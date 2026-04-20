@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Basic</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <select id="volumeSelect">
+        <option>mni152</option>
+        <option>visiblehuman</option>
+        <option selected>shear</option>
+      </select>
+      &nbsp;
+      <label for="orientCheck">Orient</label>
+      <input type="checkbox" id="orientCheck" checked/>
+      &nbsp;
+      <label for="colormapSelect">Colormap</label>
+      <select id="colormapSelect"></select>
+      &nbsp;
+      <label for="darkCheck">Clip Dark</label>
+      <input type="checkbox" id="darkCheck">
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module">
+      import NiiVue from '../src/index.ts'
+
+      orientCheck.onclick = async function () {
+        nv1.isOrientCubeVisible = this.checked
+        nv1.isOrientationTextVisible = this.checked
+      }
+      volumeSelect.onchange = async function () {
+        await nv1.loadVolumes({ url: `/volumes/${this.value}.nii.gz` });
+      }
+      webgpuCheck.onclick = function () {
+        nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+      }
+      sliceType.onchange = () => {
+        nv1.sliceType = parseInt(sliceType.value, 10)
+      }
+      colormapSelect.onchange = async function () {
+        nv1.setVolume(0, { colormap: this.value })
+      }
+      function handleLocationChange(data) {
+        document.getElementById("location").innerHTML =
+          `&nbsp;&nbsp;${data.string}`
+      }
+      darkCheck.onclick = function () {
+        nv1.volumeIsAlphaClipDark = this.checked
+      }
+      const nv1 = new NiiVue({backgroundColor: [0.2,0.2,0.2, 1], isColorbarVisible: true })
+      nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
+      await nv1.attachToCanvas(gl1)
+      for (const cmap of nv1.colormaps) {
+        const option = document.createElement('option')
+        option.value = cmap
+        option.textContent = cmap.charAt(0).toUpperCase() + cmap.slice(1)
+        if (cmap.toLowerCase() === 'gray') {
+          option.selected = true
+        }
+        colormapSelect.appendChild(option)
+      }
+      sliceType.onchange()
+      orientCheck.onclick()
+      volumeSelect.onchange()
+    </script>
+  </body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Timeseries</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <button type="button" id="prevFrame">Back</button>
+      &nbsp;
+      <button type="button" id="nextFrame">Forward</button>
+      &nbsp;
+      <label for="graphCheck">Graph</label>
+      <input type="checkbox" id="graphCheck" checked/>
+      &nbsp;
+      <label for="normalCheck">Normalize</label>
+      <input type="checkbox" id="normalCheck"/>
+      &nbsp;
+      <label for="fixedRangeCheck">Fixed Range</label>
+      <input type="checkbox" id="fixedRangeCheck"/>
+      &nbsp;
+      <label for="autoCalCheck">Auto Cal</label>
+      <input type="checkbox" id="autoCalCheck"/>
+      &nbsp;
+      <input type="color" id="colorBtn" value="#191923">
+      &nbsp;
+      <label for="colorbarCheck">Colorbars</label>
+      <input type="checkbox" id="colorbarCheck" checked/>
+      &nbsp;
+      <label for="dprSelect">Pixel Ratio</label>
+      <select id="dprSelect">
+        <option>Auto</option>
+        <option>1.0</option>
+        <option>1.5</option>
+        <option>2.0</option>
+      </select>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+      &nbsp;
+      <button type="button" id="aboutBtn">Load all volumes</button>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue::Next&nbsp;</footer>
+    <script type="module" src="vox.4d.js"></script>
+  </body>
+</html>

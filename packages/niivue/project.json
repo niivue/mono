@@ -1,0 +1,42 @@
+{
+  "name": "niivue",
+  "projectType": "library",
+  "tags": ["type:lib", "lang:typescript"],
+  "targets": {
+    "build": {
+      "command": "npm run codegen:assets && npx vite build --config vite.config.lib.ts",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": [
+        "typescript",
+        "{projectRoot}/vite.config.lib.ts",
+        "{projectRoot}/vite.config.js",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/public/**/*",
+        "{projectRoot}/scripts/**/*"
+      ],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "dev": {
+      "command": "npm run codegen:assets && npx vite --open /examples/index.html",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    },
+    "lint": {
+      "command": "bunx biome check {projectRoot}",
+      "inputs": ["typescript"]
+    },
+    "format": {
+      "command": "bunx biome format {projectRoot} --write",
+      "inputs": ["typescript"]
+    },
+    "test": {
+      "command": "npx vitest run",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    }
+  }
+}

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Voxel Atlas and Stat</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="nearestCheck">Nearest Interpolation</label>
+      <input type="checkbox" id="nearestCheck" checked>
+      &nbsp;
+      <label for="darkCheck">Clip Dark</label>
+      <input type="checkbox" id="darkCheck" checked>
+      &nbsp;
+      <label for="legendCheck">Legend</label>
+      <input type="checkbox" id="legendCheck"/>
+      &nbsp;
+      <label for="opacitySlider">Atlas Opacity</label>
+      <input
+        type="range"
+        min="1"
+        value="50"
+        max="100"
+        class="slider"
+        id="opacitySlider"
+      />
+      &nbsp;
+      <label for="opacitySlider2">Stat Opacity</label>
+      <input
+        type="range"
+        min="1"
+        value="50"
+        max="100"
+        class="slider"
+        id="opacitySlider2"
+      />
+      &nbsp;
+      <label for="colorbarCheck">Colorbars</label>
+      <input type="checkbox" id="colorbarCheck" checked/>
+      &nbsp;
+      <input type="color" id="colorBtn" value="#4D4D80">
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+      &nbsp;
+      <button type="button" id="aboutBtn">About</button>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module" src="vox.atlas.stat.js"></script>
+  </body>
+</html>

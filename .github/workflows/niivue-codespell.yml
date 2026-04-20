@@ -1,0 +1,30 @@
+name: "niivue: Codespell"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/niivue/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/niivue/**"
+
+permissions:
+  contents: read
+
+jobs:
+  codespell:
+    name: Check for spelling errors
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Annotate locations with typos
+        uses: codespell-project/codespell-problem-matcher@v1
+
+      - name: Codespell
+        uses: codespell-project/actions-codespell@v2
+        with:
+          path: packages/niivue

@@ -1,0 +1,22 @@
+{
+  "name": "py-package-c",
+  "projectType": "library",
+  "tags": ["type:lib", "lang:python"],
+  "targets": {
+    "lint": {
+      "command": "pixi run lint",
+      "options": { "cwd": "packages/py-package-c" },
+      "inputs": ["python"]
+    },
+    "format": {
+      "command": "pixi run format",
+      "options": { "cwd": "packages/py-package-c" },
+      "inputs": ["python"]
+    },
+    "test": {
+      "command": "pixi run test",
+      "options": { "cwd": "packages/py-package-c" },
+      "inputs": ["python"]
+    }
+  }
+}

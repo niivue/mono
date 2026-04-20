@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Gestures</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="primaryDrag">Primary (left)</label>
+      <select id="primaryDrag">
+        <option value="8" selected>crosshair</option>
+        <option value="1">contrast</option>
+      </select>
+      &nbsp;
+      <label for="secondaryDrag">Secondary (right)</label>
+      <select id="secondaryDrag">
+        <option value="1" selected>contrast</option>
+        <option value="2">measurement</option>
+        <option value="3">pan</option>
+        <option value="4">slicer3D</option>
+        <option value="5">callbackOnly</option>
+        <option value="6">roiSelection</option>
+        <option value="7">angle</option>
+        <option value="9">windowing</option>
+        <option value="0">none</option>
+      </select>
+      &nbsp;
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">&nbsp;</footer>
+    <script type="module">
+      import NiiVue, { DRAG_MODE } from '../src/index.ts'
+
+      primaryDrag.onchange = function () {
+        nv1.primaryDragMode = parseInt(this.value, 10)
+      }
+      secondaryDrag.onchange = function () {
+        nv1.secondaryDragMode = parseInt(this.value, 10)
+      }
+      sliceType.onchange = function () {
+        nv1.sliceType = parseInt(this.value, 10)
+      }
+      function handleLocationChange(data) {
+        document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
+      }
+      webgpuCheck.onchange = async function () {
+        await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+      }
+      function handleDragRelease(info) {
+        console.log('DragRelease', info)
+        if (info.tileIdx < 0) {
+          document.getElementById('location').innerHTML = 'Invalid drag'
+        } else {
+          const orientNames = ['Axial', 'Coronal', 'Sagittal', 'Multi', 'Render']
+          document.getElementById('location').innerHTML =
+            `Tile:${info.tileIdx} ` +
+            `Orient:${orientNames[info.axCorSag] ?? info.axCorSag} ` +
+            `Length:${Math.round(info.mmLength)}mm ` +
+            `x:${info.voxStart[0]}..${info.voxEnd[0]} ` +
+            `y:${info.voxStart[1]}..${info.voxEnd[1]} ` +
+            `z:${info.voxStart[2]}..${info.voxEnd[2]}`
+        }
+      }
+
+      const nv1 = new NiiVue({
+        backgroundColor: [0.2, 0.2, 0.2, 1],
+        isColorbarVisible: true,
+        secondaryDragMode: DRAG_MODE.contrast,
+        primaryDragMode: DRAG_MODE.crosshair,
+      })
+      nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
+      nv1.addEventListener('dragRelease', (e) => handleDragRelease(e.detail))
+      await nv1.attachToCanvas(gl1)
+      sliceType.onchange()
+      await nv1.loadVolumes({ url: '/volumes/mni152.nii.gz' })
+    </script>
+  </body>
+</html>

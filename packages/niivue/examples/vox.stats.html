@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Statistics</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="clipSelect">Clip Planes</label>
+      <select id="clipSelect">
+        <option>0</option>
+        <option>1</option>
+        <option>2</option>
+        <option selected>3</option>
+        <option>4</option>
+        <option>5</option>
+        <option>6</option>
+      </select>
+      &nbsp;
+      <label for="checkCutaway">Cutaway</label>
+      <input type="checkbox" id="checkCutaway" checked>
+      &nbsp;
+      <label for="colorSelect">Clip color</label>
+      <select id="colorSelect">
+        <option>transparent</option>
+        <option>translucent</option>
+        <option selected>shading</option>
+      </select>
+      &nbsp;
+      <label for="slideMinNeg">-Thresh</label>
+      <input
+        type="range"
+        min="1"
+        value="30"
+        max="50"
+        class="slider"
+        id="slideMinNeg"
+      />
+      &nbsp;
+      <label for="slideRangeNeg">-Range</label>
+      <input
+        type="range"
+        min="1"
+        value="30"
+        max="100"
+        class="slider"
+        id="slideRangeNeg"
+      />
+      &nbsp;
+      <label for="slideMin">+Thresh</label>
+      <input
+        type="range"
+        min="1"
+        value="30"
+        max="50"
+        class="slider"
+        id="slideMin"
+      />
+      &nbsp;
+      <label for="slideRange">+Range</label>
+      <input
+        type="range"
+        min="1"
+        value="30"
+        max="100"
+        class="slider"
+        id="slideRange"
+      />
+      &nbsp;
+      <select id="alphaMode">
+        <option selected>restrict colorbar to range</option>
+        <option>colorbar from 0,transparent subthreshold</option>
+        <option>colorbar from 0, translucent subthreshold</option>
+      </select>
+      &nbsp;
+      <label for="outlineSlide">Outline</label>
+      <input
+        type="range"
+        min="0"
+        max="4"
+        value="0"
+        class="slider"
+        id="outlineSlide"
+      />
+      &nbsp;
+      <input type="color" id="colorBtn" value="#191920">
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+      &nbsp;
+      <button type="button" id="aboutBtn">About</button>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module" src="vox.stats.js"></script>
+  </body>
+</html>

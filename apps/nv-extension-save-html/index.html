@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NiiVue — Save as HTML</title>
+    <link rel="icon" href="data:," />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: #222; color: #eee; font-family: system-ui, sans-serif; }
+      header {
+        background: #333; padding: 0.5rem 1rem; display: flex;
+        align-items: center; gap: 0.75rem; flex-wrap: wrap;
+      }
+      header label { font-size: 0.85rem; }
+      header select, header button, header input { font-size: 0.85rem; }
+      button {
+        cursor: pointer; padding: 0.25rem 0.75rem;
+        background: #555; color: #eee; border: 1px solid #777;
+        border-radius: 3px;
+      }
+      button:hover { background: #666; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      #canvas-container { width: 100%; height: calc(100vh - 80px); }
+      canvas { width: 100%; height: 100%; }
+      footer { background: #333; padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+      #status { color: #8f8; font-size: 0.85rem; }
+      .toolbar-group {
+        display: flex; align-items: center; gap: 0.5rem;
+        border-left: 1px solid #555; padding-left: 0.75rem;
+      }
+      .toolbar-group:first-child { border-left: none; padding-left: 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="toolbar-group">
+        <label for="sliceType">View:</label>
+        <select id="sliceType">
+          <option value="0">Axial</option>
+          <option value="1">Coronal</option>
+          <option value="2">Sagittal</option>
+          <option value="3" selected>A+C+S+R</option>
+        </select>
+      </div>
+
+      <div class="toolbar-group">
+        <button type="button" id="saveBtn" disabled>💾 Save as HTML</button>
+        <span id="status">Loading…</span>
+      </div>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer>
+      Load a volume and click <strong>Save as HTML</strong> to export
+      the scene as a self-contained HTML file.
+    </footer>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

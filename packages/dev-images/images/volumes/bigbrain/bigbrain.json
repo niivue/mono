@@ -1,0 +1,43 @@
+{
+  "R": [
+    0, 205, 205, 80, 80, 162, 162, 122, 122, 236, 236, 12, 12, 119, 119, 0, 0,
+    220, 220, 255, 255, 103, 103
+  ],
+  "G": [
+    0, 62, 62, 80, 80, 210, 210, 186, 186, 13, 13, 48, 48, 159, 159, 118, 118,
+    216, 216, 165, 165, 255, 255
+  ],
+  "B": [
+    0, 78, 78, 150, 150, 25, 25, 220, 220, 176, 176, 255, 255, 176, 176, 14, 14,
+    20, 20, 0, 0, 255, 255
+  ],
+  "A": [
+    0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255
+  ],
+  "labels": [
+    "",
+    "Left-red-nucleus",
+    "Right-red-nucleus",
+    "Left-substantia-nigra",
+    "Right-substantia-nigra",
+    "Left-subthalamic-nucleus",
+    "Right-subthalamic-nucleus",
+    "Left-caudate",
+    "Right-caudate",
+    "Left-putamen",
+    "Right-putamen",
+    "Left-globus-pallidus-externa",
+    "Right-globus-pallidus-externa",
+    "Left-globus-pallidus-interna",
+    "Right-globus-pallidus-interna",
+    "Left-thalamus",
+    "Right-thalamus",
+    "Left-hippocampus",
+    "Right-hippocampus",
+    "Left-nucleus-accumbens",
+    "Right-nucleus-accumbens",
+    "Left-amygdala",
+    "Right-amygdala"
+  ]
+}

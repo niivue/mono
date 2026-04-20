@@ -1,0 +1,83 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "plugins": [
+    "./nx-tools/nx-pixi-plugin.js"
+  ],
+  "namedInputs": {
+    "typescript": [
+      "{projectRoot}/**/*.ts",
+      "{projectRoot}/**/*.tsx",
+      "{projectRoot}/tsconfig.json",
+      "{projectRoot}/package.json"
+    ],
+    "python": [
+      "{projectRoot}/**/*.py",
+      "{projectRoot}/pixi.toml",
+      "{projectRoot}/pyproject.toml"
+    ]
+  },
+  "targetDefaults": {
+    "dev": {
+      "cache": false
+    },
+    "build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": true
+    },
+    "lint": {
+      "cache": true
+    },
+    "format": {
+      "cache": true
+    },
+    "typecheck": {
+      "dependsOn": [
+        "^typecheck"
+      ],
+      "cache": true
+    },
+    "test": {
+      "cache": true
+    }
+  },
+  "release": {
+    "groups": {
+      "typescript": {
+        "projects": [
+          "packages/ts-*",
+          "packages/niivue"
+        ],
+        "projectsRelationship": "independent",
+        "releaseTag": {
+          "pattern": "{projectName}@{version}"
+        },
+        "version": {
+          "conventionalCommits": true
+        },
+        "changelog": true
+      },
+      "python": {
+        "projects": [
+          "packages/py-*"
+        ],
+        "projectsRelationship": "independent",
+        "releaseTag": {
+          "pattern": "{projectName}@{version}"
+        },
+        "version": {
+          "conventionalCommits": true,
+          "versionActions": "./nx-tools/pixi-version-actions.js"
+        },
+        "changelog": true
+      }
+    },
+    "changelog": {
+      "automaticFromRef": true,
+      "workspaceChangelog": false,
+      "projectChangelogs": true
+    }
+  },
+  "analytics": false
+}

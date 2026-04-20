@@ -1,0 +1,42 @@
+name: "niivue: CI"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/niivue/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/niivue/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+
+      - name: Run ESLint
+        run: bun run --filter niivue lint
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+
+      - name: Run TypeScript type check
+        run: bun run --filter niivue typecheck

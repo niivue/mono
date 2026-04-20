@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Mesh Clipping</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="dxSlider">Mesh clipping</label>
+      <input
+        type="range"
+        min="0"
+        max="11"
+        value="11"
+        class="slider"
+        id="dxSlider"
+      />
+      &nbsp;
+      <label for="radioCheck">Radiological</label>
+      <input type="checkbox" id="radioCheck"/>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <script type="module">
+      import NiiVue from '../src/index.ts'
+
+      dxSlider.oninput = function () {
+        let dx = parseFloat(this.value)
+        if (dx > 10) dx = Infinity
+        nv1.meshThicknessOn2D = dx
+      }
+      radioCheck.onclick = function () {
+        nv1.isRadiological = this.checked
+      }
+      webgpuCheck.onchange = async function () {
+        await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+      }
+      const nv1 = new NiiVue({
+        backgroundColor: [0.3, 0.2, 0.4, 1],
+        isDragAndDropEnabled: false,
+      })
+      await nv1.attachToCanvas(gl1)
+      nv1.setClipPlanes([[0.1, 180, 20]])
+      await nv1.loadVolumes([{ url: '/volumes/fs/brainmask.mgz' }])
+      await nv1.loadMeshes([{ url: '/meshes/fs/rh.pial' , color: [0.8, 0.6, 1.0, 1.0]}])
+    </script>
+  </body>
+</html>

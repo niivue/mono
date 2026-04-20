@@ -1,0 +1,32 @@
+name: "niivue: Build and Deploy"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/niivue/**"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build (production)
+        run: bun run --filter niivue deploy
+
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: demo
+          folder: packages/niivue/dist

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Drawing</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="penValue">Pen</label>
+      <select id="penValue">
+        <option value="-1" selected>Off</option>
+        <option value="0">Erase</option>
+        <option value="1">Red</option>
+        <option value="2">Green</option>
+        <option value="3">Blue</option>
+        <option value="4">Red Filled</option>
+        <option value="5">Green Filled</option>
+        <option value="6">Blue Filled</option>
+      </select>
+      &nbsp;
+      <label for="penSize">Size</label>
+      <input type="range" min="1" value="1" max="10" class="slider" id="penSize" />
+      &nbsp;
+      <label for="opacitySlider">Opacity</label>
+      <input type="range" min="0" value="80" max="100" class="slider" id="opacitySlider" />
+      &nbsp;
+      <button type="button" id="undoBtn" disabled>Undo</button>
+      &nbsp;
+      <button type="button" id="saveBtn" disabled>Save</button>
+      &nbsp;
+      <button type="button" id="closeBtn" disabled>Close</button>
+      &nbsp;
+      <button type="button" id="loadBtn">Load</button>
+      <input type="file" id="loadFile" accept=".nii,.nii.gz" style="display:none" />
+      &nbsp;
+      <button type="button" id="leftBtn">L</button>
+      <button type="button" id="rightBtn">R</button>
+      <button type="button" id="posteriorBtn">P</button>
+      <button type="button" id="anteriorBtn">A</button>
+      <button type="button" id="inferiorBtn">I</button>
+      <button type="button" id="superiorBtn">S</button>
+      &nbsp;
+      <label for="overwriteCheck">Overwrite</label>
+      <input type="checkbox" id="overwriteCheck" checked/>
+      &nbsp;
+      <label for="rimCheck">Rim</label>
+      <input type="checkbox" id="rimCheck" checked/>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+      &nbsp;
+      <label for="antiAliasCheck">AntiAlias</label>
+      <input type="checkbox" id="antiAliasCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue::Drawing&nbsp;</footer>
+    <script type="module" src="vox.draw.js"></script>
+  </body>
+</html>

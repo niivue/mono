@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Events</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      /* Both panels absolutely positioned — immune to content changes */
+      main#canvas-container {
+        display: block;
+      }
+      #canvas-wrap {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 340px;
+      }
+      #canvas-wrap canvas {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+      }
+      /* Override niivue.css "div { display: table-row }" */
+      #event-panel,
+      #event-panel div {
+        display: flex;
+      }
+      #event-panel {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 340px;
+        flex-direction: column;
+        background: #1a1a1a;
+        border-left: 1px solid #333;
+        overflow: hidden;
+      }
+      #filter-bar {
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        padding: 0.4rem 0.5rem;
+        border-bottom: 1px solid #333;
+        background: #111;
+        font-size: 0.75rem;
+        flex-shrink: 0;
+      }
+      #filter-bar label {
+        align-items: center;
+        gap: 0.2rem;
+        cursor: pointer;
+      }
+      #filter-bar .swatch {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+      }
+      #event-log {
+        flex: 1;
+        flex-direction: column;
+        overflow-y: auto;
+        padding: 0.3rem;
+        font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+        font-size: 0.7rem;
+        line-height: 1.5;
+        min-height: 0;
+      }
+      .log-entry {
+        display: flex;
+        align-items: baseline;
+        gap: 0.4rem;
+        padding: 0.15rem 0.3rem;
+        border-bottom: 1px solid #222;
+        flex-shrink: 0;
+      }
+      .log-entry:hover {
+        background: #222;
+      }
+      .log-badge {
+        display: inline-block;
+        padding: 0.05rem 0.35rem;
+        border-radius: 3px;
+        font-weight: 600;
+        font-size: 0.65rem;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .log-detail {
+        color: #aaa;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        min-width: 0;
+      }
+      .log-time {
+        color: #555;
+        white-space: nowrap;
+        flex-shrink: 0;
+        font-size: 0.6rem;
+      }
+      .cat-interaction .log-badge { background: #1a3a5c; color: #5ba3e6; }
+      .cat-loading .log-badge { background: #1a3c1a; color: #5ce65c; }
+      .cat-lifecycle .log-badge { background: #2d1a4a; color: #a67ce6; }
+      .cat-control .log-badge { background: #4a3a1a; color: #e6b35c; }
+      .cat-drawing .log-badge { background: #4a1a1a; color: #e65c5c; }
+      .cat-change .log-badge { background: #2a2a2a; color: #999; }
+      #event-log:empty::after {
+        content: 'Interact with the viewer to see events...';
+        color: #555;
+        font-style: italic;
+        display: block;
+        padding: 1rem;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="dragMode">Drag</label>
+      <select id="dragMode">
+        <option value="8" selected>Crosshair</option>
+        <option value="1">Contrast</option>
+        <option value="2">Measure</option>
+        <option value="7">Angle</option>
+        <option value="3">Pan</option>
+      </select>
+      &nbsp;
+      <label for="drawCheck">Draw</label>
+      <input type="checkbox" id="drawCheck" />
+      &nbsp;
+      <button type="button" id="clearBtn">Clear Log</button>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
+    </header>
+    <main id="canvas-container">
+      <div id="canvas-wrap"><canvas id="gl1"></canvas></div>
+      <div id="event-panel">
+        <div id="filter-bar">
+          <label><input type="checkbox" data-cat="interaction" checked /><span class="swatch" style="background:#5ba3e6"></span>Interaction</label>
+          <label><input type="checkbox" data-cat="loading" checked /><span class="swatch" style="background:#5ce65c"></span>Loading</label>
+          <label><input type="checkbox" data-cat="lifecycle" checked /><span class="swatch" style="background:#a67ce6"></span>Lifecycle</label>
+          <label><input type="checkbox" data-cat="control" checked /><span class="swatch" style="background:#e6b35c"></span>Control</label>
+          <label><input type="checkbox" data-cat="drawing" checked /><span class="swatch" style="background:#e65c5c"></span>Drawing</label>
+          <label><input type="checkbox" data-cat="change" /><span class="swatch" style="background:#999"></span>change</label>
+        </div>
+        <div id="event-log"></div>
+      </div>
+    </main>
+    <footer id="location">NiiVue::Events&nbsp;</footer>
+    <script type="module" src="vox.events.js"></script>
+  </body>
+</html>

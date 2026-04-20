@@ -1,0 +1,13 @@
+{
+  "name": "@niivue/dev-images",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./vite-plugin": "./src/vite-plugin.ts"
+  },
+  "devDependencies": {
+    "vite": "^6.3.2"
+  }
+}

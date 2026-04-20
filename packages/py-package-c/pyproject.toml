@@ -1,0 +1,23 @@
+[project]
+name = "py-package-c"
+version = "0.4.1"
+description = "A shared Python utility library"
+authors = [{ name = "Taylor Hanayik", email = "hanayik@gmail.com" }]
+requires-python = ">=3.11"
+
+[tool.pixi.workspace]
+channels = ["conda-forge", "https://quantco.jfrog.io/artifactory/api/conda/virdx"]
+platforms = ["osx-arm64"]
+
+[tool.pixi.tasks]
+lint = "ruff check ."
+format = "ruff format ."
+test = "python -m pytest"
+
+[tool.pixi.dependencies]
+python = ">=3.11"
+ruff = ">=0.4"
+pytest = ">=8"
+
+[tool.nx]
+workspace-dependencies = []

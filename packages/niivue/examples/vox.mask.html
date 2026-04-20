@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Background As Mask</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="maskCheck">Background masks overlay</label>
+      <input type="checkbox" id="maskCheck"/>
+      &nbsp;
+      <label for="darkCheck">Clip Dark</label>
+      <input type="checkbox" id="darkCheck">
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <script type="module">
+      import NiiVue from '../src/index.ts'
+
+      sliceType.onchange = () => {
+        nv1.sliceType = parseInt(sliceType.value, 10)
+      }
+      maskCheck.onchange = async function () {
+        nv1.volumeIsBackgroundMasking = this.checked
+        await nv1.updateGLVolume()
+      }
+      darkCheck.onclick = function () {
+        nv1.volumeIsAlphaClipDark = this.checked
+      }
+      webgpuCheck.onchange = async function () {
+        await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+      }
+      const nv1 = new NiiVue({ backgroundColor: [0.2,0.2,0.2, 1], is3DCrosshairVisible: true })
+      await nv1.attachToCanvas(gl1)
+      await nv1.loadVolumes([
+        {
+          url: '/volumes/fslmean.nii.gz',
+          colormap: 'gray',
+          opacity: 1,
+        },
+        {
+          url: '/volumes/fslt.nii.gz',
+          colormap: 'redyell',
+          calMin: 0.05,
+          calMax: 5.05,
+          opacity: 0.9,
+        },
+      ])
+      nv1.sliceType = 4
+      nv1.setClipPlane([0.15, 270, 0])
+      nv1.azimuth = 45
+      nv1.elevation = 45
+      sliceType.onchange()
+    </script>
+  </body>
+</html>

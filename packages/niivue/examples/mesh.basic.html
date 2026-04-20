@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Mesh</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      &nbsp;
+      <label for="meshSelect">Mesh</label>
+      <select id="meshSelect">
+        <option>none</option>
+        <option>atl-Anatom_space-MNI</option>
+        <option>BrainMesh_ICBM152.lh</option>
+        <option>CIT168</option>
+        <option>cortex_5124</option>
+        <option selected>inflated</option>
+        <option>scalp</option>
+        <option>scalp+CIT168</option>
+      </select>
+      &nbsp;
+      <label for="shaderSelect">Shader</label>
+      <select id="shaderSelect"></select>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+      &nbsp;
+      <button type="button" id="saveBtn">Save</button>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <script type="module">
+      import NiiVue from '../src/index.ts'
+
+      sliceType.onchange = () => {
+        nv1.sliceType = parseInt(sliceType.value, 10)
+      }
+      const parseNames = (input) => {
+        if (!input || input === 'none') return []
+        return input
+          .split('+')
+          .map(n => n.trim())
+          .filter(Boolean)
+      }
+      meshSelect.onchange = async () => {
+        if (meshSelect.value === 'none') {
+          await nv1.loadMeshes([])
+          return
+        }
+        const names = parseNames(meshSelect.value)
+        const meshList = names.map(n => ({
+          url: `/meshes/${n}.mz3`,
+        }))
+        await nv1.loadMeshes(meshList)
+      }
+      shaderSelect.onchange = () => {
+        const meshes = nv1.model.getMeshes()
+        if (meshes.length < 1) return
+        nv1.setMesh(meshes.length - 1, { shaderType: shaderSelect.value })
+      }
+      webgpuCheck.onchange = async function () {
+        await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+      }
+      saveBtn.onclick = () => {
+        nv1.saveMesh(0, `myMesh.mz3`)
+      }
+      const nv1 = new NiiVue({ backgroundColor: [0.5,0.3,0.7,1] })
+      await nv1.attachToCanvas(gl1)
+      for (const shader of nv1.meshShaders) {
+        const option = document.createElement('option')
+        option.value = shader
+        option.textContent = shader.charAt(0).toUpperCase() + shader.slice(1)
+        shaderSelect.appendChild(option)
+      }
+      meshSelect.onchange()
+    </script>
+  </body>
+</html>

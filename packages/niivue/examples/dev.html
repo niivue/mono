@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Dev</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="meshSelect">Mesh</label>
+      <select id="meshSelect">
+        <option  selected>none</option>
+        <option>scalp</option>
+        <option>CIT168+scalp</option>
+        <option>inflated</option>
+        <option>cortex_5124</option>
+        <option>CIT168</option>
+      </select>
+      &nbsp;
+      <label for="shaderSelect">Shader</label>
+      <select id="shaderSelect"></select>
+      &nbsp;
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value="100"
+        class="slider"
+        id="meshOpacitySlider"
+      />
+      &nbsp;
+      &nbsp;
+      <label for="volumeSelect">Volume</label>
+      <select id="volumeSelect">
+        <option>none</option>
+        <option  selected>mni152</option>
+        <option>mni152+spmMotor</option>
+        <option>visiblehuman</option>
+        <option>PIL</option>
+        <option>i16</option>
+        <option>f32</option>
+        <option>shear</option>
+        <option>spmMotor</option>
+      </select>
+      <label for="clipSelect">Clip Planes</label>
+      <select id="clipSelect">
+        <option>0</option>
+        <option>1</option>
+        <option  selected>2</option>
+        <option>3</option>
+        <option>4</option>
+        <option>5</option>
+        <option>6</option>
+      </select>
+      &nbsp;
+      <label for="checkCutaway">Cutaway</label>
+      <input type="checkbox" id="checkCutaway">
+      &nbsp;&nbsp;
+      <label for="colorSelect">Clip color</label>
+      <select id="colorSelect">
+        <option>transparent</option>
+        <option>translucent</option>
+        <option selected>shading</option>
+      </select>
+      &nbsp;
+      <label for="colormapSelect">Colormap</label>
+      <select id="colormapSelect"></select>
+      &nbsp;
+      <label for="matcapSelect">Matcap</label>
+      <select id="matcapSelect">
+        <option>Cortex</option>
+        <option>Shiny</option>
+      </select>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value="40"
+        class="slider"
+        id="gradSlider"
+      />
+      &nbsp;
+      <label for="radioCheck">Radiological</label>
+      <input type="checkbox" id="radioCheck"/>
+      &nbsp;
+      <label for="orientCheck">Orientation</label>
+      <input type="checkbox" id="orientCheck" checked/>
+      &nbsp;
+      <label for="colorbarCheck">Colorbars</label>
+      <input type="checkbox" id="colorbarCheck" checked/>
+      &nbsp;
+      <input type="color" id="colorBtn" value="#656567">
+      &nbsp;
+      <label for="dprSelect">Pixel Ratio</label>
+      <select id="dprSelect">
+        <option>Auto</option>
+        <option>1.0</option>
+        <option>1.5</option>
+        <option>2.0</option>
+      </select>
+      &nbsp;
+      <button type="button" id="saveBtn">Save</button>
+      &nbsp;
+      <button type="button" id="saveMeshBtn">SaveMesh</button>
+      &nbsp;
+      <button type="button" id="saveVolBtn">SaveVolume</button>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+      &nbsp;
+      <label for="antiAliasCheck">AntiAlias</label>
+      <input type="checkbox" id="antiAliasCheck" checked/>
+      &nbsp;
+      <label for="animateCheck">Animate</label>
+      <input type="checkbox" id="animateCheck"/>
+      &nbsp;
+      <span id="fpsCounter" style="margin-left: 10px; font-weight: bold;">FPS: --</span>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <script type="module" src="./dev.js"></script>
+  </body>
+</html>

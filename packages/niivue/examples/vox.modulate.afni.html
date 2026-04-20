@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>AFNI DTI Modulation</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="mode">Display:</label>
+      <select id="mode">
+        <option>FA</option>
+        <option>V1</option>
+        <option>V1 modulated by FA</option>
+        <option>V1 (isV1SliceShader)</option>
+        <option selected>V1 modulated by FA (isV1SliceShader)</option>
+      </select>
+      <label for="slide">&nbsp; FAmin</label>
+      <input type="range" min="0" max="100" value="0" class="slider" id="slide" />
+      <label for="slideX">&nbsp; FAmax</label>
+      <input type="range" min="0" max="100" value="100" class="slider" id="slideX" />
+      <label for="check">ClipDark</label>
+      <input type="checkbox" id="check" checked />
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">&nbsp;</footer>
+    <script type="module" src="vox.modulate.afni.js"></script>
+  </body>
+</html>

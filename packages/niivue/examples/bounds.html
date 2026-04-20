@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Bounds</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      <label> NV1 Bounds</label>
+      <select id="bounds1">
+        <option value="0,0,0.5,1" selected>Left half</option>
+        <option value="0,0.5,0.5,1">Top-left</option>
+        <option value="0,0,0.5,0.5">Bottom-left</option>
+        <option value="0,0,1,1">Full canvas</option>
+      </select>
+      <label> NV2 Bounds</label>
+      <select id="bounds2">
+        <option value="0.5,0,1,1" selected>Right half</option>
+        <option value="0.5,0.5,1,1">Top-right</option>
+        <option value="0.5,0,1,0.5">Bottom-right</option>
+        <option value="0,0,1,1">Full canvas</option>
+      </select>
+      <label for="broadcastSelect"> Broadcast</label>
+      <select id="broadcastSelect">
+        <option value="0">Independent</option>
+        <option value="1" selected>Bidirectional</option>
+      </select>
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+      <button type="button" id="saveNv1" type="button">Save NV1</button>
+      <button type="button" id="saveNv2" type="button">Save NV2</button>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <script type="module" src="bounds.js"></script>
+  </body>
+</html>

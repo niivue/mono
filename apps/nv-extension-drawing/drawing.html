@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue — Drawing Interpolation</title>
+    <link rel="icon" href="data:," />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: #222; color: #eee; font-family: system-ui, sans-serif; }
+      header {
+        background: #333; padding: 0.5rem 1rem; display: flex;
+        align-items: center; gap: 0.75rem; flex-wrap: wrap;
+      }
+      header label { font-size: 0.85rem; }
+      header select, header button, header input { font-size: 0.85rem; }
+      #canvas-container { width: 100%; height: calc(100vh - 110px); }
+      canvas { width: 100%; height: 100%; }
+      footer { background: #333; padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+      #status { color: #8f8; font-size: 0.85rem; }
+      .toolbar-group {
+        display: flex; align-items: center; gap: 0.5rem;
+        border-left: 1px solid #555; padding-left: 0.75rem;
+      }
+      .toolbar-group:first-child { border-left: none; padding-left: 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="toolbar-group">
+        <select id="sliceType">
+          <option value="0">Axial</option>
+          <option value="1">Coronal</option>
+          <option value="2">Sagittal</option>
+          <option value="3" selected>A+C+S+R</option>
+        </select>
+      </div>
+
+      <div class="toolbar-group">
+        <label><input type="checkbox" id="useWebGPU" checked /> WebGPU</label>
+      </div>
+
+      <div class="toolbar-group">
+        <label>Drawing:</label>
+        <button type="button" id="enableDrawBtn">Enable</button>
+        <label for="penColor">Color:</label>
+        <select id="penColor">
+          <option value="1" selected>Red (1)</option>
+          <option value="2">Green (2)</option>
+          <option value="3">Blue (3)</option>
+          <option value="4">Yellow (4)</option>
+          <option value="5">Cyan (5)</option>
+        </select>
+        <label for="penSize">Size:</label>
+        <input type="range" id="penSize" min="1" max="10" value="3" style="width:60px" />
+        <button type="button" id="undoBtn">Undo</button>
+      </div>
+
+      <div class="toolbar-group">
+        <label>Interpolation:</label>
+        <select id="interpAxis">
+          <option value="0" selected>Axial</option>
+          <option value="1">Coronal</option>
+          <option value="2">Sagittal</option>
+        </select>
+        <label><input type="checkbox" id="intensityGuided" /> Intensity-guided</label>
+        <button type="button" id="findBoundaryBtn">Find Boundaries</button>
+        <button type="button" id="interpolateBtn">Interpolate</button>
+      </div>
+
+      <div class="toolbar-group" id="intensityParams" style="display:none">
+        <label>α: <input type="range" id="alphaSlider" min="0" max="100" value="70" style="width:60px" />
+          <span id="alphaVal">0.70</span></label>
+        <label>σ: <input type="range" id="sigmaSlider" min="1" max="100" value="10" style="width:60px" />
+          <span id="sigmaVal">0.10</span></label>
+        <label>thresh: <input type="range" id="threshSlider" min="1" max="100" value="38" style="width:60px" />
+          <span id="threshVal">0.38</span></label>
+        <label><input type="checkbox" id="smoothCb" checked /> Smooth</label>
+      </div>
+
+      <span id="status"></span>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">&nbsp;</footer>
+    <script type="module" src="src/drawing.js"></script>
+  </body>
+</html>

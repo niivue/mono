@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Web Extras</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      &nbsp;
+      <label for="fontSelect">Fonts:</label>
+      <select id="fontSelect">
+        <option value="" disabled selected hidden></option>
+      </select>
+      &nbsp;
+      <label for="cmapSelect">Colormaps:</label>
+      <select id="cmapSelect">
+        <option value="" disabled selected hidden></option>
+      </select>
+      &nbsp;
+      <label for="matSelect">Matcaps:</label>
+      <select id="matSelect">
+        <option value="" disabled selected hidden></option>
+      </select>
+      &nbsp;
+      <label for="mat2Select">More Matcaps:</label>
+      <select id="mat2Select">
+        <option value="" disabled selected hidden></option>
+      </select>
+      &nbsp;
+      <label for="fontSlide">Font Size</label>
+      <input type="range" id="fontSlide" min="1" max="200" step="1" value="40" />
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <script type="module" src="./web.extras.js"></script>
+  </body>
+</html>

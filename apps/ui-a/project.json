@@ -1,0 +1,36 @@
+{
+  "name": "ui-a",
+  "projectType": "application",
+  "tags": ["type:app", "lang:typescript"],
+  "implicitDependencies": ["ts-package-d"],
+  "targets": {
+    "dev": {
+      "command": "bun --hot index.ts",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "build": {
+      "command": "bun build index.ts --outdir dist",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    },
+    "lint": {
+      "command": "bunx biome check {projectRoot}",
+      "inputs": ["typescript"]
+    },
+    "format": {
+      "command": "bunx biome format {projectRoot} --write",
+      "inputs": ["typescript"]
+    },
+    "test": {
+      "command": "bun test",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    }
+  }
+}

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Volume Reorder</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="volumeSelect">Volume</label>
+      <select id="volumeSelect"></select>
+      &nbsp;
+      <button type="button" id="toBottomBtn">⏬ To Bottom</button>
+      <button type="button" id="downBtn">🔽 Down</button>
+      <button type="button" id="upBtn">🔼 Up</button>
+      <button type="button" id="toTopBtn">⏫ To Top</button>
+      &nbsp;
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue — Volume Reorder Demo</footer>
+    <script type="module" src="vox.reorder.js"></script>
+  </body>
+</html>

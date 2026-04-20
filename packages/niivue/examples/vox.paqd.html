@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue PAQD Atlas</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="paqdSelect">
+        <option value="rim" selected>Rim</option>
+        <option value="opaque">Opaque</option>
+        <option value="translucent" >Translucent</option>
+      </select>
+      &nbsp;
+      <button type="button" id="clipBtn">Clip</button>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+      &nbsp;
+      <button type="button" id="aboutBtn">About</button>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module" src="vox.paqd.js"></script>
+  </body>
+</html>

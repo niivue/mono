@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <link rel="icon" href="data:,">
+    <title>NiiVue Examples</title>
+    <style>
+      header {
+        background-color: #000;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        margin-bottom: 1rem;
+      }
+      .ribbon {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        max-width: 960px;
+        margin: 0 auto;
+        background-color: #000;
+      }
+      .logo {
+        font-size: 1.25rem;
+        font-weight: bold;
+        color: #58a6ff;
+        text-decoration: none;
+        margin-right: 1rem;
+      }
+      .nav-left {
+        display: flex;
+        gap: 1.5rem;
+        flex-grow: 1;
+      }
+      .nav-right {
+        display: flex;
+      }
+      .nav-left a,
+      .nav-right a {
+        color: #58a6ff;
+        text-decoration: none;
+        font-size: 1rem;
+      }
+      .nav-left a:hover,
+      .nav-right a:hover {
+        text-decoration: underline;
+      }
+      .nav-left  a.active {
+        font-weight: bold;
+        text-decoration: underline;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #333;
+        margin: 0;
+        padding: 0.5rem;
+        color: #58a6ff;
+      }
+      main {
+        max-width: 512px;
+        margin: auto;
+        background: #000;
+        padding: 0.1rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      }
+      h1 {
+        text-align: left;
+        color: #58a6ff;
+        padding-left: 1.5rem;
+        font-size: 1.0rem;
+        margin-bottom: 1rem;
+      }
+      ol {
+        padding-left: 1.7rem;
+      }
+      li {
+        margin: 0.5rem 0;
+      }
+      a {
+        color: #58a6ff;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="ribbon">
+        <a href="https://niivue.com/" class="logo">NiiVue</a>
+        <div class="nav-left">
+          <a href="https://niivue.com/gallery">Gallery</a>
+          <a href="./" class="active">Examples</a>
+          <a href="https://niivue.com/docs">Docs</a>
+        </div>
+        <div class="nav-right">
+          <a href="https://github.com/niivue/niivue" target="_blank">GitHub</a>
+        </div>
+      </div>
+    </header>
+      <main>
+        <h1>Voxel Scenes</h1>
+        <ul>
+          <li><a href="./vox.min.html" target="_blank" rel="noopener noreferrer">Minimal</a></li>
+          <li><a href="./vox.min.webgpu.html" target="_blank" rel="noopener noreferrer">Minimal (WebGPU only)</a></li>
+          <li><a href="./vox.min.webgl2.html" target="_blank" rel="noopener noreferrer">Minimal (WebGL2 only)</a></li>
+          <li><a href="./vox.basic.html" target="_blank" rel="noopener noreferrer">Basic</a></li>
+          <li><a href="./vox.clip.html" target="_blank" rel="noopener noreferrer">Clip planes</a></li>
+          <li><a href="./vox.stats.html" target="_blank" rel="noopener noreferrer">Statistical Overlay</a></li>
+          <li><a href="./vox.atlas.html" target="_blank" rel="noopener noreferrer">Atlas</a></li>
+          <li><a href="./vox.atlas.stat.html" target="_blank" rel="noopener noreferrer">Atlas and Statistics</a></li>
+          <li><a href="./vox.atlas.bigbrain.html" target="_blank" rel="noopener noreferrer">BigBrain Atlas</a></li>
+          <li><a href="./vox.paqd.html" target="_blank" rel="noopener noreferrer">Probabilistic Atlas (PAQD)</a></li>
+          <li><a href="./vox.4d.html" target="_blank" rel="noopener noreferrer">4D timeseries</a></li>
+          <li><a href="./vox.thumbnail.html" target="_blank" rel="noopener noreferrer">Thumbnail</a></li>
+          <li><a href="./vox.gestures.html" target="_blank" rel="noopener noreferrer">Gestures</a></li>
+          <li><a href="./vox.modulate.html" target="_blank" rel="noopener noreferrer">Modulate DTI V1 (FSL)</a></li>
+          <li><a href="./vox.modulate.afni.html" target="_blank" rel="noopener noreferrer">Modulate DTI V1 (AFNI)</a></li>
+          <li><a href="./vox.draw.html" target="_blank" rel="noopener noreferrer">Drawing</a></li>
+          <li><a href="./annotations.html" target="_blank" rel="noopener noreferrer">Vector Annotations</a></li>
+          <li><a href="./vox.reorder.html" target="_blank" rel="noopener noreferrer">Volume Reorder</a></li>
+          <li><a href="./vox.events.html" target="_blank" rel="noopener noreferrer">Events (EventTarget)</a></li>
+        </ul>
+
+        <h1>Mesh Scenes</h1>
+        <ul>
+          <li><a href="./mesh.min.html" target="_blank" rel="noopener noreferrer">Minimal</a></li>
+          <li><a href="./mesh.basic.html" target="_blank" rel="noopener noreferrer">Basic</a></li>
+          <li><a href="./mesh.layers.html" target="_blank" rel="noopener noreferrer">Layers</a></li>
+          <li><a href="./mesh.atlas.html" target="_blank" rel="noopener noreferrer">Atlas</a></li>
+        </ul>
+        <h1>Connectome Scenes</h1>
+        <ul>
+          <li><a href="./connectome.html" target="_blank" rel="noopener noreferrer">Minimal</a></li>
+        </ul>
+        <h1>Tract Scenes</h1>
+        <ul>
+          <li><a href="./tract.html" target="_blank" rel="noopener noreferrer">Minimal</a></li>
+          <li><a href="./tract.group.html" target="_blank" rel="noopener noreferrer">Single group</a></li>
+          <li><a href="./tract.groups.html" target="_blank" rel="noopener noreferrer">Multiple groups</a></li>
+          <li><a href="./tract.tsf.html" target="_blank" rel="noopener noreferrer">MRtrix statistics</a></li>
+          <li><a href="./tract.dsi.html" target="_blank" rel="noopener noreferrer">DSI-Studio TinyTrack</a></li>
+          <li><a href="./tract.trk.html" target="_blank" rel="noopener noreferrer">TrackVis with brain mesh</a></li>
+        </ul>
+
+        <h1>Freesurfer Scenes</h1>
+        <ul>
+          <li><a href="./freesurfer.clip.html" target="_blank" rel="noopener noreferrer">Clip meshes near voxels</a></li>
+          <li><a href="./freesurfer.crosscut.html" target="_blank" rel="noopener noreferrer">FreeSurfer Crosscut</a></li>
+        </ul>
+
+        <h1>Complex Scenes</h1>
+        <ul>
+          <li><a href="./backend.html" target="_blank" rel="noopener noreferrer">Backend (WebGL2 or WebGPU)</a></li>
+          <li><a href="./font.html" target="_blank" rel="noopener noreferrer">Fonts</a></li>
+          <li><a href="./web.extras.html" target="_blank" rel="noopener noreferrer">Remote assets (fonts, colormaps, matcaps)</a></li>
+          <li><a href="./layout.html" target="_blank" rel="noopener noreferrer">Layout</a></li>
+          <li><a href="./bounds.html" target="_blank" rel="noopener noreferrer">Instances sharing a canvas (bounds)</a></li>
+          <li><a href="./sync.html" target="_blank" rel="noopener noreferrer">Synchronize instances (broadcast)</a></li>
+          <li><a href="./dev.html" target="_blank" rel="noopener noreferrer">Dev (Kitchen Sink)</a></li>
+        </ul>
+      </main>
+
+  </body>
+</html>

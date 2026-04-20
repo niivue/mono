@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Layout</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="3" selected>A+C+S+R</option>
+        <option value="4">Render</option>
+        <option value="5">Mosaic</option>
+      </select>
+      <select id="multiplanarType">
+        <option value="0" selected>Auto</option>
+        <option value="1">Column</option>
+        <option value="2">Grid</option>
+        <option value="3">Row</option>
+      </select>
+      &nbsp;
+      <label for="heroSlide">Hero</label>
+      <input
+        type="range"
+        min="0"
+        max="8"
+        value="0"
+        class="slider"
+        id="heroSlide"
+      />
+      &nbsp;
+      <label for="forceRenderCheck">Force render</label>
+      <input type="checkbox" id="forceRenderCheck"/>
+      <button type="button" id="mosaicBtn">Mosaic String:</button>
+      <input
+        type="text"
+        id="mosaicStr"
+        value="A -20 50 60 70 L C -10 -20 -50 S R X 0 R X -0"
+        required
+        minlength="2"
+        maxlength="128"
+        size="128"
+      />
+      &nbsp;
+      <label for="marginSlide">Margin</label>
+      <input
+        type="range"
+        min="0"
+        max="8"
+        value="0"
+        class="slider"
+        id="marginSlide"
+      />
+      &nbsp;
+      <input type="color" id="colorBtn" value="#333334">
+      &nbsp;
+      <label for="sizeCheck">Equal Size</label>
+      <input type="checkbox" id="sizeCheck"/>
+      &nbsp;
+      <label for="darkCheck">Clip Dark</label>
+      <input type="checkbox" id="darkCheck">
+      &nbsp;
+      <label for="radioCheck">Radiological</label>
+      <input type="checkbox" id="radioCheck"/>
+      &nbsp;
+      <label for="rulerCheck">Ruler</label>
+      <input type="checkbox" id="rulerCheck"/>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module" src="layout.js"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "nx-mono-repo-test",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "nx run-many -t dev",
+    "build": "nx run-many -t build",
+    "lint": "nx run-many -t lint",
+    "format": "nx run-many -t format",
+    "typecheck": "nx run-many -t typecheck",
+    "test": "nx run-many -t test",
+    "check-boundaries": "node nx-tools/check-boundaries.js"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "latest",
+    "@nx/js": "^22.6.3",
+    "nx": "latest"
+  }
+}

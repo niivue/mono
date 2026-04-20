@@ -1,0 +1,37 @@
+{
+  "name": "nv-extension-save-html",
+  "projectType": "application",
+  "tags": ["type:app", "lang:typescript"],
+  "targets": {
+    "dev": {
+      "command": "npx vite --open /index.html",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "build": {
+      "command": "npm run prebuild:standalone && npx vite build",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"],
+      "inputs": [
+        "typescript",
+        "{projectRoot}/vite.config.js",
+        "{projectRoot}/vite.config.standalone.js",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/*.html"
+      ],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    },
+    "lint": {
+      "command": "bunx biome check {projectRoot}",
+      "inputs": ["typescript"]
+    },
+    "format": {
+      "command": "bunx biome format {projectRoot} --write",
+      "inputs": ["typescript"]
+    }
+  }
+}

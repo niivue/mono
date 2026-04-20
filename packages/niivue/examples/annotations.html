@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Vector Annotations</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="enableCheck">Annotate</label>
+      <input type="checkbox" id="enableCheck"/>
+      &nbsp;
+      <label for="toolSelect">Tool</label>
+      <select id="toolSelect">
+        <option value="freehand" selected>Freehand</option>
+        <option value="ellipse">Ellipse</option>
+        <option value="rectangle">Rectangle</option>
+        <option value="line">Line</option>
+        <option value="arrow">Arrow</option>
+        <option value="circle">Circle</option>
+        <option value="measureEllipse">Measure Ellipse</option>
+        <option value="measureRect">Measure Rect</option>
+        <option value="measureLine">Measure Line</option>
+        <option value="measureCircle">Measure Circle</option>
+      </select>
+      &nbsp;
+      <label for="eraserCheck">Eraser</label>
+      <input type="checkbox" id="eraserCheck"/>
+      &nbsp;
+      <label for="labelSelect">Label</label>
+      <select id="labelSelect">
+        <option value="1" selected>1 (Red)</option>
+        <option value="2">2 (Green)</option>
+        <option value="3">3 (Blue)</option>
+        <option value="4">4 (Yellow)</option>
+      </select>
+      &nbsp;
+      <label for="brushRadius">Brush</label>
+      <input type="range" min="0.5" value="2" max="10" step="0.5" id="brushRadius" />
+      <span id="brushLabel">2.0</span>
+      &nbsp;
+      <label for="fillOpacity">Fill</label>
+      <input type="range" min="0" value="30" max="100" id="fillOpacity" />
+      &nbsp;
+      <label for="strokeWidth">Stroke</label>
+      <input type="range" min="0" value="2" max="6" step="0.5" id="strokeWidth" />
+      &nbsp;
+      <button type="button" id="undoBtn">Undo</button>
+      <button type="button" id="redoBtn">Redo</button>
+      <button type="button" id="clearBtn">Clear</button>
+      &nbsp;
+      <label for="show3dCheck">Show in 3D</label>
+      <input type="checkbox" id="show3dCheck"/>
+      &nbsp;
+      <label for="annOpacity">Ann Opacity</label>
+      <input type="range" min="0" value="100" max="100" id="annOpacity" />
+      &nbsp;
+      <label for="volOpacity">Vol Opacity</label>
+      <input type="range" min="0" value="100" max="100" id="volOpacity" />
+      &nbsp;
+      <button type="button" id="saveBtn">Save Doc</button>
+      <button type="button" id="loadBtn">Load Doc</button>
+      <input type="file" id="loadFile" accept=".nvd" style="display:none" />
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">Annotations&nbsp;</footer>
+    <script type="module" src="annotations.js"></script>
+  </body>
+</html>

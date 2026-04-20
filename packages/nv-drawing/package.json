@@ -1,0 +1,29 @@
+{
+  "name": "@niivue/nv-drawing",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Drawing interpolation and segmentation tools for NiiVue",
+  "main": "./dist/nv-drawing.js",
+  "module": "./dist/nv-drawing.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/nv-drawing.js"
+    }
+  },
+  "files": ["dist"],
+  "peerDependencies": {
+    "@niivue/niivue": "workspace:*"
+  },
+  "devDependencies": {
+    "@niivue/niivue": "workspace:*",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.2",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "scripts": {
+    "build": "npx vite build",
+    "typecheck": "bunx tsc --noEmit"
+  }
+}

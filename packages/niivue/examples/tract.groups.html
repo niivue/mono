@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Tract Groups</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="4" selected>Render</option>
+        <option value="3">A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="fiberSelect">Fiber color:</label>
+      <select id="fiberSelect">
+        <option value="local" selected>Local direction</option>
+        <option value="global">Global direction</option>
+        <option value="fixed">Fixed</option>
+        <option value="zscore">Z-score (per-group)</option>
+        <option value="show0">First group</option>
+        <option value="show1">Second group</option>
+        <option value="show2">Third group</option>
+        <option value="show012">First three groups</option>
+      </select>
+      &nbsp;
+      <label for="thresholdSlide" id="thresholdLabel" style="display:none">Threshold</label>
+      <input type="range" id="thresholdSlide" min="0" max="6" step="0.5" value="1" style="display:none" />
+      &nbsp;
+      <label for="decimationSlide">Decimation</label>
+      <input type="range" id="decimationSlide" min="1" max="20" step="1" value="1" />
+      &nbsp;
+      <label for="xrayCheck">XRay</label>
+      <input type="checkbox" id="xrayCheck"/>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <script type="module" src="tract.groups.js"></script>
+  </body>
+</html>

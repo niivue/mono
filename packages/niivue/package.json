@@ -1,0 +1,89 @@
+{
+  "name": "@niivue/niivue",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "WebGPU/WebGL2 browser-based medical image visualization",
+  "main": "./dist/niivuegpu.js",
+  "module": "./dist/niivuegpu.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/niivuegpu.js"
+    },
+    "./webgpu": {
+      "types": "./dist/index.webgpu.d.ts",
+      "import": "./dist/niivuegpu.webgpu.js"
+    },
+    "./webgl2": {
+      "types": "./dist/index.webgl2.d.ts",
+      "import": "./dist/niivuegpu.webgl2.js"
+    },
+    "./assets/fonts": {
+      "types": "./dist/assets/fonts/index.d.ts",
+      "import": "./dist/assets/fonts/index.js"
+    },
+    "./assets/matcaps": {
+      "types": "./dist/assets/matcaps/index.d.ts",
+      "import": "./dist/assets/matcaps/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "codegen:assets": "node scripts/generate-assets.js",
+    "dev": "npm run codegen:assets && vite --open /examples/index.html",
+    "build": "npm run codegen:assets && vite build --config vite.config.lib.ts",
+    "build:examples": "npm run codegen:assets && vite build --config vite.config.examples.ts",
+    "deploy": "npm run codegen:assets && vite build --config vite.config.examples.ts --mode production",
+    "demo": "npm run build:examples && npx http-server dist/ --cors -o",
+    "preview": "vite preview",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "typecheck": "tsc --noEmit",
+    "size:entries": "node scripts/report-entry-sizes.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/niivue/niivue.git"
+  },
+  "keywords": [
+    "neuroimaging",
+    "nifti",
+    "webgpu",
+    "webgl",
+    "medical-imaging",
+    "brain",
+    "mri",
+    "visualization"
+  ],
+  "author": "niivue authors",
+  "license": "BSD-2-Clause",
+  "bugs": {
+    "url": "https://github.com/niivue/niivue/issues"
+  },
+  "homepage": "https://github.com/niivue/niivue",
+  "dependencies": {
+    "cbor-x": "^1.6.0",
+    "clipper2-ts": "^2.0.1-13",
+    "earcut": "^3.0.2",
+    "gl-matrix": "^3.4.4",
+    "nifti-reader-js": "^0.8.0"
+  },
+  "devDependencies": {
+    "@niivue/dev-images": "workspace:*",
+    "@eslint/js": "^9.39.2",
+    "@types/earcut": "^3.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.38.0",
+    "@typescript-eslint/parser": "^8.38.0",
+    "@webgpu/types": "^0.1.69",
+    "eslint": "^9.39.2",
+    "globals": "^17.0.0",
+    "http-server": "^14.1.1",
+    "typescript": "^5.6.3",
+    "vite": "^7.3.1",
+    "vite-plugin-dts": "^4.5.4"
+  }
+}

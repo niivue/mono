@@ -1,0 +1,35 @@
+{
+  "name": "nv-react",
+  "projectType": "library",
+  "tags": ["type:lib", "lang:typescript"],
+  "targets": {
+    "build": {
+      "command": "bun run build:package",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": [
+        "typescript",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.build.json"
+      ],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    },
+    "lint": {
+      "command": "bunx biome check {projectRoot}",
+      "inputs": ["typescript"]
+    },
+    "format": {
+      "command": "bunx biome format {projectRoot} --write",
+      "inputs": ["typescript"]
+    },
+    "test": {
+      "command": "bun test",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    }
+  }
+}

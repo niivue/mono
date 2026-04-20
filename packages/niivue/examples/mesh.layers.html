@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Statistics</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+      &nbsp;
+      <label for="slideMinNeg"> &nbsp; -Thresh</label>
+      <input
+        type="range"
+        min="1"
+        value="15"
+        max="50"
+        class="slider"
+        id="slideMinNeg"
+      />
+      &nbsp;
+      <label for="slideRangeNeg"> &nbsp; -Range</label>
+      <input
+        type="range"
+        min="1"
+        value="5"
+        max="100"
+        class="slider"
+        id="slideRangeNeg"
+      />
+      &nbsp;
+      <label for="slideMin"> &nbsp; +Thresh</label>
+      <input
+        type="range"
+        min="1"
+        value="30"
+        max="50"
+        class="slider"
+        id="slideMin"
+      />
+      &nbsp;
+      <label for="slideRange"> &nbsp; +Range</label>
+      <input
+        type="range"
+        min="1"
+        value="30"
+        max="100"
+        class="slider"
+        id="slideRange"
+      />
+      &nbsp;
+      <select id="alphaMode">
+        <option selected>restrict colorbar to range</option>
+        <option>colorbar from 0,transparent subthreshold</option>
+        <option>colorbar from 0, translucent subthreshold</option>
+      </select>
+      &nbsp;
+      <button type="button" id="aboutBtn">About</button>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <script type="module" src="mesh.layers.js"></script>
+  </body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Connectome</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="4" selected>Render</option>
+        <option value="3">A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="fileSelect">File</label>
+      <select id="fileSelect">
+        <option value="connectome" selected>Dense</option>
+        <option value="connectome2">Sparse</option>
+      </select>
+      &nbsp;
+      <label for="legendCheck">Legend</label>
+      <input type="checkbox" id="legendCheck" checked/>
+      &nbsp;
+      <label for="nodeScale">Node Scale</label>
+      <input type="range" id="nodeScale" min="0.5" max="10" step="0.5" value="3" />
+      &nbsp;
+      <label for="edgeScale">Edge Scale</label>
+      <input type="range" id="edgeScale" min="0.1" max="5" step="0.1" value="1" />
+      &nbsp;
+      <label for="shaderSelect">Shader</label>
+      <select id="shaderSelect"></select>
+      &nbsp;
+
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <script type="module">
+      import { ubuntu } from '../src/assets/fonts'
+      import { cortex } from '../src/assets/matcaps'
+      import NiiVue from '../src/index.ts'
+
+      sliceType.onchange = () => {
+        nv1.sliceType = parseInt(sliceType.value, 10)
+      }
+      legendCheck.onclick = async function () {
+        const meshes = nv1.model.getMeshes()
+        if (meshes.length > 0) {
+          nv1.setMesh(meshes.length - 1, { isLegendVisible: this.checked })
+        }
+      }
+      fileSelect.onchange = async () => {
+        await nv1.loadMeshes([{ url: `/meshes/${fileSelect.value}.jcon`, isLegendVisible: legendCheck.checked }])
+      }
+      shaderSelect.onchange = () => {
+        const meshes = nv1.model.getMeshes()
+        if (meshes.length < 1) return
+        nv1.setMesh(meshes.length - 1, { shaderType: shaderSelect.value })
+      }
+      nodeScale.oninput = async () => {
+        const meshes = nv1.model.getMeshes()
+        if (meshes.length < 1) return
+        await nv1.setConnectomeOptions(0, { nodeScale: parseFloat(nodeScale.value) })
+      }
+      edgeScale.oninput = async () => {
+        const meshes = nv1.model.getMeshes()
+        if (meshes.length < 1) return
+        await nv1.setConnectomeOptions(0, { edgeScale: parseFloat(edgeScale.value) })
+      }
+
+      webgpuCheck.onchange = async function () {
+        await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+      }
+      const nv1 = new NiiVue({ backgroundColor: [0.15, 0.15, 0.25, 1], font: ubuntu, matcaps: { cortex } })
+      await nv1.attachToCanvas(gl1)
+      for (const shader of nv1.meshShaders) {
+      const option = document.createElement('option')
+        option.value = shader
+        option.textContent = shader.charAt(0).toUpperCase() + shader.slice(1)
+        shaderSelect.appendChild(option)
+      }
+      nv1.sliceType = 4
+      nv1.clipPlaneColor = [0,0,0,0]
+      nv1.setClipPlanes([[0.15, 180, 0], [-0.1, 0, 0]])
+      await nv1.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
+      await fileSelect.onchange()
+    </script>
+  </body>
+</html>

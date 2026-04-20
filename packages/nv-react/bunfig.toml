@@ -1,0 +1,11 @@
+[serve.static]
+env = "BUN_PUBLIC_*"
+
+[test]
+preload = ["./src/happydom.ts", "./src/testing-library.ts"]
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = [
+  "src/happydom.ts",
+  "src/testing-library.ts",
+  "src/__mocks__/**",
+]

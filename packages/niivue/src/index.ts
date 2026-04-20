@@ -4,11 +4,20 @@
  * @packageDocumentation
  */
 
+// Extension API
+export { NVExtensionContext } from "./extension/context";
+export type {
+  BackgroundVolumeAccess,
+  DrawingAccess,
+  DrawingDims,
+  NVExtensionEventMap,
+  SharedBufferHandle,
+  SlicePointerEvent,
+} from "./extension/types";
 // Logger
 export type { LogLevel } from "./logger";
 // Mesh writer types
 export type { WriteOptions } from "./mesh/writers";
-
 // Enums
 export { DRAG_MODE, NiiDataType } from "./NVConstants";
 export { default, default as NiiVueGPU } from "./NVControl";
@@ -70,19 +79,7 @@ export type {
   TransformOptions,
   VolumeTransform,
 } from "./volume/transforms";
-// Extension API
-export {
-  NVExtensionContext,
-} from "./extension/context";
-export type {
-  BackgroundVolumeAccess,
-  DrawingAccess,
-  DrawingDims,
-  NVExtensionEventMap,
-  SharedBufferHandle,
-  SlicePointerEvent,
-} from "./extension/types";
-// Worker bridge for external transform packages
-export { NVWorker } from "./workers/NVWorker";
 // Volume utilities for extensions
 export { getImageDataRAS } from "./volume/utils";
+// Worker bridge for external transform packages
+export { NVWorker } from "./workers/NVWorker";

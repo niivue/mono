@@ -7,7 +7,6 @@
  */
 
 import { log } from "@/logger";
-import { NiiDataType } from "@/NVConstants";
 import type { NVImage } from "@/NVTypes";
 import { convertFloat32RGBVector } from "./NVVolume";
 

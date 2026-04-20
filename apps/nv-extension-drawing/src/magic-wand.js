@@ -10,8 +10,8 @@
  */
 import NiiVue from "@niivue/niivue";
 import {
-  magicWand as magicWandWorker,
   MagicWandShared,
+  magicWand as magicWandWorker,
 } from "@niivue/nv-drawing";
 
 // --- UI refs ---
@@ -83,7 +83,9 @@ useWebGPUCb.onchange = async () => {
   status.textContent = `Switching to ${backend}\u2026`;
   const ok = await nv.reinitializeView({ backend });
   useWebGPUCb.checked = nv.backend === "webgpu";
-  status.textContent = ok ? `Backend: ${nv.backend}` : `Failed to switch to ${backend}`;
+  status.textContent = ok
+    ? `Backend: ${nv.backend}`
+    : `Failed to switch to ${backend}`;
 };
 
 ctx.createEmptyDrawing();
@@ -97,7 +99,8 @@ penColorSelect.onchange = () => {
 undoBtn.onclick = () => {
   ctx.drawUndo();
   snapshotCommitted();
-  if (wandShared && committedBitmap) wandShared.updateCommitted(committedBitmap);
+  if (wandShared && committedBitmap)
+    wandShared.updateCommitted(committedBitmap);
   clearPreview();
 };
 
@@ -143,7 +146,8 @@ let sharedReady = false;
 async function initSharedIfNeeded() {
   if (wandShared) return;
   if (typeof SharedArrayBuffer === "undefined") {
-    status.textContent = "SharedArrayBuffer not available — using transfer worker.";
+    status.textContent =
+      "SharedArrayBuffer not available — using transfer worker.";
     useTransferCb.checked = true;
     return;
   }
@@ -152,11 +156,15 @@ async function initSharedIfNeeded() {
   if (!dr || !bg) return;
   status.textContent = "Initializing SharedArrayBuffer worker\u2026";
 
-  const committed = committedBitmap
-    || new Uint8Array(dr.dims.dimX * dr.dims.dimY * dr.dims.dimZ);
+  const committed =
+    committedBitmap ||
+    new Uint8Array(dr.dims.dimX * dr.dims.dimY * dr.dims.dimZ);
 
   wandShared = new MagicWandShared(
-    dr.dims, bg.imgRAS, committed, dr.voxelSizeMM,
+    dr.dims,
+    bg.imgRAS,
+    committed,
+    dr.voxelSizeMM,
   );
 
   // Point niivue's drawing volume at the wand's shared bitmap
@@ -204,8 +212,10 @@ function clearPreview() {
 }
 
 function formatStatus(prefix, result, seed, elapsed, backend) {
-  const brightStr = result.isBright !== undefined
-    ? ` (${result.isBright ? "bright" : "dark"})` : "";
+  const brightStr =
+    result.isBright !== undefined
+      ? ` (${result.isBright ? "bright" : "dark"})`
+      : "";
   const suffix = prefix === "Preview" ? " \u2014 click to apply" : "";
   return (
     `${prefix}: ${result.filledCount} voxels at [${seed}], ` +
@@ -248,8 +258,12 @@ async function runPreviewWorker(seed, sliceType) {
     : new Uint8Array(dr.bitmap.length);
   const t0 = performance.now();
   const { bitmap, result } = await magicWandWorker(
-    seed, bitmapToSend, dr.dims, bg.imgRAS,
-    opts, dr.voxelSizeMM,
+    seed,
+    bitmapToSend,
+    dr.dims,
+    bg.imgRAS,
+    opts,
+    dr.voxelSizeMM,
   );
   const elapsed = (performance.now() - t0).toFixed(1);
   if (gen !== previewGen) return;
@@ -307,14 +321,25 @@ ctx.on("slicePointerUp", (e) => {
     : new Uint8Array(dr.bitmap.length);
   const t0 = performance.now();
   magicWandWorker(
-    seed, bitmapToSend, dr.dims, bg.imgRAS,
-    opts, dr.voxelSizeMM,
+    seed,
+    bitmapToSend,
+    dr.dims,
+    bg.imgRAS,
+    opts,
+    dr.voxelSizeMM,
   ).then(({ bitmap, result }) => {
     dr.update(bitmap);
     snapshotCommitted();
-    if (wandShared && committedBitmap) wandShared.updateCommitted(committedBitmap);
+    if (wandShared && committedBitmap)
+      wandShared.updateCommitted(committedBitmap);
     const elapsed = (performance.now() - t0).toFixed(1);
-    status.textContent = formatStatus("Applied", result, seed, elapsed, "worker");
+    status.textContent = formatStatus(
+      "Applied",
+      result,
+      seed,
+      elapsed,
+      "worker",
+    );
   });
 });
 

@@ -2,9 +2,7 @@ import { defineConfig } from "vite";
 import dts from "vite-plugin-dts";
 
 export default defineConfig({
-  plugins: [
-    dts({ tsconfigPath: "./tsconfig.json" }),
-  ],
+  plugins: [dts({ tsconfigPath: "./tsconfig.json" })],
   build: {
     outDir: "dist",
     emptyOutDir: true,

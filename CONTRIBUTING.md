@@ -1,0 +1,309 @@
+# Contributing
+
+A polyglot monorepo using [NX](https://nx.dev) to orchestrate TypeScript/Bun and Python/Pixi projects from a single workspace.
+
+## Architecture
+
+```
+niivue/mono/
+├── apps/
+│   ├── nv-extension-drawing/        Drawing extension demo
+│   ├── nv-extension-image-processing/ Image processing extension demo
+│   └── nv-extension-save-html/      Save-to-HTML extension demo
+├── packages/
+│   ├── niivue/          @niivue/niivue — Core WebGPU/WebGL2 viewer
+│   ├── nv-react/        @niivue/nvreact — React bindings
+│   ├── nv-drawing/      @niivue/nv-drawing — Drawing & segmentation tools
+│   ├── nv-image-processing/ @niivue/nv-image-processing — Image processing
+│   ├── nv-save-html/    @niivue/nv-save-html — Export scene as HTML
+│   └── dev-images/      @niivue/dev-images — Shared test images (Git LFS)
+├── nx-tools/
+│   ├── nx-pixi-plugin.js       Local NX plugin for Python dependency inference
+│   ├── pixi-version-actions.js  Custom NX Release versioning for pixi.toml
+│   └── check-boundaries.js     Module boundary enforcement
+├── package.json         Bun workspaces + root devDependencies
+├── nx.json              NX task orchestration config
+└── biome.json           Linter/formatter for TypeScript
+```
+
+### How it fits together
+
+**NX** is the task orchestrator. It doesn't build or lint anything itself — it coordinates when tasks run, in what order, and caches results. Each project has a `project.json` that defines its targets (dev, build, lint, format, typecheck, test) as shell commands.
+
+**Bun** is the JavaScript runtime and package manager. The TypeScript projects are registered as [Bun workspaces](https://bun.sh/docs/install/workspaces) in the root `package.json`, sharing a single lockfile and hoisted `node_modules`.
+
+**Pixi** manages Python environments. Each Python project has its own `pixi.toml` with conda dependencies (python, ruff, pytest) and task definitions. Pixi creates isolated `.pixi/` environments per project.
+
+**Biome** handles TypeScript/JavaScript linting and formatting from a single root `biome.json`.
+
+**Ruff** handles Python linting and formatting, invoked through `pixi run` inside each Python project.
+
+### Dependency graph
+
+NX tracks project dependencies to run tasks in the correct order:
+
+```
+nv-extension-drawing ──→ nv-drawing ──→ niivue
+nv-extension-image-processing ──→ nv-image-processing ──→ niivue
+nv-extension-save-html ──→ nv-save-html ──→ niivue
+nv-react ──→ niivue
+```
+
+TypeScript dependencies are detected by NX from `package.json` or `implicitDependencies` in `project.json`. Python dependencies are detected automatically by a local plugin (`nx-tools/nx-pixi-plugin.js`) that reads a `[tool.nx]` section in `pixi.toml`:
+
+```toml
+[tool.nx]
+workspace-dependencies = ["some-py-package"]
+```
+
+Pixi ignores `[tool.*]` sections, so this doesn't interfere with conda dependency resolution. The plugin creates a graph edge for each listed project.
+
+### Module boundaries
+
+The `check-boundaries` script (`nx-tools/check-boundaries.js`) enforces architectural rules on the dependency graph:
+
+1. **Apps cannot depend on other apps** — only on libraries
+2. **Libraries cannot depend on apps**
+3. **No cross-language dependencies** — Python projects cannot depend on TypeScript projects, and vice versa
+
+These rules are enforced using the `tags` on each project (`type:app`/`type:lib`, `lang:typescript`/`lang:python`). Run `bun run check-boundaries` to validate.
+
+### Caching
+
+NX caches task results based on file inputs. If no source files changed since the last run, NX replays the cached output instead of re-executing the command. Each target declares its `inputs` (which files to watch) and `outputs` (which directories to cache):
+
+- TypeScript targets use the `typescript` named input (*.ts, tsconfig.json, package.json)
+- Python targets use the `python` named input (*.py, pixi.toml, pyproject.toml)
+
+### Releases
+
+NX Release is configured for both TypeScript and Python packages using two independent release groups. It uses [conventional commits](https://www.conventionalcommits.org/) to automatically determine version bumps and generate changelogs. Each package is versioned independently and gets its own git tag (`{projectName}@{version}`) and changelog.
+
+#### Conventional commit format
+
+Commit messages determine the version bump:
+
+| Commit prefix | Version bump | Example |
+|---|---|---|
+| `fix:` | Patch (0.1.0 → 0.1.1) | `fix: handle null input in parser` |
+| `feat:` | Minor (0.1.0 → 0.2.0) | `feat: add CSV export` |
+| `feat!:` or `BREAKING CHANGE:` | Major (0.1.0 → 1.0.0) | `feat!: redesign public API` |
+| `chore:`, `docs:`, `refactor:`, etc. | No bump | `docs: update README` |
+
+Only commits that touch files within a package's directory trigger a release for that package. TypeScript and Python packages are versioned independently.
+
+#### Release workflow
+
+```bash
+# Preview what would happen (always do this first)
+bunx nx release --dry-run
+
+# Create a release
+bunx nx release --skip-publish
+```
+
+Use `--skip-publish` since these are private packages. Remove it when you're ready to publish to npm. For the very first release in a brand new repo, add `--first-release` to establish the baseline git tags.
+
+#### What a release does
+
+A release runs three phases automatically:
+
+1. **Version** — scans commits since the last git tag for each package, determines the bump type from conventional commit prefixes, and updates `version` in the manifest (`package.json` for TS, `pyproject.toml` or `pixi.toml` for Python)
+2. **Changelog** — generates a per-package `CHANGELOG.md` inside each released package, grouping entries under Features, Fixes, and Breaking Changes
+3. **Git** — stages the changed files, creates a `chore(release): publish` commit, and tags each package (e.g. `niivue@1.0.0`)
+
+#### Configuration
+
+Release behavior is controlled in `nx.json` under the `release` key:
+
+```json
+{
+  "release": {
+    "groups": {
+      "typescript": {
+        "projects": ["packages/ts-*"],
+        "projectsRelationship": "independent",
+        "releaseTag": { "pattern": "{projectName}@{version}" },
+        "version": { "conventionalCommits": true },
+        "changelog": true
+      },
+      "python": {
+        "projects": ["packages/py-*"],
+        "projectsRelationship": "independent",
+        "releaseTag": { "pattern": "{projectName}@{version}" },
+        "version": {
+          "conventionalCommits": true,
+          "versionActions": "./nx-tools/pixi-version-actions.js"
+        },
+        "changelog": true
+      }
+    },
+    "changelog": {
+      "automaticFromRef": true,
+      "workspaceChangelog": false,
+      "projectChangelogs": true
+    }
+  }
+}
+```
+
+- **groups** — each group targets a set of packages with its own versioning config
+- **projectsRelationship: "independent"** — each package gets its own version and tag
+- **releaseTag.pattern** — tags follow `{projectName}@{version}` format
+- **conventionalCommits** — automatic version detection from commit messages
+- **versionActions** — the Python group uses a custom version actions class (`nx-tools/pixi-version-actions.js`) that reads/writes the `version` field in `pyproject.toml` or `pixi.toml`
+- **automaticFromRef** — resolves changelog ranges from git history automatically (required for multi-group independent releases)
+- **workspaceChangelog: false** — disables the single workspace-level changelog (not compatible with multi-group independent releases)
+- **projectChangelogs: true** — generates a CHANGELOG.md inside each released package
+
+## Prerequisites
+
+- [Bun](https://bun.sh) (v1.0+)
+- [Pixi](https://pixi.sh) (v0.20+)
+
+## Setup
+
+```bash
+# Install JS dependencies (nx, biome, typescript types)
+bun install
+
+# Install Python environments (only needed if you add Python projects)
+# cd packages/<py-project> && pixi install && cd ../..
+```
+
+## Commands
+
+All commands are run from the repository root.
+
+### Run across all projects
+
+The root `package.json` has shorthand scripts so you don't need to type `nx run-many` every time:
+
+```bash
+bun run lint              # Lint everything (Biome for TS, Ruff for Python)
+bun run format            # Format everything
+bun run typecheck         # Typecheck (only TS projects — Python projects are skipped)
+bun run build             # Build all projects (respects dependency order)
+bun run test              # Test all projects
+bun run dev               # Start dev servers for all projects
+bun run check-boundaries  # Enforce module boundary rules
+```
+
+These are equivalent to the full NX commands:
+
+```bash
+bunx nx run-many -t lint
+bunx nx run-many -t format
+bunx nx run-many -t typecheck
+bunx nx run-many -t build
+bunx nx run-many -t test
+bunx nx run-many -t dev
+```
+
+### Run a single project
+
+```bash
+bunx nx run niivue:dev
+bunx nx run niivue:build
+bunx nx run niivue:lint
+bunx nx run niivue:test
+
+bunx nx run nv-react:dev
+bunx nx run nv-react:build
+bunx nx run nv-react:test
+```
+
+### Only run affected projects
+
+After making changes on a branch, run tasks only on projects affected by those changes:
+
+```bash
+bunx nx affected -t lint
+bunx nx affected -t build
+bunx nx affected -t test
+```
+
+### Inspect the workspace
+
+```bash
+# List all projects
+bunx nx show projects
+
+# Open the dependency graph in a browser
+bunx nx graph
+
+# See the task execution graph for a command
+bunx nx run-many -t build --graph
+```
+
+### Releases
+
+```bash
+# Preview what a release would do
+bunx nx release --dry-run
+
+# Create a release (version bump + changelog + git tag)
+bunx nx release --skip-publish
+```
+
+### Reset the cache
+
+```bash
+bunx nx reset
+```
+
+## Project configuration
+
+### nx.json
+
+Defines workspace-wide defaults:
+
+- **plugins** — local plugins like the Pixi graph plugin that extends NX's understanding of the workspace
+- **namedInputs** — reusable file patterns (`typescript`, `python`) that targets reference for cache invalidation
+- **targetDefaults** — default settings for each target name: whether to cache, and which upstream targets must run first (`dependsOn: ["^build"]` means "build my dependencies before building me")
+- **release** — configuration for `nx release`: which packages to include, versioning strategy (conventional commits), and changelog generation
+
+### project.json (per project)
+
+Each project's `project.json` declares:
+
+- **name** — the project identifier used in NX commands
+- **projectType** — `"application"` or `"library"`
+- **tags** — labels for boundary enforcement and filtering (e.g. `lang:typescript`, `type:app`)
+- **implicitDependencies** — manual dependency declarations for the graph (used for TS projects; Python deps are auto-detected by the plugin)
+- **targets** — the commands NX can run, each with a `command`, optional `inputs`/`outputs` for caching, and optional `options.cwd` for working directory
+
+### pixi.toml (Python projects)
+
+Each Python project's `pixi.toml` defines:
+
+- **dependencies** — conda packages (python, ruff, pytest)
+- **tasks** — shell commands that `pixi run <name>` executes (these are what the NX targets invoke)
+- **[tool.nx]** — optional section declaring workspace project dependencies for the NX graph (pixi ignores `[tool.*]` sections)
+
+### nx-tools/
+
+- **nx-pixi-plugin.js** — local NX plugin that reads `[tool.nx]` sections in `pixi.toml` files and creates dependency edges in the graph for listed workspace projects. This gives Python projects the same automatic dependency detection that TypeScript projects get from `package.json`
+- **pixi-version-actions.js** — custom NX Release version actions class that reads/writes the `version` field in `pixi.toml`, enabling `nx release` to version Python packages the same way it versions TypeScript packages via `package.json`
+- **check-boundaries.js** — validates that the dependency graph follows architectural rules (no app-to-app deps, no cross-language deps)
+
+## Adding a new project
+
+### TypeScript (Bun)
+
+1. Create the directory under `apps/` or `packages/`
+2. Add a `package.json` (with `version` field if it's a releasable package), `tsconfig.json`, and `index.ts`
+3. Add a `project.json` following the pattern in any existing TS project
+4. Run `bun install` from the root
+
+### Python (Pixi)
+
+1. Create the directory under `apps/` or `packages/`
+2. Add a `pixi.toml` with dependencies and tasks (lint, format, test)
+3. Add a `project.json` following the pattern in any existing Python project
+4. Run `pixi install` from the new project directory
+5. If it depends on another Python workspace project, add a `[tool.nx]` section with `workspace-dependencies` — the graph plugin will detect it automatically:
+   ```toml
+   [tool.nx]
+   workspace-dependencies = ["other-py-project"]
+   ```

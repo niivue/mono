@@ -11,6 +11,7 @@ import type {
   ViewLifecycle,
 } from "@/control/viewLifecycle";
 import * as Drawing from "@/drawing";
+import { NVExtensionContext } from "@/extension/context";
 import { type LogLevel, log } from "@/logger";
 import * as NVTransforms from "@/math/NVTransforms";
 import * as NVMeshLayers from "@/mesh/layers";
@@ -54,9 +55,12 @@ import type { SliceTile } from "@/view/NVSliceLayout";
 import { computeModulationData } from "@/volume/modulation";
 import * as NVVolume from "@/volume/NVVolume";
 import * as NVTensorProcessing from "@/volume/TensorProcessing";
-import type { TransformInfo, TransformOptions, VolumeTransform } from "@/volume/transforms";
+import type {
+  TransformInfo,
+  TransformOptions,
+  VolumeTransform,
+} from "@/volume/transforms";
 import * as NVVolumeTransforms from "@/volume/transforms";
-import { NVExtensionContext } from "@/extension/context";
 import {
   calMinMaxFrame,
   computeVolumeLabelCentroids,
@@ -1507,7 +1511,10 @@ export default class NiiVueGPU extends EventTarget {
    */
   async moveVolumeToTop(volumeIndex: number): Promise<void> {
     if (!this._checkBounds(this.model.volumes, volumeIndex, "Volume")) return;
-    const changed = this.model.moveVolume(volumeIndex, this.model.volumes.length - 1);
+    const changed = this.model.moveVolume(
+      volumeIndex,
+      this.model.volumes.length - 1,
+    );
     if (!changed) return;
     this.emit("volumeOrderChanged", { volumes: this.model.volumes });
     await this.updateGLVolume();

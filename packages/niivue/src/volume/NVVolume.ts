@@ -3,7 +3,12 @@ import * as NVTransforms from "@/math/NVTransforms";
 import { NiiDataType, NiiIntentCode } from "@/NVConstants";
 import * as NVLoader from "@/NVLoader";
 import type { NIFTI1, NIFTI2, NVImage, TypedVoxelArray } from "@/NVTypes";
-import { calculateWorldExtents, calMinMax, ensureValidNonZero, toTypedView } from "./utils";
+import {
+  calculateWorldExtents,
+  calMinMax,
+  ensureValidNonZero,
+  toTypedView,
+} from "./utils";
 
 // Re-export utilities for external use
 export { calculateWorldExtents, calMinMax } from "./utils";
@@ -206,9 +211,11 @@ export function nii2volume(
   }
   const [pct2, pct98, mnScale, mxScale] = calMinMax(hdr, truncatedImg);
   // Ensure img is always a typed array, never a raw ArrayBuffer
-  const typedImg: TypedVoxelArray = truncatedImg instanceof ArrayBuffer
-    ? (toTypedView(truncatedImg, hdr.datatypeCode) ?? new Uint8Array(truncatedImg))
-    : truncatedImg;
+  const typedImg: TypedVoxelArray =
+    truncatedImg instanceof ArrayBuffer
+      ? (toTypedView(truncatedImg, hdr.datatypeCode) ??
+        new Uint8Array(truncatedImg))
+      : truncatedImg;
   const volume: NVImage = {
     img: typedImg,
     hdr: hdr,

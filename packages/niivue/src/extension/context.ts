@@ -12,12 +12,11 @@
  */
 
 import * as NVTransforms from "@/math/NVTransforms";
-import type { NVEventListener, NVEventMap } from "@/NVEvents";
 import type NiiVueGPU from "@/NVControlBase";
 import type { NVImage, TypedVoxelArray } from "@/NVTypes";
+import * as NVSliceLayout from "@/view/NVSliceLayout";
 import type { TransformOptions, VolumeTransform } from "@/volume/transforms";
 import { getImageDataRAS } from "@/volume/utils";
-import * as NVSliceLayout from "@/view/NVSliceLayout";
 import type {
   BackgroundVolumeAccess,
   DrawingAccess,
@@ -31,7 +30,7 @@ import type {
 // Internal event names used for high-level slice pointer events
 // ============================================================
 
-const SLICE_EVENTS = new Set<string>([
+const _SLICE_EVENTS = new Set<string>([
   "slicePointerMove",
   "slicePointerUp",
   "slicePointerLeave",
@@ -74,21 +73,41 @@ export class NVExtensionContext {
     if (!vol?.dimsRAS || !vol.img || !vol.hdr) return null;
     const self = this;
     return {
-      get img(): TypedVoxelArray { return vol.img!; },
-      get hdr() { return vol.hdr; },
+      get img(): TypedVoxelArray {
+        return vol.img!;
+      },
+      get hdr() {
+        return vol.hdr;
+      },
       get dims(): DrawingDims {
-        return { dimX: vol.dimsRAS![1], dimY: vol.dimsRAS![2], dimZ: vol.dimsRAS![3] };
+        return {
+          dimX: vol.dimsRAS?.[1],
+          dimY: vol.dimsRAS?.[2],
+          dimZ: vol.dimsRAS?.[3],
+        };
       },
       get voxelSizeMM(): [number, number, number] {
         const p = vol.pixDimsRAS;
         return p ? [p[1], p[2], p[3]] : [1, 1, 1];
       },
-      get calMin() { return vol.calMin; },
-      get calMax() { return vol.calMax; },
-      get robustMin() { return vol.robustMin; },
-      get robustMax() { return vol.robustMax; },
-      get globalMin() { return vol.globalMin; },
-      get globalMax() { return vol.globalMax; },
+      get calMin() {
+        return vol.calMin;
+      },
+      get calMax() {
+        return vol.calMax;
+      },
+      get robustMin() {
+        return vol.robustMin;
+      },
+      get robustMax() {
+        return vol.robustMax;
+      },
+      get globalMin() {
+        return vol.globalMin;
+      },
+      get globalMax() {
+        return vol.globalMax;
+      },
       get imgRAS(): Float32Array | null {
         // Return cached copy if the volume hasn't changed
         if (self._cachedImgRASVol === vol && self._cachedImgRAS) {
@@ -110,9 +129,15 @@ export class NVExtensionContext {
     const nv = this.nv;
     const self = this;
     return {
-      get bitmap(): Uint8Array { return drawVol.img as Uint8Array; },
-      get dims(): DrawingDims { return bg.dims; },
-      get voxelSizeMM(): [number, number, number] { return bg.voxelSizeMM; },
+      get bitmap(): Uint8Array {
+        return drawVol.img as Uint8Array;
+      },
+      get dims(): DrawingDims {
+        return bg.dims;
+      },
+      get voxelSizeMM(): [number, number, number] {
+        return bg.voxelSizeMM;
+      },
 
       update(bitmap: Uint8Array): void {
         (drawVol.img as Uint8Array).set(bitmap);
@@ -166,7 +191,10 @@ export class NVExtensionContext {
     if (this._disposed) return;
     // All events (both NiiVue-native and slice pointer) are dispatched
     // on the NiiVue EventTarget. Just subscribe and track.
-    this.nv.addEventListener(type as string, listener as EventListenerOrEventListenerObject);
+    this.nv.addEventListener(
+      type as string,
+      listener as EventListenerOrEventListenerObject,
+    );
     this._subs.push({ type, listener: listener as AnyListener });
   }
 
@@ -176,7 +204,10 @@ export class NVExtensionContext {
       ? () => void
       : (event: CustomEvent<NVExtensionEventMap[K]>) => void,
   ): void {
-    this.nv.removeEventListener(type as string, listener as EventListenerOrEventListenerObject);
+    this.nv.removeEventListener(
+      type as string,
+      listener as EventListenerOrEventListenerObject,
+    );
     const idx = this._subs.findIndex(
       (s) => s.type === type && s.listener === listener,
     );
@@ -227,14 +258,16 @@ export class NVExtensionContext {
 
   vox2mm(vox: [number, number, number]): [number, number, number] {
     const vol = this.nv.volumes[0];
-    if (!vol?.matRAS) throw new Error("No background volume with matRAS loaded");
+    if (!vol?.matRAS)
+      throw new Error("No background volume with matRAS loaded");
     const mm = NVTransforms.vox2mm(null, vox, vol.matRAS);
     return [mm[0], mm[1], mm[2]];
   }
 
   mm2vox(mm: [number, number, number]): [number, number, number] {
     const vol = this.nv.volumes[0];
-    if (!vol?.matRAS) throw new Error("No background volume with matRAS loaded");
+    if (!vol?.matRAS)
+      throw new Error("No background volume with matRAS loaded");
     const result = NVTransforms.mm2vox(vol, mm);
     return [result[0], result[1], result[2]];
   }
@@ -246,7 +279,10 @@ export class NVExtensionContext {
     this._disposed = true;
     // Remove all tracked subscriptions
     for (const sub of this._subs) {
-      this.nv.removeEventListener(sub.type, sub.listener as EventListenerOrEventListenerObject);
+      this.nv.removeEventListener(
+        sub.type,
+        sub.listener as EventListenerOrEventListenerObject,
+      );
     }
     this._subs = [];
     // Release shared buffer if still acquired
@@ -293,7 +329,11 @@ export function computeSlicePointerEvent(
 
   const mm = NVSliceLayout.screenSlicePick(
     nv.view.screenSlices,
-    (nv as unknown as { model: Parameters<typeof NVSliceLayout.screenSlicePick>[1] }).model,
+    (
+      nv as unknown as {
+        model: Parameters<typeof NVSliceLayout.screenSlicePick>[1];
+      }
+    ).model,
     canvasX,
     canvasY,
     hit,
@@ -307,8 +347,12 @@ export function computeSlicePointerEvent(
   const ry = Math.round(vox[1]);
   const rz = Math.round(vox[2]);
   if (
-    rx < 0 || ry < 0 || rz < 0 ||
-    rx >= vol.dimsRAS[1] || ry >= vol.dimsRAS[2] || rz >= vol.dimsRAS[3]
+    rx < 0 ||
+    ry < 0 ||
+    rz < 0 ||
+    rx >= vol.dimsRAS[1] ||
+    ry >= vol.dimsRAS[2] ||
+    rz >= vol.dimsRAS[3]
   ) {
     return null;
   }

@@ -12,7 +12,9 @@
       "import": "./dist/nv-drawing.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "peerDependencies": {
     "@niivue/niivue": "workspace:*"
   },

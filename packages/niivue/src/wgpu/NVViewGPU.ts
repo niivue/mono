@@ -1438,7 +1438,9 @@ export default class NVView {
 
     this.maxTextureDimension2D = adapter.limits.maxTextureDimension2D;
     this.maxTextureDimension3D = adapter.limits.maxTextureDimension3D;
-    const adapterInfo = (adapter as any).info;
+    const adapterInfo = (
+      adapter as unknown as { info?: { architecture?: string } }
+    ).info;
     const arch = adapterInfo?.architecture ?? "unknown";
     const preferredBufferSize = 4294967292; // 4 GB (4294967296) byte aligned
     const maxBufferSize = Math.min(

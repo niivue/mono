@@ -33,7 +33,12 @@ export type Connectivity = 6 | 18 | 26;
  *   When combined with `percent`, the range is computed as percent-based
  *   but only on the bright or dark side.
  */
-export type ThresholdMode = "symmetric" | "percent" | "bright" | "dark" | "auto";
+export type ThresholdMode =
+  | "symmetric"
+  | "percent"
+  | "bright"
+  | "dark"
+  | "auto";
 
 /** Options that control the magic-wand behaviour. */
 export interface MagicWandOptions {
@@ -231,13 +236,17 @@ export function magicWand(
   let hi: number;
   let isBright: boolean | undefined;
 
-  if (options.intensityMin !== undefined && options.intensityMax !== undefined) {
+  if (
+    options.intensityMin !== undefined &&
+    options.intensityMax !== undefined
+  ) {
     // Explicit range overrides everything
     lo = options.intensityMin;
     hi = options.intensityMax;
   } else {
     // Resolve effective mode ("auto" picks bright vs dark)
-    let effectiveMode: "symmetric" | "percent" | "bright" | "dark" = thresholdMode === "auto" ? "symmetric" : thresholdMode;
+    let effectiveMode: "symmetric" | "percent" | "bright" | "dark" =
+      thresholdMode === "auto" ? "symmetric" : thresholdMode;
     if (thresholdMode === "auto") {
       isBright = seedIntensity > (calMin + calMax) * 0.5;
       effectiveMode = isBright ? "bright" : "dark";
@@ -327,7 +336,13 @@ export function magicWand(
 
   // Check seed itself
   if (seedIntensity < lo || seedIntensity > hi) {
-    return { filledCount: 0, seedIntensity, intensityMin: lo, intensityMax: hi, isBright };
+    return {
+      filledCount: 0,
+      seedIntensity,
+      intensityMin: lo,
+      intensityMax: hi,
+      isBright,
+    };
   }
 
   // BFS queue stores flat RAS indices
@@ -371,7 +386,13 @@ export function magicWand(
     }
   }
 
-  return { filledCount, seedIntensity, intensityMin: lo, intensityMax: hi, isBright };
+  return {
+    filledCount,
+    seedIntensity,
+    intensityMin: lo,
+    intensityMax: hi,
+    isBright,
+  };
 }
 
 // ---------------------------------------------------------------------------

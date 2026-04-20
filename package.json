@@ -1,5 +1,5 @@
 {
-  "name": "nx-mono-repo-test",
+  "name": "niivue-mono",
   "private": true,
   "workspaces": [
     "apps/*",

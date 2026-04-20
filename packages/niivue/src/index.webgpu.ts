@@ -2,6 +2,15 @@
  * NiiVueGPU — WebGPU-only distribution.
  */
 
+export { NVExtensionContext } from "./extension/context";
+export type {
+  BackgroundVolumeAccess,
+  DrawingAccess,
+  DrawingDims,
+  NVExtensionEventMap,
+  SharedBufferHandle,
+  SlicePointerEvent,
+} from "./extension/types";
 export type { LogLevel } from "./logger";
 export type { WriteOptions } from "./mesh/writers";
 export { DRAG_MODE } from "./NVConstants";
@@ -29,15 +38,4 @@ export type {
   VolumeUpdate,
 } from "./NVTypes";
 export type { TransformInfo, TransformOptions } from "./volume/transforms";
-export {
-  NVExtensionContext,
-} from "./extension/context";
-export type {
-  BackgroundVolumeAccess,
-  DrawingAccess,
-  DrawingDims,
-  NVExtensionEventMap,
-  SharedBufferHandle,
-  SlicePointerEvent,
-} from "./extension/types";
 export { getImageDataRAS } from "./volume/utils";

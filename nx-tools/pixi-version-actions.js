@@ -1,4 +1,3 @@
-"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
 const { join } = require("node:path");
@@ -14,8 +13,8 @@ const { VersionActions } = require("nx/release");
  * The plugin auto-detects which manifest the project uses.
  */
 class PixiVersionActions extends VersionActions {
-  constructor() {
-    super(...arguments);
+  constructor(...args) {
+    super(...args);
     this.validManifestFilenames = ["pixi.toml", "pyproject.toml"];
   }
 
@@ -34,7 +33,10 @@ class PixiVersionActions extends VersionActions {
       const path = join(root, filename);
       if (tree.exists(path)) {
         this.manifestsToUpdate = [
-          { manifestPath: path, preserveLocalDependencyProtocols: preserveLocal },
+          {
+            manifestPath: path,
+            preserveLocalDependencyProtocols: preserveLocal,
+          },
         ];
         return;
       }
@@ -47,7 +49,7 @@ class PixiVersionActions extends VersionActions {
   async readCurrentVersionFromSourceManifest(tree) {
     if (this.manifestsToUpdate.length === 0) {
       throw new Error(
-        `Unable to find pixi.toml or pyproject.toml for project "${this.projectGraphNode.name}"`
+        `Unable to find pixi.toml or pyproject.toml for project "${this.projectGraphNode.name}"`,
       );
     }
     const manifestPath = this.manifestsToUpdate[0].manifestPath;
@@ -55,7 +57,7 @@ class PixiVersionActions extends VersionActions {
     const match = content.match(/^version\s*=\s*"([^"]+)"/m);
     if (!match) {
       throw new Error(
-        `No version field found in ${manifestPath} for project "${this.projectGraphNode.name}"`
+        `No version field found in ${manifestPath} for project "${this.projectGraphNode.name}"`,
       );
     }
     return { manifestPath, currentVersion: match[1] };
@@ -72,12 +74,12 @@ class PixiVersionActions extends VersionActions {
     try {
       const content = tree.read(
         this.manifestsToUpdate[0].manifestPath,
-        "utf-8"
+        "utf-8",
       );
       const toolNxMatch = content.match(
-        /\[tool\.nx\][\s\S]*?workspace-dependencies\s*=\s*\[([^\]]*)\]/
+        /\[tool\.nx\][\s\S]*?workspace-dependencies\s*=\s*\[([^\]]*)\]/,
       );
-      if (toolNxMatch && toolNxMatch[1].includes(`"${depName}"`)) {
+      if (toolNxMatch?.[1].includes(`"${depName}"`)) {
         return {
           currentVersion: null,
           dependencyCollection: "workspace-dependencies",
@@ -93,21 +95,17 @@ class PixiVersionActions extends VersionActions {
       const content = tree.read(manifestToUpdate.manifestPath, "utf-8");
       const updated = content.replace(
         /^(version\s*=\s*)"[^"]+"/m,
-        `$1"${newVersion}"`
+        `$1"${newVersion}"`,
       );
       tree.write(manifestToUpdate.manifestPath, updated);
       logMessages.push(
-        `✍️  New version ${newVersion} written to manifest: ${manifestToUpdate.manifestPath}`
+        `✍️  New version ${newVersion} written to manifest: ${manifestToUpdate.manifestPath}`,
       );
     }
     return logMessages;
   }
 
-  async updateProjectDependencies(
-    _tree,
-    _projectGraph,
-    dependenciesToUpdate
-  ) {
+  async updateProjectDependencies(_tree, _projectGraph, dependenciesToUpdate) {
     const count = Object.keys(dependenciesToUpdate).length;
     if (count === 0) return [];
     return [

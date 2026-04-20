@@ -20,18 +20,30 @@ export interface ConnectedLabelOutput {
   calMax: number;
 }
 
-function toTypedView(img: ArrayLike<number> | ArrayBuffer, dt: number): ArrayLike<number> {
+function toTypedView(
+  img: ArrayLike<number> | ArrayBuffer,
+  dt: number,
+): ArrayLike<number> {
   if (!(img instanceof ArrayBuffer)) return img;
   switch (dt) {
-    case 2: return new Uint8Array(img);
-    case 4: return new Int16Array(img);
-    case 8: return new Int32Array(img);
-    case 16: return new Float32Array(img);
-    case 64: return new Float64Array(img);
-    case 256: return new Int8Array(img);
-    case 512: return new Uint16Array(img);
-    case 768: return new Uint32Array(img);
-    default: return new Float32Array(img);
+    case 2:
+      return new Uint8Array(img);
+    case 4:
+      return new Int16Array(img);
+    case 8:
+      return new Int32Array(img);
+    case 16:
+      return new Float32Array(img);
+    case 64:
+      return new Float64Array(img);
+    case 256:
+      return new Int8Array(img);
+    case 512:
+      return new Uint16Array(img);
+    case 768:
+      return new Uint32Array(img);
+    default:
+      return new Float32Array(img);
   }
 }
 
@@ -61,9 +73,14 @@ function fill_tratab(tt: Uint32Array, nabo: Uint32Array, nr_set: number): void {
 }
 
 function check_previous_slice(
-  bw: Uint32Array, il: Uint32Array,
-  r: number, c: number, sl: number,
-  dim: Uint32Array, conn: number, tt: Uint32Array,
+  bw: Uint32Array,
+  il: Uint32Array,
+  r: number,
+  c: number,
+  sl: number,
+  dim: Uint32Array,
+  conn: number,
+  tt: Uint32Array,
 ): number {
   const nabo = new Uint32Array(27);
   let nr_set = 0;
@@ -74,16 +91,40 @@ function check_previous_slice(
     if (val === bw[i]) nabo[nr_set++] = il[i];
   }
   if (conn >= 18) {
-    if (r) { const i = idx(r - 1, c, sl - 1, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
-    if (c) { const i = idx(r, c - 1, sl - 1, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
-    if (r < dim[0] - 1) { const i = idx(r + 1, c, sl - 1, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
-    if (c < dim[1] - 1) { const i = idx(r, c + 1, sl - 1, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
+    if (r) {
+      const i = idx(r - 1, c, sl - 1, dim);
+      if (val === bw[i]) nabo[nr_set++] = il[i];
+    }
+    if (c) {
+      const i = idx(r, c - 1, sl - 1, dim);
+      if (val === bw[i]) nabo[nr_set++] = il[i];
+    }
+    if (r < dim[0] - 1) {
+      const i = idx(r + 1, c, sl - 1, dim);
+      if (val === bw[i]) nabo[nr_set++] = il[i];
+    }
+    if (c < dim[1] - 1) {
+      const i = idx(r, c + 1, sl - 1, dim);
+      if (val === bw[i]) nabo[nr_set++] = il[i];
+    }
   }
   if (conn === 26) {
-    if (r && c) { const i = idx(r - 1, c - 1, sl - 1, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
-    if (r < dim[0] - 1 && c) { const i = idx(r + 1, c - 1, sl - 1, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
-    if (r && c < dim[1] - 1) { const i = idx(r - 1, c + 1, sl - 1, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
-    if (r < dim[0] - 1 && c < dim[1] - 1) { const i = idx(r + 1, c + 1, sl - 1, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
+    if (r && c) {
+      const i = idx(r - 1, c - 1, sl - 1, dim);
+      if (val === bw[i]) nabo[nr_set++] = il[i];
+    }
+    if (r < dim[0] - 1 && c) {
+      const i = idx(r + 1, c - 1, sl - 1, dim);
+      if (val === bw[i]) nabo[nr_set++] = il[i];
+    }
+    if (r && c < dim[1] - 1) {
+      const i = idx(r - 1, c + 1, sl - 1, dim);
+      if (val === bw[i]) nabo[nr_set++] = il[i];
+    }
+    if (r < dim[0] - 1 && c < dim[1] - 1) {
+      const i = idx(r + 1, c + 1, sl - 1, dim);
+      if (val === bw[i]) nabo[nr_set++] = il[i];
+    }
   }
   if (nr_set) {
     fill_tratab(tt, nabo, nr_set);
@@ -93,7 +134,9 @@ function check_previous_slice(
 }
 
 function do_initial_labelling(
-  bw: Uint32Array, dim: Uint32Array, conn: number,
+  bw: Uint32Array,
+  dim: Uint32Array,
+  conn: number,
 ): [number, Uint32Array, Uint32Array] {
   let label = 1;
   const kGrowArrayBy = 8192;
@@ -110,12 +153,24 @@ function do_initial_labelling(
         nabo[0] = check_previous_slice(bw, il, r, c, sl, dim, conn, tt);
         if (nabo[0]) nr_set += 1;
         if (conn >= 6) {
-          if (r) { const i = idx(r - 1, c, sl, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
-          if (c) { const i = idx(r, c - 1, sl, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
+          if (r) {
+            const i = idx(r - 1, c, sl, dim);
+            if (val === bw[i]) nabo[nr_set++] = il[i];
+          }
+          if (c) {
+            const i = idx(r, c - 1, sl, dim);
+            if (val === bw[i]) nabo[nr_set++] = il[i];
+          }
         }
         if (conn >= 18) {
-          if (c && r) { const i = idx(r - 1, c - 1, sl, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
-          if (c && r < dim[0] - 1) { const i = idx(r + 1, c - 1, sl, dim); if (val === bw[i]) nabo[nr_set++] = il[i]; }
+          if (c && r) {
+            const i = idx(r - 1, c - 1, sl, dim);
+            if (val === bw[i]) nabo[nr_set++] = il[i];
+          }
+          if (c && r < dim[0] - 1) {
+            const i = idx(r + 1, c - 1, sl, dim);
+            if (val === bw[i]) nabo[nr_set++] = il[i];
+          }
         }
         if (nr_set) {
           il[idx(r, c, sl, dim)] = nabo[0];
@@ -143,7 +198,10 @@ function do_initial_labelling(
 }
 
 function translate_labels(
-  il: Uint32Array, dim: Uint32Array, tt: Uint32Array, ttn: number,
+  il: Uint32Array,
+  dim: Uint32Array,
+  tt: Uint32Array,
+  ttn: number,
 ): [number, Uint32Array] {
   const nvox = dim[0] * dim[1] * dim[2];
   let ml = 0;
@@ -164,7 +222,9 @@ function translate_labels(
 }
 
 function largest_original_cluster_labels(
-  bw: Uint32Array, cl: number, ls: Uint32Array,
+  bw: Uint32Array,
+  cl: number,
+  ls: Uint32Array,
 ): [number, Uint32Array] {
   const nvox = bw.length;
   const ls2bw = new Uint32Array(cl + 1).fill(0);
@@ -192,10 +252,15 @@ function largest_original_cluster_labels(
   return [mxbw, vxs];
 }
 
-export function computeConnectedLabel(input: ConnectedLabelInput): ConnectedLabelOutput {
+export function computeConnectedLabel(
+  input: ConnectedLabelInput,
+): ConnectedLabelOutput {
   const {
-    datatypeCode, dims,
-    conn = 26, binarize = false, onlyLargestClusterPerClass = false,
+    datatypeCode,
+    dims,
+    conn = 26,
+    binarize = false,
+    onlyLargestClusterPerClass = false,
   } = input;
 
   const inImg = toTypedView(input.img, datatypeCode);

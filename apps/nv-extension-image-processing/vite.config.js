@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
 import { devImagesPlugin } from "@niivue/dev-images/vite-plugin";
+import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [devImagesPlugin()],

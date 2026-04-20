@@ -5,7 +5,12 @@
  * through the NVExtensionContext API. All heavy computation runs in a Web Worker.
  */
 import NiiVue from "@niivue/niivue";
-import { conform, connectedLabel, otsu, removeHaze } from "@niivue/nv-image-processing";
+import {
+  conform,
+  connectedLabel,
+  otsu,
+  removeHaze,
+} from "@niivue/nv-image-processing";
 
 // --- Create dialog for transform options ---
 const dialog = document.createElement("dialog");
@@ -136,8 +141,10 @@ async function runTransform(name, options) {
   // Apply plugin-defined display defaults
   const info = nv.getVolumeTransformInfo(name);
   if (info?.resultDefaults) {
-    if (info.resultDefaults.colormap) result.colormap = info.resultDefaults.colormap;
-    if (info.resultDefaults.opacity != null) result.opacity = info.resultDefaults.opacity;
+    if (info.resultDefaults.colormap)
+      result.colormap = info.resultDefaults.colormap;
+    if (info.resultDefaults.opacity != null)
+      result.opacity = info.resultDefaults.opacity;
   }
 
   // For removeHaze, replace the volume; for segmentations, add as overlay
@@ -164,7 +171,12 @@ const emptyOpt = document.createElement("option");
 emptyOpt.value = "";
 emptyOpt.textContent = "— select —";
 transformSelect.appendChild(emptyOpt);
-for (const tf of [conform.name, connectedLabel.name, otsu.name, removeHaze.name]) {
+for (const tf of [
+  conform.name,
+  connectedLabel.name,
+  otsu.name,
+  removeHaze.name,
+]) {
   const option = document.createElement("option");
   option.value = tf;
   option.textContent = tf;

@@ -72,7 +72,9 @@ useWebGPUCb.onchange = async () => {
   status.textContent = `Switching to ${backend}\u2026`;
   const ok = await nv.reinitializeView({ backend });
   useWebGPUCb.checked = nv.backend === "webgpu";
-  status.textContent = ok ? `Backend: ${nv.backend}` : `Failed to switch to ${backend}`;
+  status.textContent = ok
+    ? `Backend: ${nv.backend}`
+    : `Failed to switch to ${backend}`;
 };
 
 // --- Drawing controls ---

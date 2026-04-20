@@ -1,7 +1,7 @@
 /**
  * NiiVue Extension API — public exports.
  */
-export { NVExtensionContext, computeSlicePointerEvent } from "./context";
+export { computeSlicePointerEvent, NVExtensionContext } from "./context";
 export type {
   BackgroundVolumeAccess,
   DrawingAccess,

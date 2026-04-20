@@ -652,7 +652,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     // Emit high-level slice pointer event for extensions
     const sliceEvt = computeSlicePointerEvent(ctrl, evt);
     if (sliceEvt) {
-      ctrl.emit("slicePointerUp" as keyof import("@/NVEvents").NVEventMap, sliceEvt as never);
+      ctrl.emit(
+        "slicePointerUp" as keyof import("@/NVEvents").NVEventMap,
+        sliceEvt as never,
+      );
     }
     ctrl.emit("pointerUp", {
       x: evt.offsetX,
@@ -703,7 +706,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       // Emit high-level slice pointer event for extensions
       const sliceEvt = computeSlicePointerEvent(ctrl, evt);
       if (sliceEvt) {
-        ctrl.emit("slicePointerMove" as keyof import("@/NVEvents").NVEventMap, sliceEvt as never);
+        ctrl.emit(
+          "slicePointerMove" as keyof import("@/NVEvents").NVEventMap,
+          sliceEvt as never,
+        );
       }
       return;
     }
@@ -1181,7 +1187,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       ctrl.model._annotationCursor = null;
       ctrl.drawScene();
     }
-    ctrl.emit("slicePointerLeave" as keyof import("@/NVEvents").NVEventMap, undefined as never);
+    ctrl.emit(
+      "slicePointerLeave" as keyof import("@/NVEvents").NVEventMap,
+      undefined as never,
+    );
   };
   // Add event listeners (pointer events on canvas with capture for drag tracking)
   ctrl.canvas?.addEventListener(

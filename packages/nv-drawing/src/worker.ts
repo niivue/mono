@@ -7,12 +7,24 @@
  *   Error:    { _wbId, _wbError: string }
  */
 
-const post = (self as unknown as { postMessage: (msg: unknown, transfer?: Transferable[]) => void }).postMessage.bind(self);
+const post = (
+  self as unknown as {
+    postMessage: (msg: unknown, transfer?: Transferable[]) => void;
+  }
+).postMessage.bind(self);
 
-import { findBoundarySlices, interpolateMaskSlices } from "./processing/drawing";
-import type { DrawingDims, InterpolationOptions, RASIndexMap, SliceType } from "./processing/drawing";
+import type {
+  DrawingDims,
+  InterpolationOptions,
+  RASIndexMap,
+  SliceType,
+} from "./processing/drawing";
+import {
+  findBoundarySlices,
+  interpolateMaskSlices,
+} from "./processing/drawing";
+import type { Connectivity, MagicWandOptions } from "./processing/magicWand";
 import { magicWand, magicWandFromBitmap } from "./processing/magicWand";
-import type { MagicWandOptions, MagicWandResult, Connectivity } from "./processing/magicWand";
 
 interface HandlerResult {
   [key: string]: unknown;
@@ -63,9 +75,18 @@ const handlers: Record<string, Handler> = {
     const imageData = new Float32Array(data.imageData as ArrayBuffer);
     const options = (data.options as MagicWandOptions) ?? {};
     const rasMap = (data.rasMap as RASIndexMap) ?? undefined;
-    const voxelSizeMM = (data.voxelSizeMM as [number, number, number]) ?? undefined;
+    const voxelSizeMM =
+      (data.voxelSizeMM as [number, number, number]) ?? undefined;
 
-    const result = magicWand(seed, drawBitmap, dims, imageData, options, rasMap, voxelSizeMM);
+    const result = magicWand(
+      seed,
+      drawBitmap,
+      dims,
+      imageData,
+      options,
+      rasMap,
+      voxelSizeMM,
+    );
 
     return { drawBitmap: drawBitmap.buffer, result };
   },
@@ -77,7 +98,13 @@ const handlers: Record<string, Handler> = {
     const newColor = (data.newColor as number) ?? 0;
     const connectivity = (data.connectivity as Connectivity) ?? 6;
 
-    const count = magicWandFromBitmap(seed, drawBitmap, dims, newColor, connectivity);
+    const count = magicWandFromBitmap(
+      seed,
+      drawBitmap,
+      dims,
+      newColor,
+      connectivity,
+    );
 
     return { drawBitmap: drawBitmap.buffer, count };
   },
@@ -107,7 +134,8 @@ self.onmessage = (e: MessageEvent) => {
     sharedCommitted = new Uint8Array(data.committedBuffer as ArrayBuffer);
     sharedDims = data.dims as DrawingDims;
     sharedRasMap = (data.rasMap as RASIndexMap) ?? undefined;
-    sharedVoxelSizeMM = (data.voxelSizeMM as [number, number, number]) ?? undefined;
+    sharedVoxelSizeMM =
+      (data.voxelSizeMM as [number, number, number]) ?? undefined;
     post({ type: "initSharedDone" });
     return;
   }
@@ -118,8 +146,17 @@ self.onmessage = (e: MessageEvent) => {
   }
 
   if (data.type === "magicWandShared") {
-    if (!sharedWorkingView || !sharedImageView || !sharedCommitted || !sharedDims) {
-      post({ type: "magicWandSharedResult", error: "Not initialized", gen: data.gen });
+    if (
+      !sharedWorkingView ||
+      !sharedImageView ||
+      !sharedCommitted ||
+      !sharedDims
+    ) {
+      post({
+        type: "magicWandSharedResult",
+        error: "Not initialized",
+        gen: data.gen,
+      });
       return;
     }
     // Restore committed state into the working buffer
@@ -155,6 +192,9 @@ self.onmessage = (e: MessageEvent) => {
     }
     post({ _wbId: id, ...result }, transfers);
   } catch (err: unknown) {
-    post({ _wbId: id, _wbError: err instanceof Error ? err.message : String(err) });
+    post({
+      _wbId: id,
+      _wbError: err instanceof Error ? err.message : String(err),
+    });
   }
 };

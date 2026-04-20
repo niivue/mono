@@ -3,7 +3,7 @@
  * Used by NVVolume.ts and volume transforms.
  */
 
-import { mat4, vec3, vec4 } from "gl-matrix";
+import { mat4, vec3 } from "gl-matrix";
 import { log } from "@/logger";
 import { isPaqd, NiiDataType } from "@/NVConstants";
 import type {
@@ -717,7 +717,11 @@ export function getImageDataRAS(volume: NVImage): Float32Array | null {
     step[0] === 1 &&
     step[1] === vx &&
     step[2] === vx * vy;
-  if (isIdentity && volume.img instanceof Float32Array && volume.img.length >= nVox) {
+  if (
+    isIdentity &&
+    volume.img instanceof Float32Array &&
+    volume.img.length >= nVox
+  ) {
     // Zero-copy: img is already Float32 in RAS order
     return volume.img.length === nVox
       ? volume.img

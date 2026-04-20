@@ -9,33 +9,53 @@
  *   Error:    { _wbId, _wbError: string }
  */
 
-const post = (self as unknown as { postMessage: (msg: unknown, transfer?: Transferable[]) => void }).postMessage.bind(self);
+const post = (
+  self as unknown as {
+    postMessage: (msg: unknown, transfer?: Transferable[]) => void;
+  }
+).postMessage.bind(self);
 
-import { findOtsu, applyOtsu, applyHazeRemoval } from "./processing/otsu";
 import { computeConform } from "./processing/conform";
 import { computeConnectedLabel } from "./processing/connectedLabel";
+import { applyHazeRemoval, applyOtsu, findOtsu } from "./processing/otsu";
 
 /**
  * Wrap an ArrayBuffer as a typed view based on NIfTI datatype code.
  * Self-contained (no niivue imports) to keep the inline worker bundle small.
  */
-function toTypedView(img: ArrayLike<number> | ArrayBuffer, dt: number): ArrayLike<number> {
+function toTypedView(
+  img: ArrayLike<number> | ArrayBuffer,
+  dt: number,
+): ArrayLike<number> {
   if (!(img instanceof ArrayBuffer)) return img;
   switch (dt) {
-    case 2: return new Uint8Array(img);
-    case 4: return new Int16Array(img);
-    case 8: return new Int32Array(img);
-    case 16: return new Float32Array(img);
-    case 64: return new Float64Array(img);
-    case 256: return new Int8Array(img);
-    case 512: return new Uint16Array(img);
-    case 768: return new Uint32Array(img);
-    default: return new Float32Array(img);
+    case 2:
+      return new Uint8Array(img);
+    case 4:
+      return new Int16Array(img);
+    case 8:
+      return new Int32Array(img);
+    case 16:
+      return new Float32Array(img);
+    case 64:
+      return new Float64Array(img);
+    case 256:
+      return new Int8Array(img);
+    case 512:
+      return new Uint16Array(img);
+    case 768:
+      return new Uint32Array(img);
+    default:
+      return new Float32Array(img);
   }
 }
 
 /** Compute scaled min/max from voxel data. */
-function computeMinMax(data: ArrayLike<number>, slope: number, inter: number): [number, number] {
+function computeMinMax(
+  data: ArrayLike<number>,
+  slope: number,
+  inter: number,
+): [number, number] {
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
   for (let i = 0; i < data.length; i++) {
@@ -86,13 +106,15 @@ const handlers: Record<string, Handler> = {
 
   removeHaze(img, datatypeCode, sclSlope, sclInter, options) {
     const level = (options.level as number) ?? 5;
-    const otsuLevel = level === 5 || level === 1 ? 4 : level === 4 || level === 2 ? 3 : 2;
+    const otsuLevel =
+      level === 5 || level === 1 ? 4 : level === 4 || level === 2 ? 3 : 2;
     const data = toTypedView(img, datatypeCode);
     const slope = sclSlope || 1;
     const inter = sclInter || 0;
     const [calMin, calMax] = computeMinMax(data, slope, inter);
     const thresholds = findOtsu(data, calMin, calMax, inter, slope, otsuLevel);
-    const threshold = level === 1 ? thresholds[2] : level === 2 ? thresholds[1] : thresholds[0];
+    const threshold =
+      level === 1 ? thresholds[2] : level === 2 ? thresholds[1] : thresholds[0];
     return {
       img: applyHazeRemoval(data, inter, slope, calMin, threshold),
       datatypeCode: 16,
@@ -133,14 +155,15 @@ const handlers: Record<string, Handler> = {
     };
   },
 
-  connectedLabel(img, datatypeCode, sclSlope, sclInter, options) {
+  connectedLabel(img, datatypeCode, _sclSlope, _sclInter, options) {
     const result = computeConnectedLabel({
       img,
       datatypeCode,
       dims: options.dims as number[],
       conn: (options.conn as number) ?? 26,
       binarize: (options.binarize as boolean) ?? false,
-      onlyLargestClusterPerClass: (options.onlyLargestClusterPerClass as boolean) ?? false,
+      onlyLargestClusterPerClass:
+        (options.onlyLargestClusterPerClass as boolean) ?? false,
     });
     return {
       img: result.img,
@@ -155,16 +178,33 @@ const handlers: Record<string, Handler> = {
 };
 
 self.onmessage = (e: MessageEvent) => {
-  const { _wbId: id, name, img, datatypeCode, sclSlope, sclInter, options } = e.data;
+  const {
+    _wbId: id,
+    name,
+    img,
+    datatypeCode,
+    sclSlope,
+    sclInter,
+    options,
+  } = e.data;
   const handler = handlers[name];
   if (!handler) {
     post({ _wbId: id, _wbError: `Unknown transform: ${name}` });
     return;
   }
   try {
-    const result = handler(img, datatypeCode, sclSlope, sclInter, options ?? {});
+    const result = handler(
+      img,
+      datatypeCode,
+      sclSlope,
+      sclInter,
+      options ?? {},
+    );
     post({ _wbId: id, ...result }, [result.img.buffer as ArrayBuffer]);
   } catch (err: unknown) {
-    post({ _wbId: id, _wbError: err instanceof Error ? err.message : String(err) });
+    post({
+      _wbId: id,
+      _wbError: err instanceof Error ? err.message : String(err),
+    });
   }
 };

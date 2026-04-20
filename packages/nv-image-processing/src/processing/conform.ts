@@ -59,10 +59,22 @@ function conformVox2Vox(
 ): [mat4, mat4, mat4] {
   const a = inAffine;
   const affine = mat4.fromValues(
-    a[0], a[1], a[2], a[3],
-    a[4], a[5], a[6], a[7],
-    a[8], a[9], a[10], a[11],
-    a[12], a[13], a[14], a[15],
+    a[0],
+    a[1],
+    a[2],
+    a[3],
+    a[4],
+    a[5],
+    a[6],
+    a[7],
+    a[8],
+    a[9],
+    a[10],
+    a[11],
+    a[12],
+    a[13],
+    a[14],
+    a[15],
   );
   const half = vec4.fromValues(inDims[1] / 2, inDims[2] / 2, inDims[3] / 2, 1);
   const Pxyz_c4 = vec4.create();
@@ -106,24 +118,39 @@ function conformVox2Vox(
 // Intensity scaling helpers
 // ============================================================================
 
-function toTypedView(img: ArrayLike<number> | ArrayBuffer, dt: number): ArrayLike<number> {
+function toTypedView(
+  img: ArrayLike<number> | ArrayBuffer,
+  dt: number,
+): ArrayLike<number> {
   if (!(img instanceof ArrayBuffer)) return img;
   switch (dt) {
-    case 2: return new Uint8Array(img);
-    case 4: return new Int16Array(img);
-    case 8: return new Int32Array(img);
-    case 16: return new Float32Array(img);
-    case 64: return new Float64Array(img);
-    case 256: return new Int8Array(img);
-    case 512: return new Uint16Array(img);
-    case 768: return new Uint32Array(img);
-    default: return new Float32Array(img);
+    case 2:
+      return new Uint8Array(img);
+    case 4:
+      return new Int16Array(img);
+    case 8:
+      return new Int32Array(img);
+    case 16:
+      return new Float32Array(img);
+    case 64:
+      return new Float64Array(img);
+    case 256:
+      return new Int8Array(img);
+    case 512:
+      return new Uint16Array(img);
+    case 768:
+      return new Uint32Array(img);
+    default:
+      return new Float32Array(img);
   }
 }
 
 function scalecropUint8(
-  img32: Float32Array, dst_min: number, dst_max: number,
-  src_min: number, scale: number,
+  img32: Float32Array,
+  dst_min: number,
+  dst_max: number,
+  src_min: number,
+  scale: number,
 ): Uint8Array {
   const n = img32.length;
   const out = new Uint8Array(n);
@@ -137,8 +164,11 @@ function scalecropUint8(
 }
 
 function scalecropFloat32(
-  img32: Float32Array, dst_min: number, dst_max: number,
-  src_min: number, scale: number,
+  img32: Float32Array,
+  dst_min: number,
+  dst_max: number,
+  src_min: number,
+  scale: number,
 ): Float32Array {
   const n = img32.length;
   const out = new Float32Array(n);
@@ -152,12 +182,18 @@ function scalecropFloat32(
 }
 
 function getScale(
-  datatypeCode: number, img: ArrayLike<number>,
-  sclSlope: number, sclInter: number,
-  calMin: number, calMax: number,
-  globalMin: number, globalMax: number,
-  dstMin: number, dstMax: number,
-  fLow: number, fHigh = 0.999,
+  datatypeCode: number,
+  img: ArrayLike<number>,
+  sclSlope: number,
+  sclInter: number,
+  calMin: number,
+  calMax: number,
+  globalMin: number,
+  globalMax: number,
+  dstMin: number,
+  dstMax: number,
+  fLow: number,
+  fHigh = 0.999,
 ): [number, number] {
   let srcMin = globalMin;
   let srcMax = globalMax;
@@ -227,16 +263,29 @@ function getScale(
 
 export function computeConform(input: ConformInput): ConformOutput {
   const {
-    datatypeCode, dims, pixDims, affine,
-    sclSlope, sclInter,
-    toRAS = false, isLinear = true, asFloat32 = false, isRobustMinMax = false,
+    datatypeCode,
+    dims,
+    pixDims: _pixDims,
+    affine,
+    sclSlope,
+    sclInter,
+    toRAS = false,
+    isLinear = true,
+    asFloat32 = false,
+    isRobustMinMax = false,
   } = input;
 
   const inImg = toTypedView(input.img, datatypeCode);
   const outDim = 256;
   const outMM = 1;
 
-  const [outAffine, , invVox2Vox] = conformVox2Vox(dims, affine, outDim, outMM, toRAS);
+  const [outAffine, , invVox2Vox] = conformVox2Vox(
+    dims,
+    affine,
+    outDim,
+    outMM,
+    toRAS,
+  );
 
   const outNvox = outDim * outDim * outDim;
   const outImg = new Float32Array(outNvox);
@@ -333,16 +382,34 @@ export function computeConform(input: ConformInput): ConformOutput {
 
   if (asFloat32) {
     const [srcMin, scale] = getScale(
-      datatypeCode, inImg, sclSlope, sclInter, 0, 0,
-      globalMin, globalMax, 0, 1, fLow,
+      datatypeCode,
+      inImg,
+      sclSlope,
+      sclInter,
+      0,
+      0,
+      globalMin,
+      globalMax,
+      0,
+      1,
+      fLow,
     );
     finalImg = scalecropFloat32(outImg, 0, 1, srcMin, scale);
     outDatatypeCode = 16; // DT_FLOAT32
     bitsPerVoxel = 32;
   } else {
     const [srcMin, scale] = getScale(
-      datatypeCode, inImg, sclSlope, sclInter, 0, 0,
-      globalMin, globalMax, 0, 255, fLow,
+      datatypeCode,
+      inImg,
+      sclSlope,
+      sclInter,
+      0,
+      0,
+      globalMin,
+      globalMax,
+      0,
+      255,
+      fLow,
     );
     finalImg = scalecropUint8(outImg, 0, 255, srcMin, scale);
     outDatatypeCode = 2; // DT_UINT8

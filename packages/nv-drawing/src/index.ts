@@ -9,14 +9,30 @@
  */
 
 import { NVWorker } from "@niivue/niivue";
-import type { DrawingDims, InterpolationOptions, SliceType } from "./processing/drawing";
-import type { Connectivity, MagicWandOptions, MagicWandResult, ThresholdMode } from "./processing/magicWand";
+import type {
+  DrawingDims,
+  InterpolationOptions,
+  SliceType,
+} from "./processing/drawing";
+import type {
+  Connectivity,
+  MagicWandOptions,
+  MagicWandResult,
+  ThresholdMode,
+} from "./processing/magicWand";
 // @ts-expect-error — Vite worker import with inline bundling
 import DrawingWorker from "./worker?worker&inline";
 
-export type { DrawingDims, InterpolationOptions, SliceType };
-export type { Connectivity, MagicWandOptions, MagicWandResult, ThresholdMode };
 export { SLICE_TYPE } from "./processing/drawing";
+export type {
+  Connectivity,
+  DrawingDims,
+  InterpolationOptions,
+  MagicWandOptions,
+  MagicWandResult,
+  SliceType,
+  ThresholdMode,
+};
 
 /** Convert any ArrayLike<number> to Float32Array, returning the input if already Float32. */
 function toFloat32(data: ArrayLike<number>): Float32Array {
@@ -54,12 +70,17 @@ export async function findDrawingBoundarySlices(
     drawBitmap.byteOffset,
     drawBitmap.byteOffset + drawBitmap.byteLength,
   );
-  const res = await getBridge().execute<{ result: { first: number; last: number } | null }>({
-    name: "findBoundarySlices",
-    sliceType,
-    drawBitmap: buf,
-    dims,
-  }, [buf]);
+  const res = await getBridge().execute<{
+    result: { first: number; last: number } | null;
+  }>(
+    {
+      name: "findBoundarySlices",
+      sliceType,
+      drawBitmap: buf,
+      dims,
+    },
+    [buf],
+  );
   return res.result;
 }
 
@@ -89,21 +110,27 @@ export async function interpolateMaskSlices(
 
   if (imageData) {
     const f32 = toFloat32(imageData);
-    imgBuf = f32.buffer.slice(f32.byteOffset, f32.byteOffset + f32.byteLength) as ArrayBuffer;
+    imgBuf = f32.buffer.slice(
+      f32.byteOffset,
+      f32.byteOffset + f32.byteLength,
+    ) as ArrayBuffer;
     transfers.push(imgBuf!);
   }
 
-  const res = await getBridge().execute<{ drawBitmap: ArrayBuffer }>({
-    name: "interpolateMaskSlices",
-    drawBitmap: bitmapBuf,
-    dims,
-    imageData: imgBuf,
-    maxVal,
-    sliceIndexLow,
-    sliceIndexHigh,
-    options: options ?? {},
-    rasMap: null,
-  }, transfers);
+  const res = await getBridge().execute<{ drawBitmap: ArrayBuffer }>(
+    {
+      name: "interpolateMaskSlices",
+      drawBitmap: bitmapBuf,
+      dims,
+      imageData: imgBuf,
+      maxVal,
+      sliceIndexLow,
+      sliceIndexHigh,
+      options: options ?? {},
+      rasMap: null,
+    },
+    transfers,
+  );
 
   return new Uint8Array(res.drawBitmap);
 }
@@ -151,16 +178,19 @@ export async function magicWand(
   const res = await getBridge().execute<{
     drawBitmap: ArrayBuffer;
     result: MagicWandResult;
-  }>({
-    name: "magicWand",
-    seed,
-    drawBitmap: bitmapBuf,
-    dims,
-    imageData: imgBuf,
-    options: options ?? {},
-    rasMap: null,
-    voxelSizeMM: voxelSizeMM ?? null,
-  }, transfers);
+  }>(
+    {
+      name: "magicWand",
+      seed,
+      drawBitmap: bitmapBuf,
+      dims,
+      imageData: imgBuf,
+      options: options ?? {},
+      rasMap: null,
+      voxelSizeMM: voxelSizeMM ?? null,
+    },
+    transfers,
+  );
 
   return { bitmap: new Uint8Array(res.drawBitmap), result: res.result };
 }
@@ -190,14 +220,17 @@ export async function magicWandFromBitmap(
   const res = await getBridge().execute<{
     drawBitmap: ArrayBuffer;
     count: number;
-  }>({
-    name: "magicWandFromBitmap",
-    seed,
-    drawBitmap: bitmapBuf,
-    dims,
-    newColor,
-    connectivity,
-  }, [bitmapBuf]);
+  }>(
+    {
+      name: "magicWandFromBitmap",
+      seed,
+      drawBitmap: bitmapBuf,
+      dims,
+      newColor,
+      connectivity,
+    },
+    [bitmapBuf],
+  );
 
   return { bitmap: new Uint8Array(res.drawBitmap), count: res.count };
 }
@@ -315,7 +348,10 @@ export class MagicWandShared {
       const h = (ev: MessageEvent) => {
         if (ev.data.type !== "magicWandSharedResult") return;
         this._worker.removeEventListener("message", h);
-        if (ev.data.gen !== gen) { resolve(null); return; }
+        if (ev.data.gen !== gen) {
+          resolve(null);
+          return;
+        }
         resolve(ev.data.result as MagicWandResult);
       };
       this._worker.addEventListener("message", h);

@@ -292,7 +292,6 @@ export class NvSceneController {
 
     this.viewers.forEach((viewer, index) => {
       const position = layoutConfig.layoutFunction(
-        // biome-ignore lint/style/noNonNullAssertion: containerElement is set before applyLayout is called
         this.containerElement!,
         index,
         this.viewers.length,

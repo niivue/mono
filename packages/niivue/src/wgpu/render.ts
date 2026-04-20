@@ -321,10 +321,10 @@ export class VolumeRenderer extends NVRenderer {
           vol.img2RASstep[1] === vol.dimsRAS[1] &&
           vol.img2RASstep[2] === vol.dimsRAS[1] * vol.dimsRAS[2];
         let raw = new Uint8Array(
-            vol.img.buffer,
-            vol.img.byteOffset,
-            vol.img.byteLength,
-          );
+          vol.img.buffer,
+          vol.img.byteOffset,
+          vol.img.byteLength,
+        );
         if (!isRAS) {
           raw = reorientRGBA(
             raw,

@@ -10,9 +10,9 @@
  * Or use the "check-boundaries" target defined in the root package.json.
  */
 
-const { readFileSync, unlinkSync } = require("fs");
-const { execSync } = require("child_process");
-const { join } = require("path");
+const { readFileSync, unlinkSync } = require("node:fs");
+const { execSync } = require("node:child_process");
+const { join } = require("node:path");
 
 const root = join(__dirname, "..");
 const graphFile = join(root, "tmp-boundary-graph.json");
@@ -33,8 +33,8 @@ for (const [source, deps] of Object.entries(dependencies)) {
   if (!sourceNode) continue;
 
   const sourceTags = sourceNode.data.tags || [];
-  const sourceIsApp = sourceTags.includes("type:app");
-  const sourceIsLib = sourceTags.includes("type:lib");
+  const _sourceIsApp = sourceTags.includes("type:app");
+  const _sourceIsLib = sourceTags.includes("type:lib");
   const sourceIsTS = sourceTags.includes("lang:typescript");
   const sourceIsPy = sourceTags.includes("lang:python");
 
@@ -44,26 +44,26 @@ for (const [source, deps] of Object.entries(dependencies)) {
 
     const targetTags = targetNode.data.tags || [];
     const targetIsApp = targetTags.includes("type:app");
-    const targetIsLib = targetTags.includes("type:lib");
+    const _targetIsLib = targetTags.includes("type:lib");
     const targetIsTS = targetTags.includes("lang:typescript");
     const targetIsPy = targetTags.includes("lang:python");
 
     // Rule 1 & 2: No project can depend on an app
     if (targetIsApp) {
       errors.push(
-        `${source} -> ${dep.target}: cannot depend on an app (only libs are allowed as dependencies)`
+        `${source} -> ${dep.target}: cannot depend on an app (only libs are allowed as dependencies)`,
       );
     }
 
     // Rule 3: No cross-language dependencies
     if (sourceIsTS && targetIsPy) {
       errors.push(
-        `${source} -> ${dep.target}: TypeScript project cannot depend on a Python project`
+        `${source} -> ${dep.target}: TypeScript project cannot depend on a Python project`,
       );
     }
     if (sourceIsPy && targetIsTS) {
       errors.push(
-        `${source} -> ${dep.target}: Python project cannot depend on a TypeScript project`
+        `${source} -> ${dep.target}: Python project cannot depend on a TypeScript project`,
       );
     }
   }

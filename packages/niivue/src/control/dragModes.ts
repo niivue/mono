@@ -2,9 +2,8 @@ import { vec3 } from "gl-matrix";
 import * as NVTransforms from "@/math/NVTransforms";
 import { DRAG_MODE, SLICE_TYPE } from "@/NVConstants";
 import type NiiVueGPU from "@/NVControlBase";
-import type { DragOverlay, DragReleaseInfo, TypedVoxelArray } from "@/NVTypes";
+import type { DragOverlay, DragReleaseInfo } from "@/NVTypes";
 import * as NVSliceLayout from "@/view/NVSliceLayout";
-import { getTypedArrayConstructor } from "@/volume/utils";
 
 /** Return the DRAG_MODE for a given mouse button on 2D slice tiles. */
 export function getDragModeForButton(ctrl: NiiVueGPU, button: number): number {

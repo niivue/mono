@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { resolve, dirname, relative } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 

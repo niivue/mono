@@ -1,8 +1,8 @@
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig } from "vite";
 import { devImagesPlugin } from "@niivue/dev-images/vite-plugin";
+import { defineConfig } from "vite";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const examplesDir = resolve(root, "examples");

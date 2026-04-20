@@ -12,7 +12,9 @@
       "import": "./dist/nv-image-processing.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "peerDependencies": {
     "@niivue/niivue": "workspace:*"
   },

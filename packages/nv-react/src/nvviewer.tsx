@@ -151,7 +151,6 @@ export const NvViewer = ({
         });
       } else {
         // Update visual props on already-loaded volumes
-        // biome-ignore lint/style/noNonNullAssertion: url is guaranteed to exist in currentVolumes at this point
         const prev = currentVolumes.get(opts.url)!;
         const next = extractVisualProps(opts);
 

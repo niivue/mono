@@ -1,5 +1,5 @@
-const { readFileSync } = require("fs");
-const { join } = require("path");
+const { readFileSync } = require("node:fs");
+const { join } = require("node:path");
 
 /**
  * Local NX plugin that reads pixi.toml and pyproject.toml files to infer
@@ -39,9 +39,7 @@ function parseWorkspaceDeps(content) {
     if (!trimmed || trimmed.startsWith("#")) continue;
 
     // Match: workspace-dependencies = ["proj-a", "proj-b"]
-    const match = trimmed.match(
-      /^workspace-dependencies\s*=\s*\[([^\]]*)\]/
-    );
+    const match = trimmed.match(/^workspace-dependencies\s*=\s*\[([^\]]*)\]/);
     if (!match) continue;
 
     const names = match[1].match(/"([^"]+)"/g);
@@ -59,7 +57,7 @@ function parseWorkspaceDeps(content) {
  * createDependencies - scans pixi.toml and pyproject.toml files across all
  * projects and creates graph edges from [tool.nx] workspace-dependencies.
  */
-const createDependencies = (options, context) => {
+const createDependencies = (_options, context) => {
   const deps = [];
   const projectNames = new Set(Object.keys(context.projects));
 

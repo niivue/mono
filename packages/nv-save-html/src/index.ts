@@ -203,7 +203,10 @@ ${base64Document}
  * @param options - See {@link SaveHTMLOptions}.
  * @returns A complete HTML document as a string.
  */
-export async function generateHTML(nv: NiiVueGPU, options: SaveHTMLOptions): Promise<string> {
+export async function generateHTML(
+  nv: NiiVueGPU,
+  options: SaveHTMLOptions,
+): Promise<string> {
   const {
     niivueBundleSource,
     canvasId = "gl1",
@@ -213,7 +216,7 @@ export async function generateHTML(nv: NiiVueGPU, options: SaveHTMLOptions): Pro
   if (!niivueBundleSource) {
     throw new Error(
       "nv-save-html: niivueBundleSource is required. " +
-      "Provide the full source of a self-contained niivue ESM bundle.",
+        "Provide the full source of a self-contained niivue ESM bundle.",
     );
   }
 

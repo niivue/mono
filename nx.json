@@ -1,8 +1,6 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
-  "plugins": [
-    "./nx-tools/nx-pixi-plugin.js"
-  ],
+  "plugins": ["./nx-tools/nx-pixi-plugin.js"],
   "namedInputs": {
     "typescript": [
       "{projectRoot}/**/*.ts",
@@ -21,9 +19,7 @@
       "cache": false
     },
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "cache": true
     },
     "lint": {
@@ -33,9 +29,7 @@
       "cache": true
     },
     "typecheck": {
-      "dependsOn": [
-        "^typecheck"
-      ],
+      "dependsOn": ["^typecheck"],
       "cache": true
     },
     "test": {
@@ -45,10 +39,7 @@
   "release": {
     "groups": {
       "typescript": {
-        "projects": [
-          "packages/ts-*",
-          "packages/niivue"
-        ],
+        "projects": ["packages/niivue", "packages/nv-*"],
         "projectsRelationship": "independent",
         "releaseTag": {
           "pattern": "{projectName}@{version}"
@@ -59,16 +50,13 @@
         "changelog": true
       },
       "python": {
-        "projects": [
-          "packages/py-*"
-        ],
+        "projects": ["packages/py-*"],
         "projectsRelationship": "independent",
         "releaseTag": {
           "pattern": "{projectName}@{version}"
         },
         "version": {
-          "conventionalCommits": true,
-          "versionActions": "./nx-tools/pixi-version-actions.js"
+          "conventionalCommits": true
         },
         "changelog": true
       }

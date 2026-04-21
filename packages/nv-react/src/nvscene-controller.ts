@@ -601,6 +601,11 @@ export class NvSceneController {
       }
     });
 
+    // Notify synchronously — viewer slot is registered and usable
+    this.onViewerCreated?.(niivue, index);
+    this.emit("viewerCreated", niivue, index);
+    this.notify();
+
     // Async canvas attachment — viewer is already registered
     const ready = niivue.attachToCanvas(canvas).then(() => {
       // Apply the current slice layout (default axial).
@@ -611,16 +616,10 @@ export class NvSceneController {
         this.setBroadcasting(true);
       }
 
-      // Call the onViewerCreated callback if provided
-      this.onViewerCreated?.(niivue, index);
-      this.emit("viewerCreated", niivue, index);
-
       this.notify();
 
       return viewer;
     });
-
-    this.notify();
 
     return ready;
   }

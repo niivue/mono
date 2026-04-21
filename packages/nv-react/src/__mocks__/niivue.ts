@@ -38,6 +38,8 @@ export interface MockNiiVueGPU {
   destroy: ReturnType<typeof mock>;
   addEventListener: ReturnType<typeof mock>;
   removeEventListener: ReturnType<typeof mock>;
+  /** Emit a mock event — triggers handlers registered via addEventListener */
+  emitEvent: (name: string, detail: unknown) => void;
   volumes: unknown[];
   meshes: unknown[];
   model: {
@@ -48,22 +50,36 @@ export interface MockNiiVueGPU {
   primaryDragMode: number;
   secondaryDragMode: number;
   canvas: HTMLCanvasElement | null;
+  /** Internal handler registry (event name → callbacks) */
+  _handlers: Map<string, Set<(evt: unknown) => void>>;
 }
 
 /** Create a fresh MockNiiVueGPU instance with all methods stubbed */
 export function createMockNiiVueGPU(): MockNiiVueGPU {
-  return {
+  const handlers = new Map<string, Set<(evt: unknown) => void>>();
+
+  const instance: MockNiiVueGPU = {
+    _handlers: handlers,
     attachToCanvas: mock(() => Promise.resolve()),
-    addVolume: mock((opts: { url: string }) =>
-      Promise.resolve({ url: opts.url, name: opts.url }),
-    ),
+    addVolume: null as unknown as ReturnType<typeof mock>,
     broadcastTo: mock(() => {}),
     setVolume: mock(() => Promise.resolve()),
     resize: mock(() => {}),
     updateGLVolume: mock(() => Promise.resolve()),
     destroy: mock(() => {}),
-    addEventListener: mock(() => {}),
-    removeEventListener: mock(() => {}),
+    addEventListener: mock((name: string, cb: (evt: unknown) => void) => {
+      if (!handlers.has(name)) handlers.set(name, new Set());
+      handlers.get(name)!.add(cb);
+    }),
+    removeEventListener: mock((name: string, cb: (evt: unknown) => void) => {
+      handlers.get(name)?.delete(cb);
+    }),
+    emitEvent(name: string, detail: unknown) {
+      const cbs = handlers.get(name);
+      if (cbs) {
+        for (const cb of cbs) cb({ detail });
+      }
+    },
     volumes: [],
     meshes: [],
     model: {
@@ -75,6 +91,14 @@ export function createMockNiiVueGPU(): MockNiiVueGPU {
     secondaryDragMode: DRAG_MODE.pan,
     canvas: null,
   };
+
+  instance.addVolume = mock((opts: { url: string }) => {
+    const vol = { url: opts.url, name: opts.url };
+    instance.volumes.push(vol);
+    return Promise.resolve(vol);
+  });
+
+  return instance;
 }
 
 /** Track all created instances so tests can inspect them */

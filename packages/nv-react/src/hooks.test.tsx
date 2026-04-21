@@ -87,8 +87,8 @@ describe("useNiivue", () => {
     const controller = new NvSceneController();
     const container = document.createElement("div");
     controller.setContainerElement(container);
-    controller.setLayout("2x2");
-    controller.addViewer();
+    // setLayout("1x2") creates 2 viewers filling both slots
+    controller.setLayout("1x2");
 
     const { result } = renderHook(() => useNiivue(controller, 1));
     expect(result.current).toBeDefined();
@@ -110,12 +110,15 @@ describe("useSceneEvent", () => {
     const controller = new NvSceneController();
     const container = document.createElement("div");
     controller.setContainerElement(container);
-    controller.setLayout("2x2");
+    // setLayout fills all slots; use 1x2 so there's room after removing one
+    controller.setLayout("1x2");
 
     const callback = mock((_nv: unknown, _index: number) => {});
 
     renderHook(() => useSceneEvent(controller, "viewerCreated", callback));
 
+    // Remove one so addViewer can create a new one and fire viewerCreated
+    controller.removeViewer(1);
     act(() => {
       controller.addViewer();
     });
@@ -127,7 +130,7 @@ describe("useSceneEvent", () => {
     const controller = new NvSceneController();
     const container = document.createElement("div");
     controller.setContainerElement(container);
-    controller.setLayout("2x2");
+    controller.setLayout("1x2");
 
     const callback = mock((_nv: unknown, _index: number) => {});
 
@@ -137,7 +140,8 @@ describe("useSceneEvent", () => {
 
     unmount();
 
-    // Adding a viewer after unmount should not trigger the callback
+    // Remove and re-add a viewer after unmount — should not trigger the callback
+    controller.removeViewer(1);
     controller.addViewer();
     expect(callback).not.toHaveBeenCalled();
   });
@@ -146,7 +150,7 @@ describe("useSceneEvent", () => {
     const controller = new NvSceneController();
     const container = document.createElement("div");
     controller.setContainerElement(container);
-    controller.setLayout("2x2");
+    controller.setLayout("1x2");
 
     const callback1 = mock((_nv: unknown, _index: number) => {});
     const callback2 = mock((_nv: unknown, _index: number) => {});
@@ -159,6 +163,8 @@ describe("useSceneEvent", () => {
     // Update the callback
     rerender({ cb: callback2 });
 
+    // Remove one so addViewer can fire viewerCreated
+    controller.removeViewer(1);
     act(() => {
       controller.addViewer();
     });

@@ -39,24 +39,20 @@ describe("NvViewer", () => {
     expect(nv.attachToCanvas).toHaveBeenCalled();
   });
 
-  test("calls setMouseEventConfig on the Niivue instance", () => {
+  test("sets sliceType to default AXIAL after attach", async () => {
     render(<NvViewer />);
     const nv = mockInstances[0]!;
-    expect(nv.setMouseEventConfig).toHaveBeenCalled();
+    // attachToCanvas returns a resolved promise; wait for microtask
+    await Promise.resolve();
+    expect(nv.sliceType).toBe(0); // SLICE_TYPE.AXIAL
   });
 
-  test("calls setSliceType with default AXIAL", () => {
-    render(<NvViewer />);
-    const nv = mockInstances[0]!;
-    // SLICE_TYPE.AXIAL = 0
-    expect(nv.setSliceType).toHaveBeenCalledWith(0);
-  });
-
-  test("calls setSliceType with provided sliceType", () => {
+  test("sets sliceType to provided value after attach", async () => {
     // SLICE_TYPE.CORONAL = 1
     render(<NvViewer sliceType={1} />);
     const nv = mockInstances[0]!;
-    expect(nv.setSliceType).toHaveBeenCalledWith(1);
+    await Promise.resolve();
+    expect(nv.sliceType).toBe(1);
   });
 
   test("passes className to the container div", () => {
@@ -89,11 +85,11 @@ describe("NvViewer", () => {
     expect(div.querySelector("canvas")).toBeNull();
   });
 
-  test("volume diffing: adding volumes calls addVolumeFromUrl", () => {
+  test("volume diffing: adding volumes calls addVolume", () => {
     const volumes = [{ url: "brain.nii" }];
     render(<NvViewer volumes={volumes} />);
     const nv = mockInstances[0]!;
-    expect(nv.addVolumeFromUrl).toHaveBeenCalledWith(
+    expect(nv.addVolume).toHaveBeenCalledWith(
       expect.objectContaining({ url: "brain.nii" }),
     );
   });
@@ -102,43 +98,40 @@ describe("NvViewer", () => {
     const volumes = [{ url: "a.nii" }, { url: "b.nii" }];
     render(<NvViewer volumes={volumes} />);
     const nv = mockInstances[0]!;
-    expect(nv.addVolumeFromUrl).toHaveBeenCalledTimes(2);
+    expect(nv.addVolume).toHaveBeenCalledTimes(2);
   });
 
-  test("volume diffing: no volumes results in no addVolumeFromUrl calls", () => {
+  test("volume diffing: no volumes results in no addVolume calls", () => {
     render(<NvViewer />);
     const nv = mockInstances[0]!;
-    expect(nv.addVolumeFromUrl).not.toHaveBeenCalled();
+    expect(nv.addVolume).not.toHaveBeenCalled();
   });
 
-  test("wires onLocationChange callback to Niivue", () => {
+  test("wires onLocationChange callback via addEventListener", () => {
     const onLocationChange = mock((_data: unknown) => {});
     render(<NvViewer onLocationChange={onLocationChange} />);
     const nv = mockInstances[0]!;
 
-    // Simulate Niivue calling onLocationChange
-    if (nv.onLocationChange) {
-      nv.onLocationChange({ x: 1, y: 2, z: 3 });
-    }
+    // Simulate Niivue emitting locationChange
+    nv.emitEvent("locationChange", { x: 1, y: 2, z: 3 });
     expect(onLocationChange).toHaveBeenCalledWith({ x: 1, y: 2, z: 3 });
   });
 
-  test("wires onImageLoaded callback to Niivue", () => {
+  test("wires onImageLoaded callback via addEventListener", () => {
     const onImageLoaded = mock((_vol: unknown) => {});
     render(<NvViewer onImageLoaded={onImageLoaded} />);
     const nv = mockInstances[0]!;
 
-    // Simulate Niivue calling onImageLoaded
-    if (nv.onImageLoaded) {
-      nv.onImageLoaded({ url: "test.nii" });
-    }
-    expect(onImageLoaded).toHaveBeenCalledWith({ url: "test.nii" });
+    // Simulate Niivue emitting volumeLoaded
+    const fakeVol = { url: "test.nii", name: "test.nii" };
+    nv.emitEvent("volumeLoaded", { volume: fakeVol });
+    expect(onImageLoaded).toHaveBeenCalledWith(fakeVol);
   });
 
   // --- Volume visual prop diffing ---
 
   describe("volume visual prop diffing", () => {
-    test("changing colormap on an existing volume sets vol.colormap and calls updateGLVolume", () => {
+    test("changing colormap calls setVolume with new colormap", () => {
       const volumes1 = [{ url: "brain.nii", colormap: "gray" }];
       const { rerender } = render(<NvViewer volumes={volumes1} />);
       const nv = mockInstances[0]!;
@@ -148,8 +141,8 @@ describe("NvViewer", () => {
         url: "brain.nii",
         name: "brain.nii",
         colormap: "gray",
-        cal_min: 0,
-        cal_max: 255,
+        calMin: 0,
+        calMax: 255,
         opacity: 1.0,
       };
       nv.volumes = [fakeVol];
@@ -158,12 +151,14 @@ describe("NvViewer", () => {
       const volumes2 = [{ url: "brain.nii", colormap: "hot" }];
       rerender(<NvViewer volumes={volumes2} />);
 
-      expect(fakeVol.colormap).toBe("hot");
-      expect(nv.updateGLVolume).toHaveBeenCalled();
+      expect(nv.setVolume).toHaveBeenCalledWith(
+        0,
+        expect.objectContaining({ colormap: "hot" }),
+      );
     });
 
-    test("changing cal_min/cal_max on an existing volume updates intensity and calls updateGLVolume", () => {
-      const volumes1 = [{ url: "brain.nii", cal_min: 0, cal_max: 255 }];
+    test("changing calMin/calMax calls setVolume with new values", () => {
+      const volumes1 = [{ url: "brain.nii", calMin: 0, calMax: 255 }];
       const { rerender } = render(<NvViewer volumes={volumes1} />);
       const nv = mockInstances[0]!;
 
@@ -171,21 +166,22 @@ describe("NvViewer", () => {
         url: "brain.nii",
         name: "brain.nii",
         colormap: "gray",
-        cal_min: 0,
-        cal_max: 255,
+        calMin: 0,
+        calMax: 255,
         opacity: 1.0,
       };
       nv.volumes = [fakeVol];
 
-      const volumes2 = [{ url: "brain.nii", cal_min: 50, cal_max: 200 }];
+      const volumes2 = [{ url: "brain.nii", calMin: 50, calMax: 200 }];
       rerender(<NvViewer volumes={volumes2} />);
 
-      expect(fakeVol.cal_min).toBe(50);
-      expect(fakeVol.cal_max).toBe(200);
-      expect(nv.updateGLVolume).toHaveBeenCalled();
+      expect(nv.setVolume).toHaveBeenCalledWith(
+        0,
+        expect.objectContaining({ calMin: 50, calMax: 200 }),
+      );
     });
 
-    test("changing opacity on an existing volume calls nv.setOpacity", () => {
+    test("changing opacity calls setVolume with new opacity", () => {
       const volumes1 = [{ url: "brain.nii", opacity: 1.0 }];
       const { rerender } = render(<NvViewer volumes={volumes1} />);
       const nv = mockInstances[0]!;
@@ -194,27 +190,28 @@ describe("NvViewer", () => {
         url: "brain.nii",
         name: "brain.nii",
         colormap: "gray",
-        cal_min: 0,
-        cal_max: 255,
+        calMin: 0,
+        calMax: 255,
         opacity: 1.0,
       };
       nv.volumes = [fakeVol];
-      // nv.volumes.indexOf needs to work
-      nv.volumes.indexOf = (v: unknown) => (v === fakeVol ? 0 : -1);
 
       const volumes2 = [{ url: "brain.nii", opacity: 0.5 }];
       rerender(<NvViewer volumes={volumes2} />);
 
-      expect(nv.setOpacity).toHaveBeenCalledWith(0, 0.5);
+      expect(nv.setVolume).toHaveBeenCalledWith(
+        0,
+        expect.objectContaining({ opacity: 0.5 }),
+      );
     });
 
-    test("same visual props do not trigger updates", () => {
+    test("same visual props do not trigger setVolume", () => {
       const volumes1 = [
         {
           url: "brain.nii",
           colormap: "gray",
-          cal_min: 0,
-          cal_max: 255,
+          calMin: 0,
+          calMax: 255,
           opacity: 1.0,
         },
       ];
@@ -225,30 +222,28 @@ describe("NvViewer", () => {
         url: "brain.nii",
         name: "brain.nii",
         colormap: "gray",
-        cal_min: 0,
-        cal_max: 255,
+        calMin: 0,
+        calMax: 255,
         opacity: 1.0,
       };
       nv.volumes = [fakeVol];
 
       // Reset call counts
-      nv.updateGLVolume.mockClear();
-      nv.setOpacity.mockClear();
+      nv.setVolume.mockClear();
 
       // Re-render with same props (new array reference but same values)
       const volumes2 = [
         {
           url: "brain.nii",
           colormap: "gray",
-          cal_min: 0,
-          cal_max: 255,
+          calMin: 0,
+          calMax: 255,
           opacity: 1.0,
         },
       ];
       rerender(<NvViewer volumes={volumes2} />);
 
-      expect(nv.updateGLVolume).not.toHaveBeenCalled();
-      expect(nv.setOpacity).not.toHaveBeenCalled();
+      expect(nv.setVolume).not.toHaveBeenCalled();
     });
 
     test("does not re-add a volume when only visual props change", () => {
@@ -259,14 +254,14 @@ describe("NvViewer", () => {
       const fakeVol = { url: "brain.nii", name: "brain.nii", colormap: "gray" };
       nv.volumes = [fakeVol];
 
-      // Clear the addVolumeFromUrl count
-      nv.addVolumeFromUrl.mockClear();
+      // Clear the addVolume count
+      nv.addVolume.mockClear();
 
       const volumes2 = [{ url: "brain.nii", colormap: "hot" }];
       rerender(<NvViewer volumes={volumes2} />);
 
       // Should NOT re-add the volume
-      expect(nv.addVolumeFromUrl).not.toHaveBeenCalled();
+      expect(nv.addVolume).not.toHaveBeenCalled();
     });
   });
 });

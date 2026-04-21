@@ -5,6 +5,7 @@ import {
   mockInstances,
   registerNiivueMock,
   SLICE_TYPE,
+  SHOW_RENDER,
 } from "./__mocks__/niivue";
 
 // Register the module mock before importing the controller
@@ -12,7 +13,6 @@ registerNiivueMock();
 
 import { defaultLayouts } from "./layouts";
 import {
-  defaultMouseConfig,
   defaultSliceLayout,
   defaultSliceLayouts,
   defaultViewerOptions,
@@ -98,8 +98,6 @@ describe("NvSceneController", () => {
       controller.setContainerElement(container);
       controller.setLayout("1x1");
       // setLayout calls notify, but listener was removed
-      // The listener may have been called during setContainerElement indirectly,
-      // but after unsub it should not be called again
       const callCount = listener.mock.calls.length;
       controller.setLayout("2x2");
       expect(listener.mock.calls.length).toBe(callCount);
@@ -127,8 +125,7 @@ describe("NvSceneController", () => {
       const cb = mock((_index: number) => {});
       controller.on("viewerRemoved", cb);
       controller.setContainerElement(container);
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
       controller.removeViewer(0);
       expect(cb).toHaveBeenCalledWith(0);
     });
@@ -139,8 +136,7 @@ describe("NvSceneController", () => {
       expect(typeof unsub).toBe("function");
       unsub();
       controller.setContainerElement(container);
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
       controller.removeViewer(0);
       expect(cb).not.toHaveBeenCalled();
     });
@@ -150,8 +146,7 @@ describe("NvSceneController", () => {
       controller.on("viewerRemoved", cb);
       controller.off("viewerRemoved", cb);
       controller.setContainerElement(container);
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
       controller.removeViewer(0);
       expect(cb).not.toHaveBeenCalled();
     });
@@ -162,8 +157,7 @@ describe("NvSceneController", () => {
       controller.on("viewerRemoved", cb1);
       controller.on("viewerRemoved", cb2);
       controller.setContainerElement(container);
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
       controller.removeViewer(0);
       expect(cb1).toHaveBeenCalled();
       expect(cb2).toHaveBeenCalled();
@@ -175,8 +169,7 @@ describe("NvSceneController", () => {
       controller.on("viewerRemoved", removedCb);
       controller.on("error", errorCb);
       controller.setContainerElement(container);
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
       controller.removeViewer(0);
       expect(removedCb).toHaveBeenCalled();
       expect(errorCb).not.toHaveBeenCalled();
@@ -186,7 +179,7 @@ describe("NvSceneController", () => {
       const cb = mock((_nv: unknown, _index: number) => {});
       controller.on("viewerCreated", cb);
       controller.setContainerElement(container);
-      controller.addViewer();
+      controller.setLayout("1x1");
       expect(cb).toHaveBeenCalled();
       expect(cb.mock.calls[0]?.[1]).toBe(0);
     });
@@ -221,13 +214,15 @@ describe("NvSceneController", () => {
       expect(snap2.currentLayout).toBe(snap1.currentLayout);
     });
 
+    test("setLayout fills all available slots", () => {
+      controller.setContainerElement(container);
+      controller.setLayout("2x2");
+      expect(controller.getSnapshot().viewerCount).toBe(4);
+    });
+
     test("setLayout removes excess viewers when new layout has fewer slots", () => {
       controller.setContainerElement(container);
       controller.setLayout("2x2");
-      // Add viewers to fill 4 slots (1 auto-created by setLayout + 3 more)
-      while (controller.canAddViewer()) {
-        controller.addViewer();
-      }
       expect(controller.getSnapshot().viewerCount).toBe(4);
       controller.setLayout("1x1");
       expect(controller.getSnapshot().viewerCount).toBe(1);
@@ -242,7 +237,6 @@ describe("NvSceneController", () => {
     test("updateLayout applies position styles to viewer container divs", () => {
       controller.setContainerElement(container);
       controller.setLayout("1x2");
-      controller.addViewer();
       controller.updateLayout();
       const firstViewer = controller.viewers[0]!;
       expect(firstViewer.containerDiv.style.position).toBe("absolute");
@@ -269,23 +263,28 @@ describe("NvSceneController", () => {
 
     test("addViewer throws if slot limit reached", () => {
       controller.setLayout("1x1");
-      // setLayout already creates one viewer
+      // setLayout fills the single slot
       expect(() => controller.addViewer()).toThrow("slot limit");
     });
 
     test("addViewer creates DOM elements appended to the container", () => {
       controller.setLayout("2x2");
-      // One viewer is auto-created; verify it's in the DOM
       const containerDivs = container.querySelectorAll(
         ".niivue-canvas-container",
       );
-      expect(containerDivs.length).toBeGreaterThanOrEqual(1);
+      expect(containerDivs.length).toBe(4);
       const canvases = container.querySelectorAll(".niivue-canvas");
-      expect(canvases.length).toBeGreaterThanOrEqual(1);
+      expect(canvases.length).toBe(4);
     });
 
-    test("addViewer increments viewerCount in snapshot", () => {
+    test("setLayout fills all slots and viewerCount matches", () => {
       controller.setLayout("2x2");
+      expect(controller.getSnapshot().viewerCount).toBe(4);
+    });
+
+    test("addViewer increments viewerCount when slot is available", () => {
+      controller.setLayout("2x2");
+      controller.removeViewer(3);
       const countBefore = controller.getSnapshot().viewerCount;
       controller.addViewer();
       expect(controller.getSnapshot().viewerCount).toBe(countBefore + 1);
@@ -294,33 +293,30 @@ describe("NvSceneController", () => {
     test("addViewer calls onViewerCreated callback", () => {
       const cb = mock((_nv: unknown, _index: number) => {});
       controller.onViewerCreated = cb;
-      controller.setLayout("2x2");
-      // setLayout auto-creates one viewer
+      controller.setLayout("1x1");
       expect(cb).toHaveBeenCalled();
     });
 
     test("addViewer creates a Niivue instance and calls attachToCanvas", () => {
       clearMockInstances();
-      controller.setLayout("2x2");
-      expect(mockInstances.length).toBeGreaterThanOrEqual(1);
+      controller.setLayout("1x1");
+      expect(mockInstances.length).toBe(1);
       const nv = mockInstances[0]!;
       expect(nv.attachToCanvas).toHaveBeenCalled();
-      expect(nv.setMouseEventConfig).toHaveBeenCalled();
     });
 
-    test("addViewer returns a ViewerSlot with id, niivue, canvasElement, containerDiv", () => {
-      controller.setLayout("2x2");
-      const slot = controller.addViewer();
-      expect(slot).toHaveProperty("id");
-      expect(slot).toHaveProperty("niivue");
-      expect(slot).toHaveProperty("canvasElement");
-      expect(slot).toHaveProperty("containerDiv");
-      expect(typeof slot.id).toBe("string");
+    test("viewer has id, niivue, canvasElement, containerDiv", () => {
+      controller.setLayout("1x1");
+      const viewer = controller.viewers[0]!;
+      expect(viewer).toHaveProperty("id");
+      expect(viewer).toHaveProperty("niivue");
+      expect(viewer).toHaveProperty("canvasElement");
+      expect(viewer).toHaveProperty("containerDiv");
+      expect(typeof viewer.id).toBe("string");
     });
 
     test("removeViewer decrements viewerCount", () => {
       controller.setLayout("2x2");
-      controller.addViewer();
       const countBefore = controller.getSnapshot().viewerCount;
       controller.removeViewer(0);
       expect(controller.getSnapshot().viewerCount).toBe(countBefore - 1);
@@ -328,7 +324,6 @@ describe("NvSceneController", () => {
 
     test("removeViewer removes DOM elements", () => {
       controller.setLayout("2x2");
-      controller.addViewer();
       const viewer = controller.viewers[0]!;
       const containerDiv = viewer.containerDiv;
       controller.removeViewer(0);
@@ -339,7 +334,6 @@ describe("NvSceneController", () => {
       const cb = mock((_index: number) => {});
       controller.on("viewerRemoved", cb);
       controller.setLayout("2x2");
-      controller.addViewer();
       controller.removeViewer(0);
       expect(cb).toHaveBeenCalledWith(0);
     });
@@ -356,15 +350,12 @@ describe("NvSceneController", () => {
 
     test("clearViewers removes all viewers", () => {
       controller.setLayout("2x2");
-      controller.addViewer();
-      controller.addViewer();
       controller.clearViewers();
       expect(controller.getSnapshot().viewerCount).toBe(0);
     });
 
     test("clearViewers disables broadcasting", () => {
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
       controller.setBroadcasting(true);
       controller.clearViewers();
       expect(controller.getSnapshot().isBroadcasting).toBe(false);
@@ -372,7 +363,6 @@ describe("NvSceneController", () => {
 
     test("reset clears viewers and resets layout to 1x1", () => {
       controller.setLayout("2x2");
-      controller.addViewer();
       controller.reset();
       const snap = controller.getSnapshot();
       expect(snap.viewerCount).toBe(0);
@@ -390,6 +380,7 @@ describe("NvSceneController", () => {
 
     test("canAddViewer returns true when under slot limit", () => {
       controller.setLayout("2x2");
+      controller.removeViewer(0);
       expect(controller.canAddViewer()).toBe(true);
     });
 
@@ -410,25 +401,23 @@ describe("NvSceneController", () => {
     });
 
     test("getAllNiivue returns array of all instances", () => {
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
       const all = controller.getAllNiivue();
       expect(all.length).toBe(2);
     });
 
     test("forEachNiivue calls callback for each viewer", () => {
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
       const cb = mock((_nv: unknown, _i: number) => {});
       controller.forEachNiivue(cb);
       expect(cb).toHaveBeenCalledTimes(2);
     });
 
     test("getNiivueById returns instance by id", () => {
-      controller.setLayout("2x2");
-      const slot = controller.addViewer();
-      const nv = controller.getNiivueById(slot.id);
-      expect(nv).toBe(slot.niivue);
+      controller.setLayout("1x2");
+      const viewer = controller.viewers[1]!;
+      const nv = controller.getNiivueById(viewer.id);
+      expect(nv).toBe(viewer.niivue);
     });
 
     test("getNiivueById returns undefined for unknown id", () => {
@@ -436,10 +425,10 @@ describe("NvSceneController", () => {
     });
 
     test("getViewerById returns ViewerSlot by id", () => {
-      controller.setLayout("2x2");
-      const slot = controller.addViewer();
-      const found = controller.getViewerById(slot.id);
-      expect(found).toBe(slot);
+      controller.setLayout("1x2");
+      const viewer = controller.viewers[1]!;
+      const found = controller.getViewerById(viewer.id);
+      expect(found).toBe(viewer);
     });
 
     test("getViewerById returns undefined for unknown id", () => {
@@ -452,8 +441,7 @@ describe("NvSceneController", () => {
   describe("broadcasting", () => {
     beforeEach(() => {
       controller.setContainerElement(container);
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
     });
 
     test("setBroadcasting(true) enables broadcasting", () => {
@@ -471,13 +459,10 @@ describe("NvSceneController", () => {
 
     test("setBroadcasting(true) calls broadcastTo on all viewers", () => {
       clearMockInstances();
-      // Reset controller with fresh mocks
       controller.clearViewers();
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
       controller.setBroadcasting(true);
 
-      // Each viewer should have broadcastTo called
       for (const inst of mockInstances) {
         expect(inst.broadcastTo).toHaveBeenCalled();
       }
@@ -486,12 +471,10 @@ describe("NvSceneController", () => {
     test("setBroadcasting(false) calls broadcastTo with empty array", () => {
       clearMockInstances();
       controller.clearViewers();
-      controller.setLayout("2x2");
-      controller.addViewer();
+      controller.setLayout("1x2");
       controller.setBroadcasting(true);
       controller.setBroadcasting(false);
 
-      // The last call to broadcastTo should have empty array
       for (const inst of mockInstances) {
         const lastCall =
           inst.broadcastTo.mock.calls[inst.broadcastTo.mock.calls.length - 1];
@@ -502,9 +485,7 @@ describe("NvSceneController", () => {
     test("setBroadcasting(true) excludes viewers with no volumes or meshes", () => {
       clearMockInstances();
       controller.clearViewers();
-      controller.setLayout("2x2");
-      controller.addViewer();
-      controller.addViewer();
+      controller.setLayout("1x3");
 
       const nv0 = mockInstances[0]!;
       const nv1 = mockInstances[1]!;
@@ -549,10 +530,14 @@ describe("NvSceneController", () => {
       expect(last1?.[0]).toEqual([]);
 
       nv1.volumes = [{ url: "b.nii", name: "b.nii" }];
-      nv1.onImageLoaded?.({ url: "b.nii", name: "b.nii" });
+      nv1.emitEvent("volumeLoaded", {
+        volume: { url: "b.nii", name: "b.nii" },
+      });
 
-      last0 = nv0.broadcastTo.mock.calls[nv0.broadcastTo.mock.calls.length - 1];
-      last1 = nv1.broadcastTo.mock.calls[nv1.broadcastTo.mock.calls.length - 1];
+      last0 =
+        nv0.broadcastTo.mock.calls[nv0.broadcastTo.mock.calls.length - 1];
+      last1 =
+        nv1.broadcastTo.mock.calls[nv1.broadcastTo.mock.calls.length - 1];
       expect(last0?.[0]).toEqual([nv1]);
       expect(last1?.[0]).toEqual([nv0]);
     });
@@ -575,10 +560,12 @@ describe("NvSceneController", () => {
       expect(last1?.[0]).toEqual([]);
 
       nv1.meshes = [{ id: "mesh-1" }];
-      nv1.onMeshLoaded?.({ id: "mesh-1" });
+      nv1.emitEvent("meshLoaded", {});
 
-      last0 = nv0.broadcastTo.mock.calls[nv0.broadcastTo.mock.calls.length - 1];
-      last1 = nv1.broadcastTo.mock.calls[nv1.broadcastTo.mock.calls.length - 1];
+      last0 =
+        nv0.broadcastTo.mock.calls[nv0.broadcastTo.mock.calls.length - 1];
+      last1 =
+        nv1.broadcastTo.mock.calls[nv1.broadcastTo.mock.calls.length - 1];
       expect(last0?.[0]).toEqual([nv1]);
       expect(last1?.[0]).toEqual([nv0]);
     });
@@ -629,10 +616,9 @@ describe("NvSceneController", () => {
 
     test("setViewerSliceLayout with null resets to axial", () => {
       controller.setViewerSliceLayout(0, null);
-      const nv = mockInstances[mockInstances.length - 1]!;
-      // Should have called clearCustomLayout and setSliceType
-      expect(nv.clearCustomLayout).toHaveBeenCalled();
-      expect(nv.setSliceType).toHaveBeenCalled();
+      const nv = mockInstances[0]!;
+      expect(nv.sliceType).toBe(SLICE_TYPE.AXIAL);
+      expect(nv.showRender).toBe(SHOW_RENDER.NEVER);
     });
 
     test("setViewerSliceLayout on invalid index is a no-op", () => {
@@ -656,10 +642,13 @@ describe("NvSceneController", () => {
     test("loadVolume increments and decrements loading count", async () => {
       const nv = mockInstances[mockInstances.length - 1]!;
       let resolveVolume: (v: unknown) => void;
-      nv.addVolumeFromUrl = mock(
+      nv.addVolume = mock(
         () =>
           new Promise((resolve) => {
-            resolveVolume = resolve;
+            resolveVolume = (v: unknown) => {
+              nv.volumes.push(v);
+              resolve(v);
+            };
           }),
       );
 
@@ -682,9 +671,7 @@ describe("NvSceneController", () => {
 
     test("loadVolume emits error on failure and records it", async () => {
       const nv = mockInstances[mockInstances.length - 1]!;
-      nv.addVolumeFromUrl = mock(() =>
-        Promise.reject(new Error("load failed")),
-      );
+      nv.addVolume = mock(() => Promise.reject(new Error("load failed")));
 
       const errorCb = mock((_index: number, _err: unknown) => {});
       controller.on("error", errorCb);
@@ -713,17 +700,16 @@ describe("NvSceneController", () => {
       expect(cb).toHaveBeenCalledTimes(2);
     });
 
-    test("removeVolume emits volumeRemoved when volume is found", () => {
+    test("removeVolume emits volumeRemoved when volume is found", async () => {
       const nv = mockInstances[mockInstances.length - 1]!;
       nv.volumes = [{ url: "test.nii", name: "test.nii" }];
-      nv.removeVolume = mock(() => {});
 
       const cb = mock((_index: number, _url: string) => {});
       controller.on("volumeRemoved", cb);
 
-      controller.removeVolume(0, "test.nii");
+      await controller.removeVolume(0, "test.nii");
       expect(cb).toHaveBeenCalledWith(0, "test.nii");
-      expect(nv.removeVolume).toHaveBeenCalled();
+      expect(nv.model.removeVolume).toHaveBeenCalled();
     });
 
     test("removeVolume is a no-op when volume is not found", () => {
@@ -805,12 +791,6 @@ describe("NvSceneController", () => {
       expect(defaultViewerOptions).toHaveProperty("crosshairGap");
       expect(defaultViewerOptions.crosshairGap).toBe(5);
     });
-
-    test("defaultMouseConfig has expected button mappings", () => {
-      expect(defaultMouseConfig).toHaveProperty("leftButton");
-      expect(defaultMouseConfig).toHaveProperty("rightButton");
-      expect(defaultMouseConfig).toHaveProperty("centerButton");
-    });
   });
 
   // --- Colormap / intensity / opacity ---
@@ -828,8 +808,8 @@ describe("NvSceneController", () => {
           url: "brain.nii",
           name: "brain.nii",
           colormap: "gray",
-          cal_min: 0,
-          cal_max: 255,
+          calMin: 0,
+          calMax: 255,
           opacity: 1.0,
         },
       ];
@@ -838,63 +818,66 @@ describe("NvSceneController", () => {
 
     // --- setColormap ---
 
-    test("setColormap sets colormap on the volume and calls updateGLVolume", () => {
+    test("setColormap calls setVolume with colormap", async () => {
       const nv = setupVolumeOnViewer();
-      controller.setColormap(0, 0, "hot");
-      expect((nv.volumes[0] as Record<string, unknown>).colormap).toBe("hot");
-      expect(nv.updateGLVolume).toHaveBeenCalled();
+      await controller.setColormap(0, 0, "hot");
+      expect(nv.setVolume).toHaveBeenCalledWith(
+        0,
+        expect.objectContaining({ colormap: "hot" }),
+      );
     });
 
-    test("setColormap emits colormapChanged event", () => {
+    test("setColormap emits colormapChanged event", async () => {
       setupVolumeOnViewer();
       const cb = mock(
         (_viewerIndex: number, _volumeIndex: number, _colormap: string) => {},
       );
       controller.on("colormapChanged", cb);
-      controller.setColormap(0, 0, "hot");
+      await controller.setColormap(0, 0, "hot");
       expect(cb).toHaveBeenCalledWith(0, 0, "hot");
     });
 
-    test("setColormap notifies subscribers", () => {
+    test("setColormap notifies subscribers", async () => {
       setupVolumeOnViewer();
       const listener = mock(() => {});
       controller.subscribe(listener);
       const callsBefore = listener.mock.calls.length;
-      controller.setColormap(0, 0, "hot");
+      await controller.setColormap(0, 0, "hot");
       expect(listener.mock.calls.length).toBeGreaterThan(callsBefore);
     });
 
-    test("setColormap is a no-op for invalid viewer index", () => {
+    test("setColormap is a no-op for invalid viewer index", async () => {
       setupVolumeOnViewer();
       const cb = mock(
         (_viewerIndex: number, _volumeIndex: number, _colormap: string) => {},
       );
       controller.on("colormapChanged", cb);
-      controller.setColormap(99, 0, "hot");
+      await controller.setColormap(99, 0, "hot");
       expect(cb).not.toHaveBeenCalled();
     });
 
-    test("setColormap is a no-op for invalid volume index", () => {
+    test("setColormap is a no-op for invalid volume index", async () => {
       setupVolumeOnViewer();
       const cb = mock(
         (_viewerIndex: number, _volumeIndex: number, _colormap: string) => {},
       );
       controller.on("colormapChanged", cb);
-      controller.setColormap(0, 5, "hot");
+      await controller.setColormap(0, 5, "hot");
       expect(cb).not.toHaveBeenCalled();
     });
 
     // --- setCalMinMax ---
 
-    test("setCalMinMax sets cal_min and cal_max on the volume and calls updateGLVolume", () => {
+    test("setCalMinMax calls setVolume with calMin and calMax", async () => {
       const nv = setupVolumeOnViewer();
-      controller.setCalMinMax(0, 0, 50, 200);
-      expect((nv.volumes[0] as Record<string, unknown>).cal_min).toBe(50);
-      expect((nv.volumes[0] as Record<string, unknown>).cal_max).toBe(200);
-      expect(nv.updateGLVolume).toHaveBeenCalled();
+      await controller.setCalMinMax(0, 0, 50, 200);
+      expect(nv.setVolume).toHaveBeenCalledWith(
+        0,
+        expect.objectContaining({ calMin: 50, calMax: 200 }),
+      );
     });
 
-    test("setCalMinMax emits intensityChanged event", () => {
+    test("setCalMinMax emits intensityChanged event", async () => {
       setupVolumeOnViewer();
       const cb = mock(
         (
@@ -905,20 +888,20 @@ describe("NvSceneController", () => {
         ) => {},
       );
       controller.on("intensityChanged", cb);
-      controller.setCalMinMax(0, 0, 50, 200);
+      await controller.setCalMinMax(0, 0, 50, 200);
       expect(cb).toHaveBeenCalledWith(0, 0, 50, 200);
     });
 
-    test("setCalMinMax notifies subscribers", () => {
+    test("setCalMinMax notifies subscribers", async () => {
       setupVolumeOnViewer();
       const listener = mock(() => {});
       controller.subscribe(listener);
       const callsBefore = listener.mock.calls.length;
-      controller.setCalMinMax(0, 0, 50, 200);
+      await controller.setCalMinMax(0, 0, 50, 200);
       expect(listener.mock.calls.length).toBeGreaterThan(callsBefore);
     });
 
-    test("setCalMinMax is a no-op for invalid viewer index", () => {
+    test("setCalMinMax is a no-op for invalid viewer index", async () => {
       setupVolumeOnViewer();
       const cb = mock(
         (
@@ -929,11 +912,11 @@ describe("NvSceneController", () => {
         ) => {},
       );
       controller.on("intensityChanged", cb);
-      controller.setCalMinMax(99, 0, 50, 200);
+      await controller.setCalMinMax(99, 0, 50, 200);
       expect(cb).not.toHaveBeenCalled();
     });
 
-    test("setCalMinMax is a no-op for invalid volume index", () => {
+    test("setCalMinMax is a no-op for invalid volume index", async () => {
       setupVolumeOnViewer();
       const cb = mock(
         (
@@ -944,54 +927,57 @@ describe("NvSceneController", () => {
         ) => {},
       );
       controller.on("intensityChanged", cb);
-      controller.setCalMinMax(0, 5, 50, 200);
+      await controller.setCalMinMax(0, 5, 50, 200);
       expect(cb).not.toHaveBeenCalled();
     });
 
     // --- setOpacity ---
 
-    test("setOpacity calls nv.setOpacity with volume index and value", () => {
+    test("setOpacity calls setVolume with opacity", async () => {
       const nv = setupVolumeOnViewer();
-      controller.setOpacity(0, 0, 0.5);
-      expect(nv.setOpacity).toHaveBeenCalledWith(0, 0.5);
+      await controller.setOpacity(0, 0, 0.5);
+      expect(nv.setVolume).toHaveBeenCalledWith(
+        0,
+        expect.objectContaining({ opacity: 0.5 }),
+      );
     });
 
-    test("setOpacity emits opacityChanged event", () => {
+    test("setOpacity emits opacityChanged event", async () => {
       setupVolumeOnViewer();
       const cb = mock(
         (_viewerIndex: number, _volumeIndex: number, _opacity: number) => {},
       );
       controller.on("opacityChanged", cb);
-      controller.setOpacity(0, 0, 0.5);
+      await controller.setOpacity(0, 0, 0.5);
       expect(cb).toHaveBeenCalledWith(0, 0, 0.5);
     });
 
-    test("setOpacity notifies subscribers", () => {
+    test("setOpacity notifies subscribers", async () => {
       setupVolumeOnViewer();
       const listener = mock(() => {});
       controller.subscribe(listener);
       const callsBefore = listener.mock.calls.length;
-      controller.setOpacity(0, 0, 0.5);
+      await controller.setOpacity(0, 0, 0.5);
       expect(listener.mock.calls.length).toBeGreaterThan(callsBefore);
     });
 
-    test("setOpacity is a no-op for invalid viewer index", () => {
+    test("setOpacity is a no-op for invalid viewer index", async () => {
       setupVolumeOnViewer();
       const cb = mock(
         (_viewerIndex: number, _volumeIndex: number, _opacity: number) => {},
       );
       controller.on("opacityChanged", cb);
-      controller.setOpacity(99, 0, 0.5);
+      await controller.setOpacity(99, 0, 0.5);
       expect(cb).not.toHaveBeenCalled();
     });
 
-    test("setOpacity is a no-op for invalid volume index", () => {
+    test("setOpacity is a no-op for invalid volume index", async () => {
       setupVolumeOnViewer();
       const cb = mock(
         (_viewerIndex: number, _volumeIndex: number, _opacity: number) => {},
       );
       controller.on("opacityChanged", cb);
-      controller.setOpacity(0, 5, 0.5);
+      await controller.setOpacity(0, 5, 0.5);
       expect(cb).not.toHaveBeenCalled();
     });
   });

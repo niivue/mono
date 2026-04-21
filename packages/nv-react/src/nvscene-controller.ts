@@ -31,7 +31,8 @@ export interface BroadcastOptions {
 
 export interface SliceLayoutTile {
   sliceType: number
-  position: [number, number, number, number] // [left, top, width, height]
+  position: [number, number, number, number] // [left, top, width, height] normalized 0–1
+  sliceMM?: number // optional fixed mm position for the slice
 }
 
 export interface SliceLayoutConfig {
@@ -381,10 +382,10 @@ export class NvSceneController {
     nv: NiiVueGPU,
     layout: SliceLayoutTile[] | null,
   ): void {
-    if (layout) {
-      // TODO: custom tile layouts not yet supported in new niivue
-      nv.sliceType = SLICE_TYPE.MULTIPLANAR
+    if (layout && layout.length > 0) {
+      nv.customLayout = layout
     } else {
+      nv.customLayout = null
       nv.sliceType = SLICE_TYPE.AXIAL
       nv.showRender = SHOW_RENDER.NEVER
     }

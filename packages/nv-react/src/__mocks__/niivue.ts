@@ -45,6 +45,7 @@ export interface MockNiiVueGPU {
   model: {
     removeVolume: ReturnType<typeof mock>
   }
+  customLayout: unknown[] | null
   sliceType: number
   showRender: number
   primaryDragMode: number
@@ -85,6 +86,7 @@ export function createMockNiiVueGPU(): MockNiiVueGPU {
     model: {
       removeVolume: mock(() => {}),
     },
+    customLayout: null,
     sliceType: SLICE_TYPE.AXIAL,
     showRender: SHOW_RENDER.AUTO,
     primaryDragMode: DRAG_MODE.crosshair,

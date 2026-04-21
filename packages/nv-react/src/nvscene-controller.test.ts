@@ -595,7 +595,7 @@ describe('NvSceneController', () => {
       controller.setLayout('2x2')
     })
 
-    test('setViewerSliceLayout stores and applies custom layout', () => {
+    test('setViewerSliceLayout stores and applies custom layout via nv.customLayout', () => {
       const layout = [
         {
           sliceType: SLICE_TYPE.AXIAL,
@@ -604,17 +604,68 @@ describe('NvSceneController', () => {
       ]
       controller.setViewerSliceLayout(0, layout)
       expect(controller.getViewerSliceLayout(0)).toEqual(layout)
+      const nv = mockInstances[0]!
+      expect(nv.customLayout).toEqual(layout)
+    })
+
+    test('setViewerSliceLayout with multi-tile layout sets customLayout on niivue', () => {
+      const layout = [
+        {
+          sliceType: SLICE_TYPE.SAGITTAL,
+          position: [0, 0, 0.5, 1.0] as [number, number, number, number],
+        },
+        {
+          sliceType: SLICE_TYPE.CORONAL,
+          position: [0.5, 0, 0.5, 0.5] as [number, number, number, number],
+        },
+        {
+          sliceType: SLICE_TYPE.AXIAL,
+          position: [0.5, 0.5, 0.5, 0.5] as [number, number, number, number],
+        },
+      ]
+      controller.setViewerSliceLayout(0, layout)
+      const nv = mockInstances[0]!
+      expect(nv.customLayout).toEqual(layout)
+    })
+
+    test('setViewerSliceLayout with sliceMM passes it through', () => {
+      const layout = [
+        {
+          sliceType: SLICE_TYPE.AXIAL,
+          position: [0, 0, 1, 1] as [number, number, number, number],
+          sliceMM: 42.5,
+        },
+      ]
+      controller.setViewerSliceLayout(0, layout)
+      const nv = mockInstances[0]!
+      expect(nv.customLayout).toEqual(layout)
     })
 
     test('getViewerSliceLayout returns null for default', () => {
       expect(controller.getViewerSliceLayout(0)).toBeNull()
     })
 
-    test('setViewerSliceLayout with null resets to axial', () => {
+    test('setViewerSliceLayout with null resets to axial and clears customLayout', () => {
+      // First set a layout, then clear it
+      const layout = [
+        {
+          sliceType: SLICE_TYPE.AXIAL,
+          position: [0, 0, 1, 1] as [number, number, number, number],
+        },
+      ]
+      controller.setViewerSliceLayout(0, layout)
       controller.setViewerSliceLayout(0, null)
       const nv = mockInstances[0]!
+      expect(nv.customLayout).toBeNull()
       expect(nv.sliceType).toBe(SLICE_TYPE.AXIAL)
       expect(nv.showRender).toBe(SHOW_RENDER.NEVER)
+    })
+
+    test('setViewerSliceLayout with empty array resets like null', () => {
+      controller.setViewerSliceLayout(0, [] as any)
+      const nv = mockInstances[0]!
+      expect(nv.customLayout).toBeNull()
+      expect(nv.sliceType).toBe(SLICE_TYPE.AXIAL)
     })
 
     test('setViewerSliceLayout on invalid index is a no-op', () => {

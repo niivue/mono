@@ -1,26 +1,26 @@
-import { mat4, vec4 } from "gl-matrix"
-import { sliceTypeDim } from "@/NVConstants"
+import { mat4, vec4 } from 'gl-matrix'
+import { sliceTypeDim } from '@/NVConstants'
 import type {
   AnnotationStats,
   AnnotationTool,
   NVImage,
   VectorAnnotation,
-} from "@/NVTypes"
-import { getVoxelValue } from "@/volume/utils"
-import { pointInRing } from "./pointInRing"
-import { slice2DToMM } from "./sliceProjection"
+} from '@/NVTypes'
+import { getVoxelValue } from '@/volume/utils'
+import { pointInRing } from './pointInRing'
+import { slice2DToMM } from './sliceProjection'
 
 export function isMeasureTool(tool: AnnotationTool): boolean {
   return (
-    tool === "measureEllipse" ||
-    tool === "measureRect" ||
-    tool === "measureLine" ||
-    tool === "measureCircle"
+    tool === 'measureEllipse' ||
+    tool === 'measureRect' ||
+    tool === 'measureLine' ||
+    tool === 'measureCircle'
   )
 }
 
 export function isCircleTool(tool: AnnotationTool): boolean {
-  return tool === "circle" || tool === "measureCircle"
+  return tool === 'circle' || tool === 'measureCircle'
 }
 
 const IN_PLANE_AXES: readonly (readonly [number, number])[] = [
@@ -37,7 +37,7 @@ export function computeAnnotationStats(
   if (!shape) return null
   if (!volume.dimsRAS || !volume.pixDimsRAS) return null
 
-  if (shape.type === "measureLine") {
+  if (shape.type === 'measureLine') {
     const dx = shape.end.x - shape.start.x
     const dy = shape.end.y - shape.start.y
     return {
@@ -57,7 +57,7 @@ export function computeAnnotationStats(
   const depthDim = sliceTypeDim(sliceType)
   const dims = volume.dimsRAS
   const pixDims = volume.pixDimsRAS
-  const [ax0, ax1] = IN_PLANE_AXES[sliceType]!
+  const [ax0, ax1] = IN_PLANE_AXES[sliceType] as [number, number]
   const pixDim0 = pixDims[ax0 + 1]
   const pixDim1 = pixDims[ax1 + 1]
 

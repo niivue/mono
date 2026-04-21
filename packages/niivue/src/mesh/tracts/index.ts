@@ -1,13 +1,13 @@
-import * as NVCmaps from "@/cmap/NVCmaps"
-import * as NVLoader from "@/NVLoader"
-import type { NVTractData, NVTractOptions, TractScalarMeta } from "@/NVTypes"
+import * as NVCmaps from '@/cmap/NVCmaps'
+import * as NVLoader from '@/NVLoader'
+import type { NVTractData, NVTractOptions, TractScalarMeta } from '@/NVTypes'
 
 type TractReader = {
   extensions?: string[]
   read: (buffer: ArrayBufferLike) => Promise<NVTractData>
 }
 
-const modules = import.meta.glob<TractReader>("./readers/*.ts", {
+const modules = import.meta.glob<TractReader>('./readers/*.ts', {
   eager: true,
 })
 const readerByExt = NVLoader.buildExtensionMap(modules)
@@ -55,9 +55,9 @@ export const defaultTractOptions: NVTractOptions = {
   fiberSides: 7,
   minLength: 0,
   decimation: 1,
-  colormap: "warm",
-  colormapNegative: "",
-  colorBy: "",
+  colormap: 'warm',
+  colormapNegative: '',
+  colorBy: '',
   calMin: 0,
   calMax: 0,
   calMinNeg: 0,
@@ -77,8 +77,8 @@ function getScalarArray(
   data: NVTractData,
   colorBy: string,
 ): Float32Array | null {
-  if (colorBy.startsWith("dpv:")) return data.dpv[colorBy.slice(4)] ?? null
-  if (colorBy.startsWith("dps:")) return data.dps[colorBy.slice(4)] ?? null
+  if (colorBy.startsWith('dpv:')) return data.dpv[colorBy.slice(4)] ?? null
+  if (colorBy.startsWith('dps:')) return data.dps[colorBy.slice(4)] ?? null
   return null
 }
 
@@ -95,7 +95,7 @@ export function tessellate(
   // Auto-compute cal_min/cal_max from scalar data when both are 0.
   // Persist the computed values so subsequent option changes (e.g. cal_min slider)
   // operate relative to the actual data range rather than a stale cal_max of 0.
-  if (options.colorBy !== "" && options.calMin === 0 && options.calMax === 0) {
+  if (options.colorBy !== '' && options.calMin === 0 && options.calMax === 0) {
     const arr = getScalarArray(data, options.colorBy)
     if (arr) {
       let mn = Infinity,
@@ -298,7 +298,7 @@ export function tessellate(
 
       // Compute vertex color for this centerline point
       const rgba32 = groupColorMap
-        ? groupColorMap.get(s)!
+        ? (groupColorMap.get(s) as number)
         : computeVertexColor(data, options, s, ci, start, v1)
 
       // Generate ring vertices
@@ -372,11 +372,11 @@ function ensureLuts(data: NVTractData, options: NVTractOptions): CachedLuts {
   let scalarArray: Float32Array | null = null
   let isPerVertex = false
 
-  if (options.colorBy.startsWith("dpv:")) {
+  if (options.colorBy.startsWith('dpv:')) {
     const name = options.colorBy.slice(4)
     scalarArray = data.dpv[name] ?? null
     isPerVertex = true
-  } else if (options.colorBy.startsWith("dps:")) {
+  } else if (options.colorBy.startsWith('dps:')) {
     const name = options.colorBy.slice(4)
     scalarArray = data.dps[name] ?? null
     isPerVertex = false
@@ -408,7 +408,7 @@ function computeVertexColor(
   tangent: Float32Array,
 ): number {
   // Local direction-based coloring: RGB = |tangent|
-  if (options.colorBy === "" || options.colorBy === "local") {
+  if (options.colorBy === '' || options.colorBy === 'local') {
     const r = Math.round(Math.abs(tangent[0]) * 255)
     const g = Math.round(Math.abs(tangent[1]) * 255)
     const b = Math.round(Math.abs(tangent[2]) * 255)
@@ -416,7 +416,7 @@ function computeVertexColor(
   }
 
   // Global direction: color from start-to-end direction, uniform per streamline
-  if (options.colorBy === "global") {
+  if (options.colorBy === 'global') {
     const offsets = data.offsets
     const verts = data.vertices
     const si = offsets[streamlineIndex] * 3
@@ -437,7 +437,7 @@ function computeVertexColor(
   }
 
   // Fixed color: use options.fixedColor for all vertices
-  if (options.colorBy === "fixed") {
+  if (options.colorBy === 'fixed') {
     const [r, g, b, a] = options.fixedColor
     return (a << 24) | (b << 16) | (g << 8) | r
   }
@@ -455,7 +455,7 @@ function computeVertexColor(
   // Determine which LUT and calibration range to use
   const absVal = Math.abs(value)
   const isNeg = value < 0 && luts.lutNeg
-  const activeLut = isNeg ? luts.lutNeg! : luts.lut
+  const activeLut = isNeg ? (luts.lutNeg as Uint8ClampedArray) : luts.lut
   const calMin = isNeg ? options.calMinNeg || options.calMin : options.calMin
   const calMax = isNeg ? options.calMaxNeg || options.calMax : options.calMax
 

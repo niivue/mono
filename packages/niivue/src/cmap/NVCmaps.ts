@@ -1,5 +1,5 @@
-import { log } from "@/logger"
-import type { ColorMap, LUT } from "@/NVTypes"
+import { log } from '@/logger'
+import type { ColorMap, LUT } from '@/NVTypes'
 
 export function makeLut(
   Rs: number[],
@@ -10,16 +10,24 @@ export function makeLut(
 ): Uint8ClampedArray {
   const lut = new Uint8ClampedArray(256 * 4)
   for (let i = 0; i < Is.length - 1; i++) {
-    const idxLo = Is[i]!
-    const idxHi = Is[i + 1]!
+    const idxLo = Is[i] as number
+    const idxHi = Is[i + 1] as number
     const idxRng = idxHi - idxLo
     let k = idxLo * 4
     for (let j = idxLo; j <= idxHi; j++) {
       const f = (j - idxLo) / idxRng
-      lut[k++] = Math.round(Rs[i]! + f * (Rs[i + 1]! - Rs[i]!))
-      lut[k++] = Math.round(Gs[i]! + f * (Gs[i + 1]! - Gs[i]!))
-      lut[k++] = Math.round(Bs[i]! + f * (Bs[i + 1]! - Bs[i]!))
-      lut[k++] = Math.round(As[i]! + f * (As[i + 1]! - As[i]!))
+      const rLo = Rs[i] as number
+      const rHi = Rs[i + 1] as number
+      const gLo = Gs[i] as number
+      const gHi = Gs[i + 1] as number
+      const bLo = Bs[i] as number
+      const bHi = Bs[i + 1] as number
+      const aLo = As[i] as number
+      const aHi = As[i + 1] as number
+      lut[k++] = Math.round(rLo + f * (rHi - rLo))
+      lut[k++] = Math.round(gLo + f * (gHi - gLo))
+      lut[k++] = Math.round(bLo + f * (bHi - bLo))
+      lut[k++] = Math.round(aLo + f * (aHi - aLo))
     }
   }
   return lut
@@ -43,7 +51,7 @@ export function makeLabelLut(
     }
   }
   if (hasInvalid) {
-    log.warn("Some colormap indices clamped to match label range.")
+    log.warn('Some colormap indices clamped to match label range.')
   }
   if (
     nLabels !== cm.G.length ||
@@ -82,7 +90,7 @@ export function makeLabelLut(
     if (nL === nLabelsDense) {
       cmap.labels = cm.labels
     } else if (nL === nLabels) {
-      cmap.labels = Array(nLabelsDense).fill("?")
+      cmap.labels = Array(nLabelsDense).fill('?')
       for (let i = 0; i < nLabels; i++) {
         cmap.labels[idxs[i] - mnIdx] = cm.labels[i]
       }
@@ -108,14 +116,14 @@ function buildLutIndex(): Map<string, LutDef> {
   const map = new Map<string, LutDef>()
   try {
     // import all json files in ./lut at build/dev time (Vite)
-    const modules = import.meta.glob<Record<string, unknown>>("./luts/*.json", {
+    const modules = import.meta.glob<Record<string, unknown>>('./luts/*.json', {
       eager: true,
     })
     for (const path in modules) {
       // module is the parsed JSON object
       const mod = modules[path]
       // derive a friendly name from filename: './luts/cividis.json' -> 'Cividis'
-      const base = path.replace(/^.*\/([^/]+)\.json$/i, "$1")
+      const base = path.replace(/^.*\/([^/]+)\.json$/i, '$1')
       const name = base.charAt(0).toUpperCase() + base.slice(1)
       // Guard: expect R,G,B,A,I arrays of numbers
       if (
@@ -141,7 +149,7 @@ function buildLutIndex(): Map<string, LutDef> {
     }
   } catch (err) {
     log.warn(
-      "LUT auto-discovery failed (import.meta.glob not available). Use a manifest or build-step to create ./luts/index.js",
+      'LUT auto-discovery failed (import.meta.glob not available). Use a manifest or build-step to create ./luts/index.js',
       err,
     )
   }
@@ -153,7 +161,7 @@ function buildLutIndex(): Map<string, LutDef> {
 export function colormapNames(): string[] {
   const map = buildLutIndex()
   return Array.from(map.keys())
-    .filter((n) => !n.startsWith("_"))
+    .filter((n) => !n.startsWith('_'))
     .sort()
 }
 
@@ -176,7 +184,7 @@ export function colormapNames(): string[] {
  */
 export function addColormap(
   name: string,
-  cmap: Pick<ColorMap, "R" | "G" | "B"> & Partial<Pick<ColorMap, "A" | "I">>,
+  cmap: Pick<ColorMap, 'R' | 'G' | 'B'> & Partial<Pick<ColorMap, 'A' | 'I'>>,
 ): string {
   const R = cmap.R.map(Number)
   const G = cmap.G.map(Number)
@@ -213,7 +221,7 @@ export function addColormap(
 export function drawingColormapNames(): string[] {
   const map = buildLutIndex()
   return Array.from(map.keys())
-    .filter((n) => n.startsWith("_"))
+    .filter((n) => n.startsWith('_'))
     .sort()
 }
 
@@ -234,7 +242,7 @@ export function lutrgba8(lutName?: string): Uint8ClampedArray {
   const canonical = lutName.charAt(0).toUpperCase() + lutName.slice(1)
   const def = map.get(canonical)
   if (!def) {
-    if (canonical !== "Gray") {
+    if (canonical !== 'Gray') {
       log.warn(`Unknown colormap "${lutName}", using Gray fallback`)
     }
     return makeLut([0, 255], [0, 255], [0, 255], [0, 128], [0, 255])

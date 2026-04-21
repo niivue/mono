@@ -1,9 +1,9 @@
-import type NiiVueGPU from "@niivue/niivue"
+import type NiiVueGPU from '@niivue/niivue'
 import type {
   ImageFromUrlOptions,
   NiiVueOptions,
   NVImage,
-} from "@niivue/niivue"
+} from '@niivue/niivue'
 
 export type { ImageFromUrlOptions, NiiVueOptions, NVImage }
 

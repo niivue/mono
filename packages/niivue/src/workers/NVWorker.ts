@@ -14,9 +14,9 @@
  */
 
 /** Internal message-ID key injected into every outgoing payload. */
-const ID_KEY = "_wbId"
+const ID_KEY = '_wbId'
 /** Internal error key returned by workers on failure. */
-const ERR_KEY = "_wbError"
+const ERR_KEY = '_wbError'
 
 interface Pending<T> {
   resolve: (value: T) => void
@@ -36,7 +36,7 @@ export class NVWorker {
 
   /** Whether the current environment supports Web Workers. */
   static isSupported(): boolean {
-    return typeof Worker !== "undefined"
+    return typeof Worker !== 'undefined'
   }
 
   /**
@@ -69,7 +69,7 @@ export class NVWorker {
       this.worker = null
     }
     for (const { reject } of this.pending.values()) {
-      reject(new Error("Worker terminated"))
+      reject(new Error('Worker terminated'))
     }
     this.pending.clear()
   }
@@ -101,7 +101,7 @@ export class NVWorker {
 
   private onError(e: ErrorEvent): void {
     // Unhandled worker error — reject all pending promises
-    const err = new Error(e.message ?? "Worker error")
+    const err = new Error(e.message ?? 'Worker error')
     for (const { reject } of this.pending.values()) {
       reject(err)
     }

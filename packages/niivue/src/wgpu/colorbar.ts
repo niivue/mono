@@ -1,13 +1,13 @@
-import type { ColorbarInfo } from "@/NVTypes"
+import type { ColorbarInfo } from '@/NVTypes'
 import {
   COLORBAR_GAP,
   type ColorbarLayout,
   colorbarGridLayout,
   deriveBorderColor,
-} from "@/view/NVColorbar"
-import { NVRenderer } from "@/view/NVRenderer"
-import colorbarShaderCode from "./colorbar.wgsl?raw"
-import * as wgpu from "./wgpu"
+} from '@/view/NVColorbar'
+import { NVRenderer } from '@/view/NVRenderer'
+import colorbarShaderCode from './colorbar.wgsl?raw'
+import * as wgpu from './wgpu'
 
 type ColorbarGPU = {
   texture: GPUTexture
@@ -54,8 +54,8 @@ export class ColorbarRenderer extends NVRenderer {
 
     // Create sampler
     this.sampler = device.createSampler({
-      magFilter: "linear",
-      minFilter: "linear",
+      magFilter: 'linear',
+      minFilter: 'linear',
     })
 
     // Create bind group layout
@@ -64,7 +64,7 @@ export class ColorbarRenderer extends NVRenderer {
         {
           binding: 0,
           visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-          buffer: { type: "uniform" },
+          buffer: { type: 'uniform' },
         },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
@@ -79,29 +79,29 @@ export class ColorbarRenderer extends NVRenderer {
         bindGroupLayouts: [this.bindLayout],
       }),
       multisample: { count: msaaCount },
-      vertex: { module: colorbarModule, entryPoint: "vertex_main" },
+      vertex: { module: colorbarModule, entryPoint: 'vertex_main' },
       fragment: {
         module: colorbarModule,
-        entryPoint: "fragment_main",
+        entryPoint: 'fragment_main',
         targets: [
           {
             format: format,
             blend: {
               color: {
-                srcFactor: "src-alpha",
-                dstFactor: "one-minus-src-alpha",
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
               },
-              alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
             },
           },
         ],
       },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: "always",
-        format: "depth24plus",
+        depthCompare: 'always',
+        format: 'depth24plus',
       },
-      primitive: { topology: "triangle-strip" },
+      primitive: { topology: 'triangle-strip' },
     })
 
     this.isReady = true

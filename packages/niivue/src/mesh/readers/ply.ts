@@ -1,12 +1,12 @@
-import type { MZ3 } from "@/NVTypes"
+import type { MZ3 } from '@/NVTypes'
 
 declare const log: {
   warn: (...args: unknown[]) => void
   error: (...args: unknown[]) => void
 }
 
-export const extensions = ["PLY"]
-export const type = "mz3"
+export const extensions = ['PLY']
+export const type = 'mz3'
 // read PLY format
 // https://en.wikipedia.org/wiki/PLY_(file_format)
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
@@ -23,49 +23,49 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     }
     pos++ // skip EOLN
     if (pos - startPos < 1) {
-      return ""
+      return ''
     }
     return new TextDecoder().decode(buffer.slice(startPos, pos - 1))
   }
   let line = readStr() // 1st line: magic 'ply'
-  if (!line.startsWith("ply")) {
-    throw new Error("Not a valid PLY file")
+  if (!line.startsWith('ply')) {
+    throw new Error('Not a valid PLY file')
   }
   line = readStr() // 2nd line: format 'format binary_little_endian 1.0'
-  const isAscii = line.includes("ascii")
+  const isAscii = line.includes('ascii')
   function dataTypeBytes(str: string): number {
     if (
-      str === "char" ||
-      str === "uchar" ||
-      str === "int8" ||
-      str === "uint8"
+      str === 'char' ||
+      str === 'uchar' ||
+      str === 'int8' ||
+      str === 'uint8'
     ) {
       return 1
     }
     if (
-      str === "short" ||
-      str === "ushort" ||
-      str === "int16" ||
-      str === "uint16"
+      str === 'short' ||
+      str === 'ushort' ||
+      str === 'int16' ||
+      str === 'uint16'
     ) {
       return 2
     }
     if (
-      str === "int" ||
-      str === "uint" ||
-      str === "int32" ||
-      str === "uint32" ||
-      str === "float" ||
-      str === "float32"
+      str === 'int' ||
+      str === 'uint' ||
+      str === 'int32' ||
+      str === 'uint32' ||
+      str === 'float' ||
+      str === 'float32'
     ) {
       return 4
     }
-    if (str === "double") {
+    if (str === 'double') {
       return 8
     }
     throw new Error(`Unknown data type: ${str}`)
   }
-  const isLittleEndian = line.includes("binary_little_endian")
+  const isLittleEndian = line.includes('binary_little_endian')
   let nvert = 0
   let vertIsDouble = false
   let vertStride = 0 // e.g. if each vertex stores xyz as float32 and rgb as uint8, stride is 15
@@ -81,39 +81,39 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   let greenOffset = -1
   let blueOffset = -1
   let hasColors = false
-  while (pos < len && !line.startsWith("end_header")) {
+  while (pos < len && !line.startsWith('end_header')) {
     line = readStr()
-    if (line.startsWith("comment")) {
+    if (line.startsWith('comment')) {
       continue
     }
     // line = line.replaceAll('\t', ' '); // ?are tabs valid white space?
     let items = line.split(/\s/)
-    if (line.startsWith("element vertex")) {
+    if (line.startsWith('element vertex')) {
       nvert = parseInt(items[items.length - 1], 10)
       // read vertex properties:
       line = readStr()
       items = line.split(/\s/)
       currVertPropOffset = 0
       vertexProps.length = 0
-      while (line.startsWith("property")) {
+      while (line.startsWith('property')) {
         const datatype = items[1]
         const propName = items[2]
         // record property name (for ASCII token mapping)
         vertexProps.push(propName)
         // record offsets for color components (for binary parsing)
-        if (propName === "red") {
+        if (propName === 'red') {
           redOffset = currVertPropOffset
           hasColors = true
-        } else if (propName === "green") {
+        } else if (propName === 'green') {
           greenOffset = currVertPropOffset
           hasColors = true
-        } else if (propName === "blue") {
+        } else if (propName === 'blue') {
           blueOffset = currVertPropOffset
           hasColors = true
         }
-        if (propName === "x" && datatype.startsWith("double")) {
+        if (propName === 'x' && datatype.startsWith('double')) {
           vertIsDouble = true
-        } else if (propName === "x" && !datatype.startsWith("float")) {
+        } else if (propName === 'x' && !datatype.startsWith('float')) {
           log.error(`Error: expect ply xyz to be float or double: ${line}`)
         }
         const bytes = dataTypeBytes(datatype)
@@ -123,13 +123,13 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
         items = line.split(/\s/)
       }
     }
-    if (line.startsWith("element face")) {
+    if (line.startsWith('element face')) {
       nface = parseInt(items[items.length - 1], 10)
       // read face properties:
       line = readStr()
       items = line.split(/\s/)
-      while (line.startsWith("property")) {
-        if (items[1] === "list") {
+      while (line.startsWith('property')) {
+        if (items[1] === 'list') {
           indexCountBytes = dataTypeBytes(items[2])
           indexBytes = dataTypeBytes(items[3])
           indexStrideBytes += indexCountBytes + 3 * indexBytes // e.g. "uchar int" is 1 + 3 * 4 bytes
@@ -154,12 +154,12 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     const positions = new Float32Array(nvert * 3)
     let colors: Float32Array | undefined
     // find ascii token indices for x,y,z and rgb if present
-    const idxX = vertexProps.indexOf("x")
-    const idxY = vertexProps.indexOf("y")
-    const idxZ = vertexProps.indexOf("z")
-    const idxR = vertexProps.indexOf("red")
-    const idxG = vertexProps.indexOf("green")
-    const idxB = vertexProps.indexOf("blue")
+    const idxX = vertexProps.indexOf('x')
+    const idxY = vertexProps.indexOf('y')
+    const idxZ = vertexProps.indexOf('z')
+    const idxR = vertexProps.indexOf('red')
+    const idxG = vertexProps.indexOf('green')
+    const idxB = vertexProps.indexOf('blue')
     if (idxR !== -1 && idxG !== -1 && idxB !== -1) {
       colors = new Float32Array(nvert * 3)
       hasColors = true
@@ -220,7 +220,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     }
     if (hasColors) {
       // colors was created only when we detected rgb properties
-      out.colors = typeof colors !== "undefined" ? colors : undefined
+      out.colors = typeof colors !== 'undefined' ? colors : undefined
     }
     return out
   } // if isAscii
@@ -320,13 +320,13 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     } // for each face
   } // if not 1:4 datatype
   if (!isTriangular) {
-    log.warn("Only able to read PLY meshes limited to triangles.")
+    log.warn('Only able to read PLY meshes limited to triangles.')
   }
   const out: MZ3 = {
     positions,
     indices,
   }
-  if (hasColors && typeof colors !== "undefined") {
+  if (hasColors && typeof colors !== 'undefined') {
     out.colors = colors
   }
   return out

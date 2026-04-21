@@ -1,6 +1,6 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
-colorBtn.addEventListener("input", (event) => {
+colorBtn.addEventListener('input', (event) => {
   const input = event.target
   const hex = input.value
   const r = parseInt(hex.slice(1, 3), 16) / 255
@@ -26,7 +26,7 @@ darkCheck.onclick = function () {
 }
 
 webgpuCheck.onclick = function () {
-  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
 function updateMultiplanarEnabled() {
@@ -49,7 +49,7 @@ sliceType.onchange = () => {
     nv1.mosaicString = mosaicStr.value
     return
   }
-  nv1.mosaicString = ""
+  nv1.mosaicString = ''
   nv1.sliceType = v
 }
 
@@ -57,12 +57,12 @@ updateMultiplanarEnabled()
 
 mosaicBtn.onclick = () => {
   window.alert(
-    "Choose axial (A), coronal (C) or sagittal (S) slices. Modify with cross slices (X), renderings (R).",
+    'Choose axial (A), coronal (C) or sagittal (S) slices. Modify with cross slices (X), renderings (R).',
   )
 }
 
-mosaicStr.addEventListener("keyup", (_e) => {
-  sliceType.value = "5"
+mosaicStr.addEventListener('keyup', (_e) => {
+  sliceType.value = '5'
   nv1.mosaicString = mosaicStr.value
 })
 
@@ -93,16 +93,16 @@ forceRenderCheck.onclick = function () {
 }
 
 function handleLocationChange(data) {
-  document.getElementById("location").innerHTML = `&nbsp;&nbsp;${data.string}`
+  document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
 
 const nv1 = new NiiVue({
   isColorbarVisible: true,
   backgroundColor: [0.2, 0.2, 0.2, 1],
 })
-nv1.addEventListener("locationChange", (e) => handleLocationChange(e.detail))
+nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 await nv1.attachToCanvas(gl1)
-const volumeList = [{ url: "/volumes/mni152.nii.gz" }]
+const volumeList = [{ url: '/volumes/mni152.nii.gz' }]
 await nv1.loadVolumes(volumeList)
-await nv1.loadMeshes([{ url: "/meshes/dpsv.trx" }])
+await nv1.loadMeshes([{ url: '/meshes/dpsv.trx' }])
 sliceType.onchange()

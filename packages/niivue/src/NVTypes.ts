@@ -1,6 +1,6 @@
-import type { mat4, vec3, vec4 } from "gl-matrix"
-import type { LogLevel } from "@/logger"
-import type { FontMetrics } from "@/view/NVFont"
+import type { mat4, vec3, vec4 } from 'gl-matrix'
+import type { LogLevel } from '@/logger'
+import type { FontMetrics } from '@/view/NVFont'
 
 export type TypedVoxelArray =
   | Float32Array
@@ -246,7 +246,7 @@ export type NVMeshLayer = {
 // ============================================================
 // Mesh species discriminator
 // ============================================================
-export type MeshKind = "mesh" | "tract" | "connectome"
+export type MeshKind = 'mesh' | 'tract' | 'connectome'
 
 // ============================================================
 // Source data: Triangulated Meshes
@@ -544,8 +544,8 @@ export type InteractionConfig = {
 // ============================================================
 
 export type SyncOpts = {
-  "3d"?: boolean
-  "2d"?: boolean
+  '3d'?: boolean
+  '2d'?: boolean
   crosshair?: boolean
   clipPlane?: boolean
   sliceType?: boolean
@@ -553,7 +553,7 @@ export type SyncOpts = {
   calMax?: boolean
 }
 
-export type BackendType = "webgpu" | "webgl2"
+export type BackendType = 'webgpu' | 'webgl2'
 
 export type ViewHitTest = {
   isRender: boolean
@@ -872,7 +872,7 @@ export type MeshFromUrlOptions = {
  */
 export type VolumeUpdate = Omit<
   ImageFromUrlOptions,
-  "url" | "urlImageData" | "limitFrames4D"
+  'url' | 'urlImageData' | 'limitFrames4D'
 > & {
   /** Set the current 4D frame index (0-based, clamped to valid range) */
   frame4D?: number
@@ -882,7 +882,7 @@ export type VolumeUpdate = Omit<
  * Display properties for updating a loaded mesh.
  * Same shape as MeshFromUrlOptions minus load-only fields.
  */
-export type MeshUpdate = Omit<MeshFromUrlOptions, "url">
+export type MeshUpdate = Omit<MeshFromUrlOptions, 'url'>
 
 // ============================================================
 // Location / Callback Types
@@ -927,16 +927,16 @@ export type SaveVolumeOptions = {
 // ============================================================
 
 export type AnnotationTool =
-  | "freehand"
-  | "ellipse"
-  | "rectangle"
-  | "line"
-  | "arrow"
-  | "measureEllipse"
-  | "measureRect"
-  | "measureLine"
-  | "circle"
-  | "measureCircle"
+  | 'freehand'
+  | 'ellipse'
+  | 'rectangle'
+  | 'line'
+  | 'arrow'
+  | 'measureEllipse'
+  | 'measureRect'
+  | 'measureLine'
+  | 'circle'
+  | 'measureCircle'
 
 export type AnnotationStats = {
   area: number

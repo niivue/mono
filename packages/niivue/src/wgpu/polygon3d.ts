@@ -1,6 +1,6 @@
-import type { Annotation3DRenderData } from "@/view/NVAnnotation"
-import { NVRenderer } from "@/view/NVRenderer"
-import shaderCode from "./polygon3d.wgsl?raw"
+import type { Annotation3DRenderData } from '@/view/NVAnnotation'
+import { NVRenderer } from '@/view/NVRenderer'
+import shaderCode from './polygon3d.wgsl?raw'
 
 // Uniform: mat4x4f (64 bytes) + f32 opacityMultiplier (4 bytes) + 12 bytes padding = 80 bytes
 const UNIFORM_SIZE = 80
@@ -42,7 +42,7 @@ export class Polygon3DRenderer extends NVRenderer {
         {
           binding: 0,
           visibility: GPUShaderStage.VERTEX,
-          buffer: { type: "uniform" },
+          buffer: { type: 'uniform' },
         },
       ],
     })
@@ -64,7 +64,7 @@ export class Polygon3DRenderer extends NVRenderer {
 
     const vertexState: GPUVertexState = {
       module,
-      entryPoint: "vertex_main",
+      entryPoint: 'vertex_main',
       buffers: [
         {
           arrayStride: 28, // 7 floats: x, y, z, r, g, b, a
@@ -72,12 +72,12 @@ export class Polygon3DRenderer extends NVRenderer {
             {
               shaderLocation: 0,
               offset: 0,
-              format: "float32x3" as GPUVertexFormat,
+              format: 'float32x3' as GPUVertexFormat,
             },
             {
               shaderLocation: 1,
               offset: 12,
-              format: "float32x4" as GPUVertexFormat,
+              format: 'float32x4' as GPUVertexFormat,
             },
           ],
         },
@@ -86,21 +86,21 @@ export class Polygon3DRenderer extends NVRenderer {
 
     const fragmentState: GPUFragmentState = {
       module,
-      entryPoint: "fragment_main",
+      entryPoint: 'fragment_main',
       targets: [
         {
           format,
           blend: {
-            color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha" },
-            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
           },
         },
       ],
     }
 
     const primitive: GPUPrimitiveState = {
-      topology: "triangle-list",
-      cullMode: "none",
+      topology: 'triangle-list',
+      cullMode: 'none',
     }
 
     // Normal pass: depth less, no depth write
@@ -111,8 +111,8 @@ export class Polygon3DRenderer extends NVRenderer {
       fragment: fragmentState,
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: "less",
-        format: "depth24plus",
+        depthCompare: 'less',
+        format: 'depth24plus',
       },
       primitive,
     })
@@ -125,8 +125,8 @@ export class Polygon3DRenderer extends NVRenderer {
       fragment: fragmentState,
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: "greater",
-        format: "depth24plus",
+        depthCompare: 'greater',
+        format: 'depth24plus',
       },
       primitive,
     })
@@ -207,8 +207,8 @@ export class Polygon3DRenderer extends NVRenderer {
 
     pass.setPipeline(this._pipeline)
     pass.setBindGroup(0, this._bindGroup)
-    pass.setVertexBuffer(0, this._vertexBuffer!)
-    pass.setIndexBuffer(this._indexBuffer!, "uint32")
+    pass.setVertexBuffer(0, this._vertexBuffer as GPUBuffer)
+    pass.setIndexBuffer(this._indexBuffer as GPUBuffer, 'uint32')
     pass.drawIndexed(data.indices.length)
   }
 
@@ -233,8 +233,8 @@ export class Polygon3DRenderer extends NVRenderer {
 
     pass.setPipeline(this._xrayPipeline)
     pass.setBindGroup(0, this._xrayBindGroup)
-    pass.setVertexBuffer(0, this._vertexBuffer!)
-    pass.setIndexBuffer(this._indexBuffer!, "uint32")
+    pass.setVertexBuffer(0, this._vertexBuffer as GPUBuffer)
+    pass.setIndexBuffer(this._indexBuffer as GPUBuffer, 'uint32')
     pass.drawIndexed(data.indices.length)
   }
 

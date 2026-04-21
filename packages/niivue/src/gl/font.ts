@@ -1,6 +1,6 @@
-import { log } from "@/logger"
-import { applyCORS } from "@/NVLoader"
-import type { NVFontData } from "@/NVTypes"
+import { log } from '@/logger'
+import { applyCORS } from '@/NVLoader'
+import type { NVFontData } from '@/NVTypes'
 import {
   buildTextLayout,
   calculateFontSizePx,
@@ -8,11 +8,11 @@ import {
   FLOATS_PER_PANEL,
   type FontMetrics,
   type GlyphBatch,
-} from "@/view/NVFont"
-import { NVRenderer } from "@/view/NVRenderer"
-import { fontFragShader, fontVertShader } from "./fontShader"
-import { panelFragShader, panelVertShader } from "./panelShader"
-import { Shader } from "./shader"
+} from '@/view/NVFont'
+import { NVRenderer } from '@/view/NVRenderer'
+import { fontFragShader, fontVertShader } from './fontShader'
+import { panelFragShader, panelVertShader } from './panelShader'
+import { Shader } from './shader'
 
 const BYTES_PER_PANEL = FLOATS_PER_PANEL * 4
 
@@ -25,7 +25,7 @@ async function loadFontTexture(
     img.onload = () => {
       const texture = gl.createTexture()
       if (!texture) {
-        reject(new Error("Failed to create font texture"))
+        reject(new Error('Failed to create font texture'))
         return
       }
       gl.bindTexture(gl.TEXTURE_2D, texture)
@@ -79,21 +79,21 @@ export class FontRenderer extends NVRenderer {
       // Create VAO
       this._vao = gl.createVertexArray()
       if (!this._vao) {
-        throw new Error("Failed to create font VAO")
+        throw new Error('Failed to create font VAO')
       }
       gl.bindVertexArray(this._vao)
       // Create buffer for glyph instance data
       this._glyphBuffer = gl.createBuffer()
       if (!this._glyphBuffer) {
         gl.bindVertexArray(null)
-        throw new Error("Failed to create glyph buffer")
+        throw new Error('Failed to create glyph buffer')
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, this._glyphBuffer)
       // Get attribute locations
-      const aRect = gl.getAttribLocation(this._shader.program, "glyphRect")
-      const aUvRect = gl.getAttribLocation(this._shader.program, "glyphUvRect")
-      const aColor = gl.getAttribLocation(this._shader.program, "glyphColor")
-      const aRange = gl.getAttribLocation(this._shader.program, "glyphRange")
+      const aRect = gl.getAttribLocation(this._shader.program, 'glyphRect')
+      const aUvRect = gl.getAttribLocation(this._shader.program, 'glyphUvRect')
+      const aColor = gl.getAttribLocation(this._shader.program, 'glyphColor')
+      const aRange = gl.getAttribLocation(this._shader.program, 'glyphRange')
       const FLOATS_PER_GLYPH = 16
       const BYTES_PER_GLYPH = FLOATS_PER_GLYPH * 4
       // glyphRect: offset 0, vec4
@@ -117,23 +117,23 @@ export class FontRenderer extends NVRenderer {
       this._panelShader = new Shader(gl, panelVertShader, panelFragShader)
       this._panelVao = gl.createVertexArray()
       if (!this._panelVao) {
-        throw new Error("Failed to create panel VAO")
+        throw new Error('Failed to create panel VAO')
       }
       gl.bindVertexArray(this._panelVao)
       this._panelBuffer = gl.createBuffer()
       if (!this._panelBuffer) {
         gl.bindVertexArray(null)
-        throw new Error("Failed to create panel buffer")
+        throw new Error('Failed to create panel buffer')
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, this._panelBuffer)
-      const pRect = gl.getAttribLocation(this._panelShader.program, "panelRect")
+      const pRect = gl.getAttribLocation(this._panelShader.program, 'panelRect')
       const pColor = gl.getAttribLocation(
         this._panelShader.program,
-        "panelColor",
+        'panelColor',
       )
       const pRadius = gl.getAttribLocation(
         this._panelShader.program,
-        "panelRadius",
+        'panelRadius',
       )
       gl.enableVertexAttribArray(pRect)
       gl.vertexAttribPointer(pRect, 4, gl.FLOAT, false, BYTES_PER_PANEL, 0)
@@ -147,7 +147,7 @@ export class FontRenderer extends NVRenderer {
       gl.bindVertexArray(null)
       this.isReady = true
     } catch (err) {
-      log.error("Failed to initialize font system:", err)
+      log.error('Failed to initialize font system:', err)
       this.isReady = false
     }
   }

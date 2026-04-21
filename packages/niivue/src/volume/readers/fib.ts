@@ -1,10 +1,10 @@
-import * as nifti from "nifti-reader-js"
-import { readMatV4 } from "@/codecs/NVMatlab"
-import { NiiDataType } from "@/NVConstants"
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import * as nifti from 'nifti-reader-js'
+import { readMatV4 } from '@/codecs/NVMatlab'
+import { NiiDataType } from '@/NVConstants'
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
-export const extensions = ["fz", "gqi", "qsdr", "fib"]
-export const type = "nii"
+export const extensions = ['fz', 'gqi', 'qsdr', 'fib']
+export const type = 'nii'
 
 export async function read(
   buffer: ArrayBuffer,
@@ -17,14 +17,14 @@ export async function read(
   hdr.pixDims = [1, 1, 1, 1, 1, 0, 0, 0]
 
   const mat = await readMatV4(buffer, true)
-  if (!("dimension" in mat) || !("dti_fa" in mat)) {
-    throw new Error("Not a valid DSI Studio FIB file")
+  if (!('dimension' in mat) || !('dti_fa' in mat)) {
+    throw new Error('Not a valid DSI Studio FIB file')
   }
   const hasV1 =
-    "index0" in mat &&
-    "index1" in mat &&
-    "index2" in mat &&
-    "odf_vertices" in mat
+    'index0' in mat &&
+    'index1' in mat &&
+    'index2' in mat &&
+    'odf_vertices' in mat
 
   hdr.numBitsPerVoxel = 32
   hdr.datatypeCode = NiiDataType.DT_FLOAT32
@@ -77,7 +77,7 @@ export async function read(
       2 * nBytes3D,
     )
   }
-  if ("report" in mat) {
+  if ('report' in mat) {
     hdr.description = new TextDecoder().decode(
       mat.report.subarray(0, Math.min(79, mat.report.byteLength)),
     )
@@ -85,11 +85,11 @@ export async function read(
 
   const buff8 = new Uint8Array(new ArrayBuffer(nBytes))
   const arrFA = Float32Array.from(mat.dti_fa)
-  if ("mask" in mat) {
+  if ('mask' in mat) {
     let slope = 1
-    if ("dti_fa_slope" in mat) slope = mat.dti_fa_slope[0]
+    if ('dti_fa_slope' in mat) slope = mat.dti_fa_slope[0]
     let inter = 1
-    if ("dti_fa_inter" in mat) inter = mat.dti_fa_inter[0]
+    if ('dti_fa_inter' in mat) inter = mat.dti_fa_inter[0]
     const nvox = nVox3D
     const mask = mat.mask
     const f32 = new Float32Array(nvox)

@@ -1,4 +1,4 @@
-import type NVModel from "@/NVModel"
+import type NVModel from '@/NVModel'
 import {
   BYTES_PER_VERTEX,
   buildVertexData,
@@ -7,9 +7,9 @@ import {
   packColor,
   shouldCullCylinder,
   VERTS_PER_CYLINDER,
-} from "@/view/NVCrosshair"
-import { NVRenderer } from "@/view/NVRenderer"
-import * as mesh from "./mesh"
+} from '@/view/NVCrosshair'
+import { NVRenderer } from '@/view/NVRenderer'
+import * as mesh from './mesh'
 
 export type CrosshairResources = {
   vertexBuffer: GPUBuffer
@@ -134,7 +134,7 @@ export class CrosshairRenderer extends NVRenderer {
       device.queue.writeBuffer(cyl.uniformBuffer, dynamicOffset, s)
       pass.setBindGroup(0, cyl.bindGroup, [dynamicOffset])
       pass.setVertexBuffer(0, cyl.vertexBuffer)
-      pass.setIndexBuffer(cyl.indexBuffer, "uint32")
+      pass.setIndexBuffer(cyl.indexBuffer, 'uint32')
       pass.drawIndexed(cyl.indexCount)
     }
   }
@@ -164,7 +164,7 @@ export class CrosshairRenderer extends NVRenderer {
       pass.setPipeline(xrayPipeline)
       pass.setBindGroup(0, cyl.bindGroup, [dynamicOffset])
       pass.setVertexBuffer(0, cyl.vertexBuffer)
-      pass.setIndexBuffer(cyl.indexBuffer, "uint32")
+      pass.setIndexBuffer(cyl.indexBuffer, 'uint32')
       pass.drawIndexed(cyl.indexCount)
     }
   }

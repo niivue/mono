@@ -1,8 +1,8 @@
-import { decompress } from "@/codecs/NVGz"
-import { log } from "@/logger"
-import type { LUT } from "@/NVTypes"
+import { decompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
+import type { LUT } from '@/NVTypes'
 
-export const extensions = ["SMP"]
+export const extensions = ['SMP']
 
 export type LayerReadResult = {
   values: Float32Array

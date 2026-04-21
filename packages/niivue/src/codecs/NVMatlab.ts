@@ -1,5 +1,5 @@
-import type { TypedNumberArray } from "@/NVTypes"
-import { decompress } from "./NVGz"
+import type { TypedNumberArray } from '@/NVTypes'
+import { decompress } from './NVGz'
 
 export async function readMatV4(
   buffer: ArrayBuffer,
@@ -19,7 +19,7 @@ export async function readMatV4(
     _buffer = raw.buffer as ArrayBuffer
     len = _buffer.byteLength
   }
-  const textDecoder = new TextDecoder("utf-8")
+  const textDecoder = new TextDecoder('utf-8')
   const bytes = new Uint8Array(_buffer)
   let pos = 0
   const mat: Record<string, TypedNumberArray> = {}
@@ -45,26 +45,26 @@ export async function readMatV4(
     const namlen = reader.getUint32(pos + 16, true)
     pos += 20
     if (imagf !== 0) {
-      throw new Error("Matlab V4 reader does not support imaginary numbers")
+      throw new Error('Matlab V4 reader does not support imaginary numbers')
     }
     const tagArrayItems = mrows * ncols
     if (tagArrayItems < 1) {
-      throw new Error("mrows * ncols must be greater than one")
+      throw new Error('mrows * ncols must be greater than one')
     }
     const byteArray = new Uint8Array(bytes.subarray(pos, pos + namlen))
-    let tagName = textDecoder.decode(byteArray).trim().replaceAll("\x00", "")
+    let tagName = textDecoder.decode(byteArray).trim().replaceAll('\x00', '')
     if (isReplaceDots) {
-      tagName = tagName.replaceAll(".", "_")
+      tagName = tagName.replaceAll('.', '_')
     }
     const tagDataType = getTensDigit(mtype)
     let tagBytesPerItem = 8
     if (tagDataType >= 1 && tagDataType <= 2) tagBytesPerItem = 4
     else if (tagDataType >= 3 && tagDataType <= 4) tagBytesPerItem = 2
     else if (tagDataType === 5) tagBytesPerItem = 1
-    else if (tagDataType !== 0) throw new Error("impossible Matlab v4 datatype")
+    else if (tagDataType !== 0) throw new Error('impossible Matlab v4 datatype')
     pos += namlen
     if (mtype > 50) {
-      throw new Error("Does not appear to be little-endian V4 Matlab file")
+      throw new Error('Does not appear to be little-endian V4 Matlab file')
     }
     const posEnd = pos + tagArrayItems * tagBytesPerItem
     mat[tagName] = readArray(tagDataType, pos, posEnd)

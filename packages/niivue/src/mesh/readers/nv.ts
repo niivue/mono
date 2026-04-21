@@ -1,9 +1,9 @@
-import { maybeDecompress } from "@/codecs/NVGz"
-import { log } from "@/logger"
-import type { MZ3 } from "@/NVTypes"
+import { maybeDecompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
+import type { MZ3 } from '@/NVTypes'
 
-export const extensions = ["NV"]
-export const type = "mz3"
+export const extensions = ['NV']
+export const type = 'mz3'
 
 function nextDataLine(
   lines: string[],
@@ -13,7 +13,7 @@ function nextDataLine(
   while (idx < lines.length) {
     const line = lines[idx++].trim()
     if (!line) continue
-    if (line.startsWith("#") || line.startsWith("//") || line.startsWith("%"))
+    if (line.startsWith('#') || line.startsWith('//') || line.startsWith('%'))
       continue
     return { line, idx }
   }
@@ -21,20 +21,20 @@ function nextDataLine(
 }
 
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
-  log.warn("NV mesh format may have inconsistent triangle winding.")
+  log.warn('NV mesh format may have inconsistent triangle winding.')
   buffer = await maybeDecompress(buffer)
-  const enc = new TextDecoder("utf-8")
+  const enc = new TextDecoder('utf-8')
   const txt = enc.decode(buffer)
   const lines = txt.split(/\r?\n/)
   let idx = 0
   let result = nextDataLine(lines, idx)
   idx = result.idx
   if (!result.line) {
-    throw new Error("Not a valid NV mesh file")
+    throw new Error('Not a valid NV mesh file')
   }
   const nvert = parseInt(result.line.split(/\s+/)[0], 10)
   if (!Number.isFinite(nvert) || nvert < 1) {
-    throw new Error("Not a valid NV mesh file")
+    throw new Error('Not a valid NV mesh file')
   }
   const positions = new Float32Array(nvert * 3)
   let v = 0
@@ -42,11 +42,11 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     result = nextDataLine(lines, idx)
     idx = result.idx
     if (!result.line) {
-      throw new Error("Not a valid NV mesh file")
+      throw new Error('Not a valid NV mesh file')
     }
     const items = result.line.split(/\s+/)
     if (items.length < 3) {
-      throw new Error("Not a valid NV mesh file")
+      throw new Error('Not a valid NV mesh file')
     }
     positions[v] = parseFloat(items[0])
     positions[v + 1] = parseFloat(items[1])
@@ -56,14 +56,14 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   result = nextDataLine(lines, idx)
   idx = result.idx
   if (!result.line) {
-    throw new Error("Not a valid NV mesh file")
+    throw new Error('Not a valid NV mesh file')
   }
   const ntri = parseInt(result.line.split(/\s+/)[0], 10)
   if (!Number.isFinite(ntri) || ntri < 0) {
-    throw new Error("Not a valid NV mesh file")
+    throw new Error('Not a valid NV mesh file')
   }
   if (ntri < 1) {
-    log.warn("NV mesh has no faces")
+    log.warn('NV mesh has no faces')
   }
   const rawIndices = new Int32Array(ntri * 3)
   let minIdx = Number.POSITIVE_INFINITY
@@ -71,11 +71,11 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     result = nextDataLine(lines, idx)
     idx = result.idx
     if (!result.line) {
-      throw new Error("Not a valid NV mesh file")
+      throw new Error('Not a valid NV mesh file')
     }
     const items = result.line.split(/\s+/)
     if (items.length < 3) {
-      throw new Error("Not a valid NV mesh file")
+      throw new Error('Not a valid NV mesh file')
     }
     const a = parseInt(items[0], 10)
     const b = parseInt(items[1], 10)

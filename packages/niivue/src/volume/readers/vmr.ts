@@ -1,10 +1,10 @@
-import * as nifti from "nifti-reader-js"
-import { log } from "@/logger"
-import { NiiDataType } from "@/NVConstants"
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import * as nifti from 'nifti-reader-js'
+import { log } from '@/logger'
+import { NiiDataType } from '@/NVConstants'
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
-export const extensions = ["vmr", "v16"]
-export const type = "nii"
+export const extensions = ['vmr', 'v16']
+export const type = 'nii'
 
 function readV16(buffer: ArrayBuffer): { hdr: NIFTI1; img: ArrayBuffer } {
   const hdr = new nifti.NIFTI1() as NIFTI1
@@ -16,11 +16,11 @@ function readV16(buffer: ArrayBuffer): { hdr: NIFTI1; img: ArrayBuffer } {
   hdr.dims[3] = reader.getUint16(4, true)
   const nBytes = 2 * hdr.dims[1] * hdr.dims[2] * hdr.dims[3]
   if (nBytes + 6 !== buffer.byteLength) {
-    log.warn("This does not look like a valid BrainVoyager V16 file")
+    log.warn('This does not look like a valid BrainVoyager V16 file')
   }
   hdr.numBitsPerVoxel = 16
   hdr.datatypeCode = NiiDataType.DT_UINT16
-  log.warn("Warning: V16 files have no spatial transforms")
+  log.warn('Warning: V16 files have no spatial transforms')
   hdr.affine = [
     [0, 0, -hdr.pixDims[1], (hdr.dims[1] - 2) * 0.5 * hdr.pixDims[1]],
     [-hdr.pixDims[2], 0, 0, (hdr.dims[2] - 2) * 0.5 * hdr.pixDims[2]],
@@ -38,7 +38,7 @@ function readVMR(buffer: ArrayBuffer): { hdr: NIFTI1; img: ArrayBuffer } {
   const reader = new DataView(buffer)
   const version = reader.getUint16(0, true)
   if (version !== 4) {
-    log.warn("Not a valid version 4 VMR image")
+    log.warn('Not a valid version 4 VMR image')
   }
   hdr.dims[1] = reader.getUint16(2, true)
   hdr.dims[2] = reader.getUint16(4, true)
@@ -65,7 +65,7 @@ function readVMR(buffer: ArrayBuffer): { hdr: NIFTI1; img: ArrayBuffer } {
     hdr.pixDims[2] = reader.getFloat32(pos + 6, true)
     hdr.pixDims[3] = reader.getFloat32(pos + 10, true)
   }
-  log.warn("Warning: VMR spatial transform not implemented")
+  log.warn('Warning: VMR spatial transform not implemented')
   hdr.affine = [
     [0, 0, -hdr.pixDims[1], (hdr.dims[1] - 2) * 0.5 * hdr.pixDims[1]],
     [-hdr.pixDims[2], 0, 0, (hdr.dims[2] - 2) * 0.5 * hdr.pixDims[2]],
@@ -82,8 +82,8 @@ export function read(
   name?: string,
   _pairedImgData: ArrayBuffer | null = null,
 ): { hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray } {
-  const lowerName = name?.toLowerCase() ?? ""
-  if (lowerName.endsWith(".v16")) {
+  const lowerName = name?.toLowerCase() ?? ''
+  if (lowerName.endsWith('.v16')) {
     return readV16(buffer)
   }
   return readVMR(buffer)

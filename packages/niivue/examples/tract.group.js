@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 // A palette of distinct colors for group selection (RGBA 0-255)
 const groupPalette = [
@@ -23,7 +23,7 @@ decimationSlide.oninput = async function () {
 }
 
 webgpuCheck.onclick = function () {
-  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
 async function applyColor() {
@@ -51,15 +51,15 @@ nv1.setClipPlanes([
   [0.1, 180, 20],
   [0.1, 0, -20],
 ])
-await nv1.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
+await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 await nv1.loadMeshes([
-  { url: "/meshes/yeh2022.trx", rgba255: [0, 142, 200, 255] },
+  { url: '/meshes/yeh2022.trx', rgba255: [0, 142, 200, 255] },
 ])
 
 // Populate group selector from the loaded tract data
 const groups = nv1.getTractGroups(0)
 for (const name of groups) {
-  const opt = document.createElement("option")
+  const opt = document.createElement('option')
   opt.value = name
   opt.textContent = name
   groupSelect.appendChild(opt)

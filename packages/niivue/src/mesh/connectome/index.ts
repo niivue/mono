@@ -1,12 +1,12 @@
-import * as NVCmaps from "@/cmap/NVCmaps"
-import { createCylinder, createSphere } from "@/mesh/NVShapes"
-import * as NVLoader from "@/NVLoader"
+import * as NVCmaps from '@/cmap/NVCmaps'
+import { createCylinder, createSphere } from '@/mesh/NVShapes'
+import * as NVLoader from '@/NVLoader'
 import type {
   NVConnectomeData,
   NVConnectomeEdge,
   NVConnectomeNode,
   NVConnectomeOptions,
-} from "@/NVTypes"
+} from '@/NVTypes'
 
 type ConnectomeReader = {
   extensions?: string[]
@@ -19,7 +19,7 @@ export type ConnectomeFileData = {
   options: Partial<NVConnectomeOptions>
 }
 
-const modules = import.meta.glob<ConnectomeReader>("./readers/*.ts", {
+const modules = import.meta.glob<ConnectomeReader>('./readers/*.ts', {
   eager: true,
 })
 const readerByExt = NVLoader.buildExtensionMap(modules)
@@ -37,13 +37,13 @@ export function getConnectomeReader(ext: string): ConnectomeReader | undefined {
 }
 
 export const defaultConnectomeOptions: NVConnectomeOptions = {
-  nodeColormap: "warm",
-  nodeColormapNegative: "",
+  nodeColormap: 'warm',
+  nodeColormapNegative: '',
   nodeMinColor: 0,
   nodeMaxColor: 0,
   nodeScale: 3,
-  edgeColormap: "warm",
-  edgeColormapNegative: "",
+  edgeColormap: 'warm',
+  edgeColormapNegative: '',
   edgeMin: 0,
   edgeMax: 0,
   edgeScale: 1,

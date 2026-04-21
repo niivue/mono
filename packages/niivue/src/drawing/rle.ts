@@ -1,4 +1,4 @@
-import { log } from "@/logger"
+import { log } from '@/logger'
 
 /**
  * PackBits RLE encoder. Operates byte-by-byte on uint8 data.

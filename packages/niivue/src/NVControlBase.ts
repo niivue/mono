@@ -1,27 +1,36 @@
-import { type vec3, vec4 } from "gl-matrix"
-import { getControlPoints } from "@/annotation/selection"
-import { AnnotationUndoStack } from "@/annotation/undoRedo"
-import { ubuntu } from "@/assets/fonts"
-import { cortex } from "@/assets/matcaps"
-import * as NVCmaps from "@/cmap/NVCmaps"
-import { removeInteractionListeners } from "@/control/interactions"
-import { buildLocationMessage } from "@/control/locationTracking"
+import { type vec3, vec4 } from 'gl-matrix'
+import { getControlPoints } from '@/annotation/selection'
+import { AnnotationUndoStack } from '@/annotation/undoRedo'
+import { ubuntu } from '@/assets/fonts'
+import { cortex } from '@/assets/matcaps'
+import * as NVCmaps from '@/cmap/NVCmaps'
+import { removeInteractionListeners } from '@/control/interactions'
+import { buildLocationMessage } from '@/control/locationTracking'
 import type {
   ReinitializeOptions,
   ViewLifecycle,
-} from "@/control/viewLifecycle"
-import * as Drawing from "@/drawing"
-import { NVExtensionContext } from "@/extension/context"
-import { type LogLevel, log } from "@/logger"
-import * as NVTransforms from "@/math/NVTransforms"
-import * as NVMeshLayers from "@/mesh/layers"
-import * as NVMesh from "@/mesh/NVMesh"
-import type { WriteOptions } from "@/mesh/writers"
-import { DRAG_MODE, NUM_CLIP_PLANE } from "@/NVConstants"
-import * as NVDocument from "@/NVDocument"
-import type { NVEventListener, NVEventMap } from "@/NVEvents"
-import * as NVLoader from "@/NVLoader"
-import NVModel from "@/NVModel"
+} from '@/control/viewLifecycle'
+import {
+  calculateLoadDrawingTransform,
+  clearAllUndoBitmaps,
+  createDrawingVolume,
+  getDrawingBitmap,
+  transformBitmap,
+  validateDrawingDimensions,
+} from '@/drawing/drawingManager'
+import { decodeRLE } from '@/drawing/rle'
+import { drawUndo } from '@/drawing/undo'
+import { NVExtensionContext } from '@/extension/context'
+import { type LogLevel, log } from '@/logger'
+import * as NVTransforms from '@/math/NVTransforms'
+import * as NVMeshLayers from '@/mesh/layers'
+import * as NVMesh from '@/mesh/NVMesh'
+import type { WriteOptions } from '@/mesh/writers'
+import { DRAG_MODE, NUM_CLIP_PLANE } from '@/NVConstants'
+import * as NVDocument from '@/NVDocument'
+import type { NVEventListener, NVEventMap } from '@/NVEvents'
+import * as NVLoader from '@/NVLoader'
+import NVModel from '@/NVModel'
 import type {
   AnnotationPoint,
   AnnotationStyle,
@@ -47,27 +56,27 @@ import type {
   VectorAnnotation,
   ViewHitTest,
   VolumeUpdate,
-} from "@/NVTypes"
-import { buildDrawingLut, drawingBitmapToRGBA } from "@/view/NVDrawingTexture"
-import { getFontMetrics } from "@/view/NVFont"
-import type { GraphLayout } from "@/view/NVGraph"
-import type { LegendLayout } from "@/view/NVLegend"
-import type { SliceTile } from "@/view/NVSliceLayout"
-import { validateCustomLayout } from "@/view/NVSliceLayout"
-import { computeModulationData } from "@/volume/modulation"
-import * as NVVolume from "@/volume/NVVolume"
-import * as NVTensorProcessing from "@/volume/TensorProcessing"
+} from '@/NVTypes'
+import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
+import { getFontMetrics } from '@/view/NVFont'
+import type { GraphLayout } from '@/view/NVGraph'
+import type { LegendLayout } from '@/view/NVLegend'
+import type { SliceTile } from '@/view/NVSliceLayout'
+import { validateCustomLayout } from '@/view/NVSliceLayout'
+import { computeModulationData } from '@/volume/modulation'
+import * as NVVolume from '@/volume/NVVolume'
+import * as NVTensorProcessing from '@/volume/TensorProcessing'
 import type {
   TransformInfo,
   TransformOptions,
   VolumeTransform,
-} from "@/volume/transforms"
-import * as NVVolumeTransforms from "@/volume/transforms"
+} from '@/volume/transforms'
+import * as NVVolumeTransforms from '@/volume/transforms'
 import {
   calMinMaxFrame,
   computeVolumeLabelCentroids,
   reorientDrawingToNative,
-} from "@/volume/utils"
+} from '@/volume/utils'
 
 type ViewBackend = {
   init: () => Promise<void>
@@ -88,7 +97,7 @@ type ViewBackend = {
 }
 
 export type { NiiVueOptions }
-export type DistributionBackend = "both" | "webgpu" | "webgl2"
+export type DistributionBackend = 'both' | 'webgpu' | 'webgl2'
 
 type InfrastructureOpts = {
   backend?: BackendType
@@ -145,7 +154,7 @@ export default class NiiVueGPU extends EventTarget {
   dragStartXY: [number, number] = [0, 0]
   dragEndXY: [number, number] = [0, 0]
   _activeDragMode: number = DRAG_MODE.none
-  _angleState: "none" | "drawing_first_line" | "drawing_second_line" = "none"
+  _angleState: 'none' | 'drawing_first_line' | 'drawing_second_line' = 'none'
   _angleFirstLine: number[] = [0, 0, 0, 0]
   _pan2DxyzmmAtDragStart: [number, number, number, number] | null = null
   // Annotation transient state (controller-owned, not serialized)
@@ -172,19 +181,19 @@ export default class NiiVueGPU extends EventTarget {
   constructor(
     options: NiiVueOptions = {},
     viewLifecycle: ViewLifecycle,
-    distributionBackend: DistributionBackend = "both",
+    distributionBackend: DistributionBackend = 'both',
   ) {
     super()
     // Set log level early, before any other initialization that might log
-    log.setLogLevel(options.logLevel ?? "info")
+    log.setLogLevel(options.logLevel ?? 'info')
     this.activeClipPlaneIndex = 0
     this.currentClipPlaneIndex = 0
     this.opts = {
-      backend: options.backend ?? "webgpu",
+      backend: options.backend ?? 'webgpu',
       isAntiAlias: options.isAntiAlias ?? true,
       isDragDropEnabled: options.isDragDropEnabled ?? true,
       forceDevicePixelRatio: options.devicePixelRatio ?? -1,
-      logLevel: options.logLevel ?? "info",
+      logLevel: options.logLevel ?? 'info',
       thumbnail: options.thumbnail,
       font: options.font ?? ubuntu,
       matcaps: options.matcaps ?? DEFAULT_MATCAPS,
@@ -290,11 +299,11 @@ export default class NiiVueGPU extends EventTarget {
   }
   set azimuth(v: number) {
     this.model.scene.azimuth = v
-    this.emit("azimuthElevationChange", {
+    this.emit('azimuthElevationChange', {
       azimuth: v,
       elevation: this.model.scene.elevation,
     })
-    this.emit("change", { property: "azimuth", value: v })
+    this.emit('change', { property: 'azimuth', value: v })
     this.drawScene()
   }
 
@@ -303,11 +312,11 @@ export default class NiiVueGPU extends EventTarget {
   }
   set elevation(v: number) {
     this.model.scene.elevation = v
-    this.emit("azimuthElevationChange", {
+    this.emit('azimuthElevationChange', {
       azimuth: this.model.scene.azimuth,
       elevation: v,
     })
-    this.emit("change", { property: "elevation", value: v })
+    this.emit('change', { property: 'elevation', value: v })
     this.drawScene()
   }
 
@@ -316,7 +325,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set crosshairPos(v: vec3) {
     this.model.scene.crosshairPos = v
-    this.emit("change", { property: "crosshairPos", value: v })
+    this.emit('change', { property: 'crosshairPos', value: v })
     this.drawScene()
   }
 
@@ -325,7 +334,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set pan2Dxyzmm(v: vec4) {
     this.model.scene.pan2Dxyzmm = v
-    this.emit("change", { property: "pan2Dxyzmm", value: v })
+    this.emit('change', { property: 'pan2Dxyzmm', value: v })
     this.drawScene()
   }
 
@@ -334,7 +343,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set scaleMultiplier(v: number) {
     this.model.scene.scaleMultiplier = v
-    this.emit("change", { property: "scaleMultiplier", value: v })
+    this.emit('change', { property: 'scaleMultiplier', value: v })
     this.drawScene()
   }
 
@@ -343,7 +352,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set gamma(v: number) {
     this.model.scene.gamma = v
-    this.emit("change", { property: "gamma", value: v })
+    this.emit('change', { property: 'gamma', value: v })
     this.drawScene()
   }
 
@@ -352,7 +361,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set backgroundColor(v: [number, number, number, number]) {
     this.model.scene.backgroundColor = v
-    this.emit("change", { property: "backgroundColor", value: v })
+    this.emit('change', { property: 'backgroundColor', value: v })
     this.drawScene()
   }
 
@@ -361,7 +370,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set clipPlaneColor(v: number[]) {
     this.model.scene.clipPlaneColor = v
-    this.emit("change", { property: "clipPlaneColor", value: v })
+    this.emit('change', { property: 'clipPlaneColor', value: v })
     this.drawScene()
   }
 
@@ -370,7 +379,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isClipPlaneCutaway(v: boolean) {
     this.model.scene.isClipPlaneCutaway = v
-    this.emit("change", { property: "isClipPlaneCutaway", value: v })
+    this.emit('change', { property: 'isClipPlaneCutaway', value: v })
     this.drawScene()
   }
 
@@ -381,8 +390,8 @@ export default class NiiVueGPU extends EventTarget {
   }
   set sliceType(v: number) {
     this.model.layout.sliceType = v
-    this.emit("sliceTypeChange", { sliceType: v })
-    this.emit("change", { property: "sliceType", value: v })
+    this.emit('sliceTypeChange', { sliceType: v })
+    this.emit('change', { property: 'sliceType', value: v })
     this.drawScene()
   }
 
@@ -391,7 +400,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set mosaicString(v: string) {
     this.model.layout.mosaicString = v
-    this.emit("change", { property: "mosaicString", value: v })
+    this.emit('change', { property: 'mosaicString', value: v })
     this.drawScene()
   }
 
@@ -400,7 +409,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set showRender(v: number) {
     this.model.layout.showRender = v
-    this.emit("change", { property: "showRender", value: v })
+    this.emit('change', { property: 'showRender', value: v })
     this.drawScene()
   }
 
@@ -409,7 +418,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set multiplanarType(v: number) {
     this.model.layout.multiplanarType = v
-    this.emit("change", { property: "multiplanarType", value: v })
+    this.emit('change', { property: 'multiplanarType', value: v })
     this.drawScene()
   }
 
@@ -418,7 +427,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set heroFraction(v: number) {
     this.model.layout.heroFraction = v
-    this.emit("change", { property: "heroFraction", value: v })
+    this.emit('change', { property: 'heroFraction', value: v })
     this.drawScene()
   }
 
@@ -427,7 +436,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set heroSliceType(v: number) {
     this.model.layout.heroSliceType = v
-    this.emit("change", { property: "heroSliceType", value: v })
+    this.emit('change', { property: 'heroSliceType', value: v })
     this.drawScene()
   }
 
@@ -436,7 +445,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isEqualSize(v: boolean) {
     this.model.layout.isEqualSize = v
-    this.emit("change", { property: "isEqualSize", value: v })
+    this.emit('change', { property: 'isEqualSize', value: v })
     this.drawScene()
   }
 
@@ -445,7 +454,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isMosaicCentered(v: boolean) {
     this.model.layout.isMosaicCentered = v
-    this.emit("change", { property: "isMosaicCentered", value: v })
+    this.emit('change', { property: 'isMosaicCentered', value: v })
     this.drawScene()
   }
 
@@ -454,7 +463,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set tileMargin(v: number) {
     this.model.layout.margin = v
-    this.emit("change", { property: "tileMargin", value: v })
+    this.emit('change', { property: 'tileMargin', value: v })
     this.drawScene()
   }
 
@@ -463,7 +472,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isRadiological(v: boolean) {
     this.model.layout.isRadiological = v
-    this.emit("change", { property: "isRadiological", value: v })
+    this.emit('change', { property: 'isRadiological', value: v })
     this.drawScene()
   }
 
@@ -489,10 +498,10 @@ export default class NiiVueGPU extends EventTarget {
   set customLayout(v: CustomLayoutTile[] | null) {
     if (v && v.length > 0) {
       const result = validateCustomLayout(v)
-      if (!result.valid) throw new Error(result.error!)
+      if (!result.valid) throw new Error(result.error as string)
     }
     this.model.layout.customLayout = v
-    this.emit("change", { property: "customLayout", value: v })
+    this.emit('change', { property: 'customLayout', value: v })
     this.drawScene()
   }
 
@@ -508,7 +517,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isColorbarVisible(v: boolean) {
     this.model.ui.isColorbarVisible = v
-    this.emit("change", { property: "isColorbarVisible", value: v })
+    this.emit('change', { property: 'isColorbarVisible', value: v })
     this.drawScene()
   }
 
@@ -517,7 +526,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isOrientCubeVisible(v: boolean) {
     this.model.ui.isOrientCubeVisible = v
-    this.emit("change", { property: "isOrientCubeVisible", value: v })
+    this.emit('change', { property: 'isOrientCubeVisible', value: v })
     this.drawScene()
   }
 
@@ -526,7 +535,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isOrientationTextVisible(v: boolean) {
     this.model.ui.isOrientationTextVisible = v
-    this.emit("change", { property: "isOrientationTextVisible", value: v })
+    this.emit('change', { property: 'isOrientationTextVisible', value: v })
     this.drawScene()
   }
 
@@ -535,7 +544,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set is3DCrosshairVisible(v: boolean) {
     this.model.ui.is3DCrosshairVisible = v
-    this.emit("change", { property: "is3DCrosshairVisible", value: v })
+    this.emit('change', { property: 'is3DCrosshairVisible', value: v })
     this.drawScene()
   }
 
@@ -544,7 +553,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isGraphVisible(v: boolean) {
     this.model.ui.isGraphVisible = v
-    this.emit("change", { property: "isGraphVisible", value: v })
+    this.emit('change', { property: 'isGraphVisible', value: v })
     this.drawScene()
   }
 
@@ -553,7 +562,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isRulerVisible(v: boolean) {
     this.model.ui.isRulerVisible = v
-    this.emit("change", { property: "isRulerVisible", value: v })
+    this.emit('change', { property: 'isRulerVisible', value: v })
     this.drawScene()
   }
 
@@ -562,7 +571,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isCrossLinesVisible(v: boolean) {
     this.model.ui.isCrossLinesVisible = v
-    this.emit("change", { property: "isCrossLinesVisible", value: v })
+    this.emit('change', { property: 'isCrossLinesVisible', value: v })
     this.drawScene()
   }
 
@@ -571,7 +580,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isLegendVisible(v: boolean) {
     this.model.ui.isLegendVisible = v
-    this.emit("change", { property: "isLegendVisible", value: v })
+    this.emit('change', { property: 'isLegendVisible', value: v })
     this.drawScene()
   }
 
@@ -580,7 +589,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isPositionInMM(v: boolean) {
     this.model.ui.isPositionInMM = v
-    this.emit("change", { property: "isPositionInMM", value: v })
+    this.emit('change', { property: 'isPositionInMM', value: v })
     this.drawScene()
   }
 
@@ -589,7 +598,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isMeasureUnitsVisible(v: boolean) {
     this.model.ui.isMeasureUnitsVisible = v
-    this.emit("change", { property: "isMeasureUnitsVisible", value: v })
+    this.emit('change', { property: 'isMeasureUnitsVisible', value: v })
     this.drawScene()
   }
 
@@ -599,7 +608,7 @@ export default class NiiVueGPU extends EventTarget {
   set isThumbnailVisible(v: boolean) {
     const wasVisible = this.model.ui.isThumbnailVisible
     this.model.ui.isThumbnailVisible = v
-    this.emit("change", { property: "isThumbnailVisible", value: v })
+    this.emit('change', { property: 'isThumbnailVisible', value: v })
     if (wasVisible && !v) {
       this._loadDeferredData()
     } else {
@@ -612,7 +621,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set thumbnailUrl(v: string) {
     this.model.ui.thumbnailUrl = v
-    this.emit("change", { property: "thumbnailUrl", value: v })
+    this.emit('change', { property: 'thumbnailUrl', value: v })
     this.drawScene()
   }
 
@@ -621,7 +630,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set placeholderText(v: string) {
     this.model.ui.placeholderText = v
-    this.emit("change", { property: "placeholderText", value: v })
+    this.emit('change', { property: 'placeholderText', value: v })
     this.drawScene()
   }
 
@@ -630,7 +639,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set crosshairColor(v: number[]) {
     this.model.ui.crosshairColor = v
-    this.emit("change", { property: "crosshairColor", value: v })
+    this.emit('change', { property: 'crosshairColor', value: v })
     this.drawScene()
   }
 
@@ -639,7 +648,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set crosshairGap(v: number) {
     this.model.ui.crosshairGap = v
-    this.emit("change", { property: "crosshairGap", value: v })
+    this.emit('change', { property: 'crosshairGap', value: v })
     this.drawScene()
   }
 
@@ -648,7 +657,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set crosshairWidth(v: number) {
     this.model.ui.crosshairWidth = v
-    this.emit("change", { property: "crosshairWidth", value: v })
+    this.emit('change', { property: 'crosshairWidth', value: v })
     this.drawScene()
   }
 
@@ -657,7 +666,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set fontColor(v: number[]) {
     this.model.ui.fontColor = v
-    this.emit("change", { property: "fontColor", value: v })
+    this.emit('change', { property: 'fontColor', value: v })
     this.drawScene()
   }
 
@@ -666,7 +675,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set fontScale(v: number) {
     this.model.ui.fontScale = v
-    this.emit("change", { property: "fontScale", value: v })
+    this.emit('change', { property: 'fontScale', value: v })
     this.drawScene()
   }
 
@@ -675,7 +684,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set fontMinSize(v: number) {
     this.model.ui.fontMinSize = v
-    this.emit("change", { property: "fontMinSize", value: v })
+    this.emit('change', { property: 'fontMinSize', value: v })
     this.drawScene()
   }
 
@@ -684,7 +693,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set selectionBoxColor(v: number[]) {
     this.model.ui.selectionBoxColor = v
-    this.emit("change", { property: "selectionBoxColor", value: v })
+    this.emit('change', { property: 'selectionBoxColor', value: v })
     this.drawScene()
   }
 
@@ -693,7 +702,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set measureLineColor(v: number[]) {
     this.model.ui.measureLineColor = v
-    this.emit("change", { property: "measureLineColor", value: v })
+    this.emit('change', { property: 'measureLineColor', value: v })
     this.drawScene()
   }
 
@@ -702,7 +711,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set measureTextColor(v: number[]) {
     this.model.ui.measureTextColor = v
-    this.emit("change", { property: "measureTextColor", value: v })
+    this.emit('change', { property: 'measureTextColor', value: v })
     this.drawScene()
   }
 
@@ -711,7 +720,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set rulerWidth(v: number) {
     this.model.ui.rulerWidth = v
-    this.emit("change", { property: "rulerWidth", value: v })
+    this.emit('change', { property: 'rulerWidth', value: v })
     this.drawScene()
   }
 
@@ -720,7 +729,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set graphNormalizeValues(v: boolean) {
     this.model.ui.graph.normalizeValues = v
-    this.emit("change", { property: "graphNormalizeValues", value: v })
+    this.emit('change', { property: 'graphNormalizeValues', value: v })
     this.drawScene()
   }
 
@@ -729,7 +738,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set graphIsRangeCalMinMax(v: boolean) {
     this.model.ui.graph.isRangeCalMinMax = v
-    this.emit("change", { property: "graphIsRangeCalMinMax", value: v })
+    this.emit('change', { property: 'graphIsRangeCalMinMax', value: v })
     this.drawScene()
   }
 
@@ -740,7 +749,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set volumeIllumination(v: number) {
     this.model.volume.illumination = v
-    this.emit("change", { property: "volumeIllumination", value: v })
+    this.emit('change', { property: 'volumeIllumination', value: v })
     this.drawScene()
   }
 
@@ -749,7 +758,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set volumeOutlineWidth(v: number) {
     this.model.volume.outlineWidth = v
-    this.emit("change", { property: "volumeOutlineWidth", value: v })
+    this.emit('change', { property: 'volumeOutlineWidth', value: v })
     this.drawScene()
   }
 
@@ -758,7 +767,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set volumeAlphaShader(v: number) {
     this.model.volume.alphaShader = v
-    this.emit("change", { property: "volumeAlphaShader", value: v })
+    this.emit('change', { property: 'volumeAlphaShader', value: v })
     this.drawScene()
   }
 
@@ -767,7 +776,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set volumeIsBackgroundMasking(v: boolean) {
     this.model.volume.isBackgroundMasking = v
-    this.emit("change", { property: "volumeIsBackgroundMasking", value: v })
+    this.emit('change', { property: 'volumeIsBackgroundMasking', value: v })
     this.drawScene()
   }
 
@@ -776,7 +785,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set volumeIsAlphaClipDark(v: boolean) {
     this.model.volume.isAlphaClipDark = v
-    this.emit("change", { property: "volumeIsAlphaClipDark", value: v })
+    this.emit('change', { property: 'volumeIsAlphaClipDark', value: v })
     this.drawScene()
   }
 
@@ -785,7 +794,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set volumeIsNearestInterpolation(v: boolean) {
     this.model.volume.isNearestInterpolation = v
-    this.emit("change", { property: "volumeIsNearestInterpolation", value: v })
+    this.emit('change', { property: 'volumeIsNearestInterpolation', value: v })
     this.drawScene()
   }
 
@@ -794,7 +803,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set volumeIsV1SliceShader(v: boolean) {
     this.model.volume.isV1SliceShader = v
-    this.emit("change", { property: "volumeIsV1SliceShader", value: v })
+    this.emit('change', { property: 'volumeIsV1SliceShader', value: v })
     this.drawScene()
   }
 
@@ -803,7 +812,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set volumeMatcap(v: string) {
     this.model.volume.matcap = v
-    this.emit("change", { property: "volumeMatcap", value: v })
+    this.emit('change', { property: 'volumeMatcap', value: v })
     this.drawScene()
   }
 
@@ -812,7 +821,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set volumePaqdUniforms(v: [number, number, number, number]) {
     this.model.volume.paqdUniforms = v
-    this.emit("change", { property: "volumePaqdUniforms", value: v })
+    this.emit('change', { property: 'volumePaqdUniforms', value: v })
     this.drawScene()
   }
 
@@ -824,7 +833,7 @@ export default class NiiVueGPU extends EventTarget {
   set meshXRay(v: number) {
     const clamped = Math.max(0, Math.min(1, v))
     this.model.mesh.xRay = clamped
-    this.emit("change", { property: "meshXRay", value: clamped })
+    this.emit('change', { property: 'meshXRay', value: clamped })
     this.drawScene()
   }
 
@@ -834,7 +843,7 @@ export default class NiiVueGPU extends EventTarget {
   set meshThicknessOn2D(v: number) {
     const val = v <= 0 ? Infinity : v
     this.model.mesh.thicknessOn2D = val
-    this.emit("change", { property: "meshThicknessOn2D", value: val })
+    this.emit('change', { property: 'meshThicknessOn2D', value: val })
     this.drawScene()
   }
 
@@ -845,8 +854,8 @@ export default class NiiVueGPU extends EventTarget {
   }
   set drawIsEnabled(v: boolean) {
     this.model.draw.isEnabled = v
-    this.emit("drawingEnabled", { isEnabled: v })
-    this.emit("change", { property: "drawIsEnabled", value: v })
+    this.emit('drawingEnabled', { isEnabled: v })
+    this.emit('change', { property: 'drawIsEnabled', value: v })
   }
 
   get drawPenValue(): number {
@@ -854,8 +863,8 @@ export default class NiiVueGPU extends EventTarget {
   }
   set drawPenValue(v: number) {
     this.model.draw.penValue = v
-    this.emit("penValueChanged", { penValue: v })
-    this.emit("change", { property: "drawPenValue", value: v })
+    this.emit('penValueChanged', { penValue: v })
+    this.emit('change', { property: 'drawPenValue', value: v })
   }
 
   get drawPenSize(): number {
@@ -864,7 +873,7 @@ export default class NiiVueGPU extends EventTarget {
   set drawPenSize(v: number) {
     const val = Math.max(1, Math.round(v))
     this.model.draw.penSize = val
-    this.emit("change", { property: "drawPenSize", value: val })
+    this.emit('change', { property: 'drawPenSize', value: val })
   }
 
   get drawIsFillOverwriting(): boolean {
@@ -872,7 +881,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set drawIsFillOverwriting(v: boolean) {
     this.model.draw.isFillOverwriting = v
-    this.emit("change", { property: "drawIsFillOverwriting", value: v })
+    this.emit('change', { property: 'drawIsFillOverwriting', value: v })
   }
 
   get drawOpacity(): number {
@@ -881,7 +890,7 @@ export default class NiiVueGPU extends EventTarget {
   set drawOpacity(v: number) {
     const val = Math.max(0, Math.min(1, v))
     this.model.draw.opacity = val
-    this.emit("change", { property: "drawOpacity", value: val })
+    this.emit('change', { property: 'drawOpacity', value: val })
     if (this.model.drawingVolume) this.refreshDrawing()
   }
 
@@ -890,7 +899,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set drawRimOpacity(v: number) {
     this.model.draw.rimOpacity = v
-    this.emit("change", { property: "drawRimOpacity", value: v })
+    this.emit('change', { property: 'drawRimOpacity', value: v })
     this.drawScene()
   }
 
@@ -900,7 +909,7 @@ export default class NiiVueGPU extends EventTarget {
   set drawColormap(v: string) {
     this.model.draw.colormap = v
     this._drawLut = null
-    this.emit("change", { property: "drawColormap", value: v })
+    this.emit('change', { property: 'drawColormap', value: v })
     if (this.model.drawingVolume) this.refreshDrawing()
   }
 
@@ -915,21 +924,21 @@ export default class NiiVueGPU extends EventTarget {
     }
     const volumes = this.model.getVolumes()
     if (volumes.length === 0) {
-      log.warn("drawingVolume: no background volume loaded")
+      log.warn('drawingVolume: no background volume loaded')
       return
     }
     const back = volumes[0]
     if (!back.dimsRAS) {
-      log.warn("drawingVolume: background volume has no dimsRAS")
+      log.warn('drawingVolume: background volume has no dimsRAS')
       return
     }
     if (!vol.dimsRAS) NVTransforms.calculateRAS(vol)
-    if (!Drawing.validateDrawingDimensions(vol.dimsRAS!, back.dimsRAS)) {
-      log.warn("drawingVolume dims do not match background volume")
+    if (!validateDrawingDimensions(vol.dimsRAS as number[], back.dimsRAS)) {
+      log.warn('drawingVolume dims do not match background volume')
       return
     }
     if (!(vol.img instanceof Uint8Array)) {
-      log.warn("drawingVolume: img must be a Uint8Array")
+      log.warn('drawingVolume: img must be a Uint8Array')
       return
     }
     const expectedVoxels = back.dimsRAS[1] * back.dimsRAS[2] * back.dimsRAS[3]
@@ -941,7 +950,7 @@ export default class NiiVueGPU extends EventTarget {
     }
     this.model.drawingVolume = vol
     this.model.draw.isEnabled = true
-    const cleared = Drawing.clearAllUndoBitmaps(
+    const cleared = clearAllUndoBitmaps(
       this.drawUndoBitmaps,
       this.maxDrawUndoBitmaps,
     )
@@ -958,7 +967,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set primaryDragMode(v: number) {
     this.model.interaction.primaryDragMode = v
-    this.emit("change", { property: "primaryDragMode", value: v })
+    this.emit('change', { property: 'primaryDragMode', value: v })
   }
 
   get secondaryDragMode(): number {
@@ -966,7 +975,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set secondaryDragMode(v: number) {
     this.model.interaction.secondaryDragMode = v
-    this.emit("change", { property: "secondaryDragMode", value: v })
+    this.emit('change', { property: 'secondaryDragMode', value: v })
   }
 
   get isSnapToVoxelCenters(): boolean {
@@ -974,7 +983,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isSnapToVoxelCenters(v: boolean) {
     this.model.interaction.isSnapToVoxelCenters = v
-    this.emit("change", { property: "isSnapToVoxelCenters", value: v })
+    this.emit('change', { property: 'isSnapToVoxelCenters', value: v })
   }
 
   get isYoked3DTo2DZoom(): boolean {
@@ -982,7 +991,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set isYoked3DTo2DZoom(v: boolean) {
     this.model.interaction.isYoked3DTo2DZoom = v
-    this.emit("change", { property: "isYoked3DTo2DZoom", value: v })
+    this.emit('change', { property: 'isYoked3DTo2DZoom', value: v })
   }
 
   // --- Annotation Properties ---
@@ -992,7 +1001,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set annotationIsEnabled(v: boolean) {
     this.model.annotation.isEnabled = v
-    this.emit("change", { property: "annotationIsEnabled", value: v })
+    this.emit('change', { property: 'annotationIsEnabled', value: v })
     this.drawScene()
   }
 
@@ -1001,7 +1010,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set annotationActiveLabel(v: number) {
     this.model.annotation.activeLabel = v
-    this.emit("change", { property: "annotationActiveLabel", value: v })
+    this.emit('change', { property: 'annotationActiveLabel', value: v })
   }
 
   get annotationActiveGroup(): string {
@@ -1009,7 +1018,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set annotationActiveGroup(v: string) {
     this.model.annotation.activeGroup = v
-    this.emit("change", { property: "annotationActiveGroup", value: v })
+    this.emit('change', { property: 'annotationActiveGroup', value: v })
   }
 
   get annotationBrushRadius(): number {
@@ -1017,7 +1026,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set annotationBrushRadius(v: number) {
     this.model.annotation.brushRadius = v
-    this.emit("change", { property: "annotationBrushRadius", value: v })
+    this.emit('change', { property: 'annotationBrushRadius', value: v })
   }
 
   get annotationIsErasing(): boolean {
@@ -1025,7 +1034,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set annotationIsErasing(v: boolean) {
     this.model.annotation.isErasing = v
-    this.emit("change", { property: "annotationIsErasing", value: v })
+    this.emit('change', { property: 'annotationIsErasing', value: v })
   }
 
   get annotationIsVisibleIn3D(): boolean {
@@ -1033,7 +1042,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set annotationIsVisibleIn3D(v: boolean) {
     this.model.annotation.isVisibleIn3D = v
-    this.emit("change", { property: "annotationIsVisibleIn3D", value: v })
+    this.emit('change', { property: 'annotationIsVisibleIn3D', value: v })
     this.drawScene()
   }
 
@@ -1042,7 +1051,7 @@ export default class NiiVueGPU extends EventTarget {
   }
   set annotationStyle(v: AnnotationStyle) {
     this.model.annotation.style = v
-    this.emit("change", { property: "annotationStyle", value: v })
+    this.emit('change', { property: 'annotationStyle', value: v })
     this.drawScene()
   }
 
@@ -1052,7 +1061,7 @@ export default class NiiVueGPU extends EventTarget {
   set annotationTool(v: AnnotationTool) {
     this.model.annotation.tool = v
     this.model._annotationSelection = null
-    this.emit("change", { property: "annotationTool", value: v })
+    this.emit('change', { property: 'annotationTool', value: v })
     this.drawScene()
   }
 
@@ -1081,7 +1090,7 @@ export default class NiiVueGPU extends EventTarget {
 
   addAnnotation(annotation: VectorAnnotation): void {
     this.model.annotations.push(annotation)
-    this.emit("annotationAdded", { annotation })
+    this.emit('annotationAdded', { annotation })
     this.drawScene()
   }
 
@@ -1089,7 +1098,7 @@ export default class NiiVueGPU extends EventTarget {
     const idx = this.model.annotations.findIndex((a) => a.id === id)
     if (idx >= 0) {
       this.model.annotations.splice(idx, 1)
-      this.emit("annotationRemoved", { id })
+      this.emit('annotationRemoved', { id })
       this.drawScene()
     }
   }
@@ -1097,7 +1106,7 @@ export default class NiiVueGPU extends EventTarget {
   clearAnnotations(): void {
     this.model.annotations.length = 0
     this._annotationUndoStack.clear()
-    this.emit("annotationChanged", { action: "clear" })
+    this.emit('annotationChanged', { action: 'clear' })
     this.drawScene()
   }
 
@@ -1105,7 +1114,7 @@ export default class NiiVueGPU extends EventTarget {
     const restored = this._annotationUndoStack.undo(this.model.annotations)
     if (restored) {
       this.model.annotations = restored
-      this.emit("annotationChanged", { action: "undo" })
+      this.emit('annotationChanged', { action: 'undo' })
       this.drawScene()
     }
   }
@@ -1114,7 +1123,7 @@ export default class NiiVueGPU extends EventTarget {
     const restored = this._annotationUndoStack.redo(this.model.annotations)
     if (restored) {
       this.model.annotations = restored
-      this.emit("annotationChanged", { action: "redo" })
+      this.emit('annotationChanged', { action: 'redo' })
       this.drawScene()
     }
   }
@@ -1130,33 +1139,33 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   protected enforceBackendAvailability(): void {
-    if (this._distributionBackend === "both") {
-      if (this.opts.backend === "webgpu" && !navigator.gpu) {
-        log.warn("WebGPU not available, falling back to WebGL2")
-        this.opts.backend = "webgl2"
+    if (this._distributionBackend === 'both') {
+      if (this.opts.backend === 'webgpu' && !navigator.gpu) {
+        log.warn('WebGPU not available, falling back to WebGL2')
+        this.opts.backend = 'webgl2'
       }
       return
     }
-    if (this.opts.backend === "webgpu" && !navigator.gpu) {
+    if (this.opts.backend === 'webgpu' && !navigator.gpu) {
       throw new Error(
-        "This niivuegpu WebGPU-only distribution requires browser WebGPU support.",
+        'This niivuegpu WebGPU-only distribution requires browser WebGPU support.',
       )
     }
-    if (this._distributionBackend === "webgpu") {
-      if (this.opts.backend === "webgl2") {
+    if (this._distributionBackend === 'webgpu') {
+      if (this.opts.backend === 'webgl2') {
         throw new Error(
           "This niivuegpu distribution includes only WebGPU. Requested backend 'webgl2' is unavailable.",
         )
       }
-      this.opts.backend = "webgpu"
+      this.opts.backend = 'webgpu'
       return
     }
-    if (this.opts.backend === "webgpu") {
+    if (this.opts.backend === 'webgpu') {
       throw new Error(
         "This niivuegpu distribution includes only WebGL2. Requested backend 'webgpu' is unavailable.",
       )
     }
-    this.opts.backend = "webgl2"
+    this.opts.backend = 'webgl2'
   }
 
   /**
@@ -1334,7 +1343,7 @@ export default class NiiVueGPU extends EventTarget {
       elevation,
       clipPlaneIndex,
     )
-    this.emit("clipPlaneChange", { clipPlane: [depth, azimuth, elevation] })
+    this.emit('clipPlaneChange', { clipPlane: [depth, azimuth, elevation] })
     this.drawScene()
   }
 
@@ -1346,7 +1355,7 @@ export default class NiiVueGPU extends EventTarget {
       dae[2],
       this.activeClipPlaneIndex,
     )
-    this.emit("clipPlaneChange", { clipPlane: [...dae] })
+    this.emit('clipPlaneChange', { clipPlane: [...dae] })
     this.drawScene()
   }
 
@@ -1390,7 +1399,7 @@ export default class NiiVueGPU extends EventTarget {
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<this> {
     await this.model.addVolume(volume)
     const vols = this.model.getVolumes()
-    this.emit("volumeLoaded", { volume: vols[vols.length - 1] })
+    this.emit('volumeLoaded', { volume: vols[vols.length - 1] })
     await this.updateGLVolume()
     return this
   }
@@ -1411,7 +1420,7 @@ export default class NiiVueGPU extends EventTarget {
     for (const vol of loaded) {
       await this.model.addVolume(vol)
       const vols = this.model.getVolumes()
-      this.emit("volumeLoaded", { volume: vols[vols.length - 1] })
+      this.emit('volumeLoaded', { volume: vols[vols.length - 1] })
     }
     await this.updateGLVolume()
     return this
@@ -1420,7 +1429,7 @@ export default class NiiVueGPU extends EventTarget {
   async addMesh(mesh: MeshFromUrlOptions | NVMeshType): Promise<this> {
     await this.model.addMesh(mesh)
     const meshes = this.model.getMeshes()
-    this.emit("meshLoaded", { mesh: meshes[meshes.length - 1] })
+    this.emit('meshLoaded', { mesh: meshes[meshes.length - 1] })
     await this.updateGLVolume()
     return this
   }
@@ -1439,7 +1448,7 @@ export default class NiiVueGPU extends EventTarget {
     for (const m of loaded) {
       await this.model.addMesh(m)
       const allMeshes = this.model.getMeshes()
-      this.emit("meshLoaded", { mesh: allMeshes[allMeshes.length - 1] })
+      this.emit('meshLoaded', { mesh: allMeshes[allMeshes.length - 1] })
     }
     await this.updateGLVolume()
     return this
@@ -1450,7 +1459,7 @@ export default class NiiVueGPU extends EventTarget {
     options: Record<string, unknown> = {},
   ): Promise<void> {
     const ext = NVLoader.getFileExt(
-      typeof pathOrFile === "string" ? pathOrFile : pathOrFile.name,
+      typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.name,
     )
     const meshExts = NVMesh.meshExtensions()
     if (meshExts.includes(ext)) {
@@ -1468,7 +1477,7 @@ export default class NiiVueGPU extends EventTarget {
     options: Record<string, unknown> = {},
   ): Promise<void> {
     const ext = NVLoader.getFileExt(
-      typeof pathOrFile === "string" ? pathOrFile : pathOrFile.name,
+      typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.name,
     )
     const meshExts = NVMesh.meshExtensions()
     if (meshExts.includes(ext)) {
@@ -1484,9 +1493,9 @@ export default class NiiVueGPU extends EventTarget {
 
   async removeMesh(meshIndex: number): Promise<void> {
     const meshes = this.model.getMeshes()
-    if (!this._checkBounds(meshes, meshIndex, "Mesh")) return
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     const mesh = meshes[meshIndex]
-    this.emit("meshRemoved", { mesh, index: meshIndex })
+    this.emit('meshRemoved', { mesh, index: meshIndex })
     this.model.removeMesh(meshIndex)
     await this.updateGLVolume()
   }
@@ -1494,7 +1503,7 @@ export default class NiiVueGPU extends EventTarget {
   async removeAllVolumes(): Promise<void> {
     const vols = this.model.getVolumes()
     for (let i = vols.length - 1; i >= 0; i--) {
-      this.emit("volumeRemoved", { volume: vols[i], index: i })
+      this.emit('volumeRemoved', { volume: vols[i], index: i })
     }
     await this.model.removeAllVolumes()
     await this.updateGLVolume()
@@ -1503,7 +1512,7 @@ export default class NiiVueGPU extends EventTarget {
   async removeAllMeshes(): Promise<void> {
     const meshes = this.model.getMeshes()
     for (let i = meshes.length - 1; i >= 0; i--) {
-      this.emit("meshRemoved", { mesh: meshes[i], index: i })
+      this.emit('meshRemoved', { mesh: meshes[i], index: i })
     }
     this.model.removeAllMeshes()
     await this.updateGLVolume()
@@ -1516,10 +1525,10 @@ export default class NiiVueGPU extends EventTarget {
    * await nv1.moveVolumeUp(0) // move the background image up one position
    */
   async moveVolumeUp(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, "Volume")) return
+    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
     const changed = this.model.moveVolume(volumeIndex, volumeIndex + 1)
     if (!changed) return
-    this.emit("volumeOrderChanged", { volumes: this.model.volumes })
+    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
     await this.updateGLVolume()
   }
 
@@ -1530,10 +1539,10 @@ export default class NiiVueGPU extends EventTarget {
    * await nv1.moveVolumeDown(1) // move the second image down to the background position
    */
   async moveVolumeDown(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, "Volume")) return
+    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
     const changed = this.model.moveVolume(volumeIndex, volumeIndex - 1)
     if (!changed) return
-    this.emit("volumeOrderChanged", { volumes: this.model.volumes })
+    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
     await this.updateGLVolume()
   }
 
@@ -1544,13 +1553,13 @@ export default class NiiVueGPU extends EventTarget {
    * await nv1.moveVolumeToTop(0) // move the background image to the top layer
    */
   async moveVolumeToTop(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, "Volume")) return
+    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
     const changed = this.model.moveVolume(
       volumeIndex,
       this.model.volumes.length - 1,
     )
     if (!changed) return
-    this.emit("volumeOrderChanged", { volumes: this.model.volumes })
+    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
     await this.updateGLVolume()
   }
 
@@ -1561,10 +1570,10 @@ export default class NiiVueGPU extends EventTarget {
    * await nv1.moveVolumeToBottom(3) // move the 4th volume to the background position
    */
   async moveVolumeToBottom(volumeIndex: number): Promise<void> {
-    if (!this._checkBounds(this.model.volumes, volumeIndex, "Volume")) return
+    if (!this._checkBounds(this.model.volumes, volumeIndex, 'Volume')) return
     const changed = this.model.moveVolume(volumeIndex, 0)
     if (!changed) return
-    this.emit("volumeOrderChanged", { volumes: this.model.volumes })
+    this.emit('volumeOrderChanged', { volumes: this.model.volumes })
     await this.updateGLVolume()
   }
 
@@ -1583,7 +1592,7 @@ export default class NiiVueGPU extends EventTarget {
     cmap: ColorMap | null,
   ): Promise<void> {
     const volumes = this.model.getVolumes()
-    if (!this._checkBounds(volumes, volumeIndex, "Volume")) return
+    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     if (cmap === null) {
       volumes[volumeIndex].colormapLabel = null
     } else {
@@ -1612,7 +1621,7 @@ export default class NiiVueGPU extends EventTarget {
 
   getMeshShader(meshIndex: number): string | undefined {
     const meshes = this.model.getMeshes()
-    if (!this._checkBounds(meshes, meshIndex, "Mesh")) return
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     return meshes[meshIndex].shaderType
   }
 
@@ -1627,14 +1636,14 @@ export default class NiiVueGPU extends EventTarget {
    */
   async setVolume(volumeIndex: number, options: VolumeUpdate): Promise<void> {
     const volumes = this.model.getVolumes()
-    if (!this._checkBounds(volumes, volumeIndex, "Volume")) return
+    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     // Clamp frame4D to valid range
     if (options.frame4D !== undefined) {
       const maxFrame = (volumes[volumeIndex].nFrame4D ?? 1) - 1
       options.frame4D = Math.max(0, Math.min(options.frame4D, maxFrame))
     }
     Object.assign(volumes[volumeIndex], options)
-    this.emit("volumeUpdated", {
+    this.emit('volumeUpdated', {
       volumeIndex,
       volume: volumes[volumeIndex],
       changes: options,
@@ -1653,7 +1662,7 @@ export default class NiiVueGPU extends EventTarget {
    */
   async setMesh(meshIndex: number, options: MeshUpdate): Promise<void> {
     const meshes = this.model.getMeshes()
-    if (!this._checkBounds(meshes, meshIndex, "Mesh")) return
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     if (options.rgba255) {
       options.color = [
         options.rgba255[0] / 255,
@@ -1668,7 +1677,7 @@ export default class NiiVueGPU extends EventTarget {
       const validShaders = this.view?.getAvailableShaders() ?? []
       if (!validShaders.includes(options.shaderType)) {
         log.warn(
-          `Invalid shader type: ${options.shaderType}. Expected one of: ${validShaders.join(", ")}`,
+          `Invalid shader type: ${options.shaderType}. Expected one of: ${validShaders.join(', ')}`,
         )
         return
       }
@@ -1689,7 +1698,7 @@ export default class NiiVueGPU extends EventTarget {
       }
     }
     Object.assign(meshes[meshIndex], options)
-    this.emit("meshUpdated", {
+    this.emit('meshUpdated', {
       meshIndex,
       mesh: meshes[meshIndex],
       changes: options,
@@ -1708,12 +1717,12 @@ export default class NiiVueGPU extends EventTarget {
     layerOpts: MeshLayerFromUrlOptions,
   ): Promise<this> {
     const meshes = this.model.getMeshes()
-    if (!this._checkBounds(meshes, meshIndex, "Mesh")) return this
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return this
     const m = meshes[meshIndex]
     const nVert = m.positions.length / 3
     const result = await NVMeshLayers.loadLayerFromUrl(layerOpts.url, nVert)
     const urlString =
-      typeof layerOpts.url === "string" ? layerOpts.url : layerOpts.url.name
+      typeof layerOpts.url === 'string' ? layerOpts.url : layerOpts.url.name
     const newLayer = NVMeshLayers.createLayer(result.values, nVert, {
       nFrame4D: result.nFrame4D,
       colormapLabel: result.colormapLabel ?? null,
@@ -1751,9 +1760,9 @@ export default class NiiVueGPU extends EventTarget {
    */
   async removeMeshLayer(meshIndex: number, layerIndex: number): Promise<this> {
     const meshes = this.model.getMeshes()
-    if (!this._checkBounds(meshes, meshIndex, "Mesh")) return this
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return this
     const m = meshes[meshIndex]
-    if (!this._checkBounds(m.layers, layerIndex, "Layer")) return this
+    if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return this
     m.layers.splice(layerIndex, 1)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
     await this.updateGLVolume()
@@ -1773,9 +1782,9 @@ export default class NiiVueGPU extends EventTarget {
     options: Partial<NVMeshLayer>,
   ): Promise<void> {
     const meshes = this.model.getMeshes()
-    if (!this._checkBounds(meshes, meshIndex, "Mesh")) return
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     const m = meshes[meshIndex]
-    if (!this._checkBounds(m.layers, layerIndex, "Layer")) return
+    if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return
     Object.assign(m.layers[layerIndex], options)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
     await this.updateGLVolume()
@@ -1803,23 +1812,23 @@ export default class NiiVueGPU extends EventTarget {
     options: Partial<NVTractOptions>,
   ): Promise<void> {
     const meshes = this.model.getMeshes()
-    if (!this._checkBounds(meshes, meshIndex, "Mesh")) return
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     const m = meshes[meshIndex]
-    if (m.kind !== "tract" || !m.tractOptions) {
+    if (m.kind !== 'tract' || !m.tractOptions) {
       log.warn(`setTractOptions: mesh ${meshIndex} is not a tract`)
       return
     }
     // When colorBy changes, reset cal_min/cal_max to 0 so auto-compute picks up
     // the new scalar's range (each overlay has a different data range)
-    if ("colorBy" in options && options.colorBy !== m.tractOptions.colorBy) {
-      if (!("calMin" in options)) options.calMin = 0
-      if (!("calMax" in options)) options.calMax = 0
+    if ('colorBy' in options && options.colorBy !== m.tractOptions.colorBy) {
+      if (!('calMin' in options)) options.calMin = 0
+      if (!('calMax' in options)) options.calMax = 0
     }
     Object.assign(m.tractOptions, options)
     // Auto-toggle colorbar visibility based on scalar coloring mode
-    if ("colorBy" in options) {
+    if ('colorBy' in options) {
       const cb = m.tractOptions.colorBy
-      m.isColorbarVisible = cb.startsWith("dpv:") || cb.startsWith("dps:")
+      m.isColorbarVisible = cb.startsWith('dpv:') || cb.startsWith('dps:')
     }
     NVMesh.retessellateTract(m)
     await this.updateGLVolume()
@@ -1831,9 +1840,9 @@ export default class NiiVueGPU extends EventTarget {
    */
   getTractGroups(meshIndex: number): string[] {
     const meshes = this.model.getMeshes()
-    if (!this._checkBounds(meshes, meshIndex, "Mesh")) return []
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return []
     const m = meshes[meshIndex]
-    if (m.kind !== "tract" || !m.trx) return []
+    if (m.kind !== 'tract' || !m.trx) return []
     return Object.keys(m.trx.groups)
   }
 
@@ -1848,9 +1857,9 @@ export default class NiiVueGPU extends EventTarget {
     options: Partial<NVConnectomeOptions>,
   ): Promise<void> {
     const meshes = this.model.getMeshes()
-    if (!this._checkBounds(meshes, meshIndex, "Mesh")) return
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     const m = meshes[meshIndex]
-    if (m.kind !== "connectome" || !m.connectomeOptions) {
+    if (m.kind !== 'connectome' || !m.connectomeOptions) {
       log.warn(`setConnectomeOptions: mesh ${meshIndex} is not a connectome`)
       return
     }
@@ -1884,7 +1893,7 @@ export default class NiiVueGPU extends EventTarget {
     const clamped = Math.max(0, Math.min(frame, maxFrame))
     if (clamped === vol.frame4D) return
     vol.frame4D = clamped
-    this.emit("frameChange", { volume: vol, frame: clamped })
+    this.emit('frameChange', { volume: vol, frame: clamped })
     await this.updateGLVolume()
     this.createOnLocationChange()
   }
@@ -1930,7 +1939,7 @@ export default class NiiVueGPU extends EventTarget {
       return // Already fully loaded
     }
     if (!vol.url) {
-      log.warn("loadDeferred4DVolumes: volume has no url for re-fetch")
+      log.warn('loadDeferred4DVolumes: volume has no url for re-fetch')
       return
     }
     const nii = await NVVolume.loadVolume(vol.url)
@@ -2000,7 +2009,7 @@ export default class NiiVueGPU extends EventTarget {
 
   createOnLocationChange(axCorSag = NaN): void {
     const msg = buildLocationMessage(this, axCorSag)
-    if (msg) this.emit("locationChange", msg)
+    if (msg) this.emit('locationChange', msg)
   }
 
   /**
@@ -2015,7 +2024,7 @@ export default class NiiVueGPU extends EventTarget {
    */
   setBounds(bounds: [number, number, number, number]): void {
     if (!Array.isArray(bounds) || bounds.length !== 4) {
-      throw new Error("setBounds: expected [x1,y1,x2,y2] array")
+      throw new Error('setBounds: expected [x1,y1,x2,y2] array')
     }
     this.opts.bounds = [
       [bounds[0], bounds[1]],
@@ -2072,11 +2081,11 @@ export default class NiiVueGPU extends EventTarget {
 
   async saveMesh(
     meshIndex: number,
-    filename = "mesh.mz3",
+    filename = 'mesh.mz3',
     options?: WriteOptions,
   ): Promise<void> {
     const meshes = this.model.getMeshes()
-    if (!this._checkBounds(meshes, meshIndex, "Mesh")) return
+    if (!this._checkBounds(meshes, meshIndex, 'Mesh')) return
     const ext = NVLoader.getFileExt(filename)
     const mesh = meshes[meshIndex]
     const buffer = await NVMesh.writeMesh(
@@ -2086,17 +2095,17 @@ export default class NiiVueGPU extends EventTarget {
       options,
     )
     NVDocument.downloadBlob(
-      new Blob([buffer], { type: "application/octet-stream" }),
+      new Blob([buffer], { type: 'application/octet-stream' }),
       filename,
     )
   }
 
   async saveBitmap(
-    filename = "myBitmap.png",
+    filename = 'myBitmap.png',
     quality = 0.92,
   ): Promise<boolean> {
     if (!this.canvas) {
-      log.warn("saveBitmap: no canvas attached")
+      log.warn('saveBitmap: no canvas attached')
       return false
     }
 
@@ -2136,23 +2145,23 @@ export default class NiiVueGPU extends EventTarget {
       sh = Math.max(1, bottom - top)
     }
 
-    const exportCanvas = document.createElement("canvas")
+    const exportCanvas = document.createElement('canvas')
     exportCanvas.width = sw
     exportCanvas.height = sh
-    const context = exportCanvas.getContext("2d")
+    const context = exportCanvas.getContext('2d')
     if (!context) {
-      log.warn("saveBitmap: failed to create 2D export context")
+      log.warn('saveBitmap: failed to create 2D export context')
       return false
     }
     context.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, sw, sh)
 
-    let outputName = filename.trim() || "myBitmap.png"
+    let outputName = filename.trim() || 'myBitmap.png'
     const lowerName = outputName.toLowerCase()
-    let mimeType = "image/png"
-    if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
-      mimeType = "image/jpeg"
-    } else if (!lowerName.endsWith(".png")) {
-      outputName += ".png"
+    let mimeType = 'image/png'
+    if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) {
+      mimeType = 'image/jpeg'
+    } else if (!lowerName.endsWith('.png')) {
+      outputName += '.png'
     }
 
     const jpgQuality = Math.max(0, Math.min(1, quality))
@@ -2160,12 +2169,12 @@ export default class NiiVueGPU extends EventTarget {
       exportCanvas.toBlob(
         resolve,
         mimeType,
-        mimeType === "image/jpeg" ? jpgQuality : undefined,
+        mimeType === 'image/jpeg' ? jpgQuality : undefined,
       )
     })
 
     if (!blob) {
-      log.warn("saveBitmap: failed to generate image blob")
+      log.warn('saveBitmap: failed to generate image blob')
       return false
     }
 
@@ -2193,19 +2202,19 @@ export default class NiiVueGPU extends EventTarget {
   async saveVolume(
     options: SaveVolumeOptions = {},
   ): Promise<boolean | Uint8Array> {
-    const { filename = "", isSaveDrawing = false, volumeByIndex = 0 } = options
+    const { filename = '', isSaveDrawing = false, volumeByIndex = 0 } = options
     const volumes = this.model.getVolumes()
     if (volumes.length === 0) {
-      log.debug("No voxelwise image open")
+      log.debug('No voxelwise image open')
       return false
     }
-    if (!this._checkBounds(volumes, volumeByIndex, "Volume")) return false
+    if (!this._checkBounds(volumes, volumeByIndex, 'Volume')) return false
     const volume = volumes[volumeByIndex]
     let hdr = volume.hdr
     let imgBuffer: ArrayBuffer
     if (isSaveDrawing) {
       if (!this.model.drawingVolume) {
-        log.debug("No drawing open")
+        log.debug('No drawing open')
         return false
       }
       // Use the drawing volume's own header
@@ -2219,12 +2228,12 @@ export default class NiiVueGPU extends EventTarget {
       // Reorient drawing from RAS to native voxel order
       const nativeDrawing = reorientDrawingToNative(
         volume,
-        Drawing.getDrawingBitmap(this.model.drawingVolume),
+        getDrawingBitmap(this.model.drawingVolume),
       )
       imgBuffer = nativeDrawing.buffer as ArrayBuffer
     } else {
       if (!volume.img) {
-        log.debug("Volume has no image data")
+        log.debug('Volume has no image data')
         return false
       }
       // Convert TypedArray to ArrayBuffer (slice to avoid including header bytes)
@@ -2234,7 +2243,7 @@ export default class NiiVueGPU extends EventTarget {
       )
     }
     const buffer = await NVVolume.writeVolume(
-      filename || "image.nii",
+      filename || 'image.nii',
       hdr,
       imgBuffer,
     )
@@ -2243,7 +2252,7 @@ export default class NiiVueGPU extends EventTarget {
       return outBytes
     }
     NVDocument.downloadBlob(
-      new Blob([buffer], { type: "application/octet-stream" }),
+      new Blob([buffer], { type: 'application/octet-stream' }),
       filename,
     )
     return true
@@ -2254,7 +2263,7 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   get meshShaders() {
-    if (!this.view || typeof this.view.getAvailableShaders !== "function") {
+    if (!this.view || typeof this.view.getAvailableShaders !== 'function') {
       return []
     }
     return this.view.getAvailableShaders()
@@ -2286,7 +2295,7 @@ export default class NiiVueGPU extends EventTarget {
         options?: TransformOptions,
       ): Promise<NVImage> => {
         if (!volume.hdr || !volume.img) {
-          throw new Error("Volume must have hdr and img data")
+          throw new Error('Volume must have hdr and img data')
         }
         const { hdr, img } = await NVVolumeTransforms.applyTransform(
           name,
@@ -2336,7 +2345,7 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   setDragMode(mode: string | number): void {
-    if (typeof mode === "string") {
+    if (typeof mode === 'string') {
       const map: Record<string, number> = {
         none: DRAG_MODE.none,
         contrast: DRAG_MODE.contrast,
@@ -2376,7 +2385,7 @@ export default class NiiVueGPU extends EventTarget {
    */
   broadcastTo(
     targets?: NiiVueGPU | NiiVueGPU[],
-    opts: SyncOpts = { "2d": true, "3d": true, clipPlane: true },
+    opts: SyncOpts = { '2d': true, '3d': true, clipPlane: true },
   ): void {
     if (!targets) {
       this._syncTargets = []
@@ -2398,7 +2407,7 @@ export default class NiiVueGPU extends EventTarget {
       if (target === this) continue
       const dst = target.model.scene
       let changed = false
-      if (opts["3d"]) {
+      if (opts['3d']) {
         if (
           dst.azimuth !== src.azimuth ||
           dst.elevation !== src.elevation ||
@@ -2410,7 +2419,7 @@ export default class NiiVueGPU extends EventTarget {
           changed = true
         }
       }
-      if (opts["2d"] || opts.crosshair) {
+      if (opts['2d'] || opts.crosshair) {
         const mm = this.model.scene2mm(src.crosshairPos)
         const frac = target.model.mm2scene(mm)
         if (
@@ -2421,7 +2430,7 @@ export default class NiiVueGPU extends EventTarget {
           dst.crosshairPos = frac
           changed = true
         }
-        if (opts["2d"]) {
+        if (opts['2d']) {
           const sp = src.pan2Dxyzmm
           const dp = dst.pan2Dxyzmm
           if (
@@ -2485,15 +2494,15 @@ export default class NiiVueGPU extends EventTarget {
   createEmptyDrawing(): void {
     const volumes = this.model.getVolumes()
     if (volumes.length === 0) {
-      log.warn("createEmptyDrawing: no background volume loaded")
+      log.warn('createEmptyDrawing: no background volume loaded')
       return
     }
     if (!volumes[0].dimsRAS) {
-      log.warn("createEmptyDrawing: background volume has no dimsRAS")
+      log.warn('createEmptyDrawing: background volume has no dimsRAS')
       return
     }
-    this.model.drawingVolume = Drawing.createDrawingVolume(volumes[0])
-    const cleared = Drawing.clearAllUndoBitmaps(
+    this.model.drawingVolume = createDrawingVolume(volumes[0])
+    const cleared = clearAllUndoBitmaps(
       this.drawUndoBitmaps,
       this.maxDrawUndoBitmaps,
     )
@@ -2501,7 +2510,7 @@ export default class NiiVueGPU extends EventTarget {
     this.currentDrawUndoBitmap = cleared.currentDrawUndoBitmap
     this.model.draw.isEnabled = true
     this._drawLut = null
-    this.emit("drawingChanged", { action: "create" })
+    this.emit('drawingChanged', { action: 'create' })
     this.refreshDrawing()
   }
 
@@ -2515,21 +2524,21 @@ export default class NiiVueGPU extends EventTarget {
     this._drawPenFillPts = []
     this._drawLut = null
     this.view?.clearDrawing()
-    this.emit("drawingChanged", { action: "close" })
+    this.emit('drawingChanged', { action: 'close' })
     this.drawScene()
   }
 
   drawUndo(): void {
     if (!this.model.drawingVolume) return
-    const result = Drawing.drawUndo({
+    const result = drawUndo({
       drawUndoBitmaps: this.drawUndoBitmaps,
       currentDrawUndoBitmap: this.currentDrawUndoBitmap,
-      drawBitmap: Drawing.getDrawingBitmap(this.model.drawingVolume),
+      drawBitmap: getDrawingBitmap(this.model.drawingVolume),
     })
     if (result) {
       this.model.drawingVolume.img = result.drawBitmap
       this.currentDrawUndoBitmap = result.currentDrawUndoBitmap
-      this.emit("drawingChanged", { action: "undo" })
+      this.emit('drawingChanged', { action: 'undo' })
       this.refreshDrawing()
     }
   }
@@ -2561,7 +2570,7 @@ export default class NiiVueGPU extends EventTarget {
       this._drawLut = buildDrawingLut(cm)
     }
     const rgba = drawingBitmapToRGBA(
-      Drawing.getDrawingBitmap(this.model.drawingVolume),
+      getDrawingBitmap(this.model.drawingVolume),
       this._drawLut.lut,
       this._drawLut.min ?? 0,
       this.model.draw.opacity,
@@ -2569,7 +2578,7 @@ export default class NiiVueGPU extends EventTarget {
     this.view.refreshDrawing(rgba, [dims[1], dims[2], dims[3]])
   }
 
-  async saveDrawing(filename = "drawing.nii"): Promise<boolean | Uint8Array> {
+  async saveDrawing(filename = 'drawing.nii'): Promise<boolean | Uint8Array> {
     return this.saveVolume({ filename, isSaveDrawing: true })
   }
 
@@ -2578,17 +2587,17 @@ export default class NiiVueGPU extends EventTarget {
   ): Promise<boolean> {
     const volumes = this.model.getVolumes()
     if (volumes.length === 0) {
-      log.warn("loadDrawing: no background volume loaded")
+      log.warn('loadDrawing: no background volume loaded')
       return false
     }
     const back = volumes[0]
     if (!back.dimsRAS || !back.permRAS) {
-      log.warn("loadDrawing: background volume has no dimsRAS/permRAS")
+      log.warn('loadDrawing: background volume has no dimsRAS/permRAS')
       return false
     }
     try {
       const url =
-        typeof source === "string" || source instanceof File
+        typeof source === 'string' || source instanceof File
           ? source
           : source.url
       const nii = await NVVolume.loadVolume(url)
@@ -2600,30 +2609,30 @@ export default class NiiVueGPU extends EventTarget {
         return false
       }
       // Transform from native voxel order to RAS to match background volume
-      const transform = Drawing.calculateLoadDrawingTransform({
+      const transform = calculateLoadDrawingTransform({
         permRAS: back.permRAS,
         dims: back.dimsRAS,
       })
       const img = nii.img
       if (img instanceof ArrayBuffer) {
-        throw new Error("loadDrawing: expected typed array, got ArrayBuffer")
+        throw new Error('loadDrawing: expected typed array, got ArrayBuffer')
       }
       const buf = img.buffer as ArrayBuffer
       const offset = img.byteOffset
       const length = img.byteLength
       const imgData = new Uint8Array(buf, offset, length)
-      const transformedBitmap = Drawing.transformBitmap({
+      const transformedBitmap = transformBitmap({
         inputData: imgData,
         dims: back.dimsRAS,
         xlut: transform.xlut,
         ylut: transform.ylut,
         zlut: transform.zlut,
       })
-      const dv = Drawing.createDrawingVolume(back)
+      const dv = createDrawingVolume(back)
       dv.img = transformedBitmap
       this.model.drawingVolume = dv
       // Initialize undo
-      const cleared = Drawing.clearAllUndoBitmaps(
+      const cleared = clearAllUndoBitmaps(
         this.drawUndoBitmaps,
         this.maxDrawUndoBitmaps,
       )
@@ -2634,7 +2643,7 @@ export default class NiiVueGPU extends EventTarget {
       this.refreshDrawing()
       return true
     } catch (err) {
-      log.warn("loadDrawing failed:", err)
+      log.warn('loadDrawing failed:', err)
       return false
     }
   }
@@ -2645,7 +2654,7 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   destroy(): void {
-    this.emit("viewDestroyed")
+    this.emit('viewDestroyed')
     if (this._rafId !== null) {
       cancelAnimationFrame(this._rafId)
       this._rafId = null
@@ -2675,7 +2684,7 @@ export default class NiiVueGPU extends EventTarget {
    */
   async setFont(font: NVFontData): Promise<boolean> {
     this.opts.font = font
-    this.emit("change", { property: "font", value: font })
+    this.emit('change', { property: 'font', value: font })
     return this.reinitializeView({})
   }
 
@@ -2741,10 +2750,10 @@ export default class NiiVueGPU extends EventTarget {
    */
   addColormap(
     name: string,
-    cmap: Pick<ColorMap, "R" | "G" | "B"> & Partial<Pick<ColorMap, "A" | "I">>,
+    cmap: Pick<ColorMap, 'R' | 'G' | 'B'> & Partial<Pick<ColorMap, 'A' | 'I'>>,
   ): string {
     const canonical = NVCmaps.addColormap(name, cmap)
-    this.emit("colormapAdded", { name: canonical })
+    this.emit('colormapAdded', { name: canonical })
     return canonical
   }
 
@@ -2760,7 +2769,7 @@ export default class NiiVueGPU extends EventTarget {
     const resolved = name ?? defaultName
     if (!resolved) {
       throw new Error(
-        `addColormapFromUrl: cannot derive a name from "${typeof url === "string" ? url : url.name}" — pass an explicit name.`,
+        `addColormapFromUrl: cannot derive a name from "${typeof url === 'string' ? url : url.name}" — pass an explicit name.`,
       )
     }
     this.addColormap(resolved, cmap)
@@ -2776,21 +2785,21 @@ export default class NiiVueGPU extends EventTarget {
   ): Promise<{ cmap: ColorMap; defaultName: string }> {
     let json: string
     let sourceName: string
-    if (typeof url === "string") {
+    if (typeof url === 'string') {
       const resp = await fetch(url)
       if (!resp.ok)
         throw new Error(
           `Failed to fetch ${url}: ${resp.status} ${resp.statusText}`,
         )
       json = await resp.text()
-      const clean = url.split("?")[0].split("#")[0]
-      sourceName = clean.split("/").pop() ?? ""
+      const clean = url.split('?')[0].split('#')[0]
+      sourceName = clean.split('/').pop() ?? ''
     } else {
       json = await url.text()
       sourceName = url.name
     }
     const cmap = JSON.parse(json) as ColorMap
-    const defaultName = sourceName.replace(/\.(json\.gz|gz|json)$/i, "")
+    const defaultName = sourceName.replace(/\.(json\.gz|gz|json)$/i, '')
     return { cmap, defaultName }
   }
 
@@ -2799,7 +2808,7 @@ export default class NiiVueGPU extends EventTarget {
     return NVDocument.serialize(this.model)
   }
 
-  saveDocument(filename = "scene.nvd"): void {
+  saveDocument(filename = 'scene.nvd'): void {
     const data = this.serializeDocument()
     NVDocument.triggerDownload(data, filename)
   }
@@ -2843,11 +2852,8 @@ export default class NiiVueGPU extends EventTarget {
     if (doc.drawingBitmapRLE && doc.drawingBitmapLength) {
       const back = this.model.getVolumes()[0]
       if (back) {
-        const dv = Drawing.createDrawingVolume(back)
-        const decoded = Drawing.decodeRLE(
-          doc.drawingBitmapRLE,
-          doc.drawingBitmapLength,
-        )
+        const dv = createDrawingVolume(back)
+        const decoded = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
         if (decoded.length !== dv.nVox3D) {
           log.warn(
             `loadDocument: decoded drawing length ${decoded.length} does not match volume ${dv.nVox3D}`,
@@ -2861,6 +2867,6 @@ export default class NiiVueGPU extends EventTarget {
         this.refreshDrawing()
       }
     }
-    this.emit("documentLoaded")
+    this.emit('documentLoaded')
   }
 }

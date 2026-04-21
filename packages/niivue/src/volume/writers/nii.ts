@@ -5,10 +5,10 @@
  * Compression (.nii.gz) is handled by the writer registry, not here.
  */
 
-import type { NIFTI1, NIFTI2 } from "@/NVTypes"
-import { hdrToArrayBuffer } from "../utils"
+import type { NIFTI1, NIFTI2 } from '@/NVTypes'
+import { hdrToArrayBuffer } from '../utils'
 
-export const extensions = ["NII", "NII.GZ"]
+export const extensions = ['NII', 'NII.GZ']
 
 export async function write(
   hdr: NIFTI1 | NIFTI2,

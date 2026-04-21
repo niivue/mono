@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 // ---------- Predefined custom layouts ----------
 
@@ -44,13 +44,13 @@ const nv = new NiiVue({
   backgroundColor: [0.2, 0.2, 0.2, 1],
 })
 
-nv.addEventListener("locationChange", (e) => {
-  document.getElementById("location").innerHTML =
+nv.addEventListener('locationChange', (e) => {
+  document.getElementById('location').innerHTML =
     `&nbsp;&nbsp;${e.detail.string}`
 })
 
 await nv.attachToCanvas(gl1)
-await nv.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 
 // Apply the initial custom layout
 nv.customLayout = layouts.leftSag
@@ -59,7 +59,7 @@ nv.customLayout = layouts.leftSag
 
 layoutSelect.onchange = function () {
   const key = this.value
-  if (key === "builtin") {
+  if (key === 'builtin') {
     nv.clearCustomLayout()
   } else {
     nv.customLayout = layouts[key]

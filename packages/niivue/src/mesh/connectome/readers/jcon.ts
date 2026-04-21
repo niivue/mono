@@ -3,11 +3,11 @@ import type {
   NVConnectomeEdge,
   NVConnectomeNode,
   NVConnectomeOptions,
-} from "@/NVTypes"
-import type { ConnectomeFileData } from "../index"
-import { convertDenseToSparse, defaultConnectomeOptions } from "../index"
+} from '@/NVTypes'
+import type { ConnectomeFileData } from '../index'
+import { convertDenseToSparse, defaultConnectomeOptions } from '../index'
 
-export const extensions = ["JCON"]
+export const extensions = ['JCON']
 
 /**
  * Read a JCON (JSON Connectome) file.
@@ -21,22 +21,22 @@ export async function read(
 
   // Extract display options from the file (if present)
   const fileOptions: Partial<NVConnectomeOptions> = {}
-  if (typeof json.nodeColormap === "string")
+  if (typeof json.nodeColormap === 'string')
     fileOptions.nodeColormap = json.nodeColormap
-  if (typeof json.nodeColormapNegative === "string")
+  if (typeof json.nodeColormapNegative === 'string')
     fileOptions.nodeColormapNegative = json.nodeColormapNegative
-  if (typeof json.nodeMinColor === "number")
+  if (typeof json.nodeMinColor === 'number')
     fileOptions.nodeMinColor = json.nodeMinColor
-  if (typeof json.nodeMaxColor === "number")
+  if (typeof json.nodeMaxColor === 'number')
     fileOptions.nodeMaxColor = json.nodeMaxColor
-  if (typeof json.nodeScale === "number") fileOptions.nodeScale = json.nodeScale
-  if (typeof json.edgeColormap === "string")
+  if (typeof json.nodeScale === 'number') fileOptions.nodeScale = json.nodeScale
+  if (typeof json.edgeColormap === 'string')
     fileOptions.edgeColormap = json.edgeColormap
-  if (typeof json.edgeColormapNegative === "string")
+  if (typeof json.edgeColormapNegative === 'string')
     fileOptions.edgeColormapNegative = json.edgeColormapNegative
-  if (typeof json.edgeMin === "number") fileOptions.edgeMin = json.edgeMin
-  if (typeof json.edgeMax === "number") fileOptions.edgeMax = json.edgeMax
-  if (typeof json.edgeScale === "number") fileOptions.edgeScale = json.edgeScale
+  if (typeof json.edgeMin === 'number') fileOptions.edgeMin = json.edgeMin
+  if (typeof json.edgeMax === 'number') fileOptions.edgeMax = json.edgeMax
+  if (typeof json.edgeScale === 'number') fileOptions.edgeScale = json.edgeScale
 
   // Detect format variant
   if (isDenseFormat(json)) {
@@ -46,7 +46,7 @@ export async function read(
     return readSparse(json, fileOptions)
   }
   throw new Error(
-    "Unrecognized JCON format: expected sparse or dense connectome",
+    'Unrecognized JCON format: expected sparse or dense connectome',
   )
 }
 
@@ -54,7 +54,7 @@ export async function read(
 function isDenseFormat(json: Record<string, unknown>): boolean {
   const nodes = json.nodes as Record<string, unknown> | undefined
   return (
-    !!nodes && "names" in nodes && "X" in nodes && Array.isArray(json.edges)
+    !!nodes && 'names' in nodes && 'X' in nodes && Array.isArray(json.edges)
   )
 }
 
@@ -91,7 +91,7 @@ function readSparse(
   const rawEdges = json.edges as Array<Record<string, unknown>>
 
   const nodes: NVConnectomeNode[] = rawNodes.map((n) => ({
-    name: (n.name as string) ?? "",
+    name: (n.name as string) ?? '',
     x: (n.x as number) ?? 0,
     y: (n.y as number) ?? 0,
     z: (n.z as number) ?? 0,

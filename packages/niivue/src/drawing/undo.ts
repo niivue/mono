@@ -1,5 +1,5 @@
-import { log } from "@/logger"
-import { decodeRLE } from "./rle"
+import { log } from '@/logger'
+import { decodeRLE } from './rle'
 
 interface DrawUndoArgs {
   drawUndoBitmaps: Uint8Array[]
@@ -16,7 +16,7 @@ export function drawUndo({
   | undefined {
   const len = drawUndoBitmaps.length
   if (len < 1) {
-    log.debug("undo bitmaps not loaded")
+    log.debug('undo bitmaps not loaded')
     return
   }
   // Clamp index into valid range
@@ -27,7 +27,7 @@ export function drawUndo({
     currentDrawUndoBitmap = len - 1
   }
   if (drawUndoBitmaps[currentDrawUndoBitmap].length < 2) {
-    log.debug("drawUndo is misbehaving")
+    log.debug('drawUndo is misbehaving')
     return
   }
   // Load from current index (the state saved before the most recent stroke)

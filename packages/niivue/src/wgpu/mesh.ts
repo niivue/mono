@@ -1,8 +1,8 @@
-import * as NVMeshUtils from "@/mesh/NVMesh"
-import type { NVMesh, WebGPUMeshGPU } from "@/NVTypes"
-import { BYTES_PER_VERTEX } from "@/view/NVCrosshair"
-import { buildCylinderMeshData, buildSphereMeshData } from "@/view/NVMeshView"
-import meshShaderWGSL from "./mesh.wgsl?raw"
+import * as NVMeshUtils from '@/mesh/NVMesh'
+import type { NVMesh, WebGPUMeshGPU } from '@/NVTypes'
+import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
+import { buildCylinderMeshData, buildSphereMeshData } from '@/view/NVMeshView'
+import meshShaderWGSL from './mesh.wgsl?raw'
 
 export const UNIFORM_ALIGNMENT = 256 // WebGPU minimum uniform buffer offset alignment
 export const MESH_UNIFORM_SIZE = 176
@@ -40,11 +40,11 @@ export function loadCylinderMesh(
 
 export function createMeshBuffers(
   _device: GPUDevice,
-  meshData: Omit<NVMesh, "layers" | "perVertexColors"> &
-    Partial<Pick<NVMesh, "layers" | "perVertexColors">>,
+  meshData: Omit<NVMesh, 'layers' | 'perVertexColors'> &
+    Partial<Pick<NVMesh, 'layers' | 'perVertexColors'>>,
   options: Record<string, unknown> = {},
 ): NVMesh {
-  const { shaderType = "phong" } = options as { shaderType?: string }
+  const { shaderType = 'phong' } = options as { shaderType?: string }
   const mesh = meshData as NVMesh
   mesh.opacity ??= 1
   mesh.shaderType = shaderType
@@ -60,7 +60,7 @@ export function uploadMeshGPU(
   meshData: NVMesh,
   options: Record<string, unknown> = {},
 ): WebGPUMeshGPU & { shaderType?: string } {
-  const { shaderType = "phong" } = options as { shaderType?: string }
+  const { shaderType = 'phong' } = options as { shaderType?: string }
   const normals = NVMeshUtils.generateNormals(
     meshData.positions,
     meshData.indices,
@@ -117,12 +117,12 @@ export function createMeshPipeline(
   format: GPUTextureFormat,
   msaaCount: number,
   pipelineLayout: GPUPipelineLayout,
-  entryPoint = "fragment_phong",
-  depthFormat: GPUTextureFormat = "depth24plus",
-  vertexEntryPoint = "vertex_main",
-  depthCompare: GPUCompareFunction = "less",
+  entryPoint = 'fragment_phong',
+  depthFormat: GPUTextureFormat = 'depth24plus',
+  vertexEntryPoint = 'vertex_main',
+  depthCompare: GPUCompareFunction = 'less',
   depthWriteEnabled = true,
-  cullMode: GPUCullMode = "back",
+  cullMode: GPUCullMode = 'back',
 ): GPURenderPipeline {
   const shaderModule = device.createShaderModule({ code: meshShaderWGSL })
   return device.createRenderPipeline({
@@ -134,9 +134,9 @@ export function createMeshPipeline(
         {
           arrayStride: 28,
           attributes: [
-            { format: "float32x3", offset: 0, shaderLocation: 0 }, // pos
-            { format: "float32x3", offset: 12, shaderLocation: 1 }, // norm
-            { format: "unorm8x4", offset: 24, shaderLocation: 2 }, // clr
+            { format: 'float32x3', offset: 0, shaderLocation: 0 }, // pos
+            { format: 'float32x3', offset: 12, shaderLocation: 1 }, // norm
+            { format: 'unorm8x4', offset: 24, shaderLocation: 2 }, // clr
           ],
         },
       ],
@@ -148,8 +148,8 @@ export function createMeshPipeline(
         {
           format: format,
           blend: {
-            color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha" },
-            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
           },
         },
       ],
@@ -160,7 +160,7 @@ export function createMeshPipeline(
       format: depthFormat,
     },
     primitive: {
-      topology: "triangle-list",
+      topology: 'triangle-list',
       cullMode,
     },
     multisample: { count: msaaCount },

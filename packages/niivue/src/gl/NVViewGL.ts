@@ -1,41 +1,41 @@
-import { mat4 } from "gl-matrix"
-import { log } from "@/logger"
-import * as NVTransforms from "@/math/NVTransforms"
-import { deg2rad } from "@/math/NVTransforms"
-import { generateNormals } from "@/mesh/NVMesh"
-import * as NVShapes from "@/mesh/NVShapes"
-import * as NVConstants from "@/NVConstants"
-import type NVModel from "@/NVModel"
+import { mat4 } from 'gl-matrix'
+import { log } from '@/logger'
+import * as NVTransforms from '@/math/NVTransforms'
+import { deg2rad } from '@/math/NVTransforms'
+import { generateNormals } from '@/mesh/NVMesh'
+import * as NVShapes from '@/mesh/NVShapes'
+import * as NVConstants from '@/NVConstants'
+import type NVModel from '@/NVModel'
 import type {
   NVMesh,
   NVViewOptions,
   ViewHitTest,
   WebGLMeshGPU,
-} from "@/NVTypes"
-import * as NVAnnotation from "@/view/NVAnnotation"
-import { buildColorbarLabels, colorbarTotalHeight } from "@/view/NVColorbar"
-import { crosscutMM } from "@/view/NVCrosscut"
-import { BYTES_PER_VERTEX } from "@/view/NVCrosshair"
-import { resolveHeaderLabel } from "@/view/NVFont"
-import * as NVGraph from "@/view/NVGraph"
-import * as NVLegend from "@/view/NVLegend"
-import { buildLine } from "@/view/NVLine"
-import * as NVMeasurement from "@/view/NVMeasurement"
-import * as NVRuler from "@/view/NVRuler"
-import type { SliceTile } from "@/view/NVSliceLayout"
-import * as NVSliceLayout from "@/view/NVSliceLayout"
-import * as NVUILayout from "@/view/NVUILayout"
-import { ColorbarRenderer } from "./colorbar"
-import { CrosshairRenderer } from "./crosshair"
-import { FontRenderer } from "./font"
-import { LineRenderer } from "./line"
-import * as mesh from "./mesh"
-import { maskOverlayByBackground } from "./orientOverlay"
-import { PolygonRenderer } from "./polygon"
-import { Polygon3DRenderer } from "./polygon3d"
-import { VolumeRenderer } from "./render"
-import { SliceRenderer } from "./slice"
-import { ThumbnailRenderer } from "./thumbnail"
+} from '@/NVTypes'
+import * as NVAnnotation from '@/view/NVAnnotation'
+import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
+import { crosscutMM } from '@/view/NVCrosscut'
+import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
+import { resolveHeaderLabel } from '@/view/NVFont'
+import * as NVGraph from '@/view/NVGraph'
+import * as NVLegend from '@/view/NVLegend'
+import { buildLine } from '@/view/NVLine'
+import * as NVMeasurement from '@/view/NVMeasurement'
+import * as NVRuler from '@/view/NVRuler'
+import type { SliceTile } from '@/view/NVSliceLayout'
+import * as NVSliceLayout from '@/view/NVSliceLayout'
+import * as NVUILayout from '@/view/NVUILayout'
+import { ColorbarRenderer } from './colorbar'
+import { CrosshairRenderer } from './crosshair'
+import { FontRenderer } from './font'
+import { LineRenderer } from './line'
+import * as mesh from './mesh'
+import { maskOverlayByBackground } from './orientOverlay'
+import { PolygonRenderer } from './polygon'
+import { Polygon3DRenderer } from './polygon3d'
+import { VolumeRenderer } from './render'
+import { SliceRenderer } from './slice'
+import { ThumbnailRenderer } from './thumbnail'
 
 type MeshGpuWithShader = WebGLMeshGPU & { shaderType?: string }
 
@@ -51,7 +51,7 @@ export default class NVGlview {
   fontTexture: WebGLTexture | null
   crosshairRenderer: CrosshairRenderer
   screenSlices: SliceTile[]
-  legendLayout: import("@/view/NVLegend").LegendLayout | null
+  legendLayout: import('@/view/NVLegend').LegendLayout | null
   graphLayout: NVGraph.GraphLayout | null
   isBusy: boolean
   maxLines: number
@@ -80,7 +80,7 @@ export default class NVGlview {
     options: NVViewOptions = {},
   ) {
     if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
-      throw new Error("NVGlview requires a valid HTMLCanvasElement")
+      throw new Error('NVGlview requires a valid HTMLCanvasElement')
     }
     this.canvas = canvas
     this.model = model
@@ -146,7 +146,7 @@ export default class NVGlview {
         bounds[1][0] === 1 &&
         bounds[1][1] === 1
       )
-    const gl = canvas.getContext("webgl2", {
+    const gl = canvas.getContext('webgl2', {
       alpha: true,
       antialias: isAntiAlias,
       preserveDrawingBuffer: isSubCanvas,
@@ -154,7 +154,7 @@ export default class NVGlview {
 
     if (!gl) {
       throw new Error(
-        "Unable to initialize WebGL2. Your browser may not support it.",
+        'Unable to initialize WebGL2. Your browser may not support it.',
       )
     }
 
@@ -171,9 +171,9 @@ export default class NVGlview {
     const gl = this.gl
     this.max2D = result.max2D
     this.max3D = result.max3D
-    let renderer = ""
-    let vendor = ""
-    const rendererInfo = gl.getExtension("WEBGL_debug_renderer_info")
+    let renderer = ''
+    let vendor = ''
+    const rendererInfo = gl.getExtension('WEBGL_debug_renderer_info')
     if (rendererInfo) {
       vendor = gl.getParameter(rendererInfo.UNMASKED_VENDOR_WEBGL)
       renderer = gl.getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL)
@@ -211,7 +211,7 @@ export default class NVGlview {
     // Initialize volume renderer
     await this.volumeRenderer.init(gl, this.max3D)
     // Initialize crosshair renderer with pre-allocated buffers
-    const attrs = mesh.getAttributeLocations(gl, "phong")
+    const attrs = mesh.getAttributeLocations(gl, 'phong')
     this.crosshairRenderer.init(
       gl,
       attrs.aPosition,
@@ -251,7 +251,7 @@ export default class NVGlview {
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW)
-    const shaderAttrs = mesh.getAttributeLocations(gl, "vertexColor")
+    const shaderAttrs = mesh.getAttributeLocations(gl, 'vertexColor')
     gl.enableVertexAttribArray(shaderAttrs.aPosition)
     gl.vertexAttribPointer(shaderAttrs.aPosition, 3, gl.FLOAT, false, 28, 0)
     gl.enableVertexAttribArray(shaderAttrs.aNormal)
@@ -548,7 +548,7 @@ export default class NVGlview {
               : md.getSliceTexFrac(sliceDim)
           this.sliceRenderer.draw(
             gl,
-            this.volumeRenderer.volumeTexture!,
+            this.volumeRenderer.volumeTexture as WebGLTexture,
             this.volumeRenderer.overlayTexture,
             vol,
             {
@@ -725,7 +725,7 @@ export default class NVGlview {
           const identNorm = mat4.create()
           mesh.useShader(
             gl,
-            "vertexColor",
+            'vertexColor',
             cubeMVP as Float32Array,
             identNorm as Float32Array,
             1.0,
@@ -761,7 +761,7 @@ export default class NVGlview {
           tile.axCorSag === NVConstants.SLICE_TYPE.AXIAL ||
           tile.axCorSag === NVConstants.SLICE_TYPE.CORONAL
         ) {
-          const leftLabel = isRadio ? "R" : "L"
+          const leftLabel = isRadio ? 'R' : 'L'
           labels.push(
             this.fontRenderer.buildText(
               leftLabel,
@@ -774,7 +774,7 @@ export default class NVGlview {
             ),
           )
         } else if (tile.axCorSag === NVConstants.SLICE_TYPE.SAGITTAL) {
-          const leftLabel = isRadio ? "A" : "P"
+          const leftLabel = isRadio ? 'A' : 'P'
           labels.push(
             this.fontRenderer.buildText(
               leftLabel,
@@ -790,7 +790,7 @@ export default class NVGlview {
         if (tile.axCorSag === NVConstants.SLICE_TYPE.AXIAL) {
           labels.push(
             this.fontRenderer.buildText(
-              "A",
+              'A',
               tileLeft + tileWidth / 2,
               tileTop + labelMargin,
               labelScale,
@@ -805,7 +805,7 @@ export default class NVGlview {
         ) {
           labels.push(
             this.fontRenderer.buildText(
-              "S",
+              'S',
               tileLeft + tileWidth / 2,
               tileTop + labelMargin,
               labelScale,
@@ -830,11 +830,11 @@ export default class NVGlview {
     const headerStr = resolveHeaderLabel(
       this.model.ui.placeholderText,
       hasContent,
-      "WebGL2",
-      log.level === "debug",
+      'WebGL2',
+      log.level === 'debug',
     )
     if (this.fontRenderer.isReady) {
-      if (headerStr !== "") {
+      if (headerStr !== '') {
         labels.push(
           this.fontRenderer.buildText(
             headerStr,
@@ -1086,7 +1086,7 @@ export default class NVGlview {
   getAvailableShaders(): string[] {
     if (!this.meshPipelines) return []
     return Object.keys(this.meshPipelines).filter(
-      (s) => !s.startsWith("vertexColor"),
+      (s) => !s.startsWith('vertexColor'),
     )
   }
 
@@ -1110,12 +1110,12 @@ export default class NVGlview {
     const availableShaders = this.getAvailableShaders()
     const meshes = this.model.getMeshes() as NVMesh[]
     for (const m of meshes) {
-      let shaderType = m.shaderType || "phong"
+      let shaderType = m.shaderType || 'phong'
       if (!availableShaders.includes(shaderType)) {
         log.warn(
           `Shader '${shaderType}' not available in WebGL2, falling back to 'phong'`,
         )
-        shaderType = "phong"
+        shaderType = 'phong'
       }
       const gpu = mesh.uploadMeshGPU(gl, m, { shaderType })
       this.meshResources.set(m, gpu)

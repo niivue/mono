@@ -1,7 +1,7 @@
-import { vec3 } from "gl-matrix"
-import * as NVMeshUtils from "@/mesh/NVMesh"
-import * as NVShapes from "@/mesh/NVShapes"
-import * as NVConstants from "@/NVConstants"
+import { vec3 } from 'gl-matrix'
+import * as NVMeshUtils from '@/mesh/NVMesh'
+import * as NVShapes from '@/mesh/NVShapes'
+import * as NVConstants from '@/NVConstants'
 
 export const CYLINDER_SIDES = 20
 export const CYLINDER_ENDCAPS = true

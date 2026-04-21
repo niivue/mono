@@ -1,7 +1,7 @@
-import { FLOATS_PER_LINE, type LineData } from "@/view/NVLine"
-import { NVRenderer } from "@/view/NVRenderer"
-import { lineFragShader, lineVertShader } from "./lineShader"
-import { Shader } from "./shader"
+import { FLOATS_PER_LINE, type LineData } from '@/view/NVLine'
+import { NVRenderer } from '@/view/NVRenderer'
+import { lineFragShader, lineVertShader } from './lineShader'
+import { Shader } from './shader'
 
 export class LineRenderer extends NVRenderer {
   private _gl: WebGL2RenderingContext | null = null
@@ -18,7 +18,7 @@ export class LineRenderer extends NVRenderer {
     // Create VAO
     this._vao = gl.createVertexArray()
     if (!this._vao) {
-      throw new Error("Failed to create line VAO")
+      throw new Error('Failed to create line VAO')
     }
     gl.bindVertexArray(this._vao)
     // Create buffer for line instance data
@@ -26,17 +26,17 @@ export class LineRenderer extends NVRenderer {
     this._lineBuffer = gl.createBuffer()
     if (!this._lineBuffer) {
       gl.bindVertexArray(null)
-      throw new Error("Failed to create line buffer")
+      throw new Error('Failed to create line buffer')
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this._lineBuffer)
     // Get attribute locations
-    const aLineStart = gl.getAttribLocation(this._shader.program, "lineStart")
-    const aLineEnd = gl.getAttribLocation(this._shader.program, "lineEnd")
+    const aLineStart = gl.getAttribLocation(this._shader.program, 'lineStart')
+    const aLineEnd = gl.getAttribLocation(this._shader.program, 'lineEnd')
     const aLineThickness = gl.getAttribLocation(
       this._shader.program,
-      "lineThickness",
+      'lineThickness',
     )
-    const aLineColor = gl.getAttribLocation(this._shader.program, "lineColor")
+    const aLineColor = gl.getAttribLocation(this._shader.program, 'lineColor')
     const BYTES_PER_LINE = FLOATS_PER_LINE * 4
     // lineStart: offset 0, vec2
     gl.enableVertexAttribArray(aLineStart)

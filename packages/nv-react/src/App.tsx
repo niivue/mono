@@ -1,4 +1,4 @@
-import "./index.css"
+import './index.css'
 
 import {
   type ChangeEvent,
@@ -7,84 +7,84 @@ import {
   useMemo,
   useRef,
   useState,
-} from "react"
-import { NvSceneProvider } from "./context"
-import { useScene, useSceneEvent } from "./hooks"
-import { defaultLayouts } from "./layouts"
-import { NvScene } from "./nvscene"
-import { defaultSliceLayouts } from "./nvscene-controller"
-import { NvViewer } from "./nvviewer"
-import type { ImageFromUrlOptions } from "./types"
+} from 'react'
+import { NvSceneProvider } from './context'
+import { useScene, useSceneEvent } from './hooks'
+import { defaultLayouts } from './layouts'
+import { NvScene } from './nvscene'
+import { defaultSliceLayouts } from './nvscene-controller'
+import { NvViewer } from './nvviewer'
+import type { ImageFromUrlOptions } from './types'
 
-const MNI_URL = "https://niivue.github.io/niivue-demo-images/mni152.nii.gz"
+const MNI_URL = 'https://niivue.github.io/niivue-demo-images/mni152.nii.gz'
 
 const MNI_VOLUME: ImageFromUrlOptions = {
   url: MNI_URL,
-  name: "mni152",
+  name: 'mni152',
 }
 
 /** Common colormaps available in Niivue */
 const COLORMAPS = [
-  "gray",
-  "hot",
-  "cool",
-  "warm",
-  "winter",
-  "autumn",
-  "copper",
-  "bone",
-  "jet",
-  "hsv",
-  "red",
-  "green",
-  "blue",
-  "inferno",
-  "plasma",
-  "viridis",
-  "magma",
-  "cividis",
-  "actc",
-  "ct_airways",
-  "ct_artery",
-  "ct_brain",
-  "ct_kidneys",
-  "ct_muscles",
-  "ct_soft_tissue",
-  "ct_w_contrast",
+  'gray',
+  'hot',
+  'cool',
+  'warm',
+  'winter',
+  'autumn',
+  'copper',
+  'bone',
+  'jet',
+  'hsv',
+  'red',
+  'green',
+  'blue',
+  'inferno',
+  'plasma',
+  'viridis',
+  'magma',
+  'cividis',
+  'actc',
+  'ct_airways',
+  'ct_artery',
+  'ct_brain',
+  'ct_kidneys',
+  'ct_muscles',
+  'ct_soft_tissue',
+  'ct_w_contrast',
 ]
 
-type DemoMode = "scene" | "viewer"
+type DemoMode = 'scene' | 'viewer'
 
 export function App() {
   const { scene, snapshot } = useScene()
-  const [layoutName, setLayoutName] = useState<string>("2x2")
+  const [layoutName, setLayoutName] = useState<string>('2x2')
   const [sliceLayoutEnabled, setSliceLayoutEnabled] = useState(false)
   const [selectedViewerIndex, setSelectedViewerIndex] = useState(0)
-  const [sliceLayoutName, setSliceLayoutName] = useState<string>("axial-hero")
-  const [demoMode, setDemoMode] = useState<DemoMode>("scene")
+  const [sliceLayoutName, setSliceLayoutName] = useState<string>('axial-hero')
+  const [demoMode, setDemoMode] = useState<DemoMode>('scene')
 
   // --- Colormap / intensity / opacity state ---
-  const [colormap, setColormap] = useState("gray")
+  const [colormap, setColormap] = useState('gray')
   const [calMin, setCalMin] = useState(0)
   const [calMax, setCalMax] = useState(255)
   const [opacity, setOpacity] = useState(1.0)
 
   // Log events via useSceneEvent
-  useSceneEvent(scene, "viewerCreated", (_nv, index) => {
+  useSceneEvent(scene, 'viewerCreated', (_nv, index) => {
     console.log(`[event] viewerCreated: index=${index}`)
   })
 
-  useSceneEvent(scene, "viewerRemoved", (index) => {
+  useSceneEvent(scene, 'viewerRemoved', (index) => {
     console.log(`[event] viewerRemoved: index=${index}`)
   })
 
-  useSceneEvent(scene, "imageLoaded", (viewerIndex, volume) => {
+  useSceneEvent(scene, 'imageLoaded', (viewerIndex, volume) => {
     console.log(
       `[event] imageLoaded: viewer=${viewerIndex}, name=${volume.name}`,
     )
   })
 
-  useSceneEvent(scene, "colormapChanged", (viewerIndex, volumeIndex, cm) => {
+  useSceneEvent(scene, 'colormapChanged', (viewerIndex, volumeIndex, cm) => {
     console.log(
       `[event] colormapChanged: viewer=${viewerIndex}, vol=${volumeIndex}, colormap=${cm}`,
     )
@@ -92,7 +92,7 @@ export function App() {
 
   useSceneEvent(
     scene,
-    "intensityChanged",
+    'intensityChanged',
     (viewerIndex, volumeIndex, min, max) => {
       console.log(
         `[event] intensityChanged: viewer=${viewerIndex}, vol=${volumeIndex}, cal_min=${min}, cal_max=${max}`,
@@ -100,7 +100,7 @@ export function App() {
     },
   )
 
-  useSceneEvent(scene, "opacityChanged", (viewerIndex, volumeIndex, op) => {
+  useSceneEvent(scene, 'opacityChanged', (viewerIndex, volumeIndex, op) => {
     console.log(
       `[event] opacityChanged: viewer=${viewerIndex}, vol=${volumeIndex}, opacity=${op}`,
     )
@@ -183,7 +183,7 @@ export function App() {
   )
 
   const handleDemoModeToggle = useCallback(() => {
-    setDemoMode((m) => (m === "scene" ? "viewer" : "scene"))
+    setDemoMode((m) => (m === 'scene' ? 'viewer' : 'scene'))
   }, [])
 
   // --- Colormap / intensity / opacity handlers (NvScene mode) ---
@@ -243,21 +243,21 @@ export function App() {
       <div className="app">
         <header className="app-toolbar">
           <div className="app-title">
-            <h1>{demoMode === "scene" ? "NvScene" : "NvViewer"}</h1>
+            <h1>{demoMode === 'scene' ? 'NvScene' : 'NvViewer'}</h1>
             <span>
-              {demoMode === "scene"
+              {demoMode === 'scene'
                 ? `${snapshot.viewerCount} instances`
-                : "standalone"}
-              {snapshot.isLoading ? " (loading...)" : ""}
+                : 'standalone'}
+              {snapshot.isLoading ? ' (loading...)' : ''}
             </span>
           </div>
           <div className="app-actions">
             <button type="button" onClick={handleDemoModeToggle}>
-              {demoMode === "scene"
-                ? "Switch to NvViewer"
-                : "Switch to NvScene"}
+              {demoMode === 'scene'
+                ? 'Switch to NvViewer'
+                : 'Switch to NvScene'}
             </button>
-            {demoMode === "scene" && (
+            {demoMode === 'scene' && (
               <>
                 <button
                   type="button"
@@ -277,7 +277,7 @@ export function App() {
             )}
           </div>
         </header>
-        {demoMode === "scene" && (
+        {demoMode === 'scene' && (
           <section className="app-controls">
             <label className="control-group">
               <span className="control-label">Layout</span>
@@ -305,10 +305,10 @@ export function App() {
               </select>
             </label>
             <button type="button" onClick={handleBroadcastToggle}>
-              {snapshot.isBroadcasting ? "Disable sync" : "Enable sync"}
+              {snapshot.isBroadcasting ? 'Disable sync' : 'Enable sync'}
             </button>
             <button type="button" onClick={handleSliceLayoutToggle}>
-              {sliceLayoutEnabled ? "Standard slices" : "Custom slices"}
+              {sliceLayoutEnabled ? 'Standard slices' : 'Custom slices'}
             </button>
             <label className="control-group">
               <span className="control-label">Slice layout</span>
@@ -375,7 +375,7 @@ export function App() {
             <span className="control-value">{opacity.toFixed(2)}</span>
           </label>
         </section>
-        {demoMode === "scene" ? (
+        {demoMode === 'scene' ? (
           <NvScene
             scene={scene}
             className="niivue-container"
@@ -386,10 +386,10 @@ export function App() {
             volumes={viewerVolumes}
             className="niivue-container"
             onLocationChange={(data) =>
-              console.log("[NvViewer] location:", data)
+              console.log('[NvViewer] location:', data)
             }
-            onImageLoaded={(vol) => console.log("[NvViewer] loaded:", vol.name)}
-            onError={(err) => console.error("[NvViewer] error:", err)}
+            onImageLoaded={(vol) => console.log('[NvViewer] loaded:', vol.name)}
+            onError={(err) => console.error('[NvViewer] error:', err)}
           />
         )}
       </div>

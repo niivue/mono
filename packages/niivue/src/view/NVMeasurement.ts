@@ -1,11 +1,11 @@
-import { isOnSlice } from "@/annotation/sliceProjection"
-import { SLICE_TYPE } from "@/NVConstants"
-import type NVModel from "@/NVModel"
-import { computeTolerance } from "@/view/NVAnnotation"
-import { projectMMToCanvas } from "@/view/sliceUtils"
-import type { BuildTextFn, GlyphBatch } from "./NVFont"
-import type { BuildLineFn, LineData } from "./NVLine"
-import type { SliceTile } from "./NVSliceLayout"
+import { isOnSlice } from '@/annotation/sliceProjection'
+import { SLICE_TYPE } from '@/NVConstants'
+import type NVModel from '@/NVModel'
+import { computeTolerance } from '@/view/NVAnnotation'
+import { projectMMToCanvas } from '@/view/sliceUtils'
+import type { BuildTextFn, GlyphBatch } from './NVFont'
+import type { BuildLineFn, LineData } from './NVLine'
+import type { SliceTile } from './NVSliceLayout'
 
 export type MeasurementResult = { lines: LineData[]; labels: GlyphBatch[] }
 
@@ -15,7 +15,7 @@ function formatDistance(dist: number, showUnits: boolean): string {
   if (dist > 9) decimals = 1
   if (dist > 99) decimals = 0
   let label = dist.toFixed(decimals)
-  if (showUnits) label += " mm"
+  if (showUnits) label += ' mm'
   return label
 }
 

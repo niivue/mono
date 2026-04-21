@@ -1,43 +1,43 @@
-import { mat4 } from "gl-matrix"
-import { log } from "@/logger"
-import * as NVTransforms from "@/math/NVTransforms"
-import { deg2rad } from "@/math/NVTransforms"
-import { generateNormals } from "@/mesh/NVMesh"
-import * as NVShapes from "@/mesh/NVShapes"
-import * as NVConstants from "@/NVConstants"
-import type NVModel from "@/NVModel"
+import { mat4 } from 'gl-matrix'
+import { log } from '@/logger'
+import * as NVTransforms from '@/math/NVTransforms'
+import { deg2rad } from '@/math/NVTransforms'
+import { generateNormals } from '@/mesh/NVMesh'
+import * as NVShapes from '@/mesh/NVShapes'
+import * as NVConstants from '@/NVConstants'
+import type NVModel from '@/NVModel'
 import type {
   NVMesh,
   NVViewOptions,
   ViewHitTest,
   WebGPUMeshGPU,
-} from "@/NVTypes"
-import * as NVAnnotation from "@/view/NVAnnotation"
-import { buildColorbarLabels, colorbarTotalHeight } from "@/view/NVColorbar"
-import { crosscutMM } from "@/view/NVCrosscut"
-import { BYTES_PER_VERTEX } from "@/view/NVCrosshair"
-import { resolveHeaderLabel } from "@/view/NVFont"
-import * as NVGraph from "@/view/NVGraph"
-import * as NVLegend from "@/view/NVLegend"
-import { buildLine } from "@/view/NVLine"
-import * as NVMeasurement from "@/view/NVMeasurement"
-import * as NVRuler from "@/view/NVRuler"
-import type { SliceTile } from "@/view/NVSliceLayout"
-import * as NVSliceLayout from "@/view/NVSliceLayout"
-import * as NVUILayout from "@/view/NVUILayout"
-import { ColorbarRenderer } from "./colorbar"
-import { CrosshairRenderer } from "./crosshair"
-import * as depthPick from "./depthPick"
-import { FontRenderer } from "./font"
-import { LineRenderer } from "./line"
-import * as mesh from "./mesh"
-import { maskOverlayByBackground } from "./orient"
-import { PolygonRenderer } from "./polygon"
-import { Polygon3DRenderer } from "./polygon3d"
-import { VolumeRenderer } from "./render"
-import { SliceRenderer } from "./slice"
-import { ThumbnailRenderer } from "./thumbnail"
-import * as wgpu from "./wgpu"
+} from '@/NVTypes'
+import * as NVAnnotation from '@/view/NVAnnotation'
+import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
+import { crosscutMM } from '@/view/NVCrosscut'
+import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
+import { resolveHeaderLabel } from '@/view/NVFont'
+import * as NVGraph from '@/view/NVGraph'
+import * as NVLegend from '@/view/NVLegend'
+import { buildLine } from '@/view/NVLine'
+import * as NVMeasurement from '@/view/NVMeasurement'
+import * as NVRuler from '@/view/NVRuler'
+import type { SliceTile } from '@/view/NVSliceLayout'
+import * as NVSliceLayout from '@/view/NVSliceLayout'
+import * as NVUILayout from '@/view/NVUILayout'
+import { ColorbarRenderer } from './colorbar'
+import { CrosshairRenderer } from './crosshair'
+import * as depthPick from './depthPick'
+import { FontRenderer } from './font'
+import { LineRenderer } from './line'
+import * as mesh from './mesh'
+import { maskOverlayByBackground } from './orient'
+import { PolygonRenderer } from './polygon'
+import { Polygon3DRenderer } from './polygon3d'
+import { VolumeRenderer } from './render'
+import { SliceRenderer } from './slice'
+import { ThumbnailRenderer } from './thumbnail'
+import * as wgpu from './wgpu'
 
 type MeshGpuWithShader = WebGPUMeshGPU & { shaderType?: string }
 
@@ -68,7 +68,7 @@ export default class NVView {
   depthTexture: GPUTexture | null
   crosshairRenderer: CrosshairRenderer
   screenSlices: SliceTile[]
-  legendLayout: import("@/view/NVLegend").LegendLayout | null
+  legendLayout: import('@/view/NVLegend').LegendLayout | null
   graphLayout: NVGraph.GraphLayout | null
   isBusy: boolean
   maxTextureDimension2D: number
@@ -108,7 +108,7 @@ export default class NVView {
     options: NVViewOptions = {},
   ) {
     if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
-      throw new Error("NVView requires a valid HTMLCanvasElement")
+      throw new Error('NVView requires a valid HTMLCanvasElement')
     }
     this.canvas = canvas
     this.model = model
@@ -118,7 +118,7 @@ export default class NVView {
     // State & resources (model owns them)
     this.device = null
     this.context = null
-    this.preferredCanvasFormat = "bgra8unorm"
+    this.preferredCanvasFormat = 'bgra8unorm'
     this.sampler = null
     this.buffers = {}
     this.msaaTexture = null
@@ -168,7 +168,7 @@ export default class NVView {
           binding: 0,
           visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
           buffer: {
-            type: "uniform",
+            type: 'uniform',
             hasDynamicOffset: true,
             minBindingSize: mesh.MESH_UNIFORM_SIZE,
           },
@@ -187,87 +187,87 @@ export default class NVView {
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_phong",
+        'fragment_phong',
       ),
       crevice: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_crevice",
+        'fragment_crevice',
       ),
       crosscut: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_crosscut",
-        "depth24plus",
-        "vertex_main",
-        "always",
+        'fragment_crosscut',
+        'depth24plus',
+        'vertex_main',
+        'always',
         false,
-        "none",
+        'none',
       ),
       flat: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_flat",
-        "depth24plus",
-        "vertex_flat",
+        'fragment_flat',
+        'depth24plus',
+        'vertex_flat',
       ),
       matte: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_matte",
+        'fragment_matte',
       ),
       outline: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_outline",
+        'fragment_outline',
       ),
       rim: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_rim",
+        'fragment_rim',
       ),
       silhouette: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_silhouette",
+        'fragment_silhouette',
       ),
       toon: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_toon",
+        'fragment_toon',
       ),
       vertexColor: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_vertexColor",
+        'fragment_vertexColor',
       ),
       vertexColorNoDepth: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_vertexColor",
-        "depth24plus",
-        "vertex_main",
-        "always",
+        'fragment_vertexColor',
+        'depth24plus',
+        'vertex_main',
+        'always',
         false,
       ),
     }
@@ -278,10 +278,10 @@ export default class NVView {
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_phong",
-        "depth24plus",
-        "vertex_main",
-        "greater",
+        'fragment_phong',
+        'depth24plus',
+        'vertex_main',
+        'greater',
         false,
       ),
       crevice: mesh.createMeshPipeline(
@@ -289,10 +289,10 @@ export default class NVView {
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_crevice",
-        "depth24plus",
-        "vertex_main",
-        "greater",
+        'fragment_crevice',
+        'depth24plus',
+        'vertex_main',
+        'greater',
         false,
       ),
       crosscut: mesh.createMeshPipeline(
@@ -300,22 +300,22 @@ export default class NVView {
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_crosscut",
-        "depth24plus",
-        "vertex_main",
-        "always",
+        'fragment_crosscut',
+        'depth24plus',
+        'vertex_main',
+        'always',
         false,
-        "none",
+        'none',
       ),
       flat: mesh.createMeshPipeline(
         device,
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_flat",
-        "depth24plus",
-        "vertex_flat",
-        "greater",
+        'fragment_flat',
+        'depth24plus',
+        'vertex_flat',
+        'greater',
         false,
       ),
       matte: mesh.createMeshPipeline(
@@ -323,10 +323,10 @@ export default class NVView {
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_matte",
-        "depth24plus",
-        "vertex_main",
-        "greater",
+        'fragment_matte',
+        'depth24plus',
+        'vertex_main',
+        'greater',
         false,
       ),
       outline: mesh.createMeshPipeline(
@@ -334,10 +334,10 @@ export default class NVView {
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_outline",
-        "depth24plus",
-        "vertex_main",
-        "greater",
+        'fragment_outline',
+        'depth24plus',
+        'vertex_main',
+        'greater',
         false,
       ),
       rim: mesh.createMeshPipeline(
@@ -345,10 +345,10 @@ export default class NVView {
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_rim",
-        "depth24plus",
-        "vertex_main",
-        "greater",
+        'fragment_rim',
+        'depth24plus',
+        'vertex_main',
+        'greater',
         false,
       ),
       silhouette: mesh.createMeshPipeline(
@@ -356,10 +356,10 @@ export default class NVView {
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_silhouette",
-        "depth24plus",
-        "vertex_main",
-        "greater",
+        'fragment_silhouette',
+        'depth24plus',
+        'vertex_main',
+        'greater',
         false,
       ),
       toon: mesh.createMeshPipeline(
@@ -367,10 +367,10 @@ export default class NVView {
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_toon",
-        "depth24plus",
-        "vertex_main",
-        "greater",
+        'fragment_toon',
+        'depth24plus',
+        'vertex_main',
+        'greater',
         false,
       ),
       vertexColor: mesh.createMeshPipeline(
@@ -378,10 +378,10 @@ export default class NVView {
         format,
         msaa,
         meshPipelineLayout,
-        "fragment_vertexColor",
-        "depth24plus",
-        "vertex_main",
-        "greater",
+        'fragment_vertexColor',
+        'depth24plus',
+        'vertex_main',
+        'greater',
         false,
       ),
     }
@@ -524,12 +524,12 @@ export default class NVView {
     if (!this.meshBindGroupLayout) return
     this._destroyMeshResources()
     for (const m of meshes) {
-      let shaderType = m.shaderType || "phong"
+      let shaderType = m.shaderType || 'phong'
       if (!availableShaders.includes(shaderType)) {
         log.warn(
           `Shader '${shaderType}' not available in WebGPU, falling back to 'phong'`,
         )
-        shaderType = "phong"
+        shaderType = 'phong'
       }
       const gpuData = mesh.uploadMeshGPU(device, m, { shaderType })
       const mGpu: MeshGpuWithShader = {
@@ -609,16 +609,16 @@ export default class NVView {
           {
             view: renderView,
             resolveTarget,
-            loadOp: "clear",
+            loadOp: 'clear',
             clearValue: md.scene.backgroundColor,
-            storeOp: "store",
+            storeOp: 'store',
           },
         ],
         depthStencilAttachment: {
-          view: this._depthTextureView!,
+          view: this._depthTextureView as GPUTextureView,
           depthClearValue: 1.0,
-          depthLoadOp: "clear",
-          depthStoreOp: "store",
+          depthLoadOp: 'clear',
+          depthStoreOp: 'store',
         },
       })
       pass.setViewport(0, 0, bw, bh, 0.0, 1.0)
@@ -642,16 +642,16 @@ export default class NVView {
         {
           view: renderView,
           resolveTarget,
-          loadOp: "clear",
+          loadOp: 'clear',
           clearValue: md.scene.backgroundColor,
-          storeOp: "store",
+          storeOp: 'store',
         },
       ],
       depthStencilAttachment: {
         view: this.depthTexture.createView(),
         depthClearValue: 1.0,
-        depthLoadOp: "clear",
-        depthStoreOp: "store",
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
       },
     }
     const pass = commandEncoder.beginRenderPass(renderPassDesc)
@@ -917,13 +917,13 @@ export default class NVView {
           // s[37-39] = 0 (pad, zero-initialized at allocation, never written non-zero)
           s.set(ccMM as ArrayLike<number>, 40)
           device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
-          const shaderType = mGpu.shaderType || m.shaderType || "phong"
+          const shaderType = mGpu.shaderType || m.shaderType || 'phong'
           const pipeline = this.meshPipelines[shaderType]
           if (pipeline) {
             pass.setPipeline(pipeline)
             pass.setBindGroup(0, mGpu.bindGroup, [dynamicOffset])
             pass.setVertexBuffer(0, mGpu.vertexBuffer)
-            pass.setIndexBuffer(mGpu.indexBuffer, "uint32")
+            pass.setIndexBuffer(mGpu.indexBuffer, 'uint32')
             pass.drawIndexed(mGpu.indexCount)
           }
         }
@@ -972,13 +972,13 @@ export default class NVView {
             s[36] = (m.opacity ?? 1.0) * xrayAlpha
             s.set(ccMM as ArrayLike<number>, 40)
             device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
-            const shaderType = mGpu.shaderType || m.shaderType || "phong"
+            const shaderType = mGpu.shaderType || m.shaderType || 'phong'
             const xPipeline = this.meshXRayPipelines[shaderType]
             if (xPipeline) {
               pass.setPipeline(xPipeline)
               pass.setBindGroup(0, mGpu.bindGroup, [dynamicOffset])
               pass.setVertexBuffer(0, mGpu.vertexBuffer)
-              pass.setIndexBuffer(mGpu.indexBuffer, "uint32")
+              pass.setIndexBuffer(mGpu.indexBuffer, 'uint32')
               pass.drawIndexed(mGpu.indexCount)
             }
           }
@@ -1027,19 +1027,23 @@ export default class NVView {
           mat4.multiply(cubeMVP, proj, model)
           const identNorm = mat4.create()
           const gpu = this.orientCubeGpu
-          const dynamicOffset = Math.trunc(i * gpu.alignedMeshSize!)
+          const dynamicOffset = Math.trunc(i * (gpu.alignedMeshSize ?? 0))
           const s = this._uniformScratch
           s.set(cubeMVP as unknown as ArrayLike<number>, 0)
           s.set(identNorm as unknown as ArrayLike<number>, 16)
           s.fill(0, 32) // zero clipPlane, pad, ccMM (offsets 32–43)
           s[36] = 1.0 // opacity
-          device.queue.writeBuffer(gpu.uniformBuffer!, dynamicOffset, s)
+          device.queue.writeBuffer(
+            gpu.uniformBuffer as GPUBuffer,
+            dynamicOffset,
+            s,
+          )
           const pipeline = this.meshPipelines.vertexColorNoDepth
           if (pipeline) {
             pass.setPipeline(pipeline)
             pass.setBindGroup(0, gpu.bindGroup, [dynamicOffset])
-            pass.setVertexBuffer(0, gpu.vertexBuffer!)
-            pass.setIndexBuffer(gpu.indexBuffer!, "uint32")
+            pass.setVertexBuffer(0, gpu.vertexBuffer as GPUBuffer)
+            pass.setIndexBuffer(gpu.indexBuffer as GPUBuffer, 'uint32')
             pass.drawIndexed(gpu.indexCount)
           }
         }
@@ -1062,7 +1066,7 @@ export default class NVView {
           tile.axCorSag === NVConstants.SLICE_TYPE.AXIAL ||
           tile.axCorSag === NVConstants.SLICE_TYPE.CORONAL
         ) {
-          const leftLabel = isRadio ? "R" : "L"
+          const leftLabel = isRadio ? 'R' : 'L'
           labels.push(
             this.fontRenderer.buildText(
               leftLabel,
@@ -1075,7 +1079,7 @@ export default class NVView {
             ),
           )
         } else if (tile.axCorSag === NVConstants.SLICE_TYPE.SAGITTAL) {
-          const leftLabel = isRadio ? "A" : "P"
+          const leftLabel = isRadio ? 'A' : 'P'
           labels.push(
             this.fontRenderer.buildText(
               leftLabel,
@@ -1092,7 +1096,7 @@ export default class NVView {
         if (tile.axCorSag === NVConstants.SLICE_TYPE.AXIAL) {
           labels.push(
             this.fontRenderer.buildText(
-              "A",
+              'A',
               tileLeft + tileWidth / 2,
               tileTop + labelMargin,
               labelScale,
@@ -1107,7 +1111,7 @@ export default class NVView {
         ) {
           labels.push(
             this.fontRenderer.buildText(
-              "S",
+              'S',
               tileLeft + tileWidth / 2,
               tileTop + labelMargin,
               labelScale,
@@ -1133,10 +1137,10 @@ export default class NVView {
       const headerStr = resolveHeaderLabel(
         this.model.ui.placeholderText,
         hasContent,
-        "WebGPU",
-        log.level === "debug",
+        'WebGPU',
+        log.level === 'debug',
       )
-      if (headerStr !== "") {
+      if (headerStr !== '') {
         labels.push(
           this.fontRenderer.buildText(
             headerStr,
@@ -1287,7 +1291,7 @@ export default class NVView {
         this.fontBindGroup = this.fontRenderer.createBindGroup(
           device,
           this.buffers.glyphStorage,
-          this.sampler!,
+          this.sampler as GPUSampler,
         )
       }
       this.fontRenderer.draw(
@@ -1369,7 +1373,7 @@ export default class NVView {
     const ch = canvasTexture.height
     // Validate dimensions before copy — during rapid resize, textures may be
     // stale (sized for previous canvas) causing out-of-bounds GPU errors
-    const bt = this._boundsColorTexture!
+    const bt = this._boundsColorTexture as GPUTexture
     if (
       bt.width >= this._boundsWidth &&
       bt.height >= this._boundsHeight &&
@@ -1417,7 +1421,7 @@ export default class NVView {
   }
 
   async _initWebGPU(): Promise<void> {
-    if (!navigator.gpu) throw new Error("WebGPU not supported in this browser")
+    if (!navigator.gpu) throw new Error('WebGPU not supported in this browser')
     // Check for shared context on same canvas (multi-instance bounds support)
     const shared = sharedGPUContexts.get(this.canvas)
     if (shared) {
@@ -1431,14 +1435,14 @@ export default class NVView {
       return
     }
     const adapter = await navigator.gpu.requestAdapter()
-    if (!adapter) throw new Error("Failed to get WebGPU adapter")
+    if (!adapter) throw new Error('Failed to get WebGPU adapter')
 
     this.maxTextureDimension2D = adapter.limits.maxTextureDimension2D
     this.maxTextureDimension3D = adapter.limits.maxTextureDimension3D
     const adapterInfo = (
       adapter as unknown as { info?: { architecture?: string } }
     ).info
-    const arch = adapterInfo?.architecture ?? "unknown"
+    const arch = adapterInfo?.architecture ?? 'unknown'
     const preferredBufferSize = 4294967292 // 4 GB (4294967296) byte aligned
     const maxBufferSize = Math.min(
       adapter.limits.maxBufferSize,
@@ -1477,16 +1481,16 @@ export default class NVView {
         maxTextureDimension2D: this.maxTextureDimension2D,
       },
     })
-    this.context = this.canvas.getContext("webgpu")
+    this.context = this.canvas.getContext('webgpu')
     if (!this.context) {
-      throw new Error("Unable to initialize WebGPU context")
+      throw new Error('Unable to initialize WebGPU context')
     }
     this.preferredCanvasFormat = navigator.gpu.getPreferredCanvasFormat()
     this.context.configure({
       device: this.device,
       format: this.preferredCanvasFormat,
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
-      alphaMode: "premultiplied",
+      alphaMode: 'premultiplied',
     })
     // Cache for sharing with other instances on same canvas
     sharedGPUContexts.set(this.canvas, {
@@ -1581,8 +1585,8 @@ export default class NVView {
     })
     // Sampler for font bind groups
     this.sampler = this.device.createSampler({
-      magFilter: "linear",
-      minFilter: "linear",
+      magFilter: 'linear',
+      minFilter: 'linear',
     })
     // Crosshair renderer is initialized in _createPipelines after meshBindGroupLayout is created
   }
@@ -1604,7 +1608,7 @@ export default class NVView {
         device: this.device,
         format: this.preferredCanvasFormat,
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
-        alphaMode: "premultiplied",
+        alphaMode: 'premultiplied',
       })
     }
     this._resizeSelf(dpr)
@@ -1629,18 +1633,23 @@ export default class NVView {
     const bw = this._boundsWidth
     const bh = this._boundsHeight
     this._updateMultisampleTarget()
-    this.lineRenderer.resize(this.device!, bw, bh)
-    this.polygonRenderer.resize(this.device!, bw, bh)
+    this.lineRenderer.resize(this.device as GPUDevice, bw, bh)
+    this.polygonRenderer.resize(this.device as GPUDevice, bw, bh)
     this.fontRenderer.resize(
-      this.device!,
+      this.device as GPUDevice,
       bw,
       bh,
       dpr,
       this.model.ui.fontScale,
       this.model.ui.fontMinSize,
     )
-    this.colorbarRenderer.resize(this.device!, bw, bh, this.fontRenderer.fontPx)
-    this.thumbnailRenderer.resize(this.device!, bw, bh)
+    this.colorbarRenderer.resize(
+      this.device as GPUDevice,
+      bw,
+      bh,
+      this.fontRenderer.fontPx,
+    )
+    this.thumbnailRenderer.resize(this.device as GPUDevice, bw, bh)
   }
 
   private _computeBoundsPixels(): void {
@@ -1742,7 +1751,7 @@ export default class NVView {
     this._depthTextureView = null
     this.depthTexture = this.device.createTexture({
       size: [tw, th],
-      format: "depth24plus",
+      format: 'depth24plus',
       sampleCount: samples,
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     })
@@ -1751,7 +1760,7 @@ export default class NVView {
   getAvailableShaders(): string[] {
     if (!this.meshPipelines) return []
     return Object.keys(this.meshPipelines).filter(
-      (s) => !s.startsWith("vertexColor"),
+      (s) => !s.startsWith('vertexColor'),
     )
   }
 
@@ -1941,7 +1950,7 @@ export default class NVView {
     const meshList = (md.getMeshes() as NVMesh[]).filter(
       (m) => (m.opacity ?? 1.0) > 0.0,
     )
-    const meshDrawParams: depthPick.DepthPickDrawParams["meshes"] = []
+    const meshDrawParams: depthPick.DepthPickDrawParams['meshes'] = []
     for (const m of meshList) {
       const mGpu = this._getMeshGpu(m)
       if (!mGpu?.uniformBuffer || !mGpu.vertexBuffer || !mGpu.indexBuffer)

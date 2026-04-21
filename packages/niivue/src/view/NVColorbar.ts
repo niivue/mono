@@ -1,6 +1,6 @@
-import type { ColorbarInfo } from "@/NVTypes"
-import type { BuildTextFn, GlyphBatch } from "./NVFont"
-import { estimateFontSize } from "./NVUILayout"
+import type { ColorbarInfo } from '@/NVTypes'
+import type { BuildTextFn, GlyphBatch } from './NVFont'
+import { estimateFontSize } from './NVUILayout'
 
 export function deriveBorderColor(
   backColor: [number, number, number, number],
@@ -183,7 +183,7 @@ function calculateTickSpacing(
 }
 
 function humanize(x: number): string {
-  return x.toFixed(6).replace(/\.?0*$/, "")
+  return x.toFixed(6).replace(/\.?0*$/, '')
 }
 
 function emptyPanel(

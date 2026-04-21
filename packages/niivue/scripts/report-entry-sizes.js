@@ -1,14 +1,14 @@
-import { readFileSync, statSync } from "node:fs"
-import { dirname, resolve } from "node:path"
+import { readFileSync, statSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 
 const entries = process.argv.slice(2)
 const defaultEntries = [
-  "niivuegpu.js",
-  "niivuegpu.webgpu.js",
-  "niivuegpu.webgl2.js",
+  'niivuegpu.js',
+  'niivuegpu.webgpu.js',
+  'niivuegpu.webgl2.js',
 ]
 const targets = entries.length > 0 ? entries : defaultEntries
-const distDir = resolve(process.cwd(), "dist")
+const distDir = resolve(process.cwd(), 'dist')
 
 const importRe = /(?:import|export)\s+(?:[^'"`]*?from\s+)?["'](\.[^"']+)["']/g
 
@@ -20,7 +20,7 @@ function collectDeps(entryFile) {
     if (seen.has(absPath)) return
     seen.add(absPath)
 
-    const code = readFileSync(absPath, "utf8")
+    const code = readFileSync(absPath, 'utf8')
     const baseDir = dirname(absPath)
 
     let match = importRe.exec(code)

@@ -1,8 +1,8 @@
 // Shared mesh rendering utilities used by both WebGPU and WebGL2 backends.
 
-import { vec3 } from "gl-matrix"
-import * as NVShapes from "@/mesh/NVShapes"
-import type { NVMesh } from "@/NVTypes"
+import { vec3 } from 'gl-matrix'
+import * as NVShapes from '@/mesh/NVShapes'
+import type { NVMesh } from '@/NVTypes'
 
 export function calculateExtents(positions: Float32Array): {
   extentsMin: vec3
@@ -33,7 +33,7 @@ export function buildSolidColorArray(
   return colors
 }
 
-type ShapeMeshData = Omit<NVMesh, "layers" | "perVertexColors">
+type ShapeMeshData = Omit<NVMesh, 'layers' | 'perVertexColors'>
 
 export function buildSphereMeshData(
   origin: number[] = [1, 1, 1],
@@ -52,7 +52,7 @@ export function buildSphereMeshData(
     extentsMin: extents.extentsMin,
     extentsMax: extents.extentsMax,
     opacity: 1.0,
-    shaderType: "phong",
+    shaderType: 'phong',
     color: [color[0], color[1], color[2], color[3]] as [
       number,
       number,
@@ -89,7 +89,7 @@ export function buildCylinderMeshData(
     extentsMin: extents.extentsMin,
     extentsMax: extents.extentsMax,
     opacity: 1.0,
-    shaderType: "phong",
+    shaderType: 'phong',
     color: [color[0], color[1], color[2], color[3]] as [
       number,
       number,

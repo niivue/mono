@@ -6,9 +6,9 @@
  * NIfTI intent codes for automatic detection.
  */
 
-import { log } from "@/logger"
-import type { NVImage } from "@/NVTypes"
-import { convertFloat32RGBVector } from "./NVVolume"
+import { log } from '@/logger'
+import type { NVImage } from '@/NVTypes'
+import { convertFloat32RGBVector } from './NVVolume'
 
 /**
  * Convert a 3-frame float32 volume to V1 (eigenvector) RGBA representation,
@@ -37,7 +37,7 @@ export function loadImgV1(
     }
   }
   if (!v1) {
-    log.warn("Image does not have V1 data")
+    log.warn('Image does not have V1 data')
     return false
   }
   // Apply optional axis flips before conversion

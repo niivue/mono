@@ -1,5 +1,5 @@
-import { makeLabelLut } from "@/cmap/NVCmaps"
-import type { ColorMap, LUT } from "@/NVTypes"
+import { makeLabelLut } from '@/cmap/NVCmaps'
+import type { ColorMap, LUT } from '@/NVTypes'
 
 /**
  * Convert a drawing bitmap (label indices) to an RGBA Uint8Array using a label colormap LUT.

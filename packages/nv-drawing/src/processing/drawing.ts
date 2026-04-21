@@ -283,7 +283,7 @@ export function interpolateMaskSlices(
 
   if (sliceIndexLow !== undefined && sliceIndexHigh !== undefined) {
     if (sliceIndexLow >= sliceIndexHigh)
-      throw new Error("Low slice index must be less than high slice index")
+      throw new Error('Low slice index must be less than high slice index')
     if (sliceIndexLow < 0 || sliceIndexHigh > maxSliceIdx)
       throw new Error(`Slice indices out of bounds [0, ${maxSliceIdx}]`)
   }

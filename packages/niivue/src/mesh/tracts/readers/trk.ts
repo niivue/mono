@@ -1,8 +1,8 @@
-import * as NVGz from "@/codecs/NVGz"
-import { log } from "@/logger"
-import type { NVTractData } from "@/NVTypes"
+import * as NVGz from '@/codecs/NVGz'
+import { log } from '@/logger'
+import type { NVTractData } from '@/NVTypes'
 
-export const extensions = ["TRK"]
+export const extensions = ['TRK']
 
 /**
  * Read TrackVis TRK format.
@@ -34,7 +34,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   const dpvNames: string[] = []
   for (let i = 0; i < n_scalars; i++) {
     const arr = new Uint8Array(buffer.slice(38 + i * 20, 58 + i * 20))
-    const name = new TextDecoder().decode(arr).split("\0")[0].trim()
+    const name = new TextDecoder().decode(arr).split('\0')[0].trim()
     dpvNames.push(name || `scalar_${i}`)
   }
 
@@ -43,7 +43,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   const dpsNames: string[] = []
   for (let i = 0; i < n_properties; i++) {
     const arr = new Uint8Array(buffer.slice(240 + i * 20, 260 + i * 20))
-    const name = new TextDecoder().decode(arr).split("\0")[0].trim()
+    const name = new TextDecoder().decode(arr).split('\0')[0].trim()
     dpsNames.push(name || `property_${i}`)
   }
 
@@ -63,7 +63,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     vox2ras[i] = reader.getFloat32(440 + i * 4, true)
   }
   if (vox2ras[15] === 0.0) {
-    log.warn("TRK vox_to_ras not set, using identity")
+    log.warn('TRK vox_to_ras not set, using identity')
     vox2ras[0] = 1
     vox2ras[5] = 1
     vox2ras[10] = 1
@@ -103,7 +103,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   const i32 = new Int32Array(buffer.slice(hdr_sz))
   const f32 = new Float32Array(i32.buffer)
   const ntracks = i32.length
-  if (ntracks < 1) throw new Error("Empty TRK file")
+  if (ntracks < 1) throw new Error('Empty TRK file')
 
   // Over-provision arrays
   let vertices = new Float32Array(ntracks)

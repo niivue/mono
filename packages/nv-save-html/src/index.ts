@@ -19,7 +19,7 @@
  * ```
  */
 
-import type NiiVueGPU from "@niivue/niivue"
+import type NiiVueGPU from '@niivue/niivue'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -53,7 +53,7 @@ export interface SaveHTMLOptions {
 
 /** Gzip-compress a Uint8Array. */
 async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new CompressionStream("gzip")
+  const stream = new CompressionStream('gzip')
   const writer = stream.writable.getWriter()
   writer.write(data)
   writer.close()
@@ -72,7 +72,7 @@ function uint8ToBase64(bytes: Uint8Array): string {
   for (let i = 0; i < bytes.length; i += CHUNK) {
     parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)))
   }
-  return btoa(parts.join(""))
+  return btoa(parts.join(''))
 }
 
 /**
@@ -81,16 +81,16 @@ function uint8ToBase64(bytes: Uint8Array): string {
  * insensitive) which would prematurely close the tag.
  */
 function sanitizeForScriptTag(text: string): string {
-  return text.replace(/<\/script/gi, "<\\/script")
+  return text.replace(/<\/script/gi, '<\\/script')
 }
 
 /** Escape text for safe inclusion in an HTML element (title, attributes). */
 function escapeHTML(text: string): string {
   return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
 // ---------------------------------------------------------------------------
@@ -209,14 +209,14 @@ export async function generateHTML(
 ): Promise<string> {
   const {
     niivueBundleSource,
-    canvasId = "gl1",
-    title = "NiiVue Scene",
+    canvasId = 'gl1',
+    title = 'NiiVue Scene',
   } = options
 
   if (!niivueBundleSource) {
     throw new Error(
-      "nv-save-html: niivueBundleSource is required. " +
-        "Provide the full source of a self-contained niivue ESM bundle.",
+      'nv-save-html: niivueBundleSource is required. ' +
+        'Provide the full source of a self-contained niivue ESM bundle.',
     )
   }
 
@@ -224,7 +224,7 @@ export async function generateHTML(
   // The serialized document should not contain localhost dev-server paths;
   // the standalone bundle's NiiVue instance provides its own default matcap.
   const savedMatcap = nv.volumeMatcap
-  nv.model.volume.matcap = ""
+  nv.model.volume.matcap = ''
 
   // Serialize the scene to CBOR binary (NVD format)
   const nvdBytes = nv.serializeDocument()
@@ -251,13 +251,13 @@ export async function generateHTML(
  */
 export async function saveHTML(
   nv: NiiVueGPU,
-  filename = "scene.html",
+  filename = 'scene.html',
   options: SaveHTMLOptions,
 ): Promise<void> {
   const html = await generateHTML(nv, options)
-  const blob = new Blob([html], { type: "text/html" })
+  const blob = new Blob([html], { type: 'text/html' })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
+  const a = document.createElement('a')
   a.href = url
   a.download = filename
   document.body.appendChild(a)

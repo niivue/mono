@@ -1,10 +1,10 @@
-import { maybeDecompress } from "@/codecs/NVGz"
-import { log } from "@/logger"
-import type { MZ3 } from "@/NVTypes"
-import { read as readASC } from "./asc"
+import { maybeDecompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
+import type { MZ3 } from '@/NVTypes'
+import { read as readASC } from './asc'
 
-export const extensions = ["SRF"]
-export const type = "mz3"
+export const extensions = ['SRF']
+export const type = 'mz3'
 
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   const bytes = new Uint8Array(buffer)
@@ -81,7 +81,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     pos += 4
   }
   if (ver !== 4) {
-    log.warn("Not valid SRF")
+    log.warn('Not valid SRF')
   }
   return {
     positions,

@@ -1,6 +1,6 @@
-import { COLORMAP_TYPE } from "@/NVConstants"
-import type { NVImage } from "@/NVTypes"
-import { reorientRGBA } from "@/volume/utils"
+import { COLORMAP_TYPE } from '@/NVConstants'
+import type { NVImage } from '@/NVTypes'
+import { reorientRGBA } from '@/volume/utils'
 
 export function computeNegRange(nvimage: NVImage): {
   mnNeg: number
@@ -69,7 +69,7 @@ export function prepareRGBAData(nvimage: NVImage): {
   texDims: number[]
 } {
   if (!nvimage.img2RASstep || !nvimage.img2RASstart || !nvimage.dimsRAS) {
-    throw new Error("prepareRGBAData: missing RAS mapping")
+    throw new Error('prepareRGBAData: missing RAS mapping')
   }
   const dimsIn = [
     nvimage.dims[1] ?? 0,
@@ -85,7 +85,7 @@ export function prepareRGBAData(nvimage: NVImage): {
 
   const dt = nvimage.hdr.datatypeCode
   if (!nvimage.img) {
-    throw new Error("prepareRGBAData: nvimage.img is null")
+    throw new Error('prepareRGBAData: nvimage.img is null')
   }
   const raw = new Uint8Array(
     nvimage.img.buffer,

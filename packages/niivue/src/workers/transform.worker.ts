@@ -17,8 +17,8 @@ const post = (
   }
 ).postMessage.bind(self) as (msg: unknown, transfer?: Transferable[]) => void
 
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
-import type { TransformOptions } from "@/volume/transforms"
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
+import type { TransformOptions } from '@/volume/transforms'
 
 interface VolumeTransformModule {
   name: string
@@ -31,14 +31,14 @@ interface VolumeTransformModule {
 
 // Auto-discover transform modules (mirrors the pattern in transforms/index.ts)
 const modules = import.meta.glob<VolumeTransformModule>(
-  "../volume/transforms/*.ts",
+  '../volume/transforms/*.ts',
   { eager: true },
 )
 
 const transforms = new Map<string, VolumeTransformModule>()
 for (const [path, mod] of Object.entries(modules)) {
-  if (path.endsWith("/index.ts")) continue
-  if (mod.name && typeof mod.apply === "function") {
+  if (path.endsWith('/index.ts')) continue
+  if (mod.name && typeof mod.apply === 'function') {
     transforms.set(mod.name, mod)
   }
 }

@@ -1,37 +1,37 @@
-import * as nifti from "nifti-reader-js"
-import { NiiDataType } from "@/NVConstants"
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import * as nifti from 'nifti-reader-js'
+import { NiiDataType } from '@/NVConstants'
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
-export const extensions = ["png", "bmp", "gif", "jpg", "jpeg"]
-export const type = "nii"
+export const extensions = ['png', 'bmp', 'gif', 'jpg', 'jpeg']
+export const type = 'nii'
 
 async function imageDataFromArrayBuffer(
   buffer: ArrayBuffer,
 ): Promise<ImageData> {
   const blob = new Blob([buffer])
-  if (typeof createImageBitmap === "function") {
+  if (typeof createImageBitmap === 'function') {
     const bitmap = await createImageBitmap(blob)
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
-    const ctx = canvas.getContext("2d")
+    const ctx = canvas.getContext('2d')
     if (!ctx) {
       bitmap.close()
-      throw new Error("Unable to create 2D context for image decode")
+      throw new Error('Unable to create 2D context for image decode')
     }
     ctx.drawImage(bitmap, 0, 0)
     const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height)
     bitmap.close()
     return imageData
   }
-  if (typeof document !== "undefined") {
+  if (typeof document !== 'undefined') {
     return new Promise((resolve, reject) => {
       const img = new Image()
       img.onload = () => {
-        const canvas = document.createElement("canvas")
+        const canvas = document.createElement('canvas')
         canvas.width = img.width
         canvas.height = img.height
-        const ctx = canvas.getContext("2d")
+        const ctx = canvas.getContext('2d')
         if (!ctx) {
-          reject(new Error("Unable to create 2D context for image decode"))
+          reject(new Error('Unable to create 2D context for image decode'))
           return
         }
         ctx.drawImage(img, 0, 0)
@@ -39,11 +39,11 @@ async function imageDataFromArrayBuffer(
         URL.revokeObjectURL(img.src)
         resolve(imageData)
       }
-      img.onerror = () => reject(new Error("Failed to decode image"))
+      img.onerror = () => reject(new Error('Failed to decode image'))
       img.src = URL.createObjectURL(blob)
     })
   }
-  throw new Error("No image decoding path available")
+  throw new Error('No image decoding path available')
 }
 
 export async function read(

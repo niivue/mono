@@ -1,8 +1,8 @@
-import { log } from "@/logger"
-import type { MZ3 } from "@/NVTypes"
+import { log } from '@/logger'
+import type { MZ3 } from '@/NVTypes'
 
-export const extensions = ["ASC"]
-export const type = "mz3"
+export const extensions = ['ASC']
+export const type = 'mz3'
 
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   const len = buffer.byteLength
@@ -18,20 +18,20 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     }
     pos++ // skip EOLN
     if (pos - startPos < 1) {
-      return ""
+      return ''
     }
     return new TextDecoder().decode(buffer.slice(startPos, pos - 1))
   }
   let line = readStr() // 1st line: '#!ascii version of lh.pial'
-  if (!line.startsWith("#!ascii")) {
-    log.warn("Invalid ASC mesh")
+  if (!line.startsWith('#!ascii')) {
+    log.warn('Invalid ASC mesh')
   }
   line = readStr() // 2nd line: signature
   let items = line.trim().split(/\s+/)
   const nvert = parseInt(items[0], 10)
   const ntri = parseInt(items[1], 10)
   if (!Number.isFinite(nvert) || !Number.isFinite(ntri)) {
-    throw new Error("Invalid ASC mesh")
+    throw new Error('Invalid ASC mesh')
   }
   const positions = new Float32Array(nvert * 3)
   let j = 0

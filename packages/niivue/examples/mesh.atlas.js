@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
@@ -10,7 +10,7 @@ shaderSelect.onchange = () => {
   nv1.setMesh(meshes.length - 1, { shaderType: shaderSelect.value })
 }
 
-colorBtn.addEventListener("input", (event) => {
+colorBtn.addEventListener('input', (event) => {
   const input = event.target
   const hex = input.value
   const r = parseInt(hex.slice(1, 3), 16) / 255
@@ -24,20 +24,20 @@ legendCheck.onchange = async function () {
 }
 
 webgpuCheck.onchange = async function () {
-  await nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
 const nv1 = new NiiVue({ backgroundColor: [0, 0, 0, 1] })
 await nv1.attachToCanvas(gl1)
 for (const shader of nv1.meshShaders) {
-  const option = document.createElement("option")
+  const option = document.createElement('option')
   option.value = shader
   option.textContent = shader.charAt(0).toUpperCase() + shader.slice(1)
   shaderSelect.appendChild(option)
 }
 await nv1.loadMeshes([
   {
-    url: "/meshes/atl-Anatom_space-MNI.mz3",
+    url: '/meshes/atl-Anatom_space-MNI.mz3',
   },
 ])
 sliceType.onchange()

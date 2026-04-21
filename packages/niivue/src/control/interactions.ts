@@ -1,17 +1,28 @@
-import * as Annotation from "@/annotation"
-import * as DragModes from "@/control/dragModes"
-import * as Drawing from "@/drawing"
-import { computeSlicePointerEvent } from "@/extension/context"
-import { log } from "@/logger"
-import * as NVTransforms from "@/math/NVTransforms"
-import * as NVConstants from "@/NVConstants"
-import { DRAG_MODE, sliceTypeDim } from "@/NVConstants"
-import type NiiVueGPU from "@/NVControl"
-import type { PolygonWithHoles, VectorAnnotation, ViewHitTest } from "@/NVTypes"
-import { computeTolerance } from "@/view/NVAnnotation"
-import { type GraphLayout, graphHitTest } from "@/view/NVGraph"
-import type { LegendEntry, LegendLayout } from "@/view/NVLegend"
-import * as NVSliceLayout from "@/view/NVSliceLayout"
+import * as Annotation from '@/annotation'
+import * as DragModes from '@/control/dragModes'
+import { addUndoBitmap, getDrawingBitmap } from '@/drawing/drawingManager'
+import {
+  drawLine,
+  drawPenFilled,
+  drawPoint,
+  isSamePoint,
+} from '@/drawing/penTool'
+import { computeSlicePointerEvent } from '@/extension/context'
+import { log } from '@/logger'
+import * as NVTransforms from '@/math/NVTransforms'
+import * as NVConstants from '@/NVConstants'
+import { DRAG_MODE, sliceTypeDim } from '@/NVConstants'
+import type NiiVueGPU from '@/NVControl'
+import type {
+  NVImage,
+  PolygonWithHoles,
+  VectorAnnotation,
+  ViewHitTest,
+} from '@/NVTypes'
+import { computeTolerance } from '@/view/NVAnnotation'
+import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
+import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
+import * as NVSliceLayout from '@/view/NVSliceLayout'
 
 function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -74,14 +85,14 @@ function handleGraphHitTest(ctrl: NiiVueGPU, x: number, y: number): boolean {
   const layout = ctrl.view?.graphLayout as GraphLayout | null
   const hit = graphHitTest(x, y, layout)
   if (!hit) return false
-  if (hit.type === "deferred") {
+  if (hit.type === 'deferred') {
     const vol = ctrl.volumes[0]
     if (vol?.id) {
       ctrl.loadDeferred4DVolumes(vol.id)
     }
     return true
   }
-  if (hit.type === "frame" && hit.frame >= 0) {
+  if (hit.type === 'frame' && hit.frame >= 0) {
     const vol = ctrl.volumes[0]
     if (vol?.id) {
       ctrl.setFrame4D(vol.id, hit.frame)
@@ -89,7 +100,7 @@ function handleGraphHitTest(ctrl: NiiVueGPU, x: number, y: number): boolean {
     return true
   }
   // Inside graph but not on a specific element — consume to prevent tile hit
-  return hit.type === "frame"
+  return hit.type === 'frame'
 }
 
 function legendHitTest(
@@ -124,16 +135,16 @@ function legendHitTest(
 
 function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
   const tag = document.activeElement?.tagName
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
   const key = e.key.toUpperCase()
-  if (key === "V") {
+  if (key === 'V') {
     log.info(`NIIVUE VERSION: 0.1.20260122`)
-  } else if (key === "A") {
+  } else if (key === 'A') {
     ctrl.activeClipPlaneIndex++
     if (ctrl.activeClipPlaneIndex >= NVConstants.NUM_CLIP_PLANE) {
       ctrl.activeClipPlaneIndex = 0
     }
-  } else if (key === "C") {
+  } else if (key === 'C') {
     ctrl.currentClipPlaneIndex++
     if (ctrl.currentClipPlaneIndex > 6) ctrl.currentClipPlaneIndex = 0
     let clipPlane = [2, 0, 0] //none
@@ -165,21 +176,21 @@ function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
       ctrl.activeClipPlaneIndex,
     )
   } else if (ctrl.model.layout.sliceType === NVConstants.SLICE_TYPE.RENDER) {
-    if (key === "H") {
+    if (key === 'H') {
       ctrl.model.scene.azimuth =
         (((ctrl.model.scene.azimuth - 1) % 360) + 360) % 360
       ctrl.drawScene()
-    } else if (key === "L") {
+    } else if (key === 'L') {
       ctrl.model.scene.azimuth =
         (((ctrl.model.scene.azimuth + 1) % 360) + 360) % 360
       ctrl.drawScene()
-    } else if (key === "K") {
+    } else if (key === 'K') {
       ctrl.model.scene.elevation = Math.max(
         -90,
         Math.min(90, ctrl.model.scene.elevation - 1),
       )
       ctrl.drawScene()
-    } else if (key === "J") {
+    } else if (key === 'J') {
       ctrl.model.scene.elevation = Math.max(
         -90,
         Math.min(90, ctrl.model.scene.elevation + 1),
@@ -187,18 +198,18 @@ function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
       ctrl.drawScene()
     }
   } else {
-    if (key === "H") ctrl.moveCrosshairInVox(-1, 0, 0)
-    else if (key === "L") ctrl.moveCrosshairInVox(1, 0, 0)
-    else if (key === "J") ctrl.moveCrosshairInVox(0, -1, 0)
-    else if (key === "K") ctrl.moveCrosshairInVox(0, 1, 0)
-    else if (key === "U" && e.ctrlKey) ctrl.moveCrosshairInVox(0, 0, 1)
-    else if (key === "D" && e.ctrlKey) ctrl.moveCrosshairInVox(0, 0, -1)
+    if (key === 'H') ctrl.moveCrosshairInVox(-1, 0, 0)
+    else if (key === 'L') ctrl.moveCrosshairInVox(1, 0, 0)
+    else if (key === 'J') ctrl.moveCrosshairInVox(0, -1, 0)
+    else if (key === 'K') ctrl.moveCrosshairInVox(0, 1, 0)
+    else if (key === 'U' && e.ctrlKey) ctrl.moveCrosshairInVox(0, 0, 1)
+    else if (key === 'D' && e.ctrlKey) ctrl.moveCrosshairInVox(0, 0, -1)
   }
 }
 
 export function initInteraction(ctrl: NiiVueGPU): void {
   // Prevent browser default touch gestures so pointer events fire instead
-  if (ctrl.canvas) ctrl.canvas.style.touchAction = "none"
+  if (ctrl.canvas) ctrl.canvas.style.touchAction = 'none'
   // Store bound handlers for cleanup
   ctrl._eventListeners.contextmenu = (e: Event) => {
     const evt = e as PointerEvent
@@ -258,8 +269,8 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         const vol = ctrl.model.getVolumes()[0]
         if (vol) {
           // Save undo state before first stroke
-          const undoResult = Drawing.addUndoBitmap({
-            drawBitmap: Drawing.getDrawingBitmap(ctrl.model.drawingVolume!),
+          const undoResult = addUndoBitmap({
+            drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
             drawUndoBitmaps: ctrl.drawUndoBitmaps,
             currentDrawUndoBitmap: ctrl.currentDrawUndoBitmap,
             maxDrawUndoBitmaps: ctrl.maxDrawUndoBitmaps,
@@ -268,7 +279,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
           ctrl.drawUndoBitmaps = undoResult.drawUndoBitmaps
           ctrl.currentDrawUndoBitmap = undoResult.currentDrawUndoBitmap
           if (undoResult.drawBitmap)
-            ctrl.model.drawingVolume!.img = undoResult.drawBitmap
+            (ctrl.model.drawingVolume as NVImage).img = undoResult.drawBitmap
           // Convert screen → mm → voxel
           const vox = NVTransforms.mm2vox(vol, mm)
           const pt = [
@@ -279,13 +290,13 @@ export function initInteraction(ctrl: NiiVueGPU): void {
           ctrl._drawPenLocation = pt
           ctrl._drawPenAxCorSag = ctrl.activeTileHit.sliceType
           ctrl._drawPenFillPts = [pt.slice()]
-          Drawing.drawPoint({
+          drawPoint({
             x: pt[0],
             y: pt[1],
             z: pt[2],
             penValue: ctrl.model.draw.penValue,
-            drawBitmap: Drawing.getDrawingBitmap(ctrl.model.drawingVolume!),
-            dims: vol.dimsRAS!,
+            drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
+            dims: vol.dimsRAS as number[],
             penSize: ctrl.model.draw.penSize,
             penAxCorSag: ctrl._drawPenAxCorSag,
             penOverwrites: ctrl.model.draw.isFillOverwriting,
@@ -331,7 +342,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         const tool = cfg.tool
 
         // A) Selection/resize check for shape annotations
-        if (!cfg.isErasing && tool !== "freehand") {
+        if (!cfg.isErasing && tool !== 'freehand') {
           // Check control point hit on current selection
           if (ctrl.model._annotationSelection) {
             const cpIdx = Annotation.hitTestControlPoint(
@@ -409,7 +420,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       // Clear any previous overlay and reset stale angle state
       ctrl.model._dragOverlay = null
       if (mode !== DRAG_MODE.angle) {
-        ctrl._angleState = "none"
+        ctrl._angleState = 'none'
       }
       if (mode === DRAG_MODE.crosshair) {
         const mm = NVSliceLayout.screenSlicePick(
@@ -424,8 +435,8 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         const p = ctrl.model.scene.pan2Dxyzmm
         ctrl._pan2DxyzmmAtDragStart = [p[0], p[1], p[2], p[3]]
       } else if (mode === DRAG_MODE.angle) {
-        if (ctrl._angleState !== "drawing_second_line") {
-          ctrl._angleState = "drawing_first_line"
+        if (ctrl._angleState !== 'drawing_second_line') {
+          ctrl._angleState = 'drawing_first_line'
         }
       }
     }
@@ -445,11 +456,11 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       const vol = ctrl.model.getVolumes()[0]
       if (vol?.dimsRAS) {
         if (ctrl.drawPenAutoClose && ctrl._drawPenFillPts.length > 2) {
-          Drawing.drawLine({
+          drawLine({
             ptA: ctrl._drawPenLocation,
             ptB: ctrl._drawPenFillPts[0],
             penValue: ctrl.model.draw.penValue,
-            drawBitmap: Drawing.getDrawingBitmap(ctrl.model.drawingVolume!),
+            drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
             dims: vol.dimsRAS,
             penSize: ctrl.model.draw.penSize,
             penAxCorSag: ctrl._drawPenAxCorSag,
@@ -459,17 +470,17 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         if (ctrl.drawPenFilled && ctrl._drawPenFillPts.length > 2) {
           const currentUndo =
             ctrl.drawUndoBitmaps[ctrl.currentDrawUndoBitmap] ?? null
-          const fillResult = Drawing.drawPenFilled({
+          const fillResult = drawPenFilled({
             penFillPts: ctrl._drawPenFillPts,
             penAxCorSag: ctrl._drawPenAxCorSag,
-            drawBitmap: Drawing.getDrawingBitmap(ctrl.model.drawingVolume!),
+            drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
             dims: vol.dimsRAS,
             penValue: ctrl.model.draw.penValue,
             fillOverwrites: ctrl.model.draw.isFillOverwriting,
             currentUndoBitmap: currentUndo,
           })
           if (fillResult.success) {
-            ctrl.model.drawingVolume!.img = fillResult.drawBitmap
+            ;(ctrl.model.drawingVolume as NVImage).img = fillResult.drawBitmap
           }
         }
         ctrl.refreshDrawing()
@@ -477,7 +488,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       ctrl._drawPenLocation = [NaN, NaN, NaN]
       ctrl._drawPenAxCorSag = -1
       ctrl._drawPenFillPts = []
-      ctrl.emit("drawingChanged", { action: "stroke" })
+      ctrl.emit('drawingChanged', { action: 'stroke' })
     }
     // Finalize resize on mouse-up
     if (ctrl.model.annotation.isEnabled && ctrl._resizingControlPoint >= 0) {
@@ -503,7 +514,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               ann.stats =
                 Annotation.computeAnnotationStats(ann, vol) ?? undefined
           }
-          ctrl.emit("annotationChanged", { action: "resize" })
+          ctrl.emit('annotationChanged', { action: 'resize' })
         }
       }
       ctrl._resizingControlPoint = -1
@@ -559,9 +570,9 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               end: pt2d,
             }
             if (
-              cfg.tool === "line" ||
-              cfg.tool === "arrow" ||
-              cfg.tool === "measureLine"
+              cfg.tool === 'line' ||
+              cfg.tool === 'arrow' ||
+              cfg.tool === 'measureLine'
             ) {
               shapeData.width = cfg.style.strokeWidth
             }
@@ -576,8 +587,8 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               ctrl.model.annotations,
               newAnn,
             )
-            ctrl.emit("annotationAdded", { annotation: newAnn })
-            ctrl.emit("annotationChanged", { action: "draw" })
+            ctrl.emit('annotationAdded', { annotation: newAnn })
+            ctrl.emit('annotationChanged', { action: 'draw' })
           }
         }
       }
@@ -599,7 +610,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
           if (ctrl.model._annotationErasePreview) {
             ctrl.model.annotations = ctrl.model._annotationErasePreview
           }
-          ctrl.emit("annotationChanged", { action: "erase" })
+          ctrl.emit('annotationChanged', { action: 'erase' })
         } else {
           const usePolygonMode = cfg.brushRadius <= 1
           let polygons: PolygonWithHoles[] = []
@@ -630,8 +641,8 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               ctrl.model.annotations,
               newAnn,
             )
-            ctrl.emit("annotationAdded", { annotation: newAnn })
-            ctrl.emit("annotationChanged", { action: "draw" })
+            ctrl.emit('annotationAdded', { annotation: newAnn })
+            ctrl.emit('annotationChanged', { action: 'draw' })
           }
         }
         ctrl.drawScene()
@@ -652,11 +663,11 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     const sliceEvt = computeSlicePointerEvent(ctrl, evt)
     if (sliceEvt) {
       ctrl.emit(
-        "slicePointerUp" as keyof import("@/NVEvents").NVEventMap,
+        'slicePointerUp' as keyof import('@/NVEvents').NVEventMap,
         sliceEvt as never,
       )
     }
-    ctrl.emit("pointerUp", {
+    ctrl.emit('pointerUp', {
       x: evt.offsetX,
       y: evt.offsetY,
       button: evt.button,
@@ -706,7 +717,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       const sliceEvt = computeSlicePointerEvent(ctrl, evt)
       if (sliceEvt) {
         ctrl.emit(
-          "slicePointerMove" as keyof import("@/NVEvents").NVEventMap,
+          'slicePointerMove' as keyof import('@/NVEvents').NVEventMap,
           sliceEvt as never,
         )
       }
@@ -744,12 +755,12 @@ export function initInteraction(ctrl: NiiVueGPU): void {
             Math.round(vox[1]),
             Math.round(vox[2]),
           ]
-          if (!Drawing.isSamePoint(ctrl._drawPenLocation, newPt)) {
-            Drawing.drawLine({
+          if (!isSamePoint(ctrl._drawPenLocation, newPt)) {
+            drawLine({
               ptA: ctrl._drawPenLocation,
               ptB: newPt,
               penValue: ctrl.model.draw.penValue,
-              drawBitmap: Drawing.getDrawingBitmap(ctrl.model.drawingVolume!),
+              drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
               dims: vol.dimsRAS,
               penSize: ctrl.model.draw.penSize,
               penAxCorSag: ctrl._drawPenAxCorSag,
@@ -860,7 +871,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
             start: ctrl._annotationShapeStart,
             end: pt2d,
           }
-          if (cfg.tool === "measureLine") {
+          if (cfg.tool === 'measureLine') {
             const dx = pt2d.x - ctrl._annotationShapeStart.x
             const dy = pt2d.y - ctrl._annotationShapeStart.y
             preview.stats = {
@@ -1184,74 +1195,74 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       ctrl.drawScene()
     }
     ctrl.emit(
-      "slicePointerLeave" as keyof import("@/NVEvents").NVEventMap,
+      'slicePointerLeave' as keyof import('@/NVEvents').NVEventMap,
       undefined as never,
     )
   }
   // Add event listeners (pointer events on canvas with capture for drag tracking)
-  ctrl.canvas?.addEventListener("contextmenu", ctrl._eventListeners.contextmenu)
-  ctrl.canvas?.addEventListener("pointerdown", ctrl._eventListeners.pointerdown)
-  ctrl.canvas?.addEventListener("pointerup", ctrl._eventListeners.pointerup)
-  ctrl.canvas?.addEventListener("pointermove", ctrl._eventListeners.pointermove)
+  ctrl.canvas?.addEventListener('contextmenu', ctrl._eventListeners.contextmenu)
+  ctrl.canvas?.addEventListener('pointerdown', ctrl._eventListeners.pointerdown)
+  ctrl.canvas?.addEventListener('pointerup', ctrl._eventListeners.pointerup)
+  ctrl.canvas?.addEventListener('pointermove', ctrl._eventListeners.pointermove)
   ctrl.canvas?.addEventListener(
-    "pointerleave",
+    'pointerleave',
     ctrl._eventListeners.pointerleave,
   )
-  ctrl.canvas?.addEventListener("wheel", ctrl._eventListeners.wheel, {
+  ctrl.canvas?.addEventListener('wheel', ctrl._eventListeners.wheel, {
     passive: false,
   })
-  window.addEventListener("keydown", ctrl._eventListeners.keydown)
-  ctrl.canvas?.addEventListener("dblclick", ctrl._eventListeners.dblclick)
+  window.addEventListener('keydown', ctrl._eventListeners.keydown)
+  ctrl.canvas?.addEventListener('dblclick', ctrl._eventListeners.dblclick)
 }
 
 export function removeInteractionListeners(ctrl: NiiVueGPU): void {
   if (ctrl._eventListeners.contextmenu) {
     ctrl.canvas?.removeEventListener(
-      "contextmenu",
+      'contextmenu',
       ctrl._eventListeners.contextmenu,
     )
   }
   if (ctrl._eventListeners.pointerdown) {
     ctrl.canvas?.removeEventListener(
-      "pointerdown",
+      'pointerdown',
       ctrl._eventListeners.pointerdown,
     )
   }
   if (ctrl._eventListeners.pointerup) {
     ctrl.canvas?.removeEventListener(
-      "pointerup",
+      'pointerup',
       ctrl._eventListeners.pointerup,
     )
   }
   if (ctrl._eventListeners.pointermove) {
     ctrl.canvas?.removeEventListener(
-      "pointermove",
+      'pointermove',
       ctrl._eventListeners.pointermove,
     )
   }
   if (ctrl._eventListeners.wheel) {
-    ctrl.canvas?.removeEventListener("wheel", ctrl._eventListeners.wheel)
+    ctrl.canvas?.removeEventListener('wheel', ctrl._eventListeners.wheel)
   }
   if (ctrl._eventListeners.keydown) {
-    window.removeEventListener("keydown", ctrl._eventListeners.keydown)
+    window.removeEventListener('keydown', ctrl._eventListeners.keydown)
   }
   if (ctrl._eventListeners.dragover) {
-    ctrl.canvas?.removeEventListener("dragover", ctrl._eventListeners.dragover)
+    ctrl.canvas?.removeEventListener('dragover', ctrl._eventListeners.dragover)
   }
   if (ctrl._eventListeners.drop) {
-    ctrl.canvas?.removeEventListener("drop", ctrl._eventListeners.drop)
+    ctrl.canvas?.removeEventListener('drop', ctrl._eventListeners.drop)
   }
   if (ctrl._eventListeners.dblclick) {
-    ctrl.canvas?.removeEventListener("dblclick", ctrl._eventListeners.dblclick)
+    ctrl.canvas?.removeEventListener('dblclick', ctrl._eventListeners.dblclick)
   }
   if (ctrl._eventListeners.pointerleave) {
     ctrl.canvas?.removeEventListener(
-      "pointerleave",
+      'pointerleave',
       ctrl._eventListeners.pointerleave,
     )
   }
   if (ctrl.canvas) {
-    ctrl.canvas.style.touchAction = ""
+    ctrl.canvas.style.touchAction = ''
   }
 }
 
@@ -1260,7 +1271,7 @@ export function setupDragAndDrop(ctrl: NiiVueGPU): void {
     const evt = event as DragEvent
     evt.preventDefault()
     if (evt.dataTransfer) {
-      evt.dataTransfer.dropEffect = "copy"
+      evt.dataTransfer.dropEffect = 'copy'
     }
   }
 
@@ -1273,19 +1284,19 @@ export function setupDragAndDrop(ctrl: NiiVueGPU): void {
       const file = files[0]
       try {
         // Check if it's a NiiVue document file
-        if (file.name.toLowerCase().endsWith(".nvd")) {
+        if (file.name.toLowerCase().endsWith('.nvd')) {
           await ctrl.loadDocument(file)
         } else {
           await ctrl.loadImage(file)
         }
       } catch (err) {
-        log.error("Failed to load dropped file:", err)
+        log.error('Failed to load dropped file:', err)
       }
     }
   }
 
-  ctrl.canvas?.addEventListener("dragover", ctrl._eventListeners.dragover)
-  ctrl.canvas?.addEventListener("drop", ctrl._eventListeners.drop)
+  ctrl.canvas?.addEventListener('dragover', ctrl._eventListeners.dragover)
+  ctrl.canvas?.addEventListener('drop', ctrl._eventListeners.drop)
 }
 
 export function setupResizeHandler(ctrl: NiiVueGPU): void {
@@ -1295,18 +1306,18 @@ export function setupResizeHandler(ctrl: NiiVueGPU): void {
   ctrl.resizeObserver = new ResizeObserver(() => {
     ctrl.view?.resize()
     if (ctrl.canvas) {
-      ctrl.emit("canvasResize", {
+      ctrl.emit('canvasResize', {
         width: ctrl.canvas.clientWidth,
         height: ctrl.canvas.clientHeight,
       })
     }
   })
   try {
-    ctrl.resizeObserver.observe(ctrl.canvas!, {
-      box: "device-pixel-content-box",
+    ctrl.resizeObserver.observe(ctrl.canvas as HTMLCanvasElement, {
+      box: 'device-pixel-content-box',
     })
   } catch {
-    ctrl.resizeObserver.observe(ctrl.canvas!)
+    ctrl.resizeObserver.observe(ctrl.canvas as HTMLCanvasElement)
   }
 }
 

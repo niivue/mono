@@ -1,4 +1,4 @@
-import type { VectorAnnotation } from "@/NVTypes"
+import type { VectorAnnotation } from '@/NVTypes'
 
 export class AnnotationUndoStack {
   private _undoStack: VectorAnnotation[][] = []
@@ -20,13 +20,13 @@ export class AnnotationUndoStack {
   undo(current: VectorAnnotation[]): VectorAnnotation[] | null {
     if (this._undoStack.length === 0) return null
     this._redoStack.push(structuredClone(current))
-    return this._undoStack.pop()!
+    return this._undoStack.pop() ?? null
   }
 
   redo(current: VectorAnnotation[]): VectorAnnotation[] | null {
     if (this._redoStack.length === 0) return null
     this._undoStack.push(structuredClone(current))
-    return this._redoStack.pop()!
+    return this._redoStack.pop() ?? null
   }
 
   clear(): void {

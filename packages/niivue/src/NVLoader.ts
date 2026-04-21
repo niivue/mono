@@ -1,9 +1,9 @@
 export function getName(
   pathOrFile: string | { name?: string } | null | undefined,
 ): string {
-  if (typeof pathOrFile === "string") return pathOrFile
-  if (pathOrFile && typeof pathOrFile.name === "string") return pathOrFile.name
-  return ""
+  if (typeof pathOrFile === 'string') return pathOrFile
+  if (pathOrFile && typeof pathOrFile.name === 'string') return pathOrFile.name
+  return ''
 }
 
 /**
@@ -16,7 +16,7 @@ export function getName(
  * (standard for CDNs and `raw.githubusercontent.com`).
  */
 export function applyCORS(img: HTMLImageElement): void {
-  img.crossOrigin = "anonymous"
+  img.crossOrigin = 'anonymous'
 }
 
 export function getFileExt(
@@ -24,18 +24,18 @@ export function getFileExt(
   upperCase = true,
 ): string {
   const fullname = getName(pathOrFile)
-  if (!fullname) return ""
+  if (!fullname) return ''
   const re = /(?:\.([^.]+))?$/
-  let ext = re.exec(fullname)?.[1] ?? ""
+  let ext = re.exec(fullname)?.[1] ?? ''
   ext = ext.toUpperCase()
-  if (ext === "GZ") {
+  if (ext === 'GZ') {
     // img.trk.gz -> trk
-    ext = re.exec(fullname.slice(0, -3))?.[1] ?? ""
+    ext = re.exec(fullname.slice(0, -3))?.[1] ?? ''
     ext = ext.toUpperCase()
-  } else if (ext === "CBOR") {
+  } else if (ext === 'CBOR') {
     // img.iwi.cbor -> IWI.CBOR
     const endExt = ext
-    ext = re.exec(fullname.slice(0, -5))?.[1] ?? ""
+    ext = re.exec(fullname.slice(0, -5))?.[1] ?? ''
     ext = `${ext.toUpperCase()}.${endExt}`
   }
   return upperCase ? ext : ext.toLowerCase()

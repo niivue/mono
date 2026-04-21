@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 const nv1 = new NiiVue({
   backgroundColor: [0.3, 0, 0.1, 1],
@@ -9,7 +9,7 @@ const nv1 = new NiiVue({
   showBoundsBorder: true,
   boundsBorderColor: [0.3, 0.3, 0.3, 1],
   boundsBorderThickness: 2,
-  backend: "webgpu",
+  backend: 'webgpu',
 })
 const nv2 = new NiiVue({
   backgroundColor: [0.15, 0.15, 0.3, 1],
@@ -20,24 +20,24 @@ const nv2 = new NiiVue({
   showBoundsBorder: true,
   boundsBorderColor: [0.3, 0.3, 0.3, 1],
   boundsBorderThickness: 2,
-  backend: "webgpu",
+  backend: 'webgpu',
 })
 
 await nv1.attachToCanvas(gl1)
 await nv2.attachToCanvas(gl1)
 
-await nv1.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
+await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 await nv1.loadMeshes([
   {
-    url: "/meshes/BrainMesh_ICBM152.lh.mz3",
+    url: '/meshes/BrainMesh_ICBM152.lh.mz3',
     color: [0.3, 0.8, 0.7, 1],
-    shaderType: "outline",
+    shaderType: 'outline',
   },
 ])
 
-await nv2.loadVolumes([{ url: "/volumes/mni152.nii.gz", colormap: "hot" }])
+await nv2.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'hot' }])
 await nv2.loadMeshes([
-  { url: "/meshes/BrainMesh_ICBM152.lh.mz3", color: [0.7, 0.5, 1, 1] },
+  { url: '/meshes/BrainMesh_ICBM152.lh.mz3', color: [0.7, 0.5, 1, 1] },
 ])
 
 // Slice type control
@@ -48,7 +48,7 @@ sliceType.onchange = () => {
 
 // Bounds controls
 function parseBounds(str) {
-  const parts = str.split(",").map(parseFloat)
+  const parts = str.split(',').map(parseFloat)
   return parts
 }
 
@@ -80,14 +80,14 @@ broadcastSelect.onchange()
 
 // WebGPU toggle
 webgpuCheck.onchange = async function () {
-  await nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
-  await nv2.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+  await nv2.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
 saveNv1.onclick = async () => {
-  await nv1.saveBitmap("nv1.png")
+  await nv1.saveBitmap('nv1.png')
 }
 
 saveNv2.onclick = async () => {
-  await nv2.saveBitmap("nv2.png")
+  await nv2.saveBitmap('nv2.png')
 }

@@ -1,7 +1,7 @@
-import { log } from "@/logger"
-import type { NVImage } from "@/NVTypes"
-import * as NVVolume from "@/volume/NVVolume"
-import { decodeRLE, encodeRLE } from "./rle"
+import { log } from '@/logger'
+import type { NVImage } from '@/NVTypes'
+import * as NVVolume from '@/volume/NVVolume'
+import { decodeRLE, encodeRLE } from './rle'
 
 export interface AddUndoBitmapParams {
   drawBitmap: Uint8Array | null
@@ -74,7 +74,7 @@ export function addUndoBitmap(
   } = params
 
   if (!drawBitmap || drawBitmap.length < 1) {
-    log.debug("addUndoBitmap error: No drawing open")
+    log.debug('addUndoBitmap error: No drawing open')
     return {
       drawBitmap,
       drawUndoBitmaps,
@@ -201,12 +201,12 @@ export function createDrawingVolume(backgroundVolume: NVImage): NVImage {
   clonedHdr.dims[6] = 1
   const nVox3D = clonedHdr.dims[1] * clonedHdr.dims[2] * clonedHdr.dims[3]
   const img = new Uint8Array(nVox3D)
-  return NVVolume.nii2volume(clonedHdr, img, "drawing")
+  return NVVolume.nii2volume(clonedHdr, img, 'drawing')
 }
 
 export function getDrawingBitmap(vol: NVImage): Uint8Array {
   if (!(vol.img instanceof Uint8Array)) {
-    throw new Error("Drawing volume img is not a Uint8Array")
+    throw new Error('Drawing volume img is not a Uint8Array')
   }
   return vol.img
 }

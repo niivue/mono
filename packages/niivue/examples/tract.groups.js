@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
@@ -9,11 +9,11 @@ decimationSlide.oninput = async function () {
 }
 
 webgpuCheck.onclick = function () {
-  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
 function setThresholdVisible(show) {
-  const display = show ? "inline-block" : "none"
+  const display = show ? 'inline-block' : 'none'
   thresholdLabel.style.display = display
   thresholdSlide.style.display = display
 }
@@ -26,31 +26,31 @@ thresholdSlide.oninput = async function () {
 
 fiberSelect.onchange = async function () {
   const mode = this.value
-  setThresholdVisible(mode === "zscore")
+  setThresholdVisible(mode === 'zscore')
 
-  if (mode === "show0") {
+  if (mode === 'show0') {
     // First group only (green)
     const groupColors = { [groupNames[0]]: [0, 255, 0, 255] }
-    await nv1.setTractOptions(0, { groupColors, colorBy: "fixed" })
-  } else if (mode === "show1") {
+    await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
+  } else if (mode === 'show1') {
     // Second group only (red)
     const groupColors = { [groupNames[1]]: [255, 0, 0, 255] }
-    await nv1.setTractOptions(0, { groupColors, colorBy: "fixed" })
-  } else if (mode === "show2") {
+    await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
+  } else if (mode === 'show2') {
     // Third group only (blue)
     const groupColors = { [groupNames[2]]: [25, 25, 255, 255] }
-    await nv1.setTractOptions(0, { groupColors, colorBy: "fixed" })
-  } else if (mode === "show012") {
+    await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
+  } else if (mode === 'show012') {
     // First three groups simultaneously (green, red, blue)
     const groupColors = {
       [groupNames[0]]: [0, 255, 0, 255],
       [groupNames[1]]: [255, 0, 0, 255],
       [groupNames[2]]: [25, 25, 255, 255],
     }
-    await nv1.setTractOptions(0, { groupColors, colorBy: "fixed" })
-  } else if (mode === "zscore") {
+    await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
+  } else if (mode === 'zscore') {
     // Per-group z-score scalar coloring (all streamlines visible)
-    await nv1.setTractOptions(0, { groupColors: null, colorBy: "dps:z_score" })
+    await nv1.setTractOptions(0, { groupColors: null, colorBy: 'dps:z_score' })
   } else {
     // Direction or fixed color (all streamlines visible)
     await nv1.setTractOptions(0, { groupColors: null, colorBy: mode })
@@ -65,9 +65,9 @@ nv1.setClipPlanes([
   [0.1, 0, -20],
 ])
 nv1.volumeIllumination = 0.5
-await nv1.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
+await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 await nv1.loadMeshes([
-  { url: "/meshes/yeh2022.trx", rgba255: [0, 142, 200, 255] },
+  { url: '/meshes/yeh2022.trx', rgba255: [0, 142, 200, 255] },
 ])
 
 // Get group names from the loaded tract

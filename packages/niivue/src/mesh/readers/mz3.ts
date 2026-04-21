@@ -1,10 +1,10 @@
-import { makeLabelLut } from "@/cmap/NVCmaps"
-import { maybeDecompress } from "@/codecs/NVGz"
-import { log } from "@/logger"
-import type { ColorMap, MZ3 } from "@/NVTypes"
+import { makeLabelLut } from '@/cmap/NVCmaps'
+import { maybeDecompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
+import type { ColorMap, MZ3 } from '@/NVTypes'
 
-export const extensions = ["MZ3"]
-export const type = "mz3"
+export const extensions = ['MZ3']
+export const type = 'mz3'
 export async function read(buffer: ArrayBufferLike, n_vert = 0): Promise<MZ3> {
   // read mz3 mesh from ArrayBuffer
   // returns:
@@ -23,7 +23,7 @@ export async function read(buffer: ArrayBufferLike, n_vert = 0): Promise<MZ3> {
   let nvert = reader.getUint32(8, true)
   const nskip = reader.getUint32(12, true)
   if (magic !== 23117) {
-    throw new Error("Invalid MZ3 file")
+    throw new Error('Invalid MZ3 file')
   }
   const isFace = (attr & 1) !== 0
   const isVert = (attr & 2) !== 0
@@ -32,7 +32,7 @@ export async function read(buffer: ArrayBufferLike, n_vert = 0): Promise<MZ3> {
   const isDOUBLE = (attr & 16) !== 0
   const isLOOKUP = (attr & 64) !== 0
   if (attr > 127) {
-    throw new Error("Unsupported future version of MZ3 file")
+    throw new Error('Unsupported future version of MZ3 file')
   }
 
   let bytesPerScalar = 4
@@ -60,13 +60,13 @@ export async function read(buffer: ArrayBufferLike, n_vert = 0): Promise<MZ3> {
     }
     NSCALAR = Math.floor(scalarFloats / nvert)
     if (NSCALAR < 1) {
-      log.warn("Corrupt MZ3: file reports NSCALAR but not enough bytes")
+      log.warn('Corrupt MZ3: file reports NSCALAR but not enough bytes')
       isSCALAR = false
     }
   }
 
   if (nvert < 3 && n_vert < 3) {
-    throw new Error("Not a mesh MZ3 file (maybe scalar)")
+    throw new Error('Not a mesh MZ3 file (maybe scalar)')
   }
   if (n_vert > 0 && n_vert !== nvert) {
     log.warn(`Layer has ${nvert}vertices, but background mesh has ${n_vert}`)
@@ -121,7 +121,7 @@ export async function read(buffer: ArrayBufferLike, n_vert = 0): Promise<MZ3> {
   // Build colormapLabel from embedded JSON or per-vertex RGBA colors
   let colormapLabel: ReturnType<typeof makeLabelLut> | undefined
   if (isLOOKUP && isSCALAR) {
-    const decoder = new TextDecoder("utf-8")
+    const decoder = new TextDecoder('utf-8')
     const jsonBytes = new Uint8Array(_buffer, 16, nskip)
     const jsonText = decoder.decode(jsonBytes)
     const colormap = JSON.parse(jsonText) as ColorMap

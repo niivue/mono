@@ -1,5 +1,5 @@
-import { log } from "@/logger"
-import { decodeRLE } from "./rle"
+import { log } from '@/logger'
+import { decodeRLE } from './rle'
 
 export enum PEN_SLICE_TYPE {
   AXIAL = 0,

@@ -1,6 +1,6 @@
-import type { NVTractData } from "@/NVTypes"
+import type { NVTractData } from '@/NVTypes'
 
-export const extensions = ["TCK"]
+export const extensions = ['TCK']
 
 /**
  * Read MRtrix TCK (tracks) format.
@@ -11,7 +11,7 @@ export const extensions = ["TCK"]
  */
 export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   const len = buffer.byteLength
-  if (len < 20) throw new Error("File too small to be TCK")
+  if (len < 20) throw new Error('File too small to be TCK')
   const bytes = new Uint8Array(buffer)
   let pos = 0
 
@@ -25,18 +25,18 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
 
   // Parse header
   const sig = readLine()
-  if (!sig.includes("mrtrix tracks")) throw new Error("Not a valid TCK file")
+  if (!sig.includes('mrtrix tracks')) throw new Error('Not a valid TCK file')
 
   let dataOffset = -1
-  let line = ""
-  while (pos < len && !line.includes("END")) {
+  let line = ''
+  while (pos < len && !line.includes('END')) {
     line = readLine()
-    if (line.toLowerCase().startsWith("file:")) {
-      dataOffset = parseInt(line.split(" ").pop()!, 10)
+    if (line.toLowerCase().startsWith('file:')) {
+      dataOffset = parseInt(line.split(' ').pop() as string, 10)
     }
   }
   if (dataOffset < 20)
-    throw new Error("Not a valid TCK file (missing file offset)")
+    throw new Error('Not a valid TCK file (missing file offset)')
 
   // Parse binary data
   const reader = new DataView(buffer as ArrayBuffer)

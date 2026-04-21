@@ -1,11 +1,11 @@
-import * as nifti from "nifti-reader-js"
-import { decompress } from "@/codecs/NVGz"
-import { log } from "@/logger"
-import { NiiDataType } from "@/NVConstants"
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import * as nifti from 'nifti-reader-js'
+import { decompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
+import { NiiDataType } from '@/NVConstants'
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
-export const extensions = ["mif", "mih"]
-export const type = "nii"
+export const extensions = ['mif', 'mih']
+export const type = 'nii'
 
 const range = (start: number, end: number, step: number): number[] => {
   const out: number[] = []
@@ -33,7 +33,7 @@ export async function read(
   }
   let bytes = new Uint8Array(buffer)
   if (bytes[0] === 31 && bytes[1] === 139) {
-    log.debug("MIF with GZ decompression")
+    log.debug('MIF with GZ decompression')
     const raw = await decompress(new Uint8Array(buffer))
     buffer = raw.buffer.slice(
       raw.byteOffset,
@@ -49,13 +49,13 @@ export async function read(
     const startPos = pos
     while (pos < len && bytes[pos] !== 10) pos++
     pos++
-    if (pos - startPos < 1) return ""
+    if (pos - startPos < 1) return ''
     return new TextDecoder().decode(buffer.slice(startPos, pos - 1))
   }
 
   let line = readStr()
-  if (!line.startsWith("mrtrix image")) {
-    throw new Error("Not a valid MIF file")
+  if (!line.startsWith('mrtrix image')) {
+    throw new Error('Not a valid MIF file')
   }
 
   const layout: number[] = []
@@ -64,59 +64,59 @@ export async function read(
   let TR = 0
   let isDetached = false
   line = readStr()
-  while (pos < len && !line.startsWith("END")) {
-    let items = line.split(":")
+  while (pos < len && !line.startsWith('END')) {
+    let items = line.split(':')
     line = readStr()
     if (items.length < 2) break
     const tag = items[0]
-    items = items[1].split(",")
+    items = items[1].split(',')
     for (let i = 0; i < items.length; i++) items[i] = items[i].trim()
     switch (tag) {
-      case "dim":
+      case 'dim':
         hdr.dims[0] = items.length
         for (let i = 0; i < items.length; i++)
           hdr.dims[i + 1] = parseInt(items[i], 10)
         break
-      case "vox":
+      case 'vox':
         for (let i = 0; i < items.length; i++) {
           hdr.pixDims[i + 1] = parseFloat(items[i])
           if (Number.isNaN(hdr.pixDims[i + 1])) hdr.pixDims[i + 1] = 0.0
         }
         break
-      case "layout":
+      case 'layout':
         for (let i = 0; i < items.length; i++)
           layout.push(parseInt(items[i], 10))
         break
-      case "datatype": {
+      case 'datatype': {
         const dt = items[0]
-        if (dt.startsWith("Bit")) {
+        if (dt.startsWith('Bit')) {
           isBit = true
           hdr.datatypeCode = NiiDataType.DT_UINT8
-        } else if (dt.startsWith("Int8")) hdr.datatypeCode = NiiDataType.DT_INT8
-        else if (dt.startsWith("UInt8")) hdr.datatypeCode = NiiDataType.DT_UINT8
-        else if (dt.startsWith("Int16")) hdr.datatypeCode = NiiDataType.DT_INT16
-        else if (dt.startsWith("UInt16"))
+        } else if (dt.startsWith('Int8')) hdr.datatypeCode = NiiDataType.DT_INT8
+        else if (dt.startsWith('UInt8')) hdr.datatypeCode = NiiDataType.DT_UINT8
+        else if (dt.startsWith('Int16')) hdr.datatypeCode = NiiDataType.DT_INT16
+        else if (dt.startsWith('UInt16'))
           hdr.datatypeCode = NiiDataType.DT_UINT16
-        else if (dt.startsWith("Int32")) hdr.datatypeCode = NiiDataType.DT_INT32
-        else if (dt.startsWith("UInt32"))
+        else if (dt.startsWith('Int32')) hdr.datatypeCode = NiiDataType.DT_INT32
+        else if (dt.startsWith('UInt32'))
           hdr.datatypeCode = NiiDataType.DT_UINT32
-        else if (dt.startsWith("Float32"))
+        else if (dt.startsWith('Float32'))
           hdr.datatypeCode = NiiDataType.DT_FLOAT32
-        else if (dt.startsWith("Float64"))
+        else if (dt.startsWith('Float64'))
           hdr.datatypeCode = NiiDataType.DT_FLOAT64
         else log.warn(`Unsupported datatype ${dt}`)
 
-        if (dt.includes("8")) hdr.numBitsPerVoxel = 8
-        else if (dt.includes("16")) hdr.numBitsPerVoxel = 16
-        else if (dt.includes("32")) hdr.numBitsPerVoxel = 32
-        else if (dt.includes("64")) hdr.numBitsPerVoxel = 64
+        if (dt.includes('8')) hdr.numBitsPerVoxel = 8
+        else if (dt.includes('16')) hdr.numBitsPerVoxel = 16
+        else if (dt.includes('32')) hdr.numBitsPerVoxel = 32
+        else if (dt.includes('64')) hdr.numBitsPerVoxel = 64
 
         hdr.littleEndian = true
-        if (dt.endsWith("LE")) hdr.littleEndian = true
-        if (dt.endsWith("BE")) hdr.littleEndian = false
+        if (dt.endsWith('LE')) hdr.littleEndian = true
+        if (dt.endsWith('BE')) hdr.littleEndian = false
         break
       }
-      case "transform":
+      case 'transform':
         if (nTransform > 2 || items.length !== 4) break
         hdr.affine[nTransform][0] = parseFloat(items[0])
         hdr.affine[nTransform][1] = parseFloat(items[1])
@@ -124,16 +124,16 @@ export async function read(
         hdr.affine[nTransform][3] = parseFloat(items[3])
         nTransform++
         break
-      case "comments":
+      case 'comments':
         hdr.description = items[0].substring(0, Math.min(79, items[0].length))
         break
-      case "RepetitionTime":
+      case 'RepetitionTime':
         TR = parseFloat(items[0])
         break
-      case "file":
-        isDetached = !items[0].startsWith(". ")
+      case 'file':
+        isDetached = !items[0].startsWith('. ')
         if (!isDetached) {
-          items = items[0].split(" ")
+          items = items[0].split(' ')
           hdr.vox_offset = parseInt(items[1], 10)
         }
         break
@@ -144,7 +144,7 @@ export async function read(
 
   const ndim = hdr.dims[0]
   if (ndim > 5) {
-    log.warn("reader only designed for a maximum of 5 dimensions (XYZTD)")
+    log.warn('reader only designed for a maximum of 5 dimensions (XYZTD)')
   }
   let nvox = 1
   for (let i = 0; i < ndim; i++) nvox *= Math.max(hdr.dims[i + 1], 1)
@@ -155,7 +155,7 @@ export async function read(
   }
   if (TR > 0) hdr.pixDims[4] = TR
   if (isDetached && !pairedImgData) {
-    log.warn("MIH header provided without paired image data")
+    log.warn('MIH header provided without paired image data')
   }
 
   let rawImg: ArrayBuffer
@@ -184,7 +184,7 @@ export async function read(
   }
 
   if (layout.length !== hdr.dims[0]) {
-    log.warn("dims does not match layout")
+    log.warn('dims does not match layout')
   }
 
   let stride = 1
@@ -269,7 +269,7 @@ export async function read(
       outVs = new Float64Array(nvox)
       break
     default:
-      throw new Error("unknown datatypeCode")
+      throw new Error('unknown datatypeCode')
   }
 
   for (let d = 0; d < hdr.dims[5]; d++) {

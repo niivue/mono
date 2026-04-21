@@ -9,9 +9,9 @@
  * Compression (.gz) is handled transparently based on filename.
  */
 
-import * as NVGz from "@/codecs/NVGz"
-import * as NVLoader from "@/NVLoader"
-import type { NIFTI1, NIFTI2 } from "@/NVTypes"
+import * as NVGz from '@/codecs/NVGz'
+import * as NVLoader from '@/NVLoader'
+import type { NIFTI1, NIFTI2 } from '@/NVTypes'
 
 export type VolumeWriteOptions = {
   [key: string]: unknown
@@ -26,10 +26,10 @@ type VolumeWriter = {
   ) => Promise<ArrayBuffer>
 }
 
-import { buildExtensionMap } from "@/NVLoader"
+import { buildExtensionMap } from '@/NVLoader'
 
-const modules = import.meta.glob<VolumeWriter>("./*.ts", { eager: true })
-const writerByExt = buildExtensionMap(modules, "./index.ts")
+const modules = import.meta.glob<VolumeWriter>('./*.ts', { eager: true })
+const writerByExt = buildExtensionMap(modules, './index.ts')
 
 export function writeExtensions(): string[] {
   return Array.from(new Set(Array.from(writerByExt.keys()))).sort()
@@ -47,7 +47,7 @@ export async function writeVolume(
     throw new Error(`No volume writer available for extension: ${ext}`)
   }
   const buffer = await writer.write(hdr, img, options)
-  const isGz = filename.toLowerCase().endsWith(".gz")
+  const isGz = filename.toLowerCase().endsWith('.gz')
   if (isGz) {
     const compressed = await NVGz.compress(new Uint8Array(buffer))
     return compressed.buffer as ArrayBuffer

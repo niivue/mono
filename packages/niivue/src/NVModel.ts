@@ -1,9 +1,9 @@
-import { mat4, vec3, vec4 } from "gl-matrix"
-import { log } from "@/logger"
-import * as NVTransforms from "@/math/NVTransforms"
-import * as NVMesh from "@/mesh/NVMesh"
-import * as NVConstants from "@/NVConstants"
-import { COLORMAP_TYPE } from "@/NVConstants"
+import { mat4, vec3, vec4 } from 'gl-matrix'
+import { log } from '@/logger'
+import * as NVTransforms from '@/math/NVTransforms'
+import * as NVMesh from '@/mesh/NVMesh'
+import * as NVConstants from '@/NVConstants'
+import { COLORMAP_TYPE } from '@/NVConstants'
 import type {
   AnnotationConfig,
   ColorbarInfo,
@@ -24,11 +24,11 @@ import type {
   UIConfig,
   VectorAnnotation,
   VolumeRenderConfig,
-} from "@/NVTypes"
-import * as NVLegend from "@/view/NVLegend"
-import { resolveNegativeRange } from "@/view/NVUILayout"
-import * as NVVolume from "@/volume/NVVolume"
-import { getVoxelValue } from "@/volume/utils"
+} from '@/NVTypes'
+import * as NVLegend from '@/view/NVLegend'
+import { resolveNegativeRange } from '@/view/NVUILayout'
+import * as NVVolume from '@/volume/NVVolume'
+import { getVoxelValue } from '@/volume/utils'
 
 export default class NVModel {
   // --- Config groups ---
@@ -73,7 +73,7 @@ export default class NVModel {
   } | null = null
   /** Transient selection state for shape annotation resize handles */
   _annotationSelection:
-    | import("@/annotation/selection").AnnotationSelection
+    | import('@/annotation/selection').AnnotationSelection
     | null = null
   completedMeasurements: CompletedMeasurement[] = []
   completedAngles: CompletedAngle[] = []
@@ -491,7 +491,7 @@ export default class NVModel {
       for (const [, resource] of Object.entries(gpu)) {
         if (
           resource &&
-          typeof (resource as { destroy?: () => void }).destroy === "function"
+          typeof (resource as { destroy?: () => void }).destroy === 'function'
         ) {
           ;(resource as { destroy: () => void }).destroy()
         }
@@ -518,7 +518,7 @@ export default class NVModel {
       const ct = v.colormapType ?? COLORMAP_TYPE.MIN_TO_MAX
       const isZeroBased = ct !== COLORMAP_TYPE.MIN_TO_MAX
       bars.push({
-        colormapName: v.colormap ?? "Gray",
+        colormapName: v.colormap ?? 'Gray',
         min: isZeroBased ? 0 : v.calMin,
         max: v.calMax,
         thresholdMin: isZeroBased ? v.calMin : undefined,
@@ -542,7 +542,7 @@ export default class NVModel {
     for (const m of this.meshes) {
       // Connectome colorbars: node and edge colormaps
       if (
-        m.kind === "connectome" &&
+        m.kind === 'connectome' &&
         m.connectomeOptions &&
         m.isColorbarVisible !== false
       ) {
@@ -563,7 +563,7 @@ export default class NVModel {
       }
       // Tract colorbars: scalar colormap when colorBy is set
       if (
-        m.kind === "tract" &&
+        m.kind === 'tract' &&
         m.tractOptions &&
         m.isColorbarVisible !== false &&
         m.tractOptions.colorBy
@@ -674,7 +674,7 @@ export default class NVModel {
 
   async addMesh(mesh: MeshFromUrlOptions | NVMeshType): Promise<void> {
     // Check if this is already a fully-formed NVMesh (has positions property)
-    if ("positions" in mesh && mesh.positions) {
+    if ('positions' in mesh && mesh.positions) {
       this.meshes.push(mesh as NVMeshType)
       this._setupPivot3D()
       return
@@ -686,7 +686,7 @@ export default class NVModel {
       this.meshes.push(msh)
     } catch (e) {
       const opts = mesh as MeshFromUrlOptions
-      const urlString = typeof opts.url === "string" ? opts.url : opts.url.name
+      const urlString = typeof opts.url === 'string' ? opts.url : opts.url.name
       log.error(`Failed to load mesh: ${urlString}`, e)
     }
     this._setupPivot3D()
@@ -726,8 +726,8 @@ export default class NVModel {
 
   static readonly volumeDefaults = {
     opacity: 1.0,
-    colormap: "Gray",
-    colormapNegative: "",
+    colormap: 'Gray',
+    colormapNegative: '',
     calMinNeg: NaN,
     calMaxNeg: NaN,
     colormapType: 0,
@@ -741,16 +741,16 @@ export default class NVModel {
   static async prepareVolume(
     volume: ImageFromUrlOptions | NVImage,
   ): Promise<NVImage> {
-    if ("hdr" in volume && volume.hdr) {
+    if ('hdr' in volume && volume.hdr) {
       return { ...NVModel.volumeDefaults, ...volume }
     }
     const opts = volume as ImageFromUrlOptions
     const { url, urlImageData, limitFrames4D, ...overrides } = opts
     if (!url) {
-      throw new Error("prepareVolume requires a url or an NVImage object")
+      throw new Error('prepareVolume requires a url or an NVImage object')
     }
     const nii = await NVVolume.loadVolume(url, urlImageData ?? null)
-    const urlString = typeof url === "string" ? url : url.name
+    const urlString = typeof url === 'string' ? url : url.name
     const name = overrides.name ?? urlString
     const base = NVVolume.nii2volume(nii.hdr, nii.img, name, limitFrames4D)
     return { ...base, url: urlString, ...NVModel.volumeDefaults, ...overrides }

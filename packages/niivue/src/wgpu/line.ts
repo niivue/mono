@@ -1,6 +1,6 @@
-import type { LineData } from "@/view/NVLine"
-import { NVRenderer } from "@/view/NVRenderer"
-import lineShaderCode from "./line.wgsl?raw"
+import type { LineData } from '@/view/NVLine'
+import { NVRenderer } from '@/view/NVRenderer'
+import lineShaderCode from './line.wgsl?raw'
 
 export class LineRenderer extends NVRenderer {
   pipeline: GPURenderPipeline | null
@@ -30,12 +30,12 @@ export class LineRenderer extends NVRenderer {
         {
           binding: 0,
           visibility: GPUShaderStage.VERTEX,
-          buffer: { type: "uniform" },
+          buffer: { type: 'uniform' },
         },
         {
           binding: 1,
           visibility: GPUShaderStage.VERTEX,
-          buffer: { type: "read-only-storage" },
+          buffer: { type: 'read-only-storage' },
         },
       ],
     })
@@ -46,29 +46,29 @@ export class LineRenderer extends NVRenderer {
         bindGroupLayouts: [this.bindLayout],
       }),
       multisample: { count: msaaCount },
-      vertex: { module: lineModule, entryPoint: "vertex_main" },
+      vertex: { module: lineModule, entryPoint: 'vertex_main' },
       fragment: {
         module: lineModule,
-        entryPoint: "fragment_main",
+        entryPoint: 'fragment_main',
         targets: [
           {
             format: format,
             blend: {
               color: {
-                srcFactor: "src-alpha",
-                dstFactor: "one-minus-src-alpha",
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
               },
-              alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
             },
           },
         ],
       },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: "always",
-        format: "depth24plus",
+        depthCompare: 'always',
+        format: 'depth24plus',
       },
-      primitive: { topology: "triangle-strip" },
+      primitive: { topology: 'triangle-strip' },
     })
     this.isReady = true
   }

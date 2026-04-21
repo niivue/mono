@@ -11,12 +11,12 @@
  * a local copy in sync.
  */
 
-import * as NVTransforms from "@/math/NVTransforms"
-import type NiiVueGPU from "@/NVControlBase"
-import type { NVImage, TypedVoxelArray } from "@/NVTypes"
-import * as NVSliceLayout from "@/view/NVSliceLayout"
-import type { TransformOptions, VolumeTransform } from "@/volume/transforms"
-import { getImageDataRAS } from "@/volume/utils"
+import * as NVTransforms from '@/math/NVTransforms'
+import type NiiVueGPU from '@/NVControlBase'
+import type { NVImage, TypedVoxelArray } from '@/NVTypes'
+import * as NVSliceLayout from '@/view/NVSliceLayout'
+import type { TransformOptions, VolumeTransform } from '@/volume/transforms'
+import { getImageDataRAS } from '@/volume/utils'
 import type {
   BackgroundVolumeAccess,
   DrawingAccess,
@@ -24,16 +24,16 @@ import type {
   NVExtensionEventMap,
   SharedBufferHandle,
   SlicePointerEvent,
-} from "./types"
+} from './types'
 
 // ============================================================
 // Internal event names used for high-level slice pointer events
 // ============================================================
 
 const _SLICE_EVENTS = new Set<string>([
-  "slicePointerMove",
-  "slicePointerUp",
-  "slicePointerLeave",
+  'slicePointerMove',
+  'slicePointerUp',
+  'slicePointerLeave',
 ])
 
 type AnyListener = (...args: unknown[]) => void
@@ -74,7 +74,7 @@ export class NVExtensionContext {
     const self = this
     return {
       get img(): TypedVoxelArray {
-        return vol.img!
+        return vol.img as TypedVoxelArray
       },
       get hdr() {
         return vol.hdr
@@ -258,14 +258,14 @@ export class NVExtensionContext {
 
   vox2mm(vox: [number, number, number]): [number, number, number] {
     const vol = this.nv.volumes[0]
-    if (!vol?.matRAS) throw new Error("No background volume with matRAS loaded")
+    if (!vol?.matRAS) throw new Error('No background volume with matRAS loaded')
     const mm = NVTransforms.vox2mm(null, vox, vol.matRAS)
     return [mm[0], mm[1], mm[2]]
   }
 
   mm2vox(mm: [number, number, number]): [number, number, number] {
     const vol = this.nv.volumes[0]
-    if (!vol?.matRAS) throw new Error("No background volume with matRAS loaded")
+    if (!vol?.matRAS) throw new Error('No background volume with matRAS loaded')
     const result = NVTransforms.mm2vox(vol, mm)
     return [result[0], result[1], result[2]]
   }

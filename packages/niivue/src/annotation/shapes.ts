@@ -2,7 +2,7 @@ import type {
   AnnotationPoint,
   AnnotationTool,
   PolygonWithHoles,
-} from "@/NVTypes"
+} from '@/NVTypes'
 
 const ELLIPSE_SEGMENTS = 64
 
@@ -140,19 +140,19 @@ export function generateShape(
   strokeWidth: number,
 ): PolygonWithHoles[] {
   switch (tool) {
-    case "ellipse":
-    case "measureEllipse":
+    case 'ellipse':
+    case 'measureEllipse':
       return generateEllipse(start, end)
-    case "rectangle":
-    case "measureRect":
+    case 'rectangle':
+    case 'measureRect':
       return generateRectangle(start, end)
-    case "line":
-    case "measureLine":
+    case 'line':
+    case 'measureLine':
       return generateLine(start, end, strokeWidth)
-    case "arrow":
+    case 'arrow':
       return generateArrow(start, end, strokeWidth)
-    case "circle":
-    case "measureCircle":
+    case 'circle':
+    case 'measureCircle':
       return generateCircle(start, end)
     default:
       return []

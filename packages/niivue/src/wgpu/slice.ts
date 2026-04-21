@@ -1,6 +1,6 @@
-import type { NVImage } from "@/NVTypes"
-import { NVRenderer } from "@/view/NVRenderer"
-import sliceShaderCode from "./slice.wgsl?raw"
+import type { NVImage } from '@/NVTypes'
+import { NVRenderer } from '@/view/NVRenderer'
+import sliceShaderCode from './slice.wgsl?raw'
 
 const UNIFORM_ALIGNMENT = 256 // WebGPU minimum uniform buffer offset alignment
 const SLICE_UNIFORM_SIZE = 192 // 2x mat4x4f (128) + scalars (36) + numPaqd (4) + pad (12) + paqdUniforms vec4f (16) = 192 bytes
@@ -58,43 +58,43 @@ export class SliceRenderer extends NVRenderer {
 
     // Create samplers (linear for smooth, nearest for blocky voxels)
     this.samplerLinear = device.createSampler({
-      magFilter: "linear",
-      minFilter: "linear",
+      magFilter: 'linear',
+      minFilter: 'linear',
     })
     this.samplerNearest = device.createSampler({
-      magFilter: "nearest",
-      minFilter: "nearest",
+      magFilter: 'nearest',
+      minFilter: 'nearest',
     })
 
     // Create placeholder 2x2x2 RGBA overlay texture (all zeros - transparent black)
     this.placeholderOverlay = device.createTexture({
       size: [2, 2, 2],
-      format: "rgba8unorm",
+      format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      dimension: "3d",
+      dimension: '3d',
     })
     // Initialize with zeros (WebGPU textures are zero-initialized by default)
 
     // Create placeholder 2x2x2 drawing texture (all zeros - transparent)
     this.placeholderDrawing = device.createTexture({
       size: [2, 2, 2],
-      format: "rgba8unorm",
+      format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      dimension: "3d",
+      dimension: '3d',
     })
 
     // Create placeholder 2x2x2 PAQD texture (all zeros)
     this.placeholderPaqd = device.createTexture({
       size: [2, 2, 2],
-      format: "rgba8unorm",
+      format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      dimension: "3d",
+      dimension: '3d',
     })
 
     // Create placeholder 1x1 2D LUT texture (transparent)
     this.placeholderLut2D = device.createTexture({
       size: [1, 1],
-      format: "rgba8unorm",
+      format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     })
 
@@ -105,7 +105,7 @@ export class SliceRenderer extends NVRenderer {
           binding: 0,
           visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
           buffer: {
-            type: "uniform",
+            type: 'uniform',
             hasDynamicOffset: true,
             minBindingSize: SLICE_UNIFORM_SIZE,
           },
@@ -113,37 +113,37 @@ export class SliceRenderer extends NVRenderer {
         {
           binding: 1,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "3d" },
+          texture: { viewDimension: '3d' },
         },
         {
           binding: 2,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "3d" },
+          texture: { viewDimension: '3d' },
         },
         {
           binding: 3,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: "filtering" },
+          sampler: { type: 'filtering' },
         },
         {
           binding: 4,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "3d" },
+          texture: { viewDimension: '3d' },
         },
         {
           binding: 5,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "3d" },
+          texture: { viewDimension: '3d' },
         },
         {
           binding: 6,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "2d" },
+          texture: { viewDimension: '2d' },
         },
         {
           binding: 7,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: "filtering" },
+          sampler: { type: 'filtering' },
         },
       ],
     })
@@ -155,29 +155,29 @@ export class SliceRenderer extends NVRenderer {
         bindGroupLayouts: [this.bindLayout],
       }),
       multisample: { count: msaaCount },
-      vertex: { module: sliceModule, entryPoint: "vertex_main" },
+      vertex: { module: sliceModule, entryPoint: 'vertex_main' },
       fragment: {
         module: sliceModule,
-        entryPoint: "fragment_main",
+        entryPoint: 'fragment_main',
         targets: [
           {
             format: format,
             blend: {
               color: {
-                srcFactor: "src-alpha",
-                dstFactor: "one-minus-src-alpha",
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
               },
-              alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
             },
           },
         ],
       },
       depthStencil: {
         depthWriteEnabled: true,
-        depthCompare: "less",
-        format: "depth24plus",
+        depthCompare: 'less',
+        format: 'depth24plus',
       },
-      primitive: { topology: "triangle-strip" },
+      primitive: { topology: 'triangle-strip' },
     })
 
     this.isReady = true
@@ -284,9 +284,9 @@ export class SliceRenderer extends NVRenderer {
     if (!this.drawingTexture) {
       this.drawingTexture = device.createTexture({
         size: dims,
-        format: "rgba8unorm",
+        format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-        dimension: "3d",
+        dimension: '3d',
       })
     }
     device.queue.writeTexture(
@@ -347,7 +347,7 @@ export class SliceRenderer extends NVRenderer {
     const dynamicOffset = tileIndex * alignedSliceSize
     const uniformData = new Float32Array(SLICE_UNIFORM_SIZE / 4)
     uniformData.set(mvpMatrix, 0) // mat4x4f mvpMtx (16 floats)
-    uniformData.set(vol.frac2mm!, 16) // mat4x4f frac2mm (16 floats)
+    uniformData.set(vol.frac2mm as Float32Array, 16) // mat4x4f frac2mm (16 floats)
     uniformData[32] = vol.opacity ?? 1 // f32 opacity
     uniformData[33] = md.overlayAlphaShader ?? 1.0 // f32 overlayAlphaShader
     uniformData[34] = sliceFrac // f32 slice

@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 nearestCheck.onclick = function () {
   nv1.volumeIsNearestInterpolation = this.checked
@@ -17,7 +17,7 @@ legendCheck.onchange = async function () {
 colorbarCheck.onclick = function () {
   nv1.isColorbarVisible = this.checked
 }
-colorBtn.addEventListener("input", (event) => {
+colorBtn.addEventListener('input', (event) => {
   const input = event.target
   const hex = input.value
   const r = parseInt(hex.slice(1, 3), 16) / 255
@@ -26,26 +26,26 @@ colorBtn.addEventListener("input", (event) => {
   nv1.backgroundColor = [r, g, b, 1.0]
 })
 webgpuCheck.onclick = function () {
-  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 aboutBtn.onclick = () => {
-  window.alert("The Automated Anatomical Labeling atlas PMID: 11771995.")
+  window.alert('The Automated Anatomical Labeling atlas PMID: 11771995.')
 }
 
 function handleLocationChange(data) {
-  document.getElementById("location").innerHTML = `&nbsp;&nbsp;${data.string}`
+  document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
 const nv1 = new NiiVue({ backgroundColor: [0.3, 0.3, 0.5, 1] })
-nv1.addEventListener("locationChange", (e) => handleLocationChange(e.detail))
+nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 await nv1.attachToCanvas(gl1)
 
 nv1.showRender = 1
 var volumeList = [
-  { url: "/volumes/mni152.nii.gz", calMin: 30, calMax: 80 },
-  { url: "/volumes/aal.nii.gz" },
+  { url: '/volumes/mni152.nii.gz', calMin: 30, calMax: 80 },
+  { url: '/volumes/aal.nii.gz' },
 ]
 await nv1.loadVolumes(volumeList)
-await nv1.setColormapLabelFromUrl(1, "/volumes/aal.json")
+await nv1.setColormapLabelFromUrl(1, '/volumes/aal.json')
 darkCheck.onclick()
 nearestCheck.onclick()
 opacitySlider.oninput()

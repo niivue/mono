@@ -1,41 +1,58 @@
-import { ANNOTATION_DEFAULTS } from "@/NVConstants"
+import { ANNOTATION_DEFAULTS } from '@/NVConstants'
 import type {
   AnnotationPoint,
   AnnotationStyle,
   PolygonWithHoles,
   VectorAnnotation,
-} from "@/NVTypes"
+} from '@/NVTypes'
 import {
   clipperDifference as _clipperDifference,
   clipperIntersects as _clipperIntersects,
   clipperUnion as _clipperUnion,
-} from "./clipper"
-import { pointInRing } from "./pointInRing"
-
-export {
-  clipperDifference,
   clipperInflatePath,
-  clipperIntersects,
   clipperSubtractBrush,
-  clipperUnion,
-} from "./clipper"
-export { pointInRing } from "./pointInRing"
-export type { AnnotationSelection } from "./selection"
-export {
+} from './clipper'
+import { pointInRing } from './pointInRing'
+import type { AnnotationSelection } from './selection'
+import {
   getControlPoints,
   hitTestControlPoint,
   updateShapeBounds,
-} from "./selection"
-export { constrainCircleEnd, generateShape } from "./shapes"
-export {
+} from './selection'
+import { constrainCircleEnd, generateShape } from './shapes'
+import {
   isOnSlice,
   mmToSlice2D,
   slice2DToMM,
   slice2DToMMOnPlane,
-} from "./sliceProjection"
-export { computeAnnotationStats, isCircleTool, isMeasureTool } from "./stats"
-export { triangulatePolygon } from "./triangulate"
-export { AnnotationUndoStack } from "./undoRedo"
+} from './sliceProjection'
+import { computeAnnotationStats, isCircleTool, isMeasureTool } from './stats'
+import { triangulatePolygon } from './triangulate'
+import { AnnotationUndoStack } from './undoRedo'
+
+export type { AnnotationSelection }
+export {
+  _clipperDifference as clipperDifference,
+  _clipperIntersects as clipperIntersects,
+  _clipperUnion as clipperUnion,
+  AnnotationUndoStack,
+  clipperInflatePath,
+  clipperSubtractBrush,
+  computeAnnotationStats,
+  constrainCircleEnd,
+  generateShape,
+  getControlPoints,
+  hitTestControlPoint,
+  isCircleTool,
+  isMeasureTool,
+  isOnSlice,
+  mmToSlice2D,
+  pointInRing,
+  slice2DToMM,
+  slice2DToMMOnPlane,
+  triangulatePolygon,
+  updateShapeBounds,
+}
 
 export type SelfIntersection = {
   intersection: AnnotationPoint
@@ -50,11 +67,11 @@ export function findFirstSelfIntersection(
   points: AnnotationPoint[],
 ): SelfIntersection | null {
   if (points.length < 4) return null
-  const segStart = points[points.length - 2]!
-  const segEnd = points[points.length - 1]!
+  const segStart = points[points.length - 2] as AnnotationPoint
+  const segEnd = points[points.length - 1] as AnnotationPoint
   for (let i = 0; i <= points.length - 4; i++) {
-    const a = points[i]!
-    const b = points[i + 1]!
+    const a = points[i] as AnnotationPoint
+    const b = points[i + 1] as AnnotationPoint
     const ix = _lineIntersection(segStart, segEnd, a, b)
     if (ix) return { intersection: ix, segmentStartIndex: i }
   }
@@ -91,8 +108,8 @@ export function extractClosedLoop(
     i <= points.length - 2;
     i++
   ) {
-    const pt = points[i]!
-    const last = loop[loop.length - 1]!
+    const pt = points[i] as AnnotationPoint
+    const last = loop[loop.length - 1] as AnnotationPoint
     if (Math.abs(last.x - pt.x) > 1e-7 || Math.abs(last.y - pt.y) > 1e-7) {
       loop.push({ ...pt })
     }
@@ -136,7 +153,7 @@ export function hitTestAnnotationPolygon(
   annotation: VectorAnnotation,
 ): number {
   for (let i = 0; i < annotation.polygons.length; i++) {
-    const poly = annotation.polygons[i]!
+    const poly = annotation.polygons[i] as PolygonWithHoles
     if (pointInRing(point, poly.outer)) {
       let inHole = false
       for (const hole of poly.holes) {

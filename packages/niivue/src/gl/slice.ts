@@ -1,7 +1,7 @@
-import type { NVImage } from "@/NVTypes"
-import { NVRenderer } from "@/view/NVRenderer"
-import { Shader } from "./shader"
-import { sliceFragShader, sliceVertShader } from "./sliceShader"
+import type { NVImage } from '@/NVTypes'
+import { NVRenderer } from '@/view/NVRenderer'
+import { Shader } from './shader'
+import { sliceFragShader, sliceVertShader } from './sliceShader'
 
 type SliceModel = {
   overlayAlphaShader?: number
@@ -32,7 +32,7 @@ export class SliceRenderer extends NVRenderer {
     // Create VAO and vertex buffer for a unit quad
     this._vao = gl.createVertexArray()
     if (!this._vao) {
-      throw new Error("Failed to create slice VAO")
+      throw new Error('Failed to create slice VAO')
     }
     gl.bindVertexArray(this._vao)
 
@@ -44,7 +44,7 @@ export class SliceRenderer extends NVRenderer {
     this._vertexBuffer = gl.createBuffer()
     if (!this._vertexBuffer) {
       gl.bindVertexArray(null)
-      throw new Error("Failed to create slice vertex buffer")
+      throw new Error('Failed to create slice vertex buffer')
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, quadVertices, gl.STATIC_DRAW)
@@ -59,7 +59,7 @@ export class SliceRenderer extends NVRenderer {
     this._placeholderOverlay = gl.createTexture()
     if (!this._placeholderOverlay) {
       gl.bindVertexArray(null)
-      throw new Error("Failed to create slice placeholder texture")
+      throw new Error('Failed to create slice placeholder texture')
     }
     gl.bindTexture(gl.TEXTURE_3D, this._placeholderOverlay)
     gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)

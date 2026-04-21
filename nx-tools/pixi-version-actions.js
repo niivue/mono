@@ -1,7 +1,7 @@
-Object.defineProperty(exports, "__esModule", { value: true })
+Object.defineProperty(exports, '__esModule', { value: true })
 
-const { join } = require("node:path")
-const { VersionActions } = require("nx/release")
+const { join } = require('node:path')
+const { VersionActions } = require('nx/release')
 
 /**
  * Custom NX Release version actions for Pixi/Python projects.
@@ -15,7 +15,7 @@ const { VersionActions } = require("nx/release")
 class PixiVersionActions extends VersionActions {
   constructor(...args) {
     super(...args)
-    this.validManifestFilenames = ["pixi.toml", "pyproject.toml"]
+    this.validManifestFilenames = ['pixi.toml', 'pyproject.toml']
   }
 
   /**
@@ -53,7 +53,7 @@ class PixiVersionActions extends VersionActions {
       )
     }
     const manifestPath = this.manifestsToUpdate[0].manifestPath
-    const content = tree.read(manifestPath, "utf-8")
+    const content = tree.read(manifestPath, 'utf-8')
     const match = content.match(/^version\s*=\s*"([^"]+)"/m)
     if (!match) {
       throw new Error(
@@ -72,14 +72,14 @@ class PixiVersionActions extends VersionActions {
       return { currentVersion: null, dependencyCollection: null }
     }
     try {
-      const content = tree.read(this.manifestsToUpdate[0].manifestPath, "utf-8")
+      const content = tree.read(this.manifestsToUpdate[0].manifestPath, 'utf-8')
       const toolNxMatch = content.match(
         /\[tool\.nx\][\s\S]*?workspace-dependencies\s*=\s*\[([^\]]*)\]/,
       )
       if (toolNxMatch?.[1].includes(`"${depName}"`)) {
         return {
           currentVersion: null,
-          dependencyCollection: "workspace-dependencies",
+          dependencyCollection: 'workspace-dependencies',
         }
       }
     } catch {}
@@ -89,7 +89,7 @@ class PixiVersionActions extends VersionActions {
   async updateProjectVersion(tree, newVersion) {
     const logMessages = []
     for (const manifestToUpdate of this.manifestsToUpdate) {
-      const content = tree.read(manifestToUpdate.manifestPath, "utf-8")
+      const content = tree.read(manifestToUpdate.manifestPath, 'utf-8')
       const updated = content.replace(
         /^(version\s*=\s*)"[^"]+"/m,
         `$1"${newVersion}"`,

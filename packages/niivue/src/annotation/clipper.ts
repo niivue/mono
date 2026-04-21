@@ -10,8 +10,8 @@ import {
   type Paths64,
   type PolyPath64,
   PolyTree64,
-} from "clipper2-ts"
-import type { AnnotationPoint, PolygonWithHoles } from "@/NVTypes"
+} from 'clipper2-ts'
+import type { AnnotationPoint, PolygonWithHoles } from '@/NVTypes'
 
 const SCALE = 100
 

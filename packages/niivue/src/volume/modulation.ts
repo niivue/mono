@@ -1,5 +1,5 @@
-import type { NVImage } from "@/NVTypes"
-import { getTypedArrayConstructor } from "./utils"
+import type { NVImage } from '@/NVTypes'
+import { getTypedArrayConstructor } from './utils'
 
 /** Compute modulation data for all volumes that have modulationImage set. */
 export function computeModulationData(volumes: NVImage[]): void {

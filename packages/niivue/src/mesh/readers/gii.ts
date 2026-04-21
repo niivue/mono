@@ -1,7 +1,7 @@
-import { decompress } from "@/codecs/NVGz"
-import { log } from "@/logger"
-import type { ColorMap, MZ3 } from "@/NVTypes"
-import { makeLabelLut } from "../../cmap/NVCmaps.js"
+import { decompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
+import type { ColorMap, MZ3 } from '@/NVTypes'
+import { makeLabelLut } from '../../cmap/NVCmaps.js'
 
 declare const Buffer:
   | { from: (value: string, encoding: string) => Uint8Array }
@@ -15,8 +15,8 @@ type XmlTag = {
   endPos: number
 }
 
-export const extensions = ["GII"]
-export const type = "mz3"
+export const extensions = ['GII']
+export const type = 'mz3'
 
 function toArrayBuffer(raw: Uint8Array): ArrayBuffer {
   return raw.buffer.slice(
@@ -33,8 +33,8 @@ function viewToArrayBuffer(view: ArrayBufferView): ArrayBuffer {
 }
 
 function base64ToUint8(base64: string): Uint8Array {
-  if (typeof Buffer !== "undefined") {
-    return new Uint8Array(Buffer.from(base64, "base64"))
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(base64, 'base64'))
   }
   const binaryString = atob(base64)
   const len = binaryString.length
@@ -50,27 +50,27 @@ export async function read(buffer: ArrayBuffer, n_vert = 0): Promise<MZ3> {
   if (len < 20) {
     throw new Error(`File too small to be GII: bytes = ${len}`)
   }
-  let chars = new TextDecoder("ascii").decode(buffer)
+  let chars = new TextDecoder('ascii').decode(buffer)
   if (chars[0].charCodeAt(0) === 31) {
     // raw GIFTI saved as .gii.gz is smaller than gz GIFTI due to base64 overhead
     const raw = await decompress(new Uint8Array(buffer))
     buffer = toArrayBuffer(raw)
-    chars = new TextDecoder("ascii").decode(buffer)
+    chars = new TextDecoder('ascii').decode(buffer)
   }
   let pos = 0
   function readXMLtag(): XmlTag {
     let isEmptyTag = true
     let startPos = pos
     while (isEmptyTag) {
-      while (pos < len && chars[pos] !== "<") {
+      while (pos < len && chars[pos] !== '<') {
         pos++
       }
       startPos = pos
-      while (pos < len && chars[pos] !== ">") {
+      while (pos < len && chars[pos] !== '>') {
         pos++
       }
-      isEmptyTag = chars[pos - 1] === "/"
-      if (startPos + 1 < len && chars[startPos + 1] === "/") {
+      isEmptyTag = chars[pos - 1] === '/'
+      if (startPos + 1 < len && chars[startPos + 1] === '/') {
         pos += 1
         isEmptyTag = true
       }
@@ -81,11 +81,11 @@ export async function read(buffer: ArrayBuffer, n_vert = 0): Promise<MZ3> {
     const tagString = new TextDecoder()
       .decode(buffer.slice(startPos + 1, pos))
       .trim()
-    const startTag = tagString.split(" ")[0].trim()
+    const startTag = tagString.split(' ')[0].trim()
     const contentStartPos = pos
     let contentEndPos = pos
     let endPos = pos
-    if (chars[startPos + 1] !== "?" && chars[startPos + 1] !== "!") {
+    if (chars[startPos + 1] !== '?' && chars[startPos + 1] !== '!') {
       const endTag = `</${startTag}>`
       contentEndPos = chars.indexOf(endTag, contentStartPos)
       endPos = contentEndPos + endTag.length - 1
@@ -99,23 +99,23 @@ export async function read(buffer: ArrayBuffer, n_vert = 0): Promise<MZ3> {
     }
   }
   let tag = readXMLtag()
-  if (!tag.name.startsWith("?xml")) {
-    throw new Error("readGII: Invalid XML file")
+  if (!tag.name.startsWith('?xml')) {
+    throw new Error('readGII: Invalid XML file')
   }
-  while (!tag.name.startsWith("GIFTI") && tag.endPos < len) {
+  while (!tag.name.startsWith('GIFTI') && tag.endPos < len) {
     tag = readXMLtag()
   }
   if (
-    !tag.name.startsWith("GIFTI") ||
+    !tag.name.startsWith('GIFTI') ||
     tag.contentStartPos === tag.contentEndPos
   ) {
-    throw new Error("readGII: XML file does not include GIFTI tag")
+    throw new Error('readGII: XML file does not include GIFTI tag')
   }
   len = tag.contentEndPos
   let positions = new Float32Array()
   let indices = new Uint32Array()
   let scalars = new Float32Array()
-  let anatomicalStructurePrimary = ""
+  let anatomicalStructurePrimary = ''
   let isIdx = false
   let isPts = false
   let isVectors = false
@@ -128,7 +128,7 @@ export async function read(buffer: ArrayBuffer, n_vert = 0): Promise<MZ3> {
   let nvert = 0
   let isDataSpaceScanner = false
   tag.endPos = tag.contentStartPos
-  let line = ""
+  let line = ''
   function readNumericTag(tagName: string, isFloat = false): number {
     const p = line.indexOf(tagName)
     if (p < 0) {
@@ -145,28 +145,28 @@ export async function read(buffer: ArrayBuffer, n_vert = 0): Promise<MZ3> {
   function readBracketTag(tagName: string): string {
     const p = line.indexOf(tagName)
     if (p < 0) {
-      return ""
+      return ''
     }
     const spos = p + tagName.length
-    const epos = line.indexOf("]", spos)
+    const epos = line.indexOf(']', spos)
     return line.slice(spos, epos)
   }
   const Labels: ColorMap = { R: [], G: [], B: [], A: [], I: [], labels: [] }
   while (tag.endPos < len && tag.name.length > 1) {
     tag = readXMLtag()
-    if (tag.name.startsWith("Label Key")) {
+    if (tag.name.startsWith('Label Key')) {
       line = tag.name
-      Labels.I.push(readNumericTag("Key="))
-      Labels.R.push(Math.round(255 * readNumericTag("Red=", true)))
-      Labels.G.push(Math.round(255 * readNumericTag("Green=", true)))
-      Labels.B.push(Math.round(255 * readNumericTag("Blue=", true)))
-      Labels.A.push(Math.round(255 * readNumericTag("Alpha", true)))
+      Labels.I.push(readNumericTag('Key='))
+      Labels.R.push(Math.round(255 * readNumericTag('Red=', true)))
+      Labels.G.push(Math.round(255 * readNumericTag('Green=', true)))
+      Labels.B.push(Math.round(255 * readNumericTag('Blue=', true)))
+      Labels.A.push(Math.round(255 * readNumericTag('Alpha', true)))
       line = new TextDecoder()
         .decode(buffer.slice(tag.contentStartPos + 1, tag.contentEndPos))
         .trim()
-      Labels.labels?.push(readBracketTag("<![CDATA["))
+      Labels.labels?.push(readBracketTag('<![CDATA['))
     }
-    if (tag.name.trim() === "Data") {
+    if (tag.name.trim() === 'Data') {
       if (isVectors) {
         continue
       }
@@ -178,7 +178,7 @@ export async function read(buffer: ArrayBuffer, n_vert = 0): Promise<MZ3> {
         const nvert = Dims[0] * Dims[1] * Dims[2]
         const lines = line.split(/\s+/)
         if (nvert !== lines.length) {
-          throw new Error("Unable to parse ASCII GIfTI")
+          throw new Error('Unable to parse ASCII GIfTI')
         }
         if (dataType === 2) {
           dataType = 8
@@ -207,7 +207,7 @@ export async function read(buffer: ArrayBuffer, n_vert = 0): Promise<MZ3> {
       }
       if (isPts) {
         if (dataType !== 16) {
-          log.warn("expect positions as FLOAT32")
+          log.warn('expect positions as FLOAT32')
         }
         positions = new Float32Array(
           viewToArrayBuffer(datBin as ArrayBufferView),
@@ -225,7 +225,7 @@ export async function read(buffer: ArrayBuffer, n_vert = 0): Promise<MZ3> {
         }
       } else if (isIdx) {
         if (dataType !== 8) {
-          log.warn("expect indices as INT32")
+          log.warn('expect indices as INT32')
         }
         indices = new Uint32Array(viewToArrayBuffer(datBin as ArrayBufferView))
         if (isColMajor) {
@@ -288,43 +288,43 @@ export async function read(buffer: ArrayBuffer, n_vert = 0): Promise<MZ3> {
       }
       continue
     }
-    if (tag.name.trim() === "DataSpace") {
+    if (tag.name.trim() === 'DataSpace') {
       line = new TextDecoder()
         .decode(buffer.slice(tag.contentStartPos + 1, tag.contentEndPos))
         .trim()
-      if (line.includes("NIFTI_XFORM_SCANNER_ANAT")) {
+      if (line.includes('NIFTI_XFORM_SCANNER_ANAT')) {
         isDataSpaceScanner = true
       }
     }
-    if (tag.name.trim() === "MD") {
+    if (tag.name.trim() === 'MD') {
       line = new TextDecoder()
         .decode(buffer.slice(tag.contentStartPos + 1, tag.contentEndPos))
         .trim()
       if (
-        line.includes("AnatomicalStructurePrimary") &&
-        line.includes("CDATA[")
+        line.includes('AnatomicalStructurePrimary') &&
+        line.includes('CDATA[')
       ) {
         anatomicalStructurePrimary =
-          readBracketTag("<Value><![CDATA[").toUpperCase()
+          readBracketTag('<Value><![CDATA[').toUpperCase()
       }
-      if (line.includes("VolGeom") && line.includes("CDATA[")) {
+      if (line.includes('VolGeom') && line.includes('CDATA[')) {
         let e = -1
-        if (line.includes("VolGeomC_R")) {
+        if (line.includes('VolGeomC_R')) {
           e = 0
         }
-        if (line.includes("VolGeomC_A")) {
+        if (line.includes('VolGeomC_A')) {
           e = 1
         }
-        if (line.includes("VolGeomC_S")) {
+        if (line.includes('VolGeomC_S')) {
           e = 2
         }
         if (e < 0) {
           continue
         }
-        FreeSurferTranlate[e] = parseFloat(readBracketTag("<Value><![CDATA["))
+        FreeSurferTranlate[e] = parseFloat(readBracketTag('<Value><![CDATA['))
       }
     }
-    if (!tag.name.startsWith("DataArray")) {
+    if (!tag.name.startsWith('DataArray')) {
       continue
     }
     line = tag.name
@@ -347,9 +347,9 @@ export async function read(buffer: ArrayBuffer, n_vert = 0): Promise<MZ3> {
     if (line.includes('DataType="NIFTI_TYPE_FLOAT64"')) {
       dataType = 32
     }
-    Dims[0] = readNumericTag("Dim0=")
-    Dims[1] = readNumericTag("Dim1=")
-    Dims[2] = readNumericTag("Dim2=")
+    Dims[0] = readNumericTag('Dim0=')
+    Dims[1] = readNumericTag('Dim1=')
+    Dims[2] = readNumericTag('Dim2=')
   }
   let colormapLabel: unknown
   if (Labels.I.length > 1) {

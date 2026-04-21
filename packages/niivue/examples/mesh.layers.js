@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
@@ -35,7 +35,7 @@ alphaMode.onchange = () => {
 }
 
 webgpuCheck.onchange = async function () {
-  await nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
 const nv1 = new NiiVue({ backgroundColor: [0.2, 0.2, 0.3, 1] })
@@ -43,24 +43,24 @@ await nv1.attachToCanvas(gl1)
 
 await nv1.loadMeshes([
   {
-    url: "/meshes/BrainMesh_ICBM152.lh.mz3",
+    url: '/meshes/BrainMesh_ICBM152.lh.mz3',
     layers: [
       {
-        url: "/meshes/BrainMesh_ICBM152.lh.curv",
-        colormap: "gray",
+        url: '/meshes/BrainMesh_ICBM152.lh.curv',
+        colormap: 'gray',
         calMin: 0.3,
         calMax: 0.5,
         opacity: 1,
         isColorbarVisible: false,
       },
       {
-        url: "/meshes/BrainMesh_ICBM152.lh.motor.mz3",
+        url: '/meshes/BrainMesh_ICBM152.lh.motor.mz3',
         calMin: 1.5,
         calMax: 5,
         cal_minNeg: -1.5,
         cal_maxNeg: -2,
-        colormap: "warm",
-        colormapNegative: "winter",
+        colormap: 'warm',
+        colormapNegative: 'winter',
         opacity: 0.7,
       },
     ],

@@ -1,9 +1,9 @@
-import { type mat4, vec3, vec4 } from "gl-matrix"
-import * as NVTransforms from "@/math/NVTransforms"
-import * as NVConstants from "@/NVConstants"
-import type NVModel from "@/NVModel"
-import type { CustomLayoutTile, ViewHitTest } from "@/NVTypes"
-import type { BuildLineFn, LineData } from "./NVLine"
+import { type mat4, vec3, vec4 } from 'gl-matrix'
+import * as NVTransforms from '@/math/NVTransforms'
+import * as NVConstants from '@/NVConstants'
+import type NVModel from '@/NVModel'
+import type { CustomLayoutTile, ViewHitTest } from '@/NVTypes'
+import type { BuildLineFn, LineData } from './NVLine'
 
 // ---------- Types ----------
 
@@ -200,7 +200,7 @@ const packColumn = (
 // ---------- Mosaic ----------
 
 function parseMosaicLayout(config: SliceLayoutConfig): SliceTile[] {
-  const str = (config.sliceMosaicString ?? "").trim()
+  const str = (config.sliceMosaicString ?? '').trim()
   if (!str) return []
 
   const { extentsMin, extentsMax, canvasWH } = config
@@ -219,7 +219,7 @@ function parseMosaicLayout(config: SliceLayoutConfig): SliceTile[] {
     : buildScreens(extentsMin, extentsMax, isRad)
 
   const tokens = str
-    .replace(/;/g, " ; ")
+    .replace(/;/g, ' ; ')
     .split(/\s+/)
     .filter((t) => t.length > 0)
 
@@ -247,35 +247,35 @@ function parseMosaicLayout(config: SliceLayoutConfig): SliceTile[] {
 
   for (const token of tokens) {
     const upper = token.toUpperCase()
-    if (upper === "A") {
+    if (upper === 'A') {
       orient = NVConstants.SLICE_TYPE.AXIAL
       continue
     }
-    if (upper === "C") {
+    if (upper === 'C') {
       orient = NVConstants.SLICE_TYPE.CORONAL
       continue
     }
-    if (upper === "S") {
+    if (upper === 'S') {
       orient = NVConstants.SLICE_TYPE.SAGITTAL
       continue
     }
-    if (upper === "R") {
+    if (upper === 'R') {
       isRender = true
       continue
     }
-    if (upper === "X") {
+    if (upper === 'X') {
       nextCrossLines = true
       continue
     }
-    if (upper === "L") {
+    if (upper === 'L') {
       labelsOn = true
       continue
     }
-    if (upper === "L-") {
+    if (upper === 'L-') {
       labelsOn = false
       continue
     }
-    if (upper === ";") {
+    if (upper === ';') {
       if (currentRow.length > 0) rows.push(currentRow)
       currentRow = []
       continue
@@ -370,7 +370,7 @@ function parseMosaicLayout(config: SliceLayoutConfig): SliceTile[] {
       const tile: SliceTile = {
         leftTopWidthHeight: [x, marginTop + y + yOff, w, h],
         axCorSag: desc.isRender ? NVConstants.SLICE_TYPE.RENDER : desc.orient,
-        screen: cloneScreen(screens[desc.orient].screen!),
+        screen: cloneScreen(screens[desc.orient].screen as ScreenInfo),
         azimuth,
         elevation: rot.elevation,
         showLabels: desc.showLabels,
@@ -432,14 +432,14 @@ function heroLayout(config: SliceLayoutConfig): SliceTile[] {
     const screen = screens[heroType]
     const fov = screen.screen?.fovMM
     if (!fov) {
-      throw new Error("Missing fovMM for hero slice")
+      throw new Error('Missing fovMM for hero slice')
     }
     const zoom = Math.min(heroW / fov[0], canvasWH[1] / fov[1])
     const w = fov[0] * zoom
     const h = fov[1] * zoom
     heroTile = {
       axCorSag: heroType,
-      screen: cloneScreen(screen.screen!),
+      screen: cloneScreen(screen.screen as ScreenInfo),
       azimuth: screen.azimuth,
       elevation: screen.elevation,
       leftTopWidthHeight: [(heroW - w) / 2, (canvasWH[1] - h) / 2, w, h],
@@ -737,7 +737,7 @@ export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
   const sliceType = config.sliceType
   const isRad = config.isRadiologicalConvention ?? false
   const isEqual = config.isMultiplanarEqualSize ?? false
-  const mosaic = config.sliceMosaicString ?? ""
+  const mosaic = config.sliceMosaicString ?? ''
   const heroFraction = config.heroImageFraction ?? 0
 
   // Custom layout overrides everything
@@ -773,7 +773,7 @@ export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
     const idx = sliceType // AXIAL=0, CORONAL=1, SAGITTAL=2
     const fov = screens[idx].screen?.fovMM
     if (!fov) {
-      throw new Error("Missing fovMM for slice")
+      throw new Error('Missing fovMM for slice')
     }
     const zoom = Math.min(canvasWH[0] / fov[0], canvasWH[1] / fov[1])
     const w = fov[0] * zoom

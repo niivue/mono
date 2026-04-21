@@ -1,12 +1,12 @@
-import { log } from "@/logger"
-import * as NVLoader from "@/NVLoader"
-import type { MeshLayerFromUrlOptions, NVTractData } from "@/NVTypes"
+import { log } from '@/logger'
+import * as NVLoader from '@/NVLoader'
+import type { MeshLayerFromUrlOptions, NVTractData } from '@/NVTypes'
 
 /** Extensions that provide per-vertex scalar data for tracts. */
-const dpvExtensions = new Set(["TSF"])
+const dpvExtensions = new Set(['TSF'])
 
 /** Extensions that provide per-streamline scalar data for tracts. */
-const dpsExtensions = new Set(["TXT"])
+const dpsExtensions = new Set(['TXT'])
 
 /** Check whether a file extension is a tract scalar overlay format. */
 export function isTractScalarExtension(ext: string): boolean {
@@ -23,7 +23,7 @@ export function isTractScalarExtension(ext: string): boolean {
  */
 function readTSF(buffer: ArrayBuffer, nVertices: number): Float32Array {
   const len = buffer.byteLength
-  if (len < 20) throw new Error("File too small to be TSF")
+  if (len < 20) throw new Error('File too small to be TSF')
   const bytes = new Uint8Array(buffer)
   let pos = 0
 
@@ -36,26 +36,26 @@ function readTSF(buffer: ArrayBuffer, nVertices: number): Float32Array {
   }
 
   const sig = readLine()
-  if (!sig.includes("mrtrix track scalars")) {
-    throw new Error("Not a valid TSF file")
+  if (!sig.includes('mrtrix track scalars')) {
+    throw new Error('Not a valid TSF file')
   }
 
   let dataOffset = -1
-  let line = ""
-  while (pos < len && !line.includes("END")) {
+  let line = ''
+  while (pos < len && !line.includes('END')) {
     line = readLine()
-    if (line.toLowerCase().startsWith("file:")) {
-      dataOffset = parseInt(line.split(" ").pop()!, 10)
+    if (line.toLowerCase().startsWith('file:')) {
+      dataOffset = parseInt(line.split(' ').pop() as string, 10)
     }
     if (
-      line.toLowerCase().startsWith("datatype:") &&
-      !line.endsWith("Float32LE")
+      line.toLowerCase().startsWith('datatype:') &&
+      !line.endsWith('Float32LE')
     ) {
-      throw new Error("Only supports TSF files with Float32LE")
+      throw new Error('Only supports TSF files with Float32LE')
     }
   }
   if (dataOffset < 20)
-    throw new Error("Not a valid TSF file (missing file offset)")
+    throw new Error('Not a valid TSF file (missing file offset)')
 
   pos = dataOffset
   const reader = new DataView(buffer)
@@ -80,7 +80,7 @@ function readTSF(buffer: ArrayBuffer, nVertices: number): Float32Array {
  * Used by MRtrix workflows for data-per-streamline.
  */
 function readTXT(buffer: ArrayBuffer, nStreamlines: number): Float32Array {
-  const text = new TextDecoder("utf-8").decode(buffer)
+  const text = new TextDecoder('utf-8').decode(buffer)
   const lines = text.split(/\r?\n|\r/).filter((l) => l.trim().length > 0)
   const n = nStreamlines > 0 ? nStreamlines : lines.length
   const vals = new Float32Array(n)
@@ -108,7 +108,7 @@ export async function loadTractScalars(
 
     const buffer = await NVLoader.fetchFile(layer.url)
     const fullName = NVLoader.getName(layer.url)
-    const fileName = fullName.split("/").pop() ?? fullName
+    const fileName = fullName.split('/').pop() ?? fullName
     // Strip the extension to get the scalar name
     const dotExt = `.${ext.toLowerCase()}`
     const name =

@@ -1,8 +1,8 @@
-import * as NVCmaps from "@/cmap/NVCmaps"
-import { colormapLookup } from "@/mesh/connectome"
-import type { NVImage, NVMesh } from "@/NVTypes"
-import type { BuildTextFn, GlyphBatch } from "./NVFont"
-import { estimateFontSize } from "./NVUILayout"
+import * as NVCmaps from '@/cmap/NVCmaps'
+import { colormapLookup } from '@/mesh/connectome'
+import type { NVImage, NVMesh } from '@/NVTypes'
+import type { BuildTextFn, GlyphBatch } from './NVFont'
+import { estimateFontSize } from './NVUILayout'
 
 export type LegendEntry = {
   label: string
@@ -107,7 +107,7 @@ export function collectLegendEntries(
   // Collect from connectome meshes (named nodes)
   for (const mesh of meshes) {
     if (mesh.showLegend === false) continue
-    if (mesh.kind !== "connectome" || !mesh.jcon || !mesh.connectomeOptions)
+    if (mesh.kind !== 'connectome' || !mesh.jcon || !mesh.connectomeOptions)
       continue
 
     const opts = mesh.connectomeOptions

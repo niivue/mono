@@ -1,10 +1,10 @@
-import { mat4, vec3, vec4 } from "gl-matrix"
-import { log } from "@/logger"
-import * as NVShapes from "@/mesh/NVShapes"
-import type { MZ3 } from "@/NVTypes"
+import { mat4, vec3, vec4 } from 'gl-matrix'
+import { log } from '@/logger'
+import * as NVShapes from '@/mesh/NVShapes'
+import type { MZ3 } from '@/NVTypes'
 
-export const extensions = ["X3D"]
-export const type = "mz3"
+export const extensions = ['X3D']
+export const type = 'mz3'
 
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   const len = buffer.byteLength
@@ -28,7 +28,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   function readStringTag(tagName: string): string {
     const fpos = line.indexOf(`${tagName}=`)
     if (fpos < 0) {
-      return ""
+      return ''
     }
     const delimiter = line[fpos + tagName.length + 1]
     const spos = line.indexOf(delimiter, fpos) + 1
@@ -44,7 +44,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     const spos = line.indexOf(delimiter, fpos) + 1
     const epos = line.indexOf(delimiter, spos)
     let str = line.slice(spos, epos).trim()
-    str = str.replace(/,\s*$/, "")
+    str = str.replace(/,\s*$/, '')
     const items = str.trim().split(/\s*,\s*|\s+/)
     if (items.length < 2) {
       return parseFloat(str)
@@ -59,8 +59,8 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     }
     return ret
   }
-  if (!line.includes("xml version")) {
-    log.warn("Not a X3D image")
+  if (!line.includes('xml version')) {
+    log.warn('Not a X3D image')
   }
   let positions: number[] = []
   let indices: number[] = []
@@ -103,18 +103,18 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   }
 
   function readAppearance(): void {
-    if (!line.endsWith("/>")) {
-      if (line.startsWith("<Appearance>")) {
-        while (pos < len && !line.endsWith("</Appearance>")) {
+    if (!line.endsWith('/>')) {
+      if (line.startsWith('<Appearance>')) {
+        while (pos < len && !line.endsWith('</Appearance>')) {
           line += readStr()
         }
       } else {
-        while (pos < len && !line.endsWith("/>")) {
+        while (pos < len && !line.endsWith('/>')) {
           line += readStr()
         }
       }
     }
-    const ref = readStringTag("USE")
+    const ref = readStringTag('USE')
     if (ref.length > 1) {
       if (ref in appearanceStyles) {
         rgba = appearanceStyles[ref]
@@ -123,14 +123,14 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
       }
       return
     }
-    const diffuseColor = readNumericTag("diffuseColor") as number[]
+    const diffuseColor = readNumericTag('diffuseColor') as number[]
     if (diffuseColor.length < 3) {
       return
     }
     rgba[0] = Math.round(diffuseColor[0] * 255)
     rgba[1] = Math.round(diffuseColor[1] * 255)
     rgba[2] = Math.round(diffuseColor[2] * 255)
-    const def = readStringTag("DEF")
+    const def = readStringTag('DEF')
     if (def.length < 1) {
       return
     }
@@ -140,75 +140,75 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   while (pos < len) {
     line = readStr()
     rgba = rgbaGlobal.slice()
-    if (line.startsWith("<Transform")) {
-      translation = readNumericTag("translation") as vec4
-      rotation = readNumericTag("rotation") as number[]
+    if (line.startsWith('<Transform')) {
+      translation = readNumericTag('translation') as vec4
+      rotation = readNumericTag('rotation') as number[]
     }
-    if (line.startsWith("<Appearance")) {
+    if (line.startsWith('<Appearance')) {
       readAppearance()
       rgbaGlobal = rgba.slice()
     }
-    if (line.startsWith("<Shape")) {
+    if (line.startsWith('<Shape')) {
       let radius = 1.0
       let height = 1.0
       let coordIndex: number[] = []
       let point: number[] = []
       while (pos < len) {
         line = readStr()
-        if (line.startsWith("<Appearance")) {
+        if (line.startsWith('<Appearance')) {
           readAppearance()
         }
-        if (line.startsWith("</Shape")) {
+        if (line.startsWith('</Shape')) {
           break
         }
-        if (line.startsWith("<Sphere")) {
-          radius = readNumericTag("radius") as number
+        if (line.startsWith('<Sphere')) {
+          radius = readNumericTag('radius') as number
           height = -1.0
         }
-        if (line.startsWith("<Cylinder")) {
-          radius = readNumericTag("radius") as number
-          height = readNumericTag("height") as number
+        if (line.startsWith('<Cylinder')) {
+          radius = readNumericTag('radius') as number
+          height = readNumericTag('height') as number
         }
-        if (line.startsWith("<IndexedFaceSet")) {
+        if (line.startsWith('<IndexedFaceSet')) {
           height = -2
-          coordIndex = readNumericTag("coordIndex") as number[]
+          coordIndex = readNumericTag('coordIndex') as number[]
         }
-        if (line.startsWith("<IndexedTriangleSet")) {
+        if (line.startsWith('<IndexedTriangleSet')) {
           height = -7
-          coordIndex = readNumericTag("index") as number[]
+          coordIndex = readNumericTag('index') as number[]
         }
-        if (line.startsWith("<IndexedTriangleStripSet")) {
+        if (line.startsWith('<IndexedTriangleStripSet')) {
           height = -3
-          coordIndex = readNumericTag("index") as number[]
+          coordIndex = readNumericTag('index') as number[]
         }
-        if (line.startsWith("<Coordinate")) {
-          point = readNumericTag("point") as number[]
+        if (line.startsWith('<Coordinate')) {
+          point = readNumericTag('point') as number[]
           const rem = point.length % 3
           if (rem !== 0) {
             point = point.slice(0, -rem)
           }
         }
-        if (line.startsWith("<Color")) {
-          color = readNumericTag("color") as number[]
+        if (line.startsWith('<Color')) {
+          color = readNumericTag('color') as number[]
         }
-        if (line.startsWith("<Box")) {
+        if (line.startsWith('<Box')) {
           height = -4
-          log.warn("Unsupported x3d shape: Box")
+          log.warn('Unsupported x3d shape: Box')
         }
-        if (line.startsWith("<Cone")) {
+        if (line.startsWith('<Cone')) {
           height = -5
-          log.warn("Unsupported x3d shape: Cone")
+          log.warn('Unsupported x3d shape: Cone')
         }
-        if (line.startsWith("<ElevationGrid")) {
+        if (line.startsWith('<ElevationGrid')) {
           height = -6
-          log.warn("Unsupported x3d shape: ElevationGrid")
+          log.warn('Unsupported x3d shape: ElevationGrid')
         }
       }
       if (height < -3 && height !== -7) {
         // unsupported
       } else if (height < -1) {
         if (coordIndex.length < 1 || point.length < 3) {
-          log.warn("Indexed mesh must specify indices and points")
+          log.warn('Indexed mesh must specify indices and points')
           break
         }
         const idx0 = Math.floor(positions.length / 3)

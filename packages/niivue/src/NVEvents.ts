@@ -9,7 +9,7 @@ import type {
   NVMesh,
   VectorAnnotation,
   VolumeUpdate,
-} from "@/NVTypes"
+} from '@/NVTypes'
 
 // ============================================================
 // Event detail types
@@ -28,7 +28,7 @@ export type ClipPlaneChangeDetail = { clipPlane: number[] }
 export type SliceTypeChangeDetail = { sliceType: number }
 export type PenValueChangedDetail = { penValue: number }
 export type DrawingChangedDetail = {
-  action: "stroke" | "create" | "close" | "undo"
+  action: 'stroke' | 'create' | 'close' | 'undo'
 }
 export type DrawingEnabledDetail = { isEnabled: boolean }
 export type PropertyChangeDetail = { property: string; value: unknown }
@@ -51,7 +51,7 @@ export type CanvasResizeDetail = { width: number; height: number }
 export type AnnotationAddedDetail = { annotation: VectorAnnotation }
 export type AnnotationRemovedDetail = { id: string }
 export type AnnotationChangedDetail = {
-  action: "draw" | "erase" | "move" | "resize" | "undo" | "redo" | "clear"
+  action: 'draw' | 'erase' | 'move' | 'resize' | 'undo' | 'redo' | 'clear'
 }
 export type ColormapAddedDetail = { name: string }
 export type VolumeOrderChangedDetail = { volumes: NVImage[] }

@@ -1,6 +1,6 @@
-import type { AnnotationRenderData } from "@/view/NVAnnotation"
-import { NVRenderer } from "@/view/NVRenderer"
-import shaderCode from "./polygon.wgsl?raw"
+import type { AnnotationRenderData } from '@/view/NVAnnotation'
+import { NVRenderer } from '@/view/NVRenderer'
+import shaderCode from './polygon.wgsl?raw'
 
 export class PolygonRenderer extends NVRenderer {
   private _pipeline: GPURenderPipeline | null = null
@@ -29,7 +29,7 @@ export class PolygonRenderer extends NVRenderer {
         {
           binding: 0,
           visibility: GPUShaderStage.VERTEX,
-          buffer: { type: "uniform" },
+          buffer: { type: 'uniform' },
         },
       ],
     })
@@ -48,39 +48,39 @@ export class PolygonRenderer extends NVRenderer {
       multisample: { count: msaaCount },
       vertex: {
         module,
-        entryPoint: "vertex_main",
+        entryPoint: 'vertex_main',
         buffers: [
           {
             arrayStride: 24, // 6 floats: x, y, r, g, b, a
             attributes: [
-              { shaderLocation: 0, offset: 0, format: "float32x2" }, // position
-              { shaderLocation: 1, offset: 8, format: "float32x4" }, // color
+              { shaderLocation: 0, offset: 0, format: 'float32x2' }, // position
+              { shaderLocation: 1, offset: 8, format: 'float32x4' }, // color
             ],
           },
         ],
       },
       fragment: {
         module,
-        entryPoint: "fragment_main",
+        entryPoint: 'fragment_main',
         targets: [
           {
             format,
             blend: {
               color: {
-                srcFactor: "src-alpha",
-                dstFactor: "one-minus-src-alpha",
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
               },
-              alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
             },
           },
         ],
       },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: "always",
-        format: "depth24plus",
+        depthCompare: 'always',
+        format: 'depth24plus',
       },
-      primitive: { topology: "triangle-list" },
+      primitive: { topology: 'triangle-list' },
     })
 
     this.isReady = true
@@ -139,7 +139,7 @@ export class PolygonRenderer extends NVRenderer {
     pass.setPipeline(this._pipeline)
     pass.setBindGroup(0, this._bindGroup)
     pass.setVertexBuffer(0, this._vertexBuffer)
-    pass.setIndexBuffer(this._indexBuffer, "uint32")
+    pass.setIndexBuffer(this._indexBuffer, 'uint32')
     pass.drawIndexed(data.fillIndices.length)
   }
 

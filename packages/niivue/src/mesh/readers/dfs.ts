@@ -1,8 +1,8 @@
-import { log } from "@/logger"
-import type { MZ3 } from "@/NVTypes"
+import { log } from '@/logger'
+import type { MZ3 } from '@/NVTypes'
 
-export const extensions = ["DFS"]
-export const type = "mz3"
+export const extensions = ['DFS']
+export const type = 'mz3'
 
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   // BrainSuite DFS format
@@ -11,7 +11,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   const magic = reader.getUint32(0, true) // "DFS_"
   const LE = reader.getUint16(4, true) // "LE"
   if (magic !== 1599292996 || LE !== 17740) {
-    log.warn("Not a little-endian brainsuite DFS mesh")
+    log.warn('Not a little-endian brainsuite DFS mesh')
   }
   const hdrBytes = reader.getUint32(12, true)
   const nface = reader.getUint32(24, true)

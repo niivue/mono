@@ -1,6 +1,6 @@
-import { encode } from "cbor-x"
+import { encode } from 'cbor-x'
 
-export const extensions = ["IWM.CBOR"]
+export const extensions = ['IWM.CBOR']
 
 export async function write(
   positions: Float32Array,
@@ -33,13 +33,13 @@ export async function write(
   const iwm = {
     meshType: {
       dimension: 3,
-      pointComponentType: "float32",
-      pointPixelComponentType: "int8",
-      pointPixelType: "Scalar",
+      pointComponentType: 'float32',
+      pointPixelComponentType: 'int8',
+      pointPixelType: 'Scalar',
       pointPixelComponents: 0,
-      cellComponentType: "uint64",
-      cellPixelComponentType: "int8",
-      cellPixelType: "Scalar",
+      cellComponentType: 'uint64',
+      cellPixelComponentType: 'int8',
+      cellPixelType: 'Scalar',
       cellPixelComponents: 0,
     },
     numberOfPoints: BigInt(nvert),

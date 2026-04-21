@@ -1,14 +1,14 @@
-import NVViewGL from "@/gl/NVViewGL"
-import { log } from "@/logger"
-import type NiiVueGPU from "@/NVControlBase"
-import type { BackendType } from "@/NVTypes"
-import NVViewGPU from "@/wgpu/NVViewGPU"
+import NVViewGL from '@/gl/NVViewGL'
+import { log } from '@/logger'
+import type NiiVueGPU from '@/NVControlBase'
+import type { BackendType } from '@/NVTypes'
+import NVViewGPU from '@/wgpu/NVViewGPU'
 import {
   initInteraction,
   removeInteractionListeners,
   setupDragAndDrop,
   setupResizeHandler,
-} from "./interactions"
+} from './interactions'
 
 /** Registry of controllers sharing each canvas, for coordinating canvas replacement */
 const canvasInstances = new WeakMap<HTMLCanvasElement, Set<NiiVueGPU>>()
@@ -26,7 +26,7 @@ export async function attachTo(
     document.getElementById(id) as HTMLCanvasElement,
     isAntiAlias,
   )
-  log.debug("attached to element with id: ", id)
+  log.debug('attached to element with id: ', id)
   return ctrl
 }
 
@@ -36,9 +36,9 @@ export async function attachToCanvas(
   isAntiAlias: boolean | null = null,
 ): Promise<NiiVueGPU> {
   if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
-    throw new Error("NiiVue requires a valid HTMLCanvasElement")
+    throw new Error('NiiVue requires a valid HTMLCanvasElement')
   }
-  if (typeof isAntiAlias === "boolean") {
+  if (typeof isAntiAlias === 'boolean') {
     ctrl.opts.isAntiAlias = isAntiAlias
   }
   ctrl.canvas = canvas
@@ -49,7 +49,7 @@ export async function attachToCanvas(
     canvasInstances.set(canvas, instances)
   }
   instances.add(ctrl)
-  if (ctrl.opts.backend === "webgl2") {
+  if (ctrl.opts.backend === 'webgl2') {
     ctrl.view = new NVViewGL(canvas, ctrl.model, ctrl.opts)
   } else {
     ctrl.view = new NVViewGPU(canvas, ctrl.model, ctrl.opts)
@@ -66,13 +66,13 @@ export async function attachToCanvas(
     setupDragAndDrop(ctrl)
     setupResizeHandler(ctrl)
     ctrl.view.resize()
-    ctrl.emit("viewAttached", {
+    ctrl.emit('viewAttached', {
       canvas,
-      backend: (ctrl.opts.backend ?? "webgpu") as "webgpu" | "webgl2",
+      backend: (ctrl.opts.backend ?? 'webgpu') as 'webgpu' | 'webgl2',
     })
     return ctrl
   } catch (error) {
-    log.error("Failed to initialize view:", error)
+    log.error('Failed to initialize view:', error)
     throw error
   }
 }
@@ -105,17 +105,17 @@ function isSharedCanvas(ctrl: NiiVueGPU): boolean {
 
 /** Replace the canvas DOM element and update all registered siblings' references */
 function replaceCanvasElement(ctrl: NiiVueGPU): void {
-  const oldCanvas = ctrl.canvas!
+  const oldCanvas = ctrl.canvas as HTMLCanvasElement
   // If canvas was freshly created by a sibling for the same backend, skip (no context conflict)
   if (freshCanvasBackend.get(oldCanvas) === ctrl.opts.backend) return
   const parent = oldCanvas.parentNode
   if (!parent) return
-  const newCanvas = document.createElement("canvas")
+  const newCanvas = document.createElement('canvas')
   newCanvas.id = oldCanvas.id
   newCanvas.className = oldCanvas.className
   newCanvas.style.cssText = oldCanvas.style.cssText
   parent.replaceChild(newCanvas, oldCanvas)
-  freshCanvasBackend.set(newCanvas, ctrl.opts.backend ?? "webgpu")
+  freshCanvasBackend.set(newCanvas, ctrl.opts.backend ?? 'webgpu')
   // Update this controller
   ctrl.canvas = newCanvas
   // Update all siblings sharing the old canvas
@@ -137,7 +137,7 @@ export async function recreateView(
   backendChanged = false,
 ): Promise<void> {
   // 1. Destroy current view
-  ctrl.emit("viewDestroyed")
+  ctrl.emit('viewDestroyed')
   ctrl.view?.destroy()
   // 2. Clear GPU resources from model (keeps mesh/volume data)
   ctrl.model.clearAllGPUResources()
@@ -154,10 +154,18 @@ export async function recreateView(
     replaceCanvasElement(ctrl)
   }
   // 6. Create new view with current settings
-  if (ctrl.opts.backend === "webgl2") {
-    ctrl.view = new NVViewGL(ctrl.canvas!, ctrl.model, ctrl.opts)
+  if (ctrl.opts.backend === 'webgl2') {
+    ctrl.view = new NVViewGL(
+      ctrl.canvas as HTMLCanvasElement,
+      ctrl.model,
+      ctrl.opts,
+    )
   } else {
-    ctrl.view = new NVViewGPU(ctrl.canvas!, ctrl.model, ctrl.opts)
+    ctrl.view = new NVViewGPU(
+      ctrl.canvas as HTMLCanvasElement,
+      ctrl.model,
+      ctrl.opts,
+    )
   }
   // 7. Initialize the new view
   await ctrl.view.init()
@@ -179,9 +187,9 @@ export async function recreateView(
   ctrl.view.resize()
   ctrl.drawScene()
   // 12. Notify listeners of the new view
-  ctrl.emit("viewAttached", {
-    canvas: ctrl.canvas!,
-    backend: (ctrl.opts.backend ?? "webgpu") as "webgpu" | "webgl2",
+  ctrl.emit('viewAttached', {
+    canvas: ctrl.canvas as HTMLCanvasElement,
+    backend: (ctrl.opts.backend ?? 'webgpu') as 'webgpu' | 'webgl2',
   })
 }
 
@@ -202,18 +210,18 @@ export async function reinitializeView(
   const forceRestart = options.forceRestart ?? true
 
   // Validate backend
-  if (newBackend !== "webgpu" && newBackend !== "webgl2") {
+  if (newBackend !== 'webgpu' && newBackend !== 'webgl2') {
     log.warn(`Invalid backend: ${newBackend}. Expected 'webgpu' or 'webgl2'.`)
     return false
   }
 
   // Check WebGPU availability if switching to it
   if (
-    newBackend === "webgpu" &&
+    newBackend === 'webgpu' &&
     newBackend !== ctrl.opts.backend &&
     !navigator.gpu
   ) {
-    log.warn("WebGPU is not supported in this browser.")
+    log.warn('WebGPU is not supported in this browser.')
     return false
   }
 
@@ -242,12 +250,12 @@ export async function reinitializeView(
       await recreateView(ctrl, backendChanged)
     } else {
       // Only pixelRatio changed — resize without recreating
-      ctrl.view!.forceDevicePixelRatio = newPixelRatio
+      if (ctrl.view) ctrl.view.forceDevicePixelRatio = newPixelRatio
       ctrl.view?.resize()
     }
     return true
   } catch (err) {
-    log.error("Failed to reinitialize view:", err)
+    log.error('Failed to reinitialize view:', err)
     return false
   }
 }

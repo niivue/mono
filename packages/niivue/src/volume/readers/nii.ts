@@ -1,8 +1,8 @@
-import * as nifti from "nifti-reader-js"
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import * as nifti from 'nifti-reader-js'
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
-export const extensions = ["nii", "nii.gz"]
-export const type = "nii"
+export const extensions = ['nii', 'nii.gz']
+export const type = 'nii'
 
 export async function read(
   buffer: ArrayBuffer,

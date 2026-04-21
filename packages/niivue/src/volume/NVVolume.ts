@@ -1,24 +1,25 @@
-import { log } from "@/logger"
-import * as NVTransforms from "@/math/NVTransforms"
-import { NiiDataType, NiiIntentCode } from "@/NVConstants"
-import * as NVLoader from "@/NVLoader"
-import type { NIFTI1, NIFTI2, NVImage, TypedVoxelArray } from "@/NVTypes"
+import { log } from '@/logger'
+import * as NVTransforms from '@/math/NVTransforms'
+import { NiiDataType, NiiIntentCode } from '@/NVConstants'
+import * as NVLoader from '@/NVLoader'
+import type { NIFTI1, NIFTI2, NVImage, TypedVoxelArray } from '@/NVTypes'
 import {
   calculateWorldExtents,
   calMinMax,
   ensureValidNonZero,
   toTypedView,
-} from "./utils"
+} from './utils'
 
 // Re-export utilities for external use
-export { calculateWorldExtents, calMinMax } from "./utils"
+export { calculateWorldExtents, calMinMax }
 
 // Writer support
-import * as volumeWriters from "./writers"
+import * as volumeWriters from './writers'
+import { writeVolume } from './writers'
 export function volumeWriteExtensions(): string[] {
   return volumeWriters.writeExtensions()
 }
-export { writeVolume } from "./writers"
+export { writeVolume }
 
 type VolumeReader = {
   extensions?: string[]
@@ -29,7 +30,7 @@ type VolumeReader = {
   ) => Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }>
 }
 
-const modules = import.meta.glob<VolumeReader>("./readers/*.ts", {
+const modules = import.meta.glob<VolumeReader>('./readers/*.ts', {
   eager: true,
 })
 const readerByExt = NVLoader.buildExtensionMap(modules)
@@ -74,9 +75,9 @@ export async function loadVolume(
   const name = NVLoader.getName(url)
   const ext = NVLoader.getFileExt(url)
   let reader = readerByExt.get(ext)
-  if (!reader || typeof reader.read !== "function") {
+  if (!reader || typeof reader.read !== 'function') {
     log.warn(`Unsupported volume format "${ext}", falling back to NIfTI reader`)
-    reader = readerByExt.get("NII")
+    reader = readerByExt.get('NII')
   }
   if (!reader) {
     throw new Error(`No volume reader available for extension ${ext}`)
@@ -156,7 +157,7 @@ export function convertFloat32RGBVector(
 export function nii2volume(
   hdr: NIFTI1 | NIFTI2,
   img: ArrayBuffer | TypedVoxelArray,
-  name = "",
+  name = '',
   limitFrames4D = Infinity,
 ): NVImage {
   // Convert float32 RGB vector volumes (intent_code 2003, dim4=3) to RGBA8
@@ -240,7 +241,7 @@ export function nii2volume(
   }
   NVTransforms.calculateRAS(volume)
   if (!volume.pixDimsRAS || !volume.dimsRAS) {
-    throw new Error("calculateRAS failed to set pixDimsRAS/dimsRAS")
+    throw new Error('calculateRAS failed to set pixDimsRAS/dimsRAS')
   }
   const dimsMM = [
     volume.pixDimsRAS[1] * volume.dimsRAS[1],

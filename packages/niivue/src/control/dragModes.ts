@@ -1,9 +1,9 @@
-import { vec3 } from "gl-matrix"
-import * as NVTransforms from "@/math/NVTransforms"
-import { DRAG_MODE, SLICE_TYPE } from "@/NVConstants"
-import type NiiVueGPU from "@/NVControlBase"
-import type { DragOverlay, DragReleaseInfo } from "@/NVTypes"
-import * as NVSliceLayout from "@/view/NVSliceLayout"
+import { vec3 } from 'gl-matrix'
+import * as NVTransforms from '@/math/NVTransforms'
+import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
+import type NiiVueGPU from '@/NVControlBase'
+import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
+import * as NVSliceLayout from '@/view/NVSliceLayout'
 
 /** Return the DRAG_MODE for a given mouse button on 2D slice tiles. */
 export function getDragModeForButton(ctrl: NiiVueGPU, button: number): number {
@@ -203,7 +203,7 @@ export function updateDragOverlay(ctrl: NiiVueGPU): void {
       if (dist > 9) decimals = 1
       if (dist > 99) decimals = 0
       let label = dist.toFixed(decimals)
-      if (ui.isMeasureUnitsVisible) label += " mm"
+      if (ui.isMeasureUnitsVisible) label += ' mm'
       const mx = (sx + ex) * 0.5
       const my = (sy + ey) * 0.5
       overlay.text?.push({
@@ -220,14 +220,14 @@ export function updateDragOverlay(ctrl: NiiVueGPU): void {
     ctrl.model._dragOverlay = overlay
   } else if (mode === DRAG_MODE.angle) {
     const overlay: DragOverlay = { lines: [], text: [] }
-    if (ctrl._angleState === "drawing_first_line") {
+    if (ctrl._angleState === 'drawing_first_line') {
       overlay.lines?.push({
         startXY: [sx, sy],
         endXY: [ex, ey],
         color: lineColor,
         thickness: lineWidth,
       })
-    } else if (ctrl._angleState === "drawing_second_line") {
+    } else if (ctrl._angleState === 'drawing_second_line') {
       const fl = ctrl._angleFirstLine
       overlay.lines?.push(
         {
@@ -269,19 +269,19 @@ export function handleDragRelease(ctrl: NiiVueGPU): void {
 
   // Angle state machine
   if (mode === DRAG_MODE.angle) {
-    if (ctrl._angleState === "drawing_first_line") {
+    if (ctrl._angleState === 'drawing_first_line') {
       ctrl._angleFirstLine = [
         ctrl.dragStartXY[0],
         ctrl.dragStartXY[1],
         ctrl.dragEndXY[0],
         ctrl.dragEndXY[1],
       ]
-      ctrl._angleState = "drawing_second_line"
+      ctrl._angleState = 'drawing_second_line'
       // Keep dragging for second line — don't clear
       return
     }
-    if (ctrl._angleState === "drawing_second_line") {
-      ctrl._angleState = "none"
+    if (ctrl._angleState === 'drawing_second_line') {
+      ctrl._angleState = 'none'
       // Save completed angle in mm-space
       const fl = ctrl._angleFirstLine
       const fl0 = screenSlicePickAt(ctrl, fl[0], fl[1])
@@ -305,7 +305,7 @@ export function handleDragRelease(ctrl: NiiVueGPU): void {
           ...sliceInfo,
         }
         ctrl.model.completedAngles.push(completedAngle)
-        ctrl.emit("angleCompleted", completedAngle)
+        ctrl.emit('angleCompleted', completedAngle)
       }
       fireDragRelease(ctrl)
       clearDragState(ctrl)
@@ -325,7 +325,7 @@ export function handleDragRelease(ctrl: NiiVueGPU): void {
         if (vol) {
           vol.calMin = range.calMin
           vol.calMax = range.calMax
-          ctrl.emit("volumeUpdated", {
+          ctrl.emit('volumeUpdated', {
             volumeIndex: 0,
             volume: vol,
             changes: { calMin: range.calMin, calMax: range.calMax },
@@ -357,7 +357,7 @@ export function handleDragRelease(ctrl: NiiVueGPU): void {
         ...sliceInfo,
       }
       ctrl.model.completedMeasurements.push(completedMeasurement)
-      ctrl.emit("measurementCompleted", completedMeasurement)
+      ctrl.emit('measurementCompleted', completedMeasurement)
     }
   }
 
@@ -379,7 +379,7 @@ export function handleDragRelease(ctrl: NiiVueGPU): void {
 /** Fire the dragRelease event. */
 function fireDragRelease(ctrl: NiiVueGPU): void {
   const info = buildDragReleaseInfo(ctrl)
-  if (info) ctrl.emit("dragRelease", info)
+  if (info) ctrl.emit('dragRelease', info)
 }
 
 /** Clear all drag state and overlay. */
@@ -449,7 +449,7 @@ export function dragForWindowing(
 
   vol.calMin = newCenter - newWidth * 0.5
   vol.calMax = newCenter + newWidth * 0.5
-  ctrl.emit("volumeUpdated", {
+  ctrl.emit('volumeUpdated', {
     volumeIndex: 0,
     volume: vol,
     changes: { calMin: vol.calMin, calMax: vol.calMax },

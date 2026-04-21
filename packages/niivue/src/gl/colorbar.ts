@@ -1,14 +1,14 @@
-import * as NVCmaps from "@/cmap/NVCmaps"
-import type { ColorbarInfo } from "@/NVTypes"
+import * as NVCmaps from '@/cmap/NVCmaps'
+import type { ColorbarInfo } from '@/NVTypes'
 import {
   COLORBAR_GAP,
   type ColorbarLayout,
   colorbarGridLayout,
   deriveBorderColor,
-} from "@/view/NVColorbar"
-import { NVRenderer } from "@/view/NVRenderer"
-import { colorbarFragShader, colorbarVertShader } from "./colorbarShader"
-import { Shader } from "./shader"
+} from '@/view/NVColorbar'
+import { NVRenderer } from '@/view/NVRenderer'
+import { colorbarFragShader, colorbarVertShader } from './colorbarShader'
+import { Shader } from './shader'
 
 export class ColorbarRenderer extends NVRenderer {
   private _gl: WebGL2RenderingContext | null = null

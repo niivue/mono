@@ -1,18 +1,18 @@
-import { log } from "@/logger"
-import type { MZ3 } from "@/NVTypes"
+import { log } from '@/logger'
+import type { MZ3 } from '@/NVTypes'
 
-export const extensions = ["OFF"]
-export const type = "mz3"
+export const extensions = ['OFF']
+export const type = 'mz3'
 
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
-  const enc = new TextDecoder("utf-8")
+  const enc = new TextDecoder('utf-8')
   const txt = enc.decode(buffer)
-  const lines = txt.split("\n")
+  const lines = txt.split('\n')
   const pts: number[] = []
   const t: number[] = []
   let i = 0
-  if (!lines[i].includes("OFF")) {
-    log.warn("File does not start with OFF")
+  if (!lines[i].includes('OFF')) {
+    log.warn('File does not start with OFF')
   } else {
     i++
   }
@@ -33,7 +33,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     items = str.trim().split(/\s+/)
     const n = parseInt(items[0], 10)
     if (n !== 3) {
-      log.warn("Only able to read OFF files with triangular meshes")
+      log.warn('Only able to read OFF files with triangular meshes')
     }
     t.push(parseInt(items[1], 10))
     t.push(parseInt(items[2], 10))

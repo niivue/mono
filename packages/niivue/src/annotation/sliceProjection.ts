@@ -1,6 +1,6 @@
-import type { vec3 } from "gl-matrix"
-import { SLICE_TYPE, sliceTypeDim } from "@/NVConstants"
-import type { AnnotationPoint } from "@/NVTypes"
+import type { vec3 } from 'gl-matrix'
+import { SLICE_TYPE, sliceTypeDim } from '@/NVConstants'
+import type { AnnotationPoint } from '@/NVTypes'
 
 /**
  * Project a 3D mm-space point to 2D slice-plane coordinates.
@@ -51,7 +51,7 @@ export function slice2DToMMOnPlane(
   planePoint: vec3 | Float32Array,
 ): [number, number, number] {
   const depthIdx = sliceTypeDim(sliceType)
-  const [inPlane0, inPlane1] = _inPlane[sliceType]!
+  const [inPlane0, inPlane1] = _inPlane[sliceType] as [number, number]
   _mmScratch[0] = 0
   _mmScratch[1] = 0
   _mmScratch[2] = 0

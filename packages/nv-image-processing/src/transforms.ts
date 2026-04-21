@@ -14,10 +14,10 @@ import type {
   TransformOptions,
   TypedVoxelArray,
   VolumeTransform,
-} from "@niivue/niivue"
-import { NVWorker } from "@niivue/niivue"
+} from '@niivue/niivue'
+import { NVWorker } from '@niivue/niivue'
 // @ts-expect-error — Vite worker import with inline bundling
-import ProcessingWorker from "./worker?worker&inline"
+import ProcessingWorker from './worker?worker&inline'
 
 // ---------------------------------------------------------------------------
 // Shared worker (lazy singleton)
@@ -102,52 +102,52 @@ async function run(
 // ---------------------------------------------------------------------------
 
 export const otsu: VolumeTransform = {
-  name: "otsu",
+  name: 'otsu',
   description:
-    "Otsu multi-level thresholding — produces a labeled segmentation volume",
+    'Otsu multi-level thresholding — produces a labeled segmentation volume',
   options: [
     {
-      name: "levels",
-      type: "select",
-      label: "Segmentation levels",
+      name: 'levels',
+      type: 'select',
+      label: 'Segmentation levels',
       default: 3,
       options: [2, 3, 4],
     },
   ],
   resultDefaults: {
-    colormap: "actc",
+    colormap: 'actc',
     opacity: 0.5,
   },
-  apply: (hdr, img, opts) => run("otsu", hdr, img, opts),
+  apply: (hdr, img, opts) => run('otsu', hdr, img, opts),
 }
 
 export const conform: VolumeTransform = {
-  name: "conform",
+  name: 'conform',
   description:
-    "Reslice to 256×256×256 isotropic 1 mm volume (FreeSurfer style)",
+    'Reslice to 256×256×256 isotropic 1 mm volume (FreeSurfer style)',
   options: [
     {
-      name: "toRAS",
-      type: "checkbox",
-      label: "Output RAS orientation",
+      name: 'toRAS',
+      type: 'checkbox',
+      label: 'Output RAS orientation',
       default: false,
     },
     {
-      name: "isLinear",
-      type: "checkbox",
-      label: "Linear interpolation",
+      name: 'isLinear',
+      type: 'checkbox',
+      label: 'Linear interpolation',
       default: true,
     },
     {
-      name: "asFloat32",
-      type: "checkbox",
-      label: "Output as Float32",
+      name: 'asFloat32',
+      type: 'checkbox',
+      label: 'Output as Float32',
       default: false,
     },
     {
-      name: "isRobustMinMax",
-      type: "checkbox",
-      label: "Robust min/max (2%-98%)",
+      name: 'isRobustMinMax',
+      type: 'checkbox',
+      label: 'Robust min/max (2%-98%)',
       default: false,
     },
   ],
@@ -159,55 +159,55 @@ export const conform: VolumeTransform = {
       pixDims: [...hdr.pixDims],
       affine: hdr.affine.flat(),
     }
-    return run("conform", hdr, img, extOpts)
+    return run('conform', hdr, img, extOpts)
   },
 }
 
 export const connectedLabel: VolumeTransform = {
-  name: "connectedLabel",
-  description: "Label connected components in a volume (bwlabel)",
+  name: 'connectedLabel',
+  description: 'Label connected components in a volume (bwlabel)',
   options: [
     {
-      name: "conn",
-      type: "select",
-      label: "Connectivity",
+      name: 'conn',
+      type: 'select',
+      label: 'Connectivity',
       default: 26,
       options: [6, 18, 26],
     },
     {
-      name: "binarize",
-      type: "checkbox",
-      label: "Binarize input",
+      name: 'binarize',
+      type: 'checkbox',
+      label: 'Binarize input',
       default: false,
     },
     {
-      name: "onlyLargestClusterPerClass",
-      type: "checkbox",
-      label: "Only largest cluster per class",
+      name: 'onlyLargestClusterPerClass',
+      type: 'checkbox',
+      label: 'Only largest cluster per class',
       default: false,
     },
   ],
   resultDefaults: {
-    colormap: "random",
+    colormap: 'random',
     opacity: 0.8,
   },
   apply: (hdr, img, opts) => {
     const extOpts = { ...opts, dims: [...hdr.dims] }
-    return run("connectedLabel", hdr, img, extOpts)
+    return run('connectedLabel', hdr, img, extOpts)
   },
 }
 
 export const removeHaze: VolumeTransform = {
-  name: "removeHaze",
-  description: "Remove dark background voxels using Otsu thresholding",
+  name: 'removeHaze',
+  description: 'Remove dark background voxels using Otsu thresholding',
   options: [
     {
-      name: "level",
-      type: "select",
-      label: "Preservation level (1=aggressive, 5=conservative)",
+      name: 'level',
+      type: 'select',
+      label: 'Preservation level (1=aggressive, 5=conservative)',
       default: 5,
       options: [1, 2, 3, 4, 5],
     },
   ],
-  apply: (hdr, img, opts) => run("removeHaze", hdr, img, opts),
+  apply: (hdr, img, opts) => run('removeHaze', hdr, img, opts),
 }

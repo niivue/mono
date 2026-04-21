@@ -1,9 +1,9 @@
-import * as NVCmaps from "@/cmap/NVCmaps"
-import { log } from "@/logger"
-import { COLORMAP_TYPE } from "@/NVConstants"
-import * as NVLoader from "@/NVLoader"
-import type { LUT, MeshLayerFromUrlOptions, NVMeshLayer } from "@/NVTypes"
-import { resolveNegativeRange } from "@/view/NVUILayout"
+import * as NVCmaps from '@/cmap/NVCmaps'
+import { log } from '@/logger'
+import { COLORMAP_TYPE } from '@/NVConstants'
+import * as NVLoader from '@/NVLoader'
+import type { LUT, MeshLayerFromUrlOptions, NVMeshLayer } from '@/NVTypes'
+import { resolveNegativeRange } from '@/view/NVUILayout'
 
 // --- Layer reader auto-discovery ---
 
@@ -24,13 +24,13 @@ type LayerReader = {
   isCurv?: (buffer: ArrayBuffer) => boolean
 }
 
-const layerModules = import.meta.glob<LayerReader>("./readers/*.ts", {
+const layerModules = import.meta.glob<LayerReader>('./readers/*.ts', {
   eager: true,
 })
 const layerReaderByExt = NVLoader.buildExtensionMap(layerModules)
 let curvReader: LayerReader | null = null
 for (const mod of Object.values(layerModules)) {
-  if (typeof mod.isCurv === "function") {
+  if (typeof mod.isCurv === 'function') {
     curvReader = mod
     break
   }
@@ -45,7 +45,7 @@ type MeshReader = {
     n_vert?: number,
   ) => Promise<{ scalars?: Float32Array; colormapLabel?: unknown }>
 }
-const meshReaderModules = import.meta.glob<MeshReader>("../readers/*.ts", {
+const meshReaderModules = import.meta.glob<MeshReader>('../readers/*.ts', {
   eager: true,
 })
 const meshReaderByExt = NVLoader.buildExtensionMap(meshReaderModules)
@@ -67,7 +67,7 @@ type VolumeReader = {
   }>
 }
 const volumeReaderModules = import.meta.glob<VolumeReader>(
-  "../../volume/readers/*.ts",
+  '../../volume/readers/*.ts',
   { eager: true },
 )
 const volumeReaderByExt = NVLoader.buildExtensionMap(volumeReaderModules)
@@ -77,18 +77,18 @@ export function layerExtensions(): string[] {
   const exts = new Set<string>()
   for (const k of layerReaderByExt.keys()) exts.add(k)
   // MZ3 and GII support scalar-only mode
-  exts.add("MZ3")
-  exts.add("GII")
+  exts.add('MZ3')
+  exts.add('GII')
   // Volume formats that can provide per-vertex scalars
-  exts.add("NII")
-  exts.add("MGH")
-  exts.add("MGZ")
+  exts.add('NII')
+  exts.add('MGH')
+  exts.add('MGZ')
   return Array.from(exts).sort()
 }
 
 // --- Default layer values ---
 
-const LAYER_DEFAULTS: Omit<NVMeshLayer, "values" | "globalMin" | "globalMax"> =
+const LAYER_DEFAULTS: Omit<NVMeshLayer, 'values' | 'globalMin' | 'globalMax'> =
   {
     nFrame4D: 1,
     frame4D: 0,
@@ -97,8 +97,8 @@ const LAYER_DEFAULTS: Omit<NVMeshLayer, "values" | "globalMin" | "globalMax"> =
     calMinNeg: NaN,
     calMaxNeg: NaN,
     opacity: 0.5,
-    colormap: "warm",
-    colormapNegative: "",
+    colormap: 'warm',
+    colormapNegative: '',
     isColormapInverted: false,
     colormapType: COLORMAP_TYPE.ZERO_TO_MAX_TRANSPARENT_BELOW_MIN,
     isTransparentBelowCalMin: true,
@@ -427,7 +427,7 @@ export async function loadLayersFromOptions(
   const layers: NVMeshLayer[] = []
   for (const opts of layerOptions) {
     const result = await loadLayerFromUrl(opts.url, nVert)
-    const urlString = typeof opts.url === "string" ? opts.url : opts.url.name
+    const urlString = typeof opts.url === 'string' ? opts.url : opts.url.name
     layers.push(
       createLayer(result.values, nVert, {
         nFrame4D: result.nFrame4D,

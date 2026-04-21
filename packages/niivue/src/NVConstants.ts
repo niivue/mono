@@ -70,10 +70,10 @@ export function isPaqd(hdr: {
 }
 
 export const MULTIPLANAR_TYPE = {
-  0: "AUTO",
-  1: "COLUMN",
-  2: "GRID",
-  3: "ROW",
+  0: 'AUTO',
+  1: 'COLUMN',
+  2: 'GRID',
+  3: 'ROW',
   AUTO: 0,
   COLUMN: 1,
   GRID: 2,
@@ -103,11 +103,11 @@ import type {
   MeshRenderConfig,
   UIConfig,
   VolumeRenderConfig,
-} from "@/NVTypes"
+} from '@/NVTypes'
 
 export const LAYOUT_DEFAULTS: LayoutConfig = {
   sliceType: SLICE_TYPE.MULTIPLANAR,
-  mosaicString: "",
+  mosaicString: '',
   showRender: SHOW_RENDER.AUTO,
   multiplanarType: MULTIPLANAR_TYPE.AUTO,
   heroFraction: 0,
@@ -131,8 +131,8 @@ export const UI_DEFAULTS: UIConfig = {
   isPositionInMM: false,
   isMeasureUnitsVisible: true,
   isThumbnailVisible: false,
-  thumbnailUrl: "",
-  placeholderText: "No image loaded",
+  thumbnailUrl: '',
+  placeholderText: 'No image loaded',
   crosshairColor: [1.0, 0, 0, 1.0],
   crosshairGap: 10,
   crosshairWidth: 1,
@@ -154,7 +154,7 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   isAlphaClipDark: false,
   isNearestInterpolation: false,
   isV1SliceShader: false,
-  matcap: "",
+  matcap: '',
   paqdUniforms: [0.01, 0.5, 0.25, 0.4] as [number, number, number, number],
 }
 
@@ -170,7 +170,7 @@ export const DRAW_DEFAULTS: DrawConfig = {
   isFillOverwriting: true,
   opacity: 0.8,
   rimOpacity: -1,
-  colormap: "_draw",
+  colormap: '_draw',
 }
 
 export const INTERACTION_DEFAULTS: InteractionConfig = {
@@ -184,11 +184,11 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {
   isEnabled: false,
   activeLabel: 1,
-  activeGroup: "default",
+  activeGroup: 'default',
   brushRadius: 2.0,
   isErasing: false,
   isVisibleIn3D: false,
-  tool: "freehand",
+  tool: 'freehand',
   style: {
     fillColor: [1, 0, 0, 0.3],
     strokeColor: [1, 0, 0, 1],

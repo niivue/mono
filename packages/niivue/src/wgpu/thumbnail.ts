@@ -1,5 +1,5 @@
-import { NVRenderer } from "@/view/NVRenderer"
-import * as wgpu from "./wgpu"
+import { NVRenderer } from '@/view/NVRenderer'
+import * as wgpu from './wgpu'
 
 const shaderCode = /* wgsl */ `
 struct ThumbnailUniforms {
@@ -67,8 +67,8 @@ export class ThumbnailRenderer extends NVRenderer {
     if (this.isReady) return
 
     this._sampler = device.createSampler({
-      magFilter: "linear",
-      minFilter: "linear",
+      magFilter: 'linear',
+      minFilter: 'linear',
     })
 
     this._bindLayout = device.createBindGroupLayout({
@@ -76,7 +76,7 @@ export class ThumbnailRenderer extends NVRenderer {
         {
           binding: 0,
           visibility: GPUShaderStage.VERTEX,
-          buffer: { type: "uniform" },
+          buffer: { type: 'uniform' },
         },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
@@ -89,29 +89,29 @@ export class ThumbnailRenderer extends NVRenderer {
         bindGroupLayouts: [this._bindLayout],
       }),
       multisample: { count: msaaCount },
-      vertex: { module, entryPoint: "vertex_main" },
+      vertex: { module, entryPoint: 'vertex_main' },
       fragment: {
         module,
-        entryPoint: "fragment_main",
+        entryPoint: 'fragment_main',
         targets: [
           {
             format,
             blend: {
               color: {
-                srcFactor: "src-alpha",
-                dstFactor: "one-minus-src-alpha",
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
               },
-              alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
             },
           },
         ],
       },
       depthStencil: {
         depthWriteEnabled: false,
-        depthCompare: "always",
-        format: "depth24plus",
+        depthCompare: 'always',
+        format: 'depth24plus',
       },
-      primitive: { topology: "triangle-strip" },
+      primitive: { topology: 'triangle-strip' },
     })
 
     this._paramsBuffer = device.createBuffer({

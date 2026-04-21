@@ -1,5 +1,5 @@
-import earcut from "earcut"
-import type { AnnotationPoint } from "@/NVTypes"
+import earcut from 'earcut'
+import type { AnnotationPoint } from '@/NVTypes'
 
 export function triangulatePolygon(
   outer: AnnotationPoint[],

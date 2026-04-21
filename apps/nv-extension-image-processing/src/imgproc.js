@@ -4,17 +4,17 @@
  * Demonstrates registering external volume transforms and running them
  * through the NVExtensionContext API. All heavy computation runs in a Web Worker.
  */
-import NiiVue from "@niivue/niivue"
+import NiiVue from '@niivue/niivue'
 import {
   conform,
   connectedLabel,
   otsu,
   removeHaze,
-} from "@niivue/nv-image-processing"
+} from '@niivue/nv-image-processing'
 
 // --- Create dialog for transform options ---
-const dialog = document.createElement("dialog")
-dialog.id = "transformDialog"
+const dialog = document.createElement('dialog')
+dialog.id = 'transformDialog'
 dialog.innerHTML = `
   <form method="dialog">
     <h3 id="dialogTitle">Options</h3>
@@ -26,7 +26,7 @@ dialog.innerHTML = `
   </form>
 `
 document.body.appendChild(dialog)
-dialog.querySelector("#cancelBtn").onclick = () => dialog.close()
+dialog.querySelector('#cancelBtn').onclick = () => dialog.close()
 
 // --- Initialize NiiVue ---
 const nv = new NiiVue()
@@ -40,36 +40,36 @@ ctx.registerVolumeTransform(removeHaze)
 
 function buildDialogFields(transformName) {
   const info = nv.getVolumeTransformInfo(transformName)
-  const fieldsDiv = dialog.querySelector("#dialogFields")
-  dialog.querySelector("#dialogTitle").textContent = info
+  const fieldsDiv = dialog.querySelector('#dialogFields')
+  dialog.querySelector('#dialogTitle').textContent = info
     ? info.description
     : transformName
-  fieldsDiv.innerHTML = ""
+  fieldsDiv.innerHTML = ''
   if (!info?.options.length) {
-    fieldsDiv.innerHTML = "<p>No configurable options.</p>"
+    fieldsDiv.innerHTML = '<p>No configurable options.</p>'
     return
   }
   for (const field of info.options) {
-    const div = document.createElement("div")
-    div.style.marginBottom = "0.5em"
-    if (field.type === "checkbox") {
-      const input = document.createElement("input")
-      input.type = "checkbox"
+    const div = document.createElement('div')
+    div.style.marginBottom = '0.5em'
+    if (field.type === 'checkbox') {
+      const input = document.createElement('input')
+      input.type = 'checkbox'
       input.id = `opt_${field.name}`
       input.checked = field.default
-      const label = document.createElement("label")
+      const label = document.createElement('label')
       label.htmlFor = input.id
       label.textContent = ` ${field.label}`
       div.appendChild(input)
       div.appendChild(label)
-    } else if (field.type === "select") {
-      const label = document.createElement("label")
+    } else if (field.type === 'select') {
+      const label = document.createElement('label')
       label.htmlFor = `opt_${field.name}`
       label.textContent = `${field.label}: `
-      const select = document.createElement("select")
+      const select = document.createElement('select')
       select.id = `opt_${field.name}`
       for (const opt of field.options) {
-        const option = document.createElement("option")
+        const option = document.createElement('option')
         option.value = opt
         option.textContent = String(opt)
         if (opt === field.default) option.selected = true
@@ -89,9 +89,9 @@ function getDialogOptions(transformName) {
   for (const field of info.options) {
     const el = dialog.querySelector(`#opt_${field.name}`)
     if (!el) continue
-    if (field.type === "checkbox") {
+    if (field.type === 'checkbox') {
       options[field.name] = el.checked
-    } else if (field.type === "select") {
+    } else if (field.type === 'select') {
       options[field.name] = field.options.includes(parseInt(el.value, 10))
         ? parseInt(el.value, 10)
         : el.value
@@ -101,10 +101,10 @@ function getDialogOptions(transformName) {
 }
 
 // --- UI wiring ---
-const status = document.getElementById("status")
-const sliceType = document.getElementById("sliceType")
-const transformSelect = document.getElementById("transformSelect")
-const resetBtn = document.getElementById("resetBtn")
+const status = document.getElementById('status')
+const sliceType = document.getElementById('sliceType')
+const transformSelect = document.getElementById('transformSelect')
+const resetBtn = document.getElementById('resetBtn')
 
 sliceType.onchange = () => {
   nv.sliceType = parseInt(sliceType.value, 10)
@@ -115,7 +115,7 @@ transformSelect.onchange = function () {
   if (!name) return
   buildDialogFields(name)
   dialog.showModal()
-  dialog.querySelector("form").onsubmit = async (e) => {
+  dialog.querySelector('form').onsubmit = async (e) => {
     e.preventDefault()
     const opts = getDialogOptions(name)
     dialog.close()
@@ -126,8 +126,8 @@ transformSelect.onchange = function () {
 
 resetBtn.onclick = async () => {
   await ctx.removeAllVolumes()
-  await nv.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
-  status.textContent = ""
+  await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+  status.textContent = ''
 }
 
 async function runTransform(name, options) {
@@ -148,7 +148,7 @@ async function runTransform(name, options) {
   }
 
   // For removeHaze, replace the volume; for segmentations, add as overlay
-  if (name === "removeHaze") {
+  if (name === 'removeHaze') {
     await ctx.removeAllVolumes()
     await ctx.addVolume(result)
     status.textContent = `removeHaze done in ${elapsed} ms (worker)`
@@ -158,18 +158,18 @@ async function runTransform(name, options) {
   }
 }
 
-ctx.on("locationChange", (e) => {
-  document.getElementById("location").innerHTML =
+ctx.on('locationChange', (e) => {
+  document.getElementById('location').innerHTML =
     `&nbsp;&nbsp;${e.detail.string}`
 })
 
-await nv.attachToCanvas(document.getElementById("gl1"))
+await nv.attachToCanvas(document.getElementById('gl1'))
 sliceType.onchange()
 
 // Populate the dropdown
-const emptyOpt = document.createElement("option")
-emptyOpt.value = ""
-emptyOpt.textContent = "— select —"
+const emptyOpt = document.createElement('option')
+emptyOpt.value = ''
+emptyOpt.textContent = '— select —'
 transformSelect.appendChild(emptyOpt)
 for (const tf of [
   conform.name,
@@ -177,10 +177,10 @@ for (const tf of [
   otsu.name,
   removeHaze.name,
 ]) {
-  const option = document.createElement("option")
+  const option = document.createElement('option')
   option.value = tf
   option.textContent = tf
   transformSelect.appendChild(option)
 }
 
-await nv.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])

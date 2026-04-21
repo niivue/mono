@@ -7,7 +7,7 @@
  * Based on FastSurfer conform.py (Apache License) and nibabel mghformat.py (MIT License).
  */
 
-import { mat4, vec3, vec4 } from "gl-matrix"
+import { mat4, vec3, vec4 } from 'gl-matrix'
 
 // ============================================================================
 // Types (self-contained to avoid niivue imports in worker context)

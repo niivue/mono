@@ -2,9 +2,9 @@
 // Renders to a 1x1 offscreen texture with depth packed into RGBA,
 // then reads back via copyTextureToBuffer + mapAsync.
 
-import { mat4 } from "gl-matrix"
-import { log } from "@/logger"
-import { volumeShaderPreamble } from "./volumeShaderLib"
+import { mat4 } from 'gl-matrix'
+import { log } from '@/logger'
+import { volumeShaderPreamble } from './volumeShaderLib'
 
 // --- Volume depth-pick WGSL ---
 // Preamble (structs, bindings, vertex shader, helpers) from volumeShaderLib.
@@ -229,13 +229,13 @@ export function init(
   // 1x1 offscreen color target (rgba8unorm for packed depth)
   const colorTexture = device.createTexture({
     size: [1, 1],
-    format: "rgba8unorm",
+    format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   })
   // 1x1 depth target (needed for proper depth testing between volume and meshes)
   const depthTexture = device.createTexture({
     size: [1, 1],
-    format: "depth24plus",
+    format: 'depth24plus',
     usage: GPUTextureUsage.RENDER_ATTACHMENT,
   })
   // Readback buffer: 4 bytes (one RGBA pixel), 256-byte aligned for mapAsync
@@ -256,13 +256,13 @@ export function init(
       }),
       vertex: {
         module: shaderModule,
-        entryPoint: "vertex_main",
+        entryPoint: 'vertex_main',
         buffers: [
           {
             arrayStride: 12,
             attributes: [
               {
-                format: "float32x3" as GPUVertexFormat,
+                format: 'float32x3' as GPUVertexFormat,
                 offset: 0,
                 shaderLocation: 0,
               },
@@ -272,18 +272,18 @@ export function init(
       },
       fragment: {
         module: shaderModule,
-        entryPoint: "fragment_main",
-        targets: [{ format: "rgba8unorm" as GPUTextureFormat }],
+        entryPoint: 'fragment_main',
+        targets: [{ format: 'rgba8unorm' as GPUTextureFormat }],
       },
       depthStencil: {
         depthWriteEnabled: true,
-        depthCompare: "less",
-        format: "depth24plus",
+        depthCompare: 'less',
+        format: 'depth24plus',
       },
       primitive: {
-        topology: "triangle-strip",
-        stripIndexFormat: "uint16",
-        cullMode: "back",
+        topology: 'triangle-strip',
+        stripIndexFormat: 'uint16',
+        cullMode: 'back',
       },
       multisample: { count: 1 },
     })
@@ -299,23 +299,23 @@ export function init(
       }),
       vertex: {
         module: shaderModule,
-        entryPoint: "vertex_main",
+        entryPoint: 'vertex_main',
         buffers: [
           {
             arrayStride: 28,
             attributes: [
               {
-                format: "float32x3" as GPUVertexFormat,
+                format: 'float32x3' as GPUVertexFormat,
                 offset: 0,
                 shaderLocation: 0,
               },
               {
-                format: "float32x3" as GPUVertexFormat,
+                format: 'float32x3' as GPUVertexFormat,
                 offset: 12,
                 shaderLocation: 1,
               },
               {
-                format: "unorm8x4" as GPUVertexFormat,
+                format: 'unorm8x4' as GPUVertexFormat,
                 offset: 24,
                 shaderLocation: 2,
               },
@@ -325,17 +325,17 @@ export function init(
       },
       fragment: {
         module: shaderModule,
-        entryPoint: "fragment_main",
-        targets: [{ format: "rgba8unorm" as GPUTextureFormat }],
+        entryPoint: 'fragment_main',
+        targets: [{ format: 'rgba8unorm' as GPUTextureFormat }],
       },
       depthStencil: {
         depthWriteEnabled: true,
-        depthCompare: "less",
-        format: "depth24plus",
+        depthCompare: 'less',
+        format: 'depth24plus',
       },
       primitive: {
-        topology: "triangle-list",
-        cullMode: "back",
+        topology: 'triangle-list',
+        cullMode: 'back',
       },
       multisample: { count: 1 },
     })
@@ -395,16 +395,16 @@ export async function pick(
     colorAttachments: [
       {
         view: colorTexture.createView(),
-        loadOp: "clear",
+        loadOp: 'clear',
         clearValue: { r: 0, g: 0, b: 0, a: 0 },
-        storeOp: "store",
+        storeOp: 'store',
       },
     ],
     depthStencilAttachment: {
       view: depthTexture.createView(),
       depthClearValue: 1.0,
-      depthLoadOp: "clear",
-      depthStoreOp: "store",
+      depthLoadOp: 'clear',
+      depthStoreOp: 'store',
     },
   })
   pass.setViewport(0, 0, 1, 1, 0.0, 1.0)
@@ -427,7 +427,7 @@ export async function pick(
     pass.setPipeline(volumePipeline)
     pass.setBindGroup(0, params.volumeBindGroup, [0])
     pass.setVertexBuffer(0, params.volumeVertexBuffer)
-    pass.setIndexBuffer(params.volumeIndexBuffer, "uint16")
+    pass.setIndexBuffer(params.volumeIndexBuffer, 'uint16')
     pass.drawIndexed(params.volumeIndexCount)
   }
 
@@ -444,7 +444,7 @@ export async function pick(
       pass.setPipeline(meshPipeline)
       pass.setBindGroup(0, m.bindGroup, [0])
       pass.setVertexBuffer(0, m.vertexBuffer)
-      pass.setIndexBuffer(m.indexBuffer, "uint32")
+      pass.setIndexBuffer(m.indexBuffer, 'uint32')
       pass.drawIndexed(m.indexCount)
     }
   }
@@ -469,7 +469,7 @@ export async function pick(
   readbackBuffer.unmap()
 
   if (a === 0) {
-    log.debug("depthPick: miss (alpha=0)")
+    log.debug('depthPick: miss (alpha=0)')
     return null
   }
 

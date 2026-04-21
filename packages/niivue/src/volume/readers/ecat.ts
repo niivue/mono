@@ -1,10 +1,10 @@
-import * as nifti from "nifti-reader-js"
-import { log } from "@/logger"
-import { NiiDataType } from "@/NVConstants"
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import * as nifti from 'nifti-reader-js'
+import { log } from '@/logger'
+import { NiiDataType } from '@/NVConstants'
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
-export const extensions = ["v"]
-export const type = "nii"
+export const extensions = ['v']
+export const type = 'nii'
 
 export function read(
   buffer: ArrayBuffer,
@@ -19,7 +19,7 @@ export function read(
   const signature = reader.getInt32(0, false)
   const filetype = reader.getInt16(50, false)
   if (signature !== 1296127058 || filetype < 1 || filetype > 14) {
-    throw new Error("Not a valid ECAT file")
+    throw new Error('Not a valid ECAT file')
   }
 
   let pos = 512
@@ -92,7 +92,7 @@ export function read(
     for (let i = 0; i < vols; i++) {
       if (frame_duration[i] !== frame_duration[0]) isFDvaries = true
     }
-    if (isFDvaries) log.warn("Frame durations vary")
+    if (isFDvaries) log.warn('Frame durations vary')
   }
   hdr.sform_code = 1
   hdr.affine = [

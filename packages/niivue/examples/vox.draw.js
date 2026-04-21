@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 let isDrawing = false
 
@@ -51,20 +51,20 @@ undoBtn.onclick = () => {
 }
 
 saveBtn.onclick = () => {
-  nv1.saveDrawing("drawing.nii.gz")
+  nv1.saveDrawing('drawing.nii.gz')
 }
 
 closeBtn.onclick = () => {
   if (isDrawing) {
     nv1.closeDrawing()
     setDrawingUI(false)
-    penValue.value = "-1"
+    penValue.value = '-1'
   }
 }
 
 loadBtn.onclick = () => {
   if (isDrawing) {
-    alert("A drawing is already open. Please close it before loading another.")
+    alert('A drawing is already open. Please close it before loading another.')
     return
   }
   loadFile.click()
@@ -74,7 +74,7 @@ async function openDrawing(source) {
   const ok = await nv1.loadDrawing(source)
   if (ok) {
     setDrawingUI(true)
-    penValue.value = "1"
+    penValue.value = '1'
     nv1.drawPenValue = 1
     nv1.drawPenAutoClose = false
     nv1.drawPenFilled = false
@@ -85,7 +85,7 @@ async function openDrawing(source) {
 loadFile.onchange = async function () {
   if (!this.files?.[0]) return
   await openDrawing(this.files[0])
-  this.value = ""
+  this.value = ''
 }
 
 sliceType.onchange = () => {
@@ -93,7 +93,7 @@ sliceType.onchange = () => {
 }
 
 webgpuCheck.onclick = function () {
-  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
 antiAliasCheck.onchange = async () => {
@@ -116,14 +116,14 @@ rimCheck.onchange = function () {
 }
 
 function handleLocationChange(data) {
-  document.getElementById("location").innerHTML = `&nbsp;&nbsp;${data.string}`
+  document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
 
 const nv1 = new NiiVue({})
-nv1.addEventListener("locationChange", (e) => handleLocationChange(e.detail))
+nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 await nv1.attachToCanvas(gl1)
 rimCheck.onchange()
 sliceType.onchange()
-await nv1.loadVolumes({ url: "/volumes/mni152.nii.gz" })
+await nv1.loadVolumes({ url: '/volumes/mni152.nii.gz' })
 nv1.drawOpacity = 0.3
-await openDrawing("/volumes/drawing.nii.gz")
+await openDrawing('/volumes/drawing.nii.gz')

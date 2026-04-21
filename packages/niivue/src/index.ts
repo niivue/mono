@@ -5,7 +5,8 @@
  */
 
 // Extension API
-export { NVExtensionContext } from "./extension/context"
+// biome-ignore lint/performance/noBarrelFile: package entry point
+export { NVExtensionContext } from './extension/context'
 export type {
   BackgroundVolumeAccess,
   DrawingAccess,
@@ -13,14 +14,14 @@ export type {
   NVExtensionEventMap,
   SharedBufferHandle,
   SlicePointerEvent,
-} from "./extension/types"
+} from './extension/types'
 // Logger
-export type { LogLevel } from "./logger"
+export type { LogLevel } from './logger'
 // Mesh writer types
-export type { WriteOptions } from "./mesh/writers"
+export type { WriteOptions } from './mesh/writers'
 // Enums
-export { DRAG_MODE, NiiDataType, SHOW_RENDER, SLICE_TYPE } from "./NVConstants"
-export { default, default as NiiVueGPU } from "./NVControl"
+export { DRAG_MODE, NiiDataType, SHOW_RENDER, SLICE_TYPE } from './NVConstants'
+export { default, default as NiiVueGPU } from './NVControl'
 // Event types
 export type {
   AzimuthElevationChangeDetail,
@@ -44,7 +45,7 @@ export type {
   VolumeLoadedDetail,
   VolumeRemovedDetail,
   VolumeUpdatedDetail,
-} from "./NVEvents"
+} from './NVEvents'
 // Core types used in the public API
 export type {
   BackendType,
@@ -71,7 +72,7 @@ export type {
   TypedVoxelArray,
   ViewHitTest,
   VolumeUpdate,
-} from "./NVTypes"
+} from './NVTypes'
 // Transform types
 export type {
   OptionField,
@@ -79,8 +80,8 @@ export type {
   TransformInfo,
   TransformOptions,
   VolumeTransform,
-} from "./volume/transforms"
+} from './volume/transforms'
 // Volume utilities for extensions
-export { getImageDataRAS } from "./volume/utils"
+export { getImageDataRAS } from './volume/utils'
 // Worker bridge for external transform packages
-export { NVWorker } from "./workers/NVWorker"
+export { NVWorker } from './workers/NVWorker'

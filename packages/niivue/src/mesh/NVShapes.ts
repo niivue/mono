@@ -1,5 +1,5 @@
-import { vec3 } from "gl-matrix"
-import { packColor } from "@/view/NVCrosshair"
+import { vec3 } from 'gl-matrix'
+import { packColor } from '@/view/NVCrosshair'
 
 export function getCubeMesh(): { vertices: number[]; indices: number[] } {
   const cubeVertices = [
@@ -19,7 +19,7 @@ function subdivide(vertices: number[], indices: number[]): number[] {
   const getMidpoint = (i1: number, i2: number): number => {
     const key = i1 < i2 ? (i1 << 16) | i2 : (i2 << 16) | i1
     if (midpointCache.has(key)) {
-      return midpointCache.get(key)!
+      return midpointCache.get(key) as number
     }
     const idx = vertices.length / 3
     const x = (vertices[i1 * 3] + vertices[i2 * 3]) / 2

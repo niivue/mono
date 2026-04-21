@@ -1,6 +1,6 @@
-import { decode } from "cbor-x"
-import * as nifti from "nifti-reader-js"
-import type { NIFTI1, TypedVoxelArray } from "@/NVTypes"
+import { decode } from 'cbor-x'
+import * as nifti from 'nifti-reader-js'
+import type { NIFTI1, TypedVoxelArray } from '@/NVTypes'
 
 // ITK-Wasm image format (.iwi.cbor)
 // https://docs.itk.org/en/latest/learn/python_quick_start.html
@@ -28,8 +28,8 @@ interface IWImage {
   metadata?: unknown[]
 }
 
-export const extensions = ["IWI.CBOR"]
-export const type = "nii"
+export const extensions = ['IWI.CBOR']
+export const type = 'nii'
 
 export async function read(buffer: ArrayBuffer): Promise<{
   hdr: NIFTI1
@@ -43,7 +43,7 @@ function iwi2nii(iwi: IWImage): {
   hdr: NIFTI1
   img: ArrayBuffer | TypedVoxelArray
 } {
-  if (!("imageType" in iwi) || !("size" in iwi) || !("data" in iwi)) {
+  if (!('imageType' in iwi) || !('size' in iwi) || !('data' in iwi)) {
     throw new Error('.iwi.cbor must have "imageType", "size" and "data".')
   }
 
@@ -69,7 +69,7 @@ function iwi2nii(iwi: IWImage): {
 
   // determine datatype from voxel data
   if (iwi.data instanceof Uint8Array) {
-    if (iwi.imageType.pixelType === "RGB") {
+    if (iwi.imageType.pixelType === 'RGB') {
       hdr.numBitsPerVoxel = 24
       hdr.datatypeCode = 128 // DT_RGB24
     } else {
@@ -92,7 +92,7 @@ function iwi2nii(iwi: IWImage): {
     hdr.numBitsPerVoxel = 32
     hdr.datatypeCode = 16 // DT_FLOAT32
   } else {
-    throw new Error(".iwi.cbor voxels use unsupported datatype.")
+    throw new Error('.iwi.cbor voxels use unsupported datatype.')
   }
 
   const nbyte = nvox * Math.floor(hdr.numBitsPerVoxel / 8)
@@ -109,7 +109,7 @@ function iwi2nii(iwi: IWImage): {
   hdr.vox_offset = 352
   hdr.scl_inter = 0
   hdr.scl_slope = 1
-  hdr.magic = "n+1"
+  hdr.magic = 'n+1'
 
   // set affine transform
   if (iwi.direction && iwi.origin) {
@@ -118,7 +118,7 @@ function iwi2nii(iwi: IWImage): {
     const m = iwi.direction.slice()
     const mm = iwi.spacing?.slice()
     if (!mm) {
-      throw new Error("IWI spacing is undefined")
+      throw new Error('IWI spacing is undefined')
     }
     const o = iwi.origin
     hdr.sform_code = 1

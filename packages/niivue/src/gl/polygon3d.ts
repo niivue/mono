@@ -1,7 +1,7 @@
-import type { Annotation3DRenderData } from "@/view/NVAnnotation"
-import { NVRenderer } from "@/view/NVRenderer"
-import { polygon3dFragShader, polygon3dVertShader } from "./polygon3dShader"
-import { Shader } from "./shader"
+import type { Annotation3DRenderData } from '@/view/NVAnnotation'
+import { NVRenderer } from '@/view/NVRenderer'
+import { polygon3dFragShader, polygon3dVertShader } from './polygon3dShader'
+import { Shader } from './shader'
 
 export class Polygon3DRenderer extends NVRenderer {
   private _gl: WebGL2RenderingContext | null = null
@@ -16,12 +16,12 @@ export class Polygon3DRenderer extends NVRenderer {
     this._shader = new Shader(gl, polygon3dVertShader, polygon3dFragShader)
 
     this._vao = gl.createVertexArray()
-    if (!this._vao) throw new Error("Failed to create polygon3d VAO")
+    if (!this._vao) throw new Error('Failed to create polygon3d VAO')
 
     this._vertexBuffer = gl.createBuffer()
     this._indexBuffer = gl.createBuffer()
     if (!this._vertexBuffer || !this._indexBuffer)
-      throw new Error("Failed to create polygon3d buffers")
+      throw new Error('Failed to create polygon3d buffers')
 
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer)

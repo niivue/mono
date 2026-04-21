@@ -1,10 +1,10 @@
-import fs from "node:fs"
-import { dirname, relative, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
-import type { Plugin } from "vite"
+import fs from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import type { Plugin } from 'vite'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const imagesDir = resolve(__dirname, "../images")
+const imagesDir = resolve(__dirname, '../images')
 
 /**
  * Recursively collect all files in a directory, returning paths relative to the base.
@@ -31,13 +31,13 @@ function walkDir(dir: string, base: string): string[] {
  */
 export function devImagesPlugin(): Plugin {
   return {
-    name: "niivue-dev-images",
+    name: 'niivue-dev-images',
 
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (!req.url || req.url === "/") return next()
+        if (!req.url || req.url === '/') return next()
 
-        const urlPath = req.url.split("?")[0].replace(/^\//, "")
+        const urlPath = req.url.split('?')[0].replace(/^\//, '')
         const filePath = resolve(imagesDir, urlPath)
 
         // Prevent path traversal
@@ -50,8 +50,8 @@ export function devImagesPlugin(): Plugin {
           return next()
         }
         if (!stat.isFile()) return next()
-        res.setHeader("Content-Length", stat.size)
-        res.setHeader("Content-Type", "application/octet-stream")
+        res.setHeader('Content-Length', stat.size)
+        res.setHeader('Content-Type', 'application/octet-stream')
         fs.createReadStream(filePath).pipe(res)
       })
     },
@@ -60,7 +60,7 @@ export function devImagesPlugin(): Plugin {
       for (const relPath of walkDir(imagesDir, imagesDir)) {
         const filePath = resolve(imagesDir, relPath)
         this.emitFile({
-          type: "asset",
+          type: 'asset',
           fileName: relPath,
           source: fs.readFileSync(filePath),
         })

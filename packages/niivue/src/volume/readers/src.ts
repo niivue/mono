@@ -1,10 +1,10 @@
-import * as nifti from "nifti-reader-js"
-import { readMatV4 } from "@/codecs/NVMatlab"
-import { NiiDataType } from "@/NVConstants"
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import * as nifti from 'nifti-reader-js'
+import { readMatV4 } from '@/codecs/NVMatlab'
+import { NiiDataType } from '@/NVConstants'
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
-export const extensions = ["src", "src.gz"]
-export const type = "nii"
+export const extensions = ['src', 'src.gz']
+export const type = 'nii'
 
 export async function read(
   buffer: ArrayBuffer,
@@ -17,23 +17,23 @@ export async function read(
   hdr.pixDims = [1, 1, 1, 1, 1, 0, 0, 0]
 
   const mat = await readMatV4(buffer)
-  if (!("dimension" in mat) || !("image0" in mat)) {
-    throw new Error("Not a valid DSI Studio SRC file")
+  if (!('dimension' in mat) || !('image0' in mat)) {
+    throw new Error('Not a valid DSI Studio SRC file')
   }
   let n = 0
   let len = 0
   for (const [key, value] of Object.entries(mat)) {
-    if (!key.startsWith("image")) continue
+    if (!key.startsWith('image')) continue
     if (n === 0) len = value.length
     else if (len !== value.length) len = -1
     if (value.constructor !== Uint16Array) {
-      throw new Error("DSI Studio SRC files always use Uint16 datatype")
+      throw new Error('DSI Studio SRC files always use Uint16 datatype')
     }
     n++
   }
   if (len < 1 || n < 1) {
     throw new Error(
-      "SRC file not valid DSI Studio data. The image(s) should have the same length",
+      'SRC file not valid DSI Studio data. The image(s) should have the same length',
     )
   }
 
@@ -70,7 +70,7 @@ export async function read(
     buff8.set(img8, offset)
     offset += nBytes3D
   }
-  if ("report" in mat) {
+  if ('report' in mat) {
     hdr.description = new TextDecoder().decode(
       mat.report.subarray(0, Math.min(79, mat.report.byteLength)),
     )

@@ -14,8 +14,8 @@ class Log {
   level: LogLevel
   name: string
   constructor({
-    name = "niivue",
-    level = "info",
+    name = 'niivue',
+    level = 'info',
   }: { name?: string; level?: LogLevel } = {}) {
     this.name = `${name}`
     this.level = level
@@ -73,6 +73,6 @@ class Log {
 }
 
 // make a log instance and export it
-const log = new Log({ name: "niivue", level: "info" })
+const log = new Log({ name: 'niivue', level: 'info' })
 
 export { log }

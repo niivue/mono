@@ -10,21 +10,29 @@
   },
   "formatter": {
     "enabled": true,
-    "indentStyle": "space"
+    "indentStyle": "space",
+    "indentWidth": 2
   },
   "linter": {
     "enabled": true,
     "rules": {
       "recommended": true,
       "style": {
-        "noNonNullAssertion": "off",
-        "noDescendingSpecificity": "off"
+        "noNonNullAssertion": "error",
+        "noDescendingSpecificity": "off",
+        "useImportType": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "error"
+      },
+      "performance": {
+        "noBarrelFile": "error"
       }
     }
   },
   "javascript": {
     "formatter": {
-      "quoteStyle": "double",
+      "quoteStyle": "single",
       "semicolons": "asNeeded"
     }
   },

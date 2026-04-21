@@ -5,7 +5,7 @@
  * Single-pass approach that combines Sobel-style edge detection with smoothing.
  * Uses WebGL2 slice-by-slice rendering (no compute shaders needed).
  */
-import { log } from "@/logger"
+import { log } from '@/logger'
 
 // Shader program cache (one program per GL context)
 const _programCache = new WeakMap<WebGL2RenderingContext, WebGLProgram>()
@@ -91,7 +91,7 @@ function compileShader(
 ): WebGLShader {
   const shader = gl.createShader(type)
   if (!shader) {
-    throw new Error("Gradient shader creation failed")
+    throw new Error('Gradient shader creation failed')
   }
   gl.shaderSource(shader, source)
   gl.compileShader(shader)
@@ -117,7 +117,7 @@ function createProgram(
   if (!program) {
     gl.deleteShader(vertShader)
     gl.deleteShader(fragShader)
-    throw new Error("Gradient program creation failed")
+    throw new Error('Gradient program creation failed')
   }
   gl.attachShader(program, vertShader)
   gl.attachShader(program, fragShader)
@@ -149,11 +149,11 @@ function getUniformLocations(
   program: WebGLProgram,
 ) {
   return {
-    coordZ: gl.getUniformLocation(program, "coordZ"),
-    intensityVol: gl.getUniformLocation(program, "intensityVol"),
-    dX: gl.getUniformLocation(program, "dX"),
-    dY: gl.getUniformLocation(program, "dY"),
-    dZ: gl.getUniformLocation(program, "dZ"),
+    coordZ: gl.getUniformLocation(program, 'coordZ'),
+    intensityVol: gl.getUniformLocation(program, 'intensityVol'),
+    dX: gl.getUniformLocation(program, 'dX'),
+    dY: gl.getUniformLocation(program, 'dY'),
+    dZ: gl.getUniformLocation(program, 'dZ'),
   }
 }
 
@@ -166,17 +166,17 @@ function createQuadGeometry(gl: WebGL2RenderingContext, program: WebGLProgram) {
   ])
   const vao = gl.createVertexArray()
   if (!vao) {
-    throw new Error("Gradient VAO creation failed")
+    throw new Error('Gradient VAO creation failed')
   }
   gl.bindVertexArray(vao)
   const vbo = gl.createBuffer()
   if (!vbo) {
     gl.bindVertexArray(null)
-    throw new Error("Gradient VBO creation failed")
+    throw new Error('Gradient VBO creation failed')
   }
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
   gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW)
-  const posLoc = gl.getAttribLocation(program, "vPos")
+  const posLoc = gl.getAttribLocation(program, 'vPos')
   gl.enableVertexAttribArray(posLoc)
   gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0)
   gl.bindVertexArray(null)
@@ -198,7 +198,7 @@ export function volume2TextureGradientRGBA(
   dims: [number, number, number],
 ): WebGLTexture {
   if (dims.length < 3) {
-    throw new Error("Gradient expects dims [width, height, depth]")
+    throw new Error('Gradient expects dims [width, height, depth]')
   }
   const [vx, vy, vz] = dims
 
@@ -223,7 +223,7 @@ export function volume2TextureGradientRGBA(
   if (!outputTexture) {
     gl.deleteBuffer(vbo)
     gl.deleteVertexArray(vao)
-    throw new Error("Gradient output texture creation failed")
+    throw new Error('Gradient output texture creation failed')
   }
   gl.activeTexture(gl.TEXTURE1)
   gl.bindTexture(gl.TEXTURE_3D, outputTexture)
@@ -240,7 +240,7 @@ export function volume2TextureGradientRGBA(
     gl.deleteTexture(outputTexture)
     gl.deleteBuffer(vbo)
     gl.deleteVertexArray(vao)
-    throw new Error("Gradient framebuffer creation failed")
+    throw new Error('Gradient framebuffer creation failed')
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
 
@@ -271,7 +271,7 @@ export function volume2TextureGradientRGBA(
     !uniforms.dY ||
     !uniforms.dZ
   ) {
-    throw new Error("Gradient shader uniforms missing")
+    throw new Error('Gradient shader uniforms missing')
   }
   gl.uniform1i(uniforms.intensityVol, 0) // Input texture unit
 
@@ -347,7 +347,7 @@ export function destroy(gl: WebGL2RenderingContext): void {
   try {
     gl.deleteProgram(program)
   } catch (err) {
-    log.warn("gradient.destroy: failed to delete program", err)
+    log.warn('gradient.destroy: failed to delete program', err)
   }
 
   _programCache.delete(gl)

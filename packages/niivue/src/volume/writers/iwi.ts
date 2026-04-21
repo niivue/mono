@@ -1,7 +1,7 @@
-import { encode } from "cbor-x"
-import type { NIFTI1, NIFTI2 } from "@/NVTypes"
+import { encode } from 'cbor-x'
+import type { NIFTI1, NIFTI2 } from '@/NVTypes'
 
-export const extensions = ["IWI.CBOR"]
+export const extensions = ['IWI.CBOR']
 
 export async function write(
   hdr: NIFTI1 | NIFTI2,
@@ -10,8 +10,8 @@ export async function write(
   const iwi: Record<string, unknown> = {
     imageType: {
       dimension: hdr.dims[0],
-      componentType: "uint8",
-      pixelType: "Scalar",
+      componentType: 'uint8',
+      pixelType: 'Scalar',
       components: 1,
     },
     direction: new Float64Array(9),
@@ -50,24 +50,24 @@ export async function write(
   }
 
   if (hdr.datatypeCode === 128) {
-    imageType.pixelType = "RGB"
-    imageType.componentType = "uint8"
+    imageType.pixelType = 'RGB'
+    imageType.componentType = 'uint8'
     imageType.components = 3
     iwi.data = new Uint8Array(img)
   } else if (hdr.datatypeCode === 64) {
-    imageType.componentType = "float64"
+    imageType.componentType = 'float64'
     iwi.data = new Float64Array(img)
   } else if (hdr.datatypeCode === 16) {
-    imageType.componentType = "float32"
+    imageType.componentType = 'float32'
     iwi.data = new Float32Array(img)
   } else if (hdr.datatypeCode === 2) {
-    imageType.componentType = "uint8"
+    imageType.componentType = 'uint8'
     iwi.data = new Uint8Array(img)
   } else if (hdr.datatypeCode === 4) {
-    imageType.componentType = "int16"
+    imageType.componentType = 'int16'
     iwi.data = new Int16Array(img)
   } else if (hdr.datatypeCode === 8) {
-    imageType.componentType = "int32"
+    imageType.componentType = 'int32'
     iwi.data = new Int32Array(img)
   } else {
     throw new Error(

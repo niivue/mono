@@ -1,11 +1,11 @@
-import { log } from "@/logger"
-import type { MZ3 } from "@/NVTypes"
+import { log } from '@/logger'
+import type { MZ3 } from '@/NVTypes'
 
-export const extensions = ["WRL"]
-export const type = "mz3"
+export const extensions = ['WRL']
+export const type = 'mz3'
 
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
-  const wrlText = new TextDecoder("utf-8").decode(buffer)
+  const wrlText = new TextDecoder('utf-8').decode(buffer)
   const coordRegex = /coord\s+Coordinate\s*\{\s*point\s*\[([\s\S]*?)\]/
   const indexRegex = /coordIndex\s*\[([\s\S]*?)\]/
   const colorRegex = /color\s+Color\s*\{\s*color\s*\[([\s\S]*?)\]/
@@ -14,7 +14,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   const colorMatch = colorRegex.exec(wrlText)
 
   if (!coordMatch || !indexMatch) {
-    throw new Error("Invalid WRL file: Could not find vertices or indices.")
+    throw new Error('Invalid WRL file: Could not find vertices or indices.')
   }
   const positions = new Float32Array(
     coordMatch[1]

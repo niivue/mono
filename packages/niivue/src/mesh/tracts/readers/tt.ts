@@ -1,7 +1,7 @@
-import { readMatV4 } from "@/codecs/NVMatlab"
-import type { NVTractData } from "@/NVTypes"
+import { readMatV4 } from '@/codecs/NVMatlab'
+import type { NVTractData } from '@/NVTypes'
 
-export const extensions = ["TT"]
+export const extensions = ['TT']
 
 /**
  * Read DSI-Studio TinyTrack (.tt / .tt.gz) format.
@@ -19,13 +19,13 @@ export const extensions = ["TT"]
  */
 export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   const mat = await readMatV4(buffer as ArrayBuffer)
-  if (!("trans_to_mni" in mat)) {
+  if (!('trans_to_mni' in mat)) {
     throw new Error("TT format file must have 'trans_to_mni'")
   }
-  if (!("voxel_size" in mat)) {
+  if (!('voxel_size' in mat)) {
     throw new Error("TT format file must have 'voxel_size'")
   }
-  if (!("track" in mat)) {
+  if (!('track' in mat)) {
     throw new Error("TT format file must have 'track'")
   }
 

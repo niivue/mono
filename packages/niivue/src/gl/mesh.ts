@@ -1,18 +1,18 @@
-import { log } from "@/logger"
-import * as NVMeshUtils from "@/mesh/NVMesh"
-import type { NVMesh, WebGLMeshGPU } from "@/NVTypes"
-import { BYTES_PER_VERTEX } from "@/view/NVCrosshair"
-import { buildCylinderMeshData, buildSphereMeshData } from "@/view/NVMeshView"
+import { log } from '@/logger'
+import * as NVMeshUtils from '@/mesh/NVMesh'
+import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
+import { BYTES_PER_VERTEX } from '@/view/NVCrosshair'
+import { buildCylinderMeshData, buildSphereMeshData } from '@/view/NVMeshView'
 import {
   meshDepthPickFragmentShader,
   meshDepthPickVertexShader,
-} from "./depthPickShader"
+} from './depthPickShader'
 import {
   fragmentShaders,
   meshVertShader,
   meshVertShaderFlat,
-} from "./meshShader"
-import { Shader } from "./shader"
+} from './meshShader'
+import { Shader } from './shader'
 
 type ShaderMap = Record<string, Shader>
 
@@ -27,7 +27,7 @@ export function init(gl: WebGL2RenderingContext): void {
   if (_contextCache.has(gl)) return
   const shaders: ShaderMap = {}
   for (const [name, fragSrc] of Object.entries(fragmentShaders)) {
-    const vertSrc = name === "flat" ? meshVertShaderFlat : meshVertShader
+    const vertSrc = name === 'flat' ? meshVertShaderFlat : meshVertShader
     shaders[name] = new Shader(gl, vertSrc, fragSrc)
   }
   const depthPickShader = new Shader(
@@ -44,18 +44,18 @@ export function isReady(gl: WebGL2RenderingContext): boolean {
 
 export function getAttributeLocations(
   gl: WebGL2RenderingContext,
-  shaderType = "phong",
+  shaderType = 'phong',
 ): { aPosition: number; aNormal: number; aColor: number } {
   const cache = _contextCache.get(gl)
-  if (!cache) throw new Error("mesh.init() not called for this context")
+  if (!cache) throw new Error('mesh.init() not called for this context')
   const shader = cache.shaders[shaderType] || cache.shaders.phong
   if (!shader) {
     throw new Error(`Shader ${shaderType} not initialized`)
   }
   return {
-    aPosition: gl.getAttribLocation(shader.program, "position"),
-    aNormal: gl.getAttribLocation(shader.program, "normal"),
-    aColor: gl.getAttribLocation(shader.program, "color"),
+    aPosition: gl.getAttribLocation(shader.program, 'position'),
+    aNormal: gl.getAttribLocation(shader.program, 'normal'),
+    aColor: gl.getAttribLocation(shader.program, 'color'),
   }
 }
 
@@ -117,27 +117,27 @@ function createMeshGpu(
   // Create VAO
   const vao = gl.createVertexArray()
   if (!vao) {
-    throw new Error("Failed to create mesh VAO")
+    throw new Error('Failed to create mesh VAO')
   }
   gl.bindVertexArray(vao)
   // Create and upload vertex buffer
   const vertexBuffer = gl.createBuffer()
   if (!vertexBuffer) {
     gl.bindVertexArray(null)
-    throw new Error("Failed to create mesh vertex buffer")
+    throw new Error('Failed to create mesh vertex buffer')
   }
   gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer)
   gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW)
   // Get attribute locations from the selected shader (all shaders share same vertex layout)
   const cache = _contextCache.get(gl)
-  if (!cache) throw new Error("mesh.init() not called for this context")
+  if (!cache) throw new Error('mesh.init() not called for this context')
   const shader = cache.shaders[shaderType] || cache.shaders.phong
   if (!shader) {
     throw new Error(`Missing shader for type ${shaderType}`)
   }
-  const aPosition = gl.getAttribLocation(shader.program, "position")
-  const aNormal = gl.getAttribLocation(shader.program, "normal")
-  const aColor = gl.getAttribLocation(shader.program, "color")
+  const aPosition = gl.getAttribLocation(shader.program, 'position')
+  const aNormal = gl.getAttribLocation(shader.program, 'normal')
+  const aColor = gl.getAttribLocation(shader.program, 'color')
   // Set up vertex attributes (interleaved, 28 bytes stride)
   // position: vec3 at offset 0
   gl.enableVertexAttribArray(aPosition)
@@ -152,7 +152,7 @@ function createMeshGpu(
   const indexBuffer = gl.createBuffer()
   if (!indexBuffer) {
     gl.bindVertexArray(null)
-    throw new Error("Failed to create mesh index buffer")
+    throw new Error('Failed to create mesh index buffer')
   }
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer)
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, meshData.indices, gl.STATIC_DRAW)
@@ -167,11 +167,11 @@ function createMeshGpu(
 
 export function createMeshBuffers(
   _gl: WebGL2RenderingContext,
-  meshData: Omit<NVMesh, "layers" | "perVertexColors"> &
-    Partial<Pick<NVMesh, "layers" | "perVertexColors">>,
+  meshData: Omit<NVMesh, 'layers' | 'perVertexColors'> &
+    Partial<Pick<NVMesh, 'layers' | 'perVertexColors'>>,
   options: Record<string, unknown> = {},
 ): NVMesh {
-  const { shaderType = "phong" } = options as { shaderType?: string }
+  const { shaderType = 'phong' } = options as { shaderType?: string }
   const mesh = meshData as NVMesh
   mesh.opacity = mesh.opacity ?? 1
   mesh.shaderType = shaderType
@@ -186,7 +186,7 @@ export function uploadMeshGPU(
   meshData: NVMesh,
   options: Record<string, unknown> = {},
 ): WebGLMeshGPU & { shaderType?: string } {
-  const { shaderType = "phong" } = options as { shaderType?: string }
+  const { shaderType = 'phong' } = options as { shaderType?: string }
   const gpu = createMeshGpu(gl, meshData, shaderType)
   return { ...gpu, shaderType }
 }
@@ -222,7 +222,7 @@ export function drawWithGpu(
 ): void {
   const cache = _contextCache.get(gl)
   if (!cache) return
-  const shaderType = shaderTypeOverride || mesh.shaderType || "phong"
+  const shaderType = shaderTypeOverride || mesh.shaderType || 'phong'
   const shader = cache.shaders[shaderType]
   if (!shader) {
     log.warn(`Unknown mesh shader type: ${shaderType}`)
@@ -238,7 +238,7 @@ export function drawWithGpu(
   if (shader.uniforms.crosscutMM && crosscutMM)
     gl.uniform4fv(shader.uniforms.crosscutMM, crosscutMM)
   // Set up state for mesh rendering
-  const isCrosscut = shaderType === "crosscut"
+  const isCrosscut = shaderType === 'crosscut'
   if (isCrosscut) {
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
@@ -272,7 +272,7 @@ export function drawXRay(
 ): void {
   const cache = _contextCache.get(gl)
   if (!cache) return
-  const shaderType = shaderTypeOverride || mesh.shaderType || "phong"
+  const shaderType = shaderTypeOverride || mesh.shaderType || 'phong'
   const shader = cache.shaders[shaderType]
   if (!shader) return
   shader.use(gl)
@@ -283,7 +283,7 @@ export function drawXRay(
   if (shader.uniforms.opacity) gl.uniform1f(shader.uniforms.opacity, opacity)
   if (shader.uniforms.crosscutMM && crosscutMM)
     gl.uniform4fv(shader.uniforms.crosscutMM, crosscutMM)
-  const isCrosscut = shaderType === "crosscut"
+  const isCrosscut = shaderType === 'crosscut'
   if (isCrosscut) {
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)

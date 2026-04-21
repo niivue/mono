@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 graphCheck.onclick = function () {
   nv1.isGraphVisible = this.checked
@@ -16,7 +16,7 @@ autoCalCheck.onchange = function () {
     if (vol) nv1.recalculateCalMinMax(0, vol.frame4D ?? 0)
   }
 }
-colorBtn.addEventListener("input", (event) => {
+colorBtn.addEventListener('input', (event) => {
   const input = event.target
   const hex = input.value
   const r = parseInt(hex.slice(1, 3), 16) / 255
@@ -29,11 +29,11 @@ colorbarCheck.onclick = function () {
 }
 dprSelect.onchange = async () => {
   let v = dprSelect.value.trim()
-  if (v.toLowerCase() === "auto") v = "-1"
+  if (v.toLowerCase() === 'auto') v = '-1'
   nv1.devicePixelRatio = parseFloat(v)
 }
 webgpuCheck.onclick = function () {
-  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
@@ -51,7 +51,7 @@ nextFrame.onclick = () => {
 aboutBtn.onclick = async () => {
   const vol = nv1.volumes[0]
   if (vol.nTotalFrame4D > vol.nFrame4D) {
-    aboutBtn.textContent = "Loading..."
+    aboutBtn.textContent = 'Loading...'
     await nv1.loadDeferred4DVolumes(vol.id)
     aboutBtn.textContent = `Loaded all ${vol.nFrame4D} frames`
   } else {
@@ -59,7 +59,7 @@ aboutBtn.onclick = async () => {
   }
 }
 function handleLocationChange(data) {
-  document.getElementById("location").innerHTML = `&nbsp;&nbsp;${data.string}`
+  document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
 function handleFrameChange(_volume, frame) {
   if (autoCalCheck.checked) {
@@ -70,17 +70,17 @@ const nv1 = new NiiVue({
   backgroundColor: [0.1, 0.1, 0.1, 1],
   isGraphVisible: true,
 })
-nv1.addEventListener("locationChange", (e) => handleLocationChange(e.detail))
-nv1.addEventListener("frameChange", (e) =>
+nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
+nv1.addEventListener('frameChange', (e) =>
   handleFrameChange(e.detail.volume, e.detail.frame),
 )
 await nv1.attachToCanvas(gl1)
 nv1.showRender = 1
-var volumeList = [{ url: "/volumes/mpld_asl.nii.gz", limitFrames4D: 5 }]
+var volumeList = [{ url: '/volumes/mpld_asl.nii.gz', limitFrames4D: 5 }]
 await nv1.loadVolumes(volumeList)
 console.log(
-  "nFrame4D:",
+  'nFrame4D:',
   nv1.volumes[0].nFrame4D,
-  "nTotalFrame4D:",
+  'nTotalFrame4D:',
   nv1.volumes[0].nTotalFrame4D,
 )

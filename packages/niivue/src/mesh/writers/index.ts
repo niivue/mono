@@ -20,10 +20,10 @@ type MeshWriter = {
   ) => Promise<ArrayBuffer>
 }
 
-import { buildExtensionMap } from "@/NVLoader"
+import { buildExtensionMap } from '@/NVLoader'
 
-const modules = import.meta.glob<MeshWriter>("./*.ts", { eager: true })
-const writerByExt = buildExtensionMap(modules, "./index.ts")
+const modules = import.meta.glob<MeshWriter>('./*.ts', { eager: true })
+const writerByExt = buildExtensionMap(modules, './index.ts')
 
 export function writeExtensions(): string[] {
   return Array.from(new Set(Array.from(writerByExt.keys()))).sort()

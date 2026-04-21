@@ -1,13 +1,13 @@
-import { mat3, mat4, vec3 } from "gl-matrix"
-import * as nifti from "nifti-reader-js"
-import { decompress } from "@/codecs/NVGz"
-import { log } from "@/logger"
-import * as NVTransforms from "@/math/NVTransforms"
-import { NiiDataType } from "@/NVConstants"
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import { mat3, mat4, vec3 } from 'gl-matrix'
+import * as nifti from 'nifti-reader-js'
+import { decompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
+import * as NVTransforms from '@/math/NVTransforms'
+import { NiiDataType } from '@/NVConstants'
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
-export const extensions = ["nrrd", "nhdr"]
-export const type = "nii"
+export const extensions = ['nrrd', 'nhdr']
+export const type = 'nii'
 
 export async function read(
   buffer: ArrayBuffer,
@@ -29,12 +29,12 @@ export async function read(
     }
   }
   if (!headerText) {
-    throw new Error("NRRD: could not parse header")
+    throw new Error('NRRD: could not parse header')
   }
 
-  const lines = headerText.split("\n")
-  if (!lines[0].startsWith("NRRD")) {
-    throw new Error("NRRD: invalid header signature")
+  const lines = headerText.split('\n')
+  if (!lines[0].startsWith('NRRD')) {
+    throw new Error('NRRD: invalid header signature')
   }
 
   let isGz = false
@@ -46,74 +46,74 @@ export async function read(
 
   for (let i = 1; i < lines.length; i++) {
     let str = lines[i]
-    if (!str || str[0] === "#") continue
+    if (!str || str[0] === '#') continue
     str = str.toLowerCase()
-    const items = str.split(":")
+    const items = str.split(':')
     if (items.length < 2) continue
     const key = items[0].trim()
     let value = items[1].trim()
-    value = value.replaceAll(")", " ").replaceAll("(", " ").trim()
+    value = value.replaceAll(')', ' ').replaceAll('(', ' ').trim()
 
     switch (key) {
-      case "data file":
+      case 'data file':
         isDetached = true
         break
-      case "encoding":
-        if (value.includes("raw")) isGz = false
-        else if (value.includes("gz")) isGz = true
+      case 'encoding':
+        if (value.includes('raw')) isGz = false
+        else if (value.includes('gz')) isGz = true
         else throw new Error(`NRRD: unsupported encoding ${value}`)
         break
-      case "type":
+      case 'type':
         switch (value) {
-          case "uchar":
-          case "unsigned char":
-          case "uint8":
-          case "uint8_t":
+          case 'uchar':
+          case 'unsigned char':
+          case 'uint8':
+          case 'uint8_t':
             hdr.numBitsPerVoxel = 8
             hdr.datatypeCode = NiiDataType.DT_UINT8
             break
-          case "signed char":
-          case "int8":
-          case "int8_t":
+          case 'signed char':
+          case 'int8':
+          case 'int8_t':
             hdr.numBitsPerVoxel = 8
             hdr.datatypeCode = NiiDataType.DT_INT8
             break
-          case "short":
-          case "short int":
-          case "signed short":
-          case "signed short int":
-          case "int16":
-          case "int16_t":
+          case 'short':
+          case 'short int':
+          case 'signed short':
+          case 'signed short int':
+          case 'int16':
+          case 'int16_t':
             hdr.numBitsPerVoxel = 16
             hdr.datatypeCode = NiiDataType.DT_INT16
             break
-          case "ushort":
-          case "unsigned short":
-          case "unsigned short int":
-          case "uint16":
-          case "uint16_t":
+          case 'ushort':
+          case 'unsigned short':
+          case 'unsigned short int':
+          case 'uint16':
+          case 'uint16_t':
             hdr.numBitsPerVoxel = 16
             hdr.datatypeCode = NiiDataType.DT_UINT16
             break
-          case "int":
-          case "signed int":
-          case "int32":
-          case "int32_t":
+          case 'int':
+          case 'signed int':
+          case 'int32':
+          case 'int32_t':
             hdr.numBitsPerVoxel = 32
             hdr.datatypeCode = NiiDataType.DT_INT32
             break
-          case "uint":
-          case "unsigned int":
-          case "uint32":
-          case "uint32_t":
+          case 'uint':
+          case 'unsigned int':
+          case 'uint32':
+          case 'uint32_t':
             hdr.numBitsPerVoxel = 32
             hdr.datatypeCode = NiiDataType.DT_UINT32
             break
-          case "float":
+          case 'float':
             hdr.numBitsPerVoxel = 32
             hdr.datatypeCode = NiiDataType.DT_FLOAT32
             break
-          case "double":
+          case 'double':
             hdr.numBitsPerVoxel = 64
             hdr.datatypeCode = NiiDataType.DT_FLOAT64
             break
@@ -121,14 +121,14 @@ export async function read(
             throw new Error(`NRRD: unsupported data type ${value}`)
         }
         break
-      case "spacings": {
+      case 'spacings': {
         const values = value.split(/[ ,]+/)
         for (let d = 0; d < values.length; d++) {
           hdr.pixDims[d + 1] = parseFloat(values[d])
         }
         break
       }
-      case "sizes": {
+      case 'sizes': {
         const dims = value.split(/[ ,]+/)
         hdr.dims[0] = dims.length
         for (let d = 0; d < dims.length; d++) {
@@ -136,10 +136,10 @@ export async function read(
         }
         break
       }
-      case "endian":
-        hdr.littleEndian = value.includes("little")
+      case 'endian':
+        hdr.littleEndian = value.includes('little')
         break
-      case "space directions": {
+      case 'space directions': {
         const vs = value.split(/[ ,]+/)
         if (vs.length === 9) {
           for (let d = 0; d < 9; d++) {
@@ -148,7 +148,7 @@ export async function read(
         }
         break
       }
-      case "space origin": {
+      case 'space origin': {
         const ts = value.split(/[ ,]+/)
         if (ts.length === 3) {
           offset[0] = parseFloat(ts[0])
@@ -157,27 +157,27 @@ export async function read(
         }
         break
       }
-      case "space units":
-        if (value.includes("microns")) isMicron = true
+      case 'space units':
+        if (value.includes('microns')) isMicron = true
         break
-      case "space":
+      case 'space':
         if (
-          value.includes("right-anterior-superior") ||
-          value.includes("ras")
+          value.includes('right-anterior-superior') ||
+          value.includes('ras')
         ) {
           rot33 = mat3.fromValues(1, 0, 0, 0, 1, 0, 0, 0, 1)
         } else if (
-          value.includes("left-anterior-superior") ||
-          value.includes("las")
+          value.includes('left-anterior-superior') ||
+          value.includes('las')
         ) {
           rot33 = mat3.fromValues(-1, 0, 0, 0, 1, 0, 0, 0, 1)
         } else if (
-          value.includes("left-posterior-superior") ||
-          value.includes("lps")
+          value.includes('left-posterior-superior') ||
+          value.includes('lps')
         ) {
           rot33 = mat3.fromValues(-1, 0, 0, 0, -1, 0, 0, 0, 1)
         } else {
-          log.warn("NRRD: unsupported space", value)
+          log.warn('NRRD: unsupported space', value)
         }
         break
       default:
@@ -237,7 +237,7 @@ export async function read(
   const sourceBuffer = isDetached ? pairedImgData : buffer
   const sourceOffset = isDetached ? 0 : hdr.vox_offset
   if (isDetached && !pairedImgData) {
-    throw new Error("NRRD: detached header requires paired image data")
+    throw new Error('NRRD: detached header requires paired image data')
   }
   if (!sourceBuffer || sourceOffset >= sourceBuffer.byteLength) {
     throw new Error(`NRRD: data offset (${sourceOffset}) out of range`)

@@ -1,17 +1,17 @@
-import { maybeDecompress } from "@/codecs/NVGz"
-import type { MZ3 } from "@/NVTypes"
+import { maybeDecompress } from '@/codecs/NVGz'
+import type { MZ3 } from '@/NVTypes'
 
 declare const log: { warn: (...args: unknown[]) => void }
 
-export const extensions = ["OBJ"]
-export const type = "mz3"
+export const extensions = ['OBJ']
+export const type = 'mz3'
 
 function readOBJMNI(buffer: ArrayBuffer): MZ3 {
-  const enc = new TextDecoder("utf-8")
+  const enc = new TextDecoder('utf-8')
   const txt = enc.decode(buffer)
   const items = txt.trim().split(/\s*,\s*|\s+/)
-  if (items.length < 1 || items[0] !== "P") {
-    log.warn("This is not a valid MNI OBJ mesh.")
+  if (items.length < 1 || items[0] !== 'P') {
+    log.warn('This is not a valid MNI OBJ mesh.')
   }
   let j = 6
   const nVert = parseInt(items[j++], 10)
@@ -24,7 +24,7 @@ function readOBJMNI(buffer: ArrayBuffer): MZ3 {
   const nTri = parseInt(items[j++], 10)
   const colour_flag = parseInt(items[j++], 10)
   if (nTri < 1 || colour_flag < 0 || colour_flag > 2) {
-    log.warn("This is not a valid MNI OBJ mesh.")
+    log.warn('This is not a valid MNI OBJ mesh.')
   }
   let num_c = 1
   if (colour_flag === 1) {
@@ -44,32 +44,32 @@ function readOBJMNI(buffer: ArrayBuffer): MZ3 {
 
 async function readOBJWavefront(buffer: ArrayBuffer): Promise<MZ3> {
   buffer = await maybeDecompress(buffer)
-  const enc = new TextDecoder("utf-8")
+  const enc = new TextDecoder('utf-8')
   const txt = enc.decode(buffer)
-  if (txt[0] === "P") {
+  if (txt[0] === 'P') {
     return readOBJMNI(buffer)
   }
-  const lines = txt.split("\n")
+  const lines = txt.split('\n')
   const pts: number[] = []
   const tris: number[] = []
   for (let i = 0; i < lines.length; i++) {
     const str = lines[i]
-    if (str[0] === "v" && str[1] === " ") {
+    if (str[0] === 'v' && str[1] === ' ') {
       const items = str.trim().split(/\s+/)
       pts.push(parseFloat(items[1]))
       pts.push(parseFloat(items[2]))
       pts.push(parseFloat(items[3]))
     }
-    if (str[0] === "f") {
+    if (str[0] === 'f') {
       const items = str.trim().split(/\s+/)
       const new_t = items.length - 3
       if (new_t < 1) break
-      let tn = items[1].split("/")
+      let tn = items[1].split('/')
       const t0 = parseInt(tn[0], 10) - 1
-      tn = items[2].split("/")
+      tn = items[2].split('/')
       let tprev = parseInt(tn[0], 10) - 1
       for (let j = 0; j < new_t; j++) {
-        tn = items[3 + j].split("/")
+        tn = items[3 + j].split('/')
         const tcurr = parseInt(tn[0], 10) - 1
         tris.push(t0, tprev, tcurr)
         tprev = tcurr
@@ -85,7 +85,7 @@ async function readOBJWavefront(buffer: ArrayBuffer): Promise<MZ3> {
     if (indices[i] > max) max = indices[i]
   }
   if (max - min + 1 > positions.length / 3) {
-    throw new Error("Not a valid OBJ file")
+    throw new Error('Not a valid OBJ file')
   }
   for (let i = 0; i < indices.length; i++) {
     indices[i] -= min
@@ -95,9 +95,9 @@ async function readOBJWavefront(buffer: ArrayBuffer): Promise<MZ3> {
 
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   buffer = await maybeDecompress(buffer)
-  const enc = new TextDecoder("utf-8")
+  const enc = new TextDecoder('utf-8')
   const txt = enc.decode(buffer)
-  if (txt[0] === "P") {
+  if (txt[0] === 'P') {
     return readOBJMNI(buffer)
   }
   return readOBJWavefront(buffer)

@@ -2,7 +2,7 @@
 // These shaders output depth packed into RGB for readPixels-based depth picking.
 // The packDepth encoding uses 24-bit precision across R, G, B channels.
 
-import { fragmentPreamble, volumeVertexShader } from "./volumeShaderLib"
+import { fragmentPreamble, volumeVertexShader } from './volumeShaderLib'
 
 export const depthPickVertexShader = volumeVertexShader
 

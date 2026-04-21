@@ -1,8 +1,8 @@
-import * as NVCmaps from "@/cmap/NVCmaps"
-import type { NVImage } from "@/NVTypes"
-import { buildOrientUniforms, prepareRGBAData } from "@/view/NVOrient"
-import orientWGSL from "./orient.wgsl?raw"
-import * as wgpu from "./wgpu"
+import * as NVCmaps from '@/cmap/NVCmaps'
+import type { NVImage } from '@/NVTypes'
+import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
+import orientWGSL from './orient.wgsl?raw'
+import * as wgpu from './wgpu'
 
 type PipelineCacheEntry = {
   pipeline: GPUComputePipeline
@@ -26,13 +26,13 @@ function ensurePipeline(
     return perDevice[pipelineType]
   }
   let shaderSource = orientWGSL
-  let sampleType: GPUTextureSampleType = "uint"
-  if (pipelineType === "float") {
-    shaderSource = shaderSource.replaceAll("texture_3d<u32>", "texture_3d<f32>")
-    sampleType = "unfilterable-float"
-  } else if (pipelineType === "sint") {
-    shaderSource = shaderSource.replaceAll("texture_3d<u32>", "texture_3d<i32>")
-    sampleType = "sint"
+  let sampleType: GPUTextureSampleType = 'uint'
+  if (pipelineType === 'float') {
+    shaderSource = shaderSource.replaceAll('texture_3d<u32>', 'texture_3d<f32>')
+    sampleType = 'unfilterable-float'
+  } else if (pipelineType === 'sint') {
+    shaderSource = shaderSource.replaceAll('texture_3d<u32>', 'texture_3d<i32>')
+    sampleType = 'sint'
   }
   const module = device.createShaderModule({ code: shaderSource })
   const layout = device.createBindGroupLayout({
@@ -40,38 +40,38 @@ function ensurePipeline(
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
-        buffer: { type: "uniform" },
+        buffer: { type: 'uniform' },
       },
       {
         binding: 1,
         visibility: GPUShaderStage.COMPUTE,
-        texture: { sampleType: sampleType, viewDimension: "3d" },
+        texture: { sampleType: sampleType, viewDimension: '3d' },
       },
       {
         binding: 2,
         visibility: GPUShaderStage.COMPUTE,
-        texture: { viewDimension: "2d" },
+        texture: { viewDimension: '2d' },
       },
       {
         binding: 3,
         visibility: GPUShaderStage.COMPUTE,
-        storageTexture: { format: "rgba8unorm", viewDimension: "3d" },
+        storageTexture: { format: 'rgba8unorm', viewDimension: '3d' },
       },
       {
         binding: 4,
         visibility: GPUShaderStage.COMPUTE,
-        sampler: { type: "filtering" },
+        sampler: { type: 'filtering' },
       },
       {
         binding: 5,
         visibility: GPUShaderStage.COMPUTE,
-        texture: { viewDimension: "2d" },
+        texture: { viewDimension: '2d' },
       },
     ],
   })
   const pipeline = device.createComputePipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-    compute: { module, entryPoint: "main" },
+    compute: { module, entryPoint: 'main' },
   })
   perDevice[pipelineType] = { pipeline, layout }
   return perDevice[pipelineType]
@@ -81,8 +81,8 @@ function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
   const { rgbaData, texDims } = prepareRGBAData(nvimage)
   const rgbaTexture = device.createTexture({
     size: texDims,
-    format: "rgba8unorm",
-    dimension: "3d",
+    format: 'rgba8unorm',
+    dimension: '3d',
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.COPY_DST |
@@ -111,35 +111,35 @@ export async function volume2Texture(
   overlayOpacity = 1,
 ): Promise<GPUTexture> {
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS) {
-    throw new Error("overlay2Texture: missing dimsRAS")
+    throw new Error('overlay2Texture: missing dimsRAS')
   }
   if (!nvimage.img) {
-    throw new Error("overlay2Texture: missing image data")
+    throw new Error('overlay2Texture: missing image data')
   }
   const dt = nvimage.hdr.datatypeCode
   // Handle RGB/RGBA images directly (PAQD gets special decode)
   if (dt === 2304 || dt === 128) {
     return rgba2Texture(device, nvimage)
   }
-  let format: GPUTextureFormat = "r8uint"
-  let pipelineType = "uint"
+  let format: GPUTextureFormat = 'r8uint'
+  let pipelineType = 'uint'
   let bytesPerVoxel = 1
   if (dt === 2) {
     // UINT8
-    format = "r8uint"
+    format = 'r8uint'
   } else if (dt === 4 || dt === 8) {
     // INT16 or INT32
-    format = dt === 4 ? "r16sint" : "r32sint"
-    pipelineType = "sint"
+    format = dt === 4 ? 'r16sint' : 'r32sint'
+    pipelineType = 'sint'
     bytesPerVoxel = dt === 4 ? 2 : 4
   } else if (dt === 16 || dt === 32) {
     // FLOAT32 or COMPLEX
-    format = "r32float"
-    pipelineType = "float"
+    format = 'r32float'
+    pipelineType = 'float'
     bytesPerVoxel = 4
   } else if (dt === 512 || dt === 768) {
     // UINT16 or UINT32
-    format = dt === 512 ? "r16uint" : "r32uint"
+    format = dt === 512 ? 'r16uint' : 'r32uint'
     bytesPerVoxel = dt === 512 ? 2 : 4
   } else {
     throw new Error(`Unsupported NIfTI datatype ${dt}`)
@@ -156,7 +156,7 @@ export async function volume2Texture(
   const scalarTexture = device.createTexture({
     size: dimsIn,
     format: format,
-    dimension: "3d",
+    dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
   const frame = nvimage.frame4D ?? 0
@@ -169,7 +169,7 @@ export async function volume2Texture(
   )
   // Defensive copy: SharedArrayBuffer-backed views would create a TOCTOU race with GPU upload
   const imgData =
-    typeof SharedArrayBuffer !== "undefined" &&
+    typeof SharedArrayBuffer !== 'undefined' &&
     imgView.buffer instanceof SharedArrayBuffer
       ? new Uint8Array(imgView)
       : imgView
@@ -213,8 +213,8 @@ export async function volume2Texture(
   // 3) Create RGBA storage texture sized dimsOut
   const rgbaTexture = device.createTexture({
     size: dimsOut,
-    format: "rgba8unorm",
-    dimension: "3d",
+    format: 'rgba8unorm',
+    dimension: '3d',
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.STORAGE_BINDING |
@@ -229,12 +229,12 @@ export async function volume2Texture(
     // Label colormap: variable-width LUT with nearest filtering
     const labelLut = nvimage.colormapLabel?.lut
     if (!labelLut) {
-      throw new Error("Label colormap LUT is undefined")
+      throw new Error('Label colormap LUT is undefined')
     }
     const nLabels = labelLut.length / 4
     colormapTex = device.createTexture({
       size: [nLabels, 1, 1],
-      format: "rgba8unorm",
+      format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     })
     device.queue.writeTexture(
@@ -245,8 +245,8 @@ export async function volume2Texture(
     )
     negColormapTex = colormapTex
     sampler = device.createSampler({
-      magFilter: "nearest",
-      minFilter: "nearest",
+      magFilter: 'nearest',
+      minFilter: 'nearest',
     })
   } else {
     // Continuous colormap: 256-wide LUT with linear filtering
@@ -261,8 +261,8 @@ export async function volume2Texture(
       negColormapTex = await wgpu.lutBytes2texture(device, negLut)
     }
     sampler = device.createSampler({
-      magFilter: "linear",
-      minFilter: "linear",
+      magFilter: 'linear',
+      minFilter: 'linear',
     })
   }
   // 5) Create bind group
@@ -335,23 +335,23 @@ function ensureMaskPipeline(device: GPUDevice): PipelineCacheEntry {
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
-        texture: { viewDimension: "3d" },
+        texture: { viewDimension: '3d' },
       },
       {
         binding: 1,
         visibility: GPUShaderStage.COMPUTE,
-        texture: { viewDimension: "3d" },
+        texture: { viewDimension: '3d' },
       },
       {
         binding: 2,
         visibility: GPUShaderStage.COMPUTE,
-        storageTexture: { format: "rgba8unorm", viewDimension: "3d" },
+        storageTexture: { format: 'rgba8unorm', viewDimension: '3d' },
       },
     ],
   })
   const pipeline = device.createComputePipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-    compute: { module, entryPoint: "main" },
+    compute: { module, entryPoint: 'main' },
   })
   perDevice.mask = { pipeline, layout }
   return perDevice.mask
@@ -374,8 +374,8 @@ export async function maskOverlayByBackground(
   const cached = ensureMaskPipeline(device)
   const outputTexture = device.createTexture({
     size: dims,
-    format: "rgba8unorm",
-    dimension: "3d",
+    format: 'rgba8unorm',
+    dimension: '3d',
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.STORAGE_BINDING |
@@ -512,7 +512,7 @@ function ensureBlendPipelines(device: GPUDevice): BlendPipelineCache {
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
-        buffer: { type: "storage" },
+        buffer: { type: 'storage' },
       },
     ],
   })
@@ -521,7 +521,7 @@ function ensureBlendPipelines(device: GPUDevice): BlendPipelineCache {
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
-        buffer: { type: "read-only-storage" },
+        buffer: { type: 'read-only-storage' },
       },
     ],
   })
@@ -530,7 +530,7 @@ function ensureBlendPipelines(device: GPUDevice): BlendPipelineCache {
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
-        texture: { sampleType: "float", viewDimension: "3d" },
+        texture: { sampleType: 'float', viewDimension: '3d' },
       },
     ],
   })
@@ -539,7 +539,7 @@ function ensureBlendPipelines(device: GPUDevice): BlendPipelineCache {
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
-        storageTexture: { format: "rgba8unorm", viewDimension: "3d" },
+        storageTexture: { format: 'rgba8unorm', viewDimension: '3d' },
       },
     ],
   })
@@ -549,7 +549,7 @@ function ensureBlendPipelines(device: GPUDevice): BlendPipelineCache {
     }),
     compute: {
       module: device.createShaderModule({ code: blendAccumShaderCode }),
-      entryPoint: "main",
+      entryPoint: 'main',
     },
   })
   const normPipeline = device.createComputePipeline({
@@ -558,7 +558,7 @@ function ensureBlendPipelines(device: GPUDevice): BlendPipelineCache {
     }),
     compute: {
       module: device.createShaderModule({ code: blendNormShaderCode }),
-      entryPoint: "main",
+      entryPoint: 'main',
     },
   })
   const entry: BlendPipelineCache = {
@@ -619,8 +619,8 @@ export async function blendOverlaysGPU(
 
   const outputTex = device.createTexture({
     size: dimsOut,
-    format: "rgba8unorm",
-    dimension: "3d",
+    format: 'rgba8unorm',
+    dimension: '3d',
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.STORAGE_BINDING |

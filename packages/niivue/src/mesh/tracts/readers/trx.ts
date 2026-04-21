@@ -1,8 +1,8 @@
-import { Zip } from "@/codecs/NVZip"
-import { log } from "@/logger"
-import type { NVTractData } from "@/NVTypes"
+import { Zip } from '@/codecs/NVZip'
+import { log } from '@/logger'
+import type { NVTractData } from '@/NVTypes'
 
-export const extensions = ["TRX"]
+export const extensions = ['TRX']
 
 /**
  * Decode a float16 (IEEE 754 half-precision) to float32.
@@ -43,10 +43,10 @@ function parseArray(
   fileName: string,
   data: Uint8Array,
 ): Float32Array | Uint32Array | null {
-  if (fileName.endsWith(".float32")) {
+  if (fileName.endsWith('.float32')) {
     return new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4)
   }
-  if (fileName.endsWith(".float64")) {
+  if (fileName.endsWith('.float64')) {
     const f64 = new Float64Array(
       data.buffer,
       data.byteOffset,
@@ -54,7 +54,7 @@ function parseArray(
     )
     return Float32Array.from(f64)
   }
-  if (fileName.endsWith(".float16")) {
+  if (fileName.endsWith('.float16')) {
     const u16 = new Uint16Array(
       data.buffer,
       data.byteOffset,
@@ -65,10 +65,10 @@ function parseArray(
     for (let i = 0; i < u16.length; i++) out[i] = lut[u16[i]]
     return out
   }
-  if (fileName.endsWith(".uint32")) {
+  if (fileName.endsWith('.uint32')) {
     return new Uint32Array(data.buffer, data.byteOffset, data.byteLength / 4)
   }
-  if (fileName.endsWith(".uint16")) {
+  if (fileName.endsWith('.uint16')) {
     const u16 = new Uint16Array(
       data.buffer,
       data.byteOffset,
@@ -76,10 +76,10 @@ function parseArray(
     )
     return Uint32Array.from(u16)
   }
-  if (fileName.endsWith(".uint8")) {
+  if (fileName.endsWith('.uint8')) {
     return Uint32Array.from(data)
   }
-  if (fileName.endsWith(".int32")) {
+  if (fileName.endsWith('.int32')) {
     const i32 = new Int32Array(
       data.buffer,
       data.byteOffset,
@@ -87,7 +87,7 @@ function parseArray(
     )
     return Float32Array.from(i32)
   }
-  if (fileName.endsWith(".int16")) {
+  if (fileName.endsWith('.int16')) {
     const i16 = new Int16Array(
       data.buffer,
       data.byteOffset,
@@ -95,11 +95,11 @@ function parseArray(
     )
     return Float32Array.from(i16)
   }
-  if (fileName.endsWith(".int8")) {
+  if (fileName.endsWith('.int8')) {
     const i8 = new Int8Array(data.buffer, data.byteOffset, data.byteLength)
     return Float32Array.from(i8)
   }
-  if (fileName.endsWith(".uint64") || fileName.endsWith(".int64")) {
+  if (fileName.endsWith('.uint64') || fileName.endsWith('.int64')) {
     // JS lacks 64-bit ints; read lower 32 bits, warn on overflow
     const nval = data.byteLength / 8
     const u32 = new Uint32Array(data.buffer, data.byteOffset, nval * 2)
@@ -108,7 +108,7 @@ function parseArray(
       out[i] = u32[i * 2]
       if (u32[i * 2 + 1] !== 0) {
         throw new Error(
-          "TRX 64-bit integer overflow: value exceeds 32-bit range",
+          'TRX 64-bit integer overflow: value exceeds 32-bit range',
         )
       }
     }
@@ -138,15 +138,15 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   for (const entry of zip.entries) {
     if (entry.uncompressedSize === 0) continue
 
-    const parts = entry.fileName.split("/")
+    const parts = entry.fileName.split('/')
     const fname = parts[parts.length - 1]
-    if (fname.startsWith(".")) continue
+    if (fname.startsWith('.')) continue
 
-    const pname = parts[parts.length - 2] ?? ""
-    const dname = parts[parts.length - 3] ?? ""
-    const tag = fname.split(".")[0]
+    const pname = parts[parts.length - 2] ?? ''
+    const dname = parts[parts.length - 3] ?? ''
+    const tag = fname.split('.')[0]
 
-    if (fname.includes("header.json")) {
+    if (fname.includes('header.json')) {
       // Header is informational; we don't need it for geometry
       continue
     }
@@ -157,7 +157,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     if (!arr) continue
 
     // Groups: my.trx/groups/name.uint32
-    if (pname === "groups") {
+    if (pname === 'groups') {
       groups.push({
         id: tag,
         vals: arr instanceof Uint32Array ? arr : Uint32Array.from(arr),
@@ -166,7 +166,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     }
 
     // Data per group: my.trx/dpg/GroupName/scalar.float32
-    if (dname === "dpg") {
+    if (dname === 'dpg') {
       const key = pname
       if (!dpgMap[key]) dpgMap[key] = []
       dpgMap[key].push({
@@ -177,30 +177,30 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     }
 
     // Data per vertex: my.trx/dpv/name.float32
-    if (pname === "dpv") {
+    if (pname === 'dpv') {
       dpv[tag] = arr instanceof Float32Array ? arr : Float32Array.from(arr)
       continue
     }
 
     // Data per streamline: my.trx/dps/name.float32
-    if (pname === "dps") {
+    if (pname === 'dps') {
       dps[tag] = arr instanceof Float32Array ? arr : Float32Array.from(arr)
       continue
     }
 
     // Offsets: my.trx/offsets.uint64
-    if (fname.startsWith("offsets.")) {
+    if (fname.startsWith('offsets.')) {
       rawOffsets = arr instanceof Uint32Array ? arr : Uint32Array.from(arr)
     }
 
     // Positions: my.trx/positions.3.float32
-    if (fname.startsWith("positions.3.")) {
+    if (fname.startsWith('positions.3.')) {
       vertices = arr instanceof Float32Array ? arr : Float32Array.from(arr)
     }
   }
 
   if (!vertices || !rawOffsets) {
-    throw new Error("Invalid TRX file: missing positions or offsets")
+    throw new Error('Invalid TRX file: missing positions or offsets')
   }
 
   // Build fence-post offsets: append final vertex count

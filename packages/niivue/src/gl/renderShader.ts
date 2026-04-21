@@ -1,4 +1,4 @@
-import { fragmentPreamble, volumeVertexShader } from "./volumeShaderLib"
+import { fragmentPreamble, volumeVertexShader } from './volumeShaderLib'
 
 export const vertexShader = volumeVertexShader
 

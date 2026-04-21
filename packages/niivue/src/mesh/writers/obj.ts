@@ -1,10 +1,10 @@
-export const extensions = ["OBJ"]
+export const extensions = ['OBJ']
 
 export async function write(
   positions: Float32Array,
   indices: Uint32Array,
 ): Promise<ArrayBuffer> {
-  let content = ""
+  let content = ''
   for (let i = 0; i < positions.length; i += 3) {
     content += `v ${positions[i]} ${positions[i + 1]} ${positions[i + 2]}\n`
   }

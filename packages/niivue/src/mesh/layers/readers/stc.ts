@@ -1,6 +1,6 @@
-import type { LUT } from "@/NVTypes"
+import type { LUT } from '@/NVTypes'
 
-export const extensions = ["STC"]
+export const extensions = ['STC']
 
 export type LayerReadResult = {
   values: Float32Array

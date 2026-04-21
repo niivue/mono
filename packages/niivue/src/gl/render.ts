@@ -1,17 +1,17 @@
-import { log } from "@/logger"
-import * as NVTransforms from "@/math/NVTransforms"
-import * as NVShapes from "@/mesh/NVShapes"
-import { isPaqd } from "@/NVConstants"
-import { applyCORS } from "@/NVLoader"
-import type { NVImage } from "@/NVTypes"
-import { blendOverlayData } from "@/view/NVMeshView"
-import { NVRenderer } from "@/view/NVRenderer"
-import { buildPaqdLut256, paqdResampleRaw, reorientRGBA } from "@/volume/utils"
-import * as depthPickShader from "./depthPickShader"
-import * as gradient from "./gradient"
-import * as orientOverlay from "./orientOverlay"
-import * as renderShader from "./renderShader"
-import { Shader } from "./shader"
+import { log } from '@/logger'
+import * as NVTransforms from '@/math/NVTransforms'
+import * as NVShapes from '@/mesh/NVShapes'
+import { isPaqd } from '@/NVConstants'
+import { applyCORS } from '@/NVLoader'
+import type { NVImage } from '@/NVTypes'
+import { blendOverlayData } from '@/view/NVMeshView'
+import { NVRenderer } from '@/view/NVRenderer'
+import { buildPaqdLut256, paqdResampleRaw, reorientRGBA } from '@/volume/utils'
+import * as depthPickShader from './depthPickShader'
+import * as gradient from './gradient'
+import * as orientOverlay from './orientOverlay'
+import * as renderShader from './renderShader'
+import { Shader } from './shader'
 
 export class VolumeRenderer extends NVRenderer {
   private _gl: WebGL2RenderingContext | null
@@ -119,7 +119,7 @@ export class VolumeRenderer extends NVRenderer {
     // Fix uniform array locations (Shader class doesn't handle arrays correctly)
     this.shader.uniforms.clipPlanes = gl.getUniformLocation(
       this.shader.program,
-      "clipPlanes[0]",
+      'clipPlanes[0]',
     )
 
     // Compile depth-pick shader for depth picking
@@ -130,14 +130,14 @@ export class VolumeRenderer extends NVRenderer {
     )
     this.depthPickShaderProgram.uniforms.clipPlanes = gl.getUniformLocation(
       this.depthPickShaderProgram.program,
-      "clipPlanes[0]",
+      'clipPlanes[0]',
     )
 
     this.isReady = true
   }
 
   private _createFallbackTexture2D(gl: WebGL2RenderingContext): WebGLTexture {
-    const texture = gl.createTexture()!
+    const texture = gl.createTexture() as WebGLTexture
     gl.bindTexture(gl.TEXTURE_2D, texture)
     gl.texImage2D(
       gl.TEXTURE_2D,
@@ -165,7 +165,7 @@ export class VolumeRenderer extends NVRenderer {
       image.onload = () => {
         const texture = gl.createTexture()
         if (!texture) {
-          reject(new Error("Failed to create texture"))
+          reject(new Error('Failed to create texture'))
           return
         }
         gl.bindTexture(gl.TEXTURE_2D, texture)
@@ -201,7 +201,7 @@ export class VolumeRenderer extends NVRenderer {
   async updateVolume(
     gl: WebGL2RenderingContext,
     vol: NVImage,
-    matcap: string = "",
+    matcap: string = '',
   ): Promise<void> {
     if (!this.isReady) return
 
@@ -625,7 +625,7 @@ export class VolumeRenderer extends NVRenderer {
       if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
       this.matcapTexture = newTex
     } catch (e) {
-      log.warn("Matcap load failed", e)
+      log.warn('Matcap load failed', e)
     }
   }
 

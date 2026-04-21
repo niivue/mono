@@ -1,8 +1,8 @@
-import { log } from "@/logger"
-import { COLORMAP_TYPE } from "@/NVConstants"
-import type { LUT } from "@/NVTypes"
+import { log } from '@/logger'
+import { COLORMAP_TYPE } from '@/NVConstants'
+import type { LUT } from '@/NVTypes'
 
-export const extensions = ["CURV", "CRV", "THICKNESS", "AREA", "SULC"]
+export const extensions = ['CURV', 'CRV', 'THICKNESS', 'AREA', 'SULC']
 
 export type LayerReadResult = {
   values: Float32Array
@@ -35,7 +35,7 @@ export function read(buffer: ArrayBuffer, nVert: number): LayerReadResult {
   const sig1 = view.getUint8(1)
   const sig2 = view.getUint8(2)
   if (sig0 !== 255 || sig1 !== 255 || sig2 !== 255) {
-    log.warn("Does not appear to be FreeSurfer curv format")
+    log.warn('Does not appear to be FreeSurfer curv format')
   }
   const nVertex = view.getUint32(3, false)
   const nTime = view.getUint32(11, false)
@@ -43,7 +43,7 @@ export function read(buffer: ArrayBuffer, nVert: number): LayerReadResult {
     throw new Error(`CURV file has ${nVertex} vertices, expected ${nVert}`)
   }
   if (buffer.byteLength < 15 + 4 * nVertex * nTime) {
-    throw new Error("CURV file smaller than specified")
+    throw new Error('CURV file smaller than specified')
   }
   const f32 = new Float32Array(nTime * nVertex)
   let pos = 15

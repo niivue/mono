@@ -1,17 +1,17 @@
-import { log } from "@/logger"
-import type { MZ3 } from "@/NVTypes"
-import { read as readASC } from "./asc"
+import { log } from '@/logger'
+import type { MZ3 } from '@/NVTypes'
+import { read as readASC } from './asc'
 
 export const extensions = [
-  "WHITE",
-  "PIAL",
-  "INFLATED",
-  "SPHERE",
-  "ORIG",
-  "SMOOTHWM",
-  "QSPHERE",
+  'WHITE',
+  'PIAL',
+  'INFLATED',
+  'SPHERE',
+  'ORIG',
+  'SMOOTHWM',
+  'QSPHERE',
 ]
-export const type = "mz3"
+export const type = 'mz3'
 
 export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   const bytes = new Uint8Array(buffer)
@@ -23,7 +23,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   const sig1 = view.getUint32(4, false)
   if (sig0 !== 4294966883 || sig1 !== 1919246708) {
     log.warn(
-      "Unable to recognize file type: does not appear to be FreeSurfer format.",
+      'Unable to recognize file type: does not appear to be FreeSurfer format.',
     )
   }
   let offset = 0
@@ -58,16 +58,16 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     isHeadOK = head0 === 2 && head1 === 0 && head2 === 20
   }
   if (!isHeadOK) {
-    log.warn("Unknown FreeSurfer Mesh extension code.")
+    log.warn('Unknown FreeSurfer Mesh extension code.')
   } else {
     const footer = new TextDecoder().decode(buffer.slice(offset)).trim()
-    const strings = footer.split("\n")
+    const strings = footer.split('\n')
     for (let s = 0; s < strings.length; s++) {
-      if (!strings[s].startsWith("cras")) {
+      if (!strings[s].startsWith('cras')) {
         continue
       }
-      const cras = strings[s].split("=")[1].trim()
-      const translate = cras.split(" ").map(Number)
+      const cras = strings[s].split('=')[1].trim()
+      const translate = cras.split(' ').map(Number)
       const nvert = Math.floor(positions.length / 3)
       let i = 0
       for (let v = 0; v < nvert; v++) {

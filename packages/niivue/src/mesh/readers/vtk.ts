@@ -1,18 +1,18 @@
-import { maybeDecompress } from "@/codecs/NVGz"
-import { log } from "@/logger"
-import type { MZ3, NVTractData } from "@/NVTypes"
+import { maybeDecompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
+import type { MZ3, NVTractData } from '@/NVTypes'
 
-export const extensions = ["VTK"]
-export const type = "mz3"
+export const extensions = ['VTK']
+export const type = 'mz3'
 
 function readTxtVTK(buffer: ArrayBuffer): MZ3 {
-  const txt = new TextDecoder("utf-8").decode(buffer)
+  const txt = new TextDecoder('utf-8').decode(buffer)
   const lines = txt.split(/\r?\n/)
   let lineIdx = 0
   function readLine(skipBlank = true): string | null {
     while (lineIdx < lines.length) {
       const line = lines[lineIdx++]
-      if (skipBlank && line.trim() === "") {
+      if (skipBlank && line.trim() === '') {
         continue
       }
       return line
@@ -20,33 +20,33 @@ function readTxtVTK(buffer: ArrayBuffer): MZ3 {
     return null
   }
   let line = readLine(true)
-  if (!line?.startsWith("# vtk DataFile")) {
-    throw new Error("Invalid VTK mesh")
+  if (!line?.startsWith('# vtk DataFile')) {
+    throw new Error('Invalid VTK mesh')
   }
   readLine(false) // comment line
   line = readLine(true)
-  if (!line?.startsWith("ASCII")) {
-    throw new Error("Invalid VTK mesh, expected ASCII")
+  if (!line?.startsWith('ASCII')) {
+    throw new Error('Invalid VTK mesh, expected ASCII')
   }
   line = readLine(true)
-  if (!line?.includes("POLYDATA")) {
-    throw new Error("Only able to read VTK POLYDATA")
+  if (!line?.includes('POLYDATA')) {
+    throw new Error('Only able to read VTK POLYDATA')
   }
   line = readLine(true)
-  if (!line?.includes("POINTS")) {
-    throw new Error("Invalid VTK mesh, expected POINTS")
+  if (!line?.includes('POINTS')) {
+    throw new Error('Invalid VTK mesh, expected POINTS')
   }
   const items = line.trim().split(/\s+/)
   const nvert = parseInt(items[1], 10)
   if (!Number.isFinite(nvert) || nvert < 1) {
-    throw new Error("Invalid VTK mesh")
+    throw new Error('Invalid VTK mesh')
   }
   const positions = new Float32Array(nvert * 3)
   let v = 0
   while (v < positions.length) {
     line = readLine(true)
     if (!line) {
-      throw new Error("Invalid VTK mesh")
+      throw new Error('Invalid VTK mesh')
     }
     const vals = line.trim().split(/\s+/)
     for (let i = 0; i < vals.length && v < positions.length; i++) {
@@ -55,7 +55,7 @@ function readTxtVTK(buffer: ArrayBuffer): MZ3 {
   }
   line = readLine(true)
   if (!line) {
-    throw new Error("Invalid VTK mesh")
+    throw new Error('Invalid VTK mesh')
   }
   const header = line.trim().split(/\s+/)
   const section = header[0]
@@ -65,14 +65,14 @@ function readTxtVTK(buffer: ArrayBuffer): MZ3 {
     while (tokenBuf.length === 0) {
       const l = readLine(true)
       if (!l) {
-        throw new Error("Invalid VTK mesh")
+        throw new Error('Invalid VTK mesh')
       }
       tokenBuf = l.trim().split(/\s+/).filter(Boolean)
     }
     const tok = tokenBuf.shift()
     return tok ? parseFloat(tok) : NaN
   }
-  if (section.includes("POLYGONS")) {
+  if (section.includes('POLYGONS')) {
     const npoly = parseInt(header[1], 10)
     for (let i = 0; i < npoly; i++) {
       const n = nextNumber()
@@ -87,7 +87,7 @@ function readTxtVTK(buffer: ArrayBuffer): MZ3 {
         prev = curr
       }
     }
-  } else if (section.includes("TRIANGLE_STRIPS")) {
+  } else if (section.includes('TRIANGLE_STRIPS')) {
     const nstrip = parseInt(header[1], 10)
     for (let i = 0; i < nstrip; i++) {
       const n = nextNumber()
@@ -107,8 +107,8 @@ function readTxtVTK(buffer: ArrayBuffer): MZ3 {
         idx1 = idx2
       }
     }
-  } else if (section.includes("LINES")) {
-    throw new Error("VTK LINES not supported for mesh importer")
+  } else if (section.includes('LINES')) {
+    throw new Error('VTK LINES not supported for mesh importer')
   } else {
     throw new Error(`Unsupported ASCII VTK datatype ${section}`)
   }
@@ -135,33 +135,33 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
     }
     pos++ // skip EOLN
     if (pos - startPos < 1) {
-      return ""
+      return ''
     }
     return new TextDecoder().decode(buffer.slice(startPos, pos - 1))
   }
   let line = readStr() // 1st line: signature
-  if (!line.startsWith("# vtk DataFile")) {
-    throw new Error("Invalid VTK mesh")
+  if (!line.startsWith('# vtk DataFile')) {
+    throw new Error('Invalid VTK mesh')
   }
   line = readStr(false) // 2nd line comment, n.b. MRtrix stores empty line
   line = readStr() // 3rd line ASCII/BINARY
-  if (line.startsWith("ASCII")) {
+  if (line.startsWith('ASCII')) {
     return readTxtVTK(buffer)
-  } else if (!line.startsWith("BINARY")) {
+  } else if (!line.startsWith('BINARY')) {
     throw new Error(`Invalid VTK image, expected ASCII or BINARY ${line}`)
   }
   line = readStr() // 5th line "DATASET POLYDATA"
-  if (!line.includes("POLYDATA")) {
+  if (!line.includes('POLYDATA')) {
     throw new Error(`Only able to read VTK POLYDATA ${line}`)
   }
   line = readStr() // 6th line "POINTS 10261 float"
   if (
-    !line.includes("POINTS") ||
-    (!line.includes("double") && !line.includes("float"))
+    !line.includes('POINTS') ||
+    (!line.includes('double') && !line.includes('float'))
   ) {
     log.warn(`Only able to read VTK float or double POINTS${line}`)
   }
-  const isFloat64 = line.includes("double")
+  const isFloat64 = line.includes('double')
   let items = line.trim().split(/\s+/)
   const nvert = parseInt(items[1], 10) // POINTS 10261 float
   const nvert3 = nvert * 3
@@ -181,9 +181,9 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   line = readStr() // Type, "LINES 11885 "
   items = line.trim().split(/\s+/)
   const tris: number[] = []
-  if (items[0].includes("LINES")) {
-    throw new Error("VTK LINES not supported for mesh importer")
-  } else if (items[0].includes("TRIANGLE_STRIPS")) {
+  if (items[0].includes('LINES')) {
+    throw new Error('VTK LINES not supported for mesh importer')
+  } else if (items[0].includes('TRIANGLE_STRIPS')) {
     const nstrip = parseInt(items[1], 10)
     for (let i = 0; i < nstrip; i++) {
       const ntri = reader.getInt32(pos, false) - 2 // -2 as triangle strip is creates pts - 2 faces
@@ -203,12 +203,12 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
       } // for each triangle
       pos += 8
     } // for each strip
-  } else if (items[0].includes("POLYGONS")) {
+  } else if (items[0].includes('POLYGONS')) {
     const npoly = parseInt(items[1], 10)
     const byteOffsetAfterPoly = pos
     const maybeOffsetsLine = readStr()
-    if (maybeOffsetsLine.startsWith("OFFSETS")) {
-      let isInt64 = maybeOffsetsLine.includes("int64")
+    if (maybeOffsetsLine.startsWith('OFFSETS')) {
+      let isInt64 = maybeOffsetsLine.includes('int64')
       const offset = new Uint32Array(npoly)
       let is32bitOverflow = false
       for (let i = 0; i < npoly; i++) {
@@ -229,10 +229,10 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
         throw new Error(`values exceed 2GB limit`)
       }
       const connLine = readStr()
-      if (!connLine.startsWith("CONNECTIVITY")) {
-        throw new Error("Expected CONNECTIVITY after OFFSETS")
+      if (!connLine.startsWith('CONNECTIVITY')) {
+        throw new Error('Expected CONNECTIVITY after OFFSETS')
       }
-      isInt64 = connLine.includes("int64")
+      isInt64 = connLine.includes('int64')
       const numIndices = offset[npoly - 1]
       const connectivity = new Uint32Array(numIndices)
       for (let i = 0; i < numIndices; i++) {
@@ -258,7 +258,7 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
         const ntri = reader.getInt32(pos, false) - 2
         if (i === 0 && ntri > 65535) {
           throw new Error(
-            "Invalid VTK binary polygons using little-endian data (MRtrix)",
+            'Invalid VTK binary polygons using little-endian data (MRtrix)',
           )
         }
         pos += 4
@@ -288,9 +288,9 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
  * Probe a decompressed VTK buffer to determine if it contains
  * triangulated mesh data (POLYGONS/TRIANGLE_STRIPS) or streamlines (LINES).
  */
-export function probeVTKContent(buffer: ArrayBuffer): "mesh" | "tract" {
+export function probeVTKContent(buffer: ArrayBuffer): 'mesh' | 'tract' {
   const len = buffer.byteLength
-  if (len < 20) return "mesh"
+  if (len < 20) return 'mesh'
   const bytes = new Uint8Array(buffer)
   let pos = 0
   function nextLine(skipBlank = true): string {
@@ -302,17 +302,17 @@ export function probeVTKContent(buffer: ArrayBuffer): "mesh" | "tract" {
     pos++
     return start < pos
       ? new TextDecoder().decode(buffer.slice(start, pos - 1))
-      : ""
+      : ''
   }
   let line = nextLine()
-  if (!line.startsWith("# vtk DataFile")) return "mesh"
+  if (!line.startsWith('# vtk DataFile')) return 'mesh'
   nextLine(false) // comment
   line = nextLine() // ASCII or BINARY
-  const isAscii = line.startsWith("ASCII")
-  if (!isAscii && !line.startsWith("BINARY")) return "mesh"
+  const isAscii = line.startsWith('ASCII')
+  if (!isAscii && !line.startsWith('BINARY')) return 'mesh'
   nextLine() // DATASET POLYDATA
   line = nextLine() // POINTS nvert type
-  if (!line.includes("POINTS")) return "mesh"
+  if (!line.includes('POINTS')) return 'mesh'
   const items = line.trim().split(/\s+/)
   const nvert = parseInt(items[1], 10) || 0
   if (isAscii) {
@@ -325,31 +325,31 @@ export function probeVTKContent(buffer: ArrayBuffer): "mesh" | "tract" {
     }
     // Skip METADATA if present
     line = nextLine(true)
-    if (line.startsWith("METADATA")) {
+    if (line.startsWith('METADATA')) {
       while (pos < len) {
         line = nextLine(false)
-        if (!line || line.trim() === "") break
+        if (!line || line.trim() === '') break
       }
       line = nextLine(true)
     }
   } else {
     // Skip past binary point data
-    const bytesPerVal = line.includes("double") ? 8 : 4
+    const bytesPerVal = line.includes('double') ? 8 : 4
     pos += nvert * 3 * bytesPerVal
     line = nextLine()
   }
-  return line.includes("LINES") ? "tract" : "mesh"
+  return line.includes('LINES') ? 'tract' : 'mesh'
 }
 
 /** Parse ASCII VTK LINES into NVTractData. */
 function readTxtVTKLines(buffer: ArrayBuffer): NVTractData {
-  const txt = new TextDecoder("utf-8").decode(buffer)
+  const txt = new TextDecoder('utf-8').decode(buffer)
   const lines = txt.split(/\r?\n/)
   let lineIdx = 0
   function readLine(skipBlank = true): string | null {
     while (lineIdx < lines.length) {
       const line = lines[lineIdx++]
-      if (skipBlank && line.trim() === "") continue
+      if (skipBlank && line.trim() === '') continue
       return line
     }
     return null
@@ -359,8 +359,8 @@ function readTxtVTKLines(buffer: ArrayBuffer): NVTractData {
   readLine(true) // ASCII
   readLine(true) // DATASET POLYDATA
   const pointsLine = readLine(true)
-  if (!pointsLine?.includes("POINTS")) {
-    throw new Error("Invalid VTK LINES: expected POINTS")
+  if (!pointsLine?.includes('POINTS')) {
+    throw new Error('Invalid VTK LINES: expected POINTS')
   }
   const pItems = pointsLine.trim().split(/\s+/)
   const nvert = parseInt(pItems[1], 10)
@@ -376,25 +376,25 @@ function readTxtVTKLines(buffer: ArrayBuffer): NVTractData {
   }
   // Skip METADATA if present
   let line = readLine(true)
-  if (line?.startsWith("METADATA")) {
+  if (line?.startsWith('METADATA')) {
     while (lineIdx < lines.length) {
       line = readLine(false)
-      if (!line || line.trim() === "") break
+      if (!line || line.trim() === '') break
     }
     line = readLine(true)
   }
-  if (!line?.includes("LINES")) {
-    throw new Error("Invalid VTK: expected LINES section")
+  if (!line?.includes('LINES')) {
+    throw new Error('Invalid VTK: expected LINES section')
   }
   const header = line.trim().split(/\s+/)
   const nCount = parseInt(header[1], 10)
-  if (nCount < 1) throw new Error("Corrupted VTK ASCII LINES")
+  if (nCount < 1) throw new Error('Corrupted VTK ASCII LINES')
 
   // Read next data line to check for OFFSETS style
   const dataLine = readLine(true)
-  if (!dataLine) throw new Error("Invalid VTK LINES data")
+  if (!dataLine) throw new Error('Invalid VTK LINES data')
 
-  if (dataLine.startsWith("OFFSETS")) {
+  if (dataLine.startsWith('OFFSETS')) {
     // New OFFSETS style: offset array indexes directly into positions
     const offsets = new Uint32Array(nCount + 1)
     let c = 0
@@ -427,7 +427,7 @@ function readTxtVTKLines(buffer: ArrayBuffer): NVTractData {
   function nextInt(): number {
     while (asciiIntsPos >= asciiInts.length) {
       const l = readLine(true)
-      if (!l) throw new Error("Invalid VTK LINES data")
+      if (!l) throw new Error('Invalid VTK LINES data')
       asciiInts = l
         .trim()
         .split(/\s+/)
@@ -480,7 +480,7 @@ export function readVTKLines(buffer: ArrayBuffer): NVTractData {
   const encStart = pos
   while (pos < len && bytes[pos] !== 10) pos++
   const encoding = new TextDecoder().decode(buffer.slice(encStart, pos))
-  if (encoding.startsWith("ASCII")) {
+  if (encoding.startsWith('ASCII')) {
     return readTxtVTKLines(buffer)
   }
 
@@ -495,14 +495,14 @@ export function readVTKLines(buffer: ArrayBuffer): NVTractData {
     pos++
     return startPos < pos
       ? new TextDecoder().decode(buffer.slice(startPos, pos - 1))
-      : ""
+      : ''
   }
   readStr() // signature
   readStr(false) // comment
   readStr() // BINARY
   readStr() // DATASET POLYDATA
   let line = readStr() // POINTS nvert type
-  const isFloat64 = line.includes("double")
+  const isFloat64 = line.includes('double')
   const items = line.trim().split(/\s+/)
   const nvert = parseInt(items[1], 10)
   const nvert3 = nvert * 3
@@ -526,14 +526,14 @@ export function readVTKLines(buffer: ArrayBuffer): NVTractData {
   // Check for OFFSETS style (DiPy)
   const posOK = pos
   line = readStr()
-  if (line.startsWith("OFFSETS")) {
-    const isInt64 = line.includes("int64")
+  if (line.startsWith('OFFSETS')) {
+    const isInt64 = line.includes('int64')
     const offsets = new Uint32Array(nCount + 1)
     if (isInt64) {
       for (let c = 0; c < nCount; c++) {
         const hi = reader.getInt32(pos, false)
         if (hi !== 0)
-          log.warn("int32 overflow: JavaScript does not support int64")
+          log.warn('int32 overflow: JavaScript does not support int64')
         pos += 4
         offsets[c] = reader.getInt32(pos, false)
         pos += 4

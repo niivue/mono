@@ -4,17 +4,17 @@
  *
  * Run: npx vite build --config vite.config.standalone.js
  */
-import { defineConfig } from "vite"
+import { defineConfig } from 'vite'
 
 export default defineConfig({
   publicDir: false,
   build: {
-    outDir: "public",
+    outDir: 'public',
     emptyOutDir: false,
     lib: {
-      entry: "src/standalone-entry.js",
-      formats: ["es"],
-      fileName: () => "niivue-standalone.js",
+      entry: 'src/standalone-entry.js',
+      formats: ['es'],
+      fileName: () => 'niivue-standalone.js',
     },
     // Do NOT externalize anything — bundle all deps into one file
     rollupOptions: {

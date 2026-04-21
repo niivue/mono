@@ -1,7 +1,7 @@
-import * as NVCmaps from "@/cmap/NVCmaps"
-import { applyCORS } from "@/NVLoader"
-import blurWGSL from "./blur.wgsl?raw"
-import sobelWGSL from "./sobel.wgsl?raw"
+import * as NVCmaps from '@/cmap/NVCmaps'
+import { applyCORS } from '@/NVLoader'
+import blurWGSL from './blur.wgsl?raw'
+import sobelWGSL from './sobel.wgsl?raw'
 
 // --- per-device cached pipelines ---
 interface GradientPipelines {
@@ -18,13 +18,13 @@ function ensureComputePipelines(device: GPUDevice): GradientPipelines {
   if (cached) return cached
   const compModule = device.createShaderModule({ code: sobelWGSL })
   const sobelPipeline = device.createComputePipeline({
-    layout: "auto",
-    compute: { module: compModule, entryPoint: "main" },
+    layout: 'auto',
+    compute: { module: compModule, entryPoint: 'main' },
   })
   const blurModule = device.createShaderModule({ code: blurWGSL })
   const blurPipeline = device.createComputePipeline({
-    layout: "auto",
-    compute: { module: blurModule, entryPoint: "main" },
+    layout: 'auto',
+    compute: { module: blurModule, entryPoint: 'main' },
   })
   cached = {
     sobelPipeline,
@@ -47,14 +47,14 @@ export async function volume2TextureGradientRGBA(
   // 1) Create the output textures
   const tempGradientTex = device.createTexture({
     size: [vx, vy, vz],
-    format: "rgba8unorm",
-    dimension: "3d",
+    format: 'rgba8unorm',
+    dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
   })
   const finalVolumeTexture = device.createTexture({
     size: [vx, vy, vz],
-    format: "rgba8unorm",
-    dimension: "3d",
+    format: 'rgba8unorm',
+    dimension: '3d',
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.STORAGE_BINDING |
@@ -111,7 +111,7 @@ export async function lutBytes2texture(
 ): Promise<GPUTexture> {
   const texture = device.createTexture({
     size: [256, 1, 1],
-    format: "rgba8unorm",
+    format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
   const lutUpload = new Uint8Array(lut)
@@ -143,7 +143,7 @@ export async function bitmap2texture(
   const bitmap = await createImageBitmap(image)
   const texture = device.createTexture({
     size: [bitmap.width, bitmap.height, 1],
-    format: "rgba8unorm",
+    format: 'rgba8unorm',
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.COPY_DST |
@@ -167,7 +167,7 @@ export async function bitmap2textureOrFallback(
     // 1x1 white fallback: matcap_rgb * color = color
     const texture = device.createTexture({
       size: [1, 1, 1],
-      format: "rgba8unorm",
+      format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     })
     device.queue.writeTexture(

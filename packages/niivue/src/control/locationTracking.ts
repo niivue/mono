@@ -1,17 +1,17 @@
-import type { vec3 } from "gl-matrix"
-import * as NVCmaps from "@/cmap/NVCmaps"
-import * as Drawing from "@/drawing"
-import * as NVTransforms from "@/math/NVTransforms"
-import { isPaqd } from "@/NVConstants"
+import type { vec3 } from 'gl-matrix'
+import * as NVCmaps from '@/cmap/NVCmaps'
+import { getDrawingBitmap } from '@/drawing/drawingManager'
+import * as NVTransforms from '@/math/NVTransforms'
+import { isPaqd } from '@/NVConstants'
 import type {
   LUT,
   NiiVueLocation,
   NiiVueLocationValue,
   NVImage,
   NVMesh as NVMeshType,
-} from "@/NVTypes"
-import { buildDrawingLut } from "@/view/NVDrawingTexture"
-import { getVoxelRGBA, getVoxelValue } from "@/volume/utils"
+} from '@/NVTypes'
+import { buildDrawingLut } from '@/view/NVDrawingTexture'
+import { getVoxelRGBA, getVoxelValue } from '@/volume/utils'
 
 export interface LocationContext {
   volumes: NVImage[]
@@ -56,7 +56,7 @@ export function buildLocationMessage(
   }
   // Voxel-based layer intensity
   if (ctx.volumes.length > 0) {
-    let valStr = " = "
+    let valStr = ' = '
     for (let i = 0; i < ctx.volumes.length; i++) {
       const vol = ctx.volumes[i]
       const vox = NVTransforms.mm2vox(vol, mm)
@@ -92,11 +92,11 @@ export function buildLocationMessage(
         flt = getVoxelValue(ctx.volumes[i], vox[0], vox[1], vox[2], frame)
         // TODO: read imaginary component when complex data support is added
         if (flt >= 0) {
-          valStr += "+"
+          valStr += '+'
         }
         valStr += flt2str(flt, deci)
       }
-      valStr += "   "
+      valStr += '   '
     }
     str += valStr
     // Drawing bitmap label
@@ -106,7 +106,7 @@ export function buildLocationMessage(
       if (dims) {
         const nv = dims[1] * dims[2] * dims[3]
         if (ctx.model.drawingVolume) {
-          const bitmap = Drawing.getDrawingBitmap(ctx.model.drawingVolume)
+          const bitmap = getDrawingBitmap(ctx.model.drawingVolume)
           if (bitmap.length === nv) {
             const vox = ctx.model.scene2vox(ctx.model.scene.crosshairPos)
             const vx = vox[0] + vox[1] * dims[1] + vox[2] * dims[1] * dims[2]

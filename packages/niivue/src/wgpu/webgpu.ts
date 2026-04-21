@@ -1,7 +1,7 @@
-import type { NVImage } from "@/NVTypes"
-import { reorientRGBA } from "@/volume/utils"
-import volume2rgbaWGSL from "./orient.wgsl?raw"
-import * as wgpu from "./wgpu"
+import type { NVImage } from '@/NVTypes'
+import { reorientRGBA } from '@/volume/utils'
+import volume2rgbaWGSL from './orient.wgsl?raw'
+import * as wgpu from './wgpu'
 
 type PipelineCacheEntry = {
   pipeline: GPUComputePipeline
@@ -25,13 +25,13 @@ function ensureVolume2RGBAPipeline(
     return perDevice[pipelineType]
   }
   let shaderSource = volume2rgbaWGSL
-  let sampleType: GPUTextureSampleType = "uint"
-  if (pipelineType === "float") {
-    shaderSource = shaderSource.replaceAll("texture_3d<u32>", "texture_3d<f32>")
-    sampleType = "unfilterable-float"
-  } else if (pipelineType === "sint") {
-    shaderSource = shaderSource.replaceAll("texture_3d<u32>", "texture_3d<i32>")
-    sampleType = "sint"
+  let sampleType: GPUTextureSampleType = 'uint'
+  if (pipelineType === 'float') {
+    shaderSource = shaderSource.replaceAll('texture_3d<u32>', 'texture_3d<f32>')
+    sampleType = 'unfilterable-float'
+  } else if (pipelineType === 'sint') {
+    shaderSource = shaderSource.replaceAll('texture_3d<u32>', 'texture_3d<i32>')
+    sampleType = 'sint'
   }
   const module = device.createShaderModule({ code: shaderSource })
   const layout = device.createBindGroupLayout({
@@ -39,36 +39,36 @@ function ensureVolume2RGBAPipeline(
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
-        buffer: { type: "uniform" },
+        buffer: { type: 'uniform' },
       },
       {
         binding: 1,
         visibility: GPUShaderStage.COMPUTE,
         texture: {
           sampleType: sampleType,
-          viewDimension: "3d",
+          viewDimension: '3d',
         },
       },
       {
         binding: 2,
         visibility: GPUShaderStage.COMPUTE,
-        texture: { viewDimension: "2d" },
+        texture: { viewDimension: '2d' },
       },
       {
         binding: 3,
         visibility: GPUShaderStage.COMPUTE,
-        storageTexture: { format: "rgba8unorm", viewDimension: "3d" },
+        storageTexture: { format: 'rgba8unorm', viewDimension: '3d' },
       },
       {
         binding: 4,
         visibility: GPUShaderStage.COMPUTE,
-        sampler: { type: "filtering" },
+        sampler: { type: 'filtering' },
       },
     ],
   })
   const pipeline = device.createComputePipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-    compute: { module, entryPoint: "main" },
+    compute: { module, entryPoint: 'main' },
   })
   perDevice[pipelineType] = { pipeline, layout }
   return perDevice[pipelineType]
@@ -76,7 +76,7 @@ function ensureVolume2RGBAPipeline(
 
 function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
   if (!nvimage.dimsRAS || !nvimage.img2RASstep || !nvimage.img2RASstart) {
-    throw new Error("rgba2Texture: missing RAS info")
+    throw new Error('rgba2Texture: missing RAS info')
   }
   const isRAS =
     nvimage.img2RASstep[0] === 1 &&
@@ -87,7 +87,7 @@ function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
   const nVox3D = dimsIn[0] * dimsIn[1] * dimsIn[2]
   const dt = nvimage.hdr.datatypeCode
   if (!nvimage.img) {
-    throw new Error("rgba2Texture: missing image data")
+    throw new Error('rgba2Texture: missing image data')
   }
   const raw = new Uint8Array(
     nvimage.img.buffer,
@@ -141,8 +141,8 @@ function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
   const texDims = isRAS ? dimsIn : dimsOut
   const rgbaTexture = device.createTexture({
     size: texDims,
-    format: "rgba8unorm",
-    dimension: "3d",
+    format: 'rgba8unorm',
+    dimension: '3d',
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.COPY_DST |
@@ -162,31 +162,31 @@ export async function volume2Texture(
   nvimage: NVImage,
 ): Promise<GPUTexture> {
   if (!nvimage.dimsRAS || !nvimage.img2RASstart || !nvimage.img2RASstep) {
-    throw new Error("volume2Texture: missing RAS mapping")
+    throw new Error('volume2Texture: missing RAS mapping')
   }
   if (!nvimage.img) {
-    throw new Error("volume2Texture: missing image data")
+    throw new Error('volume2Texture: missing image data')
   }
   const dt = nvimage.hdr.datatypeCode
-  let format: GPUTextureFormat = "r8uint"
-  let pipelineType = "uint"
+  let format: GPUTextureFormat = 'r8uint'
+  let pipelineType = 'uint'
   let bytesPerVoxel = 1
   if (dt === 2) {
     // UINT8
-    format = "r8uint"
+    format = 'r8uint'
   } else if (dt === 4 || dt === 8) {
     // INT16 or INT32
-    format = dt === 4 ? "r16sint" : "r32sint"
-    pipelineType = "sint"
+    format = dt === 4 ? 'r16sint' : 'r32sint'
+    pipelineType = 'sint'
     bytesPerVoxel = dt === 4 ? 2 : 4
   } else if (dt === 16 || dt === 32) {
     // FLOAT32 or COMPLEX
-    format = "r32float"
-    pipelineType = "float"
+    format = 'r32float'
+    pipelineType = 'float'
     bytesPerVoxel = 4
   } else if (dt === 512 || dt === 768) {
     // UINT16 or UINT32
-    format = dt === 512 ? "r16uint" : "r32uint"
+    format = dt === 512 ? 'r16uint' : 'r32uint'
     bytesPerVoxel = dt === 512 ? 2 : 4
   } else if (dt === 2304 || dt === 128) {
     return rgba2Texture(device, nvimage)
@@ -201,7 +201,7 @@ export async function volume2Texture(
   const scalarTexture = device.createTexture({
     size: dimsIn,
     format: format,
-    dimension: "3d",
+    dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
   const imgData = new Uint8Array(
@@ -257,8 +257,8 @@ export async function volume2Texture(
   // 3) Create RGBA storage texture sized dimsOut (this is what we will return)
   const rgbaTexture = device.createTexture({
     size: dimsOut,
-    format: "rgba8unorm",
-    dimension: "3d",
+    format: 'rgba8unorm',
+    dimension: '3d',
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.STORAGE_BINDING |
@@ -268,12 +268,12 @@ export async function volume2Texture(
   // const colormapTex = await wgpu.lut2texture(device, lutName)
   const lut = (nvimage.gpu as { lut?: Uint8ClampedArray } | undefined)?.lut
   if (!lut) {
-    throw new Error("volume2Texture: missing LUT")
+    throw new Error('volume2Texture: missing LUT')
   }
   const colormapTex = await wgpu.lutBytes2texture(device, lut)
   const sampler = device.createSampler({
-    magFilter: "linear",
-    minFilter: "linear",
+    magFilter: 'linear',
+    minFilter: 'linear',
   })
   // 5) Create bind group
   const bindGroup = device.createBindGroup({

@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
@@ -31,7 +31,7 @@ xraySlide.oninput = function () {
   nv1.meshXRay = this.value * 0.01
 }
 
-colorBtn.addEventListener("input", (event) => {
+colorBtn.addEventListener('input', (event) => {
   const input = event.target
   const hex = input.value
   const r = parseInt(hex.slice(1, 3), 16) / 255
@@ -41,7 +41,7 @@ colorBtn.addEventListener("input", (event) => {
 })
 
 webgpuCheck.onclick = function () {
-  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
 const nv1 = new NiiVue({ backgroundColor: [0, 0, 0, 1] })
@@ -52,37 +52,37 @@ nv1.setClipPlanes([
   [0.1, 180, 90],
   [0.0, 0, -90],
 ])
-await nv1.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
+await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 
 // Load three tract meshes (TRK, TCK, VTK) + brain surface
 await nv1.loadMeshes([
   {
-    url: "/meshes/tract.IFOF_R.trk",
+    url: '/meshes/tract.IFOF_R.trk',
     rgba255: [0, 255, 0, 255],
     tractOptions: { fiberRadius: 0.5 },
   },
   {
-    url: "/meshes/tract.SLF1_R.tck",
+    url: '/meshes/tract.SLF1_R.tck',
     rgba255: [0, 0, 255, 255],
     tractOptions: { fiberRadius: 0.5 },
   },
   {
-    url: "/meshes/tract.FAT_R.vtk",
+    url: '/meshes/tract.FAT_R.vtk',
     rgba255: [180, 180, 0, 255],
     tractOptions: { fiberRadius: 0.5 },
   },
-  { url: "/meshes/BrainMesh_ICBM152.lh.mz3", rgba255: [242, 174, 177, 255] },
+  { url: '/meshes/BrainMesh_ICBM152.lh.mz3', rgba255: [242, 174, 177, 255] },
 ])
 
 // Populate shader dropdown from available shaders
 const shaders = nv1.meshShaders
 for (const name of shaders) {
-  const opt = document.createElement("option")
+  const opt = document.createElement('option')
   opt.value = name
   opt.textContent = name.charAt(0).toUpperCase() + name.slice(1)
-  if (name === "outline") opt.selected = true
+  if (name === 'outline') opt.selected = true
   shaderDrop.appendChild(opt)
 }
 
 // Apply initial shader selection
-shaderDrop.dispatchEvent(new Event("change"))
+shaderDrop.dispatchEvent(new Event('change'))

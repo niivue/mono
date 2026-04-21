@@ -3,16 +3,16 @@
  * Used by NVVolume.ts and volume transforms.
  */
 
-import { mat4, vec3 } from "gl-matrix"
-import { log } from "@/logger"
-import { isPaqd, NiiDataType } from "@/NVConstants"
+import { mat4, vec3 } from 'gl-matrix'
+import { log } from '@/logger'
+import { isPaqd, NiiDataType } from '@/NVConstants'
 import type {
   NIFTI1,
   NIFTI2,
   NIFTIHeader,
   NVImage,
   TypedVoxelArray,
-} from "@/NVTypes"
+} from '@/NVTypes'
 
 // ============================================================================
 // Data Type Utilities
@@ -193,7 +193,7 @@ export function calMinMax(
   if (!imgRaw) return [0, 255, 0, 255] // RGB data
   const nVox3D = hdr.dims[1] * hdr.dims[2] * hdr.dims[3]
   const stats = robustRange(imgRaw, 0, nVox3D)
-  if (!stats) throw new Error("infinite image")
+  if (!stats) throw new Error('infinite image')
   const { mn, mx, nZero } = stats
   const mnScale = r2c(mn)
   const mxScale = r2c(mx)
@@ -224,7 +224,7 @@ export function calMinMaxFrame(
 ): [number, number, number, number] {
   const hdr = vol.hdr
   const r2c = (v: number) => v * hdr.scl_slope + hdr.scl_inter
-  const imgRaw = toTypedView(vol.img!, hdr.datatypeCode)
+  const imgRaw = toTypedView(vol.img as TypedVoxelArray, hdr.datatypeCode)
   if (!imgRaw) return [0, 255, 0, 255] // RGB data
   const offset = frame * vol.nVox3D
   const end = Math.min(offset + vol.nVox3D, imgRaw.length)
@@ -335,8 +335,8 @@ export function createNiftiHeader(
     cal_min: 0,
     slice_duration: 0,
     toffset: 0,
-    description: "",
-    aux_file: "",
+    description: '',
+    aux_file: '',
     qform_code: 0,
     sform_code: 1,
     quatern_b: 0,
@@ -346,8 +346,8 @@ export function createNiftiHeader(
     qoffset_y: 0,
     qoffset_z: 0,
     affine: affine4x4,
-    intent_name: "",
-    magic: "n+1",
+    intent_name: '',
+    magic: 'n+1',
   }
 }
 
@@ -516,7 +516,7 @@ export function reorientDrawingToNative(
   const start = volume.img2RASstart
   const dimsRAS = volume.dimsRAS
   if (!step || !start || !dimsRAS) {
-    log.warn("Missing RAS transformation info, cannot reorient drawing")
+    log.warn('Missing RAS transformation info, cannot reorient drawing')
     return drawingBytes
   }
   const dims = volume.hdr.dims

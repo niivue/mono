@@ -1,18 +1,18 @@
-import type { MZ3 } from "@/NVTypes"
+import type { MZ3 } from '@/NVTypes'
 
-export const extensions = ["STL"]
-export const type = "mz3"
+export const extensions = ['STL']
+export const type = 'mz3'
 
 function readTxtSTL(buffer: ArrayBuffer): MZ3 {
-  const enc = new TextDecoder("utf-8")
+  const enc = new TextDecoder('utf-8')
   const txt = enc.decode(buffer)
-  const lines = txt.split("\n")
-  if (!lines[0].startsWith("solid")) {
-    throw new Error("Not a valid STL file")
+  const lines = txt.split('\n')
+  if (!lines[0].startsWith('solid')) {
+    throw new Error('Not a valid STL file')
   }
   const pts: number[] = []
   for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].includes("vertex")) {
+    if (!lines[i].includes('vertex')) {
       continue
     }
     const items = lines[i].trim().split(/\s+/)
@@ -22,7 +22,7 @@ function readTxtSTL(buffer: ArrayBuffer): MZ3 {
   }
   const npts = Math.floor(pts.length / 3)
   if (npts * 3 !== pts.length) {
-    throw new Error("Unable to parse ASCII STL file.")
+    throw new Error('Unable to parse ASCII STL file.')
   }
   const positions = new Float32Array(pts)
   const indices = new Uint32Array(npts)

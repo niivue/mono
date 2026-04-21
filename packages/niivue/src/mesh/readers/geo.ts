@@ -1,20 +1,20 @@
-import { log } from "@/logger"
-import type { MZ3 } from "@/NVTypes"
+import { log } from '@/logger'
+import type { MZ3 } from '@/NVTypes'
 
-export const extensions = ["BYU", "GEO"]
-export const type = "mz3"
+export const extensions = ['BYU', 'GEO']
+export const type = 'mz3'
 
 function readGEO(buffer: ArrayBuffer, isFlipWinding = false): MZ3 {
-  const enc = new TextDecoder("utf-8")
+  const enc = new TextDecoder('utf-8')
   const txt = enc.decode(buffer)
-  const lines = txt.split("\n")
+  const lines = txt.split('\n')
   const header = lines[0].trim().split(/\s+/)
   const num_p = parseInt(header[0], 10)
   let num_v = parseInt(header[1], 10)
   let num_f = parseInt(header[2], 10)
   const num_c = parseInt(header[3], 10)
   if (num_p > 1 || num_c !== num_f * 3) {
-    log.warn("Multi-part BYU/GEO header or not a triangular mesh.")
+    log.warn('Multi-part BYU/GEO header or not a triangular mesh.')
   }
   const pts: number[] = []
   num_v *= 3

@@ -1,6 +1,6 @@
-import { ubuntu } from "../src/assets/fonts"
-import { cortex, shiny } from "../src/assets/matcaps"
-import NiiVue from "../src/index.ts"
+import { ubuntu } from '../src/assets/fonts'
+import { cortex, shiny } from '../src/assets/matcaps'
+import NiiVue from '../src/index.ts'
 
 let isAnimating = false
 let azimuth = 0
@@ -9,16 +9,16 @@ let lastTime = performance.now()
 let frameCount = 0
 
 saveBtn.onclick = () => {
-  nv1.saveDocument("myScene.nvd")
+  nv1.saveDocument('myScene.nvd')
 }
 saveMeshBtn.onclick = () => {
   // nv1.saveMesh(0, 'myMesh.iwm.cbor')
-  nv1.saveMesh(0, "myMesh.mz3")
+  nv1.saveMesh(0, 'myMesh.mz3')
 }
 
 saveVolBtn.onclick = () => {
   //nv1.saveVolume({ filename: 'myImage.iwi.cbor'})
-  nv1.saveVolume({ filename: "myImage.nii.gz" })
+  nv1.saveVolume({ filename: 'myImage.nii.gz' })
 }
 
 clipSelect.onchange = function () {
@@ -95,7 +95,7 @@ animateCheck.onclick = () => {
     frameCount = 0
     requestAnimationFrame(animate)
   } else if (!isAnimating) {
-    fpsCounter.textContent = "FPS: --"
+    fpsCounter.textContent = 'FPS: --'
   }
 }
 
@@ -121,15 +121,15 @@ orientCheck.onclick = function () {
 }
 
 const parseNames = (input) => {
-  if (!input || input === "none") return []
+  if (!input || input === 'none') return []
   return input
-    .split("+")
+    .split('+')
     .map((n) => n.trim())
     .filter(Boolean)
 }
 
 meshSelect.onchange = async () => {
-  if (meshSelect.value === "none") {
+  if (meshSelect.value === 'none') {
     await nv1.loadMeshes([])
     return
   }
@@ -145,7 +145,7 @@ meshSelect.onchange = async () => {
 
 volumeSelect.onchange = async () => {
   nv1.removeAllVolumes()
-  if (volumeSelect.value === "none") {
+  if (volumeSelect.value === 'none') {
     return
   }
   const names = parseNames(volumeSelect.value)
@@ -158,7 +158,7 @@ volumeSelect.onchange = async () => {
     const opts = { colormap: clr }
 
     if (i === 1) {
-      opts.colormap = "warm"
+      opts.colormap = 'warm'
       opts.calMin = 3
       opts.calMax = 6
     }
@@ -180,7 +180,7 @@ gradSlider.oninput = () => {
   matcapSelect.disabled = Number(gradSlider.value) < 1
 }
 
-colorBtn.addEventListener("input", (event) => {
+colorBtn.addEventListener('input', (event) => {
   const input = event.target
   const hex = input.value
   const r = parseInt(hex.slice(1, 3), 16) / 255
@@ -191,7 +191,7 @@ colorBtn.addEventListener("input", (event) => {
 
 dprSelect.onchange = async () => {
   let v = dprSelect.value.trim()
-  if (v.toLowerCase() === "auto") v = "-1"
+  if (v.toLowerCase() === 'auto') v = '-1'
   nv1.devicePixelRatio = parseFloat(v)
 }
 
@@ -231,14 +231,14 @@ colorSelect.onchange = function () {
 }
 
 webgpuCheck.onchange = async function () {
-  await nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
 antiAliasCheck.onchange = async () => {
   await nv1.reinitializeView({ isAntiAlias: antiAliasCheck.checked })
 }
 
-const api = webgpuCheck.checked ? "webgpu" : "webgl2"
+const api = webgpuCheck.checked ? 'webgpu' : 'webgl2'
 const nv1 = new NiiVue({
   backend: api,
   backgroundColor: [0.4, 0.4, 0.45, 1],
@@ -248,16 +248,16 @@ const nv1 = new NiiVue({
 await nv1.attachToCanvas(gl1)
 
 for (const shader of nv1.meshShaders) {
-  const option = document.createElement("option")
+  const option = document.createElement('option')
   option.value = shader
   option.textContent = shader.charAt(0).toUpperCase() + shader.slice(1)
   shaderSelect.appendChild(option)
 }
 for (const cmap of nv1.colormaps) {
-  const option = document.createElement("option")
+  const option = document.createElement('option')
   option.value = cmap
   option.textContent = cmap.charAt(0).toUpperCase() + cmap.slice(1)
-  if (cmap.toLowerCase() === "gray") {
+  if (cmap.toLowerCase() === 'gray') {
     option.selected = true
   }
   colormapSelect.appendChild(option)

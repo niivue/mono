@@ -1,5 +1,5 @@
-const { readFileSync } = require("node:fs")
-const { join } = require("node:path")
+const { readFileSync } = require('node:fs')
+const { join } = require('node:path')
 
 /**
  * Local NX plugin that reads pixi.toml and pyproject.toml files to infer
@@ -15,9 +15,9 @@ const { join } = require("node:path")
  * static dependency edge for each listed project that exists in the workspace.
  */
 
-const name = "nx-pixi-plugin"
+const name = 'nx-pixi-plugin'
 
-const MANIFEST_FILES = ["pixi.toml", "pyproject.toml"]
+const MANIFEST_FILES = ['pixi.toml', 'pyproject.toml']
 
 /**
  * Parse [tool.nx] workspace-dependencies from a TOML file's content.
@@ -27,16 +27,16 @@ function parseWorkspaceDeps(content) {
   const deps = []
   let inToolNx = false
 
-  for (const line of content.split("\n")) {
+  for (const line of content.split('\n')) {
     const trimmed = line.trim()
 
-    if (trimmed.startsWith("[")) {
-      inToolNx = trimmed === "[tool.nx]"
+    if (trimmed.startsWith('[')) {
+      inToolNx = trimmed === '[tool.nx]'
       continue
     }
 
     if (!inToolNx) continue
-    if (!trimmed || trimmed.startsWith("#")) continue
+    if (!trimmed || trimmed.startsWith('#')) continue
 
     // Match: workspace-dependencies = ["proj-a", "proj-b"]
     const match = trimmed.match(/^workspace-dependencies\s*=\s*\[([^\]]*)\]/)
@@ -46,7 +46,7 @@ function parseWorkspaceDeps(content) {
     if (!names) continue
 
     for (const quoted of names) {
-      deps.push(quoted.replace(/"/g, ""))
+      deps.push(quoted.replace(/"/g, ''))
     }
   }
 
@@ -67,7 +67,7 @@ const createDependencies = (_options, context) => {
 
       let content
       try {
-        content = readFileSync(manifestPath, "utf-8")
+        content = readFileSync(manifestPath, 'utf-8')
       } catch {
         continue
       }
@@ -77,7 +77,7 @@ const createDependencies = (_options, context) => {
           deps.push({
             source: projectName,
             target: depName,
-            type: "static",
+            type: 'static',
             sourceFile: join(project.root, manifest),
           })
         }

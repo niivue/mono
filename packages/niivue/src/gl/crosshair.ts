@@ -1,5 +1,5 @@
-import type NVModel from "@/NVModel"
-import type { NVMesh, WebGLMeshGPU } from "@/NVTypes"
+import type NVModel from '@/NVModel'
+import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
 import {
   BYTES_PER_VERTEX,
   buildVertexData,
@@ -8,9 +8,9 @@ import {
   packColor,
   shouldCullCylinder,
   VERTS_PER_CYLINDER,
-} from "@/view/NVCrosshair"
-import { NVRenderer } from "@/view/NVRenderer"
-import * as mesh from "./mesh"
+} from '@/view/NVCrosshair'
+import { NVRenderer } from '@/view/NVRenderer'
+import * as mesh from './mesh'
 
 export type CrosshairResources = WebGLMeshGPU & {
   shaderType: string
@@ -36,7 +36,7 @@ export class CrosshairRenderer extends NVRenderer {
       // Create VAO
       const vao = gl.createVertexArray()
       if (!vao) {
-        throw new Error("Failed to create crosshair VAO")
+        throw new Error('Failed to create crosshair VAO')
       }
       gl.bindVertexArray(vao)
 
@@ -44,7 +44,7 @@ export class CrosshairRenderer extends NVRenderer {
       const vertexBuffer = gl.createBuffer()
       if (!vertexBuffer) {
         gl.bindVertexArray(null)
-        throw new Error("Failed to create crosshair vertex buffer")
+        throw new Error('Failed to create crosshair vertex buffer')
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer)
       // Allocate buffer with initial size, data will be written in update()
@@ -66,7 +66,7 @@ export class CrosshairRenderer extends NVRenderer {
       const indexBuffer = gl.createBuffer()
       if (!indexBuffer) {
         gl.bindVertexArray(null)
-        throw new Error("Failed to create crosshair index buffer")
+        throw new Error('Failed to create crosshair index buffer')
       }
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer)
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW)
@@ -78,7 +78,7 @@ export class CrosshairRenderer extends NVRenderer {
         vertexBuffer,
         indexBuffer,
         indexCount: indices.length,
-        shaderType: "phong",
+        shaderType: 'phong',
       })
     }
 
@@ -126,12 +126,12 @@ export class CrosshairRenderer extends NVRenderer {
       if (!cyl.vao) continue
       mesh.drawWithGpu(
         gl,
-        { opacity: 1.0, shaderType: "phong" } as NVMesh,
+        { opacity: 1.0, shaderType: 'phong' } as NVMesh,
         cyl,
         mvpMatrix,
         normalMatrix,
         1.0,
-        "phong",
+        'phong',
       )
     }
   }
@@ -150,12 +150,12 @@ export class CrosshairRenderer extends NVRenderer {
       if (!cyl.vao) continue
       mesh.drawXRay(
         gl,
-        { opacity: 1.0, shaderType: "phong" } as NVMesh,
+        { opacity: 1.0, shaderType: 'phong' } as NVMesh,
         cyl,
         mvpMatrix,
         normalMatrix,
         xrayAlpha,
-        "phong",
+        'phong',
       )
     }
   }

@@ -1,8 +1,8 @@
-import type { NiiVueOptions } from "@niivue/niivue"
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react"
-import type { LayoutConfig } from "./layouts"
-import { NvSceneController } from "./nvscene-controller"
-import type { NvSceneEventMap } from "./types"
+import type { NiiVueOptions } from '@niivue/niivue'
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import type { LayoutConfig } from './layouts'
+import { NvSceneController } from './nvscene-controller'
+import type { NvSceneEventMap } from './types'
 
 export function useScene(
   controller?: NvSceneController,

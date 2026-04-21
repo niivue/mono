@@ -1,10 +1,9 @@
-import NiiVueGPU from "@niivue/niivue"
-import { SLICE_TYPE } from "@niivue/niivue"
-import type { NiiVueOptions, NVImage } from "@niivue/niivue"
-import type { CSSProperties } from "react"
-import { useEffect, useRef } from "react"
-import { defaultViewerOptions } from "./nvscene-controller"
-import type { ImageFromUrlOptions } from "./types"
+import type { NiiVueOptions, NVImage } from '@niivue/niivue'
+import NiiVueGPU, { SLICE_TYPE } from '@niivue/niivue'
+import type { CSSProperties } from 'react'
+import { useEffect, useRef } from 'react'
+import { defaultViewerOptions } from './nvscene-controller'
+import type { ImageFromUrlOptions } from './types'
 
 /** Tracked visual properties for a loaded volume */
 interface VolumeVisualProps {
@@ -62,13 +61,13 @@ export const NvViewer = ({
     const container = containerRef.current
     if (!container) return
 
-    const canvas = document.createElement("canvas")
-    canvas.className = "niivue-canvas"
-    canvas.style.position = "absolute"
-    canvas.style.top = "0"
-    canvas.style.left = "0"
-    canvas.style.width = "100%"
-    canvas.style.height = "100%"
+    const canvas = document.createElement('canvas')
+    canvas.className = 'niivue-canvas'
+    canvas.style.position = 'absolute'
+    canvas.style.top = '0'
+    canvas.style.left = '0'
+    canvas.style.width = '100%'
+    canvas.style.height = '100%'
     container.appendChild(canvas)
 
     const mergedOptions: Partial<NiiVueOptions> = {
@@ -78,10 +77,10 @@ export const NvViewer = ({
 
     const nv = new NiiVueGPU(mergedOptions)
 
-    nv.addEventListener("locationChange", (evt) => {
+    nv.addEventListener('locationChange', (evt) => {
       onLocationChangeRef.current?.(evt.detail)
     })
-    nv.addEventListener("volumeLoaded", (evt) => {
+    nv.addEventListener('volumeLoaded', (evt) => {
       onImageLoadedRef.current?.(evt.detail.volume)
     })
 
@@ -122,7 +121,7 @@ export const NvViewer = ({
 
     const desiredUrls = new Set(
       (volumes ?? []).map((v) =>
-        typeof v.url === "string" ? v.url : v.url.name,
+        typeof v.url === 'string' ? v.url : v.url.name,
       ),
     )
     const currentVolumes = loadedVolumesRef.current
@@ -142,7 +141,7 @@ export const NvViewer = ({
     }
 
     for (const opts of volumes ?? []) {
-      const urlKey = typeof opts.url === "string" ? opts.url : opts.url.name
+      const urlKey = typeof opts.url === 'string' ? opts.url : opts.url.name
       if (!currentVolumes.has(urlKey)) {
         // Add new volumes
         const props = extractVisualProps(opts)
@@ -153,7 +152,7 @@ export const NvViewer = ({
         })
       } else {
         // Update visual props on already-loaded volumes
-        const prev = currentVolumes.get(urlKey)!
+        const prev = currentVolumes.get(urlKey) as VolumeVisualProps
         const next = extractVisualProps(opts)
 
         const volIdx = nv.volumes.findIndex(
@@ -188,7 +187,7 @@ export const NvViewer = ({
     <div
       ref={containerRef}
       className={className}
-      style={{ position: "relative", ...style }}
+      style={{ position: 'relative', ...style }}
     />
   )
 }

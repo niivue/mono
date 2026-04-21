@@ -1,5 +1,5 @@
-import * as NVConstants from "@/NVConstants"
-import type NVModel from "@/NVModel"
+import * as NVConstants from '@/NVConstants'
+import type NVModel from '@/NVModel'
 
 const OUT_OF_RANGE = 1e9
 

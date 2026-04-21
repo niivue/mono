@@ -1,4 +1,4 @@
-import { mock } from "bun:test"
+import { mock } from 'bun:test'
 
 // Real enum values from @niivue/niivue
 export const SLICE_TYPE = {
@@ -69,7 +69,7 @@ export function createMockNiiVueGPU(): MockNiiVueGPU {
     destroy: mock(() => {}),
     addEventListener: mock((name: string, cb: (evt: unknown) => void) => {
       if (!handlers.has(name)) handlers.set(name, new Set())
-      handlers.get(name)!.add(cb)
+      handlers.get(name)?.add(cb)
     }),
     removeEventListener: mock((name: string, cb: (evt: unknown) => void) => {
       handlers.get(name)?.delete(cb)
@@ -135,7 +135,7 @@ export class NVImage {}
  * that import modules depending on @niivue/niivue.
  */
 export function registerNiivueMock(): void {
-  mock.module("@niivue/niivue", () => ({
+  mock.module('@niivue/niivue', () => ({
     default: NiiVueGPU,
     NiiVueGPU,
     NVImage,

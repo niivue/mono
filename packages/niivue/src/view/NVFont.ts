@@ -1,4 +1,4 @@
-import * as NVLoader from "@/NVLoader"
+import * as NVLoader from '@/NVLoader'
 
 // --- Shared types and constants for both GL and GPU font renderers ---
 
@@ -49,7 +49,7 @@ export function resolveHeaderLabel(
   isDebug: boolean,
 ): string {
   if (!hasContent) return placeholderText
-  return isDebug ? backendName : ""
+  return isDebug ? backendName : ''
 }
 
 export function calculateFontSizePx(
@@ -83,7 +83,7 @@ export function buildTextLayout(
   const fontSize = fontPx * scale
   const atlasRange = fontMets.distanceRange
   const lineHeight = fontSize * 1.2
-  const lines = str.split("\n")
+  const lines = str.split('\n')
   const lineCodes: number[][] = []
   let totalGlyphs = 0
   let maxWidth = 0
@@ -212,7 +212,7 @@ export function parseFontMetrics(jsonMetrics: FontJson): FontMetrics {
 
 export async function getFontMetrics(fnm: string): Promise<FontMetrics> {
   const fontBuffer = await NVLoader.fetchFile(fnm)
-  const decoder = new TextDecoder("utf-8")
+  const decoder = new TextDecoder('utf-8')
   const jsonString = decoder.decode(fontBuffer)
   const jsonMetrics = JSON.parse(jsonString) as FontJson
   return parseFontMetrics(jsonMetrics)

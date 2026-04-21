@@ -1,9 +1,8 @@
-import NiiVueGPU from "@niivue/niivue"
-import { DRAG_MODE, SHOW_RENDER, SLICE_TYPE } from "@niivue/niivue"
-import type { NiiVueOptions, NVImage } from "@niivue/niivue"
-import type { LayoutConfig } from "./layouts"
-import { defaultLayouts } from "./layouts"
-import type { ImageFromUrlOptions, NvSceneEventMap, ViewerState } from "./types"
+import type { NiiVueOptions, NVImage } from '@niivue/niivue'
+import NiiVueGPU, { DRAG_MODE, SHOW_RENDER, SLICE_TYPE } from '@niivue/niivue'
+import type { LayoutConfig } from './layouts'
+import { defaultLayouts } from './layouts'
+import type { ImageFromUrlOptions, NvSceneEventMap, ViewerState } from './types'
 
 export { SLICE_TYPE }
 
@@ -26,8 +25,8 @@ export interface NvSceneControllerSnapshot {
 }
 
 export interface BroadcastOptions {
-  "2d": boolean
-  "3d": boolean
+  '2d': boolean
+  '3d': boolean
 }
 
 export interface SliceLayoutTile {
@@ -97,28 +96,28 @@ export const heroRenderSliceLayout: SliceLayoutTile[] = [
 ]
 
 export const defaultSliceLayouts: Record<string, SliceLayoutConfig> = {
-  "axial-hero": {
-    label: "Axial Hero",
+  'axial-hero': {
+    label: 'Axial Hero',
     layout: defaultSliceLayout,
   },
-  "sag-left": {
-    label: "Sag Left Split",
+  'sag-left': {
+    label: 'Sag Left Split',
     layout: splitSliceLayout,
   },
-  "tri-h": {
-    label: "Tri Horizontal",
+  'tri-h': {
+    label: 'Tri Horizontal',
     layout: triSliceLayout,
   },
-  "tri-v": {
-    label: "Tri Stacked",
+  'tri-v': {
+    label: 'Tri Stacked',
     layout: stackedSliceLayout,
   },
-  "quad-render": {
-    label: "Quad Render",
+  'quad-render': {
+    label: 'Quad Render',
     layout: quadSliceLayout,
   },
-  "render-hero": {
-    label: "Render Hero",
+  'render-hero': {
+    label: 'Render Hero',
     layout: heroRenderSliceLayout,
   },
 }
@@ -147,7 +146,7 @@ export const defaultViewerOptions: Partial<NiiVueOptions> = {
 export class NvSceneController {
   containerElement: HTMLElement | null = null
   viewers: ViewerSlot[] = []
-  currentLayout: string = "1x1"
+  currentLayout: string = '1x1'
   slots: number
   layouts: Record<string, LayoutConfig>
   onViewerCreated?: NiivueCallback
@@ -157,7 +156,7 @@ export class NvSceneController {
   private nextId = 0
   private viewersById = new Map<string, ViewerSlot>()
   private broadcasting = false
-  private broadcastOptions: BroadcastOptions = { "2d": true, "3d": true }
+  private broadcastOptions: BroadcastOptions = { '2d': true, '3d': true }
   private viewerSliceLayouts = new Map<string, SliceLayoutTile[] | null>()
   private viewerDefaults: Partial<NiiVueOptions>
 
@@ -279,12 +278,12 @@ export class NvSceneController {
 
     this.viewers.forEach((viewer, index) => {
       const position = layoutConfig.layoutFunction(
-        this.containerElement!,
+        this.containerElement as HTMLElement,
         index,
         this.viewers.length,
       )
       Object.assign(viewer.containerDiv.style, {
-        position: "absolute",
+        position: 'absolute',
         top: position.top,
         left: position.left,
         width: position.width,
@@ -322,7 +321,7 @@ export class NvSceneController {
       viewer.niivue.broadcastTo(targets, this.broadcastOptions)
     } catch (err) {
       this.addError(viewer.id, err)
-      this.emit("error", index, err)
+      this.emit('error', index, err)
     }
   }
 
@@ -410,15 +409,15 @@ export class NvSceneController {
       await viewer.niivue.addVolume(opts)
       const vols = viewer.niivue.volumes
       const image = vols[vols.length - 1]
-      if (!image) throw new Error("Volume was not added")
-      this.emit("volumeAdded", index, opts, image)
+      if (!image) throw new Error('Volume was not added')
+      this.emit('volumeAdded', index, opts, image)
       if (this.broadcasting) {
         this.rewireBroadcasting()
       }
       return image
     } catch (err) {
       this.addError(viewer.id, err)
-      this.emit("error", index, err)
+      this.emit('error', index, err)
       throw err
     } finally {
       this.decrementLoading(viewer.id)
@@ -446,7 +445,7 @@ export class NvSceneController {
     if (volIdx >= 0) {
       nv.model.removeVolume(volIdx)
       await nv.updateGLVolume()
-      this.emit("volumeRemoved", index, url)
+      this.emit('volumeRemoved', index, url)
       if (this.broadcasting) {
         this.rewireBroadcasting()
       }
@@ -481,7 +480,7 @@ export class NvSceneController {
     const found = this.findVolume(viewerIndex, volumeIndex)
     if (!found) return
     await found.nv.setVolume(found.volumeIndex, { colormap })
-    this.emit("colormapChanged", viewerIndex, volumeIndex, colormap)
+    this.emit('colormapChanged', viewerIndex, volumeIndex, colormap)
     this.notify()
   }
 
@@ -495,7 +494,7 @@ export class NvSceneController {
     const found = this.findVolume(viewerIndex, volumeIndex)
     if (!found) return
     await found.nv.setVolume(found.volumeIndex, { calMin, calMax })
-    this.emit("intensityChanged", viewerIndex, volumeIndex, calMin, calMax)
+    this.emit('intensityChanged', viewerIndex, volumeIndex, calMin, calMax)
     this.notify()
   }
 
@@ -508,7 +507,7 @@ export class NvSceneController {
     const found = this.findVolume(viewerIndex, volumeIndex)
     if (!found) return
     await found.nv.setVolume(found.volumeIndex, { opacity })
-    this.emit("opacityChanged", viewerIndex, volumeIndex, opacity)
+    this.emit('opacityChanged', viewerIndex, volumeIndex, opacity)
     this.notify()
   }
 
@@ -533,25 +532,25 @@ export class NvSceneController {
 
   addViewer(options?: Partial<NiiVueOptions>): Promise<ViewerSlot> {
     if (!this.containerElement) {
-      throw new Error("Container element not set")
+      throw new Error('Container element not set')
     }
 
     if (!this.canAddViewer()) {
       throw new Error(`Cannot add viewer: slot limit of ${this.slots} reached`)
     }
 
-    const containerDiv = document.createElement("div")
-    containerDiv.className = "niivue-canvas-container"
-    containerDiv.style.position = "relative"
-    containerDiv.style.overflow = "hidden"
+    const containerDiv = document.createElement('div')
+    containerDiv.className = 'niivue-canvas-container'
+    containerDiv.style.position = 'relative'
+    containerDiv.style.overflow = 'hidden'
 
-    const canvas = document.createElement("canvas")
-    canvas.className = "niivue-canvas"
-    canvas.style.position = "absolute"
-    canvas.style.top = "0"
-    canvas.style.left = "0"
-    canvas.style.width = "100%"
-    canvas.style.height = "100%"
+    const canvas = document.createElement('canvas')
+    canvas.className = 'niivue-canvas'
+    canvas.style.position = 'absolute'
+    canvas.style.top = '0'
+    canvas.style.left = '0'
+    canvas.style.width = '100%'
+    canvas.style.height = '100%'
     containerDiv.appendChild(canvas)
 
     this.containerElement.appendChild(containerDiv)
@@ -585,16 +584,16 @@ export class NvSceneController {
     const index = this.viewers.length - 1
 
     // Wire NiiVueGPU event listeners (sync — before attachment)
-    niivue.addEventListener("locationChange", (evt) => {
-      this.emit("locationChange", index, evt.detail)
+    niivue.addEventListener('locationChange', (evt) => {
+      this.emit('locationChange', index, evt.detail)
     })
-    niivue.addEventListener("volumeLoaded", (evt) => {
-      this.emit("imageLoaded", index, evt.detail.volume)
+    niivue.addEventListener('volumeLoaded', (evt) => {
+      this.emit('imageLoaded', index, evt.detail.volume)
       if (this.broadcasting) {
         this.rewireBroadcasting()
       }
     })
-    niivue.addEventListener("meshLoaded", () => {
+    niivue.addEventListener('meshLoaded', () => {
       if (this.broadcasting) {
         this.rewireBroadcasting()
       }
@@ -602,7 +601,7 @@ export class NvSceneController {
 
     // Notify synchronously — viewer slot is registered and usable
     this.onViewerCreated?.(niivue, index)
-    this.emit("viewerCreated", niivue, index)
+    this.emit('viewerCreated', niivue, index)
     this.notify()
 
     // Async canvas attachment — viewer is already registered
@@ -647,7 +646,7 @@ export class NvSceneController {
       this.setBroadcasting(true)
     }
 
-    this.emit("viewerRemoved", index)
+    this.emit('viewerRemoved', index)
 
     if (shouldNotify) {
       this.notify()
@@ -675,7 +674,7 @@ export class NvSceneController {
 
   reset(): void {
     this.clearViewers()
-    this.currentLayout = "1x1"
+    this.currentLayout = '1x1'
     this.slots = this.layouts[this.currentLayout]?.slots ?? 1
     this.notify()
   }

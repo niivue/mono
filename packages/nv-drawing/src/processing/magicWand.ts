@@ -8,7 +8,7 @@
  * (6/18/26 neighbours), and optional maximum distance from the seed.
  */
 
-import type { DrawingDims, RASIndexMap } from "./drawing"
+import type { DrawingDims, RASIndexMap } from './drawing'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -33,7 +33,7 @@ export type Connectivity = 6 | 18 | 26
  *   When combined with `percent`, the range is computed as percent-based
  *   but only on the bright or dark side.
  */
-export type ThresholdMode = "symmetric" | "percent" | "bright" | "dark" | "auto"
+export type ThresholdMode = 'symmetric' | 'percent' | 'bright' | 'dark' | 'auto'
 
 /** Options that control the magic-wand behaviour. */
 export interface MagicWandOptions {
@@ -198,7 +198,7 @@ export function magicWand(
 ): MagicWandResult {
   const {
     tolerance = 0,
-    thresholdMode = "symmetric",
+    thresholdMode = 'symmetric',
     percent = 0,
     calMin = 0,
     calMax = 1,
@@ -240,22 +240,22 @@ export function magicWand(
     hi = options.intensityMax
   } else {
     // Resolve effective mode ("auto" picks bright vs dark)
-    let effectiveMode: "symmetric" | "percent" | "bright" | "dark" =
-      thresholdMode === "auto" ? "symmetric" : thresholdMode
-    if (thresholdMode === "auto") {
+    let effectiveMode: 'symmetric' | 'percent' | 'bright' | 'dark' =
+      thresholdMode === 'auto' ? 'symmetric' : thresholdMode
+    if (thresholdMode === 'auto') {
       isBright = seedIntensity > (calMin + calMax) * 0.5
-      effectiveMode = isBright ? "bright" : "dark"
+      effectiveMode = isBright ? 'bright' : 'dark'
     }
 
     switch (effectiveMode) {
-      case "percent": {
+      case 'percent': {
         // Range = [seed*(1-pct), seed*(1+pct)], matching old clickToSegmentPercent
         const eff = seedIntensity === 0 ? 0.01 : seedIntensity
         lo = eff * (1 - percent)
         hi = eff * (1 + percent)
         break
       }
-      case "bright":
+      case 'bright':
         // Only voxels at or above the seed
         if (percent > 0) {
           const eff = seedIntensity === 0 ? 0.01 : seedIntensity
@@ -269,7 +269,7 @@ export function magicWand(
           hi = Number.POSITIVE_INFINITY
         }
         break
-      case "dark":
+      case 'dark':
         // Only voxels at or below the seed
         if (percent > 0) {
           const eff = seedIntensity === 0 ? 0.01 : seedIntensity
@@ -346,7 +346,7 @@ export function magicWand(
   let filledCount = 0
 
   while (queue.length > 0) {
-    const idx = queue.shift()!
+    const idx = queue.shift() as number
     // Decode flat → xyz
     const iz = Math.floor(idx / (dimX * dimY))
     const iy = Math.floor((idx - iz * dimX * dimY) / dimX)
@@ -435,7 +435,7 @@ export function magicWandFromBitmap(
   let count = 0
 
   while (queue.length > 0) {
-    const idx = queue.shift()!
+    const idx = queue.shift() as number
     drawBitmap[idx] = newColor
     count++
 

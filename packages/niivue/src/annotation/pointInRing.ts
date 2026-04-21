@@ -1,4 +1,4 @@
-import type { AnnotationPoint } from "@/NVTypes"
+import type { AnnotationPoint } from '@/NVTypes'
 
 export function pointInRing(
   point: AnnotationPoint,

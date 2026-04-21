@@ -1,9 +1,9 @@
-import { mat4, vec3, vec4 } from "gl-matrix"
-import * as nifti from "nifti-reader-js"
-import { decompress } from "@/codecs/NVGz"
-import { log } from "@/logger"
-import { NiiDataType } from "@/NVConstants"
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import { mat4, vec3, vec4 } from 'gl-matrix'
+import * as nifti from 'nifti-reader-js'
+import { decompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
+import { NiiDataType } from '@/NVConstants'
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
 function vox2mm(XYZ: number[], mtx: mat4): vec3 {
   const sform = mat4.clone(mtx)
@@ -52,19 +52,19 @@ function THD_daxes_to_NIFTI(
   orientSpecific: number[],
 ): void {
   hdr.sform_code = 2
-  const ORIENT_xyz = "xxyyzzg"
+  const ORIENT_xyz = 'xxyyzzg'
   let nif_x_axnum = -1
   let nif_y_axnum = -1
   let nif_z_axnum = -1
-  const axcode = ["x", "y", "z"]
+  const axcode = ['x', 'y', 'z']
   axcode[0] = ORIENT_xyz[orientSpecific[0]]
   axcode[1] = ORIENT_xyz[orientSpecific[1]]
   axcode[2] = ORIENT_xyz[orientSpecific[2]]
   const axstep = xyzDelta.slice(0, 3)
   const axstart = xyzOrigin.slice(0, 3)
   for (let ii = 0; ii < 3; ii++) {
-    if (axcode[ii] === "x") nif_x_axnum = ii
-    else if (axcode[ii] === "y") nif_y_axnum = ii
+    if (axcode[ii] === 'x') nif_x_axnum = ii
+    else if (axcode[ii] === 'y') nif_y_axnum = ii
     else nif_z_axnum = ii
   }
   if (nif_x_axnum < 0 || nif_y_axnum < 0 || nif_z_axnum < 0) return
@@ -91,8 +91,8 @@ function THD_daxes_to_NIFTI(
   hdr.affine[2][3] = axstart[nif_z_axnum]
 }
 
-export const extensions = ["head"]
-export const type = "nii"
+export const extensions = ['head']
+export const type = 'nii'
 
 export async function read(
   dataBuffer: ArrayBuffer,
@@ -131,17 +131,17 @@ export async function read(
   while (i < nlines) {
     let line = lines[i]
     i++
-    if (!line.startsWith("type")) continue
-    const isInt = line.includes("integer-attribute")
-    const isFloat = line.includes("float-attribute")
+    if (!line.startsWith('type')) continue
+    const isInt = line.includes('integer-attribute')
+    const isFloat = line.includes('float-attribute')
     line = lines[i]
     i++
-    if (!line.startsWith("name")) continue
-    let items: Array<string | number> = line.split("= ")
+    if (!line.startsWith('name')) continue
+    let items: Array<string | number> = line.split('= ')
     const key = items[1]
     line = lines[i]
     i++
-    items = line.split("= ")
+    items = line.split('= ')
     let count = parseInt(items[1] as string, 10)
     if (count < 1) continue
     line = lines[i]
@@ -159,12 +159,12 @@ export async function read(
       }
     }
     switch (key) {
-      case "BYTEORDER_STRING":
-        if ((items[0] as string).includes("LSB_FIRST")) hdr.littleEndian = true
-        else if ((items[0] as string).includes("MSB_FIRST"))
+      case 'BYTEORDER_STRING':
+        if ((items[0] as string).includes('LSB_FIRST')) hdr.littleEndian = true
+        else if ((items[0] as string).includes('MSB_FIRST'))
           hdr.littleEndian = false
         break
-      case "BRICK_TYPES": {
+      case 'BRICK_TYPES': {
         hdr.dims[4] = count
         const datatype = parseInt(items[0] as string, 10)
         if (datatype === 0) {
@@ -177,11 +177,11 @@ export async function read(
           hdr.numBitsPerVoxel = 32
           hdr.datatypeCode = NiiDataType.DT_FLOAT32
         } else {
-          log.warn("Unknown BRICK_TYPES ", datatype)
+          log.warn('Unknown BRICK_TYPES ', datatype)
         }
         break
       }
-      case "IJK_TO_DICOM_REAL":
+      case 'IJK_TO_DICOM_REAL':
         if (count < 12) break
         hasIJK_TO_DICOM_REAL = true
         hdr.sform_code = 2
@@ -197,20 +197,20 @@ export async function read(
           [0, 0, 0, 1],
         ]
         break
-      case "DATASET_DIMENSIONS":
+      case 'DATASET_DIMENSIONS':
         count = Math.max(count, 3)
         for (let j = 0; j < count; j++) hdr.dims[j + 1] = items[j] as number
         break
-      case "ORIENT_SPECIFIC":
+      case 'ORIENT_SPECIFIC':
         orientSpecific = items as number[]
         break
-      case "ORIGIN":
+      case 'ORIGIN':
         xyzOrigin = items as number[]
         break
-      case "DELTA":
+      case 'DELTA':
         xyzDelta = items as number[]
         break
-      case "TAXIS_FLOATS":
+      case 'TAXIS_FLOATS':
         hdr.pixDims[4] = items[0] as number
         break
       default:
@@ -229,7 +229,7 @@ export async function read(
     hdr.dims[3] *
     hdr.dims[4]
   if (!pairedImgData) {
-    throw new Error("pairedImgData not set")
+    throw new Error('pairedImgData not set')
   }
   if (pairedImgData.byteLength < nBytes) {
     const raw = await decompress(new Uint8Array(pairedImgData))

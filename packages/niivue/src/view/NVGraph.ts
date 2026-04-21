@@ -1,7 +1,7 @@
-import type { GraphConfig } from "@/NVTypes"
-import type { BuildTextFn, GlyphBatch } from "./NVFont"
-import type { BuildLineFn, LineData } from "./NVLine"
-import { estimateFontSize } from "./NVUILayout"
+import type { GraphConfig } from '@/NVTypes'
+import type { BuildTextFn, GlyphBatch } from './NVFont'
+import type { BuildLineFn, LineData } from './NVLine'
+import { estimateFontSize } from './NVUILayout'
 
 export type GraphData = {
   lines: number[][]
@@ -106,7 +106,7 @@ function calculateTickSpacing(
 }
 
 function humanize(x: number): string {
-  return x.toFixed(6).replace(/\.?0*$/, "")
+  return x.toFixed(6).replace(/\.?0*$/, '')
 }
 
 /**
@@ -422,7 +422,7 @@ export function buildGraphElements(
   const volumeLabelY = plotBottom + fontSize * 1.5
   if (fontSize > 6) {
     const labelBatch = buildText(
-      "Volume",
+      'Volume',
       pL + pW * 0.5,
       volumeLabelY,
       fntScale,
@@ -440,7 +440,7 @@ export function buildGraphElements(
     const ellipsisX =
       layout.x + layout.width - outerMargin - fontSize * GRAPH_Y_GAP_EM
     const ellipsisBatch = buildText(
-      "...",
+      '...',
       ellipsisX,
       volumeLabelY,
       fntScale,
@@ -466,7 +466,7 @@ export function graphHitTest(
   x: number,
   y: number,
   layout: GraphLayout | null,
-): { type: "frame"; frame: number } | { type: "deferred" } | null {
+): { type: 'frame'; frame: number } | { type: 'deferred' } | null {
   if (!layout) return null
   const [pL, pT, pW, pH] = layout.plotLTWH
   // Check deferred ellipsis click (right-justified, same row as "Volume" label)
@@ -481,7 +481,7 @@ export function graphHitTest(
       y >= ellipsisY - fs * 0.5 &&
       y <= ellipsisY + fs * 1.5
     ) {
-      return { type: "deferred" }
+      return { type: 'deferred' }
     }
   }
   // Check plot area click
@@ -489,7 +489,7 @@ export function graphHitTest(
     const frac = (x - pL) / pW
     const frame = Math.round(frac * (plotLines_length(layout) - 1))
     return {
-      type: "frame",
+      type: 'frame',
       frame: Math.max(0, Math.min(frame, plotLines_length(layout) - 1)),
     }
   }
@@ -500,7 +500,7 @@ export function graphHitTest(
     y >= layout.y &&
     y <= layout.y + layout.height
   ) {
-    return { type: "frame", frame: -1 }
+    return { type: 'frame', frame: -1 }
   }
   return null
 }

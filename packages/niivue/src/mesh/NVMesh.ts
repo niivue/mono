@@ -1,7 +1,7 @@
-import { vec3 } from "gl-matrix"
-import { maybeDecompress } from "@/codecs/NVGz"
-import { log } from "@/logger"
-import * as NVLoader from "@/NVLoader"
+import { vec3 } from 'gl-matrix'
+import { maybeDecompress } from '@/codecs/NVGz'
+import { log } from '@/logger'
+import * as NVLoader from '@/NVLoader'
 import type {
   LUT,
   MeshFromUrlOptions,
@@ -12,21 +12,23 @@ import type {
   NVMesh as NVMeshType,
   NVTractData,
   NVTractOptions,
-} from "@/NVTypes"
+} from '@/NVTypes'
 import {
   connectomeExtensions,
   defaultConnectomeOptions,
   extrude,
   getConnectomeReader,
   isConnectomeExtension,
-} from "./connectome"
+} from './connectome'
 import {
   compositeLayers,
   computeMeshLabelCentroids,
   createLayer,
+  layerExtensions,
+  loadLayerFromUrl,
   loadLayersFromOptions,
-} from "./layers"
-import { probeVTKContent, readVTKLines } from "./readers/vtk"
+} from './layers'
+import { probeVTKContent, readVTKLines } from './readers/vtk'
 import {
   computeAllScalarMeta,
   defaultTractOptions,
@@ -34,32 +36,35 @@ import {
   isTractExtension,
   tessellate,
   tractExtensions,
-} from "./tracts"
-import { loadTractScalars } from "./tracts/scalars"
-import * as meshWriters from "./writers"
+} from './tracts'
+import { loadTractScalars } from './tracts/scalars'
+import * as meshWriters from './writers'
+import { writeMesh } from './writers'
 
-export { connectomeExtensions, isConnectomeExtension } from "./connectome"
 export {
   compositeLayers,
+  connectomeExtensions,
   createLayer,
+  isConnectomeExtension,
+  isTractExtension,
   layerExtensions,
   loadLayerFromUrl,
-} from "./layers"
-export { isTractExtension, tractExtensions } from "./tracts"
+  tractExtensions,
+}
 
 type MeshReader = {
   extensions?: string[]
   read: (buffer: ArrayBufferLike) => Promise<MZ3>
 }
 
-const modules = import.meta.glob<MeshReader>("./readers/*.ts", { eager: true })
+const modules = import.meta.glob<MeshReader>('./readers/*.ts', { eager: true })
 const readerByExt = NVLoader.buildExtensionMap(modules)
 
 export function meshWriteExtensions(): string[] {
   return meshWriters.writeExtensions()
 }
 
-export { writeMesh } from "./writers"
+export { writeMesh }
 
 /** All supported mesh-family extensions (triangulated mesh + tract + connectome). */
 export function meshExtensions(): string[] {
@@ -137,17 +142,17 @@ export function createMesh(
   colors: Uint32Array,
   options: Record<string, unknown> = {},
 ): NVMeshType {
-  const kind = (options.kind ?? "mesh") as MeshKind
+  const kind = (options.kind ?? 'mesh') as MeshKind
   const defaults = {
     kind,
-    shaderType: "phong",
+    shaderType: 'phong',
     opacity: 1.0,
     color: [1, 1, 1, 1] as [number, number, number, number],
     isColorbarVisible: false,
     isLegendVisible: false,
     layers: [] as NVMeshLayer[],
     perVertexColors: null as Uint32Array | null,
-    mz3: kind === "mesh" ? { positions, indices } : null,
+    mz3: kind === 'mesh' ? { positions, indices } : null,
     trx: null,
     jcon: null,
     tractOptions: null,
@@ -193,10 +198,10 @@ export async function loadMesh(mesh: MeshFromUrlOptions): Promise<NVMeshType> {
 
   // VTK content-based dispatch: same .vtk extension can be mesh or tract
   let prefetchedBuffer: ArrayBuffer | null = null
-  if (ext === "VTK") {
+  if (ext === 'VTK') {
     const rawBuffer = await NVLoader.fetchFile(mesh.url)
     const buffer = await maybeDecompress(rawBuffer)
-    if (probeVTKContent(buffer) === "tract") {
+    if (probeVTKContent(buffer) === 'tract') {
       const tractData = readVTKLines(buffer)
       return buildTractMesh(mesh, tractData)
     }
@@ -230,16 +235,16 @@ export async function loadMesh(mesh: MeshFromUrlOptions): Promise<NVMeshType> {
   }
   const result = prefetchedBuffer ?? (await NVLoader.fetchFile(url))
   let reader = readerByExt.get(ext)
-  if (!reader || typeof reader.read !== "function") {
+  if (!reader || typeof reader.read !== 'function') {
     log.warn(`Unsupported mesh format "${ext}", falling back to MZ3 reader`)
-    reader = readerByExt.get("MZ3")
+    reader = readerByExt.get('MZ3')
   }
   if (!reader) {
     throw new Error(`No mesh reader available for extension ${ext}`)
   }
   const meshData = await reader.read(result)
   if (!meshData.positions || !meshData.indices) {
-    throw new Error("Mesh reader did not return positions/indices")
+    throw new Error('Mesh reader did not return positions/indices')
   }
   const numVerts = meshData.positions.length / 3
   const packedColors = new Uint32Array(numVerts)
@@ -273,7 +278,7 @@ export async function loadMesh(mesh: MeshFromUrlOptions): Promise<NVMeshType> {
     layers.push(
       createLayer(meshData.scalars, numVerts, {
         nFrame4D: nFrame,
-        colormap: "warm",
+        colormap: 'warm',
         opacity: 1.0,
         isColorbarVisible: true,
         colormapLabel: (meshData.colormapLabel as LUT) ?? null,
@@ -303,7 +308,7 @@ export async function loadMesh(mesh: MeshFromUrlOptions): Promise<NVMeshType> {
   }
 
   // Build mesh options, storing color (not rgba255)
-  const urlString = typeof url === "string" ? url : url.name
+  const urlString = typeof url === 'string' ? url : url.name
   const opts = {
     ...restOptions,
     color,
@@ -357,17 +362,17 @@ async function buildTractMesh(
   }
 
   const { positions, indices, colors } = tessellate(tractData, tractOptions)
-  const urlString = typeof mesh.url === "string" ? mesh.url : mesh.url.name
+  const urlString = typeof mesh.url === 'string' ? mesh.url : mesh.url.name
   // Show colorbar automatically when using scalar coloring, unless explicitly overridden
   const hasScalarColor =
-    tractOptions.colorBy.startsWith("dpv:") ||
-    tractOptions.colorBy.startsWith("dps:")
+    tractOptions.colorBy.startsWith('dpv:') ||
+    tractOptions.colorBy.startsWith('dps:')
   return createMesh(positions, indices, colors, {
-    kind: "tract" as MeshKind,
+    kind: 'tract' as MeshKind,
     trx: tractData,
     tractOptions,
     opacity: mesh.opacity ?? 1.0,
-    shaderType: mesh.shaderType ?? "phong",
+    shaderType: mesh.shaderType ?? 'phong',
     color: mesh.color ?? [1, 1, 1, 1],
     isColorbarVisible: mesh.isColorbarVisible ?? hasScalarColor,
     url: urlString,
@@ -411,13 +416,13 @@ async function loadConnectome(
     fileData.data,
     connectomeOptions,
   )
-  const urlString = typeof mesh.url === "string" ? mesh.url : mesh.url.name
+  const urlString = typeof mesh.url === 'string' ? mesh.url : mesh.url.name
   return createMesh(positions, indices, colors, {
-    kind: "connectome" as MeshKind,
+    kind: 'connectome' as MeshKind,
     jcon: fileData.data,
     connectomeOptions,
     opacity: mesh.opacity ?? 1.0,
-    shaderType: mesh.shaderType ?? "phong",
+    shaderType: mesh.shaderType ?? 'phong',
     color: mesh.color ?? [1, 1, 1, 1],
     isColorbarVisible: mesh.isColorbarVisible ?? true,
     isLegendVisible: mesh.isLegendVisible ?? false,
@@ -431,7 +436,7 @@ async function loadConnectome(
  * Mutates the mesh's derived GPU-ready arrays in place.
  */
 export function retessellateTract(mesh: NVMeshType): void {
-  if (mesh.kind !== "tract" || !mesh.trx || !mesh.tractOptions) return
+  if (mesh.kind !== 'tract' || !mesh.trx || !mesh.tractOptions) return
   const result = tessellate(mesh.trx, mesh.tractOptions)
   mesh.positions = result.positions
   mesh.indices = result.indices
@@ -457,7 +462,7 @@ export function retessellateTract(mesh: NVMeshType): void {
  * Mutates the mesh's derived GPU-ready arrays in place.
  */
 export function reextrudeConnectome(mesh: NVMeshType): void {
-  if (mesh.kind !== "connectome" || !mesh.jcon || !mesh.connectomeOptions)
+  if (mesh.kind !== 'connectome' || !mesh.jcon || !mesh.connectomeOptions)
     return
   const result = extrude(mesh.jcon, mesh.connectomeOptions)
   mesh.positions = result.positions

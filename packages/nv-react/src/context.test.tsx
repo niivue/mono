@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test"
-import { render, screen } from "@testing-library/react"
-import { clearMockInstances, registerNiivueMock } from "./__mocks__/niivue"
+import { describe, expect, test } from 'bun:test'
+import { render, screen } from '@testing-library/react'
+import { clearMockInstances, registerNiivueMock } from './__mocks__/niivue'
 
 registerNiivueMock()
 
-import { NvSceneProvider, useSceneContext } from "./context"
-import { NvSceneController } from "./nvscene-controller"
+import { NvSceneProvider, useSceneContext } from './context'
+import { NvSceneController } from './nvscene-controller'
 
 /** Helper component that reads context and renders the layout name */
 function ContextReader() {
@@ -24,8 +24,8 @@ function OrphanReader() {
   }
 }
 
-describe("NvSceneProvider", () => {
-  test("provides the controller to children via context", () => {
+describe('NvSceneProvider', () => {
+  test('provides the controller to children via context', () => {
     clearMockInstances()
     const scene = new NvSceneController()
     render(
@@ -33,22 +33,22 @@ describe("NvSceneProvider", () => {
         <ContextReader />
       </NvSceneProvider>,
     )
-    expect(screen.getByTestId("layout").textContent).toBe("1x1")
+    expect(screen.getByTestId('layout').textContent).toBe('1x1')
   })
 
-  test("provides updated controller when scene changes", () => {
+  test('provides updated controller when scene changes', () => {
     clearMockInstances()
     const scene = new NvSceneController()
-    scene.currentLayout = "2x2"
+    scene.currentLayout = '2x2'
     render(
       <NvSceneProvider scene={scene}>
         <ContextReader />
       </NvSceneProvider>,
     )
-    expect(screen.getByTestId("layout").textContent).toBe("2x2")
+    expect(screen.getByTestId('layout').textContent).toBe('2x2')
   })
 
-  test("renders children", () => {
+  test('renders children', () => {
     clearMockInstances()
     const scene = new NvSceneController()
     render(
@@ -56,20 +56,20 @@ describe("NvSceneProvider", () => {
         <div data-testid="child">Hello</div>
       </NvSceneProvider>,
     )
-    expect(screen.getByTestId("child")).toBeInTheDocument()
+    expect(screen.getByTestId('child')).toBeInTheDocument()
   })
 })
 
-describe("useSceneContext", () => {
-  test("throws when used outside NvSceneProvider", () => {
+describe('useSceneContext', () => {
+  test('throws when used outside NvSceneProvider', () => {
     render(<OrphanReader />)
-    const result = screen.getByTestId("result")
+    const result = screen.getByTestId('result')
     expect(result.textContent).toBe(
-      "useSceneContext must be used within an NvSceneProvider",
+      'useSceneContext must be used within an NvSceneProvider',
     )
   })
 
-  test("returns the controller when inside a provider", () => {
+  test('returns the controller when inside a provider', () => {
     clearMockInstances()
     const scene = new NvSceneController()
     render(
@@ -78,6 +78,6 @@ describe("useSceneContext", () => {
       </NvSceneProvider>,
     )
     // If it didn't throw, context was successfully read
-    expect(screen.getByTestId("layout")).toBeInTheDocument()
+    expect(screen.getByTestId('layout')).toBeInTheDocument()
   })
 })

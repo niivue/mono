@@ -8,22 +8,23 @@
  * `ctx.backgroundVolume.imgRAS` from the NiiVue extension context.
  */
 
-import { NVWorker } from "@niivue/niivue"
+import { NVWorker } from '@niivue/niivue'
 import type {
   DrawingDims,
   InterpolationOptions,
   SliceType,
-} from "./processing/drawing"
+} from './processing/drawing'
 import type {
   Connectivity,
   MagicWandOptions,
   MagicWandResult,
   ThresholdMode,
-} from "./processing/magicWand"
+} from './processing/magicWand'
 // @ts-expect-error — Vite worker import with inline bundling
-import DrawingWorker from "./worker?worker&inline"
+import DrawingWorker from './worker?worker&inline'
 
-export { SLICE_TYPE } from "./processing/drawing"
+// biome-ignore lint/performance/noBarrelFile: package entry point
+export { SLICE_TYPE } from './processing/drawing'
 export type {
   Connectivity,
   DrawingDims,
@@ -74,7 +75,7 @@ export async function findDrawingBoundarySlices(
     result: { first: number; last: number } | null
   }>(
     {
-      name: "findBoundarySlices",
+      name: 'findBoundarySlices',
       sliceType,
       drawBitmap: buf,
       dims,
@@ -114,12 +115,12 @@ export async function interpolateMaskSlices(
       f32.byteOffset,
       f32.byteOffset + f32.byteLength,
     ) as ArrayBuffer
-    transfers.push(imgBuf!)
+    transfers.push(imgBuf as ArrayBuffer)
   }
 
   const res = await getBridge().execute<{ drawBitmap: ArrayBuffer }>(
     {
-      name: "interpolateMaskSlices",
+      name: 'interpolateMaskSlices',
       drawBitmap: bitmapBuf,
       dims,
       imageData: imgBuf,
@@ -180,7 +181,7 @@ export async function magicWand(
     result: MagicWandResult
   }>(
     {
-      name: "magicWand",
+      name: 'magicWand',
       seed,
       drawBitmap: bitmapBuf,
       dims,
@@ -222,7 +223,7 @@ export async function magicWandFromBitmap(
     count: number
   }>(
     {
-      name: "magicWandFromBitmap",
+      name: 'magicWandFromBitmap',
       seed,
       drawBitmap: bitmapBuf,
       dims,
@@ -297,17 +298,17 @@ export class MagicWandShared {
 
     this.ready = new Promise<void>((resolve) => {
       const h = (ev: MessageEvent) => {
-        if (ev.data.type === "initSharedDone") {
-          this._worker.removeEventListener("message", h)
+        if (ev.data.type === 'initSharedDone') {
+          this._worker.removeEventListener('message', h)
           resolve()
         }
       }
-      this._worker.addEventListener("message", h)
+      this._worker.addEventListener('message', h)
     })
 
     this._worker.postMessage(
       {
-        type: "initShared",
+        type: 'initShared',
         workingBuffer: workingSAB,
         imageBuffer: imageSAB,
         committedBuffer: committedCopy.buffer,
@@ -326,7 +327,7 @@ export class MagicWandShared {
   updateCommitted(committed: Uint8Array): void {
     const copy = committed.slice()
     this._worker.postMessage(
-      { type: "updateCommitted", committed: copy.buffer },
+      { type: 'updateCommitted', committed: copy.buffer },
       [copy.buffer],
     )
   }
@@ -346,17 +347,17 @@ export class MagicWandShared {
     const gen = ++this._gen
     return new Promise((resolve) => {
       const h = (ev: MessageEvent) => {
-        if (ev.data.type !== "magicWandSharedResult") return
-        this._worker.removeEventListener("message", h)
+        if (ev.data.type !== 'magicWandSharedResult') return
+        this._worker.removeEventListener('message', h)
         if (ev.data.gen !== gen) {
           resolve(null)
           return
         }
         resolve(ev.data.result as MagicWandResult)
       }
-      this._worker.addEventListener("message", h)
+      this._worker.addEventListener('message', h)
       this._worker.postMessage({
-        type: "magicWandShared",
+        type: 'magicWandShared',
         seed,
         options: options ?? {},
         gen,

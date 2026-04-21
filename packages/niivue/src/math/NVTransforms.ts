@@ -1,6 +1,6 @@
-import { mat3, mat4, vec3, vec4 } from "gl-matrix"
-import { log } from "@/logger"
-import type { NVImage } from "@/NVTypes"
+import { mat3, mat4, vec3, vec4 } from 'gl-matrix'
+import { log } from '@/logger'
+import type { NVImage } from '@/NVTypes'
 
 export function vox2mm(_unused: unknown, XYZ: number[], mtx: mat4): vec3 {
   const sform = mat4.clone(mtx)
@@ -369,7 +369,7 @@ export function mm2frac(
   const mm4 = vec4.fromValues(mm[0], mm[1], mm[2], 1)
   const d = nvImage.dimsRAS
   const frac = vec3.fromValues(0, 0, 0)
-  if (typeof d === "undefined") {
+  if (typeof d === 'undefined') {
     return frac
   }
   if (!isForceSliceMM) {
@@ -411,7 +411,7 @@ export function calculateOverlayTransformMatrix(
     !nvImageMoving.mm010 ||
     !nvImageMoving.mm001
   ) {
-    throw new Error("Missing moving image mm corner coordinates")
+    throw new Error('Missing moving image mm corner coordinates')
   }
   const f000 = mm2frac(nvImageStationary, nvImageMoving.mm000, true)
   let f100 = mm2frac(nvImageStationary, nvImageMoving.mm100, true)
@@ -444,13 +444,13 @@ export function calculateOverlayTransformMatrix(
 
 function calculateOblique(nvImage: NVImage): void {
   if (!nvImage.matRAS) {
-    throw new Error("matRAS not defined")
+    throw new Error('matRAS not defined')
   }
   if (nvImage.pixDimsRAS === undefined) {
-    throw new Error("pixDimsRAS not defined")
+    throw new Error('pixDimsRAS not defined')
   }
   if (!nvImage.dimsRAS) {
-    throw new Error("dimsRAS not defined")
+    throw new Error('dimsRAS not defined')
   }
   nvImage.oblique_angle = computeObliqueAngle(nvImage.matRAS)
   const LPI = vox2mm(nvImage, [0.0, 0.0, 0.0], nvImage.matRAS)
@@ -497,9 +497,9 @@ function calculateOblique(nvImage: NVImage): void {
   nvImage.maxShearDeg = Math.max(Math.max(XY, XZ), YZ)
   if (nvImage.maxShearDeg > 0.1) {
     log.warn(
-      "Voxels are rhomboidal, maximum shear is",
+      'Voxels are rhomboidal, maximum shear is',
       nvImage.maxShearDeg,
-      "degrees.",
+      'degrees.',
     )
   }
   // compute a matrix to transform vectors from factional space to mm:
@@ -565,7 +565,7 @@ function arrayEquals(a: number[], b: number[]): boolean {
 
 export function calculateRAS(nvImage: NVImage): void {
   if (!nvImage.hdr) {
-    throw new Error("hdr not set")
+    throw new Error('hdr not set')
   }
   // not elegant, as JavaScript arrays are always 1D
   const a = nvImage.hdr.affine
@@ -778,9 +778,9 @@ function computeObliqueAngle(mtx44: mat4): number {
   let oblique_angle = Math.abs((Math.acos(fig_merit) * 180.0) / Math.PI)
   if (oblique_angle > 0.01) {
     log.warn(
-      "Voxels not aligned with world space:",
+      'Voxels not aligned with world space:',
       oblique_angle,
-      "degrees from plumb.",
+      'degrees from plumb.',
     )
   } else {
     oblique_angle = 0.0
@@ -794,7 +794,7 @@ export function mm2vox(
   frac = false,
 ): vec3 | Float32Array {
   if (!nvImage.matRAS) {
-    throw new Error("matRAS undefined")
+    throw new Error('matRAS undefined')
   }
   const sform = mat4.clone(nvImage.matRAS)
   const out = mat4.clone(sform)

@@ -1,4 +1,4 @@
-import type { AnnotationPoint, AnnotationTool } from "@/NVTypes"
+import type { AnnotationPoint, AnnotationTool } from '@/NVTypes'
 
 export type AnnotationSelection = {
   annotationId: string
@@ -25,8 +25,8 @@ export function getControlPoints(shape: {
   width?: number
 }): AnnotationPoint[] {
   switch (shape.type) {
-    case "rectangle":
-    case "measureRect": {
+    case 'rectangle':
+    case 'measureRect': {
       const minX = Math.min(shape.start.x, shape.end.x)
       const maxX = Math.max(shape.start.x, shape.end.x)
       const minY = Math.min(shape.start.y, shape.end.y)
@@ -44,10 +44,10 @@ export function getControlPoints(shape: {
         { x: minX, y: midY }, // 7: left-mid
       ]
     }
-    case "ellipse":
-    case "measureEllipse":
-    case "circle":
-    case "measureCircle": {
+    case 'ellipse':
+    case 'measureEllipse':
+    case 'circle':
+    case 'measureCircle': {
       const cx = (shape.start.x + shape.end.x) / 2
       const cy = (shape.start.y + shape.end.y) / 2
       const rx = Math.abs(shape.end.x - shape.start.x) / 2
@@ -59,9 +59,9 @@ export function getControlPoints(shape: {
         { x: cx - rx, y: cy }, // 3: left
       ]
     }
-    case "line":
-    case "arrow":
-    case "measureLine": {
+    case 'line':
+    case 'arrow':
+    case 'measureLine': {
       const hw = (shape.width ?? 2) / 2
       const midX = (shape.start.x + shape.end.x) / 2
       const midY = (shape.start.y + shape.end.y) / 2
@@ -88,7 +88,7 @@ export function hitTestControlPoint(
   hitRadius: number,
 ): number {
   for (let i = 0; i < controlPoints.length; i++) {
-    const cp = controlPoints[i]!
+    const cp = controlPoints[i] as AnnotationPoint
     const dx = point.x - cp.x
     const dy = point.y - cp.y
     if (dx * dx + dy * dy <= hitRadius * hitRadius) return i
@@ -112,18 +112,18 @@ export function updateShapeBounds(
   newPosition: AnnotationPoint,
 ): ShapeBoundsUpdate {
   switch (shapeType) {
-    case "rectangle":
-    case "measureRect":
+    case 'rectangle':
+    case 'measureRect':
       return _updateRectangle(original, controlPointIndex, newPosition)
-    case "ellipse":
-    case "measureEllipse":
+    case 'ellipse':
+    case 'measureEllipse':
       return _updateEllipse(original, controlPointIndex, newPosition)
-    case "circle":
-    case "measureCircle":
+    case 'circle':
+    case 'measureCircle':
       return _updateCircle(original, controlPointIndex, newPosition)
-    case "line":
-    case "arrow":
-    case "measureLine":
+    case 'line':
+    case 'arrow':
+    case 'measureLine':
       return _updateLineArrow(original, controlPointIndex, newPosition)
     default:
       return { start: { ...original.start }, end: { ...original.end } }

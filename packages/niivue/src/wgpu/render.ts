@@ -1,15 +1,15 @@
-import { log } from "@/logger"
-import * as NVTransforms from "@/math/NVTransforms"
-import * as NVShapes from "@/mesh/NVShapes"
-import { isPaqd } from "@/NVConstants"
-import type { NVImage } from "@/NVTypes"
-import { NVRenderer } from "@/view/NVRenderer"
-import { buildPaqdLut256, paqdResampleRaw, reorientRGBA } from "@/volume/utils"
-import { MAX_TILES, UNIFORM_ALIGNMENT } from "./mesh"
-import * as orient from "./orient"
-import renderFragment from "./render.wgsl?raw"
-import { volumeShaderPreamble } from "./volumeShaderLib"
-import * as wgpu from "./wgpu"
+import { log } from '@/logger'
+import * as NVTransforms from '@/math/NVTransforms'
+import * as NVShapes from '@/mesh/NVShapes'
+import { isPaqd } from '@/NVConstants'
+import type { NVImage } from '@/NVTypes'
+import { NVRenderer } from '@/view/NVRenderer'
+import { buildPaqdLut256, paqdResampleRaw, reorientRGBA } from '@/volume/utils'
+import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
+import * as orient from './orient'
+import renderFragment from './render.wgsl?raw'
+import { volumeShaderPreamble } from './volumeShaderLib'
+import * as wgpu from './wgpu'
 
 const renderParamsSize = 416 // bytes for render uniforms (includes clipPlaneColor)
 export const alignedRenderSize =
@@ -66,7 +66,7 @@ export class VolumeRenderer extends NVRenderer {
     this.indexBuffer = null
     this.cube = NVShapes.getCubeMesh()
     this.maxTextureDimension3D = 0
-    this.depthFormat = "depth24plus"
+    this.depthFormat = 'depth24plus'
     this._device = null
   }
 
@@ -75,7 +75,7 @@ export class VolumeRenderer extends NVRenderer {
     format: GPUTextureFormat,
     msaaCount: number,
     maxTextureDimension3D: number,
-    depthFormat: GPUTextureFormat = "depth24plus",
+    depthFormat: GPUTextureFormat = 'depth24plus',
   ): Promise<void> {
     this._device = device
     this.depthFormat = depthFormat
@@ -85,12 +85,12 @@ export class VolumeRenderer extends NVRenderer {
 
     // Create samplers
     this.sampler = device.createSampler({
-      magFilter: "linear",
-      minFilter: "linear",
+      magFilter: 'linear',
+      minFilter: 'linear',
     })
     this.samplerNearest = device.createSampler({
-      magFilter: "nearest",
-      minFilter: "nearest",
+      magFilter: 'nearest',
+      minFilter: 'nearest',
     })
 
     // Create vertex buffer for cube
@@ -120,15 +120,15 @@ export class VolumeRenderer extends NVRenderer {
     // Create placeholder 2x2x2 RGBA overlay texture (all zeros - transparent black)
     this.placeholderOverlay = device.createTexture({
       size: [2, 2, 2],
-      format: "rgba8unorm",
+      format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      dimension: "3d",
+      dimension: '3d',
     })
 
     // Create placeholder 1x1 2D texture for PAQD LUT (transparent)
     this.placeholderLut2D = device.createTexture({
       size: [1, 1],
-      format: "rgba8unorm",
+      format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     })
 
@@ -141,7 +141,7 @@ export class VolumeRenderer extends NVRenderer {
           binding: 0,
           visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.VERTEX,
           buffer: {
-            type: "uniform",
+            type: 'uniform',
             hasDynamicOffset: true,
             minBindingSize: renderParamsSize,
           },
@@ -149,47 +149,47 @@ export class VolumeRenderer extends NVRenderer {
         {
           binding: 1,
           visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.VERTEX,
-          texture: { viewDimension: "3d" },
+          texture: { viewDimension: '3d' },
         },
         {
           binding: 2,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "2d" },
+          texture: { viewDimension: '2d' },
         },
         {
           binding: 3,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: "filtering" },
+          sampler: { type: 'filtering' },
         },
         {
           binding: 4,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "3d" },
+          texture: { viewDimension: '3d' },
         },
         {
           binding: 5,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "3d" },
+          texture: { viewDimension: '3d' },
         },
         {
           binding: 6,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "3d" },
+          texture: { viewDimension: '3d' },
         },
         {
           binding: 7,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "3d" },
+          texture: { viewDimension: '3d' },
         },
         {
           binding: 8,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: "non-filtering" },
+          sampler: { type: 'non-filtering' },
         },
         {
           binding: 9,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { viewDimension: "2d" },
+          texture: { viewDimension: '2d' },
         },
       ],
     })
@@ -205,36 +205,36 @@ export class VolumeRenderer extends NVRenderer {
       multisample: { count: msaaCount },
       vertex: {
         module: shaderModule,
-        entryPoint: "vertex_main",
+        entryPoint: 'vertex_main',
         buffers: [
           {
             arrayStride: 12,
-            attributes: [{ format: "float32x3", offset: 0, shaderLocation: 0 }],
+            attributes: [{ format: 'float32x3', offset: 0, shaderLocation: 0 }],
           },
         ],
       },
       fragment: {
         module: shaderModule,
-        entryPoint: "fragment_main",
+        entryPoint: 'fragment_main',
         targets: [
           {
             format: format,
             blend: {
-              color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
-              alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+              color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
             },
           },
         ],
       },
       depthStencil: {
         depthWriteEnabled: true,
-        depthCompare: "less",
+        depthCompare: 'less',
         format: this.depthFormat,
       },
       primitive: {
-        topology: "triangle-strip",
-        stripIndexFormat: "uint16",
-        cullMode: "back",
+        topology: 'triangle-strip',
+        stripIndexFormat: 'uint16',
+        cullMode: 'back',
       },
     })
 
@@ -244,7 +244,7 @@ export class VolumeRenderer extends NVRenderer {
   async updateVolume(
     device: GPUDevice,
     vol: NVImage,
-    matcap: string = "",
+    matcap: string = '',
   ): Promise<void> {
     if (!this.isReady) return
 
@@ -337,8 +337,8 @@ export class VolumeRenderer extends NVRenderer {
         )
         this.paqdTexture = device.createTexture({
           size: dimsOut,
-          format: "rgba8unorm",
-          dimension: "3d",
+          format: 'rgba8unorm',
+          dimension: '3d',
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         })
         device.queue.writeTexture(
@@ -352,7 +352,7 @@ export class VolumeRenderer extends NVRenderer {
         const lut256 = buildPaqdLut256(vol.colormapLabel.lut, lutMin)
         this.paqdLutTexture = device.createTexture({
           size: [256, 1],
-          format: "rgba8unorm",
+          format: 'rgba8unorm',
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         })
         device.queue.writeTexture(
@@ -488,9 +488,9 @@ export class VolumeRenderer extends NVRenderer {
     if (!this.drawingTexture) {
       this.drawingTexture = device.createTexture({
         size: dims,
-        format: "rgba8unorm",
+        format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-        dimension: "3d",
+        dimension: '3d',
       })
     }
     device.queue.writeTexture(
@@ -561,7 +561,7 @@ export class VolumeRenderer extends NVRenderer {
     pass.setPipeline(this.pipeline)
     pass.setBindGroup(0, this.bindGroup, [renderOffset])
     pass.setVertexBuffer(0, this.vertexBuffer)
-    pass.setIndexBuffer(this.indexBuffer, "uint16")
+    pass.setIndexBuffer(this.indexBuffer, 'uint16')
     pass.drawIndexed(this.cube.indices.length)
   }
 
@@ -575,7 +575,7 @@ export class VolumeRenderer extends NVRenderer {
       // Wait for GPU to finish upload
       await device.queue.onSubmittedWorkDone()
     } catch (e) {
-      log.warn("Matcap load failed", e)
+      log.warn('Matcap load failed', e)
     }
   }
 

@@ -5,8 +5,8 @@
  * The context class itself lives in `./context.ts`.
  */
 
-import type { NVEventMap } from "@/NVEvents"
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import type { NVEventMap } from '@/NVEvents'
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 
 // ============================================================
 // Shared geometry types

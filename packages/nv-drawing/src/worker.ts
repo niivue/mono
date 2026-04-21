@@ -18,10 +18,10 @@ import type {
   InterpolationOptions,
   RASIndexMap,
   SliceType,
-} from "./processing/drawing"
-import { findBoundarySlices, interpolateMaskSlices } from "./processing/drawing"
-import type { Connectivity, MagicWandOptions } from "./processing/magicWand"
-import { magicWand, magicWandFromBitmap } from "./processing/magicWand"
+} from './processing/drawing'
+import { findBoundarySlices, interpolateMaskSlices } from './processing/drawing'
+import type { Connectivity, MagicWandOptions } from './processing/magicWand'
+import { magicWand, magicWandFromBitmap } from './processing/magicWand'
 
 interface HandlerResult {
   [key: string]: unknown
@@ -125,7 +125,7 @@ self.onmessage = (e: MessageEvent) => {
 
   // --- SharedArrayBuffer protocol (type-based, no _wbId) ---
 
-  if (data.type === "initShared") {
+  if (data.type === 'initShared') {
     sharedWorkingView = new Uint8Array(data.workingBuffer as SharedArrayBuffer)
     sharedImageView = new Float32Array(data.imageBuffer as SharedArrayBuffer)
     sharedCommitted = new Uint8Array(data.committedBuffer as ArrayBuffer)
@@ -133,16 +133,16 @@ self.onmessage = (e: MessageEvent) => {
     sharedRasMap = (data.rasMap as RASIndexMap) ?? undefined
     sharedVoxelSizeMM =
       (data.voxelSizeMM as [number, number, number]) ?? undefined
-    post({ type: "initSharedDone" })
+    post({ type: 'initSharedDone' })
     return
   }
 
-  if (data.type === "updateCommitted") {
+  if (data.type === 'updateCommitted') {
     sharedCommitted = new Uint8Array(data.committed as ArrayBuffer)
     return
   }
 
-  if (data.type === "magicWandShared") {
+  if (data.type === 'magicWandShared') {
     if (
       !sharedWorkingView ||
       !sharedImageView ||
@@ -150,8 +150,8 @@ self.onmessage = (e: MessageEvent) => {
       !sharedDims
     ) {
       post({
-        type: "magicWandSharedResult",
-        error: "Not initialized",
+        type: 'magicWandSharedResult',
+        error: 'Not initialized',
         gen: data.gen,
       })
       return
@@ -168,7 +168,7 @@ self.onmessage = (e: MessageEvent) => {
       sharedRasMap,
       sharedVoxelSizeMM,
     )
-    post({ type: "magicWandSharedResult", result, gen: data.gen })
+    post({ type: 'magicWandSharedResult', result, gen: data.gen })
     return
   }
 

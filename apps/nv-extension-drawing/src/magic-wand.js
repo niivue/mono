@@ -8,32 +8,32 @@
  * All coordinate picking is handled by the extension context's
  * slicePointerMove / slicePointerUp events — no manual hit-testing.
  */
-import NiiVue from "@niivue/niivue"
+import NiiVue from '@niivue/niivue'
 import {
   MagicWandShared,
   magicWand as magicWandWorker,
-} from "@niivue/nv-drawing"
+} from '@niivue/nv-drawing'
 
 // --- UI refs ---
-const status = document.getElementById("status")
-const sliceTypeSelect = document.getElementById("sliceType")
-const useWebGPUCb = document.getElementById("useWebGPU")
-const modeSelect = document.getElementById("modeSelect")
-const penColorSelect = document.getElementById("penColor")
-const undoBtn = document.getElementById("undoBtn")
-const clearBtn = document.getElementById("clearBtn")
-const toleranceSlider = document.getElementById("toleranceSlider")
-const toleranceVal = document.getElementById("toleranceVal")
-const toleranceGroup = document.getElementById("toleranceGroup")
-const percentSlider = document.getElementById("percentSlider")
-const percentVal = document.getElementById("percentVal")
-const percentGroup = document.getElementById("percentGroup")
-const thresholdModeSelect = document.getElementById("thresholdModeSelect")
-const maxDistInput = document.getElementById("maxDistInput")
-const is2DCb = document.getElementById("is2DCb")
-const connectivitySelect = document.getElementById("connectivitySelect")
-const useTransferCb = document.getElementById("useTransferCb")
-const wandParams = document.getElementById("wandParams")
+const status = document.getElementById('status')
+const sliceTypeSelect = document.getElementById('sliceType')
+const useWebGPUCb = document.getElementById('useWebGPU')
+const modeSelect = document.getElementById('modeSelect')
+const penColorSelect = document.getElementById('penColor')
+const undoBtn = document.getElementById('undoBtn')
+const clearBtn = document.getElementById('clearBtn')
+const toleranceSlider = document.getElementById('toleranceSlider')
+const toleranceVal = document.getElementById('toleranceVal')
+const toleranceGroup = document.getElementById('toleranceGroup')
+const percentSlider = document.getElementById('percentSlider')
+const percentVal = document.getElementById('percentVal')
+const percentGroup = document.getElementById('percentGroup')
+const thresholdModeSelect = document.getElementById('thresholdModeSelect')
+const maxDistInput = document.getElementById('maxDistInput')
+const is2DCb = document.getElementById('is2DCb')
+const connectivitySelect = document.getElementById('connectivitySelect')
+const useTransferCb = document.getElementById('useTransferCb')
+const wandParams = document.getElementById('wandParams')
 
 toleranceSlider.oninput = () => {
   toleranceVal.textContent = toleranceSlider.value
@@ -43,46 +43,46 @@ percentSlider.oninput = () => {
 }
 thresholdModeSelect.onchange = () => {
   const mode = thresholdModeSelect.value
-  const usesTol = mode === "symmetric" || mode === "bright" || mode === "dark"
-  const usesPct = mode === "percent" || mode === "auto"
-  toleranceGroup.style.display = usesTol ? "" : "none"
-  percentGroup.style.display = usesPct ? "" : "none"
+  const usesTol = mode === 'symmetric' || mode === 'bright' || mode === 'dark'
+  const usesPct = mode === 'percent' || mode === 'auto'
+  toleranceGroup.style.display = usesTol ? '' : 'none'
+  percentGroup.style.display = usesPct ? '' : 'none'
 }
 
 modeSelect.onchange = () => {
-  const isWand = modeSelect.value === "wand"
-  wandParams.style.display = isWand ? "flex" : "none"
+  const isWand = modeSelect.value === 'wand'
+  wandParams.style.display = isWand ? 'flex' : 'none'
   nv.drawIsEnabled = !isWand
   if (isWand) {
     snapshotCommitted()
     initSharedIfNeeded()
   }
   status.textContent = isWand
-    ? "Magic Wand mode \u2014 hover to preview, click to apply."
-    : "Draw mode \u2014 draw on slices with the pen."
+    ? 'Magic Wand mode \u2014 hover to preview, click to apply.'
+    : 'Draw mode \u2014 draw on slices with the pen.'
 }
 
 // --- Initialize NiiVue + extension context ---
 const nv = new NiiVue()
 const ctx = nv.createExtensionContext()
 
-ctx.on("locationChange", (e) => {
-  document.getElementById("location").innerHTML =
+ctx.on('locationChange', (e) => {
+  document.getElementById('location').innerHTML =
     `&nbsp;&nbsp;${e.detail.string}`
 })
 
-await nv.attachToCanvas(document.getElementById("gl1"))
-await nv.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
+await nv.attachToCanvas(document.getElementById('gl1'))
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 
 // Detect actual backend and sync checkbox
-useWebGPUCb.checked = nv.backend === "webgpu"
+useWebGPUCb.checked = nv.backend === 'webgpu'
 
 // --- WebGPU / WebGL2 toggle ---
 useWebGPUCb.onchange = async () => {
-  const backend = useWebGPUCb.checked ? "webgpu" : "webgl2"
+  const backend = useWebGPUCb.checked ? 'webgpu' : 'webgl2'
   status.textContent = `Switching to ${backend}\u2026`
   const ok = await nv.reinitializeView({ backend })
-  useWebGPUCb.checked = nv.backend === "webgpu"
+  useWebGPUCb.checked = nv.backend === 'webgpu'
   status.textContent = ok
     ? `Backend: ${nv.backend}`
     : `Failed to switch to ${backend}`
@@ -106,7 +106,7 @@ undoBtn.onclick = () => {
 clearBtn.onclick = () => {
   ctx.closeDrawing()
   ctx.createEmptyDrawing()
-  if (modeSelect.value === "wand") nv.drawIsEnabled = false
+  if (modeSelect.value === 'wand') nv.drawIsEnabled = false
   if (wandShared) {
     wandShared.dispose()
     wandShared = null
@@ -114,7 +114,7 @@ clearBtn.onclick = () => {
   }
   snapshotCommitted()
   previewActive = false
-  status.textContent = "Drawing cleared."
+  status.textContent = 'Drawing cleared.'
 }
 
 sliceTypeSelect.onchange = () => {
@@ -144,16 +144,16 @@ let sharedReady = false
 
 async function initSharedIfNeeded() {
   if (wandShared) return
-  if (typeof SharedArrayBuffer === "undefined") {
+  if (typeof SharedArrayBuffer === 'undefined') {
     status.textContent =
-      "SharedArrayBuffer not available — using transfer worker."
+      'SharedArrayBuffer not available — using transfer worker.'
     useTransferCb.checked = true
     return
   }
   const dr = ctx.drawing
   const bg = ctx.backgroundVolume
   if (!dr || !bg) return
-  status.textContent = "Initializing SharedArrayBuffer worker\u2026"
+  status.textContent = 'Initializing SharedArrayBuffer worker\u2026'
 
   const committed =
     committedBitmap ||
@@ -174,7 +174,7 @@ async function initSharedIfNeeded() {
 
   await wandShared.ready
   sharedReady = true
-  status.textContent = "Ready \u2014 hover to preview, click to apply."
+  status.textContent = 'Ready \u2014 hover to preview, click to apply.'
 }
 
 // Initialize shared worker immediately (wand mode is the default)
@@ -213,9 +213,9 @@ function clearPreview() {
 function formatStatus(prefix, result, seed, elapsed, backend) {
   const brightStr =
     result.isBright !== undefined
-      ? ` (${result.isBright ? "bright" : "dark"})`
-      : ""
-  const suffix = prefix === "Preview" ? " \u2014 click to apply" : ""
+      ? ` (${result.isBright ? 'bright' : 'dark'})`
+      : ''
+  const suffix = prefix === 'Preview' ? ' \u2014 click to apply' : ''
   return (
     `${prefix}: ${result.filledCount} voxels at [${seed}], ` +
     `intensity=${result.seedIntensity.toFixed(1)}, ` +
@@ -240,7 +240,7 @@ async function runPreviewShared(seed, sliceType) {
   if (!result) return // superseded
   previewActive = true
   ctx.refreshDrawing()
-  status.textContent = formatStatus("Preview", result, seed, elapsed, "shared")
+  status.textContent = formatStatus('Preview', result, seed, elapsed, 'shared')
 }
 
 // --- Transfer-based worker (fallback) ---
@@ -268,15 +268,15 @@ async function runPreviewWorker(seed, sliceType) {
   if (gen !== previewGen) return
   dr.update(bitmap)
   previewActive = true
-  status.textContent = formatStatus("Preview", result, seed, elapsed, "worker")
+  status.textContent = formatStatus('Preview', result, seed, elapsed, 'worker')
 }
 
 // ---------------------------------------------------------------------------
 // Pointer event bindings
 // ---------------------------------------------------------------------------
 
-ctx.on("slicePointerMove", (e) => {
-  if (modeSelect.value !== "wand") return
+ctx.on('slicePointerMove', (e) => {
+  if (modeSelect.value !== 'wand') return
   if (e.detail.pointerEvent.buttons !== 0) return
 
   const seed = e.detail.voxel
@@ -289,8 +289,8 @@ ctx.on("slicePointerMove", (e) => {
   }
 })
 
-ctx.on("slicePointerUp", (e) => {
-  if (modeSelect.value !== "wand") return
+ctx.on('slicePointerUp', (e) => {
+  if (modeSelect.value !== 'wand') return
   if (e.detail.pointerEvent.button !== 0) return
 
   const seed = e.detail.voxel
@@ -305,8 +305,8 @@ ctx.on("slicePointerUp", (e) => {
       previewActive = false
       if (wandShared) wandShared.updateCommitted(committedBitmap)
       status.textContent = status.textContent
-        .replace("Preview:", "Applied:")
-        .replace(/ \u2014 click to apply/, "")
+        .replace('Preview:', 'Applied:')
+        .replace(/ \u2014 click to apply/, '')
     }
     return
   }
@@ -333,13 +333,13 @@ ctx.on("slicePointerUp", (e) => {
       wandShared.updateCommitted(committedBitmap)
     const elapsed = (performance.now() - t0).toFixed(1)
     status.textContent = formatStatus(
-      "Applied",
+      'Applied',
       result,
       seed,
       elapsed,
-      "worker",
+      'worker',
     )
   })
 })
 
-ctx.on("slicePointerLeave", () => clearPreview())
+ctx.on('slicePointerLeave', () => clearPreview())

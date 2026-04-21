@@ -1,5 +1,5 @@
-import { log } from "@/logger"
-import type { NVFontData } from "@/NVTypes"
+import { log } from '@/logger'
+import type { NVFontData } from '@/NVTypes'
 import {
   buildTextLayout,
   calculateFontSizePx,
@@ -7,11 +7,11 @@ import {
   FLOATS_PER_PANEL,
   type FontMetrics,
   type GlyphBatch,
-} from "@/view/NVFont"
-import { NVRenderer } from "@/view/NVRenderer"
-import fontShaderCode from "./font.wgsl?raw"
-import panelShaderCode from "./panel.wgsl?raw"
-import * as wgpu from "./wgpu"
+} from '@/view/NVFont'
+import { NVRenderer } from '@/view/NVRenderer'
+import fontShaderCode from './font.wgsl?raw'
+import panelShaderCode from './panel.wgsl?raw'
+import * as wgpu from './wgpu'
 
 export class FontRenderer extends NVRenderer {
   pipeline: GPURenderPipeline | null
@@ -59,12 +59,12 @@ export class FontRenderer extends NVRenderer {
           {
             binding: 0,
             visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-            buffer: { type: "uniform" },
+            buffer: { type: 'uniform' },
           },
           {
             binding: 1,
             visibility: GPUShaderStage.VERTEX,
-            buffer: { type: "read-only-storage" },
+            buffer: { type: 'read-only-storage' },
           },
           { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
           { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
@@ -73,27 +73,27 @@ export class FontRenderer extends NVRenderer {
       // 3. Create Render Pipeline
       const fontModule = device.createShaderModule({ code: fontShaderCode })
       const blendState: GPUBlendState = {
-        color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha" },
-        alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+        color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+        alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
       }
       const depthStencil: GPUDepthStencilState = {
         depthWriteEnabled: false,
-        depthCompare: "always",
-        format: "depth24plus",
+        depthCompare: 'always',
+        format: 'depth24plus',
       }
       this.pipeline = device.createRenderPipeline({
         layout: device.createPipelineLayout({
           bindGroupLayouts: [this.bindLayout],
         }),
         multisample: { count: msaaCount },
-        vertex: { module: fontModule, entryPoint: "vertex_main" },
+        vertex: { module: fontModule, entryPoint: 'vertex_main' },
         fragment: {
           module: fontModule,
-          entryPoint: "fragment_main",
+          entryPoint: 'fragment_main',
           targets: [{ format, blend: blendState }],
         },
         depthStencil,
-        primitive: { topology: "triangle-strip" },
+        primitive: { topology: 'triangle-strip' },
       })
       // Space for uniforms (canvasSize)
       this.paramsBuffer = device.createBuffer({
@@ -106,12 +106,12 @@ export class FontRenderer extends NVRenderer {
           {
             binding: 0,
             visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-            buffer: { type: "uniform" },
+            buffer: { type: 'uniform' },
           },
           {
             binding: 1,
             visibility: GPUShaderStage.VERTEX,
-            buffer: { type: "read-only-storage" },
+            buffer: { type: 'read-only-storage' },
           },
         ],
       })
@@ -121,19 +121,19 @@ export class FontRenderer extends NVRenderer {
           bindGroupLayouts: [this.panelBindLayout],
         }),
         multisample: { count: msaaCount },
-        vertex: { module: panelModule, entryPoint: "vertex_main" },
+        vertex: { module: panelModule, entryPoint: 'vertex_main' },
         fragment: {
           module: panelModule,
-          entryPoint: "fragment_main",
+          entryPoint: 'fragment_main',
           targets: [{ format, blend: blendState }],
         },
         depthStencil,
-        primitive: { topology: "triangle-strip" },
+        primitive: { topology: 'triangle-strip' },
       })
       this._growPanelBuffer(device, 128)
       this.isReady = true
     } catch (err) {
-      log.error("Failed to initialize font system:", err)
+      log.error('Failed to initialize font system:', err)
       this.isReady = false
     }
   }
@@ -258,7 +258,7 @@ export class FontRenderer extends NVRenderer {
         }
         device.queue.writeBuffer(this.panelBuffer, 0, panelData)
         pass.setPipeline(this.panelPipeline)
-        pass.setBindGroup(0, this.panelBindGroup!)
+        pass.setBindGroup(0, this.panelBindGroup as GPUBindGroup)
         pass.draw(4, panelCount)
       }
     }

@@ -1,5 +1,5 @@
-import type NiiVueGPU from "@/NVControlBase"
-import type { BackendType } from "@/NVTypes"
+import type NiiVueGPU from '@/NVControlBase'
+import type { BackendType } from '@/NVTypes'
 
 export type ReinitializeOptions = {
   backend?: BackendType

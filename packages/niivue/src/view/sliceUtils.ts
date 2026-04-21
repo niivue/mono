@@ -1,4 +1,4 @@
-import { type mat4, vec4 } from "gl-matrix"
+import { type mat4, vec4 } from 'gl-matrix'
 
 // Scratch buffers to avoid per-call allocations
 const _clip = vec4.create()

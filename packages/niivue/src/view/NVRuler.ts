@@ -1,7 +1,7 @@
-import { SLICE_TYPE } from "@/NVConstants"
-import type { BuildTextFn, GlyphBatch } from "./NVFont"
-import type { BuildLineFn, LineData } from "./NVLine"
-import type { SliceTile } from "./NVSliceLayout"
+import { SLICE_TYPE } from '@/NVConstants'
+import type { BuildTextFn, GlyphBatch } from './NVFont'
+import type { BuildLineFn, LineData } from './NVLine'
+import type { SliceTile } from './NVSliceLayout'
 
 // In-plane axis indices per orientation: [u, v] (depth axis excluded)
 const IN_PLANE: Record<number, [number, number]> = {

@@ -1,22 +1,23 @@
-import { type vec3, vec4 } from "gl-matrix"
+import { type vec3, vec4 } from 'gl-matrix'
 import {
   isOnSlice,
   slice2DToMM,
   slice2DToMMOnPlane,
-} from "@/annotation/sliceProjection"
-import { triangulatePolygon } from "@/annotation/triangulate"
-import { slicePlaneEquation } from "@/math/NVTransforms"
-import { SLICE_TYPE, sliceTypeDim } from "@/NVConstants"
-import type NVModel from "@/NVModel"
+} from '@/annotation/sliceProjection'
+import { triangulatePolygon } from '@/annotation/triangulate'
+import { slicePlaneEquation } from '@/math/NVTransforms'
+import { SLICE_TYPE, sliceTypeDim } from '@/NVConstants'
+import type NVModel from '@/NVModel'
 import type {
   AnnotationPoint,
   AnnotationStats,
+  PolygonWithHoles,
   VectorAnnotation,
-} from "@/NVTypes"
-import type { BuildTextFn, GlyphBatch } from "@/view/NVFont"
-import { projectMMToCanvas } from "@/view/sliceUtils"
-import type { BuildLineFn, LineData } from "./NVLine"
-import type { SliceTile } from "./NVSliceLayout"
+} from '@/NVTypes'
+import type { BuildTextFn, GlyphBatch } from '@/view/NVFont'
+import { projectMMToCanvas } from '@/view/sliceUtils'
+import type { BuildLineFn, LineData } from './NVLine'
+import type { SliceTile } from './NVSliceLayout'
 
 export type AnnotationRenderData = {
   fillVertices: Float32Array
@@ -57,7 +58,7 @@ function buildBrushCursor(
   if (!cursor) return
   const cfg = model.annotation
   if (!cfg.isEnabled) return
-  if (cfg.tool !== "freehand") return
+  if (cfg.tool !== 'freehand') return
   const radius = cfg.brushRadius
   if (radius <= 0) return
 
@@ -104,8 +105,8 @@ function buildBrushCursor(
     }
 
     for (let i = 0; i < CURSOR_SEGMENTS; i++) {
-      const a = circleCanvas[i]!
-      const b = circleCanvas[(i + 1) % CURSOR_SEGMENTS]!
+      const a = circleCanvas[i] as [number, number]
+      const b = circleCanvas[(i + 1) % CURSOR_SEGMENTS] as [number, number]
       strokeLines.push(
         buildLine(a[0], a[1], b[0], b[1], strokeW, [sr, sg, sb, sa]),
       )
@@ -238,8 +239,8 @@ export function buildAnnotation3DRenderData(
       const nVerts = vertices.length / 2
       for (let i = 0; i < nVerts; i++) {
         const pt: AnnotationPoint = {
-          x: vertices[i * 2]!,
-          y: vertices[i * 2 + 1]!,
+          x: vertices[i * 2] as number,
+          y: vertices[i * 2 + 1] as number,
         }
         const mm =
           planeNormal && planePoint
@@ -248,7 +249,7 @@ export function buildAnnotation3DRenderData(
         allVerts.push(mm[0], mm[1], mm[2], fr, fg, fb, fa)
       }
       for (let i = 0; i < indices.length; i++) {
-        allIndices.push(indices[i]! + vertexOffset)
+        allIndices.push((indices[i] as number) + vertexOffset)
       }
       vertexOffset += nVerts
     }
@@ -305,7 +306,7 @@ export function buildAnnotationRenderData(
     const ltwh = tile.leftTopWidthHeight
 
     for (let annIdx = 0; annIdx < annotations.length; annIdx++) {
-      const ann = annotations[annIdx]!
+      const ann = annotations[annIdx] as VectorAnnotation
       if (ann.sliceType !== tile.axCorSag) continue
       const anchor = anchors[annIdx]
       if (!anchor) continue
@@ -317,7 +318,7 @@ export function buildAnnotationRenderData(
       const strokeW = ann.style.strokeWidth
 
       for (let polyIdx = 0; polyIdx < ann.polygons.length; polyIdx++) {
-        const poly = ann.polygons[polyIdx]!
+        const poly = ann.polygons[polyIdx] as PolygonWithHoles
         // Project outer + holes to canvas coords using plane-aware depth
         const outerCanvas: AnnotationPoint[] = []
         for (const pt of poly.outer) {
@@ -370,8 +371,8 @@ export function buildAnnotationRenderData(
 
         // Stroke lines for outer
         for (let i = 0; i < outerCanvas.length; i++) {
-          const a = outerCanvas[i]!
-          const b = outerCanvas[(i + 1) % outerCanvas.length]!
+          const a = outerCanvas[i] as AnnotationPoint
+          const b = outerCanvas[(i + 1) % outerCanvas.length] as AnnotationPoint
           strokeLines.push(
             buildLine(a.x, a.y, b.x, b.y, strokeW, [sr, sg, sb, sa]),
           )
@@ -380,8 +381,8 @@ export function buildAnnotationRenderData(
         // Stroke lines for holes
         for (const holeCanvas of holesCanvas) {
           for (let i = 0; i < holeCanvas.length; i++) {
-            const a = holeCanvas[i]!
-            const b = holeCanvas[(i + 1) % holeCanvas.length]!
+            const a = holeCanvas[i] as AnnotationPoint
+            const b = holeCanvas[(i + 1) % holeCanvas.length] as AnnotationPoint
             strokeLines.push(
               buildLine(a.x, a.y, b.x, b.y, strokeW, [sr, sg, sb, sa]),
             )
@@ -392,7 +393,7 @@ export function buildAnnotationRenderData(
       // Stats text labels for measurement annotations
       if (buildText && ann.stats && ann.shape) {
         const textLines = formatAnnotationStats(ann.stats)
-        const textStr = textLines.join("\n")
+        const textStr = textLines.join('\n')
         const textColor = [sr, sg, sb, 1]
         const textBack = [0, 0, 0, 0.6]
         const pn = tile.planeNormal
@@ -400,7 +401,7 @@ export function buildAnnotationRenderData(
 
         if (
           ann.stats.length !== undefined &&
-          ann.shape.type === "measureLine"
+          ann.shape.type === 'measureLine'
         ) {
           const midPt: AnnotationPoint = {
             x: (ann.shape.start.x + ann.shape.end.x) / 2,

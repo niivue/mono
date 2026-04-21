@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 const nv1 = new NiiVue({
   backgroundColor: [0.0, 0.0, 0.2, 1],
@@ -6,23 +6,23 @@ const nv1 = new NiiVue({
   crosshairWidth: 0.5,
   isSnapToVoxelCenters: true,
 })
-nv1.addEventListener("locationChange", (e) => {
-  document.getElementById("location").innerHTML =
+nv1.addEventListener('locationChange', (e) => {
+  document.getElementById('location').innerHTML =
     `&nbsp;&nbsp;${e.detail.string}`
 })
-await nv1.attachTo("gl1")
+await nv1.attachTo('gl1')
 // V1 lines benefit from nearest neighbor interpolation
 nv1.volumeIsNearestInterpolation = true
 // AFNI detached images: header (.HEAD) and image data (.BRIK.gz) are separate files
 await nv1.loadVolumes([
   {
-    url: "/volumes/afni/DT_FA+orig.HEAD",
-    urlImageData: "/volumes/afni/DT_FA+orig.BRIK.gz",
+    url: '/volumes/afni/DT_FA+orig.HEAD',
+    urlImageData: '/volumes/afni/DT_FA+orig.BRIK.gz',
     opacity: 1,
   },
   {
-    url: "/volumes/afni/DT_V1+orig.HEAD",
-    urlImageData: "/volumes/afni/DT_V1+orig.BRIK.gz",
+    url: '/volumes/afni/DT_V1+orig.HEAD',
+    urlImageData: '/volumes/afni/DT_V1+orig.BRIK.gz',
     opacity: 1,
   },
 ])
@@ -46,7 +46,7 @@ check.onchange = function () {
   nv1.updateGLVolume()
 }
 webgpuCheck.onclick = function () {
-  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 mode.onchange = async () => {
   const idx = mode.selectedIndex
@@ -67,7 +67,7 @@ mode.onchange = async () => {
   if (idx === 2 || idx === 4) {
     await nv1.setModulationImage(nv1.volumes[1].id, nv1.volumes[0].id)
   } else {
-    await nv1.setModulationImage(nv1.volumes[1].id, "")
+    await nv1.setModulationImage(nv1.volumes[1].id, '')
   }
   nv1.volumeIsV1SliceShader = idx > 2
 }

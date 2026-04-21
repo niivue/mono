@@ -1,6 +1,6 @@
-import { compress } from "@/codecs/NVGz"
+import { compress } from '@/codecs/NVGz'
 
-export const extensions = ["MZ3"]
+export const extensions = ['MZ3']
 
 export type MZ3WriteOptions = {
   compress?: boolean

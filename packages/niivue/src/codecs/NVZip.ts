@@ -1,4 +1,4 @@
-import { log } from "@/logger"
+import { log } from '@/logger'
 
 interface Entry {
   signature: string
@@ -55,23 +55,21 @@ export class Zip {
   }
 
   async extract(entry: Entry): Promise<Uint8Array> {
+    const offset = entry.startsAt as number
     const buffer = new Uint8Array(
-      this.#dataView.buffer.slice(
-        entry.startsAt!,
-        entry.startsAt! + entry.compressedSize,
-      ),
+      this.#dataView.buffer.slice(offset, offset + entry.compressedSize),
     )
     if (entry.compressionMethod === 0x00) {
       return buffer
     } else if (entry.compressionMethod === 0x08) {
-      const stream = new DecompressionStream("deflate-raw")
+      const stream = new DecompressionStream('deflate-raw')
       const writer = stream.writable.getWriter()
       writer
         .write(new Uint8Array(buffer))
-        .catch((e) => log.error("NVZip write error", e))
+        .catch((e) => log.error('NVZip write error', e))
       const closePromise = writer
         .close()
-        .catch((e) => log.error("NVZip close error", e))
+        .catch((e) => log.error('NVZip close error', e))
       const response = new Response(stream.readable)
       const result = new Uint8Array(await response.arrayBuffer())
       await closePromise
@@ -96,26 +94,23 @@ export class Zip {
         entry.startsAt =
           this.#index + 30 + entry.fileNameLength + entry.extraLength
         if (entry.compressedSize === 0 && hasDataDescriptor) {
-          let scanIndex = entry.startsAt
-          while (scanIndex! + 20 <= this.#dataView.byteLength) {
-            const possibleSignature = this.#dataView.getUint32(scanIndex!, true)
+          let scanIndex = entry.startsAt as number
+          while (scanIndex + 20 <= this.#dataView.byteLength) {
+            const possibleSignature = this.#dataView.getUint32(scanIndex, true)
             if (possibleSignature === 0x08074b50) {
               const nextPK =
-                this.#dataView.getUint16(scanIndex! + 16, true) === 0x4b50
+                this.#dataView.getUint16(scanIndex + 16, true) === 0x4b50
               if (nextPK) {
-                scanIndex! += 4
+                scanIndex += 4
                 break
               }
             }
-            scanIndex!++
+            scanIndex++
           }
-          entry.crc = this.#dataView.getUint32(scanIndex!, true)
-          entry.compressedSize = this.#dataView.getUint32(scanIndex! + 4, true)
-          entry.uncompressedSize = this.#dataView.getUint32(
-            scanIndex! + 8,
-            true,
-          )
-          this.#index = scanIndex! + 12
+          entry.crc = this.#dataView.getUint32(scanIndex, true)
+          entry.compressedSize = this.#dataView.getUint32(scanIndex + 4, true)
+          entry.uncompressedSize = this.#dataView.getUint32(scanIndex + 8, true)
+          this.#index = scanIndex + 12
         } else {
           this.#index = entry.startsAt + entry.compressedSize
         }
@@ -137,7 +132,7 @@ export class Zip {
         break
       } else {
         log.error(
-          `Unexpected ZIP signature 0x${signature.toString(16).padStart(8, "0")} at index ${this.#index}`,
+          `Unexpected ZIP signature 0x${signature.toString(16).padStart(8, '0')} at index ${this.#index}`,
         )
         break
       }
@@ -178,7 +173,7 @@ export class Zip {
       }
       if (!foundZip64) {
         throw new Error(
-          "ZIP64 format missing extra field with signature 0x0001.",
+          'ZIP64 format missing extra field with signature 0x0001.',
         )
       }
     }
@@ -255,14 +250,14 @@ export class Zip {
         this.#dataView.getBigUint64(offset + 48, true),
       ),
       commentLength,
-      comment: "",
+      comment: '',
     }
   }
 
   private readString(offset: number, length: number): string {
     return Array.from({ length }, (_, i) =>
       String.fromCharCode(this.#dataView.getUint8(offset + i)),
-    ).join("")
+    ).join('')
   }
 
   get entries(): Entry[] {

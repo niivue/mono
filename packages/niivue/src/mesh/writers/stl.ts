@@ -1,4 +1,4 @@
-export const extensions = ["STL"]
+export const extensions = ['STL']
 
 export async function write(
   positions: Float32Array,

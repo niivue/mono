@@ -1,6 +1,6 @@
-import { applyCORS } from "@/NVLoader"
-import { NVRenderer } from "@/view/NVRenderer"
-import { Shader } from "./shader"
+import { applyCORS } from '@/NVLoader'
+import { NVRenderer } from '@/view/NVRenderer'
+import { Shader } from './shader'
 
 const vertShader = `#version 300 es
 precision highp float;

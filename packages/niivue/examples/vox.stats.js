@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts"
+import NiiVue from '../src/index.ts'
 
 checkCutaway.onclick = function () {
   nv1.isClipPlaneCutaway = this.checked
@@ -53,7 +53,7 @@ clipSelect.onchange = function () {
   }
   nv1.setClipPlanes(planes)
 }
-colorBtn.addEventListener("input", (event) => {
+colorBtn.addEventListener('input', (event) => {
   const input = event.target
   const hex = input.value
   const r = parseInt(hex.slice(1, 3), 16) / 255
@@ -62,14 +62,14 @@ colorBtn.addEventListener("input", (event) => {
   nv1.backgroundColor = [r, g, b, 1.0]
 })
 webgpuCheck.onclick = function () {
-  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+  nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
 }
 aboutBtn.onclick = () => {
   window.alert(
-    "NiiVue allows asymmetric positive and negative statistical thresholds.",
+    'NiiVue allows asymmetric positive and negative statistical thresholds.',
   )
 }
 colorSelect.onchange = function () {
@@ -121,26 +121,26 @@ alphaMode.onchange = () => {
   updateThresholds()
 }
 function handleLocationChange(data) {
-  document.getElementById("location").innerHTML = `&nbsp;&nbsp;${data.string}`
+  document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
 const nv1 = new NiiVue({
   isColorbarVisible: true,
   backgroundColor: [0.1, 0.1, 0.1, 1],
 })
-nv1.addEventListener("locationChange", (e) => handleLocationChange(e.detail))
+nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 await nv1.attachToCanvas(gl1)
 nv1.showRender = 1
 var volumeList = [
   {
-    url: "/volumes/mni152.nii.gz",
+    url: '/volumes/mni152.nii.gz',
     isColorbarVisible: false,
     calMin: 30,
     calMax: 80,
   },
   {
-    url: "/volumes/spmMotor.nii.gz",
-    colormap: "redyell",
-    colormapNegative: "winter",
+    url: '/volumes/spmMotor.nii.gz',
+    colormap: 'redyell',
+    colormapNegative: 'winter',
   },
 ]
 await nv1.loadVolumes(volumeList)

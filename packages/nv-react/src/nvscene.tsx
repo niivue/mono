@@ -1,6 +1,6 @@
-import type { CSSProperties } from "react"
-import { useEffect, useRef } from "react"
-import type { NvSceneController } from "./nvscene-controller"
+import type { CSSProperties } from 'react'
+import { useEffect, useRef } from 'react'
+import type { NvSceneController } from './nvscene-controller'
 
 interface NiivueControllerProps {
   scene: NvSceneController
@@ -13,7 +13,7 @@ export const NvScene = ({
   scene,
   className,
   style,
-  initialLayout = "1x1",
+  initialLayout = '1x1',
 }: NiivueControllerProps) => {
   const containerRef = useRef<HTMLDivElement>(null)
 

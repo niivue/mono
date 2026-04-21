@@ -1,5 +1,5 @@
-import { devImagesPlugin } from "@niivue/dev-images/vite-plugin"
-import { defineConfig } from "vite"
+import { devImagesPlugin } from '@niivue/dev-images/vite-plugin'
+import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [devImagesPlugin()],
@@ -7,10 +7,10 @@ export default defineConfig({
     port: 8085,
   },
   build: {
-    outDir: "dist",
-    target: "esnext",
+    outDir: 'dist',
+    target: 'esnext',
     rollupOptions: {
-      input: "index.html",
+      input: 'index.html',
     },
   },
 })

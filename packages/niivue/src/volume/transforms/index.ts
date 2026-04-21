@@ -10,9 +10,9 @@
  *   - resultDefaults?: { colormap?, opacity? } (suggested display defaults for output)
  */
 
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
-import { NVWorker } from "@/workers/NVWorker"
-import TransformWorker from "@/workers/transform.worker?worker&inline"
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
+import { NVWorker } from '@/workers/NVWorker'
+import TransformWorker from '@/workers/transform.worker?worker&inline'
 
 /**
  * Base options that can be passed to transform functions.
@@ -31,7 +31,7 @@ export interface OptionField {
   /** Display label for UI */
   label: string
   /** Input type */
-  type: "checkbox" | "select"
+  type: 'checkbox' | 'select'
   /** Default value */
   default: boolean | number | string
   /** Available choices (for 'select' type) */
@@ -77,7 +77,7 @@ export interface TransformInfo {
 }
 
 // Auto-discover transform modules (excludes index.ts)
-const modules = import.meta.glob<VolumeTransform>("./*.ts", { eager: true })
+const modules = import.meta.glob<VolumeTransform>('./*.ts', { eager: true })
 
 // Build registry
 const transformsByName = new Map<string, VolumeTransform>()
@@ -86,9 +86,9 @@ const builtinNames = new Set<string>()
 
 for (const [path, mod] of Object.entries(modules)) {
   // Skip index.ts
-  if (path === "./index.ts") continue
+  if (path === './index.ts') continue
 
-  if (mod.name && typeof mod.apply === "function") {
+  if (mod.name && typeof mod.apply === 'function') {
     transformsByName.set(mod.name, mod)
     builtinNames.add(mod.name)
   }
@@ -126,7 +126,7 @@ export function getTransformInfo(name: string): TransformInfo | undefined {
  * Get metadata for all registered transforms.
  */
 export function getTransformInfos(): TransformInfo[] {
-  return transformNames().map((n) => getTransformInfo(n)!)
+  return transformNames().map((n) => getTransformInfo(n) as TransformInfo)
 }
 
 // ---------------------------------------------------------------------------

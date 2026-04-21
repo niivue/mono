@@ -1,11 +1,11 @@
-import { decode, encode } from "cbor-x"
-import * as Drawing from "@/drawing"
-import { encodeRLE } from "@/drawing/rle"
-import { log } from "@/logger"
-import * as NVMeshLayers from "@/mesh/layers"
-import * as NVMesh from "@/mesh/NVMesh"
-import * as NVConstants from "@/NVConstants"
-import type NVModel from "@/NVModel"
+import { decode, encode } from 'cbor-x'
+import { getDrawingBitmap } from '@/drawing/drawingManager'
+import { encodeRLE } from '@/drawing/rle'
+import { log } from '@/logger'
+import * as NVMeshLayers from '@/mesh/layers'
+import * as NVMesh from '@/mesh/NVMesh'
+import * as NVConstants from '@/NVConstants'
+import type NVModel from '@/NVModel'
 import type {
   AnnotationConfig,
   DrawConfig,
@@ -23,9 +23,9 @@ import type {
   UIConfig,
   VectorAnnotation,
   VolumeRenderConfig,
-} from "@/NVTypes"
-import * as NVVolume from "@/volume/NVVolume"
-import { computeVolumeLabelCentroids } from "@/volume/utils"
+} from '@/NVTypes'
+import * as NVVolume from '@/volume/NVVolume'
+import { computeVolumeLabelCentroids } from '@/volume/utils'
 
 const DOCUMENT_VERSION = 7
 
@@ -303,7 +303,7 @@ export function serialize(model: NVModel): Uint8Array {
     }
 
     // Serialize tract source data and options
-    if (m.kind === "tract" && m.trx) {
+    if (m.kind === 'tract' && m.trx) {
       mesh.tractData = {
         vertices: typedArrayToBytes(m.trx.vertices),
         offsets: typedArrayToBytes(m.trx.offsets),
@@ -336,7 +336,7 @@ export function serialize(model: NVModel): Uint8Array {
     }
 
     // Serialize connectome source data and options
-    if (m.kind === "connectome" && m.jcon) {
+    if (m.kind === 'connectome' && m.jcon) {
       mesh.connectomeData = {
         nodes: m.jcon.nodes.map((n) => ({ ...n })),
         edges: m.jcon.edges.map((e) => ({ ...e })),
@@ -424,10 +424,10 @@ export function serialize(model: NVModel): Uint8Array {
     interaction: { ...model.interaction },
     clipPlanes: [...model.clipPlanes],
     drawingBitmapRLE: model.drawingVolume
-      ? encodeRLE(Drawing.getDrawingBitmap(model.drawingVolume))
+      ? encodeRLE(getDrawingBitmap(model.drawingVolume))
       : undefined,
     drawingBitmapLength: model.drawingVolume
-      ? Drawing.getDrawingBitmap(model.drawingVolume).length
+      ? getDrawingBitmap(model.drawingVolume).length
       : undefined,
     volumes,
     meshes,
@@ -442,8 +442,8 @@ export function deserialize(data: Uint8Array): NVDocumentData {
   const doc = decode(data) as NVDocumentData
 
   // Version check
-  if (typeof doc.version !== "number") {
-    throw new Error("Invalid NVD file: missing version")
+  if (typeof doc.version !== 'number') {
+    throw new Error('Invalid NVD file: missing version')
   }
   if (doc.version > DOCUMENT_VERSION) {
     throw new Error(
@@ -453,7 +453,7 @@ export function deserialize(data: Uint8Array): NVDocumentData {
 
   // Validate required fields
   if (!doc.scene || !doc.layout) {
-    throw new Error("Invalid NVD file: missing required fields")
+    throw new Error('Invalid NVD file: missing required fields')
   }
 
   // Migrate v5 → v6: rename drawing bitmap fields
@@ -544,7 +544,7 @@ export async function reconstructVolume(
       const base = NVVolume.nii2volume(
         v.data.hdr,
         imgBuffer,
-        v.name ?? "volume",
+        v.name ?? 'volume',
       )
       // Only override properties that are defined in the document
       if (v.url !== undefined) base.url = v.url
@@ -698,7 +698,7 @@ export async function reconstructMesh(
       }
 
       // Build species-specific source data
-      const kind = m.kind ?? "mesh"
+      const kind = m.kind ?? 'mesh'
       const meshOpts: Record<string, unknown> = {
         kind,
         url: m.url,
@@ -713,7 +713,7 @@ export async function reconstructMesh(
       }
 
       // Restore tract source data so retessellateTract() works
-      if (kind === "tract" && m.tractData) {
+      if (kind === 'tract' && m.tractData) {
         const td = m.tractData
         const trx: NVTractData = {
           vertices: new Float32Array(
@@ -770,7 +770,7 @@ export async function reconstructMesh(
       }
 
       // Restore connectome source data so reextrudeConnectome() works
-      if (kind === "connectome" && m.connectomeData) {
+      if (kind === 'connectome' && m.connectomeData) {
         meshOpts.jcon = m.connectomeData
         meshOpts.connectomeOptions = m.connectomeOptions ?? null
       }
@@ -796,7 +796,7 @@ export async function reconstructMesh(
 
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
+  const a = document.createElement('a')
   a.href = url
   a.download = filename
   document.body.appendChild(a)
@@ -810,6 +810,6 @@ export function triggerDownload(data: Uint8Array, filename: string): void {
     data.byteOffset,
     data.byteOffset + data.byteLength,
   ) as ArrayBuffer
-  const name = filename.endsWith(".nvd") ? filename : `${filename}.nvd`
-  downloadBlob(new Blob([buffer], { type: "application/cbor" }), name)
+  const name = filename.endsWith('.nvd') ? filename : `${filename}.nvd`
+  downloadBlob(new Blob([buffer], { type: 'application/cbor' }), name)
 }

@@ -15,9 +15,9 @@ const post = (
   }
 ).postMessage.bind(self)
 
-import { computeConform } from "./processing/conform"
-import { computeConnectedLabel } from "./processing/connectedLabel"
-import { applyHazeRemoval, applyOtsu, findOtsu } from "./processing/otsu"
+import { computeConform } from './processing/conform'
+import { computeConnectedLabel } from './processing/connectedLabel'
+import { applyHazeRemoval, applyOtsu, findOtsu } from './processing/otsu'
 
 /**
  * Wrap an ArrayBuffer as a typed view based on NIfTI datatype code.

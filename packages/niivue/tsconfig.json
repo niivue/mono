@@ -17,6 +17,6 @@
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["src", "vite.config.js", "eslint.config.cjs"],
+  "include": ["src", "vite.config.js"],
   "exclude": ["dist", "node_modules"]
 }

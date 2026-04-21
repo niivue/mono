@@ -23,7 +23,12 @@
         "useImportType": "error"
       },
       "suspicious": {
-        "noExplicitAny": "error"
+        "noExplicitAny": "error",
+        "noDoubleEquals": "error"
+      },
+      "correctness": {
+        "noUnusedVariables": "error",
+        "noUnusedImports": "error"
       },
       "performance": {
         "noBarrelFile": "error"

@@ -1,0 +1,179 @@
+# AGENTS.md — AI Agent Instructions for NiiVue Monorepo
+
+## Project overview
+
+NiiVue is a browser-based medical image visualization ecosystem. This monorepo contains the core WebGPU/WebGL2 viewer, React bindings, extension libraries, and demo applications. The stack is TypeScript, Vite, Bun (package manager + runtime), Biome (lint/format), and Nx (task orchestration + caching). There is scaffolding for Python/Pixi projects for the future. 
+
+See `README.md` for a package overview and `CONTRIBUTING.md` for detailed development docs.
+
+## Workspace layout
+
+```
+packages/       # Libraries (publishable). See each package's README for details.
+apps/           # Demo applications (private, not published). See each app's README.
+nx-tools/       # Custom Nx plugins and scripts (boundary checks, Pixi plugin, release)
+```
+
+- Each `packages/*` and `apps/*` directory has its own `README.md`, `package.json`, `project.json`, and `tsconfig.json`.
+- When working on a specific package or app, read its README first.
+
+### Tags
+
+Every project has two tags in its `project.json`:
+
+- **`type:app`** or **`type:lib`** — apps live in `apps/`, libs live in `packages/`.
+- **`lang:typescript`** or **`lang:python`** — all current projects are `lang:typescript`.
+
+### Workspace links
+
+Dependencies between packages use `"workspace:*"` in `package.json`. Bun resolves these from the workspace root. The root `package.json` declares workspaces:
+
+```json
+"workspaces": ["apps/*", "packages/*"]
+```
+
+## Commands
+
+**Package manager: Bun.** Always use `bun` and `bunx`, not `npm`/`npx`/`pnpm`/`yarn`.
+
+```bash
+bun install                          # Install all dependencies
+
+bunx nx build <project>              # Single project (builds deps first)
+bunx nx run-many -t build            # All projects
+bunx nx affected -t build            # Only projects affected by current changes
+
+bunx nx test <project>               # Single project
+bunx nx affected -t test             # Only affected
+
+bunx nx lint <project>               # Single project (Biome)
+bunx nx affected -t lint             # Only affected
+
+bunx nx typecheck <project>          # Single project (tsc --noEmit)
+bunx nx affected -t typecheck        # Only affected
+
+bunx nx format <project>             # Auto-fix formatting (Biome)
+
+bunx nx dev <project>                # Start dev server
+
+bun run check-boundaries             # Enforce module boundary rules
+bunx nx reset                        # Clear Nx cache
+```
+
+Prefer `nx affected` over `nx run-many` when working on a branch.
+
+## Creating new code
+
+### When to create a new lib vs. app
+
+- **Library** (`packages/`): reusable code published or consumed by other workspace projects. Tag `type:lib`.
+- **Application** (`apps/`): runnable demo or standalone app, not imported by others. Tag `type:app`.
+
+### Steps to add a new TypeScript project
+
+1. Create directory under `apps/` or `packages/`.
+2. Add `package.json` with `"type": "module"`. Use `workspace:*` for internal deps.
+3. Add `tsconfig.json` — copy from an existing project (there is no shared `tsconfig.base.json`).
+4. Add `project.json` following the pattern of an existing project. Required fields:
+   - `name`, `projectType` (`"library"` or `"application"`),
+   - `tags` (e.g. `["type:lib", "lang:typescript"]`),
+   - `targets` — at minimum `build`, `lint`, `format`, `typecheck`
+5. Run `bun install` from the repo root.
+
+This repo does **not** use Nx generators. Projects are created manually.
+
+## Module boundaries
+
+Enforced by `nx-tools/check-boundaries.js`. Run with `bun run check-boundaries`.
+
+1. **No project may depend on an app.** Only libs (`type:lib`) are allowed as dependencies.
+2. **Libs cannot depend on apps.**
+3. **No cross-language dependencies.** TypeScript ↔ Python imports are forbidden.
+
+## Code style
+
+### Biome (sole linter/formatter)
+
+Configured in root `biome.json`. Applies to all projects.
+
+| Rule | Setting |
+|------|---------|
+| Indent | 2 spaces |
+| Quotes | Single quotes |
+| Semicolons | As needed (no mandatory semicolons) |
+| `noExplicitAny` | **Error** — do not use `any` |
+| `noNonNullAssertion` | **Error** — do not use `!` postfix |
+| `noBarrelFile` | **Error** — do not create barrel/index re-export files |
+| `noDoubleEquals` | **Error** — use `===` not `==` |
+| `noUnusedVariables` | **Error** — prefix intentionally unused vars with `_` |
+| `noUnusedImports` | **Error** — remove unused imports |
+| `useImportType` | **Error** — use `import type` for type-only imports |
+| Import sorting | Enabled via `organizeImports` assist |
+
+### TypeScript
+
+- **Target:** ESNext, **strict mode** enabled everywhere.
+- **Path alias:** `@/*` → `./src/*` (used in some packages — check the project's `tsconfig.json`).
+- TypeScript is only used for type checking (`tsc --noEmit`), not compilation.
+
+### Commit messages
+
+Conventional commits format. Used by Nx Release for automatic versioning.
+
+```
+feat: add new colormap support
+fix: handle null volume in loader
+chore: update dev dependencies
+feat!: redesign public API   (breaking change)
+```
+
+## Testing
+
+- Tests are co-located with source files as `*.test.ts` / `*.test.tsx`.
+- Test runners vary by project — check the project's `project.json` `test` target.
+- No coverage thresholds are configured.
+
+```bash
+bunx nx test <project>               # Run a project's tests via Nx
+```
+
+## Before finishing a task
+
+Run this sequence from the repo root. All commands must exit 0.
+
+```bash
+bunx nx affected -t format
+bunx nx affected -t lint
+bunx nx affected -t typecheck
+bunx nx affected -t test
+bunx nx affected -t build
+bun run check-boundaries
+```
+
+If `nx affected` doesn't detect changes (e.g., on the default branch), target specific projects:
+
+```bash
+bunx nx run <project>:lint
+bunx nx run <project>:typecheck
+bunx nx run <project>:test
+bunx nx run <project>:build
+```
+
+## Do not touch
+
+- **`bun.lock`** — managed by Bun. Never edit manually.
+- **`node_modules/`**, **`.nx/`**, **`dist/`**, **`.pixi/`** — generated/cached. Gitignored.
+- **`packages/niivue/src/assets/fonts/index.ts`** and **`packages/niivue/src/assets/matcaps/index.ts`** — auto-generated by `scripts/generate-assets.js`.
+- **`CHANGELOG.md` files** — auto-generated by Nx Release.
+- **`packages/dev-images/images/**`** — Git LFS–tracked binary files. Do not add/modify without Git LFS.
+- **`nx-tools/`** — infrastructure scripts. Modify only if asked
+
+## Gotchas
+
+- **No barrel files.** Biome enforces `noBarrelFile: "error"`. Auto-generated asset index files in `packages/niivue/src/assets/` are the sole exception.
+- **`niivue` build requires codegen first.** The Nx target handles this automatically (`npm run codegen:assets && vite build`), but if you run Vite manually, run `node scripts/generate-assets.js` first.
+- **`workspace:*` peer dependencies.** Extensions and `nv-react` declare `@niivue/niivue` as a peer dep — the local copy is used in dev, but consumers must install it themselves.
+- **CI only covers `packages/niivue`.** GitHub Actions workflows only trigger on `packages/niivue/**` changes. Other packages must be verified locally.
+- **No shared `tsconfig.base.json`.** Each project has its own `tsconfig.json`. Copy from an existing project when creating a new one.
+- **Git LFS required for test images.** `packages/dev-images/images/` uses LFS. Run `git lfs pull` if files are pointers.
+- **Feature parity tracking.** `packages/niivue/FEATURE_PARITY.md` tracks which features from the old NiiVue exist in the rewrite. Consult before implementing features.

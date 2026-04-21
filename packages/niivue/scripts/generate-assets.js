@@ -49,15 +49,15 @@ function generateFonts() {
       continue;
     }
     const exportName = lcFirst(baseName);
-    const content = `${HEADER}import { parseFontMetrics } from '@/view/NVFont'
-import metricsJson from './${jsonFile}'
-import atlasUrl from './${pngFile}'
-import type { NVFontData } from '@/NVTypes'
+    const content = `${HEADER}import type { NVFontData } from "@/NVTypes";
+import { parseFontMetrics } from "@/view/NVFont";
+import metricsJson from "./${jsonFile}";
+import atlasUrl from "./${pngFile}";
 
 export const ${exportName}: NVFontData = {
   metrics: parseFontMetrics(metricsJson),
   atlasUrl,
-}
+};
 `;
     const wrapperPath = join(FONTS_DIR, `${exportName}.ts`);
     if (writeIfChanged(wrapperPath, content)) {
@@ -67,7 +67,7 @@ export const ${exportName}: NVFontData = {
     exportNames.push(exportName);
   }
 
-  const indexContent = `${HEADER}${exportNames.map((n) => `export { ${n} } from './${n}'`).join("\n")}\n`;
+  const indexContent = `${HEADER}${exportNames.map((n) => `export { ${n} } from "./${n}";`).join("\n")}\n`;
   if (writeIfChanged(join(FONTS_DIR, "index.ts"), indexContent)) {
     console.log("  Generated index.ts");
     changed++;
@@ -86,14 +86,14 @@ function generateMatcaps() {
     const exportName = lcFirst(baseName);
     const wrapperFile = `${exportName}.ts`;
 
-    const content = `${HEADER}import url from './${imageFile}'
-export const ${exportName} = url
+    const content = `${HEADER}import url from "./${imageFile}";
+export const ${exportName} = url;
 `;
     if (writeIfChanged(join(MATCAPS_DIR, wrapperFile), content)) {
       console.log(`  Generated ${wrapperFile}`);
       changed++;
     }
-    exports.push(`export { ${exportName} } from './${exportName}'`);
+    exports.push(`export { ${exportName} } from "./${exportName}";`);
   }
 
   const indexContent = `${HEADER}${exports.join("\n")}\n`;

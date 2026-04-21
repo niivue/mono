@@ -235,7 +235,7 @@ export async function volume2Texture(
     // Label colormap: variable-width LUT with nearest filtering
     const labelLut = nvimage.colormapLabel?.lut;
     if (!labelLut) {
-      throw new Error('Label colormap LUT is undefined');
+      throw new Error("Label colormap LUT is undefined");
     }
     const nLabels = labelLut.length / 4;
     colormapTex = device.createTexture({

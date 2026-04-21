@@ -242,7 +242,7 @@ export function nii2volume(
   }
   NVTransforms.calculateRAS(volume);
   if (!volume.pixDimsRAS || !volume.dimsRAS) {
-    throw new Error('calculateRAS failed to set pixDimsRAS/dimsRAS');
+    throw new Error("calculateRAS failed to set pixDimsRAS/dimsRAS");
   }
   const dimsMM = [
     volume.pixDimsRAS[1] * volume.dimsRAS[1],

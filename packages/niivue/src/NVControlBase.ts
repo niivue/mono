@@ -2587,7 +2587,7 @@ export default class NiiVueGPU extends EventTarget {
       });
       const img = nii.img;
       if (img instanceof ArrayBuffer) {
-        throw new Error('loadDrawing: expected typed array, got ArrayBuffer');
+        throw new Error("loadDrawing: expected typed array, got ArrayBuffer");
       }
       const buf = img.buffer as ArrayBuffer;
       const offset = img.byteOffset;

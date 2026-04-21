@@ -118,7 +118,7 @@ function iwi2nii(iwi: IWImage): {
     const m = iwi.direction.slice();
     const mm = iwi.spacing?.slice();
     if (!mm) {
-      throw new Error('IWI spacing is undefined');
+      throw new Error("IWI spacing is undefined");
     }
     const o = iwi.origin;
     hdr.sform_code = 1;

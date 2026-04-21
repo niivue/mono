@@ -85,7 +85,7 @@ export function prepareRGBAData(nvimage: NVImage): {
 
   const dt = nvimage.hdr.datatypeCode;
   if (!nvimage.img) {
-    throw new Error('prepareRGBAData: nvimage.img is null');
+    throw new Error("prepareRGBAData: nvimage.img is null");
   }
   const raw = new Uint8Array(
     nvimage.img.buffer,

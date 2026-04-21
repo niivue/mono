@@ -710,9 +710,14 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
       const idx = spec.sliceType; // AXIAL=0, CORONAL=1, SAGITTAL=2
       const screen = screens[idx];
       if (!screen?.screen) continue;
+      // Fit the slice's mm aspect ratio within the available tile area
+      const fov = screen.screen.fovMM;
+      const zoom = Math.min(pw / fov[0], ph / fov[1]);
+      const fw = fov[0] * zoom;
+      const fh = fov[1] * zoom;
       const rot = rotations(idx, isRad);
       const tile: SliceTile = {
-        leftTopWidthHeight: [px, py, pw, ph],
+        leftTopWidthHeight: [px + (pw - fw) / 2, py + (ph - fh) / 2, fw, fh],
         axCorSag: idx,
         screen: cloneScreen(screen.screen),
         azimuth: rot.azimuth,

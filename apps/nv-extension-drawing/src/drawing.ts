@@ -11,44 +11,45 @@ import NiiVue from '@niivue/niivue'
 import {
   findDrawingBoundarySlices,
   interpolateMaskSlices,
+  type SliceType,
 } from '@niivue/nv-drawing'
 
+function $<T extends HTMLElement>(id: string): T {
+  const el = document.getElementById(id)
+  if (!el) throw new Error(`Element #${id} not found`)
+  return el as T
+}
+
 // --- UI refs ---
-const status = document.getElementById('status')
-const sliceTypeSelect = document.getElementById('sliceType')
-const useWebGPUCb = document.getElementById('useWebGPU')
-const enableDrawBtn = document.getElementById('enableDrawBtn')
-const penColorSelect = document.getElementById('penColor')
-const penSizeInput = document.getElementById('penSize')
-const undoBtn = document.getElementById('undoBtn')
-const interpAxisSelect = document.getElementById('interpAxis')
-const intensityGuidedCb = document.getElementById('intensityGuided')
-const findBoundaryBtn = document.getElementById('findBoundaryBtn')
-const interpolateBtn = document.getElementById('interpolateBtn')
-const alphaSlider = document.getElementById('alphaSlider')
-const sigmaSlider = document.getElementById('sigmaSlider')
-const threshSlider = document.getElementById('threshSlider')
-const smoothCb = document.getElementById('smoothCb')
-const intensityParams = document.getElementById('intensityParams')
+const status = $('status')
+const sliceTypeSelect = $<HTMLSelectElement>('sliceType')
+const useWebGPUCb = $<HTMLInputElement>('useWebGPU')
+const enableDrawBtn = $<HTMLButtonElement>('enableDrawBtn')
+const penColorSelect = $<HTMLSelectElement>('penColor')
+const penSizeInput = $<HTMLInputElement>('penSize')
+const undoBtn = $<HTMLButtonElement>('undoBtn')
+const interpAxisSelect = $<HTMLSelectElement>('interpAxis')
+const intensityGuidedCb = $<HTMLInputElement>('intensityGuided')
+const findBoundaryBtn = $<HTMLButtonElement>('findBoundaryBtn')
+const interpolateBtn = $<HTMLButtonElement>('interpolateBtn')
+const alphaSlider = $<HTMLInputElement>('alphaSlider')
+const sigmaSlider = $<HTMLInputElement>('sigmaSlider')
+const threshSlider = $<HTMLInputElement>('threshSlider')
+const smoothCb = $<HTMLInputElement>('smoothCb')
+const intensityParams = $('intensityParams')
 
 // Show/hide intensity params when checkbox toggles
 intensityGuidedCb.onchange = () => {
   intensityParams.style.display = intensityGuidedCb.checked ? 'flex' : 'none'
 }
 alphaSlider.oninput = () => {
-  document.getElementById('alphaVal').textContent = (
-    alphaSlider.value / 100
-  ).toFixed(2)
+  $('alphaVal').textContent = (Number(alphaSlider.value) / 100).toFixed(2)
 }
 sigmaSlider.oninput = () => {
-  document.getElementById('sigmaVal').textContent = (
-    sigmaSlider.value / 100
-  ).toFixed(2)
+  $('sigmaVal').textContent = (Number(sigmaSlider.value) / 100).toFixed(2)
 }
 threshSlider.oninput = () => {
-  document.getElementById('threshVal').textContent = (
-    threshSlider.value / 100
-  ).toFixed(2)
+  $('threshVal').textContent = (Number(threshSlider.value) / 100).toFixed(2)
 }
 
 // --- Initialize NiiVue + extension context ---
@@ -56,11 +57,10 @@ const nv = new NiiVue()
 const ctx = nv.createExtensionContext()
 
 ctx.on('locationChange', (e) => {
-  document.getElementById('location').innerHTML =
-    `&nbsp;&nbsp;${e.detail.string}`
+  $('location').innerHTML = `&nbsp;&nbsp;${e.detail.string}`
 })
 
-await nv.attachToCanvas(document.getElementById('gl1'))
+await nv.attachToCanvas($<HTMLCanvasElement>('gl1'))
 await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 
 // Detect actual backend and sync checkbox
@@ -117,7 +117,7 @@ findBoundaryBtn.onclick = async () => {
     return
   }
 
-  const axis = parseInt(interpAxisSelect.value, 10)
+  const axis = parseInt(interpAxisSelect.value, 10) as SliceType
   const axisName = ['Axial', 'Coronal', 'Sagittal'][axis]
   status.textContent = `Finding ${axisName} boundaries...`
 
@@ -134,11 +134,11 @@ findBoundaryBtn.onclick = async () => {
 
 // --- Shared interpolation logic ---
 function getInterpolationParams() {
-  const axis = parseInt(interpAxisSelect.value, 10)
+  const axis = parseInt(interpAxisSelect.value, 10) as SliceType
   const useIntensity = intensityGuidedCb.checked
   const bg = ctx.backgroundVolume
 
-  let imageData = null
+  let imageData: ArrayLike<number> | null = null
   let maxVal = 1
   if (useIntensity && bg) {
     // Use RAS-ordered intensity data — no rasMap needed
@@ -149,9 +149,9 @@ function getInterpolationParams() {
   const options = {
     sliceType: axis,
     useIntensityGuided: useIntensity,
-    intensityWeight: alphaSlider.value / 100,
-    intensitySigma: sigmaSlider.value / 100,
-    binaryThreshold: threshSlider.value / 100,
+    intensityWeight: Number(alphaSlider.value) / 100,
+    intensitySigma: Number(sigmaSlider.value) / 100,
+    binaryThreshold: Number(threshSlider.value) / 100,
     applySmoothingToSlices: smoothCb.checked,
   }
 

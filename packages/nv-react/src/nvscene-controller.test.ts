@@ -637,7 +637,7 @@ describe('NvSceneController', () => {
 
     test('loadVolume increments and decrements loading count', async () => {
       const nv = mockInstances[mockInstances.length - 1]!
-      let resolveVolume: (v: unknown) => void
+      let resolveVolume: ((v: unknown) => void) | undefined
       nv.addVolume = mock(
         () =>
           new Promise((resolve) => {

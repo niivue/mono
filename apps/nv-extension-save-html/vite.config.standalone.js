@@ -12,7 +12,7 @@ export default defineConfig({
     outDir: 'public',
     emptyOutDir: false,
     lib: {
-      entry: 'src/standalone-entry.js',
+      entry: 'src/standalone-entry.ts',
       formats: ['es'],
       fileName: () => 'niivue-standalone.js',
     },

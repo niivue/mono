@@ -12,6 +12,12 @@ import {
   removeHaze,
 } from '@niivue/nv-image-processing'
 
+function $<T extends HTMLElement>(id: string): T {
+  const el = document.getElementById(id)
+  if (!el) throw new Error(`Element #${id} not found`)
+  return el as T
+}
+
 // --- Create dialog for transform options ---
 const dialog = document.createElement('dialog')
 dialog.id = 'transformDialog'
@@ -26,7 +32,8 @@ dialog.innerHTML = `
   </form>
 `
 document.body.appendChild(dialog)
-dialog.querySelector('#cancelBtn').onclick = () => dialog.close()
+;(dialog.querySelector('#cancelBtn') as HTMLButtonElement).onclick = () =>
+  dialog.close()
 
 // --- Initialize NiiVue ---
 const nv = new NiiVue()
@@ -38,10 +45,10 @@ ctx.registerVolumeTransform(connectedLabel)
 ctx.registerVolumeTransform(otsu)
 ctx.registerVolumeTransform(removeHaze)
 
-function buildDialogFields(transformName) {
+function buildDialogFields(transformName: string) {
   const info = nv.getVolumeTransformInfo(transformName)
-  const fieldsDiv = dialog.querySelector('#dialogFields')
-  dialog.querySelector('#dialogTitle').textContent = info
+  const fieldsDiv = dialog.querySelector('#dialogFields') as HTMLElement
+  ;(dialog.querySelector('#dialogTitle') as HTMLElement).textContent = info
     ? info.description
     : transformName
   fieldsDiv.innerHTML = ''
@@ -56,7 +63,7 @@ function buildDialogFields(transformName) {
       const input = document.createElement('input')
       input.type = 'checkbox'
       input.id = `opt_${field.name}`
-      input.checked = field.default
+      input.checked = field.default as boolean
       const label = document.createElement('label')
       label.htmlFor = input.id
       label.textContent = ` ${field.label}`
@@ -68,9 +75,9 @@ function buildDialogFields(transformName) {
       label.textContent = `${field.label}: `
       const select = document.createElement('select')
       select.id = `opt_${field.name}`
-      for (const opt of field.options) {
+      for (const opt of field.options as (string | number)[]) {
         const option = document.createElement('option')
-        option.value = opt
+        option.value = String(opt)
         option.textContent = String(opt)
         if (opt === field.default) option.selected = true
         select.appendChild(option)
@@ -82,17 +89,21 @@ function buildDialogFields(transformName) {
   }
 }
 
-function getDialogOptions(transformName) {
+function getDialogOptions(transformName: string): Record<string, unknown> {
   const info = nv.getVolumeTransformInfo(transformName)
   if (!info) return {}
-  const options = {}
+  const options: Record<string, unknown> = {}
   for (const field of info.options) {
-    const el = dialog.querySelector(`#opt_${field.name}`)
+    const el = dialog.querySelector(`#opt_${field.name}`) as
+      | HTMLInputElement
+      | HTMLSelectElement
+      | null
     if (!el) continue
     if (field.type === 'checkbox') {
-      options[field.name] = el.checked
+      options[field.name] = (el as HTMLInputElement).checked
     } else if (field.type === 'select') {
-      options[field.name] = field.options.includes(parseInt(el.value, 10))
+      const opts = field.options as (string | number)[]
+      options[field.name] = opts.includes(parseInt(el.value, 10))
         ? parseInt(el.value, 10)
         : el.value
     }
@@ -101,21 +112,21 @@ function getDialogOptions(transformName) {
 }
 
 // --- UI wiring ---
-const status = document.getElementById('status')
-const sliceType = document.getElementById('sliceType')
-const transformSelect = document.getElementById('transformSelect')
-const resetBtn = document.getElementById('resetBtn')
+const status = $('status')
+const sliceType = $<HTMLSelectElement>('sliceType')
+const transformSelect = $<HTMLSelectElement>('transformSelect')
+const resetBtn = $<HTMLButtonElement>('resetBtn')
 
 sliceType.onchange = () => {
   nv.sliceType = parseInt(sliceType.value, 10)
 }
 
-transformSelect.onchange = function () {
-  const name = this.value
+transformSelect.onchange = () => {
+  const name = transformSelect.value
   if (!name) return
   buildDialogFields(name)
   dialog.showModal()
-  dialog.querySelector('form').onsubmit = async (e) => {
+  ;(dialog.querySelector('form') as HTMLFormElement).onsubmit = async (e) => {
     e.preventDefault()
     const opts = getDialogOptions(name)
     dialog.close()
@@ -130,7 +141,7 @@ resetBtn.onclick = async () => {
   status.textContent = ''
 }
 
-async function runTransform(name, options) {
+async function runTransform(name: string, options: Record<string, unknown>) {
   const vol = ctx.volumes[0]
   if (!vol) return
   status.textContent = `Running ${name}…`
@@ -159,12 +170,11 @@ async function runTransform(name, options) {
 }
 
 ctx.on('locationChange', (e) => {
-  document.getElementById('location').innerHTML =
-    `&nbsp;&nbsp;${e.detail.string}`
+  $('location').innerHTML = `&nbsp;&nbsp;${e.detail.string}`
 })
 
-await nv.attachToCanvas(document.getElementById('gl1'))
-sliceType.onchange()
+await nv.attachToCanvas($<HTMLCanvasElement>('gl1'))
+sliceType.onchange(new Event('change'))
 
 // Populate the dropdown
 const emptyOpt = document.createElement('option')

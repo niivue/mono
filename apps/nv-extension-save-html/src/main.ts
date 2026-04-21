@@ -8,9 +8,15 @@
 import NiiVueGPU from '@niivue/niivue'
 import { saveHTML } from '@niivue/nv-save-html'
 
-const status = document.getElementById('status')
-const saveBtn = document.getElementById('saveBtn')
-const sliceTypeSelect = document.getElementById('sliceType')
+function $<T extends HTMLElement>(id: string): T {
+  const el = document.getElementById(id)
+  if (!el) throw new Error(`Element #${id} not found`)
+  return el as T
+}
+
+const status = $('status')
+const saveBtn = $<HTMLButtonElement>('saveBtn')
+const sliceTypeSelect = $<HTMLSelectElement>('sliceType')
 
 // --- Initialize NiiVue ---
 const nv = new NiiVueGPU()
@@ -24,7 +30,7 @@ status.textContent = 'Volume loaded.'
 
 // --- Fetch the standalone niivue bundle (built at build time) ---
 status.textContent = 'Fetching niivue bundle…'
-let bundleSource = null
+let bundleSource: string | null = null
 try {
   const resp = await fetch('/niivue-standalone.js')
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
@@ -32,7 +38,7 @@ try {
   status.textContent = `Ready — bundle size: ${(bundleSource.length / 1024).toFixed(0)} KB`
   saveBtn.disabled = false
 } catch (err) {
-  status.textContent = `⚠️ Could not load niivue bundle: ${err.message}`
+  status.textContent = `⚠️ Could not load niivue bundle: ${(err as Error).message}`
   console.error('Failed to load standalone bundle:', err)
 }
 
@@ -52,7 +58,7 @@ saveBtn.addEventListener('click', async () => {
     })
     status.textContent = 'HTML saved!'
   } catch (err) {
-    status.textContent = `⚠️ Save failed: ${err.message}`
+    status.textContent = `⚠️ Save failed: ${(err as Error).message}`
     console.error('Save HTML failed:', err)
   }
 })

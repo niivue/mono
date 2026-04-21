@@ -8,38 +8,48 @@
  * All coordinate picking is handled by the extension context's
  * slicePointerMove / slicePointerUp events — no manual hit-testing.
  */
+import type { NVExtensionEventMap } from '@niivue/niivue'
 import NiiVue from '@niivue/niivue'
 import {
+  type Connectivity,
+  type MagicWandResult,
   MagicWandShared,
   magicWand as magicWandWorker,
+  type ThresholdMode,
 } from '@niivue/nv-drawing'
 
+function $<T extends HTMLElement>(id: string): T {
+  const el = document.getElementById(id)
+  if (!el) throw new Error(`Element #${id} not found`)
+  return el as T
+}
+
 // --- UI refs ---
-const status = document.getElementById('status')
-const sliceTypeSelect = document.getElementById('sliceType')
-const useWebGPUCb = document.getElementById('useWebGPU')
-const modeSelect = document.getElementById('modeSelect')
-const penColorSelect = document.getElementById('penColor')
-const undoBtn = document.getElementById('undoBtn')
-const clearBtn = document.getElementById('clearBtn')
-const toleranceSlider = document.getElementById('toleranceSlider')
-const toleranceVal = document.getElementById('toleranceVal')
-const toleranceGroup = document.getElementById('toleranceGroup')
-const percentSlider = document.getElementById('percentSlider')
-const percentVal = document.getElementById('percentVal')
-const percentGroup = document.getElementById('percentGroup')
-const thresholdModeSelect = document.getElementById('thresholdModeSelect')
-const maxDistInput = document.getElementById('maxDistInput')
-const is2DCb = document.getElementById('is2DCb')
-const connectivitySelect = document.getElementById('connectivitySelect')
-const useTransferCb = document.getElementById('useTransferCb')
-const wandParams = document.getElementById('wandParams')
+const status = $('status')
+const sliceTypeSelect = $<HTMLSelectElement>('sliceType')
+const useWebGPUCb = $<HTMLInputElement>('useWebGPU')
+const modeSelect = $<HTMLSelectElement>('modeSelect')
+const penColorSelect = $<HTMLSelectElement>('penColor')
+const undoBtn = $<HTMLButtonElement>('undoBtn')
+const clearBtn = $<HTMLButtonElement>('clearBtn')
+const toleranceSlider = $<HTMLInputElement>('toleranceSlider')
+const toleranceVal = $('toleranceVal')
+const toleranceGroup = $('toleranceGroup')
+const percentSlider = $<HTMLInputElement>('percentSlider')
+const percentVal = $('percentVal')
+const percentGroup = $('percentGroup')
+const thresholdModeSelect = $<HTMLSelectElement>('thresholdModeSelect')
+const maxDistInput = $<HTMLInputElement>('maxDistInput')
+const is2DCb = $<HTMLInputElement>('is2DCb')
+const connectivitySelect = $<HTMLSelectElement>('connectivitySelect')
+const useTransferCb = $<HTMLInputElement>('useTransferCb')
+const wandParams = $('wandParams')
 
 toleranceSlider.oninput = () => {
   toleranceVal.textContent = toleranceSlider.value
 }
 percentSlider.oninput = () => {
-  percentVal.textContent = (percentSlider.value / 100).toFixed(2)
+  percentVal.textContent = (Number(percentSlider.value) / 100).toFixed(2)
 }
 thresholdModeSelect.onchange = () => {
   const mode = thresholdModeSelect.value
@@ -67,11 +77,10 @@ const nv = new NiiVue()
 const ctx = nv.createExtensionContext()
 
 ctx.on('locationChange', (e) => {
-  document.getElementById('location').innerHTML =
-    `&nbsp;&nbsp;${e.detail.string}`
+  $('location').innerHTML = `&nbsp;&nbsp;${e.detail.string}`
 })
 
-await nv.attachToCanvas(document.getElementById('gl1'))
+await nv.attachToCanvas($<HTMLCanvasElement>('gl1'))
 await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 
 // Detect actual backend and sync checkbox
@@ -125,7 +134,7 @@ sliceTypeSelect.onchange = () => {
 // Preview state
 // ---------------------------------------------------------------------------
 
-let committedBitmap = null
+let committedBitmap: Uint8Array | null = null
 let previewActive = false
 let previewGen = 0
 
@@ -139,7 +148,7 @@ snapshotCommitted()
 // SharedArrayBuffer — default backend (initialized eagerly on wand mode)
 // ---------------------------------------------------------------------------
 
-let wandShared = null
+let wandShared: MagicWandShared | null = null
 let sharedReady = false
 
 async function initSharedIfNeeded() {
@@ -152,7 +161,7 @@ async function initSharedIfNeeded() {
   }
   const dr = ctx.drawing
   const bg = ctx.backgroundVolume
-  if (!dr || !bg) return
+  if (!dr || !bg?.imgRAS) return
   status.textContent = 'Initializing SharedArrayBuffer worker\u2026'
 
   const committed =
@@ -182,16 +191,16 @@ initSharedIfNeeded()
 
 // --- Helpers ---
 
-function buildWandOptions(sliceAxis) {
+function buildWandOptions(sliceAxis: number) {
   const bg = ctx.backgroundVolume
   if (!bg) return null
   return {
     tolerance: parseFloat(toleranceSlider.value),
-    thresholdMode: thresholdModeSelect.value,
+    thresholdMode: thresholdModeSelect.value as ThresholdMode,
     percent: parseFloat(percentSlider.value) / 100,
     calMin: bg.calMin ?? bg.robustMin ?? 0,
     calMax: bg.calMax ?? bg.robustMax ?? 1,
-    connectivity: parseInt(connectivitySelect.value, 10),
+    connectivity: parseInt(connectivitySelect.value, 10) as Connectivity,
     maxDistanceMM: maxDistInput.value.trim()
       ? parseFloat(maxDistInput.value)
       : Number.POSITIVE_INFINITY,
@@ -210,7 +219,13 @@ function clearPreview() {
   }
 }
 
-function formatStatus(prefix, result, seed, elapsed, backend) {
+function formatStatus(
+  prefix: string,
+  result: MagicWandResult,
+  seed: number[],
+  elapsed: string,
+  backend: string,
+): string {
   const brightStr =
     result.isBright !== undefined
       ? ` (${result.isBright ? 'bright' : 'dark'})`
@@ -230,7 +245,10 @@ function formatStatus(prefix, result, seed, elapsed, backend) {
 
 // --- SharedArrayBuffer (zero-copy, default) ---
 
-async function runPreviewShared(seed, sliceType) {
+async function runPreviewShared(
+  seed: [number, number, number],
+  sliceType: number,
+) {
   if (!wandShared) return
   const opts = buildWandOptions(sliceType)
   if (!opts) return
@@ -245,10 +263,13 @@ async function runPreviewShared(seed, sliceType) {
 
 // --- Transfer-based worker (fallback) ---
 
-async function runPreviewWorker(seed, sliceType) {
+async function runPreviewWorker(
+  seed: [number, number, number],
+  sliceType: number,
+) {
   const dr = ctx.drawing
   const bg = ctx.backgroundVolume
-  if (!dr || !bg) return
+  if (!dr || !bg?.imgRAS) return
   const opts = buildWandOptions(sliceType)
   if (!opts) return
   const gen = ++previewGen
@@ -275,11 +296,13 @@ async function runPreviewWorker(seed, sliceType) {
 // Pointer event bindings
 // ---------------------------------------------------------------------------
 
-ctx.on('slicePointerMove', (e) => {
+type SlicePointerDetail = NVExtensionEventMap['slicePointerMove']
+
+ctx.on('slicePointerMove', (e: CustomEvent<SlicePointerDetail>) => {
   if (modeSelect.value !== 'wand') return
   if (e.detail.pointerEvent.buttons !== 0) return
 
-  const seed = e.detail.voxel
+  const seed = e.detail.voxel as [number, number, number]
   const sliceType = e.detail.sliceType
 
   if (!useTransferCb.checked && sharedReady) {
@@ -289,11 +312,11 @@ ctx.on('slicePointerMove', (e) => {
   }
 })
 
-ctx.on('slicePointerUp', (e) => {
+ctx.on('slicePointerUp', (e: CustomEvent<SlicePointerDetail>) => {
   if (modeSelect.value !== 'wand') return
   if (e.detail.pointerEvent.button !== 0) return
 
-  const seed = e.detail.voxel
+  const seed = e.detail.voxel as [number, number, number]
   const sliceType = e.detail.sliceType
   const dr = ctx.drawing
   const bg = ctx.backgroundVolume
@@ -312,7 +335,7 @@ ctx.on('slicePointerUp', (e) => {
   }
 
   // Fallback: no preview active (fast click) — run via worker
-  if (!dr || !bg) return
+  if (!dr || !bg?.imgRAS) return
   const opts = buildWandOptions(sliceType)
   if (!opts) return
   const bitmapToSend = committedBitmap

@@ -24,7 +24,6 @@ import type {
 import DrawingWorker from './worker?worker&inline'
 
 // biome-ignore lint/performance/noBarrelFile: package entry point
-export { SLICE_TYPE } from './processing/drawing'
 export type {
   Connectivity,
   DrawingDims,

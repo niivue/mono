@@ -5,7 +5,7 @@ Lightweight React bindings for [Niivue](https://github.com/niivue/niivue) with m
 ## Install
 
 ```bash
-npm install @niivue/nvreact @niivue/niivue react react-dom
+bun add @niivue/nvreact @niivue/niivue react react-dom
 ```
 
 ## Quick start

@@ -6,26 +6,26 @@ NiiVue is a tool for visualizing volumes, meshes, and tractography streamlines c
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/)
+- [Bun](https://bun.sh/)
 - A browser with WebGPU support (Chrome, Firefox). Safari works if you have a recent MacOS (version 26) or iOS. Older browsers will fall back to the WebGL2 renderer.
 
 ### Build Commands
 
 ```bash
-npm install          # Install dependencies
-npm run dev          # Hot-reload dev server
-npm run build        # Library build to ./dist (published npm package)
-npm run deploy       # Production examples-site build to ./dist (GitHub Pages)
-npm run demo         # Build examples site and serve locally
-npm run lint         # ESLint check
-npm run lint:fix     # ESLint auto-fix
-npm run typecheck    # TypeScript type checking (tsc --noEmit)
+bun install          # Install dependencies
+bun run dev          # Hot-reload dev server
+bun run build        # Library build to ./dist (published npm package)
+bun run deploy       # Production examples-site build to ./dist (GitHub Pages)
+bun run demo         # Build examples site and serve locally
+bun run lint         # ESLint check
+bun run lint:fix     # ESLint auto-fix
+bun run typecheck    # TypeScript type checking (tsc --noEmit)
 ```
 
 ### Development Workflows
 
-- **`npm run dev`** — Runs the `demos/` pages with hot reloading. A Vite plugin intercepts `import '../dist/niivuegpu.mjs'` and redirects it to source, so demo scripts stay identical to the deployed versions but get full HMR. Asset directories in `demos/` are symlinked to `public/` on first run.
-- **`npm run demo`** — Builds the library to `demos/dist/`, copies assets, and serves with `http-server`. Use this to test the actual built output or before deploying to GitHub Pages.
+- **`bun run dev`** — Runs the `demos/` pages with hot reloading. A Vite plugin intercepts `import '../dist/niivuegpu.mjs'` and redirects it to source, so demo scripts stay identical to the deployed versions but get full HMR. Asset directories in `demos/` are symlinked to `public/` on first run.
+- **`bun run demo`** — Builds the library to `demos/dist/`, copies assets, and serves with `http-server`. Use this to test the actual built output or before deploying to GitHub Pages.
 
 ## Usage
 

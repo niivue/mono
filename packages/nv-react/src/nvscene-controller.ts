@@ -268,9 +268,11 @@ export class NvSceneController {
       this.removeViewer(this.viewers.length - 1, false);
     }
 
-    // Ensure at least one viewer exists when a container is present
-    if (this.viewers.length === 0 && this.containerElement) {
-      this.addViewer();
+    // Fill all available slots when a container is present
+    if (this.containerElement) {
+      while (this.viewers.length < this.slots) {
+        this.addViewer();
+      }
     }
 
     this.updateLayout();
@@ -530,7 +532,7 @@ export class NvSceneController {
 
   // --- Viewer lifecycle ---
 
-  async addViewer(options?: Partial<NiiVueOptions>): Promise<ViewerSlot> {
+  addViewer(options?: Partial<NiiVueOptions>): Promise<ViewerSlot> {
     if (!this.containerElement) {
       throw new Error("Container element not set");
     }
@@ -541,9 +543,16 @@ export class NvSceneController {
 
     const containerDiv = document.createElement("div");
     containerDiv.className = "niivue-canvas-container";
+    containerDiv.style.position = "relative";
+    containerDiv.style.overflow = "hidden";
 
     const canvas = document.createElement("canvas");
     canvas.className = "niivue-canvas";
+    canvas.style.position = "absolute";
+    canvas.style.top = "0";
+    canvas.style.left = "0";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
     containerDiv.appendChild(canvas);
 
     this.containerElement.appendChild(containerDiv);
@@ -555,7 +564,6 @@ export class NvSceneController {
     };
 
     const niivue = new NiiVueGPU(mergedOptions);
-    await niivue.attachToCanvas(canvas);
 
     const id = `nv-${this.nextId++}`;
     this.viewerSliceLayouts.set(id, null);
@@ -569,15 +577,15 @@ export class NvSceneController {
       containerDiv,
     };
 
+    // Register the viewer synchronously so callers (e.g. setLayout) can
+    // add multiple viewers in a loop without awaiting each one.
     this.viewers.push(viewer);
     this.viewersById.set(id, viewer);
     this.updateLayout();
 
-    // Apply the current slice layout (default axial).
-    this.applySliceLayout(niivue, null);
-
-    // Wire NiiVueGPU event listeners
     const index = this.viewers.length - 1;
+
+    // Wire NiiVueGPU event listeners (sync — before attachment)
     niivue.addEventListener("locationChange", (evt) => {
       this.emit("locationChange", index, evt.detail);
     });
@@ -593,18 +601,28 @@ export class NvSceneController {
       }
     });
 
-    // Update broadcasting to include new viewer
-    if (this.broadcasting) {
-      this.setBroadcasting(true);
-    }
+    // Async canvas attachment — viewer is already registered
+    const ready = niivue.attachToCanvas(canvas).then(() => {
+      // Apply the current slice layout (default axial).
+      this.applySliceLayout(niivue, null);
 
-    // Call the onViewerCreated callback if provided
-    this.onViewerCreated?.(niivue, index);
-    this.emit("viewerCreated", niivue, index);
+      // Update broadcasting to include new viewer
+      if (this.broadcasting) {
+        this.setBroadcasting(true);
+      }
+
+      // Call the onViewerCreated callback if provided
+      this.onViewerCreated?.(niivue, index);
+      this.emit("viewerCreated", niivue, index);
+
+      this.notify();
+
+      return viewer;
+    });
 
     this.notify();
 
-    return viewer;
+    return ready;
   }
 
   removeViewer(index: number, shouldNotify = true): void {

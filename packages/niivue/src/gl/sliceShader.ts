@@ -23,7 +23,7 @@ void main(void) {
   vec4 mm = frac2mm * vec4(texPos, 1.0);
   gl_Position = mvpMtx * mm;
 }
-`;
+`
 
 export const sliceFragShader = `#version 300 es
 precision highp int;
@@ -201,4 +201,4 @@ void main() {
     color.a = max(color.a, drawColor.a);
   }
 }
-`;
+`

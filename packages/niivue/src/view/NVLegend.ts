@@ -1,34 +1,34 @@
-import * as NVCmaps from "@/cmap/NVCmaps";
-import { colormapLookup } from "@/mesh/connectome";
-import type { NVImage, NVMesh } from "@/NVTypes";
-import type { BuildTextFn, GlyphBatch } from "./NVFont";
-import { estimateFontSize } from "./NVUILayout";
+import * as NVCmaps from "@/cmap/NVCmaps"
+import { colormapLookup } from "@/mesh/connectome"
+import type { NVImage, NVMesh } from "@/NVTypes"
+import type { BuildTextFn, GlyphBatch } from "./NVFont"
+import { estimateFontSize } from "./NVUILayout"
 
 export type LegendEntry = {
-  label: string;
-  color: [number, number, number, number]; // RGBA 0-255
-  centroid?: [number, number, number]; // center-of-mass in mm (for crosshair navigation)
-};
+  label: string
+  color: [number, number, number, number] // RGBA 0-255
+  centroid?: [number, number, number] // center-of-mass in mm (for crosshair navigation)
+}
 
 export type LegendLayout = {
-  entries: LegendEntry[];
-  x: number; // Left edge
-  y: number; // Top edge
-  width: number; // Total width
-  boxSize: number; // Color box size (px)
-  gap: number; // Vertical gap between entries (px)
-  fontScale: number; // Font scale multiplier (relative to base font size)
-  textPadding: number; // Space between box and text
-  margin: number; // Edge margin
-};
+  entries: LegendEntry[]
+  x: number // Left edge
+  y: number // Top edge
+  width: number // Total width
+  boxSize: number // Color box size (px)
+  gap: number // Vertical gap between entries (px)
+  fontScale: number // Font scale multiplier (relative to base font size)
+  textPadding: number // Space between box and text
+  margin: number // Edge margin
+}
 
 // Constants
-const LEGEND_MARGIN = 20;
-const LEGEND_GAP = 8;
-const LEGEND_TEXT_PADDING = 8;
-const LINE_HEIGHT_RATIO = 1.2;
-const FONT_XADV = 0.7; // Character width estimation (increased for longer labels)
-const LEGEND_FONT_SCALE = 0.8; // Legend uses slightly smaller font than default
+const LEGEND_MARGIN = 20
+const LEGEND_GAP = 8
+const LEGEND_TEXT_PADDING = 8
+const LINE_HEIGHT_RATIO = 1.2
+const FONT_XADV = 0.7 // Character width estimation (increased for longer labels)
+const LEGEND_FONT_SCALE = 0.8 // Legend uses slightly smaller font than default
 
 /**
  * Collect legend entries from meshes and volumes with label colormaps.
@@ -38,24 +38,24 @@ export function collectLegendEntries(
   meshes: NVMesh[],
   volumes: NVImage[],
 ): LegendEntry[] {
-  const entries: LegendEntry[] = [];
+  const entries: LegendEntry[] = []
 
   // Collect from volumes with label colormaps
   for (const volume of volumes) {
     // Skip if showLegend is explicitly false
-    if (volume.showLegend === false) continue;
-    if (!volume.colormapLabel) continue;
+    if (volume.showLegend === false) continue
+    if (!volume.colormapLabel) continue
 
-    const lut = volume.colormapLabel;
-    const labels = lut.labels ?? [];
+    const lut = volume.colormapLabel
+    const labels = lut.labels ?? []
 
     // Extract each label with its color from the LUT
     for (let i = 0; i < labels.length; i++) {
-      const lutOffset = i * 4;
-      const alpha = lut.lut[lutOffset + 3];
+      const lutOffset = i * 4
+      const alpha = lut.lut[lutOffset + 3]
 
       // Skip transparent labels (typically index 0 = background)
-      if (alpha === 0) continue;
+      if (alpha === 0) continue
 
       entries.push({
         label: labels[i],
@@ -66,29 +66,29 @@ export function collectLegendEntries(
           lut.lut[lutOffset + 3],
         ],
         centroid: lut.centroids?.[labels[i]],
-      });
+      })
     }
   }
 
   // Collect from mesh layers with label colormaps
   for (const mesh of meshes) {
     // Skip if showLegend is explicitly false
-    if (mesh.showLegend === false) continue;
-    if (!mesh.layers) continue;
+    if (mesh.showLegend === false) continue
+    if (!mesh.layers) continue
 
     for (const layer of mesh.layers) {
-      if (!layer.colormapLabel) continue;
+      if (!layer.colormapLabel) continue
 
-      const lut = layer.colormapLabel;
-      const labels = lut.labels ?? [];
+      const lut = layer.colormapLabel
+      const labels = lut.labels ?? []
 
       // Extract each label with its color from the LUT
       for (let i = 0; i < labels.length; i++) {
-        const lutOffset = i * 4;
-        const alpha = lut.lut[lutOffset + 3];
+        const lutOffset = i * 4
+        const alpha = lut.lut[lutOffset + 3]
 
         // Skip transparent labels (typically index 0 = background)
-        if (alpha === 0) continue;
+        if (alpha === 0) continue
 
         entries.push({
           label: labels[i],
@@ -99,27 +99,27 @@ export function collectLegendEntries(
             lut.lut[lutOffset + 3],
           ],
           centroid: lut.centroids?.[labels[i]],
-        });
+        })
       }
     }
   }
 
   // Collect from connectome meshes (named nodes)
   for (const mesh of meshes) {
-    if (mesh.showLegend === false) continue;
+    if (mesh.showLegend === false) continue
     if (mesh.kind !== "connectome" || !mesh.jcon || !mesh.connectomeOptions)
-      continue;
+      continue
 
-    const opts = mesh.connectomeOptions;
-    const nodeLut = NVCmaps.lutrgba8(opts.nodeColormap);
+    const opts = mesh.connectomeOptions
+    const nodeLut = NVCmaps.lutrgba8(opts.nodeColormap)
     const nodeLutNeg = opts.nodeColormapNegative
       ? NVCmaps.lutrgba8(opts.nodeColormapNegative)
-      : null;
+      : null
 
     for (const node of mesh.jcon.nodes) {
-      if (!node.name) continue;
-      const radius = Math.abs(node.sizeValue) * opts.nodeScale;
-      if (radius <= 0) continue;
+      if (!node.name) continue
+      const radius = Math.abs(node.sizeValue) * opts.nodeScale
+      if (radius <= 0) continue
 
       const clr = colormapLookup(
         node.colorValue,
@@ -127,7 +127,7 @@ export function collectLegendEntries(
         opts.nodeMaxColor,
         nodeLut,
         nodeLutNeg,
-      );
+      )
       entries.push({
         label: node.name,
         color: [
@@ -137,11 +137,11 @@ export function collectLegendEntries(
           Math.round(clr[3] * 255),
         ],
         centroid: [node.x, node.y, node.z],
-      });
+      })
     }
   }
 
-  return entries;
+  return entries
 }
 
 /**
@@ -153,14 +153,14 @@ export function legendTotalWidth(
   canvasWidth: number,
   canvasHeight: number,
 ): number {
-  if (entries.length === 0) return 0;
+  if (entries.length === 0) return 0
 
-  const baseFontSize = estimateFontSize(canvasWidth, canvasHeight);
-  const fontSize = baseFontSize * LEGEND_FONT_SCALE;
+  const baseFontSize = estimateFontSize(canvasWidth, canvasHeight)
+  const fontSize = baseFontSize * LEGEND_FONT_SCALE
 
   // Estimate max label width with extra padding
-  const maxLabelChars = Math.max(...entries.map((e) => e.label.length));
-  const maxLabelWidth = maxLabelChars * fontSize * FONT_XADV;
+  const maxLabelChars = Math.max(...entries.map((e) => e.label.length))
+  const maxLabelWidth = maxLabelChars * fontSize * FONT_XADV
 
   // Add extra width for padding and ensure minimum width
   return (
@@ -169,7 +169,7 @@ export function legendTotalWidth(
     LEGEND_TEXT_PADDING +
     maxLabelWidth +
     LEGEND_MARGIN * 2
-  );
+  )
 }
 
 /**
@@ -183,46 +183,46 @@ export function computeLegendLayout(
   colorbarHeight: number,
   x = 0,
 ): LegendLayout | null {
-  if (entries.length === 0) return null;
+  if (entries.length === 0) return null
 
-  const baseFontSize = estimateFontSize(canvasWidth, canvasHeight);
+  const baseFontSize = estimateFontSize(canvasWidth, canvasHeight)
 
   // Calculate available vertical space (canvas height minus colorbar and margins)
-  const availableHeight = canvasHeight - colorbarHeight - LEGEND_MARGIN * 2;
+  const availableHeight = canvasHeight - colorbarHeight - LEGEND_MARGIN * 2
 
   // Calculate required height for all entries at base scale
-  const entryHeight = baseFontSize * LEGEND_FONT_SCALE * LINE_HEIGHT_RATIO;
+  const entryHeight = baseFontSize * LEGEND_FONT_SCALE * LINE_HEIGHT_RATIO
   const requiredHeight =
-    entries.length * entryHeight + (entries.length - 1) * LEGEND_GAP;
+    entries.length * entryHeight + (entries.length - 1) * LEGEND_GAP
 
   // Scale font down further if needed to fit all entries
-  let fontScale = LEGEND_FONT_SCALE;
+  let fontScale = LEGEND_FONT_SCALE
   if (requiredHeight > availableHeight && availableHeight > 0) {
-    fontScale = LEGEND_FONT_SCALE * (availableHeight / requiredHeight);
+    fontScale = LEGEND_FONT_SCALE * (availableHeight / requiredHeight)
   }
 
-  const fontSize = baseFontSize * fontScale;
-  const boxSize = fontSize;
+  const fontSize = baseFontSize * fontScale
+  const boxSize = fontSize
 
   // Recalculate max label width with scaled font
-  const maxLabelChars = Math.max(...entries.map((e) => e.label.length));
-  const maxLabelWidth = maxLabelChars * fontSize * FONT_XADV;
+  const maxLabelChars = Math.max(...entries.map((e) => e.label.length))
+  const maxLabelWidth = maxLabelChars * fontSize * FONT_XADV
 
   const totalWidth =
     LEGEND_MARGIN +
     boxSize +
     LEGEND_TEXT_PADDING +
     maxLabelWidth +
-    LEGEND_MARGIN * 2;
+    LEGEND_MARGIN * 2
 
   // Calculate total height of all entries
-  const entryHeightFinal = boxSize * LINE_HEIGHT_RATIO;
+  const entryHeightFinal = boxSize * LINE_HEIGHT_RATIO
   const totalEntriesHeight =
-    entries.length * entryHeightFinal + (entries.length - 1) * LEGEND_GAP;
+    entries.length * entryHeightFinal + (entries.length - 1) * LEGEND_GAP
 
   // Center vertically in available space
-  const availableHeightForCentering = canvasHeight - colorbarHeight;
-  const yStart = (availableHeightForCentering - totalEntriesHeight) / 2;
+  const availableHeightForCentering = canvasHeight - colorbarHeight
+  const yStart = (availableHeightForCentering - totalEntriesHeight) / 2
 
   return {
     entries,
@@ -234,7 +234,7 @@ export function computeLegendLayout(
     fontScale,
     textPadding: LEGEND_TEXT_PADDING,
     margin: LEGEND_MARGIN,
-  };
+  }
 }
 
 /**
@@ -243,24 +243,23 @@ export function computeLegendLayout(
 function computeBackingColor(
   canvasBackColor: number[],
 ): [number, number, number, number] {
-  const canvasLum =
-    canvasBackColor[0] + canvasBackColor[1] + canvasBackColor[2];
+  const canvasLum = canvasBackColor[0] + canvasBackColor[1] + canvasBackColor[2]
 
   // Offset by 0.3 total (0.1 per component)
-  let r: number, g: number, b: number;
+  let r: number, g: number, b: number
   if (canvasLum > 2.7) {
     // Canvas is very bright, darken backing
-    r = Math.max(0, canvasBackColor[0] - 0.1);
-    g = Math.max(0, canvasBackColor[1] - 0.1);
-    b = Math.max(0, canvasBackColor[2] - 0.1);
+    r = Math.max(0, canvasBackColor[0] - 0.1)
+    g = Math.max(0, canvasBackColor[1] - 0.1)
+    b = Math.max(0, canvasBackColor[2] - 0.1)
   } else {
     // Canvas is dark/medium, brighten backing (highlights are brighter)
-    r = Math.min(1, canvasBackColor[0] + 0.3);
-    g = Math.min(1, canvasBackColor[1] + 0.3);
-    b = Math.min(1, canvasBackColor[2] + 0.3);
+    r = Math.min(1, canvasBackColor[0] + 0.3)
+    g = Math.min(1, canvasBackColor[1] + 0.3)
+    b = Math.min(1, canvasBackColor[2] + 0.3)
   }
 
-  return [r, g, b, 0.7];
+  return [r, g, b, 0.7]
 }
 
 /**
@@ -269,10 +268,10 @@ function computeBackingColor(
 function computeFontColor(
   backingColor: [number, number, number, number],
 ): [number, number, number, number] {
-  const backingLum = backingColor[0] + backingColor[1] + backingColor[2];
+  const backingLum = backingColor[0] + backingColor[1] + backingColor[2]
   return backingLum > 1.5
     ? [0, 0, 0, 1] // Black text on bright backing
-    : [1, 1, 1, 1]; // White text on dark backing
+    : [1, 1, 1, 1] // White text on dark backing
 }
 
 /**
@@ -283,22 +282,22 @@ export function buildLegendLabels(
   buildText: BuildTextFn,
   canvasBackColor: number[],
 ): GlyphBatch[] {
-  const batches: GlyphBatch[] = [];
+  const batches: GlyphBatch[] = []
 
-  if (layout.entries.length === 0) return batches;
+  if (layout.entries.length === 0) return batches
 
   // Calculate bounding box for unified backing
-  const entryHeight = layout.boxSize * LINE_HEIGHT_RATIO;
+  const entryHeight = layout.boxSize * LINE_HEIGHT_RATIO
   const totalHeight =
     layout.entries.length * entryHeight +
-    (layout.entries.length - 1) * layout.gap;
-  const backingPadding = layout.margin * 0.5;
+    (layout.entries.length - 1) * layout.gap
+  const backingPadding = layout.margin * 0.5
 
   // Compute backing color offset from canvas background
-  const backingColor = computeBackingColor(canvasBackColor);
+  const backingColor = computeBackingColor(canvasBackColor)
 
   // Compute high-contrast font color based on backing
-  const fontColor = computeFontColor(backingColor);
+  const fontColor = computeFontColor(backingColor)
 
   // Create single unified backing for entire legend
   const unifiedBacking: GlyphBatch = {
@@ -312,15 +311,15 @@ export function buildLegendLabels(
       totalHeight + backingPadding * 2,
     ],
     backRadius: 8, // Rounded corners in pixels
-  };
-  batches.push(unifiedBacking);
+  }
+  batches.push(unifiedBacking)
 
   // Now add color boxes and text labels (without individual backings)
-  let yPos = layout.y;
+  let yPos = layout.y
 
   for (const entry of layout.entries) {
-    const boxX = layout.x + layout.margin;
-    const boxY = yPos;
+    const boxX = layout.x + layout.margin
+    const boxY = yPos
 
     // Add 1px margin around color box in canvas back color for distinction
     const marginBatch: GlyphBatch = {
@@ -329,8 +328,8 @@ export function buildLegendLabels(
       backColor: [...canvasBackColor, 1], // Canvas background color
       backRect: [boxX - 1, boxY - 1, layout.boxSize + 2, layout.boxSize + 2],
       backRadius: 0,
-    };
-    batches.push(marginBatch);
+    }
+    batches.push(marginBatch)
 
     // Create color box as a GlyphBatch with no glyphs, just a colored backing
     const colorBoxBatch: GlyphBatch = {
@@ -344,15 +343,15 @@ export function buildLegendLabels(
       ],
       backRect: [boxX, boxY, layout.boxSize, layout.boxSize],
       backRadius: 0, // Sharp corners for color box
-    };
-    batches.push(colorBoxBatch);
+    }
+    batches.push(colorBoxBatch)
 
     // Create text label next to the color box (no backing)
-    const textX = boxX + layout.boxSize + layout.textPadding;
-    const textY = boxY + layout.boxSize / 2;
+    const textX = boxX + layout.boxSize + layout.textPadding
+    const textY = boxY + layout.boxSize / 2
 
     // No individual backing for text (transparent)
-    const noBackColor = [0, 0, 0, 0];
+    const noBackColor = [0, 0, 0, 0]
 
     const textBatch = buildText(
       entry.label,
@@ -363,15 +362,15 @@ export function buildLegendLabels(
       0, // anchorX = 0 (left-aligned)
       0.5, // anchorY = 0.5 (vertically centered)
       noBackColor,
-    );
+    )
     // Remove backRect to avoid hitting MAX_PANELS limit (128)
     // Text renders without individual backing (unified backing already provides background)
-    textBatch.backRect = [];
-    batches.push(textBatch);
+    textBatch.backRect = []
+    batches.push(textBatch)
 
     // Move to next entry position
-    yPos += layout.boxSize * LINE_HEIGHT_RATIO + layout.gap;
+    yPos += layout.boxSize * LINE_HEIGHT_RATIO + layout.gap
   }
 
-  return batches;
+  return batches
 }

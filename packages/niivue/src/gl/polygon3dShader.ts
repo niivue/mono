@@ -13,7 +13,7 @@ void main() {
   gl_Position = mvpMatrix * vec4(position, 1.0);
   vColor = vec4(color.rgb, color.a * opacityMultiplier);
 }
-`;
+`
 
 export const polygon3dFragShader = `#version 300 es
 precision highp float;
@@ -24,4 +24,4 @@ out vec4 fragColor;
 void main() {
   fragColor = vColor;
 }
-`;
+`

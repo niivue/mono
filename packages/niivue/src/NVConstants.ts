@@ -1,5 +1,5 @@
-export const NUM_CLIP_PLANE = 6;
-export const DEFAULT_CLIP_PLANE = [0, 0, 0, 2] as const;
+export const NUM_CLIP_PLANE = 6
+export const DEFAULT_CLIP_PLANE = [0, 0, 0, 2] as const
 
 export enum COLORMAP_TYPE {
   MIN_TO_MAX = 0,
@@ -35,7 +35,7 @@ export const NiiIntentCode = Object.freeze({
   NIFTI_INTENT_LABEL: 1002,
   NIFTI_INTENT_NEURONAMES: 1005,
   NIFTI_INTENT_RGB_VECTOR: 2003,
-} as const);
+} as const)
 
 export const NiiDataType = Object.freeze({
   DT_NONE: 0,
@@ -56,17 +56,17 @@ export const NiiDataType = Object.freeze({
   DT_COMPLEX128: 1792,
   DT_COMPLEX256: 2048,
   DT_RGBA32: 2304,
-} as const);
+} as const)
 
 /** Check whether a volume is PAQD (Probabilistic Atlas Quad Datatype) */
 export function isPaqd(hdr: {
-  intent_code: number;
-  datatypeCode: number;
+  intent_code: number
+  datatypeCode: number
 }): boolean {
   return (
     hdr.intent_code === NiiIntentCode.NIFTI_INTENT_LABEL &&
     hdr.datatypeCode === NiiDataType.DT_RGBA32
-  );
+  )
 }
 
 export const MULTIPLANAR_TYPE = {
@@ -78,7 +78,7 @@ export const MULTIPLANAR_TYPE = {
   COLUMN: 1,
   GRID: 2,
   ROW: 3,
-} as const;
+} as const
 
 export const SLICE_TYPE = Object.freeze({
   AXIAL: 0,
@@ -86,13 +86,13 @@ export const SLICE_TYPE = Object.freeze({
   SAGITTAL: 2,
   MULTIPLANAR: 3,
   RENDER: 4,
-} as const);
+} as const)
 
 /** Maps AXIAL→2, CORONAL→1, SAGITTAL→0 (the RAS dimension perpendicular to the slice). */
 export function sliceTypeDim(sliceType: number): number {
-  if (sliceType === SLICE_TYPE.CORONAL) return 1;
-  if (sliceType === SLICE_TYPE.SAGITTAL) return 0;
-  return 2;
+  if (sliceType === SLICE_TYPE.CORONAL) return 1
+  if (sliceType === SLICE_TYPE.SAGITTAL) return 0
+  return 2
 }
 
 import type {
@@ -103,7 +103,7 @@ import type {
   MeshRenderConfig,
   UIConfig,
   VolumeRenderConfig,
-} from "@/NVTypes";
+} from "@/NVTypes"
 
 export const LAYOUT_DEFAULTS: LayoutConfig = {
   sliceType: SLICE_TYPE.MULTIPLANAR,
@@ -117,7 +117,7 @@ export const LAYOUT_DEFAULTS: LayoutConfig = {
   margin: 0,
   isRadiological: false,
   customLayout: null,
-};
+}
 
 export const UI_DEFAULTS: UIConfig = {
   isColorbarVisible: false,
@@ -144,7 +144,7 @@ export const UI_DEFAULTS: UIConfig = {
   measureTextColor: [1, 0, 0, 1],
   rulerWidth: 2,
   graph: { normalizeValues: false, isRangeCalMinMax: false },
-};
+}
 
 export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   illumination: 0.0,
@@ -156,12 +156,12 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   isV1SliceShader: false,
   matcap: "",
   paqdUniforms: [0.01, 0.5, 0.25, 0.4] as [number, number, number, number],
-};
+}
 
 export const MESH_DEFAULTS: MeshRenderConfig = {
   xRay: 0,
   thicknessOn2D: Infinity,
-};
+}
 
 export const DRAW_DEFAULTS: DrawConfig = {
   isEnabled: false,
@@ -171,7 +171,7 @@ export const DRAW_DEFAULTS: DrawConfig = {
   opacity: 0.8,
   rimOpacity: -1,
   colormap: "_draw",
-};
+}
 
 export const INTERACTION_DEFAULTS: InteractionConfig = {
   primaryDragMode: DRAG_MODE.crosshair,
@@ -179,7 +179,7 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
   isSnapToVoxelCenters: false,
   isDragDropEnabled: true,
   isYoked3DTo2DZoom: false,
-};
+}
 
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {
   isEnabled: false,
@@ -194,4 +194,4 @@ export const ANNOTATION_DEFAULTS: AnnotationConfig = {
     strokeColor: [1, 0, 0, 1],
     strokeWidth: 2,
   },
-};
+}

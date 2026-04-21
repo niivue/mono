@@ -19,7 +19,7 @@
  * ```
  */
 
-import type NiiVueGPU from "@niivue/niivue";
+import type NiiVueGPU from "@niivue/niivue"
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -34,13 +34,13 @@ export interface SaveHTMLOptions {
    *
    * Build one with e.g. `vite build` using `rollupOptions.external: []`.
    */
-  niivueBundleSource: string;
+  niivueBundleSource: string
 
   /** Canvas element ID in the generated HTML (default: `"gl1"`). */
-  canvasId?: string;
+  canvasId?: string
 
   /** HTML `<title>` (default: `"NiiVue Scene"`). */
-  title?: string;
+  title?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -53,11 +53,11 @@ export interface SaveHTMLOptions {
 
 /** Gzip-compress a Uint8Array. */
 async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new CompressionStream("gzip");
-  const writer = stream.writable.getWriter();
-  writer.write(data);
-  writer.close();
-  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+  const stream = new CompressionStream("gzip")
+  const writer = stream.writable.getWriter()
+  writer.write(data)
+  writer.close()
+  return new Uint8Array(await new Response(stream.readable).arrayBuffer())
 }
 
 // ---------------------------------------------------------------------------
@@ -67,12 +67,12 @@ async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
 /** Encode a Uint8Array to a base-64 string (works in browsers and workers). */
 function uint8ToBase64(bytes: Uint8Array): string {
   // Chunk to avoid call-stack overflow with large arrays
-  const CHUNK = 0x8000;
-  const parts: string[] = [];
+  const CHUNK = 0x8000
+  const parts: string[] = []
   for (let i = 0; i < bytes.length; i += CHUNK) {
-    parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)))
   }
-  return btoa(parts.join(""));
+  return btoa(parts.join(""))
 }
 
 /**
@@ -81,7 +81,7 @@ function uint8ToBase64(bytes: Uint8Array): string {
  * insensitive) which would prematurely close the tag.
  */
 function sanitizeForScriptTag(text: string): string {
-  return text.replace(/<\/script/gi, "<\\/script");
+  return text.replace(/<\/script/gi, "<\\/script")
 }
 
 /** Escape text for safe inclusion in an HTML element (title, attributes). */
@@ -90,7 +90,7 @@ function escapeHTML(text: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ ${base64Document}
     }
   </script>
 </body>
-</html>`;
+</html>`
 }
 
 // ---------------------------------------------------------------------------
@@ -211,32 +211,32 @@ export async function generateHTML(
     niivueBundleSource,
     canvasId = "gl1",
     title = "NiiVue Scene",
-  } = options;
+  } = options
 
   if (!niivueBundleSource) {
     throw new Error(
       "nv-save-html: niivueBundleSource is required. " +
         "Provide the full source of a self-contained niivue ESM bundle.",
-    );
+    )
   }
 
   // Clear environment-specific matcap URL before serialization.
   // The serialized document should not contain localhost dev-server paths;
   // the standalone bundle's NiiVue instance provides its own default matcap.
-  const savedMatcap = nv.volumeMatcap;
-  nv.model.volume.matcap = "";
+  const savedMatcap = nv.volumeMatcap
+  nv.model.volume.matcap = ""
 
   // Serialize the scene to CBOR binary (NVD format)
-  const nvdBytes = nv.serializeDocument();
+  const nvdBytes = nv.serializeDocument()
 
   // Restore the original matcap on the live instance
-  nv.model.volume.matcap = savedMatcap;
+  nv.model.volume.matcap = savedMatcap
 
   // Gzip-compress then base-64-encode for embedding
-  const compressed = await gzipCompress(nvdBytes);
-  const base64 = uint8ToBase64(compressed);
+  const compressed = await gzipCompress(nvdBytes)
+  const base64 = uint8ToBase64(compressed)
 
-  return buildHTML(niivueBundleSource, base64, canvasId, title);
+  return buildHTML(niivueBundleSource, base64, canvasId, title)
 }
 
 /**
@@ -254,14 +254,14 @@ export async function saveHTML(
   filename = "scene.html",
   options: SaveHTMLOptions,
 ): Promise<void> {
-  const html = await generateHTML(nv, options);
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const html = await generateHTML(nv, options)
+  const blob = new Blob([html], { type: "text/html" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }

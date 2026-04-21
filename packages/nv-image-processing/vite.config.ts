@@ -1,5 +1,5 @@
-import { defineConfig } from "vite";
-import dts from "vite-plugin-dts";
+import { defineConfig } from "vite"
+import dts from "vite-plugin-dts"
 
 export default defineConfig({
   plugins: [dts({ tsconfigPath: "./tsconfig.json" })],
@@ -15,4 +15,4 @@ export default defineConfig({
       external: ["@niivue/niivue"],
     },
   },
-});
+})

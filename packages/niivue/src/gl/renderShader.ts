@@ -1,6 +1,6 @@
-import { fragmentPreamble, volumeVertexShader } from "./volumeShaderLib";
+import { fragmentPreamble, volumeVertexShader } from "./volumeShaderLib"
 
-export const vertexShader = volumeVertexShader;
+export const vertexShader = volumeVertexShader
 
 export const fragmentShader = `${fragmentPreamble}
 uniform mat4 normMtx;
@@ -373,4 +373,4 @@ void main() {
   FragColor = vec4(colAcc.rgb, colAcc.a / earlyTermination);
   gl_FragDepth = fragDepth;
 }
-`;
+`

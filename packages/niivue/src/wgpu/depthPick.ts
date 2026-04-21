@@ -2,9 +2,9 @@
 // Renders to a 1x1 offscreen texture with depth packed into RGBA,
 // then reads back via copyTextureToBuffer + mapAsync.
 
-import { mat4 } from "gl-matrix";
-import { log } from "@/logger";
-import { volumeShaderPreamble } from "./volumeShaderLib";
+import { mat4 } from "gl-matrix"
+import { log } from "@/logger"
+import { volumeShaderPreamble } from "./volumeShaderLib"
 
 // --- Volume depth-pick WGSL ---
 // Preamble (structs, bindings, vertex shader, helpers) from volumeShaderLib.
@@ -158,7 +158,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
   output.fragDepth = finalDepth;
   return output;
 }
-`;
+`
 
 // --- Mesh depth-pick WGSL ---
 // Same Params struct as mesh.wgsl, simple fragment that packs hardware depth.
@@ -207,19 +207,19 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
   // alpha=0.5 signals "mesh" hit (volume uses alpha=1.0)
   return vec4f(packed.xyz, 0.5);
 }
-`;
+`
 
 // --- Offscreen resources and pipelines ---
 
 interface DepthPickResources {
-  colorTexture: GPUTexture;
-  depthTexture: GPUTexture;
-  readbackBuffer: GPUBuffer;
-  volumePipeline: GPURenderPipeline | null;
-  meshPipeline: GPURenderPipeline | null;
+  colorTexture: GPUTexture
+  depthTexture: GPUTexture
+  readbackBuffer: GPUBuffer
+  volumePipeline: GPURenderPipeline | null
+  meshPipeline: GPURenderPipeline | null
 }
 
-const _deviceCache = new WeakMap<GPUDevice, DepthPickResources>();
+const _deviceCache = new WeakMap<GPUDevice, DepthPickResources>()
 
 export function init(
   device: GPUDevice,
@@ -231,25 +231,25 @@ export function init(
     size: [1, 1],
     format: "rgba8unorm",
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-  });
+  })
   // 1x1 depth target (needed for proper depth testing between volume and meshes)
   const depthTexture = device.createTexture({
     size: [1, 1],
     format: "depth24plus",
     usage: GPUTextureUsage.RENDER_ATTACHMENT,
-  });
+  })
   // Readback buffer: 4 bytes (one RGBA pixel), 256-byte aligned for mapAsync
   const readbackBuffer = device.createBuffer({
     size: 256,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-  });
+  })
 
   // Volume depth-pick pipeline (reuses volumeRenderer's bind group layout)
-  let volumePipeline: GPURenderPipeline | null = null;
+  let volumePipeline: GPURenderPipeline | null = null
   if (volumeBindLayout) {
     const shaderModule = device.createShaderModule({
       code: volumeShaderPreamble + volumeDepthPickFragment,
-    });
+    })
     volumePipeline = device.createRenderPipeline({
       layout: device.createPipelineLayout({
         bindGroupLayouts: [volumeBindLayout],
@@ -286,13 +286,13 @@ export function init(
         cullMode: "back",
       },
       multisample: { count: 1 },
-    });
+    })
   }
 
   // Mesh depth-pick pipeline (reuses mesh bind group layout)
-  let meshPipeline: GPURenderPipeline | null = null;
+  let meshPipeline: GPURenderPipeline | null = null
   if (meshBindLayout) {
-    const shaderModule = device.createShaderModule({ code: meshDepthPickWGSL });
+    const shaderModule = device.createShaderModule({ code: meshDepthPickWGSL })
     meshPipeline = device.createRenderPipeline({
       layout: device.createPipelineLayout({
         bindGroupLayouts: [meshBindLayout],
@@ -338,7 +338,7 @@ export function init(
         cullMode: "back",
       },
       multisample: { count: 1 },
-    });
+    })
   }
 
   _deviceCache.set(device, {
@@ -347,50 +347,50 @@ export function init(
     readbackBuffer,
     volumePipeline,
     meshPipeline,
-  });
+  })
 }
 
 export interface DepthPickDrawParams {
-  device: GPUDevice;
+  device: GPUDevice
   // Volume
-  volumeBindGroup: GPUBindGroup | null;
-  volumeVertexBuffer: GPUBuffer | null;
-  volumeIndexBuffer: GPUBuffer | null;
-  volumeIndexCount: number;
-  volumeParamsBuffer: GPUBuffer | null;
-  volumeUniformData: Float32Array | null;
+  volumeBindGroup: GPUBindGroup | null
+  volumeVertexBuffer: GPUBuffer | null
+  volumeIndexBuffer: GPUBuffer | null
+  volumeIndexCount: number
+  volumeParamsBuffer: GPUBuffer | null
+  volumeUniformData: Float32Array | null
   // Meshes (array)
   meshes: {
-    bindGroup: GPUBindGroup | null;
-    vertexBuffer: GPUBuffer | null;
-    indexBuffer: GPUBuffer | null;
-    indexCount: number;
-    uniformBuffer: GPUBuffer | null;
-    uniformData: Float32Array;
-    alignedSize: number;
-  }[];
+    bindGroup: GPUBindGroup | null
+    vertexBuffer: GPUBuffer | null
+    indexBuffer: GPUBuffer | null
+    indexCount: number
+    uniformBuffer: GPUBuffer | null
+    uniformData: Float32Array
+    alignedSize: number
+  }[]
 }
 
 export interface DepthPickResult {
-  depth: number;
-  isMesh: boolean;
+  depth: number
+  isMesh: boolean
 }
 
 export async function pick(
   params: DepthPickDrawParams,
 ): Promise<DepthPickResult | null> {
-  const { device } = params;
-  const _resources = _deviceCache.get(device);
-  if (!_resources) return null;
+  const { device } = params
+  const _resources = _deviceCache.get(device)
+  if (!_resources) return null
   const {
     colorTexture,
     depthTexture,
     readbackBuffer,
     volumePipeline,
     meshPipeline,
-  } = _resources;
+  } = _resources
 
-  const commandEncoder = device.createCommandEncoder();
+  const commandEncoder = device.createCommandEncoder()
   const pass = commandEncoder.beginRenderPass({
     colorAttachments: [
       {
@@ -406,8 +406,8 @@ export async function pick(
       depthLoadOp: "clear",
       depthStoreOp: "store",
     },
-  });
-  pass.setViewport(0, 0, 1, 1, 0.0, 1.0);
+  })
+  pass.setViewport(0, 0, 1, 1, 0.0, 1.0)
 
   // Draw volume
   if (
@@ -423,63 +423,63 @@ export async function pick(
       params.volumeParamsBuffer,
       0,
       params.volumeUniformData as Float32Array<ArrayBuffer>,
-    );
-    pass.setPipeline(volumePipeline);
-    pass.setBindGroup(0, params.volumeBindGroup, [0]);
-    pass.setVertexBuffer(0, params.volumeVertexBuffer);
-    pass.setIndexBuffer(params.volumeIndexBuffer, "uint16");
-    pass.drawIndexed(params.volumeIndexCount);
+    )
+    pass.setPipeline(volumePipeline)
+    pass.setBindGroup(0, params.volumeBindGroup, [0])
+    pass.setVertexBuffer(0, params.volumeVertexBuffer)
+    pass.setIndexBuffer(params.volumeIndexBuffer, "uint16")
+    pass.drawIndexed(params.volumeIndexCount)
   }
 
   // Draw meshes
   if (meshPipeline) {
     for (const m of params.meshes) {
       if (!m.bindGroup || !m.vertexBuffer || !m.indexBuffer || !m.uniformBuffer)
-        continue;
+        continue
       device.queue.writeBuffer(
         m.uniformBuffer,
         0,
         m.uniformData as Float32Array<ArrayBuffer>,
-      );
-      pass.setPipeline(meshPipeline);
-      pass.setBindGroup(0, m.bindGroup, [0]);
-      pass.setVertexBuffer(0, m.vertexBuffer);
-      pass.setIndexBuffer(m.indexBuffer, "uint32");
-      pass.drawIndexed(m.indexCount);
+      )
+      pass.setPipeline(meshPipeline)
+      pass.setBindGroup(0, m.bindGroup, [0])
+      pass.setVertexBuffer(0, m.vertexBuffer)
+      pass.setIndexBuffer(m.indexBuffer, "uint32")
+      pass.drawIndexed(m.indexCount)
     }
   }
 
-  pass.end();
+  pass.end()
 
   // Copy 1x1 pixel to readback buffer
   commandEncoder.copyTextureToBuffer(
     { texture: colorTexture },
     { buffer: readbackBuffer, bytesPerRow: 256 },
     [1, 1],
-  );
-  device.queue.submit([commandEncoder.finish()]);
+  )
+  device.queue.submit([commandEncoder.finish()])
 
   // Read back
-  await readbackBuffer.mapAsync(GPUMapMode.READ);
-  const data = new Uint8Array(readbackBuffer.getMappedRange(0, 4));
-  const r = data[0];
-  const g = data[1];
-  const b = data[2];
-  const a = data[3];
-  readbackBuffer.unmap();
+  await readbackBuffer.mapAsync(GPUMapMode.READ)
+  const data = new Uint8Array(readbackBuffer.getMappedRange(0, 4))
+  const r = data[0]
+  const g = data[1]
+  const b = data[2]
+  const a = data[3]
+  readbackBuffer.unmap()
 
   if (a === 0) {
-    log.debug("depthPick: miss (alpha=0)");
-    return null;
+    log.debug("depthPick: miss (alpha=0)")
+    return null
   }
 
-  const depth = r / 255.0 + g / 65025.0 + b / 16581375.0;
+  const depth = r / 255.0 + g / 65025.0 + b / 16581375.0
   // Volume writes alpha=1.0 (255), mesh writes alpha=0.5 (~128)
-  const isMesh = a < 200;
+  const isMesh = a < 200
   log.debug(
     `depthPick: pixel=[${r},${g},${b},${a}] depth=${depth} isMesh=${isMesh}`,
-  );
-  return { depth, isMesh };
+  )
+  return { depth, isMesh }
 }
 
 // Build a pick matrix that zooms the frustum so only the target pixel fills the 1x1 viewport.
@@ -492,27 +492,27 @@ export function buildPickMVP(
   mvpMatrix: mat4 | Float32Array,
 ): Float32Array {
   // NDC of the target pixel center
-  const ndcX = normalizedX * 2 - 1;
-  const ndcY = 1 - normalizedY * 2; // WebGPU viewport Y is top-down, NDC Y is up
+  const ndcX = normalizedX * 2 - 1
+  const ndcY = 1 - normalizedY * 2 // WebGPU viewport Y is top-down, NDC Y is up
 
   // Pick matrix: scale(tileW, tileH, 1) * translate(-ndcX, -ndcY, 0)
-  const pickMtx = mat4.create();
-  mat4.translate(pickMtx, pickMtx, [-ndcX, -ndcY, 0]);
-  const scaleMtx = mat4.create();
-  mat4.scale(scaleMtx, scaleMtx, [tileW, tileH, 1]);
-  mat4.multiply(pickMtx, scaleMtx, pickMtx);
+  const pickMtx = mat4.create()
+  mat4.translate(pickMtx, pickMtx, [-ndcX, -ndcY, 0])
+  const scaleMtx = mat4.create()
+  mat4.scale(scaleMtx, scaleMtx, [tileW, tileH, 1])
+  mat4.multiply(pickMtx, scaleMtx, pickMtx)
 
   // pickMVP = pickMatrix * MVP
-  const result = mat4.create();
-  mat4.multiply(result, pickMtx, mvpMatrix as mat4);
-  return result as Float32Array;
+  const result = mat4.create()
+  mat4.multiply(result, pickMtx, mvpMatrix as mat4)
+  return result as Float32Array
 }
 
 export function destroy(device: GPUDevice): void {
-  const res = _deviceCache.get(device);
-  if (!res) return;
-  res.colorTexture.destroy();
-  res.depthTexture.destroy();
-  res.readbackBuffer.destroy();
-  _deviceCache.delete(device);
+  const res = _deviceCache.get(device)
+  if (!res) return
+  res.colorTexture.destroy()
+  res.depthTexture.destroy()
+  res.readbackBuffer.destroy()
+  _deviceCache.delete(device)
 }

@@ -1,9 +1,9 @@
-import { mat4, vec3, vec4 } from "gl-matrix";
-import { log } from "@/logger";
-import * as NVTransforms from "@/math/NVTransforms";
-import * as NVMesh from "@/mesh/NVMesh";
-import * as NVConstants from "@/NVConstants";
-import { COLORMAP_TYPE } from "@/NVConstants";
+import { mat4, vec3, vec4 } from "gl-matrix"
+import { log } from "@/logger"
+import * as NVTransforms from "@/math/NVTransforms"
+import * as NVMesh from "@/mesh/NVMesh"
+import * as NVConstants from "@/NVConstants"
+import { COLORMAP_TYPE } from "@/NVConstants"
 import type {
   AnnotationConfig,
   ColorbarInfo,
@@ -24,59 +24,59 @@ import type {
   UIConfig,
   VectorAnnotation,
   VolumeRenderConfig,
-} from "@/NVTypes";
-import * as NVLegend from "@/view/NVLegend";
-import { resolveNegativeRange } from "@/view/NVUILayout";
-import * as NVVolume from "@/volume/NVVolume";
-import { getVoxelValue } from "@/volume/utils";
+} from "@/NVTypes"
+import * as NVLegend from "@/view/NVLegend"
+import { resolveNegativeRange } from "@/view/NVUILayout"
+import * as NVVolume from "@/volume/NVVolume"
+import { getVoxelValue } from "@/volume/utils"
 
 export default class NVModel {
   // --- Config groups ---
-  scene: SceneConfig;
-  layout: LayoutConfig;
-  ui: UIConfig;
-  volume: VolumeRenderConfig;
-  mesh: MeshRenderConfig;
-  draw: DrawConfig;
-  interaction: InteractionConfig;
-  annotation: AnnotationConfig;
+  scene: SceneConfig
+  layout: LayoutConfig
+  ui: UIConfig
+  volume: VolumeRenderConfig
+  mesh: MeshRenderConfig
+  draw: DrawConfig
+  interaction: InteractionConfig
+  annotation: AnnotationConfig
 
   // --- Data ---
-  meshes: NVMeshType[];
-  volumes: NVImage[];
-  clipPlanes: number[];
-  annotations: VectorAnnotation[];
+  meshes: NVMeshType[]
+  volumes: NVImage[]
+  clipPlanes: number[]
+  annotations: VectorAnnotation[]
 
   // --- Drawing volume (internal) ---
-  drawingVolume: NVImage | null;
+  drawingVolume: NVImage | null
 
   // --- Computed geometry ---
-  furthestFromPivot: number;
-  pivot3D: vec3;
-  extentsMin: vec3;
-  extentsMax: vec3;
-  tex2mm: mat4 | null;
-  mm2tex: mat4 | null;
+  furthestFromPivot: number
+  pivot3D: vec3
+  extentsMin: vec3
+  extentsMax: vec3
+  tex2mm: mat4 | null
+  mm2tex: mat4 | null
 
   // --- Transient state ---
   /** Transient drag overlay for view rendering (controller-owned, not serialized) */
-  _dragOverlay: DragOverlay | null = null;
+  _dragOverlay: DragOverlay | null = null
   /** Transient annotation preview for live rendering during brush strokes */
-  _annotationPreview: VectorAnnotation | null = null;
+  _annotationPreview: VectorAnnotation | null = null
   /** Transient eraser preview: overrides persisted annotations during erase drag */
-  _annotationErasePreview: VectorAnnotation[] | null = null;
+  _annotationErasePreview: VectorAnnotation[] | null = null
   /** Transient brush cursor for brush size preview circle */
   _annotationCursor: {
-    mm: [number, number, number];
-    sliceType: number;
-    slicePosition: number;
-  } | null = null;
+    mm: [number, number, number]
+    sliceType: number
+    slicePosition: number
+  } | null = null
   /** Transient selection state for shape annotation resize handles */
   _annotationSelection:
     | import("@/annotation/selection").AnnotationSelection
-    | null = null;
-  completedMeasurements: CompletedMeasurement[] = [];
-  completedAngles: CompletedAngle[] = [];
+    | null = null
+  completedMeasurements: CompletedMeasurement[] = []
+  completedAngles: CompletedAngle[] = []
 
   constructor(options: NiiVueOptions = {}) {
     // Scene — flat options mapped to scene group
@@ -94,7 +94,7 @@ export default class NVModel {
       backgroundColor: options.backgroundColor ?? [0, 0, 0, 1],
       clipPlaneColor: options.clipPlaneColor ?? [0.7, 0, 0.7, 0.4],
       isClipPlaneCutaway: options.isClipPlaneCutaway ?? false,
-    };
+    }
     // Layout — flat options mapped to layout group
     this.layout = {
       ...NVConstants.LAYOUT_DEFAULTS,
@@ -127,7 +127,7 @@ export default class NVModel {
       ...(options.customLayout !== undefined && {
         customLayout: options.customLayout ?? null,
       }),
-    };
+    }
     // UI — flat options mapped to ui group
     this.ui = {
       ...NVConstants.UI_DEFAULTS,
@@ -208,7 +208,7 @@ export default class NVModel {
           }),
         },
       }),
-    };
+    }
     // Volume — flat options mapped to volume group
     this.volume = {
       ...NVConstants.VOLUME_DEFAULTS,
@@ -239,7 +239,7 @@ export default class NVModel {
       ...(options.volumePaqdUniforms !== undefined && {
         paqdUniforms: options.volumePaqdUniforms,
       }),
-    };
+    }
     // Mesh — flat options mapped to mesh group
     this.mesh = {
       ...NVConstants.MESH_DEFAULTS,
@@ -247,7 +247,7 @@ export default class NVModel {
       ...(options.meshThicknessOn2D !== undefined && {
         thicknessOn2D: options.meshThicknessOn2D,
       }),
-    };
+    }
     // Draw — flat options mapped to draw group
     this.draw = {
       ...NVConstants.DRAW_DEFAULTS,
@@ -272,7 +272,7 @@ export default class NVModel {
       ...(options.drawColormap !== undefined && {
         colormap: options.drawColormap,
       }),
-    };
+    }
     // Interaction — flat options mapped to interaction group
     this.interaction = {
       ...NVConstants.INTERACTION_DEFAULTS,
@@ -291,7 +291,7 @@ export default class NVModel {
       ...(options.isDragDropEnabled !== undefined && {
         isDragDropEnabled: options.isDragDropEnabled,
       }),
-    };
+    }
     // Annotation — flat options mapped to annotation group
     this.annotation = {
       ...NVConstants.ANNOTATION_DEFAULTS,
@@ -319,68 +319,68 @@ export default class NVModel {
       ...(options.annotationIsVisibleIn3D !== undefined && {
         isVisibleIn3D: options.annotationIsVisibleIn3D,
       }),
-    };
-    this.drawingVolume = null;
-    this.annotations = [];
-    this.meshes = [];
-    this.volumes = [];
+    }
+    this.drawingVolume = null
+    this.annotations = []
+    this.meshes = []
+    this.volumes = []
     this.clipPlanes = Array(NVConstants.NUM_CLIP_PLANE)
       .fill(null)
-      .flatMap(() => [...NVConstants.DEFAULT_CLIP_PLANE]);
-    this.furthestFromPivot = 1.0;
-    this.pivot3D = vec3.create();
-    this.extentsMin = vec3.create();
-    this.extentsMax = vec3.create();
-    this.tex2mm = null;
-    this.mm2tex = null;
-    this._setupPivot3D();
+      .flatMap(() => [...NVConstants.DEFAULT_CLIP_PLANE])
+    this.furthestFromPivot = 1.0
+    this.pivot3D = vec3.create()
+    this.extentsMin = vec3.create()
+    this.extentsMax = vec3.create()
+    this.tex2mm = null
+    this.mm2tex = null
+    this._setupPivot3D()
   }
 
   getMeshes(): NVMeshType[] {
-    return this.meshes;
+    return this.meshes
   }
 
   getVolumes(): NVImage[] {
-    return this.volumes;
+    return this.volumes
   }
 
   getClipPlaneDepthAziElev(clipPlaneIndex = 0): [number, number, number] {
     if (clipPlaneIndex < 0 || clipPlaneIndex >= NVConstants.NUM_CLIP_PLANE) {
-      clipPlaneIndex = 0;
+      clipPlaneIndex = 0
     }
-    const offset = clipPlaneIndex * 4;
-    const x = this.clipPlanes[offset + 0];
-    const y = this.clipPlanes[offset + 1];
-    const z = this.clipPlanes[offset + 2];
-    const depth = this.clipPlanes[offset + 3];
-    const ret = NVTransforms.cart2sphDeg(x, y, z);
-    return [-depth, ret[0], ret[1]];
+    const offset = clipPlaneIndex * 4
+    const x = this.clipPlanes[offset + 0]
+    const y = this.clipPlanes[offset + 1]
+    const z = this.clipPlanes[offset + 2]
+    const depth = this.clipPlanes[offset + 3]
+    const ret = NVTransforms.cart2sphDeg(x, y, z)
+    return [-depth, ret[0], ret[1]]
   }
 
   scene2mm(inPos: ArrayLike<number>): vec3 {
-    const outPos = vec3.create();
+    const outPos = vec3.create()
     for (let i = 0; i < 3; i++) {
       outPos[i] =
         this.extentsMin[i] +
-        inPos[i] * (this.extentsMax[i] - this.extentsMin[i]);
+        inPos[i] * (this.extentsMax[i] - this.extentsMin[i])
     }
-    return outPos;
+    return outPos
   }
 
   scene2vox(frac: ArrayLike<number>): number[] {
-    if (this.volumes.length === 0) return [0, 0, 0];
-    const mm = this.scene2mm(frac);
-    const vox = NVTransforms.mm2vox(this.volumes[0], mm);
-    return [vox[0], vox[1], vox[2]];
+    if (this.volumes.length === 0) return [0, 0, 0]
+    const mm = this.scene2mm(frac)
+    const vox = NVTransforms.mm2vox(this.volumes[0], mm)
+    return [vox[0], vox[1], vox[2]]
   }
 
   mm2scene(inPos: ArrayLike<number>): vec3 {
-    const outPos = vec3.create();
+    const outPos = vec3.create()
     for (let i = 0; i < 3; i++) {
-      const denom = this.extentsMax[i] - this.extentsMin[i];
-      outPos[i] = denom !== 0 ? (inPos[i] - this.extentsMin[i]) / denom : 0;
+      const denom = this.extentsMax[i] - this.extentsMin[i]
+      outPos[i] = denom !== 0 ? (inPos[i] - this.extentsMin[i]) / denom : 0
     }
-    return outPos;
+    return outPos
   }
 
   /**
@@ -390,38 +390,38 @@ export default class NVModel {
    * volume's texture coordinate, and this method corrects for that.
    */
   getSliceTexFrac(sliceDim: number): number {
-    const sceneFrac = this.scene.crosshairPos[sliceDim];
-    if (!this.mm2tex) return sceneFrac;
-    const mm = this.scene2mm(this.scene.crosshairPos);
-    const tmp = vec4.create();
+    const sceneFrac = this.scene.crosshairPos[sliceDim]
+    if (!this.mm2tex) return sceneFrac
+    const mm = this.scene2mm(this.scene.crosshairPos)
+    const tmp = vec4.create()
     vec4.transformMat4(
       tmp,
       vec4.fromValues(mm[0], mm[1], mm[2], 1),
       this.mm2tex,
-    );
-    return tmp[sliceDim];
+    )
+    return tmp[sliceDim]
   }
 
   getSliceTexFracAtMM(sliceDim: number, mm: number): number {
     if (!this.mm2tex) {
-      const denom = this.extentsMax[sliceDim] - this.extentsMin[sliceDim];
-      return denom !== 0 ? (mm - this.extentsMin[sliceDim]) / denom : 0;
+      const denom = this.extentsMax[sliceDim] - this.extentsMin[sliceDim]
+      return denom !== 0 ? (mm - this.extentsMin[sliceDim]) / denom : 0
     }
-    const crossMM = this.scene2mm(this.scene.crosshairPos);
-    crossMM[sliceDim] = mm;
-    const tmp = vec4.create();
+    const crossMM = this.scene2mm(this.scene.crosshairPos)
+    crossMM[sliceDim] = mm
+    const tmp = vec4.create()
     vec4.transformMat4(
       tmp,
       vec4.fromValues(crossMM[0], crossMM[1], crossMM[2], 1),
       this.mm2tex,
-    );
-    return tmp[sliceDim];
+    )
+    return tmp[sliceDim]
   }
 
   sceneExtentsMinMax(): [vec3, vec3, vec3] {
-    const range = vec3.create();
-    vec3.subtract(range, this.extentsMax, this.extentsMin);
-    return [this.extentsMin, this.extentsMax, range];
+    const range = vec3.create()
+    vec3.subtract(range, this.extentsMax, this.extentsMin)
+    return [this.extentsMin, this.extentsMax, range]
   }
 
   setClipPlaneDepthAziElev(
@@ -431,116 +431,112 @@ export default class NVModel {
     clipPlaneIndex = 0,
   ): void {
     if (clipPlaneIndex < 0 || clipPlaneIndex >= NVConstants.NUM_CLIP_PLANE) {
-      clipPlaneIndex = 0;
+      clipPlaneIndex = 0
     }
-    const clip = NVTransforms.depthAziElevToClipPlane(
-      depth,
-      azimuth,
-      elevation,
-    );
-    const offset = clipPlaneIndex * 4;
-    this.clipPlanes[offset + 0] = clip[0];
-    this.clipPlanes[offset + 1] = clip[1];
-    this.clipPlanes[offset + 2] = clip[2];
-    this.clipPlanes[offset + 3] = clip[3];
+    const clip = NVTransforms.depthAziElevToClipPlane(depth, azimuth, elevation)
+    const offset = clipPlaneIndex * 4
+    this.clipPlanes[offset + 0] = clip[0]
+    this.clipPlanes[offset + 1] = clip[1]
+    this.clipPlanes[offset + 2] = clip[2]
+    this.clipPlanes[offset + 3] = clip[3]
   }
 
   _setupPivot3D(): void {
-    let extentsMin = vec3.fromValues(Infinity, Infinity, Infinity);
-    let extentsMax = vec3.fromValues(-Infinity, -Infinity, -Infinity);
+    let extentsMin = vec3.fromValues(Infinity, Infinity, Infinity)
+    let extentsMax = vec3.fromValues(-Infinity, -Infinity, -Infinity)
     for (const v of this.volumes) {
-      vec3.min(extentsMin, extentsMin, v.extentsMin);
-      vec3.max(extentsMax, extentsMax, v.extentsMax);
+      vec3.min(extentsMin, extentsMin, v.extentsMin)
+      vec3.max(extentsMax, extentsMax, v.extentsMax)
     }
     for (const m of this.meshes) {
-      vec3.min(extentsMin, extentsMin, m.extentsMin);
-      vec3.max(extentsMax, extentsMax, m.extentsMax);
+      vec3.min(extentsMin, extentsMin, m.extentsMin)
+      vec3.max(extentsMax, extentsMax, m.extentsMax)
     }
     const isInvalid =
       extentsMin[0] > extentsMax[0] ||
       extentsMin[1] > extentsMax[1] ||
-      extentsMin[2] > extentsMax[2];
+      extentsMin[2] > extentsMax[2]
     if (isInvalid) {
       if (this.meshes.length > 0 || this.volumes.length > 0) {
-        log.warn(`spatial dimensions not defined correctly`);
+        log.warn(`spatial dimensions not defined correctly`)
       }
-      extentsMin = vec3.fromValues(100, 100, 100);
-      extentsMax = vec3.fromValues(-100, -100, -100);
+      extentsMin = vec3.fromValues(100, 100, 100)
+      extentsMax = vec3.fromValues(-100, -100, -100)
     }
-    const pivot3D = vec3.create();
-    vec3.add(pivot3D, extentsMin, extentsMax);
-    vec3.scale(pivot3D, pivot3D, 0.5);
-    this.furthestFromPivot = vec3.distance(pivot3D, extentsMax);
-    this.pivot3D = pivot3D;
-    this.extentsMin = extentsMin;
-    this.extentsMax = extentsMax;
+    const pivot3D = vec3.create()
+    vec3.add(pivot3D, extentsMin, extentsMax)
+    vec3.scale(pivot3D, pivot3D, 0.5)
+    this.furthestFromPivot = vec3.distance(pivot3D, extentsMax)
+    this.pivot3D = pivot3D
+    this.extentsMin = extentsMin
+    this.extentsMax = extentsMax
     this.tex2mm = this.volumes[0]?.frac2mm
       ? mat4.clone(this.volumes[0].frac2mm as mat4)
-      : null;
+      : null
     if (this.tex2mm) {
-      const inv = mat4.create();
+      const inv = mat4.create()
       if (mat4.invert(inv, this.tex2mm)) {
-        this.mm2tex = inv;
+        this.mm2tex = inv
       } else {
-        this.mm2tex = null;
+        this.mm2tex = null
       }
     } else {
-      this.mm2tex = null;
+      this.mm2tex = null
     }
   }
 
   _releaseGPU(obj: Record<string, unknown>): void {
-    const gpu = (obj as { gpu?: Record<string, unknown> | null }).gpu;
+    const gpu = (obj as { gpu?: Record<string, unknown> | null }).gpu
     if (gpu) {
       for (const [, resource] of Object.entries(gpu)) {
         if (
           resource &&
           typeof (resource as { destroy?: () => void }).destroy === "function"
         ) {
-          (resource as { destroy: () => void }).destroy();
+          ;(resource as { destroy: () => void }).destroy()
         }
       }
-      delete (obj as { gpu?: Record<string, unknown> }).gpu; // Clean reference
+      delete (obj as { gpu?: Record<string, unknown> }).gpu // Clean reference
     }
   }
 
   clearAllGPUResources(): void {
     for (const mesh of this.meshes) {
-      this._releaseGPU(mesh);
+      this._releaseGPU(mesh)
     }
     for (const vol of this.volumes) {
-      this._releaseGPU(vol);
-      vol.isDirty = true;
+      this._releaseGPU(vol)
+      vol.isDirty = true
     }
   }
 
   collectColorbars(): ColorbarInfo[] {
-    const bars: ColorbarInfo[] = [];
+    const bars: ColorbarInfo[] = []
     for (const v of this.volumes) {
-      if (v.isColorbarVisible === false) continue;
-      if (v.colormapLabel) continue; // Label volumes don't show colorbars
-      const ct = v.colormapType ?? COLORMAP_TYPE.MIN_TO_MAX;
-      const isZeroBased = ct !== COLORMAP_TYPE.MIN_TO_MAX;
+      if (v.isColorbarVisible === false) continue
+      if (v.colormapLabel) continue // Label volumes don't show colorbars
+      const ct = v.colormapType ?? COLORMAP_TYPE.MIN_TO_MAX
+      const isZeroBased = ct !== COLORMAP_TYPE.MIN_TO_MAX
       bars.push({
         colormapName: v.colormap ?? "Gray",
         min: isZeroBased ? 0 : v.calMin,
         max: v.calMax,
         thresholdMin: isZeroBased ? v.calMin : undefined,
-      });
+      })
       if (v.colormapNegative) {
         const [negThresh, negMaxColor] = resolveNegativeRange(
           v.calMin,
           v.calMax,
           v.calMinNeg as number,
           v.calMaxNeg as number,
-        );
+        )
         bars.push({
           colormapName: v.colormapNegative,
           min: isZeroBased ? 0 : negThresh,
           max: negMaxColor,
           thresholdMin: isZeroBased ? negThresh : undefined,
           isNegative: true,
-        });
+        })
       }
     }
     for (const m of this.meshes) {
@@ -550,20 +546,20 @@ export default class NVModel {
         m.connectomeOptions &&
         m.isColorbarVisible !== false
       ) {
-        const co = m.connectomeOptions;
+        const co = m.connectomeOptions
         bars.push({
           colormapName: co.nodeColormap,
           min: co.nodeMinColor,
           max: co.nodeMaxColor,
-        });
+        })
         if (m.jcon && m.jcon.edges.length > 0) {
           bars.push({
             colormapName: co.edgeColormap,
             min: co.edgeMin,
             max: co.edgeMax,
-          });
+          })
         }
-        continue;
+        continue
       }
       // Tract colorbars: scalar colormap when colorBy is set
       if (
@@ -572,59 +568,59 @@ export default class NVModel {
         m.isColorbarVisible !== false &&
         m.tractOptions.colorBy
       ) {
-        const to = m.tractOptions;
+        const to = m.tractOptions
         bars.push({
           colormapName: to.colormap,
           min: to.calMin,
           max: to.calMax,
-        });
-        continue;
+        })
+        continue
       }
-      if (!m.layers) continue;
+      if (!m.layers) continue
       for (const layer of m.layers) {
-        if (!layer.isColorbarVisible || layer.opacity <= 0) continue;
-        if (layer.colormapLabel) continue;
+        if (!layer.isColorbarVisible || layer.opacity <= 0) continue
+        if (layer.colormapLabel) continue
         const ct =
-          layer.colormapType ?? COLORMAP_TYPE.ZERO_TO_MAX_TRANSPARENT_BELOW_MIN;
-        const isZeroBased = ct !== COLORMAP_TYPE.MIN_TO_MAX;
+          layer.colormapType ?? COLORMAP_TYPE.ZERO_TO_MAX_TRANSPARENT_BELOW_MIN
+        const isZeroBased = ct !== COLORMAP_TYPE.MIN_TO_MAX
         bars.push({
           colormapName: layer.colormap,
           min: isZeroBased ? 0 : layer.calMin,
           max: layer.calMax,
           thresholdMin: isZeroBased ? layer.calMin : undefined,
-        });
+        })
         if (layer.colormapNegative) {
           const [negThresh, negMaxColor] = resolveNegativeRange(
             layer.calMin,
             layer.calMax,
             layer.calMinNeg,
             layer.calMaxNeg,
-          );
+          )
           bars.push({
             colormapName: layer.colormapNegative,
             min: isZeroBased ? 0 : negThresh,
             max: negMaxColor,
             thresholdMin: isZeroBased ? negThresh : undefined,
             isNegative: true,
-          });
+          })
         }
       }
     }
-    return bars;
+    return bars
   }
 
   collectLegendEntries(): NVLegend.LegendEntry[] {
-    if (!this.ui.isLegendVisible) return [];
-    return NVLegend.collectLegendEntries(this.meshes, this.volumes);
+    if (!this.ui.isLegendVisible) return []
+    return NVLegend.collectLegendEntries(this.meshes, this.volumes)
   }
 
   /** Returns the maximum nFrame4D across all volumes, or 0 if none. */
   getMaxVols(): number {
-    let maxVols = 0;
+    let maxVols = 0
     for (const v of this.volumes) {
-      maxVols = Math.max(maxVols, v.nFrame4D ?? 1);
+      maxVols = Math.max(maxVols, v.nFrame4D ?? 1)
     }
-    return maxVols;
+    return maxVols
   }
 
   /**
@@ -632,24 +628,24 @@ export default class NVModel {
    * Returns null if graph is disabled, or there is no 4D volume.
    */
   collectGraphData(): {
-    lines: number[][];
-    selectedColumn: number;
-    calMin: number;
-    calMax: number;
-    nTotalFrame4D: number;
-    graphConfig: GraphConfig;
+    lines: number[][]
+    selectedColumn: number
+    calMin: number
+    calMax: number
+    nTotalFrame4D: number
+    graphConfig: GraphConfig
   } | null {
-    if (!this.ui.isGraphVisible) return null;
-    if (this.getMaxVols() < 2) return null;
-    const vol = this.volumes[0];
-    if (!vol) return null;
-    const nFrames = vol.nFrame4D ?? 1;
-    if (nFrames < 2) return null;
-    const mm = this.scene2mm(this.scene.crosshairPos);
-    const rasVox = NVTransforms.mm2vox(vol, mm);
-    const line: number[] = [];
+    if (!this.ui.isGraphVisible) return null
+    if (this.getMaxVols() < 2) return null
+    const vol = this.volumes[0]
+    if (!vol) return null
+    const nFrames = vol.nFrame4D ?? 1
+    if (nFrames < 2) return null
+    const mm = this.scene2mm(this.scene.crosshairPos)
+    const rasVox = NVTransforms.mm2vox(vol, mm)
+    const line: number[] = []
     for (let j = 0; j < nFrames; j++) {
-      line.push(getVoxelValue(vol, rasVox[0], rasVox[1], rasVox[2], j));
+      line.push(getVoxelValue(vol, rasVox[0], rasVox[1], rasVox[2], j))
     }
     return {
       lines: [line],
@@ -658,49 +654,49 @@ export default class NVModel {
       calMax: vol.calMax,
       nTotalFrame4D: vol.nTotalFrame4D ?? nFrames,
       graphConfig: this.ui.graph,
-    };
+    }
   }
 
   removeMesh(index: number): void {
-    if (index < 0 || index >= this.meshes.length) return;
-    this._releaseGPU(this.meshes[index]);
-    this.meshes.splice(index, 1);
-    this._setupPivot3D();
+    if (index < 0 || index >= this.meshes.length) return
+    this._releaseGPU(this.meshes[index])
+    this.meshes.splice(index, 1)
+    this._setupPivot3D()
   }
 
   removeAllMeshes(): void {
     for (const m of this.meshes) {
-      this._releaseGPU(m);
+      this._releaseGPU(m)
     }
-    this.meshes = [];
-    this._setupPivot3D();
+    this.meshes = []
+    this._setupPivot3D()
   }
 
   async addMesh(mesh: MeshFromUrlOptions | NVMeshType): Promise<void> {
     // Check if this is already a fully-formed NVMesh (has positions property)
     if ("positions" in mesh && mesh.positions) {
-      this.meshes.push(mesh as NVMeshType);
-      this._setupPivot3D();
-      return;
+      this.meshes.push(mesh as NVMeshType)
+      this._setupPivot3D()
+      return
     }
 
     // Otherwise treat as MeshFromUrlOptions and load from URL
     try {
-      const msh = await NVMesh.loadMesh(mesh as MeshFromUrlOptions);
-      this.meshes.push(msh);
+      const msh = await NVMesh.loadMesh(mesh as MeshFromUrlOptions)
+      this.meshes.push(msh)
     } catch (e) {
-      const opts = mesh as MeshFromUrlOptions;
-      const urlString = typeof opts.url === "string" ? opts.url : opts.url.name;
-      log.error(`Failed to load mesh: ${urlString}`, e);
+      const opts = mesh as MeshFromUrlOptions
+      const urlString = typeof opts.url === "string" ? opts.url : opts.url.name
+      log.error(`Failed to load mesh: ${urlString}`, e)
     }
-    this._setupPivot3D();
+    this._setupPivot3D()
   }
 
   removeVolume(index: number): void {
-    if (index < 0 || index >= this.volumes.length) return;
-    this._releaseGPU(this.volumes[index]);
-    this.volumes.splice(index, 1);
-    this._setupPivot3D();
+    if (index < 0 || index >= this.volumes.length) return
+    this._releaseGPU(this.volumes[index])
+    this.volumes.splice(index, 1)
+    this._setupPivot3D()
   }
 
   /**
@@ -708,24 +704,24 @@ export default class NVModel {
    * Returns true if the order changed, false if the move was a no-op.
    */
   moveVolume(fromIndex: number, toIndex: number): boolean {
-    if (fromIndex < 0 || fromIndex >= this.volumes.length) return false;
+    if (fromIndex < 0 || fromIndex >= this.volumes.length) return false
     // Clamp target to valid range
-    toIndex = Math.max(0, Math.min(toIndex, this.volumes.length - 1));
-    if (fromIndex === toIndex) return false;
-    const [vol] = this.volumes.splice(fromIndex, 1);
-    this.volumes.splice(toIndex, 0, vol);
-    this._setupPivot3D();
-    return true;
+    toIndex = Math.max(0, Math.min(toIndex, this.volumes.length - 1))
+    if (fromIndex === toIndex) return false
+    const [vol] = this.volumes.splice(fromIndex, 1)
+    this.volumes.splice(toIndex, 0, vol)
+    this._setupPivot3D()
+    return true
   }
 
   async removeAllVolumes(): Promise<void> {
-    if (this.volumes.length === 0) return;
+    if (this.volumes.length === 0) return
     for (const vol of this.volumes) {
-      vol.img = null;
-      this._releaseGPU(vol);
+      vol.img = null
+      this._releaseGPU(vol)
     }
-    this.volumes = [];
-    this._setupPivot3D();
+    this.volumes = []
+    this._setupPivot3D()
   }
 
   static readonly volumeDefaults = {
@@ -739,35 +735,35 @@ export default class NVModel {
     modulateAlpha: 0,
     isDirty: true,
     isColorbarVisible: true,
-  };
+  }
 
   /** Fetch and prepare an NVImage without adding it to the model. */
   static async prepareVolume(
     volume: ImageFromUrlOptions | NVImage,
   ): Promise<NVImage> {
     if ("hdr" in volume && volume.hdr) {
-      return { ...NVModel.volumeDefaults, ...volume };
+      return { ...NVModel.volumeDefaults, ...volume }
     }
-    const opts = volume as ImageFromUrlOptions;
-    const { url, urlImageData, limitFrames4D, ...overrides } = opts;
+    const opts = volume as ImageFromUrlOptions
+    const { url, urlImageData, limitFrames4D, ...overrides } = opts
     if (!url) {
-      throw new Error("prepareVolume requires a url or an NVImage object");
+      throw new Error("prepareVolume requires a url or an NVImage object")
     }
-    const nii = await NVVolume.loadVolume(url, urlImageData ?? null);
-    const urlString = typeof url === "string" ? url : url.name;
-    const name = overrides.name ?? urlString;
-    const base = NVVolume.nii2volume(nii.hdr, nii.img, name, limitFrames4D);
-    return { ...base, url: urlString, ...NVModel.volumeDefaults, ...overrides };
+    const nii = await NVVolume.loadVolume(url, urlImageData ?? null)
+    const urlString = typeof url === "string" ? url : url.name
+    const name = overrides.name ?? urlString
+    const base = NVVolume.nii2volume(nii.hdr, nii.img, name, limitFrames4D)
+    return { ...base, url: urlString, ...NVModel.volumeDefaults, ...overrides }
   }
 
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<void> {
-    const prepared = await NVModel.prepareVolume(volume);
-    this.volumes.push(prepared);
-    this._setupPivot3D();
+    const prepared = await NVModel.prepareVolume(volume)
+    this.volumes.push(prepared)
+    this._setupPivot3D()
   }
 
   async loadVolume(volume: ImageFromUrlOptions): Promise<void> {
-    await this.removeAllVolumes();
-    await this.addVolume(volume);
+    await this.removeAllVolumes()
+    await this.addVolume(volume)
   }
 }

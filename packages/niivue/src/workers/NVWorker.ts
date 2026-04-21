@@ -14,19 +14,19 @@
  */
 
 /** Internal message-ID key injected into every outgoing payload. */
-const ID_KEY = "_wbId";
+const ID_KEY = "_wbId"
 /** Internal error key returned by workers on failure. */
-const ERR_KEY = "_wbError";
+const ERR_KEY = "_wbError"
 
 interface Pending<T> {
-  resolve: (value: T) => void;
-  reject: (reason: Error) => void;
+  resolve: (value: T) => void
+  reject: (reason: Error) => void
 }
 
 export class NVWorker {
-  private worker: Worker | null = null;
-  private readonly pending = new Map<number, Pending<unknown>>();
-  private nextId = 0;
+  private worker: Worker | null = null
+  private readonly pending = new Map<number, Pending<unknown>>()
+  private nextId = 0
 
   /**
    * @param createWorker Factory that returns a new Worker instance.
@@ -36,7 +36,7 @@ export class NVWorker {
 
   /** Whether the current environment supports Web Workers. */
   static isSupported(): boolean {
-    return typeof Worker !== "undefined";
+    return typeof Worker !== "undefined"
   }
 
   /**
@@ -51,27 +51,27 @@ export class NVWorker {
     payload: Record<string, unknown>,
     transfer: Transferable[] = [],
   ): Promise<T> {
-    const worker = this.getOrCreate();
-    const id = this.nextId++;
+    const worker = this.getOrCreate()
+    const id = this.nextId++
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, {
         resolve: resolve as (v: unknown) => void,
         reject,
-      });
-      worker.postMessage({ ...payload, [ID_KEY]: id }, transfer);
-    });
+      })
+      worker.postMessage({ ...payload, [ID_KEY]: id }, transfer)
+    })
   }
 
   /** Terminate the worker and reject all outstanding promises. */
   terminate(): void {
     if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
+      this.worker.terminate()
+      this.worker = null
     }
     for (const { reject } of this.pending.values()) {
-      reject(new Error("Worker terminated"));
+      reject(new Error("Worker terminated"))
     }
-    this.pending.clear();
+    this.pending.clear()
   }
 
   // ---------------------------------------------------------------------------
@@ -80,31 +80,31 @@ export class NVWorker {
 
   private getOrCreate(): Worker {
     if (!this.worker) {
-      this.worker = this.createWorker();
-      this.worker.onmessage = (e: MessageEvent) => this.onMessage(e);
-      this.worker.onerror = (e: ErrorEvent) => this.onError(e);
+      this.worker = this.createWorker()
+      this.worker.onmessage = (e: MessageEvent) => this.onMessage(e)
+      this.worker.onerror = (e: ErrorEvent) => this.onError(e)
     }
-    return this.worker;
+    return this.worker
   }
 
   private onMessage(e: MessageEvent): void {
-    const { [ID_KEY]: id, [ERR_KEY]: error, ...result } = e.data;
-    const entry = this.pending.get(id);
-    if (!entry) return;
-    this.pending.delete(id);
+    const { [ID_KEY]: id, [ERR_KEY]: error, ...result } = e.data
+    const entry = this.pending.get(id)
+    if (!entry) return
+    this.pending.delete(id)
     if (error) {
-      entry.reject(new Error(error));
+      entry.reject(new Error(error))
     } else {
-      entry.resolve(result);
+      entry.resolve(result)
     }
   }
 
   private onError(e: ErrorEvent): void {
     // Unhandled worker error — reject all pending promises
-    const err = new Error(e.message ?? "Worker error");
+    const err = new Error(e.message ?? "Worker error")
     for (const { reject } of this.pending.values()) {
-      reject(err);
+      reject(err)
     }
-    this.pending.clear();
+    this.pending.clear()
   }
 }

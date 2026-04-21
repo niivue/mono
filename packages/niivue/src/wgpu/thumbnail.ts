@@ -1,5 +1,5 @@
-import { NVRenderer } from "@/view/NVRenderer";
-import * as wgpu from "./wgpu";
+import { NVRenderer } from "@/view/NVRenderer"
+import * as wgpu from "./wgpu"
 
 const shaderCode = /* wgsl */ `
 struct ThumbnailUniforms {
@@ -47,29 +47,29 @@ fn vertex_main(@builtin(vertex_index) vIdx: u32) -> VertexOutput {
 fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     return textureSample(thumbTex, thumbSampler, in.uv);
 }
-`;
+`
 
 export class ThumbnailRenderer extends NVRenderer {
-  private _pipeline: GPURenderPipeline | null = null;
-  private _bindLayout: GPUBindGroupLayout | null = null;
-  private _sampler: GPUSampler | null = null;
-  private _texture: GPUTexture | null = null;
-  private _paramsBuffer: GPUBuffer | null = null;
-  private _bindGroup: GPUBindGroup | null = null;
-  private _texWidth = 0;
-  private _texHeight = 0;
+  private _pipeline: GPURenderPipeline | null = null
+  private _bindLayout: GPUBindGroupLayout | null = null
+  private _sampler: GPUSampler | null = null
+  private _texture: GPUTexture | null = null
+  private _paramsBuffer: GPUBuffer | null = null
+  private _bindGroup: GPUBindGroup | null = null
+  private _texWidth = 0
+  private _texHeight = 0
 
   async init(
     device: GPUDevice,
     format: GPUTextureFormat,
     msaaCount: number,
   ): Promise<void> {
-    if (this.isReady) return;
+    if (this.isReady) return
 
     this._sampler = device.createSampler({
       magFilter: "linear",
       minFilter: "linear",
-    });
+    })
 
     this._bindLayout = device.createBindGroupLayout({
       entries: [
@@ -81,9 +81,9 @@ export class ThumbnailRenderer extends NVRenderer {
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
-    });
+    })
 
-    const module = device.createShaderModule({ code: shaderCode });
+    const module = device.createShaderModule({ code: shaderCode })
     this._pipeline = device.createRenderPipeline({
       layout: device.createPipelineLayout({
         bindGroupLayouts: [this._bindLayout],
@@ -112,14 +112,14 @@ export class ThumbnailRenderer extends NVRenderer {
         format: "depth24plus",
       },
       primitive: { topology: "triangle-strip" },
-    });
+    })
 
     this._paramsBuffer = device.createBuffer({
       size: 16, // 4 floats: canvasW, canvasH, texW, texH
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    })
 
-    this.isReady = true;
+    this.isReady = true
   }
 
   async loadThumbnail(device: GPUDevice, url: string): Promise<void> {
@@ -129,15 +129,15 @@ export class ThumbnailRenderer extends NVRenderer {
       !this._sampler ||
       !this._paramsBuffer
     )
-      return;
+      return
     // Destroy old texture
     if (this._texture) {
-      this._texture.destroy();
-      this._texture = null;
+      this._texture.destroy()
+      this._texture = null
     }
-    this._texture = await wgpu.bitmap2texture(device, url);
-    this._texWidth = this._texture.width;
-    this._texHeight = this._texture.height;
+    this._texture = await wgpu.bitmap2texture(device, url)
+    this._texWidth = this._texture.width
+    this._texHeight = this._texture.height
     this._bindGroup = device.createBindGroup({
       layout: this._bindLayout,
       entries: [
@@ -145,11 +145,11 @@ export class ThumbnailRenderer extends NVRenderer {
         { binding: 1, resource: this._texture.createView() },
         { binding: 2, resource: this._sampler },
       ],
-    });
+    })
   }
 
   resize(device: GPUDevice, canvasWidth: number, canvasHeight: number): void {
-    if (!this._paramsBuffer) return;
+    if (!this._paramsBuffer) return
     device.queue.writeBuffer(
       this._paramsBuffer,
       0,
@@ -159,33 +159,33 @@ export class ThumbnailRenderer extends NVRenderer {
         this._texWidth,
         this._texHeight,
       ]) as Float32Array<ArrayBuffer>,
-    );
+    )
   }
 
   draw(_device: GPUDevice, pass: GPURenderPassEncoder): void {
-    if (!this._pipeline || !this._bindGroup) return;
-    pass.setPipeline(this._pipeline);
-    pass.setBindGroup(0, this._bindGroup);
-    pass.draw(4);
+    if (!this._pipeline || !this._bindGroup) return
+    pass.setPipeline(this._pipeline)
+    pass.setBindGroup(0, this._bindGroup)
+    pass.draw(4)
   }
 
   hasTexture(): boolean {
-    return this._texture !== null;
+    return this._texture !== null
   }
 
   destroy(): void {
     if (this._texture) {
-      this._texture.destroy();
-      this._texture = null;
+      this._texture.destroy()
+      this._texture = null
     }
     if (this._paramsBuffer) {
-      this._paramsBuffer.destroy();
-      this._paramsBuffer = null;
+      this._paramsBuffer.destroy()
+      this._paramsBuffer = null
     }
-    this._bindGroup = null;
-    this._sampler = null;
-    this._pipeline = null;
-    this._bindLayout = null;
-    this.isReady = false;
+    this._bindGroup = null
+    this._sampler = null
+    this._pipeline = null
+    this._bindLayout = null
+    this.isReady = false
   }
 }

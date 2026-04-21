@@ -1,8 +1,8 @@
-import type { NiiVueOptions } from "@niivue/niivue";
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import type { LayoutConfig } from "./layouts";
-import { NvSceneController } from "./nvscene-controller";
-import type { NvSceneEventMap } from "./types";
+import type { NiiVueOptions } from "@niivue/niivue"
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react"
+import type { LayoutConfig } from "./layouts"
+import { NvSceneController } from "./nvscene-controller"
+import type { NvSceneEventMap } from "./types"
 
 export function useScene(
   controller?: NvSceneController,
@@ -12,15 +12,15 @@ export function useScene(
   const scene = useMemo(
     () => controller ?? new NvSceneController(layouts, viewerDefaults),
     [controller, viewerDefaults, layouts],
-  );
+  )
 
   const snapshot = useSyncExternalStore(
     scene.subscribe,
     scene.getSnapshot,
     scene.getSnapshot,
-  );
+  )
 
-  return { scene, snapshot };
+  return { scene, snapshot }
 }
 
 export function useNiivue(scene: NvSceneController, index: number) {
@@ -28,10 +28,10 @@ export function useNiivue(scene: NvSceneController, index: number) {
     scene.subscribe,
     scene.getSnapshot,
     scene.getSnapshot,
-  );
+  )
 
   // Re-derive when viewerCount changes
-  return index < snapshot.viewerCount ? scene.getNiivue(index) : undefined;
+  return index < snapshot.viewerCount ? scene.getNiivue(index) : undefined
 }
 
 export function useSceneEvent<E extends keyof NvSceneEventMap>(
@@ -39,14 +39,14 @@ export function useSceneEvent<E extends keyof NvSceneEventMap>(
   event: E,
   callback: NvSceneEventMap[E],
 ) {
-  const callbackRef = useRef(callback);
-  callbackRef.current = callback;
+  const callbackRef = useRef(callback)
+  callbackRef.current = callback
 
   useEffect(() => {
     const handler = ((...args: unknown[]) => {
-      (callbackRef.current as (...a: unknown[]) => void)(...args);
-    }) as NvSceneEventMap[E];
+      ;(callbackRef.current as (...a: unknown[]) => void)(...args)
+    }) as NvSceneEventMap[E]
 
-    return scene.on(event, handler);
-  }, [scene, event]);
+    return scene.on(event, handler)
+  }, [scene, event])
 }

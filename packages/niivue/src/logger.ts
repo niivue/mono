@@ -6,73 +6,73 @@ const LOG_LEVELS = {
   error: 3,
   fatal: 4,
   silent: Infinity,
-} as const;
+} as const
 
-export type LogLevel = keyof typeof LOG_LEVELS;
+export type LogLevel = keyof typeof LOG_LEVELS
 
 class Log {
-  level: LogLevel;
-  name: string;
+  level: LogLevel
+  name: string
   constructor({
     name = "niivue",
     level = "info",
   }: { name?: string; level?: LogLevel } = {}) {
-    this.name = `${name}`;
-    this.level = level;
+    this.name = `${name}`
+    this.level = level
   }
 
-  static levels = LOG_LEVELS;
+  static levels = LOG_LEVELS
 
   debug(...args: unknown[]): void {
     if (Log.levels[this.level] > Log.levels.debug) {
-      return;
+      return
     }
 
-    console.debug(`${this.name}-debug`, ...args);
+    console.debug(`${this.name}-debug`, ...args)
   }
 
   info(...args: unknown[]): void {
     if (Log.levels[this.level] > Log.levels.info) {
-      return;
+      return
     }
 
-    console.info(`${this.name}-info`, ...args);
+    console.info(`${this.name}-info`, ...args)
   }
 
   warn(...args: unknown[]): void {
     if (Log.levels[this.level] > Log.levels.warn) {
-      return;
+      return
     }
 
-    console.warn(`${this.name}-warn`, ...args);
+    console.warn(`${this.name}-warn`, ...args)
   }
 
   error(...args: unknown[]): void {
     if (Log.levels[this.level] > Log.levels.error) {
-      return;
+      return
     }
 
-    console.error(`${this.name}-error`, ...args);
+    console.error(`${this.name}-error`, ...args)
   }
 
   fatal(...args: unknown[]): void {
     if (Log.levels[this.level] > Log.levels.fatal) {
-      return;
+      return
     }
 
-    console.error(`${this.name}-fatal`, ...args);
+    console.error(`${this.name}-fatal`, ...args)
   }
 
   setLogLevel(level: LogLevel): void {
-    this.level = level;
+    this.level = level
   }
 
   setName(name: string): void {
-    this.name = name;
+    this.name = name
   }
 }
 
 // make a log instance and export it
-const log = new Log({ name: "niivue", level: "info" });
+const log = new Log({ name: "niivue", level: "info" })
 
-export { log };
+export { log }

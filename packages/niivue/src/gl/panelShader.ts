@@ -23,7 +23,7 @@ void main() {
   vSize = panelRect.zw;
   vRadius = panelRadius;
 }
-`;
+`
 
 export const panelFragShader = `#version 300 es
 precision highp float;
@@ -47,4 +47,4 @@ void main() {
   if (alpha <= 0.0) { discard; }
   fragColor = vec4(vColor.rgb, vColor.a * alpha);
 }
-`;
+`

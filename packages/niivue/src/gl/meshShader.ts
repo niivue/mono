@@ -17,7 +17,7 @@ void main() {
     vClr = vec4(color.rgb, opacity);
     vPos = position;
 }
-`;
+`
 
 // Vertex shader for flat shading - uses flat interpolation
 export const meshVertShaderFlat = `#version 300 es
@@ -39,7 +39,7 @@ void main() {
     vClr = vec4(color.rgb, opacity);
     vPos = position;
 }
-`;
+`
 
 // Fragment shader: Flat shading
 export const meshFragFlat = `#version 300 es
@@ -58,7 +58,7 @@ void main() {
     float s = 0.2 * pow(max(dot(reflect(-l, n), r), 0.0), 10.0);
     fragColor = vec4(ambient + diffuse + s, vClr.a);
 }
-`;
+`
 
 // Fragment shader: Phong shading
 export const meshFragPhong = `#version 300 es
@@ -77,7 +77,7 @@ void main() {
     float s = 0.2 * pow(max(dot(reflect(-l, n), r), 0.0), 10.0);
     fragColor = vec4(ambient + diffuse + s, vClr.a);
 }
-`;
+`
 
 // Fragment shader: Silhouette
 export const meshFragSilhouette = `#version 300 es
@@ -98,7 +98,7 @@ void main() {
     }
     fragColor = vec4(0.0, 0.0, 0.0, vClr.a * alpha);
 }
-`;
+`
 
 // Fragment shader: Rim lighting
 export const meshFragRim = `#version 300 es
@@ -116,7 +116,7 @@ void main() {
     vec3 d = smoothstep(thresh - edgeWidth, thresh + edgeWidth, cosTheta) * vClr.rgb;
     fragColor = vec4(d, vClr.a);
 }
-`;
+`
 
 // Fragment shader: Crevice shading
 export const meshFragCrevice = `#version 300 es
@@ -153,7 +153,7 @@ void main() {
     float s = specular * pow(max(dot(reflect(-l, n), r), 0.0), shininess);
     fragColor = vec4(a + d + s, vClr.a);
 }
-`;
+`
 
 // Fragment shader: Matte
 export const meshFragMatte = `#version 300 es
@@ -173,7 +173,7 @@ void main() {
     vec3 d = max(lightNormDot, 0.0) * vClr.rgb * diffuse;
     fragColor = vec4(a + d, vClr.a);
 }
-`;
+`
 
 // Fragment shader: Toon
 export const meshFragToon = `#version 300 es
@@ -227,7 +227,7 @@ void main() {
     vec3 d = df * vClr.rgb * diffuse;
     fragColor = vec4(a + d + (specular * sf), vClr.a);
 }
-`;
+`
 
 // Fragment shader: Outline
 export const meshFragOutline = `#version 300 es
@@ -257,7 +257,7 @@ void main() {
     float s = specular * pow(max(dot(reflect(l, n), r), 0.0), shininess);
     fragColor = vec4(a + d + s, vClr.a);
 }
-`;
+`
 
 export const meshFragVertexColor = `#version 300 es
 precision highp float;
@@ -268,7 +268,7 @@ out vec4 fragColor;
 void main() {
     fragColor = vClr;
 }
-`;
+`
 
 // Fragment shader: Crosscut (crosshair ribbons on mesh surface)
 export const meshFragCrosscut = `#version 300 es
@@ -302,7 +302,7 @@ void main() {
     if (edgeAlpha <= 1e-4) discard;
     fragColor = vec4(vClr.rgb, vClr.a * edgeAlpha);
 }
-`;
+`
 
 // Map shader type names to fragment shaders
 export const fragmentShaders = {
@@ -316,4 +316,4 @@ export const fragmentShaders = {
   silhouette: meshFragSilhouette,
   toon: meshFragToon,
   vertexColor: meshFragVertexColor,
-};
+}

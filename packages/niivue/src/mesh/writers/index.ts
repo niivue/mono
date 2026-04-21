@@ -8,25 +8,25 @@
  */
 
 export type WriteOptions = {
-  [key: string]: unknown;
-};
+  [key: string]: unknown
+}
 
 type MeshWriter = {
-  extensions?: string[];
+  extensions?: string[]
   write: (
     positions: Float32Array,
     indices: Uint32Array,
     options?: WriteOptions,
-  ) => Promise<ArrayBuffer>;
-};
+  ) => Promise<ArrayBuffer>
+}
 
-import { buildExtensionMap } from "@/NVLoader";
+import { buildExtensionMap } from "@/NVLoader"
 
-const modules = import.meta.glob<MeshWriter>("./*.ts", { eager: true });
-const writerByExt = buildExtensionMap(modules, "./index.ts");
+const modules = import.meta.glob<MeshWriter>("./*.ts", { eager: true })
+const writerByExt = buildExtensionMap(modules, "./index.ts")
 
 export function writeExtensions(): string[] {
-  return Array.from(new Set(Array.from(writerByExt.keys()))).sort();
+  return Array.from(new Set(Array.from(writerByExt.keys()))).sort()
 }
 
 export async function writeMesh(
@@ -35,9 +35,9 @@ export async function writeMesh(
   indices: Uint32Array,
   options?: WriteOptions,
 ): Promise<ArrayBuffer> {
-  const writer = writerByExt.get(ext.toUpperCase());
+  const writer = writerByExt.get(ext.toUpperCase())
   if (!writer) {
-    throw new Error(`No mesh writer available for extension: ${ext}`);
+    throw new Error(`No mesh writer available for extension: ${ext}`)
   }
-  return writer.write(positions, indices, options);
+  return writer.write(positions, indices, options)
 }

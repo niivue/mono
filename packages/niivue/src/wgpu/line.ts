@@ -1,17 +1,17 @@
-import type { LineData } from "@/view/NVLine";
-import { NVRenderer } from "@/view/NVRenderer";
-import lineShaderCode from "./line.wgsl?raw";
+import type { LineData } from "@/view/NVLine"
+import { NVRenderer } from "@/view/NVRenderer"
+import lineShaderCode from "./line.wgsl?raw"
 
 export class LineRenderer extends NVRenderer {
-  pipeline: GPURenderPipeline | null;
-  bindLayout: GPUBindGroupLayout | null;
-  paramsBuffer: GPUBuffer | null;
+  pipeline: GPURenderPipeline | null
+  bindLayout: GPUBindGroupLayout | null
+  paramsBuffer: GPUBuffer | null
 
   constructor() {
-    super();
-    this.pipeline = null;
-    this.bindLayout = null;
-    this.paramsBuffer = null;
+    super()
+    this.pipeline = null
+    this.bindLayout = null
+    this.paramsBuffer = null
   }
 
   async init(
@@ -19,12 +19,12 @@ export class LineRenderer extends NVRenderer {
     format: GPUTextureFormat,
     msaaCount: number,
   ): Promise<void> {
-    if (this.isReady) return;
+    if (this.isReady) return
     // Uniforms for canvas
     this.paramsBuffer = device.createBuffer({
       size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    })
     this.bindLayout = device.createBindGroupLayout({
       entries: [
         {
@@ -38,9 +38,9 @@ export class LineRenderer extends NVRenderer {
           buffer: { type: "read-only-storage" },
         },
       ],
-    });
+    })
 
-    const lineModule = device.createShaderModule({ code: lineShaderCode });
+    const lineModule = device.createShaderModule({ code: lineShaderCode })
     this.pipeline = device.createRenderPipeline({
       layout: device.createPipelineLayout({
         bindGroupLayouts: [this.bindLayout],
@@ -69,31 +69,31 @@ export class LineRenderer extends NVRenderer {
         format: "depth24plus",
       },
       primitive: { topology: "triangle-strip" },
-    });
-    this.isReady = true;
+    })
+    this.isReady = true
   }
 
   resize(device: GPUDevice, width: number, height: number): void {
-    if (!this.isReady || !this.paramsBuffer) return;
+    if (!this.isReady || !this.paramsBuffer) return
     device.queue.writeBuffer(
       this.paramsBuffer,
       0,
       new Float32Array([width, height]),
-    );
+    )
   }
 
   createBindGroup(
     device: GPUDevice,
     lineStorageBuffer: GPUBuffer,
   ): GPUBindGroup | null {
-    if (!this.isReady || !this.bindLayout || !this.paramsBuffer) return null;
+    if (!this.isReady || !this.bindLayout || !this.paramsBuffer) return null
     return device.createBindGroup({
       layout: this.bindLayout,
       entries: [
         { binding: 0, resource: { buffer: this.paramsBuffer } },
         { binding: 1, resource: { buffer: lineStorageBuffer } },
       ],
-    });
+    })
   }
 
   draw(
@@ -105,25 +105,25 @@ export class LineRenderer extends NVRenderer {
     maxLines: number,
   ): void {
     if (!this.isReady || lines.length === 0 || !bindGroup || !this.pipeline)
-      return;
-    const allLineData = new Float32Array(maxLines * 12);
+      return
+    const allLineData = new Float32Array(maxLines * 12)
     for (let i = 0; i < lines.length; i++) {
-      if (i >= maxLines) break;
-      allLineData.set(lines[i].data, i * 12);
+      if (i >= maxLines) break
+      allLineData.set(lines[i].data, i * 12)
     }
-    device.queue.writeBuffer(lineStorageBuffer, 0, allLineData);
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.draw(4, lines.length);
+    device.queue.writeBuffer(lineStorageBuffer, 0, allLineData)
+    pass.setPipeline(this.pipeline)
+    pass.setBindGroup(0, bindGroup)
+    pass.draw(4, lines.length)
   }
 
   destroy(): void {
     if (this.paramsBuffer) {
-      this.paramsBuffer.destroy();
-      this.paramsBuffer = null;
+      this.paramsBuffer.destroy()
+      this.paramsBuffer = null
     }
-    this.pipeline = null;
-    this.bindLayout = null;
-    this.isReady = false;
+    this.pipeline = null
+    this.bindLayout = null
+    this.isReady = false
   }
 }

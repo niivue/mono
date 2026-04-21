@@ -1,46 +1,46 @@
-import type { NVImage } from "@/NVTypes";
-import { NVRenderer } from "@/view/NVRenderer";
-import sliceShaderCode from "./slice.wgsl?raw";
+import type { NVImage } from "@/NVTypes"
+import { NVRenderer } from "@/view/NVRenderer"
+import sliceShaderCode from "./slice.wgsl?raw"
 
-const UNIFORM_ALIGNMENT = 256; // WebGPU minimum uniform buffer offset alignment
-const SLICE_UNIFORM_SIZE = 192; // 2x mat4x4f (128) + scalars (36) + numPaqd (4) + pad (12) + paqdUniforms vec4f (16) = 192 bytes
+const UNIFORM_ALIGNMENT = 256 // WebGPU minimum uniform buffer offset alignment
+const SLICE_UNIFORM_SIZE = 192 // 2x mat4x4f (128) + scalars (36) + numPaqd (4) + pad (12) + paqdUniforms vec4f (16) = 192 bytes
 const alignedSliceSize =
-  Math.ceil(SLICE_UNIFORM_SIZE / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT;
-const MAX_TILES = 128;
+  Math.ceil(SLICE_UNIFORM_SIZE / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
+const MAX_TILES = 128
 
 export class SliceRenderer extends NVRenderer {
-  pipeline: GPURenderPipeline | null;
-  bindLayout: GPUBindGroupLayout | null;
-  paramsBuffer: GPUBuffer | null;
-  placeholderOverlay: GPUTexture | null;
-  drawingTexture: GPUTexture | null;
-  placeholderDrawing: GPUTexture | null;
-  placeholderPaqd: GPUTexture | null;
-  placeholderLut2D: GPUTexture | null;
-  samplerLinear: GPUSampler | null;
-  samplerNearest: GPUSampler | null;
-  bindGroupLinear: GPUBindGroup | null;
-  bindGroupNearest: GPUBindGroup | null;
-  private _bindTexVol: GPUTexture | null = null;
-  private _bindTexOverlay: GPUTexture | null = null;
-  private _bindTexDraw: GPUTexture | null = null;
-  private _bindTexPaqd: GPUTexture | null = null;
-  private _bindTexLut: GPUTexture | null = null;
+  pipeline: GPURenderPipeline | null
+  bindLayout: GPUBindGroupLayout | null
+  paramsBuffer: GPUBuffer | null
+  placeholderOverlay: GPUTexture | null
+  drawingTexture: GPUTexture | null
+  placeholderDrawing: GPUTexture | null
+  placeholderPaqd: GPUTexture | null
+  placeholderLut2D: GPUTexture | null
+  samplerLinear: GPUSampler | null
+  samplerNearest: GPUSampler | null
+  bindGroupLinear: GPUBindGroup | null
+  bindGroupNearest: GPUBindGroup | null
+  private _bindTexVol: GPUTexture | null = null
+  private _bindTexOverlay: GPUTexture | null = null
+  private _bindTexDraw: GPUTexture | null = null
+  private _bindTexPaqd: GPUTexture | null = null
+  private _bindTexLut: GPUTexture | null = null
 
   constructor() {
-    super();
-    this.pipeline = null;
-    this.bindLayout = null;
-    this.paramsBuffer = null;
-    this.placeholderOverlay = null;
-    this.drawingTexture = null;
-    this.placeholderDrawing = null;
-    this.placeholderPaqd = null;
-    this.placeholderLut2D = null;
-    this.samplerLinear = null;
-    this.samplerNearest = null;
-    this.bindGroupLinear = null;
-    this.bindGroupNearest = null;
+    super()
+    this.pipeline = null
+    this.bindLayout = null
+    this.paramsBuffer = null
+    this.placeholderOverlay = null
+    this.drawingTexture = null
+    this.placeholderDrawing = null
+    this.placeholderPaqd = null
+    this.placeholderLut2D = null
+    this.samplerLinear = null
+    this.samplerNearest = null
+    this.bindGroupLinear = null
+    this.bindGroupNearest = null
   }
 
   async init(
@@ -48,23 +48,23 @@ export class SliceRenderer extends NVRenderer {
     format: GPUTextureFormat,
     msaaCount: number,
   ): Promise<void> {
-    if (this.isReady) return;
+    if (this.isReady) return
 
     // Create uniform buffer for slice params (sized for multiple tiles with dynamic offsets)
     this.paramsBuffer = device.createBuffer({
       size: alignedSliceSize * MAX_TILES,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    })
 
     // Create samplers (linear for smooth, nearest for blocky voxels)
     this.samplerLinear = device.createSampler({
       magFilter: "linear",
       minFilter: "linear",
-    });
+    })
     this.samplerNearest = device.createSampler({
       magFilter: "nearest",
       minFilter: "nearest",
-    });
+    })
 
     // Create placeholder 2x2x2 RGBA overlay texture (all zeros - transparent black)
     this.placeholderOverlay = device.createTexture({
@@ -72,7 +72,7 @@ export class SliceRenderer extends NVRenderer {
       format: "rgba8unorm",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       dimension: "3d",
-    });
+    })
     // Initialize with zeros (WebGPU textures are zero-initialized by default)
 
     // Create placeholder 2x2x2 drawing texture (all zeros - transparent)
@@ -81,7 +81,7 @@ export class SliceRenderer extends NVRenderer {
       format: "rgba8unorm",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       dimension: "3d",
-    });
+    })
 
     // Create placeholder 2x2x2 PAQD texture (all zeros)
     this.placeholderPaqd = device.createTexture({
@@ -89,14 +89,14 @@ export class SliceRenderer extends NVRenderer {
       format: "rgba8unorm",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       dimension: "3d",
-    });
+    })
 
     // Create placeholder 1x1 2D LUT texture (transparent)
     this.placeholderLut2D = device.createTexture({
       size: [1, 1],
       format: "rgba8unorm",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
+    })
 
     // Create bind group layout
     this.bindLayout = device.createBindGroupLayout({
@@ -146,10 +146,10 @@ export class SliceRenderer extends NVRenderer {
           sampler: { type: "filtering" },
         },
       ],
-    });
+    })
 
     // Create pipeline
-    const sliceModule = device.createShaderModule({ code: sliceShaderCode });
+    const sliceModule = device.createShaderModule({ code: sliceShaderCode })
     this.pipeline = device.createRenderPipeline({
       layout: device.createPipelineLayout({
         bindGroupLayouts: [this.bindLayout],
@@ -178,9 +178,9 @@ export class SliceRenderer extends NVRenderer {
         format: "depth24plus",
       },
       primitive: { topology: "triangle-strip" },
-    });
+    })
 
-    this.isReady = true;
+    this.isReady = true
   }
 
   /**
@@ -188,7 +188,7 @@ export class SliceRenderer extends NVRenderer {
    * @returns {GPUTexture}
    */
   getPlaceholderOverlay(): GPUTexture | null {
-    return this.placeholderOverlay;
+    return this.placeholderOverlay
   }
 
   /**
@@ -209,15 +209,15 @@ export class SliceRenderer extends NVRenderer {
       !this.samplerLinear ||
       !this.samplerNearest
     )
-      return;
+      return
 
-    const overlay = overlayTexture || this.placeholderOverlay;
-    if (!overlay) return;
-    const drawTex = this.drawingTexture || this.placeholderDrawing;
-    if (!drawTex) return;
-    const paqdTex = paqdTexture || this.placeholderPaqd;
-    const lutTex = paqdLutTexture || this.placeholderLut2D;
-    if (!paqdTex || !lutTex) return;
+    const overlay = overlayTexture || this.placeholderOverlay
+    if (!overlay) return
+    const drawTex = this.drawingTexture || this.placeholderDrawing
+    if (!drawTex) return
+    const paqdTex = paqdTexture || this.placeholderPaqd
+    const lutTex = paqdLutTexture || this.placeholderLut2D
+    if (!paqdTex || !lutTex) return
 
     if (
       this.bindGroupLinear &&
@@ -228,14 +228,14 @@ export class SliceRenderer extends NVRenderer {
       this._bindTexPaqd === paqdTex &&
       this._bindTexLut === lutTex
     ) {
-      return;
+      return
     }
 
-    const volView = volumeTexture.createView();
-    const ovlView = overlay.createView();
-    const drawView = drawTex.createView();
-    const paqdView = paqdTex.createView();
-    const lutView = lutTex.createView();
+    const volView = volumeTexture.createView()
+    const ovlView = overlay.createView()
+    const drawView = drawTex.createView()
+    const paqdView = paqdTex.createView()
+    const lutView = lutTex.createView()
     this.bindGroupLinear = device.createBindGroup({
       layout: this.bindLayout,
       entries: [
@@ -251,7 +251,7 @@ export class SliceRenderer extends NVRenderer {
         { binding: 6, resource: lutView },
         { binding: 7, resource: this.samplerLinear },
       ],
-    });
+    })
     this.bindGroupNearest = device.createBindGroup({
       layout: this.bindLayout,
       entries: [
@@ -267,12 +267,12 @@ export class SliceRenderer extends NVRenderer {
         { binding: 6, resource: lutView },
         { binding: 7, resource: this.samplerLinear },
       ],
-    });
-    this._bindTexVol = volumeTexture;
-    this._bindTexOverlay = overlay;
-    this._bindTexDraw = drawTex;
-    this._bindTexPaqd = paqdTex;
-    this._bindTexLut = lutTex;
+    })
+    this._bindTexVol = volumeTexture
+    this._bindTexOverlay = overlay
+    this._bindTexDraw = drawTex
+    this._bindTexPaqd = paqdTex
+    this._bindTexLut = lutTex
   }
 
   updateDrawingTexture(
@@ -280,27 +280,27 @@ export class SliceRenderer extends NVRenderer {
     rgba: Uint8Array,
     dims: number[],
   ): void {
-    if (!this.isReady) return;
+    if (!this.isReady) return
     if (!this.drawingTexture) {
       this.drawingTexture = device.createTexture({
         size: dims,
         format: "rgba8unorm",
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         dimension: "3d",
-      });
+      })
     }
     device.queue.writeTexture(
       { texture: this.drawingTexture },
       rgba as Uint8Array<ArrayBuffer>,
       { bytesPerRow: dims[0] * 4, rowsPerImage: dims[1] },
       dims,
-    );
+    )
   }
 
   destroyDrawing(): void {
     if (this.drawingTexture) {
-      this.drawingTexture.destroy();
-      this.drawingTexture = null;
+      this.drawingTexture.destroy()
+      this.drawingTexture = null
     }
   }
 
@@ -321,11 +321,11 @@ export class SliceRenderer extends NVRenderer {
     pass: GPURenderPassEncoder,
     vol: NVImage,
     md: {
-      overlayAlphaShader?: number;
-      overlayOutlineWidth?: number;
-      isAlphaClipDark?: boolean;
-      drawRimOpacity?: number;
-      isV1SliceShader?: boolean;
+      overlayAlphaShader?: number
+      overlayOutlineWidth?: number
+      isAlphaClipDark?: boolean
+      drawRimOpacity?: number
+      isV1SliceShader?: boolean
     },
     mvpMatrix: Float32Array,
     axCorSag: number,
@@ -338,79 +338,79 @@ export class SliceRenderer extends NVRenderer {
     paqdUniforms: readonly number[] = [0, 0, 0, 0],
     isV1SliceShader = false,
   ): void {
-    const bindGroup = isNearest ? this.bindGroupNearest : this.bindGroupLinear;
+    const bindGroup = isNearest ? this.bindGroupNearest : this.bindGroupLinear
     if (!this.isReady || !bindGroup || !this.paramsBuffer || !this.pipeline)
-      return;
-    if (!vol.frac2mm) return;
+      return
+    if (!vol.frac2mm) return
 
     // Write uniforms to buffer at the appropriate offset for this tile
-    const dynamicOffset = tileIndex * alignedSliceSize;
-    const uniformData = new Float32Array(SLICE_UNIFORM_SIZE / 4);
-    uniformData.set(mvpMatrix, 0); // mat4x4f mvpMtx (16 floats)
-    uniformData.set(vol.frac2mm!, 16); // mat4x4f frac2mm (16 floats)
-    uniformData[32] = vol.opacity ?? 1; // f32 opacity
-    uniformData[33] = md.overlayAlphaShader ?? 1.0; // f32 overlayAlphaShader
-    uniformData[34] = sliceFrac; // f32 slice
-    uniformData[35] = overlayOpacity; // f32 overlayOpacity
+    const dynamicOffset = tileIndex * alignedSliceSize
+    const uniformData = new Float32Array(SLICE_UNIFORM_SIZE / 4)
+    uniformData.set(mvpMatrix, 0) // mat4x4f mvpMtx (16 floats)
+    uniformData.set(vol.frac2mm!, 16) // mat4x4f frac2mm (16 floats)
+    uniformData[32] = vol.opacity ?? 1 // f32 opacity
+    uniformData[33] = md.overlayAlphaShader ?? 1.0 // f32 overlayAlphaShader
+    uniformData[34] = sliceFrac // f32 slice
+    uniformData[35] = overlayOpacity // f32 overlayOpacity
     // [36..37] written as i32 below
-    uniformData[38] = numVolumes; // f32 numVolumes
-    uniformData[39] = md.drawRimOpacity ?? -1; // f32 drawRimOpacity
-    uniformData[40] = numPaqd; // f32 numPaqd
+    uniformData[38] = numVolumes // f32 numVolumes
+    uniformData[39] = md.drawRimOpacity ?? -1 // f32 drawRimOpacity
+    uniformData[40] = numPaqd // f32 numPaqd
     // paqdUniforms vec4f at float index 44 (byte offset 176, 16-byte aligned)
-    uniformData[44] = paqdUniforms[0];
-    uniformData[45] = paqdUniforms[1];
-    uniformData[46] = paqdUniforms[2];
-    uniformData[47] = paqdUniforms[3];
+    uniformData[44] = paqdUniforms[0]
+    uniformData[45] = paqdUniforms[1]
+    uniformData[46] = paqdUniforms[2]
+    uniformData[47] = paqdUniforms[3]
     // Write i32 values using a separate view
-    const intView = new Int32Array(uniformData.buffer);
-    intView[36] = axCorSag; // i32 axCorSag
-    intView[37] = md.isAlphaClipDark ? 1 : 0; // i32 isAlphaClipDark
-    intView[41] = isV1SliceShader ? 1 : 0; // i32 isV1SliceShader
-    uniformData[42] = md.overlayOutlineWidth ?? 0; // f32 overlayOutlineWidth
+    const intView = new Int32Array(uniformData.buffer)
+    intView[36] = axCorSag // i32 axCorSag
+    intView[37] = md.isAlphaClipDark ? 1 : 0 // i32 isAlphaClipDark
+    intView[41] = isV1SliceShader ? 1 : 0 // i32 isV1SliceShader
+    uniformData[42] = md.overlayOutlineWidth ?? 0 // f32 overlayOutlineWidth
 
-    device.queue.writeBuffer(this.paramsBuffer, dynamicOffset, uniformData);
+    device.queue.writeBuffer(this.paramsBuffer, dynamicOffset, uniformData)
 
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, bindGroup, [dynamicOffset]);
-    pass.draw(4);
+    pass.setPipeline(this.pipeline)
+    pass.setBindGroup(0, bindGroup, [dynamicOffset])
+    pass.draw(4)
   }
 
   destroy(): void {
     if (this.placeholderOverlay) {
-      this.placeholderOverlay.destroy();
-      this.placeholderOverlay = null;
+      this.placeholderOverlay.destroy()
+      this.placeholderOverlay = null
     }
     if (this.placeholderDrawing) {
-      this.placeholderDrawing.destroy();
-      this.placeholderDrawing = null;
+      this.placeholderDrawing.destroy()
+      this.placeholderDrawing = null
     }
     if (this.placeholderPaqd) {
-      this.placeholderPaqd.destroy();
-      this.placeholderPaqd = null;
+      this.placeholderPaqd.destroy()
+      this.placeholderPaqd = null
     }
     if (this.placeholderLut2D) {
-      this.placeholderLut2D.destroy();
-      this.placeholderLut2D = null;
+      this.placeholderLut2D.destroy()
+      this.placeholderLut2D = null
     }
     if (this.drawingTexture) {
-      this.drawingTexture.destroy();
-      this.drawingTexture = null;
+      this.drawingTexture.destroy()
+      this.drawingTexture = null
     }
     if (this.paramsBuffer) {
-      this.paramsBuffer.destroy();
-      this.paramsBuffer = null;
+      this.paramsBuffer.destroy()
+      this.paramsBuffer = null
     }
-    this.bindGroupLinear = null;
-    this.bindGroupNearest = null;
-    this.samplerLinear = null;
-    this.samplerNearest = null;
-    this.pipeline = null;
-    this.bindLayout = null;
-    this._bindTexVol = null;
-    this._bindTexOverlay = null;
-    this._bindTexDraw = null;
-    this._bindTexPaqd = null;
-    this._bindTexLut = null;
-    this.isReady = false;
+    this.bindGroupLinear = null
+    this.bindGroupNearest = null
+    this.samplerLinear = null
+    this.samplerNearest = null
+    this.pipeline = null
+    this.bindLayout = null
+    this._bindTexVol = null
+    this._bindTexOverlay = null
+    this._bindTexDraw = null
+    this._bindTexPaqd = null
+    this._bindTexLut = null
+    this.isReady = false
   }
 }

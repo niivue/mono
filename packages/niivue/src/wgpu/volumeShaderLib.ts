@@ -143,4 +143,4 @@ fn clipSampleRange(dir: vec3f, rayStart: vec4f, clipPlane: vec4f, sampleStartEnd
         *sampleStartEnd = vec2f(0.0, 0.0);
     }
 }
-`;
+`

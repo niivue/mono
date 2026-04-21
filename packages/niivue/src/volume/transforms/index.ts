@@ -10,40 +10,40 @@
  *   - resultDefaults?: { colormap?, opacity? } (suggested display defaults for output)
  */
 
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes";
-import { NVWorker } from "@/workers/NVWorker";
-import TransformWorker from "@/workers/transform.worker?worker&inline";
+import type { NIFTI1, NIFTI2, TypedVoxelArray } from "@/NVTypes"
+import { NVWorker } from "@/workers/NVWorker"
+import TransformWorker from "@/workers/transform.worker?worker&inline"
 
 /**
  * Base options that can be passed to transform functions.
  * Each transform may define its own specific options interface extending this.
  */
 export type TransformOptions = {
-  [key: string]: unknown;
-};
+  [key: string]: unknown
+}
 
 /**
  * Describes a single configurable option for a transform plugin.
  */
 export interface OptionField {
   /** Option key (matches the property name in the transform's options interface) */
-  name: string;
+  name: string
   /** Display label for UI */
-  label: string;
+  label: string
   /** Input type */
-  type: "checkbox" | "select";
+  type: "checkbox" | "select"
   /** Default value */
-  default: boolean | number | string;
+  default: boolean | number | string
   /** Available choices (for 'select' type) */
-  options?: (number | string)[];
+  options?: (number | string)[]
 }
 
 /**
  * Suggested display defaults for the output volume.
  */
 export interface ResultDefaults {
-  colormap?: string;
-  opacity?: number;
+  colormap?: string
+  opacity?: number
 }
 
 /**
@@ -51,46 +51,46 @@ export interface ResultDefaults {
  */
 export interface VolumeTransform {
   /** Unique name for this transform */
-  name: string;
+  name: string
   /** Human-readable description */
-  description: string;
+  description: string
   /** Self-describing option definitions for UI generation */
-  options?: OptionField[];
+  options?: OptionField[]
   /** Suggested display defaults for the output volume */
-  resultDefaults?: ResultDefaults;
+  resultDefaults?: ResultDefaults
   /** Apply the transform to raw NIFTI data */
   apply: (
     hdr: NIFTI1 | NIFTI2,
     img: TypedVoxelArray | ArrayBuffer,
     options?: TransformOptions,
-  ) => Promise<{ hdr: NIFTI1 | NIFTI2; img: TypedVoxelArray }>;
+  ) => Promise<{ hdr: NIFTI1 | NIFTI2; img: TypedVoxelArray }>
 }
 
 /**
  * Transform metadata exposed to consumers (controller, UI).
  */
 export interface TransformInfo {
-  name: string;
-  description: string;
-  options: OptionField[];
-  resultDefaults?: ResultDefaults;
+  name: string
+  description: string
+  options: OptionField[]
+  resultDefaults?: ResultDefaults
 }
 
 // Auto-discover transform modules (excludes index.ts)
-const modules = import.meta.glob<VolumeTransform>("./*.ts", { eager: true });
+const modules = import.meta.glob<VolumeTransform>("./*.ts", { eager: true })
 
 // Build registry
-const transformsByName = new Map<string, VolumeTransform>();
+const transformsByName = new Map<string, VolumeTransform>()
 // Track which transforms are built-in (discoverable by the worker via import.meta.glob)
-const builtinNames = new Set<string>();
+const builtinNames = new Set<string>()
 
 for (const [path, mod] of Object.entries(modules)) {
   // Skip index.ts
-  if (path === "./index.ts") continue;
+  if (path === "./index.ts") continue
 
   if (mod.name && typeof mod.apply === "function") {
-    transformsByName.set(mod.name, mod);
-    builtinNames.add(mod.name);
+    transformsByName.set(mod.name, mod)
+    builtinNames.add(mod.name)
   }
 }
 
@@ -98,49 +98,49 @@ for (const [path, mod] of Object.entries(modules)) {
  * Get list of available transform names.
  */
 export function transformNames(): string[] {
-  return Array.from(transformsByName.keys()).sort();
+  return Array.from(transformsByName.keys()).sort()
 }
 
 /**
  * Get a transform by name.
  */
 export function getTransform(name: string): VolumeTransform | undefined {
-  return transformsByName.get(name);
+  return transformsByName.get(name)
 }
 
 /**
  * Get metadata for a specific transform (name, description, options, resultDefaults).
  */
 export function getTransformInfo(name: string): TransformInfo | undefined {
-  const t = transformsByName.get(name);
-  if (!t) return undefined;
+  const t = transformsByName.get(name)
+  if (!t) return undefined
   return {
     name: t.name,
     description: t.description,
     options: t.options ?? [],
     resultDefaults: t.resultDefaults,
-  };
+  }
 }
 
 /**
  * Get metadata for all registered transforms.
  */
 export function getTransformInfos(): TransformInfo[] {
-  return transformNames().map((n) => getTransformInfo(n)!);
+  return transformNames().map((n) => getTransformInfo(n)!)
 }
 
 // ---------------------------------------------------------------------------
 // Worker bridge (lazy, with direct-call fallback)
 // ---------------------------------------------------------------------------
 
-let bridge: NVWorker | null = null;
+let bridge: NVWorker | null = null
 
 function getBridge(): NVWorker | null {
-  if (!NVWorker.isSupported()) return null;
+  if (!NVWorker.isSupported()) return null
   if (!bridge) {
-    bridge = new NVWorker(() => new TransformWorker());
+    bridge = new NVWorker(() => new TransformWorker())
   }
-  return bridge;
+  return bridge
 }
 
 /**
@@ -153,29 +153,29 @@ export async function applyTransform(
   img: TypedVoxelArray | ArrayBuffer,
   options?: TransformOptions,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: TypedVoxelArray }> {
-  const transform = transformsByName.get(name);
+  const transform = transformsByName.get(name)
   if (!transform) {
-    throw new Error(`Unknown volume transform: ${name}`);
+    throw new Error(`Unknown volume transform: ${name}`)
   }
   // External (registered at runtime) transforms manage their own workers,
   // so call apply() directly. Built-in transforms use the shared worker.
   if (!builtinNames.has(name)) {
-    return transform.apply(hdr, img, options);
+    return transform.apply(hdr, img, options)
   }
-  const b = getBridge();
+  const b = getBridge()
   if (b) {
     // NIFTI class instances have non-cloneable function properties;
     // JSON round-trip produces a plain data-only object safe for postMessage.
-    const plainHdr = JSON.parse(JSON.stringify(hdr));
+    const plainHdr = JSON.parse(JSON.stringify(hdr))
     return b.execute<{ hdr: NIFTI1 | NIFTI2; img: TypedVoxelArray }>({
       name,
       hdr: plainHdr,
       img,
       options,
-    });
+    })
   }
   // Fallback: direct execution (no Worker support)
-  return transform.apply(hdr, img, options);
+  return transform.apply(hdr, img, options)
 }
 
 /**
@@ -184,9 +184,9 @@ export async function applyTransform(
  */
 export function registerTransform(transform: VolumeTransform): void {
   if (transformsByName.has(transform.name)) {
-    throw new Error(`Transform "${transform.name}" already registered`);
+    throw new Error(`Transform "${transform.name}" already registered`)
   }
-  transformsByName.set(transform.name, transform);
+  transformsByName.set(transform.name, transform)
 }
 
 /**
@@ -194,7 +194,7 @@ export function registerTransform(transform: VolumeTransform): void {
  */
 export function terminate(): void {
   if (bridge) {
-    bridge.terminate();
-    bridge = null;
+    bridge.terminate()
+    bridge = null
   }
 }

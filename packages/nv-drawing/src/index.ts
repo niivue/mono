@@ -8,22 +8,22 @@
  * `ctx.backgroundVolume.imgRAS` from the NiiVue extension context.
  */
 
-import { NVWorker } from "@niivue/niivue";
+import { NVWorker } from "@niivue/niivue"
 import type {
   DrawingDims,
   InterpolationOptions,
   SliceType,
-} from "./processing/drawing";
+} from "./processing/drawing"
 import type {
   Connectivity,
   MagicWandOptions,
   MagicWandResult,
   ThresholdMode,
-} from "./processing/magicWand";
+} from "./processing/magicWand"
 // @ts-expect-error — Vite worker import with inline bundling
-import DrawingWorker from "./worker?worker&inline";
+import DrawingWorker from "./worker?worker&inline"
 
-export { SLICE_TYPE } from "./processing/drawing";
+export { SLICE_TYPE } from "./processing/drawing"
 export type {
   Connectivity,
   DrawingDims,
@@ -32,25 +32,25 @@ export type {
   MagicWandResult,
   SliceType,
   ThresholdMode,
-};
+}
 
 /** Convert any ArrayLike<number> to Float32Array, returning the input if already Float32. */
 function toFloat32(data: ArrayLike<number>): Float32Array {
-  if (data instanceof Float32Array) return data;
-  const f32 = new Float32Array(data.length);
-  for (let i = 0; i < data.length; i++) f32[i] = data[i];
-  return f32;
+  if (data instanceof Float32Array) return data
+  const f32 = new Float32Array(data.length)
+  for (let i = 0; i < data.length; i++) f32[i] = data[i]
+  return f32
 }
 
 // ---------------------------------------------------------------------------
 // Shared worker (lazy singleton)
 // ---------------------------------------------------------------------------
 
-let bridge: NVWorker | null = null;
+let bridge: NVWorker | null = null
 
 function getBridge(): NVWorker {
-  if (!bridge) bridge = new NVWorker(() => new DrawingWorker());
-  return bridge;
+  if (!bridge) bridge = new NVWorker(() => new DrawingWorker())
+  return bridge
 }
 
 // ---------------------------------------------------------------------------
@@ -69,9 +69,9 @@ export async function findDrawingBoundarySlices(
   const buf = drawBitmap.buffer.slice(
     drawBitmap.byteOffset,
     drawBitmap.byteOffset + drawBitmap.byteLength,
-  );
+  )
   const res = await getBridge().execute<{
-    result: { first: number; last: number } | null;
+    result: { first: number; last: number } | null
   }>(
     {
       name: "findBoundarySlices",
@@ -80,8 +80,8 @@ export async function findDrawingBoundarySlices(
       dims,
     },
     [buf],
-  );
-  return res.result;
+  )
+  return res.result
 }
 
 /**
@@ -103,18 +103,18 @@ export async function interpolateMaskSlices(
   const bitmapBuf = drawBitmap.buffer.slice(
     drawBitmap.byteOffset,
     drawBitmap.byteOffset + drawBitmap.byteLength,
-  );
+  )
 
-  const transfers: Transferable[] = [bitmapBuf];
-  let imgBuf: ArrayBuffer | null = null;
+  const transfers: Transferable[] = [bitmapBuf]
+  let imgBuf: ArrayBuffer | null = null
 
   if (imageData) {
-    const f32 = toFloat32(imageData);
+    const f32 = toFloat32(imageData)
     imgBuf = f32.buffer.slice(
       f32.byteOffset,
       f32.byteOffset + f32.byteLength,
-    ) as ArrayBuffer;
-    transfers.push(imgBuf!);
+    ) as ArrayBuffer
+    transfers.push(imgBuf!)
   }
 
   const res = await getBridge().execute<{ drawBitmap: ArrayBuffer }>(
@@ -130,9 +130,9 @@ export async function interpolateMaskSlices(
       rasMap: null,
     },
     transfers,
-  );
+  )
 
-  return new Uint8Array(res.drawBitmap);
+  return new Uint8Array(res.drawBitmap)
 }
 
 // ---------------------------------------------------------------------------
@@ -165,19 +165,19 @@ export async function magicWand(
   const bitmapBuf = drawBitmap.buffer.slice(
     drawBitmap.byteOffset,
     drawBitmap.byteOffset + drawBitmap.byteLength,
-  );
+  )
 
-  const f32 = toFloat32(imageData);
+  const f32 = toFloat32(imageData)
   const imgBuf = f32.buffer.slice(
     f32.byteOffset,
     f32.byteOffset + f32.byteLength,
-  ) as ArrayBuffer;
+  ) as ArrayBuffer
 
-  const transfers: Transferable[] = [bitmapBuf, imgBuf];
+  const transfers: Transferable[] = [bitmapBuf, imgBuf]
 
   const res = await getBridge().execute<{
-    drawBitmap: ArrayBuffer;
-    result: MagicWandResult;
+    drawBitmap: ArrayBuffer
+    result: MagicWandResult
   }>(
     {
       name: "magicWand",
@@ -190,9 +190,9 @@ export async function magicWand(
       voxelSizeMM: voxelSizeMM ?? null,
     },
     transfers,
-  );
+  )
 
-  return { bitmap: new Uint8Array(res.drawBitmap), result: res.result };
+  return { bitmap: new Uint8Array(res.drawBitmap), result: res.result }
 }
 
 /**
@@ -215,11 +215,11 @@ export async function magicWandFromBitmap(
   const bitmapBuf = drawBitmap.buffer.slice(
     drawBitmap.byteOffset,
     drawBitmap.byteOffset + drawBitmap.byteLength,
-  );
+  )
 
   const res = await getBridge().execute<{
-    drawBitmap: ArrayBuffer;
-    count: number;
+    drawBitmap: ArrayBuffer
+    count: number
   }>(
     {
       name: "magicWandFromBitmap",
@@ -230,9 +230,9 @@ export async function magicWandFromBitmap(
       connectivity,
     },
     [bitmapBuf],
-  );
+  )
 
-  return { bitmap: new Uint8Array(res.drawBitmap), count: res.count };
+  return { bitmap: new Uint8Array(res.drawBitmap), count: res.count }
 }
 
 // ---------------------------------------------------------------------------
@@ -264,12 +264,12 @@ export async function magicWandFromBitmap(
  */
 export class MagicWandShared {
   /** Uint8Array view over the SharedArrayBuffer — assign to `drawingVolume.img`. */
-  readonly bitmap: Uint8Array;
+  readonly bitmap: Uint8Array
   /** Resolves when the worker is initialized and ready for preview calls. */
-  readonly ready: Promise<void>;
+  readonly ready: Promise<void>
 
-  private _worker: Worker;
-  private _gen = 0;
+  private _worker: Worker
+  private _gen = 0
 
   constructor(
     dims: DrawingDims,
@@ -277,33 +277,33 @@ export class MagicWandShared {
     committedBitmap: Uint8Array,
     voxelSizeMM?: [number, number, number],
   ) {
-    const nVox = dims.dimX * dims.dimY * dims.dimZ;
+    const nVox = dims.dimX * dims.dimY * dims.dimZ
 
     // Working bitmap: SharedArrayBuffer — both threads access this
-    const workingSAB = new SharedArrayBuffer(nVox);
-    this.bitmap = new Uint8Array(workingSAB);
-    this.bitmap.set(committedBitmap);
+    const workingSAB = new SharedArrayBuffer(nVox)
+    this.bitmap = new Uint8Array(workingSAB)
+    this.bitmap.set(committedBitmap)
 
     // Image data: SharedArrayBuffer — immutable after init, both threads read
-    const f32 = toFloat32(imageData);
-    const imageSAB = new SharedArrayBuffer(f32.byteLength);
-    new Float32Array(imageSAB).set(f32);
+    const f32 = toFloat32(imageData)
+    const imageSAB = new SharedArrayBuffer(f32.byteLength)
+    new Float32Array(imageSAB).set(f32)
 
     // Committed bitmap: transferred to worker (worker owns the copy)
-    const committedCopy = committedBitmap.slice();
+    const committedCopy = committedBitmap.slice()
 
     // Spawn a dedicated worker (separate from the NVWorker singleton)
-    this._worker = new DrawingWorker();
+    this._worker = new DrawingWorker()
 
     this.ready = new Promise<void>((resolve) => {
       const h = (ev: MessageEvent) => {
         if (ev.data.type === "initSharedDone") {
-          this._worker.removeEventListener("message", h);
-          resolve();
+          this._worker.removeEventListener("message", h)
+          resolve()
         }
-      };
-      this._worker.addEventListener("message", h);
-    });
+      }
+      this._worker.addEventListener("message", h)
+    })
 
     this._worker.postMessage(
       {
@@ -316,7 +316,7 @@ export class MagicWandShared {
         voxelSizeMM: voxelSizeMM ?? null,
       },
       [committedCopy.buffer],
-    );
+    )
   }
 
   /**
@@ -324,11 +324,11 @@ export class MagicWandShared {
    * Call after commit, undo, or clear.
    */
   updateCommitted(committed: Uint8Array): void {
-    const copy = committed.slice();
+    const copy = committed.slice()
     this._worker.postMessage(
       { type: "updateCommitted", committed: copy.buffer },
       [copy.buffer],
-    );
+    )
   }
 
   /**
@@ -343,29 +343,29 @@ export class MagicWandShared {
     seed: [number, number, number],
     options?: MagicWandOptions,
   ): Promise<MagicWandResult | null> {
-    const gen = ++this._gen;
+    const gen = ++this._gen
     return new Promise((resolve) => {
       const h = (ev: MessageEvent) => {
-        if (ev.data.type !== "magicWandSharedResult") return;
-        this._worker.removeEventListener("message", h);
+        if (ev.data.type !== "magicWandSharedResult") return
+        this._worker.removeEventListener("message", h)
         if (ev.data.gen !== gen) {
-          resolve(null);
-          return;
+          resolve(null)
+          return
         }
-        resolve(ev.data.result as MagicWandResult);
-      };
-      this._worker.addEventListener("message", h);
+        resolve(ev.data.result as MagicWandResult)
+      }
+      this._worker.addEventListener("message", h)
       this._worker.postMessage({
         type: "magicWandShared",
         seed,
         options: options ?? {},
         gen,
-      });
-    });
+      })
+    })
   }
 
   /** Terminate the worker and release resources. */
   dispose(): void {
-    this._worker.terminate();
+    this._worker.terminate()
   }
 }

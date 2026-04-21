@@ -1,8 +1,8 @@
 // eslint.config.cjs   (or overwrite eslint.config.js)
-const _js = require("@eslint/js");
-const globals = require("globals");
-const tsParser = require("@typescript-eslint/parser");
-const tsPlugin = require("@typescript-eslint/eslint-plugin");
+const _js = require("@eslint/js")
+const globals = require("globals")
+const tsParser = require("@typescript-eslint/parser")
+const tsPlugin = require("@typescript-eslint/eslint-plugin")
 module.exports = [
   {
     files: ["src/**/*.{ts,tsx}"],
@@ -48,4 +48,4 @@ module.exports = [
       eqeqeq: ["error", "always"],
     },
   },
-];
+]

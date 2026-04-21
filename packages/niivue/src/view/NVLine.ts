@@ -1,4 +1,4 @@
-export type LineData = { data: Float32Array };
+export type LineData = { data: Float32Array }
 
 export type BuildLineFn = (
   x0: number,
@@ -7,9 +7,9 @@ export type BuildLineFn = (
   y1: number,
   thickness: number,
   color: number[],
-) => LineData;
+) => LineData
 
-export const FLOATS_PER_LINE = 12;
+export const FLOATS_PER_LINE = 12
 
 export function buildLine(
   startX: number,
@@ -29,6 +29,6 @@ export function buildLine(
     0,
     0,
     ...color,
-  ]);
-  return { data };
+  ])
+  return { data }
 }

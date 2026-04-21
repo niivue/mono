@@ -20,7 +20,7 @@ void main() {
   gl_Position = mvpMtx * vec4(vPos, 1.0);
   vColor = aPos;
 }
-`;
+`
 
 // Fragment preamble: version, precision, constants, shared uniforms, varyings,
 // and helper functions used by both the render and depth-pick fragment shaders.
@@ -105,4 +105,4 @@ void clipSampleRange(vec3 dir, vec4 rayStart, vec4 clipPlane, inout vec2 sampleS
     sampleStartEnd = vec2(0.0, 0.0);
   }
 }
-`;
+`

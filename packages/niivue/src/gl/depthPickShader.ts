@@ -2,9 +2,9 @@
 // These shaders output depth packed into RGB for readPixels-based depth picking.
 // The packDepth encoding uses 24-bit precision across R, G, B channels.
 
-import { fragmentPreamble, volumeVertexShader } from "./volumeShaderLib";
+import { fragmentPreamble, volumeVertexShader } from "./volumeShaderLib"
 
-export const depthPickVertexShader = volumeVertexShader;
+export const depthPickVertexShader = volumeVertexShader
 
 export const depthPickFragmentShader = `${fragmentPreamble}
 uniform float numVolumes;
@@ -151,7 +151,7 @@ void main() {
   FragColor = packDepth(finalDepth);
   gl_FragDepth = finalDepth;
 }
-`;
+`
 
 // Mesh depth-pick shaders
 // The vertex shader matches the mesh VAO layout (position, normal, color at stride 28)
@@ -165,7 +165,7 @@ in vec4 color;
 void main() {
   gl_Position = mvpMtx * vec4(position, 1.0);
 }
-`;
+`
 
 export const meshDepthPickFragmentShader = `#version 300 es
 precision highp float;
@@ -183,4 +183,4 @@ void main() {
   // alpha=0.5 signals "mesh" hit (volume uses alpha=1.0)
   fragColor = vec4(packed.xyz, 0.5);
 }
-`;
+`

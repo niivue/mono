@@ -1,45 +1,45 @@
-import NiiVue from "../src/index.ts";
+import NiiVue from "../src/index.ts"
 
 sliceType.onchange = () => {
-  nv1.sliceType = parseInt(sliceType.value, 10);
-};
+  nv1.sliceType = parseInt(sliceType.value, 10)
+}
 
 function updateThresholds() {
-  const mnNeg = slideMinNeg.value * -0.1;
-  const mxNeg = mnNeg + slideRangeNeg.value * -0.1;
-  const mn = slideMin.value * 0.1;
-  const mx = mn + slideRange.value * 0.1;
-  const cmapType = alphaMode.selectedIndex;
+  const mnNeg = slideMinNeg.value * -0.1
+  const mxNeg = mnNeg + slideRangeNeg.value * -0.1
+  const mn = slideMin.value * 0.1
+  const mx = mn + slideRange.value * 0.1
+  const cmapType = alphaMode.selectedIndex
   nv1.setMeshLayerProperty(0, 1, {
     cal_minNeg: mnNeg,
     cal_maxNeg: mxNeg,
     calMin: mn,
     calMax: mx,
     colormapType: cmapType,
-  });
+  })
 }
 slideMin.oninput = () => {
-  updateThresholds();
-};
+  updateThresholds()
+}
 slideRange.oninput = () => {
-  updateThresholds();
-};
+  updateThresholds()
+}
 slideMinNeg.oninput = () => {
-  updateThresholds();
-};
+  updateThresholds()
+}
 slideRangeNeg.oninput = () => {
-  updateThresholds();
-};
+  updateThresholds()
+}
 alphaMode.onchange = () => {
-  updateThresholds();
-};
+  updateThresholds()
+}
 
 webgpuCheck.onchange = async function () {
-  await nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" });
-};
+  await nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+}
 
-const nv1 = new NiiVue({ backgroundColor: [0.2, 0.2, 0.3, 1] });
-await nv1.attachToCanvas(gl1);
+const nv1 = new NiiVue({ backgroundColor: [0.2, 0.2, 0.3, 1] })
+await nv1.attachToCanvas(gl1)
 
 await nv1.loadMeshes([
   {
@@ -65,6 +65,6 @@ await nv1.loadMeshes([
       },
     ],
   },
-]);
+])
 
-nv1.sliceType = 4;
+nv1.sliceType = 4

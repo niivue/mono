@@ -6,26 +6,26 @@
  * Unlike WebGPU, we do this in one pass: read NEAREST, write LINEAR
  */
 
-import * as NVCmaps from "@/cmap/NVCmaps";
-import { log } from "@/logger";
-import type { NVImage, TypedVoxelArray } from "@/NVTypes";
-import { buildOrientUniforms, prepareRGBAData } from "@/view/NVOrient";
+import * as NVCmaps from "@/cmap/NVCmaps"
+import { log } from "@/logger"
+import type { NVImage, TypedVoxelArray } from "@/NVTypes"
+import { buildOrientUniforms, prepareRGBAData } from "@/view/NVOrient"
 
 type ShaderPrograms = {
-  uint: WebGLProgram;
-  sint: WebGLProgram;
-  float: WebGLProgram;
-};
+  uint: WebGLProgram
+  sint: WebGLProgram
+  float: WebGLProgram
+}
 
 // top of file
-const _programCache = new WeakMap<WebGL2RenderingContext, ShaderPrograms>(); // gl -> { uint, sint, float }
+const _programCache = new WeakMap<WebGL2RenderingContext, ShaderPrograms>() // gl -> { uint, sint, float }
 
 function getOrCreatePrograms(gl: WebGL2RenderingContext): ShaderPrograms {
-  let cache = _programCache.get(gl);
-  if (cache) return cache;
-  cache = createShaderPrograms(gl);
-  _programCache.set(gl, cache);
-  return cache;
+  let cache = _programCache.get(gl)
+  if (cache) return cache
+  cache = createShaderPrograms(gl)
+  _programCache.set(gl, cache)
+  return cache
 }
 
 /**
@@ -41,18 +41,18 @@ export function rgba2Texture(
   gl: WebGL2RenderingContext,
   nvimage: NVImage,
 ): WebGLTexture {
-  const { rgbaData, texDims } = prepareRGBAData(nvimage);
-  const tex = gl.createTexture();
+  const { rgbaData, texDims } = prepareRGBAData(nvimage)
+  const tex = gl.createTexture()
   if (!tex) {
-    throw new Error("rgba2Texture: failed to create texture");
+    throw new Error("rgba2Texture: failed to create texture")
   }
-  gl.bindTexture(gl.TEXTURE_3D, tex);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
   gl.texImage3D(
     gl.TEXTURE_3D,
     0,
@@ -64,9 +64,9 @@ export function rgba2Texture(
     gl.RGBA,
     gl.UNSIGNED_BYTE,
     rgbaData,
-  );
-  gl.bindTexture(gl.TEXTURE_3D, null);
-  return tex;
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  return tex
 }
 
 // Vertex shader - renders a full-screen quad for each output slice
@@ -77,22 +77,22 @@ out vec2 TexCoord;
 void main() {
     TexCoord = vPos.xy;
     gl_Position = vec4((vPos.xy - vec2(0.5, 0.5)) * 2.0, 0.0, 1.0);
-}`;
+}`
 
 // Fragment shader prefix for unsigned integer input (usampler3D)
 const fragShaderPrefixU = `#version 300 es
 uniform highp usampler3D intensityVol;
-`;
+`
 
 // Fragment shader prefix for signed integer input (isampler3D)
 const fragShaderPrefixI = `#version 300 es
 uniform highp isampler3D intensityVol;
-`;
+`
 
 // Fragment shader prefix for float input (sampler3D)
 const fragShaderPrefixF = `#version 300 es
 uniform highp sampler3D intensityVol;
-`;
+`
 
 const fragShaderBody = `
 precision highp int;
@@ -187,7 +187,7 @@ void main(void) {
     // Bake overlay opacity into alpha for pre-integration
     if (overlayOpacity > 0.0)
         FragColor.a *= overlayOpacity;
-}`;
+}`
 
 /**
  * Compile a WebGL shader
@@ -201,18 +201,18 @@ function compileShader(
   source: string,
   type: number,
 ): WebGLShader {
-  const shader = gl.createShader(type);
+  const shader = gl.createShader(type)
   if (!shader) {
-    throw new Error("orientOverlay: failed to create shader");
+    throw new Error("orientOverlay: failed to create shader")
   }
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
+  gl.shaderSource(shader, source)
+  gl.compileShader(shader)
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const info = gl.getShaderInfoLog(shader);
-    gl.deleteShader(shader);
-    throw new Error(`Shader compile error: ${info}`);
+    const info = gl.getShaderInfoLog(shader)
+    gl.deleteShader(shader)
+    throw new Error(`Shader compile error: ${info}`)
   }
-  return shader;
+  return shader
 }
 
 /**
@@ -227,28 +227,28 @@ function createProgram(
   vertSrc: string,
   fragSrc: string,
 ): WebGLProgram {
-  const vertShader = compileShader(gl, vertSrc, gl.VERTEX_SHADER);
-  const fragShader = compileShader(gl, fragSrc, gl.FRAGMENT_SHADER);
-  const program = gl.createProgram();
+  const vertShader = compileShader(gl, vertSrc, gl.VERTEX_SHADER)
+  const fragShader = compileShader(gl, fragSrc, gl.FRAGMENT_SHADER)
+  const program = gl.createProgram()
   if (!program) {
-    gl.deleteShader(vertShader);
-    gl.deleteShader(fragShader);
-    throw new Error("orientOverlay: failed to create program");
+    gl.deleteShader(vertShader)
+    gl.deleteShader(fragShader)
+    throw new Error("orientOverlay: failed to create program")
   }
-  gl.attachShader(program, vertShader);
-  gl.attachShader(program, fragShader);
-  gl.linkProgram(program);
+  gl.attachShader(program, vertShader)
+  gl.attachShader(program, fragShader)
+  gl.linkProgram(program)
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const info = gl.getProgramInfoLog(program);
-    gl.deleteProgram(program);
-    gl.deleteShader(vertShader);
-    gl.deleteShader(fragShader);
-    throw new Error(`Program link error: ${info}`);
+    const info = gl.getProgramInfoLog(program)
+    gl.deleteProgram(program)
+    gl.deleteShader(vertShader)
+    gl.deleteShader(fragShader)
+    throw new Error(`Program link error: ${info}`)
   }
   // Clean up individual shaders after linking
-  gl.deleteShader(vertShader);
-  gl.deleteShader(fragShader);
-  return program;
+  gl.deleteShader(vertShader)
+  gl.deleteShader(fragShader)
+  return program
 }
 
 /**
@@ -261,7 +261,7 @@ function createShaderPrograms(gl: WebGL2RenderingContext): ShaderPrograms {
     uint: createProgram(gl, vertShader, fragShaderPrefixU + fragShaderBody),
     sint: createProgram(gl, vertShader, fragShaderPrefixI + fragShaderBody),
     float: createProgram(gl, vertShader, fragShaderPrefixF + fragShaderBody),
-  };
+  }
 }
 
 /**
@@ -292,7 +292,7 @@ function getUniformLocations(
     isLabel: gl.getUniformLocation(program, "isLabel"),
     labelMin: gl.getUniformLocation(program, "labelMin"),
     labelWidth: gl.getUniformLocation(program, "labelWidth"),
-  };
+  }
 }
 
 /**
@@ -305,24 +305,24 @@ function createQuadGeometry(gl: WebGL2RenderingContext, program: WebGLProgram) {
   // Full-screen quad vertices (x, y, z) covering 0..1 in UV space
   const vertices = new Float32Array([
     0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-  ]);
-  const vao = gl.createVertexArray();
+  ])
+  const vao = gl.createVertexArray()
   if (!vao) {
-    throw new Error("orientOverlay: failed to create VAO");
+    throw new Error("orientOverlay: failed to create VAO")
   }
-  gl.bindVertexArray(vao);
-  const vbo = gl.createBuffer();
+  gl.bindVertexArray(vao)
+  const vbo = gl.createBuffer()
   if (!vbo) {
-    gl.bindVertexArray(null);
-    throw new Error("orientOverlay: failed to create VBO");
+    gl.bindVertexArray(null)
+    throw new Error("orientOverlay: failed to create VBO")
   }
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-  const posLoc = gl.getAttribLocation(program, "vPos");
-  gl.enableVertexAttribArray(posLoc);
-  gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
-  gl.bindVertexArray(null);
-  return { vao, vbo };
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW)
+  const posLoc = gl.getAttribLocation(program, "vPos")
+  gl.enableVertexAttribArray(posLoc)
+  gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0)
+  gl.bindVertexArray(null)
+  return { vao, vbo }
 }
 
 /**
@@ -331,29 +331,29 @@ function createQuadGeometry(gl: WebGL2RenderingContext, program: WebGLProgram) {
  * @returns {Object} Object with internalFormat, format, type, shaderType, and TypedArrayConstructor
  */
 type TypedArrayCtor = {
-  new (buffer: ArrayBufferLike): TypedVoxelArray;
-  from?: (arrayLike: ArrayLike<number>) => TypedVoxelArray;
-};
+  new (buffer: ArrayBufferLike): TypedVoxelArray
+  from?: (arrayLike: ArrayLike<number>) => TypedVoxelArray
+}
 
 type TextureConfig = {
-  internalFormat: string;
-  format: string;
-  type: string;
-  shaderType: keyof ShaderPrograms;
-  TypedArray: TypedArrayCtor;
-  convertTo?: typeof Float32Array;
-};
+  internalFormat: string
+  format: string
+  type: string
+  shaderType: keyof ShaderPrograms
+  TypedArray: TypedArrayCtor
+  convertTo?: typeof Float32Array
+}
 
 function getTextureConfig(datatypeCode: number): TextureConfig {
   // NIfTI datatype codes
-  const DT_UINT8 = 2;
-  const DT_INT16 = 4;
-  const DT_INT32 = 8;
-  const DT_FLOAT32 = 16;
-  const DT_FLOAT64 = 64;
-  const DT_INT8 = 256;
-  const DT_UINT16 = 512;
-  const DT_UINT32 = 768;
+  const DT_UINT8 = 2
+  const DT_INT16 = 4
+  const DT_INT32 = 8
+  const DT_FLOAT32 = 16
+  const DT_FLOAT64 = 64
+  const DT_INT8 = 256
+  const DT_UINT16 = 512
+  const DT_UINT32 = 768
   switch (datatypeCode) {
     case DT_UINT8:
       return {
@@ -362,7 +362,7 @@ function getTextureConfig(datatypeCode: number): TextureConfig {
         type: "UNSIGNED_BYTE",
         shaderType: "uint",
         TypedArray: Uint8Array,
-      };
+      }
     case DT_INT8:
       return {
         internalFormat: "R8I",
@@ -370,7 +370,7 @@ function getTextureConfig(datatypeCode: number): TextureConfig {
         type: "BYTE",
         shaderType: "sint",
         TypedArray: Int8Array,
-      };
+      }
     case DT_UINT16:
       return {
         internalFormat: "R16UI",
@@ -378,7 +378,7 @@ function getTextureConfig(datatypeCode: number): TextureConfig {
         type: "UNSIGNED_SHORT",
         shaderType: "uint",
         TypedArray: Uint16Array,
-      };
+      }
     case DT_INT16:
       return {
         internalFormat: "R16I",
@@ -386,7 +386,7 @@ function getTextureConfig(datatypeCode: number): TextureConfig {
         type: "SHORT",
         shaderType: "sint",
         TypedArray: Int16Array,
-      };
+      }
     case DT_UINT32:
       return {
         internalFormat: "R32UI",
@@ -394,7 +394,7 @@ function getTextureConfig(datatypeCode: number): TextureConfig {
         type: "UNSIGNED_INT",
         shaderType: "uint",
         TypedArray: Uint32Array,
-      };
+      }
     case DT_INT32:
       return {
         internalFormat: "R32I",
@@ -402,7 +402,7 @@ function getTextureConfig(datatypeCode: number): TextureConfig {
         type: "INT",
         shaderType: "sint",
         TypedArray: Int32Array,
-      };
+      }
     case DT_FLOAT32:
       return {
         internalFormat: "R32F",
@@ -410,7 +410,7 @@ function getTextureConfig(datatypeCode: number): TextureConfig {
         type: "FLOAT",
         shaderType: "float",
         TypedArray: Float32Array,
-      };
+      }
     case DT_FLOAT64:
       // WebGL doesn't support 64-bit floats, convert to 32-bit
       return {
@@ -420,9 +420,9 @@ function getTextureConfig(datatypeCode: number): TextureConfig {
         shaderType: "float",
         TypedArray: Float64Array,
         convertTo: Float32Array,
-      };
+      }
     default:
-      throw new Error(`Unsupported NIfTI datatype code: ${datatypeCode}`);
+      throw new Error(`Unsupported NIfTI datatype code: ${datatypeCode}`)
   }
 }
 
@@ -445,92 +445,92 @@ export function overlay2Texture(
   overlayOpacity = 1,
 ): WebGLTexture {
   if (nvimage.hdr.datatypeCode === 128 || nvimage.hdr.datatypeCode === 2304) {
-    return rgba2Texture(gl, nvimage);
+    return rgba2Texture(gl, nvimage)
   }
   if (!nvimageTarget.dimsRAS) {
-    throw new Error("overlay2Texture: nvimageTarget.dimsRAS missing");
+    throw new Error("overlay2Texture: nvimageTarget.dimsRAS missing")
   }
   // Get dimensions
   const dimsIn = [
     nvimage.hdr.dims[1] ?? 0,
     nvimage.hdr.dims[2] ?? 0,
     nvimage.hdr.dims[3] ?? 0,
-  ];
+  ]
   const dimsOut = [
     nvimageTarget.dimsRAS[1] ?? 0,
     nvimageTarget.dimsRAS[2] ?? 0,
     nvimageTarget.dimsRAS[3] ?? 0,
-  ];
+  ]
   // Determine texture configuration based on datatype
-  const texConfig = getTextureConfig(nvimage.hdr.datatypeCode);
+  const texConfig = getTextureConfig(nvimage.hdr.datatypeCode)
   // Create shader programs (could be cached for efficiency)
-  const programs = getOrCreatePrograms(gl);
-  const program = programs[texConfig.shaderType];
-  gl.useProgram(program);
+  const programs = getOrCreatePrograms(gl)
+  const program = programs[texConfig.shaderType]
+  gl.useProgram(program)
   // Get uniform locations
-  const uniforms = getUniformLocations(gl, program);
+  const uniforms = getUniformLocations(gl, program)
   // Create quad geometry
-  const { vao, vbo } = createQuadGeometry(gl, program);
+  const { vao, vbo } = createQuadGeometry(gl, program)
   // --- Create input 3D texture ---
-  const inputTexture = gl.createTexture();
+  const inputTexture = gl.createTexture()
   if (!inputTexture) {
-    gl.deleteBuffer(vbo);
-    gl.deleteVertexArray(vao);
-    throw new Error("overlay2Texture: failed to create input texture");
+    gl.deleteBuffer(vbo)
+    gl.deleteVertexArray(vao)
+    throw new Error("overlay2Texture: failed to create input texture")
   }
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_3D, inputTexture);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.activeTexture(gl.TEXTURE0)
+  gl.bindTexture(gl.TEXTURE_3D, inputTexture)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
   // Prepare image data (offset by frame4D for 4D volumes)
-  let imgData = nvimage.img;
+  let imgData = nvimage.img
   if (!imgData) {
-    gl.deleteTexture(inputTexture);
-    gl.deleteBuffer(vbo);
-    gl.deleteVertexArray(vao);
-    throw new Error("overlay2Texture: image data missing");
+    gl.deleteTexture(inputTexture)
+    gl.deleteBuffer(vbo)
+    gl.deleteVertexArray(vao)
+    throw new Error("overlay2Texture: image data missing")
   }
-  const frame = nvimage.frame4D ?? 0;
-  const frameElementOffset = frame * nvimage.nVox3D;
-  const frameElementLength = nvimage.nVox3D;
+  const frame = nvimage.frame4D ?? 0
+  const frameElementOffset = frame * nvimage.nVox3D
+  const frameElementLength = nvimage.nVox3D
   if (texConfig.convertTo) {
     // Convert Float64 to Float32
     const sourceArray =
       imgData instanceof ArrayBuffer
         ? new texConfig.TypedArray(imgData)
-        : imgData;
-    const fullConverted = texConfig.convertTo.from(sourceArray);
+        : imgData
+    const fullConverted = texConfig.convertTo.from(sourceArray)
     imgData = fullConverted.subarray(
       frameElementOffset,
       frameElementOffset + frameElementLength,
-    ) as TypedVoxelArray;
+    ) as TypedVoxelArray
   } else if (imgData instanceof ArrayBuffer) {
     // Create typed array view directly from ArrayBuffer at frame offset
-    const full = new texConfig.TypedArray(imgData) as TypedVoxelArray;
+    const full = new texConfig.TypedArray(imgData) as TypedVoxelArray
     imgData = full.subarray(
       frameElementOffset,
       frameElementOffset + frameElementLength,
-    ) as TypedVoxelArray;
+    ) as TypedVoxelArray
   } else {
     // Create typed array view from existing typed array's buffer at frame offset
     const typed =
       imgData instanceof
       (texConfig.TypedArray as unknown as {
-        new (buffer: ArrayBufferLike): TypedVoxelArray;
+        new (buffer: ArrayBufferLike): TypedVoxelArray
       })
         ? imgData
-        : (new texConfig.TypedArray(imgData.buffer) as TypedVoxelArray);
+        : (new texConfig.TypedArray(imgData.buffer) as TypedVoxelArray)
     imgData = typed.subarray(
       frameElementOffset,
       frameElementOffset + frameElementLength,
-    ) as TypedVoxelArray;
+    ) as TypedVoxelArray
   }
   // Upload input texture
-  const glAny = gl as WebGL2RenderingContext & Record<string, number>;
+  const glAny = gl as WebGL2RenderingContext & Record<string, number>
   gl.texStorage3D(
     gl.TEXTURE_3D,
     1,
@@ -538,7 +538,7 @@ export function overlay2Texture(
     dimsIn[0],
     dimsIn[1],
     dimsIn[2],
-  );
+  )
   gl.texSubImage3D(
     gl.TEXTURE_3D,
     0,
@@ -551,30 +551,30 @@ export function overlay2Texture(
     glAny[texConfig.format],
     glAny[texConfig.type],
     imgData as ArrayBufferView,
-  );
+  )
   // --- Create colormap texture(s) ---
   const isLabelVol =
-    nvimage.colormapLabel !== null && nvimage.colormapLabel !== undefined;
-  const colormapTexture = gl.createTexture();
+    nvimage.colormapLabel !== null && nvimage.colormapLabel !== undefined
+  const colormapTexture = gl.createTexture()
   if (!colormapTexture) {
-    gl.deleteTexture(inputTexture);
-    gl.deleteBuffer(vbo);
-    gl.deleteVertexArray(vao);
-    throw new Error("overlay2Texture: failed to create colormap texture");
+    gl.deleteTexture(inputTexture)
+    gl.deleteBuffer(vbo)
+    gl.deleteVertexArray(vao)
+    throw new Error("overlay2Texture: failed to create colormap texture")
   }
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, colormapTexture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.activeTexture(gl.TEXTURE1)
+  gl.bindTexture(gl.TEXTURE_2D, colormapTexture)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
   if (isLabelVol) {
     // Label colormap: variable-width LUT with nearest filtering
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    const labelLut = nvimage.colormapLabel?.lut;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    const labelLut = nvimage.colormapLabel?.lut
     if (!labelLut) {
-      throw new Error("Label colormap LUT is undefined");
+      throw new Error("Label colormap LUT is undefined")
     }
-    const nLabels = labelLut.length / 4;
+    const nLabels = labelLut.length / 4
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -585,12 +585,12 @@ export function overlay2Texture(
       gl.RGBA,
       gl.UNSIGNED_BYTE,
       labelLut,
-    );
+    )
   } else {
     // Continuous colormap: 256-wide LUT with linear filtering
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    const lutData = NVCmaps.lutrgba8(nvimage.colormap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    const lutData = NVCmaps.lutrgba8(nvimage.colormap)
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -601,31 +601,31 @@ export function overlay2Texture(
       gl.RGBA,
       gl.UNSIGNED_BYTE,
       lutData,
-    );
+    )
   }
   // --- Create negative colormap texture ---
   const hasNegColormap =
     !isLabelVol &&
     nvimage.colormapNegative &&
-    nvimage.colormapNegative.length > 0;
-  const negColormapTexture = gl.createTexture();
+    nvimage.colormapNegative.length > 0
+  const negColormapTexture = gl.createTexture()
   if (!negColormapTexture) {
-    gl.deleteTexture(inputTexture);
-    gl.deleteTexture(colormapTexture);
-    gl.deleteBuffer(vbo);
-    gl.deleteVertexArray(vao);
+    gl.deleteTexture(inputTexture)
+    gl.deleteTexture(colormapTexture)
+    gl.deleteBuffer(vbo)
+    gl.deleteVertexArray(vao)
     throw new Error(
       "overlay2Texture: failed to create negative colormap texture",
-    );
+    )
   }
-  gl.activeTexture(gl.TEXTURE2);
-  gl.bindTexture(gl.TEXTURE_2D, negColormapTexture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.activeTexture(gl.TEXTURE2)
+  gl.bindTexture(gl.TEXTURE_2D, negColormapTexture)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
   if (hasNegColormap) {
-    const negLutData = NVCmaps.lutrgba8(nvimage.colormapNegative);
+    const negLutData = NVCmaps.lutrgba8(nvimage.colormapNegative)
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -636,7 +636,7 @@ export function overlay2Texture(
       gl.RGBA,
       gl.UNSIGNED_BYTE,
       negLutData,
-    );
+    )
   } else {
     // Dummy 1-pixel transparent texture
     gl.texImage2D(
@@ -649,25 +649,25 @@ export function overlay2Texture(
       gl.RGBA,
       gl.UNSIGNED_BYTE,
       new Uint8Array([0, 0, 0, 0]),
-    );
+    )
   }
   // --- Create output 3D RGBA8 texture ---
-  const outputTexture = gl.createTexture();
+  const outputTexture = gl.createTexture()
   if (!outputTexture) {
-    gl.deleteTexture(inputTexture);
-    gl.deleteTexture(colormapTexture);
-    gl.deleteTexture(negColormapTexture);
-    gl.deleteBuffer(vbo);
-    gl.deleteVertexArray(vao);
-    throw new Error("overlay2Texture: failed to create output texture");
+    gl.deleteTexture(inputTexture)
+    gl.deleteTexture(colormapTexture)
+    gl.deleteTexture(negColormapTexture)
+    gl.deleteBuffer(vbo)
+    gl.deleteVertexArray(vao)
+    throw new Error("overlay2Texture: failed to create output texture")
   }
-  gl.activeTexture(gl.TEXTURE3);
-  gl.bindTexture(gl.TEXTURE_3D, outputTexture);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.activeTexture(gl.TEXTURE3)
+  gl.bindTexture(gl.TEXTURE_3D, outputTexture)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
   gl.texStorage3D(
     gl.TEXTURE_3D,
     1,
@@ -675,61 +675,61 @@ export function overlay2Texture(
     dimsOut[0],
     dimsOut[1],
     dimsOut[2],
-  );
+  )
   // --- Set up framebuffer for render-to-texture ---
-  const framebuffer = gl.createFramebuffer();
+  const framebuffer = gl.createFramebuffer()
   if (!framebuffer) {
-    gl.deleteTexture(inputTexture);
-    gl.deleteTexture(colormapTexture);
-    gl.deleteTexture(negColormapTexture);
-    gl.deleteTexture(outputTexture);
-    gl.deleteBuffer(vbo);
-    gl.deleteVertexArray(vao);
-    throw new Error("overlay2Texture: failed to create framebuffer");
+    gl.deleteTexture(inputTexture)
+    gl.deleteTexture(colormapTexture)
+    gl.deleteTexture(negColormapTexture)
+    gl.deleteTexture(outputTexture)
+    gl.deleteBuffer(vbo)
+    gl.deleteVertexArray(vao)
+    throw new Error("overlay2Texture: failed to create framebuffer")
   }
-  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
   // Save current GL state
-  const savedViewport = gl.getParameter(gl.VIEWPORT) as Int32Array;
-  const savedCullFace = gl.isEnabled(gl.CULL_FACE);
-  const savedBlend = gl.isEnabled(gl.BLEND);
-  const savedDepthTest = gl.isEnabled(gl.DEPTH_TEST);
-  const savedActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE) as number;
+  const savedViewport = gl.getParameter(gl.VIEWPORT) as Int32Array
+  const savedCullFace = gl.isEnabled(gl.CULL_FACE)
+  const savedBlend = gl.isEnabled(gl.BLEND)
+  const savedDepthTest = gl.isEnabled(gl.DEPTH_TEST)
+  const savedActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE) as number
   const savedVAO = gl.getParameter(
     gl.VERTEX_ARRAY_BINDING,
-  ) as WebGLVertexArrayObject | null;
+  ) as WebGLVertexArrayObject | null
   // Set viewport to output slice dimensions
-  gl.viewport(0, 0, dimsOut[0], dimsOut[1]);
-  gl.disable(gl.CULL_FACE);
-  gl.disable(gl.BLEND);
-  gl.disable(gl.DEPTH_TEST);
+  gl.viewport(0, 0, dimsOut[0], dimsOut[1])
+  gl.disable(gl.CULL_FACE)
+  gl.disable(gl.BLEND)
+  gl.disable(gl.DEPTH_TEST)
   // Bind VAO
-  gl.bindVertexArray(vao);
+  gl.bindVertexArray(vao)
   // Set uniforms
-  if (uniforms.intensityVol) gl.uniform1i(uniforms.intensityVol, 0); // Input texture unit
-  if (uniforms.colormap) gl.uniform1i(uniforms.colormap, 1); // Positive colormap unit
-  if (uniforms.colormapNeg) gl.uniform1i(uniforms.colormapNeg, 2); // Negative colormap unit
-  const u = buildOrientUniforms(nvimage, overlayOpacity);
-  if (uniforms.scl_slope) gl.uniform1f(uniforms.scl_slope, u.slope);
-  if (uniforms.scl_inter) gl.uniform1f(uniforms.scl_inter, u.intercept);
-  if (uniforms.cal_min) gl.uniform1f(uniforms.cal_min, u.calMin);
-  if (uniforms.cal_max) gl.uniform1f(uniforms.cal_max, u.calMax);
-  if (uniforms.cal_minNeg) gl.uniform1f(uniforms.cal_minNeg, u.mnNeg);
-  if (uniforms.cal_maxNeg) gl.uniform1f(uniforms.cal_maxNeg, u.mxNeg);
+  if (uniforms.intensityVol) gl.uniform1i(uniforms.intensityVol, 0) // Input texture unit
+  if (uniforms.colormap) gl.uniform1i(uniforms.colormap, 1) // Positive colormap unit
+  if (uniforms.colormapNeg) gl.uniform1i(uniforms.colormapNeg, 2) // Negative colormap unit
+  const u = buildOrientUniforms(nvimage, overlayOpacity)
+  if (uniforms.scl_slope) gl.uniform1f(uniforms.scl_slope, u.slope)
+  if (uniforms.scl_inter) gl.uniform1f(uniforms.scl_inter, u.intercept)
+  if (uniforms.cal_min) gl.uniform1f(uniforms.cal_min, u.calMin)
+  if (uniforms.cal_max) gl.uniform1f(uniforms.cal_max, u.calMax)
+  if (uniforms.cal_minNeg) gl.uniform1f(uniforms.cal_minNeg, u.mnNeg)
+  if (uniforms.cal_maxNeg) gl.uniform1f(uniforms.cal_maxNeg, u.mxNeg)
   if (uniforms.isAlphaThreshold)
-    gl.uniform1i(uniforms.isAlphaThreshold, u.isAlphaThreshold);
+    gl.uniform1i(uniforms.isAlphaThreshold, u.isAlphaThreshold)
   if (uniforms.isColorbarFromZero)
-    gl.uniform1i(uniforms.isColorbarFromZero, u.isColorbarFromZero);
+    gl.uniform1i(uniforms.isColorbarFromZero, u.isColorbarFromZero)
   if (uniforms.overlayOpacity)
-    gl.uniform1f(uniforms.overlayOpacity, u.overlayOpacity);
-  if (uniforms.mtx) gl.uniformMatrix4fv(uniforms.mtx, false, mtx);
-  if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel);
-  if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin);
-  if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth);
+    gl.uniform1f(uniforms.overlayOpacity, u.overlayOpacity)
+  if (uniforms.mtx) gl.uniformMatrix4fv(uniforms.mtx, false, mtx)
+  if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
+  if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
+  if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth)
   // Render each output slice
   for (let z = 0; z < dimsOut[2]; z++) {
     // Compute normalized z coordinate (center of voxel)
-    const coordZ = (z + 0.5) / dimsOut[2];
-    if (uniforms.coordZ) gl.uniform1f(uniforms.coordZ, coordZ);
+    const coordZ = (z + 0.5) / dimsOut[2]
+    if (uniforms.coordZ) gl.uniform1f(uniforms.coordZ, coordZ)
     // Attach output texture slice to framebuffer
     gl.framebufferTextureLayer(
       gl.FRAMEBUFFER,
@@ -737,47 +737,47 @@ export function overlay2Texture(
       outputTexture,
       0,
       z,
-    );
+    )
     // Draw quad
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
   }
   // --- Cleanup ---
-  gl.bindVertexArray(null);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.bindVertexArray(null)
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
   // Restore viewport
   gl.viewport(
     savedViewport[0],
     savedViewport[1],
     savedViewport[2],
     savedViewport[3],
-  );
+  )
   // Restore GL state
-  if (savedCullFace) gl.enable(gl.CULL_FACE);
-  else gl.disable(gl.CULL_FACE);
-  if (savedBlend) gl.enable(gl.BLEND);
-  else gl.disable(gl.BLEND);
-  if (savedDepthTest) gl.enable(gl.DEPTH_TEST);
-  else gl.disable(gl.DEPTH_TEST);
-  gl.activeTexture(savedActiveTexture);
-  gl.bindVertexArray(savedVAO);
+  if (savedCullFace) gl.enable(gl.CULL_FACE)
+  else gl.disable(gl.CULL_FACE)
+  if (savedBlend) gl.enable(gl.BLEND)
+  else gl.disable(gl.BLEND)
+  if (savedDepthTest) gl.enable(gl.DEPTH_TEST)
+  else gl.disable(gl.DEPTH_TEST)
+  gl.activeTexture(savedActiveTexture)
+  gl.bindVertexArray(savedVAO)
   // Unbind textures from the units we used
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_3D, null);
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, null);
-  gl.activeTexture(gl.TEXTURE2);
-  gl.bindTexture(gl.TEXTURE_2D, null);
-  gl.activeTexture(gl.TEXTURE3);
-  gl.bindTexture(gl.TEXTURE_3D, null);
-  gl.activeTexture(savedActiveTexture);
+  gl.activeTexture(gl.TEXTURE0)
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  gl.activeTexture(gl.TEXTURE1)
+  gl.bindTexture(gl.TEXTURE_2D, null)
+  gl.activeTexture(gl.TEXTURE2)
+  gl.bindTexture(gl.TEXTURE_2D, null)
+  gl.activeTexture(gl.TEXTURE3)
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  gl.activeTexture(savedActiveTexture)
   // Delete temporary resources
-  gl.deleteTexture(inputTexture);
-  gl.deleteTexture(colormapTexture);
-  gl.deleteTexture(negColormapTexture);
-  gl.deleteBuffer(vbo);
-  gl.deleteVertexArray(vao);
-  gl.deleteFramebuffer(framebuffer);
-  return outputTexture;
+  gl.deleteTexture(inputTexture)
+  gl.deleteTexture(colormapTexture)
+  gl.deleteTexture(negColormapTexture)
+  gl.deleteBuffer(vbo)
+  gl.deleteVertexArray(vao)
+  gl.deleteFramebuffer(framebuffer)
+  return outputTexture
 }
 
 /**
@@ -789,11 +789,11 @@ export function readTexture3D(
   texture: WebGLTexture,
   dims: number[],
 ): Uint8Array {
-  const [w, h, d] = dims;
-  const fbo = gl.createFramebuffer();
-  if (!fbo) throw new Error("readTexture3D: failed to create framebuffer");
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-  const result = new Uint8Array(w * h * d * 4);
+  const [w, h, d] = dims
+  const fbo = gl.createFramebuffer()
+  if (!fbo) throw new Error("readTexture3D: failed to create framebuffer")
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
+  const result = new Uint8Array(w * h * d * 4)
   for (let z = 0; z < d; z++) {
     gl.framebufferTextureLayer(
       gl.FRAMEBUFFER,
@@ -801,12 +801,12 @@ export function readTexture3D(
       texture,
       0,
       z,
-    );
-    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, result, z * w * h * 4);
+    )
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, result, z * w * h * 4)
   }
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.deleteFramebuffer(fbo);
-  return result;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  gl.deleteFramebuffer(fbo)
+  return result
 }
 
 /**
@@ -819,15 +819,15 @@ export function maskOverlayByBackground(
   overlayTexture: WebGLTexture,
   dims: number[],
 ): void {
-  const bgData = readTexture3D(gl, volumeTexture, dims);
-  const ovData = readTexture3D(gl, overlayTexture, dims);
-  const nVox = dims[0] * dims[1] * dims[2];
+  const bgData = readTexture3D(gl, volumeTexture, dims)
+  const ovData = readTexture3D(gl, overlayTexture, dims)
+  const nVox = dims[0] * dims[1] * dims[2]
   for (let i = 0; i < nVox; i++) {
     if (bgData[i * 4 + 3] === 0) {
-      ovData[i * 4 + 3] = 0;
+      ovData[i * 4 + 3] = 0
     }
   }
-  gl.bindTexture(gl.TEXTURE_3D, overlayTexture);
+  gl.bindTexture(gl.TEXTURE_3D, overlayTexture)
   gl.texSubImage3D(
     gl.TEXTURE_3D,
     0,
@@ -840,27 +840,27 @@ export function maskOverlayByBackground(
     gl.RGBA,
     gl.UNSIGNED_BYTE,
     ovData,
-  );
-  gl.bindTexture(gl.TEXTURE_3D, null);
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
 }
 
 export function destroy(gl: WebGL2RenderingContext): void {
   // If there is no cache for this context, nothing to do
-  const cache = _programCache.get(gl);
-  if (!cache) return;
+  const cache = _programCache.get(gl)
+  if (!cache) return
   // Delete each cached program (uint, sint, float)
   for (const key of Object.keys(cache) as Array<keyof ShaderPrograms>) {
-    const program = cache[key];
+    const program = cache[key]
     if (program) {
       try {
-        gl.deleteProgram(program);
+        gl.deleteProgram(program)
       } catch (err) {
         // swallow errors — deleting already-deleted programs is harmless,
         // but different browsers may throw in edge cases
-        log.warn("orientOverlay.destroy: failed to delete program", key, err);
+        log.warn("orientOverlay.destroy: failed to delete program", key, err)
       }
     }
   }
   // Remove reference from WeakMap so GC can collect
-  _programCache.delete(gl);
+  _programCache.delete(gl)
 }

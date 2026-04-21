@@ -34,7 +34,7 @@ void main() {
   gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
   vColor = lineColor;
 }
-`;
+`
 
 export const lineFragShader = `#version 300 es
 precision highp float;
@@ -44,4 +44,4 @@ out vec4 fragColor;
 void main() {
   fragColor = vColor;
 }
-`;
+`

@@ -1,11 +1,11 @@
-import { decode, encode } from "cbor-x";
-import * as Drawing from "@/drawing";
-import { encodeRLE } from "@/drawing/rle";
-import { log } from "@/logger";
-import * as NVMeshLayers from "@/mesh/layers";
-import * as NVMesh from "@/mesh/NVMesh";
-import * as NVConstants from "@/NVConstants";
-import type NVModel from "@/NVModel";
+import { decode, encode } from "cbor-x"
+import * as Drawing from "@/drawing"
+import { encodeRLE } from "@/drawing/rle"
+import { log } from "@/logger"
+import * as NVMeshLayers from "@/mesh/layers"
+import * as NVMesh from "@/mesh/NVMesh"
+import * as NVConstants from "@/NVConstants"
+import type NVModel from "@/NVModel"
 import type {
   AnnotationConfig,
   DrawConfig,
@@ -23,166 +23,166 @@ import type {
   UIConfig,
   VectorAnnotation,
   VolumeRenderConfig,
-} from "@/NVTypes";
-import * as NVVolume from "@/volume/NVVolume";
-import { computeVolumeLabelCentroids } from "@/volume/utils";
+} from "@/NVTypes"
+import * as NVVolume from "@/volume/NVVolume"
+import { computeVolumeLabelCentroids } from "@/volume/utils"
 
-const DOCUMENT_VERSION = 7;
+const DOCUMENT_VERSION = 7
 
 /**
  * Embedded volume data for self-contained documents.
  * Stores the complete NIFTI header and raw voxel data.
  */
 export type NVDocumentVolumeData = {
-  hdr: NIFTI1 | NIFTI2;
-  img: Uint8Array;
-  datatypeCode: number;
-};
+  hdr: NIFTI1 | NIFTI2
+  img: Uint8Array
+  datatypeCode: number
+}
 
 export type NVDocumentVolume = {
-  url?: string;
-  name?: string;
-  colormap?: string;
-  colormapNegative?: string;
-  opacity?: number;
-  calMin?: number;
-  calMax?: number;
-  calMinNeg?: number;
-  calMaxNeg?: number;
-  colormapType?: number;
-  isTransparentBelowCalMin?: boolean;
-  modulateAlpha?: number;
-  isColorbarVisible?: boolean;
-  isLegendVisible?: boolean;
-  frame4D?: number;
+  url?: string
+  name?: string
+  colormap?: string
+  colormapNegative?: string
+  opacity?: number
+  calMin?: number
+  calMax?: number
+  calMinNeg?: number
+  calMaxNeg?: number
+  colormapType?: number
+  isTransparentBelowCalMin?: boolean
+  modulateAlpha?: number
+  isColorbarVisible?: boolean
+  isLegendVisible?: boolean
+  frame4D?: number
   /** Embedded volume data (when URL is not a valid remote URL) */
-  data?: NVDocumentVolumeData;
+  data?: NVDocumentVolumeData
   /** Label colormap LUT for atlas/parcellation volumes */
   colormapLabel?: {
-    lut: Uint8Array;
-    min: number;
-    max: number;
-    labels?: string[];
-  };
-};
+    lut: Uint8Array
+    min: number
+    max: number
+    labels?: string[]
+  }
+}
 
 /**
  * Embedded mesh data for self-contained documents.
  * Stores positions, indices, and vertex colors.
  */
 export type NVDocumentMeshData = {
-  positions: Uint8Array; // Float32Array as bytes
-  indices: Uint8Array; // Uint32Array as bytes
-  colors: Uint8Array; // Uint32Array as bytes
-  perVertexColors?: Uint8Array; // Uint32Array as bytes (per-vertex colors from file, omitted for uniform-color meshes)
-};
+  positions: Uint8Array // Float32Array as bytes
+  indices: Uint8Array // Uint32Array as bytes
+  colors: Uint8Array // Uint32Array as bytes
+  perVertexColors?: Uint8Array // Uint32Array as bytes (per-vertex colors from file, omitted for uniform-color meshes)
+}
 
 /**
  * Embedded tract source data for self-contained documents.
  * Stores streamline vertices, offsets, and scalar overlays.
  */
 export type NVDocumentTractData = {
-  vertices: Uint8Array; // Float32Array as bytes
-  offsets: Uint8Array; // Uint32Array as bytes
-  dpv: Record<string, Uint8Array>; // per-vertex Float32Arrays as bytes
-  dps: Record<string, Uint8Array>; // per-streamline Float32Arrays as bytes
-  groups: Record<string, Uint8Array>; // group Uint32Arrays as bytes
-  dpvMeta: Record<string, { globalMin: number; globalMax: number }>;
-  dpsMeta: Record<string, { globalMin: number; globalMax: number }>;
-};
+  vertices: Uint8Array // Float32Array as bytes
+  offsets: Uint8Array // Uint32Array as bytes
+  dpv: Record<string, Uint8Array> // per-vertex Float32Arrays as bytes
+  dps: Record<string, Uint8Array> // per-streamline Float32Arrays as bytes
+  groups: Record<string, Uint8Array> // group Uint32Arrays as bytes
+  dpvMeta: Record<string, { globalMin: number; globalMax: number }>
+  dpsMeta: Record<string, { globalMin: number; globalMax: number }>
+}
 
 /**
  * Serialized mesh layer (scalar overlay) for NVD documents.
  */
 export type NVDocumentMeshLayer = {
-  url?: string;
-  name?: string;
-  colormap?: string;
-  colormapNegative?: string;
-  calMin?: number;
-  calMax?: number;
-  calMinNeg?: number;
-  calMaxNeg?: number;
-  opacity?: number;
-  isColorbarVisible?: boolean;
-  isColormapInverted?: boolean;
-  colormapType?: number;
-  isTransparentBelowCalMin?: boolean;
-  isAdditiveBlend?: boolean;
-  nFrame4D?: number;
-  frame4D?: number;
-  outlineWidth?: number;
+  url?: string
+  name?: string
+  colormap?: string
+  colormapNegative?: string
+  calMin?: number
+  calMax?: number
+  calMinNeg?: number
+  calMaxNeg?: number
+  opacity?: number
+  isColorbarVisible?: boolean
+  isColormapInverted?: boolean
+  colormapType?: number
+  isTransparentBelowCalMin?: boolean
+  isAdditiveBlend?: boolean
+  nFrame4D?: number
+  frame4D?: number
+  outlineWidth?: number
   /** Embedded scalar data (Float32Array as bytes) */
-  data?: Uint8Array;
+  data?: Uint8Array
   /** Label colormap LUT for atlas/parcellation layers */
   colormapLabel?: {
-    lut: Uint8Array;
-    min: number;
-    max: number;
-    labels?: string[];
-  };
-};
+    lut: Uint8Array
+    min: number
+    max: number
+    labels?: string[]
+  }
+}
 
 export type NVDocumentMesh = {
-  url?: string;
-  name?: string;
-  opacity?: number;
-  shaderType?: string;
-  color?: [number, number, number, number];
-  isColorbarVisible?: boolean;
-  isLegendVisible?: boolean;
+  url?: string
+  name?: string
+  opacity?: number
+  shaderType?: string
+  color?: [number, number, number, number]
+  isColorbarVisible?: boolean
+  isLegendVisible?: boolean
   /** Mesh species: 'mesh', 'tract', or 'connectome' (default: 'mesh') */
-  kind?: MeshKind;
+  kind?: MeshKind
   /** Tract source data (only for kind === 'tract') */
-  tractData?: NVDocumentTractData;
+  tractData?: NVDocumentTractData
   /** Tract display/tessellation options (only for kind === 'tract') */
-  tractOptions?: NVTractOptions;
+  tractOptions?: NVTractOptions
   /** Connectome source data (only for kind === 'connectome') */
-  connectomeData?: NVConnectomeData;
+  connectomeData?: NVConnectomeData
   /** Connectome display/extrusion options (only for kind === 'connectome') */
-  connectomeOptions?: NVConnectomeOptions;
+  connectomeOptions?: NVConnectomeOptions
   /** Embedded mesh data (when URL is not a valid remote URL) */
-  data?: NVDocumentMeshData;
+  data?: NVDocumentMeshData
   /** Scalar overlay layers */
-  layers?: NVDocumentMeshLayer[];
-};
+  layers?: NVDocumentMeshLayer[]
+}
 
 export type NVDocumentData = {
-  version: number;
-  created: string;
+  version: number
+  created: string
   scene: {
-    azimuth: number;
-    elevation: number;
-    scaleMultiplier: number;
-    gamma: number;
-    crosshairPos: [number, number, number];
-    pan2Dxyzmm: [number, number, number, number];
-    backgroundColor: [number, number, number, number];
-    clipPlaneColor: number[];
-    isClipPlaneCutaway: boolean;
-  };
-  layout: LayoutConfig;
-  ui: UIConfig;
-  volume: VolumeRenderConfig;
-  mesh: MeshRenderConfig;
-  draw: DrawConfig;
-  interaction: InteractionConfig;
-  clipPlanes: number[];
+    azimuth: number
+    elevation: number
+    scaleMultiplier: number
+    gamma: number
+    crosshairPos: [number, number, number]
+    pan2Dxyzmm: [number, number, number, number]
+    backgroundColor: [number, number, number, number]
+    clipPlaneColor: number[]
+    isClipPlaneCutaway: boolean
+  }
+  layout: LayoutConfig
+  ui: UIConfig
+  volume: VolumeRenderConfig
+  mesh: MeshRenderConfig
+  draw: DrawConfig
+  interaction: InteractionConfig
+  clipPlanes: number[]
   /** RLE-compressed drawing bitmap (if a drawing was active) */
-  drawingBitmapRLE?: Uint8Array;
+  drawingBitmapRLE?: Uint8Array
   /** Uncompressed length of drawing bitmap */
-  drawingBitmapLength?: number;
-  volumes: NVDocumentVolume[];
-  meshes: NVDocumentMesh[];
-  annotations?: VectorAnnotation[];
-  annotationConfig?: AnnotationConfig;
-};
+  drawingBitmapLength?: number
+  volumes: NVDocumentVolume[]
+  meshes: NVDocumentMesh[]
+  annotations?: VectorAnnotation[]
+  annotationConfig?: AnnotationConfig
+}
 
 /**
  * Convert a TypedArray to Uint8Array (as raw bytes).
  */
 function typedArrayToBytes(arr: ArrayBufferView): Uint8Array {
-  return new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+  return new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength)
 }
 
 /**
@@ -225,7 +225,7 @@ function extractHeaderData(hdr: NIFTI1 | NIFTI2): NIFTI1 | NIFTI2 {
     affine: hdr.affine.map((row) => [...row]),
     intent_name: hdr.intent_name,
     magic: hdr.magic,
-  };
+  }
 }
 
 export function serialize(model: NVModel): Uint8Array {
@@ -247,7 +247,7 @@ export function serialize(model: NVModel): Uint8Array {
       isColorbarVisible: v.isColorbarVisible,
       isLegendVisible: v.isLegendVisible,
       frame4D: v.frame4D,
-    };
+    }
 
     // Serialize label colormap if present
     if (v.colormapLabel) {
@@ -260,22 +260,22 @@ export function serialize(model: NVModel): Uint8Array {
         min: v.colormapLabel.min ?? 0,
         max: v.colormapLabel.max ?? 0,
         labels: v.colormapLabel.labels,
-      };
+      }
     }
 
     // Always embed volume data for self-contained documents
     if (v.hdr && v.img) {
-      const imgData = typedArrayToBytes(v.img);
+      const imgData = typedArrayToBytes(v.img)
 
       vol.data = {
         hdr: extractHeaderData(v.hdr),
         img: imgData,
         datatypeCode: v.hdr.datatypeCode,
-      };
+      }
     }
 
-    return vol;
-  });
+    return vol
+  })
 
   // Extract meshes with embedded data
   const meshes: NVDocumentMesh[] = model.meshes.map((m) => {
@@ -288,7 +288,7 @@ export function serialize(model: NVModel): Uint8Array {
       isColorbarVisible: m.isColorbarVisible,
       isLegendVisible: m.isLegendVisible,
       kind: m.kind,
-    };
+    }
 
     // Always embed mesh data for self-contained documents
     if (m.positions && m.indices && m.colors) {
@@ -299,7 +299,7 @@ export function serialize(model: NVModel): Uint8Array {
         perVertexColors: m.perVertexColors
           ? typedArrayToBytes(m.perVertexColors)
           : undefined,
-      };
+      }
     }
 
     // Serialize tract source data and options
@@ -331,8 +331,8 @@ export function serialize(model: NVModel): Uint8Array {
             { globalMin: v.globalMin, globalMax: v.globalMax },
           ]),
         ),
-      };
-      if (m.tractOptions) mesh.tractOptions = { ...m.tractOptions };
+      }
+      if (m.tractOptions) mesh.tractOptions = { ...m.tractOptions }
     }
 
     // Serialize connectome source data and options
@@ -340,9 +340,9 @@ export function serialize(model: NVModel): Uint8Array {
       mesh.connectomeData = {
         nodes: m.jcon.nodes.map((n) => ({ ...n })),
         edges: m.jcon.edges.map((e) => ({ ...e })),
-      };
+      }
       if (m.connectomeOptions)
-        mesh.connectomeOptions = { ...m.connectomeOptions };
+        mesh.connectomeOptions = { ...m.connectomeOptions }
     }
 
     // Serialize layers
@@ -367,7 +367,7 @@ export function serialize(model: NVModel): Uint8Array {
           frame4D: layer.frame4D,
           outlineWidth: layer.outlineWidth,
           data: typedArrayToBytes(layer.values),
-        };
+        }
         // Serialize layer label colormap if present
         if (layer.colormapLabel) {
           docLayer.colormapLabel = {
@@ -379,14 +379,14 @@ export function serialize(model: NVModel): Uint8Array {
             min: layer.colormapLabel.min ?? 0,
             max: layer.colormapLabel.max ?? 0,
             labels: layer.colormapLabel.labels,
-          };
+          }
         }
-        return docLayer;
-      });
+        return docLayer
+      })
     }
 
-    return mesh;
-  });
+    return mesh
+  })
 
   const doc: NVDocumentData = {
     version: DOCUMENT_VERSION,
@@ -433,41 +433,41 @@ export function serialize(model: NVModel): Uint8Array {
     meshes,
     annotations: model.annotations.length > 0 ? model.annotations : undefined,
     annotationConfig: { ...model.annotation },
-  };
+  }
 
-  return encode(doc);
+  return encode(doc)
 }
 
 export function deserialize(data: Uint8Array): NVDocumentData {
-  const doc = decode(data) as NVDocumentData;
+  const doc = decode(data) as NVDocumentData
 
   // Version check
   if (typeof doc.version !== "number") {
-    throw new Error("Invalid NVD file: missing version");
+    throw new Error("Invalid NVD file: missing version")
   }
   if (doc.version > DOCUMENT_VERSION) {
     throw new Error(
       `NVD file version ${doc.version} is newer than supported version ${DOCUMENT_VERSION}`,
-    );
+    )
   }
 
   // Validate required fields
   if (!doc.scene || !doc.layout) {
-    throw new Error("Invalid NVD file: missing required fields");
+    throw new Error("Invalid NVD file: missing required fields")
   }
 
   // Migrate v5 → v6: rename drawing bitmap fields
   if (doc.version <= 5) {
-    const legacy = doc as Record<string, unknown>;
+    const legacy = doc as Record<string, unknown>
     if (legacy.drawBitmapRLE) {
-      doc.drawingBitmapRLE = legacy.drawBitmapRLE as Uint8Array;
-      doc.drawingBitmapLength = legacy.drawBitmapLength as number;
-      delete legacy.drawBitmapRLE;
-      delete legacy.drawBitmapLength;
+      doc.drawingBitmapRLE = legacy.drawBitmapRLE as Uint8Array
+      doc.drawingBitmapLength = legacy.drawBitmapLength as number
+      delete legacy.drawBitmapRLE
+      delete legacy.drawBitmapLength
     }
   }
 
-  return doc;
+  return doc
 }
 
 export function applyDocumentToModel(
@@ -475,33 +475,33 @@ export function applyDocumentToModel(
   doc: NVDocumentData,
 ): void {
   // Apply scene state
-  model.scene.azimuth = doc.scene.azimuth;
-  model.scene.elevation = doc.scene.elevation;
-  model.scene.scaleMultiplier = doc.scene.scaleMultiplier;
-  model.scene.gamma = doc.scene.gamma;
-  model.scene.crosshairPos[0] = doc.scene.crosshairPos[0];
-  model.scene.crosshairPos[1] = doc.scene.crosshairPos[1];
-  model.scene.crosshairPos[2] = doc.scene.crosshairPos[2];
-  model.scene.pan2Dxyzmm[0] = doc.scene.pan2Dxyzmm[0];
-  model.scene.pan2Dxyzmm[1] = doc.scene.pan2Dxyzmm[1];
-  model.scene.pan2Dxyzmm[2] = doc.scene.pan2Dxyzmm[2];
-  model.scene.pan2Dxyzmm[3] = doc.scene.pan2Dxyzmm[3];
+  model.scene.azimuth = doc.scene.azimuth
+  model.scene.elevation = doc.scene.elevation
+  model.scene.scaleMultiplier = doc.scene.scaleMultiplier
+  model.scene.gamma = doc.scene.gamma
+  model.scene.crosshairPos[0] = doc.scene.crosshairPos[0]
+  model.scene.crosshairPos[1] = doc.scene.crosshairPos[1]
+  model.scene.crosshairPos[2] = doc.scene.crosshairPos[2]
+  model.scene.pan2Dxyzmm[0] = doc.scene.pan2Dxyzmm[0]
+  model.scene.pan2Dxyzmm[1] = doc.scene.pan2Dxyzmm[1]
+  model.scene.pan2Dxyzmm[2] = doc.scene.pan2Dxyzmm[2]
+  model.scene.pan2Dxyzmm[3] = doc.scene.pan2Dxyzmm[3]
   model.scene.backgroundColor = [...doc.scene.backgroundColor] as [
     number,
     number,
     number,
     number,
-  ];
-  model.scene.clipPlaneColor = [...doc.scene.clipPlaneColor];
-  model.scene.isClipPlaneCutaway = doc.scene.isClipPlaneCutaway;
+  ]
+  model.scene.clipPlaneColor = [...doc.scene.clipPlaneColor]
+  model.scene.isClipPlaneCutaway = doc.scene.isClipPlaneCutaway
 
   // Apply config groups
-  Object.assign(model.layout, doc.layout);
-  Object.assign(model.ui, doc.ui);
-  Object.assign(model.volume, doc.volume);
-  Object.assign(model.mesh, doc.mesh);
-  Object.assign(model.draw, doc.draw);
-  Object.assign(model.interaction, doc.interaction);
+  Object.assign(model.layout, doc.layout)
+  Object.assign(model.ui, doc.ui)
+  Object.assign(model.volume, doc.volume)
+  Object.assign(model.mesh, doc.mesh)
+  Object.assign(model.draw, doc.draw)
+  Object.assign(model.interaction, doc.interaction)
   // annotation config restored separately below, after annotations array
 
   // Apply clip planes
@@ -510,15 +510,15 @@ export function applyDocumentToModel(
     i < doc.clipPlanes.length && i < model.clipPlanes.length;
     i++
   ) {
-    model.clipPlanes[i] = doc.clipPlanes[i];
+    model.clipPlanes[i] = doc.clipPlanes[i]
   }
 
   // Restore annotations (v7+); clear if not present to avoid stale state
-  model.annotations = doc.annotations ?? [];
+  model.annotations = doc.annotations ?? []
   if (doc.annotationConfig) {
-    model.annotation = { ...doc.annotationConfig } as AnnotationConfig;
+    model.annotation = { ...doc.annotationConfig } as AnnotationConfig
   } else {
-    model.annotation = { ...NVConstants.ANNOTATION_DEFAULTS };
+    model.annotation = { ...NVConstants.ANNOTATION_DEFAULTS }
   }
 
   // Drawing bitmap restoration is handled by the controller's loadDocument()
@@ -540,32 +540,32 @@ export async function reconstructVolume(
       const imgBuffer = v.data.img.buffer.slice(
         v.data.img.byteOffset,
         v.data.img.byteOffset + v.data.img.byteLength,
-      ) as ArrayBuffer;
+      ) as ArrayBuffer
       const base = NVVolume.nii2volume(
         v.data.hdr,
         imgBuffer,
         v.name ?? "volume",
-      );
+      )
       // Only override properties that are defined in the document
-      if (v.url !== undefined) base.url = v.url;
-      if (v.colormap !== undefined) base.colormap = v.colormap;
+      if (v.url !== undefined) base.url = v.url
+      if (v.colormap !== undefined) base.colormap = v.colormap
       if (v.colormapNegative !== undefined)
-        base.colormapNegative = v.colormapNegative;
-      if (v.opacity !== undefined) base.opacity = v.opacity;
-      if (v.calMin !== undefined) base.calMin = v.calMin;
-      if (v.calMax !== undefined) base.calMax = v.calMax;
-      if (v.calMinNeg !== undefined) base.calMinNeg = v.calMinNeg;
-      if (v.calMaxNeg !== undefined) base.calMaxNeg = v.calMaxNeg;
-      if (v.colormapType !== undefined) base.colormapType = v.colormapType;
+        base.colormapNegative = v.colormapNegative
+      if (v.opacity !== undefined) base.opacity = v.opacity
+      if (v.calMin !== undefined) base.calMin = v.calMin
+      if (v.calMax !== undefined) base.calMax = v.calMax
+      if (v.calMinNeg !== undefined) base.calMinNeg = v.calMinNeg
+      if (v.calMaxNeg !== undefined) base.calMaxNeg = v.calMaxNeg
+      if (v.colormapType !== undefined) base.colormapType = v.colormapType
       if (v.isTransparentBelowCalMin !== undefined)
-        base.isTransparentBelowCalMin = v.isTransparentBelowCalMin;
-      if (v.modulateAlpha !== undefined) base.modulateAlpha = v.modulateAlpha;
+        base.isTransparentBelowCalMin = v.isTransparentBelowCalMin
+      if (v.modulateAlpha !== undefined) base.modulateAlpha = v.modulateAlpha
       if (v.isColorbarVisible !== undefined)
-        base.isColorbarVisible = v.isColorbarVisible;
+        base.isColorbarVisible = v.isColorbarVisible
       if (v.isLegendVisible !== undefined)
-        base.isLegendVisible = v.isLegendVisible;
-      if (v.frame4D !== undefined) base.frame4D = v.frame4D;
-      await model.addVolume(base);
+        base.isLegendVisible = v.isLegendVisible
+      if (v.frame4D !== undefined) base.frame4D = v.frame4D
+      await model.addVolume(base)
     } else if (v.url) {
       // Load from URL
       await model.addVolume({
@@ -582,17 +582,17 @@ export async function reconstructVolume(
         isTransparentBelowCalMin: v.isTransparentBelowCalMin,
         modulateAlpha: v.modulateAlpha,
         isColorbarVisible: v.isColorbarVisible,
-      });
+      })
     }
     // Apply post-load properties to the just-added volume
-    const vol = model.volumes[model.volumes.length - 1];
+    const vol = model.volumes[model.volumes.length - 1]
     if (vol) {
       if (v.isLegendVisible !== undefined)
-        vol.isLegendVisible = v.isLegendVisible;
-      if (v.frame4D !== undefined) vol.frame4D = v.frame4D;
+        vol.isLegendVisible = v.isLegendVisible
+      if (v.frame4D !== undefined) vol.frame4D = v.frame4D
       // Restore label colormap if present in document
       if (v.colormapLabel) {
-        const lutData = v.colormapLabel.lut;
+        const lutData = v.colormapLabel.lut
         vol.colormapLabel = {
           lut: new Uint8ClampedArray(
             lutData.buffer,
@@ -602,12 +602,12 @@ export async function reconstructVolume(
           min: v.colormapLabel.min,
           max: v.colormapLabel.max,
           labels: v.colormapLabel.labels,
-        };
-        vol.colormapLabel.centroids = computeVolumeLabelCentroids(vol);
+        }
+        vol.colormapLabel.centroids = computeVolumeLabelCentroids(vol)
       }
     }
   } catch (err) {
-    log.warn(`Failed to load volume ${v.name ?? v.url}:`, err);
+    log.warn(`Failed to load volume ${v.name ?? v.url}:`, err)
   }
 }
 
@@ -625,38 +625,38 @@ export async function reconstructMesh(
       const posBuffer = m.data.positions.buffer.slice(
         m.data.positions.byteOffset,
         m.data.positions.byteOffset + m.data.positions.byteLength,
-      );
+      )
       const idxBuffer = m.data.indices.buffer.slice(
         m.data.indices.byteOffset,
         m.data.indices.byteOffset + m.data.indices.byteLength,
-      );
+      )
       const colBuffer = m.data.colors.buffer.slice(
         m.data.colors.byteOffset,
         m.data.colors.byteOffset + m.data.colors.byteLength,
-      );
-      const positions = new Float32Array(posBuffer);
-      const indices = new Uint32Array(idxBuffer);
-      const colors = new Uint32Array(colBuffer);
+      )
+      const positions = new Float32Array(posBuffer)
+      const indices = new Uint32Array(idxBuffer)
+      const colors = new Uint32Array(colBuffer)
       // Restore perVertexColors if present (only for meshes with file colors)
-      let perVertexColors: Uint32Array | null = null;
+      let perVertexColors: Uint32Array | null = null
       if (m.data.perVertexColors) {
         const pvcBuffer = m.data.perVertexColors.buffer.slice(
           m.data.perVertexColors.byteOffset,
           m.data.perVertexColors.byteOffset + m.data.perVertexColors.byteLength,
-        ) as ArrayBuffer;
-        perVertexColors = new Uint32Array(pvcBuffer);
+        ) as ArrayBuffer
+        perVertexColors = new Uint32Array(pvcBuffer)
       }
       // Restore layers from embedded data
-      const layers: NVMeshLayer[] = [];
+      const layers: NVMeshLayer[] = []
       if (m.layers) {
-        const nVert = positions.length / 3;
+        const nVert = positions.length / 3
         for (const docLayer of m.layers) {
           if (docLayer.data) {
             const valBuffer = docLayer.data.buffer.slice(
               docLayer.data.byteOffset,
               docLayer.data.byteOffset + docLayer.data.byteLength,
-            );
-            const values = new Float32Array(valBuffer);
+            )
+            const values = new Float32Array(valBuffer)
             const layer = NVMeshLayers.createLayer(values, nVert, {
               url: docLayer.url,
               name: docLayer.name,
@@ -675,10 +675,10 @@ export async function reconstructMesh(
               nFrame4D: docLayer.nFrame4D,
               frame4D: docLayer.frame4D,
               outlineWidth: docLayer.outlineWidth,
-            });
+            })
             // Restore layer label colormap if present
             if (docLayer.colormapLabel) {
-              const lutData = docLayer.colormapLabel.lut;
+              const lutData = docLayer.colormapLabel.lut
               layer.colormapLabel = {
                 lut: new Uint8ClampedArray(
                   lutData.buffer,
@@ -688,17 +688,17 @@ export async function reconstructMesh(
                 min: docLayer.colormapLabel.min,
                 max: docLayer.colormapLabel.max,
                 labels: docLayer.colormapLabel.labels,
-              };
+              }
               layer.colormapLabel.centroids =
-                NVMeshLayers.computeMeshLabelCentroids(positions, layer);
+                NVMeshLayers.computeMeshLabelCentroids(positions, layer)
             }
-            layers.push(layer);
+            layers.push(layer)
           }
         }
       }
 
       // Build species-specific source data
-      const kind = m.kind ?? "mesh";
+      const kind = m.kind ?? "mesh"
       const meshOpts: Record<string, unknown> = {
         kind,
         url: m.url,
@@ -710,11 +710,11 @@ export async function reconstructMesh(
         isLegendVisible: m.isLegendVisible,
         perVertexColors,
         layers,
-      };
+      }
 
       // Restore tract source data so retessellateTract() works
       if (kind === "tract" && m.tractData) {
-        const td = m.tractData;
+        const td = m.tractData
         const trx: NVTractData = {
           vertices: new Float32Array(
             td.vertices.buffer.slice(
@@ -764,19 +764,19 @@ export async function reconstructMesh(
               { globalMin: v.globalMin, globalMax: v.globalMax },
             ]),
           ),
-        };
-        meshOpts.trx = trx;
-        meshOpts.tractOptions = m.tractOptions ?? null;
+        }
+        meshOpts.trx = trx
+        meshOpts.tractOptions = m.tractOptions ?? null
       }
 
       // Restore connectome source data so reextrudeConnectome() works
       if (kind === "connectome" && m.connectomeData) {
-        meshOpts.jcon = m.connectomeData;
-        meshOpts.connectomeOptions = m.connectomeOptions ?? null;
+        meshOpts.jcon = m.connectomeData
+        meshOpts.connectomeOptions = m.connectomeOptions ?? null
       }
 
-      const mesh = NVMesh.createMesh(positions, indices, colors, meshOpts);
-      await model.addMesh(mesh);
+      const mesh = NVMesh.createMesh(positions, indices, colors, meshOpts)
+      await model.addMesh(mesh)
     } else if (m.url) {
       // Load from URL (layers loaded via MeshFromUrlOptions)
       await model.addMesh({
@@ -787,29 +787,29 @@ export async function reconstructMesh(
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
         isLegendVisible: m.isLegendVisible,
-      });
+      })
     }
   } catch (err) {
-    log.warn(`Failed to load mesh ${m.name ?? m.url}:`, err);
+    log.warn(`Failed to load mesh ${m.name ?? m.url}:`, err)
   }
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 export function triggerDownload(data: Uint8Array, filename: string): void {
   const buffer = data.buffer.slice(
     data.byteOffset,
     data.byteOffset + data.byteLength,
-  ) as ArrayBuffer;
-  const name = filename.endsWith(".nvd") ? filename : `${filename}.nvd`;
-  downloadBlob(new Blob([buffer], { type: "application/cbor" }), name);
+  ) as ArrayBuffer
+  const name = filename.endsWith(".nvd") ? filename : `${filename}.nvd`
+  downloadBlob(new Blob([buffer], { type: "application/cbor" }), name)
 }

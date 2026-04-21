@@ -3,16 +3,16 @@
  * Used by NVVolume.ts and volume transforms.
  */
 
-import { mat4, vec3 } from "gl-matrix";
-import { log } from "@/logger";
-import { isPaqd, NiiDataType } from "@/NVConstants";
+import { mat4, vec3 } from "gl-matrix"
+import { log } from "@/logger"
+import { isPaqd, NiiDataType } from "@/NVConstants"
 import type {
   NIFTI1,
   NIFTI2,
   NIFTIHeader,
   NVImage,
   TypedVoxelArray,
-} from "@/NVTypes";
+} from "@/NVTypes"
 
 // ============================================================================
 // Data Type Utilities
@@ -23,9 +23,9 @@ import type {
  */
 export function ensureValidNonZero(val: number): number {
   if (val === 0 || !Number.isFinite(val)) {
-    return 1;
+    return 1
   }
-  return val;
+  return val
 }
 
 /**
@@ -45,23 +45,23 @@ export function getTypedArrayConstructor(
   | null {
   switch (datatypeCode) {
     case NiiDataType.DT_UINT8:
-      return Uint8Array;
+      return Uint8Array
     case NiiDataType.DT_INT8:
-      return Int8Array;
+      return Int8Array
     case NiiDataType.DT_INT16:
-      return Int16Array;
+      return Int16Array
     case NiiDataType.DT_UINT16:
-      return Uint16Array;
+      return Uint16Array
     case NiiDataType.DT_INT32:
-      return Int32Array;
+      return Int32Array
     case NiiDataType.DT_UINT32:
-      return Uint32Array;
+      return Uint32Array
     case NiiDataType.DT_FLOAT32:
-      return Float32Array;
+      return Float32Array
     case NiiDataType.DT_FLOAT64:
-      return Float64Array;
+      return Float64Array
     default:
-      return null;
+      return null
   }
 }
 
@@ -72,22 +72,22 @@ export function getBitsPerVoxel(datatypeCode: number): number {
   switch (datatypeCode) {
     case NiiDataType.DT_UINT8:
     case NiiDataType.DT_INT8:
-      return 8;
+      return 8
     case NiiDataType.DT_INT16:
     case NiiDataType.DT_UINT16:
-      return 16;
+      return 16
     case NiiDataType.DT_INT32:
     case NiiDataType.DT_UINT32:
     case NiiDataType.DT_FLOAT32:
-      return 32;
+      return 32
     case NiiDataType.DT_FLOAT64:
-      return 64;
+      return 64
     case NiiDataType.DT_RGB24:
-      return 24;
+      return 24
     case NiiDataType.DT_RGBA32:
-      return 32;
+      return 32
     default:
-      return 0;
+      return 0
   }
 }
 
@@ -103,14 +103,13 @@ export function toTypedView(
   img: ArrayBuffer | TypedVoxelArray,
   dt: number,
 ): TypedVoxelArray | null {
-  if (!(img instanceof ArrayBuffer)) return img;
-  const Ctor = getTypedArrayConstructor(dt);
+  if (!(img instanceof ArrayBuffer)) return img
+  const Ctor = getTypedArrayConstructor(dt)
   if (!Ctor) {
-    if (dt === NiiDataType.DT_RGB24 || dt === NiiDataType.DT_RGBA32)
-      return null;
-    throw new Error(`Unsupported datatype: ${dt}`);
+    if (dt === NiiDataType.DT_RGB24 || dt === NiiDataType.DT_RGBA32) return null
+    throw new Error(`Unsupported datatype: ${dt}`)
   }
-  return new Ctor(img);
+  return new Ctor(img)
 }
 
 /**
@@ -122,18 +121,18 @@ function robustRange(
   start: number,
   end: number,
 ): { mn: number; mx: number; nZero: number } | null {
-  let mn = Number.POSITIVE_INFINITY;
-  let mx = Number.NEGATIVE_INFINITY;
-  let nZero = 0;
+  let mn = Number.POSITIVE_INFINITY
+  let mx = Number.NEGATIVE_INFINITY
+  let nZero = 0
   for (let i = start; i < end; i++) {
-    const v = imgRaw[i];
-    if (!Number.isFinite(v)) continue;
-    if (v === 0) nZero++;
-    if (v < mn) mn = v;
-    if (v > mx) mx = v;
+    const v = imgRaw[i]
+    if (!Number.isFinite(v)) continue
+    if (v === 0) nZero++
+    if (v < mn) mn = v
+    if (v > mx) mx = v
   }
-  if (!Number.isFinite(mn) || !Number.isFinite(mx)) return null;
-  return { mn, mx, nZero };
+  if (!Number.isFinite(mn) || !Number.isFinite(mx)) return null
+  return { mn, mx, nZero }
 }
 
 /**
@@ -148,36 +147,36 @@ function histogramPercentiles(
   mx: number,
   nZero: number,
 ): [number, number] {
-  const nVox = end - start;
-  const n2pct = Math.round((nVox - nZero) * 0.02);
-  const nBins = 1001;
-  const scl = (nBins - 1) / (mx - mn);
-  const hist = new Uint32Array(nBins);
+  const nVox = end - start
+  const n2pct = Math.round((nVox - nZero) * 0.02)
+  const nBins = 1001
+  const scl = (nBins - 1) / (mx - mn)
+  const hist = new Uint32Array(nBins)
   for (let i = start; i < end; i++) {
-    const val = imgRaw[i];
-    if (!Number.isFinite(val)) continue;
-    const b = Math.round((val - mn) * scl);
-    hist[b < 0 ? 0 : b >= nBins ? nBins - 1 : b]++;
+    const val = imgRaw[i]
+    if (!Number.isFinite(val)) continue
+    const b = Math.round((val - mn) * scl)
+    hist[b < 0 ? 0 : b >= nBins ? nBins - 1 : b]++
   }
-  let n = 0;
-  let lo = 0;
+  let n = 0
+  let lo = 0
   while (n < n2pct && lo < nBins) {
-    n += hist[lo];
-    lo++;
+    n += hist[lo]
+    lo++
   }
-  lo = Math.max(0, lo - 1);
-  n = 0;
-  let hi = nBins - 1;
+  lo = Math.max(0, lo - 1)
+  n = 0
+  let hi = nBins - 1
   while (n < n2pct && hi >= 0) {
-    n += hist[hi];
-    hi--;
+    n += hist[hi]
+    hi--
   }
-  hi = Math.min(nBins - 1, hi + 1);
+  hi = Math.min(nBins - 1, hi + 1)
   if (lo >= hi) {
-    lo = 0;
-    hi = nBins - 1;
+    lo = 0
+    hi = nBins - 1
   }
-  return [lo, hi];
+  return [lo, hi]
 }
 
 /**
@@ -189,29 +188,29 @@ export function calMinMax(
   hdr: NIFTI1 | NIFTI2,
   img: ArrayBuffer | TypedVoxelArray,
 ): [number, number, number, number] {
-  const r2c = (v: number) => v * hdr.scl_slope + hdr.scl_inter;
-  const imgRaw = toTypedView(img, hdr.datatypeCode);
-  if (!imgRaw) return [0, 255, 0, 255]; // RGB data
-  const nVox3D = hdr.dims[1] * hdr.dims[2] * hdr.dims[3];
-  const stats = robustRange(imgRaw, 0, nVox3D);
-  if (!stats) throw new Error("infinite image");
-  const { mn, mx, nZero } = stats;
-  const mnScale = r2c(mn);
-  const mxScale = r2c(mx);
-  if (mx === mn) return [mnScale, mxScale, mnScale, mxScale];
+  const r2c = (v: number) => v * hdr.scl_slope + hdr.scl_inter
+  const imgRaw = toTypedView(img, hdr.datatypeCode)
+  if (!imgRaw) return [0, 255, 0, 255] // RGB data
+  const nVox3D = hdr.dims[1] * hdr.dims[2] * hdr.dims[3]
+  const stats = robustRange(imgRaw, 0, nVox3D)
+  if (!stats) throw new Error("infinite image")
+  const { mn, mx, nZero } = stats
+  const mnScale = r2c(mn)
+  const mxScale = r2c(mx)
+  if (mx === mn) return [mnScale, mxScale, mnScale, mxScale]
   if (
     hdr.cal_min < hdr.cal_max &&
     Number.isFinite(hdr.cal_min) &&
     Number.isFinite(hdr.cal_max)
   ) {
     if (hdr.cal_max > mnScale || hdr.cal_min < mxScale) {
-      return [hdr.cal_min, hdr.cal_max, mnScale, mxScale];
+      return [hdr.cal_min, hdr.cal_max, mnScale, mxScale]
     }
   }
-  const [lo, hi] = histogramPercentiles(imgRaw, 0, nVox3D, mn, mx, nZero);
-  if (lo === hi) return [mnScale, mxScale, mnScale, mxScale];
-  const scl = (1001 - 1) / (mx - mn);
-  return [r2c(lo / scl + mn), r2c(hi / scl + mn), mnScale, mxScale];
+  const [lo, hi] = histogramPercentiles(imgRaw, 0, nVox3D, mn, mx, nZero)
+  if (lo === hi) return [mnScale, mxScale, mnScale, mxScale]
+  const scl = (1001 - 1) / (mx - mn)
+  return [r2c(lo / scl + mn), r2c(hi / scl + mn), mnScale, mxScale]
 }
 
 /**
@@ -223,22 +222,22 @@ export function calMinMaxFrame(
   vol: NVImage,
   frame: number,
 ): [number, number, number, number] {
-  const hdr = vol.hdr;
-  const r2c = (v: number) => v * hdr.scl_slope + hdr.scl_inter;
-  const imgRaw = toTypedView(vol.img!, hdr.datatypeCode);
-  if (!imgRaw) return [0, 255, 0, 255]; // RGB data
-  const offset = frame * vol.nVox3D;
-  const end = Math.min(offset + vol.nVox3D, imgRaw.length);
-  const stats = robustRange(imgRaw, offset, end);
-  if (!stats) return [0, 0, 0, 0];
-  const { mn, mx, nZero } = stats;
-  const mnScale = r2c(mn);
-  const mxScale = r2c(mx);
-  if (mx === mn) return [mnScale, mxScale, mnScale, mxScale];
-  const [lo, hi] = histogramPercentiles(imgRaw, offset, end, mn, mx, nZero);
-  if (lo === hi) return [mnScale, mxScale, mnScale, mxScale];
-  const scl = (1001 - 1) / (mx - mn);
-  return [r2c(lo / scl + mn), r2c(hi / scl + mn), mnScale, mxScale];
+  const hdr = vol.hdr
+  const r2c = (v: number) => v * hdr.scl_slope + hdr.scl_inter
+  const imgRaw = toTypedView(vol.img!, hdr.datatypeCode)
+  if (!imgRaw) return [0, 255, 0, 255] // RGB data
+  const offset = frame * vol.nVox3D
+  const end = Math.min(offset + vol.nVox3D, imgRaw.length)
+  const stats = robustRange(imgRaw, offset, end)
+  if (!stats) return [0, 0, 0, 0]
+  const { mn, mx, nZero } = stats
+  const mnScale = r2c(mn)
+  const mxScale = r2c(mx)
+  if (mx === mn) return [mnScale, mxScale, mnScale, mxScale]
+  const [lo, hi] = histogramPercentiles(imgRaw, offset, end, mn, mx, nZero)
+  if (lo === hi) return [mnScale, mxScale, mnScale, mxScale]
+  const scl = (1001 - 1) / (mx - mn)
+  return [r2c(lo / scl + mn), r2c(hi / scl + mn), mnScale, mxScale]
 }
 
 // ============================================================================
@@ -252,10 +251,10 @@ export function calculateWorldExtents(
   indims: number[],
   inmat: Float32Array,
 ): { extentsMin: vec3; extentsMax: vec3 } {
-  const dims = [indims[0] - 0.5, indims[1] - 0.5, indims[2] - 0.5];
-  const v = -0.5;
-  const mat = mat4.create();
-  mat4.transpose(mat, inmat);
+  const dims = [indims[0] - 0.5, indims[1] - 0.5, indims[2] - 0.5]
+  const v = -0.5
+  const mat = mat4.create()
+  mat4.transpose(mat, inmat)
   const corners = [
     [v, v, v],
     [dims[0], v, v],
@@ -265,16 +264,16 @@ export function calculateWorldExtents(
     [dims[0], v, dims[2]],
     [v, dims[1], dims[2]],
     [dims[0], dims[1], dims[2]],
-  ];
-  const extentsMin = vec3.fromValues(Infinity, Infinity, Infinity);
-  const extentsMax = vec3.fromValues(-Infinity, -Infinity, -Infinity);
+  ]
+  const extentsMin = vec3.fromValues(Infinity, Infinity, Infinity)
+  const extentsMax = vec3.fromValues(-Infinity, -Infinity, -Infinity)
   for (const corner of corners) {
-    const worldCorner = vec3.create();
-    vec3.transformMat4(worldCorner, corner, mat);
-    vec3.min(extentsMin, extentsMin, worldCorner);
-    vec3.max(extentsMax, extentsMax, worldCorner);
+    const worldCorner = vec3.create()
+    vec3.transformMat4(worldCorner, corner, mat)
+    vec3.min(extentsMin, extentsMin, worldCorner)
+    vec3.max(extentsMax, extentsMax, worldCorner)
   }
-  return { extentsMin, extentsMax };
+  return { extentsMin, extentsMax }
 }
 
 // ============================================================================
@@ -285,11 +284,11 @@ export function calculateWorldExtents(
  * Converts a string to a Uint8Array buffer.
  */
 function str2Buffer(str: string): Uint8Array {
-  const buf = new Uint8Array(str.length);
+  const buf = new Uint8Array(str.length)
   for (let i = 0; i < str.length; i++) {
-    buf[i] = str.charCodeAt(i);
+    buf[i] = str.charCodeAt(i)
   }
-  return buf;
+  return buf
 }
 
 /**
@@ -301,17 +300,17 @@ export function createNiftiHeader(
   affine: number[],
   datatypeCode: number,
 ): NIFTIHeader {
-  const numBitsPerVoxel = getBitsPerVoxel(datatypeCode);
+  const numBitsPerVoxel = getBitsPerVoxel(datatypeCode)
 
   // Convert flat affine to 4x4 array
-  const affine4x4: number[][] = [];
+  const affine4x4: number[][] = []
   for (let row = 0; row < 4; row++) {
     affine4x4.push([
       affine[row * 4 + 0],
       affine[row * 4 + 1],
       affine[row * 4 + 2],
       affine[row * 4 + 3],
-    ]);
+    ])
   }
 
   return {
@@ -349,7 +348,7 @@ export function createNiftiHeader(
     affine: affine4x4,
     intent_name: "",
     magic: "n+1",
-  };
+  }
 }
 
 /**
@@ -360,108 +359,108 @@ export function hdrToArrayBuffer(
   isDrawing8 = false,
   isInputEndian = false,
 ): Uint8Array {
-  const SHORT_SIZE = 2;
-  const FLOAT32_SIZE = 4;
-  let isLittleEndian = true;
+  const SHORT_SIZE = 2
+  const FLOAT32_SIZE = 4
+  let isLittleEndian = true
   if (isInputEndian) {
-    isLittleEndian = hdr.littleEndian;
+    isLittleEndian = hdr.littleEndian
   }
-  const byteArray = new Uint8Array(348);
-  const view = new DataView(byteArray.buffer);
+  const byteArray = new Uint8Array(348)
+  const view = new DataView(byteArray.buffer)
 
   // sizeof_hdr
-  view.setInt32(0, 348, isLittleEndian);
+  view.setInt32(0, 348, isLittleEndian)
   // regular set to 'r' (ASCII 114) for Analyze compatibility
-  view.setUint8(38, 114);
+  view.setUint8(38, 114)
   // dim_info
-  view.setUint8(39, hdr.dim_info);
+  view.setUint8(39, hdr.dim_info)
 
   // dims
   for (let i = 0; i < 8; i++) {
-    view.setUint16(40 + SHORT_SIZE * i, hdr.dims[i], isLittleEndian);
+    view.setUint16(40 + SHORT_SIZE * i, hdr.dims[i], isLittleEndian)
   }
 
   // intent_p1, intent_p2, intent_p3
-  view.setFloat32(56, hdr.intent_p1, isLittleEndian);
-  view.setFloat32(60, hdr.intent_p2, isLittleEndian);
-  view.setFloat32(64, hdr.intent_p3, isLittleEndian);
+  view.setFloat32(56, hdr.intent_p1, isLittleEndian)
+  view.setFloat32(60, hdr.intent_p2, isLittleEndian)
+  view.setFloat32(64, hdr.intent_p3, isLittleEndian)
 
   // intent_code, datatype, bitpix, slice_start
-  view.setInt16(68, hdr.intent_code, isLittleEndian);
+  view.setInt16(68, hdr.intent_code, isLittleEndian)
   if (isDrawing8) {
-    view.setInt16(70, 2, isLittleEndian); // DT_UINT8
-    view.setInt16(72, 8, isLittleEndian);
+    view.setInt16(70, 2, isLittleEndian) // DT_UINT8
+    view.setInt16(72, 8, isLittleEndian)
   } else {
-    view.setInt16(70, hdr.datatypeCode, isLittleEndian);
-    view.setInt16(72, hdr.numBitsPerVoxel, isLittleEndian);
+    view.setInt16(70, hdr.datatypeCode, isLittleEndian)
+    view.setInt16(72, hdr.numBitsPerVoxel, isLittleEndian)
   }
-  view.setInt16(74, hdr.slice_start, isLittleEndian);
+  view.setInt16(74, hdr.slice_start, isLittleEndian)
 
   // pixdim[8], vox_offset, scl_slope, scl_inter
   for (let i = 0; i < 8; i++) {
-    view.setFloat32(76 + FLOAT32_SIZE * i, hdr.pixDims[i], isLittleEndian);
+    view.setFloat32(76 + FLOAT32_SIZE * i, hdr.pixDims[i], isLittleEndian)
   }
   if (isDrawing8) {
-    view.setFloat32(108, 352, isLittleEndian);
-    view.setFloat32(112, 1.0, isLittleEndian);
-    view.setFloat32(116, 0.0, isLittleEndian);
+    view.setFloat32(108, 352, isLittleEndian)
+    view.setFloat32(112, 1.0, isLittleEndian)
+    view.setFloat32(116, 0.0, isLittleEndian)
   } else {
-    view.setFloat32(108, 352, isLittleEndian);
-    view.setFloat32(112, hdr.scl_slope, isLittleEndian);
-    view.setFloat32(116, hdr.scl_inter, isLittleEndian);
+    view.setFloat32(108, 352, isLittleEndian)
+    view.setFloat32(112, hdr.scl_slope, isLittleEndian)
+    view.setFloat32(116, hdr.scl_inter, isLittleEndian)
   }
 
   // slice_end
-  view.setInt16(120, hdr.slice_end, isLittleEndian);
+  view.setInt16(120, hdr.slice_end, isLittleEndian)
   // slice_code, xyzt_units
-  view.setUint8(122, hdr.slice_code);
+  view.setUint8(122, hdr.slice_code)
   if (hdr.xyzt_units === 0) {
-    view.setUint8(123, 10);
+    view.setUint8(123, 10)
   } else {
-    view.setUint8(123, hdr.xyzt_units);
+    view.setUint8(123, hdr.xyzt_units)
   }
 
   // cal_max, cal_min, slice_duration, toffset
   if (isDrawing8) {
-    view.setFloat32(124, 0, isLittleEndian);
-    view.setFloat32(128, 0, isLittleEndian);
+    view.setFloat32(124, 0, isLittleEndian)
+    view.setFloat32(128, 0, isLittleEndian)
   } else {
-    view.setFloat32(124, hdr.cal_max, isLittleEndian);
-    view.setFloat32(128, hdr.cal_min, isLittleEndian);
+    view.setFloat32(124, hdr.cal_max, isLittleEndian)
+    view.setFloat32(128, hdr.cal_min, isLittleEndian)
   }
-  view.setFloat32(132, hdr.slice_duration, isLittleEndian);
-  view.setFloat32(136, hdr.toffset, isLittleEndian);
+  view.setFloat32(132, hdr.slice_duration, isLittleEndian)
+  view.setFloat32(136, hdr.toffset, isLittleEndian)
 
   // descrip and aux_file
-  byteArray.set(str2Buffer(hdr.description), 148);
-  byteArray.set(str2Buffer(hdr.aux_file), 228);
+  byteArray.set(str2Buffer(hdr.description), 148)
+  byteArray.set(str2Buffer(hdr.aux_file), 228)
 
   // qform_code, sform_code
-  view.setInt16(252, hdr.qform_code, isLittleEndian);
+  view.setInt16(252, hdr.qform_code, isLittleEndian)
   if (hdr.sform_code < 1) {
-    view.setInt16(254, 1, isLittleEndian); // default to NIFTI_XFORM_SCANNER_ANAT
+    view.setInt16(254, 1, isLittleEndian) // default to NIFTI_XFORM_SCANNER_ANAT
   } else {
-    view.setInt16(254, hdr.sform_code, isLittleEndian);
+    view.setInt16(254, hdr.sform_code, isLittleEndian)
   }
 
   // quatern_b, quatern_c, quatern_d, qoffset_x, qoffset_y, qoffset_z
-  view.setFloat32(256, hdr.quatern_b, isLittleEndian);
-  view.setFloat32(260, hdr.quatern_c, isLittleEndian);
-  view.setFloat32(264, hdr.quatern_d, isLittleEndian);
-  view.setFloat32(268, hdr.qoffset_x, isLittleEndian);
-  view.setFloat32(272, hdr.qoffset_y, isLittleEndian);
-  view.setFloat32(276, hdr.qoffset_z, isLittleEndian);
+  view.setFloat32(256, hdr.quatern_b, isLittleEndian)
+  view.setFloat32(260, hdr.quatern_c, isLittleEndian)
+  view.setFloat32(264, hdr.quatern_d, isLittleEndian)
+  view.setFloat32(268, hdr.qoffset_x, isLittleEndian)
+  view.setFloat32(272, hdr.qoffset_y, isLittleEndian)
+  view.setFloat32(276, hdr.qoffset_z, isLittleEndian)
 
   // srow_x[4], srow_y[4], srow_z[4]
-  const flattened = hdr.affine.flat();
+  const flattened = hdr.affine.flat()
   for (let i = 0; i < 12; i++) {
-    view.setFloat32(280 + FLOAT32_SIZE * i, flattened[i], isLittleEndian);
+    view.setFloat32(280 + FLOAT32_SIZE * i, flattened[i], isLittleEndian)
   }
 
   // magic
-  view.setInt32(344, 3222382, true); // "n+1\0"
+  view.setInt32(344, 3222382, true) // "n+1\0"
 
-  return byteArray;
+  return byteArray
 }
 
 /**
@@ -474,28 +473,28 @@ export function createNiftiArray(
   datatypeCode = NiiDataType.DT_UINT8,
   img: TypedVoxelArray | Uint8Array = new Uint8Array(),
 ): Uint8Array {
-  const hdr = createNiftiHeader(dims, pixDims, affine, datatypeCode);
-  const hdrBytes = hdrToArrayBuffer(hdr, false);
+  const hdr = createNiftiHeader(dims, pixDims, affine, datatypeCode)
+  const hdrBytes = hdrToArrayBuffer(hdr, false)
 
-  hdr.vox_offset = Math.max(352, hdrBytes.length);
-  const finalHdrBytes = hdrToArrayBuffer(hdr, false);
+  hdr.vox_offset = Math.max(352, hdrBytes.length)
+  const finalHdrBytes = hdrToArrayBuffer(hdr, false)
 
   if (img.length < 1) {
-    return finalHdrBytes;
+    return finalHdrBytes
   }
 
-  const paddingSize = Math.max(0, hdr.vox_offset - finalHdrBytes.length);
-  const padding = new Uint8Array(paddingSize);
-  const imgBytes = new Uint8Array(img.buffer, img.byteOffset, img.byteLength);
+  const paddingSize = Math.max(0, hdr.vox_offset - finalHdrBytes.length)
+  const padding = new Uint8Array(paddingSize)
+  const imgBytes = new Uint8Array(img.buffer, img.byteOffset, img.byteLength)
 
-  const totalLength = hdr.vox_offset + imgBytes.length;
-  const outputData = new Uint8Array(totalLength);
+  const totalLength = hdr.vox_offset + imgBytes.length
+  const outputData = new Uint8Array(totalLength)
 
-  outputData.set(finalHdrBytes, 0);
-  outputData.set(padding, finalHdrBytes.length);
-  outputData.set(imgBytes, hdr.vox_offset);
+  outputData.set(finalHdrBytes, 0)
+  outputData.set(padding, finalHdrBytes.length)
+  outputData.set(imgBytes, hdr.vox_offset)
 
-  return outputData;
+  return outputData
 }
 
 /**
@@ -509,35 +508,35 @@ export function reorientDrawingToNative(
   volume: NVImage,
   drawingBytes: Uint8Array,
 ): Uint8Array {
-  const perm = volume.permRAS;
+  const perm = volume.permRAS
   if (!perm || (perm[0] === 1 && perm[1] === 2 && perm[2] === 3)) {
-    return drawingBytes;
+    return drawingBytes
   }
-  const step = volume.img2RASstep;
-  const start = volume.img2RASstart;
-  const dimsRAS = volume.dimsRAS;
+  const step = volume.img2RASstep
+  const start = volume.img2RASstart
+  const dimsRAS = volume.dimsRAS
   if (!step || !start || !dimsRAS) {
-    log.warn("Missing RAS transformation info, cannot reorient drawing");
-    return drawingBytes;
+    log.warn("Missing RAS transformation info, cannot reorient drawing")
+    return drawingBytes
   }
-  const dims = volume.hdr.dims;
-  const nVox = dims[1] * dims[2] * dims[3];
-  const nativeData = new Uint8Array(nVox);
-  let rasIndex = 0;
+  const dims = volume.hdr.dims
+  const nVox = dims[1] * dims[2] * dims[3]
+  const nativeData = new Uint8Array(nVox)
+  let rasIndex = 0
   for (let rz = 0; rz < dimsRAS[3]; rz++) {
-    const zi = start[2] + rz * step[2];
+    const zi = start[2] + rz * step[2]
     for (let ry = 0; ry < dimsRAS[2]; ry++) {
-      const yi = start[1] + ry * step[1];
+      const yi = start[1] + ry * step[1]
       for (let rx = 0; rx < dimsRAS[1]; rx++) {
-        const nativeIndex = start[0] + rx * step[0] + yi + zi;
+        const nativeIndex = start[0] + rx * step[0] + yi + zi
         if (nativeIndex >= 0 && nativeIndex < nVox) {
-          nativeData[nativeIndex] = drawingBytes[rasIndex];
+          nativeData[nativeIndex] = drawingBytes[rasIndex]
         }
-        rasIndex++;
+        rasIndex++
       }
     }
   }
-  return nativeData;
+  return nativeData
 }
 
 // ============================================================================
@@ -568,8 +567,8 @@ export function getVoxelValue(
     !volume.img2RASstep ||
     !volume.img2RASstart
   )
-    return 0;
-  const dims = volume.dimsRAS;
+    return 0
+  const dims = volume.dimsRAS
   // Bounds check in RAS space
   if (
     rx < 0 ||
@@ -579,17 +578,17 @@ export function getVoxelValue(
     rz < 0 ||
     rz >= dims[3]
   )
-    return 0;
+    return 0
   // Compute native flat index from RAS coordinates
-  const start = volume.img2RASstart;
-  const step = volume.img2RASstep;
+  const start = volume.img2RASstart
+  const step = volume.img2RASstep
   const nativeIndex =
-    start[0] + rx * step[0] + start[1] + ry * step[1] + start[2] + rz * step[2];
+    start[0] + rx * step[0] + start[1] + ry * step[1] + start[2] + rz * step[2]
   // Frame offset for 4D data
-  const offset = nativeIndex + frame * volume.nVox3D;
-  const imgData = volume.img;
-  if (offset < 0 || offset >= imgData.length) return 0;
-  return imgData[offset] * volume.hdr.scl_slope + volume.hdr.scl_inter;
+  const offset = nativeIndex + frame * volume.nVox3D
+  const imgData = volume.img
+  if (offset < 0 || offset >= imgData.length) return 0
+  return imgData[offset] * volume.hdr.scl_slope + volume.hdr.scl_inter
 }
 
 /**
@@ -608,8 +607,8 @@ export function getVoxelRGBA(
     !volume.img2RASstep ||
     !volume.img2RASstart
   )
-    return [0, 0, 0, 0];
-  const dims = volume.dimsRAS;
+    return [0, 0, 0, 0]
+  const dims = volume.dimsRAS
   if (
     rx < 0 ||
     rx >= dims[1] ||
@@ -618,24 +617,24 @@ export function getVoxelRGBA(
     rz < 0 ||
     rz >= dims[3]
   )
-    return [0, 0, 0, 0];
-  const start = volume.img2RASstart;
-  const step = volume.img2RASstep;
+    return [0, 0, 0, 0]
+  const start = volume.img2RASstart
+  const step = volume.img2RASstep
   const nativeIndex =
-    start[0] + rx * step[0] + start[1] + ry * step[1] + start[2] + rz * step[2];
+    start[0] + rx * step[0] + start[1] + ry * step[1] + start[2] + rz * step[2]
   const raw = new Uint8Array(
     volume.img.buffer,
     volume.img.byteOffset,
     volume.img.byteLength,
-  );
-  const byteOffset = nativeIndex * 4;
-  if (byteOffset < 0 || byteOffset + 3 >= raw.byteLength) return [0, 0, 0, 0];
+  )
+  const byteOffset = nativeIndex * 4
+  if (byteOffset < 0 || byteOffset + 3 >= raw.byteLength) return [0, 0, 0, 0]
   return [
     raw[byteOffset],
     raw[byteOffset + 1],
     raw[byteOffset + 2],
     raw[byteOffset + 3],
-  ];
+  ]
 }
 
 /**
@@ -654,11 +653,11 @@ export function reorientRGBA(
   img2RASstart: number[],
   img2RASstep: number[],
 ): Uint8Array {
-  const vx = dimsRAS[1];
-  const vy = dimsRAS[2];
-  const vz = dimsRAS[3];
-  const nVox = vx * vy * vz;
-  const out = new Uint8Array(nVox * bpp);
+  const vx = dimsRAS[1]
+  const vy = dimsRAS[2]
+  const vz = dimsRAS[3]
+  const nVox = vx * vy * vz
+  const out = new Uint8Array(nVox * bpp)
   for (let z = 0; z < vz; z++) {
     for (let y = 0; y < vy; y++) {
       for (let x = 0; x < vx; x++) {
@@ -668,14 +667,14 @@ export function reorientRGBA(
           img2RASstart[1] +
           y * img2RASstep[1] +
           img2RASstart[2] +
-          z * img2RASstep[2];
-        const outOff = (x + y * vx + z * vx * vy) * bpp;
-        const inOff = nativeIdx * bpp;
-        for (let b = 0; b < bpp; b++) out[outOff + b] = raw[inOff + b];
+          z * img2RASstep[2]
+        const outOff = (x + y * vx + z * vx * vy) * bpp
+        const inOff = nativeIdx * bpp
+        for (let b = 0; b < bpp; b++) out[outOff + b] = raw[inOff + b]
       }
     }
   }
-  return out;
+  return out
 }
 
 // ============================================================================
@@ -701,14 +700,14 @@ export function getImageDataRAS(volume: NVImage): Float32Array | null {
     !volume.img2RASstep ||
     !volume.img2RASstart
   ) {
-    return null;
+    return null
   }
-  const step = volume.img2RASstep;
-  const start = volume.img2RASstart;
-  const vx = volume.dimsRAS[1];
-  const vy = volume.dimsRAS[2];
-  const vz = volume.dimsRAS[3];
-  const nVox = vx * vy * vz;
+  const step = volume.img2RASstep
+  const start = volume.img2RASstart
+  const vx = volume.dimsRAS[1]
+  const vy = volume.dimsRAS[2]
+  const vz = volume.dimsRAS[3]
+  const nVox = vx * vy * vz
   // Identity check: step = [1, dimX, dimX*dimY], start = [0,0,0]
   const isIdentity =
     start[0] === 0 &&
@@ -716,7 +715,7 @@ export function getImageDataRAS(volume: NVImage): Float32Array | null {
     start[2] === 0 &&
     step[0] === 1 &&
     step[1] === vx &&
-    step[2] === vx * vy;
+    step[2] === vx * vy
   if (
     isIdentity &&
     volume.img instanceof Float32Array &&
@@ -725,23 +724,23 @@ export function getImageDataRAS(volume: NVImage): Float32Array | null {
     // Zero-copy: img is already Float32 in RAS order
     return volume.img.length === nVox
       ? volume.img
-      : volume.img.subarray(0, nVox);
+      : volume.img.subarray(0, nVox)
   }
   // Reorder into a new Float32Array
-  const src = volume.img;
-  const out = new Float32Array(nVox);
-  let rasIdx = 0;
+  const src = volume.img
+  const out = new Float32Array(nVox)
+  let rasIdx = 0
   for (let rz = 0; rz < vz; rz++) {
-    const zi = start[2] + rz * step[2];
+    const zi = start[2] + rz * step[2]
     for (let ry = 0; ry < vy; ry++) {
-      const yi = start[1] + ry * step[1];
+      const yi = start[1] + ry * step[1]
       for (let rx = 0; rx < vx; rx++) {
-        const nativeIdx = start[0] + rx * step[0] + yi + zi;
-        out[rasIdx++] = Number(src[nativeIdx]);
+        const nativeIdx = start[0] + rx * step[0] + yi + zi
+        out[rasIdx++] = Number(src[nativeIdx])
       }
     }
   }
-  return out;
+  return out
 }
 
 // ============================================================================
@@ -757,56 +756,56 @@ export function getImageDataRAS(volume: NVImage): Float32Array | null {
 export function computeVolumeLabelCentroids(
   volume: NVImage,
 ): Record<string, [number, number, number]> {
-  const lut = volume.colormapLabel;
-  if (!lut?.labels || !volume.matRAS || !volume.dimsRAS) return {};
+  const lut = volume.colormapLabel
+  if (!lut?.labels || !volume.matRAS || !volume.dimsRAS) return {}
 
-  const labels = lut.labels;
-  const lutMin = lut.min ?? 0;
-  const lutMax = lut.max ?? labels.length - 1 + lutMin;
-  const m = volume.matRAS;
+  const labels = lut.labels
+  const lutMin = lut.min ?? 0
+  const lutMax = lut.max ?? labels.length - 1 + lutMin
+  const m = volume.matRAS
   const vx = volume.dimsRAS[1],
     vy = volume.dimsRAS[2],
-    vz = volume.dimsRAS[3];
+    vz = volume.dimsRAS[3]
 
   // Accumulators: sum of (mm * weight) and total weight per label
-  const sumX: Record<string, number> = {};
-  const sumY: Record<string, number> = {};
-  const sumZ: Record<string, number> = {};
-  const weight: Record<string, number> = {};
+  const sumX: Record<string, number> = {}
+  const sumY: Record<string, number> = {}
+  const sumZ: Record<string, number> = {}
+  const weight: Record<string, number> = {}
 
   if (isPaqd(volume.hdr)) {
     // PAQD: weight each region by its probability
     for (let rz = 0; rz < vz; rz++) {
       for (let ry = 0; ry < vy; ry++) {
         for (let rx = 0; rx < vx; rx++) {
-          const raw = getVoxelRGBA(volume, rx, ry, rz);
+          const raw = getVoxelRGBA(volume, rx, ry, rz)
           const prob1 = raw[2],
-            prob2 = raw[3];
-          if (prob1 === 0 && prob2 === 0) continue;
+            prob2 = raw[3]
+          if (prob1 === 0 && prob2 === 0) continue
           // Inline vox2mm: mm = transpose(matRAS) * [rx,ry,rz,1]
-          const mmx = m[0] * rx + m[1] * ry + m[2] * rz + m[3];
-          const mmy = m[4] * rx + m[5] * ry + m[6] * rz + m[7];
-          const mmz = m[8] * rx + m[9] * ry + m[10] * rz + m[11];
+          const mmx = m[0] * rx + m[1] * ry + m[2] * rz + m[3]
+          const mmy = m[4] * rx + m[5] * ry + m[6] * rz + m[7]
+          const mmz = m[8] * rx + m[9] * ry + m[10] * rz + m[11]
           // Primary region
-          const idx1 = raw[0];
+          const idx1 = raw[0]
           if (prob1 > 0 && idx1 >= lutMin && idx1 <= lutMax) {
-            const name = labels[idx1 - lutMin];
+            const name = labels[idx1 - lutMin]
             if (name) {
-              sumX[name] = (sumX[name] ?? 0) + mmx * prob1;
-              sumY[name] = (sumY[name] ?? 0) + mmy * prob1;
-              sumZ[name] = (sumZ[name] ?? 0) + mmz * prob1;
-              weight[name] = (weight[name] ?? 0) + prob1;
+              sumX[name] = (sumX[name] ?? 0) + mmx * prob1
+              sumY[name] = (sumY[name] ?? 0) + mmy * prob1
+              sumZ[name] = (sumZ[name] ?? 0) + mmz * prob1
+              weight[name] = (weight[name] ?? 0) + prob1
             }
           }
           // Secondary region
-          const idx2 = raw[1];
+          const idx2 = raw[1]
           if (prob2 > 0 && idx2 >= lutMin && idx2 <= lutMax) {
-            const name = labels[idx2 - lutMin];
+            const name = labels[idx2 - lutMin]
             if (name) {
-              sumX[name] = (sumX[name] ?? 0) + mmx * prob2;
-              sumY[name] = (sumY[name] ?? 0) + mmy * prob2;
-              sumZ[name] = (sumZ[name] ?? 0) + mmz * prob2;
-              weight[name] = (weight[name] ?? 0) + prob2;
+              sumX[name] = (sumX[name] ?? 0) + mmx * prob2
+              sumY[name] = (sumY[name] ?? 0) + mmy * prob2
+              sumZ[name] = (sumZ[name] ?? 0) + mmz * prob2
+              weight[name] = (weight[name] ?? 0) + prob2
             }
           }
         }
@@ -817,31 +816,31 @@ export function computeVolumeLabelCentroids(
     for (let rz = 0; rz < vz; rz++) {
       for (let ry = 0; ry < vy; ry++) {
         for (let rx = 0; rx < vx; rx++) {
-          const val = getVoxelValue(volume, rx, ry, rz);
-          const labelIdx = Math.round(val);
-          if (labelIdx < lutMin || labelIdx > lutMax) continue;
-          const name = labels[labelIdx - lutMin];
-          if (!name) continue;
-          const mmx = m[0] * rx + m[1] * ry + m[2] * rz + m[3];
-          const mmy = m[4] * rx + m[5] * ry + m[6] * rz + m[7];
-          const mmz = m[8] * rx + m[9] * ry + m[10] * rz + m[11];
-          sumX[name] = (sumX[name] ?? 0) + mmx;
-          sumY[name] = (sumY[name] ?? 0) + mmy;
-          sumZ[name] = (sumZ[name] ?? 0) + mmz;
-          weight[name] = (weight[name] ?? 0) + 1;
+          const val = getVoxelValue(volume, rx, ry, rz)
+          const labelIdx = Math.round(val)
+          if (labelIdx < lutMin || labelIdx > lutMax) continue
+          const name = labels[labelIdx - lutMin]
+          if (!name) continue
+          const mmx = m[0] * rx + m[1] * ry + m[2] * rz + m[3]
+          const mmy = m[4] * rx + m[5] * ry + m[6] * rz + m[7]
+          const mmz = m[8] * rx + m[9] * ry + m[10] * rz + m[11]
+          sumX[name] = (sumX[name] ?? 0) + mmx
+          sumY[name] = (sumY[name] ?? 0) + mmy
+          sumZ[name] = (sumZ[name] ?? 0) + mmz
+          weight[name] = (weight[name] ?? 0) + 1
         }
       }
     }
   }
 
-  const centroids: Record<string, [number, number, number]> = {};
+  const centroids: Record<string, [number, number, number]> = {}
   for (const name of Object.keys(weight)) {
-    const w = weight[name];
+    const w = weight[name]
     if (w > 0) {
-      centroids[name] = [sumX[name] / w, sumY[name] / w, sumZ[name] / w];
+      centroids[name] = [sumX[name] / w, sumY[name] / w, sumZ[name] / w]
     }
   }
-  return centroids;
+  return centroids
 }
 
 /**
@@ -861,35 +860,35 @@ export function paqdResampleRaw(
   ovDims: number[],
   mtx: Float32Array,
 ): Uint8Array {
-  const [vxOut, vyOut, vzOut] = dimsOut;
-  const [vxOv, vyOv, vzOv] = ovDims;
-  const nVoxOut = vxOut * vyOut * vzOut;
-  const out = new Uint8Array(nVoxOut * 4);
+  const [vxOut, vyOut, vzOut] = dimsOut
+  const [vxOv, vyOv, vzOv] = ovDims
+  const nVoxOut = vxOut * vyOut * vzOut
+  const out = new Uint8Array(nVoxOut * 4)
   for (let z = 0; z < vzOut; z++) {
-    const fz = (z + 0.5) / vzOut;
+    const fz = (z + 0.5) / vzOut
     for (let y = 0; y < vyOut; y++) {
-      const fy = (y + 0.5) / vyOut;
+      const fy = (y + 0.5) / vyOut
       for (let x = 0; x < vxOut; x++) {
-        const fx = (x + 0.5) / vxOut;
-        const ox = fx * mtx[0] + fy * mtx[1] + fz * mtx[2] + mtx[3];
-        const oy = fx * mtx[4] + fy * mtx[5] + fz * mtx[6] + mtx[7];
-        const oz = fx * mtx[8] + fy * mtx[9] + fz * mtx[10] + mtx[11];
-        const outOff = (x + y * vxOut + z * vxOut * vyOut) * 4;
+        const fx = (x + 0.5) / vxOut
+        const ox = fx * mtx[0] + fy * mtx[1] + fz * mtx[2] + mtx[3]
+        const oy = fx * mtx[4] + fy * mtx[5] + fz * mtx[6] + mtx[7]
+        const oz = fx * mtx[8] + fy * mtx[9] + fz * mtx[10] + mtx[11]
+        const outOff = (x + y * vxOut + z * vxOut * vyOut) * 4
         if (ox < 0 || ox > 1 || oy < 0 || oy > 1 || oz < 0 || oz > 1) {
-          continue; // out array is zero-initialized
+          continue // out array is zero-initialized
         }
-        const ix = Math.min(Math.floor(ox * vxOv), vxOv - 1);
-        const iy = Math.min(Math.floor(oy * vyOv), vyOv - 1);
-        const iz = Math.min(Math.floor(oz * vzOv), vzOv - 1);
-        const inOff = (ix + iy * vxOv + iz * vxOv * vyOv) * 4;
-        out[outOff] = raw[inOff];
-        out[outOff + 1] = raw[inOff + 1];
-        out[outOff + 2] = raw[inOff + 2];
-        out[outOff + 3] = raw[inOff + 3];
+        const ix = Math.min(Math.floor(ox * vxOv), vxOv - 1)
+        const iy = Math.min(Math.floor(oy * vyOv), vyOv - 1)
+        const iz = Math.min(Math.floor(oz * vzOv), vzOv - 1)
+        const inOff = (ix + iy * vxOv + iz * vxOv * vyOv) * 4
+        out[outOff] = raw[inOff]
+        out[outOff + 1] = raw[inOff + 1]
+        out[outOff + 2] = raw[inOff + 2]
+        out[outOff + 3] = raw[inOff + 3]
       }
     }
   }
-  return out;
+  return out
 }
 
 /**
@@ -904,18 +903,18 @@ export function buildPaqdLut256(
   lut: Uint8ClampedArray,
   lutMin: number,
 ): Uint8Array {
-  const out = new Uint8Array(256 * 4); // zero-initialized (transparent)
-  const srcLen = lut.length / 4;
+  const out = new Uint8Array(256 * 4) // zero-initialized (transparent)
+  const srcLen = lut.length / 4
   for (let i = 0; i < srcLen; i++) {
-    const destIdx = lutMin + i;
+    const destIdx = lutMin + i
     if (destIdx >= 0 && destIdx < 256) {
-      const dOff = destIdx * 4;
-      const sOff = i * 4;
-      out[dOff] = lut[sOff];
-      out[dOff + 1] = lut[sOff + 1];
-      out[dOff + 2] = lut[sOff + 2];
-      out[dOff + 3] = lut[sOff + 3];
+      const dOff = destIdx * 4
+      const sOff = i * 4
+      out[dOff] = lut[sOff]
+      out[dOff + 1] = lut[sOff + 1]
+      out[dOff + 2] = lut[sOff + 2]
+      out[dOff + 3] = lut[sOff + 3]
     }
   }
-  return out;
+  return out
 }

@@ -1,4 +1,4 @@
-import { log } from "@/logger";
+import { log } from "@/logger"
 
 /**
  * PackBits RLE encoder. Operates byte-by-byte on uint8 data.
@@ -8,29 +8,29 @@ import { log } from "@/logger";
  * @see https://en.wikipedia.org/wiki/PackBits
  */
 export function encodeRLE(data: Uint8Array): Uint8Array {
-  const dl = data.length;
-  let dp = 0;
-  const r = new Uint8Array(dl + Math.ceil(0.01 * dl));
-  const rI = new Int8Array(r.buffer);
-  let rp = 0;
+  const dl = data.length
+  let dp = 0
+  const r = new Uint8Array(dl + Math.ceil(0.01 * dl))
+  const rI = new Int8Array(r.buffer)
+  let rp = 0
   while (dp < dl) {
-    let v = data[dp];
-    dp++;
-    let rl = 1;
+    let v = data[dp]
+    dp++
+    let rl = 1
     while (rl < 129 && dp < dl && data[dp] === v) {
-      dp++;
-      rl++;
+      dp++
+      rl++
     }
     if (rl > 1) {
-      rI[rp] = -rl + 1;
-      rp++;
-      r[rp] = v;
-      rp++;
-      continue;
+      rI[rp] = -rl + 1
+      rp++
+      r[rp] = v
+      rp++
+      continue
     }
     while (dp < dl) {
       if (rl > 127) {
-        break;
+        break
       }
       if (dp + 2 < dl) {
         if (
@@ -38,47 +38,47 @@ export function encodeRLE(data: Uint8Array): Uint8Array {
           data[dp + 2] === data[dp] &&
           data[dp + 1] === data[dp]
         ) {
-          break;
+          break
         }
       }
-      v = data[dp];
-      dp++;
-      rl++;
+      v = data[dp]
+      dp++
+      rl++
     }
-    r[rp] = rl - 1;
-    rp++;
+    r[rp] = rl - 1
+    rp++
     for (let i = 0; i < rl; i++) {
-      r[rp] = data[dp - rl + i];
-      rp++;
+      r[rp] = data[dp - rl + i]
+      rp++
     }
   }
-  log.debug(`PackBits ${dl} -> ${rp} bytes (x${dl / rp})`);
-  return r.slice(0, rp);
+  log.debug(`PackBits ${dl} -> ${rp} bytes (x${dl / rp})`)
+  return r.slice(0, rp)
 }
 
 export function decodeRLE(rle: Uint8Array, decodedlen: number): Uint8Array {
-  const r = new Uint8Array(rle.buffer);
-  const rI = new Int8Array(r.buffer);
-  let rp = 0;
-  const d = new Uint8Array(decodedlen);
-  let dp = 0;
+  const r = new Uint8Array(rle.buffer)
+  const rI = new Int8Array(r.buffer)
+  let rp = 0
+  const d = new Uint8Array(decodedlen)
+  let dp = 0
   while (rp < r.length) {
-    const hdr = rI[rp];
-    rp++;
+    const hdr = rI[rp]
+    rp++
     if (hdr < 0) {
-      const v = rI[rp];
-      rp++;
+      const v = rI[rp]
+      rp++
       for (let i = 0; i < 1 - hdr; i++) {
-        d[dp] = v;
-        dp++;
+        d[dp] = v
+        dp++
       }
     } else {
       for (let i = 0; i < hdr + 1; i++) {
-        d[dp] = rI[rp];
-        rp++;
-        dp++;
+        d[dp] = rI[rp]
+        rp++
+        dp++
       }
     }
   }
-  return d;
+  return d
 }

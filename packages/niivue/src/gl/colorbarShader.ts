@@ -33,7 +33,7 @@ void main() {
     vUv = vec2(pos.x, 0.5);
     vLocalPos = pos;
 }
-`;
+`
 
 export const colorbarFragShader = `#version 300 es
 precision highp float;
@@ -81,4 +81,4 @@ void main() {
     }
     fragColor = vec4(color.rgb, opacity);
 }
-`;
+`

@@ -1,4 +1,4 @@
-import NiiVue from "../src/index.ts";
+import NiiVue from "../src/index.ts"
 
 // ---------- Predefined custom layouts ----------
 
@@ -35,41 +35,41 @@ const layouts = {
     { sliceType: 1, position: [0.7, 1 / 3, 0.3, 1 / 3] },
     { sliceType: 2, position: [0.7, 2 / 3, 0.3, 1 / 3] },
   ],
-};
+}
 
 // ---------- Viewer setup ----------
 
 const nv = new NiiVue({
   isColorbarVisible: true,
   backgroundColor: [0.2, 0.2, 0.2, 1],
-});
+})
 
 nv.addEventListener("locationChange", (e) => {
   document.getElementById("location").innerHTML =
-    `&nbsp;&nbsp;${e.detail.string}`;
-});
+    `&nbsp;&nbsp;${e.detail.string}`
+})
 
-await nv.attachToCanvas(gl1);
-await nv.loadVolumes([{ url: "/volumes/mni152.nii.gz" }]);
+await nv.attachToCanvas(gl1)
+await nv.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
 
 // Apply the initial custom layout
-nv.customLayout = layouts.leftSag;
+nv.customLayout = layouts.leftSag
 
 // ---------- Controls ----------
 
 layoutSelect.onchange = function () {
-  const key = this.value;
+  const key = this.value
   if (key === "builtin") {
-    nv.clearCustomLayout();
+    nv.clearCustomLayout()
   } else {
-    nv.customLayout = layouts[key];
+    nv.customLayout = layouts[key]
   }
-};
+}
 
 radioCheck.onclick = function () {
-  nv.isRadiological = this.checked;
-};
+  nv.isRadiological = this.checked
+}
 
 equalCheck.onclick = function () {
-  nv.isEqualSize = this.checked;
-};
+  nv.isEqualSize = this.checked
+}

@@ -33,7 +33,7 @@ void main() {
     vColor = glyphColor;
     vAtlasRange = glyphRange;
 }
-`;
+`
 
 export const fontFragShader = `#version 300 es
 precision highp float;
@@ -69,4 +69,4 @@ void main() {
     
     fragColor = vec4(vColor.rgb, vColor.a * opacity);
 }
-`;
+`

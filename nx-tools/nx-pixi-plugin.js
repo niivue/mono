@@ -1,5 +1,5 @@
-const { readFileSync } = require("node:fs");
-const { join } = require("node:path");
+const { readFileSync } = require("node:fs")
+const { join } = require("node:path")
 
 /**
  * Local NX plugin that reads pixi.toml and pyproject.toml files to infer
@@ -15,42 +15,42 @@ const { join } = require("node:path");
  * static dependency edge for each listed project that exists in the workspace.
  */
 
-const name = "nx-pixi-plugin";
+const name = "nx-pixi-plugin"
 
-const MANIFEST_FILES = ["pixi.toml", "pyproject.toml"];
+const MANIFEST_FILES = ["pixi.toml", "pyproject.toml"]
 
 /**
  * Parse [tool.nx] workspace-dependencies from a TOML file's content.
  * Returns an array of project names.
  */
 function parseWorkspaceDeps(content) {
-  const deps = [];
-  let inToolNx = false;
+  const deps = []
+  let inToolNx = false
 
   for (const line of content.split("\n")) {
-    const trimmed = line.trim();
+    const trimmed = line.trim()
 
     if (trimmed.startsWith("[")) {
-      inToolNx = trimmed === "[tool.nx]";
-      continue;
+      inToolNx = trimmed === "[tool.nx]"
+      continue
     }
 
-    if (!inToolNx) continue;
-    if (!trimmed || trimmed.startsWith("#")) continue;
+    if (!inToolNx) continue
+    if (!trimmed || trimmed.startsWith("#")) continue
 
     // Match: workspace-dependencies = ["proj-a", "proj-b"]
-    const match = trimmed.match(/^workspace-dependencies\s*=\s*\[([^\]]*)\]/);
-    if (!match) continue;
+    const match = trimmed.match(/^workspace-dependencies\s*=\s*\[([^\]]*)\]/)
+    if (!match) continue
 
-    const names = match[1].match(/"([^"]+)"/g);
-    if (!names) continue;
+    const names = match[1].match(/"([^"]+)"/g)
+    if (!names) continue
 
     for (const quoted of names) {
-      deps.push(quoted.replace(/"/g, ""));
+      deps.push(quoted.replace(/"/g, ""))
     }
   }
 
-  return deps;
+  return deps
 }
 
 /**
@@ -58,18 +58,18 @@ function parseWorkspaceDeps(content) {
  * projects and creates graph edges from [tool.nx] workspace-dependencies.
  */
 const createDependencies = (_options, context) => {
-  const deps = [];
-  const projectNames = new Set(Object.keys(context.projects));
+  const deps = []
+  const projectNames = new Set(Object.keys(context.projects))
 
   for (const [projectName, project] of Object.entries(context.projects)) {
     for (const manifest of MANIFEST_FILES) {
-      const manifestPath = join(context.workspaceRoot, project.root, manifest);
+      const manifestPath = join(context.workspaceRoot, project.root, manifest)
 
-      let content;
+      let content
       try {
-        content = readFileSync(manifestPath, "utf-8");
+        content = readFileSync(manifestPath, "utf-8")
       } catch {
-        continue;
+        continue
       }
 
       for (const depName of parseWorkspaceDeps(content)) {
@@ -79,13 +79,13 @@ const createDependencies = (_options, context) => {
             target: depName,
             type: "static",
             sourceFile: join(project.root, manifest),
-          });
+          })
         }
       }
     }
   }
 
-  return deps;
-};
+  return deps
+}
 
-module.exports = { name, createDependencies };
+module.exports = { name, createDependencies }

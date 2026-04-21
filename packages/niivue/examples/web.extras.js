@@ -1,34 +1,34 @@
-import NiiVue from "../src/index.ts";
-import { SHOW_RENDER } from "../src/NVConstants.ts";
+import NiiVue from "../src/index.ts"
+import { SHOW_RENDER } from "../src/NVConstants.ts"
 
 // Load from the community asset repositories rather than bundling.
 // All three base URLs below serve a `manifest.json` listing available
 // files, plus the files themselves.
-const FONT_BASE = "https://raw.githubusercontent.com/niivue/fonts/main/fonts/";
+const FONT_BASE = "https://raw.githubusercontent.com/niivue/fonts/main/fonts/"
 const CMAP_BASE =
-  "https://raw.githubusercontent.com/niivue/Py2NiiVueColormaps/main/SciPy/";
+  "https://raw.githubusercontent.com/niivue/Py2NiiVueColormaps/main/SciPy/"
 const MATCAP_BASE =
-  "https://raw.githubusercontent.com/niivue/matcaps/main/matcaps/";
+  "https://raw.githubusercontent.com/niivue/matcaps/main/matcaps/"
 webgpuCheck.onclick = function () {
-  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" });
-};
+  nv1.reinitializeView({ backend: this.checked ? "webgpu" : "webgl2" })
+}
 fontSlide.oninput = function () {
-  nv1.fontScale = Number(this.value) * 0.01;
-  nv1.resize();
-};
+  nv1.fontScale = Number(this.value) * 0.01
+  nv1.resize()
+}
 async function fetchManifest(baseUrl) {
-  const resp = await fetch(`${baseUrl}manifest.json`);
+  const resp = await fetch(`${baseUrl}manifest.json`)
   if (!resp.ok)
     throw new Error(
       `Failed to fetch ${baseUrl}manifest.json: ${resp.status} ${resp.statusText}`,
-    );
-  return resp.json();
+    )
+  return resp.json()
 }
 function populateSelect(selectEl, items) {
   for (const item of items) {
-    const opt = document.createElement("option");
-    opt.textContent = item;
-    selectEl.appendChild(opt);
+    const opt = document.createElement("option")
+    opt.textContent = item
+    selectEl.appendChild(opt)
   }
 }
 // Fetch a manifest and populate the matching <select>. On failure, log and
@@ -37,11 +37,11 @@ function populateSelect(selectEl, items) {
 // the whole module with an unhandled top-level rejection.
 async function populateFromManifest(selectEl, baseUrl, label) {
   try {
-    populateSelect(selectEl, await fetchManifest(baseUrl));
+    populateSelect(selectEl, await fetchManifest(baseUrl))
   } catch (err) {
-    console.error(`Could not load ${label} manifest from ${baseUrl}:`, err);
-    selectEl.options[0].textContent = `(failed to load ${label} list)`;
-    selectEl.options[0].hidden = false;
+    console.error(`Could not load ${label} manifest from ${baseUrl}:`, err)
+    selectEl.options[0].textContent = `(failed to load ${label} list)`
+    selectEl.options[0].hidden = false
   }
 }
 const nv1 = new NiiVue({
@@ -51,47 +51,47 @@ const nv1 = new NiiVue({
   showRender: SHOW_RENDER.ALWAYS,
   backgroundColor: [0.2, 0.2, 0.2, 1],
   volumeIllumination: 1.0,
-});
-await nv1.attachToCanvas(gl1);
-nv1.setClipPlane([0, 180, 20]);
-await nv1.loadVolumes([{ url: "/volumes/mni152.nii.gz" }]);
+})
+await nv1.attachToCanvas(gl1)
+nv1.setClipPlane([0, 180, 20])
+await nv1.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])
 // --- Fonts ---------------------------------------------------------
 // setFontFromUrl({ atlas, metrics }) fetches the PNG + JSON pair and
 // swaps the active font atlas. The PNG URL is kept verbatim and used
 // as the GPU texture source, so the atlas texture loads lazily when
 // the view next renders.
-await populateFromManifest(fontSelect, FONT_BASE, "font");
+await populateFromManifest(fontSelect, FONT_BASE, "font")
 fontSelect.onchange = async () => {
-  const base = FONT_BASE + fontSelect.value;
-  await nv1.setFontFromUrl({ atlas: `${base}.png`, metrics: `${base}.json` });
-};
+  const base = FONT_BASE + fontSelect.value
+  await nv1.setFontFromUrl({ atlas: `${base}.png`, metrics: `${base}.json` })
+}
 // --- Colormaps -----------------------------------------------------
 // Lazy-load: populate the dropdown from the manifest but only fetch
 // each LUT the first time the user selects it. Avoids hammering the
 // server with ~N parallel requests on page load and demonstrates the
 // intended happy path for addColormapFromUrl. `nv1.colormaps` is
 // consulted to skip re-registration on second-visit selections.
-await populateFromManifest(cmapSelect, CMAP_BASE, "colormap");
+await populateFromManifest(cmapSelect, CMAP_BASE, "colormap")
 cmapSelect.onchange = async () => {
-  const name = cmapSelect.value;
+  const name = cmapSelect.value
   if (!nv1.hasColormap(name)) {
     try {
-      await nv1.addColormapFromUrl(`${CMAP_BASE}${name}.json`, name);
+      await nv1.addColormapFromUrl(`${CMAP_BASE}${name}.json`, name)
     } catch (err) {
-      console.error(`Failed to load colormap "${name}":`, err);
-      return;
+      console.error(`Failed to load colormap "${name}":`, err)
+      return
     }
   }
-  await nv1.setVolume(0, { colormap: name });
-};
+  await nv1.setVolume(0, { colormap: name })
+}
 // --- Matcaps -------------------------------------------------------
 // loadMatcap() accepts either a registered name or a direct URL. No
 // pre-registration is required for URL-based matcaps.
-await populateFromManifest(matSelect, MATCAP_BASE, "matcap");
+await populateFromManifest(matSelect, MATCAP_BASE, "matcap")
 matSelect.onchange = async () => {
-  await nv1.loadMatcap(`${MATCAP_BASE}${matSelect.value}.jpg`);
-  mat2Select.selectedIndex = -1;
-};
+  await nv1.loadMatcap(`${MATCAP_BASE}${matSelect.value}.jpg`)
+  mat2Select.selectedIndex = -1
+}
 // Third-party matcap collection (makio135) — demonstrates loading from
 // an unrelated origin. The list below is hand-curated since that host
 // does not publish a manifest.
@@ -117,11 +117,11 @@ const mat2Items = [
   "0DBD0D_049704_047B04_045504",
   "0F0F0F_4B4B4B_1C1C1C_2C2C2C",
   "0F990F_047B04_044604_046704",
-];
-populateSelect(mat2Select, mat2Items);
+]
+populateSelect(mat2Select, mat2Items)
 mat2Select.onchange = async () => {
   await nv1.loadMatcap(
     `https://makio135.com/matcaps/64/${mat2Select.value}-64px.png`,
-  );
-  matSelect.selectedIndex = -1;
-};
+  )
+  matSelect.selectedIndex = -1
+}

@@ -1,4 +1,4 @@
-import "./index.css";
+import "./index.css"
 
 import {
   type ChangeEvent,
@@ -7,21 +7,21 @@ import {
   useMemo,
   useRef,
   useState,
-} from "react";
-import { NvSceneProvider } from "./context";
-import { useScene, useSceneEvent } from "./hooks";
-import { defaultLayouts } from "./layouts";
-import { NvScene } from "./nvscene";
-import { defaultSliceLayouts } from "./nvscene-controller";
-import { NvViewer } from "./nvviewer";
-import type { ImageFromUrlOptions } from "./types";
+} from "react"
+import { NvSceneProvider } from "./context"
+import { useScene, useSceneEvent } from "./hooks"
+import { defaultLayouts } from "./layouts"
+import { NvScene } from "./nvscene"
+import { defaultSliceLayouts } from "./nvscene-controller"
+import { NvViewer } from "./nvviewer"
+import type { ImageFromUrlOptions } from "./types"
 
-const MNI_URL = "https://niivue.github.io/niivue-demo-images/mni152.nii.gz";
+const MNI_URL = "https://niivue.github.io/niivue-demo-images/mni152.nii.gz"
 
 const MNI_VOLUME: ImageFromUrlOptions = {
   url: MNI_URL,
   name: "mni152",
-};
+}
 
 /** Common colormaps available in Niivue */
 const COLORMAPS = [
@@ -51,44 +51,44 @@ const COLORMAPS = [
   "ct_muscles",
   "ct_soft_tissue",
   "ct_w_contrast",
-];
+]
 
-type DemoMode = "scene" | "viewer";
+type DemoMode = "scene" | "viewer"
 
 export function App() {
-  const { scene, snapshot } = useScene();
-  const [layoutName, setLayoutName] = useState<string>("2x2");
-  const [sliceLayoutEnabled, setSliceLayoutEnabled] = useState(false);
-  const [selectedViewerIndex, setSelectedViewerIndex] = useState(0);
-  const [sliceLayoutName, setSliceLayoutName] = useState<string>("axial-hero");
-  const [demoMode, setDemoMode] = useState<DemoMode>("scene");
+  const { scene, snapshot } = useScene()
+  const [layoutName, setLayoutName] = useState<string>("2x2")
+  const [sliceLayoutEnabled, setSliceLayoutEnabled] = useState(false)
+  const [selectedViewerIndex, setSelectedViewerIndex] = useState(0)
+  const [sliceLayoutName, setSliceLayoutName] = useState<string>("axial-hero")
+  const [demoMode, setDemoMode] = useState<DemoMode>("scene")
 
   // --- Colormap / intensity / opacity state ---
-  const [colormap, setColormap] = useState("gray");
-  const [calMin, setCalMin] = useState(0);
-  const [calMax, setCalMax] = useState(255);
-  const [opacity, setOpacity] = useState(1.0);
+  const [colormap, setColormap] = useState("gray")
+  const [calMin, setCalMin] = useState(0)
+  const [calMax, setCalMax] = useState(255)
+  const [opacity, setOpacity] = useState(1.0)
 
   // Log events via useSceneEvent
   useSceneEvent(scene, "viewerCreated", (_nv, index) => {
-    console.log(`[event] viewerCreated: index=${index}`);
-  });
+    console.log(`[event] viewerCreated: index=${index}`)
+  })
 
   useSceneEvent(scene, "viewerRemoved", (index) => {
-    console.log(`[event] viewerRemoved: index=${index}`);
-  });
+    console.log(`[event] viewerRemoved: index=${index}`)
+  })
 
   useSceneEvent(scene, "imageLoaded", (viewerIndex, volume) => {
     console.log(
       `[event] imageLoaded: viewer=${viewerIndex}, name=${volume.name}`,
-    );
-  });
+    )
+  })
 
   useSceneEvent(scene, "colormapChanged", (viewerIndex, volumeIndex, cm) => {
     console.log(
       `[event] colormapChanged: viewer=${viewerIndex}, vol=${volumeIndex}, colormap=${cm}`,
-    );
-  });
+    )
+  })
 
   useSceneEvent(
     scene,
@@ -96,136 +96,133 @@ export function App() {
     (viewerIndex, volumeIndex, min, max) => {
       console.log(
         `[event] intensityChanged: viewer=${viewerIndex}, vol=${volumeIndex}, cal_min=${min}, cal_max=${max}`,
-      );
+      )
     },
-  );
+  )
 
   useSceneEvent(scene, "opacityChanged", (viewerIndex, volumeIndex, op) => {
     console.log(
       `[event] opacityChanged: viewer=${viewerIndex}, vol=${volumeIndex}, opacity=${op}`,
-    );
-  });
+    )
+  })
 
   // Load volumes for any viewer that doesn't have one yet.
   // This is done via useEffect on viewerCount rather than the viewerCreated
   // event, because React runs child effects (NvScene) before parent effects,
   // so the event listener may not be registered when the first viewer is created.
-  const loadedViewerIds = useRef<Set<string>>(new Set());
+  const loadedViewerIds = useRef<Set<string>>(new Set())
   useEffect(() => {
     for (let i = 0; i < snapshot.viewerCount; i++) {
-      const viewer = scene.viewers[i];
+      const viewer = scene.viewers[i]
       if (viewer && !loadedViewerIds.current.has(viewer.id)) {
-        loadedViewerIds.current.add(viewer.id);
-        scene.loadVolume(i, MNI_VOLUME).catch(console.error);
+        loadedViewerIds.current.add(viewer.id)
+        scene.loadVolume(i, MNI_VOLUME).catch(console.error)
       }
     }
-  }, [scene, snapshot.viewerCount]);
+  }, [scene, snapshot.viewerCount])
 
   useEffect(() => {
     if (selectedViewerIndex >= snapshot.viewerCount) {
-      setSelectedViewerIndex(Math.max(0, snapshot.viewerCount - 1));
+      setSelectedViewerIndex(Math.max(0, snapshot.viewerCount - 1))
     }
-  }, [selectedViewerIndex, snapshot.viewerCount]);
+  }, [selectedViewerIndex, snapshot.viewerCount])
 
   const handleAdd = useCallback(() => {
     if (scene.canAddViewer()) {
-      scene.addViewer();
+      scene.addViewer()
     }
-  }, [scene]);
+  }, [scene])
 
   const handleRemove = useCallback(() => {
     if (snapshot.viewerCount > 0) {
-      scene.removeViewer(snapshot.viewerCount - 1);
+      scene.removeViewer(snapshot.viewerCount - 1)
     }
-  }, [scene, snapshot.viewerCount]);
+  }, [scene, snapshot.viewerCount])
 
   const handleLayoutChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
-      const nextLayout = event.target.value;
-      setLayoutName(nextLayout);
-      scene.setLayout(nextLayout);
+      const nextLayout = event.target.value
+      setLayoutName(nextLayout)
+      scene.setLayout(nextLayout)
     },
     [scene],
-  );
+  )
 
   const handleBroadcastToggle = useCallback(() => {
-    scene.setBroadcasting(!snapshot.isBroadcasting);
-  }, [scene, snapshot.isBroadcasting]);
+    scene.setBroadcasting(!snapshot.isBroadcasting)
+  }, [scene, snapshot.isBroadcasting])
 
   const handleSliceLayoutToggle = useCallback(() => {
-    const nextEnabled = !sliceLayoutEnabled;
-    setSliceLayoutEnabled(nextEnabled);
-    const layout = defaultSliceLayouts[sliceLayoutName]?.layout ?? null;
-    scene.setViewerSliceLayout(
-      selectedViewerIndex,
-      nextEnabled ? layout : null,
-    );
-  }, [scene, selectedViewerIndex, sliceLayoutEnabled, sliceLayoutName]);
+    const nextEnabled = !sliceLayoutEnabled
+    setSliceLayoutEnabled(nextEnabled)
+    const layout = defaultSliceLayouts[sliceLayoutName]?.layout ?? null
+    scene.setViewerSliceLayout(selectedViewerIndex, nextEnabled ? layout : null)
+  }, [scene, selectedViewerIndex, sliceLayoutEnabled, sliceLayoutName])
 
   const handleViewerChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
-      const nextIndex = Number(event.target.value);
-      setSelectedViewerIndex(nextIndex);
+      const nextIndex = Number(event.target.value)
+      setSelectedViewerIndex(nextIndex)
       const layout = sliceLayoutEnabled
         ? (defaultSliceLayouts[sliceLayoutName]?.layout ?? null)
-        : null;
-      scene.setViewerSliceLayout(nextIndex, layout);
+        : null
+      scene.setViewerSliceLayout(nextIndex, layout)
     },
     [scene, sliceLayoutEnabled, sliceLayoutName],
-  );
+  )
 
   const handleSliceLayoutChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
-      const nextLayout = event.target.value;
-      setSliceLayoutName(nextLayout);
-      if (!sliceLayoutEnabled) return;
-      const layout = defaultSliceLayouts[nextLayout]?.layout ?? null;
-      scene.setViewerSliceLayout(selectedViewerIndex, layout);
+      const nextLayout = event.target.value
+      setSliceLayoutName(nextLayout)
+      if (!sliceLayoutEnabled) return
+      const layout = defaultSliceLayouts[nextLayout]?.layout ?? null
+      scene.setViewerSliceLayout(selectedViewerIndex, layout)
     },
     [scene, selectedViewerIndex, sliceLayoutEnabled],
-  );
+  )
 
   const handleDemoModeToggle = useCallback(() => {
-    setDemoMode((m) => (m === "scene" ? "viewer" : "scene"));
-  }, []);
+    setDemoMode((m) => (m === "scene" ? "viewer" : "scene"))
+  }, [])
 
   // --- Colormap / intensity / opacity handlers (NvScene mode) ---
 
   const handleColormapChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
-      const cm = event.target.value;
-      setColormap(cm);
-      scene.setColormap(selectedViewerIndex, 0, cm);
+      const cm = event.target.value
+      setColormap(cm)
+      scene.setColormap(selectedViewerIndex, 0, cm)
     },
     [scene, selectedViewerIndex],
-  );
+  )
 
   const handleCalMinChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      const val = Number(event.target.value);
-      setCalMin(val);
-      scene.setCalMinMax(selectedViewerIndex, 0, val, calMax);
+      const val = Number(event.target.value)
+      setCalMin(val)
+      scene.setCalMinMax(selectedViewerIndex, 0, val, calMax)
     },
     [scene, selectedViewerIndex, calMax],
-  );
+  )
 
   const handleCalMaxChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      const val = Number(event.target.value);
-      setCalMax(val);
-      scene.setCalMinMax(selectedViewerIndex, 0, calMin, val);
+      const val = Number(event.target.value)
+      setCalMax(val)
+      scene.setCalMinMax(selectedViewerIndex, 0, calMin, val)
     },
     [scene, selectedViewerIndex, calMin],
-  );
+  )
 
   const handleOpacityChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      const val = Number(event.target.value);
-      setOpacity(val);
-      scene.setOpacity(selectedViewerIndex, 0, val);
+      const val = Number(event.target.value)
+      setOpacity(val)
+      scene.setOpacity(selectedViewerIndex, 0, val)
     },
     [scene, selectedViewerIndex],
-  );
+  )
 
   // NvViewer mode: build declarative volumes with current visual props
   const viewerVolumes = useMemo<ImageFromUrlOptions[]>(
@@ -239,7 +236,7 @@ export function App() {
       },
     ],
     [colormap, calMin, calMax, opacity],
-  );
+  )
 
   return (
     <NvSceneProvider scene={scene}>
@@ -397,7 +394,7 @@ export function App() {
         )}
       </div>
     </NvSceneProvider>
-  );
+  )
 }
 
-export default App;
+export default App

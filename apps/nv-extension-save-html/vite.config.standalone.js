@@ -4,7 +4,7 @@
  *
  * Run: npx vite build --config vite.config.standalone.js
  */
-import { defineConfig } from "vite";
+import { defineConfig } from "vite"
 
 export default defineConfig({
   publicDir: false,
@@ -23,4 +23,4 @@ export default defineConfig({
     // Inline all assets (fonts, matcaps) as data URIs
     assetsInlineLimit: Number.MAX_SAFE_INTEGER,
   },
-});
+})

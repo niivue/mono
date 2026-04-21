@@ -116,6 +116,7 @@ export const LAYOUT_DEFAULTS: LayoutConfig = {
   isMosaicCentered: true,
   margin: 0,
   isRadiological: false,
+  customLayout: null,
 };
 
 export const UI_DEFAULTS: UIConfig = {

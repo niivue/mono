@@ -28,6 +28,7 @@ import type {
   AnnotationTool,
   BackendType,
   ColorMap,
+  CustomLayoutTile,
   ImageFromUrlOptions,
   LUT,
   MeshFromUrlOptions,
@@ -52,6 +53,7 @@ import { getFontMetrics } from "@/view/NVFont";
 import type { GraphLayout } from "@/view/NVGraph";
 import type { LegendLayout } from "@/view/NVLegend";
 import type { SliceTile } from "@/view/NVSliceLayout";
+import { validateCustomLayout } from "@/view/NVSliceLayout";
 import { computeModulationData } from "@/volume/modulation";
 import * as NVVolume from "@/volume/NVVolume";
 import * as NVTensorProcessing from "@/volume/TensorProcessing";
@@ -463,6 +465,40 @@ export default class NiiVueGPU extends EventTarget {
     this.model.layout.isRadiological = v;
     this.emit("change", { property: "isRadiological", value: v });
     this.drawScene();
+  }
+
+  /**
+   * Get or set a custom tile layout. When set to a non-empty array this
+   * overrides all built-in layout modes (multiplanar, mosaic, hero).
+   * Each tile specifies a slice type and a normalized [left, top, width, height]
+   * position within the canvas (0–1).
+   *
+   * Set to `null` to revert to built-in layouts.
+   *
+   * @example
+   * // Left half: sagittal, top-right: coronal, bottom-right: axial
+   * nv.customLayout = [
+   *   { sliceType: 2, position: [0, 0, 0.5, 1.0] },
+   *   { sliceType: 1, position: [0.5, 0, 0.5, 0.5] },
+   *   { sliceType: 0, position: [0.5, 0.5, 0.5, 0.5] },
+   * ];
+   */
+  get customLayout(): CustomLayoutTile[] | null {
+    return this.model.layout.customLayout;
+  }
+  set customLayout(v: CustomLayoutTile[] | null) {
+    if (v && v.length > 0) {
+      const result = validateCustomLayout(v);
+      if (!result.valid) throw new Error(result.error!);
+    }
+    this.model.layout.customLayout = v;
+    this.emit("change", { property: "customLayout", value: v });
+    this.drawScene();
+  }
+
+  /** Clear any custom layout and revert to built-in layout modes. */
+  clearCustomLayout(): void {
+    this.customLayout = null;
   }
 
   // --- UI Properties ---

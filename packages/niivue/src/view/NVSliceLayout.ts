@@ -2,7 +2,7 @@ import { type mat4, vec3, vec4 } from "gl-matrix";
 import * as NVTransforms from "@/math/NVTransforms";
 import * as NVConstants from "@/NVConstants";
 import type NVModel from "@/NVModel";
-import type { ViewHitTest } from "@/NVTypes";
+import type { CustomLayoutTile, ViewHitTest } from "@/NVTypes";
 import type { BuildLineFn, LineData } from "./NVLine";
 
 // ---------- Types ----------
@@ -40,6 +40,7 @@ export type SliceLayoutConfig = {
   isMultiplanarEqualSize?: boolean;
   isCrossLines?: boolean;
   isCenterMosaic?: boolean;
+  customLayout?: CustomLayoutTile[] | null;
 };
 
 // ---------- Helpers ----------
@@ -638,6 +639,94 @@ function layoutMultiplanar(config: SliceLayoutConfig): SliceTile[] {
   return tiles;
 }
 
+// ---------- Custom layout ----------
+
+/**
+ * Validate a custom layout for overlapping tiles and out-of-range positions.
+ * @returns Object with `valid` flag and optional `error` message.
+ */
+export function validateCustomLayout(layout: CustomLayoutTile[]): {
+  valid: boolean;
+  error?: string;
+} {
+  for (let i = 0; i < layout.length; i++) {
+    const [l, t, w, h] = layout[i].position;
+    if (w <= 0 || h <= 0) {
+      return {
+        valid: false,
+        error: `Custom layout tile ${i} has non-positive size (${w}×${h}).`,
+      };
+    }
+    if (l < 0 || t < 0 || l + w > 1.0001 || t + h > 1.0001) {
+      return {
+        valid: false,
+        error: `Custom layout tile ${i} exceeds normalized [0,1] bounds.`,
+      };
+    }
+    for (let j = i + 1; j < layout.length; j++) {
+      const [l2, t2, w2, h2] = layout[j].position;
+      if (l < l2 + w2 && l + w > l2 && t < t2 + h2 && t + h > t2) {
+        return {
+          valid: false,
+          error: `Custom layout tile ${i} overlaps with tile ${j}.`,
+        };
+      }
+    }
+  }
+  return { valid: true };
+}
+
+function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
+  const { canvasWH, extentsMin, extentsMax, customLayout } = config;
+  if (!customLayout || customLayout.length === 0) return [];
+
+  const isRad = config.isRadiologicalConvention ?? false;
+  const isEqual = config.isMultiplanarEqualSize ?? false;
+
+  const range = vec3.create();
+  vec3.sub(range, extentsMax, extentsMin);
+  const maxDim = Math.max(range[0], range[1], range[2]);
+
+  const screens = isEqual
+    ? buildEqualScreens(extentsMin, extentsMax, isRad, maxDim)
+    : buildScreens(extentsMin, extentsMax, isRad);
+
+  const tiles: SliceTile[] = [];
+  for (const spec of customLayout) {
+    const [left, top, width, height] = spec.position;
+    // Convert normalized position to pixel coordinates, clamped to canvas
+    const px = left * canvasWH[0];
+    const py = top * canvasWH[1];
+    const pw = Math.min(width * canvasWH[0], canvasWH[0] - px);
+    const ph = Math.min(height * canvasWH[1], canvasWH[1] - py);
+    if (pw <= 0 || ph <= 0) continue;
+
+    if (spec.sliceType === NVConstants.SLICE_TYPE.RENDER) {
+      tiles.push({
+        leftTopWidthHeight: [px, py, pw, ph],
+        axCorSag: NVConstants.SLICE_TYPE.RENDER,
+      });
+    } else {
+      const idx = spec.sliceType; // AXIAL=0, CORONAL=1, SAGITTAL=2
+      const screen = screens[idx];
+      if (!screen?.screen) continue;
+      const rot = rotations(idx, isRad);
+      const tile: SliceTile = {
+        leftTopWidthHeight: [px, py, pw, ph],
+        axCorSag: idx,
+        screen: cloneScreen(screen.screen),
+        azimuth: rot.azimuth,
+        elevation: rot.elevation,
+      };
+      if (spec.sliceMM !== undefined) {
+        tile.sliceMM = spec.sliceMM;
+      }
+      tiles.push(tile);
+    }
+  }
+  return tiles;
+}
+
 // ---------- Main entry point ----------
 
 export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
@@ -647,6 +736,11 @@ export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
   const isEqual = config.isMultiplanarEqualSize ?? false;
   const mosaic = config.sliceMosaicString ?? "";
   const heroFraction = config.heroImageFraction ?? 0;
+
+  // Custom layout overrides everything
+  if (config.customLayout && config.customLayout.length > 0) {
+    return buildCustomLayout(config);
+  }
 
   // Mosaic overrides everything
   if (mosaic.trim().length > 0) {

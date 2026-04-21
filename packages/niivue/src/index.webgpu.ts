@@ -18,6 +18,7 @@ export { default, default as NiiVueGPU } from "./NVControlWebGPU";
 export type {
   BackendType,
   ColorMap,
+  CustomLayoutTile,
   DragReleaseInfo,
   ImageFromUrlOptions,
   MeshFromUrlOptions,

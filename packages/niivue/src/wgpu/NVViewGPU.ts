@@ -691,6 +691,7 @@ export default class NVView {
       isMultiplanarEqualSize: md.layout.isEqualSize,
       isCrossLines: md.ui.isCrossLinesVisible,
       isCenterMosaic: md.layout.isMosaicCentered,
+      customLayout: md.layout.customLayout,
     });
     this.screenSlices = screenSlices;
     // Update crosshair geometry based on current model state

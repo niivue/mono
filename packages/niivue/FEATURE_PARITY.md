@@ -134,7 +134,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | `sliceType` (axial/coronal/sagittal/multiplanar/render) | ✅ | Property |
 | `multiplanarType` (auto/column/grid/row) | ✅ | Property |
-| `setCustomLayout` / `clearCustomLayout` / `getCustomLayout` | ❌ | No custom tile layout API |
+| `setCustomLayout` / `clearCustomLayout` / `getCustomLayout` | ✅ | `customLayout` property + `clearCustomLayout()` |
 | `heroFraction` / `heroSliceType` | ✅ | Properties |
 | Mosaic view | ✅ | `mosaicString` property |
 | `setBounds()` | ✅ | |

@@ -124,6 +124,9 @@ export default class NVModel {
       ...(options.isRadiological !== undefined && {
         isRadiological: options.isRadiological,
       }),
+      ...(options.customLayout !== undefined && {
+        customLayout: options.customLayout ?? null,
+      }),
     };
     // UI — flat options mapped to ui group
     this.ui = {

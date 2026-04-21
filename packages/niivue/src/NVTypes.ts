@@ -451,6 +451,13 @@ export type SceneConfig = {
 };
 
 /** Layout config: slice type, mosaic, multiplanar, hero, tiling */
+/** A single tile in a custom layout: slice orientation + normalized position. */
+export type CustomLayoutTile = {
+  sliceType: number; // SLICE_TYPE.AXIAL | CORONAL | SAGITTAL | RENDER
+  position: [number, number, number, number]; // [left, top, width, height] normalized 0–1
+  sliceMM?: number; // optional fixed mm position for the slice
+};
+
 export type LayoutConfig = {
   sliceType: number;
   mosaicString: string;
@@ -462,6 +469,7 @@ export type LayoutConfig = {
   isMosaicCentered: boolean;
   margin: number;
   isRadiological: boolean;
+  customLayout: CustomLayoutTile[] | null;
 };
 
 /** UI config: visual chrome (colorbars, orient, fonts, crosshair appearance, measurements) */
@@ -623,6 +631,7 @@ export type NiiVueOptions = {
   isMosaicCentered?: boolean;
   tileMargin?: number;
   isRadiological?: boolean;
+  customLayout?: CustomLayoutTile[] | null;
 
   // UI
   isColorbarVisible?: boolean;

@@ -49,6 +49,7 @@ export type {
 export type {
   BackendType,
   ColorMap,
+  CustomLayoutTile,
   DragReleaseInfo,
   ImageFromUrlOptions,
   MeshFromUrlOptions,

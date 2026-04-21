@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Custom Layout</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="layoutSelect">
+        <option value="leftSag">Sag left + Cor/Ax right</option>
+        <option value="topAxial">Axial top + Cor/Sag bottom</option>
+        <option value="threeColumn">Three columns</option>
+        <option value="quadrant">Four quadrants (A+C+S+R)</option>
+        <option value="wideRender">Wide render + thin slices</option>
+        <option value="builtin">Built-in multiplanar</option>
+      </select>
+      &nbsp;
+      <label for="radioCheck">Radiological</label>
+      <input type="checkbox" id="radioCheck"/>
+      &nbsp;
+      <label for="equalCheck">Equal Size</label>
+      <input type="checkbox" id="equalCheck"/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue — Custom Layout Demo</footer>
+    <script type="module" src="layout.custom.js"></script>
+  </body>
+</html>

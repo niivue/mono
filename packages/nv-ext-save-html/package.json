@@ -1,0 +1,31 @@
+{
+  "name": "@niivue/nv-ext-save-html",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Export a NiiVue scene as a self-contained HTML file",
+  "main": "./dist/nv-ext-save-html.js",
+  "module": "./dist/nv-ext-save-html.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/nv-ext-save-html.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "peerDependencies": {
+    "@niivue/niivue": "workspace:*"
+  },
+  "devDependencies": {
+    "@niivue/niivue": "workspace:*",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.2",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "scripts": {
+    "build": "npx vite build",
+    "typecheck": "bunx tsc --noEmit"
+  }
+}

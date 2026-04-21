@@ -662,7 +662,7 @@ describe('NvSceneController', () => {
     })
 
     test('setViewerSliceLayout with empty array resets like null', () => {
-      controller.setViewerSliceLayout(0, [] as any)
+      controller.setViewerSliceLayout(0, [])
       const nv = mockInstances[0]!
       expect(nv.customLayout).toBeNull()
       expect(nv.sliceType).toBe(SLICE_TYPE.AXIAL)

@@ -1,0 +1,17 @@
+{
+  "name": "demo-ext-drawing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx vite --open /drawing.html",
+    "build": "npx vite build"
+  },
+  "dependencies": {
+    "@niivue/niivue": "workspace:*",
+    "@niivue/nv-ext-drawing": "workspace:*",
+    "@niivue/dev-images": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.3.2"
+  }
+}

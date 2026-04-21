@@ -1,0 +1,18 @@
+{
+  "name": "demo-ext-save-html",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prebuild:standalone": "npx vite build --config vite.config.standalone.js",
+    "dev": "npm run prebuild:standalone && npx vite --open /index.html",
+    "build": "npm run prebuild:standalone && npx vite build"
+  },
+  "dependencies": {
+    "@niivue/niivue": "workspace:*",
+    "@niivue/nv-ext-save-html": "workspace:*",
+    "@niivue/dev-images": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.3.2"
+  }
+}

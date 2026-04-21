@@ -63,7 +63,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `loadDocument()` / `loadDocumentFromUrl()` | ✅ | `loadDocument(source)` |
 | `saveDocument()` | ✅ | |
 | `saveScene()` | ❌ | |
-| `saveHTML()` / `generateHTML()` | ✅ | `@niivue/nv-save-html` extension package |
+| `saveHTML()` / `generateHTML()` | ✅ | `@niivue/nv-ext-save-html` extension package |
 | `json()` — serialize state | ✅ | `serializeDocument()` returns CBOR-encoded `Uint8Array` |
 
 ## 6. Volume Management
@@ -191,8 +191,8 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `drawGrowCut()` — GPU grow-cut segmentation | ❌ | |
 | `drawOtsu()` — Otsu thresholding | ❌ | |
 | `drawingBinaryDilationWithSeed()` | ❌ | |
-| `findDrawingBoundarySlices()` | ✅ | `@niivue/nv-drawing` package |
-| `interpolateMaskSlices()` | ✅ | `@niivue/nv-drawing` package |
+| `findDrawingBoundarySlices()` | ✅ | `@niivue/nv-ext-drawing` package |
+| `interpolateMaskSlices()` | ✅ | `@niivue/nv-ext-drawing` package |
 | Click-to-segment (magic wand) | ❌ | |
 | Draw rim opacity | ✅ | `drawRimOpacity` |
 
@@ -309,7 +309,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `saveMesh()` | ✅ | |
 | `saveBitmap()` — screenshot | ✅ | |
 | `saveDocument()` | ✅ | |
-| `saveHTML()` / `generateHTML()` | ✅ | `@niivue/nv-save-html` extension |
+| `saveHTML()` / `generateHTML()` | ✅ | `@niivue/nv-ext-save-html` extension |
 | `saveScene()` | ❌ | |
 | Mesh writers: STL, MZ3, OBJ, IWM | ✅ | |
 
@@ -467,7 +467,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 10. **Clip plane methods**: `setClipPlane(s)` explicit API
 11. **Volume/mesh lookup by ID/URL**: `getVolumeIndexByID`, `getMeshIndexByID`, `removeVolumeByUrl`, `removeMeshByUrl`
 12. **Angle measurements**
-13. **~~HTML/scene export~~**: ~~`saveHTML`, `generateHTML`~~ (done — `@niivue/nv-save-html`), `saveScene`
+13. **~~HTML/scene export~~**: ~~`saveHTML`, `generateHTML`~~ (done — `@niivue/nv-ext-save-html`), `saveScene`
 14. **Zarr volume format**
 15. **DICOM loading** (plugin)
 16. **FreeSurfer connectome** loader

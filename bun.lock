@@ -10,34 +10,34 @@
         "nx": "latest",
       },
     },
-    "apps/nv-extension-drawing": {
-      "name": "nv-extension-drawing",
+    "apps/demo-ext-drawing": {
+      "name": "demo-ext-drawing",
       "dependencies": {
         "@niivue/dev-images": "workspace:*",
         "@niivue/niivue": "workspace:*",
-        "@niivue/nv-drawing": "workspace:*",
+        "@niivue/nv-ext-drawing": "workspace:*",
       },
       "devDependencies": {
         "vite": "^6.3.2",
       },
     },
-    "apps/nv-extension-image-processing": {
-      "name": "nv-extension-image-processing",
+    "apps/demo-ext-image-processing": {
+      "name": "demo-ext-image-processing",
       "dependencies": {
         "@niivue/dev-images": "workspace:*",
         "@niivue/niivue": "workspace:*",
-        "@niivue/nv-image-processing": "workspace:*",
+        "@niivue/nv-ext-image-processing": "workspace:*",
       },
       "devDependencies": {
         "vite": "^6.3.2",
       },
     },
-    "apps/nv-extension-save-html": {
-      "name": "nv-extension-save-html",
+    "apps/demo-ext-save-html": {
+      "name": "demo-ext-save-html",
       "dependencies": {
         "@niivue/dev-images": "workspace:*",
         "@niivue/niivue": "workspace:*",
-        "@niivue/nv-save-html": "workspace:*",
+        "@niivue/nv-ext-save-html": "workspace:*",
       },
       "devDependencies": {
         "vite": "^6.3.2",
@@ -75,8 +75,8 @@
         "vite-plugin-dts": "^4.5.4",
       },
     },
-    "packages/nv-drawing": {
-      "name": "@niivue/nv-drawing",
+    "packages/nv-ext-drawing": {
+      "name": "@niivue/nv-ext-drawing",
       "version": "0.1.0",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
@@ -88,13 +88,26 @@
         "@niivue/niivue": "workspace:*",
       },
     },
-    "packages/nv-image-processing": {
-      "name": "@niivue/nv-image-processing",
+    "packages/nv-ext-image-processing": {
+      "name": "@niivue/nv-ext-image-processing",
       "version": "0.1.0",
       "dependencies": {
         "gl-matrix": "^3.4.4",
         "nifti-reader-js": "^0.8.0",
       },
+      "devDependencies": {
+        "@niivue/niivue": "workspace:*",
+        "typescript": "~5.8.3",
+        "vite": "^6.3.2",
+        "vite-plugin-dts": "^4.5.4",
+      },
+      "peerDependencies": {
+        "@niivue/niivue": "workspace:*",
+      },
+    },
+    "packages/nv-ext-save-html": {
+      "name": "@niivue/nv-ext-save-html",
+      "version": "0.1.0",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "~5.8.3",
@@ -127,19 +140,6 @@
         "@niivue/niivue": "workspace:*",
         "react": "^19",
         "react-dom": "^19",
-      },
-    },
-    "packages/nv-save-html": {
-      "name": "@niivue/nv-save-html",
-      "version": "0.1.0",
-      "devDependencies": {
-        "@niivue/niivue": "workspace:*",
-        "typescript": "~5.8.3",
-        "vite": "^6.3.2",
-        "vite-plugin-dts": "^4.5.4",
-      },
-      "peerDependencies": {
-        "@niivue/niivue": "workspace:*",
       },
     },
   },
@@ -488,11 +488,11 @@
 
     "@niivue/niivue": ["@niivue/niivue@workspace:packages/niivue"],
 
-    "@niivue/nv-drawing": ["@niivue/nv-drawing@workspace:packages/nv-drawing"],
+    "@niivue/nv-ext-drawing": ["@niivue/nv-ext-drawing@workspace:packages/nv-ext-drawing"],
 
-    "@niivue/nv-image-processing": ["@niivue/nv-image-processing@workspace:packages/nv-image-processing"],
+    "@niivue/nv-ext-image-processing": ["@niivue/nv-ext-image-processing@workspace:packages/nv-ext-image-processing"],
 
-    "@niivue/nv-save-html": ["@niivue/nv-save-html@workspace:packages/nv-save-html"],
+    "@niivue/nv-ext-save-html": ["@niivue/nv-ext-save-html@workspace:packages/nv-ext-save-html"],
 
     "@niivue/nvreact": ["@niivue/nvreact@workspace:packages/nv-react"],
 
@@ -824,6 +824,12 @@
 
     "delayed-stream": ["delayed-stream@1.0.0", "", {}, "sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ=="],
 
+    "demo-ext-drawing": ["demo-ext-drawing@workspace:apps/demo-ext-drawing"],
+
+    "demo-ext-image-processing": ["demo-ext-image-processing@workspace:apps/demo-ext-image-processing"],
+
+    "demo-ext-save-html": ["demo-ext-save-html@workspace:apps/demo-ext-save-html"],
+
     "dequal": ["dequal@2.0.3", "", {}, "sha512-0je+qPKHEMohvfRTCEo3CrPG6cAzAYgmzKyxRiYSSDkS6eGJdyVJm7WaYA5ECaAD9wLB2T4EEeymA5aFVcYXCA=="],
 
     "detect-libc": ["detect-libc@2.1.2", "", {}, "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ=="],
@@ -1116,12 +1122,6 @@
 
     "npm-run-path": ["npm-run-path@4.0.1", "", { "dependencies": { "path-key": "^3.0.0" } }, "sha512-S48WzZW777zhNIrn7gxOlISNAqi9ZC/uQFnRdbeIHhZhCA6UqpkOT8T1G7BvfdgP4Er8gF4sUbaS0i7QvIfCWw=="],
 
-    "nv-extension-drawing": ["nv-extension-drawing@workspace:apps/nv-extension-drawing"],
-
-    "nv-extension-image-processing": ["nv-extension-image-processing@workspace:apps/nv-extension-image-processing"],
-
-    "nv-extension-save-html": ["nv-extension-save-html@workspace:apps/nv-extension-save-html"],
-
     "nx": ["nx@22.6.3", "", { "dependencies": { "@ltd/j-toml": "^1.38.0", "@napi-rs/wasm-runtime": "0.2.4", "@yarnpkg/lockfile": "^1.1.0", "@yarnpkg/parsers": "3.0.2", "@zkochan/js-yaml": "0.0.7", "axios": "^1.12.0", "cli-cursor": "3.1.0", "cli-spinners": "2.6.1", "cliui": "^8.0.1", "dotenv": "~16.4.5", "dotenv-expand": "~11.0.6", "ejs": "^3.1.7", "enquirer": "~2.3.6", "figures": "3.2.0", "flat": "^5.0.2", "front-matter": "^4.0.2", "ignore": "^7.0.5", "jest-diff": "^30.0.2", "jsonc-parser": "3.2.0", "lines-and-columns": "2.0.3", "minimatch": "10.2.4", "npm-run-path": "^4.0.1", "open": "^8.4.0", "ora": "5.3.0", "picocolors": "^1.1.0", "resolve.exports": "2.0.3", "semver": "^7.6.3", "string-width": "^4.2.3", "tar-stream": "~2.2.0", "tmp": "~0.2.1", "tree-kill": "^1.2.2", "tsconfig-paths": "^4.1.2", "tslib": "^2.3.0", "yaml": "^2.6.0", "yargs": "^17.6.2", "yargs-parser": "21.1.1" }, "optionalDependencies": { "@nx/nx-darwin-arm64": "22.6.3", "@nx/nx-darwin-x64": "22.6.3", "@nx/nx-freebsd-x64": "22.6.3", "@nx/nx-linux-arm-gnueabihf": "22.6.3", "@nx/nx-linux-arm64-gnu": "22.6.3", "@nx/nx-linux-arm64-musl": "22.6.3", "@nx/nx-linux-x64-gnu": "22.6.3", "@nx/nx-linux-x64-musl": "22.6.3", "@nx/nx-win32-arm64-msvc": "22.6.3", "@nx/nx-win32-x64-msvc": "22.6.3" }, "peerDependencies": { "@swc-node/register": "^1.11.1", "@swc/core": "^1.15.8" }, "optionalPeers": ["@swc-node/register", "@swc/core"], "bin": { "nx": "bin/nx.js", "nx-cloud": "bin/nx-cloud.js" } }, "sha512-8eIkEAlvkTvR2zY+yjhuTxMD6z4AtM1SumSBbwMmUMEXMtXE88fH0RL59T5V6MLjaov1exUM3lhUqPE3IyuBPg=="],
 
     "object-inspect": ["object-inspect@1.13.4", "", {}, "sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew=="],
@@ -1376,11 +1376,11 @@
 
     "@niivue/niivue/vite": ["vite@7.3.2", "", { "dependencies": { "esbuild": "^0.27.0", "fdir": "^6.5.0", "picomatch": "^4.0.3", "postcss": "^8.5.6", "rollup": "^4.43.0", "tinyglobby": "^0.2.15" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "jiti": ">=1.21.0", "less": "^4.0.0", "lightningcss": "^1.21.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "jiti", "less", "lightningcss", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-Bby3NOsna2jsjfLVOHKes8sGwgl4TT0E6vvpYgnAYDIF/tie7MRaFthmKuHx1NSXjiTueXH3do80FMQgvEktRg=="],
 
-    "@niivue/nv-drawing/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
+    "@niivue/nv-ext-drawing/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 
-    "@niivue/nv-image-processing/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
+    "@niivue/nv-ext-image-processing/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 
-    "@niivue/nv-save-html/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
+    "@niivue/nv-ext-save-html/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 
     "@niivue/nvreact/vite": ["vite@8.0.9", "", { "dependencies": { "lightningcss": "^1.32.0", "picomatch": "^4.0.4", "postcss": "^8.5.10", "rolldown": "1.0.0-rc.16", "tinyglobby": "^0.2.16" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.1.0", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-t7g7GVRpMXjNpa67HaVWI/8BWtdVIQPCL2WoozXXA7LBGEFK4AkkKkHx2hAQf5x1GZSlcmEDPkVLSGahxnEEZw=="],
 

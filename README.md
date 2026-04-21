@@ -8,18 +8,18 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 |---|---|
 | [`@niivue/niivue`](packages/niivue) | Core WebGPU/WebGL2 medical image viewer |
 | [`@niivue/nvreact`](packages/nv-react) | React bindings for NiiVue |
-| [`@niivue/nv-drawing`](packages/nv-drawing) | Drawing interpolation and segmentation tools |
-| [`@niivue/nv-image-processing`](packages/nv-image-processing) | Image processing (Otsu thresholding, haze removal, etc.) |
-| [`@niivue/nv-save-html`](packages/nv-save-html) | Export a NiiVue scene as a self-contained HTML file |
+| [`@niivue/nv-ext-drawing`](packages/nv-ext-drawing) | Drawing interpolation and segmentation tools |
+| [`@niivue/nv-ext-image-processing`](packages/nv-ext-image-processing) | Image processing (Otsu thresholding, haze removal, etc.) |
+| [`@niivue/nv-ext-save-html`](packages/nv-ext-save-html) | Export a NiiVue scene as a self-contained HTML file |
 | [`@niivue/dev-images`](packages/dev-images) | Shared test volumes, meshes, and tractography files (Git LFS) |
 
 ## Apps
 
 | App | Description |
 |---|---|
-| [`nv-extension-drawing`](apps/nv-extension-drawing) | Demo app for the drawing extension |
-| [`nv-extension-image-processing`](apps/nv-extension-image-processing) | Demo app for the image processing extension |
-| [`nv-extension-save-html`](apps/nv-extension-save-html) | Demo app for the save-to-HTML extension |
+| [`demo-ext-drawing`](apps/demo-ext-drawing) | Demo app for the drawing extension |
+| [`demo-ext-image-processing`](apps/demo-ext-image-processing) | Demo app for the image processing extension |
+| [`demo-ext-save-html`](apps/demo-ext-save-html) | Demo app for the save-to-HTML extension |
 
 ## Getting Started
 

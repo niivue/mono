@@ -7,15 +7,15 @@ A polyglot monorepo using [NX](https://nx.dev) to orchestrate TypeScript/Bun and
 ```
 niivue/mono/
 ├── apps/
-│   ├── nv-extension-drawing/        Drawing extension demo
-│   ├── nv-extension-image-processing/ Image processing extension demo
-│   └── nv-extension-save-html/      Save-to-HTML extension demo
+│   ├── demo-ext-drawing/        Drawing extension demo
+│   ├── demo-ext-image-processing/ Image processing extension demo
+│   └── demo-ext-save-html/      Save-to-HTML extension demo
 ├── packages/
 │   ├── niivue/          @niivue/niivue — Core WebGPU/WebGL2 viewer
 │   ├── nv-react/        @niivue/nvreact — React bindings
-│   ├── nv-drawing/      @niivue/nv-drawing — Drawing & segmentation tools
-│   ├── nv-image-processing/ @niivue/nv-image-processing — Image processing
-│   ├── nv-save-html/    @niivue/nv-save-html — Export scene as HTML
+│   ├── nv-ext-drawing/      @niivue/nv-ext-drawing — Drawing & segmentation tools
+│   ├── nv-ext-image-processing/ @niivue/nv-ext-image-processing — Image processing
+│   ├── nv-ext-save-html/    @niivue/nv-ext-save-html — Export scene as HTML
 │   └── dev-images/      @niivue/dev-images — Shared test images (Git LFS)
 ├── nx-tools/
 │   ├── nx-pixi-plugin.js       Local NX plugin for Python dependency inference
@@ -43,9 +43,9 @@ niivue/mono/
 NX tracks project dependencies to run tasks in the correct order:
 
 ```
-nv-extension-drawing ──→ nv-drawing ──→ niivue
-nv-extension-image-processing ──→ nv-image-processing ──→ niivue
-nv-extension-save-html ──→ nv-save-html ──→ niivue
+demo-ext-drawing ──→ nv-ext-drawing ──→ niivue
+demo-ext-image-processing ──→ nv-ext-image-processing ──→ niivue
+demo-ext-save-html ──→ nv-ext-save-html ──→ niivue
 nv-react ──→ niivue
 ```
 

@@ -8,14 +8,14 @@ Monorepo for the NiiVue ecosystem — browser-based medical image visualization.
 packages/       # Libraries (publishable)
   niivue/       # @niivue/niivue — Core WebGPU/WebGL2 medical image viewer
   nv-react/     # @niivue/nvreact — React bindings for NiiVue
-  nv-drawing/   # @niivue/nv-drawing — Drawing & segmentation tools
-  nv-image-processing/ # @niivue/nv-image-processing — Image processing
-  nv-save-html/ # @niivue/nv-save-html — Export scene as HTML
+  nv-ext-drawing/   # @niivue/nv-ext-drawing — Drawing & segmentation tools
+  nv-ext-image-processing/ # @niivue/nv-ext-image-processing — Image processing
+  nv-ext-save-html/ # @niivue/nv-ext-save-html — Export scene as HTML
   dev-images/   # @niivue/dev-images — Shared test images (Git LFS)
 apps/           # Applications (not published)
-  nv-extension-drawing/          Drawing extension demo
-  nv-extension-image-processing/ Image processing extension demo
-  nv-extension-save-html/        Save-to-HTML extension demo
+  demo-ext-drawing/          Drawing extension demo
+  demo-ext-image-processing/ Image processing extension demo
+  demo-ext-save-html/        Save-to-HTML extension demo
 nx-tools/       # Custom Nx plugins and scripts
 ```
 

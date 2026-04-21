@@ -112,6 +112,9 @@ export async function read(
     const entry = zip.entries[i];
     if (entry.fileName.toLowerCase().endsWith(".npy")) {
       const data = await entry.extract?.();
+      if (!data) {
+        throw new Error('Failed to extract .npy entry from NPZ archive');
+      }
       return readNPYBuffer(data.buffer as ArrayBuffer);
     }
   }

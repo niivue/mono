@@ -430,6 +430,9 @@ function heroLayout(config: SliceLayoutConfig): SliceTile[] {
   } else {
     const screen = screens[heroType];
     const fov = screen.screen?.fovMM;
+    if (!fov) {
+      throw new Error('Missing fovMM for hero slice');
+    }
     const zoom = Math.min(heroW / fov[0], canvasWH[1] / fov[1]);
     const w = fov[0] * zoom;
     const h = fov[1] * zoom;
@@ -672,6 +675,9 @@ export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
   if (sliceType !== NVConstants.SLICE_TYPE.MULTIPLANAR) {
     const idx = sliceType; // AXIAL=0, CORONAL=1, SAGITTAL=2
     const fov = screens[idx].screen?.fovMM;
+    if (!fov) {
+      throw new Error('Missing fovMM for slice');
+    }
     const zoom = Math.min(canvasWH[0] / fov[0], canvasWH[1] / fov[1]);
     const w = fov[0] * zoom;
     const h = fov[1] * zoom;

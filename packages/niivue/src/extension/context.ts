@@ -81,9 +81,9 @@ export class NVExtensionContext {
       },
       get dims(): DrawingDims {
         return {
-          dimX: vol.dimsRAS?.[1],
-          dimY: vol.dimsRAS?.[2],
-          dimZ: vol.dimsRAS?.[3],
+          dimX: vol.dimsRAS?.[1] ?? 0,
+          dimY: vol.dimsRAS?.[2] ?? 0,
+          dimZ: vol.dimsRAS?.[3] ?? 0,
         };
       },
       get voxelSizeMM(): [number, number, number] {

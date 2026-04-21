@@ -571,6 +571,9 @@ export function overlay2Texture(
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     const labelLut = nvimage.colormapLabel?.lut;
+    if (!labelLut) {
+      throw new Error('Label colormap LUT is undefined');
+    }
     const nLabels = labelLut.length / 4;
     gl.texImage2D(
       gl.TEXTURE_2D,

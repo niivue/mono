@@ -60,7 +60,7 @@ export function buildOrientUniforms(
     overlayOpacity,
     isLabel: isLabelVol ? 1.0 : 0.0,
     labelMin: isLabelVol ? (nvimage.colormapLabel?.min ?? 0) : 0,
-    labelWidth: isLabelVol ? nvimage.colormapLabel?.lut.length / 4 : 0,
+    labelWidth: isLabelVol ? (nvimage.colormapLabel?.lut?.length ?? 0) / 4 : 0,
   };
 }
 
@@ -84,6 +84,9 @@ export function prepareRGBAData(nvimage: NVImage): {
     nvimage.img2RASstep[2] === nvimage.dimsRAS[1] * nvimage.dimsRAS[2];
 
   const dt = nvimage.hdr.datatypeCode;
+  if (!nvimage.img) {
+    throw new Error('prepareRGBAData: nvimage.img is null');
+  }
   const raw = new Uint8Array(
     nvimage.img.buffer,
     nvimage.img.byteOffset,

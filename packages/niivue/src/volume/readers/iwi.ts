@@ -117,6 +117,9 @@ function iwi2nii(iwi: IWImage): {
     // https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Spatial_Coordinates
     const m = iwi.direction.slice();
     const mm = iwi.spacing?.slice();
+    if (!mm) {
+      throw new Error('IWI spacing is undefined');
+    }
     const o = iwi.origin;
     hdr.sform_code = 1;
     hdr.affine = [

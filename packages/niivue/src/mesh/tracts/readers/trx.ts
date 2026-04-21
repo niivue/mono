@@ -152,6 +152,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     }
 
     const data = await entry.extract?.();
+    if (!data) continue;
     const arr = parseArray(fname, data);
     if (!arr) continue;
 

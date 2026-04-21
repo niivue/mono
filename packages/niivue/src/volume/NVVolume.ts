@@ -241,10 +241,13 @@ export function nii2volume(
     volume.v1 = v1;
   }
   NVTransforms.calculateRAS(volume);
+  if (!volume.pixDimsRAS || !volume.dimsRAS) {
+    throw new Error('calculateRAS failed to set pixDimsRAS/dimsRAS');
+  }
   const dimsMM = [
-    volume.pixDimsRAS?.[1] * volume.dimsRAS?.[1],
-    volume.pixDimsRAS?.[2] * volume.dimsRAS?.[2],
-    volume.pixDimsRAS?.[3] * volume.dimsRAS?.[3],
+    volume.pixDimsRAS[1] * volume.dimsRAS[1],
+    volume.pixDimsRAS[2] * volume.dimsRAS[2],
+    volume.pixDimsRAS[3] * volume.dimsRAS[3],
   ];
   const longestAxis = Math.max(dimsMM[0], dimsMM[1], dimsMM[2]);
   const volScale = [

@@ -1915,7 +1915,7 @@ export default class NiiVueGPU extends EventTarget {
       return;
     }
     const nii = await NVVolume.loadVolume(vol.url);
-    vol.img = nii.img;
+    vol.img = nii.img instanceof ArrayBuffer ? null : nii.img;
     vol.nFrame4D = vol.nTotalFrame4D;
     await this.updateGLVolume();
   }
@@ -2585,9 +2585,13 @@ export default class NiiVueGPU extends EventTarget {
         permRAS: back.permRAS,
         dims: back.dimsRAS,
       });
-      const buf = nii.img.buffer as ArrayBuffer;
-      const offset = nii.img.byteOffset;
-      const length = nii.img.byteLength;
+      const img = nii.img;
+      if (img instanceof ArrayBuffer) {
+        throw new Error('loadDrawing: expected typed array, got ArrayBuffer');
+      }
+      const buf = img.buffer as ArrayBuffer;
+      const offset = img.byteOffset;
+      const length = img.byteLength;
       const imgData = new Uint8Array(buf, offset, length);
       const transformedBitmap = Drawing.transformBitmap({
         inputData: imgData,

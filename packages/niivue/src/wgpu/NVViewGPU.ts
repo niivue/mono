@@ -586,6 +586,9 @@ export default class NVView {
     const colorTarget = isSub
       ? this._boundsColorTexture?.createView()
       : canvasTexture.createView();
+    if (!colorTarget) {
+      return;
+    }
     const resolveTarget =
       this.isAntiAlias && this.msaaTexture ? colorTarget : undefined;
     if (this.isAntiAlias && this.msaaTexture && !this._msaaTextureView) {

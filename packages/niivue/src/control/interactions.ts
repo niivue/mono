@@ -31,6 +31,9 @@ function clientToCanvasPixel(
   clientY: number,
 ): [number, number] {
   const rect = ctrl.canvas?.getBoundingClientRect();
+  if (!rect) {
+    return [0, 0];
+  }
   let dpr = window.devicePixelRatio || 1;
   const forcedDpr = ctrl.opts.forceDevicePixelRatio ?? -1;
   if (forcedDpr > 0) {
@@ -58,8 +61,8 @@ function clientToBoundsPixel(
   ) {
     return [canvasX, canvasY];
   }
-  const cw = ctrl.canvas?.width;
-  const ch = ctrl.canvas?.height;
+  const cw = ctrl.canvas?.width ?? 0;
+  const ch = ctrl.canvas?.height ?? 0;
   const left = bounds[0][0] * cw;
   const top = (1 - bounds[1][1]) * ch;
   const width = (bounds[1][0] - bounds[0][0]) * cw;

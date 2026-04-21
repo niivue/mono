@@ -19,9 +19,8 @@
     "dist"
   ],
   "scripts": {
-    "dev": "bun --hot src/index.ts",
+    "dev": "vite",
     "build": "bun build ./src/index.html --outdir=dist --sourcemap --target=browser --minify --define:process.env.NODE_ENV='\"production\"' --env='BUN_PUBLIC_*'",
-    "start": "NODE_ENV=production bun src/index.ts",
     "build:lib": "NODE_ENV=production bun build ./src/lib.ts --outdir=dist --target=browser --format=esm --external react --external react-dom --external @niivue/niivue",
     "build:types": "tsc -p tsconfig.build.json",
     "build:package": "bun run build:lib && bun run build:types",
@@ -44,8 +43,10 @@
     "@types/bun": "latest",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.1",
     "react": "^19",
     "react-dom": "^19",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^8.0.9"
   }
 }

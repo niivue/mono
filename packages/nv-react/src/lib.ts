@@ -11,7 +11,6 @@ export type {
   ViewerSlot,
 } from "./nvscene-controller";
 export {
-  defaultMouseConfig,
   defaultSliceLayout,
   defaultSliceLayouts,
   defaultViewerOptions,
@@ -27,7 +26,7 @@ export type { NvViewerProps } from "./nvviewer";
 export { NvViewer } from "./nvviewer";
 export type {
   ImageFromUrlOptions,
-  NVConfigOptions,
+  NiiVueOptions,
   NVImage,
   NvSceneEventMap,
   ViewerState,

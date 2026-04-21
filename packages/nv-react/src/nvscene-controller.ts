@@ -1,11 +1,10 @@
+import NiiVueGPU from "@niivue/niivue";
 import {
   DRAG_MODE,
-  Niivue,
-  type NVConfigOptions,
-  type NVImage,
   SHOW_RENDER,
   SLICE_TYPE,
 } from "@niivue/niivue";
+import type { NiiVueOptions, NVImage } from "@niivue/niivue";
 import type { LayoutConfig } from "./layouts";
 import { defaultLayouts } from "./layouts";
 import type {
@@ -16,11 +15,11 @@ import type {
 
 export { SLICE_TYPE };
 
-export type NiivueCallback = (nv: Niivue, index: number) => void;
+export type NiivueCallback = (nv: NiiVueGPU, index: number) => void;
 
 export interface ViewerSlot {
   id: string;
-  niivue: Niivue;
+  niivue: NiiVueGPU;
   canvasElement: HTMLCanvasElement;
   containerDiv: HTMLDivElement;
 }
@@ -134,16 +133,10 @@ export const defaultSliceLayouts: Record<string, SliceLayoutConfig> = {
 
 type Listener = () => void;
 
-export const defaultViewerOptions: Partial<NVConfigOptions> = {
+export const defaultViewerOptions: Partial<NiiVueOptions> = {
   crosshairGap: 5,
-};
-
-export const defaultMouseConfig = {
-  leftButton: {
-    primary: DRAG_MODE.crosshair,
-  },
-  rightButton: DRAG_MODE.pan,
-  centerButton: DRAG_MODE.slicer3D,
+  primaryDragMode: DRAG_MODE.crosshair,
+  secondaryDragMode: DRAG_MODE.pan,
 };
 
 /**
@@ -174,7 +167,7 @@ export class NvSceneController {
   private broadcasting = false;
   private broadcastOptions: BroadcastOptions = { "2d": true, "3d": true };
   private viewerSliceLayouts = new Map<string, SliceLayoutTile[] | null>();
-  private viewerDefaults: Partial<NVConfigOptions>;
+  private viewerDefaults: Partial<NiiVueOptions>;
 
   // Event system
   // biome-ignore lint/complexity/noBannedTypes: generic event callback storage
@@ -186,7 +179,7 @@ export class NvSceneController {
 
   constructor(
     layouts: Record<string, LayoutConfig> = defaultLayouts,
-    viewerDefaults: Partial<NVConfigOptions> = {},
+    viewerDefaults: Partial<NiiVueOptions> = {},
   ) {
     this.layouts = layouts;
     this.slots = this.layouts[this.currentLayout]?.slots ?? 1;
@@ -310,11 +303,11 @@ export class NvSceneController {
     return this.viewers.length < this.slots;
   }
 
-  getNiivue(index: number): Niivue | undefined {
+  getNiivue(index: number): NiiVueGPU | undefined {
     return this.viewers[index]?.niivue;
   }
 
-  getAllNiivue(): Niivue[] {
+  getAllNiivue(): NiiVueGPU[] {
     return this.viewers.map((viewer) => viewer.niivue);
   }
 
@@ -324,11 +317,11 @@ export class NvSceneController {
     });
   }
 
-  private hasSyncableContent(nv: Niivue): boolean {
+  private hasSyncableContent(nv: NiiVueGPU): boolean {
     return nv.volumes.length > 0 || nv.meshes.length > 0;
   }
 
-  private safeBroadcastTo(index: number, targets: Niivue[]): void {
+  private safeBroadcastTo(index: number, targets: NiiVueGPU[]): void {
     const viewer = this.viewers[index];
     if (!viewer) return;
     try {
@@ -391,17 +384,17 @@ export class NvSceneController {
     return this.viewerSliceLayouts.get(viewer.id) ?? null;
   }
 
-  private applySliceLayout(nv: Niivue, layout: SliceLayoutTile[] | null): void {
+  private applySliceLayout(nv: NiiVueGPU, layout: SliceLayoutTile[] | null): void {
     if (layout) {
-      nv.setCustomLayout(layout);
+      // TODO: custom tile layouts not yet supported in new niivue
+      nv.sliceType = SLICE_TYPE.MULTIPLANAR;
     } else {
-      nv.clearCustomLayout();
-      nv.setSliceType(SLICE_TYPE.AXIAL);
-      nv.opts.multiplanarShowRender = SHOW_RENDER.NEVER;
+      nv.sliceType = SLICE_TYPE.AXIAL;
+      nv.showRender = SHOW_RENDER.NEVER;
     }
   }
 
-  getNiivueById(id: string): Niivue | undefined {
+  getNiivueById(id: string): NiiVueGPU | undefined {
     return this.viewersById.get(id)?.niivue;
   }
 
@@ -417,7 +410,10 @@ export class NvSceneController {
 
     this.incrementLoading(viewer.id);
     try {
-      const image = await viewer.niivue.addVolumeFromUrl(opts);
+      await viewer.niivue.addVolume(opts);
+      const vols = viewer.niivue.volumes;
+      const image = vols[vols.length - 1];
+      if (!image) throw new Error("Volume was not added");
       this.emit("volumeAdded", index, opts, image);
       if (this.broadcasting) {
         this.rewireBroadcasting();
@@ -443,15 +439,16 @@ export class NvSceneController {
     return results;
   }
 
-  removeVolume(index: number, url: string): void {
+  async removeVolume(index: number, url: string): Promise<void> {
     const viewer = this.viewers[index];
     if (!viewer) return;
     const nv = viewer.niivue;
-    const vol = nv.volumes.find(
+    const volIdx = nv.volumes.findIndex(
       (v: NVImage) => v.url === url || v.name === url,
     );
-    if (vol) {
-      nv.removeVolume(vol);
+    if (volIdx >= 0) {
+      nv.model.removeVolume(volIdx);
+      await nv.updateGLVolume();
       this.emit("volumeRemoved", index, url);
       if (this.broadcasting) {
         this.rewireBroadcasting();
@@ -469,7 +466,7 @@ export class NvSceneController {
   private findVolume(
     viewerIndex: number,
     volumeIndex: number,
-  ): { nv: Niivue; vol: NVImage; volumeIndex: number } | undefined {
+  ): { nv: NiiVueGPU; vol: NVImage; volumeIndex: number } | undefined {
     const viewer = this.viewers[viewerIndex];
     if (!viewer) return undefined;
     const nv = viewer.niivue;
@@ -479,40 +476,37 @@ export class NvSceneController {
   }
 
   /** Set the colormap for a volume at the given viewer and volume index. */
-  setColormap(
+  async setColormap(
     viewerIndex: number,
     volumeIndex: number,
     colormap: string,
-  ): void {
+  ): Promise<void> {
     const found = this.findVolume(viewerIndex, volumeIndex);
     if (!found) return;
-    found.vol.colormap = colormap;
-    found.nv.updateGLVolume();
+    await found.nv.setVolume(found.volumeIndex, { colormap });
     this.emit("colormapChanged", viewerIndex, volumeIndex, colormap);
     this.notify();
   }
 
-  /** Set the intensity range (cal_min / cal_max) for a volume at the given viewer and volume index. */
-  setCalMinMax(
+  /** Set the intensity range (calMin / calMax) for a volume at the given viewer and volume index. */
+  async setCalMinMax(
     viewerIndex: number,
     volumeIndex: number,
-    cal_min: number,
-    cal_max: number,
-  ): void {
+    calMin: number,
+    calMax: number,
+  ): Promise<void> {
     const found = this.findVolume(viewerIndex, volumeIndex);
     if (!found) return;
-    found.vol.cal_min = cal_min;
-    found.vol.cal_max = cal_max;
-    found.nv.updateGLVolume();
-    this.emit("intensityChanged", viewerIndex, volumeIndex, cal_min, cal_max);
+    await found.nv.setVolume(found.volumeIndex, { calMin, calMax });
+    this.emit("intensityChanged", viewerIndex, volumeIndex, calMin, calMax);
     this.notify();
   }
 
   /** Set the opacity for a volume at the given viewer and volume index. */
-  setOpacity(viewerIndex: number, volumeIndex: number, opacity: number): void {
+  async setOpacity(viewerIndex: number, volumeIndex: number, opacity: number): Promise<void> {
     const found = this.findVolume(viewerIndex, volumeIndex);
     if (!found) return;
-    found.nv.setOpacity(volumeIndex, opacity);
+    await found.nv.setVolume(found.volumeIndex, { opacity });
     this.emit("opacityChanged", viewerIndex, volumeIndex, opacity);
     this.notify();
   }
@@ -536,7 +530,7 @@ export class NvSceneController {
 
   // --- Viewer lifecycle ---
 
-  addViewer(options?: Partial<NVConfigOptions>): ViewerSlot {
+  async addViewer(options?: Partial<NiiVueOptions>): Promise<ViewerSlot> {
     if (!this.containerElement) {
       throw new Error("Container element not set");
     }
@@ -554,15 +548,14 @@ export class NvSceneController {
 
     this.containerElement.appendChild(containerDiv);
 
-    const mergedOptions: Partial<NVConfigOptions> = {
+    const mergedOptions: Partial<NiiVueOptions> = {
       ...defaultViewerOptions,
       ...this.viewerDefaults,
       ...options,
     };
 
-    const niivue = new Niivue(mergedOptions);
-    niivue.setMouseEventConfig(defaultMouseConfig);
-    niivue.attachToCanvas(canvas);
+    const niivue = new NiiVueGPU(mergedOptions);
+    await niivue.attachToCanvas(canvas);
 
     const id = `nv-${this.nextId++}`;
     this.viewerSliceLayouts.set(id, null);
@@ -583,22 +576,22 @@ export class NvSceneController {
     // Apply the current slice layout (default axial).
     this.applySliceLayout(niivue, null);
 
-    // Wire Niivue callbacks to event system
+    // Wire NiiVueGPU event listeners
     const index = this.viewers.length - 1;
-    niivue.onLocationChange = (data: unknown) => {
-      this.emit("locationChange", index, data);
-    };
-    niivue.onImageLoaded = (vol: NVImage) => {
-      this.emit("imageLoaded", index, vol);
+    niivue.addEventListener("locationChange", (evt) => {
+      this.emit("locationChange", index, evt.detail);
+    });
+    niivue.addEventListener("volumeLoaded", (evt) => {
+      this.emit("imageLoaded", index, evt.detail.volume);
       if (this.broadcasting) {
         this.rewireBroadcasting();
       }
-    };
-    niivue.onMeshLoaded = (_mesh: unknown) => {
+    });
+    niivue.addEventListener("meshLoaded", () => {
       if (this.broadcasting) {
         this.rewireBroadcasting();
       }
-    };
+    });
 
     // Update broadcasting to include new viewer
     if (this.broadcasting) {
@@ -646,15 +639,7 @@ export class NvSceneController {
   }
 
   private disposeViewer(viewer: ViewerSlot): void {
-    const nv = viewer.niivue;
-    let gl: WebGL2RenderingContext | null = nv._gl;
-    if (gl) {
-      const ext = gl.getExtension("WEBGL_lose_context");
-      if (ext) {
-        ext.loseContext();
-      }
-      gl = null;
-    }
+    viewer.niivue.destroy();
     viewer.canvasElement.width = 0;
     viewer.canvasElement.height = 0;
   }

@@ -28,59 +28,57 @@ export const SHOW_RENDER = {
   AUTO: 2,
 } as const;
 
-export interface MockNiivue {
+export interface MockNiiVueGPU {
   attachToCanvas: ReturnType<typeof mock>;
-  addVolumeFromUrl: ReturnType<typeof mock>;
+  addVolume: ReturnType<typeof mock>;
   broadcastTo: ReturnType<typeof mock>;
-  setSliceType: ReturnType<typeof mock>;
-  setCustomLayout: ReturnType<typeof mock>;
-  clearCustomLayout: ReturnType<typeof mock>;
-  setMouseEventConfig: ReturnType<typeof mock>;
-  resizeListener: ReturnType<typeof mock>;
-  removeVolume: ReturnType<typeof mock>;
+  setVolume: ReturnType<typeof mock>;
+  resize: ReturnType<typeof mock>;
   updateGLVolume: ReturnType<typeof mock>;
-  setOpacity: ReturnType<typeof mock>;
-  onLocationChange: ((data: unknown) => void) | null;
-  onImageLoaded: ((vol: unknown) => void) | null;
-  onMeshLoaded: ((mesh: unknown) => void) | null;
+  destroy: ReturnType<typeof mock>;
+  addEventListener: ReturnType<typeof mock>;
+  removeEventListener: ReturnType<typeof mock>;
   volumes: unknown[];
   meshes: unknown[];
-  opts: Record<string, unknown>;
-  _gl: { getExtension: ReturnType<typeof mock> } | null;
+  model: {
+    removeVolume: ReturnType<typeof mock>;
+  };
+  sliceType: number;
+  showRender: number;
+  primaryDragMode: number;
+  secondaryDragMode: number;
   canvas: HTMLCanvasElement | null;
 }
 
-/** Create a fresh MockNiivue instance with all methods stubbed */
-export function createMockNiivue(): MockNiivue {
+/** Create a fresh MockNiiVueGPU instance with all methods stubbed */
+export function createMockNiiVueGPU(): MockNiiVueGPU {
   return {
     attachToCanvas: mock(() => Promise.resolve()),
-    addVolumeFromUrl: mock((opts: { url: string }) =>
+    addVolume: mock((opts: { url: string }) =>
       Promise.resolve({ url: opts.url, name: opts.url }),
     ),
     broadcastTo: mock(() => {}),
-    setSliceType: mock(() => ({})),
-    setCustomLayout: mock(() => {}),
-    clearCustomLayout: mock(() => {}),
-    setMouseEventConfig: mock(() => {}),
-    resizeListener: mock(() => {}),
-    removeVolume: mock(() => {}),
-    updateGLVolume: mock(() => {}),
-    setOpacity: mock(() => {}),
-    onLocationChange: null,
-    onImageLoaded: null,
-    onMeshLoaded: null,
+    setVolume: mock(() => Promise.resolve()),
+    resize: mock(() => {}),
+    updateGLVolume: mock(() => Promise.resolve()),
+    destroy: mock(() => {}),
+    addEventListener: mock(() => {}),
+    removeEventListener: mock(() => {}),
     volumes: [],
     meshes: [],
-    opts: { multiplanarShowRender: SHOW_RENDER.AUTO },
-    _gl: {
-      getExtension: mock(() => ({ loseContext: mock(() => {}) })),
+    model: {
+      removeVolume: mock(() => {}),
     },
+    sliceType: SLICE_TYPE.AXIAL,
+    showRender: SHOW_RENDER.AUTO,
+    primaryDragMode: DRAG_MODE.crosshair,
+    secondaryDragMode: DRAG_MODE.pan,
     canvas: null,
   };
 }
 
 /** Track all created instances so tests can inspect them */
-export const mockInstances: MockNiivue[] = [];
+export const mockInstances: MockNiiVueGPU[] = [];
 
 /** Clear tracked instances between tests */
 export function clearMockInstances(): void {
@@ -88,19 +86,22 @@ export function clearMockInstances(): void {
 }
 
 /**
- * The mock Niivue constructor.
+ * The mock NiiVueGPU constructor (default export).
  * Captures constructor options and returns a mock instance.
  * We push `this` (the actual instance) so tests can mutate it directly.
  */
-export class Niivue {
+export class NiiVueGPU {
   [key: string]: unknown;
 
   constructor(_opts?: unknown) {
-    const instance = createMockNiivue();
+    const instance = createMockNiiVueGPU();
     Object.assign(this, instance);
-    mockInstances.push(this as unknown as MockNiivue);
+    mockInstances.push(this as unknown as MockNiiVueGPU);
   }
 }
+
+// Default export to match `import NiiVueGPU from "@niivue/niivue"`
+export default NiiVueGPU;
 
 // NVImage is just a type, export a placeholder for value-level usage
 export class NVImage {}
@@ -111,7 +112,8 @@ export class NVImage {}
  */
 export function registerNiivueMock(): void {
   mock.module("@niivue/niivue", () => ({
-    Niivue,
+    default: NiiVueGPU,
+    NiiVueGPU,
     NVImage,
     SLICE_TYPE,
     DRAG_MODE,

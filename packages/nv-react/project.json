@@ -3,6 +3,10 @@
   "projectType": "library",
   "tags": ["type:lib", "lang:typescript"],
   "targets": {
+    "dev": {
+      "command": "vite",
+      "options": { "cwd": "{projectRoot}" }
+    },
     "build": {
       "command": "bun run build:package",
       "options": { "cwd": "{projectRoot}" },

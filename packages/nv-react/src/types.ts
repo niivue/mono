@@ -1,12 +1,10 @@
-import type { Niivue, NVConfigOptions, NVImage } from "@niivue/niivue";
+import type NiiVueGPU from "@niivue/niivue";
+import type { ImageFromUrlOptions, NiiVueOptions, NVImage } from "@niivue/niivue";
 
-export type { NVConfigOptions, NVImage };
-
-/** Extract the ImageFromUrlOptions type from Niivue's addVolumeFromUrl method */
-export type ImageFromUrlOptions = Parameters<Niivue["addVolumeFromUrl"]>[0];
+export type { ImageFromUrlOptions, NiiVueOptions, NVImage };
 
 export interface NvSceneEventMap {
-  viewerCreated: (nv: Niivue, index: number) => void;
+  viewerCreated: (nv: NiiVueGPU, index: number) => void;
   viewerRemoved: (index: number) => void;
   locationChange: (viewerIndex: number, data: unknown) => void;
   imageLoaded: (viewerIndex: number, volume: NVImage) => void;

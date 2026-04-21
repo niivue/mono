@@ -1,35 +1,32 @@
-import {
-  Niivue,
-  type NVConfigOptions,
-  type NVImage,
-  SLICE_TYPE,
-} from "@niivue/niivue";
+import NiiVueGPU from "@niivue/niivue";
+import { SLICE_TYPE } from "@niivue/niivue";
+import type { NiiVueOptions, NVImage } from "@niivue/niivue";
 import type { CSSProperties } from "react";
 import { useEffect, useRef } from "react";
-import { defaultMouseConfig, defaultViewerOptions } from "./nvscene-controller";
+import { defaultViewerOptions } from "./nvscene-controller";
 import type { ImageFromUrlOptions } from "./types";
 
 /** Tracked visual properties for a loaded volume */
 interface VolumeVisualProps {
   colormap?: string;
-  cal_min?: number;
-  cal_max?: number;
+  calMin?: number;
+  calMax?: number;
   opacity?: number;
 }
 
 /** Extract the diffable visual properties from volume options */
 function extractVisualProps(opts: ImageFromUrlOptions): VolumeVisualProps {
   return {
-    colormap: opts.colormap ?? opts.colorMap,
-    cal_min: opts.cal_min,
-    cal_max: opts.cal_max,
+    colormap: opts.colormap,
+    calMin: opts.calMin,
+    calMax: opts.calMax,
     opacity: opts.opacity,
   };
 }
 
 export interface NvViewerProps {
   volumes?: ImageFromUrlOptions[];
-  options?: Partial<NVConfigOptions>;
+  options?: Partial<NiiVueOptions>;
   sliceType?: number;
   className?: string;
   style?: CSSProperties;
@@ -49,7 +46,7 @@ export const NvViewer = ({
   onError,
 }: NvViewerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const nvRef = useRef<Niivue | null>(null);
+  const nvRef = useRef<NiiVueGPU | null>(null);
   const loadedVolumesRef = useRef<Map<string, VolumeVisualProps>>(new Map());
 
   // Store latest callbacks in refs
@@ -60,7 +57,7 @@ export const NvViewer = ({
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  // Initialize Niivue instance
+  // Initialize NiiVueGPU instance
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -74,38 +71,34 @@ export const NvViewer = ({
     canvas.style.height = "100%";
     container.appendChild(canvas);
 
-    const mergedOptions: Partial<NVConfigOptions> = {
+    const mergedOptions: Partial<NiiVueOptions> = {
       ...defaultViewerOptions,
       ...options,
     };
 
-    const nv = new Niivue(mergedOptions);
-    nv.setMouseEventConfig(defaultMouseConfig);
+    const nv = new NiiVueGPU(mergedOptions);
 
-    nv.onLocationChange = (data: unknown) => {
-      onLocationChangeRef.current?.(data);
-    };
-    nv.onImageLoaded = (vol: NVImage) => {
-      onImageLoadedRef.current?.(vol);
-    };
+    nv.addEventListener("locationChange", (evt) => {
+      onLocationChangeRef.current?.(evt.detail);
+    });
+    nv.addEventListener("volumeLoaded", (evt) => {
+      onImageLoadedRef.current?.(evt.detail.volume);
+    });
 
-    nv.attachToCanvas(canvas);
-    nv.setSliceType(sliceType);
+    // attachToCanvas is async in the new API
+    nv.attachToCanvas(canvas).then(() => {
+      nv.sliceType = sliceType;
+    });
     nvRef.current = nv;
 
     const ro = new ResizeObserver(() => {
-      nv.resizeListener();
+      nv.resize();
     });
     ro.observe(container);
 
     return () => {
       ro.disconnect();
-      // Dispose WebGL context
-      const gl = nv._gl;
-      if (gl) {
-        const ext = gl.getExtension("WEBGL_lose_context");
-        if (ext) ext.loseContext();
-      }
+      nv.destroy();
       canvas.width = 0;
       canvas.height = 0;
       canvas.remove();
@@ -116,7 +109,10 @@ export const NvViewer = ({
 
   // Handle sliceType changes
   useEffect(() => {
-    nvRef.current?.setSliceType(sliceType);
+    const nv = nvRef.current;
+    if (nv) {
+      nv.sliceType = sliceType;
+    }
   }, [sliceType]);
 
   // Handle volume diffing (add/remove/update visual props)
@@ -124,64 +120,67 @@ export const NvViewer = ({
     const nv = nvRef.current;
     if (!nv) return;
 
-    const desiredUrls = new Set((volumes ?? []).map((v) => v.url));
+    const desiredUrls = new Set(
+      (volumes ?? []).map((v) =>
+        typeof v.url === "string" ? v.url : v.url.name,
+      ),
+    );
     const currentVolumes = loadedVolumesRef.current;
 
     // Remove volumes no longer in the list
     for (const url of currentVolumes.keys()) {
       if (!desiredUrls.has(url)) {
-        const vol = nv.volumes.find(
+        const volIdx = nv.volumes.findIndex(
           (v: NVImage) => v.url === url || v.name === url,
         );
-        if (vol) nv.removeVolume(vol);
+        if (volIdx >= 0) {
+          nv.model.removeVolume(volIdx);
+          nv.updateGLVolume();
+        }
         currentVolumes.delete(url);
       }
     }
 
-    let needsGLUpdate = false;
-
     for (const opts of volumes ?? []) {
-      if (!currentVolumes.has(opts.url)) {
+      const urlKey = typeof opts.url === "string" ? opts.url : opts.url.name;
+      if (!currentVolumes.has(urlKey)) {
         // Add new volumes
         const props = extractVisualProps(opts);
-        currentVolumes.set(opts.url, props);
-        nv.addVolumeFromUrl(opts).catch((err: unknown) => {
-          currentVolumes.delete(opts.url);
+        currentVolumes.set(urlKey, props);
+        nv.addVolume(opts).catch((err: unknown) => {
+          currentVolumes.delete(urlKey);
           onErrorRef.current?.(err);
         });
       } else {
         // Update visual props on already-loaded volumes
-        const prev = currentVolumes.get(opts.url)!;
+        const prev = currentVolumes.get(urlKey)!;
         const next = extractVisualProps(opts);
 
-        const vol = nv.volumes.find(
-          (v: NVImage) => v.url === opts.url || v.name === opts.url,
+        const volIdx = nv.volumes.findIndex(
+          (v: NVImage) => v.url === urlKey || v.name === urlKey,
         );
-        if (!vol) continue;
+        if (volIdx < 0) continue;
 
+        const updates: Record<string, unknown> = {};
         if (next.colormap !== undefined && next.colormap !== prev.colormap) {
-          vol.colormap = next.colormap;
-          needsGLUpdate = true;
+          updates.colormap = next.colormap;
         }
-        if (next.cal_min !== undefined && next.cal_min !== prev.cal_min) {
-          vol.cal_min = next.cal_min;
-          needsGLUpdate = true;
+        if (next.calMin !== undefined && next.calMin !== prev.calMin) {
+          updates.calMin = next.calMin;
         }
-        if (next.cal_max !== undefined && next.cal_max !== prev.cal_max) {
-          vol.cal_max = next.cal_max;
-          needsGLUpdate = true;
+        if (next.calMax !== undefined && next.calMax !== prev.calMax) {
+          updates.calMax = next.calMax;
         }
         if (next.opacity !== undefined && next.opacity !== prev.opacity) {
-          const volIdx = nv.volumes.indexOf(vol);
-          nv.setOpacity(volIdx, next.opacity);
+          updates.opacity = next.opacity;
         }
 
-        currentVolumes.set(opts.url, next);
-      }
-    }
+        if (Object.keys(updates).length > 0) {
+          nv.setVolume(volIdx, updates);
+        }
 
-    if (needsGLUpdate) {
-      nv.updateGLVolume();
+        currentVolumes.set(urlKey, next);
+      }
     }
   }, [volumes]);
 

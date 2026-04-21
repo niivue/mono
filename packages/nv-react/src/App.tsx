@@ -233,8 +233,8 @@ export function App() {
       {
         ...MNI_VOLUME,
         colormap,
-        cal_min: calMin,
-        cal_max: calMax,
+        calMin: calMin,
+        calMax: calMax,
         opacity,
       },
     ],

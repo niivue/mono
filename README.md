@@ -32,6 +32,28 @@ bunx nx run-many -t test   # Run all tests
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup, tooling, and development instructions.
 
+## Releasing and Publishing
+
+Packages are versioned and published using [Nx Release](https://nx.dev/features/manage-releases) and `bun publish`. Ensure you are logged in to npm (`npm login`) and have publish access to the `@niivue` scope.
+
+```bash
+# 1. Version — bumps package.json and updates workspace deps
+#    Use --first-release if no git tags exist yet for the project
+bunx nx release version <version> --projects=<project>
+
+# 2. Changelog (optional) — generate from conventional commits
+bunx nx release changelog <version> --projects=<project>
+
+# 3. Build
+bunx nx run-many -t build --projects=<project1>,<project2>
+
+# 4. Publish — run from each package directory
+#    bun publish resolves workspace:* dependencies automatically
+cd packages/<project> && bun publish --tag next --access public
+```
+
+Use `--tag next` for prerelease versions (e.g. `1.0.0-rc.1`). Omit `--tag` for stable releases (defaults to `latest`). The `--access public` flag is required for scoped `@niivue/*` packages.
+
 ## GitHub Pages
 
 Pushing to `main` automatically builds and deploys all examples and demo apps to GitHub Pages. To preview the site locally:

@@ -4,7 +4,7 @@
   "tags": ["type:lib", "lang:typescript"],
   "targets": {
     "build": {
-      "command": "npx vite build",
+      "command": "bunx --bun vite build",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["^build"],
       "inputs": [

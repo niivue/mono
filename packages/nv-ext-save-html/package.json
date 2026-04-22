@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-save-html",
-  "version": "0.1.1",
+  "version": "1.0.0-rc.1",
   "type": "module",
   "description": "Export a NiiVue scene as a self-contained HTML file",
   "main": "./dist/nv-ext-save-html.js",

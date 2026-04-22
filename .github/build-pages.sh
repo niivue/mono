@@ -38,36 +38,39 @@ rm -rf packages/niivue/dist
   && VITE_BASE="$BASE_PATH" bunx --bun vite build --config vite.config.examples.ts --mode production)
 
 # 4. Assemble site
-# Strip leading/trailing slashes to get the subdir name (e.g. "mono")
-SUB_DIR="${BASE_PATH#/}"
-SUB_DIR="${SUB_DIR%/}"
+# GitHub Pages (actions/deploy-pages) maps the artifact root to BASE_PATH,
+# so files go directly into _site/ — no subdirectory nesting needed.
 
 echo "==> Assembling _site/"
 rm -rf _site
-
-if [[ -n "$SUB_DIR" ]]; then
-  DEST="_site/$SUB_DIR"
-else
-  DEST="_site"
-fi
-mkdir -p "$DEST"
+mkdir -p _site
 
 # Examples build forms the site root (includes shared dev-images)
-cp -r packages/niivue/dist/* "$DEST/"
+cp -r packages/niivue/dist/* _site/
 
 # Landing page
-cp .github/pages/index.html "$DEST/index.html"
+cp .github/pages/index.html _site/index.html
 
 # Each demo app in its own subfolder
 for app in "${APPS[@]}"; do
-  mkdir -p "$DEST/$app"
-  cp -r "apps/$app/dist/"* "$DEST/$app/"
+  mkdir -p "_site/$app"
+  cp -r "apps/$app/dist/"* "_site/$app/"
 done
 
 echo "==> Done. Site is in _site/ ($(du -sh _site | cut -f1))"
 
-# Optional: serve locally
+# Optional: serve locally with the correct base path
 if [[ "${1:-}" == "--serve" ]]; then
   echo "==> Serving at http://localhost:8080${BASE_PATH}"
-  bunx http-server _site -p 8080 --cors -c-1
+  # Nest _site/ under the base path so local preview matches production URLs
+  SERVE_DIR=$(mktemp -d)
+  SUB_DIR="${BASE_PATH#/}"
+  SUB_DIR="${SUB_DIR%/}"
+  if [[ -n "$SUB_DIR" ]]; then
+    mkdir -p "$SERVE_DIR/$SUB_DIR"
+    cp -r _site/* "$SERVE_DIR/$SUB_DIR/"
+  else
+    cp -r _site/* "$SERVE_DIR/"
+  fi
+  bunx http-server "$SERVE_DIR" -p 8080 --cors -c-1
 fi

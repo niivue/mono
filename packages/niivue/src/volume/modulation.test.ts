@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { NiiDataType } from '@/NVConstants'
-import type { NVImage, NIFTIHeader } from '@/NVTypes'
+import type { NIFTIHeader, NVImage } from '@/NVTypes'
 import { computeModulationData } from './modulation'
 
 function makeHeader(overrides: Partial<NIFTIHeader> = {}): NIFTIHeader {
@@ -36,7 +36,12 @@ function makeHeader(overrides: Partial<NIFTIHeader> = {}): NIFTIHeader {
     qoffset_x: 0,
     qoffset_y: 0,
     qoffset_z: 0,
-    affine: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+    affine: [
+      [1, 0, 0, 0],
+      [0, 1, 0, 0],
+      [0, 0, 1, 0],
+      [0, 0, 0, 1],
+    ],
     intent_name: '',
     magic: 'n+1',
     ...overrides,
@@ -97,7 +102,7 @@ describe('computeModulationData', () => {
     })
     computeModulationData([targetVol, modVol])
     expect(targetVol._modulationData).not.toBeNull()
-    const data = targetVol._modulationData!
+    const data = targetVol._modulationData ?? new Float32Array(0)
     expect(data.length).toBe(8)
     // First voxel: (0 - 0) / 7 = 0
     expect(data[0]).toBeCloseTo(0, 5)

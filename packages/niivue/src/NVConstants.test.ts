@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
   isPaqd,
-  sliceTypeDim,
   NiiDataType,
   NiiIntentCode,
   SLICE_TYPE,
+  sliceTypeDim,
 } from './NVConstants'
 
 describe('isPaqd', () => {

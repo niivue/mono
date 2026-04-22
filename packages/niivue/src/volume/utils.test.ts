@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import { NiiDataType } from '@/NVConstants'
-import type { NVImage, NIFTIHeader } from '@/NVTypes'
+import type { NIFTIHeader, NVImage } from '@/NVTypes'
 import {
-  ensureValidNonZero,
-  getTypedArrayConstructor,
-  getBitsPerVoxel,
-  calMinMax,
-  createNiftiHeader,
-  hdrToArrayBuffer,
-  createNiftiArray,
   buildPaqdLut256,
+  calMinMax,
+  createNiftiArray,
+  createNiftiHeader,
+  ensureValidNonZero,
+  getBitsPerVoxel,
+  getTypedArrayConstructor,
   getVoxelValue,
+  hdrToArrayBuffer,
   reorientDrawingToNative,
 } from './utils'
 

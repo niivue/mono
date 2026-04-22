@@ -175,6 +175,7 @@ bunx nx run <project>:build
 - **No barrel files.** Biome enforces `noBarrelFile: "error"`. Auto-generated asset index files in `packages/niivue/src/assets/` are the sole exception.
 - **`niivue` build requires codegen first.** The Nx target handles this automatically (`npm run codegen:assets && vite build`), but if you run Vite manually, run `node scripts/generate-assets.js` first.
 - **`workspace:*` peer dependencies.** Extensions and `nv-react` declare `@niivue/niivue` as a peer dep — the local copy is used in dev, but consumers must install it themselves.
+- **GitHub Pages deployment.** Pushing to `main` builds all examples and demo apps and deploys to GitHub Pages via `.github/workflows/niivue-ghpages.yml`. The build script is `.github/build-pages.sh` — run it locally with `--serve` to preview. Vite configs read the `VITE_BASE` env var to set the base path and rewrite absolute `/volumes/` and `/meshes/` URLs in bundled JS.
 - **CI only covers `packages/niivue`.** GitHub Actions workflows only trigger on `packages/niivue/**` changes. Other packages must be verified locally.
 - **No shared `tsconfig.base.json`.** Each project has its own `tsconfig.json`. Copy from an existing project when creating a new one.
 - **Git LFS required for test images.** `packages/dev-images/images/` uses LFS. Run `git lfs pull` if files are pointers.

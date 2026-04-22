@@ -22,7 +22,9 @@ type MeshWriter = {
 
 import { buildExtensionMap } from '@/NVLoader'
 
-const modules = import.meta.glob<MeshWriter>('./*.ts', { eager: true })
+const modules = import.meta.glob<MeshWriter>(['./*.ts', '!./*.test.ts'], {
+  eager: true,
+})
 const writerByExt = buildExtensionMap(modules, './index.ts')
 
 export function writeExtensions(): string[] {

@@ -19,9 +19,12 @@ export type ConnectomeFileData = {
   options: Partial<NVConnectomeOptions>
 }
 
-const modules = import.meta.glob<ConnectomeReader>('./readers/*.ts', {
-  eager: true,
-})
+const modules = import.meta.glob<ConnectomeReader>(
+  ['./readers/*.ts', '!./readers/*.test.ts'],
+  {
+    eager: true,
+  },
+)
 const readerByExt = NVLoader.buildExtensionMap(modules)
 
 export function connectomeExtensions(): string[] {

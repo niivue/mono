@@ -2,14 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
 import type { NVImage } from '@/NVTypes'
 import {
-  deg2rad,
   cart2sphDeg,
+  deg2rad,
   depthAziElevToClipPlane,
-  vox2mm,
-  mm2vox,
   mm2frac,
+  mm2vox,
   slicePlaneEquation,
   unprojectScreen,
+  vox2mm,
 } from './NVTransforms'
 
 const EPSILON = 1e-5
@@ -83,12 +83,7 @@ describe('depthAziElevToClipPlane', () => {
 describe('vox2mm', () => {
   test('identityMatrix_returnsInputCoords', () => {
     // Identity affine: voxel coords = mm coords
-    const mtx = mat4.fromValues(
-      1, 0, 0, 0,
-      0, 1, 0, 0,
-      0, 0, 1, 0,
-      0, 0, 0, 1,
-    )
+    const mtx = mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
     const result = vox2mm(null, [3, 4, 5], mtx)
     approx(result[0], 3)
     approx(result[1], 4)
@@ -97,12 +92,7 @@ describe('vox2mm', () => {
 
   test('scaledMatrix_scalesCorrectly', () => {
     // 2mm voxels
-    const mtx = mat4.fromValues(
-      2, 0, 0, 0,
-      0, 2, 0, 0,
-      0, 0, 2, 0,
-      0, 0, 0, 1,
-    )
+    const mtx = mat4.fromValues(2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1)
     const result = vox2mm(null, [1, 1, 1], mtx)
     approx(result[0], 2)
     approx(result[1], 2)
@@ -112,10 +102,22 @@ describe('vox2mm', () => {
   test('translatedMatrix_translatesCorrectly', () => {
     // Identity rotation with translation offset
     const mtx = mat4.fromValues(
-      1, 0, 0, 10,
-      0, 1, 0, 20,
-      0, 0, 1, 30,
-      0, 0, 0, 1,
+      1,
+      0,
+      0,
+      10,
+      0,
+      1,
+      0,
+      20,
+      0,
+      0,
+      1,
+      30,
+      0,
+      0,
+      0,
+      1,
     )
     const result = vox2mm(null, [0, 0, 0], mtx)
     approx(result[0], 10)
@@ -130,10 +132,22 @@ describe('vox2mm', () => {
 describe('mm2vox', () => {
   test('identityRAS_roundtripsWithVox2mm', () => {
     const matRAS = mat4.fromValues(
-      1, 0, 0, 0,
-      0, 1, 0, 0,
-      0, 0, 1, 0,
-      0, 0, 0, 1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
     )
     const fakeImage = { matRAS } as unknown as NVImage
     const mm = vox2mm(null, [3, 4, 5], matRAS)
@@ -146,10 +160,22 @@ describe('mm2vox', () => {
 
   test('frac_mode_returnsFloat', () => {
     const matRAS = mat4.fromValues(
-      2, 0, 0, 0,
-      0, 2, 0, 0,
-      0, 0, 2, 0,
-      0, 0, 0, 1,
+      2,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      1,
     )
     const fakeImage = { matRAS } as unknown as NVImage
     const vox = mm2vox(fakeImage, [3, 3, 3], true)
@@ -166,10 +192,22 @@ describe('mm2vox', () => {
 describe('mm2frac', () => {
   test('validImage_returnsNormalizedCoords', () => {
     const matRAS = mat4.fromValues(
-      1, 0, 0, 0,
-      0, 1, 0, 0,
-      0, 0, 1, 0,
-      0, 0, 0, 1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
     )
     const fakeImage = {
       dimsRAS: [3, 10, 10, 10],
@@ -204,35 +242,47 @@ describe('mm2frac', () => {
 describe('slicePlaneEquation', () => {
   // Build a simple identity frac2mm (scale 100mm per axis)
   const frac2mm = mat4.fromValues(
-    100, 0, 0, 0,
-    0, 100, 0, 0,
-    0, 0, 100, 0,
-    0, 0, 0, 1,
+    100,
+    0,
+    0,
+    0,
+    0,
+    100,
+    0,
+    0,
+    0,
+    0,
+    100,
+    0,
+    0,
+    0,
+    0,
+    1,
   )
 
   test('axial_returnsZNormal', () => {
     const plane = slicePlaneEquation(frac2mm, 0, 0.5)
     expect(plane).not.toBeNull()
     // For axial slice, normal should be along Z axis
-    approx(Math.abs(plane!.normal[2]), 1, 0.01)
-    approx(Math.abs(plane!.normal[0]), 0, 0.01)
-    approx(Math.abs(plane!.normal[1]), 0, 0.01)
+    approx(Math.abs(plane?.normal[2]), 1, 0.01)
+    approx(Math.abs(plane?.normal[0]), 0, 0.01)
+    approx(Math.abs(plane?.normal[1]), 0, 0.01)
   })
 
   test('coronal_returnsYNormal', () => {
     const plane = slicePlaneEquation(frac2mm, 1, 0.5)
     expect(plane).not.toBeNull()
-    approx(Math.abs(plane!.normal[1]), 1, 0.01)
-    approx(Math.abs(plane!.normal[0]), 0, 0.01)
-    approx(Math.abs(plane!.normal[2]), 0, 0.01)
+    approx(Math.abs(plane?.normal[1]), 1, 0.01)
+    approx(Math.abs(plane?.normal[0]), 0, 0.01)
+    approx(Math.abs(plane?.normal[2]), 0, 0.01)
   })
 
   test('sagittal_returnsXNormal', () => {
     const plane = slicePlaneEquation(frac2mm, 2, 0.5)
     expect(plane).not.toBeNull()
-    approx(Math.abs(plane!.normal[0]), 1, 0.01)
-    approx(Math.abs(plane!.normal[1]), 0, 0.01)
-    approx(Math.abs(plane!.normal[2]), 0, 0.01)
+    approx(Math.abs(plane?.normal[0]), 1, 0.01)
+    approx(Math.abs(plane?.normal[1]), 0, 0.01)
+    approx(Math.abs(plane?.normal[2]), 0, 0.01)
   })
 })
 

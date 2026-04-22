@@ -9868,7 +9868,12 @@ const o1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   extensions: n1,
   write: s1
-}, Symbol.toStringTag, { value: "Module" })), a1 = /* @__PURE__ */ Object.assign({ "./iwm.ts": Jx, "./mz3.ts": e1, "./obj.ts": r1, "./stl.ts": o1 }), zd = li(a1, "./index.ts");
+}, Symbol.toStringTag, { value: "Module" })), a1 = /* @__PURE__ */ Object.assign({
+  "./iwm.ts": Jx,
+  "./mz3.ts": e1,
+  "./obj.ts": r1,
+  "./stl.ts": o1
+}), zd = li(a1, "./index.ts");
 function l1() {
   return Array.from(new Set(Array.from(zd.keys()))).sort();
 }
@@ -9878,7 +9883,25 @@ async function c1(t, e, i, r) {
     throw new Error(`No mesh writer available for extension: ${t}`);
   return n.write(e, i, r);
 }
-const u1 = /* @__PURE__ */ Object.assign({ "./readers/asc.ts": Gl, "./readers/dfs.ts": Xl, "./readers/fs.ts": ql, "./readers/geo.ts": Hl, "./readers/gii.ts": Qu, "./readers/ico.ts": Ju, "./readers/iwm.ts": Zu, "./readers/mz3.ts": $u, "./readers/nv.ts": ed, "./readers/obj.ts": id, "./readers/off.ts": rd, "./readers/ply.ts": nd, "./readers/srf.ts": sd, "./readers/stl.ts": od, "./readers/vtk.ts": cd, "./readers/wrl.ts": ud, "./readers/x3d.ts": yd }), Ar = li(u1);
+const u1 = /* @__PURE__ */ Object.assign({
+  "./readers/asc.ts": Gl,
+  "./readers/dfs.ts": Xl,
+  "./readers/fs.ts": ql,
+  "./readers/geo.ts": Hl,
+  "./readers/gii.ts": Qu,
+  "./readers/ico.ts": Ju,
+  "./readers/iwm.ts": Zu,
+  "./readers/mz3.ts": $u,
+  "./readers/nv.ts": ed,
+  "./readers/obj.ts": id,
+  "./readers/off.ts": rd,
+  "./readers/ply.ts": nd,
+  "./readers/srf.ts": sd,
+  "./readers/stl.ts": od,
+  "./readers/vtk.ts": cd,
+  "./readers/wrl.ts": ud,
+  "./readers/x3d.ts": yd
+}), Ar = li(u1);
 function d1() {
   return l1();
 }
@@ -16875,7 +16898,10 @@ const Kv = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   extensions: jv,
   write: Yv
-}, Symbol.toStringTag, { value: "Module" })), Qv = /* @__PURE__ */ Object.assign({ "./iwi.ts": Wv, "./nii.ts": Kv }), Sf = li(Qv, "./index.ts");
+}, Symbol.toStringTag, { value: "Module" })), Qv = /* @__PURE__ */ Object.assign({
+  "./iwi.ts": Wv,
+  "./nii.ts": Kv
+}), Sf = li(Qv, "./index.ts");
 function Jv() {
   return Array.from(new Set(Array.from(Sf.keys()))).sort();
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { drawUndo } from './undo'
 import { encodeRLE } from './rle'
+import { drawUndo } from './undo'
 
 describe('drawUndo', () => {
   test('emptyBitmaps_returnsUndefined', () => {
@@ -21,7 +21,7 @@ describe('drawUndo', () => {
       drawBitmap: new Uint8Array(4),
     })
     expect(result).toBeDefined()
-    expect(result!.drawBitmap).toEqual(original)
+    expect(result?.drawBitmap).toEqual(original)
   })
 
   test('wrapsAroundWhenIndexNegative', () => {
@@ -34,7 +34,7 @@ describe('drawUndo', () => {
     })
     expect(result).toBeDefined()
     // -1 wraps to len-1 = 1
-    expect(result!.drawBitmap).toEqual(new Uint8Array([40, 50, 60]))
+    expect(result?.drawBitmap).toEqual(new Uint8Array([40, 50, 60]))
   })
 
   test('shortBitmap_returnsUndefined', () => {
@@ -55,6 +55,6 @@ describe('drawUndo', () => {
       drawBitmap: new Uint8Array(3),
     })
     expect(result).toBeDefined()
-    expect(result!.currentDrawUndoBitmap).toBe(0)
+    expect(result?.currentDrawUndoBitmap).toBe(0)
   })
 })

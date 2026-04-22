@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  voxelIndex,
   clampToDimension,
-  drawPoint,
   drawLine,
+  drawPoint,
   floodFillSection,
+  getSliceIndices,
   isPenLocationValid,
   isSamePoint,
-  getSliceIndices,
   PEN_SLICE_TYPE,
+  voxelIndex,
 } from './penTool'
 
 // ---------------------------------------------------------------------------

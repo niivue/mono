@@ -20,24 +20,81 @@ describe('AnnotationUndoStack', () => {
 
   test('undo_restoresPreviousSnapshot', () => {
     const stack = new AnnotationUndoStack()
-    const snapshot1 = [{ id: 'a', label: 1, group: 'g', sliceType: 0, slicePosition: 0, polygons: [], style: { fillColor: [1, 0, 0, 1] as [number, number, number, number], strokeColor: [1, 0, 0, 1] as [number, number, number, number], strokeWidth: 2 } }]
+    const snapshot1 = [
+      {
+        id: 'a',
+        label: 1,
+        group: 'g',
+        sliceType: 0,
+        slicePosition: 0,
+        polygons: [],
+        style: {
+          fillColor: [1, 0, 0, 1] as [number, number, number, number],
+          strokeColor: [1, 0, 0, 1] as [number, number, number, number],
+          strokeWidth: 2,
+        },
+      },
+    ]
     stack.push(snapshot1)
-    const current = [{ id: 'b', label: 2, group: 'g', sliceType: 0, slicePosition: 0, polygons: [], style: { fillColor: [0, 1, 0, 1] as [number, number, number, number], strokeColor: [0, 1, 0, 1] as [number, number, number, number], strokeWidth: 2 } }]
+    const current = [
+      {
+        id: 'b',
+        label: 2,
+        group: 'g',
+        sliceType: 0,
+        slicePosition: 0,
+        polygons: [],
+        style: {
+          fillColor: [0, 1, 0, 1] as [number, number, number, number],
+          strokeColor: [0, 1, 0, 1] as [number, number, number, number],
+          strokeWidth: 2,
+        },
+      },
+    ]
     const restored = stack.undo(current)
     expect(restored).not.toBeNull()
-    expect(restored![0].id).toBe('a')
+    expect(restored?.[0].id).toBe('a')
   })
 
   test('redo_afterUndo_restoresUndoneState', () => {
     const stack = new AnnotationUndoStack()
-    const snap = [{ id: 'a', label: 1, group: 'g', sliceType: 0, slicePosition: 0, polygons: [], style: { fillColor: [1, 0, 0, 1] as [number, number, number, number], strokeColor: [1, 0, 0, 1] as [number, number, number, number], strokeWidth: 2 } }]
+    const snap = [
+      {
+        id: 'a',
+        label: 1,
+        group: 'g',
+        sliceType: 0,
+        slicePosition: 0,
+        polygons: [],
+        style: {
+          fillColor: [1, 0, 0, 1] as [number, number, number, number],
+          strokeColor: [1, 0, 0, 1] as [number, number, number, number],
+          strokeWidth: 2,
+        },
+      },
+    ]
     stack.push(snap)
-    const current = [{ id: 'b', label: 2, group: 'g', sliceType: 0, slicePosition: 0, polygons: [], style: { fillColor: [0, 1, 0, 1] as [number, number, number, number], strokeColor: [0, 1, 0, 1] as [number, number, number, number], strokeWidth: 2 } }]
-    const undone = stack.undo(current)!
+    const current = [
+      {
+        id: 'b',
+        label: 2,
+        group: 'g',
+        sliceType: 0,
+        slicePosition: 0,
+        polygons: [],
+        style: {
+          fillColor: [0, 1, 0, 1] as [number, number, number, number],
+          strokeColor: [0, 1, 0, 1] as [number, number, number, number],
+          strokeWidth: 2,
+        },
+      },
+    ]
+    const undone = stack.undo(current)
+    expect(undone).not.toBeNull()
     expect(stack.canRedo).toBe(true)
-    const redone = stack.redo(undone)
+    const redone = stack.redo(undone ?? [])
     expect(redone).not.toBeNull()
-    expect(redone![0].id).toBe('b')
+    expect(redone?.[0].id).toBe('b')
   })
 
   test('push_clearsRedoStack', () => {
@@ -57,13 +114,13 @@ describe('AnnotationUndoStack', () => {
     stack.push([{ id: '4' }] as never) // should evict '1'
     // Undo 3 times: should get 4, 3, 2 (not 1)
     const r1 = stack.undo([])
-    expect(r1![0].id).toBe('4')
-    const r2 = stack.undo(r1!)
-    expect(r2![0].id).toBe('3')
-    const r3 = stack.undo(r2!)
-    expect(r3![0].id).toBe('2')
+    expect(r1?.[0].id).toBe('4')
+    const r2 = stack.undo(r1 ?? [])
+    expect(r2?.[0].id).toBe('3')
+    const r3 = stack.undo(r2 ?? [])
+    expect(r3?.[0].id).toBe('2')
     // No more undos
-    const r4 = stack.undo(r3!)
+    const r4 = stack.undo(r3 ?? [])
     expect(r4).toBeNull()
   })
 

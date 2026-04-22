@@ -31,7 +31,7 @@ interface VolumeTransformModule {
 
 // Auto-discover transform modules (mirrors the pattern in transforms/index.ts)
 const modules = import.meta.glob<VolumeTransformModule>(
-  '../volume/transforms/*.ts',
+  ['../volume/transforms/*.ts', '!../volume/transforms/*.test.ts'],
   { eager: true },
 )
 

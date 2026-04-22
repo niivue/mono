@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { read } from './stl'
 import { write } from '../writers/stl'
+import { read } from './stl'
 
 describe('STL reader', () => {
   test('binarySTL_parsesTriangles', async () => {
@@ -11,13 +11,13 @@ describe('STL reader', () => {
     const result = await read(buf)
     expect(result.positions).toBeDefined()
     // Binary STL produces 9 position values (3 vertices * 3 coords)
-    expect(result.positions!.length).toBe(9)
+    expect(result.positions?.length).toBe(9)
     expect(result.indices).toBeDefined()
-    expect(result.indices!.length).toBe(3)
+    expect(result.indices?.length).toBe(3)
     // Verify roundtrip positions
-    expect(result.positions![0]).toBeCloseTo(0, 5)
-    expect(result.positions![3]).toBeCloseTo(1, 5)
-    expect(result.positions![7]).toBeCloseTo(1, 5) // v2.y
+    expect(result.positions?.[0]).toBeCloseTo(0, 5)
+    expect(result.positions?.[3]).toBeCloseTo(1, 5)
+    expect(result.positions?.[7]).toBeCloseTo(1, 5) // v2.y
   })
 
   test('asciiSTL_parsesVertices', async () => {
@@ -33,8 +33,8 @@ endsolid test`
     const buf = new TextEncoder().encode(ascii).buffer
     const result = await read(buf)
     expect(result.positions).toBeDefined()
-    expect(result.positions!.length).toBe(9)
-    expect(result.positions![3]).toBe(1) // second vertex x
+    expect(result.positions?.length).toBe(9)
+    expect(result.positions?.[3]).toBe(1) // second vertex x
   })
 
   test('tooSmallBuffer_throws', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { pointInRing } from './pointInRing'
 import type { AnnotationPoint } from '@/NVTypes'
+import { pointInRing } from './pointInRing'
 
 const square: AnnotationPoint[] = [
   { x: 0, y: 0 },

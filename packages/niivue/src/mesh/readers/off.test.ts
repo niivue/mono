@@ -16,15 +16,15 @@ describe('OFF reader', () => {
 `
     const result = await read(makeOFF(off))
     expect(result.positions).toBeDefined()
-    expect(result.positions!.length).toBe(9) // 3 vertices * 3 coords
+    expect(result.positions?.length).toBe(9) // 3 vertices * 3 coords
     expect(result.indices).toBeDefined()
-    expect(result.indices!.length).toBe(3) // 1 triangle * 3 indices
+    expect(result.indices?.length).toBe(3) // 1 triangle * 3 indices
     // Verify values
-    expect(result.positions![0]).toBe(0)
-    expect(result.positions![3]).toBe(1)
-    expect(result.indices![0]).toBe(0)
-    expect(result.indices![1]).toBe(1)
-    expect(result.indices![2]).toBe(2)
+    expect(result.positions?.[0]).toBe(0)
+    expect(result.positions?.[3]).toBe(1)
+    expect(result.indices?.[0]).toBe(0)
+    expect(result.indices?.[1]).toBe(1)
+    expect(result.indices?.[2]).toBe(2)
   })
 
   test('missingHeader_stillParses', async () => {
@@ -38,6 +38,6 @@ describe('OFF reader', () => {
     const result = await read(makeOFF(off))
     // Parser starts reading from line after header check
     expect(result.positions).toBeDefined()
-    expect(result.positions!.length).toBe(9)
+    expect(result.positions?.length).toBe(9)
   })
 })

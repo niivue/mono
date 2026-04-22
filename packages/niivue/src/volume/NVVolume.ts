@@ -30,9 +30,12 @@ type VolumeReader = {
   ) => Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }>
 }
 
-const modules = import.meta.glob<VolumeReader>('./readers/*.ts', {
-  eager: true,
-})
+const modules = import.meta.glob<VolumeReader>(
+  ['./readers/*.ts', '!./readers/*.test.ts'],
+  {
+    eager: true,
+  },
+)
 const readerByExt = NVLoader.buildExtensionMap(modules)
 
 export function volumeExtensions(): string[] {

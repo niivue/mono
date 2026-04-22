@@ -36,10 +36,10 @@ describe('getControlPoints', () => {
     })
     expect(pts.length).toBe(4)
     // Center: (10, 5), rx=10, ry=5
-    expect(pts[0]).toEqual({ x: 10, y: 0 })  // top
-    expect(pts[1]).toEqual({ x: 20, y: 5 })  // right
+    expect(pts[0]).toEqual({ x: 10, y: 0 }) // top
+    expect(pts[1]).toEqual({ x: 20, y: 5 }) // right
     expect(pts[2]).toEqual({ x: 10, y: 10 }) // bottom
-    expect(pts[3]).toEqual({ x: 0, y: 5 })   // left
+    expect(pts[3]).toEqual({ x: 0, y: 5 }) // left
   })
 
   test('line_returns3Points', () => {
@@ -50,7 +50,7 @@ describe('getControlPoints', () => {
       width: 4,
     })
     expect(pts.length).toBe(3)
-    expect(pts[0]).toEqual({ x: 0, y: 0 })  // start
+    expect(pts[0]).toEqual({ x: 0, y: 0 }) // start
     expect(pts[1]).toEqual({ x: 10, y: 0 }) // end
     // Width handle: midpoint + perpendicular offset
     expect(pts[2].x).toBeCloseTo(5, 5)
@@ -109,7 +109,10 @@ describe('hitTestControlPoint', () => {
 
   test('firstMatchWins', () => {
     // If two points overlap, returns the first
-    const overlapping = [{ x: 5, y: 5 }, { x: 5, y: 5 }]
+    const overlapping = [
+      { x: 5, y: 5 },
+      { x: 5, y: 5 },
+    ]
     expect(hitTestControlPoint({ x: 5, y: 5 }, overlapping, 1)).toBe(0)
   })
 })
@@ -147,7 +150,7 @@ describe('updateShapeBounds', () => {
     const result = updateShapeBounds('line', original, 2, { x: 5, y: 8 })
     expect(result.width).toBeDefined()
     // Width should increase (perpendicular distance * 2)
-    expect(result.width!).toBeGreaterThan(2)
+    expect(result.width ?? 0).toBeGreaterThan(2)
     // Endpoints unchanged
     expect(result.start).toEqual({ x: 0, y: 0 })
     expect(result.end).toEqual({ x: 10, y: 0 })

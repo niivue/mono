@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { mmToSlice2D, slice2DToMM, isOnSlice } from './sliceProjection'
 import { SLICE_TYPE } from '@/NVConstants'
+import { isOnSlice, mmToSlice2D, slice2DToMM } from './sliceProjection'
 
 describe('mmToSlice2D', () => {
   test('axial_usesXY', () => {

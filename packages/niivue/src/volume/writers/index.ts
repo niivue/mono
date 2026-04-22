@@ -28,7 +28,9 @@ type VolumeWriter = {
 
 import { buildExtensionMap } from '@/NVLoader'
 
-const modules = import.meta.glob<VolumeWriter>('./*.ts', { eager: true })
+const modules = import.meta.glob<VolumeWriter>(['./*.ts', '!./*.test.ts'], {
+  eager: true,
+})
 const writerByExt = buildExtensionMap(modules, './index.ts')
 
 export function writeExtensions(): string[] {

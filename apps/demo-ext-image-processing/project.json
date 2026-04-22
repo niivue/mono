@@ -4,11 +4,11 @@
   "tags": ["type:app", "lang:typescript"],
   "targets": {
     "dev": {
-      "command": "bunx vite --open /imgproc.html",
+      "command": "bunx --bun vite --open /imgproc.html",
       "options": { "cwd": "{projectRoot}" }
     },
     "build": {
-      "command": "bunx vite build",
+      "command": "bunx --bun vite build",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["^build"],
       "inputs": [

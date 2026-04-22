@@ -9814,10 +9814,10 @@ async function Qx(t, e) {
     points: n,
     cells: o
   }, u = xo(c);
-  return u.buffer.slice(
+  return u.slice(
     u.byteOffset,
     u.byteOffset + u.byteLength
-  );
+  ).buffer;
 }
 const Jx = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
@@ -16880,10 +16880,10 @@ async function Hv(t, e) {
       `NIfTI voxels use unsupported datatype ${t.datatypeCode}.`
     );
   const l = xo(i);
-  return l.buffer.slice(
+  return l.slice(
     l.byteOffset,
     l.byteOffset + l.byteLength
-  );
+  ).buffer;
 }
 const Wv = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,

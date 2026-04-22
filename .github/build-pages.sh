@@ -34,8 +34,8 @@ done
 echo "==> Building niivue examples"
 rm -rf packages/niivue/dist
 (cd packages/niivue \
-  && npm run codegen:assets \
-  && VITE_BASE="$BASE_PATH" npx vite build --config vite.config.examples.ts --mode production)
+  && bun run codegen:assets \
+  && VITE_BASE="$BASE_PATH" bunx vite build --config vite.config.examples.ts --mode production)
 
 # 4. Assemble site
 # Strip leading/trailing slashes to get the subdir name (e.g. "mono")

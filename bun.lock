@@ -6,7 +6,9 @@
       "name": "nx-mono-repo-test",
       "devDependencies": {
         "@biomejs/biome": "latest",
+        "@niivue/niivue": "workspace:*",
         "@nx/js": "^22.6.3",
+        "@types/bun": "^1.3.12",
         "nx": "latest",
       },
     },
@@ -62,6 +64,7 @@
       },
       "devDependencies": {
         "@niivue/dev-images": "workspace:*",
+        "@types/bun": "^1.3.12",
         "@types/earcut": "^3.0.0",
         "@webgpu/types": "^0.1.69",
         "http-server": "^14.1.1",

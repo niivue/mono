@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npx vite --open /drawing.html",
-    "build": "npx vite build"
+    "dev": "bunx vite --open /drawing.html",
+    "build": "bunx vite build"
   },
   "dependencies": {
     "@niivue/niivue": "workspace:*",

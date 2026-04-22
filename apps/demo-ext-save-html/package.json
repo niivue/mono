@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prebuild:standalone": "npx vite build --config vite.config.standalone.js",
-    "dev": "npm run prebuild:standalone && npx vite --open /index.html",
-    "build": "npm run prebuild:standalone && npx vite build"
+    "prebuild:standalone": "bunx vite build --config vite.config.standalone.js",
+    "dev": "bun run prebuild:standalone && bunx vite --open /index.html",
+    "build": "bun run prebuild:standalone && bunx vite build"
   },
   "dependencies": {
     "@niivue/niivue": "workspace:*",

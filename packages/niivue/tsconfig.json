@@ -9,7 +9,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["@webgpu/types"],
+    "types": ["@webgpu/types", "@types/bun"],
     "strict": true,
     "noEmit": true,
     "resolveJsonModule": true,

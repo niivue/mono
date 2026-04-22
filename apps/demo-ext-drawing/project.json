@@ -4,11 +4,11 @@
   "tags": ["type:app", "lang:typescript"],
   "targets": {
     "dev": {
-      "command": "npx vite --open /drawing.html",
+      "command": "bunx vite --open /drawing.html",
       "options": { "cwd": "{projectRoot}" }
     },
     "build": {
-      "command": "npx vite build",
+      "command": "bunx vite build",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["^build"],
       "inputs": [

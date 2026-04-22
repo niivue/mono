@@ -263,26 +263,29 @@ describe('slicePlaneEquation', () => {
   test('axial_returnsZNormal', () => {
     const plane = slicePlaneEquation(frac2mm, 0, 0.5)
     expect(plane).not.toBeNull()
+    if (!plane) return
     // For axial slice, normal should be along Z axis
-    approx(Math.abs(plane?.normal[2]), 1, 0.01)
-    approx(Math.abs(plane?.normal[0]), 0, 0.01)
-    approx(Math.abs(plane?.normal[1]), 0, 0.01)
+    approx(Math.abs(plane.normal[2]), 1, 0.01)
+    approx(Math.abs(plane.normal[0]), 0, 0.01)
+    approx(Math.abs(plane.normal[1]), 0, 0.01)
   })
 
   test('coronal_returnsYNormal', () => {
     const plane = slicePlaneEquation(frac2mm, 1, 0.5)
     expect(plane).not.toBeNull()
-    approx(Math.abs(plane?.normal[1]), 1, 0.01)
-    approx(Math.abs(plane?.normal[0]), 0, 0.01)
-    approx(Math.abs(plane?.normal[2]), 0, 0.01)
+    if (!plane) return
+    approx(Math.abs(plane.normal[1]), 1, 0.01)
+    approx(Math.abs(plane.normal[0]), 0, 0.01)
+    approx(Math.abs(plane.normal[2]), 0, 0.01)
   })
 
   test('sagittal_returnsXNormal', () => {
     const plane = slicePlaneEquation(frac2mm, 2, 0.5)
     expect(plane).not.toBeNull()
-    approx(Math.abs(plane?.normal[0]), 1, 0.01)
-    approx(Math.abs(plane?.normal[1]), 0, 0.01)
-    approx(Math.abs(plane?.normal[2]), 0, 0.01)
+    if (!plane) return
+    approx(Math.abs(plane.normal[0]), 1, 0.01)
+    approx(Math.abs(plane.normal[1]), 0, 0.01)
+    approx(Math.abs(plane.normal[2]), 0, 0.01)
   })
 })
 

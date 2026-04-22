@@ -4,7 +4,7 @@
   "tags": ["type:lib", "lang:typescript"],
   "targets": {
     "build": {
-      "command": "npm run codegen:assets && npx vite build --config vite.config.lib.ts",
+      "command": "bun run codegen:assets && bunx vite build --config vite.config.lib.ts",
       "options": { "cwd": "{projectRoot}" },
       "inputs": [
         "typescript",
@@ -17,7 +17,7 @@
       "outputs": ["{projectRoot}/dist"]
     },
     "dev": {
-      "command": "npm run codegen:assets && npx vite --open /examples/index.html",
+      "command": "bun run codegen:assets && bunx vite --open /examples/index.html",
       "options": { "cwd": "{projectRoot}" }
     },
     "typecheck": {

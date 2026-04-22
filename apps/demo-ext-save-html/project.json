@@ -4,11 +4,11 @@
   "tags": ["type:app", "lang:typescript"],
   "targets": {
     "dev": {
-      "command": "npx vite --open /index.html",
+      "command": "bunx vite --open /index.html",
       "options": { "cwd": "{projectRoot}" }
     },
     "build": {
-      "command": "npm run prebuild:standalone && npx vite build",
+      "command": "bun run prebuild:standalone && bunx vite build",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["^build"],
       "inputs": [

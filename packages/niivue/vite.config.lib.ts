@@ -41,6 +41,7 @@ export default defineConfig({
     emitAssetFiles(),
     dts({
       tsconfigPath: './tsconfig.json',
+      exclude: ['**/*.test.ts'],
       pathsToAliases: true,
       beforeWriteFile(filePath, content) {
         // Rewrite any remaining @/ path aliases to relative paths

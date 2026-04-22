@@ -52,8 +52,8 @@ export async function write(
   }
 
   const encoded = encode(iwm)
-  return encoded.buffer.slice(
+  return encoded.slice(
     encoded.byteOffset,
     encoded.byteOffset + encoded.byteLength,
-  )
+  ).buffer as ArrayBuffer
 }

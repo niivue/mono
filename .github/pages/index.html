@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>NiiVue — Demos</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #333;
+        margin: 0;
+        padding: 0.5rem;
+        color: #58a6ff;
+      }
+      header {
+        background-color: #000;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        margin-bottom: 1rem;
+      }
+      .ribbon {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        max-width: 960px;
+        margin: 0 auto;
+        background-color: #000;
+      }
+      .logo {
+        font-size: 1.25rem;
+        font-weight: bold;
+        color: #58a6ff;
+        text-decoration: none;
+        margin-right: 1rem;
+      }
+      .nav-left {
+        display: flex;
+        gap: 1.5rem;
+        flex-grow: 1;
+      }
+      .nav-right {
+        display: flex;
+      }
+      .nav-left a,
+      .nav-right a {
+        color: #58a6ff;
+        text-decoration: none;
+        font-size: 1rem;
+      }
+      .nav-left a:hover,
+      .nav-right a:hover {
+        text-decoration: underline;
+      }
+      main {
+        max-width: 512px;
+        margin: auto;
+        background: #000;
+        padding: 0.1rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      }
+      h1 {
+        text-align: left;
+        color: #58a6ff;
+        padding-left: 1.5rem;
+        font-size: 1rem;
+        margin-bottom: 1rem;
+      }
+      ul {
+        padding-left: 1.7rem;
+      }
+      li {
+        margin: 0.5rem 0;
+      }
+      a {
+        color: #58a6ff;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="ribbon">
+        <a href="https://niivue.com/" class="logo">NiiVue</a>
+        <div class="nav-left">
+          <a href="https://niivue.com/gallery">Gallery</a>
+          <a href="./examples/">Examples</a>
+          <a href="https://niivue.com/docs">Docs</a>
+        </div>
+        <div class="nav-right">
+          <a href="https://github.com/niivue/mono" target="_blank">GitHub</a>
+        </div>
+      </div>
+    </header>
+    <main>
+      <h1>Core Examples</h1>
+      <ul>
+        <li>
+          <a href="./examples/" target="_blank" rel="noopener noreferrer"
+            >NiiVue Examples</a
+          >
+          — voxel, mesh, tract, connectome, and more
+        </li>
+      </ul>
+
+      <h1>Extension Demos</h1>
+      <ul>
+        <li>
+          <a
+            href="./demo-ext-drawing/drawing.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Drawing — Interpolation</a
+          >
+        </li>
+        <li>
+          <a
+            href="./demo-ext-drawing/magic-wand.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Drawing — Magic Wand</a
+          >
+        </li>
+        <li>
+          <a
+            href="./demo-ext-image-processing/imgproc.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Image Processing</a
+          >
+        </li>
+        <li>
+          <a
+            href="./demo-ext-save-html/index.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Save as HTML</a
+          >
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

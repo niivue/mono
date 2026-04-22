@@ -7,9 +7,12 @@ type TractReader = {
   read: (buffer: ArrayBufferLike) => Promise<NVTractData>
 }
 
-const modules = import.meta.glob<TractReader>('./readers/*.ts', {
-  eager: true,
-})
+const modules = import.meta.glob<TractReader>(
+  ['./readers/*.ts', '!./readers/*.test.ts'],
+  {
+    eager: true,
+  },
+)
 const readerByExt = NVLoader.buildExtensionMap(modules)
 
 export function tractExtensions(): string[] {

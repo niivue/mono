@@ -24,9 +24,12 @@ type LayerReader = {
   isCurv?: (buffer: ArrayBuffer) => boolean
 }
 
-const layerModules = import.meta.glob<LayerReader>('./readers/*.ts', {
-  eager: true,
-})
+const layerModules = import.meta.glob<LayerReader>(
+  ['./readers/*.ts', '!./readers/*.test.ts'],
+  {
+    eager: true,
+  },
+)
 const layerReaderByExt = NVLoader.buildExtensionMap(layerModules)
 let curvReader: LayerReader | null = null
 for (const mod of Object.values(layerModules)) {
@@ -45,9 +48,12 @@ type MeshReader = {
     n_vert?: number,
   ) => Promise<{ scalars?: Float32Array; colormapLabel?: unknown }>
 }
-const meshReaderModules = import.meta.glob<MeshReader>('../readers/*.ts', {
-  eager: true,
-})
+const meshReaderModules = import.meta.glob<MeshReader>(
+  ['../readers/*.ts', '!../readers/*.test.ts'],
+  {
+    eager: true,
+  },
+)
 const meshReaderByExt = NVLoader.buildExtensionMap(meshReaderModules)
 
 // Volume readers for NII/MGH as vertex scalars
@@ -67,7 +73,7 @@ type VolumeReader = {
   }>
 }
 const volumeReaderModules = import.meta.glob<VolumeReader>(
-  '../../volume/readers/*.ts',
+  ['../../volume/readers/*.ts', '!../../volume/readers/*.test.ts'],
   { eager: true },
 )
 const volumeReaderByExt = NVLoader.buildExtensionMap(volumeReaderModules)

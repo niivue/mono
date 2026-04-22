@@ -32,7 +32,7 @@ status.textContent = 'Volume loaded.'
 status.textContent = 'Fetching niivue bundle…'
 let bundleSource: string | null = null
 try {
-  const resp = await fetch('/niivue-standalone.js')
+  const resp = await fetch(`${import.meta.env.BASE_URL}niivue-standalone.js`)
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
   bundleSource = await resp.text()
   status.textContent = `Ready — bundle size: ${(bundleSource.length / 1024).toFixed(0)} KB`

@@ -9,24 +9,67 @@ NiiVueGPU is a WebGPU-based neuroimaging visualization library (volumes + meshes
 ## Build Commands
 
 ```bash
-npm install          # Install dependencies
-npm run dev          # Hot-reload dev server at localhost:8080
-npm run build        # Development build to ./dist
-npm run build:lib    # Build library to demos/dist/ (ES + UMD)
-npm run demo         # Build library and serve demos/ with http-server
-npm run deploy       # Production build to ./dist
-npm run lint         # ESLint check
-npm run lint:fix     # ESLint auto-fix
-npm run typecheck    # TypeScript type checking (tsc --noEmit)
+bun install          # Install dependencies
+bun run dev          # Hot-reload dev server at localhost:8080
+bun run build        # Development build to ./dist
+bun run build:lib    # Build library to demos/dist/ (ES + UMD)
+bun run demo         # Build library and serve demos/ with http-server
+bun run deploy       # Production build to ./dist
+bun run lint         # ESLint check
+bun run lint:fix     # ESLint auto-fix
+bun run typecheck    # TypeScript type checking (tsc --noEmit)
 ```
 
-**Before committing**, always run: `npm run lint:fix && npm run typecheck`
+**Before committing**, always run: `bun run lint:fix && bun run typecheck`
 
-There is **no test suite**. Verify changes manually via the interactive demos (`npm run dev` or `npm run demo`).
+## Testing
 
-`npm run dev` uses a Vite plugin (`vite.config.dev.js`) to redirect `import '../dist/niivuegpu.mjs'` to source for HMR. Same HTML/JS files work in dev and production.
+The package has a unit test suite for non-rendering (server-side) logic using the **Bun test runner**. Tests are co-located with source files as `*.test.ts`.
 
-Library packaging note: `npm run build` emits `dist/niivuegpu.js` (both backends), `dist/niivuegpu.webgpu.js` (WebGPU-only), and `dist/niivuegpu.webgl2.js` (WebGL2-only), with package exports `niivuegpu`, `niivuegpu/webgpu`, and `niivuegpu/webgl2`.
+```bash
+bun test                # Run all tests with coverage
+bun test src/drawing/   # Run tests in a specific directory
+bun test --watch        # Watch mode
+bunx nx test niivue     # Run via Nx from monorepo root
+```
+
+Coverage is enabled by default in `bunfig.toml` (reporters: `text` + `lcov`). The `coverage/` directory is gitignored.
+
+### What's tested
+
+- **Drawing tools** (`src/drawing/`) — RLE codec, pen/line/flood-fill, undo stack
+- **Annotations** (`src/annotation/`) — undo/redo, point-in-polygon, slice projection, shape selection & control points
+- **Math/transforms** (`src/math/`) — vox↔mm, spherical coordinates, slice plane equations, screen unprojection
+- **Volume utilities** (`src/volume/`) — intensity range, NIfTI header creation, voxel lookup, reorientation, modulation
+- **Colormaps** (`src/cmap/`) — LUT generation, label colormap construction
+- **Constants** (`src/NVConstants.ts`) — PAQD detection, slice type dimension mapping
+- **Mesh I/O** (`src/mesh/`) — STL/OBJ writers, STL/OFF readers (roundtrip tests)
+- **View utilities** (`src/view/`) — mm-to-canvas projection
+
+### What's NOT yet covered by unit tests
+
+The following modules require a browser or GPU context and are not covered by the Bun unit test suite. Rendering tests using Playwright are planned.
+
+- `gl/`, `wgpu/` — GPU shader/rendering code
+- `NVControl*.ts`, `NVLoader.ts` — DOM/canvas/fetch dependencies
+- `control/` — Mouse/keyboard interaction handlers
+- `view/NVRenderer.ts`, `view/NVFont.ts` — Rendering pipeline
+- `workers/` — Web Worker code
+- `codecs/NVGz.ts`, `codecs/NVZip.ts` — DecompressionStream (browser API)
+
+### Writing new tests
+
+- Co-locate tests next to source: `src/foo/bar.ts` → `src/foo/bar.test.ts`
+- Import from `bun:test`: `import { describe, expect, test } from 'bun:test'`
+- Use the `@/*` path alias for cross-directory imports (resolved via `bunfig.toml`)
+- Follow AAA pattern (Arrange, Act, Assert) with one behavior per test
+- Test the public contract, not private internals
+
+Rendering tests (Playwright) are planned but not yet implemented. For now, verify rendering changes manually via the interactive demos (`bun run dev` or `bun run demo`).
+
+`bun run dev` uses a Vite plugin (`vite.config.dev.js`) to redirect `import '../dist/niivuegpu.mjs'` to source for HMR. Same HTML/JS files work in dev and production.
+
+Library packaging note: `bun run build` emits `dist/niivuegpu.js` (both backends), `dist/niivuegpu.webgpu.js` (WebGPU-only), and `dist/niivuegpu.webgl2.js` (WebGL2-only), with package exports `niivuegpu`, `niivuegpu/webgpu`, and `niivuegpu/webgl2`.
 
 ## Code Style
 
@@ -42,7 +85,7 @@ ESLint enforces these rules (see `eslint.config.js`):
 - **Strict mode** is enabled (strict null checks, no implicit any, etc.)
 - **Target**: ESNext with bundler module resolution
 - **WebGPU types**: `@webgpu/types` for GPU API type definitions
-- Run `npm run typecheck` to validate — this runs `tsc --noEmit`
+- Run `bun run typecheck` to validate — this runs `tsc --noEmit`
 
 ## Import Conventions
 

@@ -57,7 +57,10 @@ type MeshReader = {
   read: (buffer: ArrayBufferLike) => Promise<MZ3>
 }
 
-const modules = import.meta.glob<MeshReader>('./readers/*.ts', { eager: true })
+const modules = import.meta.glob<MeshReader>(
+  ['./readers/*.ts', '!./readers/*.test.ts'],
+  { eager: true },
+)
 const readerByExt = NVLoader.buildExtensionMap(modules)
 
 export function meshWriteExtensions(): string[] {

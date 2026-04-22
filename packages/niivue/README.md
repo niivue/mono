@@ -84,6 +84,31 @@ const nv = new NiiVue({
 })
 ```
 
+### Testing
+
+The package includes a unit test suite for non-rendering (server-side) logic using the [Bun test runner](https://bun.sh/docs/cli/test). Tests are co-located with source files as `*.test.ts`.
+
+```bash
+bun test                # Run all tests with coverage
+bun test src/drawing/   # Run tests in a specific directory
+bun test --watch        # Watch mode
+```
+
+Coverage is enabled by default (configured in `bunfig.toml`) and outputs both a console summary and an `lcov` report to `coverage/`. Tested modules include:
+
+- **Drawing tools** — RLE codec, pen/line/flood-fill, undo stack
+- **Annotations** — undo/redo, point-in-polygon, slice projection, shape selection
+- **Math/transforms** — vox↔mm conversions, spherical coordinates, slice plane equations
+- **Volume utilities** — intensity range calculation, NIfTI header creation, voxel lookup, reorientation
+- **Colormaps** — LUT generation, label colormap construction
+- **Mesh I/O** — STL/OBJ writers, STL/OFF readers (roundtrip tests)
+
+To run tests via Nx from the monorepo root:
+
+```bash
+bunx nx test niivue
+```
+
 ### Architecture
 
 The codebase is written in **TypeScript** and follows an MVC pattern with dual rendering backends (WebGPU and WebGL2). See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation, directory structure, code style, and module naming conventions.

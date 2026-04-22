@@ -1,0 +1,7 @@
+[test]
+root = "./src"
+coverage = true
+coverageReporter = ["text", "lcov"]
+
+[resolve]
+paths = { "@/*" = ["./src/*"] }

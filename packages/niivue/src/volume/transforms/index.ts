@@ -77,7 +77,9 @@ export interface TransformInfo {
 }
 
 // Auto-discover transform modules (excludes index.ts)
-const modules = import.meta.glob<VolumeTransform>('./*.ts', { eager: true })
+const modules = import.meta.glob<VolumeTransform>(['./*.ts', '!./*.test.ts'], {
+  eager: true,
+})
 
 // Build registry
 const transformsByName = new Map<string, VolumeTransform>()

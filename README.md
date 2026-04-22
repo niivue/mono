@@ -31,3 +31,11 @@ bunx nx run-many -t test   # Run all tests
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup, tooling, and development instructions.
+
+## GitHub Pages
+
+Pushing to `main` automatically builds and deploys all examples and demo apps to GitHub Pages. To preview the site locally:
+
+```bash
+.github/build-pages.sh --serve   # build and serve at http://localhost:8080/mono/
+```

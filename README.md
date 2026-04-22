@@ -4,14 +4,14 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 
 ## Packages
 
-| Package | Description |
-|---|---|
-| [`@niivue/niivue`](packages/niivue) | Core WebGPU/WebGL2 medical image viewer |
-| [`@niivue/nvreact`](packages/nv-react) | React bindings for NiiVue |
-| [`@niivue/nv-ext-drawing`](packages/nv-ext-drawing) | Drawing interpolation and segmentation tools |
-| [`@niivue/nv-ext-image-processing`](packages/nv-ext-image-processing) | Image processing (Otsu thresholding, haze removal, etc.) |
-| [`@niivue/nv-ext-save-html`](packages/nv-ext-save-html) | Export a NiiVue scene as a self-contained HTML file |
-| [`@niivue/dev-images`](packages/dev-images) | Shared test volumes, meshes, and tractography files (Git LFS) |
+| Package | Description | npm |
+|---|---|---|
+| [`@niivue/niivue`](packages/niivue) | Core WebGPU/WebGL2 medical image viewer | [![npm](https://img.shields.io/npm/v/@niivue/niivue)](https://www.npmjs.com/package/@niivue/niivue) |
+| [`@niivue/nvreact`](packages/nv-react) | React bindings for NiiVue | [![npm](https://img.shields.io/npm/v/@niivue/nvreact)](https://www.npmjs.com/package/@niivue/nvreact) |
+| [`@niivue/nv-ext-drawing`](packages/nv-ext-drawing) | Drawing interpolation and segmentation tools | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-drawing)](https://www.npmjs.com/package/@niivue/nv-ext-drawing) |
+| [`@niivue/nv-ext-image-processing`](packages/nv-ext-image-processing) | Image processing (Otsu thresholding, haze removal, etc.) | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-image-processing)](https://www.npmjs.com/package/@niivue/nv-ext-image-processing) |
+| [`@niivue/nv-ext-save-html`](packages/nv-ext-save-html) | Export a NiiVue scene as a self-contained HTML file | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-save-html)](https://www.npmjs.com/package/@niivue/nv-ext-save-html) |
+| [`@niivue/dev-images`](packages/dev-images) | Shared test volumes, meshes, and tractography files (Git LFS) | — |
 
 ## Apps
 

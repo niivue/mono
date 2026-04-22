@@ -131,10 +131,12 @@ feat!: redesign public API   (breaking change)
 
 - Tests are co-located with source files as `*.test.ts` / `*.test.tsx`.
 - Test runners vary by project — check the project's `project.json` `test` target.
-- No coverage thresholds are configured.
+- **`packages/niivue`** uses the **Bun test runner** (`bun test`). Coverage is enabled by default via `bunfig.toml` and outputs both a console summary (`text`) and `lcov` report to `coverage/`. No coverage thresholds are configured.
+- Other packages may use different test runners — always check `project.json`.
 
 ```bash
 bunx nx test <project>               # Run a project's tests via Nx
+cd packages/niivue && bun test       # Run niivue tests directly with coverage
 ```
 
 ## Before finishing a task

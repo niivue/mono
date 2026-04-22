@@ -34,7 +34,7 @@
       "inputs": ["typescript"]
     },
     "test": {
-      "command": "npx vitest run",
+      "command": "bun test",
       "options": { "cwd": "{projectRoot}" },
       "inputs": ["typescript"]
     }

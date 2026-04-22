@@ -15,7 +15,9 @@
         "typescript",
         "{projectRoot}/vite.config.js",
         "{projectRoot}/src/**/*",
-        "{projectRoot}/*.html"
+        "{projectRoot}/*.html",
+        { "env": "VITE_BASE" },
+        { "env": "VITE_IMAGES_BASE" }
       ],
       "outputs": ["{projectRoot}/dist"]
     },

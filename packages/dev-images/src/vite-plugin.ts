@@ -22,6 +22,15 @@ function walkDir(dir: string, base: string): string[] {
   return results
 }
 
+export interface DevImagesPluginOptions {
+  /**
+   * Whether to emit image files into the build output.
+   * Set to `false` when images are served from a shared location
+   * (e.g. a parent path on GitHub Pages). Default: `true`.
+   */
+  emit?: boolean
+}
+
 /**
  * Vite plugin that serves images from @niivue/dev-images during dev
  * and emits them as assets during build.
@@ -29,7 +38,8 @@ function walkDir(dir: string, base: string): string[] {
  * Files in the images directory are served at their relative path.
  * For example, `images/volumes/mni152.nii.gz` is served at `/volumes/mni152.nii.gz`.
  */
-export function devImagesPlugin(): Plugin {
+export function devImagesPlugin(options?: DevImagesPluginOptions): Plugin {
+  const shouldEmit = options?.emit ?? true
   return {
     name: 'niivue-dev-images',
 
@@ -57,6 +67,7 @@ export function devImagesPlugin(): Plugin {
     },
 
     generateBundle() {
+      if (!shouldEmit) return
       for (const relPath of walkDir(imagesDir, imagesDir)) {
         const filePath = resolve(imagesDir, relPath)
         this.emitFile({

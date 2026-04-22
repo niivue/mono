@@ -27,7 +27,7 @@ bunx nx build niivue
 # 2. Build demo apps (each gets its own sub-path)
 for app in "${APPS[@]}"; do
   echo "==> Building $app"
-  VITE_BASE="${BASE_PATH}${app}/" bunx nx build "$app"
+  VITE_BASE="${BASE_PATH}${app}/" VITE_IMAGES_BASE="$BASE_PATH" bunx nx build "$app"
 done
 
 # 3. Build niivue examples last (overwrites packages/niivue/dist)

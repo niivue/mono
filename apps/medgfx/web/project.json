@@ -1,0 +1,36 @@
+{
+  "name": "medgfx-web",
+  "projectType": "application",
+  "tags": ["type:app", "lang:typescript"],
+  "targets": {
+    "dev": {
+      "command": "bunx --bun vite",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "build": {
+      "command": "bunx --bun vite build",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"],
+      "inputs": [
+        "typescript",
+        "{projectRoot}/vite.config.ts",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/index.html"
+      ],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    },
+    "lint": {
+      "command": "bunx biome check {projectRoot}",
+      "inputs": ["typescript"]
+    },
+    "format": {
+      "command": "bunx biome format {projectRoot} --write",
+      "inputs": ["typescript"]
+    }
+  }
+}

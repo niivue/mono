@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Xcode — per-user state (window layout, breakpoints, last-opened file, etc.)
+# Keep shared schemes under xcshareddata/ so CI and other contributors can build.
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+
+# Xcode build artifacts (DerivedData is usually outside the repo, but just in case)
+build/
+DerivedData/
+
+# Swift Package Manager (if ever added)
+.swiftpm/
+Package.resolved
+
+# CocoaPods / Carthage (not used today, but cheap to pre-empt)
+Pods/
+Carthage/Build/

@@ -124,7 +124,7 @@ const nv1 = new NiiVue({
   showRender: SHOW_RENDER.ALWAYS,
 })
 await nv1.attachToCanvas(gl1)
-nv1.sliceType = 4
+sliceType.onchange()
 await nv1.loadVolumes([{ url: '/volumes/torso.nii.gz' }])
 nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 gradSlider.oninput()

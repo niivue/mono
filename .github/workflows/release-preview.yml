@@ -1,0 +1,61 @@
+name: Release Preview
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: release-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    name: Preview nx release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+
+      - name: Run nx release (dry run)
+        id: dry_run
+        run: |
+          set -o pipefail
+          bunx nx release --dry-run --skip-publish --verbose 2>&1 | tee release-preview.txt
+
+      - name: Format preview comment
+        run: bun .github/scripts/format-release-preview.ts release-preview.txt > preview-comment.md
+
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            const body = fs.readFileSync('preview-comment.md', 'utf8')
+            const marker = '<!-- nx-release-preview -->'
+            const { owner, repo } = context.repo
+            const issue_number = context.issue.number
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            })
+            const existing = comments.find((c) => c.body && c.body.includes(marker))
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body,
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body,
+              })
+            }

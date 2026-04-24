@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (print the plan without creating commits or tags)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: nx release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+
+      - name: Configure git identity
+        # Uses the official github-actions[bot] noreply address (user id 41898282).
+        # This attributes release commits to the bot in the GitHub UI with its avatar.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Release (dry run)
+        if: ${{ inputs.dry_run }}
+        run: |
+          set -o pipefail
+          {
+            echo '## Nx Release Dry Run'
+            echo ''
+            echo '```'
+            bunx nx release --dry-run --skip-publish --verbose
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Release
+        if: ${{ !inputs.dry_run }}
+        run: bunx nx release --skip-publish --verbose
+
+      - name: Push release commit and tags
+        if: ${{ !inputs.dry_run }}
+        run: git push --follow-tags origin HEAD:main

@@ -53,7 +53,16 @@
     "changelog": {
       "automaticFromRef": true,
       "workspaceChangelog": false,
-      "projectChangelogs": true
+      "projectChangelogs": {
+        "renderer": "{workspaceRoot}/nx-tools/plain-text-changelog-renderer.js"
+      }
+    },
+    "conventionalCommits": {
+      "types": {
+        "feat": { "changelog": { "title": "Features" } },
+        "fix": { "changelog": { "title": "Fixes" } },
+        "perf": { "changelog": { "title": "Performance" } }
+      }
     }
   },
   "analytics": false

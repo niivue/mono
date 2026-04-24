@@ -1,61 +1,85 @@
 # AGENTS.md — @niivue/nvreact
 
-Guidelines for AI coding agents operating in this repository.
+Guidelines for AI coding agents operating in the `@niivue/nvreact` package — lightweight React bindings for [NiiVue](https://github.com/niivue/niivue) providing multi-instance scene management, declarative hooks, and a standalone viewer component.
 
 ## Tooling
 
-Use **Bun** for everything. Never use Node.js, npm, Vite, Webpack, or esbuild.
+Use **Bun** for everything. Never use Node.js, npm, Vite (directly), Webpack, or esbuild for packaging. `vite` is used for the dev server only.
 
 ```sh
 bun install              # install dependencies
-bun run build:package    # full build (build:lib + build:types)
-bun run build:lib        # bundle src/lib.ts -> dist/lib.js (ESM)
+bun run dev              # dev server (vite)
+bun run build:package    # full library build (build:lib + build:types)
+bun run build:lib        # bundle src/lib.ts -> dist/lib.js (ESM, externals: react, react-dom, @niivue/niivue)
 bun run build:types      # emit .d.ts files via tsc -p tsconfig.build.json
 bun test                 # run all tests (Bun's built-in test runner)
 bun test src/foo.test.ts # run a single test file
 bun test --grep "name"   # run tests matching a pattern
 ```
 
-Test files use `bun:test` (`describe`, `test`/`it`, `expect`). Place tests next to
-source files as `*.test.ts` or `*.test.tsx`.
+Test files use `bun:test` (`describe`, `test`/`it`, `expect`). Place tests next to source files as `*.test.ts` or `*.test.tsx`. `bunfig.toml` preloads `./src/happydom.ts` and `./src/testing-library.ts` so JSDOM-style APIs are available in tests.
 
-### Example app
+From the monorepo root, use Nx:
 
 ```sh
-bun run example:setup    # pack library tarball and install into example-app
-bun run example:dev      # setup + start dev server
+bunx nx build nv-react
+bunx nx test nv-react
+bunx nx typecheck nv-react
+bunx nx lint nv-react
 ```
 
-After UI changes, start the dev server and visually verify with a browser or
-Chrome DevTools MCP.
+### Example-app scripts
+
+The `example:setup` / `example:dev` scripts in `package.json` pack the library tarball and install it into a sibling `example-app/` directory. Those scripts are retained for when an example app is added alongside the library; they will fail if `example-app/` is not present.
+
+After UI changes, start the dev server (`bun run dev`) and visually verify with a browser or Chrome DevTools MCP.
 
 ## Project structure
 
 ```
-src/
-  lib.ts                 # Public API barrel — all exports go here
-  nvscene-controller.ts  # Core controller class (instances, layout, volumes)
-  nvscene.tsx            # <NvScene> multi-viewer container
-  nvviewer.tsx           # <NvViewer> standalone declarative viewer
-  hooks.ts               # useScene, useNiivue, useSceneEvent
-  context.tsx            # NvSceneProvider, useSceneContext
-  layouts.ts             # Grid layout presets (1x1, 1x2, 2x2, …)
-  types.ts               # Shared types and event map
-example-app/             # Demo app consuming the library via tarball
+src/                    # Library source (published as @niivue/nvreact)
+  lib.ts                # Public API entry point — all exports (barrel, biome-ignore on noBarrelFile)
+  nvscene-controller.ts # Core controller: manages Niivue instances, layout, broadcasting, volumes
+  nvscene.tsx           # <NvScene> — multi-viewer container bound to a controller
+  nvviewer.tsx          # <NvViewer> — standalone single-instance viewer with declarative volumes
+  hooks.ts              # useScene, useNiivue, useSceneEvent
+  context.tsx           # NvSceneProvider, useSceneContext
+  layouts.ts            # Grid layout presets (1x1, 1x2, 2x2, ...)
+  types.ts              # Shared types and event map
+  App.tsx               # In-package demo component
+  frontend.tsx          # Demo entry point (React root)
+  index.html            # Demo HTML shell
+  happydom.ts           # Test preload — registers happy-dom globals
+  testing-library.ts    # Test preload — @testing-library/jest-dom matchers
+  __mocks__/            # Test mocks
+e2e/                    # Playwright end-to-end tests (scaffolding)
+scripts/                # Package scripts
 ```
+
+## Key APIs
+
+- **`NvSceneController`** — the only class; manages Niivue instances, layout, broadcasting, and volume loading. Implements `subscribe`/`getSnapshot` for `useSyncExternalStore`.
+- **`NvScene`** — React component that renders a controller's viewers in a CSS grid.
+- **`NvViewer`** — standalone viewer with declarative `volumes` prop (auto-diffs).
+- **`useScene(controller?, layouts?, viewerDefaults?)`** — creates or wraps a controller, returns `{ scene, snapshot }` via `useSyncExternalStore`.
+- **`useNiivue(scene, index)`** — access raw `Niivue` instance at a viewer index.
+- **`useSceneEvent(scene, event, callback)`** — subscribe to controller events with auto-cleanup.
+
+### Events (`NvSceneEventMap`)
+
+`viewerCreated`, `viewerRemoved`, `locationChange`, `imageLoaded`, `error`, `volumeAdded`, `volumeRemoved`.
 
 ## Code style
 
-No automated formatter or linter is configured. Follow the conventions below
-consistently.
+Linting/formatting is **Biome**, applied repo-wide via the monorepo root `biome.json`. The Nx `lint` / `format` targets run Biome against this package. See the root `AGENTS.md` for the full rule list.
 
-### Formatting
+### Formatting (enforced by Biome)
 
 - 2-space indentation
-- Always use semicolons
-- Double quotes for strings (`"`)
+- **No semicolons** (as needed only)
+- **Single quotes** for strings
 - Trailing commas in multi-line constructs
-- ESM only (`"type": "module"` in package.json)
+- ESM only (`"type": "module"` in `package.json`)
 
 ### Imports
 
@@ -64,12 +88,11 @@ consistently.
 3. External packages (`@niivue/niivue`)
 4. Internal modules (`./foo`)
 
-Use explicit `type` keyword for type-only imports — `verbatimModuleSyntax` is
-enabled and enforces this:
+Use the explicit `type` keyword for type-only imports — `verbatimModuleSyntax` is enabled and enforces this:
 
 ```ts
-import { Niivue, type NVConfigOptions } from "@niivue/niivue";
-import type { CSSProperties } from "react";
+import { Niivue, type NVConfigOptions } from '@niivue/niivue'
+import type { CSSProperties } from 'react'
 ```
 
 Relative imports use `./` prefix with no file extensions.
@@ -77,13 +100,11 @@ Relative imports use `./` prefix with no file extensions.
 ### TypeScript
 
 - **Strict mode** is on (`strict: true` plus `noUncheckedIndexedAccess`)
-- Use `interface` for object shapes; use `type` for aliases, unions, function
-  signatures, and derived types
-- Never use `any` — use `unknown` for error parameters and untyped data
+- Use `interface` for object shapes; use `type` for aliases, unions, function signatures, and derived types
+- Never use `any` — use `unknown` for error parameters and untyped data (Biome `noExplicitAny` is an error repo-wide)
 - Prefer `Partial<T>` for optional config objects
-- Generics with constraints for event systems:
-  `<E extends keyof NvSceneEventMap>`
-- Non-null assertion `!` is acceptable only where the value is guaranteed
+- Generics with constraints for event systems: `<E extends keyof NvSceneEventMap>`
+- Non-null assertion `!` is **disallowed** by Biome (`noNonNullAssertion`) — restructure instead
 
 ### Naming conventions
 
@@ -93,7 +114,7 @@ Relative imports use `./` prefix with no file extensions.
 | Files (React entry) | PascalCase | `App.tsx` |
 | Components | PascalCase, `Nv` prefix | `NvScene`, `NvViewer` |
 | Hooks | camelCase, `use` prefix | `useScene`, `useNiivue` |
-| Interfaces / Types | PascalCase, no `I` prefix | `ViewerState`, `LayoutConfig` |
+| Interfaces / types | PascalCase, no `I` prefix | `ViewerState`, `LayoutConfig` |
 | Constants | camelCase | `defaultLayouts` |
 | Private class fields | `private` keyword, camelCase | `private listeners` |
 | Unused parameters | underscore prefix | `_containerElement` |
@@ -102,9 +123,8 @@ Relative imports use `./` prefix with no file extensions.
 ### Exports
 
 - **Named exports only** in library code — no default exports
-- Barrel re-exports in `lib.ts` with separate `export { }` and `export type { }`
-  blocks
-- The example app's `App.tsx` may use both named and default exports
+- Barrel re-exports in `lib.ts` with separate `export { }` and `export type { }` blocks. The barrel file is the single exception to Biome's `noBarrelFile` rule and carries a `biome-ignore` directive.
+- `src/App.tsx` (the in-package demo) may use both named and default exports
 
 ### React patterns
 
@@ -115,8 +135,8 @@ Relative imports use `./` prefix with no file extensions.
 - `useRef` for DOM refs, mutable values, and stable callback references
 - Callback ref pattern to avoid stale closures:
   ```ts
-  const cbRef = useRef(callback);
-  cbRef.current = callback;
+  const cbRef = useRef(callback)
+  cbRef.current = callback
   ```
 - `useCallback` for event handlers passed to children
 - Always return cleanup functions from `useEffect`
@@ -125,10 +145,10 @@ Relative imports use `./` prefix with no file extensions.
 
 ### Error handling
 
-- `throw new Error("descriptive message")` for programmer errors
+- `throw new Error('descriptive message')` for programmer errors
 - `try/catch/finally` for async operations, re-throw after cleanup
 - Catch parameters typed as `unknown`: `.catch((err: unknown) => { ... })`
-- Emit errors through the event system: `this.emit("error", index, err)`
+- Emit errors through the event system: `this.emit('error', index, err)`
 - Optional chaining for optional callbacks: `onErrorRef.current?.(err)`
 
 ### Comments
@@ -137,22 +157,9 @@ Relative imports use `./` prefix with no file extensions.
 - Inline `//` for implementation notes
 - Section dividers in large files: `// --- Section Name ---`
 
-## Key APIs
+## Verification
 
-- **`NvSceneController`** — the only class; manages Niivue instances, layout,
-  broadcasting, and volume loading. Implements `subscribe`/`getSnapshot` for
-  `useSyncExternalStore`.
-- **`NvScene`** — renders a controller's viewers in a CSS grid
-- **`NvViewer`** — standalone viewer with declarative `volumes` prop (auto-diffs)
-- **`useScene(controller?, layouts?, viewerDefaults?)`** — creates or wraps a
-  controller, returns `{ scene, snapshot }`
-- **`useNiivue(scene, index)`** — access raw `Niivue` instance at a viewer index
-- **`useSceneEvent(scene, event, callback)`** — subscribe to controller events
-
-### Events (NvSceneEventMap)
-
-`viewerCreated`, `viewerRemoved`, `locationChange`, `imageLoaded`, `error`,
-`volumeAdded`, `volumeRemoved`
+Always verify UI changes with a browser or Chrome DevTools (MCP). After modifying components, start the dev server (`bun run dev`), navigate to the demo, and take screenshots to confirm the result.
 
 ## Build & publish
 
@@ -163,4 +170,4 @@ bun publish --access public
 
 ## Peer dependencies
 
-`@niivue/niivue`, `react ^19`, `react-dom ^19`
+`@niivue/niivue` (workspace), `react ^19`, `react-dom ^19`.

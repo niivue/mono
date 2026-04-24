@@ -163,6 +163,18 @@ bunx nx run <project>:test
 bunx nx run <project>:build
 ```
 
+## NiiVue feature parity
+
+The `@niivue/niivue` package in this repo is a complete rewrite of the old niivue package (`~/github/niivue/niivue/packages/niivue`). The new package does **not** aim for API compatibility — the public API is different and that is expected. However, most features from the old package should eventually be available in the new one. See `packages/niivue/FEATURE_PARITY.md` for a detailed tracking table of which features are present, missing, or deferred. Consult it before implementing features.
+
+## Releases
+
+Managed via Nx Release with conventional commits (config in root `nx.json`):
+
+- **TypeScript packages:** Independent versioning, tags as `{projectName}@{version}`
+- **Python packages:** Independent versioning with Pixi version actions
+- Project-level changelogs are auto-generated
+
 ## Do not touch
 
 - **`bun.lock`** — managed by Bun. Never edit manually.

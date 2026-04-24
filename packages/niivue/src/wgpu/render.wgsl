@@ -1,5 +1,21 @@
 // Render-specific functions (preamble is prepended by render.ts from volumeShaderLib)
 
+// Drawing-gradient tuning constants. Shader authoring choices, not runtime
+// uniforms. Offset widens vs sharpens the gradient stencil; non-integer
+// exploits the linear sampler for Gaussian-like free smoothing. Epsilon
+// below which gradient normalization is unreliable.
+const DRAW_GRAD_OFFSET: f32 = 1.5;
+const DRAW_GRAD_EPSILON: f32 = 1e-6;
+
+// Weighted scalar projection of drawing RGBA. Luminance weights on RGB
+// distinguish distinct label colors; heavy alpha weight (2.0) makes
+// background→drawing transitions dominate. Switched from length(rgba) which
+// missed label-to-label boundaries when two labels had similar-magnitude
+// RGBA vectors (common when labels share alpha=255 and differ only in hue).
+fn drawScalar(c: vec4f) -> f32 {
+    return dot(c, vec4f(0.299, 0.587, 0.114, 2.0));
+}
+
 struct RayMarchResult {
     color: vec4f,
     firstHit: vec4f,
@@ -288,8 +304,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 					}
 					let gradRaw = textureSampleLevel(volumeGradient, tex_sampler, samplePos.xyz, 0.0).rgb;
 					let localNormal = normalize(gradRaw * 2.0 - 1.0);
-					var n = norm3 * localNormal;
-					n.y = -n.y; // Match the WebGL coordinate flip
+					let n = norm3 * localNormal;
 					let uv = n.xy * 0.5 + 0.5;
 					let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * brighten;
 					let blendedRGB = mix(vec3f(1.0), mc_rgb, localGradientAmount);
@@ -351,9 +366,42 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 		let result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination, params.paqdUniforms);
 		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor);
 	}
-	// Drawing pass (nearest-neighbor sampling)
+	// Drawing pass (nearest-neighbor sampling for ray-march, linear for gradient)
 	if (textureDimensions(drawing, 0).x > 2) {
-		let result = rayMarchPass(drawing, nearest_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+		var result = rayMarchPass(drawing, nearest_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+		// Matcap lighting at first hit. 6-tap central-difference gradient
+		// sampled at 1.5 voxels out through the filtering sampler — each
+		// tap is a trilinear blend of 8 texels ("Gaussian for free"),
+		// which smooths away ray-march step jitter without any
+		// precomputed drawingGradient texture. Sign: value(+X) - value(-X)
+		// matches the volume gradient's inward-pointing convention.
+		if (result.color.a > 0.001 && params.gradientAmount > 0.0) {
+			let dv = DRAW_GRAD_OFFSET / vec3f(textureDimensions(drawing, 0));
+			let hp = result.firstHit.xyz;
+			let vXp = drawScalar(textureSampleLevel(drawing, tex_sampler, hp + vec3f(dv.x, 0.0, 0.0), 0.0));
+			let vXm = drawScalar(textureSampleLevel(drawing, tex_sampler, hp - vec3f(dv.x, 0.0, 0.0), 0.0));
+			let vYp = drawScalar(textureSampleLevel(drawing, tex_sampler, hp + vec3f(0.0, dv.y, 0.0), 0.0));
+			let vYm = drawScalar(textureSampleLevel(drawing, tex_sampler, hp - vec3f(0.0, dv.y, 0.0), 0.0));
+			let vZp = drawScalar(textureSampleLevel(drawing, tex_sampler, hp + vec3f(0.0, 0.0, dv.z), 0.0));
+			let vZm = drawScalar(textureSampleLevel(drawing, tex_sampler, hp - vec3f(0.0, 0.0, dv.z), 0.0));
+			let grad = vec3f(vXp - vXm, vYp - vYm, vZp - vZm);
+			if (length(grad) > DRAW_GRAD_EPSILON) {
+				let localNormal = normalize(grad);
+				let norm3 = mat3x3f(params.normMtx[0].xyz, params.normMtx[1].xyz, params.normMtx[2].xyz);
+				let n = norm3 * localNormal;
+				let uv = n.xy * 0.5 + 0.5;
+				let brighten = 1.0 + (params.gradientAmount / 3.0);
+				let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * brighten;
+				let shade = mix(vec3f(1.0), mc_rgb, params.gradientAmount);
+				// result.color is premultiplied (rgb = actualColor * alpha).
+				// Clamp to alpha so the shade (which can exceed 1.0 via
+				// brighten) can't push rgb > alpha and break the
+				// premultiplied-alpha invariant that depthAwareMix and
+				// framebuffer blending assume.
+				let shadedRgb = min(result.color.rgb * shade, vec3f(result.color.a));
+				result.color = vec4f(shadedRgb, result.color.a);
+			}
+		}
 		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor);
 	}
 	// Final output

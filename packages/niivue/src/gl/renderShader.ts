@@ -15,6 +15,25 @@ uniform sampler3D overlay;
 uniform sampler3D paqd;
 uniform sampler2D paqdLut;
 uniform sampler3D drawing;
+uniform sampler3D drawingLinear;
+
+// Drawing-gradient tuning constants. Kept inline because they are shader
+// authoring choices (widens vs sharpens the gradient stencil), not
+// runtime-tunable parameters.
+// Offset (in voxels) for the 6-tap gradient stencil. The non-integer value
+// exploits the LINEAR sampler — each tap is a trilinear blend of 8 texels,
+// giving a Gaussian-like smoothing for free.
+const float DRAW_GRAD_OFFSET = 1.5;
+// Below this, the gradient is too small to normalize reliably.
+const float DRAW_GRAD_EPSILON = 1e-6;
+// Weighted scalar projection of drawing RGBA → f32. Luminance weights on
+// RGB distinguish distinct label colors; heavy alpha weight (2.0) makes
+// background→drawing transitions dominate. Switched from length(rgba) which
+// missed label-to-label boundaries when two labels had similar-magnitude
+// RGBA vectors (common when labels share alpha=255 and differ only in hue).
+float drawScalar(vec4 c) {
+  return dot(c, vec4(0.299, 0.587, 0.114, 2.0));
+}
 
 struct RayResult {
   vec4 color;
@@ -364,6 +383,39 @@ void main() {
   // Drawing pass (nearest-neighbor sampling — NEAREST filter set by CPU)
   if (textureSize(drawing, 0).x > 2) {
     RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+    // Matcap lighting at first hit. 6-tap central-difference gradient on
+    // the drawing texture with LINEAR filtering — each tap is a trilinear
+    // blend of 8 texels, which approximates a Gaussian-smoothed sample
+    // (the "bilinear free smoothing" trick). Sampling at 1.5 voxels out
+    // widens the stencil, further reducing per-pixel noise from the
+    // ray-march step discretization and ran jitter. Sign convention:
+    // gx = value(+x) - value(-x), matching the volume gradient (inward-
+    // pointing toward higher drawing density).
+    if (result.color.a > 0.001 && gradientAmount > 0.0) {
+      vec3 dv = DRAW_GRAD_OFFSET / vec3(textureSize(drawingLinear, 0));
+      vec3 hp = result.firstHit.xyz;
+      float vXp = drawScalar(texture(drawingLinear, hp + vec3(dv.x, 0.0, 0.0)));
+      float vXm = drawScalar(texture(drawingLinear, hp - vec3(dv.x, 0.0, 0.0)));
+      float vYp = drawScalar(texture(drawingLinear, hp + vec3(0.0, dv.y, 0.0)));
+      float vYm = drawScalar(texture(drawingLinear, hp - vec3(0.0, dv.y, 0.0)));
+      float vZp = drawScalar(texture(drawingLinear, hp + vec3(0.0, 0.0, dv.z)));
+      float vZm = drawScalar(texture(drawingLinear, hp - vec3(0.0, 0.0, dv.z)));
+      vec3 grad = vec3(vXp - vXm, vYp - vYm, vZp - vZm);
+      if (length(grad) > DRAW_GRAD_EPSILON) {
+        vec3 localNormal = normalize(grad);
+        mat3 norm3d = mat3(normMtx);
+        vec3 n = norm3d * localNormal;
+        vec2 uv = n.xy * 0.5 + 0.5;
+        float brighten = 1.0 + (gradientAmount / 3.0);
+        vec3 mc_rgb = texture(matcap, uv).rgb * brighten;
+        vec3 shade = mix(vec3(1.0), mc_rgb, gradientAmount);
+        // result.color is premultiplied (rgb = actualColor * alpha).
+        // Clamp to alpha so the shade (which can exceed 1.0 via brighten)
+        // can't push rgb > alpha and break the premultiplied-alpha
+        // invariant that depthAwareMix and framebuffer blending assume.
+        result.color.rgb = min(result.color.rgb * shade, vec3(result.color.a));
+      }
+    }
     depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
   }
   // Final output

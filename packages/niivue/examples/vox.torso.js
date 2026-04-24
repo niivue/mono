@@ -1,4 +1,6 @@
+import { cortex, shiny } from '../src/assets/matcaps'
 import NiiVue from '../src/index.ts'
+import { SHOW_RENDER } from '../src/NVConstants.ts'
 
 gradSlider.oninput = () => {
   nv1.volumeIllumination = Number(gradSlider.value) / 100
@@ -62,27 +64,31 @@ clipSelect.onchange = function () {
   }
   nv1.setClipPlanes(planes)
 }
+matcapSelect.onchange = async () => {
+  await nv1.loadMatcap(matcapSelect.value)
+}
 benchBtn.onclick = async () => {
   const view = nv1.view
-  if (!view || typeof view.renderAndFlushOffscreen !== 'function') {
-    console.warn('renderAndFlushOffscreen unavailable')
+  if (!view) {
+    console.warn('bench harness unavailable')
     return
   }
+  const bench = view.bench
   const backend = view.device ? 'WebGPU' : view.gl ? 'WebGL2' : 'unknown'
   const WARMUP = 10
   const SAMPLES = 200
   benchBtn.disabled = true
   benchBtn.textContent = 'Benchmarking...'
-  for (let i = 0; i < WARMUP; i++) await view.renderAndFlushOffscreen()
+  for (let i = 0; i < WARMUP; i++) await bench.renderAndFlushOffscreen()
   // Sanity check for WebGL2: confirm the offscreen FBO actually got pixels.
   // Helps catch silent no-renders (incomplete FBO, stale bounds, etc.).
-  if (view.gl && view._benchFbo) {
+  if (view.gl && bench.fboW > 0) {
     const gl = view.gl
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, view._benchFbo)
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, bench.fbo)
     const pix = new Uint8Array(4)
     gl.readPixels(
-      view._benchFboW >> 1,
-      view._benchFboH >> 1,
+      bench.fboW >> 1,
+      bench.fboH >> 1,
       1,
       1,
       gl.RGBA,
@@ -92,10 +98,10 @@ benchBtn.onclick = async () => {
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null)
     const blank = pix[0] === 0 && pix[1] === 0 && pix[2] === 0
     console.log(
-      `${backend} FBO ${view._benchFboW}x${view._benchFboH} bounds=${view._boundsWidth}x${view._boundsHeight} center=[${Array.from(pix)}]${blank ? ' BLANK — NOT RENDERING' : ''}`,
+      `${backend} FBO ${bench.fboW}x${bench.fboH} bounds=${view.boundsWidth}x${view.boundsHeight} center=[${Array.from(pix)}]${blank ? ' BLANK — NOT RENDERING' : ''}`,
     )
   } else {
-    console.log(`${backend} bounds=${view._boundsWidth}x${view._boundsHeight}`)
+    console.log(`${backend} bounds=${view.boundsWidth}x${view.boundsHeight}`)
   }
   const times = new Float64Array(SAMPLES)
   for (let i = 0; i < SAMPLES; i++) {
@@ -113,7 +119,10 @@ benchBtn.onclick = async () => {
   benchBtn.textContent = `${backend} ${fmt(median)}ms`
   benchBtn.disabled = false
 }
-const nv1 = new NiiVue({ backend: 'webgl2' })
+const nv1 = new NiiVue({
+  matcaps: { Cortex: cortex, Shiny: shiny },
+  showRender: SHOW_RENDER.ALWAYS,
+})
 await nv1.attachToCanvas(gl1)
 nv1.sliceType = 4
 await nv1.loadVolumes([{ url: '/volumes/torso.nii.gz' }])
@@ -144,3 +153,4 @@ nv1.drawColormap = '_torso'
 await nv1.loadDrawing('/volumes/torsoLabel.nii.gz')
 nv1.drawIsEnabled = false
 clipSelect.onchange()
+matcapSelect.onchange()

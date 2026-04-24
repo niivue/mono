@@ -14,8 +14,8 @@
         <option value="0">Axial</option>
         <option value="1">Coronal</option>
         <option value="2">Sagittal</option>
-        <option value="4" selected>Render</option>
-        <option value="3">A+C+S+R</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
       </select>
       &nbsp;
       <label for="clipSelect">Clip Planes</label>
@@ -29,7 +29,11 @@
         <option>6</option>
       </select>
       &nbsp;
-      <label for="gradSlider">Lighting</label>
+      <label for="matcapSelect">Matcap</label>
+      <select id="matcapSelect">
+        <option>Cortex</option>
+        <option selected>Shiny</option>
+      </select>
       <input
         type="range"
         min="0"
@@ -41,7 +45,7 @@
       <button type="button" id="benchBtn">Benchmark</button>
       &nbsp;
       <label for="webgpuCheck">WebGPU</label>
-      <input type="checkbox" id="webgpuCheck"/>
+      <input type="checkbox" id="webgpuCheck" checked/>
     </header>
     <main id="canvas-container">
       <canvas id="gl1"></canvas>

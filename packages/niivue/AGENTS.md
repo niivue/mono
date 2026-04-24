@@ -420,7 +420,7 @@ Priority: mosaic string > render-only > single slice > hero layout > multiplanar
 The 3D render shaders (`wgpu/render.wgsl`, `gl/renderShader.ts`) use a multi-pass ray-march:
 
 1. **Background pass** (fast + fine): Gradient lighting via matcap. Handles clip planes.
-2. **Optional passes** (overlay, PAQD, drawing): Each uses `rayMarchPass()` (fast skip + fine accumulation with premultiplied alpha), then `depthAwareMix()` for depth-correct compositing.
+2. **Optional passes** (overlay, PAQD, drawing): Each uses `rayMarchPass()` (fast skip + fine accumulation with premultiplied alpha), then `depthAwareMix()` for depth-correct compositing. When `gradientAmount > 0`, the drawing pass applies matcap lighting at first hit using a gradient sampled from the drawing volume (same uniform gate as the background pass).
 
 Guards: Each optional pass checks `textureSize > 2` (placeholder is 2×2×2 all zeros).
 

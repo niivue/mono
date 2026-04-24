@@ -25,6 +25,7 @@
     "typecheck": {
       "command": "bunx tsc --noEmit",
       "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"],
       "inputs": ["typescript"]
     },
     "lint": {

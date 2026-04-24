@@ -18,3 +18,7 @@ Package.resolved
 # CocoaPods / Carthage (not used today, but cheap to pre-empt)
 Pods/
 Carthage/Build/
+
+# Local signing config — each contributor supplies their own Team ID.
+# Commit the template (Signing.xcconfig.sample), never the .local file.
+Signing.local.xcconfig

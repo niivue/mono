@@ -27,6 +27,8 @@
 		341DC6A82F9AB29E00FC2408 /* medgfx.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = medgfx.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		341DC6B92F9AB2A000FC2408 /* medgfxTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = medgfxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		341DC6C32F9AB2A000FC2408 /* medgfxUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = medgfxUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A51617A10CAL0CAL0CAL0001 /* Signing.local.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.local.xcconfig; sourceTree = "<group>"; };
+		7A51617A10CAL0CAL0CAL0002 /* Signing.xcconfig.sample */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig.sample; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -88,6 +90,8 @@
 		341DC69F2F9AB29E00FC2408 = {
 			isa = PBXGroup;
 			children = (
+				7A51617A10CAL0CAL0CAL0002 /* Signing.xcconfig.sample */,
+				7A51617A10CAL0CAL0CAL0001 /* Signing.local.xcconfig */,
 				341DC6AA2F9AB29E00FC2408 /* medgfx */,
 				341DC6BC2F9AB2A000FC2408 /* medgfxTests */,
 				341DC6C62F9AB2A000FC2408 /* medgfxUITests */,
@@ -317,7 +321,6 @@
 				CODE_SIGN_ENTITLEMENTS = medgfx/medgfx.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -373,7 +376,6 @@
 				CODE_SIGN_ENTITLEMENTS = medgfx/medgfx.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -423,6 +425,7 @@
 		};
 		341DC6CF2F9AB2A000FC2408 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7A51617A10CAL0CAL0CAL0001 /* Signing.local.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -456,7 +459,6 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -485,6 +487,7 @@
 		};
 		341DC6D02F9AB2A000FC2408 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7A51617A10CAL0CAL0CAL0001 /* Signing.local.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -518,7 +521,6 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -543,7 +545,6 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
@@ -569,7 +570,6 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
@@ -594,7 +594,6 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
@@ -619,7 +618,6 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;

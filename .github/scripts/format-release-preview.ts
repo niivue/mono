@@ -32,7 +32,7 @@ const mergeBump = (project: string, patch: Partial<Bump>) => {
 
 const projectStart = / NX {3}Running release version for project:\s+(\S+)/
 const fromPattern =
-  /^(\S+)\s+(?:.*Current version\s+.*?\s+is\s+(\S+)|.*Falling back to the version\s+(\S+)\s+in manifest)/
+  /^(\S+)\s+.*(?:Resolved the current version as\s+(\S+)|Falling back to the version\s+(\S+)\s+in manifest)/
 const specifierPattern = /^(\S+)\s+.*Resolved the specifier as\s+"(\w+)"/
 // A project can emit multiple "New version X written" lines during one run
 // (once from a dependency bump, again from commits). We keep the last.

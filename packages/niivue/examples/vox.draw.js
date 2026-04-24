@@ -83,8 +83,20 @@ async function openDrawing(source) {
 }
 
 loadFile.onchange = async function () {
-  if (!this.files?.[0]) return
-  await openDrawing(this.files[0])
+  const file = this.files?.[0]
+  if (!file) return
+  const name = file.name.toLowerCase()
+  if (!name.endsWith('.nii') && !name.endsWith('.nii.gz')) {
+    alert(`Unsupported file: ${file.name}\nExpected .nii or .nii.gz`)
+    this.value = ''
+    return
+  }
+  const ok = await openDrawing(file)
+  if (!ok) {
+    alert(
+      `Could not load ${file.name} as a drawing.\nCheck the browser console for details.`,
+    )
+  }
   this.value = ''
 }
 

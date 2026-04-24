@@ -25,6 +25,7 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { WGPUBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
 import * as depthPick from './depthPick'
@@ -101,6 +102,28 @@ export default class NVView {
   private _msaaTextureView: GPUTextureView | null = null
   // Reusable scratch buffer for mesh uniform writes — avoids per-call Float32Array allocation
   private _uniformScratch = new Float32Array(mesh.MESH_UNIFORM_SIZE / 4)
+  // Narrow public getters for bench.ts to read current render-area size
+  // without making the backing fields public or mutable.
+  get boundsWidth(): number {
+    return this._boundsWidth
+  }
+  get boundsHeight(): number {
+    return this._boundsHeight
+  }
+  /**
+   * Benchmark-only helper: force _isSubCanvasBounds to false (so render()
+   * writes directly to the bench override target rather than copying
+   * through _boundsColorTexture) and return a restore function.
+   */
+  suppressSubCanvasBounds(): () => void {
+    const saved = this._isSubCanvasBounds
+    this._isSubCanvasBounds = false
+    return () => {
+      this._isSubCanvasBounds = saved
+    }
+  }
+  // Lazily created on first `view.bench` access; see ./bench.ts.
+  private _bench: WGPUBench | null = null
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -577,7 +600,8 @@ export default class NVView {
       return
     }
     // Determine render targets based on bounds mode
-    const canvasTexture = this.context.getCurrentTexture()
+    const canvasTexture =
+      this._bench?.targetOverride ?? this.context.getCurrentTexture()
     const bw = this._boundsWidth
     const bh = this._boundsHeight
     const isSub = this._isSubCanvasBounds && this._boundsColorTexture
@@ -1364,6 +1388,22 @@ export default class NVView {
     device.queue.submit([commandEncoder.finish()])
   }
 
+  /** Lazy bench harness. Not for production use. See ./bench.ts. */
+  get bench(): WGPUBench {
+    if (!this._bench) this._bench = new WGPUBench(this)
+    return this._bench
+  }
+
+  /** Benchmark-only: render to canvas and await GPU completion. */
+  renderAndFlush(): Promise<void> {
+    return this.bench.renderAndFlush()
+  }
+
+  /** Benchmark-only: render to an offscreen texture and await GPU completion. */
+  renderAndFlushOffscreen(): Promise<void> {
+    return this.bench.renderAndFlushOffscreen()
+  }
+
   /** Copy this view's intermediate texture and all siblings' to the canvas */
   private _copyBoundsToCanvas(
     commandEncoder: GPUCommandEncoder,
@@ -2042,6 +2082,10 @@ export default class NVView {
       mesh.destroyMesh(this.orientCubeGpu)
       this.orientCubeGpu = null
     }
+
+    // Release benchmark resources (owned by bench module)
+    this._bench?.destroy()
+    this._bench = null
 
     // Destroy MSAA, bounds color, and depth textures
     if (this.msaaTexture) {

@@ -24,6 +24,7 @@ export class VolumeRenderer extends NVRenderer {
   paqdTexture: WebGLTexture | null
   paqdLutTexture: WebGLTexture | null
   drawingTexture: WebGLTexture | null
+  drawingLinearSampler: WebGLSampler | null
   placeholderOverlay: WebGLTexture | null
   cubeVAO: WebGLVertexArrayObject | null
   vertexBuffer: WebGLBuffer | null
@@ -43,6 +44,7 @@ export class VolumeRenderer extends NVRenderer {
     this.paqdTexture = null
     this.paqdLutTexture = null
     this.drawingTexture = null
+    this.drawingLinearSampler = null
     this.placeholderOverlay = null
     this.cubeVAO = null
     this.vertexBuffer = null
@@ -503,6 +505,31 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1i(shader.uniforms.drawing, 5)
     }
 
+    // Bind drawing texture a second time at unit 7, via a LINEAR sampler
+    // object so we can take trilinearly-filtered samples of the same
+    // texture for smooth gradient computation at first-hit (unit 5 keeps
+    // NEAREST filtering for the categorical ray-march).
+    if (!this.drawingLinearSampler) {
+      const s = gl.createSampler()
+      if (s) {
+        gl.samplerParameteri(s, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+        gl.samplerParameteri(s, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+        gl.samplerParameteri(s, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+        gl.samplerParameteri(s, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+        gl.samplerParameteri(s, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+        this.drawingLinearSampler = s
+      }
+    }
+    gl.activeTexture(gl.TEXTURE7)
+    gl.bindTexture(
+      gl.TEXTURE_3D,
+      this.drawingTexture || this.placeholderOverlay,
+    )
+    gl.bindSampler(7, this.drawingLinearSampler)
+    if (shader.uniforms.drawingLinear) {
+      gl.uniform1i(shader.uniforms.drawingLinear, 7)
+    }
+
     // Bind PAQD LUT to unit 6 (nearest-neighbor 2D texture)
     gl.activeTexture(gl.TEXTURE6)
     if (this.paqdLutTexture) {
@@ -711,6 +738,7 @@ export class VolumeRenderer extends NVRenderer {
     if (this.overlayTexture) gl.deleteTexture(this.overlayTexture)
     if (this.paqdTexture) gl.deleteTexture(this.paqdTexture)
     if (this.drawingTexture) gl.deleteTexture(this.drawingTexture)
+    if (this.drawingLinearSampler) gl.deleteSampler(this.drawingLinearSampler)
     if (this.placeholderOverlay) gl.deleteTexture(this.placeholderOverlay)
     this.matcapTexture = null
     this.volumeTexture = null
@@ -718,6 +746,7 @@ export class VolumeRenderer extends NVRenderer {
     this.overlayTexture = null
     this.paqdTexture = null
     this.drawingTexture = null
+    this.drawingLinearSampler = null
     this.placeholderOverlay = null
 
     // Delete shader program

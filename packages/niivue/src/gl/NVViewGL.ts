@@ -25,6 +25,7 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { GLBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
 import { FontRenderer } from './font'
@@ -73,6 +74,16 @@ export default class NVGlview {
   private _boundsOffsetX = 0
   private _boundsOffsetY = 0
   private _isSubCanvasBounds = false
+  // Narrow public getters for bench.ts to read current render-area size
+  // without making the backing fields public or mutable.
+  get boundsWidth(): number {
+    return this._boundsWidth
+  }
+  get boundsHeight(): number {
+    return this._boundsHeight
+  }
+  // Lazily created on first `view.bench` access; see ./bench.ts.
+  private _bench: GLBench | null = null
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -1019,6 +1030,22 @@ export default class NVGlview {
     }
   }
 
+  /** Lazy bench harness. Not for production use. See ./bench.ts. */
+  get bench(): GLBench {
+    if (!this._bench) this._bench = new GLBench(this)
+    return this._bench
+  }
+
+  /** Benchmark-only: render to canvas and block until the GPU finishes. */
+  renderAndFlush(): Promise<void> {
+    return this.bench.renderAndFlush()
+  }
+
+  /** Benchmark-only: render to an offscreen FBO and block until the GPU finishes. */
+  renderAndFlushOffscreen(): Promise<void> {
+    return this.bench.renderAndFlushOffscreen()
+  }
+
   resize(): void {
     if (!this.gl) return
     // Calculate device pixel ratio
@@ -1336,6 +1363,10 @@ export default class NVGlview {
     // Delete font texture
     if (this.fontTexture) gl.deleteTexture(this.fontTexture)
     this.fontTexture = null
+
+    // Release benchmark resources (owned by bench module)
+    this._bench?.destroy()
+    this._bench = null
 
     // Destroy render layer instances
     this.volumeRenderer.destroy()

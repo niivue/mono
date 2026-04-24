@@ -27,10 +27,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let BPR = sample_voxel(x+1, y-1, z-1, size, inputTex);
     let BPL = sample_voxel(x-1, y-1, z-1, size, inputTex);
 
+    // Standard Sobel convention: gradient = intensity(+axis) - intensity(-axis).
+    // T/B = Top/Bottom = ±Z, A/P = Anterior/Posterior = ±Y, R/L = Right/Left = ±X.
+    // Previously these were inverted (all three axes), which forced
+    // render.wgsl's volume path to carry an `n.y = -n.y` band-aid that
+    // only partially compensated for the full 3-axis flip. Restoring
+    // standard convention here lets that band-aid go away too.
     var grad: vec3<f32>;
-    grad.x = (TAL + TPL + BAL + BPL) - (TAR + TPR + BAR + BPR);
-    grad.y = (TPR + TPL + BPR + BPL) - (TAR + TAL + BAR + BAL);
-    grad.z = (BAR + BAL + BPR + BPL) - (TAR + TAL + TPR + TPL);
+    grad.x = (TAR + TPR + BAR + BPR) - (TAL + TPL + BAL + BPL);
+    grad.y = (TAR + TAL + BAR + BAL) - (TPR + TPL + BPR + BPL);
+    grad.z = (TAR + TAL + TPR + TPL) - (BAR + BAL + BPR + BPL);
 
     let magnitude = (abs(grad.x) + abs(grad.y) + abs(grad.z)) * 0.29;
     let dirColor = normalize(grad + 0.00001) * 0.5 + 0.5; // Avoid div by zero

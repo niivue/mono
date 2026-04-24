@@ -119,7 +119,7 @@ export function buildLocationMessage(
               const lut = ctx._drawLut
               const localIdx = drawVal - (lut?.min ?? 0)
               const label = lut?.labels?.[localIdx]
-              str += ` draw:${label ?? drawVal}`
+              str += label ? ` ${label}` : ` draw:${drawVal}`
             }
           }
         }

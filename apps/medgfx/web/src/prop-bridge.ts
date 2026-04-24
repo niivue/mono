@@ -9,7 +9,7 @@
 
 import type NiiVue from '@niivue/niivue'
 import type { Bridge } from './bridge'
-import { PROP_ALLOWLIST, coerce } from './prop-allowlist'
+import { coerce, PROP_ALLOWLIST } from './prop-allowlist'
 
 type Nv = InstanceType<typeof NiiVue>
 
@@ -58,7 +58,10 @@ export function wirePropBridge(nv: Nv, bridge: Bridge): void {
 
   nv.addEventListener('change', (event) => {
     if (applying) return
-    const detail = (event as CustomEvent).detail as { property?: string; value?: unknown }
+    const detail = (event as CustomEvent).detail as {
+      property?: string
+      value?: unknown
+    }
     if (!detail?.property) return
     const spec = PROP_ALLOWLIST[detail.property]
     if (!spec || spec.emitOnChange === false) return

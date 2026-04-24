@@ -98,7 +98,9 @@ export class Bridge {
   /** Register a handler the native side can invoke via `call`. */
   handle(method: string, handler: CallHandler): void {
     if (this.callHandlers.has(method)) {
-      throw new Error(`medgfx-bridge: handler already registered for '${method}'`)
+      throw new Error(
+        `medgfx-bridge: handler already registered for '${method}'`,
+      )
     }
     this.callHandlers.set(method, handler)
   }

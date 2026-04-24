@@ -1,4 +1,4 @@
-import NiiVue from '@niivue/niivue'
+import type NiiVue from '@niivue/niivue'
 import type { Bridge } from './bridge'
 import { wirePropBridge } from './prop-bridge'
 
@@ -23,7 +23,10 @@ function base64ToArrayBuffer(b64: string): ArrayBuffer {
  * Registers bridge handlers that drive the given NiiVue instance and
  * forwards niivue events back to the native host.
  */
-export function wireNiiVueToBridge(nv: InstanceType<typeof NiiVue>, bridge: Bridge): void {
+export function wireNiiVueToBridge(
+  nv: InstanceType<typeof NiiVue>,
+  bridge: Bridge,
+): void {
   bridge.handle('loadVolume', async (raw) => {
     const { name, bytesBase64 } = raw as LoadVolumePayload
     const buffer = base64ToArrayBuffer(bytesBase64)

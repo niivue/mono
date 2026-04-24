@@ -37,6 +37,9 @@
     }
   },
   "release": {
+    "releaseTag": {
+      "strictPreid": false
+    },
     "groups": {
       "typescript": {
         "projects": ["packages/niivue", "packages/nv-*"],

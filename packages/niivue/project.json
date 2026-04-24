@@ -36,7 +36,8 @@
     "test": {
       "command": "bun test",
       "options": { "cwd": "{projectRoot}" },
-      "inputs": ["typescript"]
+      "inputs": ["typescript"],
+      "outputs": ["{projectRoot}/coverage"]
     }
   }
 }

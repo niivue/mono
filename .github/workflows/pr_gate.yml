@@ -29,3 +29,7 @@ jobs:
 
       - name: Test
         run: bunx nx run-many -t test
+
+      - name: Coverage summary (niivue)
+        if: always()
+        run: bun .github/scripts/lcov-to-summary.ts packages/niivue/coverage/lcov.info --title "niivue test coverage"

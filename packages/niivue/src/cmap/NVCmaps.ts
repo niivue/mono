@@ -88,7 +88,9 @@ export function makeLabelLut(
   if (cm.labels) {
     const nL = cm.labels.length
     if (nL === nLabelsDense) {
-      cmap.labels = cm.labels
+      // Copy to decouple the returned LUT from the caller's array; callers
+      // that mutate their input should not mutate the cached LUT.
+      cmap.labels = cm.labels.slice()
     } else if (nL === nLabels) {
       cmap.labels = Array(nLabelsDense).fill('?')
       for (let i = 0; i < nLabels; i++) {
@@ -108,6 +110,7 @@ type LutDef = {
   B: number[]
   A: number[]
   I: number[]
+  labels?: string[]
 }
 let _lutIndex: Map<string, LutDef> | null = null
 
@@ -133,7 +136,7 @@ function buildLutIndex(): Map<string, LutDef> {
         Array.isArray(mod.B) &&
         Array.isArray(mod.I)
       ) {
-        map.set(name, {
+        const entry: LutDef = {
           R: (mod.R as number[]).map(Number),
           G: (mod.G as number[]).map(Number),
           B: (mod.B as number[]).map(Number),
@@ -141,7 +144,11 @@ function buildLutIndex(): Map<string, LutDef> {
             ? (mod.A as number[]).map(Number)
             : new Array((mod.I as number[]).length).fill(255),
           I: (mod.I as number[]).map(Number),
-        })
+        }
+        if (Array.isArray(mod.labels)) {
+          entry.labels = (mod.labels as string[]).slice()
+        }
+        map.set(name, entry)
       } else {
         // skip malformed JSON but keep dev-visible warning
         log.warn(`Skipping LUT ${path}: expected { R,G,B,I } arrays`)
@@ -184,7 +191,8 @@ export function colormapNames(): string[] {
  */
 export function addColormap(
   name: string,
-  cmap: Pick<ColorMap, 'R' | 'G' | 'B'> & Partial<Pick<ColorMap, 'A' | 'I'>>,
+  cmap: Pick<ColorMap, 'R' | 'G' | 'B'> &
+    Partial<Pick<ColorMap, 'A' | 'I' | 'labels'>>,
 ): string {
   const R = cmap.R.map(Number)
   const G = cmap.G.map(Number)
@@ -214,7 +222,9 @@ export function addColormap(
   }
   const canonical = name.charAt(0).toUpperCase() + name.slice(1)
   const map = buildLutIndex()
-  map.set(canonical, { R, G, B, A, I })
+  const entry: LutDef = { R, G, B, A, I }
+  if (Array.isArray(cmap.labels)) entry.labels = cmap.labels.slice()
+  map.set(canonical, entry)
   return canonical
 }
 

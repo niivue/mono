@@ -2614,13 +2614,26 @@ export default class NiiVueGPU extends EventTarget {
         dims: back.dimsRAS,
       })
       const img = nii.img
-      if (img instanceof ArrayBuffer) {
-        throw new Error('loadDrawing: expected typed array, got ArrayBuffer')
+      const imgData =
+        img instanceof ArrayBuffer
+          ? new Uint8Array(img)
+          : new Uint8Array(img.buffer, img.byteOffset, img.byteLength)
+      // Drawing voxel count must match background, otherwise transformBitmap
+      // will read out-of-bounds or write truncated output.
+      const backVoxels = back.dimsRAS[1] * back.dimsRAS[2] * back.dimsRAS[3]
+      const drawVoxels = nii.hdr.dims[1] * nii.hdr.dims[2] * nii.hdr.dims[3]
+      if (drawVoxels !== backVoxels) {
+        log.warn(
+          `loadDrawing: drawing dimensions (${nii.hdr.dims[1]}x${nii.hdr.dims[2]}x${nii.hdr.dims[3]} = ${drawVoxels} voxels) do not match background (${back.dimsRAS[1]}x${back.dimsRAS[2]}x${back.dimsRAS[3]} = ${backVoxels} voxels)`,
+        )
+        return false
       }
-      const buf = img.buffer as ArrayBuffer
-      const offset = img.byteOffset
-      const length = img.byteLength
-      const imgData = new Uint8Array(buf, offset, length)
+      if (imgData.length < drawVoxels) {
+        log.warn(
+          `loadDrawing: image data (${imgData.length} bytes) smaller than expected (${drawVoxels})`,
+        )
+        return false
+      }
       const transformedBitmap = transformBitmap({
         inputData: imgData,
         dims: back.dimsRAS,
@@ -2750,7 +2763,8 @@ export default class NiiVueGPU extends EventTarget {
    */
   addColormap(
     name: string,
-    cmap: Pick<ColorMap, 'R' | 'G' | 'B'> & Partial<Pick<ColorMap, 'A' | 'I'>>,
+    cmap: Pick<ColorMap, 'R' | 'G' | 'B'> &
+      Partial<Pick<ColorMap, 'A' | 'I' | 'labels'>>,
   ): string {
     const canonical = NVCmaps.addColormap(name, cmap)
     this.emit('colormapAdded', { name: canonical })

@@ -101,6 +101,10 @@ export default class NVView {
   private _msaaTextureView: GPUTextureView | null = null
   // Reusable scratch buffer for mesh uniform writes — avoids per-call Float32Array allocation
   private _uniformScratch = new Float32Array(mesh.MESH_UNIFORM_SIZE / 4)
+  // Benchmark-only: when non-null, render() writes here instead of the canvas swap chain
+  private _benchTargetOverride: GPUTexture | null = null
+  private _benchOffscreenTexture: GPUTexture | null = null
+  private _benchInProgress = false
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -577,7 +581,8 @@ export default class NVView {
       return
     }
     // Determine render targets based on bounds mode
-    const canvasTexture = this.context.getCurrentTexture()
+    const canvasTexture =
+      this._benchTargetOverride ?? this.context.getCurrentTexture()
     const bw = this._boundsWidth
     const bh = this._boundsHeight
     const isSub = this._isSubCanvasBounds && this._boundsColorTexture
@@ -1364,6 +1369,92 @@ export default class NVView {
     device.queue.submit([commandEncoder.finish()])
   }
 
+  /**
+   * Wait until render() would not early-return via RAF. Needed so benchmarks
+   * don't measure a no-op when the view is transiently busy (e.g. uploading
+   * bind groups) or the font atlas is still loading.
+   */
+  private async _waitForBenchReady(): Promise<void> {
+    const MAX_WAIT_FRAMES = 300
+    let tries = 0
+    while (
+      (this.isBusy || !this.fontRenderer.isReady) &&
+      tries < MAX_WAIT_FRAMES
+    ) {
+      await new Promise<void>((r) => requestAnimationFrame(() => r()))
+      tries++
+    }
+    if (this.isBusy || !this.fontRenderer.isReady) {
+      throw new Error(
+        'renderAndFlush: view not ready (isBusy or font atlas not loaded)',
+      )
+    }
+  }
+
+  /**
+   * Render one frame and wait for the GPU to finish executing it.
+   * Not for production use — `render()` is fire-and-forget by design.
+   * This helper exists so benchmarks can measure true CPU+GPU wall-clock
+   * per frame via `await view.renderAndFlush()`.
+   */
+  async renderAndFlush(): Promise<void> {
+    if (this._benchInProgress) {
+      throw new Error('renderAndFlush: concurrent call not allowed')
+    }
+    this._benchInProgress = true
+    try {
+      if (this._boundsWidth === 0 || this._boundsHeight === 0) this.resize()
+      await this._waitForBenchReady()
+      this.render()
+      if (this.device) await this.device.queue.onSubmittedWorkDone()
+    } finally {
+      this._benchInProgress = false
+    }
+  }
+
+  /**
+   * Render one frame to an offscreen texture (bypassing the canvas swap chain)
+   * and wait for the GPU to finish. Removes compositor / present-time coupling
+   * so benchmarks measure pure render cost. Benchmark-only.
+   */
+  async renderAndFlushOffscreen(): Promise<void> {
+    if (!this.device) return
+    if (this._benchInProgress) {
+      throw new Error('renderAndFlushOffscreen: concurrent call not allowed')
+    }
+    this._benchInProgress = true
+    try {
+      if (this._boundsWidth === 0 || this._boundsHeight === 0) this.resize()
+      await this._waitForBenchReady()
+      const w = this._boundsWidth
+      const h = this._boundsHeight
+      const existing = this._benchOffscreenTexture
+      if (!existing || existing.width !== w || existing.height !== h) {
+        existing?.destroy()
+        this._benchOffscreenTexture = this.device.createTexture({
+          size: { width: w, height: h },
+          format: this.preferredCanvasFormat,
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
+        })
+      }
+      // Suppress sub-canvas mode during bench so render() writes directly
+      // to the override texture rather than through _boundsColorTexture +
+      // _copyBoundsToCanvas (which would copy into the FBO at an offset).
+      const wasSubCanvas = this._isSubCanvasBounds
+      this._isSubCanvasBounds = false
+      this._benchTargetOverride = this._benchOffscreenTexture
+      try {
+        this.render()
+        await this.device.queue.onSubmittedWorkDone()
+      } finally {
+        this._benchTargetOverride = null
+        this._isSubCanvasBounds = wasSubCanvas
+      }
+    } finally {
+      this._benchInProgress = false
+    }
+  }
+
   /** Copy this view's intermediate texture and all siblings' to the canvas */
   private _copyBoundsToCanvas(
     commandEncoder: GPUCommandEncoder,
@@ -2042,6 +2133,13 @@ export default class NVView {
       mesh.destroyMesh(this.orientCubeGpu)
       this.orientCubeGpu = null
     }
+
+    // Destroy benchmark-only offscreen texture
+    if (this._benchOffscreenTexture) {
+      this._benchOffscreenTexture.destroy()
+      this._benchOffscreenTexture = null
+    }
+    this._benchTargetOverride = null
 
     // Destroy MSAA, bounds color, and depth textures
     if (this.msaaTexture) {

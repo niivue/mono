@@ -73,6 +73,13 @@ export default class NVGlview {
   private _boundsOffsetX = 0
   private _boundsOffsetY = 0
   private _isSubCanvasBounds = false
+  // Benchmark-only: offscreen FBO cached for renderAndFlushOffscreen
+  private _benchFbo: WebGLFramebuffer | null = null
+  private _benchColorRbo: WebGLRenderbuffer | null = null
+  private _benchDepthRbo: WebGLRenderbuffer | null = null
+  private _benchFboW = 0
+  private _benchFboH = 0
+  private _benchInProgress = false
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -1019,6 +1026,140 @@ export default class NVGlview {
     }
   }
 
+  /**
+   * Wait until render() would not early-return via RAF. Needed so benchmarks
+   * don't measure a no-op when the view is transiently busy (bind-group upload).
+   */
+  private async _waitForBenchReady(): Promise<void> {
+    const MAX_WAIT_FRAMES = 300
+    let tries = 0
+    while (this.isBusy && tries < MAX_WAIT_FRAMES) {
+      await new Promise<void>((r) => requestAnimationFrame(() => r()))
+      tries++
+    }
+    if (this.isBusy) {
+      throw new Error('renderAndFlush: view still busy after waiting')
+    }
+  }
+
+  /**
+   * Render one frame and block until the GPU finishes executing it.
+   * Not for production use — `render()` is fire-and-forget by design.
+   * Counterpart to NVViewGPU.renderAndFlush; benchmarks use this to
+   * measure true CPU+GPU wall-clock per frame.
+   */
+  async renderAndFlush(): Promise<void> {
+    const gl = this.gl
+    if (!gl) return
+    if (this._benchInProgress) {
+      throw new Error('renderAndFlush: concurrent call not allowed')
+    }
+    this._benchInProgress = true
+    try {
+      if (this._boundsWidth === 0 || this._boundsHeight === 0) this.resize()
+      await this._waitForBenchReady()
+      this.render()
+      // Force true GPU sync. gl.finish() is unreliable on some ANGLE/Metal
+      // paths (returns after flush, not completion). Reading a single pixel
+      // serializes the CPU against all prior GPU work — the standard
+      // WebGL benchmarking sync technique. Scissor is disabled at the end
+      // of render(), so (0,0) is always readable.
+      const pix = new Uint8Array(4)
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pix)
+    } finally {
+      this._benchInProgress = false
+    }
+  }
+
+  /**
+   * Render one frame to an offscreen FBO (bypassing the canvas) and block
+   * until the GPU finishes. Removes compositor / present-time coupling so
+   * benchmarks measure pure render cost. Benchmark-only.
+   *
+   * Sub-renderers in this backend (orient overlay, gradient) unbind to the
+   * default framebuffer when done. To keep our offscreen target active across
+   * those internal passes, we transiently redirect `bindFramebuffer(target, null)`
+   * to bind our FBO instead. Restored on exit. A single-flight guard
+   * (`_benchInProgress`) prevents re-entrancy corrupting the shim.
+   */
+  async renderAndFlushOffscreen(): Promise<void> {
+    const gl = this.gl
+    if (!gl) return
+    if (this._benchInProgress) {
+      throw new Error('renderAndFlushOffscreen: concurrent call not allowed')
+    }
+    this._benchInProgress = true
+    try {
+      if (this._boundsWidth === 0 || this._boundsHeight === 0) this.resize()
+      await this._waitForBenchReady()
+      const w = this._boundsWidth
+      const h = this._boundsHeight
+      if (!this._benchFbo || this._benchFboW !== w || this._benchFboH !== h) {
+        if (this._benchFbo) gl.deleteFramebuffer(this._benchFbo)
+        if (this._benchColorRbo) gl.deleteRenderbuffer(this._benchColorRbo)
+        if (this._benchDepthRbo) gl.deleteRenderbuffer(this._benchDepthRbo)
+        this._benchFbo = null
+        this._benchColorRbo = null
+        this._benchDepthRbo = null
+        const color = gl.createRenderbuffer()
+        gl.bindRenderbuffer(gl.RENDERBUFFER, color)
+        gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, w, h)
+        const depth = gl.createRenderbuffer()
+        gl.bindRenderbuffer(gl.RENDERBUFFER, depth)
+        gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h)
+        gl.bindRenderbuffer(gl.RENDERBUFFER, null)
+        const fbo = gl.createFramebuffer()
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
+        gl.framebufferRenderbuffer(
+          gl.FRAMEBUFFER,
+          gl.COLOR_ATTACHMENT0,
+          gl.RENDERBUFFER,
+          color,
+        )
+        gl.framebufferRenderbuffer(
+          gl.FRAMEBUFFER,
+          gl.DEPTH_ATTACHMENT,
+          gl.RENDERBUFFER,
+          depth,
+        )
+        const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER)
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+        if (status !== gl.FRAMEBUFFER_COMPLETE) {
+          gl.deleteFramebuffer(fbo)
+          gl.deleteRenderbuffer(color)
+          gl.deleteRenderbuffer(depth)
+          throw new Error(
+            `renderAndFlushOffscreen: FBO incomplete (status 0x${status.toString(16)}) at ${w}x${h}`,
+          )
+        }
+        this._benchFbo = fbo
+        this._benchColorRbo = color
+        this._benchDepthRbo = depth
+        this._benchFboW = w
+        this._benchFboH = h
+      }
+      const myFbo = this._benchFbo
+      const mutGL = gl as unknown as Pick<
+        WebGL2RenderingContext,
+        'bindFramebuffer'
+      >
+      const orig = gl.bindFramebuffer.bind(gl)
+      mutGL.bindFramebuffer = (target, fb) =>
+        orig(target, fb === null ? myFbo : fb)
+      try {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null) // → redirected to myFbo
+        this.render()
+        const pix = new Uint8Array(4)
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pix)
+      } finally {
+        mutGL.bindFramebuffer = orig
+        orig(gl.FRAMEBUFFER, null)
+      }
+    } finally {
+      this._benchInProgress = false
+    }
+  }
+
   resize(): void {
     if (!this.gl) return
     // Calculate device pixel ratio
@@ -1336,6 +1477,14 @@ export default class NVGlview {
     // Delete font texture
     if (this.fontTexture) gl.deleteTexture(this.fontTexture)
     this.fontTexture = null
+
+    // Delete benchmark-only offscreen FBO + attached renderbuffers
+    if (this._benchFbo) gl.deleteFramebuffer(this._benchFbo)
+    if (this._benchColorRbo) gl.deleteRenderbuffer(this._benchColorRbo)
+    if (this._benchDepthRbo) gl.deleteRenderbuffer(this._benchDepthRbo)
+    this._benchFbo = null
+    this._benchColorRbo = null
+    this._benchDepthRbo = null
 
     // Destroy render layer instances
     this.volumeRenderer.destroy()

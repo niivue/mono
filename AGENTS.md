@@ -110,6 +110,8 @@ Configured in root `biome.json`. Applies to all projects.
 | `useImportType` | **Error** — use `import type` for type-only imports |
 | Import sorting | Enabled via `organizeImports` assist |
 
+**No emoji in source, scripts, or generated reports.** This includes status icons (traffic lights, check marks) in CI output, markdown summaries, and log messages. Use plain text.
+
 ### TypeScript
 
 - **Target:** ESNext, **strict mode** enabled everywhere.
@@ -176,7 +178,7 @@ bunx nx run <project>:build
 - **`niivue` build requires codegen first.** The Nx target handles this automatically (`npm run codegen:assets && vite build`), but if you run Vite manually, run `node scripts/generate-assets.js` first.
 - **`workspace:*` peer dependencies.** Extensions and `nv-react` declare `@niivue/niivue` as a peer dep — the local copy is used in dev, but consumers must install it themselves.
 - **GitHub Pages deployment.** Pushing to `main` builds all examples and demo apps and deploys to GitHub Pages via `.github/workflows/niivue-ghpages.yml`. The build script is `.github/build-pages.sh` — run it locally with `--serve` to preview. Vite configs read the `VITE_BASE` env var to set the base path and rewrite absolute `/volumes/` and `/meshes/` URLs in bundled JS.
-- **CI only covers `packages/niivue`.** GitHub Actions workflows only trigger on `packages/niivue/**` changes. Other packages must be verified locally.
+- **CI workflows.** `.github/workflows/pr_gate.yml` runs lint, typecheck, and test across all projects (`nx run-many`) on every push and PR to `main`. `codespell.yml` spell-checks `packages/niivue` (ignore list lives in the workflow file). Only the niivue package emits lcov coverage; `.github/scripts/lcov-to-summary.ts` (run with Bun) parses it and appends a markdown table to `$GITHUB_STEP_SUMMARY`. CI helper scripts live in `.github/scripts/` and are written in TypeScript, executed with `bun`.
 - **No shared `tsconfig.base.json`.** Each project has its own `tsconfig.json`. Copy from an existing project when creating a new one.
 - **Git LFS required for test images.** `packages/dev-images/images/` uses LFS. Run `git lfs pull` if files are pointers.
 - **Feature parity tracking.** `packages/niivue/FEATURE_PARITY.md` tracks which features from the old NiiVue exist in the rewrite. Consult before implementing features.

@@ -20,6 +20,7 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 | [`demo-ext-drawing`](apps/demo-ext-drawing) | Demo app for the drawing extension |
 | [`demo-ext-image-processing`](apps/demo-ext-image-processing) | Demo app for the image processing extension |
 | [`demo-ext-save-html`](apps/demo-ext-save-html) | Demo app for the save-to-HTML extension |
+| [`medgfx`](apps/medgfx) | Native macOS/iOS SwiftUI app embedding NiiVue in a WebView |
 
 ## Getting Started
 

@@ -28317,6 +28317,7 @@ async function render({ model, el: el2 }) {
   canvas.width = 640;
   canvas.height = 480;
   el2.appendChild(canvas);
+  await new Promise((r) => requestAnimationFrame(() => r()));
   const opts = {};
   for (const [jsName, pyName] of PROPS_RW) {
     const v = model.get(pyName);
@@ -28325,20 +28326,29 @@ async function render({ model, el: el2 }) {
   }
   const nv = new R(opts);
   await nv.attachToCanvas(canvas);
-  const toJsonSafe = (v) => {
+  const TJS_TYPED_MAX = 1024;
+  const TJS_ARRAY_MAX = 4096;
+  const toJsonSafe = (v, seen) => {
     if (v == null)
       return v;
-    if (ArrayBuffer.isView(v))
-      return Array.from(v);
-    if (Array.isArray(v))
-      return v.map(toJsonSafe);
-    if (typeof v === "object") {
-      const out = {};
-      for (const k2 of Object.keys(v))
-        out[k2] = toJsonSafe(v[k2]);
-      return out;
+    if (ArrayBuffer.isView(v)) {
+      return v.length <= TJS_TYPED_MAX ? Array.from(v) : null;
     }
-    return v;
+    if (typeof v !== "object")
+      return v;
+    seen ??= new WeakSet;
+    if (seen.has(v))
+      return null;
+    seen.add(v);
+    if (Array.isArray(v)) {
+      if (v.length > TJS_ARRAY_MAX)
+        return null;
+      return v.map((x2) => toJsonSafe(x2, seen));
+    }
+    const out = {};
+    for (const k2 of Object.keys(v))
+      out[k2] = toJsonSafe(v[k2], seen);
+    return out;
   };
   for (const [jsName, pyName] of [...PROPS_RW, ...PROPS_RO]) {
     try {
@@ -28394,6 +28404,11 @@ async function render({ model, el: el2 }) {
         body.error = String(payload);
       model.send(body);
     };
+    if (msg.cmd === "__ready__") {
+      if (reqId !== null)
+        respond(true, true);
+      return;
+    }
     const fn2 = nv[msg.cmd];
     if (typeof fn2 !== "function") {
       const errMsg = `unknown command: ${msg.cmd}`;

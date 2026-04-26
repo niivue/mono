@@ -55,6 +55,24 @@ class NiiVue(_GeneratedNiiVue):
         # Future in `_pending`; `_dispatch_message` routes the response.
         self._pending: dict[int, asyncio.Future[Any]] = {}
         self._req_counter = itertools.count(1)
+        # JS→Python: state-update channel via `_msg_outbox`. See the trait's
+        # docstring in _generated.py. We use a closure (not a bound method)
+        # because some traitlets setups have flaky observer-registration
+        # behavior with bound methods, and stash an explicit strong
+        # reference on the instance to be safe.
+
+        def _outbox_handler(change: Any) -> None:
+            new = change.get("new") if isinstance(change, dict) else None
+            if not isinstance(new, dict):
+                return
+            body = new.get("body")
+            if isinstance(body, dict):
+                self._dispatch_message(self, body, [])
+
+        self._outbox_handler = _outbox_handler  # strong ref
+        self.observe(_outbox_handler, names=["_msg_outbox"])
+        # Kept for backward compatibility / future migration if the
+        # underlying anywidget routing becomes reliable.
         self.on_msg(self._dispatch_message)
 
     # ─── Request/response (used by codegen-emitted async methods) ────

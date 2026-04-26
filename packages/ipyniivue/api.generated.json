@@ -1,7 +1,7 @@
 {
   "niivueVersion": "1.0.0-rc.1",
   "source": "packages/niivue/src/NVControlBase.ts",
-  "generatedAt": "2026-04-26T16:56:33.135Z",
+  "generatedAt": "2026-04-26T17:19:46.143Z",
   "className": "NiiVueGPU",
   "properties": [
     {
@@ -1057,6 +1057,7 @@
       "jsName": "addAnnotation",
       "pyName": "add_annotation",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "annotation",
@@ -1071,6 +1072,7 @@
       "jsName": "addColormap",
       "pyName": "add_colormap",
       "isAsync": false,
+      "returnsValue": true,
       "params": [
         {
           "name": "name",
@@ -1090,6 +1092,7 @@
       "jsName": "addColormapFromUrl",
       "pyName": "add_colormap_from_url",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "url",
@@ -1109,6 +1112,7 @@
       "jsName": "addImage",
       "pyName": "add_image",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "pathOrFile",
@@ -1128,6 +1132,7 @@
       "jsName": "addMesh",
       "pyName": "add_mesh",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "mesh",
@@ -1142,6 +1147,7 @@
       "jsName": "addMeshLayer",
       "pyName": "add_mesh_layer",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "meshIndex",
@@ -1161,6 +1167,7 @@
       "jsName": "addVolume",
       "pyName": "add_volume",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "volume",
@@ -1175,6 +1182,7 @@
       "jsName": "annotationRedo",
       "pyName": "annotation_redo",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": null
@@ -1183,6 +1191,7 @@
       "jsName": "annotationUndo",
       "pyName": "annotation_undo",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": null
@@ -1191,6 +1200,7 @@
       "jsName": "attachTo",
       "pyName": "attach_to",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "id",
@@ -1210,6 +1220,7 @@
       "jsName": "attachToCanvas",
       "pyName": "attach_to_canvas",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "canvas",
@@ -1229,6 +1240,7 @@
       "jsName": "broadcastTo",
       "pyName": "broadcast_to",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "targets",
@@ -1248,6 +1260,7 @@
       "jsName": "clearAnnotations",
       "pyName": "clear_annotations",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": null
@@ -1256,6 +1269,7 @@
       "jsName": "clearCustomLayout",
       "pyName": "clear_custom_layout",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": "Clear any custom layout and revert to built-in layout modes."
@@ -1264,6 +1278,7 @@
       "jsName": "clearMeasurements",
       "pyName": "clear_measurements",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": null
@@ -1272,6 +1287,7 @@
       "jsName": "closeDrawing",
       "pyName": "close_drawing",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": null
@@ -1280,6 +1296,7 @@
       "jsName": "createEmptyDrawing",
       "pyName": "create_empty_drawing",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": null
@@ -1288,6 +1305,7 @@
       "jsName": "createExtensionContext",
       "pyName": "create_extension_context",
       "isAsync": false,
+      "returnsValue": true,
       "params": [],
       "returns": "NVExtensionContext",
       "doc": "Create an extension context for interacting with this NiiVue instance.\n\nThe context provides a stable API surface for extensions: live data\naccessors, event subscriptions (including high-level slice pointer events),\nsafe write-back actions, and coordinate transform utilities.\n\nCall `context.dispose()` when the extension is deactivated to remove all\nevent listeners registered through the context.\n\nMultiple contexts can coexist — each tracks its own subscriptions."
@@ -1296,6 +1314,7 @@
       "jsName": "createOnLocationChange",
       "pyName": "create_on_location_change",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "axCorSag",
@@ -1310,6 +1329,7 @@
       "jsName": "destroy",
       "pyName": "destroy",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": null
@@ -1318,6 +1338,7 @@
       "jsName": "drawScene",
       "pyName": "draw_scene",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "needsSync",
@@ -1332,6 +1353,7 @@
       "jsName": "drawUndo",
       "pyName": "draw_undo",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": null
@@ -1340,6 +1362,7 @@
       "jsName": "enforceBackendAvailability",
       "pyName": "enforce_backend_availability",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": null
@@ -1348,6 +1371,7 @@
       "jsName": "getAnnotationsJSON",
       "pyName": "get_annotations_json",
       "isAsync": false,
+      "returnsValue": true,
       "params": [],
       "returns": "string",
       "doc": null
@@ -1356,6 +1380,7 @@
       "jsName": "getClipPlaneDepthAziElev",
       "pyName": "get_clip_plane_depth_azi_elev",
       "isAsync": false,
+      "returnsValue": true,
       "params": [
         {
           "name": "clipPlaneIndex",
@@ -1370,6 +1395,7 @@
       "jsName": "getCrosshairPos",
       "pyName": "get_crosshair_pos",
       "isAsync": false,
+      "returnsValue": true,
       "params": [],
       "returns": "[number, number, number]",
       "doc": null
@@ -1378,6 +1404,7 @@
       "jsName": "getFrame4D",
       "pyName": "get_frame_4d",
       "isAsync": false,
+      "returnsValue": true,
       "params": [
         {
           "name": "id",
@@ -1392,6 +1419,7 @@
       "jsName": "getMeshShader",
       "pyName": "get_mesh_shader",
       "isAsync": false,
+      "returnsValue": true,
       "params": [
         {
           "name": "meshIndex",
@@ -1406,6 +1434,7 @@
       "jsName": "getTractGroups",
       "pyName": "get_tract_groups",
       "isAsync": false,
+      "returnsValue": true,
       "params": [
         {
           "name": "meshIndex",
@@ -1420,6 +1449,7 @@
       "jsName": "getVolumeTransformInfo",
       "pyName": "get_volume_transform_info",
       "isAsync": false,
+      "returnsValue": true,
       "params": [
         {
           "name": "name",
@@ -1434,6 +1464,7 @@
       "jsName": "hasColormap",
       "pyName": "has_colormap",
       "isAsync": false,
+      "returnsValue": true,
       "params": [
         {
           "name": "name",
@@ -1448,6 +1479,7 @@
       "jsName": "loadAnnotationsJSON",
       "pyName": "load_annotations_json",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "json",
@@ -1462,6 +1494,7 @@
       "jsName": "loadDeferred4DVolumes",
       "pyName": "load_deferred_4d_volumes",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "id",
@@ -1476,6 +1509,7 @@
       "jsName": "loadDocument",
       "pyName": "load_document",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "source",
@@ -1490,6 +1524,7 @@
       "jsName": "loadDrawing",
       "pyName": "load_drawing",
       "isAsync": true,
+      "returnsValue": true,
       "params": [
         {
           "name": "source",
@@ -1504,6 +1539,7 @@
       "jsName": "loadImage",
       "pyName": "load_image",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "pathOrFile",
@@ -1523,6 +1559,7 @@
       "jsName": "loadImgV1",
       "pyName": "load_img_v1",
       "isAsync": true,
+      "returnsValue": true,
       "params": [
         {
           "name": "volumeIndex",
@@ -1552,6 +1589,7 @@
       "jsName": "loadMatcap",
       "pyName": "load_matcap",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "matcapName",
@@ -1566,6 +1604,7 @@
       "jsName": "loadMeshes",
       "pyName": "load_meshes",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "meshes",
@@ -1580,6 +1619,7 @@
       "jsName": "loadVolumes",
       "pyName": "load_volumes",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "volumes",
@@ -1594,6 +1634,7 @@
       "jsName": "moveCrosshairInVox",
       "pyName": "move_crosshair_in_vox",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "di",
@@ -1618,6 +1659,7 @@
       "jsName": "moveVolumeDown",
       "pyName": "move_volume_down",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "volumeIndex",
@@ -1632,6 +1674,7 @@
       "jsName": "moveVolumeToBottom",
       "pyName": "move_volume_to_bottom",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "volumeIndex",
@@ -1646,6 +1689,7 @@
       "jsName": "moveVolumeToTop",
       "pyName": "move_volume_to_top",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "volumeIndex",
@@ -1660,6 +1704,7 @@
       "jsName": "moveVolumeUp",
       "pyName": "move_volume_up",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "volumeIndex",
@@ -1674,6 +1719,7 @@
       "jsName": "recalculateCalMinMax",
       "pyName": "recalculate_cal_min_max",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "volumeIndex",
@@ -1693,6 +1739,7 @@
       "jsName": "refreshDrawing",
       "pyName": "refresh_drawing",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": "Mark the drawing texture as dirty and schedule a redraw.\nThe expensive bitmap→RGBA conversion and GPU upload are deferred to\nthe next animation frame, so rapid pointermove events only pay the\ncost once per frame."
@@ -1701,6 +1748,7 @@
       "jsName": "registerVolumeTransform",
       "pyName": "register_volume_transform",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "transform",
@@ -1715,6 +1763,7 @@
       "jsName": "reinitializeView",
       "pyName": "reinitialize_view",
       "isAsync": true,
+      "returnsValue": true,
       "params": [
         {
           "name": "options",
@@ -1729,6 +1778,7 @@
       "jsName": "removeAllMeshes",
       "pyName": "remove_all_meshes",
       "isAsync": true,
+      "returnsValue": false,
       "params": [],
       "returns": "Promise<void>",
       "doc": null
@@ -1737,6 +1787,7 @@
       "jsName": "removeAllVolumes",
       "pyName": "remove_all_volumes",
       "isAsync": true,
+      "returnsValue": false,
       "params": [],
       "returns": "Promise<void>",
       "doc": null
@@ -1745,6 +1796,7 @@
       "jsName": "removeAnnotation",
       "pyName": "remove_annotation",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "id",
@@ -1759,6 +1811,7 @@
       "jsName": "removeMesh",
       "pyName": "remove_mesh",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "meshIndex",
@@ -1773,6 +1826,7 @@
       "jsName": "removeMeshLayer",
       "pyName": "remove_mesh_layer",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "meshIndex",
@@ -1792,6 +1846,7 @@
       "jsName": "resize",
       "pyName": "resize",
       "isAsync": false,
+      "returnsValue": false,
       "params": [],
       "returns": "void",
       "doc": null
@@ -1800,6 +1855,7 @@
       "jsName": "saveBitmap",
       "pyName": "save_bitmap",
       "isAsync": true,
+      "returnsValue": true,
       "params": [
         {
           "name": "filename",
@@ -1819,6 +1875,7 @@
       "jsName": "saveDocument",
       "pyName": "save_document",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "filename",
@@ -1833,6 +1890,7 @@
       "jsName": "saveDrawing",
       "pyName": "save_drawing",
       "isAsync": true,
+      "returnsValue": true,
       "params": [
         {
           "name": "filename",
@@ -1847,6 +1905,7 @@
       "jsName": "saveMesh",
       "pyName": "save_mesh",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "meshIndex",
@@ -1871,6 +1930,7 @@
       "jsName": "saveVolume",
       "pyName": "save_volume",
       "isAsync": true,
+      "returnsValue": true,
       "params": [
         {
           "name": "options",
@@ -1885,6 +1945,7 @@
       "jsName": "selectAnnotation",
       "pyName": "select_annotation",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "id",
@@ -1899,6 +1960,7 @@
       "jsName": "serializeDocument",
       "pyName": "serialize_document",
       "isAsync": false,
+      "returnsValue": true,
       "params": [],
       "returns": "Uint8Array",
       "doc": "Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array)."
@@ -1907,6 +1969,7 @@
       "jsName": "setBounds",
       "pyName": "set_bounds",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "bounds",
@@ -1921,6 +1984,7 @@
       "jsName": "setClipPlane",
       "pyName": "set_clip_plane",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "depthAzimuthElevation",
@@ -1935,6 +1999,7 @@
       "jsName": "setClipPlaneDepthAziElev",
       "pyName": "set_clip_plane_depth_azi_elev",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "depth",
@@ -1964,6 +2029,7 @@
       "jsName": "setClipPlanes",
       "pyName": "set_clip_planes",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "depthAziElevs",
@@ -1978,6 +2044,7 @@
       "jsName": "setColormapLabel",
       "pyName": "set_colormap_label",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "volumeIndex",
@@ -1997,6 +2064,7 @@
       "jsName": "setColormapLabelFromUrl",
       "pyName": "set_colormap_label_from_url",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "volumeIndex",
@@ -2016,6 +2084,7 @@
       "jsName": "setConnectomeOptions",
       "pyName": "set_connectome_options",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "meshIndex",
@@ -2035,6 +2104,7 @@
       "jsName": "setCrosshairPos",
       "pyName": "set_crosshair_pos",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "pos",
@@ -2049,6 +2119,7 @@
       "jsName": "setDragMode",
       "pyName": "set_drag_mode",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "mode",
@@ -2063,6 +2134,7 @@
       "jsName": "setFont",
       "pyName": "set_font",
       "isAsync": true,
+      "returnsValue": true,
       "params": [
         {
           "name": "font",
@@ -2077,6 +2149,7 @@
       "jsName": "setFontFromUrl",
       "pyName": "set_font_from_url",
       "isAsync": true,
+      "returnsValue": true,
       "params": [
         {
           "name": "urls",
@@ -2091,6 +2164,7 @@
       "jsName": "setFrame4D",
       "pyName": "set_frame_4d",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "id",
@@ -2110,6 +2184,7 @@
       "jsName": "setMesh",
       "pyName": "set_mesh",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "meshIndex",
@@ -2129,6 +2204,7 @@
       "jsName": "setMeshLayerFrame4D",
       "pyName": "set_mesh_layer_frame_4d",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "meshIndex",
@@ -2153,6 +2229,7 @@
       "jsName": "setMeshLayerProperty",
       "pyName": "set_mesh_layer_property",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "meshIndex",
@@ -2177,6 +2254,7 @@
       "jsName": "setModulationImage",
       "pyName": "set_modulation_image",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "targetId",
@@ -2196,6 +2274,7 @@
       "jsName": "setTractOptions",
       "pyName": "set_tract_options",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "meshIndex",
@@ -2215,6 +2294,7 @@
       "jsName": "setVolume",
       "pyName": "set_volume",
       "isAsync": true,
+      "returnsValue": false,
       "params": [
         {
           "name": "volumeIndex",
@@ -2234,6 +2314,7 @@
       "jsName": "updateGLVolume",
       "pyName": "update_gl_volume",
       "isAsync": true,
+      "returnsValue": false,
       "params": [],
       "returns": "Promise<void>",
       "doc": null
@@ -2242,6 +2323,7 @@
       "jsName": "useLoader",
       "pyName": "use_loader",
       "isAsync": false,
+      "returnsValue": false,
       "params": [
         {
           "name": "converter",
@@ -2266,6 +2348,7 @@
       "jsName": "vox2frac",
       "pyName": "vox2frac",
       "isAsync": false,
+      "returnsValue": true,
       "params": [
         {
           "name": "vox",

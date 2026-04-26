@@ -9,8 +9,10 @@ Inherits the auto-generated reactive properties and command methods from
     side dispatches events via `model.send({kind: "event", ...})`; this
     class routes them to user callbacks, validating against the
     auto-generated `NIIVUE_EVENT_NAMES` set)
-  * a few bespoke helpers for properties whose JS types do not map onto
-    JSON-serializable traitlets (volumes, meshes, drawingVolume)
+  * Pythonic load helpers (``add_volume_from_url``, ``add_mesh_from_url``)
+    that translate snake_case kwargs to NiiVue's camelCase option names
+  * notes on skipped JS object handles (volumes, meshes, drawingVolume,
+    annotations, etc.) and the method-based API to reach them
 """
 
 from __future__ import annotations
@@ -73,6 +75,73 @@ class NiiVue(_GeneratedNiiVue):
             return await future
         finally:
             self._pending.pop(req_id, None)
+
+    # ─── Pythonic helpers for non-traitlet properties ────────────────
+    #
+    # The codegen walker skips seven NVControlBase properties because
+    # their TS types are non-serializable JS handles:
+    #
+    #   volumes: NVImage[]               → use add_volume_from_url(),
+    #                                       load_volumes(), remove_volume(),
+    #                                       remove_all_volumes(), set_volume()
+    #   meshes: NVMesh[]                 → use add_mesh_from_url(),
+    #                                       load_meshes(), remove_mesh(),
+    #                                       remove_all_meshes(), set_mesh()
+    #   drawingVolume: NVImage           → use load_drawing(),
+    #                                       create_empty_drawing(),
+    #                                       close_drawing(), draw_undo()
+    #   annotations: VectorAnnotation[]  → use add_annotation(),
+    #                                       remove_annotation(),
+    #                                       clear_annotations(),
+    #                                       get_annotations_json()
+    #   annotationStyle: AnnotationStyle → set fields individually via the
+    #                                       `annotation_*` reactive
+    #                                       properties (e.g.
+    #                                       annotation_brush_radius)
+    #   customLayout: CustomLayoutTile[] → use set_custom_layout(),
+    #                                       clear_custom_layout()
+    #   volumeTransform: Record<...>     → use register_volume_transform()
+    #                                       and apply_volume_transform()
+    #
+    # All of these flow through the auto-generated command methods —
+    # this section adds only the Pythonic conveniences that wrap them.
+
+    def add_volume_from_url(self, url: str, **opts: Any) -> None:
+        """Load one volume from a URL.
+
+        Convenience wrapper for ``self.load_volumes([{"url": url, ...}])``.
+        Keyword arguments are translated snake_case → camelCase for the
+        underlying NiiVue option names. Common options:
+
+          * ``cal_min`` / ``cal_max``: window min/max
+          * ``colormap``: e.g. "gray", "hot", "viridis"
+          * ``opacity``: 0–1
+          * ``visible``: bool
+          * ``frame_4d``: int, frame index for 4D volumes
+
+        Example::
+
+            nv.add_volume_from_url(
+                "https://niivue.github.io/niivue-demo-images/mni152.nii.gz",
+                cal_min=30,
+                cal_max=80,
+                colormap="gray",
+            )
+        """
+        opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
+        opts_camel["url"] = url
+        self.load_volumes([opts_camel])
+
+    def add_mesh_from_url(self, url: str, **opts: Any) -> None:
+        """Load one mesh from a URL.
+
+        Convenience wrapper for ``self.load_meshes([{"url": url, ...}])``.
+        See :meth:`add_volume_from_url` for the snake_case → camelCase
+        translation rule.
+        """
+        opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
+        opts_camel["url"] = url
+        self.load_meshes([opts_camel])
 
     # ─── Event subscription ──────────────────────────────────────────
 
@@ -162,3 +231,19 @@ class NiiVue(_GeneratedNiiVue):
             else:
                 err = content.get("error", "unknown error from JS side")
                 future.set_exception(RuntimeError(str(err)))
+
+
+def _snake_to_camel(name: str) -> str:
+    """Convert snake_case → camelCase for NiiVue option keys.
+
+    Used by ``NiiVue.add_volume_from_url`` etc. so Python users can pass
+    ``cal_min=30`` and have it land at the JS side as ``calMin: 30``.
+
+    Names without underscores are returned unchanged. Numeric runs after
+    a digit-letter boundary collapse with the letter (e.g. ``in_3d`` →
+    ``in3D`` is *not* what we do here — Python users would write ``in3d``
+    directly because Python identifiers can include digits but underscore
+    handling differs from the codegen direction).
+    """
+    parts = name.split("_")
+    return parts[0] + "".join(p.title() for p in parts[1:] if p)

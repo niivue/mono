@@ -76,6 +76,40 @@ class NiiVue(_GeneratedNiiVue):
         finally:
             self._pending.pop(req_id, None)
 
+    async def wait_ready(self, timeout: float | None = 30.0) -> None:
+        """Wait until the JS side has mounted in the browser.
+
+        Useful in scripted notebooks (or "Run All" flows) where you want
+        the widget displayed and its JS attach complete before sending
+        commands. Without this, commands like :meth:`add_volume_from_url`
+        can race the kernel/widget reconnect handshake on first display.
+
+        Example::
+
+            from IPython.display import display
+            nv = NiiVue()
+            display(nv)
+            await nv.wait_ready()
+            nv.add_volume_from_url("...")
+
+        Implementation note: ``wait_ready`` piggybacks on the
+        request/response correlation. Python sends ``{cmd:"__ready__"}``;
+        the JS shim replies as soon as ``msg:custom`` is wired up, which
+        only happens after :func:`render` runs and the widget is mounted.
+        Messages sent before mount sit in anywidget's queue and are
+        delivered when the comm opens.
+
+        Parameters
+        ----------
+        timeout
+            Seconds to wait before giving up. ``None`` to wait forever.
+        """
+        coro = self._request("__ready__", [])
+        if timeout is None:
+            await coro
+        else:
+            await asyncio.wait_for(coro, timeout=timeout)
+
     # ─── Pythonic helpers for non-traitlet properties ────────────────
     #
     # The codegen walker skips seven NVControlBase properties because

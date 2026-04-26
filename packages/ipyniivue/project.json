@@ -1,0 +1,40 @@
+{
+  "name": "ipyniivue",
+  "projectType": "library",
+  "tags": ["type:lib", "lang:python"],
+  "targets": {
+    "codegen": {
+      "command": "bun run scripts/codegen.ts",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": [
+        "{projectRoot}/scripts/**/*",
+        "{workspaceRoot}/packages/niivue/src/NVControlBase.ts",
+        "{workspaceRoot}/packages/niivue/src/NVEvents.ts",
+        "{workspaceRoot}/packages/niivue/src/NVTypes.ts",
+        "{workspaceRoot}/packages/niivue/src/NVConstants.ts"
+      ],
+      "outputs": ["{projectRoot}/api.generated.json"]
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["{projectRoot}/scripts/**/*", "{projectRoot}/tsconfig.json"]
+    },
+    "bundle": {
+      "command": "bun build ../niivue/dist/niivuegpu.webgpu.js --outfile=src/ipyniivue/static/niivue.js --target=browser --format=esm",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": [{ "projects": ["niivue"], "target": "build" }],
+      "inputs": ["{workspaceRoot}/packages/niivue/dist/**/*"],
+      "outputs": ["{projectRoot}/src/ipyniivue/static/niivue.js"]
+    },
+    "smoke": {
+      "command": "jupyter execute examples/01_hello_volume.ipynb",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": [
+        "{projectRoot}/examples/**/*.ipynb",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/pyproject.toml"
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "ipyniivue",
+  "private": true,
+  "type": "module",
+  "description": "Codegen tooling for the ipyniivue Python package. The published artifact is a Python wheel; this package.json only carries devDependencies for the TypeScript AST walker.",
+  "scripts": {
+    "codegen": "bun run scripts/codegen.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.12",
+    "ts-morph": "^24.0.0",
+    "typescript": "~5.8.3"
+  }
+}

@@ -28281,6 +28281,11 @@ var PROPS_RO = [
   ["volumeTransforms", "volume_transforms"],
   ["volumeWriteExtensions", "volume_write_extensions"]
 ];
+var SKIP_EVENT_FORWARDING = new Set([
+  "canvasResize",
+  "viewAttached",
+  "viewDestroyed"
+]);
 var EVENTS = [
   "angleCompleted",
   "annotationAdded",
@@ -28311,40 +28316,45 @@ var EVENTS = [
   "volumeRemoved",
   "volumeUpdated"
 ];
-async function render({ model, el: el2 }) {
-  const canvas = document.createElement("canvas");
-  canvas.style.cssText = "width:100%;height:600px;display:block";
-  canvas.width = 640;
-  canvas.height = 480;
-  el2.appendChild(canvas);
-  let nv = null;
-  let mountedResolve;
-  const mountedPromise = new Promise((r) => {
+var nv = null;
+var mountedResolve = null;
+var mountedPromise = null;
+var outboxSeq = 0;
+var TJS_TYPED_MAX = 1024;
+var TJS_ARRAY_MAX = 4096;
+var toJsonSafe = (v, seen) => {
+  if (v == null)
+    return v;
+  if (ArrayBuffer.isView(v)) {
+    return v.length <= TJS_TYPED_MAX ? Array.from(v) : null;
+  }
+  if (typeof v !== "object")
+    return v;
+  seen ??= new WeakSet;
+  if (seen.has(v))
+    return null;
+  seen.add(v);
+  if (Array.isArray(v)) {
+    if (v.length > TJS_ARRAY_MAX)
+      return null;
+    return v.map((x2) => toJsonSafe(x2, seen));
+  }
+  const out = {};
+  for (const k2 of Object.keys(v))
+    out[k2] = toJsonSafe(v[k2], seen);
+  return out;
+};
+async function initialize({ model }) {
+  mountedPromise = new Promise((r) => {
     mountedResolve = r;
   });
-  const TJS_TYPED_MAX = 1024;
-  const TJS_ARRAY_MAX = 4096;
-  const toJsonSafe = (v, seen) => {
-    if (v == null)
-      return v;
-    if (ArrayBuffer.isView(v)) {
-      return v.length <= TJS_TYPED_MAX ? Array.from(v) : null;
+  const sendToPython = (body) => {
+    try {
+      model.set("_msg_outbox", { seq: ++outboxSeq, body });
+      model.save_changes();
+    } catch (err2) {
+      console.warn("ipyniivue: outbox write failed:", err2);
     }
-    if (typeof v !== "object")
-      return v;
-    seen ??= new WeakSet;
-    if (seen.has(v))
-      return null;
-    seen.add(v);
-    if (Array.isArray(v)) {
-      if (v.length > TJS_ARRAY_MAX)
-        return null;
-      return v.map((x2) => toJsonSafe(x2, seen));
-    }
-    const out = {};
-    for (const k2 of Object.keys(v))
-      out[k2] = toJsonSafe(v[k2], seen);
-    return out;
   };
   const cmdHandler = async (msg) => {
     if (!msg || typeof msg !== "object")
@@ -28360,7 +28370,7 @@ async function render({ model, el: el2 }) {
         body.result = payload;
       else
         body.error = String(payload);
-      model.send(body);
+      sendToPython(body);
     };
     await mountedPromise;
     if (msg.cmd === "__ready__") {
@@ -28386,9 +28396,7 @@ async function render({ model, el: el2 }) {
         let safe = null;
         try {
           safe = toJsonSafe(result ?? null);
-        } catch {
-          safe = null;
-        }
+        } catch {}
         respond(true, safe);
       }
     } catch (err2) {
@@ -28399,7 +28407,6 @@ async function render({ model, el: el2 }) {
     }
   };
   model.on("msg:custom", cmdHandler);
-  await new Promise((r) => requestAnimationFrame(() => r()));
   const opts = {};
   for (const [jsName, pyName] of PROPS_RW) {
     const v = model.get(pyName);
@@ -28407,21 +28414,10 @@ async function render({ model, el: el2 }) {
       opts[jsName] = v;
   }
   nv = new R(opts);
-  await nv.attachToCanvas(canvas);
-  mountedResolve();
-  for (const [jsName, pyName] of [...PROPS_RW, ...PROPS_RO]) {
-    try {
-      const v = nv[jsName];
-      if (v !== undefined)
-        model.set(pyName, toJsonSafe(v));
-    } catch (err2) {
-      console.warn(`ipyniivue: failed to seed ${pyName}:`, err2);
-    }
-  }
-  model.save_changes();
   const observers = [];
   for (const [jsName, pyName] of PROPS_RW) {
-    const handler = () => {
+    const handler = async () => {
+      await mountedPromise;
       const v = model.get(pyName);
       try {
         if (nv[jsName] !== v)
@@ -28435,31 +28431,61 @@ async function render({ model, el: el2 }) {
   }
   const evtListeners = [];
   for (const eventName of EVENTS) {
+    if (SKIP_EVENT_FORWARDING.has(eventName))
+      continue;
     const handler = (e2) => {
       let detail = null;
       try {
         detail = toJsonSafe(e2 && e2.detail);
-      } catch {
-        detail = null;
-      }
-      model.send({ kind: "event", name: eventName, detail });
+      } catch {}
+      sendToPython({ kind: "event", name: eventName, detail });
     };
     nv.addEventListener(eventName, handler);
     evtListeners.push([eventName, handler]);
   }
   return () => {
-    for (const [eventName, handler] of evtListeners) {
-      nv.removeEventListener(eventName, handler);
-    }
+    model.off("msg:custom", cmdHandler);
     for (const [pyName, handler] of observers) {
       model.off(`change:${pyName}`, handler);
     }
-    model.off("msg:custom", cmdHandler);
-    if (typeof nv.destroy === "function")
-      nv.destroy();
+    if (nv) {
+      for (const [eventName, handler] of evtListeners) {
+        nv.removeEventListener(eventName, handler);
+      }
+      if (typeof nv.destroy === "function")
+        nv.destroy();
+    }
+    nv = null;
   };
 }
-var _widget_template_default = { render };
+async function render({ model, el: el2 }) {
+  if (!nv) {
+    console.error("ipyniivue: render called before initialize");
+    return;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText = "width:100%;height:600px;display:block";
+  canvas.width = 640;
+  canvas.height = 480;
+  el2.appendChild(canvas);
+  await new Promise((r) => requestAnimationFrame(() => r()));
+  if (!nv.canvas?.parentNode) {
+    await nv.attachToCanvas(canvas);
+    for (const [jsName, pyName] of [...PROPS_RW, ...PROPS_RO]) {
+      try {
+        const v = nv[jsName];
+        if (v !== undefined)
+          model.set(pyName, toJsonSafe(v));
+      } catch (err2) {
+        console.warn(`ipyniivue: failed to seed ${pyName}:`, err2);
+      }
+    }
+    model.save_changes();
+    mountedResolve();
+  }
+  return () => {};
+}
+var _widget_template_default = { initialize, render };
 export {
   _widget_template_default as default
 };

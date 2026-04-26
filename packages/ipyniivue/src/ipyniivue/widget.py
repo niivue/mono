@@ -15,6 +15,8 @@ Inherits the auto-generated reactive properties and command methods from
 
 from __future__ import annotations
 
+import asyncio
+import itertools
 import pathlib
 from collections.abc import Callable
 from typing import Any
@@ -46,7 +48,31 @@ class NiiVue(_GeneratedNiiVue):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._event_callbacks: dict[str, list[Callable[[Any], None]]] = {}
+        # Request/response infrastructure for value-returning methods.
+        # Each outbound `_request()` allocates a monotonic id and parks a
+        # Future in `_pending`; `_dispatch_message` routes the response.
+        self._pending: dict[int, asyncio.Future[Any]] = {}
+        self._req_counter = itertools.count(1)
         self.on_msg(self._dispatch_message)
+
+    # ─── Request/response (used by codegen-emitted async methods) ────
+
+    async def _request(self, cmd: str, args: list[Any]) -> Any:
+        """Send a command to JS and await its response.
+
+        Used internally by codegen-emitted async methods (e.g.
+        ``get_crosshair_pos``). Returns the JSON-roundtripped result, or
+        raises :class:`RuntimeError` if the JS side reports an error.
+        """
+        req_id = next(self._req_counter)
+        loop = asyncio.get_event_loop()
+        future: asyncio.Future[Any] = loop.create_future()
+        self._pending[req_id] = future
+        self.send({"cmd": cmd, "args": args, "req_id": req_id})
+        try:
+            return await future
+        finally:
+            self._pending.pop(req_id, None)
 
     # ─── Event subscription ──────────────────────────────────────────
 
@@ -111,18 +137,28 @@ class NiiVue(_GeneratedNiiVue):
     def _dispatch_message(self, _widget: Any, content: Any, _buffers: Any) -> None:
         if not isinstance(content, dict):
             return
-        if content.get("kind") != "event":
-            return
-        name = content.get("name")
-        if not isinstance(name, str):
-            return
-        for cb in list(self._event_callbacks.get(name, [])):
-            try:
-                cb(content.get("detail"))
-            except Exception:  # noqa: BLE001
-                # Swallow callback errors so one bad callback doesn't
-                # break the widget. Users can wrap their own try/except
-                # if they want richer handling.
-                import traceback
+        kind = content.get("kind")
+        if kind == "event":
+            name = content.get("name")
+            if not isinstance(name, str):
+                return
+            for cb in list(self._event_callbacks.get(name, [])):
+                try:
+                    cb(content.get("detail"))
+                except Exception:  # noqa: BLE001
+                    # Swallow callback errors so one bad callback doesn't
+                    # break the widget. Users can wrap their own try/except
+                    # if they want richer handling.
+                    import traceback
 
-                traceback.print_exc()
+                    traceback.print_exc()
+        elif kind == "response":
+            req_id = content.get("req_id")
+            future = self._pending.get(req_id) if req_id is not None else None
+            if future is None or future.done():
+                return
+            if content.get("ok"):
+                future.set_result(content.get("result"))
+            else:
+                err = content.get("error", "unknown error from JS side")
+                future.set_exception(RuntimeError(str(err)))

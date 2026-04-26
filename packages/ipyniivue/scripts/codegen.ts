@@ -270,6 +270,13 @@ type MethodDescriptor = {
   jsName: string
   pyName: string
   isAsync: boolean
+  /**
+   * True when the JS method returns a meaningful value to Python
+   * (handled via request/response with correlation IDs). False for
+   * methods returning void / Promise<void> / Promise<this>, which
+   * stay fire-and-forget for the cheap path.
+   */
+  returnsValue: boolean
   params: ParamDescriptor[]
   returns: string
   doc: string | null
@@ -415,12 +422,14 @@ for (const m of methods) {
       tsType: shortenType(p.getType().getText()),
       optional: p.isOptional() || p.hasInitializer(),
     }))
+    const returnsText = shortenType(m.getReturnType().getText())
     methodDescriptors.push({
       jsName: m.getName(),
       pyName: snakeCase(m.getName()),
       isAsync: m.isAsync(),
+      returnsValue: methodReturnsValue(returnsText),
       params,
-      returns: shortenType(m.getReturnType().getText()),
+      returns: returnsText,
       doc: extractDoc(m),
     })
   } catch (e) {
@@ -501,16 +510,86 @@ const pythonPath = path.join(
 )
 await Bun.write(pythonPath, emitPython(descriptor))
 
-// Write JS shim (static/widget.js)
-const jsPath = path.join(
-  __dirname,
-  '..',
-  'src',
-  'ipyniivue',
-  'static',
-  'widget.js',
-)
-await Bun.write(jsPath, emitJs(descriptor))
+// Write the JS shim *source* (small, reviewable, imports niivue from the
+// workspace package). Then bundle it into a self-contained widget.js
+// because anywidget serves the _esm via a data:/blob: URL that has no
+// hierarchical base for relative imports to resolve against.
+const staticDir = path.join(__dirname, '..', 'src', 'ipyniivue', 'static')
+const jsTemplatePath = path.join(staticDir, '_widget.template.js')
+const jsBundledPath = path.join(staticDir, 'widget.js')
+await Bun.write(jsTemplatePath, emitJs(descriptor))
+
+const buildResult = await Bun.build({
+  entrypoints: [jsTemplatePath],
+  target: 'browser',
+  format: 'esm',
+})
+if (!buildResult.success) {
+  for (const log of buildResult.logs) console.error(log)
+  console.error('Bun.build failed bundling widget.js')
+  process.exit(1)
+}
+const bundledBlob = buildResult.outputs[0]
+if (!bundledBlob) {
+  console.error('Bun.build produced no output')
+  process.exit(1)
+}
+let bundledText = await bundledBlob.text()
+
+// niivue's bundled code references assets via
+//   `new URL("assets/X", import.meta.url).href`
+// which Vite emits so the URL resolves against the served script path.
+// anywidget serves widget.js via a `blob:` URL whose scheme is not
+// hierarchical, so `new URL` throws at module init. Inline the assets
+// as base64 `data:` URLs at bundle time.
+const niivueAssetsDir = path.join(niivueRoot, 'dist', 'assets')
+const assetPattern =
+  /new URL\("assets\/([^"]+)", import\.meta\.url\)(\.href)?/g
+const referencedAssets = new Set<string>()
+for (const m of bundledText.matchAll(assetPattern)) {
+  if (m[1]) referencedAssets.add(m[1])
+}
+const dataUrls = new Map<string, string>()
+for (const name of referencedAssets) {
+  const filePath = path.join(niivueAssetsDir, name)
+  const bytes = await Bun.file(filePath).bytes()
+  const mime = mimeForExtension(path.extname(name).toLowerCase())
+  const b64 = Buffer.from(bytes).toString('base64')
+  dataUrls.set(name, `data:${mime};base64,${b64}`)
+}
+bundledText = bundledText.replace(assetPattern, (match, name) => {
+  const url = dataUrls.get(name)
+  return url ? JSON.stringify(url) : match
+})
+
+await Bun.write(jsBundledPath, bundledText)
+
+function mimeForExtension(ext: string): string {
+  switch (ext) {
+    case '.png':
+      return 'image/png'
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.gif':
+      return 'image/gif'
+    case '.webp':
+      return 'image/webp'
+    case '.svg':
+      return 'image/svg+xml'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
+// Remove the now-orphaned standalone niivue.js if it exists from an older
+// pipeline. It's been folded into widget.js.
+const orphanNiivuePath = path.join(staticDir, 'niivue.js')
+try {
+  await Bun.file(orphanNiivuePath).delete()
+} catch {
+  // already gone, fine
+}
 
 // Summary to stdout
 console.log(`# Codegen summary — ${className} @ niivue ${niivuePkg.version}`)
@@ -710,23 +789,62 @@ function emitMethod(lines: string[], m: MethodDescriptor): void {
     .join(', ')
   const argsList = params.map((p) => snakeCase(p.name)).join(', ')
   const argsTuple = params.length === 0 ? '[]' : `[${argsList}]`
-  lines.push(
-    `    def ${m.pyName}(self${sig ? `, ${sig}` : ''}) -> None:`,
-  )
-  if (m.doc) {
-    const docLines = m.doc.split('\n')
-    lines.push(`        """${pyStringEscape(docLines[0]!)}`)
-    for (const dl of docLines.slice(1)) {
-      lines.push(`        ${pyStringEscape(dl)}`)
-    }
-    lines.push(`        """`)
+  const declParams = sig ? `, ${sig}` : ''
+  if (m.returnsValue) {
+    // Request/response: await the JS round-trip and return whatever
+    // shape JSON.stringify left us with. The Python type is `Any`
+    // because the JSON descriptor preserves only the raw TS type
+    // string; richer translation (TypedDict / pydantic) is future work.
+    lines.push(
+      `    async def ${m.pyName}(self${declParams}) -> Any:`,
+    )
+    emitMethodDocstring(lines, m)
+    lines.push(
+      `        return await self._request("${m.jsName}", ${argsTuple})`,
+    )
+  } else {
+    // Fire-and-forget. The cheap path for void/Promise<void>/Promise<this>.
+    lines.push(
+      `    def ${m.pyName}(self${declParams}) -> None:`,
+    )
+    emitMethodDocstring(lines, m)
+    lines.push(
+      `        self.send({"cmd": "${m.jsName}", "args": ${argsTuple}})`,
+    )
   }
-  lines.push(`        self.send({"cmd": "${m.jsName}", "args": ${argsTuple}})`)
   lines.push('')
+}
+
+function emitMethodDocstring(
+  lines: string[],
+  m: MethodDescriptor,
+): void {
+  if (!m.doc) return
+  const docLines = m.doc.split('\n')
+  lines.push(`        """${pyStringEscape(docLines[0]!)}`)
+  for (const dl of docLines.slice(1)) {
+    lines.push(`        ${pyStringEscape(dl)}`)
+  }
+  lines.push(`        """`)
 }
 
 function pyStringEscape(s: string): string {
   return s.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
+}
+
+/**
+ * Decide whether a method's return type carries a value Python should
+ * await for, vs. being fire-and-forget. Promise<this> covers method-
+ * chaining returns like `loadVolumes(...): Promise<this>` — the JS
+ * instance is not serializable, so we treat it as void.
+ */
+function methodReturnsValue(returns: string): boolean {
+  const trimmed = returns.trim()
+  if (trimmed === 'void') return false
+  if (trimmed === 'Promise<void>') return false
+  if (trimmed === 'this') return false
+  if (trimmed === 'Promise<this>') return false
+  return true
 }
 
 // ============================================================
@@ -759,10 +877,10 @@ function emitJs(api: ApiDescriptor): string {
   lines.push(`// Source: ${api.source} @ niivue ${api.niivueVersion}`)
   lines.push(`// Generated at: ${api.generatedAt}`)
   lines.push('')
-  lines.push('// niivue is bundled into ./niivue.js by the Nx `bundle` target,')
-  lines.push('// which depends on `niivue:build`. The bundle is checked in so a')
-  lines.push('// fresh `pip install` does not require the JS toolchain.')
-  lines.push(`import NiiVue from './niivue.js'`)
+  lines.push('// niivue is resolved at bundle time by Bun.build (called from')
+  lines.push("// scripts/codegen.ts). The output `widget.js` is self-contained;")
+  lines.push('// this template file is the small, reviewable input.')
+  lines.push(`import NiiVue from '@niivue/niivue/webgpu'`)
   lines.push('')
   lines.push('// [jsName, pyName] for read-write reactive properties.')
   lines.push('const PROPS_RW = [')
@@ -802,13 +920,31 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('  const nv = new NiiVue(opts)')
   lines.push('  await nv.attachToCanvas(canvas)')
   lines.push('')
+  lines.push('  // Recursively coerce gl-matrix vec3/vec4 (Float32Array) and')
+  lines.push('  // other typed arrays into plain arrays before crossing the')
+  lines.push('  // comm channel. Otherwise ipywidgets serializes typed arrays')
+  lines.push('  // as binary buffers, which arrive Python-side as memoryview')
+  lines.push('  // and fail traitlets.List validation. Used for the seed step,')
+  lines.push('  // event details, and request/response payloads.')
+  lines.push('  const toJsonSafe = (v) => {')
+  lines.push('    if (v == null) return v')
+  lines.push('    if (ArrayBuffer.isView(v)) return Array.from(v)')
+  lines.push('    if (Array.isArray(v)) return v.map(toJsonSafe)')
+  lines.push('    if (typeof v === "object") {')
+  lines.push('      const out = {}')
+  lines.push('      for (const k of Object.keys(v)) out[k] = toJsonSafe(v[k])')
+  lines.push('      return out')
+  lines.push('    }')
+  lines.push('    return v')
+  lines.push('  }')
+  lines.push('')
   lines.push('  // 3. Seed Python with NiiVue\'s actual current values. This')
   lines.push('  //    overwrites placeholder traitlet defaults (None / 0 / "")')
   lines.push('  //    with NiiVue\'s real defaults.')
   lines.push('  for (const [jsName, pyName] of [...PROPS_RW, ...PROPS_RO]) {')
   lines.push('    try {')
   lines.push('      const v = nv[jsName]')
-  lines.push('      if (v !== undefined) model.set(pyName, v)')
+  lines.push('      if (v !== undefined) model.set(pyName, toJsonSafe(v))')
   lines.push('    } catch (err) {')
   lines.push('      console.warn(`ipyniivue: failed to seed ${pyName}:`, err)')
   lines.push('    }')
@@ -837,8 +973,8 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('  const evtListeners = []')
   lines.push('  for (const eventName of EVENTS) {')
   lines.push('    const handler = (e) => {')
-  lines.push('      let detail = e && e.detail')
-  lines.push('      try { detail = JSON.parse(JSON.stringify(detail)) }')
+  lines.push('      let detail = null')
+  lines.push('      try { detail = toJsonSafe(e && e.detail) }')
   lines.push('      catch { detail = null }')
   lines.push('      model.send({ kind: "event", name: eventName, detail })')
   lines.push('    }')
@@ -846,29 +982,45 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    evtListeners.push([eventName, handler])')
   lines.push('  }')
   lines.push('')
-  lines.push('  // 6. Dispatch Python commands to NiiVue methods. Async results')
-  lines.push('  //    are fire-and-forget for now; a future phase will add')
-  lines.push('  //    request/response correlation for methods that return data.')
-  lines.push('  const cmdHandler = (msg) => {')
+  lines.push('  // 6. Dispatch Python commands to NiiVue methods. When the')
+  lines.push('  //    incoming message carries a `req_id`, await the result')
+  lines.push('  //    (Promise or sync return value) and post a response')
+  lines.push('  //    back to Python with the same id so the awaiting Future')
+  lines.push('  //    can resolve. Without `req_id`, the call is fire-and-')
+  lines.push('  //    forget — errors land in the JS console only.')
+  lines.push('  const cmdHandler = async (msg) => {')
   lines.push('    if (!msg || typeof msg !== "object") return')
   lines.push('    if (typeof msg.cmd !== "string") return')
+  lines.push('    const reqId = msg.req_id ?? null')
+  lines.push('    const respond = (ok, payload) => {')
+  lines.push('      if (reqId === null) return')
+  lines.push('      const body = { kind: "response", req_id: reqId, ok }')
+  lines.push('      if (ok) body.result = payload')
+  lines.push('      else body.error = String(payload)')
+  lines.push('      model.send(body)')
+  lines.push('    }')
   lines.push('    const fn = nv[msg.cmd]')
   lines.push('    if (typeof fn !== "function") {')
-  lines.push('      console.warn(`ipyniivue: unknown command ${msg.cmd}`)')
+  lines.push('      const errMsg = `unknown command: ${msg.cmd}`')
+  lines.push('      if (reqId !== null) respond(false, errMsg)')
+  lines.push('      else console.warn(`ipyniivue: ${errMsg}`)')
   lines.push('      return')
   lines.push('    }')
   lines.push('    try {')
-  lines.push('      const result = fn.apply(nv, msg.args || [])')
+  lines.push('      let result = fn.apply(nv, msg.args || [])')
   lines.push('      if (result && typeof result.then === "function") {')
-  lines.push('        result.catch((err) => {')
-  lines.push(
-    '          console.error(`ipyniivue: command ${msg.cmd} rejected:`, err)',
-  )
-  lines.push('        })')
+  lines.push('        result = await result')
+  lines.push('      }')
+  lines.push('      if (reqId !== null) {')
+  lines.push('        let safe = null')
+  lines.push('        try { safe = toJsonSafe(result ?? null) }')
+  lines.push('        catch { safe = null }')
+  lines.push('        respond(true, safe)')
   lines.push('      }')
   lines.push('    } catch (err) {')
+  lines.push('      if (reqId !== null) respond(false, err)')
   lines.push(
-    '      console.error(`ipyniivue: command ${msg.cmd} threw:`, err)',
+    '      else console.error(`ipyniivue: command ${msg.cmd} threw:`, err)',
   )
   lines.push('    }')
   lines.push('  }')

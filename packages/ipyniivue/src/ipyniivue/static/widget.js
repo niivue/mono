@@ -28314,6 +28314,8 @@ var EVENTS = [
 async function render({ model, el: el2 }) {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "width:100%;height:600px;display:block";
+  canvas.width = 640;
+  canvas.height = 480;
   el2.appendChild(canvas);
   const opts = {};
   for (const [jsName, pyName] of PROPS_RW) {

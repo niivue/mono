@@ -28317,15 +28317,11 @@ async function render({ model, el: el2 }) {
   canvas.width = 640;
   canvas.height = 480;
   el2.appendChild(canvas);
-  await new Promise((r) => requestAnimationFrame(() => r()));
-  const opts = {};
-  for (const [jsName, pyName] of PROPS_RW) {
-    const v = model.get(pyName);
-    if (v !== null && v !== undefined)
-      opts[jsName] = v;
-  }
-  const nv = new R(opts);
-  await nv.attachToCanvas(canvas);
+  let nv = null;
+  let mountedResolve;
+  const mountedPromise = new Promise((r) => {
+    mountedResolve = r;
+  });
   const TJS_TYPED_MAX = 1024;
   const TJS_ARRAY_MAX = 4096;
   const toJsonSafe = (v, seen) => {
@@ -28350,6 +28346,69 @@ async function render({ model, el: el2 }) {
       out[k2] = toJsonSafe(v[k2], seen);
     return out;
   };
+  const cmdHandler = async (msg) => {
+    if (!msg || typeof msg !== "object")
+      return;
+    if (typeof msg.cmd !== "string")
+      return;
+    const reqId = msg.req_id ?? null;
+    const respond = (ok, payload) => {
+      if (reqId === null)
+        return;
+      const body = { kind: "response", req_id: reqId, ok };
+      if (ok)
+        body.result = payload;
+      else
+        body.error = String(payload);
+      model.send(body);
+    };
+    await mountedPromise;
+    if (msg.cmd === "__ready__") {
+      if (reqId !== null)
+        respond(true, true);
+      return;
+    }
+    const fn2 = nv[msg.cmd];
+    if (typeof fn2 !== "function") {
+      const errMsg = `unknown command: ${msg.cmd}`;
+      if (reqId !== null)
+        respond(false, errMsg);
+      else
+        console.warn(`ipyniivue: ${errMsg}`);
+      return;
+    }
+    try {
+      let result = fn2.apply(nv, msg.args || []);
+      if (result && typeof result.then === "function") {
+        result = await result;
+      }
+      if (reqId !== null) {
+        let safe = null;
+        try {
+          safe = toJsonSafe(result ?? null);
+        } catch {
+          safe = null;
+        }
+        respond(true, safe);
+      }
+    } catch (err2) {
+      if (reqId !== null)
+        respond(false, err2);
+      else
+        console.error(`ipyniivue: command ${msg.cmd} threw:`, err2);
+    }
+  };
+  model.on("msg:custom", cmdHandler);
+  await new Promise((r) => requestAnimationFrame(() => r()));
+  const opts = {};
+  for (const [jsName, pyName] of PROPS_RW) {
+    const v = model.get(pyName);
+    if (v !== null && v !== undefined)
+      opts[jsName] = v;
+  }
+  nv = new R(opts);
+  await nv.attachToCanvas(canvas);
+  mountedResolve();
   for (const [jsName, pyName] of [...PROPS_RW, ...PROPS_RO]) {
     try {
       const v = nv[jsName];
@@ -28388,58 +28447,6 @@ async function render({ model, el: el2 }) {
     nv.addEventListener(eventName, handler);
     evtListeners.push([eventName, handler]);
   }
-  const cmdHandler = async (msg) => {
-    if (!msg || typeof msg !== "object")
-      return;
-    if (typeof msg.cmd !== "string")
-      return;
-    const reqId = msg.req_id ?? null;
-    const respond = (ok, payload) => {
-      if (reqId === null)
-        return;
-      const body = { kind: "response", req_id: reqId, ok };
-      if (ok)
-        body.result = payload;
-      else
-        body.error = String(payload);
-      model.send(body);
-    };
-    if (msg.cmd === "__ready__") {
-      if (reqId !== null)
-        respond(true, true);
-      return;
-    }
-    const fn2 = nv[msg.cmd];
-    if (typeof fn2 !== "function") {
-      const errMsg = `unknown command: ${msg.cmd}`;
-      if (reqId !== null)
-        respond(false, errMsg);
-      else
-        console.warn(`ipyniivue: ${errMsg}`);
-      return;
-    }
-    try {
-      let result = fn2.apply(nv, msg.args || []);
-      if (result && typeof result.then === "function") {
-        result = await result;
-      }
-      if (reqId !== null) {
-        let safe = null;
-        try {
-          safe = toJsonSafe(result ?? null);
-        } catch {
-          safe = null;
-        }
-        respond(true, safe);
-      }
-    } catch (err2) {
-      if (reqId !== null)
-        respond(false, err2);
-      else
-        console.error(`ipyniivue: command ${msg.cmd} threw:`, err2);
-    }
-  };
-  model.on("msg:custom", cmdHandler);
   return () => {
     for (const [eventName, handler] of evtListeners) {
       nv.removeEventListener(eventName, handler);

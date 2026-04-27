@@ -30,6 +30,7 @@ The remaining notebooks are first-pass ports of selected
 | `21_vox_mask.ipynb` | `vox.mask.html` | Background image masking for overlay volumes |
 | `22_vox_thumbnail.ipynb` | `vox.thumbnail.html` | Volume thumbnail loading and visibility controls |
 | `23_ext_imgproc.ipynb` | `imgproc.html` | `@niivue/nv-ext-image-processing` transforms (otsu, removeHaze, conform, connectedLabel) via `nv.apply_image_transform` |
+| `24_ext_drawing.ipynb` | `drawing.html` | `@niivue/nv-ext-drawing` interpolation: draw a few slices, then fill the gaps with `nv.interpolate_drawing_slices` (intensity-guided optional) |
 
 The ports use the public GitHub Pages asset mirror:
 

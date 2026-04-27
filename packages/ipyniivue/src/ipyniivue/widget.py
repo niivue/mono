@@ -232,6 +232,82 @@ class NiiVue(_GeneratedNiiVue):
         """
         self.send({"cmd": "saveBitmap", "args": [filename, quality]})
 
+    # Drawing extension (nv-ext-drawing)
+
+    async def find_drawing_boundary_slices(
+        self,
+        axis: int = 0,
+    ) -> dict[str, Any] | None:
+        """Find first/last slices containing drawing data along an axis.
+
+        Reads the live drawing bitmap from the JS-side extension context.
+        Returns ``None`` if no drawing volume exists yet (call
+        :meth:`create_empty_drawing` first) or if no voxels are drawn.
+
+        Parameters
+        ----------
+        axis
+            Slice axis: 0=Axial, 1=Coronal, 2=Sagittal.
+
+        Returns
+        -------
+        dict | None
+            ``{"first": int, "last": int, "elapsed_ms": float}`` or
+            ``None``.
+        """
+        return await self._request("__ext_drawing_find_boundaries", [axis])
+
+    async def interpolate_drawing_slices(
+        self,
+        axis: int = 0,
+        use_intensity_guided: bool = False,
+        intensity_weight: float = 0.7,
+        intensity_sigma: float = 0.1,
+        binary_threshold: float = 0.38,
+        apply_smoothing_to_slices: bool = True,
+    ) -> dict[str, Any]:
+        """Interpolate between drawn slices to fill gaps.
+
+        Use after drawing on a few non-adjacent slices to fill the
+        in-between slices. Heavy work runs in a Web Worker on the JS
+        side; the result is written back into NiiVue's drawing volume
+        before this call returns.
+
+        Parameters
+        ----------
+        axis
+            Slice axis to interpolate along: 0=Axial, 1=Coronal,
+            2=Sagittal.
+        use_intensity_guided
+            If True, use the background volume's intensity to guide
+            interpolation (better for anatomical boundaries).
+        intensity_weight
+            Weight of the intensity term [0, 1] when
+            ``use_intensity_guided`` is True.
+        intensity_sigma
+            Gaussian sigma for intensity similarity [0, 1].
+        binary_threshold
+            Final binarization threshold [0, 1].
+        apply_smoothing_to_slices
+            Smooth the source slices before interpolating.
+
+        Returns
+        -------
+        dict
+            ``{"before": int, "after": int, "elapsed_ms": float}``
+            voxel counts.
+        """
+        options = {
+            "intensityWeight": intensity_weight,
+            "intensitySigma": intensity_sigma,
+            "binaryThreshold": binary_threshold,
+            "applySmoothingToSlices": apply_smoothing_to_slices,
+        }
+        return await self._request(
+            "__ext_drawing_interpolate_slices",
+            [axis, bool(use_intensity_guided), options],
+        )
+
     # Image-processing extension (nv-ext-image-processing)
 
     async def apply_image_transform(

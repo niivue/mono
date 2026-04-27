@@ -8,6 +8,7 @@
 // nx-ignore-next-line: bundled widget asset, not a Python runtime dependency
 import NiiVue from '@niivue/niivue'
 import { conform, connectedLabel, otsu, removeHaze } from '@niivue/nv-ext-image-processing'
+import { findDrawingBoundarySlices, interpolateMaskSlices } from '@niivue/nv-ext-drawing'
 
 // Image-processing transforms bundled from @niivue/nv-ext-*.
 // Registered with NiiVue in initialize() so Python can apply them
@@ -304,6 +305,65 @@ async function initialize({ model }) {
       } catch (err) {
         if (reqId !== null) respond(false, err)
         else console.error("ipyniivue: __ext_apply_image_transform threw:", err)
+      }
+      return
+    }
+    // Drawing extension: find first/last slices containing drawing data
+    // along an axis. Returns { first, last } or null. Reads the live
+    // bitmap from ctx.drawing; returns null if no drawing volume exists.
+    if (msg.cmd === "__ext_drawing_find_boundaries") {
+      const args = msg.args || []
+      const axis = args[0] ?? 0
+      try {
+        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())
+        const dr = ctx.drawing
+        if (!dr) {
+          if (reqId !== null) respond(true, null)
+          return
+        }
+        const t0 = performance.now()
+        const result = await findDrawingBoundarySlices(axis, dr.bitmap, dr.dims)
+        const elapsedMs = performance.now() - t0
+        if (reqId !== null) {
+          respond(true, result ? { first: result.first, last: result.last, elapsed_ms: elapsedMs } : null)
+        }
+      } catch (err) {
+        if (reqId !== null) respond(false, err)
+        else console.error("ipyniivue: __ext_drawing_find_boundaries threw:", err)
+      }
+      return
+    }
+    // Drawing extension: interpolate between drawn slices to fill gaps.
+    // Pulls the live bitmap, runs the worker, writes the result back via
+    // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.
+    if (msg.cmd === "__ext_drawing_interpolate_slices") {
+      const args = msg.args || []
+      const axis = args[0] ?? 0
+      const useIntensity = !!args[1]
+      const userOptions = args[2] || {}
+      try {
+        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())
+        const dr = ctx.drawing
+        if (!dr) {
+          if (reqId !== null) respond(false, "no drawing volume; call create_empty_drawing() first")
+          return
+        }
+        const bg = ctx.backgroundVolume
+        const imageData = useIntensity && bg ? bg.imgRAS : null
+        const maxVal = useIntensity && bg ? (bg.globalMax || 1) : 1
+        const options = Object.assign({ sliceType: axis, useIntensityGuided: useIntensity }, userOptions)
+        const before = dr.bitmap.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)
+        const t0 = performance.now()
+        const newBitmap = await interpolateMaskSlices(
+          dr.bitmap, dr.dims, imageData, maxVal, undefined, undefined, options,
+        )
+        const elapsedMs = performance.now() - t0
+        const after = newBitmap.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)
+        dr.update(newBitmap)
+        if (reqId !== null) respond(true, { before: before, after: after, elapsed_ms: elapsedMs })
+      } catch (err) {
+        if (reqId !== null) respond(false, err)
+        else console.error("ipyniivue: __ext_drawing_interpolate_slices threw:", err)
       }
       return
     }

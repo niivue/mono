@@ -387,23 +387,35 @@ on widget mount.
 - Bundle size impact: 1.27 MB → 1.29 MB (+~20 KB; the worker is
   inlined into the ext package's pre-built `dist/`).
 
-### B.2. `nv-ext-drawing` (deferred — needs buffer transport)
+### B.2. Drawing interpolation (done)
 
-The drawing extension's API (`magicWand`, `interpolateMaskSlices`,
-`MagicWandShared`, etc.) takes raw `Uint8Array` bitmaps and returns
-modified ones. Python doesn't have those bitmaps directly — they live
-inside `nv.drawingVolume` on the JS side. Two ways to bridge:
+The `nv-ext-drawing` interpolation workflow ships:
 
-1. **JS-side composite commands** (mirrors B.1): hand-write
-   `__ext_drawing_magic_wand` etc. that pull the live bitmap from
-   `ctx.drawing.bitmap`, call the extension function, and write
-   the result back via `ctx.drawing.update(...)`. Returns only a
-   summary dict to Python. Doesn't need binary transport.
-2. **Buffer transport** (Phase C territory): Python operates on
-   numpy arrays directly. Bigger lift, more general.
+- JS side: codegen emits imports for `findDrawingBoundarySlices` and
+  `interpolateMaskSlices`, plus two composite commands
+  (`__ext_drawing_find_boundaries`, `__ext_drawing_interpolate_slices`).
+  Each pulls the live bitmap from `ctx.drawing.bitmap`, calls the
+  worker-backed extension function, writes the result back via
+  `ctx.drawing.update(...)`, and returns a summary dict.
+- Python side: `nv.find_drawing_boundary_slices(axis)` and
+  `nv.interpolate_drawing_slices(axis, use_intensity_guided=False, ...)`
+  in [widget.py](src/ipyniivue/widget.py).
+- Demo: [examples/24_ext_drawing.ipynb](examples/24_ext_drawing.ipynb)
+  — pen color/size/undo controls, axis dropdown, intensity-guided
+  toggle with three sliders, Find boundaries / Interpolate buttons,
+  status label.
+- Bundle size impact: 1.29 MB → 1.31 MB (+~12 KB).
 
-Recommend doing (1) first as a small, demoable port of
-[drawing.html](../../apps/demo-ext-drawing/drawing.html).
+The hover-driven magic-wand demo (`apps/demo-ext-drawing/magic-wand.ts`)
+is **not ported**. Its sub-frame `slicePointerMove` preview UX needs
+sub-100 ms round-trips that Jupyter's request/response model can't
+deliver, and `MagicWandShared` requires COOP+COEP headers that
+JupyterLab does not set. A programmatic
+`magic_wand(seed_voxel, slice_axis, **opts)` API that runs the
+single-shot `magicWand` worker call is straightforward to add (no
+hover preview, no SAB) and would be the next small B.2.next ship.
+
+### B.3. `nv-ext-save-html` (deferred — niivue-bundle bootstrap)
 
 ### B.3. `nv-ext-save-html` (deferred — niivue-bundle bootstrap)
 

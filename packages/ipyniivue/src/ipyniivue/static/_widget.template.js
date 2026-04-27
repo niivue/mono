@@ -186,6 +186,7 @@ const createState = () => {
     lastInboxSeq: 0,
     outboxSeq: 0,
     hasAttached: false,
+    canvas: null,
   }
 }
 const stateKey = (model) => {
@@ -336,9 +337,8 @@ async function initialize({ model }) {
       }
       return
     }
-    // Drawing extension: interpolate between drawn slices to fill gaps.
-    // Pulls the live bitmap, runs the worker, writes the result back via
-    // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.
+    // Buffer ingress: wrap bytes into a File and dispatch via NiiVue's
+    // URL/File loader so the existing extension-based reader path runs.
     if (msg.cmd === "__add_volume_from_bytes") {
       const args = msg.args || []
       const name = args[0] || "volume.nii"
@@ -390,6 +390,9 @@ async function initialize({ model }) {
       }
       return
     }
+    // Drawing extension: interpolate between drawn slices to fill gaps.
+    // Pulls the live bitmap, runs the worker, writes the result back via
+    // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.
     if (msg.cmd === "__ext_drawing_interpolate_slices") {
       const args = msg.args || []
       const axis = args[0] ?? 0
@@ -593,17 +596,24 @@ async function render({ model, el }) {
     console.error('ipyniivue: render called without an initialized NiiVue')
     return
   }
-  const canvas = document.createElement("canvas")
-  canvas.style.cssText = "width:100%;height:600px;display:block"
-  canvas.width = 640
-  canvas.height = 480
+  // Reuse the existing canvas across views. NiiVue is bound to one
+  // canvas, so when the same widget is displayed in a second cell
+  // we move that canvas into the new container instead of creating
+  // a fresh blank one. (anywidget calls render() per view.)
+  let canvas = state.canvas
+  if (!canvas) {
+    canvas = document.createElement("canvas")
+    canvas.style.cssText = "width:100%;height:600px;display:block"
+    canvas.width = 640
+    canvas.height = 480
+    state.canvas = canvas
+  }
   el.appendChild(canvas)
   // One animation frame for layout to measure the parent.
   await new Promise((r) => requestAnimationFrame(() => r()))
 
   // Only the first render performs the attach + seed. Subsequent
-  // views (e.g. same widget displayed in multiple cells) reuse
-  // the existing nv on its existing canvas.
+  // views reuse the canvas we created above.
   if (!state.hasAttached) {
     await nv.attachToCanvas(canvas)
     state.hasAttached = true

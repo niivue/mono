@@ -39,6 +39,24 @@ const EVENTTARGET_ALLOWLIST = new Set([
   'emit',
 ])
 
+// Methods that take non-JSON-serializable arguments (DOM handles, JS
+// objects with prototype methods, etc.) and therefore cannot be invoked
+// from Python through the command channel. The JS template attaches the
+// canvas itself in `render()`, so `attachToCanvas` is never something a
+// Python caller needs to invoke directly.
+const NON_SERIALIZABLE_METHODS = new Set([
+  'attachToCanvas',
+])
+
+// NiiVue events the JS template silences before forwarding to Python.
+// `canvasResize` and `viewAttached` fire at every layout tick during
+// mount (tens to hundreds of times per second on cold load); forwarding
+// them via `_msg_outbox` floods the WebSocket and disconnects the
+// JupyterLab comm. These names are filtered out of `NIIVUE_EVENT_NAMES`
+// so `nv.on(...)` rejects subscriptions that would never fire instead
+// of accepting them silently.
+const SKIP_EVENT_FORWARDING = ['canvasResize', 'viewAttached', 'viewDestroyed']
+
 // ============================================================
 // Type classifier
 // ============================================================
@@ -331,6 +349,7 @@ type ApiDescriptor = {
 const getters = new Map<string, GetAccessorDeclaration>()
 const setters = new Map<string, SetAccessorDeclaration>()
 const methods: MethodDeclaration[] = []
+const skippedMethods: SkippedItem[] = []
 
 for (const member of cls.getMembers()) {
   switch (member.getKind()) {
@@ -353,6 +372,13 @@ for (const member of cls.getMembers()) {
       if (m.getScope() === 'private') continue
       if (m.getName().startsWith('_')) continue
       if (EVENTTARGET_ALLOWLIST.has(m.getName())) continue
+      if (NON_SERIALIZABLE_METHODS.has(m.getName())) {
+        skippedMethods.push({
+          jsName: m.getName(),
+          reason: 'arguments are not JSON-serializable (DOM handle or JS object)',
+        })
+        continue
+      }
       methods.push(m)
       break
     }
@@ -362,7 +388,6 @@ for (const member of cls.getMembers()) {
 const properties: PropertyDescriptor[] = []
 const readonlyProperties: PropertyDescriptor[] = []
 const skippedProperties: SkippedItem[] = []
-const skippedMethods: SkippedItem[] = []
 
 // Reactive (paired) and read-only properties
 for (const [name, getter] of getters) {
@@ -635,6 +660,14 @@ if (descriptor.skipped.properties.length > 0) {
   }
 }
 
+if (descriptor.skipped.methods.length > 0) {
+  console.log()
+  console.log('## Skipped methods')
+  for (const s of descriptor.skipped.methods) {
+    console.log(`  ${s.jsName}: ${s.reason}`)
+  }
+}
+
 console.log()
 const traitletCounts = new Map<string, number>()
 for (const p of descriptor.properties) {
@@ -744,8 +777,17 @@ function emitPython(api: ApiDescriptor): string {
   lines.push(
     '# hand-written `widget.NiiVue.on()` method validates against this.',
   )
+  lines.push(
+    '# Events that the JS template intentionally suppresses (high-frequency',
+  )
+  lines.push(
+    '# layout ticks like `canvasResize`) are filtered out so subscribing to',
+  )
+  lines.push('# them raises instead of silently never firing.')
   lines.push('NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({')
+  const skipEvents = new Set(SKIP_EVENT_FORWARDING)
   for (const e of api.events) {
+    if (skipEvents.has(e.jsName)) continue
     lines.push(`    "${e.jsName}",`)
   }
   lines.push('})')
@@ -1142,9 +1184,9 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('// them; users rarely observe these and they have no Python-')
   lines.push('// side use cases that justify the bandwidth.')
   lines.push('const SKIP_EVENT_FORWARDING = new Set([')
-  lines.push('  "canvasResize",')
-  lines.push('  "viewAttached",')
-  lines.push('  "viewDestroyed",')
+  for (const e of SKIP_EVENT_FORWARDING) {
+    lines.push(`  "${e}",`)
+  }
   lines.push('])')
   lines.push('const EVENTS = [')
   for (const e of events) {
@@ -1176,6 +1218,7 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    lastInboxSeq: 0,')
   lines.push('    outboxSeq: 0,')
   lines.push('    hasAttached: false,')
+  lines.push('    canvas: null,')
   lines.push('  }')
   lines.push('}')
   lines.push('const stateKey = (model) => {')
@@ -1348,13 +1391,13 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      }')
   lines.push('      return')
   lines.push('    }')
-  lines.push('    // Drawing extension: interpolate between drawn slices to fill gaps.')
-  lines.push('    // Pulls the live bitmap, runs the worker, writes the result back via')
-  lines.push('    // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.')
-    // Binary buffer ingress: Python ships raw file bytes (NIfTI, MGZ,
-    // mesh format, etc.) via model.send(content, buffers). JS wraps the
-    // buffer into a File and hands it to NiiVue's standard URL/File
-    // loader path, which dispatches by filename extension.
+  // Binary buffer ingress: Python ships raw file bytes (NIfTI, MGZ,
+  // mesh format, etc.) inlined as base64 in the inbox body, decoded by
+  // `decodeInboxBuffer` into `buffers[0]` here. The JS handler wraps the
+  // buffer into a File and hands it to NiiVue's standard URL/File loader
+  // path, which dispatches by filename extension.
+  lines.push('    // Buffer ingress: wrap bytes into a File and dispatch via NiiVue\'s')
+  lines.push('    // URL/File loader so the existing extension-based reader path runs.')
   lines.push('    if (msg.cmd === "__add_volume_from_bytes") {')
   lines.push('      const args = msg.args || []')
   lines.push('      const name = args[0] || "volume.nii"')
@@ -1406,6 +1449,9 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      }')
   lines.push('      return')
   lines.push('    }')
+  lines.push('    // Drawing extension: interpolate between drawn slices to fill gaps.')
+  lines.push('    // Pulls the live bitmap, runs the worker, writes the result back via')
+  lines.push('    // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.')
   lines.push('    if (msg.cmd === "__ext_drawing_interpolate_slices") {')
   lines.push('      const args = msg.args || []')
   lines.push('      const axis = args[0] ?? 0')
@@ -1623,10 +1669,18 @@ function emitJs(api: ApiDescriptor): string {
   )
   lines.push('    return')
   lines.push('  }')
-  lines.push('  const canvas = document.createElement("canvas")')
-  lines.push('  canvas.style.cssText = "width:100%;height:600px;display:block"')
-  lines.push('  canvas.width = 640')
-  lines.push('  canvas.height = 480')
+  lines.push('  // Reuse the existing canvas across views. NiiVue is bound to one')
+  lines.push('  // canvas, so when the same widget is displayed in a second cell')
+  lines.push('  // we move that canvas into the new container instead of creating')
+  lines.push('  // a fresh blank one. (anywidget calls render() per view.)')
+  lines.push('  let canvas = state.canvas')
+  lines.push('  if (!canvas) {')
+  lines.push('    canvas = document.createElement("canvas")')
+  lines.push('    canvas.style.cssText = "width:100%;height:600px;display:block"')
+  lines.push('    canvas.width = 640')
+  lines.push('    canvas.height = 480')
+  lines.push('    state.canvas = canvas')
+  lines.push('  }')
   lines.push('  el.appendChild(canvas)')
   lines.push('  // One animation frame for layout to measure the parent.')
   lines.push('  await new Promise((r) => requestAnimationFrame(() => r()))')
@@ -1634,8 +1688,7 @@ function emitJs(api: ApiDescriptor): string {
   lines.push(
     '  // Only the first render performs the attach + seed. Subsequent',
   )
-  lines.push('  // views (e.g. same widget displayed in multiple cells) reuse')
-  lines.push('  // the existing nv on its existing canvas.')
+  lines.push('  // views reuse the canvas we created above.')
   lines.push('  if (!state.hasAttached) {')
   lines.push('    await nv.attachToCanvas(canvas)')
   lines.push('    state.hasAttached = true')

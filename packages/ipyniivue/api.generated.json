@@ -1239,29 +1239,6 @@
       "returnsDoc": null
     },
     {
-      "jsName": "attachToCanvas",
-      "pyName": "attach_to_canvas",
-      "isAsync": true,
-      "returnsValue": false,
-      "params": [
-        {
-          "name": "canvas",
-          "tsType": "HTMLCanvasElement",
-          "optional": false,
-          "doc": null
-        },
-        {
-          "name": "isAntiAlias",
-          "tsType": "boolean | null",
-          "optional": true,
-          "doc": null
-        }
-      ],
-      "returns": "Promise<this>",
-      "doc": null,
-      "returnsDoc": null
-    },
-    {
       "jsName": "broadcastTo",
       "pyName": "broadcast_to",
       "isAsync": false,
@@ -2749,7 +2726,12 @@
         "reason": "non-serializable nominal type: Record<string, (volume: NVImage, options?: TransformOptions | undefined) => Promise<NVImage>>"
       }
     ],
-    "methods": [],
+    "methods": [
+      {
+        "jsName": "attachToCanvas",
+        "reason": "arguments are not JSON-serializable (DOM handle or JS object)"
+      }
+    ],
     "events": []
   }
 }

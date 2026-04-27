@@ -126,7 +126,7 @@ class NiiVue(_GeneratedNiiVue):
         raises :class:`RuntimeError` if the JS side reports an error.
         """
         req_id = next(self._req_counter)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future: asyncio.Future[Any] = loop.create_future()
         self._pending[req_id] = future
         self.send({"cmd": cmd, "args": args, "req_id": req_id})
@@ -369,8 +369,8 @@ class NiiVue(_GeneratedNiiVue):
             import nibabel as nib
         except ImportError as exc:  # pragma: no cover
             msg = (
-                "add_volume_from_array requires nibabel. "
-                "Install with: pip install nibabel"
+                "add_volume_from_array requires nibabel and numpy. "
+                "Install with: pip install ipyniivue[examples]"
             )
             raise ImportError(msg) from exc
 

@@ -144,14 +144,6 @@ class NiiVue(_GeneratedNiiVue):
         asset loading can happen entirely in the browser without a
         Python-visible ready round trip.
 
-        Example::
-
-            from IPython.display import display
-            nv = NiiVue()
-            display(nv)
-            await nv.wait_ready()
-            print("mounted")
-
         Implementation note: ``wait_ready`` piggybacks on the
         request/response correlation. Python sends ``{cmd:"__ready__"}``;
         the JS shim replies after :func:`render` runs and the widget is
@@ -161,8 +153,16 @@ class NiiVue(_GeneratedNiiVue):
 
         Parameters
         ----------
-        timeout
-            Seconds to wait before giving up. ``None`` to wait forever.
+        timeout : float or None, optional
+            Seconds to wait before giving up. ``None`` waits forever.
+            Defaults to 30 seconds.
+
+        Examples
+        --------
+        >>> from IPython.display import display
+        >>> nv = NiiVue()
+        >>> display(nv)
+        >>> await nv.wait_ready()
         """
         coro = self._request("__ready__", [])
         if timeout is None:
@@ -204,23 +204,26 @@ class NiiVue(_GeneratedNiiVue):
         """Load one volume from a URL.
 
         Convenience wrapper for ``self.load_volumes([{"url": url, ...}])``.
-        Keyword arguments are translated snake_case to camelCase for the
-        underlying NiiVue option names. Common options:
+        Keyword arguments are translated from snake_case to camelCase for
+        the underlying NiiVue option names.
 
-          * ``cal_min`` / ``cal_max``: window min/max
-          * ``colormap``: e.g. "gray", "hot", "viridis"
-          * ``opacity``: 0-1
-          * ``visible``: bool
-          * ``frame_4d``: int, frame index for 4D volumes
+        Parameters
+        ----------
+        url : str
+            Source URL for the volume (NIfTI, MGZ, NRRD, etc.).
+        **opts
+            NiiVue ``ImageFromUrlOptions`` overrides in snake_case. Common
+            options: ``cal_min`` / ``cal_max`` (window range), ``colormap``
+            (e.g. ``"gray"``, ``"hot"``, ``"viridis"``), ``opacity`` (0-1),
+            ``visible`` (bool), ``frame_4d`` (int frame index for 4D
+            volumes).
 
-        Example::
-
-            nv.add_volume_from_url(
-                "https://niivue.github.io/niivue-demo-images/mni152.nii.gz",
-                cal_min=30,
-                cal_max=80,
-                colormap="gray",
-            )
+        Examples
+        --------
+        >>> nv.add_volume_from_url(
+        ...     "https://niivue.github.io/niivue-demo-images/mni152.nii.gz",
+        ...     cal_min=30, cal_max=80, colormap="gray",
+        ... )
         """
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
         opts_camel["url"] = url
@@ -232,6 +235,14 @@ class NiiVue(_GeneratedNiiVue):
         Convenience wrapper for ``self.load_meshes([{"url": url, ...}])``.
         See :meth:`add_volume_from_url` for the snake_case to camelCase
         translation rule.
+
+        Parameters
+        ----------
+        url : str
+            Source URL for the mesh (MZ3, GIfTI, OBJ, STL, etc.).
+        **opts
+            NiiVue ``LoadFromUrlParams`` overrides in snake_case (e.g.
+            ``rgba255``, ``opacity``, ``visible``).
         """
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
         opts_camel["url"] = url
@@ -267,10 +278,22 @@ class NiiVue(_GeneratedNiiVue):
         extension of ``path`` (or ``name`` if provided) must match the
         format.
 
-        Example::
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Local filesystem path to the volume file.
+        name : str, optional
+            Override the filename used for extension-based dispatch on
+            the JS side. Defaults to ``path.name``.
+        **opts
+            NiiVue ``ImageFromUrlOptions`` overrides in snake_case
+            (e.g. ``cal_min``, ``cal_max``, ``colormap``).
 
-            nv.add_volume_from_path("examples/fslmean8.nii.gz",
-                                     cal_min=10, cal_max=80)
+        Examples
+        --------
+        >>> nv.add_volume_from_path(
+        ...     "examples/fslmean8.nii.gz", cal_min=10, cal_max=80,
+        ... )
         """
         p = pathlib.Path(path)
         self.add_volume_from_bytes(name or p.name, p.read_bytes(), **opts)
@@ -283,22 +306,26 @@ class NiiVue(_GeneratedNiiVue):
     ) -> None:
         """Load a volume from raw file bytes already in Python memory.
 
-        ``name`` is the filename used by NiiVue's loader to pick the
-        right reader (``.nii.gz``, ``.mgz``, ``.nrrd``, ``.mih``, etc.).
-        Other keyword arguments are passed through as
-        :class:`ImageFromUrlOptions` (snake_case → camelCase).
-
-        Example using nibabel for header construction::
-
-            import numpy as np, nibabel as nib
-            arr = np.zeros((64, 64, 64), dtype=np.float32)
-            arr[28:36, 28:36, 28:36] = 1.0
-            nifti_bytes = nib.Nifti1Image(arr, np.eye(4)).to_bytes()
-            nv.add_volume_from_bytes("cube.nii", nifti_bytes,
-                                      colormap="hot")
-
         See :meth:`add_volume_from_array` for a numpy-aware convenience
         wrapper that calls nibabel for you.
+
+        Parameters
+        ----------
+        name : str
+            Filename used by NiiVue's loader to pick the right reader
+            (``.nii.gz``, ``.mgz``, ``.nrrd``, ``.mih``, etc.).
+        data : bytes
+            Raw file contents.
+        **opts
+            NiiVue ``ImageFromUrlOptions`` overrides in snake_case.
+
+        Examples
+        --------
+        >>> import numpy as np, nibabel as nib
+        >>> arr = np.zeros((64, 64, 64), dtype=np.float32)
+        >>> arr[28:36, 28:36, 28:36] = 1.0
+        >>> nifti_bytes = nib.Nifti1Image(arr, np.eye(4)).to_bytes()
+        >>> nv.add_volume_from_bytes("cube.nii", nifti_bytes, colormap="hot")
         """
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
         self._send_with_buffer(
@@ -320,8 +347,23 @@ class NiiVue(_GeneratedNiiVue):
         verbatim — if NiiVue rejects it, cast first (e.g.
         ``arr.astype(np.float32)``).
 
-        Raises :exc:`ImportError` with a clear install hint if nibabel
-        is not available.
+        Parameters
+        ----------
+        arr : numpy.ndarray
+            3D or 4D array of voxel data.
+        affine : numpy.ndarray of shape (4, 4), optional
+            Voxel-to-world affine. Defaults to the identity.
+        name : str, optional
+            Filename used for extension-based dispatch. Defaults to
+            ``"volume.nii"``.
+        **opts
+            NiiVue ``ImageFromUrlOptions`` overrides in snake_case.
+
+        Raises
+        ------
+        ImportError
+            If nibabel is not installed. Install with
+            ``pip install ipyniivue[examples]``.
         """
         try:
             import nibabel as nib
@@ -349,8 +391,19 @@ class NiiVue(_GeneratedNiiVue):
         name: str | None = None,
         **opts: Any,
     ) -> None:
-        """Load a mesh from a local file path. See
-        :meth:`add_volume_from_path` for the design notes.
+        """Load a mesh from a local file path.
+
+        See :meth:`add_volume_from_path` for the design notes.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Local filesystem path to the mesh file.
+        name : str, optional
+            Override the filename used for extension-based dispatch.
+            Defaults to ``path.name``.
+        **opts
+            NiiVue ``LoadFromUrlParams`` overrides in snake_case.
         """
         p = pathlib.Path(path)
         self.add_mesh_from_bytes(name or p.name, p.read_bytes(), **opts)
@@ -361,8 +414,19 @@ class NiiVue(_GeneratedNiiVue):
         data: bytes,
         **opts: Any,
     ) -> None:
-        """Load a mesh from raw file bytes. See
-        :meth:`add_volume_from_bytes` for the design notes.
+        """Load a mesh from raw file bytes.
+
+        See :meth:`add_volume_from_bytes` for the design notes.
+
+        Parameters
+        ----------
+        name : str
+            Filename used for extension-based dispatch (``.mz3``,
+            ``.gii``, ``.obj``, etc.).
+        data : bytes
+            Raw file contents.
+        **opts
+            NiiVue ``LoadFromUrlParams`` overrides in snake_case.
         """
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
         self._send_with_buffer(
@@ -407,6 +471,14 @@ class NiiVue(_GeneratedNiiVue):
         queue preserves ordering, so callers can queue a volume load and
         then queue this method without waiting for a Python-visible ready
         response.
+
+        Parameters
+        ----------
+        filename : str, optional
+            Suggested filename for the downloaded image. Defaults to
+            ``"myBitmap.png"``.
+        quality : float, optional
+            JPEG quality in [0, 1] (ignored for PNG). Defaults to 0.92.
         """
         self.send({"cmd": "saveBitmap", "args": [filename, quality]})
 
@@ -424,14 +496,14 @@ class NiiVue(_GeneratedNiiVue):
 
         Parameters
         ----------
-        axis
-            Slice axis: 0=Axial, 1=Coronal, 2=Sagittal.
+        axis : int, optional
+            Slice axis: 0=Axial, 1=Coronal, 2=Sagittal. Defaults to 0.
 
         Returns
         -------
-        dict | None
-            ``{"first": int, "last": int, "elapsed_ms": float}`` or
-            ``None``.
+        dict or None
+            ``{"first": int, "last": int, "elapsed_ms": float}`` if any
+            voxels are drawn along ``axis``; ``None`` otherwise.
         """
         return await self._request("__ext_drawing_find_boundaries", [axis])
 
@@ -453,27 +525,30 @@ class NiiVue(_GeneratedNiiVue):
 
         Parameters
         ----------
-        axis
+        axis : int, optional
             Slice axis to interpolate along: 0=Axial, 1=Coronal,
-            2=Sagittal.
-        use_intensity_guided
+            2=Sagittal. Defaults to 0.
+        use_intensity_guided : bool, optional
             If True, use the background volume's intensity to guide
-            interpolation (better for anatomical boundaries).
-        intensity_weight
-            Weight of the intensity term [0, 1] when
-            ``use_intensity_guided`` is True.
-        intensity_sigma
-            Gaussian sigma for intensity similarity [0, 1].
-        binary_threshold
-            Final binarization threshold [0, 1].
-        apply_smoothing_to_slices
-            Smooth the source slices before interpolating.
+            interpolation (better for anatomical boundaries). Defaults
+            to False.
+        intensity_weight : float, optional
+            Weight of the intensity term in [0, 1] when
+            ``use_intensity_guided`` is True. Defaults to 0.7.
+        intensity_sigma : float, optional
+            Gaussian sigma for intensity similarity in [0, 1].
+            Defaults to 0.1.
+        binary_threshold : float, optional
+            Final binarization threshold in [0, 1]. Defaults to 0.38.
+        apply_smoothing_to_slices : bool, optional
+            Smooth the source slices before interpolating. Defaults
+            to True.
 
         Returns
         -------
         dict
             ``{"before": int, "after": int, "elapsed_ms": float}``
-            voxel counts.
+            voxel counts before and after interpolation.
         """
         options = {
             "intensityWeight": intensity_weight,
@@ -509,16 +584,15 @@ class NiiVue(_GeneratedNiiVue):
 
         Parameters
         ----------
-        name
-            Transform name. Must be present in
-            :attr:`volume_transforms` (the read-only traitlet seeded
-            from NiiVue at mount).
-        volume_index
-            Source volume index. Default 0 (background).
-        options
+        name : str
+            Transform name. Must be present in :attr:`volume_transforms`
+            (the read-only traitlet seeded from NiiVue at mount).
+        volume_index : int, optional
+            Source volume index. Defaults to 0 (background).
+        options : dict, optional
             Transform-specific options. See
-            :meth:`get_volume_transform_info`.
-        replace_background
+            :meth:`get_volume_transform_info` for the schema.
+        replace_background : bool, optional
             If True, remove all volumes first and load the result as the
             new background. If False (default), add as an overlay.
 
@@ -527,10 +601,10 @@ class NiiVue(_GeneratedNiiVue):
         dict
             ``{"name": str, "elapsed_ms": float}``.
 
-        Example::
-
-            info = await nv.get_volume_transform_info("otsu")
-            await nv.apply_image_transform("otsu", 0)
+        Examples
+        --------
+        >>> info = await nv.get_volume_transform_info("otsu")
+        >>> await nv.apply_image_transform("otsu", 0)
         """
         return await self._request(
             "__ext_apply_image_transform",
@@ -544,27 +618,38 @@ class NiiVue(_GeneratedNiiVue):
         event: str,
         callback: Callable[[Any], None],
     ) -> Callable[[], None]:
-        """Subscribe to a NiiVue event. Returns an unsubscribe function.
+        """Subscribe to a NiiVue event.
 
         The callback receives the event's ``detail`` payload (whatever JS
         attaches to the corresponding ``CustomEvent``). Detail shapes are
         documented in the niivue ``NVEventMap`` interface and are
         delivered to Python as plain dicts/lists/scalars.
 
-        Example::
+        Parameters
+        ----------
+        event : str
+            Event name; must be a member of :data:`NIIVUE_EVENT_NAMES`.
+        callback : Callable[[Any], None]
+            Function invoked with the event's detail payload.
 
-            nv = NiiVue()
-            unsubscribe = nv.on(
-                "locationChange",
-                lambda detail: print(detail.get("string")),
-            )
-            # ... later ...
-            unsubscribe()
+        Returns
+        -------
+        Callable[[], None]
+            Unsubscribe function. Calling it removes ``callback`` from
+            this event's listener list.
 
         Raises
         ------
         ValueError
             If ``event`` is not a known NiiVue event.
+
+        Examples
+        --------
+        >>> unsubscribe = nv.on(
+        ...     "locationChange",
+        ...     lambda detail: print(detail.get("string")),
+        ... )
+        >>> unsubscribe()
         """
         if event not in NIIVUE_EVENT_NAMES:
             known = ", ".join(sorted(NIIVUE_EVENT_NAMES))
@@ -586,7 +671,13 @@ class NiiVue(_GeneratedNiiVue):
     ) -> None:
         """Remove a previously-registered event callback.
 
-        If ``callback`` is omitted, all callbacks for ``event`` are removed.
+        Parameters
+        ----------
+        event : str
+            Event name to unsubscribe from.
+        callback : Callable[[Any], None], optional
+            Specific callback to remove. If omitted, all callbacks for
+            ``event`` are removed.
         """
         if callback is None:
             self._event_callbacks.pop(event, None)

@@ -182,22 +182,41 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     async def add_colormap(self, name: Any, cmap: Any) -> Any:
         """Register a colormap by name so it becomes available to
+
         `setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh
         layers, and so on. Use this to add user-defined LUTs at runtime.
         Re-registering an existing name replaces the entry. Does not trigger a
         redraw — the colormap is inert until a volume references it.
-        
+
         Label colormaps (for atlas volumes with per-index labels) have their
         own registration path: `setColormapLabel()` / `setColormapLabelFromUrl()`.
+
+        Parameters
+        ----------
+        name : string
+        cmap : Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Pick<ColorMap, \"A\" | \"I\" | \"labels\">>
+
+        Returns
+        -------
+        string
+            The canonical name under which the colormap was stored
+            (first letter upper-cased), which is the form visible in `nv1.colormaps`
+            and the `colormapAdded` event detail.
         """
         return await self._request("addColormap", [name, cmap])
 
     def add_colormap_from_url(self, url: Any, name: Any = None) -> None:
         """Fetch a colormap JSON (`{ R, G, B, A?, I? }`) from a URL or `File` and
+
         register it under `name`. When `name` is omitted, it is derived from
         the source filename; callers passing an un-nameable source (e.g.
         `?query-only`) should supply `name` explicitly — an empty derived
         name throws.
+
+        Parameters
+        ----------
+        url : string | File
+        name : string | undefined
         """
         self.send({"cmd": "addColormapFromUrl", "args": [url, name]})
 
@@ -209,6 +228,11 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     def add_mesh_layer(self, mesh_index: Any, layer_opts: Any) -> None:
         """Add a scalar overlay layer to a mesh.
+
+        Parameters
+        ----------
+        mesh_index : number
+        layer_opts : MeshLayerFromUrlOptions
         """
         self.send({"cmd": "addMeshLayer", "args": [mesh_index, layer_opts]})
 
@@ -229,6 +253,13 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     def broadcast_to(self, targets: Any = None, opts: Any = None) -> None:
         """Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others.
+
+        Parameters
+        ----------
+        targets : default | default[] | undefined
+            the other NiiVue instance(s) to broadcast to, or omit to clear sync
+        opts : SyncOpts
+            which properties to sync (default: { '2d': true, '3d': true })
         """
         self.send({"cmd": "broadcastTo", "args": [targets, opts]})
 
@@ -251,15 +282,19 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     async def create_extension_context(self) -> Any:
         """Create an extension context for interacting with this NiiVue instance.
-        
+
         The context provides a stable API surface for extensions: live data
         accessors, event subscriptions (including high-level slice pointer events),
         safe write-back actions, and coordinate transform utilities.
-        
+
         Call `context.dispose()` when the extension is deactivated to remove all
         event listeners registered through the context.
-        
+
         Multiple contexts can coexist — each tracks its own subscriptions.
+
+        Returns
+        -------
+        NVExtensionContext
         """
         return await self._request("createExtensionContext", [])
 
@@ -289,6 +324,16 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     async def get_frame_4d(self, id: Any) -> Any:
         """Get the current 4D frame index for a volume.
+
+        Parameters
+        ----------
+        id : string
+            Volume ID (typically the URL or name)
+
+        Returns
+        -------
+        number
+            Current frame index (0-based), or 0 if volume not found
         """
         return await self._request("getFrame4D", [id])
 
@@ -297,22 +342,48 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     async def get_tract_groups(self, mesh_index: Any) -> Any:
         """Get the group names for a tract mesh.
+
         Returns an empty array if the mesh is not a tract or has no groups.
+
+        Parameters
+        ----------
+        mesh_index : number
+
+        Returns
+        -------
+        string[]
         """
         return await self._request("getTractGroups", [mesh_index])
 
     async def get_volume_transform_info(self, name: Any) -> Any:
         """Get metadata for a specific volume transform (options, description, resultDefaults).
+
+        Parameters
+        ----------
+        name : string
+
+        Returns
+        -------
+        TransformInfo | undefined
         """
         return await self._request("getVolumeTransformInfo", [name])
 
     async def has_colormap(self, name: Any) -> Any:
         """Case-insensitive existence check for a registered colormap. Accepts
+
         whatever casing the caller has on hand (e.g. a lowercased `<select>`
         value) and compares against the canonical stored name. Prefer this
         over `nv1.colormaps.includes(...)` — it handles the first-letter
         canonicalization that `addColormap` and the filesystem auto-loader
         apply internally.
+
+        Parameters
+        ----------
+        name : string
+
+        Returns
+        -------
+        boolean
         """
         return await self._request("hasColormap", [name])
 
@@ -321,7 +392,13 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     def load_deferred_4d_volumes(self, id: Any) -> None:
         """Load all remaining frames for a 4D volume that was opened with limitFrames4D.
+
         Re-fetches the complete file and replaces the truncated image data.
+
+        Parameters
+        ----------
+        id : string
+            Volume ID (typically the URL or name)
         """
         self.send({"cmd": "loadDeferred4DVolumes", "args": [id]})
 
@@ -336,8 +413,24 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     async def load_img_v1(self, volume_index: Any, is_flip_x: Any = None, is_flip_y: Any = None, is_flip_z: Any = None) -> Any:
         """Convert a float32 3-frame volume to V1 (eigenvector) RGBA representation.
+
         For formats like AFNI that lack NIfTI intent codes, this provides explicit
         conversion of vector field data (dim4=3, float32) to sign-encoded RGBA.
+
+        Parameters
+        ----------
+        volume_index : number
+            Index of the volume to convert
+        is_flip_x : boolean
+            Flip X component (default: false)
+        is_flip_y : boolean
+            Flip Y component (default: false)
+        is_flip_z : boolean
+            Flip Z component (default: false)
+
+        Returns
+        -------
+        Promise<boolean>
         """
         return await self._request("loadImgV1", [volume_index, is_flip_x, is_flip_y, is_flip_z])
 
@@ -355,32 +448,59 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     def move_volume_down(self, volume_index: Any) -> None:
         """Move a volume down one index position in the stack of loaded volumes (toward the background).
+
+        Parameters
+        ----------
+        volume_index : number
+            Index of the volume to move
         """
         self.send({"cmd": "moveVolumeDown", "args": [volume_index]})
 
     def move_volume_to_bottom(self, volume_index: Any) -> None:
         """Move a volume to the bottom position in the stack of loaded volumes (index 0, background).
+
+        Parameters
+        ----------
+        volume_index : number
+            Index of the volume to move
         """
         self.send({"cmd": "moveVolumeToBottom", "args": [volume_index]})
 
     def move_volume_to_top(self, volume_index: Any) -> None:
         """Move a volume to the top position in the stack of loaded volumes (last index, top layer).
+
+        Parameters
+        ----------
+        volume_index : number
+            Index of the volume to move
         """
         self.send({"cmd": "moveVolumeToTop", "args": [volume_index]})
 
     def move_volume_up(self, volume_index: Any) -> None:
         """Move a volume up one index position in the stack of loaded volumes (toward the top layer).
+
+        Parameters
+        ----------
+        volume_index : number
+            Index of the volume to move
         """
         self.send({"cmd": "moveVolumeUp", "args": [volume_index]})
 
     def recalculate_cal_min_max(self, volume_index: Any, frame: Any = None) -> None:
         """Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).
+
         Updates the volume's calibration range and triggers a GPU update.
+
+        Parameters
+        ----------
+        volume_index : number
+        frame : number | undefined
         """
         self.send({"cmd": "recalculateCalMinMax", "args": [volume_index, frame]})
 
     def refresh_drawing(self) -> None:
         """Mark the drawing texture as dirty and schedule a redraw.
+
         The expensive bitmap→RGBA conversion and GPU upload are deferred to
         the next animation frame, so rapid pointermove events only pay the
         cost once per frame.
@@ -389,7 +509,12 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     def register_volume_transform(self, transform: Any) -> None:
         """Register an external volume transform at runtime.
+
         External transforms manage their own Web Worker execution internally.
+
+        Parameters
+        ----------
+        transform : VolumeTransform
         """
         self.send({"cmd": "registerVolumeTransform", "args": [transform]})
 
@@ -410,6 +535,11 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     def remove_mesh_layer(self, mesh_index: Any, layer_index: Any) -> None:
         """Remove a scalar overlay layer from a mesh.
+
+        Parameters
+        ----------
+        mesh_index : number
+        layer_index : number
         """
         self.send({"cmd": "removeMeshLayer", "args": [mesh_index, layer_index]})
 
@@ -430,6 +560,19 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     async def save_volume(self, options: Any = None) -> Any:
         """Save voxel-based image to disk.
+
+        Parameters
+        ----------
+        options : SaveVolumeOptions
+            configuration object with the following fields:
+            - `filename`: name of the NIfTI image to create. If empty, returns data only.
+            - `isSaveDrawing`: whether to save the drawing layer or the background image
+            - `volumeByIndex`: which image layer to save (0 for background)
+
+        Returns
+        -------
+        Promise<boolean | Uint8Array>
+            `true` if successful when writing to disk, or a `Uint8Array` if exported as binary data
         """
         return await self._request("saveVolume", [options])
 
@@ -438,12 +581,26 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     async def serialize_document(self) -> Any:
         """Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array).
+
+        Returns
+        -------
+        Uint8Array
         """
         return await self._request("serializeDocument", [])
 
     def set_bounds(self, bounds: Any) -> None:
         """Update the drawing bounds for this Niivue instance.
+
         Coordinates use y=0 at bottom, y=1 at top (GL convention).
+
+        Parameters
+        ----------
+        bounds : [number, number, number, number]
+            [x1, y1, x2, y2] in normalized (0-1) coordinates.
+            
+            Example:
+            nv.setBounds([0,0,0.5,0.5])   // bottom-left quarter
+            nv.setBounds([0.5,0.5,1,1])   // top-right quarter
         """
         self.send({"cmd": "setBounds", "args": [bounds]})
 
@@ -458,20 +615,42 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     def set_colormap_label(self, volume_index: Any, cmap: Any) -> None:
         """Set a label colormap on a volume (e.g., atlas/parcellation).
+
         Converts the ColorMap definition to an LUT and attaches it to the volume.
         When set, the orient shader uses nearest-neighbor label lookup instead of
         continuous colormap interpolation, and locationChange events include label names.
+
+        Parameters
+        ----------
+        volume_index : number
+            Index of the volume to apply the label colormap to
+        cmap : ColorMap | null
+            ColorMap definition with R,G,B arrays and optional labels/I arrays,
+            or null to remove the label colormap
         """
         self.send({"cmd": "setColormapLabel", "args": [volume_index, cmap]})
 
     def set_colormap_label_from_url(self, volume_index: Any, url: Any) -> None:
         """Fetch a label colormap JSON from a URL or File and apply it to a volume.
+
         The JSON should contain R, G, B arrays and optional labels/I arrays.
+
+        Parameters
+        ----------
+        volume_index : number
+            Index of the volume to apply the label colormap to
+        url : string | File
+            URL string or File object pointing to a colormap JSON
         """
         self.send({"cmd": "setColormapLabelFromUrl", "args": [volume_index, url]})
 
     def set_connectome_options(self, mesh_index: Any, options: Any) -> None:
         """Update connectome extrusion/display options and re-extrude.
+
+        Parameters
+        ----------
+        mesh_index : number
+        options : Partial<NVConnectomeOptions>
         """
         self.send({"cmd": "setConnectomeOptions", "args": [mesh_index, options]})
 
@@ -483,62 +662,125 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     async def set_font(self, font: Any) -> Any:
         """Swap the active font atlas. The font is infrastructure-level configuration
+
         (GPU-owned atlas texture + metrics map), so switching requires a full view
         rebuild — use this method instead of mutating `opts.font` directly.
+
+        Parameters
+        ----------
+        font : NVFontData
+
+        Returns
+        -------
+        Promise<boolean>
         """
         return await self._request("setFont", [font])
 
     async def set_font_from_url(self, urls: Any) -> Any:
         """Fetch an MSDF font atlas (PNG + JSON metrics pair) from URLs and swap
+
         it in as the active font. Useful for loading fonts that are not bundled
         with the library (e.g. the community atlases at
         https://github.com/niivue/fonts). The PNG URL is stored verbatim and
         used as the GPU atlas texture source.
-        
+
         On failure (metrics fetch, view rebuild, or atlas texture upload)
         the previous font is restored so the view isn't left half-initialized.
         The original error is re-thrown after recovery.
+
+        Parameters
+        ----------
+        urls : { atlas: string; metrics: string; }
+
+        Returns
+        -------
+        Promise<boolean>
         """
         return await self._request("setFontFromUrl", [urls])
 
     def set_frame_4d(self, id: Any, frame: Any) -> None:
         """Set the current 4D frame for a volume.
+
+        Parameters
+        ----------
+        id : string
+            Volume ID (typically the URL or name)
+        frame : number
+            Frame index (0-based, clamped to valid range)
         """
         self.send({"cmd": "setFrame4D", "args": [id, frame]})
 
     def set_mesh(self, mesh_index: Any, options: Any) -> None:
         """Update display properties of a loaded mesh.
+
         Accepts any subset of mesh display options (opacity, shaderType, color, etc.)
         and triggers a single GPU update.
+
+        Parameters
+        ----------
+        mesh_index : number
+        options : MeshUpdate
         """
         self.send({"cmd": "setMesh", "args": [mesh_index, options]})
 
     def set_mesh_layer_frame_4d(self, mesh_index: Any, layer_index: Any, frame: Any) -> None:
         """Set the current 4D frame for a mesh layer.
+
+        Parameters
+        ----------
+        mesh_index : number
+        layer_index : number
+        frame : number
         """
         self.send({"cmd": "setMeshLayerFrame4D", "args": [mesh_index, layer_index, frame]})
 
     def set_mesh_layer_property(self, mesh_index: Any, layer_index: Any, options: Any) -> None:
         """Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).
+
         Triggers recompositing and GPU update.
+
+        Parameters
+        ----------
+        mesh_index : number
+        layer_index : number
+        options : Partial<NVMeshLayer>
         """
         self.send({"cmd": "setMeshLayerProperty", "args": [mesh_index, layer_index, options]})
 
     def set_modulation_image(self, target_id: Any, modulator_id: Any) -> None:
         """Set a modulation image for a target volume.
+
         The modulator's intensity scales the target volume's brightness and opacity.
+
+        Parameters
+        ----------
+        target_id : string
+            ID of the volume to modulate
+        modulator_id : string
+            ID of the volume providing modulation (empty string to clear)
         """
         self.send({"cmd": "setModulationImage", "args": [target_id, modulator_id]})
 
     def set_tract_options(self, mesh_index: Any, options: Any) -> None:
         """Update tract tessellation/display options and re-tessellate.
+
+        Parameters
+        ----------
+        mesh_index : number
+        options : Partial<NVTractOptions>
         """
         self.send({"cmd": "setTractOptions", "args": [mesh_index, options]})
 
     def set_volume(self, volume_index: Any, options: Any) -> None:
         """Update display properties of a loaded volume.
+
         Accepts any subset of volume display options (colormap, opacity, cal_min, etc.)
         and triggers a single GPU update.
+
+        Parameters
+        ----------
+        volume_index : number
+        options : VolumeUpdate
         """
         self.send({"cmd": "setVolume", "args": [volume_index, options]})
 
@@ -547,13 +789,32 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     def use_loader(self, converter: Any, from_ext: Any, to_ext: Any) -> None:
         """Register an external format loader.
+
         The converter function receives raw file bytes and returns bytes in a known format.
+
+        Parameters
+        ----------
+        converter : (buffer: ArrayBuffer) => ArrayBuffer | Uint8Array | Promise<ArrayBuffer | Uint8Array>
+            function that converts from the source format to the target format
+        from_ext : string
+            source file extension without dot (e.g. 'vox', 'glb')
+        to_ext : string
+            target format extension without dot: 'nii' for volumes, 'mz3' for meshes
         """
         self.send({"cmd": "useLoader", "args": [converter, from_ext, to_ext]})
 
     async def vox2frac(self, vox: Any) -> Any:
         """Convert RAS voxel coordinates to scene fraction [0,1].
+
         Uses the background volume's matRAS for the vox→mm conversion.
+
+        Parameters
+        ----------
+        vox : [number, number, number]
+
+        Returns
+        -------
+        [number, number, number]
         """
         return await self._request("vox2frac", [vox])
 

@@ -32307,6 +32307,12 @@ async function render({ model, el: el2 }) {
     canvas.style.cssText = "width:100%;height:600px;display:block";
     canvas.width = 640;
     canvas.height = 480;
+    canvas.addEventListener("contextmenu", (e2) => {
+      if (e2.shiftKey)
+        return;
+      e2.preventDefault();
+      e2.stopPropagation();
+    });
     state.canvas = canvas;
   }
   el2.appendChild(canvas);

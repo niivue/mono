@@ -169,7 +169,10 @@ handles three kinds:
   `_request(...)`. Used by codegen-emitted async methods and
   `wait_ready`.
 - `kind: "event"` — fans out to callbacks registered via `nv.on(...)`.
-  Validated against `NIIVUE_EVENT_NAMES`.
+  Validated against `NIIVUE_EVENT_NAMES`, which lists only the
+  forwarded NiiVue events — codegen excludes the names in
+  `SKIP_EVENT_FORWARDING` so subscribing to a silenced event raises
+  `ValueError` rather than silently never firing.
 - `kind: "error"` — surfaces JS-side failures from fire-and-forget
   buffer commands (e.g. an `add_volume_from_bytes` that NiiVue
   rejects). Python prints `[ipyniivue] <source>: <message>` to
@@ -263,6 +266,11 @@ auto-generated command methods or hand-written helpers in
 | `annotationStyle` | individual `annotation_*` reactive props |
 | `customLayout` | `set_custom_layout`, `clear_custom_layout` |
 | `volumeTransform` | `register_volume_transform`, `apply_volume_transform` |
+
+The walker also skips one method, `attachToCanvas`, because its sole
+argument is a non-serializable `HTMLCanvasElement`. The JS template's
+`render(model, el)` calls `nv.attachToCanvas(...)` directly on the
+canvas it creates, so no Python entry point is needed.
 
 ### Two paths to `saveBitmap`
 

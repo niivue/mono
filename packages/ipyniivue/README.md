@@ -13,6 +13,24 @@ cd packages/ipyniivue
 pip install -e .
 ```
 
+Launch JupyterLab from the package directory so the example notebooks and
+local package resolve consistently:
+
+```bash
+cd packages/ipyniivue
+jupyter lab --no-browser
+```
+
+If JupyterLab appears to be restoring stale widget state during local
+development, clear the local Jupyter cache and runtime files before
+starting it:
+
+```bash
+rm -rf ~/.cache/jupyter ~/.local/share/jupyter/runtime
+cd packages/ipyniivue
+jupyter lab --no-browser
+```
+
 Regenerate the Python API and bundled widget after TypeScript-side API or
 bundle changes:
 
@@ -177,4 +195,4 @@ Python event callbacks from `nv.on(...)` are available for low-frequency
 events, but avoid using high-volume browser events or large event payloads
 as part of the main demo path.
 
-See `KNOWN_ISSUES.md` for details.
+See `CLAUDE.md` for architecture details and known traps.

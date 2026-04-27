@@ -33,7 +33,7 @@ class NiiVue(_GeneratedNiiVue):
     """A NiiVue widget for Jupyter.
 
     Reactive properties (e.g. ``is_colorbar_visible``, ``slice_type``,
-    ``crosshair_pos``) are kept in sync with the JS view automatically —
+    ``crosshair_pos``) are kept in sync with the JS view automatically;
     set them like any traitlet.
 
     Methods send command messages to the JS view. Use them for actions
@@ -55,7 +55,8 @@ class NiiVue(_GeneratedNiiVue):
         # Future in `_pending`; `_dispatch_message` routes the response.
         self._pending: dict[int, asyncio.Future[Any]] = {}
         self._req_counter = itertools.count(1)
-        # JS→Python: state-update channel via `_msg_outbox`. See the trait's
+        self._inbox_counter = itertools.count(1)
+        # JS-to-Python: state-update channel via `_msg_outbox`. See the trait's
         # docstring in _generated.py. We use a closure (not a bound method)
         # because some traitlets setups have flaky observer-registration
         # behavior with bound methods, and stash an explicit strong
@@ -75,7 +76,28 @@ class NiiVue(_GeneratedNiiVue):
         # underlying anywidget routing becomes reliable.
         self.on_msg(self._dispatch_message)
 
-    # ─── Request/response (used by codegen-emitted async methods) ────
+    def send(self, content: Any, buffers: list[bytes] | None = None) -> None:
+        """Send widget commands through a synced-state inbox.
+
+        ipywidgets custom messages can be dropped if Python sends them before
+        the browser view has registered its handler. Command methods are often
+        called immediately after ``display(nv)`` in example notebooks, so route
+        those command messages through ``_msg_inbox`` instead. The JS side
+        drains any unseen sequence numbers once it initializes.
+        """
+        if (
+            isinstance(content, dict)
+            and isinstance(content.get("cmd"), str)
+            and not buffers
+        ):
+            self._msg_inbox = [
+                *self._msg_inbox,
+                {"seq": next(self._inbox_counter), "body": content},
+            ]
+            return
+        super().send(content, buffers=buffers)
+
+    # Request/response (used by codegen-emitted async methods)
 
     async def _request(self, cmd: str, args: list[Any]) -> Any:
         """Send a command to JS and await its response.
@@ -97,10 +119,11 @@ class NiiVue(_GeneratedNiiVue):
     async def wait_ready(self, timeout: float | None = 30.0) -> None:
         """Wait until the JS side has mounted in the browser.
 
-        Useful in scripted notebooks (or "Run All" flows) where you want
-        the widget displayed and its JS attach complete before sending
-        commands. Without this, commands like :meth:`add_volume_from_url`
-        can race the kernel/widget reconnect handshake on first display.
+        Most fire-and-forget commands, including
+        :meth:`add_volume_from_url`, do not need this method. The JS side
+        queues those commands until the canvas is attached, so async web
+        asset loading can happen entirely in the browser without a
+        Python-visible ready round trip.
 
         Example::
 
@@ -108,14 +131,14 @@ class NiiVue(_GeneratedNiiVue):
             nv = NiiVue()
             display(nv)
             await nv.wait_ready()
-            nv.add_volume_from_url("...")
+            print("mounted")
 
         Implementation note: ``wait_ready`` piggybacks on the
         request/response correlation. Python sends ``{cmd:"__ready__"}``;
-        the JS shim replies as soon as ``msg:custom`` is wired up, which
-        only happens after :func:`render` runs and the widget is mounted.
-        Messages sent before mount sit in anywidget's queue and are
-        delivered when the comm opens.
+        the JS shim replies after :func:`render` runs and the widget is
+        mounted. Because this method intentionally waits for a JS-to-Python
+        response, it is best reserved for code that truly needs that
+        confirmation.
 
         Parameters
         ----------
@@ -128,46 +151,46 @@ class NiiVue(_GeneratedNiiVue):
         else:
             await asyncio.wait_for(coro, timeout=timeout)
 
-    # ─── Pythonic helpers for non-traitlet properties ────────────────
+    # Pythonic helpers for non-traitlet properties
     #
     # The codegen walker skips seven NVControlBase properties because
     # their TS types are non-serializable JS handles:
     #
-    #   volumes: NVImage[]               → use add_volume_from_url(),
+    #   volumes: NVImage[]               - use add_volume_from_url(),
     #                                       load_volumes(), remove_volume(),
     #                                       remove_all_volumes(), set_volume()
-    #   meshes: NVMesh[]                 → use add_mesh_from_url(),
+    #   meshes: NVMesh[]                 - use add_mesh_from_url(),
     #                                       load_meshes(), remove_mesh(),
     #                                       remove_all_meshes(), set_mesh()
-    #   drawingVolume: NVImage           → use load_drawing(),
+    #   drawingVolume: NVImage           - use load_drawing(),
     #                                       create_empty_drawing(),
     #                                       close_drawing(), draw_undo()
-    #   annotations: VectorAnnotation[]  → use add_annotation(),
+    #   annotations: VectorAnnotation[]  - use add_annotation(),
     #                                       remove_annotation(),
     #                                       clear_annotations(),
     #                                       get_annotations_json()
-    #   annotationStyle: AnnotationStyle → set fields individually via the
+    #   annotationStyle: AnnotationStyle - set fields individually via the
     #                                       `annotation_*` reactive
     #                                       properties (e.g.
     #                                       annotation_brush_radius)
-    #   customLayout: CustomLayoutTile[] → use set_custom_layout(),
+    #   customLayout: CustomLayoutTile[] - use set_custom_layout(),
     #                                       clear_custom_layout()
-    #   volumeTransform: Record<...>     → use register_volume_transform()
+    #   volumeTransform: Record<...>     - use register_volume_transform()
     #                                       and apply_volume_transform()
     #
-    # All of these flow through the auto-generated command methods —
+    # All of these flow through the auto-generated command methods;
     # this section adds only the Pythonic conveniences that wrap them.
 
     def add_volume_from_url(self, url: str, **opts: Any) -> None:
         """Load one volume from a URL.
 
         Convenience wrapper for ``self.load_volumes([{"url": url, ...}])``.
-        Keyword arguments are translated snake_case → camelCase for the
+        Keyword arguments are translated snake_case to camelCase for the
         underlying NiiVue option names. Common options:
 
           * ``cal_min`` / ``cal_max``: window min/max
           * ``colormap``: e.g. "gray", "hot", "viridis"
-          * ``opacity``: 0–1
+          * ``opacity``: 0-1
           * ``visible``: bool
           * ``frame_4d``: int, frame index for 4D volumes
 
@@ -188,14 +211,28 @@ class NiiVue(_GeneratedNiiVue):
         """Load one mesh from a URL.
 
         Convenience wrapper for ``self.load_meshes([{"url": url, ...}])``.
-        See :meth:`add_volume_from_url` for the snake_case → camelCase
+        See :meth:`add_volume_from_url` for the snake_case to camelCase
         translation rule.
         """
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
         opts_camel["url"] = url
         self.load_meshes([opts_camel])
 
-    # ─── Event subscription ──────────────────────────────────────────
+    def download_bitmap(
+        self,
+        filename: str = "myBitmap.png",
+        quality: float = 0.92,
+    ) -> None:
+        """Queue a browser download using NiiVue's ``saveBitmap`` method.
+
+        This is intentionally fire-and-forget. The browser-side command
+        queue preserves ordering, so callers can queue a volume load and
+        then queue this method without waiting for a Python-visible ready
+        response.
+        """
+        self.send({"cmd": "saveBitmap", "args": [filename, quality]})
+
+    # Event subscription
 
     def on(
         self,
@@ -253,7 +290,7 @@ class NiiVue(_GeneratedNiiVue):
         if cbs and callback in cbs:
             cbs.remove(callback)
 
-    # ─── Internal: route messages from JS ────────────────────────────
+    # Internal: route messages from JS
 
     def _dispatch_message(self, _widget: Any, content: Any, _buffers: Any) -> None:
         if not isinstance(content, dict):
@@ -286,14 +323,14 @@ class NiiVue(_GeneratedNiiVue):
 
 
 def _snake_to_camel(name: str) -> str:
-    """Convert snake_case → camelCase for NiiVue option keys.
+    """Convert snake_case to camelCase for NiiVue option keys.
 
     Used by ``NiiVue.add_volume_from_url`` etc. so Python users can pass
     ``cal_min=30`` and have it land at the JS side as ``calMin: 30``.
 
     Names without underscores are returned unchanged. Numeric runs after
-    a digit-letter boundary collapse with the letter (e.g. ``in_3d`` →
-    ``in3D`` is *not* what we do here — Python users would write ``in3d``
+    a digit-letter boundary collapse with the letter (e.g. ``in_3d`` to
+    ``in3D`` is *not* what we do here; Python users would write ``in3d``
     directly because Python identifiers can include digits but underscore
     handling differs from the codegen direction).
     """

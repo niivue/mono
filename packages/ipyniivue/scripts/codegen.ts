@@ -1,10 +1,10 @@
 /**
- * Phase 2.1 — Emit api.generated.json from NVControlBase TypeScript source.
+ * Emit api.generated.json from NVControlBase TypeScript source.
  *
  * Walks `packages/niivue/src/NVControlBase.ts`, classifies every public
  * member, and produces a structured JSON descriptor that downstream
  * emitters (Python wrapper, JS shim) consume. Anything we can't translate
- * cleanly lands in the `skipped` section with a reason — those become
+ * cleanly lands in the `skipped` section with a reason. Those become
  * either hand-written code or future codegen improvements.
  *
  * The JSON file is checked in. Reviews of niivue API changes show up as
@@ -58,7 +58,7 @@ type ClassifyResult =
 function classifyType(t: Type): ClassifyResult {
   const tsText = shortenType(t.getText())
 
-  // Unwrap `T | undefined` / `T | null` — the optional wrapper is common
+  // Unwrap `T | undefined` / `T | null`: the optional wrapper is common
   // for "value or unset" and we can preserve nullability in traitlets via
   // .tag(allow_none=True) in the Python emitter (Phase 2.2). For now, take
   // the non-nullable side.
@@ -70,18 +70,22 @@ function classifyType(t: Type): ClassifyResult {
       return { ok: false, reason: 'union of only null/undefined', tsText }
     }
     if (nonNullish.length === 1) {
-      return classifyType(nonNullish[0]!)
+      const onlyType = nonNullish[0]
+      if (!onlyType) {
+        return { ok: false, reason: 'union with missing type', tsText }
+      }
+      return classifyType(onlyType)
     }
     // Boolean-literal union (`true | false`, ts widens this from `boolean`)
     if (nonNullish.every((u) => u.isBooleanLiteral())) {
       return { ok: true, traitlet: { kind: 'Bool' }, tsText }
     }
-    // String-literal union → Enum
+    // String-literal union to Enum
     if (nonNullish.every((u) => u.isStringLiteral())) {
       const values = nonNullish.map((u) => u.getLiteralValueOrThrow() as string)
       return { ok: true, traitlet: { kind: 'Enum', values }, tsText }
     }
-    // Number-literal union → Enum
+    // Number-literal union to Enum
     if (nonNullish.every((u) => u.isNumberLiteral())) {
       const values = nonNullish.map((u) => u.getLiteralValueOrThrow() as number)
       return { ok: true, traitlet: { kind: 'Enum', values }, tsText }
@@ -114,7 +118,7 @@ function classifyType(t: Type): ClassifyResult {
     return { ok: true, traitlet: { kind: 'Unicode' }, tsText }
   }
 
-  // Tuple → fixed-length List
+  // Tuple to fixed-length List
   if (t.isTuple()) {
     const elems = t.getTupleElements()
     if (elems.length === 0) {
@@ -124,7 +128,15 @@ function classifyType(t: Type): ClassifyResult {
         tsText,
       }
     }
-    const elemResult = classifyType(elems[0]!)
+    const firstElem = elems[0]
+    if (!firstElem) {
+      return {
+        ok: false,
+        reason: 'tuple with missing element type',
+        tsText,
+      }
+    }
+    const elemResult = classifyType(firstElem)
     if (!elemResult.ok) return elemResult
     // All elements should match the first (we don't support mixed tuples)
     for (const e of elems.slice(1)) {
@@ -148,10 +160,11 @@ function classifyType(t: Type): ClassifyResult {
     }
   }
 
-  // Array → variable-length List
+  // Array to variable-length List
   if (t.isArray()) {
     const elem = t.getArrayElementType()
-    if (!elem) return { ok: false, reason: 'array with no element type', tsText }
+    if (!elem)
+      return { ok: false, reason: 'array with no element type', tsText }
     const elemResult = classifyType(elem)
     if (!elemResult.ok) return elemResult
     return {
@@ -161,7 +174,7 @@ function classifyType(t: Type): ClassifyResult {
     }
   }
 
-  // Typed arrays — JSON-serializable as plain number arrays.
+  // Typed arrays are JSON-serializable as plain number arrays.
   const symbolName = t.getSymbol()?.getName()
   if (symbolName && /^(Int|Uint|Float)\d+(Clamped)?Array$/.test(symbolName)) {
     return {
@@ -298,7 +311,6 @@ type SkippedItem = {
 type ApiDescriptor = {
   niivueVersion: string
   source: string
-  generatedAt: string
   className: string
   properties: PropertyDescriptor[]
   readonlyProperties: PropertyDescriptor[]
@@ -472,14 +484,11 @@ if (eventsFile) {
 }
 
 // niivue version from its package.json
-const niivuePkg = await Bun.file(
-  path.join(niivueRoot, 'package.json'),
-).json()
+const niivuePkg = await Bun.file(path.join(niivueRoot, 'package.json')).json()
 
 const descriptor: ApiDescriptor = {
   niivueVersion: niivuePkg.version,
   source: path.relative(repoRoot, controlBase.getFilePath()),
-  generatedAt: new Date().toISOString(),
   className,
   properties: properties.sort((a, b) => a.jsName.localeCompare(b.jsName)),
   readonlyProperties: readonlyProperties.sort((a, b) =>
@@ -543,8 +552,7 @@ let bundledText = await bundledBlob.text()
 // hierarchical, so `new URL` throws at module init. Inline the assets
 // as base64 `data:` URLs at bundle time.
 const niivueAssetsDir = path.join(niivueRoot, 'dist', 'assets')
-const assetPattern =
-  /new URL\("assets\/([^"]+)", import\.meta\.url\)(\.href)?/g
+const assetPattern = /new URL\("assets\/([^"]+)", import\.meta\.url\)(\.href)?/g
 const referencedAssets = new Set<string>()
 for (const m of bundledText.matchAll(assetPattern)) {
   if (m[1]) referencedAssets.add(m[1])
@@ -561,6 +569,7 @@ bundledText = bundledText.replace(assetPattern, (match, name) => {
   const url = dataUrls.get(name)
   return url ? JSON.stringify(url) : match
 })
+bundledText = `${bundledText.replace(/[ \t]+$/gm, '').replace(/\n*$/, '')}\n`
 
 await Bun.write(jsBundledPath, bundledText)
 
@@ -592,7 +601,7 @@ try {
 }
 
 // Summary to stdout
-console.log(`# Codegen summary — ${className} @ niivue ${niivuePkg.version}`)
+console.log(`# Codegen summary - ${className} @ niivue ${niivuePkg.version}`)
 console.log()
 console.log(`Wrote ${path.relative(repoRoot, outPath)}`)
 console.log()
@@ -639,16 +648,18 @@ function traitletKindLabel(t: PyTraitlet): string {
 function snakeCase(s: string): string {
   // Order matters. Each rule inserts an underscore at one kind of word
   // boundary in CamelCase / PascalCase / mixed-with-digits names.
-  return s
-    // letter, digits, uppercase → split before digits  (in3D → in_3D)
-    .replace(/([a-z])(\d+)(?=[A-Z])/g, '$1_$2')
-    // digit, uppercase, lowercase → split before uppercase  (1Sl → 1_Sl)
-    .replace(/(\d)([A-Z])(?=[a-z])/g, '$1_$2')
-    // uppercase run followed by uppercase+lowercase → split  (ABCdef → AB_Cdef)
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
-    // standard camel boundary  (aB → a_B)
-    .replace(/([a-z])([A-Z])/g, '$1_$2')
-    .toLowerCase()
+  return (
+    s
+      // letter, digits, uppercase: split before digits  (in3D to in_3D)
+      .replace(/([a-z])(\d+)(?=[A-Z])/g, '$1_$2')
+      // digit, uppercase, lowercase: split before uppercase  (1Sl to 1_Sl)
+      .replace(/(\d)([A-Z])(?=[a-z])/g, '$1_$2')
+      // uppercase run followed by uppercase+lowercase: split (ABCdef to AB_Cdef)
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+      // standard camel boundary  (aB to a_B)
+      .replace(/([a-z])([A-Z])/g, '$1_$2')
+      .toLowerCase()
+  )
 }
 
 function extractDoc(node: JSDocableNode): string | null {
@@ -669,9 +680,8 @@ function extractDoc(node: JSDocableNode): string | null {
 function emitPython(api: ApiDescriptor): string {
   const lines: string[] = []
   lines.push('# This file is auto-generated by scripts/codegen.ts.')
-  lines.push('# Do not edit by hand — re-run `bunx nx codegen ipyniivue`.')
+  lines.push('# Do not edit by hand; re-run `bunx nx codegen ipyniivue`.')
   lines.push(`# Source: ${api.source} @ niivue ${api.niivueVersion}`)
-  lines.push(`# Generated at: ${api.generatedAt}`)
   lines.push('')
   lines.push('# ruff: noqa')
   lines.push('# mypy: ignore-errors')
@@ -685,7 +695,9 @@ function emitPython(api: ApiDescriptor): string {
   lines.push('')
   lines.push('')
   lines.push('# Set of event names that JS may dispatch to Python. The')
-  lines.push('# hand-written `widget.NiiVue.on()` method validates against this.')
+  lines.push(
+    '# hand-written `widget.NiiVue.on()` method validates against this.',
+  )
   lines.push('NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({')
   for (const e of api.events) {
     lines.push(`    "${e.jsName}",`)
@@ -694,8 +706,29 @@ function emitPython(api: ApiDescriptor): string {
   lines.push('')
   lines.push('')
   lines.push(`class _GeneratedNiiVue(anywidget.AnyWidget):`)
-  lines.push('    # Synthetic outbox for JS→Python messages. anywidget 0.9.x +')
-  lines.push("    # ipywidgets 8.x do not reliably route `model.send()` from JS")
+  lines.push(
+    '    # Synthetic inbox for Python-to-JS commands. Python may queue',
+  )
+  lines.push(
+    '    # commands immediately after display(nv), before the browser view',
+  )
+  lines.push(
+    '    # has loaded this widget module and registered msg:custom handlers.',
+  )
+  lines.push(
+    '    # Storing commands as synced state makes that cold-start path',
+  )
+  lines.push(
+    '    # durable; JS processes any unhandled seq values after initialize.',
+  )
+  lines.push('    _msg_inbox = traitlets.List([]).tag(sync=True)')
+  lines.push('')
+  lines.push(
+    '    # Synthetic outbox for JS-to-Python messages. anywidget 0.9.x +',
+  )
+  lines.push(
+    '    # ipywidgets 8.x do not reliably route `model.send()` from JS',
+  )
   lines.push("    # through Python's `on_msg` callbacks in our setup; the")
   lines.push('    # message succeeds JS-side but vanishes before reaching the')
   lines.push('    # Python widget. As a workaround, JS writes outbound')
@@ -712,25 +745,25 @@ function emitPython(api: ApiDescriptor): string {
   lines.push('')
   lines.push('    Reactive properties are kept in sync with the JS view via')
   lines.push('    anywidget. Methods send command messages over the same')
-  lines.push('    channel; for now they are fire-and-forget. A future phase')
-  lines.push('    will introduce request/response semantics for methods that')
-  lines.push('    return data.')
+  lines.push('    channel. Void-returning methods are fire-and-forget;')
+  lines.push('    value-returning methods use request/response correlation')
+  lines.push('    and should return small JSON-serializable payloads.')
   lines.push('    """')
   lines.push('')
-  lines.push('    # ─── Reactive properties (read+write, synced) ───────────────')
+  lines.push('    # Reactive properties (read+write, synced)')
 
   for (const p of api.properties) {
     emitTrait(lines, p, /* readOnly */ false)
   }
 
   lines.push('')
-  lines.push('    # ─── Read-only properties (synced from JS to Python) ────────')
+  lines.push('    # Read-only properties (synced from JS to Python)')
   for (const p of api.readonlyProperties) {
     emitTrait(lines, p, /* readOnly */ true)
   }
 
   lines.push('')
-  lines.push('    # ─── Command methods (fire-and-forget) ──────────────────────')
+  lines.push('    # Command methods')
   for (const m of api.methods) {
     emitMethod(lines, m)
   }
@@ -773,10 +806,7 @@ function formatTraitlet(t: PyTraitlet): string {
       return 'traitlets.Unicode(None, allow_none=True)'
     case 'List': {
       const elem = formatTraitlet(t.elem)
-      const args = [
-        `trait=${elem}`,
-        'default_value=None',
-      ]
+      const args = [`trait=${elem}`, 'default_value=None']
       if (t.length !== null) {
         args.push(`minlen=${t.length}`, `maxlen=${t.length}`)
       }
@@ -807,18 +837,14 @@ function emitMethod(lines: string[], m: MethodDescriptor): void {
     // shape JSON.stringify left us with. The Python type is `Any`
     // because the JSON descriptor preserves only the raw TS type
     // string; richer translation (TypedDict / pydantic) is future work.
-    lines.push(
-      `    async def ${m.pyName}(self${declParams}) -> Any:`,
-    )
+    lines.push(`    async def ${m.pyName}(self${declParams}) -> Any:`)
     emitMethodDocstring(lines, m)
     lines.push(
       `        return await self._request("${m.jsName}", ${argsTuple})`,
     )
   } else {
     // Fire-and-forget. The cheap path for void/Promise<void>/Promise<this>.
-    lines.push(
-      `    def ${m.pyName}(self${declParams}) -> None:`,
-    )
+    lines.push(`    def ${m.pyName}(self${declParams}) -> None:`)
     emitMethodDocstring(lines, m)
     lines.push(
       `        self.send({"cmd": "${m.jsName}", "args": ${argsTuple}})`,
@@ -827,13 +853,10 @@ function emitMethod(lines: string[], m: MethodDescriptor): void {
   lines.push('')
 }
 
-function emitMethodDocstring(
-  lines: string[],
-  m: MethodDescriptor,
-): void {
+function emitMethodDocstring(lines: string[], m: MethodDescriptor): void {
   if (!m.doc) return
   const docLines = m.doc.split('\n')
-  lines.push(`        """${pyStringEscape(docLines[0]!)}`)
+  lines.push(`        """${pyStringEscape(docLines[0] ?? '')}`)
   for (const dl of docLines.slice(1)) {
     lines.push(`        ${pyStringEscape(dl)}`)
   }
@@ -847,7 +870,7 @@ function pyStringEscape(s: string): string {
 /**
  * Decide whether a method's return type carries a value Python should
  * await for, vs. being fire-and-forget. Promise<this> covers method-
- * chaining returns like `loadVolumes(...): Promise<this>` — the JS
+ * chaining returns like `loadVolumes(...): Promise<this>`; the JS
  * instance is not serializable, so we treat it as void.
  */
 function methodReturnsValue(returns: string): boolean {
@@ -864,7 +887,7 @@ function methodReturnsValue(returns: string): boolean {
 // ============================================================
 
 /**
- * Emit `static/widget.js` — the anywidget ESM module that:
+ * Emit `static/widget.js`, the anywidget ESM module that:
  *   1. Reads non-null traitlets as NiiVue constructor overrides
  *   2. Constructs NiiVue and attaches it to a freshly-created canvas
  *   3. Seeds Python with NiiVue's *actual* current values (single source
@@ -885,14 +908,18 @@ function emitJs(api: ApiDescriptor): string {
 
   const lines: string[] = []
   lines.push('// This file is auto-generated by scripts/codegen.ts.')
-  lines.push('// Do not edit by hand — re-run `bunx nx codegen ipyniivue`.')
+  lines.push('// Do not edit by hand; re-run `bunx nx codegen ipyniivue`.')
   lines.push(`// Source: ${api.source} @ niivue ${api.niivueVersion}`)
-  lines.push(`// Generated at: ${api.generatedAt}`)
   lines.push('')
   lines.push('// niivue is resolved at bundle time by Bun.build (called from')
-  lines.push("// scripts/codegen.ts). The output `widget.js` is self-contained;")
+  lines.push(
+    '// scripts/codegen.ts). The output `widget.js` is self-contained;',
+  )
   lines.push('// this template file is the small, reviewable input.')
-  lines.push(`import NiiVue from '@niivue/niivue/webgpu'`)
+  lines.push(
+    '// nx-ignore-next-line: bundled widget asset, not a Python runtime dependency',
+  )
+  lines.push(`import NiiVue from '@niivue/niivue'`)
   lines.push('')
   lines.push('// [jsName, pyName] for read-write reactive properties.')
   lines.push('const PROPS_RW = [')
@@ -901,18 +928,27 @@ function emitJs(api: ApiDescriptor): string {
   }
   lines.push(']')
   lines.push('')
-  lines.push('// [jsName, pyName] for read-only properties (JS → Python only).')
+  lines.push(
+    '// [jsName, pyName] for read-only properties (JS-to-Python only).',
+  )
   lines.push('const PROPS_RO = [')
   for (const [js, py] of propsRo) {
     lines.push(`  [${jsString(js)}, ${jsString(py)}],`)
   }
   lines.push(']')
   lines.push('')
+  lines.push('// Constructor-only options that NiiVue exposes as getters,')
+  lines.push('// not setters. Python can still pass them before attach.')
+  lines.push('const CONSTRUCTOR_PROPS = [')
+  lines.push('  ...PROPS_RW,')
+  lines.push('  ["backend", "backend"],')
+  lines.push(']')
+  lines.push('')
   lines.push('// NiiVue events that we forward to Python via model.send.')
   lines.push('// `canvasResize` and `viewAttached` fire at every layout tick')
   lines.push('// during mount (tens to hundreds of times per second on cold')
   lines.push('// load), and forwarding each one to Python via model.send')
-  lines.push('// floods the WebSocket — we have observed this disconnecting')
+  lines.push('// floods the WebSocket. We have observed this disconnecting')
   lines.push('// the JupyterLab comm channel and crashing the widget. Skip')
   lines.push('// them; users rarely observe these and they have no Python-')
   lines.push('// side use cases that justify the bandwidth.')
@@ -927,27 +963,78 @@ function emitJs(api: ApiDescriptor): string {
   }
   lines.push(']')
   lines.push('')
-  // Module-scope state: per-widget (anywidget loads _esm fresh per widget).
-  // `nv` and the mount promise are shared between `initialize` (where nv is
-  // created) and `render` (where it's attached to a canvas). This mirrors
-  // the working pattern in github.com/niivue/ipyniivue.
-  lines.push('let nv = null')
-  lines.push('let mountedResolve = null')
-  lines.push('let mountedPromise = null')
-  lines.push('let outboxSeq = 0')
+  lines.push('// Per-widget runtime state. anywidget passes different proxy')
+  lines.push('// objects to initialize() and render(), so key by the stable')
+  lines.push('// model id instead of proxy object identity.')
+  lines.push('const STATE = new Map()')
+  lines.push('const createState = () => {')
+  lines.push('  let initializedResolve = null')
+  lines.push(
+    '  const initializedPromise = new Promise((r) => { initializedResolve = r })',
+  )
+  lines.push('  let mountedResolve = null')
+  lines.push(
+    '  const mountedPromise = new Promise((r) => { mountedResolve = r })',
+  )
+  lines.push('  return {')
+  lines.push('    nv: null,')
+  lines.push('    initializedResolve,')
+  lines.push('    initializedPromise,')
+  lines.push('    mountedResolve,')
+  lines.push('    mountedPromise,')
+  lines.push('    commandQueue: Promise.resolve(),')
+  lines.push('    lastInboxSeq: 0,')
+  lines.push('    outboxSeq: 0,')
+  lines.push('    hasAttached: false,')
+  lines.push('  }')
+  lines.push('}')
+  lines.push('const stateKey = (model) => {')
+  lines.push('  try {')
+  lines.push('    return model.get("_anywidget_id") || model')
+  lines.push('  } catch {')
+  lines.push('    return model')
+  lines.push('  }')
+  lines.push('}')
+  lines.push('const getState = (model) => {')
+  lines.push('  const key = stateKey(model)')
+  lines.push('  let state = STATE.get(key)')
+  lines.push('  if (!state) {')
+  lines.push('    state = createState()')
+  lines.push('    STATE.set(key, state)')
+  lines.push('  }')
+  lines.push('  return state')
+  lines.push('}')
+  lines.push('const deleteState = (model) => {')
+  lines.push('  STATE.delete(stateKey(model))')
+  lines.push('}')
   lines.push('')
-  lines.push('// Recursively coerce typed arrays (vec3/vec4 etc.) into plain arrays')
-  lines.push("// before crossing the comm. Caps protect against NiiVue events like")
-  lines.push('// volumeLoaded that carry the full voxel buffer in their detail —')
-  lines.push('// serializing 50 MB across the WebSocket disconnects the kernel.')
+  lines.push(
+    '// Recursively coerce typed arrays (vec3/vec4 etc.) into plain arrays',
+  )
+  lines.push(
+    '// before crossing the comm. Caps protect against NiiVue events like',
+  )
+  lines.push(
+    '// volumeLoaded that carry the full voxel buffer in their detail;',
+  )
+  lines.push(
+    '// serializing 50 MB across the WebSocket disconnects the kernel.',
+  )
   lines.push('const TJS_TYPED_MAX = 1024')
   lines.push('const TJS_ARRAY_MAX = 4096')
   lines.push('const toJsonSafe = (v, seen) => {')
   lines.push('  if (v == null) return v')
+  lines.push('  const t = typeof v')
+  lines.push(
+    '  if (t === "function" || t === "symbol" || t === "undefined") return null',
+  )
+  lines.push(
+    '  if (t === "bigint") return Number.isSafeInteger(Number(v)) ? Number(v) : String(v)',
+  )
   lines.push('  if (ArrayBuffer.isView(v)) {')
   lines.push('    return v.length <= TJS_TYPED_MAX ? Array.from(v) : null')
   lines.push('  }')
-  lines.push('  if (typeof v !== "object") return v')
+  lines.push('  if (t !== "object") return v')
   lines.push('  seen ??= new WeakSet()')
   lines.push('  if (seen.has(v)) return null')
   lines.push('  seen.add(v)')
@@ -956,35 +1043,45 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    return v.map((x) => toJsonSafe(x, seen))')
   lines.push('  }')
   lines.push('  const out = {}')
-  lines.push('  for (const k of Object.keys(v)) out[k] = toJsonSafe(v[k], seen)')
+  lines.push(
+    '  for (const k of Object.keys(v)) out[k] = toJsonSafe(v[k], seen)',
+  )
   lines.push('  return out')
   lines.push('}')
   lines.push('')
-  lines.push('// `initialize` runs ONCE per Python widget instance. This is the')
-  lines.push('// anywidget-recommended place for model-level wiring (msg:custom,')
+  lines.push(
+    '// `initialize` runs once per Python widget instance. This is the',
+  )
+  lines.push(
+    '// anywidget-recommended place for model-level wiring (msg:custom,',
+  )
   lines.push('// change observers, NiiVue event listeners). Putting these in')
   lines.push('// `render` instead causes per-view re-registration and breaks')
-  lines.push("// JS→Python message routing — that's the bug that took us hours")
+  lines.push(
+    "// JS-to-Python message routing. That's the bug that took us hours",
+  )
   lines.push('// to find. See https://anywidget.dev/blog/anywidget-lifecycle/.')
   lines.push('async function initialize({ model }) {')
-  lines.push('  mountedPromise = new Promise((r) => { mountedResolve = r })')
+  lines.push('  const state = getState(model)')
   lines.push('')
-  lines.push('  // Outbox writer. JS→Python messages route via a synthetic')
+  lines.push('  // Outbox writer. JS-to-Python messages route via a synthetic')
   lines.push('  // `_msg_outbox` trait. State-update is more reliable than')
   lines.push('  // `model.send()` in our anywidget setup.')
   lines.push('  const sendToPython = (body) => {')
   lines.push('    try {')
-  lines.push('      model.set("_msg_outbox", { seq: ++outboxSeq, body })')
+  lines.push('      model.set("_msg_outbox", { seq: ++state.outboxSeq, body })')
   lines.push('      model.save_changes()')
   lines.push('    } catch (err) {')
   lines.push('      console.warn("ipyniivue: outbox write failed:", err)')
   lines.push('    }')
   lines.push('  }')
   lines.push('')
-  lines.push('  // Command handler — Python→JS commands. Awaits mount before')
-  lines.push("  // touching `nv`; `__ready__` is the synthetic command behind")
+  lines.push('  // Command handler: Python-to-JS commands. Awaits mount before')
+  lines.push(
+    '  // touching `state.nv`; `__ready__` is the synthetic command behind',
+  )
   lines.push('  // `nv.wait_ready()`.')
-  lines.push('  const cmdHandler = async (msg) => {')
+  lines.push('  const runCommand = async (msg) => {')
   lines.push('    if (!msg || typeof msg !== "object") return')
   lines.push('    if (typeof msg.cmd !== "string") return')
   lines.push('    const reqId = msg.req_id ?? null')
@@ -995,16 +1092,21 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      else body.error = String(payload)')
   lines.push('      sendToPython(body)')
   lines.push('    }')
-  lines.push('    await mountedPromise')
+  lines.push('    await state.mountedPromise')
   lines.push('    if (msg.cmd === "__ready__") {')
   lines.push('      if (reqId !== null) respond(true, true)')
   lines.push('      return')
   lines.push('    }')
+  lines.push('    const nv = state.nv')
+  lines.push('    if (!nv) {')
+  lines.push('      respond(false, "NiiVue instance is not initialized")')
+  lines.push('      return')
+  lines.push('    }')
   lines.push('    const fn = nv[msg.cmd]')
   lines.push('    if (typeof fn !== "function") {')
-  lines.push('      const errMsg = `unknown command: ${msg.cmd}`')
+  lines.push('      const errMsg = "unknown command: " + msg.cmd')
   lines.push('      if (reqId !== null) respond(false, errMsg)')
-  lines.push('      else console.warn(`ipyniivue: ${errMsg}`)')
+  lines.push('      else console.warn("ipyniivue: " + errMsg)')
   lines.push('      return')
   lines.push('    }')
   lines.push('    try {')
@@ -1020,39 +1122,73 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    } catch (err) {')
   lines.push('      if (reqId !== null) respond(false, err)')
   lines.push(
-    '      else console.error(`ipyniivue: command ${msg.cmd} threw:`, err)',
+    '      else console.error("ipyniivue: command " + msg.cmd + " threw:", err)',
   )
   lines.push('    }')
   lines.push('  }')
+  lines.push('  const cmdHandler = (msg) => {')
+  lines.push('    state.commandQueue = state.commandQueue')
+  lines.push('      .then(() => runCommand(msg))')
+  lines.push('      .catch((err) => {')
+  lines.push("        console.error('ipyniivue: command queue error:', err)")
+  lines.push('      })')
+  lines.push('  }')
   lines.push('  model.on("msg:custom", cmdHandler)')
+  lines.push('  const inboxHandler = () => {')
+  lines.push('    const inbox = model.get("_msg_inbox")')
+  lines.push('    if (!Array.isArray(inbox)) return')
+  lines.push('    for (const item of inbox) {')
+  lines.push(
+    '      const seq = item && typeof item.seq === "number" ? item.seq : null',
+  )
+  lines.push('      if (seq === null || seq <= state.lastInboxSeq) continue')
+  lines.push('      state.lastInboxSeq = seq')
+  lines.push('      cmdHandler(item.body)')
+  lines.push('    }')
+  lines.push('  }')
+  lines.push('  model.on("change:_msg_inbox", inboxHandler)')
+  lines.push('  inboxHandler()')
   lines.push('')
   lines.push("  // Build NiiVue with constructor opts from user's overrides.")
   lines.push('  const opts = {}')
-  lines.push('  for (const [jsName, pyName] of PROPS_RW) {')
+  lines.push('  for (const [jsName, pyName] of CONSTRUCTOR_PROPS) {')
   lines.push('    const v = model.get(pyName)')
   lines.push('    if (v !== null && v !== undefined) opts[jsName] = v')
   lines.push('  }')
-  lines.push('  nv = new NiiVue(opts)')
+  lines.push('  const thumbnailUrl = model.get("thumbnail_url")')
+  lines.push('  if (thumbnailUrl !== null && thumbnailUrl !== undefined) {')
+  lines.push('    opts.thumbnail = thumbnailUrl')
+  lines.push('  }')
+  lines.push('  state.nv = new NiiVue(opts)')
+  lines.push('  if (state.initializedResolve) {')
+  lines.push('    state.initializedResolve()')
+  lines.push('    state.initializedResolve = null')
+  lines.push('  }')
   lines.push('')
-  lines.push('  // Property change observers — Python→JS. Each handler awaits')
+  lines.push(
+    '  // Property change observers: Python-to-JS. Each handler awaits',
+  )
   lines.push('  // mount so changes set during cold start are applied as soon')
   lines.push('  // as `nv` is attached.')
   lines.push('  const observers = []')
   lines.push('  for (const [jsName, pyName] of PROPS_RW) {')
   lines.push('    const handler = async () => {')
-  lines.push('      await mountedPromise')
+  lines.push('      await state.mountedPromise')
   lines.push('      const v = model.get(pyName)')
   lines.push('      try {')
-  lines.push('        if (nv[jsName] !== v) nv[jsName] = v')
+  lines.push('        const nv = state.nv')
+  lines.push('        if (nv && nv[jsName] !== v) nv[jsName] = v')
   lines.push('      } catch (err) {')
-  lines.push('        console.warn(`ipyniivue: failed to set ${jsName}:`, err)')
+  lines.push(
+    '        console.warn("ipyniivue: failed to set " + jsName + ":", err)',
+  )
   lines.push('      }')
   lines.push('    }')
-  lines.push('    model.on(`change:${pyName}`, handler)')
+  lines.push('    model.on("change:" + pyName, handler)')
   lines.push('    observers.push([pyName, handler])')
   lines.push('  }')
   lines.push('')
-  lines.push('  // NiiVue event listeners — JS→Python.')
+  lines.push('  // NiiVue event listeners: JS-to-Python.')
   lines.push('  const evtListeners = []')
   lines.push('  for (const eventName of EVENTS) {')
   lines.push('    if (SKIP_EVENT_FORWARDING.has(eventName)) continue')
@@ -1061,32 +1197,44 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      try { detail = toJsonSafe(e && e.detail) } catch {}')
   lines.push('      sendToPython({ kind: "event", name: eventName, detail })')
   lines.push('    }')
-  lines.push('    nv.addEventListener(eventName, handler)')
+  lines.push('    state.nv.addEventListener(eventName, handler)')
   lines.push('    evtListeners.push([eventName, handler])')
   lines.push('  }')
   lines.push('')
   lines.push('  // Cleanup on widget disposal.')
   lines.push('  return () => {')
   lines.push('    model.off("msg:custom", cmdHandler)')
+  lines.push('    model.off("change:_msg_inbox", inboxHandler)')
   lines.push('    for (const [pyName, handler] of observers) {')
-  lines.push('      model.off(`change:${pyName}`, handler)')
+  lines.push('      model.off("change:" + pyName, handler)')
   lines.push('    }')
+  lines.push('    const nv = state.nv')
   lines.push('    if (nv) {')
   lines.push('      for (const [eventName, handler] of evtListeners) {')
   lines.push('        nv.removeEventListener(eventName, handler)')
   lines.push('      }')
   lines.push('      if (typeof nv.destroy === "function") nv.destroy()')
   lines.push('    }')
-  lines.push('    nv = null')
+  lines.push('    state.nv = null')
+  lines.push('    deleteState(model)')
   lines.push('  }')
   lines.push('}')
   lines.push('')
-  lines.push('// `render` runs per VIEW (potentially multiple times for one model)')
-  lines.push('// and only handles DOM work: create a canvas, attach `nv` to it,')
+  lines.push(
+    '// `render` runs per view (potentially multiple times for one model)',
+  )
+  lines.push(
+    '// and only handles DOM work: create a canvas, attach `nv` to it,',
+  )
   lines.push('// seed Python with NiiVue defaults on first attach.')
   lines.push('async function render({ model, el }) {')
-  lines.push('  if (!nv) {')
-  lines.push("    console.error('ipyniivue: render called before initialize')")
+  lines.push('  const state = getState(model)')
+  lines.push('  await state.initializedPromise')
+  lines.push('  const nv = state?.nv')
+  lines.push('  if (!state || !nv) {')
+  lines.push(
+    "    console.error('ipyniivue: render called without an initialized NiiVue')",
+  )
   lines.push('    return')
   lines.push('  }')
   lines.push('  const canvas = document.createElement("canvas")')
@@ -1097,25 +1245,41 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('  // One animation frame for layout to measure the parent.')
   lines.push('  await new Promise((r) => requestAnimationFrame(() => r()))')
   lines.push('')
-  lines.push('  // Only the first render performs the attach + seed. Subsequent')
+  lines.push(
+    '  // Only the first render performs the attach + seed. Subsequent',
+  )
   lines.push('  // views (e.g. same widget displayed in multiple cells) reuse')
   lines.push('  // the existing nv on its existing canvas.')
-  lines.push('  if (!nv.canvas?.parentNode) {')
+  lines.push('  if (!state.hasAttached) {')
   lines.push('    await nv.attachToCanvas(canvas)')
+  lines.push('    state.hasAttached = true')
   lines.push("    // Seed Python with NiiVue's actual current values.")
   lines.push('    for (const [jsName, pyName] of [...PROPS_RW, ...PROPS_RO]) {')
   lines.push('      try {')
   lines.push('        const v = nv[jsName]')
   lines.push('        if (v !== undefined) model.set(pyName, toJsonSafe(v))')
   lines.push('      } catch (err) {')
-  lines.push('        console.warn(`ipyniivue: failed to seed ${pyName}:`, err)')
+  lines.push(
+    '        console.warn("ipyniivue: failed to seed " + pyName + ":", err)',
+  )
   lines.push('      }')
   lines.push('    }')
-  lines.push('    model.save_changes()')
-  lines.push('    mountedResolve()')
+  lines.push('    if (state.mountedResolve) {')
+  lines.push('      state.mountedResolve()')
+  lines.push('      state.mountedResolve = null')
+  lines.push('    }')
+  lines.push('    try {')
+  lines.push('      model.save_changes()')
+  lines.push('    } catch (err) {')
+  lines.push(
+    "      console.warn('ipyniivue: failed to sync initial state:', err)",
+  )
+  lines.push('    }')
   lines.push('  }')
   lines.push('  return () => {')
-  lines.push('    // Per-view cleanup: nothing — canvas is detached by JupyterLab,')
+  lines.push(
+    '    // Per-view cleanup: nothing; canvas is detached by JupyterLab,',
+  )
   lines.push('    // and `nv` is destroyed by the initialize-cleanup callback.')
   lines.push('  }')
   lines.push('}')

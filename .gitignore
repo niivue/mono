@@ -3,3 +3,4 @@ node_modules/
 .pixi/
 dist/
 _site/
+.ipynb_checkpoints/

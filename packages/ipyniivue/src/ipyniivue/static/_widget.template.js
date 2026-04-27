@@ -343,27 +343,25 @@ async function initialize({ model }) {
       const args = msg.args || []
       const name = args[0] || "volume.nii"
       const options = args[1] || {}
-      const bufInfo = buffers && buffers[0]
-        ? { kind: buffers[0].constructor && buffers[0].constructor.name, byteLength: buffers[0].byteLength }
-        : null
-      console.log("[ipyniivue] add_volume_from_bytes:", name, "buffer:", bufInfo, "options:", options)
       try {
         if (!buffers || !buffers[0]) {
           const errMsg = "no buffer attached to add_volume_from_bytes"
           console.error("[ipyniivue]", errMsg)
+          sendToPython({ kind: "error", source: msg.cmd, message: errMsg })
           if (reqId !== null) respond(false, errMsg)
           return
         }
-        // anywidget hands buffers as DataView. Blob accepts BufferSource;
-        // pass the underlying ArrayBuffer slice to be safe across browsers.
+        // buffers[0] is a Uint8Array from decodeInboxBuffer.
+        // Pass the underlying ArrayBuffer slice to File for browser
+        // compatibility (some Blob constructors are picky about views).
         const dv = buffers[0]
         const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv
         const file = new File([ab], name)
         await state.nv.loadVolumes([Object.assign({ url: file, name: name }, options)])
-        console.log("[ipyniivue] loadVolumes returned for", name)
         if (reqId !== null) respond(true, null)
       } catch (err) {
         console.error("[ipyniivue] __add_volume_from_bytes threw:", err)
+        sendToPython({ kind: "error", source: msg.cmd, message: String(err) })
         if (reqId !== null) respond(false, err)
       }
       return
@@ -374,7 +372,10 @@ async function initialize({ model }) {
       const options = args[1] || {}
       try {
         if (!buffers || !buffers[0]) {
-          if (reqId !== null) respond(false, "no buffer attached to add_mesh_from_bytes")
+          const errMsg = "no buffer attached to add_mesh_from_bytes"
+          console.error("[ipyniivue]", errMsg)
+          sendToPython({ kind: "error", source: msg.cmd, message: errMsg })
+          if (reqId !== null) respond(false, errMsg)
           return
         }
         const dv = buffers[0]
@@ -384,6 +385,7 @@ async function initialize({ model }) {
         if (reqId !== null) respond(true, null)
       } catch (err) {
         console.error("[ipyniivue] __add_mesh_from_bytes threw:", err)
+        sendToPython({ kind: "error", source: msg.cmd, message: String(err) })
         if (reqId !== null) respond(false, err)
       }
       return
@@ -469,19 +471,34 @@ async function initialize({ model }) {
       return [out]
     } catch (err) {
       // Malformed base64 must not abandon the rest of the inbox batch.
-      // The downstream handler will see no buffer and respond accordingly.
-      console.error("ipyniivue: malformed _b64 buffer:", err)
+      // Surface to Python and let the downstream handler see no buffer.
+      const msg = "malformed _b64 buffer: " + String(err)
+      console.error("ipyniivue:", msg)
+      sendToPython({ kind: "error", source: body && body.cmd, message: msg })
       return undefined
     }
   }
   const inboxHandler = () => {
     const inbox = model.get("_msg_inbox")
     if (!Array.isArray(inbox)) return
+    let highest = state.lastInboxSeq
     for (const item of inbox) {
       const seq = item && typeof item.seq === "number" ? item.seq : null
       if (seq === null || seq <= state.lastInboxSeq) continue
       state.lastInboxSeq = seq
       cmdHandler(item.body, decodeInboxBuffer(item.body))
+      if (seq > highest) highest = seq
+    }
+    // Ack drained items so Python can prune base64 payloads from
+    // _msg_inbox state. The ack reflects items received and queued
+    // for execution, not necessarily completed; that is fine because
+    // the inbox is only there to bridge the cold-start race.
+    const prevAck = model.get("_msg_inbox_ack") || 0
+    if (highest > prevAck) {
+      model.set("_msg_inbox_ack", highest)
+      try { model.save_changes() } catch (err) {
+        console.warn("ipyniivue: inbox ack save failed:", err)
+      }
     }
   }
   model.on("change:_msg_inbox", inboxHandler)

@@ -60,6 +60,17 @@ NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
 
 
 class _GeneratedNiiVue(anywidget.AnyWidget):
+    """Auto-generated reactive properties and command methods.
+
+    Mirrors NiiVueGPU @ niivue 1.0.0-rc.3.
+
+    Reactive properties are kept in sync with the JS view via
+    anywidget. Methods send command messages over the same
+    channel. Void-returning methods are fire-and-forget;
+    value-returning methods use request/response correlation
+    and should return small JSON-serializable payloads.
+    """
+
     # Synthetic inbox for Python-to-JS commands. Python may queue
     # commands immediately after display(nv), before the browser view
     # has loaded this widget module and registered msg:custom handlers.
@@ -84,17 +95,6 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
     # same channel the seed-step uses, which is verifiably
     # reliable end-to-end.
     _msg_outbox = traitlets.Dict({}).tag(sync=True)
-
-    """Auto-generated reactive properties and command methods.
-
-    Mirrors NiiVueGPU @ niivue 1.0.0-rc.3.
-
-    Reactive properties are kept in sync with the JS view via
-    anywidget. Methods send command messages over the same
-    channel. Void-returning methods are fire-and-forget;
-    value-returning methods use request/response correlation
-    and should return small JSON-serializable payloads.
-    """
 
     # Reactive properties (read+write, synced)
     annotation_active_group = traitlets.Unicode(None, allow_none=True).tag(sync=True)

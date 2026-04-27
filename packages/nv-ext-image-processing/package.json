@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-image-processing",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "type": "module",
   "description": "Image processing extensions for NiiVue (Otsu thresholding, haze removal, etc.)",
   "main": "./dist/nv-ext-image-processing.js",

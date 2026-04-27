@@ -13,6 +13,7 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 | [`@niivue/nv-ext-save-html`](packages/nv-ext-save-html) | Export a NiiVue scene as a self-contained HTML file | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-save-html/next)](https://www.npmjs.com/package/@niivue/nv-ext-save-html) |
 | [`@niivue/nv-ext-dcm2niix`](packages/nv-ext-dcm2niix) | DICOM-to-NIfTI conversion in the browser via the dcm2niix WASM build | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-dcm2niix/next)](https://www.npmjs.com/package/@niivue/nv-ext-dcm2niix) |
 | [`@niivue/dev-images`](packages/dev-images) | Shared test volumes, meshes, and tractography files (Git LFS) | — |
+| [`ipyniivue`](packages/ipyniivue) | Jupyter widget wrapping NiiVue (anywidget) — Python wheel | [![PyPI](https://img.shields.io/pypi/v/ipyniivue)](https://pypi.org/project/ipyniivue/) |
 
 ## Apps
 

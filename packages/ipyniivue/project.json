@@ -28,13 +28,80 @@
         "{projectRoot}/src/ipyniivue/static/_widget.template.js"
       ]
     },
-    "typecheck": {
-      "command": "bunx tsc --noEmit",
+    "build": {
+      "command": "pixi run -e dev python -m build --wheel --sdist --outdir dist .",
       "options": { "cwd": "{projectRoot}" },
-      "inputs": ["{projectRoot}/scripts/**/*", "{projectRoot}/tsconfig.json"]
+      "dependsOn": ["codegen"],
+      "inputs": [
+        "{projectRoot}/pyproject.toml",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/README.md"
+      ],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "commands": [
+          "bunx biome check scripts",
+          "pixi run -e dev ruff check src scripts examples",
+          "pixi run -e dev ruff format --check src"
+        ],
+        "parallel": false
+      },
+      "inputs": [
+        "python",
+        "{projectRoot}/scripts/**/*",
+        "{projectRoot}/pyproject.toml",
+        "{workspaceRoot}/biome.json"
+      ]
+    },
+    "format": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "commands": [
+          "bunx biome format --write scripts",
+          "pixi run -e dev ruff format src scripts examples",
+          "pixi run -e dev ruff check --fix src scripts examples"
+        ],
+        "parallel": false
+      },
+      "inputs": [
+        "python",
+        "{projectRoot}/scripts/**/*",
+        "{projectRoot}/pyproject.toml",
+        "{workspaceRoot}/biome.json"
+      ]
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "commands": [
+          "bunx tsc --noEmit",
+          "pixi run -e dev mypy"
+        ],
+        "parallel": false
+      },
+      "inputs": [
+        "python",
+        "{projectRoot}/scripts/**/*",
+        "{projectRoot}/tsconfig.json",
+        "{projectRoot}/pyproject.toml"
+      ]
+    },
+    "test": {
+      "command": "pixi run -e dev pytest",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": [
+        "python",
+        "{projectRoot}/pyproject.toml"
+      ]
     },
     "smoke": {
-      "command": "jupyter nbconvert --to notebook --execute --output 01_hello_volume.executed.ipynb --output-dir /tmp examples/01_hello_volume.ipynb",
+      "command": "pixi run -e dev smoke",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["codegen"],
       "inputs": [
@@ -42,6 +109,11 @@
         "{projectRoot}/src/**/*",
         "{projectRoot}/pyproject.toml"
       ]
+    },
+    "nx-release-publish": {
+      "executor": "nx:noop",
+      "dependsOn": ["build"],
+      "cache": false
     }
   }
 }

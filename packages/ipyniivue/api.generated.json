@@ -1,5 +1,5 @@
 {
-  "niivueVersion": "1.0.0-rc.1",
+  "niivueVersion": "1.0.0-rc.3",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVueGPU",
   "properties": [

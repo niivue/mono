@@ -13,8 +13,16 @@ The bundled widget JavaScript (`src/ipyniivue/static/widget.js`,
 bun install                       # from the monorepo root, once
 bunx nx codegen ipyniivue         # builds widget.js into static/
 cd packages/ipyniivue
-pip install -e .
+pip install -e .                  # plain-pip path
+# or, to match the Nx-invoked tool environment (ruff/mypy/pytest/jupyter):
+pixi install -e dev
 ```
+
+`packages/ipyniivue/pyproject.toml` is the single source of truth:
+it carries PEP 621 metadata, the hatchling build config, the Pixi
+workspace / environment / task definitions (Pixi’s
+[pyproject.toml support](https://pixi.prefix.dev/dev/python/pyproject_toml/)
+reads the `[tool.pixi.*]` sections), and ruff / mypy / pytest config.
 
 `bunx nx codegen ipyniivue` is fast and Nx-cached; rerun it after any
 change to the niivue TS sources or to `scripts/codegen.ts`.

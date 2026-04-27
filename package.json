@@ -18,8 +18,6 @@
   "devDependencies": {
     "@biomejs/biome": "latest",
     "@niivue/niivue": "workspace:*",
-    "@niivue/nv-ext-drawing": "workspace:*",
-    "@niivue/nv-ext-image-processing": "workspace:*",
     "@nx/js": "^22.6.3",
     "@types/bun": "^1.3.12",
     "nx": "latest"

@@ -21,3 +21,11 @@ packages/dev-images/images/**/*.png filter=lfs diff=lfs merge=lfs -text
 
 # medgfx app bundled sample volumes
 apps/medgfx/medgfx/**/*.nii.gz filter=lfs diff=lfs merge=lfs -text
+
+# ipyniivue example notebooks reference small NIfTI fixtures used to
+# construct demos (e.g. array-backed volumes). Track them via LFS so
+# future additions do not bloat the regular git history.
+packages/ipyniivue/examples/**/*.nii.gz filter=lfs diff=lfs merge=lfs -text
+packages/ipyniivue/examples/**/*.mz3 filter=lfs diff=lfs merge=lfs -text
+packages/ipyniivue/examples/**/*.trx filter=lfs diff=lfs merge=lfs -text
+packages/ipyniivue/examples/**/*.trk filter=lfs diff=lfs merge=lfs -text

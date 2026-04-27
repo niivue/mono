@@ -44,7 +44,8 @@ src/ipyniivue/static/
   _widget.template.js        # Auto-generated reviewable JS (PROPS_*, EVENTS, lifecycle)
   widget.js                  # Auto-generated bundled JS (~1.3 MB; includes niivue) (gitignored — `bunx nx codegen ipyniivue` builds it)
 examples/                    # 01_hello_volume.ipynb + ports of niivue demo HTMLs
-pixi.toml / pyproject.toml   # Two install paths (pixi env vs plain pip -e .)
+tests/                       # Python smoke tests (bun-run via `bunx nx test ipyniivue`)
+pyproject.toml               # Unified manifest: PEP 621 metadata, hatchling build, pixi env, ruff, mypy, pytest
 ```
 
 ## Codegen workflow
@@ -370,15 +371,26 @@ from a release tarball produces a usable wheel.
 
 ```bash
 bunx nx codegen ipyniivue          # Regenerate api.generated.json + Python + JS
-bunx nx typecheck ipyniivue        # tsc --noEmit on scripts/codegen.ts
+bunx nx lint ipyniivue             # Biome (scripts/) + ruff (src, scripts, examples)
+bunx nx format ipyniivue           # Auto-fix Biome + ruff formatting
+bunx nx typecheck ipyniivue        # tsc --noEmit on scripts/, mypy on src/
+bunx nx test ipyniivue             # pytest against tests/
+bunx nx build ipyniivue            # hatchling wheel + sdist into dist/
 bunx nx smoke ipyniivue            # Python-only nbconvert; verifies imports
                                    # and Python construction don't raise.
                                    # Does NOT validate browser rendering or
                                    # produce a bitmap — see the headless
                                    # smoke section above for the real check.
 pip install -e .                   # Local dev install (from this directory)
+pixi install -e dev                # Provision the Nx-invoked tool env
+                                   # (ruff/mypy/pytest/jupyter/hatchling)
 jupyter lab --no-browser           # Manual inspection
 ```
+
+The `lint`, `format`, `typecheck`, `test`, `build`, and `smoke` Nx
+targets wrap their Python tools in `pixi run -e dev`, so running any
+of them requires `pixi` on `PATH`. Biome and `tsc` are invoked via
+`bunx` and have no Python requirement.
 
 If JupyterLab restores stale widget state during dev:
 

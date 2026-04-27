@@ -381,7 +381,8 @@ for (const member of cls.getMembers()) {
       if (NON_SERIALIZABLE_METHODS.has(m.getName())) {
         skippedMethods.push({
           jsName: m.getName(),
-          reason: 'arguments are not JSON-serializable (DOM handle or JS object)',
+          reason:
+            'arguments are not JSON-serializable (DOM handle or JS object)',
         })
         continue
       }
@@ -826,9 +827,7 @@ function emitPython(api: ApiDescriptor): string {
   lines.push(
     "    # prunes acknowledged items so a session's worth of buffer payloads",
   )
-  lines.push(
-    '    # does not pin base64 strings in trait state forever.',
-  )
+  lines.push('    # does not pin base64 strings in trait state forever.')
   lines.push('    _msg_inbox_ack = traitlets.Int(0).tag(sync=True)')
   lines.push('')
   lines.push(
@@ -1077,7 +1076,10 @@ function splitSummaryAndBody(text: string): {
   else if (blankIdx < 0) cut = sentenceEnd
   else if (sentenceEnd < 0) cut = blankIdx
   else cut = Math.min(blankIdx, sentenceEnd)
-  const summary = trimmed.slice(0, cut).replace(/\s*\n\s*/g, ' ').trim()
+  const summary = trimmed
+    .slice(0, cut)
+    .replace(/\s*\n\s*/g, ' ')
+    .trim()
   const extended = trimmed.slice(cut).trim()
   return { summary, extended }
 }
@@ -1142,15 +1144,11 @@ function emitJs(api: ApiDescriptor): string {
     `import { findDrawingBoundarySlices, interpolateMaskSlices } from '@niivue/nv-ext-drawing'`,
   )
   lines.push('')
-  lines.push(
-    '// Image-processing transforms bundled from @niivue/nv-ext-*.',
-  )
+  lines.push('// Image-processing transforms bundled from @niivue/nv-ext-*.')
   lines.push(
     '// Registered with NiiVue in initialize() so Python can apply them',
   )
-  lines.push(
-    '// via __ext_apply_image_transform without shipping JS.',
-  )
+  lines.push('// via __ext_apply_image_transform without shipping JS.')
   lines.push('const IMAGE_PROCESSING_TRANSFORMS = [')
   lines.push('  conform,')
   lines.push('  connectedLabel,')
@@ -1321,7 +1319,9 @@ function emitJs(api: ApiDescriptor): string {
   )
   lines.push('  // `nv.wait_ready()`. The `buffers` argument carries binary')
   lines.push('  // payloads (raw NIfTI/mesh bytes from add_volume_from_bytes /')
-  lines.push('  // add_mesh_from_bytes), supplied by `decodeInboxBuffer` when the')
+  lines.push(
+    '  // add_mesh_from_bytes), supplied by `decodeInboxBuffer` when the',
+  )
   lines.push('  // inbox body has a base64 `_b64` field.')
   lines.push('  const runCommand = async (msg, buffers) => {')
   lines.push('    if (!msg || typeof msg !== "object") return')
@@ -1340,7 +1340,9 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      return')
   lines.push('    }')
   lines.push('    // Composite extension command: apply a bundled transform to')
-  lines.push('    // the volume at args[1], optionally replacing the background.')
+  lines.push(
+    '    // the volume at args[1], optionally replacing the background.',
+  )
   lines.push('    // Returns { name, elapsed_ms } so Python can show progress.')
   lines.push('    if (msg.cmd === "__ext_apply_image_transform") {')
   lines.push('      const args = msg.args || []')
@@ -1349,51 +1351,79 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      const options = args[2] || {}')
   lines.push('      const replaceBg = !!args[3]')
   lines.push('      try {')
-  lines.push('        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())')
+  lines.push(
+    '        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())',
+  )
   lines.push('        const vol = ctx.volumes[volIdx]')
   lines.push('        if (!vol) {')
-  lines.push('          if (reqId !== null) respond(false, "no volume at index " + volIdx)')
+  lines.push(
+    '          if (reqId !== null) respond(false, "no volume at index " + volIdx)',
+  )
   lines.push('          return')
   lines.push('        }')
   lines.push('        const t0 = performance.now()')
-  lines.push('        const result = await ctx.applyVolumeTransform(name, vol, options)')
+  lines.push(
+    '        const result = await ctx.applyVolumeTransform(name, vol, options)',
+  )
   lines.push('        const info = state.nv.getVolumeTransformInfo(name)')
   lines.push('        if (info && info.resultDefaults) {')
-  lines.push('          if (info.resultDefaults.colormap) result.colormap = info.resultDefaults.colormap')
-  lines.push('          if (info.resultDefaults.opacity != null) result.opacity = info.resultDefaults.opacity')
+  lines.push(
+    '          if (info.resultDefaults.colormap) result.colormap = info.resultDefaults.colormap',
+  )
+  lines.push(
+    '          if (info.resultDefaults.opacity != null) result.opacity = info.resultDefaults.opacity',
+  )
   lines.push('        }')
   lines.push('        if (replaceBg) await ctx.removeAllVolumes()')
   lines.push('        await ctx.addVolume(result)')
   lines.push('        const elapsedMs = performance.now() - t0')
-  lines.push('        if (reqId !== null) respond(true, { name: name, elapsed_ms: elapsedMs })')
+  lines.push(
+    '        if (reqId !== null) respond(true, { name: name, elapsed_ms: elapsedMs })',
+  )
   lines.push('      } catch (err) {')
   lines.push('        if (reqId !== null) respond(false, err)')
-  lines.push('        else console.error("ipyniivue: __ext_apply_image_transform threw:", err)')
+  lines.push(
+    '        else console.error("ipyniivue: __ext_apply_image_transform threw:", err)',
+  )
   lines.push('      }')
   lines.push('      return')
   lines.push('    }')
-  lines.push('    // Drawing extension: find first/last slices containing drawing data')
-  lines.push('    // along an axis. Returns { first, last } or null. Reads the live')
-  lines.push('    // bitmap from ctx.drawing; returns null if no drawing volume exists.')
+  lines.push(
+    '    // Drawing extension: find first/last slices containing drawing data',
+  )
+  lines.push(
+    '    // along an axis. Returns { first, last } or null. Reads the live',
+  )
+  lines.push(
+    '    // bitmap from ctx.drawing; returns null if no drawing volume exists.',
+  )
   lines.push('    if (msg.cmd === "__ext_drawing_find_boundaries") {')
   lines.push('      const args = msg.args || []')
   lines.push('      const axis = args[0] ?? 0')
   lines.push('      try {')
-  lines.push('        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())')
+  lines.push(
+    '        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())',
+  )
   lines.push('        const dr = ctx.drawing')
   lines.push('        if (!dr) {')
   lines.push('          if (reqId !== null) respond(true, null)')
   lines.push('          return')
   lines.push('        }')
   lines.push('        const t0 = performance.now()')
-  lines.push('        const result = await findDrawingBoundarySlices(axis, dr.bitmap, dr.dims)')
+  lines.push(
+    '        const result = await findDrawingBoundarySlices(axis, dr.bitmap, dr.dims)',
+  )
   lines.push('        const elapsedMs = performance.now() - t0')
   lines.push('        if (reqId !== null) {')
-  lines.push('          respond(true, result ? { first: result.first, last: result.last, elapsed_ms: elapsedMs } : null)')
+  lines.push(
+    '          respond(true, result ? { first: result.first, last: result.last, elapsed_ms: elapsedMs } : null)',
+  )
   lines.push('        }')
   lines.push('      } catch (err) {')
   lines.push('        if (reqId !== null) respond(false, err)')
-  lines.push('        else console.error("ipyniivue: __ext_drawing_find_boundaries threw:", err)')
+  lines.push(
+    '        else console.error("ipyniivue: __ext_drawing_find_boundaries threw:", err)',
+  )
   lines.push('      }')
   lines.push('      return')
   lines.push('    }')
@@ -1402,31 +1432,51 @@ function emitJs(api: ApiDescriptor): string {
   // `decodeInboxBuffer` into `buffers[0]` here. The JS handler wraps the
   // buffer into a File and hands it to NiiVue's standard URL/File loader
   // path, which dispatches by filename extension.
-  lines.push('    // Buffer ingress: wrap bytes into a File and dispatch via NiiVue\'s')
-  lines.push('    // URL/File loader so the existing extension-based reader path runs.')
+  lines.push(
+    "    // Buffer ingress: wrap bytes into a File and dispatch via NiiVue's",
+  )
+  lines.push(
+    '    // URL/File loader so the existing extension-based reader path runs.',
+  )
   lines.push('    if (msg.cmd === "__add_volume_from_bytes") {')
   lines.push('      const args = msg.args || []')
   lines.push('      const name = args[0] || "volume.nii"')
   lines.push('      const options = args[1] || {}')
   lines.push('      try {')
   lines.push('        if (!buffers || !buffers[0]) {')
-  lines.push('          const errMsg = "no buffer attached to add_volume_from_bytes"')
+  lines.push(
+    '          const errMsg = "no buffer attached to add_volume_from_bytes"',
+  )
   lines.push('          console.error("[ipyniivue]", errMsg)')
-  lines.push('          sendToPython({ kind: "error", source: msg.cmd, message: errMsg })')
+  lines.push(
+    '          sendToPython({ kind: "error", source: msg.cmd, message: errMsg })',
+  )
   lines.push('          if (reqId !== null) respond(false, errMsg)')
   lines.push('          return')
   lines.push('        }')
   lines.push('        // buffers[0] is a Uint8Array from decodeInboxBuffer.')
-  lines.push('        // Pass the underlying ArrayBuffer slice to File for browser')
-  lines.push('        // compatibility (some Blob constructors are picky about views).')
+  lines.push(
+    '        // Pass the underlying ArrayBuffer slice to File for browser',
+  )
+  lines.push(
+    '        // compatibility (some Blob constructors are picky about views).',
+  )
   lines.push('        const dv = buffers[0]')
-  lines.push('        const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv')
+  lines.push(
+    '        const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv',
+  )
   lines.push('        const file = new File([ab], name)')
-  lines.push('        await state.nv.loadVolumes([Object.assign({ url: file, name: name }, options)])')
+  lines.push(
+    '        await state.nv.loadVolumes([Object.assign({ url: file, name: name }, options)])',
+  )
   lines.push('        if (reqId !== null) respond(true, null)')
   lines.push('      } catch (err) {')
-  lines.push('        console.error("[ipyniivue] __add_volume_from_bytes threw:", err)')
-  lines.push('        sendToPython({ kind: "error", source: msg.cmd, message: String(err) })')
+  lines.push(
+    '        console.error("[ipyniivue] __add_volume_from_bytes threw:", err)',
+  )
+  lines.push(
+    '        sendToPython({ kind: "error", source: msg.cmd, message: String(err) })',
+  )
   lines.push('        if (reqId !== null) respond(false, err)')
   lines.push('      }')
   lines.push('      return')
@@ -1437,55 +1487,91 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      const options = args[1] || {}')
   lines.push('      try {')
   lines.push('        if (!buffers || !buffers[0]) {')
-  lines.push('          const errMsg = "no buffer attached to add_mesh_from_bytes"')
+  lines.push(
+    '          const errMsg = "no buffer attached to add_mesh_from_bytes"',
+  )
   lines.push('          console.error("[ipyniivue]", errMsg)')
-  lines.push('          sendToPython({ kind: "error", source: msg.cmd, message: errMsg })')
+  lines.push(
+    '          sendToPython({ kind: "error", source: msg.cmd, message: errMsg })',
+  )
   lines.push('          if (reqId !== null) respond(false, errMsg)')
   lines.push('          return')
   lines.push('        }')
   lines.push('        const dv = buffers[0]')
-  lines.push('        const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv')
+  lines.push(
+    '        const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv',
+  )
   lines.push('        const file = new File([ab], name)')
-  lines.push('        await state.nv.loadMeshes([Object.assign({ url: file, name: name }, options)])')
+  lines.push(
+    '        await state.nv.loadMeshes([Object.assign({ url: file, name: name }, options)])',
+  )
   lines.push('        if (reqId !== null) respond(true, null)')
   lines.push('      } catch (err) {')
-  lines.push('        console.error("[ipyniivue] __add_mesh_from_bytes threw:", err)')
-  lines.push('        sendToPython({ kind: "error", source: msg.cmd, message: String(err) })')
+  lines.push(
+    '        console.error("[ipyniivue] __add_mesh_from_bytes threw:", err)',
+  )
+  lines.push(
+    '        sendToPython({ kind: "error", source: msg.cmd, message: String(err) })',
+  )
   lines.push('        if (reqId !== null) respond(false, err)')
   lines.push('      }')
   lines.push('      return')
   lines.push('    }')
-  lines.push('    // Drawing extension: interpolate between drawn slices to fill gaps.')
-  lines.push('    // Pulls the live bitmap, runs the worker, writes the result back via')
-  lines.push('    // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.')
+  lines.push(
+    '    // Drawing extension: interpolate between drawn slices to fill gaps.',
+  )
+  lines.push(
+    '    // Pulls the live bitmap, runs the worker, writes the result back via',
+  )
+  lines.push(
+    '    // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.',
+  )
   lines.push('    if (msg.cmd === "__ext_drawing_interpolate_slices") {')
   lines.push('      const args = msg.args || []')
   lines.push('      const axis = args[0] ?? 0')
   lines.push('      const useIntensity = !!args[1]')
   lines.push('      const userOptions = args[2] || {}')
   lines.push('      try {')
-  lines.push('        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())')
+  lines.push(
+    '        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())',
+  )
   lines.push('        const dr = ctx.drawing')
   lines.push('        if (!dr) {')
-  lines.push('          if (reqId !== null) respond(false, "no drawing volume; call create_empty_drawing() first")')
+  lines.push(
+    '          if (reqId !== null) respond(false, "no drawing volume; call create_empty_drawing() first")',
+  )
   lines.push('          return')
   lines.push('        }')
   lines.push('        const bg = ctx.backgroundVolume')
   lines.push('        const imageData = useIntensity && bg ? bg.imgRAS : null')
-  lines.push('        const maxVal = useIntensity && bg ? (bg.globalMax || 1) : 1')
-  lines.push('        const options = Object.assign({ sliceType: axis, useIntensityGuided: useIntensity }, userOptions)')
-  lines.push('        const before = dr.bitmap.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)')
+  lines.push(
+    '        const maxVal = useIntensity && bg ? (bg.globalMax || 1) : 1',
+  )
+  lines.push(
+    '        const options = Object.assign({ sliceType: axis, useIntensityGuided: useIntensity }, userOptions)',
+  )
+  lines.push(
+    '        const before = dr.bitmap.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)',
+  )
   lines.push('        const t0 = performance.now()')
   lines.push('        const newBitmap = await interpolateMaskSlices(')
-  lines.push('          dr.bitmap, dr.dims, imageData, maxVal, undefined, undefined, options,')
+  lines.push(
+    '          dr.bitmap, dr.dims, imageData, maxVal, undefined, undefined, options,',
+  )
   lines.push('        )')
   lines.push('        const elapsedMs = performance.now() - t0')
-  lines.push('        const after = newBitmap.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)')
+  lines.push(
+    '        const after = newBitmap.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)',
+  )
   lines.push('        dr.update(newBitmap)')
-  lines.push('        if (reqId !== null) respond(true, { before: before, after: after, elapsed_ms: elapsedMs })')
+  lines.push(
+    '        if (reqId !== null) respond(true, { before: before, after: after, elapsed_ms: elapsedMs })',
+  )
   lines.push('      } catch (err) {')
   lines.push('        if (reqId !== null) respond(false, err)')
-  lines.push('        else console.error("ipyniivue: __ext_drawing_interpolate_slices threw:", err)')
+  lines.push(
+    '        else console.error("ipyniivue: __ext_drawing_interpolate_slices threw:", err)',
+  )
   lines.push('      }')
   lines.push('      return')
   lines.push('    }')
@@ -1526,8 +1612,12 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      })')
   lines.push('  }')
   lines.push('  // Decode an inline base64 buffer attached to a command body.')
-  lines.push('  // Buffer-carrying commands (add_volume_from_bytes, etc.) inline')
-  lines.push('  // their payload as `_b64` so they can ride the synced _msg_inbox')
+  lines.push(
+    '  // Buffer-carrying commands (add_volume_from_bytes, etc.) inline',
+  )
+  lines.push(
+    '  // their payload as `_b64` so they can ride the synced _msg_inbox',
+  )
   lines.push('  // channel like every other command, instead of raw model.send')
   lines.push('  // with the buffers= argument. Raw send is unreliable in our')
   lines.push('  // anywidget setup and required a wait_ready() ping-pong that')
@@ -1537,14 +1627,22 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    try {')
   lines.push('      const bin = atob(body._b64)')
   lines.push('      const out = new Uint8Array(bin.length)')
-  lines.push('      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)')
+  lines.push(
+    '      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)',
+  )
   lines.push('      return [out]')
   lines.push('    } catch (err) {')
-  lines.push('      // Malformed base64 must not abandon the rest of the inbox batch.')
-  lines.push('      // Surface to Python and let the downstream handler see no buffer.')
+  lines.push(
+    '      // Malformed base64 must not abandon the rest of the inbox batch.',
+  )
+  lines.push(
+    '      // Surface to Python and let the downstream handler see no buffer.',
+  )
   lines.push('      const msg = "malformed _b64 buffer: " + String(err)')
   lines.push('      console.error("ipyniivue:", msg)')
-  lines.push('      sendToPython({ kind: "error", source: body && body.cmd, message: msg })')
+  lines.push(
+    '      sendToPython({ kind: "error", source: body && body.cmd, message: msg })',
+  )
   lines.push('      return undefined')
   lines.push('    }')
   lines.push('  }')
@@ -1561,9 +1659,15 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      cmdHandler(item.body, decodeInboxBuffer(item.body))')
   lines.push('      if (seq > highest) highest = seq')
   lines.push('    }')
-  lines.push('    // Ack drained items so Python can prune base64 payloads from')
-  lines.push('    // _msg_inbox state. The ack reflects items received and queued')
-  lines.push('    // for execution, not necessarily completed; that is fine because')
+  lines.push(
+    '    // Ack drained items so Python can prune base64 payloads from',
+  )
+  lines.push(
+    '    // _msg_inbox state. The ack reflects items received and queued',
+  )
+  lines.push(
+    '    // for execution, not necessarily completed; that is fine because',
+  )
   lines.push('    // the inbox is only there to bridge the cold-start race.')
   lines.push('    const prevAck = model.get("_msg_inbox_ack") || 0')
   lines.push('    if (highest > prevAck) {')
@@ -1592,7 +1696,9 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('  for (const transform of IMAGE_PROCESSING_TRANSFORMS) {')
   lines.push('    try { state.nv.registerVolumeTransform(transform) }')
   lines.push('    catch (err) {')
-  lines.push('      console.warn("ipyniivue: failed to register " + transform.name + ":", err)')
+  lines.push(
+    '      console.warn("ipyniivue: failed to register " + transform.name + ":", err)',
+  )
   lines.push('    }')
   lines.push('  }')
   lines.push('  if (state.initializedResolve) {')
@@ -1643,7 +1749,9 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      model.off("change:" + pyName, handler)')
   lines.push('    }')
   lines.push('    const nv = state.nv')
-  lines.push('    if (state.extContext && typeof state.extContext.dispose === "function") {')
+  lines.push(
+    '    if (state.extContext && typeof state.extContext.dispose === "function") {',
+  )
   lines.push('      try { state.extContext.dispose() } catch {}')
   lines.push('    }')
   lines.push('    state.extContext = null')
@@ -1675,21 +1783,33 @@ function emitJs(api: ApiDescriptor): string {
   )
   lines.push('    return')
   lines.push('  }')
-  lines.push('  // Reuse the existing canvas across views. NiiVue is bound to one')
-  lines.push('  // canvas, so when the same widget is displayed in a second cell')
-  lines.push('  // we move that canvas into the new container instead of creating')
+  lines.push(
+    '  // Reuse the existing canvas across views. NiiVue is bound to one',
+  )
+  lines.push(
+    '  // canvas, so when the same widget is displayed in a second cell',
+  )
+  lines.push(
+    '  // we move that canvas into the new container instead of creating',
+  )
   lines.push('  // a fresh blank one. (anywidget calls render() per view.)')
   lines.push('  let canvas = state.canvas')
   lines.push('  if (!canvas) {')
   lines.push('    canvas = document.createElement("canvas")')
-  lines.push('    canvas.style.cssText = "width:100%;height:600px;display:block"')
+  lines.push(
+    '    canvas.style.cssText = "width:100%;height:600px;display:block"',
+  )
   lines.push('    canvas.width = 640')
   lines.push('    canvas.height = 480')
-  lines.push('    // Suppress JupyterLab\'s cell context menu on right-click.')
+  lines.push("    // Suppress JupyterLab's cell context menu on right-click.")
   lines.push('    // NiiVue uses right-click for secondary drag (clip plane,')
-  lines.push("    // contrast, etc.); without stopPropagation the contextmenu")
-  lines.push("    // event bubbles to JupyterLab's document handler, which pops")
-  lines.push("    // up Cut Cell / Copy Cell / etc. Holding Shift bypasses both")
+  lines.push('    // contrast, etc.); without stopPropagation the contextmenu')
+  lines.push(
+    "    // event bubbles to JupyterLab's document handler, which pops",
+  )
+  lines.push(
+    '    // up Cut Cell / Copy Cell / etc. Holding Shift bypasses both',
+  )
   lines.push("    // (matches NiiVue's existing escape hatch).")
   lines.push('    canvas.addEventListener("contextmenu", (e) => {')
   lines.push('      if (e.shiftKey) return')

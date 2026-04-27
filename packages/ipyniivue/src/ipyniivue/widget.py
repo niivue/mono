@@ -88,7 +88,8 @@ class NiiVue(_GeneratedNiiVue):
             if not isinstance(current, list) or not current:
                 return
             pruned = [
-                item for item in current
+                item
+                for item in current
                 if not (isinstance(item, dict) and item.get("seq", 0) <= ack)
             ]
             if len(pruned) != len(current):
@@ -344,9 +345,7 @@ class NiiVue(_GeneratedNiiVue):
         >>> nv.add_volume_from_bytes("cube.nii", nifti_bytes, colormap="hot")
         """
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
-        self._send_with_buffer(
-            "__add_volume_from_bytes", [name, opts_camel], data
-        )
+        self._send_with_buffer("__add_volume_from_bytes", [name, opts_camel], data)
 
     def add_volume_from_array(
         self,
@@ -398,7 +397,7 @@ class NiiVue(_GeneratedNiiVue):
             except ImportError:  # pragma: no cover
                 affine = [[1.0 if i == j else 0.0 for j in range(4)] for i in range(4)]
 
-        nifti = nib.Nifti1Image(arr, affine)  # type: ignore[attr-defined]
+        nifti = nib.Nifti1Image(arr, affine)
         self.add_volume_from_bytes(name, nifti.to_bytes(), **opts)
 
     def add_mesh_from_path(
@@ -445,9 +444,7 @@ class NiiVue(_GeneratedNiiVue):
             NiiVue ``LoadFromUrlParams`` overrides in snake_case.
         """
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
-        self._send_with_buffer(
-            "__add_mesh_from_bytes", [name, opts_camel], data
-        )
+        self._send_with_buffer("__add_mesh_from_bytes", [name, opts_camel], data)
 
     def _send_with_buffer(
         self,
@@ -715,7 +712,7 @@ class NiiVue(_GeneratedNiiVue):
             for cb in list(self._event_callbacks.get(name, [])):
                 try:
                     cb(content.get("detail"))
-                except Exception:  # noqa: BLE001
+                except Exception:
                     # Swallow callback errors so one bad callback doesn't
                     # break the widget. Users can wrap their own try/except
                     # if they want richer handling.

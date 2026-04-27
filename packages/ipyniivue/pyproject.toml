@@ -11,11 +11,26 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+# Tooling used by the Nx `lint`, `format`, `typecheck`, and `test`
+# targets. Kept as an optional group so a plain `pip install ipyniivue`
+# does not pull test tooling.
+dev = [
+  "pytest>=7",
+  "ruff>=0.6",
+  "mypy>=1.10",
+]
 # Required to run the example notebooks in `examples/`. The core widget
 # does not need these — they are used by `add_volume_from_array` (which
 # lazy-imports nibabel) and by demo notebooks that construct test data.
-examples = ["numpy>=1.20", "nibabel>=5.0"]
+examples = [
+  "numpy>=1.20",
+  "nibabel>=5.0",
+  "jupyter>=1",
+  "jupyterlab>=4",
+  "ipykernel>=6",
+  "nbclient>=0.10",
+  "nbformat>=5",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -34,7 +49,130 @@ packages = ["src/ipyniivue"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/ipyniivue/static/widget.js" = "ipyniivue/static/widget.js"
 
+# ----------------------------------------------------------------------
+# Pixi configuration (uses pyproject.toml, not a separate pixi.toml).
+# See https://pixi.prefix.dev/dev/python/pyproject_toml/
+# ----------------------------------------------------------------------
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64", "osx-64", "win-64"]
+
+[tool.pixi.dependencies]
+python = ">=3.10"
+anywidget = ">=0.9"
+
+[tool.pixi.pypi-dependencies]
+# Install the current package in editable mode so `import ipyniivue`
+# resolves to the working copy inside a pixi shell.
+ipyniivue = { path = ".", editable = true }
+
+[tool.pixi.feature.dev.pypi-dependencies]
+# Mirror the PEP 621 `[project.optional-dependencies.dev]` group so
+# `pixi run -e dev <task>` sees the same versions as pip-installed dev.
+pytest = ">=7"
+ruff = ">=0.6"
+mypy = ">=1.10"
+
+[tool.pixi.feature.dev.dependencies]
+# Jupyter stack is heavier and pins well via conda-forge; keep it here
+# rather than in the PEP 621 examples group so plain pip installs do
+# not pull jupyterlab unexpectedly.
+jupyter = ">=1"
+jupyterlab = ">=4"
+ipykernel = ">=6"
+nbclient = ">=0.10"
+nbformat = ">=5"
+# Python build frontend used by the Nx `build` target.
+python-build = ">=1.2"
+hatchling = ">=1.25"
+
+[tool.pixi.feature.dev.tasks]
+# Headless execution of the smoke-test notebook. Verifies Python-side
+# imports, widget construction, and method calls don't raise. Does NOT
+# verify the browser-side rendering; that requires a real browser.
+smoke = "jupyter nbconvert --to notebook --execute --output 01_hello_volume.executed.ipynb --output-dir /tmp examples/01_hello_volume.ipynb"
+# Open JupyterLab for manual inspection of widget rendering.
+lab = "jupyter lab"
+
+[tool.pixi.environments]
+default = { features = [], solve-group = "default" }
+dev = { features = ["dev"], solve-group = "default" }
+
+# ----------------------------------------------------------------------
+# Nx dependency graph
+# ----------------------------------------------------------------------
+
 [tool.nx]
 # Workspace dependencies for the Nx graph. None today; codegen reads
-# niivue source via filesystem, not via package import.
+# niivue source via filesystem, not via package import. The TypeScript
+# edges to @niivue/nv-ext-* are picked up by the @nx/js plugin from
+# import statements in src/ipyniivue/static/_widget.template.js.
 workspace-dependencies = []
+
+# ----------------------------------------------------------------------
+# Ruff (linter + formatter) — sole Python style gate
+# ----------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# The bundled JS asset and generated Python are not hand-authored.
+extend-exclude = [
+  "src/ipyniivue/_generated.py",
+  "src/ipyniivue/static/widget.js",
+  "src/ipyniivue/static/_widget.template.js",
+]
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "W",    # pycodestyle warnings
+  "F",    # pyflakes
+  "I",    # isort
+  "B",    # flake8-bugbear
+  "UP",   # pyupgrade
+  "SIM",  # flake8-simplify
+  "RUF",  # ruff-specific
+]
+ignore = [
+  "E501",  # line length handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Examples prioritize readability over strict style.
+# - E402: module-level imports not at top of cell (markdown cells before imports)
+# - F401: notebooks deliberately import for side effects (widget display)
+# - RUF005: explicit list concatenation reads more clearly in demo code
+# - RUF006: fire-and-forget asyncio tasks for ipywidgets button handlers
+#   (the returned task is intentionally not stored for demo brevity)
+"examples/**" = ["E402", "F401", "RUF005", "RUF006"]
+
+# ----------------------------------------------------------------------
+# Mypy (type checker) — strict on hand-written widget.py only
+# ----------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src/ipyniivue"]
+# Generated code is annotated loosely; skip it. widget.js is not Python.
+exclude = [
+  "^src/ipyniivue/_generated\\.py$",
+  "^src/ipyniivue/static/",
+]
+# anywidget and traitlets ship partial stubs; missing-imports is noisy
+# against them but shouldn't hide real errors in our own code.
+ignore_missing_imports = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+# ----------------------------------------------------------------------
+# Pytest
+# ----------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "src"]
+python_files = ["test_*.py", "*_test.py"]

@@ -13,6 +13,18 @@ import anywidget
 import traitlets
 
 
+_UNSET = object()
+_JS_UNDEFINED = {"__ipyniivue_undefined__": True}
+
+
+def _make_args(*values: Any) -> list[Any]:
+    """Build JSON-safe JS call args while preserving omitted optionals."""
+    trimmed = list(values)
+    while trimmed and trimmed[-1] is _UNSET:
+        trimmed.pop()
+    return [_JS_UNDEFINED if value is _UNSET else value for value in trimmed]
+
+
 # Set of event names that JS may dispatch to Python. The
 # hand-written `widget.NiiVue.on()` method validates against this.
 # Events that the JS template intentionally suppresses (high-frequency
@@ -178,7 +190,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     # Command methods
     def add_annotation(self, annotation: Any) -> None:
-        self.send({"cmd": "addAnnotation", "args": [annotation]})
+        self.send({"cmd": "addAnnotation", "args": _make_args(annotation)})
 
     async def add_colormap(self, name: Any, cmap: Any) -> Any:
         """Register a colormap by name so it becomes available to `setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh layers, and so on.
@@ -202,9 +214,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
             (first letter upper-cased), which is the form visible in `nv1.colormaps`
             and the `colormapAdded` event detail.
         """
-        return await self._request("addColormap", [name, cmap])
+        return await self._request("addColormap", _make_args(name, cmap))
 
-    def add_colormap_from_url(self, url: Any, name: Any = None) -> None:
+    def add_colormap_from_url(self, url: Any, name: Any = _UNSET) -> None:
         """Fetch a colormap JSON (`{ R, G, B, A?, I? }`) from a URL or `File` and register it under `name`.
 
         When `name` is omitted, it is derived from
@@ -217,13 +229,13 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         url : string | File
         name : string | undefined
         """
-        self.send({"cmd": "addColormapFromUrl", "args": [url, name]})
+        self.send({"cmd": "addColormapFromUrl", "args": _make_args(url, name)})
 
-    def add_image(self, path_or_file: Any, options: Any = None) -> None:
-        self.send({"cmd": "addImage", "args": [path_or_file, options]})
+    def add_image(self, path_or_file: Any, options: Any = _UNSET) -> None:
+        self.send({"cmd": "addImage", "args": _make_args(path_or_file, options)})
 
     def add_mesh(self, mesh: Any) -> None:
-        self.send({"cmd": "addMesh", "args": [mesh]})
+        self.send({"cmd": "addMesh", "args": _make_args(mesh)})
 
     def add_mesh_layer(self, mesh_index: Any, layer_opts: Any) -> None:
         """Add a scalar overlay layer to a mesh.
@@ -233,10 +245,10 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         mesh_index : number
         layer_opts : MeshLayerFromUrlOptions
         """
-        self.send({"cmd": "addMeshLayer", "args": [mesh_index, layer_opts]})
+        self.send({"cmd": "addMeshLayer", "args": _make_args(mesh_index, layer_opts)})
 
     def add_volume(self, volume: Any) -> None:
-        self.send({"cmd": "addVolume", "args": [volume]})
+        self.send({"cmd": "addVolume", "args": _make_args(volume)})
 
     def annotation_redo(self) -> None:
         self.send({"cmd": "annotationRedo", "args": []})
@@ -244,10 +256,10 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
     def annotation_undo(self) -> None:
         self.send({"cmd": "annotationUndo", "args": []})
 
-    def attach_to(self, id: Any, is_anti_alias: Any = None) -> None:
-        self.send({"cmd": "attachTo", "args": [id, is_anti_alias]})
+    def attach_to(self, id: Any, is_anti_alias: Any = _UNSET) -> None:
+        self.send({"cmd": "attachTo", "args": _make_args(id, is_anti_alias)})
 
-    def broadcast_to(self, targets: Any = None, opts: Any = None) -> None:
+    def broadcast_to(self, targets: Any = _UNSET, opts: Any = _UNSET) -> None:
         """Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others.
 
         Parameters
@@ -257,7 +269,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         opts : SyncOpts
             which properties to sync (default: { '2d': true, '3d': true })
         """
-        self.send({"cmd": "broadcastTo", "args": [targets, opts]})
+        self.send({"cmd": "broadcastTo", "args": _make_args(targets, opts)})
 
     def clear_annotations(self) -> None:
         self.send({"cmd": "clearAnnotations", "args": []})
@@ -276,14 +288,14 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
     def create_empty_drawing(self) -> None:
         self.send({"cmd": "createEmptyDrawing", "args": []})
 
-    def create_on_location_change(self, ax_cor_sag: Any = None) -> None:
-        self.send({"cmd": "createOnLocationChange", "args": [ax_cor_sag]})
+    def create_on_location_change(self, ax_cor_sag: Any = _UNSET) -> None:
+        self.send({"cmd": "createOnLocationChange", "args": _make_args(ax_cor_sag)})
 
     def destroy(self) -> None:
         self.send({"cmd": "destroy", "args": []})
 
-    def draw_scene(self, needs_sync: Any = None) -> None:
-        self.send({"cmd": "drawScene", "args": [needs_sync]})
+    def draw_scene(self, needs_sync: Any = _UNSET) -> None:
+        self.send({"cmd": "drawScene", "args": _make_args(needs_sync)})
 
     def draw_undo(self) -> None:
         self.send({"cmd": "drawUndo", "args": []})
@@ -294,8 +306,8 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
     async def get_annotations_json(self) -> Any:
         return await self._request("getAnnotationsJSON", [])
 
-    async def get_clip_plane_depth_azi_elev(self, clip_plane_index: Any = None) -> Any:
-        return await self._request("getClipPlaneDepthAziElev", [clip_plane_index])
+    async def get_clip_plane_depth_azi_elev(self, clip_plane_index: Any = _UNSET) -> Any:
+        return await self._request("getClipPlaneDepthAziElev", _make_args(clip_plane_index))
 
     async def get_crosshair_pos(self) -> Any:
         return await self._request("getCrosshairPos", [])
@@ -313,10 +325,10 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         number
             Current frame index (0-based), or 0 if volume not found
         """
-        return await self._request("getFrame4D", [id])
+        return await self._request("getFrame4D", _make_args(id))
 
     async def get_mesh_shader(self, mesh_index: Any) -> Any:
-        return await self._request("getMeshShader", [mesh_index])
+        return await self._request("getMeshShader", _make_args(mesh_index))
 
     async def get_tract_groups(self, mesh_index: Any) -> Any:
         """Get the group names for a tract mesh.
@@ -331,7 +343,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         -------
         string[]
         """
-        return await self._request("getTractGroups", [mesh_index])
+        return await self._request("getTractGroups", _make_args(mesh_index))
 
     async def get_volume_transform_info(self, name: Any) -> Any:
         """Get metadata for a specific volume transform (options, description, resultDefaults).
@@ -344,7 +356,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         -------
         TransformInfo | undefined
         """
-        return await self._request("getVolumeTransformInfo", [name])
+        return await self._request("getVolumeTransformInfo", _make_args(name))
 
     async def has_colormap(self, name: Any) -> Any:
         """Case-insensitive existence check for a registered colormap.
@@ -364,10 +376,10 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         -------
         boolean
         """
-        return await self._request("hasColormap", [name])
+        return await self._request("hasColormap", _make_args(name))
 
     def load_annotations_json(self, json: Any) -> None:
-        self.send({"cmd": "loadAnnotationsJSON", "args": [json]})
+        self.send({"cmd": "loadAnnotationsJSON", "args": _make_args(json)})
 
     def load_deferred_4d_volumes(self, id: Any) -> None:
         """Load all remaining frames for a 4D volume that was opened with limitFrames4D.
@@ -379,18 +391,18 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         id : string
             Volume ID (typically the URL or name)
         """
-        self.send({"cmd": "loadDeferred4DVolumes", "args": [id]})
+        self.send({"cmd": "loadDeferred4DVolumes", "args": _make_args(id)})
 
     def load_document(self, source: Any) -> None:
-        self.send({"cmd": "loadDocument", "args": [source]})
+        self.send({"cmd": "loadDocument", "args": _make_args(source)})
 
     async def load_drawing(self, source: Any) -> Any:
-        return await self._request("loadDrawing", [source])
+        return await self._request("loadDrawing", _make_args(source))
 
-    def load_image(self, path_or_file: Any, options: Any = None) -> None:
-        self.send({"cmd": "loadImage", "args": [path_or_file, options]})
+    def load_image(self, path_or_file: Any, options: Any = _UNSET) -> None:
+        self.send({"cmd": "loadImage", "args": _make_args(path_or_file, options)})
 
-    async def load_img_v1(self, volume_index: Any, is_flip_x: Any = None, is_flip_y: Any = None, is_flip_z: Any = None) -> Any:
+    async def load_img_v1(self, volume_index: Any, is_flip_x: Any = _UNSET, is_flip_y: Any = _UNSET, is_flip_z: Any = _UNSET) -> Any:
         """Convert a float32 3-frame volume to V1 (eigenvector) RGBA representation.
 
         For formats like AFNI that lack NIfTI intent codes, this provides explicit
@@ -411,19 +423,19 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         -------
         Promise<boolean>
         """
-        return await self._request("loadImgV1", [volume_index, is_flip_x, is_flip_y, is_flip_z])
+        return await self._request("loadImgV1", _make_args(volume_index, is_flip_x, is_flip_y, is_flip_z))
 
     def load_matcap(self, matcap_name: Any) -> None:
-        self.send({"cmd": "loadMatcap", "args": [matcap_name]})
+        self.send({"cmd": "loadMatcap", "args": _make_args(matcap_name)})
 
     def load_meshes(self, meshes: Any) -> None:
-        self.send({"cmd": "loadMeshes", "args": [meshes]})
+        self.send({"cmd": "loadMeshes", "args": _make_args(meshes)})
 
     def load_volumes(self, volumes: Any) -> None:
-        self.send({"cmd": "loadVolumes", "args": [volumes]})
+        self.send({"cmd": "loadVolumes", "args": _make_args(volumes)})
 
     def move_crosshair_in_vox(self, di: Any, dj: Any, dk: Any) -> None:
-        self.send({"cmd": "moveCrosshairInVox", "args": [di, dj, dk]})
+        self.send({"cmd": "moveCrosshairInVox", "args": _make_args(di, dj, dk)})
 
     def move_volume_down(self, volume_index: Any) -> None:
         """Move a volume down one index position in the stack of loaded volumes (toward the background).
@@ -433,7 +445,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         volume_index : number
             Index of the volume to move
         """
-        self.send({"cmd": "moveVolumeDown", "args": [volume_index]})
+        self.send({"cmd": "moveVolumeDown", "args": _make_args(volume_index)})
 
     def move_volume_to_bottom(self, volume_index: Any) -> None:
         """Move a volume to the bottom position in the stack of loaded volumes (index 0, background).
@@ -443,7 +455,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         volume_index : number
             Index of the volume to move
         """
-        self.send({"cmd": "moveVolumeToBottom", "args": [volume_index]})
+        self.send({"cmd": "moveVolumeToBottom", "args": _make_args(volume_index)})
 
     def move_volume_to_top(self, volume_index: Any) -> None:
         """Move a volume to the top position in the stack of loaded volumes (last index, top layer).
@@ -453,7 +465,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         volume_index : number
             Index of the volume to move
         """
-        self.send({"cmd": "moveVolumeToTop", "args": [volume_index]})
+        self.send({"cmd": "moveVolumeToTop", "args": _make_args(volume_index)})
 
     def move_volume_up(self, volume_index: Any) -> None:
         """Move a volume up one index position in the stack of loaded volumes (toward the top layer).
@@ -463,9 +475,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         volume_index : number
             Index of the volume to move
         """
-        self.send({"cmd": "moveVolumeUp", "args": [volume_index]})
+        self.send({"cmd": "moveVolumeUp", "args": _make_args(volume_index)})
 
-    def recalculate_cal_min_max(self, volume_index: Any, frame: Any = None) -> None:
+    def recalculate_cal_min_max(self, volume_index: Any, frame: Any = _UNSET) -> None:
         """Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).
 
         Updates the volume's calibration range and triggers a GPU update.
@@ -475,7 +487,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         volume_index : number
         frame : number | undefined
         """
-        self.send({"cmd": "recalculateCalMinMax", "args": [volume_index, frame]})
+        self.send({"cmd": "recalculateCalMinMax", "args": _make_args(volume_index, frame)})
 
     def refresh_drawing(self) -> None:
         """Mark the drawing texture as dirty and schedule a redraw.
@@ -486,19 +498,8 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         """
         self.send({"cmd": "refreshDrawing", "args": []})
 
-    def register_volume_transform(self, transform: Any) -> None:
-        """Register an external volume transform at runtime.
-
-        External transforms manage their own Web Worker execution internally.
-
-        Parameters
-        ----------
-        transform : VolumeTransform
-        """
-        self.send({"cmd": "registerVolumeTransform", "args": [transform]})
-
-    async def reinitialize_view(self, options: Any = None) -> Any:
-        return await self._request("reinitializeView", [options])
+    async def reinitialize_view(self, options: Any = _UNSET) -> Any:
+        return await self._request("reinitializeView", _make_args(options))
 
     def remove_all_meshes(self) -> None:
         self.send({"cmd": "removeAllMeshes", "args": []})
@@ -507,10 +508,10 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         self.send({"cmd": "removeAllVolumes", "args": []})
 
     def remove_annotation(self, id: Any) -> None:
-        self.send({"cmd": "removeAnnotation", "args": [id]})
+        self.send({"cmd": "removeAnnotation", "args": _make_args(id)})
 
     def remove_mesh(self, mesh_index: Any) -> None:
-        self.send({"cmd": "removeMesh", "args": [mesh_index]})
+        self.send({"cmd": "removeMesh", "args": _make_args(mesh_index)})
 
     def remove_mesh_layer(self, mesh_index: Any, layer_index: Any) -> None:
         """Remove a scalar overlay layer from a mesh.
@@ -520,24 +521,24 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         mesh_index : number
         layer_index : number
         """
-        self.send({"cmd": "removeMeshLayer", "args": [mesh_index, layer_index]})
+        self.send({"cmd": "removeMeshLayer", "args": _make_args(mesh_index, layer_index)})
 
     def resize(self) -> None:
         self.send({"cmd": "resize", "args": []})
 
-    async def save_bitmap(self, filename: Any = None, quality: Any = None) -> Any:
-        return await self._request("saveBitmap", [filename, quality])
+    async def save_bitmap(self, filename: Any = _UNSET, quality: Any = _UNSET) -> Any:
+        return await self._request("saveBitmap", _make_args(filename, quality))
 
-    def save_document(self, filename: Any = None) -> None:
-        self.send({"cmd": "saveDocument", "args": [filename]})
+    def save_document(self, filename: Any = _UNSET) -> None:
+        self.send({"cmd": "saveDocument", "args": _make_args(filename)})
 
-    async def save_drawing(self, filename: Any = None) -> Any:
-        return await self._request("saveDrawing", [filename])
+    async def save_drawing(self, filename: Any = _UNSET) -> Any:
+        return await self._request("saveDrawing", _make_args(filename))
 
-    def save_mesh(self, mesh_index: Any, filename: Any = None, options: Any = None) -> None:
-        self.send({"cmd": "saveMesh", "args": [mesh_index, filename, options]})
+    def save_mesh(self, mesh_index: Any, filename: Any = _UNSET, options: Any = _UNSET) -> None:
+        self.send({"cmd": "saveMesh", "args": _make_args(mesh_index, filename, options)})
 
-    async def save_volume(self, options: Any = None) -> Any:
+    async def save_volume(self, options: Any = _UNSET) -> Any:
         """Save voxel-based image to disk.
 
         Parameters
@@ -553,10 +554,10 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         Promise<boolean | Uint8Array>
             `true` if successful when writing to disk, or a `Uint8Array` if exported as binary data
         """
-        return await self._request("saveVolume", [options])
+        return await self._request("saveVolume", _make_args(options))
 
     def select_annotation(self, id: Any) -> None:
-        self.send({"cmd": "selectAnnotation", "args": [id]})
+        self.send({"cmd": "selectAnnotation", "args": _make_args(id)})
 
     async def serialize_document(self) -> Any:
         """Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array).
@@ -581,16 +582,16 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
             nv.setBounds([0,0,0.5,0.5])   // bottom-left quarter
             nv.setBounds([0.5,0.5,1,1])   // top-right quarter
         """
-        self.send({"cmd": "setBounds", "args": [bounds]})
+        self.send({"cmd": "setBounds", "args": _make_args(bounds)})
 
     def set_clip_plane(self, depth_azimuth_elevation: Any) -> None:
-        self.send({"cmd": "setClipPlane", "args": [depth_azimuth_elevation]})
+        self.send({"cmd": "setClipPlane", "args": _make_args(depth_azimuth_elevation)})
 
-    def set_clip_plane_depth_azi_elev(self, depth: Any, azimuth: Any, elevation: Any, clip_plane_index: Any = None) -> None:
-        self.send({"cmd": "setClipPlaneDepthAziElev", "args": [depth, azimuth, elevation, clip_plane_index]})
+    def set_clip_plane_depth_azi_elev(self, depth: Any, azimuth: Any, elevation: Any, clip_plane_index: Any = _UNSET) -> None:
+        self.send({"cmd": "setClipPlaneDepthAziElev", "args": _make_args(depth, azimuth, elevation, clip_plane_index)})
 
     def set_clip_planes(self, depth_azi_elevs: Any) -> None:
-        self.send({"cmd": "setClipPlanes", "args": [depth_azi_elevs]})
+        self.send({"cmd": "setClipPlanes", "args": _make_args(depth_azi_elevs)})
 
     def set_colormap_label(self, volume_index: Any, cmap: Any) -> None:
         """Set a label colormap on a volume (e.g., atlas/parcellation).
@@ -607,7 +608,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
             ColorMap definition with R,G,B arrays and optional labels/I arrays,
             or null to remove the label colormap
         """
-        self.send({"cmd": "setColormapLabel", "args": [volume_index, cmap]})
+        self.send({"cmd": "setColormapLabel", "args": _make_args(volume_index, cmap)})
 
     def set_colormap_label_from_url(self, volume_index: Any, url: Any) -> None:
         """Fetch a label colormap JSON from a URL or File and apply it to a volume.
@@ -621,7 +622,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         url : string | File
             URL string or File object pointing to a colormap JSON
         """
-        self.send({"cmd": "setColormapLabelFromUrl", "args": [volume_index, url]})
+        self.send({"cmd": "setColormapLabelFromUrl", "args": _make_args(volume_index, url)})
 
     def set_connectome_options(self, mesh_index: Any, options: Any) -> None:
         """Update connectome extrusion/display options and re-extrude.
@@ -631,13 +632,13 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         mesh_index : number
         options : Partial<NVConnectomeOptions>
         """
-        self.send({"cmd": "setConnectomeOptions", "args": [mesh_index, options]})
+        self.send({"cmd": "setConnectomeOptions", "args": _make_args(mesh_index, options)})
 
     def set_crosshair_pos(self, pos: Any) -> None:
-        self.send({"cmd": "setCrosshairPos", "args": [pos]})
+        self.send({"cmd": "setCrosshairPos", "args": _make_args(pos)})
 
     def set_drag_mode(self, mode: Any) -> None:
-        self.send({"cmd": "setDragMode", "args": [mode]})
+        self.send({"cmd": "setDragMode", "args": _make_args(mode)})
 
     async def set_font(self, font: Any) -> Any:
         """Swap the active font atlas.
@@ -654,7 +655,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         -------
         Promise<boolean>
         """
-        return await self._request("setFont", [font])
+        return await self._request("setFont", _make_args(font))
 
     async def set_font_from_url(self, urls: Any) -> Any:
         """Fetch an MSDF font atlas (PNG + JSON metrics pair) from URLs and swap it in as the active font.
@@ -676,7 +677,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         -------
         Promise<boolean>
         """
-        return await self._request("setFontFromUrl", [urls])
+        return await self._request("setFontFromUrl", _make_args(urls))
 
     def set_frame_4d(self, id: Any, frame: Any) -> None:
         """Set the current 4D frame for a volume.
@@ -688,7 +689,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         frame : number
             Frame index (0-based, clamped to valid range)
         """
-        self.send({"cmd": "setFrame4D", "args": [id, frame]})
+        self.send({"cmd": "setFrame4D", "args": _make_args(id, frame)})
 
     def set_mesh(self, mesh_index: Any, options: Any) -> None:
         """Update display properties of a loaded mesh.
@@ -701,7 +702,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         mesh_index : number
         options : MeshUpdate
         """
-        self.send({"cmd": "setMesh", "args": [mesh_index, options]})
+        self.send({"cmd": "setMesh", "args": _make_args(mesh_index, options)})
 
     def set_mesh_layer_frame_4d(self, mesh_index: Any, layer_index: Any, frame: Any) -> None:
         """Set the current 4D frame for a mesh layer.
@@ -712,7 +713,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         layer_index : number
         frame : number
         """
-        self.send({"cmd": "setMeshLayerFrame4D", "args": [mesh_index, layer_index, frame]})
+        self.send({"cmd": "setMeshLayerFrame4D", "args": _make_args(mesh_index, layer_index, frame)})
 
     def set_mesh_layer_property(self, mesh_index: Any, layer_index: Any, options: Any) -> None:
         """Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).
@@ -725,7 +726,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         layer_index : number
         options : Partial<NVMeshLayer>
         """
-        self.send({"cmd": "setMeshLayerProperty", "args": [mesh_index, layer_index, options]})
+        self.send({"cmd": "setMeshLayerProperty", "args": _make_args(mesh_index, layer_index, options)})
 
     def set_modulation_image(self, target_id: Any, modulator_id: Any) -> None:
         """Set a modulation image for a target volume.
@@ -739,7 +740,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         modulator_id : string
             ID of the volume providing modulation (empty string to clear)
         """
-        self.send({"cmd": "setModulationImage", "args": [target_id, modulator_id]})
+        self.send({"cmd": "setModulationImage", "args": _make_args(target_id, modulator_id)})
 
     def set_tract_options(self, mesh_index: Any, options: Any) -> None:
         """Update tract tessellation/display options and re-tessellate.
@@ -749,7 +750,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         mesh_index : number
         options : Partial<NVTractOptions>
         """
-        self.send({"cmd": "setTractOptions", "args": [mesh_index, options]})
+        self.send({"cmd": "setTractOptions", "args": _make_args(mesh_index, options)})
 
     def set_volume(self, volume_index: Any, options: Any) -> None:
         """Update display properties of a loaded volume.
@@ -762,26 +763,10 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         volume_index : number
         options : VolumeUpdate
         """
-        self.send({"cmd": "setVolume", "args": [volume_index, options]})
+        self.send({"cmd": "setVolume", "args": _make_args(volume_index, options)})
 
     def update_gl_volume(self) -> None:
         self.send({"cmd": "updateGLVolume", "args": []})
-
-    def use_loader(self, converter: Any, from_ext: Any, to_ext: Any) -> None:
-        """Register an external format loader.
-
-        The converter function receives raw file bytes and returns bytes in a known format.
-
-        Parameters
-        ----------
-        converter : (buffer: ArrayBuffer) => ArrayBuffer | Uint8Array | Promise<ArrayBuffer | Uint8Array>
-            function that converts from the source format to the target format
-        from_ext : string
-            source file extension without dot (e.g. 'vox', 'glb')
-        to_ext : string
-            target format extension without dot: 'nii' for volumes, 'mz3' for meshes
-        """
-        self.send({"cmd": "useLoader", "args": [converter, from_ext, to_ext]})
 
     async def vox2frac(self, vox: Any) -> Any:
         """Convert RAS voxel coordinates to scene fraction [0,1].
@@ -796,6 +781,6 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         -------
         [number, number, number]
         """
-        return await self._request("vox2frac", [vox])
+        return await self._request("vox2frac", _make_args(vox))
 
 

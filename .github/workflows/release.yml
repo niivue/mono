@@ -26,7 +26,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use an admin PAT so `git push` can bypass the main ruleset
+          # (repo admins are listed as bypass actors). Falls back to the
+          # workflow-scoped GITHUB_TOKEN if the secret is unset.
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: oven-sh/setup-bun@v2
 
@@ -47,8 +50,8 @@ jobs:
       - name: Release (dry run)
         if: ${{ inputs.dry_run }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -o pipefail
           {
@@ -62,8 +65,8 @@ jobs:
       - name: Release
         if: ${{ !inputs.dry_run }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: bunx nx release --skip-publish --verbose
 
       - name: Push release commit and tags
@@ -73,7 +76,7 @@ jobs:
       - name: Create GitHub Releases
         if: ${{ !inputs.dry_run }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         # For each tag Nx created at HEAD, create (or update, if rerunning) a
         # matching GitHub Release whose body is the project's freshly-written
         # CHANGELOG.md top section.

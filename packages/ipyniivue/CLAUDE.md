@@ -76,6 +76,42 @@ would throw at module init. This inlining is what pushes `widget.js`
 to ~1.3 MB — fonts, matcaps, and other niivue `dist/assets/*` are
 embedded in the bundle.
 
+## Module-boundary exception
+
+The workspace boundary checker ([nx-tools/check-boundaries.js](../../nx-tools/check-boundaries.js))
+forbids Python projects from depending on TypeScript projects in
+general — but **`ipyniivue` is explicitly allowed** via `PY_TO_TS_ALLOWED`.
+Reason: the codegen pipeline bundles `@niivue/niivue` and
+`@niivue/nv-ext-*` TypeScript outputs into the generated browser bundle
+[src/ipyniivue/static/widget.js](src/ipyniivue/static/widget.js) that
+ships inside the Python wheel. The TS dependency is a codegen-time
+artifact, not a runtime call.
+
+How the dependency surfaces in Nx's graph:
+
+- The generated [_widget.template.js](src/ipyniivue/static/_widget.template.js)
+  contains real `import { ... } from '@niivue/nv-ext-image-processing'`
+  statements that Nx's `@nx/js` plugin picks up as a static project edge.
+- `bunx nx graph` will show `ipyniivue -> nv-ext-image-processing` (and
+  potentially other `nv-ext-*` packages once Phase B.2 / B.3 land).
+- The boundary checker accepts this edge because `ipyniivue` is in
+  `PY_TO_TS_ALLOWED`.
+
+**Unintended consequences to watch for:**
+
+- `bunx nx affected` will run TypeScript-side checks when ipyniivue
+  changes, because Nx now sees the cross-language edge. This is
+  technically correct (a niivue API change can break the bundled JS)
+  but means CI for ipyniivue-only changes runs more than the literal
+  Python diff suggests.
+- Adding more `@niivue/nv-ext-*` packages to the codegen bundle adds
+  more graph edges automatically — no extra config needed beyond a
+  `dependsOn` entry in [project.json](project.json) and a workspace
+  symlink via the root `package.json` devDependencies.
+- If a future Python project (not ipyniivue) needs the same exception,
+  add it explicitly to `PY_TO_TS_ALLOWED` — don't broaden the rule.
+  The narrow allow-list is the design.
+
 ## Architecture: how messages move
 
 ### Python → JS commands
@@ -294,6 +330,155 @@ If JupyterLab restores stale widget state during dev:
 ```bash
 rm -rf ~/.cache/jupyter ~/.local/share/jupyter/runtime
 ```
+
+## Roadmap
+
+What's left, in execution order. Each phase produces something
+demoable before the next one starts.
+
+### A. Validate JS-to-Python event messaging in a real notebook
+
+Status: mechanism exists, **not yet exercised** by any example.
+
+The `nv.on(event, callback)` path through `_msg_outbox` is wired
+end-to-end and `wait_ready()` proves the round-trip works, but **no
+notebook in `examples/` actually uses `nv.on(...)`**. Every port
+sidesteps it by using `ipywidgets` controls for Python→JS only. That
+leaves the high-bandwidth side untested.
+
+Concrete next step: port [packages/niivue/examples/vox.atlas.stat.html](../niivue/examples/vox.atlas.stat.html)
+faithfully — the JS demo subscribes to `locationChange` and writes
+`detail.string` into a status footer on every mouse move. The current
+[examples/19_vox_atlas_stat.ipynb](examples/19_vox_atlas_stat.ipynb)
+deliberately omits that subscription. Add a new notebook (or extend
+19) that uses:
+
+```python
+status = ipywidgets.Label()
+nv.on("locationChange", lambda d: setattr(status, "value", d.get("string", "")))
+```
+
+Then drag the crosshair for ~30 seconds in JupyterLab and watch the
+kernel comm. If the comm survives, declare messaging complete. If it
+floods (the original failure mode that pushed us to `_msg_outbox`),
+add per-event throttling on the JS side — either a hard-coded
+`THROTTLE_EVENT_FORWARDING` map (`{ locationChange: 50, azimuthElevationChange: 50 }`)
+or a synced `_event_throttle_ms` Dict trait that Python can configure.
+
+### B.1. Bundle and demo `nv-ext-image-processing` (done)
+
+The four image-processing transforms (`otsu`, `removeHaze`, `conform`,
+`connectedLabel`) are now bundled into `widget.js` and pre-registered
+on widget mount.
+
+- JS side: codegen emits the import and registers all four transforms
+  inside `initialize()` before any user command can land. A composite
+  command `__ext_apply_image_transform` does
+  `applyVolumeTransform` → `resultDefaults` → `addVolume` (or
+  `removeAllVolumes` + `addVolume` when `replace_background=True`) in
+  one round-trip, returning `{name, elapsed_ms}` to Python. The
+  extension context is cached on `state.extContext` and disposed on
+  widget unmount.
+- Python side: `nv.apply_image_transform(name, volume_index=0, options=None, replace_background=False)`
+  in [widget.py](src/ipyniivue/widget.py).
+- Demo: [examples/23_ext_imgproc.ipynb](examples/23_ext_imgproc.ipynb)
+  — dropdown of bundled transforms, options form built dynamically
+  from `await nv.get_volume_transform_info(name)`, Apply / Reset.
+- Bundle size impact: 1.27 MB → 1.29 MB (+~20 KB; the worker is
+  inlined into the ext package's pre-built `dist/`).
+
+### B.2. `nv-ext-drawing` (deferred — needs buffer transport)
+
+The drawing extension's API (`magicWand`, `interpolateMaskSlices`,
+`MagicWandShared`, etc.) takes raw `Uint8Array` bitmaps and returns
+modified ones. Python doesn't have those bitmaps directly — they live
+inside `nv.drawingVolume` on the JS side. Two ways to bridge:
+
+1. **JS-side composite commands** (mirrors B.1): hand-write
+   `__ext_drawing_magic_wand` etc. that pull the live bitmap from
+   `ctx.drawing.bitmap`, call the extension function, and write
+   the result back via `ctx.drawing.update(...)`. Returns only a
+   summary dict to Python. Doesn't need binary transport.
+2. **Buffer transport** (Phase C territory): Python operates on
+   numpy arrays directly. Bigger lift, more general.
+
+Recommend doing (1) first as a small, demoable port of
+[drawing.html](../../apps/demo-ext-drawing/drawing.html).
+
+### B.3. `nv-ext-save-html` (deferred — niivue-bundle bootstrap)
+
+`saveHTML(nv, filename, {niivueBundleSource})` requires the caller to
+provide the niivue ESM source as a string. Our `widget.js` already
+has niivue inlined, but accessing the source from inside the running
+bundle is awkward (can't `fetch('./widget.js')` — anywidget serves it
+from a `blob:` URL with no hierarchical base, the same constraint
+that forced the asset-inlining hack). Options:
+
+1. Add a second codegen output `niivue-bundle.txt` and ship it in
+   the wheel, then read it via `importlib.resources` and pass to JS.
+2. Document `nv.save_document(...)` (already in the codegen) as the
+   Jupyter-native equivalent — emits an `.nvd` file that opens in
+   any niivue viewer.
+
+Option 2 is the path of least resistance and matches the notebook
+workflow; option 1 is only worth doing if a user explicitly asks.
+
+### C. Binary buffer ingress (numpy → volume)
+
+Today, `add_volume_from_url` is the only ingress path. Real workflows
+often have a `numpy.ndarray` already in memory (e.g. a derived
+statistical map) and want to view it without round-tripping to disk.
+
+Work:
+
+1. anywidget supports binary buffers in `model.send(content, buffers)`.
+   Add a buffer-aware variant of the `_msg_inbox` path: `{seq, body, buffers}`
+   where `buffers` lives in a parallel synced trait or rides on the
+   raw `model.send` channel (the latter, since it's Python→JS only,
+   doesn't suffer the JS→Python comm fragility).
+2. JS side: receive the `ArrayBuffer`, wrap into the appropriate
+   `TypedArray`, build a NIfTI header from the Python-supplied
+   metadata, hand to `nv.addVolume(...)`.
+3. Python helpers:
+   ```python
+   nv.add_volume_from_array(arr, affine=..., name=..., colormap=...)
+   nv.add_mesh_from_bytes(mz3_bytes, name=...)
+   ```
+
+This is the single most-requested feature for any scientific Python
+viewer. It also unlocks pytest unit tests that don't depend on a
+network round-trip.
+
+### D. Polish, test, and ship
+
+1. **Tests.** Add a `pytest` target to [project.json](project.json):
+   - codegen-output integrity (every method in `api.generated.json`
+     appears in `_generated.py`, every traitlet has a sane default,
+     `NIIVUE_EVENT_NAMES` is non-empty).
+   - widget construction with each major option combination.
+   - **Playwright smoke**: `01_hello_volume.ipynb` produces a
+     non-empty PNG with `backend="webgl2"`. This is the only test
+     that exercises real GPU rendering end-to-end.
+2. **PyPI publish path.**
+   - Bump `pyproject.toml` to a real version.
+   - Add a Python release target to [project.json](project.json) that
+     hooks into Nx Release.
+   - Resolve the `widget.js` gitignore question (Phase B forces a
+     decision): either keep committed and live with the 1.3+ MB
+     diff churn, or move generation into a hatch build hook so
+     `pip install` invokes Bun.
+
+### Deferred (do only if asked)
+
+- **JS-handle proxy objects** (`NVImage`, `NVMesh`, `NVDrawingVolume`,
+  `NVAnnotation` Python classes that hold an opaque JS handle id).
+  Codegen currently skips the seven properties listed in the
+  "Skipped properties" table; methods are sufficient for most flows.
+- **R port via the [anywidget R package](https://github.com/manzt/anywidget/tree/main/packages/anywidget-r).**
+  The `widget.js` bundle is reusable verbatim; only a third codegen
+  emitter (`emitR()`) is needed. Estimate: 1–2 weeks for a prototype
+  matching the Python feature set. Worth revisiting once Phase C
+  lands and the API surface stabilizes.
 
 ## Related
 

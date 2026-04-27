@@ -6,9 +6,21 @@
  * 2. Libs cannot depend on apps
  * 3. Python projects cannot depend on TypeScript projects (and vice versa)
  *
+ * Exception: `ipyniivue` is allowed to depend on TypeScript libs because
+ * its codegen pipeline bundles @niivue/* TypeScript outputs into a
+ * generated browser bundle (`src/ipyniivue/static/widget.js`) that ships
+ * inside the Python wheel. The dependency exists at codegen time only —
+ * there is no runtime Python-to-TypeScript call. See
+ * `packages/ipyniivue/CLAUDE.md` for the architecture rationale.
+ *
  * Run: bunx nx graph --file=tmp-graph.json && node nx-tools/check-boundaries.js
  * Or use the "check-boundaries" target defined in the root package.json.
  */
+
+// Python projects allowed to depend on TypeScript libs. Add a project
+// here only when its TypeScript dependencies are bundled into a static
+// asset shipped in the Python wheel (i.e., the codegen pipeline).
+const PY_TO_TS_ALLOWED = new Set(['ipyniivue'])
 
 const { readFileSync, unlinkSync } = require('node:fs')
 const { execSync } = require('node:child_process')
@@ -61,7 +73,7 @@ for (const [source, deps] of Object.entries(dependencies)) {
         `${source} -> ${dep.target}: TypeScript project cannot depend on a Python project`,
       )
     }
-    if (sourceIsPy && targetIsTS) {
+    if (sourceIsPy && targetIsTS && !PY_TO_TS_ALLOWED.has(source)) {
       errors.push(
         `${source} -> ${dep.target}: Python project cannot depend on a TypeScript project`,
       )

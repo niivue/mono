@@ -44,7 +44,6 @@
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["build"],
       "inputs": [
-        "{projectRoot}/dist/**/*",
         "{projectRoot}/scripts/smoke-test-packed.ts",
         "{projectRoot}/package.json"
       ]

@@ -55,6 +55,12 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
     # durable; JS processes any unhandled seq values after initialize.
     _msg_inbox = traitlets.List([]).tag(sync=True)
 
+    # Highest seq from `_msg_inbox` that JS has fully drained. JS sets
+    # this after each inbox-processing pass; Python observes it and
+    # prunes acknowledged items so a session's worth of buffer payloads
+    # does not pin base64 strings in trait state forever.
+    _msg_inbox_ack = traitlets.Int(0).tag(sync=True)
+
     # Synthetic outbox for JS-to-Python messages. anywidget 0.9.x +
     # ipywidgets 8.x do not reliably route `model.send()` from JS
     # through Python's `on_msg` callbacks in our setup; the

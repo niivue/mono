@@ -32054,12 +32054,11 @@ async function initialize({ model }) {
       const args = msg.args || [];
       const name = args[0] || "volume.nii";
       const options = args[1] || {};
-      const bufInfo = buffers && buffers[0] ? { kind: buffers[0].constructor && buffers[0].constructor.name, byteLength: buffers[0].byteLength } : null;
-      console.log("[ipyniivue] add_volume_from_bytes:", name, "buffer:", bufInfo, "options:", options);
       try {
         if (!buffers || !buffers[0]) {
           const errMsg = "no buffer attached to add_volume_from_bytes";
           console.error("[ipyniivue]", errMsg);
+          sendToPython({ kind: "error", source: msg.cmd, message: errMsg });
           if (reqId !== null)
             respond(false, errMsg);
           return;
@@ -32068,11 +32067,11 @@ async function initialize({ model }) {
         const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv;
         const file = new File([ab], name);
         await state.nv.loadVolumes([Object.assign({ url: file, name }, options)]);
-        console.log("[ipyniivue] loadVolumes returned for", name);
         if (reqId !== null)
           respond(true, null);
       } catch (err2) {
         console.error("[ipyniivue] __add_volume_from_bytes threw:", err2);
+        sendToPython({ kind: "error", source: msg.cmd, message: String(err2) });
         if (reqId !== null)
           respond(false, err2);
       }
@@ -32084,8 +32083,11 @@ async function initialize({ model }) {
       const options = args[1] || {};
       try {
         if (!buffers || !buffers[0]) {
+          const errMsg = "no buffer attached to add_mesh_from_bytes";
+          console.error("[ipyniivue]", errMsg);
+          sendToPython({ kind: "error", source: msg.cmd, message: errMsg });
           if (reqId !== null)
-            respond(false, "no buffer attached to add_mesh_from_bytes");
+            respond(false, errMsg);
           return;
         }
         const dv = buffers[0];
@@ -32096,6 +32098,7 @@ async function initialize({ model }) {
           respond(true, null);
       } catch (err2) {
         console.error("[ipyniivue] __add_mesh_from_bytes threw:", err2);
+        sendToPython({ kind: "error", source: msg.cmd, message: String(err2) });
         if (reqId !== null)
           respond(false, err2);
       }
@@ -32182,7 +32185,9 @@ async function initialize({ model }) {
         out[i3] = bin.charCodeAt(i3);
       return [out];
     } catch (err2) {
-      console.error("ipyniivue: malformed _b64 buffer:", err2);
+      const msg = "malformed _b64 buffer: " + String(err2);
+      console.error("ipyniivue:", msg);
+      sendToPython({ kind: "error", source: body && body.cmd, message: msg });
       return;
     }
   };
@@ -32190,12 +32195,24 @@ async function initialize({ model }) {
     const inbox = model.get("_msg_inbox");
     if (!Array.isArray(inbox))
       return;
+    let highest = state.lastInboxSeq;
     for (const item of inbox) {
       const seq = item && typeof item.seq === "number" ? item.seq : null;
       if (seq === null || seq <= state.lastInboxSeq)
         continue;
       state.lastInboxSeq = seq;
       cmdHandler(item.body, decodeInboxBuffer(item.body));
+      if (seq > highest)
+        highest = seq;
+    }
+    const prevAck = model.get("_msg_inbox_ack") || 0;
+    if (highest > prevAck) {
+      model.set("_msg_inbox_ack", highest);
+      try {
+        model.save_changes();
+      } catch (err2) {
+        console.warn("ipyniivue: inbox ack save failed:", err2);
+      }
     }
   };
   model.on("change:_msg_inbox", inboxHandler);

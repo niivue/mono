@@ -74,6 +74,28 @@ class NiiVue(_GeneratedNiiVue):
         self._outbox_handler = _outbox_handler  # strong ref
         self.observe(_outbox_handler, names=["_msg_outbox"])
 
+        # Inbox pruning: JS bumps `_msg_inbox_ack` after each drain pass;
+        # we trim acknowledged items so a session's worth of base64
+        # payloads from add_volume_from_bytes etc. doesn't pin memory in
+        # trait state. The JS side dedupes by `state.lastInboxSeq` so the
+        # trim-induced trait change is a no-op there.
+        def _ack_handler(change: Any) -> None:
+            ack = change.get("new") if isinstance(change, dict) else None
+            if not isinstance(ack, int) or ack <= 0:
+                return
+            current = self._msg_inbox
+            if not isinstance(current, list) or not current:
+                return
+            pruned = [
+                item for item in current
+                if not (isinstance(item, dict) and item.get("seq", 0) <= ack)
+            ]
+            if len(pruned) != len(current):
+                self._msg_inbox = pruned
+
+        self._ack_handler = _ack_handler  # strong ref
+        self.observe(_ack_handler, names=["_msg_inbox_ack"])
+
     def send(self, content: Any, buffers: list[bytes] | None = None) -> None:
         """Send a widget command through the synced inbox.
 
@@ -603,6 +625,16 @@ class NiiVue(_GeneratedNiiVue):
             else:
                 err = content.get("error", "unknown error from JS side")
                 future.set_exception(RuntimeError(str(err)))
+        elif kind == "error":
+            # Fire-and-forget commands (add_volume_from_path, etc.) have no
+            # request/response correlation, so JS-side failures used to be
+            # silent — the user got a blank canvas with no signal. Surface
+            # them on stderr so the kernel log carries the diagnosis.
+            import sys
+
+            source = content.get("source") or "ipyniivue"
+            message = content.get("message", "<unknown>")
+            print(f"[ipyniivue] {source}: {message}", file=sys.stderr)
 
 
 def _snake_to_camel(name: str) -> str:

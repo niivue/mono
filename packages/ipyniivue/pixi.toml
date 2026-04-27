@@ -14,7 +14,9 @@ anywidget = ">=0.9"
 ipyniivue = { path = ".", editable = true }
 
 [feature.dev.dependencies]
+build = ">=1"
 pytest = ">=7"
+ruff = ">=0.14"
 jupyter = ">=1"
 jupyterlab = ">=4"
 ipykernel = ">=6"

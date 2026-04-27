@@ -236,6 +236,58 @@ const toJsonSafe = (v, seen) => {
   return out
 }
 
+const PY_UNDEFINED_KEY = "__ipyniivue_undefined__"
+const RESPONSE_BINARY_KEY = "__ipyniivue_binary__"
+const isPyUndefined = (v) => (
+  v && typeof v === "object" && v[PY_UNDEFINED_KEY] === true
+)
+const coerceCommandArgs = (args) => (
+  Array.isArray(args)
+    ? args.map((v) => (isPyUndefined(v) ? undefined : v))
+    : []
+)
+const bytesToBase64 = (bytes) => {
+  let binary = ""
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return btoa(binary)
+}
+const toBinaryPayload = (v) => {
+  const bytes = ArrayBuffer.isView(v)
+    ? new Uint8Array(v.buffer, v.byteOffset, v.byteLength)
+    : new Uint8Array(v)
+  return {
+    [RESPONSE_BINARY_KEY]: true,
+    data: bytesToBase64(bytes),
+    byteLength: bytes.byteLength,
+    dtype: v.constructor && v.constructor.name ? v.constructor.name : "ArrayBuffer",
+  }
+}
+const toResponseSafe = (v, seen) => {
+  if (v == null) return v
+  const t = typeof v
+  if (t === "function" || t === "symbol" || t === "undefined") return null
+  if (t === "bigint") return Number.isSafeInteger(Number(v)) ? Number(v) : String(v)
+  if (ArrayBuffer.isView(v)) {
+    const length = typeof v.length === "number" ? v.length : Number.POSITIVE_INFINITY
+    return length <= TJS_TYPED_MAX ? Array.from(v) : toBinaryPayload(v)
+  }
+  if (v instanceof ArrayBuffer) return toBinaryPayload(v)
+  if (t !== "object") return v
+  seen ??= new WeakSet()
+  if (seen.has(v)) return null
+  seen.add(v)
+  if (Array.isArray(v)) {
+    if (v.length > TJS_ARRAY_MAX) return null
+    return v.map((x) => toResponseSafe(x, seen))
+  }
+  const out = {}
+  for (const k of Object.keys(v)) out[k] = toResponseSafe(v[k], seen)
+  return out
+}
+
 // `initialize` runs once per Python widget instance. This is the
 // anywidget-recommended place for model-level wiring (msg:custom,
 // change observers, NiiVue event listeners). Putting these in
@@ -254,6 +306,34 @@ async function initialize({ model }) {
       model.save_changes()
     } catch (err) {
       console.warn("ipyniivue: outbox write failed:", err)
+    }
+  }
+
+  const sameJsonValue = (a, b) => {
+    try { return JSON.stringify(a) === JSON.stringify(b) }
+    catch { return a === b }
+  }
+  const syncReadOnlyProperties = () => {
+    const nv = state.nv
+    if (!nv) return
+    let changed = false
+    for (const [jsName, pyName] of PROPS_RO) {
+      try {
+        const v = nv[jsName]
+        if (v === undefined) continue
+        const safe = toJsonSafe(v)
+        if (!sameJsonValue(model.get(pyName), safe)) {
+          model.set(pyName, safe)
+          changed = true
+        }
+      } catch (err) {
+        console.warn("ipyniivue: failed to sync " + pyName + ":", err)
+      }
+    }
+    if (changed) {
+      try { model.save_changes() } catch (err) {
+        console.warn("ipyniivue: read-only sync save failed:", err)
+      }
     }
   }
 
@@ -283,7 +363,7 @@ async function initialize({ model }) {
     // the volume at args[1], optionally replacing the background.
     // Returns { name, elapsed_ms } so Python can show progress.
     if (msg.cmd === "__ext_apply_image_transform") {
-      const args = msg.args || []
+      const args = coerceCommandArgs(msg.args)
       const name = args[0]
       const volIdx = args[1] ?? 0
       const options = args[2] || {}
@@ -316,7 +396,7 @@ async function initialize({ model }) {
     // along an axis. Returns { first, last } or null. Reads the live
     // bitmap from ctx.drawing; returns null if no drawing volume exists.
     if (msg.cmd === "__ext_drawing_find_boundaries") {
-      const args = msg.args || []
+      const args = coerceCommandArgs(msg.args)
       const axis = args[0] ?? 0
       try {
         const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())
@@ -340,7 +420,7 @@ async function initialize({ model }) {
     // Buffer ingress: wrap bytes into a File and dispatch via NiiVue's
     // URL/File loader so the existing extension-based reader path runs.
     if (msg.cmd === "__add_volume_from_bytes") {
-      const args = msg.args || []
+      const args = coerceCommandArgs(msg.args)
       const name = args[0] || "volume.nii"
       const options = args[1] || {}
       try {
@@ -367,7 +447,7 @@ async function initialize({ model }) {
       return
     }
     if (msg.cmd === "__add_mesh_from_bytes") {
-      const args = msg.args || []
+      const args = coerceCommandArgs(msg.args)
       const name = args[0] || "mesh.mz3"
       const options = args[1] || {}
       try {
@@ -394,7 +474,7 @@ async function initialize({ model }) {
     // Pulls the live bitmap, runs the worker, writes the result back via
     // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.
     if (msg.cmd === "__ext_drawing_interpolate_slices") {
-      const args = msg.args || []
+      const args = coerceCommandArgs(msg.args)
       const axis = args[0] ?? 0
       const useIntensity = !!args[1]
       const userOptions = args[2] || {}
@@ -437,13 +517,15 @@ async function initialize({ model }) {
       return
     }
     try {
-      let result = fn.apply(nv, msg.args || [])
+      const args = coerceCommandArgs(msg.args)
+      let result = fn.apply(nv, args)
       if (result && typeof result.then === "function") {
         result = await result
       }
+      syncReadOnlyProperties()
       if (reqId !== null) {
         let safe = null
-        try { safe = toJsonSafe(result ?? null) } catch {}
+        try { safe = toResponseSafe(result ?? null) } catch {}
         respond(true, safe)
       }
     } catch (err) {

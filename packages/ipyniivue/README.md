@@ -101,6 +101,10 @@ packages/ipyniivue/examples/19_vox_atlas_stat.ipynb
 packages/ipyniivue/examples/20_freesurfer_clip.ipynb
 packages/ipyniivue/examples/21_vox_mask.ipynb
 packages/ipyniivue/examples/22_vox_thumbnail.ipynb
+packages/ipyniivue/examples/23_ext_imgproc.ipynb
+packages/ipyniivue/examples/24_ext_drawing.ipynb
+packages/ipyniivue/examples/25_save_document.ipynb
+packages/ipyniivue/examples/26_data_loading_formats.ipynb
 ```
 
 These notebooks load assets from the public GitHub Pages mirror:

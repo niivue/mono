@@ -44,6 +44,7 @@ src/ipyniivue/static/
   _widget.template.js        # Auto-generated reviewable JS (PROPS_*, EVENTS, lifecycle)
   widget.js                  # Auto-generated bundled JS (~1.3 MB; includes niivue) (gitignored — `bunx nx codegen ipyniivue` builds it)
 examples/                    # 01_hello_volume.ipynb + ports of niivue demo HTMLs
+tests/                       # Focused pytest suite for hand-written widget.py and codegen invariants
 pixi.toml / pyproject.toml   # Two install paths (pixi env vs plain pip -e .)
 ```
 
@@ -153,6 +154,20 @@ to prune `_msg_inbox` items with `seq <= ack`. Without this trim,
 base64 buffer payloads stayed pinned in trait state until kernel
 restart (a session of five 50 MB loads accumulated ~670 MB).
 
+#### Optional arguments: omitted vs explicit `None`
+
+Codegen-emitted methods default optional parameters to an internal
+`_UNSET` sentinel (not `None`). `_make_args(...)` trims trailing
+`_UNSET` values and converts interior ones to a JSON-safe marker
+(`{"__ipyniivue_undefined__": true}`); the JS shim's
+`coerceCommandArgs` maps that marker back to JavaScript `undefined`
+so NiiVue's TypeScript default-parameter values apply. Explicit
+`None` still serializes as JSON `null` and reaches NiiVue verbatim,
+which is the right behavior when a caller deliberately wants the
+"clear this value" semantic. So `nv.save_document()` calls with no
+args (NiiVue picks the default filename); `nv.save_document(None)`
+explicitly passes `null`.
+
 ### JS → Python responses and events
 
 Use the synced `_msg_outbox` Dict traitlet, **not** `model.send`.
@@ -187,6 +202,24 @@ flood the WebSocket. Event payloads are also passed through
 `TJS_ARRAY_MAX = 4096`) — events like `volumeLoaded` carry the full
 voxel buffer in their detail, and serializing 50 MB across the comm
 disconnects the kernel.
+
+Command responses use a separate `toResponseSafe` sanitizer with a
+binary fallback: large typed arrays and `ArrayBuffer` results are
+encoded as `{"__ipyniivue_binary__": true, data: <base64>, byteLength,
+dtype}` instead of being truncated. Python's `_decode_js_value` in
+[widget.py](src/ipyniivue/widget.py) walks the response and turns
+those wrappers back into `bytes`, so paths like
+`await nv.serialize_document()` return real bytes rather than a
+truncated `null`. The event sanitizer keeps the conservative caps
+because event traffic is much higher-volume than command responses.
+
+After every successful command, the JS shim runs
+`syncReadOnlyProperties()`: it walks `PROPS_RO`, compares the live
+NiiVue values against the model state via `JSON.stringify`, and
+pushes any diffs back through `model.set` / `save_changes`. This
+keeps read-only traitlets such as `colormaps`, `volume_transforms`,
+and `selected_annotation` aligned with the live scene instead of
+only reflecting the initial render seed.
 
 ### anywidget lifecycle gotchas
 
@@ -241,8 +274,11 @@ flags, a hardware adapter, or platform-specific configuration.
   will make the comm unreliable. Use Python `ipywidgets` controls
   (sliders, dropdowns) that drive Python→JS updates instead — most
   of the example notebooks follow this pattern.
-- Don't return large objects from generated value-returning methods.
-  Keep responses small and JSON-serializable.
+- Generated value-returning methods decode binary command responses
+  (typed arrays / `ArrayBuffer`) into Python `bytes`, so programmatic
+  export paths like `await nv.serialize_document()` are fine. Plain
+  JSON-shaped responses still need to be reasonably small — the trait
+  channel will move them but it is not a bulk-data pipe.
 - Don't expect `jupyter execute` (or the `smoke` Nx target via
   `nbconvert --execute`) to validate browser rendering. It runs the
   Python cells but never starts a browser, so `download_bitmap`
@@ -265,19 +301,20 @@ auto-generated command methods or hand-written helpers in
 | `annotations` | `add_annotation`, `remove_annotation`, `clear_annotations`, `get_annotations_json` |
 | `annotationStyle` | individual `annotation_*` reactive props |
 | `customLayout` | `set_custom_layout`, `clear_custom_layout` |
-| `volumeTransform` | `register_volume_transform`, `apply_volume_transform` |
+| `volumeTransform` | `apply_image_transform`, `get_volume_transform_info` |
 
-The walker also skips two methods, `attachToCanvas` and
-`createExtensionContext`, because their argument or return value is a
-non-serializable JS handle (`HTMLCanvasElement` for the former, an
-in-browser extension context object for the latter). The JS template's
+The walker also skips methods that require browser-only handles or
+function-bearing JS objects: `attachToCanvas`, `createExtensionContext`,
+`registerVolumeTransform`, and `useLoader`. The JS template's
 `render(model, el)` calls `nv.attachToCanvas(...)` directly on the
 canvas it creates, so no Python entry point is needed. Extension
 features are exposed through hand-written wrappers in
 [widget.py](src/ipyniivue/widget.py) — `apply_image_transform`,
 `interpolate_drawing_slices`, `save_document`, and friends — that
-construct the extension context inside the JS bundle and call into
-it, so Python callers never see the handle.
+construct the extension context inside the JS bundle and call into it.
+External loader and transform registration still need explicit
+browser-side plugin support before they can be exposed safely to
+Python.
 
 ### Two paths to `saveBitmap`
 
@@ -348,9 +385,9 @@ Three of the four codegen outputs are committed; the bundled
 
 | File | Size | Committed? | Why |
 | --- | --- | --- | --- |
-| `api.generated.json` | ~60 KB | yes | API diffs surface here per niivue release |
-| `src/ipyniivue/_generated.py` | ~28 KB | yes | reviewable Python API surface |
-| `src/ipyniivue/static/_widget.template.js` | ~15 KB | yes | reviewable JS template (lifecycle, command routing) |
+| `api.generated.json` | ~65 KB | yes | API diffs surface here per niivue release |
+| `src/ipyniivue/_generated.py` | ~34 KB | yes | reviewable Python API surface |
+| `src/ipyniivue/static/_widget.template.js` | ~27 KB | yes | reviewable JS template (lifecycle, command routing) |
 | `src/ipyniivue/static/widget.js` | ~1.3 MB | **no** | bundled, minified, niivue inlined; not reviewable |
 
 **`widget.js` is required at runtime** — anywidget's `_esm` field
@@ -370,7 +407,10 @@ from a release tarball produces a usable wheel.
 
 ```bash
 bunx nx codegen ipyniivue          # Regenerate api.generated.json + Python + JS
+bunx nx lint ipyniivue             # Ruff check for hand-written Python/tests
 bunx nx typecheck ipyniivue        # tsc --noEmit on scripts/codegen.ts
+bunx nx test ipyniivue             # Focused Python unit tests
+bunx nx build ipyniivue            # Build a wheel into /tmp/ipyniivue-build
 bunx nx smoke ipyniivue            # Python-only nbconvert; verifies imports
                                    # and Python construction don't raise.
                                    # Does NOT validate browser rendering or

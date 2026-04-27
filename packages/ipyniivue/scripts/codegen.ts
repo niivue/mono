@@ -40,18 +40,25 @@ const EVENTTARGET_ALLOWLIST = new Set([
 ])
 
 // Methods that take or return non-JSON-serializable values (DOM handles,
-// JS objects with prototype methods, etc.) and therefore cannot be
-// invoked or consumed from Python through the command channel. The JS
-// template attaches the canvas itself in `render()`, so `attachToCanvas`
-// is never something a Python caller needs to invoke directly.
-// `createExtensionContext` returns an NVExtensionContext (a JS handle
-// with method bindings) that the codegen JSON-sanitizer can't preserve;
-// extension features are exposed through hand-written Python helpers
-// (`apply_image_transform`, `interpolate_drawing_slices`, etc.) which
-// stand up the JS-side context internally.
-const NON_SERIALIZABLE_METHODS = new Set([
-  'attachToCanvas',
-  'createExtensionContext',
+// JS callbacks, objects with prototype methods, etc.) and therefore cannot
+// be invoked or consumed from Python through the command channel.
+const NON_SERIALIZABLE_METHODS = new Map<string, string>([
+  [
+    'attachToCanvas',
+    'arguments are not JSON-serializable (DOM handle or JS object)',
+  ],
+  [
+    'createExtensionContext',
+    'return value is not JSON-serializable (JS extension context handle)',
+  ],
+  [
+    'registerVolumeTransform',
+    'argument is not JSON-serializable (volume transform with JS function hooks)',
+  ],
+  [
+    'useLoader',
+    'argument is not JSON-serializable (converter must be a JS function)',
+  ],
 ])
 
 // NiiVue events the JS template silences before forwarding to Python.
@@ -378,10 +385,11 @@ for (const member of cls.getMembers()) {
       if (m.getScope() === 'private') continue
       if (m.getName().startsWith('_')) continue
       if (EVENTTARGET_ALLOWLIST.has(m.getName())) continue
-      if (NON_SERIALIZABLE_METHODS.has(m.getName())) {
+      const nonSerializableReason = NON_SERIALIZABLE_METHODS.get(m.getName())
+      if (nonSerializableReason) {
         skippedMethods.push({
           jsName: m.getName(),
-          reason: 'arguments are not JSON-serializable (DOM handle or JS object)',
+          reason: nonSerializableReason,
         })
         continue
       }
@@ -779,6 +787,18 @@ function emitPython(api: ApiDescriptor): string {
   lines.push('import traitlets')
   lines.push('')
   lines.push('')
+  lines.push('_UNSET = object()')
+  lines.push('_JS_UNDEFINED = {"__ipyniivue_undefined__": True}')
+  lines.push('')
+  lines.push('')
+  lines.push('def _make_args(*values: Any) -> list[Any]:')
+  lines.push('    """Build JSON-safe JS call args while preserving omitted optionals."""')
+  lines.push('    trimmed = list(values)')
+  lines.push('    while trimmed and trimmed[-1] is _UNSET:')
+  lines.push('        trimmed.pop()')
+  lines.push('    return [_JS_UNDEFINED if value is _UNSET else value for value in trimmed]')
+  lines.push('')
+  lines.push('')
   lines.push('# Set of event names that JS may dispatch to Python. The')
   lines.push(
     '# hand-written `widget.NiiVue.on()` method validates against this.',
@@ -935,10 +955,10 @@ function formatTraitlet(t: PyTraitlet): string {
 function emitMethod(lines: string[], m: MethodDescriptor): void {
   const params = m.params
   const sig = params
-    .map((p) => `${snakeCase(p.name)}${p.optional ? ': Any = None' : ': Any'}`)
+    .map((p) => `${snakeCase(p.name)}${p.optional ? ': Any = _UNSET' : ': Any'}`)
     .join(', ')
   const argsList = params.map((p) => snakeCase(p.name)).join(', ')
-  const argsTuple = params.length === 0 ? '[]' : `[${argsList}]`
+  const argsTuple = params.length === 0 ? '[]' : `_make_args(${argsList})`
   const declParams = sig ? `, ${sig}` : ''
   if (m.returnsValue) {
     // Request/response: await the JS round-trip and return whatever
@@ -1288,6 +1308,58 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('  return out')
   lines.push('}')
   lines.push('')
+  lines.push('const PY_UNDEFINED_KEY = "__ipyniivue_undefined__"')
+  lines.push('const RESPONSE_BINARY_KEY = "__ipyniivue_binary__"')
+  lines.push('const isPyUndefined = (v) => (')
+  lines.push('  v && typeof v === "object" && v[PY_UNDEFINED_KEY] === true')
+  lines.push(')')
+  lines.push('const coerceCommandArgs = (args) => (')
+  lines.push('  Array.isArray(args)')
+  lines.push('    ? args.map((v) => (isPyUndefined(v) ? undefined : v))')
+  lines.push('    : []')
+  lines.push(')')
+  lines.push('const bytesToBase64 = (bytes) => {')
+  lines.push('  let binary = ""')
+  lines.push('  const chunk = 0x8000')
+  lines.push('  for (let i = 0; i < bytes.length; i += chunk) {')
+  lines.push('    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))')
+  lines.push('  }')
+  lines.push('  return btoa(binary)')
+  lines.push('}')
+  lines.push('const toBinaryPayload = (v) => {')
+  lines.push('  const bytes = ArrayBuffer.isView(v)')
+  lines.push('    ? new Uint8Array(v.buffer, v.byteOffset, v.byteLength)')
+  lines.push('    : new Uint8Array(v)')
+  lines.push('  return {')
+  lines.push('    [RESPONSE_BINARY_KEY]: true,')
+  lines.push('    data: bytesToBase64(bytes),')
+  lines.push('    byteLength: bytes.byteLength,')
+  lines.push('    dtype: v.constructor && v.constructor.name ? v.constructor.name : "ArrayBuffer",')
+  lines.push('  }')
+  lines.push('}')
+  lines.push('const toResponseSafe = (v, seen) => {')
+  lines.push('  if (v == null) return v')
+  lines.push('  const t = typeof v')
+  lines.push('  if (t === "function" || t === "symbol" || t === "undefined") return null')
+  lines.push('  if (t === "bigint") return Number.isSafeInteger(Number(v)) ? Number(v) : String(v)')
+  lines.push('  if (ArrayBuffer.isView(v)) {')
+  lines.push('    const length = typeof v.length === "number" ? v.length : Number.POSITIVE_INFINITY')
+  lines.push('    return length <= TJS_TYPED_MAX ? Array.from(v) : toBinaryPayload(v)')
+  lines.push('  }')
+  lines.push('  if (v instanceof ArrayBuffer) return toBinaryPayload(v)')
+  lines.push('  if (t !== "object") return v')
+  lines.push('  seen ??= new WeakSet()')
+  lines.push('  if (seen.has(v)) return null')
+  lines.push('  seen.add(v)')
+  lines.push('  if (Array.isArray(v)) {')
+  lines.push('    if (v.length > TJS_ARRAY_MAX) return null')
+  lines.push('    return v.map((x) => toResponseSafe(x, seen))')
+  lines.push('  }')
+  lines.push('  const out = {}')
+  lines.push('  for (const k of Object.keys(v)) out[k] = toResponseSafe(v[k], seen)')
+  lines.push('  return out')
+  lines.push('}')
+  lines.push('')
   lines.push(
     '// `initialize` runs once per Python widget instance. This is the',
   )
@@ -1312,6 +1384,34 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      model.save_changes()')
   lines.push('    } catch (err) {')
   lines.push('      console.warn("ipyniivue: outbox write failed:", err)')
+  lines.push('    }')
+  lines.push('  }')
+  lines.push('')
+  lines.push('  const sameJsonValue = (a, b) => {')
+  lines.push('    try { return JSON.stringify(a) === JSON.stringify(b) }')
+  lines.push('    catch { return a === b }')
+  lines.push('  }')
+  lines.push('  const syncReadOnlyProperties = () => {')
+  lines.push('    const nv = state.nv')
+  lines.push('    if (!nv) return')
+  lines.push('    let changed = false')
+  lines.push('    for (const [jsName, pyName] of PROPS_RO) {')
+  lines.push('      try {')
+  lines.push('        const v = nv[jsName]')
+  lines.push('        if (v === undefined) continue')
+  lines.push('        const safe = toJsonSafe(v)')
+  lines.push('        if (!sameJsonValue(model.get(pyName), safe)) {')
+  lines.push('          model.set(pyName, safe)')
+  lines.push('          changed = true')
+  lines.push('        }')
+  lines.push('      } catch (err) {')
+  lines.push('        console.warn("ipyniivue: failed to sync " + pyName + ":", err)')
+  lines.push('      }')
+  lines.push('    }')
+  lines.push('    if (changed) {')
+  lines.push('      try { model.save_changes() } catch (err) {')
+  lines.push('        console.warn("ipyniivue: read-only sync save failed:", err)')
+  lines.push('      }')
   lines.push('    }')
   lines.push('  }')
   lines.push('')
@@ -1343,7 +1443,7 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    // the volume at args[1], optionally replacing the background.')
   lines.push('    // Returns { name, elapsed_ms } so Python can show progress.')
   lines.push('    if (msg.cmd === "__ext_apply_image_transform") {')
-  lines.push('      const args = msg.args || []')
+  lines.push('      const args = coerceCommandArgs(msg.args)')
   lines.push('      const name = args[0]')
   lines.push('      const volIdx = args[1] ?? 0')
   lines.push('      const options = args[2] || {}')
@@ -1376,7 +1476,7 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    // along an axis. Returns { first, last } or null. Reads the live')
   lines.push('    // bitmap from ctx.drawing; returns null if no drawing volume exists.')
   lines.push('    if (msg.cmd === "__ext_drawing_find_boundaries") {')
-  lines.push('      const args = msg.args || []')
+  lines.push('      const args = coerceCommandArgs(msg.args)')
   lines.push('      const axis = args[0] ?? 0')
   lines.push('      try {')
   lines.push('        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())')
@@ -1405,7 +1505,7 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    // Buffer ingress: wrap bytes into a File and dispatch via NiiVue\'s')
   lines.push('    // URL/File loader so the existing extension-based reader path runs.')
   lines.push('    if (msg.cmd === "__add_volume_from_bytes") {')
-  lines.push('      const args = msg.args || []')
+  lines.push('      const args = coerceCommandArgs(msg.args)')
   lines.push('      const name = args[0] || "volume.nii"')
   lines.push('      const options = args[1] || {}')
   lines.push('      try {')
@@ -1432,7 +1532,7 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      return')
   lines.push('    }')
   lines.push('    if (msg.cmd === "__add_mesh_from_bytes") {')
-  lines.push('      const args = msg.args || []')
+  lines.push('      const args = coerceCommandArgs(msg.args)')
   lines.push('      const name = args[0] || "mesh.mz3"')
   lines.push('      const options = args[1] || {}')
   lines.push('      try {')
@@ -1459,7 +1559,7 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    // Pulls the live bitmap, runs the worker, writes the result back via')
   lines.push('    // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.')
   lines.push('    if (msg.cmd === "__ext_drawing_interpolate_slices") {')
-  lines.push('      const args = msg.args || []')
+  lines.push('      const args = coerceCommandArgs(msg.args)')
   lines.push('      const axis = args[0] ?? 0')
   lines.push('      const useIntensity = !!args[1]')
   lines.push('      const userOptions = args[2] || {}')
@@ -1502,13 +1602,15 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      return')
   lines.push('    }')
   lines.push('    try {')
-  lines.push('      let result = fn.apply(nv, msg.args || [])')
+  lines.push('      const args = coerceCommandArgs(msg.args)')
+  lines.push('      let result = fn.apply(nv, args)')
   lines.push('      if (result && typeof result.then === "function") {')
   lines.push('        result = await result')
   lines.push('      }')
+  lines.push('      syncReadOnlyProperties()')
   lines.push('      if (reqId !== null) {')
   lines.push('        let safe = null')
-  lines.push('        try { safe = toJsonSafe(result ?? null) } catch {}')
+  lines.push('        try { safe = toResponseSafe(result ?? null) } catch {}')
   lines.push('        respond(true, safe)')
   lines.push('      }')
   lines.push('    } catch (err) {')

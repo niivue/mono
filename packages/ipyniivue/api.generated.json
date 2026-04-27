@@ -1805,23 +1805,6 @@
       "returnsDoc": null
     },
     {
-      "jsName": "registerVolumeTransform",
-      "pyName": "register_volume_transform",
-      "isAsync": false,
-      "returnsValue": false,
-      "params": [
-        {
-          "name": "transform",
-          "tsType": "VolumeTransform",
-          "optional": false,
-          "doc": null
-        }
-      ],
-      "returns": "void",
-      "doc": "Register an external volume transform at runtime.\nExternal transforms manage their own Web Worker execution internally.",
-      "returnsDoc": null
-    },
-    {
       "jsName": "reinitializeView",
       "pyName": "reinitialize_view",
       "isAsync": true,
@@ -2462,35 +2445,6 @@
       "returnsDoc": null
     },
     {
-      "jsName": "useLoader",
-      "pyName": "use_loader",
-      "isAsync": false,
-      "returnsValue": false,
-      "params": [
-        {
-          "name": "converter",
-          "tsType": "(buffer: ArrayBuffer) => ArrayBuffer | Uint8Array | Promise<ArrayBuffer | Uint8Array>",
-          "optional": false,
-          "doc": "function that converts from the source format to the target format"
-        },
-        {
-          "name": "fromExt",
-          "tsType": "string",
-          "optional": false,
-          "doc": "source file extension without dot (e.g. 'vox', 'glb')"
-        },
-        {
-          "name": "toExt",
-          "tsType": "string",
-          "optional": false,
-          "doc": "target format extension without dot: 'nii' for volumes, 'mz3' for meshes"
-        }
-      ],
-      "returns": "void",
-      "doc": "Register an external format loader.\nThe converter function receives raw file bytes and returns bytes in a known format.",
-      "returnsDoc": null
-    },
-    {
       "jsName": "vox2frac",
       "pyName": "vox2frac",
       "isAsync": false,
@@ -2723,7 +2677,15 @@
       },
       {
         "jsName": "createExtensionContext",
-        "reason": "arguments are not JSON-serializable (DOM handle or JS object)"
+        "reason": "return value is not JSON-serializable (JS extension context handle)"
+      },
+      {
+        "jsName": "registerVolumeTransform",
+        "reason": "argument is not JSON-serializable (volume transform with JS function hooks)"
+      },
+      {
+        "jsName": "useLoader",
+        "reason": "argument is not JSON-serializable (converter must be a JS function)"
       }
     ],
     "events": []

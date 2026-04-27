@@ -33,6 +33,35 @@
       "options": { "cwd": "{projectRoot}" },
       "inputs": ["{projectRoot}/scripts/**/*", "{projectRoot}/tsconfig.json"]
     },
+    "lint": {
+      "command": "python -m ruff check src/ipyniivue tests",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["{projectRoot}/src/**/*.py", "{projectRoot}/tests/**/*.py"]
+    },
+    "format": {
+      "command": "python -m ruff format src/ipyniivue/widget.py src/ipyniivue/__init__.py tests",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["{projectRoot}/src/**/*.py", "{projectRoot}/tests/**/*.py"]
+    },
+    "test": {
+      "command": "PYTHONPATH=src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["codegen"],
+      "inputs": [
+        "{projectRoot}/tests/**/*.py",
+        "{projectRoot}/src/**/*.py",
+        "{projectRoot}/pyproject.toml"
+      ]
+    },
+    "build": {
+      "command": "python -m build --wheel --no-isolation --outdir /tmp/ipyniivue-build .",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["codegen"],
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/pyproject.toml"
+      ]
+    },
     "smoke": {
       "command": "jupyter nbconvert --to notebook --execute --output 01_hello_volume.executed.ipynb --output-dir /tmp examples/01_hello_volume.ipynb",
       "options": { "cwd": "{projectRoot}" },

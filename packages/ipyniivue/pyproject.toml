@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = ["build>=1", "pytest>=7", "ruff>=0.14"]
 # Required to run the example notebooks in `examples/`. The core widget
 # does not need these — they are used by `add_volume_from_array` (which
 # lazy-imports nibabel) and by demo notebooks that construct test data.

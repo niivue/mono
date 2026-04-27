@@ -88,7 +88,8 @@ class NiiVue(_GeneratedNiiVue):
             if not isinstance(current, list) or not current:
                 return
             pruned = [
-                item for item in current
+                item
+                for item in current
                 if not (isinstance(item, dict) and item.get("seq", 0) <= ack)
             ]
             if len(pruned) != len(current):
@@ -347,9 +348,7 @@ class NiiVue(_GeneratedNiiVue):
             msg = "add_volume_from_bytes: 'url' is reserved; the bytes are the source"
             raise TypeError(msg)
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
-        self._send_with_buffer(
-            "__add_volume_from_bytes", [name, opts_camel], data
-        )
+        self._send_with_buffer("__add_volume_from_bytes", [name, opts_camel], data)
 
     def add_volume_from_array(
         self,
@@ -451,9 +450,7 @@ class NiiVue(_GeneratedNiiVue):
             msg = "add_mesh_from_bytes: 'url' is reserved; the bytes are the source"
             raise TypeError(msg)
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
-        self._send_with_buffer(
-            "__add_mesh_from_bytes", [name, opts_camel], data
-        )
+        self._send_with_buffer("__add_mesh_from_bytes", [name, opts_camel], data)
 
     def _send_with_buffer(
         self,
@@ -734,7 +731,7 @@ class NiiVue(_GeneratedNiiVue):
             if future is None or future.done():
                 return
             if content.get("ok"):
-                future.set_result(content.get("result"))
+                future.set_result(_decode_js_value(content.get("result")))
             else:
                 err = content.get("error", "unknown error from JS side")
                 future.set_exception(RuntimeError(str(err)))
@@ -768,3 +765,16 @@ def _snake_to_camel(name: str) -> str:
     """
     parts = name.split("_")
     return parts[0] + "".join(p.title() for p in parts[1:] if p)
+
+
+def _decode_js_value(value: Any) -> Any:
+    """Decode JSON-safe response wrappers produced by the browser shim."""
+    if isinstance(value, dict):
+        if value.get("__ipyniivue_binary__") is True:
+            data = value.get("data")
+            if isinstance(data, str):
+                return base64.b64decode(data.encode("ascii"))
+        return {k: _decode_js_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_decode_js_value(v) for v in value]
+    return value

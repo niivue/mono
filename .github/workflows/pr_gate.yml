@@ -30,6 +30,9 @@ jobs:
       - name: Test
         run: bunx nx run-many -t test
 
+      - name: Notebook hygiene
+        run: bun .github/scripts/check-notebook-hygiene.ts
+
       - name: Coverage summary (niivue)
         if: always()
         run: bun .github/scripts/lcov-to-summary.ts packages/niivue/coverage/lcov.info --title "niivue test coverage"

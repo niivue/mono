@@ -23,8 +23,11 @@ function readTxtVTK(buffer: ArrayBuffer): MZ3 {
   if (!line?.startsWith('# vtk DataFile')) {
     throw new Error('Invalid VTK mesh')
   }
-  readLine(false) // comment line
+  // Per spec, the next line is the title; some tools omit it.
   line = readLine(true)
+  if (line && !line.startsWith('ASCII') && !line.startsWith('BINARY')) {
+    line = readLine(true) // previous was the title; this is the encoding
+  }
   if (!line?.startsWith('ASCII')) {
     throw new Error('Invalid VTK mesh, expected ASCII')
   }
@@ -143,8 +146,11 @@ export async function read(buffer: ArrayBuffer): Promise<MZ3> {
   if (!line.startsWith('# vtk DataFile')) {
     throw new Error('Invalid VTK mesh')
   }
-  line = readStr(false) // 2nd line comment, n.b. MRtrix stores empty line
-  line = readStr() // 3rd line ASCII/BINARY
+  // Per spec, the next line is the title; some tools omit it.
+  line = readStr(true)
+  if (line && !line.startsWith('ASCII') && !line.startsWith('BINARY')) {
+    line = readStr(true) // previous was the title; this is the encoding
+  }
   if (line.startsWith('ASCII')) {
     return readTxtVTK(buffer)
   } else if (!line.startsWith('BINARY')) {
@@ -306,8 +312,11 @@ export function probeVTKContent(buffer: ArrayBuffer): 'mesh' | 'tract' {
   }
   let line = nextLine()
   if (!line.startsWith('# vtk DataFile')) return 'mesh'
-  nextLine(false) // comment
-  line = nextLine() // ASCII or BINARY
+  // Per spec, the next line is the title; some tools omit it.
+  line = nextLine(true)
+  if (line && !line.startsWith('ASCII') && !line.startsWith('BINARY')) {
+    line = nextLine(true) // previous was the title; this is the encoding
+  }
   const isAscii = line.startsWith('ASCII')
   if (!isAscii && !line.startsWith('BINARY')) return 'mesh'
   nextLine() // DATASET POLYDATA
@@ -355,8 +364,15 @@ function readTxtVTKLines(buffer: ArrayBuffer): NVTractData {
     return null
   }
   readLine(true) // # vtk DataFile
-  readLine(false) // comment
-  readLine(true) // ASCII
+  // Per spec, the next line is the title; some tools omit it.
+  const titleOrEncoding = readLine(true)
+  if (
+    titleOrEncoding &&
+    !titleOrEncoding.startsWith('ASCII') &&
+    !titleOrEncoding.startsWith('BINARY')
+  ) {
+    readLine(true) // previous was the title; consume the encoding line
+  }
   readLine(true) // DATASET POLYDATA
   const pointsLine = readLine(true)
   if (!pointsLine?.includes('POINTS')) {
@@ -471,15 +487,19 @@ export function readVTKLines(buffer: ArrayBuffer): NVTractData {
   // Skip line 1 (signature)
   while (pos < len && bytes[pos] !== 10) pos++
   pos++
-  // Skip line 2 (comment)
-  while (pos < len && bytes[pos] !== 10) pos++
-  pos++
-  // Skip blank lines
+  // Per spec, the next line is the title; some tools omit it.
   while (pos < len && bytes[pos] === 10) pos++
-  // Read encoding line
-  const encStart = pos
+  let lineStart = pos
   while (pos < len && bytes[pos] !== 10) pos++
-  const encoding = new TextDecoder().decode(buffer.slice(encStart, pos))
+  let encoding = new TextDecoder().decode(buffer.slice(lineStart, pos))
+  if (!encoding.startsWith('ASCII') && !encoding.startsWith('BINARY')) {
+    // previous was the title; advance and read the encoding line
+    pos++
+    while (pos < len && bytes[pos] === 10) pos++
+    lineStart = pos
+    while (pos < len && bytes[pos] !== 10) pos++
+    encoding = new TextDecoder().decode(buffer.slice(lineStart, pos))
+  }
   if (encoding.startsWith('ASCII')) {
     return readTxtVTKLines(buffer)
   }
@@ -498,8 +518,15 @@ export function readVTKLines(buffer: ArrayBuffer): NVTractData {
       : ''
   }
   readStr() // signature
-  readStr(false) // comment
-  readStr() // BINARY
+  // Per spec, the next line is the title; some tools omit it.
+  const titleOrEncoding = readStr(true)
+  if (
+    titleOrEncoding &&
+    !titleOrEncoding.startsWith('ASCII') &&
+    !titleOrEncoding.startsWith('BINARY')
+  ) {
+    readStr() // previous was the title; consume the encoding line
+  }
   readStr() // DATASET POLYDATA
   let line = readStr() // POINTS nvert type
   const isFloat64 = line.includes('double')

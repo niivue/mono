@@ -39,13 +39,19 @@ const EVENTTARGET_ALLOWLIST = new Set([
   'emit',
 ])
 
-// Methods that take non-JSON-serializable arguments (DOM handles, JS
-// objects with prototype methods, etc.) and therefore cannot be invoked
-// from Python through the command channel. The JS template attaches the
-// canvas itself in `render()`, so `attachToCanvas` is never something a
-// Python caller needs to invoke directly.
+// Methods that take or return non-JSON-serializable values (DOM handles,
+// JS objects with prototype methods, etc.) and therefore cannot be
+// invoked or consumed from Python through the command channel. The JS
+// template attaches the canvas itself in `render()`, so `attachToCanvas`
+// is never something a Python caller needs to invoke directly.
+// `createExtensionContext` returns an NVExtensionContext (a JS handle
+// with method bindings) that the codegen JSON-sanitizer can't preserve;
+// extension features are exposed through hand-written Python helpers
+// (`apply_image_transform`, `interpolate_drawing_slices`, etc.) which
+// stand up the JS-side context internally.
 const NON_SERIALIZABLE_METHODS = new Set([
   'attachToCanvas',
+  'createExtensionContext',
 ])
 
 // NiiVue events the JS template silences before forwarding to Python.

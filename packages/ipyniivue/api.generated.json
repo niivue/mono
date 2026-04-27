@@ -1312,16 +1312,6 @@
       "returnsDoc": null
     },
     {
-      "jsName": "createExtensionContext",
-      "pyName": "create_extension_context",
-      "isAsync": false,
-      "returnsValue": true,
-      "params": [],
-      "returns": "NVExtensionContext",
-      "doc": "Create an extension context for interacting with this NiiVue instance.\n\nThe context provides a stable API surface for extensions: live data\naccessors, event subscriptions (including high-level slice pointer events),\nsafe write-back actions, and coordinate transform utilities.\n\nCall `context.dispose()` when the extension is deactivated to remove all\nevent listeners registered through the context.\n\nMultiple contexts can coexist — each tracks its own subscriptions.",
-      "returnsDoc": null
-    },
-    {
       "jsName": "createOnLocationChange",
       "pyName": "create_on_location_change",
       "isAsync": false,
@@ -2729,6 +2719,10 @@
     "methods": [
       {
         "jsName": "attachToCanvas",
+        "reason": "arguments are not JSON-serializable (DOM handle or JS object)"
+      },
+      {
+        "jsName": "createExtensionContext",
         "reason": "arguments are not JSON-serializable (DOM handle or JS object)"
       }
     ],

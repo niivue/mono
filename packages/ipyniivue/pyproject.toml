@@ -12,6 +12,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+# Required to run the example notebooks in `examples/`. The core widget
+# does not need these — they are used by `add_volume_from_array` (which
+# lazy-imports nibabel) and by demo notebooks that construct test data.
+examples = ["numpy>=1.20", "nibabel>=5.0"]
 
 [build-system]
 requires = ["hatchling"]

@@ -258,8 +258,11 @@ async function initialize({ model }) {
 
   // Command handler: Python-to-JS commands. Awaits mount before
   // touching `state.nv`; `__ready__` is the synthetic command behind
-  // `nv.wait_ready()`.
-  const runCommand = async (msg) => {
+  // `nv.wait_ready()`. The `buffers` argument carries binary
+  // payloads (raw NIfTI/mesh bytes from add_volume_from_bytes /
+  // add_mesh_from_bytes), supplied by `decodeInboxBuffer` when the
+  // inbox body has a base64 `_b64` field.
+  const runCommand = async (msg, buffers) => {
     if (!msg || typeof msg !== "object") return
     if (typeof msg.cmd !== "string") return
     const reqId = msg.req_id ?? null
@@ -336,6 +339,55 @@ async function initialize({ model }) {
     // Drawing extension: interpolate between drawn slices to fill gaps.
     // Pulls the live bitmap, runs the worker, writes the result back via
     // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.
+    if (msg.cmd === "__add_volume_from_bytes") {
+      const args = msg.args || []
+      const name = args[0] || "volume.nii"
+      const options = args[1] || {}
+      const bufInfo = buffers && buffers[0]
+        ? { kind: buffers[0].constructor && buffers[0].constructor.name, byteLength: buffers[0].byteLength }
+        : null
+      console.log("[ipyniivue] add_volume_from_bytes:", name, "buffer:", bufInfo, "options:", options)
+      try {
+        if (!buffers || !buffers[0]) {
+          const errMsg = "no buffer attached to add_volume_from_bytes"
+          console.error("[ipyniivue]", errMsg)
+          if (reqId !== null) respond(false, errMsg)
+          return
+        }
+        // anywidget hands buffers as DataView. Blob accepts BufferSource;
+        // pass the underlying ArrayBuffer slice to be safe across browsers.
+        const dv = buffers[0]
+        const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv
+        const file = new File([ab], name)
+        await state.nv.loadVolumes([Object.assign({ url: file, name: name }, options)])
+        console.log("[ipyniivue] loadVolumes returned for", name)
+        if (reqId !== null) respond(true, null)
+      } catch (err) {
+        console.error("[ipyniivue] __add_volume_from_bytes threw:", err)
+        if (reqId !== null) respond(false, err)
+      }
+      return
+    }
+    if (msg.cmd === "__add_mesh_from_bytes") {
+      const args = msg.args || []
+      const name = args[0] || "mesh.mz3"
+      const options = args[1] || {}
+      try {
+        if (!buffers || !buffers[0]) {
+          if (reqId !== null) respond(false, "no buffer attached to add_mesh_from_bytes")
+          return
+        }
+        const dv = buffers[0]
+        const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv
+        const file = new File([ab], name)
+        await state.nv.loadMeshes([Object.assign({ url: file, name: name }, options)])
+        if (reqId !== null) respond(true, null)
+      } catch (err) {
+        console.error("[ipyniivue] __add_mesh_from_bytes threw:", err)
+        if (reqId !== null) respond(false, err)
+      }
+      return
+    }
     if (msg.cmd === "__ext_drawing_interpolate_slices") {
       const args = msg.args || []
       const axis = args[0] ?? 0
@@ -394,14 +446,34 @@ async function initialize({ model }) {
       else console.error("ipyniivue: command " + msg.cmd + " threw:", err)
     }
   }
-  const cmdHandler = (msg) => {
+  const cmdHandler = (msg, buffers) => {
     state.commandQueue = state.commandQueue
-      .then(() => runCommand(msg))
+      .then(() => runCommand(msg, buffers))
       .catch((err) => {
         console.error('ipyniivue: command queue error:', err)
       })
   }
-  model.on("msg:custom", cmdHandler)
+  // Decode an inline base64 buffer attached to a command body.
+  // Buffer-carrying commands (add_volume_from_bytes, etc.) inline
+  // their payload as `_b64` so they can ride the synced _msg_inbox
+  // channel like every other command, instead of raw model.send
+  // with the buffers= argument. Raw send is unreliable in our
+  // anywidget setup and required a wait_ready() ping-pong that
+  // could time out before the response made it back to Python.
+  const decodeInboxBuffer = (body) => {
+    if (!body || typeof body._b64 !== "string") return undefined
+    try {
+      const bin = atob(body._b64)
+      const out = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+      return [out]
+    } catch (err) {
+      // Malformed base64 must not abandon the rest of the inbox batch.
+      // The downstream handler will see no buffer and respond accordingly.
+      console.error("ipyniivue: malformed _b64 buffer:", err)
+      return undefined
+    }
+  }
   const inboxHandler = () => {
     const inbox = model.get("_msg_inbox")
     if (!Array.isArray(inbox)) return
@@ -409,7 +481,7 @@ async function initialize({ model }) {
       const seq = item && typeof item.seq === "number" ? item.seq : null
       if (seq === null || seq <= state.lastInboxSeq) continue
       state.lastInboxSeq = seq
-      cmdHandler(item.body)
+      cmdHandler(item.body, decodeInboxBuffer(item.body))
     }
   }
   model.on("change:_msg_inbox", inboxHandler)
@@ -473,7 +545,6 @@ async function initialize({ model }) {
 
   // Cleanup on widget disposal.
   return () => {
-    model.off("msg:custom", cmdHandler)
     model.off("change:_msg_inbox", inboxHandler)
     for (const [pyName, handler] of observers) {
       model.off("change:" + pyName, handler)

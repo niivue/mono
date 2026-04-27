@@ -6,12 +6,18 @@ a generated, self-contained JavaScript bundle built from the local
 
 ## Install for local development
 
-From the monorepo root:
+The bundled widget JavaScript (`src/ipyniivue/static/widget.js`,
+~1.3 MB) is gitignored — generate it before installing:
 
 ```bash
+bun install                       # from the monorepo root, once
+bunx nx codegen ipyniivue         # builds widget.js into static/
 cd packages/ipyniivue
 pip install -e .
 ```
+
+`bunx nx codegen ipyniivue` is fast and Nx-cached; rerun it after any
+change to the niivue TS sources or to `scripts/codegen.ts`.
 
 Launch JupyterLab from the package directory so the example notebooks and
 local package resolve consistently:

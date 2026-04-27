@@ -21,6 +21,6 @@ build-backend = "hatchling.build"
 packages = ["src/ipyniivue"]
 
 [tool.nx]
-# Workspace dependencies for the Nx graph. None today — codegen reads
+# Workspace dependencies for the Nx graph. None today; codegen reads
 # niivue source via filesystem, not via package import.
 workspace-dependencies = []

@@ -1,96 +1,139 @@
 # Known issues
 
-## JS → Python comm routing failure (unresolved)
+## Current status
 
-In the test environment used during development, JS-to-Python message
-routing is unreliable.
+The basic notebook workflow is working:
 
-**Environment**: Python 3.13.2 (pyenv), jupyterlab 4.4.10, ipywidgets
-8.1.8, anywidget 0.9.19, Chrome and Safari (both tested fresh and in
-Incognito with cleared caches), JupyterLab launched from
-`packages/ipyniivue` after `pip install -e .`.
+- The widget mounts in JupyterLab.
+- Constructor options reach NiiVue, including `backend="webgl2"`.
+- Python-to-JavaScript fire-and-forget commands are queued in the
+  browser and run in order after the canvas attaches.
+- Asynchronous web assets can be loaded from the browser with
+  `add_volume_from_url(...)`.
+- `download_bitmap(...)` queues NiiVue's built-in `saveBitmap` method and
+  works as a simple browser smoke-test signal.
 
-**Symptom**: Calls like `await nv.wait_ready()`, `await
-nv.get_crosshair_pos()`, and event subscriptions via `nv.on(...)` never
-return / never fire. Browser DevTools eventually shows:
+The current example notebook uses this supported path:
 
+```python
+from IPython.display import display
+from ipyniivue import NiiVue
+
+nv = NiiVue(slice_type=4, is_colorbar_visible=True, backend="webgl2")
+display(nv)
+
+nv.add_volume_from_url(
+    "https://niivue.github.io/mono/volumes/mni152.nii.gz",
+    cal_min=30,
+    cal_max=80,
+    colormap="gray",
+)
 ```
-Could not send widget sync message Error: Cannot send
-    at Comm.send (services-shim.ts:246)
-    at AnyModel.send_sync_message (widget.ts:614)
-    at AnyModel.save_changes (widget.ts:643)
-    at sendToPython (widget.js:...)
-    at R.handler (widget.js:...)
-    at R.emit (widget.js:...)
-    at R.setClipPlaneDepthAziElev / canvasResize / etc.
+
+Then, in a separate cell:
+
+```python
+nv.download_bitmap("ipyniivue-smoke.png")
 ```
 
-`Comm.send` throws because `is_open === false` — the comm has been
-closed. Both available JS-to-Python channels (`model.send` and
-`model.set` + state-update) ultimately route through the same comm, so
-both paths fail.
+The example gallery notebooks under `packages/ipyniivue/examples/` also
+use this direction of travel. Their `ipywidgets` controllers run Python
+callbacks that update NiiVue traitlets or enqueue generated methods; they
+do not depend on NiiVue browser events returning to Python.
 
-## What we ruled out
+## JS-to-Python response path
 
-- **Browser cache**: confirmed via file-on-disk size + token presence
-  diagnostic that the latest `widget.js` was loaded; tested in Incognito
-  on two browsers with cleared site data.
-- **anywidget version**: 0.10.0 changelog has no relevant changes — only
-  drops Python 3.8/3.9. Same library version that the upstream
-  `niivue/ipyniivue` uses successfully.
-- **ipywidgets / JupyterLab versions**: 8.1.8 / 4.4.10 are current.
-- **Python observer registration**: tested both bound-method and closure
-  patterns; local pure-Python tests of the round-trip pass.
-- **Event flood**: ruled out by skipping `canvasResize`, `viewAttached`,
-  `viewDestroyed`, which fire at 60Hz during mount and would otherwise
-  saturate the WebSocket.
-- **Lifecycle pattern**: refactored to anywidget's recommended
-  `initialize` + `render` split, matching upstream `niivue/ipyniivue`.
+The original failure mode was raw browser-to-kernel message delivery.
+The browser-side comm eventually reported `Comm.send(...): Cannot send`
+because the underlying comm was closed while Python was waiting for a
+readiness response.
 
-## What works
+**Environment seen with failures**: Python 3.13.2 through pyenv,
+JupyterLab 4.4.10, ipywidgets 8.1.8, anywidget 0.9.19, Chrome and
+Safari.
 
-- TypeScript-driven codegen (76 reactive properties + 11 read-only + 83
-  methods + 28 events; checked-in JSON descriptor).
-- Self-contained `widget.js` bundle (~1.1 MB, niivue ESM + Ubuntu.png
-  font atlas + Cortex.jpg matcap inlined).
-- WebGPU canvas mounts in JupyterLab; if `add_volume_from_url(...)` is
-  called soon after display (before the comm dies), the volume renders.
-- Constructor overrides: `NiiVue(slice_type=4, is_colorbar_visible=True)`.
-- Initial state seed from JS to Python on attach (`nv.azimuth` reflects
-  NiiVue's real default).
-- Python → JS reactive writes (e.g. `nv.is_colorbar_visible = False`
-  toggles the colorbar in real time).
+The wrapper now avoids that raw path for responses. JavaScript writes
+response bodies to the synced `_msg_outbox` traitlet, and Python observes
+that traitlet to resolve pending requests. A browser-driven JupyterLab
+smoke test now verifies:
 
-## What doesn't work
+- `await nv.wait_ready()`
 
-- Round-trip request/response (`wait_ready`, async value-returning
-  methods).
-- NiiVue → Python event subscriptions.
+Generated async value-returning methods use the same request/response
+path. Keep those calls to small JSON-serializable responses.
 
-## Suggested next steps
+Python event callbacks registered with `nv.on(...)` also use
+`_msg_outbox`, but demos should still avoid high-frequency events and
+large payloads. The widget deliberately skips noisy internal events such
+as `canvasResize`, `viewAttached`, and `viewDestroyed`.
 
-1. Reproduce on a different host / Python install (fresh conda env)
-   to isolate environment factors.
-2. Capture Jupyter server-side logs during a failed round-trip to see
-   whether the JS WebSocket frames arrive at the kernel at all, or are
-   being closed before delivery.
-3. Diff CommManager state at runtime against the upstream
-   `niivue/ipyniivue` widget (which uses the same anywidget version and
-   works in production).
-4. Consider pivoting the codegen to emit Python that imports/extends
-   `niivue/ipyniivue`'s widget classes (a thin wrapper rather than a
-   parallel implementation), inheriting its proven comm protocol.
+## Recommended usage for now
 
-## Defensive scaffolding left in place
+Prefer fire-and-forget methods for demos and smoke tests:
 
-- **`_msg_outbox` synthetic traitlet** (`_generated.py`): JS-to-Python
-  relay via state-update, designed to bypass `model.send`. Currently
-  unreliable for the same comm-level reason but harmless and can be
-  removed once the underlying issue is understood.
-- **`SKIP_EVENT_FORWARDING` set** (`widget.js`): excludes the three
-  60Hz internal events that would otherwise overload the WebSocket.
-- **`wait_ready(timeout=...)`** with caller-side `asyncio.wait_for`
-  pattern documented in the smoke notebook so tests fail fast instead
-  of hanging.
-- **`initialize` + `render` lifecycle split** matching anywidget's
-  recommended pattern.
+- `add_volume_from_url(...)`
+- `load_volumes(...)`
+- `add_mesh_from_url(...)`
+- `download_bitmap(...)`
+- other generated methods that return `None`
+
+Do not use `wait_ready()` as a guard for volume loading. It works as a
+mount confirmation, but the JavaScript side already owns command ordering
+and waits for the canvas before invoking NiiVue methods.
+
+For automated bitmap checks, use a real browser session such as
+JupyterLab driven by Playwright. Plain `jupyter execute` runs notebook
+Python but does not render any browser widget, so it cannot create a
+bitmap download.
+
+## Notebook output and lifecycle traps
+
+Do not save example notebooks with executed widget outputs. JupyterLab
+stores widget views as normal cell outputs containing
+`application/vnd.jupyter.widget-view+json` and a transient `model_id`.
+On a later open, JupyterLab may try to restore that output before the
+kernel has a matching live model, producing:
+
+```text
+Error: widget model not found
+```
+
+Setting Jupyter Widgets `saveState` to `false` prevents
+`metadata.widgets` from being written, but it does not prevent these
+normal cell outputs. Keep notebooks under `packages/ipyniivue/examples/`
+output-free, and make smoke tests write executed notebooks to `/tmp` or
+another scratch directory instead of executing examples in place.
+
+Also be careful with anywidget lifecycle state. anywidget passes model
+proxy objects to `initialize()` and `render()`, and those proxies are not
+guaranteed to be the same object identity. Runtime state must be keyed by
+a stable value such as `_anywidget_id`, not by the proxy object itself.
+Keying by proxy identity can make `render()` wait on a never-initialized
+state object, leaving a blank widget output container with no canvas and
+no useful browser console error.
+
+## Backend notes
+
+The widget bundle uses the dual NiiVue entry point. Backend selection
+matches TypeScript:
+
+```python
+NiiVue()                  # NiiVue default: WebGPU with WebGL2 fallback
+NiiVue(backend="webgpu")  # request WebGPU
+NiiVue(backend="webgl2")  # request WebGL2
+```
+
+Use `backend="webgl2"` for headless browser automation. Headless Chromium
+may not expose a WebGPU adapter unless launched with WebGPU-specific
+flags, while WebGL2 works through SwiftShader.
+
+## Defensive scaffolding
+
+- `_msg_outbox` synthetic traitlet: used for JS-to-Python responses and
+  low-frequency events.
+- `SKIP_EVENT_FORWARDING`: avoids forwarding high-frequency internal
+  resize/view events.
+- Event payload sanitization: removes non-cloneable fields, including
+  functions, before attempting JS-to-Python sync.
+- The browser command queue: serializes commands so an async
+  `loadVolumes` completes before a later `saveBitmap`.

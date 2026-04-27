@@ -14794,6 +14794,7 @@ function Ip(n, t2, e2) {
   }
   return s;
 }
+var Dp = 12;
 function Pp(n, t2, e2, s, i2 = 2, o = [1, 1, 0, 1]) {
   return { data: new Float32Array([
     n,
@@ -23700,8 +23701,3318 @@ var jg = class extends EventTarget {
   }
 };
 
+// ../niivue/dist/NVViewGL-CdBo8UQQ.js
+class pt2 {
+  constructor(e2) {
+    this.view = e2, this._fbo = null, this._colorRbo = null, this._depthRbo = null, this._fboW = 0, this._fboH = 0, this._inProgress = false, this._disposed = false;
+  }
+  get fbo() {
+    return this._fbo;
+  }
+  get fboW() {
+    return this._fboW;
+  }
+  get fboH() {
+    return this._fboH;
+  }
+  async renderAndFlush() {
+    if (this._disposed)
+      return;
+    const e2 = this.view, r = e2.gl;
+    if (r) {
+      if (this._inProgress)
+        throw new Error("renderAndFlush: concurrent call not allowed");
+      this._inProgress = true;
+      try {
+        if ((e2.boundsWidth === 0 || e2.boundsHeight === 0) && e2.resize(), await this._waitForReady(), this._disposed)
+          return;
+        e2.render();
+        const i2 = new Uint8Array(4);
+        r.readPixels(0, 0, 1, 1, r.RGBA, r.UNSIGNED_BYTE, i2);
+      } finally {
+        this._inProgress = false;
+      }
+    }
+  }
+  async renderAndFlushOffscreen() {
+    if (this._disposed)
+      return;
+    const e2 = this.view, r = e2.gl;
+    if (r) {
+      if (this._inProgress)
+        throw new Error("renderAndFlushOffscreen: concurrent call not allowed");
+      this._inProgress = true;
+      try {
+        if ((e2.boundsWidth === 0 || e2.boundsHeight === 0) && e2.resize(), await this._waitForReady(), this._disposed)
+          return;
+        const { boundsWidth: i2, boundsHeight: o } = e2;
+        this._ensureFbo(r, i2, o);
+        const a = this._fbo;
+        if (!a)
+          return;
+        const s = r, c = r.bindFramebuffer.bind(r);
+        s.bindFramebuffer = (u, n) => c(u, n === null ? a : n);
+        try {
+          r.bindFramebuffer(r.FRAMEBUFFER, null), e2.render();
+          const u = new Uint8Array(4);
+          r.readPixels(0, 0, 1, 1, r.RGBA, r.UNSIGNED_BYTE, u);
+        } finally {
+          s.bindFramebuffer = c, c(r.FRAMEBUFFER, null);
+        }
+      } finally {
+        this._inProgress = false;
+      }
+    }
+  }
+  destroy() {
+    this._disposed = true;
+    const e2 = this.view.gl;
+    e2 && (this._fbo && e2.deleteFramebuffer(this._fbo), this._colorRbo && e2.deleteRenderbuffer(this._colorRbo), this._depthRbo && e2.deleteRenderbuffer(this._depthRbo)), this._fbo = null, this._colorRbo = null, this._depthRbo = null, this._fboW = 0, this._fboH = 0;
+  }
+  async _waitForReady() {
+    const e2 = this.view, r = 300;
+    let i2 = 0;
+    for (;e2.isBusy && i2 < r; )
+      await new Promise((o) => requestAnimationFrame(() => o())), i2++;
+    if (e2.isBusy)
+      throw new Error("renderAndFlush: view still busy after waiting");
+  }
+  _ensureFbo(e2, r, i2) {
+    if (this._fbo && this._fboW === r && this._fboH === i2)
+      return;
+    this._fbo && e2.deleteFramebuffer(this._fbo), this._colorRbo && e2.deleteRenderbuffer(this._colorRbo), this._depthRbo && e2.deleteRenderbuffer(this._depthRbo), this._fbo = null, this._colorRbo = null, this._depthRbo = null;
+    const o = e2.createRenderbuffer();
+    e2.bindRenderbuffer(e2.RENDERBUFFER, o), e2.renderbufferStorage(e2.RENDERBUFFER, e2.RGBA8, r, i2);
+    const a = e2.createRenderbuffer();
+    e2.bindRenderbuffer(e2.RENDERBUFFER, a), e2.renderbufferStorage(e2.RENDERBUFFER, e2.DEPTH_COMPONENT24, r, i2), e2.bindRenderbuffer(e2.RENDERBUFFER, null);
+    const s = e2.createFramebuffer();
+    e2.bindFramebuffer(e2.FRAMEBUFFER, s), e2.framebufferRenderbuffer(e2.FRAMEBUFFER, e2.COLOR_ATTACHMENT0, e2.RENDERBUFFER, o), e2.framebufferRenderbuffer(e2.FRAMEBUFFER, e2.DEPTH_ATTACHMENT, e2.RENDERBUFFER, a);
+    const c = e2.checkFramebufferStatus(e2.FRAMEBUFFER);
+    if (e2.bindFramebuffer(e2.FRAMEBUFFER, null), c !== e2.FRAMEBUFFER_COMPLETE)
+      throw e2.deleteFramebuffer(s), e2.deleteRenderbuffer(o), e2.deleteRenderbuffer(a), new Error(`renderAndFlushOffscreen: FBO incomplete (status 0x${c.toString(16)}) at ${r}x${i2}`);
+    this._fbo = s, this._colorRbo = o, this._depthRbo = a, this._fboW = r, this._fboH = i2;
+  }
+}
+var xt2 = `#version 300 es
+precision highp float;
+
+uniform vec2 canvasSize;
+uniform float opacity;
+uniform vec4 rect;  // x, y, width, height in pixels
+uniform float radiusPx;
+uniform float borderPx;
+uniform vec4 borderColor;
+
+out vec2 vUv;
+out vec2 vLocalPos;
+
+void main() {
+    int vIdx = gl_VertexID;
+
+    // Define quad vertices: 0, 1, 2, 3 -> (0,0), (1,0), (0,1), (1,1)
+    vec2 pos = vec2(0.0);
+    if (vIdx == 1) { pos.x = 1.0; }
+    else if (vIdx == 2) { pos.y = 1.0; }
+    else if (vIdx == 3) { pos.x = 1.0; pos.y = 1.0; }
+
+    // Map to pixel position using rect
+    vec2 pixelPos = rect.xy + pos * rect.zw;
+
+    // Convert to NDC
+    vec2 ndc = (pixelPos / canvasSize) * 2.0 - 1.0;
+
+    // Flip Y for NDC
+    gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
+
+    // Sample horizontally across colormap
+    vUv = vec2(pos.x, 0.5);
+    vLocalPos = pos;
+}
+`;
+var Tt2 = `#version 300 es
+precision highp float;
+
+uniform sampler2D colormapTex;
+uniform float opacity;
+uniform vec4 rect;  // x, y, width, height in pixels
+uniform float radiusPx;
+uniform float borderPx;
+uniform vec4 borderColor;
+
+in vec2 vUv;
+in vec2 vLocalPos;
+out vec4 fragColor;
+
+float roundedRectDistance(vec2 localPos, vec2 size, float radius) {
+    float r = max(radius, 0.0);
+    vec2 halfSize = size * 0.5;
+    vec2 q = abs(localPos - halfSize) - (halfSize - vec2(r));
+    return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+void main() {
+    vec2 size = rect.zw;
+    vec2 local = vLocalPos * size;
+    float dist = roundedRectDistance(local, size, radiusPx);
+    if (dist > 0.0) {
+        discard;
+    }
+    vec4 color = texture(colormapTex, vUv);
+    if (borderPx > 0.0) {
+        vec2 innerSize = size - vec2(2.0 * borderPx);
+        if (innerSize.x > 0.0 && innerSize.y > 0.0) {
+            vec2 innerLocal = local - vec2(borderPx);
+            float innerRadius = max(radiusPx - borderPx, 0.0);
+            float innerDist = roundedRectDistance(innerLocal, innerSize, innerRadius);
+            if (innerDist > 0.0) {
+                fragColor = vec4(borderColor.rgb, borderColor.a * opacity);
+                return;
+            }
+        } else {
+            fragColor = vec4(borderColor.rgb, borderColor.a * opacity);
+            return;
+        }
+    }
+    fragColor = vec4(color.rgb, opacity);
+}
+`;
+var vt2 = (t2, e2, r) => {
+  const i2 = t2.createShader(t2.VERTEX_SHADER);
+  if (!i2)
+    throw new Error("Vertex shader creation failed");
+  t2.shaderSource(i2, e2), t2.compileShader(i2);
+  const o = t2.createShader(t2.FRAGMENT_SHADER);
+  if (!o)
+    throw t2.deleteShader(i2), new Error("Fragment shader creation failed");
+  t2.shaderSource(o, r), t2.compileShader(o);
+  const a = t2.createProgram();
+  if (!a)
+    throw t2.deleteShader(i2), t2.deleteShader(o), new Error("Program creation failed");
+  if (t2.attachShader(a, i2), t2.attachShader(a, o), t2.linkProgram(a), !t2.getProgramParameter(a, t2.LINK_STATUS))
+    throw z.error("Shader link error:", t2.getProgramInfoLog(a)), t2.getShaderParameter(i2, t2.COMPILE_STATUS) || z.error("Vertex shader compilation error:", t2.getShaderInfoLog(i2)), t2.getShaderParameter(o, t2.COMPILE_STATUS) || z.error("Fragment shader compilation error:", t2.getShaderInfoLog(o)), new Error("Shader failed to link, see console for log");
+  return a;
+};
+
+class z2 {
+  constructor(e2, r, i2) {
+    this.program = vt2(e2, r, i2), this.uniforms = {}, this.isMatcap = undefined, this.isCrosscut = undefined;
+    const o = /uniform[^;]+[ ](\w+);/g, a = /uniform[^;]+[ ](\w+);/, s = r.match(o), c = i2.match(o);
+    s && s.forEach((u) => {
+      const f = u.match(a)?.[1];
+      f && (this.uniforms[f] = null);
+    }), c && c.forEach((u) => {
+      const f = u.match(a)?.[1];
+      f && (this.uniforms[f] = null);
+    });
+    for (const u in this.uniforms)
+      this.uniforms[u] = e2.getUniformLocation(this.program, u);
+  }
+  use(e2) {
+    e2.useProgram(this.program);
+  }
+}
+
+class Et2 extends Vp {
+  constructor() {
+    super(...arguments), this._gl = null, this._shader = null, this._colorbars = [], this._colorbarInfos = [], this._canvasWidth = 1, this._canvasHeight = 1, this._fontPx = 0, this._opacity = 1, this._margin = 20, this._heightRatio = 1.2, this._borderColor = [0, 0, 0, 1];
+  }
+  init(e2) {
+    this.isReady || (this._gl = e2, this._shader = new z2(e2, xt2, Tt2), this.isReady = true);
+  }
+  resize(e2, r, i2, o = 0) {
+    this._canvasWidth = r, this._canvasHeight = i2, this._fontPx = o;
+  }
+  setOpacity(e2, r) {
+    this._opacity = r;
+  }
+  buildColorbars(e2, r, i2) {
+    if (this.isReady) {
+      i2 && (this._borderColor = wp(i2));
+      for (const o of this._colorbars)
+        e2.deleteTexture(o);
+      this._colorbars = [], this._colorbarInfos = r;
+      for (const o of r) {
+        const a = Yt(o.colormapName), s = e2.createTexture();
+        s && (e2.bindTexture(e2.TEXTURE_2D, s), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MIN_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MAG_FILTER, e2.LINEAR), e2.texImage2D(e2.TEXTURE_2D, 0, e2.RGBA, 256, 1, 0, e2.RGBA, e2.UNSIGNED_BYTE, a), this._colorbars.push(s));
+      }
+    }
+  }
+  getColorbarInfos() {
+    return this._colorbarInfos;
+  }
+  getLayout() {
+    return {
+      margin: this._margin,
+      heightRatio: this._heightRatio,
+      gap: bp,
+      canvasWidth: this._canvasWidth,
+      canvasHeight: this._canvasHeight,
+      borderColor: [...this._borderColor],
+      fontPx: this._fontPx
+    };
+  }
+  configure(e2, r = {}) {
+    r.opacity !== undefined && (this._opacity = r.opacity), r.margin !== undefined && (this._margin = r.margin), r.heightRatio !== undefined && (this._heightRatio = r.heightRatio), r.borderColor !== undefined && (this._borderColor = r.borderColor);
+  }
+  draw(e2, r) {
+    if (!this.isReady || this._colorbars.length === 0 || !this._shader)
+      return;
+    this._shader.use(e2);
+    const { rects: i2 } = Ya(this._colorbarInfos, this.getLayout()), o = i2.length > 0 ? i2[0].h : 0;
+    this._shader.uniforms.canvasSize && e2.uniform2f(this._shader.uniforms.canvasSize, this._canvasWidth, this._canvasHeight), this._shader.uniforms.opacity && e2.uniform1f(this._shader.uniforms.opacity, this._opacity), this._shader.uniforms.radiusPx && e2.uniform1f(this._shader.uniforms.radiusPx, o * 0.5), this._shader.uniforms.borderPx && e2.uniform1f(this._shader.uniforms.borderPx, Math.ceil(o / 15)), this._shader.uniforms.borderColor && e2.uniform4f(this._shader.uniforms.borderColor, this._borderColor[0], this._borderColor[1], this._borderColor[2], this._borderColor[3]), e2.depthMask(false), e2.disable(e2.DEPTH_TEST), e2.disable(e2.CULL_FACE), e2.enable(e2.BLEND), e2.blendFunc(e2.SRC_ALPHA, e2.ONE_MINUS_SRC_ALPHA);
+    for (let a = 0;a < this._colorbars.length; a++) {
+      const s = i2[a];
+      this._shader.uniforms.rect && e2.uniform4f(this._shader.uniforms.rect, s.x, s.y, s.w, s.h), e2.activeTexture(e2.TEXTURE0), e2.bindTexture(e2.TEXTURE_2D, this._colorbars[a]), this._shader.uniforms.colormapTex && e2.uniform1i(this._shader.uniforms.colormapTex, 0), e2.drawArrays(e2.TRIANGLE_STRIP, 0, 4);
+    }
+    e2.depthMask(true), e2.enable(e2.DEPTH_TEST), e2.enable(e2.CULL_FACE);
+  }
+  hasColorbar() {
+    return this._colorbars.length > 0;
+  }
+  destroy() {
+    const e2 = this._gl;
+    if (e2) {
+      for (const r of this._colorbars)
+        e2.deleteTexture(r);
+      this._colorbars = [], this._shader?.program && e2.deleteProgram(this._shader.program), this._shader = null, this.isReady = false, this._gl = null;
+    }
+  }
+}
+function _t(t2, e2) {
+  const r = e2[0] * e2[1] * e2[2], i2 = new Float32Array(r * 4);
+  for (const a of t2)
+    for (let s = 0;s < r; s++) {
+      const c = s * 4, u = a[c + 3] / 255;
+      u <= 0 || (i2[c] += a[c] / 255 * u, i2[c + 1] += a[c + 1] / 255 * u, i2[c + 2] += a[c + 2] / 255 * u, i2[c + 3] = Math.max(i2[c + 3], u));
+    }
+  const o = new Uint8Array(r * 4);
+  for (let a = 0;a < r; a++) {
+    const s = a * 4, c = i2[s + 3];
+    c > 0 && (o[s] = Math.min(Math.round(i2[s] / c * 255), 255), o[s + 1] = Math.min(Math.round(i2[s + 1] / c * 255), 255), o[s + 2] = Math.min(Math.round(i2[s + 2] / c * 255), 255), o[s + 3] = Math.round(c * 255));
+  }
+  return o;
+}
+var Ce2 = `#version 300 es
+precision highp float;
+precision highp sampler3D;
+
+layout(location = 0) in vec3 aPos;
+
+uniform mat4 mvpMtx;
+uniform mat4 matRAS;
+uniform sampler3D volume;
+out vec3 vColor;
+
+void main() {
+  vec3 pos = aPos;
+  vec3 texVox = vec3(textureSize(volume, 0));
+  vec3 voxelSpacePos = (pos * texVox) - 0.5;
+  vec3 vPos = (vec4(voxelSpacePos, 1.0) * matRAS).xyz;
+  gl_Position = mvpMtx * vec4(vPos, 1.0);
+  vColor = aPos;
+}
+`;
+var Ue2 = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler3D;
+precision highp sampler2D;
+
+const int MAX_CLIP_PLANES = 6;
+
+uniform mat4 mvpMtx;
+uniform mat4 matRAS;
+uniform vec3 volScale;
+uniform vec3 rayDir;
+uniform float isClipCutaway;
+uniform vec4 clipPlanes[MAX_CLIP_PLANES];
+uniform sampler3D volume;
+
+in vec3 vColor;
+out vec4 FragColor;
+
+float frac2ndc(vec3 frac) {
+  vec4 pos = vec4(frac.xyz, 1.0);
+  vec4 dim = vec4(vec3(textureSize(volume, 0)), 1.0);
+  pos = pos * dim;
+  vec4 shim = vec4(-0.5, -0.5, -0.5, 0.0);
+  pos += shim;
+  vec4 mm = transpose(matRAS) * pos;
+  vec4 clipPos = mvpMtx * vec4(mm.xyz, 1.0);
+  float z_ndc = clipPos.z / clipPos.w;
+  return (z_ndc + 1.0) / 2.0;
+}
+
+vec3 GetBackPosition(vec3 startTex) {
+  vec3 startObj = startTex * volScale;
+  vec3 invR = 1.0 / rayDir;
+  vec3 tbot = invR * (-startObj);
+  vec3 ttop = invR * (volScale - startObj);
+  vec3 tmax = max(ttop, tbot);
+  float t = min(tmax.x, min(tmax.y, tmax.z));
+  return (startObj + (rayDir * t)) / volScale;
+}
+
+// see if clip plane trims ray sampling range sampleStartEnd.x..y
+void clipSampleRange(vec3 dir, vec4 rayStart, vec4 clipPlane, inout vec2 sampleStartEnd, inout bool hasClip) {
+  const float CSR_EPS = 1e-6;
+  // quick exit: no clip plane
+  if (clipPlane.a > 1.0 || clipPlane.a < -1.0) {
+    return;
+  }
+  float depth = - clipPlane.a;
+  hasClip = true;
+  // quick exit: empty range
+  if ((sampleStartEnd.y - sampleStartEnd.x) <= CSR_EPS) {
+    return;
+  }
+  // Which side does the ray start on? (plane eqn: dot(n, p-0.5) + a = 0)
+  float sampleSide = dot(clipPlane.xyz, rayStart.xyz - 0.5) + depth;
+  bool startsFront = (sampleSide < 0.0);
+  float dis = -1.0;
+  // plane normal dot ray direction
+  float cdot = dot(dir, clipPlane.xyz);
+  // avoid division by 0 for near-parallel plane
+  if (abs(cdot) >= CSR_EPS) {
+    dis = (-depth - dot(clipPlane.xyz, rayStart.xyz - 0.5)) / cdot;
+  }
+  if (dis < 0.0 || dis > sampleStartEnd.y + CSR_EPS) {
+    if (startsFront) {
+      sampleStartEnd = vec2(0.0, 0.0);
+    }
+    return;
+  }
+  bool frontface = (cdot > 0.0);
+  if (frontface) {
+    sampleStartEnd.x = max(sampleStartEnd.x, dis);
+  } else {
+    sampleStartEnd.y = min(sampleStartEnd.y, dis);
+  }
+  // if nothing remains, mark empty
+  if (sampleStartEnd.y - sampleStartEnd.x <= CSR_EPS) {
+    sampleStartEnd = vec2(0.0, 0.0);
+  }
+}
+`;
+var Rt3 = Ce2;
+var bt = `${Ue2}
+uniform float numVolumes;
+uniform sampler3D overlay;
+
+vec4 packDepth(float d) {
+  d = clamp(d, 0.0, 1.0);
+  vec3 enc = fract(vec3(1.0, 255.0, 65025.0) * d);
+  enc -= enc.yzz * vec3(1.0 / 255.0, 1.0 / 255.0, 0.0);
+  return vec4(enc, 1.0);
+}
+
+void main() {
+  vec3 start = vColor;
+  vec3 backPosition = GetBackPosition(start);
+  vec3 dirVec = backPosition - start;
+  float len = length(dirVec);
+  vec3 dir = dirVec / len;
+  vec3 texVox = vec3(textureSize(volume, 0));
+  float lenVox = length(dirVec * texVox);
+  if (lenVox < 0.5 || len > 3.0) {
+    discard;
+  }
+  // Save original ray for overlay passes (overlay ignores clip planes)
+  vec3 origStart = start;
+  float origLen = len;
+  float stepSize = len / lenVox;
+  vec4 deltaDir = vec4(dir * stepSize, stepSize);
+  vec2 sampleRange = vec2(0.0, len);
+  bool cutaway = isClipCutaway > 0.5;
+  bool hasClip = false;
+  for (int i = 0; i < MAX_CLIP_PLANES; i++) {
+    clipSampleRange(dir, vec4(start, 0.0), clipPlanes[i], sampleRange, hasClip);
+  }
+  bool isClip = (sampleRange.x > 0.0) || ((sampleRange.y < len) && (sampleRange.y > 0.0));
+  // Check if clip plane configuration eliminates background entirely
+  bool skipBackground = false;
+  if (cutaway) {
+    if (hasClip && sampleRange.x <= 0.0 && sampleRange.y >= len) {
+      skipBackground = true;
+    }
+  } else {
+    if (sampleRange.x >= sampleRange.y) {
+      skipBackground = true;
+    }
+  }
+  // Shared values
+  float ran = fract(sin(gl_FragCoord.x * 12.9898 + gl_FragCoord.y * 78.233) * 43758.5453);
+  float stepSizeFast = stepSize * 1.9;
+  vec4 deltaDirFast = vec4(dir * stepSizeFast, stepSizeFast);
+  // --- Background depth pick ---
+  float bgDepth = 1.0;
+  bool bgHit = false;
+  if (!skipBackground) {
+    if (!cutaway && isClip) {
+      start += dir * sampleRange.x;
+      len = sampleRange.y - sampleRange.x;
+    }
+    vec4 samplePos = vec4(start + dir * (stepSize * ran), stepSize * ran);
+    vec4 samplePosStart = samplePos;
+    // Fast pass
+    for (int j = 0; j < 1024; j++) {
+      if (samplePos.a > len) { break; }
+      if (cutaway && isClip && samplePos.a >= sampleRange.x && samplePos.a <= sampleRange.y) {
+        samplePos += deltaDirFast;
+        continue;
+      }
+      float alpha = texture(volume, samplePos.xyz).a;
+      if (alpha >= 0.01) { break; }
+      samplePos += deltaDirFast;
+    }
+    if (samplePos.a >= len) {
+      // Fast pass found nothing — use clip plane depth as fallback
+      if (!cutaway && isClip) {
+        bgDepth = frac2ndc(start);
+        bgHit = true;
+      }
+    } else {
+      // Retract and fine pass
+      samplePos -= deltaDirFast;
+      if (samplePos.a < 0.0) { samplePos = samplePosStart; }
+      for (int fi = 0; fi < 2048; fi++) {
+        if (samplePos.a > len) { break; }
+        if (cutaway && isClip && samplePos.a >= sampleRange.x && samplePos.a <= sampleRange.y) {
+          samplePos += deltaDir;
+          continue;
+        }
+        float alpha = texture(volume, samplePos.xyz).a;
+        if (alpha >= 0.01) {
+          bgDepth = frac2ndc(samplePos.xyz);
+          bgHit = true;
+          break;
+        }
+        samplePos += deltaDir;
+      }
+      // If fine pass found nothing, use clip plane as fallback
+      if (!bgHit && !cutaway && isClip) {
+        bgDepth = frac2ndc(start);
+        bgHit = true;
+      }
+    }
+  }
+  // --- Overlay depth pick (no clip plane) ---
+  float overDepth = 1.0;
+  bool overHit = false;
+  if (numVolumes > 1.0) {
+    vec4 overSamplePos = vec4(origStart + dir * (stepSize * ran), stepSize * ran);
+    vec4 overSamplePosStart = overSamplePos;
+    // Overlay fast pass
+    for (int oj = 0; oj < 1024; oj++) {
+      if (overSamplePos.a > origLen) { break; }
+      float alpha = texture(overlay, overSamplePos.xyz).a;
+      if (alpha >= 0.01) { break; }
+      overSamplePos += deltaDirFast;
+    }
+    if (overSamplePos.a < origLen) {
+      overSamplePos -= deltaDirFast;
+      if (overSamplePos.a < 0.0) { overSamplePos = overSamplePosStart; }
+      // Overlay fine pass
+      for (int oi = 0; oi < 2048; oi++) {
+        if (overSamplePos.a > origLen) { break; }
+        float alpha = texture(overlay, overSamplePos.xyz).a;
+        if (alpha >= 0.01) {
+          overDepth = frac2ndc(overSamplePos.xyz);
+          overHit = true;
+          break;
+        }
+        overSamplePos += deltaDir;
+      }
+    }
+  }
+  // Output nearest depth from background or overlay
+  if (!bgHit && !overHit) {
+    discard;
+  }
+  float finalDepth;
+  if (bgHit && overHit) {
+    finalDepth = min(bgDepth, overDepth);
+  } else if (bgHit) {
+    finalDepth = bgDepth;
+  } else {
+    finalDepth = overDepth;
+  }
+  FragColor = packDepth(finalDepth);
+  gl_FragDepth = finalDepth;
+}
+`;
+var At = `#version 300 es
+precision highp float;
+uniform mat4 mvpMtx;
+in vec3 position;
+in vec3 normal;
+in vec4 color;
+
+void main() {
+  gl_Position = mvpMtx * vec4(position, 1.0);
+}
+`;
+var yt2 = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+
+vec4 packDepth(float d) {
+  d = clamp(d, 0.0, 1.0);
+  vec3 enc = fract(vec3(1.0, 255.0, 65025.0) * d);
+  enc -= enc.yzz * vec3(1.0 / 255.0, 1.0 / 255.0, 0.0);
+  return vec4(enc, 1.0);
+}
+
+void main() {
+  vec4 packed = packDepth(gl_FragCoord.z);
+  // alpha=0.5 signals "mesh" hit (volume uses alpha=1.0)
+  fragColor = vec4(packed.xyz, 0.5);
+}
+`;
+var Pt = `#version 300 es
+precision highp float;
+uniform mat4 mvpMtx;
+uniform mat4 normMtx;
+uniform float opacity;
+in vec3 position;
+in vec3 normal;
+in vec4 color;
+out vec4 vClr;
+out vec3 vN;
+out vec3 vPos;
+
+void main() {
+    gl_Position = mvpMtx * vec4(position, 1.0);
+    vec3 worldNormal = normalize((normMtx * vec4(normal, 0.0)).xyz);
+    vN = worldNormal;
+    vClr = vec4(color.rgb, opacity);
+    vPos = position;
+}
+`;
+var Dt2 = `#version 300 es
+precision highp float;
+uniform mat4 mvpMtx;
+uniform mat4 normMtx;
+uniform float opacity;
+in vec3 position;
+in vec3 normal;
+in vec4 color;
+flat out vec4 vClr;
+flat out vec3 vN;
+out vec3 vPos;
+
+void main() {
+    gl_Position = mvpMtx * vec4(position, 1.0);
+    vec3 worldNormal = normalize((normMtx * vec4(normal, 0.0)).xyz);
+    vN = worldNormal;
+    vClr = vec4(color.rgb, opacity);
+    vPos = position;
+}
+`;
+var St = `#version 300 es
+precision highp float;
+flat in vec4 vClr;
+flat in vec3 vN;
+out vec4 fragColor;
+
+void main() {
+    vec3 r = vec3(0.0, 0.0, 1.0);
+    vec3 n = normalize(vN);
+    vec3 l = normalize(vec3(0.0, 10.0, 5.0));
+    float lightNormDot = dot(n, l);
+    vec3 ambient = vClr.rgb * 0.35;
+    vec3 diffuse = max(lightNormDot, 0.0) * vClr.rgb * 0.5;
+    float s = 0.2 * pow(max(dot(reflect(-l, n), r), 0.0), 10.0);
+    fragColor = vec4(ambient + diffuse + s, vClr.a);
+}
+`;
+var Ct = `#version 300 es
+precision highp float;
+in vec4 vClr;
+in vec3 vN;
+out vec4 fragColor;
+
+void main() {
+    vec3 r = vec3(0.0, 0.0, 1.0);
+    vec3 n = normalize(vN);
+    vec3 l = normalize(vec3(0.0, 10.0, 5.0));
+    float lightNormDot = dot(n, l);
+    vec3 ambient = vClr.rgb * 0.35;
+    vec3 diffuse = max(lightNormDot, 0.0) * vClr.rgb * 0.5;
+    float s = 0.2 * pow(max(dot(reflect(-l, n), r), 0.0), 10.0);
+    fragColor = vec4(ambient + diffuse + s, vClr.a);
+}
+`;
+var Ut2 = `#version 300 es
+precision highp float;
+in vec4 vClr;
+in vec3 vN;
+out vec4 fragColor;
+
+void main() {
+    float edge0 = 0.1;
+    float edge1 = 0.25;
+    vec3 viewDir = vec3(0.0, 0.0, 1.0);
+    vec3 n = normalize(vN);
+    float cosTheta = abs(dot(n, viewDir));
+    float alpha = 1.0 - smoothstep(edge0, edge1, cosTheta);
+    if (alpha <= 0.0) {
+        discard;
+    }
+    fragColor = vec4(0.0, 0.0, 0.0, vClr.a * alpha);
+}
+`;
+var Lt = `#version 300 es
+precision highp float;
+in vec4 vClr;
+in vec3 vN;
+out vec4 fragColor;
+
+void main() {
+    float thresh = 0.4;
+    vec3 viewDir = vec3(0.0, 0.0, 1.0);
+    vec3 n = normalize(vN);
+    float cosTheta = abs(dot(n, viewDir));
+    float edgeWidth = 0.05;
+    vec3 d = smoothstep(thresh - edgeWidth, thresh + edgeWidth, cosTheta) * vClr.rgb;
+    fragColor = vec4(d, vClr.a);
+}
+`;
+var Ft2 = `#version 300 es
+precision highp float;
+in vec4 vClr;
+in vec3 vN;
+in vec3 vPos;
+out vec4 fragColor;
+
+void main() {
+    vec3 n = normalize(vN);
+    vec3 dx = dFdx(n);
+    vec3 dy = dFdy(n);
+    vec3 xneg = n - dx;
+    vec3 xpos = n + dx;
+    vec3 yneg = n - dy;
+    vec3 ypos = n + dy;
+    float depth = length(gl_FragCoord.xyz);
+    float curv = (cross(xneg, xpos).y - cross(yneg, ypos).x) / depth;
+    curv = 1.0 - (curv + 0.5);
+    curv = clamp(curv, 0.0, 1.0);
+    curv = pow(curv, 0.5);
+
+    vec3 r = vec3(0.0, 0.0, 1.0);
+    float ambient = 0.6;
+    float diffuse = 0.6;
+    float specular = 0.2;
+    float shininess = 10.0;
+    vec3 lightPosition = vec3(0.0, 10.0, 2.0);
+    vec3 l = normalize(lightPosition);
+    float lightNormDot = dot(n, l);
+    vec3 a = vClr.rgb * ambient * curv;
+    vec3 d = max(lightNormDot, 0.0) * vClr.rgb * diffuse;
+    float s = specular * pow(max(dot(reflect(-l, n), r), 0.0), shininess);
+    fragColor = vec4(a + d + s, vClr.a);
+}
+`;
+var wt2 = `#version 300 es
+precision highp float;
+in vec4 vClr;
+in vec3 vN;
+out vec4 fragColor;
+
+void main() {
+    float ambient = 0.35;
+    float diffuse = 0.6;
+    vec3 n = normalize(vN);
+    vec3 lightPosition = vec3(0.0, 7.0, 5.0);
+    vec3 l = normalize(lightPosition);
+    float lightNormDot = dot(n, l);
+    vec3 a = vClr.rgb * ambient;
+    vec3 d = max(lightNormDot, 0.0) * vClr.rgb * diffuse;
+    fragColor = vec4(a + d, vClr.a);
+}
+`;
+var Nt2 = `#version 300 es
+precision highp float;
+in vec4 vClr;
+in vec3 vN;
+out vec4 fragColor;
+
+float stepmix(float a, float b, float E, float x) {
+    return mix(a, b, smoothstep(a - E, a + E, x));
+}
+
+void main() {
+    vec3 r = vec3(0.0, 0.0, 1.0);
+    float ambient = 0.3;
+    float diffuse = 0.6;
+    float specular = 0.5;
+    float shininess = 50.0;
+    vec3 n = normalize(vN);
+    vec3 lightPosition = vec3(0.0, 10.0, 5.0);
+    vec3 l = normalize(lightPosition);
+    float df = max(0.0, dot(n, l));
+    float sf = pow(max(dot(reflect(-l, n), r), 0.0), shininess);
+    const float A = 0.1;
+    const float B = 0.3;
+    const float C = 0.6;
+    const float D = 1.0;
+    float E_df = fwidth(df);
+    if (df > A - E_df && df < A + E_df) {
+        df = stepmix(A, B, E_df, df);
+    } else if (df > B - E_df && df < B + E_df) {
+        df = stepmix(B, C, E_df, df);
+    } else if (df > C - E_df && df < C + E_df) {
+        df = stepmix(C, D, E_df, df);
+    } else if (df < A) {
+        df = 0.0;
+    } else if (df < B) {
+        df = B;
+    } else if (df < C) {
+        df = C;
+    } else {
+        df = D;
+    }
+    float E_sf = fwidth(sf);
+    if (sf > 0.5 - E_sf && sf < 0.5 + E_sf) {
+        sf = smoothstep(0.5 - E_sf, 0.5 + E_sf, sf);
+    } else {
+        sf = step(0.5, sf);
+    }
+    vec3 a = vClr.rgb * ambient;
+    vec3 d = df * vClr.rgb * diffuse;
+    fragColor = vec4(a + d + (specular * sf), vClr.a);
+}
+`;
+var Bt2 = `#version 300 es
+precision highp float;
+in vec4 vClr;
+in vec3 vN;
+out vec4 fragColor;
+
+void main() {
+    vec3 r = vec3(0.0, 0.0, 1.0);
+    float ambient = 0.3;
+    float diffuse = 0.6;
+    float specular = 0.25;
+    float shininess = 10.0;
+    float penWidth = 0.6;
+    vec3 n = normalize(vN);
+    vec3 lightPosition = vec3(0.0, 10.0, 5.0);
+    vec3 l = normalize(lightPosition);
+    float lightNormDot = dot(n, l);
+    float view = abs(dot(n, r));
+
+    if (penWidth < view) {
+        discard;
+    }
+    vec3 a = vClr.rgb * ambient;
+    vec3 d = max(lightNormDot, 0.0) * vClr.rgb * diffuse;
+    float s = specular * pow(max(dot(reflect(l, n), r), 0.0), shininess);
+    fragColor = vec4(a + d + s, vClr.a);
+}
+`;
+var Mt2 = `#version 300 es
+precision highp float;
+in vec4 vClr;
+in vec3 vN;
+out vec4 fragColor;
+
+void main() {
+    fragColor = vClr;
+}
+`;
+var It2 = `#version 300 es
+precision highp float;
+uniform vec4 crosscutMM;
+in vec4 vClr;
+in vec3 vN;
+in vec3 vPos;
+out vec4 fragColor;
+
+void main() {
+    const float LINE_WIDTH_PX = 4.0;
+    const float TILT_STRENGTH = 1.0;
+    vec3 d = vPos - crosscutMM.xyz;
+    vec3 ad = abs(d);
+    vec3 fd = fwidth(vPos);
+    float minDist = min(ad.x, min(ad.y, ad.z));
+    if (minDist > crosscutMM.w) discard;
+    float tiltX = length(fd.yz);
+    float tiltY = length(fd.xz);
+    float tiltZ = length(fd.xy);
+    float tfX = clamp(1.0 / (1.0 + TILT_STRENGTH * tiltX), 0.0, 1.0);
+    float tfY = clamp(1.0 / (1.0 + TILT_STRENGTH * tiltY), 0.0, 1.0);
+    float tfZ = clamp(1.0 / (1.0 + TILT_STRENGTH * tiltZ), 0.0, 1.0);
+    vec3 halfWidth;
+    halfWidth.x = (LINE_WIDTH_PX * 0.5) * fd.x * tfX;
+    halfWidth.y = (LINE_WIDTH_PX * 0.5) * fd.y * tfY;
+    halfWidth.z = (LINE_WIDTH_PX * 0.5) * fd.z * tfZ;
+    vec3 edgeA = 1.0 - smoothstep(vec3(0.0), halfWidth, ad);
+    float edgeAlpha = max(edgeA.x, max(edgeA.y, edgeA.z));
+    if (edgeAlpha <= 1e-4) discard;
+    fragColor = vec4(vClr.rgb, vClr.a * edgeAlpha);
+}
+`;
+var Xt2 = {
+  phong: Ct,
+  crevice: Ft2,
+  crosscut: It2,
+  flat: St,
+  matte: wt2,
+  outline: Bt2,
+  rim: Lt,
+  silhouette: Ut2,
+  toon: Nt2,
+  vertexColor: Mt2
+};
+var Z3 = /* @__PURE__ */ new WeakMap;
+function Gt2(t2) {
+  if (Z3.has(t2))
+    return;
+  const e2 = {};
+  for (const [i2, o] of Object.entries(Xt2)) {
+    const a = i2 === "flat" ? Dt2 : Pt;
+    e2[i2] = new z2(t2, a, o);
+  }
+  const r = new z2(t2, At, yt2);
+  Z3.set(t2, { shaders: e2, depthPickShader: r });
+}
+function Ae2(t2, e2 = "phong") {
+  const r = Z3.get(t2);
+  if (!r)
+    throw new Error("mesh.init() not called for this context");
+  const i2 = r.shaders[e2] || r.shaders.phong;
+  if (!i2)
+    throw new Error(`Shader ${e2} not initialized`);
+  return {
+    aPosition: t2.getAttribLocation(i2.program, "position"),
+    aNormal: t2.getAttribLocation(i2.program, "normal"),
+    aColor: t2.getAttribLocation(i2.program, "color")
+  };
+}
+function Ot2(t2, e2, r) {
+  const i2 = Dd(e2.positions, e2.indices), o = e2.positions.length / 3, a = new ArrayBuffer(o * $s), s = new Float32Array(a), c = new Uint32Array(a);
+  for (let T = 0;T < o; T++) {
+    const _ = T * 28 / 4;
+    s[_] = e2.positions[T * 3] ?? 0, s[_ + 1] = e2.positions[T * 3 + 1] ?? 0, s[_ + 2] = e2.positions[T * 3 + 2] ?? 0, s[_ + 3] = i2[T * 3] ?? 0, s[_ + 4] = i2[T * 3 + 1] ?? 0, s[_ + 5] = i2[T * 3 + 2] ?? 0, c[_ + 6] = e2.colors instanceof Uint32Array ? e2.colors[T] : e2.colors;
+  }
+  const u = t2.createVertexArray();
+  if (!u)
+    throw new Error("Failed to create mesh VAO");
+  t2.bindVertexArray(u);
+  const n = t2.createBuffer();
+  if (!n)
+    throw t2.bindVertexArray(null), new Error("Failed to create mesh vertex buffer");
+  t2.bindBuffer(t2.ARRAY_BUFFER, n), t2.bufferData(t2.ARRAY_BUFFER, a, t2.STATIC_DRAW);
+  const f = Z3.get(t2);
+  if (!f)
+    throw new Error("mesh.init() not called for this context");
+  const h = f.shaders[r] || f.shaders.phong;
+  if (!h)
+    throw new Error(`Missing shader for type ${r}`);
+  const m = t2.getAttribLocation(h.program, "position"), d = t2.getAttribLocation(h.program, "normal"), p = t2.getAttribLocation(h.program, "color");
+  t2.enableVertexAttribArray(m), t2.vertexAttribPointer(m, 3, t2.FLOAT, false, 28, 0), t2.enableVertexAttribArray(d), t2.vertexAttribPointer(d, 3, t2.FLOAT, false, 28, 12), t2.enableVertexAttribArray(p), t2.vertexAttribPointer(p, 4, t2.UNSIGNED_BYTE, true, 28, 24);
+  const E = t2.createBuffer();
+  if (!E)
+    throw t2.bindVertexArray(null), new Error("Failed to create mesh index buffer");
+  return t2.bindBuffer(t2.ELEMENT_ARRAY_BUFFER, E), t2.bufferData(t2.ELEMENT_ARRAY_BUFFER, e2.indices, t2.STATIC_DRAW), t2.bindVertexArray(null), {
+    vao: u,
+    vertexBuffer: n,
+    indexBuffer: E,
+    indexCount: e2.indices.length
+  };
+}
+function Vt(t2, e2, r = {}) {
+  const { shaderType: i2 = "phong" } = r;
+  return { ...Ot2(t2, e2, i2), shaderType: i2 };
+}
+function zt2(t2, e2, r, i2, o = 1) {
+  const a = Z3.get(t2);
+  if (!a)
+    return;
+  const s = a.shaders[e2];
+  s && (s.use(t2), s.uniforms.mvpMtx && t2.uniformMatrix4fv(s.uniforms.mvpMtx, false, r), s.uniforms.normMtx && t2.uniformMatrix4fv(s.uniforms.normMtx, false, i2), s.uniforms.opacity && t2.uniform1f(s.uniforms.opacity, o));
+}
+function Le2(t2, e2, r, i2, o, a = 1, s, c) {
+  const u = Z3.get(t2);
+  if (!u)
+    return;
+  const n = s || e2.shaderType || "phong", f = u.shaders[n];
+  if (!f) {
+    z.warn(`Unknown mesh shader type: ${n}`);
+    return;
+  }
+  f.use(t2), f.uniforms.mvpMtx && t2.uniformMatrix4fv(f.uniforms.mvpMtx, false, i2), f.uniforms.normMtx && t2.uniformMatrix4fv(f.uniforms.normMtx, false, o), f.uniforms.opacity && t2.uniform1f(f.uniforms.opacity, a), f.uniforms.crosscutMM && c && t2.uniform4fv(f.uniforms.crosscutMM, c);
+  const h = n === "crosscut";
+  h ? (t2.disable(t2.DEPTH_TEST), t2.disable(t2.CULL_FACE)) : (t2.enable(t2.DEPTH_TEST), t2.depthFunc(t2.LESS), t2.enable(t2.CULL_FACE), t2.cullFace(t2.BACK)), t2.enable(t2.BLEND), t2.blendFunc(t2.SRC_ALPHA, t2.ONE_MINUS_SRC_ALPHA), t2.bindVertexArray(r.vao), t2.drawElements(t2.TRIANGLES, r.indexCount, t2.UNSIGNED_INT, 0), t2.bindVertexArray(null), h && (t2.enable(t2.DEPTH_TEST), t2.enable(t2.CULL_FACE));
+}
+function Fe2(t2, e2, r, i2, o, a = 1, s, c) {
+  const u = Z3.get(t2);
+  if (!u)
+    return;
+  const n = s || e2.shaderType || "phong", f = u.shaders[n];
+  if (!f)
+    return;
+  f.use(t2), f.uniforms.mvpMtx && t2.uniformMatrix4fv(f.uniforms.mvpMtx, false, i2), f.uniforms.normMtx && t2.uniformMatrix4fv(f.uniforms.normMtx, false, o), f.uniforms.opacity && t2.uniform1f(f.uniforms.opacity, a), f.uniforms.crosscutMM && c && t2.uniform4fv(f.uniforms.crosscutMM, c);
+  const h = n === "crosscut";
+  h ? (t2.disable(t2.DEPTH_TEST), t2.disable(t2.CULL_FACE)) : (t2.enable(t2.DEPTH_TEST), t2.depthFunc(t2.GREATER), t2.enable(t2.CULL_FACE), t2.cullFace(t2.BACK)), t2.depthMask(false), t2.enable(t2.BLEND), t2.blendFunc(t2.SRC_ALPHA, t2.ONE_MINUS_SRC_ALPHA), t2.bindVertexArray(r.vao), t2.drawElements(t2.TRIANGLES, r.indexCount, t2.UNSIGNED_INT, 0), t2.bindVertexArray(null), t2.depthFunc(t2.LESS), t2.depthMask(true), h && (t2.enable(t2.DEPTH_TEST), t2.enable(t2.CULL_FACE));
+}
+function kt(t2, e2, r) {
+  const i2 = Z3.get(t2);
+  i2 && (i2.depthPickShader.use(t2), i2.depthPickShader.uniforms.mvpMtx && t2.uniformMatrix4fv(i2.depthPickShader.uniforms.mvpMtx, false, r), t2.disable(t2.BLEND), t2.enable(t2.DEPTH_TEST), t2.depthFunc(t2.LESS), t2.enable(t2.CULL_FACE), t2.cullFace(t2.BACK), t2.bindVertexArray(e2.vao), t2.drawElements(t2.TRIANGLES, e2.indexCount, t2.UNSIGNED_INT, 0), t2.bindVertexArray(null));
+}
+function ye(t2, e2) {
+  e2.vao && t2.deleteVertexArray(e2.vao), e2.vertexBuffer && t2.deleteBuffer(e2.vertexBuffer), e2.indexBuffer && t2.deleteBuffer(e2.indexBuffer);
+}
+function Ht(t2) {
+  const e2 = Z3.get(t2);
+  if (e2) {
+    for (const r of Object.values(e2.shaders))
+      r?.program && t2.deleteProgram(r.program);
+    e2.depthPickShader?.program && t2.deleteProgram(e2.depthPickShader.program), Z3.delete(t2);
+  }
+}
+
+class Wt extends Vp {
+  constructor() {
+    super(...arguments), this.gl = null, this.cylinders = [];
+  }
+  init(e2, r, i2, o) {
+    this.gl = e2, this.destroy();
+    const a = up();
+    for (let s = 0;s < 6; s++) {
+      const c = e2.createVertexArray();
+      if (!c)
+        throw new Error("Failed to create crosshair VAO");
+      e2.bindVertexArray(c);
+      const u = e2.createBuffer();
+      if (!u)
+        throw e2.bindVertexArray(null), new Error("Failed to create crosshair vertex buffer");
+      e2.bindBuffer(e2.ARRAY_BUFFER, u), e2.bufferData(e2.ARRAY_BUFFER, cp * $s, e2.DYNAMIC_DRAW), e2.enableVertexAttribArray(r), e2.vertexAttribPointer(r, 3, e2.FLOAT, false, 28, 0), e2.enableVertexAttribArray(i2), e2.vertexAttribPointer(i2, 3, e2.FLOAT, false, 28, 12), e2.enableVertexAttribArray(o), e2.vertexAttribPointer(o, 4, e2.UNSIGNED_BYTE, true, 28, 24);
+      const n = e2.createBuffer();
+      if (!n)
+        throw e2.bindVertexArray(null), new Error("Failed to create crosshair index buffer");
+      e2.bindBuffer(e2.ELEMENT_ARRAY_BUFFER, n), e2.bufferData(e2.ELEMENT_ARRAY_BUFFER, a, e2.STATIC_DRAW), e2.bindVertexArray(null), this.cylinders.push({
+        vao: c,
+        vertexBuffer: u,
+        indexBuffer: n,
+        indexCount: a.length,
+        shaderType: "phong"
+      });
+    }
+    this.isReady = true;
+  }
+  update(e2) {
+    if (!this.gl || !this.isReady)
+      return;
+    const r = this.gl, { extentsMin: i2, extentsMax: o, scene: a, ui: s } = e2, c = s.crosshairWidth, u = da(s.crosshairColor), n = hp(i2, o, a.crosshairPos, s.crosshairGap);
+    for (let f = 0;f < 6; f++) {
+      const [h, m] = n[f], d = fp(h, m, c, u);
+      r.bindBuffer(r.ARRAY_BUFFER, this.cylinders[f].vertexBuffer), r.bufferSubData(r.ARRAY_BUFFER, 0, d);
+    }
+    r.bindBuffer(r.ARRAY_BUFFER, null);
+  }
+  getCylinders() {
+    return this.cylinders;
+  }
+  draw(e2, r, i2, o) {
+    if (this.isReady)
+      for (let a = 0;a < this.cylinders.length; a++) {
+        if (dp(a, o))
+          continue;
+        const s = this.cylinders[a];
+        s.vao && Le2(e2, { shaderType: "phong" }, s, r, i2, 1, "phong");
+      }
+  }
+  drawXRay(e2, r, i2, o, a) {
+    if (this.isReady)
+      for (let s = 0;s < this.cylinders.length; s++) {
+        if (dp(s, o))
+          continue;
+        const c = this.cylinders[s];
+        c.vao && Fe2(e2, { shaderType: "phong" }, c, r, i2, a, "phong");
+      }
+  }
+  destroy() {
+    if (!this.gl)
+      return;
+    const e2 = this.gl;
+    for (const r of this.cylinders)
+      r.vao && e2.deleteVertexArray(r.vao), r.vertexBuffer && e2.deleteBuffer(r.vertexBuffer), r.indexBuffer && e2.deleteBuffer(r.indexBuffer);
+    this.cylinders = [], this.isReady = false;
+  }
+}
+var Yt2 = `#version 300 es
+precision highp float;
+
+uniform vec2 canvasSize;
+
+// Glyph data passed as vertex attributes (using instancing)
+// Each instance is one glyph
+in vec4 glyphRect;      // x, y, width, height (pixels)
+in vec4 glyphUvRect;    // u, v, width, height (0-1)
+in vec4 glyphColor;     // RGBA color
+in float glyphRange;    // The atlas distance range
+
+out vec2 vUv;
+out vec4 vColor;
+out float vAtlasRange;
+
+void main() {
+    int vIdx = gl_VertexID;
+
+    // Define quad vertices: 0, 1, 2, 3 -> (0,0), (1,0), (0,1), (1,1)
+    vec2 pos = vec2(0.0);
+    if (vIdx == 1) { pos.x = 1.0; }
+    else if (vIdx == 2) { pos.y = 1.0; }
+    else if (vIdx == 3) { pos.x = 1.0; pos.y = 1.0; }
+
+    vec2 pixelPos = glyphRect.xy + pos * glyphRect.zw;
+    vec2 ndc = (pixelPos / canvasSize) * 2.0 - 1.0;
+
+    // Flip Y for NDC: GL Y is up, screen coords are down
+    gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
+
+    vUv = glyphUvRect.xy + pos * glyphUvRect.zw;
+    vColor = glyphColor;
+    vAtlasRange = glyphRange;
+}
+`;
+var qt2 = `#version 300 es
+precision highp float;
+
+uniform sampler2D fontTexture;
+uniform vec2 texSize;
+
+in vec2 vUv;
+in vec4 vColor;
+in float vAtlasRange;
+
+out vec4 fragColor;
+
+void main() {
+    // Sample MSDF texture
+    vec3 msd = texture(fontTexture, vUv).rgb;
+
+    // Median of three channels
+    float sd = max(min(msd.r, msd.g), min(max(msd.r, msd.g), msd.b));
+
+    // Calculate screen-space derivatives for anti-aliasing
+    vec2 uv_dx = dFdx(vUv);
+    vec2 uv_dy = dFdy(vUv);
+
+    vec2 unitRange = vec2(vAtlasRange) / texSize;
+    vec2 screenTexSize = inversesqrt(uv_dx * uv_dx + uv_dy * uv_dy);
+    float screenPxRange = max(0.5 * dot(unitRange, screenTexSize), 1.0);
+
+    float screenPxDistance = screenPxRange * (sd - 0.5);
+    float opacity = clamp(screenPxDistance + 0.5, 0.0, 1.0);
+
+    if (opacity <= 0.0) { discard; }
+
+    fragColor = vec4(vColor.rgb, vColor.a * opacity);
+}
+`;
+var Zt2 = `#version 300 es
+precision highp float;
+uniform vec2 canvasSize;
+in vec4 panelRect;
+in vec4 panelColor;
+in float panelRadius;
+out vec4 vColor;
+out vec2 vLocalPos;
+out vec2 vSize;
+out float vRadius;
+
+void main() {
+  int vIdx = gl_VertexID;
+  vec2 pos = vec2(0.0);
+  if (vIdx == 1) { pos.x = 1.0; }
+  else if (vIdx == 2) { pos.y = 1.0; }
+  else if (vIdx == 3) { pos = vec2(1.0); }
+  vec2 pixelPos = panelRect.xy + pos * panelRect.zw;
+  vec2 ndc = (pixelPos / canvasSize) * 2.0 - 1.0;
+  gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
+  vColor = panelColor;
+  vLocalPos = pos * panelRect.zw;
+  vSize = panelRect.zw;
+  vRadius = panelRadius;
+}
+`;
+var $t2 = `#version 300 es
+precision highp float;
+in vec4 vColor;
+in vec2 vLocalPos;
+in vec2 vSize;
+in float vRadius;
+out vec4 fragColor;
+
+float roundedRectDistance(vec2 localPos, vec2 size, float radius) {
+  float r = max(radius, 0.0);
+  vec2 halfSize = size * 0.5;
+  vec2 q = abs(localPos - halfSize) - (halfSize - vec2(r));
+  return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+void main() {
+  float dist = roundedRectDistance(vLocalPos, vSize, vRadius);
+  float aa = fwidth(dist);
+  float alpha = 1.0 - smoothstep(-aa, aa, dist);
+  if (alpha <= 0.0) { discard; }
+  fragColor = vec4(vColor.rgb, vColor.a * alpha);
+}
+`;
+var fe2 = j * 4;
+async function jt2(t2, e2) {
+  return new Promise((r, i2) => {
+    const o = new Image;
+    o.onload = () => {
+      const a = t2.createTexture();
+      if (!a) {
+        i2(new Error("Failed to create font texture"));
+        return;
+      }
+      t2.bindTexture(t2.TEXTURE_2D, a), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_WRAP_S, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_WRAP_T, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_MIN_FILTER, t2.LINEAR), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_MAG_FILTER, t2.LINEAR), t2.texImage2D(t2.TEXTURE_2D, 0, t2.RGBA, t2.RGBA, t2.UNSIGNED_BYTE, o), r({ texture: a, width: o.width, height: o.height });
+    }, o.onerror = i2, Z(o), o.src = e2;
+  });
+}
+
+class Kt extends Vp {
+  constructor() {
+    super(...arguments), this._gl = null, this._shader = null, this._vao = null, this._glyphBuffer = null, this._fontTexture = null, this._fontMets = null, this._canvasWidth = 1, this._canvasHeight = 1, this._texWidth = 1, this._texHeight = 1, this._fontPx = 16, this._panelShader = null, this._panelVao = null, this._panelBuffer = null;
+  }
+  get fontPx() {
+    return this._fontPx;
+  }
+  async init(e2, r) {
+    if (!this.isReady && r) {
+      this._gl = e2;
+      try {
+        const i2 = await jt2(e2, r.atlasUrl);
+        if (this._fontTexture = i2.texture, this._texWidth = i2.width, this._texHeight = i2.height, this._fontMets = r.metrics, this._shader = new z2(e2, Yt2, qt2), this._vao = e2.createVertexArray(), !this._vao)
+          throw new Error("Failed to create font VAO");
+        if (e2.bindVertexArray(this._vao), this._glyphBuffer = e2.createBuffer(), !this._glyphBuffer)
+          throw e2.bindVertexArray(null), new Error("Failed to create glyph buffer");
+        e2.bindBuffer(e2.ARRAY_BUFFER, this._glyphBuffer);
+        const o = e2.getAttribLocation(this._shader.program, "glyphRect"), a = e2.getAttribLocation(this._shader.program, "glyphUvRect"), s = e2.getAttribLocation(this._shader.program, "glyphColor"), c = e2.getAttribLocation(this._shader.program, "glyphRange"), n = 16 * 4;
+        if (e2.enableVertexAttribArray(o), e2.vertexAttribPointer(o, 4, e2.FLOAT, false, n, 0), e2.vertexAttribDivisor(o, 1), e2.enableVertexAttribArray(a), e2.vertexAttribPointer(a, 4, e2.FLOAT, false, n, 16), e2.vertexAttribDivisor(a, 1), e2.enableVertexAttribArray(s), e2.vertexAttribPointer(s, 4, e2.FLOAT, false, n, 32), e2.vertexAttribDivisor(s, 1), e2.enableVertexAttribArray(c), e2.vertexAttribPointer(c, 1, e2.FLOAT, false, n, 48), e2.vertexAttribDivisor(c, 1), e2.bindVertexArray(null), this._panelShader = new z2(e2, Zt2, $t2), this._panelVao = e2.createVertexArray(), !this._panelVao)
+          throw new Error("Failed to create panel VAO");
+        if (e2.bindVertexArray(this._panelVao), this._panelBuffer = e2.createBuffer(), !this._panelBuffer)
+          throw e2.bindVertexArray(null), new Error("Failed to create panel buffer");
+        e2.bindBuffer(e2.ARRAY_BUFFER, this._panelBuffer);
+        const f = e2.getAttribLocation(this._panelShader.program, "panelRect"), h = e2.getAttribLocation(this._panelShader.program, "panelColor"), m = e2.getAttribLocation(this._panelShader.program, "panelRadius");
+        e2.enableVertexAttribArray(f), e2.vertexAttribPointer(f, 4, e2.FLOAT, false, fe2, 0), e2.vertexAttribDivisor(f, 1), e2.enableVertexAttribArray(h), e2.vertexAttribPointer(h, 4, e2.FLOAT, false, fe2, 16), e2.vertexAttribDivisor(h, 1), e2.enableVertexAttribArray(m), e2.vertexAttribPointer(m, 1, e2.FLOAT, false, fe2, 32), e2.vertexAttribDivisor(m, 1), e2.bindVertexArray(null), this.isReady = true;
+      } catch (i2) {
+        z.error("Failed to initialize font system:", i2), this.isReady = false;
+      }
+    }
+  }
+  resize(e2, r, i2, o = 1, a = 0.4, s = 13) {
+    this._canvasWidth = r, this._canvasHeight = i2, this._fontPx = ot(r, i2, o, a, s);
+  }
+  buildText(e2, r, i2, o, a = [1, 1, 1, 1], s = 0, c = 0, u = [0, 0, 0, 0]) {
+    return !this.isReady || !this._fontMets ? L() : nt(e2, r, i2, this._fontPx, o, this._fontMets, a, s, c, u);
+  }
+  createBindGroup() {
+    return null;
+  }
+  draw(e2, r, i2, o, a, s) {
+    if (!this.isReady || a.length === 0 || !this._glyphBuffer || !this._vao || !this._shader || !this._fontTexture)
+      return;
+    if ((!s || s < 1) && (s = 256), this._panelShader && this._panelVao && this._panelBuffer) {
+      let n = 0;
+      for (const f of a)
+        f.backColor && f.backColor[3] > 0 && n++;
+      if (n > 0) {
+        const f = new Float32Array(n * j);
+        let h = 0;
+        for (const m of a) {
+          if (!m.backColor || m.backColor[3] <= 0)
+            continue;
+          const d = h * j;
+          f.set(m.backRect, d), f.set(m.backColor, d + 4), f[d + 8] = m.backRadius, h++;
+        }
+        e2.bindBuffer(e2.ARRAY_BUFFER, this._panelBuffer), e2.bufferData(e2.ARRAY_BUFFER, f, e2.DYNAMIC_DRAW), this._panelShader.use(e2), this._panelShader.uniforms.canvasSize && e2.uniform2f(this._panelShader.uniforms.canvasSize, this._canvasWidth, this._canvasHeight), e2.depthMask(false), e2.disable(e2.DEPTH_TEST), e2.disable(e2.CULL_FACE), e2.enable(e2.BLEND), e2.blendFunc(e2.SRC_ALPHA, e2.ONE_MINUS_SRC_ALPHA), e2.bindVertexArray(this._panelVao), e2.drawArraysInstanced(e2.TRIANGLE_STRIP, 0, 4, n), e2.bindVertexArray(null);
+      }
+    }
+    let c = 0;
+    const u = new Float32Array(s * 16);
+    for (const n of a) {
+      if (c + n.count > s)
+        break;
+      u.set(n.data, c * 16), c += n.count;
+    }
+    c !== 0 && (e2.bindBuffer(e2.ARRAY_BUFFER, this._glyphBuffer), e2.bufferData(e2.ARRAY_BUFFER, u, e2.DYNAMIC_DRAW), this._shader.use(e2), this._shader.uniforms.canvasSize && e2.uniform2f(this._shader.uniforms.canvasSize, this._canvasWidth, this._canvasHeight), this._shader.uniforms.texSize && e2.uniform2f(this._shader.uniforms.texSize, this._texWidth, this._texHeight), e2.activeTexture(e2.TEXTURE0), e2.bindTexture(e2.TEXTURE_2D, this._fontTexture), this._shader.uniforms.fontTexture && e2.uniform1i(this._shader.uniforms.fontTexture, 0), e2.depthMask(false), e2.disable(e2.DEPTH_TEST), e2.disable(e2.CULL_FACE), e2.enable(e2.BLEND), e2.blendFunc(e2.SRC_ALPHA, e2.ONE_MINUS_SRC_ALPHA), e2.bindVertexArray(this._vao), e2.drawArraysInstanced(e2.TRIANGLE_STRIP, 0, 4, c), e2.bindVertexArray(null), e2.depthMask(true), e2.enable(e2.DEPTH_TEST), e2.enable(e2.CULL_FACE));
+  }
+  destroy() {
+    const e2 = this._gl;
+    e2 && (this._vao && e2.deleteVertexArray(this._vao), this._glyphBuffer && e2.deleteBuffer(this._glyphBuffer), this._fontTexture && e2.deleteTexture(this._fontTexture), this._shader?.program && e2.deleteProgram(this._shader.program), this._panelVao && e2.deleteVertexArray(this._panelVao), this._panelBuffer && e2.deleteBuffer(this._panelBuffer), this._panelShader?.program && e2.deleteProgram(this._panelShader.program), this.isReady = false, this._shader = null, this._vao = null, this._glyphBuffer = null, this._fontTexture = null, this._fontMets = null, this._panelShader = null, this._panelVao = null, this._panelBuffer = null, this._gl = null);
+  }
+}
+var Qt = `#version 300 es
+precision highp float;
+uniform vec2 canvasSize;
+// Line data passed as vertex attributes (using instancing)
+// Each instance is one line
+in vec2 lineStart;
+in vec2 lineEnd;
+in float lineThickness;
+in vec4 lineColor;
+out vec4 vColor;
+
+void main() {
+  int vIdx = gl_VertexID;
+  // Calculate line geometry in pixel space
+  vec2 delta = lineEnd - lineStart;
+  vec2 dir = normalize(delta);
+  vec2 perp = vec2(-dir.y, dir.x);
+  float halfThickness = lineThickness * 0.5;
+  // Define quad vertices (0, 1, 2, 3) around the line segment
+  vec2 offset;
+  if (vIdx == 0) {
+      offset = -perp * halfThickness;
+  } else if (vIdx == 1) {
+      offset = perp * halfThickness;
+  } else if (vIdx == 2) {
+      offset = -perp * halfThickness + delta;
+  } else { // vIdx == 3
+      offset = perp * halfThickness + delta;
+  }
+  vec2 pixelPos = lineStart + offset;
+  // Map pixel coordinates to NDC (-1 to 1)
+  vec2 ndc = (pixelPos / canvasSize) * 2.0 - 1.0;
+  // Flip Y for NDC: GL Y is up, screen coords are down
+  gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
+  vColor = lineColor;
+}
+`;
+var Jt = `#version 300 es
+precision highp float;
+in vec4 vColor;
+out vec4 fragColor;
+
+void main() {
+  fragColor = vColor;
+}
+`;
+
+class gt extends Vp {
+  constructor() {
+    super(...arguments), this._gl = null, this._shader = null, this._vao = null, this._lineBuffer = null, this._canvasWidth = 1, this._canvasHeight = 1;
+  }
+  init(e2) {
+    if (this.isReady)
+      return;
+    if (this._gl = e2, this._shader = new z2(e2, Qt, Jt), this._vao = e2.createVertexArray(), !this._vao)
+      throw new Error("Failed to create line VAO");
+    if (e2.bindVertexArray(this._vao), this._lineBuffer = e2.createBuffer(), !this._lineBuffer)
+      throw e2.bindVertexArray(null), new Error("Failed to create line buffer");
+    e2.bindBuffer(e2.ARRAY_BUFFER, this._lineBuffer);
+    const r = e2.getAttribLocation(this._shader.program, "lineStart"), i2 = e2.getAttribLocation(this._shader.program, "lineEnd"), o = e2.getAttribLocation(this._shader.program, "lineThickness"), a = e2.getAttribLocation(this._shader.program, "lineColor"), s = Dp * 4;
+    e2.enableVertexAttribArray(r), e2.vertexAttribPointer(r, 2, e2.FLOAT, false, s, 0), e2.vertexAttribDivisor(r, 1), e2.enableVertexAttribArray(i2), e2.vertexAttribPointer(i2, 2, e2.FLOAT, false, s, 8), e2.vertexAttribDivisor(i2, 1), e2.enableVertexAttribArray(o), e2.vertexAttribPointer(o, 1, e2.FLOAT, false, s, 16), e2.vertexAttribDivisor(o, 1), e2.enableVertexAttribArray(a), e2.vertexAttribPointer(a, 4, e2.FLOAT, false, s, 32), e2.vertexAttribDivisor(a, 1), e2.bindVertexArray(null), this.isReady = true;
+  }
+  resize(e2, r, i2) {
+    this._canvasWidth = r, this._canvasHeight = i2;
+  }
+  draw(e2, r, i2, o, a, s = 2048) {
+    if (!this.isReady || a.length === 0 || !this._lineBuffer || !this._vao || !this._shader)
+      return;
+    const c = new Float32Array(s * Dp), u = Math.min(a.length, s);
+    for (let f = 0;f < u; f++) {
+      const h = a[f];
+      h && c.set(h.data, f * Dp);
+    }
+    e2.bindBuffer(e2.ARRAY_BUFFER, this._lineBuffer), e2.bufferData(e2.ARRAY_BUFFER, c, e2.DYNAMIC_DRAW), this._shader.use(e2);
+    const n = this._shader.uniforms.canvasSize;
+    n && e2.uniform2f(n, this._canvasWidth, this._canvasHeight), e2.depthMask(false), e2.disable(e2.DEPTH_TEST), e2.enable(e2.BLEND), e2.blendFunc(e2.SRC_ALPHA, e2.ONE_MINUS_SRC_ALPHA), e2.bindVertexArray(this._vao), e2.drawArraysInstanced(e2.TRIANGLE_STRIP, 0, 4, u), e2.bindVertexArray(null), e2.depthMask(true), e2.enable(e2.DEPTH_TEST);
+  }
+  destroy() {
+    const e2 = this._gl;
+    e2 && (this._vao && e2.deleteVertexArray(this._vao), this._lineBuffer && e2.deleteBuffer(this._lineBuffer), this._shader?.program && e2.deleteProgram(this._shader.program), this.isReady = false, this._shader = null, this._vao = null, this._lineBuffer = null, this._gl = null);
+  }
+}
+var oe = /* @__PURE__ */ new WeakMap;
+function er2(t2) {
+  let e2 = oe.get(t2);
+  return e2 || (e2 = or2(t2), oe.set(t2, e2), e2);
+}
+function tr2(t2, e2) {
+  const { rgbaData: r, texDims: i2 } = Rp(e2), o = t2.createTexture();
+  if (!o)
+    throw new Error("rgba2Texture: failed to create texture");
+  return t2.bindTexture(t2.TEXTURE_3D, o), t2.pixelStorei(t2.UNPACK_ALIGNMENT, 1), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_MIN_FILTER, t2.LINEAR), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_MAG_FILTER, t2.LINEAR), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_S, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_T, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_R, t2.CLAMP_TO_EDGE), t2.texImage3D(t2.TEXTURE_3D, 0, t2.RGBA8, i2[0], i2[1], i2[2], 0, t2.RGBA, t2.UNSIGNED_BYTE, r), t2.bindTexture(t2.TEXTURE_3D, null), o;
+}
+var ue2 = `#version 300 es
+precision highp float;
+in vec3 vPos;
+out vec2 TexCoord;
+void main() {
+    TexCoord = vPos.xy;
+    gl_Position = vec4((vPos.xy - vec2(0.5, 0.5)) * 2.0, 0.0, 1.0);
+}`;
+var rr2 = `#version 300 es
+uniform highp usampler3D intensityVol;
+`;
+var ir2 = `#version 300 es
+uniform highp isampler3D intensityVol;
+`;
+var ar2 = `#version 300 es
+uniform highp sampler3D intensityVol;
+`;
+var de2 = `
+precision highp int;
+precision highp float;
+in vec2 TexCoord;
+out vec4 FragColor;
+uniform float coordZ;
+uniform float scl_slope;
+uniform float scl_inter;
+uniform float cal_max;
+uniform float cal_min;
+uniform float cal_minNeg;
+uniform float cal_maxNeg;
+uniform int isAlphaThreshold;
+uniform int isColorbarFromZero;
+uniform float overlayOpacity;
+uniform highp sampler2D colormap;
+uniform highp sampler2D colormapNeg;
+uniform mat4 mtx;
+uniform int isLabel;
+uniform float labelMin;
+uniform float labelWidth;
+
+void main(void) {
+    // Transform output coordinates to input coordinates using the matrix
+    vec4 vx = vec4(TexCoord.xy, coordZ, 1.0) * mtx;
+    // Check bounds - set transparent if outside input volume
+    if ((vx.x < 0.0) || (vx.x > 1.0) ||
+        (vx.y < 0.0) || (vx.y > 1.0) ||
+        (vx.z < 0.0) || (vx.z > 1.0)) {
+        FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+    // Sample input volume and apply calibration: calibrated = raw * slope + intercept
+    float raw = float(texture(intensityVol, vx.xyz).r);
+    float f = (scl_slope * raw) + scl_inter;
+    // Label colormap: discrete integer index -> LUT color
+    if (isLabel != 0) {
+        int rawLabel = int(round(f));
+        // Index 0 is always unlabeled (air/background) -> transparent
+        if (rawLabel == 0) {
+            FragColor = vec4(0.0);
+            return;
+        }
+        int labelIdx = rawLabel - int(labelMin);
+        int clampedIdx = clamp(labelIdx, 0, int(labelWidth) - 1);
+        float texCoord = (float(clampedIdx) + 0.5) / labelWidth;
+        FragColor = texture(colormap, vec2(clamp(texCoord, 0.0, 1.0), 0.5));
+        if (overlayOpacity > 0.0)
+            FragColor.a *= overlayOpacity;
+        return;
+    }
+    // Positive colormap
+    float mn = cal_min;
+    float mx = cal_max;
+    if ((isAlphaThreshold != 0) || (isColorbarFromZero != 0))
+        mn = 0.0;
+    float r = max(0.00001, abs(mx - mn));
+    mn = min(mn, mx);
+    float txl = (f - mn) / r;
+    if (f > mn) {
+        txl = max(txl, 2.0/256.0);
+    }
+    FragColor = texture(colormap, vec2(clamp(txl, 0.0, 1.0), 0.5)).rgba;
+    // Negative colormap
+    mn = cal_minNeg;
+    mx = cal_maxNeg;
+    if ((isAlphaThreshold != 0) || (isColorbarFromZero != 0))
+        mx = 0.0;
+    if ((cal_minNeg < cal_maxNeg) && (f < mx)) {
+        r = max(0.00001, abs(mx - mn));
+        mn = min(mn, mx);
+        txl = 1.0 - (f - mn) / r;
+        txl = max(txl, 2.0/256.0);
+        FragColor = texture(colormapNeg, vec2(clamp(txl, 0.0, 1.0), 0.5));
+    }
+    // Overlay: make alpha binary (fully opaque or fully transparent)
+    if (overlayOpacity > 0.0)
+        FragColor.a = step(0.00001, FragColor.a);
+    // Alpha threshold effects
+    if (isAlphaThreshold != 0) {
+        if ((cal_minNeg != cal_maxNeg) && (f < 0.0) && (f > cal_maxNeg))
+            FragColor.a = pow(-f / -cal_maxNeg, 2.0);
+        else if ((f > 0.0) && (cal_min > 0.0))
+            FragColor.a *= pow(f / cal_min, 2.0);
+    } else if (isColorbarFromZero != 0) {
+        if ((cal_minNeg != cal_maxNeg) && (f < 0.0) && (f > cal_maxNeg))
+            FragColor.a = 0.0;
+        else if ((f > 0.0) && (cal_min > 0.0) && (f < cal_min))
+            FragColor.a = 0.0;
+    }
+    // Bake overlay opacity into alpha for pre-integration
+    if (overlayOpacity > 0.0)
+        FragColor.a *= overlayOpacity;
+}`;
+function Pe2(t2, e2, r) {
+  const i2 = t2.createShader(r);
+  if (!i2)
+    throw new Error("orientOverlay: failed to create shader");
+  if (t2.shaderSource(i2, e2), t2.compileShader(i2), !t2.getShaderParameter(i2, t2.COMPILE_STATUS)) {
+    const o = t2.getShaderInfoLog(i2);
+    throw t2.deleteShader(i2), new Error(`Shader compile error: ${o}`);
+  }
+  return i2;
+}
+function he(t2, e2, r) {
+  const i2 = Pe2(t2, e2, t2.VERTEX_SHADER), o = Pe2(t2, r, t2.FRAGMENT_SHADER), a = t2.createProgram();
+  if (!a)
+    throw t2.deleteShader(i2), t2.deleteShader(o), new Error("orientOverlay: failed to create program");
+  if (t2.attachShader(a, i2), t2.attachShader(a, o), t2.linkProgram(a), !t2.getProgramParameter(a, t2.LINK_STATUS)) {
+    const s = t2.getProgramInfoLog(a);
+    throw t2.deleteProgram(a), t2.deleteShader(i2), t2.deleteShader(o), new Error(`Program link error: ${s}`);
+  }
+  return t2.deleteShader(i2), t2.deleteShader(o), a;
+}
+function or2(t2) {
+  return {
+    uint: he(t2, ue2, rr2 + de2),
+    sint: he(t2, ue2, ir2 + de2),
+    float: he(t2, ue2, ar2 + de2)
+  };
+}
+function sr2(t2, e2) {
+  return {
+    coordZ: t2.getUniformLocation(e2, "coordZ"),
+    scl_slope: t2.getUniformLocation(e2, "scl_slope"),
+    scl_inter: t2.getUniformLocation(e2, "scl_inter"),
+    cal_max: t2.getUniformLocation(e2, "cal_max"),
+    cal_min: t2.getUniformLocation(e2, "cal_min"),
+    cal_minNeg: t2.getUniformLocation(e2, "cal_minNeg"),
+    cal_maxNeg: t2.getUniformLocation(e2, "cal_maxNeg"),
+    isAlphaThreshold: t2.getUniformLocation(e2, "isAlphaThreshold"),
+    isColorbarFromZero: t2.getUniformLocation(e2, "isColorbarFromZero"),
+    overlayOpacity: t2.getUniformLocation(e2, "overlayOpacity"),
+    colormap: t2.getUniformLocation(e2, "colormap"),
+    colormapNeg: t2.getUniformLocation(e2, "colormapNeg"),
+    intensityVol: t2.getUniformLocation(e2, "intensityVol"),
+    mtx: t2.getUniformLocation(e2, "mtx"),
+    isLabel: t2.getUniformLocation(e2, "isLabel"),
+    labelMin: t2.getUniformLocation(e2, "labelMin"),
+    labelWidth: t2.getUniformLocation(e2, "labelWidth")
+  };
+}
+function nr2(t2, e2) {
+  const r = new Float32Array([
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    1,
+    0,
+    1,
+    1,
+    0
+  ]), i2 = t2.createVertexArray();
+  if (!i2)
+    throw new Error("orientOverlay: failed to create VAO");
+  t2.bindVertexArray(i2);
+  const o = t2.createBuffer();
+  if (!o)
+    throw t2.bindVertexArray(null), new Error("orientOverlay: failed to create VBO");
+  t2.bindBuffer(t2.ARRAY_BUFFER, o), t2.bufferData(t2.ARRAY_BUFFER, r, t2.STATIC_DRAW);
+  const a = t2.getAttribLocation(e2, "vPos");
+  return t2.enableVertexAttribArray(a), t2.vertexAttribPointer(a, 3, t2.FLOAT, false, 0, 0), t2.bindVertexArray(null), { vao: i2, vbo: o };
+}
+function cr2(t2) {
+  switch (t2) {
+    case 2:
+      return {
+        internalFormat: "R8UI",
+        format: "RED_INTEGER",
+        type: "UNSIGNED_BYTE",
+        shaderType: "uint",
+        TypedArray: Uint8Array
+      };
+    case 256:
+      return {
+        internalFormat: "R8I",
+        format: "RED_INTEGER",
+        type: "BYTE",
+        shaderType: "sint",
+        TypedArray: Int8Array
+      };
+    case 512:
+      return {
+        internalFormat: "R16UI",
+        format: "RED_INTEGER",
+        type: "UNSIGNED_SHORT",
+        shaderType: "uint",
+        TypedArray: Uint16Array
+      };
+    case 4:
+      return {
+        internalFormat: "R16I",
+        format: "RED_INTEGER",
+        type: "SHORT",
+        shaderType: "sint",
+        TypedArray: Int16Array
+      };
+    case 768:
+      return {
+        internalFormat: "R32UI",
+        format: "RED_INTEGER",
+        type: "UNSIGNED_INT",
+        shaderType: "uint",
+        TypedArray: Uint32Array
+      };
+    case 8:
+      return {
+        internalFormat: "R32I",
+        format: "RED_INTEGER",
+        type: "INT",
+        shaderType: "sint",
+        TypedArray: Int32Array
+      };
+    case 16:
+      return {
+        internalFormat: "R32F",
+        format: "RED",
+        type: "FLOAT",
+        shaderType: "float",
+        TypedArray: Float32Array
+      };
+    case 64:
+      return {
+        internalFormat: "R32F",
+        format: "RED",
+        type: "FLOAT",
+        shaderType: "float",
+        TypedArray: Float64Array,
+        convertTo: Float32Array
+      };
+    default:
+      throw new Error(`Unsupported NIfTI datatype code: ${t2}`);
+  }
+}
+function le2(t2, e2, r, i2, o = 1) {
+  if (e2.hdr.datatypeCode === 128 || e2.hdr.datatypeCode === 2304)
+    return tr2(t2, e2);
+  if (!r.dimsRAS)
+    throw new Error("overlay2Texture: nvimageTarget.dimsRAS missing");
+  const a = [
+    e2.hdr.dims[1] ?? 0,
+    e2.hdr.dims[2] ?? 0,
+    e2.hdr.dims[3] ?? 0
+  ], s = [
+    r.dimsRAS[1] ?? 0,
+    r.dimsRAS[2] ?? 0,
+    r.dimsRAS[3] ?? 0
+  ], c = cr2(e2.hdr.datatypeCode), n = er2(t2)[c.shaderType];
+  t2.useProgram(n);
+  const f = sr2(t2, n), { vao: h, vbo: m } = nr2(t2, n), d = t2.createTexture();
+  if (!d)
+    throw t2.deleteBuffer(m), t2.deleteVertexArray(h), new Error("overlay2Texture: failed to create input texture");
+  t2.activeTexture(t2.TEXTURE0), t2.bindTexture(t2.TEXTURE_3D, d), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_MIN_FILTER, t2.NEAREST), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_MAG_FILTER, t2.NEAREST), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_R, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_S, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_T, t2.CLAMP_TO_EDGE), t2.pixelStorei(t2.UNPACK_ALIGNMENT, 1);
+  let p = e2.img;
+  if (!p)
+    throw t2.deleteTexture(d), t2.deleteBuffer(m), t2.deleteVertexArray(h), new Error("overlay2Texture: image data missing");
+  const T = (e2.frame4D ?? 0) * e2.nVox3D, _ = e2.nVox3D;
+  if (c.convertTo) {
+    const x2 = p instanceof ArrayBuffer ? new c.TypedArray(p) : p;
+    p = c.convertTo.from(x2).subarray(T, T + _);
+  } else
+    p instanceof ArrayBuffer ? p = new c.TypedArray(p).subarray(T, T + _) : p = (p instanceof c.TypedArray ? p : new c.TypedArray(p.buffer)).subarray(T, T + _);
+  const C = t2;
+  t2.texStorage3D(t2.TEXTURE_3D, 1, C[c.internalFormat], a[0], a[1], a[2]), t2.texSubImage3D(t2.TEXTURE_3D, 0, 0, 0, 0, a[0], a[1], a[2], C[c.format], C[c.type], p);
+  const R = e2.colormapLabel !== null && e2.colormapLabel !== undefined, A = t2.createTexture();
+  if (!A)
+    throw t2.deleteTexture(d), t2.deleteBuffer(m), t2.deleteVertexArray(h), new Error("overlay2Texture: failed to create colormap texture");
+  if (t2.activeTexture(t2.TEXTURE1), t2.bindTexture(t2.TEXTURE_2D, A), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_WRAP_S, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_WRAP_T, t2.CLAMP_TO_EDGE), R) {
+    t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_MIN_FILTER, t2.NEAREST), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_MAG_FILTER, t2.NEAREST);
+    const x2 = e2.colormapLabel?.lut;
+    if (!x2)
+      throw new Error("Label colormap LUT is undefined");
+    const S = x2.length / 4;
+    t2.texImage2D(t2.TEXTURE_2D, 0, t2.RGBA, S, 1, 0, t2.RGBA, t2.UNSIGNED_BYTE, x2);
+  } else {
+    t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_MIN_FILTER, t2.LINEAR), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_MAG_FILTER, t2.LINEAR);
+    const x2 = Yt(e2.colormap);
+    t2.texImage2D(t2.TEXTURE_2D, 0, t2.RGBA, 256, 1, 0, t2.RGBA, t2.UNSIGNED_BYTE, x2);
+  }
+  const X2 = !R && e2.colormapNegative && e2.colormapNegative.length > 0, k2 = t2.createTexture();
+  if (!k2)
+    throw t2.deleteTexture(d), t2.deleteTexture(A), t2.deleteBuffer(m), t2.deleteVertexArray(h), new Error("overlay2Texture: failed to create negative colormap texture");
+  if (t2.activeTexture(t2.TEXTURE2), t2.bindTexture(t2.TEXTURE_2D, k2), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_WRAP_S, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_WRAP_T, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_MIN_FILTER, t2.LINEAR), t2.texParameteri(t2.TEXTURE_2D, t2.TEXTURE_MAG_FILTER, t2.LINEAR), X2) {
+    const x2 = Yt(e2.colormapNegative);
+    t2.texImage2D(t2.TEXTURE_2D, 0, t2.RGBA, 256, 1, 0, t2.RGBA, t2.UNSIGNED_BYTE, x2);
+  } else
+    t2.texImage2D(t2.TEXTURE_2D, 0, t2.RGBA, 1, 1, 0, t2.RGBA, t2.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
+  const H = t2.createTexture();
+  if (!H)
+    throw t2.deleteTexture(d), t2.deleteTexture(A), t2.deleteTexture(k2), t2.deleteBuffer(m), t2.deleteVertexArray(h), new Error("overlay2Texture: failed to create output texture");
+  t2.activeTexture(t2.TEXTURE3), t2.bindTexture(t2.TEXTURE_3D, H), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_MIN_FILTER, t2.LINEAR), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_MAG_FILTER, t2.LINEAR), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_R, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_S, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_T, t2.CLAMP_TO_EDGE), t2.texStorage3D(t2.TEXTURE_3D, 1, t2.RGBA8, s[0], s[1], s[2]);
+  const J2 = t2.createFramebuffer();
+  if (!J2)
+    throw t2.deleteTexture(d), t2.deleteTexture(A), t2.deleteTexture(k2), t2.deleteTexture(H), t2.deleteBuffer(m), t2.deleteVertexArray(h), new Error("overlay2Texture: failed to create framebuffer");
+  t2.bindFramebuffer(t2.FRAMEBUFFER, J2);
+  const K3 = t2.getParameter(t2.VIEWPORT), W2 = t2.isEnabled(t2.CULL_FACE), re = t2.isEnabled(t2.BLEND), y = t2.isEnabled(t2.DEPTH_TEST), l = t2.getParameter(t2.ACTIVE_TEXTURE), P = t2.getParameter(t2.VERTEX_ARRAY_BINDING);
+  t2.viewport(0, 0, s[0], s[1]), t2.disable(t2.CULL_FACE), t2.disable(t2.BLEND), t2.disable(t2.DEPTH_TEST), t2.bindVertexArray(h), f.intensityVol && t2.uniform1i(f.intensityVol, 0), f.colormap && t2.uniform1i(f.colormap, 1), f.colormapNeg && t2.uniform1i(f.colormapNeg, 2);
+  const b = Np(e2, o);
+  f.scl_slope && t2.uniform1f(f.scl_slope, b.slope), f.scl_inter && t2.uniform1f(f.scl_inter, b.intercept), f.cal_min && t2.uniform1f(f.cal_min, b.calMin), f.cal_max && t2.uniform1f(f.cal_max, b.calMax), f.cal_minNeg && t2.uniform1f(f.cal_minNeg, b.mnNeg), f.cal_maxNeg && t2.uniform1f(f.cal_maxNeg, b.mxNeg), f.isAlphaThreshold && t2.uniform1i(f.isAlphaThreshold, b.isAlphaThreshold), f.isColorbarFromZero && t2.uniform1i(f.isColorbarFromZero, b.isColorbarFromZero), f.overlayOpacity && t2.uniform1f(f.overlayOpacity, b.overlayOpacity), f.mtx && t2.uniformMatrix4fv(f.mtx, false, i2), f.isLabel && t2.uniform1i(f.isLabel, b.isLabel), f.labelMin && t2.uniform1f(f.labelMin, b.labelMin), f.labelWidth && t2.uniform1f(f.labelWidth, b.labelWidth);
+  for (let x2 = 0;x2 < s[2]; x2++) {
+    const S = (x2 + 0.5) / s[2];
+    f.coordZ && t2.uniform1f(f.coordZ, S), t2.framebufferTextureLayer(t2.FRAMEBUFFER, t2.COLOR_ATTACHMENT0, H, 0, x2), t2.drawArrays(t2.TRIANGLE_STRIP, 0, 4);
+  }
+  return t2.bindVertexArray(null), t2.bindFramebuffer(t2.FRAMEBUFFER, null), t2.viewport(K3[0], K3[1], K3[2], K3[3]), W2 ? t2.enable(t2.CULL_FACE) : t2.disable(t2.CULL_FACE), re ? t2.enable(t2.BLEND) : t2.disable(t2.BLEND), y ? t2.enable(t2.DEPTH_TEST) : t2.disable(t2.DEPTH_TEST), t2.activeTexture(l), t2.bindVertexArray(P), t2.activeTexture(t2.TEXTURE0), t2.bindTexture(t2.TEXTURE_3D, null), t2.activeTexture(t2.TEXTURE1), t2.bindTexture(t2.TEXTURE_2D, null), t2.activeTexture(t2.TEXTURE2), t2.bindTexture(t2.TEXTURE_2D, null), t2.activeTexture(t2.TEXTURE3), t2.bindTexture(t2.TEXTURE_3D, null), t2.activeTexture(l), t2.deleteTexture(d), t2.deleteTexture(A), t2.deleteTexture(k2), t2.deleteBuffer(m), t2.deleteVertexArray(h), t2.deleteFramebuffer(J2), H;
+}
+function xe(t2, e2, r) {
+  const [i2, o, a] = r, s = t2.createFramebuffer();
+  if (!s)
+    throw new Error("readTexture3D: failed to create framebuffer");
+  t2.bindFramebuffer(t2.FRAMEBUFFER, s);
+  const c = new Uint8Array(i2 * o * a * 4);
+  for (let u = 0;u < a; u++)
+    t2.framebufferTextureLayer(t2.FRAMEBUFFER, t2.COLOR_ATTACHMENT0, e2, 0, u), t2.readPixels(0, 0, i2, o, t2.RGBA, t2.UNSIGNED_BYTE, c, u * i2 * o * 4);
+  return t2.bindFramebuffer(t2.FRAMEBUFFER, null), t2.deleteFramebuffer(s), c;
+}
+function fr2(t2, e2, r, i2) {
+  const o = xe(t2, e2, i2), a = xe(t2, r, i2), s = i2[0] * i2[1] * i2[2];
+  for (let c = 0;c < s; c++)
+    o[c * 4 + 3] === 0 && (a[c * 4 + 3] = 0);
+  t2.bindTexture(t2.TEXTURE_3D, r), t2.texSubImage3D(t2.TEXTURE_3D, 0, 0, 0, 0, i2[0], i2[1], i2[2], t2.RGBA, t2.UNSIGNED_BYTE, a), t2.bindTexture(t2.TEXTURE_3D, null);
+}
+function ur2(t2) {
+  const e2 = oe.get(t2);
+  if (e2) {
+    for (const r of Object.keys(e2)) {
+      const i2 = e2[r];
+      if (i2)
+        try {
+          t2.deleteProgram(i2);
+        } catch (o) {
+          z.warn("orientOverlay.destroy: failed to delete program", r, o);
+        }
+    }
+    oe.delete(t2);
+  }
+}
+var dr2 = `#version 300 es
+precision highp float;
+
+uniform vec2 canvasSize;
+
+layout(location = 0) in vec2 position;
+layout(location = 1) in vec4 color;
+
+out vec4 vColor;
+
+void main() {
+  vec2 ndc = (position / canvasSize) * 2.0 - 1.0;
+  gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
+  vColor = color;
+}
+`;
+var hr2 = `#version 300 es
+precision highp float;
+
+in vec4 vColor;
+out vec4 fragColor;
+
+void main() {
+  fragColor = vColor;
+}
+`;
+
+class lr2 extends Vp {
+  constructor() {
+    super(...arguments), this._gl = null, this._shader = null, this._vao = null, this._vertexBuffer = null, this._indexBuffer = null, this._canvasWidth = 1, this._canvasHeight = 1;
+  }
+  init(e2) {
+    if (!this.isReady) {
+      if (this._gl = e2, this._shader = new z2(e2, dr2, hr2), this._vao = e2.createVertexArray(), !this._vao)
+        throw new Error("Failed to create polygon VAO");
+      if (this._vertexBuffer = e2.createBuffer(), this._indexBuffer = e2.createBuffer(), !this._vertexBuffer || !this._indexBuffer)
+        throw new Error("Failed to create polygon buffers");
+      e2.bindVertexArray(this._vao), e2.bindBuffer(e2.ARRAY_BUFFER, this._vertexBuffer), e2.enableVertexAttribArray(0), e2.vertexAttribPointer(0, 2, e2.FLOAT, false, 24, 0), e2.enableVertexAttribArray(1), e2.vertexAttribPointer(1, 4, e2.FLOAT, false, 24, 8), e2.bindBuffer(e2.ELEMENT_ARRAY_BUFFER, this._indexBuffer), e2.bindVertexArray(null), this.isReady = true;
+    }
+  }
+  resize(e2, r, i2) {
+    this._canvasWidth = r, this._canvasHeight = i2;
+  }
+  draw(e2, r) {
+    if (!this.isReady || !this._shader || !this._vao || !this._vertexBuffer || !this._indexBuffer || r.fillVertices.length === 0 || r.fillIndices.length === 0)
+      return;
+    e2.bindBuffer(e2.ARRAY_BUFFER, this._vertexBuffer), e2.bufferData(e2.ARRAY_BUFFER, r.fillVertices, e2.DYNAMIC_DRAW), e2.bindBuffer(e2.ELEMENT_ARRAY_BUFFER, this._indexBuffer), e2.bufferData(e2.ELEMENT_ARRAY_BUFFER, r.fillIndices, e2.DYNAMIC_DRAW), this._shader.use(e2);
+    const i2 = this._shader.uniforms.canvasSize;
+    i2 && e2.uniform2f(i2, this._canvasWidth, this._canvasHeight), e2.depthMask(false), e2.disable(e2.DEPTH_TEST), e2.enable(e2.BLEND), e2.blendFunc(e2.SRC_ALPHA, e2.ONE_MINUS_SRC_ALPHA), e2.disable(e2.CULL_FACE), e2.bindVertexArray(this._vao), e2.drawElements(e2.TRIANGLES, r.fillIndices.length, e2.UNSIGNED_INT, 0), e2.bindVertexArray(null), e2.enable(e2.CULL_FACE), e2.depthMask(true), e2.enable(e2.DEPTH_TEST);
+  }
+  destroy() {
+    const e2 = this._gl;
+    e2 && (this._vao && e2.deleteVertexArray(this._vao), this._vertexBuffer && e2.deleteBuffer(this._vertexBuffer), this._indexBuffer && e2.deleteBuffer(this._indexBuffer), this._shader?.program && e2.deleteProgram(this._shader.program), this._vao = null, this._vertexBuffer = null, this._indexBuffer = null, this._shader = null, this._gl = null, this.isReady = false);
+  }
+}
+var mr2 = `#version 300 es
+precision highp float;
+
+uniform mat4 mvpMatrix;
+uniform float opacityMultiplier;
+
+layout(location = 0) in vec3 position;
+layout(location = 1) in vec4 color;
+
+out vec4 vColor;
+
+void main() {
+  gl_Position = mvpMatrix * vec4(position, 1.0);
+  vColor = vec4(color.rgb, color.a * opacityMultiplier);
+}
+`;
+var pr2 = `#version 300 es
+precision highp float;
+
+in vec4 vColor;
+out vec4 fragColor;
+
+void main() {
+  fragColor = vColor;
+}
+`;
+
+class xr2 extends Vp {
+  constructor() {
+    super(...arguments), this._gl = null, this._shader = null, this._vao = null, this._vertexBuffer = null, this._indexBuffer = null;
+  }
+  init(e2) {
+    if (!this.isReady) {
+      if (this._gl = e2, this._shader = new z2(e2, mr2, pr2), this._vao = e2.createVertexArray(), !this._vao)
+        throw new Error("Failed to create polygon3d VAO");
+      if (this._vertexBuffer = e2.createBuffer(), this._indexBuffer = e2.createBuffer(), !this._vertexBuffer || !this._indexBuffer)
+        throw new Error("Failed to create polygon3d buffers");
+      e2.bindVertexArray(this._vao), e2.bindBuffer(e2.ARRAY_BUFFER, this._vertexBuffer), e2.enableVertexAttribArray(0), e2.vertexAttribPointer(0, 3, e2.FLOAT, false, 28, 0), e2.enableVertexAttribArray(1), e2.vertexAttribPointer(1, 4, e2.FLOAT, false, 28, 12), e2.bindBuffer(e2.ELEMENT_ARRAY_BUFFER, this._indexBuffer), e2.bindVertexArray(null), this.isReady = true;
+    }
+  }
+  _drawPass(e2, r, i2, o, a) {
+    this._shader?.use(e2);
+    const s = this._shader?.uniforms.mvpMatrix;
+    s && e2.uniformMatrix4fv(s, false, i2);
+    const c = this._shader?.uniforms.opacityMultiplier;
+    c && e2.uniform1f(c, a), e2.enable(e2.DEPTH_TEST), e2.depthFunc(o), e2.depthMask(false), e2.disable(e2.CULL_FACE), e2.enable(e2.BLEND), e2.blendFuncSeparate(e2.SRC_ALPHA, e2.ONE_MINUS_SRC_ALPHA, e2.ONE, e2.ONE_MINUS_SRC_ALPHA), e2.bindVertexArray(this._vao), e2.drawElements(e2.TRIANGLES, r.indices.length, e2.UNSIGNED_INT, 0), e2.bindVertexArray(null);
+  }
+  draw(e2, r, i2) {
+    !this.isReady || !this._shader || !this._vao || !this._vertexBuffer || !this._indexBuffer || r.vertices.length === 0 || r.indices.length === 0 || (e2.bindBuffer(e2.ARRAY_BUFFER, this._vertexBuffer), e2.bufferData(e2.ARRAY_BUFFER, r.vertices, e2.DYNAMIC_DRAW), e2.bindBuffer(e2.ELEMENT_ARRAY_BUFFER, this._indexBuffer), e2.bufferData(e2.ELEMENT_ARRAY_BUFFER, r.indices, e2.DYNAMIC_DRAW), this._drawPass(e2, r, i2, e2.LESS, 1));
+  }
+  drawXRay(e2, r, i2, o) {
+    !this.isReady || !this._shader || !this._vao || this._drawPass(e2, r, i2, e2.GREATER, o);
+  }
+  endPasses(e2) {
+    e2.enable(e2.CULL_FACE), e2.depthFunc(e2.LESS), e2.depthMask(true);
+  }
+  destroy() {
+    const e2 = this._gl;
+    e2 && (this._vao && e2.deleteVertexArray(this._vao), this._vertexBuffer && e2.deleteBuffer(this._vertexBuffer), this._indexBuffer && e2.deleteBuffer(this._indexBuffer), this._shader?.program && e2.deleteProgram(this._shader.program), this._vao = null, this._vertexBuffer = null, this._indexBuffer = null, this._shader = null, this._gl = null, this.isReady = false);
+  }
+}
+var se2 = /* @__PURE__ */ new WeakMap;
+function Tr2(t2) {
+  let e2 = se2.get(t2);
+  return e2 || (e2 = Rr2(t2), se2.set(t2, e2), e2);
+}
+var vr2 = `#version 300 es
+precision highp float;
+in vec3 vPos;
+out vec2 TexCoord;
+void main() {
+    TexCoord = vPos.xy;
+    gl_Position = vec4((vPos.xy - vec2(0.5, 0.5)) * 2.0, 0.0, 1.0);
+}`;
+var Er2 = `#version 300 es
+precision highp float;
+precision highp sampler3D;
+
+in vec2 TexCoord;
+out vec4 FragColor;
+
+uniform sampler3D intensityVol;
+uniform float coordZ;
+uniform float dX;
+uniform float dY;
+uniform float dZ;
+
+void main() {
+    vec3 vPos = vec3(TexCoord.xy, coordZ);
+
+    // Sample at diagonal offsets for gradient estimation
+    // Using linear interpolation on the texture naturally smooths the result
+    float dx = dX;
+    float dy = dY;
+    float dz = dZ;
+
+    // Central differences with diagonal sampling
+    // X gradient
+    float gx = texture(intensityVol, vPos + vec3(dx, 0.0, 0.0)).a
+             - texture(intensityVol, vPos - vec3(dx, 0.0, 0.0)).a;
+
+    // Y gradient
+    float gy = texture(intensityVol, vPos + vec3(0.0, dy, 0.0)).a
+             - texture(intensityVol, vPos - vec3(0.0, dy, 0.0)).a;
+
+    // Z gradient
+    float gz = texture(intensityVol, vPos + vec3(0.0, 0.0, dz)).a
+             - texture(intensityVol, vPos - vec3(0.0, 0.0, dz)).a;
+
+    // Normalize gradient to [-1, 1] range, then map to [0, 1] for storage
+    vec3 gradient = vec3(gx, gy, gz);
+    float len = length(gradient);
+
+    if (len > 0.0001) {
+        gradient = gradient / len;
+    } else {
+        gradient = vec3(0.0);
+    }
+
+    // Map from [-1, 1] to [0, 1] for RGBA8 storage
+    vec3 normalized = gradient * 0.5 + 0.5;
+
+    // Store normalized gradient in RGB, alpha = 1.0
+    FragColor = vec4(normalized, 1.0);
+}`;
+function De2(t2, e2, r) {
+  const i2 = t2.createShader(r);
+  if (!i2)
+    throw new Error("Gradient shader creation failed");
+  if (t2.shaderSource(i2, e2), t2.compileShader(i2), !t2.getShaderParameter(i2, t2.COMPILE_STATUS)) {
+    const o = t2.getShaderInfoLog(i2);
+    throw t2.deleteShader(i2), new Error(`Gradient shader compile error: ${o}`);
+  }
+  return i2;
+}
+function _r2(t2, e2, r) {
+  const i2 = De2(t2, e2, t2.VERTEX_SHADER), o = De2(t2, r, t2.FRAGMENT_SHADER), a = t2.createProgram();
+  if (!a)
+    throw t2.deleteShader(i2), t2.deleteShader(o), new Error("Gradient program creation failed");
+  if (t2.attachShader(a, i2), t2.attachShader(a, o), t2.linkProgram(a), !t2.getProgramParameter(a, t2.LINK_STATUS)) {
+    const s = t2.getProgramInfoLog(a);
+    throw t2.deleteProgram(a), t2.deleteShader(i2), t2.deleteShader(o), new Error(`Gradient program link error: ${s}`);
+  }
+  return t2.deleteShader(i2), t2.deleteShader(o), a;
+}
+function Rr2(t2) {
+  return _r2(t2, vr2, Er2);
+}
+function br2(t2, e2) {
+  return {
+    coordZ: t2.getUniformLocation(e2, "coordZ"),
+    intensityVol: t2.getUniformLocation(e2, "intensityVol"),
+    dX: t2.getUniformLocation(e2, "dX"),
+    dY: t2.getUniformLocation(e2, "dY"),
+    dZ: t2.getUniformLocation(e2, "dZ")
+  };
+}
+function Ar2(t2, e2) {
+  const r = new Float32Array([
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    1,
+    0,
+    1,
+    1,
+    0
+  ]), i2 = t2.createVertexArray();
+  if (!i2)
+    throw new Error("Gradient VAO creation failed");
+  t2.bindVertexArray(i2);
+  const o = t2.createBuffer();
+  if (!o)
+    throw t2.bindVertexArray(null), new Error("Gradient VBO creation failed");
+  t2.bindBuffer(t2.ARRAY_BUFFER, o), t2.bufferData(t2.ARRAY_BUFFER, r, t2.STATIC_DRAW);
+  const a = t2.getAttribLocation(e2, "vPos");
+  return t2.enableVertexAttribArray(a), t2.vertexAttribPointer(a, 3, t2.FLOAT, false, 0, 0), t2.bindVertexArray(null), { vao: i2, vbo: o };
+}
+function yr2(t2, e2, r) {
+  if (r.length < 3)
+    throw new Error("Gradient expects dims [width, height, depth]");
+  const [i2, o, a] = r, s = Tr2(t2);
+  t2.useProgram(s);
+  const c = br2(t2, s), { vao: u, vbo: n } = Ar2(t2, s);
+  t2.activeTexture(t2.TEXTURE0), t2.bindTexture(t2.TEXTURE_3D, e2), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_MIN_FILTER, t2.LINEAR), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_MAG_FILTER, t2.LINEAR);
+  const f = t2.createTexture();
+  if (!f)
+    throw t2.deleteBuffer(n), t2.deleteVertexArray(u), new Error("Gradient output texture creation failed");
+  t2.activeTexture(t2.TEXTURE1), t2.bindTexture(t2.TEXTURE_3D, f), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_MIN_FILTER, t2.LINEAR), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_MAG_FILTER, t2.LINEAR), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_R, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_S, t2.CLAMP_TO_EDGE), t2.texParameteri(t2.TEXTURE_3D, t2.TEXTURE_WRAP_T, t2.CLAMP_TO_EDGE), t2.texStorage3D(t2.TEXTURE_3D, 1, t2.RGBA8, i2, o, a);
+  const h = t2.createFramebuffer();
+  if (!h)
+    throw t2.deleteTexture(f), t2.deleteBuffer(n), t2.deleteVertexArray(u), new Error("Gradient framebuffer creation failed");
+  t2.bindFramebuffer(t2.FRAMEBUFFER, h);
+  const m = t2.getParameter(t2.VIEWPORT), d = t2.isEnabled(t2.CULL_FACE), p = t2.isEnabled(t2.BLEND), E = t2.isEnabled(t2.DEPTH_TEST), T = t2.getParameter(t2.ACTIVE_TEXTURE), _ = t2.getParameter(t2.VERTEX_ARRAY_BINDING);
+  if (t2.viewport(0, 0, i2, o), t2.disable(t2.CULL_FACE), t2.disable(t2.BLEND), t2.disable(t2.DEPTH_TEST), t2.bindVertexArray(u), !c.intensityVol || !c.coordZ || !c.dX || !c.dY || !c.dZ)
+    throw new Error("Gradient shader uniforms missing");
+  t2.uniform1i(c.intensityVol, 0);
+  const C = 0.7;
+  t2.uniform1f(c.dX, C / i2), t2.uniform1f(c.dY, C / o), t2.uniform1f(c.dZ, C / a);
+  for (let R = 0;R < a; R++) {
+    const A = (R + 0.5) / a;
+    t2.uniform1f(c.coordZ, A), t2.framebufferTextureLayer(t2.FRAMEBUFFER, t2.COLOR_ATTACHMENT0, f, 0, R), t2.drawArrays(t2.TRIANGLE_STRIP, 0, 4);
+  }
+  return t2.bindVertexArray(null), t2.bindFramebuffer(t2.FRAMEBUFFER, null), t2.viewport(m[0] ?? 0, m[1] ?? 0, m[2] ?? 0, m[3] ?? 0), d ? t2.enable(t2.CULL_FACE) : t2.disable(t2.CULL_FACE), p ? t2.enable(t2.BLEND) : t2.disable(t2.BLEND), E ? t2.enable(t2.DEPTH_TEST) : t2.disable(t2.DEPTH_TEST), t2.activeTexture(T), t2.bindVertexArray(_), t2.activeTexture(t2.TEXTURE0), t2.bindTexture(t2.TEXTURE_3D, null), t2.activeTexture(t2.TEXTURE1), t2.bindTexture(t2.TEXTURE_3D, null), t2.activeTexture(T), t2.deleteBuffer(n), t2.deleteVertexArray(u), t2.deleteFramebuffer(h), f;
+}
+function Pr2(t2) {
+  const e2 = se2.get(t2);
+  if (e2) {
+    try {
+      t2.deleteProgram(e2);
+    } catch (r) {
+      z.warn("gradient.destroy: failed to delete program", r);
+    }
+    se2.delete(t2);
+  }
+}
+var Dr2 = Ce2;
+var Sr2 = `${Ue2}
+uniform mat4 normMtx;
+uniform float gradientAmount;
+uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
+uniform float numPaqd;
+uniform vec4 clipPlaneColor;
+uniform vec4 paqdUniforms;
+uniform sampler2D matcap;
+uniform sampler3D volumeGradient;
+uniform sampler3D overlay;
+uniform sampler3D paqd;
+uniform sampler2D paqdLut;
+uniform sampler3D drawing;
+uniform sampler3D drawingLinear;
+
+// Drawing-gradient tuning constants. Kept inline because they are shader
+// authoring choices (widens vs sharpens the gradient stencil), not
+// runtime-tunable parameters.
+// Offset (in voxels) for the 6-tap gradient stencil. The non-integer value
+// exploits the LINEAR sampler — each tap is a trilinear blend of 8 texels,
+// giving a Gaussian-like smoothing for free.
+const float DRAW_GRAD_OFFSET = 1.5;
+// Below this, the gradient is too small to normalize reliably.
+const float DRAW_GRAD_EPSILON = 1e-6;
+// Weighted scalar projection of drawing RGBA → f32. Luminance weights on
+// RGB distinguish distinct label colors; heavy alpha weight (2.0) makes
+// background→drawing transitions dominate. Switched from length(rgba) which
+// missed label-to-label boundaries when two labels had similar-magnitude
+// RGBA vectors (common when labels share alpha=255 and differ only in hue).
+float drawScalar(vec4 c) {
+  return dot(c, vec4(0.299, 0.587, 0.114, 2.0));
+}
+
+struct RayResult {
+  vec4 color;
+  vec4 firstHit;
+  float farthest;
+};
+
+// Shared fast+fine ray-march for overlay, PAQD, and drawing textures.
+RayResult rayMarchPass(
+    sampler3D tex, vec3 start, vec3 dir, float len,
+    vec4 deltaDir, vec4 deltaDirFast,
+    float ran, float earlyTermination
+) {
+    RayResult result;
+    result.color = vec4(0.0);
+    result.firstHit = vec4(0.0, 0.0, 0.0, 2.0 * len);
+    result.farthest = 0.0;
+
+    float stepSize = deltaDir.w;
+    vec4 samplePos = vec4(start + dir * (stepSize * ran), stepSize * ran);
+    vec4 samplePosStart = samplePos;
+
+    // Fast pass
+    for (int j = 0; j < 1024; j++) {
+        if (samplePos.a > len) { break; }
+        float alpha = texture(tex, samplePos.xyz).a;
+        if (alpha >= 0.01) { break; }
+        samplePos += deltaDirFast;
+    }
+    if (samplePos.a >= len) { return result; }
+
+    samplePos -= deltaDirFast;
+    if (samplePos.a < 0.0) { samplePos = samplePosStart; }
+
+    // Fine pass
+    for (int i = 0; i < 2048; i++) {
+        if (samplePos.a > len) { break; }
+        vec4 colorSample = texture(tex, samplePos.xyz);
+        if (colorSample.a >= 0.01) {
+            if (result.firstHit.a > len) {
+                result.firstHit = samplePos;
+            }
+            result.farthest = samplePos.a;
+            vec4 premultiplied = vec4(colorSample.rgb * colorSample.a, colorSample.a);
+            result.color = (1.0 - result.color.a) * premultiplied + result.color;
+            if (result.color.a > earlyTermination) { break; }
+        }
+        samplePos += deltaDir;
+    }
+    return result;
+}
+
+// PAQD easing function — piecewise linear alpha from primary probability.
+float paqdEaseAlpha(float alpha, vec4 u) {
+    float t0 = u[0];
+    float t1 = 0.5 * (u[0] + u[1]);
+    float t2 = u[1];
+    float y0 = 0.0;
+    float y1 = abs(u[2]);
+    float y2 = abs(u[3]);
+    if (alpha <= t0) { return y0; }
+    if (alpha <= t1) { return mix(y0, y1, (alpha - t0) / (t1 - t0)); }
+    if (alpha <= t2) { return mix(y1, y2, (alpha - t1) / (t2 - t1)); }
+    return y2;
+}
+
+// Specialized PAQD ray-march: samples raw PAQD data (nearest-neighbor),
+// performs LUT lookup, probability blending, and alpha easing per sample.
+RayResult rayMarchPaqd(
+    sampler3D tex, sampler2D lut,
+    vec3 start, vec3 dir, float len,
+    vec4 deltaDir, vec4 deltaDirFast,
+    float ran, float earlyTermination,
+    vec4 paqdUni
+) {
+    RayResult result;
+    result.color = vec4(0.0);
+    result.firstHit = vec4(0.0, 0.0, 0.0, 2.0 * len);
+    result.farthest = 0.0;
+
+    ivec3 texDims = textureSize(tex, 0);
+    vec3 texDimsF = vec3(texDims);
+    float stepSize = deltaDir.w;
+    vec4 samplePos = vec4(start + dir * (stepSize * ran), stepSize * ran);
+    vec4 samplePosStart = samplePos;
+
+    // Fast pass: skip until prob1 > easing threshold t0
+    float t0 = paqdUni[0];
+    for (int j = 0; j < 1024; j++) {
+        if (samplePos.a > len) { break; }
+        ivec3 coord = clamp(ivec3(samplePos.xyz * texDimsF), ivec3(0), texDims - 1);
+        vec4 raw = texelFetch(tex, coord, 0);
+        if (raw.b > t0) { break; }
+        samplePos += deltaDirFast;
+    }
+    if (samplePos.a >= len) { return result; }
+
+    samplePos -= deltaDirFast;
+    if (samplePos.a < 0.0) { samplePos = samplePosStart; }
+
+    // Fine pass: decode and accumulate PAQD colors
+    for (int i = 0; i < 2048; i++) {
+        if (samplePos.a > len) { break; }
+        ivec3 coord = clamp(ivec3(samplePos.xyz * texDimsF), ivec3(0), texDims - 1);
+        vec4 raw = texelFetch(tex, coord, 0);
+        float prob1 = raw.b;
+        float prob2 = raw.a;
+        float total = prob1 + prob2;
+        if (total > 0.004) {
+            int idx1 = int(round(raw.r * 255.0));
+            int idx2 = int(round(raw.g * 255.0));
+            vec4 c1 = texelFetch(lut, ivec2(clamp(idx1, 0, 255), 0), 0);
+            vec4 c2 = texelFetch(lut, ivec2(clamp(idx2, 0, 255), 0), 0);
+            float w = prob2 / total;
+            vec3 rgb = mix(c1.rgb, c2.rgb, w);
+            float alpha = paqdEaseAlpha(prob1, paqdUni);
+            if (alpha >= 0.01) {
+                if (result.firstHit.a > len) {
+                    result.firstHit = samplePos;
+                }
+                result.farthest = samplePos.a;
+                vec4 premultiplied = vec4(rgb * alpha, alpha);
+                result.color = (1.0 - result.color.a) * premultiplied + result.color;
+                if (result.color.a > earlyTermination) { break; }
+            }
+        }
+        samplePos += deltaDir;
+    }
+    return result;
+}
+
+// Depth-aware mixing of a ray-march result into the accumulated color.
+void depthAwareMix(
+    inout vec4 colAcc, RayResult result,
+    float backNearest, inout float fragDepth, float depthFactor
+) {
+    if (result.color.a <= 0.001) { return; }
+    float mixFactor = result.color.a;
+    if (colAcc.a <= 0.0) {
+        mixFactor = 1.0;
+    } else if (result.farthest > backNearest) {
+        float dx = min((result.farthest - backNearest) / 0.5, 1.0);
+        dx = colAcc.a * pow(dx, depthFactor);
+        mixFactor *= 1.0 - dx;
+    }
+    colAcc = vec4(mix(colAcc.rgb, result.color.rgb, mixFactor), max(colAcc.a, result.color.a));
+    float passDepth = frac2ndc(result.firstHit.xyz);
+    fragDepth = min(fragDepth, passDepth);
+}
+
+float distance2Plane(vec4 samplePos, vec4 clipPlane) {
+  // treat clipPlane.a > 1 as "no clip" sentinel
+  if (clipPlane.a > 1.0) {
+    return 1000.0;
+  }
+  vec3 n = clipPlane.xyz;
+  const float EPS = 1e-6;
+  float nlen = length(n);
+  if (nlen < EPS) {
+    return 1000.0; // invalid plane normal
+  }
+  // signed plane value: dot(n, p-0.5) + a
+  float signedDist = dot(n, samplePos.xyz - 0.5) - clipPlane.a;
+  // perpendicular (Euclidean) distance is |signedDist| / |n|
+  return abs(signedDist) / nlen;
+}
+
+void main() {
+  vec3 start = vColor;
+  vec3 backPosition = GetBackPosition(start);
+  vec3 dirVec = backPosition - start;
+  float len = length(dirVec);
+  vec3 dir = dirVec / len;
+  vec3 texVox = vec3(textureSize(volume, 0));
+  float lenVox = length(dirVec * texVox);
+  if (lenVox < 0.5 || len > 3.0) {
+    discard;
+  }
+  // Save original ray for overlay passes (overlay ignores clip planes)
+  vec3 origStart = start;
+  float origLen = len;
+  // Handle clip plane color (negative alpha means color plane is inside volume)
+  vec4 clipPlaneColorX = clipPlaneColor;
+  if (clipPlaneColorX.a < 0.0) {
+    clipPlaneColorX.a = 0.0;
+  }
+  float stepSize = len / lenVox;
+  vec4 deltaDir = vec4(dir * stepSize, stepSize);
+  float localGradientAmount = gradientAmount;
+  vec2 sampleRange = vec2(0.0, len);
+  bool cutaway = isClipCutaway > 0.5;
+  bool hasClip = false;
+  for (int i = 0; i < MAX_CLIP_PLANES; i++) {
+    clipSampleRange(dir, vec4(start, 0.0), clipPlanes[i], sampleRange, hasClip);
+  }
+  bool isClip = (sampleRange.x > 0.0) || ((sampleRange.y < len) && (sampleRange.y > 0.0));
+  // Check if clip plane configuration eliminates background entirely
+  bool skipBackground = false;
+  if (cutaway) {
+    if (hasClip && sampleRange.x <= 0.0 && sampleRange.y >= len) {
+      skipBackground = true;
+    }
+  } else {
+    if (sampleRange.x >= sampleRange.y) {
+      skipBackground = true;
+    }
+  }
+  // Shared values for all passes
+  float ran = fract(sin(gl_FragCoord.x * 12.9898 + gl_FragCoord.y * 78.233) * 43758.5453);
+  float stepSizeFast = stepSize * 1.9;
+  vec4 deltaDirFast = vec4(dir * stepSizeFast, stepSizeFast);
+  const float earlyTermination = 0.95;
+  // --- Background passes ---
+  vec4 colAcc = vec4(0.0);
+  vec4 firstHit = vec4(0.0, 0.0, 0.0, 2.0 * origLen);
+  bool bgHasHit = false;
+  float fragDepth = 0.9999;
+  float clipOffset = 0.0;
+  bool clipSurfaceHit = false;
+  if (!skipBackground) {
+    if (!cutaway && isClip) {
+      clipOffset = sampleRange.x;
+      start += dir * sampleRange.x;
+      len = sampleRange.y - sampleRange.x;
+      float alpha = texture(volume, start.xyz).a;
+      float alpha1 = texture(volume, start.xyz - deltaDir.xyz).a;
+      if ((alpha > 0.01) && (alpha1 > 0.01)) {
+        clipSurfaceHit = true;
+      }
+    }
+    vec4 samplePos = vec4(start + dir * (stepSize * ran), stepSize * ran);
+    // --- Background Fast Pass ---
+    vec4 samplePosStart = samplePos;
+    for (int j = 0; j < 1024; j++) {
+      if (samplePos.a > len) { break; }
+      if (cutaway && isClip && samplePos.a >= sampleRange.x && samplePos.a <= sampleRange.y) {
+        samplePos += deltaDirFast;
+        continue;
+      }
+      float alpha = texture(volume, samplePos.xyz).a;
+      if (alpha >= 0.01) {
+        break;
+      }
+      samplePos += deltaDirFast;
+    }
+    if (samplePos.a >= len) {
+      // Background fast pass found nothing — use clip plane color as fallback
+      if (isClip) {
+        float clipAlpha = clipPlaneColorX.a;
+        colAcc = vec4(clipPlaneColorX.rgb * clipAlpha, clipAlpha);
+      }
+    } else {
+      // Background fast pass found something
+      if (cutaway && isClip) {
+        float dx = abs(sampleRange.x - samplePos.a);
+        float dx2 = abs(sampleRange.y - samplePos.a);
+        if (min(dx, dx2) < stepSizeFast) {
+          clipSurfaceHit = true;
+        }
+      }
+      if (clipSurfaceHit) {
+        localGradientAmount = 0.0;
+      }
+      samplePos -= deltaDirFast;
+      if (samplePos.a < 0.0) {
+        samplePos = samplePosStart;
+      }
+      // --- Background Fine Pass ---
+      mat3 norm3 = mat3(normMtx);
+      float brighten = 1.0 + (localGradientAmount / 3.0);
+      for (int fi = 0; fi < 2048; fi++) {
+        if (samplePos.a > len) { break; }
+        if (cutaway && isClip && samplePos.a >= sampleRange.x && samplePos.a <= sampleRange.y) {
+          samplePos += deltaDir;
+          continue;
+        }
+        vec4 colorSample = texture(volume, samplePos.xyz);
+        if (colorSample.a >= 0.01) {
+          if (!bgHasHit) {
+            bgHasHit = true;
+            firstHit = samplePos;
+          }
+          vec3 gradRaw = texture(volumeGradient, samplePos.xyz).rgb;
+          vec3 localNormal = normalize(gradRaw * 2.0 - 1.0);
+          vec3 n = norm3 * localNormal;
+          vec2 uv = n.xy * 0.5 + 0.5;
+          vec3 mc_rgb = texture(matcap, uv).rgb * brighten;
+          vec3 blendedRGB = mix(vec3(1.0), mc_rgb, localGradientAmount);
+          vec3 finalRGB = blendedRGB * colorSample.rgb;
+          vec4 premultiplied = vec4(finalRGB * colorSample.a, colorSample.a);
+          colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
+          if (colAcc.a > earlyTermination) { break; }
+        }
+        samplePos += deltaDir;
+      }
+      // Clip surface ambient occlusion
+      if (clipSurfaceHit) {
+        float min1 = 1000.0;
+        float min2 = 1000.0;
+        vec4 firstHit1 = firstHit - deltaDir;
+        for (int ci = 0; ci < MAX_CLIP_PLANES; ci++) {
+          float d = distance2Plane(firstHit1, clipPlanes[ci]);
+          if (d < min1) {
+            min2 = min1;
+            min1 = d;
+          } else if (d < min2) {
+            min2 = d;
+          }
+        }
+        float thresh = 1.2 * stepSize;
+        if (cutaway && min2 < thresh && sampleRange.x > 0.0) {
+          if (abs(sampleRange.x - firstHit.a) > (2.0 * thresh) && abs(sampleRange.y - firstHit.a) > (2.0 * thresh)) {
+            min2 = thresh;
+          }
+        }
+        const float aoFrac = 0.5;
+        float factor = (1.0 - aoFrac) + aoFrac * clamp(min2 / thresh, 0.0, 1.0);
+        colAcc.rgb *= factor;
+      }
+      if (clipSurfaceHit && clipPlaneColor.a < 0.0) {
+        colAcc.rgb = mix(colAcc.rgb, clipPlaneColorX.rgb, abs(clipPlaneColor.a));
+      }
+      // If fine pass produced nothing, use clip plane color as fallback
+      if (colAcc.a <= 0.001 || !bgHasHit) {
+        if (isClip) {
+          float clipAlpha = clipPlaneColorX.a;
+          colAcc = vec4(clipPlaneColorX.rgb * clipAlpha, clipAlpha);
+        }
+      } else {
+        fragDepth = frac2ndc(firstHit.xyz);
+      }
+    }
+  }
+  // --- Optional passes (no clip plane) ---
+  float backNearest = clipOffset + firstHit.a;
+  float depthFactor = 0.3;
+  // Overlay pass
+  if (textureSize(overlay, 0).x > 2) {
+    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+    depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
+  }
+  // PAQD pass (raw data with GPU-side LUT lookup + easing)
+  if (textureSize(paqd, 0).x > 2) {
+    RayResult result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination, paqdUniforms);
+    depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
+  }
+  // Drawing pass (nearest-neighbor sampling — NEAREST filter set by CPU)
+  if (textureSize(drawing, 0).x > 2) {
+    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+    // Matcap lighting at first hit. 6-tap central-difference gradient on
+    // the drawing texture with LINEAR filtering — each tap is a trilinear
+    // blend of 8 texels, which approximates a Gaussian-smoothed sample
+    // (the "bilinear free smoothing" trick). Sampling at 1.5 voxels out
+    // widens the stencil, further reducing per-pixel noise from the
+    // ray-march step discretization and ran jitter. Sign convention:
+    // gx = value(+x) - value(-x), matching the volume gradient (inward-
+    // pointing toward higher drawing density).
+    if (result.color.a > 0.001 && gradientAmount > 0.0) {
+      vec3 dv = DRAW_GRAD_OFFSET / vec3(textureSize(drawingLinear, 0));
+      vec3 hp = result.firstHit.xyz;
+      float vXp = drawScalar(texture(drawingLinear, hp + vec3(dv.x, 0.0, 0.0)));
+      float vXm = drawScalar(texture(drawingLinear, hp - vec3(dv.x, 0.0, 0.0)));
+      float vYp = drawScalar(texture(drawingLinear, hp + vec3(0.0, dv.y, 0.0)));
+      float vYm = drawScalar(texture(drawingLinear, hp - vec3(0.0, dv.y, 0.0)));
+      float vZp = drawScalar(texture(drawingLinear, hp + vec3(0.0, 0.0, dv.z)));
+      float vZm = drawScalar(texture(drawingLinear, hp - vec3(0.0, 0.0, dv.z)));
+      vec3 grad = vec3(vXp - vXm, vYp - vYm, vZp - vZm);
+      if (length(grad) > DRAW_GRAD_EPSILON) {
+        vec3 localNormal = normalize(grad);
+        mat3 norm3d = mat3(normMtx);
+        vec3 n = norm3d * localNormal;
+        vec2 uv = n.xy * 0.5 + 0.5;
+        float brighten = 1.0 + (gradientAmount / 3.0);
+        vec3 mc_rgb = texture(matcap, uv).rgb * brighten;
+        vec3 shade = mix(vec3(1.0), mc_rgb, gradientAmount);
+        // result.color is premultiplied (rgb = actualColor * alpha).
+        // Clamp to alpha so the shade (which can exceed 1.0 via brighten)
+        // can't push rgb > alpha and break the premultiplied-alpha
+        // invariant that depthAwareMix and framebuffer blending assume.
+        result.color.rgb = min(result.color.rgb * shade, vec3(result.color.a));
+      }
+    }
+    depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
+  }
+  // Final output
+  if (colAcc.a <= 0.001) {
+    discard;
+  }
+  FragColor = vec4(colAcc.rgb, colAcc.a / earlyTermination);
+  gl_FragDepth = fragDepth;
+}
+`;
+
+class Cr2 extends Vp {
+  constructor() {
+    super(), this._gl = null, this.shader = null, this.depthPickShaderProgram = null, this.matcapTexture = null, this.volumeTexture = null, this.volumeGradientTexture = null, this.overlayTexture = null, this.paqdTexture = null, this.paqdLutTexture = null, this.drawingTexture = null, this.drawingLinearSampler = null, this.placeholderOverlay = null, this.cubeVAO = null, this.vertexBuffer = null, this.indexBuffer = null, this.cube = mp(), this.max3D = 0;
+  }
+  async init(e2, r) {
+    if (!this.isReady) {
+      if (this._gl = e2, this.max3D = r, this.cubeVAO = e2.createVertexArray(), e2.bindVertexArray(this.cubeVAO), this.vertexBuffer = e2.createBuffer(), e2.bindBuffer(e2.ARRAY_BUFFER, this.vertexBuffer), e2.bufferData(e2.ARRAY_BUFFER, new Float32Array(this.cube.vertices), e2.STATIC_DRAW), e2.enableVertexAttribArray(0), e2.vertexAttribPointer(0, 3, e2.FLOAT, false, 0, 0), this.indexBuffer = e2.createBuffer(), e2.bindBuffer(e2.ELEMENT_ARRAY_BUFFER, this.indexBuffer), e2.bufferData(e2.ELEMENT_ARRAY_BUFFER, new Uint16Array(this.cube.indices), e2.STATIC_DRAW), e2.bindVertexArray(null), this.placeholderOverlay = e2.createTexture(), this.placeholderOverlay) {
+        e2.bindTexture(e2.TEXTURE_3D, this.placeholderOverlay), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_R, e2.CLAMP_TO_EDGE);
+        const i2 = new Uint8Array(32);
+        e2.texImage3D(e2.TEXTURE_3D, 0, e2.RGBA, 2, 2, 2, 0, e2.RGBA, e2.UNSIGNED_BYTE, i2), e2.bindTexture(e2.TEXTURE_3D, null);
+      }
+      this.shader = new z2(e2, Dr2, Sr2), this.shader.uniforms.clipPlanes = e2.getUniformLocation(this.shader.program, "clipPlanes[0]"), this.depthPickShaderProgram = new z2(e2, Rt3, bt), this.depthPickShaderProgram.uniforms.clipPlanes = e2.getUniformLocation(this.depthPickShaderProgram.program, "clipPlanes[0]"), this.isReady = true;
+    }
+  }
+  _createFallbackTexture2D(e2) {
+    const r = e2.createTexture();
+    return e2.bindTexture(e2.TEXTURE_2D, r), e2.texImage2D(e2.TEXTURE_2D, 0, e2.RGBA, 1, 1, 0, e2.RGBA, e2.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255])), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MIN_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MAG_FILTER, e2.LINEAR), e2.bindTexture(e2.TEXTURE_2D, null), r;
+  }
+  async _loadTexture2D(e2, r) {
+    return new Promise((i2, o) => {
+      const a = new Image;
+      a.onload = () => {
+        const s = e2.createTexture();
+        if (!s) {
+          o(new Error("Failed to create texture"));
+          return;
+        }
+        e2.bindTexture(e2.TEXTURE_2D, s), e2.texImage2D(e2.TEXTURE_2D, 0, e2.RGBA, e2.RGBA, e2.UNSIGNED_BYTE, a), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MIN_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MAG_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.bindTexture(e2.TEXTURE_2D, null), i2(s);
+      }, a.onerror = o, Z(a), a.src = r;
+    });
+  }
+  async _loadTexture2DOrFallback(e2, r) {
+    return r ? this._loadTexture2D(e2, r) : this._createFallbackTexture2D(e2);
+  }
+  async updateVolume(e2, r, i2 = "") {
+    if (!this.isReady)
+      return;
+    const o = Math.max(Math.max(r.hdr.dims[1], r.hdr.dims[2]), r.hdr.dims[3]);
+    o > this.max3D && z.warn(`${o} exceeds the max3D (${this.max3D}) of this WebGL2 context`);
+    const a = ip(r, r);
+    this.volumeTexture && e2.deleteTexture(this.volumeTexture), this.volumeTexture = await le2(e2, r, r, a, 0), e2.bindTexture(e2.TEXTURE_3D, null), this.matcapTexture && e2.deleteTexture(this.matcapTexture), this.matcapTexture = await this._loadTexture2DOrFallback(e2, i2);
+    const s = [r.hdr.dims[1], r.hdr.dims[2], r.hdr.dims[3]];
+    this.volumeGradientTexture && e2.deleteTexture(this.volumeGradientTexture), this.volumeGradientTexture = yr2(e2, this.volumeTexture, s);
+  }
+  async updateOverlays(e2, r, i2, o = [0, 0, 0, 0]) {
+    if (!this.isReady || (this.clearOverlay(e2), this.clearPaqd(e2), !r.dimsRAS))
+      return;
+    const a = [r.dimsRAS[1], r.dimsRAS[2], r.dimsRAS[3]], s = i2.filter((n) => (n.opacity ?? 1) > 0);
+    if (s.length === 0)
+      return;
+    const c = s.filter((n) => Yn(n.hdr) && n.colormapLabel), u = s.filter((n) => !Yn(n.hdr));
+    if (c.length > 0) {
+      const n = c[0];
+      if (n.img && n.dimsRAS && n.img2RASstep && n.img2RASstart && n.colormapLabel) {
+        const f = ip(r, n), h = n.img2RASstep[0] === 1 && n.img2RASstep[1] === n.dimsRAS[1] && n.img2RASstep[2] === n.dimsRAS[1] * n.dimsRAS[2];
+        let m = new Uint8Array(n.img.buffer, n.img.byteOffset, n.img.byteLength);
+        h || (m = Us(m, 4, n.dimsRAS, n.img2RASstart, n.img2RASstep));
+        const d = [n.dimsRAS[1], n.dimsRAS[2], n.dimsRAS[3]], p = ap(m, a, d, f);
+        this.paqdTexture = e2.createTexture(), this.paqdTexture && (e2.bindTexture(e2.TEXTURE_3D, this.paqdTexture), e2.pixelStorei(e2.UNPACK_ALIGNMENT, 1), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_R, e2.CLAMP_TO_EDGE), e2.texImage3D(e2.TEXTURE_3D, 0, e2.RGBA8, a[0], a[1], a[2], 0, e2.RGBA, e2.UNSIGNED_BYTE, p), e2.bindTexture(e2.TEXTURE_3D, null));
+        const E = n.colormapLabel.min ?? 0, T = lp(n.colormapLabel.lut, E);
+        this.paqdLutTexture = e2.createTexture(), this.paqdLutTexture && (e2.bindTexture(e2.TEXTURE_2D, this.paqdLutTexture), e2.pixelStorei(e2.UNPACK_ALIGNMENT, 1), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texImage2D(e2.TEXTURE_2D, 0, e2.RGBA, 256, 1, 0, e2.RGBA, e2.UNSIGNED_BYTE, T), e2.bindTexture(e2.TEXTURE_2D, null));
+      }
+    }
+    if (u.length === 1) {
+      const n = u[0], f = ip(r, n);
+      this.overlayTexture = le2(e2, n, r, f, n.opacity ?? 1), e2.bindTexture(e2.TEXTURE_3D, null);
+    } else if (u.length > 1) {
+      const n = [];
+      for (const h of u) {
+        const m = ip(r, h), d = le2(e2, h, r, m, h.opacity ?? 1), p = xe(e2, d, a);
+        e2.deleteTexture(d), n.push(p);
+      }
+      const f = _t(n, a);
+      if (this.overlayTexture = e2.createTexture(), !this.overlayTexture)
+        return;
+      e2.bindTexture(e2.TEXTURE_3D, this.overlayTexture), e2.pixelStorei(e2.UNPACK_ALIGNMENT, 1), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_R, e2.CLAMP_TO_EDGE), e2.texImage3D(e2.TEXTURE_3D, 0, e2.RGBA8, a[0], a[1], a[2], 0, e2.RGBA, e2.UNSIGNED_BYTE, f), e2.bindTexture(e2.TEXTURE_3D, null);
+    }
+  }
+  clearOverlay(e2) {
+    this.overlayTexture && (e2.deleteTexture(this.overlayTexture), this.overlayTexture = null);
+  }
+  clearPaqd(e2) {
+    this.paqdTexture && (e2.deleteTexture(this.paqdTexture), this.paqdTexture = null), this.paqdLutTexture && (e2.deleteTexture(this.paqdLutTexture), this.paqdLutTexture = null);
+  }
+  draw(e2, r, i2, o, a, s, c, u, n, f, h = false, m = [0, 0, 0, 0]) {
+    if (!this.isReady || !this.shader || !this.cubeVAO || !this.indexBuffer || !this.volumeTexture || !this.matcapTexture || !this.volumeGradientTexture)
+      return;
+    const d = this.shader, p = this.cube.indices.length;
+    if (d.use(e2), e2.activeTexture(e2.TEXTURE0), e2.bindTexture(e2.TEXTURE_3D, this.volumeTexture), d.uniforms.volume && e2.uniform1i(d.uniforms.volume, 0), e2.activeTexture(e2.TEXTURE1), e2.bindTexture(e2.TEXTURE_2D, this.matcapTexture), d.uniforms.matcap && e2.uniform1i(d.uniforms.matcap, 1), e2.activeTexture(e2.TEXTURE2), e2.bindTexture(e2.TEXTURE_3D, this.volumeGradientTexture), d.uniforms.volumeGradient && e2.uniform1i(d.uniforms.volumeGradient, 2), e2.activeTexture(e2.TEXTURE3), e2.bindTexture(e2.TEXTURE_3D, this.overlayTexture || this.placeholderOverlay), d.uniforms.overlay && e2.uniform1i(d.uniforms.overlay, 3), e2.activeTexture(e2.TEXTURE4), e2.bindTexture(e2.TEXTURE_3D, this.paqdTexture || this.placeholderOverlay), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), d.uniforms.paqd && e2.uniform1i(d.uniforms.paqd, 4), e2.activeTexture(e2.TEXTURE5), e2.bindTexture(e2.TEXTURE_3D, this.drawingTexture || this.placeholderOverlay), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), d.uniforms.drawing && e2.uniform1i(d.uniforms.drawing, 5), !this.drawingLinearSampler) {
+      const T = e2.createSampler();
+      T && (e2.samplerParameteri(T, e2.TEXTURE_MIN_FILTER, e2.LINEAR), e2.samplerParameteri(T, e2.TEXTURE_MAG_FILTER, e2.LINEAR), e2.samplerParameteri(T, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.samplerParameteri(T, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.samplerParameteri(T, e2.TEXTURE_WRAP_R, e2.CLAMP_TO_EDGE), this.drawingLinearSampler = T);
+    }
+    e2.activeTexture(e2.TEXTURE7), e2.bindTexture(e2.TEXTURE_3D, this.drawingTexture || this.placeholderOverlay), e2.bindSampler(7, this.drawingLinearSampler), d.uniforms.drawingLinear && e2.uniform1i(d.uniforms.drawingLinear, 7), e2.activeTexture(e2.TEXTURE6), this.paqdLutTexture ? e2.bindTexture(e2.TEXTURE_2D, this.paqdLutTexture) : e2.bindTexture(e2.TEXTURE_2D, null), d.uniforms.paqdLut && e2.uniform1i(d.uniforms.paqdLut, 6), d.uniforms.mvpMtx && e2.uniformMatrix4fv(d.uniforms.mvpMtx, false, r), d.uniforms.normMtx && e2.uniformMatrix4fv(d.uniforms.normMtx, false, i2), d.uniforms.matRAS && e2.uniformMatrix4fv(d.uniforms.matRAS, false, o), d.uniforms.volScale && e2.uniform3fv(d.uniforms.volScale, a);
+    const E = s ?? [0, 0, 1];
+    d.uniforms.rayDir && e2.uniform3fv(d.uniforms.rayDir, E.slice(0, 3)), d.uniforms.gradientAmount && e2.uniform1f(d.uniforms.gradientAmount, c), d.uniforms.numVolumes && e2.uniform1f(d.uniforms.numVolumes, u), d.uniforms.clipPlanes && e2.uniform4fv(d.uniforms.clipPlanes, f), d.uniforms.clipPlaneColor && e2.uniform4fv(d.uniforms.clipPlaneColor, n), d.uniforms.isClipCutaway && e2.uniform1f(d.uniforms.isClipCutaway, h ? 1 : 0), d.uniforms.numPaqd && e2.uniform1f(d.uniforms.numPaqd, 0), d.uniforms.paqdUniforms && e2.uniform4fv(d.uniforms.paqdUniforms, m), e2.bindVertexArray(this.cubeVAO), e2.bindBuffer(e2.ELEMENT_ARRAY_BUFFER, this.indexBuffer), e2.blendFunc(e2.ONE, e2.ONE_MINUS_SRC_ALPHA), e2.drawElements(e2.TRIANGLE_STRIP, p, e2.UNSIGNED_SHORT, 0), e2.blendFunc(e2.SRC_ALPHA, e2.ONE_MINUS_SRC_ALPHA), e2.bindVertexArray(null);
+  }
+  drawDepthPick(e2, r, i2, o, a, s, c = false, u = 1) {
+    if (!this.isReady || !this.depthPickShaderProgram || !this.cubeVAO || !this.indexBuffer || !this.volumeTexture)
+      return;
+    const n = this.depthPickShaderProgram, f = this.cube.indices.length;
+    n.use(e2), e2.activeTexture(e2.TEXTURE0), e2.bindTexture(e2.TEXTURE_3D, this.volumeTexture), n.uniforms.volume && e2.uniform1i(n.uniforms.volume, 0), e2.activeTexture(e2.TEXTURE1), e2.bindTexture(e2.TEXTURE_3D, this.overlayTexture || this.placeholderOverlay), n.uniforms.overlay && e2.uniform1i(n.uniforms.overlay, 1), n.uniforms.mvpMtx && e2.uniformMatrix4fv(n.uniforms.mvpMtx, false, r), n.uniforms.matRAS && e2.uniformMatrix4fv(n.uniforms.matRAS, false, i2), n.uniforms.volScale && e2.uniform3fv(n.uniforms.volScale, o);
+    const h = a ?? [0, 0, 1];
+    n.uniforms.rayDir && e2.uniform3fv(n.uniforms.rayDir, h.slice(0, 3)), n.uniforms.clipPlanes && e2.uniform4fv(n.uniforms.clipPlanes, s), n.uniforms.isClipCutaway && e2.uniform1f(n.uniforms.isClipCutaway, c ? 1 : 0), n.uniforms.numVolumes && e2.uniform1f(n.uniforms.numVolumes, u), e2.bindVertexArray(this.cubeVAO), e2.bindBuffer(e2.ELEMENT_ARRAY_BUFFER, this.indexBuffer), e2.drawElements(e2.TRIANGLE_STRIP, f, e2.UNSIGNED_SHORT, 0), e2.bindVertexArray(null);
+  }
+  async loadMatcap(e2, r) {
+    if (this.isReady)
+      try {
+        const i2 = await this._loadTexture2DOrFallback(e2, r);
+        this.matcapTexture && e2.deleteTexture(this.matcapTexture), this.matcapTexture = i2;
+      } catch (i2) {
+        z.warn("Matcap load failed", i2);
+      }
+  }
+  hasVolume() {
+    return this.volumeTexture !== null;
+  }
+  hasOverlay() {
+    return this.overlayTexture !== null;
+  }
+  updateDrawingTexture(e2, r, i2) {
+    if (this.isReady)
+      if (this.drawingTexture)
+        e2.bindTexture(e2.TEXTURE_3D, this.drawingTexture), e2.texSubImage3D(e2.TEXTURE_3D, 0, 0, 0, 0, i2[0], i2[1], i2[2], e2.RGBA, e2.UNSIGNED_BYTE, r), e2.bindTexture(e2.TEXTURE_3D, null);
+      else {
+        if (this.drawingTexture = e2.createTexture(), !this.drawingTexture)
+          return;
+        e2.bindTexture(e2.TEXTURE_3D, this.drawingTexture), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_R, e2.CLAMP_TO_EDGE), e2.texImage3D(e2.TEXTURE_3D, 0, e2.RGBA8, i2[0], i2[1], i2[2], 0, e2.RGBA, e2.UNSIGNED_BYTE, r), e2.bindTexture(e2.TEXTURE_3D, null);
+      }
+  }
+  destroyDrawing(e2) {
+    this.drawingTexture && (e2.deleteTexture(this.drawingTexture), this.drawingTexture = null);
+  }
+  destroy() {
+    const e2 = this._gl;
+    e2 && (this.cubeVAO && e2.deleteVertexArray(this.cubeVAO), this.cubeVAO = null, this.vertexBuffer && e2.deleteBuffer(this.vertexBuffer), this.indexBuffer && e2.deleteBuffer(this.indexBuffer), this.vertexBuffer = null, this.indexBuffer = null, this.matcapTexture && e2.deleteTexture(this.matcapTexture), this.volumeTexture && e2.deleteTexture(this.volumeTexture), this.volumeGradientTexture && e2.deleteTexture(this.volumeGradientTexture), this.overlayTexture && e2.deleteTexture(this.overlayTexture), this.paqdTexture && e2.deleteTexture(this.paqdTexture), this.drawingTexture && e2.deleteTexture(this.drawingTexture), this.drawingLinearSampler && e2.deleteSampler(this.drawingLinearSampler), this.placeholderOverlay && e2.deleteTexture(this.placeholderOverlay), this.matcapTexture = null, this.volumeTexture = null, this.volumeGradientTexture = null, this.overlayTexture = null, this.paqdTexture = null, this.drawingTexture = null, this.drawingLinearSampler = null, this.placeholderOverlay = null, this.shader?.program && e2.deleteProgram(this.shader.program), this.shader = null, ur2(e2), Pr2(e2), this.isReady = false, this._gl = null);
+  }
+}
+var Ur2 = `#version 300 es
+layout(location=0) in vec3 pos;
+uniform int axCorSag;
+uniform mat4 mvpMtx;
+uniform mat4 frac2mm;
+uniform float slice;
+out vec3 texPos;
+
+void main(void) {
+  // Construct texture position based on slice orientation
+  // pos.xy are in 0-1 range, slice determines depth along the slice axis
+  texPos = vec3(pos.x, pos.y, slice);
+  if (axCorSag > 1) {
+    // Sagittal: slice is X axis
+    texPos = vec3(slice, pos.x, pos.y);
+  } else if (axCorSag > 0) {
+    // Coronal: slice is Y axis
+    texPos = vec3(pos.x, slice, pos.y);
+  }
+  // Axial: slice is Z axis (default)
+
+  // Transform from fractional to mm space, then apply MVP
+  vec4 mm = frac2mm * vec4(texPos, 1.0);
+  gl_Position = mvpMtx * mm;
+}
+`;
+var Lr2 = `#version 300 es
+precision highp int;
+precision highp float;
+
+uniform highp sampler3D volume;
+uniform highp sampler3D overlay;
+uniform float opacity;
+uniform float overlayAlphaShader;
+uniform float overlayOpacity;  // opacity of overlay volume (0-1)
+uniform int isAlphaClipDark;
+uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
+uniform highp sampler3D drawing;
+uniform float drawRimOpacity;
+uniform float numPaqd;
+uniform vec4 paqdUniforms;
+uniform highp sampler3D paqd;
+uniform highp sampler2D paqdLut;
+uniform int axCorSag;
+uniform int isV1SliceShader;
+uniform float overlayOutlineWidth;
+
+in vec3 texPos;
+out vec4 color;
+
+// PAQD easing function — piecewise linear alpha from primary probability.
+float paqdEaseAlpha(float alpha, vec4 pu) {
+    float t0 = pu[0];
+    float t1 = 0.5 * (pu[0] + pu[1]);
+    float t2 = pu[1];
+    float y0 = 0.0;
+    float y1 = abs(pu[2]);
+    float y2 = abs(pu[3]);
+    if (alpha <= t0) { return y0; }
+    if (alpha <= t1) { return mix(y0, y1, (alpha - t0) / (t1 - t0)); }
+    if (alpha <= t2) { return mix(y1, y2, (alpha - t1) / (t2 - t1)); }
+    return y2;
+}
+
+void main() {
+  // Sample background volume
+  vec4 background = texture(volume, texPos);
+  color = vec4(background.rgb, opacity);
+
+  // Handle alpha clipping for dark values (FSLeyes style)
+  if ((isAlphaClipDark != 0) && (background.a == 0.0)) {
+    color.a = 0.0;
+  }
+
+  // Apply overlay alpha modulation
+  color.a *= overlayAlphaShader;
+
+  // Overlay blending (only when overlay volumes are loaded)
+  if (numVolumes > 1.0) {
+    {
+      vec4 ocolor = texture(overlay, texPos);
+      ocolor.a *= overlayOpacity;
+      // V1 fiber line visualization: render colored line along fiber direction within each voxel
+      if ((isV1SliceShader != 0) && (ocolor.a > 0.0)) {
+        uint alpha = uint(ocolor.a * 255.0);
+        vec3 xyzFlip = vec3(float((uint(1) & alpha) > uint(0)), float((uint(2) & alpha) > uint(0)), float((uint(4) & alpha) > uint(0)));
+        xyzFlip = (xyzFlip * 2.0) - 1.0;
+        vec3 v1 = ocolor.rgb;
+        v1 = normalize(v1 * xyzFlip);
+        vec3 vxl = fract(texPos * vec3(textureSize(volume, 0))) - 0.5;
+        vxl.x = -vxl.x;
+        float t = dot(vxl, v1);
+        vec3 P = t * v1;
+        float dx = length(P - vxl);
+        ocolor.a = 1.0 - smoothstep(0.2, 0.25, dx);
+        ocolor.a *= length(ocolor.rgb);
+        ocolor.rgb = normalize(ocolor.rgb);
+        float pan = 0.5;
+        if (axCorSag == 0) vxl.z -= pan;
+        if (axCorSag == 1) vxl.y -= pan;
+        if (axCorSag == 2) vxl.x += pan;
+        t = dot(vxl, v1);
+        P = t * v1;
+        float dx2 = length(P - vxl);
+        ocolor.rgb += (dx2 - dx - 0.5 * pan);
+      }
+      // Overlay outline: draw black border at threshold boundary
+      if (overlayOutlineWidth > 0.0) {
+        vec3 vx = overlayOutlineWidth / vec3(textureSize(overlay, 0));
+        vec3 vxR = vec3(texPos.x+vx.x, texPos.y, texPos.z);
+        vec3 vxL = vec3(texPos.x-vx.x, texPos.y, texPos.z);
+        vec3 vxA = vec3(texPos.x, texPos.y+vx.y, texPos.z);
+        vec3 vxP = vec3(texPos.x, texPos.y-vx.y, texPos.z);
+        vec3 vxS = vec3(texPos.x, texPos.y, texPos.z+vx.z);
+        vec3 vxI = vec3(texPos.x, texPos.y, texPos.z-vx.z);
+        if (ocolor.a < 1.0) {
+          // Sub-threshold voxel: check if any in-plane neighbor is supra-threshold
+          float na = 0.0;
+          if (axCorSag != 2) { na = max(na, texture(overlay, vxR).a); na = max(na, texture(overlay, vxL).a); }
+          if (axCorSag != 1) { na = max(na, texture(overlay, vxA).a); na = max(na, texture(overlay, vxP).a); }
+          if (axCorSag != 0) { na = max(na, texture(overlay, vxS).a); na = max(na, texture(overlay, vxI).a); }
+          // In-plane diagonal corners
+          if (axCorSag == 0) { na = max(na, texture(overlay, vec3(texPos.x+vx.x, texPos.y+vx.y, texPos.z)).a); na = max(na, texture(overlay, vec3(texPos.x-vx.x, texPos.y+vx.y, texPos.z)).a); na = max(na, texture(overlay, vec3(texPos.x+vx.x, texPos.y-vx.y, texPos.z)).a); na = max(na, texture(overlay, vec3(texPos.x-vx.x, texPos.y-vx.y, texPos.z)).a); }
+          if (axCorSag == 1) { na = max(na, texture(overlay, vec3(texPos.x+vx.x, texPos.y, texPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x-vx.x, texPos.y, texPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x+vx.x, texPos.y, texPos.z-vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x-vx.x, texPos.y, texPos.z-vx.z)).a); }
+          if (axCorSag == 2) { na = max(na, texture(overlay, vec3(texPos.x, texPos.y+vx.y, texPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x, texPos.y-vx.y, texPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x, texPos.y+vx.y, texPos.z-vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x, texPos.y-vx.y, texPos.z-vx.z)).a); }
+          if (na >= 1.0) { ocolor = vec4(0.0, 0.0, 0.0, 1.0); }
+        } else {
+          // Supra-threshold voxel: check if any in-plane neighbor is sub-threshold
+          float na = 1.0;
+          if (axCorSag != 2) { na = min(na, texture(overlay, vxR).a); na = min(na, texture(overlay, vxL).a); }
+          if (axCorSag != 1) { na = min(na, texture(overlay, vxA).a); na = min(na, texture(overlay, vxP).a); }
+          if (axCorSag != 0) { na = min(na, texture(overlay, vxS).a); na = min(na, texture(overlay, vxI).a); }
+          if (na < 1.0) { ocolor = vec4(0.0, 0.0, 0.0, 1.0); }
+        }
+      }
+      float a = color.a + ocolor.a * (1.0 - color.a);
+      if (a > 0.0) {
+        color.rgb = mix(color.rgb, ocolor.rgb, ocolor.a / a);
+        color.a = a;
+      }
+    }
+  }
+
+  // PAQD blending (raw data with GPU-side LUT lookup + easing)
+  // Label indices use nearest-neighbor (texelFetch); probabilities use linear
+  // interpolation (texture()) for smooth distance-field boundaries.
+  if (numPaqd > 0.0) {
+    ivec3 pDims = textureSize(paqd, 0);
+    if (pDims.x > 2) {
+      // Nearest: label indices (R,G) — interpolating discrete indices is meaningless
+      ivec3 pCoord = clamp(ivec3(texPos * vec3(pDims)), ivec3(0), pDims - 1);
+      vec4 raw = texelFetch(paqd, pCoord, 0);
+      // Linear: probabilities (B,A) — smooth distance-field-like alpha
+      vec4 smoothProb = texture(paqd, texPos);
+      float prob1 = smoothProb.b;
+      float prob2 = smoothProb.a;
+      float total = prob1 + prob2;
+      if (total > 0.004) {
+        int idx1 = int(round(raw.r * 255.0));
+        int idx2 = int(round(raw.g * 255.0));
+        vec4 c1 = texelFetch(paqdLut, ivec2(clamp(idx1, 0, 255), 0), 0);
+        vec4 c2 = texelFetch(paqdLut, ivec2(clamp(idx2, 0, 255), 0), 0);
+        float w = prob2 / total;
+        vec3 prgb = mix(c1.rgb, c2.rgb, w);
+        float palpha = paqdEaseAlpha(prob1, paqdUniforms);
+        if (palpha > 0.0) {
+          // Always blend PAQD in front for 2D slices (background is typically opaque)
+          float a = palpha + color.a * (1.0 - palpha);
+          color = vec4(mix(color.rgb, prgb, palpha / max(a, 0.001)), a);
+        }
+      }
+    }
+  }
+
+  // Discard fully transparent pixels so they don't write to the depth buffer
+  // (allows meshes behind transparent slice areas to show through)
+  if (color.a <= 0.0) {
+    discard;
+  }
+
+  // Drawing overlay (nearest-neighbor via texelFetch) — always runs
+  ivec3 drawDims = textureSize(drawing, 0);
+  ivec3 drawCoord = clamp(ivec3(texPos * vec3(drawDims)), ivec3(0), drawDims - 1);
+  vec4 drawColor = texelFetch(drawing, drawCoord, 0);
+  if (drawColor.a > 0.0) {
+    float da = drawColor.a;
+    if (drawRimOpacity >= 0.0) {
+      vec3 offsetX = dFdx(texPos);
+      vec3 offsetY = dFdy(texPos);
+      vec3 L = texture(drawing, texPos - offsetX).rgb;
+      vec3 R = texture(drawing, texPos + offsetX).rgb;
+      vec3 T = texture(drawing, texPos - offsetY).rgb;
+      vec3 B = texture(drawing, texPos + offsetY).rgb;
+      vec3 drawV = drawColor.rgb;
+      if (any(notEqual(L, drawV)) || any(notEqual(R, drawV)) ||
+          any(notEqual(T, drawV)) || any(notEqual(B, drawV)))
+        da = drawRimOpacity;
+    }
+    color.rgb = mix(color.rgb, drawColor.rgb, da);
+    color.a = max(color.a, drawColor.a);
+  }
+}
+`;
+
+class Fr2 extends Vp {
+  constructor() {
+    super(...arguments), this._gl = null, this._shader = null, this._vao = null, this._vertexBuffer = null, this._placeholderOverlay = null, this._drawingTexture = null, this._placeholderDrawing = null, this._placeholderPaqd = null, this._placeholderLut2D = null;
+  }
+  init(e2) {
+    if (this.isReady)
+      return;
+    if (this._gl = e2, this._shader = new z2(e2, Ur2, Lr2), this._vao = e2.createVertexArray(), !this._vao)
+      throw new Error("Failed to create slice VAO");
+    e2.bindVertexArray(this._vao);
+    const r = new Float32Array([
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      1,
+      1,
+      0
+    ]);
+    if (this._vertexBuffer = e2.createBuffer(), !this._vertexBuffer)
+      throw e2.bindVertexArray(null), new Error("Failed to create slice vertex buffer");
+    if (e2.bindBuffer(e2.ARRAY_BUFFER, this._vertexBuffer), e2.bufferData(e2.ARRAY_BUFFER, r, e2.STATIC_DRAW), e2.enableVertexAttribArray(0), e2.vertexAttribPointer(0, 3, e2.FLOAT, false, 0, 0), e2.bindVertexArray(null), this._placeholderOverlay = e2.createTexture(), !this._placeholderOverlay)
+      throw e2.bindVertexArray(null), new Error("Failed to create slice placeholder texture");
+    e2.bindTexture(e2.TEXTURE_3D, this._placeholderOverlay), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_R, e2.CLAMP_TO_EDGE);
+    const i2 = new Uint8Array(32);
+    e2.texImage3D(e2.TEXTURE_3D, 0, e2.RGBA, 2, 2, 2, 0, e2.RGBA, e2.UNSIGNED_BYTE, i2), e2.bindTexture(e2.TEXTURE_3D, null), this._placeholderDrawing = e2.createTexture(), this._placeholderDrawing && (e2.bindTexture(e2.TEXTURE_3D, this._placeholderDrawing), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_R, e2.CLAMP_TO_EDGE), e2.texImage3D(e2.TEXTURE_3D, 0, e2.RGBA, 2, 2, 2, 0, e2.RGBA, e2.UNSIGNED_BYTE, new Uint8Array(32)), e2.bindTexture(e2.TEXTURE_3D, null)), this._placeholderPaqd = e2.createTexture(), this._placeholderPaqd && (e2.bindTexture(e2.TEXTURE_3D, this._placeholderPaqd), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_R, e2.CLAMP_TO_EDGE), e2.texImage3D(e2.TEXTURE_3D, 0, e2.RGBA, 2, 2, 2, 0, e2.RGBA, e2.UNSIGNED_BYTE, new Uint8Array(32)), e2.bindTexture(e2.TEXTURE_3D, null)), this._placeholderLut2D = e2.createTexture(), this._placeholderLut2D && (e2.bindTexture(e2.TEXTURE_2D, this._placeholderLut2D), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texImage2D(e2.TEXTURE_2D, 0, e2.RGBA, 1, 1, 0, e2.RGBA, e2.UNSIGNED_BYTE, new Uint8Array(4)), e2.bindTexture(e2.TEXTURE_2D, null)), this.isReady = true;
+  }
+  getPlaceholderOverlay() {
+    return this._placeholderOverlay;
+  }
+  draw(e2, r, i2, o, a, s, c, u, n = 1, f = false, h = 1, m = null, d = null, p = 0, E = [0, 0, 0, 0], T = false) {
+    if (!this.isReady || !r || !this._shader || !this._vao || !o.frac2mm)
+      return;
+    this._shader.use(e2);
+    const _ = f ? e2.NEAREST : e2.LINEAR;
+    e2.activeTexture(e2.TEXTURE0), e2.bindTexture(e2.TEXTURE_3D, r), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, _), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, _), e2.uniform1i(this._shader.uniforms.volume, 0), e2.activeTexture(e2.TEXTURE1), e2.bindTexture(e2.TEXTURE_3D, i2 || this._placeholderOverlay), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, _), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, _), e2.uniform1i(this._shader.uniforms.overlay, 1), e2.activeTexture(e2.TEXTURE2), e2.bindTexture(e2.TEXTURE_3D, this._drawingTexture || this._placeholderDrawing), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), this._shader.uniforms.drawing && e2.uniform1i(this._shader.uniforms.drawing, 2), e2.activeTexture(e2.TEXTURE3), e2.bindTexture(e2.TEXTURE_3D, m || this._placeholderPaqd), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.LINEAR), this._shader.uniforms.paqd && e2.uniform1i(this._shader.uniforms.paqd, 3), e2.activeTexture(e2.TEXTURE4), e2.bindTexture(e2.TEXTURE_2D, d || this._placeholderLut2D), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), this._shader.uniforms.paqdLut && e2.uniform1i(this._shader.uniforms.paqdLut, 4), this._shader.uniforms.axCorSag && e2.uniform1i(this._shader.uniforms.axCorSag, c), this._shader.uniforms.slice && e2.uniform1f(this._shader.uniforms.slice, u), this._shader.uniforms.opacity && e2.uniform1f(this._shader.uniforms.opacity, o.opacity ?? 1), this._shader.uniforms.overlayAlphaShader && e2.uniform1f(this._shader.uniforms.overlayAlphaShader, a.overlayAlphaShader ?? 1), this._shader.uniforms.overlayOpacity && e2.uniform1f(this._shader.uniforms.overlayOpacity, h), this._shader.uniforms.isAlphaClipDark && e2.uniform1i(this._shader.uniforms.isAlphaClipDark, a.isAlphaClipDark ? 1 : 0), this._shader.uniforms.numVolumes && e2.uniform1f(this._shader.uniforms.numVolumes, n), this._shader.uniforms.drawRimOpacity && e2.uniform1f(this._shader.uniforms.drawRimOpacity, a.drawRimOpacity ?? -1), this._shader.uniforms.numPaqd && e2.uniform1f(this._shader.uniforms.numPaqd, p), this._shader.uniforms.paqdUniforms && e2.uniform4f(this._shader.uniforms.paqdUniforms, E[0], E[1], E[2], E[3]), this._shader.uniforms.isV1SliceShader && e2.uniform1i(this._shader.uniforms.isV1SliceShader, T ? 1 : 0), this._shader.uniforms.overlayOutlineWidth && e2.uniform1f(this._shader.uniforms.overlayOutlineWidth, a.overlayOutlineWidth ?? 0), this._shader.uniforms.frac2mm && e2.uniformMatrix4fv(this._shader.uniforms.frac2mm, false, o.frac2mm), this._shader.uniforms.mvpMtx && e2.uniformMatrix4fv(this._shader.uniforms.mvpMtx, false, s), e2.enable(e2.BLEND), e2.blendFunc(e2.SRC_ALPHA, e2.ONE_MINUS_SRC_ALPHA), e2.depthMask(true), e2.disable(e2.CULL_FACE), e2.bindVertexArray(this._vao), e2.drawArrays(e2.TRIANGLE_STRIP, 0, 4), e2.bindVertexArray(null), e2.enable(e2.CULL_FACE);
+  }
+  updateDrawingTexture(e2, r, i2) {
+    if (this.isReady)
+      if (this._drawingTexture)
+        e2.bindTexture(e2.TEXTURE_3D, this._drawingTexture), e2.texSubImage3D(e2.TEXTURE_3D, 0, 0, 0, 0, i2[0], i2[1], i2[2], e2.RGBA, e2.UNSIGNED_BYTE, r), e2.bindTexture(e2.TEXTURE_3D, null);
+      else {
+        if (this._drawingTexture = e2.createTexture(), !this._drawingTexture)
+          return;
+        e2.bindTexture(e2.TEXTURE_3D, this._drawingTexture), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MIN_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_MAG_FILTER, e2.NEAREST), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_3D, e2.TEXTURE_WRAP_R, e2.CLAMP_TO_EDGE), e2.texImage3D(e2.TEXTURE_3D, 0, e2.RGBA8, i2[0], i2[1], i2[2], 0, e2.RGBA, e2.UNSIGNED_BYTE, r), e2.bindTexture(e2.TEXTURE_3D, null);
+      }
+  }
+  destroyDrawing() {
+    const e2 = this._gl;
+    e2 && this._drawingTexture && (e2.deleteTexture(this._drawingTexture), this._drawingTexture = null);
+  }
+  destroy() {
+    const e2 = this._gl;
+    e2 && (this._vao && e2.deleteVertexArray(this._vao), this._vertexBuffer && e2.deleteBuffer(this._vertexBuffer), this._placeholderOverlay && e2.deleteTexture(this._placeholderOverlay), this._placeholderDrawing && e2.deleteTexture(this._placeholderDrawing), this._placeholderPaqd && e2.deleteTexture(this._placeholderPaqd), this._placeholderLut2D && e2.deleteTexture(this._placeholderLut2D), this._drawingTexture && e2.deleteTexture(this._drawingTexture), this._shader?.program && e2.deleteProgram(this._shader.program), this._vao = null, this._vertexBuffer = null, this._placeholderOverlay = null, this._placeholderDrawing = null, this._placeholderPaqd = null, this._placeholderLut2D = null, this._drawingTexture = null, this._shader = null, this.isReady = false, this._gl = null);
+  }
+}
+var wr2 = `#version 300 es
+precision highp float;
+
+uniform vec2 canvasSize;
+uniform vec2 texSize;
+
+out vec2 vUv;
+
+void main() {
+    int vIdx = gl_VertexID;
+    vec2 pos = vec2(0.0);
+    if (vIdx == 1) { pos.x = 1.0; }
+    else if (vIdx == 2) { pos.y = 1.0; }
+    else if (vIdx == 3) { pos.x = 1.0; pos.y = 1.0; }
+
+    // Aspect-ratio-correct "contain" fit
+    float canvasAspect = canvasSize.x / canvasSize.y;
+    float texAspect = texSize.x / texSize.y;
+    vec2 scale = vec2(1.0);
+    if (texAspect > canvasAspect) {
+        scale.y = canvasAspect / texAspect;
+    } else {
+        scale.x = texAspect / canvasAspect;
+    }
+    vec2 offset = (vec2(1.0) - scale) * 0.5;
+    vec2 ndc = (offset + pos * scale) * 2.0 - 1.0;
+
+    gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
+    vUv = pos;
+}
+`;
+var Nr2 = `#version 300 es
+precision highp float;
+
+uniform sampler2D thumbTex;
+
+in vec2 vUv;
+out vec4 fragColor;
+
+void main() {
+    fragColor = texture(thumbTex, vUv);
+}
+`;
+
+class Br2 extends Vp {
+  constructor() {
+    super(...arguments), this._gl = null, this._shader = null, this._texture = null, this._texWidth = 0, this._texHeight = 0, this._canvasWidth = 1, this._canvasHeight = 1;
+  }
+  init(e2) {
+    this.isReady || (this._gl = e2, this._shader = new z2(e2, wr2, Nr2), this.isReady = true);
+  }
+  async loadThumbnail(e2, r) {
+    if (!this.isReady)
+      return;
+    this._texture && (e2.deleteTexture(this._texture), this._texture = null);
+    const i2 = new Image;
+    Z(i2), i2.src = r, await i2.decode(), this._texWidth = i2.width, this._texHeight = i2.height, this._texture = e2.createTexture(), this._texture && (e2.bindTexture(e2.TEXTURE_2D, this._texture), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_WRAP_S, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_WRAP_T, e2.CLAMP_TO_EDGE), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MIN_FILTER, e2.LINEAR), e2.texParameteri(e2.TEXTURE_2D, e2.TEXTURE_MAG_FILTER, e2.LINEAR), e2.texImage2D(e2.TEXTURE_2D, 0, e2.RGBA, e2.RGBA, e2.UNSIGNED_BYTE, i2));
+  }
+  resize(e2, r, i2) {
+    this._canvasWidth = r, this._canvasHeight = i2;
+  }
+  draw(e2) {
+    !this.isReady || !this._shader || !this._texture || (this._shader.use(e2), this._shader.uniforms.canvasSize && e2.uniform2f(this._shader.uniforms.canvasSize, this._canvasWidth, this._canvasHeight), this._shader.uniforms.texSize && e2.uniform2f(this._shader.uniforms.texSize, this._texWidth, this._texHeight), e2.depthMask(false), e2.disable(e2.DEPTH_TEST), e2.disable(e2.CULL_FACE), e2.enable(e2.BLEND), e2.blendFunc(e2.SRC_ALPHA, e2.ONE_MINUS_SRC_ALPHA), e2.activeTexture(e2.TEXTURE0), e2.bindTexture(e2.TEXTURE_2D, this._texture), this._shader.uniforms.thumbTex && e2.uniform1i(this._shader.uniforms.thumbTex, 0), e2.drawArrays(e2.TRIANGLE_STRIP, 0, 4), e2.depthMask(true), e2.enable(e2.DEPTH_TEST), e2.enable(e2.CULL_FACE));
+  }
+  hasTexture() {
+    return this._texture !== null;
+  }
+  destroy() {
+    const e2 = this._gl;
+    e2 && (this._texture && (e2.deleteTexture(this._texture), this._texture = null), this._shader?.program && e2.deleteProgram(this._shader.program), this._shader = null, this.isReady = false, this._gl = null);
+  }
+}
+
+class Gr2 {
+  constructor(e2, r, i2 = {}) {
+    if (this._boundsWidth = 0, this._boundsHeight = 0, this._boundsOffsetX = 0, this._boundsOffsetY = 0, this._isSubCanvasBounds = false, this._bench = null, !e2 || !(e2 instanceof HTMLCanvasElement))
+      throw new Error("NVGlview requires a valid HTMLCanvasElement");
+    this.canvas = e2, this.model = r, this.options = i2, this.isAntiAlias = i2.isAntiAlias ?? false, this.forceDevicePixelRatio = i2.devicePixelRatio ?? -1, this.gl = null, this.max2D = 0, this.max3D = 0, this.fontTexture = null, this.crosshairRenderer = new Wt, this.screenSlices = [], this.legendLayout = null, this.graphLayout = null, this.isBusy = false, this.maxLines = 1024, this.maxGlyphs = 2048, this.meshPipelines = {
+      phong: true,
+      flat: true,
+      silhouette: true,
+      rim: true,
+      crevice: true,
+      crosscut: true,
+      matte: true,
+      toon: true,
+      outline: true,
+      vertexColor: true
+    }, this.volumeRenderer = new Cr2, this.lineRenderer = new gt, this.polygonRenderer = new lr2, this.polygon3DRenderer = new xr2, this.fontRenderer = new Kt, this.colorbarRenderer = new Et2, this.thumbnailRenderer = new Br2, this.sliceRenderer = new Fr2, this.meshResources = /* @__PURE__ */ new Map, this.orientCubeGpu = null;
+  }
+  get boundsWidth() {
+    return this._boundsWidth;
+  }
+  get boundsHeight() {
+    return this._boundsHeight;
+  }
+  async init() {
+    await this._initWebGL2(), await this._createResources(), await this._createPipelines(), await this._updateBindings();
+  }
+  _initGL(e2, r) {
+    const i2 = this.options.bounds, o = !!i2 && !(i2[0][0] === 0 && i2[0][1] === 0 && i2[1][0] === 1 && i2[1][1] === 1), a = e2.getContext("webgl2", {
+      alpha: true,
+      antialias: r,
+      preserveDrawingBuffer: o
+    });
+    if (!a)
+      throw new Error("Unable to initialize WebGL2. Your browser may not support it.");
+    return {
+      gl: a,
+      max2D: a.getParameter(a.MAX_TEXTURE_SIZE),
+      max3D: a.getParameter(a.MAX_3D_TEXTURE_SIZE)
+    };
+  }
+  async _initWebGL2() {
+    const e2 = this._initGL(this.canvas, this.isAntiAlias);
+    this.gl = e2.gl;
+    const r = this.gl;
+    this.max2D = e2.max2D, this.max3D = e2.max3D;
+    let i2 = "", o = "";
+    const a = r.getExtension("WEBGL_debug_renderer_info");
+    a && (o = r.getParameter(a.UNMASKED_VENDOR_WEBGL), i2 = r.getParameter(a.UNMASKED_RENDERER_WEBGL)), z.info(`WebGL2 ${i2} :: ${o} - maxTexture 2D:${this.max2D} 3D:${this.max3D} antiAlias:${this.isAntiAlias}`), this.lineRenderer.init(r), this.polygonRenderer.init(r), this.polygon3DRenderer.init(r), this.colorbarRenderer.init(r), this.thumbnailRenderer.init(r), await this.fontRenderer.init(r, this.options.font), Gt2(r), this.sliceRenderer.init(r), r.enable(r.DEPTH_TEST), r.depthFunc(r.LESS), r.clearDepth(1), r.frontFace(r.CCW), r.enable(r.BLEND), r.blendFunc(r.SRC_ALPHA, r.ONE_MINUS_SRC_ALPHA), r.enable(r.CULL_FACE), r.cullFace(r.BACK);
+  }
+  async _createResources() {
+    const e2 = this.gl;
+    if (!e2)
+      return;
+    await this.volumeRenderer.init(e2, this.max3D);
+    const r = Ae2(e2, "phong");
+    this.crosshairRenderer.init(e2, r.aPosition, r.aNormal, r.aColor), this._createOrientCube(e2);
+  }
+  _createOrientCube(e2) {
+    const r = pp(), i2 = new Float32Array(r.positions), o = new Uint32Array(r.indices), a = Dd(i2, o), s = i2.length / 3, c = new ArrayBuffer(s * $s), u = new Float32Array(c), n = new Uint32Array(c);
+    for (let p = 0;p < s; p++) {
+      const E = p * $s / 4;
+      u[E] = i2[p * 3], u[E + 1] = i2[p * 3 + 1], u[E + 2] = i2[p * 3 + 2], u[E + 3] = a[p * 3], u[E + 4] = a[p * 3 + 1], u[E + 5] = a[p * 3 + 2], n[E + 6] = r.colors[p];
+    }
+    const f = e2.createVertexArray();
+    if (!f)
+      return;
+    e2.bindVertexArray(f);
+    const h = e2.createBuffer();
+    if (!h) {
+      e2.bindVertexArray(null);
+      return;
+    }
+    e2.bindBuffer(e2.ARRAY_BUFFER, h), e2.bufferData(e2.ARRAY_BUFFER, c, e2.STATIC_DRAW);
+    const m = Ae2(e2, "vertexColor");
+    e2.enableVertexAttribArray(m.aPosition), e2.vertexAttribPointer(m.aPosition, 3, e2.FLOAT, false, 28, 0), e2.enableVertexAttribArray(m.aNormal), e2.vertexAttribPointer(m.aNormal, 3, e2.FLOAT, false, 28, 12), e2.enableVertexAttribArray(m.aColor), e2.vertexAttribPointer(m.aColor, 4, e2.UNSIGNED_BYTE, true, 28, 24);
+    const d = e2.createBuffer();
+    if (!d) {
+      e2.bindVertexArray(null);
+      return;
+    }
+    e2.bindBuffer(e2.ELEMENT_ARRAY_BUFFER, d), e2.bufferData(e2.ELEMENT_ARRAY_BUFFER, o, e2.STATIC_DRAW), e2.bindVertexArray(null), this.orientCubeGpu = {
+      vao: f,
+      vertexBuffer: h,
+      indexBuffer: d,
+      indexCount: o.length
+    };
+  }
+  async _createPipelines() {}
+  async _updateBindings() {
+    this.isBusy = true;
+    const e2 = this.gl;
+    if (!e2) {
+      this.isBusy = false;
+      return;
+    }
+    const r = this.model.getVolumes();
+    if (this.colorbarRenderer.buildColorbars(e2, this.model.collectColorbars(), this.model.scene.backgroundColor), r.length > 0 && await this.volumeRenderer.updateVolume(e2, r[0], this.model.volume.matcap), r.length > 1) {
+      if (await this.volumeRenderer.updateOverlays(e2, r[0], r.slice(1), this.model.volume.paqdUniforms), this.model.volume.isBackgroundMasking && this.volumeRenderer.overlayTexture && this.volumeRenderer.volumeTexture && r[0].dimsRAS) {
+        const i2 = [
+          r[0].dimsRAS[1],
+          r[0].dimsRAS[2],
+          r[0].dimsRAS[3]
+        ];
+        fr2(e2, this.volumeRenderer.volumeTexture, this.volumeRenderer.overlayTexture, i2);
+      }
+    } else
+      this.volumeRenderer.clearOverlay(e2);
+    this._rebuildMeshResources(), this.isBusy = false;
+  }
+  updateBindGroups() {
+    return this._updateBindings();
+  }
+  render() {
+    const e2 = this.gl, r = this.model;
+    if (!e2)
+      return;
+    if (this.isBusy) {
+      requestAnimationFrame(() => this.render());
+      return;
+    }
+    const i2 = this._boundsOffsetX, o = this._boundsOffsetY, a = this._boundsWidth, s = this._boundsHeight, c = this.canvas.height, u = c - o - s;
+    if (r.ui.isThumbnailVisible && this.thumbnailRenderer.hasTexture()) {
+      this._isSubCanvasBounds && (e2.enable(e2.SCISSOR_TEST), e2.scissor(i2, u, a, s)), e2.viewport(i2, u, a, s);
+      const y = r.scene.backgroundColor;
+      e2.clearColor(y[0], y[1], y[2], y[3]), e2.clear(e2.COLOR_BUFFER_BIT | e2.DEPTH_BUFFER_BIT), this.thumbnailRenderer.draw(e2), this._isSubCanvasBounds && e2.disable(e2.SCISSOR_TEST);
+      return;
+    }
+    const n = [], f = r.ui.fontColor, h = a, m = s;
+    this._isSubCanvasBounds && (e2.enable(e2.SCISSOR_TEST), e2.scissor(i2, u, a, s)), e2.viewport(i2, u, a, s);
+    const d = r.scene.backgroundColor;
+    e2.clearColor(d[0], d[1], d[2], d[3]), e2.clear(e2.COLOR_BUFFER_BIT | e2.DEPTH_BUFFER_BIT);
+    const p = r.getVolumes(), E = r.ui.isColorbarVisible ? vp(this.colorbarRenderer.getColorbarInfos(), this.colorbarRenderer.getLayout()) : 0, T = r.collectLegendEntries(), _ = r.ui.isLegendVisible && T.length > 0 ? _p(T, h, m) : 0, C = r.collectGraphData(), R = C ? m0(C, h) : 0, A = op({
+      canvasWH: [
+        h - _ - R,
+        m - E
+      ],
+      sliceType: r.layout.sliceType,
+      tileMargin: r.layout.margin,
+      extentsMin: r.extentsMin,
+      extentsMax: r.extentsMax,
+      isRadiologicalConvention: r.layout.isRadiological,
+      multiplanarLayout: r.layout.multiplanarType,
+      multiplanarShowRender: r.layout.showRender,
+      sliceMosaicString: r.layout.mosaicString,
+      heroImageFraction: r.layout.heroFraction,
+      heroSliceType: r.layout.heroSliceType,
+      isMultiplanarEqualSize: r.layout.isEqualSize,
+      isCrossLines: r.ui.isCrossLinesVisible,
+      isCenterMosaic: r.layout.isMosaicCentered,
+      customLayout: r.layout.customLayout
+    });
+    this.screenSlices = A, this.crosshairRenderer.isReady && this.crosshairRenderer.update(r);
+    const X2 = r.annotation.isVisibleIn3D ? xp(r) : null, k2 = [];
+    for (let y = 0;y < A.length; y++) {
+      const l = A[y];
+      if (!l)
+        continue;
+      const P = l.leftTopWidthHeight;
+      let [b, , x2, S] = sp(P, r.scene.azimuth, r.scene.elevation, r.pivot3D, r.furthestFromPivot, r.scene.scaleMultiplier, r.volumes[0]?.obliqueRAS);
+      if (l.axCorSag === undefined)
+        continue;
+      if (l.axCorSag !== at2.RENDER) {
+        const v = l.screen, D = tc(r.scene.pan2Dxyzmm, l.axCorSag);
+        if ([b, , x2, S] = Hl(P, v.mnMM, v.mxMM, 1 / 0, undefined, l.azimuth, l.elevation, r.layout.isRadiological, r.volumes[0]?.obliqueRAS, undefined, D, false), l.mvpMatrix = exports_mat4.clone(b), r.tex2mm) {
+          const U = se(l.axCorSag), V2 = l.sliceMM !== undefined ? r.getSliceTexFracAtMM(U, l.sliceMM) : r.getSliceTexFrac(U), $2 = Vi(r.tex2mm, l.axCorSag, V2);
+          $2 && (l.planeNormal = $2.normal, l.planePoint = $2.point);
+        }
+      } else if (l.screen) {
+        const v = l.screen;
+        [b, , x2, S] = Hl(P, v.mnMM, v.mxMM, 1 / 0, undefined, l.azimuth, l.elevation, r.layout.isRadiological, r.volumes[0]?.obliqueRAS, r.pivot3D, undefined, false), l.crossLines && k2.push(...rp(l, b, r.extentsMin, r.extentsMax, Math.max(1, r.ui.crosshairWidth), r.ui.crosshairColor, Pp));
+      }
+      if (e2.viewport(i2 + P[0], c - o - P[1] - P[3], P[2], P[3]), this.volumeRenderer.hasVolume() && p.length > 0) {
+        const v = p[0];
+        if (!v)
+          continue;
+        const D = v.matRAS;
+        if (!D || !v.volScale)
+          continue;
+        if (l.axCorSag !== at2.RENDER) {
+          const U = se(l.axCorSag), V2 = l.sliceMM !== undefined ? r.getSliceTexFracAtMM(U, l.sliceMM) : r.getSliceTexFrac(U);
+          this.sliceRenderer.draw(e2, this.volumeRenderer.volumeTexture, this.volumeRenderer.overlayTexture, v, {
+            overlayAlphaShader: r.volume.alphaShader,
+            overlayOutlineWidth: r.volume.outlineWidth,
+            isAlphaClipDark: r.volume.isAlphaClipDark,
+            drawRimOpacity: r.draw.rimOpacity,
+            isV1SliceShader: r.volume.isV1SliceShader
+          }, b, l.axCorSag, V2, Math.min(p.length, 2), r.volume.isNearestInterpolation, 1, this.volumeRenderer.paqdTexture, this.volumeRenderer.paqdLutTexture, this.volumeRenderer.paqdTexture ? 1 : 0, r.volume.paqdUniforms, r.volume.isV1SliceShader);
+        } else
+          this.volumeRenderer.draw(e2, b, x2, D, v.volScale, S, r.volume.illumination, Math.min(p.length, 2), r.scene.clipPlaneColor, r.clipPlanes, r.scene.isClipPlaneCutaway, r.volume.paqdUniforms);
+      }
+      const G2 = l.renderOrientation !== undefined || l.sliceMM !== undefined;
+      r.ui.is3DCrosshairVisible && !G2 && this.crosshairRenderer.isReady && this.crosshairRenderer.draw(e2, b, x2, l.axCorSag);
+      const L2 = r.getMeshes().filter((v) => (v.opacity ?? 1) > 0), O = Sp(r, l.axCorSag);
+      let w = b, N = x2;
+      if (l.axCorSag !== at2.RENDER && r.mesh.thicknessOn2D !== 1 / 0) {
+        const v = r.scene2mm(r.scene.crosshairPos);
+        l.sliceMM !== undefined && (v[se(l.axCorSag)] = l.sliceMM);
+        const D = l.screen, U = tc(r.scene.pan2Dxyzmm, l.axCorSag);
+        [w, , N] = Hl(P, D.mnMM, D.mxMM, r.mesh.thicknessOn2D, v, l.azimuth, l.elevation, r.layout.isRadiological, r.volumes[0]?.obliqueRAS, undefined, U, false);
+      }
+      if (L2.length > 0)
+        for (const v of L2) {
+          const D = this._getMeshGpu(v);
+          if (!D)
+            continue;
+          const U = v.opacity ?? 1;
+          Le2(e2, v, D, w, N, U, D.shaderType, O);
+        }
+      const B = r.mesh.xRay;
+      if (B > 0 && (r.ui.is3DCrosshairVisible && !G2 && this.crosshairRenderer.isReady && this.crosshairRenderer.drawXRay(e2, b, x2, l.axCorSag, B), L2.length > 0))
+        for (const v of L2) {
+          const D = this._getMeshGpu(v);
+          if (!D)
+            continue;
+          const U = (v.opacity ?? 1) * B;
+          Fe2(e2, v, D, w, N, U, D.shaderType, O);
+        }
+      if (l.axCorSag === at2.RENDER && X2 && this.polygon3DRenderer.isReady && (this.polygon3DRenderer.draw(e2, X2, b), this.polygon3DRenderer.drawXRay(e2, X2, b, 0.5), this.polygon3DRenderer.endPasses(e2)), l.axCorSag === at2.RENDER && l.renderOrientation === undefined && r.ui.isOrientCubeVisible && this.orientCubeGpu) {
+        const v = gp(P);
+        if (v) {
+          const { x: D, y: U, sz: V2 } = v, $2 = exports_mat4.create();
+          exports_mat4.ortho($2, 0, P[2], 0, P[3], -10 * V2, 10 * V2);
+          const F = exports_mat4.create();
+          exports_mat4.translate(F, F, [D, U, 0]), exports_mat4.scale(F, F, [V2, V2, V2]), exports_mat4.rotateX(F, F, xn(270 - r.scene.elevation)), exports_mat4.rotateZ(F, F, xn(-r.scene.azimuth));
+          const Q3 = exports_mat4.create();
+          exports_mat4.multiply(Q3, $2, F);
+          const g = exports_mat4.create();
+          zt2(e2, "vertexColor", Q3, g, 1), e2.disable(e2.DEPTH_TEST), e2.enable(e2.CULL_FACE), e2.cullFace(e2.BACK), e2.bindVertexArray(this.orientCubeGpu.vao), e2.drawElements(e2.TRIANGLES, this.orientCubeGpu.indexCount, e2.UNSIGNED_INT, 0), e2.bindVertexArray(null), e2.enable(e2.DEPTH_TEST);
+        }
+      }
+      if (l.axCorSag !== at2.RENDER && (l.showLabels ?? r.ui.isOrientationTextVisible)) {
+        const v = r.layout.isRadiological, D = P[0], U = P[1], V2 = P[2], $2 = P[3], F = 1, Q3 = 4;
+        if (l.axCorSag === at2.AXIAL || l.axCorSag === at2.CORONAL) {
+          const g = v ? "R" : "L";
+          n.push(this.fontRenderer.buildText(g, D + Q3, U + $2 / 2, F, f, 0, 0.5));
+        } else if (l.axCorSag === at2.SAGITTAL) {
+          const g = v ? "A" : "P";
+          n.push(this.fontRenderer.buildText(g, D + Q3, U + $2 / 2, F, f, 0, 0.5));
+        }
+        l.axCorSag === at2.AXIAL ? n.push(this.fontRenderer.buildText("A", D + V2 / 2, U + Q3, F, f, 0.5, 0)) : (l.axCorSag === at2.CORONAL || l.axCorSag === at2.SAGITTAL) && n.push(this.fontRenderer.buildText("S", D + V2 / 2, U + Q3, F, f, 0.5, 0));
+      }
+    }
+    e2.viewport(i2, u, h, m), this.model.ui.isColorbarVisible && this.colorbarRenderer.draw(e2, null);
+    let H = [];
+    const J2 = this.model.getMeshes().length > 0 || p.length > 0, K3 = tt(this.model.ui.placeholderText, J2, "WebGL2", z.level === "debug");
+    if (this.fontRenderer.isReady) {
+      if (K3 !== "" && n.push(this.fontRenderer.buildText(K3, h * 0.5, 0, 1.5, [0, 0, 0, 1], 0.5, -0.2, [0.3, 0.2, 0.8, 0.8])), this.model.ui.isColorbarVisible) {
+        const x2 = Mp(this.colorbarRenderer.getColorbarInfos(), (S, G2, L2, O, w, N, B, v) => this.fontRenderer.buildText(S, G2, L2, O, w, N, B, v), this.colorbarRenderer.getLayout());
+        n.push(...x2);
+      }
+      if (r.ui.isLegendVisible && T.length > 0) {
+        if (this.legendLayout = Lp(T, h, m, E, h - _ - R), this.legendLayout) {
+          const x2 = Ip(this.legendLayout, (S, G2, L2, O, w, N, B, v) => this.fontRenderer.buildText(S, G2, L2, O, w, N, B, v), r.scene.backgroundColor);
+          n.push(...x2);
+        }
+      } else
+        this.legendLayout = null;
+      if (C && R > 0) {
+        const x2 = this.forceDevicePixelRatio > 0 ? this.forceDevicePixelRatio : window.devicePixelRatio || 1;
+        if (this.graphLayout = Ap(C, h, m, E, x2), this.graphLayout) {
+          const S = Tp(C, this.graphLayout, (G2, L2, O, w, N, B, v, D) => this.fontRenderer.buildText(G2, L2, O, w, N, B, v, D), Pp, r.scene.backgroundColor);
+          n.push(...S.labels), H = S.lines;
+        }
+      } else
+        this.graphLayout = null;
+      if (r.ui.isRulerVisible) {
+        const x2 = Op(A, (S, G2, L2, O, w, N, B, v) => this.fontRenderer.buildText(S, G2, L2, O, w, N, B, v), Pp, r.ui.fontColor, r.scene.backgroundColor);
+        x2 && (n.push(...x2.labels), H.push(...x2.lines));
+      }
+      const y = Ep(this.model, A, (x2, S, G2, L2, O, w, N, B) => this.fontRenderer.buildText(x2, S, G2, L2, O, w, N, B), Pp);
+      y && (n.push(...y.labels), H.push(...y.lines));
+      const l = yp(this.model, A, Pp, this.fontRenderer.buildText.bind(this.fontRenderer));
+      l && (this.polygonRenderer.draw(e2, l), H.push(...l.strokeLines), n.push(...l.labels));
+      const P = this.model._dragOverlay;
+      if (P?.rect && n.push({
+        data: new Float32Array(0),
+        count: 0,
+        backColor: P.rect.color,
+        backRect: [...P.rect.ltwh],
+        backRadius: 0
+      }), P?.text)
+        for (const x2 of P.text) {
+          const S = this.fontRenderer.buildText(x2.str, x2.x, x2.y, x2.scale, x2.color, x2.anchorX, x2.anchorY, x2.backColor);
+          S.count > 0 && n.push(S);
+        }
+      let b = 0;
+      for (const x2 of n)
+        b += x2.count;
+      b > this.maxGlyphs && (this.maxGlyphs = b), this.fontRenderer.draw(e2, null, null, null, n, this.maxGlyphs);
+    }
+    const W2 = [...H, ...k2], re = this.model._dragOverlay;
+    if (re?.lines)
+      for (const y of re.lines)
+        W2.push(Pp(y.startXY[0], y.startXY[1], y.endXY[0], y.endXY[1], y.thickness, y.color));
+    if (this._isSubCanvasBounds && this.options.showBoundsBorder) {
+      const y = this.options.boundsBorderColor ?? [1, 1, 1, 1], l = this.options.boundsBorderThickness ?? 2;
+      W2.push(Pp(0, 0, h, 0, l, y)), W2.push(Pp(0, m, h, m, l, y)), W2.push(Pp(0, 0, 0, m, l, y)), W2.push(Pp(h, 0, h, m, l, y));
+    }
+    W2.length > 0 && this.lineRenderer.isReady && (W2.length > this.maxLines && (this.maxLines = W2.length), this.lineRenderer.draw(e2, null, null, null, W2, this.maxLines)), this._isSubCanvasBounds && e2.disable(e2.SCISSOR_TEST);
+  }
+  get bench() {
+    return this._bench || (this._bench = new pt2(this)), this._bench;
+  }
+  renderAndFlush() {
+    return this.bench.renderAndFlush();
+  }
+  renderAndFlushOffscreen() {
+    return this.bench.renderAndFlushOffscreen();
+  }
+  resize() {
+    if (!this.gl)
+      return;
+    let e2;
+    this.forceDevicePixelRatio <= 0 ? e2 = window.devicePixelRatio || 1 : this.forceDevicePixelRatio < 0 ? e2 = 1 : e2 = this.forceDevicePixelRatio;
+    const r = this.canvas.getBoundingClientRect();
+    this.canvas.width = Math.max(1, Math.floor(r.width * e2)), this.canvas.height = Math.max(1, Math.floor(r.height * e2)), this._computeBoundsPixels();
+    const i2 = this._boundsWidth, o = this._boundsHeight;
+    this.lineRenderer.resize(this.gl, i2, o), this.polygonRenderer.resize(this.gl, i2, o), this.fontRenderer.resize(this.gl, i2, o, e2, this.model.ui.fontScale, this.model.ui.fontMinSize), this.colorbarRenderer.resize(this.gl, i2, o, this.fontRenderer.fontPx), this.thumbnailRenderer.resize(this.gl, i2, o), this.render();
+  }
+  _computeBoundsPixels() {
+    const e2 = this.options.bounds, r = this.canvas.width, i2 = this.canvas.height;
+    if (!e2 || e2[0][0] === 0 && e2[0][1] === 0 && e2[1][0] === 1 && e2[1][1] === 1) {
+      this._boundsOffsetX = 0, this._boundsOffsetY = 0, this._boundsWidth = r, this._boundsHeight = i2, this._isSubCanvasBounds = false;
+      return;
+    }
+    const o = Math.round(e2[0][0] * r), a = Math.round(e2[1][0] * r), s = Math.round((1 - e2[1][1]) * i2), c = Math.round((1 - e2[0][1]) * i2);
+    this._boundsOffsetX = o, this._boundsOffsetY = s, this._boundsWidth = Math.max(1, a - o), this._boundsHeight = Math.max(1, c - s), this._isSubCanvasBounds = true;
+  }
+  getAvailableShaders() {
+    return this.meshPipelines ? Object.keys(this.meshPipelines).filter((e2) => !e2.startsWith("vertexColor")) : [];
+  }
+  _getMeshGpu(e2) {
+    return this.meshResources.get(e2) ?? null;
+  }
+  _destroyMeshResources() {
+    const e2 = this.gl;
+    if (e2) {
+      for (const r of this.meshResources.values())
+        ye(e2, r);
+      this.meshResources.clear();
+    }
+  }
+  _rebuildMeshResources() {
+    const e2 = this.gl;
+    if (!e2)
+      return;
+    this._destroyMeshResources();
+    const r = this.getAvailableShaders(), i2 = this.model.getMeshes();
+    for (const o of i2) {
+      let a = o.shaderType || "phong";
+      r.includes(a) || (z.warn(`Shader '${a}' not available in WebGL2, falling back to 'phong'`), a = "phong");
+      const s = Vt(e2, o, { shaderType: a });
+      this.meshResources.set(o, s);
+    }
+  }
+  hitTest(e2, r) {
+    for (let i2 = 0;i2 < this.screenSlices.length; i2++) {
+      const o = this.screenSlices[i2], a = o.leftTopWidthHeight, s = a[0], c = a[1], u = a[2], n = a[3];
+      if (e2 >= s && e2 < s + u && r >= c && r < c + n)
+        return {
+          tileIndex: i2,
+          sliceType: o.axCorSag,
+          isRender: o.axCorSag === at2.RENDER,
+          normalizedX: (e2 - s) / u,
+          normalizedY: (r - c) / n
+        };
+    }
+    return null;
+  }
+  refreshDrawing(e2, r) {
+    this.gl && (this.sliceRenderer.updateDrawingTexture(this.gl, e2, r), this.volumeRenderer.updateDrawingTexture(this.gl, e2, r));
+  }
+  clearDrawing() {
+    this.gl && (this.sliceRenderer.destroyDrawing(), this.volumeRenderer.destroyDrawing(this.gl));
+  }
+  async loadThumbnail(e2) {
+    this.gl && (await this.thumbnailRenderer.loadThumbnail(this.gl, e2), this.thumbnailRenderer.resize(this.gl, this._boundsWidth || this.canvas.width, this._boundsHeight || this.canvas.height));
+  }
+  async depthPick(e2, r) {
+    const i2 = this.hitTest(e2, r);
+    if (!i2)
+      return null;
+    const o = this.screenSlices[i2.tileIndex];
+    if (!o)
+      return null;
+    const a = this.gl;
+    if (!a)
+      return null;
+    const s = o.leftTopWidthHeight, c = this.model, u = this.canvas.height;
+    let n, f;
+    if (i2.isRender && o.renderOrientation !== undefined && o.screen) {
+      const R = o.screen, A = Hl(s, R.mnMM, R.mxMM, 1 / 0, undefined, o.azimuth, o.elevation, c.layout.isRadiological, c.volumes[0]?.obliqueRAS, c.pivot3D, undefined, false);
+      n = A[0], f = A[3];
+    } else if (i2.isRender) {
+      const R = sp(s, c.scene.azimuth, c.scene.elevation, c.pivot3D, c.furthestFromPivot, c.scene.scaleMultiplier, c.volumes[0]?.obliqueRAS);
+      n = R[0], f = R[3];
+    } else {
+      const R = o.screen, A = tc(c.scene.pan2Dxyzmm, o.axCorSag), X2 = Hl(s, R.mnMM, R.mxMM, 1 / 0, undefined, o.azimuth, o.elevation, c.layout.isRadiological, c.volumes[0]?.obliqueRAS, undefined, A, false);
+      n = X2[0], f = X2[3];
+    }
+    const h = this._boundsOffsetX, m = this._boundsOffsetY;
+    a.viewport(h + s[0], u - m - s[3] - s[1], s[2], s[3]);
+    const d = h + Math.floor(e2), p = u - m - Math.floor(r) - 1;
+    a.enable(a.SCISSOR_TEST), a.scissor(d, p, 1, 1), a.clearColor(0, 0, 0, 0), a.clear(a.COLOR_BUFFER_BIT | a.DEPTH_BUFFER_BIT);
+    const E = c.getVolumes();
+    if (this.volumeRenderer.hasVolume() && E.length > 0) {
+      const R = E[0];
+      R?.matRAS && R.volScale && this.volumeRenderer.drawDepthPick(a, n, R.matRAS, R.volScale, f, c.clipPlanes, c.scene.isClipPlaneCutaway, Math.min(E.length, 2));
+    }
+    const T = c.getMeshes().filter((R) => (R.opacity ?? 1) > 0);
+    for (const R of T) {
+      const A = this._getMeshGpu(R);
+      A && kt(a, A, n);
+    }
+    const _ = new Uint8Array(4);
+    a.readPixels(d, p, 1, 1, a.RGBA, a.UNSIGNED_BYTE, _), a.disable(a.SCISSOR_TEST);
+    const C = c.scene.backgroundColor;
+    if (a.clearColor(C[0], C[1], C[2], C[3]), _[3] !== 0) {
+      const R = _[0] / 255 + _[1] / 65025 + _[2] / 16581375, A = _[3] < 200;
+      z.debug(`depthPick: pixel=[${_[0]},${_[1]},${_[2]},${_[3]}] depth=${R} isMesh=${A}`);
+      const X2 = Ns(i2.normalizedX, i2.normalizedY, R, n);
+      if (!i2.isRender && !A && c.tex2mm) {
+        const k2 = Gl(i2.normalizedX, i2.normalizedY, n, c.tex2mm, i2.sliceType, c.getSliceTexFrac(se(i2.sliceType)));
+        if (k2)
+          return k2;
+      }
+      return [X2[0], X2[1], X2[2]];
+    }
+    return !i2.isRender && E.length > 0 && c.tex2mm ? Gl(i2.normalizedX, i2.normalizedY, n, c.tex2mm, i2.sliceType, c.getSliceTexFrac(se(i2.sliceType))) : null;
+  }
+  destroy() {
+    const e2 = this.gl;
+    e2 && (this._destroyMeshResources(), this.crosshairRenderer.destroy(), this.orientCubeGpu && (ye(e2, this.orientCubeGpu), this.orientCubeGpu = null), this.fontTexture && e2.deleteTexture(this.fontTexture), this.fontTexture = null, this._bench?.destroy(), this._bench = null, this.volumeRenderer.destroy(), this.lineRenderer.destroy(), this.polygonRenderer.destroy(), this.polygon3DRenderer.destroy(), this.fontRenderer.destroy(), this.colorbarRenderer.destroy(), this.thumbnailRenderer.destroy(), this.sliceRenderer.destroy(), Ht(e2), this.gl = null);
+  }
+}
+
 // ../niivue/dist/NVViewGPU-b5YZ-vOg.js
-class wt2 {
+class wt3 {
   constructor(e2) {
     this.view = e2, this.targetOverride = null, this._offscreen = null, this._inProgress = false, this._disposed = false;
   }
@@ -23761,7 +27072,7 @@ class wt2 {
       throw new Error("renderAndFlush: view not ready (isBusy or font atlas not loaded)");
   }
 }
-var Bt2 = `struct ColorbarUniforms {
+var Bt3 = `struct ColorbarUniforms {
     canvasSize: vec2f,
     opacity: f32,
     radiusPx: f32,
@@ -23788,13 +27099,13 @@ fn vertex_main(@builtin(vertex_index) vIdx: u32) -> VertexOutput {
     if (vIdx == 1u) { pos.x = 1.0; }
     else if (vIdx == 2u) { pos.y = 1.0; }
     else if (vIdx == 3u) { pos.x = 1.0; pos.y = 1.0; }
-    
+
     // Map to pixel position using rect
     let pixelPos = u.rect.xy + pos * u.rect.zw;
-    
+
     // Convert to NDC
     let ndc = (pixelPos / u.canvasSize) * 2.0 - 1.0;
-    
+
     var out: VertexOutput;
     // Flip Y for NDC
     out.position = vec4f(ndc.x, -ndc.y, 0.0, 1.0);
@@ -23835,7 +27146,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     return vec4f(color.rgb, u.opacity);
 }
 `;
-var Rt3 = `@group(0) @binding(0) var inputTex: texture_3d<f32>;
+var Rt4 = `@group(0) @binding(0) var inputTex: texture_3d<f32>;
 @group(0) @binding(1) var outputTex: texture_storage_3d<rgba8unorm, write>;
 
 @compute @workgroup_size(8, 8, 4)
@@ -23860,7 +27171,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   // Divide by the sum of weights (8.0)
   textureStore(outputTex, id, total_color * 0.125);
 }`;
-var Gt2 = `// compute.wgsl
+var Gt3 = `// compute.wgsl
 @group(0) @binding(0) var inputTex: texture_3d<f32>;
 @group(0) @binding(1) var outputTex: texture_storage_3d<rgba8unorm, write>;
 
@@ -23870,7 +27181,7 @@ fn sample_voxel(px: i32, py: i32, pz: i32, s: vec3<i32>, tex: texture_3d<f32>) -
 }
 
 // Changed from 8, 8, 8 (512) to 8, 8, 4 (256) to meet default limits
-@compute @workgroup_size(8, 8, 4) 
+@compute @workgroup_size(8, 8, 4)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let size = vec3<i32>(textureDimensions(inputTex));
     let x = i32(id.x);
@@ -23905,15 +27216,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     textureStore(outputTex, id, vec4<f32>(dirColor, magnitude));
 }`;
-var Pe2 = /* @__PURE__ */ new WeakMap;
-function Ct(a) {
-  let e2 = Pe2.get(a);
+var Pe3 = /* @__PURE__ */ new WeakMap;
+function Ct2(a) {
+  let e2 = Pe3.get(a);
   if (e2)
     return e2;
-  const t2 = a.createShaderModule({ code: Gt2 }), i2 = a.createComputePipeline({
+  const t2 = a.createShaderModule({ code: Gt3 }), i2 = a.createComputePipeline({
     layout: "auto",
     compute: { module: t2, entryPoint: "main" }
-  }), r = a.createShaderModule({ code: Rt3 }), n = a.createComputePipeline({
+  }), r = a.createShaderModule({ code: Rt4 }), n = a.createComputePipeline({
     layout: "auto",
     compute: { module: r, entryPoint: "main" }
   });
@@ -23922,10 +27233,10 @@ function Ct(a) {
     blurPipeline: n,
     sobelBindLayout: i2.getBindGroupLayout(0),
     blurBindLayout: n.getBindGroupLayout(0)
-  }, Pe2.set(a, e2), e2;
+  }, Pe3.set(a, e2), e2;
 }
-async function Dt2(a, e2) {
-  const t2 = Ct(a), i2 = e2.width, r = e2.height, n = e2.depthOrArrayLayers, s = a.createTexture({
+async function Dt3(a, e2) {
+  const t2 = Ct2(a), i2 = e2.width, r = e2.height, n = e2.depthOrArrayLayers, s = a.createTexture({
     size: [i2, r, n],
     format: "rgba8unorm",
     dimension: "3d",
@@ -23966,7 +27277,7 @@ async function _e3(a, e2) {
   }), i2 = new Uint8Array(e2);
   return a.queue.writeTexture({ texture: t2 }, i2, { bytesPerRow: 256 * 4, rowsPerImage: 1 }, [256, 1]), await a.queue.onSubmittedWorkDone(), t2;
 }
-async function Ut2(a, e2) {
+async function Ut3(a, e2) {
   return _e3(a, Yt(e2));
 }
 async function we(a, e2) {
@@ -23982,7 +27293,7 @@ async function we(a, e2) {
     i2.height
   ]), await a.queue.onSubmittedWorkDone(), r;
 }
-async function Ae2(a, e2) {
+async function Ae3(a, e2) {
   if (!e2) {
     const t2 = a.createTexture({
       size: [1, 1, 1],
@@ -23993,11 +27304,11 @@ async function Ae2(a, e2) {
   }
   return we(a, e2);
 }
-function Lt(a) {
-  Pe2.delete(a);
+function Lt2(a) {
+  Pe3.delete(a);
 }
 
-class zt2 extends Vp {
+class zt3 extends Vp {
   constructor() {
     super(), this.pipeline = null, this.bindLayout = null, this.sampler = null, this.colorbars = [], this._colorbarInfos = [], this.canvasWidth = 1, this.canvasHeight = 1, this._fontPx = 0, this._opacity = 1, this._margin = 20, this._heightRatio = 1.2, this._borderColor = [0, 0, 0, 1];
   }
@@ -24019,7 +27330,7 @@ class zt2 extends Vp {
       ]
     });
     const r = e2.createShaderModule({
-      code: Bt2
+      code: Bt3
     });
     this.pipeline = e2.createRenderPipeline({
       layout: e2.createPipelineLayout({
@@ -24108,7 +27419,7 @@ class zt2 extends Vp {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
       });
       e2.queue.writeBuffer(s, 0, this._buildParamsData(r[n]));
-      const l = await Ut2(e2, t2[n].colormapName), u = e2.createBindGroup({
+      const l = await Ut3(e2, t2[n].colormapName), u = e2.createBindGroup({
         layout: this.bindLayout,
         entries: [
           { binding: 0, resource: { buffer: s } },
@@ -24141,7 +27452,7 @@ class zt2 extends Vp {
     this.colorbars = [], this.sampler = null, this.pipeline = null, this.bindLayout = null, this.isReady = false;
   }
 }
-var At = `// 20260131: disable clip_distances: not yet supported by Safari
+var At2 = `// 20260131: disable clip_distances: not yet supported by Safari
 // 20260131 enable clip_distances;
 
 struct Params {
@@ -24160,7 +27471,7 @@ struct Params {
 struct VertexInput {
   @location(0) position: vec3f,
   @location(1) normal: vec3f,
-  @location(2) color: vec4f, 
+  @location(2) color: vec4f,
 };
 
 struct VertexOutput {
@@ -24215,7 +27526,7 @@ fn vertex_main(vert: VertexInput) -> VertexOutput {
   if (length(planeNormal) > 0.0) {
     out.clip_dist[0] = dot(vert.position, planeNormal) + params.clipPlane.w;
   } else {
-    out.clip_dist[0] = 1.0; 
+    out.clip_dist[0] = 1.0;
   }
   */
   return out;
@@ -24430,7 +27741,7 @@ var pe2 = 256;
 var ne2 = 176;
 var K3 = Math.ceil(ne2 / pe2) * pe2;
 var me2 = 128;
-function Mt2(a, e2, t2 = {}) {
+function Mt3(a, e2, t2 = {}) {
   const { shaderType: i2 = "phong" } = t2, r = Dd(e2.positions, e2.indices), n = e2.positions.length / 3, s = new ArrayBuffer(n * $s), l = new Float32Array(s), u = new Uint32Array(s);
   for (let c = 0;c < n; c++) {
     const m = c * 28 / 4;
@@ -24463,7 +27774,7 @@ function Mt2(a, e2, t2 = {}) {
   };
 }
 function C(a, e2, t2, i2, r = "fragment_phong", n = "depth24plus", s = "vertex_main", l = "less", u = true, o = "back") {
-  const d = a.createShaderModule({ code: At });
+  const d = a.createShaderModule({ code: At2 });
   return a.createRenderPipeline({
     layout: i2,
     vertex: {
@@ -24509,7 +27820,7 @@ function Me2(a) {
   a.vertexBuffer && (a.vertexBuffer.destroy(), a.vertexBuffer = null), a.indexBuffer && (a.indexBuffer.destroy(), a.indexBuffer = null), a.uniformBuffer && (a.uniformBuffer.destroy(), a.uniformBuffer = null), a.bindGroup && (a.bindGroup = null);
 }
 
-class Ot2 extends Vp {
+class Ot3 extends Vp {
   constructor() {
     super(...arguments), this.device = null, this.cylinders = [], this._uniformScratch = new Float32Array(ne2 / 4);
   }
@@ -24739,7 +28050,7 @@ fn clipSampleRange(dir: vec3f, rayStart: vec4f, clipPlane: vec4f, sampleStartEnd
     }
 }
 `;
-var Et2 = `
+var Et3 = `
 fn packDepth(d_in: f32) -> vec4f {
   let d = clamp(d_in, 0.0, 1.0);
   var enc = fract(vec3f(1.0, 255.0, 65025.0) * d);
@@ -24889,7 +28200,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
   return output;
 }
 `;
-var Ft2 = `
+var Ft3 = `
 struct Params {
   mvpMtx: mat4x4f,
   normMtx: mat4x4f,
@@ -24935,8 +28246,8 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
   return vec4f(packed.xyz, 0.5);
 }
 `;
-var he = /* @__PURE__ */ new WeakMap;
-function It2(a, e2, t2) {
+var he2 = /* @__PURE__ */ new WeakMap;
+function It3(a, e2, t2) {
   const i2 = a.createTexture({
     size: [1, 1],
     format: "rgba8unorm",
@@ -24952,7 +28263,7 @@ function It2(a, e2, t2) {
   let s = null;
   if (e2) {
     const u = a.createShaderModule({
-      code: Ve2 + Et2
+      code: Ve2 + Et3
     });
     s = a.createRenderPipeline({
       layout: a.createPipelineLayout({
@@ -24994,7 +28305,7 @@ function It2(a, e2, t2) {
   }
   let l = null;
   if (t2) {
-    const u = a.createShaderModule({ code: Ft2 });
+    const u = a.createShaderModule({ code: Ft3 });
     l = a.createRenderPipeline({
       layout: a.createPipelineLayout({
         bindGroupLayouts: [t2]
@@ -25042,7 +28353,7 @@ function It2(a, e2, t2) {
       multisample: { count: 1 }
     });
   }
-  he.set(a, {
+  he2.set(a, {
     colorTexture: i2,
     depthTexture: r,
     readbackBuffer: n,
@@ -25050,8 +28361,8 @@ function It2(a, e2, t2) {
     meshPipeline: l
   });
 }
-async function Nt2(a) {
-  const { device: e2 } = a, t2 = he.get(e2);
+async function Nt3(a) {
+  const { device: e2 } = a, t2 = he2.get(e2);
   if (!t2)
     return null;
   const {
@@ -25086,7 +28397,7 @@ async function Nt2(a) {
   const y = p / 255 + c / 65025 + m / 16581375, h = T < 200;
   return z.debug(`depthPick: pixel=[${p},${c},${m},${T}] depth=${y} isMesh=${h}`), { depth: y, isMesh: h };
 }
-function Vt(a, e2, t2, i2, r) {
+function Vt2(a, e2, t2, i2, r) {
   const n = a * 2 - 1, s = 1 - e2 * 2, l = exports_mat4.create();
   exports_mat4.translate(l, l, [-n, -s, 0]);
   const u = exports_mat4.create();
@@ -25094,11 +28405,11 @@ function Vt(a, e2, t2, i2, r) {
   const o = exports_mat4.create();
   return exports_mat4.multiply(o, l, r), o;
 }
-function kt(a) {
-  const e2 = he.get(a);
-  e2 && (e2.colorTexture.destroy(), e2.depthTexture.destroy(), e2.readbackBuffer.destroy(), he.delete(a));
+function kt2(a) {
+  const e2 = he2.get(a);
+  e2 && (e2.colorTexture.destroy(), e2.depthTexture.destroy(), e2.readbackBuffer.destroy(), he2.delete(a));
 }
-var qt2 = `struct FontUniforms {
+var qt3 = `struct FontUniforms {
     canvasSize: vec2f,
 };
 
@@ -25118,7 +28429,7 @@ struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
     @location(1) color: vec4f,
-    @location(2) atlasRange: f32, 
+    @location(2) atlasRange: f32,
 };
 
 @vertex
@@ -25150,7 +28461,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     let uv_dx = dpdx(in.uv);
     let uv_dy = dpdy(in.uv);
     let texSize = vec2f(textureDimensions(fontTex));
-    let unitRange = vec2f(in.atlasRange) / texSize; 
+    let unitRange = vec2f(in.atlasRange) / texSize;
     let screenTexSize = inverseSqrt(uv_dx * uv_dx + uv_dy * uv_dy);
     let screenPxRange = max(0.5 * dot(unitRange, screenTexSize), 1.0);
     let screenPxDistance = screenPxRange * (sd - 0.5);
@@ -25158,7 +28469,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     if (opacity <= 0.0) { discard; }
     return vec4f(in.color.rgb, in.color.a * opacity);
 }`;
-var Wt = `struct PanelUniforms {
+var Wt2 = `struct PanelUniforms {
 	canvasSize: vec2f,
 };
 
@@ -25220,7 +28531,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 }
 `;
 
-class Xt2 extends Vp {
+class Xt3 extends Vp {
   constructor() {
     super(), this.pipeline = null, this.bindLayout = null, this.fontTexture = null, this.fontMets = null, this.paramsBuffer = null, this.panelPipeline = null, this.panelBindLayout = null, this.panelBuffer = null, this.panelBindGroup = null, this.maxPanels = 0, this.fontPx = 16;
   }
@@ -25243,7 +28554,7 @@ class Xt2 extends Vp {
             { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
           ]
         });
-        const n = e2.createShaderModule({ code: qt2 }), s = {
+        const n = e2.createShaderModule({ code: qt3 }), s = {
           color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha" },
           alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }
         }, l = {
@@ -25281,7 +28592,7 @@ class Xt2 extends Vp {
             }
           ]
         });
-        const u = e2.createShaderModule({ code: Wt });
+        const u = e2.createShaderModule({ code: Wt2 });
         this.panelPipeline = e2.createRenderPipeline({
           layout: e2.createPipelineLayout({
             bindGroupLayouts: [this.panelBindLayout]
@@ -25368,7 +28679,7 @@ class Xt2 extends Vp {
     this.fontTexture && (this.fontTexture.destroy(), this.fontTexture = null), this.paramsBuffer && (this.paramsBuffer.destroy(), this.paramsBuffer = null), this.panelBuffer && (this.panelBuffer.destroy(), this.panelBuffer = null), this.pipeline = null, this.bindLayout = null, this.panelPipeline = null, this.panelBindLayout = null, this.panelBindGroup = null, this.fontMets = null, this.isReady = false;
   }
 }
-var Ht = `struct LineUniforms {
+var Ht2 = `struct LineUniforms {
     canvasSize: vec2f,
 };
 
@@ -25396,23 +28707,23 @@ fn vertex_main(
     @builtin(instance_index) iIdx: u32
 ) -> VertexOutput {
     let line = lines[iIdx];
-    
+
     // 1. Calculate line geometry in pixel space
     let delta = line.end - line.start;
     let dir = normalize(delta);
     let perp = vec2f(-dir.y, dir.x);
     let halfThickness = line.thickness * 0.5;
-    
+
     // Define quad vertices (0, 1, 2, 3) around the line segment
     var offset = vec2f(0.0);
-    if (vIdx == 0u) { 
-        offset = -perp * halfThickness; 
-    } else if (vIdx == 1u) { 
-        offset = perp * halfThickness; 
-    } else if (vIdx == 2u) { 
-        offset = -perp * halfThickness + delta; 
+    if (vIdx == 0u) {
+        offset = -perp * halfThickness;
+    } else if (vIdx == 1u) {
+        offset = perp * halfThickness;
+    } else if (vIdx == 2u) {
+        offset = -perp * halfThickness + delta;
     } else { // vIdx == 3u
-        offset = perp * halfThickness + delta; 
+        offset = perp * halfThickness + delta;
     }
     let pixelPos = line.start + offset;
     // Map pixel coordinates to NDC (-1 to 1)
@@ -25429,7 +28740,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     return in.color;
 }`;
 
-class Yt2 extends Vp {
+class Yt3 extends Vp {
   constructor() {
     super(), this.pipeline = null, this.bindLayout = null, this.paramsBuffer = null;
   }
@@ -25453,7 +28764,7 @@ class Yt2 extends Vp {
         }
       ]
     });
-    const r = e2.createShaderModule({ code: Ht });
+    const r = e2.createShaderModule({ code: Ht2 });
     this.pipeline = e2.createRenderPipeline({
       layout: e2.createPipelineLayout({
         bindGroupLayouts: [this.bindLayout]
@@ -25508,7 +28819,7 @@ class Yt2 extends Vp {
     this.paramsBuffer && (this.paramsBuffer.destroy(), this.paramsBuffer = null), this.pipeline = null, this.bindLayout = null, this.isReady = false;
   }
 }
-var Zt2 = `// Unified orient compute shader: transforms a scalar volume to RGBA8 via matrix,
+var Zt3 = `// Unified orient compute shader: transforms a scalar volume to RGBA8 via matrix,
 // calibration, and colormap lookup. Handles both base volumes and overlays.
 // Matches the WebGL2 orientOverlay fragment shader for identical results.
 
@@ -25658,12 +28969,12 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   textureStore(rgbaOut, vec3<i32>(outX, outY, outZ), color);
 }
 `;
-var de2 = /* @__PURE__ */ new WeakMap;
-function jt2(a, e2) {
-  let t2 = de2.get(a);
-  if (t2 || (t2 = {}, de2.set(a, t2)), t2[e2])
+var de3 = /* @__PURE__ */ new WeakMap;
+function jt3(a, e2) {
+  let t2 = de3.get(a);
+  if (t2 || (t2 = {}, de3.set(a, t2)), t2[e2])
     return t2[e2];
-  let i2 = Zt2, r = "uint";
+  let i2 = Zt3, r = "uint";
   e2 === "float" ? (i2 = i2.replaceAll("texture_3d<u32>", "texture_3d<f32>"), r = "unfilterable-float") : e2 === "sint" && (i2 = i2.replaceAll("texture_3d<u32>", "texture_3d<i32>"), r = "sint");
   const n = a.createShaderModule({ code: i2 }), s = a.createBindGroupLayout({
     entries: [
@@ -25704,7 +29015,7 @@ function jt2(a, e2) {
   });
   return t2[e2] = { pipeline: l, layout: s }, t2[e2];
 }
-function $t2(a, e2) {
+function $t3(a, e2) {
   const { rgbaData: t2, texDims: i2 } = Rp(e2), r = a.createTexture({
     size: i2,
     format: "rgba8unorm",
@@ -25720,7 +29031,7 @@ async function ve2(a, e2, t2, i2, r = 1) {
     throw new Error("overlay2Texture: missing image data");
   const n = e2.hdr.datatypeCode;
   if (n === 2304 || n === 128)
-    return $t2(a, e2);
+    return $t3(a, e2);
   let s = "r8uint", l = "uint", u = 1;
   if (n === 2)
     s = "r8uint";
@@ -25736,7 +29047,7 @@ async function ve2(a, e2, t2, i2, r = 1) {
     t2.dimsRAS[1],
     t2.dimsRAS[2],
     t2.dimsRAS[3]
-  ], [p, c, m] = d, T = jt2(a, l), y = a.createTexture({
+  ], [p, c, m] = d, T = jt3(a, l), y = a.createTexture({
     size: o,
     format: s,
     dimension: "3d",
@@ -25749,11 +29060,11 @@ async function ve2(a, e2, t2, i2, r = 1) {
   const w = 112, Y2 = a.createBuffer({
     size: w,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-  }), $2 = new ArrayBuffer(w), z2 = new DataView($2);
+  }), $2 = new ArrayBuffer(w), z3 = new DataView($2);
   for (let b = 0;b < 16; b++)
-    z2.setFloat32(b * 4, i2[b], true);
+    z3.setFloat32(b * 4, i2[b], true);
   const A = Np(e2, r), ie2 = A.isLabel > 0;
-  z2.setFloat32(64, A.slope, true), z2.setFloat32(68, A.intercept, true), z2.setFloat32(72, A.calMin, true), z2.setFloat32(76, A.calMax, true), z2.setFloat32(80, A.mnNeg, true), z2.setFloat32(84, A.mxNeg, true), z2.setFloat32(88, A.isAlphaThreshold, true), z2.setFloat32(92, A.isColorbarFromZero, true), z2.setFloat32(96, A.overlayOpacity, true), z2.setFloat32(100, A.isLabel, true), z2.setFloat32(104, A.labelMin, true), z2.setFloat32(108, A.labelWidth, true), a.queue.writeBuffer(Y2, 0, $2);
+  z3.setFloat32(64, A.slope, true), z3.setFloat32(68, A.intercept, true), z3.setFloat32(72, A.calMin, true), z3.setFloat32(76, A.calMax, true), z3.setFloat32(80, A.mnNeg, true), z3.setFloat32(84, A.mxNeg, true), z3.setFloat32(88, A.isAlphaThreshold, true), z3.setFloat32(92, A.isColorbarFromZero, true), z3.setFloat32(96, A.overlayOpacity, true), z3.setFloat32(100, A.isLabel, true), z3.setFloat32(104, A.labelMin, true), z3.setFloat32(108, A.labelWidth, true), a.queue.writeBuffer(Y2, 0, $2);
   const q2 = a.createTexture({
     size: d,
     format: "rgba8unorm",
@@ -25798,7 +29109,7 @@ async function ve2(a, e2, t2, i2, r = 1) {
   }), M2 = a.createCommandEncoder(), W2 = M2.beginComputePass();
   return W2.setPipeline(T.pipeline), W2.setBindGroup(0, U), W2.dispatchWorkgroups(Math.ceil(p / 8), Math.ceil(c / 8), Math.ceil(m / 4)), W2.end(), a.queue.submit([M2.finish()]), await a.queue.onSubmittedWorkDone(), y.destroy(), Q3.destroy(), f && _.destroy(), Y2.destroy(), q2;
 }
-var Qt = `
+var Qt2 = `
 @group(0) @binding(0) var background: texture_3d<f32>;
 @group(0) @binding(1) var overlayIn: texture_3d<f32>;
 @group(0) @binding(2) var overlayOut: texture_storage_3d<rgba8unorm, write>;
@@ -25817,11 +29128,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     }
 }
 `;
-function Jt(a) {
-  let e2 = de2.get(a);
-  if (e2 || (e2 = {}, de2.set(a, e2)), e2.mask)
+function Jt2(a) {
+  let e2 = de3.get(a);
+  if (e2 || (e2 = {}, de3.set(a, e2)), e2.mask)
     return e2.mask;
-  const t2 = a.createShaderModule({ code: Qt }), i2 = a.createBindGroupLayout({
+  const t2 = a.createShaderModule({ code: Qt2 }), i2 = a.createBindGroupLayout({
     entries: [
       {
         binding: 0,
@@ -25845,12 +29156,12 @@ function Jt(a) {
   });
   return e2.mask = { pipeline: r, layout: i2 }, e2.mask;
 }
-async function Kt(a, e2, t2) {
+async function Kt2(a, e2, t2) {
   const i2 = [
     t2.width,
     t2.height,
     t2.depthOrArrayLayers
-  ], r = Jt(a), n = a.createTexture({
+  ], r = Jt2(a), n = a.createTexture({
     size: i2,
     format: "rgba8unorm",
     dimension: "3d",
@@ -25866,7 +29177,7 @@ async function Kt(a, e2, t2) {
   return u.setPipeline(r.pipeline), u.setBindGroup(0, s), u.dispatchWorkgroups(Math.ceil(i2[0] / 8), Math.ceil(i2[1] / 8), Math.ceil(i2[2] / 4)), u.end(), a.queue.submit([l.finish()]), await a.queue.onSubmittedWorkDone(), t2.destroy(), n;
 }
 function ei2(a) {
-  de2.delete(a), Se2.delete(a);
+  de3.delete(a), Se2.delete(a);
 }
 var ti2 = `
 @group(0) @binding(0) var<storage, read_write> accum: array<vec4f>;
@@ -26140,21 +29451,21 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
   return in.color;
 }
 `;
-var ye = 80;
+var ye2 = 80;
 var Oe = 2;
 
 class li2 extends Vp {
   constructor() {
-    super(...arguments), this._pipeline = null, this._xrayPipeline = null, this._uniformBuffer = null, this._xrayUniformBuffer = null, this._bindGroupLayout = null, this._bindGroup = null, this._xrayBindGroup = null, this._vertexBuffer = null, this._indexBuffer = null, this._maxVertexBytes = 0, this._maxIndexBytes = 0, this._uniformData = new Float32Array(ye / 4);
+    super(...arguments), this._pipeline = null, this._xrayPipeline = null, this._uniformBuffer = null, this._xrayUniformBuffer = null, this._bindGroupLayout = null, this._bindGroup = null, this._xrayBindGroup = null, this._vertexBuffer = null, this._indexBuffer = null, this._maxVertexBytes = 0, this._maxIndexBytes = 0, this._uniformData = new Float32Array(ye2 / 4);
   }
   async init(e2, t2, i2) {
     if (this.isReady)
       return;
     this._uniformBuffer = e2.createBuffer({
-      size: ye,
+      size: ye2,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     }), this._xrayUniformBuffer = e2.createBuffer({
-      size: ye,
+      size: ye2,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     }), this._bindGroupLayout = e2.createBindGroupLayout({
       entries: [
@@ -26813,9 +30124,9 @@ class di2 extends Vp {
     if (!this.isReady)
       return;
     const r = Math.max(Math.max(t2.hdr.dims[1], t2.hdr.dims[2]), t2.hdr.dims[3]);
-    r > this.maxTextureDimension3D && z.warn(`${r} exceeds the maxTextureDimension3D (${this.maxTextureDimension3D}) of this WebGPU adapter`), this.volumeTexture && this.volumeTexture.destroy(), this.volumeGradientTexture && this.volumeGradientTexture.destroy(), this.matcapTexture && this.matcapTexture.destroy(), this.matcapTexture = await Ae2(e2, i2);
+    r > this.maxTextureDimension3D && z.warn(`${r} exceeds the maxTextureDimension3D (${this.maxTextureDimension3D}) of this WebGPU adapter`), this.volumeTexture && this.volumeTexture.destroy(), this.volumeGradientTexture && this.volumeGradientTexture.destroy(), this.matcapTexture && this.matcapTexture.destroy(), this.matcapTexture = await Ae3(e2, i2);
     const n = ip(t2, t2);
-    this.volumeTexture = await ve2(e2, t2, t2, n, 0), this.volumeGradientTexture = await Dt2(e2, this.volumeTexture);
+    this.volumeTexture = await ve2(e2, t2, t2, n, 0), this.volumeGradientTexture = await Dt3(e2, this.volumeTexture);
   }
   async updateOverlays(e2, t2, i2, r) {
     if (!this.isReady || (this.clearOverlay(), this.clearPaqd(), !t2.dimsRAS))
@@ -26923,7 +30234,7 @@ class di2 extends Vp {
   async loadMatcap(e2, t2) {
     if (this.isReady)
       try {
-        const i2 = await Ae2(e2, t2);
+        const i2 = await Ae3(e2, t2);
         this.matcapTexture && this.matcapTexture.destroy(), this.matcapTexture = i2, await e2.queue.onSubmittedWorkDone();
       } catch (i2) {
         z.warn("Matcap load failed", i2);
@@ -27153,9 +30464,9 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     return color;
 }
 `;
-var Fe2 = 256;
-var ue2 = 192;
-var Ie2 = Math.ceil(ue2 / Fe2) * Fe2;
+var Fe3 = 256;
+var ue3 = 192;
+var Ie2 = Math.ceil(ue3 / Fe3) * Fe3;
 var fi2 = 128;
 
 class pi2 extends Vp {
@@ -27201,7 +30512,7 @@ class pi2 extends Vp {
           buffer: {
             type: "uniform",
             hasDynamicOffset: true,
-            minBindingSize: ue2
+            minBindingSize: ue3
           }
         },
         {
@@ -27293,7 +30604,7 @@ class pi2 extends Vp {
       entries: [
         {
           binding: 0,
-          resource: { buffer: this.paramsBuffer, size: ue2 }
+          resource: { buffer: this.paramsBuffer, size: ue3 }
         },
         { binding: 1, resource: d },
         { binding: 2, resource: p },
@@ -27308,7 +30619,7 @@ class pi2 extends Vp {
       entries: [
         {
           binding: 0,
-          resource: { buffer: this.paramsBuffer, size: ue2 }
+          resource: { buffer: this.paramsBuffer, size: ue3 }
         },
         { binding: 1, resource: d },
         { binding: 2, resource: p },
@@ -27335,7 +30646,7 @@ class pi2 extends Vp {
     const y = d ? this.bindGroupNearest : this.bindGroupLinear;
     if (!this.isReady || !y || !this.paramsBuffer || !this.pipeline || !i2.frac2mm)
       return;
-    const h = u * Ie2, v = new Float32Array(ue2 / 4);
+    const h = u * Ie2, v = new Float32Array(ue3 / 4);
     v.set(n, 0), v.set(i2.frac2mm, 16), v[32] = i2.opacity ?? 1, v[33] = r.overlayAlphaShader ?? 1, v[34] = l, v[35] = p, v[38] = o, v[39] = r.drawRimOpacity ?? -1, v[40] = c, v[44] = m[0], v[45] = m[1], v[46] = m[2], v[47] = m[3];
     const V2 = new Int32Array(v.buffer);
     V2[36] = s, V2[37] = r.isAlphaClipDark ? 1 : 0, V2[41] = T ? 1 : 0, v[42] = r.overlayOutlineWidth ?? 0, e2.queue.writeBuffer(this.paramsBuffer, h, v), t2.setPipeline(this.pipeline), t2.setBindGroup(0, y, [h]), t2.draw(4);
@@ -27481,7 +30792,7 @@ class yi2 {
   constructor(e2, t2, i2 = {}) {
     if (this._boundsWidth = 0, this._boundsHeight = 0, this._boundsOffsetX = 0, this._boundsOffsetY = 0, this._isSubCanvasBounds = false, this._boundsColorTexture = null, this._depthTextureView = null, this._msaaTextureView = null, this._uniformScratch = new Float32Array(ne2 / 4), this._bench = null, !e2 || !(e2 instanceof HTMLCanvasElement))
       throw new Error("NVView requires a valid HTMLCanvasElement");
-    this.canvas = e2, this.model = t2, this.options = i2, this.isAntiAlias = i2.isAntiAlias ?? false, this.forceDevicePixelRatio = i2.devicePixelRatio ?? -1, this.device = null, this.context = null, this.preferredCanvasFormat = "bgra8unorm", this.sampler = null, this.buffers = {}, this.msaaTexture = null, this.depthTexture = null, this.crosshairRenderer = new Ot2, this.screenSlices = [], this.legendLayout = null, this.graphLayout = null, this.isBusy = false, this.maxTextureDimension2D = 0, this.maxTextureDimension3D = 0, this.lineRenderer = new Yt2, this.polygonRenderer = new si2, this.polygon3DRenderer = new li2, this.fontRenderer = new Xt2, this.colorbarRenderer = new zt2, this.sliceRenderer = new pi2, this.volumeRenderer = new di2, this.meshBindGroupLayout = null, this.meshPipelines = null, this.meshXRayPipelines = null, this.lineBindGroup = null, this.fontBindGroup = null, this.maxGlyphs = 0, this.maxLines = 0, this.meshResources = /* @__PURE__ */ new Map, this.orientCubeGpu = null, this.thumbnailRenderer = new mi2;
+    this.canvas = e2, this.model = t2, this.options = i2, this.isAntiAlias = i2.isAntiAlias ?? false, this.forceDevicePixelRatio = i2.devicePixelRatio ?? -1, this.device = null, this.context = null, this.preferredCanvasFormat = "bgra8unorm", this.sampler = null, this.buffers = {}, this.msaaTexture = null, this.depthTexture = null, this.crosshairRenderer = new Ot3, this.screenSlices = [], this.legendLayout = null, this.graphLayout = null, this.isBusy = false, this.maxTextureDimension2D = 0, this.maxTextureDimension3D = 0, this.lineRenderer = new Yt3, this.polygonRenderer = new si2, this.polygon3DRenderer = new li2, this.fontRenderer = new Xt3, this.colorbarRenderer = new zt3, this.sliceRenderer = new pi2, this.volumeRenderer = new di2, this.meshBindGroupLayout = null, this.meshPipelines = null, this.meshXRayPipelines = null, this.lineBindGroup = null, this.fontBindGroup = null, this.maxGlyphs = 0, this.maxLines = 0, this.meshResources = /* @__PURE__ */ new Map, this.orientCubeGpu = null, this.thumbnailRenderer = new mi2;
   }
   get boundsWidth() {
     return this._boundsWidth;
@@ -27541,7 +30852,7 @@ class yi2 {
       silhouette: C(e2, t2, i2, n, "fragment_silhouette", "depth24plus", "vertex_main", "greater", false),
       toon: C(e2, t2, i2, n, "fragment_toon", "depth24plus", "vertex_main", "greater", false),
       vertexColor: C(e2, t2, i2, n, "fragment_vertexColor", "depth24plus", "vertex_main", "greater", false)
-    }, this.crosshairRenderer.init(e2, r), this._createOrientCube(e2, r), It2(e2, this.volumeRenderer.bindLayout, this.meshBindGroupLayout);
+    }, this.crosshairRenderer.init(e2, r), this._createOrientCube(e2, r), It3(e2, this.volumeRenderer.bindLayout, this.meshBindGroupLayout);
   }
   _createOrientCube(e2, t2) {
     const i2 = pp(), r = new Float32Array(i2.positions), n = new Uint32Array(i2.indices), s = Dd(r, n), l = r.length / 3, u = new ArrayBuffer(l * $s), o = new Float32Array(u), d = new Uint32Array(u);
@@ -27588,14 +30899,14 @@ class yi2 {
     if (!t2)
       return;
     const i2 = this.model.getVolumes();
-    await this.colorbarRenderer.buildColorbars(t2, this.model.collectColorbars(), this.model.scene.backgroundColor), i2.length > 0 && await this.volumeRenderer.updateVolume(t2, i2[0], this.model.volume.matcap), i2.length > 1 ? (await this.volumeRenderer.updateOverlays(t2, i2[0], i2.slice(1), this.model.volume.paqdUniforms), this.model.volume.isBackgroundMasking && this.volumeRenderer.overlayTexture && this.volumeRenderer.volumeTexture && (this.volumeRenderer.overlayTexture = await Kt(t2, this.volumeRenderer.volumeTexture, this.volumeRenderer.overlayTexture))) : this.volumeRenderer.clearOverlay(), this.volumeRenderer.updateBindGroup(t2), this.volumeRenderer.volumeTexture && this.sliceRenderer.updateBindGroup(t2, this.volumeRenderer.volumeTexture, this.volumeRenderer.overlayTexture, this.volumeRenderer.paqdTexture, this.volumeRenderer.paqdLutTexture), this.lineBindGroup = this.lineRenderer.createBindGroup(t2, this.buffers.lineStorage), this.fontRenderer.isReady && this.sampler && (this.fontBindGroup = this.fontRenderer.createBindGroup(t2, e2.glyphStorage, this.sampler));
+    await this.colorbarRenderer.buildColorbars(t2, this.model.collectColorbars(), this.model.scene.backgroundColor), i2.length > 0 && await this.volumeRenderer.updateVolume(t2, i2[0], this.model.volume.matcap), i2.length > 1 ? (await this.volumeRenderer.updateOverlays(t2, i2[0], i2.slice(1), this.model.volume.paqdUniforms), this.model.volume.isBackgroundMasking && this.volumeRenderer.overlayTexture && this.volumeRenderer.volumeTexture && (this.volumeRenderer.overlayTexture = await Kt2(t2, this.volumeRenderer.volumeTexture, this.volumeRenderer.overlayTexture))) : this.volumeRenderer.clearOverlay(), this.volumeRenderer.updateBindGroup(t2), this.volumeRenderer.volumeTexture && this.sliceRenderer.updateBindGroup(t2, this.volumeRenderer.volumeTexture, this.volumeRenderer.overlayTexture, this.volumeRenderer.paqdTexture, this.volumeRenderer.paqdLutTexture), this.lineBindGroup = this.lineRenderer.createBindGroup(t2, this.buffers.lineStorage), this.fontRenderer.isReady && this.sampler && (this.fontBindGroup = this.fontRenderer.createBindGroup(t2, e2.glyphStorage, this.sampler));
     const r = this.model.getMeshes(), n = this.getAvailableShaders();
     if (this.meshBindGroupLayout) {
       this._destroyMeshResources();
       for (const s of r) {
         let l = s.shaderType || "phong";
         n.includes(l) || (z.warn(`Shader '${l}' not available in WebGPU, falling back to 'phong'`), l = "phong");
-        const u = Mt2(t2, s, { shaderType: l }), o = {
+        const u = Mt3(t2, s, { shaderType: l }), o = {
           vertexBuffer: u.vertexBuffer,
           indexBuffer: u.indexBuffer,
           uniformBuffer: u.uniformBuffer,
@@ -27693,7 +31004,7 @@ class yi2 {
       customLayout: e2.layout.customLayout
     });
     this.screenSlices = $2, this.crosshairRenderer.isReady && this.crosshairRenderer.update(e2);
-    const z2 = e2.annotation.isVisibleIn3D ? xp(e2) : null, A = [];
+    const z3 = e2.annotation.isVisibleIn3D ? xp(e2) : null, A = [];
     for (let _ = 0;_ < $2.length; _++) {
       const f = $2[_], G2 = f.leftTopWidthHeight;
       let [U, , M2, W2] = sp(G2, e2.scene.azimuth, e2.scene.elevation, e2.pivot3D, e2.furthestFromPivot, e2.scene.scaleMultiplier, e2.volumes[0]?.obliqueRAS);
@@ -27746,7 +31057,7 @@ class yi2 {
             continue;
           const S = this._uniformScratch;
           S.set(E, 0), S.set(F, 16), S.set(P.clipPlane, 32), S[36] = P.opacity ?? 1, S.set(X2, 40), t2.queue.writeBuffer(g.uniformBuffer, O, S);
-          const Z3 = g.shaderType || P.shaderType || "phong", j2 = this.meshPipelines[Z3];
+          const Z4 = g.shaderType || P.shaderType || "phong", j2 = this.meshPipelines[Z4];
           j2 && (h.setPipeline(j2), h.setBindGroup(0, g.bindGroup, [O]), h.setVertexBuffer(0, g.vertexBuffer), h.setIndexBuffer(g.indexBuffer, "uint32"), h.drawIndexed(g.indexCount));
         }
       const I = e2.mesh.xRay, H = _ + $2.length;
@@ -27765,35 +31076,35 @@ class yi2 {
               continue;
             const S = this._uniformScratch;
             S.set(E, 0), S.set(F, 16), S.set(P.clipPlane, 32), S[36] = (P.opacity ?? 1) * I, S.set(X2, 40), t2.queue.writeBuffer(g.uniformBuffer, O, S);
-            const Z3 = g.shaderType || P.shaderType || "phong", j2 = this.meshXRayPipelines[Z3];
+            const Z4 = g.shaderType || P.shaderType || "phong", j2 = this.meshXRayPipelines[Z4];
             j2 && (h.setPipeline(j2), h.setBindGroup(0, g.bindGroup, [O]), h.setVertexBuffer(0, g.vertexBuffer), h.setIndexBuffer(g.indexBuffer, "uint32"), h.drawIndexed(g.indexCount));
           }
       }
-      if (f.axCorSag === at2.RENDER && z2 && this.polygon3DRenderer.isReady && (this.polygon3DRenderer.draw(t2, h, z2, U), this.polygon3DRenderer.drawXRay(t2, h, z2, U, 0.5)), f.axCorSag === at2.RENDER && f.renderOrientation === undefined && e2.ui.isOrientCubeVisible && this.orientCubeGpu && this.meshPipelines) {
+      if (f.axCorSag === at2.RENDER && z3 && this.polygon3DRenderer.isReady && (this.polygon3DRenderer.draw(t2, h, z3, U), this.polygon3DRenderer.drawXRay(t2, h, z3, U, 0.5)), f.axCorSag === at2.RENDER && f.renderOrientation === undefined && e2.ui.isOrientCubeVisible && this.orientCubeGpu && this.meshPipelines) {
         const x2 = gp(G2);
         if (x2) {
           const { x: P, y: g, sz: D } = x2, O = exports_mat4.create();
           exports_mat4.orthoZO(O, 0, G2[2], 0, G2[3], -10 * D, 10 * D);
           const S = exports_mat4.create();
           exports_mat4.translate(S, S, [P, g, 0]), exports_mat4.scale(S, S, [D, D, D]), exports_mat4.rotateX(S, S, xn(270 - e2.scene.elevation)), exports_mat4.rotateZ(S, S, xn(-e2.scene.azimuth));
-          const Z3 = exports_mat4.create();
-          exports_mat4.multiply(Z3, O, S);
-          const j2 = exports_mat4.create(), re = this.orientCubeGpu, Be2 = Math.trunc(_ * (re.alignedMeshSize ?? 0)), se2 = this._uniformScratch;
-          se2.set(Z3, 0), se2.set(j2, 16), se2.fill(0, 32), se2[36] = 1, t2.queue.writeBuffer(re.uniformBuffer, Be2, se2);
+          const Z4 = exports_mat4.create();
+          exports_mat4.multiply(Z4, O, S);
+          const j2 = exports_mat4.create(), re = this.orientCubeGpu, Be2 = Math.trunc(_ * (re.alignedMeshSize ?? 0)), se3 = this._uniformScratch;
+          se3.set(Z4, 0), se3.set(j2, 16), se3.fill(0, 32), se3[36] = 1, t2.queue.writeBuffer(re.uniformBuffer, Be2, se3);
           const Re2 = this.meshPipelines.vertexColorNoDepth;
           Re2 && (h.setPipeline(Re2), h.setBindGroup(0, re.bindGroup, [Be2]), h.setVertexBuffer(0, re.vertexBuffer), h.setIndexBuffer(re.indexBuffer, "uint32"), h.drawIndexed(re.indexCount));
         }
       }
       if (f.axCorSag !== at2.RENDER && (f.showLabels ?? e2.ui.isOrientationTextVisible)) {
-        const x2 = e2.layout.isRadiological, P = G2[0], g = G2[1], D = G2[2], O = G2[3], S = 1, Z3 = 4;
+        const x2 = e2.layout.isRadiological, P = G2[0], g = G2[1], D = G2[2], O = G2[3], S = 1, Z4 = 4;
         if (f.axCorSag === at2.AXIAL || f.axCorSag === at2.CORONAL) {
           const j2 = x2 ? "R" : "L";
-          d.push(this.fontRenderer.buildText(j2, P + Z3, g + O / 2, S, p, 0, 0.5));
+          d.push(this.fontRenderer.buildText(j2, P + Z4, g + O / 2, S, p, 0, 0.5));
         } else if (f.axCorSag === at2.SAGITTAL) {
           const j2 = x2 ? "A" : "P";
-          d.push(this.fontRenderer.buildText(j2, P + Z3, g + O / 2, S, p, 0, 0.5));
+          d.push(this.fontRenderer.buildText(j2, P + Z4, g + O / 2, S, p, 0, 0.5));
         }
-        f.axCorSag === at2.AXIAL ? d.push(this.fontRenderer.buildText("A", P + D / 2, g + Z3, S, p, 0.5, 0)) : (f.axCorSag === at2.CORONAL || f.axCorSag === at2.SAGITTAL) && d.push(this.fontRenderer.buildText("S", P + D / 2, g + Z3, S, p, 0.5, 0));
+        f.axCorSag === at2.AXIAL ? d.push(this.fontRenderer.buildText("A", P + D / 2, g + Z4, S, p, 0.5, 0)) : (f.axCorSag === at2.CORONAL || f.axCorSag === at2.SAGITTAL) && d.push(this.fontRenderer.buildText("S", P + D / 2, g + Z4, S, p, 0.5, 0));
       }
     }
     h.setViewport(0, 0, c, m, 0, 1), this.model.ui.isColorbarVisible && this.colorbarRenderer.draw(t2, h);
@@ -27861,7 +31172,7 @@ class yi2 {
     }), this.lineBindGroup = this.lineRenderer.createBindGroup(t2, this.buffers.lineStorage)), this.lineRenderer.draw(t2, h, this.lineBindGroup, this.buffers.lineStorage, q2, this.maxLines)), h.end(), s && this._copyBoundsToCanvas(T, i2), t2.queue.submit([T.finish()]);
   }
   get bench() {
-    return this._bench || (this._bench = new wt2(this)), this._bench;
+    return this._bench || (this._bench = new wt3(this)), this._bench;
   }
   renderAndFlush() {
     return this.bench.renderAndFlush();
@@ -28062,7 +31373,7 @@ class yi2 {
       const w = tc(s.scene.pan2Dxyzmm, r.axCorSag), Y2 = Hl(n, B.mnMM, B.mxMM, 1 / 0, undefined, r.azimuth, r.elevation, s.layout.isRadiological, s.volumes[0]?.obliqueRAS, undefined, w);
       u = Y2[0], o = Y2[2], d = Y2[3];
     }
-    const p = n[2], c = n[3], m = Vt(i2.normalizedX, i2.normalizedY, p, c, u), T = s.getVolumes(), y = this.volumeRenderer;
+    const p = n[2], c = n[3], m = Vt2(i2.normalizedX, i2.normalizedY, p, c, u), T = s.getVolumes(), y = this.volumeRenderer;
     let h = null;
     if (y.hasVolume() && T.length > 0 && (T[0].opacity ?? 1) > 0) {
       const B = T[0].matRAS, w = T[0].volScale;
@@ -28107,7 +31418,7 @@ class yi2 {
         alignedSize: w.alignedMeshSize ?? K3
       });
     }
-    const k2 = await Nt2({
+    const k2 = await Nt3({
       device: l,
       volumeBindGroup: y.bindGroup,
       volumeVertexBuffer: y.vertexBuffer,
@@ -28132,60 +31443,93 @@ class yi2 {
     const e2 = this.model.getVolumes();
     for (const i2 of e2)
       i2.gpu && delete i2.gpu;
-    this._destroyMeshResources(), this.crosshairRenderer.destroy(), this.orientCubeGpu && (Me2(this.orientCubeGpu), this.orientCubeGpu = null), this._bench?.destroy(), this._bench = null, this.msaaTexture && (this.msaaTexture.destroy(), this.msaaTexture = null), this._msaaTextureView = null, this._boundsColorTexture && (this._boundsColorTexture.destroy(), this._boundsColorTexture = null), this.depthTexture && (this.depthTexture.destroy(), this.depthTexture = null), this._depthTextureView = null, this.buffers.glyphStorage && this.buffers.glyphStorage.destroy(), this.buffers.lineStorage && this.buffers.lineStorage.destroy(), this.buffers = {}, this.lineRenderer.destroy(), this.polygonRenderer.destroy(), this.polygon3DRenderer.destroy(), this.fontRenderer.destroy(), this.colorbarRenderer.destroy(), this.thumbnailRenderer.destroy(), this.sliceRenderer.destroy(), this.volumeRenderer.destroy(), this.device && (kt(this.device), Lt(this.device));
+    this._destroyMeshResources(), this.crosshairRenderer.destroy(), this.orientCubeGpu && (Me2(this.orientCubeGpu), this.orientCubeGpu = null), this._bench?.destroy(), this._bench = null, this.msaaTexture && (this.msaaTexture.destroy(), this.msaaTexture = null), this._msaaTextureView = null, this._boundsColorTexture && (this._boundsColorTexture.destroy(), this._boundsColorTexture = null), this.depthTexture && (this.depthTexture.destroy(), this.depthTexture = null), this._depthTextureView = null, this.buffers.glyphStorage && this.buffers.glyphStorage.destroy(), this.buffers.lineStorage && this.buffers.lineStorage.destroy(), this.buffers = {}, this.lineRenderer.destroy(), this.polygonRenderer.destroy(), this.polygon3DRenderer.destroy(), this.fontRenderer.destroy(), this.colorbarRenderer.destroy(), this.thumbnailRenderer.destroy(), this.sliceRenderer.destroy(), this.volumeRenderer.destroy(), this.device && (kt2(this.device), Lt2(this.device));
     const t2 = ae2.get(this.canvas);
     t2 && (t2.views.delete(this), t2.refCount--, t2.refCount <= 0 && ae2.delete(this.canvas)), this.device = null, this.context = null, this.sampler = null, this.meshBindGroupLayout = null, this.meshPipelines = null, this.meshXRayPipelines = null, this.lineBindGroup = null, this.fontBindGroup = null;
   }
 }
 
-// ../niivue/dist/niivuegpu.webgpu.js
-async function c(e2, i2, n = null) {
-  return await l(e2, document.getElementById(i2), n), z.debug("attached to element with id: ", i2), e2;
+// ../niivue/dist/niivuegpu.js
+var o = /* @__PURE__ */ new WeakMap;
+var f = /* @__PURE__ */ new WeakMap;
+async function y(e2, i2, n = null) {
+  return await g(e2, document.getElementById(i2), n), z.debug("attached to element with id: ", i2), e2;
 }
-async function l(e2, i2, n = null) {
+async function g(e2, i2, n = null) {
   if (!i2 || !(i2 instanceof HTMLCanvasElement))
     throw new Error("NiiVue requires a valid HTMLCanvasElement");
-  if (typeof n == "boolean" && (e2.opts.isAntiAlias = n), e2.opts.backend === "webgl2")
-    throw new Error("This niivuegpu distribution includes only WebGPU. Requested backend 'webgl2' is unavailable.");
-  e2.canvas = i2, e2.view = new yi2(i2, e2.model, e2.opts);
+  typeof n == "boolean" && (e2.opts.isAntiAlias = n), e2.canvas = i2;
+  let a = o.get(i2);
+  a || (a = /* @__PURE__ */ new Set, o.set(i2, a)), a.add(e2), e2.opts.backend === "webgl2" ? e2.view = new Gr2(i2, e2.model, e2.opts) : e2.view = new yi2(i2, e2.model, e2.opts);
   try {
-    return await e2.view.init(), e2.opts.thumbnail && (e2.model.ui.isThumbnailVisible = true, e2.model.ui.thumbnailUrl = e2.opts.thumbnail, await e2.view.loadThumbnail(e2.model.ui.thumbnailUrl)), zg(e2), Bg(e2), $g(e2), e2.view.resize(), e2;
-  } catch (a) {
-    throw z.error("Failed to initialize view:", a), a;
+    return await e2.view.init(), e2.opts.thumbnail && (e2.model.ui.isThumbnailVisible = true, e2.model.ui.thumbnailUrl = e2.opts.thumbnail, await e2.view.loadThumbnail(e2.model.ui.thumbnailUrl)), zg(e2), Bg(e2), $g(e2), e2.view.resize(), e2.emit("viewAttached", {
+      canvas: i2,
+      backend: e2.opts.backend ?? "webgpu"
+    }), e2;
+  } catch (s) {
+    throw z.error("Failed to initialize view:", s), s;
   }
 }
-async function p(e2) {
-  e2.view?.destroy(), e2.model.clearAllGPUResources(), Om(e2), e2.resizeObserver && e2.resizeObserver.disconnect();
-  const i2 = e2.canvas, n = i2.parentNode, a = document.createElement("canvas");
-  a.id = i2.id, a.className = i2.className, a.style.cssText = i2.style.cssText, n?.replaceChild(a, i2), e2.canvas = a, e2.view = new yi2(e2.canvas, e2.model, e2.opts), await e2.view.init(), e2.opts.thumbnail && e2.model.ui.isThumbnailVisible && await e2.view.loadThumbnail(e2.opts.thumbnail), zg(e2), Bg(e2), $g(e2), await e2.view.updateBindGroups(), e2.view.resize(), e2.drawScene();
+function x2(e2) {
+  if (!e2.canvas)
+    return;
+  const i2 = o.get(e2.canvas);
+  i2 && (i2.delete(e2), i2.size === 0 && o.delete(e2.canvas));
 }
-async function g(e2, i2 = {}) {
-  const n = i2.isAntiAlias ?? e2.opts.isAntiAlias, a = i2.backend ?? e2.opts.backend, o = i2.forceDevicePixelRatio ?? e2.opts.forceDevicePixelRatio ?? -1, t2 = i2.forceRestart ?? true;
-  if (a !== "webgpu")
-    return z.warn("This niivuegpu distribution includes only WebGPU. Expected backend 'webgpu'."), false;
-  if (!navigator.gpu)
+function D(e2) {
+  const i2 = e2.opts.bounds;
+  return !!i2 && !(i2[0][0] === 0 && i2[0][1] === 0 && i2[1][0] === 1 && i2[1][1] === 1);
+}
+function N(e2) {
+  const i2 = e2.canvas;
+  if (f.get(i2) === e2.opts.backend)
+    return;
+  const n = i2.parentNode;
+  if (!n)
+    return;
+  const a = document.createElement("canvas");
+  a.id = i2.id, a.className = i2.className, a.style.cssText = i2.style.cssText, n.replaceChild(a, i2), f.set(a, e2.opts.backend ?? "webgpu"), e2.canvas = a;
+  const s = o.get(i2);
+  if (s) {
+    for (const t2 of s)
+      t2 !== e2 && (t2.canvas = a);
+    o.delete(i2), o.set(a, s);
+  }
+}
+async function h(e2, i2 = false) {
+  e2.emit("viewDestroyed"), e2.view?.destroy(), e2.model.clearAllGPUResources(), Om(e2), e2.resizeObserver && e2.resizeObserver.disconnect(), (!D(e2) || i2) && N(e2), e2.opts.backend === "webgl2" ? e2.view = new Gr2(e2.canvas, e2.model, e2.opts) : e2.view = new yi2(e2.canvas, e2.model, e2.opts), await e2.view.init(), e2.opts.thumbnail && e2.model.ui.isThumbnailVisible && await e2.view.loadThumbnail(e2.opts.thumbnail), zg(e2), Bg(e2), $g(e2), await e2.view.updateBindGroups(), e2.model.drawingVolume && e2.refreshDrawing(), e2.view.resize(), e2.drawScene(), e2.emit("viewAttached", {
+    canvas: e2.canvas,
+    backend: e2.opts.backend ?? "webgpu"
+  });
+}
+async function R(e2, i2 = {}) {
+  const n = i2.isAntiAlias ?? e2.opts.isAntiAlias, a = i2.backend ?? e2.opts.backend, s = i2.forceDevicePixelRatio ?? e2.opts.forceDevicePixelRatio ?? -1, t2 = i2.forceRestart ?? true;
+  if (a !== "webgpu" && a !== "webgl2")
+    return z.warn(`Invalid backend: ${a}. Expected 'webgpu' or 'webgl2'.`), false;
+  if (a === "webgpu" && a !== e2.opts.backend && !navigator.gpu)
     return z.warn("WebGPU is not supported in this browser."), false;
-  const u = !!n !== e2.isAntiAlias, v = o !== e2.opts.forceDevicePixelRatio;
-  if (!t2 && !u && !v)
+  const u = a !== e2.opts.backend, w = !!n !== e2.isAntiAlias, c = s !== e2.opts.forceDevicePixelRatio;
+  if (!t2 && !u && !w && !c)
     return true;
-  e2.opts.backend = "webgpu", e2.opts.isAntiAlias = !!n, e2.opts.forceDevicePixelRatio = o;
+  e2.opts.backend = a, e2.opts.isAntiAlias = !!n, e2.opts.forceDevicePixelRatio = s;
   try {
-    return t2 || u ? await p(e2) : (e2.view && (e2.view.forceDevicePixelRatio = o), e2.view?.resize()), true;
-  } catch (f) {
-    return z.error("Failed to reinitialize view:", f), false;
+    return t2 || u || w ? await h(e2, u) : (e2.view && (e2.view.forceDevicePixelRatio = s), e2.view?.resize()), true;
+  } catch (l) {
+    return z.error("Failed to reinitialize view:", l), false;
   }
 }
-var y = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+var C2 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  attachTo: c,
-  attachToCanvas: l,
-  recreateView: p,
-  reinitializeView: g
+  attachTo: y,
+  attachToCanvas: g,
+  recreateView: h,
+  reinitializeView: R,
+  unregister: x2
 }, Symbol.toStringTag, { value: "Module" }));
 
-class R extends jg {
+class P extends jg {
   constructor(i2 = {}) {
-    super(i2, y, "webgpu"), this.enforceBackendAvailability();
+    super(i2, C2, "both"), this.enforceBackendAvailability();
   }
 }
 
@@ -28281,6 +31625,10 @@ var PROPS_RO = [
   ["volumeTransforms", "volume_transforms"],
   ["volumeWriteExtensions", "volume_write_extensions"]
 ];
+var CONSTRUCTOR_PROPS = [
+  ...PROPS_RW,
+  ["backend", "backend"]
+];
 var SKIP_EVENT_FORWARDING = new Set([
   "canvasResize",
   "viewAttached",
@@ -28316,19 +31664,61 @@ var EVENTS = [
   "volumeRemoved",
   "volumeUpdated"
 ];
-var nv = null;
-var mountedResolve = null;
-var mountedPromise = null;
-var outboxSeq = 0;
+var STATE = new Map;
+var createState = () => {
+  let initializedResolve = null;
+  const initializedPromise = new Promise((r) => {
+    initializedResolve = r;
+  });
+  let mountedResolve = null;
+  const mountedPromise = new Promise((r) => {
+    mountedResolve = r;
+  });
+  return {
+    nv: null,
+    initializedResolve,
+    initializedPromise,
+    mountedResolve,
+    mountedPromise,
+    commandQueue: Promise.resolve(),
+    lastInboxSeq: 0,
+    outboxSeq: 0,
+    hasAttached: false
+  };
+};
+var stateKey = (model) => {
+  try {
+    return model.get("_anywidget_id") || model;
+  } catch {
+    return model;
+  }
+};
+var getState = (model) => {
+  const key = stateKey(model);
+  let state = STATE.get(key);
+  if (!state) {
+    state = createState();
+    STATE.set(key, state);
+  }
+  return state;
+};
+var deleteState = (model) => {
+  STATE.delete(stateKey(model));
+};
 var TJS_TYPED_MAX = 1024;
 var TJS_ARRAY_MAX = 4096;
 var toJsonSafe = (v, seen) => {
   if (v == null)
     return v;
+  const t2 = typeof v;
+  if (t2 === "function" || t2 === "symbol" || t2 === "undefined")
+    return null;
+  if (t2 === "bigint")
+    return Number.isSafeInteger(Number(v)) ? Number(v) : String(v);
   if (ArrayBuffer.isView(v)) {
     return v.length <= TJS_TYPED_MAX ? Array.from(v) : null;
   }
-  if (typeof v !== "object")
+  if (t2 !== "object")
     return v;
   seen ??= new WeakSet;
   if (seen.has(v))
@@ -28337,7 +31727,7 @@ var toJsonSafe = (v, seen) => {
   if (Array.isArray(v)) {
     if (v.length > TJS_ARRAY_MAX)
       return null;
-    return v.map((x2) => toJsonSafe(x2, seen));
+    return v.map((x3) => toJsonSafe(x3, seen));
   }
   const out = {};
   for (const k2 of Object.keys(v))
@@ -28345,18 +31735,16 @@ var toJsonSafe = (v, seen) => {
   return out;
 };
 async function initialize({ model }) {
-  mountedPromise = new Promise((r) => {
-    mountedResolve = r;
-  });
+  const state = getState(model);
   const sendToPython = (body) => {
     try {
-      model.set("_msg_outbox", { seq: ++outboxSeq, body });
+      model.set("_msg_outbox", { seq: ++state.outboxSeq, body });
       model.save_changes();
     } catch (err2) {
       console.warn("ipyniivue: outbox write failed:", err2);
     }
   };
-  const cmdHandler = async (msg) => {
+  const runCommand = async (msg) => {
     if (!msg || typeof msg !== "object")
       return;
     if (typeof msg.cmd !== "string")
@@ -28372,19 +31760,24 @@ async function initialize({ model }) {
         body.error = String(payload);
       sendToPython(body);
     };
-    await mountedPromise;
+    await state.mountedPromise;
     if (msg.cmd === "__ready__") {
       if (reqId !== null)
         respond(true, true);
       return;
     }
+    const nv = state.nv;
+    if (!nv) {
+      respond(false, "NiiVue instance is not initialized");
+      return;
+    }
     const fn2 = nv[msg.cmd];
     if (typeof fn2 !== "function") {
-      const errMsg = `unknown command: ${msg.cmd}`;
+      const errMsg = "unknown command: " + msg.cmd;
       if (reqId !== null)
         respond(false, errMsg);
       else
-        console.warn(`ipyniivue: ${errMsg}`);
+        console.warn("ipyniivue: " + errMsg);
       return;
     }
     try {
@@ -28403,30 +31796,58 @@ async function initialize({ model }) {
       if (reqId !== null)
         respond(false, err2);
       else
-        console.error(`ipyniivue: command ${msg.cmd} threw:`, err2);
+        console.error("ipyniivue: command " + msg.cmd + " threw:", err2);
     }
   };
+  const cmdHandler = (msg) => {
+    state.commandQueue = state.commandQueue.then(() => runCommand(msg)).catch((err2) => {
+      console.error("ipyniivue: command queue error:", err2);
+    });
+  };
   model.on("msg:custom", cmdHandler);
+  const inboxHandler = () => {
+    const inbox = model.get("_msg_inbox");
+    if (!Array.isArray(inbox))
+      return;
+    for (const item of inbox) {
+      const seq = item && typeof item.seq === "number" ? item.seq : null;
+      if (seq === null || seq <= state.lastInboxSeq)
+        continue;
+      state.lastInboxSeq = seq;
+      cmdHandler(item.body);
+    }
+  };
+  model.on("change:_msg_inbox", inboxHandler);
+  inboxHandler();
   const opts = {};
-  for (const [jsName, pyName] of PROPS_RW) {
+  for (const [jsName, pyName] of CONSTRUCTOR_PROPS) {
     const v = model.get(pyName);
     if (v !== null && v !== undefined)
       opts[jsName] = v;
   }
-  nv = new R(opts);
+  const thumbnailUrl = model.get("thumbnail_url");
+  if (thumbnailUrl !== null && thumbnailUrl !== undefined) {
+    opts.thumbnail = thumbnailUrl;
+  }
+  state.nv = new P(opts);
+  if (state.initializedResolve) {
+    state.initializedResolve();
+    state.initializedResolve = null;
+  }
   const observers = [];
   for (const [jsName, pyName] of PROPS_RW) {
     const handler = async () => {
-      await mountedPromise;
+      await state.mountedPromise;
       const v = model.get(pyName);
       try {
-        if (nv[jsName] !== v)
+        const nv = state.nv;
+        if (nv && nv[jsName] !== v)
           nv[jsName] = v;
       } catch (err2) {
-        console.warn(`ipyniivue: failed to set ${jsName}:`, err2);
+        console.warn("ipyniivue: failed to set " + jsName + ":", err2);
       }
     };
-    model.on(`change:${pyName}`, handler);
+    model.on("change:" + pyName, handler);
     observers.push([pyName, handler]);
   }
   const evtListeners = [];
@@ -28440,14 +31861,16 @@ async function initialize({ model }) {
       } catch {}
       sendToPython({ kind: "event", name: eventName, detail });
     };
-    nv.addEventListener(eventName, handler);
+    state.nv.addEventListener(eventName, handler);
     evtListeners.push([eventName, handler]);
   }
   return () => {
     model.off("msg:custom", cmdHandler);
+    model.off("change:_msg_inbox", inboxHandler);
     for (const [pyName, handler] of observers) {
-      model.off(`change:${pyName}`, handler);
+      model.off("change:" + pyName, handler);
     }
+    const nv = state.nv;
     if (nv) {
       for (const [eventName, handler] of evtListeners) {
         nv.removeEventListener(eventName, handler);
@@ -28455,12 +31878,16 @@ async function initialize({ model }) {
       if (typeof nv.destroy === "function")
         nv.destroy();
     }
-    nv = null;
+    state.nv = null;
+    deleteState(model);
   };
 }
 async function render({ model, el: el2 }) {
-  if (!nv) {
-    console.error("ipyniivue: render called before initialize");
+  const state = getState(model);
+  await state.initializedPromise;
+  const nv = state?.nv;
+  if (!state || !nv) {
+    console.error("ipyniivue: render called without an initialized NiiVue");
     return;
   }
   const canvas = document.createElement("canvas");
@@ -28469,19 +31896,27 @@ async function render({ model, el: el2 }) {
   canvas.height = 480;
   el2.appendChild(canvas);
   await new Promise((r) => requestAnimationFrame(() => r()));
-  if (!nv.canvas?.parentNode) {
+  if (!state.hasAttached) {
     await nv.attachToCanvas(canvas);
+    state.hasAttached = true;
     for (const [jsName, pyName] of [...PROPS_RW, ...PROPS_RO]) {
       try {
         const v = nv[jsName];
         if (v !== undefined)
           model.set(pyName, toJsonSafe(v));
       } catch (err2) {
-        console.warn(`ipyniivue: failed to seed ${pyName}:`, err2);
+        console.warn("ipyniivue: failed to seed " + pyName + ":", err2);
       }
     }
-    model.save_changes();
-    mountedResolve();
+    if (state.mountedResolve) {
+      state.mountedResolve();
+      state.mountedResolve = null;
+    }
+    try {
+      model.save_changes();
+    } catch (err2) {
+      console.warn("ipyniivue: failed to sync initial state:", err2);
+    }
   }
   return () => {};
 }

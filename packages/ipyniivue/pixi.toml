@@ -24,8 +24,8 @@ nbformat = ">=5"
 [feature.dev.tasks]
 # Headless execution of the smoke-test notebook. Verifies Python-side
 # imports, widget construction, and method calls don't raise. Does NOT
-# verify the browser-side rendering — that requires a real browser.
-smoke = "jupyter execute examples/01_hello_volume.ipynb"
+# verify the browser-side rendering; that requires a real browser.
+smoke = "jupyter nbconvert --to notebook --execute --output 01_hello_volume.executed.ipynb --output-dir /tmp examples/01_hello_volume.ipynb"
 # Open JupyterLab for manual inspection of widget rendering.
 lab = "jupyter lab"
 

@@ -1,31 +1,39 @@
 import { readFileSync } from 'node:fs'
-import { basename } from 'node:path'
+import { extname } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vite'
 import dts from 'vite-plugin-dts'
 
 /**
- * Rollup plugin that emits image assets as separate files in lib mode
- * instead of inlining them as base64 data URIs.
+ * Rollup plugin that inlines image assets as base64 data URIs in lib mode.
+ *
+ * We cannot emit separate asset files and reference them via
+ * `new URL('./foo.png', import.meta.url)` because Vite's `optimizeDeps`
+ * (esbuild) moves the bundled JS into `.vite/deps/` without copying the
+ * referenced assets, breaking runtime asset resolution for downstream
+ * consumers. See: https://github.com/niivue/mono/issues/10
+ *
+ * Fonts and matcaps ship as separate lib entry points (see build.lib.entry
+ * below), so inlining them does not bloat the main bundle — only code that
+ * actually imports them pays the base64 overhead.
  */
-function emitAssetFiles(): Plugin {
+function inlineImageAssets(): Plugin {
+  const MIME: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+  }
   return {
-    name: 'emit-asset-files',
+    name: 'inline-image-assets',
     enforce: 'pre',
     load(id) {
-      // Match image imports from asset modules
-      const match = id.match(/\.(png|jpe?g)$/)
-      if (!match) return null
-      const source = readFileSync(id)
-      const fileName = `assets/${basename(id)}`
-      const ref = this.emitFile({
-        type: 'asset',
-        name: basename(id),
-        fileName,
-        source,
-      })
-      return `export default import.meta.ROLLUP_FILE_URL_${ref}`
+      const ext = extname(id).toLowerCase()
+      const mime = MIME[ext]
+      if (!mime) return null
+      const base64 = readFileSync(id).toString('base64')
+      const dataUrl = `data:${mime};base64,${base64}`
+      return `export default ${JSON.stringify(dataUrl)}`
     },
   }
 }
@@ -38,7 +46,7 @@ export default defineConfig({
     },
   },
   plugins: [
-    emitAssetFiles(),
+    inlineImageAssets(),
     dts({
       tsconfigPath: './tsconfig.json',
       exclude: ['**/*.test.ts'],
@@ -64,7 +72,6 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    assetsInlineLimit: 0,
     lib: {
       entry: {
         niivuegpu: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
@@ -85,9 +92,6 @@ export default defineConfig({
     },
     rollupOptions: {
       external: ['cbor-x', 'gl-matrix', 'nifti-reader-js'],
-      output: {
-        assetFileNames: 'assets/[name][extname]',
-      },
     },
   },
 })

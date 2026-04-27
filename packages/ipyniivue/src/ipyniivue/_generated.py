@@ -276,24 +276,6 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
     def create_empty_drawing(self) -> None:
         self.send({"cmd": "createEmptyDrawing", "args": []})
 
-    async def create_extension_context(self) -> Any:
-        """Create an extension context for interacting with this NiiVue instance.
-
-        The context provides a stable API surface for extensions: live data
-        accessors, event subscriptions (including high-level slice pointer events),
-        safe write-back actions, and coordinate transform utilities.
-
-        Call `context.dispose()` when the extension is deactivated to remove all
-        event listeners registered through the context.
-
-        Multiple contexts can coexist — each tracks its own subscriptions.
-
-        Returns
-        -------
-        NVExtensionContext
-        """
-        return await self._request("createExtensionContext", [])
-
     def create_on_location_change(self, ax_cor_sag: Any = None) -> None:
         self.send({"cmd": "createOnLocationChange", "args": [ax_cor_sag]})
 

@@ -6,9 +6,10 @@ Inherits the auto-generated reactive properties and command methods from
   * a stable public class name (`NiiVue`)
   * the `_esm` / `_css` paths anywidget needs to load the JS bundle
   * `on()` / `off()` for subscribing to NiiVue events from Python (the JS
-    side dispatches events via `model.send({kind: "event", ...})`; this
-    class routes them to user callbacks, validating against the
-    auto-generated `NIIVUE_EVENT_NAMES` set)
+    side writes event bodies to the synced `_msg_outbox` trait as
+    `{kind: "event", name, detail}`; this class observes the trait and
+    routes the body to user callbacks, validating event names against
+    the auto-generated `NIIVUE_EVENT_NAMES` set)
   * Pythonic load helpers (``add_volume_from_url``, ``add_mesh_from_url``)
     that translate snake_case kwargs to NiiVue's camelCase option names
   * notes on skipped JS object handles (volumes, meshes, drawingVolume,
@@ -101,14 +102,29 @@ class NiiVue(_GeneratedNiiVue):
 
         Every Python-to-JS command rides ``_msg_inbox``: ordinary commands
         as JSON, buffer-carrying commands with the payload base64-encoded
-        in a ``_b64`` field on the same body. ipywidgets custom messages
-        are dropped if Python sends them before the browser view has
-        registered its handler — and demos call methods immediately after
-        ``display(nv)`` — so the synced trait is what makes that race
-        survivable. The JS side drains any unseen sequence numbers once
-        it initializes.
+        in a ``_b64`` field on the same body (see :meth:`_send_with_buffer`).
+        ipywidgets custom messages are dropped if Python sends them before
+        the browser view has registered its handler — and demos call
+        methods immediately after ``display(nv)`` — so the synced trait is
+        what makes that race survivable. The JS side drains any unseen
+        sequence numbers once it initializes.
+
+        Raises
+        ------
+        ValueError
+            If a command-shaped ``content`` is passed together with
+            ``buffers``. The inbox channel cannot carry side-channel
+            buffers; binary payloads must use :meth:`_send_with_buffer`,
+            which inlines them as base64 in the same body.
         """
         if isinstance(content, dict) and isinstance(content.get("cmd"), str):
+            if buffers:
+                msg = (
+                    "send() received buffers for an inbox command. "
+                    "Inline binary payloads via _send_with_buffer (which "
+                    "base64-encodes into the inbox body) instead."
+                )
+                raise ValueError(msg)
             self._msg_inbox = [
                 *self._msg_inbox,
                 {"seq": next(self._inbox_counter), "body": content},
@@ -734,11 +750,15 @@ def _snake_to_camel(name: str) -> str:
     Used by ``NiiVue.add_volume_from_url`` etc. so Python users can pass
     ``cal_min=30`` and have it land at the JS side as ``calMin: 30``.
 
-    Names without underscores are returned unchanged. Numeric runs after
-    a digit-letter boundary collapse with the letter (e.g. ``in_3d`` to
-    ``in3D`` is *not* what we do here; Python users would write ``in3d``
-    directly because Python identifiers can include digits but underscore
-    handling differs from the codegen direction).
+    Names without underscores are returned unchanged. Each underscore-
+    separated segment after the first is title-cased, which has the side
+    effect of uppercasing the first letter following any digit run
+    (because :py:meth:`str.title` treats non-letters as word boundaries).
+    Concretely, ``in_3d`` becomes ``in3D`` and ``pan_2_dxyzmm`` becomes
+    ``pan2Dxyzmm`` — which is what we want, since several niivue option
+    keys mix digits and a trailing capital (``in3D``, ``pan2Dxyzmm``).
+    Pass already-camelCase names directly if you need a different
+    convention.
     """
     parts = name.split("_")
     return parts[0] + "".join(p.title() for p in parts[1:] if p)

@@ -19,6 +19,9 @@ jobs:
   release:
     name: nx release
     runs-on: ubuntu-latest
+    # workflow_dispatch can be triggered from any branch. Guard against
+    # accidentally force-pushing a feature branch to main.
+    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,42 +74,71 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # For each tag Nx created at HEAD, create a matching GitHub Release
-        # whose body is the project's newly-written CHANGELOG.md top section.
+        # For each tag Nx created at HEAD, create (or update, if rerunning) a
+        # matching GitHub Release whose body is the project's freshly-written
+        # CHANGELOG.md top section.
         run: |
           set -euo pipefail
+          sha=$(git rev-parse HEAD)
           for tag in $(git tag --points-at HEAD); do
-            # Tag format is "{projectName}@{version}" where projectName may be
-            # scoped ("@scope/name@1.2.3"). Split on the LAST '@'.
-            version="${tag##*@}"
+            # Nx tag format is "{projectName}@{version}"; projectName is the
+            # Nx project name (e.g. "niivue"), which may differ from the
+            # published package.json "name" (e.g. "@niivue/niivue").
             project="${tag%@*}"
 
-            # Find the package directory by matching package.json "name".
+            # Resolve the project directory. Match project.json "name" first
+            # (authoritative for Nx tags), then fall back to package.json
+            # "name" for packages without a project.json entry.
             pkg_dir=""
             for d in packages/*; do
-              [ -f "$d/package.json" ] || continue
-              name=$(node -p "require('./$d/package.json').name")
-              if [ "$name" = "$project" ]; then
-                pkg_dir="$d"
-                break
+              if [ -f "$d/project.json" ]; then
+                nx_name=$(node -p "require('./$d/project.json').name || ''")
+                if [ "$nx_name" = "$project" ]; then
+                  pkg_dir="$d"
+                  break
+                fi
+              fi
+              if [ -f "$d/package.json" ]; then
+                pkg_name=$(node -p "require('./$d/package.json').name || ''")
+                if [ "$pkg_name" = "$project" ]; then
+                  pkg_dir="$d"
+                  break
+                fi
               fi
             done
 
-            if [ -z "$pkg_dir" ] || [ ! -f "$pkg_dir/CHANGELOG.md" ]; then
-              echo "No CHANGELOG.md found for $project; creating release with auto-generated notes."
-              gh release create "$tag" --title "$tag" --generate-notes --target "$(git rev-parse HEAD)"
-              continue
+            # Prefer the package's CHANGELOG top section as the release body.
+            notes_file=""
+            if [ -n "$pkg_dir" ] && [ -f "$pkg_dir/CHANGELOG.md" ]; then
+              notes_file=$(mktemp)
+              awk '/^## /{if(seen)exit; seen=1; next} seen' \
+                "$pkg_dir/CHANGELOG.md" > "$notes_file"
             fi
 
-            # Extract the top-most version section from CHANGELOG.md (until the
-            # next top-level heading).
-            notes=$(awk '/^## /{if(seen)exit; seen=1; next} seen' "$pkg_dir/CHANGELOG.md")
-
-            echo "Creating GitHub Release for $tag"
-            printf '%s\n' "$notes" | gh release create "$tag" \
-              --title "$tag" \
-              --target "$(git rev-parse HEAD)" \
-              --notes-file -
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "Updating existing GitHub Release for $tag"
+              if [ -n "$notes_file" ]; then
+                # `gh release edit` has no --generate-notes, so only update
+                # notes when we have a CHANGELOG-derived body.
+                gh release edit "$tag" --title "$tag" --notes-file "$notes_file"
+              else
+                gh release edit "$tag" --title "$tag"
+              fi
+            else
+              echo "Creating GitHub Release for $tag"
+              if [ -n "$notes_file" ]; then
+                gh release create "$tag" \
+                  --title "$tag" \
+                  --target "$sha" \
+                  --notes-file "$notes_file"
+              else
+                echo "No CHANGELOG.md found for $project; using auto-generated notes."
+                gh release create "$tag" \
+                  --title "$tag" \
+                  --target "$sha" \
+                  --generate-notes
+              fi
+            fi
           done
 
       - name: Publish to npm

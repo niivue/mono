@@ -23,10 +23,19 @@ jobs:
     # accidentally force-pushing a feature branch to main.
     if: github.ref == 'refs/heads/main'
     steps:
+      - name: Mint release bot token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use the App token so subsequent `git push` is performed as the
+          # App (which must be added as a bypass actor on the main ruleset).
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: oven-sh/setup-bun@v2
 
@@ -38,17 +47,22 @@ jobs:
       - run: bun install
 
       - name: Configure git identity
-        # Uses the official github-actions[bot] noreply address (user id 41898282).
-        # This attributes release commits to the bot in the GitHub UI with its avatar.
+        # Attribute release commits to the GitHub App bot user. The bot user
+        # is "<app-slug>[bot]"; we look up its user id to build a noreply
+        # email of the form "{id}+{slug}[bot]@users.noreply.github.com".
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          user_id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
 
       - name: Release (dry run)
         if: ${{ inputs.dry_run }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -o pipefail
           {
@@ -62,8 +76,8 @@ jobs:
       - name: Release
         if: ${{ !inputs.dry_run }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: bunx nx release --skip-publish --verbose
 
       - name: Push release commit and tags
@@ -73,7 +87,7 @@ jobs:
       - name: Create GitHub Releases
         if: ${{ !inputs.dry_run }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         # For each tag Nx created at HEAD, create (or update, if rerunning) a
         # matching GitHub Release whose body is the project's freshly-written
         # CHANGELOG.md top section.

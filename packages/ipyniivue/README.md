@@ -171,9 +171,16 @@ The bitmap download runs after the asynchronous volume load completes.
 
 ## Headless bitmap smoke testing
 
-Plain `jupyter execute` runs notebook Python but does not create a
-browser widget view, so it cannot produce a bitmap download or validate
-backend rendering. To test bitmap export without manual input, drive
+For a quick Python-only check that imports resolve and the widget
+constructs cleanly, run:
+
+```bash
+bunx nx smoke ipyniivue
+```
+
+This executes `01_hello_volume.ipynb` via `jupyter nbconvert` to
+`/tmp/`. It does **not** start a browser, so it cannot produce a
+bitmap download or validate backend rendering — for that, drive
 JupyterLab with a headless browser:
 
 1. Start JupyterLab with the repository package on `PYTHONPATH`, or

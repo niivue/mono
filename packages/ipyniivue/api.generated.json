@@ -1,0 +1,2737 @@
+{
+  "niivueVersion": "1.0.0-rc.1",
+  "source": "packages/niivue/src/NVControlBase.ts",
+  "className": "NiiVueGPU",
+  "properties": [
+    {
+      "jsName": "annotationActiveGroup",
+      "pyName": "annotation_active_group",
+      "tsType": "string",
+      "pyTraitlet": {
+        "kind": "Unicode"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "annotationActiveLabel",
+      "pyName": "annotation_active_label",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "annotationBrushRadius",
+      "pyName": "annotation_brush_radius",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "annotationIsEnabled",
+      "pyName": "annotation_is_enabled",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "annotationIsErasing",
+      "pyName": "annotation_is_erasing",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "annotationIsVisibleIn3D",
+      "pyName": "annotation_is_visible_in_3d",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "annotationTool",
+      "pyName": "annotation_tool",
+      "tsType": "AnnotationTool",
+      "pyTraitlet": {
+        "kind": "Enum",
+        "values": [
+          "freehand",
+          "ellipse",
+          "rectangle",
+          "line",
+          "arrow",
+          "measureEllipse",
+          "measureRect",
+          "measureLine",
+          "circle",
+          "measureCircle"
+        ]
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "azimuth",
+      "pyName": "azimuth",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "backgroundColor",
+      "pyName": "background_color",
+      "tsType": "[number, number, number, number]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": 4
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "clipPlaneColor",
+      "pyName": "clip_plane_color",
+      "tsType": "number[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "crosshairColor",
+      "pyName": "crosshair_color",
+      "tsType": "number[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "crosshairGap",
+      "pyName": "crosshair_gap",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "crosshairPos",
+      "pyName": "crosshair_pos",
+      "tsType": "vec3",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": 3
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "crosshairWidth",
+      "pyName": "crosshair_width",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "devicePixelRatio",
+      "pyName": "device_pixel_ratio",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "drawColormap",
+      "pyName": "draw_colormap",
+      "tsType": "string",
+      "pyTraitlet": {
+        "kind": "Unicode"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "drawIsEnabled",
+      "pyName": "draw_is_enabled",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "drawIsFillOverwriting",
+      "pyName": "draw_is_fill_overwriting",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "drawOpacity",
+      "pyName": "draw_opacity",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "drawPenSize",
+      "pyName": "draw_pen_size",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "drawPenValue",
+      "pyName": "draw_pen_value",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "drawRimOpacity",
+      "pyName": "draw_rim_opacity",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "elevation",
+      "pyName": "elevation",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "fontColor",
+      "pyName": "font_color",
+      "tsType": "number[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "fontMinSize",
+      "pyName": "font_min_size",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "fontScale",
+      "pyName": "font_scale",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "forceDevicePixelRatio",
+      "pyName": "force_device_pixel_ratio",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "gamma",
+      "pyName": "gamma",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "graphIsRangeCalMinMax",
+      "pyName": "graph_is_range_cal_min_max",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "graphNormalizeValues",
+      "pyName": "graph_normalize_values",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "heroFraction",
+      "pyName": "hero_fraction",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "heroSliceType",
+      "pyName": "hero_slice_type",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "is3DCrosshairVisible",
+      "pyName": "is_3d_crosshair_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isClipPlaneCutaway",
+      "pyName": "is_clip_plane_cutaway",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isColorbarVisible",
+      "pyName": "is_colorbar_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isCrossLinesVisible",
+      "pyName": "is_cross_lines_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isDragDropEnabled",
+      "pyName": "is_drag_drop_enabled",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isEqualSize",
+      "pyName": "is_equal_size",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isGraphVisible",
+      "pyName": "is_graph_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isLegendVisible",
+      "pyName": "is_legend_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isMeasureUnitsVisible",
+      "pyName": "is_measure_units_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isMosaicCentered",
+      "pyName": "is_mosaic_centered",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isOrientationTextVisible",
+      "pyName": "is_orientation_text_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isOrientCubeVisible",
+      "pyName": "is_orient_cube_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isPositionInMM",
+      "pyName": "is_position_in_mm",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isRadiological",
+      "pyName": "is_radiological",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isRulerVisible",
+      "pyName": "is_ruler_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isSnapToVoxelCenters",
+      "pyName": "is_snap_to_voxel_centers",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isThumbnailVisible",
+      "pyName": "is_thumbnail_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isYoked3DTo2DZoom",
+      "pyName": "is_yoked_3d_to_2d_zoom",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "measureLineColor",
+      "pyName": "measure_line_color",
+      "tsType": "number[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "measureTextColor",
+      "pyName": "measure_text_color",
+      "tsType": "number[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "meshThicknessOn2D",
+      "pyName": "mesh_thickness_on_2d",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "meshXRay",
+      "pyName": "mesh_x_ray",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "mosaicString",
+      "pyName": "mosaic_string",
+      "tsType": "string",
+      "pyTraitlet": {
+        "kind": "Unicode"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "multiplanarType",
+      "pyName": "multiplanar_type",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "pan2Dxyzmm",
+      "pyName": "pan_2_dxyzmm",
+      "tsType": "vec4",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": 4
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "placeholderText",
+      "pyName": "placeholder_text",
+      "tsType": "string",
+      "pyTraitlet": {
+        "kind": "Unicode"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "primaryDragMode",
+      "pyName": "primary_drag_mode",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "rulerWidth",
+      "pyName": "ruler_width",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "scaleMultiplier",
+      "pyName": "scale_multiplier",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "secondaryDragMode",
+      "pyName": "secondary_drag_mode",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "selectionBoxColor",
+      "pyName": "selection_box_color",
+      "tsType": "number[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "showRender",
+      "pyName": "show_render",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "sliceType",
+      "pyName": "slice_type",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "thumbnailUrl",
+      "pyName": "thumbnail_url",
+      "tsType": "string",
+      "pyTraitlet": {
+        "kind": "Unicode"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "tileMargin",
+      "pyName": "tile_margin",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeAlphaShader",
+      "pyName": "volume_alpha_shader",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeIllumination",
+      "pyName": "volume_illumination",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeIsAlphaClipDark",
+      "pyName": "volume_is_alpha_clip_dark",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeIsBackgroundMasking",
+      "pyName": "volume_is_background_masking",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeIsNearestInterpolation",
+      "pyName": "volume_is_nearest_interpolation",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeIsV1SliceShader",
+      "pyName": "volume_is_v1_slice_shader",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeMatcap",
+      "pyName": "volume_matcap",
+      "tsType": "string",
+      "pyTraitlet": {
+        "kind": "Unicode"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeOutlineWidth",
+      "pyName": "volume_outline_width",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumePaqdUniforms",
+      "pyName": "volume_paqd_uniforms",
+      "tsType": "[number, number, number, number]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": 4
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    }
+  ],
+  "readonlyProperties": [
+    {
+      "jsName": "backend",
+      "pyName": "backend",
+      "tsType": "BackendType | undefined",
+      "pyTraitlet": {
+        "kind": "Enum",
+        "values": [
+          "webgpu",
+          "webgl2"
+        ]
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": null
+    },
+    {
+      "jsName": "colormaps",
+      "pyName": "colormaps",
+      "tsType": "string[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Unicode"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": null
+    },
+    {
+      "jsName": "drawingColormaps",
+      "pyName": "drawing_colormaps",
+      "tsType": "string[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Unicode"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": null
+    },
+    {
+      "jsName": "isAntiAlias",
+      "pyName": "is_anti_alias",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": null
+    },
+    {
+      "jsName": "meshExtensions",
+      "pyName": "mesh_extensions",
+      "tsType": "string[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Unicode"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": null
+    },
+    {
+      "jsName": "meshShaders",
+      "pyName": "mesh_shaders",
+      "tsType": "string[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Unicode"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": null
+    },
+    {
+      "jsName": "meshWriteExtensions",
+      "pyName": "mesh_write_extensions",
+      "tsType": "string[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Unicode"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": null
+    },
+    {
+      "jsName": "selectedAnnotation",
+      "pyName": "selected_annotation",
+      "tsType": "string",
+      "pyTraitlet": {
+        "kind": "Unicode"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": null
+    },
+    {
+      "jsName": "volumeExtensions",
+      "pyName": "volume_extensions",
+      "tsType": "string[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Unicode"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": null
+    },
+    {
+      "jsName": "volumeTransforms",
+      "pyName": "volume_transforms",
+      "tsType": "string[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Unicode"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Get list of available volume transform names."
+    },
+    {
+      "jsName": "volumeWriteExtensions",
+      "pyName": "volume_write_extensions",
+      "tsType": "string[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Unicode"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": null
+    }
+  ],
+  "methods": [
+    {
+      "jsName": "addAnnotation",
+      "pyName": "add_annotation",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "annotation",
+          "tsType": "VectorAnnotation",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "addColormap",
+      "pyName": "add_colormap",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "name",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "cmap",
+          "tsType": "Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Pick<ColorMap, \"A\" | \"I\" | \"labels\">>",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "string",
+      "doc": "Register a colormap by name so it becomes available to\n`setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh\nlayers, and so on. Use this to add user-defined LUTs at runtime.\nRe-registering an existing name replaces the entry. Does not trigger a\nredraw — the colormap is inert until a volume references it.\n\nLabel colormaps (for atlas volumes with per-index labels) have their\nown registration path: `setColormapLabel()` / `setColormapLabelFromUrl()`.",
+      "returnsDoc": "The canonical name under which the colormap was stored\n(first letter upper-cased), which is the form visible in `nv1.colormaps`\nand the `colormapAdded` event detail."
+    },
+    {
+      "jsName": "addColormapFromUrl",
+      "pyName": "add_colormap_from_url",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "url",
+          "tsType": "string | File",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "name",
+          "tsType": "string | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Fetch a colormap JSON (`{ R, G, B, A?, I? }`) from a URL or `File` and\nregister it under `name`. When `name` is omitted, it is derived from\nthe source filename; callers passing an un-nameable source (e.g.\n`?query-only`) should supply `name` explicitly — an empty derived\nname throws.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "addImage",
+      "pyName": "add_image",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "pathOrFile",
+          "tsType": "string | File",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "Record<string, unknown>",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "addMesh",
+      "pyName": "add_mesh",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "mesh",
+          "tsType": "NVMesh | MeshFromUrlOptions",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<this>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "addMeshLayer",
+      "pyName": "add_mesh_layer",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "layerOpts",
+          "tsType": "MeshLayerFromUrlOptions",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<this>",
+      "doc": "Add a scalar overlay layer to a mesh.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "addVolume",
+      "pyName": "add_volume",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volume",
+          "tsType": "NVImage | ImageFromUrlOptions",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<this>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "annotationRedo",
+      "pyName": "annotation_redo",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "annotationUndo",
+      "pyName": "annotation_undo",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "attachTo",
+      "pyName": "attach_to",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "id",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "isAntiAlias",
+          "tsType": "null",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<this>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "broadcastTo",
+      "pyName": "broadcast_to",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "targets",
+          "tsType": "default | default[] | undefined",
+          "optional": true,
+          "doc": "the other NiiVue instance(s) to broadcast to, or omit to clear sync"
+        },
+        {
+          "name": "opts",
+          "tsType": "SyncOpts",
+          "optional": true,
+          "doc": "which properties to sync (default: { '2d': true, '3d': true })"
+        }
+      ],
+      "returns": "void",
+      "doc": "Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "clearAnnotations",
+      "pyName": "clear_annotations",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "clearCustomLayout",
+      "pyName": "clear_custom_layout",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Clear any custom layout and revert to built-in layout modes.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "clearMeasurements",
+      "pyName": "clear_measurements",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "closeDrawing",
+      "pyName": "close_drawing",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "createEmptyDrawing",
+      "pyName": "create_empty_drawing",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "createExtensionContext",
+      "pyName": "create_extension_context",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "NVExtensionContext",
+      "doc": "Create an extension context for interacting with this NiiVue instance.\n\nThe context provides a stable API surface for extensions: live data\naccessors, event subscriptions (including high-level slice pointer events),\nsafe write-back actions, and coordinate transform utilities.\n\nCall `context.dispose()` when the extension is deactivated to remove all\nevent listeners registered through the context.\n\nMultiple contexts can coexist — each tracks its own subscriptions.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "createOnLocationChange",
+      "pyName": "create_on_location_change",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "axCorSag",
+          "tsType": "number",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "destroy",
+      "pyName": "destroy",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "drawScene",
+      "pyName": "draw_scene",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "needsSync",
+          "tsType": "boolean",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "drawUndo",
+      "pyName": "draw_undo",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "enforceBackendAvailability",
+      "pyName": "enforce_backend_availability",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "getAnnotationsJSON",
+      "pyName": "get_annotations_json",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "string",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "getClipPlaneDepthAziElev",
+      "pyName": "get_clip_plane_depth_azi_elev",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "clipPlaneIndex",
+          "tsType": "number",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number, number]",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "getCrosshairPos",
+      "pyName": "get_crosshair_pos",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "[number, number, number]",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "getFrame4D",
+      "pyName": "get_frame_4d",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "id",
+          "tsType": "string",
+          "optional": false,
+          "doc": "Volume ID (typically the URL or name)"
+        }
+      ],
+      "returns": "number",
+      "doc": "Get the current 4D frame index for a volume.",
+      "returnsDoc": "Current frame index (0-based), or 0 if volume not found"
+    },
+    {
+      "jsName": "getMeshShader",
+      "pyName": "get_mesh_shader",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "string | undefined",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "getTractGroups",
+      "pyName": "get_tract_groups",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "string[]",
+      "doc": "Get the group names for a tract mesh.\nReturns an empty array if the mesh is not a tract or has no groups.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "getVolumeTransformInfo",
+      "pyName": "get_volume_transform_info",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "name",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "TransformInfo | undefined",
+      "doc": "Get metadata for a specific volume transform (options, description, resultDefaults).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "hasColormap",
+      "pyName": "has_colormap",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "name",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "boolean",
+      "doc": "Case-insensitive existence check for a registered colormap. Accepts\nwhatever casing the caller has on hand (e.g. a lowercased `<select>`\nvalue) and compares against the canonical stored name. Prefer this\nover `nv1.colormaps.includes(...)` — it handles the first-letter\ncanonicalization that `addColormap` and the filesystem auto-loader\napply internally.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "loadAnnotationsJSON",
+      "pyName": "load_annotations_json",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "json",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "loadDeferred4DVolumes",
+      "pyName": "load_deferred_4d_volumes",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "id",
+          "tsType": "string",
+          "optional": false,
+          "doc": "Volume ID (typically the URL or name)"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Load all remaining frames for a 4D volume that was opened with limitFrames4D.\nRe-fetches the complete file and replaces the truncated image data.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "loadDocument",
+      "pyName": "load_document",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "source",
+          "tsType": "string | File",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "loadDrawing",
+      "pyName": "load_drawing",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "source",
+          "tsType": "string | ImageFromUrlOptions | File",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<boolean>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "loadImage",
+      "pyName": "load_image",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "pathOrFile",
+          "tsType": "string | File",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "Record<string, unknown>",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "loadImgV1",
+      "pyName": "load_img_v1",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to convert"
+        },
+        {
+          "name": "isFlipX",
+          "tsType": "boolean",
+          "optional": true,
+          "doc": "Flip X component (default: false)"
+        },
+        {
+          "name": "isFlipY",
+          "tsType": "boolean",
+          "optional": true,
+          "doc": "Flip Y component (default: false)"
+        },
+        {
+          "name": "isFlipZ",
+          "tsType": "boolean",
+          "optional": true,
+          "doc": "Flip Z component (default: false)"
+        }
+      ],
+      "returns": "Promise<boolean>",
+      "doc": "Convert a float32 3-frame volume to V1 (eigenvector) RGBA representation.\nFor formats like AFNI that lack NIfTI intent codes, this provides explicit\nconversion of vector field data (dim4=3, float32) to sign-encoded RGBA.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "loadMatcap",
+      "pyName": "load_matcap",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "matcapName",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "loadMeshes",
+      "pyName": "load_meshes",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "meshes",
+          "tsType": "MeshFromUrlOptions | MeshFromUrlOptions[]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<this>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "loadVolumes",
+      "pyName": "load_volumes",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumes",
+          "tsType": "ImageFromUrlOptions | ImageFromUrlOptions[]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<this>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "moveCrosshairInVox",
+      "pyName": "move_crosshair_in_vox",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "di",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "dj",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "dk",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "moveVolumeDown",
+      "pyName": "move_volume_down",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to move"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Move a volume down one index position in the stack of loaded volumes (toward the background).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "moveVolumeToBottom",
+      "pyName": "move_volume_to_bottom",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to move"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Move a volume to the bottom position in the stack of loaded volumes (index 0, background).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "moveVolumeToTop",
+      "pyName": "move_volume_to_top",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to move"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Move a volume to the top position in the stack of loaded volumes (last index, top layer).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "moveVolumeUp",
+      "pyName": "move_volume_up",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to move"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Move a volume up one index position in the stack of loaded volumes (toward the top layer).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "recalculateCalMinMax",
+      "pyName": "recalculate_cal_min_max",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "frame",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).\nUpdates the volume's calibration range and triggers a GPU update.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "refreshDrawing",
+      "pyName": "refresh_drawing",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Mark the drawing texture as dirty and schedule a redraw.\nThe expensive bitmap→RGBA conversion and GPU upload are deferred to\nthe next animation frame, so rapid pointermove events only pay the\ncost once per frame.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "registerVolumeTransform",
+      "pyName": "register_volume_transform",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "transform",
+          "tsType": "VolumeTransform",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Register an external volume transform at runtime.\nExternal transforms manage their own Web Worker execution internally.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "reinitializeView",
+      "pyName": "reinitialize_view",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "options",
+          "tsType": "ReinitializeOptions",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<boolean>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "removeAllMeshes",
+      "pyName": "remove_all_meshes",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [],
+      "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "removeAllVolumes",
+      "pyName": "remove_all_volumes",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [],
+      "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "removeAnnotation",
+      "pyName": "remove_annotation",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "id",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "removeMesh",
+      "pyName": "remove_mesh",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "removeMeshLayer",
+      "pyName": "remove_mesh_layer",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "layerIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<this>",
+      "doc": "Remove a scalar overlay layer from a mesh.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "resize",
+      "pyName": "resize",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "saveBitmap",
+      "pyName": "save_bitmap",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "filename",
+          "tsType": "string",
+          "optional": true,
+          "doc": null
+        },
+        {
+          "name": "quality",
+          "tsType": "number",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<boolean>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "saveDocument",
+      "pyName": "save_document",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "filename",
+          "tsType": "string",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "saveDrawing",
+      "pyName": "save_drawing",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "filename",
+          "tsType": "string",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<boolean | Uint8Array>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "saveMesh",
+      "pyName": "save_mesh",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "filename",
+          "tsType": "string",
+          "optional": true,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "WriteOptions | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "saveVolume",
+      "pyName": "save_volume",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "options",
+          "tsType": "SaveVolumeOptions",
+          "optional": true,
+          "doc": "configuration object with the following fields:\n- `filename`: name of the NIfTI image to create. If empty, returns data only.\n- `isSaveDrawing`: whether to save the drawing layer or the background image\n- `volumeByIndex`: which image layer to save (0 for background)"
+        }
+      ],
+      "returns": "Promise<boolean | Uint8Array>",
+      "doc": "Save voxel-based image to disk.",
+      "returnsDoc": "`true` if successful when writing to disk, or a `Uint8Array` if exported as binary data"
+    },
+    {
+      "jsName": "selectAnnotation",
+      "pyName": "select_annotation",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "id",
+          "tsType": "string | null",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "serializeDocument",
+      "pyName": "serialize_document",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "Uint8Array",
+      "doc": "Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setBounds",
+      "pyName": "set_bounds",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "bounds",
+          "tsType": "[number, number, number, number]",
+          "optional": false,
+          "doc": "[x1, y1, x2, y2] in normalized (0-1) coordinates.\n\nExample:\nnv.setBounds([0,0,0.5,0.5])   // bottom-left quarter\nnv.setBounds([0.5,0.5,1,1])   // top-right quarter"
+        }
+      ],
+      "returns": "void",
+      "doc": "Update the drawing bounds for this Niivue instance.\nCoordinates use y=0 at bottom, y=1 at top (GL convention).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setClipPlane",
+      "pyName": "set_clip_plane",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "depthAzimuthElevation",
+          "tsType": "number[]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setClipPlaneDepthAziElev",
+      "pyName": "set_clip_plane_depth_azi_elev",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "depth",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "azimuth",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "elevation",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "clipPlaneIndex",
+          "tsType": "number",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setClipPlanes",
+      "pyName": "set_clip_planes",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "depthAziElevs",
+          "tsType": "number[][]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setColormapLabel",
+      "pyName": "set_colormap_label",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to apply the label colormap to"
+        },
+        {
+          "name": "cmap",
+          "tsType": "ColorMap | null",
+          "optional": false,
+          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays,\n  or null to remove the label colormap"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Set a label colormap on a volume (e.g., atlas/parcellation).\nConverts the ColorMap definition to an LUT and attaches it to the volume.\nWhen set, the orient shader uses nearest-neighbor label lookup instead of\ncontinuous colormap interpolation, and locationChange events include label names.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setColormapLabelFromUrl",
+      "pyName": "set_colormap_label_from_url",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to apply the label colormap to"
+        },
+        {
+          "name": "url",
+          "tsType": "string | File",
+          "optional": false,
+          "doc": "URL string or File object pointing to a colormap JSON"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Fetch a label colormap JSON from a URL or File and apply it to a volume.\nThe JSON should contain R, G, B arrays and optional labels/I arrays.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setConnectomeOptions",
+      "pyName": "set_connectome_options",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "Partial<NVConnectomeOptions>",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Update connectome extrusion/display options and re-extrude.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setCrosshairPos",
+      "pyName": "set_crosshair_pos",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "pos",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setDragMode",
+      "pyName": "set_drag_mode",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "mode",
+          "tsType": "string | number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setFont",
+      "pyName": "set_font",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "font",
+          "tsType": "NVFontData",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<boolean>",
+      "doc": "Swap the active font atlas. The font is infrastructure-level configuration\n(GPU-owned atlas texture + metrics map), so switching requires a full view\nrebuild — use this method instead of mutating `opts.font` directly.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setFontFromUrl",
+      "pyName": "set_font_from_url",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "urls",
+          "tsType": "{ atlas: string; metrics: string; }",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<boolean>",
+      "doc": "Fetch an MSDF font atlas (PNG + JSON metrics pair) from URLs and swap\nit in as the active font. Useful for loading fonts that are not bundled\nwith the library (e.g. the community atlases at\nhttps://github.com/niivue/fonts). The PNG URL is stored verbatim and\nused as the GPU atlas texture source.\n\nOn failure (metrics fetch, view rebuild, or atlas texture upload)\nthe previous font is restored so the view isn't left half-initialized.\nThe original error is re-thrown after recovery.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setFrame4D",
+      "pyName": "set_frame_4d",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "id",
+          "tsType": "string",
+          "optional": false,
+          "doc": "Volume ID (typically the URL or name)"
+        },
+        {
+          "name": "frame",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Frame index (0-based, clamped to valid range)"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Set the current 4D frame for a volume.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setMesh",
+      "pyName": "set_mesh",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "MeshUpdate",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Update display properties of a loaded mesh.\nAccepts any subset of mesh display options (opacity, shaderType, color, etc.)\nand triggers a single GPU update.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setMeshLayerFrame4D",
+      "pyName": "set_mesh_layer_frame_4d",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "layerIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "frame",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Set the current 4D frame for a mesh layer.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setMeshLayerProperty",
+      "pyName": "set_mesh_layer_property",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "layerIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "Partial<NVMeshLayer>",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).\nTriggers recompositing and GPU update.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setModulationImage",
+      "pyName": "set_modulation_image",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "targetId",
+          "tsType": "string",
+          "optional": false,
+          "doc": "ID of the volume to modulate"
+        },
+        {
+          "name": "modulatorId",
+          "tsType": "string",
+          "optional": false,
+          "doc": "ID of the volume providing modulation (empty string to clear)"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Set a modulation image for a target volume.\nThe modulator's intensity scales the target volume's brightness and opacity.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setTractOptions",
+      "pyName": "set_tract_options",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "meshIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "Partial<NVTractOptions>",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Update tract tessellation/display options and re-tessellate.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setVolume",
+      "pyName": "set_volume",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "VolumeUpdate",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Update display properties of a loaded volume.\nAccepts any subset of volume display options (colormap, opacity, cal_min, etc.)\nand triggers a single GPU update.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "updateGLVolume",
+      "pyName": "update_gl_volume",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [],
+      "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "useLoader",
+      "pyName": "use_loader",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "converter",
+          "tsType": "(buffer: ArrayBuffer) => ArrayBuffer | Uint8Array | Promise<ArrayBuffer | Uint8Array>",
+          "optional": false,
+          "doc": "function that converts from the source format to the target format"
+        },
+        {
+          "name": "fromExt",
+          "tsType": "string",
+          "optional": false,
+          "doc": "source file extension without dot (e.g. 'vox', 'glb')"
+        },
+        {
+          "name": "toExt",
+          "tsType": "string",
+          "optional": false,
+          "doc": "target format extension without dot: 'nii' for volumes, 'mz3' for meshes"
+        }
+      ],
+      "returns": "void",
+      "doc": "Register an external format loader.\nThe converter function receives raw file bytes and returns bytes in a known format.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "vox2frac",
+      "pyName": "vox2frac",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "vox",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number, number]",
+      "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion.",
+      "returnsDoc": null
+    }
+  ],
+  "events": [
+    {
+      "jsName": "angleCompleted",
+      "pyName": "angle_completed",
+      "detailType": "CompletedAngle",
+      "doc": null
+    },
+    {
+      "jsName": "annotationAdded",
+      "pyName": "annotation_added",
+      "detailType": "AnnotationAddedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "annotationChanged",
+      "pyName": "annotation_changed",
+      "detailType": "AnnotationChangedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "annotationRemoved",
+      "pyName": "annotation_removed",
+      "detailType": "AnnotationRemovedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "azimuthElevationChange",
+      "pyName": "azimuth_elevation_change",
+      "detailType": "AzimuthElevationChangeDetail",
+      "doc": null
+    },
+    {
+      "jsName": "canvasResize",
+      "pyName": "canvas_resize",
+      "detailType": "CanvasResizeDetail",
+      "doc": null
+    },
+    {
+      "jsName": "change",
+      "pyName": "change",
+      "detailType": "PropertyChangeDetail",
+      "doc": null
+    },
+    {
+      "jsName": "clipPlaneChange",
+      "pyName": "clip_plane_change",
+      "detailType": "ClipPlaneChangeDetail",
+      "doc": null
+    },
+    {
+      "jsName": "colormapAdded",
+      "pyName": "colormap_added",
+      "detailType": "ColormapAddedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "documentLoaded",
+      "pyName": "document_loaded",
+      "detailType": "undefined",
+      "doc": null
+    },
+    {
+      "jsName": "dragRelease",
+      "pyName": "drag_release",
+      "detailType": "DragReleaseInfo",
+      "doc": null
+    },
+    {
+      "jsName": "drawingChanged",
+      "pyName": "drawing_changed",
+      "detailType": "DrawingChangedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "drawingEnabled",
+      "pyName": "drawing_enabled",
+      "detailType": "DrawingEnabledDetail",
+      "doc": null
+    },
+    {
+      "jsName": "frameChange",
+      "pyName": "frame_change",
+      "detailType": "FrameChangeDetail",
+      "doc": null
+    },
+    {
+      "jsName": "locationChange",
+      "pyName": "location_change",
+      "detailType": "NiiVueLocation",
+      "doc": null
+    },
+    {
+      "jsName": "measurementCompleted",
+      "pyName": "measurement_completed",
+      "detailType": "CompletedMeasurement",
+      "doc": null
+    },
+    {
+      "jsName": "meshLoaded",
+      "pyName": "mesh_loaded",
+      "detailType": "MeshLoadedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "meshRemoved",
+      "pyName": "mesh_removed",
+      "detailType": "MeshRemovedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "meshUpdated",
+      "pyName": "mesh_updated",
+      "detailType": "MeshUpdatedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "penValueChanged",
+      "pyName": "pen_value_changed",
+      "detailType": "PenValueChangedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "pointerUp",
+      "pyName": "pointer_up",
+      "detailType": "PointerUpDetail",
+      "doc": null
+    },
+    {
+      "jsName": "sliceTypeChange",
+      "pyName": "slice_type_change",
+      "detailType": "SliceTypeChangeDetail",
+      "doc": null
+    },
+    {
+      "jsName": "viewAttached",
+      "pyName": "view_attached",
+      "detailType": "ViewAttachedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "viewDestroyed",
+      "pyName": "view_destroyed",
+      "detailType": "undefined",
+      "doc": null
+    },
+    {
+      "jsName": "volumeLoaded",
+      "pyName": "volume_loaded",
+      "detailType": "VolumeLoadedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "volumeOrderChanged",
+      "pyName": "volume_order_changed",
+      "detailType": "VolumeOrderChangedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "volumeRemoved",
+      "pyName": "volume_removed",
+      "detailType": "VolumeRemovedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "volumeUpdated",
+      "pyName": "volume_updated",
+      "detailType": "VolumeUpdatedDetail",
+      "doc": null
+    }
+  ],
+  "skipped": {
+    "properties": [
+      {
+        "jsName": "annotations",
+        "tsType": "VectorAnnotation",
+        "reason": "non-serializable nominal type: VectorAnnotation"
+      },
+      {
+        "jsName": "annotationStyle",
+        "tsType": "AnnotationStyle",
+        "reason": "non-serializable nominal type: AnnotationStyle"
+      },
+      {
+        "jsName": "customLayout",
+        "tsType": "CustomLayoutTile",
+        "reason": "non-serializable nominal type: CustomLayoutTile"
+      },
+      {
+        "jsName": "drawingVolume",
+        "tsType": "NVImage",
+        "reason": "non-serializable nominal type: NVImage"
+      },
+      {
+        "jsName": "meshes",
+        "tsType": "NVMesh",
+        "reason": "non-serializable nominal type: NVMesh"
+      },
+      {
+        "jsName": "volumes",
+        "tsType": "NVImage",
+        "reason": "non-serializable nominal type: NVImage"
+      },
+      {
+        "jsName": "volumeTransform",
+        "tsType": "Record<string, (volume: NVImage, options?: TransformOptions | undefined) => Promise<NVImage>>",
+        "reason": "non-serializable nominal type: Record<string, (volume: NVImage, options?: TransformOptions | undefined) => Promise<NVImage>>"
+      }
+    ],
+    "methods": [
+      {
+        "jsName": "attachToCanvas",
+        "reason": "arguments are not JSON-serializable (DOM handle or JS object)"
+      }
+    ],
+    "events": []
+  }
+}

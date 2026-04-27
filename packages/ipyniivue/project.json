@@ -1,0 +1,46 @@
+{
+  "name": "ipyniivue",
+  "projectType": "library",
+  "tags": ["type:lib", "lang:python"],
+  "targets": {
+    "codegen": {
+      "command": "bun run scripts/codegen.ts",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": [
+        { "projects": ["niivue"], "target": "build" },
+        { "projects": ["nv-ext-image-processing"], "target": "build" },
+        { "projects": ["nv-ext-drawing"], "target": "build" }
+      ],
+      "inputs": [
+        "{projectRoot}/scripts/**/*",
+        "{workspaceRoot}/packages/niivue/src/NVControlBase.ts",
+        "{workspaceRoot}/packages/niivue/src/NVEvents.ts",
+        "{workspaceRoot}/packages/niivue/src/NVTypes.ts",
+        "{workspaceRoot}/packages/niivue/src/NVConstants.ts",
+        "{workspaceRoot}/packages/niivue/dist/**/*",
+        "{workspaceRoot}/packages/nv-ext-image-processing/dist/**/*",
+        "{workspaceRoot}/packages/nv-ext-drawing/dist/**/*"
+      ],
+      "outputs": [
+        "{projectRoot}/api.generated.json",
+        "{projectRoot}/src/ipyniivue/_generated.py",
+        "{projectRoot}/src/ipyniivue/static/widget.js",
+        "{projectRoot}/src/ipyniivue/static/_widget.template.js"
+      ]
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["{projectRoot}/scripts/**/*", "{projectRoot}/tsconfig.json"]
+    },
+    "smoke": {
+      "command": "jupyter nbconvert --to notebook --execute --output 01_hello_volume.executed.ipynb --output-dir /tmp examples/01_hello_volume.ipynb",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": [
+        "{projectRoot}/examples/**/*.ipynb",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/pyproject.toml"
+      ]
+    }
+  }
+}

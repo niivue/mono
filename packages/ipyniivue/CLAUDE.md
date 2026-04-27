@@ -267,10 +267,17 @@ auto-generated command methods or hand-written helpers in
 | `customLayout` | `set_custom_layout`, `clear_custom_layout` |
 | `volumeTransform` | `register_volume_transform`, `apply_volume_transform` |
 
-The walker also skips one method, `attachToCanvas`, because its sole
-argument is a non-serializable `HTMLCanvasElement`. The JS template's
+The walker also skips two methods, `attachToCanvas` and
+`createExtensionContext`, because their argument or return value is a
+non-serializable JS handle (`HTMLCanvasElement` for the former, an
+in-browser extension context object for the latter). The JS template's
 `render(model, el)` calls `nv.attachToCanvas(...)` directly on the
-canvas it creates, so no Python entry point is needed.
+canvas it creates, so no Python entry point is needed. Extension
+features are exposed through hand-written wrappers in
+[widget.py](src/ipyniivue/widget.py) — `apply_image_transform`,
+`interpolate_drawing_slices`, `save_document`, and friends — that
+construct the extension context inside the JS bundle and call into
+it, so Python callers never see the handle.
 
 ### Two paths to `saveBitmap`
 

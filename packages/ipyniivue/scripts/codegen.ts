@@ -17,6 +17,7 @@ import {
   type GetAccessorDeclaration,
   type JSDocableNode,
   type MethodDeclaration,
+  Node,
   Project,
   type SetAccessorDeclaration,
   SyntaxKind,
@@ -276,6 +277,8 @@ type ParamDescriptor = {
   name: string
   tsType: string
   optional: boolean
+  /** Per-parameter description from the corresponding `@param` JSDoc tag. */
+  doc: string | null
 }
 
 type MethodDescriptor = {
@@ -291,7 +294,10 @@ type MethodDescriptor = {
   returnsValue: boolean
   params: ParamDescriptor[]
   returns: string
+  /** Method-level JSDoc description (excludes @param / @returns tags). */
   doc: string | null
+  /** Description from the `@returns` (or `@return`) tag. */
+  returnsDoc: string | null
 }
 
 type EventDescriptor = {
@@ -428,11 +434,16 @@ for (const [name, setter] of setters) {
 const methodDescriptors: MethodDescriptor[] = []
 for (const m of methods) {
   try {
-    const params: ParamDescriptor[] = m.getParameters().map((p) => ({
-      name: p.getName(),
-      tsType: shortenType(p.getType().getText()),
-      optional: p.isOptional() || p.hasInitializer(),
-    }))
+    const methodDoc = extractMethodDoc(m)
+    const params: ParamDescriptor[] = m.getParameters().map((p) => {
+      const name = p.getName()
+      return {
+        name,
+        tsType: shortenType(p.getType().getText()),
+        optional: p.isOptional() || p.hasInitializer(),
+        doc: methodDoc.paramDocs.get(name) ?? null,
+      }
+    })
     const returnsText = shortenType(m.getReturnType().getText())
     methodDescriptors.push({
       jsName: m.getName(),
@@ -441,7 +452,8 @@ for (const m of methods) {
       returnsValue: methodReturnsValue(returnsText),
       params,
       returns: returnsText,
-      doc: extractDoc(m),
+      doc: methodDoc.description,
+      returnsDoc: methodDoc.returnsDoc,
     })
   } catch (e) {
     skippedMethods.push({
@@ -672,6 +684,41 @@ function extractDoc(node: JSDocableNode): string | null {
   return text || null
 }
 
+/**
+ * Extract method-level JSDoc plus per-parameter `@param name desc` tags
+ * and the `@returns` tag, so the Python emitter can render NumPy-style
+ * docstrings with Parameters/Returns blocks. Returns nulls / empty Map
+ * when no JSDoc is present.
+ */
+function extractMethodDoc(node: JSDocableNode): {
+  description: string | null
+  paramDocs: Map<string, string>
+  returnsDoc: string | null
+} {
+  const description = extractDoc(node)
+  const paramDocs = new Map<string, string>()
+  let returnsDoc: string | null = null
+  for (const doc of node.getJsDocs()) {
+    for (const tag of doc.getTags()) {
+      const tagName = tag.getTagName()
+      // JSDoc convention permits an optional `- ` separator between the
+      // name and the description (`@param foo - description`); strip it
+      // so the rendered NumPy block reads as plain prose.
+      const comment = (tag.getCommentText() ?? '')
+        .replace(/^\s*-\s+/, '')
+        .trim()
+      if (!comment) continue
+      if (tagName === 'param' && Node.isJSDocParameterTag(tag)) {
+        const name = tag.getName()
+        if (name) paramDocs.set(name, comment)
+      } else if (tagName === 'returns' || tagName === 'return') {
+        returnsDoc = comment
+      }
+    }
+  }
+  return { description, paramDocs, returnsDoc }
+}
+
 // ============================================================
 // Python emitter
 // ============================================================
@@ -866,14 +913,72 @@ function emitMethod(lines: string[], m: MethodDescriptor): void {
   lines.push('')
 }
 
+/**
+ * Emit a NumPy-style docstring for a method. Trigger is "anything is
+ * documented": method-level description, any `@param` text, or `@returns`
+ * text. Methods with no JSDoc at all stay docstring-less to avoid
+ * churning the generated file with type-only stubs.
+ */
 function emitMethodDocstring(lines: string[], m: MethodDescriptor): void {
-  if (!m.doc) return
-  const docLines = m.doc.split('\n')
-  lines.push(`        """${pyStringEscape(docLines[0] ?? '')}`)
-  for (const dl of docLines.slice(1)) {
-    lines.push(`        ${pyStringEscape(dl)}`)
+  const hasParamDocs = m.params.some((p) => p.doc)
+  const hasAnyDoc = !!m.doc || hasParamDocs || !!m.returnsDoc
+  if (!hasAnyDoc) return
+
+  const indent = '        '
+  const out: string[] = []
+
+  // Summary + extended description from the method-level description.
+  // First line is the summary (NumPy convention); the rest is the extended
+  // body, separated from later sections by a blank line.
+  const descLines = (m.doc ?? '').split('\n')
+  const summary = descLines[0]?.trim() ?? ''
+  const extended = descLines.slice(1).join('\n').trim()
+  if (summary) out.push(summary)
+  if (extended) {
+    if (out.length > 0) out.push('')
+    for (const ln of extended.split('\n')) out.push(ln)
   }
-  lines.push(`        """`)
+
+  // Parameters block: emit when any param exists, even without per-param
+  // text, so the type info (which Python's signature loses to `Any`) is
+  // visible to readers.
+  if (m.params.length > 0) {
+    if (out.length > 0) out.push('')
+    out.push('Parameters')
+    out.push('----------')
+    for (const p of m.params) {
+      const py = snakeCase(p.name)
+      const ty = p.tsType || 'Any'
+      out.push(`${py} : ${ty}`)
+      const body = (p.doc ?? '').trim()
+      if (body) {
+        for (const ln of body.split('\n')) {
+          out.push(`    ${ln.replace(/^\s+/, '')}`)
+        }
+      }
+    }
+  }
+
+  // Returns block: only for value-returning methods. Use the @returns
+  // tag if present; otherwise the TS return type with no prose.
+  if (m.returnsValue) {
+    if (out.length > 0) out.push('')
+    out.push('Returns')
+    out.push('-------')
+    out.push(m.returns || 'Any')
+    if (m.returnsDoc) {
+      for (const ln of m.returnsDoc.trim().split('\n')) {
+        out.push(`    ${ln.replace(/^\s+/, '')}`)
+      }
+    }
+  }
+
+  // Render with the method's indentation.
+  lines.push(`${indent}"""${pyStringEscape(out[0] ?? '')}`)
+  for (const ln of out.slice(1)) {
+    lines.push(ln ? `${indent}${pyStringEscape(ln)}` : '')
+  }
+  lines.push(`${indent}"""`)
 }
 
 function pyStringEscape(s: string): string {

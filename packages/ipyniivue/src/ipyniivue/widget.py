@@ -18,6 +18,7 @@ Inherits the auto-generated reactive properties and command methods from
 from __future__ import annotations
 
 import asyncio
+import base64
 import itertools
 import pathlib
 from collections.abc import Callable
@@ -68,28 +69,24 @@ class NiiVue(_GeneratedNiiVue):
                 return
             body = new.get("body")
             if isinstance(body, dict):
-                self._dispatch_message(self, body, [])
+                self._dispatch_message(body)
 
         self._outbox_handler = _outbox_handler  # strong ref
         self.observe(_outbox_handler, names=["_msg_outbox"])
-        # Kept for backward compatibility / future migration if the
-        # underlying anywidget routing becomes reliable.
-        self.on_msg(self._dispatch_message)
 
     def send(self, content: Any, buffers: list[bytes] | None = None) -> None:
-        """Send widget commands through a synced-state inbox.
+        """Send a widget command through the synced inbox.
 
-        ipywidgets custom messages can be dropped if Python sends them before
-        the browser view has registered its handler. Command methods are often
-        called immediately after ``display(nv)`` in example notebooks, so route
-        those command messages through ``_msg_inbox`` instead. The JS side
-        drains any unseen sequence numbers once it initializes.
+        Every Python-to-JS command rides ``_msg_inbox``: ordinary commands
+        as JSON, buffer-carrying commands with the payload base64-encoded
+        in a ``_b64`` field on the same body. ipywidgets custom messages
+        are dropped if Python sends them before the browser view has
+        registered its handler — and demos call methods immediately after
+        ``display(nv)`` — so the synced trait is what makes that race
+        survivable. The JS side drains any unseen sequence numbers once
+        it initializes.
         """
-        if (
-            isinstance(content, dict)
-            and isinstance(content.get("cmd"), str)
-            and not buffers
-        ):
+        if isinstance(content, dict) and isinstance(content.get("cmd"), str):
             self._msg_inbox = [
                 *self._msg_inbox,
                 {"seq": next(self._inbox_counter), "body": content},
@@ -217,6 +214,165 @@ class NiiVue(_GeneratedNiiVue):
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
         opts_camel["url"] = url
         self.load_meshes([opts_camel])
+
+    # Local file / in-memory ingress
+    #
+    # These helpers ship raw file bytes (NIfTI, MGZ, mesh formats, etc.)
+    # to the browser. NiiVue's loader dispatches by filename extension —
+    # pass a filename whose suffix matches the format (e.g. ``.nii.gz``
+    # for gzipped NIfTI, ``.mz3`` for niivue's mesh format). Wrapping
+    # into a JS ``File`` happens on the JS side.
+    #
+    # The bytes ride the ``_msg_inbox`` synced trait as a base64 string
+    # alongside the command (see :meth:`_send_with_buffer`). This reuses
+    # the cold-start-safe inbox channel that ordinary commands already
+    # use, so callers do not need to ``await wait_ready()``. The 33%
+    # base64 overhead is negligible at the file sizes typical of
+    # interactive notebook use; for very large volumes, prefer URL
+    # ingress so the browser fetches directly.
+
+    def add_volume_from_path(
+        self,
+        path: str | pathlib.Path,
+        name: str | None = None,
+        **opts: Any,
+    ) -> None:
+        """Load a volume from a local file path.
+
+        Reads the file from disk in Python and ships the raw bytes to
+        the browser. The browser does not need access to the local
+        filesystem. NiiVue dispatches by filename extension, so the
+        extension of ``path`` (or ``name`` if provided) must match the
+        format.
+
+        Example::
+
+            nv.add_volume_from_path("examples/fslmean8.nii.gz",
+                                     cal_min=10, cal_max=80)
+        """
+        p = pathlib.Path(path)
+        self.add_volume_from_bytes(name or p.name, p.read_bytes(), **opts)
+
+    def add_volume_from_bytes(
+        self,
+        name: str,
+        data: bytes,
+        **opts: Any,
+    ) -> None:
+        """Load a volume from raw file bytes already in Python memory.
+
+        ``name`` is the filename used by NiiVue's loader to pick the
+        right reader (``.nii.gz``, ``.mgz``, ``.nrrd``, ``.mih``, etc.).
+        Other keyword arguments are passed through as
+        :class:`ImageFromUrlOptions` (snake_case → camelCase).
+
+        Example using nibabel for header construction::
+
+            import numpy as np, nibabel as nib
+            arr = np.zeros((64, 64, 64), dtype=np.float32)
+            arr[28:36, 28:36, 28:36] = 1.0
+            nifti_bytes = nib.Nifti1Image(arr, np.eye(4)).to_bytes()
+            nv.add_volume_from_bytes("cube.nii", nifti_bytes,
+                                      colormap="hot")
+
+        See :meth:`add_volume_from_array` for a numpy-aware convenience
+        wrapper that calls nibabel for you.
+        """
+        opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
+        self._send_with_buffer(
+            "__add_volume_from_bytes", [name, opts_camel], data
+        )
+
+    def add_volume_from_array(
+        self,
+        arr: Any,
+        affine: Any = None,
+        name: str = "volume.nii",
+        **opts: Any,
+    ) -> None:
+        """Load a numpy array as a volume. Requires :mod:`nibabel`.
+
+        Builds a NIfTI-1 image from the array (using ``affine`` if
+        given, else identity), serializes to bytes, and ships through
+        :meth:`add_volume_from_bytes`. ``arr.dtype`` is preserved
+        verbatim — if NiiVue rejects it, cast first (e.g.
+        ``arr.astype(np.float32)``).
+
+        Raises :exc:`ImportError` with a clear install hint if nibabel
+        is not available.
+        """
+        try:
+            import nibabel as nib
+        except ImportError as exc:  # pragma: no cover
+            msg = (
+                "add_volume_from_array requires nibabel. "
+                "Install with: pip install nibabel"
+            )
+            raise ImportError(msg) from exc
+
+        if affine is None:
+            try:
+                import numpy as np
+
+                affine = np.eye(4)
+            except ImportError:  # pragma: no cover
+                affine = [[1.0 if i == j else 0.0 for j in range(4)] for i in range(4)]
+
+        nifti = nib.Nifti1Image(arr, affine)  # type: ignore[attr-defined]
+        self.add_volume_from_bytes(name, nifti.to_bytes(), **opts)
+
+    def add_mesh_from_path(
+        self,
+        path: str | pathlib.Path,
+        name: str | None = None,
+        **opts: Any,
+    ) -> None:
+        """Load a mesh from a local file path. See
+        :meth:`add_volume_from_path` for the design notes.
+        """
+        p = pathlib.Path(path)
+        self.add_mesh_from_bytes(name or p.name, p.read_bytes(), **opts)
+
+    def add_mesh_from_bytes(
+        self,
+        name: str,
+        data: bytes,
+        **opts: Any,
+    ) -> None:
+        """Load a mesh from raw file bytes. See
+        :meth:`add_volume_from_bytes` for the design notes.
+        """
+        opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
+        self._send_with_buffer(
+            "__add_mesh_from_bytes", [name, opts_camel], data
+        )
+
+    def _send_with_buffer(
+        self,
+        cmd: str,
+        args: list[Any],
+        buffer: bytes,
+    ) -> None:
+        """Send a buffer-carrying command through the synced inbox.
+
+        Inlines the buffer as base64 in the message body so it can
+        ride the same ``_msg_inbox`` trait that ordinary commands use.
+        The JS-side inbox handler decodes ``_b64`` back to a
+        ``Uint8Array`` and passes it through the existing buffer-aware
+        command handlers (``__add_volume_from_bytes``,
+        ``__add_mesh_from_bytes``).
+
+        Why not raw ``model.send(buffers=[...])``? Raw send is dropped
+        when Python sends it before the JS view has registered its
+        ``msg:custom`` handler — the same cold-start race that forced
+        ``_msg_inbox`` for ordinary commands. The earlier workaround
+        of ``await wait_ready()`` before raw send turned out to time
+        out in practice (the ping-pong response sometimes never
+        reaches Python in JupyterLab + anywidget 0.9.x), leaving the
+        user with a blank canvas. Inlining base64 sidesteps both.
+        """
+        b64 = base64.b64encode(buffer).decode("ascii")
+        self.send({"cmd": cmd, "args": args, "_b64": b64})
 
     def download_bitmap(
         self,
@@ -419,7 +575,7 @@ class NiiVue(_GeneratedNiiVue):
 
     # Internal: route messages from JS
 
-    def _dispatch_message(self, _widget: Any, content: Any, _buffers: Any) -> None:
+    def _dispatch_message(self, content: Any) -> None:
         if not isinstance(content, dict):
             return
         kind = content.get("kind")

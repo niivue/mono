@@ -116,12 +116,22 @@ How the dependency surfaces in Nx's graph:
 
 ### Python → JS commands
 
-Commands route through a synced `_msg_inbox` traitlet (a list of
-`{seq, body}`), not raw `model.send`. Reason: ipywidgets custom
-messages are dropped if Python sends them before the browser view
-registers its handler. Demos call methods immediately after
+Every Python-to-JS command rides the synced `_msg_inbox` traitlet (a
+list of `{seq, body}`), not raw `model.send`. Reason: ipywidgets
+custom messages are dropped if Python sends them before the browser
+view registers its handler. Demos call methods immediately after
 `display(nv)`, so this race is the default. JS drains unseen
 sequence numbers after `initialize`.
+
+Ordinary commands ship as plain JSON bodies. Buffer-carrying commands
+(`add_volume_from_path`, `add_volume_from_bytes`,
+`add_volume_from_array`, `add_mesh_from_path`, `add_mesh_from_bytes`)
+inline their payload as a base64 `_b64` field on the same body. The
+JS-side inbox handler decodes `_b64` to a `Uint8Array` and passes it
+as `buffers[0]` to the existing `__add_volume_from_bytes` /
+`__add_mesh_from_bytes` handlers. Cost is the ~33% base64 size
+overhead; benefit is one cold-start-safe channel for everything,
+with no `wait_ready` ping-pong.
 
 The browser keeps a per-widget command queue. Each command awaits
 the canvas mount promise before touching NiiVue, and async NiiVue
@@ -193,8 +203,12 @@ flags, a hardware adapter, or platform-specific configuration.
 
 - Don't gate volume or mesh loading on `await nv.wait_ready()`. The
   browser command queue already serializes commands behind the
-  canvas mount promise. `wait_ready` is fine as a mount confirmation
-  for code that genuinely needs it.
+  canvas mount promise. This applies to buffer-carrying loads too
+  (`add_volume_from_path`, `add_volume_from_bytes`,
+  `add_volume_from_array`, and the mesh equivalents) — they ride the
+  same synced `_msg_inbox` channel as URL loads and do not need a
+  `wait_ready` round-trip. `wait_ready` is fine as a mount
+  confirmation for code that genuinely needs it.
 - Don't lean on `nv.on(...)` as a control path. Event delivery works
   but is bandwidth-limited; high-frequency events or large payloads
   will make the comm unreliable. Use Python `ipywidgets` controls
@@ -218,8 +232,8 @@ auto-generated command methods or hand-written helpers in
 
 | Property | Use these methods |
 | --- | --- |
-| `volumes` | `add_volume_from_url`, `load_volumes`, `remove_volume`, `remove_all_volumes`, `set_volume` |
-| `meshes` | `add_mesh_from_url`, `load_meshes`, `remove_mesh`, `remove_all_meshes`, `set_mesh` |
+| `volumes` | `add_volume_from_url`, `add_volume_from_path`, `add_volume_from_bytes`, `add_volume_from_array`, `load_volumes`, `remove_volume`, `remove_all_volumes`, `set_volume` |
+| `meshes` | `add_mesh_from_url`, `add_mesh_from_path`, `add_mesh_from_bytes`, `load_meshes`, `remove_mesh`, `remove_all_meshes`, `set_mesh` |
 | `drawingVolume` | `load_drawing`, `create_empty_drawing`, `close_drawing`, `draw_undo` |
 | `annotations` | `add_annotation`, `remove_annotation`, `clear_annotations`, `get_annotations_json` |
 | `annotationStyle` | individual `annotation_*` reactive props |
@@ -330,184 +344,6 @@ If JupyterLab restores stale widget state during dev:
 ```bash
 rm -rf ~/.cache/jupyter ~/.local/share/jupyter/runtime
 ```
-
-## Roadmap
-
-What's left, in execution order. Each phase produces something
-demoable before the next one starts.
-
-### A. Validate JS-to-Python event messaging in a real notebook
-
-Status: mechanism exists, **not yet exercised** by any example.
-
-The `nv.on(event, callback)` path through `_msg_outbox` is wired
-end-to-end and `wait_ready()` proves the round-trip works, but **no
-notebook in `examples/` actually uses `nv.on(...)`**. Every port
-sidesteps it by using `ipywidgets` controls for Python→JS only. That
-leaves the high-bandwidth side untested.
-
-Concrete next step: port [packages/niivue/examples/vox.atlas.stat.html](../niivue/examples/vox.atlas.stat.html)
-faithfully — the JS demo subscribes to `locationChange` and writes
-`detail.string` into a status footer on every mouse move. The current
-[examples/19_vox_atlas_stat.ipynb](examples/19_vox_atlas_stat.ipynb)
-deliberately omits that subscription. Add a new notebook (or extend
-19) that uses:
-
-```python
-status = ipywidgets.Label()
-nv.on("locationChange", lambda d: setattr(status, "value", d.get("string", "")))
-```
-
-Then drag the crosshair for ~30 seconds in JupyterLab and watch the
-kernel comm. If the comm survives, declare messaging complete. If it
-floods (the original failure mode that pushed us to `_msg_outbox`),
-add per-event throttling on the JS side — either a hard-coded
-`THROTTLE_EVENT_FORWARDING` map (`{ locationChange: 50, azimuthElevationChange: 50 }`)
-or a synced `_event_throttle_ms` Dict trait that Python can configure.
-
-### B.1. Bundle and demo `nv-ext-image-processing` (done)
-
-The four image-processing transforms (`otsu`, `removeHaze`, `conform`,
-`connectedLabel`) are now bundled into `widget.js` and pre-registered
-on widget mount.
-
-- JS side: codegen emits the import and registers all four transforms
-  inside `initialize()` before any user command can land. A composite
-  command `__ext_apply_image_transform` does
-  `applyVolumeTransform` → `resultDefaults` → `addVolume` (or
-  `removeAllVolumes` + `addVolume` when `replace_background=True`) in
-  one round-trip, returning `{name, elapsed_ms}` to Python. The
-  extension context is cached on `state.extContext` and disposed on
-  widget unmount.
-- Python side: `nv.apply_image_transform(name, volume_index=0, options=None, replace_background=False)`
-  in [widget.py](src/ipyniivue/widget.py).
-- Demo: [examples/23_ext_imgproc.ipynb](examples/23_ext_imgproc.ipynb)
-  — dropdown of bundled transforms, options form built dynamically
-  from `await nv.get_volume_transform_info(name)`, Apply / Reset.
-- Bundle size impact: 1.27 MB → 1.29 MB (+~20 KB; the worker is
-  inlined into the ext package's pre-built `dist/`).
-
-### B.2. Drawing interpolation (done)
-
-The `nv-ext-drawing` interpolation workflow ships:
-
-- JS side: codegen emits imports for `findDrawingBoundarySlices` and
-  `interpolateMaskSlices`, plus two composite commands
-  (`__ext_drawing_find_boundaries`, `__ext_drawing_interpolate_slices`).
-  Each pulls the live bitmap from `ctx.drawing.bitmap`, calls the
-  worker-backed extension function, writes the result back via
-  `ctx.drawing.update(...)`, and returns a summary dict.
-- Python side: `nv.find_drawing_boundary_slices(axis)` and
-  `nv.interpolate_drawing_slices(axis, use_intensity_guided=False, ...)`
-  in [widget.py](src/ipyniivue/widget.py).
-- Demo: [examples/24_ext_drawing.ipynb](examples/24_ext_drawing.ipynb)
-  — pen color/size/undo controls, axis dropdown, intensity-guided
-  toggle with three sliders, Find boundaries / Interpolate buttons,
-  status label.
-- Bundle size impact: 1.29 MB → 1.31 MB (+~12 KB).
-
-The hover-driven magic-wand demo (`apps/demo-ext-drawing/magic-wand.ts`)
-is **not ported**. Its sub-frame `slicePointerMove` preview UX needs
-sub-100 ms round-trips that Jupyter's request/response model can't
-deliver, and `MagicWandShared` requires COOP+COEP headers that
-JupyterLab does not set. A programmatic
-`magic_wand(seed_voxel, slice_axis, **opts)` API that runs the
-single-shot `magicWand` worker call is straightforward to add (no
-hover preview, no SAB) and would be the next small B.2.next ship.
-
-### B.3. `nv-ext-save-html` (deferred — niivue-bundle bootstrap)
-
-### B.3. Scene export (done — chose `.nvd` over self-contained `.html`)
-
-Shipped: [examples/25_save_document.ipynb](examples/25_save_document.ipynb)
-demonstrating two export paths backed by the existing codegen output:
-
-- `nv.save_document(filename)` (fire-and-forget) — triggers a browser
-  download of an `.nvd` file (CBOR-encoded NVD document). Opens in
-  any niivue viewer including [niivue.github.io](https://niivue.github.io/niivue/).
-- `await nv.serialize_document()` — returns the raw bytes for
-  programmatic use (write to disk, upload to object storage, etc.).
-
-**Why we did not bundle `@niivue/nv-ext-save-html`:**
-`saveHTML(nv, filename, {niivueBundleSource})` requires a
-self-contained niivue ESM (the `apps/demo-ext-save-html/public/niivue-standalone.js`
-artifact is ~1.2 MB) bundled in for the `import()` machinery in the
-saved HTML to work. Shipping it inside `widget.js` would roughly
-double the wheel size to ~2.5 MB; shipping it as a separate static
-asset would still add 1.2 MB to the install and complicate the
-anywidget asset-loading path (anywidget serves the widget JS via a
-`blob:` URL with no hierarchical base, so a relative `fetch()` of a
-sibling asset doesn't resolve cleanly). For a Jupyter/data-science
-audience, `.nvd` is the better artifact — it's KB rather than MB, it
-opens in any niivue viewer, and the kernel/notebook already provides
-the share-with-someone affordance that `.html` solves for browser
-apps.
-
-If a user explicitly asks for `.html` export later, the right design
-is to ship `niivue-bundle.js` as a separate static asset (rather than
-inlining it into `widget.js`) so it can be gitignored independently
-and rebuilt on demand. The codegen pattern would mirror Phase B.1 —
-a second `Bun.build` pass with a tiny `import NiiVueGPU from '@niivue/niivue'; export default NiiVueGPU`
-entry — and JS-side widget code would load it via `importlib.resources`
-on Python and pass the source string to `saveHTML` through a
-composite command.
-
-### C. Binary buffer ingress (numpy → volume)
-
-Today, `add_volume_from_url` is the only ingress path. Real workflows
-often have a `numpy.ndarray` already in memory (e.g. a derived
-statistical map) and want to view it without round-tripping to disk.
-
-Work:
-
-1. anywidget supports binary buffers in `model.send(content, buffers)`.
-   Add a buffer-aware variant of the `_msg_inbox` path: `{seq, body, buffers}`
-   where `buffers` lives in a parallel synced trait or rides on the
-   raw `model.send` channel (the latter, since it's Python→JS only,
-   doesn't suffer the JS→Python comm fragility).
-2. JS side: receive the `ArrayBuffer`, wrap into the appropriate
-   `TypedArray`, build a NIfTI header from the Python-supplied
-   metadata, hand to `nv.addVolume(...)`.
-3. Python helpers:
-   ```python
-   nv.add_volume_from_array(arr, affine=..., name=..., colormap=...)
-   nv.add_mesh_from_bytes(mz3_bytes, name=...)
-   ```
-
-This is the single most-requested feature for any scientific Python
-viewer. It also unlocks pytest unit tests that don't depend on a
-network round-trip.
-
-### D. Polish, test, and ship
-
-1. **Tests.** Add a `pytest` target to [project.json](project.json):
-   - codegen-output integrity (every method in `api.generated.json`
-     appears in `_generated.py`, every traitlet has a sane default,
-     `NIIVUE_EVENT_NAMES` is non-empty).
-   - widget construction with each major option combination.
-   - **Playwright smoke**: `01_hello_volume.ipynb` produces a
-     non-empty PNG with `backend="webgl2"`. This is the only test
-     that exercises real GPU rendering end-to-end.
-2. **PyPI publish path.**
-   - Bump `pyproject.toml` to a real version.
-   - Add a Python release target to [project.json](project.json) that
-     hooks into Nx Release.
-   - Resolve the `widget.js` gitignore question (Phase B forces a
-     decision): either keep committed and live with the 1.3+ MB
-     diff churn, or move generation into a hatch build hook so
-     `pip install` invokes Bun.
-
-### Deferred (do only if asked)
-
-- **JS-handle proxy objects** (`NVImage`, `NVMesh`, `NVDrawingVolume`,
-  `NVAnnotation` Python classes that hold an opaque JS handle id).
-  Codegen currently skips the seven properties listed in the
-  "Skipped properties" table; methods are sufficient for most flows.
-- **R port via the [anywidget R package](https://github.com/manzt/anywidget/tree/main/packages/anywidget-r).**
-  The `widget.js` bundle is reusable verbatim; only a third codegen
-  emitter (`emitR()`) is needed. Estimate: 1–2 weeks for a prototype
-  matching the Python feature set. Worth revisiting once Phase C
-  lands and the API surface stabilizes.
 
 ## Related
 

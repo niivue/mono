@@ -31966,7 +31966,7 @@ async function initialize({ model }) {
       console.warn("ipyniivue: outbox write failed:", err2);
     }
   };
-  const runCommand = async (msg) => {
+  const runCommand = async (msg, buffers) => {
     if (!msg || typeof msg !== "object")
       return;
     if (typeof msg.cmd !== "string")
@@ -32050,6 +32050,57 @@ async function initialize({ model }) {
       }
       return;
     }
+    if (msg.cmd === "__add_volume_from_bytes") {
+      const args = msg.args || [];
+      const name = args[0] || "volume.nii";
+      const options = args[1] || {};
+      const bufInfo = buffers && buffers[0] ? { kind: buffers[0].constructor && buffers[0].constructor.name, byteLength: buffers[0].byteLength } : null;
+      console.log("[ipyniivue] add_volume_from_bytes:", name, "buffer:", bufInfo, "options:", options);
+      try {
+        if (!buffers || !buffers[0]) {
+          const errMsg = "no buffer attached to add_volume_from_bytes";
+          console.error("[ipyniivue]", errMsg);
+          if (reqId !== null)
+            respond(false, errMsg);
+          return;
+        }
+        const dv = buffers[0];
+        const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv;
+        const file = new File([ab], name);
+        await state.nv.loadVolumes([Object.assign({ url: file, name }, options)]);
+        console.log("[ipyniivue] loadVolumes returned for", name);
+        if (reqId !== null)
+          respond(true, null);
+      } catch (err2) {
+        console.error("[ipyniivue] __add_volume_from_bytes threw:", err2);
+        if (reqId !== null)
+          respond(false, err2);
+      }
+      return;
+    }
+    if (msg.cmd === "__add_mesh_from_bytes") {
+      const args = msg.args || [];
+      const name = args[0] || "mesh.mz3";
+      const options = args[1] || {};
+      try {
+        if (!buffers || !buffers[0]) {
+          if (reqId !== null)
+            respond(false, "no buffer attached to add_mesh_from_bytes");
+          return;
+        }
+        const dv = buffers[0];
+        const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv;
+        const file = new File([ab], name);
+        await state.nv.loadMeshes([Object.assign({ url: file, name }, options)]);
+        if (reqId !== null)
+          respond(true, null);
+      } catch (err2) {
+        console.error("[ipyniivue] __add_mesh_from_bytes threw:", err2);
+        if (reqId !== null)
+          respond(false, err2);
+      }
+      return;
+    }
     if (msg.cmd === "__ext_drawing_interpolate_slices") {
       const args = msg.args || [];
       const axis = args[0] ?? 0;
@@ -32116,12 +32167,25 @@ async function initialize({ model }) {
         console.error("ipyniivue: command " + msg.cmd + " threw:", err2);
     }
   };
-  const cmdHandler = (msg) => {
-    state.commandQueue = state.commandQueue.then(() => runCommand(msg)).catch((err2) => {
+  const cmdHandler = (msg, buffers) => {
+    state.commandQueue = state.commandQueue.then(() => runCommand(msg, buffers)).catch((err2) => {
       console.error("ipyniivue: command queue error:", err2);
     });
   };
-  model.on("msg:custom", cmdHandler);
+  const decodeInboxBuffer = (body) => {
+    if (!body || typeof body._b64 !== "string")
+      return;
+    try {
+      const bin = atob(body._b64);
+      const out = new Uint8Array(bin.length);
+      for (let i3 = 0;i3 < bin.length; i3++)
+        out[i3] = bin.charCodeAt(i3);
+      return [out];
+    } catch (err2) {
+      console.error("ipyniivue: malformed _b64 buffer:", err2);
+      return;
+    }
+  };
   const inboxHandler = () => {
     const inbox = model.get("_msg_inbox");
     if (!Array.isArray(inbox))
@@ -32131,7 +32195,7 @@ async function initialize({ model }) {
       if (seq === null || seq <= state.lastInboxSeq)
         continue;
       state.lastInboxSeq = seq;
-      cmdHandler(item.body);
+      cmdHandler(item.body, decodeInboxBuffer(item.body));
     }
   };
   model.on("change:_msg_inbox", inboxHandler);
@@ -32189,7 +32253,6 @@ async function initialize({ model }) {
     evtListeners.push([eventName, handler]);
   }
   return () => {
-    model.off("msg:custom", cmdHandler);
     model.off("change:_msg_inbox", inboxHandler);
     for (const [pyName, handler] of observers) {
       model.off("change:" + pyName, handler);

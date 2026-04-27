@@ -32,6 +32,7 @@ The remaining notebooks are first-pass ports of selected
 | `23_ext_imgproc.ipynb` | `imgproc.html` | `@niivue/nv-ext-image-processing` transforms (otsu, removeHaze, conform, connectedLabel) via `nv.apply_image_transform` |
 | `24_ext_drawing.ipynb` | `drawing.html` | `@niivue/nv-ext-drawing` interpolation: draw a few slices, then fill the gaps with `nv.interpolate_drawing_slices` (intensity-guided optional) |
 | `25_save_document.ipynb` | (`nv-ext-save-html` equivalent) | Export the current scene as a portable `.nvd` document with `nv.save_document(filename)` (browser download) or `await nv.serialize_document()` (raw bytes for programmatic use) |
+| `26_data_loading_formats.ipynb` | n/a (legacy ipyniivue port) | Load volumes from URL, local path (`fslmean8.nii.gz` ships next to the notebook), and numpy arrays via nibabel. Demonstrates `add_volume_from_path` / `add_volume_from_array`. Requires `pip install ipyniivue[examples]`. |
 
 The ports use the public GitHub Pages asset mirror:
 

@@ -36,6 +36,7 @@
     "smoke": {
       "command": "jupyter nbconvert --to notebook --execute --output 01_hello_volume.executed.ipynb --output-dir /tmp examples/01_hello_volume.ipynb",
       "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["codegen"],
       "inputs": [
         "{projectRoot}/examples/**/*.ipynb",
         "{projectRoot}/src/**/*",

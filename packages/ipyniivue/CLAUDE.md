@@ -42,7 +42,7 @@ src/ipyniivue/widget.py      # Hand-written subclass with on/off, helpers, dispa
 src/ipyniivue/_generated.py  # Auto-generated traitlets + command methods + event names
 src/ipyniivue/static/
   _widget.template.js        # Auto-generated reviewable JS (PROPS_*, EVENTS, lifecycle)
-  widget.js                  # Auto-generated bundled JS (~1.3 MB; includes niivue)
+  widget.js                  # Auto-generated bundled JS (~1.3 MB; includes niivue) (gitignored — `bunx nx codegen ipyniivue` builds it)
 examples/                    # 01_hello_volume.ipynb + ports of niivue demo HTMLs
 pixi.toml / pyproject.toml   # Two install paths (pixi env vs plain pip -e .)
 ```
@@ -334,28 +334,30 @@ The browser must actually render — `saveBitmap` reads pixels from
 the live canvas. Plain `jupyter execute` / the `smoke` Nx target
 runs Python only and cannot validate this path.
 
-### Generated files in version control (open question)
+### Generated files in version control
 
-Today, all four codegen outputs are committed:
+Three of the four codegen outputs are committed; the bundled
+`widget.js` is gitignored.
 
-| File | Size | Reviewable? |
-| --- | --- | --- |
-| `api.generated.json` | ~60 KB | yes — API diffs surface here |
-| `src/ipyniivue/_generated.py` | ~28 KB | yes |
-| `src/ipyniivue/static/_widget.template.js` | ~15 KB | yes |
-| `src/ipyniivue/static/widget.js` | ~1.3 MB bundled | no — minified niivue inlined |
+| File | Size | Committed? | Why |
+| --- | --- | --- | --- |
+| `api.generated.json` | ~60 KB | yes | API diffs surface here per niivue release |
+| `src/ipyniivue/_generated.py` | ~28 KB | yes | reviewable Python API surface |
+| `src/ipyniivue/static/_widget.template.js` | ~15 KB | yes | reviewable JS template (lifecycle, command routing) |
+| `src/ipyniivue/static/widget.js` | ~1.3 MB | **no** | bundled, minified, niivue inlined; not reviewable |
 
-The bundled `widget.js` is the strongest candidate for removal from
-git — it is large, regenerates on every niivue change, and is not
-human-reviewable. The other three are small, churn rarely, and are
-useful as code-review surfaces. Keeping `_generated.py` committed
-also lets `pip install -e .` work without invoking Bun on the
-consumer side.
+**`widget.js` is required at runtime** — anywidget's `_esm` field
+points to it. After cloning, run `bunx nx codegen ipyniivue` once
+before `pip install -e .` (or before opening any example notebook).
+The codegen target is fast (~3s) and cached by Nx. CI pipelines
+that exercise the widget should include the codegen step before any
+notebook execution.
 
-Recommendation when revisiting this: gitignore `widget.js` and
-generate it at install time via a hatch build hook (or document
-that `bunx nx codegen ipyniivue` is a prerequisite for `pip install
--e .`); keep the other three committed.
+This split keeps the repo lean (a single niivue refresh used to
+churn ~1.3 MB of binary diff) while preserving the reviewable
+artifacts as a record of API change. PyPI publishing will need a
+build hook (`hatch-jupyter-builder` or equivalent) so `pip install`
+from a release tarball produces a usable wheel.
 
 ## Commands
 

@@ -27,6 +27,11 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
       - run: bun install
 
       - name: Configure git identity
@@ -38,6 +43,9 @@ jobs:
 
       - name: Release (dry run)
         if: ${{ inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -o pipefail
           {
@@ -50,8 +58,60 @@ jobs:
 
       - name: Release
         if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bunx nx release --skip-publish --verbose
 
       - name: Push release commit and tags
         if: ${{ !inputs.dry_run }}
         run: git push --follow-tags origin HEAD:main
+
+      - name: Create GitHub Releases
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # For each tag Nx created at HEAD, create a matching GitHub Release
+        # whose body is the project's newly-written CHANGELOG.md top section.
+        run: |
+          set -euo pipefail
+          for tag in $(git tag --points-at HEAD); do
+            # Tag format is "{projectName}@{version}" where projectName may be
+            # scoped ("@scope/name@1.2.3"). Split on the LAST '@'.
+            version="${tag##*@}"
+            project="${tag%@*}"
+
+            # Find the package directory by matching package.json "name".
+            pkg_dir=""
+            for d in packages/*; do
+              [ -f "$d/package.json" ] || continue
+              name=$(node -p "require('./$d/package.json').name")
+              if [ "$name" = "$project" ]; then
+                pkg_dir="$d"
+                break
+              fi
+            done
+
+            if [ -z "$pkg_dir" ] || [ ! -f "$pkg_dir/CHANGELOG.md" ]; then
+              echo "No CHANGELOG.md found for $project; creating release with auto-generated notes."
+              gh release create "$tag" --title "$tag" --generate-notes --target "$(git rev-parse HEAD)"
+              continue
+            fi
+
+            # Extract the top-most version section from CHANGELOG.md (until the
+            # next top-level heading).
+            notes=$(awk '/^## /{if(seen)exit; seen=1; next} seen' "$pkg_dir/CHANGELOG.md")
+
+            echo "Creating GitHub Release for $tag"
+            printf '%s\n' "$notes" | gh release create "$tag" \
+              --title "$tag" \
+              --target "$(git rev-parse HEAD)" \
+              --notes-file -
+          done
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bunx nx release publish --verbose

@@ -1061,11 +1061,13 @@
         {
           "name": "annotation",
           "tsType": "VectorAnnotation",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "addColormap",
@@ -1076,16 +1078,19 @@
         {
           "name": "name",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "cmap",
           "tsType": "Pick<ColorMap, \"R\" | \"G\" | \"B\"> & Partial<Pick<ColorMap, \"A\" | \"I\" | \"labels\">>",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "string",
-      "doc": "Register a colormap by name so it becomes available to\n`setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh\nlayers, and so on. Use this to add user-defined LUTs at runtime.\nRe-registering an existing name replaces the entry. Does not trigger a\nredraw — the colormap is inert until a volume references it.\n\nLabel colormaps (for atlas volumes with per-index labels) have their\nown registration path: `setColormapLabel()` / `setColormapLabelFromUrl()`."
+      "doc": "Register a colormap by name so it becomes available to\n`setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh\nlayers, and so on. Use this to add user-defined LUTs at runtime.\nRe-registering an existing name replaces the entry. Does not trigger a\nredraw — the colormap is inert until a volume references it.\n\nLabel colormaps (for atlas volumes with per-index labels) have their\nown registration path: `setColormapLabel()` / `setColormapLabelFromUrl()`.",
+      "returnsDoc": "The canonical name under which the colormap was stored\n(first letter upper-cased), which is the form visible in `nv1.colormaps`\nand the `colormapAdded` event detail."
     },
     {
       "jsName": "addColormapFromUrl",
@@ -1096,16 +1101,19 @@
         {
           "name": "url",
           "tsType": "string | File",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "name",
           "tsType": "string | undefined",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Fetch a colormap JSON (`{ R, G, B, A?, I? }`) from a URL or `File` and\nregister it under `name`. When `name` is omitted, it is derived from\nthe source filename; callers passing an un-nameable source (e.g.\n`?query-only`) should supply `name` explicitly — an empty derived\nname throws."
+      "doc": "Fetch a colormap JSON (`{ R, G, B, A?, I? }`) from a URL or `File` and\nregister it under `name`. When `name` is omitted, it is derived from\nthe source filename; callers passing an un-nameable source (e.g.\n`?query-only`) should supply `name` explicitly — an empty derived\nname throws.",
+      "returnsDoc": null
     },
     {
       "jsName": "addImage",
@@ -1116,16 +1124,19 @@
         {
           "name": "pathOrFile",
           "tsType": "string | File",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "options",
           "tsType": "Record<string, unknown>",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "addMesh",
@@ -1136,11 +1147,13 @@
         {
           "name": "mesh",
           "tsType": "NVMesh | MeshFromUrlOptions",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<this>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "addMeshLayer",
@@ -1151,16 +1164,19 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "layerOpts",
           "tsType": "MeshLayerFromUrlOptions",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<this>",
-      "doc": "Add a scalar overlay layer to a mesh."
+      "doc": "Add a scalar overlay layer to a mesh.",
+      "returnsDoc": null
     },
     {
       "jsName": "addVolume",
@@ -1171,11 +1187,13 @@
         {
           "name": "volume",
           "tsType": "NVImage | ImageFromUrlOptions",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<this>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "annotationRedo",
@@ -1184,7 +1202,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "annotationUndo",
@@ -1193,7 +1212,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "attachTo",
@@ -1204,16 +1224,19 @@
         {
           "name": "id",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "isAntiAlias",
           "tsType": "null",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<this>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "attachToCanvas",
@@ -1224,16 +1247,19 @@
         {
           "name": "canvas",
           "tsType": "HTMLCanvasElement",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "isAntiAlias",
           "tsType": "boolean | null",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<this>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "broadcastTo",
@@ -1244,16 +1270,19 @@
         {
           "name": "targets",
           "tsType": "default | default[] | undefined",
-          "optional": true
+          "optional": true,
+          "doc": "the other NiiVue instance(s) to broadcast to, or omit to clear sync"
         },
         {
           "name": "opts",
           "tsType": "SyncOpts",
-          "optional": true
+          "optional": true,
+          "doc": "which properties to sync (default: { '2d': true, '3d': true })"
         }
       ],
       "returns": "void",
-      "doc": "Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others."
+      "doc": "Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others.",
+      "returnsDoc": null
     },
     {
       "jsName": "clearAnnotations",
@@ -1262,7 +1291,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "clearCustomLayout",
@@ -1271,7 +1301,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": "Clear any custom layout and revert to built-in layout modes."
+      "doc": "Clear any custom layout and revert to built-in layout modes.",
+      "returnsDoc": null
     },
     {
       "jsName": "clearMeasurements",
@@ -1280,7 +1311,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "closeDrawing",
@@ -1289,7 +1321,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "createEmptyDrawing",
@@ -1298,7 +1331,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "createExtensionContext",
@@ -1307,7 +1341,8 @@
       "returnsValue": true,
       "params": [],
       "returns": "NVExtensionContext",
-      "doc": "Create an extension context for interacting with this NiiVue instance.\n\nThe context provides a stable API surface for extensions: live data\naccessors, event subscriptions (including high-level slice pointer events),\nsafe write-back actions, and coordinate transform utilities.\n\nCall `context.dispose()` when the extension is deactivated to remove all\nevent listeners registered through the context.\n\nMultiple contexts can coexist — each tracks its own subscriptions."
+      "doc": "Create an extension context for interacting with this NiiVue instance.\n\nThe context provides a stable API surface for extensions: live data\naccessors, event subscriptions (including high-level slice pointer events),\nsafe write-back actions, and coordinate transform utilities.\n\nCall `context.dispose()` when the extension is deactivated to remove all\nevent listeners registered through the context.\n\nMultiple contexts can coexist — each tracks its own subscriptions.",
+      "returnsDoc": null
     },
     {
       "jsName": "createOnLocationChange",
@@ -1318,11 +1353,13 @@
         {
           "name": "axCorSag",
           "tsType": "number",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "destroy",
@@ -1331,7 +1368,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "drawScene",
@@ -1342,11 +1380,13 @@
         {
           "name": "needsSync",
           "tsType": "boolean",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "drawUndo",
@@ -1355,7 +1395,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "enforceBackendAvailability",
@@ -1364,7 +1405,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "getAnnotationsJSON",
@@ -1373,7 +1415,8 @@
       "returnsValue": true,
       "params": [],
       "returns": "string",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "getClipPlaneDepthAziElev",
@@ -1384,11 +1427,13 @@
         {
           "name": "clipPlaneIndex",
           "tsType": "number",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "[number, number, number]",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "getCrosshairPos",
@@ -1397,7 +1442,8 @@
       "returnsValue": true,
       "params": [],
       "returns": "[number, number, number]",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "getFrame4D",
@@ -1408,11 +1454,13 @@
         {
           "name": "id",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": "Volume ID (typically the URL or name)"
         }
       ],
       "returns": "number",
-      "doc": "Get the current 4D frame index for a volume."
+      "doc": "Get the current 4D frame index for a volume.",
+      "returnsDoc": "Current frame index (0-based), or 0 if volume not found"
     },
     {
       "jsName": "getMeshShader",
@@ -1423,11 +1471,13 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "string | undefined",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "getTractGroups",
@@ -1438,11 +1488,13 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "string[]",
-      "doc": "Get the group names for a tract mesh.\nReturns an empty array if the mesh is not a tract or has no groups."
+      "doc": "Get the group names for a tract mesh.\nReturns an empty array if the mesh is not a tract or has no groups.",
+      "returnsDoc": null
     },
     {
       "jsName": "getVolumeTransformInfo",
@@ -1453,11 +1505,13 @@
         {
           "name": "name",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "TransformInfo | undefined",
-      "doc": "Get metadata for a specific volume transform (options, description, resultDefaults)."
+      "doc": "Get metadata for a specific volume transform (options, description, resultDefaults).",
+      "returnsDoc": null
     },
     {
       "jsName": "hasColormap",
@@ -1468,11 +1522,13 @@
         {
           "name": "name",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "boolean",
-      "doc": "Case-insensitive existence check for a registered colormap. Accepts\nwhatever casing the caller has on hand (e.g. a lowercased `<select>`\nvalue) and compares against the canonical stored name. Prefer this\nover `nv1.colormaps.includes(...)` — it handles the first-letter\ncanonicalization that `addColormap` and the filesystem auto-loader\napply internally."
+      "doc": "Case-insensitive existence check for a registered colormap. Accepts\nwhatever casing the caller has on hand (e.g. a lowercased `<select>`\nvalue) and compares against the canonical stored name. Prefer this\nover `nv1.colormaps.includes(...)` — it handles the first-letter\ncanonicalization that `addColormap` and the filesystem auto-loader\napply internally.",
+      "returnsDoc": null
     },
     {
       "jsName": "loadAnnotationsJSON",
@@ -1483,11 +1539,13 @@
         {
           "name": "json",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "loadDeferred4DVolumes",
@@ -1498,11 +1556,13 @@
         {
           "name": "id",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": "Volume ID (typically the URL or name)"
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Load all remaining frames for a 4D volume that was opened with limitFrames4D.\nRe-fetches the complete file and replaces the truncated image data."
+      "doc": "Load all remaining frames for a 4D volume that was opened with limitFrames4D.\nRe-fetches the complete file and replaces the truncated image data.",
+      "returnsDoc": null
     },
     {
       "jsName": "loadDocument",
@@ -1513,11 +1573,13 @@
         {
           "name": "source",
           "tsType": "string | File",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "loadDrawing",
@@ -1528,11 +1590,13 @@
         {
           "name": "source",
           "tsType": "string | ImageFromUrlOptions | File",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<boolean>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "loadImage",
@@ -1543,16 +1607,19 @@
         {
           "name": "pathOrFile",
           "tsType": "string | File",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "options",
           "tsType": "Record<string, unknown>",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "loadImgV1",
@@ -1563,26 +1630,31 @@
         {
           "name": "volumeIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": "Index of the volume to convert"
         },
         {
           "name": "isFlipX",
           "tsType": "boolean",
-          "optional": true
+          "optional": true,
+          "doc": "Flip X component (default: false)"
         },
         {
           "name": "isFlipY",
           "tsType": "boolean",
-          "optional": true
+          "optional": true,
+          "doc": "Flip Y component (default: false)"
         },
         {
           "name": "isFlipZ",
           "tsType": "boolean",
-          "optional": true
+          "optional": true,
+          "doc": "Flip Z component (default: false)"
         }
       ],
       "returns": "Promise<boolean>",
-      "doc": "Convert a float32 3-frame volume to V1 (eigenvector) RGBA representation.\nFor formats like AFNI that lack NIfTI intent codes, this provides explicit\nconversion of vector field data (dim4=3, float32) to sign-encoded RGBA."
+      "doc": "Convert a float32 3-frame volume to V1 (eigenvector) RGBA representation.\nFor formats like AFNI that lack NIfTI intent codes, this provides explicit\nconversion of vector field data (dim4=3, float32) to sign-encoded RGBA.",
+      "returnsDoc": null
     },
     {
       "jsName": "loadMatcap",
@@ -1593,11 +1665,13 @@
         {
           "name": "matcapName",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "loadMeshes",
@@ -1608,11 +1682,13 @@
         {
           "name": "meshes",
           "tsType": "MeshFromUrlOptions | MeshFromUrlOptions[]",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<this>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "loadVolumes",
@@ -1623,11 +1699,13 @@
         {
           "name": "volumes",
           "tsType": "ImageFromUrlOptions | ImageFromUrlOptions[]",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<this>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "moveCrosshairInVox",
@@ -1638,21 +1716,25 @@
         {
           "name": "di",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "dj",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "dk",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "moveVolumeDown",
@@ -1663,11 +1745,13 @@
         {
           "name": "volumeIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": "Index of the volume to move"
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Move a volume down one index position in the stack of loaded volumes (toward the background)."
+      "doc": "Move a volume down one index position in the stack of loaded volumes (toward the background).",
+      "returnsDoc": null
     },
     {
       "jsName": "moveVolumeToBottom",
@@ -1678,11 +1762,13 @@
         {
           "name": "volumeIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": "Index of the volume to move"
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Move a volume to the bottom position in the stack of loaded volumes (index 0, background)."
+      "doc": "Move a volume to the bottom position in the stack of loaded volumes (index 0, background).",
+      "returnsDoc": null
     },
     {
       "jsName": "moveVolumeToTop",
@@ -1693,11 +1779,13 @@
         {
           "name": "volumeIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": "Index of the volume to move"
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Move a volume to the top position in the stack of loaded volumes (last index, top layer)."
+      "doc": "Move a volume to the top position in the stack of loaded volumes (last index, top layer).",
+      "returnsDoc": null
     },
     {
       "jsName": "moveVolumeUp",
@@ -1708,11 +1796,13 @@
         {
           "name": "volumeIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": "Index of the volume to move"
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Move a volume up one index position in the stack of loaded volumes (toward the top layer)."
+      "doc": "Move a volume up one index position in the stack of loaded volumes (toward the top layer).",
+      "returnsDoc": null
     },
     {
       "jsName": "recalculateCalMinMax",
@@ -1723,16 +1813,19 @@
         {
           "name": "volumeIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "frame",
           "tsType": "number | undefined",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).\nUpdates the volume's calibration range and triggers a GPU update."
+      "doc": "Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).\nUpdates the volume's calibration range and triggers a GPU update.",
+      "returnsDoc": null
     },
     {
       "jsName": "refreshDrawing",
@@ -1741,7 +1834,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": "Mark the drawing texture as dirty and schedule a redraw.\nThe expensive bitmap→RGBA conversion and GPU upload are deferred to\nthe next animation frame, so rapid pointermove events only pay the\ncost once per frame."
+      "doc": "Mark the drawing texture as dirty and schedule a redraw.\nThe expensive bitmap→RGBA conversion and GPU upload are deferred to\nthe next animation frame, so rapid pointermove events only pay the\ncost once per frame.",
+      "returnsDoc": null
     },
     {
       "jsName": "registerVolumeTransform",
@@ -1752,11 +1846,13 @@
         {
           "name": "transform",
           "tsType": "VolumeTransform",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": "Register an external volume transform at runtime.\nExternal transforms manage their own Web Worker execution internally."
+      "doc": "Register an external volume transform at runtime.\nExternal transforms manage their own Web Worker execution internally.",
+      "returnsDoc": null
     },
     {
       "jsName": "reinitializeView",
@@ -1767,11 +1863,13 @@
         {
           "name": "options",
           "tsType": "ReinitializeOptions",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<boolean>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "removeAllMeshes",
@@ -1780,7 +1878,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "Promise<void>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "removeAllVolumes",
@@ -1789,7 +1888,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "Promise<void>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "removeAnnotation",
@@ -1800,11 +1900,13 @@
         {
           "name": "id",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "removeMesh",
@@ -1815,11 +1917,13 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "removeMeshLayer",
@@ -1830,16 +1934,19 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "layerIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<this>",
-      "doc": "Remove a scalar overlay layer from a mesh."
+      "doc": "Remove a scalar overlay layer from a mesh.",
+      "returnsDoc": null
     },
     {
       "jsName": "resize",
@@ -1848,7 +1955,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "saveBitmap",
@@ -1859,16 +1967,19 @@
         {
           "name": "filename",
           "tsType": "string",
-          "optional": true
+          "optional": true,
+          "doc": null
         },
         {
           "name": "quality",
           "tsType": "number",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<boolean>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "saveDocument",
@@ -1879,11 +1990,13 @@
         {
           "name": "filename",
           "tsType": "string",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "saveDrawing",
@@ -1894,11 +2007,13 @@
         {
           "name": "filename",
           "tsType": "string",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<boolean | Uint8Array>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "saveMesh",
@@ -1909,21 +2024,25 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "filename",
           "tsType": "string",
-          "optional": true
+          "optional": true,
+          "doc": null
         },
         {
           "name": "options",
           "tsType": "WriteOptions | undefined",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "saveVolume",
@@ -1934,11 +2053,13 @@
         {
           "name": "options",
           "tsType": "SaveVolumeOptions",
-          "optional": true
+          "optional": true,
+          "doc": "configuration object with the following fields:\n- `filename`: name of the NIfTI image to create. If empty, returns data only.\n- `isSaveDrawing`: whether to save the drawing layer or the background image\n- `volumeByIndex`: which image layer to save (0 for background)"
         }
       ],
       "returns": "Promise<boolean | Uint8Array>",
-      "doc": "Save voxel-based image to disk."
+      "doc": "Save voxel-based image to disk.",
+      "returnsDoc": "`true` if successful when writing to disk, or a `Uint8Array` if exported as binary data"
     },
     {
       "jsName": "selectAnnotation",
@@ -1949,11 +2070,13 @@
         {
           "name": "id",
           "tsType": "string | null",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "serializeDocument",
@@ -1962,7 +2085,8 @@
       "returnsValue": true,
       "params": [],
       "returns": "Uint8Array",
-      "doc": "Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array)."
+      "doc": "Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array).",
+      "returnsDoc": null
     },
     {
       "jsName": "setBounds",
@@ -1973,11 +2097,13 @@
         {
           "name": "bounds",
           "tsType": "[number, number, number, number]",
-          "optional": false
+          "optional": false,
+          "doc": "[x1, y1, x2, y2] in normalized (0-1) coordinates.\n\nExample:\nnv.setBounds([0,0,0.5,0.5])   // bottom-left quarter\nnv.setBounds([0.5,0.5,1,1])   // top-right quarter"
         }
       ],
       "returns": "void",
-      "doc": "Update the drawing bounds for this Niivue instance.\nCoordinates use y=0 at bottom, y=1 at top (GL convention)."
+      "doc": "Update the drawing bounds for this Niivue instance.\nCoordinates use y=0 at bottom, y=1 at top (GL convention).",
+      "returnsDoc": null
     },
     {
       "jsName": "setClipPlane",
@@ -1988,11 +2114,13 @@
         {
           "name": "depthAzimuthElevation",
           "tsType": "number[]",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "setClipPlaneDepthAziElev",
@@ -2003,26 +2131,31 @@
         {
           "name": "depth",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "azimuth",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "elevation",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "clipPlaneIndex",
           "tsType": "number",
-          "optional": true
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "setClipPlanes",
@@ -2033,11 +2166,13 @@
         {
           "name": "depthAziElevs",
           "tsType": "number[][]",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "setColormapLabel",
@@ -2048,16 +2183,19 @@
         {
           "name": "volumeIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": "Index of the volume to apply the label colormap to"
         },
         {
           "name": "cmap",
           "tsType": "ColorMap | null",
-          "optional": false
+          "optional": false,
+          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays,\n  or null to remove the label colormap"
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Set a label colormap on a volume (e.g., atlas/parcellation).\nConverts the ColorMap definition to an LUT and attaches it to the volume.\nWhen set, the orient shader uses nearest-neighbor label lookup instead of\ncontinuous colormap interpolation, and locationChange events include label names."
+      "doc": "Set a label colormap on a volume (e.g., atlas/parcellation).\nConverts the ColorMap definition to an LUT and attaches it to the volume.\nWhen set, the orient shader uses nearest-neighbor label lookup instead of\ncontinuous colormap interpolation, and locationChange events include label names.",
+      "returnsDoc": null
     },
     {
       "jsName": "setColormapLabelFromUrl",
@@ -2068,16 +2206,19 @@
         {
           "name": "volumeIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": "Index of the volume to apply the label colormap to"
         },
         {
           "name": "url",
           "tsType": "string | File",
-          "optional": false
+          "optional": false,
+          "doc": "URL string or File object pointing to a colormap JSON"
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Fetch a label colormap JSON from a URL or File and apply it to a volume.\nThe JSON should contain R, G, B arrays and optional labels/I arrays."
+      "doc": "Fetch a label colormap JSON from a URL or File and apply it to a volume.\nThe JSON should contain R, G, B arrays and optional labels/I arrays.",
+      "returnsDoc": null
     },
     {
       "jsName": "setConnectomeOptions",
@@ -2088,16 +2229,19 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "options",
           "tsType": "Partial<NVConnectomeOptions>",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Update connectome extrusion/display options and re-extrude."
+      "doc": "Update connectome extrusion/display options and re-extrude.",
+      "returnsDoc": null
     },
     {
       "jsName": "setCrosshairPos",
@@ -2108,11 +2252,13 @@
         {
           "name": "pos",
           "tsType": "[number, number, number]",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "setDragMode",
@@ -2123,11 +2269,13 @@
         {
           "name": "mode",
           "tsType": "string | number",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "setFont",
@@ -2138,11 +2286,13 @@
         {
           "name": "font",
           "tsType": "NVFontData",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<boolean>",
-      "doc": "Swap the active font atlas. The font is infrastructure-level configuration\n(GPU-owned atlas texture + metrics map), so switching requires a full view\nrebuild — use this method instead of mutating `opts.font` directly."
+      "doc": "Swap the active font atlas. The font is infrastructure-level configuration\n(GPU-owned atlas texture + metrics map), so switching requires a full view\nrebuild — use this method instead of mutating `opts.font` directly.",
+      "returnsDoc": null
     },
     {
       "jsName": "setFontFromUrl",
@@ -2153,11 +2303,13 @@
         {
           "name": "urls",
           "tsType": "{ atlas: string; metrics: string; }",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<boolean>",
-      "doc": "Fetch an MSDF font atlas (PNG + JSON metrics pair) from URLs and swap\nit in as the active font. Useful for loading fonts that are not bundled\nwith the library (e.g. the community atlases at\nhttps://github.com/niivue/fonts). The PNG URL is stored verbatim and\nused as the GPU atlas texture source.\n\nOn failure (metrics fetch, view rebuild, or atlas texture upload)\nthe previous font is restored so the view isn't left half-initialized.\nThe original error is re-thrown after recovery."
+      "doc": "Fetch an MSDF font atlas (PNG + JSON metrics pair) from URLs and swap\nit in as the active font. Useful for loading fonts that are not bundled\nwith the library (e.g. the community atlases at\nhttps://github.com/niivue/fonts). The PNG URL is stored verbatim and\nused as the GPU atlas texture source.\n\nOn failure (metrics fetch, view rebuild, or atlas texture upload)\nthe previous font is restored so the view isn't left half-initialized.\nThe original error is re-thrown after recovery.",
+      "returnsDoc": null
     },
     {
       "jsName": "setFrame4D",
@@ -2168,16 +2320,19 @@
         {
           "name": "id",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": "Volume ID (typically the URL or name)"
         },
         {
           "name": "frame",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": "Frame index (0-based, clamped to valid range)"
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Set the current 4D frame for a volume."
+      "doc": "Set the current 4D frame for a volume.",
+      "returnsDoc": null
     },
     {
       "jsName": "setMesh",
@@ -2188,16 +2343,19 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "options",
           "tsType": "MeshUpdate",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Update display properties of a loaded mesh.\nAccepts any subset of mesh display options (opacity, shaderType, color, etc.)\nand triggers a single GPU update."
+      "doc": "Update display properties of a loaded mesh.\nAccepts any subset of mesh display options (opacity, shaderType, color, etc.)\nand triggers a single GPU update.",
+      "returnsDoc": null
     },
     {
       "jsName": "setMeshLayerFrame4D",
@@ -2208,21 +2366,25 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "layerIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "frame",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Set the current 4D frame for a mesh layer."
+      "doc": "Set the current 4D frame for a mesh layer.",
+      "returnsDoc": null
     },
     {
       "jsName": "setMeshLayerProperty",
@@ -2233,21 +2395,25 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "layerIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "options",
           "tsType": "Partial<NVMeshLayer>",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).\nTriggers recompositing and GPU update."
+      "doc": "Update properties of a mesh layer (colormap, cal_min, cal_max, opacity, etc.).\nTriggers recompositing and GPU update.",
+      "returnsDoc": null
     },
     {
       "jsName": "setModulationImage",
@@ -2258,16 +2424,19 @@
         {
           "name": "targetId",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": "ID of the volume to modulate"
         },
         {
           "name": "modulatorId",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": "ID of the volume providing modulation (empty string to clear)"
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Set a modulation image for a target volume.\nThe modulator's intensity scales the target volume's brightness and opacity."
+      "doc": "Set a modulation image for a target volume.\nThe modulator's intensity scales the target volume's brightness and opacity.",
+      "returnsDoc": null
     },
     {
       "jsName": "setTractOptions",
@@ -2278,16 +2447,19 @@
         {
           "name": "meshIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "options",
           "tsType": "Partial<NVTractOptions>",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Update tract tessellation/display options and re-tessellate."
+      "doc": "Update tract tessellation/display options and re-tessellate.",
+      "returnsDoc": null
     },
     {
       "jsName": "setVolume",
@@ -2298,16 +2470,19 @@
         {
           "name": "volumeIndex",
           "tsType": "number",
-          "optional": false
+          "optional": false,
+          "doc": null
         },
         {
           "name": "options",
           "tsType": "VolumeUpdate",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Update display properties of a loaded volume.\nAccepts any subset of volume display options (colormap, opacity, cal_min, etc.)\nand triggers a single GPU update."
+      "doc": "Update display properties of a loaded volume.\nAccepts any subset of volume display options (colormap, opacity, cal_min, etc.)\nand triggers a single GPU update.",
+      "returnsDoc": null
     },
     {
       "jsName": "updateGLVolume",
@@ -2316,7 +2491,8 @@
       "returnsValue": false,
       "params": [],
       "returns": "Promise<void>",
-      "doc": null
+      "doc": null,
+      "returnsDoc": null
     },
     {
       "jsName": "useLoader",
@@ -2327,21 +2503,25 @@
         {
           "name": "converter",
           "tsType": "(buffer: ArrayBuffer) => ArrayBuffer | Uint8Array | Promise<ArrayBuffer | Uint8Array>",
-          "optional": false
+          "optional": false,
+          "doc": "function that converts from the source format to the target format"
         },
         {
           "name": "fromExt",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": "source file extension without dot (e.g. 'vox', 'glb')"
         },
         {
           "name": "toExt",
           "tsType": "string",
-          "optional": false
+          "optional": false,
+          "doc": "target format extension without dot: 'nii' for volumes, 'mz3' for meshes"
         }
       ],
       "returns": "void",
-      "doc": "Register an external format loader.\nThe converter function receives raw file bytes and returns bytes in a known format."
+      "doc": "Register an external format loader.\nThe converter function receives raw file bytes and returns bytes in a known format.",
+      "returnsDoc": null
     },
     {
       "jsName": "vox2frac",
@@ -2352,11 +2532,13 @@
         {
           "name": "vox",
           "tsType": "[number, number, number]",
-          "optional": false
+          "optional": false,
+          "doc": null
         }
       ],
       "returns": "[number, number, number]",
-      "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion."
+      "doc": "Convert RAS voxel coordinates to scene fraction [0,1].\nUses the background volume's matRAS for the vox→mm conversion.",
+      "returnsDoc": null
     }
   ],
   "events": [

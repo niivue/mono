@@ -31,6 +31,7 @@ The remaining notebooks are first-pass ports of selected
 | `22_vox_thumbnail.ipynb` | `vox.thumbnail.html` | Volume thumbnail loading and visibility controls |
 | `23_ext_imgproc.ipynb` | `imgproc.html` | `@niivue/nv-ext-image-processing` transforms (otsu, removeHaze, conform, connectedLabel) via `nv.apply_image_transform` |
 | `24_ext_drawing.ipynb` | `drawing.html` | `@niivue/nv-ext-drawing` interpolation: draw a few slices, then fill the gaps with `nv.interpolate_drawing_slices` (intensity-guided optional) |
+| `25_save_document.ipynb` | (`nv-ext-save-html` equivalent) | Export the current scene as a portable `.nvd` document with `nv.save_document(filename)` (browser download) or `await nv.serialize_document()` (raw bytes for programmatic use) |
 
 The ports use the public GitHub Pages asset mirror:
 

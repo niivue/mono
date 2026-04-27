@@ -417,23 +417,40 @@ hover preview, no SAB) and would be the next small B.2.next ship.
 
 ### B.3. `nv-ext-save-html` (deferred — niivue-bundle bootstrap)
 
-### B.3. `nv-ext-save-html` (deferred — niivue-bundle bootstrap)
+### B.3. Scene export (done — chose `.nvd` over self-contained `.html`)
 
-`saveHTML(nv, filename, {niivueBundleSource})` requires the caller to
-provide the niivue ESM source as a string. Our `widget.js` already
-has niivue inlined, but accessing the source from inside the running
-bundle is awkward (can't `fetch('./widget.js')` — anywidget serves it
-from a `blob:` URL with no hierarchical base, the same constraint
-that forced the asset-inlining hack). Options:
+Shipped: [examples/25_save_document.ipynb](examples/25_save_document.ipynb)
+demonstrating two export paths backed by the existing codegen output:
 
-1. Add a second codegen output `niivue-bundle.txt` and ship it in
-   the wheel, then read it via `importlib.resources` and pass to JS.
-2. Document `nv.save_document(...)` (already in the codegen) as the
-   Jupyter-native equivalent — emits an `.nvd` file that opens in
-   any niivue viewer.
+- `nv.save_document(filename)` (fire-and-forget) — triggers a browser
+  download of an `.nvd` file (CBOR-encoded NVD document). Opens in
+  any niivue viewer including [niivue.github.io](https://niivue.github.io/niivue/).
+- `await nv.serialize_document()` — returns the raw bytes for
+  programmatic use (write to disk, upload to object storage, etc.).
 
-Option 2 is the path of least resistance and matches the notebook
-workflow; option 1 is only worth doing if a user explicitly asks.
+**Why we did not bundle `@niivue/nv-ext-save-html`:**
+`saveHTML(nv, filename, {niivueBundleSource})` requires a
+self-contained niivue ESM (the `apps/demo-ext-save-html/public/niivue-standalone.js`
+artifact is ~1.2 MB) bundled in for the `import()` machinery in the
+saved HTML to work. Shipping it inside `widget.js` would roughly
+double the wheel size to ~2.5 MB; shipping it as a separate static
+asset would still add 1.2 MB to the install and complicate the
+anywidget asset-loading path (anywidget serves the widget JS via a
+`blob:` URL with no hierarchical base, so a relative `fetch()` of a
+sibling asset doesn't resolve cleanly). For a Jupyter/data-science
+audience, `.nvd` is the better artifact — it's KB rather than MB, it
+opens in any niivue viewer, and the kernel/notebook already provides
+the share-with-someone affordance that `.html` solves for browser
+apps.
+
+If a user explicitly asks for `.html` export later, the right design
+is to ship `niivue-bundle.js` as a separate static asset (rather than
+inlining it into `widget.js`) so it can be gitignored independently
+and rebuilt on demand. The codegen pattern would mirror Phase B.1 —
+a second `Bun.build` pass with a tiny `import NiiVueGPU from '@niivue/niivue'; export default NiiVueGPU`
+entry — and JS-side widget code would load it via `importlib.resources`
+on Python and pass the source string to `saveHTML` through a
+composite command.
 
 ### C. Binary buffer ingress (numpy → volume)
 

@@ -38,6 +38,15 @@
       "options": { "cwd": "{projectRoot}" },
       "inputs": ["typescript"],
       "outputs": ["{projectRoot}/coverage"]
+    },
+    "smoke": {
+      "command": "bun run scripts/smoke-test-packed.ts",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["build"],
+      "inputs": [
+        "{projectRoot}/scripts/smoke-test-packed.ts",
+        "{projectRoot}/package.json"
+      ]
     }
   }
 }

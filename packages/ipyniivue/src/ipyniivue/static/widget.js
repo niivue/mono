@@ -31905,7 +31905,8 @@ var createState = () => {
     commandQueue: Promise.resolve(),
     lastInboxSeq: 0,
     outboxSeq: 0,
-    hasAttached: false
+    hasAttached: false,
+    canvas: null
   };
 };
 var stateKey = (model) => {
@@ -32300,10 +32301,14 @@ async function render({ model, el: el2 }) {
     console.error("ipyniivue: render called without an initialized NiiVue");
     return;
   }
-  const canvas = document.createElement("canvas");
-  canvas.style.cssText = "width:100%;height:600px;display:block";
-  canvas.width = 640;
-  canvas.height = 480;
+  let canvas = state.canvas;
+  if (!canvas) {
+    canvas = document.createElement("canvas");
+    canvas.style.cssText = "width:100%;height:600px;display:block";
+    canvas.width = 640;
+    canvas.height = 480;
+    state.canvas = canvas;
+  }
   el2.appendChild(canvas);
   await new Promise((r) => requestAnimationFrame(() => r()));
   if (!state.hasAttached) {

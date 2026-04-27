@@ -15,13 +15,15 @@ import traitlets
 
 # Set of event names that JS may dispatch to Python. The
 # hand-written `widget.NiiVue.on()` method validates against this.
+# Events that the JS template intentionally suppresses (high-frequency
+# layout ticks like `canvasResize`) are filtered out so subscribing to
+# them raises instead of silently never firing.
 NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
     "angleCompleted",
     "annotationAdded",
     "annotationChanged",
     "annotationRemoved",
     "azimuthElevationChange",
-    "canvasResize",
     "change",
     "clipPlaneChange",
     "colormapAdded",
@@ -38,8 +40,6 @@ NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
     "penValueChanged",
     "pointerUp",
     "sliceTypeChange",
-    "viewAttached",
-    "viewDestroyed",
     "volumeLoaded",
     "volumeOrderChanged",
     "volumeRemoved",
@@ -246,9 +246,6 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
 
     def attach_to(self, id: Any, is_anti_alias: Any = None) -> None:
         self.send({"cmd": "attachTo", "args": [id, is_anti_alias]})
-
-    def attach_to_canvas(self, canvas: Any, is_anti_alias: Any = None) -> None:
-        self.send({"cmd": "attachToCanvas", "args": [canvas, is_anti_alias]})
 
     def broadcast_to(self, targets: Any = None, opts: Any = None) -> None:
         """Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others.

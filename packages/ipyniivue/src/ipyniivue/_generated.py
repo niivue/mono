@@ -181,10 +181,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         self.send({"cmd": "addAnnotation", "args": [annotation]})
 
     async def add_colormap(self, name: Any, cmap: Any) -> Any:
-        """Register a colormap by name so it becomes available to
+        """Register a colormap by name so it becomes available to `setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh layers, and so on.
 
-        `setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh
-        layers, and so on. Use this to add user-defined LUTs at runtime.
+        Use this to add user-defined LUTs at runtime.
         Re-registering an existing name replaces the entry. Does not trigger a
         redraw — the colormap is inert until a volume references it.
 
@@ -206,9 +205,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         return await self._request("addColormap", [name, cmap])
 
     def add_colormap_from_url(self, url: Any, name: Any = None) -> None:
-        """Fetch a colormap JSON (`{ R, G, B, A?, I? }`) from a URL or `File` and
+        """Fetch a colormap JSON (`{ R, G, B, A?, I? }`) from a URL or `File` and register it under `name`.
 
-        register it under `name`. When `name` is omitted, it is derived from
+        When `name` is omitted, it is derived from
         the source filename; callers passing an un-nameable source (e.g.
         `?query-only`) should supply `name` explicitly — an empty derived
         name throws.
@@ -369,8 +368,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         return await self._request("getVolumeTransformInfo", [name])
 
     async def has_colormap(self, name: Any) -> Any:
-        """Case-insensitive existence check for a registered colormap. Accepts
+        """Case-insensitive existence check for a registered colormap.
 
+        Accepts
         whatever casing the caller has on hand (e.g. a lowercased `<select>`
         value) and compares against the canonical stored name. Prefer this
         over `nv1.colormaps.includes(...)` — it handles the first-letter
@@ -661,8 +661,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         self.send({"cmd": "setDragMode", "args": [mode]})
 
     async def set_font(self, font: Any) -> Any:
-        """Swap the active font atlas. The font is infrastructure-level configuration
+        """Swap the active font atlas.
 
+        The font is infrastructure-level configuration
         (GPU-owned atlas texture + metrics map), so switching requires a full view
         rebuild — use this method instead of mutating `opts.font` directly.
 
@@ -677,9 +678,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         return await self._request("setFont", [font])
 
     async def set_font_from_url(self, urls: Any) -> Any:
-        """Fetch an MSDF font atlas (PNG + JSON metrics pair) from URLs and swap
+        """Fetch an MSDF font atlas (PNG + JSON metrics pair) from URLs and swap it in as the active font.
 
-        it in as the active font. Useful for loading fonts that are not bundled
+        Useful for loading fonts that are not bundled
         with the library (e.g. the community atlases at
         https://github.com/niivue/fonts). The PNG URL is stored verbatim and
         used as the GPU atlas texture source.

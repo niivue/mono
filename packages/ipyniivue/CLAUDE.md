@@ -68,6 +68,15 @@ classifies every public member of `NVControlBase`, and emits:
 Codegen depends on the niivue package being built first (declared in
 [project.json](project.json) `dependsOn`).
 
+Codegen extracts JSDoc `@param` and `@returns` tags from
+`NVControlBase.ts` and emits NumPy-style docstrings (Parameters /
+Returns sections) on the generated Python methods. Hand-written
+wrappers in [widget.py](src/ipyniivue/widget.py) follow the same
+format, including doctest-style `>>>` examples. Codegen-emitted
+methods keep TS type strings as-is in the docstring (`string`,
+`number`, `ColorMap | null`); hand-written wrappers use Pythonic
+types (`str`, `bytes`, `pathlib.Path`). This split is intentional.
+
 After Bun.build produces the bundle, codegen rewrites every
 `new URL("assets/X", import.meta.url)` reference into a base64 `data:`
 URL inlined into `widget.js`. anywidget serves the ESM via a `blob:`
@@ -138,6 +147,12 @@ the canvas mount promise before touching NiiVue, and async NiiVue
 methods (e.g. `loadVolumes`) are awaited inside the queue so a
 later `saveBitmap` runs only after the load completes.
 
+A synced `_msg_inbox_ack` Int trait pairs with `_msg_inbox`: JS
+bumps it to the highest seq it has drained, and Python observes it
+to prune `_msg_inbox` items with `seq <= ack`. Without this trim,
+base64 buffer payloads stayed pinned in trait state until kernel
+restart (a session of five 50 MB loads accumulated ~670 MB).
+
 ### JS → Python responses and events
 
 Use the synced `_msg_outbox` Dict traitlet, **not** `model.send`.
@@ -148,13 +163,18 @@ the trait channel is reliably delivered.
 
 Python's [widget.py](src/ipyniivue/widget.py) observes
 `_msg_outbox` and routes the body into `_dispatch_message`, which
-handles two kinds:
+handles three kinds:
 
 - `kind: "response"` — resolves a `Future` parked in `_pending` by
   `_request(...)`. Used by codegen-emitted async methods and
   `wait_ready`.
 - `kind: "event"` — fans out to callbacks registered via `nv.on(...)`.
   Validated against `NIIVUE_EVENT_NAMES`.
+- `kind: "error"` — surfaces JS-side failures from fire-and-forget
+  buffer commands (e.g. an `add_volume_from_bytes` that NiiVue
+  rejects). Python prints `[ipyniivue] <source>: <message>` to
+  stderr so the failure reason shows up in the kernel log instead
+  of vanishing behind a blank canvas.
 
 `SKIP_EVENT_FORWARDING` in the JS template silences high-frequency
 internal events (`canvasResize`, `viewAttached`, `viewDestroyed`)
@@ -208,7 +228,11 @@ flags, a hardware adapter, or platform-specific configuration.
   `add_volume_from_array`, and the mesh equivalents) — they ride the
   same synced `_msg_inbox` channel as URL loads and do not need a
   `wait_ready` round-trip. `wait_ready` is fine as a mount
-  confirmation for code that genuinely needs it.
+  confirmation for code that genuinely needs it. When a
+  fire-and-forget buffer load fails (bad bytes, unsupported format,
+  NiiVue parse error), the canvas stays blank but Python prints
+  `[ipyniivue] <source>: <message>` to stderr — check the kernel
+  log when a load looks silently dropped.
 - Don't lean on `nv.on(...)` as a control path. Event delivery works
   but is bandwidth-limited; high-frequency events or large payloads
   will make the comm unreliable. Use Python `ipywidgets` controls

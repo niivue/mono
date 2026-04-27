@@ -928,15 +928,28 @@ function emitMethodDocstring(lines: string[], m: MethodDescriptor): void {
   const out: string[] = []
 
   // Summary + extended description from the method-level description.
-  // First line is the summary (NumPy convention); the rest is the extended
-  // body, separated from later sections by a blank line.
-  const descLines = (m.doc ?? '').split('\n')
-  const summary = descLines[0]?.trim() ?? ''
-  const extended = descLines.slice(1).join('\n').trim()
+  // NumPy convention: summary is one line; extended body follows a blank
+  // line; further paragraphs are separated by blank lines.
+  //
+  // JSDoc varies. Some authors wrap a single sentence across hard
+  // newlines (no blank line between them); others put a one-line
+  // summary then continue the description on the next line. We honor
+  // both: the summary is everything up to the first sentence-ending
+  // `[.!?]` followed by whitespace, OR up to the first blank line,
+  // whichever comes first. Internal newlines inside the summary are
+  // collapsed to spaces so it lands on one line in NumPy style.
+  const { summary, extended } = splitSummaryAndBody(m.doc ?? '')
   if (summary) out.push(summary)
-  if (extended) {
-    if (out.length > 0) out.push('')
-    for (const ln of extended.split('\n')) out.push(ln)
+  const extendedParas = extended
+    .split(/\n\s*\n+/)
+    .map((p: string) => p.trim())
+    .filter(Boolean)
+  let firstExtended = true
+  for (const p of extendedParas) {
+    if (out.length > 0 && firstExtended) out.push('')
+    if (!firstExtended) out.push('')
+    firstExtended = false
+    for (const ln of p.split('\n')) out.push(ln)
   }
 
   // Parameters block: emit when any param exists, even without per-param
@@ -983,6 +996,42 @@ function emitMethodDocstring(lines: string[], m: MethodDescriptor): void {
 
 function pyStringEscape(s: string): string {
   return s.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
+}
+
+/**
+ * Split a JSDoc description body into a NumPy-style summary line and
+ * the remaining extended body. Cuts at the earlier of (a) the first
+ * sentence-ending `.` followed by whitespace, or (b) a blank line.
+ * Internal newlines within the summary are collapsed to spaces.
+ *
+ * We restrict the sentence-end match to `.` (not `!` or `?`) because
+ * the TS optional-marker `?` inside code spans (e.g. `{ R, G, B, A?, I? }`)
+ * would otherwise split mid-clause. Authors who want a different split
+ * boundary can add a blank line after the intended summary.
+ *
+ * Decimal points like `1.5` are safe because the next char is a digit,
+ * not whitespace. Common abbreviations (`e.g.`) inside parens followed
+ * by `,` (the niivue convention) likewise don't match `\.\s`.
+ */
+function splitSummaryAndBody(text: string): {
+  summary: string
+  extended: string
+} {
+  const trimmed = text.trim()
+  if (!trimmed) return { summary: '', extended: '' }
+  const blankIdx = trimmed.search(/\n\s*\n/)
+  const sentenceMatch = /\.(?=\s|$)/.exec(trimmed)
+  const sentenceEnd = sentenceMatch
+    ? sentenceMatch.index + sentenceMatch[0].length
+    : -1
+  let cut: number
+  if (blankIdx < 0 && sentenceEnd < 0) cut = trimmed.length
+  else if (blankIdx < 0) cut = sentenceEnd
+  else if (sentenceEnd < 0) cut = blankIdx
+  else cut = Math.min(blankIdx, sentenceEnd)
+  const summary = trimmed.slice(0, cut).replace(/\s*\n\s*/g, ' ').trim()
+  const extended = trimmed.slice(cut).trim()
+  return { summary, extended }
 }
 
 /**

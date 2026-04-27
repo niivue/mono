@@ -29,6 +29,7 @@ The remaining notebooks are first-pass ports of selected
 | `20_freesurfer_clip.ipynb` | `freesurfer.clip.html` | FreeSurfer brainmask and pial mesh with 2D mesh clipping controls |
 | `21_vox_mask.ipynb` | `vox.mask.html` | Background image masking for overlay volumes |
 | `22_vox_thumbnail.ipynb` | `vox.thumbnail.html` | Volume thumbnail loading and visibility controls |
+| `23_ext_imgproc.ipynb` | `imgproc.html` | `@niivue/nv-ext-image-processing` transforms (otsu, removeHaze, conform, connectedLabel) via `nv.apply_image_transform` |
 
 The ports use the public GitHub Pages asset mirror:
 

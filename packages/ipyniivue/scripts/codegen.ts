@@ -59,9 +59,8 @@ function classifyType(t: Type): ClassifyResult {
   const tsText = shortenType(t.getText())
 
   // Unwrap `T | undefined` / `T | null`: the optional wrapper is common
-  // for "value or unset" and we can preserve nullability in traitlets via
-  // .tag(allow_none=True) in the Python emitter (Phase 2.2). For now, take
-  // the non-nullable side.
+  // for "value or unset". Nullability is preserved in the Python emitter
+  // via .tag(allow_none=True). Here we just take the non-nullable side.
   if (t.isUnion()) {
     const nonNullish = t
       .getUnionTypes()
@@ -674,7 +673,7 @@ function extractDoc(node: JSDocableNode): string | null {
 }
 
 // ============================================================
-// Python emitter (Phase 2.2)
+// Python emitter
 // ============================================================
 
 function emitPython(api: ApiDescriptor): string {
@@ -791,10 +790,10 @@ function emitTrait(
 
 function formatTraitlet(t: PyTraitlet): string {
   // Every trait defaults to None and allows None. The JS shim seeds real
-  // values from NiiVue on attach (Phase 2.3), so Python "doesn't know"
-  // until then. This avoids placeholder defaults that may violate trait
-  // constraints (e.g. an empty list failing minlen=4) and matches the
-  // 1b strategy: NiiVue is the single source of truth for defaults.
+  // values from NiiVue on first attach, so Python "doesn't know" until
+  // then. This avoids placeholder defaults that may violate trait
+  // constraints (e.g. an empty list failing minlen=4) and keeps NiiVue
+  // as the single source of truth for defaults.
   switch (t.kind) {
     case 'Bool':
       return 'traitlets.Bool(None, allow_none=True)'
@@ -883,7 +882,7 @@ function methodReturnsValue(returns: string): boolean {
 }
 
 // ============================================================
-// JS shim emitter (Phase 2.3)
+// JS shim emitter
 // ============================================================
 
 /**
@@ -920,6 +919,25 @@ function emitJs(api: ApiDescriptor): string {
     '// nx-ignore-next-line: bundled widget asset, not a Python runtime dependency',
   )
   lines.push(`import NiiVue from '@niivue/niivue'`)
+  lines.push(
+    `import { conform, connectedLabel, otsu, removeHaze } from '@niivue/nv-ext-image-processing'`,
+  )
+  lines.push('')
+  lines.push(
+    '// Image-processing transforms bundled from @niivue/nv-ext-*.',
+  )
+  lines.push(
+    '// Registered with NiiVue in initialize() so Python can apply them',
+  )
+  lines.push(
+    '// via __ext_apply_image_transform without shipping JS.',
+  )
+  lines.push('const IMAGE_PROCESSING_TRANSFORMS = [')
+  lines.push('  conform,')
+  lines.push('  connectedLabel,')
+  lines.push('  otsu,')
+  lines.push('  removeHaze,')
+  lines.push(']')
   lines.push('')
   lines.push('// [jsName, pyName] for read-write reactive properties.')
   lines.push('const PROPS_RW = [')
@@ -978,6 +996,7 @@ function emitJs(api: ApiDescriptor): string {
   )
   lines.push('  return {')
   lines.push('    nv: null,')
+  lines.push('    extContext: null,')
   lines.push('    initializedResolve,')
   lines.push('    initializedPromise,')
   lines.push('    mountedResolve,')
@@ -1097,6 +1116,39 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      if (reqId !== null) respond(true, true)')
   lines.push('      return')
   lines.push('    }')
+  lines.push('    // Composite extension command: apply a bundled transform to')
+  lines.push('    // the volume at args[1], optionally replacing the background.')
+  lines.push('    // Returns { name, elapsed_ms } so Python can show progress.')
+  lines.push('    if (msg.cmd === "__ext_apply_image_transform") {')
+  lines.push('      const args = msg.args || []')
+  lines.push('      const name = args[0]')
+  lines.push('      const volIdx = args[1] ?? 0')
+  lines.push('      const options = args[2] || {}')
+  lines.push('      const replaceBg = !!args[3]')
+  lines.push('      try {')
+  lines.push('        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())')
+  lines.push('        const vol = ctx.volumes[volIdx]')
+  lines.push('        if (!vol) {')
+  lines.push('          if (reqId !== null) respond(false, "no volume at index " + volIdx)')
+  lines.push('          return')
+  lines.push('        }')
+  lines.push('        const t0 = performance.now()')
+  lines.push('        const result = await ctx.applyVolumeTransform(name, vol, options)')
+  lines.push('        const info = state.nv.getVolumeTransformInfo(name)')
+  lines.push('        if (info && info.resultDefaults) {')
+  lines.push('          if (info.resultDefaults.colormap) result.colormap = info.resultDefaults.colormap')
+  lines.push('          if (info.resultDefaults.opacity != null) result.opacity = info.resultDefaults.opacity')
+  lines.push('        }')
+  lines.push('        if (replaceBg) await ctx.removeAllVolumes()')
+  lines.push('        await ctx.addVolume(result)')
+  lines.push('        const elapsedMs = performance.now() - t0')
+  lines.push('        if (reqId !== null) respond(true, { name: name, elapsed_ms: elapsedMs })')
+  lines.push('      } catch (err) {')
+  lines.push('        if (reqId !== null) respond(false, err)')
+  lines.push('        else console.error("ipyniivue: __ext_apply_image_transform threw:", err)')
+  lines.push('      }')
+  lines.push('      return')
+  lines.push('    }')
   lines.push('    const nv = state.nv')
   lines.push('    if (!nv) {')
   lines.push('      respond(false, "NiiVue instance is not initialized")')
@@ -1160,6 +1212,14 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    opts.thumbnail = thumbnailUrl')
   lines.push('  }')
   lines.push('  state.nv = new NiiVue(opts)')
+  lines.push('  // Register bundled image-processing transforms before any')
+  lines.push('  // user command can land. Idempotent on re-register.')
+  lines.push('  for (const transform of IMAGE_PROCESSING_TRANSFORMS) {')
+  lines.push('    try { state.nv.registerVolumeTransform(transform) }')
+  lines.push('    catch (err) {')
+  lines.push('      console.warn("ipyniivue: failed to register " + transform.name + ":", err)')
+  lines.push('    }')
+  lines.push('  }')
   lines.push('  if (state.initializedResolve) {')
   lines.push('    state.initializedResolve()')
   lines.push('    state.initializedResolve = null')
@@ -1209,6 +1269,10 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('      model.off("change:" + pyName, handler)')
   lines.push('    }')
   lines.push('    const nv = state.nv')
+  lines.push('    if (state.extContext && typeof state.extContext.dispose === "function") {')
+  lines.push('      try { state.extContext.dispose() } catch {}')
+  lines.push('    }')
+  lines.push('    state.extContext = null')
   lines.push('    if (nv) {')
   lines.push('      for (const [eventName, handler] of evtListeners) {')
   lines.push('        nv.removeEventListener(eventName, handler)')

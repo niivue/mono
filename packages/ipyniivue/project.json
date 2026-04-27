@@ -6,14 +6,18 @@
     "codegen": {
       "command": "bun run scripts/codegen.ts",
       "options": { "cwd": "{projectRoot}" },
-      "dependsOn": [{ "projects": ["niivue"], "target": "build" }],
+      "dependsOn": [
+        { "projects": ["niivue"], "target": "build" },
+        { "projects": ["nv-ext-image-processing"], "target": "build" }
+      ],
       "inputs": [
         "{projectRoot}/scripts/**/*",
         "{workspaceRoot}/packages/niivue/src/NVControlBase.ts",
         "{workspaceRoot}/packages/niivue/src/NVEvents.ts",
         "{workspaceRoot}/packages/niivue/src/NVTypes.ts",
         "{workspaceRoot}/packages/niivue/src/NVConstants.ts",
-        "{workspaceRoot}/packages/niivue/dist/**/*"
+        "{workspaceRoot}/packages/niivue/dist/**/*",
+        "{workspaceRoot}/packages/nv-ext-image-processing/dist/**/*"
       ],
       "outputs": [
         "{projectRoot}/api.generated.json",

@@ -31533,7 +31533,164 @@ class P extends jg {
   }
 }
 
+// ../nv-ext-image-processing/dist/nv-ext-image-processing.js
+var f2 = '(function(){"use strict";var T=typeof Float32Array<"u"?Float32Array:Array;function B(){var n=new T(16);return T!=Float32Array&&(n[1]=0,n[2]=0,n[3]=0,n[4]=0,n[6]=0,n[7]=0,n[8]=0,n[9]=0,n[11]=0,n[12]=0,n[13]=0,n[14]=0),n[0]=1,n[5]=1,n[10]=1,n[15]=1,n}function q(n,e,t,a,i,r,y,l,s,c,v,u,w,b,h,A){var x=new T(16);return x[0]=n,x[1]=e,x[2]=t,x[3]=a,x[4]=i,x[5]=r,x[6]=y,x[7]=l,x[8]=s,x[9]=c,x[10]=v,x[11]=u,x[12]=w,x[13]=b,x[14]=h,x[15]=A,x}function J(n,e){if(n===e){var t=e[1],a=e[2],i=e[3],r=e[6],y=e[7],l=e[11];n[1]=e[4],n[2]=e[8],n[3]=e[12],n[4]=t,n[6]=e[9],n[7]=e[13],n[8]=a,n[9]=r,n[11]=e[14],n[12]=i,n[13]=y,n[14]=l}else n[0]=e[0],n[1]=e[4],n[2]=e[8],n[3]=e[12],n[4]=e[1],n[5]=e[5],n[6]=e[9],n[7]=e[13],n[8]=e[2],n[9]=e[6],n[10]=e[10],n[11]=e[14],n[12]=e[3],n[13]=e[7],n[14]=e[11],n[15]=e[15];return n}function sn(n,e){var t=e[0],a=e[1],i=e[2],r=e[3],y=e[4],l=e[5],s=e[6],c=e[7],v=e[8],u=e[9],w=e[10],b=e[11],h=e[12],A=e[13],x=e[14],p=e[15],I=t*l-a*y,o=t*s-i*y,f=t*c-r*y,M=a*s-i*l,d=a*c-r*l,P=i*c-r*s,S=v*A-u*h,U=v*x-w*h,F=v*p-b*h,Y=u*x-w*A,g=u*p-b*A,L=w*p-b*x,z=I*L-o*g+f*Y+M*F-d*U+P*S;return z?(z=1/z,n[0]=(l*L-s*g+c*Y)*z,n[1]=(i*g-a*L-r*Y)*z,n[2]=(A*P-x*d+p*M)*z,n[3]=(w*d-u*P-b*M)*z,n[4]=(s*F-y*L-c*U)*z,n[5]=(t*L-i*F+r*U)*z,n[6]=(x*f-h*P-p*o)*z,n[7]=(v*P-w*f+b*o)*z,n[8]=(y*g-l*F+c*S)*z,n[9]=(a*F-t*g-r*S)*z,n[10]=(h*d-A*f+p*I)*z,n[11]=(u*f-v*d-b*I)*z,n[12]=(l*U-y*Y-s*S)*z,n[13]=(t*Y-a*U+i*S)*z,n[14]=(A*o-h*M-x*I)*z,n[15]=(v*M-u*o+w*I)*z,n):null}function wn(n,e,t){var a=e[0],i=e[1],r=e[2],y=e[3],l=e[4],s=e[5],c=e[6],v=e[7],u=e[8],w=e[9],b=e[10],h=e[11],A=e[12],x=e[13],p=e[14],I=e[15],o=t[0],f=t[1],M=t[2],d=t[3];return n[0]=o*a+f*l+M*u+d*A,n[1]=o*i+f*s+M*w+d*x,n[2]=o*r+f*c+M*b+d*p,n[3]=o*y+f*v+M*h+d*I,o=t[4],f=t[5],M=t[6],d=t[7],n[4]=o*a+f*l+M*u+d*A,n[5]=o*i+f*s+M*w+d*x,n[6]=o*r+f*c+M*b+d*p,n[7]=o*y+f*v+M*h+d*I,o=t[8],f=t[9],M=t[10],d=t[11],n[8]=o*a+f*l+M*u+d*A,n[9]=o*i+f*s+M*w+d*x,n[10]=o*r+f*c+M*b+d*p,n[11]=o*y+f*v+M*h+d*I,o=t[12],f=t[13],M=t[14],d=t[15],n[12]=o*a+f*l+M*u+d*A,n[13]=o*i+f*s+M*w+d*x,n[14]=o*r+f*c+M*b+d*p,n[15]=o*y+f*v+M*h+d*I,n}function Mn(n,e,t){var a=t[0],i=t[1],r=t[2];return n[0]=e[0]*a,n[1]=e[1]*a,n[2]=e[2]*a,n[3]=e[3]*a,n[4]=e[4]*i,n[5]=e[5]*i,n[6]=e[6]*i,n[7]=e[7]*i,n[8]=e[8]*r,n[9]=e[9]*r,n[10]=e[10]*r,n[11]=e[11]*r,n[12]=e[12],n[13]=e[13],n[14]=e[14],n[15]=e[15],n}var hn=wn;function on(){var n=new T(3);return T!=Float32Array&&(n[0]=0,n[1]=0,n[2]=0),n}function K(n,e,t){var a=new T(3);return a[0]=n,a[1]=e,a[2]=t,a}function In(n,e,t){return n[0]=e[0]-t[0],n[1]=e[1]-t[1],n[2]=e[2]-t[2],n}(function(){var n=on();return function(e,t,a,i,r,y){var l,s;for(t||(t=3),a||(a=0),i?s=Math.min(i*t+a,e.length):s=e.length,l=a;l<s;l+=t)n[0]=e[l],n[1]=e[l+1],n[2]=e[l+2],r(n,n,y),e[l]=n[0],e[l+1]=n[1],e[l+2]=n[2];return e}})();function cn(){var n=new T(4);return T!=Float32Array&&(n[0]=0,n[1]=0,n[2]=0,n[3]=0),n}function Q(n,e,t,a){var i=new T(4);return i[0]=n,i[1]=e,i[2]=t,i[3]=a,i}function pn(n,e,t){return n[0]=e[0]*t,n[1]=e[1]*t,n[2]=e[2]*t,n[3]=e[3]*t,n}function fn(n,e,t){var a=e[0],i=e[1],r=e[2],y=e[3];return n[0]=t[0]*a+t[4]*i+t[8]*r+t[12]*y,n[1]=t[1]*a+t[5]*i+t[9]*r+t[13]*y,n[2]=t[2]*a+t[6]*i+t[10]*r+t[14]*y,n[3]=t[3]*a+t[7]*i+t[11]*r+t[15]*y,n}(function(){var n=cn();return function(e,t,a,i,r,y){var l,s;for(t||(t=4),a||(a=0),i?s=Math.min(i*t+a,e.length):s=e.length,l=a;l<s;l+=t)n[0]=e[l],n[1]=e[l+1],n[2]=e[l+2],n[3]=e[l+3],r(n,n,y),e[l]=n[0],e[l+1]=n[1],e[l+2]=n[2],e[l+3]=n[3];return e}})();function dn(n,e,t=256,a=1,i=!1){const r=e,y=q(r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8],r[9],r[10],r[11],r[12],r[13],r[14],r[15]),l=Q(n[1]/2,n[2]/2,n[3]/2,1),s=cn(),c=B();J(c,y),fn(s,l,c);const v=K(s[0],s[1],s[2]),u=K(a,a,a);let w=q(-1,0,0,0,0,0,1,0,0,-1,0,0,0,0,0,1);i&&(w=q(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1)),J(w,w);const b=Q(t,t,t,1),h=B();Mn(h,w,u);const A=Q(b[0],b[1],b[2],1);fn(A,A,h),pn(A,A,.5);const x=on();In(x,v,K(A[0],A[1],A[2]));const p=B();J(p,h),p[3]=x[0],p[7]=x[1],p[11]=x[2];const I=B();sn(I,p);const o=B();hn(o,y,I);const f=B();return sn(f,o),[p,o,f]}function bn(n,e){if(!(n instanceof ArrayBuffer))return n;switch(e){case 2:return new Uint8Array(n);case 4:return new Int16Array(n);case 8:return new Int32Array(n);case 16:return new Float32Array(n);case 64:return new Float64Array(n);case 256:return new Int8Array(n);case 512:return new Uint16Array(n);case 768:return new Uint32Array(n);default:return new Float32Array(n)}}function Fn(n,e,t,a,i){const r=n.length,y=new Uint8Array(r);for(let l=0;l<r;l++){let s=e+i*(n[l]-a);s=Math.max(s,e),s=Math.min(s,t),y[l]=s}return y}function Un(n,e,t,a,i){const r=n.length,y=new Float32Array(r);for(let l=0;l<r;l++){let s=e+i*(n[l]-a);s=Math.max(s,e),s=Math.min(s,t),y[l]=s}return y}function yn(n,e,t,a,i,r,y,l,s,c,v,u=.999){let w=y,b=l;if(n===2)return[w,1];const h=e.length,A=new Float32Array(h);for(let U=0;U<h;U++)A[U]=e[U]*t+a;if(v===0&&u===1)return[w,1];let x=0;for(let U=0;U<h;U++)Math.abs(A[U])>=1e-15&&x++;const p=1e3,I=(b-w)/p,o=new Array(p).fill(0);for(let U=0;U<h;U++){let F=Math.floor((A[U]-w)/I);F=Math.min(F,p-1),o[F]++}const f=new Array(p).fill(0);f[0]=o[0];for(let U=1;U<p;U++)f[U]=f[U-1]+o[U];let M=Math.floor(v*h),d=0;for(;d<p&&!(f[d]>=M);)d++;const P=w;for(w=d*I+P,M=h-Math.floor((1-u)*x),d=0;d<p-1&&!(f[d+1]>=M);)d++;b=d*I+P;let S=1;return w!==b&&(S=(c-s)/(b-w)),[w,S]}function _n(n){const{datatypeCode:e,dims:t,affine:a,sclSlope:i,sclInter:r,toRAS:y=!1,isLinear:l=!0,asFloat32:s=!1,isRobustMinMax:c=!1}=n,v=bn(n.img,e),u=256,w=1,[b,,h]=dn(t,a,u,w,y),A=u*u*u,x=new Float32Array(A),p=t[1]*t[2]*t[3],I=new Float32Array(p);for(let _=0;_<p;_++)I[_]=v[_]*i+r;let o=1/0,f=-1/0;for(let _=0;_<p;_++){const C=I[_];C<o&&(o=C),C>f&&(f=C)}const M=t[1],d=t[2],P=t[3],S=M*d;function U(_,C,j){return _+C*M+j*S}const F=h;let Y=-1;if(l)for(let _=0;_<u;_++)for(let C=0;C<u;C++){const j=C*F[1]+_*F[2]+F[3],en=C*F[5]+_*F[6]+F[7],tn=C*F[9]+_*F[10]+F[11];for(let N=0;N<u;N++){const E=N*F[0]+j,Z=N*F[4]+en,k=N*F[8]+tn,rn=Math.floor(E),ln=Math.floor(Z),an=Math.floor(k);if(Y++,rn<0||ln<0||an<0)continue;const gn=Math.ceil(E),$n=Math.ceil(Z),En=Math.ceil(k);if(gn>=M||$n>=d||En>=P)continue;const O=E-rn,X=Z-ln,m=k-an,D=1-O,G=1-X,H=1-m,$=U(rn,ln,an);let R=0;R+=I[$]*D*G*H,R+=I[$+S]*D*G*m,R+=I[$+M]*D*X*H,R+=I[$+M+S]*D*X*m,R+=I[$+1]*O*G*H,R+=I[$+1+S]*O*G*m,R+=I[$+1+M]*O*X*H,R+=I[$+1+M+S]*O*X*m,x[Y]=R}}else for(let _=0;_<u;_++)for(let C=0;C<u;C++){const j=C*F[1]+_*F[2]+F[3],en=C*F[5]+_*F[6]+F[7],tn=C*F[9]+_*F[10]+F[11];for(let N=0;N<u;N++){const E=Math.round(N*F[0]+j),Z=Math.round(N*F[4]+en),k=Math.round(N*F[8]+tn);Y++,!(E<0||Z<0||k<0)&&(E>=M||Z>=d||k>=P||(x[Y]=I[U(E,Z,k)]))}}const g=c?NaN:0;let L,z,nn;if(s){const[_,C]=yn(e,v,i,r,0,0,o,f,0,1,g);L=Un(x,0,1,_,C),z=16,nn=32}else{const[_,C]=yn(e,v,i,r,0,0,o,f,0,255,g);L=Fn(x,0,255,_,C),z=2,nn=8}const Rn=Array.from(b);return{img:L,dims:[3,u,u,u,1,1,1,1],pixDims:[1,w,w,w,1,0,0,0],affine:Rn,datatypeCode:z,bitsPerVoxel:nn,sclSlope:1,sclInter:0,calMin:0,calMax:0}}function zn(n,e){if(!(n instanceof ArrayBuffer))return n;switch(e){case 2:return new Uint8Array(n);case 4:return new Int16Array(n);case 8:return new Int32Array(n);case 16:return new Float32Array(n);case 64:return new Float64Array(n);case 256:return new Int8Array(n);case 512:return new Uint16Array(n);case 768:return new Uint32Array(n);default:return new Float32Array(n)}}function V(n,e,t,a){return t*a[0]*a[1]+e*a[0]+n}function un(n,e,t){let a=0;const i=new Uint32Array(t+5).fill(0);let y=2147483647;for(let l=0;l<t;l++){let s=e[l];for(a=0;n[s-1]!==s&&(s=n[s-1],a++,!(a>100)););i[l]=s,y=Math.min(y,s)}for(let l=0;l<t;l++)n[i[l]-1]=y}function Cn(n,e,t,a,i,r,y,l){const s=new Uint32Array(27);let c=0;if(!i)return 0;const v=n[V(t,a,i,r)];if(y>=6){const u=V(t,a,i-1,r);v===n[u]&&(s[c++]=e[u])}if(y>=18){if(t){const u=V(t-1,a,i-1,r);v===n[u]&&(s[c++]=e[u])}if(a){const u=V(t,a-1,i-1,r);v===n[u]&&(s[c++]=e[u])}if(t<r[0]-1){const u=V(t+1,a,i-1,r);v===n[u]&&(s[c++]=e[u])}if(a<r[1]-1){const u=V(t,a+1,i-1,r);v===n[u]&&(s[c++]=e[u])}}if(y===26){if(t&&a){const u=V(t-1,a-1,i-1,r);v===n[u]&&(s[c++]=e[u])}if(t<r[0]-1&&a){const u=V(t+1,a-1,i-1,r);v===n[u]&&(s[c++]=e[u])}if(t&&a<r[1]-1){const u=V(t-1,a+1,i-1,r);v===n[u]&&(s[c++]=e[u])}if(t<r[0]-1&&a<r[1]-1){const u=V(t+1,a+1,i-1,r);v===n[u]&&(s[c++]=e[u])}}return c?(un(l,s,c),s[0]):0}function Vn(n,e,t){let a=1;const i=8192;let r=i,y=new Uint32Array(r).fill(0);const l=new Uint32Array(e[0]*e[1]*e[2]).fill(0),s=new Uint32Array(27);for(let c=0;c<e[2];c++)for(let v=0;v<e[1];v++)for(let u=0;u<e[0];u++){let w=0;const b=n[V(u,v,c,e)];if(b!==0){if(s[0]=Cn(n,l,u,v,c,e,t,y),s[0]&&(w+=1),t>=6){if(u){const h=V(u-1,v,c,e);b===n[h]&&(s[w++]=l[h])}if(v){const h=V(u,v-1,c,e);b===n[h]&&(s[w++]=l[h])}}if(t>=18){if(v&&u){const h=V(u-1,v-1,c,e);b===n[h]&&(s[w++]=l[h])}if(v&&u<e[0]-1){const h=V(u+1,v-1,c,e);b===n[h]&&(s[w++]=l[h])}}if(w)l[V(u,v,c,e)]=s[0],un(y,s,w);else{if(l[V(u,v,c,e)]=a,a>=r){r+=i;const h=new Uint32Array(r);h.set(y),y=h}y[a-1]=a,a++}}}for(let c=0;c<a-1;c++){let v=c;for(;y[v]!==v+1;)v=y[v]-1;y[c]=v+1}return[a-1,y,l]}function Sn(n,e,t,a){const i=e[0]*e[1]*e[2];let r=0;const y=new Uint32Array(i).fill(0);for(let c=0;c<a;c++)r=Math.max(r,t[c]);const l=new Uint32Array(r).fill(0);let s=0;for(let c=0;c<i;c++)n[c]&&(l[t[n[c]-1]-1]||(s+=1,l[t[n[c]-1]-1]=s),y[c]=l[t[n[c]-1]-1]);return[s,y]}function Pn(n,e,t){const a=n.length,i=new Uint32Array(e+1).fill(0),r=new Uint32Array(e+1).fill(0);for(let s=0;s<a;s++)i[t[s]]=n[s],r[t[s]]++;let y=0;for(let s=0;s<e+1;s++){const c=i[s];y=Math.max(y,c);for(let v=0;v<e+1;v++)v!==s&&c===i[v]&&(r[s]<r[v]||r[s]===r[v]&&s<v)&&(i[s]=0)}const l=new Uint32Array(a).fill(0);for(let s=0;s<a;s++)l[s]=i[t[s]];return[y,l]}function Nn(n){const{datatypeCode:e,dims:t,conn:a=26,binarize:i=!1,onlyLargestClusterPerClass:r=!1}=n,y=zn(n.img,e),l=Uint32Array.from([t[1],t[2],t[3]]),s=l[0]*l[1]*l[2],c=new Uint32Array(s).fill(0);if(i)for(let f=0;f<s;f++)y[f]!==0&&(c[f]=1);else for(let f=0;f<s;f++)c[f]=y[f];const[v,u,w]=Vn(c,l,a),[b,h]=Sn(w,l,u??new Uint32Array,v);let A,x;r?[A,x]=Pn(c,b,h):(A=b,x=h);let p,I,o;return A>65535?(p=Float32Array.from(x),I=16,o=32):A>255?(p=Uint16Array.from(x),I=512,o=16):(p=Uint8Array.from(x),I=2,o=8),{img:p,datatypeCode:I,bitsPerVoxel:o,calMax:A}}function vn(n,e,t,a,i,r=2){const y=n.length;if(y<1)return[];const l=256,s=l-1,c=new Array(l).fill(0),v=e,u=t;if(u<=v)return[];const w=(u-v)/l;function b(o){return o*w+v}const h=(l-1)/Math.abs(u-v);for(let o=0;o<y;o++){let f=n[o]*i+a;f=Math.min(Math.max(f,v),u),f=Math.round((f-v)*h),c[f]++}const A=Array(l).fill(0).map(()=>Array(l).fill(0)),x=Array(l).fill(0).map(()=>Array(l).fill(0));for(let o=1;o<l;++o)A[o][o]=c[o],x[o][o]=o*c[o];for(let o=1;o<l-1;++o)A[1][o+1]=A[1][o]+c[o+1],x[1][o+1]=x[1][o]+(o+1)*c[o+1];for(let o=2;o<l;o++)for(let f=o+1;f<l;f++)A[o][f]=A[1][f]-A[1][o-1],x[o][f]=x[1][f]-x[1][o-1];for(let o=1;o<l;++o)for(let f=o+1;f<l;f++)A[o][f]!==0&&(A[o][f]=x[o][f]*x[o][f]/A[o][f]);let p=0;const I=[1/0,1/0,1/0];if(r>3)for(let o=0;o<l-3;o++)for(let f=o+1;f<l-2;f++)for(let M=f+1;M<l-1;M++){const d=A[0][o]+A[o+1][f]+A[f+1][M]+A[M+1][s];d>p&&(I[0]=o,I[1]=f,I[2]=M,p=d)}else if(r===3)for(let o=0;o<l-2;o++)for(let f=o+1;f<l-1;f++){const M=A[0][o]+A[o+1][f]+A[f+1][s];M>p&&(I[0]=o,I[1]=f,p=M)}else for(let o=0;o<l-1;o++){const f=A[0][o]+A[o+1][s];f>p&&(I[0]=o,p=f)}return[b(I[0]),b(I[1]),b(I[2])]}function Yn(n,e){const t=n.length,a=new Uint8Array(t);for(let i=0;i<t;i++){const r=n[i];r>e[0]&&(a[i]=1),r>e[1]&&(a[i]=2),r>e[2]&&(a[i]=3)}return a}function Tn(n,e,t,a,i){const r=n.length,y=new Float32Array(r);for(let l=0;l<r;l++){const s=n[l]*t+e;y[l]=s<i?a:n[l]}return y}const W=self.postMessage.bind(self);function xn(n,e){if(!(n instanceof ArrayBuffer))return n;switch(e){case 2:return new Uint8Array(n);case 4:return new Int16Array(n);case 8:return new Int32Array(n);case 16:return new Float32Array(n);case 64:return new Float64Array(n);case 256:return new Int8Array(n);case 512:return new Uint16Array(n);case 768:return new Uint32Array(n);default:return new Float32Array(n)}}function An(n,e,t){let a=Number.POSITIVE_INFINITY,i=Number.NEGATIVE_INFINITY;for(let r=0;r<n.length;r++){const y=n[r]*e+t;Number.isFinite(y)&&(y<a&&(a=y),y>i&&(i=y))}return[a,i]}const Ln={otsu(n,e,t,a,i){const r=i.levels??3,y=xn(n,e),l=t||1,s=a||0,[c,v]=An(y,l,s),u=vn(y,c,v,s,l,r);return{img:Yn(y,u),datatypeCode:2,bitsPerVoxel:8,sclSlope:1,sclInter:0,calMin:0,calMax:r}},removeHaze(n,e,t,a,i){const r=i.level??5,y=r===5||r===1?4:r===4||r===2?3:2,l=xn(n,e),s=t||1,c=a||0,[v,u]=An(l,s,c),w=vn(l,v,u,c,s,y),b=r===1?w[2]:r===2?w[1]:w[0];return{img:Tn(l,c,s,v,b),datatypeCode:16,bitsPerVoxel:32,sclSlope:1,sclInter:0,calMin:v,calMax:u}},conform(n,e,t,a,i){const r=_n({img:n,datatypeCode:e,dims:i.dims,pixDims:i.pixDims,affine:i.affine,sclSlope:t||1,sclInter:a||0,toRAS:i.toRAS??!1,isLinear:i.isLinear??!0,asFloat32:i.asFloat32??!1,isRobustMinMax:i.isRobustMinMax??!1});return{img:r.img,datatypeCode:r.datatypeCode,bitsPerVoxel:r.bitsPerVoxel,sclSlope:r.sclSlope,sclInter:r.sclInter,calMin:r.calMin,calMax:r.calMax,dims:r.dims,pixDims:r.pixDims,affine:r.affine}},connectedLabel(n,e,t,a,i){const r=Nn({img:n,datatypeCode:e,dims:i.dims,conn:i.conn??26,binarize:i.binarize??!1,onlyLargestClusterPerClass:i.onlyLargestClusterPerClass??!1});return{img:r.img,datatypeCode:r.datatypeCode,bitsPerVoxel:r.bitsPerVoxel,sclSlope:1,sclInter:0,calMin:0,calMax:r.calMax}}};self.onmessage=n=>{const{_wbId:e,name:t,img:a,datatypeCode:i,sclSlope:r,sclInter:y,options:l}=n.data,s=Ln[t];if(!s){W({_wbId:e,_wbError:`Unknown transform: ${t}`});return}try{const c=s(a,i,r,y,l??{});W({_wbId:e,...c},[c.img.buffer])}catch(c){W({_wbId:e,_wbError:c instanceof Error?c.message:String(c)})}}})();\n';
+var c = typeof self < "u" && self.Blob && new Blob([f2], { type: "text/javascript;charset=utf-8" });
+function y2(n) {
+  let e2;
+  try {
+    if (e2 = c && (self.URL || self.webkitURL).createObjectURL(c), !e2)
+      throw "";
+    const t2 = new Worker(e2, {
+      name: n == null ? undefined : n.name
+    });
+    return t2.addEventListener("error", () => {
+      (self.URL || self.webkitURL).revokeObjectURL(e2);
+    }), t2;
+  } catch {
+    return new Worker("data:text/javascript;charset=utf-8," + encodeURIComponent(f2), {
+      name: n == null ? undefined : n.name
+    });
+  } finally {
+    e2 && (self.URL || self.webkitURL).revokeObjectURL(e2);
+  }
+}
+var i2 = null;
+function d() {
+  return i2 || (i2 = new Ii(() => new y2)), i2;
+}
+async function s(n, e2, t2, l) {
+  const r = await d().execute({
+    name: n,
+    img: t2,
+    datatypeCode: e2.datatypeCode,
+    sclSlope: e2.scl_slope,
+    sclInter: e2.scl_inter,
+    options: l
+  }), a = JSON.parse(JSON.stringify(e2));
+  if (a.datatypeCode = r.datatypeCode, a.numBitsPerVoxel = r.bitsPerVoxel, a.scl_slope = r.sclSlope, a.scl_inter = r.sclInter, a.cal_min = r.calMin, a.cal_max = r.calMax, r.dims && (a.dims = r.dims), r.pixDims && (a.pixDims = r.pixDims), r.affine) {
+    const o2 = r.affine;
+    a.affine = [
+      [o2[0], o2[1], o2[2], o2[3]],
+      [o2[4], o2[5], o2[6], o2[7]],
+      [o2[8], o2[9], o2[10], o2[11]],
+      [0, 0, 0, 1]
+    ], a.sform_code = 1, a.qform_code = 0;
+  }
+  return { hdr: a, img: r.img };
+}
+var w = {
+  name: "otsu",
+  description: "Otsu multi-level thresholding — produces a labeled segmentation volume",
+  options: [
+    {
+      name: "levels",
+      type: "select",
+      label: "Segmentation levels",
+      default: 3,
+      options: [2, 3, 4]
+    }
+  ],
+  resultDefaults: {
+    colormap: "actc",
+    opacity: 0.5
+  },
+  apply: (n, e2, t2) => s("otsu", n, e2, t2)
+};
+var A = {
+  name: "conform",
+  description: "Reslice to 256×256×256 isotropic 1 mm volume (FreeSurfer style)",
+  options: [
+    {
+      name: "toRAS",
+      type: "checkbox",
+      label: "Output RAS orientation",
+      default: false
+    },
+    {
+      name: "isLinear",
+      type: "checkbox",
+      label: "Linear interpolation",
+      default: true
+    },
+    {
+      name: "asFloat32",
+      type: "checkbox",
+      label: "Output as Float32",
+      default: false
+    },
+    {
+      name: "isRobustMinMax",
+      type: "checkbox",
+      label: "Robust min/max (2%-98%)",
+      default: false
+    }
+  ],
+  apply: (n, e2, t2) => {
+    const l = {
+      ...t2,
+      dims: [...n.dims],
+      pixDims: [...n.pixDims],
+      affine: n.affine.flat()
+    };
+    return s("conform", n, e2, l);
+  }
+};
+var m = {
+  name: "connectedLabel",
+  description: "Label connected components in a volume (bwlabel)",
+  options: [
+    {
+      name: "conn",
+      type: "select",
+      label: "Connectivity",
+      default: 26,
+      options: [6, 18, 26]
+    },
+    {
+      name: "binarize",
+      type: "checkbox",
+      label: "Binarize input",
+      default: false
+    },
+    {
+      name: "onlyLargestClusterPerClass",
+      type: "checkbox",
+      label: "Only largest cluster per class",
+      default: false
+    }
+  ],
+  resultDefaults: {
+    colormap: "random",
+    opacity: 0.8
+  },
+  apply: (n, e2, t2) => {
+    const l = { ...t2, dims: [...n.dims] };
+    return s("connectedLabel", n, e2, l);
+  }
+};
+var v = {
+  name: "removeHaze",
+  description: "Remove dark background voxels using Otsu thresholding",
+  options: [
+    {
+      name: "level",
+      type: "select",
+      label: "Preservation level (1=aggressive, 5=conservative)",
+      default: 5,
+      options: [1, 2, 3, 4, 5]
+    }
+  ],
+  apply: (n, e2, t2) => s("removeHaze", n, e2, t2)
+};
+
 // src/ipyniivue/static/_widget.template.js
+var IMAGE_PROCESSING_TRANSFORMS = [
+  A,
+  m,
+  w,
+  v
+];
 var PROPS_RW = [
   ["annotationActiveGroup", "annotation_active_group"],
   ["annotationActiveLabel", "annotation_active_label"],
@@ -31676,6 +31833,7 @@ var createState = () => {
   });
   return {
     nv: null,
+    extContext: null,
     initializedResolve,
     initializedPromise,
     mountedResolve,
@@ -31707,31 +31865,31 @@ var deleteState = (model) => {
 };
 var TJS_TYPED_MAX = 1024;
 var TJS_ARRAY_MAX = 4096;
-var toJsonSafe = (v, seen) => {
-  if (v == null)
-    return v;
-  const t2 = typeof v;
+var toJsonSafe = (v2, seen) => {
+  if (v2 == null)
+    return v2;
+  const t2 = typeof v2;
   if (t2 === "function" || t2 === "symbol" || t2 === "undefined")
     return null;
   if (t2 === "bigint")
-    return Number.isSafeInteger(Number(v)) ? Number(v) : String(v);
-  if (ArrayBuffer.isView(v)) {
-    return v.length <= TJS_TYPED_MAX ? Array.from(v) : null;
+    return Number.isSafeInteger(Number(v2)) ? Number(v2) : String(v2);
+  if (ArrayBuffer.isView(v2)) {
+    return v2.length <= TJS_TYPED_MAX ? Array.from(v2) : null;
   }
   if (t2 !== "object")
-    return v;
+    return v2;
   seen ??= new WeakSet;
-  if (seen.has(v))
+  if (seen.has(v2))
     return null;
-  seen.add(v);
-  if (Array.isArray(v)) {
-    if (v.length > TJS_ARRAY_MAX)
+  seen.add(v2);
+  if (Array.isArray(v2)) {
+    if (v2.length > TJS_ARRAY_MAX)
       return null;
-    return v.map((x3) => toJsonSafe(x3, seen));
+    return v2.map((x3) => toJsonSafe(x3, seen));
   }
   const out = {};
-  for (const k2 of Object.keys(v))
-    out[k2] = toJsonSafe(v[k2], seen);
+  for (const k2 of Object.keys(v2))
+    out[k2] = toJsonSafe(v2[k2], seen);
   return out;
 };
 async function initialize({ model }) {
@@ -31764,6 +31922,43 @@ async function initialize({ model }) {
     if (msg.cmd === "__ready__") {
       if (reqId !== null)
         respond(true, true);
+      return;
+    }
+    if (msg.cmd === "__ext_apply_image_transform") {
+      const args = msg.args || [];
+      const name = args[0];
+      const volIdx = args[1] ?? 0;
+      const options = args[2] || {};
+      const replaceBg = !!args[3];
+      try {
+        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext());
+        const vol = ctx.volumes[volIdx];
+        if (!vol) {
+          if (reqId !== null)
+            respond(false, "no volume at index " + volIdx);
+          return;
+        }
+        const t02 = performance.now();
+        const result = await ctx.applyVolumeTransform(name, vol, options);
+        const info = state.nv.getVolumeTransformInfo(name);
+        if (info && info.resultDefaults) {
+          if (info.resultDefaults.colormap)
+            result.colormap = info.resultDefaults.colormap;
+          if (info.resultDefaults.opacity != null)
+            result.opacity = info.resultDefaults.opacity;
+        }
+        if (replaceBg)
+          await ctx.removeAllVolumes();
+        await ctx.addVolume(result);
+        const elapsedMs = performance.now() - t02;
+        if (reqId !== null)
+          respond(true, { name, elapsed_ms: elapsedMs });
+      } catch (err2) {
+        if (reqId !== null)
+          respond(false, err2);
+        else
+          console.error("ipyniivue: __ext_apply_image_transform threw:", err2);
+      }
       return;
     }
     const nv = state.nv;
@@ -31821,15 +32016,22 @@ async function initialize({ model }) {
   inboxHandler();
   const opts = {};
   for (const [jsName, pyName] of CONSTRUCTOR_PROPS) {
-    const v = model.get(pyName);
-    if (v !== null && v !== undefined)
-      opts[jsName] = v;
+    const v2 = model.get(pyName);
+    if (v2 !== null && v2 !== undefined)
+      opts[jsName] = v2;
   }
   const thumbnailUrl = model.get("thumbnail_url");
   if (thumbnailUrl !== null && thumbnailUrl !== undefined) {
     opts.thumbnail = thumbnailUrl;
   }
   state.nv = new P(opts);
+  for (const transform of IMAGE_PROCESSING_TRANSFORMS) {
+    try {
+      state.nv.registerVolumeTransform(transform);
+    } catch (err2) {
+      console.warn("ipyniivue: failed to register " + transform.name + ":", err2);
+    }
+  }
   if (state.initializedResolve) {
     state.initializedResolve();
     state.initializedResolve = null;
@@ -31838,11 +32040,11 @@ async function initialize({ model }) {
   for (const [jsName, pyName] of PROPS_RW) {
     const handler = async () => {
       await state.mountedPromise;
-      const v = model.get(pyName);
+      const v2 = model.get(pyName);
       try {
         const nv = state.nv;
-        if (nv && nv[jsName] !== v)
-          nv[jsName] = v;
+        if (nv && nv[jsName] !== v2)
+          nv[jsName] = v2;
       } catch (err2) {
         console.warn("ipyniivue: failed to set " + jsName + ":", err2);
       }
@@ -31871,6 +32073,12 @@ async function initialize({ model }) {
       model.off("change:" + pyName, handler);
     }
     const nv = state.nv;
+    if (state.extContext && typeof state.extContext.dispose === "function") {
+      try {
+        state.extContext.dispose();
+      } catch {}
+    }
+    state.extContext = null;
     if (nv) {
       for (const [eventName, handler] of evtListeners) {
         nv.removeEventListener(eventName, handler);
@@ -31901,9 +32109,9 @@ async function render({ model, el: el2 }) {
     state.hasAttached = true;
     for (const [jsName, pyName] of [...PROPS_RW, ...PROPS_RO]) {
       try {
-        const v = nv[jsName];
-        if (v !== undefined)
-          model.set(pyName, toJsonSafe(v));
+        const v2 = nv[jsName];
+        if (v2 !== undefined)
+          model.set(pyName, toJsonSafe(v2));
       } catch (err2) {
         console.warn("ipyniivue: failed to seed " + pyName + ":", err2);
       }

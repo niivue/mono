@@ -7,6 +7,17 @@
 // this template file is the small, reviewable input.
 // nx-ignore-next-line: bundled widget asset, not a Python runtime dependency
 import NiiVue from '@niivue/niivue'
+import { conform, connectedLabel, otsu, removeHaze } from '@niivue/nv-ext-image-processing'
+
+// Image-processing transforms bundled from @niivue/nv-ext-*.
+// Registered with NiiVue in initialize() so Python can apply them
+// via __ext_apply_image_transform without shipping JS.
+const IMAGE_PROCESSING_TRANSFORMS = [
+  conform,
+  connectedLabel,
+  otsu,
+  removeHaze,
+]
 
 // [jsName, pyName] for read-write reactive properties.
 const PROPS_RW = [
@@ -165,6 +176,7 @@ const createState = () => {
   const mountedPromise = new Promise((r) => { mountedResolve = r })
   return {
     nv: null,
+    extContext: null,
     initializedResolve,
     initializedPromise,
     mountedResolve,
@@ -262,6 +274,39 @@ async function initialize({ model }) {
       if (reqId !== null) respond(true, true)
       return
     }
+    // Composite extension command: apply a bundled transform to
+    // the volume at args[1], optionally replacing the background.
+    // Returns { name, elapsed_ms } so Python can show progress.
+    if (msg.cmd === "__ext_apply_image_transform") {
+      const args = msg.args || []
+      const name = args[0]
+      const volIdx = args[1] ?? 0
+      const options = args[2] || {}
+      const replaceBg = !!args[3]
+      try {
+        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())
+        const vol = ctx.volumes[volIdx]
+        if (!vol) {
+          if (reqId !== null) respond(false, "no volume at index " + volIdx)
+          return
+        }
+        const t0 = performance.now()
+        const result = await ctx.applyVolumeTransform(name, vol, options)
+        const info = state.nv.getVolumeTransformInfo(name)
+        if (info && info.resultDefaults) {
+          if (info.resultDefaults.colormap) result.colormap = info.resultDefaults.colormap
+          if (info.resultDefaults.opacity != null) result.opacity = info.resultDefaults.opacity
+        }
+        if (replaceBg) await ctx.removeAllVolumes()
+        await ctx.addVolume(result)
+        const elapsedMs = performance.now() - t0
+        if (reqId !== null) respond(true, { name: name, elapsed_ms: elapsedMs })
+      } catch (err) {
+        if (reqId !== null) respond(false, err)
+        else console.error("ipyniivue: __ext_apply_image_transform threw:", err)
+      }
+      return
+    }
     const nv = state.nv
     if (!nv) {
       respond(false, "NiiVue instance is not initialized")
@@ -321,6 +366,14 @@ async function initialize({ model }) {
     opts.thumbnail = thumbnailUrl
   }
   state.nv = new NiiVue(opts)
+  // Register bundled image-processing transforms before any
+  // user command can land. Idempotent on re-register.
+  for (const transform of IMAGE_PROCESSING_TRANSFORMS) {
+    try { state.nv.registerVolumeTransform(transform) }
+    catch (err) {
+      console.warn("ipyniivue: failed to register " + transform.name + ":", err)
+    }
+  }
   if (state.initializedResolve) {
     state.initializedResolve()
     state.initializedResolve = null
@@ -366,6 +419,10 @@ async function initialize({ model }) {
       model.off("change:" + pyName, handler)
     }
     const nv = state.nv
+    if (state.extContext && typeof state.extContext.dispose === "function") {
+      try { state.extContext.dispose() } catch {}
+    }
+    state.extContext = null
     if (nv) {
       for (const [eventName, handler] of evtListeners) {
         nv.removeEventListener(eventName, handler)

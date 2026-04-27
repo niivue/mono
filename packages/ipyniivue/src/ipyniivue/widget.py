@@ -232,6 +232,57 @@ class NiiVue(_GeneratedNiiVue):
         """
         self.send({"cmd": "saveBitmap", "args": [filename, quality]})
 
+    # Image-processing extension (nv-ext-image-processing)
+
+    async def apply_image_transform(
+        self,
+        name: str,
+        volume_index: int = 0,
+        options: dict[str, Any] | None = None,
+        replace_background: bool = False,
+    ) -> dict[str, Any]:
+        """Apply a bundled image-processing transform to a loaded volume.
+
+        Bundled transforms (registered automatically on widget mount):
+        ``otsu``, ``removeHaze``, ``conform``, ``connectedLabel``. Use
+        :meth:`get_volume_transform_info` to discover the option schema
+        for any transform.
+
+        Heavy work runs in a Web Worker on the JS side, so this does not
+        block the browser. The result volume is added to the scene as an
+        overlay; pass ``replace_background=True`` to remove existing
+        volumes first (the right call for ``removeHaze``).
+
+        Parameters
+        ----------
+        name
+            Transform name. Must be present in
+            :attr:`volume_transforms` (the read-only traitlet seeded
+            from NiiVue at mount).
+        volume_index
+            Source volume index. Default 0 (background).
+        options
+            Transform-specific options. See
+            :meth:`get_volume_transform_info`.
+        replace_background
+            If True, remove all volumes first and load the result as the
+            new background. If False (default), add as an overlay.
+
+        Returns
+        -------
+        dict
+            ``{"name": str, "elapsed_ms": float}``.
+
+        Example::
+
+            info = await nv.get_volume_transform_info("otsu")
+            await nv.apply_image_transform("otsu", 0)
+        """
+        return await self._request(
+            "__ext_apply_image_transform",
+            [name, volume_index, options or {}, bool(replace_background)],
+        )
+
     # Event subscription
 
     def on(

@@ -26,6 +26,20 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 
 ## Getting Started
 
+Use the hot-reloadable live demos for local development—they provide the fastest feedback loop while working on the project.
+
+```bash
+git clone git@github.com:niivue/mono.git
+cd mono
+bun install
+bunx nx build niivue
+git lfs install
+git lfs pull
+bun run dev
+```
+
+Core commands include
+
 ```bash
 bun install                # Install all dependencies
 bunx nx build <project>    # Build a single project (builds deps first)

@@ -193,6 +193,10 @@ waits for the canvas and preserves async command order.
 Keep demos on low-bandwidth, explicit Python-to-JavaScript controls.
 Python event callbacks from `nv.on(...)` are available for low-frequency
 events, but avoid using high-volume browser events or large event payloads
-as part of the main demo path.
+as part of the main demo path. A few internal events (`canvasResize`,
+`viewAttached`, `viewDestroyed`) are silenced at the JS layer to keep
+the WebSocket clear during mount; subscribing to them via `nv.on(...)`
+raises `ValueError`. The full subscribable list is `NIIVUE_EVENT_NAMES`
+in `ipyniivue`.
 
 See `CLAUDE.md` for architecture details and known traps.

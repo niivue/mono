@@ -606,6 +606,17 @@ async function render({ model, el }) {
     canvas.style.cssText = "width:100%;height:600px;display:block"
     canvas.width = 640
     canvas.height = 480
+    // Suppress JupyterLab's cell context menu on right-click.
+    // NiiVue uses right-click for secondary drag (clip plane,
+    // contrast, etc.); without stopPropagation the contextmenu
+    // event bubbles to JupyterLab's document handler, which pops
+    // up Cut Cell / Copy Cell / etc. Holding Shift bypasses both
+    // (matches NiiVue's existing escape hatch).
+    canvas.addEventListener("contextmenu", (e) => {
+      if (e.shiftKey) return
+      e.preventDefault()
+      e.stopPropagation()
+    })
     state.canvas = canvas
   }
   el.appendChild(canvas)

@@ -31684,6 +31684,70 @@ var v = {
   apply: (n, e2, t2) => s("removeHaze", n, e2, t2)
 };
 
+// ../nv-ext-drawing/dist/nv-ext-drawing.js
+var g2 = '(function(){"use strict";const X={AXIAL:0,CORONAL:1};function ct(t,e){const{dimX:o,dimY:r,dimZ:s}=e;return t===X.AXIAL?{w:o,h:r,depth:s}:t===X.CORONAL?{w:o,h:s,depth:r}:{w:r,h:s,depth:o}}function Y(t,e,o,r){return t+e*r.dimX+o*r.dimX*r.dimY}function j(t,e,o,r,s){if(!s)return Y(t,e,o,r);const{img2RASstep:i,img2RASstart:n}=s;return n[0]+t*i[0]+n[1]+e*i[1]+n[2]+o*i[2]}function U(t,e,o,r){const{dimX:s,dimY:i,dimZ:n}=r;if(e===X.AXIAL){const c=new Float32Array(s*i),f=t*s*i;for(let a=0;a<c.length;a++)c[a]=o[f+a];return c}if(e===X.CORONAL){const c=new Float32Array(s*n);for(let f=0;f<n;f++)for(let a=0;a<s;a++)c[a+f*s]=o[Y(a,t,f,r)];return c}const l=new Float32Array(i*n);for(let c=0;c<n;c++)for(let f=0;f<i;f++)l[f+c*i]=o[Y(t,f,c,r)];return l}function J(t,e,o,r,s,i){const{dimX:n,dimY:l,dimZ:c}=r,f=1/s;if(e===X.AXIAL){const u=new Float32Array(n*l);for(let h=0;h<l;h++)for(let p=0;p<n;p++)u[p+h*n]=o[j(p,h,t,r,i)]*f;return u}if(e===X.CORONAL){const u=new Float32Array(n*c);for(let h=0;h<c;h++)for(let p=0;p<n;p++)u[p+h*n]=o[j(p,t,h,r,i)]*f;return u}const a=new Float32Array(l*c);for(let u=0;u<c;u++)for(let h=0;h<l;h++)a[h+u*l]=o[j(t,h,u,r,i)]*f;return a}function wt(t,e,o,r,s,i,n){const{dimX:l,dimY:c,dimZ:f}=s;if(o===X.AXIAL){const a=e*l*c;for(let u=0;u<t.length;u++)t[u]>=i&&(r[a+u]=n)}else if(o===X.CORONAL)for(let a=0;a<f;a++)for(let u=0;u<l;u++)t[u+a*l]>=i&&(r[Y(u,e,a,s)]=n);else for(let a=0;a<f;a++)for(let u=0;u<c;u++)t[u+a*c]>=i&&(r[Y(e,u,a,s)]=n)}function ft(t,e,o){if(e<3||o<3)return;const r=new Float32Array(t.length);for(let s=0;s<o;s++)for(let i=0;i<e;i++){const n=i+s*e;r[n]=i===0||i===e-1?t[n]:(t[n-1]+2*t[n]+t[n+1])*.25}for(let s=0;s<o;s++)for(let i=0;i<e;i++){const n=i+s*e;t[n]=s===0||s===o-1?r[n]:(r[n-e]+2*r[n]+r[n+e])*.25}}function pt(t,e,o,r){const s=Math.abs(o-t),i=Math.abs(o-e),n=Math.exp(-s*s/(2*r*r)),l=Math.exp(-i*i/(2*r*r)),c=n+l;return c<1e-6?.5:n/c}function bt(t,e,o){const{depth:r}=ct(t,o);let s=-1,i=-1;for(let n=0;n<r;n++){const l=U(n,t,e,o);let c=!1;for(let f=0;f<l.length;f++)if(l[f]>0){c=!0;break}c&&(s===-1&&(s=n),i=n)}return s===-1?null:{first:s,last:i}}function xt(t,e,o,r,s,i,n,l){const c=n.sliceType??X.AXIAL,{w:f,h:a,depth:u}=ct(c,e),h=u-1,p={intensityWeight:n.intensityWeight??.7,binaryThreshold:n.binaryThreshold??.375,intensitySigma:n.intensitySigma??.1,applySmoothingToSlices:n.applySmoothingToSlices??!0,useIntensityGuided:n.useIntensityGuided??!1};if(s!==void 0&&i!==void 0){if(s>=i)throw new Error("Low slice index must be less than high slice index");if(s<0||i>h)throw new Error(`Slice indices out of bounds [0, ${h}]`)}const C=new Map;for(let b=0;b<=h;b++){const N=U(b,c,t,e);for(let y=0;y<N.length;y++){const g=N[y];if(g>0){const x=C.get(g);x?(x.min=Math.min(x.min,b),x.max=Math.max(x.max,b)):C.set(g,{min:b,max:b})}}}for(const[b,N]of C){const y=s!==void 0?Math.max(s,N.min):N.min,g=i!==void 0?Math.min(i,N.max):N.max;if(y>=g||g-y<2)continue;const x=U(y,c,t,e),O=U(g,c,t,e),M=new Float32Array(x.length),I=new Float32Array(O.length);for(let A=0;A<x.length;A++)M[A]=x[A]===b?1:0,I[A]=O[A]===b?1:0;p.applySmoothingToSlices&&(ft(M,f,a),ft(I,f,a));for(let A=y+1;A<g;A++){const E=new Float32Array(f*a),d=(A-y)/(g-y),w=1-d;if(p.useIntensityGuided&&o){const m=J(y,c,o,e,r,l),v=J(g,c,o,e,r,l),nt=J(A,c,o,e,r,l),Z=p.intensityWeight;for(let F=0;F<M.length;F++)if(M[F]>0||I[F]>0){const et=pt(m[F],v[F],nt[F],p.intensitySigma),D=Z*et+(1-Z)*w,ot=1-D;E[F]=M[F]*D+I[F]*ot}else E[F]=M[F]*w+I[F]*d}else for(let m=0;m<M.length;m++)E[m]=M[m]*w+I[m]*d;wt(E,A,c,t,e,p.binaryThreshold,b)}}return t}function k(t,e,o,r){return t+e*r.dimX+o*r.dimX*r.dimY}function lt(t,e,o,r,s){if(!s)return k(t,e,o,r);const{img2RASstep:i,img2RASstart:n}=s;return n[0]+t*i[0]+n[1]+e*i[1]+n[2]+o*i[2]}const K=[[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]],at=[[-1,-1,0],[1,-1,0],[-1,1,0],[1,1,0],[0,-1,-1],[0,1,-1],[-1,0,-1],[1,0,-1],[0,-1,1],[0,1,1],[-1,0,1],[1,0,1]],Mt=[[-1,-1,-1],[1,-1,-1],[-1,1,-1],[1,1,-1],[-1,-1,1],[1,-1,1],[-1,1,1],[1,1,1]];function ut(t){return t>=26?[...K,...at,...Mt]:t>=18?[...K,...at]:[...K]}function dt(t,e,o,r,s={},i,n){const{tolerance:l=0,thresholdMode:c="symmetric",percent:f=0,calMin:a=0,calMax:u=1,connectivity:h=6,maxDistanceMM:p=Number.POSITIVE_INFINITY,is2D:C=!1,sliceAxis:b=0,penValue:N=1}=s,{dimX:y,dimY:g,dimZ:x}=o,O=y*g*x,[M,I,A]=t;if(M<0||I<0||A<0||M>=y||I>=g||A>=x)return{filledCount:0,seedIntensity:0,intensityMin:0,intensityMax:0};const E=lt(M,I,A,o,i),d=Number(r[E]);let w,m,v;if(s.intensityMin!==void 0&&s.intensityMax!==void 0)w=s.intensityMin,m=s.intensityMax;else{let L=c==="auto"?"symmetric":c;switch(c==="auto"&&(v=d>(a+u)*.5,L=v?"bright":"dark"),L){case"percent":{const S=d===0?.01:d;w=S*(1-f),m=S*(1+f);break}case"bright":if(f>0){const S=d===0?.01:d;w=S*(1-f),m=S*(1+f)}else l>0?(w=d,m=d+l):(w=d,m=Number.POSITIVE_INFINITY);break;case"dark":if(f>0){const S=d===0?.01:d;w=S*(1-f),m=S*(1+f)}else l>0?(w=d-l,m=d):(w=Number.NEGATIVE_INFINITY,m=d);break;default:w=d-l,m=d+l;break}}const nt=ut(h),Z=n?n[0]:1,F=n?n[1]:1,et=n?n[2]:1,D=p*p;function ot(L,S,H){if(!Number.isFinite(D))return!0;const P=(L-M)*Z,q=(S-I)*F,$=(H-A)*et;return P*P+q*q+$*$<=D}let z=-1,G=-1;C&&(b===0?(z=2,G=A):b===1?(z=1,G=I):b===2&&(z=0,G=M));const it=new Uint8Array(O),yt=k(M,I,A,o);if(d<w||d>m)return{filledCount:0,seedIntensity:d,intensityMin:w,intensityMax:m,isBright:v};const rt=[yt];it[yt]=1;let gt=0;for(;rt.length>0;){const L=rt.shift(),S=Math.floor(L/(y*g)),H=Math.floor((L-S*y*g)/y),P=L-S*y*g-H*y;e[L]=N,gt++;for(const[q,$,St]of nt){const B=P+q,W=H+$,T=S+St;if(B<0||W<0||T<0||B>=y||W>=g||T>=x||z>=0&&(z===0?B:z===1?W:T)!==G)continue;const st=k(B,W,T,o);if(it[st]||(it[st]=1,!ot(B,W,T)))continue;const At=Number(r[lt(B,W,T,o,i)]);At<w||At>m||rt.push(st)}}return{filledCount:gt,seedIntensity:d,intensityMin:w,intensityMax:m,isBright:v}}function It(t,e,o,r,s=6){const{dimX:i,dimY:n,dimZ:l}=o,[c,f,a]=t;if(c<0||f<0||a<0||c>=i||f>=n||a>=l)return 0;const u=k(c,f,a,o),h=e[u];if(h===r||h===0)return 0;const p=i*n*l,C=new Uint8Array(p),b=ut(s),N=[u];C[u]=1;let y=0;for(;N.length>0;){const g=N.shift();e[g]=r,y++;const x=Math.floor(g/(i*n)),O=Math.floor((g-x*i*n)/i),M=g-x*i*n-O*i;for(const[I,A,E]of b){const d=M+I,w=O+A,m=x+E;if(d<0||w<0||m<0||d>=i||w>=n||m>=l)continue;const v=k(d,w,m,o);C[v]||(C[v]=1,e[v]===h&&N.push(v))}}return y}const R=self.postMessage.bind(self),Ft={findBoundarySlices(t){const e=t.sliceType,o=new Uint8Array(t.drawBitmap),r=t.dims;return{result:bt(e,o,r)}},interpolateMaskSlices(t){const e=new Uint8Array(t.drawBitmap),o=t.dims,r=t.imageData?new Float32Array(t.imageData):null,s=t.maxVal??1,i=t.sliceIndexLow,n=t.sliceIndexHigh,l=t.options??{},c=t.rasMap??void 0;return{drawBitmap:xt(e,o,r,s,i,n,l,c).buffer}},magicWand(t){const e=t.seed,o=new Uint8Array(t.drawBitmap),r=t.dims,s=new Float32Array(t.imageData),i=t.options??{},n=t.rasMap??void 0,l=t.voxelSizeMM??void 0,c=dt(e,o,r,s,i,n,l);return{drawBitmap:o.buffer,result:c}},magicWandFromBitmap(t){const e=t.seed,o=new Uint8Array(t.drawBitmap),r=t.dims,s=t.newColor??0,i=t.connectivity??6,n=It(e,o,r,s,i);return{drawBitmap:o.buffer,count:n}}};let V=null,Q=null,_=null,tt=null,mt,ht;self.onmessage=t=>{const e=t.data;if(e.type==="initShared"){V=new Uint8Array(e.workingBuffer),Q=new Float32Array(e.imageBuffer),_=new Uint8Array(e.committedBuffer),tt=e.dims,mt=e.rasMap??void 0,ht=e.voxelSizeMM??void 0,R({type:"initSharedDone"});return}if(e.type==="updateCommitted"){_=new Uint8Array(e.committed);return}if(e.type==="magicWandShared"){if(!V||!Q||!_||!tt){R({type:"magicWandSharedResult",error:"Not initialized",gen:e.gen});return}V.set(_);const n=dt(e.seed,V,tt,Q,e.options??{},mt,ht);R({type:"magicWandSharedResult",result:n,gen:e.gen});return}const{_wbId:o,name:r,...s}=e,i=Ft[r];if(!i){R({_wbId:o,_wbError:`Unknown operation: ${r}`});return}try{const n=i(s),l=[];for(const c of Object.values(n))c instanceof ArrayBuffer&&l.push(c);R({_wbId:o,...n},l)}catch(n){R({_wbId:o,_wbError:n instanceof Error?n.message:String(n)})}}})();\n';
+var h2 = typeof self < "u" && self.Blob && new Blob([g2], { type: "text/javascript;charset=utf-8" });
+function w2(e2) {
+  let t2;
+  try {
+    if (t2 = h2 && (self.URL || self.webkitURL).createObjectURL(h2), !t2)
+      throw "";
+    const n = new Worker(t2, {
+      name: e2 == null ? undefined : e2.name
+    });
+    return n.addEventListener("error", () => {
+      (self.URL || self.webkitURL).revokeObjectURL(t2);
+    }), n;
+  } catch {
+    return new Worker("data:text/javascript;charset=utf-8," + encodeURIComponent(g2), {
+      name: e2 == null ? undefined : e2.name
+    });
+  } finally {
+    t2 && (self.URL || self.webkitURL).revokeObjectURL(t2);
+  }
+}
+function y3(e2) {
+  if (e2 instanceof Float32Array)
+    return e2;
+  const t2 = new Float32Array(e2.length);
+  for (let n = 0;n < e2.length; n++)
+    t2[n] = e2[n];
+  return t2;
+}
+var m2 = null;
+function d2() {
+  return m2 || (m2 = new Ii(() => new w2)), m2;
+}
+async function M2(e2, t2, n) {
+  const r = t2.buffer.slice(t2.byteOffset, t2.byteOffset + t2.byteLength);
+  return (await d2().execute({
+    name: "findBoundarySlices",
+    sliceType: e2,
+    drawBitmap: r,
+    dims: n
+  }, [r])).result;
+}
+async function S(e2, t2, n, r, o2, s2, i3) {
+  const a = e2.buffer.slice(e2.byteOffset, e2.byteOffset + e2.byteLength), c2 = [a];
+  let f3 = null;
+  if (n) {
+    const l = y3(n);
+    f3 = l.buffer.slice(l.byteOffset, l.byteOffset + l.byteLength), c2.push(f3);
+  }
+  const u = await d2().execute({
+    name: "interpolateMaskSlices",
+    drawBitmap: a,
+    dims: t2,
+    imageData: f3,
+    maxVal: r,
+    sliceIndexLow: o2,
+    sliceIndexHigh: s2,
+    options: i3 ?? {},
+    rasMap: null
+  }, c2);
+  return new Uint8Array(u.drawBitmap);
+}
+
 // src/ipyniivue/static/_widget.template.js
 var IMAGE_PROCESSING_TRANSFORMS = [
   A,
@@ -31958,6 +32022,64 @@ async function initialize({ model }) {
           respond(false, err2);
         else
           console.error("ipyniivue: __ext_apply_image_transform threw:", err2);
+      }
+      return;
+    }
+    if (msg.cmd === "__ext_drawing_find_boundaries") {
+      const args = msg.args || [];
+      const axis = args[0] ?? 0;
+      try {
+        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext());
+        const dr3 = ctx.drawing;
+        if (!dr3) {
+          if (reqId !== null)
+            respond(true, null);
+          return;
+        }
+        const t02 = performance.now();
+        const result = await M2(axis, dr3.bitmap, dr3.dims);
+        const elapsedMs = performance.now() - t02;
+        if (reqId !== null) {
+          respond(true, result ? { first: result.first, last: result.last, elapsed_ms: elapsedMs } : null);
+        }
+      } catch (err2) {
+        if (reqId !== null)
+          respond(false, err2);
+        else
+          console.error("ipyniivue: __ext_drawing_find_boundaries threw:", err2);
+      }
+      return;
+    }
+    if (msg.cmd === "__ext_drawing_interpolate_slices") {
+      const args = msg.args || [];
+      const axis = args[0] ?? 0;
+      const useIntensity = !!args[1];
+      const userOptions = args[2] || {};
+      try {
+        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext());
+        const dr3 = ctx.drawing;
+        if (!dr3) {
+          if (reqId !== null)
+            respond(false, "no drawing volume; call create_empty_drawing() first");
+          return;
+        }
+        const bg2 = ctx.backgroundVolume;
+        const imageData = useIntensity && bg2 ? bg2.imgRAS : null;
+        const maxVal = useIntensity && bg2 ? bg2.globalMax || 1 : 1;
+        const options = Object.assign({ sliceType: axis, useIntensityGuided: useIntensity }, userOptions);
+        const before = dr3.bitmap.reduce((n, v2) => n + (v2 > 0 ? 1 : 0), 0);
+        const t02 = performance.now();
+        const newBitmap = await S(dr3.bitmap, dr3.dims, imageData, maxVal, undefined, undefined, options);
+        const elapsedMs = performance.now() - t02;
+        const after = newBitmap.reduce((n, v2) => n + (v2 > 0 ? 1 : 0), 0);
+        dr3.update(newBitmap);
+        if (reqId !== null)
+          respond(true, { before, after, elapsed_ms: elapsedMs });
+      } catch (err2) {
+        if (reqId !== null)
+          respond(false, err2);
+        else
+          console.error("ipyniivue: __ext_drawing_interpolate_slices threw:", err2);
       }
       return;
     }

@@ -8,7 +8,8 @@
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": [
         { "projects": ["niivue"], "target": "build" },
-        { "projects": ["nv-ext-image-processing"], "target": "build" }
+        { "projects": ["nv-ext-image-processing"], "target": "build" },
+        { "projects": ["nv-ext-drawing"], "target": "build" }
       ],
       "inputs": [
         "{projectRoot}/scripts/**/*",
@@ -17,7 +18,8 @@
         "{workspaceRoot}/packages/niivue/src/NVTypes.ts",
         "{workspaceRoot}/packages/niivue/src/NVConstants.ts",
         "{workspaceRoot}/packages/niivue/dist/**/*",
-        "{workspaceRoot}/packages/nv-ext-image-processing/dist/**/*"
+        "{workspaceRoot}/packages/nv-ext-image-processing/dist/**/*",
+        "{workspaceRoot}/packages/nv-ext-drawing/dist/**/*"
       ],
       "outputs": [
         "{projectRoot}/api.generated.json",

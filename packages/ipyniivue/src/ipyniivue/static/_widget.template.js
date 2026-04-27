@@ -357,7 +357,7 @@ async function initialize({ model }) {
         const dv = buffers[0]
         const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv
         const file = new File([ab], name)
-        await state.nv.loadVolumes([Object.assign({ url: file, name: name }, options)])
+        await state.nv.loadVolumes([Object.assign({}, options, { url: file, name: name })])
         if (reqId !== null) respond(true, null)
       } catch (err) {
         console.error("[ipyniivue] __add_volume_from_bytes threw:", err)
@@ -381,7 +381,7 @@ async function initialize({ model }) {
         const dv = buffers[0]
         const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv
         const file = new File([ab], name)
-        await state.nv.loadMeshes([Object.assign({ url: file, name: name }, options)])
+        await state.nv.loadMeshes([Object.assign({}, options, { url: file, name: name })])
         if (reqId !== null) respond(true, null)
       } catch (err) {
         console.error("[ipyniivue] __add_mesh_from_bytes threw:", err)

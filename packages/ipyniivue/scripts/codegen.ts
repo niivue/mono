@@ -1467,7 +1467,7 @@ function emitJs(api: ApiDescriptor): string {
   )
   lines.push('        const file = new File([ab], name)')
   lines.push(
-    '        await state.nv.loadVolumes([Object.assign({ url: file, name: name }, options)])',
+    '        await state.nv.loadVolumes([Object.assign({}, options, { url: file, name: name })])',
   )
   lines.push('        if (reqId !== null) respond(true, null)')
   lines.push('      } catch (err) {')
@@ -1503,7 +1503,7 @@ function emitJs(api: ApiDescriptor): string {
   )
   lines.push('        const file = new File([ab], name)')
   lines.push(
-    '        await state.nv.loadMeshes([Object.assign({ url: file, name: name }, options)])',
+    '        await state.nv.loadMeshes([Object.assign({}, options, { url: file, name: name })])',
   )
   lines.push('        if (reqId !== null) respond(true, null)')
   lines.push('      } catch (err) {')

@@ -344,6 +344,9 @@ class NiiVue(_GeneratedNiiVue):
         >>> nifti_bytes = nib.Nifti1Image(arr, np.eye(4)).to_bytes()
         >>> nv.add_volume_from_bytes("cube.nii", nifti_bytes, colormap="hot")
         """
+        if "url" in opts:
+            msg = "add_volume_from_bytes: 'url' is reserved; the bytes are the source"
+            raise TypeError(msg)
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
         self._send_with_buffer("__add_volume_from_bytes", [name, opts_camel], data)
 
@@ -443,6 +446,9 @@ class NiiVue(_GeneratedNiiVue):
         **opts
             NiiVue ``LoadFromUrlParams`` overrides in snake_case.
         """
+        if "url" in opts:
+            msg = "add_mesh_from_bytes: 'url' is reserved; the bytes are the source"
+            raise TypeError(msg)
         opts_camel = {_snake_to_camel(k): v for k, v in opts.items()}
         self._send_with_buffer("__add_mesh_from_bytes", [name, opts_camel], data)
 

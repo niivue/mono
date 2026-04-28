@@ -430,10 +430,11 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | `DRAG_MODE` | ✅ | |
-| `SLICE_TYPE` | ❌ | Not exported (set via property) |
-| `MULTIPLANAR_TYPE` | ❌ | Not exported |
-| `SHOW_RENDER` | ❌ | Not exported |
-| `NiiDataType` / `NiiIntentCode` | ✅ | In NVConstants (not exported from index) |
+| `SLICE_TYPE` | ✅ | |
+| `MULTIPLANAR_TYPE` | ✅ | |
+| `SHOW_RENDER` | ✅ | |
+| `NiiDataType` | ✅ | |
+| `NiiIntentCode` | ❌ | In NVConstants (not exported from index) |
 
 ## 33. Miscellaneous
 
@@ -480,7 +481,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 21. **`colormapInvert`**
 22. **Mesh utilities**: `decimateFaces`, `linesToCylinders`, `createFiberDensityMap`, `reverseFaces`
 23. **Missing events**: `locationChange`, `intensityChange`, `dragRelease`, `measurementCompleted`, `angleCompleted`, `documentLoaded`, `volumeOrderChanged`
-24. **Enum exports**: `SLICE_TYPE`, `MULTIPLANAR_TYPE`, `SHOW_RENDER`
+24. **Enum exports**: `NiiIntentCode`
 25. **AFNI .niml.tract** tractography format
 26. **Legacy callback properties**
 27. **`watchOptsChanges`** (replaced by `propertyChange` event)

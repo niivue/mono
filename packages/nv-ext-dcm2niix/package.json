@@ -1,0 +1,34 @@
+{
+  "name": "@niivue/nv-ext-dcm2niix",
+  "version": "1.0.0-rc.1",
+  "type": "module",
+  "description": "DICOM-to-NIfTI conversion in the browser via the dcm2niix WASM build, packaged for NiiVue",
+  "main": "./dist/nv-ext-dcm2niix.js",
+  "module": "./dist/nv-ext-dcm2niix.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/nv-ext-dcm2niix.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "peerDependencies": {
+    "@niivue/niivue": "workspace:*"
+  },
+  "dependencies": {
+    "@niivue/dcm2niix": "^1.2.0"
+  },
+  "devDependencies": {
+    "@niivue/niivue": "workspace:*",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.2",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "scripts": {
+    "build": "npx vite build",
+    "typecheck": "bunx tsc --noEmit"
+  }
+}

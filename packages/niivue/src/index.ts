@@ -20,7 +20,13 @@ export type { LogLevel } from './logger'
 // Mesh writer types
 export type { WriteOptions } from './mesh/writers'
 // Enums
-export { DRAG_MODE, NiiDataType, SHOW_RENDER, SLICE_TYPE } from './NVConstants'
+export {
+  DRAG_MODE,
+  MULTIPLANAR_TYPE,
+  NiiDataType,
+  SHOW_RENDER,
+  SLICE_TYPE,
+} from './NVConstants'
 export { default, default as NiiVueGPU } from './NVControl'
 // Event types
 export type {

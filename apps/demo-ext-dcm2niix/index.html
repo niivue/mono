@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NiiVue — dcm2niix DICOM to NIfTI</title>
+    <link rel="icon" href="data:," />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        display: flex;
+        flex-direction: column;
+        font-family: system-ui, Arial, Helvetica, sans-serif;
+        color: #eee;
+        background: #303030;
+        user-select: none;
+      }
+      header {
+        background: #333;
+        padding: 0.75rem 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        font-size: 0.9rem;
+      }
+      .drop-target {
+        padding: 0.75rem;
+        border: 2px dashed #888;
+        border-radius: 5px;
+        text-align: center;
+        background-color: #000;
+        color: #ccc;
+        font-size: 0.9rem;
+      }
+      .drop-target.dragover {
+        background-color: #222;
+        border-color: #fff;
+        color: #fff;
+      }
+      button, select, label.file-input-label {
+        font-size: 0.85rem;
+        cursor: pointer;
+        padding: 0.3rem 0.75rem;
+        background: #555;
+        color: #eee;
+        border: 1px solid #777;
+        border-radius: 3px;
+      }
+      button:hover, label.file-input-label:hover { background: #666; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      input[type="file"] { display: none; }
+      main { flex: 1; background: #000; position: relative; min-height: 0; }
+      canvas { width: 100%; height: 100%; cursor: crosshair; }
+      canvas:focus { outline: 0; }
+      footer {
+        background: #333;
+        padding: 0.4rem 1rem;
+        font-size: 0.85rem;
+        min-height: 1.6rem;
+      }
+      .loading {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: #fff;
+        animation: spin 1s ease-in-out infinite;
+        vertical-align: middle;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div id="dropTarget" class="drop-target">
+        Drop a folder of DICOM files here, or use the controls below.
+      </div>
+      <div class="row">
+        <label for="fileInput" class="file-input-label">Choose DICOM folder</label>
+        <input type="file" id="fileInput" webkitdirectory multiple />
+
+        <button type="button" id="loadManifestBtn">Load demo DICOM series</button>
+
+        <select id="fileSelect" class="hidden"></select>
+
+        <button type="button" id="saveButton" class="hidden">Save selected file</button>
+
+        <span id="loadingCircle" class="loading hidden"></span>
+      </div>
+    </header>
+
+    <main>
+      <canvas id="gl1"></canvas>
+    </main>
+
+    <footer id="status">&nbsp;</footer>
+
+    <script type="module" src="src/main.ts"></script>
+  </body>
+</html>

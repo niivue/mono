@@ -389,6 +389,8 @@ Configurable drag interactions on 2D slices. `interaction.primaryDragMode` (defa
 
 `DRAG_MODE` enum: `none`(0), `contrast`(1), `measurement`(2), `pan`(3), `slicer3D`(4), `callbackOnly`(5), `roiSelection`(6), `angle`(7), `crosshair`(8), `windowing`(9).
 
+Public enum exports from the package root (alongside `DRAG_MODE`): `SLICE_TYPE` (axial/coronal/sagittal/multiplanar/render), `MULTIPLANAR_TYPE` (auto/column/grid/row), `SHOW_RENDER`, and `NiiDataType`.
+
 **Overlay rendering:** Selection boxes use GlyphBatch panels (`_dragOverlay.rect`). Measurement/angle lines use line renderer (`_dragOverlay.lines`). Overlay state lives on `model._dragOverlay` (transient, not serialized).
 
 **Drawing priority:** When `draw.isEnabled && drawingVolume`, drawing intercepts left-button before drag mode dispatch.

@@ -27,13 +27,15 @@ niivue/mono/
 ├── apps/
 │   ├── demo-ext-drawing/        Drawing extension demo
 │   ├── demo-ext-image-processing/ Image processing extension demo
-│   └── demo-ext-save-html/      Save-to-HTML extension demo
+│   ├── demo-ext-save-html/      Save-to-HTML extension demo
+│   └── demo-ext-dcm2niix/       DICOM-to-NIfTI extension demo
 ├── packages/
 │   ├── niivue/          @niivue/niivue — Core WebGPU/WebGL2 viewer
 │   ├── nv-react/        @niivue/nvreact — React bindings
 │   ├── nv-ext-drawing/      @niivue/nv-ext-drawing — Drawing & segmentation tools
 │   ├── nv-ext-image-processing/ @niivue/nv-ext-image-processing — Image processing
 │   ├── nv-ext-save-html/    @niivue/nv-ext-save-html — Export scene as HTML
+│   ├── nv-ext-dcm2niix/     @niivue/nv-ext-dcm2niix — DICOM-to-NIfTI via WASM
 │   └── dev-images/      @niivue/dev-images — Shared test images (Git LFS)
 ├── nx-tools/
 │   ├── nx-pixi-plugin.js       Local NX plugin for Python dependency inference
@@ -64,6 +66,7 @@ NX tracks project dependencies to run tasks in the correct order:
 demo-ext-drawing ──→ nv-ext-drawing ──→ niivue
 demo-ext-image-processing ──→ nv-ext-image-processing ──→ niivue
 demo-ext-save-html ──→ nv-ext-save-html ──→ niivue
+demo-ext-dcm2niix ──→ nv-ext-dcm2niix ──→ niivue
 nv-react ──→ niivue
 ```
 

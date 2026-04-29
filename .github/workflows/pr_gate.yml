@@ -16,10 +16,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - uses: oven-sh/setup-bun@v2
 
       - run: bun install
+
+      # Generate ipyniivue's widget.js before pixi installs the package
+      # in editable mode. widget.js is gitignored and bundled by codegen;
+      # hatchling's force-include entry for it would otherwise fail the
+      # editable install below.
+      - name: Codegen (ipyniivue)
+        run: bunx nx run ipyniivue:codegen
+
+      # Pixi provisions the Python dev env used by ipyniivue's Nx
+      # targets (ruff, mypy, pytest, hatchling/python-build, jupyter).
+      # Cached across runs by prefix-dev/setup-pixi.
+      - uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          manifest-path: packages/ipyniivue/pyproject.toml
+          environments: dev
+          cache: true
 
       - name: Lint
         run: bunx nx run-many -t lint
@@ -32,6 +50,12 @@ jobs:
 
       - name: Packed-consumer smoke test (niivue)
         run: bunx nx run niivue:smoke
+
+      - name: Notebook hygiene
+        run: bun .github/scripts/check-notebook-hygiene.ts
+
+      - name: README notebook paths
+        run: bun .github/scripts/check-readme-notebook-paths.ts
 
       - name: Coverage summary (niivue)
         if: always()

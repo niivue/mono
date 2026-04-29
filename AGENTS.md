@@ -2,7 +2,7 @@
 
 ## Project overview
 
-NiiVue is a browser-based medical image visualization ecosystem. This monorepo contains the core WebGPU/WebGL2 viewer, React bindings, extension libraries, and demo applications. The stack is TypeScript, Vite, Bun (package manager + runtime), Biome (lint/format), and Nx (task orchestration + caching). There is scaffolding for Python/Pixi projects for the future. 
+NiiVue is a browser-based medical image visualization ecosystem. This monorepo contains the core WebGPU/WebGL2 viewer, React bindings, extension libraries, demo applications, and a Python Jupyter widget (`ipyniivue`). The stack is TypeScript, Vite, Bun (package manager + runtime), Biome (lint/format), Nx (task orchestration + caching), and Pixi/hatchling (Python environments + wheels).
 
 See `README.md` for a package overview and `CONTRIBUTING.md` for detailed development docs.
 

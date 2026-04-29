@@ -10,7 +10,6 @@
     ],
     "python": [
       "{projectRoot}/**/*.py",
-      "{projectRoot}/pixi.toml",
       "{projectRoot}/pyproject.toml"
     ]
   },
@@ -53,6 +52,19 @@
         "version": {
           "conventionalCommits": true,
           "fallbackCurrentVersionResolver": "disk"
+        },
+        "changelog": true
+      },
+      "python": {
+        "projects": ["packages/ipyniivue"],
+        "projectsRelationship": "independent",
+        "releaseTag": {
+          "pattern": "{projectName}@{version}"
+        },
+        "version": {
+          "conventionalCommits": true,
+          "fallbackCurrentVersionResolver": "disk",
+          "versionActions": "./nx-tools/pixi-version-actions.js"
         },
         "changelog": true
       }

@@ -21,6 +21,15 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      - run: bun install
+
+      # Generate ipyniivue's widget.js before pixi installs the package
+      # in editable mode. widget.js is gitignored and bundled by codegen;
+      # hatchling's force-include entry for it would otherwise fail the
+      # editable install below.
+      - name: Codegen (ipyniivue)
+        run: bunx nx run ipyniivue:codegen
+
       # Pixi provisions the Python dev env used by ipyniivue's Nx
       # targets (ruff, mypy, pytest, hatchling/python-build, jupyter).
       # Cached across runs by prefix-dev/setup-pixi.
@@ -29,8 +38,6 @@ jobs:
           manifest-path: packages/ipyniivue/pyproject.toml
           environments: dev
           cache: true
-
-      - run: bun install
 
       - name: Lint
         run: bunx nx run-many -t lint

@@ -214,7 +214,7 @@
     },
     "packages/nv-web-component": {
       "name": "@niivue/nv-web-component",
-      "version": "1.0.0-rc.3",
+      "version": "1.0.0-rc.1",
       "dependencies": {
         "lit": "^3.3.2",
       },

@@ -187,10 +187,15 @@ async function fetchDemoManifest(manifestUrl: string): Promise<File[]> {
       const filename = url.pathname.split('/').pop() ?? 'dicom'
       // dcm2niix groups by webkitRelativePath; standard webkitRelativePath
       // is read-only, so stamp the underscore-prefixed form it also reads.
+      // Preserve any folder hierarchy the manifest specifies so nested
+      // studies/series don't collapse and collide; bare filenames get a
+      // synthetic "series/" prefix so dcm2niix treats them as adjacent.
       const file = new File([buffer], filename) as File & {
         _webkitRelativePath?: string
       }
-      file._webkitRelativePath = `series/${filename}`
+      file._webkitRelativePath = relativePath.includes('/')
+        ? relativePath
+        : `series/${filename}`
       return file
     }),
   )

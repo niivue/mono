@@ -12,6 +12,8 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 | [`@niivue/nv-ext-image-processing`](packages/nv-ext-image-processing) | Image processing (Otsu thresholding, haze removal, etc.) | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-image-processing/next)](https://www.npmjs.com/package/@niivue/nv-ext-image-processing) |
 | [`@niivue/nv-ext-save-html`](packages/nv-ext-save-html) | Export a NiiVue scene as a self-contained HTML file | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-save-html/next)](https://www.npmjs.com/package/@niivue/nv-ext-save-html) |
 | [`@niivue/nv-ext-dcm2niix`](packages/nv-ext-dcm2niix) | DICOM-to-NIfTI conversion in the browser via the dcm2niix WASM build | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-dcm2niix/next)](https://www.npmjs.com/package/@niivue/nv-ext-dcm2niix) |
+| [`@niivue/web-bridge`](packages/niivue-web-bridge) | Typed two-way JSON-envelope bridge between a NiiVue web view and a native (WKWebView) host | — |
+| [`NiiVueKit`](packages/niivue-swift) | Swift package (`BridgeCore` + `NiiVueKit`) pairing with `@niivue/web-bridge` to embed NiiVue in SwiftUI apps via `WKWebView` | — |
 | [`@niivue/dev-images`](packages/dev-images) | Shared test volumes, meshes, and tractography files (Git LFS) | — |
 | [`ipyniivue`](packages/ipyniivue) | Jupyter widget wrapping NiiVue (anywidget) — Python wheel | [![PyPI](https://img.shields.io/pypi/v/ipyniivue)](https://pypi.org/project/ipyniivue/) |
 

@@ -27,6 +27,7 @@ const useWebGPUCb = $<HTMLInputElement>('useWebGPU')
 const enableDrawBtn = $<HTMLButtonElement>('enableDrawBtn')
 const penColorSelect = $<HTMLSelectElement>('penColor')
 const penSizeInput = $<HTMLInputElement>('penSize')
+const penFilledCb = $<HTMLInputElement>('penFilled')
 const undoBtn = $<HTMLButtonElement>('undoBtn')
 const interpAxisSelect = $<HTMLSelectElement>('interpAxis')
 const intensityGuidedCb = $<HTMLInputElement>('intensityGuided')
@@ -100,6 +101,10 @@ penColorSelect.onchange = () => {
 
 penSizeInput.oninput = () => {
   nv.drawPenSize = parseInt(penSizeInput.value, 10)
+}
+
+penFilledCb.onchange = () => {
+  nv.drawPenFilled = penFilledCb.checked
 }
 
 undoBtn.onclick = () => ctx.drawUndo()

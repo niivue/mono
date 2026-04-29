@@ -1,43 +1,42 @@
 //
 //  WebAssetHandler.swift
-//  medgfx
+//  BridgeCore
 //
-//  Serves the built vite web app (medgfx-web) from the app bundle under
-//  a custom `medgfx://` scheme. Needed so we can set Cross-Origin-Opener-Policy
-//  and Cross-Origin-Embedder-Policy response headers, which `loadFileURL`
-//  cannot do. Those headers enable `crossOriginIsolated`, which niivue's
-//  worker paths rely on for `SharedArrayBuffer`.
+//  Serves the built web app from a resource bundle under a custom URL
+//  scheme configured on a `BridgeConfig`. Exists specifically so we can set
+//  Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy response
+//  headers, which `WKWebView.loadFileURL:` cannot do. Those headers enable
+//  `crossOriginIsolated`, which NiiVue's worker paths rely on for
+//  `SharedArrayBuffer`.
 //
-//  URL shape: medgfx://app/<path-under-Resources/WebApp>
+//  URL shape: <scheme>://<host>/<path-under-bundleSubdir>
 //
 
 import Foundation
 import UniformTypeIdentifiers
 import WebKit
 
-enum WebAssetConstants {
-    static let scheme = "medgfx"
-    static let host = "app"
-    /// Name of the folder copied into the app bundle by the Xcode build phase.
-    static let bundleSubdir = "WebApp"
-    /// Entry URL loaded in RELEASE builds.
-    static let entryURL = URL(string: "medgfx://app/index.html")!
-}
+public final class WebAssetHandler: NSObject, WKURLSchemeHandler {
+    public let config: BridgeConfig
 
-final class WebAssetHandler: NSObject, WKURLSchemeHandler {
-    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+    public init(config: BridgeConfig) {
+        self.config = config
+    }
+
+    public func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         let url = urlSchemeTask.request.url
-        guard let url, url.scheme == WebAssetConstants.scheme else {
+        guard let url, url.scheme == config.urlScheme else {
             urlSchemeTask.didFailWithError(URLError(.badURL))
             return
         }
 
-        // `medgfx://app/foo/bar.js` -> path "foo/bar.js" relative to Resources/WebApp
+        // `<scheme>://<host>/foo/bar.js` -> path "foo/bar.js" relative to
+        // the configured bundle subdir.
         var relative = url.path
         if relative.hasPrefix("/") { relative.removeFirst() }
-        if relative.isEmpty { relative = "index.html" }
+        if relative.isEmpty { relative = config.entryPath }
 
-        guard let fileURL = Self.resolve(relative: relative) else {
+        guard let fileURL = resolve(relative: relative) else {
             respondNotFound(task: urlSchemeTask, url: url)
             return
         }
@@ -68,26 +67,21 @@ final class WebAssetHandler: NSObject, WKURLSchemeHandler {
         }
     }
 
-    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
+    public func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
         // No long-running state to cancel.
     }
 
     // MARK: Helpers
 
-    private static func resolve(relative: String) -> URL? {
-        // Try the configured subdir first.
-        if let base = Bundle.main.resourceURL?.appendingPathComponent(WebAssetConstants.bundleSubdir) {
-            let candidate = base.appendingPathComponent(relative)
-            if FileManager.default.fileExists(atPath: candidate.path) {
-                return candidate
-            }
+    private func resolve(relative: String) -> URL? {
+        guard let base = config.resourceBundle.resourceURL?
+            .appendingPathComponent(config.bundleSubdir)
+        else { return nil }
+        let candidate = base.appendingPathComponent(relative)
+        guard FileManager.default.fileExists(atPath: candidate.path) else {
+            return nil
         }
-        // Fallback: raw bundle lookup (in case the Copy Files phase deposits
-        // assets at the top level of Resources).
-        if let any = Bundle.main.url(forResource: relative, withExtension: nil) {
-            return any
-        }
-        return nil
+        return candidate
     }
 
     private static func mimeType(for url: URL) -> String {

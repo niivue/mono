@@ -6,6 +6,7 @@
 //  orientation labels, crosshair in 3D, cross lines, ruler, legend.
 //
 
+import NiiVueKit
 import SwiftUI
 
 struct ChromePanel: InspectorPanel {

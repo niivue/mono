@@ -5,6 +5,7 @@
 //  Background color, gamma, camera (azimuth/elevation).
 //
 
+import NiiVueKit
 import SwiftUI
 
 struct ScenePanel: InspectorPanel {

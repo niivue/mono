@@ -1,8 +1,10 @@
 //
 //  Bridge.swift
-//  medgfx
+//  BridgeCore
 //
-//  Typed two-way bridge between SwiftUI and the WKWebView.
+//  Typed two-way bridge between a SwiftUI host and a WKWebView-hosted web
+//  app. Configured by a `BridgeConfig` so the same code can power multiple
+//  independent bridges in one app (e.g. multiple viewers side by side).
 //
 //  Wire format (both directions):
 //    { kind: "call",   id, method, payload }
@@ -11,32 +13,20 @@
 //    { kind: "event",  name, payload }
 //
 //  Transport:
-//    Swift -> JS: webView.evaluateJavaScript("window.__medgfxBridge.__receive(<json>)")
-//    JS -> Swift: WKScriptMessageHandler named "medgfx"
+//    Swift -> JS: webView.evaluateJavaScript("<jsGlobalPath>.__receive(<json>)")
+//    JS -> Swift: WKScriptMessageHandler named `config.handlerName`
 //
 
 import Foundation
 import WebKit
 
-enum BridgeError: Error {
-    case remote(String)
-    case notReady
-    case encoding(String)
-    case webViewGone
-}
-
-/// Name of the JS-side message handler and the JS global object.
-/// Kept in one place so the Swift injection script and the JS bridge agree.
-enum BridgeNames {
-    static let messageHandler = "medgfx"
-    static let jsGlobal = "window.__medgfxBridge"
-}
-
 @MainActor
-final class Bridge: NSObject {
-    // The webview this bridge speaks to. Set by NiiVueWebView after the
-    // WKWebView is created.
-    weak var webView: WKWebView?
+public final class Bridge: NSObject {
+    public let config: BridgeConfig
+
+    /// The webview this bridge speaks to. Set by the SwiftUI wrapper after
+    /// the `WKWebView` is created.
+    public weak var webView: WKWebView?
 
     // Pending Swift-initiated calls awaiting a result envelope from JS.
     private var pending: [String: CheckedContinuation<Data, Error>] = [:]
@@ -51,7 +41,13 @@ final class Bridge: NSObject {
     private var isReady = false
     private var preReadyQueue: [String] = []
 
-    override init() {
+    /// Test-only hook. When set, outbound JS literals are delivered here
+    /// instead of being evaluated on the webView. `internal` + `@testable
+    /// import BridgeCore` keeps this out of the public surface.
+    internal var _testOutboundSink: ((String) -> Void)?
+
+    public init(config: BridgeConfig = .default) {
+        self.config = config
         super.init()
         // Built-in: flush the queue when JS reports it's ready.
         on("ready") { [weak self] _ in
@@ -62,7 +58,7 @@ final class Bridge: NSObject {
     // MARK: Public API
 
     /// Invoke a method on the JS side and await its reply.
-    func call<Out: Decodable>(
+    public func call<Out: Decodable>(
         _ method: String,
         _ payload: Encodable,
         as: Out.Type = Out.self
@@ -78,47 +74,54 @@ final class Bridge: NSObject {
     }
 
     /// Fire-and-forget event to the JS side with no payload.
-    func emit(_ name: String) {
+    public func emit(_ name: String) {
         emit(name, EmptyPayload())
     }
 
     /// Fire-and-forget event to the JS side.
-    func emit(_ name: String, _ payload: Encodable) {
+    public func emit(_ name: String, _ payload: Encodable) {
         let envelope = EventEnvelope(kind: "event", name: name, payload: AnyEncodable(payload))
         do {
             let js = try encodeAsJSLiteral(envelope)
             enqueueOrSend(js)
         } catch {
-            print("[medgfx-bridge] failed to encode event \(name): \(error)")
+            print("[niivue-bridge] failed to encode event \(name): \(error)")
         }
     }
 
     /// Register a handler for JS-initiated calls to `method`.
-    func handle(_ method: String, _ handler: @escaping (Data) async throws -> Encodable) {
+    ///
+    /// Precondition: `method` must not already be registered. Matches the
+    /// JS side's symmetric behaviour (`Bridge.handle` throws on dupes).
+    public func handle(_ method: String, _ handler: @escaping (Data) async throws -> Encodable) {
+        precondition(
+            callHandlers[method] == nil,
+            "Bridge.handle: handler already registered for '\(method)'"
+        )
         callHandlers[method] = handler
     }
 
     /// Subscribe to JS-emitted events by name.
-    func on(_ event: String, _ handler: @escaping (Data) -> Void) {
+    public func on(_ event: String, _ handler: @escaping (Data) -> Void) {
         eventHandlers[event, default: []].append(handler)
     }
 
     // MARK: Transport plumbing
 
-    /// Called from WKScriptMessageHandler for each envelope JS sent us.
-    func receive(rawBody: Any) {
+    /// Called from the WKScriptMessageHandler for each envelope JS sent us.
+    public func receive(rawBody: Any) {
         guard let json = serializeMessageBody(rawBody),
               let envelope = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
               let kind = envelope["kind"] as? String
         else {
-            print("[medgfx-bridge] malformed envelope from JS: \(rawBody)")
+            print("[niivue-bridge] malformed envelope from JS: \(rawBody)")
             return
         }
         switch kind {
         case "call":   handleCall(envelope)
         case "result": handleResult(envelope)
         case "event":  handleEvent(envelope)
-        default:       print("[medgfx-bridge] unknown kind: \(kind)")
+        default:       print("[niivue-bridge] unknown kind: \(kind)")
         }
     }
 
@@ -139,10 +142,20 @@ final class Bridge: NSObject {
     }
 
     private func sendToJS(_ jsEnvelopeLiteral: String) {
+        // `JSONEncoder` does not escape U+2028/U+2029, which terminate JS
+        // source lines. We embed the JSON directly into an `evaluateJavaScript`
+        // input, so we must neutralise them ourselves.
+        let safeLiteral = jsEnvelopeLiteral
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        if let sink = _testOutboundSink {
+            sink("\(config.jsGlobalPath).__receive(\(safeLiteral));")
+            return
+        }
         guard let webView else { return }
-        let js = "\(BridgeNames.jsGlobal).__receive(\(jsEnvelopeLiteral));"
+        let js = "\(config.jsGlobalPath).__receive(\(safeLiteral));"
         webView.evaluateJavaScript(js) { _, err in
-            if let err { print("[medgfx-bridge] evaluateJavaScript error: \(err)") }
+            if let err { print("[niivue-bridge] evaluateJavaScript error: \(err)") }
         }
     }
 
@@ -205,44 +218,6 @@ final class Bridge: NSObject {
             sendToJS(js)
         }
     }
-}
-
-// MARK: - Wire types
-
-private struct CallEnvelope: Encodable {
-    let kind: String
-    let id: String
-    let method: String
-    let payload: AnyEncodable
-}
-
-private struct EventEnvelope: Encodable {
-    let kind: String
-    let name: String
-    let payload: AnyEncodable
-}
-
-private struct ResultOK: Encodable {
-    let kind: String
-    let id: String
-    let ok: Bool
-    let value: AnyEncodable
-}
-
-private struct ResultErr: Encodable {
-    let kind: String
-    let id: String
-    let ok: Bool
-    let error: String
-}
-
-struct EmptyPayload: Encodable {}
-
-/// Type-erased Encodable wrapper so we can embed arbitrary Encodable payloads.
-struct AnyEncodable: Encodable {
-    private let _encode: (Encoder) throws -> Void
-    init<T: Encodable>(_ wrapped: T) { _encode = wrapped.encode }
-    func encode(to encoder: Encoder) throws { try _encode(encoder) }
 }
 
 // MARK: - Helpers

@@ -8,22 +8,16 @@ A native SwiftUI app for **macOS**, **iOS**, and **iPadOS** that hosts [NiiVue](
 apps/medgfx/
 ├── .gitignore                     macOS (.DS_Store) + Xcode (xcuserdata/, *.xcuserstate) noise
 ├── medgfx.xcodeproj/              Xcode project (targets: medgfx, medgfxTests, medgfxUITests)
+│                                  References the Swift package at ../../packages/niivue-swift
+│                                  via XCLocalSwiftPackageReference (product: NiiVueKit).
 ├── medgfx/                        Swift target sources (target name: medgfx)
 │   ├── medgfxApp.swift              @main entry — WindowGroup { ContentView() }
-│   ├── ContentView.swift            Layout shell — WebView + inspector + footer
+│   ├── ContentView.swift            Layout shell — NiiVueWebView + inspector + footer
 │   ├── Info.plist                   ATS exception for localhost (needed in Debug only)
 │   ├── medgfx.entitlements          App Sandbox + Outgoing Network + hardened runtime
 │   ├── mni152.nii.gz                Bundled sample volume (LFS-tracked, 4.1 MB)
 │   ├── Assets.xcassets/             App icon + accent color
-│   ├── WebView/
-│   │   ├── NiiVueWebView.swift      UIView/NSView Representable wrapping WKWebView
-│   │   ├── WebAssetHandler.swift    WKURLSchemeHandler for `medgfx://app/` (Release)
-│   │   └── Bridge.swift             Swift side of the typed envelope bridge
-│   ├── NiiVue/
-│   │   ├── NiiVueModel.swift        @Observable view-model; owns Bridge + prop cells
-│   │   ├── NiiVueProp.swift         Generic property cell used by the model
-│   │   └── NiiVueEnums.swift        SliceType / MultiplanarType / ShowRender / Backend
-│   └── Inspector/
+│   └── Inspector/                   App-specific inspector panels (not part of NiiVueKit)
 │       ├── InspectorPanel.swift     Protocol + AnyInspectorPanel type eraser
 │       ├── InspectorContainer.swift Segmented picker + active panel host
 │       ├── PanelHelpers.swift       Shared `section()` + `sliderRow()` builders
@@ -36,16 +30,22 @@ apps/medgfx/
 └── web/                           Nx TS project "medgfx-web"
     ├── index.html                   Full-viewport <canvas id="gl1"> host
     ├── src/
-    │   ├── main.ts                  Instantiates NiiVue, wires bridge, emits 'ready'
-    │   ├── bridge.ts                JS side of the typed envelope bridge
-    │   ├── niivue-controller.ts     Registers loadVolume / setBackend; delegates to prop-bridge
-    │   ├── prop-bridge.ts           Generic setProp / getProps / propChange wiring
-    │   └── prop-allowlist.ts        Allow-listed NiiVue properties + coercion kinds
-    ├── vite.config.ts               Port 8083, COOP/COEP headers, base: './'
+    │   └── main.ts                  Instantiates NiiVue, wires bridge, emits 'ready'
+    │                                Imports from @niivue/web-bridge/{bridge,niivue-controller}.
+    ├── vite.config.ts               Port 8083, COOP/COEP headers, base: './',
+    │                                resolves the `development` export condition of
+    │                                @niivue/web-bridge so the dev server uses source.
     ├── tsconfig.json
-    ├── package.json                 deps: @niivue/niivue (workspace:*)
+    ├── package.json                 deps: @niivue/niivue, @niivue/web-bridge (both workspace:*)
     └── project.json                 Nx targets: dev, build, typecheck, lint, format
 ```
+
+The reusable bridge code lives in two packages under `packages/`:
+
+- **`packages/niivue-swift/`** (Swift Package, products `BridgeCore` + `NiiVueKit`) — owns `Bridge`, `BridgeConfig`, `WebAssetHandler`, `NiiVueWebView`, `NiiVueModel`, `NiiVueProp`, `NiiVueEnums`, and the wire types. Also has an optional bundled web app slot under `Sources/NiiVueKit/Resources/WebApp/` (gitignored; regenerate with `scripts/build-web.sh`, consumed via `BridgeConfig.niiVueKitBundled`). `apps/medgfx/` does *not* use that slot — it ships its own web bundle via a Run Script phase.
+- **`packages/niivue-web-bridge/`** (`@niivue/web-bridge`) — owns `bridge.ts`, `prop-bridge.ts`, `prop-allowlist.ts`, `niivue-controller.ts`.
+
+`apps/medgfx/` is a consumer of both. Its Xcode project stores a relative-path `XCLocalSwiftPackageReference` to `../../packages/niivue-swift`; its web app depends on `@niivue/web-bridge` via `workspace:*`.
 
 The web app is a first-class Nx workspace (`medgfx-web`). The root `package.json` declares `apps/medgfx/web` as a workspace so `bun install` picks it up. Nx discovers `project.json` automatically.
 
@@ -66,12 +66,14 @@ type Envelope =
 ```
 
 **Transport:**
-- JS → Swift: `window.webkit.messageHandlers.medgfx.postMessage(envelope)` → delivered to `WKScriptMessageHandler` in `NiiVueWebView.Coordinator` → forwarded to `Bridge.receive(rawBody:)`.
-- Swift → JS: `webView.evaluateJavaScript("window.__medgfxBridge.__receive(<jsonLiteral>)")`.
+- JS → Swift: `window.webkit.messageHandlers.niivue.postMessage(envelope)` → delivered to `WKScriptMessageHandler` in `NiiVueWebView.Coordinator` → forwarded to `Bridge.receive(rawBody:)`.
+- Swift → JS: `webView.evaluateJavaScript("window.__niivueBridge.__receive(<jsonLiteral>)")`.
+
+(Handler name and JS global are configurable via `BridgeConfig`; medgfx uses `BridgeConfig.default`, which pins them to `niivue` / `__niivueBridge` / scheme `niivue-app://`. Matches the defaults of `@niivue/web-bridge`.)
 
 **API is symmetric on both sides:**
 
-| Operation | JS (`bridge.ts`) | Swift (`Bridge.swift`) |
+| Operation | JS (`@niivue/web-bridge/bridge`) | Swift (`BridgeCore.Bridge`) |
 |---|---|---|
 | Invoke remote, await reply | `bridge.call<Out>(method, payload): Promise<Out>` | `try await bridge.call(method, payload) as Out` |
 | Register a handler the other side can `call` | `bridge.handle(method, (payload) => result)` | `bridge.handle(method) { payload in ... }` |
@@ -94,7 +96,7 @@ type Envelope =
 
 When you do need a bespoke method:
 
-1. Pick a direction. Swift→JS: register the handler on the JS side with `bridge.handle('foo', ...)` (typically in `niivue-controller.ts`). JS→Swift: register it on the Swift side with `bridge.handle("foo") { ... }` (typically in `ContentView` or a dedicated controller).
+1. Pick a direction. Swift→JS: register the handler on the JS side with `bridge.handle('foo', ...)` (typically in `packages/niivue-web-bridge/src/niivue-controller.ts`). JS→Swift: register it on the Swift side with `bridge.handle("foo") { ... }` (typically in `ContentView` or on `NiiVueModel`).
 2. Call it from the other side: `bridge.call('foo', payload)` / `try await bridge.call("foo", payload)`.
 3. Payload and return types are plain JSON-serialisable structures. Define matching `Encodable`/`Decodable` Swift structs and TS types; the bridge itself is name-agnostic.
 
@@ -116,16 +118,19 @@ An `isApplyingFromJS` guard in the model and a corresponding `applying` flag in 
 
 **To expose a new NiiVue property as a SwiftUI control:**
 
-1. Add one line to `web/src/prop-allowlist.ts`:
+For properties already in `NiiVueModel`'s built-in list, just bind them (e.g. `Toggle(..., isOn: model.binding(\.isColorbarVisible))`). For new properties:
+
+1. Add one line to `packages/niivue-web-bridge/src/prop-allowlist.ts` (extends `DEFAULT_PROP_ALLOWLIST`, or pass a custom map to `wireNiiVueToBridge`):
    ```ts
    crosshairColor: { kind: 'rgba', emitOnChange: true },
    ```
    `kind` controls coercion on the JS side: `boolean`, `number`, `enum`, `string`, or `rgba`.
-2. Add one line to `NiiVueModel.swift` (and register it in the init block):
+2. Register an extra cell on `NiiVueModel` at init time (preferred — the cell is then visible to the automatic `hydrate()` on `ready`):
    ```swift
-   let crosshairColor: NiiVueProp<[Double]> = NiiVueProp(path: "crosshairColor", initial: [1,0,0,1])
-   // in init: register(crosshairColor) { [weak self] p, v in self?.pushToJS(path: p, value: v) }
+   let crosshair = NiiVueProp<[Double]>(path: "crosshairColor", initial: [1, 0, 0, 1])
+   let model = NiiVueModel(bridge: bridge, extraCells: [crosshair])
    ```
+   `model.registerExtra(_:)` exists for post-init registration, but cells added that way miss the first hydrate.
 3. Bind it in any panel:
    ```swift
    ColorPicker("Crosshair", selection: ...)  // see ScenePanel for rgba↔Color conversion
@@ -147,9 +152,9 @@ The app has exactly two moving parts:
 | Config | Webview loads | Web assets come from | Needs dev server? |
 |---|---|---|---|
 | **Debug** | `http://localhost:8083/` | Vite dev server (HMR) | Yes — `bunx nx dev medgfx-web` |
-| **Release** | `medgfx://app/index.html` | `Contents/Resources/WebApp/` inside the `.app` | No |
+| **Release** | `niivue-app://app/index.html` | `Contents/Resources/WebApp/` inside the `.app` | No |
 
-The loader URL is chosen at compile time via `#if DEBUG` in `NiiVueWebView.initialURL()`.
+The loader URL is chosen at runtime by `NiiVueWebView.initialURL()`: in DEBUG builds it uses `BridgeConfig.devServerURL` if set (medgfx sets it via `.withDevServer(port: 8083)` on `ContentView.init`), otherwise the bundled URL. `BridgeConfig.default` leaves `devServerURL` nil, so consumers that don't opt in get RELEASE-shaped behaviour everywhere.
 
 ### Debug flow
 
@@ -167,7 +172,7 @@ No external dev server needed. A Run Script build phase on the `medgfx` target d
    - Augments `PATH` with `~/.bun/bin`, `/opt/homebrew/bin`, `/usr/local/bin` because Xcode.app's script environment doesn't inherit the user shell's PATH.
    - `cd` to the monorepo root and runs `bunx nx build medgfx-web`, producing `apps/medgfx/web/dist/`.
    - `rsync -a --delete` copies `web/dist/` into `$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/WebApp/` — on macOS this is `medgfx.app/Contents/Resources/WebApp/`, on iOS/iPadOS this is `medgfx.app/WebApp/`.
-2. At runtime, `WKWebView` requests `medgfx://app/index.html`.
+2. At runtime, `WKWebView` requests `niivue-app://app/index.html`.
 3. `WebAssetHandler` (registered via `WKWebViewConfiguration.setURLSchemeHandler`) resolves the request path against `Bundle.main.resourceURL!.appendingPathComponent("WebApp")` and returns the bytes with the required response headers (COOP/COEP/CORP, correct MIME type).
 
 The custom scheme exists specifically because `loadFileURL:` cannot set response headers. Without COOP/COEP, `crossOriginIsolated` is false, `SharedArrayBuffer` is disabled, and NiiVue's worker-accelerated paths silently degrade.
@@ -188,11 +193,11 @@ The custom scheme exists specifically because `loadFileURL:` cannot set response
   - `NiiVueWebView(bridge: bridge)` filling the main area (the dominant element).
   - Trailing `InspectorContainer` or bottom sheet (see "Responsive layout" below).
   - Footer with "Load sample" button, status text (`model.lastStatus`), and the most recent `locationChange.string` (`model.locationText`).
-- `NiiVueModel` — `@MainActor @Observable` view-model. Owns every allow-listed NiiVue property as a `NiiVueProp<Value>` cell plus transient state (`isReady`, `currentBackend`, `isSwitchingBackend`, `lastStatus`, `locationText`). Subscribes once to `ready` / `propChange` / `backendChange` / `locationChange` events; fans out inbound updates to the right cell by path via a `[String: any AnyPropCell]` dispatch table.
-- `NiiVueProp<Value>` — single bound property cell. Stores current value, has an injected `pusher` closure that fires on write (the model uses this to call `setProp` over the bridge), and an `applyFromJS(_:)` entry point for inbound updates that bypasses the pusher.
-- `InspectorContainer` — segmented picker over an array of `AnyInspectorPanel` + a `ScrollView` hosting the active panel. Panels are registered in `InspectorPanels.all`; adding one is a one-line append.
-- `NiiVueWebView` — a thin `UIViewRepresentable` (iOS/iPadOS) / `NSViewRepresentable` (macOS) wrapper around `WKWebView`. Handles configuration, script message handler registration, custom scheme handler registration, inspector toggle, and initial URL selection. Exposes no SwiftUI state — all app state flows through the `Bridge`.
-- `Bridge` is a `@MainActor` reference type, stored in `@State` (not `@StateObject`, since nothing publishes).
+- `NiiVueModel` (from `NiiVueKit`) — `@MainActor @Observable` view-model. Owns every allow-listed NiiVue property as a `NiiVueProp<Value>` cell plus transient state (`isReady`, `currentBackend`, `isSwitchingBackend`, `lastStatus`, `locationText`). Subscribes once to `ready` / `propChange` / `backendChange` / `locationChange` events; fans out inbound updates to the right cell by path via a `[String: any AnyPropCell]` dispatch table.
+- `NiiVueProp<Value>` (from `NiiVueKit`) — single bound property cell. Stores current value, has an injected `pusher` closure that fires on write (the model uses this to call `setProp` over the bridge), and an `applyFromJS(_:)` entry point for inbound updates that bypasses the pusher.
+- `InspectorContainer` — segmented picker over an array of `AnyInspectorPanel` + a `ScrollView` hosting the active panel. Panels are registered in `InspectorPanels.all`; adding one is a one-line append. Lives in this app; NiiVueKit does not ship inspector UI.
+- `NiiVueWebView` (from `NiiVueKit`) — a thin `UIViewRepresentable` (iOS/iPadOS) / `NSViewRepresentable` (macOS) wrapper around `WKWebView`. Handles configuration, script message handler registration, custom scheme handler registration, inspector toggle, and initial URL selection. Exposes no SwiftUI state — all app state flows through the `Bridge`.
+- `Bridge` (from `BridgeCore`) is a `@MainActor` reference type, stored in `@State` (not `@StateObject`, since nothing publishes).
 
 ### Responsive layout
 
@@ -262,3 +267,4 @@ xcodebuild -project medgfx.xcodeproj -scheme medgfx \
 - **`#if os(iPadOS)` is not a thing** — Swift treats iPadOS as iOS. Use `@Environment(\.horizontalSizeClass)` (regular vs compact) to distinguish iPad from iPhone at runtime, not compile-time conditionals.
 - **LFS for bundled sample volumes** — `mni152.nii.gz` in the Swift target is Git LFS-tracked via the root `.gitattributes` pattern `apps/medgfx/medgfx/**/*.nii.gz`. LFS deduplicates by content hash, so the same bytes shared with `packages/dev-images/images/volumes/mni152.nii.gz` cost zero extra LFS storage. Contributors need `git lfs install` once per machine — otherwise they'll clone the 3-line pointer file, Xcode will happily bundle that pointer as the "sample", and the Load-sample button will fail at runtime.
 - **`apps/medgfx/.gitignore`** — excludes `.DS_Store`, `xcuserdata/`, and `*.xcuserstate` (per-user Xcode window/breakpoint state). `project.pbxproj`, `contents.xcworkspacedata`, and `xcshareddata/xcschemes/` must stay tracked — dropping any of them breaks the build for other contributors.
+- **`packages/niivue-swift/Sources/NiiVueKit/Resources/WebApp/` is gitignored.** Only the placeholder `README.md` inside that directory is tracked. The prebuilt web bundle is a generated artifact with content-hashed filenames (~900 KB per build); committing it would balloon git history every rebuild. medgfx doesn't need it — its Run Script phase ships `apps/medgfx/web/dist/` into `Contents/Resources/WebApp/` and `BridgeConfig.default` reads from `Bundle.main`. Only consumers opting into `BridgeConfig.niiVueKitBundled` (`.module`) need to run `packages/niivue-swift/scripts/build-web.sh` once locally. A blank webview with 404s on `niivue-app://app/index.html` for a `niiVueKitBundled` consumer is the signal to run it.

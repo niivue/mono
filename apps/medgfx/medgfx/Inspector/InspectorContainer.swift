@@ -7,6 +7,7 @@
 //  visibility — InspectorContainer itself is always "visible" when instantiated.
 //
 
+import NiiVueKit
 import SwiftUI
 
 @MainActor

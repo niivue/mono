@@ -5,6 +5,7 @@
 //  Slice type, multiplanar type, hero fraction, radiological flip, mosaic.
 //
 
+import NiiVueKit
 import SwiftUI
 
 struct ViewLayoutPanel: InspectorPanel {

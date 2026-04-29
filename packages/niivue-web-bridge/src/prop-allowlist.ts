@@ -1,12 +1,15 @@
 /**
- * Allow-list of NiiVue controller properties exposed to the native host.
+ * Allow-list of NiiVue controller properties that can be driven from the
+ * native host via the generic `setProp` / `getProps` / `propChange` path.
  *
  * Every entry declares:
  *   - `kind`: how the JSON value is coerced before assigning to the controller
  *   - `emitOnChange`: whether inbound changes from NiiVue's `change` event
- *     should be forwarded to Swift (set to false for transient/internal props)
+ *     should be forwarded to the native side (set to false for transient/
+ *     internal props)
  *
- * Adding a property = one line here + one line in the Swift view-model.
+ * Consumers can extend or override entries by passing their own map into
+ * `wirePropBridge(nv, bridge, { allowlist })`.
  */
 
 export type PropKind =
@@ -21,7 +24,13 @@ export type PropSpec = {
   emitOnChange?: boolean
 }
 
-export const PROP_ALLOWLIST: Record<string, PropSpec> = {
+export type PropAllowlist = Record<string, PropSpec>
+
+/**
+ * Default set of properties most hosts will want. Consumers who need more
+ * (or fewer) pass their own map into `wirePropBridge`.
+ */
+export const DEFAULT_PROP_ALLOWLIST: PropAllowlist = {
   // Layout
   sliceType: { kind: 'enum', emitOnChange: true },
   multiplanarType: { kind: 'enum', emitOnChange: true },

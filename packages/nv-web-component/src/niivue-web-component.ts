@@ -450,6 +450,8 @@ export class NiivueSceneElement extends LitElement {
 export function defineNiivueWebComponents(
   options: NiivueWebComponentOptions = {},
 ): void {
+  if (typeof customElements === 'undefined') return
+
   const viewerName = options.elementName ?? defaultElementName
   const sceneName = options.sceneElementName ?? defaultSceneElementName
   if (!customElements.get(viewerName)) {

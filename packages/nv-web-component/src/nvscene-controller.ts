@@ -13,6 +13,7 @@ export interface ViewerSlot {
   niivue: NiiVueGPU
   canvasElement: HTMLCanvasElement
   containerDiv: HTMLDivElement
+  ready: Promise<void>
 }
 
 export interface NvSceneControllerSnapshot {
@@ -263,7 +264,7 @@ export class NvSceneController {
     // Fill all available slots when a container is present
     if (this.containerElement) {
       while (this.viewers.length < this.slots) {
-        this.addViewer()
+        void this.addViewer().catch(() => undefined)
       }
     }
 
@@ -368,8 +369,11 @@ export class NvSceneController {
     const viewer = this.viewers[index]
     if (!viewer) return
     this.viewerSliceLayouts.set(viewer.id, layout)
-    this.applySliceLayout(viewer.niivue, layout)
-    this.notify()
+    void viewer.ready.then(() => {
+      if (this.viewersById.get(viewer.id) !== viewer) return
+      this.applySliceLayout(viewer.niivue, layout)
+      this.notify()
+    })
   }
 
   getViewerSliceLayout(index: number): SliceLayoutTile[] | null {
@@ -401,12 +405,22 @@ export class NvSceneController {
 
   // --- Volume management ---
 
+  private async waitForViewerReady(viewer: ViewerSlot): Promise<boolean> {
+    await viewer.ready
+    return this.viewersById.get(viewer.id) === viewer
+  }
+
   async loadVolume(index: number, opts: ImageFromUrlOptions): Promise<NVImage> {
     const viewer = this.viewers[index]
     if (!viewer) throw new Error(`No viewer at index ${index}`)
 
     this.incrementLoading(viewer.id)
     try {
+      if (!(await this.waitForViewerReady(viewer))) {
+        throw new Error(
+          `Viewer at index ${index} was removed before it was ready`,
+        )
+      }
       await viewer.niivue.addVolume(opts)
       const vols = viewer.niivue.volumes
       const image = vols[vols.length - 1]
@@ -439,6 +453,7 @@ export class NvSceneController {
   async removeVolume(index: number, url: string): Promise<void> {
     const viewer = this.viewers[index]
     if (!viewer) return
+    if (!(await this.waitForViewerReady(viewer))) return
     const nv = viewer.niivue
     const volIdx = nv.volumes.findIndex(
       (v: NVImage) => v.url === url || v.name === url,
@@ -460,12 +475,13 @@ export class NvSceneController {
    * Look up the Niivue instance and NVImage at the given viewer and volume indices.
    * Returns undefined if either index is out of bounds.
    */
-  private findVolume(
+  private async findVolume(
     viewerIndex: number,
     volumeIndex: number,
-  ): { nv: NiiVueGPU; vol: NVImage; volumeIndex: number } | undefined {
+  ): Promise<{ nv: NiiVueGPU; vol: NVImage; volumeIndex: number } | undefined> {
     const viewer = this.viewers[viewerIndex]
     if (!viewer) return undefined
+    if (!(await this.waitForViewerReady(viewer))) return undefined
     const nv = viewer.niivue
     const vol = nv.volumes[volumeIndex] as NVImage | undefined
     if (!vol) return undefined
@@ -478,7 +494,7 @@ export class NvSceneController {
     volumeIndex: number,
     colormap: string,
   ): Promise<void> {
-    const found = this.findVolume(viewerIndex, volumeIndex)
+    const found = await this.findVolume(viewerIndex, volumeIndex)
     if (!found) return
     await found.nv.setVolume(found.volumeIndex, { colormap })
     this.emit('colormapChanged', viewerIndex, volumeIndex, colormap)
@@ -492,7 +508,7 @@ export class NvSceneController {
     calMin: number,
     calMax: number,
   ): Promise<void> {
-    const found = this.findVolume(viewerIndex, volumeIndex)
+    const found = await this.findVolume(viewerIndex, volumeIndex)
     if (!found) return
     await found.nv.setVolume(found.volumeIndex, { calMin, calMax })
     this.emit('intensityChanged', viewerIndex, volumeIndex, calMin, calMax)
@@ -505,7 +521,7 @@ export class NvSceneController {
     volumeIndex: number,
     opacity: number,
   ): Promise<void> {
-    const found = this.findVolume(viewerIndex, volumeIndex)
+    const found = await this.findVolume(viewerIndex, volumeIndex)
     if (!found) return
     await found.nv.setVolume(found.volumeIndex, { opacity })
     this.emit('opacityChanged', viewerIndex, volumeIndex, opacity)
@@ -573,12 +589,13 @@ export class NvSceneController {
     this.loadingCounts.set(id, 0)
     this.viewerErrors.set(id, [])
 
-    const viewer: ViewerSlot = {
+    const viewer = {
       id,
       niivue,
       canvasElement: canvas,
       containerDiv,
-    }
+      ready: Promise.resolve(),
+    } satisfies ViewerSlot
 
     // Register the viewer synchronously so callers (e.g. setLayout) can
     // add multiple viewers in a loop without awaiting each one.
@@ -616,21 +633,33 @@ export class NvSceneController {
     this.notify()
 
     // Async canvas attachment — viewer is already registered
-    const ready = niivue.attachToCanvas(canvas).then(() => {
-      // Apply the current slice layout (default axial).
-      this.applySliceLayout(niivue, null)
+    viewer.ready = niivue
+      .attachToCanvas(canvas)
+      .then(() => {
+        if (this.viewersById.get(viewer.id) !== viewer) return
 
-      // Update broadcasting to include new viewer
-      if (this.broadcasting) {
-        this.setBroadcasting(true)
-      }
+        const sliceLayout = this.viewerSliceLayouts.get(id) ?? null
+        this.applySliceLayout(niivue, sliceLayout)
 
-      this.notify()
+        if (this.broadcasting) {
+          this.setBroadcasting(true)
+        }
 
-      return viewer
-    })
+        this.notify()
+      })
+      .catch((error: unknown) => {
+        if (this.viewersById.get(viewer.id) === viewer) {
+          const currentIndex = this.viewers.indexOf(viewer)
+          this.addError(viewer.id, error)
+          if (currentIndex >= 0) {
+            this.emit('error', currentIndex, error)
+            this.removeViewer(currentIndex)
+          }
+        }
+        throw error
+      })
 
-    return ready
+    return viewer.ready.then(() => viewer)
   }
 
   removeViewer(index: number, shouldNotify = true): void {

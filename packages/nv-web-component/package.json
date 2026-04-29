@@ -10,7 +10,6 @@
   "exports": {
     ".": {
       "types": "./dist/niivue-web-component.d.ts",
-      "development": "./src/niivue-web-component.ts",
       "import": "./dist/nv-web-component.js"
     }
   },

@@ -7,7 +7,8 @@
     "build": "bunx --bun vite build"
   },
   "dependencies": {
-    "@niivue/niivue": "workspace:*"
+    "@niivue/niivue": "workspace:*",
+    "@niivue/web-bridge": "workspace:*"
   },
   "devDependencies": {
     "vite": "^6.3.2"

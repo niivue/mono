@@ -1,23 +1,30 @@
 //
 //  NiiVueProp.swift
-//  medgfx
+//  NiiVueKit
 //
-//  Low-level property cells used by NiiVueModel. Each cell remembers its
+//  Low-level property cells used by `NiiVueModel`. Each cell remembers its
 //  JS path, its current value, and how to encode/decode itself across the
 //  bridge. The model holds a `[String: any AnyPropCell]` dispatch table so
-//  incoming propChange events can be routed to the right cell by path.
+//  incoming `propChange` events can be routed to the right cell by path.
 //
 
+import BridgeCore
 import Foundation
 
 /// Erased protocol so the model can store heterogeneous cells in one dict
-/// and forward inbound JSON payloads to them without knowing the concrete type.
+/// and wire them up without knowing the concrete `Value` type.
 @MainActor
-protocol AnyPropCell: AnyObject {
+public protocol AnyPropCell: AnyObject {
     var path: String { get }
+
     /// Update the cell from a JS-supplied JSON value (the `value` field of
-    /// a propChange event). Must NOT echo back to JS.
+    /// a `propChange` event). Must NOT echo back to JS.
     func applyFromJS(_ any: Any)
+
+    /// Install the push-to-JS callback. Called by `NiiVueModel` during
+    /// registration. The cell wraps the callback so its typed `pusher`
+    /// still fires on local writes.
+    func attach(push: @escaping (String, AnyEncodable) -> Void)
 }
 
 /// A single bound property. Generic over any `Codable & Equatable` value.
@@ -26,19 +33,19 @@ protocol AnyPropCell: AnyObject {
 /// Inbound `applyFromJS` calls update `value` without invoking `pusher`.
 @MainActor
 @Observable
-final class NiiVueProp<Value: Codable & Equatable>: AnyPropCell {
-    let path: String
+public final class NiiVueProp<Value: Codable & Equatable>: AnyPropCell {
+    public let path: String
 
     private var _value: Value
-    /// Injected by the model after construction. Takes (path, value).
-    var pusher: ((String, Value) -> Void)?
+    /// Injected by the model via `attach(push:)`. Takes (path, value).
+    public var pusher: ((String, Value) -> Void)?
 
-    init(path: String, initial: Value) {
+    public init(path: String, initial: Value) {
         self.path = path
         self._value = initial
     }
 
-    var value: Value {
+    public var value: Value {
         get { _value }
         set {
             guard _value != newValue else { return }
@@ -47,7 +54,7 @@ final class NiiVueProp<Value: Codable & Equatable>: AnyPropCell {
         }
     }
 
-    func applyFromJS(_ any: Any) {
+    public func applyFromJS(_ any: Any) {
         guard let data = try? JSONSerialization.data(
             withJSONObject: any,
             options: [.fragmentsAllowed]
@@ -56,5 +63,9 @@ final class NiiVueProp<Value: Codable & Equatable>: AnyPropCell {
         if _value != decoded {
             _value = decoded
         }
+    }
+
+    public func attach(push: @escaping (String, AnyEncodable) -> Void) {
+        self.pusher = { path, value in push(path, AnyEncodable(value)) }
     }
 }

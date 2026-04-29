@@ -3,6 +3,7 @@
 //  medgfx
 //
 
+import NiiVueKit
 import SwiftUI
 
 struct ContentView: View {
@@ -16,7 +17,13 @@ struct ContentView: View {
     #endif
 
     init() {
-        let b = Bridge()
+        // medgfx ships its own web bundle under Contents/Resources/WebApp/
+        // (copied by the "Build and embed medgfx-web" Run Script phase).
+        // We start from BridgeConfig.default (handler "niivue" + scheme
+        // "niivue-app://" + Bundle.main/WebApp/) and layer on the dev
+        // server URL used in DEBUG builds so Vite HMR works.
+        let config = BridgeConfig.default.withDevServer(port: 8083)
+        let b = Bridge(config: config)
         _bridge = State(initialValue: b)
         _model = State(initialValue: NiiVueModel(bridge: b))
     }
@@ -83,8 +90,8 @@ struct ContentView: View {
         }
     }
 
-    /// A binding that only drives the sheet on iPhone — on macOS and iPad the
-    /// sheet is never presented (inline sidebar handles it).
+    /// A binding that only drives the sheet on iPhone — on macOS and iPad
+    /// the sheet is never presented (inline sidebar handles it).
     private var sheetBinding: Binding<Bool> {
         Binding(
             get: { !useInlineInspector && isInspectorVisible },
@@ -157,24 +164,13 @@ struct ContentView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            let data = try Data(contentsOf: url)
-            let payload = LoadVolumePayload(
-                name: "mni152.nii.gz",
-                bytesBase64: data.base64EncodedString()
-            )
-            let _: OKReply = try await bridge.call("loadVolume", payload)
-            model.lastStatus = "Loaded mni152.nii.gz (\(data.count / 1024) KB)"
+            try await model.loadVolume(url: url)
+            let kb = (try? Data(contentsOf: url).count).map { $0 / 1024 } ?? 0
+            model.lastStatus = "Loaded mni152.nii.gz (\(kb) KB)"
         } catch {
             model.lastStatus = "Load failed: \(error)"
         }
     }
-}
-
-// MARK: - Wire types (local to ContentView)
-
-private struct LoadVolumePayload: Encodable {
-    let name: String
-    let bytesBase64: String
 }
 
 #Preview {

@@ -1,0 +1,48 @@
+{
+  "name": "@niivue/web-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Typed two-way JSON-envelope bridge between a NiiVue web view and a native (WKWebView) host",
+  "exports": {
+    "./bridge": {
+      "types": "./dist/bridge.d.ts",
+      "development": "./src/bridge.ts",
+      "import": "./dist/bridge.js"
+    },
+    "./prop-bridge": {
+      "types": "./dist/prop-bridge.d.ts",
+      "development": "./src/prop-bridge.ts",
+      "import": "./dist/prop-bridge.js"
+    },
+    "./prop-allowlist": {
+      "types": "./dist/prop-allowlist.d.ts",
+      "development": "./src/prop-allowlist.ts",
+      "import": "./dist/prop-allowlist.js"
+    },
+    "./niivue-controller": {
+      "types": "./dist/niivue-controller.d.ts",
+      "development": "./src/niivue-controller.ts",
+      "import": "./dist/niivue-controller.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "peerDependencies": {
+    "@niivue/niivue": "workspace:*"
+  },
+  "devDependencies": {
+    "@niivue/niivue": "workspace:*",
+    "@types/bun": "^1.1.13",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.2",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "scripts": {
+    "build": "bunx --bun vite build",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test"
+  }
+}

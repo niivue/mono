@@ -7,6 +7,7 @@
 //  this protocol and register it in InspectorContainer.allPanels.
 //
 
+import NiiVueKit
 import SwiftUI
 
 protocol InspectorPanel: Identifiable, Hashable {

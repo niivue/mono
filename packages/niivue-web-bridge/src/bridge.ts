@@ -1,5 +1,5 @@
 /**
- * Typed two-way bridge between the webview and the native host.
+ * Typed two-way JSON-envelope bridge between a web view and a native host.
  *
  * Wire format (both directions):
  *   { kind: 'call',   id, method, payload }
@@ -8,8 +8,8 @@
  *   { kind: 'event',  name, payload }
  *
  * Transport:
- *   JS → native: window.webkit.messageHandlers.medgfx.postMessage(envelope)
- *   native → JS: native calls window.__medgfxBridge.__receive(envelope)
+ *   JS -> native: window.webkit.messageHandlers[handlerName].postMessage(env)
+ *   native -> JS: native calls window[jsGlobalName].__receive(env)
  *
  * In a regular browser (no native host), a dev shim logs outbound messages
  * so the web app still runs for local development.
@@ -34,6 +34,28 @@ export type EventEnvelope = {
 
 export type Envelope = CallEnvelope | ResultEnvelope | EventEnvelope
 
+/** Configuration for a bridge instance. */
+export type BridgeOptions = {
+  /**
+   * Name of the WKScriptMessageHandler the native side registered. The JS
+   * side sends outbound envelopes via
+   * `window.webkit.messageHandlers[handlerName]`.
+   *
+   * Must match the `handlerName` used on the Swift `BridgeConfig`.
+   *
+   * @default "niivue"
+   */
+  handlerName?: string
+  /**
+   * Name (without the `window.` prefix) of the global object the native side
+   * calls into when delivering inbound envelopes. Defaults to
+   * `__${handlerName}Bridge` (e.g. `__niivueBridge`). The native side installs
+   * a stub at `window[jsGlobalName]` at document-start; when the `Bridge`
+   * constructor runs it replaces the stub with a live receiver.
+   */
+  jsGlobalName?: string
+}
+
 type Pending = {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
@@ -44,38 +66,55 @@ type EventHandler = (payload: unknown) => void
 
 type NativeSink = (envelope: Envelope) => void
 
-function resolveNativeSink(): NativeSink {
-  type WebkitWindow = Window & {
-    webkit?: {
-      messageHandlers?: {
-        medgfx?: { postMessage: (msg: unknown) => void }
-      }
-    }
+type MessageHandler = { postMessage: (msg: unknown) => void }
+
+type WebkitWindow = Window & {
+  webkit?: {
+    messageHandlers?: Record<string, MessageHandler | undefined>
   }
+}
+
+type BridgeWindow = Record<string, unknown>
+
+function resolveNativeSink(handlerName: string): NativeSink {
   const w = window as WebkitWindow
-  const handler = w.webkit?.messageHandlers?.medgfx
+  const handler = w.webkit?.messageHandlers?.[handlerName]
   if (handler) return (env) => handler.postMessage(env)
-  // Dev shim — runs in a regular browser (no native host).
+  // Dev shim -- runs in a regular browser (no native host).
   return (env) => {
-    console.info('[medgfx-bridge:dev-shim] →', env)
+    console.info(`[niivue-web-bridge:${handlerName}] ->`, env)
   }
 }
 
 export class Bridge {
+  readonly handlerName: string
+  readonly jsGlobalName: string
+
   private readonly sendToNative: NativeSink
   private readonly pending = new Map<string, Pending>()
   private readonly callHandlers = new Map<string, CallHandler>()
   private readonly eventHandlers = new Map<string, Set<EventHandler>>()
 
-  constructor() {
-    this.sendToNative = resolveNativeSink()
-    // Expose a stable receiver for the native side.
-    type BridgeWindow = Window & {
-      __medgfxBridge?: { __receive: (env: Envelope) => void }
+  constructor(options: BridgeOptions = {}) {
+    this.handlerName = options.handlerName ?? 'niivue'
+    this.jsGlobalName = options.jsGlobalName ?? `__${this.handlerName}Bridge`
+    this.sendToNative = resolveNativeSink(this.handlerName)
+
+    // Drain any envelopes the native shell delivered before this ctor ran
+    // (a document-start stub buffers them in `__pendingReceive`). We move
+    // them into a local queue and replay after wiring the live receiver.
+    const w = window as unknown as BridgeWindow
+    const stub = w[this.jsGlobalName] as
+      | { __pendingReceive?: Envelope[] }
+      | undefined
+    const buffered = stub?.__pendingReceive ?? []
+
+    // Expose the live receiver, replacing the stub.
+    w[this.jsGlobalName] = {
+      __receive: (env: Envelope) => this.receive(env),
     }
-    ;(window as BridgeWindow).__medgfxBridge = {
-      __receive: (env) => this.receive(env),
-    }
+
+    for (const env of buffered) this.receive(env)
   }
 
   /** Invoke a handler on the native side and await its reply. */
@@ -99,7 +138,7 @@ export class Bridge {
   handle(method: string, handler: CallHandler): void {
     if (this.callHandlers.has(method)) {
       throw new Error(
-        `medgfx-bridge: handler already registered for '${method}'`,
+        `niivue-web-bridge: handler already registered for '${method}'`,
       )
     }
     this.callHandlers.set(method, handler)
@@ -165,10 +204,16 @@ export class Bridge {
       try {
         h(env.payload)
       } catch (err) {
-        console.error(`[medgfx-bridge] event handler '${env.name}' threw`, err)
+        console.error(
+          `[niivue-web-bridge] event handler '${env.name}' threw`,
+          err,
+        )
       }
     }
   }
 }
 
-export const bridge = new Bridge()
+/** Convenience factory; equivalent to `new Bridge(options)`. */
+export function createBridge(options: BridgeOptions = {}): Bridge {
+  return new Bridge(options)
+}

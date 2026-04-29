@@ -1,5 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import type { Bridge } from './bridge'
+import type { PropAllowlist } from './prop-allowlist'
 import { wirePropBridge } from './prop-bridge'
 
 export type LoadVolumePayload = {
@@ -9,6 +10,11 @@ export type LoadVolumePayload = {
 
 export type SetBackendPayload = {
   backend: 'webgl2' | 'webgpu'
+}
+
+export type WireNiiVueOptions = {
+  /** Forwarded to `wirePropBridge`. */
+  allowlist?: PropAllowlist
 }
 
 function base64ToArrayBuffer(b64: string): ArrayBuffer {
@@ -22,10 +28,17 @@ function base64ToArrayBuffer(b64: string): ArrayBuffer {
 /**
  * Registers bridge handlers that drive the given NiiVue instance and
  * forwards niivue events back to the native host.
+ *
+ * Adds:
+ *   - `loadVolume(name, bytesBase64)` -> `nv.loadImage(File)`
+ *   - `setBackend(backend)` -> `nv.reinitializeView({ backend })` (+ emits `backendChange`)
+ *   - generic prop-bridge (setProp / getProps / propChange)
+ *   - forwards `locationChange` as an event with `{ mm, voxel, string }`
  */
 export function wireNiiVueToBridge(
   nv: InstanceType<typeof NiiVue>,
   bridge: Bridge,
+  options: WireNiiVueOptions = {},
 ): void {
   bridge.handle('loadVolume', async (raw) => {
     const { name, bytesBase64 } = raw as LoadVolumePayload
@@ -44,14 +57,13 @@ export function wireNiiVueToBridge(
       return { backend: nv.backend }
     }
     await nv.reinitializeView({ backend })
-    // NiiVue may downgrade webgpu→webgl2 if the adapter is unavailable; report
-    // back what actually ended up active.
+    // NiiVue may downgrade webgpu -> webgl2 if the adapter is unavailable;
+    // report back what actually ended up active.
     bridge.emit('backendChange', { backend: nv.backend })
     return { backend: nv.backend }
   })
 
-  // Generic property sync: setProp / getProps / propChange.
-  wirePropBridge(nv, bridge)
+  wirePropBridge(nv, bridge, { allowlist: options.allowlist })
 
   nv.addEventListener('locationChange', (e) => {
     const detail = (e as CustomEvent).detail

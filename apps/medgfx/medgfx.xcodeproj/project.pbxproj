@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7A51617A20CAL0CAL0CAL0001 /* NiiVueKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A51617A20CAL0CAL0CAL0002 /* NiiVueKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		341DC6BA2F9AB2A000FC2408 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -67,6 +71,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7A51617A20CAL0CAL0CAL0001 /* NiiVueKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -130,6 +135,7 @@
 			);
 			name = medgfx;
 			packageProductDependencies = (
+				7A51617A20CAL0CAL0CAL0002 /* NiiVueKit */,
 			);
 			productName = medgfx;
 			productReference = 341DC6A82F9AB29E00FC2408 /* medgfx.app */;
@@ -213,6 +219,9 @@
 			);
 			mainGroup = 341DC69F2F9AB29E00FC2408;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7A51617A20CAL0CAL0CAL0003 /* XCLocalSwiftPackageReference "../../packages/niivue-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 341DC6A92F9AB29E00FC2408 /* Products */;
 			projectDirPath = "";
@@ -681,6 +690,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		7A51617A20CAL0CAL0CAL0003 /* XCLocalSwiftPackageReference "../../packages/niivue-swift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../packages/niivue-swift";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7A51617A20CAL0CAL0CAL0002 /* NiiVueKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NiiVueKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 341DC6A02F9AB29E00FC2408 /* Project object */;
 }

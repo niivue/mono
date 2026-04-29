@@ -120,6 +120,9 @@ saveButton.addEventListener('click', () => {
 
 async function convertAndDisplay(files: FileList | File[]): Promise<void> {
   if (isConverting) {
+    // Drop and manifest paths call showLoading() before us, so any
+    // in-progress spinner from this rejected attempt must be cleared.
+    hideLoading()
     setStatus('Conversion already in progress — please wait.')
     return
   }
@@ -161,7 +164,13 @@ async function convertAndDisplay(files: FileList | File[]): Promise<void> {
  */
 async function fetchDemoManifest(manifestUrl: string): Promise<File[]> {
   const baseUrl = new URL(manifestUrl, window.location.href)
-  const text = await (await fetch(baseUrl)).text()
+  const manifestRes = await fetch(baseUrl)
+  if (!manifestRes.ok) {
+    throw new Error(
+      `Failed to fetch manifest ${baseUrl}: ${manifestRes.status}`,
+    )
+  }
+  const text = await manifestRes.text()
   const relativePaths = text
     .split('\n')
     .map((line) => line.trim())

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NiiVue Web Component Demo</title>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <main>
+      <header class="app-header">
+        <div>
+          <h1>NiiVue Web Component Demo</h1>
+          <p>
+            A compact DOM integration example for the Lit-based
+            <code>&lt;niivue-viewer&gt;</code> and
+            <code>&lt;niivue-scene&gt;</code> custom elements.
+          </p>
+        </div>
+      </header>
+
+      <section class="toolbar" aria-labelledby="shared-controls-title">
+        <div class="toolbar-title">
+          <h2 id="shared-controls-title">Shared controls</h2>
+          <p>Applied to the viewer and all scene panes.</p>
+        </div>
+        <div class="controls">
+          <label class="field">
+            Colormap
+            <select id="colormapSelect">
+              <option value="gray">gray</option>
+              <option value="hot">hot</option>
+              <option value="cool">cool</option>
+              <option value="red">red</option>
+              <option value="green">green</option>
+              <option value="blue">blue</option>
+            </select>
+          </label>
+          <label class="field">
+            Drag mode
+            <select id="dragModeSelect">
+              <option value="crosshair">crosshair</option>
+              <option value="pan">pan</option>
+              <option value="contrast">contrast</option>
+              <option value="none">none</option>
+            </select>
+          </label>
+          <label>
+            <input id="colorbarCheckbox" type="checkbox" checked />
+            Colorbar
+          </label>
+          <label>
+            <input id="crosshairCheckbox" type="checkbox" checked />
+            Crosshair
+          </label>
+        </div>
+      </section>
+
+      <section class="demo-grid">
+        <article class="demo-card">
+          <header class="card-header">
+            <div>
+              <h2>Standalone viewer</h2>
+              <p>Single <code>&lt;niivue-viewer&gt;</code> instance.</p>
+            </div>
+          </header>
+
+          <div class="controls control-row">
+            <button id="loadViewerBtn" class="primary" type="button">
+              Load MNI152
+            </button>
+            <button id="clearViewerBtn" type="button">Clear</button>
+          </div>
+
+          <niivue-viewer id="viewer"></niivue-viewer>
+        </article>
+
+        <article class="demo-card">
+          <header class="card-header">
+            <div>
+              <h2>Multi-viewer scene</h2>
+              <p>Managed <code>&lt;niivue-scene&gt;</code> layout.</p>
+            </div>
+          </header>
+
+          <div class="controls control-row with-fields">
+            <button id="loadSceneBtn" class="primary" type="button">
+              Load scene
+            </button>
+            <label class="field">
+              Scene layout
+              <select id="layoutSelect">
+                <option value="1x1">1x1</option>
+                <option value="1x2">1x2</option>
+                <option value="2x1">2x1</option>
+                <option value="2x2">2x2</option>
+              </select>
+            </label>
+            <label class="field">
+              Slice layout
+              <select id="sliceLayoutSelect">
+                <option value="default">default axial</option>
+                <option value="axial-hero">axial hero</option>
+                <option value="sag-left">sagittal left split</option>
+                <option value="tri-h">tri horizontal</option>
+                <option value="tri-v">tri stacked</option>
+                <option value="quad-render">quad render</option>
+                <option value="render-hero">render hero</option>
+              </select>
+            </label>
+            <label>
+              <input id="broadcastingCheckbox" type="checkbox" />
+              Broadcast
+            </label>
+          </div>
+
+          <niivue-scene id="scene" layout="1x1"></niivue-scene>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

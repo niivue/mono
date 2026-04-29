@@ -18,7 +18,13 @@ BASE_PATH="${BASE_PATH:-/mono/}"
 echo "==> Building with BASE_PATH=$BASE_PATH"
 
 # Demo apps to include (folder names under apps/)
-APPS=(demo-ext-drawing demo-ext-image-processing demo-ext-save-html demo-ext-dcm2niix)
+APPS=(
+  demo-ext-drawing
+  demo-ext-image-processing
+  demo-ext-save-html
+  demo-ext-dcm2niix
+  demo-nv-web-component
+)
 
 # 1. Build the niivue library (required by all apps)
 echo "==> Building niivue library"

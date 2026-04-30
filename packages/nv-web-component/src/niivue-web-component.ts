@@ -26,15 +26,40 @@ type VolumeVisualProps = {
   opacity?: number
 }
 
-const volumeKey = (opts: ImageFromUrlOptions): string =>
+export const volumeKey = (opts: ImageFromUrlOptions): string =>
   typeof opts.url === 'string' ? opts.url : opts.url.name
 
-const extractVisualProps = (opts: ImageFromUrlOptions): VolumeVisualProps => ({
+export const volumeIdentity = (volume: Pick<NVImage, 'url' | 'name'>): string =>
+  volume.url || volume.name
+
+export const extractVisualProps = (
+  opts: ImageFromUrlOptions,
+): VolumeVisualProps => ({
   colormap: opts.colormap,
   calMin: opts.calMin,
   calMax: opts.calMax,
   opacity: opts.opacity,
 })
+
+export const volumeVisualUpdates = (
+  next: VolumeVisualProps,
+  prev: VolumeVisualProps,
+): Partial<VolumeVisualProps> => {
+  const updates: Partial<VolumeVisualProps> = {}
+  if (next.colormap !== undefined && next.colormap !== prev.colormap) {
+    updates.colormap = next.colormap
+  }
+  if (next.calMin !== undefined && next.calMin !== prev.calMin) {
+    updates.calMin = next.calMin
+  }
+  if (next.calMax !== undefined && next.calMax !== prev.calMax) {
+    updates.calMax = next.calMax
+  }
+  if (next.opacity !== undefined && next.opacity !== prev.opacity) {
+    updates.opacity = next.opacity
+  }
+  return updates
+}
 
 const dispatchNiivueEvent = (
   element: HTMLElement,
@@ -230,19 +255,7 @@ export class NiivueViewerElement extends LitElement {
       )
       if (volIdx < 0) continue
 
-      const updates: Partial<VolumeVisualProps> = {}
-      if (next.colormap !== undefined && next.colormap !== prev.colormap) {
-        updates.colormap = next.colormap
-      }
-      if (next.calMin !== undefined && next.calMin !== prev.calMin) {
-        updates.calMin = next.calMin
-      }
-      if (next.calMax !== undefined && next.calMax !== prev.calMax) {
-        updates.calMax = next.calMax
-      }
-      if (next.opacity !== undefined && next.opacity !== prev.opacity) {
-        updates.opacity = next.opacity
-      }
+      const updates = volumeVisualUpdates(next, prev)
       if (Object.keys(updates).length > 0) {
         await nv.setVolume(volIdx, updates)
       }

@@ -81,6 +81,7 @@ Use `<niivue-scene>` when you want multiple independent NiiVue viewers managed a
   await customElements.whenDefined('niivue-scene')
 
   const scene = document.querySelector('#scene')
+  await scene.updateComplete
 
   const volume = {
     url: '/volumes/mni152.nii.gz',
@@ -101,6 +102,10 @@ Use `<niivue-scene>` when you want multiple independent NiiVue viewers managed a
   })
 </script>
 ```
+
+`customElements.whenDefined()` waits for element registration. Wait for Lit's
+`scene.updateComplete`, or for the first `scene-change` event, before reading
+`scene.snapshot.viewerCount` or loading volumes into scene viewers.
 
 ### Updating all scene viewers
 

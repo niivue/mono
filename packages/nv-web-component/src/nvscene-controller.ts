@@ -324,6 +324,7 @@ export class NvSceneController {
     } catch (err) {
       this.addError(viewer.id, err)
       this.emit('error', index, err)
+      this.notify()
     }
   }
 

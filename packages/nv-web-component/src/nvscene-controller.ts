@@ -681,9 +681,9 @@ export class NvSceneController {
     this.viewers.splice(index, 1)
     this.updateLayout()
 
-    // Update broadcasting for remaining viewers
+    // Update broadcasting for remaining viewers without notifying twice.
     if (this.broadcasting && this.viewers.length > 0) {
-      this.setBroadcasting(true)
+      this.rewireBroadcasting()
     }
 
     this.emit('viewerRemoved', index)

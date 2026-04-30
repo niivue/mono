@@ -34,11 +34,6 @@
     "format": {
       "command": "bunx biome format {projectRoot} --write",
       "inputs": ["typescript"]
-    },
-    "test": {
-      "command": "bun -e \"process.exit(0)\"",
-      "options": { "cwd": "{projectRoot}" },
-      "inputs": ["typescript"]
     }
   }
 }

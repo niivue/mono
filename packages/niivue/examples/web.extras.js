@@ -2,8 +2,10 @@ import NiiVue from '../src/index.ts'
 import { SHOW_RENDER } from '../src/NVConstants.ts'
 
 // Load from the community asset repositories rather than bundling.
-// All three base URLs below serve a `manifest.json` listing available
+// All four base URLs below serve a `manifest.json` listing available
 // files, plus the files themselves.
+const VOLUME_BASE =
+  'https://raw.githubusercontent.com/niivue/niivue-demo-images/main/'
 const FONT_BASE = 'https://raw.githubusercontent.com/niivue/fonts/main/fonts/'
 const CMAP_BASE =
   'https://raw.githubusercontent.com/niivue/Py2NiiVueColormaps/main/SciPy/'
@@ -55,6 +57,13 @@ const nv1 = new NiiVue({
 await nv1.attachToCanvas(gl1)
 nv1.setClipPlane([0, 180, 20])
 await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+// --- Volumes -------------------------------------------------------
+await populateFromManifest(volumeSelect, VOLUME_BASE, 'volume')
+volumeSelect.onchange = async () => {
+  await nv1.removeAllVolumes()
+  const base = VOLUME_BASE + volumeSelect.value
+  await nv1.addVolume({ url: `${base}` })
+}
 // --- Fonts ---------------------------------------------------------
 // setFontFromUrl({ atlas, metrics }) fetches the PNG + JSON pair and
 // swaps the active font atlas. The PNG URL is kept verbatim and used

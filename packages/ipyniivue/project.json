@@ -79,10 +79,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "commands": [
-          "bunx tsc --noEmit",
-          "pixi run -e dev mypy"
-        ],
+        "commands": ["bunx tsc --noEmit", "pixi run -e dev mypy"],
         "parallel": false
       },
       "inputs": [
@@ -95,10 +92,7 @@
     "test": {
       "command": "pixi run -e dev pytest",
       "options": { "cwd": "{projectRoot}" },
-      "inputs": [
-        "python",
-        "{projectRoot}/pyproject.toml"
-      ]
+      "inputs": ["python", "{projectRoot}/pyproject.toml"]
     },
     "smoke": {
       "command": "pixi run -e dev smoke",

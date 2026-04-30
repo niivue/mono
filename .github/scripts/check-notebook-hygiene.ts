@@ -20,68 +20,69 @@
 // place anywidget notebooks live today). Pass globs as arguments to
 // scope to a different set.
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { Glob } from "bun";
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { Glob } from 'bun'
 
-const root = resolve(import.meta.dir, "..", "..");
-const patterns = Bun.argv.slice(2);
-const globs = patterns.length > 0
-  ? patterns
-  : ["packages/ipyniivue/examples/*.ipynb"];
+const root = resolve(import.meta.dir, '..', '..')
+const patterns = Bun.argv.slice(2)
+const globs =
+  patterns.length > 0 ? patterns : ['packages/ipyniivue/examples/*.ipynb']
 
-type Issue = { file: string; cell: number; problem: string };
-const issues: Issue[] = [];
-const seen: string[] = [];
+type Issue = { file: string; cell: number; problem: string }
+const issues: Issue[] = []
+const seen: string[] = []
 
 for (const pattern of globs) {
-  const glob = new Glob(pattern);
+  const glob = new Glob(pattern)
   for await (const rel of glob.scan({ cwd: root, absolute: false })) {
-    seen.push(rel);
-    let nb: unknown;
+    seen.push(rel)
+    let nb: unknown
     try {
-      nb = JSON.parse(readFileSync(resolve(root, rel), "utf-8"));
+      nb = JSON.parse(readFileSync(resolve(root, rel), 'utf-8'))
     } catch (err) {
-      issues.push({ file: rel, cell: -1, problem: `not valid JSON: ${err}` });
-      continue;
+      issues.push({ file: rel, cell: -1, problem: `not valid JSON: ${err}` })
+      continue
     }
-    const cells = (nb as { cells?: unknown[] }).cells ?? [];
+    const cells = (nb as { cells?: unknown[] }).cells ?? []
     for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i] as Record<string, unknown>;
-      if (cell.cell_type !== "code") continue;
+      const cell = cells[i] as Record<string, unknown>
+      if (cell.cell_type !== 'code') continue
       if (cell.execution_count != null) {
         issues.push({
           file: rel,
           cell: i,
           problem: `execution_count is ${JSON.stringify(cell.execution_count)} (expected null)`,
-        });
+        })
       }
-      const outputs = cell.outputs;
+      const outputs = cell.outputs
       if (Array.isArray(outputs) && outputs.length > 0) {
         issues.push({
           file: rel,
           cell: i,
           problem: `has ${outputs.length} output(s) (expected [])`,
-        });
+        })
       }
     }
   }
 }
 
 if (seen.length === 0) {
-  console.warn(`No notebooks matched: ${globs.join(", ")}`);
+  console.warn(`No notebooks matched: ${globs.join(', ')}`)
 }
 
 if (issues.length > 0) {
-  console.error("Notebook hygiene check failed.");
-  console.error("Strip outputs with:");
-  console.error("  jupyter nbconvert --clear-output --inplace " + globs.join(" "));
-  console.error("");
+  console.error('Notebook hygiene check failed.')
+  console.error('Strip outputs with:')
+  console.error(
+    '  jupyter nbconvert --clear-output --inplace ' + globs.join(' '),
+  )
+  console.error('')
   for (const i of issues) {
-    const loc = i.cell >= 0 ? `cell ${i.cell}` : "file";
-    console.error(`  ${i.file}: ${loc}: ${i.problem}`);
+    const loc = i.cell >= 0 ? `cell ${i.cell}` : 'file'
+    console.error(`  ${i.file}: ${loc}: ${i.problem}`)
   }
-  process.exit(1);
+  process.exit(1)
 }
 
-console.log(`OK: ${seen.length} notebooks clean`);
+console.log(`OK: ${seen.length} notebooks clean`)

@@ -7,120 +7,120 @@
 // this template file is the small, reviewable input.
 // nx-ignore-next-line: bundled widget asset, not a Python runtime dependency
 import NiiVue from '@niivue/niivue'
-import { conform, connectedLabel, otsu, removeHaze } from '@niivue/nv-ext-image-processing'
-import { findDrawingBoundarySlices, interpolateMaskSlices } from '@niivue/nv-ext-drawing'
-
-// Image-processing transforms bundled from @niivue/nv-ext-*.
-// Registered with NiiVue in initialize() so Python can apply them
-// via __ext_apply_image_transform without shipping JS.
-const IMAGE_PROCESSING_TRANSFORMS = [
+import {
+  findDrawingBoundarySlices,
+  interpolateMaskSlices,
+} from '@niivue/nv-ext-drawing'
+import {
   conform,
   connectedLabel,
   otsu,
   removeHaze,
-]
+} from '@niivue/nv-ext-image-processing'
+
+// Image-processing transforms bundled from @niivue/nv-ext-*.
+// Registered with NiiVue in initialize() so Python can apply them
+// via __ext_apply_image_transform without shipping JS.
+const IMAGE_PROCESSING_TRANSFORMS = [conform, connectedLabel, otsu, removeHaze]
 
 // [jsName, pyName] for read-write reactive properties.
 const PROPS_RW = [
-  ["annotationActiveGroup", "annotation_active_group"],
-  ["annotationActiveLabel", "annotation_active_label"],
-  ["annotationBrushRadius", "annotation_brush_radius"],
-  ["annotationIsEnabled", "annotation_is_enabled"],
-  ["annotationIsErasing", "annotation_is_erasing"],
-  ["annotationIsVisibleIn3D", "annotation_is_visible_in_3d"],
-  ["annotationTool", "annotation_tool"],
-  ["azimuth", "azimuth"],
-  ["backgroundColor", "background_color"],
-  ["clipPlaneColor", "clip_plane_color"],
-  ["crosshairColor", "crosshair_color"],
-  ["crosshairGap", "crosshair_gap"],
-  ["crosshairPos", "crosshair_pos"],
-  ["crosshairWidth", "crosshair_width"],
-  ["devicePixelRatio", "device_pixel_ratio"],
-  ["drawColormap", "draw_colormap"],
-  ["drawIsEnabled", "draw_is_enabled"],
-  ["drawIsFillOverwriting", "draw_is_fill_overwriting"],
-  ["drawOpacity", "draw_opacity"],
-  ["drawPenSize", "draw_pen_size"],
-  ["drawPenValue", "draw_pen_value"],
-  ["drawRimOpacity", "draw_rim_opacity"],
-  ["elevation", "elevation"],
-  ["fontColor", "font_color"],
-  ["fontMinSize", "font_min_size"],
-  ["fontScale", "font_scale"],
-  ["forceDevicePixelRatio", "force_device_pixel_ratio"],
-  ["gamma", "gamma"],
-  ["graphIsRangeCalMinMax", "graph_is_range_cal_min_max"],
-  ["graphNormalizeValues", "graph_normalize_values"],
-  ["heroFraction", "hero_fraction"],
-  ["heroSliceType", "hero_slice_type"],
-  ["is3DCrosshairVisible", "is_3d_crosshair_visible"],
-  ["isClipPlaneCutaway", "is_clip_plane_cutaway"],
-  ["isColorbarVisible", "is_colorbar_visible"],
-  ["isCrossLinesVisible", "is_cross_lines_visible"],
-  ["isDragDropEnabled", "is_drag_drop_enabled"],
-  ["isEqualSize", "is_equal_size"],
-  ["isGraphVisible", "is_graph_visible"],
-  ["isLegendVisible", "is_legend_visible"],
-  ["isMeasureUnitsVisible", "is_measure_units_visible"],
-  ["isMosaicCentered", "is_mosaic_centered"],
-  ["isOrientationTextVisible", "is_orientation_text_visible"],
-  ["isOrientCubeVisible", "is_orient_cube_visible"],
-  ["isPositionInMM", "is_position_in_mm"],
-  ["isRadiological", "is_radiological"],
-  ["isRulerVisible", "is_ruler_visible"],
-  ["isSnapToVoxelCenters", "is_snap_to_voxel_centers"],
-  ["isThumbnailVisible", "is_thumbnail_visible"],
-  ["isYoked3DTo2DZoom", "is_yoked_3d_to_2d_zoom"],
-  ["measureLineColor", "measure_line_color"],
-  ["measureTextColor", "measure_text_color"],
-  ["meshThicknessOn2D", "mesh_thickness_on_2d"],
-  ["meshXRay", "mesh_x_ray"],
-  ["mosaicString", "mosaic_string"],
-  ["multiplanarType", "multiplanar_type"],
-  ["pan2Dxyzmm", "pan_2_dxyzmm"],
-  ["placeholderText", "placeholder_text"],
-  ["primaryDragMode", "primary_drag_mode"],
-  ["rulerWidth", "ruler_width"],
-  ["scaleMultiplier", "scale_multiplier"],
-  ["secondaryDragMode", "secondary_drag_mode"],
-  ["selectionBoxColor", "selection_box_color"],
-  ["showRender", "show_render"],
-  ["sliceType", "slice_type"],
-  ["thumbnailUrl", "thumbnail_url"],
-  ["tileMargin", "tile_margin"],
-  ["volumeAlphaShader", "volume_alpha_shader"],
-  ["volumeIllumination", "volume_illumination"],
-  ["volumeIsAlphaClipDark", "volume_is_alpha_clip_dark"],
-  ["volumeIsBackgroundMasking", "volume_is_background_masking"],
-  ["volumeIsNearestInterpolation", "volume_is_nearest_interpolation"],
-  ["volumeIsV1SliceShader", "volume_is_v1_slice_shader"],
-  ["volumeMatcap", "volume_matcap"],
-  ["volumeOutlineWidth", "volume_outline_width"],
-  ["volumePaqdUniforms", "volume_paqd_uniforms"],
+  ['annotationActiveGroup', 'annotation_active_group'],
+  ['annotationActiveLabel', 'annotation_active_label'],
+  ['annotationBrushRadius', 'annotation_brush_radius'],
+  ['annotationIsEnabled', 'annotation_is_enabled'],
+  ['annotationIsErasing', 'annotation_is_erasing'],
+  ['annotationIsVisibleIn3D', 'annotation_is_visible_in_3d'],
+  ['annotationTool', 'annotation_tool'],
+  ['azimuth', 'azimuth'],
+  ['backgroundColor', 'background_color'],
+  ['clipPlaneColor', 'clip_plane_color'],
+  ['crosshairColor', 'crosshair_color'],
+  ['crosshairGap', 'crosshair_gap'],
+  ['crosshairPos', 'crosshair_pos'],
+  ['crosshairWidth', 'crosshair_width'],
+  ['devicePixelRatio', 'device_pixel_ratio'],
+  ['drawColormap', 'draw_colormap'],
+  ['drawIsEnabled', 'draw_is_enabled'],
+  ['drawIsFillOverwriting', 'draw_is_fill_overwriting'],
+  ['drawOpacity', 'draw_opacity'],
+  ['drawPenSize', 'draw_pen_size'],
+  ['drawPenValue', 'draw_pen_value'],
+  ['drawRimOpacity', 'draw_rim_opacity'],
+  ['elevation', 'elevation'],
+  ['fontColor', 'font_color'],
+  ['fontMinSize', 'font_min_size'],
+  ['fontScale', 'font_scale'],
+  ['forceDevicePixelRatio', 'force_device_pixel_ratio'],
+  ['gamma', 'gamma'],
+  ['graphIsRangeCalMinMax', 'graph_is_range_cal_min_max'],
+  ['graphNormalizeValues', 'graph_normalize_values'],
+  ['heroFraction', 'hero_fraction'],
+  ['heroSliceType', 'hero_slice_type'],
+  ['is3DCrosshairVisible', 'is_3d_crosshair_visible'],
+  ['isClipPlaneCutaway', 'is_clip_plane_cutaway'],
+  ['isColorbarVisible', 'is_colorbar_visible'],
+  ['isCrossLinesVisible', 'is_cross_lines_visible'],
+  ['isDragDropEnabled', 'is_drag_drop_enabled'],
+  ['isEqualSize', 'is_equal_size'],
+  ['isGraphVisible', 'is_graph_visible'],
+  ['isLegendVisible', 'is_legend_visible'],
+  ['isMeasureUnitsVisible', 'is_measure_units_visible'],
+  ['isMosaicCentered', 'is_mosaic_centered'],
+  ['isOrientationTextVisible', 'is_orientation_text_visible'],
+  ['isOrientCubeVisible', 'is_orient_cube_visible'],
+  ['isPositionInMM', 'is_position_in_mm'],
+  ['isRadiological', 'is_radiological'],
+  ['isRulerVisible', 'is_ruler_visible'],
+  ['isSnapToVoxelCenters', 'is_snap_to_voxel_centers'],
+  ['isThumbnailVisible', 'is_thumbnail_visible'],
+  ['isYoked3DTo2DZoom', 'is_yoked_3d_to_2d_zoom'],
+  ['measureLineColor', 'measure_line_color'],
+  ['measureTextColor', 'measure_text_color'],
+  ['meshThicknessOn2D', 'mesh_thickness_on_2d'],
+  ['meshXRay', 'mesh_x_ray'],
+  ['mosaicString', 'mosaic_string'],
+  ['multiplanarType', 'multiplanar_type'],
+  ['pan2Dxyzmm', 'pan_2_dxyzmm'],
+  ['placeholderText', 'placeholder_text'],
+  ['primaryDragMode', 'primary_drag_mode'],
+  ['rulerWidth', 'ruler_width'],
+  ['scaleMultiplier', 'scale_multiplier'],
+  ['secondaryDragMode', 'secondary_drag_mode'],
+  ['selectionBoxColor', 'selection_box_color'],
+  ['showRender', 'show_render'],
+  ['sliceType', 'slice_type'],
+  ['thumbnailUrl', 'thumbnail_url'],
+  ['tileMargin', 'tile_margin'],
+  ['volumeAlphaShader', 'volume_alpha_shader'],
+  ['volumeIllumination', 'volume_illumination'],
+  ['volumeIsAlphaClipDark', 'volume_is_alpha_clip_dark'],
+  ['volumeIsBackgroundMasking', 'volume_is_background_masking'],
+  ['volumeIsNearestInterpolation', 'volume_is_nearest_interpolation'],
+  ['volumeIsV1SliceShader', 'volume_is_v1_slice_shader'],
+  ['volumeMatcap', 'volume_matcap'],
+  ['volumeOutlineWidth', 'volume_outline_width'],
+  ['volumePaqdUniforms', 'volume_paqd_uniforms'],
 ]
 
 // [jsName, pyName] for read-only properties (JS-to-Python only).
 const PROPS_RO = [
-  ["backend", "backend"],
-  ["colormaps", "colormaps"],
-  ["drawingColormaps", "drawing_colormaps"],
-  ["isAntiAlias", "is_anti_alias"],
-  ["meshExtensions", "mesh_extensions"],
-  ["meshShaders", "mesh_shaders"],
-  ["meshWriteExtensions", "mesh_write_extensions"],
-  ["selectedAnnotation", "selected_annotation"],
-  ["volumeExtensions", "volume_extensions"],
-  ["volumeTransforms", "volume_transforms"],
-  ["volumeWriteExtensions", "volume_write_extensions"],
+  ['backend', 'backend'],
+  ['colormaps', 'colormaps'],
+  ['drawingColormaps', 'drawing_colormaps'],
+  ['isAntiAlias', 'is_anti_alias'],
+  ['meshExtensions', 'mesh_extensions'],
+  ['meshShaders', 'mesh_shaders'],
+  ['meshWriteExtensions', 'mesh_write_extensions'],
+  ['selectedAnnotation', 'selected_annotation'],
+  ['volumeExtensions', 'volume_extensions'],
+  ['volumeTransforms', 'volume_transforms'],
+  ['volumeWriteExtensions', 'volume_write_extensions'],
 ]
 
 // Constructor-only options that NiiVue exposes as getters,
 // not setters. Python can still pass them before attach.
-const CONSTRUCTOR_PROPS = [
-  ...PROPS_RW,
-  ["backend", "backend"],
-]
+const CONSTRUCTOR_PROPS = [...PROPS_RW, ['backend', 'backend']]
 
 // NiiVue events that we forward to Python via model.send.
 // `canvasResize` and `viewAttached` fire at every layout tick
@@ -131,39 +131,39 @@ const CONSTRUCTOR_PROPS = [
 // them; users rarely observe these and they have no Python-
 // side use cases that justify the bandwidth.
 const SKIP_EVENT_FORWARDING = new Set([
-  "canvasResize",
-  "viewAttached",
-  "viewDestroyed",
+  'canvasResize',
+  'viewAttached',
+  'viewDestroyed',
 ])
 const EVENTS = [
-  "angleCompleted",
-  "annotationAdded",
-  "annotationChanged",
-  "annotationRemoved",
-  "azimuthElevationChange",
-  "canvasResize",
-  "change",
-  "clipPlaneChange",
-  "colormapAdded",
-  "documentLoaded",
-  "dragRelease",
-  "drawingChanged",
-  "drawingEnabled",
-  "frameChange",
-  "locationChange",
-  "measurementCompleted",
-  "meshLoaded",
-  "meshRemoved",
-  "meshUpdated",
-  "penValueChanged",
-  "pointerUp",
-  "sliceTypeChange",
-  "viewAttached",
-  "viewDestroyed",
-  "volumeLoaded",
-  "volumeOrderChanged",
-  "volumeRemoved",
-  "volumeUpdated",
+  'angleCompleted',
+  'annotationAdded',
+  'annotationChanged',
+  'annotationRemoved',
+  'azimuthElevationChange',
+  'canvasResize',
+  'change',
+  'clipPlaneChange',
+  'colormapAdded',
+  'documentLoaded',
+  'dragRelease',
+  'drawingChanged',
+  'drawingEnabled',
+  'frameChange',
+  'locationChange',
+  'measurementCompleted',
+  'meshLoaded',
+  'meshRemoved',
+  'meshUpdated',
+  'penValueChanged',
+  'pointerUp',
+  'sliceTypeChange',
+  'viewAttached',
+  'viewDestroyed',
+  'volumeLoaded',
+  'volumeOrderChanged',
+  'volumeRemoved',
+  'volumeUpdated',
 ]
 
 // Per-widget runtime state. anywidget passes different proxy
@@ -172,9 +172,13 @@ const EVENTS = [
 const STATE = new Map()
 const createState = () => {
   let initializedResolve = null
-  const initializedPromise = new Promise((r) => { initializedResolve = r })
+  const initializedPromise = new Promise((r) => {
+    initializedResolve = r
+  })
   let mountedResolve = null
-  const mountedPromise = new Promise((r) => { mountedResolve = r })
+  const mountedPromise = new Promise((r) => {
+    mountedResolve = r
+  })
   return {
     nv: null,
     extContext: null,
@@ -191,7 +195,7 @@ const createState = () => {
 }
 const stateKey = (model) => {
   try {
-    return model.get("_anywidget_id") || model
+    return model.get('_anywidget_id') || model
   } catch {
     return model
   }
@@ -218,12 +222,13 @@ const TJS_ARRAY_MAX = 4096
 const toJsonSafe = (v, seen) => {
   if (v == null) return v
   const t = typeof v
-  if (t === "function" || t === "symbol" || t === "undefined") return null
-  if (t === "bigint") return Number.isSafeInteger(Number(v)) ? Number(v) : String(v)
+  if (t === 'function' || t === 'symbol' || t === 'undefined') return null
+  if (t === 'bigint')
+    return Number.isSafeInteger(Number(v)) ? Number(v) : String(v)
   if (ArrayBuffer.isView(v)) {
     return v.length <= TJS_TYPED_MAX ? Array.from(v) : null
   }
-  if (t !== "object") return v
+  if (t !== 'object') return v
   seen ??= new WeakSet()
   if (seen.has(v)) return null
   seen.add(v)
@@ -236,18 +241,14 @@ const toJsonSafe = (v, seen) => {
   return out
 }
 
-const PY_UNDEFINED_KEY = "__ipyniivue_undefined__"
-const RESPONSE_BINARY_KEY = "__ipyniivue_binary__"
-const isPyUndefined = (v) => (
-  v && typeof v === "object" && v[PY_UNDEFINED_KEY] === true
-)
-const coerceCommandArgs = (args) => (
-  Array.isArray(args)
-    ? args.map((v) => (isPyUndefined(v) ? undefined : v))
-    : []
-)
+const PY_UNDEFINED_KEY = '__ipyniivue_undefined__'
+const RESPONSE_BINARY_KEY = '__ipyniivue_binary__'
+const isPyUndefined = (v) =>
+  v && typeof v === 'object' && v[PY_UNDEFINED_KEY] === true
+const coerceCommandArgs = (args) =>
+  Array.isArray(args) ? args.map((v) => (isPyUndefined(v) ? undefined : v)) : []
 const bytesToBase64 = (bytes) => {
-  let binary = ""
+  let binary = ''
   const chunk = 0x8000
   for (let i = 0; i < bytes.length; i += chunk) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
@@ -262,20 +263,23 @@ const toBinaryPayload = (v) => {
     [RESPONSE_BINARY_KEY]: true,
     data: bytesToBase64(bytes),
     byteLength: bytes.byteLength,
-    dtype: v.constructor && v.constructor.name ? v.constructor.name : "ArrayBuffer",
+    dtype:
+      v.constructor && v.constructor.name ? v.constructor.name : 'ArrayBuffer',
   }
 }
 const toResponseSafe = (v, seen) => {
   if (v == null) return v
   const t = typeof v
-  if (t === "function" || t === "symbol" || t === "undefined") return null
-  if (t === "bigint") return Number.isSafeInteger(Number(v)) ? Number(v) : String(v)
+  if (t === 'function' || t === 'symbol' || t === 'undefined') return null
+  if (t === 'bigint')
+    return Number.isSafeInteger(Number(v)) ? Number(v) : String(v)
   if (ArrayBuffer.isView(v)) {
-    const length = typeof v.length === "number" ? v.length : Number.POSITIVE_INFINITY
+    const length =
+      typeof v.length === 'number' ? v.length : Number.POSITIVE_INFINITY
     return length <= TJS_TYPED_MAX ? Array.from(v) : toBinaryPayload(v)
   }
   if (v instanceof ArrayBuffer) return toBinaryPayload(v)
-  if (t !== "object") return v
+  if (t !== 'object') return v
   seen ??= new WeakSet()
   if (seen.has(v)) return null
   seen.add(v)
@@ -302,16 +306,19 @@ async function initialize({ model }) {
   // `model.send()` in our anywidget setup.
   const sendToPython = (body) => {
     try {
-      model.set("_msg_outbox", { seq: ++state.outboxSeq, body })
+      model.set('_msg_outbox', { seq: ++state.outboxSeq, body })
       model.save_changes()
     } catch (err) {
-      console.warn("ipyniivue: outbox write failed:", err)
+      console.warn('ipyniivue: outbox write failed:', err)
     }
   }
 
   const sameJsonValue = (a, b) => {
-    try { return JSON.stringify(a) === JSON.stringify(b) }
-    catch { return a === b }
+    try {
+      return JSON.stringify(a) === JSON.stringify(b)
+    } catch {
+      return a === b
+    }
   }
   const syncReadOnlyProperties = () => {
     const nv = state.nv
@@ -327,12 +334,14 @@ async function initialize({ model }) {
           changed = true
         }
       } catch (err) {
-        console.warn("ipyniivue: failed to sync " + pyName + ":", err)
+        console.warn('ipyniivue: failed to sync ' + pyName + ':', err)
       }
     }
     if (changed) {
-      try { model.save_changes() } catch (err) {
-        console.warn("ipyniivue: read-only sync save failed:", err)
+      try {
+        model.save_changes()
+      } catch (err) {
+        console.warn('ipyniivue: read-only sync save failed:', err)
       }
     }
   }
@@ -344,43 +353,47 @@ async function initialize({ model }) {
   // add_mesh_from_bytes), supplied by `decodeInboxBuffer` when the
   // inbox body has a base64 `_b64` field.
   const runCommand = async (msg, buffers) => {
-    if (!msg || typeof msg !== "object") return
-    if (typeof msg.cmd !== "string") return
+    if (!msg || typeof msg !== 'object') return
+    if (typeof msg.cmd !== 'string') return
     const reqId = msg.req_id ?? null
     const respond = (ok, payload) => {
       if (reqId === null) return
-      const body = { kind: "response", req_id: reqId, ok }
+      const body = { kind: 'response', req_id: reqId, ok }
       if (ok) body.result = payload
       else body.error = String(payload)
       sendToPython(body)
     }
     await state.mountedPromise
-    if (msg.cmd === "__ready__") {
+    if (msg.cmd === '__ready__') {
       if (reqId !== null) respond(true, true)
       return
     }
     // Composite extension command: apply a bundled transform to
     // the volume at args[1], optionally replacing the background.
     // Returns { name, elapsed_ms } so Python can show progress.
-    if (msg.cmd === "__ext_apply_image_transform") {
+    if (msg.cmd === '__ext_apply_image_transform') {
       const args = coerceCommandArgs(msg.args)
       const name = args[0]
       const volIdx = args[1] ?? 0
       const options = args[2] || {}
       const replaceBg = !!args[3]
       try {
-        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())
+        const ctx =
+          state.extContext ??
+          (state.extContext = state.nv.createExtensionContext())
         const vol = ctx.volumes[volIdx]
         if (!vol) {
-          if (reqId !== null) respond(false, "no volume at index " + volIdx)
+          if (reqId !== null) respond(false, 'no volume at index ' + volIdx)
           return
         }
         const t0 = performance.now()
         const result = await ctx.applyVolumeTransform(name, vol, options)
         const info = state.nv.getVolumeTransformInfo(name)
         if (info && info.resultDefaults) {
-          if (info.resultDefaults.colormap) result.colormap = info.resultDefaults.colormap
-          if (info.resultDefaults.opacity != null) result.opacity = info.resultDefaults.opacity
+          if (info.resultDefaults.colormap)
+            result.colormap = info.resultDefaults.colormap
+          if (info.resultDefaults.opacity != null)
+            result.opacity = info.resultDefaults.opacity
         }
         if (replaceBg) await ctx.removeAllVolumes()
         await ctx.addVolume(result)
@@ -388,18 +401,20 @@ async function initialize({ model }) {
         if (reqId !== null) respond(true, { name: name, elapsed_ms: elapsedMs })
       } catch (err) {
         if (reqId !== null) respond(false, err)
-        else console.error("ipyniivue: __ext_apply_image_transform threw:", err)
+        else console.error('ipyniivue: __ext_apply_image_transform threw:', err)
       }
       return
     }
     // Drawing extension: find first/last slices containing drawing data
     // along an axis. Returns { first, last } or null. Reads the live
     // bitmap from ctx.drawing; returns null if no drawing volume exists.
-    if (msg.cmd === "__ext_drawing_find_boundaries") {
+    if (msg.cmd === '__ext_drawing_find_boundaries') {
       const args = coerceCommandArgs(msg.args)
       const axis = args[0] ?? 0
       try {
-        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())
+        const ctx =
+          state.extContext ??
+          (state.extContext = state.nv.createExtensionContext())
         const dr = ctx.drawing
         if (!dr) {
           if (reqId !== null) respond(true, null)
@@ -409,25 +424,35 @@ async function initialize({ model }) {
         const result = await findDrawingBoundarySlices(axis, dr.bitmap, dr.dims)
         const elapsedMs = performance.now() - t0
         if (reqId !== null) {
-          respond(true, result ? { first: result.first, last: result.last, elapsed_ms: elapsedMs } : null)
+          respond(
+            true,
+            result
+              ? {
+                  first: result.first,
+                  last: result.last,
+                  elapsed_ms: elapsedMs,
+                }
+              : null,
+          )
         }
       } catch (err) {
         if (reqId !== null) respond(false, err)
-        else console.error("ipyniivue: __ext_drawing_find_boundaries threw:", err)
+        else
+          console.error('ipyniivue: __ext_drawing_find_boundaries threw:', err)
       }
       return
     }
     // Buffer ingress: wrap bytes into a File and dispatch via NiiVue's
     // URL/File loader so the existing extension-based reader path runs.
-    if (msg.cmd === "__add_volume_from_bytes") {
+    if (msg.cmd === '__add_volume_from_bytes') {
       const args = coerceCommandArgs(msg.args)
-      const name = args[0] || "volume.nii"
+      const name = args[0] || 'volume.nii'
       const options = args[1] || {}
       try {
         if (!buffers || !buffers[0]) {
-          const errMsg = "no buffer attached to add_volume_from_bytes"
-          console.error("[ipyniivue]", errMsg)
-          sendToPython({ kind: "error", source: msg.cmd, message: errMsg })
+          const errMsg = 'no buffer attached to add_volume_from_bytes'
+          console.error('[ipyniivue]', errMsg)
+          sendToPython({ kind: 'error', source: msg.cmd, message: errMsg })
           if (reqId !== null) respond(false, errMsg)
           return
         }
@@ -435,37 +460,45 @@ async function initialize({ model }) {
         // Pass the underlying ArrayBuffer slice to File for browser
         // compatibility (some Blob constructors are picky about views).
         const dv = buffers[0]
-        const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv
+        const ab = dv.buffer
+          ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength)
+          : dv
         const file = new File([ab], name)
-        await state.nv.loadVolumes([Object.assign({}, options, { url: file, name: name })])
+        await state.nv.loadVolumes([
+          Object.assign({}, options, { url: file, name: name }),
+        ])
         if (reqId !== null) respond(true, null)
       } catch (err) {
-        console.error("[ipyniivue] __add_volume_from_bytes threw:", err)
-        sendToPython({ kind: "error", source: msg.cmd, message: String(err) })
+        console.error('[ipyniivue] __add_volume_from_bytes threw:', err)
+        sendToPython({ kind: 'error', source: msg.cmd, message: String(err) })
         if (reqId !== null) respond(false, err)
       }
       return
     }
-    if (msg.cmd === "__add_mesh_from_bytes") {
+    if (msg.cmd === '__add_mesh_from_bytes') {
       const args = coerceCommandArgs(msg.args)
-      const name = args[0] || "mesh.mz3"
+      const name = args[0] || 'mesh.mz3'
       const options = args[1] || {}
       try {
         if (!buffers || !buffers[0]) {
-          const errMsg = "no buffer attached to add_mesh_from_bytes"
-          console.error("[ipyniivue]", errMsg)
-          sendToPython({ kind: "error", source: msg.cmd, message: errMsg })
+          const errMsg = 'no buffer attached to add_mesh_from_bytes'
+          console.error('[ipyniivue]', errMsg)
+          sendToPython({ kind: 'error', source: msg.cmd, message: errMsg })
           if (reqId !== null) respond(false, errMsg)
           return
         }
         const dv = buffers[0]
-        const ab = dv.buffer ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength) : dv
+        const ab = dv.buffer
+          ? dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength)
+          : dv
         const file = new File([ab], name)
-        await state.nv.loadMeshes([Object.assign({}, options, { url: file, name: name })])
+        await state.nv.loadMeshes([
+          Object.assign({}, options, { url: file, name: name }),
+        ])
         if (reqId !== null) respond(true, null)
       } catch (err) {
-        console.error("[ipyniivue] __add_mesh_from_bytes threw:", err)
-        sendToPython({ kind: "error", source: msg.cmd, message: String(err) })
+        console.error('[ipyniivue] __add_mesh_from_bytes threw:', err)
+        sendToPython({ kind: 'error', source: msg.cmd, message: String(err) })
         if (reqId !== null) respond(false, err)
       }
       return
@@ -473,64 +506,86 @@ async function initialize({ model }) {
     // Drawing extension: interpolate between drawn slices to fill gaps.
     // Pulls the live bitmap, runs the worker, writes the result back via
     // ctx.drawing.update. Returns { before, after, elapsed_ms } voxel counts.
-    if (msg.cmd === "__ext_drawing_interpolate_slices") {
+    if (msg.cmd === '__ext_drawing_interpolate_slices') {
       const args = coerceCommandArgs(msg.args)
       const axis = args[0] ?? 0
       const useIntensity = !!args[1]
       const userOptions = args[2] || {}
       try {
-        const ctx = state.extContext ?? (state.extContext = state.nv.createExtensionContext())
+        const ctx =
+          state.extContext ??
+          (state.extContext = state.nv.createExtensionContext())
         const dr = ctx.drawing
         if (!dr) {
-          if (reqId !== null) respond(false, "no drawing volume; call create_empty_drawing() first")
+          if (reqId !== null)
+            respond(
+              false,
+              'no drawing volume; call create_empty_drawing() first',
+            )
           return
         }
         const bg = ctx.backgroundVolume
         const imageData = useIntensity && bg ? bg.imgRAS : null
-        const maxVal = useIntensity && bg ? (bg.globalMax || 1) : 1
-        const options = Object.assign({ sliceType: axis, useIntensityGuided: useIntensity }, userOptions)
+        const maxVal = useIntensity && bg ? bg.globalMax || 1 : 1
+        const options = Object.assign(
+          { sliceType: axis, useIntensityGuided: useIntensity },
+          userOptions,
+        )
         const before = dr.bitmap.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)
         const t0 = performance.now()
         const newBitmap = await interpolateMaskSlices(
-          dr.bitmap, dr.dims, imageData, maxVal, undefined, undefined, options,
+          dr.bitmap,
+          dr.dims,
+          imageData,
+          maxVal,
+          undefined,
+          undefined,
+          options,
         )
         const elapsedMs = performance.now() - t0
         const after = newBitmap.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)
         dr.update(newBitmap)
-        if (reqId !== null) respond(true, { before: before, after: after, elapsed_ms: elapsedMs })
+        if (reqId !== null)
+          respond(true, { before: before, after: after, elapsed_ms: elapsedMs })
       } catch (err) {
         if (reqId !== null) respond(false, err)
-        else console.error("ipyniivue: __ext_drawing_interpolate_slices threw:", err)
+        else
+          console.error(
+            'ipyniivue: __ext_drawing_interpolate_slices threw:',
+            err,
+          )
       }
       return
     }
     const nv = state.nv
     if (!nv) {
-      respond(false, "NiiVue instance is not initialized")
+      respond(false, 'NiiVue instance is not initialized')
       return
     }
     const fn = nv[msg.cmd]
-    if (typeof fn !== "function") {
-      const errMsg = "unknown command: " + msg.cmd
+    if (typeof fn !== 'function') {
+      const errMsg = 'unknown command: ' + msg.cmd
       if (reqId !== null) respond(false, errMsg)
-      else console.warn("ipyniivue: " + errMsg)
+      else console.warn('ipyniivue: ' + errMsg)
       return
     }
     try {
       const args = coerceCommandArgs(msg.args)
       let result = fn.apply(nv, args)
-      if (result && typeof result.then === "function") {
+      if (result && typeof result.then === 'function') {
         result = await result
       }
       syncReadOnlyProperties()
       if (reqId !== null) {
         let safe = null
-        try { safe = toResponseSafe(result ?? null) } catch {}
+        try {
+          safe = toResponseSafe(result ?? null)
+        } catch {}
         respond(true, safe)
       }
     } catch (err) {
       if (reqId !== null) respond(false, err)
-      else console.error("ipyniivue: command " + msg.cmd + " threw:", err)
+      else console.error('ipyniivue: command ' + msg.cmd + ' threw:', err)
     }
   }
   const cmdHandler = (msg, buffers) => {
@@ -548,7 +603,7 @@ async function initialize({ model }) {
   // anywidget setup and required a wait_ready() ping-pong that
   // could time out before the response made it back to Python.
   const decodeInboxBuffer = (body) => {
-    if (!body || typeof body._b64 !== "string") return undefined
+    if (!body || typeof body._b64 !== 'string') return undefined
     try {
       const bin = atob(body._b64)
       const out = new Uint8Array(bin.length)
@@ -557,18 +612,18 @@ async function initialize({ model }) {
     } catch (err) {
       // Malformed base64 must not abandon the rest of the inbox batch.
       // Surface to Python and let the downstream handler see no buffer.
-      const msg = "malformed _b64 buffer: " + String(err)
-      console.error("ipyniivue:", msg)
-      sendToPython({ kind: "error", source: body && body.cmd, message: msg })
+      const msg = 'malformed _b64 buffer: ' + String(err)
+      console.error('ipyniivue:', msg)
+      sendToPython({ kind: 'error', source: body && body.cmd, message: msg })
       return undefined
     }
   }
   const inboxHandler = () => {
-    const inbox = model.get("_msg_inbox")
+    const inbox = model.get('_msg_inbox')
     if (!Array.isArray(inbox)) return
     let highest = state.lastInboxSeq
     for (const item of inbox) {
-      const seq = item && typeof item.seq === "number" ? item.seq : null
+      const seq = item && typeof item.seq === 'number' ? item.seq : null
       if (seq === null || seq <= state.lastInboxSeq) continue
       state.lastInboxSeq = seq
       cmdHandler(item.body, decodeInboxBuffer(item.body))
@@ -578,15 +633,17 @@ async function initialize({ model }) {
     // _msg_inbox state. The ack reflects items received and queued
     // for execution, not necessarily completed; that is fine because
     // the inbox is only there to bridge the cold-start race.
-    const prevAck = model.get("_msg_inbox_ack") || 0
+    const prevAck = model.get('_msg_inbox_ack') || 0
     if (highest > prevAck) {
-      model.set("_msg_inbox_ack", highest)
-      try { model.save_changes() } catch (err) {
-        console.warn("ipyniivue: inbox ack save failed:", err)
+      model.set('_msg_inbox_ack', highest)
+      try {
+        model.save_changes()
+      } catch (err) {
+        console.warn('ipyniivue: inbox ack save failed:', err)
       }
     }
   }
-  model.on("change:_msg_inbox", inboxHandler)
+  model.on('change:_msg_inbox', inboxHandler)
   inboxHandler()
 
   // Build NiiVue with constructor opts from user's overrides.
@@ -595,7 +652,7 @@ async function initialize({ model }) {
     const v = model.get(pyName)
     if (v !== null && v !== undefined) opts[jsName] = v
   }
-  const thumbnailUrl = model.get("thumbnail_url")
+  const thumbnailUrl = model.get('thumbnail_url')
   if (thumbnailUrl !== null && thumbnailUrl !== undefined) {
     opts.thumbnail = thumbnailUrl
   }
@@ -603,9 +660,10 @@ async function initialize({ model }) {
   // Register bundled image-processing transforms before any
   // user command can land. Idempotent on re-register.
   for (const transform of IMAGE_PROCESSING_TRANSFORMS) {
-    try { state.nv.registerVolumeTransform(transform) }
-    catch (err) {
-      console.warn("ipyniivue: failed to register " + transform.name + ":", err)
+    try {
+      state.nv.registerVolumeTransform(transform)
+    } catch (err) {
+      console.warn('ipyniivue: failed to register ' + transform.name + ':', err)
     }
   }
   if (state.initializedResolve) {
@@ -625,10 +683,10 @@ async function initialize({ model }) {
         const nv = state.nv
         if (nv && nv[jsName] !== v) nv[jsName] = v
       } catch (err) {
-        console.warn("ipyniivue: failed to set " + jsName + ":", err)
+        console.warn('ipyniivue: failed to set ' + jsName + ':', err)
       }
     }
-    model.on("change:" + pyName, handler)
+    model.on('change:' + pyName, handler)
     observers.push([pyName, handler])
   }
 
@@ -638,8 +696,10 @@ async function initialize({ model }) {
     if (SKIP_EVENT_FORWARDING.has(eventName)) continue
     const handler = (e) => {
       let detail = null
-      try { detail = toJsonSafe(e && e.detail) } catch {}
-      sendToPython({ kind: "event", name: eventName, detail })
+      try {
+        detail = toJsonSafe(e && e.detail)
+      } catch {}
+      sendToPython({ kind: 'event', name: eventName, detail })
     }
     state.nv.addEventListener(eventName, handler)
     evtListeners.push([eventName, handler])
@@ -647,20 +707,22 @@ async function initialize({ model }) {
 
   // Cleanup on widget disposal.
   return () => {
-    model.off("change:_msg_inbox", inboxHandler)
+    model.off('change:_msg_inbox', inboxHandler)
     for (const [pyName, handler] of observers) {
-      model.off("change:" + pyName, handler)
+      model.off('change:' + pyName, handler)
     }
     const nv = state.nv
-    if (state.extContext && typeof state.extContext.dispose === "function") {
-      try { state.extContext.dispose() } catch {}
+    if (state.extContext && typeof state.extContext.dispose === 'function') {
+      try {
+        state.extContext.dispose()
+      } catch {}
     }
     state.extContext = null
     if (nv) {
       for (const [eventName, handler] of evtListeners) {
         nv.removeEventListener(eventName, handler)
       }
-      if (typeof nv.destroy === "function") nv.destroy()
+      if (typeof nv.destroy === 'function') nv.destroy()
     }
     state.nv = null
     deleteState(model)
@@ -684,8 +746,8 @@ async function render({ model, el }) {
   // a fresh blank one. (anywidget calls render() per view.)
   let canvas = state.canvas
   if (!canvas) {
-    canvas = document.createElement("canvas")
-    canvas.style.cssText = "width:100%;height:600px;display:block"
+    canvas = document.createElement('canvas')
+    canvas.style.cssText = 'width:100%;height:600px;display:block'
     canvas.width = 640
     canvas.height = 480
     // Suppress JupyterLab's cell context menu on right-click.
@@ -694,7 +756,7 @@ async function render({ model, el }) {
     // event bubbles to JupyterLab's document handler, which pops
     // up Cut Cell / Copy Cell / etc. Holding Shift bypasses both
     // (matches NiiVue's existing escape hatch).
-    canvas.addEventListener("contextmenu", (e) => {
+    canvas.addEventListener('contextmenu', (e) => {
       if (e.shiftKey) return
       e.preventDefault()
       e.stopPropagation()
@@ -716,7 +778,7 @@ async function render({ model, el }) {
         const v = nv[jsName]
         if (v !== undefined) model.set(pyName, toJsonSafe(v))
       } catch (err) {
-        console.warn("ipyniivue: failed to seed " + pyName + ":", err)
+        console.warn('ipyniivue: failed to seed ' + pyName + ':', err)
       }
     }
     if (state.mountedResolve) {

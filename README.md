@@ -8,6 +8,7 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 |---|---|---|
 | [`@niivue/niivue`](packages/niivue) | Core WebGPU/WebGL2 medical image viewer | [![npm](https://img.shields.io/npm/v/@niivue/niivue/next)](https://www.npmjs.com/package/@niivue/niivue) |
 | [`@niivue/nvreact`](packages/nv-react) | React bindings for NiiVue | [![npm](https://img.shields.io/npm/v/@niivue/nvreact/next)](https://www.npmjs.com/package/@niivue/nvreact) |
+| [`@niivue/nv-web-component`](packages/nv-web-component) | Lit-based Web Components for NiiVue | [![npm](https://img.shields.io/npm/v/@niivue/nv-web-component/next)](https://www.npmjs.com/package/@niivue/nv-web-component) |
 | [`@niivue/nv-ext-drawing`](packages/nv-ext-drawing) | Drawing interpolation and segmentation tools | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-drawing/next)](https://www.npmjs.com/package/@niivue/nv-ext-drawing) |
 | [`@niivue/nv-ext-image-processing`](packages/nv-ext-image-processing) | Image processing (Otsu thresholding, haze removal, etc.) | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-image-processing/next)](https://www.npmjs.com/package/@niivue/nv-ext-image-processing) |
 | [`@niivue/nv-ext-save-html`](packages/nv-ext-save-html) | Export a NiiVue scene as a self-contained HTML file | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-save-html/next)](https://www.npmjs.com/package/@niivue/nv-ext-save-html) |
@@ -25,6 +26,7 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 | [`demo-ext-image-processing`](apps/demo-ext-image-processing) | Demo app for the image processing extension |
 | [`demo-ext-save-html`](apps/demo-ext-save-html) | Demo app for the save-to-HTML extension |
 | [`demo-ext-dcm2niix`](apps/demo-ext-dcm2niix) | Demo app for the dcm2niix DICOM-to-NIfTI extension |
+| [`demo-nv-web-component`](apps/demo-nv-web-component) | Demo app for the Web Components package |
 | [`medgfx`](apps/medgfx) | Native macOS/iOS SwiftUI app embedding NiiVue in a WebView |
 
 ## Getting Started

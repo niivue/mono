@@ -6,7 +6,12 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignoreUnknown": false
+    "ignoreUnknown": false,
+    "includes": [
+      "**",
+      "!packages/ipyniivue/src/ipyniivue/static/_widget.template.js",
+      "!packages/ipyniivue/api.generated.json"
+    ]
   },
   "formatter": {
     "enabled": true,

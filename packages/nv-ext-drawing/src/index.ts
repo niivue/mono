@@ -23,7 +23,6 @@ import type {
 // @ts-expect-error — Vite worker import with inline bundling
 import DrawingWorker from './worker?worker&inline'
 
-// biome-ignore lint/performance/noBarrelFile: package entry point
 export type {
   Connectivity,
   DrawingDims,

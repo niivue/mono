@@ -113,6 +113,8 @@ export class NiivueViewerElement extends LitElement {
   private niivue: NiiVueGPU | null = null
   private resizeObserver: ResizeObserver | null = null
   private loadedVolumes = new Map<string, VolumeVisualProps>()
+  private attachmentReady: Promise<NiiVueGPU> | null = null
+  private attachmentGeneration = 0
 
   get nv(): NiiVueGPU | null {
     return this.niivue
@@ -144,12 +146,21 @@ export class NiivueViewerElement extends LitElement {
     this.resizeObserver = new ResizeObserver(() => nv.resize())
     this.resizeObserver.observe(container)
 
-    nv.attachToCanvas(canvas)
-      .then(() => {
-        nv.sliceType = this.sliceType
-        return this.syncVolumes()
+    const generation = ++this.attachmentGeneration
+    const attachmentReady = nv.attachToCanvas(canvas).then(() => nv)
+    this.attachmentReady = attachmentReady
+    attachmentReady
+      .then(async (attachedNv) => {
+        if (!this.ownsAttachment(attachedNv, generation)) return
+        attachedNv.sliceType = this.sliceType
+        await attachedNv.updateGLVolume()
+        await this.syncVolumes()
       })
-      .catch((error: unknown) => this.emitError(error))
+      .catch((error: unknown) => {
+        if (this.ownsAttachment(nv, generation)) {
+          this.emitError(error)
+        }
+      })
   }
 
   override updated(changed: PropertyValues<this>): void {
@@ -165,13 +176,29 @@ export class NiivueViewerElement extends LitElement {
     super.disconnectedCallback()
     this.resizeObserver?.disconnect()
     this.resizeObserver = null
+    this.attachmentGeneration++
+    this.attachmentReady = null
     this.niivue?.destroy()
     this.niivue = null
     this.loadedVolumes.clear()
   }
 
   private emitError(error: unknown): void {
-    dispatchNiivueEvent(this, 'niivue-error', error)
+    if (this.niivue) {
+      dispatchNiivueEvent(this, 'niivue-error', error)
+    }
+  }
+
+  private ownsAttachment(nv: NiiVueGPU, generation: number): boolean {
+    return this.niivue === nv && this.attachmentGeneration === generation
+  }
+
+  private async getAttachedNiivue(): Promise<NiiVueGPU | null> {
+    const attachmentReady = this.attachmentReady
+    if (!attachmentReady) return this.niivue
+
+    const nv = await attachmentReady
+    return this.niivue === nv ? nv : null
   }
 
   async setColormap(volumeIndex: number, colormap: string): Promise<void> {
@@ -222,7 +249,7 @@ export class NiivueViewerElement extends LitElement {
   }
 
   private async syncVolumes(): Promise<void> {
-    const nv = this.niivue
+    const nv = await this.getAttachedNiivue()
     if (!nv) return
 
     const desiredUrls = new Set(this.volumes.map(volumeKey))

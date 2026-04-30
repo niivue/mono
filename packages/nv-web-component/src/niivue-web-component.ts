@@ -61,6 +61,12 @@ export const volumeVisualUpdates = (
   return updates
 }
 
+export const volumeIndexByKey = (
+  volumes: Pick<NVImage, 'url' | 'name'>[],
+  key: string,
+): number =>
+  volumes.findIndex((volume) => volume.url === key || volume.name === key)
+
 const dispatchNiivueEvent = (
   element: HTMLElement,
   name: string,
@@ -223,9 +229,7 @@ export class NiivueViewerElement extends LitElement {
 
     for (const url of this.loadedVolumes.keys()) {
       if (!desiredUrls.has(url)) {
-        const volIdx = nv.volumes.findIndex(
-          (volume: NVImage) => volume.url === url || volume.name === url,
-        )
+        const volIdx = volumeIndexByKey(nv.volumes, url)
         if (volIdx >= 0) {
           nv.model.removeVolume(volIdx)
           await nv.updateGLVolume()
@@ -250,9 +254,7 @@ export class NiivueViewerElement extends LitElement {
         continue
       }
 
-      const volIdx = nv.volumes.findIndex(
-        (volume: NVImage) => volume.url === urlKey || volume.name === urlKey,
-      )
+      const volIdx = volumeIndexByKey(nv.volumes, urlKey)
       if (volIdx < 0) continue
 
       const updates = volumeVisualUpdates(next, prev)
@@ -260,6 +262,22 @@ export class NiivueViewerElement extends LitElement {
         await nv.setVolume(volIdx, updates)
       }
       this.loadedVolumes.set(urlKey, next)
+    }
+
+    await this.reconcileVolumeOrder(nv)
+  }
+
+  private async reconcileVolumeOrder(nv: NiiVueGPU): Promise<void> {
+    let didReorder = false
+    for (const [desiredIndex, opts] of this.volumes.entries()) {
+      const currentIndex = volumeIndexByKey(nv.volumes, volumeKey(opts))
+      if (currentIndex < 0 || currentIndex === desiredIndex) continue
+      if (nv.model.moveVolume(currentIndex, desiredIndex)) {
+        didReorder = true
+      }
+    }
+    if (didReorder) {
+      await nv.updateGLVolume()
     }
   }
 }

@@ -4,6 +4,7 @@ import {
   defaultElementName,
   extractVisualProps,
   volumeIdentity,
+  volumeIndexByKey,
   volumeKey,
   volumeVisualUpdates,
 } from './niivue-web-component'
@@ -57,5 +58,16 @@ describe('volume helpers', () => {
         { colormap: 'gray', calMin: 10, calMax: 200, opacity: 0.5 },
       ),
     ).toEqual({ colormap: 'hot' })
+  })
+
+  test('finds loaded volume indices by URL or name key', () => {
+    const volumes = [
+      { url: '/volumes/background.nii.gz', name: 'background' },
+      { url: '', name: 'overlay.nii.gz' },
+    ]
+
+    expect(volumeIndexByKey(volumes, '/volumes/background.nii.gz')).toBe(0)
+    expect(volumeIndexByKey(volumes, 'overlay.nii.gz')).toBe(1)
+    expect(volumeIndexByKey(volumes, 'missing.nii.gz')).toBe(-1)
   })
 })

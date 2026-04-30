@@ -1,0 +1,242 @@
+:root {
+  color: #d7dde5;
+  background: #111418;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.app-header,
+.toolbar,
+.demo-card {
+  border: 1px solid #2a3038;
+  border-radius: 8px;
+  background: #181c22;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+}
+
+.app-header,
+.toolbar {
+  padding: 12px 14px;
+}
+
+.app-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 4px;
+  color: #f3f5f7;
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin-bottom: 2px;
+  color: #eef1f4;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+p {
+  margin-bottom: 0;
+  color: #9aa4b2;
+  line-height: 1.45;
+}
+
+code {
+  color: #d7dde5;
+  font-size: 0.9em;
+  background: #222832;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+}
+
+.toolbar-title {
+  min-width: 170px;
+  margin-right: 2px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.control-row {
+  padding-top: 8px;
+}
+
+.toolbar .controls > label:not(.field),
+.control-row.with-fields > button,
+.control-row.with-fields > label:not(.field) {
+  margin-top: calc(0.85rem * 1.2 + 4px);
+}
+
+label,
+.field {
+  display: inline-flex;
+  min-height: 32px;
+  gap: 6px;
+  align-items: center;
+  color: #b6bec9;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.field {
+  min-height: unset;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  line-height: 1.2;
+}
+
+button,
+select {
+  min-height: 32px;
+  border: 1px solid #3a424d;
+  border-radius: 6px;
+  padding: 5px 9px;
+  color: #e5eaf0;
+  background: #222832;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button.primary {
+  border-color: #687384;
+  color: #ffffff;
+  background: #3f4652;
+}
+
+button:hover,
+select:hover {
+  border-color: #5b6573;
+  background: #2a3038;
+}
+
+button.primary:hover {
+  border-color: #7d8898;
+  background: #4b5563;
+}
+
+input[type="checkbox"] {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  appearance: none;
+  place-content: center;
+  border: 1px solid #4b5563;
+  border-radius: 3px;
+  background: #11161d;
+}
+
+input[type="checkbox"]::before {
+  width: 8px;
+  height: 8px;
+  content: "";
+  transform: scale(0);
+  background: #c8d0da;
+  clip-path: polygon(14% 44%, 0 60%, 40% 100%, 100% 18%, 84% 4%, 38% 68%);
+}
+
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+.demo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+}
+
+.demo-card {
+  display: grid;
+  grid-template-rows: auto auto minmax(360px, 1fr);
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.card-header p {
+  max-width: 54ch;
+  font-size: 0.85rem;
+}
+
+niivue-viewer,
+niivue-scene {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  overflow: hidden;
+  border: 1px solid #303743;
+  border-radius: 6px;
+  background: #0b1020;
+}
+
+@media (width <= 1100px) {
+  main {
+    grid-template-rows: auto auto auto;
+  }
+
+  .app-header,
+  .demo-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-card {
+    grid-template-rows: auto auto minmax(420px, 55vh);
+  }
+}

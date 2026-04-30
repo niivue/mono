@@ -8,10 +8,7 @@
       "{projectRoot}/tsconfig.json",
       "{projectRoot}/package.json"
     ],
-    "python": [
-      "{projectRoot}/**/*.py",
-      "{projectRoot}/pyproject.toml"
-    ]
+    "python": ["{projectRoot}/**/*.py", "{projectRoot}/pyproject.toml"]
   },
   "targetDefaults": {
     "dev": {

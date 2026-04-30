@@ -899,10 +899,7 @@
       "tsType": "BackendType | undefined",
       "pyTraitlet": {
         "kind": "Enum",
-        "values": [
-          "webgpu",
-          "webgl2"
-        ]
+        "values": ["webgpu", "webgl2"]
       },
       "hasGetter": true,
       "hasSetter": false,

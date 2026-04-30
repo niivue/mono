@@ -4,7 +4,8 @@ import { SHOW_RENDER } from '../src/NVConstants.ts'
 // Load from the community asset repositories rather than bundling.
 // All four base URLs below serve a `manifest.json` listing available
 // files, plus the files themselves.
-const VOLUME_BASE = 'https://raw.githubusercontent.com/niivue/niivue-demo-images/main/'
+const VOLUME_BASE =
+  'https://raw.githubusercontent.com/niivue/niivue-demo-images/main/'
 const FONT_BASE = 'https://raw.githubusercontent.com/niivue/fonts/main/fonts/'
 const CMAP_BASE =
   'https://raw.githubusercontent.com/niivue/Py2NiiVueColormaps/main/SciPy/'

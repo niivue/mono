@@ -2,7 +2,7 @@ import NiiVue from '../src/index.ts'
 import { SHOW_RENDER } from '../src/NVConstants.ts'
 
 // Load from the community asset repositories rather than bundling.
-// All three base URLs below serve a `manifest.json` listing available
+// All four base URLs below serve a `manifest.json` listing available
 // files, plus the files themselves.
 const VOLUME_BASE = 'https://raw.githubusercontent.com/niivue/niivue-demo-images/main/'
 const FONT_BASE = 'https://raw.githubusercontent.com/niivue/fonts/main/fonts/'
@@ -59,9 +59,9 @@ await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 // --- Volumes -------------------------------------------------------
 await populateFromManifest(volumeSelect, VOLUME_BASE, 'volume')
 volumeSelect.onchange = async () => {
-  nv1.removeAllVolumes()
+  await nv1.removeAllVolumes()
   const base = VOLUME_BASE + volumeSelect.value
-  await nv1.addVolume({ url: `${base}`})
+  await nv1.addVolume({ url: `${base}` })
 }
 // --- Fonts ---------------------------------------------------------
 // setFontFromUrl({ atlas, metrics }) fetches the PNG + JSON pair and

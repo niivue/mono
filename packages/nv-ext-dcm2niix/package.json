@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-dcm2niix",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "type": "module",
   "description": "DICOM-to-NIfTI conversion in the browser via the dcm2niix WASM build, packaged for NiiVue",
   "main": "./dist/nv-ext-dcm2niix.js",

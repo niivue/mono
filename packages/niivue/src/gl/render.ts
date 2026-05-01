@@ -13,6 +13,10 @@ import * as orientOverlay from './orientOverlay'
 import * as renderShader from './renderShader'
 import { Shader } from './shader'
 
+function isRgbaDatatype(datatypeCode: number): boolean {
+  return datatypeCode === 128 || datatypeCode === 2304
+}
+
 export class VolumeRenderer extends NVRenderer {
   private _gl: WebGL2RenderingContext | null
   shader: Shader | null
@@ -369,7 +373,7 @@ export class VolumeRenderer extends NVRenderer {
     } else if (standardVols.length === 1) {
       const vol = standardVols[0]
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
-      if (vol.hdr.datatypeCode === 128 || vol.hdr.datatypeCode === 2304) {
+      if (isRgbaDatatype(vol.hdr.datatypeCode)) {
         this.clearOverlay(gl)
         this.overlayTexture = orientOverlay.overlay2Texture(
           gl,
@@ -441,10 +445,7 @@ export class VolumeRenderer extends NVRenderer {
   ): boolean {
     if (!this.isReady || !this.overlayOrientCache) return false
     if (!baseVol.dimsRAS || isPaqd(overlayVol.hdr)) return false
-    if (
-      overlayVol.hdr.datatypeCode === 128 ||
-      overlayVol.hdr.datatypeCode === 2304
-    ) {
+    if (isRgbaDatatype(overlayVol.hdr.datatypeCode)) {
       return false
     }
     const mtx = NVTransforms.calculateOverlayTransformMatrix(

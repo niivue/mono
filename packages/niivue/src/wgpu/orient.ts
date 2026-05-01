@@ -143,6 +143,10 @@ function orientColormapKey(nvimage: NVImage, isLabelVol: boolean): string {
   return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}`
 }
 
+function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
 function writeOrientUniforms(
   device: GPUDevice,
   uniformBuffer: GPUBuffer,
@@ -208,8 +212,8 @@ export async function prepareOrientTextureCache(
     existingCache.pipelineType === pipelineType &&
     existingCache.frame4D === frame4D &&
     existingCache.imageBuffer === nvimage.img.buffer &&
-    existingCache.dimsIn.join(',') === dimsIn.join(',') &&
-    existingCache.dimsOut.join(',') === dimsOut.join(',') &&
+    dimensionsMatch(existingCache.dimsIn, dimsIn) &&
+    dimensionsMatch(existingCache.dimsOut, dimsOut) &&
     existingCache.colormapKey === colormapKey
   if (canReuse) {
     writeOrientUniforms(

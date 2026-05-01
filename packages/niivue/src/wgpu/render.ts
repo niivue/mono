@@ -15,6 +15,10 @@ const renderParamsSize = 416 // bytes for render uniforms (includes clipPlaneCol
 export const alignedRenderSize =
   Math.ceil(renderParamsSize / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
 
+function isRgbaDatatype(datatypeCode: number): boolean {
+  return datatypeCode === 128 || datatypeCode === 2304
+}
+
 export class VolumeRenderer extends NVRenderer {
   pipeline: GPURenderPipeline | null
   bindLayout: GPUBindGroupLayout | null
@@ -376,7 +380,7 @@ export class VolumeRenderer extends NVRenderer {
     } else if (standardVols.length === 1) {
       const vol = standardVols[0]
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
-      if (vol.hdr.datatypeCode === 128 || vol.hdr.datatypeCode === 2304) {
+      if (isRgbaDatatype(vol.hdr.datatypeCode)) {
         this.clearOverlay()
         this.overlayTexture = await orient.volume2Texture(
           device,
@@ -429,10 +433,7 @@ export class VolumeRenderer extends NVRenderer {
   ): Promise<boolean> {
     if (!this.isReady || !this.overlayOrientCache) return false
     if (!baseVol.dimsRAS || isPaqd(overlayVol.hdr)) return false
-    if (
-      overlayVol.hdr.datatypeCode === 128 ||
-      overlayVol.hdr.datatypeCode === 2304
-    ) {
+    if (isRgbaDatatype(overlayVol.hdr.datatypeCode)) {
       return false
     }
     const mtx = NVTransforms.calculateOverlayTransformMatrix(

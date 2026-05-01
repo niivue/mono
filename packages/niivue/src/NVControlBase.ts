@@ -1681,27 +1681,18 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   getVolumeAffine(volumeIndex: number): AffineMatrix {
-    const volumes = this.model.getVolumes()
-    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) {
-      throw new Error(`Volume index ${volumeIndex} out of range`)
-    }
-    return NVTransforms.copyAffine(volumes[volumeIndex].hdr.affine)
+    return NVTransforms.copyAffine(
+      this._getVolumeOrThrow(volumeIndex).hdr.affine,
+    )
   }
 
   async setVolumeAffine(
     volumeIndex: number,
     affine: number[][],
   ): Promise<void> {
-    const volumes = this.model.getVolumes()
-    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) {
-      throw new Error(`Volume index ${volumeIndex} out of range`)
-    }
-    this._setVolumeAffine(volumes[volumeIndex], affine)
-    this.emit('volumeUpdated', {
-      volumeIndex,
-      volume: volumes[volumeIndex],
-      changes: { affine: volumes[volumeIndex].hdr.affine },
-    })
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    this._setVolumeAffine(volume, affine)
+    this._emitVolumeAffineUpdate(volumeIndex, volume)
     await this.updateVolumeAffineOnly()
   }
 
@@ -1709,42 +1700,41 @@ export default class NiiVueGPU extends EventTarget {
     volumeIndex: number,
     transform: AffineTransform,
   ): Promise<void> {
-    const volumes = this.model.getVolumes()
-    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) {
-      throw new Error(`Volume index ${volumeIndex} out of range`)
-    }
+    const volume = this._getVolumeOrThrow(volumeIndex)
     const transformMatrix = NVTransforms.createAffineTransformMatrix(transform)
     this._setVolumeAffine(
-      volumes[volumeIndex],
-      NVTransforms.multiplyAffine(
-        volumes[volumeIndex].hdr.affine,
-        transformMatrix,
-      ),
+      volume,
+      NVTransforms.multiplyAffine(volume.hdr.affine, transformMatrix),
     )
-    this.emit('volumeUpdated', {
-      volumeIndex,
-      volume: volumes[volumeIndex],
-      changes: { affine: volumes[volumeIndex].hdr.affine },
-    })
+    this._emitVolumeAffineUpdate(volumeIndex, volume)
     await this.updateVolumeAffineOnly()
   }
 
   async resetVolumeAffine(volumeIndex: number): Promise<void> {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    const originalAffine = volume.originalAffine
+    if (!originalAffine) {
+      throw new Error('Original affine not stored')
+    }
+    this._setVolumeAffine(volume, originalAffine)
+    this._emitVolumeAffineUpdate(volumeIndex, volume)
+    await this.updateVolumeAffineOnly()
+  }
+
+  private _getVolumeOrThrow(volumeIndex: number): NVImage {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) {
       throw new Error(`Volume index ${volumeIndex} out of range`)
     }
-    const originalAffine = volumes[volumeIndex].originalAffine
-    if (!originalAffine) {
-      throw new Error('Original affine not stored')
-    }
-    this._setVolumeAffine(volumes[volumeIndex], originalAffine)
+    return volumes[volumeIndex]
+  }
+
+  private _emitVolumeAffineUpdate(volumeIndex: number, volume: NVImage): void {
     this.emit('volumeUpdated', {
       volumeIndex,
-      volume: volumes[volumeIndex],
-      changes: { affine: volumes[volumeIndex].hdr.affine },
+      volume,
+      changes: { affine: volume.hdr.affine },
     })
-    await this.updateVolumeAffineOnly()
   }
 
   private _setVolumeAffine(volume: NVImage, affine: number[][]): void {

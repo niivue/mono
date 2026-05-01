@@ -452,6 +452,10 @@ function overlayColormapKey(nvimage: NVImage): string {
   return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}`
 }
 
+function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
 export function destroyOverlayTextureCache(
   gl: WebGL2RenderingContext,
   cache: OverlayTextureCache | null,
@@ -530,8 +534,8 @@ export function prepareOverlayTextureCache(
     existingCache.shaderType === texConfig.shaderType &&
     existingCache.frame4D === frame4D &&
     existingCache.imageBuffer === nvimage.img.buffer &&
-    existingCache.dimsIn.join(',') === dimsIn.join(',') &&
-    existingCache.dimsOut.join(',') === dimsOut.join(',') &&
+    dimensionsMatch(existingCache.dimsIn, dimsIn) &&
+    dimensionsMatch(existingCache.dimsOut, dimsOut) &&
     existingCache.colormapKey === colormapKey
   if (canReuse) {
     renderOverlayCache(gl, existingCache, nvimage, mtx, overlayOpacity)

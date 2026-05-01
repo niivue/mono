@@ -77,6 +77,24 @@ function ensurePipeline(
   return perDevice[pipelineType]
 }
 
+export type OrientTextureCache = {
+  sourceTexture: GPUTexture
+  outputTexture: GPUTexture
+  uniformBuffer: GPUBuffer
+  colormapTexture: GPUTexture
+  negativeColormapTexture: GPUTexture
+  sampler: GPUSampler
+  bindGroup: GPUBindGroup
+  dimsIn: number[]
+  dimsOut: number[]
+  datatypeCode: number
+  frame4D: number
+  colormapKey: string
+  imageBuffer: ArrayBufferLike
+  pipelineType: string
+  hasNegativeColormap: boolean
+}
+
 function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
   const { rgbaData, texDims } = prepareRGBAData(nvimage)
   const rgbaTexture = device.createTexture({
@@ -95,6 +113,244 @@ function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
     texDims,
   )
   return rgbaTexture
+}
+
+function getTextureFormat(nvimage: NVImage): {
+  format: GPUTextureFormat
+  pipelineType: string
+  bytesPerVoxel: number
+} {
+  const dt = nvimage.hdr.datatypeCode
+  if (dt === 2)
+    return { format: 'r8uint', pipelineType: 'uint', bytesPerVoxel: 1 }
+  if (dt === 4)
+    return { format: 'r16sint', pipelineType: 'sint', bytesPerVoxel: 2 }
+  if (dt === 8)
+    return { format: 'r32sint', pipelineType: 'sint', bytesPerVoxel: 4 }
+  if (dt === 16 || dt === 32)
+    return { format: 'r32float', pipelineType: 'float', bytesPerVoxel: 4 }
+  if (dt === 512)
+    return { format: 'r16uint', pipelineType: 'uint', bytesPerVoxel: 2 }
+  if (dt === 768)
+    return { format: 'r32uint', pipelineType: 'uint', bytesPerVoxel: 4 }
+  throw new Error(`Unsupported NIfTI datatype ${dt}`)
+}
+
+function orientColormapKey(nvimage: NVImage, isLabelVol: boolean): string {
+  if (isLabelVol) {
+    return `label:${nvimage.colormapLabel?.lut.length ?? 0}:${nvimage.colormapLabel?.min ?? 0}:${nvimage.colormapLabel?.max ?? 0}`
+  }
+  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}`
+}
+
+function writeOrientUniforms(
+  device: GPUDevice,
+  uniformBuffer: GPUBuffer,
+  nvimage: NVImage,
+  mtx: Float32Array,
+  overlayOpacity: number,
+): void {
+  const uniformBufferSize = 7 * 16
+  const ab = new ArrayBuffer(uniformBufferSize)
+  const dv = new DataView(ab)
+  for (let i = 0; i < 16; i++) dv.setFloat32(i * 4, mtx[i], true)
+  const u = buildOrientUniforms(nvimage, overlayOpacity)
+  dv.setFloat32(64, u.slope, true)
+  dv.setFloat32(68, u.intercept, true)
+  dv.setFloat32(72, u.calMin, true)
+  dv.setFloat32(76, u.calMax, true)
+  dv.setFloat32(80, u.mnNeg, true)
+  dv.setFloat32(84, u.mxNeg, true)
+  dv.setFloat32(88, u.isAlphaThreshold, true)
+  dv.setFloat32(92, u.isColorbarFromZero, true)
+  dv.setFloat32(96, u.overlayOpacity, true)
+  dv.setFloat32(100, u.isLabel, true)
+  dv.setFloat32(104, u.labelMin, true)
+  dv.setFloat32(108, u.labelWidth, true)
+  device.queue.writeBuffer(uniformBuffer, 0, ab)
+}
+
+export function destroyOrientTextureCache(
+  cache: OrientTextureCache | null,
+): void {
+  if (!cache) return
+  cache.sourceTexture.destroy()
+  cache.outputTexture.destroy()
+  cache.uniformBuffer.destroy()
+  cache.colormapTexture.destroy()
+  if (cache.hasNegativeColormap) cache.negativeColormapTexture.destroy()
+}
+
+export async function prepareOrientTextureCache(
+  device: GPUDevice,
+  nvimage: NVImage,
+  nvimageTarget: NVImage,
+  mtx: Float32Array,
+  overlayOpacity = 1,
+  existingCache: OrientTextureCache | null = null,
+): Promise<OrientTextureCache> {
+  if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS)
+    throw new Error('overlay2Texture: missing dimsRAS')
+  if (!nvimage.img) throw new Error('overlay2Texture: missing image data')
+  const { format, pipelineType, bytesPerVoxel } = getTextureFormat(nvimage)
+  const dimsIn = [nvimage.dims[1], nvimage.dims[2], nvimage.dims[3]]
+  const dimsOut = [
+    nvimageTarget.dimsRAS[1],
+    nvimageTarget.dimsRAS[2],
+    nvimageTarget.dimsRAS[3],
+  ]
+  const frame4D = nvimage.frame4D ?? 0
+  const u = buildOrientUniforms(nvimage, overlayOpacity)
+  const colormapKey = orientColormapKey(nvimage, u.isLabel > 0)
+  const canReuse =
+    existingCache &&
+    existingCache.datatypeCode === nvimage.hdr.datatypeCode &&
+    existingCache.pipelineType === pipelineType &&
+    existingCache.frame4D === frame4D &&
+    existingCache.imageBuffer === nvimage.img.buffer &&
+    existingCache.dimsIn.join(',') === dimsIn.join(',') &&
+    existingCache.dimsOut.join(',') === dimsOut.join(',') &&
+    existingCache.colormapKey === colormapKey
+  if (canReuse) {
+    writeOrientUniforms(
+      device,
+      existingCache.uniformBuffer,
+      nvimage,
+      mtx,
+      overlayOpacity,
+    )
+    return existingCache
+  }
+  destroyOrientTextureCache(existingCache)
+  const cached = ensurePipeline(device, pipelineType)
+  const sourceTexture = device.createTexture({
+    size: dimsIn,
+    format,
+    dimension: '3d',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
+  const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
+  const frameByteLength = nvimage.nVox3D * bytesPerVoxel
+  const imgView = new Uint8Array(
+    nvimage.img.buffer,
+    nvimage.img.byteOffset + frameByteOffset,
+    frameByteLength,
+  )
+  const imgData =
+    typeof SharedArrayBuffer !== 'undefined' &&
+    imgView.buffer instanceof SharedArrayBuffer
+      ? new Uint8Array(imgView)
+      : imgView
+  device.queue.writeTexture(
+    { texture: sourceTexture },
+    imgData as Uint8Array<ArrayBuffer>,
+    {
+      bytesPerRow: Math.floor(dimsIn[0] * bytesPerVoxel),
+      rowsPerImage: dimsIn[1],
+    },
+    dimsIn,
+  )
+  const uniformBuffer = device.createBuffer({
+    size: 7 * 16,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  })
+  writeOrientUniforms(device, uniformBuffer, nvimage, mtx, overlayOpacity)
+  const outputTexture = device.createTexture({
+    size: dimsOut,
+    format: 'rgba8unorm',
+    dimension: '3d',
+    usage:
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.STORAGE_BINDING |
+      GPUTextureUsage.COPY_SRC,
+  })
+  let colormapTexture: GPUTexture
+  let negativeColormapTexture: GPUTexture
+  let hasNegativeColormap = false
+  let sampler: GPUSampler
+  if (u.isLabel > 0) {
+    const labelLut = nvimage.colormapLabel?.lut
+    if (!labelLut) throw new Error('Label colormap LUT is undefined')
+    const nLabels = labelLut.length / 4
+    colormapTexture = device.createTexture({
+      size: [nLabels, 1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    })
+    device.queue.writeTexture(
+      { texture: colormapTexture },
+      Uint8Array.from(labelLut),
+      { bytesPerRow: nLabels * 4, rowsPerImage: 1 },
+      [nLabels, 1],
+    )
+    negativeColormapTexture = colormapTexture
+    sampler = device.createSampler({
+      magFilter: 'nearest',
+      minFilter: 'nearest',
+    })
+  } else {
+    colormapTexture = await wgpu.lutBytes2texture(
+      device,
+      NVCmaps.lutrgba8(nvimage.colormap),
+    )
+    negativeColormapTexture = colormapTexture
+    hasNegativeColormap = !!(
+      nvimage.colormapNegative && nvimage.colormapNegative.length > 0
+    )
+    if (hasNegativeColormap)
+      negativeColormapTexture = await wgpu.lutBytes2texture(
+        device,
+        NVCmaps.lutrgba8(nvimage.colormapNegative),
+      )
+    sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' })
+  }
+  const bindGroup = device.createBindGroup({
+    layout: cached.layout,
+    entries: [
+      { binding: 0, resource: { buffer: uniformBuffer } },
+      { binding: 1, resource: sourceTexture.createView() },
+      { binding: 2, resource: colormapTexture.createView() },
+      { binding: 3, resource: outputTexture.createView() },
+      { binding: 4, resource: sampler },
+      { binding: 5, resource: negativeColormapTexture.createView() },
+    ],
+  })
+  return {
+    sourceTexture,
+    outputTexture,
+    uniformBuffer,
+    colormapTexture,
+    negativeColormapTexture,
+    sampler,
+    bindGroup,
+    dimsIn,
+    dimsOut,
+    datatypeCode: nvimage.hdr.datatypeCode,
+    frame4D,
+    colormapKey,
+    imageBuffer: nvimage.img.buffer,
+    pipelineType,
+    hasNegativeColormap,
+  }
+}
+
+export function dispatchOrient(
+  device: GPUDevice,
+  cache: OrientTextureCache,
+): void {
+  const cached = ensurePipeline(device, cache.pipelineType)
+  const [vxOut, vyOut, vzOut] = cache.dimsOut
+  const encoder = device.createCommandEncoder()
+  const pass = encoder.beginComputePass()
+  pass.setPipeline(cached.pipeline)
+  pass.setBindGroup(0, cache.bindGroup)
+  pass.dispatchWorkgroups(
+    Math.ceil(vxOut / 8),
+    Math.ceil(vyOut / 8),
+    Math.ceil(vzOut / 4),
+  )
+  pass.end()
+  device.queue.submit([encoder.finish()])
 }
 
 /**

@@ -44,6 +44,7 @@ export class VolumeRenderer extends NVRenderer {
   private _bindTexPaqd: GPUTexture | null = null
   private _bindTexDraw: GPUTexture | null = null
   private _bindTexLut: GPUTexture | null = null
+  private overlayOrientCache: orient.OrientTextureCache | null = null
 
   constructor() {
     super()
@@ -285,15 +286,20 @@ export class VolumeRenderer extends NVRenderer {
     _paqdUniforms: readonly number[],
   ): Promise<void> {
     if (!this.isReady) return
-    this.clearOverlay()
     this.clearPaqd()
 
-    if (!baseVol.dimsRAS) return
+    if (!baseVol.dimsRAS) {
+      this.clearOverlay()
+      return
+    }
     const dimsOut = [baseVol.dimsRAS[1], baseVol.dimsRAS[2], baseVol.dimsRAS[3]]
 
     // Filter out overlays with zero opacity
     const visible = overlayVols.filter((v) => (v.opacity ?? 1) > 0)
-    if (visible.length === 0) return
+    if (visible.length === 0) {
+      this.clearOverlay()
+      return
+    }
 
     // Separate PAQD from standard overlays
     const paqdVols = visible.filter((v) => isPaqd(v.hdr) && v.colormapLabel)
@@ -365,17 +371,35 @@ export class VolumeRenderer extends NVRenderer {
     }
 
     // Upload standard overlays
-    if (standardVols.length === 1) {
+    if (standardVols.length === 0) {
+      this.clearOverlay()
+    } else if (standardVols.length === 1) {
       const vol = standardVols[0]
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
-      this.overlayTexture = await orient.volume2Texture(
+      if (vol.hdr.datatypeCode === 128 || vol.hdr.datatypeCode === 2304) {
+        this.clearOverlay()
+        this.overlayTexture = await orient.volume2Texture(
+          device,
+          vol,
+          baseVol,
+          mtx as Float32Array,
+          vol.opacity ?? 1,
+        )
+        return
+      }
+      this.overlayOrientCache = await orient.prepareOrientTextureCache(
         device,
         vol,
         baseVol,
         mtx as Float32Array,
         vol.opacity ?? 1,
+        this.overlayOrientCache,
       )
+      orient.dispatchOrient(device, this.overlayOrientCache)
+      this.overlayTexture = this.overlayOrientCache.outputTexture
     } else if (standardVols.length > 1) {
+      orient.destroyOrientTextureCache(this.overlayOrientCache)
+      this.overlayOrientCache = null
       const overlayTextures: GPUTexture[] = []
       for (const vol of standardVols) {
         const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
@@ -398,11 +422,44 @@ export class VolumeRenderer extends NVRenderer {
     }
   }
 
-  clearOverlay(): void {
-    if (this.overlayTexture) {
-      this.overlayTexture.destroy()
-      this.overlayTexture = null
+  async updateAffineOverlay(
+    device: GPUDevice,
+    baseVol: NVImage,
+    overlayVol: NVImage,
+  ): Promise<boolean> {
+    if (!this.isReady || !this.overlayOrientCache) return false
+    if (!baseVol.dimsRAS || isPaqd(overlayVol.hdr)) return false
+    if (
+      overlayVol.hdr.datatypeCode === 128 ||
+      overlayVol.hdr.datatypeCode === 2304
+    ) {
+      return false
     }
+    const mtx = NVTransforms.calculateOverlayTransformMatrix(
+      baseVol,
+      overlayVol,
+    )
+    this.overlayOrientCache = await orient.prepareOrientTextureCache(
+      device,
+      overlayVol,
+      baseVol,
+      mtx as Float32Array,
+      overlayVol.opacity ?? 1,
+      this.overlayOrientCache,
+    )
+    orient.dispatchOrient(device, this.overlayOrientCache)
+    this.overlayTexture = this.overlayOrientCache.outputTexture
+    return true
+  }
+
+  clearOverlay(): void {
+    const cachedOutput = this.overlayOrientCache?.outputTexture ?? null
+    orient.destroyOrientTextureCache(this.overlayOrientCache)
+    this.overlayOrientCache = null
+    if (this.overlayTexture && this.overlayTexture !== cachedOutput) {
+      this.overlayTexture.destroy()
+    }
+    this.overlayTexture = null
   }
 
   clearPaqd(): void {

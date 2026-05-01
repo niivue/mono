@@ -48,7 +48,8 @@
         },
         "version": {
           "conventionalCommits": true,
-          "fallbackCurrentVersionResolver": "disk"
+          "fallbackCurrentVersionResolver": "disk",
+          "updateDependents": "auto"
         },
         "changelog": true
       },

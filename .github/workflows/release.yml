@@ -40,15 +40,6 @@ jobs:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
 
-      # Pixi env for ipyniivue's `build` target (hatchling / python-build).
-      # Required because `nx-release-publish` depends on `build`, and
-      # ipyniivue's build target runs `pixi run -e dev python -m build`.
-      - uses: prefix-dev/setup-pixi@v0.8.1
-        with:
-          manifest-path: packages/ipyniivue/pyproject.toml
-          environments: dev
-          cache: true
-
       - run: bun install
 
       - name: Configure git identity
@@ -69,7 +60,7 @@ jobs:
             echo '## Nx Release Dry Run'
             echo ''
             echo '```'
-            bunx nx release --dry-run --skip-publish --verbose
+            bunx nx release --groups typescript --dry-run --skip-publish --verbose
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -78,7 +69,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-        run: bunx nx release --skip-publish --verbose
+        run: bunx nx release --groups typescript --skip-publish --verbose
 
       - name: Push release commit and tags
         if: ${{ !inputs.dry_run }}
@@ -161,4 +152,4 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
-        run: bunx nx release publish --verbose
+        run: bunx nx release publish --groups typescript --verbose

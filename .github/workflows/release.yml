@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run (print the plan without creating commits or tags)'
+        description: "Dry run (print the plan without creating commits or tags)"
         type: boolean
         default: false
 
@@ -14,6 +14,7 @@ concurrency:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -23,7 +24,7 @@ jobs:
     # accidentally force-pushing a feature branch to main.
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           lfs: true
@@ -37,7 +38,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: 'https://registry.npmjs.org'
+          registry-url: "https://registry.npmjs.org"
 
       # Pixi env for ipyniivue's `build` target (hatchling / python-build).
       # Required because `nx-release-publish` depends on `build`, and
@@ -159,4 +160,5 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
         run: bunx nx release publish --verbose

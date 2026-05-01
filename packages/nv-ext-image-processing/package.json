@@ -31,5 +31,8 @@
   "dependencies": {
     "gl-matrix": "^3.4.4",
     "nifti-reader-js": "^0.8.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

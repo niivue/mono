@@ -626,10 +626,7 @@ export class VolumeRenderer extends NVRenderer {
       this.volumeGradientTexture.destroy()
       this.volumeGradientTexture = null
     }
-    if (this.overlayTexture) {
-      this.overlayTexture.destroy()
-      this.overlayTexture = null
-    }
+    this.clearOverlay()
     if (this.paqdTexture) {
       this.paqdTexture.destroy()
       this.paqdTexture = null

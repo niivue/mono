@@ -1733,13 +1733,27 @@ export default class NiiVueGPU extends EventTarget {
     this.emit('volumeUpdated', {
       volumeIndex,
       volume,
-      changes: { affine: volume.hdr.affine },
+      changes: { affine: NVTransforms.copyAffine(volume.hdr.affine) },
     })
   }
 
   private _setVolumeAffine(volume: NVImage, affine: number[][]): void {
     volume.hdr.affine = NVTransforms.copyAffine(affine)
     NVTransforms.calculateRAS(volume)
+    if (!volume.pixDimsRAS || !volume.dimsRAS) {
+      throw new Error('calculateRAS failed to set pixDimsRAS/dimsRAS')
+    }
+    const dimsMM = [
+      volume.pixDimsRAS[1] * volume.dimsRAS[1],
+      volume.pixDimsRAS[2] * volume.dimsRAS[2],
+      volume.pixDimsRAS[3] * volume.dimsRAS[3],
+    ]
+    const longestAxis = Math.max(dimsMM[0], dimsMM[1], dimsMM[2])
+    volume.volScale = [
+      dimsMM[0] / longestAxis,
+      dimsMM[1] / longestAxis,
+      dimsMM[2] / longestAxis,
+    ]
     const { extentsMin, extentsMax } = calculateWorldExtents(
       volume.hdr.dims.slice(1, 4),
       new Float32Array(volume.hdr.affine.flat()),

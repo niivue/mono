@@ -759,7 +759,7 @@ export class VolumeRenderer extends NVRenderer {
     if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
     if (this.volumeTexture) gl.deleteTexture(this.volumeTexture)
     if (this.volumeGradientTexture) gl.deleteTexture(this.volumeGradientTexture)
-    if (this.overlayTexture) gl.deleteTexture(this.overlayTexture)
+    this.clearOverlay(gl)
     if (this.paqdTexture) gl.deleteTexture(this.paqdTexture)
     if (this.drawingTexture) gl.deleteTexture(this.drawingTexture)
     if (this.drawingLinearSampler) gl.deleteSampler(this.drawingLinearSampler)

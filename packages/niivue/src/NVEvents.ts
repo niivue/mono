@@ -36,7 +36,7 @@ export type PointerUpDetail = { x: number; y: number; button: number }
 export type VolumeUpdatedDetail = {
   volumeIndex: number
   volume: NVImage
-  changes: VolumeUpdate | { affine: number[][] }
+  changes: VolumeUpdate
 }
 export type MeshUpdatedDetail = {
   meshIndex: number

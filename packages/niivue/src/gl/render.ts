@@ -6,16 +6,15 @@ import { applyCORS } from '@/NVLoader'
 import type { NVImage } from '@/NVTypes'
 import { blendOverlayData } from '@/view/NVMeshView'
 import { NVRenderer } from '@/view/NVRenderer'
-import { buildPaqdLut256, paqdResampleRaw, reorientRGBA } from '@/volume/utils'
+import {
+  isRgbaDatatype,
+  preparePaqdOverlayData,
+} from '@/view/NVRenderVolumeData'
 import * as depthPickShader from './depthPickShader'
 import * as gradient from './gradient'
 import * as orientOverlay from './orientOverlay'
 import * as renderShader from './renderShader'
 import { Shader } from './shader'
-
-function isRgbaDatatype(datatypeCode: number): boolean {
-  return datatypeCode === 128 || datatypeCode === 2304
-}
 
 export class VolumeRenderer extends NVRenderer {
   private _gl: WebGL2RenderingContext | null
@@ -283,39 +282,9 @@ export class VolumeRenderer extends NVRenderer {
     // Upload first PAQD as raw data + LUT texture (GPU shaders do LUT lookup + easing)
     if (paqdVols.length > 0) {
       const vol = paqdVols[0]
-      if (
-        vol.img &&
-        vol.dimsRAS &&
-        vol.img2RASstep &&
-        vol.img2RASstart &&
-        vol.colormapLabel
-      ) {
-        const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
-        const isRAS =
-          vol.img2RASstep[0] === 1 &&
-          vol.img2RASstep[1] === vol.dimsRAS[1] &&
-          vol.img2RASstep[2] === vol.dimsRAS[1] * vol.dimsRAS[2]
-        let raw = new Uint8Array(
-          vol.img.buffer,
-          vol.img.byteOffset,
-          vol.img.byteLength,
-        )
-        if (!isRAS) {
-          raw = reorientRGBA(
-            raw,
-            4,
-            vol.dimsRAS,
-            vol.img2RASstart,
-            vol.img2RASstep,
-          )
-        }
-        const ovDims = [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
-        const paqdData = paqdResampleRaw(
-          raw,
-          dimsOut,
-          ovDims,
-          mtx as Float32Array,
-        )
+      const prepared = preparePaqdOverlayData(baseVol, vol, dimsOut)
+      if (prepared) {
+        const { paqdData, lut256 } = prepared
         // Upload raw PAQD 3D texture (nearest-neighbor)
         this.paqdTexture = gl.createTexture()
         if (this.paqdTexture) {
@@ -341,8 +310,6 @@ export class VolumeRenderer extends NVRenderer {
           gl.bindTexture(gl.TEXTURE_3D, null)
         }
         // Upload 256-entry padded LUT as 2D texture (nearest-neighbor)
-        const lutMin = vol.colormapLabel.min ?? 0
-        const lut256 = buildPaqdLut256(vol.colormapLabel.lut, lutMin)
         this.paqdLutTexture = gl.createTexture()
         if (this.paqdLutTexture) {
           gl.bindTexture(gl.TEXTURE_2D, this.paqdLutTexture)

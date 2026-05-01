@@ -4,7 +4,10 @@ import * as NVShapes from '@/mesh/NVShapes'
 import { isPaqd } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
 import { NVRenderer } from '@/view/NVRenderer'
-import { buildPaqdLut256, paqdResampleRaw, reorientRGBA } from '@/volume/utils'
+import {
+  isRgbaDatatype,
+  preparePaqdOverlayData,
+} from '@/view/NVRenderVolumeData'
 import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
 import * as orient from './orient'
 import renderFragment from './render.wgsl?raw'
@@ -14,10 +17,6 @@ import * as wgpu from './wgpu'
 const renderParamsSize = 416 // bytes for render uniforms (includes clipPlaneColor)
 export const alignedRenderSize =
   Math.ceil(renderParamsSize / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
-
-function isRgbaDatatype(datatypeCode: number): boolean {
-  return datatypeCode === 128 || datatypeCode === 2304
-}
 
 export class VolumeRenderer extends NVRenderer {
   pipeline: GPURenderPipeline | null
@@ -312,39 +311,9 @@ export class VolumeRenderer extends NVRenderer {
     // Upload first PAQD as raw data + LUT texture (GPU shaders do LUT lookup + easing)
     if (paqdVols.length > 0) {
       const vol = paqdVols[0]
-      if (
-        vol.img &&
-        vol.dimsRAS &&
-        vol.img2RASstep &&
-        vol.img2RASstart &&
-        vol.colormapLabel
-      ) {
-        const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
-        const isRAS =
-          vol.img2RASstep[0] === 1 &&
-          vol.img2RASstep[1] === vol.dimsRAS[1] &&
-          vol.img2RASstep[2] === vol.dimsRAS[1] * vol.dimsRAS[2]
-        let raw = new Uint8Array(
-          vol.img.buffer,
-          vol.img.byteOffset,
-          vol.img.byteLength,
-        )
-        if (!isRAS) {
-          raw = reorientRGBA(
-            raw,
-            4,
-            vol.dimsRAS,
-            vol.img2RASstart,
-            vol.img2RASstep,
-          )
-        }
-        const ovDims = [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
-        const paqdData = paqdResampleRaw(
-          raw,
-          dimsOut,
-          ovDims,
-          mtx as Float32Array,
-        )
+      const prepared = preparePaqdOverlayData(baseVol, vol, dimsOut)
+      if (prepared) {
+        const { paqdData, lut256 } = prepared
         this.paqdTexture = device.createTexture({
           size: dimsOut,
           format: 'rgba8unorm',
@@ -358,8 +327,6 @@ export class VolumeRenderer extends NVRenderer {
           dimsOut,
         )
         // Upload 256-entry padded LUT as 2D texture
-        const lutMin = vol.colormapLabel.min ?? 0
-        const lut256 = buildPaqdLut256(vol.colormapLabel.lut, lutMin)
         this.paqdLutTexture = device.createTexture({
           size: [256, 1],
           format: 'rgba8unorm',

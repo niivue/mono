@@ -445,9 +445,21 @@ export type OverlayTextureCache = {
   shaderType: keyof ShaderPrograms
 }
 
+const _labelColormapIds = new WeakMap<object, number>()
+let _nextLabelColormapId = 1
+
+function labelColormapId(colormapLabel: object): number {
+  const existing = _labelColormapIds.get(colormapLabel)
+  if (existing) return existing
+  const id = _nextLabelColormapId++
+  _labelColormapIds.set(colormapLabel, id)
+  return id
+}
+
 function overlayColormapKey(nvimage: NVImage): string {
-  if (nvimage.colormapLabel) {
-    return `label:${nvimage.colormapLabel.lut.length}:${nvimage.colormapLabel.min ?? 0}:${nvimage.colormapLabel.max ?? 0}`
+  const label = nvimage.colormapLabel
+  if (label) {
+    return `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
   }
   return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}`
 }

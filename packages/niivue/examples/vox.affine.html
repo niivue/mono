@@ -20,6 +20,24 @@
       &nbsp;
       <button id="resetAffine" type="button">Reset affine</button>
       &nbsp;
+      <label for="underlayColormap">Underlay colormap</label>
+      <select id="underlayColormap">
+        <option value="gray" selected>gray</option>
+        <option value="hot">hot</option>
+        <option value="cool">cool</option>
+        <option value="winter">winter</option>
+        <option value="plasma">plasma</option>
+      </select>
+      &nbsp;
+      <label for="overlayColormap">Overlay colormap</label>
+      <select id="overlayColormap">
+        <option value="hot" selected>hot</option>
+        <option value="gray">gray</option>
+        <option value="cool">cool</option>
+        <option value="winter">winter</option>
+        <option value="plasma">plasma</option>
+      </select>
+      &nbsp;
       <label for="webgpuCheck">WebGPU</label>
       <input type="checkbox" id="webgpuCheck" checked />
     </header>
@@ -83,6 +101,12 @@
         translateX.value = '0'
         rotateY.value = '0'
         await applyAffine()
+      }
+      underlayColormap.onchange = async function () {
+        await nv1.setVolume(0, { colormap: this.value })
+      }
+      overlayColormap.onchange = async function () {
+        await nv1.setVolume(1, { colormap: this.value })
       }
       webgpuCheck.onclick = function () {
         nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })

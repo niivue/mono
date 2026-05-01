@@ -136,9 +136,23 @@ function getTextureFormat(nvimage: NVImage): {
   throw new Error(`Unsupported NIfTI datatype ${dt}`)
 }
 
+const _labelColormapIds = new WeakMap<object, number>()
+let _nextLabelColormapId = 1
+
+function labelColormapId(colormapLabel: object): number {
+  const existing = _labelColormapIds.get(colormapLabel)
+  if (existing) return existing
+  const id = _nextLabelColormapId++
+  _labelColormapIds.set(colormapLabel, id)
+  return id
+}
+
 function orientColormapKey(nvimage: NVImage, isLabelVol: boolean): string {
   if (isLabelVol) {
-    return `label:${nvimage.colormapLabel?.lut.length ?? 0}:${nvimage.colormapLabel?.min ?? 0}:${nvimage.colormapLabel?.max ?? 0}`
+    const label = nvimage.colormapLabel
+    return label
+      ? `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
+      : 'label:none'
   }
   return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}`
 }

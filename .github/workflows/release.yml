@@ -152,4 +152,26 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
-        run: bunx nx release publish --groups typescript --verbose
+        run: |
+          set -euo pipefail
+          for tag in $(git tag --points-at HEAD); do
+            project="${tag%@*}"
+            version="${tag##*@}"
+
+            # Only publish npm packages from the TypeScript release group.
+            case "$project" in
+              niivue|nv-*) ;;
+              *) continue ;;
+            esac
+
+            npm_tag="latest"
+            if [[ "$version" == *-* ]]; then
+              npm_tag="next"
+            fi
+
+            echo "Publishing $project@$version to npm with dist-tag '$npm_tag'"
+            bunx nx release publish \
+              --projects "$project" \
+              --tag "$npm_tag" \
+              --verbose
+          done

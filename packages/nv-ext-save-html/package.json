@@ -27,5 +27,8 @@
   "scripts": {
     "build": "npx vite build",
     "typecheck": "bunx tsc --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

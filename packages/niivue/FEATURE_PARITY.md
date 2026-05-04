@@ -10,7 +10,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 - ❌ = Missing
 - ⚠️ = Partial
 
-*Generated: 2026-04-17*
+*Updated: 2026-05-01*
 
 ---
 
@@ -31,7 +31,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `addVolume(volume)` | ✅ | |
 | `loadImages()` (mixed volumes+meshes) | ✅ | `loadImage` / `addImage` |
 | `loadFromUrl/File/ArrayBuffer` generic loaders | ✅ | Via `useLoader` plugin system |
-| `loadDicoms()` | ❌ | No DICOM loader built-in (plugin system exists via `useLoader`) |
+| DICOM loading | ✅ | Provided by `@niivue/nv-ext-dcm2niix` extension (browser-side dcm2niix/WASM conversion) |
 | `loadDeferred4DVolumes()` | ✅ | |
 | `getZarrVolume()` / Zarr format | ❌ | No Zarr reader |
 | `NVImage` static loaders (`loadFromUrl/File/Base64`) | ❌ | NVImage is a type, not a class with static methods |
@@ -99,7 +99,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | List available colormaps | ✅ | Via `NVCmaps` |
 | `setColormap` (via `setVolume`) | ✅ | |
-| `setColormapNegative` | ❌ | No negative colormap API found |
+| `setColormapNegative` / negative colormap option | ✅ | Via `colormapNegative` in volume, mesh layer, tract, and connectome options; API differs from old setter |
 | `addColormap(name, cmap)` | ✅ | |
 | `addColormapFromUrl()` | ✅ | |
 | `setColormapLabel` / `setColormapLabelFromUrl` | ✅ | |
@@ -173,8 +173,8 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | Clip plane color | ✅ | `clipPlaneColor` property |
 | Clip plane cutaway | ✅ | `isClipPlaneCutaway` property |
-| `setClipPlane` / `setClipPlanes` (up to 6) | ❌ | No explicit clip plane setting methods found |
-| Keyboard/mouse clip plane interaction | ❌ | Not verified |
+| `setClipPlane` / `setClipPlanes` (up to 6) | ✅ | `setClipPlane`, `setClipPlanes`, `setClipPlaneDepthAziElev` |
+| Keyboard/mouse clip plane interaction | ⚠️ | Clip planes are modelled and synchronized; full old interaction parity not verified |
 
 ## 14. Drawing & Segmentation
 
@@ -189,19 +189,19 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Draw undo | ✅ | `drawUndoBitmaps` mechanism |
 | Save drawing | ✅ | `saveDrawing()` |
 | `drawGrowCut()` — GPU grow-cut segmentation | ❌ | |
-| `drawOtsu()` — Otsu thresholding | ❌ | |
+| `drawOtsu()` — Otsu thresholding | ✅ | `@niivue/nv-ext-image-processing` exports `otsu`; API is a volume transform rather than legacy drawing method |
 | `drawingBinaryDilationWithSeed()` | ❌ | |
 | `findDrawingBoundarySlices()` | ✅ | `@niivue/nv-ext-drawing` package |
 | `interpolateMaskSlices()` | ✅ | `@niivue/nv-ext-drawing` package |
-| Click-to-segment (magic wand) | ❌ | |
+| Click-to-segment (magic wand) | ✅ | `@niivue/nv-ext-drawing` exports `magicWand`, `magicWandFromBitmap`, and `MagicWandShared` |
 | Draw rim opacity | ✅ | `drawRimOpacity` |
 
 ## 15. Image Processing
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `removeHaze()` — dehaze/bias correction | ❌ | |
-| `binarize()` | ⚠️ | Available as option in connectedLabel transform, not standalone |
+| `removeHaze()` — dehaze/bias correction | ✅ | `@niivue/nv-ext-image-processing` exports `removeHaze` volume transform |
+| `binarize()` | ⚠️ | Available through connected-label/threshold transform options, not standalone legacy method |
 | `conform()` — 1mm isotropic | ✅ | Volume transform |
 | `createConnectedLabelImage()` | ✅ | Volume transform |
 | `setModulationImage()` | ✅ | |
@@ -214,7 +214,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | `cal_min` / `cal_max` | ✅ | Via `setVolume` / `recalculateCalMinMax` |
-| Negative thresholds (`cal_minNeg` / `cal_maxNeg`) | ❌ | No negative colormap/threshold support found |
+| Negative thresholds (`cal_minNeg` / `cal_maxNeg`) | ✅ | Supported on volume and mesh layer options |
 | `colormapType` threshold modes | ❌ | Not found on controller API |
 
 ## 17. Measurements
@@ -223,18 +223,18 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | Distance measurement | ✅ | `NVMeasurement` view component |
 | `clearMeasurements()` | ✅ | |
-| Angle measurements | ❌ | No angle measurement found |
-| `clearAngles()` | ❌ | |
+| Angle measurements | ✅ | `DRAG_MODE.angle`; completed angles stored on model |
+| `clearAngles()` | ⚠️ | `clearMeasurements()` clears both distances and angles; no separate `clearAngles()` method |
 | `getDescriptives()` — ROI statistics | ❌ | |
 
 ## 18. Registration / Affine Transforms
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `getVolumeAffine` / `setVolumeAffine` | ❌ | No public affine get/set on controller |
-| `applyVolumeTransform` | ❌ | Transform system is for processing, not affine manipulation |
-| `resetVolumeAffine` | ❌ | |
-| Affine utilities (`copyAffine`, `multiplyAffine`, etc.) | ⚠️ | `NVTransforms` module exists but not publicly exported |
+| `getVolumeAffine` / `setVolumeAffine` | ✅ | Public controller methods; async setters update render state |
+| `applyVolumeTransform` | ✅ | Applies translation/rotation/scale in world space |
+| `resetVolumeAffine` | ✅ | Restores the affine captured at volume load |
+| Affine utilities (`copyAffine`, `multiplyAffine`, etc.) | ✅ | Implemented in `NVTransforms`; public API is controller-first |
 
 ## 19. 4D Volumes (Timeseries)
 
@@ -265,12 +265,12 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `penValueChanged` | ✅ | |
 | `pointerUp` | ✅ | |
 | `canvasResize` | ✅ | |
-| `propertyChange` | ✅ | |
-| `locationChange` / `intensityChange` | ❌ | Not in event map |
-| `dragRelease` | ❌ | |
+| `propertyChange` | ⚠️ | New API uses typed `change` event with `{ property, value }` detail |
+| `locationChange` / `intensityChange` | ⚠️ | `locationChange` exists; no separate `intensityChange` event found |
+| `dragRelease` | ✅ | |
 | `clickToSegment` event | ❌ | |
-| `measurementCompleted` / `angleCompleted` | ❌ | |
-| `documentLoaded` | ❌ | |
+| `measurementCompleted` / `angleCompleted` | ✅ | |
+| `documentLoaded` | ✅ | |
 | `volumeOrderChanged` | ✅ | |
 | `customMeshShaderAdded` / `meshShaderChanged` | ❌ | |
 | Legacy callback properties | ❌ | Not supported |
@@ -336,7 +336,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | `useLoader()` — custom format loader | ✅ | |
 | External reader registration | ✅ | `registerExternalReader` on NVVolume |
-| DICOM loader plugin | ❌ | No built-in DICOM plugin |
+| DICOM loader plugin | ✅ | `@niivue/nv-ext-dcm2niix` extension |
 | Other loader plugins (itkwasm, minc, tiff, vox, cbor) | ❌ | Must be provided externally |
 
 ## 29. NVImage Public API
@@ -382,7 +382,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | VMR | ✅ |
 | NPY/NPZ | ✅ |
 | Zarr | ❌ |
-| DICOM (plugin) | ❌ |
+| DICOM (extension) | ✅ |
 | MINC (plugin) | ❌ |
 | TIFF (plugin) | ❌ |
 | VOX (plugin) | ❌ |
@@ -455,36 +455,37 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 
 ## Summary of Key Missing Features
 
-1. **Drawing segmentation tools**: `drawOtsu`, `drawingBinaryDilationWithSeed`, `interpolateMaskSlices`, `findDrawingBoundarySlices`, click-to-segment, flood fill
 ### High Priority (Core Functionality)
-3. **Negative colormaps/thresholds**: `cal_minNeg`, `cal_maxNeg`, `setColormapNegative`, `colormapType`
-4. **Affine manipulation**: `getVolumeAffine`, `setVolumeAffine`, `applyVolumeTransform`, `resetVolumeAffine`
-5. **Mesh overlay formats**: GIfTI, CIfTI-2, MZ3, FreeSurfer ANNOT layer readers
-6. **Image processing**: `removeHaze`, standalone `binarize`
-7. **ROI statistics**: `getDescriptives`
+1. **Mesh overlay formats**: GIfTI, CIfTI-2, MZ3, FreeSurfer ANNOT layer readers
+2. **ROI statistics**: old `getDescriptives()` over drawing/label regions (new vector annotations have stats, but this is not equivalent)
+3. **Statistical threshold modes**: old `colormapType` threshold behavior is not clearly exposed, despite negative colormaps/thresholds being present
 
 ### Medium Priority
-9. **3D rendering**: `setGradientOpacity`, `setAdditiveBlend` (MIP), custom gradient textures
-10. **Clip plane methods**: `setClipPlane(s)` explicit API
-11. **Volume/mesh lookup by ID/URL**: `getVolumeIndexByID`, `getMeshIndexByID`, `removeVolumeByUrl`, `removeMeshByUrl`
-12. **Angle measurements**
-13. **~~HTML/scene export~~**: ~~`saveHTML`, `generateHTML`~~ (done — `@niivue/nv-ext-save-html`), `saveScene`
-14. **Zarr volume format**
-15. **DICOM loading** (plugin)
-16. **FreeSurfer connectome** loader
-17. **NVImage class methods**: coordinate conversion, getValue, clone, etc. (architectural difference — NVImage is a type not a class)
+4. **3D rendering**: `setGradientOpacity`, `setAdditiveBlend` (MIP), custom gradient textures
+5. **Volume/mesh lookup by ID/URL**: `getVolumeIndexByID`, `getMeshIndexByID`, `removeVolumeByUrl`, `removeMeshByUrl`
+6. **`saveScene()`**: HTML export is covered by `@niivue/nv-ext-save-html`, but old scene export remains missing
+7. **Zarr volume format**
+8. **FreeSurfer connectome** loader
+9. **NVImage class methods**: coordinate conversion, getValue, clone, etc. (architectural difference — NVImage is a type not a class)
 
 ### Lower Priority
-18. **Mouse/touch event config**: `setMouseEventConfig`, `setTouchEventConfig`
-19. **`cloneVolume`**
-20. **`setAtlasOutline`**
-21. **`colormapInvert`**
-22. **Mesh utilities**: `decimateFaces`, `linesToCylinders`, `createFiberDensityMap`, `reverseFaces`
-23. **Missing events**: `locationChange`, `intensityChange`, `dragRelease`, `measurementCompleted`, `angleCompleted`, `documentLoaded`, `volumeOrderChanged`
-24. **Enum exports**: `NiiIntentCode`
-25. **AFNI .niml.tract** tractography format
-26. **Legacy callback properties**
-27. **`watchOptsChanges`** (replaced by `propertyChange` event)
+11. **Mouse/touch event config**: `setMouseEventConfig`, `setTouchEventConfig`
+12. **`cloneVolume`**
+13. **`setAtlasOutline`**
+14. **`colormapInvert`**
+15. **Mesh utilities**: `decimateFaces`, `linesToCylinders`, `createFiberDensityMap`, `reverseFaces`
+16. **Missing/changed events**: no separate `intensityChange`; shader events not present; legacy callback properties not supported
+17. **Enum exports**: `NiiIntentCode`
+18. **AFNI .niml.tract** tractography format
+19. **`watchOptsChanges`** (replaced by `change` / property-change style event)
+20. **Standalone `binarize()` and separate `clearAngles()` APIs** (functionality partly available through different APIs)
+
+### Covered by New Extensions / Different APIs
+- **DICOM loading**: `@niivue/nv-ext-dcm2niix`
+- **Drawing helpers**: `findDrawingBoundarySlices`, `interpolateMaskSlices`, magic wand segmentation in `@niivue/nv-ext-drawing`
+- **Image processing**: `otsu`, `removeHaze`, `conform`, `connectedLabel` in `@niivue/nv-ext-image-processing`
+- **HTML export**: `generateHTML`, `saveHTML` in `@niivue/nv-ext-save-html`
+- **Negative colormaps/thresholds and clip plane setters**: present in the new core API, but setter names differ from the old package
 
 ### Deferred (Not Planning to Implement Soon)
 - **`drawGrowCut`** — GPU grow-cut segmentation

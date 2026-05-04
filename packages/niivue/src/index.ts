@@ -54,6 +54,8 @@ export type {
 } from './NVEvents'
 // Core types used in the public API
 export type {
+  AffineMatrix,
+  AffineTransform,
   BackendType,
   ColorMap,
   CustomLayoutTile,

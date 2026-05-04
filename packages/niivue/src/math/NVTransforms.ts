@@ -1,6 +1,6 @@
 import { mat3, mat4, vec3, vec4 } from 'gl-matrix'
 import { log } from '@/logger'
-import type { NVImage } from '@/NVTypes'
+import type { AffineMatrix, AffineTransform, NVImage } from '@/NVTypes'
 
 export function vox2mm(_unused: unknown, XYZ: number[], mtx: mat4): vec3 {
   const sform = mat4.clone(mtx)
@@ -83,6 +83,78 @@ export function depthAziElevToClipPlane(
 
 export function deg2rad(deg: number): number {
   return deg * (Math.PI / 180.0)
+}
+
+export function copyAffine(affine: number[][]): AffineMatrix {
+  validateAffine(affine)
+  return affine.map((row) => [...row]) as AffineMatrix
+}
+
+export function arrayToMat4(arr: number[][]): mat4 {
+  validateAffine(arr)
+  return mat4.fromValues(
+    arr[0][0],
+    arr[1][0],
+    arr[2][0],
+    arr[3][0],
+    arr[0][1],
+    arr[1][1],
+    arr[2][1],
+    arr[3][1],
+    arr[0][2],
+    arr[1][2],
+    arr[2][2],
+    arr[3][2],
+    arr[0][3],
+    arr[1][3],
+    arr[2][3],
+    arr[3][3],
+  )
+}
+
+export function mat4ToArray(m: mat4): AffineMatrix {
+  return [
+    [m[0], m[4], m[8], m[12]],
+    [m[1], m[5], m[9], m[13]],
+    [m[2], m[6], m[10], m[14]],
+    [m[3], m[7], m[11], m[15]],
+  ]
+}
+
+export function createAffineTransformMatrix(transform: AffineTransform): mat4 {
+  const out = mat4.create()
+  mat4.translate(out, out, transform.translation)
+  mat4.rotateX(out, out, deg2rad(transform.rotation[0]))
+  mat4.rotateY(out, out, deg2rad(transform.rotation[1]))
+  mat4.rotateZ(out, out, deg2rad(transform.rotation[2]))
+  mat4.scale(out, out, transform.scale)
+  return out
+}
+
+export function multiplyAffine(
+  original: number[][],
+  transform: mat4,
+): AffineMatrix {
+  const originalMat = arrayToMat4(original)
+  const result = mat4.create()
+  mat4.multiply(result, transform, originalMat)
+  return mat4ToArray(result)
+}
+
+export function validateAffine(affine: number[][]): void {
+  if (!Array.isArray(affine) || affine.length !== 4) {
+    throw new Error('Affine matrix must have 4 rows')
+  }
+  for (const row of affine) {
+    if (!Array.isArray(row) || row.length !== 4) {
+      throw new Error('Affine matrix rows must each have 4 columns')
+    }
+    for (const value of row) {
+      if (!Number.isFinite(value)) {
+        throw new Error('Affine matrix values must be finite numbers')
+      }
+    }
+  }
 }
 
 export function calculateMvpMatrix2D(

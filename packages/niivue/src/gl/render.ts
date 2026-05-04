@@ -6,7 +6,10 @@ import { applyCORS } from '@/NVLoader'
 import type { NVImage } from '@/NVTypes'
 import { blendOverlayData } from '@/view/NVMeshView'
 import { NVRenderer } from '@/view/NVRenderer'
-import { buildPaqdLut256, paqdResampleRaw, reorientRGBA } from '@/volume/utils'
+import {
+  isRgbaDatatype,
+  preparePaqdOverlayData,
+} from '@/view/NVRenderVolumeData'
 import * as depthPickShader from './depthPickShader'
 import * as gradient from './gradient'
 import * as orientOverlay from './orientOverlay'
@@ -31,6 +34,7 @@ export class VolumeRenderer extends NVRenderer {
   indexBuffer: WebGLBuffer | null
   cube: { vertices: number[]; indices: number[] }
   max3D: number
+  private overlayOrientCache: orientOverlay.OverlayTextureCache | null = null
 
   constructor() {
     super()
@@ -256,15 +260,20 @@ export class VolumeRenderer extends NVRenderer {
     _paqdUniforms: readonly number[] = [0, 0, 0, 0],
   ): Promise<void> {
     if (!this.isReady) return
-    this.clearOverlay(gl)
     this.clearPaqd(gl)
 
-    if (!baseVol.dimsRAS) return
+    if (!baseVol.dimsRAS) {
+      this.clearOverlay(gl)
+      return
+    }
     const dimsOut = [baseVol.dimsRAS[1], baseVol.dimsRAS[2], baseVol.dimsRAS[3]]
 
     // Filter out overlays with zero opacity
     const visible = overlayVols.filter((v) => (v.opacity ?? 1) > 0)
-    if (visible.length === 0) return
+    if (visible.length === 0) {
+      this.clearOverlay(gl)
+      return
+    }
 
     // Separate PAQD from standard overlays
     const paqdVols = visible.filter((v) => isPaqd(v.hdr) && v.colormapLabel)
@@ -273,39 +282,9 @@ export class VolumeRenderer extends NVRenderer {
     // Upload first PAQD as raw data + LUT texture (GPU shaders do LUT lookup + easing)
     if (paqdVols.length > 0) {
       const vol = paqdVols[0]
-      if (
-        vol.img &&
-        vol.dimsRAS &&
-        vol.img2RASstep &&
-        vol.img2RASstart &&
-        vol.colormapLabel
-      ) {
-        const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
-        const isRAS =
-          vol.img2RASstep[0] === 1 &&
-          vol.img2RASstep[1] === vol.dimsRAS[1] &&
-          vol.img2RASstep[2] === vol.dimsRAS[1] * vol.dimsRAS[2]
-        let raw = new Uint8Array(
-          vol.img.buffer,
-          vol.img.byteOffset,
-          vol.img.byteLength,
-        )
-        if (!isRAS) {
-          raw = reorientRGBA(
-            raw,
-            4,
-            vol.dimsRAS,
-            vol.img2RASstart,
-            vol.img2RASstep,
-          )
-        }
-        const ovDims = [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
-        const paqdData = paqdResampleRaw(
-          raw,
-          dimsOut,
-          ovDims,
-          mtx as Float32Array,
-        )
+      const prepared = preparePaqdOverlayData(baseVol, vol, dimsOut)
+      if (prepared) {
+        const { paqdData, lut256 } = prepared
         // Upload raw PAQD 3D texture (nearest-neighbor)
         this.paqdTexture = gl.createTexture()
         if (this.paqdTexture) {
@@ -331,8 +310,6 @@ export class VolumeRenderer extends NVRenderer {
           gl.bindTexture(gl.TEXTURE_3D, null)
         }
         // Upload 256-entry padded LUT as 2D texture (nearest-neighbor)
-        const lutMin = vol.colormapLabel.min ?? 0
-        const lut256 = buildPaqdLut256(vol.colormapLabel.lut, lutMin)
         this.paqdLutTexture = gl.createTexture()
         if (this.paqdLutTexture) {
           gl.bindTexture(gl.TEXTURE_2D, this.paqdLutTexture)
@@ -358,18 +335,36 @@ export class VolumeRenderer extends NVRenderer {
     }
 
     // Upload standard overlays
-    if (standardVols.length === 1) {
+    if (standardVols.length === 0) {
+      this.clearOverlay(gl)
+    } else if (standardVols.length === 1) {
       const vol = standardVols[0]
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
-      this.overlayTexture = orientOverlay.overlay2Texture(
+      if (isRgbaDatatype(vol.hdr.datatypeCode)) {
+        this.clearOverlay(gl)
+        this.overlayTexture = orientOverlay.overlay2Texture(
+          gl,
+          vol,
+          baseVol,
+          mtx as Float32Array,
+          vol.opacity ?? 1,
+        )
+        gl.bindTexture(gl.TEXTURE_3D, null)
+        return
+      }
+      this.overlayOrientCache = orientOverlay.prepareOverlayTextureCache(
         gl,
         vol,
         baseVol,
         mtx as Float32Array,
         vol.opacity ?? 1,
+        this.overlayOrientCache,
       )
+      this.overlayTexture = this.overlayOrientCache.outputTexture
       gl.bindTexture(gl.TEXTURE_3D, null)
     } else if (standardVols.length > 1) {
+      orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
+      this.overlayOrientCache = null
       const overlayData: Uint8Array[] = []
       for (const vol of standardVols) {
         const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
@@ -410,11 +405,40 @@ export class VolumeRenderer extends NVRenderer {
     }
   }
 
-  clearOverlay(gl: WebGL2RenderingContext): void {
-    if (this.overlayTexture) {
-      gl.deleteTexture(this.overlayTexture)
-      this.overlayTexture = null
+  updateAffineOverlay(
+    gl: WebGL2RenderingContext,
+    baseVol: NVImage,
+    overlayVol: NVImage,
+  ): boolean {
+    if (!this.isReady || !this.overlayOrientCache) return false
+    if (!baseVol.dimsRAS || isPaqd(overlayVol.hdr)) return false
+    if (isRgbaDatatype(overlayVol.hdr.datatypeCode)) {
+      return false
     }
+    const mtx = NVTransforms.calculateOverlayTransformMatrix(
+      baseVol,
+      overlayVol,
+    )
+    this.overlayOrientCache = orientOverlay.prepareOverlayTextureCache(
+      gl,
+      overlayVol,
+      baseVol,
+      mtx as Float32Array,
+      overlayVol.opacity ?? 1,
+      this.overlayOrientCache,
+    )
+    this.overlayTexture = this.overlayOrientCache.outputTexture
+    return true
+  }
+
+  clearOverlay(gl: WebGL2RenderingContext): void {
+    const cachedOutput = this.overlayOrientCache?.outputTexture ?? null
+    orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
+    this.overlayOrientCache = null
+    if (this.overlayTexture && this.overlayTexture !== cachedOutput) {
+      gl.deleteTexture(this.overlayTexture)
+    }
+    this.overlayTexture = null
   }
 
   clearPaqd(gl: WebGL2RenderingContext): void {
@@ -735,7 +759,7 @@ export class VolumeRenderer extends NVRenderer {
     if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
     if (this.volumeTexture) gl.deleteTexture(this.volumeTexture)
     if (this.volumeGradientTexture) gl.deleteTexture(this.volumeGradientTexture)
-    if (this.overlayTexture) gl.deleteTexture(this.overlayTexture)
+    this.clearOverlay(gl)
     if (this.paqdTexture) gl.deleteTexture(this.paqdTexture)
     if (this.drawingTexture) gl.deleteTexture(this.drawingTexture)
     if (this.drawingLinearSampler) gl.deleteSampler(this.drawingLinearSampler)

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Affine Manipulation</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="translateX">Overlay X mm</label>
+      <input id="translateX" type="range" min="-40" max="40" step="1" value="0" />
+      <span id="translateXValue">0</span>
+      &nbsp;
+      <label for="rotateY">Overlay Y deg</label>
+      <input id="rotateY" type="range" min="-30" max="30" step="1" value="0" />
+      <span id="rotateYValue">0</span>
+      &nbsp;
+      <button id="resetAffine" type="button">Reset affine</button>
+      &nbsp;
+      <label for="underlayColormap">Underlay colormap</label>
+      <select id="underlayColormap">
+        <option value="gray" selected>gray</option>
+        <option value="hot">hot</option>
+        <option value="cool">cool</option>
+        <option value="winter">winter</option>
+        <option value="plasma">plasma</option>
+      </select>
+      &nbsp;
+      <label for="overlayColormap">Overlay colormap</label>
+      <select id="overlayColormap">
+        <option value="hot" selected>hot</option>
+        <option value="gray">gray</option>
+        <option value="cool">cool</option>
+        <option value="winter">winter</option>
+        <option value="plasma">plasma</option>
+      </select>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module">
+      import NiiVue from '../src/index.ts'
+
+      const nv1 = new NiiVue({
+        backgroundColor: [0.2, 0.2, 0.2, 1],
+        isColorbarVisible: true,
+      })
+
+      function handleLocationChange(data) {
+        document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
+      }
+
+      let originalOverlayAffine = null
+
+      function multiplyAffine(transform, affine) {
+        const result = Array.from({ length: 4 }, () => [0, 0, 0, 0])
+        for (let row = 0; row < 4; row++) {
+          for (let col = 0; col < 4; col++) {
+            for (let k = 0; k < 4; k++) {
+              result[row][col] += transform[row][k] * affine[k][col]
+            }
+          }
+        }
+        return result
+      }
+
+      function createTransform(translationX, rotationY) {
+        const radians = (rotationY * Math.PI) / 180
+        const c = Math.cos(radians)
+        const s = Math.sin(radians)
+        return [
+          [c, 0, s, translationX],
+          [0, 1, 0, 0],
+          [-s, 0, c, 0],
+          [0, 0, 0, 1],
+        ]
+      }
+
+      async function applyAffine() {
+        if (!originalOverlayAffine) return
+        const translationX = Number(translateX.value)
+        const rotationY = Number(rotateY.value)
+        translateXValue.textContent = String(translationX)
+        rotateYValue.textContent = String(rotationY)
+        await nv1.setVolumeAffine(
+          1,
+          multiplyAffine(createTransform(translationX, rotationY), originalOverlayAffine),
+        )
+      }
+
+      translateX.oninput = applyAffine
+      rotateY.oninput = applyAffine
+      resetAffine.onclick = async () => {
+        translateX.value = '0'
+        rotateY.value = '0'
+        await applyAffine()
+      }
+      underlayColormap.onchange = async function () {
+        await nv1.setVolume(0, { colormap: this.value })
+      }
+      overlayColormap.onchange = async function () {
+        await nv1.setVolume(1, { colormap: this.value })
+      }
+      webgpuCheck.onclick = function () {
+        nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+      }
+
+      nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
+      await nv1.attachToCanvas(gl1)
+      nv1.sliceType = 3
+      await nv1.loadVolumes([
+        {
+          url: '/volumes/mni152.nii.gz',
+          calMin: 30,
+          calMax: 80,
+          colormap: 'gray',
+        },
+        {
+          url: '/volumes/spmMotor.nii.gz',
+          calMin: 4,
+          calMax: 12,
+          colormap: 'hot',
+          opacity: 0.7,
+        },
+      ])
+      originalOverlayAffine = nv1.getVolumeAffine(1)
+      await applyAffine()
+    </script>
+  </body>
+</html>

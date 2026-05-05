@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NiiVue — niimath fullstack demo</title>
+    <title>NiiVue — niimath WASM demo</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="src/style.css" />
   </head>
   <body>
     <header>
-      <h1>NiiVue · niimath fullstack demo</h1>
-      <span id="health" class="health">checking server…</span>
+      <h1>NiiVue · niimath WASM demo</h1>
+      <span id="health" class="health">loading WASM…</span>
     </header>
 
     <main>
@@ -62,7 +62,7 @@
 
         <div class="card" id="pipelineCard">
           <h3>Processing Pipeline</h3>
-          <p class="desc">Operations applied in order, server-side via niimath.</p>
+          <p class="desc">Operations applied in order via the niimath WASM worker.</p>
           <div id="pipeline"></div>
           <p id="emptyPipeline" class="desc">No operations yet.</p>
         </div>
@@ -74,14 +74,14 @@
         </div>
 
         <button type="button" id="runBtn" class="primary" style="width: 100%" disabled>
-          Run on server
+          Run pipeline
         </button>
       </div>
 
       <div id="tab-history" class="tab-panel">
         <div class="section">
           <h2>Processing history</h2>
-          <p>Recent jobs from this server (in-memory; cleared on restart).</p>
+          <p>Recent runs (in-memory; cleared on page reload).</p>
           <div id="historyList"></div>
           <p id="emptyHistory" class="desc">No jobs yet.</p>
         </div>

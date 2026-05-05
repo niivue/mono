@@ -1,15 +1,21 @@
 /**
- * NiiVue + niimath fullstack demo.
+ * NiiVue + niimath WASM demo.
  *
- * Frontend (Vite, port 8088) talks to a Bun HTTP server (port 8087)
- * that runs the `niimath` binary as a subprocess. Vite proxies /api/*
- * to the server so the same origin works in dev.
+ * Same UI as demo-ext-fullstack, but niimath runs in a Web Worker via the
+ * @niivue/niimath package — no backend, no HTTP, no auth, deployable as a
+ * static site to GitHub Pages.
  */
+
 import NiiVueGPU, {
   MULTIPLANAR_TYPE,
   SHOW_RENDER,
   SLICE_TYPE,
 } from '@niivue/niivue'
+import {
+  Niimath,
+  type NiimathStep,
+  runNiimathPipeline,
+} from '@niivue/nv-ext-niimath'
 import {
   inferOutputName,
   NIIMATH_OPERATORS,
@@ -22,16 +28,24 @@ interface PipelineStep {
   args: string[]
 }
 
-interface JobSummary {
+interface HistoryEntry {
   id: string
-  status: 'running' | 'completed' | 'failed'
-  inputName: string
   args: string[]
+  inputName: string
+  outputName: string
   startedAt: number
-  finishedAt?: number
-  durationMs?: number
+  durationMs: number
+  status: 'completed' | 'failed'
+  blob?: Blob
   error?: string
 }
+
+// Cap in-memory history. Each entry retains a result Blob, so user uploads
+// of hundreds of MB can blow through browser memory if we only count
+// entries. Apply both a count cap and a total-bytes cap; evict oldest
+// until both are satisfied.
+const HISTORY_CAP = 20
+const HISTORY_BYTE_CAP = 256 * 1024 * 1024 // 256 MB
 
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id)
@@ -58,19 +72,23 @@ const emptyHistory = $('emptyHistory')
 
 const pipeline: PipelineStep[] = []
 // `currentSource` is the user's chosen input — runs always operate on it.
-// `displayedResult` is the most recent successful run's output, shown in the
-// viewer but NOT used as the next input until the user clicks "Apply" — that
-// way reordering pipeline steps re-runs against the same source rather than
-// chaining results.
+// `displayedResult` is the most recent successful run's output, shown in
+// the viewer but NOT used as the next input until the user clicks Apply
+// — that way reordering pipeline steps re-runs against the same source
+// rather than chaining results.
 let currentSource:
   | { kind: 'sample'; url: string; name: string }
   | { kind: 'file'; file: File; name: string }
   | null = null
-let displayedResult: { url: string; name: string } | null = null
+let displayedResult: { blob: Blob; name: string } | null = null
+const history: HistoryEntry[] = []
 // Monotonic counter used to discard completions from runs the user has
 // already invalidated by loading another image, applying, or starting a
 // fresh run.
 let latestRunId = 0
+
+const niimath = new Niimath()
+const niimathReady = niimath.init()
 
 const nv = new NiiVueGPU({ isDragDropEnabled: false })
 await nv.attachTo('gl1')
@@ -81,6 +99,22 @@ nv.crosshairGap = 5
 nv.addEventListener('locationChange', (e) => {
   status.textContent = e.detail.string
 })
+
+niimathReady
+  .then((ok) => {
+    if (ok) {
+      health.textContent = 'niimath WASM ready'
+      health.classList.add('ok')
+    } else {
+      health.textContent = 'niimath WASM failed to initialize'
+      health.classList.add('error')
+    }
+  })
+  .catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err)
+    health.textContent = `niimath WASM error: ${msg}`
+    health.classList.add('error')
+  })
 
 // --- Tabs ---
 for (const btn of document.querySelectorAll<HTMLButtonElement>('.tab-btn')) {
@@ -93,7 +127,7 @@ for (const btn of document.querySelectorAll<HTMLButtonElement>('.tab-btn')) {
       p.classList.remove('active')
     btn.classList.add('active')
     $(`tab-${target}`).classList.add('active')
-    if (target === 'history') void refreshHistory()
+    if (target === 'history') renderHistory()
   })
 }
 
@@ -326,8 +360,9 @@ saveBtn.addEventListener('click', () => {
   let download: string
   let revoke = false
   if (displayedResult) {
-    href = displayedResult.url
+    href = URL.createObjectURL(displayedResult.blob)
     download = displayedResult.name
+    revoke = true
   } else if (currentSource?.kind === 'sample') {
     href = currentSource.url
     download = currentSource.name
@@ -347,16 +382,14 @@ saveBtn.addEventListener('click', () => {
   if (revoke) URL.revokeObjectURL(href)
 })
 
-// Promote the most recent result to be the new working input. Lets the user
-// chain pipelines explicitly without auto-chaining on every successful run.
+// Promote the most recent result to be the new working input.
 applyBtn.addEventListener('click', () => {
   if (!displayedResult) return
   latestRunId++
-  currentSource = {
-    kind: 'sample',
-    url: displayedResult.url,
-    name: displayedResult.name,
-  }
+  const file = new File([displayedResult.blob], displayedResult.name, {
+    type: 'application/gzip',
+  })
+  currentSource = { kind: 'file', file, name: displayedResult.name }
   displayedResult = null
   updateCurrentImageDisplay()
   updateCommandPreview()
@@ -365,128 +398,64 @@ applyBtn.addEventListener('click', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Run pipeline (server round-trip)
+// Run pipeline (WASM in-browser)
 // ---------------------------------------------------------------------------
 
 async function runPipeline(): Promise<void> {
-  if (!currentSource) return
-  const args = flattenArgs()
-  if (args.length === 0) return
+  if (!currentSource || pipeline.length === 0) return
 
-  setStatus('Uploading + running niimath on server…', true)
+  setStatus('Running niimath WASM…', true)
   runBtn.disabled = true
-
-  // Bump on every Run so any earlier in-flight job is invalidated. Each
-  // side-effect that mutates global state below is guarded with
-  // `if (myRun !== latestRunId) return`. The user clicking Run / loading a
-  // new image / applying a result also bumps latestRunId, so a slow job
-  // can't smear over user actions.
   const myRun = ++latestRunId
-  // Snapshot the source so a mid-flight `currentSource` change doesn't make
-  // us re-fetch a different file or relabel the result with the new name.
   const source = currentSource
+  const steps: NiimathStep[] = pipeline.map((s) => ({
+    method: s.operator.name.slice(1), // drop leading '-'
+    args: s.args.map((a) => a.trim()).filter((a) => a.length > 0),
+  }))
+  // Reconstruct the dash-prefixed flat form for history display. Coerce
+  // numeric args back to strings — NiimathStep allows numbers.
+  const args = steps.flatMap((s) => [`-${s.method}`, ...s.args.map(String)])
 
   try {
-    // Bun's req.formData() rejects browser-built multipart bodies on larger
-    // files ("missing final boundary"). We send raw bytes + headers instead.
-    // Pass `file` (a Blob) directly so fetch can stream rather than buffer
-    // the whole ArrayBuffer in JS first.
-    let file: File
-    if (source.kind === 'file') {
-      file = source.file
-    } else {
-      const srcRes = await fetch(source.url)
-      if (!srcRes.ok)
-        throw new Error(`Failed to fetch ${source.url}: ${srcRes.status}`)
-      file = new File([await srcRes.blob()], source.name, {
-        type: 'application/gzip',
-      })
-    }
+    await niimathReady
+    const file = await sourceAsFile(source)
     const t0 = performance.now()
-    const res = await fetch('/api/process', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'X-Niimath-Filename': encodeURIComponent(file.name),
-        'X-Niimath-Args': JSON.stringify(args),
-      },
-      body: file,
-    })
+    const blob = await runNiimathPipeline(niimath, file, steps)
     const elapsed = ((performance.now() - t0) / 1000).toFixed(2)
-
-    // Read response as text first so a non-JSON body (proxy timeout HTML,
-    // empty 504, etc.) tells us what actually came back instead of throwing
-    // an opaque "Unexpected end of JSON input".
-    const text = await res.text()
-    if (myRun !== latestRunId) return // user moved on; don't smear over them
-    let body: {
-      id?: string
-      status?: string
-      resultUrl?: string
-      error?: string
-      durationMs?: number
-    } | null = null
-    if (text.length > 0) {
-      try {
-        body = JSON.parse(text)
-      } catch {
-        setStatus(
-          `Server returned non-JSON (status ${res.status} after ${elapsed}s): ${text.slice(0, 200)}`,
-        )
-        return
-      }
-    }
-    if (!res.ok || !body?.resultUrl) {
-      const detail =
-        body?.error ?? (text.length === 0 ? '(empty body)' : res.statusText)
-      setStatus(
-        `Server error (status ${res.status} after ${elapsed}s): ${detail}`,
-      )
-      return
-    }
-
-    // Don't pull the result into memory or overwrite currentSource — point
-    // at the server URL so reordering pipeline steps re-runs against the
-    // same input rather than chaining results. The user clicks "Apply" if
-    // they want to chain. (Bonus: avoids a niivue worker-transfer bug where
-    // a re-uploaded Blob can come up byte-short.)
-    const filename = inferOutputName(file.name)
-    // Guard before mutating global state: a stale completion shouldn't
-    // smear `displayedResult` or flash its volume into the viewer after
-    // the user has moved on. Re-check after `loadVolumes` too — the user
-    // may have started another run while it was decoding.
     if (myRun !== latestRunId) return
-    displayedResult = { url: body.resultUrl, name: filename }
-    await nv.loadVolumes([{ url: body.resultUrl, name: filename }])
+
+    const filename = inferOutputName(file.name)
+    displayedResult = { blob, name: filename }
+    const previewFile = new File([blob], filename, { type: 'application/gzip' })
+    await nv.loadVolumes([{ url: previewFile, name: filename }])
     if (myRun !== latestRunId) return
     updateCurrentImageDisplay()
-    const serverMs = body.durationMs
-      ? `${(body.durationMs / 1000).toFixed(2)}s server`
-      : ''
-    setStatus(`Done in ${elapsed}s${serverMs ? ` (${serverMs})` : ''}`)
-    void refreshHistory()
+    pushHistory({
+      id: crypto.randomUUID(),
+      args,
+      inputName: file.name,
+      outputName: filename,
+      startedAt: Date.now(),
+      durationMs: Number(elapsed) * 1000,
+      status: 'completed',
+      blob,
+    })
+    setStatus(`Done in ${elapsed}s`)
   } catch (err) {
     if (myRun !== latestRunId) return
     const msg = err instanceof Error ? err.message : String(err)
-    // "Failed to fetch" is the canonical browser error for "the request never
-    // got a response" — usually the API server isn't running. Probe the
-    // health endpoint to confirm and give the user something actionable.
-    if (msg.toLowerCase().includes('failed to fetch')) {
-      const reachable = await fetch('/api/health')
-        .then((r) => r.ok)
-        .catch(() => false)
-      setStatus(
-        reachable
-          ? `Run failed: ${msg} (server reachable but request was dropped — check the server terminal).`
-          : 'Run failed: niimath server unreachable on :8087. Start it with `bunx nx dev demo-ext-fullstack` (or `bun run server`).',
-      )
-    } else {
-      setStatus(`Run failed: ${msg}`)
-    }
+    pushHistory({
+      id: crypto.randomUUID(),
+      args,
+      inputName: source.name,
+      outputName: inferOutputName(source.name),
+      startedAt: Date.now(),
+      durationMs: 0,
+      status: 'failed',
+      error: msg,
+    })
+    setStatus(`Run failed: ${msg}`)
   } finally {
-    // Only the live run owns the run button; otherwise a stale completion
-    // would re-enable Run while a fresh job is still in flight, letting the
-    // user double-submit.
     if (myRun === latestRunId) {
       runBtn.disabled = false
       updateButtons()
@@ -494,70 +463,87 @@ async function runPipeline(): Promise<void> {
   }
 }
 
+async function sourceAsFile(
+  src: NonNullable<typeof currentSource>,
+): Promise<File> {
+  if (src.kind === 'file') return src.file
+  const res = await fetch(src.url)
+  if (!res.ok) throw new Error(`Failed to fetch ${src.url}: ${res.status}`)
+  const blob = await res.blob()
+  return new File([blob], src.name, { type: 'application/gzip' })
+}
+
 // ---------------------------------------------------------------------------
 // History
 // ---------------------------------------------------------------------------
 
-async function refreshHistory(): Promise<void> {
-  try {
-    const res = await fetch('/api/jobs')
-    if (!res.ok) return
-    const { jobs } = (await res.json()) as { jobs: JobSummary[] }
-    historyList.innerHTML = ''
-    emptyHistory.classList.toggle('hidden', jobs.length > 0)
-    for (const job of jobs) renderHistoryItem(job)
-  } catch {
-    /* server not reachable — leave history empty */
-  }
+function historyByteSize(): number {
+  let n = 0
+  for (const e of history) n += e.blob?.size ?? 0
+  return n
 }
 
-function renderHistoryItem(job: JobSummary): void {
+function pushHistory(entry: HistoryEntry): void {
+  history.unshift(entry)
+  // Evict oldest entries until both caps are satisfied. The just-pushed
+  // entry sits at index 0 and is never the eviction target.
+  while (
+    history.length > HISTORY_CAP ||
+    (history.length > 1 && historyByteSize() > HISTORY_BYTE_CAP)
+  ) {
+    history.pop()
+  }
+  renderHistory()
+}
+
+function renderHistory(): void {
+  historyList.innerHTML = ''
+  emptyHistory.classList.toggle('hidden', history.length > 0)
+  for (const entry of history) renderHistoryItem(entry)
+}
+
+function renderHistoryItem(entry: HistoryEntry): void {
   const item = document.createElement('div')
   item.className = 'history-item'
 
   const top = document.createElement('div')
   top.className = 'top'
   const cmd = document.createElement('code')
-  cmd.textContent = job.args.join(' ')
+  cmd.textContent = entry.args.join(' ')
   top.appendChild(cmd)
   const statusSpan = document.createElement('span')
-  statusSpan.className = `status-${job.status}`
-  statusSpan.textContent = job.status
+  statusSpan.className = `status-${entry.status}`
+  statusSpan.textContent = entry.status
   top.appendChild(statusSpan)
   item.appendChild(top)
 
   const meta = document.createElement('div')
   meta.className = 'meta'
-  const when = new Date(job.startedAt).toLocaleTimeString()
-  const dur = job.durationMs ? `${(job.durationMs / 1000).toFixed(2)}s` : '—'
-  meta.textContent = `${job.inputName} · ${when} · ${dur}`
+  const when = new Date(entry.startedAt).toLocaleTimeString()
+  const dur =
+    entry.durationMs > 0 ? `${(entry.durationMs / 1000).toFixed(2)}s` : '—'
+  meta.textContent = `${entry.inputName} · ${when} · ${dur}`
   item.appendChild(meta)
 
-  if (job.error) {
+  if (entry.error) {
     const err = document.createElement('div')
     err.className = 'meta status-failed'
-    err.textContent = job.error
+    err.textContent = entry.error
     item.appendChild(err)
   }
 
-  if (job.status === 'completed') {
+  if (entry.status === 'completed' && entry.blob) {
     const reload = document.createElement('button')
     reload.style.marginTop = '0.4rem'
     reload.textContent = 'Reload result'
     reload.addEventListener('click', async () => {
-      setStatus(`Reloading job ${job.id}…`, true)
+      if (!entry.blob) return
       latestRunId++
-      const url = `/api/result/${job.id}`
-      const filename = inferOutputName(job.inputName)
-      try {
-        await nv.loadVolumes([{ url, name: filename }])
-      } catch (err) {
-        setStatus(
-          `Reload failed (result may have been cleared on server restart): ${err instanceof Error ? err.message : String(err)}`,
-        )
-        return
-      }
-      currentSource = { kind: 'sample', url, name: filename }
+      const file = new File([entry.blob], entry.outputName, {
+        type: 'application/gzip',
+      })
+      await nv.loadVolumes([{ url: file, name: entry.outputName }])
+      currentSource = { kind: 'file', file, name: entry.outputName }
       displayedResult = null
       updateCurrentImageDisplay()
       updateCommandPreview()
@@ -571,32 +557,6 @@ function renderHistoryItem(job: JobSummary): void {
 }
 
 // ---------------------------------------------------------------------------
-// Health check
-// ---------------------------------------------------------------------------
-
-async function checkHealth(): Promise<void> {
-  try {
-    const res = await fetch('/api/health')
-    const body = (await res.json()) as {
-      ok: boolean
-      niimath: { tag: string } | null
-    }
-    if (body.niimath) {
-      health.textContent = `server ok · niimath ${body.niimath.tag}`
-      health.classList.remove('error')
-      health.classList.add('ok')
-    } else {
-      health.textContent =
-        'server up · niimath NOT installed (run `bun run setup`)'
-      health.classList.add('error')
-    }
-  } catch {
-    health.textContent = 'server unreachable'
-    health.classList.add('error')
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -606,7 +566,5 @@ function setStatus(text: string, busy = false): void {
 }
 
 renderPipeline()
-void checkHealth()
-void refreshHistory()
 sampleSelect.value = SAMPLE_VOLUMES[0].name
 void loadSample(SAMPLE_VOLUMES[0].name)

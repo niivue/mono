@@ -54,6 +54,17 @@
         "vite": "^6.3.2",
       },
     },
+    "apps/demo-ext-niimath": {
+      "name": "demo-ext-niimath",
+      "dependencies": {
+        "@niivue/dev-images": "workspace:*",
+        "@niivue/niivue": "workspace:*",
+        "@niivue/nv-ext-niimath": "workspace:*",
+      },
+      "devDependencies": {
+        "vite": "^6.3.2",
+      },
+    },
     "apps/demo-ext-save-html": {
       "name": "demo-ext-save-html",
       "dependencies": {
@@ -174,6 +185,22 @@
       "dependencies": {
         "gl-matrix": "^3.4.4",
         "nifti-reader-js": "^0.8.0",
+      },
+      "devDependencies": {
+        "@niivue/niivue": "workspace:*",
+        "typescript": "~5.8.3",
+        "vite": "^6.3.2",
+        "vite-plugin-dts": "^4.5.4",
+      },
+      "peerDependencies": {
+        "@niivue/niivue": "workspace:*",
+      },
+    },
+    "packages/nv-ext-niimath": {
+      "name": "@niivue/nv-ext-niimath",
+      "version": "1.0.0-rc.0",
+      "dependencies": {
+        "@niivue/niimath": "^1.2.0",
       },
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
@@ -563,6 +590,8 @@
 
     "@niivue/dev-images": ["@niivue/dev-images@workspace:packages/dev-images"],
 
+    "@niivue/niimath": ["@niivue/niimath@1.2.0", "", {}, "sha512-Llats13a09Pj9CRn0izLhG0TQ6sJ4ny5ZzQSbO8e4EjSpdLYM+amZA42ZuMAt+5k/N/Mh3mzt8423GcUkl0pig=="],
+
     "@niivue/niivue": ["@niivue/niivue@workspace:packages/niivue"],
 
     "@niivue/nv-ext-dcm2niix": ["@niivue/nv-ext-dcm2niix@workspace:packages/nv-ext-dcm2niix"],
@@ -570,6 +599,8 @@
     "@niivue/nv-ext-drawing": ["@niivue/nv-ext-drawing@workspace:packages/nv-ext-drawing"],
 
     "@niivue/nv-ext-image-processing": ["@niivue/nv-ext-image-processing@workspace:packages/nv-ext-image-processing"],
+
+    "@niivue/nv-ext-niimath": ["@niivue/nv-ext-niimath@workspace:packages/nv-ext-niimath"],
 
     "@niivue/nv-ext-save-html": ["@niivue/nv-ext-save-html@workspace:packages/nv-ext-save-html"],
 
@@ -890,6 +921,8 @@
     "demo-ext-fullstack": ["demo-ext-fullstack@workspace:apps/demo-ext-fullstack"],
 
     "demo-ext-image-processing": ["demo-ext-image-processing@workspace:apps/demo-ext-image-processing"],
+
+    "demo-ext-niimath": ["demo-ext-niimath@workspace:apps/demo-ext-niimath"],
 
     "demo-ext-save-html": ["demo-ext-save-html@workspace:apps/demo-ext-save-html"],
 
@@ -1368,6 +1401,8 @@
     "@niivue/nv-ext-drawing/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 
     "@niivue/nv-ext-image-processing/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
+
+    "@niivue/nv-ext-niimath/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 
     "@niivue/nv-ext-save-html/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 

@@ -73,9 +73,11 @@ import type {
 } from '@/volume/transforms'
 import * as NVVolumeTransforms from '@/volume/transforms'
 import {
+  calMinMax,
   calMinMaxFrame,
   computeVolumeLabelCentroids,
   reorientDrawingToNative,
+  toTypedViewOrU8,
 } from '@/volume/utils'
 
 type ViewBackend = {
@@ -1943,8 +1945,23 @@ export default class NiiVueGPU extends EventTarget {
       return
     }
     const nii = await NVVolume.loadVolume(vol.url)
-    vol.img = nii.img instanceof ArrayBuffer ? null : nii.img
+    // Compute intensity stats on `nii.img` BEFORE typed-view coercion —
+    // calMinMax's RGB/RGBA sentinel only triggers when its internal
+    // `toTypedView` sees a raw ArrayBuffer; once we've coerced to
+    // Uint8Array via toTypedViewOrU8, calMinMax would scan RGB bytes
+    // as scalar intensities. Matches nii2volume's call order.
+    // (Like nii2volume, this scans the first 3D frame only — so
+    // intensity range may differ from a hypothetical scan over the
+    // full timeseries; that's the existing initial-load behavior.)
+    const [pct2, pct98, mnScale, mxScale] = calMinMax(vol.hdr, nii.img)
+    vol.img = toTypedViewOrU8(nii.img, vol.hdr.datatypeCode)
     vol.nFrame4D = vol.nTotalFrame4D
+    vol.calMin = pct2
+    vol.calMax = pct98
+    vol.robustMin = pct2
+    vol.robustMax = pct98
+    vol.globalMin = mnScale
+    vol.globalMax = mxScale
     await this.updateGLVolume()
   }
 

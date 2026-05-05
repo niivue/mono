@@ -48,12 +48,12 @@ nextFrame.onclick = () => {
   currentVol++
   nv1.setFrame4D(nv1.volumes[0].id, currentVol)
 }
-aboutBtn.onclick = async () => {
+loadAllBtn.onclick = async () => {
   const vol = nv1.volumes[0]
   if (vol.nTotalFrame4D > vol.nFrame4D) {
-    aboutBtn.textContent = 'Loading...'
+    loadAllBtn.textContent = 'Loading...'
     await nv1.loadDeferred4DVolumes(vol.id)
-    aboutBtn.textContent = `Loaded all ${vol.nFrame4D} frames`
+    loadAllBtn.textContent = `Loaded all ${vol.nFrame4D} frames`
   } else {
     window.alert(`All ${vol.nFrame4D} frames are loaded.`)
   }

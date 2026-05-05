@@ -125,7 +125,14 @@ function attachClickToCopy(el: HTMLElement): void {
   el.addEventListener('click', async () => {
     const text = el.textContent ?? ''
     if (!text.trim()) return
-    await navigator.clipboard.writeText(text)
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch (err) {
+      // Permission denied, document not focused, etc. Don't show
+      // the "copied" flash — it'd be a lie.
+      console.warn('clipboard write failed:', err)
+      return
+    }
     el.classList.add('copied')
     setTimeout(() => el.classList.remove('copied'), 600)
   })

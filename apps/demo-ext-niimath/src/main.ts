@@ -89,6 +89,10 @@ let latestRunId = 0
 
 const niimath = new Niimath()
 const niimathReady = niimath.init()
+// Tracks whether the worker actually came up. The current upstream
+// rejects on failure, but defending against a future `resolve(false)`
+// is one boolean.
+let niimathOk = false
 
 const nv = new NiiVueGPU({ isDragDropEnabled: false })
 await nv.attachTo('gl1')
@@ -102,6 +106,7 @@ nv.addEventListener('locationChange', (e) => {
 
 niimathReady
   .then((ok) => {
+    niimathOk = ok
     if (ok) {
       health.textContent = 'niimath WASM ready'
       health.classList.add('ok')
@@ -109,6 +114,7 @@ niimathReady
       health.textContent = 'niimath WASM failed to initialize'
       health.classList.add('error')
     }
+    updateButtons() // reflect ok-state on the Run button
   })
   .catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
@@ -159,7 +165,14 @@ function attachClickToCopy(el: HTMLElement): void {
   el.addEventListener('click', async () => {
     const text = el.textContent ?? ''
     if (!text.trim()) return
-    await navigator.clipboard.writeText(text)
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch (err) {
+      // Permission denied, document not focused, etc. Don't show
+      // the "copied" flash — it'd be a lie.
+      console.warn('clipboard write failed:', err)
+      return
+    }
     el.classList.add('copied')
     setTimeout(() => el.classList.remove('copied'), 600)
   })
@@ -348,7 +361,7 @@ function updateCurrentImageDisplay(): void {
 }
 
 function updateButtons(): void {
-  runBtn.disabled = !currentSource || pipeline.length === 0
+  runBtn.disabled = !currentSource || pipeline.length === 0 || !niimathOk
   saveBtn.disabled = !currentSource && !displayedResult
   applyBtn.disabled = !displayedResult
 }
@@ -418,6 +431,9 @@ async function runPipeline(): Promise<void> {
 
   try {
     await niimathReady
+    if (!niimathOk) {
+      throw new Error('niimath WASM failed to initialize — reload the page')
+    }
     const file = await sourceAsFile(source)
     const t0 = performance.now()
     const blob = await runNiimathPipeline(niimath, file, steps)

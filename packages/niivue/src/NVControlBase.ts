@@ -73,9 +73,11 @@ import type {
 } from '@/volume/transforms'
 import * as NVVolumeTransforms from '@/volume/transforms'
 import {
+  calMinMax,
   calMinMaxFrame,
   computeVolumeLabelCentroids,
   reorientDrawingToNative,
+  toTypedViewOrU8,
 } from '@/volume/utils'
 
 type ViewBackend = {
@@ -1943,8 +1945,19 @@ export default class NiiVueGPU extends EventTarget {
       return
     }
     const nii = await NVVolume.loadVolume(vol.url)
-    vol.img = nii.img instanceof ArrayBuffer ? null : nii.img
+    vol.img = toTypedViewOrU8(nii.img, vol.hdr.datatypeCode)
     vol.nFrame4D = vol.nTotalFrame4D
+    // Recompute intensity range over the now-full timeseries. Later
+    // frames in dynamic scans often widen the range; leaving the
+    // truncated values would give a brightness shift versus a fresh
+    // full load. Same fields `recalculateCalMinMax` writes.
+    const [pct2, pct98, mnScale, mxScale] = calMinMax(vol.hdr, vol.img)
+    vol.calMin = pct2
+    vol.calMax = pct98
+    vol.robustMin = pct2
+    vol.robustMax = pct98
+    vol.globalMin = mnScale
+    vol.globalMax = mxScale
     await this.updateGLVolume()
   }
 

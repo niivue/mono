@@ -26,6 +26,7 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 | [`demo-ext-image-processing`](apps/demo-ext-image-processing) | Demo app for the image processing extension |
 | [`demo-ext-save-html`](apps/demo-ext-save-html) | Demo app for the save-to-HTML extension |
 | [`demo-ext-dcm2niix`](apps/demo-ext-dcm2niix) | Demo app for the dcm2niix DICOM-to-NIfTI extension |
+| [`demo-ext-fullstack`](apps/demo-ext-fullstack) | Fullstack demo wiring NiiVue to a Bun server that runs the `niimath` native binary |
 | [`demo-nv-web-component`](apps/demo-nv-web-component) | Demo app for the Web Components package |
 | [`medgfx`](apps/medgfx) | Native macOS/iOS SwiftUI app embedding NiiVue in a WebView |
 

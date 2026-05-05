@@ -1,0 +1,49 @@
+{
+  "name": "demo-ext-fullstack",
+  "projectType": "application",
+  "tags": ["type:app", "lang:typescript"],
+  "targets": {
+    "setup": {
+      "command": "bun server/fetch-niimath.ts",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "server": {
+      "command": "bun server/server.ts",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "frontend": {
+      "command": "bunx --bun vite --open /index.html",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "dev": {
+      "command": "bun server/dev.ts",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "build": {
+      "command": "bunx --bun vite build",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"],
+      "inputs": [
+        "typescript",
+        "{projectRoot}/vite.config.js",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/*.html"
+      ],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"],
+      "inputs": ["typescript"]
+    },
+    "lint": {
+      "command": "bunx biome check {projectRoot}",
+      "inputs": ["typescript"]
+    },
+    "format": {
+      "command": "bunx biome format {projectRoot} --write",
+      "inputs": ["typescript"]
+    }
+  }
+}

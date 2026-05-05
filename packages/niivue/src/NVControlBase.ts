@@ -1945,13 +1945,17 @@ export default class NiiVueGPU extends EventTarget {
       return
     }
     const nii = await NVVolume.loadVolume(vol.url)
+    // Compute intensity stats on `nii.img` BEFORE typed-view coercion —
+    // calMinMax's RGB/RGBA sentinel only triggers when its internal
+    // `toTypedView` sees a raw ArrayBuffer; once we've coerced to
+    // Uint8Array via toTypedViewOrU8, calMinMax would scan RGB bytes
+    // as scalar intensities. Matches nii2volume's call order.
+    // (Like nii2volume, this scans the first 3D frame only — so
+    // intensity range may differ from a hypothetical scan over the
+    // full timeseries; that's the existing initial-load behavior.)
+    const [pct2, pct98, mnScale, mxScale] = calMinMax(vol.hdr, nii.img)
     vol.img = toTypedViewOrU8(nii.img, vol.hdr.datatypeCode)
     vol.nFrame4D = vol.nTotalFrame4D
-    // Recompute intensity range over the now-full timeseries. Later
-    // frames in dynamic scans often widen the range; leaving the
-    // truncated values would give a brightness shift versus a fresh
-    // full load. Same fields `recalculateCalMinMax` writes.
-    const [pct2, pct98, mnScale, mxScale] = calMinMax(vol.hdr, vol.img)
     vol.calMin = pct2
     vol.calMax = pct98
     vol.robustMin = pct2

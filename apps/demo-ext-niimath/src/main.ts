@@ -429,15 +429,22 @@ async function runPipeline(): Promise<void> {
   // numeric args back to strings — NiimathStep allows numbers.
   const args = steps.flatMap((s) => [`-${s.method}`, ...s.args.map(String)])
 
+  // Capture timing before any awaits so history reflects when the user
+  // clicked Run, not when the result happened to land. Use performance.now
+  // for the duration delta to avoid the precision loss of round-tripping
+  // through a toFixed string.
+  const startedAt = Date.now()
+  const t0 = performance.now()
+
   try {
     await niimathReady
     if (!niimathOk) {
       throw new Error('niimath WASM failed to initialize — reload the page')
     }
     const file = await sourceAsFile(source)
-    const t0 = performance.now()
     const blob = await runNiimathPipeline(niimath, file, steps)
-    const elapsed = ((performance.now() - t0) / 1000).toFixed(2)
+    const durationMs = performance.now() - t0
+    const elapsed = (durationMs / 1000).toFixed(2)
     if (myRun !== latestRunId) return
 
     const filename = inferOutputName(file.name)
@@ -451,8 +458,8 @@ async function runPipeline(): Promise<void> {
       args,
       inputName: file.name,
       outputName: filename,
-      startedAt: Date.now(),
-      durationMs: Number(elapsed) * 1000,
+      startedAt,
+      durationMs,
       status: 'completed',
       blob,
     })
@@ -465,8 +472,8 @@ async function runPipeline(): Promise<void> {
       args,
       inputName: source.name,
       outputName: inferOutputName(source.name),
-      startedAt: Date.now(),
-      durationMs: 0,
+      startedAt,
+      durationMs: performance.now() - t0,
       status: 'failed',
       error: msg,
     })

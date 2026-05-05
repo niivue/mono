@@ -12,6 +12,8 @@ import {
   getVoxelValue,
   hdrToArrayBuffer,
   reorientDrawingToNative,
+  toTypedView,
+  toTypedViewOrU8,
 } from './utils'
 
 // ---------------------------------------------------------------------------
@@ -357,5 +359,45 @@ describe('reorientDrawingToNative', () => {
     const vol = makeMinimalVolume({ permRAS: undefined })
     const result = reorientDrawingToNative(vol, drawing)
     expect(result).toBe(drawing)
+  })
+})
+
+describe('toTypedView', () => {
+  test('arrayBuffer_int16_returnsInt16Array', () => {
+    const buf = new Int16Array([10, -3, 32000]).buffer
+    const view = toTypedView(buf, NiiDataType.DT_INT16)
+    expect(view).toBeInstanceOf(Int16Array)
+    expect(Array.from(view as Int16Array)).toEqual([10, -3, 32000])
+  })
+
+  test('arrayBuffer_rgb24_returnsNull', () => {
+    const buf = new Uint8Array([255, 0, 0, 0, 255, 0]).buffer
+    expect(toTypedView(buf, NiiDataType.DT_RGB24)).toBeNull()
+  })
+
+  test('alreadyTypedArray_returnsAsIs', () => {
+    const arr = new Float32Array([1.5, 2.5])
+    expect(toTypedView(arr, NiiDataType.DT_FLOAT32)).toBe(arr)
+  })
+})
+
+describe('toTypedViewOrU8', () => {
+  test('arrayBuffer_int16_returnsInt16Array', () => {
+    const buf = new Int16Array([1, 2, 3]).buffer
+    const view = toTypedViewOrU8(buf, NiiDataType.DT_INT16)
+    expect(view).toBeInstanceOf(Int16Array)
+    expect(Array.from(view)).toEqual([1, 2, 3])
+  })
+
+  test('arrayBuffer_rgb24_fallsBackToUint8Array', () => {
+    const bytes = new Uint8Array([255, 0, 128, 64, 32, 16])
+    const view = toTypedViewOrU8(bytes.buffer, NiiDataType.DT_RGB24)
+    expect(view).toBeInstanceOf(Uint8Array)
+    expect(Array.from(view)).toEqual([255, 0, 128, 64, 32, 16])
+  })
+
+  test('alreadyTypedArray_returnsAsIs', () => {
+    const arr = new Uint8Array([7, 8, 9])
+    expect(toTypedViewOrU8(arr, NiiDataType.DT_UINT8)).toBe(arr)
   })
 })

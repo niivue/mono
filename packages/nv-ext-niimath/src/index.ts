@@ -93,6 +93,11 @@ export async function runNiimathPipeline(
   steps: NiimathStep[],
   outName = 'output.nii.gz',
 ): Promise<Blob> {
+  if (!outName.toLowerCase().endsWith('.nii.gz')) {
+    throw new Error(
+      `outName must end with .nii.gz; got "${outName}". The WASM build of niimath always gzips its output.`,
+    )
+  }
   let chain = niimath.image(file) as unknown as Chain
   for (const step of steps) {
     const args = step.args.map((a) => {

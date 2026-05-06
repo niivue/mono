@@ -64,6 +64,37 @@ const outPath = parseStrFlag('out')
 const base: BenchJson = JSON.parse(await readFile(basePath, 'utf8'))
 const head: BenchJson = JSON.parse(await readFile(headPath, 'utf8'))
 
+// Bootstrap case: main predates the perf gate, so the base side wrote a
+// sentinel instead of running the bench. Emit a friendly report with
+// head numbers only and exit cleanly so the PR isn't blocked.
+const SCHEMA = 'niivue-benchmark-v1'
+if (base.schema !== SCHEMA) {
+  const headGpu = head.env?.gpu
+  const rows: string[] = ['| Scenario | Head (ms) |', '|---|---:|']
+  for (const s of [...(head.renderer ?? []), ...(head.compute ?? [])]) {
+    const m = s.stats?.median
+    rows.push(`| ${s.name} | ${m == null ? '—' : m.toFixed(3)} |`)
+  }
+  const md = [
+    '## NiiVue Benchmark Comparison',
+    '',
+    'No baseline available on `main` yet — looks like this is the first PR ' +
+      'after the perf gate landed (or `main` is missing the bench ' +
+      'infrastructure). Reporting head numbers only; future PRs will get a ' +
+      'real comparison once this lands.',
+    '',
+    `Head GPU: \`${headGpu?.vendor ?? '?'} / ${headGpu?.architecture ?? '?'}\``,
+    '',
+    '### Head scenarios',
+    '',
+    ...rows,
+    '',
+  ].join('\n')
+  console.log(md)
+  if (outPath) await writeFile(outPath, md, 'utf8')
+  process.exit(0)
+}
+
 type Status = 'OK' | 'WARN' | 'FAIL' | 'FASTER' | 'MISSING'
 interface Row {
   name: string

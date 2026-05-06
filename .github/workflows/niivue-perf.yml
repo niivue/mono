@@ -50,25 +50,47 @@ jobs:
           lfs: true
           ref: ${{ matrix.ref }}
 
-      - uses: oven-sh/setup-bun@v2
+      # If the checked-out tree predates the perf gate (typical for the
+      # base side on the first PR after this lands), skip the heavy
+      # build/bench and write a sentinel that compare-bench detects.
+      - name: Detect bench infrastructure
+        id: detect
+        run: |
+          if [ -f packages/niivue/bench/run-bench.ts ] && \
+             grep -q '__benchDone' packages/niivue/examples/benchmark.js; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Bench infrastructure missing on this ref — writing sentinel."
+            echo '{"schema":"missing","reason":"ref predates perf gate"}' \
+              > /tmp/${{ matrix.side }}.json
+          fi
 
-      - run: bun install --frozen-lockfile
+      - uses: oven-sh/setup-bun@v2
+        if: steps.detect.outputs.available == 'true'
+
+      - if: steps.detect.outputs.available == 'true'
+        run: bun install --frozen-lockfile
 
       - name: Cache Playwright browsers
+        if: steps.detect.outputs.available == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-v1
 
       - name: Install Playwright Chromium
+        if: steps.detect.outputs.available == 'true'
         run: bunx playwright install --with-deps chromium
         working-directory: packages/niivue
 
       - name: Build examples (perf)
+        if: steps.detect.outputs.available == 'true'
         run: bun run build:examples:perf
         working-directory: packages/niivue
 
       - name: Start preview server
+        if: steps.detect.outputs.available == 'true'
         run: |
           nohup bunx --bun vite preview \
             --config vite.config.examples.ts \
@@ -79,6 +101,7 @@ jobs:
         working-directory: packages/niivue
 
       - name: Wait for server
+        if: steps.detect.outputs.available == 'true'
         run: |
           for i in $(seq 1 60); do
             if curl -sf "http://localhost:${{ env.BENCH_PREVIEW_PORT }}/examples/benchmark.html" > /dev/null; then
@@ -92,13 +115,14 @@ jobs:
           exit 1
 
       - name: Run benchmark
+        if: steps.detect.outputs.available == 'true'
         run: |
           URL="http://localhost:${{ env.BENCH_PREVIEW_PORT }}/examples/benchmark.html?${{ env.BENCH_URL_PARAMS }}&frames=${{ env.BENCH_FRAMES }}&computeIter=${{ env.BENCH_COMPUTE_ITER }}"
           bun run bench "$URL" /tmp/${{ matrix.side }}.json
         working-directory: packages/niivue
 
       - name: Stop preview server
-        if: always()
+        if: always() && steps.detect.outputs.available == 'true'
         run: kill $(cat /tmp/preview.pid) 2>/dev/null || true
 
       - name: Upload bench result

@@ -22,6 +22,29 @@ bun run lint:fix     # ESLint auto-fix
 bun run typecheck    # TypeScript type checking (tsc --noEmit)
 ```
 
+### Perf builds (benchmarking only)
+
+The renderer carries optional `performance.mark`/`measure` instrumentation
+(`src/view/NVPerfMarks.ts`) consumed by the in-browser benchmark harness
+at `examples/benchmark.html`. It is gated on a build-time constant
+`__NIIVUE_PERF__`, injected by Vite's `define` and driven by the
+`NIIVUE_PERF=1` env var.
+
+**Default builds (`bun run build`, `bun run dev`, `bun run deploy`) set
+the flag to `false`, so esbuild dead-code-eliminates every perf-mark
+body. Production bundles pay zero runtime cost — the perf code does
+not exist in shipped output.**
+
+Use the perf scripts only when running the harness:
+
+```bash
+bun run dev:perf            # dev server with marks armed (opens benchmark.html)
+bun run build:perf          # lib build with marks armed
+bun run build:examples:perf # static examples site with marks armed
+```
+
+See `benchmarks/README.md` for the full benchmarking workflow.
+
 ### Development Workflows
 
 - **`bun run dev`** — Runs the `demos/` pages with hot reloading. A Vite plugin intercepts `import '../dist/niivuegpu.mjs'` and redirects it to source, so demo scripts stay identical to the deployed versions but get full HMR. Asset directories in `demos/` are symlinked to `public/` on first run.

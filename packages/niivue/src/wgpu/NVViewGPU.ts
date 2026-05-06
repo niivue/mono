@@ -21,6 +21,7 @@ import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
 import * as NVMeasurement from '@/view/NVMeasurement'
+import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
@@ -599,6 +600,7 @@ export default class NVView {
       requestAnimationFrame(() => this.render())
       return
     }
+    markCpuStart()
     // Determine render targets based on bounds mode
     const canvasTexture =
       this._bench?.targetOverride ?? this.context.getCurrentTexture()
@@ -651,7 +653,9 @@ export default class NVView {
       if (isSub) {
         this._copyBoundsToCanvas(commandEncoder, canvasTexture)
       }
+      markSubmitStart()
       device.queue.submit([commandEncoder.finish()])
+      markEnd()
       return
     }
     // Clear labels at start of each render
@@ -1385,7 +1389,9 @@ export default class NVView {
     if (isSub) {
       this._copyBoundsToCanvas(commandEncoder, canvasTexture)
     }
+    markSubmitStart()
     device.queue.submit([commandEncoder.finish()])
+    markEnd()
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */

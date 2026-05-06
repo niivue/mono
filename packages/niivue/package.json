@@ -34,16 +34,22 @@
   "sideEffects": false,
   "scripts": {
     "codegen:assets": "node scripts/generate-assets.js",
-    "dev": "bun run codegen:assets && bunx --bun vite --open /examples/index.html",
+    "dev": "bun run codegen:assets && bunx --bun vite --port 5273 --strictPort --open /examples/index.html",
+    "dev:perf": "NIIVUE_PERF=1 bun run codegen:assets && NIIVUE_PERF=1 bunx --bun vite --port 5273 --strictPort --open /examples/benchmark.html",
     "build": "bun run codegen:assets && bunx --bun vite build --config vite.config.lib.ts",
+    "build:perf": "NIIVUE_PERF=1 bun run codegen:assets && NIIVUE_PERF=1 bunx --bun vite build --config vite.config.lib.ts",
     "build:examples": "bun run codegen:assets && bunx --bun vite build --config vite.config.examples.ts",
+    "build:examples:perf": "NIIVUE_PERF=1 bun run codegen:assets && NIIVUE_PERF=1 bunx --bun vite build --config vite.config.examples.ts",
     "deploy": "bun run codegen:assets && bunx --bun vite build --config vite.config.examples.ts --mode production",
     "demo": "bun run build:examples && bunx http-server dist/ --cors -o",
     "preview": "vite preview",
     "lint": "bunx biome check src",
     "lint:fix": "bunx biome check src --fix",
     "typecheck": "tsc --noEmit",
-    "size:entries": "node scripts/report-entry-sizes.js"
+    "size:entries": "node scripts/report-entry-sizes.js",
+    "size:check": "node scripts/check-entry-sizes.js",
+    "bench": "bun run bench/run-bench.ts",
+    "bench:compare": "bash bench/compare-to-main.sh"
   },
   "repository": {
     "type": "git",
@@ -78,6 +84,7 @@
     "@types/earcut": "^3.0.0",
     "@webgpu/types": "^0.1.69",
     "http-server": "^14.1.1",
+    "playwright": "^1.59.1",
     "typescript": "^5.6.3",
     "vite": "^7.3.1",
     "vite-plugin-dts": "^4.5.4"

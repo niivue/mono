@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Minimal Perf Marks</title>
+    <link rel="icon" href="data:,">
+    <!-- Intentionally NOT loading /niivue.css — its global rules
+         (`body { position: absolute }`, `div { display: table-row }`,
+         `canvas { position: absolute; width: 100%; height: 100% }`)
+         escape every container and break block layouts on this page. -->
+    <style>
+      #canvas-container canvas {
+        display: block;
+        width: 100%;
+        height: 320px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <button type="button" id="runBtn">Measure 100 frames</button>
+      &nbsp;
+      <span id="statusEl">Ready.</span>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <pre id="out" style="padding:8px;font-family:ui-monospace,monospace;font-size:12px"></pre>
+    <script type="module">
+      // Smallest demonstration of the renderer's CPU vs GPU-submit split.
+      //
+      // The marks are gated on the `__NIIVUE_PERF__` build flag, so this page
+      // only reports useful numbers when served from a perf build:
+      //   bun run dev:perf
+      // In a regular build the calls below are dead-code-eliminated and the
+      // observer never sees any 'niivue:render-*' entries.
+      import NiiVue from '../src/index.ts'
+      import {
+        isPerfBuild,
+        setPerfMarksEnabled,
+      } from '../src/view/NVPerfMarks.ts'
+
+      const FRAMES = 100
+      const WARMUP = 20
+
+      const nv = new NiiVue({ isColorbarVisible: false })
+      await nv.attachToCanvas(gl1)
+      await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+
+      if (!isPerfBuild()) {
+        statusEl.textContent =
+          'Non-perf build — CPU/submit splits will be empty. Run `bun run dev:perf`.'
+      }
+
+      const median = (xs) => {
+        const s = [...xs].sort((a, b) => a - b)
+        return s.length ? s[Math.floor(s.length / 2)] : null
+      }
+      const fmt = (n) => (n == null ? '—' : `${n.toFixed(2)} ms`)
+
+      runBtn.onclick = async () => {
+        runBtn.disabled = true
+        statusEl.textContent = 'Measuring...'
+
+        // The renderer emits three named `performance.measure` entries per
+        // render() call: render-cpu, render-submit, render-frame. We only
+        // need the first two — wall time we can take ourselves.
+        const cpu = []
+        const submit = []
+        const observer = new PerformanceObserver((list) => {
+          for (const e of list.getEntries()) {
+            if (e.name === 'niivue:render-cpu') cpu.push(e.duration)
+            else if (e.name === 'niivue:render-submit') submit.push(e.duration)
+          }
+        })
+        observer.observe({ entryTypes: ['measure'] })
+
+        setPerfMarksEnabled(true)
+        for (let i = 0; i < WARMUP; i++) nv.view.render()
+        // Drop warmup samples.
+        observer.takeRecords()
+        cpu.length = 0
+        submit.length = 0
+
+        const wall = new Float64Array(FRAMES)
+        for (let i = 0; i < FRAMES; i++) {
+          const t = performance.now()
+          nv.view.render()
+          wall[i] = performance.now() - t
+        }
+        // Let the observer drain any pending entries.
+        await new Promise((r) => setTimeout(r, 0))
+        setPerfMarksEnabled(false)
+        observer.disconnect()
+
+        const wallMed = median(wall)
+        const fps = wallMed ? 1000 / wallMed : null
+        out.textContent = [
+          `frames: ${FRAMES}`,
+          `wall   median: ${fmt(wallMed)}    (~${fps == null ? '—' : fps.toFixed(1)} fps)`,
+          `cpu    median: ${fmt(median(cpu))}`,
+          `submit median: ${fmt(median(submit))}`,
+        ].join('\n')
+        statusEl.textContent = 'Done.'
+        runBtn.disabled = false
+      }
+    </script>
+  </body>
+</html>

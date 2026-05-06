@@ -2,3 +2,7 @@
 node_modules
 dist
 coverage
+
+# Benchmark runs are local artifacts; commit only when documenting a regression/fix.
+benchmarks/runs/*.json
+examples/entry-sizes.json

@@ -36,8 +36,13 @@ function ghPagesRewritePlugin(): Plugin | null {
   }
 }
 
+const PERF_BUILD = process.env.NIIVUE_PERF === '1'
+
 export default defineConfig({
   base: ghBase || '/',
+  define: {
+    __NIIVUE_PERF__: JSON.stringify(PERF_BUILD),
+  },
   plugins: [devImagesPlugin(), ghPagesRewritePlugin()],
   resolve: {
     alias: {

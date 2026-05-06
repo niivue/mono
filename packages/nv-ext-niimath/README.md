@@ -40,12 +40,16 @@ input.addEventListener('change', async () => {
 
 ## API
 
-### `runNiimathPipeline(niimath, file, steps, outName?): Promise<Blob>`
+### `runNiimathPipeline(niimath, source, steps, outName?): Promise<Blob>`
 
 Walks `steps` and dispatches each to the matching method on the niimath
-chain. Returns the final NIfTI result as a `Blob`. The caller owns the
-`Niimath` lifetime; this function never terminates the worker so it can
-be reused across many pipelines.
+chain. Returns the final NIfTI result as a `Blob`. `source` accepts
+either a `File` (the typical drag-and-drop / `<input type="file">`
+case) or an `NVImage` already loaded in NiiVue — the wrapper serializes
+an `NVImage` to a `.nii` `File` via `writeVolume` before handing it to
+the worker, so callers don't need to round-trip through the disk.
+The caller owns the `Niimath` lifetime; this function never terminates
+the worker so it can be reused across many pipelines.
 
 **Serial only.** The underlying worker has a single `onmessage` handler
 that gets reassigned on every `run()`, so two overlapping calls against
@@ -53,19 +57,25 @@ the same `Niimath` instance will steal each other's responses. Either
 await the previous call (typical UI pattern: disable Run while a job is
 in flight) or instantiate a separate `Niimath` per concurrent stream.
 
-`outName` defaults to `'output.nii.gz'`. The WASM build of niimath
-gzip-compresses its output, so a `.nii` filename produces a file the
-worker then can't read back (surfaces as a generic
-`Uncaught [object Object]` error). Override only if you have a reason.
+`outName` defaults to `'output.nii.gz'`. NIfTI outputs must end in
+`.nii.gz` because the WASM build of niimath always gzips them — a bare
+`.nii` filename throws upfront with a clear error (the worker would
+otherwise emit a file it can't read back). Mesh outputs from the `mesh`
+operator (`.mz3`, `.obj`, `.stl`, ...) are written verbatim and accept
+their own extension.
 
 ### `NiimathStep`
 
 ```ts
 interface NiimathStep {
-  method: string                     // niimath flag without '-' (e.g. 's', 'thr')
-  args: (string | number)[]          // positional parameters; strings auto-parsed
+  method: string                                       // niimath flag without '-' (e.g. 's', 'thr')
+  args: (string | number | Record<string, unknown>)[] // positional params; strings auto-parsed
 }
 ```
+
+Most operators take scalar args. A few (notably `mesh`) take a single
+options object — pass it as `args: [{ i: 0.5, l: 1, r: 0.25 }]` and the
+wrapper forwards it without coercion.
 
 ### Re-exports
 

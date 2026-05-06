@@ -82,7 +82,7 @@ export type {
   VolumeUpdate,
 } from './NVTypes'
 // Volume construction helper for extensions that produce derived volumes
-export { nii2volume } from './volume/NVVolume'
+export { nii2volume, writeVolume } from './volume/NVVolume'
 // Transform types
 export type {
   OptionField,

@@ -12,7 +12,14 @@ export default defineConfig({
       fileName: 'nv-ext-brain2print',
     },
     rollupOptions: {
-      external: ['@niivue/niivue', '@niivue/nv-ext-image-processing'],
+      external: [
+        '@itk-wasm/cuberille',
+        '@itk-wasm/mesh-filters',
+        '@niivue/niivue',
+        '@niivue/nv-ext-image-processing',
+        '@niivue/nv-ext-niimath',
+        'cbor-x',
+      ],
     },
   },
 })

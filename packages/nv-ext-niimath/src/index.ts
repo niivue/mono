@@ -35,6 +35,7 @@
  */
 
 import { type ImageProcessorMethods, Niimath } from '@niivue/niimath'
+import { type NVImage, writeVolume } from '@niivue/niivue'
 
 export type {
   ImageProcessorMethods,
@@ -55,10 +56,12 @@ export { Niimath }
  *
  * `args` are positional parameters. Strings that parse as numbers are
  * converted automatically; pass numbers directly if you already have them.
+ * A few operators (notably `mesh`) take an options object as their single
+ * argument — those are passed straight through with no coercion.
  */
 export interface NiimathStep {
   method: string
-  args: (string | number)[]
+  args: (string | number | Record<string, unknown>)[]
 }
 
 type Chain = ImageProcessorMethods & { run(outName?: string): Promise<Blob> }
@@ -79,29 +82,37 @@ type Chain = ImageProcessorMethods & { run(outName?: string): Promise<Blob> }
  * `Niimath` per concurrent stream.
  *
  * @param niimath  An initialised `Niimath` instance (after `await niimath.init()`).
- * @param file     Input NIfTI as a browser `File`.
+ * @param source   Input NIfTI as a browser `File`, or an in-memory `NVImage`
+ *                 from `@niivue/niivue` — the latter is serialized to a
+ *                 transient `.nii` `File` here so callers don't have to
+ *                 thread `writeVolume` themselves.
  * @param steps    Pipeline steps; applied in order.
- * @param outName  Output filename in the WASM filesystem; must end in
- *                 `.nii.gz` since the WASM build always gzips its output.
- * @returns        The processed NIfTI as a `Blob` (gzipped).
+ * @param outName  Output filename in the WASM filesystem. NIfTI outputs must
+ *                 end in `.nii.gz` since the WASM build always gzips them.
+ *                 Mesh outputs (`.mz3`, `.obj`, `.stl`, ...) from the `mesh`
+ *                 operator are written verbatim and accept their own
+ *                 extension.
+ * @returns        The processed file as a `Blob` (gzipped for NIfTI).
  *
  * @throws If a step references a method the WASM build doesn't expose.
  */
 export async function runNiimathPipeline(
   niimath: Niimath,
-  file: File,
+  source: File | NVImage,
   steps: NiimathStep[],
   outName = 'output.nii.gz',
 ): Promise<Blob> {
-  if (!outName.toLowerCase().endsWith('.nii.gz')) {
+  const lower = outName.toLowerCase()
+  if (lower.endsWith('.nii') && !lower.endsWith('.nii.gz')) {
     throw new Error(
-      `outName must end with .nii.gz; got "${outName}". The WASM build of niimath always gzips its output.`,
+      `outName "${outName}" must end with .nii.gz, not bare .nii — the WASM build of niimath always gzips NIfTI output.`,
     )
   }
+  const file = source instanceof File ? source : await volumeToFile(source)
   let chain = niimath.image(file) as unknown as Chain
   for (const step of steps) {
     const args = step.args.map((a) => {
-      if (typeof a === 'number') return a
+      if (typeof a !== 'string') return a
       const trimmed = a.trim()
       const n = Number(trimmed)
       return Number.isFinite(n) && trimmed.length > 0 ? n : trimmed
@@ -112,7 +123,7 @@ export async function runNiimathPipeline(
     // dispatch to harmless-but-cryptic prototype methods.
     const obj = chain as unknown as Record<
       string,
-      ((...a: (string | number)[]) => Chain) | undefined
+      ((...a: unknown[]) => Chain) | undefined
     >
     if (
       !Object.hasOwn(obj, step.method) ||
@@ -123,4 +134,17 @@ export async function runNiimathPipeline(
     chain = obj[step.method]?.apply(chain, args) as Chain
   }
   return await chain.run(outName)
+}
+
+async function volumeToFile(volume: NVImage): Promise<File> {
+  const img = volume.img
+  if (!img) {
+    throw new Error('runNiimathPipeline: NVImage has no image data')
+  }
+  const buf = (img.buffer as ArrayBuffer).slice(
+    img.byteOffset,
+    img.byteOffset + img.byteLength,
+  )
+  const niiBytes = await writeVolume('image.nii', volume.hdr, buf)
+  return new File([niiBytes], 'image.nii')
 }

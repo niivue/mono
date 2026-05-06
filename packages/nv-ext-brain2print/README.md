@@ -1,6 +1,6 @@
 # @niivue/nv-ext-brain2print
 
-Tinygrad-generated WebGPU brain segmentation models for [NiiVue](https://github.com/niivue). Two models bundled — `tissue_fast` (fast tissue-class segmentation) and `subcortical` (gray/white + subcortical structures). Both expect a conformed 256³ 1 mm T1 input. All inference runs on the user's GPU; no data leaves the browser.
+Tinygrad-generated WebGPU brain segmentation models for [NiiVue](https://github.com/niivue), plus voxel-to-mesh helpers that turn the resulting label volume into an exportable 3D triangle mesh. Two segmentation models are bundled — `tissue_fast` (fast tissue-class segmentation) and `subcortical` (gray/white + subcortical structures); both expect a conformed 256³ 1 mm T1 input. All inference runs on the user's GPU; no data leaves the browser.
 
 The model implementations under `src/models/` are tinygrad codegen output (WGSL + JS). They are kept verbatim — only a typed wrapper at the bottom matches the public `BrainModel` shape.
 
@@ -10,7 +10,11 @@ The model implementations under `src/models/` are tinygrad codegen output (WGSL 
 bun add @niivue/nv-ext-brain2print
 ```
 
-Peer deps: `@niivue/niivue`, `@niivue/nv-ext-image-processing` (for the `conform` transform). Weight blobs are not bundled — host the `.safetensors` files alongside your app and pass the URL.
+Peer deps: `@niivue/niivue`, `@niivue/nv-ext-image-processing` (for the `conform` transform), `@niivue/nv-ext-niimath` (fast mesh path), `@itk-wasm/cuberille` and `@itk-wasm/mesh-filters` (quality mesh path). Weight blobs are not bundled — host the `.safetensors` files alongside your app and pass the URL.
+
+The quality mesh path lazily fetches its WASM modules from the `@itk-wasm/*` packages' default CDN (`cdn.jsdelivr.net`) on first call. The fast path runs entirely in-process via the niimath WASM worker.
+
+**Trust boundary.** A CDN compromise or MITM during the first quality build would inject WASM that runs against the user's GPU and loaded volumes. There is no SRI hash on the runtime fetch. Consumers who can't accept that risk should vendor the pipeline `.wasm`/`.js` blobs locally and call `setPipelinesBaseUrl()` from `@itk-wasm/cuberille` and `@itk-wasm/mesh-filters` at app startup to point at a same-origin path.
 
 ## Try the demo
 
@@ -91,7 +95,7 @@ ctx.registerVolumeTransform(conform)
 }
 ```
 
-`load(device, weights)` returns a disposable inferer closure `(img32) => Promise<Float32Array[]>`. `weights` accepts a URL string, `ArrayBuffer`, or `Uint8Array`. Call `inferer.dispose()` when replacing a model or tearing down the view to release the generated WebGPU buffers.
+`load(device, weights)` returns a disposable inferer closure `(img32) => Promise<Float32Array[]>`. `weights` accepts a URL string, `ArrayBuffer`, or `Uint8Array`. `await inferer.dispose()` when replacing a model or tearing down the view — it waits for every in-flight inference to settle (tracked via an internal `Set` + `Promise.allSettled`) before destroying the tracked GPU buffers, so a slower call can't still be running on freed buffers. Subsequent calls to a disposed inferer reject; `dispose()` itself is idempotent. The library does **not** serialize concurrent calls (the tinygrad pipeline races on shared input/output buffers) — callers must do that themselves.
 
 ### `buildSegmentationVolume(conformed, labels, colormap): NVImage`
 
@@ -100,5 +104,57 @@ Wraps `labels` as a label-coloured `NVImage` sharing `conformed`'s grid. Sets `c
 ### `COLORMAP_TISSUE_SUBCORTICAL`
 
 `ColorMap` constant used by both models. Inlined — no JSON fetch needed.
+
+### `buildMeshFromVolumeFast(niimath, volume, opts?): Promise<ArrayBuffer>`
+
+Turns a label or scalar `NVImage` into an MZ3 triangle mesh via niimath's `hollow → close → mesh` chain. Caller passes an already-`init()`ed `Niimath` instance — reuse it across calls so the WASM worker cold-start is paid once. Options:
+
+| Field          | Default                                      | Notes |
+|----------------|----------------------------------------------|-------|
+| `isoValue`     | `0.5` for labels (`intent_code === 1002`); `240` for everything else | |
+| `hollow`       | `0`                                          | mm; negative values hollow with a `-hollow`-mm wall |
+| `close`        | `0`                                          | mm; positive values morph-close before meshing |
+| `reduce`       | `0.25`                                       | (0, 1] simplification factor |
+| `largestOnly`  | `true`                                       | keep only the largest connected component |
+| `fillBubbles`  | `false`                                      | fill internal bubbles |
+
+Returns a raw MZ3 buffer with niimath's native CW winding. Use `loadFastMeshAndFlipFaces` to land it in NiiVue with the winding fixed and the GPU index buffer refreshed in one call.
+
+### `loadFastMeshAndFlipFaces(nv, buffer, name?): Promise<void>`
+
+Loads a `buildMeshFromVolumeFast` MZ3 buffer into the given NiiVue instance, flips every triangle's winding in place (niimath emits CW; NiiVue's mesh shader assumes CCW), and calls `nv.updateGLVolume()` so the GPU index buffer is re-uploaded to match — without that re-upload, mutating `mesh.indices` alone leaves the previously-uploaded buffer on the GPU and the mesh renders inside-out until a slider tweak forces a refresh. The Quality path emits CCW already and does not need this; load its buffer directly via `nv.loadMeshes`.
+
+```ts
+const buf = await buildMeshFromVolumeFast(niimath, volume)
+await loadFastMeshAndFlipFaces(nv, buf)
+```
+
+### `buildMeshFromVolumeQuality(volume, opts?): Promise<ArrayBuffer>`
+
+Higher-quality watertight mesh via `@itk-wasm/cuberille` (or `antiAliasCuberille` for label volumes) → `repair` → `keepLargestComponent` → `smoothRemesh` → `repair`. Returns a `.iwm.cbor` buffer that niivue's mesh reader picks up by extension. Options:
+
+| Field              | Default                                | Notes |
+|--------------------|----------------------------------------|-------|
+| `isoValue`         | `0.5` for labels, `240` for scalar     | ignored when `useAntiAlias` is true (the anti-alias path operates on a normalized `[-4, 4]` image and uses its WASM default) |
+| `useAntiAlias`     | `true` for labels, `false` for scalar  | switches to `antiAliasCuberille` when set |
+| `smoothIterations` | `30`                                   | Newton iterations passed to `smoothRemesh` |
+| `shrinkPct`        | `25`                                   | output point count, percent of bounding-box diagonal |
+| `maxHoleArea`      | `50`                                   | passed to `repair` (percent of total area) |
+
+```ts
+import {
+  buildMeshFromVolumeFast,
+  buildMeshFromVolumeQuality,
+  loadFastMeshAndFlipFaces,
+} from '@niivue/nv-ext-brain2print'
+
+const buf = await buildMeshFromVolumeFast(niimath, segVolume, { hollow: 0, close: 0 })
+await loadFastMeshAndFlipFaces(nv, buf)
+
+// Quality variant — first call fetches the cuberille + mesh-filters WASM
+// modules from jsdelivr (npm default CDN for @itk-wasm/*).
+const buf2 = await buildMeshFromVolumeQuality(segVolume)
+await nv.loadMeshes([{ url: new File([buf2], 'mesh.iwm.cbor') }])
+```
 
 ## Part of the [NiiVue](https://github.com/niivue) ecosystem

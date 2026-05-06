@@ -493,7 +493,7 @@ Exported from `volume/utils.ts` and from the package root. Returns `Float32Array
 
 ### Public exports
 
-From package root (`src/index.ts`): `NVExtensionContext`, `computeSlicePointerEvent`, `getImageDataRAS`, `nii2volume` (build an `NVImage` from a NIfTI header + typed-array image data), `makeLabelLut` (turn a `ColorMap` into the discrete LUT consumed by `NVImage.colormapLabel`; the input `cm.I` is cloned internally so reusing the same `const ColorMap` across calls is safe), and types `BackgroundVolumeAccess`, `DrawingAccess`, `DrawingDims`, `NVExtensionEventMap`, `SharedBufferHandle`, `SlicePointerEvent`.
+From package root (`src/index.ts`): `NVExtensionContext`, `computeSlicePointerEvent`, `getImageDataRAS`, `nii2volume` (build an `NVImage` from a NIfTI header + typed-array image data), `writeVolume` (serialize a NIfTI header + image data back to a `.nii` byte buffer — used by `nv-ext-brain2print`'s mesh path to hand a volume to the niimath WASM worker), `makeLabelLut` (turn a `ColorMap` into the discrete LUT consumed by `NVImage.colormapLabel`; the input `cm.I` is cloned internally so reusing the same `const ColorMap` across calls is safe), and types `BackgroundVolumeAccess`, `DrawingAccess`, `DrawingDims`, `NVExtensionEventMap`, `SharedBufferHandle`, `SlicePointerEvent`.
 
 ## Web Workers
 

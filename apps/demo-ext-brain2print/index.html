@@ -25,6 +25,53 @@
       </label>
 
       <button type="button" id="segmentBtn" class="primary" disabled>Segment</button>
+
+      <details id="meshPanel" class="inline-panel">
+        <summary>
+          <button type="button" id="meshBtn" disabled>Mesh</button>
+        </summary>
+        <div class="panel-body">
+          <label class="field">
+            <span>Quality</span>
+            <select id="meshQuality">
+              <option value="fast" selected>Fast (niimath)</option>
+              <option value="quality">Quality (ITK)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Hollow (mm)</span>
+            <input id="meshHollow" type="number" step="0.5" value="0" />
+          </label>
+          <label class="field">
+            <span>Close (mm)</span>
+            <input id="meshClose" type="number" step="0.5" min="0" value="0" />
+          </label>
+          <label class="field">
+            <span>Smooth iters</span>
+            <input id="meshSmooth" type="number" step="1" min="0" value="30" />
+          </label>
+          <label class="field">
+            <span>Shrink (%)</span>
+            <input id="meshShrink" type="number" step="1" min="1" max="100" value="25" />
+          </label>
+          <label class="checkfield">
+            <input id="meshLargest" type="checkbox" checked />
+            <span>Largest only</span>
+          </label>
+          <label class="checkfield">
+            <input id="meshBubbles" type="checkbox" />
+            <span>Fill bubbles</span>
+          </label>
+          <button type="button" id="meshApplyBtn" class="primary">Create</button>
+        </div>
+      </details>
+
+      <select id="saveFormat" aria-label="Save format">
+        <option value="volume" selected>Volume (.nii.gz)</option>
+        <option value="mz3">Mesh (.mz3)</option>
+        <option value="obj">Mesh (.obj)</option>
+        <option value="stl">Mesh (.stl)</option>
+      </select>
       <button type="button" id="saveBtn" disabled>Save</button>
     </header>
 

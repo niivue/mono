@@ -161,3 +161,67 @@ footer .health.error {
 .hidden {
   display: none;
 }
+
+.inline-panel {
+  position: relative;
+}
+
+.inline-panel > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.inline-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.inline-panel > summary > button {
+  pointer-events: none;
+}
+
+.inline-panel[open] .panel-body {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 5;
+  background: #2c2c31;
+  border: 1px solid #3a3a3f;
+  border-radius: 6px;
+  padding: 0.6rem 0.7rem;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.panel-body .field,
+.panel-body .checkfield {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #c9c9cf;
+}
+
+.panel-body .field span {
+  min-width: 5.5rem;
+}
+
+.panel-body .field input,
+.panel-body .field select {
+  width: 6.5rem;
+  background: #1f1f23;
+  color: #e8e8ea;
+  border: 1px solid #3a3a3f;
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.panel-body button {
+  grid-column: 1 / -1;
+  justify-self: end;
+  margin-top: 0.3rem;
+}

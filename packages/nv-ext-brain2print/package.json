@@ -16,12 +16,21 @@
     "dist"
   ],
   "peerDependencies": {
-    "@niivue/niivue": "workspace:*",
-    "@niivue/nv-ext-image-processing": "workspace:*"
-  },
-  "devDependencies": {
+    "@itk-wasm/cuberille": "^0.2.0",
+    "@itk-wasm/mesh-filters": "^1.7.0",
     "@niivue/niivue": "workspace:*",
     "@niivue/nv-ext-image-processing": "workspace:*",
+    "@niivue/nv-ext-niimath": "workspace:*"
+  },
+  "dependencies": {
+    "cbor-x": "^1.6.0"
+  },
+  "devDependencies": {
+    "@itk-wasm/cuberille": "^0.2.0",
+    "@itk-wasm/mesh-filters": "^1.7.0",
+    "@niivue/niivue": "workspace:*",
+    "@niivue/nv-ext-image-processing": "workspace:*",
+    "@niivue/nv-ext-niimath": "workspace:*",
     "@webgpu/types": "^0.1.52",
     "typescript": "~5.8.3",
     "vite": "^6.3.2",

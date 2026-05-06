@@ -25,7 +25,8 @@ bunx nx build demo-ext-brain2print
 - **Drag-and-drop** — drop any `.nii` or `.nii.gz` onto the page to replace the background and re-segment automatically. The library's `prepareInput` conforms arbitrary-orientation inputs to the canonical 256³ 1 mm grid the models expect.
 - **Model dropdown** — switch between `tissue_fast` (fast tissue-class segmentation) and `subcortical` (gray/white + subcortical structures). The demo keeps one active inferer and disposes it before loading the next model so GPU memory stays bounded.
 - **Opacity sliders** — independent BG / Seg sliders adjust background and overlay opacity live.
-- **Save** — exports the current segmentation overlay as `brain2print-overlay.nii.gz`.
+- **Mesh** — once a segmentation exists, the Mesh button opens an inline `<details>` panel with a Quality (fast/quality) selector plus hollow / close / smooth / shrink / largest-only / fill-bubbles controls and a Create button. When no segmentation exists, Create is disabled and the panel is force-closed (the `<summary>` button itself can't be disabled, so the panel state plus disabled Create button are the actual gate). Fast uses niimath's `mesh` chain entirely in-process and lands the result via `loadFastMeshAndFlipFaces` (the lib helper handles CW→CCW winding + GPU re-upload in one call); Quality uses `@itk-wasm/cuberille` + `mesh-filters` (first call fetches the WASM modules from cdn.jsdelivr.net) and loads its already-CCW `.iwm.cbor` directly via `nv.loadMeshes`.
+- **Save** — exports either the segmentation overlay as `.nii.gz` (Volume) or the current mesh as `.mz3`/`.obj`/`.stl`. The format dropdown is reset to `volume` after each fresh segmentation and to `mz3` after each mesh build (assigned directly on `saveFormat.value` at those transitions); the user can override either default before clicking Save.
 
 ## GPU requirements
 

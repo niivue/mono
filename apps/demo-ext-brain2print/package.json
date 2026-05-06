@@ -7,10 +7,13 @@
     "build": "bunx --bun vite build"
   },
   "dependencies": {
+    "@itk-wasm/cuberille": "^0.2.0",
+    "@itk-wasm/mesh-filters": "^1.7.0",
     "@niivue/dev-images": "workspace:*",
     "@niivue/niivue": "workspace:*",
     "@niivue/nv-ext-brain2print": "workspace:*",
-    "@niivue/nv-ext-image-processing": "workspace:*"
+    "@niivue/nv-ext-image-processing": "workspace:*",
+    "@niivue/nv-ext-niimath": "workspace:*"
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.52",

@@ -35,10 +35,23 @@ import {
   nii2volume,
 } from '@niivue/niivue'
 import { COLORMAP_TISSUE_SUBCORTICAL } from './colormap'
+import {
+  type BuildMeshFastOptions,
+  type BuildMeshQualityOptions,
+  buildMeshFromVolumeFast,
+  buildMeshFromVolumeQuality,
+  loadFastMeshAndFlipFaces,
+} from './mesh'
 import subcorticalImpl from './models/subcortical'
 import tissueFastImpl from './models/tissue-fast'
 
-export { COLORMAP_TISSUE_SUBCORTICAL }
+export type { BuildMeshFastOptions, BuildMeshQualityOptions }
+export {
+  buildMeshFromVolumeFast,
+  buildMeshFromVolumeQuality,
+  COLORMAP_TISSUE_SUBCORTICAL,
+  loadFastMeshAndFlipFaces,
+}
 
 const CONFORM_DIM = 256
 const EXPECTED_VOXELS = CONFORM_DIM * CONFORM_DIM * CONFORM_DIM
@@ -163,10 +176,16 @@ function wrapModelLoad(load: ModelImpl['load']): BrainModel['load'] {
     }
 
     let disposed = false
-    // Tracks the most recently invoked inference so `dispose()` can wait for
-    // any GPU work to settle before destroying its buffers. The library does
-    // not serialize concurrent calls — callers must do that themselves.
-    let inflight: Promise<unknown> = Promise.resolve()
+    // Tracks every in-flight inference so `dispose()` can wait for ALL of
+    // them to settle before destroying tracked GPU buffers. Tracking only
+    // the latest (which earlier versions did) lets a slower call still be
+    // running on the buffers we're about to destroy. The library still
+    // doesn't serialize concurrent calls — the tinygrad pipeline races on
+    // its shared input/output buffers regardless — so callers must serialize
+    // their own calls. This `Set` is purely a teardown safety net; entries
+    // are only consumed by `dispose()` so we don't bother removing settled
+    // ones.
+    const inflight = new Set<Promise<unknown>>()
 
     const inferer = ((img32: Float32Array): Promise<Float32Array[]> => {
       if (disposed) {
@@ -180,14 +199,14 @@ function wrapModelLoad(load: ModelImpl['load']): BrainModel['load'] {
         )
       }
       const run = generatedInferer(img32)
-      inflight = run.catch(() => undefined)
+      inflight.add(run.catch(() => undefined))
       return run
     }) as BrainInferer
 
     inferer.dispose = async (): Promise<void> => {
       if (disposed) return
       disposed = true
-      await inflight
+      await Promise.allSettled(inflight)
       destroyBuffers(trackedBuffers)
     }
 
@@ -415,6 +434,10 @@ export function buildSegmentationVolume(
   clonedHdr.scl_inter = 0
   clonedHdr.cal_min = 0
   clonedHdr.cal_max = 0
+  // Mark as a label volume so downstream consumers (mesh export, save, etc.)
+  // can pick the label-aware code path instead of inheriting `intent_code`
+  // from the input T1.
+  clonedHdr.intent_code = 1002 // NIFTI_INTENT_LABEL
   // Force a 3D dim count — segmentations are single-frame even if the input
   // was 4D — and clear any per-frame trailing dims that the deep-clone
   // carried over from the conformed source.

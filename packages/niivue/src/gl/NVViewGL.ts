@@ -21,6 +21,7 @@ import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
 import * as NVMeasurement from '@/view/NVMeasurement'
+import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
@@ -363,6 +364,7 @@ export default class NVGlview {
       requestAnimationFrame(() => this.render())
       return
     }
+    markCpuStart()
     // Bounds pixel rect (sub-canvas or full canvas)
     const bx = this._boundsOffsetX
     const by = this._boundsOffsetY
@@ -383,6 +385,8 @@ export default class NVGlview {
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
       this.thumbnailRenderer.draw(gl)
       if (this._isSubCanvasBounds) gl.disable(gl.SCISSOR_TEST)
+      markSubmitStart()
+      markEnd()
       return
     }
     // Clear labels at start of each render
@@ -1028,6 +1032,8 @@ export default class NVGlview {
     if (this._isSubCanvasBounds) {
       gl.disable(gl.SCISSOR_TEST)
     }
+    markSubmitStart()
+    markEnd()
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Benchmark Suite</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      body {
+        font-family: -apple-system, system-ui, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: #0d1117;
+        color: #c9d1d9;
+      }
+      header {
+        padding: 12px 16px;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+      header label { font-size: 13px; }
+      header input[type="number"] {
+        width: 70px;
+        padding: 4px 6px;
+        background: #0d1117;
+        color: #c9d1d9;
+        border: 1px solid #30363d;
+        border-radius: 4px;
+      }
+      header button {
+        padding: 6px 14px;
+        background: #238636;
+        color: white;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      header button:hover { background: #2ea043; }
+      header button:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+      header button.secondary { background: #30363d; color: #c9d1d9; }
+      header button.secondary:hover { background: #484f58; }
+      #statusText { font-size: 12px; color: #8b949e; padding: 6px 16px; background: #161b22; border-bottom: 1px solid #30363d; }
+
+      main {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 12px 16px;
+      }
+      .canvases {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .canvas-wrap {
+        flex: 1;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #000;
+      }
+      .canvas-wrap h3 {
+        margin: 0;
+        padding: 6px 10px;
+        font-size: 12px;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+        font-weight: 500;
+      }
+      .canvas-wrap canvas {
+        display: block;
+        width: 100%;
+        height: 320px;
+      }
+
+      #results { margin-top: 8px; }
+      #results table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      #results th, #results td {
+        padding: 6px 10px;
+        border-bottom: 1px solid #30363d;
+        text-align: right;
+      }
+      #results th { background: #161b22; font-weight: 600; text-align: left; }
+      #results td:first-child, #results th:first-child { text-align: left; }
+      #results td.faster { color: #3fb950; font-weight: 600; }
+      #results td.slower { color: #f85149; font-weight: 600; }
+      #results td.neutral { color: #8b949e; }
+      #results h2 { font-size: 14px; margin: 16px 0 6px; color: #c9d1d9; }
+
+      #markdownOutput {
+        margin-top: 12px;
+        padding: 10px;
+        background: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 4px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        white-space: pre;
+        max-height: 320px;
+        overflow: auto;
+        color: #c9d1d9;
+      }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>NiiVue Benchmark</h1>
+      <label>Frames <input type="number" id="frameCount" value="300" min="10" max="10000" /></label>
+      <label>Compute iter <input type="number" id="computeIter" value="100" min="1" max="10000" /></label>
+      <label><input type="checkbox" id="runRenderer" checked /> Renderer</label>
+      <label><input type="checkbox" id="runCompute" checked /> Compute</label>
+      <label><input type="checkbox" id="runSweeps" /> Sweeps (tile + mesh)</label>
+      <label><input type="checkbox" id="runTract" /> Tract regen</label>
+      <button id="runBtn">Run</button>
+      <button id="exportJsonBtn" class="secondary" disabled>Download JSON</button>
+      <button id="exportMdBtn" class="secondary" disabled>Download .md</button>
+      <button id="copyMdBtn" class="secondary" disabled>Copy Markdown</button>
+    </header>
+    <div id="statusText">Ready. Click Run to start.</div>
+
+    <main>
+      <div class="canvases">
+        <div class="canvas-wrap">
+          <h3>WebGPU (backend auto)</h3>
+          <canvas id="canvasA"></canvas>
+        </div>
+      </div>
+
+      <div id="results"></div>
+      <pre id="markdownOutput" class="hidden"></pre>
+    </main>
+
+    <script type="module" src="./benchmark.js"></script>
+  </body>
+</html>

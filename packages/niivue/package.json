@@ -43,7 +43,8 @@
     "lint": "bunx biome check src",
     "lint:fix": "bunx biome check src --fix",
     "typecheck": "tsc --noEmit",
-    "size:entries": "node scripts/report-entry-sizes.js"
+    "size:entries": "node scripts/report-entry-sizes.js",
+    "size:check": "node scripts/check-entry-sizes.js"
   },
   "repository": {
     "type": "git",

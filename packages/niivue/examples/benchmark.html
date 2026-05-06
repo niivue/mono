@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
     <title>NiiVue Benchmark Suite</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/niivue.css" />
+    <!-- Intentionally NOT loading /niivue.css — its global rules
+         (`body { position: absolute }`, `div { display: table-row }`,
+         `canvas { position: absolute; width: 100%; height: 100% }`)
+         escape every container and break block layouts on this page. -->
     <style>
       body {
         font-family: -apple-system, system-ui, sans-serif;
@@ -90,9 +93,9 @@
       #results th, #results td {
         padding: 6px 10px;
         border-bottom: 1px solid #30363d;
-        text-align: right;
+        text-align: center;
       }
-      #results th { background: #161b22; font-weight: 600; text-align: left; }
+      #results th { background: #161b22; font-weight: 600; }
       #results td:first-child, #results th:first-child { text-align: left; }
       #results td.faster { color: #3fb950; font-weight: 600; }
       #results td.slower { color: #f85149; font-weight: 600; }
@@ -125,6 +128,7 @@
       <label><input type="checkbox" id="runSweeps" /> Sweeps (tile + mesh)</label>
       <label><input type="checkbox" id="runTract" /> Tract regen</label>
       <button type="button" id="runBtn">Run</button>
+      <button type="button" id="abortBtn" class="secondary" disabled>Stop</button>
       <button type="button" id="exportJsonBtn" class="secondary" disabled>Download JSON</button>
       <button type="button" id="exportMdBtn" class="secondary" disabled>Download .md</button>
       <button type="button" id="copyMdBtn" class="secondary" disabled>Copy Markdown</button>

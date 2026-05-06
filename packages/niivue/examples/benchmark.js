@@ -53,12 +53,32 @@ const resultsDiv = document.getElementById('results')
 const statusEl = document.getElementById('statusText')
 const mdOut = document.getElementById('markdownOutput')
 const runBtn = document.getElementById('runBtn')
+const abortBtn = document.getElementById('abortBtn')
 const exportJsonBtn = document.getElementById('exportJsonBtn')
 const exportMdBtn = document.getElementById('exportMdBtn')
 const copyMdBtn = document.getElementById('copyMdBtn')
 
 function setStatus(msg) {
   statusEl.textContent = msg
+}
+
+// Cooperative-abort state. Long render loops yield via rAF every
+// YIELD_EVERY frames so the compositor can paint and the abort click
+// can register; on resume they call checkAbort() to bail.
+const ABORT_ERROR = 'aborted'
+const YIELD_EVERY = 30
+let _aborted = false
+function checkAbort() {
+  if (_aborted) throw new Error(ABORT_ERROR)
+}
+async function yieldAndCheck() {
+  await new Promise((r) => requestAnimationFrame(r))
+  checkAbort()
+}
+abortBtn.onclick = () => {
+  _aborted = true
+  setStatus('Aborting...')
+  abortBtn.disabled = true
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +387,7 @@ async function runCompute(iter) {
   for (const s of scenarios) {
     setStatus(`Compute: ${s.name} (${s.dataSize})...`)
     await new Promise((r) => setTimeout(r, 0))
+    checkAbort()
     const samples = benchSamples(s.fn, s.iter, 5)
     const stats = summarize(samples)
     results.push({ ...s, fn: undefined, stats })
@@ -426,6 +447,7 @@ async function benchRenderFrames(nv, frames, warmup = 20) {
     nv.view.render()
     await _waitGpu(nv)
     samples[i] = performance.now() - t0
+    if ((i + 1) % YIELD_EVERY === 0) await yieldAndCheck()
   }
   return samples
 }
@@ -480,6 +502,7 @@ async function benchRenderFramesWithSplit(nv, frames, warmup = 20) {
     await _waitGpu(nv)
     wall[i] = performance.now() - t0
     recordPhases(consumeFrameStats())
+    if ((i + 1) % YIELD_EVERY === 0) await yieldAndCheck()
   }
   setPerfMarksEnabled(false)
   if (observer) {
@@ -503,10 +526,12 @@ async function rendererScenarios(nv, frames) {
 
   const run = async (name, setup) => {
     setStatus(`Renderer: ${name}...`)
+    checkAbort()
     await setup()
     await new Promise((r) =>
       requestAnimationFrame(() => requestAnimationFrame(r)),
     )
+    checkAbort()
     const split = await benchRenderFramesWithSplit(nv, frames)
     const cpuStats = split.cpu.length ? summarize(split.cpu) : null
     const submitStats = split.submit.length ? summarize(split.submit) : null
@@ -607,6 +632,7 @@ async function tileSweep(nv, frames) {
   for (const cfg of TILE_SWEEP) {
     setStatus(`Tile sweep: ${cfg.tiles} tiles...`)
     await new Promise((r) => setTimeout(r, 0))
+    checkAbort()
     nv.mosaicString = cfg.mosaic
     await new Promise((r) =>
       requestAnimationFrame(() => requestAnimationFrame(r)),
@@ -677,9 +703,13 @@ async function meshSweep(nv, frames) {
   for (const size of MESH_SWEEP_SIZES) {
     for (const count of MESH_SWEEP_COUNTS) {
       const totalVerts = size.numVerts * count
-      // Skip combos ≥ 32M vertices total. Empirically 64M (64 × 1M) trips
-      // WebGPU's per-buffer cap with mappedAtCreation=true on Apple GPUs.
-      if (totalVerts >= 32_000_000) {
+      // Skip combos ≥ 8M vertices total. 16 × 1M (16M) reliably hangs the
+      // GPU compositor on Apple integrated GPUs (white-screens the entire
+      // browser, not just the tab). 64 × 1M (64M) also trips WebGPU's
+      // per-buffer cap with mappedAtCreation=true. The 8M ceiling keeps
+      // 4 × 1M and 64 × 100K (6.4M) — enough to characterize per-mesh
+      // overhead without putting the system at risk.
+      if (totalVerts >= 8_000_000) {
         rows.push({
           size: size.label,
           count,
@@ -693,6 +723,7 @@ async function meshSweep(nv, frames) {
       }
       setStatus(`Mesh sweep: ${count} × ${size.label}...`)
       await new Promise((r) => setTimeout(r, 0))
+      checkAbort()
       await unloadAll(nv)
       for (let i = 0; i < count; i++) {
         const m = makeSyntheticMesh(size.numVerts, i)
@@ -803,6 +834,7 @@ async function tractRegen(iter = 5) {
   }
   for (const scn of TRACT_REGEN_SCENARIOS) {
     await new Promise((r) => setTimeout(r, 0))
+    checkAbort()
     setStatus(`Tract regen: ${scn.label}...`)
     const data = makeSyntheticTract(scn.nStreamlines, scn.pointsPerStreamline)
     // Warmup
@@ -865,16 +897,18 @@ function renderResultsTable(
     html += `<h2>Renderer scenarios</h2>
 <table>
   <tr>
-    <th>Scenario</th><th>Frames</th><th>Wall mean (ms)</th><th>CPU mean</th><th>Submit mean</th><th>Frame mean</th><th>p95</th><th>Stddev</th>
+    <th>Scenario</th><th>Frames</th><th>Wall mean (ms)</th><th>~fps</th><th>CPU mean</th><th>Submit mean</th><th>Frame mean</th><th>p95</th><th>Stddev</th>
   </tr>`
     for (const r of rendererResults) {
       const s = r.stats
       const cpuM = r.cpu ? fmt(r.cpu.mean) : '—'
       const subM = r.submit ? fmt(r.submit.mean) : '—'
       const frmM = r.frame ? fmt(r.frame.mean) : '—'
+      const fps = s.mean > 0 ? (1000 / s.mean).toFixed(1) : '—'
       html += `<tr>
         <td>${r.name}</td><td>${r.frames}</td>
-        <td>${fmt(s.mean)}</td><td>${cpuM}</td><td>${subM}</td><td>${frmM}</td>
+        <td>${fmt(s.mean)}</td><td>${fps}</td>
+        <td>${cpuM}</td><td>${subM}</td><td>${frmM}</td>
         <td>${fmt(s.p95)}</td><td>${fmt(s.stddev)}</td>
       </tr>`
     }
@@ -1088,16 +1122,17 @@ function buildMarkdown(
     lines.push('### Renderer scenarios')
     lines.push('')
     lines.push(
-      '| Scenario | Frames | Wall mean (ms) | CPU mean | Submit mean | Frame mean | p95 | Stddev |',
+      '| Scenario | Frames | Wall mean (ms) | ~fps | CPU mean | Submit mean | Frame mean | p95 | Stddev |',
     )
-    lines.push('|---|---|---|---|---|---|---|---|')
+    lines.push('|---|---|---|---|---|---|---|---|---|')
     for (const r of rendererResults) {
       const s = r.stats
       const cpuM = r.cpu ? fmt(r.cpu.mean) : '—'
       const subM = r.submit ? fmt(r.submit.mean) : '—'
       const frmM = r.frame ? fmt(r.frame.mean) : '—'
+      const fps = s.mean > 0 ? (1000 / s.mean).toFixed(1) : '—'
       lines.push(
-        `| ${r.name} | ${r.frames} | ${fmt(s.mean)} | ${cpuM} | ${subM} | ${frmM} | ${fmt(s.p95)} | ${fmt(s.stddev)} |`,
+        `| ${r.name} | ${r.frames} | ${fmt(s.mean)} | ${fps} | ${cpuM} | ${subM} | ${frmM} | ${fmt(s.p95)} | ${fmt(s.stddev)} |`,
       )
     }
     lines.push('')
@@ -1219,7 +1254,9 @@ if (!isPerfBuild()) {
 let _lastRun = null
 
 runBtn.onclick = async () => {
+  _aborted = false
   runBtn.disabled = true
+  abortBtn.disabled = false
   exportJsonBtn.disabled = true
   exportMdBtn.disabled = true
   copyMdBtn.disabled = true
@@ -1284,10 +1321,15 @@ runBtn.onclick = async () => {
     exportMdBtn.disabled = false
     copyMdBtn.disabled = false
   } catch (err) {
-    console.error(err)
-    setStatus(`Error: ${err.message || err}`)
-    resultsDiv.innerHTML = `<pre style="color:#f85149">${err.stack || err}</pre>`
+    if (err.message === ABORT_ERROR) {
+      setStatus('Aborted.')
+    } else {
+      console.error(err)
+      setStatus(`Error: ${err.message || err}`)
+      resultsDiv.innerHTML = `<pre style="color:#f85149">${err.stack || err}</pre>`
+    }
   } finally {
+    abortBtn.disabled = true
     runBtn.disabled = false
     runBtn.textContent = 'Run'
   }

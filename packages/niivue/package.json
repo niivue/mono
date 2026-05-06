@@ -48,7 +48,8 @@
     "typecheck": "tsc --noEmit",
     "size:entries": "node scripts/report-entry-sizes.js",
     "size:check": "node scripts/check-entry-sizes.js",
-    "bench": "bun run bench/run-bench.ts"
+    "bench": "bun run bench/run-bench.ts",
+    "bench:compare": "bash bench/compare-to-main.sh"
   },
   "repository": {
     "type": "git",

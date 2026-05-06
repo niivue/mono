@@ -38,10 +38,14 @@ console.log(
   `[bench] mode: ${headed ? 'headed (real GPU)' : 'headless (SwiftShader)'}`,
 )
 
-const browser = await chromium.launch({
-  headless: !headed,
-  args: ['--enable-unsafe-webgpu', '--no-sandbox'],
-})
+// In headless mode we explicitly force the SwiftShader Vulkan ICD. On
+// Linux CI runners there is no other Vulkan driver, so without this
+// flag WebGPU init fails. On macOS Chromium's headless default is also
+// SwiftShader, so this is a no-op there.
+const args = ['--enable-unsafe-webgpu', '--no-sandbox']
+if (!headed) args.push('--enable-features=Vulkan', '--use-vulkan=swiftshader')
+
+const browser = await chromium.launch({ headless: !headed, args })
 
 let exitCode = 0
 try {

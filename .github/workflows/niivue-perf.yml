@@ -1,0 +1,175 @@
+# Runs the niivue benchmark suite on the PR commit AND on main, then
+# diffs them and posts a comment. Fails the job if any scenario regresses
+# beyond compare-bench's --fail-pct threshold (default 25%).
+#
+# Bootstrap note: this workflow requires `playwright`, autorun mode in
+# benchmark.html, and the bench scripts to be present on BOTH sides
+# (PR head and base). The PR that introduces this workflow itself
+# can't be gated by it — only PRs landing after that meta-PR is merged
+# to main will compare meaningfully.
+
+name: niivue perf
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/niivue/src/**'
+      - 'packages/niivue/examples/benchmark.html'
+      - 'packages/niivue/examples/benchmark.js'
+      - 'packages/niivue/bench/**'
+      - 'packages/niivue/package.json'
+      - '.github/workflows/niivue-perf.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Bench parameters shared by both sides so PR vs main are apples-to-apples.
+env:
+  BENCH_FRAMES: '200'
+  BENCH_COMPUTE_ITER: '100'
+  BENCH_URL_PARAMS: 'autorun=1&renderer=1&compute=1&sweeps=0&tract=0'
+  BENCH_PREVIEW_PORT: '4173'
+
+jobs:
+  bench:
+    name: bench (${{ matrix.side }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - side: head
+            ref: ''
+          - side: base
+            ref: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          ref: ${{ matrix.ref }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-v1
+
+      - name: Install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
+        working-directory: packages/niivue
+
+      - name: Build examples (perf)
+        run: bun run build:examples:perf
+        working-directory: packages/niivue
+
+      - name: Start preview server
+        run: |
+          nohup bunx --bun vite preview \
+            --config vite.config.examples.ts \
+            --port ${{ env.BENCH_PREVIEW_PORT }} \
+            --strictPort \
+            > /tmp/preview-${{ matrix.side }}.log 2>&1 &
+          echo $! > /tmp/preview.pid
+        working-directory: packages/niivue
+
+      - name: Wait for server
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf "http://localhost:${{ env.BENCH_PREVIEW_PORT }}/examples/benchmark.html" > /dev/null; then
+              echo "ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "preview server failed to start"
+          cat /tmp/preview-${{ matrix.side }}.log
+          exit 1
+
+      - name: Run benchmark
+        run: |
+          URL="http://localhost:${{ env.BENCH_PREVIEW_PORT }}/examples/benchmark.html?${{ env.BENCH_URL_PARAMS }}&frames=${{ env.BENCH_FRAMES }}&computeIter=${{ env.BENCH_COMPUTE_ITER }}"
+          bun run bench "$URL" /tmp/${{ matrix.side }}.json
+        working-directory: packages/niivue
+
+      - name: Stop preview server
+        if: always()
+        run: kill $(cat /tmp/preview.pid) 2>/dev/null || true
+
+      - name: Upload bench result
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.side }}
+          path: /tmp/${{ matrix.side }}.json
+          retention-days: 14
+
+  compare:
+    name: compare and comment
+    needs: bench
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Download head result
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-head
+          path: bench-head
+
+      - name: Download base result
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-base
+          path: bench-base
+
+      - name: Compare
+        id: compare
+        # `|| true` so we still post the comment when fail-pct is exceeded;
+        # the job's exit code is set explicitly at the end.
+        run: |
+          set +e
+          bun run packages/niivue/bench/compare-bench.ts \
+            bench-base/base.json \
+            bench-head/head.json \
+            --out=/tmp/perf-report.md
+          echo "exitcode=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-report
+          path: /tmp/perf-report.md
+          retention-days: 14
+
+      - name: Find existing comment
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/find-comment@v3
+        id: find
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: 'NiiVue Benchmark Comparison'
+
+      - name: Post or update PR comment
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: /tmp/perf-report.md
+          edit-mode: replace
+
+      - name: Fail job on regression
+        if: steps.compare.outputs.exitcode != '0'
+        run: |
+          echo "Perf comparison reported regressions; see report."
+          exit 1

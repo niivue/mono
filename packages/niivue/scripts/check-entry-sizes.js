@@ -23,9 +23,16 @@ function arg(name, fallback) {
 
 const BUDGET_KB = Number(arg('--budget-kb', '5'))
 const UPDATE = flag('--update')
-const BASELINE_PATH = resolve(process.cwd(), 'benchmarks/baselines/bundle-sizes-baseline.json')
+const BASELINE_PATH = resolve(
+  process.cwd(),
+  'benchmarks/baselines/bundle-sizes-baseline.json',
+)
 const DIST_DIR = resolve(process.cwd(), 'dist')
-const DEFAULT_ENTRIES = ['niivuegpu.js', 'niivuegpu.webgpu.js', 'niivuegpu.webgl2.js']
+const DEFAULT_ENTRIES = [
+  'niivuegpu.js',
+  'niivuegpu.webgpu.js',
+  'niivuegpu.webgl2.js',
+]
 
 const importRe = /(?:import|export)\s+(?:[^'"`]*?from\s+)?["'](\.[^"']+)["']/g
 
@@ -50,7 +57,10 @@ function collectDeps(entryFile) {
 
 function summarize(entry) {
   const files = collectDeps(entry)
-  const totalReachableBytes = files.reduce((sum, abs) => sum + statSync(abs).size, 0)
+  const totalReachableBytes = files.reduce(
+    (sum, abs) => sum + statSync(abs).size,
+    0,
+  )
   const entryAbs = resolve(DIST_DIR, entry)
   const entryBytes = readFileSync(entryAbs)
   return {
@@ -67,7 +77,7 @@ function summarize(entry) {
 let baseline = null
 try {
   baseline = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'))
-} catch (err) {
+} catch (_err) {
   if (!UPDATE) {
     console.error(`No baseline at ${BASELINE_PATH}.`)
     console.error(`Run with --update to seed it from the current build.`)
@@ -84,7 +94,9 @@ console.log(`Budget: +${BUDGET_KB} KiB (totalReachable bytes per entry)\n`)
 for (const cur of currentEntries) {
   const base = baseline?.entries.find((b) => b.name === cur.name)
   if (!base) {
-    console.log(`  ${cur.name}: new entry (${(cur.totalReachableBytes / 1024).toFixed(1)} KiB)`)
+    console.log(
+      `  ${cur.name}: new entry (${(cur.totalReachableBytes / 1024).toFixed(1)} KiB)`,
+    )
     continue
   }
   const delta = cur.totalReachableBytes - base.totalReachableBytes
@@ -118,7 +130,9 @@ if (UPDATE) {
 
 if (failed) {
   console.error('\nBundle-size check failed. Investigate the growth above.')
-  console.error('If the growth is intentional, rerun with --update to refresh the baseline.')
+  console.error(
+    'If the growth is intentional, rerun with --update to refresh the baseline.',
+  )
   process.exit(1)
 }
 console.log('\nAll entries within budget.')

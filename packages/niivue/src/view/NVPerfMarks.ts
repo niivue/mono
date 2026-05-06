@@ -59,7 +59,11 @@ export function markSubmitStart(): void {
   if (!enabled) return
   performance.mark('niivue:submit-start')
   try {
-    performance.measure('niivue:render-cpu', 'niivue:cpu-start', 'niivue:submit-start')
+    performance.measure(
+      'niivue:render-cpu',
+      'niivue:cpu-start',
+      'niivue:submit-start',
+    )
   } catch {
     /* missing start mark, skip */
   }
@@ -69,7 +73,11 @@ export function markEnd(): void {
   if (!enabled) return
   performance.mark('niivue:end')
   try {
-    performance.measure('niivue:render-submit', 'niivue:submit-start', 'niivue:end')
+    performance.measure(
+      'niivue:render-submit',
+      'niivue:submit-start',
+      'niivue:end',
+    )
   } catch {
     /* missing start mark */
   }

@@ -5,9 +5,15 @@ import { gzipSync } from 'node:zlib'
 const args = process.argv.slice(2)
 const jsonIdx = args.indexOf('--json')
 const wantJson = jsonIdx !== -1
-const jsonOut = wantJson ? args[jsonIdx + 1] || 'benchmarks/entry-sizes.json' : null
+const jsonOut = wantJson
+  ? args[jsonIdx + 1] || 'benchmarks/entry-sizes.json'
+  : null
 const entries = wantJson ? args.slice(0, jsonIdx) : args
-const defaultEntries = ['niivuegpu.js', 'niivuegpu.webgpu.js', 'niivuegpu.webgl2.js']
+const defaultEntries = [
+  'niivuegpu.js',
+  'niivuegpu.webgpu.js',
+  'niivuegpu.webgl2.js',
+]
 const targets = entries.length > 0 ? entries : defaultEntries
 const distDir = resolve(process.cwd(), 'dist')
 
@@ -58,13 +64,21 @@ function summarize(entry) {
   const entryAbs = resolve(distDir, entry)
   const entryBytes = readFileSync(entryAbs)
   const gzipBytes = gzipSync(entryBytes).length
-  return { entry, total, rows, entrySize: entryBytes.length, gzipSize: gzipBytes }
+  return {
+    entry,
+    total,
+    rows,
+    entrySize: entryBytes.length,
+    gzipSize: gzipBytes,
+  }
 }
 
 function report(s) {
   console.log(`\nEntry: ${s.entry}`)
   console.log(`Total reachable JS: ${formatBytes(s.total)} (${s.total} bytes)`)
-  console.log(`Entry file: ${formatBytes(s.entrySize)} min, ${formatBytes(s.gzipSize)} gzip`)
+  console.log(
+    `Entry file: ${formatBytes(s.entrySize)} min, ${formatBytes(s.gzipSize)} gzip`,
+  )
   console.log(`Chunks: ${s.rows.length}`)
   for (const row of s.rows) {
     console.log(`  - ${row.file}: ${formatBytes(row.size)}`)

@@ -23,21 +23,25 @@
  * copy-pasteable markdown table. Two runs can be diffed with
  * `node benchmarks/diff-runs.mjs a.json b.json`.
  */
+
+import { mat4 } from 'gl-matrix'
+import { decodeRLE, encodeRLE } from '../src/drawing/rle.ts'
 import NiiVue from '../src/index.ts'
 import {
-  vox2mm,
+  calculateMvpMatrix,
+  calculateMvpMatrix2D,
   cart2sphDeg,
   deg2rad,
-  calculateMvpMatrix2D,
-  calculateMvpMatrix,
+  vox2mm,
 } from '../src/math/NVTransforms.ts'
-import { encodeRLE, decodeRLE } from '../src/drawing/rle.ts'
-import { generateNormals, createMesh } from '../src/mesh/NVMesh.ts'
+import { createMesh, generateNormals } from '../src/mesh/NVMesh.ts'
+import { tessellate as tractTessellate } from '../src/mesh/tracts/index.ts'
+import {
+  consumeFrameStats,
+  setPerfMarksEnabled,
+} from '../src/view/NVPerfMarks.ts'
 import { reorientRGBA } from '../src/volume/utils.ts'
 import { MESH_UNIFORM_SIZE } from '../src/wgpu/mesh.ts'
-import { setPerfMarksEnabled, consumeFrameStats } from '../src/view/NVPerfMarks.ts'
-import { tessellate as tractTessellate } from '../src/mesh/tracts/index.ts'
-import { mat4 } from 'gl-matrix'
 
 // ---------------------------------------------------------------------------
 // DOM
@@ -52,7 +56,9 @@ const exportJsonBtn = document.getElementById('exportJsonBtn')
 const exportMdBtn = document.getElementById('exportMdBtn')
 const copyMdBtn = document.getElementById('copyMdBtn')
 
-function setStatus(msg) { statusEl.textContent = msg }
+function setStatus(msg) {
+  statusEl.textContent = msg
+}
 
 // ---------------------------------------------------------------------------
 // Statistical helpers
@@ -71,7 +77,17 @@ function benchSamples(fn, n, warmup = 5) {
 
 function summarize(samples) {
   const n = samples.length
-  if (n === 0) return { n: 0, mean: 0, median: 0, min: 0, max: 0, p95: 0, p99: 0, stddev: 0 }
+  if (n === 0)
+    return {
+      n: 0,
+      mean: 0,
+      median: 0,
+      min: 0,
+      max: 0,
+      p95: 0,
+      p99: 0,
+      stddev: 0,
+    }
   const sorted = Array.from(samples).sort((a, b) => a - b)
   const sum = sorted.reduce((s, v) => s + v, 0)
   const mean = sum / n
@@ -85,7 +101,7 @@ function summarize(samples) {
   return { n, mean, median, min, max, p95, p99, stddev }
 }
 
-const fmt = (v) => v == null ? '—' : v.toFixed(3)
+const fmt = (v) => (v == null ? '—' : v.toFixed(3))
 
 // ---------------------------------------------------------------------------
 // Environment capture
@@ -105,7 +121,7 @@ async function captureEnv() {
   try {
     if (navigator.gpu) {
       const adapter = await navigator.gpu.requestAdapter()
-      if (adapter && adapter.info) {
+      if (adapter?.info) {
         env.gpu = {
           vendor: adapter.info.vendor || '',
           architecture: adapter.info.architecture || '',
@@ -178,45 +194,166 @@ function computeScenarios(iter) {
   const img2RASstep256 = [1, 256, 256 * 256]
 
   return [
-    { name: 'vox2mm', category: 'computation', dataSize: '1 call', iter: iter * 100,
-      fn: () => vox2mm(null, xyz, mtx) },
-    { name: 'cart2sphDeg', category: 'computation', dataSize: '1 call', iter: iter * 100,
-      fn: () => cart2sphDeg(1, 2, 3) },
-    { name: 'deg2rad', category: 'computation', dataSize: '1 call', iter: iter * 1000,
-      fn: () => deg2rad(45) },
-    { name: 'calculateMvpMatrix', category: 'computation', dataSize: '3D perspective', iter: iter * 10,
-      fn: () => calculateMvpMatrix([0, 0, 800, 600], 110, 10, [0, 0, 0], 1, 1) },
-    { name: 'calculateMvpMatrix2D', category: 'computation', dataSize: '400x400', iter: iter * 10,
-      fn: () => calculateMvpMatrix2D([0, 0, 400, 400], mn, mx, Infinity, undefined, 0, 0, false) },
-    { name: 'calculateMvpMatrix2D', category: 'computation', dataSize: '1024x768', iter: iter * 10,
-      fn: () => calculateMvpMatrix2D([0, 0, 1024, 768], mn, mx, Infinity, undefined, 0, 0, false) },
-    { name: 'calculateMvpMatrix2D', category: 'computation', dataSize: '1920x1080', iter: iter * 10,
-      fn: () => calculateMvpMatrix2D([0, 0, 1920, 1080], mn, mx, Infinity, undefined, 0, 0, false) },
+    {
+      name: 'vox2mm',
+      category: 'computation',
+      dataSize: '1 call',
+      iter: iter * 100,
+      fn: () => vox2mm(null, xyz, mtx),
+    },
+    {
+      name: 'cart2sphDeg',
+      category: 'computation',
+      dataSize: '1 call',
+      iter: iter * 100,
+      fn: () => cart2sphDeg(1, 2, 3),
+    },
+    {
+      name: 'deg2rad',
+      category: 'computation',
+      dataSize: '1 call',
+      iter: iter * 1000,
+      fn: () => deg2rad(45),
+    },
+    {
+      name: 'calculateMvpMatrix',
+      category: 'computation',
+      dataSize: '3D perspective',
+      iter: iter * 10,
+      fn: () => calculateMvpMatrix([0, 0, 800, 600], 110, 10, [0, 0, 0], 1, 1),
+    },
+    {
+      name: 'calculateMvpMatrix2D',
+      category: 'computation',
+      dataSize: '400x400',
+      iter: iter * 10,
+      fn: () =>
+        calculateMvpMatrix2D(
+          [0, 0, 400, 400],
+          mn,
+          mx,
+          Infinity,
+          undefined,
+          0,
+          0,
+          false,
+        ),
+    },
+    {
+      name: 'calculateMvpMatrix2D',
+      category: 'computation',
+      dataSize: '1024x768',
+      iter: iter * 10,
+      fn: () =>
+        calculateMvpMatrix2D(
+          [0, 0, 1024, 768],
+          mn,
+          mx,
+          Infinity,
+          undefined,
+          0,
+          0,
+          false,
+        ),
+    },
+    {
+      name: 'calculateMvpMatrix2D',
+      category: 'computation',
+      dataSize: '1920x1080',
+      iter: iter * 10,
+      fn: () =>
+        calculateMvpMatrix2D(
+          [0, 0, 1920, 1080],
+          mn,
+          mx,
+          Infinity,
+          undefined,
+          0,
+          0,
+          false,
+        ),
+    },
 
-    { name: 'generateNormals', category: 'mesh', dataSize: '10K verts', iter: Math.max(5, Math.floor(iter / 2)),
-      fn: () => generateNormals(meshSm.pts, meshSm.tris) },
-    { name: 'generateNormals', category: 'mesh', dataSize: '100K verts', iter: Math.max(5, Math.floor(iter / 10)),
-      fn: () => generateNormals(meshMd.pts, meshMd.tris) },
-    { name: 'generateNormals', category: 'mesh', dataSize: '1M verts', iter: Math.max(3, Math.floor(iter / 50)),
-      fn: () => generateNormals(meshLg.pts, meshLg.tris) },
+    {
+      name: 'generateNormals',
+      category: 'mesh',
+      dataSize: '10K verts',
+      iter: Math.max(5, Math.floor(iter / 2)),
+      fn: () => generateNormals(meshSm.pts, meshSm.tris),
+    },
+    {
+      name: 'generateNormals',
+      category: 'mesh',
+      dataSize: '100K verts',
+      iter: Math.max(5, Math.floor(iter / 10)),
+      fn: () => generateNormals(meshMd.pts, meshMd.tris),
+    },
+    {
+      name: 'generateNormals',
+      category: 'mesh',
+      dataSize: '1M verts',
+      iter: Math.max(3, Math.floor(iter / 50)),
+      fn: () => generateNormals(meshLg.pts, meshLg.tris),
+    },
 
-    { name: 'encodeRLE', category: 'drawing', dataSize: '1 MB', iter: Math.max(5, Math.floor(iter / 5)),
-      fn: () => encodeRLE(rle1) },
-    { name: 'encodeRLE', category: 'drawing', dataSize: '4 MB', iter: Math.max(5, Math.floor(iter / 20)),
-      fn: () => encodeRLE(rle4) },
-    { name: 'encodeRLE', category: 'drawing', dataSize: '16 MB', iter: Math.max(3, Math.floor(iter / 50)),
-      fn: () => encodeRLE(rle16) },
-    { name: 'decodeRLE', category: 'drawing', dataSize: '1 MB', iter: Math.max(5, Math.floor(iter / 5)),
-      fn: () => decodeRLE(rle1Enc, rle1.length) },
-    { name: 'decodeRLE', category: 'drawing', dataSize: '4 MB', iter: Math.max(5, Math.floor(iter / 20)),
-      fn: () => decodeRLE(rle4Enc, rle4.length) },
-    { name: 'decodeRLE', category: 'drawing', dataSize: '16 MB', iter: Math.max(3, Math.floor(iter / 50)),
-      fn: () => decodeRLE(rle16Enc, rle16.length) },
+    {
+      name: 'encodeRLE',
+      category: 'drawing',
+      dataSize: '1 MB',
+      iter: Math.max(5, Math.floor(iter / 5)),
+      fn: () => encodeRLE(rle1),
+    },
+    {
+      name: 'encodeRLE',
+      category: 'drawing',
+      dataSize: '4 MB',
+      iter: Math.max(5, Math.floor(iter / 20)),
+      fn: () => encodeRLE(rle4),
+    },
+    {
+      name: 'encodeRLE',
+      category: 'drawing',
+      dataSize: '16 MB',
+      iter: Math.max(3, Math.floor(iter / 50)),
+      fn: () => encodeRLE(rle16),
+    },
+    {
+      name: 'decodeRLE',
+      category: 'drawing',
+      dataSize: '1 MB',
+      iter: Math.max(5, Math.floor(iter / 5)),
+      fn: () => decodeRLE(rle1Enc, rle1.length),
+    },
+    {
+      name: 'decodeRLE',
+      category: 'drawing',
+      dataSize: '4 MB',
+      iter: Math.max(5, Math.floor(iter / 20)),
+      fn: () => decodeRLE(rle4Enc, rle4.length),
+    },
+    {
+      name: 'decodeRLE',
+      category: 'drawing',
+      dataSize: '16 MB',
+      iter: Math.max(3, Math.floor(iter / 50)),
+      fn: () => decodeRLE(rle16Enc, rle16.length),
+    },
 
-    { name: 'reorientRGBA', category: 'volume', dataSize: '128³', iter: Math.max(5, Math.floor(iter / 10)),
-      fn: () => reorientRGBA(rgba128, 4, dimsRAS, img2RASstart, img2RASstep) },
-    { name: 'reorientRGBA', category: 'volume', dataSize: '256³', iter: Math.max(3, Math.floor(iter / 50)),
-      fn: () => reorientRGBA(rgba256, 4, dimsRAS256, img2RASstart256, img2RASstep256) },
+    {
+      name: 'reorientRGBA',
+      category: 'volume',
+      dataSize: '128³',
+      iter: Math.max(5, Math.floor(iter / 10)),
+      fn: () => reorientRGBA(rgba128, 4, dimsRAS, img2RASstart, img2RASstep),
+    },
+    {
+      name: 'reorientRGBA',
+      category: 'volume',
+      dataSize: '256³',
+      iter: Math.max(3, Math.floor(iter / 50)),
+      fn: () =>
+        reorientRGBA(rgba256, 4, dimsRAS256, img2RASstart256, img2RASstep256),
+    },
   ]
 }
 
@@ -227,7 +364,7 @@ async function runCompute(iter) {
 
   for (const s of scenarios) {
     setStatus(`Compute: ${s.name} (${s.dataSize})...`)
-    await new Promise(r => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
     const samples = benchSamples(s.fn, s.iter, 5)
     const stats = summarize(samples)
     results.push({ ...s, fn: undefined, stats })
@@ -244,7 +381,9 @@ const VOL_OVERLAY = [
   { url: '/volumes/mni152.nii.gz' },
   { url: '/volumes/spmMotor.nii.gz', colormap: 'warm', calMin: 2, calMax: 8 },
 ]
-const MESH_BRAIN = [{ url: '/meshes/BrainMesh_ICBM152.lh.mz3', rgba255: [220, 220, 220, 255] }]
+const MESH_BRAIN = [
+  { url: '/meshes/BrainMesh_ICBM152.lh.mz3', rgba255: [220, 220, 220, 255] },
+]
 const MESH_TRACT = [{ url: '/meshes/tract.IFOF_R.trk' }]
 
 async function unloadAll(nv) {
@@ -256,11 +395,15 @@ async function ensureAssets(nv, { volumes = null, meshes = null } = {}) {
   await unloadAll(nv)
   if (volumes) await nv.loadVolumes(volumes)
   if (meshes) await nv.loadMeshes(meshes)
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+  await new Promise((r) =>
+    requestAnimationFrame(() => requestAnimationFrame(r)),
+  )
 }
 
 let _bench_paced = false
-function setBenchPaced(value) { _bench_paced = value }
+function setBenchPaced(value) {
+  _bench_paced = value
+}
 
 async function _waitGpu(nv) {
   if (!_bench_paced) return
@@ -271,7 +414,10 @@ async function _waitGpu(nv) {
 }
 
 async function benchRenderFrames(nv, frames, warmup = 20) {
-  for (let i = 0; i < warmup; i++) { nv.view.render(); await _waitGpu(nv) }
+  for (let i = 0; i < warmup; i++) {
+    nv.view.render()
+    await _waitGpu(nv)
+  }
   const samples = new Float64Array(frames)
   for (let i = 0; i < frames; i++) {
     const t0 = performance.now()
@@ -308,13 +454,22 @@ async function benchRenderFramesWithSplit(nv, frames, warmup = 20) {
   let observer = null
   if (typeof PerformanceObserver !== 'undefined') {
     observer = new PerformanceObserver((list) => ingest(list.getEntries()))
-    try { observer.observe({ entryTypes: ['measure'] }) } catch { observer = null }
+    try {
+      observer.observe({ entryTypes: ['measure'] })
+    } catch {
+      observer = null
+    }
   }
   setPerfMarksEnabled(true)
-  for (let i = 0; i < warmup; i++) { nv.view.render(); await _waitGpu(nv) }
+  for (let i = 0; i < warmup; i++) {
+    nv.view.render()
+    await _waitGpu(nv)
+  }
   if (observer) {
     observer.takeRecords()
-    cpu.length = 0; submit.length = 0; frame.length = 0
+    cpu.length = 0
+    submit.length = 0
+    frame.length = 0
   }
   const wall = new Float64Array(frames)
   for (let i = 0; i < frames; i++) {
@@ -330,7 +485,8 @@ async function benchRenderFramesWithSplit(nv, frames, warmup = 20) {
     observer.disconnect()
   }
   const phaseArrays = {}
-  for (const k of Object.keys(phases)) phaseArrays[k] = Float64Array.from(phases[k])
+  for (const k of Object.keys(phases))
+    phaseArrays[k] = Float64Array.from(phases[k])
   return {
     wall,
     cpu: Float64Array.from(cpu),
@@ -346,7 +502,9 @@ async function rendererScenarios(nv, frames) {
   const run = async (name, setup) => {
     setStatus(`Renderer: ${name}...`)
     await setup()
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await new Promise((r) =>
+      requestAnimationFrame(() => requestAnimationFrame(r)),
+    )
     const split = await benchRenderFramesWithSplit(nv, frames)
     const cpuStats = split.cpu.length ? summarize(split.cpu) : null
     const submitStats = split.submit.length ? summarize(split.submit) : null
@@ -428,11 +586,15 @@ async function rendererScenarios(nv, frames) {
 // ---------------------------------------------------------------------------
 
 const TILE_SWEEP = [
-  { tiles: 1,  mosaic: 'A 0' },
-  { tiles: 2,  mosaic: 'A -10 10' },
-  { tiles: 4,  mosaic: 'A -20 -10 10 20' },
-  { tiles: 8,  mosaic: 'A -30 -20 -10 0 ; A 10 20 30 40' },
-  { tiles: 16, mosaic: 'A -40 -30 -20 -10 ; A 0 10 20 30 ; A 40 -50 50 -60 ; A 60 -70 70 80' },
+  { tiles: 1, mosaic: 'A 0' },
+  { tiles: 2, mosaic: 'A -10 10' },
+  { tiles: 4, mosaic: 'A -20 -10 10 20' },
+  { tiles: 8, mosaic: 'A -30 -20 -10 0 ; A 10 20 30 40' },
+  {
+    tiles: 16,
+    mosaic:
+      'A -40 -30 -20 -10 ; A 0 10 20 30 ; A 40 -50 50 -60 ; A 60 -70 70 80',
+  },
 ]
 
 async function tileSweep(nv, frames) {
@@ -442,18 +604,32 @@ async function tileSweep(nv, frames) {
   const rows = []
   for (const cfg of TILE_SWEEP) {
     setStatus(`Tile sweep: ${cfg.tiles} tiles...`)
-    await new Promise(r => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
     nv.mosaicString = cfg.mosaic
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await new Promise((r) =>
+      requestAnimationFrame(() => requestAnimationFrame(r)),
+    )
     const samples = await benchRenderFrames(nv, frames)
-    rows.push({ tiles: cfg.tiles, mosaic: cfg.mosaic, frames, stats: summarize(samples) })
+    rows.push({
+      tiles: cfg.tiles,
+      mosaic: cfg.mosaic,
+      frames,
+      stats: summarize(samples),
+    })
   }
   // Linear regression of mean frame-time vs tile-count.
   const n = rows.length
-  let sx = 0, sy = 0, sxx = 0, sxy = 0
+  let sx = 0,
+    sy = 0,
+    sxx = 0,
+    sxy = 0
   for (const r of rows) {
-    const x = r.tiles, y = r.stats.mean
-    sx += x; sy += y; sxx += x * x; sxy += x * y
+    const x = r.tiles,
+      y = r.stats.mean
+    sx += x
+    sy += y
+    sxx += x * x
+    sxy += x * y
   }
   const denom = n * sxx - sx * sx
   const slope = denom === 0 ? 0 : (n * sxy - sx * sy) / denom
@@ -463,9 +639,9 @@ async function tileSweep(nv, frames) {
 
 const MESH_SWEEP_COUNTS = [1, 4, 16, 64]
 const MESH_SWEEP_SIZES = [
-  { label: '10K verts',  numVerts: 10_000 },
+  { label: '10K verts', numVerts: 10_000 },
   { label: '100K verts', numVerts: 100_000 },
-  { label: '1M verts',   numVerts: 1_000_000 },
+  { label: '1M verts', numVerts: 1_000_000 },
 ]
 
 function makeSyntheticMesh(numVerts, seedOffset = 0) {
@@ -478,7 +654,7 @@ function makeSyntheticMesh(numVerts, seedOffset = 0) {
   const triCount = numVerts - 2
   const indices = new Uint32Array(triCount * 3)
   for (let i = 0; i < triCount; i++) {
-    indices[i * 3]     = i
+    indices[i * 3] = i
     indices[i * 3 + 1] = i + 1
     indices[i * 3 + 2] = i + 2
   }
@@ -503,29 +679,39 @@ async function meshSweep(nv, frames) {
       // WebGPU's per-buffer cap with mappedAtCreation=true on Apple GPUs.
       if (totalVerts >= 32_000_000) {
         rows.push({
-          size: size.label, count, totalVerts,
-          frames: 0, stats: null,
-          uniformBytesPerFrame: null, skipped: 'too-large',
+          size: size.label,
+          count,
+          totalVerts,
+          frames: 0,
+          stats: null,
+          uniformBytesPerFrame: null,
+          skipped: 'too-large',
         })
         continue
       }
       setStatus(`Mesh sweep: ${count} × ${size.label}...`)
-      await new Promise(r => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
       await unloadAll(nv)
       for (let i = 0; i < count; i++) {
         const m = makeSyntheticMesh(size.numVerts, i)
         await nv.addMesh(m)
       }
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      await new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r)),
+      )
       const samples = await benchRenderFrames(nv, frames)
       // Mesh hot-path writes MESH_UNIFORM_SIZE bytes per (tile × mesh).
       // 3D render with no mosaic uses a single render tile.
       const tilesActive = 1
       const uniformBytesPerFrame = tilesActive * count * MESH_UNIFORM_SIZE
       rows.push({
-        size: size.label, count, totalVerts,
-        frames, stats: summarize(samples),
-        uniformBytesPerFrame, skipped: null,
+        size: size.label,
+        count,
+        totalVerts,
+        frames,
+        stats: summarize(samples),
+        uniformBytesPerFrame,
+        skipped: null,
       })
     }
   }
@@ -536,10 +722,16 @@ async function meshSweep(nv, frames) {
 async function runSweeps(nv, frames) {
   let tile = null
   let mesh = null
-  try { tile = await tileSweep(nv, frames) }
-  catch (err) { console.error('tile sweep failed:', err) }
-  try { mesh = await meshSweep(nv, frames) }
-  catch (err) { console.error('mesh sweep failed:', err) }
+  try {
+    tile = await tileSweep(nv, frames)
+  } catch (err) {
+    console.error('tile sweep failed:', err)
+  }
+  try {
+    mesh = await meshSweep(nv, frames)
+  } catch (err) {
+    console.error('mesh sweep failed:', err)
+  }
   return { tile, mesh }
 }
 
@@ -554,14 +746,16 @@ function makeSyntheticTract(nStreamlines, pointsPerStreamline) {
   let s = 0xa5a5a5a5 >>> 0
   const rnd = () => {
     s = (Math.imul(s, 1664525) + 1013904223) >>> 0
-    return ((s & 0xffffff) / 0xffffff) - 0.5
+    return (s & 0xffffff) / 0xffffff - 0.5
   }
   for (let i = 0; i < nStreamlines; i++) {
     offsets[i] = i * pointsPerStreamline
-    let x = rnd() * 80, y = rnd() * 80, z = rnd() * 80
+    let x = rnd() * 80,
+      y = rnd() * 80,
+      z = rnd() * 80
     for (let p = 0; p < pointsPerStreamline; p++) {
       const idx = (i * pointsPerStreamline + p) * 3
-      vertices[idx]     = x
+      vertices[idx] = x
       vertices[idx + 1] = y
       vertices[idx + 2] = z
       x += rnd() * 2
@@ -573,13 +767,16 @@ function makeSyntheticTract(nStreamlines, pointsPerStreamline) {
   return {
     vertices,
     offsets,
-    dpv: {}, dps: {}, groups: {},
-    dpvMeta: {}, dpsMeta: {},
+    dpv: {},
+    dps: {},
+    groups: {},
+    dpvMeta: {},
+    dpsMeta: {},
   }
 }
 
 const TRACT_REGEN_SCENARIOS = [
-  { label: '1K streamlines',  nStreamlines: 1_000,  pointsPerStreamline: 50 },
+  { label: '1K streamlines', nStreamlines: 1_000, pointsPerStreamline: 50 },
   { label: '10K streamlines', nStreamlines: 10_000, pointsPerStreamline: 50 },
   { label: '50K streamlines', nStreamlines: 50_000, pointsPerStreamline: 50 },
 ]
@@ -603,7 +800,7 @@ async function tractRegen(iter = 5) {
     groupColors: null,
   }
   for (const scn of TRACT_REGEN_SCENARIOS) {
-    await new Promise(r => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
     setStatus(`Tract regen: ${scn.label}...`)
     const data = makeSyntheticTract(scn.nStreamlines, scn.pointsPerStreamline)
     // Warmup
@@ -646,16 +843,23 @@ async function fetchBundleSizes() {
 // Rendering the results table
 // ---------------------------------------------------------------------------
 
-function renderResultsTable(env, computeResults, rendererResults, sweepResults, tractResults, bundleSizes) {
+function renderResultsTable(
+  env,
+  computeResults,
+  rendererResults,
+  sweepResults,
+  tractResults,
+  bundleSizes,
+) {
   let html = `<h2>Environment</h2>
 <table>
   <tr><th>Timestamp</th><td>${env.timestamp}</td></tr>
   <tr><th>User Agent</th><td>${env.userAgent}</td></tr>
   <tr><th>Platform</th><td>${env.platform}</td></tr>
-  <tr><th>GPU</th><td>${env.gpu ? (env.gpu.description || env.gpu.vendor + ' ' + env.gpu.architecture + ' ' + env.gpu.device) : 'n/a'}</td></tr>
+  <tr><th>GPU</th><td>${env.gpu ? env.gpu.description || `${env.gpu.vendor} ${env.gpu.architecture} ${env.gpu.device}` : 'n/a'}</td></tr>
 </table>`
 
-  if (rendererResults && rendererResults.length) {
+  if (rendererResults?.length) {
     html += `<h2>Renderer scenarios</h2>
 <table>
   <tr>
@@ -675,7 +879,7 @@ function renderResultsTable(env, computeResults, rendererResults, sweepResults, 
     html += `</table>`
   }
 
-  if (computeResults && computeResults.length) {
+  if (computeResults?.length) {
     html += `<h2>Compute scenarios</h2>
 <table>
   <tr>
@@ -692,7 +896,7 @@ function renderResultsTable(env, computeResults, rendererResults, sweepResults, 
     html += `</table>`
   }
 
-  if (sweepResults && sweepResults.tile && sweepResults.tile.rows.length) {
+  if (sweepResults?.tile?.rows.length) {
     const t = sweepResults.tile
     html += `<h2>Tile-count sweep</h2>
 <p style="font-size:12px;color:#8b949e;margin:4px 0 8px">
@@ -712,7 +916,7 @@ function renderResultsTable(env, computeResults, rendererResults, sweepResults, 
     html += `</table>`
   }
 
-  if (sweepResults && sweepResults.mesh && sweepResults.mesh.length) {
+  if (sweepResults?.mesh?.length) {
     html += `<h2>Mesh-size sweep</h2>
 <table>
   <tr>
@@ -738,7 +942,7 @@ function renderResultsTable(env, computeResults, rendererResults, sweepResults, 
     html += `</table>`
   }
 
-  if (tractResults && tractResults.length) {
+  if (tractResults?.length) {
     html += `<h2>Tract regeneration</h2>
 <table>
   <tr>
@@ -756,7 +960,7 @@ function renderResultsTable(env, computeResults, rendererResults, sweepResults, 
     html += `</table>`
   }
 
-  if (bundleSizes && bundleSizes.entries && bundleSizes.entries.length) {
+  if (bundleSizes?.entries?.length) {
     html += `<h2>Bundle sizes</h2>
 <p style="font-size:12px;color:#8b949e;margin:4px 0 8px">
   Snapshot from <code>scripts/report-entry-sizes.js</code> at <code>${bundleSizes.timestamp || 'unknown'}</code>.
@@ -778,12 +982,19 @@ function renderResultsTable(env, computeResults, rendererResults, sweepResults, 
 // Export: JSON
 // ---------------------------------------------------------------------------
 
-function buildJson(env, computeResults, rendererResults, sweepResults, tractResults, bundleSizes) {
+function buildJson(
+  env,
+  computeResults,
+  rendererResults,
+  sweepResults,
+  tractResults,
+  bundleSizes,
+) {
   const json = {
     schema: 'niivue-benchmark-v1',
     timestamp: env.timestamp,
     env,
-    renderer: rendererResults.map(r => ({
+    renderer: rendererResults.map((r) => ({
       name: r.name,
       frames: r.frames,
       stats: r.stats,
@@ -791,7 +1002,7 @@ function buildJson(env, computeResults, rendererResults, sweepResults, tractResu
       submit: r.submit ?? null,
       frame: r.frame ?? null,
     })),
-    compute: computeResults.map(r => ({
+    compute: computeResults.map((r) => ({
       name: r.name,
       category: r.category,
       dataSize: r.dataSize,
@@ -802,13 +1013,16 @@ function buildJson(env, computeResults, rendererResults, sweepResults, tractResu
   if (sweepResults) {
     json.sweeps = {
       tile: sweepResults.tile && {
-        rows: sweepResults.tile.rows.map(r => ({
-          tiles: r.tiles, mosaic: r.mosaic, frames: r.frames, stats: r.stats,
+        rows: sweepResults.tile.rows.map((r) => ({
+          tiles: r.tiles,
+          mosaic: r.mosaic,
+          frames: r.frames,
+          stats: r.stats,
         })),
         slope: sweepResults.tile.slope,
         intercept: sweepResults.tile.intercept,
       },
-      mesh: sweepResults.mesh && sweepResults.mesh.map(r => ({
+      mesh: sweepResults.mesh?.map((r) => ({
         size: r.size,
         count: r.count,
         totalVerts: r.totalVerts,
@@ -819,8 +1033,8 @@ function buildJson(env, computeResults, rendererResults, sweepResults, tractResu
       })),
     }
   }
-  if (tractResults && tractResults.length) {
-    json.tract = tractResults.map(r => ({
+  if (tractResults?.length) {
+    json.tract = tractResults.map((r) => ({
       label: r.label,
       nStreamlines: r.nStreamlines,
       pointsPerStreamline: r.pointsPerStreamline,
@@ -849,90 +1063,123 @@ function downloadBlob(content, filename, mime) {
 // Export: Markdown
 // ---------------------------------------------------------------------------
 
-function buildMarkdown(env, computeResults, rendererResults, sweepResults, tractResults, bundleSizes) {
+function buildMarkdown(
+  env,
+  computeResults,
+  rendererResults,
+  sweepResults,
+  tractResults,
+  bundleSizes,
+) {
   const lines = []
   lines.push(`## Run ${env.timestamp}`)
   lines.push('')
   lines.push(`**Environment**`)
   lines.push(`- Platform: ${env.platform}`)
-  lines.push(`- GPU: ${env.gpu ? (env.gpu.description || `${env.gpu.vendor} ${env.gpu.architecture} ${env.gpu.device}`) : 'n/a'}`)
+  lines.push(
+    `- GPU: ${env.gpu ? env.gpu.description || `${env.gpu.vendor} ${env.gpu.architecture} ${env.gpu.device}` : 'n/a'}`,
+  )
   lines.push(`- User Agent: ${env.userAgent}`)
   lines.push('')
 
-  if (rendererResults && rendererResults.length) {
+  if (rendererResults?.length) {
     lines.push('### Renderer scenarios')
     lines.push('')
-    lines.push('| Scenario | Frames | Wall mean (ms) | CPU mean | Submit mean | Frame mean | p95 | Stddev |')
+    lines.push(
+      '| Scenario | Frames | Wall mean (ms) | CPU mean | Submit mean | Frame mean | p95 | Stddev |',
+    )
     lines.push('|---|---|---|---|---|---|---|---|')
     for (const r of rendererResults) {
       const s = r.stats
       const cpuM = r.cpu ? fmt(r.cpu.mean) : '—'
       const subM = r.submit ? fmt(r.submit.mean) : '—'
       const frmM = r.frame ? fmt(r.frame.mean) : '—'
-      lines.push(`| ${r.name} | ${r.frames} | ${fmt(s.mean)} | ${cpuM} | ${subM} | ${frmM} | ${fmt(s.p95)} | ${fmt(s.stddev)} |`)
+      lines.push(
+        `| ${r.name} | ${r.frames} | ${fmt(s.mean)} | ${cpuM} | ${subM} | ${frmM} | ${fmt(s.p95)} | ${fmt(s.stddev)} |`,
+      )
     }
     lines.push('')
   }
 
-  if (computeResults && computeResults.length) {
+  if (computeResults?.length) {
     lines.push('### Compute scenarios')
     lines.push('')
     lines.push('| Function | Size | Iter | Mean (ms) | p95 (ms) | Stddev |')
     lines.push('|---|---|---|---|---|---|')
     for (const r of computeResults) {
       const s = r.stats
-      lines.push(`| ${r.name} | ${r.dataSize} | ${r.iter} | ${fmt(s.mean)} | ${fmt(s.p95)} | ${fmt(s.stddev)} |`)
+      lines.push(
+        `| ${r.name} | ${r.dataSize} | ${r.iter} | ${fmt(s.mean)} | ${fmt(s.p95)} | ${fmt(s.stddev)} |`,
+      )
     }
     lines.push('')
   }
 
-  if (sweepResults && sweepResults.tile && sweepResults.tile.rows.length) {
+  if (sweepResults?.tile?.rows.length) {
     const t = sweepResults.tile
     lines.push('### Tile-count sweep')
     lines.push('')
-    lines.push(`Linear fit: **${fmt(t.slope)} ms/tile** (slope) + **${fmt(t.intercept)} ms** (intercept)`)
+    lines.push(
+      `Linear fit: **${fmt(t.slope)} ms/tile** (slope) + **${fmt(t.intercept)} ms** (intercept)`,
+    )
     lines.push('')
-    lines.push('| Tiles | Mosaic | Frames | Mean (ms) | Median | p95 | Min | Max | Stddev |')
+    lines.push(
+      '| Tiles | Mosaic | Frames | Mean (ms) | Median | p95 | Min | Max | Stddev |',
+    )
     lines.push('|---|---|---|---|---|---|---|---|---|')
     for (const r of t.rows) {
       const s = r.stats
-      lines.push(`| ${r.tiles} | \`${r.mosaic}\` | ${r.frames} | ${fmt(s.mean)} | ${fmt(s.median)} | ${fmt(s.p95)} | ${fmt(s.min)} | ${fmt(s.max)} | ${fmt(s.stddev)} |`)
+      lines.push(
+        `| ${r.tiles} | \`${r.mosaic}\` | ${r.frames} | ${fmt(s.mean)} | ${fmt(s.median)} | ${fmt(s.p95)} | ${fmt(s.min)} | ${fmt(s.max)} | ${fmt(s.stddev)} |`,
+      )
     }
     lines.push('')
   }
 
-  if (sweepResults && sweepResults.mesh && sweepResults.mesh.length) {
+  if (sweepResults?.mesh?.length) {
     lines.push('### Mesh-size sweep')
     lines.push('')
-    lines.push('| Verts/mesh | Meshes | Total verts | Frames | Mean (ms) | p95 | Uniform B/frame |')
+    lines.push(
+      '| Verts/mesh | Meshes | Total verts | Frames | Mean (ms) | p95 | Uniform B/frame |',
+    )
     lines.push('|---|---|---|---|---|---|---|')
     for (const r of sweepResults.mesh) {
       if (r.skipped) {
-        lines.push(`| ${r.size} | ${r.count} | ${r.totalVerts.toLocaleString()} | — | — | — | _skipped (${r.skipped})_ |`)
+        lines.push(
+          `| ${r.size} | ${r.count} | ${r.totalVerts.toLocaleString()} | — | — | — | _skipped (${r.skipped})_ |`,
+        )
         continue
       }
       const s = r.stats
-      lines.push(`| ${r.size} | ${r.count} | ${r.totalVerts.toLocaleString()} | ${r.frames} | ${fmt(s.mean)} | ${fmt(s.p95)} | ${r.uniformBytesPerFrame.toLocaleString()} |`)
+      lines.push(
+        `| ${r.size} | ${r.count} | ${r.totalVerts.toLocaleString()} | ${r.frames} | ${fmt(s.mean)} | ${fmt(s.p95)} | ${r.uniformBytesPerFrame.toLocaleString()} |`,
+      )
     }
     lines.push('')
   }
 
-  if (tractResults && tractResults.length) {
+  if (tractResults?.length) {
     lines.push('### Tract regeneration')
     lines.push('')
-    lines.push('| Streamlines | Pts/streamline | Iter | Mean (ms) | p95 (ms) | ms / 1k streamlines |')
+    lines.push(
+      '| Streamlines | Pts/streamline | Iter | Mean (ms) | p95 (ms) | ms / 1k streamlines |',
+    )
     lines.push('|---|---|---|---|---|---|')
     for (const r of tractResults) {
       const s = r.stats
-      lines.push(`| ${r.nStreamlines.toLocaleString()} | ${r.pointsPerStreamline} | ${r.iter} | ${fmt(s.mean)} | ${fmt(s.p95)} | ${fmt(r.msPer1kStreamlines)} |`)
+      lines.push(
+        `| ${r.nStreamlines.toLocaleString()} | ${r.pointsPerStreamline} | ${r.iter} | ${fmt(s.mean)} | ${fmt(s.p95)} | ${fmt(r.msPer1kStreamlines)} |`,
+      )
     }
     lines.push('')
   }
 
-  if (bundleSizes && bundleSizes.entries && bundleSizes.entries.length) {
+  if (bundleSizes?.entries?.length) {
     lines.push('### Bundle sizes')
     lines.push('')
-    lines.push(`Snapshot from \`scripts/report-entry-sizes.js\` at \`${bundleSizes.timestamp || 'unknown'}\`.`)
+    lines.push(
+      `Snapshot from \`scripts/report-entry-sizes.js\` at \`${bundleSizes.timestamp || 'unknown'}\`.`,
+    )
     lines.push('')
     lines.push('| Entry | Min (KB) | Gzip (KB) |')
     lines.push('|---|---|---|')
@@ -963,7 +1210,7 @@ setStatus('Ready. Click Run to start benchmark.')
 
 let _lastRun = null
 
-runBtn.onclick = async function () {
+runBtn.onclick = async () => {
   runBtn.disabled = true
   exportJsonBtn.disabled = true
   exportMdBtn.disabled = true
@@ -972,8 +1219,10 @@ runBtn.onclick = async function () {
   resultsDiv.innerHTML = ''
   mdOut.classList.add('hidden')
 
-  const frames = parseInt(document.getElementById('frameCount').value) || 300
-  const computeIter = parseInt(document.getElementById('computeIter').value) || 100
+  const frames =
+    parseInt(document.getElementById('frameCount').value, 10) || 300
+  const computeIter =
+    parseInt(document.getElementById('computeIter').value, 10) || 100
   const runRenderer = document.getElementById('runRenderer').checked
   const runComp = document.getElementById('runCompute').checked
   const runSwp = document.getElementById('runSweeps').checked
@@ -1006,8 +1255,22 @@ runBtn.onclick = async function () {
     }
     const bundleSizes = await fetchBundleSizes()
 
-    _lastRun = { env, computeResults, rendererResults, sweepResults, tractResults, bundleSizes }
-    renderResultsTable(env, computeResults, rendererResults, sweepResults, tractResults, bundleSizes)
+    _lastRun = {
+      env,
+      computeResults,
+      rendererResults,
+      sweepResults,
+      tractResults,
+      bundleSizes,
+    }
+    renderResultsTable(
+      env,
+      computeResults,
+      rendererResults,
+      sweepResults,
+      tractResults,
+      bundleSizes,
+    )
     setStatus('Done.')
     exportJsonBtn.disabled = false
     exportMdBtn.disabled = false
@@ -1022,21 +1285,33 @@ runBtn.onclick = async function () {
   }
 }
 
-exportJsonBtn.onclick = function () {
+exportJsonBtn.onclick = () => {
   if (!_lastRun) return
   const json = buildJson(
-    _lastRun.env, _lastRun.computeResults, _lastRun.rendererResults,
-    _lastRun.sweepResults, _lastRun.tractResults, _lastRun.bundleSizes,
+    _lastRun.env,
+    _lastRun.computeResults,
+    _lastRun.rendererResults,
+    _lastRun.sweepResults,
+    _lastRun.tractResults,
+    _lastRun.bundleSizes,
   )
   const stamp = json.timestamp.replace(/[:.]/g, '-')
-  downloadBlob(JSON.stringify(json, null, 2), `benchmark-${stamp}.json`, 'application/json')
+  downloadBlob(
+    JSON.stringify(json, null, 2),
+    `benchmark-${stamp}.json`,
+    'application/json',
+  )
 }
 
-exportMdBtn.onclick = function () {
+exportMdBtn.onclick = () => {
   if (!_lastRun) return
   const md = buildMarkdown(
-    _lastRun.env, _lastRun.computeResults, _lastRun.rendererResults,
-    _lastRun.sweepResults, _lastRun.tractResults, _lastRun.bundleSizes,
+    _lastRun.env,
+    _lastRun.computeResults,
+    _lastRun.rendererResults,
+    _lastRun.sweepResults,
+    _lastRun.tractResults,
+    _lastRun.bundleSizes,
   )
   const stamp = _lastRun.env.timestamp.replace(/[:.]/g, '-')
   downloadBlob(md, `benchmark-${stamp}.md`, 'text/markdown')
@@ -1044,11 +1319,15 @@ exportMdBtn.onclick = function () {
   mdOut.classList.remove('hidden')
 }
 
-copyMdBtn.onclick = async function () {
+copyMdBtn.onclick = async () => {
   if (!_lastRun) return
   const md = buildMarkdown(
-    _lastRun.env, _lastRun.computeResults, _lastRun.rendererResults,
-    _lastRun.sweepResults, _lastRun.tractResults, _lastRun.bundleSizes,
+    _lastRun.env,
+    _lastRun.computeResults,
+    _lastRun.rendererResults,
+    _lastRun.sweepResults,
+    _lastRun.tractResults,
+    _lastRun.bundleSizes,
   )
   try {
     await navigator.clipboard.writeText(md)

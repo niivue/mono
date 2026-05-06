@@ -17,7 +17,8 @@ function die(msg) {
 }
 
 const [a, b] = process.argv.slice(2)
-if (!a || !b) die('Usage: node benchmarks/diff-runs.mjs <baseline.json> <candidate.json>')
+if (!a || !b)
+  die('Usage: node benchmarks/diff-runs.mjs <baseline.json> <candidate.json>')
 
 const baseline = JSON.parse(readFileSync(a, 'utf-8'))
 const candidate = JSON.parse(readFileSync(b, 'utf-8'))
@@ -66,7 +67,8 @@ function diffRenderer() {
     const frames = br?.frames ?? cr?.frames ?? '—'
     let winner = '—'
     if (bMean != null && cMean != null) {
-      if (Math.abs(bMean - cMean) / Math.max(bMean, cMean) < 0.05) winner = 'tie'
+      if (Math.abs(bMean - cMean) / Math.max(bMean, cMean) < 0.05)
+        winner = 'tie'
       else winner = bMean < cMean ? baselineLabel : candidateLabel
     }
     lines.push(
@@ -82,7 +84,9 @@ function diffCompute() {
   const lines = []
   lines.push(`### Compute scenarios`)
   lines.push('')
-  lines.push(`| Function | Size | ${baselineLabel} Mean (ms) | ${candidateLabel} Mean (ms) | Δ | Winner |`)
+  lines.push(
+    `| Function | Size | ${baselineLabel} Mean (ms) | ${candidateLabel} Mean (ms) | Δ | Winner |`,
+  )
   lines.push(`|---|---|---|---|---|---|`)
   const key = (r) => `${r.name}::${r.dataSize}`
   const bMap = new Map(baseline.compute.map((r) => [key(r), r]))
@@ -96,10 +100,13 @@ function diffCompute() {
     const [name, size] = k.split('::')
     let winner = '—'
     if (bMean != null && cMean != null) {
-      if (Math.abs(bMean - cMean) / Math.max(bMean, cMean) < 0.05) winner = 'tie'
+      if (Math.abs(bMean - cMean) / Math.max(bMean, cMean) < 0.05)
+        winner = 'tie'
       else winner = bMean < cMean ? baselineLabel : candidateLabel
     }
-    lines.push(`| ${name} | ${size} | ${fmt(bMean)} | ${fmt(cMean)} | ${pct(bMean, cMean)} | ${winner} |`)
+    lines.push(
+      `| ${name} | ${size} | ${fmt(bMean)} | ${fmt(cMean)} | ${pct(bMean, cMean)} | ${winner} |`,
+    )
   }
   return lines.join('\n')
 }
@@ -117,11 +124,15 @@ function diffTileSweep() {
       `candidate=${fmt(ct?.slope)}/${fmt(ct?.intercept)}`,
   )
   lines.push('')
-  lines.push(`| Tiles | ${baselineLabel} Mean (ms) | ${candidateLabel} Mean (ms) | Δ | Winner |`)
+  lines.push(
+    `| Tiles | ${baselineLabel} Mean (ms) | ${candidateLabel} Mean (ms) | Δ | Winner |`,
+  )
   lines.push(`|---|---|---|---|---|`)
   const bMap = new Map((bt?.rows ?? []).map((r) => [r.tiles, r]))
   const cMap = new Map((ct?.rows ?? []).map((r) => [r.tiles, r]))
-  const tileCounts = [...new Set([...bMap.keys(), ...cMap.keys()])].sort((a, b) => a - b)
+  const tileCounts = [...new Set([...bMap.keys(), ...cMap.keys()])].sort(
+    (a, b) => a - b,
+  )
   for (const tc of tileCounts) {
     const br = bMap.get(tc),
       cr = cMap.get(tc)
@@ -129,10 +140,13 @@ function diffTileSweep() {
     const cMean = cr?.stats?.mean
     let winner = '—'
     if (bMean != null && cMean != null) {
-      if (Math.abs(bMean - cMean) / Math.max(bMean, cMean) < 0.05) winner = 'tie'
+      if (Math.abs(bMean - cMean) / Math.max(bMean, cMean) < 0.05)
+        winner = 'tie'
       else winner = bMean < cMean ? baselineLabel : candidateLabel
     }
-    lines.push(`| ${tc} | ${fmt(bMean)} | ${fmt(cMean)} | ${pct(bMean, cMean)} | ${winner} |`)
+    lines.push(
+      `| ${tc} | ${fmt(bMean)} | ${fmt(cMean)} | ${pct(bMean, cMean)} | ${winner} |`,
+    )
   }
   return lines.join('\n')
 }
@@ -144,7 +158,9 @@ function diffMeshSweep() {
   const lines = []
   lines.push(`### Mesh-size sweep`)
   lines.push('')
-  lines.push(`| Verts/mesh | Meshes | ${baselineLabel} Mean (ms) | ${candidateLabel} Mean (ms) | Δ | Winner |`)
+  lines.push(
+    `| Verts/mesh | Meshes | ${baselineLabel} Mean (ms) | ${candidateLabel} Mean (ms) | Δ | Winner |`,
+  )
   lines.push(`|---|---|---|---|---|---|`)
   const key = (r) => `${r.size}::${r.count}`
   const bMap = new Map((bm ?? []).map((r) => [key(r), r]))
@@ -158,10 +174,13 @@ function diffMeshSweep() {
     const cMean = cr?.stats?.mean
     let winner = '—'
     if (bMean != null && cMean != null) {
-      if (Math.abs(bMean - cMean) / Math.max(bMean, cMean) < 0.05) winner = 'tie'
+      if (Math.abs(bMean - cMean) / Math.max(bMean, cMean) < 0.05)
+        winner = 'tie'
       else winner = bMean < cMean ? baselineLabel : candidateLabel
     }
-    lines.push(`| ${size} | ${count} | ${fmt(bMean)} | ${fmt(cMean)} | ${pct(bMean, cMean)} | ${winner} |`)
+    lines.push(
+      `| ${size} | ${count} | ${fmt(bMean)} | ${fmt(cMean)} | ${pct(bMean, cMean)} | ${winner} |`,
+    )
   }
   return lines.join('\n')
 }
@@ -173,11 +192,15 @@ function diffTract() {
   const lines = []
   lines.push(`### Tract regeneration`)
   lines.push('')
-  lines.push(`| Streamlines | ${baselineLabel} Mean (ms) | ${candidateLabel} Mean (ms) | Δ | Winner |`)
+  lines.push(
+    `| Streamlines | ${baselineLabel} Mean (ms) | ${candidateLabel} Mean (ms) | Δ | Winner |`,
+  )
   lines.push(`|---|---|---|---|---|`)
   const bMap = new Map((bt ?? []).map((r) => [r.nStreamlines, r]))
   const cMap = new Map((ct ?? []).map((r) => [r.nStreamlines, r]))
-  const keys = [...new Set([...bMap.keys(), ...cMap.keys()])].sort((a, b) => a - b)
+  const keys = [...new Set([...bMap.keys(), ...cMap.keys()])].sort(
+    (a, b) => a - b,
+  )
   for (const k of keys) {
     const br = bMap.get(k),
       cr = cMap.get(k)
@@ -185,10 +208,13 @@ function diffTract() {
     const cMean = cr?.stats?.mean
     let winner = '—'
     if (bMean != null && cMean != null) {
-      if (Math.abs(bMean - cMean) / Math.max(bMean, cMean) < 0.05) winner = 'tie'
+      if (Math.abs(bMean - cMean) / Math.max(bMean, cMean) < 0.05)
+        winner = 'tie'
       else winner = bMean < cMean ? baselineLabel : candidateLabel
     }
-    lines.push(`| ${k.toLocaleString()} | ${fmt(bMean)} | ${fmt(cMean)} | ${pct(bMean, cMean)} | ${winner} |`)
+    lines.push(
+      `| ${k.toLocaleString()} | ${fmt(bMean)} | ${fmt(cMean)} | ${pct(bMean, cMean)} | ${winner} |`,
+    )
   }
   return lines.join('\n')
 }
@@ -200,7 +226,9 @@ function diffBundles() {
   const lines = []
   lines.push(`### Bundle sizes`)
   lines.push('')
-  lines.push(`| Entry | Baseline min KB | Candidate min KB | Δ | Baseline gzip KB | Candidate gzip KB | Δ |`)
+  lines.push(
+    `| Entry | Baseline min KB | Candidate min KB | Δ | Baseline gzip KB | Candidate gzip KB | Δ |`,
+  )
   lines.push(`|---|---|---|---|---|---|---|`)
   const bMap = new Map((bb?.entries ?? []).map((e) => [e.name, e]))
   const cMap = new Map((cb?.entries ?? []).map((e) => [e.name, e]))
@@ -238,7 +266,10 @@ if (baseline.compute?.length || candidate.compute?.length) {
   out.push(diffCompute())
   out.push('')
 }
-if (baseline.sweeps?.tile?.rows?.length || candidate.sweeps?.tile?.rows?.length) {
+if (
+  baseline.sweeps?.tile?.rows?.length ||
+  candidate.sweeps?.tile?.rows?.length
+) {
   out.push(diffTileSweep())
   out.push('')
 }
@@ -250,7 +281,10 @@ if (baseline.tract?.length || candidate.tract?.length) {
   out.push(diffTract())
   out.push('')
 }
-if (baseline.bundleSizes?.entries?.length || candidate.bundleSizes?.entries?.length) {
+if (
+  baseline.bundleSizes?.entries?.length ||
+  candidate.bundleSizes?.entries?.length
+) {
   out.push(diffBundles())
   out.push('')
 }

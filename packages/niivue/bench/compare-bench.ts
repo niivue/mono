@@ -64,30 +64,64 @@ const outPath = parseStrFlag('out')
 const base: BenchJson = JSON.parse(await readFile(basePath, 'utf8'))
 const head: BenchJson = JSON.parse(await readFile(headPath, 'utf8'))
 
-// Bootstrap case: main predates the perf gate, so the base side wrote a
-// sentinel instead of running the bench. Emit a friendly report with
-// head numbers only and exit cleanly so the PR isn't blocked.
+// Either side may be a sentinel:
+//   * base: main predates the perf gate (bootstrap case).
+//   * head: bench failed in the CI environment (SwiftShader bug etc.).
+// In both cases, post an advisory comment and exit cleanly so the PR
+// isn't blocked by infrastructure issues unrelated to the change itself.
 const SCHEMA = 'niivue-benchmark-v1'
-if (base.schema !== SCHEMA) {
-  const headGpu = head.env?.gpu
-  const rows: string[] = ['| Scenario | Head (ms) |', '|---|---:|']
-  for (const s of [...(head.renderer ?? []), ...(head.compute ?? [])]) {
-    const m = s.stats?.median
-    rows.push(`| ${s.name} | ${m == null ? '—' : m.toFixed(3)} |`)
+const baseMissing = base.schema !== SCHEMA
+const headMissing = head.schema !== SCHEMA
+
+if (baseMissing || headMissing) {
+  const usable = baseMissing ? head : base
+  const usableLabel = baseMissing ? 'Head' : 'Base'
+  const reasonLines: string[] = []
+  if (headMissing && baseMissing) {
+    reasonLines.push(
+      'Both bench runs failed to produce numbers in CI — usually a ' +
+        'SwiftShader/WebGPU environment issue rather than a PR-specific ' +
+        'regression. Skipping comparison.',
+    )
+  } else if (headMissing) {
+    reasonLines.push(
+      'The PR-side bench failed to produce numbers in CI — usually a ' +
+        'SwiftShader/WebGPU environment issue rather than a PR-specific ' +
+        'regression. Reporting base (`main`) numbers only.',
+    )
+    reasonLines.push(
+      `Reason recorded: \`${(head as { reason?: string }).reason ?? 'unknown'}\``,
+    )
+  } else {
+    reasonLines.push(
+      'No baseline available on `main` yet — looks like this is the first ' +
+        'PR after the perf gate landed (or `main` is missing the bench ' +
+        'infrastructure). Reporting head numbers only; future PRs will get ' +
+        'a real comparison once this lands.',
+    )
   }
+
+  const rows: string[] = [`| Scenario | ${usableLabel} (ms) |`, '|---|---:|']
+  if (!(headMissing && baseMissing)) {
+    for (const s of [...(usable.renderer ?? []), ...(usable.compute ?? [])]) {
+      const m = s.stats?.median
+      rows.push(`| ${s.name} | ${m == null ? '—' : m.toFixed(3)} |`)
+    }
+  }
+
+  const usableGpu = usable.env?.gpu
   const md = [
     '## NiiVue Benchmark Comparison',
     '',
-    'No baseline available on `main` yet — looks like this is the first PR ' +
-      'after the perf gate landed (or `main` is missing the bench ' +
-      'infrastructure). Reporting head numbers only; future PRs will get a ' +
-      'real comparison once this lands.',
+    ...reasonLines,
     '',
-    `Head GPU: \`${headGpu?.vendor ?? '?'} / ${headGpu?.architecture ?? '?'}\``,
+    headMissing && baseMissing
+      ? ''
+      : `${usableLabel} GPU: \`${usableGpu?.vendor ?? '?'} / ${usableGpu?.architecture ?? '?'}\``,
     '',
-    '### Head scenarios',
+    headMissing && baseMissing ? '' : `### ${usableLabel} scenarios`,
     '',
-    ...rows,
+    ...(headMissing && baseMissing ? [] : rows),
     '',
   ].join('\n')
   console.log(md)

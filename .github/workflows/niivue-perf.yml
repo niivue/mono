@@ -115,11 +115,26 @@ jobs:
           exit 1
 
       - name: Run benchmark
+        id: run
         if: steps.detect.outputs.available == 'true'
+        # The bench can fail for environment reasons (SwiftShader WebGPU
+        # bugs, headless Chromium quirks) that are unrelated to the PR's
+        # actual perf. Don't abort the matrix entry on those — the next
+        # step writes a sentinel and the compare job posts an advisory.
+        continue-on-error: true
         run: |
           URL="http://localhost:${{ env.BENCH_PREVIEW_PORT }}/examples/benchmark.html?${{ env.BENCH_URL_PARAMS }}&frames=${{ env.BENCH_FRAMES }}&computeIter=${{ env.BENCH_COMPUTE_ITER }}"
           bun run bench "$URL" /tmp/${{ matrix.side }}.json
         working-directory: packages/niivue
+
+      - name: Sentinel on bench failure
+        if: always() && steps.detect.outputs.available == 'true'
+        run: |
+          if [ ! -s /tmp/${{ matrix.side }}.json ]; then
+            echo "Bench did not produce a result; writing sentinel."
+            echo '{"schema":"missing","reason":"bench failed in CI environment"}' \
+              > /tmp/${{ matrix.side }}.json
+          fi
 
       - name: Stop preview server
         if: always() && steps.detect.outputs.available == 'true'

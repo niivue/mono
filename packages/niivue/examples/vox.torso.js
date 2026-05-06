@@ -67,58 +67,6 @@ clipSelect.onchange = function () {
 matcapSelect.onchange = async () => {
   await nv1.loadMatcap(matcapSelect.value)
 }
-benchBtn.onclick = async () => {
-  const view = nv1.view
-  if (!view) {
-    console.warn('bench harness unavailable')
-    return
-  }
-  const bench = view.bench
-  const backend = view.device ? 'WebGPU' : view.gl ? 'WebGL2' : 'unknown'
-  const WARMUP = 10
-  const SAMPLES = 200
-  benchBtn.disabled = true
-  benchBtn.textContent = 'Benchmarking...'
-  for (let i = 0; i < WARMUP; i++) await bench.renderAndFlushOffscreen()
-  // Sanity check for WebGL2: confirm the offscreen FBO actually got pixels.
-  // Helps catch silent no-renders (incomplete FBO, stale bounds, etc.).
-  if (view.gl && bench.fboW > 0) {
-    const gl = view.gl
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, bench.fbo)
-    const pix = new Uint8Array(4)
-    gl.readPixels(
-      bench.fboW >> 1,
-      bench.fboH >> 1,
-      1,
-      1,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      pix,
-    )
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null)
-    const blank = pix[0] === 0 && pix[1] === 0 && pix[2] === 0
-    console.log(
-      `${backend} FBO ${bench.fboW}x${bench.fboH} bounds=${view.boundsWidth}x${view.boundsHeight} center=[${Array.from(pix)}]${blank ? ' BLANK — NOT RENDERING' : ''}`,
-    )
-  } else {
-    console.log(`${backend} bounds=${view.boundsWidth}x${view.boundsHeight}`)
-  }
-  const times = new Float64Array(SAMPLES)
-  for (let i = 0; i < SAMPLES; i++) {
-    const t0 = performance.now()
-    await view.renderAndFlushOffscreen()
-    times[i] = performance.now() - t0
-  }
-  const sorted = Array.from(times).sort((a, b) => a - b)
-  const mean = sorted.reduce((s, x) => s + x, 0) / sorted.length
-  const median = sorted[Math.floor(sorted.length * 0.5)]
-  const p95 = sorted[Math.floor(sorted.length * 0.95)]
-  const fmt = (n) => n.toFixed(2)
-  const msg = `${backend}  n=${SAMPLES}  median=${fmt(median)}ms  mean=${fmt(mean)}ms  p95=${fmt(p95)}ms  (~${fmt(1000 / median)} fps)`
-  console.log(msg)
-  benchBtn.textContent = `${backend} ${fmt(median)}ms`
-  benchBtn.disabled = false
-}
 const nv1 = new NiiVue({
   matcaps: { Cortex: cortex, Shiny: shiny },
   showRender: SHOW_RENDER.ALWAYS,

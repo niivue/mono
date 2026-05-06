@@ -1320,18 +1320,30 @@ runBtn.onclick = async () => {
     exportJsonBtn.disabled = false
     exportMdBtn.disabled = false
     copyMdBtn.disabled = false
+    // Headless/autorun consumers (Playwright in CI) read this directly.
+    window.__bench = buildJson(
+      env,
+      computeResults,
+      rendererResults,
+      sweepResults,
+      tractResults,
+      bundleSizes,
+    )
   } catch (err) {
     if (err.message === ABORT_ERROR) {
       setStatus('Aborted.')
+      window.__benchError = 'aborted'
     } else {
       console.error(err)
       setStatus(`Error: ${err.message || err}`)
       resultsDiv.innerHTML = `<pre style="color:#f85149">${err.stack || err}</pre>`
+      window.__benchError = err.message || String(err)
     }
   } finally {
     abortBtn.disabled = true
     runBtn.disabled = false
     runBtn.textContent = 'Run'
+    window.__benchDone = true
   }
 }
 
@@ -1384,5 +1396,41 @@ copyMdBtn.onclick = async () => {
     setStatus('Markdown copied to clipboard.')
   } catch (e) {
     setStatus(`Copy failed: ${e.message}`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Autorun mode for headless/CI consumers.
+//
+// Append `?autorun=1` to the URL to run without clicking. Optional overrides:
+//   frames=<int>      computeIter=<int>
+//   renderer=0|1      compute=0|1      sweeps=0|1      tract=0|1
+//
+// When the run finishes, results are exposed as:
+//   window.__bench       — full JSON (schema niivue-benchmark-v1)
+//   window.__benchDone   — true (always, even on error/abort)
+//   window.__benchError  — string (set only on error/abort)
+//
+// Playwright contract: navigate, then `waitForFunction(() => window.__benchDone)`.
+// ---------------------------------------------------------------------------
+{
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('autorun') === '1') {
+    const setIfPresent = (id, key) => {
+      const v = params.get(key)
+      if (v == null) return
+      const el = document.getElementById(id)
+      if (!el) return
+      if (el.type === 'checkbox') el.checked = v === '1'
+      else el.value = v
+    }
+    setIfPresent('frameCount', 'frames')
+    setIfPresent('computeIter', 'computeIter')
+    setIfPresent('runRenderer', 'renderer')
+    setIfPresent('runCompute', 'compute')
+    setIfPresent('runSweeps', 'sweeps')
+    setIfPresent('runTract', 'tract')
+    // Defer one tick so the DOM/UI shows the chosen values before the run.
+    setTimeout(() => runBtn.click(), 0)
   }
 }

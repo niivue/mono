@@ -10,7 +10,8 @@
     "includes": [
       "**",
       "!packages/ipyniivue/src/ipyniivue/static/_widget.template.js",
-      "!packages/ipyniivue/api.generated.json"
+      "!packages/ipyniivue/api.generated.json",
+      "!packages/nv-ext-brain2print/src/models/**"
     ]
   },
   "formatter": {

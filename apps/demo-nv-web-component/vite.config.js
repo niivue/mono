@@ -1,30 +1,12 @@
 import { fileURLToPath } from 'node:url'
-import { devImagesPlugin } from '@niivue/dev-images/vite-plugin'
+import {
+  devImagesPlugin,
+  ghPagesRewritePlugin,
+} from '@niivue/dev-images/vite-plugin'
 import { defineConfig } from 'vite'
 
-const ghBase = process.env.VITE_BASE ?? ''
-const imagesBase = process.env.VITE_IMAGES_BASE ?? ghBase
-
-function ghPagesRewritePlugin() {
-  if (!imagesBase) return null
-  return {
-    name: 'ghpages-rewrite-asset-urls',
-    enforce: 'post',
-    renderChunk(code) {
-      let out = code
-      for (const dir of ['volumes', 'meshes']) {
-        out = out
-          .replaceAll(`"/${dir}/`, `"${imagesBase}${dir}/`)
-          .replaceAll(`'/${dir}/`, `'${imagesBase}${dir}/`)
-          .replaceAll(`\`/${dir}/`, `\`${imagesBase}${dir}/`)
-      }
-      return out
-    },
-  }
-}
-
 export default defineConfig({
-  base: ghBase || '/',
+  base: process.env.VITE_BASE || '/',
   plugins: [
     devImagesPlugin({ emit: !process.env.VITE_IMAGES_BASE }),
     ghPagesRewritePlugin(),

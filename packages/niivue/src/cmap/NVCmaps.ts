@@ -42,7 +42,10 @@ export function makeLabelLut(
     throw new Error(`Invalid colormap table`)
   }
   const nLabels = cm.R.length
-  const idxs = cm.I ?? [...Array(nLabels).keys()]
+  // Copy `cm.I` so out-of-range clamping below can't mutate the caller's
+  // colormap. Reusing the same const ColorMap across multiple calls would
+  // otherwise see its `I` field clamped on every invocation.
+  const idxs = cm.I ? cm.I.slice() : [...Array(nLabels).keys()]
   let hasInvalid = false
   for (let i = 0; i < idxs.length; i++) {
     if (idxs[i] > maxIdx) {

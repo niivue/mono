@@ -1511,6 +1511,21 @@ export default class NiiVueGPU extends EventTarget {
     await this.updateGLVolume()
   }
 
+  /**
+   * Remove a single volume by index (0 = background).
+   *
+   * Companion to {@link removeAllVolumes} for cases where the caller wants
+   * to drop one overlay without disturbing the rest of the stack.
+   */
+  async removeVolume(volumeIndex: number): Promise<void> {
+    const vols = this.model.getVolumes()
+    if (!this._checkBounds(vols, volumeIndex, 'Volume')) return
+    const volume = vols[volumeIndex]
+    this.emit('volumeRemoved', { volume, index: volumeIndex })
+    this.model.removeVolume(volumeIndex)
+    await this.updateGLVolume()
+  }
+
   async removeAllMeshes(): Promise<void> {
     const meshes = this.model.getMeshes()
     for (let i = meshes.length - 1; i >= 0; i--) {

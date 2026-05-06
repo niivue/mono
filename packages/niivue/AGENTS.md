@@ -479,7 +479,7 @@ Slice pointer events are emitted from `control/interactions.ts` via `computeSlic
 ### Actions
 
 - **Drawing:** `createEmptyDrawing()`, `closeDrawing()`, `drawUndo()`, `refreshDrawing()`
-- **Volumes:** `addVolume(vol)`, `removeAllVolumes()`
+- **Volumes:** `addVolume(vol)`, `removeVolume(volumeIndex)`, `removeAllVolumes()`
 - **Transforms:** `registerVolumeTransform(transform)`, `applyVolumeTransform(name, volume, options?)`
 
 ### Coordinate transforms
@@ -493,7 +493,7 @@ Exported from `volume/utils.ts` and from the package root. Returns `Float32Array
 
 ### Public exports
 
-From package root (`src/index.ts`): `NVExtensionContext`, `computeSlicePointerEvent`, `getImageDataRAS`, and types `BackgroundVolumeAccess`, `DrawingAccess`, `DrawingDims`, `NVExtensionEventMap`, `SharedBufferHandle`, `SlicePointerEvent`.
+From package root (`src/index.ts`): `NVExtensionContext`, `computeSlicePointerEvent`, `getImageDataRAS`, `nii2volume` (build an `NVImage` from a NIfTI header + typed-array image data), `makeLabelLut` (turn a `ColorMap` into the discrete LUT consumed by `NVImage.colormapLabel`; the input `cm.I` is cloned internally so reusing the same `const ColorMap` across calls is safe), and types `BackgroundVolumeAccess`, `DrawingAccess`, `DrawingDims`, `NVExtensionEventMap`, `SharedBufferHandle`, `SlicePointerEvent`.
 
 ## Web Workers
 

@@ -14,6 +14,7 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 | [`@niivue/nv-ext-save-html`](packages/nv-ext-save-html) | Export a NiiVue scene as a self-contained HTML file | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-save-html/next)](https://www.npmjs.com/package/@niivue/nv-ext-save-html) |
 | [`@niivue/nv-ext-dcm2niix`](packages/nv-ext-dcm2niix) | DICOM-to-NIfTI conversion in the browser via the dcm2niix WASM build | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-dcm2niix/next)](https://www.npmjs.com/package/@niivue/nv-ext-dcm2niix) |
 | [`@niivue/nv-ext-niimath`](packages/nv-ext-niimath) | niimath pipelines in the browser via the niimath WASM build | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-niimath/next)](https://www.npmjs.com/package/@niivue/nv-ext-niimath) |
+| [`@niivue/nv-ext-brain2print`](packages/nv-ext-brain2print) | Tinygrad-generated WebGPU brain segmentation models (`tissue_fast`, `subcortical`) | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-brain2print/next)](https://www.npmjs.com/package/@niivue/nv-ext-brain2print) |
 | [`@niivue/web-bridge`](packages/niivue-web-bridge) | Typed two-way JSON-envelope bridge between a NiiVue web view and a native (WKWebView) host | — |
 | [`NiiVueKit`](packages/niivue-swift) | Swift package (`BridgeCore` + `NiiVueKit`) pairing with `@niivue/web-bridge` to embed NiiVue in SwiftUI apps via `WKWebView` | — |
 | [`@niivue/dev-images`](packages/dev-images) | Shared test volumes, meshes, and tractography files (Git LFS) | — |
@@ -29,6 +30,7 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 | [`demo-ext-dcm2niix`](apps/demo-ext-dcm2niix) | Demo app for the dcm2niix DICOM-to-NIfTI extension |
 | [`demo-ext-fullstack`](apps/demo-ext-fullstack) | Fullstack demo wiring NiiVue to a Bun server that runs the `niimath` native binary |
 | [`demo-ext-niimath`](apps/demo-ext-niimath) | Browser-only demo running niimath as WASM via [`@niivue/niimath`](https://www.npmjs.com/package/@niivue/niimath) |
+| [`demo-ext-brain2print`](apps/demo-ext-brain2print) | WebGPU brain segmentation demo (`tissue_fast`, `subcortical`) via [`@niivue/nv-ext-brain2print`](packages/nv-ext-brain2print) |
 | [`demo-nv-web-component`](apps/demo-nv-web-component) | Demo app for the Web Components package |
 | [`medgfx`](apps/medgfx) | Native macOS/iOS SwiftUI app embedding NiiVue in a WebView |
 

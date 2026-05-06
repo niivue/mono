@@ -4,8 +4,10 @@
  * @packageDocumentation
  */
 
-// Extension API
+// Label-LUT builder for extensions that produce label volumes
 // biome-ignore lint/performance/noBarrelFile: package entry point
+export { makeLabelLut } from './cmap/NVCmaps'
+// Extension API
 export { NVExtensionContext } from './extension/context'
 export type {
   BackgroundVolumeAccess,
@@ -79,6 +81,8 @@ export type {
   ViewHitTest,
   VolumeUpdate,
 } from './NVTypes'
+// Volume construction helper for extensions that produce derived volumes
+export { nii2volume } from './volume/NVVolume'
 // Transform types
 export type {
   OptionField,

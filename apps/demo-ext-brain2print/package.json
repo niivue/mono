@@ -1,0 +1,19 @@
+{
+  "name": "demo-ext-brain2print",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bunx --bun vite --open /index.html",
+    "build": "bunx --bun vite build"
+  },
+  "dependencies": {
+    "@niivue/dev-images": "workspace:*",
+    "@niivue/niivue": "workspace:*",
+    "@niivue/nv-ext-brain2print": "workspace:*",
+    "@niivue/nv-ext-image-processing": "workspace:*"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.52",
+    "vite": "^6.3.2"
+  }
+}

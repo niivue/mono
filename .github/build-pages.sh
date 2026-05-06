@@ -24,6 +24,7 @@ APPS=(
   demo-ext-save-html
   demo-ext-dcm2niix
   demo-ext-niimath
+  demo-ext-brain2print
   demo-nv-web-component
 )
 

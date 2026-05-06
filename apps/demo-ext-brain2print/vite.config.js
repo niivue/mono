@@ -11,7 +11,7 @@ export default defineConfig({
     ghPagesRewritePlugin(),
   ],
   server: {
-    port: 8085,
+    port: 8090,
   },
   build: {
     outDir: 'dist',

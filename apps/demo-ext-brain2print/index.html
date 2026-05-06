@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NiiVue — brain2print WebGPU segmentation</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="src/style.css" />
+  </head>
+  <body>
+    <header>
+      <select id="modelSelect" aria-label="Model">
+        <option value="tissue_fast" selected>Tissue (fast)</option>
+        <option value="subcortical">Subcortical</option>
+      </select>
+
+      <label class="slider">
+        <span>BG</span>
+        <input id="bgOpacity" type="range" min="0" max="100" value="100" aria-label="Background opacity" />
+      </label>
+
+      <label class="slider">
+        <span>Seg</span>
+        <input id="ovOpacity" type="range" min="0" max="100" value="50" aria-label="Overlay opacity" />
+      </label>
+
+      <button type="button" id="segmentBtn" class="primary" disabled>Segment</button>
+      <button type="button" id="saveBtn" disabled>Save</button>
+    </header>
+
+    <main>
+      <canvas id="gl1"></canvas>
+      <div id="spinner" class="spinner hidden"></div>
+    </main>
+
+    <footer>
+      <span id="status">Loading…</span>
+      <span id="health" class="health">checking GPU…</span>
+    </footer>
+
+    <script type="module" src="src/main.ts"></script>
+  </body>
+</html>

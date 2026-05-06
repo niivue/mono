@@ -3,6 +3,7 @@
  */
 
 // biome-ignore lint/performance/noBarrelFile: package entry point
+export { makeLabelLut } from './cmap/NVCmaps'
 export { NVExtensionContext } from './extension/context'
 export type {
   BackgroundVolumeAccess,
@@ -39,5 +40,6 @@ export type {
   ViewHitTest,
   VolumeUpdate,
 } from './NVTypes'
+export { nii2volume } from './volume/NVVolume'
 export type { TransformInfo, TransformOptions } from './volume/transforms'
 export { getImageDataRAS } from './volume/utils'

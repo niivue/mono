@@ -1,0 +1,40 @@
+{
+  "name": "demo-ext-brain2print",
+  "projectType": "application",
+  "tags": ["type:app", "lang:typescript"],
+  "targets": {
+    "dev": {
+      "command": "bunx --bun vite --open /index.html",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "build": {
+      "command": "bunx --bun vite build",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"],
+      "inputs": [
+        "typescript",
+        "{projectRoot}/vite.config.js",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/public/**/*",
+        "{projectRoot}/*.html",
+        { "env": "VITE_BASE" },
+        { "env": "VITE_IMAGES_BASE" }
+      ],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"],
+      "inputs": ["typescript"]
+    },
+    "lint": {
+      "command": "bunx biome check {projectRoot}",
+      "inputs": ["typescript"]
+    },
+    "format": {
+      "command": "bunx biome format {projectRoot} --write",
+      "inputs": ["typescript"]
+    }
+  }
+}

@@ -79,3 +79,53 @@ export function devImagesPlugin(options?: DevImagesPluginOptions): Plugin {
     },
   }
 }
+
+export interface GhPagesRewriteOptions {
+  /**
+   * URL prefix for shared `/volumes/` and `/meshes/` assets in the production
+   * bundle. Defaults to `process.env.VITE_IMAGES_BASE ?? process.env.VITE_BASE`,
+   * matching the env vars `.github/build-pages.sh` sets per app.
+   */
+  imagesBase?: string
+  /**
+   * Asset directories to rewrite. Defaults to `['volumes', 'meshes']` —
+   * the two directories `@niivue/dev-images` ships.
+   */
+  dirs?: string[]
+}
+
+/**
+ * Production-build plugin: rewrites absolute `"/volumes/…"` and `"/meshes/…"`
+ * URLs in emitted JS to point at a shared base path. Use this together with
+ * `devImagesPlugin({ emit: false })` when multiple demo apps share a single
+ * copy of `@niivue/dev-images` from a GitHub Pages site root, instead of
+ * each app bundling its own copy.
+ *
+ * Returns `null` when no base is configured (i.e. dev mode), so callers can
+ * include it unconditionally in their `plugins` array.
+ */
+export function ghPagesRewritePlugin(
+  options?: GhPagesRewriteOptions,
+): Plugin | null {
+  const base =
+    options?.imagesBase ??
+    process.env.VITE_IMAGES_BASE ??
+    process.env.VITE_BASE ??
+    ''
+  if (!base) return null
+  const dirs = options?.dirs ?? ['volumes', 'meshes']
+  return {
+    name: 'niivue-ghpages-rewrite-asset-urls',
+    enforce: 'post',
+    renderChunk(code) {
+      let out = code
+      for (const d of dirs) {
+        out = out
+          .replaceAll(`"/${d}/`, `"${base}${d}/`)
+          .replaceAll(`'/${d}/`, `'${base}${d}/`)
+          .replaceAll(`\`/${d}/`, `\`${base}${d}/`)
+      }
+      return out
+    },
+  }
+}

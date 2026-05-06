@@ -38,6 +38,7 @@ import { createMesh, generateNormals } from '../src/mesh/NVMesh.ts'
 import { tessellate as tractTessellate } from '../src/mesh/tracts/index.ts'
 import {
   consumeFrameStats,
+  isPerfBuild,
   setPerfMarksEnabled,
 } from '../src/view/NVPerfMarks.ts'
 import { reorientRGBA } from '../src/volume/utils.ts'
@@ -115,6 +116,7 @@ async function captureEnv() {
     platform: navigator.platform,
     hardwareConcurrency: navigator.hardwareConcurrency,
     paced: urlParams.get('paced') === '1',
+    perfBuild: isPerfBuild(),
   }
   const labelParam = urlParams.get('label')
   if (labelParam) env.label = labelParam
@@ -1206,7 +1208,13 @@ const nv = new NiiVue({
   isColorbarVisible: false,
 })
 await nv.attachToCanvas(canvasA)
-setStatus('Ready. Click Run to start benchmark.')
+if (!isPerfBuild()) {
+  setStatus(
+    'Ready, but this is a non-perf build — CPU/submit splits and phase stats will be empty. Run `bun run dev:perf` for instrumented numbers.',
+  )
+} else {
+  setStatus('Ready (perf build). Click Run to start benchmark.')
+}
 
 let _lastRun = null
 

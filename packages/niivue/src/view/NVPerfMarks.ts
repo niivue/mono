@@ -18,8 +18,22 @@
  * because the option-bag `performance.measure(name, {start, duration})`
  * form does not consistently surface as 'measure' entries across browsers.
  *
- * When disabled (default) all helpers are no-ops, so production renders
- * pay nothing.
+ * Two-stage gating:
+ *
+ *  1. Build-time: `__NIIVUE_PERF__` is injected by Vite's `define` and is
+ *     `false` unless the build was started with `NIIVUE_PERF=1`. Every
+ *     helper bails on the build flag first, so esbuild dead-code-eliminates
+ *     the bodies in production bundles — the calls that remain inline to
+ *     a bare `return`. This is what guarantees zero runtime cost outside
+ *     a perf build.
+ *
+ *  2. Runtime: inside a perf build, `setPerfMarksEnabled(true)` arms the
+ *     marks for a single benchmark scenario; the harness flips it back
+ *     off between runs.
+ *
+ * The bench harness needs a perf build (`bun run dev:perf` or
+ * `bun run build:examples:perf`) to record useful numbers; otherwise
+ * `consumeFrameStats()` returns an empty object.
  */
 
 let enabled = false
@@ -33,29 +47,46 @@ let meshPhaseEnabled = true
 const phaseTotals: Map<string, number> = new Map()
 let lastPhaseTotals: Map<string, number> = new Map()
 
+/**
+ * Returns the compile-time build flag (`true` only when Vite was invoked
+ * with `NIIVUE_PERF=1`). The benchmark harness uses this to warn the
+ * user when they've loaded the page from a non-perf build, since
+ * `setPerfMarksEnabled(true)` would silently no-op and produce empty
+ * frame stats.
+ */
+export function isPerfBuild(): boolean {
+  return __NIIVUE_PERF__
+}
+
 export function setPerfMarksEnabled(value: boolean): void {
+  if (!__NIIVUE_PERF__) return
   enabled = value
 }
 
 export function arePerfMarksEnabled(): boolean {
+  if (!__NIIVUE_PERF__) return false
   return enabled
 }
 
 export function setMeshPhaseEnabled(value: boolean): void {
+  if (!__NIIVUE_PERF__) return
   meshPhaseEnabled = value
 }
 
 export function areMeshPhasesEnabled(): boolean {
+  if (!__NIIVUE_PERF__) return false
   return meshPhaseEnabled
 }
 
 export function markCpuStart(): void {
+  if (!__NIIVUE_PERF__) return
   if (!enabled) return
   phaseTotals.clear()
   performance.mark('niivue:cpu-start')
 }
 
 export function markSubmitStart(): void {
+  if (!__NIIVUE_PERF__) return
   if (!enabled) return
   performance.mark('niivue:submit-start')
   try {
@@ -70,6 +101,7 @@ export function markSubmitStart(): void {
 }
 
 export function markEnd(): void {
+  if (!__NIIVUE_PERF__) return
   if (!enabled) return
   performance.mark('niivue:end')
   try {
@@ -102,11 +134,13 @@ export function markEnd(): void {
  * into the named bucket.
  */
 export function beginPhase(): number {
+  if (!__NIIVUE_PERF__) return 0
   if (!enabled) return 0
   return performance.now()
 }
 
 export function endPhase(startMs: number, name: string): void {
+  if (!__NIIVUE_PERF__) return
   if (!enabled || startMs === 0) return
   const dt = performance.now() - startMs
   phaseTotals.set(name, (phaseTotals.get(name) ?? 0) + dt)
@@ -114,6 +148,7 @@ export function endPhase(startMs: number, name: string): void {
 
 /** Increment a named counter by 1 (used for iteration counts). */
 export function tickPhase(name: string): void {
+  if (!__NIIVUE_PERF__) return
   if (!enabled) return
   phaseTotals.set(name, (phaseTotals.get(name) ?? 0) + 1)
 }
@@ -124,6 +159,7 @@ export function tickPhase(name: string): void {
  * the next `markCpuStart()`.
  */
 export function consumeFrameStats(): Record<string, number> {
+  if (!__NIIVUE_PERF__) return {}
   const out: Record<string, number> = {}
   for (const [k, v] of lastPhaseTotals) out[k] = v
   return out

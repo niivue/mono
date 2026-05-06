@@ -38,8 +38,13 @@ function inlineImageAssets(): Plugin {
   }
 }
 
+const PERF_BUILD = process.env.NIIVUE_PERF === '1'
+
 export default defineConfig({
   publicDir: false,
+  define: {
+    __NIIVUE_PERF__: JSON.stringify(PERF_BUILD),
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

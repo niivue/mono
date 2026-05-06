@@ -35,8 +35,11 @@
   "scripts": {
     "codegen:assets": "node scripts/generate-assets.js",
     "dev": "bun run codegen:assets && bunx --bun vite --open /examples/index.html",
+    "dev:perf": "NIIVUE_PERF=1 bun run codegen:assets && NIIVUE_PERF=1 bunx --bun vite --open /examples/benchmark.html",
     "build": "bun run codegen:assets && bunx --bun vite build --config vite.config.lib.ts",
+    "build:perf": "NIIVUE_PERF=1 bun run codegen:assets && NIIVUE_PERF=1 bunx --bun vite build --config vite.config.lib.ts",
     "build:examples": "bun run codegen:assets && bunx --bun vite build --config vite.config.examples.ts",
+    "build:examples:perf": "NIIVUE_PERF=1 bun run codegen:assets && NIIVUE_PERF=1 bunx --bun vite build --config vite.config.examples.ts",
     "deploy": "bun run codegen:assets && bunx --bun vite build --config vite.config.examples.ts --mode production",
     "demo": "bun run build:examples && bunx http-server dist/ --cors -o",
     "preview": "vite preview",

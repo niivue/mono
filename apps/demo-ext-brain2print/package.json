@@ -12,6 +12,7 @@
     "@niivue/dev-images": "workspace:*",
     "@niivue/niivue": "workspace:*",
     "@niivue/nv-ext-brain2print": "workspace:*",
+    "@niivue/nv-ext-dcm2niix": "workspace:*",
     "@niivue/nv-ext-image-processing": "workspace:*",
     "@niivue/nv-ext-niimath": "workspace:*"
   },

@@ -182,10 +182,13 @@ function wrapModelLoad(load: ModelImpl['load']): BrainModel['load'] {
     // running on the buffers we're about to destroy. The library still
     // doesn't serialize concurrent calls — the tinygrad pipeline races on
     // its shared input/output buffers regardless — so callers must serialize
-    // their own calls. This `Set` is purely a teardown safety net; entries
-    // are only consumed by `dispose()` so we don't bother removing settled
-    // ones.
-    const inflight = new Set<Promise<unknown>>()
+    // their own calls. This `Set` is purely a teardown safety net.
+    //
+    // We store a *void-fulfilled* mirror, NOT the original `run` promise,
+    // so the Set doesn't pin each result's `Float32Array[]` (~64 MB per
+    // call) until dispose. We also delete entries on settle so a
+    // long-lived inferer doesn't accumulate empty Promise objects.
+    const inflight = new Set<Promise<void>>()
 
     const inferer = ((img32: Float32Array): Promise<Float32Array[]> => {
       if (disposed) {
@@ -199,7 +202,12 @@ function wrapModelLoad(load: ModelImpl['load']): BrainModel['load'] {
         )
       }
       const run = generatedInferer(img32)
-      inflight.add(run.catch(() => undefined))
+      const settled = run.then(
+        () => undefined,
+        () => undefined,
+      )
+      inflight.add(settled)
+      settled.finally(() => inflight.delete(settled))
       return run
     }) as BrainInferer
 

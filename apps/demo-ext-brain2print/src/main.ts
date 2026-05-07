@@ -28,6 +28,7 @@ import {
   loadFastMeshAndFlipFaces,
   prepareInput,
 } from '@niivue/nv-ext-brain2print'
+import { runDcm2niix, traverseDataTransferItems } from '@niivue/nv-ext-dcm2niix'
 import { conform } from '@niivue/nv-ext-image-processing'
 import { Niimath } from '@niivue/nv-ext-niimath'
 
@@ -63,6 +64,8 @@ const meshBubbles = $<HTMLInputElement>('meshBubbles')
 const meshApplyBtn = $<HTMLButtonElement>('meshApplyBtn')
 const saveFormat = $<HTMLSelectElement>('saveFormat')
 const saveBtn = $<HTMLButtonElement>('saveBtn')
+const dicomDrop = $('dicomDrop')
+const dicomPick = $<HTMLSelectElement>('dicomPick')
 
 const nv = new NiiVueGPU({
   isDragDropEnabled: false,
@@ -121,9 +124,12 @@ function updateButtons(): void {
   const noSeg = !hasSegmentation() || isCleanedUp
   meshBtn.disabled = noSeg
   meshApplyBtn.disabled = noSeg
-  // Save is enabled when there's something to export — segmentation or mesh.
-  // The dropdown decides which.
-  saveBtn.disabled = !hasSegmentation() && !hasMesh()
+  // Save is enabled when there's something to export AND no mutating task
+  // is in flight (otherwise saveVolume/saveMesh could read mid-replace
+  // state from the queue). Save itself bypasses the queue intentionally —
+  // a 30s Quality build shouldn't block a click — so we gate via the
+  // inFlightCount instead of by queueing.
+  saveBtn.disabled = inFlightCount > 0 || (!hasSegmentation() && !hasMesh())
 }
 
 async function disposeActiveInferer(): Promise<void> {
@@ -151,15 +157,27 @@ async function getInferer(modelName: BrainModelName): Promise<BrainInferer> {
 
 // Serialize volume + mesh mutations so load, drop, segmentation, and mesh
 // generation don't overlap. The catch keeps one failed task from poisoning
-// later tasks.
+// later tasks. `inFlightCount` lets `updateButtons` gate Save while a
+// mutation is queued or running — Save itself bypasses the queue (it's
+// read-only and shouldn't block on a long mesh build) but it must not
+// race a mutation that's mid-replace on `nv.volumes` / `nv.meshes`.
 let pending: Promise<unknown> = Promise.resolve()
+let inFlightCount = 0
 
 function enqueue(fn: () => Promise<unknown>): void {
-  pending = pending.then(fn).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err)
-    status.textContent = `Failed: ${msg}`
-    console.error('brain2print task failed', err)
-  })
+  inFlightCount++
+  updateButtons()
+  pending = pending
+    .then(fn)
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      status.textContent = `Failed: ${msg}`
+      console.error('brain2print task failed', err)
+    })
+    .finally(() => {
+      inFlightCount--
+      updateButtons()
+    })
 }
 
 async function ensureNiimath(): Promise<void> {
@@ -338,25 +356,33 @@ async function init(): Promise<void> {
   await runSegmentation()
 }
 
-// --- Drag-and-drop: replace the background with the dropped NIfTI, then
-//     auto-segment. prepareInput's conform step handles arbitrary input
-//     dims/orientation — the model still receives a 256³ canonical volume.
+// --- Drag-and-drop: every drop on the page goes through `handleDicomDrop`,
+//     which runs dcm2niix and either auto-loads the single result or
+//     populates a picker for multi-series output. Single-file drops that
+//     dcm2niix declines fall back to NiiVue's reader registry directly
+//     (.nii(.gz), .nrrd, .mgh/.mgz, .mha, …). The dashed "Drop DICOM
+//     folder" tile is purely a visual affordance — its dragover/dragleave
+//     listeners highlight the tile, but the actual drop is captured at the
+//     document level so a drop landing on the canvas, header, or anywhere
+//     else flows through the same code path.
 
-function isNiftiName(name: string): boolean {
-  const n = name.toLowerCase()
-  return n.endsWith('.nii') || n.endsWith('.nii.gz')
-}
+let dcmConverted: File[] = []
 
-async function handleDrop(file: File): Promise<void> {
-  if (!device || isCleanedUp) return
-  if (!isNiftiName(file.name)) {
-    status.textContent = `Unsupported file: ${file.name} (need .nii or .nii.gz)`
-    return
-  }
-  status.textContent = `Loading ${file.name}…`
-  await loadAndPrepare({ url: file, name: file.name })
-  await runSegmentation()
-}
+dicomDrop.addEventListener(
+  'dragover',
+  (e) => {
+    e.preventDefault()
+    dicomDrop.classList.add('dragover')
+  },
+  { signal: listeners.signal },
+)
+dicomDrop.addEventListener(
+  'dragleave',
+  () => {
+    dicomDrop.classList.remove('dragover')
+  },
+  { signal: listeners.signal },
+)
 
 document.addEventListener(
   'dragover',
@@ -370,8 +396,92 @@ document.addEventListener(
   'drop',
   (e) => {
     e.preventDefault()
-    const file = e.dataTransfer?.files?.[0]
-    if (file) enqueue(() => handleDrop(file))
+    dicomDrop.classList.remove('dragover')
+    const items = e.dataTransfer?.items
+    if (items && items.length > 0) enqueue(() => handleDicomDrop(items))
+  },
+  { signal: listeners.signal },
+)
+
+async function handleDicomDrop(items: DataTransferItemList): Promise<void> {
+  if (!device || isCleanedUp) return
+  spinner.classList.remove('hidden')
+  try {
+    status.textContent = 'Reading dropped folder…'
+    const files = await traverseDataTransferItems(items)
+    if (files.length === 0) {
+      status.textContent = 'Drop contained no readable files.'
+      return
+    }
+    status.textContent = `Converting ${files.length} file(s) with dcm2niix…`
+    const t0 = performance.now()
+    let niftiFiles: File[] = []
+    let dcmError: unknown = null
+    try {
+      niftiFiles = await runDcm2niix(files)
+    } catch (err) {
+      // Multi-file drops should be DICOM — surface the error. A single
+      // file may legitimately be a non-DICOM volume (NIfTI/NRRD/MGH/…),
+      // so fall through to the direct-load path below.
+      if (files.length !== 1) throw err
+      dcmError = err
+    }
+    const ms = Math.round(performance.now() - t0)
+
+    let toLoad: File
+    if (niftiFiles.length > 1) {
+      dcmConverted = niftiFiles
+      toLoad = niftiFiles[0]
+      dicomPick.replaceChildren()
+      for (let i = 0; i < niftiFiles.length; i++) {
+        const opt = document.createElement('option')
+        opt.value = String(i)
+        opt.text = niftiFiles[i].name
+        dicomPick.appendChild(opt)
+      }
+      dicomPick.value = '0'
+      dicomPick.classList.remove('hidden')
+      status.textContent = `dcm2niix: ${niftiFiles.length} NIfTI in ${ms} ms — pick one to view.`
+    } else if (niftiFiles.length === 1) {
+      // Picker is hidden for single output — no need to retain the File
+      // reference past loadAndPrepare. NiiVue keeps its own copy.
+      dcmConverted = []
+      toLoad = niftiFiles[0]
+      dicomPick.classList.add('hidden')
+      status.textContent = `dcm2niix: 1 NIfTI in ${ms} ms — loading…`
+    } else if (files.length === 1) {
+      // dcm2niix declined or produced no NIfTI from a single file — hand
+      // the original to NiiVue's reader registry. Unsupported extensions
+      // throw and surface in the queue's .catch.
+      dcmConverted = []
+      toLoad = files[0]
+      dicomPick.classList.add('hidden')
+      const why = dcmError ? 'dcm2niix declined' : 'no NIfTI from dcm2niix'
+      status.textContent = `${why}; loading ${toLoad.name} directly…`
+    } else {
+      status.textContent = 'No NIfTI output produced. Are these DICOM images?'
+      return
+    }
+
+    await loadAndPrepare({ url: toLoad, name: toLoad.name })
+    await runSegmentation()
+  } finally {
+    spinner.classList.add('hidden')
+  }
+}
+
+dicomPick.addEventListener(
+  'change',
+  () => {
+    const idx = Number(dicomPick.value)
+    const file = dcmConverted[idx]
+    if (!file) return
+    // Picking is mutating (loads a new volume), so it queues behind any
+    // in-flight task. Save is read-only and does NOT queue — see saveBtn.
+    enqueue(async () => {
+      await loadAndPrepare({ url: file, name: file.name })
+      await runSegmentation()
+    })
   },
   { signal: listeners.signal },
 )

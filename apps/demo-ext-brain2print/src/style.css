@@ -162,6 +162,23 @@ footer .health.error {
   display: none;
 }
 
+.drop-target {
+  font-size: 0.78rem;
+  color: #9aa0a6;
+  border: 1px dashed #4a4a52;
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  white-space: nowrap;
+  cursor: copy;
+  user-select: none;
+}
+
+.drop-target.dragover {
+  border-color: #6c8cff;
+  color: #c7d3ff;
+  background: rgba(108, 140, 255, 0.08);
+}
+
 .inline-panel {
   position: relative;
 }

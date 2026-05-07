@@ -17,7 +17,9 @@ export default defineConfig({
     exclude: [
       '@itk-wasm/cuberille',
       '@itk-wasm/mesh-filters',
+      '@niivue/dcm2niix',
       '@niivue/niimath',
+      '@niivue/nv-ext-dcm2niix',
       '@niivue/nv-ext-niimath',
       'itk-wasm',
     ],

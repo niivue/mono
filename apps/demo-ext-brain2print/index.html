@@ -9,6 +9,11 @@
   </head>
   <body>
     <header>
+      <div id="dicomDrop" class="drop-target" title="Drop a folder of DICOM files (or a single NIfTI/NRRD/MGH/...) here">
+        Drop DICOM folder
+      </div>
+      <select id="dicomPick" class="hidden" aria-label="Pick a converted NIfTI"></select>
+
       <select id="modelSelect" aria-label="Model">
         <option value="tissue_fast" selected>Tissue (fast)</option>
         <option value="subcortical">Subcortical</option>

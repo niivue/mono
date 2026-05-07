@@ -319,17 +319,22 @@ function niftiOriginLPS(hdr: NIFTI1 | NIFTI2): number[] {
 
 function requireAffine(hdr: NIFTI1 | NIFTI2): number[][] {
   const a = hdr.affine
-  if (
-    !a ||
-    a.length !== 4 ||
-    (hdr.sform_code === 0 && hdr.qform_code === 0) ||
-    !Number.isFinite(a[0]?.[0]) ||
-    !Number.isFinite(a[1]?.[1]) ||
-    !Number.isFinite(a[2]?.[2])
-  ) {
+  if (!a || a.length !== 4 || (hdr.sform_code === 0 && hdr.qform_code === 0)) {
     throw new Error(
       'nvImageToIwi: NIfTI header has no usable sform/qform — cannot place mesh in patient coordinates.',
     )
+  }
+  // Validate every spatial value `niftiDirectionLPS` + `niftiOriginLPS`
+  // actually consume — rows 0..2, cols 0..3. A NaN or Inf in any of these
+  // would silently propagate into the IWI direction matrix or origin.
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 4; c++) {
+      if (!Number.isFinite(a[r]?.[c])) {
+        throw new Error(
+          `nvImageToIwi: NIfTI affine[${r}][${c}] is not finite — cannot place mesh in patient coordinates.`,
+        )
+      }
+    }
   }
   return a
 }

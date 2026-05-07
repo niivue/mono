@@ -64,7 +64,7 @@ const inferer = await model.load(device, '/net_tissue_fast.safetensors')
 const [labels] = await inferer(img32)
 const seg = buildSegmentationVolume(conformed, labels, COLORMAP_TISSUE_SUBCORTICAL)
 await ctx.addVolume(seg)
-inferer.dispose()
+await inferer.dispose()
 ```
 
 ## API

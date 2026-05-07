@@ -30,17 +30,10 @@
     <pre id="out" style="padding:8px;font-family:ui-monospace,monospace;font-size:12px"></pre>
     <script type="module">
       // Smallest demonstration of the renderer's CPU vs GPU-submit split.
-      //
-      // The marks are gated on the `__NIIVUE_PERF__` build flag, so this page
-      // only reports useful numbers when served from a perf build:
-      //   bun run dev:perf
-      // In a regular build the calls below are dead-code-eliminated and the
-      // observer never sees any 'niivue:render-*' entries.
+      // Marks are runtime-gated via setPerfMarksEnabled — they are
+      // available in any build.
       import NiiVue from '../src/index.ts'
-      import {
-        isPerfBuild,
-        setPerfMarksEnabled,
-      } from '../src/view/NVPerfMarks.ts'
+      import { setPerfMarksEnabled } from '../src/view/NVPerfMarks.ts'
 
       const FRAMES = 100
       const WARMUP = 20
@@ -48,11 +41,6 @@
       const nv = new NiiVue({ isColorbarVisible: false })
       await nv.attachToCanvas(gl1)
       await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
-
-      if (!isPerfBuild()) {
-        statusEl.textContent =
-          'Non-perf build — CPU/submit splits will be empty. Run `bun run dev:perf`.'
-      }
 
       const median = (xs) => {
         const s = [...xs].sort((a, b) => a - b)

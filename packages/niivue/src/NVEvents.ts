@@ -10,6 +10,7 @@ import type {
   VectorAnnotation,
   VolumeUpdate,
 } from '@/NVTypes'
+import type { FrameReport } from '@/view/NVPerfMarks'
 
 // ============================================================
 // Event detail types
@@ -55,6 +56,15 @@ export type AnnotationChangedDetail = {
 }
 export type ColormapAddedDetail = { name: string }
 export type VolumeOrderChangedDetail = { volumes: NVImage[] }
+
+/**
+ * Per-frame render performance report. Emitted after every render
+ * while `nv.perf.enabled` is true. `tag` is the action source set via
+ * `nv.perf.tagFrame(...)` (or by an interaction handler) before the
+ * frame, or `null` for frames triggered by programmatic property
+ * mutation.
+ */
+export type PerfFrameDetail = FrameReport
 
 // ============================================================
 // Event map: event name → detail type
@@ -105,6 +115,9 @@ export interface NVEventMap {
 
   // Asset registration
   colormapAdded: ColormapAddedDetail
+
+  // Render performance (only fires while nv.perf.enabled)
+  perfFrame: PerfFrameDetail
 
   // Generic property change
   change: PropertyChangeDetail

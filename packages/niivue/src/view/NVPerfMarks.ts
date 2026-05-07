@@ -1,10 +1,21 @@
 /**
- * Optional `performance.mark`/`measure` instrumentation for the renderer.
+ * Per-frame `performance.mark`/`measure` instrumentation for the renderer.
  *
- * The benchmark harness flips `setPerfMarksEnabled(true)` before a run,
- * and the WebGPU/WebGL2 view classes call `markCpuStart` / `markSubmitStart`
- * / `markEnd` around their CPU work and GPU submission. Each render
- * produces three named entries via PerformanceObserver:
+ * Two consumers:
+ *
+ *  1. `nv.perf.enabled = true` on the controller — emits a `perfFrame`
+ *     CustomEvent after every render, carrying `{ tag, cpuMs, submitMs,
+ *     totalMs, phases }`. Use this to measure the cost of user-initiated
+ *     actions in real apps.
+ *
+ *  2. The benchmark harness — flips `setPerfMarksEnabled(true)` and reads
+ *     `consumeFrameStats()` / observes `niivue:render-*` measure entries.
+ *
+ * Both gates share a single runtime flag (`enabled`). When the flag is
+ * off, every helper bails on its first line, so the cost in production
+ * is one well-predicted branch per call site.
+ *
+ * Each render produces three named entries via PerformanceObserver:
  *
  *  - `niivue:render-cpu`     — CPU time recording the frame
  *  - `niivue:render-submit`  — JS-side cost of `device.queue.submit()` /
@@ -12,28 +23,12 @@
  *  - `niivue:render-frame`   — total render() wall time
  *
  * Sub-phase counters (named, per-frame totals) are accumulated via
- * `beginPhase()` / `endPhase(t, name)` deltas across many tiny calls
- * per frame. Snapshot is captured at `markEnd` and read directly by
- * the harness via `consumeFrameStats()` — bypasses PerformanceObserver
- * because the option-bag `performance.measure(name, {start, duration})`
- * form does not consistently surface as 'measure' entries across browsers.
+ * `beginPhase()` / `endPhase(t, name)`. Frame report subscribers receive
+ * a snapshot of all phases when the frame closes.
  *
- * Two-stage gating:
- *
- *  1. Build-time: `__NIIVUE_PERF__` is injected by Vite's `define` and is
- *     `false` unless the build was started with `NIIVUE_PERF=1`. Every
- *     helper bails on the build flag first, so esbuild dead-code-eliminates
- *     the bodies in production bundles — the calls that remain inline to
- *     a bare `return`. This is what guarantees zero runtime cost outside
- *     a perf build.
- *
- *  2. Runtime: inside a perf build, `setPerfMarksEnabled(true)` arms the
- *     marks for a single benchmark scenario; the harness flips it back
- *     off between runs.
- *
- * The bench harness needs a perf build (`bun run dev:perf` or
- * `bun run build:examples:perf`) to record useful numbers; otherwise
- * `consumeFrameStats()` returns an empty object.
+ * Action tagging: `setNextActionTag(tag)` attaches a label to the next
+ * frame; `markCpuStart()` consumes it. The tag flows through to the
+ * frame report so consumers can correlate cost with user action.
  */
 
 let enabled = false
@@ -47,47 +42,84 @@ let meshPhaseEnabled = true
 const phaseTotals: Map<string, number> = new Map()
 let lastPhaseTotals: Map<string, number> = new Map()
 
-/**
- * Returns the compile-time build flag (`true` only when Vite was invoked
- * with `NIIVUE_PERF=1`). The benchmark harness uses this to warn the
- * user when they've loaded the page from a non-perf build, since
- * `setPerfMarksEnabled(true)` would silently no-op and produce empty
- * frame stats.
- */
-export function isPerfBuild(): boolean {
-  return __NIIVUE_PERF__
+let cpuStartTime = 0
+let submitStartTime = 0
+let nextActionTag: string | null = null
+let activeActionTag: string | null = null
+let lastFrameReport: FrameReport | null = null
+
+export type FrameReport = {
+  /** Action label set via `setNextActionTag` before the frame, or null. */
+  tag: string | null
+  /** CPU time recording draw commands, in milliseconds. */
+  cpuMs: number
+  /** JS-side cost of GPU submission / GL flush, in milliseconds. */
+  submitMs: number
+  /** Total render() wall time, in milliseconds. */
+  totalMs: number
+  /** Per-frame totals from `beginPhase`/`endPhase` calls. */
+  phases: Record<string, number>
 }
 
+const frameSubscribers = new Set<(report: FrameReport) => void>()
+
 export function setPerfMarksEnabled(value: boolean): void {
-  if (!__NIIVUE_PERF__) return
   enabled = value
 }
 
 export function arePerfMarksEnabled(): boolean {
-  if (!__NIIVUE_PERF__) return false
   return enabled
 }
 
 export function setMeshPhaseEnabled(value: boolean): void {
-  if (!__NIIVUE_PERF__) return
   meshPhaseEnabled = value
 }
 
 export function areMeshPhasesEnabled(): boolean {
-  if (!__NIIVUE_PERF__) return false
   return meshPhaseEnabled
 }
 
+/**
+ * Tag the next frame with an action source (e.g. `'pointerdown'`,
+ * `'wheel'`). Cleared at the start of the next render so each tag
+ * applies to exactly one frame. Caller wins races: the most recent
+ * tag before `markCpuStart` is the one recorded.
+ */
+export function setNextActionTag(tag: string | null): void {
+  if (!enabled) return
+  nextActionTag = tag
+}
+
+/**
+ * Subscribe to per-frame reports. Returns a disposer. Subscribers are
+ * called synchronously from `markEnd` so the controller can re-emit
+ * the report as a CustomEvent before the renderer returns.
+ */
+export function subscribeFrameReports(
+  cb: (report: FrameReport) => void,
+): () => void {
+  frameSubscribers.add(cb)
+  return () => {
+    frameSubscribers.delete(cb)
+  }
+}
+
+export function getLastFrameReport(): FrameReport | null {
+  return lastFrameReport
+}
+
 export function markCpuStart(): void {
-  if (!__NIIVUE_PERF__) return
   if (!enabled) return
   phaseTotals.clear()
+  activeActionTag = nextActionTag
+  nextActionTag = null
+  cpuStartTime = performance.now()
   performance.mark('niivue:cpu-start')
 }
 
 export function markSubmitStart(): void {
-  if (!__NIIVUE_PERF__) return
   if (!enabled) return
+  submitStartTime = performance.now()
   performance.mark('niivue:submit-start')
   try {
     performance.measure(
@@ -101,8 +133,8 @@ export function markSubmitStart(): void {
 }
 
 export function markEnd(): void {
-  if (!__NIIVUE_PERF__) return
   if (!enabled) return
+  const endTime = performance.now()
   performance.mark('niivue:end')
   try {
     performance.measure(
@@ -119,6 +151,20 @@ export function markEnd(): void {
     /* missing start mark */
   }
   lastPhaseTotals = new Map(phaseTotals)
+  const phases: Record<string, number> = {}
+  for (const [k, v] of phaseTotals) phases[k] = v
+  lastFrameReport = {
+    tag: activeActionTag,
+    cpuMs: submitStartTime - cpuStartTime,
+    submitMs: endTime - submitStartTime,
+    totalMs: endTime - cpuStartTime,
+    phases,
+  }
+  activeActionTag = null
+  if (frameSubscribers.size > 0) {
+    const report = lastFrameReport
+    for (const cb of frameSubscribers) cb(report)
+  }
   try {
     performance.clearMarks('niivue:cpu-start')
     performance.clearMarks('niivue:submit-start')
@@ -134,13 +180,11 @@ export function markEnd(): void {
  * into the named bucket.
  */
 export function beginPhase(): number {
-  if (!__NIIVUE_PERF__) return 0
   if (!enabled) return 0
   return performance.now()
 }
 
 export function endPhase(startMs: number, name: string): void {
-  if (!__NIIVUE_PERF__) return
   if (!enabled || startMs === 0) return
   const dt = performance.now() - startMs
   phaseTotals.set(name, (phaseTotals.get(name) ?? 0) + dt)
@@ -148,7 +192,6 @@ export function endPhase(startMs: number, name: string): void {
 
 /** Increment a named counter by 1 (used for iteration counts). */
 export function tickPhase(name: string): void {
-  if (!__NIIVUE_PERF__) return
   if (!enabled) return
   phaseTotals.set(name, (phaseTotals.get(name) ?? 0) + 1)
 }
@@ -159,7 +202,6 @@ export function tickPhase(name: string): void {
  * the next `markCpuStart()`.
  */
 export function consumeFrameStats(): Record<string, number> {
-  if (!__NIIVUE_PERF__) return {}
   const out: Record<string, number> = {}
   for (const [k, v] of lastPhaseTotals) out[k] = v
   return out

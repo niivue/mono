@@ -2,14 +2,12 @@
 
 Performance harness and bundle-size budget for `@niivue/niivue`.
 
-> **Production builds carry zero perf-instrumentation cost.** The
-> `performance.mark`/`measure` hooks in `src/view/NVPerfMarks.ts` are
-> gated on a build-time constant `__NIIVUE_PERF__`, injected by Vite's
-> `define`. The default build (`bun run build`, `bun run dev`,
-> `bun run deploy`) sets it to `false`, so esbuild dead-code-eliminates
-> every perf-mark body — the calls inline to a bare `return` and tree-shake
-> away. Only the dedicated `*:perf` scripts (driven by `NIIVUE_PERF=1`)
-> ship with marks armed, and they exist solely for running this harness.
+> The `performance.mark`/`measure` hooks in `src/view/NVPerfMarks.ts`
+> are gated on a single runtime flag (`setPerfMarksEnabled`, also
+> exposed as `nv.perf.enabled` on the controller). When the flag is
+> off, every helper bails on its first line — cost in production is
+> one well-predicted branch per call site. The benchmark harness flips
+> the flag while a scenario is recording.
 
 ## Layout
 
@@ -24,33 +22,12 @@ Performance harness and bundle-size budget for `@niivue/niivue`.
 
 ## Running the in-browser harness
 
-The renderer's `performance.mark`/`measure` instrumentation is gated on a
-build-time flag (`__NIIVUE_PERF__`, injected by Vite's `define`). Standard
-builds set it to `false` so esbuild dead-code-eliminates the bodies of
-`markCpuStart` / `markSubmitStart` / `markEnd` — production renders pay
-nothing. Run the dedicated **perf** scripts when benchmarking:
-
 ```bash
-bun run dev:perf
-# auto-opens http://localhost:5173/examples/benchmark.html with marks armed
+bun run dev
+# open http://localhost:5173/examples/benchmark.html
 ```
 
-Toggle the checkboxes for **Renderer / Compute / Sweeps / Tract**, hit **Run**, and use **Download JSON** / **Copy Markdown** to save results.
-
-If you load the bench against a non-perf build, the page banner says so and
-CPU-vs-submit splits / phase stats will be empty (`setPerfMarksEnabled(true)`
-no-ops in non-perf bundles). For a static perf build of the examples site
-(e.g. for sharing a hosted copy):
-
-```bash
-bun run build:examples:perf
-```
-
-For library consumers who want to ship perf-instrumented bundles:
-
-```bash
-bun run build:perf
-```
+Toggle the checkboxes for **Renderer / Compute / Sweeps / Tract**, hit **Run**, and use **Download JSON** / **Copy Markdown** to save results. The harness arms `setPerfMarksEnabled(true)` while a scenario is recording.
 
 The bundle-sizes section is auto-fetched from `examples/entry-sizes.json`. Generate it after a build:
 

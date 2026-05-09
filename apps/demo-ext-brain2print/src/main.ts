@@ -35,6 +35,7 @@ import { Niimath } from '@niivue/nv-ext-niimath'
 const WEIGHT_URLS: Record<BrainModelName, string> = {
   tissue_fast: 'net_tissue_fast.safetensors',
   subcortical: 'net_subcortical.safetensors',
+  mindgrab: 'net_mindgrab.safetensors',
 }
 
 const T1_URL = '/volumes/t1_crop.nii.gz'

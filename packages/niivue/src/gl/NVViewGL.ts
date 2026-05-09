@@ -663,23 +663,27 @@ export default class NVGlview {
           )
         }
       }
-      // Layer 2b-xray: Mesh X-ray pass (depth disabled, reduced opacity)
+      // Layer 2b-xray: Mesh X-ray pass (depth greater, reduced opacity)
       const xrayAlpha = md.mesh.xRay
+      const crosshairXRayAlpha = md.ui.crosshairXRayOpacity
+      // Re-draw crosshairs with xray so the portion occluded by the volume
+      // (or meshes) shows faintly through the surface. Independent of
+      // md.mesh.xRay — controlled by ui.crosshairXRayOpacity.
+      if (
+        crosshairXRayAlpha > 0 &&
+        md.ui.is3DCrosshairVisible &&
+        !isMosaicTile &&
+        this.crosshairRenderer.isReady
+      ) {
+        this.crosshairRenderer.drawXRay(
+          gl,
+          mvpMatrix as Float32Array,
+          normalMatrix as Float32Array,
+          tile.axCorSag,
+          crosshairXRayAlpha,
+        )
+      }
       if (xrayAlpha > 0) {
-        // Re-draw crosshairs with xray (skip on all mosaic tiles)
-        if (
-          md.ui.is3DCrosshairVisible &&
-          !isMosaicTile &&
-          this.crosshairRenderer.isReady
-        ) {
-          this.crosshairRenderer.drawXRay(
-            gl,
-            mvpMatrix as Float32Array,
-            normalMatrix as Float32Array,
-            tile.axCorSag,
-            xrayAlpha,
-          )
-        }
         // Re-draw meshes with xray
         if (meshes.length > 0) {
           for (const m of meshes) {

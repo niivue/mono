@@ -956,28 +956,33 @@ export default class NVView {
       // Use offset tile slots (i + screenSlices.length) so writeBuffer doesn't
       // overwrite the normal-pass uniforms before the GPU executes them.
       const xrayAlpha = md.mesh.xRay
+      const crosshairXRayAlpha = md.ui.crosshairXRayOpacity
       const xrayTile = i + screenSlices.length
-      if (xrayAlpha > 0 && this.meshXRayPipelines) {
-        // Re-draw crosshairs with xray (skip on all mosaic tiles)
-        if (
-          md.ui.is3DCrosshairVisible &&
-          !isMosaicTile &&
-          this.crosshairRenderer.isReady
-        ) {
-          const xPipeline = this.meshXRayPipelines.phong
-          if (xPipeline) {
-            this.crosshairRenderer.drawXRay(
-              device,
-              pass,
-              xPipeline,
-              mvpMatrix as Float32Array,
-              normalMatrix as Float32Array,
-              xrayTile,
-              tile.axCorSag,
-              xrayAlpha,
-            )
-          }
+      // Re-draw crosshairs with xray so the portion occluded by the volume
+      // (or meshes) shows faintly through the surface. Independent of
+      // md.mesh.xRay — controlled by ui.crosshairXRayOpacity.
+      if (
+        crosshairXRayAlpha > 0 &&
+        md.ui.is3DCrosshairVisible &&
+        !isMosaicTile &&
+        this.crosshairRenderer.isReady &&
+        this.meshXRayPipelines
+      ) {
+        const xPipeline = this.meshXRayPipelines.phong
+        if (xPipeline) {
+          this.crosshairRenderer.drawXRay(
+            device,
+            pass,
+            xPipeline,
+            mvpMatrix as Float32Array,
+            normalMatrix as Float32Array,
+            xrayTile,
+            tile.axCorSag,
+            crosshairXRayAlpha,
+          )
         }
+      }
+      if (xrayAlpha > 0 && this.meshXRayPipelines) {
         // Re-draw meshes with xray
         if (meshes.length > 0) {
           for (let meshIdx = 0; meshIdx < meshes.length; meshIdx++) {

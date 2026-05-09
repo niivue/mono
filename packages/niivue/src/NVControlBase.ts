@@ -663,6 +663,15 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  get crosshairXRayOpacity(): number {
+    return this.model.ui.crosshairXRayOpacity
+  }
+  set crosshairXRayOpacity(v: number) {
+    this.model.ui.crosshairXRayOpacity = v
+    this.emit('change', { property: 'crosshairXRayOpacity', value: v })
+    this.drawScene()
+  }
+
   get fontColor(): number[] {
     return this.model.ui.fontColor
   }

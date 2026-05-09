@@ -179,6 +179,9 @@ export default class NVModel {
       ...(options.crosshairWidth !== undefined && {
         crosshairWidth: options.crosshairWidth,
       }),
+      ...(options.crosshairXRayOpacity !== undefined && {
+        crosshairXRayOpacity: options.crosshairXRayOpacity,
+      }),
       ...(options.fontColor !== undefined && { fontColor: options.fontColor }),
       ...(options.fontScale !== undefined && { fontScale: options.fontScale }),
       ...(options.fontMinSize !== undefined && {

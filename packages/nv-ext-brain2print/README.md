@@ -1,6 +1,6 @@
 # @niivue/nv-ext-brain2print
 
-Tinygrad-generated WebGPU brain segmentation models for [NiiVue](https://github.com/niivue), plus voxel-to-mesh helpers that turn the resulting label volume into an exportable 3D triangle mesh. Two segmentation models are bundled — `tissue_fast` (fast tissue-class segmentation) and `subcortical` (gray/white + subcortical structures); both expect a conformed 256³ 1 mm T1 input. All inference runs on the user's GPU; no data leaves the browser.
+Tinygrad-generated WebGPU brain segmentation models for [NiiVue](https://github.com/niivue), plus voxel-to-mesh helpers that turn the resulting label volume into an exportable 3D triangle mesh. Three segmentation models are bundled — `tissue_fast` (fast tissue-class segmentation), `subcortical` (gray/white + subcortical structures), and `mindgrab` (skull strip); all expect a conformed 256³ 1 mm T1 input. All inference runs on the user's GPU; no data leaves the browser.
 
 The model implementations under `src/models/` are tinygrad codegen output (WGSL + JS). They are kept verbatim — only a typed wrapper at the bottom matches the public `BrainModel` shape.
 
@@ -103,7 +103,7 @@ Wraps `labels` as a label-coloured `NVImage` sharing `conformed`'s grid. Sets `c
 
 ### `COLORMAP_TISSUE_SUBCORTICAL`
 
-`ColorMap` constant used by both models. Inlined — no JSON fetch needed.
+`ColorMap` constant used by `tissue_fast` and `subcortical` (and currently reused for `mindgrab`'s binary mask). Inlined — no JSON fetch needed.
 
 ### `buildMeshFromVolumeFast(niimath, volume, opts?): Promise<ArrayBuffer>`
 

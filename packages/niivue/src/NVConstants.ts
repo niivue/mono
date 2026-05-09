@@ -136,6 +136,7 @@ export const UI_DEFAULTS: UIConfig = {
   crosshairColor: [1.0, 0, 0, 1.0],
   crosshairGap: 10,
   crosshairWidth: 1,
+  crosshairXRayOpacity: 0.15,
   fontColor: [0.5, 0.5, 0.5, 1],
   fontScale: 0.4,
   fontMinSize: 13,

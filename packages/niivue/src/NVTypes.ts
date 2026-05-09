@@ -490,6 +490,7 @@ export type UIConfig = {
   crosshairColor: number[]
   crosshairGap: number
   crosshairWidth: number
+  crosshairXRayOpacity: number
   fontColor: number[]
   fontScale: number
   fontMinSize: number
@@ -650,6 +651,7 @@ export type NiiVueOptions = {
   crosshairColor?: number[]
   crosshairGap?: number
   crosshairWidth?: number
+  crosshairXRayOpacity?: number
   fontColor?: number[]
   fontScale?: number
   fontMinSize?: number

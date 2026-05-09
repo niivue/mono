@@ -3,9 +3,10 @@
  *
  * Tinygrad-generated WebGPU brain segmentation models for NiiVue.
  *
- * Two models are bundled — `tissue_fast` (fast tissue-class segmentation)
- * and `subcortical` (gray/white + subcortical structures). Both expect a
- * conformed 256³ 1 mm T1 input and emit a label volume sharing that grid.
+ * Three models are bundled — `tissue_fast` (fast tissue-class
+ * segmentation), `subcortical` (gray/white + subcortical structures), and
+ * `mindgrab` (skull strip). All expect a conformed 256³ 1 mm T1 input and
+ * emit a label volume sharing that grid.
  *
  * The library exposes four granular helpers so a demo UI can show progress
  * per stage (acquire device → prepare input → run inference → wrap result):
@@ -16,7 +17,7 @@
  *   - {@link BRAIN_MODELS}          — `{ name, label, load }` per model
  *   - {@link buildSegmentationVolume} — wrap labels as a label-coloured NVImage
  *
- * Plus the inlined colormap used by both models:
+ * Plus the inlined colormap reused by all three models:
  *
  *   - {@link COLORMAP_TISSUE_SUBCORTICAL}
  *
@@ -42,6 +43,7 @@ import {
   buildMeshFromVolumeQuality,
   loadFastMeshAndFlipFaces,
 } from './mesh'
+import mindgrabImpl from './models/mindgrab'
 import subcorticalImpl from './models/subcortical'
 import tissueFastImpl from './models/tissue-fast'
 
@@ -61,7 +63,7 @@ const SPACING_EPSILON = 1e-4
 // Model registry
 // ---------------------------------------------------------------------------
 
-export type BrainModelName = 'subcortical' | 'tissue_fast'
+export type BrainModelName = 'mindgrab' | 'subcortical' | 'tissue_fast'
 
 /** Callable inference closure returned by {@link BrainModel.load}. Call it
  *  with a normalized 256³ Float32 volume (z-fastest, as produced by
@@ -233,6 +235,11 @@ export const BRAIN_MODELS: Record<BrainModelName, BrainModel> = {
     label: 'Subcortical',
     load: wrapModelLoad((subcorticalImpl as unknown as ModelImpl).load),
   },
+  mindgrab: {
+    name: 'mindgrab',
+    label: 'Skull strip (mindgrab)',
+    load: wrapModelLoad((mindgrabImpl as unknown as ModelImpl).load),
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -302,13 +309,23 @@ function transposeToModel(data: Float32Array, size: number): Float32Array {
   return out
 }
 
-function transposeFromModel(data: Float32Array, size: number): Float32Array {
-  const out = new Float32Array(data.length)
+// Inverse-transpose model-order labels (z-fastest float32 indices) into
+// NIfTI-order Uint8 labels (x-fastest, integer). Combining the two passes
+// avoids a 64 MB Float32 transient (256³ × 4 B). Values outside [0, 255]
+// are clamped — the bundled models all emit argmax indices well under 100,
+// but we still defend against future drift.
+function transposeFromModelAsLabels(
+  data: Float32Array,
+  size: number,
+): Uint8Array {
+  const out = new Uint8Array(data.length)
   let it = 0
   for (let x = 0; x < size; x++) {
     for (let y = 0; y < size; y++) {
       for (let z = 0; z < size; z++) {
-        out[x + y * size + z * size * size] = data[it++]
+        const v = data[it++]
+        out[x + y * size + z * size * size] =
+          v > 0 ? (v < 255 ? Math.round(v) : 255) : 0
       }
     }
   }
@@ -413,11 +430,13 @@ export async function prepareInput(
 // ---------------------------------------------------------------------------
 
 /**
- * Wrap a segmentation-label `Float32Array` as a label-coloured `NVImage`
- * sharing the conformed input's geometry. The returned volume has its
- * `colormapLabel` populated via `makeLabelLut(colormap)` so the orient
- * shader picks up the discrete label palette without an extra controller
- * call.
+ * Wrap a segmentation-label `Float32Array` (model output) as a
+ * label-coloured `NVImage` sharing the conformed input's geometry. The
+ * returned volume stores its labels as `Uint8` (`DT_UINT8`,
+ * `intent_code = 1002`) — labels fit in a byte and Float32 storage costs
+ * 4× memory for no benefit. Its `colormapLabel` is populated via
+ * `makeLabelLut(colormap)` so the orient shader picks up the discrete
+ * label palette without an extra controller call.
  *
  * Default `opacity` is `0.5` (legacy used 128/255 ≈ 0.502; rounded to
  * match the slider used in the new demo).
@@ -436,8 +455,11 @@ export function buildSegmentationVolume(
     )
   }
   const clonedHdr: NIFTI1 | NIFTI2 = JSON.parse(JSON.stringify(conformed.hdr))
-  clonedHdr.datatypeCode = 16 // DT_FLOAT32
-  clonedHdr.numBitsPerVoxel = 32
+  // Discrete labels fit in a byte; storing them as Uint8 saves ~48 MB per
+  // 256³ volume vs. Float32 and lets the mesh path consume them without
+  // re-narrowing. Models emit argmax indices in [0, ~50].
+  clonedHdr.datatypeCode = 2 // DT_UINT8
+  clonedHdr.numBitsPerVoxel = 8
   clonedHdr.scl_slope = 1
   clonedHdr.scl_inter = 0
   clonedHdr.cal_min = 0
@@ -453,8 +475,7 @@ export function buildSegmentationVolume(
   clonedHdr.dims[4] = 1
   clonedHdr.dims[5] = 1
   clonedHdr.dims[6] = 1
-  // Inverse-transpose: model output is z-fastest; NIfTI storage is x-fastest.
-  const niftiOrder = transposeFromModel(segmentationLabels, CONFORM_DIM)
+  const niftiOrder = transposeFromModelAsLabels(segmentationLabels, CONFORM_DIM)
   const seg = nii2volume(clonedHdr, niftiOrder, 'segmentation')
   seg.colormapLabel = makeLabelLut(colormap)
   seg.opacity = 0.5

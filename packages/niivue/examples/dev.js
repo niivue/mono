@@ -172,6 +172,10 @@ gradSlider.oninput = () => {
   matcapSelect.disabled = Number(gradSlider.value) < 1
 }
 
+xraySlider.oninput = () => {
+  nv1.crosshairXRayOpacity = Number(xraySlider.value) / 100
+}
+
 colorBtn.addEventListener('input', (event) => {
   const input = event.target
   const hex = input.value
@@ -261,6 +265,7 @@ for (const cmap of nv1.colormaps) {
 //nv1.setClipPlaneDepthAziElev(0, 0, 0)
 nv1.volumeIsAlphaClipDark = true
 gradSlider.oninput()
+xraySlider.oninput()
 meshSelect.onchange()
 //await volumeSelect.onchange()
 clipSelect.onchange()

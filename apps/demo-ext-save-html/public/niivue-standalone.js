@@ -1,31 +1,31 @@
-var ff = Object.defineProperty;
+var mf = Object.defineProperty;
 var Vo = (t) => {
   throw TypeError(t);
 };
-var pf = (t, e, r) => e in t ? ff(t, e, { enumerable: !0, configurable: !0, writable: !0, value: r }) : t[e] = r;
-var B = (t, e, r) => pf(t, typeof e != "symbol" ? e + "" : e, r), zo = (t, e, r) => e.has(t) || Vo("Cannot " + r);
+var gf = (t, e, r) => e in t ? mf(t, e, { enumerable: !0, configurable: !0, writable: !0, value: r }) : t[e] = r;
+var B = (t, e, r) => gf(t, typeof e != "symbol" ? e + "" : e, r), zo = (t, e, r) => e.has(t) || Vo("Cannot " + r);
 var me = (t, e, r) => (zo(t, e, "read from private field"), r ? r.call(t) : e.get(t)), zr = (t, e, r) => e.has(t) ? Vo("Cannot add the same private member more than once") : e instanceof WeakSet ? e.add(t) : e.set(t, r), Er = (t, e, r, i) => (zo(t, e, "write to private field"), i ? i.call(t, r) : e.set(t, r), r);
-var mf = 1e-6, ft = typeof Float32Array < "u" ? Float32Array : Array;
+var xf = 1e-6, ft = typeof Float32Array < "u" ? Float32Array : Array;
 function Ps() {
   var t = new ft(9);
   return ft != Float32Array && (t[1] = 0, t[2] = 0, t[3] = 0, t[5] = 0, t[6] = 0, t[7] = 0), t[0] = 1, t[4] = 1, t[8] = 1, t;
 }
-function gf(t, e) {
+function vf(t, e) {
   return t[0] = e[0], t[1] = e[1], t[2] = e[2], t[3] = e[4], t[4] = e[5], t[5] = e[6], t[6] = e[8], t[7] = e[9], t[8] = e[10], t;
 }
 function mr(t, e, r, i, n, s, o, a, l) {
   var c = new ft(9);
   return c[0] = t, c[1] = e, c[2] = r, c[3] = i, c[4] = n, c[5] = s, c[6] = o, c[7] = a, c[8] = l, c;
 }
-function xf(t, e) {
+function yf(t, e) {
   var r = e[0], i = e[1], n = e[2], s = e[3], o = e[4], a = e[5], l = e[6], c = e[7], u = e[8], d = u * o - a * c, h = -u * s + a * l, f = c * s - o * l, p = r * d + i * h + n * f;
   return p ? (p = 1 / p, t[0] = d * p, t[1] = (-u * i + n * c) * p, t[2] = (a * i - n * o) * p, t[3] = h * p, t[4] = (u * r - n * l) * p, t[5] = (-a * r + n * s) * p, t[6] = f * p, t[7] = (-c * r + i * l) * p, t[8] = (o * r - i * s) * p, t) : null;
 }
 function ol(t, e, r) {
-  var i = e[0], n = e[1], s = e[2], o = e[3], a = e[4], l = e[5], c = e[6], u = e[7], d = e[8], h = r[0], f = r[1], p = r[2], g = r[3], m = r[4], y = r[5], A = r[6], v = r[7], E = r[8];
-  return t[0] = h * i + f * o + p * c, t[1] = h * n + f * a + p * u, t[2] = h * s + f * l + p * d, t[3] = g * i + m * o + y * c, t[4] = g * n + m * a + y * u, t[5] = g * s + m * l + y * d, t[6] = A * i + v * o + E * c, t[7] = A * n + v * a + E * u, t[8] = A * s + v * l + E * d, t;
+  var i = e[0], n = e[1], s = e[2], o = e[3], a = e[4], l = e[5], c = e[6], u = e[7], d = e[8], h = r[0], f = r[1], p = r[2], g = r[3], m = r[4], v = r[5], A = r[6], b = r[7], E = r[8];
+  return t[0] = h * i + f * o + p * c, t[1] = h * n + f * a + p * u, t[2] = h * s + f * l + p * d, t[3] = g * i + m * o + v * c, t[4] = g * n + m * a + v * u, t[5] = g * s + m * l + v * d, t[6] = A * i + b * o + E * c, t[7] = A * n + b * a + E * u, t[8] = A * s + b * l + E * d, t;
 }
-function vf(t, e, r) {
+function bf(t, e, r) {
   return t[0] = e[0] * r, t[1] = e[1] * r, t[2] = e[2] * r, t[3] = e[3] * r, t[4] = e[4] * r, t[5] = e[5] * r, t[6] = e[6] * r, t[7] = e[7] * r, t[8] = e[8] * r, t;
 }
 function Oe() {
@@ -36,14 +36,14 @@ function Ke(t) {
   var e = new ft(16);
   return e[0] = t[0], e[1] = t[1], e[2] = t[2], e[3] = t[3], e[4] = t[4], e[5] = t[5], e[6] = t[6], e[7] = t[7], e[8] = t[8], e[9] = t[9], e[10] = t[10], e[11] = t[11], e[12] = t[12], e[13] = t[13], e[14] = t[14], e[15] = t[15], e;
 }
-function yf(t, e) {
+function Tf(t, e) {
   return t[0] = e[0], t[1] = e[1], t[2] = e[2], t[3] = e[3], t[4] = e[4], t[5] = e[5], t[6] = e[6], t[7] = e[7], t[8] = e[8], t[9] = e[9], t[10] = e[10], t[11] = e[11], t[12] = e[12], t[13] = e[13], t[14] = e[14], t[15] = e[15], t;
 }
 function Or(t, e, r, i, n, s, o, a, l, c, u, d, h, f, p, g) {
   var m = new ft(16);
   return m[0] = t, m[1] = e, m[2] = r, m[3] = i, m[4] = n, m[5] = s, m[6] = o, m[7] = a, m[8] = l, m[9] = c, m[10] = u, m[11] = d, m[12] = h, m[13] = f, m[14] = p, m[15] = g, m;
 }
-function bf(t) {
+function Af(t) {
   return t[0] = 1, t[1] = 0, t[2] = 0, t[3] = 0, t[4] = 0, t[5] = 1, t[6] = 0, t[7] = 0, t[8] = 0, t[9] = 0, t[10] = 1, t[11] = 0, t[12] = 0, t[13] = 0, t[14] = 0, t[15] = 1, t;
 }
 function er(t, e) {
@@ -55,16 +55,16 @@ function er(t, e) {
   return t;
 }
 function zt(t, e) {
-  var r = e[0], i = e[1], n = e[2], s = e[3], o = e[4], a = e[5], l = e[6], c = e[7], u = e[8], d = e[9], h = e[10], f = e[11], p = e[12], g = e[13], m = e[14], y = e[15], A = r * a - i * o, v = r * l - n * o, E = r * c - s * o, b = i * l - n * a, x = i * c - s * a, T = n * c - s * l, S = u * g - d * p, P = u * m - h * p, U = u * y - f * p, _ = d * m - h * g, O = d * y - f * g, w = h * y - f * m, D = A * w - v * O + E * _ + b * U - x * P + T * S;
-  return D ? (D = 1 / D, t[0] = (a * w - l * O + c * _) * D, t[1] = (n * O - i * w - s * _) * D, t[2] = (g * T - m * x + y * b) * D, t[3] = (h * x - d * T - f * b) * D, t[4] = (l * U - o * w - c * P) * D, t[5] = (r * w - n * U + s * P) * D, t[6] = (m * E - p * T - y * v) * D, t[7] = (u * T - h * E + f * v) * D, t[8] = (o * O - a * U + c * S) * D, t[9] = (i * U - r * O - s * S) * D, t[10] = (p * x - g * E + y * A) * D, t[11] = (d * E - u * x - f * A) * D, t[12] = (a * P - o * _ - l * S) * D, t[13] = (r * _ - i * P + n * S) * D, t[14] = (g * v - p * b - m * A) * D, t[15] = (u * b - d * v + h * A) * D, t) : null;
+  var r = e[0], i = e[1], n = e[2], s = e[3], o = e[4], a = e[5], l = e[6], c = e[7], u = e[8], d = e[9], h = e[10], f = e[11], p = e[12], g = e[13], m = e[14], v = e[15], A = r * a - i * o, b = r * l - n * o, E = r * c - s * o, y = i * l - n * a, x = i * c - s * a, T = n * c - s * l, S = u * g - d * p, P = u * m - h * p, U = u * v - f * p, _ = d * m - h * g, O = d * v - f * g, w = h * v - f * m, D = A * w - b * O + E * _ + y * U - x * P + T * S;
+  return D ? (D = 1 / D, t[0] = (a * w - l * O + c * _) * D, t[1] = (n * O - i * w - s * _) * D, t[2] = (g * T - m * x + v * y) * D, t[3] = (h * x - d * T - f * y) * D, t[4] = (l * U - o * w - c * P) * D, t[5] = (r * w - n * U + s * P) * D, t[6] = (m * E - p * T - v * b) * D, t[7] = (u * T - h * E + f * b) * D, t[8] = (o * O - a * U + c * S) * D, t[9] = (i * U - r * O - s * S) * D, t[10] = (p * x - g * E + v * A) * D, t[11] = (d * E - u * x - f * A) * D, t[12] = (a * P - o * _ - l * S) * D, t[13] = (r * _ - i * P + n * S) * D, t[14] = (g * b - p * y - m * A) * D, t[15] = (u * y - d * b + h * A) * D, t) : null;
 }
 function yr(t, e, r) {
-  var i = e[0], n = e[1], s = e[2], o = e[3], a = e[4], l = e[5], c = e[6], u = e[7], d = e[8], h = e[9], f = e[10], p = e[11], g = e[12], m = e[13], y = e[14], A = e[15], v = r[0], E = r[1], b = r[2], x = r[3];
-  return t[0] = v * i + E * a + b * d + x * g, t[1] = v * n + E * l + b * h + x * m, t[2] = v * s + E * c + b * f + x * y, t[3] = v * o + E * u + b * p + x * A, v = r[4], E = r[5], b = r[6], x = r[7], t[4] = v * i + E * a + b * d + x * g, t[5] = v * n + E * l + b * h + x * m, t[6] = v * s + E * c + b * f + x * y, t[7] = v * o + E * u + b * p + x * A, v = r[8], E = r[9], b = r[10], x = r[11], t[8] = v * i + E * a + b * d + x * g, t[9] = v * n + E * l + b * h + x * m, t[10] = v * s + E * c + b * f + x * y, t[11] = v * o + E * u + b * p + x * A, v = r[12], E = r[13], b = r[14], x = r[15], t[12] = v * i + E * a + b * d + x * g, t[13] = v * n + E * l + b * h + x * m, t[14] = v * s + E * c + b * f + x * y, t[15] = v * o + E * u + b * p + x * A, t;
+  var i = e[0], n = e[1], s = e[2], o = e[3], a = e[4], l = e[5], c = e[6], u = e[7], d = e[8], h = e[9], f = e[10], p = e[11], g = e[12], m = e[13], v = e[14], A = e[15], b = r[0], E = r[1], y = r[2], x = r[3];
+  return t[0] = b * i + E * a + y * d + x * g, t[1] = b * n + E * l + y * h + x * m, t[2] = b * s + E * c + y * f + x * v, t[3] = b * o + E * u + y * p + x * A, b = r[4], E = r[5], y = r[6], x = r[7], t[4] = b * i + E * a + y * d + x * g, t[5] = b * n + E * l + y * h + x * m, t[6] = b * s + E * c + y * f + x * v, t[7] = b * o + E * u + y * p + x * A, b = r[8], E = r[9], y = r[10], x = r[11], t[8] = b * i + E * a + y * d + x * g, t[9] = b * n + E * l + y * h + x * m, t[10] = b * s + E * c + y * f + x * v, t[11] = b * o + E * u + y * p + x * A, b = r[12], E = r[13], y = r[14], x = r[15], t[12] = b * i + E * a + y * d + x * g, t[13] = b * n + E * l + y * h + x * m, t[14] = b * s + E * c + y * f + x * v, t[15] = b * o + E * u + y * p + x * A, t;
 }
 function br(t, e, r) {
-  var i = r[0], n = r[1], s = r[2], o, a, l, c, u, d, h, f, p, g, m, y;
-  return e === t ? (t[12] = e[0] * i + e[4] * n + e[8] * s + e[12], t[13] = e[1] * i + e[5] * n + e[9] * s + e[13], t[14] = e[2] * i + e[6] * n + e[10] * s + e[14], t[15] = e[3] * i + e[7] * n + e[11] * s + e[15]) : (o = e[0], a = e[1], l = e[2], c = e[3], u = e[4], d = e[5], h = e[6], f = e[7], p = e[8], g = e[9], m = e[10], y = e[11], t[0] = o, t[1] = a, t[2] = l, t[3] = c, t[4] = u, t[5] = d, t[6] = h, t[7] = f, t[8] = p, t[9] = g, t[10] = m, t[11] = y, t[12] = o * i + u * n + p * s + e[12], t[13] = a * i + d * n + g * s + e[13], t[14] = l * i + h * n + m * s + e[14], t[15] = c * i + f * n + y * s + e[15]), t;
+  var i = r[0], n = r[1], s = r[2], o, a, l, c, u, d, h, f, p, g, m, v;
+  return e === t ? (t[12] = e[0] * i + e[4] * n + e[8] * s + e[12], t[13] = e[1] * i + e[5] * n + e[9] * s + e[13], t[14] = e[2] * i + e[6] * n + e[10] * s + e[14], t[15] = e[3] * i + e[7] * n + e[11] * s + e[15]) : (o = e[0], a = e[1], l = e[2], c = e[3], u = e[4], d = e[5], h = e[6], f = e[7], p = e[8], g = e[9], m = e[10], v = e[11], t[0] = o, t[1] = a, t[2] = l, t[3] = c, t[4] = u, t[5] = d, t[6] = h, t[7] = f, t[8] = p, t[9] = g, t[10] = m, t[11] = v, t[12] = o * i + u * n + p * s + e[12], t[13] = a * i + d * n + g * s + e[13], t[14] = l * i + h * n + m * s + e[14], t[15] = c * i + f * n + v * s + e[15]), t;
 }
 function lo(t, e, r) {
   var i = r[0], n = r[1], s = r[2];
@@ -78,15 +78,15 @@ function Nn(t, e, r) {
   var i = Math.sin(r), n = Math.cos(r), s = e[0], o = e[1], a = e[2], l = e[3], c = e[4], u = e[5], d = e[6], h = e[7];
   return e !== t && (t[8] = e[8], t[9] = e[9], t[10] = e[10], t[11] = e[11], t[12] = e[12], t[13] = e[13], t[14] = e[14], t[15] = e[15]), t[0] = s * n + c * i, t[1] = o * n + u * i, t[2] = a * n + d * i, t[3] = l * n + h * i, t[4] = c * n - s * i, t[5] = u * n - o * i, t[6] = d * n - a * i, t[7] = h * n - l * i, t;
 }
-function Tf(t, e, r) {
+function wf(t, e, r) {
   var i = r[0], n = r[1], s = r[2], o = Math.sqrt(i * i + n * n + s * s), a, l, c;
-  return o < mf ? null : (o = 1 / o, i *= o, n *= o, s *= o, a = Math.sin(e), l = Math.cos(e), c = 1 - l, t[0] = i * i * c + l, t[1] = n * i * c + s * a, t[2] = s * i * c - n * a, t[3] = 0, t[4] = i * n * c - s * a, t[5] = n * n * c + l, t[6] = s * n * c + i * a, t[7] = 0, t[8] = i * s * c + n * a, t[9] = n * s * c - i * a, t[10] = s * s * c + l, t[11] = 0, t[12] = 0, t[13] = 0, t[14] = 0, t[15] = 1, t);
+  return o < xf ? null : (o = 1 / o, i *= o, n *= o, s *= o, a = Math.sin(e), l = Math.cos(e), c = 1 - l, t[0] = i * i * c + l, t[1] = n * i * c + s * a, t[2] = s * i * c - n * a, t[3] = 0, t[4] = i * n * c - s * a, t[5] = n * n * c + l, t[6] = s * n * c + i * a, t[7] = 0, t[8] = i * s * c + n * a, t[9] = n * s * c - i * a, t[10] = s * s * c + l, t[11] = 0, t[12] = 0, t[13] = 0, t[14] = 0, t[15] = 1, t);
 }
-function Af(t, e, r, i, n, s, o) {
+function Ef(t, e, r, i, n, s, o) {
   var a = 1 / (e - r), l = 1 / (i - n), c = 1 / (s - o);
   return t[0] = -2 * a, t[1] = 0, t[2] = 0, t[3] = 0, t[4] = 0, t[5] = -2 * l, t[6] = 0, t[7] = 0, t[8] = 0, t[9] = 0, t[10] = 2 * c, t[11] = 0, t[12] = (e + r) * a, t[13] = (n + i) * l, t[14] = (o + s) * c, t[15] = 1, t;
 }
-var al = Af;
+var al = Ef;
 function co(t, e, r, i, n, s, o) {
   var a = 1 / (e - r), l = 1 / (i - n), c = 1 / (s - o);
   return t[0] = -2 * a, t[1] = 0, t[2] = 0, t[3] = 0, t[4] = 0, t[5] = -2 * l, t[6] = 0, t[7] = 0, t[8] = 0, t[9] = 0, t[10] = c, t[11] = 0, t[12] = (e + r) * a, t[13] = (n + i) * l, t[14] = s * c, t[15] = 1, t;
@@ -110,7 +110,7 @@ function ve(t, e, r) {
 function is(t, e, r, i) {
   return t[0] = e, t[1] = r, t[2] = i, t;
 }
-function wf(t, e, r) {
+function Sf(t, e, r) {
   return t[0] = e[0] + r[0], t[1] = e[1] + r[1], t[2] = e[2] + r[2], t;
 }
 function rt(t, e, r) {
@@ -132,7 +132,7 @@ function Vn(t, e) {
   var r = e[0] - t[0], i = e[1] - t[1], n = e[2] - t[2];
   return Math.sqrt(r * r + i * i + n * n);
 }
-function Ef(t, e) {
+function Mf(t, e) {
   return t[0] = -e[0], t[1] = -e[1], t[2] = -e[2], t;
 }
 function Us(t, e) {
@@ -146,11 +146,11 @@ function on(t, e, r) {
   var i = e[0], n = e[1], s = e[2], o = r[0], a = r[1], l = r[2];
   return t[0] = n * l - s * a, t[1] = s * o - i * l, t[2] = i * a - n * o, t;
 }
-function Sf(t, e, r) {
+function Rf(t, e, r) {
   var i = e[0], n = e[1], s = e[2], o = r[3] * i + r[7] * n + r[11] * s + r[15];
   return o = o || 1, t[0] = (r[0] * i + r[4] * n + r[8] * s + r[12]) / o, t[1] = (r[1] * i + r[5] * n + r[9] * s + r[13]) / o, t[2] = (r[2] * i + r[6] * n + r[10] * s + r[14]) / o, t;
 }
-function Go(t, e, r) {
+function ko(t, e, r) {
   var i = e[0], n = e[1], s = e[2];
   return t[0] = i * r[0] + n * r[3] + s * r[6], t[1] = i * r[1] + n * r[4] + s * r[7], t[2] = i * r[2] + n * r[5] + s * r[8], t;
 }
@@ -172,7 +172,7 @@ function Kt() {
   var t = new ft(4);
   return ft != Float32Array && (t[0] = 0, t[1] = 0, t[2] = 0, t[3] = 0), t;
 }
-function Rf(t) {
+function Pf(t) {
   var e = new ft(4);
   return e[0] = t[0], e[1] = t[1], e[2] = t[2], e[3] = t[3], e;
 }
@@ -180,10 +180,10 @@ function Qe(t, e, r, i) {
   var n = new ft(4);
   return n[0] = t, n[1] = e, n[2] = r, n[3] = i, n;
 }
-function Mf(t, e, r, i, n) {
+function Df(t, e, r, i, n) {
   return t[0] = e, t[1] = r, t[2] = i, t[3] = n, t;
 }
-function ko(t, e, r) {
+function Go(t, e, r) {
   return t[0] = e[0] + r[0], t[1] = e[1] + r[1], t[2] = e[2] + r[2], t[3] = e[3] + r[3], t;
 }
 function ot(t, e, r) {
@@ -241,7 +241,7 @@ async function Qt(t) {
   }
   return e;
 }
-const $r = 12, Pf = 0.3, Df = 0.25;
+const $r = 12, Cf = 0.3, Uf = 0.25;
 function mn() {
   return {
     data: new Float32Array(0),
@@ -266,36 +266,36 @@ function dl(t, e, r, i, n, s, o, a, l, c) {
     const D = [];
     for (const C of w) D.push(C.codePointAt(0) ?? 0);
     p.push(D), g += D.length;
-    let R = 0;
+    let M = 0;
     for (let C = 0; C < D.length; C++) {
       const I = s.mets[D[C]];
-      I && (R += u * I.xadv);
+      I && (M += u * I.xadv);
     }
-    R > m && (m = R);
+    M > m && (m = M);
   }
   if (g === 0) return mn();
-  const y = f.length * h, A = e - m * a, v = r - y * l, E = new Float32Array(g * 16);
-  let b = 0, x = 1 / 0, T = 1 / 0, S = -1 / 0, P = -1 / 0;
+  const v = f.length * h, A = e - m * a, b = r - v * l, E = new Float32Array(g * 16);
+  let y = 0, x = 1 / 0, T = 1 / 0, S = -1 / 0, P = -1 / 0;
   for (let w = 0; w < f.length; w++) {
-    const D = p[w], R = v + u + w * h;
+    const D = p[w], M = b + u + w * h;
     let C = A;
     for (let I = 0; I < D.length; I++) {
       const V = s.mets[D[I]];
       if (!V) continue;
-      const k = b * 16, F = C + u * V.lbwh[0], X = R - u * (V.lbwh[1] + V.lbwh[3]), q = u * V.lbwh[2], Q = u * V.lbwh[3];
-      E.set([F, X, q, Q], k), E.set(V.uv_lbwh, k + 4), E.set(o, k + 8), E[k + 12] = d, F < x && (x = F), X < T && (T = X), F + q > S && (S = F + q), X + Q > P && (P = X + Q), C += u * V.xadv, b++;
+      const G = y * 16, F = C + u * V.lbwh[0], X = M - u * (V.lbwh[1] + V.lbwh[3]), q = u * V.lbwh[2], Q = u * V.lbwh[3];
+      E.set([F, X, q, Q], G), E.set(V.uv_lbwh, G + 4), E.set(o, G + 8), E[G + 12] = d, F < x && (x = F), X < T && (T = X), F + q > S && (S = F + q), X + Q > P && (P = X + Q), C += u * V.xadv, y++;
     }
   }
-  if (b === 0) return mn();
-  const U = u * Pf, _ = u * Df, O = [
+  if (y === 0) return mn();
+  const U = u * Cf, _ = u * Uf, O = [
     x - U,
     T - U,
     S - x + 2 * U,
     P - T + 2 * U
   ];
   return {
-    data: E.subarray(0, b * 16),
-    count: b,
+    data: E.subarray(0, y * 16),
+    count: y,
     backColor: c,
     backRect: O,
     backRadius: _
@@ -323,18 +323,18 @@ function hl(t) {
   }
   return e;
 }
-async function Cf(t) {
+async function If(t) {
   const e = await Qt(t), r = new TextDecoder("utf-8").decode(e), i = JSON.parse(r);
   return hl(i);
 }
-const Uf = { type: "msdf", distanceRange: 2, size: 56.84375, width: 512, height: 256, yOrigin: "bottom" }, If = /* @__PURE__ */ JSON.parse('[{"unicode":32,"advance":0.233},{"unicode":33,"advance":0.306,"planeBounds":{"left":0.04745,"bottom":-0.03823,"right":0.25855,"top":0.71823},"atlasBounds":{"left":365.5,"bottom":153.5,"right":377.5,"top":196.5}},{"unicode":34,"advance":0.457,"planeBounds":{"left":0.04378,"bottom":0.46317,"right":0.41322,"top":0.77983},"atlasBounds":{"left":102.5,"bottom":8.5,"right":123.5,"top":26.5}},{"unicode":35,"advance":0.671,"planeBounds":{"left":0.02764,"bottom":-0.02293,"right":0.64336,"top":0.71593},"atlasBounds":{"left":249.5,"bottom":106.5,"right":284.5,"top":148.5}},{"unicode":36,"advance":0.568,"planeBounds":{"left":0.02741,"bottom":-0.13269,"right":0.53759,"top":0.79969},"atlasBounds":{"left":203.5,"bottom":202.5,"right":232.5,"top":255.5}},{"unicode":37,"advance":0.897,"planeBounds":{"left":0.02629,"bottom":-0.04103,"right":0.87071,"top":0.73303},"atlasBounds":{"left":27.5,"bottom":152.5,"right":75.5,"top":196.5}},{"unicode":38,"advance":0.684,"planeBounds":{"left":0.02525,"bottom":-0.02823,"right":0.69375,"top":0.72823},"atlasBounds":{"left":378.5,"bottom":153.5,"right":416.5,"top":196.5}},{"unicode":39,"advance":0.26,"planeBounds":{"left":0.05084,"bottom":0.46317,"right":0.20916,"top":0.77983},"atlasBounds":{"left":124.5,"bottom":8.5,"right":133.5,"top":26.5}},{"unicode":40,"advance":0.339,"planeBounds":{"left":0.05547,"bottom":-0.21117,"right":0.35453,"top":0.80917},"atlasBounds":{"left":0.5,"bottom":197.5,"right":17.5,"top":255.5}},{"unicode":41,"advance":0.339,"planeBounds":{"left":-0.01553,"bottom":-0.21117,"right":0.28353,"top":0.80917},"atlasBounds":{"left":18.5,"bottom":197.5,"right":35.5,"top":255.5}},{"unicode":42,"advance":0.482,"planeBounds":{"left":0.0123,"bottom":0.2771,"right":0.4697,"top":0.7169},"atlasBounds":{"left":32.5,"bottom":1.5,"right":58.5,"top":26.5}},{"unicode":43,"advance":0.568,"planeBounds":{"left":0.02891,"bottom":0.01332,"right":0.53909,"top":0.55868},"atlasBounds":{"left":370.5,"bottom":30.5,"right":399.5,"top":61.5}},{"unicode":44,"advance":0.268,"planeBounds":{"left":0.01395,"bottom":-0.18112,"right":0.22505,"top":0.15312},"atlasBounds":{"left":89.5,"bottom":7.5,"right":101.5,"top":26.5}},{"unicode":45,"advance":0.315,"planeBounds":{"left":-0.00083,"bottom":0.20634,"right":0.31583,"top":0.36466},"atlasBounds":{"left":492.5,"bottom":95.5,"right":510.5,"top":104.5}},{"unicode":46,"advance":0.266,"planeBounds":{"left":0.02745,"bottom":-0.03905,"right":0.23855,"top":0.17205},"atlasBounds":{"left":492.5,"bottom":65.5,"right":504.5,"top":77.5}},{"unicode":47,"advance":0.416,"planeBounds":{"left":-0.05209,"bottom":-0.21117,"right":0.45809,"top":0.80917},"atlasBounds":{"left":88.5,"bottom":197.5,"right":117.5,"top":255.5}},{"unicode":48,"advance":0.568,"planeBounds":{"left":0.02012,"bottom":-0.04003,"right":0.54788,"top":0.73403},"atlasBounds":{"left":76.5,"bottom":152.5,"right":106.5,"top":196.5}},{"unicode":49,"advance":0.568,"planeBounds":{"left":0.06658,"bottom":-0.02293,"right":0.41842,"top":0.71593},"atlasBounds":{"left":339.5,"bottom":106.5,"right":359.5,"top":148.5}},{"unicode":50,"advance":0.568,"planeBounds":{"left":0.01891,"bottom":-0.02373,"right":0.52909,"top":0.73273},"atlasBounds":{"left":449.5,"bottom":153.5,"right":478.5,"top":196.5}},{"unicode":51,"advance":0.568,"planeBounds":{"left":0.03021,"bottom":-0.04003,"right":0.52279,"top":0.73403},"atlasBounds":{"left":137.5,"bottom":152.5,"right":165.5,"top":196.5}},{"unicode":52,"advance":0.568,"planeBounds":{"left":0.01032,"bottom":-0.02293,"right":0.55568,"top":0.71593},"atlasBounds":{"left":82.5,"bottom":62.5,"right":113.5,"top":104.5}},{"unicode":53,"advance":0.568,"planeBounds":{"left":0.03521,"bottom":-0.03923,"right":0.52779,"top":0.71723},"atlasBounds":{"left":0.5,"bottom":105.5,"right":28.5,"top":148.5}},{"unicode":54,"advance":0.568,"planeBounds":{"left":0.03341,"bottom":-0.03723,"right":0.54359,"top":0.71923},"atlasBounds":{"left":29.5,"bottom":105.5,"right":58.5,"top":148.5}},{"unicode":55,"advance":0.568,"planeBounds":{"left":0.02941,"bottom":-0.02293,"right":0.53959,"top":0.71593},"atlasBounds":{"left":360.5,"bottom":62.5,"right":389.5,"top":104.5}},{"unicode":56,"advance":0.568,"planeBounds":{"left":0.02891,"bottom":-0.04003,"right":0.53909,"top":0.73403},"atlasBounds":{"left":166.5,"bottom":152.5,"right":195.5,"top":196.5}},{"unicode":57,"advance":0.568,"planeBounds":{"left":0.02491,"bottom":-0.02473,"right":0.53509,"top":0.73173},"atlasBounds":{"left":89.5,"bottom":105.5,"right":118.5,"top":148.5}},{"unicode":58,"advance":0.266,"planeBounds":{"left":0.02745,"bottom":-0.03677,"right":0.23855,"top":0.54377},"atlasBounds":{"left":220.5,"bottom":28.5,"right":232.5,"top":61.5}},{"unicode":59,"advance":0.264,"planeBounds":{"left":0.00915,"bottom":-0.18114,"right":0.23785,"top":0.54014},"atlasBounds":{"left":478.5,"bottom":63.5,"right":491.5,"top":104.5}},{"unicode":60,"advance":0.568,"planeBounds":{"left":0.02891,"bottom":0.02991,"right":0.53909,"top":0.54009},"atlasBounds":{"left":430.5,"bottom":32.5,"right":459.5,"top":61.5}},{"unicode":61,"advance":0.568,"planeBounds":{"left":0.02891,"bottom":0.10128,"right":0.53909,"top":0.47072},"atlasBounds":{"left":59.5,"bottom":5.5,"right":88.5,"top":26.5}},{"unicode":62,"advance":0.568,"planeBounds":{"left":0.02891,"bottom":0.02991,"right":0.53909,"top":0.54009},"atlasBounds":{"left":400.5,"bottom":32.5,"right":429.5,"top":61.5}},{"unicode":63,"advance":0.424,"planeBounds":{"left":-0.00311,"bottom":-0.03903,"right":0.41911,"top":0.73503},"atlasBounds":{"left":196.5,"bottom":152.5,"right":220.5,"top":196.5}},{"unicode":64,"advance":0.971,"planeBounds":{"left":0.0369,"bottom":-0.18039,"right":0.9341,"top":0.73439},"atlasBounds":{"left":275.5,"bottom":203.5,"right":326.5,"top":255.5}},{"unicode":65,"advance":0.684,"planeBounds":{"left":-0.01864,"bottom":-0.02293,"right":0.70264,"top":0.71593},"atlasBounds":{"left":279.5,"bottom":62.5,"right":320.5,"top":104.5}},{"unicode":66,"advance":0.657,"planeBounds":{"left":0.06453,"bottom":-0.03223,"right":0.62747,"top":0.72423},"atlasBounds":{"left":479.5,"bottom":153.5,"right":511.5,"top":196.5}},{"unicode":67,"advance":0.638,"planeBounds":{"left":0.03443,"bottom":-0.04003,"right":0.63257,"top":0.73403},"atlasBounds":{"left":221.5,"bottom":152.5,"right":255.5,"top":196.5}},{"unicode":68,"advance":0.726,"planeBounds":{"left":0.06034,"bottom":-0.03223,"right":0.69366,"top":0.72423},"atlasBounds":{"left":184.5,"bottom":105.5,"right":220.5,"top":148.5}},{"unicode":69,"advance":0.586,"planeBounds":{"left":0.06241,"bottom":-0.02293,"right":0.57259,"top":0.71593},"atlasBounds":{"left":142.5,"bottom":62.5,"right":171.5,"top":104.5}},{"unicode":70,"advance":0.551,"planeBounds":{"left":0.06451,"bottom":-0.02293,"right":0.53949,"top":0.71593},"atlasBounds":{"left":114.5,"bottom":62.5,"right":141.5,"top":104.5}},{"unicode":71,"advance":0.683,"planeBounds":{"left":0.02964,"bottom":-0.03953,"right":0.64536,"top":0.73453},"atlasBounds":{"left":256.5,"bottom":152.5,"right":291.5,"top":196.5}},{"unicode":72,"advance":0.719,"planeBounds":{"left":0.06043,"bottom":-0.02293,"right":0.65857,"top":0.71593},"atlasBounds":{"left":47.5,"bottom":62.5,"right":81.5,"top":104.5}},{"unicode":73,"advance":0.292,"planeBounds":{"left":0.05804,"bottom":-0.02293,"right":0.23396,"top":0.71593},"atlasBounds":{"left":36.5,"bottom":62.5,"right":46.5,"top":104.5}},{"unicode":74,"advance":0.513,"planeBounds":{"left":-0.01749,"bottom":-0.03923,"right":0.45749,"top":0.71723},"atlasBounds":{"left":221.5,"bottom":105.5,"right":248.5,"top":148.5}},{"unicode":75,"advance":0.651,"planeBounds":{"left":0.05664,"bottom":-0.02293,"right":0.67236,"top":0.71593},"atlasBounds":{"left":0.5,"bottom":62.5,"right":35.5,"top":104.5}},{"unicode":76,"advance":0.534,"planeBounds":{"left":0.06451,"bottom":-0.02293,"right":0.53949,"top":0.71593},"atlasBounds":{"left":442.5,"bottom":106.5,"right":469.5,"top":148.5}},{"unicode":77,"advance":0.884,"planeBounds":{"left":0.04618,"bottom":-0.02293,"right":0.83782,"top":0.71593},"atlasBounds":{"left":396.5,"bottom":106.5,"right":441.5,"top":148.5}},{"unicode":78,"advance":0.74,"planeBounds":{"left":0.06214,"bottom":-0.02293,"right":0.67786,"top":0.71593},"atlasBounds":{"left":360.5,"bottom":106.5,"right":395.5,"top":148.5}},{"unicode":79,"advance":0.782,"planeBounds":{"left":0.03036,"bottom":-0.04003,"right":0.75164,"top":0.73403},"atlasBounds":{"left":292.5,"bottom":152.5,"right":333.5,"top":196.5}},{"unicode":80,"advance":0.623,"planeBounds":{"left":0.06432,"bottom":-0.01943,"right":0.60968,"top":0.71943},"atlasBounds":{"left":307.5,"bottom":106.5,"right":338.5,"top":148.5}},{"unicode":81,"advance":0.782,"planeBounds":{"left":0.03036,"bottom":-0.20519,"right":0.75164,"top":0.72719},"atlasBounds":{"left":233.5,"bottom":202.5,"right":274.5,"top":255.5}},{"unicode":82,"advance":0.64,"planeBounds":{"left":0.06373,"bottom":-0.01943,"right":0.64427,"top":0.71943},"atlasBounds":{"left":444.5,"bottom":62.5,"right":477.5,"top":104.5}},{"unicode":83,"advance":0.54,"planeBounds":{"left":0.00712,"bottom":-0.04003,"right":0.53488,"top":0.73403},"atlasBounds":{"left":334.5,"bottom":152.5,"right":364.5,"top":196.5}},{"unicode":84,"advance":0.579,"planeBounds":{"left":-0.00957,"bottom":-0.02293,"right":0.58857,"top":0.71593},"atlasBounds":{"left":211.5,"bottom":62.5,"right":245.5,"top":104.5}},{"unicode":85,"advance":0.703,"planeBounds":{"left":0.05243,"bottom":-0.03923,"right":0.65057,"top":0.71723},"atlasBounds":{"left":149.5,"bottom":105.5,"right":183.5,"top":148.5}},{"unicode":86,"advance":0.683,"planeBounds":{"left":-0.01914,"bottom":-0.02293,"right":0.70214,"top":0.71593},"atlasBounds":{"left":470.5,"bottom":106.5,"right":511.5,"top":148.5}},{"unicode":87,"advance":0.938,"planeBounds":{"left":0.00381,"bottom":-0.02293,"right":0.93619,"top":0.71593},"atlasBounds":{"left":390.5,"bottom":62.5,"right":443.5,"top":104.5}},{"unicode":88,"advance":0.657,"planeBounds":{"left":-0.00325,"bottom":-0.02293,"right":0.66525,"top":0.71593},"atlasBounds":{"left":321.5,"bottom":62.5,"right":359.5,"top":104.5}},{"unicode":89,"advance":0.625,"planeBounds":{"left":-0.02175,"bottom":-0.02293,"right":0.64675,"top":0.71593},"atlasBounds":{"left":172.5,"bottom":62.5,"right":210.5,"top":104.5}},{"unicode":90,"advance":0.588,"planeBounds":{"left":0.01053,"bottom":-0.02293,"right":0.57347,"top":0.71593},"atlasBounds":{"left":246.5,"bottom":62.5,"right":278.5,"top":104.5}},{"unicode":91,"advance":0.346,"planeBounds":{"left":0.06747,"bottom":-0.21117,"right":0.36653,"top":0.80917},"atlasBounds":{"left":118.5,"bottom":197.5,"right":135.5,"top":255.5}},{"unicode":92,"advance":0.416,"planeBounds":{"left":-0.04209,"bottom":-0.21117,"right":0.46809,"top":0.80917},"atlasBounds":{"left":136.5,"bottom":197.5,"right":165.5,"top":255.5}},{"unicode":93,"advance":0.346,"planeBounds":{"left":-0.02053,"bottom":-0.21117,"right":0.27853,"top":0.80917},"atlasBounds":{"left":166.5,"bottom":197.5,"right":183.5,"top":255.5}},{"unicode":94,"advance":0.568,"planeBounds":{"left":0.01082,"bottom":0.2766,"right":0.55618,"top":0.7164},"atlasBounds":{"left":0.5,"bottom":1.5,"right":31.5,"top":26.5}},{"unicode":95,"advance":0.5,"planeBounds":{"left":-0.02268,"bottom":-0.20487,"right":0.52268,"top":-0.06413},"atlasBounds":{"left":134.5,"bottom":18.5,"right":165.5,"top":26.5}},{"unicode":96,"advance":0.392,"planeBounds":{"left":0.05606,"bottom":0.55276,"right":0.31994,"top":0.83424},"atlasBounds":{"left":492.5,"bottom":78.5,"right":507.5,"top":94.5}},{"unicode":97,"advance":0.534,"planeBounds":{"left":0.01401,"bottom":-0.03657,"right":0.48899,"top":0.56157},"atlasBounds":{"left":84.5,"bottom":27.5,"right":111.5,"top":61.5}},{"unicode":98,"advance":0.596,"planeBounds":{"left":0.05741,"bottom":-0.03191,"right":0.56759,"top":0.79491},"atlasBounds":{"left":327.5,"bottom":208.5,"right":356.5,"top":255.5}},{"unicode":99,"advance":0.472,"planeBounds":{"left":0.0228,"bottom":-0.03757,"right":0.4802,"top":0.56057},"atlasBounds":{"left":57.5,"bottom":27.5,"right":83.5,"top":61.5}},{"unicode":100,"advance":0.596,"planeBounds":{"left":0.02841,"bottom":-0.03191,"right":0.53859,"top":0.79491},"atlasBounds":{"left":357.5,"bottom":208.5,"right":386.5,"top":255.5}},{"unicode":101,"advance":0.571,"planeBounds":{"left":0.02891,"bottom":-0.03757,"right":0.53909,"top":0.56057},"atlasBounds":{"left":112.5,"bottom":27.5,"right":141.5,"top":61.5}},{"unicode":102,"advance":0.4,"planeBounds":{"left":0.05099,"bottom":-0.02541,"right":0.43801,"top":0.80141},"atlasBounds":{"left":387.5,"bottom":208.5,"right":409.5,"top":255.5}},{"unicode":103,"advance":0.586,"planeBounds":{"left":0.02341,"bottom":-0.21403,"right":0.53359,"top":0.56003},"atlasBounds":{"left":107.5,"bottom":152.5,"right":136.5,"top":196.5}},{"unicode":104,"advance":0.582,"planeBounds":{"left":0.05801,"bottom":-0.02541,"right":0.53299,"top":0.80141},"atlasBounds":{"left":410.5,"bottom":208.5,"right":437.5,"top":255.5}},{"unicode":105,"advance":0.276,"planeBounds":{"left":0.04074,"bottom":-0.02032,"right":0.23426,"top":0.77132},"atlasBounds":{"left":15.5,"bottom":151.5,"right":26.5,"top":196.5}},{"unicode":106,"advance":0.275,"planeBounds":{"left":-0.08683,"bottom":-0.21008,"right":0.22983,"top":0.77508},"atlasBounds":{"left":184.5,"bottom":199.5,"right":202.5,"top":255.5}},{"unicode":107,"advance":0.551,"planeBounds":{"left":0.05341,"bottom":-0.02541,"right":0.56359,"top":0.80141},"atlasBounds":{"left":438.5,"bottom":208.5,"right":467.5,"top":255.5}},{"unicode":108,"advance":0.297,"planeBounds":{"left":0.05236,"bottom":-0.03041,"right":0.29864,"top":0.79641},"atlasBounds":{"left":0.5,"bottom":149.5,"right":14.5,"top":196.5}},{"unicode":109,"advance":0.865,"planeBounds":{"left":0.05727,"bottom":-0.02327,"right":0.81373,"top":0.55727},"atlasBounds":{"left":468.5,"bottom":222.5,"right":511.5,"top":255.5}},{"unicode":110,"advance":0.585,"planeBounds":{"left":0.05801,"bottom":-0.02327,"right":0.53299,"top":0.55727},"atlasBounds":{"left":142.5,"bottom":28.5,"right":169.5,"top":61.5}},{"unicode":111,"advance":0.598,"planeBounds":{"left":0.02632,"bottom":-0.03807,"right":0.57168,"top":0.56007},"atlasBounds":{"left":25.5,"bottom":27.5,"right":56.5,"top":61.5}},{"unicode":112,"advance":0.596,"planeBounds":{"left":0.05741,"bottom":-0.20373,"right":0.56759,"top":0.55273},"atlasBounds":{"left":59.5,"bottom":105.5,"right":88.5,"top":148.5}},{"unicode":113,"advance":0.596,"planeBounds":{"left":0.02841,"bottom":-0.20373,"right":0.53859,"top":0.55273},"atlasBounds":{"left":119.5,"bottom":105.5,"right":148.5,"top":148.5}},{"unicode":114,"advance":0.403,"planeBounds":{"left":0.05178,"bottom":-0.02327,"right":0.42122,"top":0.55727},"atlasBounds":{"left":170.5,"bottom":28.5,"right":191.5,"top":61.5}},{"unicode":115,"advance":0.457,"planeBounds":{"left":0.01789,"bottom":-0.03757,"right":0.44011,"top":0.56057},"atlasBounds":{"left":0.5,"bottom":27.5,"right":24.5,"top":61.5}},{"unicode":116,"advance":0.418,"planeBounds":{"left":0.05028,"bottom":-0.03493,"right":0.41972,"top":0.70393},"atlasBounds":{"left":285.5,"bottom":106.5,"right":306.5,"top":148.5}},{"unicode":117,"advance":0.583,"planeBounds":{"left":0.05101,"bottom":-0.03477,"right":0.52599,"top":0.54577},"atlasBounds":{"left":192.5,"bottom":28.5,"right":219.5,"top":61.5}},{"unicode":118,"advance":0.526,"planeBounds":{"left":-0.00968,"bottom":-0.01997,"right":0.53568,"top":0.54297},"atlasBounds":{"left":311.5,"bottom":29.5,"right":342.5,"top":61.5}},{"unicode":119,"advance":0.78,"planeBounds":{"left":-0.00582,"bottom":-0.01997,"right":0.78582,"top":0.54297},"atlasBounds":{"left":265.5,"bottom":29.5,"right":310.5,"top":61.5}},{"unicode":120,"advance":0.529,"planeBounds":{"left":-0.00818,"bottom":-0.01997,"right":0.53718,"top":0.54297},"atlasBounds":{"left":233.5,"bottom":29.5,"right":264.5,"top":61.5}},{"unicode":121,"advance":0.519,"planeBounds":{"left":-0.02118,"bottom":-0.21023,"right":0.52418,"top":0.54623},"atlasBounds":{"left":417.5,"bottom":153.5,"right":448.5,"top":196.5}},{"unicode":122,"advance":0.484,"planeBounds":{"left":0.0123,"bottom":-0.01997,"right":0.4697,"top":0.54297},"atlasBounds":{"left":343.5,"bottom":29.5,"right":369.5,"top":61.5}},{"unicode":123,"advance":0.348,"planeBounds":{"left":0.01408,"bottom":-0.21117,"right":0.36592,"top":0.80917},"atlasBounds":{"left":67.5,"bottom":197.5,"right":87.5,"top":255.5}},{"unicode":124,"advance":0.3,"planeBounds":{"left":0.07084,"bottom":-0.21117,"right":0.22916,"top":0.80917},"atlasBounds":{"left":57.5,"bottom":197.5,"right":66.5,"top":255.5}},{"unicode":125,"advance":0.348,"planeBounds":{"left":-0.01792,"bottom":-0.21117,"right":0.33392,"top":0.80917},"atlasBounds":{"left":36.5,"bottom":197.5,"right":56.5,"top":255.5}},{"unicode":126,"advance":0.568,"planeBounds":{"left":0.01032,"bottom":0.18565,"right":0.55568,"top":0.41435},"atlasBounds":{"left":468.5,"bottom":208.5,"right":499.5,"top":221.5}}]'), Bf = {
-  atlas: Uf,
-  glyphs: If
-}, Lf = "data:image/png;base64,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", _f = {
-  metrics: hl(Bf),
-  atlasUrl: Lf
-}, Of = "data:image/jpeg;base64,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", Ff = Of;
-var St = Uint8Array, jr = Uint16Array, Nf = Int32Array, fl = new St([
+const Bf = { type: "msdf", distanceRange: 2, size: 56.84375, width: 512, height: 256, yOrigin: "bottom" }, Lf = /* @__PURE__ */ JSON.parse('[{"unicode":32,"advance":0.233},{"unicode":33,"advance":0.306,"planeBounds":{"left":0.04745,"bottom":-0.03823,"right":0.25855,"top":0.71823},"atlasBounds":{"left":365.5,"bottom":153.5,"right":377.5,"top":196.5}},{"unicode":34,"advance":0.457,"planeBounds":{"left":0.04378,"bottom":0.46317,"right":0.41322,"top":0.77983},"atlasBounds":{"left":102.5,"bottom":8.5,"right":123.5,"top":26.5}},{"unicode":35,"advance":0.671,"planeBounds":{"left":0.02764,"bottom":-0.02293,"right":0.64336,"top":0.71593},"atlasBounds":{"left":249.5,"bottom":106.5,"right":284.5,"top":148.5}},{"unicode":36,"advance":0.568,"planeBounds":{"left":0.02741,"bottom":-0.13269,"right":0.53759,"top":0.79969},"atlasBounds":{"left":203.5,"bottom":202.5,"right":232.5,"top":255.5}},{"unicode":37,"advance":0.897,"planeBounds":{"left":0.02629,"bottom":-0.04103,"right":0.87071,"top":0.73303},"atlasBounds":{"left":27.5,"bottom":152.5,"right":75.5,"top":196.5}},{"unicode":38,"advance":0.684,"planeBounds":{"left":0.02525,"bottom":-0.02823,"right":0.69375,"top":0.72823},"atlasBounds":{"left":378.5,"bottom":153.5,"right":416.5,"top":196.5}},{"unicode":39,"advance":0.26,"planeBounds":{"left":0.05084,"bottom":0.46317,"right":0.20916,"top":0.77983},"atlasBounds":{"left":124.5,"bottom":8.5,"right":133.5,"top":26.5}},{"unicode":40,"advance":0.339,"planeBounds":{"left":0.05547,"bottom":-0.21117,"right":0.35453,"top":0.80917},"atlasBounds":{"left":0.5,"bottom":197.5,"right":17.5,"top":255.5}},{"unicode":41,"advance":0.339,"planeBounds":{"left":-0.01553,"bottom":-0.21117,"right":0.28353,"top":0.80917},"atlasBounds":{"left":18.5,"bottom":197.5,"right":35.5,"top":255.5}},{"unicode":42,"advance":0.482,"planeBounds":{"left":0.0123,"bottom":0.2771,"right":0.4697,"top":0.7169},"atlasBounds":{"left":32.5,"bottom":1.5,"right":58.5,"top":26.5}},{"unicode":43,"advance":0.568,"planeBounds":{"left":0.02891,"bottom":0.01332,"right":0.53909,"top":0.55868},"atlasBounds":{"left":370.5,"bottom":30.5,"right":399.5,"top":61.5}},{"unicode":44,"advance":0.268,"planeBounds":{"left":0.01395,"bottom":-0.18112,"right":0.22505,"top":0.15312},"atlasBounds":{"left":89.5,"bottom":7.5,"right":101.5,"top":26.5}},{"unicode":45,"advance":0.315,"planeBounds":{"left":-0.00083,"bottom":0.20634,"right":0.31583,"top":0.36466},"atlasBounds":{"left":492.5,"bottom":95.5,"right":510.5,"top":104.5}},{"unicode":46,"advance":0.266,"planeBounds":{"left":0.02745,"bottom":-0.03905,"right":0.23855,"top":0.17205},"atlasBounds":{"left":492.5,"bottom":65.5,"right":504.5,"top":77.5}},{"unicode":47,"advance":0.416,"planeBounds":{"left":-0.05209,"bottom":-0.21117,"right":0.45809,"top":0.80917},"atlasBounds":{"left":88.5,"bottom":197.5,"right":117.5,"top":255.5}},{"unicode":48,"advance":0.568,"planeBounds":{"left":0.02012,"bottom":-0.04003,"right":0.54788,"top":0.73403},"atlasBounds":{"left":76.5,"bottom":152.5,"right":106.5,"top":196.5}},{"unicode":49,"advance":0.568,"planeBounds":{"left":0.06658,"bottom":-0.02293,"right":0.41842,"top":0.71593},"atlasBounds":{"left":339.5,"bottom":106.5,"right":359.5,"top":148.5}},{"unicode":50,"advance":0.568,"planeBounds":{"left":0.01891,"bottom":-0.02373,"right":0.52909,"top":0.73273},"atlasBounds":{"left":449.5,"bottom":153.5,"right":478.5,"top":196.5}},{"unicode":51,"advance":0.568,"planeBounds":{"left":0.03021,"bottom":-0.04003,"right":0.52279,"top":0.73403},"atlasBounds":{"left":137.5,"bottom":152.5,"right":165.5,"top":196.5}},{"unicode":52,"advance":0.568,"planeBounds":{"left":0.01032,"bottom":-0.02293,"right":0.55568,"top":0.71593},"atlasBounds":{"left":82.5,"bottom":62.5,"right":113.5,"top":104.5}},{"unicode":53,"advance":0.568,"planeBounds":{"left":0.03521,"bottom":-0.03923,"right":0.52779,"top":0.71723},"atlasBounds":{"left":0.5,"bottom":105.5,"right":28.5,"top":148.5}},{"unicode":54,"advance":0.568,"planeBounds":{"left":0.03341,"bottom":-0.03723,"right":0.54359,"top":0.71923},"atlasBounds":{"left":29.5,"bottom":105.5,"right":58.5,"top":148.5}},{"unicode":55,"advance":0.568,"planeBounds":{"left":0.02941,"bottom":-0.02293,"right":0.53959,"top":0.71593},"atlasBounds":{"left":360.5,"bottom":62.5,"right":389.5,"top":104.5}},{"unicode":56,"advance":0.568,"planeBounds":{"left":0.02891,"bottom":-0.04003,"right":0.53909,"top":0.73403},"atlasBounds":{"left":166.5,"bottom":152.5,"right":195.5,"top":196.5}},{"unicode":57,"advance":0.568,"planeBounds":{"left":0.02491,"bottom":-0.02473,"right":0.53509,"top":0.73173},"atlasBounds":{"left":89.5,"bottom":105.5,"right":118.5,"top":148.5}},{"unicode":58,"advance":0.266,"planeBounds":{"left":0.02745,"bottom":-0.03677,"right":0.23855,"top":0.54377},"atlasBounds":{"left":220.5,"bottom":28.5,"right":232.5,"top":61.5}},{"unicode":59,"advance":0.264,"planeBounds":{"left":0.00915,"bottom":-0.18114,"right":0.23785,"top":0.54014},"atlasBounds":{"left":478.5,"bottom":63.5,"right":491.5,"top":104.5}},{"unicode":60,"advance":0.568,"planeBounds":{"left":0.02891,"bottom":0.02991,"right":0.53909,"top":0.54009},"atlasBounds":{"left":430.5,"bottom":32.5,"right":459.5,"top":61.5}},{"unicode":61,"advance":0.568,"planeBounds":{"left":0.02891,"bottom":0.10128,"right":0.53909,"top":0.47072},"atlasBounds":{"left":59.5,"bottom":5.5,"right":88.5,"top":26.5}},{"unicode":62,"advance":0.568,"planeBounds":{"left":0.02891,"bottom":0.02991,"right":0.53909,"top":0.54009},"atlasBounds":{"left":400.5,"bottom":32.5,"right":429.5,"top":61.5}},{"unicode":63,"advance":0.424,"planeBounds":{"left":-0.00311,"bottom":-0.03903,"right":0.41911,"top":0.73503},"atlasBounds":{"left":196.5,"bottom":152.5,"right":220.5,"top":196.5}},{"unicode":64,"advance":0.971,"planeBounds":{"left":0.0369,"bottom":-0.18039,"right":0.9341,"top":0.73439},"atlasBounds":{"left":275.5,"bottom":203.5,"right":326.5,"top":255.5}},{"unicode":65,"advance":0.684,"planeBounds":{"left":-0.01864,"bottom":-0.02293,"right":0.70264,"top":0.71593},"atlasBounds":{"left":279.5,"bottom":62.5,"right":320.5,"top":104.5}},{"unicode":66,"advance":0.657,"planeBounds":{"left":0.06453,"bottom":-0.03223,"right":0.62747,"top":0.72423},"atlasBounds":{"left":479.5,"bottom":153.5,"right":511.5,"top":196.5}},{"unicode":67,"advance":0.638,"planeBounds":{"left":0.03443,"bottom":-0.04003,"right":0.63257,"top":0.73403},"atlasBounds":{"left":221.5,"bottom":152.5,"right":255.5,"top":196.5}},{"unicode":68,"advance":0.726,"planeBounds":{"left":0.06034,"bottom":-0.03223,"right":0.69366,"top":0.72423},"atlasBounds":{"left":184.5,"bottom":105.5,"right":220.5,"top":148.5}},{"unicode":69,"advance":0.586,"planeBounds":{"left":0.06241,"bottom":-0.02293,"right":0.57259,"top":0.71593},"atlasBounds":{"left":142.5,"bottom":62.5,"right":171.5,"top":104.5}},{"unicode":70,"advance":0.551,"planeBounds":{"left":0.06451,"bottom":-0.02293,"right":0.53949,"top":0.71593},"atlasBounds":{"left":114.5,"bottom":62.5,"right":141.5,"top":104.5}},{"unicode":71,"advance":0.683,"planeBounds":{"left":0.02964,"bottom":-0.03953,"right":0.64536,"top":0.73453},"atlasBounds":{"left":256.5,"bottom":152.5,"right":291.5,"top":196.5}},{"unicode":72,"advance":0.719,"planeBounds":{"left":0.06043,"bottom":-0.02293,"right":0.65857,"top":0.71593},"atlasBounds":{"left":47.5,"bottom":62.5,"right":81.5,"top":104.5}},{"unicode":73,"advance":0.292,"planeBounds":{"left":0.05804,"bottom":-0.02293,"right":0.23396,"top":0.71593},"atlasBounds":{"left":36.5,"bottom":62.5,"right":46.5,"top":104.5}},{"unicode":74,"advance":0.513,"planeBounds":{"left":-0.01749,"bottom":-0.03923,"right":0.45749,"top":0.71723},"atlasBounds":{"left":221.5,"bottom":105.5,"right":248.5,"top":148.5}},{"unicode":75,"advance":0.651,"planeBounds":{"left":0.05664,"bottom":-0.02293,"right":0.67236,"top":0.71593},"atlasBounds":{"left":0.5,"bottom":62.5,"right":35.5,"top":104.5}},{"unicode":76,"advance":0.534,"planeBounds":{"left":0.06451,"bottom":-0.02293,"right":0.53949,"top":0.71593},"atlasBounds":{"left":442.5,"bottom":106.5,"right":469.5,"top":148.5}},{"unicode":77,"advance":0.884,"planeBounds":{"left":0.04618,"bottom":-0.02293,"right":0.83782,"top":0.71593},"atlasBounds":{"left":396.5,"bottom":106.5,"right":441.5,"top":148.5}},{"unicode":78,"advance":0.74,"planeBounds":{"left":0.06214,"bottom":-0.02293,"right":0.67786,"top":0.71593},"atlasBounds":{"left":360.5,"bottom":106.5,"right":395.5,"top":148.5}},{"unicode":79,"advance":0.782,"planeBounds":{"left":0.03036,"bottom":-0.04003,"right":0.75164,"top":0.73403},"atlasBounds":{"left":292.5,"bottom":152.5,"right":333.5,"top":196.5}},{"unicode":80,"advance":0.623,"planeBounds":{"left":0.06432,"bottom":-0.01943,"right":0.60968,"top":0.71943},"atlasBounds":{"left":307.5,"bottom":106.5,"right":338.5,"top":148.5}},{"unicode":81,"advance":0.782,"planeBounds":{"left":0.03036,"bottom":-0.20519,"right":0.75164,"top":0.72719},"atlasBounds":{"left":233.5,"bottom":202.5,"right":274.5,"top":255.5}},{"unicode":82,"advance":0.64,"planeBounds":{"left":0.06373,"bottom":-0.01943,"right":0.64427,"top":0.71943},"atlasBounds":{"left":444.5,"bottom":62.5,"right":477.5,"top":104.5}},{"unicode":83,"advance":0.54,"planeBounds":{"left":0.00712,"bottom":-0.04003,"right":0.53488,"top":0.73403},"atlasBounds":{"left":334.5,"bottom":152.5,"right":364.5,"top":196.5}},{"unicode":84,"advance":0.579,"planeBounds":{"left":-0.00957,"bottom":-0.02293,"right":0.58857,"top":0.71593},"atlasBounds":{"left":211.5,"bottom":62.5,"right":245.5,"top":104.5}},{"unicode":85,"advance":0.703,"planeBounds":{"left":0.05243,"bottom":-0.03923,"right":0.65057,"top":0.71723},"atlasBounds":{"left":149.5,"bottom":105.5,"right":183.5,"top":148.5}},{"unicode":86,"advance":0.683,"planeBounds":{"left":-0.01914,"bottom":-0.02293,"right":0.70214,"top":0.71593},"atlasBounds":{"left":470.5,"bottom":106.5,"right":511.5,"top":148.5}},{"unicode":87,"advance":0.938,"planeBounds":{"left":0.00381,"bottom":-0.02293,"right":0.93619,"top":0.71593},"atlasBounds":{"left":390.5,"bottom":62.5,"right":443.5,"top":104.5}},{"unicode":88,"advance":0.657,"planeBounds":{"left":-0.00325,"bottom":-0.02293,"right":0.66525,"top":0.71593},"atlasBounds":{"left":321.5,"bottom":62.5,"right":359.5,"top":104.5}},{"unicode":89,"advance":0.625,"planeBounds":{"left":-0.02175,"bottom":-0.02293,"right":0.64675,"top":0.71593},"atlasBounds":{"left":172.5,"bottom":62.5,"right":210.5,"top":104.5}},{"unicode":90,"advance":0.588,"planeBounds":{"left":0.01053,"bottom":-0.02293,"right":0.57347,"top":0.71593},"atlasBounds":{"left":246.5,"bottom":62.5,"right":278.5,"top":104.5}},{"unicode":91,"advance":0.346,"planeBounds":{"left":0.06747,"bottom":-0.21117,"right":0.36653,"top":0.80917},"atlasBounds":{"left":118.5,"bottom":197.5,"right":135.5,"top":255.5}},{"unicode":92,"advance":0.416,"planeBounds":{"left":-0.04209,"bottom":-0.21117,"right":0.46809,"top":0.80917},"atlasBounds":{"left":136.5,"bottom":197.5,"right":165.5,"top":255.5}},{"unicode":93,"advance":0.346,"planeBounds":{"left":-0.02053,"bottom":-0.21117,"right":0.27853,"top":0.80917},"atlasBounds":{"left":166.5,"bottom":197.5,"right":183.5,"top":255.5}},{"unicode":94,"advance":0.568,"planeBounds":{"left":0.01082,"bottom":0.2766,"right":0.55618,"top":0.7164},"atlasBounds":{"left":0.5,"bottom":1.5,"right":31.5,"top":26.5}},{"unicode":95,"advance":0.5,"planeBounds":{"left":-0.02268,"bottom":-0.20487,"right":0.52268,"top":-0.06413},"atlasBounds":{"left":134.5,"bottom":18.5,"right":165.5,"top":26.5}},{"unicode":96,"advance":0.392,"planeBounds":{"left":0.05606,"bottom":0.55276,"right":0.31994,"top":0.83424},"atlasBounds":{"left":492.5,"bottom":78.5,"right":507.5,"top":94.5}},{"unicode":97,"advance":0.534,"planeBounds":{"left":0.01401,"bottom":-0.03657,"right":0.48899,"top":0.56157},"atlasBounds":{"left":84.5,"bottom":27.5,"right":111.5,"top":61.5}},{"unicode":98,"advance":0.596,"planeBounds":{"left":0.05741,"bottom":-0.03191,"right":0.56759,"top":0.79491},"atlasBounds":{"left":327.5,"bottom":208.5,"right":356.5,"top":255.5}},{"unicode":99,"advance":0.472,"planeBounds":{"left":0.0228,"bottom":-0.03757,"right":0.4802,"top":0.56057},"atlasBounds":{"left":57.5,"bottom":27.5,"right":83.5,"top":61.5}},{"unicode":100,"advance":0.596,"planeBounds":{"left":0.02841,"bottom":-0.03191,"right":0.53859,"top":0.79491},"atlasBounds":{"left":357.5,"bottom":208.5,"right":386.5,"top":255.5}},{"unicode":101,"advance":0.571,"planeBounds":{"left":0.02891,"bottom":-0.03757,"right":0.53909,"top":0.56057},"atlasBounds":{"left":112.5,"bottom":27.5,"right":141.5,"top":61.5}},{"unicode":102,"advance":0.4,"planeBounds":{"left":0.05099,"bottom":-0.02541,"right":0.43801,"top":0.80141},"atlasBounds":{"left":387.5,"bottom":208.5,"right":409.5,"top":255.5}},{"unicode":103,"advance":0.586,"planeBounds":{"left":0.02341,"bottom":-0.21403,"right":0.53359,"top":0.56003},"atlasBounds":{"left":107.5,"bottom":152.5,"right":136.5,"top":196.5}},{"unicode":104,"advance":0.582,"planeBounds":{"left":0.05801,"bottom":-0.02541,"right":0.53299,"top":0.80141},"atlasBounds":{"left":410.5,"bottom":208.5,"right":437.5,"top":255.5}},{"unicode":105,"advance":0.276,"planeBounds":{"left":0.04074,"bottom":-0.02032,"right":0.23426,"top":0.77132},"atlasBounds":{"left":15.5,"bottom":151.5,"right":26.5,"top":196.5}},{"unicode":106,"advance":0.275,"planeBounds":{"left":-0.08683,"bottom":-0.21008,"right":0.22983,"top":0.77508},"atlasBounds":{"left":184.5,"bottom":199.5,"right":202.5,"top":255.5}},{"unicode":107,"advance":0.551,"planeBounds":{"left":0.05341,"bottom":-0.02541,"right":0.56359,"top":0.80141},"atlasBounds":{"left":438.5,"bottom":208.5,"right":467.5,"top":255.5}},{"unicode":108,"advance":0.297,"planeBounds":{"left":0.05236,"bottom":-0.03041,"right":0.29864,"top":0.79641},"atlasBounds":{"left":0.5,"bottom":149.5,"right":14.5,"top":196.5}},{"unicode":109,"advance":0.865,"planeBounds":{"left":0.05727,"bottom":-0.02327,"right":0.81373,"top":0.55727},"atlasBounds":{"left":468.5,"bottom":222.5,"right":511.5,"top":255.5}},{"unicode":110,"advance":0.585,"planeBounds":{"left":0.05801,"bottom":-0.02327,"right":0.53299,"top":0.55727},"atlasBounds":{"left":142.5,"bottom":28.5,"right":169.5,"top":61.5}},{"unicode":111,"advance":0.598,"planeBounds":{"left":0.02632,"bottom":-0.03807,"right":0.57168,"top":0.56007},"atlasBounds":{"left":25.5,"bottom":27.5,"right":56.5,"top":61.5}},{"unicode":112,"advance":0.596,"planeBounds":{"left":0.05741,"bottom":-0.20373,"right":0.56759,"top":0.55273},"atlasBounds":{"left":59.5,"bottom":105.5,"right":88.5,"top":148.5}},{"unicode":113,"advance":0.596,"planeBounds":{"left":0.02841,"bottom":-0.20373,"right":0.53859,"top":0.55273},"atlasBounds":{"left":119.5,"bottom":105.5,"right":148.5,"top":148.5}},{"unicode":114,"advance":0.403,"planeBounds":{"left":0.05178,"bottom":-0.02327,"right":0.42122,"top":0.55727},"atlasBounds":{"left":170.5,"bottom":28.5,"right":191.5,"top":61.5}},{"unicode":115,"advance":0.457,"planeBounds":{"left":0.01789,"bottom":-0.03757,"right":0.44011,"top":0.56057},"atlasBounds":{"left":0.5,"bottom":27.5,"right":24.5,"top":61.5}},{"unicode":116,"advance":0.418,"planeBounds":{"left":0.05028,"bottom":-0.03493,"right":0.41972,"top":0.70393},"atlasBounds":{"left":285.5,"bottom":106.5,"right":306.5,"top":148.5}},{"unicode":117,"advance":0.583,"planeBounds":{"left":0.05101,"bottom":-0.03477,"right":0.52599,"top":0.54577},"atlasBounds":{"left":192.5,"bottom":28.5,"right":219.5,"top":61.5}},{"unicode":118,"advance":0.526,"planeBounds":{"left":-0.00968,"bottom":-0.01997,"right":0.53568,"top":0.54297},"atlasBounds":{"left":311.5,"bottom":29.5,"right":342.5,"top":61.5}},{"unicode":119,"advance":0.78,"planeBounds":{"left":-0.00582,"bottom":-0.01997,"right":0.78582,"top":0.54297},"atlasBounds":{"left":265.5,"bottom":29.5,"right":310.5,"top":61.5}},{"unicode":120,"advance":0.529,"planeBounds":{"left":-0.00818,"bottom":-0.01997,"right":0.53718,"top":0.54297},"atlasBounds":{"left":233.5,"bottom":29.5,"right":264.5,"top":61.5}},{"unicode":121,"advance":0.519,"planeBounds":{"left":-0.02118,"bottom":-0.21023,"right":0.52418,"top":0.54623},"atlasBounds":{"left":417.5,"bottom":153.5,"right":448.5,"top":196.5}},{"unicode":122,"advance":0.484,"planeBounds":{"left":0.0123,"bottom":-0.01997,"right":0.4697,"top":0.54297},"atlasBounds":{"left":343.5,"bottom":29.5,"right":369.5,"top":61.5}},{"unicode":123,"advance":0.348,"planeBounds":{"left":0.01408,"bottom":-0.21117,"right":0.36592,"top":0.80917},"atlasBounds":{"left":67.5,"bottom":197.5,"right":87.5,"top":255.5}},{"unicode":124,"advance":0.3,"planeBounds":{"left":0.07084,"bottom":-0.21117,"right":0.22916,"top":0.80917},"atlasBounds":{"left":57.5,"bottom":197.5,"right":66.5,"top":255.5}},{"unicode":125,"advance":0.348,"planeBounds":{"left":-0.01792,"bottom":-0.21117,"right":0.33392,"top":0.80917},"atlasBounds":{"left":36.5,"bottom":197.5,"right":56.5,"top":255.5}},{"unicode":126,"advance":0.568,"planeBounds":{"left":0.01032,"bottom":0.18565,"right":0.55568,"top":0.41435},"atlasBounds":{"left":468.5,"bottom":208.5,"right":499.5,"top":221.5}}]'), _f = {
+  atlas: Bf,
+  glyphs: Lf
+}, Of = "data:image/png;base64,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", Ff = {
+  metrics: hl(_f),
+  atlasUrl: Of
+}, Nf = "data:image/jpeg;base64,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", Vf = Nf;
+var St = Uint8Array, jr = Uint16Array, zf = Int32Array, fl = new St([
   0,
   0,
   0,
@@ -403,16 +403,16 @@ var St = Uint8Array, jr = Uint16Array, Nf = Int32Array, fl = new St([
   /* unused */
   0,
   0
-]), Vf = new St([16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]), ml = function(t, e) {
+]), kf = new St([16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]), ml = function(t, e) {
   for (var r = new jr(31), i = 0; i < 31; ++i)
     r[i] = e += 1 << t[i - 1];
-  for (var n = new Nf(r[30]), i = 1; i < 30; ++i)
+  for (var n = new zf(r[30]), i = 1; i < 30; ++i)
     for (var s = r[i]; s < r[i + 1]; ++s)
       n[s] = s - r[i] << 5 | i;
   return { b: r, r: n };
-}, gl = ml(fl, 2), xl = gl.b, zf = gl.r;
-xl[28] = 258, zf[258] = 28;
-var Gf = ml(pl, 0), kf = Gf.b, Is = new jr(32768);
+}, gl = ml(fl, 2), xl = gl.b, Gf = gl.r;
+xl[28] = 258, Gf[258] = 28;
+var Xf = ml(pl, 0), qf = Xf.b, Is = new jr(32768);
 for (var ze = 0; ze < 32768; ++ze) {
   var hr = (ze & 43690) >> 1 | (ze & 21845) << 1;
   hr = (hr & 52428) >> 2 | (hr & 13107) << 2, hr = (hr & 61680) >> 4 | (hr & 3855) << 4, Is[ze] = ((hr & 65280) >> 8 | (hr & 255) << 8) >> 1;
@@ -447,7 +447,7 @@ for (var ze = 280; ze < 288; ++ze)
 var vl = new St(32);
 for (var ze = 0; ze < 32; ++ze)
   vl[ze] = 5;
-var Xf = /* @__PURE__ */ mi(Ii, 9, 1), qf = /* @__PURE__ */ mi(vl, 5, 1), ss = function(t) {
+var Hf = /* @__PURE__ */ mi(Ii, 9, 1), Wf = /* @__PURE__ */ mi(vl, 5, 1), ss = function(t) {
   for (var e = t[0], r = 1; r < t.length; ++r)
     t[r] > e && (e = t[r]);
   return e;
@@ -457,11 +457,11 @@ var Xf = /* @__PURE__ */ mi(Ii, 9, 1), qf = /* @__PURE__ */ mi(vl, 5, 1), ss = f
 }, os = function(t, e) {
   var r = e / 8 | 0;
   return (t[r] | t[r + 1] << 8 | t[r + 2] << 16) >> (e & 7);
-}, Hf = function(t) {
+}, jf = function(t) {
   return (t + 7) / 8 | 0;
-}, Wf = function(t, e, r) {
+}, Yf = function(t, e, r) {
   return (r == null || r > t.length) && (r = t.length), new St(t.subarray(e, r));
-}, jf = [
+}, Kf = [
   "unexpected EOF",
   "invalid block type",
   "invalid length/literal",
@@ -478,7 +478,7 @@ var Xf = /* @__PURE__ */ mi(Ii, 9, 1), qf = /* @__PURE__ */ mi(vl, 5, 1), ss = f
   "invalid zip data"
   // determined by unknown compression method
 ], Et = function(t, e, r) {
-  var i = new Error(e || jf[t]);
+  var i = new Error(e || Kf[t]);
   if (i.code = t, Error.captureStackTrace && Error.captureStackTrace(i, Et), !r)
     throw i;
   return i;
@@ -494,46 +494,46 @@ var Xf = /* @__PURE__ */ mi(Ii, 9, 1), qf = /* @__PURE__ */ mi(vl, 5, 1), ss = f
       var pe = new St(Math.max(de * 2, Ce));
       pe.set(r), r = pe;
     }
-  }, u = e.f || 0, d = e.p || 0, h = e.b || 0, f = e.l, p = e.d, g = e.m, m = e.n, y = n * 8;
+  }, u = e.f || 0, d = e.p || 0, h = e.b || 0, f = e.l, p = e.d, g = e.m, m = e.n, v = n * 8;
   do {
     if (!f) {
       u = It(t, d, 1);
       var A = It(t, d + 1, 3);
       if (d += 3, A)
         if (A == 1)
-          f = Xf, p = qf, g = 9, m = 5;
+          f = Hf, p = Wf, g = 9, m = 5;
         else if (A == 2) {
           var x = It(t, d, 31) + 257, T = It(t, d + 10, 15) + 4, S = x + It(t, d + 5, 31) + 1;
           d += 14;
           for (var P = new St(S), U = new St(19), _ = 0; _ < T; ++_)
-            U[Vf[_]] = It(t, d + _ * 3, 7);
+            U[kf[_]] = It(t, d + _ * 3, 7);
           d += T * 3;
           for (var O = ss(U), w = (1 << O) - 1, D = mi(U, O, 1), _ = 0; _ < S; ) {
-            var R = D[It(t, d, w)];
-            d += R & 15;
-            var v = R >> 4;
-            if (v < 16)
-              P[_++] = v;
+            var M = D[It(t, d, w)];
+            d += M & 15;
+            var b = M >> 4;
+            if (b < 16)
+              P[_++] = b;
             else {
               var C = 0, I = 0;
-              for (v == 16 ? (I = 3 + It(t, d, 3), d += 2, C = P[_ - 1]) : v == 17 ? (I = 3 + It(t, d, 7), d += 3) : v == 18 && (I = 11 + It(t, d, 127), d += 7); I--; )
+              for (b == 16 ? (I = 3 + It(t, d, 3), d += 2, C = P[_ - 1]) : b == 17 ? (I = 3 + It(t, d, 7), d += 3) : b == 18 && (I = 11 + It(t, d, 127), d += 7); I--; )
                 P[_++] = C;
             }
           }
-          var V = P.subarray(0, x), k = P.subarray(x);
-          g = ss(V), m = ss(k), f = mi(V, g, 1), p = mi(k, m, 1);
+          var V = P.subarray(0, x), G = P.subarray(x);
+          g = ss(V), m = ss(G), f = mi(V, g, 1), p = mi(G, m, 1);
         } else
           Et(1);
       else {
-        var v = Hf(d) + 4, E = t[v - 4] | t[v - 3] << 8, b = v + E;
-        if (b > n) {
+        var b = jf(d) + 4, E = t[b - 4] | t[b - 3] << 8, y = b + E;
+        if (y > n) {
           l && Et(0);
           break;
         }
-        a && c(h + E), r.set(t.subarray(v, b), h), e.b = h += E, e.p = d = b * 8, e.f = u;
+        a && c(h + E), r.set(t.subarray(b, y), h), e.b = h += E, e.p = d = y * 8, e.f = u;
         continue;
       }
-      if (d > y) {
+      if (d > v) {
         l && Et(0);
         break;
       }
@@ -541,7 +541,7 @@ var Xf = /* @__PURE__ */ mi(Ii, 9, 1), qf = /* @__PURE__ */ mi(vl, 5, 1), ss = f
     a && c(h + 131072);
     for (var F = (1 << g) - 1, X = (1 << m) - 1, q = d; ; q = d) {
       var C = f[os(t, d) & F], Q = C >> 4;
-      if (d += C & 15, d > y) {
+      if (d += C & 15, d > v) {
         l && Et(0);
         break;
       }
@@ -558,58 +558,58 @@ var Xf = /* @__PURE__ */ mi(Ii, 9, 1), qf = /* @__PURE__ */ mi(vl, 5, 1), ss = f
         }
         var ge = p[os(t, d) & X], Ae = ge >> 4;
         ge || Et(3), d += ge & 15;
-        var k = kf[Ae];
+        var G = qf[Ae];
         if (Ae > 3) {
           var J = pl[Ae];
-          k += os(t, d) & (1 << J) - 1, d += J;
+          G += os(t, d) & (1 << J) - 1, d += J;
         }
-        if (d > y) {
+        if (d > v) {
           l && Et(0);
           break;
         }
         a && c(h + 131072);
         var re = h + ee;
-        if (h < k) {
-          var xe = s - k, Ee = Math.min(k, re);
+        if (h < G) {
+          var xe = s - G, Ee = Math.min(G, re);
           for (xe + h < 0 && Et(3); h < Ee; ++h)
             r[h] = i[xe + h];
         }
         for (; h < re; ++h)
-          r[h] = r[h - k];
+          r[h] = r[h - G];
       }
     }
     e.l = f, e.p = q, e.b = h, e.f = u, f && (u = 1, e.m = g, e.d = p, e.n = m);
   } while (!u);
-  return h != r.length && o ? Wf(r, 0, h) : r.subarray(0, h);
-}, Yf = /* @__PURE__ */ new St(0), Kf = function(t) {
+  return h != r.length && o ? Yf(r, 0, h) : r.subarray(0, h);
+}, Qf = /* @__PURE__ */ new St(0), Zf = function(t) {
   (t[0] != 31 || t[1] != 139 || t[2] != 8) && Et(6, "invalid gzip data");
   var e = t[3], r = 10;
   e & 4 && (r += (t[10] | t[11] << 8) + 2);
   for (var i = (e >> 3 & 1) + (e >> 4 & 1); i > 0; i -= !t[r++])
     ;
   return r + (e & 2);
-}, Qf = function(t) {
+}, Jf = function(t) {
   var e = t.length;
   return (t[e - 4] | t[e - 3] << 8 | t[e - 2] << 16 | t[e - 1] << 24) >>> 0;
-}, Zf = function(t, e) {
+}, $f = function(t, e) {
   return ((t[0] & 15) != 8 || t[0] >> 4 > 7 || (t[0] << 8 | t[1]) % 31) && Et(6, "invalid zlib data"), (t[1] >> 5 & 1) == 1 && Et(6, "invalid zlib data: " + (t[1] & 32 ? "need" : "unexpected") + " dictionary"), (t[1] >> 3 & 4) + 2;
 };
-function Jf(t, e) {
+function ep(t, e) {
   return ho(t, { i: 2 }, e, e);
 }
-function $f(t, e) {
-  var r = Kf(t);
-  return r + 8 > t.length && Et(6, "invalid gzip data"), ho(t.subarray(r, -8), { i: 2 }, new St(Qf(t)), e);
-}
-function ep(t, e) {
-  return ho(t.subarray(Zf(t), -4), { i: 2 }, e, e);
-}
 function tp(t, e) {
-  return t[0] == 31 && t[1] == 139 && t[2] == 8 ? $f(t, e) : (t[0] & 15) != 8 || t[0] >> 4 > 7 || (t[0] << 8 | t[1]) % 31 ? Jf(t, e) : ep(t, e);
+  var r = Zf(t);
+  return r + 8 > t.length && Et(6, "invalid gzip data"), ho(t.subarray(r, -8), { i: 2 }, new St(Jf(t)), e);
 }
-var rp = typeof TextDecoder < "u" && /* @__PURE__ */ new TextDecoder(), ip = 0;
+function rp(t, e) {
+  return ho(t.subarray($f(t), -4), { i: 2 }, e, e);
+}
+function ip(t, e) {
+  return t[0] == 31 && t[1] == 139 && t[2] == 8 ? tp(t, e) : (t[0] & 15) != 8 || t[0] >> 4 > 7 || (t[0] << 8 | t[1]) % 31 ? ep(t, e) : rp(t, e);
+}
+var np = typeof TextDecoder < "u" && /* @__PURE__ */ new TextDecoder(), sp = 0;
 try {
-  rp.decode(Yf, { stream: !0 }), ip = 1;
+  np.decode(Qf, { stream: !0 }), sp = 1;
 } catch {
 }
 class yl {
@@ -898,8 +898,8 @@ const oe = class oe {
       [0, 0, 0, 0],
       [0, 0, 0, 0],
       [0, 0, 0, 0]
-    ], h, f = e, p = r, g = i, m, y, A;
-    return d[3][0] = d[3][1] = d[3][2] = 0, d[3][3] = 1, h = 1 - (f * f + p * p + g * g), h < 1e-7 ? (h = 1 / Math.sqrt(f * f + p * p + g * g), f *= h, p *= h, g *= h, h = 0) : h = Math.sqrt(h), m = a > 0 ? a : 1, y = l > 0 ? l : 1, A = c > 0 ? c : 1, u < 0 && (A = -A), d[0][0] = (h * h + f * f - p * p - g * g) * m, d[0][1] = 2 * (f * p - h * g) * y, d[0][2] = 2 * (f * g + h * p) * A, d[1][0] = 2 * (f * p + h * g) * m, d[1][1] = (h * h + p * p - f * f - g * g) * y, d[1][2] = 2 * (p * g - h * f) * A, d[2][0] = 2 * (f * g - h * p) * m, d[2][1] = 2 * (p * g + h * f) * y, d[2][2] = (h * h + g * g - p * p - f * f) * A, d[0][3] = n, d[1][3] = s, d[2][3] = o, d;
+    ], h, f = e, p = r, g = i, m, v, A;
+    return d[3][0] = d[3][1] = d[3][2] = 0, d[3][3] = 1, h = 1 - (f * f + p * p + g * g), h < 1e-7 ? (h = 1 / Math.sqrt(f * f + p * p + g * g), f *= h, p *= h, g *= h, h = 0) : h = Math.sqrt(h), m = a > 0 ? a : 1, v = l > 0 ? l : 1, A = c > 0 ? c : 1, u < 0 && (A = -A), d[0][0] = (h * h + f * f - p * p - g * g) * m, d[0][1] = 2 * (f * p - h * g) * v, d[0][2] = 2 * (f * g + h * p) * A, d[1][0] = 2 * (f * p + h * g) * m, d[1][1] = (h * h + p * p - f * f - g * g) * v, d[1][2] = 2 * (p * g - h * f) * A, d[2][0] = 2 * (f * g - h * p) * m, d[2][1] = 2 * (p * g + h * f) * v, d[2][2] = (h * h + g * g - p * p - f * f) * A, d[0][3] = n, d[1][3] = s, d[2][3] = o, d;
   }
   /**
    * Converts sform to an orientation string (e.g., XYZ+--).  (See http://nifti.nimh.nih.gov/pub/dist/src/niftilib/nifti1_io.c)
@@ -907,7 +907,7 @@ const oe = class oe {
    * @returns {string}
    */
   convertNiftiSFormToNEMA(e) {
-    var r, i, n, s, o, a, l, c, u, d, h, f, p, g, m, y, A, v, E, b, x, T, S, P, U, _, O, w, D, R, C, I, V, k;
+    var r, i, n, s, o, a, l, c, u, d, h, f, p, g, m, v, A, b, E, y, x, T, S, P, U, _, O, w, D, M, C, I, V, G;
     if (m = 0, O = [
       [0, 0, 0],
       [0, 0, 0],
@@ -935,17 +935,17 @@ const oe = class oe {
     }
     if (O[0][0] = r, O[0][1] = i, O[0][2] = n, O[1][0] = s, O[1][1] = o, O[1][2] = a, O[2][0] = l, O[2][1] = c, O[2][2] = u, h = this.nifti_mat33_determ(O), h === 0)
       return null;
-    for (_ = -666, E = T = S = P = 1, b = 2, x = 3, p = 1; p <= 3; p += 1)
+    for (_ = -666, E = T = S = P = 1, y = 2, x = 3, p = 1; p <= 3; p += 1)
       for (g = 1; g <= 3; g += 1)
         if (p !== g) {
           for (m = 1; m <= 3; m += 1)
             if (!(p === m || g === m))
-              for (w[0][0] = w[0][1] = w[0][2] = w[1][0] = w[1][1] = w[1][2] = w[2][0] = w[2][1] = w[2][2] = 0, y = -1; y <= 1; y += 2)
+              for (w[0][0] = w[0][1] = w[0][2] = w[1][0] = w[1][1] = w[1][2] = w[2][0] = w[2][1] = w[2][2] = 0, v = -1; v <= 1; v += 2)
                 for (A = -1; A <= 1; A += 2)
-                  for (v = -1; v <= 1; v += 2)
-                    w[0][p - 1] = y, w[1][g - 1] = A, w[2][m - 1] = v, f = this.nifti_mat33_determ(w), f * h > 0 && (U = this.nifti_mat33_mul(w, O), d = U[0][0] + U[1][1] + U[2][2], d > _ && (_ = d, E = p, b = g, x = m, T = y, S = A, P = v));
+                  for (b = -1; b <= 1; b += 2)
+                    w[0][p - 1] = v, w[1][g - 1] = A, w[2][m - 1] = b, f = this.nifti_mat33_determ(w), f * h > 0 && (U = this.nifti_mat33_mul(w, O), d = U[0][0] + U[1][1] + U[2][2], d > _ && (_ = d, E = p, y = g, x = m, T = v, S = A, P = b));
         }
-    switch (D = R = C = I = V = k = "", E * T) {
+    switch (D = M = C = I = V = G = "", E * T) {
       case 1:
         D = "X", I = "+";
         break;
@@ -965,47 +965,47 @@ const oe = class oe {
         D = "Z", I = "-";
         break;
     }
-    switch (b * S) {
+    switch (y * S) {
       case 1:
-        R = "X", V = "+";
+        M = "X", V = "+";
         break;
       case -1:
-        R = "X", V = "-";
+        M = "X", V = "-";
         break;
       case 2:
-        R = "Y", V = "+";
+        M = "Y", V = "+";
         break;
       case -2:
-        R = "Y", V = "-";
+        M = "Y", V = "-";
         break;
       case 3:
-        R = "Z", V = "+";
+        M = "Z", V = "+";
         break;
       case -3:
-        R = "Z", V = "-";
+        M = "Z", V = "-";
         break;
     }
     switch (x * P) {
       case 1:
-        C = "X", k = "+";
+        C = "X", G = "+";
         break;
       case -1:
-        C = "X", k = "-";
+        C = "X", G = "-";
         break;
       case 2:
-        C = "Y", k = "+";
+        C = "Y", G = "+";
         break;
       case -2:
-        C = "Y", k = "-";
+        C = "Y", G = "-";
         break;
       case 3:
-        C = "Z", k = "+";
+        C = "Z", G = "+";
         break;
       case -3:
-        C = "Z", k = "-";
+        C = "Z", G = "-";
         break;
     }
-    return D + R + C + I + V + k;
+    return D + M + C + I + V + G;
   }
   /**
    * Returns the byte index of the extension.
@@ -1295,31 +1295,31 @@ const Wt = class Wt {
 /*** Static Pseudo-constants ***/
 B(Wt, "MAGIC_COOKIE", 540), B(Wt, "MAGIC_NUMBER_LOCATION", 4), B(Wt, "MAGIC_NUMBER", [110, 43, 50, 0, 13, 10, 26, 10]), // n+2\0
 B(Wt, "MAGIC_NUMBER2", [110, 105, 50, 0, 13, 10, 26, 10]);
-let Mt = Wt;
-function np(t, e = !1) {
+let Rt = Wt;
+function op(t, e = !1) {
   var r, i, n, s;
   return t.byteLength < Se.STANDARD_HEADER_SIZE ? !1 : (r = new DataView(t), r && (i = r.getUint8(Se.MAGIC_NUMBER_LOCATION)), n = r.getUint8(Se.MAGIC_NUMBER_LOCATION + 1), s = r.getUint8(Se.MAGIC_NUMBER_LOCATION + 2), e && i === Se.MAGIC_NUMBER2[0] && n === Se.MAGIC_NUMBER2[1] && s === Se.MAGIC_NUMBER2[2] ? !0 : i === Se.MAGIC_NUMBER[0] && n === Se.MAGIC_NUMBER[1] && s === Se.MAGIC_NUMBER[2]);
 }
-function sp(t, e = !1) {
+function ap(t, e = !1) {
   var r, i, n, s;
-  return t.byteLength < Se.STANDARD_HEADER_SIZE ? !1 : (r = new DataView(t), i = r.getUint8(Mt.MAGIC_NUMBER_LOCATION), n = r.getUint8(Mt.MAGIC_NUMBER_LOCATION + 1), s = r.getUint8(Mt.MAGIC_NUMBER_LOCATION + 2), e && i === Mt.MAGIC_NUMBER2[0] && n === Mt.MAGIC_NUMBER2[1] && s === Mt.MAGIC_NUMBER2[2] ? !0 : i === Mt.MAGIC_NUMBER[0] && n === Mt.MAGIC_NUMBER[1] && s === Mt.MAGIC_NUMBER[2]);
+  return t.byteLength < Se.STANDARD_HEADER_SIZE ? !1 : (r = new DataView(t), i = r.getUint8(Rt.MAGIC_NUMBER_LOCATION), n = r.getUint8(Rt.MAGIC_NUMBER_LOCATION + 1), s = r.getUint8(Rt.MAGIC_NUMBER_LOCATION + 2), e && i === Rt.MAGIC_NUMBER2[0] && n === Rt.MAGIC_NUMBER2[1] && s === Rt.MAGIC_NUMBER2[2] ? !0 : i === Rt.MAGIC_NUMBER[0] && n === Rt.MAGIC_NUMBER[1] && s === Rt.MAGIC_NUMBER[2]);
 }
 function bl(t) {
   var e, r, i;
   return !!(t && (e = new DataView(t), r = e.getUint8(0), i = e.getUint8(1), r === $.GUNZIP_MAGIC_COOKIE1 || i === $.GUNZIP_MAGIC_COOKIE2));
 }
 function Tl(t) {
-  return tp(new Uint8Array(t)).buffer;
+  return ip(new Uint8Array(t)).buffer;
 }
-function op(t, e = !1) {
+function lp(t, e = !1) {
   let r = null;
-  if (bl(t) && (t = Tl(t)), np(t, e) ? r = new Se() : sp(t, e) && (r = new Mt()), r)
+  if (bl(t) && (t = Tl(t)), op(t, e) ? r = new Se() : ap(t, e) && (r = new Rt()), r)
     r.readHeader(t);
   else
     throw new Error("That file does not appear to be NIFTI!");
   return r;
 }
-function ap(t, e) {
+function cp(t, e) {
   var r = t.vox_offset, i = 1, n = 1;
   t.dims[4] && (i = t.dims[4]), t.dims[5] && (n = t.dims[5]);
   var s = t.dims[1] * t.dims[2] * t.dims[3] * i * n * (t.numBitsPerVoxel / 8);
@@ -1331,7 +1331,7 @@ try {
 } catch {
 }
 let he, Br, K = 0;
-const lp = 105, cp = 57342, up = 57343, Xo = 57337, qo = 6, Gr = {};
+const up = 105, dp = 57342, hp = 57343, Xo = 57337, qo = 6, kr = {};
 let li = 11281e4, nr = 1681e4, Pe = {}, qe, gn, xn = 0, vi = 0, tt, Pt, Ze = [], Ls = [], vt, ht, di, Ho = {
   useRecords: !1,
   mapsAsObjects: !0
@@ -1388,7 +1388,7 @@ class bi {
   }
   decode(e, r) {
     if (he)
-      return Rl(() => (Ns(), this ? this.decode(e, r) : bi.prototype.decode.call(Ho, e, r)));
+      return Ml(() => (Ns(), this ? this.decode(e, r) : bi.prototype.decode.call(Ho, e, r)));
     Br = r > -1 ? r : e.length, K = 0, vi = 0, gn = null, tt = null, he = e;
     try {
       ht = e.dataView || (e.dataView = new DataView(e.buffer, e.byteOffset, e.byteLength));
@@ -1458,7 +1458,7 @@ function Ue() {
         break;
       case 25:
         if (e == 7)
-          return pp();
+          return gp();
         t = ht.getUint16(K), K += 2;
         break;
       case 26:
@@ -1492,7 +1492,7 @@ function Ue() {
             throw new Error("Indefinite length not supported for byte or text strings");
           case 4:
             let r = [], i, n = 0;
-            for (; (i = Ue()) != Gr; ) {
+            for (; (i = Ue()) != kr; ) {
               if (n >= li) throw new Error(`Array length exceeds ${li}`);
               r[n++] = i;
             }
@@ -1502,12 +1502,12 @@ function Ue() {
             if (Pe.mapsAsObjects) {
               let o = {}, a = 0;
               if (Pe.keyMap)
-                for (; (s = Ue()) != Gr; ) {
+                for (; (s = Ue()) != kr; ) {
                   if (a++ >= nr) throw new Error(`Property count exceeds ${nr}`);
                   o[Dt(Pe.decodeKey(s))] = Ue();
                 }
               else
-                for (; (s = Ue()) != Gr; ) {
+                for (; (s = Ue()) != kr; ) {
                   if (a++ >= nr) throw new Error(`Property count exceeds ${nr}`);
                   o[Dt(s)] = Ue();
                 }
@@ -1517,14 +1517,14 @@ function Ue() {
               let o = /* @__PURE__ */ new Map();
               if (Pe.keyMap) {
                 let a = 0;
-                for (; (s = Ue()) != Gr; ) {
+                for (; (s = Ue()) != kr; ) {
                   if (a++ >= nr)
                     throw new Error(`Map size exceeds ${nr}`);
                   o.set(Pe.decodeKey(s), Ue());
                 }
               } else {
                 let a = 0;
-                for (; (s = Ue()) != Gr; ) {
+                for (; (s = Ue()) != kr; ) {
                   if (a++ >= nr)
                     throw new Error(`Map size exceeds ${nr}`);
                   o.set(s, Ue());
@@ -1533,7 +1533,7 @@ function Ue() {
               return o;
             }
           case 7:
-            return Gr;
+            return kr;
           default:
             throw new Error("Invalid major type for indefinite length " + e);
         }
@@ -1546,16 +1546,16 @@ function Ue() {
     case 1:
       return ~t;
     case 2:
-      return fp(t);
+      return mp(t);
     case 3:
       if (vi >= K)
         return gn.slice(K - xn, (K += t) - xn);
       if (vi == 0 && Br < 140 && t < 32) {
-        let n = t < 16 ? wl(t) : hp(t);
+        let n = t < 16 ? wl(t) : pp(t);
         if (n != null)
           return n;
       }
-      return dp(t);
+      return fp(t);
     case 4:
       if (t >= li) throw new Error(`Array length exceeds ${li}`);
       let r = new Array(t);
@@ -1581,7 +1581,7 @@ function Ue() {
         if (n)
           return n.read || (n.read = _s(n)), n.read();
         if (t < 65536) {
-          if (t == up) {
+          if (t == hp) {
             let s = Yr(), o = Ue(), a = Ue();
             Fs(o, a);
             let l = {};
@@ -1594,13 +1594,13 @@ function Ue() {
               l[Dt(u)] = Ue();
             }
             return l;
-          } else if (t == cp) {
+          } else if (t == dp) {
             let s = Yr(), o = Ue();
             for (let a = 2; a < s; a++)
               Fs(o++, Ue());
             return Ue();
           } else if (t == Xo)
-            return bp();
+            return Ap();
           if (Pe.getShared && (fo(), n = qe[t & 8191], n))
             return n.read || (n.read = _s(n)), n.read();
         }
@@ -1686,7 +1686,7 @@ function Dt(t) {
   if (t == null) return t + "";
   throw new Error("Invalid property name type " + typeof t);
 }
-let dp = Os;
+let fp = Os;
 function Os(t) {
   let e;
   if (t < 16 && (e = wl(t)))
@@ -1715,7 +1715,7 @@ function Os(t) {
   return i.length > 0 && (e += st.apply(String, i)), e;
 }
 let st = String.fromCharCode;
-function hp(t) {
+function pp(t) {
   let e = K, r = new Array(t);
   for (let i = 0; i < t; i++) {
     const n = he[K++];
@@ -1853,14 +1853,14 @@ function wl(t) {
     }
   }
 }
-function fp(t) {
+function mp(t) {
   return Pe.copyBuffers ? (
     // specifically use the copying slice (not the node one)
     Uint8Array.prototype.slice.call(he, K, K += t)
   ) : he.subarray(K, K += t);
 }
 let El = new Float32Array(1), Hi = new Uint8Array(El.buffer, 0, 4);
-function pp() {
+function gp() {
   let t = he[K++], e = he[K++], r = (t & 127) >> 2;
   if (r === 31)
     return e || t & 3 ? NaN : t & 128 ? -1 / 0 : 1 / 0;
@@ -1894,7 +1894,7 @@ const Fs = (t, e) => {
   let r = qe[t];
   r && r.isShared && ((qe.restoreStructures || (qe.restoreStructures = []))[t] = r), qe[t] = e, e.read = _s(e);
 };
-Ze[lp] = (t) => {
+Ze[up] = (t) => {
   let e = t.length, r = t[1];
   Fs(t[0], r);
   let i = {};
@@ -1906,8 +1906,8 @@ Ze[lp] = (t) => {
 };
 Ze[14] = (t) => tt ? tt[0].slice(tt.position0, tt.position0 += t) : new Fr(t, 14);
 Ze[15] = (t) => tt ? tt[1].slice(tt.position1, tt.position1 += t) : new Fr(t, 15);
-let mp = { Error, RegExp };
-Ze[27] = (t) => (mp[t[0]] || Error)(t[1], t[2]);
+let xp = { Error, RegExp };
+Ze[27] = (t) => (xp[t[0]] || Error)(t[1], t[2]);
 const Sl = (t) => {
   if (he[K++] != 132) {
     let r = new Error("Packed values structure must be followed by a 4 element array");
@@ -1949,7 +1949,7 @@ Ze[29] = (t) => {
 };
 Ze[258] = (t) => new Set(t);
 (Ze[259] = (t) => (Pe.mapsAsObjects && (Pe.mapsAsObjects = !1, di = !0), t())).handlesRead = !0;
-function kr(t, e) {
+function Gr(t, e) {
   return typeof t == "string" ? t + e : t instanceof Array ? t.concat(e) : Object.assign({}, t, e);
 }
 function Sr() {
@@ -1960,21 +1960,21 @@ function Sr() {
       throw new Error("No packed values available");
   return vt;
 }
-const gp = 1399353956;
+const vp = 1399353956;
 Ls.push((t, e) => {
   if (t >= 225 && t <= 255)
-    return kr(Sr().prefixes[t - 224], e);
+    return Gr(Sr().prefixes[t - 224], e);
   if (t >= 28704 && t <= 32767)
-    return kr(Sr().prefixes[t - 28672], e);
+    return Gr(Sr().prefixes[t - 28672], e);
   if (t >= 1879052288 && t <= 2147483647)
-    return kr(Sr().prefixes[t - 1879048192], e);
+    return Gr(Sr().prefixes[t - 1879048192], e);
   if (t >= 216 && t <= 223)
-    return kr(e, Sr().suffixes[t - 216]);
+    return Gr(e, Sr().suffixes[t - 216]);
   if (t >= 27647 && t <= 28671)
-    return kr(e, Sr().suffixes[t - 27639]);
+    return Gr(e, Sr().suffixes[t - 27639]);
   if (t >= 1811940352 && t <= 1879048191)
-    return kr(e, Sr().suffixes[t - 1811939328]);
-  if (t == gp)
+    return Gr(e, Sr().suffixes[t - 1811939328]);
+  if (t == vp)
     return {
       packedValues: vt,
       structures: qe.slice(0),
@@ -1983,7 +1983,7 @@ Ls.push((t, e) => {
   if (t == 55799)
     return e;
 });
-const xp = new Uint8Array(new Uint16Array([1]).buffer)[0] == 1, jo = [
+const yp = new Uint8Array(new Uint16Array([1]).buffer)[0] == 1, jo = [
   Uint8Array,
   Uint8ClampedArray,
   Uint16Array,
@@ -1995,17 +1995,17 @@ const xp = new Uint8Array(new Uint16Array([1]).buffer)[0] == 1, jo = [
   typeof BigInt64Array > "u" ? { name: "BigInt64Array" } : BigInt64Array,
   Float32Array,
   Float64Array
-], vp = [64, 68, 69, 70, 71, 72, 77, 78, 79, 85, 86];
+], bp = [64, 68, 69, 70, 71, 72, 77, 78, 79, 85, 86];
 for (let t = 0; t < jo.length; t++)
-  yp(jo[t], vp[t]);
-function yp(t, e) {
+  Tp(jo[t], bp[t]);
+function Tp(t, e) {
   let r = "get" + t.name.slice(0, -5), i;
   typeof t == "function" ? i = t.BYTES_PER_ELEMENT : t = null;
   for (let n = 0; n < 2; n++) {
     if (!n && i == 1)
       continue;
     let s = i == 2 ? 1 : i == 4 ? 2 : i == 8 ? 3 : 0;
-    Ze[n ? e : e - 4] = i == 1 || n == xp ? (o) => {
+    Ze[n ? e : e - 4] = i == 1 || n == yp ? (o) => {
       if (!t)
         throw new Error("Could not find typed array for code " + e);
       return !Pe.copyBuffers && (i === 1 || i === 2 && !(o.byteOffset & 1) || i === 4 && !(o.byteOffset & 3) || i === 8 && !(o.byteOffset & 7)) ? new t(o.buffer, o.byteOffset, o.byteLength >> s) : new t(Uint8Array.prototype.slice.call(o, 0).buffer);
@@ -2019,7 +2019,7 @@ function yp(t, e) {
     };
   }
 }
-function bp() {
+function Ap() {
   let t = Yr(), e = K + Ue();
   for (let i = 2; i < t; i++) {
     let n = Yr();
@@ -2046,11 +2046,11 @@ function Yr() {
 }
 function fo() {
   if (Pe.getShared) {
-    let t = Rl(() => (he = null, Pe.getShared())) || {}, e = t.structures || [];
+    let t = Ml(() => (he = null, Pe.getShared())) || {}, e = t.structures || [];
     Pe.sharedVersion = t.version, vt = Pe.sharedValues = t.packedValues, qe === !0 ? Pe.structures = qe = e : qe.splice.apply(qe, [0, e.length].concat(e));
   }
 }
-function Rl(t) {
+function Ml(t) {
   let e = Br, r = K, i = xn, n = vi, s = gn, o = Pt, a = tt, l = new Uint8Array(he.slice(0, Br)), c = qe, u = Pe, d = yi, h = t();
   return Br = e, K = r, xn = i, vi = n, gn = s, Pt = o, tt = a, he = l, yi = d, qe = c, Pe = u, ht = new DataView(he.buffer, he.byteOffset, he.byteLength), h;
 }
@@ -2068,11 +2068,11 @@ try {
   an = new TextEncoder();
 } catch {
 }
-let Vs, Ml;
-const Gn = typeof globalThis == "object" && globalThis.Buffer, Bi = typeof Gn < "u", as = Bi ? Gn.allocUnsafeSlow : Uint8Array, Yo = Bi ? Gn : Uint8Array, Ko = 256, Qo = Bi ? 4294967296 : 2144337920;
+let Vs, Rl;
+const kn = typeof globalThis == "object" && globalThis.Buffer, Bi = typeof kn < "u", as = Bi ? kn.allocUnsafeSlow : Uint8Array, Yo = Bi ? kn : Uint8Array, Ko = 256, Qo = Bi ? 4294967296 : 2144337920;
 let ls, H, Ve, z = 0, fr, Je = null;
-const Tp = 61440, Ap = /[\u0080-\uFFFF]/, At = Symbol("record-id");
-class wp extends bi {
+const wp = 61440, Ep = /[\u0080-\uFFFF]/, At = Symbol("record-id");
+class Sp extends bi {
   constructor(e) {
     super(e), this.offset = 0;
     let r, i, n, s, o;
@@ -2092,12 +2092,12 @@ class wp extends bi {
       for (let w = 0, D = p.length; w < D; w++)
         g[p[w]] = w;
     }
-    let m = [], y = 0, A = 0;
+    let m = [], v = 0, A = 0;
     this.mapEncode = function(w, D) {
       if (this._keyMap && !this._mapped)
         switch (w.constructor.name) {
           case "Array":
-            w = w.map((R) => this.encodeKeys(R));
+            w = w.map((M) => this.encodeKeys(M));
             break;
         }
       return this.encode(w, D);
@@ -2109,34 +2109,34 @@ class wp extends bi {
           let I = l.sharedValues = C.packedValues;
           if (I) {
             g = {};
-            for (let V = 0, k = I.length; V < k; V++)
+            for (let V = 0, G = I.length; V < G; V++)
               g[I[V]] = V;
           }
         }
-        let R = i.length;
-        if (R > u && !d && (R = u), !i.transitions) {
+        let M = i.length;
+        if (M > u && !d && (M = u), !i.transitions) {
           i.transitions = /* @__PURE__ */ Object.create(null);
-          for (let C = 0; C < R; C++) {
+          for (let C = 0; C < M; C++) {
             let I = i[C];
             if (!I)
               continue;
-            let V, k = i.transitions;
+            let V, G = i.transitions;
             for (let F = 0, X = I.length; F < X; F++) {
-              k[At] === void 0 && (k[At] = C);
+              G[At] === void 0 && (G[At] = C);
               let q = I[F];
-              V = k[q], V || (V = k[q] = /* @__PURE__ */ Object.create(null)), k = V;
+              V = G[q], V || (V = G[q] = /* @__PURE__ */ Object.create(null)), G = V;
             }
-            k[At] = C | 1048576;
+            G[At] = C | 1048576;
           }
         }
-        d || (i.nextId = R);
+        d || (i.nextId = M);
       }
       if (n && (n = !1), s = i || [], f = g, e.pack) {
-        let R = /* @__PURE__ */ new Map();
-        if (R.values = [], R.encoder = l, R.maxValues = e.maxPrivatePackedValues || (g ? 16 : 1 / 0), R.objectMap = g || !1, R.samplingPackedValues = h, ln(w, R), R.values.length > 0) {
+        let M = /* @__PURE__ */ new Map();
+        if (M.values = [], M.encoder = l, M.maxValues = e.maxPrivatePackedValues || (g ? 16 : 1 / 0), M.objectMap = g || !1, M.samplingPackedValues = h, ln(w, M), M.values.length > 0) {
           H[z++] = 216, H[z++] = 51, jt(4);
-          let C = R.values;
-          v(C), jt(0), jt(0), f = Object.create(g || null);
+          let C = M.values;
+          b(C), jt(0), jt(0), f = Object.create(g || null);
           for (let I = 0, V = C.length; I < V; I++)
             f[C[I]] = I;
         }
@@ -2145,46 +2145,46 @@ class wp extends bi {
       try {
         if (ls)
           return;
-        if (v(w), Je && Jo(r, v), l.offset = z, o && o.idsToInsert) {
-          z += o.idsToInsert.length * 2, z > fr && b(z), l.offset = z;
-          let R = Rp(H.subarray(r, z), o.idsToInsert);
-          return o = null, R;
+        if (b(w), Je && Jo(r, b), l.offset = z, o && o.idsToInsert) {
+          z += o.idsToInsert.length * 2, z > fr && y(z), l.offset = z;
+          let M = Pp(H.subarray(r, z), o.idsToInsert);
+          return o = null, M;
         }
         return D & $o ? (H.start = r, H.end = z, H) : H.subarray(r, z);
       } finally {
         if (i) {
-          if (A < 10 && A++, i.length > u && (i.length = u), y > 1e4)
-            i.transitions = null, A = 0, y = 0, m.length > 0 && (m = []);
+          if (A < 10 && A++, i.length > u && (i.length = u), v > 1e4)
+            i.transitions = null, A = 0, v = 0, m.length > 0 && (m = []);
           else if (m.length > 0 && !d) {
-            for (let R = 0, C = m.length; R < C; R++)
-              m[R][At] = void 0;
+            for (let M = 0, C = m.length; M < C; M++)
+              m[M][At] = void 0;
             m = [];
           }
         }
         if (n && l.saveShared) {
           l.structures.length > u && (l.structures = l.structures.slice(0, u));
-          let R = H.subarray(r, z);
-          return l.updateSharedData() === !1 ? l.encode(w) : R;
+          let M = H.subarray(r, z);
+          return l.updateSharedData() === !1 ? l.encode(w) : M;
         }
-        D & Mp && (z = r);
+        D & Dp && (z = r);
       }
     }, this.findCommonStringsToPack = () => (h = /* @__PURE__ */ new Map(), g || (g = /* @__PURE__ */ Object.create(null)), (w) => {
-      let D = w && w.threshold || 4, R = this.pack ? w.maxPrivatePackedValues || 16 : 0;
+      let D = w && w.threshold || 4, M = this.pack ? w.maxPrivatePackedValues || 16 : 0;
       p || (p = this.sharedValues = []);
       for (let [C, I] of h)
-        I.count > D && (g[C] = R++, p.push(C), n = !0);
+        I.count > D && (g[C] = M++, p.push(C), n = !0);
       for (; this.saveShared && this.updateSharedData() === !1; )
         ;
       h = null;
     });
-    const v = (w) => {
-      z > fr && (H = b(z));
-      var D = typeof w, R;
+    const b = (w) => {
+      z > fr && (H = y(z));
+      var D = typeof w, M;
       if (D === "string") {
         if (f) {
-          let k = f[w];
-          if (k >= 0) {
-            k < 16 ? H[z++] = k + 224 : (H[z++] = 198, k & 1 ? v(15 - k >> 1) : v(k - 16 >> 1));
+          let G = f[w];
+          if (G >= 0) {
+            G < 16 ? H[z++] = G + 224 : (H[z++] = 198, G & 1 ? b(15 - G >> 1) : b(G - 16 >> 1));
             return;
           } else if (h && !e.pack) {
             let F = h.get(w);
@@ -2195,25 +2195,25 @@ class wp extends bi {
         }
         let C = w.length;
         if (Je && C >= 4 && C < 1024) {
-          if ((Je.size += C) > Tp) {
+          if ((Je.size += C) > wp) {
             let F, X = (Je[0] ? Je[0].length * 3 + Je[1].length : 0) + 10;
-            z + X > fr && (H = b(z + X)), H[z++] = 217, H[z++] = 223, H[z++] = 249, H[z++] = Je.position ? 132 : 130, H[z++] = 26, F = z - r, z += 4, Je.position && Jo(r, v), Je = ["", ""], Je.size = 0, Je.position = F;
+            z + X > fr && (H = y(z + X)), H[z++] = 217, H[z++] = 223, H[z++] = 249, H[z++] = Je.position ? 132 : 130, H[z++] = 26, F = z - r, z += 4, Je.position && Jo(r, b), Je = ["", ""], Je.size = 0, Je.position = F;
           }
-          let k = Ap.test(w);
-          Je[k ? 0 : 1] += w, H[z++] = k ? 206 : 207, v(C);
+          let G = Ep.test(w);
+          Je[G ? 0 : 1] += w, H[z++] = G ? 206 : 207, b(C);
           return;
         }
         let I;
         C < 32 ? I = 1 : C < 256 ? I = 2 : C < 65536 ? I = 3 : I = 5;
         let V = C * 3;
-        if (z + V > fr && (H = b(z + V)), C < 64 || !a) {
-          let k, F, X, q = z + I;
-          for (k = 0; k < C; k++)
-            F = w.charCodeAt(k), F < 128 ? H[q++] = F : F < 2048 ? (H[q++] = F >> 6 | 192, H[q++] = F & 63 | 128) : (F & 64512) === 55296 && ((X = w.charCodeAt(k + 1)) & 64512) === 56320 ? (F = 65536 + ((F & 1023) << 10) + (X & 1023), k++, H[q++] = F >> 18 | 240, H[q++] = F >> 12 & 63 | 128, H[q++] = F >> 6 & 63 | 128, H[q++] = F & 63 | 128) : (H[q++] = F >> 12 | 224, H[q++] = F >> 6 & 63 | 128, H[q++] = F & 63 | 128);
-          R = q - z - I;
+        if (z + V > fr && (H = y(z + V)), C < 64 || !a) {
+          let G, F, X, q = z + I;
+          for (G = 0; G < C; G++)
+            F = w.charCodeAt(G), F < 128 ? H[q++] = F : F < 2048 ? (H[q++] = F >> 6 | 192, H[q++] = F & 63 | 128) : (F & 64512) === 55296 && ((X = w.charCodeAt(G + 1)) & 64512) === 56320 ? (F = 65536 + ((F & 1023) << 10) + (X & 1023), G++, H[q++] = F >> 18 | 240, H[q++] = F >> 12 & 63 | 128, H[q++] = F >> 6 & 63 | 128, H[q++] = F & 63 | 128) : (H[q++] = F >> 12 | 224, H[q++] = F >> 6 & 63 | 128, H[q++] = F & 63 | 128);
+          M = q - z - I;
         } else
-          R = a(w, z + I, V);
-        R < 24 ? H[z++] = 96 | R : R < 256 ? (I < 2 && H.copyWithin(z + 2, z + 1, z + 1 + R), H[z++] = 120, H[z++] = R) : R < 65536 ? (I < 3 && H.copyWithin(z + 3, z + 2, z + 2 + R), H[z++] = 121, H[z++] = R >> 8, H[z++] = R & 255) : (I < 5 && H.copyWithin(z + 5, z + 3, z + 3 + R), H[z++] = 122, Ve.setUint32(z, R), z += 4), z += R;
+          M = a(w, z + I, V);
+        M < 24 ? H[z++] = 96 | M : M < 256 ? (I < 2 && H.copyWithin(z + 2, z + 1, z + 1 + M), H[z++] = 120, H[z++] = M) : M < 65536 ? (I < 3 && H.copyWithin(z + 3, z + 2, z + 2 + M), H[z++] = 121, H[z++] = M >> 8, H[z++] = M & 255) : (I < 5 && H.copyWithin(z + 5, z + 3, z + 3 + M), H[z++] = 122, Ve.setUint32(z, M), z += 4), z += M;
       } else if (D === "number")
         if (!this.alwaysUseFloat && w >>> 0 === w)
           w < 24 ? H[z++] = w : w < 256 ? (H[z++] = 24, H[z++] = w) : w < 65536 ? (H[z++] = 25, H[z++] = w >> 8, H[z++] = w & 255) : (H[z++] = 26, Ve.setUint32(z, w), z += 4);
@@ -2255,22 +2255,22 @@ class wp extends bi {
           if (C === Object)
             this.skipFunction === !0 && (w = Object.fromEntries([...Object.keys(w).filter((I) => typeof w[I] != "function").map((I) => [I, w[I]])])), E(w);
           else if (C === Array) {
-            R = w.length, R < 24 ? H[z++] = 128 | R : jt(R);
-            for (let I = 0; I < R; I++)
-              v(w[I]);
+            M = w.length, M < 24 ? H[z++] = 128 | M : jt(M);
+            for (let I = 0; I < M; I++)
+              b(w[I]);
           } else if (C === Map)
-            if ((this.mapsAsObjects ? this.useTag259ForMaps !== !1 : this.useTag259ForMaps) && (H[z++] = 217, H[z++] = 1, H[z++] = 3), R = w.size, R < 24 ? H[z++] = 160 | R : R < 256 ? (H[z++] = 184, H[z++] = R) : R < 65536 ? (H[z++] = 185, H[z++] = R >> 8, H[z++] = R & 255) : (H[z++] = 186, Ve.setUint32(z, R), z += 4), l.keyMap)
+            if ((this.mapsAsObjects ? this.useTag259ForMaps !== !1 : this.useTag259ForMaps) && (H[z++] = 217, H[z++] = 1, H[z++] = 3), M = w.size, M < 24 ? H[z++] = 160 | M : M < 256 ? (H[z++] = 184, H[z++] = M) : M < 65536 ? (H[z++] = 185, H[z++] = M >> 8, H[z++] = M & 255) : (H[z++] = 186, Ve.setUint32(z, M), z += 4), l.keyMap)
               for (let [I, V] of w)
-                v(l.encodeKey(I)), v(V);
+                b(l.encodeKey(I)), b(V);
             else
               for (let [I, V] of w)
-                v(I), v(V);
+                b(I), b(V);
           else {
             for (let I = 0, V = Vs.length; I < V; I++) {
-              let k = Ml[I];
-              if (w instanceof k) {
+              let G = Rl[I];
+              if (w instanceof G) {
                 let F = Vs[I], X = F.tag;
-                X == null && (X = F.getTag && F.getTag.call(this, w)), X < 24 ? H[z++] = 192 | X : X < 256 ? (H[z++] = 216, H[z++] = X) : X < 65536 ? (H[z++] = 217, H[z++] = X >> 8, H[z++] = X & 255) : X > -1 && (H[z++] = 218, Ve.setUint32(z, X), z += 4), F.encode.call(this, w, v, b);
+                X == null && (X = F.getTag && F.getTag.call(this, w)), X < 24 ? H[z++] = 192 | X : X < 256 ? (H[z++] = 216, H[z++] = X) : X < 65536 ? (H[z++] = 217, H[z++] = X >> 8, H[z++] = X & 255) : X > -1 && (H[z++] = 218, Ve.setUint32(z, X), z += 4), F.encode.call(this, w, b, y);
                 return;
               }
             }
@@ -2281,7 +2281,7 @@ class wp extends bi {
               }
               H[z++] = 159;
               for (let I of w)
-                v(I);
+                b(I);
               H[z++] = 255;
               return;
             }
@@ -2292,7 +2292,7 @@ class wp extends bi {
             if (this.useToJSON && w.toJSON) {
               const I = w.toJSON();
               if (I !== w)
-                return v(I);
+                return b(I);
             }
             E(w);
           }
@@ -2311,7 +2311,7 @@ class wp extends bi {
           let C = [];
           for (; w; )
             C.push(Number(w & BigInt(255))), w >>= BigInt(8);
-          zs(new Uint8Array(C.reverse()), b);
+          zs(new Uint8Array(C.reverse()), y);
           return;
         }
         z += 8;
@@ -2320,51 +2320,51 @@ class wp extends bi {
       else
         throw new Error("Unknown type: " + D);
     }, E = this.useRecords === !1 ? this.variableMapSize ? (w) => {
-      let D = Object.keys(w), R = Object.values(w), C = D.length;
+      let D = Object.keys(w), M = Object.values(w), C = D.length;
       if (C < 24 ? H[z++] = 160 | C : C < 256 ? (H[z++] = 184, H[z++] = C) : C < 65536 ? (H[z++] = 185, H[z++] = C >> 8, H[z++] = C & 255) : (H[z++] = 186, Ve.setUint32(z, C), z += 4), l.keyMap)
         for (let I = 0; I < C; I++)
-          v(l.encodeKey(D[I])), v(R[I]);
+          b(l.encodeKey(D[I])), b(M[I]);
       else
         for (let I = 0; I < C; I++)
-          v(D[I]), v(R[I]);
+          b(D[I]), b(M[I]);
     } : (w) => {
       H[z++] = 185;
       let D = z - r;
       z += 2;
-      let R = 0;
+      let M = 0;
       if (l.keyMap)
-        for (let C in w) (typeof w.hasOwnProperty != "function" || w.hasOwnProperty(C)) && (v(l.encodeKey(C)), v(w[C]), R++);
+        for (let C in w) (typeof w.hasOwnProperty != "function" || w.hasOwnProperty(C)) && (b(l.encodeKey(C)), b(w[C]), M++);
       else
-        for (let C in w) (typeof w.hasOwnProperty != "function" || w.hasOwnProperty(C)) && (v(C), v(w[C]), R++);
-      H[D++ + r] = R >> 8, H[D + r] = R & 255;
+        for (let C in w) (typeof w.hasOwnProperty != "function" || w.hasOwnProperty(C)) && (b(C), b(w[C]), M++);
+      H[D++ + r] = M >> 8, H[D + r] = M & 255;
     } : (w, D) => {
-      let R, C = s.transitions || (s.transitions = /* @__PURE__ */ Object.create(null)), I = 0, V = 0, k, F;
+      let M, C = s.transitions || (s.transitions = /* @__PURE__ */ Object.create(null)), I = 0, V = 0, G, F;
       if (this.keyMap) {
         F = Object.keys(w).map((q) => this.encodeKey(q)), V = F.length;
         for (let q = 0; q < V; q++) {
           let Q = F[q];
-          R = C[Q], R || (R = C[Q] = /* @__PURE__ */ Object.create(null), I++), C = R;
+          M = C[Q], M || (M = C[Q] = /* @__PURE__ */ Object.create(null), I++), C = M;
         }
       } else
-        for (let q in w) (typeof w.hasOwnProperty != "function" || w.hasOwnProperty(q)) && (R = C[q], R || (C[At] & 1048576 && (k = C[At] & 65535), R = C[q] = /* @__PURE__ */ Object.create(null), I++), C = R, V++);
+        for (let q in w) (typeof w.hasOwnProperty != "function" || w.hasOwnProperty(q)) && (M = C[q], M || (C[At] & 1048576 && (G = C[At] & 65535), M = C[q] = /* @__PURE__ */ Object.create(null), I++), C = M, V++);
       let X = C[At];
       if (X !== void 0)
         X &= 65535, H[z++] = 217, H[z++] = X >> 8 | 224, H[z++] = X & 255;
-      else if (F || (F = C.__keys__ || (C.__keys__ = Object.keys(w))), k === void 0 ? (X = s.nextId++, X || (X = 0, s.nextId = 1), X >= Ko && (s.nextId = (X = u) + 1)) : X = k, s[X] = F, X < u) {
+      else if (F || (F = C.__keys__ || (C.__keys__ = Object.keys(w))), G === void 0 ? (X = s.nextId++, X || (X = 0, s.nextId = 1), X >= Ko && (s.nextId = (X = u) + 1)) : X = G, s[X] = F, X < u) {
         H[z++] = 217, H[z++] = X >> 8 | 224, H[z++] = X & 255, C = s.transitions;
         for (let q = 0; q < V; q++)
           (C[At] === void 0 || C[At] & 1048576) && (C[At] = X), C = C[F[q]];
         C[At] = X | 1048576, n = !0;
       } else {
-        if (C[At] = X, Ve.setUint32(z, 3655335680), z += 3, I && (y += A * I), m.length >= Ko - u && (m.shift()[At] = void 0), m.push(C), jt(V + 2), v(57344 + X), v(F), D) return;
+        if (C[At] = X, Ve.setUint32(z, 3655335680), z += 3, I && (v += A * I), m.length >= Ko - u && (m.shift()[At] = void 0), m.push(C), jt(V + 2), b(57344 + X), b(F), D) return;
         for (let q in w)
-          (typeof w.hasOwnProperty != "function" || w.hasOwnProperty(q)) && v(w[q]);
+          (typeof w.hasOwnProperty != "function" || w.hasOwnProperty(q)) && b(w[q]);
         return;
       }
       if (V < 24 ? H[z++] = 128 | V : jt(V), !D)
         for (let q in w)
-          (typeof w.hasOwnProperty != "function" || w.hasOwnProperty(q)) && v(w[q]);
-    }, b = (w) => {
+          (typeof w.hasOwnProperty != "function" || w.hasOwnProperty(q)) && b(w[q]);
+    }, y = (w) => {
       let D;
       if (w > 16777216) {
         if (w - r > Qo)
@@ -2375,8 +2375,8 @@ class wp extends bi {
         );
       } else
         D = (Math.max(w - r << 2, H.length - 1) >> 12) + 1 << 12;
-      let R = new as(D);
-      return Ve = new DataView(R.buffer, 0, D), H.copy ? H.copy(R, 0, r, w) : R.set(H.slice(r, w)), z -= r, r = 0, fr = R.length - 10, H = R;
+      let M = new as(D);
+      return Ve = new DataView(M.buffer, 0, D), H.copy ? H.copy(M, 0, r, w) : M.set(H.slice(r, w)), z -= r, r = 0, fr = M.length - 10, H = M;
     };
     let x = 100, T = 1e3;
     this.encodeAsIterable = function(w, D) {
@@ -2384,60 +2384,60 @@ class wp extends bi {
     }, this.encodeAsAsyncIterable = function(w, D) {
       return _(w, D, O);
     };
-    function* S(w, D, R) {
+    function* S(w, D, M) {
       let C = w.constructor;
       if (C === Object) {
         let I = l.useRecords !== !1;
         I ? E(w, !0) : Zo(Object.keys(w).length, 160);
         for (let V in w) {
-          let k = w[V];
-          I || v(V), k && typeof k == "object" ? D[V] ? yield* S(k, D[V]) : yield* P(k, D, V) : v(k);
+          let G = w[V];
+          I || b(V), G && typeof G == "object" ? D[V] ? yield* S(G, D[V]) : yield* P(G, D, V) : b(G);
         }
       } else if (C === Array) {
         let I = w.length;
         jt(I);
         for (let V = 0; V < I; V++) {
-          let k = w[V];
-          k && (typeof k == "object" || z - r > x) ? D.element ? yield* S(k, D.element) : yield* P(k, D, "element") : v(k);
+          let G = w[V];
+          G && (typeof G == "object" || z - r > x) ? D.element ? yield* S(G, D.element) : yield* P(G, D, "element") : b(G);
         }
       } else if (w[Symbol.iterator] && !w.buffer) {
         H[z++] = 159;
         for (let I of w)
-          I && (typeof I == "object" || z - r > x) ? D.element ? yield* S(I, D.element) : yield* P(I, D, "element") : v(I);
+          I && (typeof I == "object" || z - r > x) ? D.element ? yield* S(I, D.element) : yield* P(I, D, "element") : b(I);
         H[z++] = 255;
-      } else cs(w) ? (Zo(w.size, 64), yield H.subarray(r, z), yield w, U()) : w[Symbol.asyncIterator] ? (H[z++] = 159, yield H.subarray(r, z), yield w, U(), H[z++] = 255) : v(w);
-      R && z > r ? yield H.subarray(r, z) : z - r > x && (yield H.subarray(r, z), U());
+      } else cs(w) ? (Zo(w.size, 64), yield H.subarray(r, z), yield w, U()) : w[Symbol.asyncIterator] ? (H[z++] = 159, yield H.subarray(r, z), yield w, U(), H[z++] = 255) : b(w);
+      M && z > r ? yield H.subarray(r, z) : z - r > x && (yield H.subarray(r, z), U());
     }
-    function* P(w, D, R) {
+    function* P(w, D, M) {
       let C = z - r;
       try {
-        v(w), z - r > x && (yield H.subarray(r, z), U());
+        b(w), z - r > x && (yield H.subarray(r, z), U());
       } catch (I) {
         if (I.iteratorNotHandled)
-          D[R] = {}, z = r + C, yield* S.call(this, w, D[R]);
+          D[M] = {}, z = r + C, yield* S.call(this, w, D[M]);
         else throw I;
       }
     }
     function U() {
       x = T, l.encode(null, us);
     }
-    function _(w, D, R) {
-      return D && D.chunkThreshold ? x = T = D.chunkThreshold : x = 100, w && typeof w == "object" ? (l.encode(null, us), R(w, l.iterateProperties || (l.iterateProperties = {}), !0)) : [l.encode(w)];
+    function _(w, D, M) {
+      return D && D.chunkThreshold ? x = T = D.chunkThreshold : x = 100, w && typeof w == "object" ? (l.encode(null, us), M(w, l.iterateProperties || (l.iterateProperties = {}), !0)) : [l.encode(w)];
     }
     async function* O(w, D) {
-      for (let R of S(w, D, !0)) {
-        let C = R.constructor;
+      for (let M of S(w, D, !0)) {
+        let C = M.constructor;
         if (C === Yo || C === Uint8Array)
-          yield R;
-        else if (cs(R)) {
-          let I = R.stream().getReader(), V;
+          yield M;
+        else if (cs(M)) {
+          let I = M.stream().getReader(), V;
           for (; !(V = await I.read()).done; )
             yield V.value;
-        } else if (R[Symbol.asyncIterator])
-          for await (let I of R)
+        } else if (M[Symbol.asyncIterator])
+          for await (let I of M)
             U(), I ? yield* O(I, D.async || (D.async = {})) : yield l.encode(I);
         else
-          yield R;
+          yield M;
       }
     }
   }
@@ -2468,10 +2468,10 @@ class Pl {
 function jt(t) {
   t < 24 ? H[z++] = 128 | t : t < 256 ? (H[z++] = 152, H[z++] = t) : t < 65536 ? (H[z++] = 153, H[z++] = t >> 8, H[z++] = t & 255) : (H[z++] = 154, Ve.setUint32(z, t), z += 4);
 }
-const Ep = typeof Blob > "u" ? function() {
+const Mp = typeof Blob > "u" ? function() {
 } : Blob;
 function cs(t) {
-  if (t instanceof Ep)
+  if (t instanceof Mp)
     return !0;
   let e = t[Symbol.toStringTag];
   return e === "Blob" || e === "File";
@@ -2510,8 +2510,8 @@ function ln(t, e) {
       console.log(t);
   }
 }
-const Sp = new Uint8Array(new Uint16Array([1]).buffer)[0] == 1;
-Ml = [
+const Rp = new Uint8Array(new Uint16Array([1]).buffer)[0] == 1;
+Rl = [
   Date,
   Set,
   Error,
@@ -2592,16 +2592,16 @@ Vs = [
       zs(t, r);
     }
   },
-  kt(68, 1),
-  kt(69, 2),
-  kt(70, 4),
-  kt(71, 8),
-  kt(72, 1),
-  kt(77, 2),
-  kt(78, 4),
-  kt(79, 8),
-  kt(85, 4),
-  kt(86, 8),
+  Gt(68, 1),
+  Gt(69, 2),
+  Gt(70, 4),
+  Gt(71, 8),
+  Gt(72, 1),
+  Gt(77, 2),
+  Gt(78, 4),
+  Gt(79, 8),
+  Gt(85, 4),
+  Gt(86, 8),
   {
     encode(t, e) {
       let r = t.packedValues || [], i = t.structures || [];
@@ -2621,12 +2621,12 @@ Vs = [
     }
   }
 ];
-function kt(t, e) {
-  return !Sp && e > 1 && (t -= 4), {
+function Gt(t, e) {
+  return !Rp && e > 1 && (t -= 4), {
     tag: t,
     encode: function(i, n) {
       let s = i.byteLength, o = i.byteOffset || 0, a = i.buffer || i;
-      n(Bi ? Gn.from(a, o, s) : new Uint8Array(a, o, s));
+      n(Bi ? kn.from(a, o, s) : new Uint8Array(a, o, s));
     }
   };
 }
@@ -2634,7 +2634,7 @@ function zs(t, e) {
   let r = t.byteLength;
   r < 24 ? H[z++] = 64 + r : r < 256 ? (H[z++] = 88, H[z++] = r) : r < 65536 ? (H[z++] = 89, H[z++] = r >> 8, H[z++] = r & 255) : (H[z++] = 90, Ve.setUint32(z, r), z += 4), z + r >= H.length && e(z + r), H.set(t.buffer ? t : new Uint8Array(t), z), z += r;
 }
-function Rp(t, e) {
+function Pp(t, e) {
   let r, i = e.length * 2, n = t.length - i;
   e.sort((s, o) => s.offset > o.offset ? 1 : -1);
   for (let s = 0; s < e.length; s++) {
@@ -2656,18 +2656,328 @@ function Jo(t, e) {
   let r = Je;
   Je = null, e(r[0]), e(r[1]);
 }
-let xo = new wp({ useRecords: !1 });
+let xo = new Sp({ useRecords: !1 });
 const vo = xo.encode;
 xo.encodeAsIterable;
 xo.encodeAsAsyncIterable;
-const $o = 512, Mp = 1024, us = 2048, Pp = {
+const $o = 512, Dp = 1024, us = 2048, Dl = [0, 255, 0, 0, 255, 0, 255, 255], Cl = [0, 0, 255, 0, 255, 255, 0, 255], Ul = [0, 0, 0, 255, 0, 255, 255, 255], Il = [0, 255, 255, 255, 255, 255, 255, 255], Bl = [0, 1, 2, 3, 4, 5, 6, 7], Ll = ["air", "red", "green", "blue", "yellow", "cyan", "magenta", "white"], Cp = {
+  R: Dl,
+  G: Cl,
+  B: Ul,
+  A: Il,
+  I: Bl,
+  labels: Ll
+}, Up = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Il,
+  B: Ul,
+  G: Cl,
+  I: Bl,
+  R: Dl,
+  default: Cp,
+  labels: Ll
+}, Symbol.toStringTag, { value: "Module" })), _l = [0, 255, 0, 0, 255, 0, 255, 255, 0, 205, 210, 102, 0, 0, 46, 255, 106, 221, 233, 165, 255, 147, 218, 75, 255, 60, 255, 255, 218, 0, 188, 255, 255, 222, 127, 139, 124, 255, 70, 0, 238, 238, 240, 245, 184, 32, 255, 25, 112, 34, 248, 245, 255, 144, 173, 65, 255, 250, 128, 50, 244, 255, 123, 255, 173, 255, 127, 255, 143, 220, 253, 255, 0, 0, 128, 255, 250, 148, 178, 255, 135, 100, 240, 250, 255, 107, 135, 0, 139, 245, 186, 255, 255, 0, 210, 255, 47, 72, 175, 128, 176, 255, 139, 240, 255, 216, 119, 219, 72, 255, 199, 154, 189, 240, 230, 0, 85, 64, 153, 205, 250, 95, 0, 255, 224, 176, 138, 30, 240, 152, 160], Ol = [0, 0, 255, 0, 255, 255, 0, 239, 0, 133, 180, 205, 0, 139, 139, 228, 90, 160, 150, 42, 250, 112, 112, 0, 182, 179, 235, 228, 165, 128, 143, 105, 218, 184, 255, 69, 252, 255, 130, 100, 130, 232, 255, 222, 134, 178, 20, 25, 128, 139, 248, 255, 160, 238, 255, 105, 99, 240, 0, 205, 164, 255, 104, 165, 216, 192, 255, 140, 188, 20, 245, 250, 206, 255, 0, 250, 128, 0, 34, 127, 206, 149, 230, 235, 245, 142, 206, 0, 0, 245, 85, 228, 222, 191, 105, 248, 79, 61, 238, 128, 224, 240, 0, 255, 215, 191, 136, 112, 209, 0, 21, 205, 183, 248, 230, 250, 107, 224, 50, 92, 250, 158, 128, 69, 255, 196, 43, 144, 128, 251, 82], Fl = [0, 0, 0, 255, 0, 255, 255, 213, 205, 63, 140, 170, 128, 139, 87, 225, 205, 221, 122, 42, 250, 219, 214, 130, 193, 113, 205, 196, 32, 128, 143, 180, 185, 135, 0, 19, 0, 224, 180, 0, 238, 170, 240, 179, 11, 170, 147, 112, 144, 34, 255, 250, 122, 144, 47, 225, 71, 230, 0, 50, 96, 240, 238, 0, 230, 203, 212, 0, 143, 60, 230, 240, 209, 127, 128, 205, 114, 211, 34, 80, 235, 237, 140, 215, 238, 35, 250, 139, 139, 220, 211, 181, 173, 255, 30, 220, 79, 139, 238, 0, 230, 245, 0, 255, 0, 216, 153, 147, 204, 255, 133, 50, 107, 255, 250, 154, 47, 208, 204, 92, 210, 160, 0, 0, 255, 222, 226, 255, 128, 152, 45], Nl = [0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255], Vl = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130], Ip = {
+  R: _l,
+  G: Ol,
+  B: Fl,
+  A: Nl,
+  I: Vl
+}, Bp = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Nl,
+  B: Fl,
+  G: Ol,
+  I: Vl,
+  R: _l,
+  default: Ip
+}, Symbol.toStringTag, { value: "Module" })), zl = [0, 0, 24, 248, 255], kl = [0, 0, 177, 254, 0], Gl = [0, 136, 0, 0, 0], Xl = [0, 32, 64, 78, 128], ql = [0, 64, 128, 156, 255], Lp = {
+  R: zl,
+  G: kl,
+  B: Gl,
+  A: Xl,
+  I: ql
+}, _p = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Xl,
+  B: Gl,
+  G: kl,
+  I: ql,
+  R: zl,
+  default: Lp
+}, Symbol.toStringTag, { value: "Module" })), Hl = [1, 10, 15, 17, 21, 27, 36, 49, 65, 82, 99, 118, 140, 161, 183, 203, 222, 238, 248, 253, 253, 253, 252, 250], Wl = [25, 42, 56, 68, 79, 88, 97, 105, 111, 116, 122, 127, 133, 138, 142, 146, 150, 155, 162, 170, 178, 186, 195, 204], jl = [89, 92, 95, 96, 98, 98, 96, 91, 83, 74, 64, 55, 46, 43, 49, 62, 79, 100, 126, 151, 175, 199, 223, 250], Yl = [0, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], Kl = [0, 11, 22, 33, 44, 55, 66, 77, 88, 99, 110, 121, 133, 144, 155, 166, 177, 188, 199, 210, 221, 232, 243, 255], Op = {
+  R: Hl,
+  G: Wl,
+  B: jl,
+  A: Yl,
+  I: Kl
+}, Fp = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Yl,
+  B: jl,
+  G: Wl,
+  I: Kl,
+  R: Hl,
+  default: Op
+}, Symbol.toStringTag, { value: "Module" })), Ql = [0, 0, 0], Zl = [0, 0, 0], Jl = [0, 128, 255], $l = [0, 64, 128], ec = [0, 128, 255], Np = {
+  R: Ql,
+  G: Zl,
+  B: Jl,
+  A: $l,
+  I: ec
+}, Vp = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: $l,
+  B: Jl,
+  G: Zl,
+  I: ec,
+  R: Ql,
+  default: Np
+}, Symbol.toStringTag, { value: "Module" })), tc = [0, 86, 166, 255], rc = [32, 92, 156, 233], ic = [76, 108, 117, 69], nc = [0, 56, 80, 88], sc = [0, 64, 192, 255], zp = {
+  R: tc,
+  G: rc,
+  B: ic,
+  A: nc,
+  I: sc
+}, kp = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: nc,
+  B: ic,
+  G: rc,
+  I: sc,
+  R: tc,
+  default: zp
+}, Symbol.toStringTag, { value: "Module" })), oc = [0, 0, 0], ac = [127, 196, 254], lc = [255, 255, 255], cc = [0, 64, 128], uc = [0, 128, 255], Gp = {
+  R: oc,
+  G: ac,
+  B: lc,
+  A: cc,
+  I: uc
+}, Xp = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: cc,
+  B: lc,
+  G: ac,
+  I: uc,
+  R: oc,
+  default: Gp
+}, Symbol.toStringTag, { value: "Module" })), dc = [0, 255], hc = [0, 255], fc = [0, 255], pc = [0, 128], mc = [0, 255], qp = {
+  R: dc,
+  G: hc,
+  B: fc,
+  A: pc,
+  I: mc
+}, Hp = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: pc,
+  B: fc,
+  G: hc,
+  I: mc,
+  R: dc,
+  default: qp
+}, Symbol.toStringTag, { value: "Module" })), gc = [0, 0, 0], xc = [0, 128, 255], vc = [0, 0, 0], yc = [0, 64, 128], bc = [0, 128, 255], Wp = {
+  R: gc,
+  G: xc,
+  B: vc,
+  A: yc,
+  I: bc
+}, jp = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: yc,
+  B: vc,
+  G: xc,
+  I: bc,
+  R: gc,
+  default: Wp
+}, Symbol.toStringTag, { value: "Module" })), Tc = [0, 0, 0], Ac = [72, 72, 255], wc = [0, 255, 255], Ec = [0, 64, 128], Sc = [0, 88, 255], Yp = {
+  R: Tc,
+  G: Ac,
+  B: wc,
+  A: Ec,
+  I: Sc
+}, Kp = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Ec,
+  B: wc,
+  G: Ac,
+  I: Sc,
+  R: Tc,
+  default: Yp
+}, Symbol.toStringTag, { value: "Module" })), Mc = [0, 255, 255], Rc = [72, 88, 255], Pc = [0, 0, 0], Dc = [0, 64, 128], Cc = [0, 88, 255], Qp = {
+  R: Mc,
+  G: Rc,
+  B: Pc,
+  A: Dc,
+  I: Cc
+}, Zp = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Dc,
+  B: Pc,
+  G: Rc,
+  I: Cc,
+  R: Mc,
+  default: Qp
+}, Symbol.toStringTag, { value: "Module" })), Uc = [3, 255, 255, 255], Ic = [0, 0, 255, 255], Bc = [0, 0, 0, 255], Lc = [0, 48, 96, 128], _c = [0, 95, 191, 255], Jp = {
+  R: Uc,
+  G: Ic,
+  B: Bc,
+  A: Lc,
+  I: _c
+}, $p = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Lc,
+  B: Bc,
+  G: Ic,
+  I: _c,
+  R: Uc,
+  default: Jp
+}, Symbol.toStringTag, { value: "Module" })), Oc = [0, 255, 255, 255], Fc = [0, 0, 126, 255], Nc = [0, 0, 0, 255], Vc = [0, 64, 96, 128], zc = [0, 128, 191, 255], e0 = {
+  R: Oc,
+  G: Fc,
+  B: Nc,
+  A: Vc,
+  I: zc
+}, t0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Vc,
+  B: Nc,
+  G: Fc,
+  I: zc,
+  R: Oc,
+  default: e0
+}, Symbol.toStringTag, { value: "Module" })), kc = [255, 255, 0, 0, 0, 255, 255], Gc = [0, 255, 255, 255, 0, 0, 0], Xc = [0, 0, 0, 255, 255, 255, 0], qc = [0, 14, 28, 43, 57, 71, 85], Hc = [0, 43, 85, 128, 170, 213, 255], r0 = {
+  R: kc,
+  G: Gc,
+  B: Xc,
+  A: qc,
+  I: Hc
+}, i0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: qc,
+  B: Xc,
+  G: Gc,
+  I: Hc,
+  R: kc,
+  default: r0
+}, Symbol.toStringTag, { value: "Module" })), Wc = [0, 120, 237, 240], jc = [0, 28, 105, 249], Yc = [4, 109, 37, 33], Kc = [0, 56, 80, 88], Qc = [0, 64, 192, 255], n0 = {
+  R: Wc,
+  G: jc,
+  B: Yc,
+  A: Kc,
+  I: Qc
+}, s0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Kc,
+  B: Yc,
+  G: jc,
+  I: Qc,
+  R: Wc,
+  default: n0
+}, Symbol.toStringTag, { value: "Module" })), Zc = [11, 59, 55, 222], Jc = [4, 45, 165, 245], $c = [5, 91, 172, 229], eu = [0, 23, 70, 107], tu = [0, 56, 167, 255], o0 = {
+  R: Zc,
+  G: Jc,
+  B: $c,
+  A: eu,
+  I: tu
+}, a0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: eu,
+  B: $c,
+  G: Jc,
+  I: tu,
+  R: Zc,
+  default: o0
+}, Symbol.toStringTag, { value: "Module" })), ru = [13, 156, 237, 240], iu = [8, 23, 121, 249], nu = [135, 158, 83, 33], su = [0, 56, 80, 88], ou = [0, 64, 192, 255], l0 = {
+  R: ru,
+  G: iu,
+  B: nu,
+  A: su,
+  I: ou
+}, c0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: su,
+  B: nu,
+  G: iu,
+  I: ou,
+  R: ru,
+  default: l0
+}, Symbol.toStringTag, { value: "Module" })), au = [0, 128, 255], lu = [0, 0, 0], cu = [0, 0, 0], uu = [0, 64, 128], du = [0, 128, 255], u0 = {
+  R: au,
+  G: lu,
+  B: cu,
+  A: uu,
+  I: du
+}, d0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: uu,
+  B: cu,
+  G: lu,
+  I: du,
+  R: au,
+  default: u0
+}, Symbol.toStringTag, { value: "Module" })), hu = [192, 224, 255], fu = [1, 128, 255], pu = [0, 0, 0], mu = [0, 64, 128], gu = [0, 128, 255], h0 = {
+  R: hu,
+  G: fu,
+  B: pu,
+  A: mu,
+  I: gu
+}, f0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: mu,
+  B: pu,
+  G: fu,
+  I: gu,
+  R: hu,
+  default: h0
+}, Symbol.toStringTag, { value: "Module" })), xu = [68, 49, 53, 253], vu = [1, 104, 183, 231], yu = [84, 142, 121, 37], bu = [0, 56, 80, 88], Tu = [0, 64, 192, 255], p0 = {
+  R: xu,
+  G: vu,
+  B: yu,
+  A: bu,
+  I: Tu
+}, m0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: bu,
+  B: yu,
+  G: vu,
+  I: Tu,
+  R: xu,
+  default: p0
+}, Symbol.toStringTag, { value: "Module" })), Au = [255, 255, 255], wu = [127, 196, 254], Eu = [0, 0, 0], Su = [0, 64, 128], Mu = [0, 128, 255], g0 = {
+  R: Au,
+  G: wu,
+  B: Eu,
+  A: Su,
+  I: Mu
+}, x0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Su,
+  B: Eu,
+  G: wu,
+  I: Mu,
+  R: Au,
+  default: g0
+}, Symbol.toStringTag, { value: "Module" })), Ru = [0, 0, 0], Pu = [0, 128, 255], Du = [255, 196, 128], Cu = [0, 64, 128], Uu = [0, 128, 255], v0 = {
+  R: Ru,
+  G: Pu,
+  B: Du,
+  A: Cu,
+  I: Uu
+}, y0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  A: Cu,
+  B: Du,
+  G: Pu,
+  I: Uu,
+  R: Ru,
+  default: v0
+}, Symbol.toStringTag, { value: "Module" })), b0 = {
   debug: 0,
   info: 1,
   warn: 2,
   error: 3,
   fatal: 4,
   silent: 1 / 0
-}, Dl = class Lt {
+}, Iu = class Lt {
   constructor({
     name: e = "niivue",
     level: r = "info"
@@ -2696,42 +3006,184 @@ const $o = 512, Mp = 1024, us = 2048, Pp = {
     this.name = e;
   }
 };
-Dl.levels = Pp;
-let Dp = Dl;
-const Y = new Dp({ name: "niivue", level: "info" });
-function ct(t, e, r) {
+Iu.levels = b0;
+let T0 = Iu;
+const Y = new T0({ name: "niivue", level: "info" });
+function ds(t, e, r, i, n) {
+  const s = new Uint8ClampedArray(1024);
+  for (let o = 0; o < n.length - 1; o++) {
+    const a = n[o], l = n[o + 1], c = l - a;
+    let u = a * 4;
+    for (let d = a; d <= l; d++) {
+      const h = (d - a) / c, f = t[o], p = t[o + 1], g = e[o], m = e[o + 1], v = r[o], A = r[o + 1], b = i[o], E = i[o + 1];
+      s[u++] = Math.round(f + h * (p - f)), s[u++] = Math.round(g + h * (m - g)), s[u++] = Math.round(v + h * (A - v)), s[u++] = Math.round(b + h * (E - b));
+    }
+  }
+  return s;
+}
+function Ti(t, e = 255, r = 1 / 0) {
+  if (!t.R || !t.G || !t.B)
+    throw new Error("Invalid colormap table");
+  const i = t.R.length, n = t.I ? t.I.slice() : [...Array(i).keys()];
+  let s = !1;
+  for (let f = 0; f < n.length; f++)
+    n[f] > r && (s = !0, n[f] = r);
+  if (s && Y.warn("Some colormap indices clamped to match label range."), i !== t.G.length || i !== t.B.length || i !== n.length)
+    throw new Error("colormap does not make sense");
+  let o = new Uint8ClampedArray(i).fill(e);
+  const a = n.indexOf(0);
+  a >= 0 && (o[a] = 0), t.A !== void 0 && (o = Uint8ClampedArray.from(t.A));
+  const l = Math.min(...n), c = Math.max(...n), u = c - l + 1, d = new Uint8ClampedArray(u * 4).fill(0);
+  for (let f = 0; f < i; f++) {
+    let p = (n[f] - l) * 4;
+    d[p++] = t.R[f], d[p++] = t.G[f], d[p++] = t.B[f], d[p++] = o[f];
+  }
+  const h = {
+    lut: d,
+    min: l,
+    max: c
+  };
+  if (t.labels) {
+    const f = t.labels.length;
+    if (f === u)
+      h.labels = t.labels.slice();
+    else if (f === i) {
+      h.labels = Array(u).fill("?");
+      for (let p = 0; p < i; p++)
+        h.labels[n[p] - l] = t.labels[p];
+    }
+  }
+  return h;
+}
+let Wi = null;
+function Li() {
+  if (Wi) return Wi;
+  const t = /* @__PURE__ */ new Map();
+  try {
+    const e = /* @__PURE__ */ Object.assign({
+      "./luts/_draw.json": Up,
+      "./luts/_itksnap.json": Bp,
+      "./luts/actc.json": _p,
+      "./luts/batlow.json": Fp,
+      "./luts/blue.json": Vp,
+      "./luts/cividis.json": kp,
+      "./luts/cool.json": Xp,
+      "./luts/gray.json": Hp,
+      "./luts/green.json": jp,
+      "./luts/green2cyan.json": Kp,
+      "./luts/green2orange.json": Zp,
+      "./luts/hot.json": $p,
+      "./luts/hotiron.json": t0,
+      "./luts/hsv.json": i0,
+      "./luts/inferno.json": s0,
+      "./luts/mako.json": a0,
+      "./luts/plasma.json": c0,
+      "./luts/red.json": d0,
+      "./luts/redyell.json": f0,
+      "./luts/viridis.json": m0,
+      "./luts/warm.json": x0,
+      "./luts/winter.json": y0
+    });
+    for (const r in e) {
+      const i = e[r], n = r.replace(/^.*\/([^/]+)\.json$/i, "$1"), s = n.charAt(0).toUpperCase() + n.slice(1);
+      if (i && Array.isArray(i.R) && Array.isArray(i.G) && Array.isArray(i.B) && Array.isArray(i.I)) {
+        const o = {
+          R: i.R.map(Number),
+          G: i.G.map(Number),
+          B: i.B.map(Number),
+          A: Array.isArray(i.A) ? i.A.map(Number) : new Array(i.I.length).fill(255),
+          I: i.I.map(Number)
+        };
+        Array.isArray(i.labels) && (o.labels = i.labels.slice()), t.set(s, o);
+      } else
+        Y.warn(`Skipping LUT ${r}: expected { R,G,B,I } arrays`);
+    }
+  } catch (e) {
+    Y.warn(
+      "LUT auto-discovery failed (import.meta.glob not available). Use a manifest or build-step to create ./luts/index.js",
+      e
+    );
+  }
+  return Wi = t, Wi;
+}
+function A0() {
+  const t = Li();
+  return Array.from(t.keys()).filter((e) => !e.startsWith("_")).sort();
+}
+function w0(t, e) {
+  const r = e.R.map(Number), i = e.G.map(Number), n = e.B.map(Number);
+  if (r.length < 2 || i.length !== r.length || n.length !== r.length)
+    throw new Error(
+      `addColormap('${t}'): R, G, B must all be the same length and have at least 2 stops`
+    );
+  const s = Array.isArray(e.I) ? e.I.map(Number) : (
+    // Distribute N stops evenly over [0..255] so a 3-stop R/G/B-only cmap
+    // spans the full LUT instead of leaving 253 pixels transparent.
+    r.map((u, d) => Math.round(d * 255 / (r.length - 1)))
+  );
+  if (s.length !== r.length)
+    throw new Error(
+      `addColormap('${t}'): I length (${s.length}) must equal R length (${r.length})`
+    );
+  const o = Array.isArray(e.A) ? e.A.map(Number) : new Array(s.length).fill(255);
+  if (o.length !== s.length)
+    throw new Error(
+      `addColormap('${t}'): A length (${o.length}) must equal I length (${s.length})`
+    );
+  const a = t.charAt(0).toUpperCase() + t.slice(1), l = Li(), c = { R: r, G: i, B: n, A: o, I: s };
+  return Array.isArray(e.labels) && (c.labels = e.labels.slice()), l.set(a, c), a;
+}
+function E0() {
+  const t = Li();
+  return Array.from(t.keys()).filter((e) => e.startsWith("_")).sort();
+}
+function ks(t) {
+  const e = Li(), r = t.charAt(0).toUpperCase() + t.slice(1);
+  return e.get(r) || null;
+}
+function ct(t) {
+  const e = Li();
+  if (!t)
+    return ds([0, 255], [0, 255], [0, 255], [0, 128], [0, 255]);
+  const r = t.charAt(0).toUpperCase() + t.slice(1), i = e.get(r);
+  if (!i)
+    return r !== "Gray" && Y.warn(`Unknown colormap "${t}", using Gray fallback`), ds([0, 255], [0, 255], [0, 255], [0, 128], [0, 255]);
+  const { R: n, G: s, B: o, A: a, I: l } = i, c = a && a.length === l.length ? a : new Array(l.length).fill(255);
+  return ds(n, s, o, c, l);
+}
+function ut(t, e, r) {
   const i = Ke(r);
   er(i, i);
   const n = Qe(e[0], e[1], e[2], 1);
   return ot(n, n, i), ve(n[0], n[1], n[2]);
 }
-function Cl(t, e) {
+function Bu(t, e) {
   if (e) {
     const c = Ke(e);
     yr(t, t, c);
   }
   const r = ve(0, 0, -1), i = mr(1, 0, 0, 0, -1, 0, 0, 0, -1), n = De();
-  Go(n, r, i);
+  ko(n, r, i);
   const s = Ps();
-  gf(s, t);
+  vf(s, t);
   const o = Ps();
-  if (!xf(o, s))
+  if (!yf(o, s))
     return ve(0, 0, 1);
   const a = De();
-  Go(a, n, o), Us(a, a);
+  ko(a, n, o), Us(a, a);
   const l = 5e-5;
   for (let c = 0; c < 3; c++)
     Math.abs(a[c]) < l && (a[c] = Math.sign(a[c]) * l || l);
-  return Ef(a, a), a;
+  return Mf(a, a), a;
 }
-function Cp(t, e, r) {
+function S0(t, e, r) {
   const i = Math.sqrt(t * t + e * e + r * r);
   if (i === 0) return [0, 0];
   const n = -Math.asin(r / i) * (180 / Math.PI);
   let s = Math.atan2(e, t) * (180 / Math.PI) - 90;
   return s = (s + 360) % 360, [s, n];
 }
-function Up(t, e) {
+function M0(t, e) {
   const r = -e * (Math.PI / 180), i = (t + 90) % 360 * (Math.PI / 180), n = [
     Math.cos(r) * Math.cos(i),
     Math.cos(r) * Math.sin(i),
@@ -2739,8 +3191,8 @@ function Up(t, e) {
   ], s = Math.sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
   return s <= 0 || (n[0] /= s, n[1] /= s, n[2] /= s), n;
 }
-function Ip(t, e, r) {
-  const i = Up(e, r);
+function R0(t, e, r) {
+  const i = M0(e, r);
   return [i[0], i[1], i[2], -t];
 }
 function Tr(t) {
@@ -2756,49 +3208,49 @@ function Ft(t, e, r, i = 1 / 0, n, s = 0, o = 0, a = !1, l, c, u, d = !0) {
   if (u) {
     const U = u.length > 2 ? u[2] : 1;
     if (U !== 1) {
-      const O = (h + f) / 2, w = (p + g) / 2, D = (f - h) / (2 * U), R = (g - p) / (2 * U);
-      h = O - D, f = O + D, p = w - R, g = w + R;
+      const O = (h + f) / 2, w = (p + g) / 2, D = (f - h) / (2 * U), M = (g - p) / (2 * U);
+      h = O - D, f = O + D, p = w - M, g = w + M;
     }
     const _ = a ? -u[0] : u[0];
     h -= _, f -= _, p -= u[1], g -= u[1];
   }
-  const m = 2 * Math.max(Math.abs(e[2]), Math.abs(r[2])), y = Oe(), A = ve(0, 0, -m * 1.8);
-  br(y, y, A), Fn(y, y, Tr(o - 90)), Nn(y, y, Tr(s)), c && br(y, y, [
+  const m = 2 * Math.max(Math.abs(e[2]), Math.abs(r[2])), v = Oe(), A = ve(0, 0, -m * 1.8);
+  br(v, v, A), Fn(v, v, Tr(o - 90)), Nn(v, v, Tr(s)), c && br(v, v, [
     -c[0],
     -c[1],
     -c[2]
   ]);
-  let v = m * 0.01, E = m * 8;
+  let b = m * 0.01, E = m * 8;
   if (i !== 1 / 0 && n) {
     const U = Kt();
     ot(
       U,
       Qe(n[0], n[1], n[2], 1),
-      y
+      v
     );
     const _ = -U[2];
-    v = _ - i, E = _ + i;
+    b = _ - i, E = _ + i;
   }
-  const b = Oe();
-  d ? co(b, h, f, p, g, v, E) : al(b, h, f, p, g, v, E);
+  const y = Oe();
+  d ? co(y, h, f, p, g, b, E) : al(y, h, f, p, g, b, E);
   const x = Oe();
-  zt(x, y);
+  zt(x, v);
   const T = Oe();
   er(T, x);
   const S = Oe();
-  yr(S, b, y);
-  const P = Cl(y, l);
-  return [S, y, T, P];
+  yr(S, y, v);
+  const P = Bu(v, l);
+  return [S, v, T, P];
 }
 function vn(t, e, r, i, n, s, o) {
-  const a = Oe(), l = Oe(), c = Oe(), u = Oe(), d = t[2] / t[3], h = 0.8 * n / s, f = d < 1 ? -h : -h * d, p = d < 1 ? h : h * d, g = d < 1 ? -h / d : -h, m = d < 1 ? h / d : h, y = h * 0.01, A = h * 8;
-  co(u, f, p, g, m, y, A);
-  const v = ve(0, 0, -h * 1.8);
-  br(l, l, v), Fn(l, l, Tr(r - 90)), Nn(l, l, Tr(e)), br(l, l, [-i[0], -i[1], -i[2]]);
+  const a = Oe(), l = Oe(), c = Oe(), u = Oe(), d = t[2] / t[3], h = 0.8 * n / s, f = d < 1 ? -h : -h * d, p = d < 1 ? h : h * d, g = d < 1 ? -h / d : -h, m = d < 1 ? h / d : h, v = h * 0.01, A = h * 8;
+  co(u, f, p, g, m, v, A);
+  const b = ve(0, 0, -h * 1.8);
+  br(l, l, b), Fn(l, l, Tr(r - 90)), Nn(l, l, Tr(e)), br(l, l, [-i[0], -i[1], -i[2]]);
   const E = Oe();
   zt(E, l), er(c, E), yr(a, u, l);
-  const b = Cl(l, o);
-  return [a, l, c, b];
+  const y = Bu(l, o);
+  return [a, l, c, y];
 }
 function yn(t, e, r, i) {
   const n = Oe();
@@ -2810,10 +3262,10 @@ function yn(t, e, r, i) {
     c[2] / c[3]
   );
 }
-function kn(t, e, r) {
+function Gn(t, e, r) {
   let i = 2;
   e === 1 && (i = 1), e === 2 && (i = 0);
-  const n = (m, y) => i === 2 ? Qe(m, y, r, 1) : i === 1 ? Qe(m, r, y, 1) : Qe(r, m, y, 1), s = n(0, 0), o = n(1, 0), a = n(0, 1), l = De(), c = De(), u = De(), d = Kt();
+  const n = (m, v) => i === 2 ? Qe(m, v, r, 1) : i === 1 ? Qe(m, r, v, 1) : Qe(r, m, v, 1), s = n(0, 0), o = n(1, 0), a = n(0, 1), l = De(), c = De(), u = De(), d = Kt();
   ot(d, s, t), is(l, d[0] / d[3], d[1] / d[3], d[2] / d[3]), ot(d, o, t), is(c, d[0] / d[3], d[1] / d[3], d[2] / d[3]), ot(d, a, t), is(u, d[0] / d[3], d[1] / d[3], d[2] / d[3]);
   const h = De(), f = De();
   rt(h, c, l), rt(f, u, l);
@@ -2822,7 +3274,7 @@ function kn(t, e, r) {
   const g = Ir(p);
   return g < 1e-12 ? null : (ll(p, p, 1 / g), { normal: p, point: l });
 }
-function Ul(t, e, r, i, n) {
+function Lu(t, e, r, i, n) {
   const s = yn(t, e, 0, r), o = yn(t, e, 1, r), a = De();
   rt(a, o, s);
   const l = pn(a, i);
@@ -2836,11 +3288,11 @@ function Ul(t, e, r, i, n) {
     s[2] + u * a[2]
   ];
 }
-function Ti(t, e, r, i, n, s) {
-  const o = kn(i, n, s);
-  return o ? Ul(t, e, r, o.normal, o.point) : null;
+function Ai(t, e, r, i, n, s) {
+  const o = Gn(i, n, s);
+  return o ? Lu(t, e, r, o.normal, o.point) : null;
 }
-function Wi(t, e, r = !1) {
+function ji(t, e, r = !1) {
   const i = Qe(e[0], e[1], e[2], 1), n = t.dimsRAS, s = ve(0, 0, 0);
   if (typeof n > "u")
     return s;
@@ -2858,8 +3310,8 @@ function Wi(t, e, r = !1) {
 function gr(t, e) {
   if (!e.mm000 || !e.mm100 || !e.mm010 || !e.mm001)
     throw new Error("Missing moving image mm corner coordinates");
-  const r = Wi(t, e.mm000, !0);
-  let i = Wi(t, e.mm100, !0), n = Wi(t, e.mm010, !0), s = Wi(t, e.mm001, !0);
+  const r = ji(t, e.mm000, !0);
+  let i = ji(t, e.mm100, !0), n = ji(t, e.mm010, !0), s = ji(t, e.mm001, !0);
   i = rt(i, i, r), n = rt(n, n, r), s = rt(s, s, r);
   const o = Or(
     i[0],
@@ -2888,16 +3340,16 @@ function ea(t) {
     throw new Error("pixDimsRAS not defined");
   if (!t.dimsRAS)
     throw new Error("dimsRAS not defined");
-  t.oblique_angle = Bp(t.matRAS);
-  const e = ct(t, [0, 0, 0], t.matRAS), r = ct(
+  t.oblique_angle = P0(t.matRAS);
+  const e = ut(t, [0, 0, 0], t.matRAS), r = ut(
     t,
     [1 / t.pixDimsRAS[1], 0, 0],
     t.matRAS
-  ), i = ct(
+  ), i = ut(
     t,
     [0, 1 / t.pixDimsRAS[2], 0],
     t.matRAS
-  ), n = ct(
+  ), n = ut(
     t,
     [0, 0, 1 / t.pixDimsRAS[3]],
     t.matRAS
@@ -2949,7 +3401,7 @@ function ea(t) {
 function ta(t, e) {
   return Array.isArray(t) && Array.isArray(e) && t.length === e.length && t.every((r, i) => r === e[i]);
 }
-function Il(t) {
+function _u(t) {
   if (!t.hdr)
     throw new Error("hdr not set");
   const e = t.hdr.affine, r = t.hdr, i = mr(
@@ -2984,12 +3436,12 @@ function Il(t) {
     0,
     1
   );
-  t.mm000 = ct(t, [-0.5, -0.5, -0.5], o), t.mm100 = ct(t, [r.dims[1] - 0.5, -0.5, -0.5], o), t.mm010 = ct(t, [-0.5, r.dims[2] - 0.5, -0.5], o), t.mm001 = ct(t, [-0.5, -0.5, r.dims[3] - 0.5], o);
+  t.mm000 = ut(t, [-0.5, -0.5, -0.5], o), t.mm100 = ut(t, [r.dims[1] - 0.5, -0.5, -0.5], o), t.mm010 = ut(t, [-0.5, r.dims[2] - 0.5, -0.5], o), t.mm001 = ut(t, [-0.5, -0.5, r.dims[3] - 0.5], o);
   const a = Oe();
-  yf(a, o);
+  Tf(a, o);
   for (let m = 0; m < 3; m++)
-    for (let y = 0; y < 3; y++)
-      a[m * 4 + y] = o[m * 4 + s[y] - 1];
+    for (let v = 0; v < 3; v++)
+      a[m * 4 + v] = o[m * 4 + s[v] - 1];
   const l = [0, 0, 0];
   a[0] < 0 && (l[0] = 1), a[5] < 0 && (l[1] = 1), a[10] < 0 && (l[2] = 1), t.dimsRAS = [
     r.dims[0],
@@ -3012,7 +3464,7 @@ function Il(t) {
     ], t.img2RASstart = [0, 0, 0];
     return;
   }
-  bf(o), o[0] = 1 - l[0] * 2, o[5] = 1 - l[1] * 2, o[10] = 1 - l[2] * 2, o[3] = (r.dims[s[0]] - 1) * l[0], o[7] = (r.dims[s[1]] - 1) * l[1], o[11] = (r.dims[s[2]] - 1) * l[2];
+  Af(o), o[0] = 1 - l[0] * 2, o[5] = 1 - l[1] * 2, o[10] = 1 - l[2] * 2, o[3] = (r.dims[s[0]] - 1) * l[0], o[7] = (r.dims[s[1]] - 1) * l[1], o[11] = (r.dims[s[2]] - 1) * l[2];
   const c = Oe();
   zt(c, o), yr(c, c, a), t.matRAS = Ke(c), o = Or(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), o[s[0] - 1 + 0] = -l[0] * 2 + 1, o[s[1] - 1 + 4] = -l[1] * 2 + 1, o[s[2] - 1 + 8] = -l[2] * 2 + 1, o[3] = l[0], o[7] = l[1], o[11] = l[2], t.toRAS = Ke(o), o[3] = 0, o[7] = 0, o[11] = 0, o[12] = 0, (t.permRAS[0] === -1 || t.permRAS[1] === -1 || t.permRAS[2] === -1) && (o[12] = r.dims[1] - 1), o[13] = 0, (t.permRAS[0] === -2 || t.permRAS[1] === -2 || t.permRAS[2] === -2) && (o[13] = r.dims[2] - 1), o[14] = 0, (t.permRAS[0] === -3 || t.permRAS[1] === -3 || t.permRAS[2] === -3) && (o[14] = r.dims[3] - 1), t.toRASvox = Ke(o);
   const u = t.hdr;
@@ -3026,7 +3478,7 @@ function Il(t) {
     s[m] < 0 && (g[m] = p[m] * (h[m] - 1), p[m] = -p[m]);
   t.img2RASstep = p, t.img2RASstart = g, ea(t);
 }
-function Bp(t) {
+function P0(t) {
   const e = Ke(t);
   er(e, t);
   const r = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]), i = Math.max(Math.max(Math.abs(e[0]), Math.abs(e[1])), Math.abs(e[2])) / r, n = Math.sqrt(e[4] * e[4] + e[5] * e[5] + e[6] * e[6]), s = Math.max(Math.max(Math.abs(e[4]), Math.abs(e[5])), Math.abs(e[6])) / n, o = Math.sqrt(e[8] * e[8] + e[9] * e[9] + e[10] * e[10]), a = Math.max(Math.max(Math.abs(e[8]), Math.abs(e[9])), Math.abs(e[10])) / o, l = Math.min(Math.min(i, s), a);
@@ -3051,9 +3503,9 @@ function pt(t, e, r = !1) {
     Math.round(o[2])
   ]);
 }
-const gi = 6, Lp = [0, 0, 0, 2];
+const gi = 6, D0 = [0, 0, 0, 2];
 var lt = /* @__PURE__ */ ((t) => (t[t.MIN_TO_MAX = 0] = "MIN_TO_MAX", t[t.ZERO_TO_MAX_TRANSPARENT_BELOW_MIN = 1] = "ZERO_TO_MAX_TRANSPARENT_BELOW_MIN", t[t.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN = 2] = "ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN", t))(lt || {}), we = /* @__PURE__ */ ((t) => (t[t.none = 0] = "none", t[t.contrast = 1] = "contrast", t[t.measurement = 2] = "measurement", t[t.pan = 3] = "pan", t[t.slicer3D = 4] = "slicer3D", t[t.callbackOnly = 5] = "callbackOnly", t[t.roiSelection = 6] = "roiSelection", t[t.angle = 7] = "angle", t[t.crosshair = 8] = "crosshair", t[t.windowing = 9] = "windowing", t))(we || {}), Kr = /* @__PURE__ */ ((t) => (t[t.NEVER = 0] = "NEVER", t[t.ALWAYS = 1] = "ALWAYS", t[t.AUTO = 2] = "AUTO", t))(Kr || {});
-const Bl = Object.freeze({
+const Ou = Object.freeze({
   NIFTI_INTENT_NONE: 0,
   NIFTI_INTENT_CORREL: 2,
   NIFTI_INTENT_TTEST: 3,
@@ -3083,7 +3535,7 @@ const Bl = Object.freeze({
   DT_RGBA32: 2304
 });
 function Nr(t) {
-  return t.intent_code === Bl.NIFTI_INTENT_LABEL && t.datatypeCode === le.DT_RGBA32;
+  return t.intent_code === Ou.NIFTI_INTENT_LABEL && t.datatypeCode === le.DT_RGBA32;
 }
 const _t = {
   AUTO: 0,
@@ -3100,7 +3552,7 @@ const _t = {
 function et(t) {
   return t === se.CORONAL ? 1 : t === se.SAGITTAL ? 0 : 2;
 }
-const _p = {
+const C0 = {
   sliceType: se.MULTIPLANAR,
   mosaicString: "",
   showRender: 2,
@@ -3137,7 +3589,7 @@ const _p = {
   measureTextColor: [1, 0, 0, 1],
   rulerWidth: 2,
   graph: { normalizeValues: !1, isRangeCalMinMax: !1 }
-}, Op = {
+}, U0 = {
   illumination: 0,
   outlineWidth: 0,
   alphaShader: 1,
@@ -3147,10 +3599,10 @@ const _p = {
   isV1SliceShader: !1,
   matcap: "",
   paqdUniforms: [0.01, 0.5, 0.25, 0.4]
-}, Fp = {
+}, I0 = {
   xRay: 0,
   thicknessOn2D: 1 / 0
-}, Np = {
+}, B0 = {
   isEnabled: !1,
   penValue: 1,
   penSize: 1,
@@ -3158,7 +3610,7 @@ const _p = {
   opacity: 0.8,
   rimOpacity: -1,
   colormap: "_draw"
-}, Vp = {
+}, L0 = {
   primaryDragMode: 8,
   secondaryDragMode: 1,
   isSnapToVoxelCenters: !1,
@@ -3189,7 +3641,7 @@ function Lr(t, e) {
   const r = qn[e];
   return [t[r[0]], t[r[1]], t[3] ?? 1];
 }
-const Li = (t, e, r) => {
+const _i = (t, e, r) => {
   const i = De();
   return oi(i, e, t), qn.map((n, s) => {
     const o = ve(
@@ -3207,7 +3659,7 @@ const Li = (t, e, r) => {
       ...Xn(c, r)
     };
   });
-}, _i = (t, e, r, i) => qn.map((n, s) => {
+}, Oi = (t, e, r, i) => qn.map((n, s) => {
   const o = (t[n[0]] + e[n[0]]) / 2, a = (t[n[1]] + e[n[1]]) / 2, l = i / 2, c = ve(
     o - l,
     a - l,
@@ -3230,14 +3682,14 @@ const Li = (t, e, r) => {
   mnMM: rs(t.mnMM),
   mxMM: rs(t.mxMM),
   fovMM: rs(t.fovMM)
-}), zp = (t, e, r, i) => r ? [i, i] : t === se.AXIAL ? [e[0], e[1]] : t === se.CORONAL ? [e[0], e[2]] : [e[1], e[2]], Gp = (t, e, r, i = []) => {
+}), _0 = (t, e, r, i) => r ? [i, i] : t === se.AXIAL ? [e[0], e[1]] : t === se.CORONAL ? [e[0], e[2]] : [e[1], e[2]], O0 = (t, e, r, i = []) => {
   const n = r.reduce((c, u) => c + u.w, 0) + e * (r.length - 1), s = Math.max(...r.map((c) => c.h)), o = (t[0] - n) / 2, a = (t[1] - s) / 2;
   let l = o;
   return r.map((c, u) => {
     const d = a + (s - c.h) / 2, h = { leftTopWidthHeight: [l, d, c.w, c.h] };
     return l += c.w + e, { ...h, ...i[u] ?? {} };
   });
-}, kp = (t, e, r, i = []) => {
+}, F0 = (t, e, r, i = []) => {
   const n = r.reduce((l, c) => l + c.h, 0) + e * (r.length - 1), s = Math.max(...r.map((l) => l.w)), o = (t[0] - s) / 2;
   let a = (t[1] - n) / 2;
   return r.map((l, c) => {
@@ -3245,25 +3697,25 @@ const Li = (t, e, r) => {
     return a += l.h + e, { ...u, ...i[c] ?? {} };
   });
 };
-function Xp(t) {
+function N0(t) {
   const e = (t.sliceMosaicString ?? "").trim();
   if (!e) return [];
   const { extentsMin: r, extentsMax: i, canvasWH: n } = t, s = t.isRadiologicalConvention ?? !1, o = t.tileMargin ?? 0, a = t.isMultiplanarEqualSize ?? !1, l = t.isCenterMosaic ?? !0, c = t.isCrossLines ?? !1, u = De();
   oi(u, i, r);
-  const d = Math.max(u[0], u[1], u[2]), h = a ? _i(r, i, s, d) : Li(r, i, s), f = e.replace(/;/g, " ; ").split(/\s+/).filter((F) => F.length > 0), p = [], g = [], m = [], y = [];
-  let A = [], v = se.AXIAL, E = !1, b = !1, x = !1;
+  const d = Math.max(u[0], u[1], u[2]), h = a ? Oi(r, i, s, d) : _i(r, i, s), f = e.replace(/;/g, " ; ").split(/\s+/).filter((F) => F.length > 0), p = [], g = [], m = [], v = [];
+  let A = [], b = se.AXIAL, E = !1, y = !1, x = !1;
   for (const F of f) {
     const X = F.toUpperCase();
     if (X === "A") {
-      v = se.AXIAL;
+      b = se.AXIAL;
       continue;
     }
     if (X === "C") {
-      v = se.CORONAL;
+      b = se.CORONAL;
       continue;
     }
     if (X === "S") {
-      v = se.SAGITTAL;
+      b = se.SAGITTAL;
       continue;
     }
     if (X === "R") {
@@ -3271,7 +3723,7 @@ function Xp(t) {
       continue;
     }
     if (X === "X") {
-      b = !0;
+      y = !0;
       continue;
     }
     if (X === "L") {
@@ -3283,53 +3735,53 @@ function Xp(t) {
       continue;
     }
     if (X === ";") {
-      A.length > 0 && y.push(A), A = [];
+      A.length > 0 && v.push(A), A = [];
       continue;
     }
     const q = parseFloat(F);
     if (Number.isNaN(q)) continue;
-    const [Q, ee] = zp(v, u, a, d);
+    const [Q, ee] = _0(b, u, a, d);
     A.push({
-      orient: v,
+      orient: b,
       sliceMM: q,
       isRender: E,
-      isCrossLines: b || c && E,
+      isCrossLines: y || c && E,
       showLabels: x,
       w: Q,
       h: ee
-    }), E || (v === se.AXIAL ? p.push(q) : v === se.CORONAL ? g.push(q) : m.push(q)), b = !1, E = !1;
+    }), E || (b === se.AXIAL ? p.push(q) : b === se.CORONAL ? g.push(q) : m.push(q)), y = !1, E = !1;
   }
-  if (A.length > 0 && y.push(A), y.length === 0) return [];
-  const T = y.map(
+  if (A.length > 0 && v.push(A), v.length === 0) return [];
+  const T = v.map(
     (F) => F.reduce((X, q) => X + q.w, 0)
-  ), S = y.map((F) => Math.max(...F.map((X) => X.h))), P = S.reduce((F, X) => F + X, 0);
+  ), S = v.map((F) => Math.max(...F.map((X) => X.h))), P = S.reduce((F, X) => F + X, 0);
   if (P <= 0) return [];
-  const U = o * Math.max(0, y.length - 1), _ = (n[1] - U) / P, O = Math.min(
-    ...y.map((F, X) => {
+  const U = o * Math.max(0, v.length - 1), _ = (n[1] - U) / P, O = Math.min(
+    ...v.map((F, X) => {
       const q = o * Math.max(0, F.length - 1);
       return T[X] > 0 ? (n[0] - q) / T[X] : 1 / 0;
     })
   ), w = Math.min(O, _);
   if (w <= 0) return [];
   const D = Math.max(
-    ...y.map((F, X) => {
+    ...v.map((F, X) => {
       const q = o * Math.max(0, F.length - 1);
       return T[X] * w + q;
     })
-  ), R = P * w + U;
+  ), M = P * w + U;
   let C = 0, I = 0;
-  l && (C = (n[0] - D) / 2, I = (n[1] - R) / 2);
+  l && (C = (n[0] - D) / 2, I = (n[1] - M) / 2);
   const V = [];
-  let k = 0;
-  for (let F = 0; F < y.length; F++) {
-    const X = T[F] * w + o * Math.max(0, y[F].length - 1);
+  let G = 0;
+  for (let F = 0; F < v.length; F++) {
+    const X = T[F] * w + o * Math.max(0, v[F].length - 1);
     let q = C + (D - X) / 2;
-    for (const Q of y[F]) {
+    for (const Q of v[F]) {
       const ee = Q.w * w, J = Q.h * w, ge = (S[F] * w - J) / 2, Ae = Xn(Q.orient, s);
       let re = Ae.azimuth;
       Q.isRender && (Q.sliceMM < 0 || Object.is(Q.sliceMM, -0)) && (re += 180);
       const xe = {
-        leftTopWidthHeight: [q, I + k + ge, ee, J],
+        leftTopWidthHeight: [q, I + G + ge, ee, J],
         axCorSag: Q.isRender ? se.RENDER : Q.orient,
         screen: yo(h[Q.orient].screen),
         azimuth: re,
@@ -3342,15 +3794,15 @@ function Xp(t) {
         sagittalMM: [...m]
       })), V.push(xe), q += ee + o;
     }
-    k += S[F] * w + o;
+    G += S[F] * w + o;
   }
   return V;
 }
-function qp(t) {
-  var y;
+function V0(t) {
+  var v;
   const { canvasWH: e, extentsMin: r, extentsMax: i } = t, n = t.isRadiologicalConvention ?? !1, s = t.tileMargin ?? 0, o = t.heroImageFraction ?? 0, a = t.heroSliceType ?? se.RENDER, l = t.isMultiplanarEqualSize ?? !1, c = De();
   oi(c, i, r);
-  const u = Math.max(c[0], c[1], c[2]), d = l ? _i(r, i, n, u) : Li(r, i, n), h = e[0] * o, f = e[0] - h - s;
+  const u = Math.max(c[0], c[1], c[2]), d = l ? Oi(r, i, n, u) : _i(r, i, n), h = e[0] * o, f = e[0] - h - s;
   let p;
   if (a === se.RENDER)
     p = {
@@ -3358,19 +3810,19 @@ function qp(t) {
       leftTopWidthHeight: [0, 0, h, e[1]]
     };
   else {
-    const A = d[a], v = (y = A.screen) == null ? void 0 : y.fovMM;
-    if (!v)
+    const A = d[a], b = (v = A.screen) == null ? void 0 : v.fovMM;
+    if (!b)
       throw new Error("Missing fovMM for hero slice");
-    const E = Math.min(h / v[0], e[1] / v[1]), b = v[0] * E, x = v[1] * E;
+    const E = Math.min(h / b[0], e[1] / b[1]), y = b[0] * E, x = b[1] * E;
     p = {
       axCorSag: a,
       screen: yo(A.screen),
       azimuth: A.azimuth,
       elevation: A.elevation,
-      leftTopWidthHeight: [(h - b) / 2, (e[1] - x) / 2, b, x]
+      leftTopWidthHeight: [(h - y) / 2, (e[1] - x) / 2, y, x]
     };
   }
-  const g = Ll({
+  const g = Fu({
     ...t,
     canvasWH: [f, e[1]],
     multiplanarShowRender: Kr.NEVER
@@ -3379,21 +3831,21 @@ function qp(t) {
     A.leftTopWidthHeight && (A.leftTopWidthHeight[0] += m);
   return [p, ...g];
 }
-function Ll(t) {
+function Fu(t) {
   const { canvasWH: e, extentsMin: r, extentsMax: i } = t, n = t.isRadiologicalConvention ?? !1, s = t.tileMargin ?? 0, o = t.multiplanarLayout ?? _t.AUTO, a = t.multiplanarShowRender ?? Kr.AUTO, l = t.isMultiplanarEqualSize ?? !1, c = De();
   oi(c, i, r);
-  const u = Math.max(c[0], c[1], c[2]), d = l ? _i(r, i, n, u) : Li(r, i, n), h = l ? u : c[0], f = l ? u : c[1], p = l ? u : c[0], g = l ? u : c[2], m = l ? u : c[1], y = l ? u : c[2], A = Math.min(
+  const u = Math.max(c[0], c[1], c[2]), d = l ? Oi(r, i, n, u) : _i(r, i, n), h = l ? u : c[0], f = l ? u : c[1], p = l ? u : c[0], g = l ? u : c[2], m = l ? u : c[1], v = l ? u : c[2], A = Math.min(
     (e[0] - 2 * s) / (h + p + m),
-    e[1] / Math.max(f, g, y)
-  ), v = Math.min(
+    e[1] / Math.max(f, g, v)
+  ), b = Math.min(
     (e[0] - 3 * s) / (h + p + m + u),
-    e[1] / Math.max(f, g, y, u)
+    e[1] / Math.max(f, g, v, u)
   ), E = Math.min(
     e[0] / Math.max(h, p, m),
-    (e[1] - 2 * s) / (f + g + y)
-  ), b = Math.min(
+    (e[1] - 2 * s) / (f + g + v)
+  ), y = Math.min(
     e[0] / Math.max(h, p, m, u),
-    (e[1] - 3 * s) / (f + g + y + u)
+    (e[1] - 3 * s) / (f + g + v + u)
   ), x = Math.min(
     (e[0] - s) / (h + m),
     (e[1] - s) / (f + g)
@@ -3409,11 +3861,11 @@ function Ll(t) {
       hasRender: !1,
       zoom: x
     },
-    { type: _t.ROW, hasRender: !0, zoom: v },
+    { type: _t.ROW, hasRender: !0, zoom: b },
     {
       type: _t.COLUMN,
       hasRender: !0,
-      zoom: b
+      zoom: y
     },
     {
       type: _t.GRID,
@@ -3432,22 +3884,22 @@ function Ll(t) {
       return !J || ee.zoom >= J.zoom - 1e-4;
     }
     return !0;
-  }).sort((ee, J) => Math.abs(J.zoom - ee.zoom) > 1e-4 ? J.zoom - ee.zoom : (J.hasRender ? 1 : 0) - (ee.hasRender ? 1 : 0))[0] || T[0], [P, U, _] = d, O = { axCorSag: se.RENDER }, w = S.zoom, D = { w: h * w, h: f * w }, R = { w: p * w, h: g * w }, C = { w: m * w, h: y * w }, I = u * w;
+  }).sort((ee, J) => Math.abs(J.zoom - ee.zoom) > 1e-4 ? J.zoom - ee.zoom : (J.hasRender ? 1 : 0) - (ee.hasRender ? 1 : 0))[0] || T[0], [P, U, _] = d, O = { axCorSag: se.RENDER }, w = S.zoom, D = { w: h * w, h: f * w }, M = { w: p * w, h: g * w }, C = { w: m * w, h: v * w }, I = u * w;
   if (S.type === _t.ROW) {
-    const ee = [D, R, C], J = [P, U, _];
-    return S.hasRender && (ee.push({ w: I, h: I }), J.push(O)), Gp(e, s, ee, J);
+    const ee = [D, M, C], J = [P, U, _];
+    return S.hasRender && (ee.push({ w: I, h: I }), J.push(O)), O0(e, s, ee, J);
   }
   if (S.type === _t.COLUMN) {
-    const ee = [D, R, C], J = [P, U, _];
-    return S.hasRender && (ee.push({ w: I, h: I }), J.push(O)), kp(e, s, ee, J);
+    const ee = [D, M, C], J = [P, U, _];
+    return S.hasRender && (ee.push({ w: I, h: I }), J.push(O)), F0(e, s, ee, J);
   }
-  const V = Math.min(C.w, D.h), k = D.w + C.w + s, F = D.h + R.h + s, X = (e[0] - k) / 2, q = (e[1] - F) / 2, Q = [
-    { ...U, leftTopWidthHeight: [X, q, R.w, R.h] },
+  const V = Math.min(C.w, D.h), G = D.w + C.w + s, F = D.h + M.h + s, X = (e[0] - G) / 2, q = (e[1] - F) / 2, Q = [
+    { ...U, leftTopWidthHeight: [X, q, M.w, M.h] },
     {
       ...P,
       leftTopWidthHeight: [
         X,
-        q + R.h + s,
+        q + M.h + s,
         D.w,
         D.h
       ]
@@ -3455,7 +3907,7 @@ function Ll(t) {
     {
       ..._,
       leftTopWidthHeight: [
-        X + R.w + s,
+        X + M.w + s,
         q,
         C.w,
         C.h
@@ -3465,14 +3917,14 @@ function Ll(t) {
   return S.hasRender && Q.push({
     ...O,
     leftTopWidthHeight: [
-      X + R.w + s,
-      q + R.h + s,
+      X + M.w + s,
+      q + M.h + s,
       V,
       V
     ]
   }), Q;
 }
-function Hp(t) {
+function z0(t) {
   for (let e = 0; e < t.length; e++) {
     const [r, i, n, s] = t[e].position;
     if (n <= 0 || s <= 0)
@@ -3496,27 +3948,27 @@ function Hp(t) {
   }
   return { valid: !0 };
 }
-function Wp(t) {
+function k0(t) {
   const { canvasWH: e, extentsMin: r, extentsMax: i, customLayout: n } = t;
   if (!n || n.length === 0) return [];
   const s = t.isRadiologicalConvention ?? !1, o = t.isMultiplanarEqualSize ?? !1, a = De();
   oi(a, i, r);
-  const l = Math.max(a[0], a[1], a[2]), c = o ? _i(r, i, s, l) : Li(r, i, s), u = [];
+  const l = Math.max(a[0], a[1], a[2]), c = o ? Oi(r, i, s, l) : _i(r, i, s), u = [];
   for (const d of n) {
-    const [h, f, p, g] = d.position, m = h * e[0], y = f * e[1], A = Math.min(p * e[0], e[0] - m), v = Math.min(g * e[1], e[1] - y);
-    if (!(A <= 0 || v <= 0))
+    const [h, f, p, g] = d.position, m = h * e[0], v = f * e[1], A = Math.min(p * e[0], e[0] - m), b = Math.min(g * e[1], e[1] - v);
+    if (!(A <= 0 || b <= 0))
       if (d.sliceType === se.RENDER)
         u.push({
-          leftTopWidthHeight: [m, y, A, v],
+          leftTopWidthHeight: [m, v, A, b],
           axCorSag: se.RENDER
         });
       else {
-        const E = d.sliceType, b = c[E];
-        if (!(b != null && b.screen)) continue;
-        const x = b.screen.fovMM, T = Math.min(A / x[0], v / x[1]), S = x[0] * T, P = x[1] * T, U = Xn(E, s), _ = {
-          leftTopWidthHeight: [m + (A - S) / 2, y + (v - P) / 2, S, P],
+        const E = d.sliceType, y = c[E];
+        if (!(y != null && y.screen)) continue;
+        const x = y.screen.fovMM, T = Math.min(A / x[0], b / x[1]), S = x[0] * T, P = x[1] * T, U = Xn(E, s), _ = {
+          leftTopWidthHeight: [m + (A - S) / 2, v + (b - P) / 2, S, P],
           axCorSag: E,
-          screen: yo(b.screen),
+          screen: yo(y.screen),
           azimuth: U.azimuth,
           elevation: U.elevation
         };
@@ -3525,13 +3977,13 @@ function Wp(t) {
   }
   return u;
 }
-function _l(t) {
+function Nu(t) {
   var h;
   const { canvasWH: e, extentsMin: r, extentsMax: i } = t, n = t.sliceType, s = t.isRadiologicalConvention ?? !1, o = t.isMultiplanarEqualSize ?? !1, a = t.sliceMosaicString ?? "", l = t.heroImageFraction ?? 0;
   if (t.customLayout && t.customLayout.length > 0)
-    return Wp(t);
+    return k0(t);
   if (a.trim().length > 0)
-    return Xp(t);
+    return N0(t);
   if (n === se.RENDER)
     return [
       {
@@ -3541,27 +3993,27 @@ function _l(t) {
     ];
   const c = De();
   oi(c, i, r);
-  const u = Math.max(c[0], c[1], c[2]), d = o ? _i(r, i, s, u) : Li(r, i, s);
+  const u = Math.max(c[0], c[1], c[2]), d = o ? Oi(r, i, s, u) : _i(r, i, s);
   if (n !== se.MULTIPLANAR) {
     const f = n, p = (h = d[f].screen) == null ? void 0 : h.fovMM;
     if (!p)
       throw new Error("Missing fovMM for slice");
-    const g = Math.min(e[0] / p[0], e[1] / p[1]), m = p[0] * g, y = p[1] * g;
+    const g = Math.min(e[0] / p[0], e[1] / p[1]), m = p[0] * g, v = p[1] * g;
     return [
       {
         ...d[f],
         leftTopWidthHeight: [
           (e[0] - m) / 2,
-          (e[1] - y) / 2,
+          (e[1] - v) / 2,
           m,
-          y
+          v
         ]
       }
     ];
   }
-  return l > 0 && l < 1 ? qp(t) : Ll(t);
+  return l > 0 && l < 1 ? V0(t) : Fu(t);
 }
-function Rt(t, e, r, i, n) {
+function Mt(t, e, r, i, n) {
   var p;
   const s = t[n.tileIndex];
   if (!s || n.isRender) return null;
@@ -3569,7 +4021,7 @@ function Rt(t, e, r, i, n) {
   if (e.volumes.length === 0 || !e.tex2mm) return null;
   const a = Math.max(0, Math.min(1, (r - o[0]) / o[2])), l = Math.max(0, Math.min(1, (i - o[1]) / o[3]));
   if (s.mvpMatrix && s.planeNormal && s.planePoint)
-    return Ul(
+    return Lu(
       a,
       l,
       s.mvpMatrix,
@@ -3591,7 +4043,7 @@ function Rt(t, e, r, i, n) {
     void 0,
     u
   ), h = et(n.sliceType), f = s.sliceMM !== void 0 ? e.getSliceTexFracAtMM(h, s.sliceMM) : e.getSliceTexFrac(h);
-  return Ti(
+  return Ai(
     a,
     l,
     d,
@@ -3600,48 +4052,48 @@ function Rt(t, e, r, i, n) {
     f
   );
 }
-function Ol(t, e, r, i, n, s, o) {
+function Vu(t, e, r, i, n, s, o) {
   if (!t.crossLines || t.renderOrientation === void 0 || !t.leftTopWidthHeight)
     return [];
-  const a = t.renderOrientation, l = t.leftTopWidthHeight, c = [], [u, d, h] = qn[a], f = (r[h] + i[h]) / 2, p = (y, A, v) => {
+  const a = t.renderOrientation, l = t.leftTopWidthHeight, c = [], [u, d, h] = qn[a], f = (r[h] + i[h]) / 2, p = (v, A, b) => {
     const E = Kt();
-    return ot(E, Qe(y, A, v, 1), e), [
+    return ot(E, Qe(v, A, b, 1), e), [
       l[0] + (E[0] + 1) * 0.5 * l[2],
       l[1] + (1 - E[1]) * 0.5 * l[3]
     ];
-  }, g = (y, A, v) => {
+  }, g = (v, A, b) => {
     const E = [0, 0, 0];
-    return E[u] = y, E[d] = A, E[h] = v, E;
+    return E[u] = v, E[d] = A, E[h] = b, E;
   }, m = [
     { mmValues: t.crossLines.axialMM, dim: 2 },
     { mmValues: t.crossLines.coronalMM, dim: 1 },
     { mmValues: t.crossLines.sagittalMM, dim: 0 }
   ];
-  for (const { mmValues: y, dim: A } of m)
-    if (!(A === h || y.length === 0)) {
-      for (const v of y)
+  for (const { mmValues: v, dim: A } of m)
+    if (!(A === h || v.length === 0)) {
+      for (const b of v)
         if (A === d) {
-          const [E, b] = p(
-            ...g(r[u], v, f)
+          const [E, y] = p(
+            ...g(r[u], b, f)
           ), [x, T] = p(
-            ...g(i[u], v, f)
+            ...g(i[u], b, f)
           );
-          c.push(o(E, b, x, T, n, s));
+          c.push(o(E, y, x, T, n, s));
         } else if (A === u) {
-          const [E, b] = p(
-            ...g(v, r[d], f)
+          const [E, y] = p(
+            ...g(b, r[d], f)
           ), [x, T] = p(
-            ...g(v, i[d], f)
+            ...g(b, i[d], f)
           );
-          c.push(o(E, b, x, T, n, s));
+          c.push(o(E, y, x, T, n, s));
         }
     }
   return c;
 }
-function jp(t) {
+function G0(t) {
   return t === 0 || !Number.isFinite(t) ? 1 : t;
 }
-function Fl(t) {
+function zu(t) {
   switch (t) {
     case le.DT_UINT8:
       return Uint8Array;
@@ -3665,14 +4117,17 @@ function Fl(t) {
 }
 function bo(t, e) {
   if (!(t instanceof ArrayBuffer)) return t;
-  const r = Fl(e);
+  const r = zu(e);
   if (!r) {
     if (e === le.DT_RGB24 || e === le.DT_RGBA32) return null;
     throw new Error(`Unsupported datatype: ${e}`);
   }
   return new r(t);
 }
-function Nl(t, e, r) {
+function ku(t, e) {
+  return t instanceof ArrayBuffer ? bo(t, e) ?? new Uint8Array(t) : t;
+}
+function Gu(t, e, r) {
   let i = Number.POSITIVE_INFINITY, n = Number.NEGATIVE_INFINITY, s = 0;
   for (let o = e; o < r; o++) {
     const a = t[o];
@@ -3680,7 +4135,7 @@ function Nl(t, e, r) {
   }
   return !Number.isFinite(i) || !Number.isFinite(n) ? null : { mn: i, mx: n, nZero: s };
 }
-function Vl(t, e, r, i, n, s) {
+function Xu(t, e, r, i, n, s) {
   const o = r - e, a = Math.round((o - s) * 0.02), l = 1001, c = (l - 1) / (n - i), u = new Uint32Array(l);
   for (let p = e; p < r; p++) {
     const g = t[p];
@@ -3697,33 +4152,33 @@ function Vl(t, e, r, i, n, s) {
     d += u[f], f--;
   return f = Math.min(l - 1, f + 1), h >= f && (h = 0, f = l - 1), [h, f];
 }
-function Yp(t, e) {
+function qu(t, e) {
   const r = (p) => p * t.scl_slope + t.scl_inter, i = bo(e, t.datatypeCode);
   if (!i) return [0, 255, 0, 255];
-  const n = t.dims[1] * t.dims[2] * t.dims[3], s = Nl(i, 0, n);
+  const n = t.dims[1] * t.dims[2] * t.dims[3], s = Gu(i, 0, n);
   if (!s) throw new Error("infinite image");
   const { mn: o, mx: a, nZero: l } = s, c = r(o), u = r(a);
   if (a === o) return [c, u, c, u];
   if (t.cal_min < t.cal_max && Number.isFinite(t.cal_min) && Number.isFinite(t.cal_max) && (t.cal_max > c || t.cal_min < u))
     return [t.cal_min, t.cal_max, c, u];
-  const [d, h] = Vl(i, 0, n, o, a, l);
+  const [d, h] = Xu(i, 0, n, o, a, l);
   if (d === h) return [c, u, c, u];
   const f = 1e3 / (a - o);
   return [r(d / f + o), r(h / f + o), c, u];
 }
-function Kp(t, e) {
+function X0(t, e) {
   const r = t.hdr, i = (m) => m * r.scl_slope + r.scl_inter, n = bo(t.img, r.datatypeCode);
   if (!n) return [0, 255, 0, 255];
-  const s = e * t.nVox3D, o = Math.min(s + t.nVox3D, n.length), a = Nl(n, s, o);
+  const s = e * t.nVox3D, o = Math.min(s + t.nVox3D, n.length), a = Gu(n, s, o);
   if (!a) return [0, 0, 0, 0];
   const { mn: l, mx: c, nZero: u } = a, d = i(l), h = i(c);
   if (c === l) return [d, h, d, h];
-  const [f, p] = Vl(n, s, o, l, c, u);
+  const [f, p] = Xu(n, s, o, l, c, u);
   if (f === p) return [d, h, d, h];
   const g = 1e3 / (c - l);
   return [i(f / g + l), i(p / g + l), d, h];
 }
-function Qp(t, e) {
+function q0(t, e) {
   const r = [t[0] - 0.5, t[1] - 0.5, t[2] - 0.5], i = -0.5, n = Oe();
   er(n, e);
   const s = [
@@ -3738,7 +4193,7 @@ function Qp(t, e) {
   ], o = ve(1 / 0, 1 / 0, 1 / 0), a = ve(-1 / 0, -1 / 0, -1 / 0);
   for (const l of s) {
     const c = De();
-    Sf(c, l, n), Ds(o, o, c), Cs(a, a, c);
+    Rf(c, l, n), Ds(o, o, c), Cs(a, a, c);
   }
   return { extentsMin: o, extentsMax: a };
 }
@@ -3748,7 +4203,7 @@ function ia(t) {
     e[r] = t.charCodeAt(r);
   return e;
 }
-function Zp(t, e = !1, r = !1) {
+function H0(t, e = !1, r = !1) {
   let i = !0;
   r && (i = t.littleEndian);
   const n = new Uint8Array(348), s = new DataView(n.buffer);
@@ -3764,7 +4219,7 @@ function Zp(t, e = !1, r = !1) {
     s.setFloat32(280 + 4 * a, o[a], i);
   return s.setInt32(344, 3222382, !0), n;
 }
-function Jp(t, e) {
+function W0(t, e) {
   const r = t.permRAS;
   if (!r || r[0] === 1 && r[1] === 2 && r[2] === 3)
     return e;
@@ -3822,7 +4277,7 @@ function bn(t, e, r, i, n) {
       }
   return c;
 }
-function $p(t) {
+function j0(t) {
   if (!t.img || !t.dimsRAS || !t.img2RASstep || !t.img2RASstart)
     return null;
   const e = t.img2RASstep, r = t.img2RASstart, i = t.dimsRAS[1], n = t.dimsRAS[2], s = t.dimsRAS[3], o = i * n * s;
@@ -3842,7 +4297,7 @@ function $p(t) {
   }
   return l;
 }
-function zl(t) {
+function Hu(t) {
   const e = t.colormapLabel;
   if (!(e != null && e.labels) || !t.matRAS || !t.dimsRAS) return {};
   const r = e.labels, i = e.min ?? 0, n = e.max ?? r.length - 1 + i, s = t.matRAS, o = t.dimsRAS[1], a = t.dimsRAS[2], l = t.dimsRAS[3], c = {}, u = {}, d = {}, h = {};
@@ -3850,29 +4305,29 @@ function zl(t) {
     for (let p = 0; p < l; p++)
       for (let g = 0; g < a; g++)
         for (let m = 0; m < o; m++) {
-          const y = Gs(t, m, g, p), A = y[2], v = y[3];
-          if (A === 0 && v === 0) continue;
-          const E = s[0] * m + s[1] * g + s[2] * p + s[3], b = s[4] * m + s[5] * g + s[6] * p + s[7], x = s[8] * m + s[9] * g + s[10] * p + s[11], T = y[0];
+          const v = Gs(t, m, g, p), A = v[2], b = v[3];
+          if (A === 0 && b === 0) continue;
+          const E = s[0] * m + s[1] * g + s[2] * p + s[3], y = s[4] * m + s[5] * g + s[6] * p + s[7], x = s[8] * m + s[9] * g + s[10] * p + s[11], T = v[0];
           if (A > 0 && T >= i && T <= n) {
             const P = r[T - i];
-            P && (c[P] = (c[P] ?? 0) + E * A, u[P] = (u[P] ?? 0) + b * A, d[P] = (d[P] ?? 0) + x * A, h[P] = (h[P] ?? 0) + A);
+            P && (c[P] = (c[P] ?? 0) + E * A, u[P] = (u[P] ?? 0) + y * A, d[P] = (d[P] ?? 0) + x * A, h[P] = (h[P] ?? 0) + A);
           }
-          const S = y[1];
-          if (v > 0 && S >= i && S <= n) {
+          const S = v[1];
+          if (b > 0 && S >= i && S <= n) {
             const P = r[S - i];
-            P && (c[P] = (c[P] ?? 0) + E * v, u[P] = (u[P] ?? 0) + b * v, d[P] = (d[P] ?? 0) + x * v, h[P] = (h[P] ?? 0) + v);
+            P && (c[P] = (c[P] ?? 0) + E * b, u[P] = (u[P] ?? 0) + y * b, d[P] = (d[P] ?? 0) + x * b, h[P] = (h[P] ?? 0) + b);
           }
         }
   else
     for (let p = 0; p < l; p++)
       for (let g = 0; g < a; g++)
         for (let m = 0; m < o; m++) {
-          const y = ei(t, m, g, p), A = Math.round(y);
+          const v = ei(t, m, g, p), A = Math.round(v);
           if (A < i || A > n) continue;
-          const v = r[A - i];
-          if (!v) continue;
-          const E = s[0] * m + s[1] * g + s[2] * p + s[3], b = s[4] * m + s[5] * g + s[6] * p + s[7], x = s[8] * m + s[9] * g + s[10] * p + s[11];
-          c[v] = (c[v] ?? 0) + E, u[v] = (u[v] ?? 0) + b, d[v] = (d[v] ?? 0) + x, h[v] = (h[v] ?? 0) + 1;
+          const b = r[A - i];
+          if (!b) continue;
+          const E = s[0] * m + s[1] * g + s[2] * p + s[3], y = s[4] * m + s[5] * g + s[6] * p + s[7], x = s[8] * m + s[9] * g + s[10] * p + s[11];
+          c[b] = (c[b] ?? 0) + E, u[b] = (u[b] ?? 0) + y, d[b] = (d[b] ?? 0) + x, h[b] = (h[b] ?? 0) + 1;
         }
   const f = {};
   for (const p of Object.keys(h)) {
@@ -3881,24 +4336,24 @@ function zl(t) {
   }
   return f;
 }
-function Gl(t, e, r, i) {
+function Wu(t, e, r, i) {
   const [n, s, o] = e, [a, l, c] = r, u = n * s * o, d = new Uint8Array(u * 4);
   for (let h = 0; h < o; h++) {
     const f = (h + 0.5) / o;
     for (let p = 0; p < s; p++) {
       const g = (p + 0.5) / s;
       for (let m = 0; m < n; m++) {
-        const y = (m + 0.5) / n, A = y * i[0] + g * i[1] + f * i[2] + i[3], v = y * i[4] + g * i[5] + f * i[6] + i[7], E = y * i[8] + g * i[9] + f * i[10] + i[11], b = (m + p * n + h * n * s) * 4;
-        if (A < 0 || A > 1 || v < 0 || v > 1 || E < 0 || E > 1)
+        const v = (m + 0.5) / n, A = v * i[0] + g * i[1] + f * i[2] + i[3], b = v * i[4] + g * i[5] + f * i[6] + i[7], E = v * i[8] + g * i[9] + f * i[10] + i[11], y = (m + p * n + h * n * s) * 4;
+        if (A < 0 || A > 1 || b < 0 || b > 1 || E < 0 || E > 1)
           continue;
-        const x = Math.min(Math.floor(A * a), a - 1), T = Math.min(Math.floor(v * l), l - 1), S = Math.min(Math.floor(E * c), c - 1), P = (x + T * a + S * a * l) * 4;
-        d[b] = t[P], d[b + 1] = t[P + 1], d[b + 2] = t[P + 2], d[b + 3] = t[P + 3];
+        const x = Math.min(Math.floor(A * a), a - 1), T = Math.min(Math.floor(b * l), l - 1), S = Math.min(Math.floor(E * c), c - 1), P = (x + T * a + S * a * l) * 4;
+        d[y] = t[P], d[y + 1] = t[P + 1], d[y + 2] = t[P + 2], d[y + 3] = t[P + 3];
       }
     }
   }
   return d;
 }
-function kl(t, e) {
+function ju(t, e) {
   const r = new Uint8Array(1024), i = t.length / 4;
   for (let n = 0; n < i; n++) {
     const s = e + n;
@@ -3909,7 +4364,7 @@ function kl(t, e) {
   }
   return r;
 }
-class e0 {
+class Y0 {
   constructor(e) {
     this.nv = e, this._subs = [], this._disposed = !1, this._savedDrawingImg = null, this._cachedImgRAS = null, this._cachedImgRASVol = null;
   }
@@ -3958,7 +4413,7 @@ class e0 {
       get imgRAS() {
         if (r._cachedImgRASVol === e && r._cachedImgRAS)
           return r._cachedImgRAS;
-        const i = $p(e);
+        const i = j0(e);
         return r._cachedImgRAS = i, r._cachedImgRASVol = e, i;
       }
     };
@@ -4050,7 +4505,7 @@ class e0 {
   vox2mm(e) {
     const r = this.nv.volumes[0];
     if (!(r != null && r.matRAS)) throw new Error("No background volume with matRAS loaded");
-    const i = ct(null, e, r.matRAS);
+    const i = ut(null, e, r.matRAS);
     return [i[0], i[1], i[2]];
   }
   mm2vox(e) {
@@ -4087,7 +4542,7 @@ function na(t, e) {
   s > 0 && (n = s);
   const o = (e.clientX - i.left) * n, a = (e.clientY - i.top) * n, l = t.view.hitTest(o, a);
   if (!l || l.isRender) return null;
-  const c = Rt(
+  const c = Mt(
     t.view.screenSlices,
     t.model,
     o,
@@ -4105,7 +4560,7 @@ function na(t, e) {
     pointerEvent: e
   };
 }
-const t0 = ["ASC"], r0 = "mz3";
+const K0 = ["ASC"], Q0 = "mz3";
 async function To(t) {
   const e = t.byteLength, r = new Uint8Array(t);
   let i = 0;
@@ -4136,13 +4591,13 @@ async function To(t) {
     indices: d
   };
 }
-const Xl = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Yu = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: t0,
+  extensions: K0,
   read: To,
-  type: r0
-}, Symbol.toStringTag, { value: "Module" })), i0 = ["DFS"], n0 = "mz3";
-async function s0(t) {
+  type: Q0
+}, Symbol.toStringTag, { value: "Module" })), Z0 = ["DFS"], J0 = "mz3";
+async function $0(t) {
   const e = new DataView(t), r = e.getUint32(0, !0), i = e.getUint16(4, !0);
   (r !== 1599292996 || i !== 17740) && Y.warn("Not a little-endian brainsuite DFS mesh");
   const n = e.getUint32(12, !0), s = e.getUint32(24, !0), o = e.getUint32(28, !0), a = e.getUint32(48, !0);
@@ -4159,12 +4614,12 @@ async function s0(t) {
   const h = { positions: u, indices: c };
   return d && (h.colors = d), h;
 }
-const ql = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Ku = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: i0,
-  read: s0,
-  type: n0
-}, Symbol.toStringTag, { value: "Module" })), o0 = [
+  extensions: Z0,
+  read: $0,
+  type: J0
+}, Symbol.toStringTag, { value: "Module" })), em = [
   "WHITE",
   "PIAL",
   "INFLATED",
@@ -4172,8 +4627,8 @@ const ql = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   "ORIG",
   "SMOOTHWM",
   "QSPHERE"
-], a0 = "mz3";
-async function l0(t) {
+], tm = "mz3";
+async function rm(t) {
   const e = new Uint8Array(t);
   if (e[0] === 35 && e[1] === 33 && e[2] === 97)
     return To(t);
@@ -4215,7 +4670,7 @@ async function l0(t) {
         continue;
       const p = h[f].split("=")[1].trim().split(" ").map(Number), g = Math.floor(l.length / 3);
       let m = 0;
-      for (let y = 0; y < g; y++)
+      for (let v = 0; v < g; v++)
         l[m] += p[0], m++, l[m] += p[1], m++, l[m] += p[2], m++;
     }
   }
@@ -4224,13 +4679,13 @@ async function l0(t) {
     indices: c
   };
 }
-const Hl = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Qu = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: o0,
-  read: l0,
-  type: a0
-}, Symbol.toStringTag, { value: "Module" })), c0 = ["BYU", "GEO"], u0 = "mz3";
-function d0(t, e = !1) {
+  extensions: em,
+  read: rm,
+  type: tm
+}, Symbol.toStringTag, { value: "Module" })), im = ["BYU", "GEO"], nm = "mz3";
+function sm(t, e = !1) {
   const r = new TextDecoder("utf-8").decode(t).split(`
 `), i = r[0].trim().split(/\s+/), n = parseInt(i[0], 10);
   let s = parseInt(i[1], 10), o = parseInt(i[2], 10);
@@ -4265,16 +4720,16 @@ function d0(t, e = !1) {
     indices: p
   };
 }
-async function h0(t) {
-  return d0(t, !0);
+async function om(t) {
+  return sm(t, !0);
 }
-const Wl = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Zu = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: c0,
-  read: h0,
-  type: u0
+  extensions: im,
+  read: om,
+  type: nm
 }, Symbol.toStringTag, { value: "Module" }));
-async function jl(t) {
+async function Ju(t) {
   const e = new CompressionStream("gzip"), r = e.writable.getWriter();
   r.write(new Uint8Array(t)).catch((o) => Y.error("NVGz compress write error", o));
   const i = r.close().catch((o) => Y.error("NVGz compress close error", o)), n = new Response(e.readable), s = new Uint8Array(await n.arrayBuffer());
@@ -4297,461 +4752,8 @@ async function Zt(t) {
   const s = i.close().catch((l) => Y.error("NVGz close error", l)), o = new Response(r.readable), a = new Uint8Array(await o.arrayBuffer());
   return await s, a;
 }
-const Yl = [0, 255, 0, 0], Kl = [0, 0, 255, 0], Ql = [0, 0, 0, 255], Zl = [0, 255, 255, 255], Jl = [0, 1, 2, 3], $l = ["air", "red", "green", "blue"], f0 = {
-  R: Yl,
-  G: Kl,
-  B: Ql,
-  A: Zl,
-  I: Jl,
-  labels: $l
-}, p0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Zl,
-  B: Ql,
-  G: Kl,
-  I: Jl,
-  R: Yl,
-  default: f0,
-  labels: $l
-}, Symbol.toStringTag, { value: "Module" })), ec = [0, 255, 0, 0, 255, 0, 255, 255, 0, 205, 210, 102, 0, 0, 46, 255, 106, 221, 233, 165, 255, 147, 218, 75, 255, 60, 255, 255, 218, 0, 188, 255, 255, 222, 127, 139, 124, 255, 70, 0, 238, 238, 240, 245, 184, 32, 255, 25, 112, 34, 248, 245, 255, 144, 173, 65, 255, 250, 128, 50, 244, 255, 123, 255, 173, 255, 127, 255, 143, 220, 253, 255, 0, 0, 128, 255, 250, 148, 178, 255, 135, 100, 240, 250, 255, 107, 135, 0, 139, 245, 186, 255, 255, 0, 210, 255, 47, 72, 175, 128, 176, 255, 139, 240, 255, 216, 119, 219, 72, 255, 199, 154, 189, 240, 230, 0, 85, 64, 153, 205, 250, 95, 0, 255, 224, 176, 138, 30, 240, 152, 160], tc = [0, 0, 255, 0, 255, 255, 0, 239, 0, 133, 180, 205, 0, 139, 139, 228, 90, 160, 150, 42, 250, 112, 112, 0, 182, 179, 235, 228, 165, 128, 143, 105, 218, 184, 255, 69, 252, 255, 130, 100, 130, 232, 255, 222, 134, 178, 20, 25, 128, 139, 248, 255, 160, 238, 255, 105, 99, 240, 0, 205, 164, 255, 104, 165, 216, 192, 255, 140, 188, 20, 245, 250, 206, 255, 0, 250, 128, 0, 34, 127, 206, 149, 230, 235, 245, 142, 206, 0, 0, 245, 85, 228, 222, 191, 105, 248, 79, 61, 238, 128, 224, 240, 0, 255, 215, 191, 136, 112, 209, 0, 21, 205, 183, 248, 230, 250, 107, 224, 50, 92, 250, 158, 128, 69, 255, 196, 43, 144, 128, 251, 82], rc = [0, 0, 0, 255, 0, 255, 255, 213, 205, 63, 140, 170, 128, 139, 87, 225, 205, 221, 122, 42, 250, 219, 214, 130, 193, 113, 205, 196, 32, 128, 143, 180, 185, 135, 0, 19, 0, 224, 180, 0, 238, 170, 240, 179, 11, 170, 147, 112, 144, 34, 255, 250, 122, 144, 47, 225, 71, 230, 0, 50, 96, 240, 238, 0, 230, 203, 212, 0, 143, 60, 230, 240, 209, 127, 128, 205, 114, 211, 34, 80, 235, 237, 140, 215, 238, 35, 250, 139, 139, 220, 211, 181, 173, 255, 30, 220, 79, 139, 238, 0, 230, 245, 0, 255, 0, 216, 153, 147, 204, 255, 133, 50, 107, 255, 250, 154, 47, 208, 204, 92, 210, 160, 0, 0, 255, 222, 226, 255, 128, 152, 45], ic = [0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255], nc = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130], m0 = {
-  R: ec,
-  G: tc,
-  B: rc,
-  A: ic,
-  I: nc
-}, g0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: ic,
-  B: rc,
-  G: tc,
-  I: nc,
-  R: ec,
-  default: m0
-}, Symbol.toStringTag, { value: "Module" })), sc = [0, 0, 24, 248, 255], oc = [0, 0, 177, 254, 0], ac = [0, 136, 0, 0, 0], lc = [0, 32, 64, 78, 128], cc = [0, 64, 128, 156, 255], x0 = {
-  R: sc,
-  G: oc,
-  B: ac,
-  A: lc,
-  I: cc
-}, v0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: lc,
-  B: ac,
-  G: oc,
-  I: cc,
-  R: sc,
-  default: x0
-}, Symbol.toStringTag, { value: "Module" })), uc = [1, 10, 15, 17, 21, 27, 36, 49, 65, 82, 99, 118, 140, 161, 183, 203, 222, 238, 248, 253, 253, 253, 252, 250], dc = [25, 42, 56, 68, 79, 88, 97, 105, 111, 116, 122, 127, 133, 138, 142, 146, 150, 155, 162, 170, 178, 186, 195, 204], hc = [89, 92, 95, 96, 98, 98, 96, 91, 83, 74, 64, 55, 46, 43, 49, 62, 79, 100, 126, 151, 175, 199, 223, 250], fc = [0, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], pc = [0, 11, 22, 33, 44, 55, 66, 77, 88, 99, 110, 121, 133, 144, 155, 166, 177, 188, 199, 210, 221, 232, 243, 255], y0 = {
-  R: uc,
-  G: dc,
-  B: hc,
-  A: fc,
-  I: pc
-}, b0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: fc,
-  B: hc,
-  G: dc,
-  I: pc,
-  R: uc,
-  default: y0
-}, Symbol.toStringTag, { value: "Module" })), mc = [0, 0, 0], gc = [0, 0, 0], xc = [0, 128, 255], vc = [0, 64, 128], yc = [0, 128, 255], T0 = {
-  R: mc,
-  G: gc,
-  B: xc,
-  A: vc,
-  I: yc
-}, A0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: vc,
-  B: xc,
-  G: gc,
-  I: yc,
-  R: mc,
-  default: T0
-}, Symbol.toStringTag, { value: "Module" })), bc = [0, 86, 166, 255], Tc = [32, 92, 156, 233], Ac = [76, 108, 117, 69], wc = [0, 56, 80, 88], Ec = [0, 64, 192, 255], w0 = {
-  R: bc,
-  G: Tc,
-  B: Ac,
-  A: wc,
-  I: Ec
-}, E0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: wc,
-  B: Ac,
-  G: Tc,
-  I: Ec,
-  R: bc,
-  default: w0
-}, Symbol.toStringTag, { value: "Module" })), Sc = [0, 0, 0], Rc = [127, 196, 254], Mc = [255, 255, 255], Pc = [0, 64, 128], Dc = [0, 128, 255], S0 = {
-  R: Sc,
-  G: Rc,
-  B: Mc,
-  A: Pc,
-  I: Dc
-}, R0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Pc,
-  B: Mc,
-  G: Rc,
-  I: Dc,
-  R: Sc,
-  default: S0
-}, Symbol.toStringTag, { value: "Module" })), Cc = [0, 255], Uc = [0, 255], Ic = [0, 255], Bc = [0, 128], Lc = [0, 255], M0 = {
-  R: Cc,
-  G: Uc,
-  B: Ic,
-  A: Bc,
-  I: Lc
-}, P0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Bc,
-  B: Ic,
-  G: Uc,
-  I: Lc,
-  R: Cc,
-  default: M0
-}, Symbol.toStringTag, { value: "Module" })), _c = [0, 0, 0], Oc = [0, 128, 255], Fc = [0, 0, 0], Nc = [0, 64, 128], Vc = [0, 128, 255], D0 = {
-  R: _c,
-  G: Oc,
-  B: Fc,
-  A: Nc,
-  I: Vc
-}, C0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Nc,
-  B: Fc,
-  G: Oc,
-  I: Vc,
-  R: _c,
-  default: D0
-}, Symbol.toStringTag, { value: "Module" })), zc = [0, 0, 0], Gc = [72, 72, 255], kc = [0, 255, 255], Xc = [0, 64, 128], qc = [0, 88, 255], U0 = {
-  R: zc,
-  G: Gc,
-  B: kc,
-  A: Xc,
-  I: qc
-}, I0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Xc,
-  B: kc,
-  G: Gc,
-  I: qc,
-  R: zc,
-  default: U0
-}, Symbol.toStringTag, { value: "Module" })), Hc = [0, 255, 255], Wc = [72, 88, 255], jc = [0, 0, 0], Yc = [0, 64, 128], Kc = [0, 88, 255], B0 = {
-  R: Hc,
-  G: Wc,
-  B: jc,
-  A: Yc,
-  I: Kc
-}, L0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Yc,
-  B: jc,
-  G: Wc,
-  I: Kc,
-  R: Hc,
-  default: B0
-}, Symbol.toStringTag, { value: "Module" })), Qc = [3, 255, 255, 255], Zc = [0, 0, 255, 255], Jc = [0, 0, 0, 255], $c = [0, 48, 96, 128], eu = [0, 95, 191, 255], _0 = {
-  R: Qc,
-  G: Zc,
-  B: Jc,
-  A: $c,
-  I: eu
-}, O0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: $c,
-  B: Jc,
-  G: Zc,
-  I: eu,
-  R: Qc,
-  default: _0
-}, Symbol.toStringTag, { value: "Module" })), tu = [0, 255, 255, 255], ru = [0, 0, 126, 255], iu = [0, 0, 0, 255], nu = [0, 64, 96, 128], su = [0, 128, 191, 255], F0 = {
-  R: tu,
-  G: ru,
-  B: iu,
-  A: nu,
-  I: su
-}, N0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: nu,
-  B: iu,
-  G: ru,
-  I: su,
-  R: tu,
-  default: F0
-}, Symbol.toStringTag, { value: "Module" })), ou = [255, 255, 0, 0, 0, 255, 255], au = [0, 255, 255, 255, 0, 0, 0], lu = [0, 0, 0, 255, 255, 255, 0], cu = [0, 14, 28, 43, 57, 71, 85], uu = [0, 43, 85, 128, 170, 213, 255], V0 = {
-  R: ou,
-  G: au,
-  B: lu,
-  A: cu,
-  I: uu
-}, z0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: cu,
-  B: lu,
-  G: au,
-  I: uu,
-  R: ou,
-  default: V0
-}, Symbol.toStringTag, { value: "Module" })), du = [0, 120, 237, 240], hu = [0, 28, 105, 249], fu = [4, 109, 37, 33], pu = [0, 56, 80, 88], mu = [0, 64, 192, 255], G0 = {
-  R: du,
-  G: hu,
-  B: fu,
-  A: pu,
-  I: mu
-}, k0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: pu,
-  B: fu,
-  G: hu,
-  I: mu,
-  R: du,
-  default: G0
-}, Symbol.toStringTag, { value: "Module" })), gu = [11, 59, 55, 222], xu = [4, 45, 165, 245], vu = [5, 91, 172, 229], yu = [0, 23, 70, 107], bu = [0, 56, 167, 255], X0 = {
-  R: gu,
-  G: xu,
-  B: vu,
-  A: yu,
-  I: bu
-}, q0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: yu,
-  B: vu,
-  G: xu,
-  I: bu,
-  R: gu,
-  default: X0
-}, Symbol.toStringTag, { value: "Module" })), Tu = [13, 156, 237, 240], Au = [8, 23, 121, 249], wu = [135, 158, 83, 33], Eu = [0, 56, 80, 88], Su = [0, 64, 192, 255], H0 = {
-  R: Tu,
-  G: Au,
-  B: wu,
-  A: Eu,
-  I: Su
-}, W0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Eu,
-  B: wu,
-  G: Au,
-  I: Su,
-  R: Tu,
-  default: H0
-}, Symbol.toStringTag, { value: "Module" })), Ru = [0, 128, 255], Mu = [0, 0, 0], Pu = [0, 0, 0], Du = [0, 64, 128], Cu = [0, 128, 255], j0 = {
-  R: Ru,
-  G: Mu,
-  B: Pu,
-  A: Du,
-  I: Cu
-}, Y0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Du,
-  B: Pu,
-  G: Mu,
-  I: Cu,
-  R: Ru,
-  default: j0
-}, Symbol.toStringTag, { value: "Module" })), Uu = [192, 224, 255], Iu = [1, 128, 255], Bu = [0, 0, 0], Lu = [0, 64, 128], _u = [0, 128, 255], K0 = {
-  R: Uu,
-  G: Iu,
-  B: Bu,
-  A: Lu,
-  I: _u
-}, Q0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Lu,
-  B: Bu,
-  G: Iu,
-  I: _u,
-  R: Uu,
-  default: K0
-}, Symbol.toStringTag, { value: "Module" })), Ou = [68, 49, 53, 253], Fu = [1, 104, 183, 231], Nu = [84, 142, 121, 37], Vu = [0, 56, 80, 88], zu = [0, 64, 192, 255], Z0 = {
-  R: Ou,
-  G: Fu,
-  B: Nu,
-  A: Vu,
-  I: zu
-}, J0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Vu,
-  B: Nu,
-  G: Fu,
-  I: zu,
-  R: Ou,
-  default: Z0
-}, Symbol.toStringTag, { value: "Module" })), Gu = [255, 255, 255], ku = [127, 196, 254], Xu = [0, 0, 0], qu = [0, 64, 128], Hu = [0, 128, 255], $0 = {
-  R: Gu,
-  G: ku,
-  B: Xu,
-  A: qu,
-  I: Hu
-}, em = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: qu,
-  B: Xu,
-  G: ku,
-  I: Hu,
-  R: Gu,
-  default: $0
-}, Symbol.toStringTag, { value: "Module" })), Wu = [0, 0, 0], ju = [0, 128, 255], Yu = [255, 196, 128], Ku = [0, 64, 128], Qu = [0, 128, 255], tm = {
-  R: Wu,
-  G: ju,
-  B: Yu,
-  A: Ku,
-  I: Qu
-}, rm = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  A: Ku,
-  B: Yu,
-  G: ju,
-  I: Qu,
-  R: Wu,
-  default: tm
-}, Symbol.toStringTag, { value: "Module" }));
-function ds(t, e, r, i, n) {
-  const s = new Uint8ClampedArray(1024);
-  for (let o = 0; o < n.length - 1; o++) {
-    const a = n[o], l = n[o + 1], c = l - a;
-    let u = a * 4;
-    for (let d = a; d <= l; d++) {
-      const h = (d - a) / c, f = t[o], p = t[o + 1], g = e[o], m = e[o + 1], y = r[o], A = r[o + 1], v = i[o], E = i[o + 1];
-      s[u++] = Math.round(f + h * (p - f)), s[u++] = Math.round(g + h * (m - g)), s[u++] = Math.round(y + h * (A - y)), s[u++] = Math.round(v + h * (E - v));
-    }
-  }
-  return s;
-}
-function Ai(t, e = 255, r = 1 / 0) {
-  if (!t.R || !t.G || !t.B)
-    throw new Error("Invalid colormap table");
-  const i = t.R.length, n = t.I ?? [...Array(i).keys()];
-  let s = !1;
-  for (let f = 0; f < n.length; f++)
-    n[f] > r && (s = !0, n[f] = r);
-  if (s && Y.warn("Some colormap indices clamped to match label range."), i !== t.G.length || i !== t.B.length || i !== n.length)
-    throw new Error("colormap does not make sense");
-  let o = new Uint8ClampedArray(i).fill(e);
-  const a = n.indexOf(0);
-  a >= 0 && (o[a] = 0), t.A !== void 0 && (o = Uint8ClampedArray.from(t.A));
-  const l = Math.min(...n), c = Math.max(...n), u = c - l + 1, d = new Uint8ClampedArray(u * 4).fill(0);
-  for (let f = 0; f < i; f++) {
-    let p = (n[f] - l) * 4;
-    d[p++] = t.R[f], d[p++] = t.G[f], d[p++] = t.B[f], d[p++] = o[f];
-  }
-  const h = {
-    lut: d,
-    min: l,
-    max: c
-  };
-  if (t.labels) {
-    const f = t.labels.length;
-    if (f === u)
-      h.labels = t.labels.slice();
-    else if (f === i) {
-      h.labels = Array(u).fill("?");
-      for (let p = 0; p < i; p++)
-        h.labels[n[p] - l] = t.labels[p];
-    }
-  }
-  return h;
-}
-let ji = null;
-function Oi() {
-  if (ji) return ji;
-  const t = /* @__PURE__ */ new Map();
-  try {
-    const e = /* @__PURE__ */ Object.assign({
-      "./luts/_draw.json": p0,
-      "./luts/_itksnap.json": g0,
-      "./luts/actc.json": v0,
-      "./luts/batlow.json": b0,
-      "./luts/blue.json": A0,
-      "./luts/cividis.json": E0,
-      "./luts/cool.json": R0,
-      "./luts/gray.json": P0,
-      "./luts/green.json": C0,
-      "./luts/green2cyan.json": I0,
-      "./luts/green2orange.json": L0,
-      "./luts/hot.json": O0,
-      "./luts/hotiron.json": N0,
-      "./luts/hsv.json": z0,
-      "./luts/inferno.json": k0,
-      "./luts/mako.json": q0,
-      "./luts/plasma.json": W0,
-      "./luts/red.json": Y0,
-      "./luts/redyell.json": Q0,
-      "./luts/viridis.json": J0,
-      "./luts/warm.json": em,
-      "./luts/winter.json": rm
-    });
-    for (const r in e) {
-      const i = e[r], n = r.replace(/^.*\/([^/]+)\.json$/i, "$1"), s = n.charAt(0).toUpperCase() + n.slice(1);
-      if (i && Array.isArray(i.R) && Array.isArray(i.G) && Array.isArray(i.B) && Array.isArray(i.I)) {
-        const o = {
-          R: i.R.map(Number),
-          G: i.G.map(Number),
-          B: i.B.map(Number),
-          A: Array.isArray(i.A) ? i.A.map(Number) : new Array(i.I.length).fill(255),
-          I: i.I.map(Number)
-        };
-        Array.isArray(i.labels) && (o.labels = i.labels.slice()), t.set(s, o);
-      } else
-        Y.warn(`Skipping LUT ${r}: expected { R,G,B,I } arrays`);
-    }
-  } catch (e) {
-    Y.warn(
-      "LUT auto-discovery failed (import.meta.glob not available). Use a manifest or build-step to create ./luts/index.js",
-      e
-    );
-  }
-  return ji = t, ji;
-}
-function im() {
-  const t = Oi();
-  return Array.from(t.keys()).filter((e) => !e.startsWith("_")).sort();
-}
-function nm(t, e) {
-  const r = e.R.map(Number), i = e.G.map(Number), n = e.B.map(Number);
-  if (r.length < 2 || i.length !== r.length || n.length !== r.length)
-    throw new Error(
-      `addColormap('${t}'): R, G, B must all be the same length and have at least 2 stops`
-    );
-  const s = Array.isArray(e.I) ? e.I.map(Number) : (
-    // Distribute N stops evenly over [0..255] so a 3-stop R/G/B-only cmap
-    // spans the full LUT instead of leaving 253 pixels transparent.
-    r.map((u, d) => Math.round(d * 255 / (r.length - 1)))
-  );
-  if (s.length !== r.length)
-    throw new Error(
-      `addColormap('${t}'): I length (${s.length}) must equal R length (${r.length})`
-    );
-  const o = Array.isArray(e.A) ? e.A.map(Number) : new Array(s.length).fill(255);
-  if (o.length !== s.length)
-    throw new Error(
-      `addColormap('${t}'): A length (${o.length}) must equal I length (${s.length})`
-    );
-  const a = t.charAt(0).toUpperCase() + t.slice(1), l = Oi(), c = { R: r, G: i, B: n, A: o, I: s };
-  return Array.isArray(e.labels) && (c.labels = e.labels.slice()), l.set(a, c), a;
-}
-function sm() {
-  const t = Oi();
-  return Array.from(t.keys()).filter((e) => e.startsWith("_")).sort();
-}
-function ks(t) {
-  const e = Oi(), r = t.charAt(0).toUpperCase() + t.slice(1);
-  return e.get(r) || null;
-}
-function ut(t) {
-  const e = Oi();
-  if (!t)
-    return ds([0, 255], [0, 255], [0, 255], [0, 128], [0, 255]);
-  const r = t.charAt(0).toUpperCase() + t.slice(1), i = e.get(r);
-  if (!i)
-    return r !== "Gray" && Y.warn(`Unknown colormap "${t}", using Gray fallback`), ds([0, 255], [0, 255], [0, 255], [0, 128], [0, 255]);
-  const { R: n, G: s, B: o, A: a, I: l } = i, c = a && a.length === l.length ? a : new Array(l.length).fill(255);
-  return ds(n, s, o, c, l);
-}
-const om = ["GII"], am = "mz3";
-function lm(t) {
+const am = ["GII"], lm = "mz3";
+function cm(t) {
   return t.buffer.slice(
     t.byteOffset,
     t.byteOffset + t.byteLength
@@ -4771,7 +4773,7 @@ function sa(t) {
     i[n] = e.charCodeAt(n);
   return i;
 }
-async function cm(t, e = 0) {
+async function um(t, e = 0) {
   var O;
   let r = t.byteLength;
   if (r < 20)
@@ -4779,7 +4781,7 @@ async function cm(t, e = 0) {
   let i = new TextDecoder("ascii").decode(t);
   if (i[0].charCodeAt(0) === 31) {
     const w = await Zt(new Uint8Array(t));
-    t = lm(w), i = new TextDecoder("ascii").decode(t);
+    t = cm(w), i = new TextDecoder("ascii").decode(t);
   }
   let n = 0;
   function s() {
@@ -4792,18 +4794,18 @@ async function cm(t, e = 0) {
       if (w = i[n - 1] === "/", D + 1 < r && i[D + 1] === "/" && (n += 1, w = !0), n >= r)
         break;
     }
-    const R = new TextDecoder().decode(t.slice(D + 1, n)).trim(), C = R.split(" ")[0].trim(), I = n;
-    let V = n, k = n;
+    const M = new TextDecoder().decode(t.slice(D + 1, n)).trim(), C = M.split(" ")[0].trim(), I = n;
+    let V = n, G = n;
     if (i[D + 1] !== "?" && i[D + 1] !== "!") {
       const F = `</${C}>`;
-      V = i.indexOf(F, I), k = V + F.length - 1;
+      V = i.indexOf(F, I), G = V + F.length - 1;
     }
     return {
-      name: R,
+      name: M,
       startPos: D,
       contentStartPos: I,
       contentEndPos: V,
-      endPos: k
+      endPos: G
     };
   }
   let o = s();
@@ -4816,22 +4818,22 @@ async function cm(t, e = 0) {
   r = o.contentEndPos;
   let a = new Float32Array(), l = new Uint32Array(), c = new Float32Array(), u = "", d = !1, h = !1, f = !1, p = !1, g = [1, 1, 1];
   const m = [0, 0, 0];
-  let y = 0, A = !1, v = !1, E = 0, b = !1;
+  let v = 0, A = !1, b = !1, E = 0, y = !1;
   o.endPos = o.contentStartPos;
   let x = "";
   function T(w, D = !1) {
-    const R = x.indexOf(w);
-    if (R < 0)
+    const M = x.indexOf(w);
+    if (M < 0)
       return 1;
-    const C = x.indexOf('"', R) + 1, I = x.indexOf('"', C), V = x.slice(C, I);
+    const C = x.indexOf('"', M) + 1, I = x.indexOf('"', C), V = x.slice(C, I);
     return D ? parseFloat(V) : parseInt(V, 10);
   }
   function S(w) {
     const D = x.indexOf(w);
     if (D < 0)
       return "";
-    const R = D + w.length, C = x.indexOf("]", R);
-    return x.slice(R, C);
+    const M = D + w.length, C = x.indexOf("]", M);
+    return x.slice(M, C);
   }
   const P = { R: [], G: [], B: [], A: [], I: [], labels: [] };
   for (; o.endPos < r && o.name.length > 1; ) {
@@ -4840,18 +4842,18 @@ async function cm(t, e = 0) {
         continue;
       x = new TextDecoder().decode(t.slice(o.contentStartPos + 1, o.contentEndPos)).trim();
       let w;
-      if (v) {
-        const D = g[0] * g[1] * g[2], R = x.split(/\s+/);
-        if (D !== R.length)
+      if (b) {
+        const D = g[0] * g[1] * g[2], M = x.split(/\s+/);
+        if (D !== M.length)
           throw new Error("Unable to parse ASCII GIfTI");
-        if (y === 2 && (y = 8), y === 32 && (y = 16), y === 8) {
+        if (v === 2 && (v = 8), v === 32 && (v = 16), v === 8) {
           w = new Int32Array(D);
           for (let C = 0; C < D; C++)
-            w[C] = parseInt(R[C], 10);
+            w[C] = parseInt(M[C], 10);
         } else {
           w = new Float32Array(D);
           for (let C = 0; C < D; C++)
-            w[C] = parseFloat(R[C]);
+            w[C] = parseFloat(M[C]);
         }
       } else if (A) {
         const D = sa(x.slice());
@@ -4859,77 +4861,77 @@ async function cm(t, e = 0) {
       } else
         w = sa(x.slice());
       if (h) {
-        if (y !== 16 && Y.warn("expect positions as FLOAT32"), a = new Float32Array(
+        if (v !== 16 && Y.warn("expect positions as FLOAT32"), a = new Float32Array(
           Xr(w)
         ), p) {
-          const D = a.slice(), R = D.length / 3;
+          const D = a.slice(), M = D.length / 3;
           let C = 0;
-          for (let I = 0; I < R; I++)
+          for (let I = 0; I < M; I++)
             for (let V = 0; V < 3; V++)
-              a[C] = D[V * R + I], C++;
+              a[C] = D[V * M + I], C++;
         }
       } else if (d) {
-        if (y !== 8 && Y.warn("expect indices as INT32"), l = new Uint32Array(Xr(w)), p) {
-          const D = l.slice(), R = D.length / 3;
+        if (v !== 8 && Y.warn("expect indices as INT32"), l = new Uint32Array(Xr(w)), p) {
+          const D = l.slice(), M = D.length / 3;
           let C = 0;
-          for (let I = 0; I < R; I++)
+          for (let I = 0; I < M; I++)
             for (let V = 0; V < 3; V++)
-              l[C] = D[V * R + I], C++;
+              l[C] = D[V * M + I], C++;
         }
       } else {
         let D = function(C, I) {
-          const V = C.length, k = new Float32Array(V + I.length);
-          return k.set(C), k.set(I, V), k;
+          const V = C.length, G = new Float32Array(V + I.length);
+          return G.set(C), G.set(I, V), G;
         };
         E = g[0] * g[1] * g[2], e !== 0 && E % e !== 0 && Y.warn(
           `Number of vertices in scalar overlay (${E}) does not match mesh (${e})`
         );
-        let R;
-        if (y === 2) {
+        let M;
+        if (v === 2) {
           const C = new Uint8Array(
             Xr(w)
           );
-          R = Float32Array.from(C);
-        } else if (y === 8) {
+          M = Float32Array.from(C);
+        } else if (v === 8) {
           const C = new Int32Array(
             Xr(w)
           );
-          R = Float32Array.from(C);
-        } else if (y === 16)
-          R = new Float32Array(
+          M = Float32Array.from(C);
+        } else if (v === 16)
+          M = new Float32Array(
             Xr(w)
           );
-        else if (y === 32) {
+        else if (v === 32) {
           const C = new Float64Array(
             Xr(w)
           );
-          R = Float32Array.from(C);
+          M = Float32Array.from(C);
         } else
-          throw new Error(`Invalid dataType: ${y}`);
+          throw new Error(`Invalid dataType: ${v}`);
         c = D(
           c,
-          R
+          M
         );
       }
       continue;
     }
-    if (o.name.trim() === "DataSpace" && (x = new TextDecoder().decode(t.slice(o.contentStartPos + 1, o.contentEndPos)).trim(), x.includes("NIFTI_XFORM_SCANNER_ANAT") && (b = !0)), o.name.trim() === "MD" && (x = new TextDecoder().decode(t.slice(o.contentStartPos + 1, o.contentEndPos)).trim(), x.includes("AnatomicalStructurePrimary") && x.includes("CDATA[") && (u = S("<Value><![CDATA[").toUpperCase()), x.includes("VolGeom") && x.includes("CDATA["))) {
+    if (o.name.trim() === "DataSpace" && (x = new TextDecoder().decode(t.slice(o.contentStartPos + 1, o.contentEndPos)).trim(), x.includes("NIFTI_XFORM_SCANNER_ANAT") && (y = !0)), o.name.trim() === "MD" && (x = new TextDecoder().decode(t.slice(o.contentStartPos + 1, o.contentEndPos)).trim(), x.includes("AnatomicalStructurePrimary") && x.includes("CDATA[") && (u = S("<Value><![CDATA[").toUpperCase()), x.includes("VolGeom") && x.includes("CDATA["))) {
       let w = -1;
       if (x.includes("VolGeomC_R") && (w = 0), x.includes("VolGeomC_A") && (w = 1), x.includes("VolGeomC_S") && (w = 2), w < 0)
         continue;
       m[w] = parseFloat(S("<Value><![CDATA["));
     }
-    o.name.startsWith("DataArray") && (x = o.name, g = [1, 1, 1], A = x.includes('Encoding="GZipBase64Binary"'), v = x.includes('Encoding="ASCII"'), d = x.includes('Intent="NIFTI_INTENT_TRIANGLE"'), h = x.includes('Intent="NIFTI_INTENT_POINTSET"'), f = x.includes('Intent="NIFTI_INTENT_VECTOR"'), p = x.includes('ArrayIndexingOrder="ColumnMajorOrder"'), x.includes('DataType="NIFTI_TYPE_UINT8"') && (y = 2), x.includes('DataType="NIFTI_TYPE_INT32"') && (y = 8), x.includes('DataType="NIFTI_TYPE_FLOAT32"') && (y = 16), x.includes('DataType="NIFTI_TYPE_FLOAT64"') && (y = 32), g[0] = T("Dim0="), g[1] = T("Dim1="), g[2] = T("Dim2="));
+    o.name.startsWith("DataArray") && (x = o.name, g = [1, 1, 1], A = x.includes('Encoding="GZipBase64Binary"'), b = x.includes('Encoding="ASCII"'), d = x.includes('Intent="NIFTI_INTENT_TRIANGLE"'), h = x.includes('Intent="NIFTI_INTENT_POINTSET"'), f = x.includes('Intent="NIFTI_INTENT_VECTOR"'), p = x.includes('ArrayIndexingOrder="ColumnMajorOrder"'), x.includes('DataType="NIFTI_TYPE_UINT8"') && (v = 2), x.includes('DataType="NIFTI_TYPE_INT32"') && (v = 8), x.includes('DataType="NIFTI_TYPE_FLOAT32"') && (v = 16), x.includes('DataType="NIFTI_TYPE_FLOAT64"') && (v = 32), g[0] = T("Dim0="), g[1] = T("Dim1="), g[2] = T("Dim2="));
   }
   let U;
-  if (P.I.length > 1 && (P.A.some((w) => w > 0) || P.A.fill(255), U = Ai(P)), e > 0) {
+  if (P.I.length > 1 && (P.A.some((w) => w > 0) || P.A.fill(255), U = Ti(P)), e > 0) {
     const w = {
       scalars: c,
       colormapLabel: U
     };
     return w.anatomicalStructurePrimary = u, w;
   }
-  if (a.length > 2 && !b && (m[0] !== 0 || m[1] !== 0 || m[2] !== 0)) {
+  if (a.length > 2 && !y && (m[0] !== 0 || m[1] !== 0 || m[2] !== 0)) {
     E = Math.floor(a.length / 3);
     let w = 0;
     for (let D = 0; D < E; D++)
@@ -4943,13 +4945,13 @@ async function cm(t, e = 0) {
   };
   return _.anatomicalStructurePrimary = u, _;
 }
-const Zu = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const $u = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: om,
-  read: cm,
-  type: am
-}, Symbol.toStringTag, { value: "Module" })), um = ["ICO"], dm = "mz3";
-async function hm(t) {
+  extensions: am,
+  read: um,
+  type: lm
+}, Symbol.toStringTag, { value: "Module" })), dm = ["ICO"], hm = "mz3";
+async function fm(t) {
   const e = new TextDecoder("utf-8").decode(t).split(`
 `);
   let r = e[0].trim().split(/\s+/);
@@ -4989,17 +4991,17 @@ async function hm(t) {
     indices: a
   };
 }
-const Ju = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const ed = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: um,
-  read: hm,
-  type: dm
-}, Symbol.toStringTag, { value: "Module" })), fm = ["IWM.CBOR"], pm = "iwm";
-async function mm(t) {
+  extensions: dm,
+  read: fm,
+  type: hm
+}, Symbol.toStringTag, { value: "Module" })), pm = ["IWM.CBOR"], mm = "iwm";
+async function gm(t) {
   const e = go(new Uint8Array(t));
-  return gm(e);
+  return xm(e);
 }
-function gm(t) {
+function xm(t) {
   if (!("meshType" in t) || !("cells" in t) || !("points" in t))
     throw new Error('.iwm.cbor must have "meshType", "cells" and "points".');
   let e;
@@ -5034,13 +5036,13 @@ function gm(t) {
     o[i] = -o[i], o[i + 1] = -o[i + 1], i += 3;
   return { positions: o, indices: n };
 }
-const $u = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const td = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: fm,
-  read: mm,
-  type: pm
-}, Symbol.toStringTag, { value: "Module" })), xm = ["MZ3"], vm = "mz3";
-async function ym(t, e = 0) {
+  extensions: pm,
+  read: gm,
+  type: mm
+}, Symbol.toStringTag, { value: "Module" })), vm = ["MZ3"], ym = "mz3";
+async function bm(t, e = 0) {
   var S;
   if (t.byteLength < 20)
     throw new Error(`File too small to be mz3: bytes = ${t.byteLength}`);
@@ -5066,27 +5068,27 @@ async function ym(t, e = 0) {
   if (a < 3 && e < 3)
     throw new Error("Not a mesh MZ3 file (maybe scalar)");
   e > 0 && e !== a && Y.warn(`Layer has ${a}vertices, but background mesh has ${e}`);
-  let y = 16 + l;
+  let v = 16 + l;
   const A = new DataView(r);
-  let v = null;
+  let b = null;
   if (c) {
-    v = new Uint32Array(o * 3);
+    b = new Uint32Array(o * 3);
     for (let P = 0; P < o * 3; P++)
-      v[P] = A.getUint32(y, !0), y += 4;
+      b[P] = A.getUint32(v, !0), v += 4;
   }
   let E = null;
   if (u) {
     E = new Float32Array(a * 3);
     for (let P = 0; P < a * 3; P++)
-      E[P] = A.getFloat32(y, !0), y += 4;
+      E[P] = A.getFloat32(v, !0), v += 4;
   }
-  let b = null;
+  let y = null;
   if (d) {
-    b = new Float32Array(a * 3);
+    y = new Float32Array(a * 3);
     for (let P = 0; P < a; P++) {
       for (let U = 0; U < 3; U++)
-        b[P * 3 + U] = A.getUint8(y++) / 255;
-      y++;
+        y[P * 3 + U] = A.getUint8(v++) / 255;
+      v++;
     }
   }
   let x = new Float32Array();
@@ -5094,18 +5096,18 @@ async function ym(t, e = 0) {
     if (f) {
       const P = new Float64Array(m * a);
       for (let U = 0; U < m * a; U++)
-        P[U] = A.getFloat64(y, !0), y += 8;
+        P[U] = A.getFloat64(v, !0), v += 8;
       x = Float32Array.from(P);
     } else {
       x = new Float32Array(m * a);
       for (let P = 0; P < m * a; P++)
-        x[P] = A.getFloat32(y, !0), y += 4;
+        x[P] = A.getFloat32(v, !0), v += 4;
     }
   let T;
   if (p && h) {
     const P = new TextDecoder("utf-8"), U = new Uint8Array(r, 16, l), _ = P.decode(U), O = JSON.parse(_);
-    T = Ai(O);
-  } else if (d && h && b) {
+    T = Ti(O);
+  } else if (d && h && y) {
     let P = x[0];
     for (let _ = 0; _ < a; _++)
       P = Math.max(P, x[_]);
@@ -5114,19 +5116,19 @@ async function ym(t, e = 0) {
       for (let O = 0; O < a; O++)
         if (_ === x[O]) {
           const w = O * 3;
-          U.I.push(_), U.R.push(b[w] * 255), U.G.push(b[w + 1] * 255), U.B.push(b[w + 2] * 255), U.A.push(255), (S = U.labels) == null || S.push(`${_}`);
+          U.I.push(_), U.R.push(y[w] * 255), U.G.push(y[w + 1] * 255), U.B.push(y[w + 2] * 255), U.A.push(255), (S = U.labels) == null || S.push(`${_}`);
           break;
         }
-    T = Ai(U);
+    T = Ti(U);
   }
-  return e > 0 && T ? { scalars: x, colormapLabel: T } : e > 0 ? { scalars: x } : { positions: E, indices: v, scalars: x, colors: b, colormapLabel: T };
+  return e > 0 && T ? { scalars: x, colormapLabel: T } : e > 0 ? { scalars: x } : { positions: E, indices: b, scalars: x, colors: y, colormapLabel: T };
 }
-const ed = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const rd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: xm,
-  read: ym,
-  type: vm
-}, Symbol.toStringTag, { value: "Module" })), bm = ["NV"], Tm = "mz3";
+  extensions: vm,
+  read: bm,
+  type: ym
+}, Symbol.toStringTag, { value: "Module" })), Tm = ["NV"], Am = "mz3";
 function Yi(t, e) {
   let r = e;
   for (; r < t.length; ) {
@@ -5136,7 +5138,7 @@ function Yi(t, e) {
   }
   return { line: null, idx: r };
 }
-async function Am(t) {
+async function wm(t) {
   Y.warn("NV mesh format may have inconsistent triangle winding."), t = await Ar(t);
   const e = new TextDecoder("utf-8").decode(t).split(/\r?\n/);
   let r = 0, i = Yi(e, r);
@@ -5179,13 +5181,13 @@ async function Am(t) {
   }
   return { positions: s, indices: d };
 }
-const td = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const id = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: bm,
-  read: Am,
-  type: Tm
-}, Symbol.toStringTag, { value: "Module" })), wm = ["OBJ"], Em = "mz3";
-function rd(t) {
+  extensions: Tm,
+  read: wm,
+  type: Am
+}, Symbol.toStringTag, { value: "Module" })), Em = ["OBJ"], Sm = "mz3";
+function nd(t) {
   const e = new TextDecoder("utf-8").decode(t).trim().split(/\s*,\s*|\s+/);
   (e.length < 1 || e[0] !== "P") && log.warn("This is not a valid MNI OBJ mesh.");
   let r = 6;
@@ -5202,11 +5204,11 @@ function rd(t) {
     u[d] = parseInt(e[r++], 10);
   return { positions: s, indices: u };
 }
-async function Sm(t) {
+async function Mm(t) {
   t = await Ar(t);
   const e = new TextDecoder("utf-8").decode(t);
   if (e[0] === "P")
-    return rd(t);
+    return nd(t);
   const r = e.split(`
 `), i = [], n = [];
   for (let c = 0; c < r.length; c++) {
@@ -5224,8 +5226,8 @@ async function Sm(t) {
       let g = parseInt(f[0], 10) - 1;
       for (let m = 0; m < h; m++) {
         f = d[3 + m].split("/");
-        const y = parseInt(f[0], 10) - 1;
-        n.push(p, g, y), g = y;
+        const v = parseInt(f[0], 10) - 1;
+        n.push(p, g, v), g = v;
       }
     }
   }
@@ -5240,15 +5242,15 @@ async function Sm(t) {
   return { positions: s, indices: o };
 }
 async function Rm(t) {
-  return t = await Ar(t), new TextDecoder("utf-8").decode(t)[0] === "P" ? rd(t) : Sm(t);
+  return t = await Ar(t), new TextDecoder("utf-8").decode(t)[0] === "P" ? nd(t) : Mm(t);
 }
-const id = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const sd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: wm,
+  extensions: Em,
   read: Rm,
-  type: Em
-}, Symbol.toStringTag, { value: "Module" })), Mm = ["OFF"], Pm = "mz3";
-async function Dm(t) {
+  type: Sm
+}, Symbol.toStringTag, { value: "Module" })), Pm = ["OFF"], Dm = "mz3";
+async function Cm(t) {
   const e = new TextDecoder("utf-8").decode(t).split(`
 `), r = [], i = [];
   let n = 0;
@@ -5266,83 +5268,83 @@ async function Dm(t) {
     indices: c
   };
 }
-const nd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const od = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Mm,
-  read: Dm,
-  type: Pm
-}, Symbol.toStringTag, { value: "Module" })), Cm = ["PLY"], Um = "mz3";
-async function Im(t) {
+  extensions: Pm,
+  read: Cm,
+  type: Dm
+}, Symbol.toStringTag, { value: "Module" })), Um = ["PLY"], Im = "mz3";
+async function Bm(t) {
   const e = t.byteLength, r = new Uint8Array(t);
   let i = 0;
   function n() {
     for (; i < e && r[i] === 10; )
       i++;
-    const R = i;
+    const M = i;
     for (; i < e && r[i] !== 10; )
       i++;
-    return i++, i - R < 1 ? "" : new TextDecoder().decode(t.slice(R, i - 1));
+    return i++, i - M < 1 ? "" : new TextDecoder().decode(t.slice(M, i - 1));
   }
   let s = n();
   if (!s.startsWith("ply"))
     throw new Error("Not a valid PLY file");
   s = n();
   const o = s.includes("ascii");
-  function a(R) {
-    if (R === "char" || R === "uchar" || R === "int8" || R === "uint8")
+  function a(M) {
+    if (M === "char" || M === "uchar" || M === "int8" || M === "uint8")
       return 1;
-    if (R === "short" || R === "ushort" || R === "int16" || R === "uint16")
+    if (M === "short" || M === "ushort" || M === "int16" || M === "uint16")
       return 2;
-    if (R === "int" || R === "uint" || R === "int32" || R === "uint32" || R === "float" || R === "float32")
+    if (M === "int" || M === "uint" || M === "int32" || M === "uint32" || M === "float" || M === "float32")
       return 4;
-    if (R === "double")
+    if (M === "double")
       return 8;
-    throw new Error(`Unknown data type: ${R}`);
+    throw new Error(`Unknown data type: ${M}`);
   }
   const l = s.includes("binary_little_endian");
-  let c = 0, u = !1, d = 0, h = 0, f = 0, p = 0, g = 0, m = 0, y = 0;
+  let c = 0, u = !1, d = 0, h = 0, f = 0, p = 0, g = 0, m = 0, v = 0;
   const A = [];
-  let v = 0, E = -1, b = -1, x = -1, T = !1;
+  let b = 0, E = -1, y = -1, x = -1, T = !1;
   for (; i < e && !s.startsWith("end_header"); ) {
     if (s = n(), s.startsWith("comment"))
       continue;
-    let R = s.split(/\s/);
+    let M = s.split(/\s/);
     if (s.startsWith("element vertex"))
-      for (c = parseInt(R[R.length - 1], 10), s = n(), R = s.split(/\s/), v = 0, A.length = 0; s.startsWith("property"); ) {
-        const C = R[1], I = R[2];
-        A.push(I), I === "red" ? (E = v, T = !0) : I === "green" ? (b = v, T = !0) : I === "blue" && (x = v, T = !0), I === "x" && C.startsWith("double") ? u = !0 : I === "x" && !C.startsWith("float") && log.error(`Error: expect ply xyz to be float or double: ${s}`);
+      for (c = parseInt(M[M.length - 1], 10), s = n(), M = s.split(/\s/), b = 0, A.length = 0; s.startsWith("property"); ) {
+        const C = M[1], I = M[2];
+        A.push(I), I === "red" ? (E = b, T = !0) : I === "green" ? (y = b, T = !0) : I === "blue" && (x = b, T = !0), I === "x" && C.startsWith("double") ? u = !0 : I === "x" && !C.startsWith("float") && log.error(`Error: expect ply xyz to be float or double: ${s}`);
         const V = a(C);
-        d += V, v += V, s = n(), R = s.split(/\s/);
+        d += V, b += V, s = n(), M = s.split(/\s/);
       }
     if (s.startsWith("element face"))
-      for (y = parseInt(R[R.length - 1], 10), s = n(), R = s.split(/\s/); s.startsWith("property"); ) {
-        if (R[1] === "list")
-          f = a(R[2]), p = a(R[3]), h += f + 3 * p;
+      for (v = parseInt(M[M.length - 1], 10), s = n(), M = s.split(/\s/); s.startsWith("property"); ) {
+        if (M[1] === "list")
+          f = a(M[2]), p = a(M[3]), h += f + 3 * p;
         else {
-          const C = a(R[1]);
+          const C = a(M[1]);
           h += C, p === 0 && (g += C, m++);
         }
-        s = n(), R = s.split(/\s/);
+        s = n(), M = s.split(/\s/);
       }
   }
   if (o) {
-    y < 1 && log.error(`Malformed ply format: faces ${y} `);
-    const R = new Float32Array(c * 3);
+    v < 1 && log.error(`Malformed ply format: faces ${v} `);
+    const M = new Float32Array(c * 3);
     let C;
-    const I = A.indexOf("x"), V = A.indexOf("y"), k = A.indexOf("z"), F = A.indexOf("red"), X = A.indexOf("green"), q = A.indexOf("blue");
+    const I = A.indexOf("x"), V = A.indexOf("y"), G = A.indexOf("z"), F = A.indexOf("red"), X = A.indexOf("green"), q = A.indexOf("blue");
     F !== -1 && X !== -1 && q !== -1 && (C = new Float32Array(c * 3), T = !0);
     let Q = 0;
     for (let Ae = 0; Ae < c; Ae++) {
       s = n();
-      const re = s.split(/\s/), xe = I >= 0 ? parseFloat(re[I]) : parseFloat(re[0]), Ee = V >= 0 ? parseFloat(re[V]) : parseFloat(re[1]), Ce = k >= 0 ? parseFloat(re[k]) : parseFloat(re[2]);
-      if (R[Q] = xe, R[Q + 1] = Ee, R[Q + 2] = Ce, T && C) {
+      const re = s.split(/\s/), xe = I >= 0 ? parseFloat(re[I]) : parseFloat(re[0]), Ee = V >= 0 ? parseFloat(re[V]) : parseFloat(re[1]), Ce = G >= 0 ? parseFloat(re[G]) : parseFloat(re[2]);
+      if (M[Q] = xe, M[Q + 1] = Ee, M[Q + 2] = Ce, T && C) {
         const de = F >= 0 ? parseInt(re[F], 10) : 0, pe = X >= 0 ? parseInt(re[X], 10) : 0, ye = q >= 0 ? parseInt(re[q], 10) : 0, Be = Ae * 3;
         C[Be] = de / 255, C[Be + 1] = pe / 255, C[Be + 2] = ye / 255;
       }
       Q += 3;
     }
-    let ee = new Uint32Array(y * 3), J = 0;
-    for (let Ae = 0; Ae < y; Ae++) {
+    let ee = new Uint32Array(v * 3), J = 0;
+    for (let Ae = 0; Ae < v; Ae++) {
       s = n();
       const re = s.split(/\s/), xe = parseInt(re[m], 10) - 2;
       if (xe < 1)
@@ -5360,13 +5362,13 @@ async function Im(t) {
     }
     ee.length !== J && (ee = ee.slice(0, J));
     const ge = {
-      positions: R,
+      positions: M,
       indices: ee
     };
     return T && (ge.colors = typeof C < "u" ? C : void 0), ge;
   }
-  (d < 12 || f < 1 || p < 1 || y < 1) && log.warn(
-    `Malformed ply format: stride ${d} count ${f} iBytes ${p} iStrideBytes ${h} iPadBytes ${g} faces ${y}`
+  (d < 12 || f < 1 || p < 1 || v < 1) && log.warn(
+    `Malformed ply format: stride ${d} count ${f} iBytes ${p} iStrideBytes ${h} iPadBytes ${g} faces ${v}`
   );
   const S = new DataView(t);
   let P, U;
@@ -5374,31 +5376,31 @@ async function Im(t) {
     P = new Float32Array(t, i, c * 3), i += c * d;
   else {
     P = new Float32Array(c * 3);
-    let R = 0;
+    let M = 0;
     for (let C = 0; C < c; C++) {
-      if (u ? (P[R] = S.getFloat64(i, l), P[R + 1] = S.getFloat64(i + 8, l), P[R + 2] = S.getFloat64(i + 16, l)) : (P[R] = S.getFloat32(i, l), P[R + 1] = S.getFloat32(i + 4, l), P[R + 2] = S.getFloat32(i + 8, l)), T && U) {
-        const I = i, V = E >= 0 ? S.getUint8(I + E) : 0, k = b >= 0 ? S.getUint8(I + b) : 0, F = x >= 0 ? S.getUint8(I + x) : 0, X = C * 3;
-        U[X] = V / 255, U[X + 1] = k / 255, U[X + 2] = F / 255;
+      if (u ? (P[M] = S.getFloat64(i, l), P[M + 1] = S.getFloat64(i + 8, l), P[M + 2] = S.getFloat64(i + 16, l)) : (P[M] = S.getFloat32(i, l), P[M + 1] = S.getFloat32(i + 4, l), P[M + 2] = S.getFloat32(i + 8, l)), T && U) {
+        const I = i, V = E >= 0 ? S.getUint8(I + E) : 0, G = y >= 0 ? S.getUint8(I + y) : 0, F = x >= 0 ? S.getUint8(I + x) : 0, X = C * 3;
+        U[X] = V / 255, U[X + 1] = G / 255, U[X + 2] = F / 255;
       }
-      R += 3, i += d;
+      M += 3, i += d;
     }
   }
-  const _ = new Uint32Array(y * 3);
+  const _ = new Uint32Array(v * 3);
   let O = !0, w = 0;
   if (f === 1 && p === 4 && h === 13)
-    for (let R = 0; R < y; R++) {
+    for (let M = 0; M < v; M++) {
       const C = S.getUint8(i);
       i += f, C !== 3 && (O = !1), _[w] = S.getUint32(i, l), i += 4, _[w + 1] = S.getUint32(i, l), i += 4, _[w + 2] = S.getUint32(i, l), i += 4, w += 3;
     }
   else {
-    let R = i;
-    for (let C = 0; C < y; C++) {
-      i = R + g;
+    let M = i;
+    for (let C = 0; C < v; C++) {
+      i = M + g;
       let I = 0;
       f === 1 ? I = S.getUint8(i) : f === 2 ? I = S.getUint16(i, l) : f === 4 && (I = S.getUint32(i, l)), i += f, I !== 3 && (O = !1);
       for (let V = 0; V < 3; V++)
         p === 1 ? _[w] = S.getUint8(i) : p === 2 ? _[w] = S.getUint16(i, l) : p === 4 && (_[w] = S.getUint32(i, l)), w++, i += p;
-      R += h;
+      M += h;
     }
   }
   O || log.warn("Only able to read PLY meshes limited to triangles.");
@@ -5408,57 +5410,57 @@ async function Im(t) {
   };
   return T && typeof U < "u" && (D.colors = U), D;
 }
-const sd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const ad = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Cm,
-  read: Im,
-  type: Um
-}, Symbol.toStringTag, { value: "Module" })), Bm = ["SRF"], Lm = "mz3";
-async function _m(t) {
+  extensions: Um,
+  read: Bm,
+  type: Im
+}, Symbol.toStringTag, { value: "Module" })), Lm = ["SRF"], _m = "mz3";
+async function Om(t) {
   const e = new Uint8Array(t);
   if (e[0] === 35 && e[1] === 33 && e[2] === 97)
     return To(t);
   t = await Ar(t);
   const r = new DataView(t), i = r.getFloat32(0, !0), n = r.getUint32(8, !0), s = r.getUint32(12, !0), o = r.getFloat32(16, !0), a = r.getFloat32(20, !0), l = r.getFloat32(24, !0), c = new Float32Array(n * 3);
   let u = 28, d = 1;
-  for (let b = 0; b < n; b++)
+  for (let y = 0; y < n; y++)
     c[d] = -r.getFloat32(u, !0) + o, d += 3, u += 4;
   d = 2;
-  for (let b = 0; b < n; b++)
+  for (let y = 0; y < n; y++)
     c[d] = -r.getFloat32(u, !0) + a, d += 3, u += 4;
   d = 0;
-  for (let b = 0; b < n; b++)
+  for (let y = 0; y < n; y++)
     c[d] = -r.getFloat32(u, !0) + l, d += 3, u += 4;
   u = 28 + 24 * n;
-  const h = r.getFloat32(u, !0), f = r.getFloat32(u + 4, !0), p = r.getFloat32(u + 8, !0), g = r.getFloat32(u + 16, !0), m = r.getFloat32(u + 20, !0), y = r.getFloat32(u + 24, !0);
+  const h = r.getFloat32(u, !0), f = r.getFloat32(u + 4, !0), p = r.getFloat32(u + 8, !0), g = r.getFloat32(u + 16, !0), m = r.getFloat32(u + 20, !0), v = r.getFloat32(u + 24, !0);
   u += 32;
-  const A = new Float32Array(n * 3), v = new Uint32Array(t, u, n);
+  const A = new Float32Array(n * 3), b = new Uint32Array(t, u, n);
   d = 0;
-  for (let b = 0; b < n; b++) {
-    const x = v[b];
-    x > 1056964608 && (A[d + 0] = (x >> 16 & 255) / 255, A[d + 1] = (x >> 8 & 255) / 255, A[d + 2] = (x & 255) / 255), x === 0 && (A[d + 0] = h, A[d + 1] = f, A[d + 2] = p), x === 1 && (A[d + 0] = g, A[d + 1] = m, A[d + 2] = y), d += 3;
+  for (let y = 0; y < n; y++) {
+    const x = b[y];
+    x > 1056964608 && (A[d + 0] = (x >> 16 & 255) / 255, A[d + 1] = (x >> 8 & 255) / 255, A[d + 2] = (x & 255) / 255), x === 0 && (A[d + 0] = h, A[d + 1] = f, A[d + 2] = p), x === 1 && (A[d + 0] = g, A[d + 1] = m, A[d + 2] = v), d += 3;
   }
   u += n * 4;
-  for (let b = 0; b < n; b++) {
+  for (let y = 0; y < n; y++) {
     const x = r.getUint32(u, !0);
     u += 4 + 4 * x;
   }
   const E = new Uint32Array(s * 3);
-  for (let b = 0; b < s * 3; b++)
-    E[b] = r.getInt32(u, !0), u += 4;
+  for (let y = 0; y < s * 3; y++)
+    E[y] = r.getInt32(u, !0), u += 4;
   return i !== 4 && Y.warn("Not valid SRF"), {
     positions: c,
     indices: E,
     colors: A
   };
 }
-const od = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const ld = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Bm,
-  read: _m,
-  type: Lm
-}, Symbol.toStringTag, { value: "Module" })), Om = ["STL"], Fm = "mz3";
-function Nm(t) {
+  extensions: Lm,
+  read: Om,
+  type: _m
+}, Symbol.toStringTag, { value: "Module" })), Fm = ["STL"], Nm = "mz3";
+function Vm(t) {
   const e = new TextDecoder("utf-8").decode(t).split(`
 `);
   if (!e[0].startsWith("solid"))
@@ -5482,12 +5484,12 @@ function Nm(t) {
     indices: s
   };
 }
-async function Vm(t) {
+async function zm(t) {
   if (t.byteLength < 134)
     throw new Error(`File too small to be STL: bytes = ${t.byteLength}`);
   const e = new DataView(t);
   if (e.getUint32(0, !0) === 1768714099)
-    return Nm(t);
+    return Vm(t);
   const r = e.getUint32(80, !0), i = 3 * r;
   if (t.byteLength < 84 + r * 50)
     throw new Error(`STL file too small to store triangles = ${r}`);
@@ -5505,13 +5507,13 @@ async function Vm(t) {
     indices: n
   };
 }
-const ad = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const cd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Om,
-  read: Vm,
-  type: Fm
-}, Symbol.toStringTag, { value: "Module" })), zm = ["VTK"], Gm = "mz3";
-function km(t) {
+  extensions: Fm,
+  read: zm,
+  type: Nm
+}, Symbol.toStringTag, { value: "Module" })), km = ["VTK"], Gm = "mz3";
+function Xm(t) {
   const e = new TextDecoder("utf-8").decode(t).split(/\r?\n/);
   let r = 0;
   function i(p = !0) {
@@ -5525,7 +5527,7 @@ function km(t) {
   let n = i(!0);
   if (!(n != null && n.startsWith("# vtk DataFile")))
     throw new Error("Invalid VTK mesh");
-  if (i(!1), n = i(!0), !(n != null && n.startsWith("ASCII")))
+  if (n = i(!0), n && !n.startsWith("ASCII") && !n.startsWith("BINARY") && (n = i(!0)), !(n != null && n.startsWith("ASCII")))
     throw new Error("Invalid VTK mesh, expected ASCII");
   if (n = i(!0), !(n != null && n.includes("POLYDATA")))
     throw new Error("Only able to read VTK POLYDATA");
@@ -5563,11 +5565,11 @@ function km(t) {
       const m = f();
       if (!Number.isFinite(m) || m < 3)
         continue;
-      const y = f();
+      const v = f();
       let A = f();
-      for (let v = 0; v < m - 2; v++) {
+      for (let b = 0; b < m - 2; b++) {
         const E = f();
-        d.push(y, A, E), A = E;
+        d.push(v, A, E), A = E;
       }
     }
   } else if (u.includes("TRIANGLE_STRIPS")) {
@@ -5576,16 +5578,16 @@ function km(t) {
       const m = f();
       if (!Number.isFinite(m) || m < 3)
         continue;
-      let y = f(), A = f();
-      for (let v = 0; v < m - 2; v++) {
+      let v = f(), A = f();
+      for (let b = 0; b < m - 2; b++) {
         const E = f();
-        v % 2 ? d.push(E, A, y) : d.push(y, A, E), y = A, A = E;
+        b % 2 ? d.push(E, A, v) : d.push(v, A, E), v = A, A = E;
       }
     }
   } else throw u.includes("LINES") ? new Error("VTK LINES not supported for mesh importer") : new Error(`Unsupported ASCII VTK datatype ${u}`);
   return { positions: a, indices: new Uint32Array(d) };
 }
-async function Xm(t) {
+async function qm(t) {
   t = await Ar(t);
   const e = t.byteLength;
   if (e < 20)
@@ -5604,8 +5606,8 @@ async function Xm(t) {
   let s = n();
   if (!s.startsWith("# vtk DataFile"))
     throw new Error("Invalid VTK mesh");
-  if (s = n(!1), s = n(), s.startsWith("ASCII"))
-    return km(t);
+  if (s = n(!0), s && !s.startsWith("ASCII") && !s.startsWith("BINARY") && (s = n(!0)), s.startsWith("ASCII"))
+    return Xm(t);
   if (!s.startsWith("BINARY"))
     throw new Error(`Invalid VTK image, expected ASCII or BINARY ${s}`);
   if (s = n(), !s.includes("POLYDATA"))
@@ -5637,40 +5639,40 @@ async function Xm(t) {
     const f = parseInt(a[1], 10), p = i, g = n();
     if (g.startsWith("OFFSETS")) {
       let m = g.includes("int64");
-      const y = new Uint32Array(f);
+      const v = new Uint32Array(f);
       let A = !1;
       for (let x = 0; x < f; x++)
-        m && (u.getInt32(i, !1) !== 0 && (A = !0), i += 4), y[x] = u.getInt32(i, !1), i += 4;
+        m && (u.getInt32(i, !1) !== 0 && (A = !0), i += 4), v[x] = u.getInt32(i, !1), i += 4;
       if (!Number.isSafeInteger(f) || f >= 2147483648 || A)
         throw new Error("values exceed 2GB limit");
-      const v = n();
-      if (!v.startsWith("CONNECTIVITY"))
+      const b = n();
+      if (!b.startsWith("CONNECTIVITY"))
         throw new Error("Expected CONNECTIVITY after OFFSETS");
-      m = v.includes("int64");
-      const E = y[f - 1], b = new Uint32Array(E);
+      m = b.includes("int64");
+      const E = v[f - 1], y = new Uint32Array(E);
       for (let x = 0; x < E; x++)
-        m && (i += 4), b[x] = u.getInt32(i, !1), i += 4;
+        m && (i += 4), y[x] = u.getInt32(i, !1), i += 4;
       for (let x = 0; x < f; x++) {
-        const T = x === 0 ? 0 : y[x - 1], S = y[x];
+        const T = x === 0 ? 0 : v[x - 1], S = v[x];
         for (let P = 1; P < S - T - 1; P++)
-          d.push(b[T]), d.push(b[T + P]), d.push(b[T + P + 1]);
+          d.push(y[T]), d.push(y[T + P]), d.push(y[T + P + 1]);
       }
     } else {
       i = p;
       for (let m = 0; m < f; m++) {
-        const y = u.getInt32(i, !1) - 2;
-        if (m === 0 && y > 65535)
+        const v = u.getInt32(i, !1) - 2;
+        if (m === 0 && v > 65535)
           throw new Error(
             "Invalid VTK binary polygons using little-endian data (MRtrix)"
           );
         i += 4;
         const A = u.getInt32(i, !1);
         i += 4;
-        let v = u.getInt32(i, !1);
+        let b = u.getInt32(i, !1);
         i += 4;
-        for (let E = 0; E < y; E++) {
-          const b = u.getInt32(i, !1);
-          i += 4, d.push(A, v, b), v = b;
+        for (let E = 0; E < v; E++) {
+          const y = u.getInt32(i, !1);
+          i += 4, d.push(A, b, y), b = y;
         }
       }
     }
@@ -5682,7 +5684,7 @@ async function Xm(t) {
     indices: h
   };
 }
-function ld(t) {
+function ud(t) {
   const e = t.byteLength;
   if (e < 20) return "mesh";
   const r = new Uint8Array(t);
@@ -5696,7 +5698,7 @@ function ld(t) {
   }
   let s = n();
   if (!s.startsWith("# vtk DataFile")) return "mesh";
-  n(!1), s = n();
+  s = n(!0), s && !s.startsWith("ASCII") && !s.startsWith("BINARY") && (s = n(!0));
   const o = s.startsWith("ASCII");
   if (!o && !s.startsWith("BINARY") || (n(), s = n(), !s.includes("POINTS"))) return "mesh";
   const a = s.trim().split(/\s+/), l = parseInt(a[1], 10) || 0;
@@ -5718,130 +5720,56 @@ function ld(t) {
   }
   return s.includes("LINES") ? "tract" : "mesh";
 }
-function qm(t) {
+function Hm(t) {
   const e = new TextDecoder("utf-8").decode(t).split(/\r?\n/);
   let r = 0;
-  function i(v = !0) {
+  function i(E = !0) {
     for (; r < e.length; ) {
-      const E = e[r++];
-      if (!(v && E.trim() === ""))
-        return E;
+      const y = e[r++];
+      if (!(E && y.trim() === ""))
+        return y;
     }
     return null;
   }
-  i(!0), i(!1), i(!0), i(!0);
+  i(!0);
   const n = i(!0);
-  if (!(n != null && n.includes("POINTS")))
+  n && !n.startsWith("ASCII") && !n.startsWith("BINARY") && i(!0), i(!0);
+  const s = i(!0);
+  if (!(s != null && s.includes("POINTS")))
     throw new Error("Invalid VTK LINES: expected POINTS");
-  const s = n.trim().split(/\s+/), o = parseInt(s[1], 10), a = new Float32Array(o * 3);
-  let l = 0;
-  for (; l < a.length; ) {
-    const v = i(!0);
-    if (!v) break;
-    const E = v.trim().split(/\s+/);
-    for (let b = 0; b < E.length && l < a.length; b++)
-      a[l++] = parseFloat(E[b]);
+  const o = s.trim().split(/\s+/), a = parseInt(o[1], 10), l = new Float32Array(a * 3);
+  let c = 0;
+  for (; c < l.length; ) {
+    const E = i(!0);
+    if (!E) break;
+    const y = E.trim().split(/\s+/);
+    for (let x = 0; x < y.length && c < l.length; x++)
+      l[c++] = parseFloat(y[x]);
   }
-  let c = i(!0);
-  if (c != null && c.startsWith("METADATA")) {
-    for (; r < e.length && (c = i(!1), !(!c || c.trim() === "")); )
+  let u = i(!0);
+  if (u != null && u.startsWith("METADATA")) {
+    for (; r < e.length && (u = i(!1), !(!u || u.trim() === "")); )
       ;
-    c = i(!0);
+    u = i(!0);
   }
-  if (!(c != null && c.includes("LINES")))
+  if (!(u != null && u.includes("LINES")))
     throw new Error("Invalid VTK: expected LINES section");
-  const u = c.trim().split(/\s+/), d = parseInt(u[1], 10);
-  if (d < 1) throw new Error("Corrupted VTK ASCII LINES");
-  const h = i(!0);
-  if (!h) throw new Error("Invalid VTK LINES data");
-  if (h.startsWith("OFFSETS")) {
-    const v = new Uint32Array(d + 1);
-    let E = 0;
-    for (; E < d; ) {
-      const b = i(!0);
-      if (!b) break;
-      const x = b.trim().split(/\s+/);
-      for (let T = 0; T < x.length && E < d; T++)
-        v[E++] = parseInt(x[T], 10);
+  const d = u.trim().split(/\s+/), h = parseInt(d[1], 10);
+  if (h < 1) throw new Error("Corrupted VTK ASCII LINES");
+  const f = i(!0);
+  if (!f) throw new Error("Invalid VTK LINES data");
+  if (f.startsWith("OFFSETS")) {
+    const E = new Uint32Array(h + 1);
+    let y = 0;
+    for (; y < h; ) {
+      const x = i(!0);
+      if (!x) break;
+      const T = x.trim().split(/\s+/);
+      for (let S = 0; S < T.length && y < h; S++)
+        E[y++] = parseInt(T[S], 10);
     }
-    return v[d] = o, {
-      vertices: a,
-      offsets: v,
-      dpv: {},
-      dps: {},
-      groups: {},
-      dpvMeta: {},
-      dpsMeta: {}
-    };
-  }
-  let f = h.trim().split(/\s+/).map((v) => parseInt(v, 10)), p = 0;
-  function g() {
-    for (; p >= f.length; ) {
-      const v = i(!0);
-      if (!v) throw new Error("Invalid VTK LINES data");
-      f = v.trim().split(/\s+/).map((E) => parseInt(E, 10)), p = 0;
-    }
-    return f[p++];
-  }
-  let m = 0;
-  const y = [0], A = [];
-  for (let v = 0; v < d; v++) {
-    const E = g();
-    m += E, y.push(m);
-    for (let b = 0; b < E; b++) {
-      const x = g() * 3;
-      A.push(a[x], a[x + 1], a[x + 2]);
-    }
-  }
-  return {
-    vertices: Float32Array.from(A),
-    offsets: Uint32Array.from(y),
-    dpv: {},
-    dps: {},
-    groups: {},
-    dpvMeta: {},
-    dpsMeta: {}
-  };
-}
-function cd(t) {
-  const e = new Uint8Array(t), r = t.byteLength;
-  let i = 0;
-  for (; i < r && e[i] !== 10; ) i++;
-  for (i++; i < r && e[i] !== 10; ) i++;
-  for (i++; i < r && e[i] === 10; ) i++;
-  const n = i;
-  for (; i < r && e[i] !== 10; ) i++;
-  if (new TextDecoder().decode(t.slice(n, i)).startsWith("ASCII"))
-    return qm(t);
-  i = 0;
-  function s(v = !0) {
-    if (v)
-      for (; i < r && e[i] === 10; ) i++;
-    const E = i;
-    for (; i < r && e[i] !== 10; ) i++;
-    return i++, E < i ? new TextDecoder().decode(t.slice(E, i - 1)) : "";
-  }
-  s(), s(!1), s(), s();
-  let o = s();
-  const a = o.includes("double"), l = o.trim().split(/\s+/), c = parseInt(l[1], 10), u = c * 3, d = new Float32Array(u), h = new DataView(t);
-  if (a)
-    for (let v = 0; v < u; v++)
-      d[v] = h.getFloat64(i, !1), i += 8;
-  else
-    for (let v = 0; v < u; v++)
-      d[v] = h.getFloat32(i, !1), i += 4;
-  o = s();
-  const f = o.trim().split(/\s+/), p = parseInt(f[1], 10), g = i;
-  if (o = s(), o.startsWith("OFFSETS")) {
-    const v = o.includes("int64"), E = new Uint32Array(p + 1);
-    if (v)
-      for (let b = 0; b < p; b++)
-        h.getInt32(i, !1) !== 0 && Y.warn("int32 overflow: JavaScript does not support int64"), i += 4, E[b] = h.getInt32(i, !1), i += 4;
-    else
-      for (let b = 0; b < p; b++)
-        E[b] = h.getInt32(i, !1), i += 4;
-    return E[p] = c, {
-      vertices: d,
+    return E[h] = a, {
+      vertices: l,
       offsets: E,
       dpv: {},
       dps: {},
@@ -5850,20 +5778,28 @@ function cd(t) {
       dpsMeta: {}
     };
   }
-  i = g;
-  let m = 0;
-  const y = [0], A = [];
-  for (let v = 0; v < p; v++) {
-    const E = h.getInt32(i, !1);
-    i += 4, m += E, y.push(m);
-    for (let b = 0; b < E; b++) {
-      const x = h.getInt32(i, !1) * 3;
-      i += 4, A.push(d[x], d[x + 1], d[x + 2]);
+  let p = f.trim().split(/\s+/).map((E) => parseInt(E, 10)), g = 0;
+  function m() {
+    for (; g >= p.length; ) {
+      const E = i(!0);
+      if (!E) throw new Error("Invalid VTK LINES data");
+      p = E.trim().split(/\s+/).map((y) => parseInt(y, 10)), g = 0;
+    }
+    return p[g++];
+  }
+  let v = 0;
+  const A = [0], b = [];
+  for (let E = 0; E < h; E++) {
+    const y = m();
+    v += y, A.push(v);
+    for (let x = 0; x < y; x++) {
+      const T = m() * 3;
+      b.push(l[T], l[T + 1], l[T + 2]);
     }
   }
   return {
-    vertices: Float32Array.from(A),
-    offsets: Uint32Array.from(y),
+    vertices: Float32Array.from(b),
+    offsets: Uint32Array.from(A),
     dpv: {},
     dps: {},
     groups: {},
@@ -5871,15 +5807,90 @@ function cd(t) {
     dpsMeta: {}
   };
 }
-const ud = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+function dd(t) {
+  const e = new Uint8Array(t), r = t.byteLength;
+  let i = 0;
+  for (; i < r && e[i] !== 10; ) i++;
+  for (i++; i < r && e[i] === 10; ) i++;
+  let n = i;
+  for (; i < r && e[i] !== 10; ) i++;
+  let s = new TextDecoder().decode(t.slice(n, i));
+  if (!s.startsWith("ASCII") && !s.startsWith("BINARY")) {
+    for (i++; i < r && e[i] === 10; ) i++;
+    for (n = i; i < r && e[i] !== 10; ) i++;
+    s = new TextDecoder().decode(t.slice(n, i));
+  }
+  if (s.startsWith("ASCII"))
+    return Hm(t);
+  i = 0;
+  function o(y = !0) {
+    if (y)
+      for (; i < r && e[i] === 10; ) i++;
+    const x = i;
+    for (; i < r && e[i] !== 10; ) i++;
+    return i++, x < i ? new TextDecoder().decode(t.slice(x, i - 1)) : "";
+  }
+  o();
+  const a = o(!0);
+  a && !a.startsWith("ASCII") && !a.startsWith("BINARY") && o(), o();
+  let l = o();
+  const c = l.includes("double"), u = l.trim().split(/\s+/), d = parseInt(u[1], 10), h = d * 3, f = new Float32Array(h), p = new DataView(t);
+  if (c)
+    for (let y = 0; y < h; y++)
+      f[y] = p.getFloat64(i, !1), i += 8;
+  else
+    for (let y = 0; y < h; y++)
+      f[y] = p.getFloat32(i, !1), i += 4;
+  l = o();
+  const g = l.trim().split(/\s+/), m = parseInt(g[1], 10), v = i;
+  if (l = o(), l.startsWith("OFFSETS")) {
+    const y = l.includes("int64"), x = new Uint32Array(m + 1);
+    if (y)
+      for (let T = 0; T < m; T++)
+        p.getInt32(i, !1) !== 0 && Y.warn("int32 overflow: JavaScript does not support int64"), i += 4, x[T] = p.getInt32(i, !1), i += 4;
+    else
+      for (let T = 0; T < m; T++)
+        x[T] = p.getInt32(i, !1), i += 4;
+    return x[m] = d, {
+      vertices: f,
+      offsets: x,
+      dpv: {},
+      dps: {},
+      groups: {},
+      dpvMeta: {},
+      dpsMeta: {}
+    };
+  }
+  i = v;
+  let A = 0;
+  const b = [0], E = [];
+  for (let y = 0; y < m; y++) {
+    const x = p.getInt32(i, !1);
+    i += 4, A += x, b.push(A);
+    for (let T = 0; T < x; T++) {
+      const S = p.getInt32(i, !1) * 3;
+      i += 4, E.push(f[S], f[S + 1], f[S + 2]);
+    }
+  }
+  return {
+    vertices: Float32Array.from(E),
+    offsets: Uint32Array.from(b),
+    dpv: {},
+    dps: {},
+    groups: {},
+    dpvMeta: {},
+    dpsMeta: {}
+  };
+}
+const hd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: zm,
-  probeVTKContent: ld,
-  read: Xm,
-  readVTKLines: cd,
+  extensions: km,
+  probeVTKContent: ud,
+  read: qm,
+  readVTKLines: dd,
   type: Gm
-}, Symbol.toStringTag, { value: "Module" })), Hm = ["WRL"], Wm = "mz3";
-async function jm(t) {
+}, Symbol.toStringTag, { value: "Module" })), Wm = ["WRL"], jm = "mz3";
+async function Ym(t) {
   const e = new TextDecoder("utf-8").decode(t), r = /coord\s+Coordinate\s*\{\s*point\s*\[([\s\S]*?)\]/, i = /coordIndex\s*\[([\s\S]*?)\]/, n = /color\s+Color\s*\{\s*color\s*\[([\s\S]*?)\]/, s = r.exec(e), o = i.exec(e), a = n.exec(e);
   if (!s || !o)
     throw new Error("Invalid WRL file: Could not find vertices or indices.");
@@ -5901,14 +5912,14 @@ async function jm(t) {
   ), d = { positions: l, indices: u };
   return c && (d.colors = c), d;
 }
-const dd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const fd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Hm,
-  read: jm,
-  type: Wm
-}, Symbol.toStringTag, { value: "Module" })), Tn = 20, hd = !0, fd = (Tn + 1) * 2 + 2 + (Tn + 1) * 2, Jt = 28;
+  extensions: Wm,
+  read: Ym,
+  type: jm
+}, Symbol.toStringTag, { value: "Module" })), Tn = 20, pd = !0, md = (Tn + 1) * 2 + 2 + (Tn + 1) * 2, Jt = 28;
 let Ki = null;
-function pd() {
+function gd() {
   if (Ki) return Ki;
   const t = Wn(
     [0, 0, 0],
@@ -5916,7 +5927,7 @@ function pd() {
     1,
     [1, 1, 1, 1],
     Tn,
-    hd
+    pd
   );
   return Ki = new Uint32Array(t.indices), Ki;
 }
@@ -5924,14 +5935,14 @@ function Hn(t) {
   const [e, r, i, n] = t.map((s) => Math.round(s * 255));
   return n << 24 | i << 16 | r << 8 | e;
 }
-function md(t, e, r, i) {
+function xd(t, e, r, i) {
   const n = Wn(
     Array.from(t),
     Array.from(e),
     r,
     [1, 1, 1, 1],
     Tn,
-    hd
+    pd
   ), s = new Float32Array(n.positions), o = Fi(
     s,
     new Uint32Array(n.indices)
@@ -5942,7 +5953,7 @@ function md(t, e, r, i) {
   }
   return l;
 }
-function gd(t, e, r, i) {
+function vd(t, e, r, i) {
   const n = De();
   for (let o = 0; o < 3; o++)
     n[o] = t[o] + r[o] * (e[o] - t[o]);
@@ -5981,7 +5992,7 @@ function An(t, e) {
   const r = Math.floor(t / 2);
   return e === se.AXIAL && r === 2 || e === se.CORONAL && r === 1 || e === se.SAGITTAL && r === 0;
 }
-function xd() {
+function yd() {
   const t = [
     1,
     1,
@@ -6028,7 +6039,7 @@ function xd() {
   ], e = t.length / 3, r = Array.from({ length: e }, (i, n) => n);
   return { vertices: t, indices: r };
 }
-function Ym(t, e) {
+function Km(t, e) {
   const r = e.length / 3, i = new Array(r * 12), n = /* @__PURE__ */ new Map(), s = (a, l) => {
     const c = a < l ? a << 16 | l : l << 16 | a;
     if (n.has(c))
@@ -6043,7 +6054,7 @@ function Ym(t, e) {
   }
   return i;
 }
-function vd(t = [0, 0, 0], e = 1, r = [1, 1, 1, 1], i = 2) {
+function bd(t = [0, 0, 0], e = 1, r = [1, 1, 1, 1], i = 2) {
   const n = [
     0,
     0,
@@ -6145,7 +6156,7 @@ function vd(t = [0, 0, 0], e = 1, r = [1, 1, 1, 1], i = 2) {
     1
   ];
   for (let c = 0; c < i; c++)
-    s = Ym(n, s);
+    s = Km(n, s);
   const o = n.length / 3, a = new Array(n.length);
   for (let c = 0; c < o; c++) {
     const u = c * 3;
@@ -6166,26 +6177,26 @@ function Wn(t, e, r, i = [1, 1, 1, 1], n = 20, s = !0) {
   for (let p = 0; p < n; p++) {
     const g = p * 2 * Math.PI / n, m = De();
     dr(m, m, d, Math.cos(g)), dr(m, m, h, Math.sin(g));
-    const y = dr(De(), t, m, r), A = dr(De(), e, m, r);
-    o.push(...y, ...A);
-    const v = p * 2, E = (p + 1) % n * 2;
-    a.push(v, E, v + 1, v + 1, E, E + 1);
+    const v = dr(De(), t, m, r), A = dr(De(), e, m, r);
+    o.push(...v, ...A);
+    const b = p * 2, E = (p + 1) % n * 2;
+    a.push(b, E, b + 1, b + 1, E, E + 1);
   }
   if (s) {
     const p = o.length / 3, g = p + 1;
     o.push(...t, ...e);
     const m = o.length / 3;
-    for (let y = 0; y < n; y++) {
-      const A = y * 2 * Math.PI / n, v = De();
-      dr(v, v, d, Math.cos(A)), dr(v, v, h, Math.sin(A)), o.push(...dr(De(), t, v, r)), o.push(...dr(De(), e, v, r));
-      const E = m + y * 2, b = m + (y + 1) % n * 2;
-      a.push(p, b, E), a.push(g, E + 1, b + 1);
+    for (let v = 0; v < n; v++) {
+      const A = v * 2 * Math.PI / n, b = De();
+      dr(b, b, d, Math.cos(A)), dr(b, b, h, Math.sin(A)), o.push(...dr(De(), t, b, r)), o.push(...dr(De(), e, b, r));
+      const E = m + v * 2, y = m + (v + 1) % n * 2;
+      a.push(p, y, E), a.push(g, E + 1, y + 1);
     }
   }
   const f = Hn(i);
   return { positions: o, indices: a, rgba32: f };
 }
-function yd() {
+function Td() {
   const t = new Float32Array([
     -1,
     -1,
@@ -7204,11 +7215,11 @@ function yd() {
   ]), e = /* @__PURE__ */ new Map(), r = [], i = [], n = [], s = t.length / 6;
   function o(l) {
     const c = l * 6, u = t[c], d = t[c + 1], h = t[c + 2], f = t[c + 3], p = t[c + 4], g = t[c + 5], m = `${u},${d},${h},${f},${p},${g}`;
-    let y = e.get(m);
-    if (y !== void 0) return y;
-    y = r.length / 3, e.set(m, y), r.push(u, d, h);
-    const A = Math.round(f * 255), v = Math.round(p * 255), E = Math.round(g * 255);
-    return i.push(255 << 24 | E << 16 | v << 8 | A), y;
+    let v = e.get(m);
+    if (v !== void 0) return v;
+    v = r.length / 3, e.set(m, v), r.push(u, d, h);
+    const A = Math.round(f * 255), b = Math.round(p * 255), E = Math.round(g * 255);
+    return i.push(255 << 24 | E << 16 | b << 8 | A), v;
   }
   function a(l, c) {
     const u = t[l * 6], d = t[l * 6 + 1], h = t[l * 6 + 2], f = t[c * 6], p = t[c * 6 + 1], g = t[c * 6 + 2];
@@ -7222,8 +7233,8 @@ function yd() {
   }
   return { positions: r, indices: n, colors: new Uint32Array(i) };
 }
-const Km = ["X3D"], Qm = "mz3";
-async function Zm(t) {
+const Qm = ["X3D"], Zm = "mz3";
+async function Jm(t) {
   const e = t.byteLength;
   if (e < 20)
     throw new Error(`File too small to be X3D: bytes = ${e}`);
@@ -7235,22 +7246,22 @@ async function Zm(t) {
     const E = i;
     for (; i < e && r[i] !== 62; )
       i++;
-    const b = i;
-    return new TextDecoder().decode(t.slice(E, b + 1)).trim();
+    const y = i;
+    return new TextDecoder().decode(t.slice(E, y + 1)).trim();
   }
   let s = n();
   function o(E) {
-    const b = s.indexOf(`${E}=`);
-    if (b < 0)
+    const y = s.indexOf(`${E}=`);
+    if (y < 0)
       return "";
-    const x = s[b + E.length + 1], T = s.indexOf(x, b) + 1, S = s.indexOf(x, T);
+    const x = s[y + E.length + 1], T = s.indexOf(x, y) + 1, S = s.indexOf(x, T);
     return s.slice(T, S);
   }
   function a(E) {
-    const b = s.indexOf(`${E}=`);
-    if (b < 0)
+    const y = s.indexOf(`${E}=`);
+    if (y < 0)
       return 1;
-    const x = s[b + E.length + 1], T = s.indexOf(x, b) + 1, S = s.indexOf(x, T);
+    const x = s[y + E.length + 1], T = s.indexOf(x, y) + 1, S = s.indexOf(x, T);
     let P = s.slice(T, S).trim();
     P = P.replace(/,\s*$/, "");
     const U = P.trim().split(/\s*,\s*|\s+/);
@@ -7268,10 +7279,10 @@ async function Zm(t) {
   const u = [];
   let d = [], h = [0, 0, 0, 0], f = [0, 0, 0, 0], p = [255, 255, 255, 255], g = [255, 255, 255, 255];
   const m = {};
-  function y(E, b, x, T) {
+  function v(E, y, x, T) {
     const S = Math.floor(l.length / 3);
-    for (let U = 0; U < b.length; U++)
-      c.push(b[U] + S);
+    for (let U = 0; U < y.length; U++)
+      c.push(y[U] + S);
     l = l.concat(E);
     const P = Math.floor(E.length / 3);
     {
@@ -7293,34 +7304,34 @@ async function Zm(t) {
       E in m ? p = m[E] : Y.warn(`Unable to find DEF for ${E}`);
       return;
     }
-    const b = a("diffuseColor");
-    if (b.length < 3)
+    const y = a("diffuseColor");
+    if (y.length < 3)
       return;
-    p[0] = Math.round(b[0] * 255), p[1] = Math.round(b[1] * 255), p[2] = Math.round(b[2] * 255);
+    p[0] = Math.round(y[0] * 255), p[1] = Math.round(y[1] * 255), p[2] = Math.round(y[2] * 255);
     const x = o("DEF");
     x.length < 1 || (m[x] = p);
   }
   for (; i < e; )
     if (s = n(), p = g.slice(), s.startsWith("<Transform") && (h = a("translation"), f = a("rotation")), s.startsWith("<Appearance") && (A(), g = p.slice()), s.startsWith("<Shape")) {
-      let E = 1, b = 1, x = [], T = [];
+      let E = 1, y = 1, x = [], T = [];
       for (; i < e && (s = n(), s.startsWith("<Appearance") && A(), !s.startsWith("</Shape")); ) {
-        if (s.startsWith("<Sphere") && (E = a("radius"), b = -1), s.startsWith("<Cylinder") && (E = a("radius"), b = a("height")), s.startsWith("<IndexedFaceSet") && (b = -2, x = a("coordIndex")), s.startsWith("<IndexedTriangleSet") && (b = -7, x = a("index")), s.startsWith("<IndexedTriangleStripSet") && (b = -3, x = a("index")), s.startsWith("<Coordinate")) {
+        if (s.startsWith("<Sphere") && (E = a("radius"), y = -1), s.startsWith("<Cylinder") && (E = a("radius"), y = a("height")), s.startsWith("<IndexedFaceSet") && (y = -2, x = a("coordIndex")), s.startsWith("<IndexedTriangleSet") && (y = -7, x = a("index")), s.startsWith("<IndexedTriangleStripSet") && (y = -3, x = a("index")), s.startsWith("<Coordinate")) {
           T = a("point");
           const S = T.length % 3;
           S !== 0 && (T = T.slice(0, -S));
         }
-        s.startsWith("<Color") && (d = a("color")), s.startsWith("<Box") && (b = -4, Y.warn("Unsupported x3d shape: Box")), s.startsWith("<Cone") && (b = -5, Y.warn("Unsupported x3d shape: Cone")), s.startsWith("<ElevationGrid") && (b = -6, Y.warn("Unsupported x3d shape: ElevationGrid"));
+        s.startsWith("<Color") && (d = a("color")), s.startsWith("<Box") && (y = -4, Y.warn("Unsupported x3d shape: Box")), s.startsWith("<Cone") && (y = -5, Y.warn("Unsupported x3d shape: Cone")), s.startsWith("<ElevationGrid") && (y = -6, Y.warn("Unsupported x3d shape: ElevationGrid"));
       }
-      if (!(b < -3 && b !== -7)) if (b < -1) {
+      if (!(y < -3 && y !== -7)) if (y < -1) {
         if (x.length < 1 || T.length < 3) {
           Y.warn("Indexed mesh must specify indices and points");
           break;
         }
         const S = Math.floor(l.length / 3);
         let P = 2;
-        if (b === -7)
+        if (y === -7)
           c = c.concat(x.map((_) => _ + S));
-        else if (b === -2) {
+        else if (y === -2) {
           let _ = 0;
           for (; P < x.length; )
             x[P] >= 0 ? (c.push(x[_] + S), c.push(x[P - 1] + S), c.push(x[P - 0] + S), P += 1) : (P += 3, _ = P - 2);
@@ -7337,23 +7348,23 @@ async function Zm(t) {
           for (let D = 0; D < U; D++)
             u.push(_, O, w);
         }
-      } else if (b < 0) {
-        const S = [h[0], h[1], h[2]], P = vd(
+      } else if (y < 0) {
+        const S = [h[0], h[1], h[2]], P = bd(
           S,
           E,
           [p[0] / 255, p[1] / 255, p[2] / 255, p[3] / 255],
           2
         );
-        y(P.positions, P.indices, p);
+        v(P.positions, P.indices, p);
       } else {
         const S = Oe();
-        Tf(S, f[3], [
+        wf(S, f[3], [
           f[0],
           f[1],
           f[2]
         ]);
-        const P = Qe(0, -b * 0.5, 0, 1), U = Qe(0, +b * 0.5, 0, 1);
-        ot(P, P, S), ot(U, U, S), ko(P, P, h), ko(U, U, h);
+        const P = Qe(0, -y * 0.5, 0, 1), U = Qe(0, +y * 0.5, 0, 1);
+        ot(P, P, S), ot(U, U, S), Go(P, P, h), Go(U, U, h);
         const _ = ve(P[0], P[1], P[2]), O = ve(U[0], U[1], U[2]), w = Wn(
           [_[0], _[1], _[2]],
           [O[0], O[1], O[2]],
@@ -7362,46 +7373,46 @@ async function Zm(t) {
           20,
           !0
         );
-        y(w.positions, w.indices, p);
+        v(w.positions, w.indices, p);
       }
     }
-  const v = {
+  const b = {
     positions: Float32Array.from(l),
     indices: Uint32Array.from(c)
   };
-  return u.length === l.length && (v.colors = Float32Array.from(u)), v;
+  return u.length === l.length && (b.colors = Float32Array.from(u)), b;
 }
-const bd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Ad = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Km,
-  read: Zm,
-  type: Qm
-}, Symbol.toStringTag, { value: "Module" })), Jm = ["JCON"];
-async function $m(t) {
+  extensions: Qm,
+  read: Jm,
+  type: Zm
+}, Symbol.toStringTag, { value: "Module" })), $m = ["JCON"];
+async function eg(t) {
   const e = new TextDecoder().decode(t), r = JSON.parse(e), i = {};
-  if (typeof r.nodeColormap == "string" && (i.nodeColormap = r.nodeColormap), typeof r.nodeColormapNegative == "string" && (i.nodeColormapNegative = r.nodeColormapNegative), typeof r.nodeMinColor == "number" && (i.nodeMinColor = r.nodeMinColor), typeof r.nodeMaxColor == "number" && (i.nodeMaxColor = r.nodeMaxColor), typeof r.nodeScale == "number" && (i.nodeScale = r.nodeScale), typeof r.edgeColormap == "string" && (i.edgeColormap = r.edgeColormap), typeof r.edgeColormapNegative == "string" && (i.edgeColormapNegative = r.edgeColormapNegative), typeof r.edgeMin == "number" && (i.edgeMin = r.edgeMin), typeof r.edgeMax == "number" && (i.edgeMax = r.edgeMax), typeof r.edgeScale == "number" && (i.edgeScale = r.edgeScale), eg(r))
-    return rg(r, i);
-  if (tg(r))
+  if (typeof r.nodeColormap == "string" && (i.nodeColormap = r.nodeColormap), typeof r.nodeColormapNegative == "string" && (i.nodeColormapNegative = r.nodeColormapNegative), typeof r.nodeMinColor == "number" && (i.nodeMinColor = r.nodeMinColor), typeof r.nodeMaxColor == "number" && (i.nodeMaxColor = r.nodeMaxColor), typeof r.nodeScale == "number" && (i.nodeScale = r.nodeScale), typeof r.edgeColormap == "string" && (i.edgeColormap = r.edgeColormap), typeof r.edgeColormapNegative == "string" && (i.edgeColormapNegative = r.edgeColormapNegative), typeof r.edgeMin == "number" && (i.edgeMin = r.edgeMin), typeof r.edgeMax == "number" && (i.edgeMax = r.edgeMax), typeof r.edgeScale == "number" && (i.edgeScale = r.edgeScale), tg(r))
     return ig(r, i);
+  if (rg(r))
+    return ng(r, i);
   throw new Error(
     "Unrecognized JCON format: expected sparse or dense connectome"
   );
 }
-function eg(t) {
+function tg(t) {
   const e = t.nodes;
   return !!e && "names" in e && "X" in e && Array.isArray(t.edges);
 }
-function tg(t) {
+function rg(t) {
   return Array.isArray(t.nodes) && Array.isArray(t.edges);
 }
-function rg(t, e) {
-  const r = t.nodes, i = t.edges, { data: n } = cg(r, i);
+function ig(t, e) {
+  const r = t.nodes, i = t.edges, { data: n } = ug(r, i);
   return {
     data: n,
     options: { ...wo, ...e }
   };
 }
-function ig(t, e) {
+function ng(t, e) {
   const r = t.nodes, i = t.edges, n = r.map((o) => ({
     name: o.name ?? "",
     x: o.x ?? 0,
@@ -7419,20 +7430,20 @@ function ig(t, e) {
     options: { ...wo, ...e }
   };
 }
-const ng = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const sg = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Jm,
-  read: $m
-}, Symbol.toStringTag, { value: "Module" })), sg = /* @__PURE__ */ Object.assign({
-  "./readers/jcon.ts": ng
-}), Ao = cr(sg);
-function og() {
+  extensions: $m,
+  read: eg
+}, Symbol.toStringTag, { value: "Module" })), og = /* @__PURE__ */ Object.assign({
+  "./readers/jcon.ts": sg
+}), Ao = cr(og);
+function ag() {
   return Array.from(Ao.keys()).sort();
 }
-function ag(t) {
+function lg(t) {
   return Ao.has(t.toUpperCase());
 }
-function lg(t) {
+function cg(t) {
   return Ao.get(t.toUpperCase());
 }
 const wo = {
@@ -7447,7 +7458,7 @@ const wo = {
   edgeMax: 0,
   edgeScale: 1
 };
-function Td(t, e) {
+function wd(t, e) {
   const { nodes: r, edges: i } = t;
   if (r.length === 0)
     return {
@@ -7455,29 +7466,29 @@ function Td(t, e) {
       indices: new Uint32Array(0),
       colors: new Uint32Array(0)
     };
-  const n = ut(e.nodeColormap), s = e.nodeColormapNegative ? ut(e.nodeColormapNegative) : null, o = ut(e.edgeColormap), a = e.edgeColormapNegative ? ut(e.edgeColormapNegative) : null, l = [], c = [], u = [];
+  const n = ct(e.nodeColormap), s = e.nodeColormapNegative ? ct(e.nodeColormapNegative) : null, o = ct(e.edgeColormap), a = e.edgeColormapNegative ? ct(e.edgeColormapNegative) : null, l = [], c = [], u = [];
   let d = 0;
   for (const A of r) {
-    const v = Math.abs(A.sizeValue) * e.nodeScale;
-    if (v <= 0) continue;
+    const b = Math.abs(A.sizeValue) * e.nodeScale;
+    if (b <= 0) continue;
     const E = Xs(
       A.colorValue,
       e.nodeMinColor,
       e.nodeMaxColor,
       n,
       s
-    ), b = vd([A.x, A.y, A.z], v, E, 2), x = b.indices.map((S) => S + d);
-    l.push(b.positions), c.push(x);
-    const T = b.positions.length / 3;
-    for (let S = 0; S < T; S++) u.push(b.rgba32);
+    ), y = bd([A.x, A.y, A.z], b, E, 2), x = y.indices.map((S) => S + d);
+    l.push(y.positions), c.push(x);
+    const T = y.positions.length / 3;
+    for (let S = 0; S < T; S++) u.push(y.rgba32);
     d += T;
   }
   for (const A of i) {
-    const v = Math.abs(A.colorValue);
-    if (v < e.edgeMin || e.edgeMax > 0 && v > e.edgeMax) continue;
-    const E = r[A.first], b = r[A.second];
-    if (!E || !b) continue;
-    const x = v * e.edgeScale;
+    const b = Math.abs(A.colorValue);
+    if (b < e.edgeMin || e.edgeMax > 0 && b > e.edgeMax) continue;
+    const E = r[A.first], y = r[A.second];
+    if (!E || !y) continue;
+    const x = b * e.edgeScale;
     if (x <= 0) continue;
     const T = Xs(
       A.colorValue,
@@ -7487,7 +7498,7 @@ function Td(t, e) {
       a
     ), S = Wn(
       [E.x, E.y, E.z],
-      [b.x, b.y, b.z],
+      [y.x, y.y, y.z],
       x,
       T,
       20,
@@ -7501,17 +7512,17 @@ function Td(t, e) {
   const h = new Float32Array(d * 3);
   let f = 0;
   for (const A of l)
-    for (let v = 0; v < A.length; v++)
-      h[f++] = A[v];
+    for (let b = 0; b < A.length; b++)
+      h[f++] = A[b];
   let p = 0;
   for (const A of c) p += A.length;
   const g = new Uint32Array(p);
   let m = 0;
   for (const A of c)
-    for (let v = 0; v < A.length; v++)
-      g[m++] = A[v];
-  const y = new Uint32Array(u);
-  return { positions: h, indices: g, colors: y };
+    for (let b = 0; b < A.length; b++)
+      g[m++] = A[b];
+  const v = new Uint32Array(u);
+  return { positions: h, indices: g, colors: v };
 }
 function Xs(t, e, r, i, n) {
   const s = Math.abs(t), o = t < 0 && n ? n : i, a = r - e, l = a > 0 ? Math.max(0, Math.min(1, (s - e) / a)) : 0, c = o.length / 4, u = Math.min(c - 1, Math.floor(l * (c - 1))) * 4;
@@ -7522,7 +7533,7 @@ function Xs(t, e, r, i, n) {
     o[u + 3] / 255
   ];
 }
-function cg(t, e) {
+function ug(t, e) {
   const r = t.names.length, i = [];
   for (let s = 0; s < r; s++)
     i.push({
@@ -7541,13 +7552,13 @@ function cg(t, e) {
     }
   return { data: { nodes: i, edges: n } };
 }
-const ug = ["CURV", "CRV", "THICKNESS", "AREA", "SULC"];
-function dg(t) {
+const dg = ["CURV", "CRV", "THICKNESS", "AREA", "SULC"];
+function hg(t) {
   if (t.byteLength < 3) return !1;
   const e = new DataView(t);
   return e.getUint8(0) === 255 && e.getUint8(1) === 255 && e.getUint8(2) === 255;
 }
-function hg(t, e) {
+function fg(t, e) {
   const r = new DataView(t), i = r.getUint8(0), n = r.getUint8(1), s = r.getUint8(2);
   (i !== 255 || n !== 255 || s !== 255) && Y.warn("Does not appear to be FreeSurfer curv format");
   const o = r.getUint32(3, !1), a = r.getUint32(11, !1);
@@ -7575,13 +7586,13 @@ function hg(t, e) {
     isTransparentBelowCalMin: !1
   };
 }
-const fg = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const pg = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: ug,
-  isCurv: dg,
-  read: hg
-}, Symbol.toStringTag, { value: "Module" })), pg = ["SMP"];
-async function mg(t, e) {
+  extensions: dg,
+  isCurv: hg,
+  read: fg
+}, Symbol.toStringTag, { value: "Module" })), mg = ["SMP"];
+async function gg(t, e) {
   let r = new DataView(t), i = r.getUint16(0, !0);
   if (i > 5) {
     const u = await Zt(new Uint8Array(t));
@@ -7608,12 +7619,12 @@ async function mg(t, e) {
   }
   return { values: a, nFrame4D: s };
 }
-const gg = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const xg = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: pg,
-  read: mg
-}, Symbol.toStringTag, { value: "Module" })), xg = ["STC"];
-function vg(t, e) {
+  extensions: mg,
+  read: gg
+}, Symbol.toStringTag, { value: "Module" })), vg = ["STC"];
+function yg(t, e) {
   const r = new DataView(t), i = r.getInt32(8, !1);
   if (i !== e)
     throw new Error(`STC overlay has ${i} vertices, expected ${e}`);
@@ -7625,10 +7636,10 @@ function vg(t, e) {
     o[a] = r.getFloat32(n, !1), n += 4;
   return { values: o, nFrame4D: s };
 }
-const yg = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const bg = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: xg,
-  read: vg
+  extensions: vg,
+  read: yg
 }, Symbol.toStringTag, { value: "Module" }));
 function Qi(t, e) {
   const r = Ke(e);
@@ -7636,7 +7647,7 @@ function Qi(t, e) {
   const i = Qe(t[0], t[1], t[2], 1);
   return ot(i, i, r), ve(i[0], i[1], i[2]);
 }
-function bg(t) {
+function Tg(t) {
   const e = t.affine, r = Or(
     e[0][0],
     e[0][1],
@@ -7661,7 +7672,7 @@ function bg(t) {
   const o = Qi([0, 0, 1], r);
   rt(o, o, i), t.pixDims[1] = Ir(n), t.pixDims[2] = Ir(s), t.pixDims[3] = Ir(o);
 }
-function Tg(t, e, r, i) {
+function Ag(t, e, r, i) {
   t.sform_code = 2;
   const n = "xxyyzzg";
   let s = -1, o = -1, a = -1;
@@ -7677,100 +7688,100 @@ function Tg(t, e, r, i) {
     [0, 0, 0, 1]
   ], t.affine[0][s] = -c[s], t.affine[1][o] = -c[o], t.affine[2][a] = c[a], t.affine[0][3] = -u[s], t.affine[1][3] = -u[o], t.affine[2][3] = u[a]);
 }
-const Ag = ["head"], wg = "nii";
-async function Eg(t, e, r = null) {
-  var y;
+const wg = ["head"], Eg = "nii";
+async function Sg(t, e, r = null) {
+  var v;
   const i = new Se();
   i.dims[0] = 3, i.pixDims = [1, 1, 1, 1, 1, 0, 0, 0];
   let n = [0, 0, 0], s = [0, 0, 0], o = [1, 1, 1];
   const a = new TextDecoder().decode(t).split(/\r?\n/), l = (t.byteLength + 8) % 16, c = t.byteLength + (16 - l), u = new ArrayBuffer(c);
   new Uint8Array(u).set(new Uint8Array(t));
   const d = new yl(c + 8, 42, u, !0), h = i;
-  (y = h.addExtension) == null || y.call(h, d), h.extensionCode = 42, h.extensionFlag && (h.extensionFlag[0] = 1), h.extensionSize = c + 8;
+  (v = h.addExtension) == null || v.call(h, d), h.extensionCode = 42, h.extensionFlag && (h.extensionFlag[0] = 1), h.extensionSize = c + 8;
   const f = a.length;
   let p = 0, g = !1;
   for (; p < f; ) {
     let A = a[p];
     if (p++, !A.startsWith("type")) continue;
-    const v = A.includes("integer-attribute"), E = A.includes("float-attribute");
+    const b = A.includes("integer-attribute"), E = A.includes("float-attribute");
     if (A = a[p], p++, !A.startsWith("name")) continue;
-    let b = A.split("= ");
-    const x = b[1];
-    A = a[p], p++, b = A.split("= ");
-    let T = parseInt(b[1], 10);
+    let y = A.split("= ");
+    const x = y[1];
+    A = a[p], p++, y = A.split("= ");
+    let T = parseInt(y[1], 10);
     if (!(T < 1)) {
-      if (A = a[p], p++, b = A.trim().split(/\s+/), E || v) {
-        for (; b.length < T; ) {
+      if (A = a[p], p++, y = A.trim().split(/\s+/), E || b) {
+        for (; y.length < T; ) {
           A = a[p], p++;
           const S = A.trim().split(/\s+/);
-          b.push(...S);
+          y.push(...S);
         }
         for (let S = 0; S < T; S++)
-          b[S] = parseFloat(b[S]);
+          y[S] = parseFloat(y[S]);
       }
       switch (x) {
         case "BYTEORDER_STRING":
-          b[0].includes("LSB_FIRST") ? i.littleEndian = !0 : b[0].includes("MSB_FIRST") && (i.littleEndian = !1);
+          y[0].includes("LSB_FIRST") ? i.littleEndian = !0 : y[0].includes("MSB_FIRST") && (i.littleEndian = !1);
           break;
         case "BRICK_TYPES": {
           i.dims[4] = T;
-          const S = parseInt(b[0], 10);
+          const S = parseInt(y[0], 10);
           S === 0 ? (i.numBitsPerVoxel = 8, i.datatypeCode = le.DT_UINT8) : S === 1 ? (i.numBitsPerVoxel = 16, i.datatypeCode = le.DT_INT16) : S === 3 ? (i.numBitsPerVoxel = 32, i.datatypeCode = le.DT_FLOAT32) : Y.warn("Unknown BRICK_TYPES ", S);
           break;
         }
         case "IJK_TO_DICOM_REAL":
           if (T < 12) break;
           g = !0, i.sform_code = 2, i.affine = [
-            [-b[0], -b[1], -b[2], -b[3]],
-            [-b[4], -b[5], -b[6], -b[7]],
+            [-y[0], -y[1], -y[2], -y[3]],
+            [-y[4], -y[5], -y[6], -y[7]],
             [
-              b[8],
-              b[9],
-              b[10],
-              b[11]
+              y[8],
+              y[9],
+              y[10],
+              y[11]
             ],
             [0, 0, 0, 1]
           ];
           break;
         case "DATASET_DIMENSIONS":
           T = Math.max(T, 3);
-          for (let S = 0; S < T; S++) i.dims[S + 1] = b[S];
+          for (let S = 0; S < T; S++) i.dims[S + 1] = y[S];
           break;
         case "ORIENT_SPECIFIC":
-          n = b;
+          n = y;
           break;
         case "ORIGIN":
-          s = b;
+          s = y;
           break;
         case "DELTA":
-          o = b;
+          o = y;
           break;
         case "TAXIS_FLOATS":
-          i.pixDims[4] = b[0];
+          i.pixDims[4] = y[0];
           break;
       }
     }
   }
-  g ? bg(i) : Tg(i, o, s, n);
+  g ? Tg(i) : Ag(i, o, s, n);
   const m = i.numBitsPerVoxel / 8 * i.dims[1] * i.dims[2] * i.dims[3] * i.dims[4];
   if (!r)
     throw new Error("pairedImgData not set");
   if (r.byteLength < m) {
-    const A = await Zt(new Uint8Array(r)), v = A.buffer.slice(
+    const A = await Zt(new Uint8Array(r)), b = A.buffer.slice(
       A.byteOffset,
       A.byteOffset + A.byteLength
     );
-    return { hdr: i, img: v };
+    return { hdr: i, img: b };
   }
   return { hdr: i, img: r.slice(0) };
 }
-const Ad = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Ed = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Ag,
-  read: Eg,
-  type: wg
-}, Symbol.toStringTag, { value: "Module" })), Sg = ["png", "bmp", "gif", "jpg", "jpeg"], Rg = "nii";
-async function Mg(t) {
+  extensions: wg,
+  read: Sg,
+  type: Eg
+}, Symbol.toStringTag, { value: "Module" })), Mg = ["png", "bmp", "gif", "jpg", "jpeg"], Rg = "nii";
+async function Pg(t) {
   const e = new Blob([t]);
   if (typeof createImageBitmap == "function") {
     const r = await createImageBitmap(e), i = new OffscreenCanvas(r.width, r.height).getContext("2d");
@@ -7798,8 +7809,8 @@ async function Mg(t) {
     });
   throw new Error("No image decoding path available");
 }
-async function Pg(t, e, r = null) {
-  const i = await Mg(t), { width: n, height: s, data: o } = i, a = new Se();
+async function Dg(t, e, r = null) {
+  const i = await Pg(t), { width: n, height: s, data: o } = i, a = new Se();
   a.dims = [3, n, s, 1, 0, 0, 0, 0], a.pixDims = [1, 1, 1, 1, 1, 0, 0, 0], a.affine = [
     [a.pixDims[1], 0, 0, -(a.dims[1] - 2) * 0.5 * a.pixDims[1]],
     [0, a.pixDims[2], 0, -(a.dims[2] - 2) * 0.5 * a.pixDims[2]],
@@ -7821,13 +7832,13 @@ async function Pg(t, e, r = null) {
   }
   return { hdr: a, img: o.buffer };
 }
-const wd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Sd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Sg,
-  read: Pg,
+  extensions: Mg,
+  read: Dg,
   type: Rg
-}, Symbol.toStringTag, { value: "Module" })), Dg = ["v"], Cg = "nii";
-function Ug(t, e, r = null) {
+}, Symbol.toStringTag, { value: "Module" })), Cg = ["v"], Ug = "nii";
+function Ig(t, e, r = null) {
   const i = new Se();
   i.dims = [3, 1, 1, 1, 0, 0, 0, 0], i.pixDims = [1, 1, 1, 1, 1, 0, 0, 0];
   const n = new DataView(t), s = n.getInt32(0, !1), o = n.getInt16(50, !1);
@@ -7844,24 +7855,24 @@ function Ug(t, e, r = null) {
     for (; p < 31 && (g = n.getInt32(f, !1), f += 16, g !== 0); ) {
       p++;
       let m = g * 512;
-      const y = m - 512, A = n.getUint16(y, !1);
-      i.dims[1] = n.getUint16(y + 4, !1), i.dims[2] = n.getUint16(y + 6, !1), i.dims[3] = n.getUint16(y + 8, !1);
-      const v = n.getFloat32(y + 26, !1);
-      i.pixDims[1] = n.getFloat32(y + 34, !1) * 10, i.pixDims[2] = n.getFloat32(y + 38, !1) * 10, i.pixDims[3] = n.getFloat32(y + 42, !1) * 10, i.pixDims[4] = n.getUint32(y + 46, !1) / 1e3, c.push(i.pixDims[4]);
-      const E = i.dims[1] * i.dims[2] * i.dims[3], b = new Float32Array(E);
+      const v = m - 512, A = n.getUint16(v, !1);
+      i.dims[1] = n.getUint16(v + 4, !1), i.dims[2] = n.getUint16(v + 6, !1), i.dims[3] = n.getUint16(v + 8, !1);
+      const b = n.getFloat32(v + 26, !1);
+      i.pixDims[1] = n.getFloat32(v + 34, !1) * 10, i.pixDims[2] = n.getFloat32(v + 38, !1) * 10, i.pixDims[3] = n.getFloat32(v + 42, !1) * 10, i.pixDims[4] = n.getUint32(v + 46, !1) / 1e3, c.push(i.pixDims[4]);
+      const E = i.dims[1] * i.dims[2] * i.dims[3], y = new Float32Array(E);
       if (A === 1)
         for (let T = 0; T < E; T++)
-          b[T] = n.getUint8(m) * v, m++;
+          y[T] = n.getUint8(m) * b, m++;
       else if (A === 6)
         for (let T = 0; T < E; T++)
-          b[T] = n.getUint16(m, !1) * v, m += 2;
+          y[T] = n.getUint16(m, !1) * b, m += 2;
       else if (A === 7)
         for (let T = 0; T < E; T++)
-          b[T] = n.getUint32(m, !1) * v, m += 4;
+          y[T] = n.getUint32(m, !1) * b, m += 4;
       else
         Y.warn(`Unknown ECAT data type ${A}`);
       const x = u.slice(0);
-      u = new Float32Array(x.length + b.length), u.set(x), u.set(b, x.length), l++;
+      u = new Float32Array(x.length + y.length), u.set(x), u.set(y, x.length), l++;
     }
     if (g === 0) break;
     a += 512;
@@ -7880,11 +7891,11 @@ function Ug(t, e, r = null) {
     [0, 0, 0, 1]
   ], i.numBitsPerVoxel = 32, i.datatypeCode = le.DT_FLOAT32, { hdr: i, img: u.buffer };
 }
-const Ed = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Md = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Dg,
-  read: Ug,
-  type: Cg
+  extensions: Cg,
+  read: Ig,
+  type: Ug
 }, Symbol.toStringTag, { value: "Module" }));
 async function Eo(t, e = !1) {
   let r = t.byteLength;
@@ -7901,32 +7912,32 @@ async function Eo(t, e = !1) {
     const m = new Uint8Array(a.subarray(p, g));
     return f === 1 ? new Float32Array(m.buffer) : f === 2 ? new Int32Array(m.buffer) : f === 3 ? new Int16Array(m.buffer) : f === 4 ? new Uint16Array(m.buffer) : f === 5 ? new Uint8Array(m.buffer) : new Float64Array(m.buffer);
   }, h = () => {
-    const f = i.getUint32(l, !0), p = i.getUint32(l + 4, !0), g = i.getUint32(l + 8, !0), m = i.getUint32(l + 12, !0), y = i.getUint32(l + 16, !0);
+    const f = i.getUint32(l, !0), p = i.getUint32(l + 4, !0), g = i.getUint32(l + 8, !0), m = i.getUint32(l + 12, !0), v = i.getUint32(l + 16, !0);
     if (l += 20, m !== 0)
       throw new Error("Matlab V4 reader does not support imaginary numbers");
     const A = p * g;
     if (A < 1)
       throw new Error("mrows * ncols must be greater than one");
-    const v = new Uint8Array(a.subarray(l, l + y));
-    let E = o.decode(v).trim().replaceAll("\0", "");
+    const b = new Uint8Array(a.subarray(l, l + v));
+    let E = o.decode(b).trim().replaceAll("\0", "");
     e && (E = E.replaceAll(".", "_"));
-    const b = u(f);
+    const y = u(f);
     let x = 8;
-    if (b >= 1 && b <= 2) x = 4;
-    else if (b >= 3 && b <= 4) x = 2;
-    else if (b === 5) x = 1;
-    else if (b !== 0) throw new Error("impossible Matlab v4 datatype");
-    if (l += y, f > 50)
+    if (y >= 1 && y <= 2) x = 4;
+    else if (y >= 3 && y <= 4) x = 2;
+    else if (y === 5) x = 1;
+    else if (y !== 0) throw new Error("impossible Matlab v4 datatype");
+    if (l += v, f > 50)
       throw new Error("Does not appear to be little-endian V4 Matlab file");
     const T = l + A * x;
-    c[E] = d(b, l, T), l = T;
+    c[E] = d(y, l, T), l = T;
   };
   for (; l + 20 < r; )
     h();
   return c;
 }
-const Ig = ["fz", "gqi", "qsdr", "fib"], Bg = "nii";
-async function Lg(t, e, r = null) {
+const Bg = ["fz", "gqi", "qsdr", "fib"], Lg = "nii";
+async function _g(t, e, r = null) {
   const i = new Se();
   i.littleEndian = !1, i.dims = [3, 1, 1, 1, 0, 0, 0, 0], i.pixDims = [1, 1, 1, 1, 1, 0, 0, 0];
   const n = await Eo(t, !0);
@@ -7943,19 +7954,19 @@ async function Lg(t, e, r = null) {
   ], i.littleEndian = !0;
   const c = i.dims[1] * i.dims[2] * i.dims[3], u = c * Math.ceil(i.numBitsPerVoxel / 8), d = u * i.dims[4], h = new Uint8Array(new ArrayBuffer(c * 4 * 3));
   if (s) {
-    const m = c, y = new Float32Array(m), A = new Float32Array(m), v = new Float32Array(m), E = n.index0, b = n.odf_vertices;
+    const m = c, v = new Float32Array(m), A = new Float32Array(m), b = new Float32Array(m), E = n.index0, y = n.odf_vertices;
     for (let x = 0; x < m; x++) {
       const T = E[x] * 3;
-      y[x] = b[T + 0], A[x] = b[T + 1], v[x] = -b[T + 2];
+      v[x] = y[T + 0], A[x] = y[T + 1], b[x] = -y[T + 2];
     }
     h.set(
-      new Uint8Array(y.buffer, y.byteOffset, y.byteLength),
+      new Uint8Array(v.buffer, v.byteOffset, v.byteLength),
       0 * u
     ), h.set(
       new Uint8Array(A.buffer, A.byteOffset, A.byteLength),
       1 * u
     ), h.set(
-      new Uint8Array(v.buffer, v.byteOffset, v.byteLength),
+      new Uint8Array(b.buffer, b.byteOffset, b.byteLength),
       2 * u
     );
   }
@@ -7966,12 +7977,12 @@ async function Lg(t, e, r = null) {
   if ("mask" in n) {
     let m = 1;
     "dti_fa_slope" in n && (m = n.dti_fa_slope[0]);
-    let y = 1;
-    "dti_fa_inter" in n && (y = n.dti_fa_inter[0]);
-    const A = c, v = n.mask, E = new Float32Array(A);
-    let b = 0;
+    let v = 1;
+    "dti_fa_inter" in n && (v = n.dti_fa_inter[0]);
+    const A = c, b = n.mask, E = new Float32Array(A);
+    let y = 0;
     for (let x = 0; x < A; x++)
-      v[x] !== 0 && (E[x] = p[b] * m + y, b++);
+      b[x] !== 0 && (E[x] = p[y] * m + v, y++);
     return i.v1 = new Float32Array(
       h.buffer
     ), { hdr: i, img: E.buffer };
@@ -7981,17 +7992,17 @@ async function Lg(t, e, r = null) {
     h.buffer
   ), { hdr: i, img: f.buffer };
 }
-const Sd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Rd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Ig,
-  read: Lg,
-  type: Bg
-}, Symbol.toStringTag, { value: "Module" })), _g = ["IWI.CBOR"], Og = "nii";
-async function Fg(t) {
+  extensions: Bg,
+  read: _g,
+  type: Lg
+}, Symbol.toStringTag, { value: "Module" })), Og = ["IWI.CBOR"], Fg = "nii";
+async function Ng(t) {
   const e = go(new Uint8Array(t));
-  return Ng(e);
+  return Vg(e);
 }
-function Ng(t) {
+function Vg(t) {
   var o;
   if (!("imageType" in t) || !("size" in t) || !("data" in t))
     throw new Error('.iwi.cbor must have "imageType", "size" and "data".');
@@ -8042,12 +8053,12 @@ function Ng(t) {
   );
   return { hdr: e, img: s };
 }
-const Rd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Pd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: _g,
-  read: Fg,
-  type: Og
-}, Symbol.toStringTag, { value: "Module" })), Vg = ["mgh", "mgz"], zg = "nii";
+  extensions: Og,
+  read: Ng,
+  type: Fg
+}, Symbol.toStringTag, { value: "Module" })), zg = ["mgh", "mgz"], kg = "nii";
 async function Gg(t, e, r = null) {
   let i = t instanceof Uint8Array ? t : new Uint8Array(t);
   if (i.length >= 2 && i[0] === 31 && i[1] === 139)
@@ -8059,7 +8070,7 @@ async function Gg(t, e, r = null) {
   const n = new DataView(i.buffer, i.byteOffset, i.byteLength), s = new Se();
   if (i.byteLength < 284)
     throw Y.error("File too small to be a valid MGH/MGZ header."), new Error("Invalid MGH/MGZ header");
-  const o = n.getInt32(0, !1), a = n.getInt32(4, !1), l = n.getInt32(8, !1), c = n.getInt32(12, !1), u = n.getInt32(16, !1), d = n.getInt32(20, !1), h = n.getFloat32(30, !1), f = n.getFloat32(34, !1), p = n.getFloat32(38, !1), g = n.getFloat32(42, !1), m = n.getFloat32(46, !1), y = n.getFloat32(50, !1), A = n.getFloat32(54, !1), v = n.getFloat32(58, !1), E = n.getFloat32(62, !1), b = n.getFloat32(66, !1), x = n.getFloat32(70, !1), T = n.getFloat32(74, !1), S = n.getFloat32(78, !1), P = n.getFloat32(82, !1), U = n.getFloat32(86, !1);
+  const o = n.getInt32(0, !1), a = n.getInt32(4, !1), l = n.getInt32(8, !1), c = n.getInt32(12, !1), u = n.getInt32(16, !1), d = n.getInt32(20, !1), h = n.getFloat32(30, !1), f = n.getFloat32(34, !1), p = n.getFloat32(38, !1), g = n.getFloat32(42, !1), m = n.getFloat32(46, !1), v = n.getFloat32(50, !1), A = n.getFloat32(54, !1), b = n.getFloat32(58, !1), E = n.getFloat32(62, !1), y = n.getFloat32(66, !1), x = n.getFloat32(70, !1), T = n.getFloat32(74, !1), S = n.getFloat32(78, !1), P = n.getFloat32(82, !1), U = n.getFloat32(86, !1);
   if (o !== 1 && o !== 257 && Y.warn(`Unexpected MGH version: ${o}.`), a <= 0 || l <= 0 || c <= 0)
     throw Y.error(`Invalid MGH dimensions: ${a}x${l}x${c}`), new Error("Invalid MGH dimensions");
   switch (d) {
@@ -8082,13 +8093,13 @@ async function Gg(t, e, r = null) {
   const _ = Or(
     g * s.pixDims[1],
     A * s.pixDims[2],
-    b * s.pixDims[3],
+    y * s.pixDims[3],
     0,
     m * s.pixDims[1],
-    v * s.pixDims[2],
+    b * s.pixDims[2],
     x * s.pixDims[3],
     0,
-    y * s.pixDims[1],
+    v * s.pixDims[1],
     E * s.pixDims[2],
     T * s.pixDims[3],
     0,
@@ -8099,8 +8110,8 @@ async function Gg(t, e, r = null) {
   ), O = [s.dims[1] / 2, s.dims[2] / 2, s.dims[3] / 2, 1], w = [0, 0, 0, 0];
   for (let V = 0; V < 3; V++) {
     w[V] = 0;
-    for (let k = 0; k < 3; k++)
-      w[V] = w[V] + _[k + V * 4] * O[k];
+    for (let G = 0; G < 3; G++)
+      w[V] = w[V] + _[G + V * 4] * O[G];
   }
   s.affine = [
     [_[0], _[1], _[2], S - w[0]],
@@ -8108,7 +8119,7 @@ async function Gg(t, e, r = null) {
     [_[8], _[9], _[10], U - w[2]],
     [0, 0, 0, 1]
   ], s.vox_offset = 284, s.magic = "n+1";
-  const D = s.numBitsPerVoxel / 8, R = a * l * c * s.dims[4] * D, C = i.slice(s.vox_offset, s.vox_offset + R);
+  const D = s.numBitsPerVoxel / 8, M = a * l * c * s.dims[4] * D, C = i.slice(s.vox_offset, s.vox_offset + M);
   let I = o === 257;
   return I || (I = [
     "aparc.DKTatlas+aseg.deep.mg",
@@ -8165,13 +8176,13 @@ async function Gg(t, e, r = null) {
     hdr: s
   };
 }
-const Md = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Dd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Vg,
+  extensions: zg,
   read: Gg,
-  type: zg
-}, Symbol.toStringTag, { value: "Module" })), kg = ["mha", "mhd"], Xg = "nii";
-async function qg(t, e, r = null) {
+  type: kg
+}, Symbol.toStringTag, { value: "Module" })), Xg = ["mha", "mhd"], qg = "nii";
+async function Hg(t, e, r = null) {
   const i = t.byteLength;
   if (i < 20)
     throw new Error(`File too small to be MHA/MHD: bytes = ${i}`);
@@ -8191,17 +8202,17 @@ async function qg(t, e, r = null) {
   for (; l !== ""; ) {
     let m = l.split(" ");
     if (m.length > 2 && (m = m.slice(2)), l.startsWith("BinaryDataByteOrderMSB") && m[0].includes("False") && (c.littleEndian = !0), l.startsWith("BinaryDataByteOrderMSB") && m[0].includes("True") && (c.littleEndian = !1), l.startsWith("CompressedData") && m[0].includes("True") && (u = !0), l.startsWith("TransformMatrix"))
-      for (let y = 0; y < 9; y++) h[y] = parseFloat(m[y]);
+      for (let v = 0; v < 9; v++) h[v] = parseFloat(m[v]);
     if (l.startsWith("Offset"))
-      for (let y = 0; y < Math.min(m.length, 3); y++)
-        f[y] = parseFloat(m[y]);
+      for (let v = 0; v < Math.min(m.length, 3); v++)
+        f[v] = parseFloat(m[v]);
     if (l.startsWith("ElementSpacing"))
-      for (let y = 0; y < m.length; y++)
-        c.pixDims[y + 1] = parseFloat(m[y]);
+      for (let v = 0; v < m.length; v++)
+        c.pixDims[v + 1] = parseFloat(m[v]);
     if (l.startsWith("DimSize")) {
       c.dims[0] = m.length;
-      for (let y = 0; y < m.length; y++)
-        c.dims[y + 1] = parseInt(m[y], 10);
+      for (let v = 0; v < m.length; v++)
+        c.dims[v + 1] = parseInt(m[v], 10);
     }
     if (l.startsWith("ElementType"))
       switch (m[0]) {
@@ -8266,12 +8277,12 @@ async function qg(t, e, r = null) {
   }
   return { hdr: c, img: g };
 }
-const Pd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Cd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: kg,
-  read: qg,
-  type: Xg
-}, Symbol.toStringTag, { value: "Module" })), Hg = ["mif", "mih"], Wg = "nii", Xt = (t, e, r) => {
+  extensions: Xg,
+  read: Hg,
+  type: qg
+}, Symbol.toStringTag, { value: "Module" })), Wg = ["mif", "mih"], jg = "nii", Xt = (t, e, r) => {
   const i = [];
   if (r === 0) return i;
   if (r > 0)
@@ -8280,7 +8291,7 @@ const Pd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
     for (let n = t; n >= e; n += r) i.push(n);
   return i;
 };
-async function jg(t, e, r = null) {
+async function Yg(t, e, r = null) {
   const i = new Se();
   i.pixDims = [1, 1, 1, 1, 1, 0, 0, 0], i.dims = [1, 1, 1, 1, 1, 1, 1, 1];
   let n = t.byteLength;
@@ -8364,10 +8375,10 @@ async function jg(t, e, r = null) {
       i.vox_offset,
       i.vox_offset + Math.ceil(g / 8)
     ), D = new Uint8Array(w);
-    let R = 0;
+    let M = 0;
     for (let C = 0; C < g; C++) {
       const I = C % 8;
-      O[C] = D[R] >> 7 - I & 1, I === 7 && R++;
+      O[C] = D[M] >> 7 - I & 1, I === 7 && M++;
     }
     m = O.buffer;
   } else
@@ -8376,25 +8387,25 @@ async function jg(t, e, r = null) {
       i.vox_offset + g * (i.numBitsPerVoxel / 8)
     );
   c.length !== i.dims[0] && Y.warn("dims does not match layout");
-  let y = 1;
-  const A = [1, 1, 1, 1, 1], v = [!1, !1, !1, !1, !1];
+  let v = 1;
+  const A = [1, 1, 1, 1, 1], b = [!1, !1, !1, !1, !1];
   for (let O = 0; O < c.length; O++)
     for (let w = 0; w < c.length; w++)
-      Math.abs(c[w]) === O && (A[w] = y, (c[w] < 0 || Object.is(c[w], -0)) && (v[w] = !0), y *= i.dims[w + 1]);
+      Math.abs(c[w]) === O && (A[w] = v, (c[w] < 0 || Object.is(c[w], -0)) && (b[w] = !0), v *= i.dims[w + 1]);
   let E = Xt(0, i.dims[1] - 1, 1);
-  v[0] && (E = Xt(i.dims[1] - 1, 0, -1));
+  b[0] && (E = Xt(i.dims[1] - 1, 0, -1));
   for (let O = 0; O < i.dims[1]; O++) E[O] *= A[0];
-  let b = Xt(0, i.dims[2] - 1, 1);
-  v[1] && (b = Xt(i.dims[2] - 1, 0, -1));
-  for (let O = 0; O < i.dims[2]; O++) b[O] *= A[1];
+  let y = Xt(0, i.dims[2] - 1, 1);
+  b[1] && (y = Xt(i.dims[2] - 1, 0, -1));
+  for (let O = 0; O < i.dims[2]; O++) y[O] *= A[1];
   let x = Xt(0, i.dims[3] - 1, 1);
-  v[2] && (x = Xt(i.dims[3] - 1, 0, -1));
+  b[2] && (x = Xt(i.dims[3] - 1, 0, -1));
   for (let O = 0; O < i.dims[3]; O++) x[O] *= A[2];
   let T = Xt(0, i.dims[4] - 1, 1);
-  v[3] && (T = Xt(i.dims[4] - 1, 0, -1));
+  b[3] && (T = Xt(i.dims[4] - 1, 0, -1));
   for (let O = 0; O < i.dims[4]; O++) T[O] *= A[3];
   let S = Xt(0, i.dims[5] - 1, 1);
-  v[4] && (S = Xt(i.dims[5] - 1, 0, -1));
+  b[4] && (S = Xt(i.dims[5] - 1, 0, -1));
   for (let O = 0; O < i.dims[5]; O++) S[O] *= A[4];
   let P = 0, U, _;
   switch (i.datatypeCode) {
@@ -8428,32 +8439,32 @@ async function jg(t, e, r = null) {
   for (let O = 0; O < i.dims[5]; O++)
     for (let w = 0; w < i.dims[4]; w++)
       for (let D = 0; D < i.dims[3]; D++)
-        for (let R = 0; R < i.dims[2]; R++)
+        for (let M = 0; M < i.dims[2]; M++)
           for (let C = 0; C < i.dims[1]; C++)
-            _[P] = U[E[C] + b[R] + x[D] + T[w] + S[O]], P++;
+            _[P] = U[E[C] + y[M] + x[D] + T[w] + S[O]], P++;
   return { hdr: i, img: _.buffer };
 }
-const Dd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Ud = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Hg,
-  read: jg,
-  type: Wg
-}, Symbol.toStringTag, { value: "Module" })), Yg = ["nii", "nii.gz"], Kg = "nii";
-async function Qg(t, e, r = null) {
-  const i = op(t), n = bl(t) ? Tl(t) : t;
+  extensions: Wg,
+  read: Yg,
+  type: jg
+}, Symbol.toStringTag, { value: "Module" })), Kg = ["nii", "nii.gz"], Qg = "nii";
+async function Zg(t, e, r = null) {
+  const i = lp(t), n = bl(t) ? Tl(t) : t;
   return {
-    img: ap(i, n),
+    img: cp(i, n),
     hdr: i
   };
 }
-const Cd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Id = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Yg,
-  read: Qg,
-  type: Kg
+  extensions: Kg,
+  read: Zg,
+  type: Qg
 }, Symbol.toStringTag, { value: "Module" }));
 var be, gt, Ui, _n, ti;
-class Ud {
+class Bd {
   constructor(e) {
     zr(this, be);
     zr(this, gt, 0);
@@ -8626,7 +8637,7 @@ class Ud {
   }
 }
 be = new WeakMap(), gt = new WeakMap(), Ui = new WeakMap(), _n = new WeakMap(), ti = new WeakMap();
-const Zg = ["npy", "npz"], Jg = "nii";
+const Jg = ["npy", "npz"], $g = "nii";
 function oa(t) {
   return {
     "|b1": 1,
@@ -8640,7 +8651,7 @@ function oa(t) {
     "<f8": 8
   }[t] ?? 1;
 }
-function $g(t) {
+function ex(t) {
   return {
     "|b1": le.DT_BINARY,
     "<i1": le.DT_INT8,
@@ -8662,15 +8673,15 @@ function aa(t) {
     e.getUint8(4),
     e.getUint8(5)
   ], i = [147, 78, 85, 77, 80, 89];
-  if (!r.every((y, A) => y === i[A]))
+  if (!r.every((v, A) => v === i[A]))
     throw new Error("Not a valid NPY file: Magic number mismatch");
   const n = e.getUint16(8, !0), s = new TextDecoder("utf-8").decode(
     t.slice(10, 10 + n)
   ), o = s.match(/'shape': \((.*?)\)/);
   if (!o) throw new Error("Invalid NPY header: Shape not found");
-  const a = o[1].split(",").map((y) => y.trim()).filter((y) => y !== "").map(Number), l = s.match(/'descr': '([^']+)'/);
+  const a = o[1].split(",").map((v) => v.trim()).filter((v) => v !== "").map(Number), l = s.match(/'descr': '([^']+)'/);
   if (!l) throw new Error("Invalid NPY header: Data type not found");
-  const c = l[1], u = a.reduce((y, A) => y * A, 1), d = 10 + n, h = t.slice(
+  const c = l[1], u = a.reduce((v, A) => v * A, 1), d = 10 + n, h = t.slice(
     d,
     d + u * oa(c)
   ), f = a.length > 0 ? a[a.length - 1] : 1, p = a.length > 1 ? a[a.length - 2] : 1, g = a.length > 2 ? a[a.length - 3] : 1, m = new Se();
@@ -8679,9 +8690,9 @@ function aa(t) {
     [0, -m.pixDims[2], 0, (m.dims[2] - 2) * 0.5 * m.pixDims[2]],
     [0, 0, -m.pixDims[3], (m.dims[3] - 2) * 0.5 * m.pixDims[3]],
     [0, 0, 0, 1]
-  ], m.numBitsPerVoxel = oa(c) * 8, m.datatypeCode = $g(c), { hdr: m, img: h };
+  ], m.numBitsPerVoxel = oa(c) * 8, m.datatypeCode = ex(c), { hdr: m, img: h };
 }
-async function ex(t, e, r = null) {
+async function tx(t, e, r = null) {
   var a;
   const i = new DataView(t), n = [
     i.getUint8(0),
@@ -8691,7 +8702,7 @@ async function ex(t, e, r = null) {
   ], s = [80, 75, 3, 4];
   if (!n.every((l, c) => l === s[c]))
     return aa(t);
-  const o = new Ud(t);
+  const o = new Bd(t);
   for (let l = 0; l < o.entries.length; l++) {
     const c = o.entries[l];
     if (c.fileName.toLowerCase().endsWith(".npy")) {
@@ -8703,21 +8714,21 @@ async function ex(t, e, r = null) {
   }
   throw new Error("NPZ archive contains no .npy entries");
 }
-const Id = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Ld = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Zg,
-  read: ex,
-  type: Jg
-}, Symbol.toStringTag, { value: "Module" })), tx = ["nrrd", "nhdr"], rx = "nii";
-async function ix(t, e, r = null) {
+  extensions: Jg,
+  read: tx,
+  type: $g
+}, Symbol.toStringTag, { value: "Module" })), rx = ["nrrd", "nhdr"], ix = "nii";
+async function nx(t, e, r = null) {
   const i = new Se();
   i.pixDims = [1, 1, 1, 1, 1, 0, 0, 0], i.dims = [0, 0, 0, 0, 0, 0, 0, 0];
   const n = new Uint8Array(t);
   let s = null;
   for (let A = 1; A < n.length; A++)
     if (n[A - 1] === 10 && n[A] === 10) {
-      const v = t.slice(0, A - 1);
-      s = new TextDecoder().decode(v), i.vox_offset = A + 1;
+      const b = t.slice(0, A - 1);
+      s = new TextDecoder().decode(b), i.vox_offset = A + 1;
       break;
     }
   if (!s)
@@ -8730,14 +8741,14 @@ async function ix(t, e, r = null) {
   const u = mr(NaN, 0, 0, 0, 1, 0, 0, 0, 1), d = ve(0, 0, 0);
   let h = Ps();
   for (let A = 1; A < o.length; A++) {
-    let v = o[A];
-    if (!v || v[0] === "#") continue;
-    v = v.toLowerCase();
-    const E = v.split(":");
+    let b = o[A];
+    if (!b || b[0] === "#") continue;
+    b = b.toLowerCase();
+    const E = b.split(":");
     if (E.length < 2) continue;
-    const b = E[0].trim();
+    const y = E[0].trim();
     let x = E[1].trim();
-    switch (x = x.replaceAll(")", " ").replaceAll("(", " ").trim(), b) {
+    switch (x = x.replaceAll(")", " ").replaceAll("(", " ").trim(), y) {
       case "data file":
         c = !0;
         break;
@@ -8833,7 +8844,7 @@ async function ix(t, e, r = null) {
     }
   }
   if (!Number.isNaN(u[0])) {
-    i.sform_code = 2, l && (vf(u, u, 1e-3), d[0] *= 1e-3, d[1] *= 1e-3, d[2] *= 1e-3), h[0] < 0 && (d[0] = -d[0]), h[4] < 0 && (d[1] = -d[1]), h[8] < 0 && (d[2] = -d[2]), ol(u, h, u);
+    i.sform_code = 2, l && (bf(u, u, 1e-3), d[0] *= 1e-3, d[1] *= 1e-3, d[2] *= 1e-3), h[0] < 0 && (d[0] = -d[0]), h[4] < 0 && (d[1] = -d[1]), h[8] < 0 && (d[2] = -d[2]), ol(u, h, u);
     const A = Or(
       u[0],
       u[3],
@@ -8851,8 +8862,8 @@ async function ix(t, e, r = null) {
       0,
       0,
       1
-    ), v = ct(null, [0, 0, 0], A), E = ct(null, [1, 0, 0], A), b = ct(null, [0, 1, 0], A), x = ct(null, [0, 0, 1], A);
-    rt(E, E, v), rt(b, b, v), rt(x, x, v), i.pixDims[0] = 1, i.pixDims[1] = Ir(E), i.pixDims[2] = Ir(b), i.pixDims[3] = Ir(x), i.affine = [
+    ), b = ut(null, [0, 0, 0], A), E = ut(null, [1, 0, 0], A), y = ut(null, [0, 1, 0], A), x = ut(null, [0, 0, 1], A);
+    rt(E, E, b), rt(y, y, b), rt(x, x, b), i.pixDims[0] = 1, i.pixDims[1] = Ir(E), i.pixDims[2] = Ir(y), i.pixDims[3] = Ir(x), i.affine = [
       [A[0], A[1], A[2], A[3]],
       [A[4], A[5], A[6], A[7]],
       [A[8], A[9], A[10], A[11]],
@@ -8872,20 +8883,20 @@ async function ix(t, e, r = null) {
       A.byteOffset + A.byteLength
     );
   }
-  const m = i.numBitsPerVoxel / 8, y = i.dims.slice(1, i.dims[0] + 1).reduce((A, v) => A * Math.max(1, v), 1) * m;
-  if (g.byteLength < y)
+  const m = i.numBitsPerVoxel / 8, v = i.dims.slice(1, i.dims[0] + 1).reduce((A, b) => A * Math.max(1, b), 1) * m;
+  if (g.byteLength < v)
     throw new Error(
-      `NRRD: image data size mismatch (expected ${y}, got ${g.byteLength})`
+      `NRRD: image data size mismatch (expected ${v}, got ${g.byteLength})`
     );
-  return g.byteLength > y && (g = g.slice(0, y)), { hdr: i, img: g };
+  return g.byteLength > v && (g = g.slice(0, v)), { hdr: i, img: g };
 }
-const Bd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const _d = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: tx,
-  read: ix,
-  type: rx
-}, Symbol.toStringTag, { value: "Module" })), nx = ["src", "src.gz"], sx = "nii";
-async function ox(t, e, r = null) {
+  extensions: rx,
+  read: nx,
+  type: ix
+}, Symbol.toStringTag, { value: "Module" })), sx = ["src", "src.gz"], ox = "nii";
+async function ax(t, e, r = null) {
   const i = new Se();
   i.littleEndian = !1, i.dims = [3, 1, 1, 1, 0, 0, 0, 0], i.pixDims = [1, 1, 1, 1, 1, 0, 0, 0];
   const n = await Eo(t);
@@ -8920,13 +8931,13 @@ async function ox(t, e, r = null) {
     n.report.subarray(0, Math.min(79, n.report.byteLength))
   )), { hdr: i, img: h.buffer };
 }
-const Ld = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Od = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: nx,
-  read: ox,
-  type: sx
-}, Symbol.toStringTag, { value: "Module" })), ax = ["vmr", "v16"], lx = "nii";
-function cx(t) {
+  extensions: sx,
+  read: ax,
+  type: ox
+}, Symbol.toStringTag, { value: "Module" })), lx = ["vmr", "v16"], cx = "nii";
+function ux(t) {
   const e = new Se();
   e.dims = [3, 1, 1, 1, 0, 0, 0, 0], e.pixDims = [1, 1, 1, 1, 1, 0, 0, 0];
   const r = new DataView(t);
@@ -8937,7 +8948,7 @@ function cx(t) {
     [0, 0, 0, 1]
   ], e.littleEndian = !0, { hdr: e, img: t.slice(6) };
 }
-function ux(t) {
+function dx(t) {
   const e = new Se();
   e.dims = [3, 1, 1, 1, 0, 0, 0, 0], e.pixDims = [1, 1, 1, 1, 1, 0, 0, 0];
   const r = new DataView(t), i = r.getUint16(0, !0);
@@ -8966,14 +8977,14 @@ function ux(t) {
     [0, 0, 0, 1]
   ], e.numBitsPerVoxel = 8, e.datatypeCode = le.DT_UINT8, { hdr: e, img: t.slice(8, 8 + n) };
 }
-function dx(t, e, r = null) {
-  return ((e == null ? void 0 : e.toLowerCase()) ?? "").endsWith(".v16") ? cx(t) : ux(t);
+function hx(t, e, r = null) {
+  return ((e == null ? void 0 : e.toLowerCase()) ?? "").endsWith(".v16") ? ux(t) : dx(t);
 }
-const _d = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Fd = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: ax,
-  read: dx,
-  type: lx
+  extensions: lx,
+  read: hx,
+  type: cx
 }, Symbol.toStringTag, { value: "Module" }));
 function jn(t, e) {
   const r = t * e;
@@ -8985,54 +8996,54 @@ function qs(t, e, r, i) {
     Math.max(Math.abs(r), Math.abs(i))
   ] : [t, e];
 }
-function Od(t) {
+function Nd(t) {
   const e = 0.05 * Math.min(t[2], t[3]);
   return e < 5 ? null : { x: 1.8 * e, y: 1.8 * e, sz: e };
 }
-const Fd = /* @__PURE__ */ Object.assign({
-  "./readers/curv.ts": fg,
-  "./readers/smp.ts": gg,
-  "./readers/stc.ts": yg
-}), hx = cr(Fd);
-let Rr = null;
-for (const t of Object.values(Fd))
+const Vd = /* @__PURE__ */ Object.assign({
+  "./readers/curv.ts": pg,
+  "./readers/smp.ts": xg,
+  "./readers/stc.ts": bg
+}), fx = cr(Vd);
+let Mr = null;
+for (const t of Object.values(Vd))
   if (typeof t.isCurv == "function") {
-    Rr = t;
+    Mr = t;
     break;
   }
-const fx = /* @__PURE__ */ Object.assign({
-  "../readers/asc.ts": Xl,
-  "../readers/dfs.ts": ql,
-  "../readers/fs.ts": Hl,
-  "../readers/geo.ts": Wl,
-  "../readers/gii.ts": Zu,
-  "../readers/ico.ts": Ju,
-  "../readers/iwm.ts": $u,
-  "../readers/mz3.ts": ed,
-  "../readers/nv.ts": td,
-  "../readers/obj.ts": id,
-  "../readers/off.ts": nd,
-  "../readers/ply.ts": sd,
-  "../readers/srf.ts": od,
-  "../readers/stl.ts": ad,
-  "../readers/vtk.ts": ud,
-  "../readers/wrl.ts": dd,
-  "../readers/x3d.ts": bd
-}), px = cr(fx), mx = /* @__PURE__ */ Object.assign({
-  "../../volume/readers/afni.ts": Ad,
-  "../../volume/readers/bmp.ts": wd,
-  "../../volume/readers/ecat.ts": Ed,
-  "../../volume/readers/fib.ts": Sd,
-  "../../volume/readers/iwi.ts": Rd,
-  "../../volume/readers/mgh.ts": Md,
-  "../../volume/readers/mha.ts": Pd,
-  "../../volume/readers/mif.ts": Dd,
-  "../../volume/readers/nii.ts": Cd,
-  "../../volume/readers/npy.ts": Id,
-  "../../volume/readers/nrrd.ts": Bd,
-  "../../volume/readers/src.ts": Ld,
-  "../../volume/readers/vmr.ts": _d
-}), gx = cr(mx), xx = {
+const px = /* @__PURE__ */ Object.assign({
+  "../readers/asc.ts": Yu,
+  "../readers/dfs.ts": Ku,
+  "../readers/fs.ts": Qu,
+  "../readers/geo.ts": Zu,
+  "../readers/gii.ts": $u,
+  "../readers/ico.ts": ed,
+  "../readers/iwm.ts": td,
+  "../readers/mz3.ts": rd,
+  "../readers/nv.ts": id,
+  "../readers/obj.ts": sd,
+  "../readers/off.ts": od,
+  "../readers/ply.ts": ad,
+  "../readers/srf.ts": ld,
+  "../readers/stl.ts": cd,
+  "../readers/vtk.ts": hd,
+  "../readers/wrl.ts": fd,
+  "../readers/x3d.ts": Ad
+}), mx = cr(px), gx = /* @__PURE__ */ Object.assign({
+  "../../volume/readers/afni.ts": Ed,
+  "../../volume/readers/bmp.ts": Sd,
+  "../../volume/readers/ecat.ts": Md,
+  "../../volume/readers/fib.ts": Rd,
+  "../../volume/readers/iwi.ts": Pd,
+  "../../volume/readers/mgh.ts": Dd,
+  "../../volume/readers/mha.ts": Cd,
+  "../../volume/readers/mif.ts": Ud,
+  "../../volume/readers/nii.ts": Id,
+  "../../volume/readers/npy.ts": Ld,
+  "../../volume/readers/nrrd.ts": _d,
+  "../../volume/readers/src.ts": Od,
+  "../../volume/readers/vmr.ts": Fd
+}), xx = cr(gx), vx = {
   nFrame4D: 1,
   frame4D: 0,
   calMin: 0,
@@ -9058,7 +9069,7 @@ function Yn(t, e, r = {}) {
     Object.entries(r).filter(([, c]) => c !== void 0)
   );
   return {
-    ...xx,
+    ...vx,
     ...l,
     values: t,
     globalMin: i,
@@ -9068,13 +9079,13 @@ function Yn(t, e, r = {}) {
     nFrame4D: s
   };
 }
-async function vx(t, e, r) {
+async function yx(t, e, r) {
   var o;
   e = e.toUpperCase();
-  const i = hx.get(e);
+  const i = fx.get(e);
   if (i)
     return await i.read(t, r);
-  const n = px.get(e);
+  const n = mx.get(e);
   if (n) {
     const a = await n.read(t, r);
     if (a.scalars && a.scalars.length > 0) {
@@ -9087,7 +9098,7 @@ async function vx(t, e, r) {
     }
     throw new Error(`Mesh reader for ${e} returned no scalar data`);
   }
-  const s = gx.get(e);
+  const s = xx.get(e);
   if (s) {
     const a = await s.read(t), l = a.hdr, c = l.dims[1] * l.dims[2] * l.dims[3];
     c !== r && Y.warn(`Volume has ${c} voxels but mesh has ${r} vertices`);
@@ -9103,13 +9114,13 @@ async function vx(t, e, r) {
     }
     return { values: h, nFrame4D: u };
   }
-  if ((o = Rr == null ? void 0 : Rr.isCurv) != null && o.call(Rr, t))
-    return await Rr.read(t, r);
+  if ((o = Mr == null ? void 0 : Mr.isCurv) != null && o.call(Mr, t))
+    return await Mr.read(t, r);
   throw new Error(`No layer reader available for extension "${e}"`);
 }
-async function Nd(t, e) {
+async function zd(t, e) {
   const r = await Qt(t), i = xr(t);
-  return vx(r, i, e);
+  return yx(r, i, e);
 }
 function hi(t, e, r, i) {
   var s, o, a;
@@ -9125,51 +9136,51 @@ function hi(t, e, r, i) {
     const c = l.calMin, u = l.calMax, d = l.colormapType ?? lt.ZERO_TO_MAX_TRANSPARENT_BELOW_MIN, h = d !== lt.MIN_TO_MAX;
     let f, p = null;
     const g = l.colormapLabel !== null;
-    g ? f = ((s = l.colormapLabel) == null ? void 0 : s.lut) ?? new Uint8ClampedArray(0) : (f = ut(l.colormap), l.colormapNegative && (p = ut(l.colormapNegative)));
-    const m = h ? 0 : c, y = u - m, [A, v] = qs(
+    g ? f = ((s = l.colormapLabel) == null ? void 0 : s.lut) ?? new Uint8ClampedArray(0) : (f = ct(l.colormap), l.colormapNegative && (p = ct(l.colormapNegative)));
+    const m = h ? 0 : c, v = u - m, [A, b] = qs(
       c,
       u,
       l.calMinNeg,
       l.calMaxNeg
-    ), E = h ? 0 : A, b = v - E, x = l.frame4D * n, T = l.opacity;
+    ), E = h ? 0 : A, y = b - E, x = l.frame4D * n, T = l.opacity;
     for (let S = 0; S < n; S++) {
       const P = l.values[x + S];
       if (P === void 0) continue;
       let U, _, O, w;
       if (g) {
-        const k = ((o = l.colormapLabel) == null ? void 0 : o.min) ?? 0, F = ((a = l.colormapLabel) == null ? void 0 : a.max) ?? 0, X = Math.round(P);
-        if (X < k || X > F) continue;
-        const q = (X - k) * 4;
+        const G = ((o = l.colormapLabel) == null ? void 0 : o.min) ?? 0, F = ((a = l.colormapLabel) == null ? void 0 : a.max) ?? 0, X = Math.round(P);
+        if (X < G || X > F) continue;
+        const q = (X - G) * 4;
         if (U = f[q], _ = f[q + 1], O = f[q + 2], w = f[q + 3], w === 0) continue;
         w = w * T / 255;
       } else if (p && P < 0) {
-        const k = Math.abs(P);
-        if (b <= 0 || k < A && d !== lt.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN && !(d === lt.MIN_TO_MAX && !l.isTransparentBelowCalMin))
+        const G = Math.abs(P);
+        if (y <= 0 || G < A && d !== lt.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN && !(d === lt.MIN_TO_MAX && !l.isTransparentBelowCalMin))
           continue;
-        const F = (k - E) / b, X = Math.max(
+        const F = (G - E) / y, X = Math.max(
           0,
           Math.min(255, Math.round(Math.max(0, Math.min(1, F)) * 255))
         ), q = l.isColormapInverted ? 255 - X : X;
-        U = p[q * 4], _ = p[q * 4 + 1], O = p[q * 4 + 2], w = T, d === lt.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN && k < A && A > 0 && (w *= (k / A) ** 2);
+        U = p[q * 4], _ = p[q * 4 + 1], O = p[q * 4 + 2], w = T, d === lt.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN && G < A && A > 0 && (w *= (G / A) ** 2);
       } else {
-        if (y <= 0 || P >= 0 && P < c && d !== lt.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN && !(d === lt.MIN_TO_MAX && !l.isTransparentBelowCalMin))
+        if (v <= 0 || P >= 0 && P < c && d !== lt.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN && !(d === lt.MIN_TO_MAX && !l.isTransparentBelowCalMin))
           continue;
-        const k = (P - m) / y, F = Math.max(
+        const G = (P - m) / v, F = Math.max(
           0,
-          Math.min(255, Math.round(Math.max(0, Math.min(1, k)) * 255))
+          Math.min(255, Math.round(Math.max(0, Math.min(1, G)) * 255))
         ), X = l.isColormapInverted ? 255 - F : F;
         U = f[X * 4], _ = f[X * 4 + 1], O = f[X * 4 + 2], w = T, d === lt.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN && P > 0 && P < c && c > 0 && (w *= (P / c) ** 2);
       }
       const D = i[S];
-      let R = D & 255, C = D >> 8 & 255, I = D >> 16 & 255, V = D >> 24 & 255;
-      l.isAdditiveBlend ? (R = Math.min(255, R + Math.round(U * w)), C = Math.min(255, C + Math.round(_ * w)), I = Math.min(255, I + Math.round(O * w))) : (R = Math.round(U * w + R * (1 - w)), C = Math.round(_ * w + C * (1 - w)), I = Math.round(O * w + I * (1 - w))), V = Math.max(V, Math.round(w * 255)), i[S] = V << 24 | I << 16 | C << 8 | R;
+      let M = D & 255, C = D >> 8 & 255, I = D >> 16 & 255, V = D >> 24 & 255;
+      l.isAdditiveBlend ? (M = Math.min(255, M + Math.round(U * w)), C = Math.min(255, C + Math.round(_ * w)), I = Math.min(255, I + Math.round(O * w))) : (M = Math.round(U * w + M * (1 - w)), C = Math.round(_ * w + C * (1 - w)), I = Math.round(O * w + I * (1 - w))), V = Math.max(V, Math.round(w * 255)), i[S] = V << 24 | I << 16 | C << 8 | M;
     }
   }
 }
-async function yx(t, e) {
+async function bx(t, e) {
   const r = [];
   for (const i of t) {
-    const n = await Nd(i.url, e), s = typeof i.url == "string" ? i.url : i.url.name;
+    const n = await zd(i.url, e), s = typeof i.url == "string" ? i.url : i.url.name;
     r.push(
       Yn(n.values, e, {
         nFrame4D: n.nFrame4D,
@@ -9203,8 +9214,8 @@ function So(t, e) {
     if (f < n || f > s) continue;
     const p = i[f - n];
     if (!p) continue;
-    const g = t[h * 3], m = t[h * 3 + 1], y = t[h * 3 + 2];
-    a[p] = (a[p] ?? 0) + g, l[p] = (l[p] ?? 0) + m, c[p] = (c[p] ?? 0) + y, u[p] = (u[p] ?? 0) + 1;
+    const g = t[h * 3], m = t[h * 3 + 1], v = t[h * 3 + 2];
+    a[p] = (a[p] ?? 0) + g, l[p] = (l[p] ?? 0) + m, c[p] = (c[p] ?? 0) + v, u[p] = (u[p] ?? 0) + 1;
   }
   const d = {};
   for (const h of Object.keys(u)) {
@@ -9213,8 +9224,8 @@ function So(t, e) {
   }
   return d;
 }
-const bx = ["TCK"];
-async function Tx(t) {
+const Tx = ["TCK"];
+async function Ax(t) {
   const e = t.byteLength;
   if (e < 20) throw new Error("File too small to be TCK");
   const r = new Uint8Array(t);
@@ -9254,12 +9265,12 @@ async function Tx(t) {
     dpsMeta: {}
   };
 }
-const Ax = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const wx = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: bx,
-  read: Tx
-}, Symbol.toStringTag, { value: "Module" })), wx = ["TRK"];
-async function Ex(t) {
+  extensions: Tx,
+  read: Ax
+}, Symbol.toStringTag, { value: "Module" })), Ex = ["TRK"];
+async function Sx(t) {
   t = await Ar(t);
   const e = new DataView(t), r = e.getUint32(0, !0);
   if (r !== 1128354388)
@@ -9272,68 +9283,68 @@ async function Ex(t) {
       `Not a valid TRK file, expected version 3 or earlier with header size 1000, not version ${i} size ${n}`
     );
   const s = e.getInt16(36, !0), o = [];
-  for (let R = 0; R < s; R++) {
-    const C = new Uint8Array(t.slice(38 + R * 20, 58 + R * 20)), I = new TextDecoder().decode(C).split("\0")[0].trim();
-    o.push(I || `scalar_${R}`);
+  for (let M = 0; M < s; M++) {
+    const C = new Uint8Array(t.slice(38 + M * 20, 58 + M * 20)), I = new TextDecoder().decode(C).split("\0")[0].trim();
+    o.push(I || `scalar_${M}`);
   }
   const a = e.getInt16(238, !0), l = [];
-  for (let R = 0; R < a; R++) {
-    const C = new Uint8Array(t.slice(240 + R * 20, 260 + R * 20)), I = new TextDecoder().decode(C).split("\0")[0].trim();
-    l.push(I || `property_${R}`);
+  for (let M = 0; M < a; M++) {
+    const C = new Uint8Array(t.slice(240 + M * 20, 260 + M * 20)), I = new TextDecoder().decode(C).split("\0")[0].trim();
+    l.push(I || `property_${M}`);
   }
   const c = e.getFloat32(12, !0), u = e.getFloat32(16, !0), d = e.getFloat32(20, !0), h = new Float32Array(16);
-  for (let R = 0; R < 16; R++)
-    h[R] = e.getFloat32(440 + R * 4, !0);
+  for (let M = 0; M < 16; M++)
+    h[M] = e.getFloat32(440 + M * 4, !0);
   h[15] === 0 && (Y.warn("TRK vox_to_ras not set, using identity"), h[0] = 1, h[5] = 1, h[10] = 1, h[15] = 1);
-  const f = new Float32Array(16), p = 1 / c, g = 1 / u, m = 1 / d, y = -0.5;
-  f[0] = p * h[0] + y * h[12], f[1] = p * h[1] + y * h[13], f[2] = p * h[2] + y * h[14], f[3] = p * h[3] + y * h[15], f[4] = g * h[4] + y * h[12], f[5] = g * h[5] + y * h[13], f[6] = g * h[6] + y * h[14], f[7] = g * h[7] + y * h[15], f[8] = m * h[8] + y * h[12], f[9] = m * h[9] + y * h[13], f[10] = m * h[10] + y * h[14], f[11] = m * h[11] + y * h[15], f[12] = h[12], f[13] = h[13], f[14] = h[14], f[15] = h[15];
-  const A = new Int32Array(t.slice(n)), v = new Float32Array(A.buffer), E = A.length;
+  const f = new Float32Array(16), p = 1 / c, g = 1 / u, m = 1 / d, v = -0.5;
+  f[0] = p * h[0] + v * h[12], f[1] = p * h[1] + v * h[13], f[2] = p * h[2] + v * h[14], f[3] = p * h[3] + v * h[15], f[4] = g * h[4] + v * h[12], f[5] = g * h[5] + v * h[13], f[6] = g * h[6] + v * h[14], f[7] = g * h[7] + v * h[15], f[8] = m * h[8] + v * h[12], f[9] = m * h[9] + v * h[13], f[10] = m * h[10] + v * h[14], f[11] = m * h[11] + v * h[15], f[12] = h[12], f[13] = h[13], f[14] = h[14], f[15] = h[15];
+  const A = new Int32Array(t.slice(n)), b = new Float32Array(A.buffer), E = A.length;
   if (E < 1) throw new Error("Empty TRK file");
-  let b = new Float32Array(E), x = new Uint32Array(E / 4), T = 0, S = 0, P = 0;
+  let y = new Float32Array(E), x = new Uint32Array(E / 4), T = 0, S = 0, P = 0;
   const U = o.map(() => []), _ = l.map(() => []);
   let O = 0;
   for (; O < E; ) {
-    const R = A[O];
-    if (O++, !Number.isFinite(R) || R < 1) break;
+    const M = A[O];
+    if (O++, !Number.isFinite(M) || M < 1) break;
     x[P++] = T;
-    for (let C = 0; C < R; C++) {
-      const I = v[O], V = v[O + 1], k = v[O + 2];
-      O += 3, b[S++] = I * f[0] + V * f[1] + k * f[2] + f[3], b[S++] = I * f[4] + V * f[5] + k * f[6] + f[7], b[S++] = I * f[8] + V * f[9] + k * f[10] + f[11];
+    for (let C = 0; C < M; C++) {
+      const I = b[O], V = b[O + 1], G = b[O + 2];
+      O += 3, y[S++] = I * f[0] + V * f[1] + G * f[2] + f[3], y[S++] = I * f[4] + V * f[5] + G * f[6] + f[7], y[S++] = I * f[8] + V * f[9] + G * f[10] + f[11];
       for (let F = 0; F < s; F++)
-        U[F].push(v[O]), O++;
+        U[F].push(b[O]), O++;
       T++;
     }
     for (let C = 0; C < a; C++)
-      _[C].push(v[O]), O++;
+      _[C].push(b[O]), O++;
   }
-  x[P++] = T, b = b.slice(0, S), x = x.slice(0, P);
+  x[P++] = T, y = y.slice(0, S), x = x.slice(0, P);
   const w = {};
-  for (let R = 0; R < o.length; R++)
-    w[o[R]] = Float32Array.from(U[R]);
+  for (let M = 0; M < o.length; M++)
+    w[o[M]] = Float32Array.from(U[M]);
   const D = {};
-  for (let R = 0; R < l.length; R++)
-    D[l[R]] = Float32Array.from(_[R]);
-  return { vertices: b, offsets: x, dpv: w, dps: D, groups: {}, dpvMeta: {}, dpsMeta: {} };
+  for (let M = 0; M < l.length; M++)
+    D[l[M]] = Float32Array.from(_[M]);
+  return { vertices: y, offsets: x, dpv: w, dps: D, groups: {}, dpvMeta: {}, dpsMeta: {} };
 }
-const Sx = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Mx = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: wx,
-  read: Ex
+  extensions: Ex,
+  read: Sx
 }, Symbol.toStringTag, { value: "Module" })), Rx = ["TRX"];
-function Mx(t) {
+function Px(t) {
   const e = (t & 31744) >> 10, r = t & 1023;
   return (t >> 15 ? -1 : 1) * (e ? e === 31 ? r ? NaN : 1 / 0 : 2 ** (e - 15) * (1 + r / 1024) : 6103515625e-14 * (r / 1024));
 }
 let Zi = null;
-function Px() {
+function Dx() {
   if (!Zi) {
     Zi = new Float32Array(65536);
     for (let t = 0; t < 65536; t++)
-      Zi[t] = Mx(t);
+      Zi[t] = Px(t);
   }
   return Zi;
 }
-function Dx(t, e) {
+function Cx(t, e) {
   if (t.endsWith(".float32"))
     return new Float32Array(e.buffer, e.byteOffset, e.byteLength / 4);
   if (t.endsWith(".float64")) {
@@ -9349,7 +9360,7 @@ function Dx(t, e) {
       e.buffer,
       e.byteOffset,
       e.byteLength / 2
-    ), i = Px(), n = new Float32Array(r.length);
+    ), i = Dx(), n = new Float32Array(r.length);
     for (let s = 0; s < r.length; s++) n[s] = i[r[s]];
     return n;
   }
@@ -9396,52 +9407,52 @@ function Dx(t, e) {
   }
   return null;
 }
-async function Cx(t) {
+async function Ux(t) {
   var d;
-  const e = new Ud(t);
+  const e = new Bd(t);
   let r = null, i = null;
   const n = {}, s = {}, o = [], a = {};
   for (const h of e.entries) {
     if (h.uncompressedSize === 0) continue;
     const f = h.fileName.split("/"), p = f[f.length - 1];
     if (p.startsWith(".")) continue;
-    const g = f[f.length - 2] ?? "", m = f[f.length - 3] ?? "", y = p.split(".")[0];
+    const g = f[f.length - 2] ?? "", m = f[f.length - 3] ?? "", v = p.split(".")[0];
     if (p.includes("header.json"))
       continue;
     const A = await ((d = h.extract) == null ? void 0 : d.call(h));
     if (!A) continue;
-    const v = Dx(p, A);
-    if (v) {
+    const b = Cx(p, A);
+    if (b) {
       if (g === "groups") {
         o.push({
-          id: y,
-          vals: v instanceof Uint32Array ? v : Uint32Array.from(v)
+          id: v,
+          vals: b instanceof Uint32Array ? b : Uint32Array.from(b)
         });
         continue;
       }
       if (m === "dpg") {
         const E = g;
         a[E] || (a[E] = []), a[E].push({
-          id: y,
-          vals: v instanceof Float32Array ? v : Float32Array.from(v)
+          id: v,
+          vals: b instanceof Float32Array ? b : Float32Array.from(b)
         });
         continue;
       }
       if (g === "dpv") {
-        n[y] = v instanceof Float32Array ? v : Float32Array.from(v);
+        n[v] = b instanceof Float32Array ? b : Float32Array.from(b);
         continue;
       }
       if (g === "dps") {
-        s[y] = v instanceof Float32Array ? v : Float32Array.from(v);
+        s[v] = b instanceof Float32Array ? b : Float32Array.from(b);
         continue;
       }
-      p.startsWith("offsets.") && (i = v instanceof Uint32Array ? v : Uint32Array.from(v)), p.startsWith("positions.3.") && (r = v instanceof Float32Array ? v : Float32Array.from(v));
+      p.startsWith("offsets.") && (i = b instanceof Uint32Array ? b : Uint32Array.from(b)), p.startsWith("positions.3.") && (r = b instanceof Float32Array ? b : Float32Array.from(b));
     }
   }
   if (!r || !i)
     throw new Error("Invalid TRX file: missing positions or offsets");
   const l = i.length, c = new Uint32Array(l + 1);
-  c.set(i), c[l] = r.length / 3, o.length > 0 && Object.keys(a).length > 0 && Ux(a, o, l, s);
+  c.set(i), c[l] = r.length / 3, o.length > 0 && Object.keys(a).length > 0 && Ix(a, o, l, s);
   const u = {};
   for (const h of o)
     u[h.id] = h.vals;
@@ -9457,7 +9468,7 @@ async function Cx(t) {
     dpsMeta: {}
   };
 }
-function Ux(t, e, r, i) {
+function Ix(t, e, r, i) {
   const n = /* @__PURE__ */ new Set();
   for (const s in t)
     for (const o of t[s])
@@ -9476,12 +9487,12 @@ function Ux(t, e, r, i) {
     i[`dpg:${s}`] = o;
   }
 }
-const Ix = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Bx = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   extensions: Rx,
-  read: Cx
-}, Symbol.toStringTag, { value: "Module" })), Bx = ["TT"];
-async function Lx(t) {
+  read: Ux
+}, Symbol.toStringTag, { value: "Module" })), Lx = ["TT"];
+async function _x(t) {
   const e = await Eo(t);
   if (!("trans_to_mni" in e))
     throw new Error("TT format file must have 'trans_to_mni'");
@@ -9489,16 +9500,16 @@ async function Lx(t) {
     throw new Error("TT format file must have 'voxel_size'");
   if (!("track" in e))
     throw new Error("TT format file must have 'track'");
-  const r = e.trans_to_mni, i = r[0], n = r[1], s = r[2], o = r[3], a = r[4], l = r[5], c = r[6], u = r[7], d = r[8], h = r[9], f = r[10], p = r[11], g = e.track, m = new DataView(g.buffer, g.byteOffset, g.byteLength), y = g.length;
-  let A = 0, v = 0, E = 0;
-  for (; E < y; ) {
+  const r = e.trans_to_mni, i = r[0], n = r[1], s = r[2], o = r[3], a = r[4], l = r[5], c = r[6], u = r[7], d = r[8], h = r[9], f = r[10], p = r[11], g = e.track, m = new DataView(g.buffer, g.byteOffset, g.byteLength), v = g.length;
+  let A = 0, b = 0, E = 0;
+  for (; E < v; ) {
     const U = m.getUint32(E, !0), _ = U / 3;
-    v += _, A++, E += U + 13;
+    b += _, A++, E += U + 13;
   }
-  const b = new Float32Array(v * 3), x = new Uint32Array(A + 1);
+  const y = new Float32Array(b * 3), x = new Uint32Array(A + 1);
   E = 0;
   let T = 0, S = 0;
-  for (; E < y; ) {
+  for (; E < v; ) {
     x[T] = S / 3;
     const U = m.getUint32(E, !0) / 3;
     E += 4;
@@ -9507,21 +9518,21 @@ async function Lx(t) {
     let O = m.getInt32(E, !0);
     E += 4;
     let w = m.getInt32(E, !0);
-    E += 4, b[S++] = _, b[S++] = O, b[S++] = w;
+    E += 4, y[S++] = _, y[S++] = O, y[S++] = w;
     for (let D = 2; D <= U; D++)
-      _ += m.getInt8(E++), O += m.getInt8(E++), w += m.getInt8(E++), b[S++] = _, b[S++] = O, b[S++] = w;
+      _ += m.getInt8(E++), O += m.getInt8(E++), w += m.getInt8(E++), y[S++] = _, y[S++] = O, y[S++] = w;
     T++;
   }
   x[T] = S / 3;
   for (let U = 0; U < S; U++)
-    b[U] /= 32;
+    y[U] /= 32;
   let P = 0;
   for (let U = 0; U < S / 3; U++) {
-    const _ = b[P], O = b[P + 1], w = b[P + 2];
-    b[P] = _ * i + O * n + w * s + o, b[P + 1] = _ * a + O * l + w * c + u, b[P + 2] = _ * d + O * h + w * f + p, P += 3;
+    const _ = y[P], O = y[P + 1], w = y[P + 2];
+    y[P] = _ * i + O * n + w * s + o, y[P + 1] = _ * a + O * l + w * c + u, y[P + 2] = _ * d + O * h + w * f + p, P += 3;
   }
   return {
-    vertices: b,
+    vertices: y,
     offsets: x,
     dpv: {},
     dps: {},
@@ -9530,24 +9541,24 @@ async function Lx(t) {
     dpsMeta: {}
   };
 }
-const _x = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Ox = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Bx,
-  read: Lx
-}, Symbol.toStringTag, { value: "Module" })), Ox = /* @__PURE__ */ Object.assign({
-  "./readers/tck.ts": Ax,
-  "./readers/trk.ts": Sx,
-  "./readers/trx.ts": Ix,
-  "./readers/tt.ts": _x
-}), Ro = cr(Ox);
-function Fx() {
-  return Array.from(Ro.keys()).sort();
-}
-function Nx(t) {
-  return Ro.has(t.toUpperCase());
+  extensions: Lx,
+  read: _x
+}, Symbol.toStringTag, { value: "Module" })), Fx = /* @__PURE__ */ Object.assign({
+  "./readers/tck.ts": wx,
+  "./readers/trk.ts": Mx,
+  "./readers/trx.ts": Bx,
+  "./readers/tt.ts": Ox
+}), Mo = cr(Fx);
+function Nx() {
+  return Array.from(Mo.keys()).sort();
 }
 function Vx(t) {
-  return Ro.get(t.toUpperCase());
+  return Mo.has(t.toUpperCase());
+}
+function zx(t) {
+  return Mo.get(t.toUpperCase());
 }
 function la(t) {
   let e = 1 / 0, r = -1 / 0;
@@ -9560,7 +9571,7 @@ function la(t) {
     globalMax: Number.isFinite(r) ? r : 0
   };
 }
-function zx(t) {
+function kx(t) {
   for (const [e, r] of Object.entries(t.dpv))
     t.dpvMeta[e] = la(r);
   for (const [e, r] of Object.entries(t.dps))
@@ -9581,12 +9592,12 @@ const Gx = {
   fixedColor: [255, 255, 255, 255],
   groupColors: null
 };
-function kx(t, e) {
+function Xx(t, e) {
   return e.startsWith("dpv:") ? t.dpv[e.slice(4)] ?? null : e.startsWith("dps:") ? t.dps[e.slice(4)] ?? null : null;
 }
-function Vd(t, e) {
+function kd(t, e) {
   if (pr = null, e.colorBy !== "" && e.calMin === 0 && e.calMax === 0) {
-    const U = kx(t, e.colorBy);
+    const U = Xx(t, e.colorBy);
     if (U) {
       let _ = 1 / 0, O = -1 / 0;
       for (let w = 0; w < U.length; w++) {
@@ -9617,8 +9628,8 @@ function Vd(t, e) {
     if (!(w < 2)) {
       if (o > 0) {
         let D = 0;
-        for (let R = _ + 1; R < O; R++) {
-          const C = r[R * 3] - r[(R - 1) * 3], I = r[R * 3 + 1] - r[(R - 1) * 3 + 1], V = r[R * 3 + 2] - r[(R - 1) * 3 + 2];
+        for (let M = _ + 1; M < O; M++) {
+          const C = r[M * 3] - r[(M - 1) * 3], I = r[M * 3 + 1] - r[(M - 1) * 3 + 1], V = r[M * 3 + 2] - r[(M - 1) * 3 + 2];
           D += Math.sqrt(C * C + I * I + V * V);
         }
         if (D < o) continue;
@@ -9647,25 +9658,25 @@ function Vd(t, e) {
     const _ = i[U + 1] - i[U];
     m += (_ - 1) * s * 2;
   }
-  const y = new Uint32Array(m * 3);
-  let A = 0, v = 0;
-  const E = new Float32Array(s), b = new Float32Array(s);
+  const v = new Uint32Array(m * 3);
+  let A = 0, b = 0;
+  const E = new Float32Array(s), y = new Float32Array(s);
   for (let U = 0; U < s; U++) {
     const _ = U / s * Math.PI * 2;
-    E[U] = Math.cos(_), b[U] = Math.sin(_);
+    E[U] = Math.cos(_), y[U] = Math.sin(_);
   }
   const x = new Float32Array(3), T = new Float32Array(3), S = new Float32Array(3), P = new Float32Array(3);
   for (const U of h) {
     const _ = i[U], O = i[U + 1] - _;
     P[0] = 0, P[1] = 0, P[2] = 0;
     for (let w = 0; w < O; w++) {
-      const D = _ + w, R = r[D * 3], C = r[D * 3 + 1], I = r[D * 3 + 2];
+      const D = _ + w, M = r[D * 3], C = r[D * 3 + 1], I = r[D * 3 + 2];
       if (w === 0) {
         const X = D + 1;
-        x[0] = r[X * 3] - R, x[1] = r[X * 3 + 1] - C, x[2] = r[X * 3 + 2] - I;
+        x[0] = r[X * 3] - M, x[1] = r[X * 3 + 1] - C, x[2] = r[X * 3 + 2] - I;
       } else if (w === O - 1) {
         const X = D - 1;
-        x[0] = R - r[X * 3], x[1] = C - r[X * 3 + 1], x[2] = I - r[X * 3 + 2];
+        x[0] = M - r[X * 3], x[1] = C - r[X * 3 + 1], x[2] = I - r[X * 3 + 2];
       } else {
         const X = D + 1, q = D - 1;
         x[0] = r[X * 3] - r[q * 3], x[1] = r[X * 3 + 1] - r[q * 3 + 1], x[2] = r[X * 3 + 2] - r[q * 3 + 2];
@@ -9676,27 +9687,27 @@ function Vd(t, e) {
         T[0] = x[1] * Q - x[2] * q, T[1] = x[2] * X - x[0] * Q, T[2] = x[0] * q - x[1] * X, V = Math.sqrt(T[0] * T[0] + T[1] * T[1] + T[2] * T[2]), V > 1e-6 && (T[0] /= V, T[1] /= V, T[2] /= V);
       }
       (w === 0 || V <= 1e-6) && (Math.abs(x[2]) < 0.9 ? (T[0] = -x[1], T[1] = x[0], T[2] = 0) : (T[0] = 0, T[1] = -x[2], T[2] = x[1]), V = Math.sqrt(T[0] * T[0] + T[1] * T[1] + T[2] * T[2]), V > 0 && (T[0] /= V, T[1] /= V, T[2] /= V)), P[0] = T[0], P[1] = T[1], P[2] = T[2], S[0] = x[1] * T[2] - x[2] * T[1], S[1] = x[2] * T[0] - x[0] * T[2], S[2] = x[0] * T[1] - x[1] * T[0];
-      const k = c ? c.get(U) : qx(t, e, U, D, _, x), F = A;
+      const G = c ? c.get(U) : Hx(t, e, U, D, _, x), F = A;
       for (let X = 0; X < s; X++) {
-        const q = E[X], Q = b[X], ee = n * (q * T[0] + Q * S[0]), J = n * (q * T[1] + Q * S[1]), ge = n * (q * T[2] + Q * S[2]), Ae = A * 3;
-        p[Ae] = R + ee, p[Ae + 1] = C + J, p[Ae + 2] = I + ge, g[A] = k, A++;
+        const q = E[X], Q = y[X], ee = n * (q * T[0] + Q * S[0]), J = n * (q * T[1] + Q * S[1]), ge = n * (q * T[2] + Q * S[2]), Ae = A * 3;
+        p[Ae] = M + ee, p[Ae + 1] = C + J, p[Ae + 2] = I + ge, g[A] = G, A++;
       }
       if (w > 0) {
         const X = F - s;
         for (let q = 0; q < s; q++) {
           const Q = (q + 1) % s;
-          y[v++] = X + q, y[v++] = F + q, y[v++] = F + Q, y[v++] = X + q, y[v++] = F + Q, y[v++] = X + Q;
+          v[b++] = X + q, v[b++] = F + q, v[b++] = F + Q, v[b++] = X + q, v[b++] = F + Q, v[b++] = X + Q;
         }
       }
     }
   }
-  return { positions: p, indices: y, colors: g };
+  return { positions: p, indices: v, colors: g };
 }
 let pr = null;
-function Xx(t, e) {
+function qx(t, e) {
   if (pr && pr.colorBy === e.colorBy && pr.colormap === e.colormap && pr.colormapNegative === e.colormapNegative)
     return pr;
-  const r = ut(e.colormap), i = e.colormapNegative ? ut(e.colormapNegative) : null;
+  const r = ct(e.colormap), i = e.colormapNegative ? ct(e.colormapNegative) : null;
   let n = null, s = !1;
   if (e.colorBy.startsWith("dpv:")) {
     const o = e.colorBy.slice(4);
@@ -9715,34 +9726,34 @@ function Xx(t, e) {
     isPerVertex: s
   }, pr;
 }
-function qx(t, e, r, i, n, s) {
+function Hx(t, e, r, i, n, s) {
   if (e.colorBy === "" || e.colorBy === "local") {
-    const E = Math.round(Math.abs(s[0]) * 255), b = Math.round(Math.abs(s[1]) * 255), x = Math.round(Math.abs(s[2]) * 255);
-    return 255 << 24 | x << 16 | b << 8 | E;
+    const E = Math.round(Math.abs(s[0]) * 255), y = Math.round(Math.abs(s[1]) * 255), x = Math.round(Math.abs(s[2]) * 255);
+    return 255 << 24 | x << 16 | y << 8 | E;
   }
   if (e.colorBy === "global") {
-    const E = t.offsets, b = t.vertices, x = E[r] * 3, T = (E[r + 1] - 1) * 3;
-    let S = b[T] - b[x], P = b[T + 1] - b[x + 1], U = b[T + 2] - b[x + 2];
+    const E = t.offsets, y = t.vertices, x = E[r] * 3, T = (E[r + 1] - 1) * 3;
+    let S = y[T] - y[x], P = y[T + 1] - y[x + 1], U = y[T + 2] - y[x + 2];
     const _ = Math.sqrt(S * S + P * P + U * U);
     _ > 0 && (S /= _, P /= _, U /= _);
     const O = Math.round(Math.abs(S) * 255), w = Math.round(Math.abs(P) * 255), D = Math.round(Math.abs(U) * 255);
     return 255 << 24 | D << 16 | w << 8 | O;
   }
   if (e.colorBy === "fixed") {
-    const [E, b, x, T] = e.fixedColor;
-    return T << 24 | x << 16 | b << 8 | E;
+    const [E, y, x, T] = e.fixedColor;
+    return T << 24 | x << 16 | y << 8 | E;
   }
-  const o = Xx(t, e);
+  const o = qx(t, e);
   if (!o.scalarArray) return 4294967295;
   const a = o.isPerVertex ? o.scalarArray[i] ?? 0 : o.scalarArray[r] ?? 0;
   if (!Number.isFinite(a)) return 0;
   const l = Math.abs(a), c = a < 0 && o.lutNeg, u = c ? o.lutNeg : o.lut, d = c && e.calMinNeg || e.calMin, h = c && e.calMaxNeg || e.calMax;
   if (d > 0 && l < d) return 0;
-  const f = h - d, p = f > 0 ? Math.max(0, Math.min(1, (l - d) / f)) : 0, g = u.length / 4, m = Math.min(g - 1, Math.floor(p * (g - 1))) * 4, y = u[m], A = u[m + 1], v = u[m + 2];
-  return u[m + 3] << 24 | v << 16 | A << 8 | y;
+  const f = h - d, p = f > 0 ? Math.max(0, Math.min(1, (l - d) / f)) : 0, g = u.length / 4, m = Math.min(g - 1, Math.floor(p * (g - 1))) * 4, v = u[m], A = u[m + 1], b = u[m + 2];
+  return u[m + 3] << 24 | b << 16 | A << 8 | v;
 }
-const ca = /* @__PURE__ */ new Set(["TSF"]), Hx = /* @__PURE__ */ new Set(["TXT"]);
-function Wx(t, e) {
+const ca = /* @__PURE__ */ new Set(["TSF"]), Wx = /* @__PURE__ */ new Set(["TXT"]);
+function jx(t, e) {
   const r = t.byteLength;
   if (r < 20) throw new Error("File too small to be TSF");
   const i = new Uint8Array(t);
@@ -9772,7 +9783,7 @@ function Wx(t, e) {
   }
   return c;
 }
-function jx(t, e) {
+function Yx(t, e) {
   const r = new TextDecoder("utf-8").decode(t).split(/\r?\n|\r/).filter((s) => s.trim().length > 0), i = e > 0 ? e : r.length, n = new Float32Array(i);
   for (let s = 0; s < i && s < r.length; s++) {
     const o = parseFloat(r[s].trim());
@@ -9780,17 +9791,17 @@ function jx(t, e) {
   }
   return n;
 }
-async function Yx(t, e) {
+async function Kx(t, e) {
   const r = t.vertices.length / 3, i = t.offsets.length - 1;
   for (const n of e) {
     const s = xr(n.url).toUpperCase();
-    if (!ca.has(s) && !Hx.has(s)) continue;
+    if (!ca.has(s) && !Wx.has(s)) continue;
     const o = await Qt(n.url), a = uo(n.url), l = a.split("/").pop() ?? a, c = `.${s.toLowerCase()}`, u = n.name ?? (l.toLowerCase().endsWith(c) ? l.slice(0, -c.length) : l);
-    ca.has(s) ? (t.dpv[u] = Wx(o, r), Y.debug(`Loaded tract dpv "${u}" from TSF: ${r} values`)) : (t.dps[u] = jx(o, i), Y.debug(`Loaded tract dps "${u}" from TXT: ${i} values`));
+    ca.has(s) ? (t.dpv[u] = jx(o, r), Y.debug(`Loaded tract dpv "${u}" from TSF: ${r} values`)) : (t.dps[u] = Yx(o, i), Y.debug(`Loaded tract dps "${u}" from TXT: ${i} values`));
   }
 }
-const Kx = ["IWM.CBOR"];
-async function Qx(t, e) {
+const Qx = ["IWM.CBOR"];
+async function Zx(t, e) {
   const r = t.length / 3, i = e.length / 3, n = new Float32Array(t);
   for (let d = 0; d < n.length; d += 3)
     n[d] = -n[d], n[d + 1] = -n[d + 1];
@@ -9823,12 +9834,12 @@ async function Qx(t, e) {
     u.byteOffset + u.byteLength
   ).buffer;
 }
-const Zx = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Jx = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Kx,
-  write: Qx
-}, Symbol.toStringTag, { value: "Module" })), Jx = ["MZ3"];
-async function $x(t, e, r) {
+  extensions: Qx,
+  write: Zx
+}, Symbol.toStringTag, { value: "Module" })), $x = ["MZ3"];
+async function e1(t, e, r) {
   const i = t.length / 3, n = e.length / 3, s = 3, o = 16, a = n * 3 * 4, l = i * 3 * 4, c = new ArrayBuffer(o + a + l), u = new DataView(c);
   u.setUint16(0, 23117, !0), u.setUint16(2, s, !0), u.setUint32(4, n, !0), u.setUint32(8, i, !0), u.setUint32(12, 0, !0);
   let d = o;
@@ -9836,14 +9847,14 @@ async function $x(t, e, r) {
     u.setUint32(d, e[h], !0), d += 4;
   for (let h = 0; h < i * 3; h++)
     u.setFloat32(d, t[h], !0), d += 4;
-  return r != null && r.compress ? (await jl(new Uint8Array(c))).buffer : c;
+  return r != null && r.compress ? (await Ju(new Uint8Array(c))).buffer : c;
 }
-const e1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const t1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: Jx,
-  write: $x
-}, Symbol.toStringTag, { value: "Module" })), t1 = ["OBJ"];
-async function r1(t, e) {
+  extensions: $x,
+  write: e1
+}, Symbol.toStringTag, { value: "Module" })), r1 = ["OBJ"];
+async function i1(t, e) {
   let r = "";
   for (let i = 0; i < t.length; i += 3)
     r += `v ${t[i]} ${t[i + 1]} ${t[i + 2]}
@@ -9853,12 +9864,12 @@ async function r1(t, e) {
 `;
   return new TextEncoder().encode(r).buffer;
 }
-const i1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const n1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: t1,
-  write: r1
-}, Symbol.toStringTag, { value: "Module" })), n1 = ["STL"];
-async function s1(t, e) {
+  extensions: r1,
+  write: i1
+}, Symbol.toStringTag, { value: "Module" })), s1 = ["STL"];
+async function o1(t, e) {
   const r = e.length / 3, i = new ArrayBuffer(84 + r * 50), n = new DataView(i);
   n.setUint32(80, r, !0);
   let s = 84;
@@ -9868,55 +9879,55 @@ async function s1(t, e) {
   }
   return i;
 }
-const o1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const a1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: n1,
-  write: s1
-}, Symbol.toStringTag, { value: "Module" })), a1 = /* @__PURE__ */ Object.assign({
-  "./iwm.ts": Zx,
-  "./mz3.ts": e1,
-  "./obj.ts": i1,
-  "./stl.ts": o1
-}), zd = cr(a1, "./index.ts");
-function l1() {
-  return Array.from(new Set(Array.from(zd.keys()))).sort();
+  extensions: s1,
+  write: o1
+}, Symbol.toStringTag, { value: "Module" })), l1 = /* @__PURE__ */ Object.assign({
+  "./iwm.ts": Jx,
+  "./mz3.ts": t1,
+  "./obj.ts": n1,
+  "./stl.ts": a1
+}), Gd = cr(l1, "./index.ts");
+function c1() {
+  return Array.from(new Set(Array.from(Gd.keys()))).sort();
 }
-async function c1(t, e, r, i) {
-  const n = zd.get(t.toUpperCase());
+async function u1(t, e, r, i) {
+  const n = Gd.get(t.toUpperCase());
   if (!n)
     throw new Error(`No mesh writer available for extension: ${t}`);
   return n.write(e, r, i);
 }
-const u1 = /* @__PURE__ */ Object.assign({
-  "./readers/asc.ts": Xl,
-  "./readers/dfs.ts": ql,
-  "./readers/fs.ts": Hl,
-  "./readers/geo.ts": Wl,
-  "./readers/gii.ts": Zu,
-  "./readers/ico.ts": Ju,
-  "./readers/iwm.ts": $u,
-  "./readers/mz3.ts": ed,
-  "./readers/nv.ts": td,
-  "./readers/obj.ts": id,
-  "./readers/off.ts": nd,
-  "./readers/ply.ts": sd,
-  "./readers/srf.ts": od,
-  "./readers/stl.ts": ad,
-  "./readers/vtk.ts": ud,
-  "./readers/wrl.ts": dd,
-  "./readers/x3d.ts": bd
-}), wi = cr(u1);
-function d1() {
-  return l1();
+const d1 = /* @__PURE__ */ Object.assign({
+  "./readers/asc.ts": Yu,
+  "./readers/dfs.ts": Ku,
+  "./readers/fs.ts": Qu,
+  "./readers/geo.ts": Zu,
+  "./readers/gii.ts": $u,
+  "./readers/ico.ts": ed,
+  "./readers/iwm.ts": td,
+  "./readers/mz3.ts": rd,
+  "./readers/nv.ts": id,
+  "./readers/obj.ts": sd,
+  "./readers/off.ts": od,
+  "./readers/ply.ts": ad,
+  "./readers/srf.ts": ld,
+  "./readers/stl.ts": cd,
+  "./readers/vtk.ts": hd,
+  "./readers/wrl.ts": fd,
+  "./readers/x3d.ts": Ad
+}), wi = cr(d1);
+function h1() {
+  return c1();
 }
 function Ji() {
   return [
     ...Array.from(wi.keys()),
-    ...Fx(),
-    ...og()
+    ...Nx(),
+    ...ag()
   ].sort();
 }
-function h1(t, e, r) {
+function f1(t, e, r) {
   const i = wi.get(e.toUpperCase());
   if (!i)
     throw new Error(`No built-in mesh reader for target format "${e}"`);
@@ -9962,18 +9973,18 @@ function Kn(t, e, r, i = {}) {
     ...s
   };
 }
-async function Gd(t) {
+async function Xd(t) {
   const e = xr(t.url);
-  if (Nx(e))
-    return f1(t, e);
-  if (ag(e))
+  if (Vx(e))
     return p1(t, e);
+  if (lg(e))
+    return m1(t, e);
   let r = null;
   if (e === "VTK") {
-    const v = await Qt(t.url), E = await Ar(v);
-    if (ld(E) === "tract") {
-      const b = cd(E);
-      return kd(t, b);
+    const b = await Qt(t.url), E = await Ar(b);
+    if (ud(E) === "tract") {
+      const y = dd(E);
+      return qd(t, y);
     }
     r = E;
   }
@@ -10007,21 +10018,21 @@ async function Gd(t) {
   let p = null;
   const g = Math.round(l[3] * 255);
   if (d.colors) {
-    for (let v = 0; v < h; v++) {
-      const E = Math.round(d.colors[v * 3] * 255), b = Math.round(d.colors[v * 3 + 1] * 255), x = Math.round(d.colors[v * 3 + 2] * 255);
-      f[v] = g << 24 | x << 16 | b << 8 | E;
+    for (let b = 0; b < h; b++) {
+      const E = Math.round(d.colors[b * 3] * 255), y = Math.round(d.colors[b * 3 + 1] * 255), x = Math.round(d.colors[b * 3 + 2] * 255);
+      f[b] = g << 24 | x << 16 | y << 8 | E;
     }
     p = f.slice();
   } else {
-    const v = g << 24 | Math.round(l[2] * 255) << 16 | Math.round(l[1] * 255) << 8 | Math.round(l[0] * 255);
-    f.fill(v);
+    const b = g << 24 | Math.round(l[2] * 255) << 16 | Math.round(l[1] * 255) << 8 | Math.round(l[0] * 255);
+    f.fill(b);
   }
   const m = [];
   if (d.scalars && d.scalars.length > 0) {
-    const v = Math.max(1, Math.floor(d.scalars.length / h));
+    const b = Math.max(1, Math.floor(d.scalars.length / h));
     m.push(
       Yn(d.scalars, h, {
-        nFrame4D: v,
+        nFrame4D: b,
         colormap: "warm",
         opacity: 1,
         isColorbarVisible: !0,
@@ -10030,28 +10041,28 @@ async function Gd(t) {
     );
   }
   if (o && o.length > 0) {
-    const v = await yx(o, h);
-    m.push(...v);
+    const b = await bx(o, h);
+    m.push(...b);
   }
-  for (const v of m)
-    v.colormapLabel && (v.colormapLabel.centroids = So(
+  for (const b of m)
+    b.colormapLabel && (b.colormapLabel.centroids = So(
       d.positions,
-      v
+      b
     ));
   m.length > 0 && hi(p, l, m, f);
-  const y = typeof i == "string" ? i : i.name, A = {
+  const v = typeof i == "string" ? i : i.name, A = {
     ...a,
     color: l,
-    url: y,
-    name: a.name ?? y,
+    url: v,
+    name: a.name ?? v,
     layers: m,
     perVertexColors: p
   };
   return Kn(d.positions, d.indices, f, A);
 }
-async function kd(t, e) {
+async function qd(t, e) {
   var c;
-  t.layers && t.layers.length > 0 && await Yx(e, t.layers), zx(e);
+  t.layers && t.layers.length > 0 && await Kx(e, t.layers), kx(e);
   let r;
   (c = t.tractOptions) != null && c.fixedColor || (t.rgba255 ? r = [
     t.rgba255[0],
@@ -10068,7 +10079,7 @@ async function kd(t, e) {
     ...Gx,
     ...r && { fixedColor: r },
     ...t.tractOptions
-  }, { positions: n, indices: s, colors: o } = Vd(e, i), a = typeof t.url == "string" ? t.url : t.url.name, l = i.colorBy.startsWith("dpv:") || i.colorBy.startsWith("dps:");
+  }, { positions: n, indices: s, colors: o } = kd(e, i), a = typeof t.url == "string" ? t.url : t.url.name, l = i.colorBy.startsWith("dpv:") || i.colorBy.startsWith("dps:");
   return Kn(n, s, o, {
     kind: "tract",
     trx: e,
@@ -10081,20 +10092,20 @@ async function kd(t, e) {
     name: t.name ?? a
   });
 }
-async function f1(t, e) {
-  const r = Vx(e);
+async function p1(t, e) {
+  const r = zx(e);
   if (!r) throw new Error(`No tract reader for extension ${e}`);
   const i = await Qt(t.url), n = await r.read(i);
-  return kd(t, n);
+  return qd(t, n);
 }
-async function p1(t, e) {
-  const r = lg(e);
+async function m1(t, e) {
+  const r = cg(e);
   if (!r) throw new Error(`No connectome reader for extension ${e}`);
   const i = await Qt(t.url), n = await r.read(i), s = {
     ...wo,
     ...n.options,
     ...t.connectomeOptions
-  }, { positions: o, indices: a, colors: l } = Td(
+  }, { positions: o, indices: a, colors: l } = wd(
     n.data,
     s
   ), c = typeof t.url == "string" ? t.url : t.url.name;
@@ -10111,19 +10122,19 @@ async function p1(t, e) {
     name: t.name ?? c
   });
 }
-function m1(t) {
+function g1(t) {
   if (t.kind !== "tract" || !t.trx || !t.tractOptions) return;
-  const e = Vd(t.trx, t.tractOptions);
+  const e = kd(t.trx, t.tractOptions);
   t.positions = e.positions, t.indices = e.indices, t.colors = e.colors;
   const r = ve(1 / 0, 1 / 0, 1 / 0), i = ve(-1 / 0, -1 / 0, -1 / 0), n = e.positions.length / 3;
   for (let s = 0; s < n; s++)
     r[0] = Math.min(r[0], e.positions[s * 3]), r[1] = Math.min(r[1], e.positions[s * 3 + 1]), r[2] = Math.min(r[2], e.positions[s * 3 + 2]), i[0] = Math.max(i[0], e.positions[s * 3]), i[1] = Math.max(i[1], e.positions[s * 3 + 1]), i[2] = Math.max(i[2], e.positions[s * 3 + 2]);
   t.extentsMin = r, t.extentsMax = i;
 }
-function g1(t) {
+function x1(t) {
   if (t.kind !== "connectome" || !t.jcon || !t.connectomeOptions)
     return;
-  const e = Td(t.jcon, t.connectomeOptions);
+  const e = wd(t.jcon, t.connectomeOptions);
   t.positions = e.positions, t.indices = e.indices, t.colors = e.colors;
   const r = ve(1 / 0, 1 / 0, 1 / 0), i = ve(-1 / 0, -1 / 0, -1 / 0), n = e.positions.length / 3;
   for (let s = 0; s < n; s++)
@@ -10136,13 +10147,13 @@ function ci(t, e) {
 function wn(t, e, r) {
   return r === se.CORONAL ? [t.x, e, t.y] : r === se.SAGITTAL ? [e, t.x, t.y] : [t.x, t.y, e];
 }
-const x1 = [
+const v1 = [
   [0, 1],
   [0, 2],
   [1, 2]
 ], qt = [0, 0, 0];
 function Qr(t, e, r, i) {
-  const n = et(e), [s, o] = x1[e];
+  const n = et(e), [s, o] = v1[e];
   qt[0] = 0, qt[1] = 0, qt[2] = 0, qt[s] = t.x, qt[o] = t.y;
   const a = r[n];
   if (Math.abs(a) > 1e-10) {
@@ -10157,13 +10168,13 @@ function vr(t, e, r, i) {
     (t[0] - r[0]) * e[0] + (t[1] - r[1]) * e[1] + (t[2] - r[2]) * e[2]
   ) <= i;
 }
-function v1(t, e, r = 2) {
+function y1(t, e, r = 2) {
   const i = e && e.length, n = i ? e[0] * r : t.length;
-  let s = Xd(t, 0, n, r, !0);
+  let s = Hd(t, 0, n, r, !0);
   const o = [];
   if (!s || s.next === s.prev) return o;
   let a, l, c;
-  if (i && (s = w1(t, e, s, r)), t.length > 80 * r) {
+  if (i && (s = E1(t, e, s, r)), t.length > 80 * r) {
     a = t[0], l = t[1];
     let u = a, d = l;
     for (let h = r; h < n; h += r) {
@@ -10174,13 +10185,13 @@ function v1(t, e, r = 2) {
   }
   return Ei(s, o, r, a, l, c, 0), o;
 }
-function Xd(t, e, r, i, n) {
+function Hd(t, e, r, i, n) {
   let s;
-  if (n === L1(t, e, r, i) > 0)
+  if (n === _1(t, e, r, i) > 0)
     for (let o = e; o < r; o += i) s = ua(o / i | 0, t[o], t[o + 1], s);
   else
     for (let o = r - i; o >= e; o -= i) s = ua(o / i | 0, t[o], t[o + 1], s);
-  return s && ri(s, s.next) && (Ri(s), s = s.next), s;
+  return s && ri(s, s.next) && (Mi(s), s = s.next), s;
 }
 function Vr(t, e) {
   if (!t) return t;
@@ -10188,7 +10199,7 @@ function Vr(t, e) {
   let r = t, i;
   do
     if (i = !1, !r.steiner && (ri(r, r.next) || Xe(r.prev, r, r.next) === 0)) {
-      if (Ri(r), r = e = r.prev, r === r.next) break;
+      if (Mi(r), r = e = r.prev, r === r.next) break;
       i = !0;
     } else
       r = r.next;
@@ -10197,21 +10208,21 @@ function Vr(t, e) {
 }
 function Ei(t, e, r, i, n, s, o) {
   if (!t) return;
-  !o && s && P1(t, i, n, s);
+  !o && s && D1(t, i, n, s);
   let a = t;
   for (; t.prev !== t.next; ) {
     const l = t.prev, c = t.next;
-    if (s ? b1(t, i, n, s) : y1(t)) {
-      e.push(l.i, t.i, c.i), Ri(t), t = c.next, a = c.next;
+    if (s ? T1(t, i, n, s) : b1(t)) {
+      e.push(l.i, t.i, c.i), Mi(t), t = c.next, a = c.next;
       continue;
     }
     if (t = c, t === a) {
-      o ? o === 1 ? (t = T1(Vr(t), e), Ei(t, e, r, i, n, s, 2)) : o === 2 && A1(t, e, r, i, n, s) : Ei(Vr(t), e, r, i, n, s, 1);
+      o ? o === 1 ? (t = A1(Vr(t), e), Ei(t, e, r, i, n, s, 2)) : o === 2 && w1(t, e, r, i, n, s) : Ei(Vr(t), e, r, i, n, s, 1);
       break;
     }
   }
 }
-function y1(t) {
+function b1(t) {
   const e = t.prev, r = t, i = t.next;
   if (Xe(e, r, i) >= 0) return !1;
   const n = e.x, s = r.x, o = i.x, a = e.y, l = r.y, c = i.y, u = Math.min(n, s, o), d = Math.min(a, l, c), h = Math.max(n, s, o), f = Math.max(a, l, c);
@@ -10222,18 +10233,18 @@ function y1(t) {
   }
   return !0;
 }
-function b1(t, e, r, i) {
+function T1(t, e, r, i) {
   const n = t.prev, s = t, o = t.next;
   if (Xe(n, s, o) >= 0) return !1;
-  const a = n.x, l = s.x, c = o.x, u = n.y, d = s.y, h = o.y, f = Math.min(a, l, c), p = Math.min(u, d, h), g = Math.max(a, l, c), m = Math.max(u, d, h), y = Hs(f, p, e, r, i), A = Hs(g, m, e, r, i);
-  let v = t.prevZ, E = t.nextZ;
-  for (; v && v.z >= y && E && E.z <= A; ) {
-    if (v.x >= f && v.x <= g && v.y >= p && v.y <= m && v !== n && v !== o && fi(a, u, l, d, c, h, v.x, v.y) && Xe(v.prev, v, v.next) >= 0 || (v = v.prevZ, E.x >= f && E.x <= g && E.y >= p && E.y <= m && E !== n && E !== o && fi(a, u, l, d, c, h, E.x, E.y) && Xe(E.prev, E, E.next) >= 0)) return !1;
+  const a = n.x, l = s.x, c = o.x, u = n.y, d = s.y, h = o.y, f = Math.min(a, l, c), p = Math.min(u, d, h), g = Math.max(a, l, c), m = Math.max(u, d, h), v = Hs(f, p, e, r, i), A = Hs(g, m, e, r, i);
+  let b = t.prevZ, E = t.nextZ;
+  for (; b && b.z >= v && E && E.z <= A; ) {
+    if (b.x >= f && b.x <= g && b.y >= p && b.y <= m && b !== n && b !== o && fi(a, u, l, d, c, h, b.x, b.y) && Xe(b.prev, b, b.next) >= 0 || (b = b.prevZ, E.x >= f && E.x <= g && E.y >= p && E.y <= m && E !== n && E !== o && fi(a, u, l, d, c, h, E.x, E.y) && Xe(E.prev, E, E.next) >= 0)) return !1;
     E = E.nextZ;
   }
-  for (; v && v.z >= y; ) {
-    if (v.x >= f && v.x <= g && v.y >= p && v.y <= m && v !== n && v !== o && fi(a, u, l, d, c, h, v.x, v.y) && Xe(v.prev, v, v.next) >= 0) return !1;
-    v = v.prevZ;
+  for (; b && b.z >= v; ) {
+    if (b.x >= f && b.x <= g && b.y >= p && b.y <= m && b !== n && b !== o && fi(a, u, l, d, c, h, b.x, b.y) && Xe(b.prev, b, b.next) >= 0) return !1;
+    b = b.prevZ;
   }
   for (; E && E.z <= A; ) {
     if (E.x >= f && E.x <= g && E.y >= p && E.y <= m && E !== n && E !== o && fi(a, u, l, d, c, h, E.x, E.y) && Xe(E.prev, E, E.next) >= 0) return !1;
@@ -10241,21 +10252,21 @@ function b1(t, e, r, i) {
   }
   return !0;
 }
-function T1(t, e) {
+function A1(t, e) {
   let r = t;
   do {
     const i = r.prev, n = r.next.next;
-    !ri(i, n) && Hd(i, r, r.next, n) && Si(i, n) && Si(n, i) && (e.push(i.i, r.i, n.i), Ri(r), Ri(r.next), r = t = n), r = r.next;
+    !ri(i, n) && jd(i, r, r.next, n) && Si(i, n) && Si(n, i) && (e.push(i.i, r.i, n.i), Mi(r), Mi(r.next), r = t = n), r = r.next;
   } while (r !== t);
   return Vr(r);
 }
-function A1(t, e, r, i, n, s) {
+function w1(t, e, r, i, n, s) {
   let o = t;
   do {
     let a = o.next.next;
     for (; a !== o.prev; ) {
-      if (o.i !== a.i && U1(o, a)) {
-        let l = Wd(o, a);
+      if (o.i !== a.i && I1(o, a)) {
+        let l = Yd(o, a);
         o = Vr(o, o.next), l = Vr(l, l.next), Ei(o, e, r, i, n, s, 0), Ei(l, e, r, i, n, s, 0);
         return;
       }
@@ -10264,18 +10275,18 @@ function A1(t, e, r, i, n, s) {
     o = o.next;
   } while (o !== t);
 }
-function w1(t, e, r, i) {
+function E1(t, e, r, i) {
   const n = [];
   for (let s = 0, o = e.length; s < o; s++) {
-    const a = e[s] * i, l = s < o - 1 ? e[s + 1] * i : t.length, c = Xd(t, a, l, i, !1);
-    c === c.next && (c.steiner = !0), n.push(C1(c));
+    const a = e[s] * i, l = s < o - 1 ? e[s + 1] * i : t.length, c = Hd(t, a, l, i, !1);
+    c === c.next && (c.steiner = !0), n.push(U1(c));
   }
-  n.sort(E1);
+  n.sort(S1);
   for (let s = 0; s < n.length; s++)
-    r = S1(n[s], r);
+    r = M1(n[s], r);
   return r;
 }
-function E1(t, e) {
+function S1(t, e) {
   let r = t.x - e.x;
   if (r === 0 && (r = t.y - e.y, r === 0)) {
     const i = (t.next.y - t.y) / (t.next.x - t.x), n = (e.next.y - e.y) / (e.next.x - e.x);
@@ -10283,11 +10294,11 @@ function E1(t, e) {
   }
   return r;
 }
-function S1(t, e) {
+function M1(t, e) {
   const r = R1(t, e);
   if (!r)
     return e;
-  const i = Wd(r, t);
+  const i = Yd(r, t);
   return Vr(i, i.next), Vr(r, r.next);
 }
 function R1(t, e) {
@@ -10309,25 +10320,25 @@ function R1(t, e) {
   let u = 1 / 0;
   r = o;
   do {
-    if (i >= r.x && r.x >= l && i !== r.x && qd(n < c ? i : s, n, l, c, n < c ? s : i, n, r.x, r.y)) {
+    if (i >= r.x && r.x >= l && i !== r.x && Wd(n < c ? i : s, n, l, c, n < c ? s : i, n, r.x, r.y)) {
       const d = Math.abs(n - r.y) / (i - r.x);
-      Si(r, t) && (d < u || d === u && (r.x > o.x || r.x === o.x && M1(o, r))) && (o = r, u = d);
+      Si(r, t) && (d < u || d === u && (r.x > o.x || r.x === o.x && P1(o, r))) && (o = r, u = d);
     }
     r = r.next;
   } while (r !== a);
   return o;
 }
-function M1(t, e) {
+function P1(t, e) {
   return Xe(t.prev, t, e.prev) < 0 && Xe(e.next, t, t.next) < 0;
 }
-function P1(t, e, r, i) {
+function D1(t, e, r, i) {
   let n = t;
   do
     n.z === 0 && (n.z = Hs(n.x, n.y, e, r, i)), n.prevZ = n.prev, n.nextZ = n.next, n = n.next;
   while (n !== t);
-  n.prevZ.nextZ = null, n.prevZ = null, D1(n);
+  n.prevZ.nextZ = null, n.prevZ = null, C1(n);
 }
-function D1(t) {
+function C1(t) {
   let e, r = 1;
   do {
     let i = t, n;
@@ -10350,22 +10361,22 @@ function D1(t) {
 function Hs(t, e, r, i, n) {
   return t = (t - r) * n | 0, e = (e - i) * n | 0, t = (t | t << 8) & 16711935, t = (t | t << 4) & 252645135, t = (t | t << 2) & 858993459, t = (t | t << 1) & 1431655765, e = (e | e << 8) & 16711935, e = (e | e << 4) & 252645135, e = (e | e << 2) & 858993459, e = (e | e << 1) & 1431655765, t | e << 1;
 }
-function C1(t) {
+function U1(t) {
   let e = t, r = t;
   do
     (e.x < r.x || e.x === r.x && e.y < r.y) && (r = e), e = e.next;
   while (e !== t);
   return r;
 }
-function qd(t, e, r, i, n, s, o, a) {
+function Wd(t, e, r, i, n, s, o, a) {
   return (n - o) * (e - a) >= (t - o) * (s - a) && (t - o) * (i - a) >= (r - o) * (e - a) && (r - o) * (s - a) >= (n - o) * (i - a);
 }
 function fi(t, e, r, i, n, s, o, a) {
-  return !(t === o && e === a) && qd(t, e, r, i, n, s, o, a);
+  return !(t === o && e === a) && Wd(t, e, r, i, n, s, o, a);
 }
-function U1(t, e) {
-  return t.next.i !== e.i && t.prev.i !== e.i && !I1(t, e) && // doesn't intersect other edges
-  (Si(t, e) && Si(e, t) && B1(t, e) && // locally visible
+function I1(t, e) {
+  return t.next.i !== e.i && t.prev.i !== e.i && !B1(t, e) && // doesn't intersect other edges
+  (Si(t, e) && Si(e, t) && L1(t, e) && // locally visible
   (Xe(t.prev, t, e.prev) || Xe(t, e.prev, e)) || // does not create opposite-facing sectors
   ri(t, e) && Xe(t.prev, t, t.next) > 0 && Xe(e.prev, e, e.next) > 0);
 }
@@ -10375,7 +10386,7 @@ function Xe(t, e, r) {
 function ri(t, e) {
   return t.x === e.x && t.y === e.y;
 }
-function Hd(t, e, r, i) {
+function jd(t, e, r, i) {
   const n = en(Xe(t, e, r)), s = en(Xe(t, e, i)), o = en(Xe(r, i, t)), a = en(Xe(r, i, e));
   return !!(n !== s && o !== a || n === 0 && $i(t, r, e) || s === 0 && $i(t, i, e) || o === 0 && $i(r, t, i) || a === 0 && $i(r, e, i));
 }
@@ -10385,10 +10396,10 @@ function $i(t, e, r) {
 function en(t) {
   return t > 0 ? 1 : t < 0 ? -1 : 0;
 }
-function I1(t, e) {
+function B1(t, e) {
   let r = t;
   do {
-    if (r.i !== t.i && r.next.i !== t.i && r.i !== e.i && r.next.i !== e.i && Hd(r, r.next, t, e)) return !0;
+    if (r.i !== t.i && r.next.i !== t.i && r.i !== e.i && r.next.i !== e.i && jd(r, r.next, t, e)) return !0;
     r = r.next;
   } while (r !== t);
   return !1;
@@ -10396,7 +10407,7 @@ function I1(t, e) {
 function Si(t, e) {
   return Xe(t.prev, t, t.next) < 0 ? Xe(t, e, t.next) >= 0 && Xe(t, t.prev, e) >= 0 : Xe(t, e, t.prev) < 0 || Xe(t, t.next, e) < 0;
 }
-function B1(t, e) {
+function L1(t, e) {
   let r = t, i = !1;
   const n = (t.x + e.x) / 2, s = (t.y + e.y) / 2;
   do
@@ -10404,7 +10415,7 @@ function B1(t, e) {
   while (r !== t);
   return i;
 }
-function Wd(t, e) {
+function Yd(t, e) {
   const r = Ws(t.i, t.x, t.y), i = Ws(e.i, e.x, e.y), n = t.next, s = e.prev;
   return t.next = e, e.prev = t, r.next = n, n.prev = r, i.next = r, r.prev = i, s.next = i, i.prev = s, i;
 }
@@ -10412,7 +10423,7 @@ function ua(t, e, r, i) {
   const n = Ws(t, e, r);
   return i ? (n.next = i.next, n.prev = i, i.next.prev = n, i.next = n) : (n.prev = n, n.next = n), n;
 }
-function Ri(t) {
+function Mi(t) {
   t.next.prev = t.prev, t.prev.next = t.next, t.prevZ && (t.prevZ.nextZ = t.nextZ), t.nextZ && (t.nextZ.prevZ = t.prevZ);
 }
 function Ws(t, e, r) {
@@ -10434,13 +10445,13 @@ function Ws(t, e, r) {
     // indicates whether this is a steiner point
   };
 }
-function L1(t, e, r, i) {
+function _1(t, e, r, i) {
   let n = 0;
   for (let s = e, o = r - i; s < r; s += i)
     n += (t[o] - t[s]) * (t[s + 1] + t[o + 1]), o = s;
   return n;
 }
-function jd(t, e) {
+function Kd(t, e) {
   const r = [], i = [];
   for (const s of t)
     r.push(s.x, s.y);
@@ -10450,7 +10461,7 @@ function jd(t, e) {
       for (const o of s)
         r.push(o.x, o.y);
     }
-  const n = v1(
+  const n = y1(
     r,
     i.length > 0 ? i : void 0,
     2
@@ -10467,7 +10478,7 @@ function Nt(t, e, r) {
     r[1] + (1 - hs[1]) * 0.5 * r[3]
   ];
 }
-function Yd(t) {
+function Qd(t) {
   var r;
   if (t.anchorMM) return t.anchorMM;
   const e = (r = t.polygons[0]) == null ? void 0 : r.outer[0];
@@ -10480,7 +10491,7 @@ function En(t) {
   return Math.max(r[1], r[2], r[3]) * 0.5;
 }
 const rn = 32;
-function _1(t, e, r, i, n) {
+function O1(t, e, r, i, n) {
   const s = t._annotationCursor;
   if (!s) return;
   const o = t.annotation;
@@ -10490,57 +10501,57 @@ function _1(t, e, r, i, n) {
   const { mm: l, sliceType: c } = s, [u, d, h, f] = o.isErasing ? [1, 0.3, 0.3, 0.8] : o.style.strokeColor, p = o.style.strokeWidth;
   for (const g of e) {
     if (g.axCorSag === se.RENDER || g.axCorSag !== c || !g.mvpMatrix || !g.planeNormal || !g.planePoint || !g.leftTopWidthHeight || !vr(l, g.planeNormal, g.planePoint, n)) continue;
-    const m = g.mvpMatrix, y = g.leftTopWidthHeight, A = [];
-    for (let v = 0; v < rn; v++) {
-      const E = v / rn * Math.PI * 2, b = Math.cos(E) * a, x = Math.sin(E) * a, T = [l[0], l[1], l[2]];
-      c === se.AXIAL ? (T[0] += b, T[1] += x) : c === se.CORONAL ? (T[0] += b, T[2] += x) : (T[1] += b, T[2] += x), A.push(Nt(T, m, y));
+    const m = g.mvpMatrix, v = g.leftTopWidthHeight, A = [];
+    for (let b = 0; b < rn; b++) {
+      const E = b / rn * Math.PI * 2, y = Math.cos(E) * a, x = Math.sin(E) * a, T = [l[0], l[1], l[2]];
+      c === se.AXIAL ? (T[0] += y, T[1] += x) : c === se.CORONAL ? (T[0] += y, T[2] += x) : (T[1] += y, T[2] += x), A.push(Nt(T, m, v));
     }
-    for (let v = 0; v < rn; v++) {
-      const E = A[v], b = A[(v + 1) % rn];
+    for (let b = 0; b < rn; b++) {
+      const E = A[b], y = A[(b + 1) % rn];
       i.push(
-        r(E[0], E[1], b[0], b[1], p, [u, d, h, f])
+        r(E[0], E[1], y[0], y[1], p, [u, d, h, f])
       );
     }
   }
 }
-function O1(t, e, r, i, n, s, o, a) {
+function F1(t, e, r, i, n, s, o, a) {
   const l = t._annotationSelection;
   if (!l) return o;
   const c = t.annotations.find((f) => f.id === l.annotationId);
   if (!(c != null && c.shape)) return o;
   const u = 4;
   let d = o;
-  const h = Yd(c);
+  const h = Qd(c);
   if (!h) return o;
   for (const f of e) {
     if (f.axCorSag === se.RENDER || f.axCorSag !== c.sliceType || !f.mvpMatrix || !f.planeNormal || !f.planePoint || !f.leftTopWidthHeight || !vr(h, f.planeNormal, f.planePoint, a))
       continue;
-    const p = f.mvpMatrix, g = f.leftTopWidthHeight, m = f.planeNormal, y = f.planePoint, A = l.controlPoints.map((v) => {
-      const E = Qr(v, c.sliceType, m, y);
+    const p = f.mvpMatrix, g = f.leftTopWidthHeight, m = f.planeNormal, v = f.planePoint, A = l.controlPoints.map((b) => {
+      const E = Qr(b, c.sliceType, m, v);
       return Nt(E, p, g);
     });
-    for (const [v, E] of A) {
-      const b = u;
-      i.push(v - b, E - b, 1, 1, 1, 0.9), i.push(v + b, E - b, 1, 1, 1, 0.9), i.push(v + b, E + b, 1, 1, 1, 0.9), i.push(v - b, E + b, 1, 1, 1, 0.9), n.push(d, d + 1, d + 2), n.push(d, d + 2, d + 3), d += 4, s.push(
-        r(v - b, E - b, v + b, E - b, 1, [0.2, 0.2, 0.2, 1])
+    for (const [b, E] of A) {
+      const y = u;
+      i.push(b - y, E - y, 1, 1, 1, 0.9), i.push(b + y, E - y, 1, 1, 1, 0.9), i.push(b + y, E + y, 1, 1, 1, 0.9), i.push(b - y, E + y, 1, 1, 1, 0.9), n.push(d, d + 1, d + 2), n.push(d, d + 2, d + 3), d += 4, s.push(
+        r(b - y, E - y, b + y, E - y, 1, [0.2, 0.2, 0.2, 1])
       ), s.push(
-        r(v + b, E - b, v + b, E + b, 1, [0.2, 0.2, 0.2, 1])
+        r(b + y, E - y, b + y, E + y, 1, [0.2, 0.2, 0.2, 1])
       ), s.push(
-        r(v + b, E + b, v - b, E + b, 1, [0.2, 0.2, 0.2, 1])
+        r(b + y, E + y, b - y, E + y, 1, [0.2, 0.2, 0.2, 1])
       ), s.push(
-        r(v - b, E + b, v - b, E - b, 1, [0.2, 0.2, 0.2, 1])
+        r(b - y, E + y, b - y, E - y, 1, [0.2, 0.2, 0.2, 1])
       );
     }
   }
   return d;
 }
-function Kd(t) {
+function Zd(t) {
   const e = t._annotationErasePreview ?? t.annotations;
   return t._annotationPreview ? [...e, t._annotationPreview] : e;
 }
 const nn = Qe(0, 0, 0, 1), da = Kt();
-function Qd(t) {
-  const e = Kd(t);
+function Jd(t) {
+  const e = Zd(t);
   if (e.length === 0) return null;
   const r = t.tex2mm, i = t.mm2tex, n = [], s = [];
   let o = 0;
@@ -10549,7 +10560,7 @@ function Qd(t) {
     let h = null, f = null;
     if (r && i && a.anchorMM) {
       nn[0] = a.anchorMM[0], nn[1] = a.anchorMM[1], nn[2] = a.anchorMM[2], ot(da, nn, i);
-      const p = et(a.sliceType), g = kn(
+      const p = et(a.sliceType), g = Gn(
         r,
         a.sliceType,
         da[p]
@@ -10557,17 +10568,17 @@ function Qd(t) {
       g && (h = g.normal, f = g.point);
     }
     for (const p of a.polygons) {
-      const { vertices: g, indices: m } = jd(p.outer, p.holes), y = g.length / 2;
-      for (let A = 0; A < y; A++) {
-        const v = {
+      const { vertices: g, indices: m } = Kd(p.outer, p.holes), v = g.length / 2;
+      for (let A = 0; A < v; A++) {
+        const b = {
           x: g[A * 2],
           y: g[A * 2 + 1]
-        }, E = h && f ? Qr(v, a.sliceType, h, f) : wn(v, a.slicePosition, a.sliceType);
+        }, E = h && f ? Qr(b, a.sliceType, h, f) : wn(b, a.slicePosition, a.sliceType);
         n.push(E[0], E[1], E[2], l, c, u, d);
       }
       for (let A = 0; A < m.length; A++)
         s.push(m[A] + o);
-      o += y;
+      o += v;
     }
   }
   return n.length === 0 ? null : {
@@ -10575,17 +10586,17 @@ function Qd(t) {
     indices: new Uint32Array(s)
   };
 }
-function F1(t) {
+function N1(t) {
   return t.length !== void 0 ? [`${t.length.toFixed(1)} mm`] : [
     `Area: ${t.area.toFixed(1)} mm²`,
     `Min: ${t.min.toFixed(1)}  Max: ${t.max.toFixed(1)}`,
     `Mean: ${t.mean.toFixed(1)}  SD: ${t.stdDev.toFixed(1)}`
   ];
 }
-function Zd(t, e, r, i) {
-  const n = Kd(t), s = En(t), o = [], a = [], l = [], c = [];
+function $d(t, e, r, i) {
+  const n = Zd(t), s = En(t), o = [], a = [], l = [], c = [];
   let u = 0;
-  const d = n.map(Yd);
+  const d = n.map(Qd);
   for (const h of e) {
     if (h.axCorSag === se.RENDER || !h.mvpMatrix || !h.planeNormal || !h.planePoint || !h.leftTopWidthHeight)
       continue;
@@ -10593,24 +10604,24 @@ function Zd(t, e, r, i) {
     for (let g = 0; g < n.length; g++) {
       const m = n[g];
       if (m.sliceType !== h.axCorSag) continue;
-      const y = d[g];
-      if (!y || !vr(y, h.planeNormal, h.planePoint, s))
+      const v = d[g];
+      if (!v || !vr(v, h.planeNormal, h.planePoint, s))
         continue;
-      const [A, v, E, b] = m.style.fillColor, [x, T, S, P] = m.style.strokeColor, U = m.style.strokeWidth;
+      const [A, b, E, y] = m.style.fillColor, [x, T, S, P] = m.style.strokeColor, U = m.style.strokeWidth;
       for (let _ = 0; _ < m.polygons.length; _++) {
         const O = m.polygons[_], w = [];
         for (const V of O.outer) {
-          const k = Qr(
+          const G = Qr(
             V,
             m.sliceType,
             h.planeNormal,
             h.planePoint
-          ), [F, X] = Nt(k, f, p);
+          ), [F, X] = Nt(G, f, p);
           w.push({ x: F, y: X });
         }
         const D = [];
         for (const V of O.holes) {
-          const k = [];
+          const G = [];
           for (const F of V) {
             const X = Qr(
               F,
@@ -10618,53 +10629,53 @@ function Zd(t, e, r, i) {
               h.planeNormal,
               h.planePoint
             ), [q, Q] = Nt(X, f, p);
-            k.push({ x: q, y: Q });
+            G.push({ x: q, y: Q });
           }
-          D.push(k);
+          D.push(G);
         }
-        const { vertices: R, indices: C } = jd(
+        const { vertices: M, indices: C } = Kd(
           w,
           D
-        ), I = R.length / 2;
+        ), I = M.length / 2;
         for (let V = 0; V < I; V++)
           o.push(
-            R[V * 2],
-            R[V * 2 + 1],
+            M[V * 2],
+            M[V * 2 + 1],
             A,
-            v,
+            b,
             E,
-            b
+            y
           );
         for (let V = 0; V < C.length; V++)
           a.push(C[V] + u);
         u += I;
         for (let V = 0; V < w.length; V++) {
-          const k = w[V], F = w[(V + 1) % w.length];
+          const G = w[V], F = w[(V + 1) % w.length];
           l.push(
-            r(k.x, k.y, F.x, F.y, U, [x, T, S, P])
+            r(G.x, G.y, F.x, F.y, U, [x, T, S, P])
           );
         }
         for (const V of D)
-          for (let k = 0; k < V.length; k++) {
-            const F = V[k], X = V[(k + 1) % V.length];
+          for (let G = 0; G < V.length; G++) {
+            const F = V[G], X = V[(G + 1) % V.length];
             l.push(
               r(F.x, F.y, X.x, X.y, U, [x, T, S, P])
             );
           }
       }
       if (i && m.stats && m.shape) {
-        const _ = F1(m.stats).join(`
-`), O = [x, T, S, 1], w = [0, 0, 0, 0.6], D = h.planeNormal, R = h.planePoint;
+        const _ = N1(m.stats).join(`
+`), O = [x, T, S, 1], w = [0, 0, 0, 0.6], D = h.planeNormal, M = h.planePoint;
         if (m.stats.length !== void 0 && m.shape.type === "measureLine") {
           const C = {
             x: (m.shape.start.x + m.shape.end.x) / 2,
             y: (m.shape.start.y + m.shape.end.y) / 2
-          }, I = Qr(C, m.sliceType, D, R), [V, k] = Nt(I, f, p);
+          }, I = Qr(C, m.sliceType, D, M), [V, G] = Nt(I, f, p);
           c.push(
             i(
               _,
               V,
-              k - 8,
+              G - 8,
               0.7,
               O,
               0.5,
@@ -10673,15 +10684,15 @@ function Zd(t, e, r, i) {
             )
           );
         } else {
-          const C = Math.max(m.shape.start.x, m.shape.end.x), I = (m.shape.start.y + m.shape.end.y) / 2, V = Qr({ x: C, y: I }, m.sliceType, D, R), [k, F] = Nt(V, f, p);
+          const C = Math.max(m.shape.start.x, m.shape.end.x), I = (m.shape.start.y + m.shape.end.y) / 2, V = Qr({ x: C, y: I }, m.sliceType, D, M), [G, F] = Nt(V, f, p);
           c.push(
-            i(_, k + 6, F, 0.7, O, 0, 0.5, w)
+            i(_, G + 6, F, 0.7, O, 0, 0.5, w)
           );
         }
       }
     }
   }
-  return _1(t, e, r, l, s), O1(
+  return O1(t, e, r, l, s), F1(
     t,
     e,
     r,
@@ -10697,22 +10708,22 @@ function Zd(t, e, r, i) {
     labels: c
   };
 }
-function Jd(t) {
+function eh(t) {
   return t[0] + t[1] + t[2] < 0.6 ? [0.2, 0.2, 0.2, 1] : [0, 0, 0, 1];
 }
-const $d = 16, N1 = 42, V1 = 0.55, eh = 0.3;
-function th(t, e) {
-  return Math.max(0, t * (1 + eh) - e * 0.5);
+const th = 16, V1 = 42, z1 = 0.55, rh = 0.3;
+function ih(t, e) {
+  return Math.max(0, t * (1 + rh) - e * 0.5);
 }
 function ha(t, e) {
-  const r = t.length * e * V1 + 2 * e * eh;
+  const r = t.length * e * z1 + 2 * e * rh;
   return Math.ceil(r * 0.5);
 }
-function z1(t, e) {
+function k1(t, e) {
   let r = 0, i = 0;
   for (const n of t) {
     if (n.max - n.min <= 0) continue;
-    const [s, o] = sh(n.min, n.max), a = o < n.min ? o + s : o;
+    const [s, o] = ah(n.min, n.max), a = o < n.min ? o + s : o;
     let l = a, c = a;
     for (; c <= n.max; )
       l = c, c += s;
@@ -10721,34 +10732,34 @@ function z1(t, e) {
   }
   return { left: r, right: i };
 }
-function rh(t) {
+function nh(t) {
   const e = jn(t.canvasWidth, t.canvasHeight);
   return Math.max(t.fontPx, e);
 }
-function ih(t) {
+function sh(t) {
   return Math.max(1, 0.1 * t);
 }
-function nh(t, e, r, i, n) {
+function oh(t, e, r, i, n) {
   const s = Math.max(0, t - 1) * r;
   return i + t * e + s + n;
 }
-function Mi(t, e) {
+function Ri(t, e) {
   if (t.length <= 0) return { columns: 0, rows: 0, rects: [] };
-  const { margin: r, heightRatio: i, gap: n, canvasWidth: s, canvasHeight: o } = e, a = rh(e), l = Math.ceil(i * a), c = s / l, u = Math.floor(c / N1) + 1, d = Math.min(u, t.length), h = Math.ceil(t.length / d), { left: f, right: p } = z1(
+  const { margin: r, heightRatio: i, gap: n, canvasWidth: s, canvasHeight: o } = e, a = nh(e), l = Math.ceil(i * a), c = s / l, u = Math.floor(c / V1) + 1, d = Math.min(u, t.length), h = Math.ceil(t.length / d), { left: f, right: p } = k1(
     t,
     a
-  ), g = s - 2 * r - f - p, m = d > 1 ? Math.max(n, f + p) : 0, y = d > 1 ? (g - (d - 1) * m) / d : g, A = [], v = Math.ceil(
-    th(a, l) + ih(a)
-  ), E = nh(
+  ), g = s - 2 * r - f - p, m = d > 1 ? Math.max(n, f + p) : 0, v = d > 1 ? (g - (d - 1) * m) / d : g, A = [], b = Math.ceil(
+    ih(a, l) + sh(a)
+  ), E = oh(
     h,
     l,
     n,
     r,
-    v
-  ), b = o - E;
+    b
+  ), y = o - E;
   for (let x = 0; x < t.length; x++) {
-    const T = x % d, S = Math.floor(x / d), P = r + f + T * (y + m), U = b + r + S * (l + n);
-    A.push({ x: P, y: U, w: y, h: l });
+    const T = x % d, S = Math.floor(x / d), P = r + f + T * (v + m), U = y + r + S * (l + n);
+    A.push({ x: P, y: U, w: v, h: l });
   }
   return { columns: d, rows: h, rects: A };
 }
@@ -10757,7 +10768,7 @@ function fa(t, e) {
   let n;
   return e ? i < 1.5 ? n = 1 : i < 3 ? n = 2 : i < 7 ? n = 5 : n = 10 : i <= 1 ? n = 1 : i <= 2 ? n = 2 : i <= 5 ? n = 5 : n = 10, n * 10 ** r;
 }
-function sh(t, e) {
+function ah(t, e) {
   const r = e - t;
   if (r <= 0) return [1, t, e];
   const i = 5, n = fa(r, !1), s = fa(n / (i - 1), !0), o = Math.floor(t / s) * s, a = Math.ceil(e / s) * s;
@@ -10775,12 +10786,12 @@ function pa(t, e, r) {
     backRadius: r
   };
 }
-function oh(t, e) {
+function lh(t, e) {
   if (t.length <= 0) return 0;
-  const { rows: r } = Mi(t, e), i = rh(e), n = Math.ceil(e.heightRatio * i), s = Math.ceil(
-    th(i, n) + ih(i)
+  const { rows: r } = Ri(t, e), i = nh(e), n = Math.ceil(e.heightRatio * i), s = Math.ceil(
+    ih(i, n) + sh(i)
   );
-  return nh(
+  return oh(
     r,
     n,
     e.gap,
@@ -10788,21 +10799,21 @@ function oh(t, e) {
     s
   );
 }
-function ah(t, e, r) {
-  const { borderColor: i } = r, { rects: n } = Mi(t, r);
+function ch(t, e, r) {
+  const { borderColor: i } = r, { rects: n } = Ri(t, r);
   if (n.length === 0) return [];
   const s = [], o = 3, a = [i[0], i[1], i[2], 0.75], l = [1, 1, 1, 1];
   for (let c = 0; c < t.length; c++) {
     const u = t[c], d = n[c], h = d.x, f = d.y, p = d.w, g = f + d.h * 0.5, m = u.max - u.min;
     if (m <= 0) continue;
-    const [y, A] = sh(u.min, u.max);
-    let v = A < u.min ? A + y : A;
-    for (; v <= u.max; ) {
-      const E = (v - u.min) / m, b = h + E * p;
+    const [v, A] = ah(u.min, u.max);
+    let b = A < u.min ? A + v : A;
+    for (; b <= u.max; ) {
+      const E = (b - u.min) / m, y = h + E * p;
       s.push(
         pa(
           [
-            b - o,
+            y - o,
             g - o,
             o * 2,
             o * 2
@@ -10811,11 +10822,11 @@ function ah(t, e, r) {
           o
         )
       );
-      const x = u.isNegative ? -v : v;
+      const x = u.isNegative ? -b : b;
       s.push(
         e(
           js(x),
-          b,
+          y,
           g,
           1,
           l,
@@ -10823,13 +10834,13 @@ function ah(t, e, r) {
           0,
           a
         )
-      ), v += y;
+      ), b += v;
     }
     if (u.thresholdMin !== void 0 && u.thresholdMin > u.min) {
-      const E = (u.thresholdMin - u.min) / m, b = h + E * p;
+      const E = (u.thresholdMin - u.min) / m, y = h + E * p;
       s.push(
         pa(
-          [b - o, f, o * 2, d.h],
+          [y - o, f, o * 2, d.h],
           i,
           o
         )
@@ -10839,17 +10850,17 @@ function ah(t, e, r) {
   return s;
 }
 const qr = 1e9;
-function lh(t, e) {
+function uh(t, e) {
   const r = t.scene2mm(t.scene.crosshairPos);
   return e !== se.RENDER && (e === se.SAGITTAL ? (r[1] = qr, r[2] = qr) : e === se.CORONAL ? (r[0] = qr, r[2] = qr) : (r[0] = qr, r[1] = qr)), [r[0], r[1], r[2], 2];
 }
-const Mo = 0.6, ma = 1.5, G1 = 4, k1 = 1.5, Sn = 0.3, X1 = 0.25, q1 = 120, H1 = 4096, W1 = 0.55, j1 = 0.7, ga = 2, sr = [0.8, 0, 0];
-function Y1(t) {
+const Ro = 0.6, ma = 1.5, G1 = 4, X1 = 1.5, Sn = 0.3, q1 = 0.25, H1 = 120, W1 = 4096, j1 = 0.55, Y1 = 0.7, ga = 2, sr = [0.8, 0, 0];
+function K1(t) {
   const e = t[0] + t[1] + t[2];
   let r, i, n;
   return e > 2.7 ? (r = Math.max(0, t[0] - 0.1), i = Math.max(0, t[1] - 0.1), n = Math.max(0, t[2] - 0.1)) : (r = Math.min(1, t[0] + 0.15), i = Math.min(1, t[1] + 0.15), n = Math.min(1, t[2] + 0.15)), [r, i, n, 1];
 }
-function K1(t) {
+function Q1(t) {
   return t[0] + t[1] + t[2] > 1.5 ? [0, 0, 0, 1] : [1, 1, 1, 1];
 }
 function xa(t, e) {
@@ -10857,43 +10868,43 @@ function xa(t, e) {
   let n;
   return e ? i < 1.5 ? n = 1 : i < 3 ? n = 2 : i < 7 ? n = 5 : n = 10 : i <= 1 ? n = 1 : i <= 2 ? n = 2 : i <= 5 ? n = 5 : n = 10, n * 10 ** r;
 }
-function ch(t, e) {
+function dh(t, e) {
   const r = e - t;
   if (r <= 0) return [1, t, e];
   const i = 5, n = xa(r, !1), s = xa(n / (i - 1), !0), o = Math.floor(t / s) * s, a = Math.ceil(e / s) * s;
   return [s, o, a];
 }
-function Q1(t) {
+function Z1(t) {
   return t.toFixed(6).replace(/\.?0*$/, "");
 }
 function Po(t, e, r) {
   if (!t || t.lines.length === 0 || t.lines[0].length < 2) return 0;
-  const i = Math.round(e * X1);
-  return Math.max(q1, Math.min(H1, i));
+  const i = Math.round(e * q1);
+  return Math.max(H1, Math.min(W1, i));
 }
-function uh(t, e, r, i, n = 1) {
+function hh(t, e, r, i, n = 1) {
   if (t.lines.length === 0 || t.lines[0].length < 2) return null;
-  const s = Po(t, e), o = r - i, a = e - s, l = 0, c = o, u = jn(e, r), d = j1, h = u * d;
-  let [f, p] = dh(t);
-  const [g, m] = ch(f, p);
+  const s = Po(t, e), o = r - i, a = e - s, l = 0, c = o, u = jn(e, r), d = Y1, h = u * d;
+  let [f, p] = fh(t);
+  const [g, m] = dh(f, p);
   f = Math.min(m, f), p = Math.max(Math.ceil(p / g) * g, p);
-  const y = Math.max(0, -1 * Math.floor(Math.log(g) / Math.log(10)));
+  const v = Math.max(0, -1 * Math.floor(Math.log(g) / Math.log(10)));
   let A = 0;
   if (h > 0) {
     let P = m;
     for (; P <= p; ) {
-      const U = P.toFixed(y);
-      A = Math.max(A, U.length * h * W1), P += g;
+      const U = P.toFixed(v);
+      A = Math.max(A, U.length * h * j1), P += g;
     }
     A += h * 0.3;
   }
-  const v = h * Mo, E = h * Sn, b = a + v + E + A + E, x = l + h * ma, T = s - (b - a) - h * k1, S = c - h * (ma + G1);
+  const b = h * Ro, E = h * Sn, y = a + b + E + A + E, x = l + h * ma, T = s - (y - a) - h * X1, S = c - h * (ma + G1);
   return T < 20 || S < 20 ? null : {
     x: a,
     y: l,
     width: s,
     height: c,
-    plotLTWH: [b, x, T, S],
+    plotLTWH: [y, x, T, S],
     nFrames: t.lines[0].length,
     hasDeferred: t.nTotalFrame4D > t.lines[0].length,
     fontScale: d,
@@ -10901,7 +10912,7 @@ function uh(t, e, r, i, n = 1) {
     dpr: n
   };
 }
-function dh(t) {
+function fh(t) {
   const e = t.graphConfig;
   let r = t.lines[0][0], i = t.lines[0][0];
   for (const n of t.lines)
@@ -10909,7 +10920,7 @@ function dh(t) {
       r = Math.min(s, r), i = Math.max(s, i);
   return e.isRangeCalMinMax && t.calMin < t.calMax && Number.isFinite(t.calMin) && Number.isFinite(t.calMax) && (r = t.calMin, i = t.calMax), e.normalizeValues && i > r && (r = 0, i = 1), r >= i && (i = r + 1), [r, i];
 }
-function Z1(t) {
+function J1(t) {
   const e = t.graphConfig;
   if (!e.normalizeValues) return t.lines;
   let r, i;
@@ -10925,8 +10936,8 @@ function Z1(t) {
   const n = i - r;
   return t.lines.map((s) => s.map((o) => (o - r) / n));
 }
-function hh(t, e, r, i, n) {
-  const s = [], o = [], a = Y1(n), l = K1(a), c = [
+function ph(t, e, r, i, n) {
+  const s = [], o = [], a = K1(n), l = Q1(a), c = [
     a[0],
     a[1],
     a[2],
@@ -10936,7 +10947,7 @@ function hh(t, e, r, i, n) {
     c[1],
     c[2],
     0.5
-  ], [d, h, f, p] = e.plotLTWH, g = [0, 0, 0, 0], m = e.fontScale, y = e.fontSize, A = Math.ceil(ga * e.dpr), v = Math.ceil(ga * e.dpr * 0.5), E = y * Mo;
+  ], [d, h, f, p] = e.plotLTWH, g = [0, 0, 0, 0], m = e.fontScale, v = e.fontSize, A = Math.ceil(ga * e.dpr), b = Math.ceil(ga * e.dpr * 0.5), E = v * Ro;
   s.push({
     data: new Float32Array(0),
     count: 0,
@@ -10955,19 +10966,19 @@ function hh(t, e, r, i, n) {
     backRect: [d, h, f, p],
     backRadius: 0
   });
-  const b = Z1(t);
-  let [x, T] = dh(t);
-  const [S, P] = ch(x, T), U = Math.max(0, -1 * Math.floor(Math.log(S) / Math.log(10)));
+  const y = J1(t);
+  let [x, T] = fh(t);
+  const [S, P] = dh(x, T), U = Math.max(0, -1 * Math.floor(Math.log(S) / Math.log(10)));
   x = Math.min(P, x), T = Math.max(Math.ceil(T / S) * S, T);
-  const _ = T - x, O = p / _, w = f / (b[0].length - 1), D = h + p;
-  let R = P;
-  for (; R <= T; ) {
-    const F = D - (R - x) * O;
+  const _ = T - x, O = p / _, w = f / (y[0].length - 1), D = h + p;
+  let M = P;
+  for (; M <= T; ) {
+    const F = D - (M - x) * O;
     if (F >= h - 1 && F <= D + 1) {
-      o.push(i(d, F, d + f, F, v, c));
-      const X = R.toFixed(U), q = r(
+      o.push(i(d, F, d + f, F, b, c));
+      const X = M.toFixed(U), q = r(
         X,
-        d - y * Sn,
+        d - v * Sn,
         F,
         m,
         l,
@@ -10977,12 +10988,12 @@ function hh(t, e, r, i, n) {
       );
       q.backRect = [], s.push(q);
     }
-    R += S;
+    M += S;
   }
   let C = 1;
-  for (; b[0].length / C > 12; )
+  for (; y[0].length / C > 12; )
     C *= 5;
-  for (let F = 0; F < b[0].length; F += C) {
+  for (let F = 0; F < y[0].length; F += C) {
     const X = F * w + d;
     if (o.push(
       i(
@@ -10990,14 +11001,14 @@ function hh(t, e, r, i, n) {
         h,
         X,
         D,
-        v,
+        b,
         F % (C * 2) === 0 ? c : u
       )
     ), F % (C * 2) === 0) {
-      const q = Q1(F), Q = r(
+      const q = Z1(F), Q = r(
         q,
         X,
-        D + y * 0.2,
+        D + v * 0.2,
         m,
         l,
         0.5,
@@ -11008,16 +11019,16 @@ function hh(t, e, r, i, n) {
     }
   }
   let I = !1, V = !1;
-  for (let F = 0; F < b.length; F++) {
+  for (let F = 0; F < y.length; F++) {
     const X = [sr[0], sr[1], sr[2], 1];
-    for (let q = 1; q < b[F].length; q++) {
+    for (let q = 1; q < y[F].length; q++) {
       const Q = (q - 1) * w + d, ee = q * w + d;
-      let J = D - (b[F][q - 1] - x) * O, ge = D - (b[F][q] - x) * O;
+      let J = D - (y[F][q - 1] - x) * O, ge = D - (y[F][q] - x) * O;
       (J < h || ge < h) && (I = !0), (J > D || ge > D) && (V = !0), J = Math.max(h, Math.min(D, J)), ge = Math.max(h, Math.min(D, ge)), o.push(i(Q, J, ee, ge, A, X));
     }
   }
   if (t.graphConfig.isRangeCalMinMax) {
-    const F = y * 0.6, X = [
+    const F = v * 0.6, X = [
       sr[0],
       sr[1],
       sr[2],
@@ -11037,16 +11048,16 @@ function hh(t, e, r, i, n) {
       backRadius: 2
     });
   }
-  if (t.selectedColumn >= 0 && t.selectedColumn < b[0].length) {
+  if (t.selectedColumn >= 0 && t.selectedColumn < y[0].length) {
     const F = t.selectedColumn * w + d, X = [sr[0], sr[1], sr[2], 1];
     o.push(i(F, h, F, D, A, X));
   }
-  const k = D + y * 1.5;
-  if (y > 6) {
+  const G = D + v * 1.5;
+  if (v > 6) {
     const F = r(
       "Volume",
       d + f * 0.5,
-      k,
+      G,
       m,
       l,
       0.5,
@@ -11055,11 +11066,11 @@ function hh(t, e, r, i, n) {
     );
     F.backRect = [], s.push(F);
   }
-  if (e.hasDeferred && y > 6) {
-    const F = e.x + e.width - E - y * Sn, X = r(
+  if (e.hasDeferred && v > 6) {
+    const F = e.x + e.width - E - v * Sn, X = r(
       "...",
       F,
-      k,
+      G,
       m,
       l,
       1,
@@ -11070,11 +11081,11 @@ function hh(t, e, r, i, n) {
   }
   return { labels: s, lines: o };
 }
-function J1(t, e, r) {
+function $1(t, e, r) {
   if (!r) return null;
   const [i, n, s, o] = r.plotLTWH;
   if (r.hasDeferred) {
-    const a = r.fontSize, l = n + o + a * 1.5, c = r.x + r.width - a * (Mo + Sn);
+    const a = r.fontSize, l = n + o + a * 1.5, c = r.x + r.width - a * (Ro + Sn);
     if (t >= c - a * 2 && t <= c && e >= l - a * 0.5 && e <= l + a * 1.5)
       return { type: "deferred" };
   }
@@ -11090,8 +11101,8 @@ function J1(t, e, r) {
 function va(t) {
   return t.nFrames;
 }
-const Mr = 20, fs = 8, Ys = 8, Rn = 1.2, fh = 0.7, cn = 0.8;
-function $1(t, e) {
+const Rr = 20, fs = 8, Ys = 8, Mn = 1.2, mh = 0.7, cn = 0.8;
+function ev(t, e) {
   var i, n;
   const r = [];
   for (const s of e) {
@@ -11133,7 +11144,7 @@ function $1(t, e) {
   for (const s of t) {
     if (s.showLegend === !1 || s.kind !== "connectome" || !s.jcon || !s.connectomeOptions)
       continue;
-    const o = s.connectomeOptions, a = ut(o.nodeColormap), l = o.nodeColormapNegative ? ut(o.nodeColormapNegative) : null;
+    const o = s.connectomeOptions, a = ct(o.nodeColormap), l = o.nodeColormapNegative ? ct(o.nodeColormapNegative) : null;
     for (const c of s.jcon.nodes) {
       if (!c.name || Math.abs(c.sizeValue) * o.nodeScale <= 0) continue;
       const u = Xs(
@@ -11157,42 +11168,42 @@ function $1(t, e) {
   }
   return r;
 }
-function ph(t, e, r) {
+function gh(t, e, r) {
   if (t.length === 0) return 0;
-  const i = jn(e, r) * cn, n = Math.max(...t.map((s) => s.label.length)) * i * fh;
-  return Mr + i + Ys + n + Mr * 2;
+  const i = jn(e, r) * cn, n = Math.max(...t.map((s) => s.label.length)) * i * mh;
+  return Rr + i + Ys + n + Rr * 2;
 }
-function mh(t, e, r, i, n = 0) {
+function xh(t, e, r, i, n = 0) {
   if (t.length === 0) return null;
-  const s = jn(e, r), o = r - i - Mr * 2, a = s * cn * Rn, l = t.length * a + (t.length - 1) * fs;
+  const s = jn(e, r), o = r - i - Rr * 2, a = s * cn * Mn, l = t.length * a + (t.length - 1) * fs;
   let c = cn;
   l > o && o > 0 && (c = cn * (o / l));
-  const u = s * c, d = u, h = Math.max(...t.map((y) => y.label.length)) * u * fh, f = Mr + d + Ys + h + Mr * 2, p = d * Rn, g = t.length * p + (t.length - 1) * fs, m = (r - i - g) / 2;
+  const u = s * c, d = u, h = Math.max(...t.map((v) => v.label.length)) * u * mh, f = Rr + d + Ys + h + Rr * 2, p = d * Mn, g = t.length * p + (t.length - 1) * fs, m = (r - i - g) / 2;
   return {
     entries: t,
     x: n,
-    y: Math.max(Mr, m),
+    y: Math.max(Rr, m),
     // Don't go above top margin
     width: f,
     boxSize: d,
     gap: fs,
     fontScale: c,
     textPadding: Ys,
-    margin: Mr
+    margin: Rr
   };
 }
-function ev(t) {
+function tv(t) {
   const e = t[0] + t[1] + t[2];
   let r, i, n;
   return e > 2.7 ? (r = Math.max(0, t[0] - 0.1), i = Math.max(0, t[1] - 0.1), n = Math.max(0, t[2] - 0.1)) : (r = Math.min(1, t[0] + 0.3), i = Math.min(1, t[1] + 0.3), n = Math.min(1, t[2] + 0.3)), [r, i, n, 0.7];
 }
-function tv(t) {
+function rv(t) {
   return t[0] + t[1] + t[2] > 1.5 ? [0, 0, 0, 1] : [1, 1, 1, 1];
 }
-function gh(t, e, r) {
+function vh(t, e, r) {
   const i = [];
   if (t.entries.length === 0) return i;
-  const n = t.boxSize * Rn, s = t.entries.length * n + (t.entries.length - 1) * t.gap, o = t.margin * 0.5, a = ev(r), l = tv(a), c = {
+  const n = t.boxSize * Mn, s = t.entries.length * n + (t.entries.length - 1) * t.gap, o = t.margin * 0.5, a = tv(r), l = rv(a), c = {
     data: new Float32Array(0),
     count: 0,
     backColor: a,
@@ -11231,10 +11242,10 @@ function gh(t, e, r) {
       // Sharp corners for color box
     };
     i.push(g);
-    const m = h + t.boxSize + t.textPadding, y = f + t.boxSize / 2, A = [0, 0, 0, 0], v = e(
+    const m = h + t.boxSize + t.textPadding, v = f + t.boxSize / 2, A = [0, 0, 0, 0], b = e(
       d.label,
       m,
-      y,
+      v,
       t.fontScale,
       // Use scale factor, not absolute font size
       l,
@@ -11245,7 +11256,7 @@ function gh(t, e, r) {
       // anchorY = 0.5 (vertically centered)
       A
     );
-    v.backRect = [], i.push(v), u += t.boxSize * Rn + t.gap;
+    b.backRect = [], i.push(b), u += t.boxSize * Mn + t.gap;
   }
   return i;
 }
@@ -11263,44 +11274,44 @@ function Ye(t, e, r, i, n = 2, s = [1, 1, 0, 1]) {
     ...s
   ]) };
 }
-function rv(t, e) {
+function iv(t, e) {
   let r = 2;
   t > 9 && (r = 1), t > 99 && (r = 0);
   let i = t.toFixed(r);
   return e && (i += " mm"), i;
 }
-function xh(t, e, r, i) {
+function yh(t, e, r, i) {
   const n = t.completedMeasurements, s = t.completedAngles;
   if (n.length === 0 && s.length === 0) return null;
   const o = t.ui, a = o.measureLineColor, l = o.rulerWidth, c = o.measureTextColor, u = c[0] + c[1] + c[2] > 0.8 ? [0, 0, 0, 0.5] : [1, 1, 1, 0.5], d = En(t), h = [], f = [];
   for (const p of e) {
     if (p.axCorSag === se.RENDER || !p.mvpMatrix || !p.planeNormal || !p.planePoint || !p.leftTopWidthHeight)
       continue;
-    const g = p.mvpMatrix, m = p.leftTopWidthHeight, y = p.planeNormal, A = p.planePoint;
-    for (const v of n) {
-      if (!vr(v.startMM, y, A, d) || !vr(v.endMM, y, A, d))
+    const g = p.mvpMatrix, m = p.leftTopWidthHeight, v = p.planeNormal, A = p.planePoint;
+    for (const b of n) {
+      if (!vr(b.startMM, v, A, d) || !vr(b.endMM, v, A, d))
         continue;
-      const [E, b] = Nt(v.startMM, g, m), [x, T] = Nt(v.endMM, g, m);
-      h.push(i(E, b, x, T, l, a));
-      const S = x - E, P = T - b, U = Math.sqrt(S * S + P * P);
+      const [E, y] = Nt(b.startMM, g, m), [x, T] = Nt(b.endMM, g, m);
+      h.push(i(E, y, x, T, l, a));
+      const S = x - E, P = T - y, U = Math.sqrt(S * S + P * P);
       if (U > 0) {
-        const R = -P / U * 6, C = S / U * 6;
+        const M = -P / U * 6, C = S / U * 6;
         h.push(
-          i(E - R, b - C, E + R, b + C, l, a),
-          i(x - R, T - C, x + R, T + C, l, a)
+          i(E - M, y - C, E + M, y + C, l, a),
+          i(x - M, T - C, x + M, T + C, l, a)
         );
       }
-      const _ = rv(v.distance, o.isMeasureUnitsVisible), O = (E + x) * 0.5, w = (b + T) * 0.5, D = r(_, O, w, 0.8, c, 0.5, 1, u);
+      const _ = iv(b.distance, o.isMeasureUnitsVisible), O = (E + x) * 0.5, w = (y + T) * 0.5, D = r(_, O, w, 0.8, c, 0.5, 1, u);
       D.count > 0 && f.push(D);
     }
-    for (const v of s) {
-      if (!vr(v.firstLine.endMM, y, A, d)) continue;
-      const [E, b] = Nt(v.firstLine.startMM, g, m), [x, T] = Nt(v.firstLine.endMM, g, m), [S, P] = Nt(v.secondLine.endMM, g, m);
+    for (const b of s) {
+      if (!vr(b.firstLine.endMM, v, A, d)) continue;
+      const [E, y] = Nt(b.firstLine.startMM, g, m), [x, T] = Nt(b.firstLine.endMM, g, m), [S, P] = Nt(b.secondLine.endMM, g, m);
       h.push(
-        i(E, b, x, T, l, a),
+        i(E, y, x, T, l, a),
         i(x, T, S, P, l, a)
       );
-      const U = `${v.angle.toFixed(1)}°`, _ = r(
+      const U = `${b.angle.toFixed(1)}°`, _ = r(
         U,
         x,
         T,
@@ -11315,16 +11326,16 @@ function xh(t, e, r, i) {
   }
   return h.length === 0 && f.length === 0 ? null : { lines: h, labels: f };
 }
-const vh = {
+const bh = {
   [se.AXIAL]: [0, 1],
   [se.CORONAL]: [0, 2],
   [se.SAGITTAL]: [1, 2]
 }, ya = [10, 5, 2, 1];
-function iv(t) {
+function nv(t) {
   let e = null, r = 0;
   for (const i of t) {
     if (i.axCorSag === se.RENDER || !i.screen || !i.leftTopWidthHeight) continue;
-    const n = vh[i.axCorSag];
+    const n = bh[i.axCorSag];
     if (!n) continue;
     const s = i.screen.fovMM, o = Math.max(
       Math.abs(s[n[0]]),
@@ -11334,7 +11345,7 @@ function iv(t) {
   }
   return e;
 }
-function nv(t) {
+function sv(t) {
   const e = t * 0.65;
   if (e <= 0) return null;
   if (t >= 50)
@@ -11348,23 +11359,23 @@ function nv(t) {
       return { lengthMM: r, label: `${r} mm` };
   return null;
 }
-function yh(t, e, r, i, n) {
-  const s = iv(t);
+function Th(t, e, r, i, n) {
+  const s = nv(t);
   if (!(s != null && s.screen) || !s.leftTopWidthHeight) return null;
-  const o = vh[s.axCorSag];
+  const o = bh[s.axCorSag];
   if (!o) return null;
-  const a = s.screen.fovMM, l = Math.abs(a[o[0]]), [c, u, d, h] = s.leftTopWidthHeight, f = nv(l);
+  const a = s.screen.fovMM, l = Math.abs(a[o[0]]), [c, u, d, h] = s.leftTopWidthHeight, f = sv(l);
   if (!f) return null;
-  const p = d / l, g = f.lengthMM * p, m = 5, y = g / m, A = 4, v = 8, E = c + d - v, b = E - g, x = u + h - v - A, T = [];
-  for (let R = 0; R < m; R++)
-    if (R % 2 === 0) {
-      const C = b + R * y, I = b + (R + 1) * y;
+  const p = d / l, g = f.lengthMM * p, m = 5, v = g / m, A = 4, b = 8, E = c + d - b, y = E - g, x = u + h - b - A, T = [];
+  for (let M = 0; M < m; M++)
+    if (M % 2 === 0) {
+      const C = y + M * v, I = y + (M + 1) * v;
       T.push(r(C, x, I, x, A, i));
     }
   const S = 1, P = x - A / 2, U = x + A / 2;
   T.push(
     r(
-      b,
+      y,
       P,
       E,
       P,
@@ -11373,7 +11384,7 @@ function yh(t, e, r, i, n) {
     )
   ), T.push(
     r(
-      b,
+      y,
       U,
       E,
       U,
@@ -11382,9 +11393,9 @@ function yh(t, e, r, i, n) {
     )
   ), T.push(
     r(
-      b,
+      y,
       P,
-      b,
+      y,
       U,
       S,
       i
@@ -11399,11 +11410,11 @@ function yh(t, e, r, i, n) {
       i
     )
   );
-  for (let R = 1; R < m; R++) {
-    const C = b + R * y;
+  for (let M = 1; M < m; M++) {
+    const C = y + M * v;
     T.push(r(C, P, C, U, S, i));
   }
-  const _ = b + g / 2, O = x + A / 2 + 2, w = [], D = e(f.label, _, O, 0.8, i, 0, 0);
+  const _ = y + g / 2, O = x + A / 2 + 2, w = [], D = e(f.label, _, O, 0.8, i, 0, 0);
   return D.count > 0 && w.push(D), { lines: T, labels: w };
 }
 class at {
@@ -11419,7 +11430,7 @@ class at {
   resize(...e) {
   }
 }
-function sv(t) {
+function ov(t) {
   let e = 0, r = 0;
   if (t.colormapNegative && t.colormapNegative.length > 0) {
     e = Math.min(-t.calMin, -t.calMax), r = Math.max(-t.calMin, -t.calMax);
@@ -11428,9 +11439,9 @@ function sv(t) {
   }
   return { mnNeg: e, mxNeg: r };
 }
-function bh(t, e = 1) {
+function Ah(t, e = 1) {
   var o, a, l;
-  const { mnNeg: r, mxNeg: i } = sv(t), n = t.colormapType ?? 0, s = t.colormapLabel !== null && t.colormapLabel !== void 0;
+  const { mnNeg: r, mxNeg: i } = ov(t), n = t.colormapType ?? 0, s = t.colormapLabel !== null && t.colormapLabel !== void 0;
   return {
     slope: t.hdr.scl_slope,
     intercept: t.hdr.scl_inter,
@@ -11446,7 +11457,7 @@ function bh(t, e = 1) {
     labelWidth: s ? (((l = (a = t.colormapLabel) == null ? void 0 : a.lut) == null ? void 0 : l.length) ?? 0) / 4 : 0
   };
 }
-function Th(t) {
+function wh(t) {
   if (!t.img2RASstep || !t.img2RASstart || !t.dimsRAS)
     throw new Error("prepareRGBAData: missing RAS mapping");
   const e = [
@@ -11472,8 +11483,8 @@ function Th(t) {
     ), u = n ? i : r[0] * r[1] * r[2];
     a = new Uint8Array(u * 4);
     for (let d = 0, h = 0, f = 0; d < u; ++d, h += 3, f += 4) {
-      const p = c[h] ?? 0, g = c[h + 1] ?? 0, m = c[h + 2] ?? 0, y = Math.floor((p + g + m) / 3);
-      a[f] = p, a[f + 1] = g, a[f + 2] = m, a[f + 3] = y;
+      const p = c[h] ?? 0, g = c[h + 1] ?? 0, m = c[h + 2] ?? 0, v = Math.floor((p + g + m) / 3);
+      a[f] = p, a[f + 1] = g, a[f + 2] = m, a[f + 3] = v;
     }
   } else if (s === 2304)
     a = n ? o : bn(
@@ -11499,146 +11510,146 @@ var Le;
 (function(t) {
   t[t.NoClip = 0] = "NoClip", t[t.Intersection = 1] = "Intersection", t[t.Union = 2] = "Union", t[t.Difference = 3] = "Difference", t[t.Xor = 4] = "Xor";
 })(Le || (Le = {}));
-var ke;
+var Ge;
 (function(t) {
   t[t.Subject = 0] = "Subject", t[t.Clip = 1] = "Clip";
-})(ke || (ke = {}));
-var Re;
-(function(t) {
-  t[t.EvenOdd = 0] = "EvenOdd", t[t.NonZero = 1] = "NonZero", t[t.Positive = 2] = "Positive", t[t.Negative = 3] = "Negative";
-})(Re || (Re = {}));
+})(Ge || (Ge = {}));
 var Me;
 (function(t) {
-  t[t.IsOn = 0] = "IsOn", t[t.IsInside = 1] = "IsInside", t[t.IsOutside = 2] = "IsOutside";
+  t[t.EvenOdd = 0] = "EvenOdd", t[t.NonZero = 1] = "NonZero", t[t.Positive = 2] = "Positive", t[t.Negative = 3] = "Negative";
 })(Me || (Me = {}));
+var Re;
+(function(t) {
+  t[t.IsOn = 0] = "IsOn", t[t.IsInside = 1] = "IsInside", t[t.IsOutside = 2] = "IsOutside";
+})(Re || (Re = {}));
 var te;
 (function(t) {
   t.MaxInt64 = 9223372036854775807n, t.MaxCoord = Number(t.MaxInt64 / 4n), t.max_coord = t.MaxCoord, t.min_coord = -t.MaxCoord, t.Invalid64 = Number(t.MaxInt64), t.floatingPointTolerance = 1e-12, t.defaultMinimumEdgeLength = 0.1;
-  function e(b, x, T) {
-    return (x.x - b.x) * (T.y - x.y) - (x.y - b.y) * (T.x - x.x);
+  function e(y, x, T) {
+    return (x.x - y.x) * (T.y - x.y) - (x.y - y.y) * (T.x - x.x);
   }
   t.crossProduct = e;
-  function r(b, x, T) {
-    const S = x.x - b.x, P = T.y - x.y, U = x.y - b.y, _ = T.x - x.x;
+  function r(y, x, T) {
+    const S = x.x - y.x, P = T.y - x.y, U = x.y - y.y, _ = T.x - x.x;
     if (Math.abs(S) < 9e7 && Math.abs(P) < 9e7 && Math.abs(U) < 9e7 && Math.abs(_) < 9e7) {
       const ee = S * P, J = U * _;
       return ee > J ? 1 : ee < J ? -1 : 0;
     }
-    const O = S < 0 ? -1 : S > 0 ? 1 : 0, w = P < 0 ? -1 : P > 0 ? 1 : 0, D = U < 0 ? -1 : U > 0 ? 1 : 0, R = _ < 0 ? -1 : _ > 0 ? 1 : 0, C = O * w, I = D * R;
+    const O = S < 0 ? -1 : S > 0 ? 1 : 0, w = P < 0 ? -1 : P > 0 ? 1 : 0, D = U < 0 ? -1 : U > 0 ? 1 : 0, M = _ < 0 ? -1 : _ > 0 ? 1 : 0, C = O * w, I = D * M;
     if (C !== I)
       return C > I ? 1 : -1;
     if (C === 0)
       return 0;
-    const V = BigInt(S), k = BigInt(P), F = BigInt(U), X = BigInt(_), q = V * k, Q = F * X;
+    const V = BigInt(S), G = BigInt(P), F = BigInt(U), X = BigInt(_), q = V * G, Q = F * X;
     return q === Q ? 0 : q > Q ? 1 : -1;
   }
   t.crossProductSign = r;
-  function i(b) {
-    if (b < -8 || b > 8)
+  function i(y) {
+    if (y < -8 || y > 8)
       throw new Error("Error: Precision is out of range.");
   }
   t.checkPrecision = i;
-  function n(b) {
-    return Math.abs(b) <= t.floatingPointTolerance;
+  function n(y) {
+    return Math.abs(y) <= t.floatingPointTolerance;
   }
   t.isAlmostZero = n;
-  function s(b) {
-    return b < 0 ? -1 : b > 0 ? 1 : 0;
+  function s(y) {
+    return y < 0 ? -1 : y > 0 ? 1 : 0;
   }
   t.triSign = s;
-  function o(b, x) {
-    const T = BigInt(b), S = BigInt(x), P = T * S;
+  function o(y, x) {
+    const T = BigInt(y), S = BigInt(x), P = T * S;
     return {
       lo64: Number(P & 0xffffffffffffffffn),
       hi64: Number(P >> 64n)
     };
   }
   t.multiplyUInt64 = o;
-  function a(b, x, T, S) {
-    const P = Math.abs(b), U = Math.abs(x), _ = Math.abs(T), O = Math.abs(S);
+  function a(y, x, T, S) {
+    const P = Math.abs(y), U = Math.abs(x), _ = Math.abs(T), O = Math.abs(S);
     if (P < 46341 && U < 46341 && _ < 46341 && O < 46341 || P < 9e7 && U < 9e7 && _ < 9e7 && O < 9e7)
-      return b * x === T * S;
-    const w = (b < 0 ? -1 : b > 0 ? 1 : 0) * (x < 0 ? -1 : x > 0 ? 1 : 0), D = (T < 0 ? -1 : T > 0 ? 1 : 0) * (S < 0 ? -1 : S > 0 ? 1 : 0);
+      return y * x === T * S;
+    const w = (y < 0 ? -1 : y > 0 ? 1 : 0) * (x < 0 ? -1 : x > 0 ? 1 : 0), D = (T < 0 ? -1 : T > 0 ? 1 : 0) * (S < 0 ? -1 : S > 0 ? 1 : 0);
     if (w !== D)
       return !1;
     if (w === 0)
       return !0;
-    const R = BigInt(P), C = BigInt(U), I = BigInt(_), V = BigInt(O);
-    return R * C === I * V;
+    const M = BigInt(P), C = BigInt(U), I = BigInt(_), V = BigInt(O);
+    return M * C === I * V;
   }
   t.productsAreEqual = a;
-  function l(b, x, T) {
-    const S = x.x - b.x, P = T.y - x.y, U = x.y - b.y, _ = T.x - x.x;
+  function l(y, x, T) {
+    const S = x.x - y.x, P = T.y - x.y, U = x.y - y.y, _ = T.x - x.x;
     return a(S, P, U, _);
   }
   t.isCollinear = l;
-  function c(b, x, T) {
-    return (x.x - b.x) * (T.x - x.x) + (x.y - b.y) * (T.y - x.y);
+  function c(y, x, T) {
+    return (x.x - y.x) * (T.x - x.x) + (x.y - y.y) * (T.y - x.y);
   }
   t.dotProduct = c;
-  function u(b, x) {
-    return b.y * x.x - x.y * b.x;
+  function u(y, x) {
+    return y.y * x.x - x.y * y.x;
   }
   t.crossProductD = u;
-  function d(b, x) {
-    return b.x * x.x + b.y * x.y;
+  function d(y, x) {
+    return y.x * x.x + y.y * x.y;
   }
   t.dotProductD = d;
-  function h(b) {
-    const x = Math.floor(b), T = b - x;
-    return Math.abs(T - 0.5) < 1e-10 ? x % 2 === 0 ? x : x + 1 : Math.round(b);
+  function h(y) {
+    const x = Math.floor(y), T = y - x;
+    return Math.abs(T - 0.5) < 1e-10 ? x % 2 === 0 ? x : x + 1 : Math.round(y);
   }
   t.roundToEven = h;
-  function f(b) {
-    return b >= t.max_coord || b <= t.min_coord ? t.Invalid64 : Math.round(b);
+  function f(y) {
+    return y >= t.max_coord || y <= t.min_coord ? t.Invalid64 : Math.round(y);
   }
   t.checkCastInt64 = f;
-  function p(b, x, T, S) {
-    const P = x.y - b.y, U = x.x - b.x, _ = S.y - T.y, O = S.x - T.x, w = P * O - _ * U;
+  function p(y, x, T, S) {
+    const P = x.y - y.y, U = x.x - y.x, _ = S.y - T.y, O = S.x - T.x, w = P * O - _ * U;
     if (w === 0)
       return { intersects: !1, point: { x: 0, y: 0, z: 0 } };
-    const D = ((b.x - T.x) * _ - (b.y - T.y) * O) / w;
-    let R;
+    const D = ((y.x - T.x) * _ - (y.y - T.y) * O) / w;
+    let M;
     if (D <= 0)
-      R = { x: b.x, y: b.y, z: 0 };
+      M = { x: y.x, y: y.y, z: 0 };
     else if (D >= 1)
-      R = { x: x.x, y: x.y, z: 0 };
+      M = { x: x.x, y: x.y, z: 0 };
     else {
-      const C = b.x + D * U, I = b.y + D * P;
-      R = {
+      const C = y.x + D * U, I = y.y + D * P;
+      M = {
         x: Math.trunc(C),
         y: Math.trunc(I),
         z: 0
       };
     }
-    return { intersects: !0, point: R };
+    return { intersects: !0, point: M };
   }
   t.getLineIntersectPt = p;
-  function g(b, x, T, S) {
-    const P = x.y - b.y, U = x.x - b.x, _ = S.y - T.y, O = S.x - T.x, w = P * O - _ * U;
+  function g(y, x, T, S) {
+    const P = x.y - y.y, U = x.x - y.x, _ = S.y - T.y, O = S.x - T.x, w = P * O - _ * U;
     if (w === 0)
       return { success: !1, ip: { x: 0, y: 0, z: 0 } };
-    const D = ((b.x - T.x) * _ - (b.y - T.y) * O) / w;
-    let R;
-    return D <= 0 ? R = { ...b, z: 0 } : D >= 1 ? R = { ...x, z: 0 } : R = {
-      x: b.x + D * U,
-      y: b.y + D * P,
+    const D = ((y.x - T.x) * _ - (y.y - T.y) * O) / w;
+    let M;
+    return D <= 0 ? M = { ...y, z: 0 } : D >= 1 ? M = { ...x, z: 0 } : M = {
+      x: y.x + D * U,
+      y: y.y + D * P,
       z: 0
-    }, { success: !0, ip: R };
+    }, { success: !0, ip: M };
   }
   t.getLineIntersectPtD = g;
-  function m(b, x, T, S, P = !1) {
+  function m(y, x, T, S, P = !1) {
     if (!P)
-      return e(b, T, S) * e(x, T, S) < 0 && e(T, b, x) * e(S, b, x) < 0;
-    const U = e(b, T, S), _ = e(x, T, S);
+      return e(y, T, S) * e(x, T, S) < 0 && e(T, y, x) * e(S, y, x) < 0;
+    const U = e(y, T, S), _ = e(x, T, S);
     if (U * _ > 0)
       return !1;
-    const O = e(T, b, x), w = e(S, b, x);
+    const O = e(T, y, x), w = e(S, y, x);
     return O * w > 0 ? !1 : U !== 0 || _ !== 0 || O !== 0 || w !== 0;
   }
   t.segsIntersect = m;
-  function y(b) {
-    if (b.length === 0)
+  function v(y) {
+    if (y.length === 0)
       return { left: 0, top: 0, right: 0, bottom: 0 };
     const x = {
       left: Number.MAX_SAFE_INTEGER,
@@ -11646,15 +11657,15 @@ var te;
       right: Number.MIN_SAFE_INTEGER,
       bottom: Number.MIN_SAFE_INTEGER
     };
-    for (const T of b)
+    for (const T of y)
       T.x < x.left && (x.left = T.x), T.x > x.right && (x.right = T.x), T.y < x.top && (x.top = T.y), T.y > x.bottom && (x.bottom = T.y);
     return x.left === Number.MAX_SAFE_INTEGER ? { left: 0, top: 0, right: 0, bottom: 0 } : x;
   }
-  t.getBounds = y;
-  function A(b, x, T) {
+  t.getBounds = v;
+  function A(y, x, T) {
     if (x.x === T.x && x.y === T.y)
       return { x: x.x, y: x.y, z: 0 };
-    const S = T.x - x.x, P = T.y - x.y, U = ((b.x - x.x) * S + (b.y - x.y) * P) / (S * S + P * P), _ = U < 0 ? 0 : U > 1 ? 1 : U;
+    const S = T.x - x.x, P = T.y - x.y, U = ((y.x - x.x) * S + (y.y - x.y) * P) / (S * S + P * P), _ = U < 0 ? 0 : U > 1 ? 1 : U;
     return {
       // use Math.round to match the C# MidpointRounding.ToEven behavior
       x: Math.round(x.x + _ * S),
@@ -11663,16 +11674,16 @@ var te;
     };
   }
   t.getClosestPtOnSegment = A;
-  function v(b, x) {
+  function b(y, x) {
     const T = x.length;
     let S = 0;
     if (T < 3)
-      return Me.IsOutside;
-    for (; S < T && x[S].y === b.y; )
+      return Re.IsOutside;
+    for (; S < T && x[S].y === y.y; )
       S++;
     if (S === T)
-      return Me.IsOutside;
-    let P = x[S].y < b.y;
+      return Re.IsOutside;
+    let P = x[S].y < y.y;
     const U = P;
     let _ = 0, O = S + 1, w = T;
     for (; ; ) {
@@ -11682,58 +11693,58 @@ var te;
         w = S, O = 0;
       }
       if (P)
-        for (; O < w && x[O].y < b.y; )
+        for (; O < w && x[O].y < y.y; )
           O++;
       else
-        for (; O < w && x[O].y > b.y; )
+        for (; O < w && x[O].y > y.y; )
           O++;
       if (O === w)
         continue;
-      const R = x[O], C = O > 0 ? x[O - 1] : x[T - 1];
-      if (R.y === b.y) {
-        if (R.x === b.x || R.y === C.y && b.x < C.x != b.x < R.x)
-          return Me.IsOn;
+      const M = x[O], C = O > 0 ? x[O - 1] : x[T - 1];
+      if (M.y === y.y) {
+        if (M.x === y.x || M.y === C.y && y.x < C.x != y.x < M.x)
+          return Re.IsOn;
         if (O++, O === S)
           break;
         continue;
       }
-      if (!(b.x < R.x && b.x < C.x)) if (b.x > C.x && b.x > R.x)
+      if (!(y.x < M.x && y.x < C.x)) if (y.x > C.x && y.x > M.x)
         _ = 1 - _;
       else {
-        const I = r(C, R, b);
+        const I = r(C, M, y);
         if (I === 0)
-          return Me.IsOn;
+          return Re.IsOn;
         I < 0 === P && (_ = 1 - _);
       }
       P = !P, O++;
     }
     if (P === U)
-      return _ === 0 ? Me.IsOutside : Me.IsInside;
+      return _ === 0 ? Re.IsOutside : Re.IsInside;
     O === T && (O = 0);
-    const D = O === 0 ? r(x[T - 1], x[0], b) : r(x[O - 1], x[O], b);
-    return D === 0 ? Me.IsOn : (D < 0 === P && (_ = 1 - _), _ === 0 ? Me.IsOutside : Me.IsInside);
+    const D = O === 0 ? r(x[T - 1], x[0], y) : r(x[O - 1], x[O], y);
+    return D === 0 ? Re.IsOn : (D < 0 === P && (_ = 1 - _), _ === 0 ? Re.IsOutside : Re.IsInside);
   }
-  t.pointInPolygon = v;
-  function E(b, x) {
-    let T = Me.IsOn;
-    for (const U of b)
-      switch (v(U, x)) {
-        case Me.IsOutside:
-          if (T === Me.IsOutside)
+  t.pointInPolygon = b;
+  function E(y, x) {
+    let T = Re.IsOn;
+    for (const U of y)
+      switch (b(U, x)) {
+        case Re.IsOutside:
+          if (T === Re.IsOutside)
             return !1;
-          T = Me.IsOutside;
+          T = Re.IsOutside;
           break;
-        case Me.IsInside:
-          if (T === Me.IsInside)
+        case Re.IsInside:
+          if (T === Re.IsInside)
             return !0;
-          T = Me.IsInside;
+          T = Re.IsInside;
           break;
       }
-    const S = y(b), P = {
+    const S = v(y), P = {
       x: Math.round((S.left + S.right) / 2),
       y: Math.round((S.top + S.bottom) / 2)
     };
-    return v(P, x) !== Me.IsOutside;
+    return b(P, x) !== Re.IsOutside;
   }
   t.path2ContainsPath1 = E;
 })(te || (te = {}));
@@ -11967,12 +11978,12 @@ var ba;
   }
   t.reverseD = n;
 })(ba || (ba = {}));
-const ov = $e.createInvalid(), av = Pr.createInvalid();
+const av = $e.createInvalid(), lv = Pr.createInvalid();
 var Fe;
 (function(t) {
   t[t.None = 0] = "None", t[t.OpenStart = 1] = "OpenStart", t[t.OpenEnd = 2] = "OpenEnd", t[t.LocalMax = 4] = "LocalMax", t[t.LocalMin = 8] = "LocalMin";
 })(Fe || (Fe = {}));
-class lv {
+class cv {
   constructor() {
     B(this, "data", []);
   }
@@ -12016,7 +12027,7 @@ let Ta = class {
     this.pt = e, this.flags = r, this.prev = i;
   }
 };
-class Ah {
+class Eh {
   constructor(e, r, i = !1) {
     B(this, "vertex");
     B(this, "polytype");
@@ -12027,7 +12038,7 @@ class Ah {
     return e !== null && this.vertex === e.vertex;
   }
 }
-function cv(t, e, r) {
+function uv(t, e, r) {
   return { pt: { x: t.x, y: t.y, z: t.z || 0 }, edge1: e, edge2: r };
 }
 var Ur;
@@ -12069,7 +12080,7 @@ const On = class On {
 };
 B(On, "_nextId", 1);
 let Ks = On;
-class uv {
+class dv {
   constructor(e) {
     B(this, "leftOp");
     B(this, "rightOp");
@@ -12121,7 +12132,7 @@ var Qs;
     if ((i.flags & Fe.LocalMin) !== Fe.None)
       return;
     i.flags |= Fe.LocalMin;
-    const a = new Ah(i, n, s);
+    const a = new Eh(i, n, s);
     o.push(a);
   }
   t.addLocMin = e;
@@ -12129,13 +12140,13 @@ var Qs;
     for (let l = 0, c = i.length; l < c; l++) {
       const u = i[l];
       let d = null, h = null;
-      for (let m = 0, y = u.length; m < y; m++) {
+      for (let m = 0, v = u.length; m < v; m++) {
         const A = u[m];
         if (d === null)
           d = new Ta(A, Fe.None, null), a.push(d), h = d;
         else if (!(h.pt.x === A.x && h.pt.y === A.y)) {
-          const v = new Ta(A, Fe.None, h);
-          a.push(v), h.next = v, h = v;
+          const b = new Ta(A, Fe.None, h);
+          a.push(b), h.next = b, h = b;
         }
       }
       if ((h == null ? void 0 : h.prev) === null || (!s && h.pt.x === d.pt.x && h.pt.y === d.pt.y && (h = h.prev), h.next = d, d.prev = h, !s && h.next === h))
@@ -12163,7 +12174,7 @@ var Qs;
   }
   t.addPathsToVertexList = r;
 })(Qs || (Qs = {}));
-class dv {
+class hv {
   constructor(e = null) {
     B(this, "parent");
     B(this, "children", []);
@@ -12213,7 +12224,7 @@ class dv {
 `;
   }
 }
-class Do extends dv {
+class Do extends hv {
   // polytree root's polygon == null
   constructor(r = null) {
     super(r);
@@ -12243,14 +12254,14 @@ class Ni extends Do {
 class j {
   constructor() {
     B(this, "cliptype", Le.NoClip);
-    B(this, "fillrule", Re.EvenOdd);
+    B(this, "fillrule", Me.EvenOdd);
     B(this, "actives", null);
     B(this, "sel", null);
     B(this, "minimaList", []);
     B(this, "intersectList", []);
     B(this, "vertexList", []);
     B(this, "outrecList", []);
-    B(this, "scanlineHeap", new lv());
+    B(this, "scanlineHeap", new cv());
     B(this, "scanlineSet", /* @__PURE__ */ new Set());
     // For very small inputs, a heap + set can cost more than it saves.
     // Use an array-based scanline mode initially, and upgrade to heap+set
@@ -12277,7 +12288,7 @@ class j {
   }
   setZ(e, r, i) {
     const n = this.getZCallback();
-    n && (j.getPolyType(e) === ke.Subject ? (this.xyEqual(i, e.bot) ? i.z = e.bot.z : this.xyEqual(i, e.top) ? i.z = e.top.z : this.xyEqual(i, r.bot) ? i.z = r.bot.z : this.xyEqual(i, r.top) ? i.z = r.top.z : i.z = 0, n(e.bot, e.top, r.bot, r.top, i)) : (this.xyEqual(i, r.bot) ? i.z = r.bot.z : this.xyEqual(i, r.top) ? i.z = r.top.z : this.xyEqual(i, e.bot) ? i.z = e.bot.z : this.xyEqual(i, e.top) ? i.z = e.top.z : i.z = 0, n(r.bot, r.top, e.bot, e.top, i)));
+    n && (j.getPolyType(e) === Ge.Subject ? (this.xyEqual(i, e.bot) ? i.z = e.bot.z : this.xyEqual(i, e.top) ? i.z = e.top.z : this.xyEqual(i, r.bot) ? i.z = r.bot.z : this.xyEqual(i, r.top) ? i.z = r.top.z : i.z = 0, n(e.bot, e.top, r.bot, r.top, i)) : (this.xyEqual(i, r.bot) ? i.z = r.bot.z : this.xyEqual(i, r.top) ? i.z = r.top.z : this.xyEqual(i, e.bot) ? i.z = e.bot.z : this.xyEqual(i, e.top) ? i.z = e.top.z : i.z = 0, n(r.bot, r.top, e.bot, e.top, i)));
   }
   // Helper functions
   static isOdd(e) {
@@ -12425,7 +12436,7 @@ class j {
     if (e.minimaList.length !== 0) {
       this.isSortedMinimaList = !1;
       for (const r of e.minimaList)
-        this.minimaList.push(new Ah(r.vertex, r.polytype, r.isOpen)), r.isOpen && (this.hasOpenPaths = !0);
+        this.minimaList.push(new Eh(r.vertex, r.polytype, r.isOpen)), r.isOpen && (this.hasOpenPaths = !0);
     }
   }
   deleteFromAEL(e) {
@@ -12642,18 +12653,18 @@ class j {
     while (r !== e.pts);
   }
   path1InsidePath2(e, r) {
-    let i = Me.IsOn, n = e;
+    let i = Re.IsOn, n = e;
     do {
       switch (this.pointInOpPolygon(n.pt, r)) {
-        case Me.IsOutside:
-          if (i === Me.IsOutside)
+        case Re.IsOutside:
+          if (i === Re.IsOutside)
             return !1;
-          i = Me.IsOutside;
+          i = Re.IsOutside;
           break;
-        case Me.IsInside:
-          if (i === Me.IsInside)
+        case Re.IsInside:
+          if (i === Re.IsInside)
             return !0;
-          i = Me.IsInside;
+          i = Re.IsInside;
           break;
       }
       n = n.next;
@@ -12662,7 +12673,7 @@ class j {
   }
   pointInOpPolygon(e, r) {
     if (r === r.next || r.prev === r.next)
-      return Me.IsOutside;
+      return Re.IsOutside;
     let i = r;
     do {
       if (r.pt.y !== e.y)
@@ -12670,7 +12681,7 @@ class j {
       r = r.next;
     } while (r !== i);
     if (r.pt.y === e.y)
-      return Me.IsOutside;
+      return Re.IsOutside;
     let n = r.pt.y < e.y;
     const s = n;
     let o = 0;
@@ -12685,7 +12696,7 @@ class j {
         break;
       if (i.pt.y === e.y) {
         if (i.pt.x === e.x || i.pt.y === i.prev.pt.y && e.x < i.prev.pt.x != e.x < i.pt.x)
-          return Me.IsOn;
+          return Re.IsOn;
         if (i = i.next, i === r)
           break;
         continue;
@@ -12696,20 +12707,20 @@ class j {
         else {
           const a = te.crossProduct(i.prev.pt, i.pt, e);
           if (a === 0)
-            return Me.IsOn;
+            return Re.IsOn;
           a < 0 === n && (o = 1 - o);
         }
       n = !n, i = i.next;
     }
     if (n === s)
-      return o === 0 ? Me.IsOutside : Me.IsInside;
+      return o === 0 ? Re.IsOutside : Re.IsInside;
     {
       const a = te.crossProduct(i.prev.pt, i.pt, e);
       if (a === 0)
-        return Me.IsOn;
+        return Re.IsOn;
       a < 0 === n && (o = 1 - o);
     }
-    return o === 0 ? Me.IsOutside : Me.IsInside;
+    return o === 0 ? Re.IsOutside : Re.IsInside;
   }
   getCleanPath(e) {
     const r = [];
@@ -12804,7 +12815,7 @@ class j {
     i && j.setDx(e);
   }
   addToHorzSegList(e) {
-    e.outrec.isOpen || this.horzSegList.push(new uv(e));
+    e.outrec.isOpen || this.horzSegList.push(new dv(e));
   }
   addNewIntersectNode(e, r, i) {
     const n = te.getLineIntersectPt(e.bot, e.top, r.bot, r.top);
@@ -12813,7 +12824,7 @@ class j {
       const a = Math.abs(e.dx), l = Math.abs(r.dx);
       a > 100 && l > 100 ? a > l ? s = te.getClosestPtOnSegment(s, e.bot, e.top) : s = te.getClosestPtOnSegment(s, r.bot, r.top) : a > 100 ? s = te.getClosestPtOnSegment(s, e.bot, e.top) : l > 100 ? s = te.getClosestPtOnSegment(s, r.bot, r.top) : (s.y < i ? s.y = i : s.y = this.currentBotY, a < l ? s.x = j.topX(e, s.y) : s.x = j.topX(r, s.y));
     }
-    const o = cv(s, e, r);
+    const o = uv(s, e, r);
     this.intersectList.push(o);
   }
   extractFromSEL(e) {
@@ -12874,21 +12885,21 @@ class j {
   }
   setWindCountForOpenPathEdge(e) {
     let r = this.actives;
-    if (this.fillrule === Re.EvenOdd) {
+    if (this.fillrule === Me.EvenOdd) {
       let i = 0, n = 0;
       for (; r !== e; )
-        j.getPolyType(r) === ke.Clip ? n++ : j.isOpen(r) || i++, r = r.nextInAEL;
+        j.getPolyType(r) === Ge.Clip ? n++ : j.isOpen(r) || i++, r = r.nextInAEL;
       e.windCount = j.isOdd(i) ? 1 : 0, e.windCount2 = j.isOdd(n) ? 1 : 0;
     } else
       for (; r !== e; )
-        j.getPolyType(r) === ke.Clip ? e.windCount2 += r.windDx : j.isOpen(r) || (e.windCount += r.windDx), r = r.nextInAEL;
+        j.getPolyType(r) === Ge.Clip ? e.windCount2 += r.windDx : j.isOpen(r) || (e.windCount += r.windDx), r = r.nextInAEL;
   }
   setWindCountForClosedPathEdge(e) {
     let r = e.prevInAEL;
     const i = j.getPolyType(e);
     for (; r !== null && (j.getPolyType(r) !== i || j.isOpen(r)); )
       r = r.prevInAEL;
-    if (r === null ? (e.windCount = e.windDx, r = this.actives) : this.fillrule === Re.EvenOdd ? (e.windCount = e.windDx, e.windCount2 = r.windCount2, r = r.nextInAEL) : (r.windCount * r.windDx < 0 ? Math.abs(r.windCount) > 1 ? r.windDx * e.windDx < 0 ? e.windCount = r.windCount : e.windCount = r.windCount + e.windDx : e.windCount = j.isOpen(e) ? 1 : e.windDx : r.windDx * e.windDx < 0 ? e.windCount = r.windCount : e.windCount = r.windCount + e.windDx, e.windCount2 = r.windCount2, r = r.nextInAEL), this.fillrule === Re.EvenOdd)
+    if (r === null ? (e.windCount = e.windDx, r = this.actives) : this.fillrule === Me.EvenOdd ? (e.windCount = e.windDx, e.windCount2 = r.windCount2, r = r.nextInAEL) : (r.windCount * r.windDx < 0 ? Math.abs(r.windCount) > 1 ? r.windDx * e.windDx < 0 ? e.windCount = r.windCount : e.windCount = r.windCount + e.windDx : e.windCount = j.isOpen(e) ? 1 : e.windDx : r.windDx * e.windDx < 0 ? e.windCount = r.windCount : e.windCount = r.windCount + e.windDx, e.windCount2 = r.windCount2, r = r.nextInAEL), this.fillrule === Me.EvenOdd)
       for (; r !== e; )
         j.getPolyType(r) !== i && !j.isOpen(r) && (e.windCount2 = e.windCount2 === 0 ? 1 : 0), r = r.nextInAEL;
     else
@@ -12898,10 +12909,10 @@ class j {
   isContributingOpen(e) {
     let r, i;
     switch (this.fillrule) {
-      case Re.Positive:
+      case Me.Positive:
         i = e.windCount > 0, r = e.windCount2 > 0;
         break;
-      case Re.Negative:
+      case Me.Negative:
         i = e.windCount < 0, r = e.windCount2 < 0;
         break;
       default:
@@ -12919,27 +12930,27 @@ class j {
   }
   isContributingClosed(e) {
     switch (this.fillrule) {
-      case Re.Positive:
+      case Me.Positive:
         if (e.windCount !== 1)
           return !1;
         break;
-      case Re.Negative:
+      case Me.Negative:
         if (e.windCount !== -1)
           return !1;
         break;
-      case Re.NonZero:
+      case Me.NonZero:
         if (Math.abs(e.windCount) !== 1)
           return !1;
         break;
     }
     switch (this.cliptype) {
       case Le.Intersection:
-        return this.fillrule === Re.Positive ? e.windCount2 > 0 : this.fillrule === Re.Negative ? e.windCount2 < 0 : e.windCount2 !== 0;
+        return this.fillrule === Me.Positive ? e.windCount2 > 0 : this.fillrule === Me.Negative ? e.windCount2 < 0 : e.windCount2 !== 0;
       case Le.Union:
-        return this.fillrule === Re.Positive ? e.windCount2 <= 0 : this.fillrule === Re.Negative ? e.windCount2 >= 0 : e.windCount2 === 0;
+        return this.fillrule === Me.Positive ? e.windCount2 <= 0 : this.fillrule === Me.Negative ? e.windCount2 >= 0 : e.windCount2 === 0;
       case Le.Difference:
-        const r = this.fillrule === Re.Positive ? e.windCount2 <= 0 : this.fillrule === Re.Negative ? e.windCount2 >= 0 : e.windCount2 === 0;
-        return j.getPolyType(e) === ke.Subject ? r : !r;
+        const r = this.fillrule === Me.Positive ? e.windCount2 <= 0 : this.fillrule === Me.Negative ? e.windCount2 >= 0 : e.windCount2 === 0;
+        return j.getPolyType(e) === Ge.Subject ? r : !r;
       case Le.Xor:
         return !0;
       // XOr is always contributing unless open
@@ -13008,14 +13019,14 @@ class j {
       if (j.isOpen(r) && ([e, r] = j.swapActives(e, r)), this.isJoined(r) && this.split(r, i), this.cliptype === Le.Union) {
         if (!j.isHotEdge(r))
           return;
-      } else if (r.localMin.polytype === ke.Subject)
+      } else if (r.localMin.polytype === Ge.Subject)
         return;
       switch (this.fillrule) {
-        case Re.Positive:
+        case Me.Positive:
           if (r.windCount !== 1)
             return;
           break;
-        case Re.Negative:
+        case Me.Negative:
           if (r.windCount !== -1)
             return;
           break;
@@ -13040,11 +13051,11 @@ class j {
     }
     this.isJoined(e) && this.split(e, i), this.isJoined(r) && this.split(r, i);
     let s, o;
-    switch (e.localMin.polytype === r.localMin.polytype ? this.fillrule === Re.EvenOdd ? (s = e.windCount, e.windCount = r.windCount, r.windCount = s) : (e.windCount + r.windDx === 0 ? e.windCount = -e.windCount : e.windCount += r.windDx, r.windCount - e.windDx === 0 ? r.windCount = -r.windCount : r.windCount -= e.windDx) : (this.fillrule !== Re.EvenOdd ? e.windCount2 += r.windDx : e.windCount2 = e.windCount2 === 0 ? 1 : 0, this.fillrule !== Re.EvenOdd ? r.windCount2 -= e.windDx : r.windCount2 = r.windCount2 === 0 ? 1 : 0), this.fillrule) {
-      case Re.Positive:
+    switch (e.localMin.polytype === r.localMin.polytype ? this.fillrule === Me.EvenOdd ? (s = e.windCount, e.windCount = r.windCount, r.windCount = s) : (e.windCount + r.windDx === 0 ? e.windCount = -e.windCount : e.windCount += r.windDx, r.windCount - e.windDx === 0 ? r.windCount = -r.windCount : r.windCount -= e.windDx) : (this.fillrule !== Me.EvenOdd ? e.windCount2 += r.windDx : e.windCount2 = e.windCount2 === 0 ? 1 : 0, this.fillrule !== Me.EvenOdd ? r.windCount2 -= e.windDx : r.windCount2 = r.windCount2 === 0 ? 1 : 0), this.fillrule) {
+      case Me.Positive:
         s = e.windCount, o = r.windCount;
         break;
-      case Re.Negative:
+      case Me.Negative:
         s = -e.windCount, o = -r.windCount;
         break;
       default:
@@ -13072,10 +13083,10 @@ class j {
       else {
         let c, u;
         switch (this.fillrule) {
-          case Re.Positive:
+          case Me.Positive:
             c = e.windCount2, u = r.windCount2;
             break;
-          case Re.Negative:
+          case Me.Negative:
             c = -e.windCount2, u = -r.windCount2;
             break;
           default:
@@ -13092,7 +13103,7 @@ class j {
               n = this.addLocalMinPoly(e, r, i);
               break;
             case Le.Difference:
-              (j.getPolyType(e) === ke.Clip && c > 0 && u > 0 || j.getPolyType(e) === ke.Subject && c <= 0 && u <= 0) && (n = this.addLocalMinPoly(e, r, i));
+              (j.getPolyType(e) === Ge.Clip && c > 0 && u > 0 || j.getPolyType(e) === Ge.Subject && c <= 0 && u <= 0) && (n = this.addLocalMinPoly(e, r, i));
               break;
             case Le.Xor:
               n = this.addLocalMinPoly(e, r, i);
@@ -13371,7 +13382,7 @@ class j {
     return !1;
   }
 }
-class Mn extends j {
+class Rn extends j {
   constructor() {
     super(...arguments);
     B(this, "zCallback");
@@ -13389,13 +13400,13 @@ class Mn extends j {
     super.addPaths(r, i, n);
   }
   addSubject(r) {
-    this.addPaths(r, ke.Subject);
+    this.addPaths(r, Ge.Subject);
   }
   addOpenSubject(r) {
-    this.addPaths(r, ke.Subject, !0);
+    this.addPaths(r, Ge.Subject, !0);
   }
   addClip(r) {
-    this.addPaths(r, ke.Clip);
+    this.addPaths(r, Ge.Clip);
   }
   execute(r, i, n, s) {
     if (Array.isArray(n)) {
@@ -13474,22 +13485,22 @@ let Sa = class extends j {
     super.addPaths(Pi.scalePaths64(r, this.scale), i, n);
   }
   addSubject(r) {
-    this.addPath(r, ke.Subject);
+    this.addPath(r, Ge.Subject);
   }
   addOpenSubject(r) {
-    this.addPath(r, ke.Subject, !0);
+    this.addPath(r, Ge.Subject, !0);
   }
   addClip(r) {
-    this.addPath(r, ke.Clip);
+    this.addPath(r, Ge.Clip);
   }
   addSubjectPaths(r) {
-    this.addPaths(r, ke.Subject);
+    this.addPaths(r, Ge.Subject);
   }
   addOpenSubjectPaths(r) {
-    this.addPaths(r, ke.Subject, !0);
+    this.addPaths(r, Ge.Subject, !0);
   }
   addClipPaths(r) {
-    this.addPaths(r, ke.Clip);
+    this.addPaths(r, Ge.Clip);
   }
   execute(r, i, n, s) {
     if (Array.isArray(n)) {
@@ -13585,23 +13596,23 @@ var Ot;
 (function(t) {
   t[t.Miter = 0] = "Miter", t[t.Square = 1] = "Square", t[t.Bevel = 2] = "Bevel", t[t.Round = 3] = "Round";
 })(Ot || (Ot = {}));
-var Ge;
+var ke;
 (function(t) {
   t[t.Polygon = 0] = "Polygon", t[t.Joined = 1] = "Joined", t[t.Butt = 2] = "Butt", t[t.Square = 3] = "Square", t[t.Round = 4] = "Round";
-})(Ge || (Ge = {}));
-class hv {
-  constructor(e, r, i = Ge.Polygon) {
+})(ke || (ke = {}));
+class fv {
+  constructor(e, r, i = ke.Polygon) {
     B(this, "inPaths");
     B(this, "joinType");
     B(this, "endType");
     B(this, "pathsReversed");
     B(this, "lowestPathIdx");
     this.joinType = r, this.endType = i;
-    const n = i === Ge.Polygon || i === Ge.Joined;
+    const n = i === ke.Polygon || i === ke.Joined;
     this.inPaths = [];
     for (const s of e)
       this.inPaths.push(Pn.stripDuplicates(s, n));
-    if (i === Ge.Polygon) {
+    if (i === ke.Polygon) {
       const s = Pn.getLowestPathInfo(this.inPaths);
       this.lowestPathIdx = s.idx, this.pathsReversed = this.lowestPathIdx >= 0 && s.isNegArea;
     } else
@@ -13625,7 +13636,7 @@ let Pn = (Ne = class {
     B(this, "stepSin", 0);
     B(this, "stepCos", 0);
     B(this, "joinType", Ot.Bevel);
-    B(this, "endType", Ge.Polygon);
+    B(this, "endType", ke.Polygon);
     B(this, "arcTolerance", 0);
     B(this, "mergeGroups", !0);
     B(this, "miterLimit", 2);
@@ -13649,18 +13660,18 @@ let Pn = (Ne = class {
     this.addPaths(n, r, i);
   }
   addPaths(e, r, i) {
-    e.length !== 0 && this.groupList.push(new hv(e, r, i));
+    e.length !== 0 && this.groupList.push(new fv(e, r, i));
   }
   calcSolutionCapacity() {
     let e = 0;
     for (const r of this.groupList)
-      e += r.endType === Ge.Joined ? r.inPaths.length * 2 : r.inPaths.length;
+      e += r.endType === ke.Joined ? r.inPaths.length * 2 : r.inPaths.length;
     return e;
   }
   checkPathsReversed() {
     let e = !1;
     for (const r of this.groupList)
-      if (r.endType === Ge.Polygon) {
+      if (r.endType === ke.Polygon) {
         e = r.pathsReversed;
         break;
       }
@@ -13680,7 +13691,7 @@ let Pn = (Ne = class {
       this.doGroupOffset(s);
     if (this.groupList.length === 0)
       return;
-    const r = this.checkPathsReversed(), i = r ? Re.Negative : Re.Positive, n = new Mn();
+    const r = this.checkPathsReversed(), i = r ? Me.Negative : Me.Positive, n = new Rn();
     n.preserveCollinear = this.preserveCollinear, n.reverseSolution = this.reverseSolution !== r, n.zCallback = this.ZCB, n.addSubject(this.solution), this.solutionTree !== null ? n.execute(Le.Union, i, this.solutionTree) : n.execute(Le.Union, i, this.solution);
   }
   execute(e, r) {
@@ -13899,10 +13910,10 @@ let Pn = (Ne = class {
       this.pathOut.push(r[0]);
     else
       switch (this.endType) {
-        case Ge.Butt:
+        case ke.Butt:
           this.doBevel(r, 0, 0);
           break;
-        case Ge.Round:
+        case ke.Round:
           this.doRound(r, 0, 0, Math.PI);
           break;
         default:
@@ -13917,10 +13928,10 @@ let Pn = (Ne = class {
       this.pathOut.push(r[i]);
     else
       switch (this.endType) {
-        case Ge.Butt:
+        case ke.Butt:
           this.doBevel(r, i, i);
           break;
-        case Ge.Round:
+        case ke.Round:
           this.doRound(r, i, i, Math.PI);
           break;
         default:
@@ -13932,9 +13943,9 @@ let Pn = (Ne = class {
     this.solution.push([...this.pathOut]);
   }
   doGroupOffset(e) {
-    e.endType === Ge.Polygon ? (e.lowestPathIdx < 0 && (this.delta = Math.abs(this.delta)), this.groupDelta = e.pathsReversed ? -this.delta : this.delta) : this.groupDelta = Math.abs(this.delta);
+    e.endType === ke.Polygon ? (e.lowestPathIdx < 0 && (this.delta = Math.abs(this.delta)), this.groupDelta = e.pathsReversed ? -this.delta : this.delta) : this.groupDelta = Math.abs(this.delta);
     const r = Math.abs(this.groupDelta);
-    if (this.joinType = e.joinType, this.endType = e.endType, e.joinType === Ot.Round || e.endType === Ge.Round) {
+    if (this.joinType = e.joinType, this.endType = e.endType, e.joinType === Ot.Round || e.endType === ke.Round) {
       const i = this.arcTolerance > 0.01 ? this.arcTolerance : r * Ne.arc_const, n = Math.PI / Math.acos(1 - i / r);
       this.stepSin = Math.sin(2 * Math.PI / n), this.stepCos = Math.cos(2 * Math.PI / n), this.groupDelta < 0 && (this.stepSin = -this.stepSin), this.stepsPerRad = n / (2 * Math.PI);
     }
@@ -13943,7 +13954,7 @@ let Pn = (Ne = class {
       const n = i.length;
       if (n === 1) {
         const s = i[0];
-        if (this.deltaCallback !== null && (this.groupDelta = this.deltaCallback(i, this.normals, 0, 0), e.pathsReversed && (this.groupDelta = -this.groupDelta)), e.endType === Ge.Round) {
+        if (this.deltaCallback !== null && (this.groupDelta = this.deltaCallback(i, this.normals, 0, 0), e.pathsReversed && (this.groupDelta = -this.groupDelta)), e.endType === ke.Round) {
           const o = Math.ceil(this.stepsPerRad * 2 * Math.PI);
           this.pathOut = Ne.ellipse(s, Math.abs(this.groupDelta), Math.abs(this.groupDelta), o);
         } else {
@@ -13958,11 +13969,11 @@ let Pn = (Ne = class {
         this.solution.push([...this.pathOut]);
         continue;
       }
-      switch (n === 2 && e.endType === Ge.Joined && (this.endType = e.joinType === Ot.Round ? Ge.Round : Ge.Square), this.buildNormals(i), this.endType) {
-        case Ge.Polygon:
+      switch (n === 2 && e.endType === ke.Joined && (this.endType = e.joinType === Ot.Round ? ke.Round : ke.Square), this.buildNormals(i), this.endType) {
+        case ke.Polygon:
           this.offsetPolygon(e, i);
           break;
-        case Ge.Joined:
+        case ke.Joined:
           this.offsetOpenJoined(e, i);
           break;
         default:
@@ -14023,7 +14034,7 @@ let Pn = (Ne = class {
 // default arc tolerance (offset_radius / 500) generally produces good (smooth)
 // arc approximations without producing excessively small segment lengths.
 // See also: https://www.angusj.com/clipper2/Docs/Trigonometry.htm
-B(Ne, "arc_const", 2e-3), Ne), Ra = class {
+B(Ne, "arc_const", 2e-3), Ne), Ma = class {
   constructor(e) {
     B(this, "next", null);
     B(this, "prev", null);
@@ -14053,13 +14064,13 @@ class fe {
   add(e, r = !1) {
     let i = this.results.length, n;
     if (i === 0 || r)
-      n = new Ra(e), this.results.push(n), n.ownerIdx = i, n.prev = n, n.next = n;
+      n = new Ma(e), this.results.push(n), n.ownerIdx = i, n.prev = n, n.next = n;
     else {
       i--;
       const s = this.results[i];
       if (s && _e.equals(s.pt, e))
         return s;
-      n = new Ra(e), n.ownerIdx = i, n.next = s.next, s.next.prev = n, s.next = n, n.prev = s, this.results[i] = n;
+      n = new Ma(e), n.ownerIdx = i, n.next = s.next, s.next.prev = n, s.next = n, n.prev = s, this.results[i] = n;
     }
     return n;
   }
@@ -14067,10 +14078,10 @@ class fe {
     let i = 0;
     for (const n of r) {
       switch (te.pointInPolygon(n, e)) {
-        case Me.IsInside:
+        case Re.IsInside:
           i--;
           break;
-        case Me.IsOutside:
+        case Re.IsOutside:
           i++;
           break;
       }
@@ -14503,8 +14514,8 @@ class fe {
       }
       let p, g;
       s ? (p = u, g = d) : (p = l, g = h), this.results[p.ownerIdx] = p, this.results[g.ownerIdx] = g;
-      let m, y;
-      n ? (m = p.pt.x > p.prev.pt.x, y = g.pt.x > g.prev.pt.x) : (m = p.pt.y > p.prev.pt.y, y = g.pt.y > g.prev.pt.y), p.next === p.prev || _e.equals(p.pt, p.prev.pt) ? y === s ? (r[o] = g, i[a++] = null) : (i[a] = g, r[o++] = null) : g.next === g.prev || _e.equals(g.pt, g.prev.pt) ? m === s ? (r[o] = p, i[a++] = null) : (i[a] = p, r[o++] = null) : m === y ? m === s ? (r[o] = p, fe.uncoupleEdge(g), fe.addToEdge(r, g), i[a++] = null) : (r[o++] = null, i[a] = g, fe.uncoupleEdge(p), fe.addToEdge(i, p), a = 0) : (m === s ? r[o] = p : i[a] = p, y === s ? r[o] = g : i[a] = g);
+      let m, v;
+      n ? (m = p.pt.x > p.prev.pt.x, v = g.pt.x > g.prev.pt.x) : (m = p.pt.y > p.prev.pt.y, v = g.pt.y > g.prev.pt.y), p.next === p.prev || _e.equals(p.pt, p.prev.pt) ? v === s ? (r[o] = g, i[a++] = null) : (i[a] = g, r[o++] = null) : g.next === g.prev || _e.equals(g.pt, g.prev.pt) ? m === s ? (r[o] = p, i[a++] = null) : (i[a] = p, r[o++] = null) : m === v ? m === s ? (r[o] = p, fe.uncoupleEdge(g), fe.addToEdge(r, g), i[a++] = null) : (r[o++] = null, i[a] = g, fe.uncoupleEdge(p), fe.addToEdge(i, p), a = 0) : (m === s ? r[o] = p : i[a] = p, v === s ? r[o] = g : i[a] = g);
     }
   }
   getPath(e) {
@@ -14521,7 +14532,7 @@ class fe {
     return r;
   }
 }
-let Ma = class extends fe {
+let Ra = class extends fe {
   constructor(e) {
     super(e);
   }
@@ -14601,7 +14612,7 @@ let Ma = class extends fe {
 var Jr;
 (function(t) {
   function e(h, f, p, g) {
-    const m = g ? 0 : 1, y = h.length, A = f.length, v = [];
+    const m = g ? 0 : 1, v = h.length, A = f.length, b = [];
     for (const T of f) {
       const S = [];
       if (p)
@@ -14610,40 +14621,40 @@ var Jr;
       else
         for (const P of h)
           S.push(_e.subtract(T, P));
-      v.push(S);
+      b.push(S);
     }
     const E = [];
-    let b = g ? A - 1 : 0, x = y - 1;
+    let y = g ? A - 1 : 0, x = v - 1;
     for (let T = m; T < A; T++) {
-      for (let S = 0; S < y; S++) {
+      for (let S = 0; S < v; S++) {
         const P = [
-          v[b][x],
-          v[T][x],
-          v[T][S],
-          v[b][S]
+          b[y][x],
+          b[T][x],
+          b[T][S],
+          b[y][S]
         ];
         o(P) ? E.push(P) : E.push(l(P)), x = S;
       }
-      b = T;
+      y = T;
     }
     return E;
   }
   function r(h, f, p) {
-    return d(e(h, f, !0, p), Re.NonZero);
+    return d(e(h, f, !0, p), Me.NonZero);
   }
   t.sum = r;
   function i(h, f, p, g = 2) {
-    const m = Math.pow(10, g), y = d(e(c(h, m), c(f, m), !0, p), Re.NonZero);
-    return u(y, 1 / m);
+    const m = Math.pow(10, g), v = d(e(c(h, m), c(f, m), !0, p), Me.NonZero);
+    return u(v, 1 / m);
   }
   t.sumD = i;
   function n(h, f, p) {
-    return d(e(h, f, !1, p), Re.NonZero);
+    return d(e(h, f, !1, p), Me.NonZero);
   }
   t.diff = n;
   function s(h, f, p, g = 2) {
-    const m = Math.pow(10, g), y = d(e(c(h, m), c(f, m), !1, p), Re.NonZero);
-    return u(y, 1 / m);
+    const m = Math.pow(10, g), v = d(e(c(h, m), c(f, m), !1, p), Me.NonZero);
+    return u(v, 1 / m);
   }
   t.diffD = s;
   function o(h) {
@@ -14675,18 +14686,18 @@ var Jr;
     const p = [];
     for (const g of h) {
       const m = [];
-      for (const y of g)
+      for (const v of g)
         m.push({
-          x: y.x * f,
-          y: y.y * f
+          x: v.x * f,
+          y: v.y * f
         });
       p.push(m);
     }
     return p;
   }
   function d(h, f) {
-    const p = [], g = new Mn();
-    return g.addPaths(h, ke.Subject), g.execute(Le.Union, f, p), p;
+    const p = [], g = new Rn();
+    return g.addPaths(h, Ge.Subject), g.execute(Le.Union, f, p), p;
   }
 })(Jr || (Jr = {}));
 var Dr;
@@ -14713,7 +14724,7 @@ class ms {
     this.pt = e;
   }
 }
-class fv {
+class pv {
   constructor() {
     B(this, "vL", null);
     B(this, "vR", null);
@@ -14727,7 +14738,7 @@ class fv {
     B(this, "prevE", null);
   }
 }
-class pv {
+class mv {
   constructor(e, r, i) {
     B(this, "edges", new Array(3));
     this.edges[0] = e, this.edges[1] = r, this.edges[2] = i;
@@ -14860,11 +14871,11 @@ class ue {
     return ue.removeEdgeFromVertex(a, n), n.vL === a ? n.vL = i : n.vR = i, n.vT = i, i.edges.push(n), i.innerLM = !1, n.vB.innerLM && ue.getLocMinAngle(n.vB) <= 0 && (n.vB.innerLM = !1), this.createEdge(i, a, n.kind), !0;
   }
   createEdge(e, r, i) {
-    const n = new fv();
+    const n = new pv();
     return this.allEdges.push(n), e.pt.y === r.pt.y ? (n.vB = e, n.vT = r) : e.pt.y < r.pt.y ? (n.vB = r, n.vT = e) : (n.vB = e, n.vT = r), e.pt.x <= r.pt.x ? (n.vL = e, n.vR = r) : (n.vL = r, n.vR = e), n.kind = i, e.edges.push(n), r.edges.push(n), i === je.loose && (this.pendingDelaunayStack.push(n), this.addEdgeToActives(n)), n;
   }
   createTriangle(e, r, i) {
-    const n = new pv(e, r, i);
+    const n = new mv(e, r, i);
     this.allTriangles.push(n);
     for (let s = 0; s < 3; ++s) {
       const o = n.edges[s];
@@ -15192,98 +15203,98 @@ class ue {
 }
 var Zs;
 (function(t) {
-  t.invalidRect64 = ov, t.invalidRectD = av;
-  function e(M, L, N) {
-    return c(Le.Intersection, M, L, N);
+  t.invalidRect64 = av, t.invalidRectD = lv;
+  function e(R, L, N) {
+    return c(Le.Intersection, R, L, N);
   }
   t.intersect = e;
-  function r(M, L, N, G = 2) {
-    return d(Le.Intersection, M, L, N, G);
+  function r(R, L, N, k = 2) {
+    return d(Le.Intersection, R, L, N, k);
   }
   t.intersectD = r;
-  function i(M, L, N) {
-    return typeof L == "number" ? c(Le.Union, M, null, L) : c(Le.Union, M, L, N);
+  function i(R, L, N) {
+    return typeof L == "number" ? c(Le.Union, R, null, L) : c(Le.Union, R, L, N);
   }
   t.union = i;
-  function n(M, L, N, G) {
-    return typeof L == "number" ? d(Le.Union, M, null, L) : d(Le.Union, M, L, N, G || 2);
+  function n(R, L, N, k) {
+    return typeof L == "number" ? d(Le.Union, R, null, L) : d(Le.Union, R, L, N, k || 2);
   }
   t.unionD = n;
-  function s(M, L, N) {
-    return c(Le.Difference, M, L, N);
+  function s(R, L, N) {
+    return c(Le.Difference, R, L, N);
   }
   t.difference = s;
-  function o(M, L, N, G = 2) {
-    return d(Le.Difference, M, L, N, G);
+  function o(R, L, N, k = 2) {
+    return d(Le.Difference, R, L, N, k);
   }
   t.differenceD = o;
-  function a(M, L, N) {
-    return c(Le.Xor, M, L, N);
+  function a(R, L, N) {
+    return c(Le.Xor, R, L, N);
   }
   t.xor = a;
-  function l(M, L, N, G = 2) {
-    return d(Le.Xor, M, L, N, G);
+  function l(R, L, N, k = 2) {
+    return d(Le.Xor, R, L, N, k);
   }
   t.xorD = l;
-  function c(M, L, N, G) {
+  function c(R, L, N, k) {
     const W = [];
     if (L === null)
       return W;
-    const Z = new Mn();
-    return Z.addPaths(L, ke.Subject), N !== null && Z.addPaths(N, ke.Clip), Z.execute(M, G, W), W;
+    const Z = new Rn();
+    return Z.addPaths(L, Ge.Subject), N !== null && Z.addPaths(N, Ge.Clip), Z.execute(R, k, W), W;
   }
   t.booleanOp = c;
-  function u(M, L, N, G, W) {
+  function u(R, L, N, k, W) {
     if (L === null)
       return;
-    const Z = new Mn();
-    Z.addPaths(L, ke.Subject), N !== null && Z.addPaths(N, ke.Clip), Z.execute(M, W, G);
+    const Z = new Rn();
+    Z.addPaths(L, Ge.Subject), N !== null && Z.addPaths(N, Ge.Clip), Z.execute(R, W, k);
   }
   t.booleanOpWithPolyTree = u;
-  function d(M, L, N, G, W = 2) {
+  function d(R, L, N, k, W = 2) {
     const Z = [], ne = new Sa(W);
-    return ne.addSubjectPaths(L), N !== null && ne.addClipPaths(N), ne.execute(M, G, Z), Z;
+    return ne.addSubjectPaths(L), N !== null && ne.addClipPaths(N), ne.execute(R, k, Z), Z;
   }
   t.booleanOpD = d;
-  function h(M, L, N, G, W, Z = 2) {
+  function h(R, L, N, k, W, Z = 2) {
     if (L === null)
       return;
     const ne = new Sa(Z);
-    ne.addSubjectPaths(L), N !== null && ne.addClipPaths(N), ne.execute(M, W, G);
+    ne.addSubjectPaths(L), N !== null && ne.addClipPaths(N), ne.execute(R, W, k);
   }
   t.booleanOpDWithPolyTree = h;
-  function f(M, L, N, G, W = 2, Z = 0) {
+  function f(R, L, N, k, W = 2, Z = 0) {
     const ne = new Pn(W, Z);
-    ne.addPaths(M, N, G);
+    ne.addPaths(R, N, k);
     const ce = [];
     return ne.execute(L, ce), ce;
   }
   t.inflatePaths = f;
-  function p(M, L, N, G, W = 2, Z = 2, ne = 0) {
+  function p(R, L, N, k, W = 2, Z = 2, ne = 0) {
     te.checkPrecision(Z);
-    const ce = Math.pow(10, Z), ie = ee(M, ce), nt = new Pn(W, ce * ne);
-    nt.addPaths(ie, N, G);
+    const ce = Math.pow(10, Z), ie = ee(R, ce), nt = new Pn(W, ce * ne);
+    nt.addPaths(ie, N, k);
     const Te = [];
     return nt.execute(L * ce, Te), q(Te, 1 / ce);
   }
   t.inflatePathsD = p;
-  function g(M, L, N) {
-    if ("left" in M && typeof M.left == "number" && Number.isInteger(M.left)) {
-      const G = M;
-      if ($e.isEmpty(G))
+  function g(R, L, N) {
+    if ("left" in R && typeof R.left == "number" && Number.isInteger(R.left)) {
+      const k = R;
+      if ($e.isEmpty(k))
         return [];
       if (Array.isArray(L[0])) {
         const W = L;
-        return W.length === 0 ? [] : new fe(G).execute(W);
+        return W.length === 0 ? [] : new fe(k).execute(W);
       } else {
         const W = L;
-        return W.length === 0 ? [] : g(G, [W]);
+        return W.length === 0 ? [] : g(k, [W]);
       }
     } else {
-      const G = M, W = N || 2;
-      if (te.checkPrecision(W), Pr.isEmpty(G))
+      const k = R, W = N || 2;
+      if (te.checkPrecision(W), Pr.isEmpty(k))
         return [];
-      const Z = Math.pow(10, W), ne = V(G, Z);
+      const Z = Math.pow(10, W), ne = V(k, Z);
       if (Array.isArray(L[0])) {
         const ce = L;
         if (ce.length === 0)
@@ -15292,549 +15303,549 @@ var Zs;
         return q(nt, 1 / Z);
       } else {
         const ce = L;
-        return ce.length === 0 ? [] : g(G, [ce], W);
+        return ce.length === 0 ? [] : g(k, [ce], W);
       }
     }
   }
   t.rectClip = g;
-  function m(M, L, N) {
-    if ("left" in M && typeof M.left == "number" && Number.isInteger(M.left)) {
-      const G = M;
-      if ($e.isEmpty(G))
+  function m(R, L, N) {
+    if ("left" in R && typeof R.left == "number" && Number.isInteger(R.left)) {
+      const k = R;
+      if ($e.isEmpty(k))
         return [];
       if (Array.isArray(L[0])) {
         const W = L;
-        return W.length === 0 ? [] : new Ma(G).execute(W);
+        return W.length === 0 ? [] : new Ra(k).execute(W);
       } else {
         const W = L;
-        return W.length === 0 ? [] : m(G, [W]);
+        return W.length === 0 ? [] : m(k, [W]);
       }
     } else {
-      const G = M, W = N || 2;
-      if (te.checkPrecision(W), Pr.isEmpty(G))
+      const k = R, W = N || 2;
+      if (te.checkPrecision(W), Pr.isEmpty(k))
         return [];
-      const Z = Math.pow(10, W), ne = V(G, Z);
+      const Z = Math.pow(10, W), ne = V(k, Z);
       if (Array.isArray(L[0])) {
         const ce = L;
         if (ce.length === 0)
           return [];
-        const ie = ee(ce, Z), nt = new Ma(ne).execute(ie);
+        const ie = ee(ce, Z), nt = new Ra(ne).execute(ie);
         return q(nt, 1 / Z);
       } else {
         const ce = L;
-        return ce.length === 0 ? [] : m(G, [ce], W);
+        return ce.length === 0 ? [] : m(k, [ce], W);
       }
     }
   }
   t.rectClipLines = m;
-  function y(M, L, N) {
-    return Jr.sum(M, L, N);
+  function v(R, L, N) {
+    return Jr.sum(R, L, N);
   }
-  t.minkowskiSum = y;
-  function A(M, L, N) {
-    return Jr.sumD(M, L, N);
+  t.minkowskiSum = v;
+  function A(R, L, N) {
+    return Jr.sumD(R, L, N);
   }
   t.minkowskiSumD = A;
-  function v(M, L, N) {
-    return Jr.diff(M, L, N);
+  function b(R, L, N) {
+    return Jr.diff(R, L, N);
   }
-  t.minkowskiDiff = v;
-  function E(M, L, N) {
-    return Jr.diffD(M, L, N);
+  t.minkowskiDiff = b;
+  function E(R, L, N) {
+    return Jr.diffD(R, L, N);
   }
   t.minkowskiDiffD = E;
-  function b(M) {
+  function y(R) {
     let L = 0;
-    const N = M.length;
+    const N = R.length;
     if (N < 3)
       return 0;
-    let G = M[N - 1];
-    for (const W of M)
-      L += (G.y + W.y) * (G.x - W.x), G = W;
+    let k = R[N - 1];
+    for (const W of R)
+      L += (k.y + W.y) * (k.x - W.x), k = W;
     return L * 0.5;
   }
-  t.area = b;
-  function x(M) {
+  t.area = y;
+  function x(R) {
     let L = 0;
-    for (const N of M)
-      L += b(N);
+    for (const N of R)
+      L += y(N);
     return L;
   }
   t.areaPaths = x;
-  function T(M) {
+  function T(R) {
     let L = 0;
-    const N = M.length;
+    const N = R.length;
     if (N < 3)
       return 0;
-    let G = M[N - 1];
-    for (const W of M)
-      L += (G.y + W.y) * (G.x - W.x), G = W;
+    let k = R[N - 1];
+    for (const W of R)
+      L += (k.y + W.y) * (k.x - W.x), k = W;
     return L * 0.5;
   }
   t.areaD = T;
-  function S(M) {
+  function S(R) {
     let L = 0;
-    for (const N of M)
+    for (const N of R)
       L += T(N);
     return L;
   }
   t.areaPathsD = S;
-  function P(M) {
-    return b(M) >= 0;
+  function P(R) {
+    return y(R) >= 0;
   }
   t.isPositive = P;
-  function U(M) {
-    return T(M) >= 0;
+  function U(R) {
+    return T(R) >= 0;
   }
   t.isPositiveD = U;
-  function _(M) {
+  function _(R) {
     let L = "";
-    for (const N of M)
+    for (const N of R)
       L += _e.toString(N);
     return L + `
 `;
   }
   t.path64ToString = _;
-  function O(M) {
+  function O(R) {
     let L = "";
-    for (const N of M)
+    for (const N of R)
       L += _(N);
     return L;
   }
   t.paths64ToString = O;
-  function w(M, L = 2) {
+  function w(R, L = 2) {
     let N = "";
-    for (const G of M)
-      N += lr.toString(G, L);
+    for (const k of R)
+      N += lr.toString(k, L);
     return N + `
 `;
   }
   t.pathDToString = w;
-  function D(M, L = 2) {
+  function D(R, L = 2) {
     let N = "";
-    for (const G of M)
-      N += w(G, L);
+    for (const k of R)
+      N += w(k, L);
     return N;
   }
   t.pathsDToString = D;
-  function R(M, L, N) {
-    const G = [];
-    for (const W of M)
-      G.push({ x: W.x + L, y: W.y + N });
-    return G;
+  function M(R, L, N) {
+    const k = [];
+    for (const W of R)
+      k.push({ x: W.x + L, y: W.y + N });
+    return k;
   }
-  t.offsetPath = R;
-  function C(M, L) {
+  t.offsetPath = M;
+  function C(R, L) {
     return {
-      x: Math.round(M.x * L),
-      y: Math.round(M.y * L)
+      x: Math.round(R.x * L),
+      y: Math.round(R.y * L)
     };
   }
   t.scalePoint64 = C;
-  function I(M, L) {
+  function I(R, L) {
     return {
-      x: M.x * L,
-      y: M.y * L
+      x: R.x * L,
+      y: R.y * L
     };
   }
   t.scalePointD = I;
-  function V(M, L) {
+  function V(R, L) {
     return {
-      left: Math.round(M.left * L),
-      top: Math.round(M.top * L),
-      right: Math.round(M.right * L),
-      bottom: Math.round(M.bottom * L)
+      left: Math.round(R.left * L),
+      top: Math.round(R.top * L),
+      right: Math.round(R.right * L),
+      bottom: Math.round(R.bottom * L)
     };
   }
   t.scaleRect = V;
-  function k(M, L) {
+  function G(R, L) {
     if (te.isAlmostZero(L - 1))
-      return M;
+      return R;
     const N = [];
-    for (const G of M)
+    for (const k of R)
       N.push({
-        x: Math.round(G.x * L),
-        y: Math.round(G.y * L)
+        x: Math.round(k.x * L),
+        y: Math.round(k.y * L)
       });
     return N;
   }
-  t.scalePath = k;
-  function F(M, L) {
+  t.scalePath = G;
+  function F(R, L) {
     if (te.isAlmostZero(L - 1))
-      return M;
+      return R;
     const N = [];
-    for (const G of M)
-      N.push(k(G, L));
+    for (const k of R)
+      N.push(G(k, L));
     return N;
   }
   t.scalePaths = F;
-  function X(M, L) {
+  function X(R, L) {
     if (te.isAlmostZero(L - 1))
-      return M;
+      return R;
     const N = [];
-    for (const G of M)
-      N.push(lr.scale(G, L));
+    for (const k of R)
+      N.push(lr.scale(k, L));
     return N;
   }
   t.scalePathD = X;
-  function q(M, L) {
+  function q(R, L) {
     if (te.isAlmostZero(L - 1))
-      return M;
+      return R;
     const N = [];
-    for (const G of M)
-      N.push(X(G, L));
+    for (const k of R)
+      N.push(X(k, L));
     return N;
   }
   t.scalePathsD = q;
-  function Q(M, L) {
+  function Q(R, L) {
     const N = [];
-    for (const G of M)
+    for (const k of R)
       N.push({
-        x: Math.round(G.x * L),
-        y: Math.round(G.y * L)
+        x: Math.round(k.x * L),
+        y: Math.round(k.y * L)
       });
     return N;
   }
   t.scalePath64 = Q;
-  function ee(M, L) {
+  function ee(R, L) {
     const N = [];
-    for (const G of M)
-      N.push(Q(G, L));
+    for (const k of R)
+      N.push(Q(k, L));
     return N;
   }
   t.scalePaths64 = ee;
-  function J(M, L) {
+  function J(R, L) {
     const N = [];
-    for (const G of M)
+    for (const k of R)
       N.push({
-        x: G.x * L,
-        y: G.y * L
+        x: k.x * L,
+        y: k.y * L
       });
     return N;
   }
   t.scalePathDFromInt = J;
-  function ge(M, L) {
+  function ge(R, L) {
     const N = [];
-    for (const G of M)
-      N.push(J(G, L));
+    for (const k of R)
+      N.push(J(k, L));
     return N;
   }
   t.scalePathsDFromInt = ge;
-  function Ae(M) {
+  function Ae(R) {
     const L = [];
-    for (const N of M)
+    for (const N of R)
       L.push(_e.fromPointD(N));
     return L;
   }
   t.path64FromD = Ae;
-  function re(M) {
+  function re(R) {
     const L = [];
-    for (const N of M)
+    for (const N of R)
       L.push(Ae(N));
     return L;
   }
   t.paths64FromD = re;
-  function xe(M) {
+  function xe(R) {
     const L = [];
-    for (const N of M)
+    for (const N of R)
       L.push(Ee(N));
     return L;
   }
   t.pathsD = xe;
-  function Ee(M) {
+  function Ee(R) {
     const L = [];
-    for (const N of M)
+    for (const N of R)
       L.push(lr.fromPoint64(N));
     return L;
   }
   t.pathD = Ee;
-  function Ce(M, L, N) {
-    const G = [];
-    for (const W of M)
-      G.push({ x: W.x + L, y: W.y + N });
-    return G;
+  function Ce(R, L, N) {
+    const k = [];
+    for (const W of R)
+      k.push({ x: W.x + L, y: W.y + N });
+    return k;
   }
   t.translatePath = Ce;
-  function de(M, L, N) {
-    const G = [];
-    for (const W of M)
-      G.push(R(W, L, N));
-    return G;
+  function de(R, L, N) {
+    const k = [];
+    for (const W of R)
+      k.push(M(W, L, N));
+    return k;
   }
   t.translatePaths = de;
-  function pe(M, L, N) {
-    const G = [];
-    for (const W of M)
-      G.push({ x: W.x + L, y: W.y + N });
-    return G;
+  function pe(R, L, N) {
+    const k = [];
+    for (const W of R)
+      k.push({ x: W.x + L, y: W.y + N });
+    return k;
   }
   t.translatePathD = pe;
-  function ye(M, L, N) {
-    const G = [];
-    for (const W of M)
-      G.push(pe(W, L, N));
-    return G;
+  function ye(R, L, N) {
+    const k = [];
+    for (const W of R)
+      k.push(pe(W, L, N));
+    return k;
   }
   t.translatePathsD = ye;
-  function Be(M) {
-    return [...M].reverse();
+  function Be(R) {
+    return [...R].reverse();
   }
   t.reversePath = Be;
-  function it(M) {
-    return [...M].reverse();
+  function it(R) {
+    return [...R].reverse();
   }
   t.reversePathD = it;
-  function Ie(M) {
+  function Ie(R) {
     const L = [];
-    for (const N of M)
+    for (const N of R)
       L.push(Be(N));
     return L;
   }
   t.reversePaths = Ie;
-  function yt(M) {
+  function yt(R) {
     const L = [];
-    for (const N of M)
+    for (const N of R)
       L.push(it(N));
     return L;
   }
   t.reversePathsD = yt;
-  function bt(M) {
-    return te.getBounds(M);
+  function bt(R) {
+    return te.getBounds(R);
   }
   t.getBounds = bt;
-  function ur(M) {
+  function ur(R) {
     const L = $e.createInvalid();
-    for (const N of M)
-      for (const G of N)
-        G.x < L.left && (L.left = G.x), G.x > L.right && (L.right = G.x), G.y < L.top && (L.top = G.y), G.y > L.bottom && (L.bottom = G.y);
+    for (const N of R)
+      for (const k of N)
+        k.x < L.left && (L.left = k.x), k.x > L.right && (L.right = k.x), k.y < L.top && (L.top = k.y), k.y > L.bottom && (L.bottom = k.y);
     return L.left === Number.MAX_SAFE_INTEGER ? { left: 0, top: 0, right: 0, bottom: 0 } : L;
   }
   t.getBoundsPaths = ur;
-  function Gi(M) {
+  function ki(R) {
     const L = Pr.createInvalid();
-    for (const N of M)
+    for (const N of R)
       N.x < L.left && (L.left = N.x), N.x > L.right && (L.right = N.x), N.y < L.top && (L.top = N.y), N.y > L.bottom && (L.bottom = N.y);
     return Math.abs(L.left - Number.MAX_VALUE) < te.floatingPointTolerance ? { left: 0, top: 0, right: 0, bottom: 0 } : L;
   }
-  t.getBoundsD = Gi;
-  function wr(M) {
+  t.getBoundsD = ki;
+  function wr(R) {
     const L = Pr.createInvalid();
-    for (const N of M)
-      for (const G of N)
-        G.x < L.left && (L.left = G.x), G.x > L.right && (L.right = G.x), G.y < L.top && (L.top = G.y), G.y > L.bottom && (L.bottom = G.y);
+    for (const N of R)
+      for (const k of N)
+        k.x < L.left && (L.left = k.x), k.x > L.right && (L.right = k.x), k.y < L.top && (L.top = k.y), k.y > L.bottom && (L.bottom = k.y);
     return Math.abs(L.left - Number.MAX_VALUE) < te.floatingPointTolerance ? { left: 0, top: 0, right: 0, bottom: 0 } : L;
   }
   t.getBoundsPathsD = wr;
-  function ki(M) {
-    const L = Math.floor(M.length / 2), N = [];
-    for (let G = 0; G < L; G++)
-      N.push({ x: M[G * 2], y: M[G * 2 + 1], z: 0 });
+  function Gi(R) {
+    const L = Math.floor(R.length / 2), N = [];
+    for (let k = 0; k < L; k++)
+      N.push({ x: R[k * 2], y: R[k * 2 + 1], z: 0 });
     return N;
   }
-  t.makePath = ki;
-  function Hh(M) {
-    const L = Math.floor(M.length / 2), N = [];
-    for (let G = 0; G < L; G++)
-      N.push({ x: M[G * 2], y: M[G * 2 + 1], z: 0 });
+  t.makePath = Gi;
+  function jh(R) {
+    const L = Math.floor(R.length / 2), N = [];
+    for (let k = 0; k < L; k++)
+      N.push({ x: R[k * 2], y: R[k * 2 + 1], z: 0 });
     return N;
   }
-  t.makePathD = Hh;
-  function Ut(M) {
-    return M * M;
+  t.makePathD = jh;
+  function Ut(R) {
+    return R * R;
   }
   t.sqr = Ut;
-  function Wh(M, L) {
-    return Ut(M.x - L.x) + Ut(M.y - L.y);
+  function Yh(R, L) {
+    return Ut(R.x - L.x) + Ut(R.y - L.y);
   }
-  t.distanceSqr = Wh;
-  function jh(M, L) {
-    return { x: Math.round((M.x + L.x) / 2), y: Math.round((M.y + L.y) / 2) };
+  t.distanceSqr = Yh;
+  function Kh(R, L) {
+    return { x: Math.round((R.x + L.x) / 2), y: Math.round((R.y + L.y) / 2) };
   }
-  t.midPoint = jh;
-  function Yh(M, L) {
-    return { x: (M.x + L.x) / 2, y: (M.y + L.y) / 2 };
+  t.midPoint = Kh;
+  function Qh(R, L) {
+    return { x: (R.x + L.x) / 2, y: (R.y + L.y) / 2 };
   }
-  t.midPointD = Yh;
-  function Kh(M, L, N) {
-    M.left -= L, M.right += L, M.top -= N, M.bottom += N;
+  t.midPointD = Qh;
+  function Zh(R, L, N) {
+    R.left -= L, R.right += L, R.top -= N, R.bottom += N;
   }
-  t.inflateRect = Kh;
-  function Qh(M, L, N) {
-    M.left -= L, M.right += L, M.top -= N, M.bottom += N;
+  t.inflateRect = Zh;
+  function Jh(R, L, N) {
+    R.left -= L, R.right += L, R.top -= N, R.bottom += N;
   }
-  t.inflateRectD = Qh;
-  function $n(M, L, N) {
-    return Ut(M.x - L.x) + Ut(M.y - L.y) < N;
+  t.inflateRectD = Jh;
+  function $n(R, L, N) {
+    return Ut(R.x - L.x) + Ut(R.y - L.y) < N;
   }
   t.pointsNearEqual = $n;
-  function Zh(M, L, N) {
-    const G = M.length, W = [];
-    if (G === 0)
+  function $h(R, L, N) {
+    const k = R.length, W = [];
+    if (k === 0)
       return W;
-    let Z = M[0];
+    let Z = R[0];
     W.push(Z);
-    for (let ne = 1; ne < G; ne++)
-      $n(Z, M[ne], L) || (Z = M[ne], W.push(Z));
+    for (let ne = 1; ne < k; ne++)
+      $n(Z, R[ne], L) || (Z = R[ne], W.push(Z));
     return N && $n(Z, W[0], L) && W.pop(), W;
   }
-  t.stripNearDuplicates = Zh;
-  function Jh(M, L) {
-    const N = M.length, G = [];
+  t.stripNearDuplicates = $h;
+  function ef(R, L) {
+    const N = R.length, k = [];
     if (N === 0)
-      return G;
-    let W = M[0];
-    G.push(W);
+      return k;
+    let W = R[0];
+    k.push(W);
     for (let Z = 1; Z < N; Z++)
-      _e.equals(W, M[Z]) || (W = M[Z], G.push(W));
-    return L && _e.equals(W, G[0]) && G.pop(), G;
+      _e.equals(W, R[Z]) || (W = R[Z], k.push(W));
+    return L && _e.equals(W, k[0]) && k.pop(), k;
   }
-  t.stripDuplicates = Jh;
-  function Uo(M, L) {
-    M.poly && M.poly.length > 0 && L.push(M.poly);
-    for (let N = 0; N < M.count; N++)
-      Uo(M.child(N), L);
+  t.stripDuplicates = ef;
+  function Uo(R, L) {
+    R.poly && R.poly.length > 0 && L.push(R.poly);
+    for (let N = 0; N < R.count; N++)
+      Uo(R.child(N), L);
   }
-  function $h(M) {
+  function tf(R) {
     const L = [];
-    for (let N = 0; N < M.count; N++)
-      Uo(M.child(N), L);
+    for (let N = 0; N < R.count; N++)
+      Uo(R.child(N), L);
     return L;
   }
-  t.polyTreeToPaths64 = $h;
-  function es(M, L) {
-    M.poly && M.poly.length > 0 && L.push(M.poly);
-    for (let N = 0; N < M.count; N++)
-      es(M.child(N), L);
+  t.polyTreeToPaths64 = tf;
+  function es(R, L) {
+    R.poly && R.poly.length > 0 && L.push(R.poly);
+    for (let N = 0; N < R.count; N++)
+      es(R.child(N), L);
   }
   t.addPolyNodeToPathsD = es;
-  function ef(M) {
+  function rf(R) {
     const L = [];
-    for (let N = 0; N < M.count; N++)
-      es(M.child(N), L);
+    for (let N = 0; N < R.count; N++)
+      es(R.child(N), L);
     return L;
   }
-  t.polyTreeToPathsD = ef;
-  function tr(M, L, N) {
-    const G = M.x - L.x, W = M.y - L.y, Z = N.x - L.x, ne = N.y - L.y;
-    return Z === 0 && ne === 0 ? 0 : Ut(G * ne - Z * W) / (Z * Z + ne * ne);
+  t.polyTreeToPathsD = rf;
+  function tr(R, L, N) {
+    const k = R.x - L.x, W = R.y - L.y, Z = N.x - L.x, ne = N.y - L.y;
+    return Z === 0 && ne === 0 ? 0 : Ut(k * ne - Z * W) / (Z * Z + ne * ne);
   }
   t.perpendicDistFromLineSqrd = tr;
-  function rr(M, L, N) {
-    const G = M.x - L.x, W = M.y - L.y, Z = N.x - L.x, ne = N.y - L.y;
-    return Z === 0 && ne === 0 ? 0 : Ut(G * ne - Z * W) / (Z * Z + ne * ne);
+  function rr(R, L, N) {
+    const k = R.x - L.x, W = R.y - L.y, Z = N.x - L.x, ne = N.y - L.y;
+    return Z === 0 && ne === 0 ? 0 : Ut(k * ne - Z * W) / (Z * Z + ne * ne);
   }
   t.perpendicDistFromLineSqrd64 = rr;
-  function Io(M, L, N, G, W) {
+  function Io(R, L, N, k, W) {
     for (; ; ) {
       let Z = 0, ne = 0;
-      for (; N > L && _e.equals(M[L], M[N]); )
+      for (; N > L && _e.equals(R[L], R[N]); )
         W[N--] = !1;
       for (let ce = L + 1; ce < N; ++ce) {
-        const ie = rr(M[ce], M[L], M[N]);
+        const ie = rr(R[ce], R[L], R[N]);
         ie <= ne || (ne = ie, Z = ce);
       }
-      if (ne <= G)
+      if (ne <= k)
         return;
-      if (W[Z] = !0, Z > L + 1 && Io(M, L, Z, G, W), Z < N - 1) {
+      if (W[Z] = !0, Z > L + 1 && Io(R, L, Z, k, W), Z < N - 1) {
         L = Z;
         continue;
       }
       break;
     }
   }
-  function Bo(M, L) {
-    const N = M.length;
+  function Bo(R, L) {
+    const N = R.length;
     if (N < 5)
-      return M;
-    const G = new Array(N).fill(!1);
-    G[0] = !0, G[N - 1] = !0, Io(M, 0, N - 1, Ut(L), G);
+      return R;
+    const k = new Array(N).fill(!1);
+    k[0] = !0, k[N - 1] = !0, Io(R, 0, N - 1, Ut(L), k);
     const W = [];
     for (let Z = 0; Z < N; ++Z)
-      G[Z] && W.push(M[Z]);
+      k[Z] && W.push(R[Z]);
     return W;
   }
   t.ramerDouglasPeucker = Bo;
-  function tf(M, L) {
+  function nf(R, L) {
     const N = [];
-    for (const G of M)
-      N.push(Bo(G, L));
+    for (const k of R)
+      N.push(Bo(k, L));
     return N;
   }
-  t.ramerDouglasPeuckerPaths = tf;
-  function Lo(M, L, N, G, W) {
+  t.ramerDouglasPeuckerPaths = nf;
+  function Lo(R, L, N, k, W) {
     for (; ; ) {
       let Z = 0, ne = 0;
-      for (; N > L && lr.equals(M[L], M[N]); )
+      for (; N > L && lr.equals(R[L], R[N]); )
         W[N--] = !1;
       for (let ce = L + 1; ce < N; ++ce) {
-        const ie = tr(M[ce], M[L], M[N]);
+        const ie = tr(R[ce], R[L], R[N]);
         ie <= ne || (ne = ie, Z = ce);
       }
-      if (ne <= G)
+      if (ne <= k)
         return;
-      if (W[Z] = !0, Z > L + 1 && Lo(M, L, Z, G, W), Z < N - 1) {
+      if (W[Z] = !0, Z > L + 1 && Lo(R, L, Z, k, W), Z < N - 1) {
         L = Z;
         continue;
       }
       break;
     }
   }
-  function _o(M, L) {
-    const N = M.length;
+  function _o(R, L) {
+    const N = R.length;
     if (N < 5)
-      return M;
-    const G = new Array(N).fill(!1);
-    G[0] = !0, G[N - 1] = !0, Lo(M, 0, N - 1, Ut(L), G);
+      return R;
+    const k = new Array(N).fill(!1);
+    k[0] = !0, k[N - 1] = !0, Lo(R, 0, N - 1, Ut(L), k);
     const W = [];
     for (let Z = 0; Z < N; ++Z)
-      G[Z] && W.push(M[Z]);
+      k[Z] && W.push(R[Z]);
     return W;
   }
   t.ramerDouglasPeuckerD = _o;
-  function rf(M, L) {
+  function sf(R, L) {
     const N = [];
-    for (const G of M)
-      N.push(_o(G, L));
+    for (const k of R)
+      N.push(_o(k, L));
     return N;
   }
-  t.ramerDouglasPeuckerPathsD = rf;
-  function Gt(M, L, N) {
-    for (++M; M <= L && N[M]; )
-      ++M;
-    if (M <= L)
-      return M;
-    for (M = 0; N[M]; )
-      ++M;
-    return M;
+  t.ramerDouglasPeuckerPathsD = sf;
+  function kt(R, L, N) {
+    for (++R; R <= L && N[R]; )
+      ++R;
+    if (R <= L)
+      return R;
+    for (R = 0; N[R]; )
+      ++R;
+    return R;
   }
-  function Xi(M, L, N) {
-    for (M === 0 ? M = L : --M; M > 0 && N[M]; )
-      --M;
-    if (!N[M])
-      return M;
-    for (M = L; N[M]; )
-      --M;
-    return M;
+  function Xi(R, L, N) {
+    for (R === 0 ? R = L : --R; R > 0 && N[R]; )
+      --R;
+    if (!N[R])
+      return R;
+    for (R = L; N[R]; )
+      --R;
+    return R;
   }
-  function Oo(M, L, N = !0) {
-    const G = M.length, W = G - 1, Z = Ut(L);
-    if (G < 4)
-      return M;
-    const ne = new Array(G).fill(!1), ce = new Array(G).fill(0);
+  function Oo(R, L, N = !0) {
+    const k = R.length, W = k - 1, Z = Ut(L);
+    if (k < 4)
+      return R;
+    const ne = new Array(k).fill(!1), ce = new Array(k).fill(0);
     let ie = 0;
-    N ? (ce[0] = rr(M[0], M[W], M[1]), ce[W] = rr(M[W], M[0], M[W - 1])) : (ce[0] = Number.MAX_VALUE, ce[W] = Number.MAX_VALUE);
+    N ? (ce[0] = rr(R[0], R[W], R[1]), ce[W] = rr(R[W], R[0], R[W - 1])) : (ce[0] = Number.MAX_VALUE, ce[W] = Number.MAX_VALUE);
     for (let Te = 1; Te < W; ++Te)
-      ce[Te] = rr(M[Te], M[Te - 1], M[Te + 1]);
+      ce[Te] = rr(R[Te], R[Te - 1], R[Te + 1]);
     for (; ; ) {
       if (ce[ie] > Z) {
         const He = ie;
         do
-          ie = Gt(ie, W, ne);
+          ie = kt(ie, W, ne);
         while (ie !== He && ce[ie] > Z);
         if (ie === He)
           break;
       }
-      const Te = Xi(ie, W, ne), Tt = Gt(ie, W, ne);
+      const Te = Xi(ie, W, ne), Tt = kt(ie, W, ne);
       if (Tt === Te)
         break;
       let ir;
@@ -15842,48 +15853,48 @@ var Zs;
         ir = Te;
         const He = ie;
         ie = Tt;
-        const ai = Gt(Tt, W, ne);
+        const ai = kt(Tt, W, ne);
         ne[ie] = !0, ie = ai;
-        const ts = Gt(ai, W, ne);
-        (N || ie !== W && ie !== 0) && (ce[ie] = rr(M[ie], M[He], M[ts])), (N || He !== 0 && He !== W) && (ce[He] = rr(M[He], M[ir], M[ie]));
+        const ts = kt(ai, W, ne);
+        (N || ie !== W && ie !== 0) && (ce[ie] = rr(R[ie], R[He], R[ts])), (N || He !== 0 && He !== W) && (ce[He] = rr(R[He], R[ir], R[ie]));
       } else {
         ir = Xi(Te, W, ne), ne[ie] = !0, ie = Tt;
-        const He = Gt(Tt, W, ne);
-        (N || ie !== W && ie !== 0) && (ce[ie] = rr(M[ie], M[Te], M[He])), (N || Te !== 0 && Te !== W) && (ce[Te] = rr(M[Te], M[ir], M[ie]));
+        const He = kt(Tt, W, ne);
+        (N || ie !== W && ie !== 0) && (ce[ie] = rr(R[ie], R[Te], R[He])), (N || Te !== 0 && Te !== W) && (ce[Te] = rr(R[Te], R[ir], R[ie]));
       }
     }
     const nt = [];
-    for (let Te = 0; Te < G; Te++)
-      ne[Te] || nt.push(M[Te]);
+    for (let Te = 0; Te < k; Te++)
+      ne[Te] || nt.push(R[Te]);
     return nt;
   }
   t.simplifyPath = Oo;
-  function nf(M, L, N = !0) {
-    const G = [];
-    for (const W of M)
-      G.push(Oo(W, L, N));
-    return G;
+  function of(R, L, N = !0) {
+    const k = [];
+    for (const W of R)
+      k.push(Oo(W, L, N));
+    return k;
   }
-  t.simplifyPaths = nf;
-  function Fo(M, L, N = !0) {
-    const G = M.length, W = G - 1, Z = Ut(L);
-    if (G < 4)
-      return M;
-    const ne = new Array(G).fill(!1), ce = new Array(G).fill(0);
+  t.simplifyPaths = of;
+  function Fo(R, L, N = !0) {
+    const k = R.length, W = k - 1, Z = Ut(L);
+    if (k < 4)
+      return R;
+    const ne = new Array(k).fill(!1), ce = new Array(k).fill(0);
     let ie = 0;
-    N ? (ce[0] = tr(M[0], M[W], M[1]), ce[W] = tr(M[W], M[0], M[W - 1])) : (ce[0] = Number.MAX_VALUE, ce[W] = Number.MAX_VALUE);
+    N ? (ce[0] = tr(R[0], R[W], R[1]), ce[W] = tr(R[W], R[0], R[W - 1])) : (ce[0] = Number.MAX_VALUE, ce[W] = Number.MAX_VALUE);
     for (let Te = 1; Te < W; ++Te)
-      ce[Te] = tr(M[Te], M[Te - 1], M[Te + 1]);
+      ce[Te] = tr(R[Te], R[Te - 1], R[Te + 1]);
     for (; ; ) {
       if (ce[ie] > Z) {
         const He = ie;
         do
-          ie = Gt(ie, W, ne);
+          ie = kt(ie, W, ne);
         while (ie !== He && ce[ie] > Z);
         if (ie === He)
           break;
       }
-      const Te = Xi(ie, W, ne), Tt = Gt(ie, W, ne);
+      const Te = Xi(ie, W, ne), Tt = kt(ie, W, ne);
       if (Tt === Te)
         break;
       let ir;
@@ -15891,47 +15902,47 @@ var Zs;
         ir = Te;
         const He = ie;
         ie = Tt;
-        const ai = Gt(Tt, W, ne);
+        const ai = kt(Tt, W, ne);
         ne[ie] = !0, ie = ai;
-        const ts = Gt(ai, W, ne);
-        (N || ie !== W && ie !== 0) && (ce[ie] = tr(M[ie], M[He], M[ts])), (N || He !== 0 && He !== W) && (ce[He] = tr(M[He], M[ir], M[ie]));
+        const ts = kt(ai, W, ne);
+        (N || ie !== W && ie !== 0) && (ce[ie] = tr(R[ie], R[He], R[ts])), (N || He !== 0 && He !== W) && (ce[He] = tr(R[He], R[ir], R[ie]));
       } else {
         ir = Xi(Te, W, ne), ne[ie] = !0, ie = Tt;
-        const He = Gt(Tt, W, ne);
-        (N || ie !== W && ie !== 0) && (ce[ie] = tr(M[ie], M[Te], M[He])), (N || Te !== 0 && Te !== W) && (ce[Te] = tr(M[Te], M[ir], M[ie]));
+        const He = kt(Tt, W, ne);
+        (N || ie !== W && ie !== 0) && (ce[ie] = tr(R[ie], R[Te], R[He])), (N || Te !== 0 && Te !== W) && (ce[Te] = tr(R[Te], R[ir], R[ie]));
       }
     }
     const nt = [];
-    for (let Te = 0; Te < G; Te++)
-      ne[Te] || nt.push(M[Te]);
+    for (let Te = 0; Te < k; Te++)
+      ne[Te] || nt.push(R[Te]);
     return nt;
   }
   t.simplifyPathD = Fo;
-  function sf(M, L, N = !0) {
-    const G = [];
-    for (const W of M)
-      G.push(Fo(W, L, N));
-    return G;
+  function af(R, L, N = !0) {
+    const k = [];
+    for (const W of R)
+      k.push(Fo(W, L, N));
+    return k;
   }
-  t.simplifyPathsD = sf;
-  function No(M, L = !1) {
-    let N = M.length, G = 0;
+  t.simplifyPathsD = af;
+  function No(R, L = !1) {
+    let N = R.length, k = 0;
     if (!L) {
-      for (; G < N - 1 && te.isCollinear(M[N - 1], M[G], M[G + 1]); )
-        G++;
-      for (; G < N - 1 && te.isCollinear(M[N - 2], M[N - 1], M[G]); )
+      for (; k < N - 1 && te.isCollinear(R[N - 1], R[k], R[k + 1]); )
+        k++;
+      for (; k < N - 1 && te.isCollinear(R[N - 2], R[N - 1], R[k]); )
         N--;
     }
-    if (N - G < 3)
-      return !L || N < 2 || _e.equals(M[0], M[1]) ? [] : M;
+    if (N - k < 3)
+      return !L || N < 2 || _e.equals(R[0], R[1]) ? [] : R;
     const W = [];
-    let Z = M[G];
-    for (W.push(Z), G++; G < N - 1; G++)
-      te.isCollinear(Z, M[G], M[G + 1]) || (Z = M[G], W.push(Z));
+    let Z = R[k];
+    for (W.push(Z), k++; k < N - 1; k++)
+      te.isCollinear(Z, R[k], R[k + 1]) || (Z = R[k], W.push(Z));
     if (L)
-      W.push(M[N - 1]);
-    else if (!te.isCollinear(Z, M[N - 1], W[0]))
-      W.push(M[N - 1]);
+      W.push(R[N - 1]);
+    else if (!te.isCollinear(Z, R[N - 1], W[0]))
+      W.push(R[N - 1]);
     else {
       for (; W.length > 2 && te.isCollinear(W[W.length - 1], W[W.length - 2], W[0]); )
         W.pop();
@@ -15940,73 +15951,73 @@ var Zs;
     return W;
   }
   t.trimCollinear = No;
-  function of(M, L, N = !1) {
+  function lf(R, L, N = !1) {
     te.checkPrecision(L);
-    const G = Math.pow(10, L);
-    let W = Q(M, G);
-    return W = No(W, N), J(W, 1 / G);
+    const k = Math.pow(10, L);
+    let W = Q(R, k);
+    return W = No(W, N), J(W, 1 / k);
   }
-  t.trimCollinearD = of;
-  function af(M, L) {
-    return te.pointInPolygon(M, L);
+  t.trimCollinearD = lf;
+  function cf(R, L) {
+    return te.pointInPolygon(R, L);
   }
-  t.pointInPolygon = af;
-  function lf(M, L, N = 2) {
+  t.pointInPolygon = cf;
+  function uf(R, L, N = 2) {
     te.checkPrecision(N);
-    const G = Math.pow(10, N), W = _e.fromPointD(lr.scale(M, G)), Z = Q(L, G);
+    const k = Math.pow(10, N), W = _e.fromPointD(lr.scale(R, k)), Z = Q(L, k);
     return te.pointInPolygon(W, Z);
   }
-  t.pointInPolygonD = lf;
-  function cf(M, L, N = 0, G = 0) {
+  t.pointInPolygonD = uf;
+  function df(R, L, N = 0, k = 0) {
     if (L <= 0)
       return [];
-    N <= 0 && (N = L), G <= 2 && (G = Math.ceil(Math.PI * Math.sqrt((L + N) / 2)));
-    const W = Math.sin(2 * Math.PI / G), Z = Math.cos(2 * Math.PI / G);
+    N <= 0 && (N = L), k <= 2 && (k = Math.ceil(Math.PI * Math.sqrt((L + N) / 2)));
+    const W = Math.sin(2 * Math.PI / k), Z = Math.cos(2 * Math.PI / k);
     let ne = Z, ce = W;
-    const ie = [{ x: Math.round(M.x + L), y: M.y }];
-    for (let nt = 1; nt < G; ++nt) {
+    const ie = [{ x: Math.round(R.x + L), y: R.y }];
+    for (let nt = 1; nt < k; ++nt) {
       ie.push({
-        x: Math.round(M.x + L * ne),
-        y: Math.round(M.y + N * ce)
+        x: Math.round(R.x + L * ne),
+        y: Math.round(R.y + N * ce)
       });
       const Te = ne * Z - ce * W;
       ce = ce * Z + ne * W, ne = Te;
     }
     return ie;
   }
-  t.ellipse = cf;
-  function uf(M, L, N = 0, G = 0) {
+  t.ellipse = df;
+  function hf(R, L, N = 0, k = 0) {
     if (L <= 0)
       return [];
-    N <= 0 && (N = L), G <= 2 && (G = Math.ceil(Math.PI * Math.sqrt((L + N) / 2)));
-    const W = Math.sin(2 * Math.PI / G), Z = Math.cos(2 * Math.PI / G);
+    N <= 0 && (N = L), k <= 2 && (k = Math.ceil(Math.PI * Math.sqrt((L + N) / 2)));
+    const W = Math.sin(2 * Math.PI / k), Z = Math.cos(2 * Math.PI / k);
     let ne = Z, ce = W;
-    const ie = [{ x: M.x + L, y: M.y }];
-    for (let nt = 1; nt < G; ++nt) {
+    const ie = [{ x: R.x + L, y: R.y }];
+    for (let nt = 1; nt < k; ++nt) {
       ie.push({
-        x: M.x + L * ne,
-        y: M.y + N * ce
+        x: R.x + L * ne,
+        y: R.y + N * ce
       });
       const Te = ne * Z - ce * W;
       ce = ce * Z + ne * W, ne = Te;
     }
     return ie;
   }
-  t.ellipseD = uf;
-  function df(M, L = !0) {
-    return new ue(L).execute(M);
+  t.ellipseD = hf;
+  function ff(R, L = !0) {
+    return new ue(L).execute(R);
   }
-  t.triangulate = df;
-  function hf(M, L, N = !0) {
-    let G;
-    L <= 0 ? G = 1 : L > 8 ? G = Math.pow(10, 8) : G = Math.pow(10, L);
-    const W = ee(M, G), Z = new ue(N), { result: ne, solution: ce } = Z.execute(W);
+  t.triangulate = ff;
+  function pf(R, L, N = !0) {
+    let k;
+    L <= 0 ? k = 1 : L > 8 ? k = Math.pow(10, 8) : k = Math.pow(10, L);
+    const W = ee(R, k), Z = new ue(N), { result: ne, solution: ce } = Z.execute(W);
     let ie;
-    return ne === Dr.success ? ie = q(ce, 1 / G) : ie = [], { result: ne, solution: ie };
+    return ne === Dr.success ? ie = q(ce, 1 / k) : ie = [], { result: ne, solution: ie };
   }
-  t.triangulateD = hf;
+  t.triangulateD = pf;
 })(Zs || (Zs = {}));
-const { intersect: sT, intersectD: oT, union: aT, unionD: lT, difference: cT, differenceD: uT, xor: dT, xorD: hT, booleanOp: fT, booleanOpWithPolyTree: Vi, booleanOpD: pT, booleanOpDWithPolyTree: mT, inflatePaths: wh, inflatePathsD: gT, rectClip: xT, rectClipLines: vT, minkowskiSum: yT, minkowskiSumD: bT, minkowskiDiff: TT, minkowskiDiffD: AT, area: wT, areaPaths: ET, areaD: ST, areaPathsD: RT, isPositive: Pa, isPositiveD: MT, getBounds: PT, getBoundsPaths: DT, getBoundsD: CT, getBoundsPathsD: UT, makePath: IT, makePathD: BT, scalePath64: LT, scalePaths64: _T, scalePathD: OT, scalePathsD: FT, translatePath: NT, translatePaths: VT, translatePathD: zT, translatePathsD: GT, reversePath: kT, reversePathD: XT, reversePaths: qT, reversePathsD: HT, stripDuplicates: WT, trimCollinear: jT, trimCollinearD: YT, pointInPolygon: KT, pointInPolygonD: QT, ellipse: ZT, ellipseD: JT, simplifyPath: $T, simplifyPaths: eA, simplifyPathD: tA, simplifyPathsD: rA, ramerDouglasPeucker: iA, ramerDouglasPeuckerPaths: nA, ramerDouglasPeuckerD: sA, ramerDouglasPeuckerPathsD: oA, triangulate: aA, triangulateD: lA } = Zs, ii = 100;
+const { intersect: oT, intersectD: aT, union: lT, unionD: cT, difference: uT, differenceD: dT, xor: hT, xorD: fT, booleanOp: pT, booleanOpWithPolyTree: Vi, booleanOpD: mT, booleanOpDWithPolyTree: gT, inflatePaths: Sh, inflatePathsD: xT, rectClip: vT, rectClipLines: yT, minkowskiSum: bT, minkowskiSumD: TT, minkowskiDiff: AT, minkowskiDiffD: wT, area: ET, areaPaths: ST, areaD: MT, areaPathsD: RT, isPositive: Pa, isPositiveD: PT, getBounds: DT, getBoundsPaths: CT, getBoundsD: UT, getBoundsPathsD: IT, makePath: BT, makePathD: LT, scalePath64: _T, scalePaths64: OT, scalePathD: FT, scalePathsD: NT, translatePath: VT, translatePaths: zT, translatePathD: kT, translatePathsD: GT, reversePath: XT, reversePathD: qT, reversePaths: HT, reversePathsD: WT, stripDuplicates: jT, trimCollinear: YT, trimCollinearD: KT, pointInPolygon: QT, pointInPolygonD: ZT, ellipse: JT, ellipseD: $T, simplifyPath: eA, simplifyPaths: tA, simplifyPathD: rA, simplifyPathsD: iA, ramerDouglasPeucker: nA, ramerDouglasPeuckerPaths: sA, ramerDouglasPeuckerD: oA, ramerDouglasPeuckerPathsD: aA, triangulate: lA, triangulateD: cA } = Zs, ii = 100;
 function Dn(t) {
   return t.map((e) => ({
     x: Math.round(e.x * ii),
@@ -16048,54 +16059,54 @@ function zi(t) {
   }
   return e;
 }
-function mv(t) {
+function gv(t) {
   var i, n, s;
   if (t.length === 0) return [];
   if (t.length === 1 && (!((i = t[0]) != null && i.holes) || ((n = t[0]) == null ? void 0 : n.holes.length) === 0))
     return [{ outer: [...((s = t[0]) == null ? void 0 : s.outer) ?? []], holes: [] }];
   const e = ni(t, !0), r = new Ni();
-  return Vi(Le.Union, e, null, r, Re.NonZero), zi(r);
+  return Vi(Le.Union, e, null, r, Me.NonZero), zi(r);
 }
-function gv(t, e) {
+function xv(t, e) {
   const r = ni([t]), i = ni([e]), n = new Ni();
   return Vi(
     Le.Intersection,
     r,
     i,
     n,
-    Re.EvenOdd
+    Me.EvenOdd
   ), n.count > 0;
 }
-function xv(t, e) {
+function vv(t, e) {
   const r = ni([t]), i = ni([e]), n = new Ni();
   return Vi(
     Le.Difference,
     r,
     i,
     n,
-    Re.EvenOdd
+    Me.EvenOdd
   ), zi(n);
 }
 function Ua(t, e) {
   if (t.length === 0 || e <= 0) return [];
-  const r = Math.round(e * ii), i = Dn(t), n = wh(
+  const r = Math.round(e * ii), i = Dn(t), n = Sh(
     [i],
     r,
     Ot.Round,
-    Ge.Round
+    ke.Round
   );
   if (n.length === 0) return [];
   const s = new Ni();
-  return Vi(Le.Union, n, null, s, Re.NonZero), zi(s);
+  return Vi(Le.Union, n, null, s, Me.NonZero), zi(s);
 }
-function vv(t, e, r) {
+function yv(t, e, r) {
   if (e.length === 0 || r <= 0)
     return [{ outer: [...t.outer], holes: [...t.holes ?? []] }];
-  const i = Math.round(r * ii), n = Dn(e), s = wh(
+  const i = Math.round(r * ii), n = Dn(e), s = Sh(
     [n],
     i,
     Ot.Round,
-    Ge.Round
+    ke.Round
   );
   if (s.length === 0)
     return [{ outer: [...t.outer], holes: [...t.holes ?? []] }];
@@ -16105,7 +16116,7 @@ function vv(t, e, r) {
     o,
     s,
     a,
-    Re.EvenOdd
+    Me.EvenOdd
   ), zi(a);
 }
 function Js(t, e) {
@@ -16175,33 +16186,33 @@ function un(t) {
       return [];
   }
 }
-function yv(t, e, r) {
+function bv(t, e, r) {
   for (let i = 0; i < e.length; i++) {
     const n = e[i], s = t.x - n.x, o = t.y - n.y;
     if (s * s + o * o <= r * r) return i;
   }
   return -1;
 }
-function bv(t, e, r, i) {
+function Tv(t, e, r, i) {
   switch (t) {
     case "rectangle":
     case "measureRect":
-      return Tv(e, r, i);
+      return Av(e, r, i);
     case "ellipse":
     case "measureEllipse":
-      return Av(e, r, i);
+      return wv(e, r, i);
     case "circle":
     case "measureCircle":
-      return wv(e, r, i);
+      return Ev(e, r, i);
     case "line":
     case "arrow":
     case "measureLine":
-      return Ev(e, r, i);
+      return Sv(e, r, i);
     default:
       return { start: { ...e.start }, end: { ...e.end } };
   }
 }
-function Tv(t, e, r) {
+function Av(t, e, r) {
   const i = Math.min(t.start.x, t.end.x), n = Math.max(t.start.x, t.end.x), s = Math.min(t.start.y, t.end.y), o = Math.max(t.start.y, t.end.y);
   switch (e) {
     case 0:
@@ -16224,7 +16235,7 @@ function Tv(t, e, r) {
       return { start: { ...t.start }, end: { ...t.end } };
   }
 }
-function Av(t, e, r) {
+function wv(t, e, r) {
   const i = Math.min(t.start.x, t.end.x), n = Math.max(t.start.x, t.end.x), s = Math.min(t.start.y, t.end.y), o = Math.max(t.start.y, t.end.y);
   switch (e) {
     case 0:
@@ -16239,7 +16250,7 @@ function Av(t, e, r) {
       return { start: { ...t.start }, end: { ...t.end } };
   }
 }
-function wv(t, e, r) {
+function Ev(t, e, r) {
   const i = (t.start.x + t.end.x) / 2, n = (t.start.y + t.end.y) / 2;
   let s;
   switch (e) {
@@ -16261,7 +16272,7 @@ function wv(t, e, r) {
     end: { x: i + s, y: n + s }
   };
 }
-function Ev(t, e, r) {
+function Sv(t, e, r) {
   const i = t.width ?? 2;
   if (e === 0) return { start: r, end: { ...t.end }, width: i };
   if (e === 1) return { start: { ...t.start }, end: r, width: i };
@@ -16283,7 +16294,7 @@ function Ev(t, e, r) {
   return { start: { ...t.start }, end: { ...t.end }, width: i };
 }
 const Cn = 64;
-function Sv(t, e) {
+function Mv(t, e) {
   const r = (t.x + e.x) / 2, i = (t.y + e.y) / 2, n = Math.abs(e.x - t.x) / 2, s = Math.abs(e.y - t.y) / 2;
   if (n < 0.25 && s < 0.25) return [];
   const o = [];
@@ -16308,7 +16319,7 @@ function $s(t, e, r) {
   const i = Math.sqrt(t * t + e * e);
   return i < 1e-9 ? [0, 0] : [-e / i * r, t / i * r];
 }
-function Mv(t, e, r) {
+function Pv(t, e, r) {
   const i = e.x - t.x, n = e.y - t.y;
   if (Math.sqrt(i * i + n * n) < 0.25) return [];
   const s = r / 2, [o, a] = $s(i, n, s);
@@ -16319,7 +16330,7 @@ function Mv(t, e, r) {
     { x: t.x - o, y: t.y - a }
   ], holes: [] }];
 }
-function Pv(t, e, r) {
+function Dv(t, e, r) {
   const i = e.x - t.x, n = e.y - t.y, s = Math.sqrt(i * i + n * n);
   if (s < 0.5) return [];
   const o = i / s, a = n / s, l = r / 2, c = r * 1.5;
@@ -16343,7 +16354,7 @@ function eo(t, e) {
     y: t.y + Math.sign(i || 1) * n
   };
 }
-function Dv(t, e) {
+function Cv(t, e) {
   const r = eo(t, e), i = (t.x + r.x) / 2, n = (t.y + r.y) / 2, s = Math.abs(r.x - t.x) / 2;
   if (s < 0.25) return [];
   const o = [];
@@ -16357,18 +16368,18 @@ function sn(t, e, r, i) {
   switch (t) {
     case "ellipse":
     case "measureEllipse":
-      return Sv(e, r);
+      return Mv(e, r);
     case "rectangle":
     case "measureRect":
       return Rv(e, r);
     case "line":
     case "measureLine":
-      return Mv(e, r, i);
-    case "arrow":
       return Pv(e, r, i);
+    case "arrow":
+      return Dv(e, r, i);
     case "circle":
     case "measureCircle":
-      return Dv(e, r);
+      return Cv(e, r);
     default:
       return [];
   }
@@ -16379,13 +16390,13 @@ function Ia(t) {
 function Ba(t) {
   return t === "circle" || t === "measureCircle";
 }
-const Cv = [
+const Uv = [
   [0, 1],
   [0, 2],
   [1, 2]
 ];
 function La(t, e) {
-  var k, F, X;
+  var G, F, X;
   const r = t.shape;
   if (!r || !e.dimsRAS || !e.pixDimsRAS) return null;
   if (r.type === "measureLine") {
@@ -16399,43 +16410,43 @@ function La(t, e) {
       length: Math.sqrt(q * q + Q * Q)
     };
   }
-  const i = (k = t.polygons[0]) == null ? void 0 : k.outer;
+  const i = (G = t.polygons[0]) == null ? void 0 : G.outer;
   if (!i || i.length < 3) return null;
-  const n = t.sliceType, s = et(n), o = e.dimsRAS, a = e.pixDimsRAS, [l, c] = Cv[n], u = a[l + 1], d = a[c + 1];
+  const n = t.sliceType, s = et(n), o = e.dimsRAS, a = e.pixDimsRAS, [l, c] = Uv[n], u = a[l + 1], d = a[c + 1];
   if (!e.matRAS) return null;
   const h = Oe();
   er(h, e.matRAS), zt(h, h);
   const f = Kt();
   function p(q) {
-    return Mf(f, q[0], q[1], q[2], 1), ot(f, f, h), [Math.round(f[0]), Math.round(f[1]), Math.round(f[2])];
+    return Df(f, q[0], q[1], q[2], 1), ot(f, f, h), [Math.round(f[0]), Math.round(f[1]), Math.round(f[2])];
   }
   const g = i.map((q) => {
     const Q = wn(q, t.slicePosition, n), ee = p(Q);
     return { x: ee[l], y: ee[c] };
   });
-  let m = 1 / 0, y = 1 / 0, A = -1 / 0, v = -1 / 0;
+  let m = 1 / 0, v = 1 / 0, A = -1 / 0, b = -1 / 0;
   for (const q of g)
-    q.x < m && (m = q.x), q.y < y && (y = q.y), q.x > A && (A = q.x), q.y > v && (v = q.y);
+    q.x < m && (m = q.x), q.y < v && (v = q.y), q.x > A && (A = q.x), q.y > b && (b = q.y);
   const E = wn(
     { x: (F = i[0]) == null ? void 0 : F.x, y: (X = i[0]) == null ? void 0 : X.y },
     t.slicePosition,
     n
-  ), b = p(E)[s], x = Math.max(0, Math.floor(Math.min(m, A))), T = Math.min(o[l + 1] - 1, Math.ceil(Math.max(m, A))), S = Math.max(0, Math.floor(Math.min(y, v))), P = Math.min(o[c + 1] - 1, Math.ceil(Math.max(y, v)));
-  if (b < 0 || b >= o[s + 1]) return null;
+  ), y = p(E)[s], x = Math.max(0, Math.floor(Math.min(m, A))), T = Math.min(o[l + 1] - 1, Math.ceil(Math.max(m, A))), S = Math.max(0, Math.floor(Math.min(v, b))), P = Math.min(o[c + 1] - 1, Math.ceil(Math.max(v, b)));
+  if (y < 0 || y >= o[s + 1]) return null;
   let U = 0, _ = 0, O = 0, w = 1 / 0, D = -1 / 0;
   for (let q = x; q <= T; q++)
     for (let Q = S; Q <= P; Q++) {
       if (!Js({ x: q, y: Q }, g)) continue;
       const ee = [0, 0, 0];
-      ee[l] = q, ee[c] = Q, ee[s] = b;
+      ee[l] = q, ee[c] = Q, ee[s] = y;
       const J = ei(e, ee[0], ee[1], ee[2]);
       U++, _ += J, O += J * J, J < w && (w = J), J > D && (D = J);
     }
   if (U === 0) return null;
-  const R = U * u * d, C = _ / U, I = O / U - C * C, V = Math.sqrt(Math.max(0, I));
-  return { area: R, min: w, mean: C, max: D, stdDev: V };
+  const M = U * u * d, C = _ / U, I = O / U - C * C, V = Math.sqrt(Math.max(0, I));
+  return { area: M, min: w, mean: C, max: D, stdDev: V };
 }
-class Uv {
+class Iv {
   constructor(e = 32) {
     this._undoStack = [], this._redoStack = [], this._maxSnapshots = e;
   }
@@ -16458,22 +16469,22 @@ class Uv {
     return this._redoStack.length > 0;
   }
 }
-function Iv(t) {
+function Bv(t) {
   if (t.length < 4) return null;
   const e = t[t.length - 2], r = t[t.length - 1];
   for (let i = 0; i <= t.length - 4; i++) {
-    const n = t[i], s = t[i + 1], o = Bv(e, r, n, s);
+    const n = t[i], s = t[i + 1], o = Lv(e, r, n, s);
     if (o) return { intersection: o, segmentStartIndex: i };
   }
   return null;
 }
-function Bv(t, e, r, i) {
+function Lv(t, e, r, i) {
   const n = (t.x - e.x) * (r.y - i.y) - (t.y - e.y) * (r.x - i.x);
   if (Math.abs(n) < 1e-7) return null;
   const s = ((t.x - r.x) * (r.y - i.y) - (t.y - r.y) * (r.x - i.x)) / n, o = ((t.x - r.x) * (t.y - e.y) - (t.y - r.y) * (t.x - e.x)) / n;
   return s < -1e-7 || s > 1 + 1e-7 || o < -1e-7 || o > 1 + 1e-7 ? null : { x: t.x + s * (e.x - t.x), y: t.y + s * (e.y - t.y) };
 }
-function Lv(t, e) {
+function _v(t, e) {
   const r = [{ ...e.intersection }];
   for (let i = e.segmentStartIndex + 1; i <= t.length - 2; i++) {
     const n = t[i], s = r[r.length - 1];
@@ -16499,7 +16510,7 @@ function ui(t, e, r, i, n, s, o) {
     }
   };
 }
-function _v(t, e) {
+function Ov(t, e) {
   for (let r = 0; r < e.polygons.length; r++) {
     const i = e.polygons[r];
     if (Js(t, i.outer)) {
@@ -16525,15 +16536,15 @@ function _a(t, e) {
     if (n.label === e.label && n.group === e.group)
       n.polygons.some(
         (s) => i.some(
-          (o) => gv(s, o)
+          (o) => xv(s, o)
         )
-      ) ? (i.push(...n.polygons), i = mv(i)) : r.push(n);
+      ) ? (i.push(...n.polygons), i = gv(i)) : r.push(n);
     else {
       let s = n.polygons;
       for (const o of e.polygons) {
         const a = [];
         for (const l of s)
-          a.push(...xv(l, o));
+          a.push(...vv(l, o));
         s = a;
       }
       s.length > 0 && r.push({ ...n, polygons: s });
@@ -16541,10 +16552,10 @@ function _a(t, e) {
   }
   return i.length > 0 && r.push({ ...e, polygons: i }), r;
 }
-function Ov(t, e) {
+function Fv(t, e) {
   return e === 0 ? t.model.interaction.primaryDragMode : e === 2 ? t.model.interaction.secondaryDragMode : we.none;
 }
-function Fv(t, e = 0) {
+function Nv(t, e = 0) {
   const r = t.model.getVolumes()[e];
   if (!(r != null && r.img) || !r.dimsRAS || !r.img2RASstep || !r.img2RASstart)
     return null;
@@ -16572,24 +16583,24 @@ function Fv(t, e = 0) {
   ), f = Math.min(
     a[3] - 1,
     Math.max(Math.round(s[2]), Math.round(o[2]))
-  ), p = r.img, g = r.img2RASstart, m = r.img2RASstep, y = r.hdr.scl_slope, A = r.hdr.scl_inter;
-  let v = Number.MAX_VALUE, E = -Number.MAX_VALUE;
-  for (let b = h; b <= f; b++) {
-    const x = g[2] + b * m[2];
+  ), p = r.img, g = r.img2RASstart, m = r.img2RASstep, v = r.hdr.scl_slope, A = r.hdr.scl_inter;
+  let b = Number.MAX_VALUE, E = -Number.MAX_VALUE;
+  for (let y = h; y <= f; y++) {
+    const x = g[2] + y * m[2];
     for (let T = u; T <= d; T++) {
       const S = x + g[1] + T * m[1];
       for (let P = l; P <= c; P++) {
         const U = S + g[0] + P * m[0];
         if (U >= 0 && U < p.length) {
           const _ = p[U];
-          _ < v && (v = _), _ > E && (E = _);
+          _ < b && (b = _), _ > E && (E = _);
         }
       }
     }
   }
-  return v >= E ? null : { calMin: v * y + A, calMax: E * y + A };
+  return b >= E ? null : { calMin: b * v + A, calMax: E * v + A };
 }
-function Nv(t) {
+function Vv(t) {
   const e = xt(
     t,
     t.dragStartXY[0],
@@ -16616,13 +16627,13 @@ function Nv(t) {
     mmEnd: [r[0], r[1], r[2]]
   };
 }
-function Vv(t) {
+function zv(t) {
   var d, h, f, p, g;
   const e = t._activeDragMode, [r, i] = t.dragStartXY, [n, s] = t.dragEndXY, o = t.model.ui, a = o.measureLineColor, l = o.rulerWidth, c = o.measureTextColor, u = c[0] + c[1] + c[2] > 0.8 ? [0, 0, 0, 0.5] : [1, 1, 1, 0.5];
   if (e === we.contrast || e === we.callbackOnly || e === we.roiSelection) {
-    const m = Math.min(r, n), y = Math.min(i, s), A = Math.abs(n - r), v = Math.abs(s - i);
+    const m = Math.min(r, n), v = Math.min(i, s), A = Math.abs(n - r), b = Math.abs(s - i);
     t.model._dragOverlay = {
-      rect: { ltwh: [m, y, A, v], color: o.selectionBoxColor }
+      rect: { ltwh: [m, v, A, b], color: o.selectionBoxColor }
     };
   } else if (e === we.measurement) {
     const m = {
@@ -16635,9 +16646,9 @@ function Vv(t) {
         }
       ],
       text: []
-    }, y = 6, A = n - r, v = s - i, E = Math.sqrt(A * A + v * v);
+    }, v = 6, A = n - r, b = s - i, E = Math.sqrt(A * A + b * b);
     if (E > 0) {
-      const T = -v / E * y, S = A / E * y;
+      const T = -b / E * v, S = A / E * v;
       (d = m.lines) == null || d.push(
         {
           startXY: [r - T, i - S],
@@ -16653,10 +16664,10 @@ function Vv(t) {
         }
       );
     }
-    const b = xt(t, r, i), x = xt(t, n, s);
-    if (b && x) {
+    const y = xt(t, r, i), x = xt(t, n, s);
+    if (y && x) {
       const T = Vn(
-        ve(b[0], b[1], b[2]),
+        ve(y[0], y[1], y[2]),
         ve(x[0], x[1], x[2])
       );
       let S = 2;
@@ -16686,26 +16697,26 @@ function Vv(t) {
         thickness: l
       });
     else if (t._angleState === "drawing_second_line") {
-      const y = t._angleFirstLine;
+      const v = t._angleFirstLine;
       (p = m.lines) == null || p.push(
         {
-          startXY: [y[0], y[1]],
-          endXY: [y[2], y[3]],
+          startXY: [v[0], v[1]],
+          endXY: [v[2], v[3]],
           color: a,
           thickness: l
         },
         {
-          startXY: [y[2], y[3]],
+          startXY: [v[2], v[3]],
           endXY: [n, s],
           color: a,
           thickness: l
         }
       );
-      const A = [y[2], y[3], n, s], v = Eh(y, A);
+      const A = [v[2], v[3], n, s], b = Mh(v, A);
       (g = m.text) == null || g.push({
-        str: `${v.toFixed(1)}°`,
-        x: y[2],
-        y: y[3],
+        str: `${b.toFixed(1)}°`,
+        x: v[2],
+        y: v[3],
         scale: 0.8,
         color: c,
         anchorX: 0.5,
@@ -16717,7 +16728,7 @@ function Vv(t) {
   } else
     t.model._dragOverlay = null;
 }
-function zv(t) {
+function kv(t) {
   const e = t._activeDragMode;
   if (e === we.angle) {
     if (t._angleState === "drawing_first_line") {
@@ -16733,7 +16744,7 @@ function zv(t) {
       t._angleState = "none";
       const r = t._angleFirstLine, i = xt(t, r[0], r[1]), n = xt(t, r[2], r[3]), s = xt(t, r[2], r[3]), o = xt(t, t.dragEndXY[0], t.dragEndXY[1]);
       if (i && n && s && o) {
-        const a = [r[2], r[3], t.dragEndXY[0], t.dragEndXY[1]], l = Eh(r, a), c = Na(t), u = {
+        const a = [r[2], r[3], t.dragEndXY[0], t.dragEndXY[1]], l = Mh(r, a), c = Na(t), u = {
           firstLine: {
             startMM: [...i],
             endMM: [...n]
@@ -16752,7 +16763,7 @@ function zv(t) {
     }
   }
   if (e === we.contrast && (t.dragStartXY[0] !== t.dragEndXY[0] || t.dragStartXY[1] !== t.dragEndXY[1])) {
-    const r = Fv(t);
+    const r = Nv(t);
     if (r) {
       const i = t.model.getVolumes()[0];
       i && (i.calMin = r.calMin, i.calMax = r.calMax, t.emit("volumeUpdated", {
@@ -16788,7 +16799,7 @@ function zv(t) {
   Fa(t);
 }
 function Oa(t) {
-  const e = Nv(t);
+  const e = Vv(t);
   e && t.emit("dragRelease", e);
 }
 function Fa(t) {
@@ -16804,7 +16815,7 @@ function Gv(t) {
   ), i = xt(t, t.dragEndXY[0], t.dragEndXY[1]);
   !r || !i || (t.model.scene.pan2Dxyzmm[0] = e[0] + (i[0] - r[0]), t.model.scene.pan2Dxyzmm[1] = e[1] + (i[1] - r[1]), t.model.scene.pan2Dxyzmm[2] = e[2] + (i[2] - r[2]));
 }
-function kv(t) {
+function Xv(t) {
   const e = t._pan2DxyzmmAtDragStart;
   if (!e) return;
   const r = t.dragEndXY[1] - t.dragStartXY[1];
@@ -16815,7 +16826,7 @@ function kv(t) {
   const s = t.model.scene2mm(t.model.scene.crosshairPos);
   t.model.scene.pan2Dxyzmm[0] += n * s[0], t.model.scene.pan2Dxyzmm[1] += n * s[1], t.model.scene.pan2Dxyzmm[2] += n * s[2];
 }
-function Xv(t, e, r) {
+function qv(t, e, r) {
   const i = t.model.getVolumes()[0];
   if (!i) return;
   const n = i.robustMax - i.robustMin, s = n * 5e-3, o = n * 5e-3, a = i.calMax - i.calMin, l = (i.calMax + i.calMin) * 0.5, c = Math.max(1, a + e * s), u = l - r * o;
@@ -16826,7 +16837,7 @@ function Xv(t, e, r) {
   }), t.updateGLVolume();
 }
 function xt(t, e, r) {
-  return !t.view || !t.activeTileHit ? null : Rt(
+  return !t.view || !t.activeTileHit ? null : Mt(
     t.view.screenSlices,
     t.model,
     e,
@@ -16839,14 +16850,14 @@ function Na(t) {
   let s = 0;
   return n === se.AXIAL ? s = r[2] : n === se.CORONAL ? s = r[1] : n === se.SAGITTAL && (s = r[0]), { sliceIndex: i, sliceType: n, slicePosition: s };
 }
-function Eh(t, e) {
+function Mh(t, e) {
   const r = t[2], i = t[3], n = t[0] - r, s = t[1] - i, o = e[2] - r, a = e[3] - i, l = n * o + s * a, c = Math.sqrt(n * n + s * s), u = Math.sqrt(o * o + a * a);
   if (c === 0 || u === 0) return 0;
   const d = Math.max(-1, Math.min(1, l / (c * u)));
   return Math.acos(d) * (180 / Math.PI);
 }
-const qv = ["IWI.CBOR"];
-async function Hv(t, e) {
+const Hv = ["IWI.CBOR"];
+async function Wv(t, e) {
   const r = {
     imageType: {
       dimension: t.dims[0],
@@ -16889,55 +16900,55 @@ async function Hv(t, e) {
     l.byteOffset + l.byteLength
   ).buffer;
 }
-const Wv = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const jv = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: qv,
-  write: Hv
-}, Symbol.toStringTag, { value: "Module" })), jv = ["NII", "NII.GZ"];
-async function Yv(t, e) {
-  const r = Zp(t), i = new Uint8Array(4), n = 352, s = new Uint8Array(e), o = new Uint8Array(n + s.length);
+  extensions: Hv,
+  write: Wv
+}, Symbol.toStringTag, { value: "Module" })), Yv = ["NII", "NII.GZ"];
+async function Kv(t, e) {
+  const r = H0(t), i = new Uint8Array(4), n = 352, s = new Uint8Array(e), o = new Uint8Array(n + s.length);
   return o.set(r, 0), o.set(i, 348), o.set(s, n), o.buffer;
 }
-const Kv = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Qv = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  extensions: jv,
-  write: Yv
-}, Symbol.toStringTag, { value: "Module" })), Qv = /* @__PURE__ */ Object.assign({
-  "./iwi.ts": Wv,
-  "./nii.ts": Kv
-}), Sh = cr(Qv, "./index.ts");
-function Zv() {
-  return Array.from(new Set(Array.from(Sh.keys()))).sort();
+  extensions: Yv,
+  write: Kv
+}, Symbol.toStringTag, { value: "Module" })), Zv = /* @__PURE__ */ Object.assign({
+  "./iwi.ts": jv,
+  "./nii.ts": Qv
+}), Rh = cr(Zv, "./index.ts");
+function Jv() {
+  return Array.from(new Set(Array.from(Rh.keys()))).sort();
 }
-async function Jv(t, e, r, i) {
-  const n = xr(t), s = Sh.get(n.toUpperCase());
+async function $v(t, e, r, i) {
+  const n = xr(t), s = Rh.get(n.toUpperCase());
   if (!s)
     throw new Error(`No volume writer available for extension: ${n}`);
   const o = await s.write(e, r, i);
-  return t.toLowerCase().endsWith(".gz") ? (await jl(new Uint8Array(o))).buffer : o;
+  return t.toLowerCase().endsWith(".gz") ? (await Ju(new Uint8Array(o))).buffer : o;
 }
-function $v() {
-  return Zv();
+function ey() {
+  return Jv();
 }
-const ey = /* @__PURE__ */ Object.assign({
-  "./readers/afni.ts": Ad,
-  "./readers/bmp.ts": wd,
-  "./readers/ecat.ts": Ed,
-  "./readers/fib.ts": Sd,
-  "./readers/iwi.ts": Rd,
-  "./readers/mgh.ts": Md,
-  "./readers/mha.ts": Pd,
-  "./readers/mif.ts": Dd,
-  "./readers/nii.ts": Cd,
-  "./readers/npy.ts": Id,
-  "./readers/nrrd.ts": Bd,
-  "./readers/src.ts": Ld,
-  "./readers/vmr.ts": _d
-}), Di = cr(ey);
+const ty = /* @__PURE__ */ Object.assign({
+  "./readers/afni.ts": Ed,
+  "./readers/bmp.ts": Sd,
+  "./readers/ecat.ts": Md,
+  "./readers/fib.ts": Rd,
+  "./readers/iwi.ts": Pd,
+  "./readers/mgh.ts": Dd,
+  "./readers/mha.ts": Cd,
+  "./readers/mif.ts": Ud,
+  "./readers/nii.ts": Id,
+  "./readers/npy.ts": Ld,
+  "./readers/nrrd.ts": _d,
+  "./readers/src.ts": Od,
+  "./readers/vmr.ts": Fd
+}), Di = cr(ty);
 function Va() {
   return Array.from(Di.keys()).sort();
 }
-function ty(t, e, r) {
+function ry(t, e, r) {
   const i = Di.get(e.toUpperCase());
   if (!i)
     throw new Error(`No built-in volume reader for target format "${e}"`);
@@ -16957,7 +16968,7 @@ async function to(t, e = null) {
     throw new Error(`No volume reader available for extension ${s}`);
   return await o.read(r, n, i);
 }
-function Rh(t, e) {
+function Ph(t, e) {
   const r = t.dims[1] * t.dims[2] * t.dims[3], i = t.scl_slope, n = t.scl_inter;
   let s;
   e instanceof ArrayBuffer ? s = new Float32Array(e) : e instanceof Float32Array ? s = e : s = new Float32Array(e.buffer, e.byteOffset, e.byteLength / 4);
@@ -16973,8 +16984,8 @@ function Rh(t, e) {
     if (c[m] = Math.abs(f * l), c[m + 1] = Math.abs(p * l), c[m + 2] = Math.abs(g * l), Math.abs(f) + Math.abs(p) + Math.abs(g) < 0.1)
       c[m + 3] = 0;
     else {
-      const y = f > 0 ? 1 : 0, A = p > 0 ? 2 : 0, v = g > 0 ? 4 : 0;
-      c[m + 3] = 248 + y + A + v;
+      const v = f > 0 ? 1 : 0, A = p > 0 ? 2 : 0, b = g > 0 ? 4 : 0;
+      c[m + 3] = 248 + v + A + b;
     }
   }
   const d = {
@@ -16987,36 +16998,36 @@ function Rh(t, e) {
   ), { hdr: d, img: c };
 }
 function Qn(t, e, r = "", i = 1 / 0) {
-  if (t.intent_code === Bl.NIFTI_INTENT_RGB_VECTOR && t.dims[4] === 3 && t.datatypeCode === le.DT_FLOAT32) {
-    const v = Rh(t, e);
-    t = v.hdr, e = v.img;
+  if (t.intent_code === Ou.NIFTI_INTENT_RGB_VECTOR && t.dims[4] === 3 && t.datatypeCode === le.DT_FLOAT32) {
+    const b = Ph(t, e);
+    t = b.hdr, e = b.img;
   }
-  const { extentsMin: n, extentsMax: s } = Qp(
+  const { extentsMin: n, extentsMax: s } = q0(
     t.dims.slice(1, 4),
     new Float32Array(t.affine.flat())
   );
   Number.isFinite(t.scl_inter) || (t.scl_inter = 0), (!Number.isFinite(t.scl_slope) || t.scl_slope === 0) && (t.scl_slope = 1);
-  for (let v = 1; v < 4; v++)
-    t.dims[v] = Math.max(t.dims[v], 1), t.pixDims[v] = jp(t.pixDims[v]);
+  for (let b = 1; b < 4; b++)
+    t.dims[b] = Math.max(t.dims[b], 1), t.pixDims[b] = G0(t.pixDims[b]);
   const o = [4, 5, 6].reduce(
-    (v, E) => v * (t.dims[E] > 1 ? t.dims[E] : 1),
+    (b, E) => b * (t.dims[E] > 1 ? t.dims[E] : 1),
     1
   ), a = Number.isFinite(i) ? Math.max(1, Math.min(i, o)) : o, l = t.dims[1] * t.dims[2] * t.dims[3];
   let c = e;
   if (a < o) {
-    const v = t.numBitsPerVoxel / 8, E = l * a * v;
+    const b = t.numBitsPerVoxel / 8, E = l * a * b;
     if (e instanceof ArrayBuffer)
       c = e.slice(0, E);
     else {
-      const b = l * a;
-      c = e.slice(0, b);
+      const y = l * a;
+      c = e.slice(0, y);
     }
     Y.info(
       `4D: loaded ${a} of ${o} frames (limitFrames4D=${i})`
     );
   }
-  const [u, d, h, f] = Yp(t, c), p = {
-    img: c instanceof ArrayBuffer ? bo(c, t.datatypeCode) ?? new Uint8Array(c) : c,
+  const [u, d, h, f] = qu(t, c), p = {
+    img: ku(c, t.datatypeCode),
     hdr: t,
     dims: t.dims.slice(0, 4),
     nVox3D: l,
@@ -17035,20 +17046,20 @@ function Qn(t, e, r = "", i = 1 / 0) {
     nTotalFrame4D: o,
     isLegendVisible: !1
   }, g = t.v1;
-  if (g && (p.v1 = g), Il(p), !p.pixDimsRAS || !p.dimsRAS)
+  if (g && (p.v1 = g), _u(p), !p.pixDimsRAS || !p.dimsRAS)
     throw new Error("calculateRAS failed to set pixDimsRAS/dimsRAS");
   const m = [
     p.pixDimsRAS[1] * p.dimsRAS[1],
     p.pixDimsRAS[2] * p.dimsRAS[2],
     p.pixDimsRAS[3] * p.dimsRAS[3]
-  ], y = Math.max(m[0], m[1], m[2]), A = [
-    m[0] / y,
-    m[1] / y,
-    m[2] / y
+  ], v = Math.max(m[0], m[1], m[2]), A = [
+    m[0] / v,
+    m[1] / v,
+    m[2] / v
   ];
   return p.volScale = A, p;
 }
-function Mh(t) {
+function Dh(t) {
   const e = t.length;
   let r = 0;
   const i = new Uint8Array(e + Math.ceil(0.01 * e)), n = new Int8Array(i.buffer);
@@ -17097,7 +17108,7 @@ function gs(t, e) {
     r[n] = new Uint8Array();
   return { drawUndoBitmaps: r, currentDrawUndoBitmap: i };
 }
-function ry(t) {
+function iy(t) {
   const {
     drawBitmap: e,
     drawUndoBitmaps: r,
@@ -17122,7 +17133,7 @@ function ry(t) {
     l = !0;
   }
   let c = i + 1;
-  return c >= n && (c = 0), o[c] = Mh(a), {
+  return c >= n && (c = 0), o[c] = Dh(a), {
     drawBitmap: a,
     drawUndoBitmaps: o,
     currentDrawUndoBitmap: c,
@@ -17139,7 +17150,7 @@ function xs(t, e, r) {
       i[n] = n * e;
   return i;
 }
-function iy(t) {
+function ny(t) {
   const { permRAS: e, dims: r } = t, i = [0, 0, 0];
   for (let u = 0; u < 3; u++)
     for (let d = 0; d < 3; d++)
@@ -17152,7 +17163,7 @@ function iy(t) {
   const a = xs(r[1], s[0], o[0]), l = xs(r[2], s[1], o[1]), c = xs(r[3], s[2], o[2]);
   return { instride: s, inflip: o, xlut: a, ylut: l, zlut: c };
 }
-function ny(t) {
+function sy(t) {
   const { inputData: e, dims: r, xlut: i, ylut: n, zlut: s } = t, o = r[1] * r[2] * r[3], a = new Uint8Array(o);
   let l = 0;
   for (let c = 0; c < r[3]; c++)
@@ -17172,7 +17183,7 @@ function Vt(t) {
     throw new Error("Drawing volume img is not a Uint8Array");
   return t.img;
 }
-function sy(t, e) {
+function oy(t, e) {
   return t[1] === e[1] && t[2] === e[2] && t[3] === e[3];
 }
 function za(t, e, r, i, n) {
@@ -17192,17 +17203,17 @@ function dn(t) {
     penSize: a,
     penAxCorSag: l,
     penOverwrites: c
-  } = t, u = c === !1 && n !== 0, d = o[1], h = o[2], f = o[3], p = or(e, d), g = or(r, h), m = or(i, f), y = za(p, g, m, d, h);
-  if ((!u || s[y] === 0) && (s[y] = n), a > 1) {
-    const A = Math.floor(a / 2), v = l === 0, E = l === 1, b = l === 2;
+  } = t, u = c === !1 && n !== 0, d = o[1], h = o[2], f = o[3], p = or(e, d), g = or(r, h), m = or(i, f), v = za(p, g, m, d, h);
+  if ((!u || s[v] === 0) && (s[v] = n), a > 1) {
+    const A = Math.floor(a / 2), b = l === 0, E = l === 1, y = l === 2;
     for (let x = -A; x <= A; x++)
       for (let T = -A; T <= A; T++) {
         let S, P, U;
-        if (v)
+        if (b)
           S = or(p + x, d), P = or(g + T, h), U = m;
         else if (E)
           S = or(p + x, d), P = g, U = or(m + T, f);
-        else if (b)
+        else if (y)
           S = p, P = or(g + T, h), U = or(m + x, f);
         else
           continue;
@@ -17211,7 +17222,7 @@ function dn(t) {
       }
   }
 }
-function Ga(t) {
+function ka(t) {
   const {
     ptA: e,
     ptB: r,
@@ -17222,8 +17233,8 @@ function Ga(t) {
     penAxCorSag: a,
     penOverwrites: l
   } = t, c = Math.abs(e[0] - r[0]), u = Math.abs(e[1] - r[1]), d = Math.abs(e[2] - r[2]), h = r[0] > e[0] ? 1 : -1, f = r[1] > e[1] ? 1 : -1, p = r[2] > e[2] ? 1 : -1;
-  let g = e[0], m = e[1], y = e[2];
-  const A = r[0], v = r[1], E = r[2], b = {
+  let g = e[0], m = e[1], v = e[2];
+  const A = r[0], b = r[1], E = r[2], y = {
     x: 0,
     y: 0,
     z: 0,
@@ -17237,41 +17248,41 @@ function Ga(t) {
   if (c >= u && c >= d) {
     let x = 2 * u - c, T = 2 * d - c;
     for (; g !== A; )
-      g += h, x >= 0 && (m += f, x -= 2 * c), T >= 0 && (y += p, T -= 2 * c), x += 2 * u, T += 2 * d, b.x = g, b.y = m, b.z = y, dn(b);
+      g += h, x >= 0 && (m += f, x -= 2 * c), T >= 0 && (v += p, T -= 2 * c), x += 2 * u, T += 2 * d, y.x = g, y.y = m, y.z = v, dn(y);
   } else if (u >= c && u >= d) {
     let x = 2 * c - u, T = 2 * d - u;
-    for (; m !== v; )
-      m += f, x >= 0 && (g += h, x -= 2 * u), T >= 0 && (y += p, T -= 2 * u), x += 2 * c, T += 2 * d, b.x = g, b.y = m, b.z = y, dn(b);
+    for (; m !== b; )
+      m += f, x >= 0 && (g += h, x -= 2 * u), T >= 0 && (v += p, T -= 2 * u), x += 2 * c, T += 2 * d, y.x = g, y.y = m, y.z = v, dn(y);
   } else {
     let x = 2 * u - d, T = 2 * c - d;
-    for (; y !== E; )
-      y += p, x >= 0 && (m += f, x -= 2 * d), T >= 0 && (g += h, T -= 2 * d), x += 2 * u, T += 2 * c, b.x = g, b.y = m, b.z = y, dn(b);
+    for (; v !== E; )
+      v += p, x >= 0 && (m += f, x -= 2 * d), T >= 0 && (g += h, T -= 2 * d), x += 2 * u, T += 2 * c, y.x = g, y.y = m, y.z = v, dn(y);
   }
 }
-function oy(t) {
+function ay(t) {
   const { img2D: e, dims2D: r, minPt: i, maxPt: n } = t, s = r[0], [o, a] = i, [l, c] = n, u = (l - o + 1) * (c - a + 1), d = new Int32Array(u * 2);
   let h = 0, f = 0;
-  function p(y, A) {
-    if (y < o || y > l || A < a || A > c) return;
-    const v = y + A * s;
-    e[v] === 0 && (e[v] = 2, d[f] = y, d[f + 1] = A, f = (f + 2) % d.length);
+  function p(v, A) {
+    if (v < o || v > l || A < a || A > c) return;
+    const b = v + A * s;
+    e[b] === 0 && (e[b] = 2, d[f] = v, d[f + 1] = A, f = (f + 2) % d.length);
   }
   function g() {
     if (h === f) return null;
-    const y = d[h], A = d[h + 1];
-    return h = (h + 2) % d.length, [y, A];
+    const v = d[h], A = d[h + 1];
+    return h = (h + 2) % d.length, [v, A];
   }
-  for (let y = o; y <= l; y++)
-    p(y, a), p(y, c);
-  for (let y = a + 1; y <= c - 1; y++)
-    p(o, y), p(l, y);
+  for (let v = o; v <= l; v++)
+    p(v, a), p(v, c);
+  for (let v = a + 1; v <= c - 1; v++)
+    p(o, v), p(l, v);
   let m = g();
   for (; m !== null; ) {
-    const [y, A] = m;
-    p(y - 1, A), p(y + 1, A), p(y, A - 1), p(y, A + 1), m = g();
+    const [v, A] = m;
+    p(v - 1, A), p(v + 1, A), p(v, A - 1), p(v, A + 1), m = g();
   }
 }
-function ka(t, e, r, i, n) {
+function Ga(t, e, r, i, n) {
   const s = Math.abs(r[0] - i[0]), o = Math.abs(r[1] - i[1]);
   t[r[0] + r[1] * e[0]] = n, t[i[0] + i[1] * e[0]] = n;
   const a = i[0] > r[0] ? 1 : -1, l = i[1] > r[1] ? 1 : -1;
@@ -17291,11 +17302,11 @@ function Xa(t, e) {
   const r = Math.min(Math.max(t[0], 0), e[0] - 1), i = Math.min(Math.max(t[1], 0), e[1] - 1);
   return [r, i];
 }
-function ay(t) {
+function ly(t) {
   let e = 0, r = 1;
   return t === 1 ? r = 2 : t === 2 && (e = 1, r = 2), [e, r];
 }
-function ly(t) {
+function cy(t) {
   const {
     penFillPts: e,
     penAxCorSag: r,
@@ -17307,13 +17318,13 @@ function ly(t) {
   } = t, l = e.length;
   if (l < 2)
     return { drawBitmap: i, success: !1 };
-  const [c, u] = ay(r), d = [n[c + 1], n[u + 1]], h = new Uint8Array(d[0] * d[1]), f = 1, p = Xa([e[0][c], e[0][u]], d);
-  let g = [...p], m = [...p], y = p;
+  const [c, u] = ly(r), d = [n[c + 1], n[u + 1]], h = new Uint8Array(d[0] * d[1]), f = 1, p = Xa([e[0][c], e[0][u]], d);
+  let g = [...p], m = [...p], v = p;
   for (let x = 1; x < l; x++) {
     let T = [e[x][c], e[x][u]];
-    T = Xa(T, d), g = [Math.min(T[0], g[0]), Math.min(T[1], g[1])], m = [Math.max(T[0], m[0]), Math.max(T[1], m[1])], ka(h, d, y, T, f), y = T;
+    T = Xa(T, d), g = [Math.min(T[0], g[0]), Math.min(T[1], g[1])], m = [Math.max(T[0], m[0]), Math.max(T[1], m[1])], Ga(h, d, v, T, f), v = T;
   }
-  ka(h, d, p, y, f);
+  Ga(h, d, p, v, f);
   const A = 1;
   g[0] = Math.max(0, g[0] - A), g[1] = Math.max(0, g[1] - A), m[0] = Math.min(d[0] - 1, m[0] + A), m[1] = Math.min(d[1] - 1, m[1] + A);
   for (let x = 0; x < d[1]; x++)
@@ -17323,13 +17334,13 @@ function ly(t) {
       const S = T + x * d[0];
       h[S] === 0 && (h[S] = 2);
     }
-  const v = Date.now();
-  oy({ img2D: h, dims2D: d, minPt: g, maxPt: m }), Y.debug(`FloodFill ${Date.now() - v}`);
-  const E = e[0][3 - (c + u)], b = new Uint8Array(i);
+  const b = Date.now();
+  ay({ img2D: h, dims2D: d, minPt: g, maxPt: m }), Y.debug(`FloodFill ${Date.now() - b}`);
+  const E = e[0][3 - (c + u)], y = new Uint8Array(i);
   if (r === 0) {
     const x = E * d[0] * d[1];
     for (let T = 0; T < d[0] * d[1]; T++)
-      h[T] !== 2 && (b[T + x] = s);
+      h[T] !== 2 && (y[T + x] = s);
   } else {
     let x = 1;
     const T = n[1] * n[2];
@@ -17338,23 +17349,23 @@ function ly(t) {
     let P = 0;
     for (let U = 0; U < d[1]; U++)
       for (let _ = 0; _ < d[0]; _++)
-        h[P] !== 2 && (b[_ * x + U * T + S] = s), P++;
+        h[P] !== 2 && (y[_ * x + U * T + S] = s), P++;
   }
   if (!o && a && a.length > 0) {
-    const x = b.length, T = Zn(a, x);
+    const x = y.length, T = Zn(a, x);
     for (let S = 0; S < x; S++)
-      T[S] !== 0 && (b[S] = T[S]);
+      T[S] !== 0 && (y[S] = T[S]);
   }
-  return { drawBitmap: b, success: !0 };
+  return { drawBitmap: y, success: !0 };
 }
-function cy(t, e) {
+function uy(t, e) {
   return t[0] === e[0] && t[1] === e[1] && t[2] === e[2];
 }
 function ys(t, e) {
   var r;
   t.isDragging = !0, t.activeButton = e.button, t.lastPointerX = e.clientX, t.lastPointerY = e.clientY, (r = t.canvas) == null || r.setPointerCapture(e.pointerId);
 }
-function uy(t, e, r) {
+function dy(t, e, r) {
   var l;
   const i = (l = t.canvas) == null ? void 0 : l.getBoundingClientRect();
   if (!i)
@@ -17367,15 +17378,15 @@ function uy(t, e, r) {
 }
 function Ht(t, e, r) {
   var p, g;
-  const [i, n] = uy(t, e, r), s = t.opts.bounds;
+  const [i, n] = dy(t, e, r), s = t.opts.bounds;
   if (!s || s[0][0] === 0 && s[0][1] === 0 && s[1][0] === 1 && s[1][1] === 1)
     return [i, n];
   const o = ((p = t.canvas) == null ? void 0 : p.width) ?? 0, a = ((g = t.canvas) == null ? void 0 : g.height) ?? 0, l = s[0][0] * o, c = (1 - s[1][1]) * a, u = (s[1][0] - s[0][0]) * o, d = (s[1][1] - s[0][1]) * a, h = i - l, f = n - c;
   return h < 0 || h >= u || f < 0 || f >= d ? null : [h, f];
 }
-function dy(t, e, r) {
+function hy(t, e, r) {
   var s;
-  const i = (s = t.view) == null ? void 0 : s.graphLayout, n = J1(e, r, i);
+  const i = (s = t.view) == null ? void 0 : s.graphLayout, n = $1(e, r, i);
   if (!n) return !1;
   if (n.type === "deferred") {
     const o = t.volumes[0];
@@ -17387,7 +17398,7 @@ function dy(t, e, r) {
   }
   return n.type === "frame";
 }
-function hy(t, e, r) {
+function fy(t, e, r) {
   if (!r || r.entries.length === 0 || t < r.x || t > r.x + r.width) return null;
   const i = r.boxSize * 1.2, n = r.entries.length * i + (r.entries.length - 1) * r.gap;
   if (e < r.y || e > r.y + n) return null;
@@ -17399,7 +17410,7 @@ function hy(t, e, r) {
   }
   return null;
 }
-function fy(t, e) {
+function py(t, e) {
   var n;
   const r = (n = document.activeElement) == null ? void 0 : n.tagName;
   if (r === "INPUT" || r === "TEXTAREA" || r === "SELECT") return;
@@ -17445,13 +17456,13 @@ function fy(t, e) {
     Math.min(90, t.model.scene.elevation + 1)
   ), t.drawScene()) : i === "H" ? t.moveCrosshairInVox(-1, 0, 0) : i === "L" ? t.moveCrosshairInVox(1, 0, 0) : i === "J" ? t.moveCrosshairInVox(0, -1, 0) : i === "K" ? t.moveCrosshairInVox(0, 1, 0) : i === "U" && e.ctrlKey ? t.moveCrosshairInVox(0, 0, 1) : i === "D" && e.ctrlKey && t.moveCrosshairInVox(0, 0, -1);
 }
-function Ph(t) {
+function Ch(t) {
   var e, r, i, n, s, o, a;
   t.canvas && (t.canvas.style.touchAction = "none"), t._eventListeners.contextmenu = (l) => {
     const c = l;
     c.shiftKey || c.preventDefault();
   }, t._eventListeners.pointerdown = (l) => {
-    var p, g, m, y, A, v, E, b;
+    var p, g, m, v, A, b, E, y;
     const c = l;
     if (t.model.ui.isThumbnailVisible) {
       t.isThumbnailVisible = !1;
@@ -17463,14 +17474,14 @@ function Ph(t) {
     }
     const u = Ht(t, c.clientX, c.clientY);
     if (!u) return;
-    const [d, h] = u, f = hy(d, h, ((p = t.view) == null ? void 0 : p.legendLayout) ?? null);
+    const [d, h] = u, f = fy(d, h, ((p = t.view) == null ? void 0 : p.legendLayout) ?? null);
     if (f) {
       Y.info(`Legend clicked: ${f.label}`), f.centroid && t.setCrosshairPos(f.centroid);
       return;
     }
-    if (!dy(t, d, h)) {
+    if (!hy(t, d, h)) {
       if (t.activeTileHit = ((g = t.view) == null ? void 0 : g.hitTest(d, h)) ?? null, t.model.draw.isEnabled && t.model.drawingVolume && t.activeTileHit && !t.activeTileHit.isRender && c.button === 0) {
-        const x = Rt(
+        const x = Mt(
           ((m = t.view) == null ? void 0 : m.screenSlices) ?? [],
           t.model,
           d,
@@ -17480,7 +17491,7 @@ function Ph(t) {
         if (x) {
           const T = t.model.getVolumes()[0];
           if (T) {
-            const S = ry({
+            const S = iy({
               drawBitmap: Vt(t.model.drawingVolume),
               drawUndoBitmaps: t.drawUndoBitmaps,
               currentDrawUndoBitmap: t.currentDrawUndoBitmap,
@@ -17506,11 +17517,11 @@ function Ph(t) {
             }), t.refreshDrawing(), t.setCrosshairPos(x);
           }
         }
-        t.isDragging = !0, t.activeButton = c.button, t.lastPointerX = c.clientX, t.lastPointerY = c.clientY, (y = t.canvas) == null || y.setPointerCapture(c.pointerId);
+        t.isDragging = !0, t.activeButton = c.button, t.lastPointerX = c.clientX, t.lastPointerY = c.clientY, (v = t.canvas) == null || v.setPointerCapture(c.pointerId);
         return;
       }
       if (t.model.annotation.isEnabled && t.activeTileHit && !t.activeTileHit.isRender && c.button === 0) {
-        const x = Rt(
+        const x = Mt(
           ((A = t.view) == null ? void 0 : A.screenSlices) ?? [],
           t.model,
           d,
@@ -17526,12 +17537,12 @@ function Ph(t) {
           const _ = t.model.annotation, O = _.tool;
           if (!_.isErasing && O !== "freehand") {
             if (t.model._annotationSelection) {
-              const R = yv(
+              const M = bv(
                 U,
                 t.model._annotationSelection.controlPoints,
                 2
               );
-              if (R >= 0) {
+              if (M >= 0) {
                 const C = t.model.annotations.find(
                   (I) => {
                     var V;
@@ -17539,7 +17550,7 @@ function Ph(t) {
                   }
                 );
                 if (C != null && C.shape) {
-                  t._annotationUndoStack.push(t.model.annotations), t._resizingControlPoint = R, t._resizeOriginalShape = {
+                  t._annotationUndoStack.push(t.model.annotations), t._resizingControlPoint = M, t._resizeOriginalShape = {
                     start: { ...C.shape.start },
                     end: { ...C.shape.end },
                     width: C.shape.width
@@ -17548,19 +17559,19 @@ function Ph(t) {
                 }
               }
             }
-            const w = (((v = t.view) == null ? void 0 : v.screenSlices) ?? [])[t.activeTileHit.tileIndex], D = En(t.model);
-            for (const R of t.model.annotations) {
-              if (!R.shape || R.sliceType !== T) continue;
-              const C = R.anchorMM;
+            const w = (((b = t.view) == null ? void 0 : b.screenSlices) ?? [])[t.activeTileHit.tileIndex], D = En(t.model);
+            for (const M of t.model.annotations) {
+              if (!M.shape || M.sliceType !== T) continue;
+              const C = M.anchorMM;
               if ((C && (w != null && w.planeNormal) && (w != null && w.planePoint) ? vr(
                 C,
                 w.planeNormal,
                 w.planePoint,
                 D
-              ) : Math.abs(R.slicePosition - P) <= D) && _v(U, R) !== -1) {
+              ) : Math.abs(M.slicePosition - P) <= D) && Ov(U, M) !== -1) {
                 t.model._annotationSelection = {
-                  annotationId: R.id,
-                  controlPoints: un(R.shape)
+                  annotationId: M.id,
+                  controlPoints: un(M.shape)
                 }, t.drawScene();
                 return;
               }
@@ -17573,9 +17584,9 @@ function Ph(t) {
         }
       }
       if (t.isDragging = !0, t.activeButton = c.button, t.activeTileHit && !t.activeTileHit.isRender) {
-        const x = Ov(t, c.button);
+        const x = Fv(t, c.button);
         if (t._activeDragMode = x, t.dragStartXY = [d, h], t.dragEndXY = [d, h], t.model._dragOverlay = null, x !== we.angle && (t._angleState = "none"), x === we.crosshair) {
-          const T = Rt(
+          const T = Mt(
             ((E = t.view) == null ? void 0 : E.screenSlices) ?? [],
             t.model,
             d,
@@ -17588,14 +17599,14 @@ function Ph(t) {
           t._pan2DxyzmmAtDragStart = [T[0], T[1], T[2], T[3]];
         } else x === we.angle && t._angleState !== "drawing_second_line" && (t._angleState = "drawing_first_line");
       }
-      t.lastPointerX = c.clientX, t.lastPointerY = c.clientY, (b = t.canvas) == null || b.setPointerCapture(c.pointerId);
+      t.lastPointerX = c.clientX, t.lastPointerY = c.clientY, (y = t.canvas) == null || y.setPointerCapture(c.pointerId);
     }
   }, t._eventListeners.pointerup = (l) => {
     var d, h;
     if (t.model.draw.isEnabled && t._drawPenFillPts.length > 0 && t.model.drawingVolume) {
       const f = t.model.getVolumes()[0];
       if (f != null && f.dimsRAS) {
-        if (t.drawPenAutoClose && t._drawPenFillPts.length > 2 && Ga({
+        if (t.drawPenAutoClose && t._drawPenFillPts.length > 2 && ka({
           ptA: t._drawPenLocation,
           ptB: t._drawPenFillPts[0],
           penValue: t.model.draw.penValue,
@@ -17605,7 +17616,7 @@ function Ph(t) {
           penAxCorSag: t._drawPenAxCorSag,
           penOverwrites: t.model.draw.isFillOverwriting
         }), t.drawPenFilled && t._drawPenFillPts.length > 2) {
-          const p = t.drawUndoBitmaps[t.currentDrawUndoBitmap] ?? null, g = ly({
+          const p = t.drawUndoBitmaps[t.currentDrawUndoBitmap] ?? null, g = cy({
             penFillPts: t._drawPenFillPts,
             penAxCorSag: t._drawPenAxCorSag,
             drawBitmap: Vt(t.model.drawingVolume),
@@ -17625,13 +17636,13 @@ function Ph(t) {
       if (f) {
         const p = t._resizingAnnotation;
         if (p != null && p.shape) {
-          const g = t.model.annotation, m = p.shape.width ?? g.style.strokeWidth, y = sn(
+          const g = t.model.annotation, m = p.shape.width ?? g.style.strokeWidth, v = sn(
             p.shape.type,
             p.shape.start,
             p.shape.end,
             m
           );
-          if (y.length > 0 && (p.polygons = y, f.controlPoints = un(p.shape)), Ia(p.shape.type)) {
+          if (v.length > 0 && (p.polygons = v, f.controlPoints = un(p.shape)), Ia(p.shape.type)) {
             const A = t.model.getVolumes()[0];
             A && (p.stats = La(p, A) ?? void 0);
           }
@@ -17643,7 +17654,7 @@ function Ph(t) {
     if (t.model.annotation.isEnabled && t._annotationShapeStart) {
       const f = l, p = Ht(t, f.clientX, f.clientY);
       if (p && t.activeTileHit && !t.activeTileHit.isRender) {
-        const g = Rt(
+        const g = Mt(
           ((d = t.view) == null ? void 0 : d.screenSlices) ?? [],
           t.model,
           p[0],
@@ -17655,40 +17666,40 @@ function Ph(t) {
             g,
             t._annotationSliceType
           );
-          const y = t.model.annotation;
-          Ba(y.tool) && (m = eo(
+          const v = t.model.annotation;
+          Ba(v.tool) && (m = eo(
             t._annotationShapeStart,
             m
           ));
           const A = sn(
-            y.tool,
+            v.tool,
             t._annotationShapeStart,
             m,
-            y.style.strokeWidth
+            v.style.strokeWidth
           );
           if (A.length > 0) {
             t._annotationUndoStack.push(t.model.annotations);
-            const v = ui(
-              y.activeLabel,
-              y.activeGroup,
+            const b = ui(
+              v.activeLabel,
+              v.activeGroup,
               t._annotationSliceType,
               t._annotationSlicePosition,
               A,
-              y.style,
+              v.style,
               t._annotationAnchorMM
             ), E = {
-              type: y.tool,
+              type: v.tool,
               start: t._annotationShapeStart,
               end: m
             };
-            if ((y.tool === "line" || y.tool === "arrow" || y.tool === "measureLine") && (E.width = y.style.strokeWidth), v.shape = E, Ia(y.tool)) {
-              const b = t.model.getVolumes()[0];
-              b && (v.stats = La(v, b) ?? void 0);
+            if ((v.tool === "line" || v.tool === "arrow" || v.tool === "measureLine") && (E.width = v.style.strokeWidth), b.shape = E, Ia(v.tool)) {
+              const y = t.model.getVolumes()[0];
+              y && (b.stats = La(b, y) ?? void 0);
             }
             t.model.annotations = _a(
               t.model.annotations,
-              v
-            ), t.emit("annotationAdded", { annotation: v }), t.emit("annotationChanged", { action: "draw" });
+              b
+            ), t.emit("annotationAdded", { annotation: b }), t.emit("annotationChanged", { action: "draw" });
           }
         }
       }
@@ -17731,7 +17742,7 @@ function Ph(t) {
       }
       t._annotationBrushPath = [], t._frozenLoopPoints = null, t.model._annotationPreview = null, t.model._annotationErasePreview = null;
     }
-    t._activeDragMode !== we.none && zv(t), t.isDragging = !1, t.activeTileHit = null;
+    t._activeDragMode !== we.none && kv(t), t.isDragging = !1, t.activeTileHit = null;
     const c = l, u = na(t, c);
     u && t.emit(
       "slicePointerUp",
@@ -17746,14 +17757,14 @@ function Ph(t) {
     } catch {
     }
   }, t._eventListeners.pointermove = (l) => {
-    var f, p, g, m, y, A, v, E, b;
+    var f, p, g, m, v, A, b, E, y;
     const c = l;
     if (t.model.annotation.isEnabled && !t.isDragging) {
       const x = Ht(t, c.clientX, c.clientY);
       if (x) {
         const T = ((f = t.view) == null ? void 0 : f.hitTest(x[0], x[1])) ?? null;
         if (T && !T.isRender) {
-          const S = Rt(
+          const S = Mt(
             ((p = t.view) == null ? void 0 : p.screenSlices) ?? [],
             t.model,
             x[0],
@@ -17787,7 +17798,7 @@ function Ph(t) {
     if (t.lastPointerX = c.clientX, t.lastPointerY = c.clientY, t.model.draw.isEnabled && t._drawPenAxCorSag >= 0 && t.activeTileHit && !t.activeTileHit.isRender && t.model.drawingVolume) {
       const x = Ht(t, c.clientX, c.clientY);
       if (!x) return;
-      const [T, S] = x, P = Rt(
+      const [T, S] = x, P = Mt(
         ((g = t.view) == null ? void 0 : g.screenSlices) ?? [],
         t.model,
         T,
@@ -17802,7 +17813,7 @@ function Ph(t) {
             Math.round(_[1]),
             Math.round(_[2])
           ];
-          cy(t._drawPenLocation, O) || (Ga({
+          uy(t._drawPenLocation, O) || (ka({
             ptA: t._drawPenLocation,
             ptB: O,
             penValue: t.model.draw.penValue,
@@ -17819,7 +17830,7 @@ function Ph(t) {
     if (t.model.annotation.isEnabled && t._resizingControlPoint >= 0 && t.activeTileHit && !t.activeTileHit.isRender) {
       const x = Ht(t, c.clientX, c.clientY);
       if (!x) return;
-      const T = Rt(
+      const T = Mt(
         ((m = t.view) == null ? void 0 : m.screenSlices) ?? [],
         t.model,
         x[0],
@@ -17832,7 +17843,7 @@ function Ph(t) {
           t._annotationSliceType
         ), P = t._resizingAnnotation;
         if (P != null && P.shape) {
-          const U = bv(
+          const U = Tv(
             P.shape.type,
             t._resizeOriginalShape,
             t._resizingControlPoint,
@@ -17853,8 +17864,8 @@ function Ph(t) {
     if (t.model.annotation.isEnabled && t._annotationShapeStart && t.activeTileHit && !t.activeTileHit.isRender) {
       const x = Ht(t, c.clientX, c.clientY);
       if (!x) return;
-      const T = Rt(
-        ((y = t.view) == null ? void 0 : y.screenSlices) ?? [],
+      const T = Mt(
+        ((v = t.view) == null ? void 0 : v.screenSlices) ?? [],
         t.model,
         x[0],
         x[1],
@@ -17908,7 +17919,7 @@ function Ph(t) {
     if (t.model.annotation.isEnabled && t._annotationBrushPath.length > 0 && t.activeTileHit && !t.activeTileHit.isRender) {
       const x = Ht(t, c.clientX, c.clientY);
       if (!x) return;
-      const [T, S] = x, P = Rt(
+      const [T, S] = x, P = Mt(
         ((A = t.view) == null ? void 0 : A.screenSlices) ?? [],
         t.model,
         T,
@@ -17929,40 +17940,40 @@ function Ph(t) {
         if (w && Math.sqrt(
           (O.x - w.x) ** 2 + (O.y - w.y) ** 2
         ) > 0.1 && (t._annotationBrushPath.push(O), t._annotationBrushPath.length > 1)) {
-          const D = t.model.annotation, R = D.brushRadius <= 1;
+          const D = t.model.annotation, M = D.brushRadius <= 1;
           if (D.isErasing) {
-            const C = [], I = (((v = t.view) == null ? void 0 : v.screenSlices) ?? [])[(E = t.activeTileHit) == null ? void 0 : E.tileIndex], V = En(t.model);
-            for (const k of t.model.annotations) {
-              const F = k.anchorMM, X = F && (I != null && I.planeNormal) && (I != null && I.planePoint) ? vr(
+            const C = [], I = (((b = t.view) == null ? void 0 : b.screenSlices) ?? [])[(E = t.activeTileHit) == null ? void 0 : E.tileIndex], V = En(t.model);
+            for (const G of t.model.annotations) {
+              const F = G.anchorMM, X = F && (I != null && I.planeNormal) && (I != null && I.planePoint) ? vr(
                 F,
                 I.planeNormal,
                 I.planePoint,
                 V
               ) : Math.abs(
-                k.slicePosition - t._annotationSlicePosition
+                G.slicePosition - t._annotationSlicePosition
               ) <= V;
-              if (k.sliceType !== t._annotationSliceType || !X) {
-                C.push(k);
+              if (G.sliceType !== t._annotationSliceType || !X) {
+                C.push(G);
                 continue;
               }
               const q = [];
-              for (const Q of k.polygons)
+              for (const Q of G.polygons)
                 q.push(
-                  ...vv(
+                  ...yv(
                     Q,
                     t._annotationBrushPath,
                     D.brushRadius
                   )
                 );
-              q.length > 0 && C.push({ ...k, polygons: q });
+              q.length > 0 && C.push({ ...G, polygons: q });
             }
             t.model._annotationErasePreview = C;
-          } else if (R) {
+          } else if (M) {
             if (!t._frozenLoopPoints && t._annotationBrushPath.length >= 4) {
-              const I = Iv(
+              const I = Bv(
                 t._annotationBrushPath
               );
-              I && (t._frozenLoopPoints = Lv(
+              I && (t._frozenLoopPoints = _v(
                 t._annotationBrushPath,
                 I
               ));
@@ -18009,8 +18020,8 @@ function Ph(t) {
       const [T, S] = x;
       switch (t.dragEndXY = [T, S], t._activeDragMode) {
         case we.crosshair: {
-          const P = Rt(
-            ((b = t.view) == null ? void 0 : b.screenSlices) ?? [],
+          const P = Mt(
+            ((y = t.view) == null ? void 0 : y.screenSlices) ?? [],
             t.model,
             T,
             S,
@@ -18023,17 +18034,17 @@ function Ph(t) {
           Gv(t), t.drawScene();
           break;
         case we.slicer3D:
-          kv(t), t.drawScene();
+          Xv(t), t.drawScene();
           break;
         case we.windowing:
-          Xv(t, u, d), t.drawScene();
+          qv(t, u, d), t.drawScene();
           break;
         case we.contrast:
         case we.measurement:
         case we.callbackOnly:
         case we.roiSelection:
         case we.angle:
-          Vv(t), t.drawScene();
+          zv(t), t.drawScene();
           break;
       }
       return;
@@ -18063,21 +18074,21 @@ function Ph(t) {
     if (!f.isRender) {
       if (t.model.interaction.primaryDragMode === we.pan || t.model.interaction.primaryDragMode === we.slicer3D || t.model.interaction.secondaryDragMode === we.pan || t.model.interaction.secondaryDragMode === we.slicer3D) {
         const A = c.deltaY < 0 ? 1 : -1;
-        let v = t.model.scene.pan2Dxyzmm[3] * (1 + 0.1 * A);
-        v = Math.round(v * 10) / 10, v = Math.max(0.1, Math.min(10, v));
-        const E = t.model.scene.pan2Dxyzmm[3] - v;
-        t.model.interaction.isYoked3DTo2DZoom && (t.model.scene.scaleMultiplier = v), t.model.scene.pan2Dxyzmm[3] = v;
-        const b = t.model.scene2mm(t.model.scene.crosshairPos);
-        t.model.scene.pan2Dxyzmm[0] += E * b[0], t.model.scene.pan2Dxyzmm[1] += E * b[1], t.model.scene.pan2Dxyzmm[2] += E * b[2], t.drawScene();
+        let b = t.model.scene.pan2Dxyzmm[3] * (1 + 0.1 * A);
+        b = Math.round(b * 10) / 10, b = Math.max(0.1, Math.min(10, b));
+        const E = t.model.scene.pan2Dxyzmm[3] - b;
+        t.model.interaction.isYoked3DTo2DZoom && (t.model.scene.scaleMultiplier = b), t.model.scene.pan2Dxyzmm[3] = b;
+        const y = t.model.scene2mm(t.model.scene.crosshairPos);
+        t.model.scene.pan2Dxyzmm[0] += E * y[0], t.model.scene.pan2Dxyzmm[1] += E * y[1], t.model.scene.pan2Dxyzmm[2] += E * y[2], t.drawScene();
         return;
       }
-      const y = c.deltaY > 0 ? 1 : -1;
+      const v = c.deltaY > 0 ? 1 : -1;
       if (t.model.getVolumes().length > 0) {
-        const A = et(f.sliceType), v = [0, 0, 0];
-        v[A] = y, t.moveCrosshairInVox(v[0], v[1], v[2]);
+        const A = et(f.sliceType), b = [0, 0, 0];
+        b[A] = v, t.moveCrosshairInVox(b[0], b[1], b[2]);
       } else {
-        const A = et(f.sliceType), v = t.model.scene2mm(t.model.scene.crosshairPos), E = t.model.extentsMax[A] - t.model.extentsMin[A];
-        v[A] += y * E * 0.01, t.setCrosshairPos([v[0], v[1], v[2]]);
+        const A = et(f.sliceType), b = t.model.scene2mm(t.model.scene.crosshairPos), E = t.model.extentsMax[A] - t.model.extentsMin[A];
+        b[A] += v * E * 0.01, t.setCrosshairPos([b[0], b[1], b[2]]);
       }
       return;
     }
@@ -18096,7 +18107,7 @@ function Ph(t) {
       0.5,
       Math.min(2, t.model.scene.scaleMultiplier)
     ), t.drawScene();
-  }, t._eventListeners.keydown = (l) => fy(t, l), t._eventListeners.dblclick = async (l) => {
+  }, t._eventListeners.keydown = (l) => py(t, l), t._eventListeners.dblclick = async (l) => {
     var p;
     const c = l, u = Ht(t, c.clientX, c.clientY);
     if (!u) return;
@@ -18114,7 +18125,7 @@ function Ph(t) {
     passive: !1
   }), window.addEventListener("keydown", t._eventListeners.keydown), (a = t.canvas) == null || a.addEventListener("dblclick", t._eventListeners.dblclick);
 }
-function Dh(t) {
+function Uh(t) {
   var e, r, i, n, s, o, a, l, c;
   t._eventListeners.contextmenu && ((e = t.canvas) == null || e.removeEventListener(
     "contextmenu",
@@ -18133,7 +18144,7 @@ function Dh(t) {
     t._eventListeners.pointerleave
   )), t.canvas && (t.canvas.style.touchAction = "");
 }
-function Ch(t) {
+function Ih(t) {
   var e, r;
   t._eventListeners.dragover = (i) => {
     const n = i;
@@ -18153,7 +18164,7 @@ function Ch(t) {
     }
   }, (e = t.canvas) == null || e.addEventListener("dragover", t._eventListeners.dragover), (r = t.canvas) == null || r.addEventListener("drop", t._eventListeners.drop);
 }
-function Uh(t) {
+function Bh(t) {
   t.resizeObserver && t.resizeObserver.disconnect(), t.resizeObserver = new ResizeObserver(() => {
     var e;
     (e = t.view) == null || e.resize(), t.canvas && t.emit("canvasResize", {
@@ -18169,7 +18180,7 @@ function Uh(t) {
     t.resizeObserver.observe(t.canvas);
   }
 }
-function py(t, e, r, i) {
+function my(t, e, r, i) {
   const n = t.length, s = new Uint8Array(n * 4), o = Math.min(Math.max(i, 0), 1);
   for (let a = 0; a < n; a++) {
     const l = t[a];
@@ -18181,10 +18192,10 @@ function py(t, e, r, i) {
   }
   return s;
 }
-function Ih(t) {
-  return Ai(t);
+function Lh(t) {
+  return Ti(t);
 }
-function my(t, e) {
+function gy(t, e) {
   var d;
   if (t.volumes.length === 0 && t.meshes.length === 0) return null;
   const [, , r] = t.model.sceneExtentsMinMax(), i = Math.max(Math.max(r[0], r[1]), r[2]);
@@ -18201,26 +18212,26 @@ function my(t, e) {
     let h = " = ";
     for (let f = 0; f < t.volumes.length; f++) {
       const p = t.volumes[f], g = pt(p, o), m = p.frame4D ?? 0;
-      let y = ei(p, g[0], g[1], g[2], m);
+      let v = ei(p, g[0], g[1], g[2], m);
       if (s = 3, Nr(p.hdr) && p.colormapLabel) {
-        const A = p.colormapLabel, v = Gs(p, g[0], g[1], g[2]);
-        if (v[2] > 2 && A.labels) {
-          const E = Math.round(100 * v[2] / 255);
-          if (h += `${A.labels[v[0]] ?? `label(${v[0]})`} (${E}%)`, v[3] > 2) {
-            const b = Math.round(100 * v[3] / 255);
-            h += ` ${A.labels[v[1]] ?? `label(${v[1]})`} (${b}%)`;
+        const A = p.colormapLabel, b = Gs(p, g[0], g[1], g[2]);
+        if (b[2] > 2 && A.labels) {
+          const E = Math.round(100 * b[2] / 255);
+          if (h += `${A.labels[b[0]] ?? `label(${b[0]})`} (${E}%)`, b[3] > 2) {
+            const y = Math.round(100 * b[3] / 255);
+            h += ` ${A.labels[b[1]] ?? `label(${b[1]})`} (${y}%)`;
           }
         }
       } else if (p.colormapLabel) {
-        const A = p.colormapLabel, v = Math.round(y), E = A.min ?? 0, b = A.max ?? 0;
-        if (v >= E && v <= b && A.labels) {
-          const x = v - E;
-          h += A.labels[x] ?? `label(${v})`;
+        const A = p.colormapLabel, b = Math.round(v), E = A.min ?? 0, y = A.max ?? 0;
+        if (b >= E && b <= y && A.labels) {
+          const x = b - E;
+          h += A.labels[x] ?? `label(${b})`;
         } else
-          h += a(y, s);
+          h += a(v, s);
       } else
-        h += a(y, s);
-      t.volumes[f].isImaginary && (y = ei(t.volumes[f], g[0], g[1], g[2], m), y >= 0 && (h += "+"), h += a(y, s)), h += "   ";
+        h += a(v, s);
+      t.volumes[f].isImaginary && (v = ei(t.volumes[f], g[0], g[1], g[2], m), v >= 0 && (h += "+"), h += a(v, s)), h += "   ";
     }
     if (l += h, t.volumes.length > 0) {
       const f = t.volumes[0].dimsRAS;
@@ -18229,14 +18240,14 @@ function my(t, e) {
         if (t.model.drawingVolume) {
           const g = Vt(t.model.drawingVolume);
           if (g.length === p) {
-            const m = t.model.scene2vox(t.model.scene.crosshairPos), y = m[0] + m[1] * f[1] + m[2] * f[1] * f[2], A = g[y];
+            const m = t.model.scene2vox(t.model.scene.crosshairPos), v = m[0] + m[1] * f[1] + m[2] * f[1] * f[2], A = g[v];
             if (A > 0) {
               if (!t._drawLut) {
                 const x = ks(t.model.draw.colormap);
-                x && (t._drawLut = Ih(x));
+                x && (t._drawLut = Lh(x));
               }
-              const v = t._drawLut, E = A - ((v == null ? void 0 : v.min) ?? 0), b = (d = v == null ? void 0 : v.labels) == null ? void 0 : d[E];
-              l += b ? ` ${b}` : ` draw:${A}`;
+              const b = t._drawLut, E = A - ((b == null ? void 0 : b.min) ?? 0), y = (d = b == null ? void 0 : b.labels) == null ? void 0 : d[E];
+              l += y ? ` ${y}` : ` draw:${A}`;
             }
           }
         }
@@ -18259,18 +18270,18 @@ function my(t, e) {
         vox: [f[0], f[1], f[2]]
       };
       if (Nr(h.hdr) && h.colormapLabel) {
-        const m = h.colormapLabel, y = Gs(h, f[0], f[1], f[2]);
-        y[2] > 2 && m.labels && (g.label = m.labels[y[0]] ?? `label(${y[0]})`);
+        const m = h.colormapLabel, v = Gs(h, f[0], f[1], f[2]);
+        v[2] > 2 && m.labels && (g.label = m.labels[v[0]] ?? `label(${v[0]})`);
       } else if (h.colormapLabel) {
-        const m = h.colormapLabel, y = Math.round(p), A = m.min ?? 0, v = m.max ?? 0;
-        y >= A && y <= v && m.labels && (g.label = m.labels[y - A]);
+        const m = h.colormapLabel, v = Math.round(p), A = m.min ?? 0, b = m.max ?? 0;
+        v >= A && v <= b && m.labels && (g.label = m.labels[v - A]);
       }
       return g;
     }),
     string: l
   };
 }
-function gy({
+function xy({
   drawUndoBitmaps: t,
   currentDrawUndoBitmap: e,
   drawBitmap: r
@@ -18293,7 +18304,7 @@ const ro = 7;
 function Bt(t) {
   return new Uint8Array(t.buffer, t.byteOffset, t.byteLength);
 }
-function xy(t) {
+function vy(t) {
   return {
     littleEndian: t.littleEndian,
     dim_info: t.dim_info,
@@ -18331,7 +18342,7 @@ function xy(t) {
     magic: t.magic
   };
 }
-function vy(t) {
+function yy(t) {
   const e = t.volumes.map((n) => {
     const s = {
       url: n.url,
@@ -18362,7 +18373,7 @@ function vy(t) {
     }), n.hdr && n.img) {
       const o = Bt(n.img);
       s.data = {
-        hdr: xy(n.hdr),
+        hdr: vy(n.hdr),
         img: o,
         datatypeCode: n.hdr.datatypeCode
       };
@@ -18476,7 +18487,7 @@ function vy(t) {
     draw: { ...t.draw },
     interaction: { ...t.interaction },
     clipPlanes: [...t.clipPlanes],
-    drawingBitmapRLE: t.drawingVolume ? Mh(Vt(t.drawingVolume)) : void 0,
+    drawingBitmapRLE: t.drawingVolume ? Dh(Vt(t.drawingVolume)) : void 0,
     drawingBitmapLength: t.drawingVolume ? Vt(t.drawingVolume).length : void 0,
     volumes: e,
     meshes: r,
@@ -18485,7 +18496,7 @@ function vy(t) {
   };
   return vo(i);
 }
-function yy(t) {
+function by(t) {
   const e = go(t);
   if (typeof e.version != "number")
     throw new Error("Invalid NVD file: missing version");
@@ -18501,13 +18512,13 @@ function yy(t) {
   }
   return e;
 }
-function by(t, e) {
+function Ty(t, e) {
   t.scene.azimuth = e.scene.azimuth, t.scene.elevation = e.scene.elevation, t.scene.scaleMultiplier = e.scene.scaleMultiplier, t.scene.gamma = e.scene.gamma, t.scene.crosshairPos[0] = e.scene.crosshairPos[0], t.scene.crosshairPos[1] = e.scene.crosshairPos[1], t.scene.crosshairPos[2] = e.scene.crosshairPos[2], t.scene.pan2Dxyzmm[0] = e.scene.pan2Dxyzmm[0], t.scene.pan2Dxyzmm[1] = e.scene.pan2Dxyzmm[1], t.scene.pan2Dxyzmm[2] = e.scene.pan2Dxyzmm[2], t.scene.pan2Dxyzmm[3] = e.scene.pan2Dxyzmm[3], t.scene.backgroundColor = [...e.scene.backgroundColor], t.scene.clipPlaneColor = [...e.scene.clipPlaneColor], t.scene.isClipPlaneCutaway = e.scene.isClipPlaneCutaway, Object.assign(t.layout, e.layout), Object.assign(t.ui, e.ui), Object.assign(t.volume, e.volume), Object.assign(t.mesh, e.mesh), Object.assign(t.draw, e.draw), Object.assign(t.interaction, e.interaction);
   for (let r = 0; r < e.clipPlanes.length && r < t.clipPlanes.length; r++)
     t.clipPlanes[r] = e.clipPlanes[r];
   t.annotations = e.annotations ?? [], e.annotationConfig ? t.annotation = { ...e.annotationConfig } : t.annotation = { ...xi };
 }
-async function Ty(t, e) {
+async function Ay(t, e) {
   try {
     if (e.data) {
       const i = e.data.img.buffer.slice(
@@ -18546,13 +18557,13 @@ async function Ty(t, e) {
         min: e.colormapLabel.min,
         max: e.colormapLabel.max,
         labels: e.colormapLabel.labels
-      }, r.colormapLabel.centroids = zl(r);
+      }, r.colormapLabel.centroids = Hu(r);
     }
   } catch (r) {
     Y.warn(`Failed to load volume ${e.name ?? e.url}:`, r);
   }
 }
-async function Ay(t, e) {
+async function wy(t, e) {
   try {
     if (e.data) {
       const r = e.data.positions.buffer.slice(
@@ -18581,7 +18592,7 @@ async function Ay(t, e) {
             const g = p.data.buffer.slice(
               p.data.byteOffset,
               p.data.byteOffset + p.data.byteLength
-            ), m = new Float32Array(g), y = Yn(m, f, {
+            ), m = new Float32Array(g), v = Yn(m, f, {
               url: p.url,
               name: p.name,
               colormap: p.colormap,
@@ -18602,7 +18613,7 @@ async function Ay(t, e) {
             });
             if (p.colormapLabel) {
               const A = p.colormapLabel.lut;
-              y.colormapLabel = {
+              v.colormapLabel = {
                 lut: new Uint8ClampedArray(
                   A.buffer,
                   A.byteOffset,
@@ -18611,9 +18622,9 @@ async function Ay(t, e) {
                 min: p.colormapLabel.min,
                 max: p.colormapLabel.max,
                 labels: p.colormapLabel.labels
-              }, y.colormapLabel.centroids = So(s, y);
+              }, v.colormapLabel.centroids = So(s, v);
             }
-            c.push(y);
+            c.push(v);
           }
       }
       const u = e.kind ?? "mesh", d = {
@@ -18701,14 +18712,14 @@ function hn(t, e) {
   const r = URL.createObjectURL(t), i = document.createElement("a");
   i.href = r, i.download = e, document.body.appendChild(i), i.click(), document.body.removeChild(i), URL.revokeObjectURL(r);
 }
-function wy(t, e) {
+function Ey(t, e) {
   const r = t.buffer.slice(
     t.byteOffset,
     t.byteOffset + t.byteLength
   ), i = e.endsWith(".nvd") ? e : `${e}.nvd`;
   hn(new Blob([r], { type: "application/cbor" }), i);
 }
-const Bh = class fn {
+const _h = class fn {
   constructor(e = {}) {
     this._dragOverlay = null, this._annotationPreview = null, this._annotationErasePreview = null, this._annotationCursor = null, this._annotationSelection = null, this.completedMeasurements = [], this.completedAngles = [], this.scene = {
       azimuth: e.azimuth ?? 110,
@@ -18721,7 +18732,7 @@ const Bh = class fn {
       clipPlaneColor: e.clipPlaneColor ?? [0.7, 0, 0.7, 0.4],
       isClipPlaneCutaway: e.isClipPlaneCutaway ?? !1
     }, this.layout = {
-      ..._p,
+      ...C0,
       ...e.sliceType !== void 0 && { sliceType: e.sliceType },
       ...e.mosaicString !== void 0 && {
         mosaicString: e.mosaicString
@@ -18830,7 +18841,7 @@ const Bh = class fn {
         }
       }
     }, this.volume = {
-      ...Op,
+      ...U0,
       ...e.volumeIllumination !== void 0 && {
         illumination: e.volumeIllumination
       },
@@ -18859,13 +18870,13 @@ const Bh = class fn {
         paqdUniforms: e.volumePaqdUniforms
       }
     }, this.mesh = {
-      ...Fp,
+      ...I0,
       ...e.meshXRay !== void 0 && { xRay: e.meshXRay },
       ...e.meshThicknessOn2D !== void 0 && {
         thicknessOn2D: e.meshThicknessOn2D
       }
     }, this.draw = {
-      ...Np,
+      ...B0,
       ...e.drawIsEnabled !== void 0 && {
         isEnabled: e.drawIsEnabled
       },
@@ -18888,7 +18899,7 @@ const Bh = class fn {
         colormap: e.drawColormap
       }
     }, this.interaction = {
-      ...Vp,
+      ...L0,
       ...e.primaryDragMode !== void 0 && {
         primaryDragMode: e.primaryDragMode
       },
@@ -18930,7 +18941,7 @@ const Bh = class fn {
       ...e.annotationIsVisibleIn3D !== void 0 && {
         isVisibleIn3D: e.annotationIsVisibleIn3D
       }
-    }, this.drawingVolume = null, this.annotations = [], this.meshes = [], this.volumes = [], this.clipPlanes = Array(gi).fill(null).flatMap(() => [...Lp]), this.furthestFromPivot = 1, this.pivot3D = De(), this.extentsMin = De(), this.extentsMax = De(), this.tex2mm = null, this.mm2tex = null, this._setupPivot3D();
+    }, this.drawingVolume = null, this.annotations = [], this.meshes = [], this.volumes = [], this.clipPlanes = Array(gi).fill(null).flatMap(() => [...D0]), this.furthestFromPivot = 1, this.pivot3D = De(), this.extentsMin = De(), this.extentsMax = De(), this.tex2mm = null, this.mm2tex = null, this._setupPivot3D();
   }
   getMeshes() {
     return this.meshes;
@@ -18940,7 +18951,7 @@ const Bh = class fn {
   }
   getClipPlaneDepthAziElev(e = 0) {
     (e < 0 || e >= gi) && (e = 0);
-    const r = e * 4, i = this.clipPlanes[r + 0], n = this.clipPlanes[r + 1], s = this.clipPlanes[r + 2], o = this.clipPlanes[r + 3], a = Cp(i, n, s);
+    const r = e * 4, i = this.clipPlanes[r + 0], n = this.clipPlanes[r + 1], s = this.clipPlanes[r + 2], o = this.clipPlanes[r + 3], a = S0(i, n, s);
     return [-o, a[0], a[1]];
   }
   scene2mm(e) {
@@ -18998,7 +19009,7 @@ const Bh = class fn {
   }
   setClipPlaneDepthAziElev(e, r, i, n = 0) {
     (n < 0 || n >= gi) && (n = 0);
-    const s = Ip(e, r, i), o = n * 4;
+    const s = R0(e, r, i), o = n * 4;
     this.clipPlanes[o + 0] = s[0], this.clipPlanes[o + 1] = s[1], this.clipPlanes[o + 2] = s[2], this.clipPlanes[o + 3] = s[3];
   }
   _setupPivot3D() {
@@ -19010,7 +19021,7 @@ const Bh = class fn {
       Ds(e, e, s.extentsMin), Cs(r, r, s.extentsMax);
     (e[0] > r[0] || e[1] > r[1] || e[2] > r[2]) && ((this.meshes.length > 0 || this.volumes.length > 0) && Y.warn("spatial dimensions not defined correctly"), e = ve(100, 100, 100), r = ve(-100, -100, -100));
     const i = De();
-    if (wf(i, e, r), ll(i, i, 0.5), this.furthestFromPivot = Vn(i, r), this.pivot3D = i, this.extentsMin = e, this.extentsMax = r, this.tex2mm = (n = this.volumes[0]) != null && n.frac2mm ? Ke(this.volumes[0].frac2mm) : null, this.tex2mm) {
+    if (Sf(i, e, r), ll(i, i, 0.5), this.furthestFromPivot = Vn(i, r), this.pivot3D = i, this.extentsMin = e, this.extentsMax = r, this.tex2mm = (n = this.volumes[0]) != null && n.frac2mm ? Ke(this.volumes[0].frac2mm) : null, this.tex2mm) {
       const s = Oe();
       zt(s, this.tex2mm) ? this.mm2tex = s : this.mm2tex = null;
     } else
@@ -19108,7 +19119,7 @@ const Bh = class fn {
     return e;
   }
   collectLegendEntries() {
-    return this.ui.isLegendVisible ? $1(this.meshes, this.volumes) : [];
+    return this.ui.isLegendVisible ? ev(this.meshes, this.volumes) : [];
   }
   /** Returns the maximum nFrame4D across all volumes, or 0 if none. */
   getMaxVols() {
@@ -19153,7 +19164,7 @@ const Bh = class fn {
       return;
     }
     try {
-      const r = await Gd(e);
+      const r = await Xd(e);
       this.meshes.push(r);
     } catch (r) {
       const i = e, n = typeof i.url == "string" ? i.url : i.url.name;
@@ -19198,7 +19209,7 @@ const Bh = class fn {
     await this.removeAllVolumes(), await this.addVolume(e);
   }
 };
-Bh.volumeDefaults = {
+_h.volumeDefaults = {
   opacity: 1,
   colormap: "Gray",
   colormapNegative: "",
@@ -19210,8 +19221,8 @@ Bh.volumeDefaults = {
   isDirty: !0,
   isColorbarVisible: !0
 };
-let qa = Bh;
-function Ey(t) {
+let qa = _h;
+function Sy(t) {
   for (const e of t) {
     if (!e.modulationImage) {
       e._modulationData = null;
@@ -19223,7 +19234,7 @@ function Ey(t) {
       continue;
     }
     const i = r.hdr;
-    if (!Fl(i.datatypeCode)) {
+    if (!zu(i.datatypeCode)) {
       e._modulationData = null;
       continue;
     }
@@ -19236,17 +19247,17 @@ function Ey(t) {
     let p = 0;
     for (let g = 0; g < s[3]; g++)
       for (let m = 0; m < s[2]; m++)
-        for (let y = 0; y < s[1]; y++) {
-          const A = d[0] + y * h[0] + d[1] + m * h[1] + d[2] + g * h[2], v = (n[A + f] ?? 0) * l + c;
+        for (let v = 0; v < s[1]; v++) {
+          const A = d[0] + v * h[0] + d[1] + m * h[1] + d[2] + g * h[2], b = (n[A + f] ?? 0) * l + c;
           a[p] = Math.max(
             0,
-            Math.min(1, (v - r.calMin) / u)
+            Math.min(1, (b - r.calMin) / u)
           ), p++;
         }
     e._modulationData = a;
   }
 }
-function Sy(t, e = !1, r = !1, i = !1) {
+function My(t, e = !1, r = !1, i = !1) {
   let n = t.v1;
   if (!n && t.nFrame4D === 3 && t.img && t.img instanceof Float32Array && (n = t.img.slice()), !n)
     return Y.warn("Image does not have V1 data"), !1;
@@ -19259,7 +19270,7 @@ function Sy(t, e = !1, r = !1, i = !1) {
   if (i)
     for (let o = 2 * t.nVox3D; o < 3 * t.nVox3D; o++)
       n[o] = -n[o];
-  const s = Rh(t.hdr, n);
+  const s = Ph(t.hdr, n);
   return t.hdr = s.hdr, t.img = s.img, t.nFrame4D = 1, t.dims = s.hdr.dims.slice(0, 4), t.cal_min = 0, t.cal_max = 255, t.robust_min = 0, t.robust_max = 255, t.global_min = 0, t.global_max = 255, !0;
 }
 const Ha = "_wbId", Ry = "_wbError";
@@ -19316,8 +19327,8 @@ class Wa {
     this.pending.clear();
   }
 }
-const Lh = '(function(){"use strict";const m="_wbId",h="_wbError";class l{constructor(e){this.createWorker=e,this.worker=null,this.pending=new Map,this.nextId=0}static isSupported(){return typeof Worker<"u"}execute(e,t=[]){const n=this.getOrCreate(),s=this.nextId++;return new Promise((o,c)=>{this.pending.set(s,{resolve:o,reject:c}),n.postMessage({...e,[m]:s},t)})}terminate(){this.worker&&(this.worker.terminate(),this.worker=null);for(const{reject:e}of this.pending.values())e(new Error("Worker terminated"));this.pending.clear()}getOrCreate(){return this.worker||(this.worker=this.createWorker(),this.worker.onmessage=e=>this.onMessage(e),this.worker.onerror=e=>this.onError(e)),this.worker}onMessage(e){const{[m]:t,[h]:n,...s}=e.data,o=this.pending.get(t);o&&(this.pending.delete(t),n?o.reject(new Error(n)):o.resolve(s))}onError(e){const t=new Error(e.message??"Worker error");for(const{reject:n}of this.pending.values())n(t);this.pending.clear()}}function k(r){return new Worker(self.location.href,{name:r?.name})}const y=Object.assign({}),i=new Map,d=new Set;for(const[r,e]of Object.entries(y))r!=="./index.ts"&&e.name&&typeof e.apply=="function"&&(i.set(e.name,e),d.add(e.name));function p(){return Array.from(i.keys()).sort()}function b(r){return i.get(r)}function g(r){const e=i.get(r);if(e)return{name:e.name,description:e.description,options:e.options??[],resultDefaults:e.resultDefaults}}function _(){return p().map(r=>g(r))}let f=null;function E(){return l.isSupported()?(f||(f=new l(()=>new k)),f):null}async function I(r,e,t,n){const s=i.get(r);if(!s)throw new Error(`Unknown volume transform: ${r}`);if(!d.has(r))return s.apply(e,t,n);const o=E();if(o){const c=JSON.parse(JSON.stringify(e));return o.execute({name:r,hdr:c,img:t,options:n})}return s.apply(e,t,n)}function O(r){if(i.has(r.name))throw new Error(`Transform "${r.name}" already registered`);i.set(r.name,r)}function T(){f&&(f.terminate(),f=null)}var W=Object.freeze({__proto__:null,applyTransform:I,getTransform:b,getTransformInfo:g,getTransformInfos:_,registerTransform:O,terminate:T,transformNames:p});const u=self.postMessage.bind(self),v=Object.assign({"../volume/transforms/index.ts":W}),w=new Map;for(const[r,e]of Object.entries(v))r.endsWith("/index.ts")||e.name&&typeof e.apply=="function"&&w.set(e.name,e);self.onmessage=async r=>{const{_wbId:e,name:t,hdr:n,img:s,options:o}=r.data,c=w.get(t);if(!c){u({_wbId:e,_wbError:`Unknown volume transform: ${t}`});return}try{const a=await c.apply(n,s,o),N=JSON.parse(JSON.stringify(a.hdr));u({_wbId:e,hdr:N,img:a.img},[a.img.buffer])}catch(a){u({_wbId:e,_wbError:a instanceof Error?a.message:String(a)})}}})();\n', ja = typeof self < "u" && self.Blob && new Blob(["(self.URL || self.webkitURL).revokeObjectURL(self.location.href);", Lh], { type: "text/javascript;charset=utf-8" });
-function My(t) {
+const Oh = '(function(){"use strict";const m="_wbId",h="_wbError";class l{constructor(e){this.createWorker=e,this.worker=null,this.pending=new Map,this.nextId=0}static isSupported(){return typeof Worker<"u"}execute(e,t=[]){const n=this.getOrCreate(),s=this.nextId++;return new Promise((o,c)=>{this.pending.set(s,{resolve:o,reject:c}),n.postMessage({...e,[m]:s},t)})}terminate(){this.worker&&(this.worker.terminate(),this.worker=null);for(const{reject:e}of this.pending.values())e(new Error("Worker terminated"));this.pending.clear()}getOrCreate(){return this.worker||(this.worker=this.createWorker(),this.worker.onmessage=e=>this.onMessage(e),this.worker.onerror=e=>this.onError(e)),this.worker}onMessage(e){const{[m]:t,[h]:n,...s}=e.data,o=this.pending.get(t);o&&(this.pending.delete(t),n?o.reject(new Error(n)):o.resolve(s))}onError(e){const t=new Error(e.message??"Worker error");for(const{reject:n}of this.pending.values())n(t);this.pending.clear()}}function k(r){return new Worker(self.location.href,{name:r?.name})}const y=Object.assign({}),i=new Map,d=new Set;for(const[r,e]of Object.entries(y))r!=="./index.ts"&&e.name&&typeof e.apply=="function"&&(i.set(e.name,e),d.add(e.name));function p(){return Array.from(i.keys()).sort()}function b(r){return i.get(r)}function g(r){const e=i.get(r);if(e)return{name:e.name,description:e.description,options:e.options??[],resultDefaults:e.resultDefaults}}function _(){return p().map(r=>g(r))}let f=null;function E(){return l.isSupported()?(f||(f=new l(()=>new k)),f):null}async function I(r,e,t,n){const s=i.get(r);if(!s)throw new Error(`Unknown volume transform: ${r}`);if(!d.has(r))return s.apply(e,t,n);const o=E();if(o){const c=JSON.parse(JSON.stringify(e));return o.execute({name:r,hdr:c,img:t,options:n})}return s.apply(e,t,n)}function O(r){if(i.has(r.name))throw new Error(`Transform "${r.name}" already registered`);i.set(r.name,r)}function T(){f&&(f.terminate(),f=null)}var W=Object.freeze({__proto__:null,applyTransform:I,getTransform:b,getTransformInfo:g,getTransformInfos:_,registerTransform:O,terminate:T,transformNames:p});const u=self.postMessage.bind(self),v=Object.assign({"../volume/transforms/index.ts":W}),w=new Map;for(const[r,e]of Object.entries(v))r.endsWith("/index.ts")||e.name&&typeof e.apply=="function"&&w.set(e.name,e);self.onmessage=async r=>{const{_wbId:e,name:t,hdr:n,img:s,options:o}=r.data,c=w.get(t);if(!c){u({_wbId:e,_wbError:`Unknown volume transform: ${t}`});return}try{const a=await c.apply(n,s,o),N=JSON.parse(JSON.stringify(a.hdr));u({_wbId:e,hdr:N,img:a.img},[a.img.buffer])}catch(a){u({_wbId:e,_wbError:a instanceof Error?a.message:String(a)})}}})();\n', ja = typeof self < "u" && self.Blob && new Blob(["(self.URL || self.webkitURL).revokeObjectURL(self.location.href);", Oh], { type: "text/javascript;charset=utf-8" });
+function Py(t) {
   let e;
   try {
     if (e = ja && (self.URL || self.webkitURL).createObjectURL(ja), !e) throw "";
@@ -19329,20 +19340,20 @@ function My(t) {
     }), r;
   } catch {
     return new Worker(
-      "data:text/javascript;charset=utf-8," + encodeURIComponent(Lh),
+      "data:text/javascript;charset=utf-8," + encodeURIComponent(Oh),
       {
         name: t == null ? void 0 : t.name
       }
     );
   }
 }
-const Py = /* @__PURE__ */ Object.assign({}), si = /* @__PURE__ */ new Map(), _h = /* @__PURE__ */ new Set();
-for (const [t, e] of Object.entries(Py))
-  t !== "./index.ts" && e.name && typeof e.apply == "function" && (si.set(e.name, e), _h.add(e.name));
+const Dy = /* @__PURE__ */ Object.assign({}), si = /* @__PURE__ */ new Map(), Fh = /* @__PURE__ */ new Set();
+for (const [t, e] of Object.entries(Dy))
+  t !== "./index.ts" && e.name && typeof e.apply == "function" && (si.set(e.name, e), Fh.add(e.name));
 function Ya() {
   return Array.from(si.keys()).sort();
 }
-function Dy(t) {
+function Cy(t) {
   const e = si.get(t);
   if (e)
     return {
@@ -19353,16 +19364,16 @@ function Dy(t) {
     };
 }
 let bs = null;
-function Cy() {
-  return Wa.isSupported() ? (bs || (bs = new Wa(() => new My())), bs) : null;
+function Uy() {
+  return Wa.isSupported() ? (bs || (bs = new Wa(() => new Py())), bs) : null;
 }
-async function Uy(t, e, r, i) {
+async function Iy(t, e, r, i) {
   const n = si.get(t);
   if (!n)
     throw new Error(`Unknown volume transform: ${t}`);
-  if (!_h.has(t))
+  if (!Fh.has(t))
     return n.apply(e, r, i);
-  const s = Cy();
+  const s = Uy();
   if (s) {
     const o = JSON.parse(JSON.stringify(e));
     return s.execute({
@@ -19374,23 +19385,23 @@ async function Uy(t, e, r, i) {
   }
   return n.apply(e, r, i);
 }
-function Iy(t) {
+function By(t) {
   if (si.has(t.name))
     throw new Error(`Transform "${t.name}" already registered`);
   si.set(t.name, t);
 }
-const By = { cortex: Ff };
-let Ly = class extends EventTarget {
+const Ly = { cortex: Vf };
+let _y = class extends EventTarget {
   constructor(t = {}, e, r = "both") {
-    if (super(), this.canvas = null, this.view = null, this._updating = !1, this._pendingUpdate = !1, this._deferredVolumes = null, this._deferredMeshes = null, this._drawPenLocation = [NaN, NaN, NaN], this._drawPenAxCorSag = -1, this._drawPenFillPts = [], this._drawLut = null, this._drawingDirty = !1, this.drawPenAutoClose = !1, this.drawPenFilled = !1, this.drawUndoBitmaps = [], this.currentDrawUndoBitmap = -1, this.maxDrawUndoBitmaps = 8, this.dragStartXY = [0, 0], this.dragEndXY = [0, 0], this._activeDragMode = we.none, this._angleState = "none", this._angleFirstLine = [0, 0, 0, 0], this._pan2DxyzmmAtDragStart = null, this._annotationUndoStack = new Uv(), this._annotationBrushPath = [], this._frozenLoopPoints = null, this._annotationSliceType = 0, this._annotationSlicePosition = 0, this._annotationAnchorMM = [0, 0, 0], this._annotationShapeStart = null, this._resizingControlPoint = -1, this._resizeOriginalShape = null, this._resizingAnnotation = null, this._syncTargets = [], this._syncOpts = {}, this._syncDirty = !1, this._rafId = null, Y.setLogLevel(t.logLevel ?? "info"), this.activeClipPlaneIndex = 0, this.currentClipPlaneIndex = 0, this.opts = {
+    if (super(), this.canvas = null, this.view = null, this._updating = !1, this._pendingUpdate = !1, this._deferredVolumes = null, this._deferredMeshes = null, this._drawPenLocation = [NaN, NaN, NaN], this._drawPenAxCorSag = -1, this._drawPenFillPts = [], this._drawLut = null, this._drawingDirty = !1, this.drawPenAutoClose = !1, this.drawPenFilled = !1, this.drawUndoBitmaps = [], this.currentDrawUndoBitmap = -1, this.maxDrawUndoBitmaps = 8, this.dragStartXY = [0, 0], this.dragEndXY = [0, 0], this._activeDragMode = we.none, this._angleState = "none", this._angleFirstLine = [0, 0, 0, 0], this._pan2DxyzmmAtDragStart = null, this._annotationUndoStack = new Iv(), this._annotationBrushPath = [], this._frozenLoopPoints = null, this._annotationSliceType = 0, this._annotationSlicePosition = 0, this._annotationAnchorMM = [0, 0, 0], this._annotationShapeStart = null, this._resizingControlPoint = -1, this._resizeOriginalShape = null, this._resizingAnnotation = null, this._syncTargets = [], this._syncOpts = {}, this._syncDirty = !1, this._rafId = null, Y.setLogLevel(t.logLevel ?? "info"), this.activeClipPlaneIndex = 0, this.currentClipPlaneIndex = 0, this.opts = {
       backend: t.backend ?? "webgpu",
       isAntiAlias: t.isAntiAlias ?? !0,
       isDragDropEnabled: t.isDragDropEnabled ?? !0,
       forceDevicePixelRatio: t.devicePixelRatio ?? -1,
       logLevel: t.logLevel ?? "info",
       thumbnail: t.thumbnail,
-      font: t.font ?? _f,
-      matcaps: t.matcaps ?? By,
+      font: t.font ?? Ff,
+      matcaps: t.matcaps ?? Ly,
       bounds: t.bounds ?? [
         [0, 0],
         [1, 1]
@@ -19574,7 +19585,7 @@ let Ly = class extends EventTarget {
   }
   set customLayout(t) {
     if (t && t.length > 0) {
-      const e = Hp(t);
+      const e = z0(t);
       if (!e.valid) throw new Error(e.error);
     }
     this.model.layout.customLayout = t, this.emit("change", { property: "customLayout", value: t }), this.drawScene();
@@ -19868,7 +19879,7 @@ let Ly = class extends EventTarget {
       Y.warn("drawingVolume: background volume has no dimsRAS");
       return;
     }
-    if (t.dimsRAS || Il(t), !sy(t.dimsRAS, r.dimsRAS)) {
+    if (t.dimsRAS || _u(t), !oy(t.dimsRAS, r.dimsRAS)) {
       Y.warn("drawingVolume dims do not match background volume");
       return;
     }
@@ -20040,9 +20051,9 @@ let Ly = class extends EventTarget {
   useLoader(t, e, r) {
     const i = r.toUpperCase(), n = Va(), s = Ji();
     if (n.includes(i))
-      ty(e, r, t);
+      ry(e, r, t);
     else if (s.includes(i))
-      h1(e, r, t);
+      f1(e, r, t);
     else
       throw new Error(
         `Unsupported target format "${r}". Use a known volume format (e.g. "nii") or mesh format (e.g. "mz3").`
@@ -20097,12 +20108,12 @@ let Ly = class extends EventTarget {
     const n = this.volumes[t];
     if (!n)
       return Y.warn(`loadImgV1: volume index ${t} not found`), !1;
-    const s = Sy(n, e, r, i);
+    const s = My(n, e, r, i);
     return s && (n.isDirty = !0, await this.updateGLVolume()), s;
   }
   /** Compute modulation data for all volumes that have modulationImage set. */
   _computeModulationData() {
-    Ey(this.volumes);
+    Sy(this.volumes);
   }
   get backend() {
     return this.opts.backend;
@@ -20202,7 +20213,7 @@ let Ly = class extends EventTarget {
     if (Array.isArray(t) || (t = [t]), this.model.ui.isThumbnailVisible)
       return this._deferredMeshes = t, this;
     await this.removeAllMeshes();
-    const e = await Promise.all(t.map((r) => Gd(r)));
+    const e = await Promise.all(t.map((r) => Xd(r)));
     for (const r of e) {
       await this.model.addMesh(r);
       const i = this.model.getMeshes();
@@ -20240,6 +20251,18 @@ let Ly = class extends EventTarget {
     for (let e = t.length - 1; e >= 0; e--)
       this.emit("volumeRemoved", { volume: t[e], index: e });
     await this.model.removeAllVolumes(), await this.updateGLVolume();
+  }
+  /**
+   * Remove a single volume by index (0 = background).
+   *
+   * Companion to {@link removeAllVolumes} for cases where the caller wants
+   * to drop one overlay without disturbing the rest of the stack.
+   */
+  async removeVolume(t) {
+    const e = this.model.getVolumes();
+    if (!this._checkBounds(e, t, "Volume")) return;
+    const r = e[t];
+    this.emit("volumeRemoved", { volume: r, index: t }), this.model.removeVolume(t), await this.updateGLVolume();
   }
   async removeAllMeshes() {
     const t = this.model.getMeshes();
@@ -20298,7 +20321,7 @@ let Ly = class extends EventTarget {
    */
   async setColormapLabel(t, e) {
     const r = this.model.getVolumes();
-    this._checkBounds(r, t, "Volume") && (e === null ? r[t].colormapLabel = null : (r[t].colormapLabel = Ai(e), r[t].colormapLabel.centroids = zl(r[t])), r[t].isDirty = !0, await this.updateGLVolume());
+    this._checkBounds(r, t, "Volume") && (e === null ? r[t].colormapLabel = null : (r[t].colormapLabel = Ti(e), r[t].colormapLabel.centroids = Hu(r[t])), r[t].isDirty = !0, await this.updateGLVolume());
   }
   /**
    * Fetch a label colormap JSON from a URL or File and apply it to a volume.
@@ -20392,7 +20415,7 @@ let Ly = class extends EventTarget {
   async addMeshLayer(t, e) {
     const r = this.model.getMeshes();
     if (!this._checkBounds(r, t, "Mesh")) return this;
-    const i = r[t], n = i.positions.length / 3, s = await Nd(e.url, n), o = typeof e.url == "string" ? e.url : e.url.name, a = Yn(s.values, n, {
+    const i = r[t], n = i.positions.length / 3, s = await zd(e.url, n), o = typeof e.url == "string" ? e.url : e.url.name, a = Yn(s.values, n, {
       nFrame4D: s.nFrame4D,
       colormapLabel: s.colormapLabel ?? null,
       colormapType: e.colormapType ?? s.colormapType,
@@ -20462,7 +20485,7 @@ let Ly = class extends EventTarget {
       const n = i.tractOptions.colorBy;
       i.isColorbarVisible = n.startsWith("dpv:") || n.startsWith("dps:");
     }
-    m1(i), await this.updateGLVolume();
+    g1(i), await this.updateGLVolume();
   }
   /**
    * Get the group names for a tract mesh.
@@ -20488,7 +20511,7 @@ let Ly = class extends EventTarget {
       Y.warn(`setConnectomeOptions: mesh ${t} is not a connectome`);
       return;
     }
-    Object.assign(i.connectomeOptions, e), g1(i), await this.updateGLVolume();
+    Object.assign(i.connectomeOptions, e), x1(i), await this.updateGLVolume();
   }
   /**
    * Get the current 4D frame index for a volume.
@@ -20525,7 +20548,7 @@ let Ly = class extends EventTarget {
       );
       return;
     }
-    const i = e ?? r.frame4D ?? 0, [n, s, o, a] = Kp(r, i);
+    const i = e ?? r.frame4D ?? 0, [n, s, o, a] = X0(r, i);
     r.calMin = n, r.calMax = s, r.robustMin = n, r.robustMax = s, r.globalMin = o, r.globalMax = a, await this.updateGLVolume();
   }
   /**
@@ -20534,7 +20557,7 @@ let Ly = class extends EventTarget {
    * @param id - Volume ID (typically the URL or name)
    */
   async loadDeferred4DVolumes(t) {
-    const e = this.volumes.find((i) => i.id === t);
+    const e = this.volumes.find((a) => a.id === t);
     if (!e) {
       Y.warn(`loadDeferred4DVolumes: volume with id "${t}" not found`);
       return;
@@ -20545,8 +20568,8 @@ let Ly = class extends EventTarget {
       Y.warn("loadDeferred4DVolumes: volume has no url for re-fetch");
       return;
     }
-    const r = await to(e.url);
-    e.img = r.img instanceof ArrayBuffer ? null : r.img, e.nFrame4D = e.nTotalFrame4D, await this.updateGLVolume();
+    const r = await to(e.url), [i, n, s, o] = qu(e.hdr, r.img);
+    e.img = ku(r.img, e.hdr.datatypeCode), e.nFrame4D = e.nTotalFrame4D, e.calMin = i, e.calMax = n, e.robustMin = i, e.robustMax = n, e.globalMin = s, e.globalMax = o, await this.updateGLVolume();
   }
   /**
    * Convert RAS voxel coordinates to scene fraction [0,1].
@@ -20556,7 +20579,7 @@ let Ly = class extends EventTarget {
     if (this.volumes.length === 0) return [0.5, 0.5, 0.5];
     const e = this.volumes[0];
     if (!e.matRAS) return [0.5, 0.5, 0.5];
-    const r = ct(null, t, e.matRAS), i = this.model.mm2scene(r);
+    const r = ut(null, t, e.matRAS), i = this.model.mm2scene(r);
     return [i[0], i[1], i[2]];
   }
   getCrosshairPos() {
@@ -20568,7 +20591,7 @@ let Ly = class extends EventTarget {
     if (this.model.interaction.isSnapToVoxelCenters && this.volumes.length > 0) {
       const i = this.volumes[0];
       if (i.matRAS && i.dimsRAS) {
-        const n = pt(i, e), s = ct(
+        const n = pt(i, e), s = ut(
           null,
           [n[0], n[1], n[2]],
           i.matRAS
@@ -20586,11 +20609,11 @@ let Ly = class extends EventTarget {
     if (i.length === 0) return;
     const n = i[0];
     if (!n.matRAS || !n.dimsRAS) return;
-    const s = this.model.scene2mm(this.model.scene.crosshairPos), o = pt(n, s), a = Math.max(0, Math.min(n.dimsRAS[1] - 1, o[0] + t)), l = Math.max(0, Math.min(n.dimsRAS[2] - 1, o[1] + e)), c = Math.max(0, Math.min(n.dimsRAS[3] - 1, o[2] + r)), u = ct(null, [a, l, c], n.matRAS);
+    const s = this.model.scene2mm(this.model.scene.crosshairPos), o = pt(n, s), a = Math.max(0, Math.min(n.dimsRAS[1] - 1, o[0] + t)), l = Math.max(0, Math.min(n.dimsRAS[2] - 1, o[1] + e)), c = Math.max(0, Math.min(n.dimsRAS[3] - 1, o[2] + r)), u = ut(null, [a, l, c], n.matRAS);
     this.setCrosshairPos([u[0], u[1], u[2]]);
   }
   createOnLocationChange(t = NaN) {
-    const e = my(this, t);
+    const e = gy(this, t);
     e && this.emit("locationChange", e);
   }
   /**
@@ -20617,7 +20640,7 @@ let Ly = class extends EventTarget {
     }));
   }
   get colormaps() {
-    return im();
+    return A0();
   }
   /**
    * Case-insensitive existence check for a registered colormap. Accepts
@@ -20636,12 +20659,12 @@ let Ly = class extends EventTarget {
     return Ji();
   }
   get meshWriteExtensions() {
-    return d1();
+    return h1();
   }
   async saveMesh(t, e = "mesh.mz3", r) {
     const i = this.model.getMeshes();
     if (!this._checkBounds(i, t, "Mesh")) return;
-    const n = xr(e), s = i[t], o = await c1(
+    const n = xr(e), s = i[t], o = await u1(
       n,
       s.positions,
       s.indices,
@@ -20659,8 +20682,8 @@ let Ly = class extends EventTarget {
     const r = this.canvas, i = this.opts.bounds;
     let n = 0, s = 0, o = r.width, a = r.height;
     if (i && !(i[0][0] === 0 && i[0][1] === 0 && i[1][0] === 1 && i[1][1] === 1)) {
-      const g = Math.max(0, Math.min(1, Math.min(i[0][0], i[1][0]))), m = Math.max(0, Math.min(1, Math.min(i[0][1], i[1][1]))), y = Math.max(0, Math.min(1, Math.max(i[0][0], i[1][0]))), A = Math.max(0, Math.min(1, Math.max(i[0][1], i[1][1]))), v = Math.round(g * r.width), E = Math.round(y * r.width), b = Math.round((1 - A) * r.height), x = Math.round((1 - m) * r.height);
-      n = v, s = b, o = Math.max(1, E - v), a = Math.max(1, x - b);
+      const g = Math.max(0, Math.min(1, Math.min(i[0][0], i[1][0]))), m = Math.max(0, Math.min(1, Math.min(i[0][1], i[1][1]))), v = Math.max(0, Math.min(1, Math.max(i[0][0], i[1][0]))), A = Math.max(0, Math.min(1, Math.max(i[0][1], i[1][1]))), b = Math.round(g * r.width), E = Math.round(v * r.width), y = Math.round((1 - A) * r.height), x = Math.round((1 - m) * r.height);
+      n = b, s = y, o = Math.max(1, E - b), a = Math.max(1, x - y);
     }
     const l = document.createElement("canvas");
     l.width = o, l.height = a;
@@ -20682,7 +20705,7 @@ let Ly = class extends EventTarget {
     return p ? (hn(p, u), !0) : (Y.warn("saveBitmap: failed to generate image blob"), !1);
   }
   get volumeWriteExtensions() {
-    return $v();
+    return ey();
   }
   /**
    * Save voxel-based image to disk.
@@ -20707,7 +20730,7 @@ let Ly = class extends EventTarget {
     if (r) {
       if (!this.model.drawingVolume)
         return Y.debug("No drawing open"), !1;
-      o = JSON.parse(JSON.stringify(this.model.drawingVolume.hdr)), o.datatypeCode = 2, o.numBitsPerVoxel = 8, o.scl_slope = 1, o.scl_inter = 0, o.cal_max = 0, o.cal_min = 0, a = Jp(
+      o = JSON.parse(JSON.stringify(this.model.drawingVolume.hdr)), o.datatypeCode = 2, o.numBitsPerVoxel = 8, o.scl_slope = 1, o.scl_inter = 0, o.cal_max = 0, o.cal_min = 0, a = W0(
         s,
         Vt(this.model.drawingVolume)
       ).buffer;
@@ -20719,7 +20742,7 @@ let Ly = class extends EventTarget {
         s.img.byteOffset + s.img.byteLength
       );
     }
-    const l = await Jv(
+    const l = await $v(
       e || "image.nii",
       o,
       a
@@ -20752,7 +20775,7 @@ let Ly = class extends EventTarget {
       t[e] = async (r, i) => {
         if (!r.hdr || !r.img)
           throw new Error("Volume must have hdr and img data");
-        const { hdr: n, img: s } = await Uy(
+        const { hdr: n, img: s } = await Iy(
           e,
           r.hdr,
           r.img,
@@ -20770,14 +20793,14 @@ let Ly = class extends EventTarget {
    * Get metadata for a specific volume transform (options, description, resultDefaults).
    */
   getVolumeTransformInfo(t) {
-    return Dy(t);
+    return Cy(t);
   }
   /**
    * Register an external volume transform at runtime.
    * External transforms manage their own Web Worker execution internally.
    */
   registerVolumeTransform(t) {
-    Iy(t);
+    By(t);
   }
   /**
    * Create an extension context for interacting with this NiiVue instance.
@@ -20792,7 +20815,7 @@ let Ly = class extends EventTarget {
    * Multiple contexts can coexist — each tracks its own subscriptions.
    */
   createExtensionContext() {
-    return new e0(this);
+    return new Y0(this);
   }
   setDragMode(t) {
     if (typeof t == "string") {
@@ -20844,7 +20867,7 @@ let Ly = class extends EventTarget {
         const s = this.model.scene2mm(e.crosshairPos), o = r.model.mm2scene(s);
         if ((i.crosshairPos[0] !== o[0] || i.crosshairPos[1] !== o[1] || i.crosshairPos[2] !== o[2]) && (i.crosshairPos = o, n = !0), t["2d"]) {
           const a = e.pan2Dxyzmm, l = i.pan2Dxyzmm;
-          (l[0] !== a[0] || l[1] !== a[1] || l[2] !== a[2] || l[3] !== a[3]) && (i.pan2Dxyzmm = Rf(a), n = !0);
+          (l[0] !== a[0] || l[1] !== a[1] || l[2] !== a[2] || l[3] !== a[3]) && (i.pan2Dxyzmm = Pf(a), n = !0);
         }
       }
       if (t.clipPlane) {
@@ -20862,7 +20885,7 @@ let Ly = class extends EventTarget {
   }
   // --- Drawing API ---
   get drawingColormaps() {
-    return sm();
+    return E0();
   }
   createEmptyDrawing() {
     const t = this.model.getVolumes();
@@ -20887,7 +20910,7 @@ let Ly = class extends EventTarget {
   }
   drawUndo() {
     if (!this.model.drawingVolume) return;
-    const t = gy({
+    const t = xy({
       drawUndoBitmaps: this.drawUndoBitmaps,
       currentDrawUndoBitmap: this.currentDrawUndoBitmap,
       drawBitmap: Vt(this.model.drawingVolume)
@@ -20914,9 +20937,9 @@ let Ly = class extends EventTarget {
         Y.warn(`Drawing colormap "${this.model.draw.colormap}" not found`);
         return;
       }
-      this._drawLut = Ih(r);
+      this._drawLut = Lh(r);
     }
-    const e = py(
+    const e = my(
       Vt(this.model.drawingVolume),
       this._drawLut.lut,
       this._drawLut.min ?? 0,
@@ -20940,7 +20963,7 @@ let Ly = class extends EventTarget {
         return Y.warn(
           `loadDrawing: expected DT_UINT8 (2), got ${n.hdr.datatypeCode}`
         ), !1;
-      const s = iy({
+      const s = ny({
         permRAS: r.permRAS,
         dims: r.dimsRAS
       }), o = n.img, a = o instanceof ArrayBuffer ? new Uint8Array(o) : new Uint8Array(o.buffer, o.byteOffset, o.byteLength), l = r.dimsRAS[1] * r.dimsRAS[2] * r.dimsRAS[3], c = n.hdr.dims[1] * n.hdr.dims[2] * n.hdr.dims[3];
@@ -20952,7 +20975,7 @@ let Ly = class extends EventTarget {
         return Y.warn(
           `loadDrawing: image data (${a.length} bytes) smaller than expected (${c})`
         ), !1;
-      const u = ny({
+      const u = sy({
         inputData: a,
         dims: r.dimsRAS,
         xlut: s.xlut,
@@ -20974,7 +20997,7 @@ let Ly = class extends EventTarget {
   }
   destroy() {
     var t, e;
-    this.emit("viewDestroyed"), this._rafId !== null && (cancelAnimationFrame(this._rafId), this._rafId = null, this.framePending = !1), Dh(this), this.resizeObserver && (this.resizeObserver.disconnect(), this.resizeObserver = null), this.view && this.view.destroy(), (e = (t = this._viewLifecycle).unregister) == null || e.call(t, this);
+    this.emit("viewDestroyed"), this._rafId !== null && (cancelAnimationFrame(this._rafId), this._rafId = null, this.framePending = !1), Uh(this), this.resizeObserver && (this.resizeObserver.disconnect(), this.resizeObserver = null), this.view && this.view.destroy(), (e = (t = this._viewLifecycle).unregister) == null || e.call(t, this);
   }
   async _recreateView() {
     await this._viewLifecycle.recreateView(this);
@@ -21007,7 +21030,7 @@ let Ly = class extends EventTarget {
   async setFontFromUrl(t) {
     const e = this.opts.font;
     try {
-      const r = await Cf(t.metrics);
+      const r = await If(t.metrics);
       return await this.setFont({ metrics: r, atlasUrl: t.atlas });
     } catch (r) {
       if (Y.warn(
@@ -21042,7 +21065,7 @@ let Ly = class extends EventTarget {
    * await nv1.setVolume(0, { colormap: canonical })
    */
   addColormap(t, e) {
-    const r = nm(t, e);
+    const r = w0(t, e);
     return this.emit("colormapAdded", { name: r }), r;
   }
   /**
@@ -21081,19 +21104,19 @@ let Ly = class extends EventTarget {
   }
   /** Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array). */
   serializeDocument() {
-    return vy(this.model);
+    return yy(this.model);
   }
   saveDocument(t = "scene.nvd") {
     const e = this.serializeDocument();
-    wy(e, t);
+    Ey(e, t);
   }
   async loadDocument(t) {
-    const e = await Qt(t), r = new Uint8Array(e), i = yy(r);
-    this.closeDrawing(), await this.removeAllVolumes(), await this.removeAllMeshes(), by(this.model, i), this.model.ui.thumbnailUrl && (this.opts.thumbnail = this.model.ui.thumbnailUrl, this.model.ui.isThumbnailVisible = !0, this.view && await this.view.loadThumbnail(this.model.ui.thumbnailUrl));
+    const e = await Qt(t), r = new Uint8Array(e), i = by(r);
+    this.closeDrawing(), await this.removeAllVolumes(), await this.removeAllMeshes(), Ty(this.model, i), this.model.ui.thumbnailUrl && (this.opts.thumbnail = this.model.ui.thumbnailUrl, this.model.ui.isThumbnailVisible = !0, this.view && await this.view.loadThumbnail(this.model.ui.thumbnailUrl));
     const n = i.volumes.map(
-      (o) => Ty(this.model, o)
-    ), s = i.meshes.map(
       (o) => Ay(this.model, o)
+    ), s = i.meshes.map(
+      (o) => wy(this.model, o)
     );
     if (await Promise.all([...n, ...s]), await this.updateGLVolume(), i.drawingBitmapRLE && i.drawingBitmapLength) {
       const o = this.model.getVolumes()[0];
@@ -21107,7 +21130,7 @@ let Ly = class extends EventTarget {
     this.emit("documentLoaded");
   }
 };
-class _y {
+class Oy {
   constructor(e) {
     this.view = e, this._fbo = null, this._colorRbo = null, this._depthRbo = null, this._fboW = 0, this._fboH = 0, this._inProgress = !1, this._disposed = !1;
   }
@@ -21218,7 +21241,7 @@ class _y {
     this._fbo = o, this._colorRbo = n, this._depthRbo = s, this._fboW = r, this._fboH = i;
   }
 }
-const Oy = `#version 300 es
+const Fy = `#version 300 es
 precision highp float;
 
 uniform vec2 canvasSize;
@@ -21253,7 +21276,7 @@ void main() {
     vUv = vec2(pos.x, 0.5);
     vLocalPos = pos;
 }
-`, Fy = `#version 300 es
+`, Ny = `#version 300 es
 precision highp float;
 
 uniform sampler2D colormapTex;
@@ -21299,7 +21322,7 @@ void main() {
     }
     fragColor = vec4(color.rgb, opacity);
 }
-`, Ny = (t, e, r) => {
+`, Vy = (t, e, r) => {
   const i = t.createShader(t.VERTEX_SHADER);
   if (!i)
     throw new Error("Vertex shader creation failed");
@@ -21317,7 +21340,7 @@ void main() {
 };
 class Ct {
   constructor(e, r, i) {
-    this.program = Ny(e, r, i), this.uniforms = {}, this.isMatcap = void 0, this.isCrosscut = void 0;
+    this.program = Vy(e, r, i), this.uniforms = {}, this.isMatcap = void 0, this.isCrosscut = void 0;
     const n = /uniform[^;]+[ ](\w+);/g, s = /uniform[^;]+[ ](\w+);/, o = r.match(n), a = i.match(n);
     o && o.forEach((l) => {
       var u;
@@ -21335,12 +21358,12 @@ class Ct {
     e.useProgram(this.program);
   }
 }
-let Vy = class extends at {
+let zy = class extends at {
   constructor() {
     super(...arguments), this._gl = null, this._shader = null, this._colorbars = [], this._colorbarInfos = [], this._canvasWidth = 1, this._canvasHeight = 1, this._fontPx = 0, this._opacity = 1, this._margin = 20, this._heightRatio = 1.2, this._borderColor = [0, 0, 0, 1];
   }
   init(e) {
-    this.isReady || (this._gl = e, this._shader = new Ct(e, Oy, Fy), this.isReady = !0);
+    this.isReady || (this._gl = e, this._shader = new Ct(e, Fy, Ny), this.isReady = !0);
   }
   resize(e, r, i, n = 0) {
     this._canvasWidth = r, this._canvasHeight = i, this._fontPx = n;
@@ -21350,12 +21373,12 @@ let Vy = class extends at {
   }
   buildColorbars(e, r, i) {
     if (this.isReady) {
-      i && (this._borderColor = Jd(i));
+      i && (this._borderColor = eh(i));
       for (const n of this._colorbars)
         e.deleteTexture(n);
       this._colorbars = [], this._colorbarInfos = r;
       for (const n of r) {
-        const s = ut(n.colormapName), o = e.createTexture();
+        const s = ct(n.colormapName), o = e.createTexture();
         o && (e.bindTexture(e.TEXTURE_2D, o), e.texParameteri(e.TEXTURE_2D, e.TEXTURE_WRAP_S, e.CLAMP_TO_EDGE), e.texParameteri(e.TEXTURE_2D, e.TEXTURE_WRAP_T, e.CLAMP_TO_EDGE), e.texParameteri(e.TEXTURE_2D, e.TEXTURE_MIN_FILTER, e.LINEAR), e.texParameteri(e.TEXTURE_2D, e.TEXTURE_MAG_FILTER, e.LINEAR), e.texImage2D(
           e.TEXTURE_2D,
           0,
@@ -21377,7 +21400,7 @@ let Vy = class extends at {
     return {
       margin: this._margin,
       heightRatio: this._heightRatio,
-      gap: $d,
+      gap: th,
       canvasWidth: this._canvasWidth,
       canvasHeight: this._canvasHeight,
       borderColor: [...this._borderColor],
@@ -21390,7 +21413,7 @@ let Vy = class extends at {
   draw(e, r) {
     if (!this.isReady || this._colorbars.length === 0 || !this._shader) return;
     this._shader.use(e);
-    const { rects: i } = Mi(this._colorbarInfos, this.getLayout()), n = i.length > 0 ? i[0].h : 0;
+    const { rects: i } = Ri(this._colorbarInfos, this.getLayout()), n = i.length > 0 ? i[0].h : 0;
     this._shader.uniforms.canvasSize && e.uniform2f(
       this._shader.uniforms.canvasSize,
       this._canvasWidth,
@@ -21421,7 +21444,7 @@ let Vy = class extends at {
     }
   }
 };
-function zy(t, e) {
+function ky(t, e) {
   const r = e[0] * e[1] * e[2], i = new Float32Array(r * 4);
   for (const s of t)
     for (let o = 0; o < r; o++) {
@@ -21435,7 +21458,7 @@ function zy(t, e) {
   }
   return n;
 }
-const Oh = `#version 300 es
+const Nh = `#version 300 es
 precision highp float;
 precision highp sampler3D;
 
@@ -21454,7 +21477,7 @@ void main() {
   gl_Position = mvpMtx * vec4(vPos, 1.0);
   vColor = aPos;
 }
-`, Fh = `#version 300 es
+`, Vh = `#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler3D;
@@ -21535,7 +21558,7 @@ void clipSampleRange(vec3 dir, vec4 rayStart, vec4 clipPlane, inout vec2 sampleS
     sampleStartEnd = vec2(0.0, 0.0);
   }
 }
-`, Gy = Oh, ky = `${Fh}
+`, Gy = Nh, Xy = `${Vh}
 uniform float numVolumes;
 uniform sampler3D overlay;
 
@@ -21680,7 +21703,7 @@ void main() {
   FragColor = packDepth(finalDepth);
   gl_FragDepth = finalDepth;
 }
-`, Xy = `#version 300 es
+`, qy = `#version 300 es
 precision highp float;
 uniform mat4 mvpMtx;
 in vec3 position;
@@ -21690,7 +21713,7 @@ in vec4 color;
 void main() {
   gl_Position = mvpMtx * vec4(position, 1.0);
 }
-`, qy = `#version 300 es
+`, Hy = `#version 300 es
 precision highp float;
 out vec4 fragColor;
 
@@ -21706,7 +21729,7 @@ void main() {
   // alpha=0.5 signals "mesh" hit (volume uses alpha=1.0)
   fragColor = vec4(packed.xyz, 0.5);
 }
-`, Hy = `#version 300 es
+`, Wy = `#version 300 es
 precision highp float;
 uniform mat4 mvpMtx;
 uniform mat4 normMtx;
@@ -21725,7 +21748,7 @@ void main() {
     vClr = vec4(color.rgb, opacity);
     vPos = position;
 }
-`, Wy = `#version 300 es
+`, jy = `#version 300 es
 precision highp float;
 uniform mat4 mvpMtx;
 uniform mat4 normMtx;
@@ -21744,26 +21767,10 @@ void main() {
     vClr = vec4(color.rgb, opacity);
     vPos = position;
 }
-`, jy = `#version 300 es
+`, Yy = `#version 300 es
 precision highp float;
 flat in vec4 vClr;
 flat in vec3 vN;
-out vec4 fragColor;
-
-void main() {
-    vec3 r = vec3(0.0, 0.0, 1.0);
-    vec3 n = normalize(vN);
-    vec3 l = normalize(vec3(0.0, 10.0, 5.0));
-    float lightNormDot = dot(n, l);
-    vec3 ambient = vClr.rgb * 0.35;
-    vec3 diffuse = max(lightNormDot, 0.0) * vClr.rgb * 0.5;
-    float s = 0.2 * pow(max(dot(reflect(-l, n), r), 0.0), 10.0);
-    fragColor = vec4(ambient + diffuse + s, vClr.a);
-}
-`, Yy = `#version 300 es
-precision highp float;
-in vec4 vClr;
-in vec3 vN;
 out vec4 fragColor;
 
 void main() {
@@ -21783,6 +21790,22 @@ in vec3 vN;
 out vec4 fragColor;
 
 void main() {
+    vec3 r = vec3(0.0, 0.0, 1.0);
+    vec3 n = normalize(vN);
+    vec3 l = normalize(vec3(0.0, 10.0, 5.0));
+    float lightNormDot = dot(n, l);
+    vec3 ambient = vClr.rgb * 0.35;
+    vec3 diffuse = max(lightNormDot, 0.0) * vClr.rgb * 0.5;
+    float s = 0.2 * pow(max(dot(reflect(-l, n), r), 0.0), 10.0);
+    fragColor = vec4(ambient + diffuse + s, vClr.a);
+}
+`, Qy = `#version 300 es
+precision highp float;
+in vec4 vClr;
+in vec3 vN;
+out vec4 fragColor;
+
+void main() {
     float edge0 = 0.1;
     float edge1 = 0.25;
     vec3 viewDir = vec3(0.0, 0.0, 1.0);
@@ -21794,7 +21817,7 @@ void main() {
     }
     fragColor = vec4(0.0, 0.0, 0.0, vClr.a * alpha);
 }
-`, Qy = `#version 300 es
+`, Zy = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -21809,7 +21832,7 @@ void main() {
     vec3 d = smoothstep(thresh - edgeWidth, thresh + edgeWidth, cosTheta) * vClr.rgb;
     fragColor = vec4(d, vClr.a);
 }
-`, Zy = `#version 300 es
+`, Jy = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -21843,7 +21866,7 @@ void main() {
     float s = specular * pow(max(dot(reflect(-l, n), r), 0.0), shininess);
     fragColor = vec4(a + d + s, vClr.a);
 }
-`, Jy = `#version 300 es
+`, $y = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -21860,7 +21883,7 @@ void main() {
     vec3 d = max(lightNormDot, 0.0) * vClr.rgb * diffuse;
     fragColor = vec4(a + d, vClr.a);
 }
-`, $y = `#version 300 es
+`, e2 = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -21911,7 +21934,7 @@ void main() {
     vec3 d = df * vClr.rgb * diffuse;
     fragColor = vec4(a + d + (specular * sf), vClr.a);
 }
-`, e2 = `#version 300 es
+`, t2 = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -21938,7 +21961,7 @@ void main() {
     float s = specular * pow(max(dot(reflect(l, n), r), 0.0), shininess);
     fragColor = vec4(a + d + s, vClr.a);
 }
-`, t2 = `#version 300 es
+`, r2 = `#version 300 es
 precision highp float;
 in vec4 vClr;
 in vec3 vN;
@@ -21947,7 +21970,7 @@ out vec4 fragColor;
 void main() {
     fragColor = vClr;
 }
-`, r2 = `#version 300 es
+`, i2 = `#version 300 es
 precision highp float;
 uniform vec4 crosscutMM;
 in vec4 vClr;
@@ -21978,29 +22001,29 @@ void main() {
     if (edgeAlpha <= 1e-4) discard;
     fragColor = vec4(vClr.rgb, vClr.a * edgeAlpha);
 }
-`, i2 = {
-  phong: Yy,
-  crevice: Zy,
-  crosscut: r2,
-  flat: jy,
-  matte: Jy,
-  outline: e2,
-  rim: Qy,
-  silhouette: Ky,
-  toon: $y,
-  vertexColor: t2
+`, n2 = {
+  phong: Ky,
+  crevice: Jy,
+  crosscut: i2,
+  flat: Yy,
+  matte: $y,
+  outline: t2,
+  rim: Zy,
+  silhouette: Qy,
+  toon: e2,
+  vertexColor: r2
 }, $t = /* @__PURE__ */ new WeakMap();
-function n2(t) {
+function s2(t) {
   if ($t.has(t)) return;
   const e = {};
-  for (const [i, n] of Object.entries(i2)) {
-    const s = i === "flat" ? Wy : Hy;
+  for (const [i, n] of Object.entries(n2)) {
+    const s = i === "flat" ? jy : Wy;
     e[i] = new Ct(t, s, n);
   }
   const r = new Ct(
     t,
-    Xy,
-    qy
+    qy,
+    Hy
   );
   $t.set(t, { shaders: e, depthPickShader: r });
 }
@@ -22016,14 +22039,14 @@ function Ka(t, e = "phong") {
     aColor: t.getAttribLocation(i.program, "color")
   };
 }
-function s2(t, e, r) {
+function o2(t, e, r) {
   const i = Fi(
     e.positions,
     e.indices
   ), n = e.positions.length / 3, s = new ArrayBuffer(n * Jt), o = new Float32Array(s), a = new Uint32Array(s);
   for (let m = 0; m < n; m++) {
-    const y = m * 28 / 4;
-    o[y] = e.positions[m * 3] ?? 0, o[y + 1] = e.positions[m * 3 + 1] ?? 0, o[y + 2] = e.positions[m * 3 + 2] ?? 0, o[y + 3] = i[m * 3] ?? 0, o[y + 4] = i[m * 3 + 1] ?? 0, o[y + 5] = i[m * 3 + 2] ?? 0, a[y + 6] = e.colors instanceof Uint32Array ? e.colors[m] : e.colors;
+    const v = m * 28 / 4;
+    o[v] = e.positions[m * 3] ?? 0, o[v + 1] = e.positions[m * 3 + 1] ?? 0, o[v + 2] = e.positions[m * 3 + 2] ?? 0, o[v + 3] = i[m * 3] ?? 0, o[v + 4] = i[m * 3 + 1] ?? 0, o[v + 5] = i[m * 3 + 2] ?? 0, a[v + 6] = e.colors instanceof Uint32Array ? e.colors[m] : e.colors;
   }
   const l = t.createVertexArray();
   if (!l)
@@ -22050,17 +22073,17 @@ function s2(t, e, r) {
     indexCount: e.indices.length
   };
 }
-function o2(t, e, r = {}) {
+function a2(t, e, r = {}) {
   const { shaderType: i = "phong" } = r;
-  return { ...s2(t, e, i), shaderType: i };
+  return { ...o2(t, e, i), shaderType: i };
 }
-function a2(t, e, r, i, n = 1) {
+function l2(t, e, r, i, n = 1) {
   const s = $t.get(t);
   if (!s) return;
   const o = s.shaders[e];
   o && (o.use(t), o.uniforms.mvpMtx && t.uniformMatrix4fv(o.uniforms.mvpMtx, !1, r), o.uniforms.normMtx && t.uniformMatrix4fv(o.uniforms.normMtx, !1, i), o.uniforms.opacity && t.uniform1f(o.uniforms.opacity, n));
 }
-function Nh(t, e, r, i, n, s = 1, o, a) {
+function zh(t, e, r, i, n, s = 1, o, a) {
   const l = $t.get(t);
   if (!l) return;
   const c = o || e.shaderType || "phong", u = l.shaders[c];
@@ -22072,7 +22095,7 @@ function Nh(t, e, r, i, n, s = 1, o, a) {
   const d = c === "crosscut";
   d ? (t.disable(t.DEPTH_TEST), t.disable(t.CULL_FACE)) : (t.enable(t.DEPTH_TEST), t.depthFunc(t.LESS), t.enable(t.CULL_FACE), t.cullFace(t.BACK)), t.enable(t.BLEND), t.blendFunc(t.SRC_ALPHA, t.ONE_MINUS_SRC_ALPHA), t.bindVertexArray(r.vao), t.drawElements(t.TRIANGLES, r.indexCount, t.UNSIGNED_INT, 0), t.bindVertexArray(null), d && (t.enable(t.DEPTH_TEST), t.enable(t.CULL_FACE));
 }
-function Vh(t, e, r, i, n, s = 1, o, a) {
+function kh(t, e, r, i, n, s = 1, o, a) {
   const l = $t.get(t);
   if (!l) return;
   const c = o || e.shaderType || "phong", u = l.shaders[c];
@@ -22081,14 +22104,14 @@ function Vh(t, e, r, i, n, s = 1, o, a) {
   const d = c === "crosscut";
   d ? (t.disable(t.DEPTH_TEST), t.disable(t.CULL_FACE)) : (t.enable(t.DEPTH_TEST), t.depthFunc(t.GREATER), t.enable(t.CULL_FACE), t.cullFace(t.BACK)), t.depthMask(!1), t.enable(t.BLEND), t.blendFunc(t.SRC_ALPHA, t.ONE_MINUS_SRC_ALPHA), t.bindVertexArray(r.vao), t.drawElements(t.TRIANGLES, r.indexCount, t.UNSIGNED_INT, 0), t.bindVertexArray(null), t.depthFunc(t.LESS), t.depthMask(!0), d && (t.enable(t.DEPTH_TEST), t.enable(t.CULL_FACE));
 }
-function l2(t, e, r) {
+function c2(t, e, r) {
   const i = $t.get(t);
   i && (i.depthPickShader.use(t), i.depthPickShader.uniforms.mvpMtx && t.uniformMatrix4fv(i.depthPickShader.uniforms.mvpMtx, !1, r), t.disable(t.BLEND), t.enable(t.DEPTH_TEST), t.depthFunc(t.LESS), t.enable(t.CULL_FACE), t.cullFace(t.BACK), t.bindVertexArray(e.vao), t.drawElements(t.TRIANGLES, e.indexCount, t.UNSIGNED_INT, 0), t.bindVertexArray(null));
 }
 function Qa(t, e) {
   e.vao && t.deleteVertexArray(e.vao), e.vertexBuffer && t.deleteBuffer(e.vertexBuffer), e.indexBuffer && t.deleteBuffer(e.indexBuffer);
 }
-function c2(t) {
+function u2(t) {
   var r;
   const e = $t.get(t);
   if (e) {
@@ -22097,13 +22120,13 @@ function c2(t) {
     (r = e.depthPickShader) != null && r.program && t.deleteProgram(e.depthPickShader.program), $t.delete(t);
   }
 }
-let u2 = class extends at {
+let d2 = class extends at {
   constructor() {
     super(...arguments), this.gl = null, this.cylinders = [];
   }
   init(e, r, i, n) {
     this.gl = e, this.destroy();
-    const s = pd();
+    const s = gd();
     for (let o = 0; o < 6; o++) {
       const a = e.createVertexArray();
       if (!a)
@@ -22114,7 +22137,7 @@ let u2 = class extends at {
         throw e.bindVertexArray(null), new Error("Failed to create crosshair vertex buffer");
       e.bindBuffer(e.ARRAY_BUFFER, l), e.bufferData(
         e.ARRAY_BUFFER,
-        fd * Jt,
+        md * Jt,
         e.DYNAMIC_DRAW
       ), e.enableVertexAttribArray(r), e.vertexAttribPointer(r, 3, e.FLOAT, !1, 28, 0), e.enableVertexAttribArray(i), e.vertexAttribPointer(i, 3, e.FLOAT, !1, 28, 12), e.enableVertexAttribArray(n), e.vertexAttribPointer(n, 4, e.UNSIGNED_BYTE, !0, 28, 24);
       const c = e.createBuffer();
@@ -22132,14 +22155,14 @@ let u2 = class extends at {
   }
   update(e) {
     if (!this.gl || !this.isReady) return;
-    const r = this.gl, { extentsMin: i, extentsMax: n, scene: s, ui: o } = e, a = o.crosshairWidth, l = Hn(o.crosshairColor), c = gd(
+    const r = this.gl, { extentsMin: i, extentsMax: n, scene: s, ui: o } = e, a = o.crosshairWidth, l = Hn(o.crosshairColor), c = vd(
       i,
       n,
       s.crosshairPos,
       o.crosshairGap
     );
     for (let u = 0; u < 6; u++) {
-      const [d, h] = c[u], f = md(d, h, a, l);
+      const [d, h] = c[u], f = xd(d, h, a, l);
       r.bindBuffer(r.ARRAY_BUFFER, this.cylinders[u].vertexBuffer), r.bufferSubData(r.ARRAY_BUFFER, 0, f);
     }
     r.bindBuffer(r.ARRAY_BUFFER, null);
@@ -22152,7 +22175,7 @@ let u2 = class extends at {
       for (let s = 0; s < this.cylinders.length; s++) {
         if (An(s, n)) continue;
         const o = this.cylinders[s];
-        o.vao && Nh(
+        o.vao && zh(
           e,
           { shaderType: "phong" },
           o,
@@ -22168,7 +22191,7 @@ let u2 = class extends at {
       for (let o = 0; o < this.cylinders.length; o++) {
         if (An(o, n)) continue;
         const a = this.cylinders[o];
-        a.vao && Vh(
+        a.vao && kh(
           e,
           { shaderType: "phong" },
           a,
@@ -22187,7 +22210,7 @@ let u2 = class extends at {
     this.cylinders = [], this.isReady = !1;
   }
 };
-const d2 = `#version 300 es
+const h2 = `#version 300 es
 precision highp float;
 
 uniform vec2 canvasSize;
@@ -22222,7 +22245,7 @@ void main() {
     vColor = glyphColor;
     vAtlasRange = glyphRange;
 }
-`, h2 = `#version 300 es
+`, f2 = `#version 300 es
 precision highp float;
 
 uniform sampler2D fontTexture;
@@ -22256,7 +22279,7 @@ void main() {
     
     fragColor = vec4(vColor.rgb, vColor.a * opacity);
 }
-`, f2 = `#version 300 es
+`, p2 = `#version 300 es
 precision highp float;
 uniform vec2 canvasSize;
 in vec4 panelRect;
@@ -22281,7 +22304,7 @@ void main() {
   vSize = panelRect.zw;
   vRadius = panelRadius;
 }
-`, p2 = `#version 300 es
+`, m2 = `#version 300 es
 precision highp float;
 in vec4 vColor;
 in vec2 vLocalPos;
@@ -22304,7 +22327,7 @@ void main() {
   fragColor = vec4(vColor.rgb, vColor.a * alpha);
 }
 `, Ts = $r * 4;
-async function m2(t, e) {
+async function g2(t, e) {
   return new Promise((r, i) => {
     const n = new Image();
     n.onload = () => {
@@ -22317,7 +22340,7 @@ async function m2(t, e) {
     }, n.onerror = i, zn(n), n.src = e;
   });
 }
-let g2 = class extends at {
+let x2 = class extends at {
   constructor() {
     super(...arguments), this._gl = null, this._shader = null, this._vao = null, this._glyphBuffer = null, this._fontTexture = null, this._fontMets = null, this._canvasWidth = 1, this._canvasHeight = 1, this._texWidth = 1, this._texHeight = 1, this._fontPx = 16, this._panelShader = null, this._panelVao = null, this._panelBuffer = null;
   }
@@ -22329,14 +22352,14 @@ let g2 = class extends at {
     if (!this.isReady && r) {
       this._gl = e;
       try {
-        const i = await m2(e, r.atlasUrl);
-        if (this._fontTexture = i.texture, this._texWidth = i.width, this._texHeight = i.height, this._fontMets = r.metrics, this._shader = new Ct(e, d2, h2), this._vao = e.createVertexArray(), !this._vao)
+        const i = await g2(e, r.atlasUrl);
+        if (this._fontTexture = i.texture, this._texWidth = i.width, this._texHeight = i.height, this._fontMets = r.metrics, this._shader = new Ct(e, h2, f2), this._vao = e.createVertexArray(), !this._vao)
           throw new Error("Failed to create font VAO");
         if (e.bindVertexArray(this._vao), this._glyphBuffer = e.createBuffer(), !this._glyphBuffer)
           throw e.bindVertexArray(null), new Error("Failed to create glyph buffer");
         e.bindBuffer(e.ARRAY_BUFFER, this._glyphBuffer);
         const n = e.getAttribLocation(this._shader.program, "glyphRect"), s = e.getAttribLocation(this._shader.program, "glyphUvRect"), o = e.getAttribLocation(this._shader.program, "glyphColor"), a = e.getAttribLocation(this._shader.program, "glyphRange"), l = 64;
-        if (e.enableVertexAttribArray(n), e.vertexAttribPointer(n, 4, e.FLOAT, !1, l, 0), e.vertexAttribDivisor(n, 1), e.enableVertexAttribArray(s), e.vertexAttribPointer(s, 4, e.FLOAT, !1, l, 16), e.vertexAttribDivisor(s, 1), e.enableVertexAttribArray(o), e.vertexAttribPointer(o, 4, e.FLOAT, !1, l, 32), e.vertexAttribDivisor(o, 1), e.enableVertexAttribArray(a), e.vertexAttribPointer(a, 1, e.FLOAT, !1, l, 48), e.vertexAttribDivisor(a, 1), e.bindVertexArray(null), this._panelShader = new Ct(e, f2, p2), this._panelVao = e.createVertexArray(), !this._panelVao)
+        if (e.enableVertexAttribArray(n), e.vertexAttribPointer(n, 4, e.FLOAT, !1, l, 0), e.vertexAttribDivisor(n, 1), e.enableVertexAttribArray(s), e.vertexAttribPointer(s, 4, e.FLOAT, !1, l, 16), e.vertexAttribDivisor(s, 1), e.enableVertexAttribArray(o), e.vertexAttribPointer(o, 4, e.FLOAT, !1, l, 32), e.vertexAttribDivisor(o, 1), e.enableVertexAttribArray(a), e.vertexAttribPointer(a, 1, e.FLOAT, !1, l, 48), e.vertexAttribDivisor(a, 1), e.bindVertexArray(null), this._panelShader = new Ct(e, p2, m2), this._panelVao = e.createVertexArray(), !this._panelVao)
           throw new Error("Failed to create panel VAO");
         if (e.bindVertexArray(this._panelVao), this._panelBuffer = e.createBuffer(), !this._panelBuffer)
           throw e.bindVertexArray(null), new Error("Failed to create panel buffer");
@@ -22424,7 +22447,7 @@ let g2 = class extends at {
     e && (this._vao && e.deleteVertexArray(this._vao), this._glyphBuffer && e.deleteBuffer(this._glyphBuffer), this._fontTexture && e.deleteTexture(this._fontTexture), (r = this._shader) != null && r.program && e.deleteProgram(this._shader.program), this._panelVao && e.deleteVertexArray(this._panelVao), this._panelBuffer && e.deleteBuffer(this._panelBuffer), (i = this._panelShader) != null && i.program && e.deleteProgram(this._panelShader.program), this.isReady = !1, this._shader = null, this._vao = null, this._glyphBuffer = null, this._fontTexture = null, this._fontMets = null, this._panelShader = null, this._panelVao = null, this._panelBuffer = null, this._gl = null);
   }
 };
-const x2 = `#version 300 es
+const v2 = `#version 300 es
 precision highp float;
 uniform vec2 canvasSize;
 // Line data passed as vertex attributes (using instancing)
@@ -22460,7 +22483,7 @@ void main() {
   gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
   vColor = lineColor;
 }
-`, v2 = `#version 300 es
+`, y2 = `#version 300 es
 precision highp float;
 in vec4 vColor;
 out vec4 fragColor;
@@ -22469,13 +22492,13 @@ void main() {
   fragColor = vColor;
 }
 `;
-class y2 extends at {
+class b2 extends at {
   constructor() {
     super(...arguments), this._gl = null, this._shader = null, this._vao = null, this._lineBuffer = null, this._canvasWidth = 1, this._canvasHeight = 1;
   }
   init(e) {
     if (this.isReady) return;
-    if (this._gl = e, this._shader = new Ct(e, x2, v2), this._vao = e.createVertexArray(), !this._vao)
+    if (this._gl = e, this._shader = new Ct(e, v2, y2), this._vao = e.createVertexArray(), !this._vao)
       throw new Error("Failed to create line VAO");
     if (e.bindVertexArray(this._vao), this._lineBuffer = e.createBuffer(), !this._lineBuffer)
       throw e.bindVertexArray(null), new Error("Failed to create line buffer");
@@ -22515,12 +22538,12 @@ class y2 extends at {
   }
 }
 const Un = /* @__PURE__ */ new WeakMap();
-function b2(t) {
+function T2(t) {
   let e = Un.get(t);
-  return e || (e = S2(t), Un.set(t, e), e);
+  return e || (e = M2(t), Un.set(t, e), e);
 }
-function T2(t, e) {
-  const { rgbaData: r, texDims: i } = Th(e), n = t.createTexture();
+function A2(t, e) {
+  const { rgbaData: r, texDims: i } = wh(e), n = t.createTexture();
   if (!n)
     throw new Error("rgba2Texture: failed to create texture");
   return t.bindTexture(t.TEXTURE_3D, n), t.pixelStorei(t.UNPACK_ALIGNMENT, 1), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_MIN_FILTER, t.LINEAR), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_MAG_FILTER, t.LINEAR), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_S, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_T, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_R, t.CLAMP_TO_EDGE), t.texImage3D(
@@ -22543,11 +22566,11 @@ out vec2 TexCoord;
 void main() {
     TexCoord = vPos.xy;
     gl_Position = vec4((vPos.xy - vec2(0.5, 0.5)) * 2.0, 0.0, 1.0);
-}`, A2 = `#version 300 es
+}`, w2 = `#version 300 es
 uniform highp usampler3D intensityVol;
-`, w2 = `#version 300 es
-uniform highp isampler3D intensityVol;
 `, E2 = `#version 300 es
+uniform highp isampler3D intensityVol;
+`, S2 = `#version 300 es
 uniform highp sampler3D intensityVol;
 `, ws = `
 precision highp int;
@@ -22663,11 +22686,11 @@ function Es(t, e, r) {
   }
   return t.deleteShader(i), t.deleteShader(n), s;
 }
-function S2(t) {
+function M2(t) {
   return {
-    uint: Es(t, As, A2 + ws),
-    sint: Es(t, As, w2 + ws),
-    float: Es(t, As, E2 + ws)
+    uint: Es(t, As, w2 + ws),
+    sint: Es(t, As, E2 + ws),
+    float: Es(t, As, S2 + ws)
   };
 }
 function R2(t, e) {
@@ -22691,7 +22714,7 @@ function R2(t, e) {
     labelWidth: t.getUniformLocation(e, "labelWidth")
   };
 }
-function M2(t, e) {
+function P2(t, e) {
   const r = new Float32Array([
     0,
     0,
@@ -22716,7 +22739,7 @@ function M2(t, e) {
   const s = t.getAttribLocation(e, "vPos");
   return t.enableVertexAttribArray(s), t.vertexAttribPointer(s, 3, t.FLOAT, !1, 0, 0), t.bindVertexArray(null), { vao: i, vbo: n };
 }
-function P2(t) {
+function D2(t) {
   switch (t) {
     case 2:
       return {
@@ -22790,7 +22813,7 @@ function P2(t) {
 function Ss(t, e, r, i, n = 1) {
   var D;
   if (e.hdr.datatypeCode === 128 || e.hdr.datatypeCode === 2304)
-    return T2(t, e);
+    return A2(t, e);
   if (!r.dimsRAS)
     throw new Error("overlay2Texture: nvimageTarget.dimsRAS missing");
   const s = [
@@ -22801,9 +22824,9 @@ function Ss(t, e, r, i, n = 1) {
     r.dimsRAS[1] ?? 0,
     r.dimsRAS[2] ?? 0,
     r.dimsRAS[3] ?? 0
-  ], a = P2(e.hdr.datatypeCode), l = b2(t)[a.shaderType];
+  ], a = D2(e.hdr.datatypeCode), l = T2(t)[a.shaderType];
   t.useProgram(l);
-  const c = R2(t, l), { vao: u, vbo: d } = M2(t, l), h = t.createTexture();
+  const c = R2(t, l), { vao: u, vbo: d } = P2(t, l), h = t.createTexture();
   if (!h)
     throw t.deleteBuffer(d), t.deleteVertexArray(u), new Error("overlay2Texture: failed to create input texture");
   t.activeTexture(t.TEXTURE0), t.bindTexture(t.TEXTURE_3D, h), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_MIN_FILTER, t.NEAREST), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_MAG_FILTER, t.NEAREST), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_R, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_S, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_T, t.CLAMP_TO_EDGE), t.pixelStorei(t.UNPACK_ALIGNMENT, 1);
@@ -22812,8 +22835,8 @@ function Ss(t, e, r, i, n = 1) {
     throw t.deleteTexture(h), t.deleteBuffer(d), t.deleteVertexArray(u), new Error("overlay2Texture: image data missing");
   const p = (e.frame4D ?? 0) * e.nVox3D, g = e.nVox3D;
   if (a.convertTo) {
-    const R = f instanceof ArrayBuffer ? new a.TypedArray(f) : f;
-    f = a.convertTo.from(R).subarray(
+    const M = f instanceof ArrayBuffer ? new a.TypedArray(f) : f;
+    f = a.convertTo.from(M).subarray(
       p,
       p + g
     );
@@ -22845,15 +22868,15 @@ function Ss(t, e, r, i, n = 1) {
     m[a.type],
     f
   );
-  const y = e.colormapLabel !== null && e.colormapLabel !== void 0, A = t.createTexture();
+  const v = e.colormapLabel !== null && e.colormapLabel !== void 0, A = t.createTexture();
   if (!A)
     throw t.deleteTexture(h), t.deleteBuffer(d), t.deleteVertexArray(u), new Error("overlay2Texture: failed to create colormap texture");
-  if (t.activeTexture(t.TEXTURE1), t.bindTexture(t.TEXTURE_2D, A), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_WRAP_S, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_WRAP_T, t.CLAMP_TO_EDGE), y) {
+  if (t.activeTexture(t.TEXTURE1), t.bindTexture(t.TEXTURE_2D, A), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_WRAP_S, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_WRAP_T, t.CLAMP_TO_EDGE), v) {
     t.texParameteri(t.TEXTURE_2D, t.TEXTURE_MIN_FILTER, t.NEAREST), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_MAG_FILTER, t.NEAREST);
-    const R = (D = e.colormapLabel) == null ? void 0 : D.lut;
-    if (!R)
+    const M = (D = e.colormapLabel) == null ? void 0 : D.lut;
+    if (!M)
       throw new Error("Label colormap LUT is undefined");
-    const C = R.length / 4;
+    const C = M.length / 4;
     t.texImage2D(
       t.TEXTURE_2D,
       0,
@@ -22863,11 +22886,11 @@ function Ss(t, e, r, i, n = 1) {
       0,
       t.RGBA,
       t.UNSIGNED_BYTE,
-      R
+      M
     );
   } else {
     t.texParameteri(t.TEXTURE_2D, t.TEXTURE_MIN_FILTER, t.LINEAR), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_MAG_FILTER, t.LINEAR);
-    const R = ut(e.colormap);
+    const M = ct(e.colormap);
     t.texImage2D(
       t.TEXTURE_2D,
       0,
@@ -22877,16 +22900,16 @@ function Ss(t, e, r, i, n = 1) {
       0,
       t.RGBA,
       t.UNSIGNED_BYTE,
-      R
+      M
     );
   }
-  const v = !y && e.colormapNegative && e.colormapNegative.length > 0, E = t.createTexture();
+  const b = !v && e.colormapNegative && e.colormapNegative.length > 0, E = t.createTexture();
   if (!E)
     throw t.deleteTexture(h), t.deleteTexture(A), t.deleteBuffer(d), t.deleteVertexArray(u), new Error(
       "overlay2Texture: failed to create negative colormap texture"
     );
-  if (t.activeTexture(t.TEXTURE2), t.bindTexture(t.TEXTURE_2D, E), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_WRAP_S, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_WRAP_T, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_MIN_FILTER, t.LINEAR), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_MAG_FILTER, t.LINEAR), v) {
-    const R = ut(e.colormapNegative);
+  if (t.activeTexture(t.TEXTURE2), t.bindTexture(t.TEXTURE_2D, E), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_WRAP_S, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_WRAP_T, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_MIN_FILTER, t.LINEAR), t.texParameteri(t.TEXTURE_2D, t.TEXTURE_MAG_FILTER, t.LINEAR), b) {
+    const M = ct(e.colormapNegative);
     t.texImage2D(
       t.TEXTURE_2D,
       0,
@@ -22896,7 +22919,7 @@ function Ss(t, e, r, i, n = 1) {
       0,
       t.RGBA,
       t.UNSIGNED_BYTE,
-      R
+      M
     );
   } else
     t.texImage2D(
@@ -22910,10 +22933,10 @@ function Ss(t, e, r, i, n = 1) {
       t.UNSIGNED_BYTE,
       new Uint8Array([0, 0, 0, 0])
     );
-  const b = t.createTexture();
-  if (!b)
+  const y = t.createTexture();
+  if (!y)
     throw t.deleteTexture(h), t.deleteTexture(A), t.deleteTexture(E), t.deleteBuffer(d), t.deleteVertexArray(u), new Error("overlay2Texture: failed to create output texture");
-  t.activeTexture(t.TEXTURE3), t.bindTexture(t.TEXTURE_3D, b), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_MIN_FILTER, t.LINEAR), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_MAG_FILTER, t.LINEAR), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_R, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_S, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_T, t.CLAMP_TO_EDGE), t.texStorage3D(
+  t.activeTexture(t.TEXTURE3), t.bindTexture(t.TEXTURE_3D, y), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_MIN_FILTER, t.LINEAR), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_MAG_FILTER, t.LINEAR), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_R, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_S, t.CLAMP_TO_EDGE), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_WRAP_T, t.CLAMP_TO_EDGE), t.texStorage3D(
     t.TEXTURE_3D,
     1,
     t.RGBA8,
@@ -22923,22 +22946,22 @@ function Ss(t, e, r, i, n = 1) {
   );
   const x = t.createFramebuffer();
   if (!x)
-    throw t.deleteTexture(h), t.deleteTexture(A), t.deleteTexture(E), t.deleteTexture(b), t.deleteBuffer(d), t.deleteVertexArray(u), new Error("overlay2Texture: failed to create framebuffer");
+    throw t.deleteTexture(h), t.deleteTexture(A), t.deleteTexture(E), t.deleteTexture(y), t.deleteBuffer(d), t.deleteVertexArray(u), new Error("overlay2Texture: failed to create framebuffer");
   t.bindFramebuffer(t.FRAMEBUFFER, x);
   const T = t.getParameter(t.VIEWPORT), S = t.isEnabled(t.CULL_FACE), P = t.isEnabled(t.BLEND), U = t.isEnabled(t.DEPTH_TEST), _ = t.getParameter(t.ACTIVE_TEXTURE), O = t.getParameter(
     t.VERTEX_ARRAY_BINDING
   );
   t.viewport(0, 0, o[0], o[1]), t.disable(t.CULL_FACE), t.disable(t.BLEND), t.disable(t.DEPTH_TEST), t.bindVertexArray(u), c.intensityVol && t.uniform1i(c.intensityVol, 0), c.colormap && t.uniform1i(c.colormap, 1), c.colormapNeg && t.uniform1i(c.colormapNeg, 2);
-  const w = bh(e, n);
+  const w = Ah(e, n);
   c.scl_slope && t.uniform1f(c.scl_slope, w.slope), c.scl_inter && t.uniform1f(c.scl_inter, w.intercept), c.cal_min && t.uniform1f(c.cal_min, w.calMin), c.cal_max && t.uniform1f(c.cal_max, w.calMax), c.cal_minNeg && t.uniform1f(c.cal_minNeg, w.mnNeg), c.cal_maxNeg && t.uniform1f(c.cal_maxNeg, w.mxNeg), c.isAlphaThreshold && t.uniform1i(c.isAlphaThreshold, w.isAlphaThreshold), c.isColorbarFromZero && t.uniform1i(c.isColorbarFromZero, w.isColorbarFromZero), c.overlayOpacity && t.uniform1f(c.overlayOpacity, w.overlayOpacity), c.mtx && t.uniformMatrix4fv(c.mtx, !1, i), c.isLabel && t.uniform1i(c.isLabel, w.isLabel), c.labelMin && t.uniform1f(c.labelMin, w.labelMin), c.labelWidth && t.uniform1f(c.labelWidth, w.labelWidth);
-  for (let R = 0; R < o[2]; R++) {
-    const C = (R + 0.5) / o[2];
+  for (let M = 0; M < o[2]; M++) {
+    const C = (M + 0.5) / o[2];
     c.coordZ && t.uniform1f(c.coordZ, C), t.framebufferTextureLayer(
       t.FRAMEBUFFER,
       t.COLOR_ATTACHMENT0,
-      b,
+      y,
       0,
-      R
+      M
     ), t.drawArrays(t.TRIANGLE_STRIP, 0, 4);
   }
   return t.bindVertexArray(null), t.bindFramebuffer(t.FRAMEBUFFER, null), t.viewport(
@@ -22946,7 +22969,7 @@ function Ss(t, e, r, i, n = 1) {
     T[1],
     T[2],
     T[3]
-  ), S ? t.enable(t.CULL_FACE) : t.disable(t.CULL_FACE), P ? t.enable(t.BLEND) : t.disable(t.BLEND), U ? t.enable(t.DEPTH_TEST) : t.disable(t.DEPTH_TEST), t.activeTexture(_), t.bindVertexArray(O), t.activeTexture(t.TEXTURE0), t.bindTexture(t.TEXTURE_3D, null), t.activeTexture(t.TEXTURE1), t.bindTexture(t.TEXTURE_2D, null), t.activeTexture(t.TEXTURE2), t.bindTexture(t.TEXTURE_2D, null), t.activeTexture(t.TEXTURE3), t.bindTexture(t.TEXTURE_3D, null), t.activeTexture(_), t.deleteTexture(h), t.deleteTexture(A), t.deleteTexture(E), t.deleteBuffer(d), t.deleteVertexArray(u), t.deleteFramebuffer(x), b;
+  ), S ? t.enable(t.CULL_FACE) : t.disable(t.CULL_FACE), P ? t.enable(t.BLEND) : t.disable(t.BLEND), U ? t.enable(t.DEPTH_TEST) : t.disable(t.DEPTH_TEST), t.activeTexture(_), t.bindVertexArray(O), t.activeTexture(t.TEXTURE0), t.bindTexture(t.TEXTURE_3D, null), t.activeTexture(t.TEXTURE1), t.bindTexture(t.TEXTURE_2D, null), t.activeTexture(t.TEXTURE2), t.bindTexture(t.TEXTURE_2D, null), t.activeTexture(t.TEXTURE3), t.bindTexture(t.TEXTURE_3D, null), t.activeTexture(_), t.deleteTexture(h), t.deleteTexture(A), t.deleteTexture(E), t.deleteBuffer(d), t.deleteVertexArray(u), t.deleteFramebuffer(x), y;
 }
 function io(t, e, r) {
   const [i, n, s] = r, o = t.createFramebuffer();
@@ -22963,7 +22986,7 @@ function io(t, e, r) {
     ), t.readPixels(0, 0, i, n, t.RGBA, t.UNSIGNED_BYTE, a, l * i * n * 4);
   return t.bindFramebuffer(t.FRAMEBUFFER, null), t.deleteFramebuffer(o), a;
 }
-function D2(t, e, r, i) {
+function C2(t, e, r, i) {
   const n = io(t, e, i), s = io(t, r, i), o = i[0] * i[1] * i[2];
   for (let a = 0; a < o; a++)
     n[a * 4 + 3] === 0 && (s[a * 4 + 3] = 0);
@@ -22981,7 +23004,7 @@ function D2(t, e, r, i) {
     s
   ), t.bindTexture(t.TEXTURE_3D, null);
 }
-function C2(t) {
+function U2(t) {
   const e = Un.get(t);
   if (e) {
     for (const r of Object.keys(e)) {
@@ -22996,7 +23019,7 @@ function C2(t) {
     Un.delete(t);
   }
 }
-const U2 = `#version 300 es
+const I2 = `#version 300 es
 precision highp float;
 
 uniform vec2 canvasSize;
@@ -23011,7 +23034,7 @@ void main() {
   gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
   vColor = color;
 }
-`, I2 = `#version 300 es
+`, B2 = `#version 300 es
 precision highp float;
 
 in vec4 vColor;
@@ -23021,13 +23044,13 @@ void main() {
   fragColor = vColor;
 }
 `;
-class B2 extends at {
+class L2 extends at {
   constructor() {
     super(...arguments), this._gl = null, this._shader = null, this._vao = null, this._vertexBuffer = null, this._indexBuffer = null, this._canvasWidth = 1, this._canvasHeight = 1;
   }
   init(e) {
     if (!this.isReady) {
-      if (this._gl = e, this._shader = new Ct(e, U2, I2), this._vao = e.createVertexArray(), !this._vao) throw new Error("Failed to create polygon VAO");
+      if (this._gl = e, this._shader = new Ct(e, I2, B2), this._vao = e.createVertexArray(), !this._vao) throw new Error("Failed to create polygon VAO");
       if (this._vertexBuffer = e.createBuffer(), this._indexBuffer = e.createBuffer(), !this._vertexBuffer || !this._indexBuffer)
         throw new Error("Failed to create polygon buffers");
       e.bindVertexArray(this._vao), e.bindBuffer(e.ARRAY_BUFFER, this._vertexBuffer), e.enableVertexAttribArray(0), e.vertexAttribPointer(0, 2, e.FLOAT, !1, 24, 0), e.enableVertexAttribArray(1), e.vertexAttribPointer(1, 4, e.FLOAT, !1, 24, 8), e.bindBuffer(e.ELEMENT_ARRAY_BUFFER, this._indexBuffer), e.bindVertexArray(null), this.isReady = !0;
@@ -23048,7 +23071,7 @@ class B2 extends at {
     e && (this._vao && e.deleteVertexArray(this._vao), this._vertexBuffer && e.deleteBuffer(this._vertexBuffer), this._indexBuffer && e.deleteBuffer(this._indexBuffer), (r = this._shader) != null && r.program && e.deleteProgram(this._shader.program), this._vao = null, this._vertexBuffer = null, this._indexBuffer = null, this._shader = null, this._gl = null, this.isReady = !1);
   }
 }
-const L2 = `#version 300 es
+const _2 = `#version 300 es
 precision highp float;
 
 uniform mat4 mvpMatrix;
@@ -23063,7 +23086,7 @@ void main() {
   gl_Position = mvpMatrix * vec4(position, 1.0);
   vColor = vec4(color.rgb, color.a * opacityMultiplier);
 }
-`, _2 = `#version 300 es
+`, O2 = `#version 300 es
 precision highp float;
 
 in vec4 vColor;
@@ -23073,13 +23096,13 @@ void main() {
   fragColor = vColor;
 }
 `;
-class O2 extends at {
+class F2 extends at {
   constructor() {
     super(...arguments), this._gl = null, this._shader = null, this._vao = null, this._vertexBuffer = null, this._indexBuffer = null;
   }
   init(e) {
     if (!this.isReady) {
-      if (this._gl = e, this._shader = new Ct(e, L2, _2), this._vao = e.createVertexArray(), !this._vao) throw new Error("Failed to create polygon3d VAO");
+      if (this._gl = e, this._shader = new Ct(e, _2, O2), this._vao = e.createVertexArray(), !this._vao) throw new Error("Failed to create polygon3d VAO");
       if (this._vertexBuffer = e.createBuffer(), this._indexBuffer = e.createBuffer(), !this._vertexBuffer || !this._indexBuffer)
         throw new Error("Failed to create polygon3d buffers");
       e.bindVertexArray(this._vao), e.bindBuffer(e.ARRAY_BUFFER, this._vertexBuffer), e.enableVertexAttribArray(0), e.vertexAttribPointer(0, 3, e.FLOAT, !1, 28, 0), e.enableVertexAttribArray(1), e.vertexAttribPointer(1, 4, e.FLOAT, !1, 28, 12), e.bindBuffer(e.ELEMENT_ARRAY_BUFFER, this._indexBuffer), e.bindVertexArray(null), this.isReady = !0;
@@ -23115,18 +23138,18 @@ class O2 extends at {
   }
 }
 const In = /* @__PURE__ */ new WeakMap();
-function F2(t) {
+function N2(t) {
   let e = In.get(t);
   return e || (e = G2(t), In.set(t, e), e);
 }
-const N2 = `#version 300 es
+const V2 = `#version 300 es
 precision highp float;
 in vec3 vPos;
 out vec2 TexCoord;
 void main() {
     TexCoord = vPos.xy;
     gl_Position = vec4((vPos.xy - vec2(0.5, 0.5)) * 2.0, 0.0, 1.0);
-}`, V2 = `#version 300 es
+}`, z2 = `#version 300 es
 precision highp float;
 precision highp sampler3D;
 
@@ -23187,7 +23210,7 @@ function Ja(t, e, r) {
   }
   return i;
 }
-function z2(t, e, r) {
+function k2(t, e, r) {
   const i = Ja(t, e, t.VERTEX_SHADER), n = Ja(t, r, t.FRAGMENT_SHADER), s = t.createProgram();
   if (!s)
     throw t.deleteShader(i), t.deleteShader(n), new Error("Gradient program creation failed");
@@ -23198,9 +23221,9 @@ function z2(t, e, r) {
   return t.deleteShader(i), t.deleteShader(n), s;
 }
 function G2(t) {
-  return z2(t, N2, V2);
+  return k2(t, V2, z2);
 }
-function k2(t, e) {
+function X2(t, e) {
   return {
     coordZ: t.getUniformLocation(e, "coordZ"),
     intensityVol: t.getUniformLocation(e, "intensityVol"),
@@ -23209,7 +23232,7 @@ function k2(t, e) {
     dZ: t.getUniformLocation(e, "dZ")
   };
 }
-function X2(t, e) {
+function q2(t, e) {
   const r = new Float32Array([
     0,
     0,
@@ -23234,12 +23257,12 @@ function X2(t, e) {
   const s = t.getAttribLocation(e, "vPos");
   return t.enableVertexAttribArray(s), t.vertexAttribPointer(s, 3, t.FLOAT, !1, 0, 0), t.bindVertexArray(null), { vao: i, vbo: n };
 }
-function q2(t, e, r) {
+function H2(t, e, r) {
   if (r.length < 3)
     throw new Error("Gradient expects dims [width, height, depth]");
-  const [i, n, s] = r, o = F2(t);
+  const [i, n, s] = r, o = N2(t);
   t.useProgram(o);
-  const a = k2(t, o), { vao: l, vbo: c } = X2(t, o);
+  const a = X2(t, o), { vao: l, vbo: c } = q2(t, o);
   t.activeTexture(t.TEXTURE0), t.bindTexture(t.TEXTURE_3D, e), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_MIN_FILTER, t.LINEAR), t.texParameteri(t.TEXTURE_3D, t.TEXTURE_MAG_FILTER, t.LINEAR);
   const u = t.createTexture();
   if (!u)
@@ -23249,7 +23272,7 @@ function q2(t, e, r) {
   if (!d)
     throw t.deleteTexture(u), t.deleteBuffer(c), t.deleteVertexArray(l), new Error("Gradient framebuffer creation failed");
   t.bindFramebuffer(t.FRAMEBUFFER, d);
-  const h = t.getParameter(t.VIEWPORT), f = t.isEnabled(t.CULL_FACE), p = t.isEnabled(t.BLEND), g = t.isEnabled(t.DEPTH_TEST), m = t.getParameter(t.ACTIVE_TEXTURE), y = t.getParameter(
+  const h = t.getParameter(t.VIEWPORT), f = t.isEnabled(t.CULL_FACE), p = t.isEnabled(t.BLEND), g = t.isEnabled(t.DEPTH_TEST), m = t.getParameter(t.ACTIVE_TEXTURE), v = t.getParameter(
     t.VERTEX_ARRAY_BINDING
   );
   if (t.viewport(0, 0, i, n), t.disable(t.CULL_FACE), t.disable(t.BLEND), t.disable(t.DEPTH_TEST), t.bindVertexArray(l), !a.intensityVol || !a.coordZ || !a.dX || !a.dY || !a.dZ)
@@ -23257,14 +23280,14 @@ function q2(t, e, r) {
   t.uniform1i(a.intensityVol, 0);
   const A = 0.7;
   t.uniform1f(a.dX, A / i), t.uniform1f(a.dY, A / n), t.uniform1f(a.dZ, A / s);
-  for (let v = 0; v < s; v++) {
-    const E = (v + 0.5) / s;
+  for (let b = 0; b < s; b++) {
+    const E = (b + 0.5) / s;
     t.uniform1f(a.coordZ, E), t.framebufferTextureLayer(
       t.FRAMEBUFFER,
       t.COLOR_ATTACHMENT0,
       u,
       0,
-      v
+      b
     ), t.drawArrays(t.TRIANGLE_STRIP, 0, 4);
   }
   return t.bindVertexArray(null), t.bindFramebuffer(t.FRAMEBUFFER, null), t.viewport(
@@ -23272,9 +23295,9 @@ function q2(t, e, r) {
     h[1] ?? 0,
     h[2] ?? 0,
     h[3] ?? 0
-  ), f ? t.enable(t.CULL_FACE) : t.disable(t.CULL_FACE), p ? t.enable(t.BLEND) : t.disable(t.BLEND), g ? t.enable(t.DEPTH_TEST) : t.disable(t.DEPTH_TEST), t.activeTexture(m), t.bindVertexArray(y), t.activeTexture(t.TEXTURE0), t.bindTexture(t.TEXTURE_3D, null), t.activeTexture(t.TEXTURE1), t.bindTexture(t.TEXTURE_3D, null), t.activeTexture(m), t.deleteBuffer(c), t.deleteVertexArray(l), t.deleteFramebuffer(d), u;
+  ), f ? t.enable(t.CULL_FACE) : t.disable(t.CULL_FACE), p ? t.enable(t.BLEND) : t.disable(t.BLEND), g ? t.enable(t.DEPTH_TEST) : t.disable(t.DEPTH_TEST), t.activeTexture(m), t.bindVertexArray(v), t.activeTexture(t.TEXTURE0), t.bindTexture(t.TEXTURE_3D, null), t.activeTexture(t.TEXTURE1), t.bindTexture(t.TEXTURE_3D, null), t.activeTexture(m), t.deleteBuffer(c), t.deleteVertexArray(l), t.deleteFramebuffer(d), u;
 }
-function H2(t) {
+function W2(t) {
   const e = In.get(t);
   if (e) {
     try {
@@ -23285,7 +23308,7 @@ function H2(t) {
     In.delete(t);
   }
 }
-const W2 = Oh, j2 = `${Fh}
+const j2 = Nh, Y2 = `${Vh}
 uniform mat4 normMtx;
 uniform float gradientAmount;
 uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
@@ -23709,9 +23732,9 @@ void main() {
   gl_FragDepth = fragDepth;
 }
 `;
-class Y2 extends at {
+class K2 extends at {
   constructor() {
-    super(), this._gl = null, this.shader = null, this.depthPickShaderProgram = null, this.matcapTexture = null, this.volumeTexture = null, this.volumeGradientTexture = null, this.overlayTexture = null, this.paqdTexture = null, this.paqdLutTexture = null, this.drawingTexture = null, this.drawingLinearSampler = null, this.placeholderOverlay = null, this.cubeVAO = null, this.vertexBuffer = null, this.indexBuffer = null, this.cube = xd(), this.max3D = 0;
+    super(), this._gl = null, this.shader = null, this.depthPickShaderProgram = null, this.matcapTexture = null, this.volumeTexture = null, this.volumeGradientTexture = null, this.overlayTexture = null, this.paqdTexture = null, this.paqdLutTexture = null, this.drawingTexture = null, this.drawingLinearSampler = null, this.placeholderOverlay = null, this.cubeVAO = null, this.vertexBuffer = null, this.indexBuffer = null, this.cube = yd(), this.max3D = 0;
   }
   async init(e, r) {
     if (!this.isReady) {
@@ -23741,15 +23764,15 @@ class Y2 extends at {
       }
       this.shader = new Ct(
         e,
-        W2,
-        j2
+        j2,
+        Y2
       ), this.shader.uniforms.clipPlanes = e.getUniformLocation(
         this.shader.program,
         "clipPlanes[0]"
       ), this.depthPickShaderProgram = new Ct(
         e,
         Gy,
-        ky
+        Xy
       ), this.depthPickShaderProgram.uniforms.clipPlanes = e.getUniformLocation(
         this.depthPickShaderProgram.program,
         "clipPlanes[0]"
@@ -23811,7 +23834,7 @@ class Y2 extends at {
       0
     ), e.bindTexture(e.TEXTURE_3D, null), this.matcapTexture && e.deleteTexture(this.matcapTexture), this.matcapTexture = await this._loadTexture2DOrFallback(e, i);
     const o = [r.hdr.dims[1], r.hdr.dims[2], r.hdr.dims[3]];
-    this.volumeGradientTexture && e.deleteTexture(this.volumeGradientTexture), this.volumeGradientTexture = q2(
+    this.volumeGradientTexture && e.deleteTexture(this.volumeGradientTexture), this.volumeGradientTexture = H2(
       e,
       this.volumeTexture,
       o
@@ -23838,7 +23861,7 @@ class Y2 extends at {
           c.img2RASstart,
           c.img2RASstep
         ));
-        const f = [c.dimsRAS[1], c.dimsRAS[2], c.dimsRAS[3]], p = Gl(
+        const f = [c.dimsRAS[1], c.dimsRAS[2], c.dimsRAS[3]], p = Wu(
           h,
           s,
           f,
@@ -23856,7 +23879,7 @@ class Y2 extends at {
           e.UNSIGNED_BYTE,
           p
         ), e.bindTexture(e.TEXTURE_3D, null));
-        const g = c.colormapLabel.min ?? 0, m = kl(c.colormapLabel.lut, g);
+        const g = c.colormapLabel.min ?? 0, m = ju(c.colormapLabel.lut, g);
         this.paqdLutTexture = e.createTexture(), this.paqdLutTexture && (e.bindTexture(e.TEXTURE_2D, this.paqdLutTexture), e.pixelStorei(e.UNPACK_ALIGNMENT, 1), e.texParameteri(e.TEXTURE_2D, e.TEXTURE_MIN_FILTER, e.NEAREST), e.texParameteri(e.TEXTURE_2D, e.TEXTURE_MAG_FILTER, e.NEAREST), e.texParameteri(e.TEXTURE_2D, e.TEXTURE_WRAP_S, e.CLAMP_TO_EDGE), e.texParameteri(e.TEXTURE_2D, e.TEXTURE_WRAP_T, e.CLAMP_TO_EDGE), e.texImage2D(
           e.TEXTURE_2D,
           0,
@@ -23891,7 +23914,7 @@ class Y2 extends at {
         ), p = io(e, f, s);
         e.deleteTexture(f), c.push(p);
       }
-      const u = zy(c, s);
+      const u = ky(c, s);
       if (this.overlayTexture = e.createTexture(), !this.overlayTexture) return;
       e.bindTexture(e.TEXTURE_3D, this.overlayTexture), e.pixelStorei(e.UNPACK_ALIGNMENT, 1), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MIN_FILTER, e.LINEAR), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MAG_FILTER, e.LINEAR), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_WRAP_S, e.CLAMP_TO_EDGE), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_WRAP_T, e.CLAMP_TO_EDGE), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_WRAP_R, e.CLAMP_TO_EDGE), e.texImage3D(
         e.TEXTURE_3D,
@@ -23997,10 +24020,10 @@ class Y2 extends at {
   destroy() {
     var r;
     const e = this._gl;
-    e && (this.cubeVAO && e.deleteVertexArray(this.cubeVAO), this.cubeVAO = null, this.vertexBuffer && e.deleteBuffer(this.vertexBuffer), this.indexBuffer && e.deleteBuffer(this.indexBuffer), this.vertexBuffer = null, this.indexBuffer = null, this.matcapTexture && e.deleteTexture(this.matcapTexture), this.volumeTexture && e.deleteTexture(this.volumeTexture), this.volumeGradientTexture && e.deleteTexture(this.volumeGradientTexture), this.overlayTexture && e.deleteTexture(this.overlayTexture), this.paqdTexture && e.deleteTexture(this.paqdTexture), this.drawingTexture && e.deleteTexture(this.drawingTexture), this.drawingLinearSampler && e.deleteSampler(this.drawingLinearSampler), this.placeholderOverlay && e.deleteTexture(this.placeholderOverlay), this.matcapTexture = null, this.volumeTexture = null, this.volumeGradientTexture = null, this.overlayTexture = null, this.paqdTexture = null, this.drawingTexture = null, this.drawingLinearSampler = null, this.placeholderOverlay = null, (r = this.shader) != null && r.program && e.deleteProgram(this.shader.program), this.shader = null, C2(e), H2(e), this.isReady = !1, this._gl = null);
+    e && (this.cubeVAO && e.deleteVertexArray(this.cubeVAO), this.cubeVAO = null, this.vertexBuffer && e.deleteBuffer(this.vertexBuffer), this.indexBuffer && e.deleteBuffer(this.indexBuffer), this.vertexBuffer = null, this.indexBuffer = null, this.matcapTexture && e.deleteTexture(this.matcapTexture), this.volumeTexture && e.deleteTexture(this.volumeTexture), this.volumeGradientTexture && e.deleteTexture(this.volumeGradientTexture), this.overlayTexture && e.deleteTexture(this.overlayTexture), this.paqdTexture && e.deleteTexture(this.paqdTexture), this.drawingTexture && e.deleteTexture(this.drawingTexture), this.drawingLinearSampler && e.deleteSampler(this.drawingLinearSampler), this.placeholderOverlay && e.deleteTexture(this.placeholderOverlay), this.matcapTexture = null, this.volumeTexture = null, this.volumeGradientTexture = null, this.overlayTexture = null, this.paqdTexture = null, this.drawingTexture = null, this.drawingLinearSampler = null, this.placeholderOverlay = null, (r = this.shader) != null && r.program && e.deleteProgram(this.shader.program), this.shader = null, U2(e), W2(e), this.isReady = !1, this._gl = null);
   }
 }
-const K2 = `#version 300 es
+const Q2 = `#version 300 es
 layout(location=0) in vec3 pos;
 uniform int axCorSag;
 uniform mat4 mvpMtx;
@@ -24025,7 +24048,7 @@ void main(void) {
   vec4 mm = frac2mm * vec4(texPos, 1.0);
   gl_Position = mvpMtx * mm;
 }
-`, Q2 = `#version 300 es
+`, Z2 = `#version 300 es
 precision highp int;
 precision highp float;
 
@@ -24202,13 +24225,13 @@ void main() {
   }
 }
 `;
-class Z2 extends at {
+class J2 extends at {
   constructor() {
     super(...arguments), this._gl = null, this._shader = null, this._vao = null, this._vertexBuffer = null, this._placeholderOverlay = null, this._drawingTexture = null, this._placeholderDrawing = null, this._placeholderPaqd = null, this._placeholderLut2D = null;
   }
   init(e) {
     if (this.isReady) return;
-    if (this._gl = e, this._shader = new Ct(e, K2, Q2), this._vao = e.createVertexArray(), !this._vao)
+    if (this._gl = e, this._shader = new Ct(e, Q2, Z2), this._vao = e.createVertexArray(), !this._vao)
       throw new Error("Failed to create slice VAO");
     e.bindVertexArray(this._vao);
     const r = new Float32Array([
@@ -24283,8 +24306,8 @@ class Z2 extends at {
     if (!this.isReady || !r || !this._shader || !this._vao || !n.frac2mm)
       return;
     this._shader.use(e);
-    const y = u ? e.NEAREST : e.LINEAR;
-    e.activeTexture(e.TEXTURE0), e.bindTexture(e.TEXTURE_3D, r), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MIN_FILTER, y), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MAG_FILTER, y), e.uniform1i(this._shader.uniforms.volume, 0), e.activeTexture(e.TEXTURE1), e.bindTexture(e.TEXTURE_3D, i || this._placeholderOverlay), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MIN_FILTER, y), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MAG_FILTER, y), e.uniform1i(this._shader.uniforms.overlay, 1), e.activeTexture(e.TEXTURE2), e.bindTexture(
+    const v = u ? e.NEAREST : e.LINEAR;
+    e.activeTexture(e.TEXTURE0), e.bindTexture(e.TEXTURE_3D, r), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MIN_FILTER, v), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MAG_FILTER, v), e.uniform1i(this._shader.uniforms.volume, 0), e.activeTexture(e.TEXTURE1), e.bindTexture(e.TEXTURE_3D, i || this._placeholderOverlay), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MIN_FILTER, v), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MAG_FILTER, v), e.uniform1i(this._shader.uniforms.overlay, 1), e.activeTexture(e.TEXTURE2), e.bindTexture(
       e.TEXTURE_3D,
       this._drawingTexture || this._placeholderDrawing
     ), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MIN_FILTER, e.NEAREST), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MAG_FILTER, e.NEAREST), this._shader.uniforms.drawing && e.uniform1i(this._shader.uniforms.drawing, 2), e.activeTexture(e.TEXTURE3), e.bindTexture(e.TEXTURE_3D, h || this._placeholderPaqd), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MIN_FILTER, e.LINEAR), e.texParameteri(e.TEXTURE_3D, e.TEXTURE_MAG_FILTER, e.LINEAR), this._shader.uniforms.paqd && e.uniform1i(this._shader.uniforms.paqd, 3), e.activeTexture(e.TEXTURE4), e.bindTexture(e.TEXTURE_2D, f || this._placeholderLut2D), e.texParameteri(e.TEXTURE_2D, e.TEXTURE_MIN_FILTER, e.NEAREST), e.texParameteri(e.TEXTURE_2D, e.TEXTURE_MAG_FILTER, e.NEAREST), this._shader.uniforms.paqdLut && e.uniform1i(this._shader.uniforms.paqdLut, 4), this._shader.uniforms.axCorSag && e.uniform1i(this._shader.uniforms.axCorSag, a), this._shader.uniforms.slice && e.uniform1f(this._shader.uniforms.slice, l), this._shader.uniforms.opacity && e.uniform1f(this._shader.uniforms.opacity, n.opacity ?? 1), this._shader.uniforms.overlayAlphaShader && e.uniform1f(
@@ -24352,7 +24375,7 @@ class Z2 extends at {
     e && (this._vao && e.deleteVertexArray(this._vao), this._vertexBuffer && e.deleteBuffer(this._vertexBuffer), this._placeholderOverlay && e.deleteTexture(this._placeholderOverlay), this._placeholderDrawing && e.deleteTexture(this._placeholderDrawing), this._placeholderPaqd && e.deleteTexture(this._placeholderPaqd), this._placeholderLut2D && e.deleteTexture(this._placeholderLut2D), this._drawingTexture && e.deleteTexture(this._drawingTexture), (r = this._shader) != null && r.program && e.deleteProgram(this._shader.program), this._vao = null, this._vertexBuffer = null, this._placeholderOverlay = null, this._placeholderDrawing = null, this._placeholderPaqd = null, this._placeholderLut2D = null, this._drawingTexture = null, this._shader = null, this.isReady = !1, this._gl = null);
   }
 }
-const J2 = `#version 300 es
+const $2 = `#version 300 es
 precision highp float;
 
 uniform vec2 canvasSize;
@@ -24382,7 +24405,7 @@ void main() {
     gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
     vUv = pos;
 }
-`, $2 = `#version 300 es
+`, eb = `#version 300 es
 precision highp float;
 
 uniform sampler2D thumbTex;
@@ -24394,12 +24417,12 @@ void main() {
     fragColor = texture(thumbTex, vUv);
 }
 `;
-class eb extends at {
+class tb extends at {
   constructor() {
     super(...arguments), this._gl = null, this._shader = null, this._texture = null, this._texWidth = 0, this._texHeight = 0, this._canvasWidth = 1, this._canvasHeight = 1;
   }
   init(e) {
-    this.isReady || (this._gl = e, this._shader = new Ct(e, J2, $2), this.isReady = !0);
+    this.isReady || (this._gl = e, this._shader = new Ct(e, $2, eb), this.isReady = !0);
   }
   async loadThumbnail(e, r) {
     if (!this.isReady) return;
@@ -24430,11 +24453,11 @@ class eb extends at {
     e && (this._texture && (e.deleteTexture(this._texture), this._texture = null), (r = this._shader) != null && r.program && e.deleteProgram(this._shader.program), this._shader = null, this.isReady = !1, this._gl = null);
   }
 }
-class zh {
+class Gh {
   constructor(e, r, i = {}) {
     if (this._boundsWidth = 0, this._boundsHeight = 0, this._boundsOffsetX = 0, this._boundsOffsetY = 0, this._isSubCanvasBounds = !1, this._bench = null, !e || !(e instanceof HTMLCanvasElement))
       throw new Error("NVGlview requires a valid HTMLCanvasElement");
-    this.canvas = e, this.model = r, this.options = i, this.isAntiAlias = i.isAntiAlias ?? !1, this.forceDevicePixelRatio = i.devicePixelRatio ?? -1, this.gl = null, this.max2D = 0, this.max3D = 0, this.fontTexture = null, this.crosshairRenderer = new u2(), this.screenSlices = [], this.legendLayout = null, this.graphLayout = null, this.isBusy = !1, this.maxLines = 1024, this.maxGlyphs = 2048, this.meshPipelines = {
+    this.canvas = e, this.model = r, this.options = i, this.isAntiAlias = i.isAntiAlias ?? !1, this.forceDevicePixelRatio = i.devicePixelRatio ?? -1, this.gl = null, this.max2D = 0, this.max3D = 0, this.fontTexture = null, this.crosshairRenderer = new d2(), this.screenSlices = [], this.legendLayout = null, this.graphLayout = null, this.isBusy = !1, this.maxLines = 1024, this.maxGlyphs = 2048, this.meshPipelines = {
       phong: !0,
       flat: !0,
       silhouette: !0,
@@ -24445,7 +24468,7 @@ class zh {
       toon: !0,
       outline: !0,
       vertexColor: !0
-    }, this.volumeRenderer = new Y2(), this.lineRenderer = new y2(), this.polygonRenderer = new B2(), this.polygon3DRenderer = new O2(), this.fontRenderer = new g2(), this.colorbarRenderer = new Vy(), this.thumbnailRenderer = new eb(), this.sliceRenderer = new Z2(), this.meshResources = /* @__PURE__ */ new Map(), this.orientCubeGpu = null;
+    }, this.volumeRenderer = new K2(), this.lineRenderer = new b2(), this.polygonRenderer = new L2(), this.polygon3DRenderer = new F2(), this.fontRenderer = new x2(), this.colorbarRenderer = new zy(), this.thumbnailRenderer = new tb(), this.sliceRenderer = new J2(), this.meshResources = /* @__PURE__ */ new Map(), this.orientCubeGpu = null;
   }
   // Narrow public getters for bench.ts to read current render-area size
   // without making the backing fields public or mutable.
@@ -24483,7 +24506,7 @@ class zh {
     const s = r.getExtension("WEBGL_debug_renderer_info");
     s && (n = r.getParameter(s.UNMASKED_VENDOR_WEBGL), i = r.getParameter(s.UNMASKED_RENDERER_WEBGL)), Y.info(
       `WebGL2 ${i} :: ${n} - maxTexture 2D:${this.max2D} 3D:${this.max3D} antiAlias:${this.isAntiAlias}`
-    ), this.lineRenderer.init(r), this.polygonRenderer.init(r), this.polygon3DRenderer.init(r), this.colorbarRenderer.init(r), this.thumbnailRenderer.init(r), await this.fontRenderer.init(r, this.options.font), n2(r), this.sliceRenderer.init(r), r.enable(r.DEPTH_TEST), r.depthFunc(r.LESS), r.clearDepth(1), r.frontFace(r.CCW), r.enable(r.BLEND), r.blendFunc(r.SRC_ALPHA, r.ONE_MINUS_SRC_ALPHA), r.enable(r.CULL_FACE), r.cullFace(r.BACK);
+    ), this.lineRenderer.init(r), this.polygonRenderer.init(r), this.polygon3DRenderer.init(r), this.colorbarRenderer.init(r), this.thumbnailRenderer.init(r), await this.fontRenderer.init(r, this.options.font), s2(r), this.sliceRenderer.init(r), r.enable(r.DEPTH_TEST), r.depthFunc(r.LESS), r.clearDepth(1), r.frontFace(r.CCW), r.enable(r.BLEND), r.blendFunc(r.SRC_ALPHA, r.ONE_MINUS_SRC_ALPHA), r.enable(r.CULL_FACE), r.cullFace(r.BACK);
   }
   async _createResources() {
     const e = this.gl;
@@ -24498,7 +24521,7 @@ class zh {
     ), this._createOrientCube(e);
   }
   _createOrientCube(e) {
-    const r = yd(), i = new Float32Array(r.positions), n = new Uint32Array(r.indices), s = Fi(i, n), o = i.length / 3, a = new ArrayBuffer(o * Jt), l = new Float32Array(a), c = new Uint32Array(a);
+    const r = Td(), i = new Float32Array(r.positions), n = new Uint32Array(r.indices), s = Fi(i, n), o = i.length / 3, a = new ArrayBuffer(o * Jt), l = new Float32Array(a), c = new Uint32Array(a);
     for (let p = 0; p < o; p++) {
       const g = p * Jt / 4;
       l[g] = i[p * 3], l[g + 1] = i[p * 3 + 1], l[g + 2] = i[p * 3 + 2], l[g + 3] = s[p * 3], l[g + 4] = s[p * 3 + 1], l[g + 5] = s[p * 3 + 2], c[g + 6] = r.colors[p];
@@ -24563,7 +24586,7 @@ class zh {
           r[0].dimsRAS[2],
           r[0].dimsRAS[3]
         ];
-        D2(
+        C2(
           e,
           this.volumeRenderer.volumeTexture,
           this.volumeRenderer.overlayTexture,
@@ -24578,7 +24601,7 @@ class zh {
     return this._updateBindings();
   }
   render() {
-    var O, w, D, R;
+    var O, w, D, M;
     const e = this.gl, r = this.model;
     if (!e) return;
     if (this.isBusy) {
@@ -24596,12 +24619,12 @@ class zh {
     this._isSubCanvasBounds && (e.enable(e.SCISSOR_TEST), e.scissor(i, l, s, o)), e.viewport(i, l, s, o);
     const f = r.scene.backgroundColor;
     e.clearColor(f[0], f[1], f[2], f[3]), e.clear(e.COLOR_BUFFER_BIT | e.DEPTH_BUFFER_BIT);
-    const p = r.getVolumes(), g = r.ui.isColorbarVisible ? oh(
+    const p = r.getVolumes(), g = r.ui.isColorbarVisible ? lh(
       this.colorbarRenderer.getColorbarInfos(),
       this.colorbarRenderer.getLayout()
-    ) : 0, m = r.collectLegendEntries(), y = r.ui.isLegendVisible && m.length > 0 ? ph(m, d, h) : 0, A = r.collectGraphData(), v = A ? Po(A, d) : 0, E = _l({
+    ) : 0, m = r.collectLegendEntries(), v = r.ui.isLegendVisible && m.length > 0 ? gh(m, d, h) : 0, A = r.collectGraphData(), b = A ? Po(A, d) : 0, E = Nu({
       canvasWH: [
-        d - y - v,
+        d - v - b,
         h - g
       ],
       sliceType: r.layout.sliceType,
@@ -24620,12 +24643,12 @@ class zh {
       customLayout: r.layout.customLayout
     });
     this.screenSlices = E, this.crosshairRenderer.isReady && this.crosshairRenderer.update(r);
-    const b = r.annotation.isVisibleIn3D ? Qd(r) : null, x = [];
+    const y = r.annotation.isVisibleIn3D ? Jd(r) : null, x = [];
     for (let C = 0; C < E.length; C++) {
       const I = E[C];
       if (!I) continue;
       const V = I.leftTopWidthHeight;
-      let [k, , F, X] = vn(
+      let [G, , F, X] = vn(
         V,
         r.scene.azimuth,
         r.scene.elevation,
@@ -24638,7 +24661,7 @@ class zh {
         continue;
       if (I.axCorSag !== se.RENDER) {
         const re = I.screen, xe = Lr(r.scene.pan2Dxyzmm, I.axCorSag);
-        if ([k, , F, X] = Ft(
+        if ([G, , F, X] = Ft(
           V,
           re.mnMM,
           re.mxMM,
@@ -24651,8 +24674,8 @@ class zh {
           void 0,
           xe,
           !1
-        ), I.mvpMatrix = Ke(k), r.tex2mm) {
-          const Ee = et(I.axCorSag), Ce = I.sliceMM !== void 0 ? r.getSliceTexFracAtMM(Ee, I.sliceMM) : r.getSliceTexFrac(Ee), de = kn(
+        ), I.mvpMatrix = Ke(G), r.tex2mm) {
+          const Ee = et(I.axCorSag), Ce = I.sliceMM !== void 0 ? r.getSliceTexFracAtMM(Ee, I.sliceMM) : r.getSliceTexFrac(Ee), de = Gn(
             r.tex2mm,
             I.axCorSag,
             Ce
@@ -24661,7 +24684,7 @@ class zh {
         }
       } else if (I.screen) {
         const re = I.screen;
-        [k, , F, X] = Ft(
+        [G, , F, X] = Ft(
           V,
           re.mnMM,
           re.mxMM,
@@ -24675,9 +24698,9 @@ class zh {
           void 0,
           !1
         ), I.crossLines && x.push(
-          ...Ol(
+          ...Vu(
             I,
-            k,
+            G,
             r.extentsMin,
             r.extentsMax,
             Math.max(1, r.ui.crosshairWidth),
@@ -24711,7 +24734,7 @@ class zh {
               drawRimOpacity: r.draw.rimOpacity,
               isV1SliceShader: r.volume.isV1SliceShader
             },
-            k,
+            G,
             I.axCorSag,
             Ce,
             Math.min(p.length, 2),
@@ -24726,7 +24749,7 @@ class zh {
         } else
           this.volumeRenderer.draw(
             e,
-            k,
+            G,
             F,
             xe,
             re.volScale,
@@ -24742,14 +24765,14 @@ class zh {
       const q = I.renderOrientation !== void 0 || I.sliceMM !== void 0;
       r.ui.is3DCrosshairVisible && !q && this.crosshairRenderer.isReady && this.crosshairRenderer.draw(
         e,
-        k,
+        G,
         F,
         I.axCorSag
       );
       const Q = r.getMeshes().filter(
         (re) => (re.opacity ?? 1) > 0
-      ), ee = lh(r, I.axCorSag);
-      let J = k, ge = F;
+      ), ee = uh(r, I.axCorSag);
+      let J = G, ge = F;
       if (I.axCorSag !== se.RENDER && r.mesh.thicknessOn2D !== 1 / 0) {
         const re = r.scene2mm(r.scene.crosshairPos);
         I.sliceMM !== void 0 && (re[et(I.axCorSag)] = I.sliceMM);
@@ -24763,7 +24786,7 @@ class zh {
           I.azimuth,
           I.elevation,
           r.layout.isRadiological,
-          (R = r.volumes[0]) == null ? void 0 : R.obliqueRAS,
+          (M = r.volumes[0]) == null ? void 0 : M.obliqueRAS,
           void 0,
           Ee,
           !1
@@ -24774,7 +24797,7 @@ class zh {
           const xe = this._getMeshGpu(re);
           if (!xe) continue;
           const Ee = re.opacity ?? 1;
-          Nh(
+          zh(
             e,
             re,
             xe,
@@ -24788,7 +24811,7 @@ class zh {
       const Ae = r.mesh.xRay;
       if (Ae > 0 && (r.ui.is3DCrosshairVisible && !q && this.crosshairRenderer.isReady && this.crosshairRenderer.drawXRay(
         e,
-        k,
+        G,
         F,
         I.axCorSag,
         Ae
@@ -24797,7 +24820,7 @@ class zh {
           const xe = this._getMeshGpu(re);
           if (!xe) continue;
           const Ee = (re.opacity ?? 1) * Ae;
-          Vh(
+          kh(
             e,
             re,
             xe,
@@ -24808,13 +24831,13 @@ class zh {
             ee
           );
         }
-      if (I.axCorSag === se.RENDER && b && this.polygon3DRenderer.isReady && (this.polygon3DRenderer.draw(e, b, k), this.polygon3DRenderer.drawXRay(
+      if (I.axCorSag === se.RENDER && y && this.polygon3DRenderer.isReady && (this.polygon3DRenderer.draw(e, y, G), this.polygon3DRenderer.drawXRay(
         e,
-        b,
-        k,
+        y,
+        G,
         0.5
       ), this.polygon3DRenderer.endPasses(e)), I.axCorSag === se.RENDER && I.renderOrientation === void 0 && r.ui.isOrientCubeVisible && this.orientCubeGpu) {
-        const re = Od(V);
+        const re = Nd(V);
         if (re) {
           const { x: xe, y: Ee, sz: Ce } = re, de = Oe();
           al(de, 0, V[2], 0, V[3], -10 * Ce, 10 * Ce);
@@ -24823,7 +24846,7 @@ class zh {
           const ye = Oe();
           yr(ye, de, pe);
           const Be = Oe();
-          a2(
+          l2(
             e,
             "vertexColor",
             ye,
@@ -24910,7 +24933,7 @@ class zh {
           [0.3, 0.2, 0.8, 0.8]
         )
       ), this.model.ui.isColorbarVisible) {
-        const F = ah(
+        const F = ch(
           this.colorbarRenderer.getColorbarInfos(),
           (X, q, Q, ee, J, ge, Ae, re) => this.fontRenderer.buildText(X, q, Q, ee, J, ge, Ae, re),
           this.colorbarRenderer.getLayout()
@@ -24918,14 +24941,14 @@ class zh {
         c.push(...F);
       }
       if (r.ui.isLegendVisible && m.length > 0) {
-        if (this.legendLayout = mh(
+        if (this.legendLayout = xh(
           m,
           d,
           h,
           g,
-          d - y - v
+          d - v - b
         ), this.legendLayout) {
-          const F = gh(
+          const F = vh(
             this.legendLayout,
             (X, q, Q, ee, J, ge, Ae, re) => this.fontRenderer.buildText(X, q, Q, ee, J, ge, Ae, re),
             r.scene.backgroundColor
@@ -24934,16 +24957,16 @@ class zh {
         }
       } else
         this.legendLayout = null;
-      if (A && v > 0) {
+      if (A && b > 0) {
         const F = this.forceDevicePixelRatio > 0 ? this.forceDevicePixelRatio : window.devicePixelRatio || 1;
-        if (this.graphLayout = uh(
+        if (this.graphLayout = hh(
           A,
           d,
           h,
           g,
           F
         ), this.graphLayout) {
-          const X = hh(
+          const X = ph(
             A,
             this.graphLayout,
             (q, Q, ee, J, ge, Ae, re, xe) => this.fontRenderer.buildText(q, Q, ee, J, ge, Ae, re, xe),
@@ -24955,7 +24978,7 @@ class zh {
       } else
         this.graphLayout = null;
       if (r.ui.isRulerVisible) {
-        const F = yh(
+        const F = Th(
           E,
           (X, q, Q, ee, J, ge, Ae, re) => this.fontRenderer.buildText(X, q, Q, ee, J, ge, Ae, re),
           Ye,
@@ -24964,14 +24987,14 @@ class zh {
         );
         F && (c.push(...F.labels), T.push(...F.lines));
       }
-      const C = xh(
+      const C = yh(
         this.model,
         E,
         (F, X, q, Q, ee, J, ge, Ae) => this.fontRenderer.buildText(F, X, q, Q, ee, J, ge, Ae),
         Ye
       );
       C && (c.push(...C.labels), T.push(...C.lines));
-      const I = Zd(
+      const I = $d(
         this.model,
         E,
         Ye,
@@ -24999,9 +25022,9 @@ class zh {
           );
           X.count > 0 && c.push(X);
         }
-      let k = 0;
-      for (const F of c) k += F.count;
-      k > this.maxGlyphs && (this.maxGlyphs = k), this.fontRenderer.draw(e, null, null, null, c, this.maxGlyphs);
+      let G = 0;
+      for (const F of c) G += F.count;
+      G > this.maxGlyphs && (this.maxGlyphs = G), this.fontRenderer.draw(e, null, null, null, c, this.maxGlyphs);
     }
     const U = [...T, ...x], _ = this.model._dragOverlay;
     if (_ != null && _.lines)
@@ -25028,7 +25051,7 @@ class zh {
   }
   /** Lazy bench harness. Not for production use. See ./bench.ts. */
   get bench() {
-    return this._bench || (this._bench = new _y(this)), this._bench;
+    return this._bench || (this._bench = new Oy(this)), this._bench;
   }
   /** Benchmark-only: render to canvas and block until the GPU finishes. */
   renderAndFlush() {
@@ -25089,7 +25112,7 @@ class zh {
       r.includes(s) || (Y.warn(
         `Shader '${s}' not available in WebGL2, falling back to 'phong'`
       ), s = "phong");
-      const o = o2(e, n, { shaderType: s });
+      const o = a2(e, n, { shaderType: s });
       this.meshResources.set(n, o);
     }
   }
@@ -25121,7 +25144,7 @@ class zh {
     ));
   }
   async depthPick(e, r) {
-    var v, E, b;
+    var b, E, y;
     const i = this.hitTest(e, r);
     if (!i) return null;
     const n = this.screenSlices[i.tileIndex];
@@ -25140,7 +25163,7 @@ class zh {
         n.azimuth,
         n.elevation,
         a.layout.isRadiological,
-        (v = a.volumes[0]) == null ? void 0 : v.obliqueRAS,
+        (b = a.volumes[0]) == null ? void 0 : b.obliqueRAS,
         a.pivot3D,
         void 0,
         !1
@@ -25167,7 +25190,7 @@ class zh {
         n.azimuth,
         n.elevation,
         a.layout.isRadiological,
-        (b = a.volumes[0]) == null ? void 0 : b.obliqueRAS,
+        (y = a.volumes[0]) == null ? void 0 : y.obliqueRAS,
         void 0,
         T,
         !1
@@ -25202,15 +25225,15 @@ class zh {
     );
     for (const x of m) {
       const T = this._getMeshGpu(x);
-      T && l2(s, T, c);
+      T && c2(s, T, c);
     }
-    const y = new Uint8Array(4);
-    s.readPixels(f, p, 1, 1, s.RGBA, s.UNSIGNED_BYTE, y), s.disable(s.SCISSOR_TEST);
+    const v = new Uint8Array(4);
+    s.readPixels(f, p, 1, 1, s.RGBA, s.UNSIGNED_BYTE, v), s.disable(s.SCISSOR_TEST);
     const A = a.scene.backgroundColor;
-    if (s.clearColor(A[0], A[1], A[2], A[3]), y[3] !== 0) {
-      const x = y[0] / 255 + y[1] / 65025 + y[2] / 16581375, T = y[3] < 200;
+    if (s.clearColor(A[0], A[1], A[2], A[3]), v[3] !== 0) {
+      const x = v[0] / 255 + v[1] / 65025 + v[2] / 16581375, T = v[3] < 200;
       Y.debug(
-        `depthPick: pixel=[${y[0]},${y[1]},${y[2]},${y[3]}] depth=${x} isMesh=${T}`
+        `depthPick: pixel=[${v[0]},${v[1]},${v[2]},${v[3]}] depth=${x} isMesh=${T}`
       );
       const S = yn(
         i.normalizedX,
@@ -25219,7 +25242,7 @@ class zh {
         c
       );
       if (!i.isRender && !T && a.tex2mm) {
-        const P = Ti(
+        const P = Ai(
           i.normalizedX,
           i.normalizedY,
           c,
@@ -25231,7 +25254,7 @@ class zh {
       }
       return [S[0], S[1], S[2]];
     }
-    return !i.isRender && g.length > 0 && a.tex2mm ? Ti(
+    return !i.isRender && g.length > 0 && a.tex2mm ? Ai(
       i.normalizedX,
       i.normalizedY,
       c,
@@ -25243,10 +25266,10 @@ class zh {
   destroy() {
     var r;
     const e = this.gl;
-    e && (this._destroyMeshResources(), this.crosshairRenderer.destroy(), this.orientCubeGpu && (Qa(e, this.orientCubeGpu), this.orientCubeGpu = null), this.fontTexture && e.deleteTexture(this.fontTexture), this.fontTexture = null, (r = this._bench) == null || r.destroy(), this._bench = null, this.volumeRenderer.destroy(), this.lineRenderer.destroy(), this.polygonRenderer.destroy(), this.polygon3DRenderer.destroy(), this.fontRenderer.destroy(), this.colorbarRenderer.destroy(), this.thumbnailRenderer.destroy(), this.sliceRenderer.destroy(), c2(e), this.gl = null);
+    e && (this._destroyMeshResources(), this.crosshairRenderer.destroy(), this.orientCubeGpu && (Qa(e, this.orientCubeGpu), this.orientCubeGpu = null), this.fontTexture && e.deleteTexture(this.fontTexture), this.fontTexture = null, (r = this._bench) == null || r.destroy(), this._bench = null, this.volumeRenderer.destroy(), this.lineRenderer.destroy(), this.polygonRenderer.destroy(), this.polygon3DRenderer.destroy(), this.fontRenderer.destroy(), this.colorbarRenderer.destroy(), this.thumbnailRenderer.destroy(), this.sliceRenderer.destroy(), u2(e), this.gl = null);
   }
 }
-class tb {
+class rb {
   constructor(e) {
     this.view = e, this.targetOverride = null, this._offscreen = null, this._inProgress = !1, this._disposed = !1;
   }
@@ -25313,7 +25336,7 @@ class tb {
       );
   }
 }
-const rb = `struct ColorbarUniforms {
+const ib = `struct ColorbarUniforms {
     canvasSize: vec2f,
     opacity: f32,
     radiusPx: f32,
@@ -25386,7 +25409,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     }
     return vec4f(color.rgb, u.opacity);
 }
-`, ib = `@group(0) @binding(0) var inputTex: texture_3d<f32>;
+`, nb = `@group(0) @binding(0) var inputTex: texture_3d<f32>;
 @group(0) @binding(1) var outputTex: texture_storage_3d<rgba8unorm, write>;
 
 @compute @workgroup_size(8, 8, 4)
@@ -25410,7 +25433,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   }
   // Divide by the sum of weights (8.0)
   textureStore(outputTex, id, total_color * 0.125);
-}`, nb = `// compute.wgsl
+}`, sb = `// compute.wgsl
 @group(0) @binding(0) var inputTex: texture_3d<f32>;
 @group(0) @binding(1) var outputTex: texture_storage_3d<rgba8unorm, write>;
 
@@ -25455,13 +25478,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     textureStore(outputTex, id, vec4<f32>(dirColor, magnitude));
 }`, no = /* @__PURE__ */ new WeakMap();
-function sb(t) {
+function ob(t) {
   let e = no.get(t);
   if (e) return e;
-  const r = t.createShaderModule({ code: nb }), i = t.createComputePipeline({
+  const r = t.createShaderModule({ code: sb }), i = t.createComputePipeline({
     layout: "auto",
     compute: { module: r, entryPoint: "main" }
-  }), n = t.createShaderModule({ code: ib }), s = t.createComputePipeline({
+  }), n = t.createShaderModule({ code: nb }), s = t.createComputePipeline({
     layout: "auto",
     compute: { module: n, entryPoint: "main" }
   });
@@ -25472,8 +25495,8 @@ function sb(t) {
     blurBindLayout: s.getBindGroupLayout(0)
   }, no.set(t, e), e;
 }
-async function ob(t, e) {
-  const r = sb(t), i = e.width, n = e.height, s = e.depthOrArrayLayers, o = t.createTexture({
+async function ab(t, e) {
+  const r = ob(t), i = e.width, n = e.height, s = e.depthOrArrayLayers, o = t.createTexture({
     size: [i, n, s],
     format: "rgba8unorm",
     dimension: "3d",
@@ -25527,8 +25550,8 @@ async function so(t, e) {
     [256, 1]
   ), await t.queue.onSubmittedWorkDone(), r;
 }
-async function ab(t, e) {
-  return so(t, ut(e));
+async function lb(t, e) {
+  return so(t, ct(e));
 }
 async function Co(t, e) {
   const r = new Image();
@@ -25559,10 +25582,10 @@ async function $a(t, e) {
   }
   return Co(t, e);
 }
-function lb(t) {
+function cb(t) {
   no.delete(t);
 }
-class cb extends at {
+class ub extends at {
   constructor() {
     super(), this.pipeline = null, this.bindLayout = null, this.sampler = null, this.colorbars = [], this._colorbarInfos = [], this.canvasWidth = 1, this.canvasHeight = 1, this._fontPx = 0, this._opacity = 1, this._margin = 20, this._heightRatio = 1.2, this._borderColor = [0, 0, 0, 1];
   }
@@ -25583,7 +25606,7 @@ class cb extends at {
       ]
     });
     const n = e.createShaderModule({
-      code: rb
+      code: ib
     });
     this.pipeline = e.createRenderPipeline({
       layout: e.createPipelineLayout({
@@ -25652,7 +25675,7 @@ class cb extends at {
     return {
       margin: this._margin,
       heightRatio: this._heightRatio,
-      gap: $d,
+      gap: th,
       canvasWidth: this.canvasWidth,
       canvasHeight: this.canvasHeight,
       borderColor: [...this._borderColor],
@@ -25660,7 +25683,7 @@ class cb extends at {
     };
   }
   _writeAllParams(e) {
-    const { rects: r } = Mi(this._colorbarInfos, this.getLayout());
+    const { rects: r } = Ri(this._colorbarInfos, this.getLayout());
     for (let i = 0; i < this.colorbars.length; i++)
       e.queue.writeBuffer(
         this.colorbars[i].paramsBuffer,
@@ -25670,11 +25693,11 @@ class cb extends at {
   }
   async buildColorbars(e, r, i) {
     if (!this.isReady || !this.bindLayout || !this.sampler) return;
-    i && (this._borderColor = Jd(i));
+    i && (this._borderColor = eh(i));
     for (const s of this.colorbars)
       s.texture.destroy(), s.paramsBuffer.destroy();
     this.colorbars = [], this._colorbarInfos = r;
-    const { rects: n } = Mi(r, this.getLayout());
+    const { rects: n } = Ri(r, this.getLayout());
     for (let s = 0; s < r.length; s++) {
       const o = e.createBuffer({
         size: 80,
@@ -25685,7 +25708,7 @@ class cb extends at {
         0,
         this._buildParamsData(n[s])
       );
-      const a = await ab(e, r[s].colormapName), l = e.createBindGroup({
+      const a = await lb(e, r[s].colormapName), l = e.createBindGroup({
         layout: this.bindLayout,
         entries: [
           { binding: 0, resource: { buffer: o } },
@@ -25718,7 +25741,7 @@ class cb extends at {
     this.colorbars = [], this.sampler = null, this.pipeline = null, this.bindLayout = null, this.isReady = !1;
   }
 }
-const ub = `// 20260131: disable clip_distances: not yet supported by Safari
+const db = `// 20260131: disable clip_distances: not yet supported by Safari
 // 20260131 enable clip_distances;
 
 struct Params {
@@ -26003,7 +26026,7 @@ fn fragment_crosscut(in: CrosscutFragmentInput) -> @location(0) vec4f {
   }
   return vec4f(in.vClr.rgb, in.vClr.a * edgeAlpha);
 }`, Bn = 256, Cr = 176, Yt = Math.ceil(Cr / Bn) * Bn, Jn = 128;
-function db(t, e, r = {}) {
+function hb(t, e, r = {}) {
   const { shaderType: i = "phong" } = r, n = Fi(
     e.positions,
     e.indices
@@ -26039,7 +26062,7 @@ function db(t, e, r = {}) {
   };
 }
 function We(t, e, r, i, n = "fragment_phong", s = "depth24plus", o = "vertex_main", a = "less", l = !0, c = "back") {
-  const u = t.createShaderModule({ code: ub });
+  const u = t.createShaderModule({ code: db });
   return t.createRenderPipeline({
     layout: i,
     vertex: {
@@ -26087,16 +26110,16 @@ function We(t, e, r, i, n = "fragment_phong", s = "depth24plus", o = "vertex_mai
 function el(t) {
   t.vertexBuffer && (t.vertexBuffer.destroy(), t.vertexBuffer = null), t.indexBuffer && (t.indexBuffer.destroy(), t.indexBuffer = null), t.uniformBuffer && (t.uniformBuffer.destroy(), t.uniformBuffer = null), t.bindGroup && (t.bindGroup = null);
 }
-class hb extends at {
+class fb extends at {
   constructor() {
     super(...arguments), this.device = null, this.cylinders = [], this._uniformScratch = new Float32Array(Cr / 4);
   }
   init(e, r) {
     this.device = e, this.destroy();
-    const i = pd();
+    const i = gd();
     for (let n = 0; n < 6; n++) {
       const s = e.createBuffer({
-        size: fd * Jt,
+        size: md * Jt,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
       }), o = e.createBuffer({
         size: i.byteLength,
@@ -26134,14 +26157,14 @@ class hb extends at {
   }
   update(e) {
     if (!this.device || !this.isReady) return;
-    const { extentsMin: r, extentsMax: i, scene: n, ui: s } = e, o = s.crosshairWidth, a = Hn(s.crosshairColor), l = gd(
+    const { extentsMin: r, extentsMax: i, scene: n, ui: s } = e, o = s.crosshairWidth, a = Hn(s.crosshairColor), l = vd(
       r,
       i,
       n.crosshairPos,
       s.crosshairGap
     );
     for (let c = 0; c < 6; c++) {
-      const [u, d] = l[c], h = md(u, d, o, a);
+      const [u, d] = l[c], h = xd(u, d, o, a);
       this.device.queue.writeBuffer(
         this.cylinders[c].vertexBuffer,
         0,
@@ -26182,7 +26205,7 @@ class hb extends at {
     this.cylinders = [], this.isReady = !1;
   }
 }
-const Gh = (
+const Xh = (
   /* wgsl */
   `
 const MAX_CLIP_PLANES: i32 = 6;
@@ -26327,7 +26350,7 @@ fn clipSampleRange(dir: vec3f, rayStart: vec4f, clipPlane: vec4f, sampleStartEnd
     }
 }
 `
-), fb = (
+), pb = (
   /* wgsl */
   `
 fn packDepth(d_in: f32) -> vec4f {
@@ -26479,7 +26502,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
   return output;
 }
 `
-), pb = (
+), mb = (
   /* wgsl */
   `
 struct Params {
@@ -26528,7 +26551,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 }
 `
 ), Ln = /* @__PURE__ */ new WeakMap();
-function mb(t, e, r) {
+function gb(t, e, r) {
   const i = t.createTexture({
     size: [1, 1],
     format: "rgba8unorm",
@@ -26544,7 +26567,7 @@ function mb(t, e, r) {
   let o = null;
   if (e) {
     const l = t.createShaderModule({
-      code: Gh + fb
+      code: Xh + pb
     });
     o = t.createRenderPipeline({
       layout: t.createPipelineLayout({
@@ -26586,7 +26609,7 @@ function mb(t, e, r) {
   }
   let a = null;
   if (r) {
-    const l = t.createShaderModule({ code: pb });
+    const l = t.createShaderModule({ code: mb });
     a = t.createRenderPipeline({
       layout: t.createPipelineLayout({
         bindGroupLayouts: [r]
@@ -26642,7 +26665,7 @@ function mb(t, e, r) {
     meshPipeline: a
   });
 }
-async function gb(t) {
+async function xb(t) {
   const { device: e } = t, r = Ln.get(e);
   if (!r) return null;
   const {
@@ -26672,12 +26695,12 @@ async function gb(t) {
     0,
     t.volumeUniformData
   ), c.setPipeline(o), c.setBindGroup(0, t.volumeBindGroup, [0]), c.setVertexBuffer(0, t.volumeVertexBuffer), c.setIndexBuffer(t.volumeIndexBuffer, "uint16"), c.drawIndexed(t.volumeIndexCount)), a)
-    for (const y of t.meshes)
-      !y.bindGroup || !y.vertexBuffer || !y.indexBuffer || !y.uniformBuffer || (e.queue.writeBuffer(
-        y.uniformBuffer,
+    for (const v of t.meshes)
+      !v.bindGroup || !v.vertexBuffer || !v.indexBuffer || !v.uniformBuffer || (e.queue.writeBuffer(
+        v.uniformBuffer,
         0,
-        y.uniformData
-      ), c.setPipeline(a), c.setBindGroup(0, y.bindGroup, [0]), c.setVertexBuffer(0, y.vertexBuffer), c.setIndexBuffer(y.indexBuffer, "uint32"), c.drawIndexed(y.indexCount));
+        v.uniformData
+      ), c.setPipeline(a), c.setBindGroup(0, v.bindGroup, [0]), c.setVertexBuffer(0, v.vertexBuffer), c.setIndexBuffer(v.indexBuffer, "uint32"), c.drawIndexed(v.indexCount));
   c.end(), l.copyTextureToBuffer(
     { texture: i },
     { buffer: s, bytesPerRow: 256 },
@@ -26691,7 +26714,7 @@ async function gb(t) {
     `depthPick: pixel=[${d},${h},${f},${p}] depth=${g} isMesh=${m}`
   ), { depth: g, isMesh: m };
 }
-function xb(t, e, r, i, n) {
+function vb(t, e, r, i, n) {
   const s = t * 2 - 1, o = 1 - e * 2, a = Oe();
   br(a, a, [-s, -o, 0]);
   const l = Oe();
@@ -26699,11 +26722,11 @@ function xb(t, e, r, i, n) {
   const c = Oe();
   return yr(c, a, n), c;
 }
-function vb(t) {
+function yb(t) {
   const e = Ln.get(t);
   e && (e.colorTexture.destroy(), e.depthTexture.destroy(), e.readbackBuffer.destroy(), Ln.delete(t));
 }
-const yb = `struct FontUniforms {
+const bb = `struct FontUniforms {
     canvasSize: vec2f,
 };
 
@@ -26762,7 +26785,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     let opacity = clamp(screenPxDistance + 0.5, 0.0, 1.0);
     if (opacity <= 0.0) { discard; }
     return vec4f(in.color.rgb, in.color.a * opacity);
-}`, bb = `struct PanelUniforms {
+}`, Tb = `struct PanelUniforms {
 	canvasSize: vec2f,
 };
 
@@ -26823,7 +26846,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 	return vec4f(in.color.rgb, in.color.a * alpha);
 }
 `;
-class Tb extends at {
+class Ab extends at {
   constructor() {
     super(), this.pipeline = null, this.bindLayout = null, this.fontTexture = null, this.fontMets = null, this.paramsBuffer = null, this.panelPipeline = null, this.panelBindLayout = null, this.panelBuffer = null, this.panelBindGroup = null, this.maxPanels = 0, this.fontPx = 16;
   }
@@ -26846,7 +26869,7 @@ class Tb extends at {
             { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
           ]
         });
-        const s = e.createShaderModule({ code: yb }), o = {
+        const s = e.createShaderModule({ code: bb }), o = {
           color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha" },
           alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }
         }, a = {
@@ -26884,7 +26907,7 @@ class Tb extends at {
             }
           ]
         });
-        const l = e.createShaderModule({ code: bb });
+        const l = e.createShaderModule({ code: Tb });
         this.panelPipeline = e.createRenderPipeline({
           layout: e.createPipelineLayout({
             bindGroupLayouts: [this.panelBindLayout]
@@ -26987,7 +27010,7 @@ class Tb extends at {
     this.fontTexture && (this.fontTexture.destroy(), this.fontTexture = null), this.paramsBuffer && (this.paramsBuffer.destroy(), this.paramsBuffer = null), this.panelBuffer && (this.panelBuffer.destroy(), this.panelBuffer = null), this.pipeline = null, this.bindLayout = null, this.panelPipeline = null, this.panelBindLayout = null, this.panelBindGroup = null, this.fontMets = null, this.isReady = !1;
   }
 }
-const Ab = `struct LineUniforms {
+const wb = `struct LineUniforms {
     canvasSize: vec2f,
 };
 
@@ -27047,7 +27070,7 @@ fn vertex_main(
 fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     return in.color;
 }`;
-class wb extends at {
+class Eb extends at {
   constructor() {
     super(), this.pipeline = null, this.bindLayout = null, this.paramsBuffer = null;
   }
@@ -27070,7 +27093,7 @@ class wb extends at {
         }
       ]
     });
-    const n = e.createShaderModule({ code: Ab });
+    const n = e.createShaderModule({ code: wb });
     this.pipeline = e.createRenderPipeline({
       layout: e.createPipelineLayout({
         bindGroupLayouts: [this.bindLayout]
@@ -27129,7 +27152,7 @@ class wb extends at {
     this.paramsBuffer && (this.paramsBuffer.destroy(), this.paramsBuffer = null), this.pipeline = null, this.bindLayout = null, this.isReady = !1;
   }
 }
-const Eb = `// Unified orient compute shader: transforms a scalar volume to RGBA8 via matrix,
+const Sb = `// Unified orient compute shader: transforms a scalar volume to RGBA8 via matrix,
 // calibration, and colormap lookup. Handles both base volumes and overlays.
 // Matches the WebGL2 orientOverlay fragment shader for identical results.
 
@@ -27279,11 +27302,11 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   textureStore(rgbaOut, vec3<i32>(outX, outY, outZ), color);
 }
 `, Ci = /* @__PURE__ */ new WeakMap();
-function Sb(t, e) {
+function Mb(t, e) {
   let r = Ci.get(t);
   if (r || (r = {}, Ci.set(t, r)), r[e])
     return r[e];
-  let i = Eb, n = "uint";
+  let i = Sb, n = "uint";
   e === "float" ? (i = i.replaceAll("texture_3d<u32>", "texture_3d<f32>"), n = "unfilterable-float") : e === "sint" && (i = i.replaceAll("texture_3d<u32>", "texture_3d<i32>"), n = "sint");
   const s = t.createShaderModule({ code: i }), o = t.createBindGroupLayout({
     entries: [
@@ -27325,7 +27348,7 @@ function Sb(t, e) {
   return r[e] = { pipeline: a, layout: o }, r[e];
 }
 function Rb(t, e) {
-  const { rgbaData: r, texDims: i } = Th(e), n = t.createTexture({
+  const { rgbaData: r, texDims: i } = wh(e), n = t.createTexture({
     size: i,
     format: "rgba8unorm",
     dimension: "3d",
@@ -27338,7 +27361,7 @@ function Rb(t, e) {
     i
   ), n;
 }
-async function Rs(t, e, r, i, n = 1) {
+async function Ms(t, e, r, i, n = 1) {
   var V;
   if (!e.dimsRAS || !r.dimsRAS)
     throw new Error("overlay2Texture: missing dimsRAS");
@@ -27362,33 +27385,33 @@ async function Rs(t, e, r, i, n = 1) {
     r.dimsRAS[1],
     r.dimsRAS[2],
     r.dimsRAS[3]
-  ], [d, h, f] = u, p = Sb(t, a), g = t.createTexture({
+  ], [d, h, f] = u, p = Mb(t, a), g = t.createTexture({
     size: c,
     format: o,
     dimension: "3d",
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
-  }), m = (e.frame4D ?? 0) * e.nVox3D * l, y = e.nVox3D * l, A = new Uint8Array(
+  }), m = (e.frame4D ?? 0) * e.nVox3D * l, v = e.nVox3D * l, A = new Uint8Array(
     e.img.buffer,
     e.img.byteOffset + m,
-    y
-  ), v = typeof SharedArrayBuffer < "u" && A.buffer instanceof SharedArrayBuffer ? new Uint8Array(A) : A;
+    v
+  ), b = typeof SharedArrayBuffer < "u" && A.buffer instanceof SharedArrayBuffer ? new Uint8Array(A) : A;
   t.queue.writeTexture(
     { texture: g },
-    v,
+    b,
     {
       bytesPerRow: Math.floor(c[0] * l),
       rowsPerImage: c[1]
     },
     c
   );
-  const E = 112, b = t.createBuffer({
+  const E = 112, y = t.createBuffer({
     size: E,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
   }), x = new ArrayBuffer(E), T = new DataView(x);
-  for (let k = 0; k < 16; k++)
-    T.setFloat32(k * 4, i[k], !0);
-  const S = bh(e, n), P = S.isLabel > 0;
-  T.setFloat32(64, S.slope, !0), T.setFloat32(68, S.intercept, !0), T.setFloat32(72, S.calMin, !0), T.setFloat32(76, S.calMax, !0), T.setFloat32(80, S.mnNeg, !0), T.setFloat32(84, S.mxNeg, !0), T.setFloat32(88, S.isAlphaThreshold, !0), T.setFloat32(92, S.isColorbarFromZero, !0), T.setFloat32(96, S.overlayOpacity, !0), T.setFloat32(100, S.isLabel, !0), T.setFloat32(104, S.labelMin, !0), T.setFloat32(108, S.labelWidth, !0), t.queue.writeBuffer(b, 0, x);
+  for (let G = 0; G < 16; G++)
+    T.setFloat32(G * 4, i[G], !0);
+  const S = Ah(e, n), P = S.isLabel > 0;
+  T.setFloat32(64, S.slope, !0), T.setFloat32(68, S.intercept, !0), T.setFloat32(72, S.calMin, !0), T.setFloat32(76, S.calMax, !0), T.setFloat32(80, S.mnNeg, !0), T.setFloat32(84, S.mxNeg, !0), T.setFloat32(88, S.isAlphaThreshold, !0), T.setFloat32(92, S.isColorbarFromZero, !0), T.setFloat32(96, S.overlayOpacity, !0), T.setFloat32(100, S.isLabel, !0), T.setFloat32(104, S.labelMin, !0), T.setFloat32(108, S.labelWidth, !0), t.queue.writeBuffer(y, 0, x);
   const U = t.createTexture({
     size: u,
     format: "rgba8unorm",
@@ -27397,17 +27420,17 @@ async function Rs(t, e, r, i, n = 1) {
   });
   let _, O, w = !1, D;
   if (P) {
-    const k = (V = e.colormapLabel) == null ? void 0 : V.lut;
-    if (!k)
+    const G = (V = e.colormapLabel) == null ? void 0 : V.lut;
+    if (!G)
       throw new Error("Label colormap LUT is undefined");
-    const F = k.length / 4;
+    const F = G.length / 4;
     _ = t.createTexture({
       size: [F, 1, 1],
       format: "rgba8unorm",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
     }), t.queue.writeTexture(
       { texture: _ },
-      Uint8Array.from(k),
+      Uint8Array.from(G),
       { bytesPerRow: F * 4, rowsPerImage: 1 },
       [F, 1]
     ), O = _, D = t.createSampler({
@@ -27415,9 +27438,9 @@ async function Rs(t, e, r, i, n = 1) {
       minFilter: "nearest"
     });
   } else {
-    const k = ut(e.colormap);
-    if (_ = await so(t, k), O = _, w = !!(e.colormapNegative && e.colormapNegative.length > 0), w) {
-      const F = ut(e.colormapNegative);
+    const G = ct(e.colormap);
+    if (_ = await so(t, G), O = _, w = !!(e.colormapNegative && e.colormapNegative.length > 0), w) {
+      const F = ct(e.colormapNegative);
       O = await so(t, F);
     }
     D = t.createSampler({
@@ -27425,10 +27448,10 @@ async function Rs(t, e, r, i, n = 1) {
       minFilter: "linear"
     });
   }
-  const R = t.createBindGroup({
+  const M = t.createBindGroup({
     layout: p.layout,
     entries: [
-      { binding: 0, resource: { buffer: b } },
+      { binding: 0, resource: { buffer: y } },
       { binding: 1, resource: g.createView() },
       { binding: 2, resource: _.createView() },
       { binding: 3, resource: U.createView() },
@@ -27436,13 +27459,13 @@ async function Rs(t, e, r, i, n = 1) {
       { binding: 5, resource: O.createView() }
     ]
   }), C = t.createCommandEncoder(), I = C.beginComputePass();
-  return I.setPipeline(p.pipeline), I.setBindGroup(0, R), I.dispatchWorkgroups(
+  return I.setPipeline(p.pipeline), I.setBindGroup(0, M), I.dispatchWorkgroups(
     Math.ceil(d / 8),
     Math.ceil(h / 8),
     Math.ceil(f / 4)
-  ), I.end(), t.queue.submit([C.finish()]), await t.queue.onSubmittedWorkDone(), g.destroy(), _.destroy(), w && O.destroy(), b.destroy(), U;
+  ), I.end(), t.queue.submit([C.finish()]), await t.queue.onSubmittedWorkDone(), g.destroy(), _.destroy(), w && O.destroy(), y.destroy(), U;
 }
-const Mb = `
+const Pb = `
 @group(0) @binding(0) var background: texture_3d<f32>;
 @group(0) @binding(1) var overlayIn: texture_3d<f32>;
 @group(0) @binding(2) var overlayOut: texture_storage_3d<rgba8unorm, write>;
@@ -27461,11 +27484,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     }
 }
 `;
-function Pb(t) {
+function Db(t) {
   let e = Ci.get(t);
   if (e || (e = {}, Ci.set(t, e)), e.mask)
     return e.mask;
-  const r = t.createShaderModule({ code: Mb }), i = t.createBindGroupLayout({
+  const r = t.createShaderModule({ code: Pb }), i = t.createBindGroupLayout({
     entries: [
       {
         binding: 0,
@@ -27489,12 +27512,12 @@ function Pb(t) {
   });
   return e.mask = { pipeline: n, layout: i }, e.mask;
 }
-async function Db(t, e, r) {
+async function Cb(t, e, r) {
   const i = [
     r.width,
     r.height,
     r.depthOrArrayLayers
-  ], n = Pb(t), s = t.createTexture({
+  ], n = Db(t), s = t.createTexture({
     size: i,
     format: "rgba8unorm",
     dimension: "3d",
@@ -27513,10 +27536,10 @@ async function Db(t, e, r) {
     Math.ceil(i[2] / 4)
   ), l.end(), t.queue.submit([a.finish()]), await t.queue.onSubmittedWorkDone(), r.destroy(), s;
 }
-function Cb(t) {
+function Ub(t) {
   Ci.delete(t), oo.delete(t);
 }
-const Ub = `
+const Ib = `
 @group(0) @binding(0) var<storage, read_write> accum: array<vec4f>;
 @group(1) @binding(0) var overlay: texture_3d<f32>;
 
@@ -27531,7 +27554,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     var cur = accum[idx];
     accum[idx] = vec4f(cur.x + rgba.x * a, cur.y + rgba.y * a, cur.z + rgba.z * a, max(cur.w, a));
 }
-`, Ib = `
+`, Bb = `
 @group(0) @binding(0) var<storage, read> accum: array<vec4f>;
 @group(1) @binding(0) var output: texture_storage_3d<rgba8unorm, write>;
 
@@ -27550,7 +27573,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     textureStore(output, vec3i(gid), vec4f(rgb, clamp(a, 0.0, 1.0)));
 }
 `, oo = /* @__PURE__ */ new WeakMap();
-function Bb(t) {
+function Lb(t) {
   const e = oo.get(t);
   if (e) return e;
   const r = t.createBindGroupLayout({
@@ -27590,7 +27613,7 @@ function Bb(t) {
       bindGroupLayouts: [r, n]
     }),
     compute: {
-      module: t.createShaderModule({ code: Ub }),
+      module: t.createShaderModule({ code: Ib }),
       entryPoint: "main"
     }
   }), a = t.createComputePipeline({
@@ -27598,7 +27621,7 @@ function Bb(t) {
       bindGroupLayouts: [i, s]
     }),
     compute: {
-      module: t.createShaderModule({ code: Ib }),
+      module: t.createShaderModule({ code: Bb }),
       entryPoint: "main"
     }
   }), l = {
@@ -27611,8 +27634,8 @@ function Bb(t) {
   };
   return oo.set(t, l), l;
 }
-async function Lb(t, e, r) {
-  const [i, n, s] = r, o = Bb(t), a = t.createBuffer({
+async function _b(t, e, r) {
+  const [i, n, s] = r, o = Lb(t), a = t.createBuffer({
     size: i * n * s * 16,
     usage: GPUBufferUsage.STORAGE
   }), l = t.createBindGroup({
@@ -27648,7 +27671,7 @@ async function Lb(t, e, r) {
     Math.ceil(s / 4)
   ), f.end(), t.queue.submit([c.finish()]), a.destroy(), u;
 }
-const _b = `struct PolygonUniforms {
+const Ob = `struct PolygonUniforms {
   canvasSize: vec2f,
 };
 
@@ -27678,7 +27701,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
   return in.color;
 }
 `;
-class Ob extends at {
+class Fb extends at {
   constructor() {
     super(...arguments), this._pipeline = null, this._uniformBuffer = null, this._bindGroupLayout = null, this._bindGroup = null, this._vertexBuffer = null, this._indexBuffer = null, this._maxVertices = 0, this._maxIndices = 0;
   }
@@ -27699,7 +27722,7 @@ class Ob extends at {
       layout: this._bindGroupLayout,
       entries: [{ binding: 0, resource: { buffer: this._uniformBuffer } }]
     });
-    const n = e.createShaderModule({ code: _b });
+    const n = e.createShaderModule({ code: Ob });
     this._pipeline = e.createRenderPipeline({
       layout: e.createPipelineLayout({
         bindGroupLayouts: [this._bindGroupLayout]
@@ -27775,7 +27798,7 @@ class Ob extends at {
     this._vertexBuffer && (this._vertexBuffer.destroy(), this._vertexBuffer = null), this._indexBuffer && (this._indexBuffer.destroy(), this._indexBuffer = null), this._uniformBuffer && (this._uniformBuffer.destroy(), this._uniformBuffer = null), this._pipeline = null, this._bindGroupLayout = null, this._bindGroup = null, this.isReady = !1;
   }
 }
-const Fb = `struct Uniforms {
+const Nb = `struct Uniforms {
   mvpMatrix: mat4x4f,
   opacityMultiplier: f32,
 };
@@ -27804,18 +27827,18 @@ fn vertex_main(in: VertexInput) -> VertexOutput {
 fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
   return in.color;
 }
-`, Ms = 80, tl = 2;
-class Nb extends at {
+`, Rs = 80, tl = 2;
+class Vb extends at {
   constructor() {
-    super(...arguments), this._pipeline = null, this._xrayPipeline = null, this._uniformBuffer = null, this._xrayUniformBuffer = null, this._bindGroupLayout = null, this._bindGroup = null, this._xrayBindGroup = null, this._vertexBuffer = null, this._indexBuffer = null, this._maxVertexBytes = 0, this._maxIndexBytes = 0, this._uniformData = new Float32Array(Ms / 4);
+    super(...arguments), this._pipeline = null, this._xrayPipeline = null, this._uniformBuffer = null, this._xrayUniformBuffer = null, this._bindGroupLayout = null, this._bindGroup = null, this._xrayBindGroup = null, this._vertexBuffer = null, this._indexBuffer = null, this._maxVertexBytes = 0, this._maxIndexBytes = 0, this._uniformData = new Float32Array(Rs / 4);
   }
   async init(e, r, i) {
     if (this.isReady) return;
     this._uniformBuffer = e.createBuffer({
-      size: Ms,
+      size: Rs,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     }), this._xrayUniformBuffer = e.createBuffer({
-      size: Ms,
+      size: Rs,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     }), this._bindGroupLayout = e.createBindGroupLayout({
       entries: [
@@ -27832,7 +27855,7 @@ class Nb extends at {
       layout: this._bindGroupLayout,
       entries: [{ binding: 0, resource: { buffer: this._xrayUniformBuffer } }]
     });
-    const n = e.createShaderModule({ code: Fb }), s = e.createPipelineLayout({
+    const n = e.createShaderModule({ code: Nb }), s = e.createPipelineLayout({
       bindGroupLayouts: [this._bindGroupLayout]
     }), o = {
       module: n,
@@ -27930,7 +27953,7 @@ class Nb extends at {
     this._vertexBuffer && (this._vertexBuffer.destroy(), this._vertexBuffer = null), this._indexBuffer && (this._indexBuffer.destroy(), this._indexBuffer = null), this._uniformBuffer && (this._uniformBuffer.destroy(), this._uniformBuffer = null), this._xrayUniformBuffer && (this._xrayUniformBuffer.destroy(), this._xrayUniformBuffer = null), this._pipeline = null, this._xrayPipeline = null, this._bindGroupLayout = null, this._bindGroup = null, this._xrayBindGroup = null, this.isReady = !1;
   }
 }
-const Vb = `// Render-specific functions (preamble is prepended by render.ts from volumeShaderLib)
+const zb = `// Render-specific functions (preamble is prepended by render.ts from volumeShaderLib)
 
 // Drawing-gradient tuning constants. Shader authoring choices, not runtime
 // uniforms. Offset widens vs sharpens the gradient stencil; non-integer
@@ -28346,9 +28369,9 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	return output;
 }
 `, ao = 416, rl = Math.ceil(ao / Bn) * Bn;
-class zb extends at {
+class kb extends at {
   constructor() {
-    super(), this._bindTexVol = null, this._bindTexGrad = null, this._bindTexMatcap = null, this._bindTexOverlay = null, this._bindTexPaqd = null, this._bindTexDraw = null, this._bindTexLut = null, this.pipeline = null, this.bindLayout = null, this.bindGroup = null, this.matcapTexture = null, this.volumeTexture = null, this.volumeGradientTexture = null, this.overlayTexture = null, this.paqdTexture = null, this.paqdLutTexture = null, this.drawingTexture = null, this.placeholderOverlay = null, this.placeholderLut2D = null, this.sampler = null, this.samplerNearest = null, this.paramsBuffer = null, this.vertexBuffer = null, this.indexBuffer = null, this.cube = xd(), this.maxTextureDimension3D = 0, this.depthFormat = "depth24plus", this._device = null;
+    super(), this._bindTexVol = null, this._bindTexGrad = null, this._bindTexMatcap = null, this._bindTexOverlay = null, this._bindTexPaqd = null, this._bindTexDraw = null, this._bindTexLut = null, this.pipeline = null, this.bindLayout = null, this.bindGroup = null, this.matcapTexture = null, this.volumeTexture = null, this.volumeGradientTexture = null, this.overlayTexture = null, this.paqdTexture = null, this.paqdLutTexture = null, this.drawingTexture = null, this.placeholderOverlay = null, this.placeholderLut2D = null, this.sampler = null, this.samplerNearest = null, this.paramsBuffer = null, this.vertexBuffer = null, this.indexBuffer = null, this.cube = yd(), this.maxTextureDimension3D = 0, this.depthFormat = "depth24plus", this._device = null;
   }
   async init(e, r, i, n, s = "depth24plus") {
     if (this._device = e, this.depthFormat = s, this.isReady) return;
@@ -28437,7 +28460,7 @@ class zb extends at {
       ]
     });
     const o = e.createShaderModule({
-      code: Gh + Vb
+      code: Xh + zb
     });
     this.pipeline = e.createRenderPipeline({
       layout: e.createPipelineLayout({
@@ -28489,13 +28512,13 @@ class zb extends at {
       `${n} exceeds the maxTextureDimension3D (${this.maxTextureDimension3D}) of this WebGPU adapter`
     ), this.volumeTexture && this.volumeTexture.destroy(), this.volumeGradientTexture && this.volumeGradientTexture.destroy(), this.matcapTexture && this.matcapTexture.destroy(), this.matcapTexture = await $a(e, i);
     const s = gr(r, r);
-    this.volumeTexture = await Rs(
+    this.volumeTexture = await Ms(
       e,
       r,
       r,
       s,
       0
-    ), this.volumeGradientTexture = await ob(
+    ), this.volumeGradientTexture = await ab(
       e,
       this.volumeTexture
     );
@@ -28521,7 +28544,7 @@ class zb extends at {
           c.img2RASstart,
           c.img2RASstep
         ));
-        const f = [c.dimsRAS[1], c.dimsRAS[2], c.dimsRAS[3]], p = Gl(
+        const f = [c.dimsRAS[1], c.dimsRAS[2], c.dimsRAS[3]], p = Wu(
           h,
           s,
           f,
@@ -28538,7 +28561,7 @@ class zb extends at {
           { bytesPerRow: s[0] * 4, rowsPerImage: s[1] },
           s
         );
-        const g = c.colormapLabel.min ?? 0, m = kl(c.colormapLabel.lut, g);
+        const g = c.colormapLabel.min ?? 0, m = ju(c.colormapLabel.lut, g);
         this.paqdLutTexture = e.createTexture({
           size: [256, 1],
           format: "rgba8unorm",
@@ -28553,7 +28576,7 @@ class zb extends at {
     }
     if (l.length === 1) {
       const c = l[0], u = gr(r, c);
-      this.overlayTexture = await Rs(
+      this.overlayTexture = await Ms(
         e,
         c,
         r,
@@ -28565,7 +28588,7 @@ class zb extends at {
       for (const u of l) {
         const d = gr(r, u);
         c.push(
-          await Rs(
+          await Ms(
             e,
             u,
             r,
@@ -28574,7 +28597,7 @@ class zb extends at {
           )
         );
       }
-      this.overlayTexture = await Lb(
+      this.overlayTexture = await _b(
         e,
         c,
         s
@@ -28668,7 +28691,7 @@ class zb extends at {
     return this.overlayTexture !== null;
   }
   destroy() {
-    this.matcapTexture && (this.matcapTexture.destroy(), this.matcapTexture = null), this.volumeTexture && (this.volumeTexture.destroy(), this.volumeTexture = null), this.volumeGradientTexture && (this.volumeGradientTexture.destroy(), this.volumeGradientTexture = null), this.overlayTexture && (this.overlayTexture.destroy(), this.overlayTexture = null), this.paqdTexture && (this.paqdTexture.destroy(), this.paqdTexture = null), this.drawingTexture && (this.drawingTexture.destroy(), this.drawingTexture = null), this.placeholderOverlay && (this.placeholderOverlay.destroy(), this.placeholderOverlay = null), this.paramsBuffer && (this.paramsBuffer.destroy(), this.paramsBuffer = null), this.vertexBuffer && (this.vertexBuffer.destroy(), this.vertexBuffer = null), this.indexBuffer && (this.indexBuffer.destroy(), this.indexBuffer = null), this.bindGroup = null, this.sampler = null, this.samplerNearest = null, this.pipeline = null, this.bindLayout = null, this._bindTexVol = null, this._bindTexGrad = null, this._bindTexMatcap = null, this._bindTexOverlay = null, this._bindTexPaqd = null, this._bindTexDraw = null, this._bindTexLut = null, this.isReady = !1, this._device && (Cb(this._device), this._device = null);
+    this.matcapTexture && (this.matcapTexture.destroy(), this.matcapTexture = null), this.volumeTexture && (this.volumeTexture.destroy(), this.volumeTexture = null), this.volumeGradientTexture && (this.volumeGradientTexture.destroy(), this.volumeGradientTexture = null), this.overlayTexture && (this.overlayTexture.destroy(), this.overlayTexture = null), this.paqdTexture && (this.paqdTexture.destroy(), this.paqdTexture = null), this.drawingTexture && (this.drawingTexture.destroy(), this.drawingTexture = null), this.placeholderOverlay && (this.placeholderOverlay.destroy(), this.placeholderOverlay = null), this.paramsBuffer && (this.paramsBuffer.destroy(), this.paramsBuffer = null), this.vertexBuffer && (this.vertexBuffer.destroy(), this.vertexBuffer = null), this.indexBuffer && (this.indexBuffer.destroy(), this.indexBuffer = null), this.bindGroup = null, this.sampler = null, this.samplerNearest = null, this.pipeline = null, this.bindLayout = null, this._bindTexVol = null, this._bindTexGrad = null, this._bindTexMatcap = null, this._bindTexOverlay = null, this._bindTexPaqd = null, this._bindTexDraw = null, this._bindTexLut = null, this.isReady = !1, this._device && (Ub(this._device), this._device = null);
   }
 }
 const Gb = `struct SliceUniforms {
@@ -28884,15 +28907,15 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     }
     return color;
 }
-`, il = 256, pi = 192, nl = Math.ceil(pi / il) * il, kb = 128;
-class Xb extends at {
+`, il = 256, pi = 192, nl = Math.ceil(pi / il) * il, Xb = 128;
+class qb extends at {
   constructor() {
     super(), this._bindTexVol = null, this._bindTexOverlay = null, this._bindTexDraw = null, this._bindTexPaqd = null, this._bindTexLut = null, this.pipeline = null, this.bindLayout = null, this.paramsBuffer = null, this.placeholderOverlay = null, this.drawingTexture = null, this.placeholderDrawing = null, this.placeholderPaqd = null, this.placeholderLut2D = null, this.samplerLinear = null, this.samplerNearest = null, this.bindGroupLinear = null, this.bindGroupNearest = null;
   }
   async init(e, r, i) {
     if (this.isReady) return;
     this.paramsBuffer = e.createBuffer({
-      size: nl * kb,
+      size: nl * Xb,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     }), this.samplerLinear = e.createSampler({
       magFilter: "linear",
@@ -29082,16 +29105,16 @@ class Xb extends at {
   draw(e, r, i, n, s, o, a, l = 0, c = 1, u = !1, d = 1, h = 0, f = [0, 0, 0, 0], p = !1) {
     const g = u ? this.bindGroupNearest : this.bindGroupLinear;
     if (!this.isReady || !g || !this.paramsBuffer || !this.pipeline || !i.frac2mm) return;
-    const m = l * nl, y = new Float32Array(pi / 4);
-    y.set(s, 0), y.set(i.frac2mm, 16), y[32] = i.opacity ?? 1, y[33] = n.overlayAlphaShader ?? 1, y[34] = a, y[35] = d, y[38] = c, y[39] = n.drawRimOpacity ?? -1, y[40] = h, y[44] = f[0], y[45] = f[1], y[46] = f[2], y[47] = f[3];
-    const A = new Int32Array(y.buffer);
-    A[36] = o, A[37] = n.isAlphaClipDark ? 1 : 0, A[41] = p ? 1 : 0, y[42] = n.overlayOutlineWidth ?? 0, e.queue.writeBuffer(this.paramsBuffer, m, y), r.setPipeline(this.pipeline), r.setBindGroup(0, g, [m]), r.draw(4);
+    const m = l * nl, v = new Float32Array(pi / 4);
+    v.set(s, 0), v.set(i.frac2mm, 16), v[32] = i.opacity ?? 1, v[33] = n.overlayAlphaShader ?? 1, v[34] = a, v[35] = d, v[38] = c, v[39] = n.drawRimOpacity ?? -1, v[40] = h, v[44] = f[0], v[45] = f[1], v[46] = f[2], v[47] = f[3];
+    const A = new Int32Array(v.buffer);
+    A[36] = o, A[37] = n.isAlphaClipDark ? 1 : 0, A[41] = p ? 1 : 0, v[42] = n.overlayOutlineWidth ?? 0, e.queue.writeBuffer(this.paramsBuffer, m, v), r.setPipeline(this.pipeline), r.setBindGroup(0, g, [m]), r.draw(4);
   }
   destroy() {
     this.placeholderOverlay && (this.placeholderOverlay.destroy(), this.placeholderOverlay = null), this.placeholderDrawing && (this.placeholderDrawing.destroy(), this.placeholderDrawing = null), this.placeholderPaqd && (this.placeholderPaqd.destroy(), this.placeholderPaqd = null), this.placeholderLut2D && (this.placeholderLut2D.destroy(), this.placeholderLut2D = null), this.drawingTexture && (this.drawingTexture.destroy(), this.drawingTexture = null), this.paramsBuffer && (this.paramsBuffer.destroy(), this.paramsBuffer = null), this.bindGroupLinear = null, this.bindGroupNearest = null, this.samplerLinear = null, this.samplerNearest = null, this.pipeline = null, this.bindLayout = null, this._bindTexVol = null, this._bindTexOverlay = null, this._bindTexDraw = null, this._bindTexPaqd = null, this._bindTexLut = null, this.isReady = !1;
   }
 }
-const qb = (
+const Hb = (
   /* wgsl */
   `
 struct ThumbnailUniforms {
@@ -29141,7 +29164,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 }
 `
 );
-class Hb extends at {
+class Wb extends at {
   constructor() {
     super(...arguments), this._pipeline = null, this._bindLayout = null, this._sampler = null, this._texture = null, this._paramsBuffer = null, this._bindGroup = null, this._texWidth = 0, this._texHeight = 0;
   }
@@ -29161,7 +29184,7 @@ class Hb extends at {
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
       ]
     });
-    const n = e.createShaderModule({ code: qb });
+    const n = e.createShaderModule({ code: Hb });
     this._pipeline = e.createRenderPipeline({
       layout: e.createPipelineLayout({
         bindGroupLayouts: [this._bindLayout]
@@ -29229,11 +29252,11 @@ class Hb extends at {
   }
 }
 const Wr = /* @__PURE__ */ new WeakMap();
-class kh {
+class qh {
   constructor(e, r, i = {}) {
     if (this._boundsWidth = 0, this._boundsHeight = 0, this._boundsOffsetX = 0, this._boundsOffsetY = 0, this._isSubCanvasBounds = !1, this._boundsColorTexture = null, this._depthTextureView = null, this._msaaTextureView = null, this._uniformScratch = new Float32Array(Cr / 4), this._bench = null, !e || !(e instanceof HTMLCanvasElement))
       throw new Error("NVView requires a valid HTMLCanvasElement");
-    this.canvas = e, this.model = r, this.options = i, this.isAntiAlias = i.isAntiAlias ?? !1, this.forceDevicePixelRatio = i.devicePixelRatio ?? -1, this.device = null, this.context = null, this.preferredCanvasFormat = "bgra8unorm", this.sampler = null, this.buffers = {}, this.msaaTexture = null, this.depthTexture = null, this.crosshairRenderer = new hb(), this.screenSlices = [], this.legendLayout = null, this.graphLayout = null, this.isBusy = !1, this.maxTextureDimension2D = 0, this.maxTextureDimension3D = 0, this.lineRenderer = new wb(), this.polygonRenderer = new Ob(), this.polygon3DRenderer = new Nb(), this.fontRenderer = new Tb(), this.colorbarRenderer = new cb(), this.sliceRenderer = new Xb(), this.volumeRenderer = new zb(), this.meshBindGroupLayout = null, this.meshPipelines = null, this.meshXRayPipelines = null, this.lineBindGroup = null, this.fontBindGroup = null, this.maxGlyphs = 0, this.maxLines = 0, this.meshResources = /* @__PURE__ */ new Map(), this.orientCubeGpu = null, this.thumbnailRenderer = new Hb();
+    this.canvas = e, this.model = r, this.options = i, this.isAntiAlias = i.isAntiAlias ?? !1, this.forceDevicePixelRatio = i.devicePixelRatio ?? -1, this.device = null, this.context = null, this.preferredCanvasFormat = "bgra8unorm", this.sampler = null, this.buffers = {}, this.msaaTexture = null, this.depthTexture = null, this.crosshairRenderer = new fb(), this.screenSlices = [], this.legendLayout = null, this.graphLayout = null, this.isBusy = !1, this.maxTextureDimension2D = 0, this.maxTextureDimension3D = 0, this.lineRenderer = new Eb(), this.polygonRenderer = new Fb(), this.polygon3DRenderer = new Vb(), this.fontRenderer = new Ab(), this.colorbarRenderer = new ub(), this.sliceRenderer = new qb(), this.volumeRenderer = new kb(), this.meshBindGroupLayout = null, this.meshPipelines = null, this.meshXRayPipelines = null, this.lineBindGroup = null, this.fontBindGroup = null, this.maxGlyphs = 0, this.maxLines = 0, this.meshResources = /* @__PURE__ */ new Map(), this.orientCubeGpu = null, this.thumbnailRenderer = new Wb();
   }
   // Narrow public getters for bench.ts to read current render-area size
   // without making the backing fields public or mutable.
@@ -29477,14 +29500,14 @@ class kh {
         "greater",
         !1
       )
-    }, this.crosshairRenderer.init(e, n), this._createOrientCube(e, n), mb(
+    }, this.crosshairRenderer.init(e, n), this._createOrientCube(e, n), gb(
       e,
       this.volumeRenderer.bindLayout,
       this.meshBindGroupLayout
     );
   }
   _createOrientCube(e, r) {
-    const i = yd(), n = new Float32Array(i.positions), s = new Uint32Array(i.indices), o = Fi(n, s), a = n.length / 3, l = new ArrayBuffer(a * Jt), c = new Float32Array(l), u = new Uint32Array(l);
+    const i = Td(), n = new Float32Array(i.positions), s = new Uint32Array(i.indices), o = Fi(n, s), a = n.length / 3, l = new ArrayBuffer(a * Jt), c = new Float32Array(l), u = new Uint32Array(l);
     for (let g = 0; g < a; g++) {
       const m = g * Jt / 4;
       c[m] = n[g * 3], c[m + 1] = n[g * 3 + 1], c[m + 2] = n[g * 3 + 2], c[m + 3] = o[g * 3], c[m + 4] = o[g * 3 + 1], c[m + 5] = o[g * 3 + 2], u[m + 6] = i.colors[g];
@@ -29542,7 +29565,7 @@ class kh {
       i[0],
       i.slice(1),
       this.model.volume.paqdUniforms
-    ), this.model.volume.isBackgroundMasking && this.volumeRenderer.overlayTexture && this.volumeRenderer.volumeTexture && (this.volumeRenderer.overlayTexture = await Db(
+    ), this.model.volume.isBackgroundMasking && this.volumeRenderer.overlayTexture && this.volumeRenderer.volumeTexture && (this.volumeRenderer.overlayTexture = await Cb(
       r,
       this.volumeRenderer.volumeTexture,
       this.volumeRenderer.overlayTexture
@@ -29568,7 +29591,7 @@ class kh {
         s.includes(a) || (Y.warn(
           `Shader '${a}' not available in WebGPU, falling back to 'phong'`
         ), a = "phong");
-        const l = db(r, o, { shaderType: a }), c = {
+        const l = hb(r, o, { shaderType: a }), c = {
           vertexBuffer: l.vertexBuffer,
           indexBuffer: l.indexBuffer,
           uniformBuffer: l.uniformBuffer,
@@ -29594,7 +29617,7 @@ class kh {
     }
   }
   render() {
-    var w, D, R, C, I, V;
+    var w, D, M, C, I, V;
     const e = this.model;
     if (!this.device || !this.context || !this.depthTexture || !this.canvas.parentNode) return;
     const r = this.device;
@@ -29609,7 +29632,7 @@ class kh {
     this.isAntiAlias && this.msaaTexture && !this._msaaTextureView && (this._msaaTextureView = this.msaaTexture.createView());
     const c = this.isAntiAlias && this._msaaTextureView ? this._msaaTextureView : a;
     if (this._depthTextureView || (this._depthTextureView = this.depthTexture.createView()), e.ui.isThumbnailVisible && this.thumbnailRenderer.hasTexture()) {
-      const k = r.createCommandEncoder(), F = k.beginRenderPass({
+      const G = r.createCommandEncoder(), F = G.beginRenderPass({
         colorAttachments: [
           {
             view: c,
@@ -29626,7 +29649,7 @@ class kh {
           depthStoreOp: "store"
         }
       });
-      F.setViewport(0, 0, n, s, 0, 1), this.thumbnailRenderer.draw(r, F), F.end(), o && this._copyBoundsToCanvas(k, i), r.queue.submit([k.finish()]);
+      F.setViewport(0, 0, n, s, 0, 1), this.thumbnailRenderer.draw(r, F), F.end(), o && this._copyBoundsToCanvas(G, i), r.queue.submit([G.finish()]);
       return;
     }
     const u = [], d = e.ui.fontColor, h = n, f = s, p = r.createCommandEncoder(), g = {
@@ -29645,10 +29668,10 @@ class kh {
         depthLoadOp: "clear",
         depthStoreOp: "store"
       }
-    }, m = p.beginRenderPass(g), y = e.getVolumes(), A = e.ui.isColorbarVisible ? oh(
+    }, m = p.beginRenderPass(g), v = e.getVolumes(), A = e.ui.isColorbarVisible ? lh(
       this.colorbarRenderer.getColorbarInfos(),
       this.colorbarRenderer.getLayout()
-    ) : 0, v = e.collectLegendEntries(), E = e.ui.isLegendVisible && v.length > 0 ? ph(v, h, f) : 0, b = e.collectGraphData(), x = b ? Po(b, h) : 0, T = _l({
+    ) : 0, b = e.collectLegendEntries(), E = e.ui.isLegendVisible && b.length > 0 ? gh(b, h, f) : 0, y = e.collectGraphData(), x = y ? Po(y, h) : 0, T = Nu({
       canvasWH: [
         h - E - x,
         f - A
@@ -29669,9 +29692,9 @@ class kh {
       customLayout: e.layout.customLayout
     });
     this.screenSlices = T, this.crosshairRenderer.isReady && this.crosshairRenderer.update(e);
-    const S = e.annotation.isVisibleIn3D ? Qd(e) : null, P = [];
-    for (let k = 0; k < T.length; k++) {
-      const F = T[k], X = F.leftTopWidthHeight;
+    const S = e.annotation.isVisibleIn3D ? Jd(e) : null, P = [];
+    for (let G = 0; G < T.length; G++) {
+      const F = T[G], X = F.leftTopWidthHeight;
       let [q, , Q, ee] = vn(
         X,
         e.scene.azimuth,
@@ -29679,7 +29702,7 @@ class kh {
         e.pivot3D,
         e.furthestFromPivot,
         e.scene.scaleMultiplier,
-        (R = e.volumes[0]) == null ? void 0 : R.obliqueRAS
+        (M = e.volumes[0]) == null ? void 0 : M.obliqueRAS
       );
       if (F.axCorSag !== se.RENDER) {
         const de = F.screen, pe = Lr(e.scene.pan2Dxyzmm, F.axCorSag), ye = Ft(
@@ -29696,7 +29719,7 @@ class kh {
           pe
         );
         if (q = ye[0], Q = ye[2], ee = ye[3], F.mvpMatrix = Ke(q), e.tex2mm) {
-          const Be = et(F.axCorSag), it = F.sliceMM !== void 0 ? e.getSliceTexFracAtMM(Be, F.sliceMM) : e.getSliceTexFrac(Be), Ie = kn(
+          const Be = et(F.axCorSag), it = F.sliceMM !== void 0 ? e.getSliceTexFracAtMM(Be, F.sliceMM) : e.getSliceTexFrac(Be), Ie = Gn(
             e.tex2mm,
             F.axCorSag,
             it
@@ -29717,7 +29740,7 @@ class kh {
           e.pivot3D
         );
         q = pe[0], Q = pe[2], ee = pe[3], F.crossLines && P.push(
-          ...Ol(
+          ...Vu(
             F,
             q,
             e.extentsMin,
@@ -29728,8 +29751,8 @@ class kh {
           )
         );
       }
-      if (m.setViewport(X[0], X[1], X[2], X[3], 0, 1), this.volumeRenderer.hasVolume() && y.length > 0) {
-        const de = y[0].matRAS, pe = y[0].volScale;
+      if (m.setViewport(X[0], X[1], X[2], X[3], 0, 1), this.volumeRenderer.hasVolume() && v.length > 0) {
+        const de = v[0].matRAS, pe = v[0].volScale;
         if (!de || !pe)
           continue;
         if (F.axCorSag !== se.RENDER) {
@@ -29737,7 +29760,7 @@ class kh {
           this.sliceRenderer.draw(
             r,
             m,
-            y[0],
+            v[0],
             {
               overlayAlphaShader: e.volume.alphaShader,
               overlayOutlineWidth: e.volume.outlineWidth,
@@ -29748,8 +29771,8 @@ class kh {
             q,
             F.axCorSag,
             Be,
-            k,
-            Math.min(y.length, 2),
+            G,
+            Math.min(v.length, 2),
             e.volume.isNearestInterpolation,
             1,
             this.volumeRenderer.paqdTexture ? 1 : 0,
@@ -29760,14 +29783,14 @@ class kh {
           this.volumeRenderer.draw(
             r,
             m,
-            k,
+            G,
             q,
             Q,
             de,
             pe,
             ee,
             e.volume.illumination,
-            Math.min(y.length, 2),
+            Math.min(v.length, 2),
             e.scene.clipPlaneColor,
             e.clipPlanes,
             e.scene.isClipPlaneCutaway,
@@ -29783,13 +29806,13 @@ class kh {
           de,
           q,
           Q,
-          k,
+          G,
           F.axCorSag
         );
       }
       const ge = e.getMeshes().filter(
         (de) => (de.opacity ?? 1) > 0
-      ), Ae = lh(e, F.axCorSag);
+      ), Ae = uh(e, F.axCorSag);
       let re = q, xe = Q;
       if (F.axCorSag !== se.RENDER && e.mesh.thicknessOn2D !== 1 / 0) {
         const de = e.scene2mm(e.scene.crosshairPos);
@@ -29814,7 +29837,7 @@ class kh {
           const pe = ge[de], ye = this._getMeshGpu(pe);
           if (!ye || !ye.uniformBuffer || !ye.vertexBuffer || !ye.indexBuffer)
             continue;
-          const Be = ye.alignedMeshSize ?? Yt, it = Math.trunc(k * Be);
+          const Be = ye.alignedMeshSize ?? Yt, it = Math.trunc(G * Be);
           if (!Number.isFinite(it))
             continue;
           const Ie = this._uniformScratch;
@@ -29822,7 +29845,7 @@ class kh {
           const yt = ye.shaderType || pe.shaderType || "phong", bt = this.meshPipelines[yt];
           bt && (m.setPipeline(bt), m.setBindGroup(0, ye.bindGroup, [it]), m.setVertexBuffer(0, ye.vertexBuffer), m.setIndexBuffer(ye.indexBuffer, "uint32"), m.drawIndexed(ye.indexCount));
         }
-      const Ee = e.mesh.xRay, Ce = k + T.length;
+      const Ee = e.mesh.xRay, Ce = G + T.length;
       if (Ee > 0 && this.meshXRayPipelines) {
         if (e.ui.is3DCrosshairVisible && !J && this.crosshairRenderer.isReady) {
           const de = this.meshXRayPipelines.phong;
@@ -29862,7 +29885,7 @@ class kh {
         q,
         0.5
       )), F.axCorSag === se.RENDER && F.renderOrientation === void 0 && e.ui.isOrientCubeVisible && this.orientCubeGpu && this.meshPipelines) {
-        const de = Od(X);
+        const de = Nd(X);
         if (de) {
           const { x: pe, y: ye, sz: Be } = de, it = Oe();
           co(it, 0, X[2], 0, X[3], -10 * Be, 10 * Be);
@@ -29870,14 +29893,14 @@ class kh {
           br(Ie, Ie, [pe, ye, 0]), lo(Ie, Ie, [Be, Be, Be]), Fn(Ie, Ie, Tr(270 - e.scene.elevation)), Nn(Ie, Ie, Tr(-e.scene.azimuth));
           const yt = Oe();
           yr(yt, it, Ie);
-          const bt = Oe(), ur = this.orientCubeGpu, Gi = Math.trunc(k * (ur.alignedMeshSize ?? 0)), wr = this._uniformScratch;
+          const bt = Oe(), ur = this.orientCubeGpu, ki = Math.trunc(G * (ur.alignedMeshSize ?? 0)), wr = this._uniformScratch;
           wr.set(yt, 0), wr.set(bt, 16), wr.fill(0, 32), wr[36] = 1, r.queue.writeBuffer(
             ur.uniformBuffer,
-            Gi,
+            ki,
             wr
           );
-          const ki = this.meshPipelines.vertexColorNoDepth;
-          ki && (m.setPipeline(ki), m.setBindGroup(0, ur.bindGroup, [Gi]), m.setVertexBuffer(0, ur.vertexBuffer), m.setIndexBuffer(ur.indexBuffer, "uint32"), m.drawIndexed(ur.indexCount));
+          const Gi = this.meshPipelines.vertexColorNoDepth;
+          Gi && (m.setPipeline(Gi), m.setBindGroup(0, ur.bindGroup, [ki]), m.setVertexBuffer(0, ur.vertexBuffer), m.setIndexBuffer(ur.indexBuffer, "uint32"), m.drawIndexed(ur.indexCount));
         }
       }
       if (F.axCorSag !== se.RENDER && (F.showLabels ?? e.ui.isOrientationTextVisible)) {
@@ -29935,9 +29958,9 @@ class kh {
     m.setViewport(0, 0, h, f, 0, 1), this.model.ui.isColorbarVisible && this.colorbarRenderer.draw(r, m);
     let U = [];
     if (this.fontRenderer.isReady && this.fontBindGroup) {
-      const k = this.model.getMeshes().length > 0 || y.length > 0, F = cl(
+      const G = this.model.getMeshes().length > 0 || v.length > 0, F = cl(
         this.model.ui.placeholderText,
-        k,
+        G,
         "WebGPU",
         Y.level === "debug"
       );
@@ -29953,22 +29976,22 @@ class kh {
           [0.5, 0.2, 0.6, 0.8]
         )
       ), this.model.ui.isColorbarVisible) {
-        const J = ah(
+        const J = ch(
           this.colorbarRenderer.getColorbarInfos(),
           (ge, Ae, re, xe, Ee, Ce, de, pe) => this.fontRenderer.buildText(ge, Ae, re, xe, Ee, Ce, de, pe),
           this.colorbarRenderer.getLayout()
         );
         u.push(...J);
       }
-      if (e.ui.isLegendVisible && v.length > 0) {
-        if (this.legendLayout = mh(
-          v,
+      if (e.ui.isLegendVisible && b.length > 0) {
+        if (this.legendLayout = xh(
+          b,
           h,
           f,
           A,
           h - E - x
         ), this.legendLayout) {
-          const J = gh(
+          const J = vh(
             this.legendLayout,
             (ge, Ae, re, xe, Ee, Ce, de, pe) => this.fontRenderer.buildText(ge, Ae, re, xe, Ee, Ce, de, pe),
             e.scene.backgroundColor
@@ -29977,17 +30000,17 @@ class kh {
         }
       } else
         this.legendLayout = null;
-      if (b && x > 0) {
+      if (y && x > 0) {
         const J = this.forceDevicePixelRatio > 0 ? this.forceDevicePixelRatio : window.devicePixelRatio || 1;
-        if (this.graphLayout = uh(
-          b,
+        if (this.graphLayout = hh(
+          y,
           h,
           f,
           A,
           J
         ), this.graphLayout) {
-          const ge = hh(
-            b,
+          const ge = ph(
+            y,
             this.graphLayout,
             (Ae, re, xe, Ee, Ce, de, pe, ye) => this.fontRenderer.buildText(Ae, re, xe, Ee, Ce, de, pe, ye),
             Ye,
@@ -29998,7 +30021,7 @@ class kh {
       } else
         this.graphLayout = null;
       if (e.ui.isRulerVisible) {
-        const J = yh(
+        const J = Th(
           T,
           (ge, Ae, re, xe, Ee, Ce, de, pe) => this.fontRenderer.buildText(ge, Ae, re, xe, Ee, Ce, de, pe),
           Ye,
@@ -30007,14 +30030,14 @@ class kh {
         );
         J && (u.push(...J.labels), U.push(...J.lines));
       }
-      const X = xh(
+      const X = yh(
         this.model,
         T,
         (J, ge, Ae, re, xe, Ee, Ce, de) => this.fontRenderer.buildText(J, ge, Ae, re, xe, Ee, Ce, de),
         Ye
       );
       X && (u.push(...X.labels), U.push(...X.lines));
-      const q = Zd(
+      const q = $d(
         this.model,
         T,
         Ye,
@@ -30062,23 +30085,23 @@ class kh {
     }
     const _ = [...U, ...P], O = this.model._dragOverlay;
     if (O != null && O.lines)
-      for (const k of O.lines)
+      for (const G of O.lines)
         _.push(
           Ye(
-            k.startXY[0],
-            k.startXY[1],
-            k.endXY[0],
-            k.endXY[1],
-            k.thickness,
-            k.color
+            G.startXY[0],
+            G.startXY[1],
+            G.endXY[0],
+            G.endXY[1],
+            G.thickness,
+            G.color
           )
         );
     if (this._isSubCanvasBounds && this.options.showBoundsBorder) {
-      const k = this.options.boundsBorderColor ?? [1, 1, 1, 1], F = this.options.boundsBorderThickness ?? 2;
-      _.push(Ye(0, 0, h, 0, F, k)), _.push(
-        Ye(0, f, h, f, F, k)
-      ), _.push(Ye(0, 0, 0, f, F, k)), _.push(
-        Ye(h, 0, h, f, F, k)
+      const G = this.options.boundsBorderColor ?? [1, 1, 1, 1], F = this.options.boundsBorderThickness ?? 2;
+      _.push(Ye(0, 0, h, 0, F, G)), _.push(
+        Ye(0, f, h, f, F, G)
+      ), _.push(Ye(0, 0, 0, f, F, G)), _.push(
+        Ye(h, 0, h, f, F, G)
       );
     }
     _.length > 0 && this.lineBindGroup && (_.length > this.maxLines && (this.maxLines = _.length, this.buffers.lineStorage.destroy(), this.buffers.lineStorage = r.createBuffer({
@@ -30098,7 +30121,7 @@ class kh {
   }
   /** Lazy bench harness. Not for production use. See ./bench.ts. */
   get bench() {
-    return this._bench || (this._bench = new tb(this)), this._bench;
+    return this._bench || (this._bench = new rb(this)), this._bench;
   }
   /** Benchmark-only: render to canvas and await GPU completion. */
   renderAndFlush() {
@@ -30371,7 +30394,7 @@ class kh {
     ));
   }
   async depthPick(e, r) {
-    var E, b, x;
+    var E, y, x;
     const i = this.hitTest(e, r);
     if (!i) return null;
     const n = this.screenSlices[i.tileIndex];
@@ -30401,7 +30424,7 @@ class kh {
         o.pivot3D,
         o.furthestFromPivot,
         o.scene.scaleMultiplier,
-        (b = o.volumes[0]) == null ? void 0 : b.obliqueRAS
+        (y = o.volumes[0]) == null ? void 0 : y.obliqueRAS
       );
       l = T[0], c = T[2], u = T[3];
     } else {
@@ -30422,7 +30445,7 @@ class kh {
       );
       l = P[0], c = P[2], u = P[3];
     }
-    const d = s[2], h = s[3], f = xb(
+    const d = s[2], h = s[3], f = vb(
       i.normalizedX,
       i.normalizedY,
       d,
@@ -30448,10 +30471,10 @@ class kh {
         ...o.clipPlanes
       ]));
     }
-    const y = o.getMeshes().filter(
+    const v = o.getMeshes().filter(
       (T) => (T.opacity ?? 1) > 0
     ), A = [];
-    for (const T of y) {
+    for (const T of v) {
       const S = this._getMeshGpu(T);
       !(S != null && S.uniformBuffer) || !S.vertexBuffer || !S.indexBuffer || A.push({
         bindGroup: S.bindGroup,
@@ -30475,7 +30498,7 @@ class kh {
         alignedSize: S.alignedMeshSize ?? Yt
       });
     }
-    const v = await gb({
+    const b = await xb({
       device: a,
       volumeBindGroup: g.bindGroup,
       volumeVertexBuffer: g.vertexBuffer,
@@ -30485,15 +30508,15 @@ class kh {
       volumeUniformData: m,
       meshes: A
     });
-    if (v !== null) {
+    if (b !== null) {
       const T = yn(
         i.normalizedX,
         i.normalizedY,
-        v.depth,
+        b.depth,
         l
       );
-      if (!i.isRender && !v.isMesh && o.tex2mm) {
-        const S = Ti(
+      if (!i.isRender && !b.isMesh && o.tex2mm) {
+        const S = Ai(
           i.normalizedX,
           i.normalizedY,
           l,
@@ -30505,7 +30528,7 @@ class kh {
       }
       return [T[0], T[1], T[2]];
     }
-    return !i.isRender && p.length > 0 && o.tex2mm ? Ti(
+    return !i.isRender && p.length > 0 && o.tex2mm ? Ai(
       i.normalizedX,
       i.normalizedY,
       l,
@@ -30519,27 +30542,27 @@ class kh {
     const e = this.model.getVolumes();
     for (const n of e)
       n.gpu && delete n.gpu;
-    this._destroyMeshResources(), this.crosshairRenderer.destroy(), this.orientCubeGpu && (el(this.orientCubeGpu), this.orientCubeGpu = null), (i = this._bench) == null || i.destroy(), this._bench = null, this.msaaTexture && (this.msaaTexture.destroy(), this.msaaTexture = null), this._msaaTextureView = null, this._boundsColorTexture && (this._boundsColorTexture.destroy(), this._boundsColorTexture = null), this.depthTexture && (this.depthTexture.destroy(), this.depthTexture = null), this._depthTextureView = null, this.buffers.glyphStorage && this.buffers.glyphStorage.destroy(), this.buffers.lineStorage && this.buffers.lineStorage.destroy(), this.buffers = {}, this.lineRenderer.destroy(), this.polygonRenderer.destroy(), this.polygon3DRenderer.destroy(), this.fontRenderer.destroy(), this.colorbarRenderer.destroy(), this.thumbnailRenderer.destroy(), this.sliceRenderer.destroy(), this.volumeRenderer.destroy(), this.device && (vb(this.device), lb(this.device));
+    this._destroyMeshResources(), this.crosshairRenderer.destroy(), this.orientCubeGpu && (el(this.orientCubeGpu), this.orientCubeGpu = null), (i = this._bench) == null || i.destroy(), this._bench = null, this.msaaTexture && (this.msaaTexture.destroy(), this.msaaTexture = null), this._msaaTextureView = null, this._boundsColorTexture && (this._boundsColorTexture.destroy(), this._boundsColorTexture = null), this.depthTexture && (this.depthTexture.destroy(), this.depthTexture = null), this._depthTextureView = null, this.buffers.glyphStorage && this.buffers.glyphStorage.destroy(), this.buffers.lineStorage && this.buffers.lineStorage.destroy(), this.buffers = {}, this.lineRenderer.destroy(), this.polygonRenderer.destroy(), this.polygon3DRenderer.destroy(), this.fontRenderer.destroy(), this.colorbarRenderer.destroy(), this.thumbnailRenderer.destroy(), this.sliceRenderer.destroy(), this.volumeRenderer.destroy(), this.device && (yb(this.device), cb(this.device));
     const r = Wr.get(this.canvas);
     r && (r.views.delete(this), r.refCount--, r.refCount <= 0 && Wr.delete(this.canvas)), this.device = null, this.context = null, this.sampler = null, this.meshBindGroupLayout = null, this.meshPipelines = null, this.meshXRayPipelines = null, this.lineBindGroup = null, this.fontBindGroup = null;
   }
 }
 const _r = /* @__PURE__ */ new WeakMap(), sl = /* @__PURE__ */ new WeakMap();
-async function Wb(t, e, r = null) {
-  return await Xh(
+async function jb(t, e, r = null) {
+  return await Hh(
     t,
     document.getElementById(e),
     r
   ), Y.debug("attached to element with id: ", e), t;
 }
-async function Xh(t, e, r = null) {
+async function Hh(t, e, r = null) {
   if (!e || !(e instanceof HTMLCanvasElement))
     throw new Error("NiiVue requires a valid HTMLCanvasElement");
   typeof r == "boolean" && (t.opts.isAntiAlias = r), t.canvas = e;
   let i = _r.get(e);
-  i || (i = /* @__PURE__ */ new Set(), _r.set(e, i)), i.add(t), t.opts.backend === "webgl2" ? t.view = new zh(e, t.model, t.opts) : t.view = new kh(e, t.model, t.opts);
+  i || (i = /* @__PURE__ */ new Set(), _r.set(e, i)), i.add(t), t.opts.backend === "webgl2" ? t.view = new Gh(e, t.model, t.opts) : t.view = new qh(e, t.model, t.opts);
   try {
-    return await t.view.init(), t.opts.thumbnail && (t.model.ui.isThumbnailVisible = !0, t.model.ui.thumbnailUrl = t.opts.thumbnail, await t.view.loadThumbnail(t.model.ui.thumbnailUrl)), Ph(t), Ch(t), Uh(t), t.view.resize(), t.emit("viewAttached", {
+    return await t.view.init(), t.opts.thumbnail && (t.model.ui.isThumbnailVisible = !0, t.model.ui.thumbnailUrl = t.opts.thumbnail, await t.view.loadThumbnail(t.model.ui.thumbnailUrl)), Ch(t), Ih(t), Bh(t), t.view.resize(), t.emit("viewAttached", {
       canvas: e,
       backend: t.opts.backend ?? "webgpu"
     }), t;
@@ -30547,16 +30570,16 @@ async function Xh(t, e, r = null) {
     throw Y.error("Failed to initialize view:", n), n;
   }
 }
-function jb(t) {
+function Yb(t) {
   if (!t.canvas) return;
   const e = _r.get(t.canvas);
   e && (e.delete(t), e.size === 0 && _r.delete(t.canvas));
 }
-function Yb(t) {
+function Kb(t) {
   const e = t.opts.bounds;
   return !!e && !(e[0][0] === 0 && e[0][1] === 0 && e[1][0] === 1 && e[1][1] === 1);
 }
-function Kb(t) {
+function Qb(t) {
   const e = t.canvas;
   if (sl.get(e) === t.opts.backend) return;
   const r = e.parentNode;
@@ -30570,22 +30593,22 @@ function Kb(t) {
     _r.delete(e), _r.set(i, n);
   }
 }
-async function qh(t, e = !1) {
+async function Wh(t, e = !1) {
   var r;
-  t.emit("viewDestroyed"), (r = t.view) == null || r.destroy(), t.model.clearAllGPUResources(), Dh(t), t.resizeObserver && t.resizeObserver.disconnect(), (!Yb(t) || e) && Kb(t), t.opts.backend === "webgl2" ? t.view = new zh(
+  t.emit("viewDestroyed"), (r = t.view) == null || r.destroy(), t.model.clearAllGPUResources(), Uh(t), t.resizeObserver && t.resizeObserver.disconnect(), (!Kb(t) || e) && Qb(t), t.opts.backend === "webgl2" ? t.view = new Gh(
     t.canvas,
     t.model,
     t.opts
-  ) : t.view = new kh(
+  ) : t.view = new qh(
     t.canvas,
     t.model,
     t.opts
-  ), await t.view.init(), t.opts.thumbnail && t.model.ui.isThumbnailVisible && await t.view.loadThumbnail(t.opts.thumbnail), Ph(t), Ch(t), Uh(t), await t.view.updateBindGroups(), t.model.drawingVolume && t.refreshDrawing(), t.view.resize(), t.drawScene(), t.emit("viewAttached", {
+  ), await t.view.init(), t.opts.thumbnail && t.model.ui.isThumbnailVisible && await t.view.loadThumbnail(t.opts.thumbnail), Ch(t), Ih(t), Bh(t), await t.view.updateBindGroups(), t.model.drawingVolume && t.refreshDrawing(), t.view.resize(), t.drawScene(), t.emit("viewAttached", {
     canvas: t.canvas,
     backend: t.opts.backend ?? "webgpu"
   });
 }
-async function Qb(t, e = {}) {
+async function Zb(t, e = {}) {
   var c;
   const r = e.isAntiAlias ?? t.opts.isAntiAlias, i = e.backend ?? t.opts.backend, n = e.forceDevicePixelRatio ?? t.opts.forceDevicePixelRatio ?? -1, s = e.forceRestart ?? !0;
   if (i !== "webgpu" && i !== "webgl2")
@@ -30597,24 +30620,24 @@ async function Qb(t, e = {}) {
     return !0;
   t.opts.backend = i, t.opts.isAntiAlias = !!r, t.opts.forceDevicePixelRatio = n;
   try {
-    return s || o || a ? await qh(t, o) : (t.view && (t.view.forceDevicePixelRatio = n), (c = t.view) == null || c.resize()), !0;
+    return s || o || a ? await Wh(t, o) : (t.view && (t.view.forceDevicePixelRatio = n), (c = t.view) == null || c.resize()), !0;
   } catch (u) {
     return Y.error("Failed to reinitialize view:", u), !1;
   }
 }
-const Zb = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const Jb = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  attachTo: Wb,
-  attachToCanvas: Xh,
-  recreateView: qh,
-  reinitializeView: Qb,
-  unregister: jb
+  attachTo: jb,
+  attachToCanvas: Hh,
+  recreateView: Wh,
+  reinitializeView: Zb,
+  unregister: Yb
 }, Symbol.toStringTag, { value: "Module" }));
-class hA extends Ly {
+class fA extends _y {
   constructor(e = {}) {
-    super(e, Zb, "both"), this.enforceBackendAvailability();
+    super(e, Jb, "both"), this.enforceBackendAvailability();
   }
 }
 export {
-  hA as default
+  fA as default
 };

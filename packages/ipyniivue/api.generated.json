@@ -1,5 +1,5 @@
 {
-  "niivueVersion": "1.0.0-rc.3",
+  "niivueVersion": "1.0.0-rc.4",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVueGPU",
   "properties": [
@@ -899,7 +899,10 @@
       "tsType": "BackendType | undefined",
       "pyTraitlet": {
         "kind": "Enum",
-        "values": ["webgpu", "webgl2"]
+        "values": [
+          "webgpu",
+          "webgl2"
+        ]
       },
       "hasGetter": true,
       "hasSetter": false,
@@ -1893,6 +1896,23 @@
       ],
       "returns": "Promise<this>",
       "doc": "Remove a scalar overlay layer from a mesh.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "removeVolume",
+      "pyName": "remove_volume",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Remove a single volume by index (0 = background).\n\nCompanion to {@link removeAllVolumes} for cases where the caller wants\nto drop one overlay without disturbing the rest of the stack.",
       "returnsDoc": null
     },
     {

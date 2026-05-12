@@ -467,6 +467,12 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Control whether 2D slices use radiological or neurological convention.
+   * @default `false` (neurological)
+   * @example nv1.isRadiological = true
+   * @see {@link https://niivue.github.io/mono/examples/freesurfer.clip.html | live demo usage}
+   */
   get isRadiological(): boolean {
     return this.model.layout.isRadiological
   }

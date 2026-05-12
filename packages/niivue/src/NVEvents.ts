@@ -1,4 +1,5 @@
 import type {
+  AffineMatrix,
   BackendType,
   CompletedAngle,
   CompletedMeasurement,
@@ -33,10 +34,13 @@ export type DrawingChangedDetail = {
 export type DrawingEnabledDetail = { isEnabled: boolean }
 export type PropertyChangeDetail = { property: string; value: unknown }
 export type PointerUpDetail = { x: number; y: number; button: number }
+export type VolumeUpdatedChanges = VolumeUpdate & {
+  affine?: AffineMatrix
+}
 export type VolumeUpdatedDetail = {
   volumeIndex: number
   volume: NVImage
-  changes: VolumeUpdate
+  changes: VolumeUpdatedChanges
 }
 export type MeshUpdatedDetail = {
   meshIndex: number

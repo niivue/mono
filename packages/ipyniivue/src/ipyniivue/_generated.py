@@ -256,6 +256,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
     def annotation_undo(self) -> None:
         self.send({"cmd": "annotationUndo", "args": []})
 
+    def apply_volume_transform(self, volume_index: Any, transform: Any) -> None:
+        self.send({"cmd": "applyVolumeTransform", "args": _make_args(volume_index, transform)})
+
     def attach_to(self, id: Any, is_anti_alias: Any = _UNSET) -> None:
         self.send({"cmd": "attachTo", "args": _make_args(id, is_anti_alias)})
 
@@ -344,6 +347,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         string[]
         """
         return await self._request("getTractGroups", _make_args(mesh_index))
+
+    async def get_volume_affine(self, volume_index: Any) -> Any:
+        return await self._request("getVolumeAffine", _make_args(volume_index))
 
     async def get_volume_transform_info(self, name: Any) -> Any:
         """Get metadata for a specific volume transform (options, description, resultDefaults).
@@ -522,6 +528,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         layer_index : number
         """
         self.send({"cmd": "removeMeshLayer", "args": _make_args(mesh_index, layer_index)})
+
+    def reset_volume_affine(self, volume_index: Any) -> None:
+        self.send({"cmd": "resetVolumeAffine", "args": _make_args(volume_index)})
 
     def resize(self) -> None:
         self.send({"cmd": "resize", "args": []})
@@ -764,6 +773,9 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
         options : VolumeUpdate
         """
         self.send({"cmd": "setVolume", "args": _make_args(volume_index, options)})
+
+    def set_volume_affine(self, volume_index: Any, affine: Any) -> None:
+        self.send({"cmd": "setVolumeAffine", "args": _make_args(volume_index, affine)})
 
     def update_gl_volume(self) -> None:
         self.send({"cmd": "updateGLVolume", "args": []})

@@ -216,6 +216,7 @@ export function nii2volume(
   const volume: NVImage = {
     img: typedImg,
     hdr: hdr,
+    originalAffine: hdr.affine.map((row) => [...row]),
     dims: hdr.dims.slice(0, 4),
     nVox3D: nVox3D,
     extentsMin: extentsMin,

@@ -351,6 +351,17 @@ export default class NVGlview {
     this.isBusy = false
   }
 
+  async updateAffineOverlays(): Promise<boolean> {
+    const gl = this.gl
+    if (!gl) return false
+    const vols = this.model.getVolumes()
+    if (vols.length !== 2) return false
+    if (this.model.volume.isBackgroundMasking) return false
+    const overlay = vols[1]
+    if ((overlay.opacity ?? 1) <= 0) return false
+    return this.volumeRenderer.updateAffineOverlay(gl, vols[0], overlay)
+  }
+
   updateBindGroups(): Promise<void> {
     return this._updateBindings()
   }

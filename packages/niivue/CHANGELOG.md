@@ -1,3 +1,13 @@
+## 1.0.0-rc.7 (2026-05-12)
+
+### Fixes
+
+- **niivue:** update README package reference ([9f1ffe0](https://github.com/niivue/mono/commit/9f1ffe0))
+
+### Thank You
+
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.6 (2026-05-12)
 
 ### Fixes

@@ -12,14 +12,16 @@ const run = (command: string[], options?: { quiet?: boolean }): string => {
     stdout: options?.quiet ? 'pipe' : 'inherit',
     stderr: options?.quiet ? 'pipe' : 'inherit',
   })
+  const stdout = result.stdout?.toString() ?? ''
+  const stderr = result.stderr?.toString() ?? ''
   if (result.exitCode !== 0) {
-    const output = `${result.stdout.toString()}${result.stderr.toString()}`
+    const output = `${stdout}${stderr}`
     if (output) {
       Bun.stderr.write(output)
     }
     throw new Error(`Command failed: ${command.join(' ')}`)
   }
-  return result.stdout.toString().trim()
+  return stdout.trim()
 }
 
 const commandSucceeds = (command: string[]): boolean => {

@@ -41,7 +41,7 @@
     </main>
     <footer id="location">NiiVue</footer>
     <script type="module">
-      import NiiVue from '../src/index.ts'
+      import NiiVue, { SHOW_RENDER } from '../src/index.ts'
 
       orientCheck.onclick = async function () {
         nv1.isOrientCubeVisible = this.checked
@@ -66,7 +66,7 @@
       darkCheck.onclick = function () {
         nv1.volumeIsAlphaClipDark = this.checked
       }
-      const nv1 = new NiiVue({backgroundColor: [0.2,0.2,0.2, 1], isColorbarVisible: true })
+      const nv1 = new NiiVue({backgroundColor: [0.2,0.2,0.2, 1], isColorbarVisible: true, showRender: SHOW_RENDER.ALWAYS })
       nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
       await nv1.attachToCanvas(gl1)
       for (const cmap of nv1.colormaps) {

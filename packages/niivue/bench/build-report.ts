@@ -360,6 +360,96 @@ function renderBackendTable(run: Run): string {
 <p class="caption">${caption}</p>`
 }
 
+/**
+ * Per-backend frame time used as the basis for fps.
+ *   - WebGPU: paced `wall` (CPU + GPU serial via onSubmittedWorkDone).
+ *   - WebGL2: `max(frame, GPU)` because CPU submit and GPU execution
+ *     overlap on real hardware. Null when GPU timer data is missing.
+ *
+ * These are not the same measurement technique (WebGPU is wall-clock
+ * with a fence, WebGL2 is reconstructed from two parallel measurements),
+ * but they're the most honest approximation of "what fps would a user
+ * see in this scene" we can produce without a frame-pacing harness on
+ * top of rAF.
+ */
+function frameMsForFps(row: RendererRow, backend: string): number | null {
+  if (backend === 'webgpu') {
+    return Number.isFinite(row.stats.mean) ? row.stats.mean : null
+  }
+  return effectiveMsWebGl2(row)
+}
+
+function renderFpsHeadToHead(runs: Run[]): string {
+  if (runs.length !== 2) return ''
+  const names = rendererScenarioNames(runs)
+  if (names.length === 0) return ''
+  const [a, b] = runs
+  const aName = escapeHtml(backendPretty(a.backend))
+  const bName = escapeHtml(backendPretty(b.backend))
+  const headerCells = [
+    '<th class="left" rowspan="2">Scenario</th>',
+    `<th colspan="2" class="group">${aName}</th>`,
+    `<th colspan="2" class="group">${bName}</th>`,
+    '<th rowspan="2">Winner</th>',
+    '<th rowspan="2">Speedup</th>',
+  ]
+  const subHeaderCells = [
+    '<th>fps</th>',
+    '<th>frame (ms)</th>',
+    '<th>fps</th>',
+    '<th>frame (ms)</th>',
+  ]
+  const bodyRows: string[] = []
+  for (const name of names) {
+    const rowA = findRenderer(a, name)
+    const rowB = findRenderer(b, name)
+    const msA = rowA ? frameMsForFps(rowA, a.backend) : null
+    const msB = rowB ? frameMsForFps(rowB, b.backend) : null
+    const fpsA = msA != null && msA > 0 ? 1000 / msA : null
+    const fpsB = msB != null && msB > 0 ? 1000 / msB : null
+    let winner = '—'
+    let speedup = '—'
+    if (fpsA != null && fpsB != null && msA != null && msB != null) {
+      if (msA < msB) {
+        winner = aName
+        speedup = ratio(msB, msA)
+      } else if (msB < msA) {
+        winner = bName
+        speedup = ratio(msA, msB)
+      } else {
+        winner = 'tie'
+        speedup = '1.00×'
+      }
+    }
+    bodyRows.push(
+      `<tr><td class="left">${escapeHtml(name)}</td>` +
+        `<td>${fpsA == null ? '—' : fpsA.toFixed(1)}</td>` +
+        `<td>${fmt(msA)}</td>` +
+        `<td>${fpsB == null ? '—' : fpsB.toFixed(1)}</td>` +
+        `<td>${fmt(msB)}</td>` +
+        `<td>${winner}</td>` +
+        `<td class="ratio">${speedup}</td></tr>`,
+    )
+  }
+  return `<h2>fps head-to-head</h2>
+<table>
+  <thead>
+    <tr>${headerCells.join('')}</tr>
+    <tr>${subHeaderCells.join('')}</tr>
+  </thead>
+  <tbody>
+    ${bodyRows.join('\n    ')}
+  </tbody>
+</table>
+<p class="caption">fps comes from a backend-appropriate frame time:
+WebGPU uses paced <code>wall</code> (CPU+GPU serial via
+<code>onSubmittedWorkDone</code>); WebGL2 uses
+<code>max(frame, GPU timer)</code> because CPU submit and GPU execution
+overlap on real hardware. Rows show <code>—</code> when WebGL2 timer-query
+data is unavailable (e.g. SwiftShader headless). Speedup = slower frame
+time ÷ faster frame time.</p>`
+}
+
 function renderComparisonSection(runs: Run[]): string {
   if (runs.length !== 2) return ''
   const names = rendererScenarioNames(runs)
@@ -428,7 +518,13 @@ function renderRendererSection(runs: Run[]): string {
     .map((r) => renderBackendTable(r))
     .filter((s) => s.length > 0)
   if (tables.length === 0) return ''
-  return tables.join('\n') + renderComparisonSection(runs)
+  return [
+    renderFpsHeadToHead(runs),
+    tables.join('\n'),
+    renderComparisonSection(runs),
+  ]
+    .filter((s) => s.length > 0)
+    .join('\n')
 }
 
 function isSwiftShader(run: Run): boolean {

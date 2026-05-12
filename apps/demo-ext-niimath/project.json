@@ -5,7 +5,8 @@
   "targets": {
     "dev": {
       "command": "bunx --bun vite --open /index.html",
-      "options": { "cwd": "{projectRoot}" }
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"]
     },
     "build": {
       "command": "bunx --bun vite build",

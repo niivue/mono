@@ -358,6 +358,7 @@ export class VolumeRenderer extends NVRenderer {
         )
         return
       }
+      this.destroyNonCachedOverlayTexture()
       this.overlayOrientCache = await orient.prepareOrientTextureCache(
         device,
         vol,
@@ -369,6 +370,7 @@ export class VolumeRenderer extends NVRenderer {
       orient.dispatchOrient(device, this.overlayOrientCache)
       this.overlayTexture = this.overlayOrientCache.outputTexture
     } else if (standardVols.length > 1) {
+      this.destroyNonCachedOverlayTexture()
       orient.destroyOrientTextureCache(this.overlayOrientCache)
       this.overlayOrientCache = null
       const overlayTextures: GPUTexture[] = []
@@ -384,6 +386,7 @@ export class VolumeRenderer extends NVRenderer {
           ),
         )
       }
+      this.destroyNonCachedOverlayTexture()
       this.overlayTexture = await orient.blendOverlaysGPU(
         device,
         overlayTextures,
@@ -420,14 +423,20 @@ export class VolumeRenderer extends NVRenderer {
     return true
   }
 
-  clearOverlay(): void {
-    const cachedOutput = this.overlayOrientCache?.outputTexture ?? null
-    orient.destroyOrientTextureCache(this.overlayOrientCache)
-    this.overlayOrientCache = null
-    if (this.overlayTexture && this.overlayTexture !== cachedOutput) {
+  private destroyNonCachedOverlayTexture(): void {
+    if (
+      this.overlayTexture &&
+      this.overlayTexture !== this.overlayOrientCache?.outputTexture
+    ) {
       this.overlayTexture.destroy()
     }
     this.overlayTexture = null
+  }
+
+  clearOverlay(): void {
+    this.destroyNonCachedOverlayTexture()
+    orient.destroyOrientTextureCache(this.overlayOrientCache)
+    this.overlayOrientCache = null
   }
 
   clearPaqd(): void {

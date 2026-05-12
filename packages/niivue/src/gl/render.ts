@@ -352,6 +352,7 @@ export class VolumeRenderer extends NVRenderer {
         gl.bindTexture(gl.TEXTURE_3D, null)
         return
       }
+      this.deleteNonCachedOverlayTexture(gl)
       this.overlayOrientCache = orientOverlay.prepareOverlayTextureCache(
         gl,
         vol,
@@ -363,6 +364,7 @@ export class VolumeRenderer extends NVRenderer {
       this.overlayTexture = this.overlayOrientCache.outputTexture
       gl.bindTexture(gl.TEXTURE_3D, null)
     } else if (standardVols.length > 1) {
+      this.deleteNonCachedOverlayTexture(gl)
       orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
       this.overlayOrientCache = null
       const overlayData: Uint8Array[] = []
@@ -380,6 +382,7 @@ export class VolumeRenderer extends NVRenderer {
         overlayData.push(data)
       }
       const blended = blendOverlayData(overlayData, dimsOut)
+      this.deleteNonCachedOverlayTexture(gl)
       this.overlayTexture = gl.createTexture()
       if (!this.overlayTexture) return
       gl.bindTexture(gl.TEXTURE_3D, this.overlayTexture)
@@ -431,14 +434,20 @@ export class VolumeRenderer extends NVRenderer {
     return true
   }
 
-  clearOverlay(gl: WebGL2RenderingContext): void {
-    const cachedOutput = this.overlayOrientCache?.outputTexture ?? null
-    orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
-    this.overlayOrientCache = null
-    if (this.overlayTexture && this.overlayTexture !== cachedOutput) {
+  private deleteNonCachedOverlayTexture(gl: WebGL2RenderingContext): void {
+    if (
+      this.overlayTexture &&
+      this.overlayTexture !== this.overlayOrientCache?.outputTexture
+    ) {
       gl.deleteTexture(this.overlayTexture)
     }
     this.overlayTexture = null
+  }
+
+  clearOverlay(gl: WebGL2RenderingContext): void {
+    this.deleteNonCachedOverlayTexture(gl)
+    orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
+    this.overlayOrientCache = null
   }
 
   clearPaqd(gl: WebGL2RenderingContext): void {

@@ -893,8 +893,6 @@ export type VolumeUpdate = Omit<
 > & {
   /** Set the current 4D frame index (0-based, clamped to valid range) */
   frame4D?: number
-  /** Updated affine matrix. */
-  affine?: AffineMatrix
 }
 
 /**

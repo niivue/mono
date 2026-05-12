@@ -7,6 +7,10 @@ on:
         description: "Dry run (print the plan without creating commits or tags)"
         type: boolean
         default: false
+      rc:
+        description: "Create release candidate versions (for example, 1.2.3-rc.0) and publish them with the npm 'next' tag"
+        type: boolean
+        default: false
 
 concurrency:
   group: release
@@ -55,21 +59,63 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          set -o pipefail
+          set +e
+          log_file=$(mktemp)
+          clean_log=$(mktemp)
+
+          if [ "${{ inputs.rc }}" = "true" ]; then
+            bunx nx release --groups typescript --preid rc --dry-run --skip-publish > "$log_file" 2>&1
+          else
+            bunx nx release --groups typescript --dry-run --skip-publish > "$log_file" 2>&1
+          fi
+          status=$?
+          cat "$log_file"
+
+          # Strip ANSI escape sequences before parsing Nx output.
+          perl -pe 's/\e\[[0-9;?]*[ -\/]*[@-~]//g' "$log_file" > "$clean_log"
+
           {
             echo '## Nx Release Dry Run'
             echo ''
-            echo '```'
-            bunx nx release --groups typescript --dry-run --skip-publish --verbose
-            echo '```'
+            if [ "$status" -ne 0 ]; then
+              echo "Nx release dry run failed with exit code $status."
+              echo ''
+              echo '```'
+              tail -n 80 "$clean_log"
+              echo '```'
+            else
+              echo '| Project | Version | npm dist-tag | GitHub release |'
+              echo '| --- | --- | --- | --- |'
+              releases=$(sed -nE 's/.*- project: ([^ ]+) ([0-9][^ ]*).*/\1 \2/p' "$clean_log")
+              if [ -z "$releases" ]; then
+                echo '| None | None | None | None |'
+              else
+                while read -r project version; do
+                  npm_tag='latest'
+                  github_release='release'
+                  if [[ "$version" == *-* ]]; then
+                    npm_tag='next'
+                    github_release='prerelease'
+                  fi
+                  echo "| \`$project\` | \`$version\` | \`$npm_tag\` | \`$github_release\` |"
+                done <<< "$releases"
+              fi
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$status"
 
       - name: Release
         if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-        run: bunx nx release --groups typescript --skip-publish --verbose
+        run: |
+          if [ "${{ inputs.rc }}" = "true" ]; then
+            bunx nx release --groups typescript --preid rc --skip-publish --verbose
+          else
+            bunx nx release --groups typescript --skip-publish --verbose
+          fi
 
       - name: Push release commit and tags
         if: ${{ !inputs.dry_run }}
@@ -132,16 +178,18 @@ jobs:
             else
               echo "Creating GitHub Release for $tag"
               if [ -n "$notes_file" ]; then
-                gh release create "$tag" \
-                  --title "$tag" \
-                  --target "$sha" \
-                  --notes-file "$notes_file"
+                gh_args=(--title "$tag" --target "$sha" --notes-file "$notes_file")
+                if [[ "$tag" == *-* ]]; then
+                  gh_args+=(--prerelease)
+                fi
+                gh release create "$tag" "${gh_args[@]}"
               else
                 echo "No CHANGELOG.md found for $project; using auto-generated notes."
-                gh release create "$tag" \
-                  --title "$tag" \
-                  --target "$sha" \
-                  --generate-notes
+                gh_args=(--title "$tag" --target "$sha" --generate-notes)
+                if [[ "$tag" == *-* ]]; then
+                  gh_args+=(--prerelease)
+                fi
+                gh release create "$tag" "${gh_args[@]}"
               fi
             fi
           done

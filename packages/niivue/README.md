@@ -44,7 +44,7 @@ Add a `<canvas>` to your page and attach NiiVueGPU to it:
 
 ### Backend-specific distributions
 
-By default, `niivuegpu` includes both backends (WebGPU + WebGL2 fallback):
+By default, `@niivue/niivue` includes both backends (WebGPU + WebGL2 fallback):
 
 ```js
 import NiiVue from '@niivue/niivue'

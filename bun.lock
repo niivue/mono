@@ -118,7 +118,7 @@
     },
     "packages/niivue": {
       "name": "@niivue/niivue",
-      "version": "1.0.0-rc.5",
+      "version": "1.0.0-rc.6",
       "dependencies": {
         "cbor-x": "^1.6.0",
         "clipper2-ts": "^2.0.1-13",
@@ -153,7 +153,7 @@
     },
     "packages/nv-ext-dcm2niix": {
       "name": "@niivue/nv-ext-dcm2niix",
-      "version": "1.0.0-rc.3",
+      "version": "1.0.0-rc.4",
       "dependencies": {
         "@niivue/dcm2niix": "^1.2.0",
       },
@@ -169,7 +169,7 @@
     },
     "packages/nv-ext-drawing": {
       "name": "@niivue/nv-ext-drawing",
-      "version": "1.0.0-rc.5",
+      "version": "1.0.0-rc.6",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "~5.8.3",
@@ -182,7 +182,7 @@
     },
     "packages/nv-ext-image-processing": {
       "name": "@niivue/nv-ext-image-processing",
-      "version": "1.0.0-rc.5",
+      "version": "1.0.0-rc.6",
       "dependencies": {
         "gl-matrix": "^3.4.4",
         "nifti-reader-js": "^0.8.0",
@@ -199,7 +199,7 @@
     },
     "packages/nv-ext-niimath": {
       "name": "@niivue/nv-ext-niimath",
-      "version": "1.0.0-rc.1",
+      "version": "1.0.0-rc.2",
       "dependencies": {
         "@niivue/niimath": "^1.2.0",
       },
@@ -215,7 +215,7 @@
     },
     "packages/nv-ext-save-html": {
       "name": "@niivue/nv-ext-save-html",
-      "version": "1.0.0-rc.5",
+      "version": "1.0.0-rc.6",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "~5.8.3",
@@ -228,7 +228,7 @@
     },
     "packages/nv-react": {
       "name": "@niivue/nvreact",
-      "version": "1.0.0-rc.6",
+      "version": "1.0.0-rc.7",
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.6.1",
         "@niivue/niivue": "workspace:*",
@@ -252,7 +252,7 @@
     },
     "packages/nv-web-component": {
       "name": "@niivue/nv-web-component",
-      "version": "1.0.0-rc.3",
+      "version": "1.0.0-rc.4",
       "dependencies": {
         "lit": "^3.3.2",
       },

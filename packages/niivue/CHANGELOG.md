@@ -1,3 +1,13 @@
+## 1.0.0-rc.6 (2026-05-12)
+
+### Fixes
+
+- **niivue:** correct package import examples ([7e4567c](https://github.com/niivue/mono/commit/7e4567c))
+
+### Thank You
+
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.5 (2026-05-12)
 
 ### Fixes

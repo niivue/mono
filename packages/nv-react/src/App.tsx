@@ -44,6 +44,7 @@ const COLORMAPS = [
   'magma',
   'cividis',
   'actc',
+  'turbo',
   'ct_airways',
   'ct_artery',
   'ct_brain',

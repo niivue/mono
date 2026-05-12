@@ -34,7 +34,7 @@ Add a `<canvas>` to your page and attach NiiVueGPU to it:
 ```html
 <canvas id="gl1"></canvas>
 <script type="module">
-  import NiiVue from 'niivuegpu'
+  import NiiVue from '@niivue/niivue'
 
   const nv = new NiiVue()
   await nv.attachToCanvas(document.getElementById('gl1'))
@@ -47,14 +47,14 @@ Add a `<canvas>` to your page and attach NiiVueGPU to it:
 By default, `niivuegpu` includes both backends (WebGPU + WebGL2 fallback):
 
 ```js
-import NiiVue from 'niivuegpu'
+import NiiVue from '@niivue/niivue'
 ```
 
 You can also import backend-only builds to reduce package size:
 
 ```js
-import NiiVueWebGPU from 'niivuegpu/webgpu' // WebGPU-only
-import NiiVueWebGL2 from 'niivuegpu/webgl2' // WebGL2-only
+import NiiVueWebGPU from '@niivue/niivue/webgpu' // WebGPU-only
+import NiiVueWebGL2 from '@niivue/niivue/webgl2' // WebGL2-only
 ```
 
 In backend-only builds, selecting the missing backend throws an explicit error.

@@ -1,0 +1,37 @@
+{
+  "name": "@niivue/nv-ext-niimath",
+  "version": "1.0.0-rc.0",
+  "type": "module",
+  "description": "Browser-side niimath pipeline runner for NiiVue, wrapping the @niivue/niimath WebAssembly build",
+  "main": "./dist/nv-ext-niimath.js",
+  "module": "./dist/nv-ext-niimath.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/nv-ext-niimath.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "peerDependencies": {
+    "@niivue/niivue": "workspace:*"
+  },
+  "dependencies": {
+    "@niivue/niimath": "^1.2.0"
+  },
+  "devDependencies": {
+    "@niivue/niivue": "workspace:*",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.2",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "scripts": {
+    "build": "bunx --bun vite build",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

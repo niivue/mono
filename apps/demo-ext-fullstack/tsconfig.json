@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "types": ["vite/client", "bun"]
+  },
+  "include": ["src", "server"],
+  "exclude": ["dist", "node_modules", "server/bin"]
+}

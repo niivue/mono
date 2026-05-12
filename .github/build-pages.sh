@@ -23,6 +23,7 @@ APPS=(
   demo-ext-image-processing
   demo-ext-save-html
   demo-ext-dcm2niix
+  demo-ext-niimath
   demo-nv-web-component
 )
 

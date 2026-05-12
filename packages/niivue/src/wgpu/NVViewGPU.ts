@@ -481,6 +481,33 @@ export default class NVView {
     }
   }
 
+  async updateAffineOverlays(): Promise<boolean> {
+    const device = this.device
+    if (!device) return false
+    const vols = this.model.getVolumes()
+    if (vols.length !== 2) return false
+    if (this.model.volume.isBackgroundMasking) return false
+    const overlay = vols[1]
+    if ((overlay.opacity ?? 1) <= 0) return false
+    const handled = await this.volumeRenderer.updateAffineOverlay(
+      device,
+      vols[0],
+      overlay,
+    )
+    if (!handled) return false
+    this.volumeRenderer.updateBindGroup(device)
+    if (this.volumeRenderer.volumeTexture) {
+      this.sliceRenderer.updateBindGroup(
+        device,
+        this.volumeRenderer.volumeTexture,
+        this.volumeRenderer.overlayTexture,
+        this.volumeRenderer.paqdTexture,
+        this.volumeRenderer.paqdLutTexture,
+      )
+    }
+    return true
+  }
+
   async updateBindGroups(): Promise<void> {
     this.isBusy = true
     const buffs = this.buffers

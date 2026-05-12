@@ -1,12 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
-import type { NVImage } from '@/NVTypes'
+import type { AffineMatrix, NVImage } from '@/NVTypes'
 import {
+  arrayToMat4,
   cart2sphDeg,
+  copyAffine,
+  createAffineTransformMatrix,
   deg2rad,
   depthAziElevToClipPlane,
+  mat4ToArray,
   mm2frac,
   mm2vox,
+  multiplyAffine,
   slicePlaneEquation,
   unprojectScreen,
   vox2mm,
@@ -36,6 +41,41 @@ describe('deg2rad', () => {
 
   test('90_returnsHalfPi', () => {
     approx(deg2rad(90), Math.PI / 2)
+  })
+})
+
+describe('affine utilities', () => {
+  const affine: AffineMatrix = [
+    [1, 0, 0, 10],
+    [0, 2, 0, 20],
+    [0, 0, 3, 30],
+    [0, 0, 0, 1],
+  ]
+
+  test('copyAffine_returnsDeepCopy', () => {
+    const copy = copyAffine(affine)
+    copy[0][3] = 99
+    expect(affine[0][3]).toBe(10)
+  })
+
+  test('arrayToMat4_roundTrip', () => {
+    expect(mat4ToArray(arrayToMat4(affine))).toEqual(affine)
+  })
+
+  test('multiplyAffine_appliesWorldTranslationOnLeft', () => {
+    const transform = createAffineTransformMatrix({
+      translation: [5, -2, 1],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+    })
+    const result = multiplyAffine(affine, transform)
+    expect(result[0][3]).toBe(15)
+    expect(result[1][3]).toBe(18)
+    expect(result[2][3]).toBe(31)
+  })
+
+  test('copyAffine_rejectsInvalidMatrix', () => {
+    expect(() => copyAffine([[1, 2, 3]])).toThrow()
   })
 })
 

@@ -899,7 +899,10 @@
       "tsType": "BackendType | undefined",
       "pyTraitlet": {
         "kind": "Enum",
-        "values": ["webgpu", "webgl2"]
+        "values": [
+          "webgpu",
+          "webgl2"
+        ]
       },
       "hasGetter": true,
       "hasSetter": false,
@@ -1213,6 +1216,29 @@
       "returnsDoc": null
     },
     {
+      "jsName": "applyVolumeTransform",
+      "pyName": "apply_volume_transform",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "transform",
+          "tsType": "AffineTransform",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
       "jsName": "attachTo",
       "pyName": "attach_to",
       "isAsync": true,
@@ -1458,6 +1484,23 @@
       ],
       "returns": "string[]",
       "doc": "Get the group names for a tract mesh.\nReturns an empty array if the mesh is not a tract or has no groups.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "getVolumeAffine",
+      "pyName": "get_volume_affine",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "AffineMatrix",
+      "doc": null,
       "returnsDoc": null
     },
     {
@@ -1893,6 +1936,23 @@
       ],
       "returns": "Promise<this>",
       "doc": "Remove a scalar overlay layer from a mesh.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "resetVolumeAffine",
+      "pyName": "reset_volume_affine",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": null,
       "returnsDoc": null
     },
     {
@@ -2429,6 +2489,29 @@
       ],
       "returns": "Promise<void>",
       "doc": "Update display properties of a loaded volume.\nAccepts any subset of volume display options (colormap, opacity, cal_min, etc.)\nand triggers a single GPU update.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setVolumeAffine",
+      "pyName": "set_volume_affine",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "affine",
+          "tsType": "number[][]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": null,
       "returnsDoc": null
     },
     {

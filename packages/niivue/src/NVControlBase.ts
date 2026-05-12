@@ -32,6 +32,8 @@ import type { NVEventListener, NVEventMap } from '@/NVEvents'
 import * as NVLoader from '@/NVLoader'
 import NVModel from '@/NVModel'
 import type {
+  AffineMatrix,
+  AffineTransform,
   AnnotationPoint,
   AnnotationStyle,
   AnnotationTool,
@@ -73,6 +75,7 @@ import type {
 } from '@/volume/transforms'
 import * as NVVolumeTransforms from '@/volume/transforms'
 import {
+  calculateWorldExtents,
   calMinMaxFrame,
   computeVolumeLabelCentroids,
   reorientDrawingToNative,
@@ -83,6 +86,7 @@ type ViewBackend = {
   resize: () => void
   render: () => void
   updateBindGroups: () => Promise<void>
+  updateAffineOverlays?: () => Promise<boolean>
   hitTest: (x: number, y: number) => ViewHitTest | null
   depthPick: (x: number, y: number) => Promise<[number, number, number] | null>
   loadThumbnail: (url: string) => Promise<void>
@@ -1237,6 +1241,31 @@ export default class NiiVueGPU extends EventTarget {
     }
   }
 
+  private async updateVolumeAffineOnly(): Promise<void> {
+    if (this._updating) {
+      this._pendingUpdate = true
+      return
+    }
+    this._updating = true
+    try {
+      if (!this.view) return
+      const handled = await this.view.updateAffineOverlays?.()
+      if (handled) {
+        this.drawScene()
+        return
+      }
+      this._computeModulationData()
+      await this.view.updateBindGroups()
+      this.drawScene()
+    } finally {
+      this._updating = false
+      if (this._pendingUpdate) {
+        this._pendingUpdate = false
+        await this.updateVolumeAffineOnly()
+      }
+    }
+  }
+
   /**
    * Set a modulation image for a target volume.
    * The modulator's intensity scales the target volume's brightness and opacity.
@@ -1649,6 +1678,90 @@ export default class NiiVueGPU extends EventTarget {
       changes: options,
     })
     await this.updateGLVolume()
+  }
+
+  getVolumeAffine(volumeIndex: number): AffineMatrix {
+    return NVTransforms.copyAffine(
+      this._getVolumeOrThrow(volumeIndex).hdr.affine,
+    )
+  }
+
+  async setVolumeAffine(
+    volumeIndex: number,
+    affine: number[][],
+  ): Promise<void> {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    this._setVolumeAffine(volume, affine)
+    this._emitVolumeAffineUpdate(volumeIndex, volume)
+    await this.updateVolumeAffineOnly()
+  }
+
+  async applyVolumeTransform(
+    volumeIndex: number,
+    transform: AffineTransform,
+  ): Promise<void> {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    const transformMatrix = NVTransforms.createAffineTransformMatrix(transform)
+    this._setVolumeAffine(
+      volume,
+      NVTransforms.multiplyAffine(volume.hdr.affine, transformMatrix),
+    )
+    this._emitVolumeAffineUpdate(volumeIndex, volume)
+    await this.updateVolumeAffineOnly()
+  }
+
+  async resetVolumeAffine(volumeIndex: number): Promise<void> {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    const originalAffine = volume.originalAffine
+    if (!originalAffine) {
+      throw new Error('Original affine not stored')
+    }
+    this._setVolumeAffine(volume, originalAffine)
+    this._emitVolumeAffineUpdate(volumeIndex, volume)
+    await this.updateVolumeAffineOnly()
+  }
+
+  private _getVolumeOrThrow(volumeIndex: number): NVImage {
+    const volumes = this.model.getVolumes()
+    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) {
+      throw new Error(`Volume index ${volumeIndex} out of range`)
+    }
+    return volumes[volumeIndex]
+  }
+
+  private _emitVolumeAffineUpdate(volumeIndex: number, volume: NVImage): void {
+    this.emit('volumeUpdated', {
+      volumeIndex,
+      volume,
+      changes: { affine: NVTransforms.copyAffine(volume.hdr.affine) },
+    })
+  }
+
+  private _setVolumeAffine(volume: NVImage, affine: number[][]): void {
+    volume.hdr.affine = NVTransforms.copyAffine(affine)
+    NVTransforms.calculateRAS(volume)
+    if (!volume.pixDimsRAS || !volume.dimsRAS) {
+      throw new Error('calculateRAS failed to set pixDimsRAS/dimsRAS')
+    }
+    const dimsMM = [
+      volume.pixDimsRAS[1] * volume.dimsRAS[1],
+      volume.pixDimsRAS[2] * volume.dimsRAS[2],
+      volume.pixDimsRAS[3] * volume.dimsRAS[3],
+    ]
+    const longestAxis = Math.max(dimsMM[0], dimsMM[1], dimsMM[2])
+    volume.volScale = [
+      dimsMM[0] / longestAxis,
+      dimsMM[1] / longestAxis,
+      dimsMM[2] / longestAxis,
+    ]
+    const { extentsMin, extentsMax } = calculateWorldExtents(
+      volume.hdr.dims.slice(1, 4),
+      new Float32Array(volume.hdr.affine.flat()),
+    )
+    volume.extentsMin = extentsMin
+    volume.extentsMax = extentsMax
+    volume.isDirty = true
+    this.model._setupPivot3D()
   }
 
   /**

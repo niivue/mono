@@ -62,6 +62,22 @@ export type NIFTIHeader = {
 export type NIFTI1 = NIFTIHeader
 export type NIFTI2 = NIFTIHeader
 
+export type AffineMatrix = [
+  [number, number, number, number],
+  [number, number, number, number],
+  [number, number, number, number],
+  [number, number, number, number],
+]
+
+export type AffineTransform = {
+  /** Translation in world millimeters. */
+  translation: [number, number, number]
+  /** Euler rotation angles in degrees, applied X then Y then Z. */
+  rotation: [number, number, number]
+  /** Scale factors. */
+  scale: [number, number, number]
+}
+
 // ============================================================
 // Per-Volume Data (NVImage)
 // ============================================================
@@ -69,6 +85,7 @@ export type NVImage = {
   name: string
   url?: string
   hdr: NIFTI1 | NIFTI2
+  originalAffine?: number[][]
   img: TypedVoxelArray | null
   dims: number[]
   nVox3D: number

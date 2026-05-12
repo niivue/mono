@@ -2,8 +2,7 @@
  * NiiVue + niimath fullstack demo.
  *
  * Frontend (Vite, port 8088) talks to a Bun HTTP server (port 8087)
- * that runs the `niimath` binary as a subprocess. Vite proxies /api/*
- * to the server so the same origin works in dev.
+ * that runs the `niimath` binary as a subprocess.
  */
 import NiiVueGPU, {
   MULTIPLANAR_TYPE,
@@ -16,6 +15,8 @@ import {
   type NiimathOperator,
   SAMPLE_VOLUMES,
 } from './operators'
+
+const API_ORIGIN = `${location.protocol}//${location.hostname === 'localhost' ? '127.0.0.1' : location.hostname}:8087`
 
 interface PipelineStep {
   operator: NiimathOperator
@@ -396,8 +397,10 @@ async function runPipeline(): Promise<void> {
   try {
     // Bun's req.formData() rejects browser-built multipart bodies on larger
     // files ("missing final boundary"). We send raw bytes + headers instead.
-    // Pass `file` (a Blob) directly so fetch can stream rather than buffer
-    // the whole ArrayBuffer in JS first.
+    // Materialize the Blob before handing it to fetch: Chromium streams Blob
+    // request bodies through Vite's proxy with transfer-encoding: chunked,
+    // which can leave Bun's req.arrayBuffer() waiting indefinitely. An
+    // ArrayBuffer body gets a fixed Content-Length and completes reliably.
     let file: File
     if (source.kind === 'file') {
       file = source.file
@@ -410,14 +413,14 @@ async function runPipeline(): Promise<void> {
       })
     }
     const t0 = performance.now()
-    const res = await fetch('/api/process', {
+    const res = await fetch(`${API_ORIGIN}/api/process`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/octet-stream',
         'X-Niimath-Filename': encodeURIComponent(file.name),
         'X-Niimath-Args': JSON.stringify(args),
       },
-      body: file,
+      body: await file.arrayBuffer(),
     })
     const elapsed = ((performance.now() - t0) / 1000).toFixed(2)
 
@@ -463,8 +466,9 @@ async function runPipeline(): Promise<void> {
     // the user has moved on. Re-check after `loadVolumes` too — the user
     // may have started another run while it was decoding.
     if (myRun !== latestRunId) return
-    displayedResult = { url: body.resultUrl, name: filename }
-    await nv.loadVolumes([{ url: body.resultUrl, name: filename }])
+    const resultUrl = new URL(body.resultUrl, API_ORIGIN).href
+    displayedResult = { url: resultUrl, name: filename }
+    await nv.loadVolumes([{ url: resultUrl, name: filename }])
     if (myRun !== latestRunId) return
     updateCurrentImageDisplay()
     const serverMs = body.durationMs
@@ -479,7 +483,7 @@ async function runPipeline(): Promise<void> {
     // got a response" — usually the API server isn't running. Probe the
     // health endpoint to confirm and give the user something actionable.
     if (msg.toLowerCase().includes('failed to fetch')) {
-      const reachable = await fetch('/api/health')
+      const reachable = await fetch(`${API_ORIGIN}/api/health`)
         .then((r) => r.ok)
         .catch(() => false)
       setStatus(
@@ -507,7 +511,7 @@ async function runPipeline(): Promise<void> {
 
 async function refreshHistory(): Promise<void> {
   try {
-    const res = await fetch('/api/jobs')
+    const res = await fetch(`${API_ORIGIN}/api/jobs`)
     if (!res.ok) return
     const { jobs } = (await res.json()) as { jobs: JobSummary[] }
     historyList.innerHTML = ''
@@ -583,7 +587,7 @@ function renderHistoryItem(job: JobSummary): void {
 
 async function checkHealth(): Promise<void> {
   try {
-    const res = await fetch('/api/health')
+    const res = await fetch(`${API_ORIGIN}/api/health`)
     const body = (await res.json()) as {
       ok: boolean
       niimath: { tag: string } | null

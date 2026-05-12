@@ -73,11 +73,38 @@ interface Job {
 
 const jobs = new Map<string, Job>()
 
-function json(body: unknown, init: ResponseInit = {}): Response {
+function corsHeaders(req: Request): HeadersInit {
+  const origin = req.headers.get('origin')
+  if (
+    origin === 'http://localhost:8088' ||
+    origin === 'http://127.0.0.1:8088'
+  ) {
+    return {
+      'Access-Control-Allow-Origin': origin,
+      Vary: 'Origin',
+    }
+  }
+  return {}
+}
+
+function withCors(res: Response, req: Request): Response {
+  const headers = new Headers(res.headers)
+  for (const [key, value] of Object.entries(corsHeaders(req))) {
+    headers.set(key, value)
+  }
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  })
+}
+
+function json(body: unknown, init: ResponseInit = {}, req?: Request): Response {
   return new Response(JSON.stringify(body), {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      ...(req ? corsHeaders(req) : {}),
       ...(init.headers ?? {}),
     },
   })
@@ -281,7 +308,7 @@ async function handleProcess(req: Request): Promise<Response> {
   })
 }
 
-function handleResult(id: string): Response {
+function handleResult(id: string, req: Request): Response {
   const job = jobs.get(id)
   if (!job?.outputPath || !existsSync(job.outputPath)) {
     return json({ error: 'Result not found' }, { status: 404 })
@@ -290,25 +317,30 @@ function handleResult(id: string): Response {
   return new Response(file, {
     headers: {
       'Content-Type': 'application/gzip',
+      ...corsHeaders(req),
       'Content-Disposition': `attachment; filename="${inferOutputName(job.inputName)}"`,
     },
   })
 }
 
-function handleJobs(): Response {
+function handleJobs(req: Request): Response {
   const list = [...jobs.values()]
     .sort((a, b) => b.startedAt - a.startedAt)
     .map(({ outputPath: _outputPath, ...rest }) => rest)
-  return json({ jobs: list })
+  return json({ jobs: list }, {}, req)
 }
 
-function handleHealth(): Response {
-  return json({
-    ok: true,
-    niimath: niimathManifest(),
-    workDir: WORK_DIR,
-    jobs: jobs.size,
-  })
+function handleHealth(req: Request): Response {
+  return json(
+    {
+      ok: true,
+      niimath: niimathManifest(),
+      workDir: WORK_DIR,
+      jobs: jobs.size,
+    },
+    {},
+    req,
+  )
 }
 
 const server = Bun.serve({
@@ -329,36 +361,52 @@ const server = Bun.serve({
       )
     }
     try {
-      if (url.pathname === '/api/health') {
-        const res = handleHealth()
+      if (req.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
+        const res = new Response(null, {
+          status: 204,
+          headers: {
+            ...corsHeaders(req),
+            'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+            'Access-Control-Allow-Headers':
+              'Content-Type,X-Niimath-Filename,X-Niimath-Args',
+          },
+        })
         log(res.status)
         return res
       }
-      if (url.pathname === '/api/jobs' && req.method === 'GET') {
-        const res = handleJobs()
+      if (url.pathname === '/api/health') {
+        const res = handleHealth(req)
         log(res.status)
-        return res
+        return withCors(res, req)
+      }
+      if (url.pathname === '/api/jobs' && req.method === 'GET') {
+        const res = handleJobs(req)
+        log(res.status)
+        return withCors(res, req)
       }
       if (url.pathname === '/api/process' && req.method === 'POST') {
         const res = await handleProcess(req)
         log(res.status)
-        return res
+        return withCors(res, req)
       }
       const resultMatch = url.pathname.match(
         /^\/api\/result\/([0-9a-f-]{36})$/i,
       )
       if (resultMatch && req.method === 'GET') {
-        const res = handleResult(resultMatch[1])
+        const res = handleResult(resultMatch[1], req)
         log(res.status)
-        return res
+        return withCors(res, req)
       }
       log(404)
-      return json({ error: 'Not found' }, { status: 404 })
+      return withCors(json({ error: 'Not found' }, { status: 404 }), req)
     } catch (err) {
       const msg = err instanceof Error ? err.stack || err.message : String(err)
       console.error(`${req.method} ${url.pathname} threw:`, msg)
       log(500)
-      return json({ error: `Server exception: ${msg}` }, { status: 500 })
+      return withCors(
+        json({ error: `Server exception: ${msg}` }, { status: 500 }),
+        req,
+      )
     }
   },
   error(err) {

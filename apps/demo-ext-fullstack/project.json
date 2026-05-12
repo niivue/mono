@@ -5,19 +5,24 @@
   "targets": {
     "setup": {
       "command": "bun server/fetch-niimath.ts",
-      "options": { "cwd": "{projectRoot}" }
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["{projectRoot}/server/fetch-niimath.ts"],
+      "outputs": ["{projectRoot}/server/bin"]
     },
     "server": {
       "command": "bun server/server.ts",
-      "options": { "cwd": "{projectRoot}" }
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["setup"]
     },
     "frontend": {
       "command": "bunx --bun vite --open /index.html",
-      "options": { "cwd": "{projectRoot}" }
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"]
     },
     "dev": {
       "command": "bun server/dev.ts",
-      "options": { "cwd": "{projectRoot}" }
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["setup", "^build"]
     },
     "build": {
       "command": "bunx --bun vite build",

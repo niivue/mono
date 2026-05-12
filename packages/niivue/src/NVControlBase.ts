@@ -75,8 +75,8 @@ import type {
 } from '@/volume/transforms'
 import * as NVVolumeTransforms from '@/volume/transforms'
 import {
-  calMinMax,
   calculateWorldExtents,
+  calMinMax,
   calMinMaxFrame,
   computeVolumeLabelCentroids,
   reorientDrawingToNative,

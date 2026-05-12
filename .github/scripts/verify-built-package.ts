@@ -101,6 +101,16 @@ verifyPath('main', pkg.main)
 verifyPath('module', pkg.module)
 verifyPath('types', pkg.types)
 
+const exportLabel = (label: string, key: string): string => {
+  if (key === '.') {
+    return label
+  }
+  if (key.startsWith('./')) {
+    return `${label}["${key}"]`
+  }
+  return `${label}.${key}`
+}
+
 const verifyExports = (value: unknown, label: string) => {
   if (typeof value === 'string') {
     verifyPath(label, value)
@@ -110,7 +120,7 @@ const verifyExports = (value: unknown, label: string) => {
     return
   }
   for (const [key, child] of Object.entries(value)) {
-    verifyExports(child, `${label}.${key}`)
+    verifyExports(child, exportLabel(label, key))
   }
 }
 verifyExports(pkg.exports, 'exports')

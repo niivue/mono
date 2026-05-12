@@ -92,14 +92,17 @@ const tags = run(['git', 'tag', '--points-at', 'HEAD'], { quiet: true })
 const tempDir = mkdtempSync(join(tmpdir(), 'github-releases-'))
 
 for (const tag of tags) {
-  const project = tag.replace(/@[^@]+$/, '')
+  const atIndex = tag.lastIndexOf('@')
+  const project = tag.slice(0, atIndex)
+  const version = tag.slice(atIndex + 1)
   const pkgDir = resolvePackageDir(project)
   const notes = pkgDir ? changelogTopSection(pkgDir) : null
-  const notesFile = notes
-    ? join(tempDir, `${tag.replace(/[^a-zA-Z0-9._-]/g, '_')}.md`)
-    : null
-  if (notesFile && notes) {
-    await Bun.write(notesFile, notes)
+  const notesFile =
+    notes !== null
+      ? join(tempDir, `${tag.replace(/[^a-zA-Z0-9._-]/g, '_')}.md`)
+      : null
+  if (notesFile) {
+    await Bun.write(notesFile, notes ?? '')
   }
 
   const releaseExists = commandSucceeds(['gh', 'release', 'view', tag])
@@ -123,7 +126,7 @@ for (const tag of tags) {
     )
     args.push('--generate-notes')
   }
-  if (tag.includes('-')) {
+  if (version.includes('-')) {
     args.push('--prerelease')
   }
   run(args)

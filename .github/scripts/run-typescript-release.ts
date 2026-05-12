@@ -33,6 +33,14 @@ if (!isDryRun) {
   releaseArgs.push('--verbose')
 }
 
+if (!isDryRun) {
+  const result = Bun.spawnSync(['bunx', ...releaseArgs], {
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+  process.exit(result.exitCode)
+}
+
 const result = Bun.spawnSync(['bunx', ...releaseArgs], {
   stdout: 'pipe',
   stderr: 'pipe',
@@ -40,10 +48,6 @@ const result = Bun.spawnSync(['bunx', ...releaseArgs], {
 
 const output = `${result.stdout.toString()}${result.stderr.toString()}`
 Bun.write(Bun.stdout, output)
-
-if (!isDryRun) {
-  process.exit(result.exitCode)
-}
 
 const cleanOutput = stripAnsi(output)
 const summaryPath = process.env.GITHUB_STEP_SUMMARY

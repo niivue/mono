@@ -4,7 +4,14 @@
 # Usage: bun run bench:compare [-- --warn-pct=N --fail-pct=N --noise-ms=N]
 #
 # Refuses to run while on main. Builds examples (perf flavor) on both sides,
-# starts a vite preview, runs the headless bench, and diffs the results.
+# starts a vite preview, runs the headless bench for each requested backend,
+# and diffs the results per backend.
+#
+# Backends:
+#   BENCH_BACKENDS="webgpu webgl2"   # default — bench both, compare each
+#   BENCH_BACKENDS="webgpu"          # WebGPU only
+#   BENCH_BACKENDS="webgl2"          # WebGL2 only
+#
 # Set BENCH_HEADED=1 to launch a real browser window for true-GPU numbers
 # (Metal on macOS). Headless uses SwiftShader on every platform.
 set -euo pipefail
@@ -36,7 +43,14 @@ trap cleanup EXIT
 PORT="${BENCH_PORT:-4173}"
 FRAMES="${BENCH_FRAMES:-200}"
 COMPUTE_ITER="${BENCH_COMPUTE_ITER:-100}"
-URL_PARAMS="autorun=1&renderer=1&compute=1&sweeps=0&tract=0&frames=${FRAMES}&computeIter=${COMPUTE_ITER}"
+
+# Backends to bench, space-separated. Default: both.
+#   BENCH_BACKENDS="webgpu"          # WebGPU only
+#   BENCH_BACKENDS="webgl2"          # WebGL2 only
+#   BENCH_BACKENDS="webgpu webgl2"   # both (default)
+BACKENDS="${BENCH_BACKENDS:-webgpu webgl2}"
+
+URL_PARAMS_BASE="autorun=1&renderer=1&compute=1&sweeps=0&tract=0&frames=${FRAMES}&computeIter=${COMPUTE_ITER}"
 
 bench_at() {
   local dir="$1"
@@ -47,6 +61,23 @@ bench_at() {
   if [ "$label" = "base" ]; then
     # Worktree starts without node_modules.
     (cd "$dir" && bun install --frozen-lockfile)
+  fi
+
+  # Bootstrap case: when this is the base side and main predates the perf
+  # harness (no `build:examples:perf` script or no `bench/` dir), write a
+  # schema-less sentinel JSON per backend. compare-bench.ts treats that as
+  # "no baseline available" and falls back to head-only reporting instead
+  # of failing the gate.
+  if [ "$label" = "base" ] && {
+    ! grep -q '"build:examples:perf"' "$dir/packages/niivue/package.json" ||
+      [ ! -d "$dir/packages/niivue/bench" ]
+  }; then
+    echo "[bench] base side predates perf infrastructure — writing bootstrap sentinels"
+    for backend in $BACKENDS; do
+      printf '{"reason":"main predates perf-bench infrastructure","backend":"%s"}\n' \
+        "$backend" >"$OUTDIR/$label.$backend.json"
+    done
+    return 0
   fi
 
   (
@@ -72,12 +103,16 @@ bench_at() {
     sleep 1
   done
 
-  (
-    cd "$dir/packages/niivue"
-    bun run bench \
-      "http://localhost:$PORT/examples/benchmark.html?$URL_PARAMS" \
-      "$OUTDIR/$label.json"
-  )
+  for backend in $BACKENDS; do
+    echo
+    echo "--- bench: $label / $backend ---"
+    (
+      cd "$dir/packages/niivue"
+      bun run bench \
+        "http://localhost:$PORT/examples/benchmark.html?$URL_PARAMS_BASE&backend=$backend" \
+        "$OUTDIR/$label.$backend.json"
+    )
+  done
 
   if [ -s "$PIDFILE" ]; then
     kill "$(cat "$PIDFILE")" 2>/dev/null || true
@@ -92,8 +127,18 @@ bench_at "$ROOT" head
 git -C "$ROOT" worktree add "$WORKTREE" main
 bench_at "$WORKTREE" base
 
-# Diff. compare-bench exits non-zero on regression; surface that.
-bun run "$PKG/bench/compare-bench.ts" \
-  "$OUTDIR/base.json" \
-  "$OUTDIR/head.json" \
-  "$@"
+# Diff per backend. compare-bench exits non-zero on regression; surface that
+# if any backend regresses, but still run all comparisons first so the user
+# sees the full picture.
+overall_status=0
+for backend in $BACKENDS; do
+  echo
+  echo "=== compare: $backend ==="
+  if ! bun run "$PKG/bench/compare-bench.ts" \
+    "$OUTDIR/base.$backend.json" \
+    "$OUTDIR/head.$backend.json" \
+    "$@"; then
+    overall_status=1
+  fi
+done
+exit $overall_status

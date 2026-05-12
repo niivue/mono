@@ -121,6 +121,12 @@
   <body>
     <header>
       <h1>NiiVue Benchmark</h1>
+      <label>Backend
+        <select id="backendSelect">
+          <option value="webgpu">WebGPU</option>
+          <option value="webgl2">WebGL2</option>
+        </select>
+      </label>
       <label>Frames <input type="number" id="frameCount" value="300" min="10" max="10000" /></label>
       <label>Compute iter <input type="number" id="computeIter" value="100" min="1" max="10000" /></label>
       <label><input type="checkbox" id="runRenderer" checked /> Renderer</label>
@@ -138,7 +144,7 @@
     <main>
       <div class="canvases">
         <div class="canvas-wrap">
-          <h3>WebGPU (backend auto)</h3>
+          <h3 id="canvasLabel">Backend: ...</h3>
           <canvas id="canvasA"></canvas>
         </div>
       </div>

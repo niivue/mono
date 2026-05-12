@@ -96,6 +96,13 @@
           <option value="visiblehuman">visiblehuman (large)</option>
         </select>
       </label>
+      <label>
+        Backend
+        <select id="backendSelect">
+          <option value="webgpu">WebGPU</option>
+          <option value="webgl2">WebGL2</option>
+        </select>
+      </label>
       <button type="button" id="clearBtn">Clear stats</button>
       <span id="statusEl" style="color:#666"></span>
       <span id="fps">— fps <small>1s window</small></span>
@@ -130,12 +137,25 @@
     <script type="module">
       import NiiVue, { SLICE_TYPE } from '../src/index.ts'
 
+      // Default to whatever the URL or selector says — falls back to WebGPU.
+      const initialBackend = backendSelect.value
       const nv = new NiiVue({
         isColorbarVisible: false,
         backgroundColor: [0.05, 0.05, 0.05, 1],
         sliceType: SLICE_TYPE.RENDER,
+        backend: initialBackend,
       })
       await nv.attachToCanvas(gl1)
+
+      // The 'viewAttached' event reports the backend that *actually*
+      // initialized (WebGPU may fall back to WebGL2 in unsupported
+      // browsers). Surface it in the status line so users can confirm.
+      let activeBackend = initialBackend
+      nv.addEventListener('viewAttached', (e) => {
+        activeBackend = e.detail.backend
+        backendSelect.value = activeBackend
+        updateStatus()
+      })
 
       // Each scene is a list of volume specs passed to loadVolumes.
       // Overlay volumes (index >= 1) get a colormap that reads well over
@@ -155,6 +175,10 @@
       }
 
       let loading = false
+      function updateStatus() {
+        const state = enableChk.checked ? 'Recording' : 'Paused'
+        statusEl.textContent = `${state} — backend: ${activeBackend}`
+      }
       async function loadScene(name) {
         const volumes = SCENES[name]
         if (!volumes) return
@@ -167,9 +191,7 @@
           frameTimes.length = 0
           render()
           liveEl.textContent = `Loaded ${name} — interact with the canvas to record frames.`
-          statusEl.textContent = enableChk.checked
-            ? 'Recording — interact with the canvas'
-            : 'Paused'
+          updateStatus()
         } finally {
           loading = false
         }
@@ -284,9 +306,7 @@
       // ----- controls -----
       enableChk.addEventListener('change', () => {
         nv.perf.enabled = enableChk.checked
-        statusEl.textContent = enableChk.checked
-          ? 'Recording — interact with the canvas'
-          : 'Paused'
+        updateStatus()
       })
       clearBtn.addEventListener('click', () => {
         samples.clear()
@@ -298,6 +318,25 @@
       sceneSelect.addEventListener('change', () => {
         if (loading) return
         loadScene(sceneSelect.value)
+      })
+      backendSelect.addEventListener('change', async () => {
+        if (loading) return
+        const requested = backendSelect.value
+        if (requested === activeBackend) return
+        loading = true
+        statusEl.textContent = `Switching to ${requested}…`
+        try {
+          await nv.reinitializeView({ backend: requested })
+          // GPU backends have very different per-frame costs — keep
+          // samples segregated so cross-backend means aren't muddled.
+          samples.clear()
+          frameTimes.length = 0
+          render()
+          liveEl.textContent = `Switched backend — interact with the canvas to record frames.`
+        } finally {
+          loading = false
+          updateStatus()
+        }
       })
 
       // Initial load — kicks off after all helpers are bound.

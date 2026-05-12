@@ -48,6 +48,7 @@ import { MESH_UNIFORM_SIZE } from '../src/wgpu/mesh.ts'
 // ---------------------------------------------------------------------------
 
 const canvasA = document.getElementById('canvasA')
+const canvasLabel = document.getElementById('canvasLabel')
 const resultsDiv = document.getElementById('results')
 const statusEl = document.getElementById('statusText')
 const mdOut = document.getElementById('markdownOutput')
@@ -56,6 +57,24 @@ const abortBtn = document.getElementById('abortBtn')
 const exportJsonBtn = document.getElementById('exportJsonBtn')
 const exportMdBtn = document.getElementById('exportMdBtn')
 const copyMdBtn = document.getElementById('copyMdBtn')
+const backendSelect = document.getElementById('backendSelect')
+
+// Resolve the active backend before NiiVue is constructed. URL param wins
+// (set by the headless bench runner); otherwise the dropdown's default is
+// used. Changing the dropdown after load reloads the page so the rebuild
+// happens cleanly — NiiVue can't swap backends mid-instance for free, and
+// the bench harness owns the GPU context lifetime.
+const _initialParams = new URLSearchParams(window.location.search)
+const _backendParam = _initialParams.get('backend')
+const ACTIVE_BACKEND =
+  _backendParam === 'webgl2' || _backendParam === 'webgpu'
+    ? _backendParam
+    : backendSelect.value
+backendSelect.value = ACTIVE_BACKEND
+canvasLabel.textContent = `Backend: ${ACTIVE_BACKEND === 'webgpu' ? 'WebGPU' : 'WebGL2'}`
+// Track the resolved backend; populated after attachToCanvas below. Used by
+// captureEnv() so the JSON records what actually ran (post-fallback).
+let _activeBackend = ACTIVE_BACKEND
 
 function setStatus(msg) {
   statusEl.textContent = msg
@@ -127,6 +146,32 @@ const fmt = (v) => (v == null ? '—' : v.toFixed(3))
 // Environment capture
 // ---------------------------------------------------------------------------
 
+function captureWebGLRenderer() {
+  // Use a throwaway probe canvas so we don't disturb the live bench canvas.
+  // WEBGL_debug_renderer_info is exposed in headless Chromium and most
+  // desktop browsers; when it isn't, fall back to plain VENDOR/RENDERER.
+  try {
+    const probe = document.createElement('canvas')
+    const gl = probe.getContext('webgl2') || probe.getContext('webgl')
+    if (!gl) return null
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info')
+    const vendor = dbg
+      ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL)
+      : gl.getParameter(gl.VENDOR)
+    const renderer = dbg
+      ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)
+      : gl.getParameter(gl.RENDERER)
+    const version = gl.getParameter(gl.VERSION)
+    return {
+      vendor: String(vendor ?? ''),
+      renderer: String(renderer ?? ''),
+      version: String(version ?? ''),
+    }
+  } catch (e) {
+    return { error: String(e) }
+  }
+}
+
 async function captureEnv() {
   const urlParams = new URLSearchParams(window.location.search)
   const env = {
@@ -135,6 +180,8 @@ async function captureEnv() {
     platform: navigator.platform,
     hardwareConcurrency: navigator.hardwareConcurrency,
     paced: urlParams.get('paced') === '1',
+    backend: _activeBackend,
+    requestedBackend: ACTIVE_BACKEND,
   }
   const labelParam = urlParams.get('label')
   if (labelParam) env.label = labelParam
@@ -153,6 +200,10 @@ async function captureEnv() {
   } catch (e) {
     env.gpu = { error: String(e) }
   }
+  // For WebGL2 runs the comparison report should surface the actual driver,
+  // not just the WebGPU adapter info (which may be absent in headless).
+  const webgl = captureWebGLRenderer()
+  if (webgl) env.webgl = webgl
   return env
 }
 
@@ -428,9 +479,76 @@ function setBenchPaced(value) {
 
 async function _waitGpu(nv) {
   if (!_bench_paced) return
+  // WebGPU: queue-completion promise. Resolves once the most recently
+  // submitted work group has finished on the device — used by the bench
+  // wall timer to include GPU time in `wall_ms`.
   const dev = nv.view?.device
   if (dev?.queue?.onSubmittedWorkDone) {
     await dev.queue.onSubmittedWorkDone()
+    return
+  }
+  // WebGL2: no analogous primitive. `gl.fenceSync` + `clientWaitSync` is
+  // IPC-bound in Chromium and produces a ~10ms floor regardless of GPU
+  // load, which is worse than measuring nothing. We rely on
+  // `EXT_disjoint_timer_query_webgl2` (see `setupGlTimerQuery`) to report
+  // GPU time in its own column instead.
+}
+
+// ---------------------------------------------------------------------------
+// WebGL2 GPU timing via EXT_disjoint_timer_query_webgl2
+// ---------------------------------------------------------------------------
+
+/**
+ * Set up timer-query infrastructure for a WebGL2 backend. Returns null if
+ * the extension is unavailable (most desktop Chromium has it; some mobile
+ * browsers don't). The returned object is single-use per scenario.
+ *
+ * Usage:
+ *   const tq = setupGlTimerQuery(gl)
+ *   for each frame:
+ *     tq?.begin()
+ *     nv.view.render()
+ *     tq?.end()
+ *   const samplesMs = await tq?.drain()  // ms per frame, length === frames
+ */
+function setupGlTimerQuery(gl) {
+  if (!gl) return null
+  const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2')
+  if (!ext) return null
+  const TIME_ELAPSED = ext.TIME_ELAPSED_EXT
+  const GPU_DISJOINT = ext.GPU_DISJOINT_EXT
+  const pending = []
+  return {
+    begin() {
+      const q = gl.createQuery()
+      gl.beginQuery(TIME_ELAPSED, q)
+      pending.push(q)
+    },
+    end() {
+      gl.endQuery(TIME_ELAPSED)
+    },
+    async drain() {
+      const samples = new Float64Array(pending.length)
+      let i = 0
+      // Spin with rAF yields until every query has a result. Disjoint flag
+      // invalidates the entire batch — discard and return empty so the
+      // caller reports the column as unavailable instead of misleading.
+      for (const q of pending) {
+        // Bounded poll loop with yields so the page stays interactive.
+        for (let n = 0; n < 5000; n++) {
+          const ok = gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)
+          if (ok) break
+          await new Promise((r) => requestAnimationFrame(r))
+        }
+        const ns = gl.getQueryParameter(q, gl.QUERY_RESULT)
+        samples[i++] = ns / 1_000_000
+        gl.deleteQuery(q)
+      }
+      const disjoint = gl.getParameter(GPU_DISJOINT)
+      pending.length = 0
+      if (disjoint) return null
+      return samples
+    },
   }
 }
 
@@ -482,6 +600,10 @@ async function benchRenderFramesWithSplit(nv, frames, warmup = 20) {
       observer = null
     }
   }
+  // WebGL2-only: per-frame GPU timer queries. WebGPU paths use wall pacing
+  // (`_waitGpu` -> onSubmittedWorkDone) instead. `tq` is null when running
+  // on WebGPU or when the extension is unavailable.
+  const tq = nv.view?.gl ? setupGlTimerQuery(nv.view.gl) : null
   setPerfMarksEnabled(true)
   for (let i = 0; i < warmup; i++) {
     nv.view.render()
@@ -496,7 +618,9 @@ async function benchRenderFramesWithSplit(nv, frames, warmup = 20) {
   const wall = new Float64Array(frames)
   for (let i = 0; i < frames; i++) {
     const t0 = performance.now()
+    tq?.begin()
     nv.view.render()
+    tq?.end()
     await _waitGpu(nv)
     wall[i] = performance.now() - t0
     recordPhases(consumeFrameStats())
@@ -507,6 +631,9 @@ async function benchRenderFramesWithSplit(nv, frames, warmup = 20) {
     ingest(observer.takeRecords())
     observer.disconnect()
   }
+  // Drain timer-query results. Null when the GPU disjoint flag fired
+  // (clock reset mid-batch) — callers treat that as "no data".
+  const gpu = tq ? await tq.drain() : null
   const phaseArrays = {}
   for (const k of Object.keys(phases))
     phaseArrays[k] = Float64Array.from(phases[k])
@@ -515,6 +642,7 @@ async function benchRenderFramesWithSplit(nv, frames, warmup = 20) {
     cpu: Float64Array.from(cpu),
     submit: Float64Array.from(submit),
     frame: Float64Array.from(frame),
+    gpu: gpu ?? new Float64Array(0),
     phases: phaseArrays,
   }
 }
@@ -534,6 +662,7 @@ async function rendererScenarios(nv, frames) {
     const cpuStats = split.cpu.length ? summarize(split.cpu) : null
     const submitStats = split.submit.length ? summarize(split.submit) : null
     const frameStats = split.frame.length ? summarize(split.frame) : null
+    const gpuStats = split.gpu.length ? summarize(split.gpu) : null
     scenarios.push({
       name,
       frames,
@@ -541,6 +670,7 @@ async function rendererScenarios(nv, frames) {
       cpu: cpuStats,
       submit: submitStats,
       frame: frameStats,
+      gpu: gpuStats,
     })
   }
 
@@ -883,30 +1013,38 @@ function renderResultsTable(
   tractResults,
   bundleSizes,
 ) {
+  const webglDesc = env.webgl
+    ? env.webgl.error
+      ? `error: ${env.webgl.error}`
+      : `${env.webgl.vendor} / ${env.webgl.renderer}`
+    : 'n/a'
   let html = `<h2>Environment</h2>
 <table>
   <tr><th>Timestamp</th><td>${env.timestamp}</td></tr>
+  <tr><th>Backend</th><td>${env.backend ?? '?'}${env.requestedBackend && env.requestedBackend !== env.backend ? ` (requested ${env.requestedBackend})` : ''}</td></tr>
   <tr><th>User Agent</th><td>${env.userAgent}</td></tr>
   <tr><th>Platform</th><td>${env.platform}</td></tr>
-  <tr><th>GPU</th><td>${env.gpu ? env.gpu.description || `${env.gpu.vendor} ${env.gpu.architecture} ${env.gpu.device}` : 'n/a'}</td></tr>
+  <tr><th>WebGPU adapter</th><td>${env.gpu ? env.gpu.description || `${env.gpu.vendor} ${env.gpu.architecture} ${env.gpu.device}` : 'n/a'}</td></tr>
+  <tr><th>WebGL renderer</th><td>${webglDesc}</td></tr>
 </table>`
 
   if (rendererResults?.length) {
     html += `<h2>Renderer scenarios</h2>
 <table>
   <tr>
-    <th>Scenario</th><th>Frames</th><th>Wall mean (ms)</th><th>~fps</th><th>CPU mean</th><th>Submit mean</th><th>Frame mean</th><th>p95</th><th>Stddev</th>
+    <th>Scenario</th><th>Frames</th><th>Wall mean (ms)</th><th>~fps</th><th>CPU mean</th><th>Submit mean</th><th>Frame mean</th><th>GPU mean</th><th>p95</th><th>Stddev</th>
   </tr>`
     for (const r of rendererResults) {
       const s = r.stats
       const cpuM = r.cpu ? fmt(r.cpu.mean) : '—'
       const subM = r.submit ? fmt(r.submit.mean) : '—'
       const frmM = r.frame ? fmt(r.frame.mean) : '—'
+      const gpuM = r.gpu ? fmt(r.gpu.mean) : '—'
       const fps = s.mean > 0 ? (1000 / s.mean).toFixed(1) : '—'
       html += `<tr>
         <td>${r.name}</td><td>${r.frames}</td>
         <td>${fmt(s.mean)}</td><td>${fps}</td>
-        <td>${cpuM}</td><td>${subM}</td><td>${frmM}</td>
+        <td>${cpuM}</td><td>${subM}</td><td>${frmM}</td><td>${gpuM}</td>
         <td>${fmt(s.p95)}</td><td>${fmt(s.stddev)}</td>
       </tr>`
     }
@@ -1035,6 +1173,7 @@ function buildJson(
       cpu: r.cpu ?? null,
       submit: r.submit ?? null,
       frame: r.frame ?? null,
+      gpu: r.gpu ?? null,
     })),
     compute: computeResults.map((r) => ({
       name: r.name,
@@ -1109,10 +1248,19 @@ function buildMarkdown(
   lines.push(`## Run ${env.timestamp}`)
   lines.push('')
   lines.push(`**Environment**`)
+  lines.push(
+    `- Backend: ${env.backend ?? '?'}${env.requestedBackend && env.requestedBackend !== env.backend ? ` (requested ${env.requestedBackend})` : ''}`,
+  )
   lines.push(`- Platform: ${env.platform}`)
   lines.push(
-    `- GPU: ${env.gpu ? env.gpu.description || `${env.gpu.vendor} ${env.gpu.architecture} ${env.gpu.device}` : 'n/a'}`,
+    `- WebGPU adapter: ${env.gpu ? env.gpu.description || `${env.gpu.vendor} ${env.gpu.architecture} ${env.gpu.device}` : 'n/a'}`,
   )
+  const webglDesc = env.webgl
+    ? env.webgl.error
+      ? `error: ${env.webgl.error}`
+      : `${env.webgl.vendor} / ${env.webgl.renderer}`
+    : 'n/a'
+  lines.push(`- WebGL renderer: ${webglDesc}`)
   lines.push(`- User Agent: ${env.userAgent}`)
   lines.push('')
 
@@ -1120,17 +1268,18 @@ function buildMarkdown(
     lines.push('### Renderer scenarios')
     lines.push('')
     lines.push(
-      '| Scenario | Frames | Wall mean (ms) | ~fps | CPU mean | Submit mean | Frame mean | p95 | Stddev |',
+      '| Scenario | Frames | Wall mean (ms) | ~fps | CPU mean | Submit mean | Frame mean | GPU mean | p95 | Stddev |',
     )
-    lines.push('|---|---|---|---|---|---|---|---|---|')
+    lines.push('|---|---|---|---|---|---|---|---|---|---|')
     for (const r of rendererResults) {
       const s = r.stats
       const cpuM = r.cpu ? fmt(r.cpu.mean) : '—'
       const subM = r.submit ? fmt(r.submit.mean) : '—'
       const frmM = r.frame ? fmt(r.frame.mean) : '—'
+      const gpuM = r.gpu ? fmt(r.gpu.mean) : '—'
       const fps = s.mean > 0 ? (1000 / s.mean).toFixed(1) : '—'
       lines.push(
-        `| ${r.name} | ${r.frames} | ${fmt(s.mean)} | ${fps} | ${cpuM} | ${subM} | ${frmM} | ${fmt(s.p95)} | ${fmt(s.stddev)} |`,
+        `| ${r.name} | ${r.frames} | ${fmt(s.mean)} | ${fps} | ${cpuM} | ${subM} | ${frmM} | ${gpuM} | ${fmt(s.p95)} | ${fmt(s.stddev)} |`,
       )
     }
     lines.push('')
@@ -1233,15 +1382,52 @@ function buildMarkdown(
 // NiiVue setup and main run
 // ---------------------------------------------------------------------------
 
-setStatus('Initializing NiiVue...')
+setStatus(`Initializing NiiVue (${ACTIVE_BACKEND})...`)
 const nv = new NiiVue({
+  backend: ACTIVE_BACKEND,
   backgroundColor: [0.05, 0.05, 0.05, 1],
   isOrientationTextVisible: false,
   isOrientCubeVisible: false,
   isColorbarVisible: false,
 })
 await nv.attachToCanvas(canvasA)
-setStatus('Ready. Click Run to start benchmark.')
+// `enforceBackendAvailability` may downgrade webgpu→webgl2 if the runtime
+// doesn't expose `navigator.gpu`. Reflect the final choice in the UI/env.
+_activeBackend = nv.backend ?? ACTIVE_BACKEND
+function updateCanvasLabel() {
+  const pretty = _activeBackend === 'webgpu' ? 'WebGPU' : 'WebGL2'
+  const note =
+    _activeBackend !== backendSelect.value
+      ? ` (requested ${backendSelect.value})`
+      : ''
+  canvasLabel.textContent = `Backend: ${pretty}${note}`
+}
+updateCanvasLabel()
+backendSelect.value = _activeBackend
+nv.addEventListener('viewAttached', (e) => {
+  if (e.detail?.backend) {
+    _activeBackend = e.detail.backend
+    backendSelect.value = _activeBackend
+    updateCanvasLabel()
+  }
+})
+backendSelect.onchange = async () => {
+  const requested = backendSelect.value
+  if (requested === _activeBackend) return
+  setStatus(`Switching backend to ${requested}…`)
+  runBtn.disabled = true
+  try {
+    await nv.reinitializeView({ backend: requested })
+    _activeBackend = nv.backend ?? requested
+    updateCanvasLabel()
+    setStatus(`Ready (${_activeBackend}). Click Run to start benchmark.`)
+  } catch (err) {
+    setStatus(`Backend switch failed: ${err.message || err}`)
+  } finally {
+    runBtn.disabled = false
+  }
+}
+setStatus(`Ready (${_activeBackend}). Click Run to start benchmark.`)
 
 let _lastRun = null
 

@@ -15,6 +15,14 @@ type LutJson = {
 const isNumberArray = (value: unknown): value is number[] =>
   Array.isArray(value) && value.every((item) => typeof item === 'number')
 
+const expectByteValues = (values: number[]) => {
+  for (const value of values) {
+    expect(Number.isInteger(value)).toBe(true)
+    expect(value).toBeGreaterThanOrEqual(0)
+    expect(value).toBeLessThanOrEqual(255)
+  }
+}
+
 const lutDirectory = join(import.meta.dir, 'luts')
 const lutFiles = readdirSync(lutDirectory)
   .filter((file) => file.endsWith('.json'))
@@ -53,6 +61,11 @@ describe('bundled colormaps', () => {
     expect(B.length).toBe(R.length)
     expect(A.length).toBe(R.length)
     expect(I.length).toBe(R.length)
+    expectByteValues(R)
+    expectByteValues(G)
+    expectByteValues(B)
+    expectByteValues(A)
+    expectByteValues(I)
     expect(I[0]).toBe(0)
     if (!file.startsWith('_')) {
       expect(I[I.length - 1]).toBe(255)
@@ -62,11 +75,18 @@ describe('bundled colormaps', () => {
       expect(I[index]).toBeGreaterThan(I[index - 1] as number)
     }
 
+    if (file.startsWith('_') || Array.isArray(lut.labels)) {
+      const labelLut = makeLabelLut({ R, G, B, A, I })
+      expect(labelLut.lut.length).toBeGreaterThan(0)
+      expect(labelLut.min).toBe(I[0])
+      expect(labelLut.max).toBe(I[I.length - 1])
+    } else {
+      expect(makeLut(R, G, B, A, I).length).toBe(256 * 4)
+    }
+
     if (Array.isArray(lut.labels)) {
       expect(lut.labels.length).toBe(R.length)
     }
-
-    expect(makeLut(R, G, B, A, I).length).toBe(256 * 4)
   })
 })
 

@@ -521,6 +521,13 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Control whether the orientation cube is shown on the 3D render view.
+   * Each face of the cube is labeled with an anatomical direction: Anterior (A), Posterior (P), Left (L), Right (R), Superior (S), Inferior (I).
+   * @default `true`
+   * @example nv1.isOrientCubeVisible = false
+   * @see {@link https://niivue.github.io/mono/examples/vox.basic.html | live demo usage}
+   */
   get isOrientCubeVisible(): boolean {
     return this.model.ui.isOrientCubeVisible
   }

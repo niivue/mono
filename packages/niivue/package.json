@@ -49,7 +49,8 @@
     "size:entries": "node scripts/report-entry-sizes.js",
     "size:check": "node scripts/check-entry-sizes.js",
     "bench": "bun run bench/run-bench.ts",
-    "bench:compare": "bash bench/compare-to-main.sh"
+    "bench:compare": "bash bench/compare-to-main.sh",
+    "bench:report": "bash bench/report.sh"
   },
   "repository": {
     "type": "git",

@@ -18,8 +18,10 @@
  * main on the same SwiftShader still detects real regressions.
  *
  * Set `BENCH_HEADED=1` to launch a visible browser window — only then
- * do you get real-GPU numbers (Metal on macOS, etc.). Use for local
- * "what's my actual fps" runs, not for CI comparison.
+ * do you get real-GPU numbers (Metal on macOS, etc.). Always use headed
+ * mode for rendering perf reports: headless compositor/vsync paths
+ * differ from real-window rendering and produce misleading fps numbers
+ * even when the GPU is exposed.
  */
 
 import { writeFile } from 'node:fs/promises'

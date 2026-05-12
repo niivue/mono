@@ -217,73 +217,196 @@ function findCompute(run: Run, name: string): ComputeRow | undefined {
   return run.json.compute?.find((r) => r.name === name)
 }
 
-function renderRendererSection(runs: Run[]): string {
+/**
+ * Per-backend GPU time accounting:
+ *
+ * - WebGPU: `_waitGpu` awaits `device.queue.onSubmittedWorkDone()`, so
+ *   `wall` includes GPU execution. The `frame` perf mark is the JS work
+ *   to issue commands. `wall − frame` therefore approximates GPU time.
+ *   WebGPU does *not* populate the per-frame `gpu` array — there is no
+ *   timestamp-query path on the bench side.
+ *
+ * - WebGL2: there is no analogous fence (Chromium's `clientWaitSync` has
+ *   a ~10ms IPC floor; see `examples/benchmark.js`). `_waitGpu` is a
+ *   no-op, so `wall ≈ frame` (CPU submit only). GPU time is read from
+ *   the `gpu` array, populated by `EXT_disjoint_timer_query_webgl2`
+ *   when the extension is exposed (true on real GPUs; false on
+ *   headless SwiftShader, in which case the column reads `—`).
+ */
+function gpuMeanForRun(row: RendererRow, backend: string): number | null {
+  if (backend === 'webgpu') {
+    const wall = row.stats?.mean
+    const frame = row.frame?.mean
+    if (
+      typeof wall === 'number' &&
+      typeof frame === 'number' &&
+      Number.isFinite(wall) &&
+      Number.isFinite(frame)
+    ) {
+      return Math.max(0, wall - frame)
+    }
+    return null
+  }
+  return row.gpu?.mean ?? null
+}
+
+function gpuLabel(backend: string): string {
+  return backend === 'webgpu' ? 'GPU est. (wall−frame)' : 'GPU (timer)'
+}
+
+/**
+ * Effective per-frame time for WebGL2: CPU and GPU run concurrently on
+ * the host, so steady-state frame rate is governed by whichever side is
+ * slower. Returns null when GPU timer data is missing — in that case we
+ * can't honestly compute fps (a `frame`-only number would overstate it
+ * by ignoring the GPU side).
+ */
+function effectiveMsWebGl2(row: RendererRow): number | null {
+  const frame = row.frame?.mean
+  const gpu = row.gpu?.mean
+  if (typeof frame !== 'number' || !Number.isFinite(frame)) return null
+  if (typeof gpu !== 'number' || !Number.isFinite(gpu)) return null
+  return Math.max(frame, gpu)
+}
+
+function renderBackendTable(run: Run): string {
+  const isWebGpu = run.backend === 'webgpu'
+  const rows = run.json.renderer ?? []
+  if (rows.length === 0) return ''
+  const headers = isWebGpu
+    ? [
+        'Scenario',
+        'Frames',
+        'Wall (CPU+GPU)',
+        '~fps',
+        'CPU',
+        'Submit',
+        'Frame',
+        gpuLabel(run.backend),
+        'p95',
+        'Stddev',
+      ]
+    : [
+        'Scenario',
+        'Frames',
+        'CPU',
+        'Submit',
+        'Frame',
+        gpuLabel(run.backend),
+        'Effective',
+        '~fps',
+        'p95',
+        'Stddev',
+      ]
+  const headerHtml = headers
+    .map((h, i) => `<th${i === 0 ? ' class="left"' : ''}>${escapeHtml(h)}</th>`)
+    .join('')
+  const bodyRows: string[] = []
+  for (const row of rows) {
+    const wall = row.stats.mean
+    const cpuM = row.cpu?.mean
+    const subM = row.submit?.mean
+    const frmM = row.frame?.mean
+    const gpuM = gpuMeanForRun(row, run.backend)
+    const baseCells = isWebGpu
+      ? [
+          `<td>${fmt(wall)}</td>`,
+          `<td>${fps(wall)}</td>`,
+          `<td>${fmt(cpuM)}</td>`,
+          `<td>${fmt(subM)}</td>`,
+          `<td>${fmt(frmM)}</td>`,
+          `<td>${fmt(gpuM)}</td>`,
+        ]
+      : (() => {
+          const eff = effectiveMsWebGl2(row)
+          return [
+            `<td>${fmt(cpuM)}</td>`,
+            `<td>${fmt(subM)}</td>`,
+            `<td>${fmt(frmM)}</td>`,
+            `<td>${fmt(gpuM)}</td>`,
+            `<td>${fmt(eff)}</td>`,
+            `<td>${fps(eff)}</td>`,
+          ]
+        })()
+    bodyRows.push(
+      `<tr><td class="left">${escapeHtml(row.name)}</td>` +
+        `<td>${row.frames}</td>` +
+        baseCells.join('') +
+        `<td>${fmt(row.stats.p95)}</td>` +
+        `<td>${fmt(row.stats.stddev)}</td></tr>`,
+    )
+  }
+  const caption = isWebGpu
+    ? `<code>Wall</code> includes GPU pacing via <code>onSubmittedWorkDone</code>.
+       <code>GPU est.</code> is <code>wall − frame</code> (no
+       per-frame timestamp queries on the WebGPU bench path).`
+    : `WebGL2 has no cheap GPU fence in Chromium, so we measure CPU work
+       (perf marks) and GPU work (<code>EXT_disjoint_timer_query_webgl2</code>)
+       separately. <code>Effective</code> is <code>max(frame, GPU)</code>
+       — the steady-state per-frame cost on a pipelined GPU, since CPU
+       submit and GPU execution overlap. <code>~fps</code> is
+       <code>1000 / Effective</code>. Both stay blank when the timer-query
+       extension is unavailable (e.g. SwiftShader headless) because we
+       can't honestly report fps from CPU work alone.`
+  return `<h2>${escapeHtml(backendPretty(run.backend))} scenarios</h2>
+<table>
+  <thead>
+    <tr>${headerHtml}</tr>
+  </thead>
+  <tbody>
+    ${bodyRows.join('\n    ')}
+  </tbody>
+</table>
+<p class="caption">${caption}</p>`
+}
+
+function renderComparisonSection(runs: Run[]): string {
+  if (runs.length !== 2) return ''
   const names = rendererScenarioNames(runs)
   if (names.length === 0) return ''
-  const headerCells: string[] = ['<th rowspan="2">Scenario</th>']
-  for (const r of runs) {
-    headerCells.push(
-      `<th colspan="5" class="group">${escapeHtml(backendPretty(r.backend))}</th>`,
-    )
-  }
-  if (runs.length === 2) {
-    headerCells.push('<th rowspan="2">Wall ratio</th>')
-    headerCells.push('<th rowspan="2">GPU ratio</th>')
-  }
-  const subHeaderCells: string[] = []
-  for (const _ of runs) {
-    subHeaderCells.push(
-      '<th>Wall</th><th>~fps</th><th>CPU</th><th>Frame</th><th>GPU</th>',
-    )
-  }
+  const [a, b] = runs
+  const aName = escapeHtml(backendPretty(a.backend))
+  const bName = escapeHtml(backendPretty(b.backend))
+  const headerCells = [
+    '<th class="left" rowspan="2">Scenario</th>',
+    `<th colspan="3" class="group">CPU (frame, ms)</th>`,
+    `<th colspan="3" class="group">GPU (ms)</th>`,
+  ]
+  const subHeaderCells = [
+    `<th>${aName}</th>`,
+    `<th>${bName}</th>`,
+    '<th>Ratio</th>',
+    `<th>${aName}</th>`,
+    `<th>${bName}</th>`,
+    '<th>Ratio</th>',
+  ]
   const bodyRows: string[] = []
   for (const name of names) {
-    const cells: string[] = [`<td class="left">${escapeHtml(name)}</td>`]
-    const wallMeans: number[] = []
-    const gpuMeans: number[] = []
-    for (const r of runs) {
-      const row = findRenderer(r, name)
-      if (!row) {
-        cells.push('<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>')
-        wallMeans.push(NaN)
-        gpuMeans.push(NaN)
-        continue
-      }
-      const wall = row.stats.mean
-      const cpuM = row.cpu?.mean
-      const frmM = row.frame?.mean
-      const gpuM = row.gpu?.mean
-      wallMeans.push(wall)
-      gpuMeans.push(gpuM ?? NaN)
-      cells.push(
-        `<td>${fmt(wall)}</td>` +
-          `<td>${fps(wall)}</td>` +
-          `<td>${fmt(cpuM)}</td>` +
-          `<td>${fmt(frmM)}</td>` +
-          `<td>${fmt(gpuM)}</td>`,
-      )
-    }
-    if (runs.length === 2) {
-      const [a, b] = wallMeans
-      const [ga, gb] = gpuMeans
-      cells.push(
-        `<td class="ratio">${
-          Number.isFinite(a) && Number.isFinite(b)
-            ? ratio(Math.max(a, b), Math.min(a, b))
-            : '—'
-        }</td>`,
-      )
-      cells.push(
-        `<td class="ratio">${
-          Number.isFinite(ga) && Number.isFinite(gb)
-            ? ratio(Math.max(ga, gb), Math.min(ga, gb))
-            : '—'
-        }</td>`,
-      )
-    }
-    bodyRows.push(`<tr>${cells.join('')}</tr>`)
+    const rowA = findRenderer(a, name)
+    const rowB = findRenderer(b, name)
+    const cpuA = rowA?.frame?.mean ?? NaN
+    const cpuB = rowB?.frame?.mean ?? NaN
+    const gpuA = rowA ? (gpuMeanForRun(rowA, a.backend) ?? NaN) : NaN
+    const gpuB = rowB ? (gpuMeanForRun(rowB, b.backend) ?? NaN) : NaN
+    const cpuRatio =
+      Number.isFinite(cpuA) && Number.isFinite(cpuB)
+        ? ratio(Math.max(cpuA, cpuB), Math.min(cpuA, cpuB))
+        : '—'
+    const gpuRatio =
+      Number.isFinite(gpuA) && Number.isFinite(gpuB)
+        ? ratio(Math.max(gpuA, gpuB), Math.min(gpuA, gpuB))
+        : '—'
+    bodyRows.push(
+      `<tr><td class="left">${escapeHtml(name)}</td>` +
+        `<td>${fmt(cpuA)}</td>` +
+        `<td>${fmt(cpuB)}</td>` +
+        `<td class="ratio">${cpuRatio}</td>` +
+        `<td>${fmt(gpuA)}</td>` +
+        `<td>${fmt(gpuB)}</td>` +
+        `<td class="ratio">${gpuRatio}</td></tr>`,
+    )
   }
-  return `<h2>Renderer scenarios</h2>
+  return `<h2>Apples-to-apples comparison</h2>
 <table>
   <thead>
     <tr>${headerCells.join('')}</tr>
@@ -293,12 +416,45 @@ function renderRendererSection(runs: Run[]): string {
     ${bodyRows.join('\n    ')}
   </tbody>
 </table>
-<p class="caption">All times in ms unless noted. Wall = end-to-end render
-including GPU pacing (WebGPU: <code>onSubmittedWorkDone</code>; WebGL2: no
-sync — wall reflects CPU submit only). GPU column uses
-<code>EXT_disjoint_timer_query_webgl2</code> on WebGL2 and is left blank
-when the extension isn't exposed (e.g. SwiftShader). Ratios are
-slower/faster, so the larger number sets the numerator.</p>`
+<p class="caption">CPU = the <code>niivue:render-frame</code> perf mark
+(pure JS, no GPU sync) — directly comparable across backends. GPU =
+<code>wall − frame</code> for WebGPU (paced), and
+<code>EXT_disjoint_timer_query_webgl2</code> for WebGL2. Both are real
+device time, modulo measurement technique. Ratios are slower / faster.</p>`
+}
+
+function renderRendererSection(runs: Run[]): string {
+  const tables = runs
+    .map((r) => renderBackendTable(r))
+    .filter((s) => s.length > 0)
+  if (tables.length === 0) return ''
+  return tables.join('\n') + renderComparisonSection(runs)
+}
+
+function isSwiftShader(run: Run): boolean {
+  const blobs = [
+    run.json.env.gpu?.description,
+    run.json.env.gpu?.vendor,
+    run.json.env.gpu?.device,
+    run.json.env.webgl?.renderer,
+    run.json.env.webgl?.vendor,
+  ]
+    .filter((s): s is string => typeof s === 'string')
+    .join(' ')
+    .toLowerCase()
+  return blobs.includes('swiftshader')
+}
+
+function renderEnvWarning(runs: Run[]): string {
+  const swiftRuns = runs.filter(isSwiftShader)
+  if (swiftRuns.length === 0) return ''
+  const labels = swiftRuns.map((r) => backendPretty(r.backend)).join(', ')
+  return `<div class="warning">
+  <strong>SwiftShader detected</strong> on ${escapeHtml(labels)} — these
+  runs are software-rasterised, so absolute numbers are not representative
+  of real-GPU performance. Re-run with <code>BENCH_HEADED=1</code> to use
+  the host GPU (Metal on macOS, Vulkan on Linux/Windows).
+</div>`
 }
 
 function renderComputeSection(runs: Run[]): string {
@@ -400,6 +556,7 @@ function renderEnvSection(runs: Run[]): string {
 
 function buildHtml(runs: Run[]): string {
   const title = `NiiVue performance report — ${runs.map((r) => backendPretty(r.backend)).join(' vs ')}`
+  const warning = renderEnvWarning(runs)
   const env = renderEnvSection(runs)
   const renderer = renderRendererSection(runs)
   const compute = renderComputeSection(runs)
@@ -458,12 +615,24 @@ function buildHtml(runs: Run[]): string {
     color: #8b949e;
     font-size: 11px;
   }
+  .warning {
+    margin: 16px 0;
+    padding: 10px 14px;
+    background: #3a2308;
+    border: 1px solid #9e6a03;
+    border-radius: 6px;
+    color: #f0883e;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .warning strong { color: #f0883e; }
 </style>
 </head>
 <body>
 <h1>${escapeHtml(title)}</h1>
 <p class="subtitle">Generated ${escapeHtml(generated)} from
   ${runs.map((r) => `<code>${escapeHtml(r.source)}</code>`).join(', ')}.</p>
+${warning}
 ${env}
 ${renderer}
 ${compute}

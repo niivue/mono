@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Generate a self-contained HTML performance report by running the
-# benchmark headlessly against both backends.
+# benchmark against both backends in a real browser window.
+#
+# Headed mode is the default — and not optional in a meaningful sense —
+# because headless Chromium uses SwiftShader (no real GPU) and even
+# `--headless=new` with a real GPU exposed has a different compositor
+# path, so fps numbers don't match what users actually experience. If
+# you want a deterministic CI gate instead of a report, use
+# `bun run bench:compare`, which keeps SwiftShader on purpose.
 #
 # Usage:
 #   bun run bench:report              # writes ./perf-report.html
@@ -8,11 +15,15 @@
 #
 # Tunables (env vars):
 #   BENCH_BACKENDS="webgpu webgl2"   # default — both backends
-#   BENCH_HEADED=1                   # real GPU (Metal/Vulkan); default uses SwiftShader
 #   BENCH_FRAMES=200                 # frames per renderer scenario
 #   BENCH_COMPUTE_ITER=100           # iterations per compute scenario
 #   BENCH_PORT=4173                  # vite preview port
 set -euo pipefail
+
+# Force headed mode for rendering fidelity. run-bench.ts honours this
+# env var; we set it unconditionally so the report can't accidentally
+# capture headless numbers.
+export BENCH_HEADED=1
 
 ROOT=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 PKG="$ROOT/packages/niivue"

@@ -4,7 +4,7 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 
 ## Packages
 
-| Package | Description | npm |
+| <div style="width:260px">Package</div> | Description | npm |
 |---|---|---|
 | [`@niivue/niivue`](packages/niivue) | Core WebGPU/WebGL2 medical image viewer | [![npm](https://img.shields.io/npm/v/@niivue/niivue/next)](https://www.npmjs.com/package/@niivue/niivue) |
 | [`@niivue/nvreact`](packages/nv-react) | React bindings for NiiVue | [![npm](https://img.shields.io/npm/v/@niivue/nvreact/next)](https://www.npmjs.com/package/@niivue/nvreact) |
@@ -21,7 +21,7 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 
 ## Apps
 
-| App | Description |
+| <div style="width:260px">App</div> | Description |
 |---|---|
 | [`demo-ext-drawing`](apps/demo-ext-drawing) | Demo app for the drawing extension |
 | [`demo-ext-image-processing`](apps/demo-ext-image-processing) | Demo app for the image processing extension |

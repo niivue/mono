@@ -22,6 +22,23 @@ bun run lint:fix     # ESLint auto-fix
 bun run typecheck    # TypeScript type checking (tsc --noEmit)
 ```
 
+### Perf instrumentation
+
+The renderer carries `performance.mark`/`measure` instrumentation
+(`src/view/NVPerfMarks.ts`) gated on a single runtime flag. Consumers:
+
+- **App code:** `nv.perf.enabled = true`, then listen for the
+  `perfFrame` event to receive `{ tag, cpuMs, submitMs, totalMs, phases }`
+  per render. Tag user-driven frames via `nv.perf.tagFrame('myAction')`
+  before mutating state.
+- **Benchmark harness** at `examples/benchmark.html` flips the same
+  flag and reads `consumeFrameStats()` plus the `niivue:render-*`
+  PerformanceObserver entries.
+
+When `enabled` is `false` every helper bails on its first line; cost
+in production is one well-predicted branch per call site. See
+`benchmarks/README.md` for the harness workflow.
+
 ### Development Workflows
 
 - **`bun run dev`** — Runs the `demos/` pages with hot reloading. A Vite plugin intercepts `import '../dist/niivuegpu.mjs'` and redirects it to source, so demo scripts stay identical to the deployed versions but get full HMR. Asset directories in `demos/` are symlinked to `public/` on first run.

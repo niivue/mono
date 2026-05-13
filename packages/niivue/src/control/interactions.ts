@@ -22,6 +22,7 @@ import type {
 import { computeTolerance } from '@/view/NVAnnotation'
 import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
 import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
+import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 
 function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
@@ -136,6 +137,7 @@ function legendHitTest(
 function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  setNextActionTag('keydown')
   const key = e.key.toUpperCase()
   if (key === 'V') {
     log.info(`NIIVUE VERSION: 0.1.20260122`)
@@ -219,6 +221,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   }
   ctrl._eventListeners.pointerdown = (e: Event) => {
     const evt = e as PointerEvent
+    setNextActionTag('pointerdown')
     // Dismiss thumbnail on click
     if (ctrl.model.ui.isThumbnailVisible) {
       ctrl.isThumbnailVisible = false
@@ -447,6 +450,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     ctrl.canvas?.setPointerCapture(evt.pointerId)
   }
   ctrl._eventListeners.pointerup = (e: Event) => {
+    setNextActionTag('pointerup')
     // Finalize drawing stroke on mouse-up
     if (
       ctrl.model.draw.isEnabled &&
@@ -680,6 +684,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   }
   ctrl._eventListeners.pointermove = (e: Event) => {
     const evt = e as PointerEvent
+    setNextActionTag(ctrl.isDragging ? 'drag' : 'pointermove')
     // Annotation brush cursor preview (hover, no drag required)
     if (ctrl.model.annotation.isEnabled && !ctrl.isDragging) {
       const hit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
@@ -1104,6 +1109,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     // Perform hit test to determine which tile the wheel event is on
     const wheelHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
     if (!wheelHit) return // outside this instance's bounds
+    setNextActionTag('wheel')
     evt.preventDefault()
     const [px, py] = wheelHit
     const hit = ctrl.view?.hitTest(px, py)
@@ -1180,6 +1186,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     const evt = e as PointerEvent
     const dblHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
     if (!dblHit) return // outside this instance's bounds
+    setNextActionTag('dblclick')
     const [px, py] = dblHit
     const mm = (await ctrl.view?.depthPick(px, py)) ?? null
     if (mm) {
@@ -1191,6 +1198,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   }
   ctrl._eventListeners.pointerleave = () => {
     if (ctrl.model._annotationCursor) {
+      setNextActionTag('pointerleave')
       ctrl.model._annotationCursor = null
       ctrl.drawScene()
     }
@@ -1304,6 +1312,7 @@ export function setupResizeHandler(ctrl: NiiVueGPU): void {
     ctrl.resizeObserver.disconnect()
   }
   ctrl.resizeObserver = new ResizeObserver(() => {
+    setNextActionTag('resize')
     ctrl.view?.resize()
     if (ctrl.canvas) {
       ctrl.emit('canvasResize', {

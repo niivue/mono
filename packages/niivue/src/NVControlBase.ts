@@ -63,6 +63,12 @@ import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
 import type { GraphLayout } from '@/view/NVGraph'
 import type { LegendLayout } from '@/view/NVLegend'
+import {
+  arePerfMarksEnabled,
+  setNextActionTag,
+  setPerfMarksEnabled,
+  subscribeFrameReports,
+} from '@/view/NVPerfMarks'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import { validateCustomLayout } from '@/view/NVSliceLayout'
 import { computeModulationData } from '@/volume/modulation'
@@ -122,6 +128,46 @@ type InfrastructureOpts = {
 const DEFAULT_MATCAPS: Record<string, string> = { cortex }
 
 type EventHandler = ((e: Event) => void) | ((e: Event) => Promise<void>)
+
+/**
+ * Public render-perf API surface accessed via `nv.perf`. Setting
+ * `enabled = true` arms `performance.mark`/`measure` instrumentation
+ * in the renderer and starts emitting a `perfFrame` event on the
+ * controller after every render. Tag the next frame with
+ * `tagFrame('myAction')` before mutating state so the frame report
+ * carries an action source.
+ */
+class NiiVuePerf {
+  private _frameUnsub: (() => void) | null = null
+
+  constructor(private readonly _controller: NiiVueGPU) {}
+
+  get enabled(): boolean {
+    return arePerfMarksEnabled()
+  }
+  set enabled(value: boolean) {
+    if (value === arePerfMarksEnabled()) return
+    setPerfMarksEnabled(value)
+    if (value) {
+      this._frameUnsub?.()
+      this._frameUnsub = subscribeFrameReports((report) => {
+        this._controller.emit('perfFrame', report)
+      })
+    } else {
+      this._frameUnsub?.()
+      this._frameUnsub = null
+    }
+  }
+
+  /**
+   * Tag the next frame with an action source. Cleared after the next
+   * `render()`, so each call applies to exactly one frame. No-op when
+   * `enabled` is false.
+   */
+  tagFrame(tag: string): void {
+    setNextActionTag(tag)
+  }
+}
 
 export default class NiiVueGPU extends EventTarget {
   activeClipPlaneIndex: number
@@ -183,6 +229,8 @@ export default class NiiVueGPU extends EventTarget {
   private _syncOpts: SyncOpts = {}
   private _syncDirty = false
   private _rafId: number | null = null
+  // Render-perf API — see NiiVuePerf docstring
+  private _perf: NiiVuePerf | null = null
 
   constructor(
     options: NiiVueOptions = {},
@@ -296,6 +344,17 @@ export default class NiiVueGPU extends EventTarget {
   ): void {
     if (args.length === 0) this.dispatchEvent(new Event(type))
     else this.dispatchEvent(new CustomEvent(type, { detail: args[0] }))
+  }
+
+  /**
+   * Render-perf API. Set `nv.perf.enabled = true` to start receiving
+   * `perfFrame` events with `{ tag, cpuMs, submitMs, totalMs, phases }`
+   * after every render. Use `nv.perf.tagFrame('myAction')` before
+   * mutating state to label the resulting frame.
+   */
+  get perf(): NiiVuePerf {
+    if (!this._perf) this._perf = new NiiVuePerf(this)
+    return this._perf
   }
 
   // --- Scene Properties ---
@@ -2811,6 +2870,7 @@ export default class NiiVueGPU extends EventTarget {
 
   destroy(): void {
     this.emit('viewDestroyed')
+    if (this._perf) this._perf.enabled = false
     if (this._rafId !== null) {
       cancelAnimationFrame(this._rafId)
       this._rafId = null

@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Interaction Perf Metrics</title>
+    <link rel="icon" href="data:,">
+    <!-- Intentionally NOT loading /niivue.css — its global rules
+         (`body { position: absolute }`, `div { display: table-row }`,
+         `canvas { position: absolute; width: 100%; height: 100% }`)
+         escape every container and break block layouts on this page. -->
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        margin: 0;
+        padding: 12px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      #fps {
+        margin-left: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 22px;
+        font-weight: 600;
+        min-width: 9ch;
+        text-align: right;
+      }
+      #fps small {
+        font-size: 11px;
+        color: #888;
+        font-weight: 400;
+      }
+      #canvas-container {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 12px;
+      }
+      #canvas-container canvas {
+        display: block;
+        width: 100%;
+        height: 480px;
+        background: #000;
+      }
+      #stats {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      #live {
+        background: #f4f4f4;
+        padding: 8px;
+        border-radius: 4px;
+        margin-bottom: 8px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th, td {
+        padding: 4px 6px;
+        text-align: right;
+        border-bottom: 1px solid #ddd;
+      }
+      th:first-child, td:first-child {
+        text-align: left;
+      }
+      th {
+        background: #fafafa;
+      }
+      .help {
+        font-size: 12px;
+        color: #555;
+        margin-top: 8px;
+        max-width: 360px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <label>
+        <input type="checkbox" id="enableChk" />
+        <code>nv.perf.enabled</code>
+      </label>
+      <label>
+        Scene
+        <select id="sceneSelect">
+          <option value="mni152">mni152</option>
+          <option value="mni152+spmMotor">mni152 + spmMotor (overlay)</option>
+          <option value="torso">torso (CT)</option>
+          <option value="torso+torsoLabel">torso + torsoLabel (overlay)</option>
+          <option value="visiblehuman">visiblehuman (large)</option>
+        </select>
+      </label>
+      <label>
+        Backend
+        <select id="backendSelect">
+          <option value="webgpu">WebGPU</option>
+          <option value="webgl2">WebGL2</option>
+        </select>
+      </label>
+      <button type="button" id="clearBtn">Clear stats</button>
+      <span id="statusEl" style="color:#666"></span>
+      <span id="fps">— fps <small>1s window</small></span>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+      <section id="stats">
+        <div id="live">Move the mouse, drag, or scroll over the canvas to record frames.</div>
+        <table id="agg">
+          <thead>
+            <tr>
+              <th>action</th>
+              <th>n</th>
+              <th>cpu p50</th>
+              <th>cpu p95</th>
+              <th>total p50</th>
+              <th>total p95</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="help">
+          Each row aggregates frames whose <code>perfFrame.detail.tag</code>
+          matches the action. Programmatic mutations
+          (e.g. <code>nv.azimuth = 110</code>) appear under
+          <code>(untagged)</code>. Use <code>nv.perf.tagFrame('myAction')</code>
+          before mutating state to attach your own label.
+        </p>
+      </section>
+    </main>
+
+    <script type="module">
+      import NiiVue, { SLICE_TYPE } from '../src/index.ts'
+
+      // Default to whatever the URL or selector says — falls back to WebGPU.
+      const initialBackend = backendSelect.value
+      const nv = new NiiVue({
+        isColorbarVisible: false,
+        backgroundColor: [0.05, 0.05, 0.05, 1],
+        sliceType: SLICE_TYPE.RENDER,
+        backend: initialBackend,
+      })
+      await nv.attachToCanvas(gl1)
+
+      // The 'viewAttached' event reports the backend that *actually*
+      // initialized (WebGPU may fall back to WebGL2 in unsupported
+      // browsers). Surface it in the status line so users can confirm.
+      let activeBackend = initialBackend
+      nv.addEventListener('viewAttached', (e) => {
+        activeBackend = e.detail.backend
+        backendSelect.value = activeBackend
+        updateStatus()
+      })
+
+      // Each scene is a list of volume specs passed to loadVolumes.
+      // Overlay volumes (index >= 1) get a colormap that reads well over
+      // the anatomical base.
+      const SCENES = {
+        mni152: [{ url: '/volumes/mni152.nii.gz' }],
+        'mni152+spmMotor': [
+          { url: '/volumes/mni152.nii.gz' },
+          { url: '/volumes/spmMotor.nii.gz', colormap: 'warm', calMin: 3, calMax: 6 },
+        ],
+        torso: [{ url: '/volumes/torso.nii.gz' }],
+        'torso+torsoLabel': [
+          { url: '/volumes/torso.nii.gz' },
+          { url: '/volumes/torsoLabel.nii.gz', colormap: 'hsv', opacity: 0.7 },
+        ],
+        visiblehuman: [{ url: '/volumes/visiblehuman.nii.gz' }],
+      }
+
+      let loading = false
+      function updateStatus() {
+        const state = enableChk.checked ? 'Recording' : 'Paused'
+        statusEl.textContent = `${state} — backend: ${activeBackend}`
+      }
+      async function loadScene(name) {
+        const volumes = SCENES[name]
+        if (!volumes) return
+        loading = true
+        statusEl.textContent = `Loading ${name}…`
+        try {
+          await nv.loadVolumes(volumes)
+          // Different volumes have very different costs; start clean.
+          samples.clear()
+          frameTimes.length = 0
+          render()
+          liveEl.textContent = `Loaded ${name} — interact with the canvas to record frames.`
+          updateStatus()
+        } finally {
+          loading = false
+        }
+      }
+
+      // ----- aggregation -----
+      const samples = new Map() // tag -> { cpu: number[], total: number[] }
+      const liveEl = document.getElementById('live')
+      const tbody = document.querySelector('#agg tbody')
+      const fpsEl = document.getElementById('fps')
+
+      // Rolling 1s window of frame timestamps. FPS = count / (newest - oldest).
+      const FPS_WINDOW_MS = 1000
+      const FPS_IDLE_MS = 500 // show '—' if no frames in this long
+      const frameTimes = []
+      function recordFrameTime(t) {
+        frameTimes.push(t)
+        const cutoff = t - FPS_WINDOW_MS
+        while (frameTimes.length > 0 && frameTimes[0] < cutoff) {
+          frameTimes.shift()
+        }
+      }
+      function currentFps(now) {
+        if (frameTimes.length < 2) return null
+        if (now - frameTimes[frameTimes.length - 1] > FPS_IDLE_MS) return null
+        const span = frameTimes[frameTimes.length - 1] - frameTimes[0]
+        if (span <= 0) return null
+        return ((frameTimes.length - 1) * 1000) / span
+      }
+      function paintFps() {
+        const now = performance.now()
+        const fps = currentFps(now)
+        fpsEl.firstChild.nodeValue = fps == null ? '— fps ' : `${fps.toFixed(1)} fps `
+      }
+      // Drive a paint loop so the readout decays to '—' when the user
+      // stops interacting — perfFrame events alone wouldn't fire.
+      ;(function tick() {
+        paintFps()
+        requestAnimationFrame(tick)
+      })()
+
+      function quantile(xs, q) {
+        if (xs.length === 0) return null
+        const s = [...xs].sort((a, b) => a - b)
+        const idx = Math.min(s.length - 1, Math.floor(q * (s.length - 1)))
+        return s[idx]
+      }
+      const fmt = (n) => (n == null ? '—' : `${n.toFixed(2)} ms`)
+
+      function record(report) {
+        const tag = report.tag ?? '(untagged)'
+        let bucket = samples.get(tag)
+        if (!bucket) {
+          bucket = { cpu: [], total: [] }
+          samples.set(tag, bucket)
+        }
+        // Cap per-tag history so an idle tab doesn't grow unbounded.
+        if (bucket.cpu.length >= 500) {
+          bucket.cpu.shift()
+          bucket.total.shift()
+        }
+        bucket.cpu.push(report.cpuMs)
+        bucket.total.push(report.totalMs)
+      }
+
+      function render() {
+        const rows = []
+        for (const [tag, bucket] of samples) {
+          rows.push({
+            tag,
+            n: bucket.cpu.length,
+            cpu50: quantile(bucket.cpu, 0.5),
+            cpu95: quantile(bucket.cpu, 0.95),
+            total50: quantile(bucket.total, 0.5),
+            total95: quantile(bucket.total, 0.95),
+          })
+        }
+        rows.sort((a, b) => b.n - a.n)
+        tbody.innerHTML = rows
+          .map(
+            (r) =>
+              `<tr><td>${r.tag}</td><td>${r.n}</td>` +
+              `<td>${fmt(r.cpu50)}</td><td>${fmt(r.cpu95)}</td>` +
+              `<td>${fmt(r.total50)}</td><td>${fmt(r.total95)}</td></tr>`,
+          )
+          .join('')
+      }
+
+      let renderPending = false
+      function scheduleRender() {
+        if (renderPending) return
+        renderPending = true
+        // Throttle table updates so we don't repaint on every frame.
+        setTimeout(() => {
+          renderPending = false
+          render()
+        }, 100)
+      }
+
+      // ----- live + aggregate hookup -----
+      nv.addEventListener('perfFrame', (e) => {
+        const r = e.detail
+        record(r)
+        recordFrameTime(performance.now())
+        scheduleRender()
+        const tag = r.tag ?? '(untagged)'
+        liveEl.textContent =
+          `${tag.padEnd(14)}  cpu ${fmt(r.cpuMs)}  ` +
+          `submit ${fmt(r.submitMs)}  total ${fmt(r.totalMs)}`
+      })
+
+      // ----- controls -----
+      enableChk.addEventListener('change', () => {
+        nv.perf.enabled = enableChk.checked
+        updateStatus()
+      })
+      clearBtn.addEventListener('click', () => {
+        samples.clear()
+        frameTimes.length = 0
+        render()
+        liveEl.textContent =
+          'Cleared. Move the mouse, drag, or scroll over the canvas to record frames.'
+      })
+      sceneSelect.addEventListener('change', () => {
+        if (loading) return
+        loadScene(sceneSelect.value)
+      })
+      backendSelect.addEventListener('change', async () => {
+        if (loading) return
+        const requested = backendSelect.value
+        if (requested === activeBackend) return
+        loading = true
+        statusEl.textContent = `Switching to ${requested}…`
+        try {
+          await nv.reinitializeView({ backend: requested })
+          // GPU backends have very different per-frame costs — keep
+          // samples segregated so cross-backend means aren't muddled.
+          samples.clear()
+          frameTimes.length = 0
+          render()
+          liveEl.textContent = `Switched backend — interact with the canvas to record frames.`
+        } finally {
+          loading = false
+          updateStatus()
+        }
+      })
+
+      // Initial load — kicks off after all helpers are bound.
+      await loadScene(sceneSelect.value)
+    </script>
+  </body>
+</html>

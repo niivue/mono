@@ -110,6 +110,17 @@ export function getLastFrameReport(): FrameReport | null {
 
 export function markCpuStart(): void {
   if (!enabled) return
+  // Clear the previous frame's measures so the User Timing buffer stays
+  // bounded under long-running sessions (3 entries/frame would otherwise
+  // grow without limit). Clearing here — not in markEnd — keeps the
+  // just-finished frame visible to synchronous post-render readers.
+  try {
+    performance.clearMeasures('niivue:render-cpu')
+    performance.clearMeasures('niivue:render-submit')
+    performance.clearMeasures('niivue:render-frame')
+  } catch {
+    /* no-op */
+  }
   phaseTotals.clear()
   activeActionTag = nextActionTag
   nextActionTag = null

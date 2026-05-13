@@ -2727,6 +2727,7 @@ export default class NiiVueGPU extends EventTarget {
 
   destroy(): void {
     this.emit('viewDestroyed')
+    if (this._perf) this._perf.enabled = false
     if (this._rafId !== null) {
       cancelAnimationFrame(this._rafId)
       this._rafId = null

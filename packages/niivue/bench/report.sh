@@ -52,10 +52,10 @@ BACKENDS="${BENCH_BACKENDS:-webgpu webgl2}"
 
 URL_PARAMS_BASE="autorun=1&renderer=1&compute=1&sweeps=0&tract=0&paced=1&frames=${FRAMES}&computeIter=${COMPUTE_ITER}"
 
-echo "[report] building examples (perf flavor)"
+echo "[report] building examples"
 (
   cd "$PKG"
-  bun run build:examples:perf
+  bun run build:examples
 )
 
 echo "[report] starting vite preview on :$PORT"

@@ -64,14 +64,11 @@ bench_at() {
   fi
 
   # Bootstrap case: when this is the base side and main predates the perf
-  # harness (no `build:examples:perf` script or no `bench/` dir), write a
-  # schema-less sentinel JSON per backend. compare-bench.ts treats that as
-  # "no baseline available" and falls back to head-only reporting instead
-  # of failing the gate.
-  if [ "$label" = "base" ] && {
-    ! grep -q '"build:examples:perf"' "$dir/packages/niivue/package.json" ||
-      [ ! -d "$dir/packages/niivue/bench" ]
-  }; then
+  # harness (no `bench/` dir on that side), write a schema-less sentinel
+  # JSON per backend. compare-bench.ts treats that as "no baseline
+  # available" and falls back to head-only reporting instead of failing
+  # the gate.
+  if [ "$label" = "base" ] && [ ! -d "$dir/packages/niivue/bench" ]; then
     echo "[bench] base side predates perf infrastructure — writing bootstrap sentinels"
     for backend in $BACKENDS; do
       printf '{"reason":"main predates perf-bench infrastructure","backend":"%s"}\n' \
@@ -82,7 +79,7 @@ bench_at() {
 
   (
     cd "$dir/packages/niivue"
-    bun run build:examples:perf
+    bun run build:examples
   )
 
   rm -f "$PIDFILE"

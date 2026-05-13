@@ -13,12 +13,13 @@ scenarios. It's used three ways:
 All three share the same scenarios, the same instrumentation, and the
 same `niivue-benchmark-v1` JSON schema.
 
-> Perf instrumentation is gated on the build-time constant
-> `__NIIVUE_PERF__`. Default builds (`bun run build`, `bun run dev`,
-> `bun run deploy`) compile it out — `performance.mark`/`measure` calls
-> tree-shake away and production bundles pay nothing. Anything that
-> reads CPU/Submit/Frame phase stats requires a perf build: `dev:perf`,
-> `build:perf`, or `build:examples:perf`.
+> Perf instrumentation is gated on a runtime flag in
+> `src/view/NVPerfMarks.ts` — every helper bails on its first line when
+> the flag is off, so the cost in default builds is one well-predicted
+> branch per call site. The bench harness flips it on with
+> `setPerfMarksEnabled(true)` while measuring; the controller API
+> exposes it as `nv.perf.enabled = true`, which additionally emits a
+> `perfFrame` event after every render. The flag is off by default.
 
 ## Quickstart
 
@@ -161,9 +162,9 @@ PR-vs-main on identical SwiftShader still surfaces real regressions
 because the comparison is relative.
 
 If `main` predates the perf-harness infrastructure (no `bench/`
-directory or no `build:examples:perf` script), `compare-to-main.sh`
-writes a sentinel JSON and `compare-bench.ts` falls back to head-only
-reporting instead of failing the gate.
+directory), `compare-to-main.sh` writes a sentinel JSON and
+`compare-bench.ts` falls back to head-only reporting instead of failing
+the gate.
 
 Tunables for the regression gate (pass after `--`):
 

@@ -1,3 +1,17 @@
+## 1.0.0-rc.8 (2026-05-13)
+
+### Features
+
+- **niivue:** port legacy colormaps ([06902e0](https://github.com/niivue/mono/commit/06902e0))
+
+### Fixes
+
+- **niivue:** validate colormap channel bounds ([27b3882](https://github.com/niivue/mono/commit/27b3882))
+
+### Thank You
+
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.7 (2026-05-12)
 
 ### Fixes

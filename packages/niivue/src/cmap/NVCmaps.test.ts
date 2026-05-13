@@ -1,5 +1,94 @@
 import { describe, expect, test } from 'bun:test'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { makeLabelLut, makeLut } from './NVCmaps'
+
+type LutJson = {
+  R?: unknown
+  G?: unknown
+  B?: unknown
+  A?: unknown
+  I?: unknown
+  labels?: unknown
+}
+
+const isNumberArray = (value: unknown): value is number[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'number')
+
+const expectByteValues = (values: number[]) => {
+  for (const value of values) {
+    expect(Number.isInteger(value)).toBe(true)
+    expect(value).toBeGreaterThanOrEqual(0)
+    expect(value).toBeLessThanOrEqual(255)
+  }
+}
+
+const lutDirectory = join(import.meta.dir, 'luts')
+const lutFiles = readdirSync(lutDirectory)
+  .filter((file) => file.endsWith('.json'))
+  .sort()
+
+const readLut = (file: string): LutJson =>
+  JSON.parse(readFileSync(join(lutDirectory, file), 'utf8')) as LutJson
+
+// ---------------------------------------------------------------------------
+// bundled colormaps
+// ---------------------------------------------------------------------------
+describe('bundled colormaps', () => {
+  test('include colormaps ported from the original NiiVue package', () => {
+    expect(lutFiles).toContain('jet.json')
+    expect(lutFiles).toContain('magma.json')
+    expect(lutFiles).toContain('ct_bones.json')
+    expect(lutFiles).toContain('_slicer3d.json')
+  })
+
+  test.each(lutFiles)('%s has valid color stops', (file) => {
+    const lut = readLut(file)
+    expect(isNumberArray(lut.R)).toBe(true)
+    expect(isNumberArray(lut.G)).toBe(true)
+    expect(isNumberArray(lut.B)).toBe(true)
+    expect(isNumberArray(lut.I)).toBe(true)
+    expect(isNumberArray(lut.A)).toBe(true)
+
+    const R = lut.R as number[]
+    const G = lut.G as number[]
+    const B = lut.B as number[]
+    const A = lut.A as number[]
+    const I = lut.I as number[]
+
+    expect(R.length).toBeGreaterThanOrEqual(2)
+    expect(G.length).toBe(R.length)
+    expect(B.length).toBe(R.length)
+    expect(A.length).toBe(R.length)
+    expect(I.length).toBe(R.length)
+    expectByteValues(R)
+    expectByteValues(G)
+    expectByteValues(B)
+    expectByteValues(A)
+    expectByteValues(I)
+    expect(I[0]).toBe(0)
+    if (!file.startsWith('_')) {
+      expect(I[I.length - 1]).toBe(255)
+    }
+
+    for (let index = 1; index < I.length; index++) {
+      expect(I[index]).toBeGreaterThan(I[index - 1] as number)
+    }
+
+    if (file.startsWith('_') || Array.isArray(lut.labels)) {
+      const labelLut = makeLabelLut({ R, G, B, A, I })
+      expect(labelLut.lut.length).toBeGreaterThan(0)
+      expect(labelLut.min).toBe(I[0])
+      expect(labelLut.max).toBe(I[I.length - 1])
+    } else {
+      expect(makeLut(R, G, B, A, I).length).toBe(256 * 4)
+    }
+
+    if (Array.isArray(lut.labels)) {
+      expect(lut.labels.length).toBe(R.length)
+    }
+  })
+})
 
 // ---------------------------------------------------------------------------
 // makeLut

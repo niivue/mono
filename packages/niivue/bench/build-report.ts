@@ -255,15 +255,22 @@ function gpuLabel(backend: string): string {
 }
 
 /**
- * Effective per-frame time for WebGL2: CPU and GPU run concurrently on
- * the host, so steady-state frame rate is governed by whichever side is
- * slower. Returns null when GPU timer data is missing — in that case we
- * can't honestly compute fps (a `frame`-only number would overstate it
- * by ignoring the GPU side).
+ * Effective per-frame time assuming a rAF loop pipelines CPU/GPU work.
+ * Steady-state frame rate is governed by whichever side is slower:
+ * `max(frame_ms, gpu_ms)`. Same shape on both backends so the fps
+ * head-to-head is apples-to-apples.
+ *
+ * Returns null when the GPU side is missing — on WebGL2 that happens
+ * when the timer-query extension is unavailable (SwiftShader headless);
+ * on WebGPU we always derive `gpu` from `wall − frame`, so a finite
+ * `frame` and `wall` is enough.
  */
-function effectiveMsWebGl2(row: RendererRow): number | null {
+function effectiveMsForBackend(
+  row: RendererRow,
+  backend: string,
+): number | null {
   const frame = row.frame?.mean
-  const gpu = row.gpu?.mean
+  const gpu = gpuMeanForRun(row, backend)
   if (typeof frame !== 'number' || !Number.isFinite(frame)) return null
   if (typeof gpu !== 'number' || !Number.isFinite(gpu)) return null
   return Math.max(frame, gpu)
@@ -277,21 +284,20 @@ function renderBackendTable(run: Run): string {
     ? [
         'Scenario',
         'Frames',
-        'Wall (CPU+GPU)',
-        '~fps',
+        'Wall (paced)',
         'CPU',
         'Submit',
         'Frame',
         gpuLabel(run.backend),
+        'Effective',
+        '~fps',
         'p95',
         'Stddev',
       ]
     : [
         'Scenario',
         'Frames',
-        'CPU',
-        'Submit',
-        'Frame',
+        'Frame (CPU+submit)',
         gpuLabel(run.backend),
         'Effective',
         '~fps',
@@ -308,26 +314,23 @@ function renderBackendTable(run: Run): string {
     const subM = row.submit?.mean
     const frmM = row.frame?.mean
     const gpuM = gpuMeanForRun(row, run.backend)
+    const eff = effectiveMsForBackend(row, run.backend)
     const baseCells = isWebGpu
       ? [
           `<td>${fmt(wall)}</td>`,
-          `<td>${fps(wall)}</td>`,
           `<td>${fmt(cpuM)}</td>`,
           `<td>${fmt(subM)}</td>`,
           `<td>${fmt(frmM)}</td>`,
           `<td>${fmt(gpuM)}</td>`,
+          `<td>${fmt(eff)}</td>`,
+          `<td>${fps(eff)}</td>`,
         ]
-      : (() => {
-          const eff = effectiveMsWebGl2(row)
-          return [
-            `<td>${fmt(cpuM)}</td>`,
-            `<td>${fmt(subM)}</td>`,
-            `<td>${fmt(frmM)}</td>`,
-            `<td>${fmt(gpuM)}</td>`,
-            `<td>${fmt(eff)}</td>`,
-            `<td>${fps(eff)}</td>`,
-          ]
-        })()
+      : [
+          `<td>${fmt(frmM)}</td>`,
+          `<td>${fmt(gpuM)}</td>`,
+          `<td>${fmt(eff)}</td>`,
+          `<td>${fps(eff)}</td>`,
+        ]
     bodyRows.push(
       `<tr><td class="left">${escapeHtml(row.name)}</td>` +
         `<td>${row.frames}</td>` +
@@ -338,16 +341,22 @@ function renderBackendTable(run: Run): string {
   }
   const caption = isWebGpu
     ? `<code>Wall</code> includes GPU pacing via <code>onSubmittedWorkDone</code>.
-       <code>GPU est.</code> is <code>wall − frame</code> (no
-       per-frame timestamp queries on the WebGPU bench path).`
-    : `WebGL2 has no cheap GPU fence in Chromium, so we measure CPU work
-       (perf marks) and GPU work (<code>EXT_disjoint_timer_query_webgl2</code>)
-       separately. <code>Effective</code> is <code>max(frame, GPU)</code>
-       — the steady-state per-frame cost on a pipelined GPU, since CPU
-       submit and GPU execution overlap. <code>~fps</code> is
-       <code>1000 / Effective</code>. Both stay blank when the timer-query
-       extension is unavailable (e.g. SwiftShader headless) because we
-       can't honestly report fps from CPU work alone.`
+       <code>GPU est.</code> is <code>wall − frame</code> (no per-frame
+       timestamp queries on the WebGPU bench path). <code>Effective</code>
+       is <code>max(frame, GPU est.)</code> — the steady-state per-frame
+       cost assuming a rAF loop pipelines CPU/GPU work (which paced
+       <code>wall</code> serialises). <code>~fps</code> is
+       <code>1000 / Effective</code>.`
+    : `WebGL2 has no cheap GPU fence in Chromium, so the renderer issues
+       commands and lets the driver pipeline; there is no discrete
+       submit step. <code>Frame</code> is the JS render call (perf marks)
+       and <code>GPU (timer)</code> is hardware time from
+       <code>EXT_disjoint_timer_query_webgl2</code>. <code>Effective</code>
+       is <code>max(frame, GPU)</code> — the steady-state per-frame cost
+       since CPU submit and GPU execution overlap. <code>~fps</code> is
+       <code>1000 / Effective</code>. <code>GPU</code>, <code>Effective</code>
+       and <code>~fps</code> stay blank when the timer-query extension is
+       unavailable (e.g. SwiftShader headless).`
   return `<h2>${escapeHtml(backendPretty(run.backend))} scenarios</h2>
 <table>
   <thead>
@@ -361,22 +370,18 @@ function renderBackendTable(run: Run): string {
 }
 
 /**
- * Per-backend frame time used as the basis for fps.
- *   - WebGPU: paced `wall` (CPU + GPU serial via onSubmittedWorkDone).
- *   - WebGL2: `max(frame, GPU)` because CPU submit and GPU execution
- *     overlap on real hardware. Null when GPU timer data is missing.
+ * Per-backend frame time used as the basis for fps. Both backends use
+ * `max(frame, GPU)` so the head-to-head compares the same quantity:
+ * the steady-state per-frame cost assuming a rAF loop pipelines CPU
+ * and GPU work. Returns null when either side is missing.
  *
- * These are not the same measurement technique (WebGPU is wall-clock
- * with a fence, WebGL2 is reconstructed from two parallel measurements),
- * but they're the most honest approximation of "what fps would a user
- * see in this scene" we can produce without a frame-pacing harness on
- * top of rAF.
+ * (Paced `wall` on WebGPU serialises CPU and GPU, which understates
+ * what a real rAF loop achieves; the per-backend table still shows
+ * <code>wall</code> for diagnostic purposes, but it is *not* the basis
+ * for fps.)
  */
 function frameMsForFps(row: RendererRow, backend: string): number | null {
-  if (backend === 'webgpu') {
-    return Number.isFinite(row.stats.mean) ? row.stats.mean : null
-  }
-  return effectiveMsWebGl2(row)
+  return effectiveMsForBackend(row, backend)
 }
 
 function renderFpsHeadToHead(runs: Run[]): string {
@@ -441,13 +446,13 @@ function renderFpsHeadToHead(runs: Run[]): string {
     ${bodyRows.join('\n    ')}
   </tbody>
 </table>
-<p class="caption">fps comes from a backend-appropriate frame time:
-WebGPU uses paced <code>wall</code> (CPU+GPU serial via
-<code>onSubmittedWorkDone</code>); WebGL2 uses
-<code>max(frame, GPU timer)</code> because CPU submit and GPU execution
-overlap on real hardware. Rows show <code>—</code> when WebGL2 timer-query
-data is unavailable (e.g. SwiftShader headless). Speedup = slower frame
-time ÷ faster frame time.</p>`
+<p class="caption">fps uses the same definition on both backends:
+<code>max(frame, GPU)</code>, the steady-state per-frame cost assuming a
+rAF loop pipelines CPU and GPU work. <code>GPU</code> comes from
+<code>wall − frame</code> on WebGPU and
+<code>EXT_disjoint_timer_query_webgl2</code> on WebGL2. Rows show
+<code>—</code> when GPU timing is unavailable (e.g. SwiftShader
+headless WebGL2). Speedup = slower frame time ÷ faster frame time.</p>`
 }
 
 function renderComparisonSection(runs: Run[]): string {

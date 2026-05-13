@@ -91,10 +91,15 @@ The report has four sections (in order):
 
 Side-by-side run metadata: backend resolved, paced flag, WebGPU adapter
 description, WebGL renderer string (via
-`WEBGL_debug_renderer_info`), timestamp, source file. A prominent
-amber banner appears if a SwiftShader driver was detected — that means
-the run is software-rasterised and absolute numbers are not
-representative.
+`WEBGL_debug_renderer_info`), timestamp, source file, and canvas size
+(CSS px × DPR). A prominent amber banner appears if a SwiftShader
+driver was detected — that means the run is software-rasterised and
+absolute numbers are not representative.
+
+The bench pins canvas CSS size to 1024×576 when `autorun=1`, so two
+runs of `bench:report` on the same machine compare against the same
+fragment count regardless of window size. Override per-run with
+`canvasW` / `canvasH` URL params.
 
 ### 2. fps head-to-head
 
@@ -102,25 +107,32 @@ The practical view. For each scenario:
 
 | Column | Meaning |
 | --- | --- |
-| `WebGPU fps`, `WebGPU frame (ms)` | `1000 / wall` and `wall` |
+| `WebGPU fps`, `WebGPU frame (ms)` | `1000 / max(frame, GPU)` and `max(frame, GPU)` |
 | `WebGL2 fps`, `WebGL2 frame (ms)` | `1000 / max(frame, GPU)` and `max(frame, GPU)` |
 | `Winner` | Whichever backend has the lower frame time |
 | `Speedup` | `slower frame time / faster frame time` |
 
-For WebGL2 the effective frame time is `max(frame, GPU)` because CPU
-submit and GPU execution overlap on real hardware — steady-state frame
-rate is governed by whichever side is slower. When the GPU timer-query
-extension isn't exposed the row shows `—` rather than a misleadingly
-high CPU-only number.
+Effective frame time is `max(frame, GPU)` on both backends — CPU submit
+and GPU execution overlap on real hardware, so steady-state frame rate
+is governed by whichever side is slower. For WebGPU the GPU side is
+estimated as `wall − frame` (paced via `onSubmittedWorkDone`); for
+WebGL2 it comes from `EXT_disjoint_timer_query_webgl2`. If GPU time is
+unavailable for a row (e.g. WebGL2 with no timer-query extension), the
+row shows `—` rather than a misleadingly high CPU-only number.
 
 ### 3. Per-backend tables
 
 Backend-specific column layouts (the columns mean different things on
 each backend, so they're not shared):
 
-**WebGPU** — `Wall (CPU+GPU)` | `~fps` | `CPU` | `Submit` | `Frame` | `GPU est. (wall−frame)` | `p95` | `Stddev`
+**WebGPU** — `Scenario` | `Frames` | `Wall (paced)` | `CPU` | `Submit` | `Frame` | `GPU est. (wall−frame)` | `Effective` | `~fps` | `p95` | `Stddev`
 
-**WebGL2** — `CPU` | `Submit` | `Frame` | `GPU (timer)` | `Effective` | `~fps` | `p95` | `Stddev`
+**WebGL2** — `Scenario` | `Frames` | `Frame (CPU+submit)` | `GPU (timer)` | `Effective` | `~fps` | `p95` | `Stddev`
+
+The WebGL2 table doesn't break out `CPU` and `Submit` columns because
+in WebGL2 there's no meaningful boundary between them — `markSubmitStart`
+and `markEnd` fire adjacently with no work in between, so the split is
+always ~0 and would just be noise.
 
 If `GPU (timer)` is blank on every WebGL2 row, the host driver doesn't
 expose `EXT_disjoint_timer_query_webgl2` (commonly SwiftShader in

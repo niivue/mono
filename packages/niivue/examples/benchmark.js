@@ -48,6 +48,21 @@ import { MESH_UNIFORM_SIZE } from '../src/wgpu/mesh.ts'
 // ---------------------------------------------------------------------------
 
 const canvasA = document.getElementById('canvasA')
+
+// Headless/headed autorun pins the canvas to a fixed pixel size so the
+// numbers don't drift with the host window. Two consecutive headed
+// `bench:report` runs at different window sizes will otherwise disagree
+// by 20-30% just from canvas-pixel-count variance. Override with
+// `?canvasW=…&canvasH=…` if a specific aspect ratio is wanted.
+{
+  const _params = new URLSearchParams(window.location.search)
+  if (_params.get('autorun') === '1') {
+    const w = Number(_params.get('canvasW')) || 1024
+    const h = Number(_params.get('canvasH')) || 576
+    canvasA.style.width = `${w}px`
+    canvasA.style.height = `${h}px`
+  }
+}
 const canvasLabel = document.getElementById('canvasLabel')
 const resultsDiv = document.getElementById('results')
 const statusEl = document.getElementById('statusText')
@@ -182,6 +197,13 @@ async function captureEnv() {
     paced: urlParams.get('paced') === '1',
     backend: _activeBackend,
     requestedBackend: ACTIVE_BACKEND,
+    canvas: {
+      cssWidth: canvasA.clientWidth,
+      cssHeight: canvasA.clientHeight,
+      pixelWidth: canvasA.width,
+      pixelHeight: canvasA.height,
+      devicePixelRatio: window.devicePixelRatio || 1,
+    },
   }
   const labelParam = urlParams.get('label')
   if (labelParam) env.label = labelParam
@@ -552,7 +574,7 @@ function setupGlTimerQuery(gl) {
   }
 }
 
-async function benchRenderFrames(nv, frames, warmup = 20) {
+async function benchRenderFrames(nv, frames, warmup = 30) {
   for (let i = 0; i < warmup; i++) {
     nv.view.render()
     await _waitGpu(nv)
@@ -573,7 +595,7 @@ async function benchRenderFrames(nv, frames, warmup = 20) {
  * Returns { wall, cpu, submit, frame } each holding one sample per render() call.
  * Falls back to empty arrays if PerformanceObserver isn't available.
  */
-async function benchRenderFramesWithSplit(nv, frames, warmup = 20) {
+async function benchRenderFramesWithSplit(nv, frames, warmup = 30) {
   const cpu = []
   const submit = []
   const frame = []
@@ -649,6 +671,28 @@ async function benchRenderFramesWithSplit(nv, frames, warmup = 20) {
 
 async function rendererScenarios(nv, frames) {
   const scenarios = []
+
+  // Pipeline pre-warm: touch the dominant render paths (slice, mosaic,
+  // 3D ray-march, mesh) once before recording any stats so shader
+  // compile / pipeline-state creation doesn't bill to the first
+  // measured scenario. The per-scenario warmup (30 frames inside
+  // `benchRenderFramesWithSplit`) is enough for JIT but not for a
+  // worst-case WebGPU compile that can take tens of ms.
+  setStatus('Pipeline pre-warm...')
+  checkAbort()
+  await ensureAssets(nv, { volumes: VOL_MNI })
+  for (const mode of [
+    { sliceType: 3, mosaicString: '', showRender: 1 }, // multiplanar + render
+    { sliceType: 0, mosaicString: '' }, // single axial
+    { sliceType: 4, mosaicString: '' }, // 3D
+    { sliceType: 3, mosaicString: 'A -10 10' }, // mosaic
+  ]) {
+    Object.assign(nv, mode)
+    for (let i = 0; i < 5; i++) {
+      nv.view.render()
+      await _waitGpu(nv)
+    }
+  }
 
   const run = async (name, setup) => {
     setStatus(`Renderer: ${name}...`)

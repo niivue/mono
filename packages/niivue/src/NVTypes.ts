@@ -511,6 +511,7 @@ export type VolumeRenderConfig = {
   isV1SliceShader: boolean
   matcap: string
   paqdUniforms: [number, number, number, number]
+  transmittanceCutoff: number
 }
 
 /** Mesh rendering config: global settings for mesh display */
@@ -670,6 +671,7 @@ export type NiiVueOptions = {
   volumeIsV1SliceShader?: boolean
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
+  volumeTransmittanceCutoff?: number
 
   // Mesh (prefixed)
   meshXRay?: number

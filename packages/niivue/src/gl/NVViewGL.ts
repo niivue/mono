@@ -599,6 +599,7 @@ export default class NVGlview {
             md.clipPlanes,
             md.scene.isClipPlaneCutaway,
             md.volume.paqdUniforms,
+            md.volume.transmittanceCutoff,
           )
         }
       }

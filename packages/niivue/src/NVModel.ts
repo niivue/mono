@@ -239,6 +239,9 @@ export default class NVModel {
       ...(options.volumePaqdUniforms !== undefined && {
         paqdUniforms: options.volumePaqdUniforms,
       }),
+      ...(options.volumeTransmittanceCutoff !== undefined && {
+        transmittanceCutoff: options.volumeTransmittanceCutoff,
+      }),
     }
     // Mesh — flat options mapped to mesh group
     this.mesh = {

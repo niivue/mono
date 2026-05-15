@@ -523,6 +523,7 @@ export class VolumeRenderer extends NVRenderer {
     clipPlanes: number[],
     isClipCutaway = false,
     paqdUniforms: readonly number[] = [0, 0, 0, 0],
+    earlyTermination = 0.95,
   ): void {
     if (
       !this.isReady ||
@@ -555,6 +556,7 @@ export class VolumeRenderer extends NVRenderer {
         ...clipPlaneColor,
         ...clipPlanes,
         ...paqdUniforms,
+        earlyTermination,
       ]),
     )
 

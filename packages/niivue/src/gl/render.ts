@@ -441,6 +441,7 @@ export class VolumeRenderer extends NVRenderer {
     clipPlanes: number[],
     isClipCutaway = false,
     paqdUniforms: readonly number[] = [0, 0, 0, 0],
+    earlyTermination = 0.95,
   ): void {
     if (!this.isReady || !this.shader || !this.cubeVAO || !this.indexBuffer)
       return
@@ -566,6 +567,8 @@ export class VolumeRenderer extends NVRenderer {
     if (shader.uniforms.numPaqd) gl.uniform1f(shader.uniforms.numPaqd, 0.0)
     if (shader.uniforms.paqdUniforms)
       gl.uniform4fv(shader.uniforms.paqdUniforms, paqdUniforms as number[])
+    if (shader.uniforms.earlyTermination)
+      gl.uniform1f(shader.uniforms.earlyTermination, earlyTermination)
 
     // 4. Bind Geometry
     gl.bindVertexArray(this.cubeVAO)

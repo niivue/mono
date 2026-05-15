@@ -812,6 +812,15 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  get volumeTransmittanceCutoff(): number {
+    return this.model.volume.transmittanceCutoff
+  }
+  set volumeTransmittanceCutoff(v: number) {
+    this.model.volume.transmittanceCutoff = v
+    this.emit('change', { property: 'volumeTransmittanceCutoff', value: v })
+    this.drawScene()
+  }
+
   get volumeOutlineWidth(): number {
     return this.model.volume.outlineWidth
   }

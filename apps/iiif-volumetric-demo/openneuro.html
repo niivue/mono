@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenNeuro Render Grid - IIIF Volumetric</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050706;
+        --panel: rgba(8, 12, 11, 0.86);
+        --panel-strong: rgba(12, 17, 16, 0.95);
+        --line: rgba(171, 190, 182, 0.18);
+        --line-hot: rgba(135, 224, 188, 0.72);
+        --text: #e7eee9;
+        --muted: #91a19a;
+        --quiet: #63726d;
+        --green: #8fe0bd;
+        --amber: #f0c46f;
+        --blue: #80b8ff;
+        font-family: "Avenir Next Condensed", "DIN Condensed", "Arial Narrow", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        overflow: hidden;
+        background:
+          linear-gradient(90deg, rgba(143, 224, 189, 0.035) 1px, transparent 1px),
+          linear-gradient(0deg, rgba(143, 224, 189, 0.026) 1px, transparent 1px),
+          radial-gradient(circle at 72% 36%, rgba(128, 184, 255, 0.10), transparent 36%),
+          #050706;
+        background-size: 42px 42px, 42px 42px, cover, cover;
+        color: var(--text);
+      }
+
+      .shell {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      #nv-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        cursor: grab;
+      }
+
+      #nv-canvas.dragging {
+        cursor: grabbing;
+      }
+
+      .topbar {
+        position: fixed;
+        inset: 14px 16px auto 16px;
+        z-index: 10;
+        min-height: 68px;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 18px;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        backdrop-filter: blur(16px);
+      }
+
+      .mark {
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(143, 224, 189, 0.45);
+        border-radius: 7px;
+        color: var(--green);
+        font-size: 0.74rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.2rem, 1.8vw, 2rem);
+        line-height: 0.95;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .subtitle {
+        margin-top: 5px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.76rem;
+      }
+
+      .stats {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+
+      .stat {
+        min-width: 88px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.24);
+        text-align: center;
+      }
+
+      .toolbar {
+        position: fixed;
+        top: 98px;
+        right: 16px;
+        z-index: 11;
+        width: 236px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-strong);
+        backdrop-filter: blur(16px);
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+        margin-bottom: 14px;
+      }
+
+      .field span,
+      .panel-kicker {
+        color: var(--muted);
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      select,
+      button {
+        width: 100%;
+        min-height: 34px;
+        border: 1px solid rgba(171, 190, 182, 0.22);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.35);
+        color: var(--text);
+        font: inherit;
+      }
+
+      select {
+        padding: 0 10px;
+      }
+
+      .zoom-field {
+        margin-bottom: 12px;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        height: 28px;
+        margin: 0;
+        accent-color: var(--green);
+      }
+
+      input[type="range"]:focus-visible {
+        outline: 2px solid var(--blue);
+        outline-offset: 3px;
+      }
+
+      button {
+        display: grid;
+        place-items: center;
+        color: var(--green);
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.95rem;
+      }
+
+      button:hover,
+      select:hover {
+        border-color: var(--line-hot);
+      }
+
+      .button-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      .selection-panel {
+        position: fixed;
+        left: 16px;
+        bottom: 16px;
+        z-index: 10;
+        width: min(380px, calc(100vw - 32px));
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-strong);
+        backdrop-filter: blur(16px);
+      }
+
+      .selection-panel h2 {
+        margin: 4px 0 12px;
+        overflow: hidden;
+        color: var(--text);
+        font-size: 1.05rem;
+        line-height: 1.1;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      dl {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0;
+      }
+
+      dt {
+        color: var(--quiet);
+        font-size: 0.65rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      dd {
+        margin: 2px 0 0;
+        overflow: hidden;
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.76rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .rotation-controls {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+      }
+
+      .rotation-controls.is-disabled {
+        opacity: 0.46;
+      }
+
+      .range-control {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 6px 10px;
+        align-items: center;
+      }
+
+      .range-control span {
+        color: var(--muted);
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .range-control output {
+        color: var(--green);
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.72rem;
+      }
+
+      .range-control input {
+        grid-column: 1 / -1;
+      }
+
+      .overview-panel {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 10;
+        width: 236px;
+        height: 236px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-strong);
+        backdrop-filter: blur(16px);
+      }
+
+      #overview {
+        width: 100%;
+        height: 100%;
+        cursor: crosshair;
+      }
+
+      .loading {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: grid;
+        place-items: center;
+        background: rgba(5, 7, 6, 0.88);
+        color: var(--green);
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        letter-spacing: 0;
+      }
+
+      .loading.hidden {
+        display: none;
+      }
+
+      @media (max-width: 760px) {
+        .topbar {
+          grid-template-columns: auto 1fr;
+        }
+
+        .stats {
+          grid-column: 1 / -1;
+          justify-content: flex-start;
+        }
+
+        .toolbar {
+          top: auto;
+          right: 16px;
+          bottom: 16px;
+          width: 210px;
+        }
+
+        .overview-panel {
+          display: none;
+        }
+
+        .selection-panel {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell" aria-label="OpenNeuro rendered volume grid">
+      <canvas id="nv-canvas" tabindex="0" aria-label="Rendered OpenNeuro volume grid"></canvas>
+
+      <header class="topbar">
+        <a class="mark" href="/" aria-label="Back to demo index">IIIF</a>
+        <div>
+          <h1>OpenNeuro Render Grid</h1>
+          <div id="status" class="subtitle">Loading volumes</div>
+        </div>
+        <div class="stats" aria-live="polite">
+          <div id="stat-count" class="stat">0 volumes</div>
+          <div id="stat-grid" class="stat">0 x 0</div>
+          <div id="stat-zoom" class="stat">zoom 1.00</div>
+        </div>
+      </header>
+
+      <aside class="toolbar" aria-label="Grid controls">
+        <label class="field">
+          <span>Dataset</span>
+          <select id="dataset">
+            <option value="ds000001">ds000001</option>
+            <option value="openneuro">All OpenNeuro</option>
+            <option value="all">All NIfTI</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Color</span>
+          <select id="colormap">
+            <option value="Gray">Gray</option>
+            <option value="viridis">Viridis</option>
+            <option value="plasma">Plasma</option>
+            <option value="hot">Hot</option>
+            <option value="cool">Cool</option>
+          </select>
+        </label>
+        <label class="field zoom-field">
+          <span>Zoom</span>
+          <input id="zoom-slider" type="range" min="0" max="1000" value="0" aria-label="Zoom" />
+        </label>
+        <div class="button-row">
+          <button id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">-</button>
+          <button id="fit-grid" type="button" title="Fit grid" aria-label="Fit grid">[]</button>
+          <button id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+        </div>
+        <button id="zoom-selected" type="button">Focus</button>
+      </aside>
+
+      <aside class="selection-panel" aria-label="Selected volume">
+        <div class="panel-kicker">Selected</div>
+        <h2 id="selected-title">None</h2>
+        <dl>
+          <div>
+            <dt>Shape</dt>
+            <dd id="selected-shape">-</dd>
+          </div>
+          <div>
+            <dt>Level</dt>
+            <dd id="selected-level">-</dd>
+          </div>
+          <div>
+            <dt>Dtype</dt>
+            <dd id="selected-dtype">-</dd>
+          </div>
+          <div>
+            <dt>Tile</dt>
+            <dd id="selected-tile">-</dd>
+          </div>
+        </dl>
+        <div id="rotation-controls" class="rotation-controls is-disabled">
+          <div class="panel-kicker">View</div>
+          <label class="range-control">
+            <span>Azimuth</span>
+            <output id="selected-azimuth-value" for="selected-azimuth">-</output>
+            <input id="selected-azimuth" type="range" min="0" max="360" step="1" value="0" disabled />
+          </label>
+          <label class="range-control">
+            <span>Elevation</span>
+            <output id="selected-elevation-value" for="selected-elevation">-</output>
+            <input id="selected-elevation" type="range" min="-90" max="90" step="1" value="0" disabled />
+          </label>
+        </div>
+      </aside>
+
+      <aside class="overview-panel" aria-label="Grid overview">
+        <canvas id="overview"></canvas>
+      </aside>
+
+      <div id="loading" class="loading">Preparing rendered grid</div>
+    </main>
+
+    <script type="module" src="/src/openneuro.ts"></script>
+  </body>
+</html>

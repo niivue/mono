@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 
 const ghBase = process.env.VITE_BASE ?? ''
@@ -19,7 +20,14 @@ export default defineConfig({
     outDir: 'dist',
     target: 'esnext',
     rollupOptions: {
-      input: 'index.html',
+      input: {
+        index: resolve(__dirname, 'index.html'),
+        infinite: resolve(__dirname, 'infinite.html'),
+        'neuro-desktop': resolve(__dirname, 'neuro-desktop.html'),
+        openneuro: resolve(__dirname, 'openneuro.html'),
+        'osd-volume-desktop': resolve(__dirname, 'osd-volume-desktop.html'),
+        'volume-fly-space': resolve(__dirname, 'volume-fly-space.html'),
+      },
     },
   },
 })

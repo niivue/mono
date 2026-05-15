@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IIIF Volumetric Server — Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #0b0d10;
+        color: #e8eaed;
+      }
+      header {
+        padding: 12px 18px;
+        border-bottom: 1px solid #222;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header h1 {
+        font-size: 1rem;
+        margin: 0;
+      }
+      header .links a {
+        color: #8ab4f8;
+        margin-left: 12px;
+        text-decoration: none;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 1px;
+        background: #222;
+        height: calc(100vh - 51px);
+      }
+      aside,
+      section {
+        background: #0b0d10;
+        overflow: auto;
+      }
+      aside {
+        padding: 12px;
+      }
+      aside h2 {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        color: #9aa0a6;
+        margin: 16px 0 6px;
+      }
+      .vol-item {
+        padding: 8px 10px;
+        border: 1px solid #2a2d31;
+        border-radius: 6px;
+        margin-bottom: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+      .vol-item.active {
+        background: #1a2a3a;
+        border-color: #8ab4f8;
+      }
+      .vol-item small {
+        display: block;
+        color: #9aa0a6;
+        margin-top: 2px;
+      }
+      .controls {
+        font-size: 0.85rem;
+      }
+      .controls label {
+        display: block;
+        margin: 4px 0;
+        color: #9aa0a6;
+      }
+      .controls input[type='range'] {
+        width: 100%;
+      }
+      .controls input[type='text'],
+      .controls input[type='number'],
+      .controls select {
+        width: 100%;
+        background: #1a1d20;
+        border: 1px solid #2a2d31;
+        color: #e8eaed;
+        padding: 4px 6px;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 1fr;
+        gap: 1px;
+        background: #222;
+      }
+      .pane {
+        background: #0b0d10;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .pane h3 {
+        position: absolute;
+        top: 4px;
+        left: 8px;
+        margin: 0;
+        font-size: 0.75rem;
+        color: #9aa0a6;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        z-index: 2;
+        text-shadow: 0 0 4px #000;
+      }
+      .pane .slice-controls {
+        position: absolute;
+        bottom: 8px;
+        left: 8px;
+        right: 8px;
+        z-index: 2;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .pane img {
+        max-width: 100%;
+        max-height: 100%;
+        image-rendering: pixelated;
+      }
+      .pane canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        outline: none;
+      }
+      #pane-3d.render-ready #nv-canvas {
+        cursor: grab;
+      }
+      #pane-3d.render-dragging #nv-canvas {
+        cursor: grabbing;
+      }
+      .empty {
+        color: #5f6368;
+        font-size: 0.9rem;
+        text-align: center;
+        padding: 20px;
+      }
+      .pill {
+        display: inline-block;
+        font-size: 0.7rem;
+        background: #1a1d20;
+        border: 1px solid #2a2d31;
+        padding: 1px 6px;
+        border-radius: 999px;
+        color: #9aa0a6;
+        margin-left: 6px;
+      }
+      .pill.green {
+        color: #b8f5c8;
+        border-color: #1a3a25;
+      }
+      .pill.red {
+        color: #f5b8b8;
+        border-color: #3a1a1a;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>
+        IIIF Volumetric Server
+        <span class="pill" id="apiPill">API</span>
+        <span class="pill" id="niivuePill">niivue</span>
+      </h1>
+      <div class="links">
+        <a href="/api">/api</a>
+        <a href="/iiif/presentation">/iiif/presentation</a>
+      </div>
+    </header>
+    <main>
+      <aside>
+        <h2>Volumes</h2>
+        <div id="vols"></div>
+        <h2>Controls</h2>
+        <div class="controls" id="controls">
+          <label>Manifest URL</label>
+          <input id="manifestUrl" type="text" readonly />
+          <label>Colormap</label>
+          <select id="colormap">
+            <option>Gray</option>
+            <option>hot</option>
+            <option>cool</option>
+            <option>plasma</option>
+            <option>viridis</option>
+            <option>turbo</option>
+          </select>
+          <label>Window min / max</label>
+          <input id="window" type="text" placeholder="e.g. 0,1000" />
+
+          <label>Resolution Level</label>
+          <select id="resLevel">
+            <option value="0">Full (Native)</option>
+          </select>
+
+          <h2 style="margin-top: 18px">Exploded view</h2>
+          <label>
+            <input id="explodedToggle" type="checkbox" /> Render exploded
+          </label>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px">
+            <div>
+              <label style="margin: 0">nx</label>
+              <input id="explodeNx" type="number" min="1" max="10" value="3" />
+            </div>
+            <div>
+              <label style="margin: 0">ny</label>
+              <input id="explodeNy" type="number" min="1" max="10" value="3" />
+            </div>
+            <div>
+              <label style="margin: 0">nz</label>
+              <input id="explodeNz" type="number" min="1" max="10" value="3" />
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr; gap: 4px">
+            <div>
+              <label style="margin: 0">ex: <span id="valEx">1.5</span></label>
+              <input id="explodeEx" type="range" min="1" max="5" step="0.1" value="1.5" />
+            </div>
+            <div>
+              <label style="margin: 0">ey: <span id="valEy">1.5</span></label>
+              <input id="explodeEy" type="range" min="1" max="5" step="0.1" value="1.5" />
+            </div>
+            <div>
+              <label style="margin: 0">ez: <span id="valEz">1.5</span></label>
+              <input id="explodeEz" type="range" min="1" max="5" step="0.1" value="1.5" />
+            </div>
+          </div>
+          <div id="explodePlan" style="margin-top: 6px; color: #9aa0a6; font-size: 0.75rem"></div>
+
+          <p style="margin-top: 18px; color: #5f6368; font-size: 0.75rem">
+            The three IIIF Image API panes show axial/coronal/sagittal slices.
+            The fourth pane is a 3D rendering driven by
+            <code>@niivue/niivue</code>.
+          </p>
+        </div>
+      </aside>
+      <section>
+        <div class="pane" id="pane-axial">
+          <h3>Axial (IIIF Image API)</h3>
+          <img id="img-axial" alt="Axial slice" />
+          <div class="slice-controls">
+            <input id="slice-axial" type="range" min="0" max="0" value="0" />
+            <span id="slice-axial-val"></span>
+          </div>
+        </div>
+        <div class="pane" id="pane-coronal">
+          <h3>Coronal (IIIF Image API)</h3>
+          <img id="img-coronal" alt="Coronal slice" />
+          <div class="slice-controls">
+            <input id="slice-coronal" type="range" min="0" max="0" value="0" />
+            <span id="slice-coronal-val"></span>
+          </div>
+        </div>
+        <div class="pane" id="pane-sagittal">
+          <h3>Sagittal (IIIF Image API)</h3>
+          <img id="img-sagittal" alt="Sagittal slice" />
+          <div class="slice-controls">
+            <input id="slice-sagittal" type="range" min="0" max="0" value="0" />
+            <span id="slice-sagittal-val"></span>
+          </div>
+        </div>
+        <div class="pane" id="pane-3d">
+          <h3>3D (Presentation 4.0 alpha → niivue)</h3>
+          <canvas id="nv-canvas" tabindex="0" aria-label="Interactive 3D NIfTI render"></canvas>
+          <div id="nv-fallback" class="empty" hidden></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/viewer.ts"></script>
+  </body>
+</html>

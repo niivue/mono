@@ -195,6 +195,16 @@ interface WarmIndex {
   warming: Set<string>
 }
 
+interface VolumeWindow {
+  calMin: number
+  calMax: number
+}
+
+interface VolumeExtents {
+  min: [number, number, number]
+  max: [number, number, number]
+}
+
 interface AppState {
   api: ApiCatalog | null
   nv: NiiVueLike | null
@@ -209,6 +219,8 @@ interface AppState {
   loadingSignature: string
   loadedSignature: string
   loadedSourceKeys: Set<string>
+  volumeWindow: Map<string, VolumeWindow>
+  volumeExtents: Map<string, VolumeExtents>
   instanceSignature: string
   cameraSignature: string
   renderLevels: Map<string, number>
@@ -245,7 +257,13 @@ interface NiiVueLike {
   model: {
     addVolume(volume: ImageFromUrlOptions): Promise<void>
     removeVolume(index: number): void
-    getVolumes(): { name?: string }[]
+    getVolumes(): {
+      name?: string
+      calMin?: number
+      calMax?: number
+      extentsMin?: ArrayLike<number>
+      extentsMax?: ArrayLike<number>
+    }[]
   }
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   setInstances(instances: NVInstance[]): void
@@ -298,6 +316,8 @@ const state: AppState = {
   loadingSignature: '',
   loadedSignature: '',
   loadedSourceKeys: new Set(),
+  volumeWindow: new Map(),
+  volumeExtents: new Map(),
   instanceSignature: '',
   cameraSignature: '',
   renderLevels: new Map(),
@@ -719,22 +739,27 @@ async function loadActiveVolumes(): Promise<void> {
         Promise.all(
           toAdd.map(async (slot) => {
             const source = volumeSourceForSlot(slot)
+            const volumeId = slot.node.volume.id
+            const cached = state.volumeWindow.get(volumeId)
+            const baseOptions = {
+              name: slot.volumeKey,
+              colormap: colormapForVolume(slot.node.volume),
+              isColorbarVisible: false,
+              ...(cached
+                ? { calMin: cached.calMin, calMax: cached.calMax }
+                : {}),
+            }
             const options: ImageFromUrlOptions =
               source instanceof File
                 ? ({
                     url: source,
-                    name: slot.volumeKey,
-                    colormap: colormapForNode(slot.node),
-                    isColorbarVisible: false,
+                    ...baseOptions,
                   } as unknown as ImageFromUrlOptions)
-                : {
-                    url: source,
-                    name: slot.volumeKey,
-                    colormap: colormapForNode(slot.node),
-                    isColorbarVisible: false,
-                  }
+                : { url: source, ...baseOptions }
             await nv.model.addVolume(options)
             state.loadedSourceKeys.add(slot.volumeKey)
+            if (!cached) cacheVolumeWindow(volumeId, slot.volumeKey)
+            stabilizeVolumeExtents(volumeId, slot.volumeKey)
           }),
         ),
         LOAD_TIMEOUT_MS,
@@ -2191,10 +2216,96 @@ function parseBboxQuery(value: string | null): number[] | null {
   return parts.length === 6 ? parts : null
 }
 
-function colormapForNode(node: SceneNode): string {
-  if (els.quality.value === 'low') return 'Gray'
-  const names = ['Gray', 'viridis', 'plasma', 'hot', 'cool']
-  return names[node.index % names.length] ?? 'Gray'
+// Multiple scene nodes share the same source NIfTI (only ~20 fixtures spread
+// across 120 nodes). All instances of one source render through a single
+// NVImage with a single colormap, so we key colormap + window by source id —
+// not node id — to keep appearance stable as the dedup winner shifts and as
+// LOD swaps in.
+const RANDOM_COLORMAPS = [
+  'hot',
+  'cool',
+  'viridis',
+  'inferno',
+  'plasma',
+  'mako',
+  'cividis',
+  'batlow',
+  'warm',
+  'winter',
+  'redyell',
+  'hotiron',
+  'actc',
+  'hsv',
+  'green2cyan',
+  'green2orange',
+]
+
+function colormapForVolume(volume: ApiVolume): string {
+  let hash = 0
+  for (let i = 0; i < volume.id.length; i++) {
+    hash = (hash * 31 + volume.id.charCodeAt(i)) | 0
+  }
+  const idx = Math.abs(hash) % RANDOM_COLORMAPS.length
+  return RANDOM_COLORMAPS[idx] ?? 'Gray'
+}
+
+function cacheVolumeWindow(volumeId: string, volumeKey: string): void {
+  const vols = state.nv?.model.getVolumes()
+  if (!vols) return
+  const vol = vols.find((v) => v.name === volumeKey)
+  if (!vol) return
+  const { calMin, calMax } = vol
+  if (
+    typeof calMin === 'number' &&
+    typeof calMax === 'number' &&
+    Number.isFinite(calMin) &&
+    Number.isFinite(calMax) &&
+    calMax > calMin
+  ) {
+    state.volumeWindow.set(volumeId, { calMin, calMax })
+  }
+}
+
+// Lock the per-source extents used by global3d MVP math. Each cropped LOD has
+// a slightly different tight-bbox in mm space, so swapping LODs would shift
+// the MVP center/diameter and visibly translate the volume. Reusing the
+// first-loaded LOD's extents keeps the projection stable across LOD swaps.
+function stabilizeVolumeExtents(volumeId: string, volumeKey: string): void {
+  const vols = state.nv?.model.getVolumes()
+  if (!vols) return
+  const vol = vols.find((v) => v.name === volumeKey) as
+    | {
+        name?: string
+        extentsMin?: ArrayLike<number>
+        extentsMax?: ArrayLike<number>
+      }
+    | undefined
+  if (!vol?.extentsMin || !vol?.extentsMax) return
+  const cached = state.volumeExtents.get(volumeId)
+  if (cached) {
+    const target = vol as unknown as {
+      extentsMin: [number, number, number]
+      extentsMax: [number, number, number]
+    }
+    target.extentsMin = [...cached.min]
+    target.extentsMax = [...cached.max]
+    return
+  }
+  const min = vol.extentsMin
+  const max = vol.extentsMax
+  if (
+    Number.isFinite(min[0]) &&
+    Number.isFinite(min[1]) &&
+    Number.isFinite(min[2]) &&
+    Number.isFinite(max[0]) &&
+    Number.isFinite(max[1]) &&
+    Number.isFinite(max[2])
+  ) {
+    state.volumeExtents.set(volumeId, {
+      min: [min[0], min[1], min[2]],
+      max: [max[0], max[1], max[2]],
+    })
+  }
 }
 
 function visibleScore(node: SceneNode): number {

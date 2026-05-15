@@ -100,16 +100,25 @@ function resolveNiivuegpuDeps(distDir: string | null): NiivuegpuDeps {
 
 async function main(): Promise<void> {
   await registry.scan(FIXTURES_DIR)
-  console.log(
-    `Loaded ${registry.size()} volume(s) from ${FIXTURES_DIR}:\n` +
-      registry
-        .list()
-        .map(
-          (v) =>
-            `  - ${v.id} (${v.format}, ${v.shape.join('x')}, dtype=${v.dtype})`,
-        )
-        .join('\n'),
-  )
+  if (registry.size() === 0) {
+    console.warn(
+      `No volumes found in ${FIXTURES_DIR}.\n` +
+        '  Download OpenNeuro T1w samples with:\n' +
+        '    bunx nx run iiif-volumetric-server:fetch-fixtures\n' +
+        '  Or drop NIfTI (.nii/.nii.gz) files into the fixtures directory and restart.',
+    )
+  } else {
+    console.log(
+      `Loaded ${registry.size()} volume(s) from ${FIXTURES_DIR}:\n` +
+        registry
+          .list()
+          .map(
+            (v) =>
+              `  - ${v.id} (${v.format}, ${v.shape.join('x')}, dtype=${v.dtype})`,
+          )
+          .join('\n'),
+    )
+  }
 
   const app = express()
   app.locals.publicBaseUrl = PUBLIC_BASE_URL

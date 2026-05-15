@@ -1,4 +1,5 @@
 import { mat4 } from 'gl-matrix'
+import { getCanvasViewport } from '@/control/viewBoth'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
@@ -55,6 +56,42 @@ type SharedGPUContext = {
 }
 const sharedGPUContexts = new WeakMap<HTMLCanvasElement, SharedGPUContext>()
 
+/**
+ * Copy the visible portion of a bounds-rect intermediate texture to the canvas
+ * texture. Handles partial clipping on any edge by computing source-side and
+ * destination-side origins independently — `copyTextureToTexture` rejects
+ * negative `origin` values, so clipping must happen before the GPU call.
+ *
+ * Pre-condition: `source` is sized for `[bw × bh]` and represents the
+ * full bounds rect. After viewport pan/zoom the rect may extend off-canvas on
+ * any side; this routine clips to the on-canvas portion.
+ */
+function copyBoundsRect(
+  commandEncoder: GPUCommandEncoder,
+  source: GPUTexture,
+  dest: GPUTexture,
+  cw: number,
+  ch: number,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+): void {
+  if (source.width < bw || source.height < bh) return // stale during rapid resize
+  const srcX = Math.max(0, -bx)
+  const srcY = Math.max(0, -by)
+  const dstX = Math.max(0, bx)
+  const dstY = Math.max(0, by)
+  const visW = Math.min(bw - srcX, cw - dstX)
+  const visH = Math.min(bh - srcY, ch - dstY)
+  if (visW <= 0 || visH <= 0) return
+  commandEncoder.copyTextureToTexture(
+    { texture: source, origin: { x: srcX, y: srcY } },
+    { texture: dest, origin: { x: dstX, y: dstY } },
+    { width: visW, height: visH },
+  )
+}
+
 export default class NVView {
   canvas: HTMLCanvasElement
   model: NVModel
@@ -98,6 +135,8 @@ export default class NVView {
   private _boundsOffsetX = 0
   private _boundsOffsetY = 0
   private _isSubCanvasBounds = false
+  /** True when the bounds rect (after viewport pan/zoom) is entirely off-canvas */
+  _isBoundsOffscreen = false
   private _boundsColorTexture: GPUTexture | null = null
   private _depthTextureView: GPUTextureView | null = null
   private _msaaTextureView: GPUTextureView | null = null
@@ -600,6 +639,9 @@ export default class NVView {
       requestAnimationFrame(() => this.render())
       return
     }
+    // Off-screen after viewport transform: skip render pass entirely. Sibling instances
+    // still copy their own textures to the canvas in their own render() calls.
+    if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
     markCpuStart()
     // Determine render targets based on bounds mode
     const canvasTexture =
@@ -701,27 +743,32 @@ export default class NVView {
     const graphWidth = graphData
       ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
       : 0
-    const screenSlices = NVSliceLayout.screenSlicesLayout({
-      canvasWH: [
-        canvasWidth - legendWidth - graphWidth,
-        canvasHeight - cbHeight,
-      ],
-      sliceType: md.layout.sliceType,
-      tileMargin: md.layout.margin,
-      extentsMin: md.extentsMin,
-      extentsMax: md.extentsMax,
-      isRadiologicalConvention: md.layout.isRadiological,
-      multiplanarLayout: md.layout.multiplanarType,
-      multiplanarShowRender: md.layout.showRender,
-      sliceMosaicString: md.layout.mosaicString,
-      heroImageFraction: md.layout.heroFraction,
-      heroSliceType: md.layout.heroSliceType,
-      isMultiplanarEqualSize: md.layout.isEqualSize,
-      isCrossLines: md.ui.isCrossLinesVisible,
-      isCenterMosaic: md.layout.isMosaicCentered,
-      customLayout: md.layout.customLayout,
-    })
-    this.screenSlices = screenSlices
+    // When `options.instances` is set, the controller has already populated
+    // `this.screenSlices` via `updateTilesFromInstances` — skip the slice-layout pass.
+    if (!this.options.instances) {
+      const screenSlices = NVSliceLayout.screenSlicesLayout({
+        canvasWH: [
+          canvasWidth - legendWidth - graphWidth,
+          canvasHeight - cbHeight,
+        ],
+        sliceType: md.layout.sliceType,
+        tileMargin: md.layout.margin,
+        extentsMin: md.extentsMin,
+        extentsMax: md.extentsMax,
+        isRadiologicalConvention: md.layout.isRadiological,
+        multiplanarLayout: md.layout.multiplanarType,
+        multiplanarShowRender: md.layout.showRender,
+        sliceMosaicString: md.layout.mosaicString,
+        heroImageFraction: md.layout.heroFraction,
+        heroSliceType: md.layout.heroSliceType,
+        isMultiplanarEqualSize: md.layout.isEqualSize,
+        isCrossLines: md.ui.isCrossLinesVisible,
+        isCenterMosaic: md.layout.isMosaicCentered,
+        customLayout: md.layout.customLayout,
+      })
+      this.screenSlices = screenSlices
+    }
+    const screenSlices = this.screenSlices
     // Update crosshair geometry based on current model state
     if (this.crosshairRenderer.isReady) {
       this.crosshairRenderer.update(md)
@@ -1418,50 +1465,41 @@ export default class NVView {
   ): void {
     const cw = canvasTexture.width
     const ch = canvasTexture.height
-    // Validate dimensions before copy — during rapid resize, textures may be
-    // stale (sized for previous canvas) causing out-of-bounds GPU errors
     const bt = this._boundsColorTexture as GPUTexture
-    if (
-      bt.width >= this._boundsWidth &&
-      bt.height >= this._boundsHeight &&
-      this._boundsOffsetX + this._boundsWidth <= cw &&
-      this._boundsOffsetY + this._boundsHeight <= ch
-    ) {
-      commandEncoder.copyTextureToTexture(
-        { texture: bt },
-        {
-          texture: canvasTexture,
-          origin: { x: this._boundsOffsetX, y: this._boundsOffsetY },
-        },
-        { width: this._boundsWidth, height: this._boundsHeight },
+    if (!this._isBoundsOffscreen) {
+      copyBoundsRect(
+        commandEncoder,
+        bt,
+        canvasTexture,
+        cw,
+        ch,
+        this._boundsOffsetX,
+        this._boundsOffsetY,
+        this._boundsWidth,
+        this._boundsHeight,
       )
     }
     // Also copy sibling views' cached textures so their regions persist
-    // (WebGPU getCurrentTexture() returns a new blank texture each frame)
+    // (WebGPU getCurrentTexture() returns a new blank texture each frame).
+    // Off-screen siblings are culled here — their texture may be null entirely.
     const shared = sharedGPUContexts.get(this.canvas)
     if (shared) {
       for (const sibling of shared.views) {
         if (sibling === this) continue
+        if (sibling._isBoundsOffscreen) continue
         const st = sibling._boundsColorTexture
         if (st && sibling._isSubCanvasBounds) {
-          if (
-            st.width >= sibling._boundsWidth &&
-            st.height >= sibling._boundsHeight &&
-            sibling._boundsOffsetX + sibling._boundsWidth <= cw &&
-            sibling._boundsOffsetY + sibling._boundsHeight <= ch
-          ) {
-            commandEncoder.copyTextureToTexture(
-              { texture: st },
-              {
-                texture: canvasTexture,
-                origin: {
-                  x: sibling._boundsOffsetX,
-                  y: sibling._boundsOffsetY,
-                },
-              },
-              { width: sibling._boundsWidth, height: sibling._boundsHeight },
-            )
-          }
+          copyBoundsRect(
+            commandEncoder,
+            st,
+            canvasTexture,
+            cw,
+            ch,
+            sibling._boundsOffsetX,
+            sibling._boundsOffsetY,
+            sibling._boundsWidth,
+            sibling._boundsHeight,
+          )
         }
       }
     }
@@ -1703,31 +1741,59 @@ export default class NVView {
     const bounds = this.options.bounds
     const cw = this.canvas.width
     const ch = this.canvas.height
+    const vp = getCanvasViewport(this.canvas)
+    const isIdentity = vp.pan[0] === 0 && vp.pan[1] === 0 && vp.zoom === 1
     if (
-      !bounds ||
-      (bounds[0][0] === 0 &&
-        bounds[0][1] === 0 &&
-        bounds[1][0] === 1 &&
-        bounds[1][1] === 1)
+      isIdentity &&
+      (!bounds ||
+        (bounds[0][0] === 0 &&
+          bounds[0][1] === 0 &&
+          bounds[1][0] === 1 &&
+          bounds[1][1] === 1))
     ) {
       this._boundsOffsetX = 0
       this._boundsOffsetY = 0
       this._boundsWidth = cw
       this._boundsHeight = ch
       this._isSubCanvasBounds = false
+      this._isBoundsOffscreen = false
       return
     }
+    // Default to full-canvas world rect when bounds are absent
+    const worldX1 = bounds ? bounds[0][0] : 0
+    const worldY1 = bounds ? bounds[0][1] : 0
+    const worldX2 = bounds ? bounds[1][0] : 1
+    const worldY2 = bounds ? bounds[1][1] : 1
+    // Apply viewport: world -> screen-normalized (zoom around centre, then translate by pan)
+    const z = vp.zoom
+    const px = vp.pan[0]
+    const py = vp.pan[1]
+    const sx1 = (worldX1 - 0.5) * z + 0.5 + px
+    const sx2 = (worldX2 - 0.5) * z + 0.5 + px
+    const sy1 = (worldY1 - 0.5) * z + 0.5 + py
+    const sy2 = (worldY2 - 0.5) * z + 0.5 + py
     // Round pixel edges, then derive size by subtraction to prevent
     // offset + size > canvas (which breaks copyTextureToTexture on odd dimensions)
-    const left = Math.round(bounds[0][0] * cw)
-    const right = Math.round(bounds[1][0] * cw)
-    const top = Math.round((1 - bounds[1][1]) * ch)
-    const bottom = Math.round((1 - bounds[0][1]) * ch)
+    const left = Math.round(sx1 * cw)
+    const right = Math.round(sx2 * cw)
+    const top = Math.round((1 - sy2) * ch)
+    const bottom = Math.round((1 - sy1) * ch)
+    // Off-screen check: rect entirely outside canvas — caller skips texture allocation
+    if (right <= 0 || left >= cw || bottom <= 0 || top >= ch) {
+      this._boundsOffsetX = left
+      this._boundsOffsetY = top
+      this._boundsWidth = Math.max(1, right - left)
+      this._boundsHeight = Math.max(1, bottom - top)
+      this._isSubCanvasBounds = true
+      this._isBoundsOffscreen = true
+      return
+    }
     this._boundsOffsetX = left
     this._boundsOffsetY = top
     this._boundsWidth = Math.max(1, right - left)
     this._boundsHeight = Math.max(1, bottom - top)
     this._isSubCanvasBounds = true
+    this._isBoundsOffscreen = false
   }
 
   _updateMultisampleTarget(): void {
@@ -1758,8 +1824,10 @@ export default class NVView {
         this._msaaTextureView = null
       }
     }
-    // Create intermediate color texture for sub-canvas bounds (copy to canvas after render)
-    if (this._isSubCanvasBounds) {
+    // Create intermediate color texture for sub-canvas bounds (copy to canvas after render).
+    // Skip allocation when this instance is fully off-canvas after viewport transform —
+    // the texture is unused this frame and can be very large at high zoom.
+    if (this._isSubCanvasBounds && !this._isBoundsOffscreen) {
       if (
         !this._boundsColorTexture ||
         this._boundsColorTexture.width !== tw ||

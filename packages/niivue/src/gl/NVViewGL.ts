@@ -1,4 +1,5 @@
 import { mat4 } from 'gl-matrix'
+import { getCanvasViewport } from '@/control/viewBoth'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
@@ -75,6 +76,8 @@ export default class NVGlview {
   private _boundsOffsetX = 0
   private _boundsOffsetY = 0
   private _isSubCanvasBounds = false
+  /** True when the bounds rect (after viewport pan/zoom) is entirely off-canvas */
+  _isBoundsOffscreen = false
   // Narrow public getters for bench.ts to read current render-area size
   // without making the backing fields public or mutable.
   get boundsWidth(): number {
@@ -320,7 +323,7 @@ export default class NVGlview {
     }
 
     // Handle overlays (all volumes after the first)
-    if (vols.length > 1) {
+    if (vols.length > 1 && !this.options.instances) {
       await this.volumeRenderer.updateOverlays(
         gl,
         vols[0],
@@ -364,6 +367,9 @@ export default class NVGlview {
       requestAnimationFrame(() => this.render())
       return
     }
+    // Off-screen after viewport transform: skip the entire render pass — scissor would
+    // clip everything and the work is wasted. preserveDrawingBuffer keeps prior pixels.
+    if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
     markCpuStart()
     // Bounds pixel rect (sub-canvas or full canvas)
     const bx = this._boundsOffsetX
@@ -425,27 +431,32 @@ export default class NVGlview {
     const graphWidth = graphData
       ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
       : 0
-    const screenSlices = NVSliceLayout.screenSlicesLayout({
-      canvasWH: [
-        canvasWidth - legendWidth - graphWidth,
-        canvasHeight - cbHeight,
-      ],
-      sliceType: md.layout.sliceType,
-      tileMargin: md.layout.margin,
-      extentsMin: md.extentsMin,
-      extentsMax: md.extentsMax,
-      isRadiologicalConvention: md.layout.isRadiological,
-      multiplanarLayout: md.layout.multiplanarType,
-      multiplanarShowRender: md.layout.showRender,
-      sliceMosaicString: md.layout.mosaicString,
-      heroImageFraction: md.layout.heroFraction,
-      heroSliceType: md.layout.heroSliceType,
-      isMultiplanarEqualSize: md.layout.isEqualSize,
-      isCrossLines: md.ui.isCrossLinesVisible,
-      isCenterMosaic: md.layout.isMosaicCentered,
-      customLayout: md.layout.customLayout,
-    })
-    this.screenSlices = screenSlices
+    // When `options.instances` is set, the controller has already populated
+    // `this.screenSlices` via `updateTilesFromInstances` — skip the slice-layout pass.
+    if (!this.options.instances) {
+      const screenSlices = NVSliceLayout.screenSlicesLayout({
+        canvasWH: [
+          canvasWidth - legendWidth - graphWidth,
+          canvasHeight - cbHeight,
+        ],
+        sliceType: md.layout.sliceType,
+        tileMargin: md.layout.margin,
+        extentsMin: md.extentsMin,
+        extentsMax: md.extentsMax,
+        isRadiologicalConvention: md.layout.isRadiological,
+        multiplanarLayout: md.layout.multiplanarType,
+        multiplanarShowRender: md.layout.showRender,
+        sliceMosaicString: md.layout.mosaicString,
+        heroImageFraction: md.layout.heroFraction,
+        heroSliceType: md.layout.heroSliceType,
+        isMultiplanarEqualSize: md.layout.isEqualSize,
+        isCrossLines: md.ui.isCrossLinesVisible,
+        isCenterMosaic: md.layout.isMosaicCentered,
+        customLayout: md.layout.customLayout,
+      })
+      this.screenSlices = screenSlices
+    }
+    const screenSlices = this.screenSlices
     // Update crosshair geometry based on current model state
     if (this.crosshairRenderer.isReady) {
       this.crosshairRenderer.update(md)
@@ -459,6 +470,10 @@ export default class NVGlview {
       const tile = screenSlices[i]
       if (!tile) continue
       const ltwh = tile.leftTopWidthHeight as number[]
+      const tileVol =
+        volumes.find(
+          (v) => v.name === tile.volumeId || v.url === tile.volumeId,
+        ) ?? volumes[0]
       // Calculate MVP matrix
       let [mvpMatrix, , normalMatrix, rayDir] = NVTransforms.calculateMvpMatrix(
         ltwh,
@@ -469,10 +484,27 @@ export default class NVGlview {
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
       )
+      if (tile.space === 'global3d' && tileVol) {
+        ;[mvpMatrix, , normalMatrix, rayDir] =
+          NVTransforms.calculateGlobalVolumeMvp(
+            ltwh,
+            tile.globalCamera,
+            tile.position ?? [0, 0, 0],
+            tile.scale ?? 1,
+            tile.orientation,
+            tileVol.extentsMin,
+            tileVol.extentsMax,
+            tileVol.obliqueRAS,
+          )
+        tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
+      }
       if (tile.axCorSag === undefined) {
         continue
       }
-      if (tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER) {
+      if (
+        tile.space !== 'global3d' &&
+        tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+      ) {
         const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
         const pan = NVSliceLayout.slicePanUV(md.scene.pan2Dxyzmm, tile.axCorSag)
         ;[mvpMatrix, , normalMatrix, rayDir] =
@@ -607,6 +639,7 @@ export default class NVGlview {
       const isMosaicTile =
         tile.renderOrientation !== undefined || tile.sliceMM !== undefined
       if (
+        tile.space !== 'global3d' &&
         md.ui.is3DCrosshairVisible &&
         !isMosaicTile &&
         this.crosshairRenderer.isReady
@@ -619,9 +652,10 @@ export default class NVGlview {
         )
       }
       // Layer 2b: Meshes
-      const meshes = (md.getMeshes() as NVMesh[]).filter(
-        (m) => (m.opacity ?? 1.0) > 0.0,
-      )
+      const meshes =
+        tile.space === 'global3d'
+          ? []
+          : (md.getMeshes() as NVMesh[]).filter((m) => (m.opacity ?? 1.0) > 0.0)
       const ccMM = crosscutMM(md, tile.axCorSag)
       // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
       let meshMvp = mvpMatrix
@@ -706,6 +740,7 @@ export default class NVGlview {
       }
       // Layer 2b-ann: 3D annotations (RENDER tiles only)
       if (
+        tile.space !== 'global3d' &&
         tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
         ann3DData &&
         this.polygon3DRenderer.isReady
@@ -1090,31 +1125,49 @@ export default class NVGlview {
     const bounds = this.options.bounds
     const cw = this.canvas.width
     const ch = this.canvas.height
+    const vp = getCanvasViewport(this.canvas)
+    const isIdentity = vp.pan[0] === 0 && vp.pan[1] === 0 && vp.zoom === 1
     if (
-      !bounds ||
-      (bounds[0][0] === 0 &&
-        bounds[0][1] === 0 &&
-        bounds[1][0] === 1 &&
-        bounds[1][1] === 1)
+      isIdentity &&
+      (!bounds ||
+        (bounds[0][0] === 0 &&
+          bounds[0][1] === 0 &&
+          bounds[1][0] === 1 &&
+          bounds[1][1] === 1))
     ) {
       this._boundsOffsetX = 0
       this._boundsOffsetY = 0
       this._boundsWidth = cw
       this._boundsHeight = ch
       this._isSubCanvasBounds = false
+      this._isBoundsOffscreen = false
       return
     }
+    const worldX1 = bounds ? bounds[0][0] : 0
+    const worldY1 = bounds ? bounds[0][1] : 0
+    const worldX2 = bounds ? bounds[1][0] : 1
+    const worldY2 = bounds ? bounds[1][1] : 1
+    // Apply viewport: world -> screen-normalized (zoom around centre, then translate by pan)
+    const z = vp.zoom
+    const px = vp.pan[0]
+    const py = vp.pan[1]
+    const sx1 = (worldX1 - 0.5) * z + 0.5 + px
+    const sx2 = (worldX2 - 0.5) * z + 0.5 + px
+    const sy1 = (worldY1 - 0.5) * z + 0.5 + py
+    const sy2 = (worldY2 - 0.5) * z + 0.5 + py
     // Round pixel edges, then derive size by subtraction to prevent
     // offset + size > canvas (which breaks copyTextureToTexture on odd dimensions)
-    const left = Math.round(bounds[0][0] * cw)
-    const right = Math.round(bounds[1][0] * cw)
-    const top = Math.round((1 - bounds[1][1]) * ch)
-    const bottom = Math.round((1 - bounds[0][1]) * ch)
+    const left = Math.round(sx1 * cw)
+    const right = Math.round(sx2 * cw)
+    const top = Math.round((1 - sy2) * ch)
+    const bottom = Math.round((1 - sy1) * ch)
     this._boundsOffsetX = left
     this._boundsOffsetY = top
     this._boundsWidth = Math.max(1, right - left)
     this._boundsHeight = Math.max(1, bottom - top)
     this._isSubCanvasBounds = true
+    this._isBoundsOffscreen =
+      right <= 0 || left >= cw || bottom <= 0 || top >= ch
   }
 
   getAvailableShaders(): string[] {

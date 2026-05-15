@@ -4,6 +4,10 @@
  * @packageDocumentation
  */
 
+// Viewport controller (OpenSeadragon-style smooth pan/zoom on the shared canvas).
+// Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
+// Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
+export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
 // Extension API
 // biome-ignore lint/performance/noBarrelFile: package entry point
 export { NVExtensionContext } from './extension/context'
@@ -55,6 +59,7 @@ export type {
 // Core types used in the public API
 export type {
   BackendType,
+  CanvasViewport,
   ColorMap,
   CustomLayoutTile,
   DragReleaseInfo,
@@ -67,9 +72,12 @@ export type {
   NiiVueLocation,
   NiiVueLocationValue,
   NiiVueOptions,
+  NVBounds,
   NVConnectomeOptions,
   NVFontData,
+  NVGlobalCamera,
   NVImage,
+  NVInstance,
   NVMesh,
   NVMeshLayer,
   NVTractOptions,

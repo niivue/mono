@@ -81,6 +81,12 @@ export default defineConfig({
         'niivuegpu.webgl2': fileURLToPath(
           new URL('./src/index.webgl2.ts', import.meta.url),
         ),
+        viewport: fileURLToPath(
+          new URL(
+            './src/control/NVCanvasViewportController.ts',
+            import.meta.url,
+          ),
+        ),
         'assets/fonts/index': fileURLToPath(
           new URL('./src/assets/fonts/index.ts', import.meta.url),
         ),

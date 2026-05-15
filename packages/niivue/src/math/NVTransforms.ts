@@ -1,6 +1,6 @@
 import { mat3, mat4, vec3, vec4 } from 'gl-matrix'
 import { log } from '@/logger'
-import type { NVImage } from '@/NVTypes'
+import type { NVGlobalCamera, NVImage } from '@/NVTypes'
 
 export function vox2mm(_unused: unknown, XYZ: number[], mtx: mat4): vec3 {
   const sform = mat4.clone(mtx)
@@ -217,6 +217,86 @@ export function calculateMvpMatrix(
   const iModelMatrix = mat4.create()
   mat4.invert(iModelMatrix, modelMatrix)
   mat4.transpose(normalMatrix, iModelMatrix)
+  mat4.multiply(mvpMatrix, projectionMatrix, modelMatrix)
+  const rayDir = calculateRayDirection(modelMatrix, obliqueRAS)
+  return [mvpMatrix, modelMatrix, normalMatrix, rayDir]
+}
+
+export function calculateGlobalVolumeMvp(
+  ltwh: number[],
+  camera: NVGlobalCamera | undefined,
+  position: ArrayLike<number>,
+  scale: number | ArrayLike<number> | undefined,
+  orientation: ArrayLike<number> | undefined,
+  extentsMin: ArrayLike<number>,
+  extentsMax: ArrayLike<number>,
+  obliqueRAS?: mat4,
+): [mat4, mat4, mat4, vec3] {
+  const aspect = Math.max(0.01, ltwh[2] / Math.max(1, ltwh[3]))
+  const fov = camera?.fov ?? 55
+  const near = camera?.near ?? 0.1
+  const far = camera?.far ?? 900
+  const projectionMatrix = mat4.create()
+  mat4.perspective(projectionMatrix, deg2rad(fov), aspect, near, far)
+
+  const eye = vec3.fromValues(
+    camera?.position?.[0] ?? 0,
+    camera?.position?.[1] ?? 0,
+    camera?.position?.[2] ?? 32,
+  )
+  const yaw = camera?.yaw ?? 0
+  const pitch = camera?.pitch ?? 0
+  const cp = Math.cos(pitch)
+  const forward = vec3.fromValues(
+    Math.sin(yaw) * cp,
+    Math.sin(pitch),
+    -Math.cos(yaw) * cp,
+  )
+  const target = vec3.create()
+  vec3.add(target, eye, forward)
+  const viewMatrix = mat4.create()
+  mat4.lookAt(viewMatrix, eye, target, vec3.fromValues(0, 1, 0))
+
+  const center = vec3.fromValues(
+    (extentsMin[0] + extentsMax[0]) / 2,
+    (extentsMin[1] + extentsMax[1]) / 2,
+    (extentsMin[2] + extentsMax[2]) / 2,
+  )
+  const diameter = Math.max(
+    Math.abs(extentsMax[0] - extentsMin[0]),
+    Math.abs(extentsMax[1] - extentsMin[1]),
+    Math.abs(extentsMax[2] - extentsMin[2]),
+    1,
+  )
+  const sx = typeof scale === 'number' ? scale : (scale?.[0] ?? 1)
+  const sy = typeof scale === 'number' ? scale : (scale?.[1] ?? sx)
+  const sz = typeof scale === 'number' ? scale : (scale?.[2] ?? sx)
+
+  const modelWorld = mat4.create()
+  mat4.translate(modelWorld, modelWorld, [
+    position[0] ?? 0,
+    position[1] ?? 0,
+    position[2] ?? 0,
+  ])
+  if (orientation) {
+    mat4.rotateX(modelWorld, modelWorld, orientation[0] ?? 0)
+    mat4.rotateY(modelWorld, modelWorld, orientation[1] ?? 0)
+    mat4.rotateZ(modelWorld, modelWorld, orientation[2] ?? 0)
+  }
+  mat4.scale(modelWorld, modelWorld, [
+    sx / diameter,
+    sy / diameter,
+    sz / diameter,
+  ])
+  mat4.translate(modelWorld, modelWorld, [-center[0], -center[1], -center[2]])
+
+  const modelMatrix = mat4.create()
+  mat4.multiply(modelMatrix, viewMatrix, modelWorld)
+  const normalMatrix = mat4.create()
+  const iModelMatrix = mat4.create()
+  mat4.invert(iModelMatrix, modelMatrix)
+  mat4.transpose(normalMatrix, iModelMatrix)
+  const mvpMatrix = mat4.create()
   mat4.multiply(mvpMatrix, projectionMatrix, modelMatrix)
   const rayDir = calculateRayDirection(modelMatrix, obliqueRAS)
   return [mvpMatrix, modelMatrix, normalMatrix, rayDir]

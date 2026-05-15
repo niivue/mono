@@ -6,6 +6,11 @@ import { cortex } from '@/assets/matcaps'
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { removeInteractionListeners } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
+import {
+  getCanvasInstances,
+  getCanvasViewport,
+  setCanvasViewport,
+} from '@/control/viewBoth'
 import type {
   ReinitializeOptions,
   ViewLifecycle,
@@ -36,6 +41,7 @@ import type {
   AnnotationStyle,
   AnnotationTool,
   BackendType,
+  CanvasViewport,
   ColorMap,
   CustomLayoutTile,
   ImageFromUrlOptions,
@@ -47,7 +53,9 @@ import type {
   NVBounds,
   NVConnectomeOptions,
   NVFontData,
+  NVGlobalCamera,
   NVImage,
+  NVInstance,
   NVMeshLayer,
   NVMesh as NVMeshType,
   NVTractOptions,
@@ -109,6 +117,9 @@ type InfrastructureOpts = {
   backend?: BackendType
   isAntiAlias?: boolean
   isDragDropEnabled?: boolean
+  isInteractionEnabled?: boolean
+  instances?: NVInstance[]
+  globalCamera?: NVGlobalCamera
   forceDevicePixelRatio?: number
   logLevel?: LogLevel
   thumbnail?: string
@@ -240,6 +251,9 @@ export default class NiiVueGPU extends EventTarget {
       backend: options.backend ?? 'webgpu',
       isAntiAlias: options.isAntiAlias ?? true,
       isDragDropEnabled: options.isDragDropEnabled ?? true,
+      isInteractionEnabled: options.isInteractionEnabled ?? true,
+      instances: options.instances,
+      globalCamera: options.globalCamera,
       forceDevicePixelRatio: options.devicePixelRatio ?? -1,
       logLevel: options.logLevel ?? 'info',
       thumbnail: options.thumbnail,
@@ -1480,11 +1494,15 @@ export default class NiiVueGPU extends EventTarget {
       this._deferredVolumes = volumes
       return this
     }
-    await this.removeAllVolumes()
     // Fetch all volumes in parallel, then add in original order
     const loaded = await Promise.all(
       volumes.map((v) => NVModel.prepareVolume(v)),
     )
+    const previous = this.model.getVolumes()
+    for (let i = previous.length - 1; i >= 0; i--) {
+      this.emit('volumeRemoved', { volume: previous[i], index: i })
+    }
+    await this.model.removeAllVolumes()
     for (const vol of loaded) {
       await this.model.addVolume(vol)
       const vols = this.model.getVolumes()
@@ -2104,6 +2122,131 @@ export default class NiiVueGPU extends EventTarget {
     }
   }
 
+  /**
+   * Read the canvas-level viewport (virtual camera) shared with sibling instances.
+   * The viewport applies a pan + zoom over the entire canvas before each instance's
+   * `bounds` are projected to pixels. Identity is `{pan: [0, 0], zoom: 1}`.
+   */
+  getViewport(): CanvasViewport {
+    return getCanvasViewport(this.canvas)
+  }
+
+  /**
+   * Update the canvas-level viewport (virtual camera). All controllers sharing this
+   * canvas resize and redraw together. `pan` is in normalized canvas units (GL convention,
+   * y up); `zoom` is a positive scalar around the canvas centre.
+   *
+   * @param viewport - `{ pan: [x, y], zoom }`. Default identity keeps existing behavior.
+   * @example
+   *   nv1.setViewport({ pan: [0, 0], zoom: 1 })          // identity (no transform)
+   *   nv1.setViewport({ pan: [0.5, 0], zoom: 1 })        // shift world right by half a canvas
+   *   nv1.setViewport({ pan: [0, 0], zoom: 2 })          // zoom in 2x around canvas centre
+   */
+  setViewport(viewport: CanvasViewport): void {
+    if (
+      !viewport ||
+      !Array.isArray(viewport.pan) ||
+      viewport.pan.length !== 2
+    ) {
+      throw new Error('setViewport: expected { pan: [x, y], zoom }')
+    }
+    if (!Number.isFinite(viewport.zoom) || viewport.zoom <= 0) {
+      throw new Error('setViewport: zoom must be a positive finite number')
+    }
+    const canvas = this.canvas
+    if (!canvas) return
+    const changed = setCanvasViewport(canvas, viewport)
+    if (!changed) return
+    if (this.opts.instances) this.updateTilesFromInstances()
+    // Fan out to every sibling sharing this canvas: each needs to re-derive its
+    // pixel rect from (bounds × viewport) and redraw.
+    const sibs = getCanvasInstances(canvas)
+    if (sibs) {
+      for (const sib of sibs) {
+        if (sib.view) {
+          sib.view.resize()
+          sib.drawScene(false)
+        }
+      }
+    } else if (this.view) {
+      this.view.resize()
+      this.drawScene(false)
+    }
+    this._syncDirty = true
+  }
+
+  /**
+   * Replace the multi-instance descriptor list (canvas tiling + optional global3d
+   * volumes). Triggers a tile rebuild and redraw.
+   */
+  setInstances(instances: NVInstance[]): void {
+    this.opts.instances = instances
+    if (this.view) {
+      this.updateTilesFromInstances()
+      this.drawScene()
+    }
+  }
+
+  /** Update the shared 3D camera used by `space === 'global3d'` instances. */
+  setGlobalCamera(camera: NVGlobalCamera): void {
+    this.opts.globalCamera = camera
+    if (this.view && this.opts.instances) {
+      this.updateTilesFromInstances()
+      this.drawScene()
+    }
+  }
+
+  private updateTilesFromInstances(): void {
+    if (!this.view || !this.opts.instances || !this.canvas) return
+    const cw = this.canvas.width
+    const ch = this.canvas.height
+    const vp = getCanvasViewport(this.canvas)
+
+    const tiles: SliceTile[] = this.opts.instances.map((inst) => {
+      if (inst.space === 'global3d' || inst.position) {
+        return {
+          leftTopWidthHeight: [0, 0, cw, ch],
+          axCorSag: 4,
+          volumeId: inst.volumeId,
+          space: 'global3d',
+          position: inst.position ?? [0, 0, 0],
+          scale: inst.scale ?? 1,
+          orientation: inst.orientation,
+          globalCamera: this.opts.globalCamera,
+        }
+      }
+      const b = inst.bounds
+      if (!b) {
+        return {
+          leftTopWidthHeight: [0, 0, cw, ch],
+          axCorSag: 4,
+          volumeId: inst.volumeId,
+        }
+      }
+      // Apply viewport transform (Normalized World -> Normalized Screen)
+      // World is 0..1, Viewport pan is in normalized units, zoom is scalar around center (0.5, 0.5)
+      const x1 = (b[0][0] - 0.5 + vp.pan[0]) * vp.zoom + 0.5
+      const y1 = (b[0][1] - 0.5 + vp.pan[1]) * vp.zoom + 0.5
+      const x2 = (b[1][0] - 0.5 + vp.pan[0]) * vp.zoom + 0.5
+      const y2 = (b[1][1] - 0.5 + vp.pan[1]) * vp.zoom + 0.5
+      // Convert to Screen Pixels (Inverting Y for GL convention)
+      const px = x1 * cw
+      const py = (1 - y2) * ch
+      const pw = (x2 - x1) * cw
+      const ph = (y2 - y1) * ch
+      return {
+        leftTopWidthHeight: [px, py, pw, ph],
+        axCorSag: 4,
+        azimuth: inst.rotation ? inst.rotation[0] : undefined,
+        elevation: inst.rotation ? inst.rotation[1] : undefined,
+        pan: inst.viewport ? inst.viewport.pan : undefined,
+        zoom: inst.viewport ? inst.viewport.zoom : undefined,
+        volumeId: inst.volumeId,
+      }
+    })
+    this.view.screenSlices = tiles
+  }
+
   drawScene(needsSync = true): void {
     if (needsSync) this._syncDirty = true
     if (!this.framePending) {
@@ -2546,6 +2689,18 @@ export default class NiiVueGPU extends EventTarget {
           changed = true
         }
       }
+      if (opts.viewport && target.canvas && target.canvas !== this.canvas) {
+        const srcVp = getCanvasViewport(this.canvas)
+        const dstVp = getCanvasViewport(target.canvas)
+        if (
+          dstVp.pan[0] !== srcVp.pan[0] ||
+          dstVp.pan[1] !== srcVp.pan[1] ||
+          dstVp.zoom !== srcVp.zoom
+        ) {
+          target.setViewport(srcVp)
+          changed = true
+        }
+      }
       if (changed) {
         target.drawScene(false)
         target.createOnLocationChange()
@@ -2732,6 +2887,7 @@ export default class NiiVueGPU extends EventTarget {
   resize(): void {
     if (!this.view) return
     this.view.resize()
+    if (this.opts.instances) this.updateTilesFromInstances()
   }
 
   destroy(): void {

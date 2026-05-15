@@ -552,6 +552,7 @@ export type SyncOpts = {
   sliceType?: boolean
   calMin?: boolean
   calMax?: boolean
+  viewport?: boolean
 }
 
 export type BackendType = 'webgpu' | 'webgl2'
@@ -566,6 +567,44 @@ export type ViewHitTest = {
 
 /** Normalized bounds [[x1,y1],[x2,y2]] where y=0 is bottom, y=1 is top */
 export type NVBounds = [[number, number], [number, number]]
+
+/**
+ * Canvas-level virtual camera applied to all instances sharing a canvas.
+ * Each instance's `bounds` define its position in *world space*; the viewport
+ * pans (in normalized canvas units, GL convention y-up) and zooms (scalar
+ * around the canvas centre) the world before bounds are projected to pixels.
+ * Identity `{pan: [0, 0], zoom: 1}` reproduces the pre-viewport behavior.
+ */
+export type CanvasViewport = {
+  pan: [number, number]
+  zoom: number
+}
+
+export type NVGlobalCamera = {
+  position: [number, number, number]
+  yaw?: number
+  pitch?: number
+  fov?: number
+  near?: number
+  far?: number
+}
+
+export type NVInstance = {
+  id: string
+  /** Screen-space canvas bounds for classic OSD-style tiled instances. */
+  bounds?: NVBounds
+  /** Set to `global3d` to draw this volume in one shared 3D scene. */
+  space?: 'canvas' | 'global3d'
+  /** Global scene position used when `space` is `global3d`. */
+  position?: [number, number, number]
+  /** Global scene scale in world units, or xyz scale. */
+  scale?: number | [number, number, number]
+  /** Global scene Euler rotation in radians: [x, y, z]. */
+  orientation?: [number, number, number]
+  viewport?: CanvasViewport
+  rotation?: [number, number, number, number]
+  volumeId?: string
+}
 
 export type NVViewOptions = {
   isAntiAlias?: boolean
@@ -597,6 +636,8 @@ export type GraphConfig = {
  */
 export type NiiVueOptions = {
   // Infrastructure (set once at construction)
+  instances?: NVInstance[]
+  globalCamera?: NVGlobalCamera
   backend?: BackendType
   isAntiAlias?: boolean
   devicePixelRatio?: number
@@ -607,6 +648,7 @@ export type NiiVueOptions = {
   font?: NVFontData
   matcaps?: Record<string, string>
   isDragDropEnabled?: boolean
+  isInteractionEnabled?: boolean
   logLevel?: LogLevel
   thumbnail?: string
 

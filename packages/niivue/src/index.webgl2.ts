@@ -2,6 +2,7 @@
  * NiiVueGPU — WebGL2-only distribution.
  */
 
+export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
 // biome-ignore lint/performance/noBarrelFile: package entry point
 export { NVExtensionContext } from './extension/context'
 export type {
@@ -18,6 +19,7 @@ export { DRAG_MODE } from './NVConstants'
 export { default, default as NiiVueGPU } from './NVControlWebGL2'
 export type {
   BackendType,
+  CanvasViewport,
   ColorMap,
   CustomLayoutTile,
   DragReleaseInfo,
@@ -28,9 +30,12 @@ export type {
   NiiVueLocation,
   NiiVueLocationValue,
   NiiVueOptions,
+  NVBounds,
   NVConnectomeOptions,
   NVFontData,
+  NVGlobalCamera,
   NVImage,
+  NVInstance,
   NVMesh,
   NVMeshLayer,
   NVTractOptions,

@@ -9,10 +9,7 @@ import type {
 } from 'express'
 
 import { planExplodedView } from '../iiif/explode.ts'
-import {
-  buildExplodedManifest,
-  buildManifest,
-} from '../iiif/presentation.ts'
+import { buildExplodedManifest, buildManifest } from '../iiif/presentation.ts'
 import type { Registry } from '../registry.ts'
 
 export function mountPresentationApi(app: Express, registry: Registry): void {

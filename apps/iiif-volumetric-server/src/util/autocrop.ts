@@ -2,11 +2,7 @@
 // borders from a downsampled volume and shifts the affine so world
 // coordinates of any retained voxel are unchanged.
 
-import type {
-  Affine4x4,
-  Shape3,
-  VoxelArray,
-} from '../adapters/volumeHandle.ts'
+import type { Affine4x4, Shape3, VoxelArray } from '../adapters/volumeHandle.ts'
 import { VolumeHandle } from '../adapters/volumeHandle.ts'
 
 export type Bbox6 = readonly [number, number, number, number, number, number]

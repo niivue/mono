@@ -3,7 +3,13 @@
 
 import fs from 'node:fs/promises'
 import nifti from 'nifti-reader-js'
-import type { Affine4x4, Dtype, Shape3, Vec3, VoxelArray } from './volumeHandle.ts'
+import type {
+  Affine4x4,
+  Dtype,
+  Shape3,
+  Vec3,
+  VoxelArray,
+} from './volumeHandle.ts'
 import { VolumeHandle } from './volumeHandle.ts'
 
 export interface ProbeMeta {

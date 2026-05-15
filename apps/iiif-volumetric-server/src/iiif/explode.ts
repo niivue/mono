@@ -48,7 +48,10 @@ export interface ExplodeLayout {
 }
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message)
   }
 }
@@ -150,8 +153,7 @@ export function planExplodedView(
   })
 
   const compositeShape: [number, number, number] = [maxX, maxY, maxZ]
-  const totalVoxels =
-    compositeShape[0] * compositeShape[1] * compositeShape[2]
+  const totalVoxels = compositeShape[0] * compositeShape[1] * compositeShape[2]
   if (totalVoxels > MAX_VOXELS) {
     throw new HttpError(
       413,
@@ -176,7 +178,7 @@ export function composeExplodedBuffer(
 ): VoxelArray {
   const [sx, sy] = volume.shape
   const [Cx, Cy, Cz] = layout.compositeShape
-  const [cx, cy, cz] = layout.cellShape
+  const [_cx, cy, cz] = layout.cellShape
 
   const colorBytes =
     volume.dtype === 'rgb24' ? 3 : volume.dtype === 'rgba32' ? 4 : 0

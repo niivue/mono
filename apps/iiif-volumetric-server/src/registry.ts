@@ -97,7 +97,10 @@ interface Sidecar {
 }
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message)
   }
 }
@@ -258,8 +261,7 @@ export class Registry {
         shape: entry.shape,
         spacing: entry.spacing,
       }
-      if (!entry.volume)
-        throw new HttpError(500, `Volume ${id} failed to load`)
+      if (!entry.volume) throw new HttpError(500, `Volume ${id} failed to load`)
       return { entry, level: lvl, volume: entry.volume }
     }
 
@@ -271,7 +273,7 @@ export class Registry {
     }
 
     const level = entry.levels.find((l) => l.level === normalized)
-    if (!level || !level.path) {
+    if (!level?.path) {
       throw new HttpError(
         404,
         `Level ${normalized} is not available for volume ${id}`,
@@ -599,7 +601,9 @@ export class Registry {
     const level = this.levelMetadata(entry, levelIndex)
     const sourcePath = levelIndex === 0 ? entry.source : (level.path as string)
     let volume: VolumeHandle | undefined =
-      levelIndex === 0 ? entry.volume ?? undefined : entry.levelVolumes.get(levelIndex)
+      levelIndex === 0
+        ? (entry.volume ?? undefined)
+        : entry.levelVolumes.get(levelIndex)
     if (!volume) {
       volume = await niftiAdapter.load(sourcePath)
     }
@@ -639,7 +643,10 @@ export class Registry {
     }
   }
 
-  private levelMetadata(entry: RegistryEntry, levelIndex: number): LevelMetadata {
+  private levelMetadata(
+    entry: RegistryEntry,
+    levelIndex: number,
+  ): LevelMetadata {
     const level = entry.levels.find((l) => l.level === levelIndex)
     if (level) return level
     if (levelIndex === 0) {

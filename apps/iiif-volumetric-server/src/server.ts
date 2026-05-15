@@ -239,7 +239,9 @@ async function main(): Promise<void> {
         ? Number((err as { status?: unknown }).status) || 500
         : 500
     const message =
-      err instanceof Error ? err.message : String(err) || 'Internal Server Error'
+      err instanceof Error
+        ? err.message
+        : String(err) || 'Internal Server Error'
     res.status(status).json({ error: message })
   }
   app.use(errorHandler)

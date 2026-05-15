@@ -2,25 +2,21 @@
 // if needed, and check that the in-process pipeline produces a valid
 // IIIF info.json, a valid Presentation 4.0 manifest, and a slice PNG.
 
+import { beforeAll, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
-import type { AddressInfo } from 'node:net'
 import fs from 'node:fs/promises'
 import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import url from 'node:url'
 import zlib, { gzipSync } from 'node:zlib'
-
-import { beforeAll, describe, expect, test } from 'bun:test'
 import express from 'express'
 
 import { niftiAdapter } from '../src/adapters/nifti.ts'
 import { VolumeHandle } from '../src/adapters/volumeHandle.ts'
 import { buildDesktopManifest } from '../src/desktop/manifest.ts'
-import {
-  composeExplodedBuffer,
-  planExplodedView,
-} from '../src/iiif/explode.ts'
+import { composeExplodedBuffer, planExplodedView } from '../src/iiif/explode.ts'
 import { infoJson, renderImageRequest } from '../src/iiif/imageApi.ts'
 import {
   buildExplodedManifest,
@@ -39,8 +35,8 @@ import {
 } from '../src/util/autocrop.ts'
 import { downsampleVolume } from '../src/util/downsample.ts'
 import {
-  compressBuffer,
   type ContentEncoding,
+  compressBuffer,
   encodeNiftiRaw,
   negotiateEncoding,
 } from '../src/util/niftiEncoder.ts'
@@ -202,16 +198,21 @@ describe('server smoke', () => {
     })
     expect(layout.cellShape).toEqual([21, 21, 21])
     expect(layout.cells.length).toBe(27)
-    const naturalSpan = layout.cellShape.map((d, i) => d * [3, 3, 3][i]!)
+    const naturalSpan = layout.cellShape.map((d) => d * 3)
     for (let d = 0; d < 3; d++) {
-      expect(layout.compositeShape[d]).toBeGreaterThanOrEqual(naturalSpan[d]!)
-      expect(layout.compositeShape[d]).toBeLessThanOrEqual(naturalSpan[d]! * 1.5 + 2)
+      const span = naturalSpan[d] as number
+      expect(layout.compositeShape[d]).toBeGreaterThanOrEqual(span)
+      expect(layout.compositeShape[d]).toBeLessThanOrEqual(span * 1.5 + 2)
     }
     const cellShape = layout.cellShape
     for (let a = 0; a < layout.cells.length; a++) {
       for (let b = a + 1; b < layout.cells.length; b++) {
-        const A = layout.cells[a]!.compositeOrigin
-        const B = layout.cells[b]!.compositeOrigin
+        const A = (
+          layout.cells[a] as { compositeOrigin: [number, number, number] }
+        ).compositeOrigin
+        const B = (
+          layout.cells[b] as { compositeOrigin: [number, number, number] }
+        ).compositeOrigin
         const overlap =
           Math.abs(A[0] - B[0]) < cellShape[0] &&
           Math.abs(A[1] - B[1]) < cellShape[1] &&
@@ -353,7 +354,7 @@ describe('server smoke', () => {
       expect(Number.isFinite(it.bytes) && (it.bytes as number) > 0).toBe(true)
       const services = it.service as Array<{ id: string }>
       expect(Array.isArray(services) && services.length >= 1).toBe(true)
-      expect(services[0]!.id).toMatch(
+      expect((services[0] as { id: string }).id).toMatch(
         /\/volumes\/synthetic\/occupancy\?block=/,
       )
       const ext = it['https://example.org/iiif/volumetric#'] as {
@@ -379,13 +380,14 @@ describe('server smoke', () => {
     expect(manifest.items.length).toBe(volumes.length)
     expect(manifest.world.width).toBeGreaterThan(0)
     expect(manifest.world.height).toBeGreaterThan(0)
-    if (manifest.items.length === 0) return
-    const first = manifest.items[0]!
+    const [first] = manifest.items
+    if (!first) return
     expect(first.type).toBe('NiftiVolumeItem')
     expect(first.preview.image).toMatch(
       /\/iiif\/image\/.*\/axial\/\d+\/full\/384,\/0\/default\.png$/,
     )
-    expect(first.levels[0]!.raw).toMatch(/\/volumes\/.*\/raw\.nii\.gz$/)
+    const [firstLevel] = first.levels
+    expect(firstLevel?.raw).toMatch(/\/volumes\/.*\/raw\.nii\.gz$/)
   })
 })
 
@@ -947,7 +949,9 @@ describe('content encoding negotiation', () => {
         `http://127.0.0.1:${port}/volumes/encvol/raw.nii.gz?bbox=${bbox}`,
       )
       expect(legacy.status).toBe(200)
-      expect(legacy.headers.get('content-type')).toBe('application/x.nifti+gzip')
+      expect(legacy.headers.get('content-type')).toBe(
+        'application/x.nifti+gzip',
+      )
       expect(legacy.headers.get('content-encoding')).toBeNull()
       await legacy.arrayBuffer()
 

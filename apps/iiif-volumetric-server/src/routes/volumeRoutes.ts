@@ -28,33 +28,26 @@ import type {
   Shape3,
   VolumeHandle,
 } from '../adapters/volumeHandle.ts'
+import { composeExplodedBuffer, planExplodedView } from '../iiif/explode.ts'
+import type { RawLevelLayout, Registry, RegistryEntry } from '../registry.ts'
 import {
-  composeExplodedBuffer,
-  planExplodedView,
-} from '../iiif/explode.ts'
-import {
-  compressBuffer,
   type ContentEncoding,
+  compressBuffer,
   dtypeByteSize,
   encodeNifti,
   encodeNiftiRaw,
   negotiateEncoding,
 } from '../util/niftiEncoder.ts'
-import {
-  encodeNiftiRle,
-  NIFTI_RLE_MEDIA_TYPE,
-} from '../util/rleEncoder.ts'
-import type {
-  RawLevelLayout,
-  Registry,
-  RegistryEntry,
-} from '../registry.ts'
+import { encodeNiftiRle, NIFTI_RLE_MEDIA_TYPE } from '../util/rleEncoder.ts'
 
 const NIFTI_MEDIA_TYPE = 'application/x.nifti'
 const NIFTI_GZIP_MEDIA_TYPE = 'application/x.nifti+gzip'
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message)
   }
 }
@@ -151,7 +144,7 @@ export function mountVolumeRoutes(app: Express, registry: Registry): void {
 
       if (!bbox && levelIdx > 0) {
         const level = entry.levels.find((l) => l.level === levelIdx)
-        if (!level || !level.path) {
+        if (!level?.path) {
           throw new HttpError(
             404,
             `Level ${levelIdx} is not available for volume ${entry.id}`,
@@ -208,7 +201,9 @@ export function mountVolumeRoutes(app: Express, registry: Registry): void {
         const legacyGzip = legacyGzipWire(req)
         const encoding: ContentEncoding = legacyGzip
           ? 'gzip'
-          : negotiateEncoding(req.headers['accept-encoding'] as string | undefined)
+          : negotiateEncoding(
+              req.headers['accept-encoding'] as string | undefined,
+            )
         const result = await cropNiftiResponse({
           registry,
           entry,
@@ -276,7 +271,9 @@ export function mountVolumeRoutes(app: Express, registry: Registry): void {
       const legacyGzip = legacyGzipWire(req)
       const encoding: ContentEncoding = legacyGzip
         ? 'gzip'
-        : negotiateEncoding(req.headers['accept-encoding'] as string | undefined)
+        : negotiateEncoding(
+            req.headers['accept-encoding'] as string | undefined,
+          )
       const body = compressBuffer(rawBuffer, encoding)
       if (legacyGzip) {
         res.set('Content-Type', NIFTI_GZIP_MEDIA_TYPE)
@@ -411,7 +408,10 @@ async function cropNiftiResponse(
   let source = 'row-read'
   let body: Buffer
   try {
-    const rawLevel = await registry.getUncompressedNiftiLevel(entry.id, levelIdx)
+    const rawLevel = await registry.getUncompressedNiftiLevel(
+      entry.id,
+      levelIdx,
+    )
     timer.mark('raw-cache')
     const rawCrop = await cropRawNiftiFile(rawLevel.path, rawLevel.layout, bbox)
     timer.mark('row-read')
@@ -477,7 +477,10 @@ function sendCroppedNifti(
   res.send(result.buffer)
 }
 
-async function streamSource(entry: RegistryEntry, res: Response): Promise<void> {
+async function streamSource(
+  entry: RegistryEntry,
+  res: Response,
+): Promise<void> {
   const stat = await fsp.stat(entry.source)
   if (stat.isDirectory()) {
     throw new HttpError(
@@ -739,8 +742,7 @@ function cropNiftiMeta(
   const ch = y1 - y0
   const cd = z1 - z0
   const dataView = v.data
-  const colorBytes =
-    v.dtype === 'rgb24' ? 3 : v.dtype === 'rgba32' ? 4 : 0
+  const colorBytes = v.dtype === 'rgb24' ? 3 : v.dtype === 'rgba32' ? 4 : 0
   const TypedArrayCtor = dataView.constructor as {
     new (length: number): import('../adapters/volumeHandle.ts').VoxelArray
   }

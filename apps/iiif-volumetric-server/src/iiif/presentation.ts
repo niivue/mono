@@ -10,8 +10,7 @@ import type {
 import type { LevelMetadata, RegistryEntry } from '../registry.ts'
 import type { Bbox6, ExplodeLayout } from './explode.ts'
 
-export const PREZI_4_CONTEXT =
-  'http://iiif.io/api/presentation/4/context.json'
+export const PREZI_4_CONTEXT = 'http://iiif.io/api/presentation/4/context.json'
 
 const NIFTI_MEDIA_TYPE = 'application/x.nifti'
 const NIFTI_RLE_MEDIA_TYPE = 'application/x.nifti-rle'
@@ -53,10 +52,7 @@ function affineCorner(
   ]
 }
 
-function worldBboxFromVoxelBbox(
-  affine: Affine4x4 | null,
-  bbox: Bbox6,
-): Bbox6 {
+function worldBboxFromVoxelBbox(affine: Affine4x4 | null, bbox: Bbox6): Bbox6 {
   const [x0, y0, z0, x1, y1, z1] = bbox
   if (!affine) return [x0, y0, z0, x1, y1, z1]
   let xmin = Number.POSITIVE_INFINITY
@@ -420,15 +416,15 @@ export function buildExplodedManifest(args: ExplodedManifestArgs): unknown {
     const cellWorldBbox = worldBboxFromVoxelBbox(entry.affine, cell.sourceBbox)
     const items = entry.levels.flatMap((l) => {
       const scale = 2 ** l.level
-      const bboxAtLevel = cell.sourceBbox.map((v) => Math.floor(v / scale)) as Bbox6
+      const bboxAtLevel = cell.sourceBbox.map((v) =>
+        Math.floor(v / scale),
+      ) as Bbox6
       const bboxQ = bboxAtLevel.join(',')
       const levelQ = l.level > 0 ? `&level=${l.level}` : ''
       const cellUrl = `${baseUrl}/volumes/${id}/raw.nii.gz?bbox=${bboxQ}${levelQ}`
-      const cellShapeAtLevel = layout.cellShape.map((v) => Math.floor(v / scale)) as [
-        number,
-        number,
-        number,
-      ]
+      const cellShapeAtLevel = layout.cellShape.map((v) =>
+        Math.floor(v / scale),
+      ) as [number, number, number]
       const voxels =
         cellShapeAtLevel[0] * cellShapeAtLevel[1] * cellShapeAtLevel[2]
       const extCommon = {

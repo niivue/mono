@@ -1,7 +1,10 @@
 import type { Shape3, Vec3, VoxelArray } from '../adapters/volumeHandle.ts'
 import { VolumeHandle } from '../adapters/volumeHandle.ts'
 
-export function downsampleVolume(volume: VolumeHandle, factor = 2): VolumeHandle {
+export function downsampleVolume(
+  volume: VolumeHandle,
+  factor = 2,
+): VolumeHandle {
   const [sx, sy, sz] = volume.shape
   const [dx, dy, dz] = volume.spacing
   const [nx, ny, nz] = [

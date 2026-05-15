@@ -17,7 +17,10 @@ import type { Registry } from '../registry.ts'
 const AXES: Set<Axis> = new Set(['axial', 'coronal', 'sagittal'])
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message)
   }
 }

@@ -44,13 +44,18 @@ describe('anisotropy', () => {
       dtype: 'uint8',
     })
 
-    const { buffer, contentType } = await renderImageRequest(vol, 'coronal', 0, {
-      region: 'full',
-      size: 'max',
-      rotation: '0',
-      quality: 'default',
-      format: 'png',
-    })
+    const { buffer, contentType } = await renderImageRequest(
+      vol,
+      'coronal',
+      0,
+      {
+        region: 'full',
+        size: 'max',
+        rotation: '0',
+        quality: 'default',
+        format: 'png',
+      },
+    )
 
     expect(contentType).toBe('image/png')
     expect(buffer.length).toBeGreaterThan(0)

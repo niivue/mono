@@ -1,6 +1,10 @@
 // IIIF Image API 3.0 helpers.
 
-import type { Axis, SliceImage, VolumeHandle } from '../adapters/volumeHandle.ts'
+import type {
+  Axis,
+  SliceImage,
+  VolumeHandle,
+} from '../adapters/volumeHandle.ts'
 import { rgbaToPng } from '../util/png.ts'
 
 export const IMAGE_API_CONTEXT = 'http://iiif.io/api/image/3/context.json'
@@ -71,7 +75,10 @@ export function infoJson(opts: InfoJsonOpts): InfoJson {
   }
 }
 
-function pyramidSizes(w: number, h: number): Array<{ width: number; height: number }> {
+function pyramidSizes(
+  w: number,
+  h: number,
+): Array<{ width: number; height: number }> {
   const sizes: Array<{ width: number; height: number }> = []
   let curW = w
   let curH = h
@@ -144,11 +151,7 @@ interface Rect {
   h: number
 }
 
-function parseRegion(
-  region: string | undefined,
-  w: number,
-  h: number,
-): Rect {
+function parseRegion(region: string | undefined, w: number, h: number): Rect {
   if (!region || region === 'full') {
     return { x: 0, y: 0, w, h }
   }
@@ -235,7 +238,11 @@ function applySize(
   return resizeNearest(slice, targetW, targetH)
 }
 
-function resizeNearest(slice: SliceImage, targetW: number, targetH: number): SliceImage {
+function resizeNearest(
+  slice: SliceImage,
+  targetW: number,
+  targetH: number,
+): SliceImage {
   if (targetW === slice.width && targetH === slice.height) return slice
   const out = new Uint8Array(targetW * targetH * 4)
   const sx = slice.width / targetW
@@ -255,7 +262,10 @@ function resizeNearest(slice: SliceImage, targetW: number, targetH: number): Sli
   return { width: targetW, height: targetH, data: out }
 }
 
-function applyRotation(slice: SliceImage, rotation: string | undefined): SliceImage {
+function applyRotation(
+  slice: SliceImage,
+  rotation: string | undefined,
+): SliceImage {
   if (!rotation || rotation === '0') return slice
   const r = Number(rotation.replace(/^!/, ''))
   if (![0, 90, 180, 270].includes(r)) {
@@ -292,7 +302,10 @@ function applyRotation(slice: SliceImage, rotation: string | undefined): SliceIm
   return { width: newW, height: newH, data: out }
 }
 
-function applyQuality(slice: SliceImage, quality: string | undefined): SliceImage {
+function applyQuality(
+  slice: SliceImage,
+  quality: string | undefined,
+): SliceImage {
   if (!quality || quality === 'default' || quality === 'gray') {
     return slice
   }

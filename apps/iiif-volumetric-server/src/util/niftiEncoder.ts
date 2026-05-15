@@ -1,8 +1,16 @@
 import zlib from 'node:zlib'
 import nifti from 'nifti-reader-js'
-import type { Affine4x4, Dtype, Shape3, Vec3, VoxelArray } from '../adapters/volumeHandle.ts'
+import type {
+  Affine4x4,
+  Dtype,
+  Shape3,
+  Vec3,
+  VoxelArray,
+} from '../adapters/volumeHandle.ts'
 
-const HAS_ZSTD = typeof (zlib as unknown as { zstdCompressSync?: unknown }).zstdCompressSync === 'function'
+const HAS_ZSTD =
+  typeof (zlib as unknown as { zstdCompressSync?: unknown })
+    .zstdCompressSync === 'function'
 const ENCODING_PREFERENCE = ['zstd', 'br', 'gzip', 'identity'] as const
 export type ContentEncoding = (typeof ENCODING_PREFERENCE)[number]
 
@@ -56,8 +64,11 @@ function parseAcceptEncoding(header: string): Map<string, number> {
 export function compressBuffer(buf: Buffer, encoding: ContentEncoding): Buffer {
   switch (encoding) {
     case 'zstd':
-      if (!HAS_ZSTD) throw new Error('zstd encoding requested but not supported')
-      return (zlib as unknown as { zstdCompressSync: (b: Buffer) => Buffer }).zstdCompressSync(buf)
+      if (!HAS_ZSTD)
+        throw new Error('zstd encoding requested but not supported')
+      return (
+        zlib as unknown as { zstdCompressSync: (b: Buffer) => Buffer }
+      ).zstdCompressSync(buf)
     case 'br':
       return zlib.brotliCompressSync(buf)
     case 'gzip':
@@ -105,7 +116,15 @@ export interface MakeHeaderOpts {
 }
 
 export function makeNifti1Header(opts: MakeHeaderOpts): ArrayBuffer {
-  const { dims, pixDims, datatypeCode, bitsPerVoxel, affine, sclSlope, sclInter } = opts
+  const {
+    dims,
+    pixDims,
+    datatypeCode,
+    bitsPerVoxel,
+    affine,
+    sclSlope,
+    sclInter,
+  } = opts
   const buf = new ArrayBuffer(352)
   const view = new DataView(buf)
   view.setInt32(0, 348, true)
@@ -176,7 +195,9 @@ export function dtypeNameToNiftiCode(name: Dtype): number {
       return 2304
     default: {
       const exhaustive: never = name
-      throw new Error(`Cannot map dtype to NIfTI datatype: ${String(exhaustive)}`)
+      throw new Error(
+        `Cannot map dtype to NIfTI datatype: ${String(exhaustive)}`,
+      )
     }
   }
 }

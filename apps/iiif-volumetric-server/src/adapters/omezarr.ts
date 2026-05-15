@@ -114,7 +114,9 @@ async function readZarrRoot(dirPath: string): Promise<Summary> {
   const arrayMetaPath = path.join(arrPath, '.zarray')
   let arrayMeta: ZarrV2ArrayMeta = {}
   try {
-    arrayMeta = JSON.parse(await fs.readFile(arrayMetaPath, 'utf8')) as ZarrV2ArrayMeta
+    arrayMeta = JSON.parse(
+      await fs.readFile(arrayMetaPath, 'utf8'),
+    ) as ZarrV2ArrayMeta
   } catch (_) {
     // no .zarray
   }

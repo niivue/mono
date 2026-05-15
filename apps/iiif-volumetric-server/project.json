@@ -1,0 +1,37 @@
+{
+  "name": "iiif-volumetric-server",
+  "projectType": "application",
+  "tags": ["type:app", "lang:typescript"],
+  "targets": {
+    "dev": {
+      "command": "bun --watch src/server.ts",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "start": {
+      "command": "bun src/server.ts",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    },
+    "lint": {
+      "command": "bunx biome check {projectRoot}",
+      "inputs": ["typescript"]
+    },
+    "format": {
+      "command": "bunx biome format {projectRoot} --write",
+      "inputs": ["typescript"]
+    },
+    "test": {
+      "command": "bun test",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": ["typescript"]
+    },
+    "fetch-fixtures": {
+      "command": "bun scripts/fetch-fixtures.ts",
+      "options": { "cwd": "{projectRoot}" }
+    }
+  }
+}

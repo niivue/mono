@@ -315,11 +315,31 @@ export default class NVGlview {
       this.model.scene.backgroundColor,
     )
     if (vols.length > 0) {
-      await this.volumeRenderer.updateVolume(
-        gl,
-        vols[0],
-        this.model.volume.matcap,
-      )
+      if (this.options.instances) {
+        // Multi-instance mode (global3d): upload every volume's GPU texture
+        // so the render loop can switch the active texture per tile via
+        // bindCachedVolume. Without this, all tiles would share volumes[0]'s
+        // texture and visibly "jump" as the model's first volume changes.
+        for (const vol of vols) {
+          await this.volumeRenderer.updateVolume(
+            gl,
+            vol,
+            this.model.volume.matcap,
+          )
+        }
+        const keepKeys = new Set<string>()
+        for (const vol of vols) {
+          const key = vol.url || vol.name
+          if (key) keepKeys.add(key)
+        }
+        this.volumeRenderer.pruneVolumeCache(keepKeys)
+      } else {
+        await this.volumeRenderer.updateVolume(
+          gl,
+          vols[0],
+          this.model.volume.matcap,
+        )
+      }
     }
 
     // Handle overlays (all volumes after the first)
@@ -581,8 +601,18 @@ export default class NVGlview {
       )
       // Layer 1: Volume rendering
       if (this.volumeRenderer.hasVolume() && volumes.length > 0) {
-        const vol = volumes[0]
+        // For global3d tiles, render the per-tile resolved volume (tileVol)
+        // rather than always volumes[0]. This requires rebinding the active
+        // GPU texture from the per-volume cache populated in _updateBindings.
+        const vol = tile.space === 'global3d' && tileVol ? tileVol : volumes[0]
         if (!vol) continue
+        if (tile.space === 'global3d') {
+          this.volumeRenderer.bindCachedVolume(vol.url || vol.name)
+        } else if (volumes[0]) {
+          this.volumeRenderer.bindCachedVolume(
+            volumes[0].url || volumes[0].name,
+          )
+        }
         const matRAS = vol.matRAS
         if (!matRAS || !vol.volScale) {
           continue

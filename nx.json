@@ -32,7 +32,12 @@
       "cache": true
     },
     "nx-release-publish": {
-      "dependsOn": ["build"]
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "@nx/js:release-publish": {
+      "dependsOn": ["build"],
+      "cache": false
     }
   },
   "release": {

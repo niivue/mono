@@ -1,3 +1,59 @@
+## 1.0.0-rc.8 (2026-05-13)
+
+### Features
+
+- **niivue:** port legacy colormaps ([06902e0](https://github.com/niivue/mono/commit/06902e0))
+
+### Fixes
+
+- **niivue:** validate colormap channel bounds ([27b3882](https://github.com/niivue/mono/commit/27b3882))
+
+### Thank You
+
+- Taylor Hanayik @hanayik
+
+## 1.0.0-rc.7 (2026-05-12)
+
+### Fixes
+
+- **niivue:** update README package reference ([9f1ffe0](https://github.com/niivue/mono/commit/9f1ffe0))
+
+### Thank You
+
+- Taylor Hanayik @hanayik
+
+## 1.0.0-rc.6 (2026-05-12)
+
+### Fixes
+
+- **niivue:** correct package import examples ([7e4567c](https://github.com/niivue/mono/commit/7e4567c))
+
+### Thank You
+
+- Taylor Hanayik @hanayik
+
+## 1.0.0-rc.5 (2026-05-12)
+
+### Fixes
+
+- **niivue:** sort imports after merge conflict resolution ([aa6a73d](https://github.com/niivue/mono/commit/aa6a73d))
+- **niivue:** clean up overlay texture transitions ([a3b861f](https://github.com/niivue/mono/commit/a3b861f))
+- address Copilot second-round PR review ([53651fb](https://github.com/niivue/mono/commit/53651fb))
+- **niivue:** repair loadDeferred4DVolumes after limitFrames4D ([#28](https://github.com/niivue/mono/issues/28))
+- **niivue:** address affine review feedback ([185c5f5](https://github.com/niivue/mono/commit/185c5f5))
+- **niivue:** invalidate label colormap texture cache ([3808d90](https://github.com/niivue/mono/commit/3808d90))
+
+### Performance
+
+- **niivue:** cache affine overlay rebakes ([2717694](https://github.com/niivue/mono/commit/2717694))
+
+### Thank You
+
+- Claude Opus 4.7 (1M context)
+- hanayik @hanayik
+- neurolabusc
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.4 (2026-05-01)
 
 ### Features

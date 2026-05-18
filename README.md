@@ -4,30 +4,50 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
 
 ## Packages
 
-| Package | Description | npm |
-|---|---|---|
-| [`@niivue/niivue`](packages/niivue) | Core WebGPU/WebGL2 medical image viewer | [![npm](https://img.shields.io/npm/v/@niivue/niivue/next)](https://www.npmjs.com/package/@niivue/niivue) |
-| [`@niivue/nvreact`](packages/nv-react) | React bindings for NiiVue | [![npm](https://img.shields.io/npm/v/@niivue/nvreact/next)](https://www.npmjs.com/package/@niivue/nvreact) |
-| [`@niivue/nv-web-component`](packages/nv-web-component) | Lit-based Web Components for NiiVue | [![npm](https://img.shields.io/npm/v/@niivue/nv-web-component/next)](https://www.npmjs.com/package/@niivue/nv-web-component) |
-| [`@niivue/nv-ext-drawing`](packages/nv-ext-drawing) | Drawing interpolation and segmentation tools | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-drawing/next)](https://www.npmjs.com/package/@niivue/nv-ext-drawing) |
-| [`@niivue/nv-ext-image-processing`](packages/nv-ext-image-processing) | Image processing (Otsu thresholding, haze removal, etc.) | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-image-processing/next)](https://www.npmjs.com/package/@niivue/nv-ext-image-processing) |
-| [`@niivue/nv-ext-save-html`](packages/nv-ext-save-html) | Export a NiiVue scene as a self-contained HTML file | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-save-html/next)](https://www.npmjs.com/package/@niivue/nv-ext-save-html) |
-| [`@niivue/nv-ext-dcm2niix`](packages/nv-ext-dcm2niix) | DICOM-to-NIfTI conversion in the browser via the dcm2niix WASM build | [![npm](https://img.shields.io/npm/v/@niivue/nv-ext-dcm2niix/next)](https://www.npmjs.com/package/@niivue/nv-ext-dcm2niix) |
-| [`@niivue/web-bridge`](packages/niivue-web-bridge) | Typed two-way JSON-envelope bridge between a NiiVue web view and a native (WKWebView) host | — |
-| [`NiiVueKit`](packages/niivue-swift) | Swift package (`BridgeCore` + `NiiVueKit`) pairing with `@niivue/web-bridge` to embed NiiVue in SwiftUI apps via `WKWebView` | — |
-| [`@niivue/dev-images`](packages/dev-images) | Shared test volumes, meshes, and tractography files (Git LFS) | — |
-| [`ipyniivue`](packages/ipyniivue) | Jupyter widget wrapping NiiVue (anywidget) — Python wheel | [![PyPI](https://img.shields.io/pypi/v/ipyniivue)](https://pypi.org/project/ipyniivue/) |
+<table>
+  <thead>
+    <tr>
+      <th width="260">Package</th>
+      <th>Description</th>
+      <th>npm</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><a href="packages/niivue"><code>@niivue/niivue</code></a></td><td>Core WebGPU/WebGL2 medical image viewer</td><td><a href="https://www.npmjs.com/package/@niivue/niivue"><img src="https://img.shields.io/npm/v/@niivue/niivue/next" alt="npm"></a></td></tr>
+    <tr><td><a href="packages/nv-react"><code>@niivue/nvreact</code></a></td><td>React bindings for NiiVue</td><td><a href="https://www.npmjs.com/package/@niivue/nvreact"><img src="https://img.shields.io/npm/v/@niivue/nvreact/next" alt="npm"></a></td></tr>
+    <tr><td><a href="packages/nv-web-component"><code>@niivue/nv-web-component</code></a></td><td>Lit-based Web Components for NiiVue</td><td><a href="https://www.npmjs.com/package/@niivue/nv-web-component"><img src="https://img.shields.io/npm/v/@niivue/nv-web-component/next" alt="npm"></a></td></tr>
+    <tr><td><a href="packages/nv-ext-drawing"><code>@niivue/nv-ext-drawing</code></a></td><td>Drawing interpolation and segmentation tools</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-drawing"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-drawing/next" alt="npm"></a></td></tr>
+    <tr><td><a href="packages/nv-ext-image-processing"><code>@niivue/nv-ext-image-processing</code></a></td><td>Image processing (Otsu thresholding, haze removal, etc.)</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-image-processing"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-image-processing/next" alt="npm"></a></td></tr>
+    <tr><td><a href="packages/nv-ext-save-html"><code>@niivue/nv-ext-save-html</code></a></td><td>Export a NiiVue scene as a self-contained HTML file</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-save-html"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-save-html/next" alt="npm"></a></td></tr>
+    <tr><td><a href="packages/nv-ext-dcm2niix"><code>@niivue/nv-ext-dcm2niix</code></a></td><td>DICOM-to-NIfTI conversion in the browser via the dcm2niix WASM build</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-dcm2niix"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-dcm2niix/next" alt="npm"></a></td></tr>
+    <tr><td><a href="packages/nv-ext-niimath"><code>@niivue/nv-ext-niimath</code></a></td><td>niimath pipelines in the browser via the niimath WASM build</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-niimath"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-niimath/next" alt="npm"></a></td></tr>
+    <tr><td><a href="packages/niivue-web-bridge"><code>@niivue/web-bridge</code></a></td><td>Typed two-way JSON-envelope bridge between a NiiVue web view and a native (WKWebView) host</td><td>—</td></tr>
+    <tr><td><a href="packages/niivue-swift"><code>NiiVueKit</code></a></td><td>Swift package (<code>BridgeCore</code> + <code>NiiVueKit</code>) pairing with <code>@niivue/web-bridge</code> to embed NiiVue in SwiftUI apps via <code>WKWebView</code></td><td>—</td></tr>
+    <tr><td><a href="packages/dev-images"><code>@niivue/dev-images</code></a></td><td>Shared test volumes, meshes, and tractography files (Git LFS)</td><td>—</td></tr>
+    <tr><td><a href="packages/ipyniivue"><code>ipyniivue</code></a></td><td>Jupyter widget wrapping NiiVue (anywidget) — Python wheel</td><td><a href="https://pypi.org/project/ipyniivue/"><img src="https://img.shields.io/pypi/v/ipyniivue" alt="PyPI"></a></td></tr>
+  </tbody>
+</table>
 
 ## Apps
 
-| App | Description |
-|---|---|
-| [`demo-ext-drawing`](apps/demo-ext-drawing) | Demo app for the drawing extension |
-| [`demo-ext-image-processing`](apps/demo-ext-image-processing) | Demo app for the image processing extension |
-| [`demo-ext-save-html`](apps/demo-ext-save-html) | Demo app for the save-to-HTML extension |
-| [`demo-ext-dcm2niix`](apps/demo-ext-dcm2niix) | Demo app for the dcm2niix DICOM-to-NIfTI extension |
-| [`demo-nv-web-component`](apps/demo-nv-web-component) | Demo app for the Web Components package |
-| [`medgfx`](apps/medgfx) | Native macOS/iOS SwiftUI app embedding NiiVue in a WebView |
+<table>
+  <thead>
+    <tr>
+      <th width="260">App</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><a href="apps/demo-ext-drawing"><code>demo-ext-drawing</code></a></td><td>Demo app for the drawing extension</td></tr>
+    <tr><td><a href="apps/demo-ext-image-processing"><code>demo-ext-image-processing</code></a></td><td>Demo app for the image processing extension</td></tr>
+    <tr><td><a href="apps/demo-ext-save-html"><code>demo-ext-save-html</code></a></td><td>Demo app for the save-to-HTML extension</td></tr>
+    <tr><td><a href="apps/demo-ext-dcm2niix"><code>demo-ext-dcm2niix</code></a></td><td>Demo app for the dcm2niix DICOM-to-NIfTI extension</td></tr>
+    <tr><td><a href="apps/demo-ext-fullstack"><code>demo-ext-fullstack</code></a></td><td>Fullstack demo wiring NiiVue to a Bun server that runs the <code>niimath</code> native binary</td></tr>
+    <tr><td><a href="apps/demo-ext-niimath"><code>demo-ext-niimath</code></a></td><td>Browser-only demo running niimath as WASM via <a href="https://www.npmjs.com/package/@niivue/niimath"><code>@niivue/niimath</code></a></td></tr>
+    <tr><td><a href="apps/demo-nv-web-component"><code>demo-nv-web-component</code></a></td><td>Demo app for the Web Components package</td></tr>
+    <tr><td><a href="apps/medgfx"><code>medgfx</code></a></td><td>Native macOS/iOS SwiftUI app embedding NiiVue in a WebView</td></tr>
+  </tbody>
+</table>
 
 ## Getting Started
 

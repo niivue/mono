@@ -7,6 +7,10 @@ on:
         description: "Dry run (print the plan without creating commits or tags)"
         type: boolean
         default: false
+      rc:
+        description: "Create release candidate versions (for example, 1.2.3-rc.0) and publish them with the npm 'next' tag"
+        type: boolean
+        default: false
 
 concurrency:
   group: release
@@ -45,35 +49,25 @@ jobs:
       - name: Configure git identity
         # Uses the official github-actions[bot] noreply address (user id 41898282).
         # This attributes release commits to the bot in the GitHub UI with its avatar.
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        run: bun .github/scripts/configure-release-git.ts
 
       - name: Release (dry run)
         if: ${{ inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          set -o pipefail
-          {
-            echo '## Nx Release Dry Run'
-            echo ''
-            echo '```'
-            bunx nx release --groups typescript --dry-run --skip-publish --verbose
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: bun .github/scripts/run-typescript-release.ts --dry-run ${{ inputs.rc && '--rc' || '' }}
 
       - name: Release
         if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-        run: bunx nx release --groups typescript --skip-publish --verbose
+        run: bun .github/scripts/run-typescript-release.ts ${{ inputs.rc && '--rc' || '' }}
 
       - name: Push release commit and tags
         if: ${{ !inputs.dry_run }}
-        run: git push --follow-tags origin HEAD:main
+        run: bun .github/scripts/push-release-commit.ts
 
       - name: Create GitHub Releases
         if: ${{ !inputs.dry_run }}
@@ -82,69 +76,7 @@ jobs:
         # For each tag Nx created at HEAD, create (or update, if rerunning) a
         # matching GitHub Release whose body is the project's freshly-written
         # CHANGELOG.md top section.
-        run: |
-          set -euo pipefail
-          sha=$(git rev-parse HEAD)
-          for tag in $(git tag --points-at HEAD); do
-            # Nx tag format is "{projectName}@{version}"; projectName is the
-            # Nx project name (e.g. "niivue"), which may differ from the
-            # published package.json "name" (e.g. "@niivue/niivue").
-            project="${tag%@*}"
-
-            # Resolve the project directory. Match project.json "name" first
-            # (authoritative for Nx tags), then fall back to package.json
-            # "name" for packages without a project.json entry.
-            pkg_dir=""
-            for d in packages/*; do
-              if [ -f "$d/project.json" ]; then
-                nx_name=$(node -p "require('./$d/project.json').name || ''")
-                if [ "$nx_name" = "$project" ]; then
-                  pkg_dir="$d"
-                  break
-                fi
-              fi
-              if [ -f "$d/package.json" ]; then
-                pkg_name=$(node -p "require('./$d/package.json').name || ''")
-                if [ "$pkg_name" = "$project" ]; then
-                  pkg_dir="$d"
-                  break
-                fi
-              fi
-            done
-
-            # Prefer the package's CHANGELOG top section as the release body.
-            notes_file=""
-            if [ -n "$pkg_dir" ] && [ -f "$pkg_dir/CHANGELOG.md" ]; then
-              notes_file=$(mktemp)
-              awk '/^## /{if(seen)exit; seen=1; next} seen' \
-                "$pkg_dir/CHANGELOG.md" > "$notes_file"
-            fi
-
-            if gh release view "$tag" >/dev/null 2>&1; then
-              echo "Updating existing GitHub Release for $tag"
-              if [ -n "$notes_file" ]; then
-                # `gh release edit` has no --generate-notes, so only update
-                # notes when we have a CHANGELOG-derived body.
-                gh release edit "$tag" --title "$tag" --notes-file "$notes_file"
-              else
-                gh release edit "$tag" --title "$tag"
-              fi
-            else
-              echo "Creating GitHub Release for $tag"
-              if [ -n "$notes_file" ]; then
-                gh release create "$tag" \
-                  --title "$tag" \
-                  --target "$sha" \
-                  --notes-file "$notes_file"
-              else
-                echo "No CHANGELOG.md found for $project; using auto-generated notes."
-                gh release create "$tag" \
-                  --title "$tag" \
-                  --target "$sha" \
-                  --generate-notes
-              fi
-            fi
-          done
+        run: bun .github/scripts/create-github-releases.ts
 
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
@@ -152,26 +84,4 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
-        run: |
-          set -euo pipefail
-          for tag in $(git tag --points-at HEAD); do
-            project="${tag%@*}"
-            version="${tag##*@}"
-
-            # Only publish npm packages from the TypeScript release group.
-            case "$project" in
-              niivue|nv-*) ;;
-              *) continue ;;
-            esac
-
-            npm_tag="latest"
-            if [[ "$version" == *-* ]]; then
-              npm_tag="next"
-            fi
-
-            echo "Publishing $project@$version to npm with dist-tag '$npm_tag'"
-            bunx nx release publish \
-              --projects "$project" \
-              --tag "$npm_tag" \
-              --verbose
-          done
+        run: bun .github/scripts/publish-npm-packages.ts

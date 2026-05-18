@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NiiVue — niimath WASM demo</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>NiiVue · niimath WASM demo</h1>
+      <span id="health" class="health">loading WASM…</span>
+    </header>
+
+    <main>
+      <canvas id="gl1"></canvas>
+    </main>
+
+    <aside>
+      <div class="tabs">
+        <button type="button" class="tab-btn active" data-tab="image">Image</button>
+        <button type="button" class="tab-btn" data-tab="tools">Processing</button>
+        <button type="button" class="tab-btn" data-tab="history">History</button>
+      </div>
+
+      <div id="tab-image" class="tab-panel active">
+        <div class="section">
+          <h2>Sample volumes</h2>
+          <p>Pick a built-in volume from <code>@niivue/dev-images</code>.</p>
+          <select id="sampleSelect" style="width: 100%"></select>
+        </div>
+
+        <div class="section">
+          <h2>Upload</h2>
+          <p>Or load a NIfTI from disk.</p>
+          <label for="fileInput" class="file-label">Choose .nii / .nii.gz</label>
+          <input id="fileInput" type="file" accept=".nii,.nii.gz,application/gzip" />
+        </div>
+
+        <div class="section">
+          <h2>Current image</h2>
+          <p id="currentImage">none</p>
+          <div class="row">
+            <button type="button" id="saveBtn" disabled>Save to disk</button>
+            <button type="button" id="applyBtn" disabled title="Use the most recent processing result as the input for further pipelines">Apply result as input</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-tools" class="tab-panel">
+        <div class="card">
+          <h3>Add Operation</h3>
+          <p class="desc">Pick a niimath operator to append to the pipeline.</p>
+          <div class="row">
+            <select id="operatorSelect" class="grow">
+              <option value="">Select operator…</option>
+            </select>
+            <button type="button" id="addOperatorBtn" disabled>+</button>
+          </div>
+        </div>
+
+        <div class="card" id="pipelineCard">
+          <h3>Processing Pipeline</h3>
+          <p class="desc">Operations applied in order via the niimath WASM worker.</p>
+          <div id="pipeline"></div>
+          <p id="emptyPipeline" class="desc">No operations yet.</p>
+        </div>
+
+        <div class="card">
+          <h3>Generated Command</h3>
+          <p class="desc">Preview of the niimath invocation.</p>
+          <pre class="command" id="commandPreview">niimath input.nii output.nii</pre>
+        </div>
+
+        <button type="button" id="runBtn" class="primary" style="width: 100%" disabled>
+          Run pipeline
+        </button>
+      </div>
+
+      <div id="tab-history" class="tab-panel">
+        <div class="section">
+          <h2>Processing history</h2>
+          <p>Recent runs (in-memory; cleared on page reload).</p>
+          <div id="historyList"></div>
+          <p id="emptyHistory" class="desc">No jobs yet.</p>
+        </div>
+      </div>
+    </aside>
+
+    <footer>
+      <span id="spinner" class="spinner hidden"></span>
+      <span id="status">Ready.</span>
+    </footer>
+
+    <script type="module" src="src/main.ts"></script>
+  </body>
+</html>

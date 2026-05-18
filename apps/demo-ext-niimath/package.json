@@ -1,0 +1,17 @@
+{
+  "name": "demo-ext-niimath",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bunx --bun vite --open /index.html",
+    "build": "bunx --bun vite build"
+  },
+  "dependencies": {
+    "@niivue/dev-images": "workspace:*",
+    "@niivue/niivue": "workspace:*",
+    "@niivue/nv-ext-niimath": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.3.2"
+  }
+}

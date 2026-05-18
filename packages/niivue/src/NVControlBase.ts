@@ -37,6 +37,8 @@ import type { NVEventListener, NVEventMap } from '@/NVEvents'
 import * as NVLoader from '@/NVLoader'
 import NVModel from '@/NVModel'
 import type {
+  AffineMatrix,
+  AffineTransform,
   AnnotationPoint,
   AnnotationStyle,
   AnnotationTool,
@@ -87,9 +89,12 @@ import type {
 } from '@/volume/transforms'
 import * as NVVolumeTransforms from '@/volume/transforms'
 import {
+  calculateWorldExtents,
+  calMinMax,
   calMinMaxFrame,
   computeVolumeLabelCentroids,
   reorientDrawingToNative,
+  toTypedViewOrU8,
 } from '@/volume/utils'
 
 type ViewBackend = {
@@ -97,6 +102,7 @@ type ViewBackend = {
   resize: () => void
   render: () => void
   updateBindGroups: () => Promise<void>
+  updateAffineOverlays?: () => Promise<boolean>
   hitTest: (x: number, y: number) => ViewHitTest | null
   depthPick: (x: number, y: number) => Promise<[number, number, number] | null>
   loadThumbnail: (url: string) => Promise<void>
@@ -540,6 +546,12 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Control whether 2D slices use radiological or neurological convention.
+   * @default `false` (neurological)
+   * @example nv1.isRadiological = true
+   * @see {@link https://niivue.github.io/mono/examples/freesurfer.clip.html | live demo usage}
+   */
   get isRadiological(): boolean {
     return this.model.layout.isRadiological
   }
@@ -594,6 +606,13 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Control whether the orientation cube is shown on the 3D render view.
+   * Each face of the cube is labeled with an anatomical direction: Anterior (A), Posterior (P), Left (L), Right (R), Superior (S), Inferior (I).
+   * @default `true`
+   * @example nv1.isOrientCubeVisible = false
+   * @see {@link https://niivue.github.io/mono/examples/vox.basic.html | live demo usage}
+   */
   get isOrientCubeVisible(): boolean {
     return this.model.ui.isOrientCubeVisible
   }
@@ -1319,6 +1338,31 @@ export default class NiiVueGPU extends EventTarget {
     }
   }
 
+  private async updateVolumeAffineOnly(): Promise<void> {
+    if (this._updating) {
+      this._pendingUpdate = true
+      return
+    }
+    this._updating = true
+    try {
+      if (!this.view) return
+      const handled = await this.view.updateAffineOverlays?.()
+      if (handled) {
+        this.drawScene()
+        return
+      }
+      this._computeModulationData()
+      await this.view.updateBindGroups()
+      this.drawScene()
+    } finally {
+      this._updating = false
+      if (this._pendingUpdate) {
+        this._pendingUpdate = false
+        await this.updateVolumeAffineOnly()
+      }
+    }
+  }
+
   /**
    * Set a modulation image for a target volume.
    * The modulator's intensity scales the target volume's brightness and opacity.
@@ -1737,6 +1781,90 @@ export default class NiiVueGPU extends EventTarget {
     await this.updateGLVolume()
   }
 
+  getVolumeAffine(volumeIndex: number): AffineMatrix {
+    return NVTransforms.copyAffine(
+      this._getVolumeOrThrow(volumeIndex).hdr.affine,
+    )
+  }
+
+  async setVolumeAffine(
+    volumeIndex: number,
+    affine: number[][],
+  ): Promise<void> {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    this._setVolumeAffine(volume, affine)
+    this._emitVolumeAffineUpdate(volumeIndex, volume)
+    await this.updateVolumeAffineOnly()
+  }
+
+  async applyVolumeTransform(
+    volumeIndex: number,
+    transform: AffineTransform,
+  ): Promise<void> {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    const transformMatrix = NVTransforms.createAffineTransformMatrix(transform)
+    this._setVolumeAffine(
+      volume,
+      NVTransforms.multiplyAffine(volume.hdr.affine, transformMatrix),
+    )
+    this._emitVolumeAffineUpdate(volumeIndex, volume)
+    await this.updateVolumeAffineOnly()
+  }
+
+  async resetVolumeAffine(volumeIndex: number): Promise<void> {
+    const volume = this._getVolumeOrThrow(volumeIndex)
+    const originalAffine = volume.originalAffine
+    if (!originalAffine) {
+      throw new Error('Original affine not stored')
+    }
+    this._setVolumeAffine(volume, originalAffine)
+    this._emitVolumeAffineUpdate(volumeIndex, volume)
+    await this.updateVolumeAffineOnly()
+  }
+
+  private _getVolumeOrThrow(volumeIndex: number): NVImage {
+    const volumes = this.model.getVolumes()
+    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) {
+      throw new Error(`Volume index ${volumeIndex} out of range`)
+    }
+    return volumes[volumeIndex]
+  }
+
+  private _emitVolumeAffineUpdate(volumeIndex: number, volume: NVImage): void {
+    this.emit('volumeUpdated', {
+      volumeIndex,
+      volume,
+      changes: { affine: NVTransforms.copyAffine(volume.hdr.affine) },
+    })
+  }
+
+  private _setVolumeAffine(volume: NVImage, affine: number[][]): void {
+    volume.hdr.affine = NVTransforms.copyAffine(affine)
+    NVTransforms.calculateRAS(volume)
+    if (!volume.pixDimsRAS || !volume.dimsRAS) {
+      throw new Error('calculateRAS failed to set pixDimsRAS/dimsRAS')
+    }
+    const dimsMM = [
+      volume.pixDimsRAS[1] * volume.dimsRAS[1],
+      volume.pixDimsRAS[2] * volume.dimsRAS[2],
+      volume.pixDimsRAS[3] * volume.dimsRAS[3],
+    ]
+    const longestAxis = Math.max(dimsMM[0], dimsMM[1], dimsMM[2])
+    volume.volScale = [
+      dimsMM[0] / longestAxis,
+      dimsMM[1] / longestAxis,
+      dimsMM[2] / longestAxis,
+    ]
+    const { extentsMin, extentsMax } = calculateWorldExtents(
+      volume.hdr.dims.slice(1, 4),
+      new Float32Array(volume.hdr.affine.flat()),
+    )
+    volume.extentsMin = extentsMin
+    volume.extentsMax = extentsMax
+    volume.isDirty = true
+    this.model._setupPivot3D()
+  }
+
   /**
    * Update display properties of a loaded mesh.
    * Accepts any subset of mesh display options (opacity, shaderType, color, etc.)
@@ -2029,8 +2157,23 @@ export default class NiiVueGPU extends EventTarget {
       return
     }
     const nii = await NVVolume.loadVolume(vol.url)
-    vol.img = nii.img instanceof ArrayBuffer ? null : nii.img
+    // Compute intensity stats on `nii.img` BEFORE typed-view coercion —
+    // calMinMax's RGB/RGBA sentinel only triggers when its internal
+    // `toTypedView` sees a raw ArrayBuffer; once we've coerced to
+    // Uint8Array via toTypedViewOrU8, calMinMax would scan RGB bytes
+    // as scalar intensities. Matches nii2volume's call order.
+    // (Like nii2volume, this scans the first 3D frame only — so
+    // intensity range may differ from a hypothetical scan over the
+    // full timeseries; that's the existing initial-load behavior.)
+    const [pct2, pct98, mnScale, mxScale] = calMinMax(vol.hdr, nii.img)
+    vol.img = toTypedViewOrU8(nii.img, vol.hdr.datatypeCode)
     vol.nFrame4D = vol.nTotalFrame4D
+    vol.calMin = pct2
+    vol.calMax = pct98
+    vol.robustMin = pct2
+    vol.robustMax = pct98
+    vol.globalMin = mnScale
+    vol.globalMax = mxScale
     await this.updateGLVolume()
   }
 

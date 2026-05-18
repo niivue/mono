@@ -113,6 +113,21 @@ export function toTypedView(
 }
 
 /**
+ * Coerce raw NIfTI bytes to a typed view, falling back to a Uint8Array for
+ * RGB/RGBA datatypes that have no per-voxel intensity. The fallback matches
+ * how loaders treat those bytes elsewhere — `nii2volume` and the deferred-
+ * load path in `NVControlBase.loadDeferred4DVolumes` must agree on this
+ * shape, so it lives here once.
+ */
+export function toTypedViewOrU8(
+  img: ArrayBuffer | TypedVoxelArray,
+  dt: number,
+): TypedVoxelArray {
+  if (!(img instanceof ArrayBuffer)) return img
+  return toTypedView(img, dt) ?? new Uint8Array(img)
+}
+
+/**
  * Compute robust (2%–98% histogram percentile) intensity range over a typed array slice.
  * Returns [robust_min, robust_max, global_min, global_max] in raw (unscaled) values.
  */

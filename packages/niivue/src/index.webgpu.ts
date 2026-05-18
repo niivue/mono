@@ -18,6 +18,8 @@ export type { WriteOptions } from './mesh/writers'
 export { DRAG_MODE } from './NVConstants'
 export { default, default as NiiVueGPU } from './NVControlWebGPU'
 export type {
+  AffineMatrix,
+  AffineTransform,
   BackendType,
   CanvasViewport,
   ColorMap,

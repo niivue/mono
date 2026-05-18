@@ -1,5 +1,6 @@
 import * as Annotation from '@/annotation'
 import * as DragModes from '@/control/dragModes'
+import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { addUndoBitmap, getDrawingBitmap } from '@/drawing/drawingManager'
 import {
   drawLine,
@@ -13,7 +14,6 @@ import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
 import { DRAG_MODE, sliceTypeDim } from '@/NVConstants'
 import type NiiVueGPU from '@/NVControl'
-import { computeBoundsPixelRect } from '@/control/viewBoth'
 import type {
   NVImage,
   PolygonWithHoles,

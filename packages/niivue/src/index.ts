@@ -54,10 +54,13 @@ export type {
   ViewAttachedDetail,
   VolumeLoadedDetail,
   VolumeRemovedDetail,
+  VolumeUpdatedChanges,
   VolumeUpdatedDetail,
 } from './NVEvents'
 // Core types used in the public API
 export type {
+  AffineMatrix,
+  AffineTransform,
   BackendType,
   CanvasViewport,
   ColorMap,

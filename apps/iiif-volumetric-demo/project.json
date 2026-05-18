@@ -34,6 +34,11 @@
     "format": {
       "command": "bunx biome format {projectRoot} --write",
       "inputs": ["typescript"]
+    },
+    "capture-screenshots": {
+      "command": "bun scripts/capture-screenshots.ts",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"]
     }
   }
 }

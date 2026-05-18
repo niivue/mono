@@ -29,7 +29,6 @@ export default defineConfig({
         stitch: resolve(__dirname, 'stitch.html'),
         infinite: resolve(__dirname, 'infinite.html'),
         'neuro-desktop': resolve(__dirname, 'neuro-desktop.html'),
-        openneuro: resolve(__dirname, 'openneuro.html'),
         'osd-volume-desktop': resolve(__dirname, 'osd-volume-desktop.html'),
         'volume-fly-space': resolve(__dirname, 'volume-fly-space.html'),
       },

@@ -21,7 +21,7 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   dependency.
 
 Additional POC pages from the standalone repo (`infinite.html`,
-`neuro-desktop.html`, `openneuro.html`, `osd-volume-desktop.html`,
+`neuro-desktop.html`, `osd-volume-desktop.html`,
 `volume-fly-space.html`) are deferred — they depend on niivuegpu APIs
 (`setInstances`, `setViewport`, `NVCanvasViewportController`,
 `setGlobalCamera`) that are not yet ported into `@niivue/niivue`.
@@ -98,8 +98,8 @@ IIIF_SERVER_URL=http://127.0.0.1:9090 bunx nx dev iiif-volumetric-demo
 ```
 
 The header on `index.html` links to `meshes.html`, `sheet.html`,
-`infinite.html`, `neuro-desktop.html`, `openneuro.html`,
-`osd-volume-desktop.html`, and `volume-fly-space.html`. `meshes.html`
+`infinite.html`, `neuro-desktop.html`, `osd-volume-desktop.html`, and
+`volume-fly-space.html`. `meshes.html`
 works standalone (it pulls fixtures from `@niivue/dev-images` and does
 not require the IIIF server, though Vite still proxies `/api` etc. for
 the rest of the site). `sheet.html` needs the IIIF server running with

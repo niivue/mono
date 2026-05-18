@@ -26,6 +26,7 @@ export default defineConfig({
         index: resolve(__dirname, 'index.html'),
         meshes: resolve(__dirname, 'meshes.html'),
         sheet: resolve(__dirname, 'sheet.html'),
+        stitch: resolve(__dirname, 'stitch.html'),
         infinite: resolve(__dirname, 'infinite.html'),
         'neuro-desktop': resolve(__dirname, 'neuro-desktop.html'),
         openneuro: resolve(__dirname, 'openneuro.html'),

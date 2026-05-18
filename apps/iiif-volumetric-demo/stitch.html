@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Texture Stitching — Boundary Artifacts</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b0d10;
+        color: #e8eaed;
+        overflow: hidden;
+      }
+      header {
+        padding: 8px 16px;
+        border-bottom: 1px solid #222;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px 14px;
+      }
+      header h1 {
+        font-size: 0.95rem;
+        margin: 0;
+        font-weight: 500;
+      }
+      header .links {
+        margin-left: auto;
+      }
+      header .links a {
+        color: #8ab4f8;
+        margin-left: 12px;
+        text-decoration: none;
+        font-size: 0.85rem;
+      }
+      header .control {
+        font-size: 0.8rem;
+        color: #9aa0a6;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      header select,
+      header button,
+      header input[type='range'] {
+        background: #1a1d20;
+        border: 1px solid #2a2d31;
+        color: #e8eaed;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+      }
+      header input[type='range'] {
+        padding: 0;
+        width: 110px;
+      }
+      header button {
+        cursor: pointer;
+      }
+      header button:hover {
+        background: #2a2d31;
+      }
+      header .num {
+        display: inline-block;
+        min-width: 36px;
+        font-family: ui-monospace, monospace;
+        color: #d6d8db;
+        text-align: right;
+      }
+      main {
+        position: relative;
+        height: calc(100vh - 49px);
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        outline: none;
+      }
+      .hud {
+        position: absolute;
+        bottom: 12px;
+        left: 12px;
+        background: rgba(0, 0, 0, 0.55);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-family: ui-monospace, monospace;
+        font-size: 0.72rem;
+        color: #9aa0a6;
+        pointer-events: none;
+        max-width: 70%;
+        line-height: 1.45;
+      }
+      .pill {
+        display: inline-block;
+        font-size: 0.7rem;
+        background: #1a1d20;
+        border: 1px solid #2a2d31;
+        padding: 1px 6px;
+        border-radius: 999px;
+        color: #9aa0a6;
+      }
+      .pill.green {
+        color: #b8f5c8;
+        border-color: #1a3a25;
+      }
+      .pill.red {
+        color: #f5b8b8;
+        border-color: #3a1a1a;
+      }
+      .checkbox-control input {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Texture Stitching <span class="pill" id="statusPill">init</span></h1>
+      <span class="control">
+        <label for="imageSelect">Image</label>
+        <select id="imageSelect">
+          <option value="cytology" selected>Cytology peritoneal fluid (4272×2848)</option>
+          <option value="pillars">Hubble pillars (6780×7071, ~45MB)</option>
+          <option value="">(none — use Pattern)</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="patternSelect">Pattern</label>
+        <select id="patternSelect">
+          <option value="gradient" selected>gradient</option>
+          <option value="grid">fine grid</option>
+          <option value="checker">checker</option>
+          <option value="rings">concentric rings</option>
+          <option value="noise">noise</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="tilesSelect">Tiles</label>
+        <select id="tilesSelect">
+          <option value="2">2 × 2</option>
+          <option value="3" selected>3 × 3</option>
+          <option value="4">4 × 4</option>
+          <option value="5">5 × 5</option>
+          <option value="8">8 × 8</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="filterSelect">Filter</label>
+        <select id="filterSelect">
+          <option value="linear" selected>linear</option>
+          <option value="nearest">nearest</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="wrapSelect">Wrap</label>
+        <select id="wrapSelect">
+          <option value="clamp" selected>clamp-to-edge</option>
+          <option value="repeat">repeat</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="overlapSelect">Overlap</label>
+        <select id="overlapSelect">
+          <option value="0" selected>0 px</option>
+          <option value="1">1 px</option>
+          <option value="2">2 px</option>
+          <option value="4">4 px</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="shearX">Shear X</label>
+        <input type="range" id="shearX" min="-0.6" max="0.6" step="0.01" value="0" />
+        <span class="num" id="shearXNum">0.00</span>
+      </span>
+      <span class="control">
+        <label for="shearY">Shear Y</label>
+        <input type="range" id="shearY" min="-0.6" max="0.6" step="0.01" value="0" />
+        <span class="num" id="shearYNum">0.00</span>
+      </span>
+      <span class="control">
+        <label for="zoom">Zoom</label>
+        <input type="range" id="zoom" min="0.5" max="6" step="0.05" value="1" />
+        <span class="num" id="zoomNum">1.00</span>
+      </span>
+      <span class="control checkbox-control">
+        <input type="checkbox" id="showBorders" />
+        <label for="showBorders">show tile borders</label>
+      </span>
+      <span class="control checkbox-control">
+        <input type="checkbox" id="reference" />
+        <label for="reference">single texture (reference)</label>
+      </span>
+      <div class="links">
+        <a href="/index.html">index</a>
+        <a href="/sheet.html">sheet</a>
+        <a href="/meshes.html">meshes</a>
+      </div>
+    </header>
+    <main>
+      <canvas id="gl-canvas" aria-label="Texture stitching demo"></canvas>
+      <div class="hud" id="hud"></div>
+    </main>
+    <script type="module" src="/src/stitch.ts"></script>
+  </body>
+</html>

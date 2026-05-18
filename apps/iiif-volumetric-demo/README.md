@@ -13,6 +13,12 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   zoomable canvas. Each cell loads a different IIIF volume from the
   server plus the same `.mz3` mesh (colored differently per cell).
   Drag to pan, wheel to zoom, +/−/fit buttons to step.
+- `stitch.html` — standalone WebGL2 diagnostic for texture-stitching
+  boundary artifacts. A single test pattern is split into NxN GPU
+  textures rendered as adjacent quads under a global shear matrix.
+  Toggle filter / wrap / overlap padding / pattern / tile count and
+  compare against the single-texture reference. No niivue, no IIIF
+  dependency.
 
 Additional POC pages from the standalone repo (`infinite.html`,
 `neuro-desktop.html`, `openneuro.html`, `osd-volume-desktop.html`,

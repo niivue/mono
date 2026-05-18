@@ -6,6 +6,13 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
 
 - `index.html` — 3-pane IIIF Image API slices (axial / coronal / sagittal)
   plus a niivue 3D render driven by the Presentation 4.0 alpha manifest.
+- `meshes.html` — niivue mesh / tract / connectome demo. Loads `.mz3`,
+  `.trx`, `.tck`, `.trk`, `.vtk`, `.curv` and `.jcon` fixtures from
+  `@niivue/dev-images`. Has no IIIF dependency.
+- `sheet.html` — 3×3 sheet of independent niivue instances on one
+  zoomable canvas. Each cell loads a different IIIF volume from the
+  server plus the same `.mz3` mesh (colored differently per cell).
+  Drag to pan, wheel to zoom, +/−/fit buttons to step.
 
 Additional POC pages from the standalone repo (`infinite.html`,
 `neuro-desktop.html`, `openneuro.html`, `osd-volume-desktop.html`,
@@ -84,11 +91,16 @@ server. Point the proxy elsewhere with `IIIF_SERVER_URL`:
 IIIF_SERVER_URL=http://127.0.0.1:9090 bunx nx dev iiif-volumetric-demo
 ```
 
-The header on `index.html` links to `infinite.html`, `neuro-desktop.html`,
-`openneuro.html`, `osd-volume-desktop.html`, and `volume-fly-space.html`.
-**Those pages are deferred** (see top of this README) — opening them will
-fail with missing-symbol errors from the old `niivuegpu` API. Stay on
-`index.html` until those pages are ported.
+The header on `index.html` links to `meshes.html`, `sheet.html`,
+`infinite.html`, `neuro-desktop.html`, `openneuro.html`,
+`osd-volume-desktop.html`, and `volume-fly-space.html`. `meshes.html`
+works standalone (it pulls fixtures from `@niivue/dev-images` and does
+not require the IIIF server, though Vite still proxies `/api` etc. for
+the rest of the site). `sheet.html` needs the IIIF server running with
+at least one fixture volume — it cycles the available volumes through
+9 cells. **The remaining POC pages are deferred** (see top of this
+README) — opening them will fail with missing-symbol errors from the
+old `niivuegpu` API.
 
 ### 6. Stop
 

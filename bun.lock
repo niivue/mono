@@ -72,6 +72,7 @@
         "@niivue/niivue": "workspace:*",
       },
       "devDependencies": {
+        "@niivue/dev-images": "workspace:*",
         "vite": "^6.3.2",
       },
     },

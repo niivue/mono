@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NiiVue Meshes — Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #0b0d10;
+        color: #e8eaed;
+      }
+      header {
+        padding: 12px 18px;
+        border-bottom: 1px solid #222;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header h1 {
+        font-size: 1rem;
+        margin: 0;
+      }
+      header .links a {
+        color: #8ab4f8;
+        margin-left: 12px;
+        text-decoration: none;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 1px;
+        background: #222;
+        height: calc(100vh - 51px);
+      }
+      aside,
+      section {
+        background: #0b0d10;
+        overflow: auto;
+      }
+      aside {
+        padding: 12px;
+      }
+      aside h2 {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        color: #9aa0a6;
+        margin: 16px 0 6px;
+      }
+      .controls {
+        font-size: 0.85rem;
+      }
+      .controls label {
+        display: block;
+        margin: 6px 0 2px;
+        color: #9aa0a6;
+      }
+      .controls input[type='range'] {
+        width: 100%;
+      }
+      .controls input[type='checkbox'] {
+        vertical-align: middle;
+      }
+      .controls select,
+      .controls input[type='text'],
+      .controls input[type='number'] {
+        width: 100%;
+        background: #1a1d20;
+        border: 1px solid #2a2d31;
+        color: #e8eaed;
+        padding: 4px 6px;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      .pane {
+        background: #0b0d10;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .pane canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        outline: none;
+      }
+      .status {
+        font-size: 0.75rem;
+        color: #9aa0a6;
+        margin-top: 6px;
+        min-height: 1.1em;
+      }
+      .pill {
+        display: inline-block;
+        font-size: 0.7rem;
+        background: #1a1d20;
+        border: 1px solid #2a2d31;
+        padding: 1px 6px;
+        border-radius: 999px;
+        color: #9aa0a6;
+        margin-left: 6px;
+      }
+      .pill.green {
+        color: #b8f5c8;
+        border-color: #1a3a25;
+      }
+      .pill.red {
+        color: #f5b8b8;
+        border-color: #3a1a1a;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>
+        NiiVue Meshes
+        <span class="pill" id="niivuePill">niivue</span>
+      </h1>
+      <div class="links">
+        <a href="/index.html">index</a>
+        <a href="/meshes.html">meshes</a>
+        <a href="/sheet.html">sheet</a>
+        <a href="/iiif/presentation">/iiif/presentation</a>
+      </div>
+    </header>
+    <main>
+      <aside>
+        <h2 style="margin-top: 0">Surface mesh</h2>
+        <div class="controls">
+          <label for="meshSelect">Mesh</label>
+          <select id="meshSelect">
+            <option value="">— none —</option>
+            <option value="inflated" selected>inflated (FreeSurfer)</option>
+            <option value="BrainMesh_ICBM152.lh">BrainMesh_ICBM152.lh</option>
+            <option value="cortex_5124">cortex_5124</option>
+            <option value="CIT168">CIT168</option>
+            <option value="scalp">scalp</option>
+            <option value="atl-Anatom_space-MNI">atl-Anatom (atlas)</option>
+          </select>
+
+          <label for="shaderSelect">Shader</label>
+          <select id="shaderSelect"></select>
+
+          <label>
+            <input id="layerToggle" type="checkbox" />
+            Add curvature layer
+          </label>
+
+          <label>
+            <input id="motorToggle" type="checkbox" />
+            Add motor activation layer
+          </label>
+
+          <label for="opacityRange">Opacity: <span id="opacityVal">1.00</span></label>
+          <input id="opacityRange" type="range" min="0" max="1" step="0.05" value="1" />
+
+          <label for="xrayRange">Mesh X-Ray: <span id="xrayVal">0.00</span></label>
+          <input id="xrayRange" type="range" min="0" max="1" step="0.02" value="0" />
+
+          <label for="thicknessRange">
+            Thickness on 2D: <span id="thicknessVal">∞</span> mm
+          </label>
+          <input id="thicknessRange" type="range" min="0" max="200" step="1" value="200" />
+        </div>
+
+        <h2>Tract / Connectome</h2>
+        <div class="controls">
+          <label for="tractSelect">Tract</label>
+          <select id="tractSelect">
+            <option value="">— none —</option>
+            <option value="yeh2022.trx">yeh2022 (.trx)</option>
+            <option value="colby.trx">colby (.trx)</option>
+            <option value="dpsv.trx">dpsv (.trx)</option>
+            <option value="tract.SLF1_R.tck">SLF1_R (.tck)</option>
+            <option value="tract.IFOF_R.trk">IFOF_R (.trk)</option>
+            <option value="tract.FAT_R.vtk">FAT_R (.vtk lines)</option>
+          </select>
+
+          <label for="connectomeSelect">Connectome</label>
+          <select id="connectomeSelect">
+            <option value="">— none —</option>
+            <option value="connectome.jcon">connectome (dense)</option>
+            <option value="connectome2.jcon">connectome2 (sparse)</option>
+          </select>
+        </div>
+
+        <h2>View</h2>
+        <div class="controls">
+          <label for="sliceType">Slice type</label>
+          <select id="sliceType">
+            <option value="0">Axial</option>
+            <option value="1">Coronal</option>
+            <option value="2">Sagittal</option>
+            <option value="3">A + C + S + R</option>
+            <option value="4" selected>Render (3D)</option>
+          </select>
+
+          <label>
+            <input id="backendCheck" type="checkbox" checked />
+            WebGPU (uncheck for WebGL2)
+          </label>
+        </div>
+
+        <div class="status" id="status"></div>
+
+        <p style="margin-top: 16px; color: #5f6368; font-size: 0.75rem">
+          Meshes are served from <code>@niivue/dev-images</code> at
+          <code>/meshes/*</code>. Volume slices and IIIF endpoints are unused on
+          this page.
+        </p>
+      </aside>
+      <section>
+        <div class="pane" id="pane-3d">
+          <canvas id="nv-canvas" tabindex="0" aria-label="Interactive niivue mesh viewer"></canvas>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/meshes-viewer.ts"></script>
+  </body>
+</html>

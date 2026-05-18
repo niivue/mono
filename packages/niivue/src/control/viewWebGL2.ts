@@ -8,6 +8,7 @@ import {
   setupDragAndDrop,
   setupResizeHandler,
 } from './interactions'
+import { registerCanvasInstance } from './viewBoth'
 
 export async function attachTo(
   ctrl: NiiVueGPU,
@@ -40,6 +41,7 @@ export async function attachToCanvas(
     )
   }
   ctrl.canvas = canvas
+  registerCanvasInstance(ctrl, canvas)
   ctrl.view = new NVViewGL(canvas, ctrl.model, ctrl.opts)
   try {
     await ctrl.view.init()

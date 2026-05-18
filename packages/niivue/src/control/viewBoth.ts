@@ -172,6 +172,21 @@ export async function attachToCanvas(
   }
 }
 
+/** Add a controller to the canvas instance registry. Used by single-backend
+ *  lifecycle modules (`viewWebGL2`, `viewWebGPU`) so that `setViewport` fan-out
+ *  via `getCanvasInstances` reaches every sibling sharing the canvas. */
+export function registerCanvasInstance(
+  ctrl: NiiVueGPU,
+  canvas: HTMLCanvasElement,
+): void {
+  let instances = canvasInstances.get(canvas)
+  if (!instances) {
+    instances = new Set()
+    canvasInstances.set(canvas, instances)
+  }
+  instances.add(ctrl)
+}
+
 /** Remove a controller from the canvas instance registry (called on destroy) */
 export function unregister(ctrl: NiiVueGPU): void {
   if (!ctrl.canvas) return

@@ -1130,8 +1130,10 @@ export default class NVGlview {
       dpr = this.forceDevicePixelRatio
     }
     const rect = this.canvas.getBoundingClientRect()
-    this.canvas.width = Math.max(1, Math.floor(rect.width * dpr))
-    this.canvas.height = Math.max(1, Math.floor(rect.height * dpr))
+    const targetW = Math.max(1, Math.floor(rect.width * dpr))
+    const targetH = Math.max(1, Math.floor(rect.height * dpr))
+    if (this.canvas.width !== targetW) this.canvas.width = targetW
+    if (this.canvas.height !== targetH) this.canvas.height = targetH
     // Compute bounds pixel rect
     this._computeBoundsPixels()
     const bw = this._boundsWidth

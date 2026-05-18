@@ -13,6 +13,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
 import { DRAG_MODE, sliceTypeDim } from '@/NVConstants'
 import type NiiVueGPU from '@/NVControl'
+import { computeBoundsPixelRect } from '@/control/viewBoth'
 import type {
   NVImage,
   PolygonWithHoles,
@@ -52,7 +53,9 @@ function clientToCanvasPixel(
   return [x, y]
 }
 
-/** Convert client coords to bounds-local pixel coords. Returns null if outside bounds. */
+/** Convert client coords to bounds-local pixel coords. Returns null if outside bounds.
+ *  Uses the post-viewport pixel rect so hit testing tracks the same transform
+ *  the renderer applies — otherwise pan/zoom would route events to the wrong tile. */
 function clientToBoundsPixel(
   ctrl: NiiVueGPU,
   clientX: number,
@@ -69,15 +72,18 @@ function clientToBoundsPixel(
   ) {
     return [canvasX, canvasY]
   }
-  const cw = ctrl.canvas?.width ?? 0
-  const ch = ctrl.canvas?.height ?? 0
-  const left = bounds[0][0] * cw
-  const top = (1 - bounds[1][1]) * ch
-  const width = (bounds[1][0] - bounds[0][0]) * cw
-  const height = (bounds[1][1] - bounds[0][1]) * ch
-  const boundsX = canvasX - left
-  const boundsY = canvasY - top
-  if (boundsX < 0 || boundsX >= width || boundsY < 0 || boundsY >= height)
+  const canvas = ctrl.canvas
+  if (!canvas) return null
+  const rect = computeBoundsPixelRect(canvas, bounds)
+  if (rect.isOffscreen) return null
+  const boundsX = canvasX - rect.left
+  const boundsY = canvasY - rect.top
+  if (
+    boundsX < 0 ||
+    boundsX >= rect.width ||
+    boundsY < 0 ||
+    boundsY >= rect.height
+  )
     return null
   return [boundsX, boundsY]
 }

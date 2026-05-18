@@ -20,6 +20,10 @@ import type {
 import NiiVue from '@niivue/niivue/webgl2'
 
 import { installNav } from './nav'
+import {
+  getSyntheticOverlayUrl,
+  SYNTHETIC_VOLUME_ID,
+} from './synthetic-overlay'
 
 installNav()
 
@@ -149,9 +153,15 @@ async function fetchVolumeIds(): Promise<string[]> {
   if (!res.ok) throw new Error(`/api -> ${res.status}`)
   const json = (await res.json()) as ApiResponse
   const list = json.volumes ?? []
+  // Reorder so the synthetic cube is in the first cell when it is present.
+  // The cube + symmetric overlay path is the headline of this demo, so we
+  // pin it to a predictable slot instead of relying on registry scan order.
+  const synthetic = list.find((v) => v.id === SYNTHETIC_VOLUME_ID)
+  const others = list.filter((v) => v.id !== SYNTHETIC_VOLUME_ID)
+  const ordered = synthetic ? [synthetic, ...others] : others
   const ids: string[] = []
-  for (let i = 0; ids.length < CELL_COUNT && i < list.length * 4; i++) {
-    const entry = list[i % list.length]
+  for (let i = 0; ids.length < CELL_COUNT && i < ordered.length * 4; i++) {
+    const entry = ordered[i % ordered.length]
     if (entry) ids.push(entry.id)
   }
   return ids
@@ -245,17 +255,34 @@ async function loadAllCells(volumeIds: string[]): Promise<void> {
       cell.volumeId = id
       cell.nameEl.textContent = prettyName(id)
       const colormap = PALETTE[idx % PALETTE.length] ?? 'gray'
+      const isSynthetic = id === SYNTHETIC_VOLUME_ID
       try {
-        await cell.nv.loadVolumes([
+        const volumes = [
           {
             url: `/volumes/${encodeURIComponent(id)}/raw`,
             colormap,
           },
-        ])
+        ]
+        if (isSynthetic) {
+          // The cube already centers on the world origin via its sform.
+          // The overlay shares the same dims/spacing/sform so the scene
+          // AABB is symmetric, which keeps niivue's auto-framing
+          // centered on the cube.
+          volumes.push({
+            url: getSyntheticOverlayUrl(),
+            name: 'synthetic-overlay.nii',
+            colormap: 'warm',
+            opacity: 0.7,
+          } as (typeof volumes)[number] & { name?: string; opacity?: number })
+        }
+        await cell.nv.loadVolumes(volumes)
         const meta = volumeMetaText(cell.nv)
         cell.metaAEl.textContent = meta.lineA
         cell.metaBEl.textContent = meta.lineB
-        if (meshUrl) {
+        // Skip the asymmetric hemisphere mesh on the synthetic cell so
+        // the scene AABB stays symmetric. The shell overlay plays the
+        // role of "interesting second layer" on that cell.
+        if (meshUrl && !isSynthetic) {
           await cell.nv.loadMeshes(meshOptsFor(idx, meshUrl))
           await alignCellMeshesToVolume(cell.nv)
         }
@@ -577,7 +604,7 @@ async function reloadMeshes(): Promise<void> {
       for (let i = existing.length - 1; i >= 0; i--) {
         await cell.nv.removeMesh(i)
       }
-      if (meshUrl) {
+      if (meshUrl && cell.volumeId !== SYNTHETIC_VOLUME_ID) {
         try {
           await cell.nv.loadMeshes(meshOptsFor(idx, meshUrl))
           await alignCellMeshesToVolume(cell.nv)

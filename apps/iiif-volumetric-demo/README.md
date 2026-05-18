@@ -6,9 +6,6 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
 
 - `index.html` — 3-pane IIIF Image API slices (axial / coronal / sagittal)
   plus a niivue 3D render driven by the Presentation 4.0 alpha manifest.
-- `meshes.html` — niivue mesh / tract / connectome demo. Loads `.mz3`,
-  `.trx`, `.tck`, `.trk`, `.vtk`, `.curv` and `.jcon` fixtures from
-  `@niivue/dev-images`. Has no IIIF dependency.
 - `sheet.html` — 3×3 sheet of independent niivue instances on one
   zoomable canvas. Each cell loads a different IIIF volume from the
   server plus the same `.mz3` mesh (colored differently per cell).
@@ -20,8 +17,7 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   compare against the single-texture reference. No niivue, no IIIF
   dependency.
 
-Additional POC pages from the standalone repo (`infinite.html`,
-`neuro-desktop.html`, `osd-volume-desktop.html`,
+Additional POC pages from the standalone repo (`osd-volume-desktop.html`,
 `volume-fly-space.html`) are deferred — they depend on niivuegpu APIs
 (`setInstances`, `setViewport`, `NVCanvasViewportController`,
 `setGlobalCamera`) that are not yet ported into `@niivue/niivue`.
@@ -97,16 +93,13 @@ server. Point the proxy elsewhere with `IIIF_SERVER_URL`:
 IIIF_SERVER_URL=http://127.0.0.1:9090 bunx nx dev iiif-volumetric-demo
 ```
 
-The header on `index.html` links to `meshes.html`, `sheet.html`,
-`infinite.html`, `neuro-desktop.html`, `osd-volume-desktop.html`, and
-`volume-fly-space.html`. `meshes.html`
-works standalone (it pulls fixtures from `@niivue/dev-images` and does
-not require the IIIF server, though Vite still proxies `/api` etc. for
-the rest of the site). `sheet.html` needs the IIIF server running with
-at least one fixture volume — it cycles the available volumes through
-9 cells. **The remaining POC pages are deferred** (see top of this
-README) — opening them will fail with missing-symbol errors from the
-old `niivuegpu` API.
+The header on every page exposes the shared cross-page nav (`volumes`,
+`sheet`, `stitch`, plus dimmed `osd-volume` and `volume-fly` links to
+the deferred POCs). `sheet.html` needs the IIIF server running with at
+least one fixture volume — it cycles the available volumes through 9
+cells. **The two deferred POC pages** (see top of this README) will
+fail with missing-symbol errors from the old `niivuegpu` API; use the
+home link in their topbar to navigate back.
 
 ### 6. Stop
 
@@ -122,7 +115,8 @@ needed to add or refresh data.
   is on a different port than `IIIF_SERVER_URL` expects.
 - **Server starts but no volumes listed** — fixtures dir is empty; run
   step 3.
-- **Header links open a broken page** — `infinite.html` etc. are
-  deferred; only `index.html` works today.
+- **Header links open a broken page** — `osd-volume-desktop.html` and
+  `volume-fly-space.html` are deferred (the nav dims them). Use the
+  home link in their topbar to return.
 - **Port 8087 or 8080 already in use** — stop the other process, or
   override `PORT` (server) / pass `--port` to Vite (demo).

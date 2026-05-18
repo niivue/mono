@@ -24,11 +24,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'index.html'),
-        meshes: resolve(__dirname, 'meshes.html'),
         sheet: resolve(__dirname, 'sheet.html'),
         stitch: resolve(__dirname, 'stitch.html'),
-        infinite: resolve(__dirname, 'infinite.html'),
-        'neuro-desktop': resolve(__dirname, 'neuro-desktop.html'),
         'osd-volume-desktop': resolve(__dirname, 'osd-volume-desktop.html'),
         'volume-fly-space': resolve(__dirname, 'volume-fly-space.html'),
       },

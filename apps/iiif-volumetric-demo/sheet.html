@@ -84,6 +84,49 @@
         color: #9aa0a6;
         pointer-events: none;
       }
+      .intro {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        max-width: 360px;
+        background: rgba(0, 0, 0, 0.6);
+        border: 1px solid #2a2d31;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 0.72rem;
+        color: #c8ccd1;
+        line-height: 1.45;
+      }
+      .intro summary {
+        cursor: pointer;
+        color: #e8eaed;
+        font-weight: 500;
+        list-style: none;
+      }
+      .intro summary::-webkit-details-marker {
+        display: none;
+      }
+      .intro summary::before {
+        content: '▸';
+        display: inline-block;
+        width: 12px;
+        color: #8ab4f8;
+        transition: transform 120ms linear;
+      }
+      .intro[open] summary::before {
+        transform: rotate(90deg);
+      }
+      .intro ul {
+        margin: 6px 0 0;
+        padding-left: 18px;
+        color: #9aa0a6;
+      }
+      .intro li {
+        margin-bottom: 3px;
+      }
+      .intro code {
+        color: #d6d8db;
+      }
       .pill {
         display: inline-block;
         font-size: 0.7rem;
@@ -140,9 +183,25 @@
         bottom: 2px;
         left: 4px;
         font-size: 0.62rem;
-        color: #5f6368;
+        color: #8ab4f8;
         font-family: ui-monospace, monospace;
         pointer-events: none;
+        letter-spacing: 0.04em;
+      }
+      .minimap-title {
+        position: absolute;
+        top: -22px;
+        right: 0;
+        font-size: 0.65rem;
+        color: #c8ccd1;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        pointer-events: none;
+      }
+      .minimap-title::before {
+        content: '▾ ';
+        color: #8ab4f8;
       }
       .labels {
         position: absolute;
@@ -208,17 +267,55 @@
         <button type="button" id="zoomFit">fit</button>
         <button type="button" id="zoomIn">+</button>
       </span>
-      <div class="links">
-        <a href="/index.html">index</a>
-        <a href="/meshes.html">meshes</a>
-        <a href="/stitch.html">stitch</a>
-      </div>
+      <div class="links" data-nav-links></div>
     </header>
     <main>
       <canvas id="nv-canvas" tabindex="0" aria-label="3×3 sheet of volumes and meshes"></canvas>
       <div class="labels" id="labels" aria-hidden="true"></div>
+      <details class="intro" open>
+        <summary>What this demo highlights</summary>
+        <ul>
+          <li>
+            <strong>Multi-instance niivue on a single WebGL2 canvas</strong> —
+            9 independent <code>NiiVue</code> instances share one
+            <code>&lt;canvas&gt;</code>, each with its own normalized
+            <code>bounds</code> rect. Each cell loads a different volume,
+            mesh colormap and orientation.
+          </li>
+          <li>
+            <strong>Minimap (top-right) is the primary navigator</strong> —
+            click to recentre, drag the blue view rect to pan, scroll the
+            wheel over it to zoom around the cursor. The
+            <code>NVCanvasViewportController</code> reads from the minimap
+            and fans the resulting viewport out to all 9 cells in one pass
+            so the sheet pans/zooms as a single rigid surface.
+          </li>
+          <li>
+            Right-drag on the sheet itself or wheel-zoom over a cell also
+            work — they go through the same controller, so the minimap
+            stays in sync.
+          </li>
+          <li>
+            <strong>LOD-driven layout</strong>: gutters and per-cell label
+            strips grow with zoom (world-space units) so the layout stays
+            proportional whether the sheet is fit-to-screen or panned in
+            close.
+          </li>
+          <li>
+            <strong>Mesh + volume overlay alignment</strong> per cell — the
+            <code>.mz3</code> hemisphere mesh is scaled-and-anchored into
+            each volume's bbox so the AABB stays symmetric.
+          </li>
+          <li>
+            Volumes stream from the IIIF server
+            (<code>/volumes/&lt;id&gt;/raw</code>); meshes come from
+            <code>@niivue/dev-images</code>.
+          </li>
+        </ul>
+      </details>
       <div class="hud" id="hud">zoom 1.00× · pan 0.00, 0.00</div>
       <div class="minimap" id="minimap" aria-label="Sheet navigator">
+        <div class="minimap-title">Navigator</div>
         <div class="minimap-grid" id="minimapGrid"></div>
         <div class="minimap-view" id="minimapView"></div>
         <div class="minimap-label">click · drag · wheel</div>

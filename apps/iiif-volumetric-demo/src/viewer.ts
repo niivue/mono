@@ -15,6 +15,10 @@
 
 import NiiVue from '@niivue/niivue/webgl2'
 
+import { installNav } from './nav'
+
+installNav()
+
 type Axis = 'axial' | 'coronal' | 'sagittal'
 
 interface VolumeLevel {
@@ -122,7 +126,7 @@ const state: ViewerState = {
   explodedManifest: null,
   axes: ['axial', 'coronal', 'sagittal'],
   nv: null,
-  mode: 'single',
+  mode: 'exploded',
   renderDrag: null,
 }
 
@@ -156,8 +160,11 @@ const els = {
 }
 
 const urlParams = new URLSearchParams(window.location.search)
-if (urlParams.get('mode') === 'exploded') {
+const modeParam = urlParams.get('mode')
+if (modeParam === 'exploded') {
   els.explodedToggle.checked = true
+} else if (modeParam === 'single') {
+  els.explodedToggle.checked = false
 }
 
 main().catch((err: unknown) => {

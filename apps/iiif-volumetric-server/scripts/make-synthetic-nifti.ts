@@ -14,18 +14,24 @@ const OUT = path.resolve(__dirname, '..', 'fixtures', 'synthetic.nii.gz')
 const SX = 64
 const SY = 64
 const SZ = 64
+const SPACING = 2.0
+
+// Voxel-center coordinates that map to world (0,0,0). For a volume of length
+// N along an axis, the geometric center sits at (N-1)/2, so the Gaussian blob
+// and the sform offset use the same value and the volume renders centered on
+// the world origin instead of in the +X/+Y/+Z octant.
+const CX = (SX - 1) / 2
+const CY = (SY - 1) / 2
+const CZ = (SZ - 1) / 2
 
 function makeData(): Float32Array {
   const data = new Float32Array(SX * SY * SZ)
-  const cx = SX / 2
-  const cy = SY / 2
-  const cz = SZ / 2
   for (let z = 0; z < SZ; z++) {
     for (let y = 0; y < SY; y++) {
       for (let x = 0; x < SX; x++) {
-        const dx = x - cx
-        const dy = y - cy
-        const dz = z - cz
+        const dx = x - CX
+        const dy = y - CY
+        const dz = z - CZ
         const r2 = dx * dx + dy * dy + dz * dz
         const blob = Math.exp(-r2 / (2 * 14 * 14))
         const grid =
@@ -52,10 +58,29 @@ function makeHeader(): ArrayBuffer {
   view.setInt16(70, 16, true) // datatype 16 = float32
   view.setInt16(72, 32, true)
   view.setFloat32(76, 1, true)
-  view.setFloat32(80, 2.0, true)
-  view.setFloat32(84, 2.0, true)
-  view.setFloat32(88, 2.0, true)
+  view.setFloat32(80, SPACING, true)
+  view.setFloat32(84, SPACING, true)
+  view.setFloat32(88, SPACING, true)
   view.setFloat32(108, 352, true)
+
+  // sform = identity scale × SPACING with translation so that the geometric
+  // center voxel (CX, CY, CZ) maps to world (0, 0, 0). Without this the
+  // synthetic cube sits with one corner at the origin and looks off-center
+  // next to real T1w fixtures that follow the MNI convention.
+  view.setInt16(254, 1, true) // sform_code = 1 (NIFTI_XFORM_SCANNER_ANAT)
+  view.setFloat32(280, SPACING, true) // srow_x[0]
+  view.setFloat32(284, 0, true)
+  view.setFloat32(288, 0, true)
+  view.setFloat32(292, -SPACING * CX, true) // qoffset_x via srow_x[3]
+  view.setFloat32(296, 0, true)
+  view.setFloat32(300, SPACING, true) // srow_y[1]
+  view.setFloat32(304, 0, true)
+  view.setFloat32(308, -SPACING * CY, true)
+  view.setFloat32(312, 0, true)
+  view.setFloat32(316, 0, true)
+  view.setFloat32(320, SPACING, true) // srow_z[2]
+  view.setFloat32(324, -SPACING * CZ, true)
+
   const magic = new Uint8Array(buf, 344, 4)
   magic[0] = 0x6e
   magic[1] = 0x2b

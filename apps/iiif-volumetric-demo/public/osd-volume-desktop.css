@@ -65,6 +65,24 @@ select {
   gap: 11px;
 }
 
+.home-link {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(215, 166, 66, 0.45);
+  border-radius: 6px;
+  color: var(--amber);
+  text-decoration: none;
+  font-weight: 800;
+  background: rgba(215, 166, 66, 0.08);
+  font-size: 0.85rem;
+}
+
+.home-link:hover {
+  background: rgba(215, 166, 66, 0.16);
+}
+
 .brand-mark {
   width: 30px;
   height: 30px;

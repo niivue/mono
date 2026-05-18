@@ -20,6 +20,10 @@
 // pattern under the same shear, with no internal seams, so the eye has a
 // known-good A/B comparison.
 
+import { installNav } from './nav'
+
+installNav()
+
 const SOURCE_SIZE = 768
 const VIEWPORT_FILL = 0.86 // fraction of canvas the image occupies at zoom=1
 
@@ -217,7 +221,7 @@ function generatePattern(kind: SyntheticPattern, size: number): Uint8Array {
           break
         }
         case 'rings': {
-          // Concentric rings around the centre — exposes both axis-aligned
+          // Concentric rings around the center — exposes both axis-aligned
           // and oblique tile boundaries with the same pattern.
           const cx = (size - 1) / 2
           const cy = (size - 1) / 2
@@ -232,7 +236,7 @@ function generatePattern(kind: SyntheticPattern, size: number): Uint8Array {
         }
         case 'noise': {
           // Deterministic high-frequency noise — every pixel has a unique
-          // colour so a seam shows as a 1-pixel-wide tonal discontinuity.
+          // color so a seam shows as a 1-pixel-wide tonal discontinuity.
           const h = hash2d(x, y)
           r = (h >> 16) & 0xff
           g = (h >> 8) & 0xff
@@ -639,7 +643,7 @@ function resizeCanvas(): void {
 }
 
 // Build the model-view-projection matrix for the current state. The source
-// image is aspect-fit into the canvas (centred, letterboxed) with a
+// image is aspect-fit into the canvas (centered, letterboxed) with a
 // VIEWPORT_FILL margin, scaled by zoom, then sheared in clip space.
 function buildMvp(): Float32Array {
   if (!gl) return mat3Identity()

@@ -178,17 +178,7 @@
         <span class="pill" id="apiPill">API</span>
         <span class="pill" id="niivuePill">niivue</span>
       </h1>
-      <div class="links">
-        <a href="/meshes.html">meshes</a>
-        <a href="/sheet.html">sheet</a>
-        <a href="/stitch.html">stitch</a>
-        <a href="/infinite.html">infinite</a>
-        <a href="/neuro-desktop.html">neuro-desktop</a>
-        <a href="/osd-volume-desktop.html">osd-volume-desktop</a>
-        <a href="/volume-fly-space.html">volume-fly-space</a>
-        <a href="/api">/api</a>
-        <a href="/iiif/presentation">/iiif/presentation</a>
-      </div>
+      <div class="links" data-nav-links></div>
     </header>
     <main>
       <aside>
@@ -215,7 +205,7 @@
 
           <h2 style="margin-top: 18px">Exploded view</h2>
           <label>
-            <input id="explodedToggle" type="checkbox" /> Render exploded
+            <input id="explodedToggle" type="checkbox" checked /> Render exploded
           </label>
           <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px">
             <div>
@@ -247,11 +237,40 @@
           </div>
           <div id="explodePlan" style="margin-top: 6px; color: #9aa0a6; font-size: 0.75rem"></div>
 
-          <p style="margin-top: 18px; color: #5f6368; font-size: 0.75rem">
-            The three IIIF Image API panes show axial/coronal/sagittal slices.
-            The fourth pane is a 3D rendering driven by
-            <code>@niivue/niivue</code>.
+          <h2>About this demo</h2>
+          <p style="margin: 0 0 8px; color: #9aa0a6; font-size: 0.78rem; line-height: 1.45">
+            End-to-end exercise of the IIIF Volumetric Server. Highlights:
           </p>
+          <ul style="margin: 0; padding-left: 16px; color: #9aa0a6; font-size: 0.75rem; line-height: 1.5">
+            <li>
+              <strong>IIIF Image API</strong> for on-the-fly axial / coronal /
+              sagittal slice extraction — the three image panes hit
+              <code>/iiif/image/&lt;id&gt;/&lt;axis&gt;/&lt;n&gt;/...</code>
+              with no client-side slicing.
+            </li>
+            <li>
+              <strong>IIIF Presentation 4.0 alpha manifest</strong> driving the
+              3D render — the fourth pane reads a Scene / Model annotation
+              from the manifest and hands the resolved NIfTI URL to
+              <code>@niivue/niivue</code>.
+            </li>
+            <li>
+              <strong>Volumetric extension — Exploded view</strong> (default):
+              the server composes a single padded composite NIfTI from an
+              <code>nx×ny×nz</code> partition of the source volume with
+              per-axis explosion factors. The exploded manifest exposes both
+              per-cell annotations and a <code>rendering</code> link to the
+              composite, which niivue loads as one volume.
+            </li>
+            <li>
+              <strong>Resolution-pyramid (LOD)</strong> via the
+              <code>Resolution Level</code> selector — Choice bodies in the
+              manifest list each level so the viewer can step down for speed.
+            </li>
+            <li>
+              Live colormap / window controls forward straight into niivue.
+            </li>
+          </ul>
         </div>
         <h2>Volumes</h2>
         <div id="vols"></div>

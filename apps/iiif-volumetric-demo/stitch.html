@@ -98,6 +98,49 @@
         max-width: 70%;
         line-height: 1.45;
       }
+      .intro {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        max-width: 380px;
+        background: rgba(0, 0, 0, 0.6);
+        border: 1px solid #2a2d31;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 0.72rem;
+        color: #c8ccd1;
+        line-height: 1.45;
+      }
+      .intro summary {
+        cursor: pointer;
+        color: #e8eaed;
+        font-weight: 500;
+        list-style: none;
+      }
+      .intro summary::-webkit-details-marker {
+        display: none;
+      }
+      .intro summary::before {
+        content: '▸';
+        display: inline-block;
+        width: 12px;
+        color: #8ab4f8;
+        transition: transform 120ms linear;
+      }
+      .intro[open] summary::before {
+        transform: rotate(90deg);
+      }
+      .intro ul {
+        margin: 6px 0 0;
+        padding-left: 18px;
+        color: #9aa0a6;
+      }
+      .intro li {
+        margin-bottom: 3px;
+      }
+      .intro code {
+        color: #d6d8db;
+      }
       .pill {
         display: inline-block;
         font-size: 0.7rem;
@@ -197,14 +240,44 @@
         <input type="checkbox" id="reference" />
         <label for="reference">single texture (reference)</label>
       </span>
-      <div class="links">
-        <a href="/index.html">index</a>
-        <a href="/sheet.html">sheet</a>
-        <a href="/meshes.html">meshes</a>
-      </div>
+      <div class="links" data-nav-links></div>
     </header>
     <main>
       <canvas id="gl-canvas" aria-label="Texture stitching demo"></canvas>
+      <details class="intro" open>
+        <summary>What this demo highlights</summary>
+        <ul>
+          <li>
+            <strong>Texture-stitching boundary artifacts</strong> — when a
+            large image is split across N×N GPU textures and rendered as
+            adjacent quads, bilinear filtering with
+            <code>clamp-to-edge</code> wrap bleeds half a texel at every
+            seam. Crank <em>Shear</em> or <em>Zoom</em> to make the seams
+            obvious.
+          </li>
+          <li>
+            <strong>Overlap padding as the fix</strong> — bumping
+            <em>Overlap</em> from 0 px to 1–4 px duplicates that many
+            pixels into each neighbour's texture so the bilinear footprint
+            never crosses an upload boundary.
+          </li>
+          <li>
+            Toggle <em>single texture (reference)</em> to compare against a
+            ground-truth render of the full source image (subject to
+            <code>gl.MAX_TEXTURE_SIZE</code> on weak GPUs).
+          </li>
+          <li>
+            <strong>High-resolution real images</strong> (Hubble pillars
+            6780×7071, peritoneal-fluid cytology 4272×2848) and synthetic
+            test patterns (grid / checker / rings / noise / gradient) both
+            exercise the same uploader path.
+          </li>
+          <li>
+            No niivue, no IIIF — this is a pure WebGL2 diagnostic for the
+            sampler/wrap/filter behavior the volume viewers rely on.
+          </li>
+        </ul>
+      </details>
       <div class="hud" id="hud"></div>
     </main>
     <script type="module" src="/src/stitch.ts"></script>

@@ -19,6 +19,10 @@ import type {
 } from '@niivue/niivue/webgl2'
 import NiiVue from '@niivue/niivue/webgl2'
 
+import { installNav } from './nav'
+
+installNav()
+
 type VolumeApiEntry = {
   id: string
   format: string
@@ -327,7 +331,7 @@ function dtypeName(code: number | undefined): string {
 // Volumes (subject-native T1w) and the ICBM152 hemisphere mesh live in different
 // coordinate systems, so without a transform the mesh floats off-screen. For
 // demo overlay quality we map the mesh bbox into the volume bbox via uniform
-// scale (fit-to-90%) + translate-centres. Mutates positions in place then asks
+// scale (fit-to-90%) + translate-centers. Mutates positions in place then asks
 // niivue to re-upload the GPU buffer; normals are regenerated from the new
 // positions during upload.
 async function alignCellMeshesToVolume(
@@ -371,10 +375,10 @@ function applyMeshAlignment(mesh: NVMesh, vol: NVImage): void {
   const vCx = (vol.extentsMin[0] + vol.extentsMax[0]) / 2
   const vCy = (vol.extentsMin[1] + vol.extentsMax[1]) / 2
   const vCz = (vol.extentsMin[2] + vol.extentsMax[2]) / 2
-  // Anchor the mesh's rightmost extent to the volume's X centre and centre on
-  // the volume in Y/Z. The mesh extends -X-ward from there, sitting inside the
-  // volume's bbox so the scene AABB ≈ volume AABB and the volume stays
-  // visually centred when niivue auto-frames the render.
+  // Anchor the mesh's rightmost extent to the volume's X center. For
+  // hemisphere meshes (e.g. BrainMesh_ICBM152.lh) the +X end is the
+  // midsagittal flat edge, so this places the cut surface at the volume
+  // center with the curved hemisphere falling to -X. Y/Z are centered.
   const anchorX = vCx - (mSize[0] / 2) * s
   const p = mesh.positions
   let nMinX = Infinity
@@ -642,10 +646,10 @@ function buildMinimapGrid(): void {
 // Minimap shows the world (canvas-normalized [0,1]²) in screen convention
 // (y-down, top-left origin). Niivue's viewport math is:
 //   screen.x = (world.x - 0.5) * zoom + 0.5 + pan.x
-// Solving for the canvas-centre world point gives:
-//   world.x_centre = 0.5 - pan.x / zoom
-//   world.y_centre = 0.5 - pan.y / zoom  (y-up)
-// The minimap is y-down, so flip y to get mm.cy = 1 - world.y_centre.
+// Solving for the canvas-center world point gives:
+//   world.x_center = 0.5 - pan.x / zoom
+//   world.y_center = 0.5 - pan.y / zoom  (y-up)
+// The minimap is y-down, so flip y to get mm.cy = 1 - world.y_center.
 // Visible world-width = 1 / zoom (and height likewise).
 function viewportToMinimapRect(vp: CanvasViewport): {
   cx: number
@@ -660,7 +664,7 @@ function viewportToMinimapRect(vp: CanvasViewport): {
   return { cx, cy, w, h }
 }
 
-// Inverse: minimap click (mx, my, y-down) → pan that centres that world
+// Inverse: minimap click (mx, my, y-down) → pan that centers that world
 // point on the canvas. From the formulas above:
 //   pan.x = (0.5 - mx) * zoom
 //   pan.y = (my - 0.5) * zoom  (y-down minimap → y-up pan, sign flips)

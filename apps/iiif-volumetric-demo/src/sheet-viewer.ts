@@ -549,6 +549,19 @@ function wireControls(): void {
   els.canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault()
   })
+
+  // Block wheel-zoom on the main canvas — NVCanvasViewportController attaches
+  // its own bubble-phase wheel handler with no opt-out, so we register in the
+  // capture phase and stop propagation before it can fire. Wheel-zoom is still
+  // available over the minimap (which has its own listener).
+  els.canvas.addEventListener(
+    'wheel',
+    (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+    },
+    { capture: true, passive: false },
+  )
 }
 
 async function reloadMeshes(): Promise<void> {

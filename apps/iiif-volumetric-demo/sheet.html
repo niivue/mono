@@ -144,6 +144,40 @@
         font-family: ui-monospace, monospace;
         pointer-events: none;
       }
+      .labels {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .cell-label {
+        position: absolute;
+        background: rgba(8, 10, 12, 0.78);
+        border: 1px solid #2a2d31;
+        border-radius: 4px;
+        color: #d6d8db;
+        font-family: ui-monospace, monospace;
+        padding: 4px 6px;
+        box-sizing: border-box;
+        opacity: 0;
+        transition: opacity 120ms linear;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 1px;
+      }
+      .cell-label .name {
+        color: #e8eaed;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .cell-label .meta {
+        color: #8a9099;
+      }
     </style>
   </head>
   <body>
@@ -181,6 +215,7 @@
     </header>
     <main>
       <canvas id="nv-canvas" tabindex="0" aria-label="3×3 sheet of volumes and meshes"></canvas>
+      <div class="labels" id="labels" aria-hidden="true"></div>
       <div class="hud" id="hud">zoom 1.00× · pan 0.00, 0.00</div>
       <div class="minimap" id="minimap" aria-label="Sheet navigator">
         <div class="minimap-grid" id="minimapGrid"></div>

@@ -74,6 +74,7 @@ const els = {
   minimap: el<HTMLDivElement>('minimap'),
   minimapGrid: el<HTMLDivElement>('minimapGrid'),
   minimapView: el<HTMLDivElement>('minimapView'),
+  labels: el<HTMLDivElement>('labels'),
 }
 
 type Cell = {
@@ -81,11 +82,28 @@ type Cell = {
   volumeId: string | null
   row: number
   col: number
+  labelEl: HTMLDivElement
+  nameEl: HTMLDivElement
+  metaAEl: HTMLDivElement
+  metaBEl: HTMLDivElement
 }
+
+// LOD: gutter and label strip grow with zoom. Below LOD_START the layout is
+// flush (tiny gutter, no label); above LOD_END the label strip is fully open.
+// The gutter and label height are in WORLD units (canvas-normalized) so they
+// scale with zoom in screen-space — gutters look proportional whether the
+// sheet is fit-to-screen or panned in close.
+const LOD_START = 1.6
+const LOD_END = 3.2
+const BASE_GUTTER = 0.004
+const MAX_GUTTER = 0.022
+const MAX_LABEL_HEIGHT = 0.07
+const LABEL_REVEAL = 0.35 // fraction of LOD at which labels start fading in
 
 const cells: Cell[] = []
 let controller: NVCanvasViewportController | null = null
 let gl: WebGL2RenderingContext | null = null
+let lastLod = -1
 
 main().catch((err: unknown) => {
   console.error(err)
@@ -97,6 +115,7 @@ async function main(): Promise<void> {
   window.addEventListener('resize', () => {
     resizeCanvasToDisplay()
     redrawAll()
+    syncFromViewport()
   })
 
   setStatus('loading volumes…')
@@ -139,16 +158,12 @@ async function createCells(volumeIds: string[]): Promise<void> {
     for (let col = 0; col < GRID; col++) {
       const idx = row * GRID + col
       const volumeId = volumeIds[idx] ?? null
-      const x1 = col / GRID
-      const x2 = (col + 1) / GRID
-      // Screen row 0 is top, but bounds use y=0 bottom.
-      const y1 = (GRID - 1 - row) / GRID
-      const y2 = (GRID - row) / GRID
+      const rect = cellBoundsWorld(row, col, 0)
       const opts: NiiVueOptions = {
         backgroundColor: CLEAR_COLOR,
         bounds: [
-          [x1, y1],
-          [x2, y2],
+          [rect.x1, rect.tileY1],
+          [rect.x2, rect.y2],
         ],
         showBoundsBorder: true,
         boundsBorderColor: [0.18, 0.2, 0.24, 1],
@@ -160,9 +175,61 @@ async function createCells(volumeIds: string[]): Promise<void> {
       }
       const nv = new NiiVue(opts)
       await nv.attachToCanvas(els.canvas)
-      cells.push({ nv, volumeId, row, col })
+      const { labelEl, nameEl, metaAEl, metaBEl } = createLabelEl(idx, volumeId)
+      els.labels.appendChild(labelEl)
+      cells.push({ nv, volumeId, row, col, labelEl, nameEl, metaAEl, metaBEl })
     }
   }
+}
+
+// World-space rect for a cell at LOD t in [0,1]. Returns the inner bounds the
+// niivue tile renders into (`tileY1..y2` is the volume area) plus the label
+// strip (`y1..tileY1`) just below it. y=0 is bottom (GL convention).
+type CellRect = {
+  x1: number
+  x2: number
+  y1: number // outer bottom (label strip starts here)
+  y2: number // outer top
+  tileY1: number // inner bottom — volume tile bottom (label strip ends here)
+}
+function cellBoundsWorld(row: number, col: number, t: number): CellRect {
+  const g = BASE_GUTTER + (MAX_GUTTER - BASE_GUTTER) * t
+  const labelH = MAX_LABEL_HEIGHT * t
+  const x1 = col / GRID + g / 2
+  const x2 = (col + 1) / GRID - g / 2
+  const y1 = (GRID - 1 - row) / GRID + g / 2
+  const y2 = (GRID - row) / GRID - g / 2
+  const tileY1 = y1 + labelH
+  return { x1, x2, y1, y2, tileY1 }
+}
+
+function createLabelEl(
+  idx: number,
+  volumeId: string | null,
+): {
+  labelEl: HTMLDivElement
+  nameEl: HTMLDivElement
+  metaAEl: HTMLDivElement
+  metaBEl: HTMLDivElement
+} {
+  const labelEl = document.createElement('div')
+  labelEl.className = 'cell-label'
+  labelEl.dataset.cell = String(idx)
+  const nameEl = document.createElement('div')
+  nameEl.className = 'name'
+  nameEl.textContent = volumeId ? prettyName(volumeId) : '—'
+  const metaAEl = document.createElement('div')
+  metaAEl.className = 'meta'
+  const metaBEl = document.createElement('div')
+  metaBEl.className = 'meta'
+  labelEl.appendChild(nameEl)
+  labelEl.appendChild(metaAEl)
+  labelEl.appendChild(metaBEl)
+  return { labelEl, nameEl, metaAEl, metaBEl }
+}
+
+function prettyName(id: string): string {
+  return id.replace(/\.nii(\.gz)?$/i, '')
 }
 
 async function loadAllCells(volumeIds: string[]): Promise<void> {
@@ -172,6 +239,7 @@ async function loadAllCells(volumeIds: string[]): Promise<void> {
       const id = volumeIds[idx]
       if (!id) return
       cell.volumeId = id
+      cell.nameEl.textContent = prettyName(id)
       const colormap = PALETTE[idx % PALETTE.length] ?? 'gray'
       try {
         await cell.nv.loadVolumes([
@@ -180,15 +248,80 @@ async function loadAllCells(volumeIds: string[]): Promise<void> {
             colormap,
           },
         ])
+        const meta = volumeMetaText(cell.nv)
+        cell.metaAEl.textContent = meta.lineA
+        cell.metaBEl.textContent = meta.lineB
         if (meshUrl) {
           await cell.nv.loadMeshes(meshOptsFor(idx, meshUrl))
           await alignCellMeshesToVolume(cell.nv)
         }
       } catch (err) {
         console.warn(`cell ${idx} (${id}) failed:`, err)
+        cell.metaAEl.textContent = 'load failed'
+        cell.metaBEl.textContent = ''
       }
     }),
   )
+}
+
+// Two-line label meta: `dimX × dimY × dimZ · pixX × pixY × pixZ mm` and
+// `dtype · [calMin .. calMax]`. Kept terse so it stays readable in a narrow
+// strip and degrades gracefully when the NIfTI header is sparse.
+function volumeMetaText(nv: InstanceType<typeof NiiVue>): {
+  lineA: string
+  lineB: string
+} {
+  const v = nv.model.getVolumes()[0] as NVImage | undefined
+  if (!v) return { lineA: '', lineB: '' }
+  const hdr = v.hdr
+  const dims = hdr?.dims ?? []
+  const pix = hdr?.pixDims ?? []
+  const dimStr =
+    dims.length >= 4
+      ? `${dims[1]}×${dims[2]}×${dims[3]}`
+      : (v.dims ?? []).slice(1, 4).join('×')
+  const pixStr =
+    pix.length >= 4
+      ? `${fmtNum(pix[1])}×${fmtNum(pix[2])}×${fmtNum(pix[3])} mm`
+      : ''
+  const dtype = dtypeName(hdr?.datatypeCode)
+  const range = `${fmtNum(v.calMin)}..${fmtNum(v.calMax)}`
+  return {
+    lineA: pixStr ? `${dimStr} · ${pixStr}` : dimStr,
+    lineB: `${dtype} · ${range}`,
+  }
+}
+
+function fmtNum(n: number | undefined): string {
+  if (n === undefined || !Number.isFinite(n)) return '—'
+  if (Math.abs(n) >= 100) return n.toFixed(0)
+  if (Math.abs(n) >= 10) return n.toFixed(1)
+  return n.toFixed(2)
+}
+
+// NIfTI datatypeCode (subset relevant for fixtures). Falls back to the raw
+// code so unfamiliar formats still show something traceable.
+function dtypeName(code: number | undefined): string {
+  switch (code) {
+    case 2:
+      return 'uint8'
+    case 4:
+      return 'int16'
+    case 8:
+      return 'int32'
+    case 16:
+      return 'float32'
+    case 64:
+      return 'float64'
+    case 256:
+      return 'int8'
+    case 512:
+      return 'uint16'
+    case 768:
+      return 'uint32'
+    default:
+      return code === undefined ? '?' : `dt${code}`
+  }
 }
 
 // Volumes (subject-native T1w) and the ICBM152 hemisphere mesh live in different
@@ -301,6 +434,10 @@ function attachController(): void {
     apply: (vp) => {
       const first = cells[0]
       if (!first) return
+      // Update bounds BEFORE setViewport — setViewport fans out resize+draw
+      // to every sibling, so the new bounds get picked up in that same pass
+      // without an extra round of draws.
+      applyLodBounds(lodForZoom(vp.zoom))
       clearCanvas()
       first.nv.setViewport(vp)
       syncFromViewport(vp)
@@ -311,6 +448,72 @@ function attachController(): void {
     maxZoom: 50,
   })
   controller.attach()
+}
+
+function lodForZoom(zoom: number): number {
+  if (zoom <= LOD_START) return 0
+  if (zoom >= LOD_END) return 1
+  const x = (zoom - LOD_START) / (LOD_END - LOD_START)
+  // smoothstep
+  return x * x * (3 - 2 * x)
+}
+
+// Mutates each cell's bounds in-place so the upcoming setViewport fan-out
+// uses the new layout. `opts.bounds` is the same array reference the view
+// reads in `_computeBoundsPixels`, so the change is picked up automatically
+// on the next resize() without calling setBounds() (which would force a
+// redundant drawScene per cell).
+function applyLodBounds(t: number): void {
+  // Snap to 1/100 steps so identical viewport ticks don't reassign the
+  // bounds array every frame.
+  const snapped = Math.round(t * 100) / 100
+  if (snapped === lastLod) return
+  lastLod = snapped
+  for (const cell of cells) {
+    const r = cellBoundsWorld(cell.row, cell.col, snapped)
+    cell.nv.opts.bounds = [
+      [r.x1, r.tileY1],
+      [r.x2, r.y2],
+    ]
+  }
+}
+
+function positionLabels(vp: CanvasViewport): void {
+  const rect = els.canvas.getBoundingClientRect()
+  const cw = rect.width
+  const ch = rect.height
+  const z = vp.zoom
+  const px = vp.pan[0]
+  const py = vp.pan[1]
+  // Label opacity ramps in over the upper portion of the LOD range so the
+  // tiles separate visibly before text appears.
+  const t = lastLod < 0 ? 0 : lastLod
+  const opacity =
+    t <= LABEL_REVEAL ? 0 : (t - LABEL_REVEAL) / (1 - LABEL_REVEAL)
+  // Scale font with label height so a 7% strip stays legible without
+  // overwhelming a tiny LOD-mid strip. Bound it between 9px and 15px.
+  const stripPx = MAX_LABEL_HEIGHT * t * ch * z
+  const fontPx = Math.max(9, Math.min(15, stripPx / 3.6))
+  for (const cell of cells) {
+    const r = cellBoundsWorld(cell.row, cell.col, t)
+    // world → screen-normalized (GL y-up) → pixels (y-down).
+    const sx1 = (r.x1 - 0.5) * z + 0.5 + px
+    const sx2 = (r.x2 - 0.5) * z + 0.5 + px
+    const sy1 = (r.y1 - 0.5) * z + 0.5 + py
+    const syTile = (r.tileY1 - 0.5) * z + 0.5 + py
+    const left = sx1 * cw
+    const right = sx2 * cw
+    // CSS top = (1 - screenY) * canvasHeight; the label strip sits between
+    // screen-y `sy1` (bottom) and `syTile` (top, where the volume starts).
+    const top = (1 - syTile) * ch
+    const bottom = (1 - sy1) * ch
+    cell.labelEl.style.left = `${left}px`
+    cell.labelEl.style.top = `${top}px`
+    cell.labelEl.style.width = `${Math.max(0, right - left)}px`
+    cell.labelEl.style.height = `${Math.max(0, bottom - top)}px`
+    cell.labelEl.style.opacity = String(opacity)
+    cell.labelEl.style.fontSize = `${fontPx}px`
+  }
 }
 
 function clearCanvas(): void {
@@ -466,6 +669,7 @@ function syncFromViewport(maybeVp?: CanvasViewport): void {
   els.minimapView.style.top = `${topPct}%`
   els.minimapView.style.width = `${wPct}%`
   els.minimapView.style.height = `${hPct}%`
+  positionLabels(vp)
 }
 
 function wireMinimap(): void {

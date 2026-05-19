@@ -58,6 +58,10 @@
       header input[type='text'] {
         width: 110px;
       }
+      header input[type='range'] {
+        width: 110px;
+        vertical-align: middle;
+      }
       header #bbox {
         width: 180px;
         font-family: ui-monospace, monospace;
@@ -206,6 +210,39 @@
         </button>
         <button id="bboxClear" type="button" title="Clear bbox">clear</button>
       </span>
+      <span class="control" title="Zoom independently of mouse wheel — works even while a right-click clip-plane drag is in progress">
+        <label for="zoom">Zoom</label>
+        <input
+          type="range"
+          id="zoom"
+          min="0.5"
+          max="8"
+          step="0.05"
+          value="1"
+        />
+      </span>
+      <span class="control" title="Pan horizontally in screen space. Works even while a right-click clip-plane drag is in progress.">
+        <label for="panX">Pan X</label>
+        <input
+          type="range"
+          id="panX"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+      </span>
+      <span class="control" title="Pan vertically in screen space. Works even while a right-click clip-plane drag is in progress.">
+        <label for="panY">Pan Y</label>
+        <input
+          type="range"
+          id="panY"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+      </span>
       <span class="control" title="Switch pyramid level automatically based on viewer zoom">
         <label for="autoLod">
           <input type="checkbox" id="autoLod" checked />
@@ -218,8 +255,8 @@
       <canvas id="nv-canvas" aria-label="OME-Zarr volume render"></canvas>
       <div class="hud" id="hud">Loading...</div>
       <div class="hint">
-        Scroll to zoom (auto-LOD swaps level) · Shift-click to fetch a 128³ slab
-        at L0
+        Scroll or Zoom slider (auto-LOD swaps level) · Left-drag to orbit ·
+        Pan X/Y to translate · Shift-click to fetch a 128³ slab at L0
       </div>
       <div class="fallback" id="fallback" hidden></div>
     </main>

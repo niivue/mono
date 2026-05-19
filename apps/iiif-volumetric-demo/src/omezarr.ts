@@ -84,6 +84,9 @@ const els = {
   bboxRandom: el<HTMLButtonElement>('bboxRandom'),
   bboxClear: el<HTMLButtonElement>('bboxClear'),
   autoLod: el<HTMLInputElement>('autoLod'),
+  zoom: el<HTMLInputElement>('zoom'),
+  panX: el<HTMLInputElement>('panX'),
+  panY: el<HTMLInputElement>('panY'),
   canvas: el<HTMLCanvasElement>('nv-canvas'),
   hud: el<HTMLDivElement>('hud'),
   fallback: el<HTMLDivElement>('fallback'),
@@ -150,6 +153,15 @@ async function main(): Promise<void> {
   els.bboxClear.addEventListener('click', () => {
     els.bbox.value = ''
     void reload()
+  })
+  els.zoom.addEventListener('input', () => {
+    applyZoomFromSlider()
+  })
+  els.panX.addEventListener('input', () => {
+    applyPanFromSliders()
+  })
+  els.panY.addEventListener('input', () => {
+    applyPanFromSliders()
   })
   await ensureNiivue()
   const initial = readInitialVolumeId()
@@ -241,6 +253,17 @@ async function ensureNiivue(): Promise<void> {
   // swaps, each cancelling the prior fetch.
   els.canvas.addEventListener('wheel', scheduleAutoLod, { passive: true })
 
+  // Wheel drives niivue's zoom directly. Mirror the post-wheel value into the
+  // zoom slider so the UI tracks the camera. Pan/orientation are slider- or
+  // drag-driven respectively; there's no wheel/drag path that changes pan.
+  els.canvas.addEventListener(
+    'wheel',
+    () => {
+      requestAnimationFrame(syncCameraSliders)
+    },
+    { passive: true },
+  )
+
   // Shift-click anywhere on the canvas pulls a 128³ slab at L0 centered
   // on the click. Use the most recent locationChange coords — niivue
   // updates these on mousedown, so they're current by click time.
@@ -309,7 +332,45 @@ async function reload(): Promise<void> {
   }
   renderHud(v, level)
   reloading = false
+  // loadVolumes can reset the camera/zoom, so the sliders may now be stale.
+  syncCameraSliders()
   scheduleProgressiveUpgrade(v, level)
+}
+
+// Drive niivue's 3D zoom from the slider. Independent of mouse interactions,
+// so the user can keep zooming even while a right-click clip-plane drag is
+// in progress. The setter triggers drawScene; we also kick auto-LOD so the
+// pyramid level catches up.
+function applyZoomFromSlider(): void {
+  if (!nv) return
+  const v = Number(els.zoom.value)
+  if (!Number.isFinite(v) || v <= 0) return
+  ;(nv as unknown as { scaleMultiplier: number }).scaleMultiplier = v
+  scheduleAutoLod()
+}
+
+// Drive niivue's 3D pan from the panX/panY sliders. nv.renderPan is a
+// clip-space translation applied after projection, so the values are in NDC
+// units ([-1, 1] spans the full viewport). Independent of mouse interactions
+// — works even while a right-click clip-plane drag is in progress.
+function applyPanFromSliders(): void {
+  if (!nv) return
+  const x = Number(els.panX.value)
+  const y = Number(els.panY.value)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return
+  ;(nv as unknown as { renderPan: [number, number] }).renderPan = [x, y]
+}
+
+// Pull niivue's current zoom back into the slider so wheel-driven changes
+// stay in sync. Pan isn't touched by wheel/drag, so we don't sync it.
+function syncCameraSliders(): void {
+  if (!nv) return
+  const z = readViewerScale(nv)
+  if (Number.isFinite(z) && z > 0) {
+    const min = Number(els.zoom.min) || 0.5
+    const max = Number(els.zoom.max) || 8
+    els.zoom.value = String(Math.max(min, Math.min(max, z)))
+  }
 }
 
 // Apply colormap + window in place. No fetch, no re-decode — niivue updates

@@ -130,28 +130,35 @@ export function mountVolumeRoutes(app: Express, registry: Registry): void {
 
       if (!bbox && levelIdx > 0) {
         const level = entry.levels.find((l) => l.level === levelIdx)
-        if (!level?.path) {
+        if (!level) {
           throw new HttpError(
             404,
             `Level ${levelIdx} is not available for volume ${entry.id}`,
           )
         }
-        res.set('Content-Type', 'application/x.nifti+gzip')
-        res.set(
-          'Content-Disposition',
-          `inline; filename="${entry.id}_L${levelIdx}.nii.gz"`,
-        )
-        res.set('Cache-Control', 'public, max-age=3600')
-        fs.createReadStream(level.path).pipe(res)
+        if (level.path) {
+          res.set('Content-Type', 'application/x.nifti+gzip')
+          res.set(
+            'Content-Disposition',
+            `inline; filename="${entry.id}_L${levelIdx}.nii.gz"`,
+          )
+          res.set('Cache-Control', 'public, max-age=3600')
+          fs.createReadStream(level.path).pipe(res)
+          return
+        }
+        await serveLevelAsNifti(req, res, registry, entry, levelIdx)
         return
       }
 
       if (bbox) {
         if (entry.format !== 'nifti') {
-          throw new HttpError(
-            501,
-            `bbox crop is only implemented for NIfTI sources in this POC (got format=${entry.format})`,
-          )
+          // Native-pyramid sources (OME-Zarr) ask the adapter for just
+          // the slab, encode to NIfTI, then send. Skips the row-read
+          // cache that the NIfTI fast path uses — the cache would
+          // require materialising the full level on disk first, which
+          // is exactly what we're trying to avoid for multi-GB levels.
+          await serveSubvolumeAsNifti(req, res, registry, entry, levelIdx, bbox)
+          return
         }
 
         if (acceptsRle(req) && entry.dtype === 'uint8') {
@@ -204,6 +211,14 @@ export function mountVolumeRoutes(app: Express, registry: Registry): void {
         return
       }
 
+      // Level 0, no bbox, no RLE, no .nii url. NIfTI streams its source
+      // file as-is; native-pyramid adapters (OME-Zarr) have no single file,
+      // so encode the loaded VolumeHandle into NIfTI bytes on the fly.
+      const stat = await fsp.stat(entry.source)
+      if (stat.isDirectory()) {
+        await serveLevelAsNifti(req, res, registry, entry, 0)
+        return
+      }
       await streamSource(entry, res)
     }),
   )
@@ -461,6 +476,104 @@ function sendCroppedNifti(
   res.set('X-Subvolume-Cache', result.cache)
   res.set('X-Subvolume-Source', result.source)
   res.send(result.buffer)
+}
+
+// Encode a chunk-aware subvolume read into NIfTI-1 bytes and serve. The
+// underlying VolumeHandle has shape = bbox dims and affine already shifted
+// so world coords align with the slab's origin. Used for native-pyramid
+// sources (OME-Zarr) where row-read caching would force a full-level
+// materialisation on disk first.
+async function serveSubvolumeAsNifti(
+  req: Request,
+  res: Response,
+  registry: Registry,
+  entry: RegistryEntry,
+  levelIdx: number,
+  bbox: Bbox,
+): Promise<void> {
+  const { volume } = await registry.loadSubvolume(entry.id, levelIdx, bbox)
+  const legacyGzip = legacyGzipWire(req)
+  const encoding: ContentEncoding = legacyGzip
+    ? 'gzip'
+    : negotiateEncoding(req.headers['accept-encoding'] as string | undefined)
+  const raw = encodeNiftiRaw({
+    data: volume.data,
+    shape: volume.shape,
+    spacing: volume.spacing,
+    dtype: volume.dtype,
+    affine: volume.affine,
+    sclSlope: volume.sclSlope,
+    sclInter: volume.sclInter,
+  })
+  const body = compressBuffer(raw, encoding)
+  if (legacyGzip) {
+    res.set('Content-Type', NIFTI_GZIP_MEDIA_TYPE)
+    res.set(
+      'Content-Disposition',
+      `inline; filename="${entry.id}_L${levelIdx}_crop.nii.gz"`,
+    )
+  } else {
+    res.set('Content-Type', NIFTI_MEDIA_TYPE)
+    if (encoding !== 'identity') {
+      res.set('Content-Encoding', encoding)
+    }
+    res.set('Vary', 'Accept-Encoding')
+    res.set(
+      'Content-Disposition',
+      `inline; filename="${entry.id}_L${levelIdx}_crop.nii"`,
+    )
+  }
+  res.set('Content-Length', String(body.length))
+  res.set('Cache-Control', 'public, max-age=3600')
+  res.send(body)
+}
+
+// Encode the requested level's VolumeHandle into NIfTI-1 bytes and serve.
+// Used for sources without a single backing file (OME-Zarr today). Honours
+// the legacy `.nii.gz` URL contract and Accept-Encoding negotiation so the
+// response looks identical to the streamed-file path used for NIfTI.
+async function serveLevelAsNifti(
+  req: Request,
+  res: Response,
+  registry: Registry,
+  entry: RegistryEntry,
+  levelIdx: number,
+): Promise<void> {
+  const { volume } = await registry.loadLevel(entry.id, levelIdx)
+  const legacyGzip = legacyGzipWire(req)
+  const encoding: ContentEncoding = legacyGzip
+    ? 'gzip'
+    : negotiateEncoding(req.headers['accept-encoding'] as string | undefined)
+  const raw = encodeNiftiRaw({
+    data: volume.data,
+    shape: volume.shape,
+    spacing: volume.spacing,
+    dtype: volume.dtype,
+    affine: volume.affine,
+    sclSlope: volume.sclSlope,
+    sclInter: volume.sclInter,
+  })
+  const body = compressBuffer(raw, encoding)
+  if (legacyGzip) {
+    res.set('Content-Type', NIFTI_GZIP_MEDIA_TYPE)
+    res.set(
+      'Content-Disposition',
+      `inline; filename="${entry.id}_L${levelIdx}.nii.gz"`,
+    )
+  } else {
+    res.set('Content-Type', NIFTI_MEDIA_TYPE)
+    if (encoding !== 'identity') {
+      res.set('Content-Encoding', encoding)
+    }
+    res.set('Vary', 'Accept-Encoding')
+    res.set(
+      'Content-Disposition',
+      `inline; filename="${entry.id}_L${levelIdx}.nii"`,
+    )
+  }
+  res.set('Content-Length', String(body.length))
+  res.set('Cache-Control', 'public, max-age=3600')
+  res.send(body)
 }
 
 async function streamSource(

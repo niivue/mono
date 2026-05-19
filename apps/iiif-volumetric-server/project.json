@@ -32,6 +32,14 @@
     "fetch-fixtures": {
       "command": "bun scripts/fetch-fixtures.ts",
       "options": { "cwd": "{projectRoot}" }
+    },
+    "fetch-omezarr": {
+      "command": "bun scripts/fetch-omezarr.ts",
+      "options": { "cwd": "{projectRoot}" }
+    },
+    "fetch-dicom-wsi": {
+      "command": "bun scripts/fetch-dicom-wsi.ts",
+      "options": { "cwd": "{projectRoot}" }
     }
   }
 }

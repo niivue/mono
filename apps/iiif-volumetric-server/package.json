@@ -9,13 +9,15 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@zarrita/storage": "^0.2.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "morgan": "^1.10.0",
     "nifti-reader-js": "^0.6.8",
     "nrrd-js": "^0.2.1",
     "pako": "^2.1.0",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "zarrita": "^0.7.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

@@ -6,7 +6,11 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 import { dicomAdapter } from './adapters/dicom.ts'
-import { niftiAdapter, type VolumeAdapter } from './adapters/nifti.ts'
+import {
+  niftiAdapter,
+  type SubvolumeBbox,
+  type VolumeAdapter,
+} from './adapters/nifti.ts'
 import { nrrdAdapter } from './adapters/nrrd.ts'
 import { omezarrAdapter } from './adapters/omezarr.ts'
 import type {
@@ -14,8 +18,9 @@ import type {
   Dtype,
   Shape3,
   Vec3,
-  VolumeHandle,
+  VoxelArray,
 } from './adapters/volumeHandle.ts'
+import { VolumeHandle } from './adapters/volumeHandle.ts'
 import {
   autocropBackground,
   computeTightBbox,
@@ -183,8 +188,15 @@ export class Registry {
       if (item.name === '.cache') continue
       const full = path.join(dir, item.name)
       try {
+        // Resolve symlinks so a `fixtures/foo.zarr -> omezarr/foo.zarr`
+        // pointer is treated as the directory it targets.
+        const stat = item.isSymbolicLink()
+          ? await fs.stat(full).catch(() => null)
+          : null
+        const isDirectory = item.isDirectory() || stat?.isDirectory() === true
+        const isFile = item.isFile() || stat?.isFile() === true
         let entry: RegistryEntry | null = null
-        if (item.isDirectory()) {
+        if (isDirectory) {
           const adapter = ADAPTERS.find((a) =>
             a.canHandle(full, { isDirectory: true }),
           )
@@ -204,7 +216,7 @@ export class Registry {
             levelVolumes: new Map(),
             volume: null,
           }
-        } else if (item.isFile()) {
+        } else if (isFile) {
           const adapter = ADAPTERS.find((a) =>
             a.canHandle(full, { isDirectory: false }),
           )
@@ -257,15 +269,8 @@ export class Registry {
       return { entry, level: lvl, volume: entry.volume }
     }
 
-    if (entry.format !== 'nifti') {
-      throw new HttpError(
-        501,
-        `Pyramid levels are only implemented for NIfTI sources (got format=${entry.format})`,
-      )
-    }
-
     const level = entry.levels.find((l) => l.level === normalized)
-    if (!level?.path) {
+    if (!level) {
       throw new HttpError(
         404,
         `Level ${normalized} is not available for volume ${id}`,
@@ -273,12 +278,84 @@ export class Registry {
     }
 
     if (!entry.levelVolumes.has(normalized)) {
-      entry.levelVolumes.set(normalized, await niftiAdapter.load(level.path))
+      let loaded: VolumeHandle
+      if (entry.adapter.loadLevel) {
+        loaded = await entry.adapter.loadLevel(entry.source, normalized)
+      } else if (level.path) {
+        loaded = await niftiAdapter.load(level.path)
+      } else {
+        throw new HttpError(
+          404,
+          `Level ${normalized} is not available for volume ${id}`,
+        )
+      }
+      entry.levelVolumes.set(normalized, loaded)
     }
 
     const volume = entry.levelVolumes.get(normalized)
     if (!volume)
       throw new HttpError(500, `Failed to load level ${normalized} for ${id}`)
+    return { entry, level, volume }
+  }
+
+  // Read just the (x0,y0,z0)–(x1,y1,z1) slab from a level. For adapters
+  // with native chunk-aware reads (OME-Zarr), this avoids materialising
+  // the whole level in RAM — important for s3+ tiers of multi-GB EM
+  // stacks. Adapters without `loadSubvolume` fall back to a JS-side slice
+  // of the full level (acceptable for NIfTI levels we already hold).
+  // The returned VolumeHandle is NOT cached; callers should re-request if
+  // they want it again.
+  async loadSubvolume(
+    id: string,
+    levelIndex: number,
+    bbox: SubvolumeBbox,
+  ): Promise<{
+    entry: RegistryEntry
+    level: LevelMetadata
+    volume: VolumeHandle
+  }> {
+    const normalized = Number(levelIndex)
+    if (!Number.isInteger(normalized) || normalized < 0) {
+      throw new HttpError(400, `Invalid level: ${levelIndex}`)
+    }
+    const entry = this.entries.get(id)
+    if (!entry) throw new HttpError(404, `Unknown volume id: ${id}`)
+
+    let level: LevelMetadata
+    if (normalized === 0) {
+      const found = entry.levels.find((l) => l.level === 0)
+      level = found ?? {
+        level: 0,
+        shape: entry.shape,
+        spacing: entry.spacing,
+        affine: entry.affine,
+      }
+    } else {
+      const found = entry.levels.find((l) => l.level === normalized)
+      if (!found) {
+        throw new HttpError(
+          404,
+          `Level ${normalized} is not available for volume ${id}`,
+        )
+      }
+      level = found
+    }
+
+    const shape: Shape3 = level.shape
+    const clamped = clampBbox(bbox, shape)
+    if (entry.adapter.loadSubvolume) {
+      const volume = await entry.adapter.loadSubvolume(
+        entry.source,
+        normalized,
+        clamped,
+      )
+      return { entry, level, volume }
+    }
+    // Fallback: load the whole level and slice it in JS. This keeps the
+    // generic path working for adapters that haven't implemented native
+    // partial reads yet.
+    const { volume: full } = await this.loadLevel(id, normalized)
+    const volume = sliceVolume(full, clamped)
     return { entry, level, volume }
   }
 
@@ -293,12 +370,6 @@ export class Registry {
 
     const entry = this.entries.get(id)
     if (!entry) throw new HttpError(404, `Unknown volume id: ${id}`)
-    if (entry.format !== 'nifti') {
-      throw new HttpError(
-        501,
-        `Uncompressed level cache is only implemented for NIfTI sources (got format=${entry.format})`,
-      )
-    }
 
     const rawPath = this.rawLevelPath(entry.id, normalized)
     const cached = await this.readRawLevelCache(entry, normalized, rawPath)
@@ -321,6 +392,27 @@ export class Registry {
 
   private async refreshLevels(entry: RegistryEntry): Promise<void> {
     if (!this.cacheDir) throw new Error('Registry.cacheDir not initialised')
+
+    // Native multiscale path (OME-Zarr today, DICOM-WSI / OME-TIFF later):
+    // ask the adapter for the on-disk pyramid and surface that directly,
+    // skipping the NIfTI-cache scan entirely. No `path` is set because
+    // these levels are read via adapter.loadLevel rather than a file.
+    if (entry.adapter.probeLevels) {
+      const native = await entry.adapter.probeLevels(entry.source)
+      entry.levels = native.map((nl) => ({
+        level: nl.level,
+        shape: nl.shape,
+        spacing: nl.spacing,
+        affine: nl.affine ?? null,
+        rawPath: null,
+        ready: true,
+        bytes: null,
+        originalShape: nl.shape,
+        cropOffset: [0, 0, 0],
+      }))
+      return
+    }
+
     const level0RawPath = this.rawLevelPath(entry.id, 0)
     const levels: LevelMetadata[] = [
       {
@@ -367,7 +459,11 @@ export class Registry {
 
   private async generatePyramidBackground(id: string): Promise<void> {
     const entry = this.entries.get(id)
-    if (!entry || entry.format !== 'nifti') return
+    if (!entry) return
+    // Adapters with a native pyramid (OME-Zarr) already expose all levels
+    // via probeLevels — no need to synthesise a NIfTI cache.
+    if (entry.adapter.probeLevels) return
+    if (entry.format !== 'nifti') return
     if (entry.levels.length > 1) return
     if (this.pyramidPromises.has(id)) return
 
@@ -525,12 +621,6 @@ export class Registry {
       )
     }
     const entry = await this.load(id)
-    if (entry.format !== 'nifti') {
-      throw new HttpError(
-        501,
-        `Occupancy is only implemented for NIfTI sources (got format=${entry.format})`,
-      )
-    }
     if (!entry.volume) throw new HttpError(500, `Volume ${id} not loaded`)
     const dims: [number, number, number] = [
       Math.ceil(entry.shape[0] / normalized),
@@ -590,15 +680,9 @@ export class Registry {
     const cached = await this.readRawLevelCache(entry, levelIndex, rawPath)
     if (cached) return cached
 
-    const level = this.levelMetadata(entry, levelIndex)
-    const sourcePath = levelIndex === 0 ? entry.source : (level.path as string)
-    let volume: VolumeHandle | undefined =
-      levelIndex === 0
-        ? (entry.volume ?? undefined)
-        : entry.levelVolumes.get(levelIndex)
-    if (!volume) {
-      volume = await niftiAdapter.load(sourcePath)
-    }
+    // loadLevel dispatches via the adapter, so this works for both
+    // file-backed NIfTI levels and native-pyramid OME-Zarr levels.
+    const { level, volume } = await this.loadLevel(entry.id, levelIndex)
     const raw = encodeNiftiRaw({
       data: volume.data,
       shape: volume.shape,
@@ -669,6 +753,81 @@ function stripVolumeExtensions(name: string): string {
     .replace(/\.nrrd$/i, '')
     .replace(/\.ome\.tiff?$/i, '')
     .replace(/\.tiff?$/i, '')
+}
+
+function clampBbox(bbox: SubvolumeBbox, shape: Shape3): SubvolumeBbox {
+  const [sx, sy, sz] = shape
+  const x0 = clamp(bbox.x0, 0, sx)
+  const y0 = clamp(bbox.y0, 0, sy)
+  const z0 = clamp(bbox.z0, 0, sz)
+  const x1 = clamp(bbox.x1, x0, sx)
+  const y1 = clamp(bbox.y1, y0, sy)
+  const z1 = clamp(bbox.z1, z0, sz)
+  if (x1 <= x0 || y1 <= y0 || z1 <= z0) {
+    throw new HttpError(400, 'bbox produced an empty subvolume')
+  }
+  return { x0, y0, z0, x1, y1, z1 }
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n))
+}
+
+// Fallback used when an adapter doesn't expose loadSubvolume — the source
+// VolumeHandle is already in RAM, so we just copy out the requested slab.
+// Affine is shifted so world coords line up with the subvolume's origin.
+function sliceVolume(volume: VolumeHandle, bbox: SubvolumeBbox): VolumeHandle {
+  const { x0, y0, z0, x1, y1, z1 } = bbox
+  const cw = x1 - x0
+  const ch = y1 - y0
+  const cd = z1 - z0
+  const [sx, sy] = volume.shape
+  const src = volume.data
+  const colorBytes =
+    volume.dtype === 'rgb24' ? 3 : volume.dtype === 'rgba32' ? 4 : 0
+  const elemPerVoxel = colorBytes || 1
+  const Ctor = src.constructor as new (length: number) => VoxelArray
+  const out = new Ctor(cw * ch * cd * elemPerVoxel)
+  const rowElems = cw * elemPerVoxel
+  for (let z = 0; z < cd; z++) {
+    for (let y = 0; y < ch; y++) {
+      const srcOff = (x0 + (y0 + y) * sx + (z0 + z) * sx * sy) * elemPerVoxel
+      const dstOff = (y * cw + z * cw * ch) * elemPerVoxel
+      ;(out as { set: (s: VoxelArray, o: number) => void }).set(
+        src.subarray(srcOff, srcOff + rowElems) as VoxelArray,
+        dstOff,
+      )
+    }
+  }
+  return new VolumeHandle({
+    shape: [cw, ch, cd],
+    spacing: volume.spacing,
+    dtype: volume.dtype,
+    data: out,
+    affine: shiftedSubAffine(volume.affine, x0, y0, z0),
+    sclSlope: volume.sclSlope,
+    sclInter: volume.sclInter,
+    metadata: { ...volume.metadata, subvolume: { x0, y0, z0 } },
+  })
+}
+
+function shiftedSubAffine(
+  affine: Affine4x4 | null,
+  x0: number,
+  y0: number,
+  z0: number,
+): Affine4x4 | null {
+  if (!affine) return null
+  const rows = affine.map((row) => [...row]) as [
+    [number, number, number, number],
+    [number, number, number, number],
+    [number, number, number, number],
+    [number, number, number, number],
+  ]
+  rows[0][3] += affine[0][0] * x0 + affine[0][1] * y0 + affine[0][2] * z0
+  rows[1][3] += affine[1][0] * x0 + affine[1][1] * y0 + affine[1][2] * z0
+  rows[2][3] += affine[2][0] * x0 + affine[2][1] * y0 + affine[2][2] * z0
+  return rows
 }
 
 export const registry = new Registry()

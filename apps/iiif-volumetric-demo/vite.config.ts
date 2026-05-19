@@ -28,6 +28,7 @@ export default defineConfig({
         stitch: resolve(__dirname, 'stitch.html'),
         osd: resolve(__dirname, 'osd-volume-desktop.html'),
         fly: resolve(__dirname, 'volume-fly-space.html'),
+        omezarr: resolve(__dirname, 'omezarr.html'),
       },
     },
   },

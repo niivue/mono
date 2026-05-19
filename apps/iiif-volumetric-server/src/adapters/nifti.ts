@@ -19,8 +19,32 @@ export interface ProbeMeta {
   affine: Affine4x4 | null
 }
 
+// One pyramid level surfaced by an adapter that has a native multiscale
+// representation (OME-Zarr, DICOM-WSI, OME-TIFF). Level 0 is the
+// highest-resolution; higher indices are coarser, following OME-Zarr
+// convention. `spacing` reflects the per-level physical voxel size.
+export interface AdapterLevel {
+  level: number
+  shape: Shape3
+  spacing: Vec3
+  affine?: Affine4x4 | null
+}
+
 export interface AdapterContext {
   isDirectory: boolean
+}
+
+// Half-open bbox in (X, Y, Z) voxel coords matching VolumeHandle. End
+// indices are exclusive. The adapter is responsible for clamping any
+// out-of-range values; callers (the registry) clamp before dispatch so
+// adapters can trust the inputs lie inside the level shape.
+export interface SubvolumeBbox {
+  x0: number
+  y0: number
+  z0: number
+  x1: number
+  y1: number
+  z1: number
 }
 
 export interface VolumeAdapter {
@@ -28,6 +52,20 @@ export interface VolumeAdapter {
   canHandle(path: string, ctx: AdapterContext): boolean
   probe(filePath: string): Promise<ProbeMeta>
   load(filePath: string): Promise<VolumeHandle>
+  // Adapters with a native multiscale pyramid (OME-Zarr datasets, future
+  // DICOM-WSI tiers) implement these. When absent, the registry falls
+  // back to generating a pyramid from level 0 (NIfTI path).
+  probeLevels?(filePath: string): Promise<AdapterLevel[]>
+  loadLevel?(filePath: string, levelIdx: number): Promise<VolumeHandle>
+  // Chunk-aware partial read. Returns a VolumeHandle whose shape equals
+  // (x1-x0, y1-y0, z1-z0) and whose data covers only that slab — useful
+  // for native-pyramid sources where loading the full level into RAM is
+  // wasteful (s3+ of jrc_hela-2 is hundreds of MB to GBs).
+  loadSubvolume?(
+    filePath: string,
+    levelIdx: number,
+    bbox: SubvolumeBbox,
+  ): Promise<VolumeHandle>
 }
 
 interface NiftiHeader {

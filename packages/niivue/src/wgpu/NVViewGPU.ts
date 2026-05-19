@@ -1653,6 +1653,10 @@ export default class NVView {
         maxBufferSize,
         maxStorageBufferBindingSize,
         maxTextureDimension2D: this.maxTextureDimension2D,
+        // WebGPU's spec default is 2048; many adapters offer 4096–16384 but
+        // only if explicitly requested. Without this, large volumes that
+        // exceed 2048 in any dim silently upload as a black 3D texture.
+        maxTextureDimension3D: this.maxTextureDimension3D,
       },
     })
     this.context = this.canvas.getContext('webgpu')

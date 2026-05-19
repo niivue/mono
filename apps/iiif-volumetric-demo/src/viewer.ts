@@ -177,7 +177,11 @@ main().catch((err: unknown) => {
 async function main(): Promise<void> {
   const res = await fetch('/api')
   const api = (await res.json()) as ApiResponse
-  state.volumes = api.volumes ?? []
+  // This page exercises the NIfTI-oriented IIIF Image API + exploded
+  // composite path. OME-Zarr volumes don't have slice tile endpoints
+  // wired and would also auto-load a multi-GB L0 into niivue; they have
+  // their own demo at /omezarr.html.
+  state.volumes = (api.volumes ?? []).filter((v) => v.format === 'nifti')
   els.apiPill.textContent = `API · ${state.volumes.length} volume(s)`
   els.apiPill.classList.add('green')
   renderVolList()

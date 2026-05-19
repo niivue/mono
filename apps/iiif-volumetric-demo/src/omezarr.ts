@@ -22,11 +22,14 @@
 // Rendering is the off-the-shelf niivue 3D viewer — the point here is the
 // server-side pyramid + subvolume plumbing, not viewer features.
 
-import NiiVue from '@niivue/niivue/webgl2'
+import NiiVue from '@niivue/niivue'
 
+import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
 
 installNav()
+
+const BACKEND = getBackendFromUrl()
 
 interface VolumeLevel {
   level: number
@@ -188,6 +191,7 @@ function currentVolume(): VolumeApiEntry | null {
 async function ensureNiivue(): Promise<void> {
   if (nv) return
   nv = new NiiVue({
+    backend: BACKEND,
     backgroundColor: [0, 0, 0, 1],
     isColorbarVisible: true,
     isDragDropEnabled: false,

@@ -183,6 +183,10 @@ export default class NiiVueGPU extends EventTarget {
   model: NVModel
   view: ViewBackend | null = null
   resizeObserver: ResizeObserver | null
+  _dprMediaQuery: {
+    mql: MediaQueryList
+    handler: (event: MediaQueryListEvent) => void
+  } | null = null
   _eventListeners: Record<string, EventHandler | null>
   private _updating = false
   private _pendingUpdate = false
@@ -2880,6 +2884,13 @@ export default class NiiVueGPU extends EventTarget {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect()
       this.resizeObserver = null
+    }
+    if (this._dprMediaQuery) {
+      this._dprMediaQuery.mql.removeEventListener(
+        'change',
+        this._dprMediaQuery.handler,
+      )
+      this._dprMediaQuery = null
     }
     if (this.view) this.view.destroy()
     this._viewLifecycle.unregister?.(this)

@@ -1112,6 +1112,16 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     setNextActionTag('wheel')
     evt.preventDefault()
     const [px, py] = wheelHit
+    // Wheel over the 4D timeline graph: step to previous/next frame
+    const graphLayout = ctrl.view?.graphLayout as GraphLayout | null
+    if (graphLayout && graphHitTest(px, py, graphLayout)) {
+      const vol = ctrl.volumes[0]
+      if (vol?.id && (vol.nFrame4D ?? 1) > 1) {
+        const delta = evt.deltaY > 0 ? 1 : -1
+        ctrl.setFrame4D(vol.id, (vol.frame4D ?? 0) + delta)
+      }
+      return
+    }
     const hit = ctrl.view?.hitTest(px, py)
     if (!hit) return
     // 2D slice: zoom when pan/slicer3D mode, otherwise step crosshair
@@ -1311,7 +1321,7 @@ export function setupResizeHandler(ctrl: NiiVueGPU): void {
   if (ctrl.resizeObserver) {
     ctrl.resizeObserver.disconnect()
   }
-  ctrl.resizeObserver = new ResizeObserver(() => {
+  const onResize = () => {
     setNextActionTag('resize')
     ctrl.view?.resize()
     if (ctrl.canvas) {
@@ -1320,13 +1330,43 @@ export function setupResizeHandler(ctrl: NiiVueGPU): void {
         height: ctrl.canvas.clientHeight,
       })
     }
-  })
+  }
+  ctrl.resizeObserver = new ResizeObserver(onResize)
   try {
     ctrl.resizeObserver.observe(ctrl.canvas as HTMLCanvasElement, {
       box: 'device-pixel-content-box',
     })
   } catch {
     ctrl.resizeObserver.observe(ctrl.canvas as HTMLCanvasElement)
+  }
+  // Track devicePixelRatio changes (e.g., window moved between displays
+  // with different DPR). matchMedia('(resolution: ...)') fires once when
+  // the DPR crosses the queried value; re-arm with the new DPR each time.
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function'
+  ) {
+    const armDprListener = () => {
+      const mql = window.matchMedia(
+        `(resolution: ${window.devicePixelRatio}dppx)`,
+      )
+      const handler = () => {
+        mql.removeEventListener('change', handler)
+        ctrl._dprMediaQuery = null
+        onResize()
+        armDprListener()
+      }
+      mql.addEventListener('change', handler)
+      ctrl._dprMediaQuery = { mql, handler }
+    }
+    if (ctrl._dprMediaQuery) {
+      ctrl._dprMediaQuery.mql.removeEventListener(
+        'change',
+        ctrl._dprMediaQuery.handler,
+      )
+      ctrl._dprMediaQuery = null
+    }
+    armDprListener()
   }
 }
 

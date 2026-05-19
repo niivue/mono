@@ -272,6 +272,7 @@ export function calculateMvpMatrix(
   furthestFromPivot: number,
   volScaleMultiplier: number,
   obliqueRAS?: mat4,
+  renderPan?: ArrayLike<number>,
 ) {
   const mvpMatrix = mat4.create()
   const modelMatrix = mat4.create()
@@ -286,6 +287,13 @@ export function calculateMvpMatrix(
   const near = scale * 0.01
   const far = scale * 8.0
   mat4.orthoZO(projectionMatrix, left, right, bottom, top, near, far)
+  if (renderPan && (renderPan[0] !== 0 || renderPan[1] !== 0)) {
+    // Pre-multiply by a clip-space translation so the projected image slides
+    // by (panX, panY) in NDC, independent of model rotation.
+    const panMat = mat4.create()
+    mat4.fromTranslation(panMat, [renderPan[0] ?? 0, renderPan[1] ?? 0, 0])
+    mat4.multiply(projectionMatrix, panMat, projectionMatrix)
+  }
   const translateVec3 = vec3.fromValues(0, 0, -scale * 1.8)
   mat4.translate(modelMatrix, modelMatrix, translateVec3)
   mat4.rotateX(modelMatrix, modelMatrix, deg2rad(elevation - 90))

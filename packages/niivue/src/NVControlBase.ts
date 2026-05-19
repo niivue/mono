@@ -1,4 +1,4 @@
-import { type vec3, vec4 } from 'gl-matrix'
+import { type vec2, type vec3, vec4 } from 'gl-matrix'
 import { getControlPoints } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
@@ -425,6 +425,15 @@ export default class NiiVueGPU extends EventTarget {
   set scaleMultiplier(v: number) {
     this.model.scene.scaleMultiplier = v
     this.emit('change', { property: 'scaleMultiplier', value: v })
+    this.drawScene()
+  }
+
+  get renderPan(): vec2 {
+    return this.model.scene.renderPan
+  }
+  set renderPan(v: vec2) {
+    this.model.scene.renderPan = v
+    this.emit('change', { property: 'renderPan', value: v })
     this.drawScene()
   }
 
@@ -1540,21 +1549,31 @@ export default class NiiVueGPU extends EventTarget {
       this._deferredVolumes = volumes
       return this
     }
-    // Fetch all volumes in parallel, then add in original order
+    // Fetch + parse new volumes in parallel — the old volumes stay rendered
+    // throughout, since prepareVolume only touches local NVImage objects.
     const loaded = await Promise.all(
       volumes.map((v) => NVModel.prepareVolume(v)),
     )
+    // Atomic swap: keep refs to the old volumes so we can release their GPU
+    // resources AFTER the new bind groups are live. Replace the model's
+    // volume array in place — the view's bind groups still point at the old
+    // textures until updateGLVolume rebuilds them, so the canvas keeps
+    // showing the previous frame across the swap instead of flashing blank.
     const previous = this.model.getVolumes()
     for (let i = previous.length - 1; i >= 0; i--) {
       this.emit('volumeRemoved', { volume: previous[i], index: i })
     }
-    await this.model.removeAllVolumes()
+    this.model.volumes = loaded
+    this.model._setupPivot3D()
     for (const vol of loaded) {
-      await this.model.addVolume(vol)
-      const vols = this.model.getVolumes()
-      this.emit('volumeLoaded', { volume: vols[vols.length - 1] })
+      this.emit('volumeLoaded', { volume: vol })
     }
     await this.updateGLVolume()
+    // New bind groups are live; the old GPU textures are no longer referenced.
+    for (const vol of previous) {
+      this.model._releaseGPU(vol as unknown as Record<string, unknown>)
+      vol.img = null
+    }
     return this
   }
 

@@ -1,4 +1,4 @@
-import { mat4, vec3, vec4 } from 'gl-matrix'
+import { mat4, vec2, vec3, vec4 } from 'gl-matrix'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMesh from '@/mesh/NVMesh'
@@ -27,7 +27,7 @@ import type {
 } from '@/NVTypes'
 import * as NVLegend from '@/view/NVLegend'
 import { resolveNegativeRange } from '@/view/NVUILayout'
-import * as NVVolume from '@/volume/NVVolume'
+import { loadVolumePrepared } from '@/volume/loadBridge'
 import { getVoxelValue } from '@/volume/utils'
 
 export default class NVModel {
@@ -90,6 +90,9 @@ export default class NVModel {
         ? vec4.fromValues(...options.pan2Dxyzmm)
         : vec4.fromValues(0, 0, 0, 1),
       scaleMultiplier: options.scaleMultiplier ?? 1.0,
+      renderPan: options.renderPan
+        ? vec2.fromValues(...options.renderPan)
+        : vec2.fromValues(0, 0),
       gamma: options.gamma ?? 1.0,
       backgroundColor: options.backgroundColor ?? [0, 0, 0, 1],
       clipPlaneColor: options.clipPlaneColor ?? [0.7, 0, 0.7, 0.4],
@@ -752,10 +755,14 @@ export default class NVModel {
     if (!url) {
       throw new Error('prepareVolume requires a url or an NVImage object')
     }
-    const nii = await NVVolume.loadVolume(url, urlImageData ?? null)
     const urlString = typeof url === 'string' ? url : url.name
     const name = overrides.name ?? urlString
-    const base = NVVolume.nii2volume(nii.hdr, nii.img, name, limitFrames4D)
+    const base = await loadVolumePrepared(
+      url,
+      urlImageData ?? null,
+      limitFrames4D,
+      name,
+    )
     return { ...base, url: urlString, ...NVModel.volumeDefaults, ...overrides }
   }
 

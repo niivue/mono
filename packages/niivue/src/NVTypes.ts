@@ -1,4 +1,4 @@
-import type { mat4, vec3, vec4 } from 'gl-matrix'
+import type { mat4, vec2, vec3, vec4 } from 'gl-matrix'
 import type { LogLevel } from '@/logger'
 import type { FontMetrics } from '@/view/NVFont'
 
@@ -461,6 +461,10 @@ export type SceneConfig = {
   crosshairPos: vec3
   pan2Dxyzmm: vec4
   scaleMultiplier: number
+  // Clip-space translation applied after projection in 3D render mode
+  // (sliceType === RENDER). Each component is in NDC units, so renderPan = [0.5, 0.5]
+  // shifts the volume half the viewport right and up. Ignored in 2D / mosaic.
+  renderPan: vec2
   gamma: number
   backgroundColor: [number, number, number, number]
   clipPlaneColor: number[]
@@ -675,6 +679,7 @@ export type NiiVueOptions = {
   crosshairPos?: [number, number, number]
   pan2Dxyzmm?: [number, number, number, number]
   scaleMultiplier?: number
+  renderPan?: [number, number]
   gamma?: number
   backgroundColor?: [number, number, number, number]
   clipPlaneColor?: number[]

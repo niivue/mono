@@ -514,6 +514,7 @@ export default class NVGlview {
         md.furthestFromPivot,
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
+        md.scene.renderPan,
       )
       if (tile.space === 'global3d' && tileVol) {
         ;[mvpMatrix, , normalMatrix, rayDir] =
@@ -1339,6 +1340,7 @@ export default class NVGlview {
         md.furthestFromPivot,
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
+        md.scene.renderPan,
       )
       mvpMatrix = result[0] as mat4
       rayDir = result[3] as Float32Array

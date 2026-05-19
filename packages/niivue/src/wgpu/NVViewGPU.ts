@@ -839,6 +839,7 @@ export default class NVView {
         md.furthestFromPivot,
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
+        md.scene.renderPan,
       )
       if (tile.space === 'global3d' && tileVol) {
         const mvp3d = NVTransforms.calculateGlobalVolumeMvp(
@@ -2089,6 +2090,7 @@ export default class NVView {
         md.furthestFromPivot,
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
+        md.scene.renderPan,
       )
       mvpMatrix = result[0] as mat4
       normalMatrix = result[2] as mat4

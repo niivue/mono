@@ -2,28 +2,14 @@
 //   /iiif/image/{volId}/{axis}/{slice}/info.json
 //   /iiif/image/{volId}/{axis}/{slice}/{region}/{size}/{rotation}/{quality}.{format}
 
-import type {
-  Express,
-  NextFunction,
-  Request,
-  RequestHandler,
-  Response,
-} from 'express'
+import type { Express, Request, Response } from 'express'
 
 import type { Axis, VolumeHandle } from '../adapters/volumeHandle.ts'
 import { infoJson, renderImageRequest } from '../iiif/imageApi.ts'
 import type { Registry } from '../registry.ts'
+import { asyncHandler, HttpError, parseLevel } from '../util/http.ts'
 
 const AXES: Set<Axis> = new Set(['axial', 'coronal', 'sagittal'])
-
-class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message)
-  }
-}
 
 export function mountImageApi(app: Express, registry: Registry): void {
   app.get(
@@ -136,26 +122,10 @@ function validateSliceRange(
   }
 }
 
-function parseLevel(s: string | undefined | string[] | unknown): number {
-  if (s === undefined || s === null || s === '') return 0
-  const n = Number(s)
-  if (!Number.isInteger(n) || n < 0) {
-    throw new HttpError(400, `Invalid level: ${String(s)}`)
-  }
-  return n
-}
-
 function splitQualityFormat(s: string): [string, string] {
   const dot = s.lastIndexOf('.')
   if (dot < 0) {
     throw new HttpError(400, `Invalid quality.format: ${s}`)
   }
   return [s.slice(0, dot), s.slice(dot + 1).toLowerCase()]
-}
-
-type AsyncRouteHandler = (req: Request, res: Response) => Promise<void>
-
-function asyncHandler(fn: AsyncRouteHandler): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction) =>
-    Promise.resolve(fn(req, res)).catch(next)
 }

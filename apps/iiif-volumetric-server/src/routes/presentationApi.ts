@@ -1,16 +1,11 @@
 // Mounts /iiif/presentation/{id}/manifest
 
-import type {
-  Express,
-  NextFunction,
-  Request,
-  RequestHandler,
-  Response,
-} from 'express'
+import type { Express, Request, Response } from 'express'
 
 import { planExplodedView } from '../iiif/explode.ts'
 import { buildExplodedManifest, buildManifest } from '../iiif/presentation.ts'
 import type { Registry } from '../registry.ts'
+import { asyncHandler } from '../util/http.ts'
 
 export function mountPresentationApi(app: Express, registry: Registry): void {
   app.get(
@@ -73,11 +68,4 @@ export function mountPresentationApi(app: Express, registry: Registry): void {
       ]),
     })
   })
-}
-
-type AsyncRouteHandler = (req: Request, res: Response) => Promise<void>
-
-function asyncHandler(fn: AsyncRouteHandler): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction) =>
-    Promise.resolve(fn(req, res)).catch(next)
 }

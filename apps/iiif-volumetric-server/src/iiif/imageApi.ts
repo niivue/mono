@@ -63,7 +63,7 @@ export function infoJson(opts: InfoJsonOpts): InfoJson {
     height: h,
     sizes: pyramidSizes(w, h),
     tiles: [{ width: 512, height: 512, scaleFactors: scaleFactors(w, h, 512) }],
-    extraFormats: ['png', 'jpg'],
+    extraFormats: ['png'],
     extraQualities: ['default', 'gray'],
     extraFeatures: [
       'regionByPx',
@@ -326,12 +326,6 @@ function applyQuality(
 
 function encode(slice: SliceImage, format: string | undefined): ImageResponse {
   if (format === 'png' || !format) {
-    return {
-      buffer: rgbaToPng(slice.width, slice.height, slice.data),
-      contentType: 'image/png',
-    }
-  }
-  if (format === 'jpg' || format === 'jpeg') {
     return {
       buffer: rgbaToPng(slice.width, slice.height, slice.data),
       contentType: 'image/png',

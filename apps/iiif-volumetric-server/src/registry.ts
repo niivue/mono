@@ -22,6 +22,7 @@ import {
   cropVolume,
 } from './util/autocrop.ts'
 import { downsampleVolume } from './util/downsample.ts'
+import { HttpError } from './util/http.ts'
 import { encodeNifti, encodeNiftiRaw } from './util/niftiEncoder.ts'
 import { computeOccupancyGrid, type OccupancyGrid } from './util/occupancy.ts'
 
@@ -94,15 +95,6 @@ interface Sidecar {
   background: number | null
   dtype: Dtype
   spacing: Vec3
-}
-
-class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message)
-  }
 }
 
 export class Registry {

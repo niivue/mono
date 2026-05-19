@@ -4,20 +4,12 @@
 // slot with the canonical list of pages so adding/removing a demo is a
 // single-file edit here.
 
-type Page = { href: string; label: string; deferred?: boolean }
+type Page = { href: string; label: string }
 
 const PAGES: Page[] = [
   { href: '/index.html', label: 'volumes' },
   { href: '/sheet.html', label: 'sheet' },
   { href: '/stitch.html', label: 'stitch' },
-]
-
-// Deferred POCs — kept reachable from the nav so they're discoverable,
-// but visually dimmed because they depend on niivuegpu APIs that haven't
-// been ported yet. See README for status.
-const DEFERRED: Page[] = [
-  { href: '/osd-volume-desktop.html', label: 'osd-volume', deferred: true },
-  { href: '/volume-fly-space.html', label: 'volume-fly', deferred: true },
 ]
 
 // Endpoints exposed by the IIIF server — handy to reach from any page when
@@ -44,13 +36,6 @@ function installActiveStyles(): void {
       margin: 0 4px;
       pointer-events: none;
     }
-    [data-nav-links] a.deferred {
-      color: #6a6d71;
-      font-style: italic;
-    }
-    [data-nav-links] a.deferred:hover {
-      color: #9aa0a6;
-    }
   `
   const style = document.createElement('style')
   style.textContent = css
@@ -62,10 +47,6 @@ function makeLink(page: Page, currentPath: string): HTMLAnchorElement {
   const a = document.createElement('a')
   a.href = page.href
   a.textContent = page.label
-  if (page.deferred) {
-    a.classList.add('deferred')
-    a.title = 'Deferred POC — depends on niivuegpu APIs not yet ported'
-  }
   // Treat '/' and '/index.html' as the same page so the active marker
   // works whether Vite serves the index by name or as the root.
   const isActive =
@@ -92,12 +73,6 @@ export function installNav(): void {
     slot.replaceChildren()
     for (const page of PAGES) {
       slot.appendChild(makeLink(page, here))
-    }
-    if (DEFERRED.length > 0) {
-      appendSeparator(slot)
-      for (const page of DEFERRED) {
-        slot.appendChild(makeLink(page, here))
-      }
     }
     if (ENDPOINTS.length > 0) {
       appendSeparator(slot)

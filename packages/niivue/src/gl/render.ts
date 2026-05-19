@@ -21,6 +21,7 @@ export class VolumeRenderer extends NVRenderer {
   shader: Shader | null
   depthPickShaderProgram: Shader | null
   matcapTexture: WebGLTexture | null
+  private _matcapUrl: string | null
   volumeTexture: WebGLTexture | null
   volumeGradientTexture: WebGLTexture | null
   overlayTexture: WebGLTexture | null
@@ -49,6 +50,7 @@ export class VolumeRenderer extends NVRenderer {
     this.shader = null
     this.depthPickShaderProgram = null
     this.matcapTexture = null
+    this._matcapUrl = null
     this.volumeTexture = null
     this.volumeGradientTexture = null
     this.overlayTexture = null
@@ -253,9 +255,14 @@ export class VolumeRenderer extends NVRenderer {
     this.volumeTexture = entry.volumeTexture
     this.volumeGradientTexture = entry.volumeGradientTexture
 
-    // Load matcap texture (independent of per-volume cache)
-    if (!this.matcapTexture) {
-      this.matcapTexture = await this._loadTexture2DOrFallback(gl, matcap)
+    // Matcap is independent of per-volume cache. Reload when the URL
+    // changes so that opts.matcap updates take effect — otherwise the
+    // first loaded matcap sticks for the lifetime of the renderer.
+    if (this.matcapTexture == null || this._matcapUrl !== matcap) {
+      const newTex = await this._loadTexture2DOrFallback(gl, matcap)
+      if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
+      this.matcapTexture = newTex
+      this._matcapUrl = matcap
     }
   }
 
@@ -720,6 +727,7 @@ export class VolumeRenderer extends NVRenderer {
       const newTex = await this._loadTexture2DOrFallback(gl, matcapUrl)
       if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
       this.matcapTexture = newTex
+      this._matcapUrl = matcapUrl
     } catch (e) {
       log.warn('Matcap load failed', e)
     }

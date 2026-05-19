@@ -14,13 +14,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
 
-import type {
-  Express,
-  NextFunction,
-  Request,
-  RequestHandler,
-  Response,
-} from 'express'
+import type { Express, Request, Response } from 'express'
 
 import type {
   Affine4x4,
@@ -30,6 +24,7 @@ import type {
 } from '../adapters/volumeHandle.ts'
 import { composeExplodedBuffer, planExplodedView } from '../iiif/explode.ts'
 import type { RawLevelLayout, Registry, RegistryEntry } from '../registry.ts'
+import { asyncHandler, HttpError, parseLevel } from '../util/http.ts'
 import {
   type ContentEncoding,
   compressBuffer,
@@ -42,15 +37,6 @@ import { encodeNiftiRle, NIFTI_RLE_MEDIA_TYPE } from '../util/rleEncoder.ts'
 
 const NIFTI_MEDIA_TYPE = 'application/x.nifti'
 const NIFTI_GZIP_MEDIA_TYPE = 'application/x.nifti+gzip'
-
-class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message)
-  }
-}
 
 export interface Bbox {
   x0: number
@@ -524,15 +510,6 @@ function parseBbox(s: unknown): Bbox | null {
   return { x0, y0, z0, x1, y1, z1 }
 }
 
-function parseLevel(s: unknown): number {
-  if (s === undefined || s === null || s === '') return 0
-  const n = Number(s)
-  if (!Number.isInteger(n) || n < 0) {
-    throw new HttpError(400, `Invalid level: ${String(s)}`)
-  }
-  return n
-}
-
 export interface CropMeta {
   data: Uint8Array
   shape: Shape3
@@ -885,11 +862,4 @@ function createServerTimer(): ServerTimer {
         .join(', ')
     },
   }
-}
-
-type AsyncRouteHandler = (req: Request, res: Response) => Promise<void>
-
-function asyncHandler(fn: AsyncRouteHandler): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction) =>
-    Promise.resolve(fn(req, res)).catch(next)
 }

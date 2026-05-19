@@ -6,6 +6,7 @@ import type {
   VolumeHandle,
   VoxelArray,
 } from '../adapters/volumeHandle.ts'
+import { HttpError } from '../util/http.ts'
 
 const MAX_VOXELS = 200_000_000
 
@@ -45,15 +46,6 @@ export interface ExplodeLayout {
   compositeSpacing: Vec3
   cells: ExplodeCell[]
   params: NormalizedExplodeParams
-}
-
-class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message)
-  }
 }
 
 export function planExplodedView(

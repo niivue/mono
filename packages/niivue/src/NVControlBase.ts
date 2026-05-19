@@ -7,6 +7,7 @@ import * as NVCmaps from '@/cmap/NVCmaps'
 import { removeInteractionListeners } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
 import {
+  computeBoundsPixelRect,
   getCanvasInstances,
   getCanvasViewport,
   setCanvasViewport,
@@ -253,13 +254,23 @@ export default class NiiVueGPU extends EventTarget {
     log.setLogLevel(options.logLevel ?? 'info')
     this.activeClipPlaneIndex = 0
     this.currentClipPlaneIndex = 0
+    const backend = options.backend ?? 'webgpu'
+    if (backend === 'webgpu' && (options.instances || options.globalCamera)) {
+      // Multi-instance/global3d tile routing currently lives in NVViewGL only
+      // (per-tile `bindCachedVolume` + `calculateGlobalVolumeMvp`). On WebGPU
+      // these fields would be silently ignored, so drop them and surface a
+      // warning rather than render a misleading scene.
+      log.warn(
+        'opts.instances / opts.globalCamera are WebGL2-only — they will be ignored on the WebGPU backend until the WebGPU view gains per-tile volumeId/global3d routing',
+      )
+    }
     this.opts = {
-      backend: options.backend ?? 'webgpu',
+      backend,
       isAntiAlias: options.isAntiAlias ?? true,
       isDragDropEnabled: options.isDragDropEnabled ?? true,
       isInteractionEnabled: options.isInteractionEnabled ?? true,
-      instances: options.instances,
-      globalCamera: options.globalCamera,
+      instances: backend === 'webgpu' ? undefined : options.instances,
+      globalCamera: backend === 'webgpu' ? undefined : options.globalCamera,
       forceDevicePixelRatio: options.devicePixelRatio ?? -1,
       logLevel: options.logLevel ?? 'info',
       thumbnail: options.thumbnail,
@@ -2321,8 +2332,21 @@ export default class NiiVueGPU extends EventTarget {
   /**
    * Replace the multi-instance descriptor list (canvas tiling + optional global3d
    * volumes). Triggers a tile rebuild and redraw.
+   *
+   * Currently WebGL2-only. The WebGPU backend (`opts.backend === 'webgpu'`)
+   * does not yet route per-tile `volumeId` / `space === 'global3d'` /
+   * `globalCamera` through its render loop, so multi-instance scenes with
+   * per-tile volumes or shared 3D cameras would silently render the wrong
+   * content. The call is rejected (with a warning) on WebGPU until that
+   * backend gains the matching per-tile logic.
    */
   setInstances(instances: NVInstance[]): void {
+    if (this.opts.backend === 'webgpu') {
+      log.warn(
+        'setInstances is WebGL2-only — the WebGPU backend does not yet honour per-tile volumeId/global3d/globalCamera; switch the backend to use this API',
+      )
+      return
+    }
     this.opts.instances = instances
     if (this.view) {
       this.updateTilesFromInstances()
@@ -2330,8 +2354,17 @@ export default class NiiVueGPU extends EventTarget {
     }
   }
 
-  /** Update the shared 3D camera used by `space === 'global3d'` instances. */
+  /**
+   * Update the shared 3D camera used by `space === 'global3d'` instances.
+   * WebGL2-only — see {@link setInstances} for the backend limitation.
+   */
   setGlobalCamera(camera: NVGlobalCamera): void {
+    if (this.opts.backend === 'webgpu') {
+      log.warn(
+        'setGlobalCamera is WebGL2-only — the WebGPU backend does not yet honour the shared global3d camera',
+      )
+      return
+    }
     this.opts.globalCamera = camera
     if (this.view && this.opts.instances) {
       this.updateTilesFromInstances()
@@ -2343,7 +2376,7 @@ export default class NiiVueGPU extends EventTarget {
     if (!this.view || !this.opts.instances || !this.canvas) return
     const cw = this.canvas.width
     const ch = this.canvas.height
-    const vp = getCanvasViewport(this.canvas)
+    const canvas = this.canvas
 
     const tiles: SliceTile[] = this.opts.instances.map((inst) => {
       if (inst.space === 'global3d' || inst.position) {
@@ -2366,19 +2399,11 @@ export default class NiiVueGPU extends EventTarget {
           volumeId: inst.volumeId,
         }
       }
-      // Apply viewport transform (Normalized World -> Normalized Screen)
-      // World is 0..1, Viewport pan is in normalized units, zoom is scalar around center (0.5, 0.5)
-      const x1 = (b[0][0] - 0.5 + vp.pan[0]) * vp.zoom + 0.5
-      const y1 = (b[0][1] - 0.5 + vp.pan[1]) * vp.zoom + 0.5
-      const x2 = (b[1][0] - 0.5 + vp.pan[0]) * vp.zoom + 0.5
-      const y2 = (b[1][1] - 0.5 + vp.pan[1]) * vp.zoom + 0.5
-      // Convert to Screen Pixels (Inverting Y for GL convention)
-      const px = x1 * cw
-      const py = (1 - y2) * ch
-      const pw = (x2 - x1) * cw
-      const ph = (y2 - y1) * ch
+      // Share the bounds→pixel projection with NVViewGPU/NVViewGL so that
+      // pan/zoom stays consistent across the renderer and the tile rects.
+      const rect = computeBoundsPixelRect(canvas, b)
       return {
-        leftTopWidthHeight: [px, py, pw, ph],
+        leftTopWidthHeight: [rect.left, rect.top, rect.width, rect.height],
         axCorSag: 4,
         azimuth: inst.rotation ? inst.rotation[0] : undefined,
         elevation: inst.rotation ? inst.rotation[1] : undefined,

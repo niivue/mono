@@ -16,11 +16,25 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   Toggle filter / wrap / overlap padding / pattern / tile count and
   compare against the single-texture reference. No niivue, no IIIF
   dependency.
+- `osd-volume-desktop.html` — OpenSeadragon-style deep-zoom 2D desktop
+  of NIfTI tile previews fed from an IIIF VolumeDesktop manifest, with
+  an embedded niivue 3D pane that loads the selected volume at the
+  matching LOD.
+- `volume-fly-space.html` — WASD-fly through a constellation of NIfTI
+  volumes rendered in a single shared 3D scene via niivue's
+  `space: 'global3d'` instances. Streams source volumes from `/api`,
+  prefetches low-resolution variants, and keeps next bricks warm as
+  the camera moves.
 
-Additional POC pages from the standalone repo (`osd-volume-desktop.html`,
-`volume-fly-space.html`) are deferred — they depend on niivuegpu APIs
-(`setInstances`, `setViewport`, `NVCanvasViewportController`,
-`setGlobalCamera`) that are not yet ported into `@niivue/niivue`.
+### Backend switching
+
+Every niivue page reads a `?backend=webgl2|webgpu` URL query and
+passes it to the `NiiVue` constructor (default: `webgl2`). The shared
+nav ribbon exposes a `WebGL2 / WebGPU` toggle that reloads the page
+with the new query; the WebGPU option is disabled when
+`navigator.gpu` is absent. The choice is preserved across in-app
+navigation. `stitch.html` is raw WebGL2 with no NiiVue and ignores
+the query.
 
 ## Running
 
@@ -36,18 +50,20 @@ bun install
 
 ### 2. Build `@niivue/niivue` (first time, and after any niivue change)
 
-The demo imports `@niivue/niivue/webgl2`, which resolves to a built
-file in `packages/niivue/dist/`. Vite does **not** build workspace
-deps on the fly, so this must be done explicitly:
+The demo imports `@niivue/niivue` (combined entry — both backends),
+which resolves to a built file in `packages/niivue/dist/`. Vite does
+**not** build workspace deps on the fly, so this must be done
+explicitly:
 
 ```sh
 bunx nx build niivue
 ```
 
-> The built file is named `niivuegpu.webgl2.js` (the filename was
-> kept from the upstream `niivuegpu` port). If Vite logs a missing
-> module error mentioning `niivuegpu.*.js`, this build step was
-> skipped — it is not the legacy niivuegpu package.
+> The built files are named `niivuegpu.js`, `niivuegpu.webgpu.js`,
+> and `niivuegpu.webgl2.js` (the `niivuegpu` filename was kept from
+> the upstream port). If Vite logs a missing-module error mentioning
+> `niivuegpu.*.js`, this build step was skipped — it is not the
+> legacy niivuegpu package.
 
 ### 3. Download fixture volumes (first time, or to add more)
 
@@ -75,9 +91,10 @@ bunx nx dev iiif-volumetric-server
 Listens on `http://127.0.0.1:8080`. Override with `PORT` / `HOST` /
 `PUBLIC_BASE_URL` env vars. If the fixtures directory is empty the
 server logs a warning and serves no volumes. The server will also
-log `niivuegpu dist not found` — that warning belongs to the legacy
-`/vendor/niivuegpu/*` route used by the deferred pages and is safe
-to ignore when running `index.html`.
+log `niivuegpu dist not found` — that warning belongs to a legacy
+`/vendor/niivuegpu/*` route that no current page uses (the demos
+now pull niivue from `@niivue/niivue` directly) and is safe to
+ignore.
 
 ### 5. Start the demo (terminal 2)
 
@@ -93,13 +110,14 @@ server. Point the proxy elsewhere with `IIIF_SERVER_URL`:
 IIIF_SERVER_URL=http://127.0.0.1:9090 bunx nx dev iiif-volumetric-demo
 ```
 
-The header on every page exposes the shared cross-page nav (`volumes`,
-`sheet`, `stitch`, plus dimmed `osd-volume` and `volume-fly` links to
-the deferred POCs). `sheet.html` needs the IIIF server running with at
-least one fixture volume — it cycles the available volumes through 9
-cells. **The two deferred POC pages** (see top of this README) will
-fail with missing-symbol errors from the old `niivuegpu` API; use the
-home link in their topbar to navigate back.
+The header on every page exposes the shared cross-page nav
+(`volumes`, `sheet`, `stitch`, `osd desktop`, `fly space`) plus the
+`WebGL2 / WebGPU` backend toggle. `sheet.html`, `osd-volume-desktop.html`,
+and `volume-fly-space.html` all need the IIIF server running with at
+least one fixture volume — `sheet.html` cycles available volumes
+through 9 cells; `osd-volume-desktop.html` reads the VolumeDesktop
+manifest at `/iiif/desktop/neuro/manifest`; `volume-fly-space.html`
+streams from `/api`.
 
 ### 6. Stop
 
@@ -108,15 +126,15 @@ needed to add or refresh data.
 
 ## Troubleshooting
 
-- **Vite error: failed to resolve `@niivue/niivue/webgl2` / missing
-  `niivuegpu.webgl2.js`** — step 2 was skipped. Run
-  `bunx nx build niivue`.
+- **Vite error: failed to resolve `@niivue/niivue` / missing
+  `niivuegpu.*.js`** — step 2 was skipped. Run `bunx nx build niivue`.
 - **Blank viewer / 404s on `/iiif/...`** — the server isn't running, or
   is on a different port than `IIIF_SERVER_URL` expects.
 - **Server starts but no volumes listed** — fixtures dir is empty; run
   step 3.
-- **Header links open a broken page** — `osd-volume-desktop.html` and
-  `volume-fly-space.html` are deferred (the nav dims them). Use the
-  home link in their topbar to return.
+- **WebGPU toggle disabled** — the browser doesn't expose
+  `navigator.gpu`. Safari needs the feature flag enabled; older
+  Firefox builds don't support it. WebGL2 is the default and works
+  everywhere.
 - **Port 8087 or 8080 already in use** — stop the other process, or
   override `PORT` (server) / pass `--port` to Vite (demo).

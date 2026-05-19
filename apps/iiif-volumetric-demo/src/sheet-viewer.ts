@@ -12,16 +12,17 @@
 // so the demo has a stable canonical T1 even when the server's
 // fixtures dir is empty.
 
-import { NVCanvasViewportController } from '@niivue/niivue/viewport'
 import type {
   CanvasViewport,
   MeshFromUrlOptions,
   NiiVueOptions,
   NVImage,
   NVMesh,
-} from '@niivue/niivue/webgl2'
-import NiiVue from '@niivue/niivue/webgl2'
+} from '@niivue/niivue'
+import NiiVue from '@niivue/niivue'
+import { NVCanvasViewportController } from '@niivue/niivue/viewport'
 
+import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
 import {
   getSyntheticOverlayUrl,
@@ -29,6 +30,8 @@ import {
 } from './synthetic-overlay'
 
 installNav()
+
+const BACKEND = getBackendFromUrl()
 
 type VolumeApiEntry = {
   id: string
@@ -145,15 +148,23 @@ async function main(): Promise<void> {
   // After the first instance attached, the canvas owns a webgl2 context.
   // Re-requesting returns the same one — we use it to clear the full
   // backbuffer before each viewport-driven redraw, otherwise zoom-out
-  // leaves stale pixels outside the union of bound rects.
-  gl = els.canvas.getContext('webgl2') as WebGL2RenderingContext | null
+  // leaves stale pixels outside the union of bound rects. Skipped under
+  // WebGPU: the canvas has a webgpu context (getContext('webgl2') would
+  // throw) and each instance's render pass clears its own intermediate
+  // texture, so stale pixels outside the bound rects aren't an issue.
+  gl =
+    BACKEND === 'webgl2'
+      ? (els.canvas.getContext('webgl2') as WebGL2RenderingContext | null)
+      : null
   attachController()
   buildMinimapGrid()
   wireMinimap()
   await loadAllCells(volumeIds)
   wireControls()
   syncFromViewport()
-  setStatus(`${cells.length} cells · mesh: ${els.meshSelect.value || 'none'}`)
+  setStatus(
+    `${cells.length} cells · mesh: ${els.meshSelect.value || 'none'} · ${BACKEND}`,
+  )
 }
 
 async function fetchVolumeIds(): Promise<string[]> {
@@ -186,6 +197,7 @@ async function createCells(volumeIds: string[]): Promise<void> {
       const volumeId = volumeIds[idx] ?? null
       const rect = cellBoundsWorld(row, col, 0)
       const opts: NiiVueOptions = {
+        backend: BACKEND,
         backgroundColor: CLEAR_COLOR,
         bounds: [
           [rect.x1, rect.tileY1],
@@ -626,7 +638,9 @@ async function reloadMeshes(): Promise<void> {
       }
     }),
   )
-  setStatus(`${cells.length} cells · mesh: ${els.meshSelect.value || 'none'}`)
+  setStatus(
+    `${cells.length} cells · mesh: ${els.meshSelect.value || 'none'} · ${BACKEND}`,
+  )
 }
 
 function nudgeZoom(factor: number): void {

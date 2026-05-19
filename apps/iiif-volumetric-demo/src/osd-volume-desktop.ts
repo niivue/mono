@@ -2,7 +2,14 @@
 // from an IIIF VolumeDesktop manifest, plus an embedded NiiVue volume pane
 // that loads the selected item at the appropriate LOD.
 
-import NiiVue from '@niivue/niivue/webgl2'
+import NiiVue from '@niivue/niivue'
+
+import { getBackendFromUrl } from './backend'
+import { installNav } from './nav'
+
+installNav()
+
+const BACKEND = getBackendFromUrl()
 
 const PREVIEW_LIMIT = 320
 const PREVIEW_CONCURRENCY = 8
@@ -1226,6 +1233,7 @@ async function ensureVolumeRenderer(): Promise<NiiVueLike | null> {
   state.volume.rendererTried = true
   try {
     const nv = new NiiVue({
+      backend: BACKEND,
       backgroundColor: [0, 0, 0, 1],
       isColorbarVisible: false,
       isDragDropEnabled: false,

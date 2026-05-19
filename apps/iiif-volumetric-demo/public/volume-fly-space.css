@@ -85,7 +85,8 @@ input {
 .topbar,
 .control-panel,
 .probe-panel,
-.radar-panel {
+.radar-panel,
+.status-panel {
   position: absolute;
   z-index: 20;
   border: 1px solid var(--line);
@@ -144,18 +145,29 @@ h1 {
   text-overflow: ellipsis;
 }
 
-.status-strip {
+.topbar > .links {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 7px;
+  gap: 14px;
+}
+
+.status-panel {
+  right: 16px;
+  bottom: 244px;
+  width: 220px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
   font-family: "SFMono-Regular", Consolas, ui-monospace, monospace;
   font-size: 0.7rem;
   color: var(--muted);
 }
 
-.status-strip span {
-  min-width: 78px;
+.status-panel span {
   padding: 5px 7px;
   border: 1px solid rgba(148, 162, 157, 0.18);
   border-radius: 6px;
@@ -324,7 +336,7 @@ dd {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .status-strip {
+  .topbar > .links {
     grid-column: 1 / -1;
     justify-content: flex-start;
   }
@@ -337,7 +349,8 @@ dd {
   }
 
   .probe-panel,
-  .radar-panel {
+  .radar-panel,
+  .status-panel {
     display: none;
   }
 }

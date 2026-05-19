@@ -26,6 +26,8 @@ export default defineConfig({
         index: resolve(__dirname, 'index.html'),
         sheet: resolve(__dirname, 'sheet.html'),
         stitch: resolve(__dirname, 'stitch.html'),
+        osd: resolve(__dirname, 'osd-volume-desktop.html'),
+        fly: resolve(__dirname, 'volume-fly-space.html'),
       },
     },
   },

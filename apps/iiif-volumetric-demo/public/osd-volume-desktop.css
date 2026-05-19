@@ -120,33 +120,46 @@ h1 {
   text-overflow: ellipsis;
 }
 
-.toolbar {
+.topbar > .links {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 14px;
 }
 
-.toolbar button,
-.toolbar select {
-  height: 34px;
+.inspector-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.inspector-tools button,
+.inspector-tools select {
+  height: 30px;
   border: 1px solid var(--line);
   background: #12130f;
   color: var(--ink);
 }
 
-.toolbar button {
-  min-width: 38px;
-  padding: 0 10px;
+.inspector-tools button {
+  min-width: 32px;
+  padding: 0 8px;
   cursor: pointer;
 }
 
-.toolbar button:hover,
-.toolbar select:hover {
+.inspector-tools button:hover,
+.inspector-tools select:hover {
   border-color: var(--amber);
 }
 
-.toolbar select {
-  width: 118px;
+.inspector-tools select {
+  flex: 1;
+  min-width: 100px;
   padding: 0 8px;
 }
 

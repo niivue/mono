@@ -17,20 +17,7 @@
             <p id="desktop-subtitle">Loading desktop</p>
           </div>
         </div>
-        <div class="toolbar" aria-label="Desktop controls">
-          <button id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">-</button>
-          <button id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">+</button>
-          <button id="fit-world" type="button" title="Fit world" aria-label="Fit world">[]</button>
-          <button id="zoom-focus" type="button" title="Zoom to selected" aria-label="Zoom to selected">1:1</button>
-          <select id="colormap" title="Volume colormap" aria-label="Volume colormap">
-            <option>Gray</option>
-            <option>viridis</option>
-            <option>plasma</option>
-            <option>hot</option>
-            <option>cool</option>
-            <option>turbo</option>
-          </select>
-        </div>
+        <span class="links" data-nav-links></span>
       </header>
 
       <aside class="left-rail">
@@ -56,6 +43,20 @@
       </main>
 
       <aside class="inspector">
+        <div class="inspector-tools" aria-label="Desktop controls">
+          <button id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">-</button>
+          <button id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+          <button id="fit-world" type="button" title="Fit world" aria-label="Fit world">[]</button>
+          <button id="zoom-focus" type="button" title="Zoom to selected" aria-label="Zoom to selected">1:1</button>
+          <select id="colormap" title="Volume colormap" aria-label="Volume colormap">
+            <option>Gray</option>
+            <option>viridis</option>
+            <option>plasma</option>
+            <option>hot</option>
+            <option>cool</option>
+            <option>turbo</option>
+          </select>
+        </div>
         <div class="inspector-header">
           <span>Focus</span>
           <span id="focus-lod">no selection</span>

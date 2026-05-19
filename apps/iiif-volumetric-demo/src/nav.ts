@@ -3,6 +3,14 @@
 // and calls installNav() from its entry module. The function rebuilds the
 // slot with the canonical list of pages so adding/removing a demo is a
 // single-file edit here.
+//
+// The nav also renders a WebGPU/WebGL2 backend toggle that reloads the
+// current page with the new `?backend=` query, so manual verification is
+// symmetric across both NiiVue backends (see packages/niivue/AGENTS.md
+// "Backend feature parity"). The toggle is hidden on pages that don't
+// use NiiVue (e.g. stitch.html).
+
+import { backendSwitchUrl, getBackendFromUrl } from './backend'
 
 type Page = { href: string; label: string }
 
@@ -10,6 +18,8 @@ const PAGES: Page[] = [
   { href: '/index.html', label: 'volumes' },
   { href: '/sheet.html', label: 'sheet' },
   { href: '/stitch.html', label: 'stitch' },
+  { href: '/osd-volume-desktop.html', label: 'osd desktop' },
+  { href: '/volume-fly-space.html', label: 'fly space' },
 ]
 
 // Endpoints exposed by the IIIF server — handy to reach from any page when
@@ -36,6 +46,32 @@ function installActiveStyles(): void {
       margin: 0 4px;
       pointer-events: none;
     }
+    [data-nav-links] .backend-toggle {
+      display: inline-flex;
+      gap: 0;
+      margin-left: 8px;
+      border: 1px solid #2a2d31;
+      border-radius: 4px;
+      overflow: hidden;
+      vertical-align: middle;
+    }
+    [data-nav-links] .backend-toggle a {
+      padding: 1px 7px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #9aa0a6;
+      text-decoration: none;
+    }
+    [data-nav-links] .backend-toggle a[aria-current='true'] {
+      background: #2a2d31;
+      color: #e8eaed;
+      font-weight: 600;
+    }
+    [data-nav-links] .backend-toggle a[aria-disabled='true'] {
+      color: #4a4d51;
+      pointer-events: none;
+      cursor: not-allowed;
+    }
   `
   const style = document.createElement('style')
   style.textContent = css
@@ -45,7 +81,6 @@ function installActiveStyles(): void {
 
 function makeLink(page: Page, currentPath: string): HTMLAnchorElement {
   const a = document.createElement('a')
-  a.href = page.href
   a.textContent = page.label
   // Treat '/' and '/index.html' as the same page so the active marker
   // works whether Vite serves the index by name or as the root.
@@ -55,6 +90,15 @@ function makeLink(page: Page, currentPath: string): HTMLAnchorElement {
   if (isActive) {
     a.setAttribute('aria-current', 'page')
   }
+  // Preserve `?backend=` across navigation so the chosen backend sticks
+  // (stitch.html doesn't use NiiVue and ignores the param, but the value
+  // persists so the user lands on the right backend when navigating back).
+  const backend = getBackendFromUrl()
+  if (backend === 'webgpu') {
+    a.href = `${page.href}?backend=webgpu`
+  } else {
+    a.href = page.href
+  }
   return a
 }
 
@@ -63,6 +107,31 @@ function appendSeparator(slot: HTMLElement): void {
   sep.className = 'sep'
   sep.textContent = '·'
   slot.appendChild(sep)
+}
+
+function buildBackendToggle(): HTMLSpanElement {
+  const wgpuAvailable = typeof navigator !== 'undefined' && 'gpu' in navigator
+  const current = getBackendFromUrl()
+  const wrap = document.createElement('span')
+  wrap.className = 'backend-toggle'
+  const mk = (
+    backend: 'webgl2' | 'webgpu',
+    label: string,
+  ): HTMLAnchorElement => {
+    const a = document.createElement('a')
+    a.textContent = label
+    a.href = backendSwitchUrl(backend)
+    if (backend === current) a.setAttribute('aria-current', 'true')
+    if (backend === 'webgpu' && !wgpuAvailable) {
+      a.setAttribute('aria-disabled', 'true')
+      a.title = 'WebGPU not available in this browser'
+      a.removeAttribute('href')
+    }
+    return a
+  }
+  wrap.appendChild(mk('webgl2', 'WebGL2'))
+  wrap.appendChild(mk('webgpu', 'WebGPU'))
+  return wrap
 }
 
 export function installNav(): void {
@@ -80,5 +149,6 @@ export function installNav(): void {
         slot.appendChild(makeLink(page, here))
       }
     }
+    slot.appendChild(buildBackendToggle())
   }
 }

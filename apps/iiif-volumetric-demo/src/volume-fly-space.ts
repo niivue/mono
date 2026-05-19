@@ -7,8 +7,15 @@ import type {
   ImageFromUrlOptions,
   NVGlobalCamera,
   NVInstance,
-} from '@niivue/niivue/webgl2'
-import NiiVue from '@niivue/niivue/webgl2'
+} from '@niivue/niivue'
+import NiiVue from '@niivue/niivue'
+
+import { getBackendFromUrl } from './backend'
+import { installNav } from './nav'
+
+installNav()
+
+const BACKEND = getBackendFromUrl()
 
 const ACTIVE_VOLUME_COUNT = 14
 const ACTIVE_MOVING_VOLUME_COUNT = 8
@@ -377,11 +384,13 @@ async function main(): Promise<void> {
     throw new Error('No NIfTI volumes are registered in /api.')
 
   els.subtitle.textContent = 'Starting global niivue renderer'
-  // mono's @niivue/niivue/webgl2 is the in-tree replacement for the POC's
+  // mono's @niivue/niivue is the in-tree replacement for the POC's
   // /vendor/niivuegpu/niivuegpu.webgl2.js entry. enableInteraction /
   // disableInteraction no longer exist; we set opts.isInteractionEnabled to
-  // false in the constructor and skip any runtime toggles.
+  // false in the constructor and skip any runtime toggles. Backend is
+  // chosen at runtime from ?backend=webgl2|webgpu (default webgl2).
   const nv = new NiiVue({
+    backend: BACKEND,
     backgroundColor: [0, 0, 0, 1],
     isColorbarVisible: false,
     isDragDropEnabled: false,

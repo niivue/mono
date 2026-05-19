@@ -24,13 +24,15 @@
           <h1>NIfTI Fly Space</h1>
           <p id="scene-subtitle">Starting global renderer</p>
         </div>
-        <div class="status-strip" aria-live="polite">
-          <span id="status-visible">0 visible</span>
-          <span id="status-loaded">0 loaded</span>
-          <span id="status-queue">0 queued</span>
-          <span id="status-speed">speed 0</span>
-        </div>
+        <span class="links" data-nav-links></span>
       </header>
+
+      <aside class="status-panel" aria-label="Scene status" aria-live="polite">
+        <span id="status-visible">0 visible</span>
+        <span id="status-loaded">0 loaded</span>
+        <span id="status-queue">0 queued</span>
+        <span id="status-speed">speed 0</span>
+      </aside>
 
       <aside class="control-panel" aria-label="Flight controls">
         <label class="field">

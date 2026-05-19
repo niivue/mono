@@ -13,11 +13,14 @@
 // — this is intentional, the IIIF Image API endpoint serves slices of
 // the original volume, not the exploded composite.
 
-import NiiVue from '@niivue/niivue/webgl2'
+import NiiVue from '@niivue/niivue'
 
+import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
 
 installNav()
+
+const BACKEND = getBackendFromUrl()
 
 type Axis = 'axial' | 'coronal' | 'sagittal'
 
@@ -387,13 +390,14 @@ async function ensureNiivue(): Promise<void> {
   if (state.nv) return
   try {
     state.nv = new NiiVue({
+      backend: BACKEND,
       backgroundColor: [0, 0, 0, 1],
       isColorbarVisible: true,
       isDragDropEnabled: false,
     })
     state.nv.opts.isDragDropEnabled = false
     await state.nv.attachToCanvas(els.canvas)
-    els.niivuePill.textContent = 'niivue · ready'
+    els.niivuePill.textContent = `niivue · ready (${BACKEND})`
     els.niivuePill.classList.add('green')
   } catch (err) {
     console.warn('niivue failed to load:', err)

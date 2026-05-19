@@ -40,6 +40,7 @@ export class VolumeRenderer extends NVRenderer {
   maxTextureDimension3D: number
   depthFormat: GPUTextureFormat
   private _device: GPUDevice | null
+  private _matcapUrl: string | null = null
   private _bindTexVol: GPUTexture | null = null
   private _bindTexGrad: GPUTexture | null = null
   private _bindTexMatcap: GPUTexture | null = null
@@ -48,6 +49,26 @@ export class VolumeRenderer extends NVRenderer {
   private _bindTexDraw: GPUTexture | null = null
   private _bindTexLut: GPUTexture | null = null
   private overlayOrientCache: orient.OrientTextureCache | null = null
+  // Per-volume GPU texture cache. Populated by updateVolume; consumed by
+  // bindCachedVolume to switch the active volume/gradient texture per tile
+  // when rendering multi-instance global3d scenes.
+  private _texCache: Map<
+    string,
+    { volumeTexture: GPUTexture; volumeGradientTexture: GPUTexture }
+  > = new Map()
+  // Per-volume cached bind groups so multi-volume tile loops can swap
+  // textures without rebuilding the bind group every frame. Keyed by the
+  // same cacheKey as _texCache. Invalidated whenever any non-volume
+  // texture (overlay/paqd/draw/matcap/lut) changes.
+  private _bindGroupCache: Map<string, GPUBindGroup> = new Map()
+  private _activeVolKey: string | null = null
+  private _bindGroupSharedKey: {
+    matcap: GPUTexture | null
+    overlay: GPUTexture | null
+    paqd: GPUTexture | null
+    draw: GPUTexture | null
+    lut: GPUTexture | null
+  } = { matcap: null, overlay: null, paqd: null, draw: null, lut: null }
 
   constructor() {
     super()
@@ -262,24 +283,75 @@ export class VolumeRenderer extends NVRenderer {
       )
     }
 
-    // Destroy old textures
-    if (this.volumeTexture) this.volumeTexture.destroy()
-    if (this.volumeGradientTexture) this.volumeGradientTexture.destroy()
-    if (this.matcapTexture) this.matcapTexture.destroy()
-    // Create new textures
-    this.matcapTexture = await wgpu.bitmap2textureOrFallback(device, matcap)
-    const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
-    this.volumeTexture = await orient.volume2Texture(
-      device,
-      vol,
-      vol,
-      mtx as Float32Array,
-      0,
-    )
-    this.volumeGradientTexture = await wgpu.volume2TextureGradientRGBA(
-      device,
-      this.volumeTexture,
-    )
+    const cacheKey = vol.url || vol.name
+    let entry = cacheKey ? this._texCache.get(cacheKey) : undefined
+    if (!entry) {
+      const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
+      const volumeTexture = await orient.volume2Texture(
+        device,
+        vol,
+        vol,
+        mtx as Float32Array,
+        0,
+      )
+      const volumeGradientTexture = await wgpu.volume2TextureGradientRGBA(
+        device,
+        volumeTexture,
+      )
+      entry = { volumeTexture, volumeGradientTexture }
+      if (cacheKey) this._texCache.set(cacheKey, entry)
+    }
+    this.volumeTexture = entry.volumeTexture
+    this.volumeGradientTexture = entry.volumeGradientTexture
+    this._activeVolKey = cacheKey || null
+
+    // Matcap is independent of per-volume cache. Reload when the URL
+    // changes so that opts.matcap updates take effect — otherwise the
+    // first loaded matcap sticks for the lifetime of the renderer.
+    if (this.matcapTexture == null || this._matcapUrl !== matcap) {
+      const newTex = await wgpu.bitmap2textureOrFallback(device, matcap)
+      if (this.matcapTexture) this.matcapTexture.destroy()
+      this.matcapTexture = newTex
+      this._matcapUrl = matcap
+      this._invalidateBindGroupCache()
+    }
+  }
+
+  /**
+   * Switch the active volume/gradient textures to the cache entry for
+   * `cacheKey` (a volume url or name). Used per-tile by global3d rendering
+   * to draw distinct volumes without re-uploading their data each frame.
+   * Returns true if the cache hit.
+   */
+  bindCachedVolume(cacheKey: string | undefined): boolean {
+    if (!cacheKey) return false
+    const entry = this._texCache.get(cacheKey)
+    if (!entry) return false
+    this.volumeTexture = entry.volumeTexture
+    this.volumeGradientTexture = entry.volumeGradientTexture
+    this._activeVolKey = cacheKey
+    const cached = this._bindGroupCache.get(cacheKey)
+    if (cached) {
+      this.bindGroup = cached
+      this._bindTexVol = entry.volumeTexture
+      this._bindTexGrad = entry.volumeGradientTexture
+    }
+    return true
+  }
+
+  /** Release any cached volume textures whose key is not in `keepKeys`. */
+  pruneVolumeCache(keepKeys: Set<string>): void {
+    for (const [key, entry] of this._texCache) {
+      if (keepKeys.has(key)) continue
+      entry.volumeTexture.destroy()
+      entry.volumeGradientTexture.destroy()
+      this._texCache.delete(key)
+      this._bindGroupCache.delete(key)
+    }
+  }
+
+  private _invalidateBindGroupCache(): void {
+    this._bindGroupCache.clear()
   }
 
   async updateOverlays(
@@ -437,6 +509,7 @@ export class VolumeRenderer extends NVRenderer {
     this.destroyNonCachedOverlayTexture()
     orient.destroyOrientTextureCache(this.overlayOrientCache)
     this.overlayOrientCache = null
+    this._invalidateBindGroupCache()
   }
 
   clearPaqd(): void {
@@ -448,6 +521,7 @@ export class VolumeRenderer extends NVRenderer {
       this.paqdLutTexture.destroy()
       this.paqdLutTexture = null
     }
+    this._invalidateBindGroupCache()
   }
 
   updateBindGroup(device: GPUDevice): void {
@@ -472,6 +546,27 @@ export class VolumeRenderer extends NVRenderer {
     const paqdTex = this.paqdTexture || this.placeholderOverlay
     const drawTex = this.drawingTexture || this.placeholderOverlay
     const paqdLutTex = this.paqdLutTexture || this.placeholderLut2D
+
+    // If any shared (non-volume) texture changed since the cache was
+    // populated, drop the per-volume bind group cache — its entries
+    // reference stale views.
+    const shared = this._bindGroupSharedKey
+    if (
+      shared.matcap !== this.matcapTexture ||
+      shared.overlay !== overlayTex ||
+      shared.paqd !== paqdTex ||
+      shared.draw !== drawTex ||
+      shared.lut !== paqdLutTex
+    ) {
+      this._invalidateBindGroupCache()
+      this._bindGroupSharedKey = {
+        matcap: this.matcapTexture,
+        overlay: overlayTex,
+        paqd: paqdTex,
+        draw: drawTex,
+        lut: paqdLutTex,
+      }
+    }
 
     if (
       this.bindGroup &&
@@ -511,6 +606,9 @@ export class VolumeRenderer extends NVRenderer {
     this._bindTexPaqd = paqdTex
     this._bindTexDraw = drawTex
     this._bindTexLut = paqdLutTex
+    if (this._activeVolKey) {
+      this._bindGroupCache.set(this._activeVolKey, this.bindGroup)
+    }
   }
 
   updateDrawingTexture(
@@ -526,6 +624,7 @@ export class VolumeRenderer extends NVRenderer {
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         dimension: '3d',
       })
+      this._invalidateBindGroupCache()
     }
     device.queue.writeTexture(
       { texture: this.drawingTexture },
@@ -539,6 +638,7 @@ export class VolumeRenderer extends NVRenderer {
     if (this.drawingTexture) {
       this.drawingTexture.destroy()
       this.drawingTexture = null
+      this._invalidateBindGroupCache()
     }
   }
 
@@ -608,6 +708,8 @@ export class VolumeRenderer extends NVRenderer {
       const newTex = await wgpu.bitmap2textureOrFallback(device, matcapUrl)
       if (this.matcapTexture) this.matcapTexture.destroy()
       this.matcapTexture = newTex
+      this._matcapUrl = matcapUrl
+      this._invalidateBindGroupCache()
       // Wait for GPU to finish upload
       await device.queue.onSubmittedWorkDone()
     } catch (e) {
@@ -628,15 +730,19 @@ export class VolumeRenderer extends NVRenderer {
     if (this.matcapTexture) {
       this.matcapTexture.destroy()
       this.matcapTexture = null
+      this._matcapUrl = null
     }
-    if (this.volumeTexture) {
-      this.volumeTexture.destroy()
-      this.volumeTexture = null
+    // Destroy all cached per-volume textures (covers the currently active
+    // volumeTexture/volumeGradientTexture, which alias an entry).
+    for (const entry of this._texCache.values()) {
+      entry.volumeTexture.destroy()
+      entry.volumeGradientTexture.destroy()
     }
-    if (this.volumeGradientTexture) {
-      this.volumeGradientTexture.destroy()
-      this.volumeGradientTexture = null
-    }
+    this._texCache.clear()
+    this._bindGroupCache.clear()
+    this._activeVolKey = null
+    this.volumeTexture = null
+    this.volumeGradientTexture = null
     this.clearOverlay()
     if (this.paqdTexture) {
       this.paqdTexture.destroy()

@@ -561,13 +561,33 @@ export default class NVView {
       this.model.scene.backgroundColor,
     )
     if (vols.length > 0) {
-      await this.volumeRenderer.updateVolume(
-        device,
-        vols[0],
-        this.model.volume.matcap,
-      )
+      if (this.options.instances) {
+        // Multi-instance mode (global3d): upload every volume's GPU texture
+        // so the render loop can switch the active texture per tile via
+        // bindCachedVolume. Without this, all tiles would share volumes[0]'s
+        // texture and visibly "jump" as the model's first volume changes.
+        for (const vol of vols) {
+          await this.volumeRenderer.updateVolume(
+            device,
+            vol,
+            this.model.volume.matcap,
+          )
+        }
+        const keepKeys = new Set<string>()
+        for (const vol of vols) {
+          const key = vol.url || vol.name
+          if (key) keepKeys.add(key)
+        }
+        this.volumeRenderer.pruneVolumeCache(keepKeys)
+      } else {
+        await this.volumeRenderer.updateVolume(
+          device,
+          vols[0],
+          this.model.volume.matcap,
+        )
+      }
     }
-    if (vols.length > 1) {
+    if (vols.length > 1 && !this.options.instances) {
       await this.volumeRenderer.updateOverlays(
         device,
         vols[0],
@@ -807,6 +827,10 @@ export default class NVView {
     for (let i = 0; i < screenSlices.length; i++) {
       const tile = screenSlices[i]
       const ltwh = tile.leftTopWidthHeight as number[]
+      const tileVol =
+        volumes.find(
+          (v) => v.name === tile.volumeId || v.url === tile.volumeId,
+        ) ?? volumes[0]
       let [mvpMatrix, , normalMatrix, rayDir] = NVTransforms.calculateMvpMatrix(
         ltwh,
         md.scene.azimuth,
@@ -816,7 +840,26 @@ export default class NVView {
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
       )
-      if (tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER) {
+      if (tile.space === 'global3d' && tileVol) {
+        const mvp3d = NVTransforms.calculateGlobalVolumeMvp(
+          ltwh,
+          tile.globalCamera,
+          tile.position ?? [0, 0, 0],
+          tile.scale ?? 1,
+          tile.orientation,
+          tileVol.extentsMin,
+          tileVol.extentsMax,
+          tileVol.obliqueRAS,
+        )
+        mvpMatrix = mvp3d[0]
+        normalMatrix = mvp3d[2]
+        rayDir = mvp3d[3]
+        tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
+      }
+      if (
+        tile.space !== 'global3d' &&
+        tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+      ) {
         const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
         const pan = NVSliceLayout.slicePanUV(md.scene.pan2Dxyzmm, tile.axCorSag)
         const mvp2d = NVTransforms.calculateMvpMatrix2D(
@@ -889,8 +932,21 @@ export default class NVView {
       // each tile is drawn to a unique screen region
       pass.setViewport(ltwh[0], ltwh[1], ltwh[2], ltwh[3], 0.0, 1.0)
       if (this.volumeRenderer.hasVolume() && volumes.length > 0) {
-        const matRAS = volumes[0].matRAS
-        const volScale = volumes[0].volScale
+        // For global3d tiles, render the per-tile resolved volume (tileVol)
+        // rather than always volumes[0]. This requires rebinding the active
+        // GPU texture from the per-volume cache populated in updateBindGroups.
+        const vol = tile.space === 'global3d' && tileVol ? tileVol : volumes[0]
+        if (!vol) continue
+        if (tile.space === 'global3d') {
+          this.volumeRenderer.bindCachedVolume(vol.url || vol.name)
+        } else if (volumes[0]) {
+          this.volumeRenderer.bindCachedVolume(
+            volumes[0].url || volumes[0].name,
+          )
+        }
+        this.volumeRenderer.updateBindGroup(device)
+        const matRAS = vol.matRAS
+        const volScale = vol.volScale
         if (!matRAS || !volScale) {
           continue
         }
@@ -903,7 +959,7 @@ export default class NVView {
           this.sliceRenderer.draw(
             device,
             pass,
-            volumes[0],
+            vol,
             {
               overlayAlphaShader: md.volume.alphaShader,
               overlayOutlineWidth: md.volume.outlineWidth,
@@ -942,10 +998,11 @@ export default class NVView {
           )
         }
       }
-      // Layer 2a: Crosshairs (skip on all mosaic tiles)
+      // Layer 2a: Crosshairs (skip on all mosaic tiles and global3d tiles)
       const isMosaicTile =
         tile.renderOrientation !== undefined || tile.sliceMM !== undefined
       if (
+        tile.space !== 'global3d' &&
         md.ui.is3DCrosshairVisible &&
         !isMosaicTile &&
         this.crosshairRenderer.isReady &&
@@ -964,10 +1021,11 @@ export default class NVView {
           )
         }
       }
-      // Layer 2b: Meshes (also limited to same tile)
-      const meshes = (md.getMeshes() as NVMesh[]).filter(
-        (m) => (m.opacity ?? 1.0) > 0.0,
-      )
+      // Layer 2b: Meshes (also limited to same tile; skipped on global3d)
+      const meshes =
+        tile.space === 'global3d'
+          ? []
+          : (md.getMeshes() as NVMesh[]).filter((m) => (m.opacity ?? 1.0) > 0.0)
       // Compute crosscut uniform for this tile (crosshair mm with axis masking for 2D)
       const ccMM = crosscutMM(md, tile.axCorSag)
       // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
@@ -1037,8 +1095,9 @@ export default class NVView {
       const xrayAlpha = md.mesh.xRay
       const xrayTile = i + screenSlices.length
       if (xrayAlpha > 0 && this.meshXRayPipelines) {
-        // Re-draw crosshairs with xray (skip on all mosaic tiles)
+        // Re-draw crosshairs with xray (skip on all mosaic tiles and global3d)
         if (
+          tile.space !== 'global3d' &&
           md.ui.is3DCrosshairVisible &&
           !isMosaicTile &&
           this.crosshairRenderer.isReady
@@ -1087,8 +1146,9 @@ export default class NVView {
           }
         }
       }
-      // Layer 2b-ann: 3D annotations (RENDER tiles only)
+      // Layer 2b-ann: 3D annotations (RENDER tiles only, skipped on global3d)
       if (
+        tile.space !== 'global3d' &&
         tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
         ann3DData &&
         this.polygon3DRenderer.isReady
@@ -1108,8 +1168,9 @@ export default class NVView {
           0.5,
         )
       }
-      // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders)
+      // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders and global3d)
       if (
+        tile.space !== 'global3d' &&
         tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
         tile.renderOrientation === undefined &&
         md.ui.isOrientCubeVisible &&

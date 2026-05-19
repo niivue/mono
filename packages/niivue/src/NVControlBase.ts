@@ -255,22 +255,13 @@ export default class NiiVueGPU extends EventTarget {
     this.activeClipPlaneIndex = 0
     this.currentClipPlaneIndex = 0
     const backend = options.backend ?? 'webgpu'
-    if (backend === 'webgpu' && (options.instances || options.globalCamera)) {
-      // Multi-instance/global3d tile routing currently lives in NVViewGL only
-      // (per-tile `bindCachedVolume` + `calculateGlobalVolumeMvp`). On WebGPU
-      // these fields would be silently ignored, so drop them and surface a
-      // warning rather than render a misleading scene.
-      log.warn(
-        'opts.instances / opts.globalCamera are WebGL2-only — they will be ignored on the WebGPU backend until the WebGPU view gains per-tile volumeId/global3d routing',
-      )
-    }
     this.opts = {
       backend,
       isAntiAlias: options.isAntiAlias ?? true,
       isDragDropEnabled: options.isDragDropEnabled ?? true,
       isInteractionEnabled: options.isInteractionEnabled ?? true,
-      instances: backend === 'webgpu' ? undefined : options.instances,
-      globalCamera: backend === 'webgpu' ? undefined : options.globalCamera,
+      instances: options.instances,
+      globalCamera: options.globalCamera,
       forceDevicePixelRatio: options.devicePixelRatio ?? -1,
       logLevel: options.logLevel ?? 'info',
       thumbnail: options.thumbnail,
@@ -2331,22 +2322,10 @@ export default class NiiVueGPU extends EventTarget {
 
   /**
    * Replace the multi-instance descriptor list (canvas tiling + optional global3d
-   * volumes). Triggers a tile rebuild and redraw.
-   *
-   * Currently WebGL2-only. The WebGPU backend (`opts.backend === 'webgpu'`)
-   * does not yet route per-tile `volumeId` / `space === 'global3d'` /
-   * `globalCamera` through its render loop, so multi-instance scenes with
-   * per-tile volumes or shared 3D cameras would silently render the wrong
-   * content. The call is rejected (with a warning) on WebGPU until that
-   * backend gains the matching per-tile logic.
+   * volumes). Triggers a tile rebuild and redraw. Supported on both WebGL2 and
+   * WebGPU backends.
    */
   setInstances(instances: NVInstance[]): void {
-    if (this.opts.backend === 'webgpu') {
-      log.warn(
-        'setInstances is WebGL2-only — the WebGPU backend does not yet honour per-tile volumeId/global3d/globalCamera; switch the backend to use this API',
-      )
-      return
-    }
     this.opts.instances = instances
     if (this.view) {
       this.updateTilesFromInstances()
@@ -2356,15 +2335,9 @@ export default class NiiVueGPU extends EventTarget {
 
   /**
    * Update the shared 3D camera used by `space === 'global3d'` instances.
-   * WebGL2-only — see {@link setInstances} for the backend limitation.
+   * Supported on both WebGL2 and WebGPU backends.
    */
   setGlobalCamera(camera: NVGlobalCamera): void {
-    if (this.opts.backend === 'webgpu') {
-      log.warn(
-        'setGlobalCamera is WebGL2-only — the WebGPU backend does not yet honour the shared global3d camera',
-      )
-      return
-    }
     this.opts.globalCamera = camera
     if (this.view && this.opts.instances) {
       this.updateTilesFromInstances()

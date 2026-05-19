@@ -6,6 +6,18 @@
 // `/volumes/{id}/raw?level=N` so the wire path matches what a real client
 // would use.
 //
+// Load strategy (lazy / progressive):
+//
+//   - First paint uses the coarsest available level so even multi-GB
+//     volumes show something within a few hundred ms. L0 of a typical
+//     fibsem volume is ~1.9 GB; L3 is ~3.7 MB.
+//   - After the coarse render lands, a background upgrade fetches a
+//     "comfortable" mid level (closest to 1 voxel per screen pixel at
+//     the current zoom). The upgrade is cancelled if the user touches
+//     level/bbox or scrolls, so user intent always wins.
+//   - Colormap and window edits update the GPU in place via setVolume()
+//     and do not refetch — only level/bbox changes hit the wire.
+//
 // Two automatic behaviours showcase the server's strengths:
 //
 //   - Auto-LOD: scrolling to zoom in/out triggers a level swap so the
@@ -89,6 +101,13 @@ let reloading = false
 // Surfaced in the HUD so demos can show "we just swapped L2 → L1 because
 // you zoomed in". Cleared on next reload().
 let lastLodEvent: { from: number; to: number; reason: string } | null = null
+// Scheduled background refinement from the coarsest level to a "comfortable"
+// mid level after the first paint. Cancelled if the user interacts before
+// it fires (manual level change, scroll, bbox edit).
+let upgradeTimer: ReturnType<typeof setTimeout> | null = null
+// Token bumped on every user-driven reload so an in-flight progressive
+// upgrade can detect "I'm stale, drop me".
+let reloadEpoch = 0
 
 main().catch((err: unknown) => {
   console.error(err)
@@ -113,10 +132,10 @@ async function main(): Promise<void> {
     void reload()
   })
   els.colormap.addEventListener('change', () => {
-    void reload()
+    void applyDisplay()
   })
   els.window.addEventListener('change', () => {
-    void reload()
+    void applyDisplay()
   })
   els.bbox.addEventListener('change', () => {
     void reload()
@@ -181,7 +200,11 @@ function populateLevelSelect(v: VolumeApiEntry): void {
     opt.textContent = `L${l.level} · ${l.shape.join('×')}`
     els.level.appendChild(opt)
   }
-  els.level.value = '0'
+  // Lazy load: start at the coarsest level so even multi-GB volumes paint
+  // immediately. A background upgrade in reload() refines to a comfortable
+  // level once the first frame is on-screen.
+  const coarsest = lvls[lvls.length - 1]?.level ?? 0
+  els.level.value = String(coarsest)
 }
 
 function currentVolume(): VolumeApiEntry | null {
@@ -228,6 +251,11 @@ async function ensureNiivue(): Promise<void> {
 }
 
 async function reload(): Promise<void> {
+  // User-driven reload — invalidate any pending background upgrade and
+  // bump the epoch so an in-flight upgrade discards its result.
+  cancelUpgrade()
+  reloadEpoch += 1
+  const myEpoch = reloadEpoch
   const v = currentVolume()
   if (!v || !nv) return
   const level = Number(els.level.value)
@@ -242,6 +270,10 @@ async function reload(): Promise<void> {
     reloading = false
     const msg = err instanceof Error ? err.message : String(err)
     showFallback(msg)
+    return
+  }
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
     return
   }
   lastStats = stats
@@ -263,6 +295,10 @@ async function reload(): Promise<void> {
   }
   try {
     await nv.loadVolumes([opts])
+    if (myEpoch !== reloadEpoch) {
+      reloading = false
+      return
+    }
     nv.sliceType = 4
     showCanvas()
   } catch (err) {
@@ -273,6 +309,67 @@ async function reload(): Promise<void> {
   }
   renderHud(v, level)
   reloading = false
+  scheduleProgressiveUpgrade(v, level)
+}
+
+// Apply colormap + window in place. No fetch, no re-decode — niivue updates
+// the GPU textures directly. Called from the colormap/window UI changes so
+// fiddling with display doesn't pull bytes off the wire.
+async function applyDisplay(): Promise<void> {
+  if (!nv || nv.volumes.length === 0) return
+  const colormap = els.colormap.value || 'gray'
+  const win = parseWindow(els.window.value)
+  const opts: {
+    colormap: string
+    calMin?: number
+    calMax?: number
+  } = { colormap }
+  if (win) {
+    opts.calMin = win.min
+    opts.calMax = win.max
+  }
+  await nv.setVolume(0, opts)
+}
+
+// After the coarse first paint, fetch a "comfortable" level in the
+// background so the user sees a sharper image without paying for L0 up
+// front. The choice is the same heuristic auto-LOD uses at scale=1, so
+// the result roughly matches one voxel per screen pixel at native zoom.
+function scheduleProgressiveUpgrade(
+  v: VolumeApiEntry,
+  loadedLevel: number,
+): void {
+  cancelUpgrade()
+  const levels = v.levels
+  if (!levels || levels.length < 2) return
+  if (parseBbox(els.bbox.value)) return // explicit subvolume — user picked the level
+  const canvasPx = Math.max(
+    els.canvas.clientWidth,
+    els.canvas.clientHeight,
+    256,
+  )
+  const target = chooseLevel(1, levels, canvasPx)
+  if (target >= loadedLevel) return // we're already at or finer than comfort
+  upgradeTimer = setTimeout(() => {
+    upgradeTimer = null
+    if (reloading) return
+    if (Number(els.level.value) !== loadedLevel) return
+    if (parseBbox(els.bbox.value)) return
+    lastLodEvent = {
+      from: loadedLevel,
+      to: target,
+      reason: 'progressive upgrade',
+    }
+    els.level.value = String(target)
+    void reload()
+  }, 280)
+}
+
+function cancelUpgrade(): void {
+  if (upgradeTimer) {
+    clearTimeout(upgradeTimer)
+    upgradeTimer = null
+  }
 }
 
 // Picks the pyramid level whose voxel-per-screen-pixel ratio is closest
@@ -305,6 +402,9 @@ function chooseLevel(
 // during the wheel event, so by the time the timer fires `scaleMultiplier`
 // (3D mode) or `pan2Dxyzmm[3]` (2D mode) reflects the post-zoom value.
 function scheduleAutoLod(): void {
+  // User scrolled — kill any pending progressive upgrade so it doesn't fire
+  // a redundant fetch right before auto-LOD picks the real target.
+  cancelUpgrade()
   if (!els.autoLod.checked) return
   if (!nv) return
   if (parseBbox(els.bbox.value)) return // Don't override an explicit subvolume

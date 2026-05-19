@@ -17,6 +17,7 @@ struct Params {
     clipPlaneColor: vec4f,
     clipPlanes: array<vec4f, 6>,
     paqdUniforms: vec4f,
+    earlyTermination: f32,
 }
 
 struct VertexInput {

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OSD NIfTI Desktop</title>
+    <link rel="stylesheet" href="/osd-volume-desktop.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <a class="home-link" href="/" aria-label="Back to demo index">IIIF</a>
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div>
+            <h1>OSD NIfTI Desktop</h1>
+            <p id="desktop-subtitle">Loading desktop</p>
+          </div>
+        </div>
+        <div class="toolbar" aria-label="Desktop controls">
+          <button id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">-</button>
+          <button id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+          <button id="fit-world" type="button" title="Fit world" aria-label="Fit world">[]</button>
+          <button id="zoom-focus" type="button" title="Zoom to selected" aria-label="Zoom to selected">1:1</button>
+          <select id="colormap" title="Volume colormap" aria-label="Volume colormap">
+            <option>Gray</option>
+            <option>viridis</option>
+            <option>plasma</option>
+            <option>hot</option>
+            <option>cool</option>
+            <option>turbo</option>
+          </select>
+        </div>
+      </header>
+
+      <aside class="left-rail">
+        <div class="rail-title">
+          <span>Volumes</span>
+          <span id="volume-count">0</span>
+        </div>
+        <input id="volume-filter" type="search" placeholder="Filter" autocomplete="off" />
+        <div id="volume-list" class="volume-list"></div>
+      </aside>
+
+      <main class="stage">
+        <canvas id="desktop-canvas"></canvas>
+        <div class="hud">
+          <span id="hud-zoom">zoom 1.00x</span>
+          <span id="hud-visible">0 visible</span>
+          <span id="hud-queue">0 queued</span>
+          <span id="hud-cache">0 cached</span>
+        </div>
+        <div class="minimap" aria-hidden="true">
+          <div id="minimap-viewport"></div>
+        </div>
+      </main>
+
+      <aside class="inspector">
+        <div class="inspector-header">
+          <span>Focus</span>
+          <span id="focus-lod">no selection</span>
+        </div>
+        <h2 id="focus-title">Select a volume</h2>
+        <dl class="meta-grid">
+          <div>
+            <dt>Shape</dt>
+            <dd id="focus-shape">-</dd>
+          </div>
+          <div>
+            <dt>Spacing</dt>
+            <dd id="focus-spacing">-</dd>
+          </div>
+          <div>
+            <dt>Dtype</dt>
+            <dd id="focus-dtype">-</dd>
+          </div>
+          <div>
+            <dt>LOD</dt>
+            <dd id="focus-level">-</dd>
+          </div>
+        </dl>
+        <div class="volume-pane">
+          <canvas
+            id="volume-canvas"
+            tabindex="0"
+            aria-label="Interactive NIfTI volume render"
+          ></canvas>
+          <div id="volume-fallback">Renderer idle</div>
+        </div>
+        <div class="level-strip" id="level-strip"></div>
+        <label class="axis-control">
+          <span>Preview slice</span>
+          <input id="slice-slider" type="range" min="0" max="0" value="0" />
+        </label>
+        <img id="slice-preview" alt="" />
+        <div class="resource-links">
+          <a id="manifest-link" href="/iiif/desktop/neuro/manifest" target="_blank">manifest</a>
+          <a id="raw-link" href="/api" target="_blank">raw</a>
+        </div>
+      </aside>
+    </div>
+
+    <script type="module" src="/src/osd-volume-desktop.ts"></script>
+  </body>
+</html>

@@ -21,6 +21,7 @@ export class VolumeRenderer extends NVRenderer {
   shader: Shader | null
   depthPickShaderProgram: Shader | null
   matcapTexture: WebGLTexture | null
+  private _matcapUrl: string | null
   volumeTexture: WebGLTexture | null
   volumeGradientTexture: WebGLTexture | null
   overlayTexture: WebGLTexture | null
@@ -34,6 +35,13 @@ export class VolumeRenderer extends NVRenderer {
   indexBuffer: WebGLBuffer | null
   cube: { vertices: number[]; indices: number[] }
   max3D: number
+  // Per-volume GPU texture cache. Populated by updateVolume; consumed by
+  // bindCachedVolume to switch the active volume/gradient texture per tile
+  // when rendering multi-instance global3d scenes.
+  private _texCache: Map<
+    string,
+    { volumeTexture: WebGLTexture; volumeGradientTexture: WebGLTexture }
+  >
   private overlayOrientCache: orientOverlay.OverlayTextureCache | null = null
 
   constructor() {
@@ -42,6 +50,7 @@ export class VolumeRenderer extends NVRenderer {
     this.shader = null
     this.depthPickShaderProgram = null
     this.matcapTexture = null
+    this._matcapUrl = null
     this.volumeTexture = null
     this.volumeGradientTexture = null
     this.overlayTexture = null
@@ -55,6 +64,7 @@ export class VolumeRenderer extends NVRenderer {
     this.indexBuffer = null
     this.cube = NVShapes.getCubeMesh()
     this.max3D = 0
+    this._texCache = new Map()
   }
 
   async init(gl: WebGL2RenderingContext, max3D: number): Promise<void> {
@@ -221,36 +231,66 @@ export class VolumeRenderer extends NVRenderer {
       )
     }
 
-    // Create volumeTexture using orientOverlay
-    const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
-    if (this.volumeTexture) {
-      gl.deleteTexture(this.volumeTexture)
+    const cacheKey = vol.url || vol.name
+    let entry = cacheKey ? this._texCache.get(cacheKey) : undefined
+    if (!entry) {
+      const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
+      const volumeTexture = await orientOverlay.overlay2Texture(
+        gl,
+        vol,
+        vol,
+        mtx as Float32Array,
+        0,
+      )
+      gl.bindTexture(gl.TEXTURE_3D, null)
+      const dims = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
+      const volumeGradientTexture = gradient.volume2TextureGradientRGBA(
+        gl,
+        volumeTexture,
+        dims as [number, number, number],
+      )
+      entry = { volumeTexture, volumeGradientTexture }
+      if (cacheKey) this._texCache.set(cacheKey, entry)
     }
-    this.volumeTexture = await orientOverlay.overlay2Texture(
-      gl,
-      vol,
-      vol,
-      mtx as Float32Array,
-      0,
-    )
-    gl.bindTexture(gl.TEXTURE_3D, null)
+    this.volumeTexture = entry.volumeTexture
+    this.volumeGradientTexture = entry.volumeGradientTexture
 
-    // Load matcap texture
-    if (this.matcapTexture) {
-      gl.deleteTexture(this.matcapTexture)
+    // Matcap is independent of per-volume cache. Reload when the URL
+    // changes so that opts.matcap updates take effect — otherwise the
+    // first loaded matcap sticks for the lifetime of the renderer.
+    if (this.matcapTexture == null || this._matcapUrl !== matcap) {
+      const newTex = await this._loadTexture2DOrFallback(gl, matcap)
+      if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
+      this.matcapTexture = newTex
+      this._matcapUrl = matcap
     }
-    this.matcapTexture = await this._loadTexture2DOrFallback(gl, matcap)
+  }
 
-    // Create gradient texture from volume
-    const dims = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
-    if (this.volumeGradientTexture) {
-      gl.deleteTexture(this.volumeGradientTexture)
+  /**
+   * Switch the active volume/gradient textures to the cache entry for
+   * `cacheKey` (a volume url or name). Used per-tile by global3d rendering
+   * to draw distinct volumes without re-uploading their data each frame.
+   * Returns true if the cache hit and textures were rebound.
+   */
+  bindCachedVolume(cacheKey: string | undefined): boolean {
+    if (!cacheKey) return false
+    const entry = this._texCache.get(cacheKey)
+    if (!entry) return false
+    this.volumeTexture = entry.volumeTexture
+    this.volumeGradientTexture = entry.volumeGradientTexture
+    return true
+  }
+
+  /** Release any cached volume textures whose key is not in `keepKeys`. */
+  pruneVolumeCache(keepKeys: Set<string>): void {
+    const gl = this._gl
+    if (!gl) return
+    for (const [key, entry] of this._texCache) {
+      if (keepKeys.has(key)) continue
+      gl.deleteTexture(entry.volumeTexture)
+      gl.deleteTexture(entry.volumeGradientTexture)
+      this._texCache.delete(key)
     }
-    this.volumeGradientTexture = gradient.volume2TextureGradientRGBA(
-      gl,
-      this.volumeTexture,
-      dims as [number, number, number],
-    )
   }
 
   async updateOverlays(
@@ -474,6 +514,7 @@ export class VolumeRenderer extends NVRenderer {
     clipPlanes: number[],
     isClipCutaway = false,
     paqdUniforms: readonly number[] = [0, 0, 0, 0],
+    earlyTermination = 0.95,
   ): void {
     if (!this.isReady || !this.shader || !this.cubeVAO || !this.indexBuffer)
       return
@@ -599,6 +640,8 @@ export class VolumeRenderer extends NVRenderer {
     if (shader.uniforms.numPaqd) gl.uniform1f(shader.uniforms.numPaqd, 0.0)
     if (shader.uniforms.paqdUniforms)
       gl.uniform4fv(shader.uniforms.paqdUniforms, paqdUniforms as number[])
+    if (shader.uniforms.earlyTermination)
+      gl.uniform1f(shader.uniforms.earlyTermination, earlyTermination)
 
     // 4. Bind Geometry
     gl.bindVertexArray(this.cubeVAO)
@@ -684,6 +727,7 @@ export class VolumeRenderer extends NVRenderer {
       const newTex = await this._loadTexture2DOrFallback(gl, matcapUrl)
       if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
       this.matcapTexture = newTex
+      this._matcapUrl = matcapUrl
     } catch (e) {
       log.warn('Matcap load failed', e)
     }
@@ -764,10 +808,18 @@ export class VolumeRenderer extends NVRenderer {
     this.vertexBuffer = null
     this.indexBuffer = null
 
-    // Delete textures
+    // Delete textures (cache owns volume + gradient textures)
     if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
-    if (this.volumeTexture) gl.deleteTexture(this.volumeTexture)
-    if (this.volumeGradientTexture) gl.deleteTexture(this.volumeGradientTexture)
+    // _texCache owns the volume + gradient textures, so freeing the cache
+    // covers the legacy this.volumeTexture / this.volumeGradientTexture
+    // handles too (those are just pointers into the cache entries).
+    for (const entry of this._texCache.values()) {
+      gl.deleteTexture(entry.volumeTexture)
+      gl.deleteTexture(entry.volumeGradientTexture)
+    }
+    this._texCache.clear()
+    this.volumeTexture = null
+    this.volumeGradientTexture = null
     this.clearOverlay(gl)
     if (this.paqdTexture) gl.deleteTexture(this.paqdTexture)
     if (this.drawingTexture) gl.deleteTexture(this.drawingTexture)

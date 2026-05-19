@@ -231,7 +231,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	let ran = fract(sin(in.position.x * 12.9898 + in.position.y * 78.233) * 43758.5453);
 	let stepSizeFast = stepSize * 1.9;
 	let deltaDirFast = vec4f(dir * stepSizeFast, stepSizeFast);
-	let earlyTermination = 0.95;
+	let earlyTermination = params.earlyTermination;
 	// --- Background passes ---
 	var colAcc = vec4f(0.0);
 	var firstHit = vec4f(2.0 * origLen);

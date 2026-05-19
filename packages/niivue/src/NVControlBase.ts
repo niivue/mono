@@ -6,6 +6,12 @@ import { cortex } from '@/assets/matcaps'
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { removeInteractionListeners } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
+import {
+  computeBoundsPixelRect,
+  getCanvasInstances,
+  getCanvasViewport,
+  setCanvasViewport,
+} from '@/control/viewBoth'
 import type {
   ReinitializeOptions,
   ViewLifecycle,
@@ -38,6 +44,7 @@ import type {
   AnnotationStyle,
   AnnotationTool,
   BackendType,
+  CanvasViewport,
   ColorMap,
   CustomLayoutTile,
   ImageFromUrlOptions,
@@ -49,7 +56,9 @@ import type {
   NVBounds,
   NVConnectomeOptions,
   NVFontData,
+  NVGlobalCamera,
   NVImage,
+  NVInstance,
   NVMeshLayer,
   NVMesh as NVMeshType,
   NVTractOptions,
@@ -115,6 +124,9 @@ type InfrastructureOpts = {
   backend?: BackendType
   isAntiAlias?: boolean
   isDragDropEnabled?: boolean
+  isInteractionEnabled?: boolean
+  instances?: NVInstance[]
+  globalCamera?: NVGlobalCamera
   forceDevicePixelRatio?: number
   logLevel?: LogLevel
   thumbnail?: string
@@ -246,10 +258,23 @@ export default class NiiVueGPU extends EventTarget {
     log.setLogLevel(options.logLevel ?? 'info')
     this.activeClipPlaneIndex = 0
     this.currentClipPlaneIndex = 0
+    const backend = options.backend ?? 'webgpu'
+    if (backend === 'webgpu' && (options.instances || options.globalCamera)) {
+      // Multi-instance/global3d tile routing currently lives in NVViewGL only
+      // (per-tile `bindCachedVolume` + `calculateGlobalVolumeMvp`). On WebGPU
+      // these fields would be silently ignored, so drop them and surface a
+      // warning rather than render a misleading scene.
+      log.warn(
+        'opts.instances / opts.globalCamera are WebGL2-only — they will be ignored on the WebGPU backend until the WebGPU view gains per-tile volumeId/global3d routing',
+      )
+    }
     this.opts = {
-      backend: options.backend ?? 'webgpu',
+      backend,
       isAntiAlias: options.isAntiAlias ?? true,
       isDragDropEnabled: options.isDragDropEnabled ?? true,
+      isInteractionEnabled: options.isInteractionEnabled ?? true,
+      instances: backend === 'webgpu' ? undefined : options.instances,
+      globalCamera: backend === 'webgpu' ? undefined : options.globalCamera,
       forceDevicePixelRatio: options.devicePixelRatio ?? -1,
       logLevel: options.logLevel ?? 'info',
       thumbnail: options.thumbnail,
@@ -832,6 +857,15 @@ export default class NiiVueGPU extends EventTarget {
   set volumeIllumination(v: number) {
     this.model.volume.illumination = v
     this.emit('change', { property: 'volumeIllumination', value: v })
+    this.drawScene()
+  }
+
+  get volumeTransmittanceCutoff(): number {
+    return this.model.volume.transmittanceCutoff
+  }
+  set volumeTransmittanceCutoff(v: number) {
+    this.model.volume.transmittanceCutoff = v
+    this.emit('change', { property: 'volumeTransmittanceCutoff', value: v })
     this.drawScene()
   }
 
@@ -1519,11 +1553,15 @@ export default class NiiVueGPU extends EventTarget {
       this._deferredVolumes = volumes
       return this
     }
-    await this.removeAllVolumes()
     // Fetch all volumes in parallel, then add in original order
     const loaded = await Promise.all(
       volumes.map((v) => NVModel.prepareVolume(v)),
     )
+    const previous = this.model.getVolumes()
+    for (let i = previous.length - 1; i >= 0; i--) {
+      this.emit('volumeRemoved', { volume: previous[i], index: i })
+    }
+    await this.model.removeAllVolumes()
     for (const vol of loaded) {
       await this.model.addVolume(vol)
       const vols = this.model.getVolumes()
@@ -2242,6 +2280,145 @@ export default class NiiVueGPU extends EventTarget {
     }
   }
 
+  /**
+   * Read the canvas-level viewport (virtual camera) shared with sibling instances.
+   * The viewport applies a pan + zoom over the entire canvas before each instance's
+   * `bounds` are projected to pixels. Identity is `{pan: [0, 0], zoom: 1}`.
+   */
+  getViewport(): CanvasViewport {
+    return getCanvasViewport(this.canvas)
+  }
+
+  /**
+   * Update the canvas-level viewport (virtual camera). All controllers sharing this
+   * canvas resize and redraw together. `pan` is in normalized canvas units (GL convention,
+   * y up); `zoom` is a positive scalar around the canvas centre.
+   *
+   * @param viewport - `{ pan: [x, y], zoom }`. Default identity keeps existing behavior.
+   * @example
+   *   nv1.setViewport({ pan: [0, 0], zoom: 1 })          // identity (no transform)
+   *   nv1.setViewport({ pan: [0.5, 0], zoom: 1 })        // shift world right by half a canvas
+   *   nv1.setViewport({ pan: [0, 0], zoom: 2 })          // zoom in 2x around canvas centre
+   */
+  setViewport(viewport: CanvasViewport): void {
+    if (
+      !viewport ||
+      !Array.isArray(viewport.pan) ||
+      viewport.pan.length !== 2
+    ) {
+      throw new Error('setViewport: expected { pan: [x, y], zoom }')
+    }
+    if (!Number.isFinite(viewport.zoom) || viewport.zoom <= 0) {
+      throw new Error('setViewport: zoom must be a positive finite number')
+    }
+    const canvas = this.canvas
+    if (!canvas) return
+    const changed = setCanvasViewport(canvas, viewport)
+    if (!changed) return
+    if (this.opts.instances) this.updateTilesFromInstances()
+    // Fan out to every sibling sharing this canvas: each needs to re-derive its
+    // pixel rect from (bounds × viewport) and redraw.
+    const sibs = getCanvasInstances(canvas)
+    if (sibs) {
+      for (const sib of sibs) {
+        if (sib.view) {
+          sib.view.resize()
+          sib.drawScene(false)
+        }
+      }
+    } else if (this.view) {
+      this.view.resize()
+      this.drawScene(false)
+    }
+    this._syncDirty = true
+  }
+
+  /**
+   * Replace the multi-instance descriptor list (canvas tiling + optional global3d
+   * volumes). Triggers a tile rebuild and redraw.
+   *
+   * Currently WebGL2-only. The WebGPU backend (`opts.backend === 'webgpu'`)
+   * does not yet route per-tile `volumeId` / `space === 'global3d'` /
+   * `globalCamera` through its render loop, so multi-instance scenes with
+   * per-tile volumes or shared 3D cameras would silently render the wrong
+   * content. The call is rejected (with a warning) on WebGPU until that
+   * backend gains the matching per-tile logic.
+   */
+  setInstances(instances: NVInstance[]): void {
+    if (this.opts.backend === 'webgpu') {
+      log.warn(
+        'setInstances is WebGL2-only — the WebGPU backend does not yet honour per-tile volumeId/global3d/globalCamera; switch the backend to use this API',
+      )
+      return
+    }
+    this.opts.instances = instances
+    if (this.view) {
+      this.updateTilesFromInstances()
+      this.drawScene()
+    }
+  }
+
+  /**
+   * Update the shared 3D camera used by `space === 'global3d'` instances.
+   * WebGL2-only — see {@link setInstances} for the backend limitation.
+   */
+  setGlobalCamera(camera: NVGlobalCamera): void {
+    if (this.opts.backend === 'webgpu') {
+      log.warn(
+        'setGlobalCamera is WebGL2-only — the WebGPU backend does not yet honour the shared global3d camera',
+      )
+      return
+    }
+    this.opts.globalCamera = camera
+    if (this.view && this.opts.instances) {
+      this.updateTilesFromInstances()
+      this.drawScene()
+    }
+  }
+
+  private updateTilesFromInstances(): void {
+    if (!this.view || !this.opts.instances || !this.canvas) return
+    const cw = this.canvas.width
+    const ch = this.canvas.height
+    const canvas = this.canvas
+
+    const tiles: SliceTile[] = this.opts.instances.map((inst) => {
+      if (inst.space === 'global3d' || inst.position) {
+        return {
+          leftTopWidthHeight: [0, 0, cw, ch],
+          axCorSag: 4,
+          volumeId: inst.volumeId,
+          space: 'global3d',
+          position: inst.position ?? [0, 0, 0],
+          scale: inst.scale ?? 1,
+          orientation: inst.orientation,
+          globalCamera: this.opts.globalCamera,
+        }
+      }
+      const b = inst.bounds
+      if (!b) {
+        return {
+          leftTopWidthHeight: [0, 0, cw, ch],
+          axCorSag: 4,
+          volumeId: inst.volumeId,
+        }
+      }
+      // Share the bounds→pixel projection with NVViewGPU/NVViewGL so that
+      // pan/zoom stays consistent across the renderer and the tile rects.
+      const rect = computeBoundsPixelRect(canvas, b)
+      return {
+        leftTopWidthHeight: [rect.left, rect.top, rect.width, rect.height],
+        axCorSag: 4,
+        azimuth: inst.rotation ? inst.rotation[0] : undefined,
+        elevation: inst.rotation ? inst.rotation[1] : undefined,
+        pan: inst.viewport ? inst.viewport.pan : undefined,
+        zoom: inst.viewport ? inst.viewport.zoom : undefined,
+        volumeId: inst.volumeId,
+      }
+    })
+    this.view.screenSlices = tiles
+  }
+
   drawScene(needsSync = true): void {
     if (needsSync) this._syncDirty = true
     if (!this.framePending) {
@@ -2684,6 +2861,18 @@ export default class NiiVueGPU extends EventTarget {
           changed = true
         }
       }
+      if (opts.viewport && target.canvas && target.canvas !== this.canvas) {
+        const srcVp = getCanvasViewport(this.canvas)
+        const dstVp = getCanvasViewport(target.canvas)
+        if (
+          dstVp.pan[0] !== srcVp.pan[0] ||
+          dstVp.pan[1] !== srcVp.pan[1] ||
+          dstVp.zoom !== srcVp.zoom
+        ) {
+          target.setViewport(srcVp)
+          changed = true
+        }
+      }
       if (changed) {
         target.drawScene(false)
         target.createOnLocationChange()
@@ -2870,6 +3059,7 @@ export default class NiiVueGPU extends EventTarget {
   resize(): void {
     if (!this.view) return
     this.view.resize()
+    if (this.opts.instances) this.updateTilesFromInstances()
   }
 
   destroy(): void {

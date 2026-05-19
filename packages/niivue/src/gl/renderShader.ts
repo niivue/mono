@@ -7,6 +7,7 @@ uniform mat4 normMtx;
 uniform float gradientAmount;
 uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
 uniform float numPaqd;
+uniform float earlyTermination;
 uniform vec4 clipPlaneColor;
 uniform vec4 paqdUniforms;
 uniform sampler2D matcap;
@@ -245,7 +246,7 @@ void main() {
   float ran = fract(sin(gl_FragCoord.x * 12.9898 + gl_FragCoord.y * 78.233) * 43758.5453);
   float stepSizeFast = stepSize * 1.9;
   vec4 deltaDirFast = vec4(dir * stepSizeFast, stepSizeFast);
-  const float earlyTermination = 0.95;
+  // earlyTermination is a fragment-shader uniform (declared above).
   // --- Background passes ---
   vec4 colAcc = vec4(0.0);
   vec4 firstHit = vec4(0.0, 0.0, 0.0, 2.0 * origLen);

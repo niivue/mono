@@ -57,7 +57,13 @@ interface NgffMultiscale {
 }
 
 interface NgffAttrs {
+  // OME-Zarr <= 0.4 places `multiscales` at the top of the group attrs.
   multiscales?: NgffMultiscale[]
+  // OME-Zarr 0.5+ (Zarr v3) nests all OME metadata under an `ome` key.
+  ome?: {
+    version?: string
+    multiscales?: NgffMultiscale[]
+  }
 }
 
 // Resolved view of one level's metadata, with shape and spacing already
@@ -222,7 +228,9 @@ async function resolveLevels(dirPath: string): Promise<ResolvedLevel[]> {
   const store = new FileSystemStore(dirPath)
   const grp = await zarr.open(zarr.root(store), { kind: 'group' })
   const attrs = grp.attrs as NgffAttrs
-  const ms = attrs.multiscales?.[0]
+  // OME-Zarr 0.5 moved `multiscales` under an `ome` namespace key; older
+  // stores keep it at the top level. Accept either.
+  const ms = attrs.multiscales?.[0] ?? attrs.ome?.multiscales?.[0]
   if (!ms?.datasets?.length) {
     throw new Error(`No multiscales metadata in ${dirPath}`)
   }

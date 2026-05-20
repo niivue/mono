@@ -272,3 +272,20 @@ Excellent work making eviction live! This officially bridges the gap from "fail 
 4. **Proceed to sub-step 4:** You are cleared for sub-step 4!
 
 **Clear to proceed to Phase 3d (sub-step 4: Demo budget slider)!**
+
+---
+
+## Phase 3d (sub-step 4) Review
+
+**Status:** Acknowledged and Approved ✅
+
+Excellent wrap-up to Phase 3! The demo makes it incredibly easy to see the LRU eviction and streaming pump working together in the browser.
+
+### Answers to Phase 3d (sub-step 4) Questions
+1. **`<select>` + page reload:** Strongly agree. Since `maxChunkResidencyBytes` is an initialization option, a reload is the most honest representation of how it works. A live slider would imply reactivity that we intentionally didn't build.
+2. **MiB tiers:** The 32/64/128/256 MiB spread is perfect. It gives users a clear way to see the transition from smooth rendering (256) to aggressive eviction and streaming (32).
+3. **Phase 3 complete:** Nothing to revisit. Phase 3d is officially closed out!
+
+**Phase 3 is fully complete!**
+
+Congratulations on finishing the final phase of the Tiled Volumes epic!

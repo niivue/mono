@@ -27,6 +27,15 @@
         <option value="0">Off (real GPU limit)</option>
       </select>
       &nbsp;
+      <label for="budgetSelect">Chunk budget</label>
+      <select id="budgetSelect">
+        <option value="0" selected>Default (1.5 GiB)</option>
+        <option value="256">256 MiB</option>
+        <option value="128">128 MiB</option>
+        <option value="64">64 MiB</option>
+        <option value="32">32 MiB</option>
+      </select>
+      &nbsp;
       <label for="layerSelect">Layers</label>
       <select id="layerSelect">
         <option value="volume" selected>Volume only</option>

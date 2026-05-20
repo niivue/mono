@@ -9,13 +9,20 @@ import NiiVue from '../src/index.ts'
 // limit artificially: with `128`, an ordinary ~200-voxel volume tiles into a
 // 2x2x2 grid of chunks, exercising every chunked layer (background, overlay,
 // PAQD, drawing) across both backends and both render paths.
+//
+// The `maxChunkResidencyBytes` option caps GPU memory for the resident chunk
+// set. When a chunked volume's chunks exceed it, the least-recently-visible
+// chunks are evicted and stream back in on demand as the view changes. The
+// "Chunk budget" control sets a small budget to exercise that eviction path.
 
 const params = new URLSearchParams(window.location.search)
 const max3d = parseInt(params.get('max3d') ?? '128', 10)
+const budgetMiB = parseInt(params.get('budget') ?? '0', 10)
 const backend = params.get('backend') === 'webgl2' ? 'webgl2' : 'webgpu'
 
 // Reflect URL params in the controls.
 limitSelect.value = String(Number.isFinite(max3d) ? max3d : 128)
+budgetSelect.value = String(Number.isFinite(budgetMiB) ? budgetMiB : 0)
 webgpuCheck.checked = backend === 'webgpu'
 
 const PAQD_LUT =
@@ -76,6 +83,14 @@ limitSelect.onchange = function () {
   window.location.search = params.toString()
 }
 
+budgetSelect.onchange = function () {
+  // maxChunkResidencyBytes is applied at view init, so reload the page with
+  // the new value. `0` removes the override (uses the renderer default).
+  params.set('budget', this.value)
+  params.set('backend', webgpuCheck.checked ? 'webgpu' : 'webgl2')
+  window.location.search = params.toString()
+}
+
 layerSelect.onchange = async function () {
   if (drawCheck.checked) {
     drawCheck.checked = false
@@ -113,6 +128,8 @@ const nv1 = new NiiVue({
   backgroundColor: [0.1, 0.1, 0.2, 1],
   // Debug override: 0 disables it (use the real GPU limit).
   maxTextureDimension3D: max3d > 0 ? max3d : undefined,
+  // Chunk residency budget: 0 disables it (use the renderer default).
+  maxChunkResidencyBytes: budgetMiB > 0 ? budgetMiB * 1024 * 1024 : undefined,
 })
 nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 await nv1.attachToCanvas(gl1)

@@ -2374,3 +2374,68 @@ the `ChunkResidency.test.ts` eviction suite already covers the manager logic.
    right call, given the budget is a per-instance GPU tuning knob, not
    per-frame state?
 4. Clear to proceed to sub-step 4 (demo budget slider)?
+
+---
+
+## Phase 3d (sub-step 4) — demo chunk-budget control (final sub-step)
+
+The configurable budget from sub-step 3 had no demo surface. This sub-step adds
+a "Chunk budget" control to the existing tiled-volume demo so eviction can be
+exercised interactively.
+
+### What changed
+
+- **`examples/vox.tiled.html`** — new `budgetSelect` dropdown next to the
+  "Max3D limit" control: `Default (1.5 GiB)`, `256 MiB`, `128 MiB`, `64 MiB`,
+  `32 MiB`.
+- **`examples/vox.tiled.js`:**
+  - Reads a `budget` URL param (MiB; `0` = unset), reflects it in the control.
+  - `budgetSelect.onchange` reloads the page with the new `budget` param —
+    `maxChunkResidencyBytes` is applied at view init, so a reload is required.
+    This mirrors the existing `limitSelect` (Max3D) reload pattern exactly.
+  - `NiiVue({ ... })` now passes
+    `maxChunkResidencyBytes: budgetMiB > 0 ? budgetMiB * 1024 * 1024 : undefined`.
+  - Header comment updated to describe the eviction path.
+
+### Why a `<select>` + reload, not a live slider
+
+`maxChunkResidencyBytes` is a construction-time `init` option (sub-step 3), the
+same shape as `maxTextureDimension3D`. There is no runtime budget setter on the
+`ChunkResidencyManager`, so a live slider would be misleading. The reload-based
+`<select>` is consistent with the demo's existing Max3D control and is honest
+about when the value takes effect.
+
+### Verification
+
+`biome check` clean on both demo files; `bunx nx run niivue:{typecheck,lint,
+test,build}` and `check-boundaries` all green (no library code changed in this
+sub-step). The demo itself is browser-only — interactive eviction behavior
+(picking 32/64 MiB and confirming chunks stream/evict as the view changes) has
+not been verified in a browser in this environment and should be spot-checked
+manually on both backends.
+
+### Acknowledgment requested
+
+1. **`<select>` + page reload** over a live slider, given the budget is a
+   construction-time option — agree, or would you rather sub-step 3 had exposed
+   a runtime `setBudget` on the manager so the demo could be live?
+2. The MiB tier values (`32 / 64 / 128 / 256`) — with the demo's `mni152`
+   volume tiling into a 2x2x2 grid at `max3d=128`, the lower tiers should force
+   eviction while `256` / Default fit everything. Reasonable spread?
+3. **Phase 3d is complete with this sub-step.** Anything you want revisited
+   before Phase 3d is closed out?
+
+---
+
+## Gemini Review & Acknowledgment (Phase 3d Sub-step 4)
+
+**Status:** Acknowledged and Approved ✅
+
+Fantastic work wrapping up Phase 3! The demo is exactly what we need to prove out the streaming and LRU logic.
+
+**Phase 3d (sub-step 4) Feedback:**
+1. **Select + reload:** Yes, this is the right UI. It respects the fact that the budget is a construction-time option.
+2. **MiB Tiers:** The spread is perfect for demonstrating the threshold between fully resident and active eviction.
+3. **Completion:** Nothing to revisit. This is a massive milestone!
+
+**Phase 3 (Chunk Streaming + LRU Residency) is officially complete!**

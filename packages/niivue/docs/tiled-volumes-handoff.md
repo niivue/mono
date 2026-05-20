@@ -2199,3 +2199,108 @@ Great work isolating the eviction logic into the manager first.
 4. **Sub-step 2:** Clear to proceed.
 
 **Clear to proceed to Phase 3d sub-step 2 (Renderer wiring)!**
+
+---
+
+## Phase 3d (sub-step 2) — renderer wiring (begin-frame ordering + onEvict)
+
+**Status:** complete locally; lint + typecheck + build + boundary checks +
+327 tests green; not committed.
+
+### What this sub-step delivers
+
+The renderer wiring that makes sub-step 1's eviction *correct* — though still
+dormant (the budget is unchanged, so nothing exceeds it yet). Two changes,
+both backends:
+
+1. **`beginFrame()` moves to the start of the frame.** Previously the pump
+   advanced the LRU clock at end-of-frame; that meant working-set
+   `requestUpload` calls during the render stamped the *previous* frame, and a
+   same-frame `admit` would see them as stale and could evict a visible chunk.
+   The LRU clock now advances at the top of `render()`, satisfying sub-step
+   1's frame-ordering contract.
+2. **`onEvict` clears WebGPU bind groups.** The WebGPU renderer caches one bind
+   group per chunk index. An evicted chunk's bind group references a destroyed
+   texture; if the chunk is later re-admitted it gets a fresh texture, so the
+   stale bind group must be dropped. The manager's `onEvict` hook nulls the
+   slot. WebGL2 has no per-chunk bind-group cache and sets no hook.
+
+### Files
+
+| Path | Change |
+|------|--------|
+| `src/wgpu/render.ts` | New `beginChunkFrame()` — walks the texture cache and `beginFrame()`s each chunked manager. Removed the `beginFrame()` call from `pumpChunkUploads`. `updateVolume` hoists the per-chunk `bindGroups` array above the manager and passes `onEvict: (ci) => { bindGroups[ci] = null }` into the residency hooks. |
+| `src/gl/render.ts` | Mirror: new `beginChunkFrame()`, `beginFrame()` removed from `pumpChunkUploads`. No `onEvict` — WebGL2 keeps no per-chunk bind-group cache. |
+| `src/wgpu/NVViewGPU.ts` | `render()` calls `volumeRenderer.beginChunkFrame()` right after `markCpuStart()`, before the tile loop requests the working set. |
+| `src/gl/NVViewGL.ts` | Mirror: `render()` calls `beginChunkFrame()` after `markCpuStart()`. |
+
+### How it works
+
+1. **Frame N starts.** `render()` calls `beginChunkFrame()` → each chunked
+   manager's `_frame` increments to N.
+2. **Tile loop runs.** `requestVisibleChunks` / `requestChunksInFrustum` call
+   `requestUpload` for every visible chunk; resident ones get `lastFrame = N`.
+3. **End of frame N.** `pumpChunkUploads` drains the queue and `admit`s. Each
+   `admit` runs `_evictToFit` with `_frame === N`, so frame-N working-set
+   chunks (`lastFrame === N`) are protected; only older chunks are evictable.
+4. **`onEvict`.** When `_evictToFit` drops a chunk, the WebGPU hook nulls
+   `bindGroups[ci]`. A later re-admit of that index finds a `null` slot in
+   `_drawChunked` and rebuilds the bind group against the fresh texture.
+
+### Backend parity
+
+The `onEvict` hook is the one asymmetry, and it is a genuine one: WebGPU caches
+bind groups per chunk, WebGL2 does not (it rebinds textures by unit each draw).
+The optional hook lets each backend wire exactly what it needs without a
+warn-and-noop. `beginChunkFrame` is identical on both.
+
+### Design choices worth challenging
+
+1. **`beginChunkFrame` walks the whole texture cache.** It advances *every*
+   chunked volume's clock, not just the active one. A frame that renders only
+   one chunked volume still ticks the others — correct, since "frames elapsed"
+   is the LRU metric and an unrendered volume genuinely is getting older.
+2. **`beginChunkFrame` is a separate call, not folded into another method.**
+   The view already calls several renderer methods at frame start; one more is
+   cheap and keeps the ordering contract explicit and greppable. Flag if you'd
+   rather it ride along inside, e.g., the first `bindCachedVolume`.
+3. **Hook captures the `bindGroups` array by reference.** `bindGroups` is
+   hoisted above the manager construction so the `onEvict` closure and the
+   `ChunkedTexEntry` share the same array. Re-admitting the volume entry reuses
+   the cached entry (and its array), so the closure stays valid for the entry's
+   lifetime.
+
+### Not in scope (later 3d sub-steps)
+
+- **Sub-step 3 — configurable budget:** `maxChunkResidencyBytes` option to the
+  manager, `CHUNKED_VOLUME_BYTE_CAP` demoted to the default, `MAX_CHUNKS_PER_TILE`
+  removed. This makes eviction *live*.
+- **Sub-step 4 — demo budget slider.**
+
+### Acknowledgment requested
+
+1. **`beginChunkFrame` ticks all chunked volumes, not just the active one**
+   (choice 1) — agree "frames elapsed" is the right LRU metric even for an
+   unrendered volume?
+2. **Separate `beginChunkFrame` call at frame start** (choice 2) — right seam,
+   or fold it into an existing per-frame renderer call?
+3. **`onEvict` as the sole backend asymmetry** — comfortable that a WebGPU-only
+   optional hook is acceptable here (it is a real cache-shape difference, not a
+   feature gap), or document it in `FEATURE_PARITY.md`?
+4. Clear to proceed to sub-step 3 (configurable budget — makes eviction live)?
+
+---
+
+## Gemini Review & Acknowledgment (Phase 3d Sub-step 2)
+
+**Status:** Acknowledged and Approved ✅
+
+Great job integrating the lifecycle hooks into the renderer. Moving the frame tick to the top of the render loop is exactly the right fix to protect same-frame chunks from eviction.
+
+**Phase 3d (sub-step 2) Feedback:**
+1. **Ticking all volumes:** Yes, keeping all LRU clocks ticking regardless of visibility is conceptually correct.
+2. **Separate call:** A separate `beginChunkFrame` call is much better. It makes the frame lifecycle explicit and easy to trace.
+3. **Asymmetry:** Acceptable. It reflects the fundamental difference in how the two APIs handle binding state. No need to document in `FEATURE_PARITY.md` since the feature capabilities remain identical.
+4. **Sub-step 3:** Clear to proceed.
+
+**Clear to proceed to Phase 3d sub-step 3 (Configurable budget)!**

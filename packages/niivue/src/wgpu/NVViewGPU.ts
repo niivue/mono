@@ -707,6 +707,9 @@ export default class NVView {
     // still copy their own textures to the canvas in their own render() calls.
     if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
     markCpuStart()
+    // Phase 3d: advance the chunk-residency LRU clock before the tile loop
+    // requests this frame's working set, so eviction protects visible chunks.
+    this.volumeRenderer.beginChunkFrame()
     // Determine render targets based on bounds mode
     const canvasTexture =
       this._bench?.targetOverride ?? this.context.getCurrentTexture()

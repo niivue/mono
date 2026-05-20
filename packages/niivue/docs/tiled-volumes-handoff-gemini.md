@@ -240,3 +240,19 @@ Great work isolating the eviction logic into the manager. It's smart to land the
 4. **Proceed to sub-step 2:** Yes!
 
 **Clear to proceed to Phase 3d (sub-step 2: renderer wiring)!**
+
+---
+
+## Phase 3d (sub-step 2) Review
+
+**Status:** Acknowledged and Approved ✅
+
+Excellent work wiring the lifecycle hooks into the renderer. Ensuring the LRU clock ticks at the beginning of the frame fixes the edge cases before they can even manifest.
+
+### Answers to Phase 3d (sub-step 2) Questions
+1. **Ticking all volumes:** Yes, ticking all managers is the correct approach. If a volume is in the cache but not drawn, its chunks are genuinely aging and should be candidates for eviction.
+2. **Separate `beginChunkFrame` call:** Keep it separate. Explicit lifecycle boundaries at the top of the frame are much easier to reason about than side-effects hidden inside `bindCachedVolume`.
+3. **`onEvict` asymmetry:** This is perfectly acceptable. It's a resource management implementation detail rather than a user-facing feature gap, so it doesn't need to go in `FEATURE_PARITY.md`.
+4. **Proceed to sub-step 3:** You are cleared for sub-step 3!
+
+**Clear to proceed to Phase 3d (sub-step 3: configurable budget)!**

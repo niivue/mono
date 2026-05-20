@@ -612,6 +612,18 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /**
+   * Phase 3d: advance every chunked volume's LRU clock. Must be called once at
+   * the start of each frame, before the view requests its working set, so
+   * working-set `requestUpload` calls stamp the current frame and a same-frame
+   * eviction in `pumpChunkUploads` cannot drop a visible chunk.
+   */
+  beginChunkFrame(): void {
+    for (const entry of this._texCache.values()) {
+      if (entry.kind === 'chunked') entry.manager.beginFrame()
+    }
+  }
+
+  /**
    * Stream in queued chunks for every cached chunked volume — the per-frame
    * upload pump. Uploads at most `CHUNK_UPLOADS_PER_FRAME` chunks total, then
    * `admit`s them. Returns true if any chunk was admitted, so the view can
@@ -623,7 +635,6 @@ export class VolumeRenderer extends NVRenderer {
     let admitted = false
     for (const entry of this._texCache.values()) {
       if (entry.kind !== 'chunked') continue
-      entry.manager.beginFrame()
       if (budget <= 0) continue
       const indices = entry.manager.takePendingUploads(budget)
       for (const i of indices) {

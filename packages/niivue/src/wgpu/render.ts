@@ -503,12 +503,20 @@ export class VolumeRenderer extends NVRenderer {
       } else {
         if (existing) this._destroyTexEntry(existing)
         const uploader = await createChunkUploaderGPU(device, vol, plan)
+        // Per-chunk bind groups, indexed by chunk index. Hoisted above the
+        // manager so the onEvict hook can null the slot of an evicted chunk —
+        // a re-admitted chunk gets a fresh texture, so its old bind group
+        // would dangle.
+        const bindGroups: (GPUBindGroup | null)[] = plan.chunks.map(() => null)
         const manager = new ChunkResidencyManager<VolumeChunkGPU>(
           plan.chunks.length,
           CHUNKED_VOLUME_BYTE_CAP,
           {
             bytesOf: chunkResidentBytes,
             destroy: (c) => destroyVolumeChunksGPU([c]),
+            onEvict: (ci) => {
+              bindGroups[ci] = null
+            },
           },
         )
         // Phase 3c: upload only the first chunk synchronously so the volume
@@ -524,7 +532,7 @@ export class VolumeRenderer extends NVRenderer {
           uploader,
           plan,
           centers: computeChunkCenters(plan),
-          bindGroups: plan.chunks.map(() => null),
+          bindGroups,
         }
         if (cacheKey) this._texCache.set(cacheKey, chunkedEntry)
       }
@@ -677,6 +685,18 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /**
+   * Phase 3d: advance every chunked volume's LRU clock. Must be called once at
+   * the start of each frame, before the view requests its working set, so
+   * working-set `requestUpload` calls stamp the current frame and a same-frame
+   * eviction in `pumpChunkUploads` cannot drop a visible chunk.
+   */
+  beginChunkFrame(): void {
+    for (const entry of this._texCache.values()) {
+      if (entry.kind === 'chunked') entry.manager.beginFrame()
+    }
+  }
+
+  /**
    * Stream in queued chunks for every cached chunked volume — the per-frame
    * upload pump. Uploads at most `CHUNK_UPLOADS_PER_FRAME` chunks total, then
    * `admit`s them. Returns true if any chunk was admitted, so the view can
@@ -692,7 +712,6 @@ export class VolumeRenderer extends NVRenderer {
     try {
       for (const entry of this._texCache.values()) {
         if (entry.kind !== 'chunked') continue
-        entry.manager.beginFrame()
         if (budget <= 0) continue
         const indices = entry.manager.takePendingUploads(budget)
         for (const i of indices) {

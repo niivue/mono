@@ -414,6 +414,9 @@ export default class NVGlview {
     // clip everything and the work is wasted. preserveDrawingBuffer keeps prior pixels.
     if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
     markCpuStart()
+    // Phase 3d: advance the chunk-residency LRU clock before the tile loop
+    // requests this frame's working set, so eviction protects visible chunks.
+    this.volumeRenderer.beginChunkFrame()
     // Bounds pixel rect (sub-canvas or full canvas)
     const bx = this._boundsOffsetX
     const by = this._boundsOffsetY

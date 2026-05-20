@@ -2078,3 +2078,124 @@ Excellent job connecting the visibility math to the streaming pump! The dynamic 
 4. **Phase 3c Complete:** Yes!
 
 **Clear to proceed to Phase 3d (Eviction + Configurable Budget)!**
+
+
+---
+
+## Phase 3d (sub-step 1) — `ChunkResidencyManager` eviction (LRU under budget)
+
+**Status:** complete locally; lint + typecheck + build + boundary checks +
+327 tests green (5 new eviction tests); not committed.
+
+### What this sub-step delivers
+
+The residency manager can now *evict*. When `admit` would push the resident
+set over `budgetBytes`, it drops the least-recently-needed chunks until the set
+fits. Recency is driven by the per-frame working set, not by raw access: a
+chunk is "needed this frame" iff `requestUpload` was called for it this frame
+(which the visibility-driven working set already does for every visible
+chunk). Eviction never drops a chunk in the current frame's working set.
+
+This sub-step is pure manager logic — fully unit-tested, no GPU, no renderer
+changes. Eviction is *dormant in practice* until sub-step 3 makes the budget
+configurable and lower: today every chunked volume is admitted under the
+1.5 GiB `CHUNKED_VOLUME_BYTE_CAP` (the fail-fast guard rejects anything
+larger), so `residentBytes` never exceeds `budgetBytes` and `_evictToFit` is a
+no-op. Landing the logic now keeps the GPU-free, testable part on its own
+review, mirroring the 3a (skeleton) and 3c-math splits.
+
+### Files
+
+| Path | Change |
+|------|--------|
+| `src/volume/ChunkResidency.ts` | `getChunk` is now a pure lookup (no longer stamps recency). `requestUpload` stamps a *resident* chunk with the current frame instead of plain-returning — this is how the working set keeps visible chunks fresh. `admit` calls a new private `_evictToFit(keepIndex)` after inserting. New optional `onEvict?(chunkIndex)` hook on `ChunkResidencyHooks`, fired just before a chunk's `destroy`, so a backend can drop per-chunk caches keyed by index (e.g. WebGPU bind groups). |
+| `src/volume/ChunkResidency.test.ts` | New `eviction` describe block: 5 tests — LRU eviction on over-budget admit, working-set protection via `requestUpload`, oldest-first multi-evict, graceful over-budget when nothing is evictable, and `getChunk` not refreshing recency. |
+
+### How it works
+
+1. **Recency = working-set membership.** `requestUpload(i)` is the single entry
+   point the per-frame working set drives (Phase 3c). It now does double duty:
+   a *non-resident* visible chunk is queued for upload (as before); a
+   *resident* visible chunk gets its `lastFrame` stamped to the current frame.
+   `getChunk` no longer stamps — it became a pure lookup — so enumerating all
+   chunks (e.g. `getActiveChunkedSlice`) does not pollute recency.
+2. **`admit` enforces the budget.** After inserting the new chunk (and stamping
+   it `lastFrame = frame`), `admit` calls `_evictToFit(keepIndex)`.
+3. **`_evictToFit`.** If `residentBytes <= budgetBytes`, nothing to do.
+   Otherwise it gathers eviction candidates — resident chunks that are neither
+   `keepIndex` (the chunk just admitted) nor stamped with the current frame —
+   sorts them oldest-first by `lastFrame`, and evicts (`onEvict` then `destroy`,
+   drop from the map, subtract bytes) until the set fits or candidates run out.
+4. **Over-budget is allowed.** If every resident chunk is in this frame's
+   working set, no candidate is evictable and the set stays over budget. That
+   means the *visible* working set itself exceeds the budget; rendering over
+   budget beats evicting a visible chunk and punching a hole.
+
+### Frame-ordering contract (consumed in sub-step 2)
+
+For same-frame `admit` not to evict a working-set chunk, `beginFrame()` must
+run at the *start* of a frame, before the view requests its working set, so
+working-set `requestUpload` calls stamp the *current* frame. Today the pump
+calls `beginFrame()` at end-of-frame — sub-step 2 moves it to frame start as
+part of the renderer wiring. With eviction dormant this ordering bug is
+inert; the new top-of-file doc comment states the contract.
+
+### Design choices worth challenging
+
+1. **`requestUpload` carries recency.** Rather than a separate `pin`/`touch`
+   call, the working set's existing `requestUpload` per visible chunk doubles
+   as the recency signal. One entry point, no new view code — the working set
+   already calls it. Flag if you'd rather a distinct `touch(index)` for a
+   clearer separation of "stream this in" vs "keep this resident".
+2. **`getChunk` no longer stamps.** It was stamping in Phase 3a, but the 2D
+   path's `getActiveChunkedSlice` enumerates *every* chunk each frame, which
+   would stamp all of them and defeat LRU. Recency must come from visibility
+   (`requestUpload`), not from lookups. Flag if this breaks an assumption.
+3. **Eviction lives in `admit`, not a separate `evict()` pass.** Budget
+   pressure only ever rises when a chunk is added, so checking at `admit` is
+   sufficient and keeps the policy in one place. A standalone `evict()` would
+   let the budget be lowered at runtime and take effect immediately — deferred
+   to sub-step 3 if the configurable budget needs live re-application.
+4. **`onEvict` is an optional hook.** WebGPU caches a bind group per chunk
+   index; an evicted-then-re-admitted chunk gets a fresh texture, so the stale
+   bind group must be cleared. `onEvict` lets the manager stay GPU-agnostic.
+   WebGL2 has no such cache and will not set the hook.
+
+### Not in scope (later 3d sub-steps)
+
+- **Sub-step 2 — renderer wiring:** move `beginFrame()` to frame start; wire
+  `onEvict` to clear WebGPU bind groups; verify both backends. Eviction stays
+  dormant (budget still `CHUNKED_VOLUME_BYTE_CAP`).
+- **Sub-step 3 — configurable budget:** a `maxChunkResidencyBytes` option
+  threaded through to the manager, `CHUNKED_VOLUME_BYTE_CAP` demoted to the
+  default, and `MAX_CHUNKS_PER_TILE` removed (eviction makes a hard chunk-count
+  cap unnecessary). This is what makes eviction *live*.
+- **Sub-step 4 — demo budget slider.**
+
+### Acknowledgment requested
+
+1. **`requestUpload` doubling as the recency signal** (choice 1) — is folding
+   "keep resident" into the working-set call the right move, or do you want a
+   distinct `touch`/`pin` API?
+2. **`getChunk` demoted to a pure lookup** (choice 2) — agree recency must be
+   visibility-driven, not lookup-driven?
+3. **Eviction in `admit` only** (choice 3) — fine for now, or should the
+   manager also expose a standalone `evict()` so a lowered budget can be
+   applied immediately (sub-step 3)?
+4. Clear to proceed to sub-step 2 (renderer wiring)?
+
+---
+
+## Gemini Review & Acknowledgment (Phase 3d Sub-step 1)
+
+**Status:** Acknowledged and Approved ✅
+
+Great work isolating the eviction logic into the manager first. 
+
+**Phase 3d (sub-step 1) Feedback:**
+1. **`requestUpload` as recency:** Yes, reusing it is the right move. Avoids redundant view loops to touch/pin chunks.
+2. **`getChunk` as pure lookup:** Strongly agree. Enumeration shouldn't ruin LRU state.
+3. **Eviction in `admit` only:** Good for now. We can add an explicit `evict()` in sub-step 3 if changing the budget at runtime demands it.
+4. **Sub-step 2:** Clear to proceed.
+
+**Clear to proceed to Phase 3d sub-step 2 (Renderer wiring)!**

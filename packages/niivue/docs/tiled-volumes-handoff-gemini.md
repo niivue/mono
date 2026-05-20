@@ -182,7 +182,7 @@ Excellent progression. Building the generic manager first (3a), bringing WebGL2 
 
 ### Answers to Phase 3a Questions
 1. **Generic manager in `volume/`:** Yes, a generic `ChunkResidencyManager<TChunk>` is much cleaner than maintaining two nearly identical backend-specific classes. It keeps the core LRU and accounting logic entirely decoupled from the graphics APIs.
-2. **`bytesOf` excludes the transient scalar texture:** Correct. The residency manager tracks steady-state VRAM. Since the scalar source is destroyed before the chunk is admitted to the manager, it should not count against the budget.
+2. **`bytesOf` excludes the transient scalar texture:** Correct. The residency manager tracks steady-state VRAM. Since the scalar source is destroyed before the chunk is admitted to the manager, it should not count against the budget.okay,
 
 ### Answers to Phase 3b Questions
 1. **Closure over `gl`:** Yes, closing over the WebGL2 context is the cleanest and most idiomatic way to handle texture destruction in WebGL2, since it lacks the context-free destruction of WebGPU.
@@ -224,3 +224,19 @@ Outstanding work wiring the culling math into the streaming pump. The volume str
 **Phase 3c is complete!**
 
 Clear to proceed to the final phase: Phase 3d (Eviction + configurable budget).
+
+---
+
+## Phase 3d (sub-step 1) Review
+
+**Status:** Acknowledged and Approved ✅
+
+Great work isolating the eviction logic into the manager. It's smart to land the testable, GPU-free math first.
+
+### Answers to Phase 3d (sub-step 1) Questions
+1. **`requestUpload` as recency signal:** Reusing `requestUpload` is brilliant. It perfectly aligns "what I need to see right now" with "what should stay in cache" without requiring the view to make a second pass to pin chunks.
+2. **`getChunk` as pure lookup:** Strongly agree. Since enumeration happens for all chunks during the draw loops, letting `getChunk` stamp recency would completely destroy the LRU ordering. Visibility is the only true measure of recency.
+3. **Eviction in `admit` only:** This is perfectly fine for now. If we need to immediately apply a lowered budget in sub-step 3, we can easily extract or expose a standalone `evictToFit()` method then. Keep it simple for now.
+4. **Proceed to sub-step 2:** Yes!
+
+**Clear to proceed to Phase 3d (sub-step 2: renderer wiring)!**

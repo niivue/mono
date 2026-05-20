@@ -124,6 +124,86 @@ describe('ChunkResidencyManager upload queue', () => {
   })
 })
 
+describe('ChunkResidencyManager eviction', () => {
+  /** Manager that records evicted indices via the onEvict hook. */
+  function evictingManager(chunkCount: number, budgetBytes: number) {
+    const evicted: number[] = []
+    const m = new ChunkResidencyManager<FakeChunk>(chunkCount, budgetBytes, {
+      bytesOf: (c) => c.bytes,
+      destroy: (c) => {
+        c.destroyed = true
+      },
+      onEvict: (i) => evicted.push(i),
+    })
+    return { m, evicted }
+  }
+
+  test('admit over budget evicts the least-recently-needed chunk', () => {
+    const { m, evicted } = evictingManager(3, 250)
+    const a = fakeChunk('a', 100)
+    m.admit(0, a) // frame 0
+    m.beginFrame()
+    m.admit(1, fakeChunk('b', 100)) // frame 1
+    m.beginFrame()
+    m.admit(2, fakeChunk('c', 100)) // frame 2 — 300 > 250, evict oldest
+
+    expect(m.isResident(0)).toBe(false)
+    expect(m.isResident(1)).toBe(true)
+    expect(m.isResident(2)).toBe(true)
+    expect(m.residentBytes).toBe(200)
+    expect(a.destroyed).toBe(true)
+    expect(evicted).toEqual([0])
+  })
+
+  test('a chunk touched this frame via requestUpload is protected', () => {
+    const { m } = evictingManager(3, 250)
+    m.admit(0, fakeChunk('a', 100))
+    m.beginFrame()
+    m.admit(1, fakeChunk('b', 100))
+    m.beginFrame()
+    m.requestUpload(0) // resident — refreshes recency to the current frame
+    m.admit(2, fakeChunk('c', 100)) // 300 > 250 — chunk 0 is protected now
+
+    expect(m.isResident(0)).toBe(true)
+    expect(m.isResident(1)).toBe(false)
+  })
+
+  test('evicts oldest-first until the resident set fits', () => {
+    const { m, evicted } = evictingManager(3, 150)
+    m.admit(0, fakeChunk('a', 100))
+    m.beginFrame()
+    m.admit(1, fakeChunk('b', 100))
+    m.beginFrame()
+    m.admit(2, fakeChunk('c', 100)) // 300 > 150 — evict 0 then 1
+
+    expect(evicted).toEqual([0, 1])
+    expect(m.residentCount).toBe(1)
+    expect(m.isResident(2)).toBe(true)
+  })
+
+  test('stays over budget when nothing is evictable', () => {
+    const { m, evicted } = evictingManager(2, 150)
+    m.admit(0, fakeChunk('a', 100)) // frame 0
+    m.admit(1, fakeChunk('b', 100)) // frame 0 — both touched this frame
+
+    expect(evicted).toEqual([])
+    expect(m.residentBytes).toBe(200)
+    expect(m.residentCount).toBe(2)
+  })
+
+  test('getChunk does not refresh eviction recency', () => {
+    const { m } = evictingManager(3, 250)
+    m.admit(0, fakeChunk('a', 100))
+    m.beginFrame()
+    m.admit(1, fakeChunk('b', 100))
+    m.beginFrame()
+    m.getChunk(0) // pure lookup — must not protect chunk 0
+    m.admit(2, fakeChunk('c', 100))
+
+    expect(m.isResident(0)).toBe(false)
+  })
+})
+
 describe('ChunkResidencyManager destroy', () => {
   test('destroy releases every resident chunk and resets state', () => {
     const m = manager(2)

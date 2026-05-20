@@ -8,11 +8,16 @@
  * and supplies `bytesOf` / `destroy` hooks. Keeping the LRU and budget policy
  * here makes it identical across the WebGPU and WebGL2 backends.
  *
- * Phase 3a: the backend uploads every chunk up front and `admit`s them all, so
- * the resident set is always complete and no eviction or streaming happens.
- * The upload queue, frame counter, and budget accounting are populated but
- * exert no pressure — Phase 3c wires visibility-driven upload and Phase 3d
- * wires eviction under budget pressure.
+ * Phase 3c wired visibility-driven upload: the view requests a per-frame
+ * working set and the backend streams those chunks in. Phase 3d adds eviction
+ * under budget pressure — `admit` drops the least-recently-needed chunks once
+ * the resident set would exceed `budgetBytes`. Recency is driven by the
+ * working set: `requestUpload` stamps a resident chunk as needed-this-frame,
+ * and eviction never drops a chunk touched since the last `beginFrame`.
+ *
+ * Frame ordering contract: call `beginFrame()` once at the start of each
+ * frame, *before* requesting the working set, so working-set chunks carry the
+ * current frame stamp and a same-frame `admit` cannot evict them.
  */
 
 export interface ChunkResidencyHooks<TChunk> {
@@ -20,6 +25,12 @@ export interface ChunkResidencyHooks<TChunk> {
   bytesOf(chunk: TChunk): number
   /** Release a chunk's GPU resources. Called on eviction and on destroy. */
   destroy(chunk: TChunk): void
+  /**
+   * Called with a chunk index just before it is evicted, so the backend can
+   * drop any per-chunk caches keyed by index (e.g. cached bind groups) that
+   * would otherwise dangle once the chunk's GPU resources are released.
+   */
+  onEvict?(chunkIndex: number): void
 }
 
 interface ResidentChunk<TChunk> {
@@ -62,7 +73,9 @@ export class ChunkResidencyManager<TChunk> {
 
   /**
    * Register an already-uploaded chunk as resident. Replacing an existing
-   * resident chunk destroys the old handle and adjusts the byte total.
+   * resident chunk destroys the old handle and adjusts the byte total. Once
+   * the chunk is in, evicts the least-recently-needed resident chunks if the
+   * resident set now exceeds `budgetBytes` (see `_evictToFit`).
    */
   admit(chunkIndex: number, chunk: TChunk): void {
     const prev = this._resident.get(chunkIndex)
@@ -75,14 +88,13 @@ export class ChunkResidencyManager<TChunk> {
     this._residentBytes += bytes
     const q = this._uploadQueue.indexOf(chunkIndex)
     if (q >= 0) this._uploadQueue.splice(q, 1)
+    this._evictToFit(chunkIndex)
   }
 
-  /** The resident chunk for an index, stamping it as used this frame. */
+  /** The resident chunk for an index, or null. Pure lookup — does not affect
+   * eviction recency; recency is driven by `requestUpload` (the working set). */
   getChunk(chunkIndex: number): TChunk | null {
-    const r = this._resident.get(chunkIndex)
-    if (!r) return null
-    r.lastFrame = this._frame
-    return r.chunk
+    return this._resident.get(chunkIndex)?.chunk ?? null
   }
 
   /** Whether a chunk index is currently GPU-resident. */
@@ -111,11 +123,19 @@ export class ChunkResidencyManager<TChunk> {
   }
 
   /**
-   * Enqueue a chunk for upload. No-op if the chunk is already resident or
-   * already queued. Drained by the backend via `takePendingUploads`.
+   * Mark a chunk as needed this frame. A resident chunk is stamped with the
+   * current frame so eviction will not drop it; a non-resident, not-yet-queued
+   * chunk is enqueued for upload. Already-queued chunks are left as-is. This is
+   * the single entry point the per-frame working set drives — it both keeps
+   * visible resident chunks fresh and streams in the visible missing ones.
+   * Drained by the backend via `takePendingUploads`.
    */
   requestUpload(chunkIndex: number): void {
-    if (this._resident.has(chunkIndex)) return
+    const resident = this._resident.get(chunkIndex)
+    if (resident) {
+      resident.lastFrame = this._frame
+      return
+    }
     if (this._uploadQueue.includes(chunkIndex)) return
     this._uploadQueue.push(chunkIndex)
   }
@@ -131,6 +151,31 @@ export class ChunkResidencyManager<TChunk> {
    */
   takePendingUploads(max: number): number[] {
     return this._uploadQueue.splice(0, Math.max(0, max))
+  }
+
+  /**
+   * Evict least-recently-needed resident chunks until the resident set fits
+   * within `budgetBytes`. A chunk is a candidate only if it is not `keepIndex`
+   * (the chunk just admitted) and was not touched this frame (`lastFrame` is
+   * older than the current frame) — so a chunk in this frame's working set is
+   * never evicted. Candidates are evicted oldest-first. If no candidate
+   * remains the resident set stays over budget: the visible working set itself
+   * exceeds the budget, and rendering over budget beats punching a hole.
+   */
+  private _evictToFit(keepIndex: number): void {
+    if (this._residentBytes <= this._budgetBytes) return
+    const candidates = [...this._resident.entries()]
+      .filter(
+        ([index, r]) => index !== keepIndex && r.lastFrame !== this._frame,
+      )
+      .sort((a, b) => a[1].lastFrame - b[1].lastFrame)
+    for (const [index, r] of candidates) {
+      if (this._residentBytes <= this._budgetBytes) break
+      this._hooks.onEvict?.(index)
+      this._hooks.destroy(r.chunk)
+      this._resident.delete(index)
+      this._residentBytes -= r.bytes
+    }
   }
 
   /** Destroy every resident chunk's GPU resources and reset all state. */

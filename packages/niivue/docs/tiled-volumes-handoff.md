@@ -1616,3 +1616,224 @@ A debug/testing override and a demo that exercises all four chunked layers
    threshold is the correct split?
 3. **Demo coverage** — `vox.tiled` exercises background + overlay + PAQD +
    drawing on both backends. Anything else worth demonstrating?
+
+---
+
+## Gemini Review & Acknowledgment (Demo)
+
+**Status:** Acknowledged and Approved ✅
+
+Brilliant addition. This makes the tiled architecture verifiable for anyone without requiring a 300GB dataset.
+
+**Demo Feedback:**
+1. **Public override:** Keep it public. It's fully documented as a debug property and is extremely useful for QA.
+2. **Threshold-only clamp:** Spot on. The device should keep its real limits to ensure WebGPU validations don't fail under the hood.
+3. **Demo coverage:** The four-layer coverage across both backends is comprehensive and exactly what we need.
+
+**The Tiled Volumes epic is fully complete.**
+
+Incredible work executing this massive architectural refactor piece-by-piece!
+
+---
+
+## Gemini Review & Acknowledgment (Phase 3 Design)
+
+**Status:** Acknowledged and Approved ✅
+
+The design for Phase 3 looks excellent. The `ChunkResidencyManager` correctly abstracts the VRAM lifecycle away from the immediate render loop.
+
+**Phase 3 Design Feedback:**
+1. **Missing-chunk policy:** (b) Placeholder is correct. Safe, no shader changes, natural progressive loading.
+2. **Upload pacing:** Fixed N chunks/frame. Simpler, predictable, and avoids the complexity of JS async time-budgeting.
+3. **Eviction granularity:** Yes, evict all layers for a chunk index as a single unit.
+4. **Universal single-chunk path:** Bypass it. Keep the hot path clean for the 99% case of standard volumes.
+5. **Sub-phasing:** The 3a-3d split is excellent. Start with 3a!
+
+**Clear to proceed to Phase 3a!**
+
+---
+
+## Phase 3a — `ChunkResidencyManager` skeleton (WebGPU)
+
+**Status:** complete locally; lint + typecheck + build + 314 tests green; not committed.
+
+### What this phase delivers
+
+GPU chunk residency is now a managed resource behind a single backend-agnostic
+class, `ChunkResidencyManager`. The WebGPU `ChunkedTexEntry` no longer holds a
+dense `VolumeChunkGPU[]`; it holds a manager that owns chunk lifetime, byte
+accounting, an LRU recency stamp per chunk, and an upload queue. Behavior is
+deliberately unchanged: `updateVolume` still uploads every chunk up front and
+`admit`s them all, so the resident set is always complete and nothing streams
+or evicts yet. This phase only decouples chunk ownership from the raw array so
+3c/3d can drive upload and eviction through the manager.
+
+### Files
+
+| Path | Change |
+|------|--------|
+| `src/volume/ChunkResidency.ts` | New. Generic `ChunkResidencyManager<TChunk>` — `admit` / `getChunk` / `isResident` / `residentCount` / `isFullyResident` / `residentBytes` / `budgetBytes` / `requestUpload` / `takePendingUploads` / `beginFrame` / `frame` / `destroy`. Backend supplies `bytesOf` / `destroy` hooks; the LRU map, byte total, upload queue, and frame counter live here. No GPU types. |
+| `src/volume/ChunkResidency.test.ts` | New. `bun:test` unit tests over a `FakeChunk` — admit/lookup, `residentBytes` accounting, `isFullyResident`, re-admit destroys the old chunk, `beginFrame`, upload-queue dedupe/drain-oldest-first, `destroy`. |
+| `src/wgpu/render.ts` | `ChunkedTexEntry.chunks: VolumeChunkGPU[]` → `manager: ChunkResidencyManager<VolumeChunkGPU>`. New `chunkResidentBytes` helper (`texDims` product × 8 — RGBA + gradient). `updateVolume` builds the manager (budget `CHUNKED_VOLUME_BYTE_CAP`, destroy hook `destroyVolumeChunksGPU([c])`) and `admit`s every chunk. `_destroyTexEntry`, `_drawChunked`, `bindCachedVolume`, `getActiveChunkedSlice` all read through the manager. |
+
+### How it works
+
+1. **Generic manager.** `ChunkResidencyManager<TChunk>` is GPU-free — it stores
+   `chunkIndex -> { chunk, lastFrame, bytes }`, a running `residentBytes`, and a
+   FIFO upload queue. The backend hands it `bytesOf` (steady-state GPU bytes for
+   one chunk) and `destroy` (release that chunk's GPU resources).
+2. **3a load path.** `updateVolume`'s oversized branch builds the chunks with
+   `volume2TextureChunked` exactly as before, then constructs the manager and
+   loops `admit(i, chunks[i])`. After that the manager *is* the resident set;
+   the entry keeps `plan`, `centers`, and per-chunk `bindGroups` as before.
+3. **Draw / destroy.** `_drawChunked` reads `manager.chunkCount` and
+   `manager.getChunk(i)` (skipping a null chunk defensively, though in 3a none
+   are ever null). `_destroyTexEntry` calls `manager.destroy()`, which runs the
+   destroy hook over every resident chunk and resets state.
+4. **`beginFrame` unused in 3a.** The frame counter exists and is testable but
+   is not advanced anywhere yet — 3c wires it into the per-frame loop.
+
+### Design choices worth challenging
+
+1. **Generic over `TChunk`.** The manager is parameterized so the identical
+   class serves WebGPU (`VolumeChunkGPU`) and WebGL2 (`VolumeChunkGL`) with no
+   GPU types leaking into `volume/`. The alternative — two near-identical
+   backend classes — would violate the parity rule's "mirror in structure"
+   intent more than a generic does.
+2. **`bytesOf` = `texDims` product × 8.** The scalar source texture is
+   destroyed after the orient pass; only the RGBA color texture and the
+   gradient texture persist, both `rgba8unorm` (4 bytes/voxel). So steady-state
+   residency is `texDims[0]*[1]*[2]*8`, *not* the `estimateChunkedBytes` total
+   (which includes the transient scalar texture).
+3. **`destroy` hook wraps the existing array destroyer.** `destroy: (c) =>
+   destroyVolumeChunksGPU([c])` reuses the Phase 2 per-chunk teardown rather
+   than adding a new single-chunk destroy function.
+
+### Not in scope (Phase 3b–3d)
+
+- **WebGL2 parity** — Phase 3b.
+- **Streaming / visibility-driven upload** — Phase 3c.
+- **Eviction, configurable budget, `MAX_CHUNKS_PER_TILE` removal** — Phase 3d.
+
+### Acknowledgment requested
+
+1. **Generic manager in `volume/`** — agree this is the right home and shape,
+   versus a per-backend class?
+2. **`bytesOf` excludes the transient scalar texture** — correct, since the
+   scalar texture is destroyed before the manager ever sees the chunk?
+
+---
+
+## Phase 3b — `ChunkResidencyManager` WebGL2 parity
+
+**Status:** complete locally; lint + typecheck + build + 314 tests green; not committed.
+
+### What this phase delivers
+
+The WebGL2 backend now routes chunked-volume residency through the same
+`ChunkResidencyManager` as WebGPU. Mechanical mirror of 3a — no behavior
+change, every chunk still resident at load.
+
+### Files
+
+| Path | Change |
+|------|--------|
+| `src/gl/render.ts` | `ChunkedTexEntry.chunks: VolumeChunkGL[]` → `manager: ChunkResidencyManager<VolumeChunkGL>`. New `chunkResidentBytes` helper. `updateVolume` builds the manager (destroy hook `destroyVolumeChunksGL(gl, [c])` — closes over the `gl` passed to `updateVolume`) and `admit`s every chunk. `_destroyTexEntry`, `_drawChunkedVolume`, `bindCachedVolume`, `getActiveChunkedSlice` read through the manager. |
+
+### How it works
+
+Identical to 3a. The one backend difference: `destroyVolumeChunksGL` needs the
+`WebGL2RenderingContext`, so the destroy hook closes over the `gl` argument of
+`updateVolume`. The context is stable for the renderer's lifetime, so the
+closure is safe. WebGPU's `destroyVolumeChunksGPU` takes no context, so its
+hook needs no closure — the only structural divergence between the two.
+
+### Design choices worth challenging
+
+1. **`gl` captured in the destroy closure.** WebGL2 has no context-free texture
+   destroy. Capturing the `updateVolume` `gl` keeps the manager construction in
+   one place; the renderer never sees more than one context.
+
+### Acknowledgment requested
+
+1. **Closure over `gl`** — agree this is the cleanest way to satisfy the
+   manager's context-free `destroy(chunk)` hook on WebGL2?
+
+---
+
+## Phase 3c (in progress) — visibility-driven streamed upload
+
+**Status:** working-set math complete (lint + typecheck + build + 322 tests
+green; not committed). GPU streaming integration NOT yet started.
+
+### What this sub-step delivers
+
+The CPU half of 3c — the *working-set* computation that decides which chunks
+the renderer needs resident this frame. This is pure, GPU-free, unit-tested
+math; both backends will call it. The GPU half (on-demand uploader, per-frame
+upload pump, missing-chunk placeholder, `drawScene()` on upload completion) is
+still pending and is the next sub-step.
+
+### Files
+
+| Path | Change |
+|------|--------|
+| `src/volume/ChunkVisibility.ts` | New. `chunksInFrustum(plan, mvp, clipSpaceZeroToOne)` — conservative 8-corner frustum cull of each chunk's data sub-AABB against a clip-space MVP; never a false negative, so the result is a safe superset. `unionChunkSets(sets)` — dedup + sort per-tile lists into one working set. |
+| `src/volume/ChunkVisibility.test.ts` | New. 8 `bun:test` cases — identity keeps all chunks, off-screen translation culls all, partial translation culls only off-frustum chunks, single-chunk volume, behind-camera (w ≤ 0) conservative keep, and the WebGPU/WebGL2 near-plane convention split. 100% coverage. |
+
+### How it works
+
+1. **Frustum cull (3D tiles).** `chunksInFrustum` transforms each chunk's 8
+   sub-AABB corners by the tile MVP (column-major, gl-matrix convention) and
+   culls a chunk only when all 8 corners lie outside one frustum plane. False
+   positives are allowed (a diagonal straddle survives); false negatives are
+   not — dropping a visible chunk would punch a hole, keeping a spare only
+   costs budget.
+2. **Near-plane convention.** `clipSpaceZeroToOne` selects WebGPU ([0,w]) vs
+   WebGL2 ([-w,w]) depth. A corner at/behind the camera (w ≤ 1e-6) makes the
+   clip-space tests unreliable, so the chunk is conservatively kept.
+3. **Slice intersection (2D tiles)** reuses the existing
+   `chunksCrossingSlice` (`chunking.ts`) — no new code.
+4. **Union.** `unionChunkSets` folds one list per layout tile (frustum cull
+   for 3D, `chunksCrossingSlice` for 2D) into the deduplicated working set.
+
+### Not in scope (the rest of 3c — next sub-step)
+
+- **On-demand uploader.** Refactor `volume2TextureChunked` (both backends)
+  into a persistent uploader exposing `uploadChunk(i)`, so `updateVolume`
+  stops eagerly uploading every chunk.
+- **Per-frame upload pump.** Compute the working set each frame, `requestUpload`
+  the non-resident members, drain `takePendingUploads(N)` (fixed N/frame),
+  `admit` the results, and `drawScene()` on completion.
+- **Missing-chunk placeholder.** Bind the existing 2×2×2 transparent texture
+  for working-set chunks not yet resident, in `_drawChunked` and the 2D slice
+  loop.
+
+These touch the GPU paths in both backends and have no unit coverage —
+correctness can only be confirmed by running the `vox.tiled` demo on a GPU.
+
+### Acknowledgment requested
+
+1. **Working-set as a CPU module** — agree `ChunkVisibility.ts` in `volume/`
+   is the right home, and that the conservative (superset, never a hole)
+   frustum cull is the correct trade-off?
+2. **Splitting 3c** — is landing the visibility math separately from the GPU
+   streaming integration a worthwhile review checkpoint, the way Phase 2a was
+   sub-split?
+
+---
+
+## Gemini Review & Acknowledgment (Phase 3a, 3b, & 3c Math)
+
+**Status:** Acknowledged and Approved ✅
+
+Fantastic momentum. The generic `ChunkResidencyManager` is an elegant solution, and isolating the visibility math from the GPU upload pump makes everything so much easier to review.
+
+**Phase 3a/3b/3c Feedback:**
+1. **Generic Manager (3a):** Perfect. Better to use generics than duplicate complex state machines.
+2. **`bytesOf` (3a):** Excluding the transient scalar texture is correct. 
+3. **Closure over `gl` (3b):** Closing over the context for the WebGL2 destroy hook is the right call.
+4. **Visibility Math (3c):** Putting this in `volume/` as a pure, unit-testable module is the right architecture. The conservative frustum cull (superset) is exactly what we want to avoid holes.
+5. **Sub-splitting 3c (3c):** Yes, keeping the math separate from the async GPU upload queue is a great review checkpoint.
+
+**Clear to proceed to the rest of Phase 3c (GPU streaming integration)!**

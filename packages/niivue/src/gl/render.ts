@@ -10,6 +10,7 @@ import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
+import { ChunkResidencyManager } from '@/volume/ChunkResidency'
 import {
   bytesPerSourceVoxel,
   estimateChunkedBytes,
@@ -79,7 +80,8 @@ interface SingleTexEntry {
 /** Chunked (tiled) volume: one or more axes exceed max3D. */
 interface ChunkedTexEntry {
   kind: 'chunked'
-  chunks: VolumeChunkGL[]
+  /** GPU residency bookkeeping for the volume's chunks. */
+  manager: ChunkResidencyManager<VolumeChunkGL>
   plan: ChunkPlan
   /** Per-chunk data-region center in the full-volume [0,1] cube (for sort). */
   centers: Vec3f[]
@@ -98,6 +100,17 @@ function computeChunkCenters(plan: ChunkPlan): Vec3f[] {
     (c.voxelOrigin[1] + c.voxelDims[1] / 2) / vy,
     (c.voxelOrigin[2] + c.voxelDims[2] / 2) / vz,
   ])
+}
+
+/**
+ * Steady-state GPU bytes one resident chunk occupies. The scalar source
+ * texture is destroyed after the orient pass, so only the RGBA color texture
+ * and the gradient texture persist — both rgba8 (4 bytes/voxel) over the
+ * chunk's padded `texDims`.
+ */
+function chunkResidentBytes(chunk: VolumeChunkGL): number {
+  const [tx, ty, tz] = chunk.desc.texDims
+  return tx * ty * tz * 8
 }
 
 /** Per-chunk uniform values derived from a chunk descriptor and its plan. */
@@ -404,9 +417,21 @@ export class VolumeRenderer extends NVRenderer {
       } else {
         if (existing) this._destroyTexEntry(gl, existing)
         const chunks = volume2TextureChunkedGL(gl, vol, plan)
+        // Phase 3a: every chunk is uploaded up front and admitted, so the
+        // resident set is always complete. The manager owns chunk lifetime
+        // and byte accounting; streaming/eviction arrive in 3c/3d.
+        const manager = new ChunkResidencyManager<VolumeChunkGL>(
+          plan.chunks.length,
+          CHUNKED_VOLUME_BYTE_CAP,
+          {
+            bytesOf: chunkResidentBytes,
+            destroy: (c) => destroyVolumeChunksGL(gl, [c]),
+          },
+        )
+        for (let i = 0; i < chunks.length; i++) manager.admit(i, chunks[i])
         chunkedEntry = {
           kind: 'chunked',
-          chunks,
+          manager,
           plan,
           centers: computeChunkCenters(plan),
         }
@@ -414,9 +439,10 @@ export class VolumeRenderer extends NVRenderer {
       }
       this._activeChunked = chunkedEntry
       this._activeDims = [rasDims[0], rasDims[1], rasDims[2]]
-      this.volumeTexture = chunkedEntry.chunks[0]?.volumeTexture ?? null
+      this.volumeTexture =
+        chunkedEntry.manager.getChunk(0)?.volumeTexture ?? null
       this.volumeGradientTexture =
-        chunkedEntry.chunks[0]?.volumeGradientTexture ?? null
+        chunkedEntry.manager.getChunk(0)?.volumeGradientTexture ?? null
       await this._ensureMatcap(gl, matcap)
       return
     }
@@ -492,9 +518,9 @@ export class VolumeRenderer extends NVRenderer {
       // single-texture state is set only so hasVolume()/guards pass.
       this._activeChunked = entry
       this._activeDims = entry.plan.volumeDims
-      this.volumeTexture = entry.chunks[0]?.volumeTexture ?? null
+      this.volumeTexture = entry.manager.getChunk(0)?.volumeTexture ?? null
       this.volumeGradientTexture =
-        entry.chunks[0]?.volumeGradientTexture ?? null
+        entry.manager.getChunk(0)?.volumeGradientTexture ?? null
       return true
     }
     this._activeChunked = null
@@ -516,10 +542,16 @@ export class VolumeRenderer extends NVRenderer {
     paqdChunks: WebGLTexture[] | null
   } | null {
     if (!this._activeChunked) return null
-    const chunkCount = this._activeChunked.chunks.length
+    const { manager } = this._activeChunked
+    const chunkCount = manager.chunkCount
+    const chunkTextures: WebGLTexture[] = []
+    for (let i = 0; i < chunkCount; i++) {
+      const c = manager.getChunk(i)
+      if (c) chunkTextures.push(c.volumeTexture)
+    }
     return {
       plan: this._activeChunked.plan,
-      chunkTextures: this._activeChunked.chunks.map((c) => c.volumeTexture),
+      chunkTextures,
       overlayChunks:
         this.overlayChunks && this.overlayChunks.length === chunkCount
           ? this.overlayChunks
@@ -537,7 +569,7 @@ export class VolumeRenderer extends NVRenderer {
     entry: TexCacheEntry,
   ): void {
     if (entry.kind === 'chunked') {
-      destroyVolumeChunksGL(gl, entry.chunks)
+      entry.manager.destroy()
       if (this._activeChunked === entry) this._activeChunked = null
     } else {
       gl.deleteTexture(entry.volumeTexture)
@@ -1146,7 +1178,8 @@ export class VolumeRenderer extends NVRenderer {
     rayDir: number[],
   ): void {
     const entry = this._activeChunked
-    if (!entry || entry.chunks.length === 0) return
+    if (!entry || entry.manager.chunkCount === 0) return
+    const chunkCount = entry.manager.chunkCount
     // Back-to-front: farthest chunk first. dot(rayDir, center) grows along
     // the ray-march direction, so descending dot draws the deepest first.
     const [rx, ry, rz] = [rayDir[0], rayDir[1], rayDir[2]]
@@ -1158,25 +1191,26 @@ export class VolumeRenderer extends NVRenderer {
     // matching chunk so the drawing layer reads its own sub-texture; the
     // linear sampler object bound to unit 7 outside this loop is unaffected.
     const drawingChunks =
-      this.drawingChunks && this.drawingChunks.length === entry.chunks.length
+      this.drawingChunks && this.drawingChunks.length === chunkCount
         ? this.drawingChunks
         : null
     // Per-chunk overlay textures, likewise 1:1 with the volume chunks. When
     // present, swap unit 3 to the matching chunk so the overlay layer reads
     // its own sub-texture.
     const overlayChunks =
-      this.overlayChunks && this.overlayChunks.length === entry.chunks.length
+      this.overlayChunks && this.overlayChunks.length === chunkCount
         ? this.overlayChunks
         : null
     // Per-chunk raw PAQD textures, likewise 1:1 with the volume chunks. When
     // present, swap unit 4 to the matching chunk so the PAQD layer reads its
     // own sub-texture.
     const paqdChunks =
-      this.paqdChunks && this.paqdChunks.length === entry.chunks.length
+      this.paqdChunks && this.paqdChunks.length === chunkCount
         ? this.paqdChunks
         : null
     for (const chunkIndex of order) {
-      const chunk = entry.chunks[chunkIndex]
+      const chunk = entry.manager.getChunk(chunkIndex)
+      if (!chunk) continue
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_3D, chunk.volumeTexture)
       gl.activeTexture(gl.TEXTURE2)

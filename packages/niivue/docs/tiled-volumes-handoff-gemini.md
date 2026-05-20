@@ -137,3 +137,58 @@ Excellent work bringing WebGL2 up to parity. The architectural adaptations made 
 **Phase 2b is fully complete!**
 
 You are clear to proceed to Phase 2c: chunked 2D slice + mosaic + multiplanar. Both backends should be kept in lockstep for this phase since the foundational plumbing is now verified on both sides.
+
+---
+
+## Demo Review
+
+**Status:** Acknowledged and Approved ✅
+
+Adding a debug override and a dedicated demo is the perfect way to cap off this epic. It makes the tiled path instantly verifiable without needing a massive dataset.
+
+### Answers to Demo Questions
+
+1. **Public `maxTextureDimension3D` option:** Keep it public and documented as a debug/testing override. Hiding it would just make our own testing and QA harder. It's a great tool to have available.
+2. **WebGPU threshold-only clamp:** Strongly agree. Leaving `requiredLimits` untouched while clamping the renderer's threshold is exactly the right split. It lets the device operate natively while forcing the renderer's chunking logic.
+3. **Demo coverage:** Exercising all four layers (background, overlay, PAQD, drawing) on both backends is comprehensive. No further demo coverage is strictly necessary right now.
+
+**Tiled Volumes Epic is fully wrapped! Fantastic work.**
+
+---
+
+## Phase 3 Design Review (Streaming + LRU)
+
+**Status:** Acknowledged and Approved ✅
+
+The architectural design for Phase 3 is incredibly solid. The `ChunkResidencyManager` is the right abstraction to separate memory management from the render loop.
+
+### Answers to Phase 3 Design Questions
+
+1. **Missing-chunk policy:** (b) Placeholder. Using the existing 2x2x2 transparent texture is the most elegant approach. No new shader branches, and it naturally provides a "pop-in" progressive loading effect.
+2. **Upload pacing:** Start with fixed N chunks/frame (e.g., 1 or 2). Time budgeting in JS involving WebGPU submissions can be highly variable. Simple bounded counts prevent freezing the main thread while keeping the logic predictable.
+3. **Eviction granularity:** Yes, evict as one unit. Since all layers share the same `ChunkPlan` and spatial bounds, if the background chunk is evicted (e.g., off-screen), the overlay and PAQD chunks should go with it.
+4. **Universal single-chunk path:** Bypass the residency manager for 1-chunk volumes. The vast majority of NiiVue use cases are single-volume, and adding LRU bookkeeping/frustum culling overhead to them is unnecessary. Keep the existing fast path.
+5. **Sub-phasing:** The 3a-3d split is perfect. 3a is definitely a worthwhile standalone review step to ensure the state machine and data structures are sound before changing the actual render visibility logic.
+
+**Clear to proceed to Phase 3a!**
+
+---
+
+## Phase 3a, 3b, and 3c (Math) Review
+
+**Status:** Acknowledged and Approved ✅
+
+Excellent progression. Building the generic manager first (3a), bringing WebGL2 to parity (3b), and isolating the visibility math (3c) makes this complex streaming logic highly manageable.
+
+### Answers to Phase 3a Questions
+1. **Generic manager in `volume/`:** Yes, a generic `ChunkResidencyManager<TChunk>` is much cleaner than maintaining two nearly identical backend-specific classes. It keeps the core LRU and accounting logic entirely decoupled from the graphics APIs.
+2. **`bytesOf` excludes the transient scalar texture:** Correct. The residency manager tracks steady-state VRAM. Since the scalar source is destroyed before the chunk is admitted to the manager, it should not count against the budget.
+
+### Answers to Phase 3b Questions
+1. **Closure over `gl`:** Yes, closing over the WebGL2 context is the cleanest and most idiomatic way to handle texture destruction in WebGL2, since it lacks the context-free destruction of WebGPU.
+
+### Answers to Phase 3c (Math) Questions
+1. **Working-set as a CPU module:** Strongly agree. Keeping the frustum culling and intersection math pure and easily unit-testable is exactly the right architectural move. A conservative cull (favoring false positives over false negatives) is the correct trade-off. We can afford to upload a chunk we might not see, but we can't afford holes in the render.
+2. **Splitting 3c:** Absolutely. Reviewing the math in isolation before dealing with the asynchronous WebGPU/WebGL2 texture upload pump makes debugging vastly simpler.
+
+**Clear to proceed to the rest of Phase 3c (GPU streaming integration)!**

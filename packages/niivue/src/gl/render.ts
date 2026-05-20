@@ -26,9 +26,10 @@ import { chunkOverlayMatrix, extractChunkBytes } from '@/volume/orientChunked'
 import * as depthPickShader from './depthPickShader'
 import * as gradient from './gradient'
 import {
+  type ChunkUploaderGL,
+  createChunkUploaderGL,
   destroyVolumeChunksGL,
   type VolumeChunkGL,
-  volume2TextureChunkedGL,
 } from './orientChunked'
 import * as orientOverlay from './orientOverlay'
 import * as renderShader from './renderShader'
@@ -46,6 +47,14 @@ const CHUNKED_VOLUME_BYTE_CAP = 1_500_000_000
  * the WebGPU backend's cap so cross-backend error behavior stays identical.
  */
 const MAX_CHUNKS_PER_TILE = 32
+
+/**
+ * Chunks uploaded per frame by the streaming pump. Mirrors the WebGPU
+ * backend: a chunked volume's chunks are uploaded one (orient + gradient) at a
+ * time so each frame's main-thread cost is bounded, streaming the volume in
+ * over `chunkCount` frames instead of stalling at load.
+ */
+const CHUNK_UPLOADS_PER_FRAME = 1
 
 type Vec3f = [number, number, number]
 
@@ -82,6 +91,8 @@ interface ChunkedTexEntry {
   kind: 'chunked'
   /** GPU residency bookkeeping for the volume's chunks. */
   manager: ChunkResidencyManager<VolumeChunkGL>
+  /** On-demand uploader the streaming pump drives to fill the manager. */
+  uploader: ChunkUploaderGL
   plan: ChunkPlan
   /** Per-chunk data-region center in the full-volume [0,1] cube (for sort). */
   centers: Vec3f[]
@@ -416,10 +427,7 @@ export class VolumeRenderer extends NVRenderer {
         chunkedEntry = existing
       } else {
         if (existing) this._destroyTexEntry(gl, existing)
-        const chunks = volume2TextureChunkedGL(gl, vol, plan)
-        // Phase 3a: every chunk is uploaded up front and admitted, so the
-        // resident set is always complete. The manager owns chunk lifetime
-        // and byte accounting; streaming/eviction arrive in 3c/3d.
+        const uploader = createChunkUploaderGL(gl, vol, plan)
         const manager = new ChunkResidencyManager<VolumeChunkGL>(
           plan.chunks.length,
           CHUNKED_VOLUME_BYTE_CAP,
@@ -428,10 +436,16 @@ export class VolumeRenderer extends NVRenderer {
             destroy: (c) => destroyVolumeChunksGL(gl, [c]),
           },
         )
-        for (let i = 0; i < chunks.length; i++) manager.admit(i, chunks[i])
+        // Phase 3c: upload only the first chunk synchronously so the volume
+        // is immediately present (hasVolume/volumeTexture guards pass), then
+        // queue the rest — the per-frame pump streams them in over the next
+        // frames instead of stalling the main thread at load.
+        manager.admit(0, uploader.uploadChunk(0))
+        for (let i = 1; i < plan.chunks.length; i++) manager.requestUpload(i)
         chunkedEntry = {
           kind: 'chunked',
           manager,
+          uploader,
           plan,
           centers: computeChunkCenters(plan),
         }
@@ -537,17 +551,19 @@ export class VolumeRenderer extends NVRenderer {
    */
   getActiveChunkedSlice(): {
     plan: ChunkPlan
-    chunkTextures: WebGLTexture[]
+    chunkTextures: (WebGLTexture | null)[]
     overlayChunks: WebGLTexture[] | null
     paqdChunks: WebGLTexture[] | null
   } | null {
     if (!this._activeChunked) return null
     const { manager } = this._activeChunked
     const chunkCount = manager.chunkCount
-    const chunkTextures: WebGLTexture[] = []
+    // Indexed by chunk index; null for chunks not yet streamed in. The slice
+    // loop skips nulls — a transient gap rather than a hole, since the pump
+    // fills them within a few frames.
+    const chunkTextures: (WebGLTexture | null)[] = []
     for (let i = 0; i < chunkCount; i++) {
-      const c = manager.getChunk(i)
-      if (c) chunkTextures.push(c.volumeTexture)
+      chunkTextures.push(manager.getChunk(i)?.volumeTexture ?? null)
     }
     return {
       plan: this._activeChunked.plan,
@@ -563,6 +579,30 @@ export class VolumeRenderer extends NVRenderer {
     }
   }
 
+  /**
+   * Stream in queued chunks for every cached chunked volume — the per-frame
+   * upload pump. Uploads at most `CHUNK_UPLOADS_PER_FRAME` chunks total, then
+   * `admit`s them. Returns true if any chunk was admitted, so the view can
+   * schedule a follow-up frame to show the newly-resident data. WebGL2 uploads
+   * synchronously, so no in-flight guard is needed (unlike the WebGPU pump).
+   */
+  pumpChunkUploads(): boolean {
+    let budget = CHUNK_UPLOADS_PER_FRAME
+    let admitted = false
+    for (const entry of this._texCache.values()) {
+      if (entry.kind !== 'chunked') continue
+      entry.manager.beginFrame()
+      if (budget <= 0) continue
+      const indices = entry.manager.takePendingUploads(budget)
+      for (const i of indices) {
+        entry.manager.admit(i, entry.uploader.uploadChunk(i))
+        admitted = true
+        budget--
+      }
+    }
+    return admitted
+  }
+
   /** Release the GPU textures backing a single cache entry. */
   private _destroyTexEntry(
     gl: WebGL2RenderingContext,
@@ -570,6 +610,7 @@ export class VolumeRenderer extends NVRenderer {
   ): void {
     if (entry.kind === 'chunked') {
       entry.manager.destroy()
+      entry.uploader.dispose()
       if (this._activeChunked === entry) this._activeChunked = null
     } else {
       gl.deleteTexture(entry.volumeTexture)

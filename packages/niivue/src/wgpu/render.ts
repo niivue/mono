@@ -24,9 +24,10 @@ import { chunkOverlayMatrix, extractChunkBytes } from '@/volume/orientChunked'
 import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
 import * as orient from './orient'
 import {
+  type ChunkUploaderGPU,
+  createChunkUploaderGPU,
   destroyVolumeChunksGPU,
   type VolumeChunkGPU,
-  volume2TextureChunked,
 } from './orientChunked'
 import renderFragment from './render.wgsl?raw'
 import { volumeShaderPreamble } from './volumeShaderLib'
@@ -49,6 +50,14 @@ const CHUNKED_VOLUME_BYTE_CAP = 1_500_000_000
  * grids well below 32 chunks even with a 2048 device limit).
  */
 const MAX_CHUNKS_PER_TILE = 32
+
+/**
+ * Chunks uploaded per frame by the streaming pump. A chunked volume's chunks
+ * are uploaded one (orient + gradient) at a time so each frame's main-thread
+ * cost is bounded — the volume streams in over `chunkCount` frames instead of
+ * stalling at load. Raising this trades smoother streaming for larger hitches.
+ */
+const CHUNK_UPLOADS_PER_FRAME = 1
 
 type Vec3f = [number, number, number]
 
@@ -83,6 +92,8 @@ interface ChunkedTexEntry {
   kind: 'chunked'
   /** GPU residency bookkeeping for the volume's chunks. */
   manager: ChunkResidencyManager<VolumeChunkGPU>
+  /** On-demand uploader the streaming pump drives to fill the manager. */
+  uploader: ChunkUploaderGPU
   plan: ChunkPlan
   /** Per-chunk data-region center in the full-volume [0,1] cube (for sort). */
   centers: Vec3f[]
@@ -212,6 +223,10 @@ export class VolumeRenderer extends NVRenderer {
   // Set when bindCachedVolume selects a chunked entry; null for single
   // entries. draw() branches on this to run the multi-chunk loop.
   private _activeChunked: ChunkedTexEntry | null = null
+  // True while pumpChunkUploads has an async upload in flight. Guards against
+  // re-entrant pumps double-uploading a chunk that is queued but not yet
+  // admitted (admit clears the queue, so one pump at a time stays correct).
+  private _pumpInFlight = false
   private _bindGroupSharedKey: {
     matcap: GPUTexture | null
     overlay: GPUTexture | null
@@ -480,10 +495,7 @@ export class VolumeRenderer extends NVRenderer {
         chunkedEntry = existing
       } else {
         if (existing) this._destroyTexEntry(existing)
-        const chunks = await volume2TextureChunked(device, vol, plan)
-        // Phase 3a: every chunk is uploaded up front and admitted, so the
-        // resident set is always complete. The manager owns chunk lifetime
-        // and byte accounting; streaming/eviction arrive in 3c/3d.
+        const uploader = await createChunkUploaderGPU(device, vol, plan)
         const manager = new ChunkResidencyManager<VolumeChunkGPU>(
           plan.chunks.length,
           CHUNKED_VOLUME_BYTE_CAP,
@@ -492,13 +504,19 @@ export class VolumeRenderer extends NVRenderer {
             destroy: (c) => destroyVolumeChunksGPU([c]),
           },
         )
-        for (let i = 0; i < chunks.length; i++) manager.admit(i, chunks[i])
+        // Phase 3c: upload only the first chunk synchronously so the volume
+        // is immediately present (hasVolume/volumeTexture guards pass), then
+        // queue the rest — the per-frame pump streams them in over the next
+        // frames instead of stalling the main thread at load.
+        manager.admit(0, await uploader.uploadChunk(0))
+        for (let i = 1; i < plan.chunks.length; i++) manager.requestUpload(i)
         chunkedEntry = {
           kind: 'chunked',
           manager,
+          uploader,
           plan,
           centers: computeChunkCenters(plan),
-          bindGroups: chunks.map(() => null),
+          bindGroups: plan.chunks.map(() => null),
         }
         if (cacheKey) this._texCache.set(cacheKey, chunkedEntry)
       }
@@ -598,17 +616,19 @@ export class VolumeRenderer extends NVRenderer {
    */
   getActiveChunkedSlice(): {
     plan: ChunkPlan
-    chunkTextures: GPUTexture[]
+    chunkTextures: (GPUTexture | null)[]
     overlayChunks: GPUTexture[] | null
     paqdChunks: GPUTexture[] | null
   } | null {
     if (!this._activeChunked) return null
     const { manager } = this._activeChunked
     const chunkCount = manager.chunkCount
-    const chunkTextures: GPUTexture[] = []
+    // Indexed by chunk index; null for chunks not yet streamed in. The slice
+    // loop skips nulls — a transient gap rather than a hole, since the pump
+    // fills them within a few frames.
+    const chunkTextures: (GPUTexture | null)[] = []
     for (let i = 0; i < chunkCount; i++) {
-      const c = manager.getChunk(i)
-      if (c) chunkTextures.push(c.volumeTexture)
+      chunkTextures.push(manager.getChunk(i)?.volumeTexture ?? null)
     }
     return {
       plan: this._activeChunked.plan,
@@ -624,10 +644,42 @@ export class VolumeRenderer extends NVRenderer {
     }
   }
 
+  /**
+   * Stream in queued chunks for every cached chunked volume — the per-frame
+   * upload pump. Uploads at most `CHUNK_UPLOADS_PER_FRAME` chunks total, then
+   * `admit`s them. Returns true if any chunk was admitted, so the view can
+   * schedule a follow-up frame to show the newly-resident data. A single pump
+   * runs at a time: a re-entrant call while an async upload is in flight
+   * returns false immediately.
+   */
+  async pumpChunkUploads(): Promise<boolean> {
+    if (this._pumpInFlight) return false
+    let budget = CHUNK_UPLOADS_PER_FRAME
+    this._pumpInFlight = true
+    let admitted = false
+    try {
+      for (const entry of this._texCache.values()) {
+        if (entry.kind !== 'chunked') continue
+        entry.manager.beginFrame()
+        if (budget <= 0) continue
+        const indices = entry.manager.takePendingUploads(budget)
+        for (const i of indices) {
+          entry.manager.admit(i, await entry.uploader.uploadChunk(i))
+          admitted = true
+          budget--
+        }
+      }
+    } finally {
+      this._pumpInFlight = false
+    }
+    return admitted
+  }
+
   /** Release the GPU textures backing a single cache entry. */
   private _destroyTexEntry(entry: TexCacheEntry): void {
     if (entry.kind === 'chunked') {
       entry.manager.destroy()
+      entry.uploader.dispose()
       if (this._activeChunked === entry) this._activeChunked = null
     } else {
       entry.volumeTexture.destroy()

@@ -34,17 +34,32 @@ export interface VolumeChunkGL {
 }
 
 /**
- * Build per-chunk RGBA + gradient textures for a chunked volume on WebGL2.
- *
- * Sequential per chunk: extract -> orient -> gradient. Only the returned RGBA +
- * gradient textures persist; the per-chunk source texture is destroyed inside
- * `orientChunkToTexture`.
+ * On-demand chunk uploader for a chunked volume (WebGL2). The renderer keeps
+ * one per chunked volume and calls `uploadChunk` to stream chunks in across
+ * frames instead of uploading the whole volume at load. `dispose` exists for
+ * interface parity with the WebGPU uploader — WebGL2 holds no shared GPU
+ * resources, so it is a no-op.
  */
-export function volume2TextureChunkedGL(
+export interface ChunkUploaderGL {
+  /** Upload, orient, and gradient the chunk at `index` in the plan. */
+  uploadChunk(index: number): VolumeChunkGL
+  /** No-op; present for parity with the WebGPU uploader. */
+  dispose(): void
+}
+
+/**
+ * Build an on-demand chunk uploader for a chunked volume on WebGL2.
+ *
+ * Each `uploadChunk` extracts one chunk's source voxels, orients them to an
+ * RGBA texture, and runs the gradient pass; only the returned RGBA + gradient
+ * textures persist. The renderer pumps these calls a few per frame so a tiled
+ * volume streams in rather than stalling the main thread.
+ */
+export function createChunkUploaderGL(
   gl: WebGL2RenderingContext,
   nvimage: NVImage,
   plan: ChunkPlan,
-): VolumeChunkGL[] {
+): ChunkUploaderGL {
   if (!nvimage.dimsRAS) {
     throw new Error('orientChunkedGL: missing dimsRAS')
   }
@@ -99,8 +114,11 @@ export function volume2TextureChunkedGL(
     )
   }
 
-  const results: VolumeChunkGL[] = []
-  for (const desc of plan.chunks) {
+  function uploadChunk(index: number): VolumeChunkGL {
+    const desc = plan.chunks[index]
+    if (!desc) {
+      throw new Error(`orientChunkedGL: chunk index ${index} out of range`)
+    }
     const chunkBytes =
       identity || !img2RASstart || !img2RASstep
         ? extractChunkBytes(
@@ -130,9 +148,10 @@ export function volume2TextureChunkedGL(
       volumeTexture,
       [desc.texDims[0], desc.texDims[1], desc.texDims[2]],
     )
-    results.push({ volumeTexture, volumeGradientTexture, desc })
+    return { volumeTexture, volumeGradientTexture, desc }
   }
-  return results
+
+  return { uploadChunk, dispose: () => {} }
 }
 
 /** Release all per-chunk GPU textures from a previous build. */

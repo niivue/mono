@@ -158,17 +158,33 @@ async function createColormapResources(
 }
 
 /**
- * Build per-chunk RGBA + gradient textures for a chunked volume.
- *
- * Sequential per chunk: extract → upload → orient → gradient. Per-chunk source
- * textures and the shared scalar staging are destroyed before the next chunk
- * is processed; only the returned RGBA + gradient textures persist.
+ * On-demand chunk uploader for a chunked volume. The renderer keeps one of
+ * these per chunked volume and calls `uploadChunk` to stream chunks in across
+ * frames instead of uploading the whole volume at load. `dispose` releases the
+ * shared orient resources once the volume leaves the texture cache.
  */
-export async function volume2TextureChunked(
+export interface ChunkUploaderGPU {
+  /** Upload, orient, and gradient the chunk at `index` in the plan. */
+  uploadChunk(index: number): Promise<VolumeChunkGPU>
+  /** Release the shared uniform/colormap GPU resources. */
+  dispose(): void
+}
+
+/**
+ * Build an on-demand chunk uploader for a chunked volume.
+ *
+ * The shared orient resources (uniform buffer, colormap textures, sampler) are
+ * created once here and reused by every `uploadChunk` call. Each `uploadChunk`
+ * extracts one chunk's source voxels, uploads + orients + gradients it, and
+ * returns its RGBA + gradient textures; the transient per-chunk source texture
+ * is destroyed before returning. The renderer pumps these calls a few per
+ * frame so a tiled volume streams in rather than stalling the main thread.
+ */
+export async function createChunkUploaderGPU(
   device: GPUDevice,
   nvimage: NVImage,
   plan: ChunkPlan,
-): Promise<VolumeChunkGPU[]> {
+): Promise<ChunkUploaderGPU> {
   if (!nvimage.dimsRAS) {
     throw new Error('orientChunked: missing dimsRAS')
   }
@@ -228,8 +244,11 @@ export async function volume2TextureChunked(
     throw new Error('orientChunked: source is non-RAS but missing RAS mapping')
   }
 
-  const results: VolumeChunkGPU[] = []
-  for (const desc of plan.chunks) {
+  async function uploadChunk(index: number): Promise<VolumeChunkGPU> {
+    const desc = plan.chunks[index]
+    if (!desc) {
+      throw new Error(`orientChunked: chunk index ${index} out of range`)
+    }
     const chunkBytes =
       identity || !img2RASstart || !img2RASstep
         ? extractChunkBytes(
@@ -300,16 +319,20 @@ export async function volume2TextureChunked(
       device,
       rgbaTexture,
     )
-    results.push({
+    return {
       volumeTexture: rgbaTexture,
       volumeGradientTexture: gradientTexture,
       desc,
-    })
+    }
   }
-  uniformBuffer.destroy()
-  colormapTexture.destroy()
-  if (hasNegativeColormap) negativeColormapTexture.destroy()
-  return results
+
+  function dispose(): void {
+    uniformBuffer.destroy()
+    colormapTexture.destroy()
+    if (hasNegativeColormap) negativeColormapTexture.destroy()
+  }
+
+  return { uploadChunk, dispose }
 }
 
 /** Release all per-chunk GPU textures from a previous build. */

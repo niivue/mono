@@ -997,6 +997,9 @@ export default class NVView {
               sliceFrac,
             )
             for (const ci of crossing) {
+              const chunkTex = chunked.chunkTextures[ci]
+              // Not yet streamed in — skip; the pump fills it in shortly.
+              if (!chunkTex) continue
               this.sliceRenderer.draw(
                 device,
                 pass,
@@ -1013,7 +1016,7 @@ export default class NVView {
                 md.volume.paqdUniforms,
                 md.volume.isV1SliceShader,
                 {
-                  volumeTexture: chunked.chunkTextures[ci],
+                  volumeTexture: chunkTex,
                   transform: chunkSampleTransform(chunked.plan, ci),
                   slot: ci,
                   chunkIndex: ci,
@@ -1594,6 +1597,14 @@ export default class NVView {
     markSubmitStart()
     device.queue.submit([commandEncoder.finish()])
     markEnd()
+    // Stream in any not-yet-resident chunks of oversized volumes, then
+    // schedule a follow-up frame so the freshly-uploaded data appears.
+    this.volumeRenderer
+      .pumpChunkUploads()
+      .then((changed) => {
+        if (changed) requestAnimationFrame(() => this.render())
+      })
+      .catch((err) => log.error('chunk upload pump failed', err))
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */

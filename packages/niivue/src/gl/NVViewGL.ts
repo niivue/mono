@@ -670,9 +670,12 @@ export default class NVGlview {
               sliceFrac,
             )
             for (const ci of crossing) {
+              const chunkTex = chunked.chunkTextures[ci]
+              // Not yet streamed in — skip; the pump fills it in shortly.
+              if (!chunkTex) continue
               this.sliceRenderer.draw(
                 gl,
-                chunked.chunkTextures[ci],
+                chunkTex,
                 chunked.overlayChunks
                   ? chunked.overlayChunks[ci]
                   : this.volumeRenderer.overlayTexture,
@@ -1168,6 +1171,11 @@ export default class NVGlview {
     }
     markSubmitStart()
     markEnd()
+    // Stream in any not-yet-resident chunks of oversized volumes, then
+    // schedule a follow-up frame so the freshly-uploaded data appears.
+    if (this.volumeRenderer.pumpChunkUploads()) {
+      requestAnimationFrame(() => this.render())
+    }
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */

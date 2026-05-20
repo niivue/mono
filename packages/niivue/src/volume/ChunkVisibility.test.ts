@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { chunkVolume } from './chunking'
 import { chunksInFrustum, unionChunkSets } from './ChunkVisibility'
+import { chunkVolume } from './chunking'
 
 /** Column-major 4x4 identity. */
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]

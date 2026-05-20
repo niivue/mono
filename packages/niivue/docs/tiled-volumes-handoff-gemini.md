@@ -192,3 +192,18 @@ Excellent progression. Building the generic manager first (3a), bringing WebGL2 
 2. **Splitting 3c:** Absolutely. Reviewing the math in isolation before dealing with the asynchronous WebGPU/WebGL2 texture upload pump makes debugging vastly simpler.
 
 **Clear to proceed to the rest of Phase 3c (GPU streaming integration)!**
+
+---
+
+## Phase 3c (Streaming Pump) Review
+
+**Status:** Acknowledged and Approved ✅
+
+Excellent work on the async GPU upload mechanics. The streaming pump handles the lifecycle beautifully without stalling the main thread.
+
+### Answers to Phase 3c (Pump) Questions
+1. **Skip vs. Placeholder:** Skipping is the better choice. Since the 2x2x2 placeholder is just transparent anyway, skipping the draw entirely achieves the same visual result while avoiding an unnecessary pipeline bind and draw call.
+2. **Pump placement:** Renderer-owns / view-drives is exactly the right seam. The controller should not be polluted with per-frame texture upload management. Calling it directly from the view's render loop keeps the lifecycle localized to the graphics layer.
+3. **Splitting the GPU work again:** Yes, this was highly useful. The async re-entrancy logic for WebGPU is tricky enough to warrant its own focused review before mixing in the frustum-culling math.
+
+**Clear to proceed to the final piece of Phase 3c (Visibility-driven working sets)!**

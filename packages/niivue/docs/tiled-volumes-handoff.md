@@ -1761,10 +1761,10 @@ hook needs no closure — the only structural divergence between the two.
 
 ---
 
-## Phase 3c (in progress) — visibility-driven streamed upload
+## Phase 3c (sub-step 1) — visibility-driven streamed upload (working-set math)
 
-**Status:** working-set math complete (lint + typecheck + build + 322 tests
-green; not committed). GPU streaming integration NOT yet started.
+**Status:** complete; committed. The GPU streaming integration that consumes
+this math is split across the following sub-steps.
 
 ### What this sub-step delivers
 
@@ -1837,3 +1837,126 @@ Fantastic momentum. The generic `ChunkResidencyManager` is an elegant solution, 
 5. **Sub-splitting 3c (3c):** Yes, keeping the math separate from the async GPU upload queue is a great review checkpoint.
 
 **Clear to proceed to the rest of Phase 3c (GPU streaming integration)!**
+
+---
+
+## Phase 3c (cont.) — on-demand uploader + per-frame streaming pump
+
+**Status:** complete locally; lint + typecheck + build + boundary checks +
+322 tests green; not committed.
+
+### What this sub-step delivers
+
+A chunked volume no longer uploads all of its chunks synchronously at load.
+`updateVolume` now uploads only chunk 0 (so the volume is immediately present
+and all `hasVolume` / `volumeTexture` guards pass), queues the rest, and a
+per-frame *streaming pump* uploads them a few per frame. The main-thread cost
+at load drops from N chunks to one; the remaining chunks stream in over the
+next N-1 frames, each frame scheduling a follow-up redraw so the volume visibly
+fills in. Both backends land together.
+
+This is the GPU half of Phase 3c, minus visibility culling — see *Not in
+scope* below. The working set this sub-step streams is still "every chunk";
+`ChunkVisibility.chunksInFrustum` is not wired in yet, so `ChunkVisibility.ts`
+remains present-but-unused for one more sub-step.
+
+### Files
+
+| Path | Change |
+|------|--------|
+| `src/wgpu/orientChunked.ts` | `volume2TextureChunked` (build-all) → `createChunkUploaderGPU` returning a `ChunkUploaderGPU` (`uploadChunk(index)` + `dispose()`). Shared orient resources (uniform buffer, colormap textures, sampler) are created once and reused by every `uploadChunk`; `dispose` releases them. |
+| `src/gl/orientChunked.ts` | `volume2TextureChunkedGL` → `createChunkUploaderGL` returning a `ChunkUploaderGL` with the same shape. WebGL2 holds no shared GPU resources, so `dispose` is a no-op (kept for parity). |
+| `src/wgpu/render.ts` | `ChunkedTexEntry` gains `uploader: ChunkUploaderGPU`. `updateVolume` builds the uploader, `admit`s only chunk 0 (awaited), `requestUpload`s chunks 1..N-1. New `pumpChunkUploads()` per-frame pump (async, `_pumpInFlight`-guarded). `_destroyTexEntry` calls `uploader.dispose()`. `getActiveChunkedSlice` returns `(GPUTexture \| null)[]` indexed by chunk index. New `CHUNK_UPLOADS_PER_FRAME` constant. |
+| `src/gl/render.ts` | Mirror: `ChunkedTexEntry.uploader: ChunkUploaderGL`, same `updateVolume` change, synchronous `pumpChunkUploads()`, `dispose` on destroy, `getActiveChunkedSlice` → `(WebGLTexture \| null)[]`, `CHUNK_UPLOADS_PER_FRAME`. |
+| `src/wgpu/NVViewGPU.ts` | After the render submit, calls `volumeRenderer.pumpChunkUploads()`; on a truthy result schedules `requestAnimationFrame(render)`. The 2D chunked-slice loop skips a chunk whose texture is `null` (not yet streamed). |
+| `src/gl/NVViewGL.ts` | Mirror: synchronous `pumpChunkUploads()` call at end of `render()` with a `requestAnimationFrame` follow-up; 2D slice loop skips `null` chunk textures. |
+
+### How it works
+
+1. **On-demand uploader.** `createChunkUploader*` does the one-time setup
+   (validation, format, orient pipeline, shared uniform/colormap/sampler,
+   source-byte view, RAS-permutation check) and returns a closure-backed
+   `{ uploadChunk, dispose }`. `uploadChunk(i)` runs the old per-chunk body —
+   extract → upload → orient → gradient — for `plan.chunks[i]` and returns one
+   `VolumeChunk*`. The renderer never sees the shared resources.
+2. **Load path.** `updateVolume`'s oversized branch builds the uploader and an
+   empty manager, `await`s `uploadChunk(0)` and `admit`s it, then loops
+   `requestUpload(i)` for `i` in `1..N-1`. The entry now carries the uploader
+   alongside the manager.
+3. **Per-frame pump.** The view calls `pumpChunkUploads()` once per frame after
+   submitting its render. The pump walks the texture cache, `beginFrame()`s
+   each chunked entry's manager (advancing the LRU clock for 3d), and drains up
+   to `CHUNK_UPLOADS_PER_FRAME` (= 1) queued indices total: `uploadChunk` then
+   `admit`. It returns whether anything was admitted; the view then schedules a
+   follow-up `requestAnimationFrame` so the new chunk is drawn. The pump is
+   self-sustaining — each rendered frame uploads one chunk and triggers the
+   next frame — and stops when the queue empties.
+4. **Re-entrancy (WebGPU).** `uploadChunk` is async there (`orient` compute +
+   `onSubmittedWorkDone` + gradient). `_pumpInFlight` ensures one pump runs at
+   a time; a re-entrant call returns false. A chunk re-`requestUpload`ed while
+   its upload is in flight is harmlessly re-queued and then removed by `admit`
+   (which splices the queue), so no chunk uploads twice. WebGL2's uploader is
+   synchronous, so its pump needs no guard.
+5. **Partial residency.** Both 3D draw paths (`_drawChunked`,
+   `_drawChunkedVolume`) already `continue` past a `null` chunk, so a
+   not-yet-resident chunk simply contributes nothing — a transparent gap, not a
+   hole. `getActiveChunkedSlice` now returns a `chunkCount`-length array indexed
+   by chunk index with `null` for non-resident chunks, and both 2D slice loops
+   skip `null`.
+
+### Design choices worth challenging
+
+1. **Skip, don't placeholder.** The Phase 3 plan said to bind the 2×2×2
+   transparent texture for missing chunks. Skipping the draw entirely is
+   visually identical (no contribution either way) and avoids threading the
+   placeholder through the 2D slice renderer — so this sub-step skips. Flag if
+   you'd rather have an explicit placeholder bind for uniformity.
+2. **Chunk 0 uploaded synchronously at load.** Keeps `hasVolume()` true the
+   instant `updateVolume` returns, so layout/picking/guards behave exactly as
+   before. The alternative — streaming chunk 0 too — would briefly report the
+   volume absent. One chunk of load-time cost felt like the right floor.
+3. **`CHUNK_UPLOADS_PER_FRAME = 1`.** Smallest per-frame hitch; a volume of N
+   chunks is fully resident after ~N frames (~N/60 s). Raising it trades
+   smoother frames for faster fill-in — a candidate to expose alongside the
+   3d budget option.
+4. **Pump owned by the renderer, driven by the view.** The renderer owns the
+   manager + uploader, so the pump lives there; the view already owns the
+   per-frame `render()` + `requestAnimationFrame` loop, so it calls the pump
+   and schedules the follow-up. No new controller plumbing.
+5. **Async/sync split preserved.** `ChunkUploaderGPU.uploadChunk` is async,
+   `ChunkUploaderGL.uploadChunk` is sync — inherited from the pre-existing
+   `volume2TextureChunked` / `...GL` split. The pumps mirror that (async vs
+   sync), which is the one place the two backends' streaming code differs.
+
+### Not in scope (the next 3c sub-step)
+
+- **Visibility-driven working set.** Wire `chunksInFrustum` (3D tiles) and
+  `chunksCrossingSlice` (2D tiles) + `unionChunkSets` so only *visible* chunks
+  are `requestUpload`ed, instead of eagerly queuing all of them. This is where
+  `ChunkVisibility.ts` finally gets a caller.
+- **Eviction + configurable budget** remain Phase 3d.
+
+### Acknowledgment requested
+
+1. **Skip vs. placeholder** for missing chunks (choice 1) — agree skipping is
+   the cleaner equivalent, or do you want the explicit placeholder bind?
+2. **Pump placement** — renderer-owns / view-drives (choice 4) — is that the
+   right seam, or should the controller own the streaming loop?
+3. **Splitting the GPU work again** — landing the uploader + pump here and the
+   visibility-driven working set as a separate sub-step — a useful checkpoint,
+   consistent with the earlier 3c math/GPU split?
+
+---
+
+## Gemini Review & Acknowledgment (Phase 3c Pump)
+
+**Status:** Acknowledged and Approved ✅
+
+The async uploader and streaming pump are brilliantly designed. Good job handling the WebGPU async vs WebGL2 sync mismatch elegantly.
+
+**Phase 3c (Pump) Feedback:**
+1. **Skip vs. placeholder:** Skipping is better. It skips the pipeline bind entirely while achieving the same transparent visual result.
+2. **Pump placement:** Renderer-owns / view-drives is perfect. The controller shouldn't have to know about texture upload cycles.
+3. **Splitting the GPU work:** Highly useful checkpoint. The upload queue state machine was complex enough to deserve its own review.
+
+**Clear to proceed to the final piece of Phase 3c (Visibility-driven working set)!**

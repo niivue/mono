@@ -236,7 +236,15 @@ export default class NVGlview {
       typeof override === 'number' && override > 0
         ? Math.min(this.max3D, override)
         : this.max3D
-    await this.volumeRenderer.init(gl, chunkLimit)
+    // `maxChunkResidencyBytes`, when set, overrides the GPU memory budget for a
+    // chunked volume's resident chunk set; the manager evicts least-recently-
+    // visible chunks to stay within it. Unset leaves the renderer default.
+    const residencyOverride = this.options.maxChunkResidencyBytes
+    const chunkResidencyBytes =
+      typeof residencyOverride === 'number' && residencyOverride > 0
+        ? residencyOverride
+        : undefined
+    await this.volumeRenderer.init(gl, chunkLimit, chunkResidencyBytes)
     // Initialize crosshair renderer with pre-allocated buffers
     const attrs = mesh.getAttributeLocations(gl, 'phong')
     this.crosshairRenderer.init(

@@ -37,15 +37,17 @@ import * as renderShader from './renderShader'
 import { Shader } from './shader'
 
 /**
- * Hard cap on total GPU bytes per chunked volume (scalar + RGBA + gradient
- * across all chunks). Mirrors the WebGPU backend so both fail fast with the
- * same error before a multi-gigabyte upload crashes the context.
+ * Default GPU memory budget, in bytes, for a chunked volume's resident chunk
+ * set. Mirrors the WebGPU backend; overridable per instance via the
+ * `maxChunkResidencyBytes` option. The ChunkResidencyManager evicts
+ * least-recently-visible chunks to keep the resident set within budget.
  */
-const CHUNKED_VOLUME_BYTE_CAP = 1_500_000_000
+const DEFAULT_CHUNK_RESIDENCY_BYTES = 1_500_000_000
 
 /**
- * Maximum chunks a single chunked volume may draw per 3D-render tile. Mirrors
- * the WebGPU backend's cap so cross-backend error behavior stays identical.
+ * Maximum chunks a single chunked volume may tile into. Bounds the per-chunk
+ * uniform-buffer slot allocation. Mirrors the WebGPU backend's structural
+ * limit so cross-backend error behavior stays identical.
  */
 const MAX_CHUNKS_PER_TILE = 32
 
@@ -192,6 +194,9 @@ export class VolumeRenderer extends NVRenderer {
   indexBuffer: WebGLBuffer | null
   cube: { vertices: number[]; indices: number[] }
   max3D: number
+  // GPU memory budget for a chunked volume's resident chunk set. Set from the
+  // maxChunkResidencyBytes option in init; passed to each ChunkResidencyManager.
+  private _chunkResidencyBytes = DEFAULT_CHUNK_RESIDENCY_BYTES
   // Per-volume GPU texture cache. Populated by updateVolume; consumed by
   // bindCachedVolume to switch the active volume/gradient texture per tile
   // when rendering multi-instance global3d scenes.
@@ -231,11 +236,16 @@ export class VolumeRenderer extends NVRenderer {
     this._texCache = new Map()
   }
 
-  async init(gl: WebGL2RenderingContext, max3D: number): Promise<void> {
+  async init(
+    gl: WebGL2RenderingContext,
+    max3D: number,
+    chunkResidencyBytes: number = DEFAULT_CHUNK_RESIDENCY_BYTES,
+  ): Promise<void> {
     if (this.isReady) return
     this._gl = gl
 
     this.max3D = max3D
+    this._chunkResidencyBytes = chunkResidencyBytes
 
     // Create cube VAO
     this.cubeVAO = gl.createVertexArray()
@@ -413,14 +423,6 @@ export class VolumeRenderer extends NVRenderer {
           `${formatBytes(budget.rgbaBytes)} RGBA + ` +
           `${formatBytes(budget.gradientBytes)} gradient).`,
       )
-      if (budget.totalBytes > CHUNKED_VOLUME_BYTE_CAP) {
-        throw new Error(
-          `Volume ${vol.name} too large to render: ` +
-            `~${formatBytes(budget.totalBytes)} required, ` +
-            `${formatBytes(CHUNKED_VOLUME_BYTE_CAP)} cap. ` +
-            `Use a coarser pyramid level or crop the volume.`,
-        )
-      }
       if (plan.chunks.length > MAX_CHUNKS_PER_TILE) {
         throw new Error(
           `Volume ${vol.name} tiles into ${plan.chunks.length} chunks, ` +
@@ -437,7 +439,7 @@ export class VolumeRenderer extends NVRenderer {
         const uploader = createChunkUploaderGL(gl, vol, plan)
         const manager = new ChunkResidencyManager<VolumeChunkGL>(
           plan.chunks.length,
-          CHUNKED_VOLUME_BYTE_CAP,
+          this._chunkResidencyBytes,
           {
             bytesOf: chunkResidentBytes,
             destroy: (c) => destroyVolumeChunksGL(gl, [c]),

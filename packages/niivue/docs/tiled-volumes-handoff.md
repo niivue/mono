@@ -2304,3 +2304,73 @@ Great job integrating the lifecycle hooks into the renderer. Moving the frame ti
 4. **Sub-step 3:** Clear to proceed.
 
 **Clear to proceed to Phase 3d sub-step 3 (Configurable budget)!**
+---
+
+## Phase 3d (sub-step 3) — configurable residency budget (makes eviction live)
+
+Until now eviction was implemented but **dormant**: the renderer constructed
+every `ChunkResidencyManager` with `budgetBytes = CHUNKED_VOLUME_BYTE_CAP`
+(1.5 GiB) *and* a fail-fast guard rejected any volume whose total chunk bytes
+exceeded that same cap. So `residentBytes <= totalBytes <= budgetBytes` always
+held and `_evictToFit` never evicted anything.
+
+This sub-step makes the budget configurable and removes the byte fail-fast
+guard, so a volume whose chunks exceed the budget now streams in with the
+least-recently-visible chunks evicted, instead of being rejected outright.
+
+### What changed
+
+- **`NiiVueOptions.maxChunkResidencyBytes?: number`** (`NVTypes.ts`) — new
+  optional GPU memory budget for a chunked volume's resident chunk set. Unset
+  leaves the renderer default.
+- **Both renderers (`wgpu/render.ts`, `gl/render.ts`):**
+  - `CHUNKED_VOLUME_BYTE_CAP` renamed to **`DEFAULT_CHUNK_RESIDENCY_BYTES`** —
+    demoted from a hard cap to the *default* budget value.
+  - New private field `_chunkResidencyBytes`, set in `init(...)` from a new
+    `chunkResidencyBytes` parameter (defaults to `DEFAULT_CHUNK_RESIDENCY_BYTES`).
+  - The `ChunkResidencyManager` is now constructed with `this._chunkResidencyBytes`
+    instead of the constant.
+  - **The `budget.totalBytes > CHUNKED_VOLUME_BYTE_CAP` fail-fast guard is
+    removed.** Over-budget volumes are now handled by eviction, not rejection.
+- **Both views (`NVViewGPU.ts`, `NVViewGL.ts`):** `_createResources` reads
+  `options.maxChunkResidencyBytes`, validates it (`typeof === 'number' && > 0`),
+  and threads it into `volumeRenderer.init(...)` — mirroring the existing
+  `maxTextureDimension3D` override pattern.
+
+### Deliberate deviation from the sub-step-2 "not in scope" note
+
+The sub-step-2 handoff said sub-step 3 would also see `MAX_CHUNKS_PER_TILE`
+**removed**. On implementation I kept it, because it is *not* a memory budget —
+it is a **structural limit of the fixed-size per-chunk uniform buffer**
+(`paramsBuffer` is sized `alignedRenderSize * MAX_TILES * (1 + MAX_CHUNKS_PER_TILE)`,
+and `slice.ts` mirrors it). Removing it requires dynamically sizing/recreating
+that uniform buffer when a chunked volume loads, in both `render.ts` and
+`slice.ts` — a meaningfully larger, riskier change that is orthogonal to
+"configurable budget."
+
+Consequence with `MAX_CHUNKS_PER_TILE` retained: eviction is live for any
+volume that tiles into <= 32 chunks but whose total bytes exceed the budget
+(high per-chunk resolution). A volume tiling into > 32 chunks still fails fast
+on the chunk-count guard.
+
+### Verification
+
+`bunx nx run niivue:{typecheck,lint,test,build}` all green (327 tests pass),
+`bun run check-boundaries` passes. Eviction has no GPU-free unit-test surface;
+the `ChunkResidency.test.ts` eviction suite already covers the manager logic.
+
+### Acknowledgment requested
+
+1. **Keeping `MAX_CHUNKS_PER_TILE`** as a structural uniform-buffer limit rather
+   than removing it this sub-step — agree it should be deferred (its own
+   sub-step, dynamic uniform-buffer sizing) rather than bundled here?
+2. **Removing the `totalBytes` fail-fast guard entirely** — comfortable that
+   eviction is now the sole mechanism for over-budget volumes (resident set
+   stays bounded; non-resident chunks render as skipped, per the Phase 3c
+   skip-vs-placeholder decision), with no "too large" error at all for
+   <= 32-chunk volumes?
+3. **`maxChunkResidencyBytes` as a construction-time `init` option** (threaded
+   like `maxTextureDimension3D`) rather than a reactive model property —
+   right call, given the budget is a per-instance GPU tuning knob, not
+   per-frame state?
+4. Clear to proceed to sub-step 4 (demo budget slider)?

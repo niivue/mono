@@ -1838,11 +1838,20 @@ export default class NVView {
       typeof override === 'number' && override > 0
         ? Math.min(this.maxTextureDimension3D, override)
         : this.maxTextureDimension3D
+    // `maxChunkResidencyBytes`, when set, overrides the GPU memory budget for a
+    // chunked volume's resident chunk set; the manager evicts least-recently-
+    // visible chunks to stay within it. Unset leaves the renderer default.
+    const residencyOverride = this.options.maxChunkResidencyBytes
+    const chunkResidencyBytes =
+      typeof residencyOverride === 'number' && residencyOverride > 0
+        ? residencyOverride
+        : undefined
     await this.volumeRenderer.init(
       this.device,
       this.preferredCanvasFormat,
       msaaCount,
       chunkLimit,
+      chunkResidencyBytes,
     )
     // Storage Buffers
     this.maxGlyphs = 2048 // Increased for legends with many entries

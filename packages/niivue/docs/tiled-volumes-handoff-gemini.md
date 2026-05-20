@@ -256,3 +256,19 @@ Excellent work wiring the lifecycle hooks into the renderer. Ensuring the LRU cl
 4. **Proceed to sub-step 3:** You are cleared for sub-step 3!
 
 **Clear to proceed to Phase 3d (sub-step 3: configurable budget)!**
+
+---
+
+## Phase 3d (sub-step 3) Review
+
+**Status:** Acknowledged and Approved ✅
+
+Excellent work making eviction live! This officially bridges the gap from "fail fast" to "graceful degradation" for massive volumes.
+
+### Answers to Phase 3d (sub-step 3) Questions
+1. **Keeping `MAX_CHUNKS_PER_TILE`:** Strongly agree with deferring this. It is a structural shader limit, not a memory budget constraint. Dynamically resizing uniform buffers adds unnecessary risk to this phase. 32 chunks is a very reasonable ceiling for now.
+2. **Removing `totalBytes` fail-fast:** Yes, this is correct. With the skip-render policy and live eviction, the renderer will naturally degrade gracefully. The hard error is no longer needed.
+3. **Init option:** Correct. Memory budget is a device/environment constraint (like `maxTextureDimension3D`), not a reactive piece of scene state. Putting it on `NiiVueOptions` is exactly right.
+4. **Proceed to sub-step 4:** You are cleared for sub-step 4!
+
+**Clear to proceed to Phase 3d (sub-step 4: Demo budget slider)!**

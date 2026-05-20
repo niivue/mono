@@ -35,20 +35,21 @@ import { volumeShaderPreamble } from './volumeShaderLib'
 import * as wgpu from './wgpu'
 
 /**
- * Hard cap on total GPU bytes per chunked volume (scalar + RGBA + gradient
- * across all chunks). Picked to fit comfortably below a typical 4 GiB
- * discrete-GPU budget while leaving headroom for overlays, fonts, and
- * other resident textures. Volumes over this cap fail fast with a clear
- * error instead of crashing the WebGPU context mid-upload.
+ * Default GPU memory budget, in bytes, for a chunked volume's resident chunk
+ * set (scalar + RGBA + gradient across resident chunks). Picked to fit
+ * comfortably below a typical 4 GiB discrete-GPU budget while leaving headroom
+ * for overlays, fonts, and other resident textures. Overridable per instance
+ * via the `maxChunkResidencyBytes` option — the ChunkResidencyManager evicts
+ * least-recently-visible chunks to keep the resident set within budget.
  */
-const CHUNKED_VOLUME_BYTE_CAP = 1_500_000_000
+const DEFAULT_CHUNK_RESIDENCY_BYTES = 1_500_000_000
 
 /**
- * Maximum chunks a single chunked volume may draw per 3D-render tile. Bounds
- * the per-chunk uniform-buffer slot allocation. A volume that tiles into more
- * chunks than this fails fast in updateVolume with a clear error. 32 covers
- * realistic chunk grids under CHUNKED_VOLUME_BYTE_CAP (a 1.5 GiB budget caps
- * grids well below 32 chunks even with a 2048 device limit).
+ * Maximum chunks a single chunked volume may tile into. Bounds the per-chunk
+ * uniform-buffer slot allocation (one slot per chunk per tile). A volume that
+ * tiles into more chunks than this fails fast in updateVolume with a clear
+ * error — a structural limit of the fixed-size uniform buffer, not a memory
+ * budget (memory pressure is handled by chunk eviction).
  */
 const MAX_CHUNKS_PER_TILE = 32
 
@@ -207,6 +208,9 @@ export class VolumeRenderer extends NVRenderer {
   maxTextureDimension3D: number
   depthFormat: GPUTextureFormat
   private _device: GPUDevice | null
+  // GPU memory budget for a chunked volume's resident chunk set. Set from the
+  // maxChunkResidencyBytes option in init; passed to each ChunkResidencyManager.
+  private _chunkResidencyBytes = DEFAULT_CHUNK_RESIDENCY_BYTES
   private _matcapUrl: string | null = null
   private _bindTexVol: GPUTexture | null = null
   private _bindTexGrad: GPUTexture | null = null
@@ -275,6 +279,7 @@ export class VolumeRenderer extends NVRenderer {
     format: GPUTextureFormat,
     msaaCount: number,
     maxTextureDimension3D: number,
+    chunkResidencyBytes: number = DEFAULT_CHUNK_RESIDENCY_BYTES,
     depthFormat: GPUTextureFormat = 'depth24plus',
   ): Promise<void> {
     this._device = device
@@ -282,6 +287,7 @@ export class VolumeRenderer extends NVRenderer {
     if (this.isReady) return
 
     this.maxTextureDimension3D = maxTextureDimension3D
+    this._chunkResidencyBytes = chunkResidencyBytes
 
     // Create samplers
     this.sampler = device.createSampler({
@@ -481,14 +487,6 @@ export class VolumeRenderer extends NVRenderer {
           `${formatBytes(budget.rgbaBytes)} RGBA + ` +
           `${formatBytes(budget.gradientBytes)} gradient).`,
       )
-      if (budget.totalBytes > CHUNKED_VOLUME_BYTE_CAP) {
-        throw new Error(
-          `Volume ${vol.name} too large to render: ` +
-            `~${formatBytes(budget.totalBytes)} required, ` +
-            `${formatBytes(CHUNKED_VOLUME_BYTE_CAP)} cap. ` +
-            `Use a coarser pyramid level or crop the volume.`,
-        )
-      }
       if (plan.chunks.length > MAX_CHUNKS_PER_TILE) {
         throw new Error(
           `Volume ${vol.name} tiles into ${plan.chunks.length} chunks, ` +
@@ -510,7 +508,7 @@ export class VolumeRenderer extends NVRenderer {
         const bindGroups: (GPUBindGroup | null)[] = plan.chunks.map(() => null)
         const manager = new ChunkResidencyManager<VolumeChunkGPU>(
           plan.chunks.length,
-          CHUNKED_VOLUME_BYTE_CAP,
+          this._chunkResidencyBytes,
           {
             bytesOf: chunkResidentBytes,
             destroy: (c) => destroyVolumeChunksGPU([c]),

@@ -684,6 +684,15 @@ export type NiiVueOptions = {
    * not raise the limit beyond what the device actually supports.
    */
   maxTextureDimension3D?: number
+  /**
+   * GPU memory budget, in bytes, for a chunked (tiled) volume's resident chunk
+   * set (scalar + RGBA + gradient across resident chunks). When a chunked
+   * volume's chunks exceed this budget, the least-recently-visible chunks are
+   * evicted and stream back in on demand as the view changes. Unset leaves a
+   * conservative default that fits comfortably below typical discrete-GPU
+   * memory.
+   */
+  maxChunkResidencyBytes?: number
 
   // Scene
   azimuth?: number

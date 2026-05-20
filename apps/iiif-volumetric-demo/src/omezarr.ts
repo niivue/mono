@@ -15,8 +15,9 @@
 //     "comfortable" mid level (closest to 1 voxel per screen pixel at
 //     the current zoom). The upgrade is cancelled if the user touches
 //     level/bbox or scrolls, so user intent always wins.
-//   - Colormap and window edits update the GPU in place via setVolume()
-//     and do not refetch — only level/bbox changes hit the wire.
+//   - Colormap and window edits trigger a reload of the current level so
+//     the 3D render texture is rebuilt — the bytes come from browser cache,
+//     so this is cheap at the coarse levels the demo paints first.
 //
 // Two automatic behaviours showcase the server's strengths:
 //
@@ -111,6 +112,11 @@ let upgradeTimer: ReturnType<typeof setTimeout> | null = null
 // Token bumped on every user-driven reload so an in-flight progressive
 // upgrade can detect "I'm stale, drop me".
 let reloadEpoch = 0
+// Volumes that have had the punchy default window applied. niivue's
+// auto-calibration leaves a translucent low-intensity haze that dims the
+// 3D render; we re-window onto the upper half of the robust range once,
+// on first load, unless the user has set a window explicitly.
+const autoWindowed = new Set<string>()
 
 main().catch((err: unknown) => {
   console.error(err)
@@ -135,10 +141,10 @@ async function main(): Promise<void> {
     void reload()
   })
   els.colormap.addEventListener('change', () => {
-    void applyDisplay()
+    void reload()
   })
   els.window.addEventListener('change', () => {
-    void applyDisplay()
+    void reload()
   })
   els.bbox.addEventListener('change', () => {
     void reload()
@@ -330,6 +336,21 @@ async function reload(): Promise<void> {
     reloading = false
     return
   }
+  // First paint of a volume: niivue auto-calibrated a wide 2-98% window
+  // that renders the low-intensity matrix as translucent haze, dulling the
+  // whole image. Re-window onto the upper half of the robust range so
+  // dense structure reads as bright, then reload once to rebuild the 3D
+  // texture (bytes come from cache). Skipped if the user set a window.
+  if (!autoWindowed.has(v.id) && !els.window.value && nv.volumes[0]) {
+    autoWindowed.add(v.id)
+    const w = punchyWindow(nv.volumes[0])
+    if (w) {
+      els.window.value = `${w.min},${w.max}`
+      reloading = false
+      void reload()
+      return
+    }
+  }
   renderHud(v, level)
   reloading = false
   // loadVolumes can reset the camera/zoom, so the sliders may now be stale.
@@ -373,23 +394,21 @@ function syncCameraSliders(): void {
   }
 }
 
-// Apply colormap + window in place. No fetch, no re-decode — niivue updates
-// the GPU textures directly. Called from the colormap/window UI changes so
-// fiddling with display doesn't pull bytes off the wire.
-async function applyDisplay(): Promise<void> {
-  if (!nv || nv.volumes.length === 0) return
-  const colormap = els.colormap.value || 'gray'
-  const win = parseWindow(els.window.value)
-  const opts: {
-    colormap: string
-    calMin?: number
-    calMax?: number
-  } = { colormap }
-  if (win) {
-    opts.calMin = win.min
-    opts.calMax = win.max
+// Derives a "punchy" window from niivue's auto-calibrated intensity range.
+// The render alpha is baked from intensity, so the wide 2-98% auto window
+// leaves the low-intensity bulk as translucent haze. Windowing to the upper
+// half of the robust range drops that haze; the max is stretched to the
+// global peak so the brightest structure saturates to white.
+function punchyWindow(vol: unknown): { min: number; max: number } | null {
+  const v = vol as { calMin?: unknown; calMax?: unknown; globalMax?: unknown }
+  const lo = v.calMin
+  const hi = v.calMax
+  if (typeof lo !== 'number' || typeof hi !== 'number' || hi <= lo) {
+    return null
   }
-  await nv.setVolume(0, opts)
+  const gmax = v.globalMax
+  const max = typeof gmax === 'number' && gmax > hi ? gmax : hi
+  return { min: Math.round(lo + 0.5 * (hi - lo)), max: Math.round(max) }
 }
 
 // After the coarse first paint, fetch a "comfortable" level in the

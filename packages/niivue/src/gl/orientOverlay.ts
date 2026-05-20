@@ -10,6 +10,8 @@ import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import type { NVImage, TypedVoxelArray } from '@/NVTypes'
 import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
+import type { ChunkPlan } from '@/volume/chunking'
+import { chunkOverlayMatrix } from '@/volume/orientChunked'
 
 type ShaderPrograms = {
   uint: WebGLProgram
@@ -19,6 +21,11 @@ type ShaderPrograms = {
 
 // top of file
 const _programCache = new WeakMap<WebGL2RenderingContext, ShaderPrograms>() // gl -> { uint, sint, float }
+
+/** Identity 4x4 — orient shader applies `vec4(TexCoord, coordZ, 1) * mtx`. */
+const IDENTITY_MAT4 = new Float32Array([
+  1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+])
 
 function getOrCreatePrograms(gl: WebGL2RenderingContext): ShaderPrograms {
   let cache = _programCache.get(gl)
@@ -813,6 +820,7 @@ export function overlay2Texture(
   nvimageTarget: NVImage,
   mtx: Float32Array,
   overlayOpacity = 1,
+  outDimsOverride?: readonly number[],
 ): WebGLTexture {
   if (nvimage.hdr.datatypeCode === 128 || nvimage.hdr.datatypeCode === 2304) {
     return rgba2Texture(gl, nvimage)
@@ -826,11 +834,16 @@ export function overlay2Texture(
     nvimage.hdr.dims[2] ?? 0,
     nvimage.hdr.dims[3] ?? 0,
   ]
-  const dimsOut = [
-    nvimageTarget.dimsRAS[1] ?? 0,
-    nvimageTarget.dimsRAS[2] ?? 0,
-    nvimageTarget.dimsRAS[3] ?? 0,
-  ]
+  // Output dims default to the target's RAS grid. A chunked caller passes a
+  // chunk's texDims here and a pre-composed mtx (S * overlayMtx) so this same
+  // pass renders one chunk-sized sub-texture.
+  const dimsOut = outDimsOverride
+    ? [outDimsOverride[0], outDimsOverride[1], outDimsOverride[2]]
+    : [
+        nvimageTarget.dimsRAS[1] ?? 0,
+        nvimageTarget.dimsRAS[2] ?? 0,
+        nvimageTarget.dimsRAS[3] ?? 0,
+      ]
   // Determine texture configuration based on datatype
   const texConfig = getTextureConfig(nvimage.hdr.datatypeCode)
   // Create shader programs (could be cached for efficiency)
@@ -1141,6 +1154,294 @@ export function overlay2Texture(
   gl.bindTexture(gl.TEXTURE_3D, null)
   gl.activeTexture(savedActiveTexture)
   // Delete temporary resources
+  gl.deleteTexture(inputTexture)
+  gl.deleteTexture(colormapTexture)
+  gl.deleteTexture(negColormapTexture)
+  gl.deleteBuffer(vbo)
+  gl.deleteVertexArray(vao)
+  gl.deleteFramebuffer(framebuffer)
+  return outputTexture
+}
+
+/**
+ * Build one RGBA8 overlay texture per chunk for a chunked oversized volume.
+ *
+ * Each chunk is oriented independently: the output texture is sized to the
+ * chunk's `texDims` (halo included) and `overlay2Texture` runs with the matrix
+ * `mtx * S`, where S maps the chunk's local [0,1] output coordinates to the
+ * full volume's [0,1] coordinates. The per-chunk textures align 1:1 with the
+ * volume chunks (shared ChunkPlan), so the renderer's per-chunk uniforms and
+ * `chunkTexCoord` sample them seam-free. Returns one texture per `plan.chunks`.
+ */
+export function overlay2TextureChunked(
+  gl: WebGL2RenderingContext,
+  nvimage: NVImage,
+  nvimageTarget: NVImage,
+  mtx: Float32Array,
+  plan: ChunkPlan,
+  overlayOpacity = 1,
+): WebGLTexture[] {
+  const [dx, dy, dz] = plan.volumeDims
+  const out: WebGLTexture[] = []
+  for (const desc of plan.chunks) {
+    const [ox, oy, oz] = desc.texOrigin
+    const [sx, sy, sz] = desc.texDims
+    const mtxChunk = chunkOverlayMatrix(
+      mtx,
+      [sx / dx, sy / dy, sz / dz],
+      [ox / dx, oy / dy, oz / dz],
+    )
+    out.push(
+      overlay2Texture(
+        gl,
+        nvimage,
+        nvimageTarget,
+        mtxChunk,
+        overlayOpacity,
+        desc.texDims,
+      ),
+    )
+  }
+  return out
+}
+
+/**
+ * Orient one pre-extracted chunk of scalar voxels to an RGBA8 3D texture.
+ *
+ * Unlike overlay2Texture, the source bytes are already in RAS row-major order
+ * (extracted by volume/orientChunked.ts) and sized exactly to `texDims`, so the
+ * orient pass runs with an identity matrix and output dims equal to input dims.
+ * Calibration and colormap come from `nvimage`; only the voxel data is per-chunk.
+ *
+ * @param gl            WebGL2 context
+ * @param chunkBytes    Raw scalar bytes for this chunk, row-major, RAS order
+ * @param datatypeCode  NIfTI datatype code of the source volume
+ * @param texDims       Chunk extent in voxels [dx, dy, dz] (includes halo)
+ * @param nvimage       Source volume (supplies calibration + colormap)
+ * @returns RGBA8 3D texture sized `texDims`
+ */
+export function orientChunkToTexture(
+  gl: WebGL2RenderingContext,
+  chunkBytes: Uint8Array,
+  datatypeCode: number,
+  texDims: readonly [number, number, number],
+  nvimage: NVImage,
+): WebGLTexture {
+  const texConfig = getTextureConfig(datatypeCode)
+  if (texConfig.convertTo) {
+    throw new Error(
+      `orientChunkToTexture: datatype ${datatypeCode} needs CPU conversion ` +
+        'and is not supported for chunked volumes',
+    )
+  }
+  const programs = getOrCreatePrograms(gl)
+  const program = programs[texConfig.shaderType]
+  gl.useProgram(program)
+  const uniforms = getUniformLocations(gl, program)
+  const { vao, vbo } = createQuadGeometry(gl, program)
+  const glAny = gl as WebGL2RenderingContext & Record<string, number>
+  const inputTexture = gl.createTexture()
+  const colormapTexture = gl.createTexture()
+  const negColormapTexture = gl.createTexture()
+  const outputTexture = gl.createTexture()
+  const framebuffer = gl.createFramebuffer()
+  if (
+    !inputTexture ||
+    !colormapTexture ||
+    !negColormapTexture ||
+    !outputTexture ||
+    !framebuffer
+  ) {
+    throw new Error('orientChunkToTexture: failed to create GL resources')
+  }
+  gl.activeTexture(gl.TEXTURE0)
+  gl.bindTexture(gl.TEXTURE_3D, inputTexture)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texStorage3D(
+    gl.TEXTURE_3D,
+    1,
+    glAny[texConfig.internalFormat],
+    texDims[0],
+    texDims[1],
+    texDims[2],
+  )
+  const typedChunk = new texConfig.TypedArray(
+    chunkBytes.buffer,
+  ) as unknown as ArrayBufferView
+  gl.texSubImage3D(
+    gl.TEXTURE_3D,
+    0,
+    0,
+    0,
+    0,
+    texDims[0],
+    texDims[1],
+    texDims[2],
+    glAny[texConfig.format],
+    glAny[texConfig.type],
+    typedChunk,
+  )
+  const isLabelVol =
+    nvimage.colormapLabel !== null && nvimage.colormapLabel !== undefined
+  gl.activeTexture(gl.TEXTURE1)
+  gl.bindTexture(gl.TEXTURE_2D, colormapTexture)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  if (isLabelVol) {
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    const labelLut = nvimage.colormapLabel?.lut
+    if (!labelLut) throw new Error('Label colormap LUT is undefined')
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      labelLut.length / 4,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      labelLut,
+    )
+  } else {
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      256,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      NVCmaps.lutrgba8(nvimage.colormap),
+    )
+  }
+  const hasNegColormap =
+    !isLabelVol &&
+    nvimage.colormapNegative &&
+    nvimage.colormapNegative.length > 0
+  gl.activeTexture(gl.TEXTURE2)
+  gl.bindTexture(gl.TEXTURE_2D, negColormapTexture)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  if (hasNegColormap) {
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      256,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      NVCmaps.lutrgba8(nvimage.colormapNegative),
+    )
+  } else {
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      1,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      new Uint8Array([0, 0, 0, 0]),
+    )
+  }
+  gl.activeTexture(gl.TEXTURE3)
+  gl.bindTexture(gl.TEXTURE_3D, outputTexture)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texStorage3D(
+    gl.TEXTURE_3D,
+    1,
+    gl.RGBA8,
+    texDims[0],
+    texDims[1],
+    texDims[2],
+  )
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
+  const savedViewport = gl.getParameter(gl.VIEWPORT) as Int32Array
+  const savedCullFace = gl.isEnabled(gl.CULL_FACE)
+  const savedBlend = gl.isEnabled(gl.BLEND)
+  const savedDepthTest = gl.isEnabled(gl.DEPTH_TEST)
+  const savedActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE) as number
+  const savedVAO = gl.getParameter(
+    gl.VERTEX_ARRAY_BINDING,
+  ) as WebGLVertexArrayObject | null
+  gl.viewport(0, 0, texDims[0], texDims[1])
+  gl.disable(gl.CULL_FACE)
+  gl.disable(gl.BLEND)
+  gl.disable(gl.DEPTH_TEST)
+  gl.bindVertexArray(vao)
+  if (uniforms.intensityVol) gl.uniform1i(uniforms.intensityVol, 0)
+  if (uniforms.colormap) gl.uniform1i(uniforms.colormap, 1)
+  if (uniforms.colormapNeg) gl.uniform1i(uniforms.colormapNeg, 2)
+  const u = buildOrientUniforms(nvimage, 1)
+  if (uniforms.scl_slope) gl.uniform1f(uniforms.scl_slope, u.slope)
+  if (uniforms.scl_inter) gl.uniform1f(uniforms.scl_inter, u.intercept)
+  if (uniforms.cal_min) gl.uniform1f(uniforms.cal_min, u.calMin)
+  if (uniforms.cal_max) gl.uniform1f(uniforms.cal_max, u.calMax)
+  if (uniforms.cal_minNeg) gl.uniform1f(uniforms.cal_minNeg, u.mnNeg)
+  if (uniforms.cal_maxNeg) gl.uniform1f(uniforms.cal_maxNeg, u.mxNeg)
+  if (uniforms.isAlphaThreshold)
+    gl.uniform1i(uniforms.isAlphaThreshold, u.isAlphaThreshold)
+  if (uniforms.isColorbarFromZero)
+    gl.uniform1i(uniforms.isColorbarFromZero, u.isColorbarFromZero)
+  if (uniforms.overlayOpacity)
+    gl.uniform1f(uniforms.overlayOpacity, u.overlayOpacity)
+  if (uniforms.mtx) gl.uniformMatrix4fv(uniforms.mtx, false, IDENTITY_MAT4)
+  if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
+  if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
+  if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth)
+  for (let z = 0; z < texDims[2]; z++) {
+    if (uniforms.coordZ) gl.uniform1f(uniforms.coordZ, (z + 0.5) / texDims[2])
+    gl.framebufferTextureLayer(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      outputTexture,
+      0,
+      z,
+    )
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+  }
+  gl.bindVertexArray(null)
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  gl.viewport(
+    savedViewport[0],
+    savedViewport[1],
+    savedViewport[2],
+    savedViewport[3],
+  )
+  if (savedCullFace) gl.enable(gl.CULL_FACE)
+  else gl.disable(gl.CULL_FACE)
+  if (savedBlend) gl.enable(gl.BLEND)
+  else gl.disable(gl.BLEND)
+  if (savedDepthTest) gl.enable(gl.DEPTH_TEST)
+  else gl.disable(gl.DEPTH_TEST)
+  gl.activeTexture(gl.TEXTURE0)
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  gl.activeTexture(gl.TEXTURE1)
+  gl.bindTexture(gl.TEXTURE_2D, null)
+  gl.activeTexture(gl.TEXTURE2)
+  gl.bindTexture(gl.TEXTURE_2D, null)
+  gl.activeTexture(gl.TEXTURE3)
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  gl.activeTexture(savedActiveTexture)
+  gl.bindVertexArray(savedVAO)
   gl.deleteTexture(inputTexture)
   gl.deleteTexture(colormapTexture)
   gl.deleteTexture(negColormapTexture)

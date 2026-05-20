@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Tiled (Oversized) Volumes</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="limitSelect">Max3D limit</label>
+      <select id="limitSelect">
+        <option value="96">96</option>
+        <option value="128" selected>128</option>
+        <option value="192">192</option>
+        <option value="256">256</option>
+        <option value="0">Off (real GPU limit)</option>
+      </select>
+      &nbsp;
+      <label for="layerSelect">Layers</label>
+      <select id="layerSelect">
+        <option value="volume" selected>Volume only</option>
+        <option value="overlay">Volume + Overlay</option>
+        <option value="paqd">Probabilistic Atlas (PAQD)</option>
+      </select>
+      &nbsp;
+      <label for="drawCheck">Draw</label>
+      <input type="checkbox" id="drawCheck" />
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
+      &nbsp;
+      <label for="antiAliasCheck">AntiAlias</label>
+      <input type="checkbox" id="antiAliasCheck" checked />
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue::Tiled&nbsp;</footer>
+    <script type="module" src="vox.tiled.js"></script>
+  </body>
+</html>

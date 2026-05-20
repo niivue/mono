@@ -24,7 +24,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
   let dirVec = backPosition - start;
   var len = length(dirVec);
   let dir = dirVec / len;
-  let texVox = vec3f(textureDimensions(volume, 0));
+  let texVox = params.volumeTexDimsFull.xyz;
   let lenVox = length(dirVec * texVox);
   if (lenVox < 0.5 || len > 3.0) {
     discard;
@@ -75,7 +75,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
         samplePos += deltaDirFast;
         continue;
       }
-      let alpha = textureSampleLevel(volume, tex_sampler, samplePos.xyz, 0.0).a;
+      let alpha = textureSampleLevel(volume, tex_sampler, chunkTexCoord(samplePos.xyz), 0.0).a;
       if (alpha >= 0.01) { break; }
       samplePos += deltaDirFast;
     }
@@ -95,7 +95,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
           samplePos += deltaDir;
           continue;
         }
-        let alpha = textureSampleLevel(volume, tex_sampler, samplePos.xyz, 0.0).a;
+        let alpha = textureSampleLevel(volume, tex_sampler, chunkTexCoord(samplePos.xyz), 0.0).a;
         if (alpha >= 0.01) {
           bgDepth = frac2ndc(samplePos.xyz);
           bgHit = true;

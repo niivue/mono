@@ -80,6 +80,7 @@ import {
 } from '@/view/NVPerfMarks'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import { validateCustomLayout } from '@/view/NVSliceLayout'
+import type { ChunkPlan } from '@/volume/chunking'
 import { computeModulationData } from '@/volume/modulation'
 import * as NVVolume from '@/volume/NVVolume'
 import * as NVTensorProcessing from '@/volume/TensorProcessing'
@@ -111,7 +112,7 @@ type ViewBackend = {
   legendLayout: LegendLayout | null
   graphLayout: GraphLayout | null
   getAvailableShaders: () => string[]
-  refreshDrawing: (rgba: Uint8Array, dims: number[]) => void
+  refreshDrawing: (rgba: Uint8Array, dims: number[], plan?: ChunkPlan) => void
   clearDrawing: () => void
   destroy: () => void
   forceDevicePixelRatio: number
@@ -2958,7 +2959,11 @@ export default class NiiVueGPU extends EventTarget {
       this._drawLut.min ?? 0,
       this.model.draw.opacity,
     )
-    this.view.refreshDrawing(rgba, [dims[1], dims[2], dims[3]])
+    // The drawing layer shares the background volume's ChunkPlan (1-voxel
+    // halo) so chunk indices and texDims line up. Passing it switches both
+    // renderers to per-chunk drawing textures for oversized volumes.
+    const plan = this.model.volumes[0]?.chunkPlan
+    this.view.refreshDrawing(rgba, [dims[1], dims[2], dims[3]], plan)
   }
 
   async saveDrawing(filename = 'drawing.nii'): Promise<boolean | Uint8Array> {

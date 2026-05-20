@@ -27,6 +27,11 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import {
+  type ChunkPlan,
+  chunkSampleTransform,
+  chunksCrossingSlice,
+} from '@/volume/chunking'
 import { GLBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
@@ -223,8 +228,15 @@ export default class NVGlview {
   async _createResources(): Promise<void> {
     const gl = this.gl
     if (!gl) return
-    // Initialize volume renderer
-    await this.volumeRenderer.init(gl, this.max3D)
+    // Initialize volume renderer. A `maxTextureDimension3D` option, when set,
+    // caps the chunking threshold below the GPU limit so the tiled-volume
+    // path can be exercised on normally-sized volumes.
+    const override = this.options.maxTextureDimension3D
+    const chunkLimit =
+      typeof override === 'number' && override > 0
+        ? Math.min(this.max3D, override)
+        : this.max3D
+    await this.volumeRenderer.init(gl, chunkLimit)
     // Initialize crosshair renderer with pre-allocated buffers
     const attrs = mesh.getAttributeLocations(gl, 'phong')
     this.crosshairRenderer.init(
@@ -635,30 +647,74 @@ export default class NVGlview {
             tile.sliceMM !== undefined
               ? md.getSliceTexFracAtMM(sliceDim, tile.sliceMM)
               : md.getSliceTexFrac(sliceDim)
-          this.sliceRenderer.draw(
-            gl,
-            this.volumeRenderer.volumeTexture as WebGLTexture,
-            this.volumeRenderer.overlayTexture,
-            vol,
-            {
-              overlayAlphaShader: md.volume.alphaShader,
-              overlayOutlineWidth: md.volume.outlineWidth,
-              isAlphaClipDark: md.volume.isAlphaClipDark,
-              drawRimOpacity: md.draw.rimOpacity,
-              isV1SliceShader: md.volume.isV1SliceShader,
-            },
-            mvpMatrix as Float32Array,
-            tile.axCorSag,
-            sliceFrac,
-            Math.min(volumes.length, 2),
-            md.volume.isNearestInterpolation,
-            1,
-            this.volumeRenderer.paqdTexture,
-            this.volumeRenderer.paqdLutTexture,
-            this.volumeRenderer.paqdTexture ? 1 : 0,
-            md.volume.paqdUniforms,
-            md.volume.isV1SliceShader,
-          )
+          const sliceMd = {
+            overlayAlphaShader: md.volume.alphaShader,
+            overlayOutlineWidth: md.volume.outlineWidth,
+            isAlphaClipDark: md.volume.isAlphaClipDark,
+            drawRimOpacity: md.draw.rimOpacity,
+            isV1SliceShader: md.volume.isV1SliceShader,
+          }
+          const numSliceVolumes = Math.min(volumes.length, 2)
+          const numSlicePaqd =
+            this.volumeRenderer.paqdTexture || this.volumeRenderer.paqdChunks
+              ? 1
+              : 0
+          const chunked = this.volumeRenderer.getActiveChunkedSlice()
+          if (chunked) {
+            // Oversized volume: draw one in-plane-restricted quad per chunk
+            // the slice crosses. Quads are spatially disjoint, so draw order
+            // does not matter.
+            const crossing = chunksCrossingSlice(
+              chunked.plan,
+              sliceDim,
+              sliceFrac,
+            )
+            for (const ci of crossing) {
+              this.sliceRenderer.draw(
+                gl,
+                chunked.chunkTextures[ci],
+                chunked.overlayChunks
+                  ? chunked.overlayChunks[ci]
+                  : this.volumeRenderer.overlayTexture,
+                vol,
+                sliceMd,
+                mvpMatrix as Float32Array,
+                tile.axCorSag,
+                sliceFrac,
+                numSliceVolumes,
+                md.volume.isNearestInterpolation,
+                1,
+                chunked.paqdChunks
+                  ? chunked.paqdChunks[ci]
+                  : this.volumeRenderer.paqdTexture,
+                this.volumeRenderer.paqdLutTexture,
+                numSlicePaqd,
+                md.volume.paqdUniforms,
+                md.volume.isV1SliceShader,
+                chunkSampleTransform(chunked.plan, ci),
+                ci,
+              )
+            }
+          } else {
+            this.sliceRenderer.draw(
+              gl,
+              this.volumeRenderer.volumeTexture as WebGLTexture,
+              this.volumeRenderer.overlayTexture,
+              vol,
+              sliceMd,
+              mvpMatrix as Float32Array,
+              tile.axCorSag,
+              sliceFrac,
+              numSliceVolumes,
+              md.volume.isNearestInterpolation,
+              1,
+              this.volumeRenderer.paqdTexture,
+              this.volumeRenderer.paqdLutTexture,
+              numSlicePaqd,
+              md.volume.paqdUniforms,
+              md.volume.isV1SliceShader,
+            )
+          }
         } else {
           this.volumeRenderer.draw(
             gl,
@@ -1274,10 +1330,10 @@ export default class NVGlview {
     return null
   }
 
-  refreshDrawing(rgba: Uint8Array, dims: number[]): void {
+  refreshDrawing(rgba: Uint8Array, dims: number[], plan?: ChunkPlan): void {
     if (!this.gl) return
-    this.sliceRenderer.updateDrawingTexture(this.gl, rgba, dims)
-    this.volumeRenderer.updateDrawingTexture(this.gl, rgba, dims)
+    this.sliceRenderer.updateDrawingTexture(this.gl, rgba, dims, plan)
+    this.volumeRenderer.updateDrawingTexture(this.gl, rgba, dims, plan)
   }
 
   clearDrawing(): void {

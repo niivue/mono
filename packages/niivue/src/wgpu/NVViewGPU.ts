@@ -27,6 +27,11 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import {
+  type ChunkPlan,
+  chunkSampleTransform,
+  chunksCrossingSlice,
+} from '@/volume/chunking'
 import { WGPUBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
@@ -567,11 +572,17 @@ export default class NVView {
         // bindCachedVolume. Without this, all tiles would share volumes[0]'s
         // texture and visibly "jump" as the model's first volume changes.
         for (const vol of vols) {
-          await this.volumeRenderer.updateVolume(
-            device,
-            vol,
-            this.model.volume.matcap,
-          )
+          try {
+            await this.volumeRenderer.updateVolume(
+              device,
+              vol,
+              this.model.volume.matcap,
+            )
+          } catch (e) {
+            log.warn(
+              `updateVolume failed for ${vol.name}: ${(e as Error).message}`,
+            )
+          }
         }
         const keepKeys = new Set<string>()
         for (const vol of vols) {
@@ -580,11 +591,17 @@ export default class NVView {
         }
         this.volumeRenderer.pruneVolumeCache(keepKeys)
       } else {
-        await this.volumeRenderer.updateVolume(
-          device,
-          vols[0],
-          this.model.volume.matcap,
-        )
+        try {
+          await this.volumeRenderer.updateVolume(
+            device,
+            vols[0],
+            this.model.volume.matcap,
+          )
+        } catch (e) {
+          log.warn(
+            `updateVolume failed for ${vols[0].name}: ${(e as Error).message}`,
+          )
+        }
       }
     }
     if (vols.length > 1 && !this.options.instances) {
@@ -957,28 +974,76 @@ export default class NVView {
             tile.sliceMM !== undefined
               ? md.getSliceTexFracAtMM(sliceDim, tile.sliceMM)
               : md.getSliceTexFrac(sliceDim)
-          this.sliceRenderer.draw(
-            device,
-            pass,
-            vol,
-            {
-              overlayAlphaShader: md.volume.alphaShader,
-              overlayOutlineWidth: md.volume.outlineWidth,
-              isAlphaClipDark: md.volume.isAlphaClipDark,
-              drawRimOpacity: md.draw.rimOpacity,
-              isV1SliceShader: md.volume.isV1SliceShader,
-            },
-            mvpMatrix as Float32Array,
-            tile.axCorSag,
-            sliceFrac,
-            i,
-            Math.min(volumes.length, 2),
-            md.volume.isNearestInterpolation,
-            1,
-            this.volumeRenderer.paqdTexture ? 1 : 0,
-            md.volume.paqdUniforms,
-            md.volume.isV1SliceShader,
-          )
+          const sliceMd = {
+            overlayAlphaShader: md.volume.alphaShader,
+            overlayOutlineWidth: md.volume.outlineWidth,
+            isAlphaClipDark: md.volume.isAlphaClipDark,
+            drawRimOpacity: md.draw.rimOpacity,
+            isV1SliceShader: md.volume.isV1SliceShader,
+          }
+          const numSliceVolumes = Math.min(volumes.length, 2)
+          const numSlicePaqd =
+            this.volumeRenderer.paqdTexture || this.volumeRenderer.paqdChunks
+              ? 1
+              : 0
+          const chunked = this.volumeRenderer.getActiveChunkedSlice()
+          if (chunked) {
+            // Oversized volume: draw one in-plane-restricted quad per chunk
+            // the slice crosses. Quads are spatially disjoint, so draw order
+            // does not matter.
+            const crossing = chunksCrossingSlice(
+              chunked.plan,
+              sliceDim,
+              sliceFrac,
+            )
+            for (const ci of crossing) {
+              this.sliceRenderer.draw(
+                device,
+                pass,
+                vol,
+                sliceMd,
+                mvpMatrix as Float32Array,
+                tile.axCorSag,
+                sliceFrac,
+                i,
+                numSliceVolumes,
+                md.volume.isNearestInterpolation,
+                1,
+                numSlicePaqd,
+                md.volume.paqdUniforms,
+                md.volume.isV1SliceShader,
+                {
+                  volumeTexture: chunked.chunkTextures[ci],
+                  transform: chunkSampleTransform(chunked.plan, ci),
+                  slot: ci,
+                  chunkIndex: ci,
+                  overlayTexture: chunked.overlayChunks
+                    ? chunked.overlayChunks[ci]
+                    : undefined,
+                  paqdTexture: chunked.paqdChunks
+                    ? chunked.paqdChunks[ci]
+                    : undefined,
+                },
+              )
+            }
+          } else {
+            this.sliceRenderer.draw(
+              device,
+              pass,
+              vol,
+              sliceMd,
+              mvpMatrix as Float32Array,
+              tile.axCorSag,
+              sliceFrac,
+              i,
+              numSliceVolumes,
+              md.volume.isNearestInterpolation,
+              1,
+              numSlicePaqd,
+              md.volume.paqdUniforms,
+              md.volume.isV1SliceShader,
+            )
+          }
         } else {
           this.volumeRenderer.draw(
             device,
@@ -1744,11 +1809,19 @@ export default class NVView {
       this.preferredCanvasFormat,
       msaaCount,
     )
+    // A `maxTextureDimension3D` option, when set, caps the chunking threshold
+    // below the GPU limit so the tiled-volume path can be exercised on
+    // normally-sized volumes.
+    const override = this.options.maxTextureDimension3D
+    const chunkLimit =
+      typeof override === 'number' && override > 0
+        ? Math.min(this.maxTextureDimension3D, override)
+        : this.maxTextureDimension3D
     await this.volumeRenderer.init(
       this.device,
       this.preferredCanvasFormat,
       msaaCount,
-      this.maxTextureDimension3D,
+      chunkLimit,
     )
     // Storage Buffers
     this.maxGlyphs = 2048 // Increased for legends with many entries
@@ -2004,12 +2077,12 @@ export default class NVView {
     return null
   }
 
-  refreshDrawing(rgba: Uint8Array, dims: number[]): void {
+  refreshDrawing(rgba: Uint8Array, dims: number[], plan?: ChunkPlan): void {
     if (!this.device) return
     const needsRebind =
       !this.sliceRenderer.drawingTexture || !this.volumeRenderer.drawingTexture
-    this.sliceRenderer.updateDrawingTexture(this.device, rgba, dims)
-    this.volumeRenderer.updateDrawingTexture(this.device, rgba, dims)
+    this.sliceRenderer.updateDrawingTexture(this.device, rgba, dims, plan)
+    this.volumeRenderer.updateDrawingTexture(this.device, rgba, dims, plan)
     if (needsRebind) {
       // Rebuild bind groups to reference the newly created drawing textures
       if (this.volumeRenderer.volumeTexture) {

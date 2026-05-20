@@ -1,6 +1,8 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import type { NVImage } from '@/NVTypes'
 import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
+import type { ChunkPlan } from '@/volume/chunking'
+import { chunkOverlayMatrix } from '@/volume/orientChunked'
 import orientWGSL from './orient.wgsl?raw'
 import * as wgpu from './wgpu'
 
@@ -13,7 +15,7 @@ const _deviceCache = new WeakMap<
   Record<string, PipelineCacheEntry>
 >()
 
-function ensurePipeline(
+export function ensureOrientPipeline(
   device: GPUDevice,
   pipelineType: string,
 ): PipelineCacheEntry {
@@ -240,7 +242,7 @@ export async function prepareOrientTextureCache(
     return existingCache
   }
   destroyOrientTextureCache(existingCache)
-  const cached = ensurePipeline(device, pipelineType)
+  const cached = ensureOrientPipeline(device, pipelineType)
   const sourceTexture = device.createTexture({
     size: dimsIn,
     format,
@@ -356,7 +358,7 @@ export function dispatchOrient(
   device: GPUDevice,
   cache: OrientTextureCache,
 ): void {
-  const cached = ensurePipeline(device, cache.pipelineType)
+  const cached = ensureOrientPipeline(device, cache.pipelineType)
   const [vxOut, vyOut, vzOut] = cache.dimsOut
   const encoder = device.createCommandEncoder()
   const pass = encoder.beginComputePass()
@@ -383,6 +385,7 @@ export async function volume2Texture(
   nvimageTarget: NVImage,
   mtx: Float32Array,
   overlayOpacity = 1,
+  outDimsOverride?: readonly number[],
 ): Promise<GPUTexture> {
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS) {
     throw new Error('overlay2Texture: missing dimsRAS')
@@ -419,13 +422,18 @@ export async function volume2Texture(
     throw new Error(`Unsupported NIfTI datatype ${dt}`)
   }
   const dimsIn = [nvimage.dims[1], nvimage.dims[2], nvimage.dims[3]]
-  const dimsOut = [
-    nvimageTarget.dimsRAS[1],
-    nvimageTarget.dimsRAS[2],
-    nvimageTarget.dimsRAS[3],
-  ]
+  // Output dims default to the target's RAS grid. A chunked caller passes a
+  // chunk's texDims here and a pre-composed mtx (chunkOverlayMatrix) so this
+  // same pass renders one chunk-sized sub-texture.
+  const dimsOut = outDimsOverride
+    ? [outDimsOverride[0], outDimsOverride[1], outDimsOverride[2]]
+    : [
+        nvimageTarget.dimsRAS[1],
+        nvimageTarget.dimsRAS[2],
+        nvimageTarget.dimsRAS[3],
+      ]
   const [vxOut, vyOut, vzOut] = dimsOut
-  const cached = ensurePipeline(device, pipelineType)
+  const cached = ensureOrientPipeline(device, pipelineType)
   // 1) Upload input scalar texture (offset by frame4D for 4D volumes)
   const scalarTexture = device.createTexture({
     size: dimsIn,
@@ -572,6 +580,48 @@ export async function volume2Texture(
   }
   uniformBuffer.destroy()
   return rgbaTexture
+}
+
+/**
+ * Build one RGBA8 overlay texture per chunk for a chunked oversized volume.
+ *
+ * Each chunk is oriented independently: the output texture is sized to the
+ * chunk's `texDims` (halo included) and `volume2Texture` runs with the matrix
+ * from `chunkOverlayMatrix`, which folds the chunk-local -> full-volume affine
+ * lift into the overlay matrix. The per-chunk textures align 1:1 with the
+ * volume chunks (shared ChunkPlan), so the renderer's per-chunk uniforms and
+ * `chunkTexCoord` sample them seam-free. Returns one texture per `plan.chunks`.
+ */
+export async function overlay2TextureChunked(
+  device: GPUDevice,
+  nvimage: NVImage,
+  nvimageTarget: NVImage,
+  mtx: Float32Array,
+  plan: ChunkPlan,
+  overlayOpacity = 1,
+): Promise<GPUTexture[]> {
+  const [dx, dy, dz] = plan.volumeDims
+  const out: GPUTexture[] = []
+  for (const desc of plan.chunks) {
+    const [ox, oy, oz] = desc.texOrigin
+    const [sx, sy, sz] = desc.texDims
+    const mtxChunk = chunkOverlayMatrix(
+      mtx,
+      [sx / dx, sy / dy, sz / dz],
+      [ox / dx, oy / dy, oz / dz],
+    )
+    out.push(
+      await volume2Texture(
+        device,
+        nvimage,
+        nvimageTarget,
+        mtxChunk,
+        overlayOpacity,
+        desc.texDims,
+      ),
+    )
+  }
+  return out
 }
 
 const maskShaderCode = `

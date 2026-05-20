@@ -1,6 +1,7 @@
 import type { mat4, vec2, vec3, vec4 } from 'gl-matrix'
 import type { LogLevel } from '@/logger'
 import type { FontMetrics } from '@/view/NVFont'
+import type { ChunkPlan } from '@/volume/chunking'
 
 export type TypedVoxelArray =
   | Float32Array
@@ -149,6 +150,8 @@ export type NVImage = {
   modulationImage?: string
   /** @internal Pre-computed modulation data in RAS order (Float32Array of [0,1] values) */
   _modulationData?: Float32Array | null
+  /** Tiling plan for volumes whose dims exceed maxTextureDimension3D. Absent ⇒ legacy single-texture path. */
+  chunkPlan?: ChunkPlan
   [key: string]: unknown
 }
 
@@ -636,6 +639,7 @@ export type NVViewOptions = {
   showBoundsBorder?: boolean
   boundsBorderColor?: [number, number, number, number]
   boundsBorderThickness?: number
+  maxTextureDimension3D?: number
   [key: string]: unknown
 }
 
@@ -672,6 +676,14 @@ export type NiiVueOptions = {
   isInteractionEnabled?: boolean
   logLevel?: LogLevel
   thumbnail?: string
+  /**
+   * Debug/testing override: caps the effective `maxTextureDimension3D` used to
+   * decide when a volume must be tiled into chunks. GPUs rarely report a limit
+   * low enough to exercise the tiled-volume path on ordinary data; setting a
+   * small value here (e.g. 256) forces normally-sized volumes to chunk. Does
+   * not raise the limit beyond what the device actually supports.
+   */
+  maxTextureDimension3D?: number
 
   // Scene
   azimuth?: number

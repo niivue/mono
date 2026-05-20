@@ -1,12 +1,24 @@
 import type { NVImage } from '@/NVTypes'
 import { NVRenderer } from '@/view/NVRenderer'
+import {
+  type ChunkPlan,
+  type ChunkSampleTransform,
+  identityChunkSampleTransform,
+  type Vec3i,
+} from '@/volume/chunking'
+import { extractChunkBytes } from '@/volume/orientChunked'
 import sliceShaderCode from './slice.wgsl?raw'
 
 const UNIFORM_ALIGNMENT = 256 // WebGPU minimum uniform buffer offset alignment
-const SLICE_UNIFORM_SIZE = 192 // 2x mat4x4f (128) + scalars (36) + numPaqd (4) + pad (12) + paqdUniforms vec4f (16) = 192 bytes
+// 2x mat4x4f (128) + scalars (44) + paqdUniforms vec4f (16, 16-aligned at 176)
+// + 5x vec3f chunk transform (80, 16-aligned each) = 272 bytes.
+const SLICE_UNIFORM_SIZE = 272
 const alignedSliceSize =
   Math.ceil(SLICE_UNIFORM_SIZE / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
 const MAX_TILES = 128
+// Max chunks one chunked volume may contribute to a single slice tile.
+// Mirrors the 3D render path's per-tile chunk cap.
+const MAX_CHUNKS_PER_TILE = 32
 
 export class SliceRenderer extends NVRenderer {
   pipeline: GPURenderPipeline | null
@@ -14,6 +26,9 @@ export class SliceRenderer extends NVRenderer {
   paramsBuffer: GPUBuffer | null
   placeholderOverlay: GPUTexture | null
   drawingTexture: GPUTexture | null
+  // Per-chunk drawing textures, parallel to the active chunked volume's
+  // plan.chunks. Non-null only when the drawing layer is chunked.
+  drawingChunks: GPUTexture[] | null
   placeholderDrawing: GPUTexture | null
   placeholderPaqd: GPUTexture | null
   placeholderLut2D: GPUTexture | null
@@ -26,6 +41,20 @@ export class SliceRenderer extends NVRenderer {
   private _bindTexDraw: GPUTexture | null = null
   private _bindTexPaqd: GPUTexture | null = null
   private _bindTexLut: GPUTexture | null = null
+  // Per-chunk-texture bind group cache for chunked volumes. Keyed by the
+  // chunk's volume texture; the linear/nearest pair reuses the shared
+  // overlay/drawing/paqd/lut textures captured by updateBindGroup. Cleared
+  // whenever updateBindGroup rebuilds (any bound texture changed).
+  private _chunkBindGroups = new Map<
+    GPUTexture,
+    {
+      linear: GPUBindGroup
+      nearest: GPUBindGroup
+      overlay: GPUTexture
+      draw: GPUTexture
+      paqd: GPUTexture
+    }
+  >()
 
   constructor() {
     super()
@@ -34,6 +63,7 @@ export class SliceRenderer extends NVRenderer {
     this.paramsBuffer = null
     this.placeholderOverlay = null
     this.drawingTexture = null
+    this.drawingChunks = null
     this.placeholderDrawing = null
     this.placeholderPaqd = null
     this.placeholderLut2D = null
@@ -50,9 +80,12 @@ export class SliceRenderer extends NVRenderer {
   ): Promise<void> {
     if (this.isReady) return
 
-    // Create uniform buffer for slice params (sized for multiple tiles with dynamic offsets)
+    // Uniform buffer for slice params, addressed by dynamic offset.
+    // Base region: one slot per tile (non-chunked draws).
+    // Chunk region: tile i, chunk slot j uses
+    //   chunkBase + (i * MAX_CHUNKS_PER_TILE + j) * alignedSliceSize.
     this.paramsBuffer = device.createBuffer({
-      size: alignedSliceSize * MAX_TILES,
+      size: alignedSliceSize * MAX_TILES * (1 + MAX_CHUNKS_PER_TILE),
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
 
@@ -231,6 +264,10 @@ export class SliceRenderer extends NVRenderer {
       return
     }
 
+    // A bound texture changed; per-chunk bind groups built from the old
+    // shared textures are now stale.
+    this._chunkBindGroups.clear()
+
     const volView = volumeTexture.createView()
     const ovlView = overlay.createView()
     const drawView = drawTex.createView()
@@ -275,12 +312,106 @@ export class SliceRenderer extends NVRenderer {
     this._bindTexLut = lutTex
   }
 
+  /**
+   * Build (or fetch a cached) bind group for one chunk of a chunked volume.
+   * Reuses the shared overlay/drawing/paqd/lut textures last captured by
+   * updateBindGroup; returns null if those have not been set yet.
+   */
+  private _chunkBindGroupFor(
+    device: GPUDevice,
+    chunkVolumeTexture: GPUTexture,
+    isNearest: boolean,
+    drawingTexture?: GPUTexture,
+    overlayTexture?: GPUTexture,
+    paqdTexture?: GPUTexture,
+  ): GPUBindGroup | null {
+    const bindLayout = this.bindLayout
+    const paramsBuffer = this.paramsBuffer
+    const samplerLinear = this.samplerLinear
+    const samplerNearest = this.samplerNearest
+    // Chunked overlay layer: binding 2 is the chunk's own overlay texture.
+    // Falls back to the shared overlay texture when not chunked or absent.
+    const overlay = overlayTexture ?? this._bindTexOverlay
+    // Chunked drawing layer: binding 4 is the chunk's own drawing texture.
+    // Falls back to the shared drawing texture when not chunked or absent.
+    const drawTex = drawingTexture ?? this._bindTexDraw
+    // Chunked PAQD layer: binding 5 is the chunk's own raw PAQD texture.
+    // Falls back to the shared PAQD texture when not chunked or absent.
+    const paqdTex = paqdTexture ?? this._bindTexPaqd
+    const lutTex = this._bindTexLut
+    if (
+      !bindLayout ||
+      !paramsBuffer ||
+      !samplerLinear ||
+      !samplerNearest ||
+      !overlay ||
+      !drawTex ||
+      !paqdTex ||
+      !lutTex
+    )
+      return null
+
+    let pair = this._chunkBindGroups.get(chunkVolumeTexture)
+    // Per-chunk overlay/drawing/paqd textures are rebuilt as fresh GPUTexture
+    // objects when their layer changes; a cached pair built from stale
+    // textures must be discarded.
+    if (
+      pair &&
+      (pair.overlay !== overlay ||
+        pair.draw !== drawTex ||
+        pair.paqd !== paqdTex)
+    ) {
+      pair = undefined
+    }
+    if (!pair) {
+      const volView = chunkVolumeTexture.createView()
+      const ovlView = overlay.createView()
+      const drawView = drawTex.createView()
+      const paqdView = paqdTex.createView()
+      const lutView = lutTex.createView()
+      const make = (sampler: GPUSampler): GPUBindGroup =>
+        device.createBindGroup({
+          layout: bindLayout,
+          entries: [
+            {
+              binding: 0,
+              resource: { buffer: paramsBuffer, size: SLICE_UNIFORM_SIZE },
+            },
+            { binding: 1, resource: volView },
+            { binding: 2, resource: ovlView },
+            { binding: 3, resource: sampler },
+            { binding: 4, resource: drawView },
+            { binding: 5, resource: paqdView },
+            { binding: 6, resource: lutView },
+            { binding: 7, resource: samplerLinear },
+          ],
+        })
+      pair = {
+        linear: make(samplerLinear),
+        nearest: make(samplerNearest),
+        overlay,
+        draw: drawTex,
+        paqd: paqdTex,
+      }
+      this._chunkBindGroups.set(chunkVolumeTexture, pair)
+    }
+    return isNearest ? pair.nearest : pair.linear
+  }
+
   updateDrawingTexture(
     device: GPUDevice,
     rgba: Uint8Array,
     dims: number[],
+    plan?: ChunkPlan,
   ): void {
     if (!this.isReady) return
+    if (plan) {
+      this._updateDrawingChunks(device, rgba, dims, plan)
+      return
+    }
+    // Non-chunked path: switching back from a chunked volume frees the
+    // per-chunk drawing textures so only one representation is live.
+    this._destroyDrawingChunks()
     if (!this.drawingTexture) {
       this.drawingTexture = device.createTexture({
         size: dims,
@@ -297,11 +428,76 @@ export class SliceRenderer extends NVRenderer {
     )
   }
 
+  /**
+   * Build (or refresh) one rgba8unorm drawing texture per chunk. The drawing
+   * layer shares the background volume's ChunkPlan, so chunk indices and
+   * texDims line up with the volume chunks the slice loop iterates.
+   */
+  private _updateDrawingChunks(
+    device: GPUDevice,
+    rgba: Uint8Array,
+    dims: number[],
+    plan: ChunkPlan,
+  ): void {
+    if (this.drawingTexture) {
+      this.drawingTexture.destroy()
+      this.drawingTexture = null
+    }
+    const volumeDims: Vec3i = [dims[0], dims[1], dims[2]]
+    const reuse =
+      this.drawingChunks !== null &&
+      this.drawingChunks.length === plan.chunks.length
+    if (!reuse) {
+      this._destroyDrawingChunks()
+      this.drawingChunks = []
+    }
+    const chunks = this.drawingChunks ?? []
+    for (let i = 0; i < plan.chunks.length; i++) {
+      const desc = plan.chunks[i]
+      const bytes = extractChunkBytes(
+        rgba,
+        volumeDims,
+        4,
+        desc.texOrigin,
+        desc.texDims,
+      )
+      const [tx, ty, tz] = desc.texDims
+      let tex = reuse ? chunks[i] : null
+      if (!tex) {
+        tex = device.createTexture({
+          size: [tx, ty, tz],
+          format: 'rgba8unorm',
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+          dimension: '3d',
+        })
+        chunks[i] = tex
+      }
+      device.queue.writeTexture(
+        { texture: tex },
+        bytes as Uint8Array<ArrayBuffer>,
+        { bytesPerRow: tx * 4, rowsPerImage: ty },
+        [tx, ty, tz],
+      )
+    }
+    this.drawingChunks = chunks
+    // New textures invalidate cached per-chunk bind groups (binding 4).
+    if (!reuse) this._chunkBindGroups.clear()
+  }
+
+  /** Release all per-chunk drawing textures from a previous build. */
+  private _destroyDrawingChunks(): void {
+    if (!this.drawingChunks) return
+    for (const tex of this.drawingChunks) tex.destroy()
+    this.drawingChunks = null
+  }
+
   destroyDrawing(): void {
     if (this.drawingTexture) {
       this.drawingTexture.destroy()
       this.drawingTexture = null
     }
+    this._destroyDrawingChunks()
+    this._chunkBindGroups.clear()
   }
 
   /**
@@ -337,14 +533,54 @@ export class SliceRenderer extends NVRenderer {
     numPaqd = 0,
     paqdUniforms: readonly number[] = [0, 0, 0, 0],
     isV1SliceShader = false,
+    chunk?: {
+      volumeTexture: GPUTexture
+      transform: ChunkSampleTransform
+      slot: number
+      chunkIndex: number
+      overlayTexture?: GPUTexture
+      paqdTexture?: GPUTexture
+    },
   ): void {
-    const bindGroup = isNearest ? this.bindGroupNearest : this.bindGroupLinear
-    if (!this.isReady || !bindGroup || !this.paramsBuffer || !this.pipeline)
-      return
+    if (!this.isReady || !this.paramsBuffer || !this.pipeline) return
     if (!vol.frac2mm) return
 
-    // Write uniforms to buffer at the appropriate offset for this tile
-    const dynamicOffset = tileIndex * alignedSliceSize
+    const chunkDrawTex =
+      chunk && this.drawingChunks
+        ? this.drawingChunks[chunk.chunkIndex]
+        : undefined
+    const bindGroup = chunk
+      ? this._chunkBindGroupFor(
+          device,
+          chunk.volumeTexture,
+          isNearest,
+          chunkDrawTex,
+          chunk.overlayTexture,
+          chunk.paqdTexture,
+        )
+      : isNearest
+        ? this.bindGroupNearest
+        : this.bindGroupLinear
+    if (!bindGroup) return
+
+    // Chunked draws live in the chunk region of the buffer, one slot per
+    // (tile, chunk); non-chunked draws use the per-tile base region.
+    const dynamicOffset = chunk
+      ? MAX_TILES * alignedSliceSize +
+        (tileIndex * MAX_CHUNKS_PER_TILE + chunk.slot) * alignedSliceSize
+      : tileIndex * alignedSliceSize
+
+    // Chunked volumes pass a per-chunk transform; non-chunked volumes use the
+    // identity transform sized to the volume's full RAS dims.
+    const ct =
+      chunk?.transform ??
+      identityChunkSampleTransform(
+        vol.dimsRAS
+          ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
+          : [1, 1, 1],
+      )
+
+    // Write uniforms to buffer at the appropriate offset for this draw
     const uniformData = new Float32Array(SLICE_UNIFORM_SIZE / 4)
     uniformData.set(mvpMatrix, 0) // mat4x4f mvpMtx (16 floats)
     uniformData.set(vol.frac2mm as Float32Array, 16) // mat4x4f frac2mm (16 floats)
@@ -367,6 +603,24 @@ export class SliceRenderer extends NVRenderer {
     intView[37] = md.isAlphaClipDark ? 1 : 0 // i32 isAlphaClipDark
     intView[41] = isV1SliceShader ? 1 : 0 // i32 isV1SliceShader
     uniformData[42] = md.overlayOutlineWidth ?? 0 // f32 overlayOutlineWidth
+
+    // Chunk transform: 5x vec3f starting at byte 192 (float 48), each vec3f
+    // padded to 16 bytes (4 floats). Identity for non-chunked volumes.
+    uniformData[48] = ct.subOrigin[0]
+    uniformData[49] = ct.subOrigin[1]
+    uniformData[50] = ct.subOrigin[2]
+    uniformData[52] = ct.subSize[0]
+    uniformData[53] = ct.subSize[1]
+    uniformData[54] = ct.subSize[2]
+    uniformData[56] = ct.dataOrigin[0]
+    uniformData[57] = ct.dataOrigin[1]
+    uniformData[58] = ct.dataOrigin[2]
+    uniformData[60] = ct.dataSize[0]
+    uniformData[61] = ct.dataSize[1]
+    uniformData[62] = ct.dataSize[2]
+    uniformData[64] = ct.volumeDims[0]
+    uniformData[65] = ct.volumeDims[1]
+    uniformData[66] = ct.volumeDims[2]
 
     device.queue.writeBuffer(this.paramsBuffer, dynamicOffset, uniformData)
 
@@ -396,12 +650,14 @@ export class SliceRenderer extends NVRenderer {
       this.drawingTexture.destroy()
       this.drawingTexture = null
     }
+    this._destroyDrawingChunks()
     if (this.paramsBuffer) {
       this.paramsBuffer.destroy()
       this.paramsBuffer = null
     }
     this.bindGroupLinear = null
     this.bindGroupNearest = null
+    this._chunkBindGroups.clear()
     this.samplerLinear = null
     this.samplerNearest = null
     this.pipeline = null

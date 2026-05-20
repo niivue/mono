@@ -42,7 +42,9 @@ struct RayResult {
   float farthest;
 };
 
-// Shared fast+fine ray-march for overlay, PAQD, and drawing textures.
+// Shared fast+fine ray-march for overlay and drawing textures. Samples are
+// remapped through chunkTexCoord so a chunked layer (drawing) reads its
+// per-chunk texture; for non-chunked layers chunkTexCoord is the identity.
 RayResult rayMarchPass(
     sampler3D tex, vec3 start, vec3 dir, float len,
     vec4 deltaDir, vec4 deltaDirFast,
@@ -60,7 +62,7 @@ RayResult rayMarchPass(
     // Fast pass
     for (int j = 0; j < 1024; j++) {
         if (samplePos.a > len) { break; }
-        float alpha = texture(tex, samplePos.xyz).a;
+        float alpha = texture(tex, chunkTexCoord(samplePos.xyz)).a;
         if (alpha >= 0.01) { break; }
         samplePos += deltaDirFast;
     }
@@ -72,7 +74,7 @@ RayResult rayMarchPass(
     // Fine pass
     for (int i = 0; i < 2048; i++) {
         if (samplePos.a > len) { break; }
-        vec4 colorSample = texture(tex, samplePos.xyz);
+        vec4 colorSample = texture(tex, chunkTexCoord(samplePos.xyz));
         if (colorSample.a >= 0.01) {
             if (result.firstHit.a > len) {
                 result.firstHit = samplePos;
@@ -125,7 +127,8 @@ RayResult rayMarchPaqd(
     float t0 = paqdUni[0];
     for (int j = 0; j < 1024; j++) {
         if (samplePos.a > len) { break; }
-        ivec3 coord = clamp(ivec3(samplePos.xyz * texDimsF), ivec3(0), texDims - 1);
+        // chunkTexCoord remaps into the per-chunk PAQD texture (identity when not chunked).
+        ivec3 coord = clamp(ivec3(chunkTexCoord(samplePos.xyz) * texDimsF), ivec3(0), texDims - 1);
         vec4 raw = texelFetch(tex, coord, 0);
         if (raw.b > t0) { break; }
         samplePos += deltaDirFast;
@@ -138,7 +141,7 @@ RayResult rayMarchPaqd(
     // Fine pass: decode and accumulate PAQD colors
     for (int i = 0; i < 2048; i++) {
         if (samplePos.a > len) { break; }
-        ivec3 coord = clamp(ivec3(samplePos.xyz * texDimsF), ivec3(0), texDims - 1);
+        ivec3 coord = clamp(ivec3(chunkTexCoord(samplePos.xyz) * texDimsF), ivec3(0), texDims - 1);
         vec4 raw = texelFetch(tex, coord, 0);
         float prob1 = raw.b;
         float prob2 = raw.a;
@@ -208,7 +211,7 @@ void main() {
   vec3 dirVec = backPosition - start;
   float len = length(dirVec);
   vec3 dir = dirVec / len;
-  vec3 texVox = vec3(textureSize(volume, 0));
+  vec3 texVox = volumeTexDimsFull;
   float lenVox = length(dirVec * texVox);
   if (lenVox < 0.5 || len > 3.0) {
     discard;
@@ -259,8 +262,8 @@ void main() {
       clipOffset = sampleRange.x;
       start += dir * sampleRange.x;
       len = sampleRange.y - sampleRange.x;
-      float alpha = texture(volume, start.xyz).a;
-      float alpha1 = texture(volume, start.xyz - deltaDir.xyz).a;
+      float alpha = texture(volume, chunkTexCoord(start.xyz)).a;
+      float alpha1 = texture(volume, chunkTexCoord(start.xyz - deltaDir.xyz)).a;
       if ((alpha > 0.01) && (alpha1 > 0.01)) {
         clipSurfaceHit = true;
       }
@@ -274,7 +277,7 @@ void main() {
         samplePos += deltaDirFast;
         continue;
       }
-      float alpha = texture(volume, samplePos.xyz).a;
+      float alpha = texture(volume, chunkTexCoord(samplePos.xyz)).a;
       if (alpha >= 0.01) {
         break;
       }
@@ -311,13 +314,14 @@ void main() {
           samplePos += deltaDir;
           continue;
         }
-        vec4 colorSample = texture(volume, samplePos.xyz);
+        vec3 volCoord = chunkTexCoord(samplePos.xyz);
+        vec4 colorSample = texture(volume, volCoord);
         if (colorSample.a >= 0.01) {
           if (!bgHasHit) {
             bgHasHit = true;
             firstHit = samplePos;
           }
-          vec3 gradRaw = texture(volumeGradient, samplePos.xyz).rgb;
+          vec3 gradRaw = texture(volumeGradient, volCoord).rgb;
           vec3 localNormal = normalize(gradRaw * 2.0 - 1.0);
           vec3 n = norm3 * localNormal;
           vec2 uv = n.xy * 0.5 + 0.5;
@@ -393,14 +397,17 @@ void main() {
     // gx = value(+x) - value(-x), matching the volume gradient (inward-
     // pointing toward higher drawing density).
     if (result.color.a > 0.001 && gradientAmount > 0.0) {
-      vec3 dv = DRAW_GRAD_OFFSET / vec3(textureSize(drawingLinear, 0));
+      // Offset in full-volume [0,1] space so the stencil width is correct
+      // for chunked drawing (chunk texDims differ from the full volume);
+      // chunkTexCoord then maps each tap into the chunk texture.
+      vec3 dv = DRAW_GRAD_OFFSET / volumeTexDimsFull;
       vec3 hp = result.firstHit.xyz;
-      float vXp = drawScalar(texture(drawingLinear, hp + vec3(dv.x, 0.0, 0.0)));
-      float vXm = drawScalar(texture(drawingLinear, hp - vec3(dv.x, 0.0, 0.0)));
-      float vYp = drawScalar(texture(drawingLinear, hp + vec3(0.0, dv.y, 0.0)));
-      float vYm = drawScalar(texture(drawingLinear, hp - vec3(0.0, dv.y, 0.0)));
-      float vZp = drawScalar(texture(drawingLinear, hp + vec3(0.0, 0.0, dv.z)));
-      float vZm = drawScalar(texture(drawingLinear, hp - vec3(0.0, 0.0, dv.z)));
+      float vXp = drawScalar(texture(drawingLinear, chunkTexCoord(hp + vec3(dv.x, 0.0, 0.0))));
+      float vXm = drawScalar(texture(drawingLinear, chunkTexCoord(hp - vec3(dv.x, 0.0, 0.0))));
+      float vYp = drawScalar(texture(drawingLinear, chunkTexCoord(hp + vec3(0.0, dv.y, 0.0))));
+      float vYm = drawScalar(texture(drawingLinear, chunkTexCoord(hp - vec3(0.0, dv.y, 0.0))));
+      float vZp = drawScalar(texture(drawingLinear, chunkTexCoord(hp + vec3(0.0, 0.0, dv.z))));
+      float vZm = drawScalar(texture(drawingLinear, chunkTexCoord(hp - vec3(0.0, 0.0, dv.z))));
       vec3 grad = vec3(vXp - vXm, vYp - vYm, vZp - vZm);
       if (length(grad) > DRAW_GRAD_EPSILON) {
         vec3 localNormal = normalize(grad);
@@ -423,7 +430,9 @@ void main() {
   if (colAcc.a <= 0.001) {
     discard;
   }
-  FragColor = vec4(colAcc.rgb, colAcc.a / earlyTermination);
+  // Scale rgb and alpha together so the fragment stays premultiplied —
+  // chunked volumes composite multiple draws with ONE,ONE_MINUS_SRC_ALPHA.
+  FragColor = colAcc / earlyTermination;
   gl_FragDepth = fragDepth;
 }
 `

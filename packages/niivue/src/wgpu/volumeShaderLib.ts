@@ -18,6 +18,30 @@ struct Params {
     clipPlanes: array<vec4f, 6>,
     paqdUniforms: vec4f,
     earlyTermination: f32,
+    _pad0: vec3f,
+    // Tiled-volume fields. Pass-through values for non-chunked volumes:
+    //   volumeTexDimsFull = textureDimensions(volume, 0)
+    //   chunkSubOrigin    = (0,0,0)
+    //   chunkSubSize      = (1,1,1)
+    //   dataOriginTexFrac = (0,0,0)
+    //   dataSizeTexFrac   = (1,1,1)
+    // The vertex shader scales the unit cube into the sub-cube region of the
+    // full volume; the fragment shader remaps sample positions from full-volume
+    // [0,1] space to the chunk texture's [dataOrigin, dataOrigin+dataSize] region,
+    // letting trilinear sampling pull from halo voxels for seam-free chunk joins.
+    volumeTexDimsFull: vec4f,
+    chunkSubOrigin: vec4f,
+    chunkSubSize: vec4f,
+    dataOriginTexFrac: vec4f,
+    dataSizeTexFrac: vec4f,
+}
+
+// Remap a sample position from full-volume [0,1] cube space to the local chunk
+// texture's [dataOrigin, dataOrigin+dataSize] region (preserves trilinear halo
+// access at chunk seams). Identity for non-chunked volumes.
+fn chunkTexCoord(samplePos: vec3f) -> vec3f {
+    let chunkLocal = (samplePos - params.chunkSubOrigin.xyz) / params.chunkSubSize.xyz;
+    return params.dataOriginTexFrac.xyz + chunkLocal * params.dataSizeTexFrac.xyz;
 }
 
 struct VertexInput {
@@ -67,19 +91,22 @@ var paqdLut: texture_2d<f32>;
 @vertex
 fn vertex_main(vert: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    var pos = vert.position;
-    let texVox = vec3<f32>(textureDimensions(volume, 0));
-    let voxelSpacePos = (pos * texVox) - 0.5;
+    // Place this draw's cube into the sub-cube region of the full volume's
+    // [0,1] cube. For non-chunked: chunkSubOrigin=0, chunkSubSize=1 so
+    // subPos == vert.position (unchanged from the legacy path).
+    let subPos = params.chunkSubOrigin.xyz + vert.position * params.chunkSubSize.xyz;
+    let texVox = params.volumeTexDimsFull.xyz;
+    let voxelSpacePos = (subPos * texVox) - 0.5;
     let vPos = (vec4<f32>(voxelSpacePos, 1.0) * params.matRAS).xyz;
     var gl_pos = vec4<f32>(params.mvpMtx * vec4<f32>(vPos, 1.0));
     out.position = gl_pos;
-    out.vColor = vert.position;
+    out.vColor = subPos;
     return out;
 }
 
 fn frac2ndc(frac: vec3f) -> f32 {
     var pos: vec4f = vec4f(frac, 1.0);
-    let dim: vec4f = vec4f(vec3f(textureDimensions(volume, 0)), 1.0);
+    let dim: vec4f = vec4f(params.volumeTexDimsFull.xyz, 1.0);
     pos = pos * dim;
     let shim: vec4f = vec4f(-0.5, -0.5, -0.5, 0.0);
     pos += shim;
@@ -95,10 +122,14 @@ fn frac2ndc(frac: vec3f) -> f32 {
 fn GetBackPosition(startTex: vec3f) -> vec3f {
     let volScale = params.volScale.xyz;
     let rayDir = params.rayDir.xyz;
+    // Clip ray to the chunk's sub-cube in object space, not the full cube.
+    // For non-chunked: subMin=0, subMax=volScale (identical to original).
+    let subMin = params.chunkSubOrigin.xyz * volScale;
+    let subMax = (params.chunkSubOrigin.xyz + params.chunkSubSize.xyz) * volScale;
     let startObj = startTex * volScale;
     let invR = 1.0 / rayDir;
-    let tbot = invR * (-startObj);
-    let ttop = invR * (volScale - startObj);
+    let tbot = invR * (subMin - startObj);
+    let ttop = invR * (subMax - startObj);
     let tmax = max(ttop, tbot);
     let t = min(tmax.x, min(tmax.y, tmax.z));
     return (startObj + (rayDir * t)) / volScale;

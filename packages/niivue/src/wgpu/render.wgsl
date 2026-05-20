@@ -22,8 +22,10 @@ struct RayMarchResult {
     farthest: f32,
 }
 
-// Shared fast+fine ray-march for overlay, PAQD, and drawing textures.
+// Shared fast+fine ray-march for overlay and drawing textures.
 // Samples `tex` using `samp` (linear or nearest depending on caller).
+// Sample positions are remapped through chunkTexCoord so a chunked layer
+// (drawing) reads its per-chunk texture; identity for non-chunked layers.
 fn rayMarchPass(
     tex: texture_3d<f32>, samp: sampler,
     start: vec3f, dir: vec3f, len: f32,
@@ -42,7 +44,7 @@ fn rayMarchPass(
     // Fast pass
     for (var j: i32 = 0; j < 1024; j++) {
         if (samplePos.a > len) { break; }
-        let alpha = textureSampleLevel(tex, samp, samplePos.xyz, 0.0).a;
+        let alpha = textureSampleLevel(tex, samp, chunkTexCoord(samplePos.xyz), 0.0).a;
         if (alpha >= 0.01) { break; }
         samplePos += deltaDirFast;
     }
@@ -54,7 +56,7 @@ fn rayMarchPass(
     // Fine pass
     for (var i: i32 = 0; i < 2048; i++) {
         if (samplePos.a > len) { break; }
-        let colorSample = textureSampleLevel(tex, samp, samplePos.xyz, 0.0);
+        let colorSample = textureSampleLevel(tex, samp, chunkTexCoord(samplePos.xyz), 0.0);
         if (colorSample.a >= 0.01) {
             if (result.firstHit.a > len) {
                 result.firstHit = samplePos;
@@ -106,7 +108,8 @@ fn rayMarchPaqd(
     let t0 = paqdUni[0];
     for (var j: i32 = 0; j < 1024; j++) {
         if (samplePos.a > len) { break; }
-        let coord = vec3i(clamp(samplePos.xyz * texDims, vec3f(0.0), texDims - 1.0));
+        // chunkTexCoord remaps into the per-chunk PAQD texture (identity when not chunked).
+        let coord = vec3i(clamp(chunkTexCoord(samplePos.xyz) * texDims, vec3f(0.0), texDims - 1.0));
         let raw = textureLoad(tex, coord, 0);
         if (raw.b > t0) { break; }
         samplePos += deltaDirFast;
@@ -119,7 +122,7 @@ fn rayMarchPaqd(
     // Fine pass: decode and accumulate PAQD colors
     for (var i: i32 = 0; i < 2048; i++) {
         if (samplePos.a > len) { break; }
-        let coord = vec3i(clamp(samplePos.xyz * texDims, vec3f(0.0), texDims - 1.0));
+        let coord = vec3i(clamp(chunkTexCoord(samplePos.xyz) * texDims, vec3f(0.0), texDims - 1.0));
         let raw = textureLoad(tex, coord, 0);
         let prob1 = raw.b;
         let prob2 = raw.a;
@@ -193,7 +196,9 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	let dirVec = backPosition - start;
 	var len = length(dirVec);
 	let dir = dirVec / len;
-	let texVox = vec3f(textureDimensions(volume, 0));
+	// Step size is per-voxel of the FULL volume (not the chunk texture, which
+	// may include halo). For non-chunked: volumeTexDimsFull == textureDimensions(volume, 0).
+	let texVox = params.volumeTexDimsFull.xyz;
 	let lenVox = length(dirVec * texVox);
 	if (lenVox < 0.5 || len > 3.0) {
 		discard;
@@ -244,8 +249,8 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 			clipOffset = sampleRange.x;
 			start += dir * sampleRange.x;
 			len = sampleRange.y - sampleRange.x;
-			let alpha = textureSampleLevel(volume, tex_sampler, start.xyz, 0.0).a;
-			let alpha1 = textureSampleLevel(volume, tex_sampler, start.xyz - deltaDir.xyz, 0.0).a;
+			let alpha = textureSampleLevel(volume, tex_sampler, chunkTexCoord(start.xyz), 0.0).a;
+			let alpha1 = textureSampleLevel(volume, tex_sampler, chunkTexCoord(start.xyz - deltaDir.xyz), 0.0).a;
 			if ((alpha > 0.01) && (alpha1 > 0.01)) {
 				clipSurfaceHit = true;
 			}
@@ -259,7 +264,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 				samplePos += deltaDirFast;
 				continue;
 			}
-			let alpha = textureSampleLevel(volume, tex_sampler, samplePos.xyz, 0.0).a;
+			let alpha = textureSampleLevel(volume, tex_sampler, chunkTexCoord(samplePos.xyz), 0.0).a;
 			if (alpha >= 0.01) {
 				break;
 			}
@@ -296,13 +301,14 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 					samplePos += deltaDir;
 					continue;
 				}
-				let colorSample = textureSampleLevel(volume, tex_sampler, samplePos.xyz, 0.0);
+				let volCoord = chunkTexCoord(samplePos.xyz);
+				let colorSample = textureSampleLevel(volume, tex_sampler, volCoord, 0.0);
 				if (colorSample.a >= 0.01) {
 					if (!bgHasHit) {
 						bgHasHit = true;
 						firstHit = samplePos;
 					}
-					let gradRaw = textureSampleLevel(volumeGradient, tex_sampler, samplePos.xyz, 0.0).rgb;
+					let gradRaw = textureSampleLevel(volumeGradient, tex_sampler, volCoord, 0.0).rgb;
 					let localNormal = normalize(gradRaw * 2.0 - 1.0);
 					let n = norm3 * localNormal;
 					let uv = n.xy * 0.5 + 0.5;
@@ -376,14 +382,17 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 		// precomputed drawingGradient texture. Sign: value(+X) - value(-X)
 		// matches the volume gradient's inward-pointing convention.
 		if (result.color.a > 0.001 && params.gradientAmount > 0.0) {
-			let dv = DRAW_GRAD_OFFSET / vec3f(textureDimensions(drawing, 0));
+			// dv is a 1.5-voxel offset in full-volume [0,1] units; chunkTexCoord
+			// then maps it into the per-chunk texture (1.5 chunk-texels). Using
+			// volumeTexDimsFull keeps the offset correct for chunked layers.
+			let dv = DRAW_GRAD_OFFSET / params.volumeTexDimsFull.xyz;
 			let hp = result.firstHit.xyz;
-			let vXp = drawScalar(textureSampleLevel(drawing, tex_sampler, hp + vec3f(dv.x, 0.0, 0.0), 0.0));
-			let vXm = drawScalar(textureSampleLevel(drawing, tex_sampler, hp - vec3f(dv.x, 0.0, 0.0), 0.0));
-			let vYp = drawScalar(textureSampleLevel(drawing, tex_sampler, hp + vec3f(0.0, dv.y, 0.0), 0.0));
-			let vYm = drawScalar(textureSampleLevel(drawing, tex_sampler, hp - vec3f(0.0, dv.y, 0.0), 0.0));
-			let vZp = drawScalar(textureSampleLevel(drawing, tex_sampler, hp + vec3f(0.0, 0.0, dv.z), 0.0));
-			let vZm = drawScalar(textureSampleLevel(drawing, tex_sampler, hp - vec3f(0.0, 0.0, dv.z), 0.0));
+			let vXp = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp + vec3f(dv.x, 0.0, 0.0)), 0.0));
+			let vXm = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp - vec3f(dv.x, 0.0, 0.0)), 0.0));
+			let vYp = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp + vec3f(0.0, dv.y, 0.0)), 0.0));
+			let vYm = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp - vec3f(0.0, dv.y, 0.0)), 0.0));
+			let vZp = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp + vec3f(0.0, 0.0, dv.z)), 0.0));
+			let vZm = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp - vec3f(0.0, 0.0, dv.z)), 0.0));
 			let grad = vec3f(vXp - vXm, vYp - vYm, vZp - vZm);
 			if (length(grad) > DRAW_GRAD_EPSILON) {
 				let localNormal = normalize(grad);
@@ -409,7 +418,9 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 		discard;
 	}
 	var output: FragmentOutput;
-	output.color = vec4f(colAcc.rgb, colAcc.a / earlyTermination);
+	// Scale rgb and alpha together so the fragment stays premultiplied —
+	// chunked volumes composite multiple draws with one,one-minus-src-alpha.
+	output.color = colAcc / earlyTermination;
 	output.fragDepth = fragDepth;
 	return output;
 }

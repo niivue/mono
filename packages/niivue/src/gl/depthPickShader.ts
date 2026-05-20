@@ -23,7 +23,7 @@ void main() {
   vec3 dirVec = backPosition - start;
   float len = length(dirVec);
   vec3 dir = dirVec / len;
-  vec3 texVox = vec3(textureSize(volume, 0));
+  vec3 texVox = volumeTexDimsFull;
   float lenVox = length(dirVec * texVox);
   if (lenVox < 0.5 || len > 3.0) {
     discard;
@@ -72,7 +72,7 @@ void main() {
         samplePos += deltaDirFast;
         continue;
       }
-      float alpha = texture(volume, samplePos.xyz).a;
+      float alpha = texture(volume, chunkTexCoord(samplePos.xyz)).a;
       if (alpha >= 0.01) { break; }
       samplePos += deltaDirFast;
     }
@@ -92,7 +92,7 @@ void main() {
           samplePos += deltaDir;
           continue;
         }
-        float alpha = texture(volume, samplePos.xyz).a;
+        float alpha = texture(volume, chunkTexCoord(samplePos.xyz)).a;
         if (alpha >= 0.01) {
           bgDepth = frac2ndc(samplePos.xyz);
           bgHit = true;

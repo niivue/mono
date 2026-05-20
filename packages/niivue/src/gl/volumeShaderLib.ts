@@ -3,22 +3,30 @@
 
 export const volumeVertexShader = `#version 300 es
 precision highp float;
-precision highp sampler3D;
 
 layout(location = 0) in vec3 aPos;
 
 uniform mat4 mvpMtx;
 uniform mat4 matRAS;
-uniform sampler3D volume;
+// Tiled-volume fields. Pass-through values for non-chunked volumes:
+//   volumeTexDimsFull = full RAS volume dims
+//   chunkSubOrigin    = (0,0,0)
+//   chunkSubSize      = (1,1,1)
+uniform vec3 volumeTexDimsFull;
+uniform vec3 chunkSubOrigin;
+uniform vec3 chunkSubSize;
 out vec3 vColor;
 
 void main() {
-  vec3 pos = aPos;
-  vec3 texVox = vec3(textureSize(volume, 0));
-  vec3 voxelSpacePos = (pos * texVox) - 0.5;
+  // Place this draw's cube into the sub-cube region of the full volume's
+  // [0,1] cube. For non-chunked: chunkSubOrigin=0, chunkSubSize=1 so
+  // subPos == aPos (unchanged from the legacy path).
+  vec3 subPos = chunkSubOrigin + aPos * chunkSubSize;
+  vec3 texVox = volumeTexDimsFull;
+  vec3 voxelSpacePos = (subPos * texVox) - 0.5;
   vec3 vPos = (vec4(voxelSpacePos, 1.0) * matRAS).xyz;
   gl_Position = mvpMtx * vec4(vPos, 1.0);
-  vColor = aPos;
+  vColor = subPos;
 }
 `
 
@@ -40,12 +48,32 @@ uniform float isClipCutaway;
 uniform vec4 clipPlanes[MAX_CLIP_PLANES];
 uniform sampler3D volume;
 
+// Tiled-volume fields. Pass-through values for non-chunked volumes:
+//   volumeTexDimsFull = full RAS volume dims
+//   chunkSubOrigin    = (0,0,0)
+//   chunkSubSize      = (1,1,1)
+//   dataOriginTexFrac = (0,0,0)
+//   dataSizeTexFrac   = (1,1,1)
+// chunkTexCoord remaps a sample position from full-volume [0,1] cube space
+// to the local chunk texture's [dataOrigin, dataOrigin+dataSize] region,
+// letting trilinear sampling pull from halo voxels for seam-free chunk joins.
+uniform vec3 volumeTexDimsFull;
+uniform vec3 chunkSubOrigin;
+uniform vec3 chunkSubSize;
+uniform vec3 dataOriginTexFrac;
+uniform vec3 dataSizeTexFrac;
+
 in vec3 vColor;
 out vec4 FragColor;
 
+vec3 chunkTexCoord(vec3 samplePos) {
+  vec3 chunkLocal = (samplePos - chunkSubOrigin) / chunkSubSize;
+  return dataOriginTexFrac + chunkLocal * dataSizeTexFrac;
+}
+
 float frac2ndc(vec3 frac) {
   vec4 pos = vec4(frac.xyz, 1.0);
-  vec4 dim = vec4(vec3(textureSize(volume, 0)), 1.0);
+  vec4 dim = vec4(volumeTexDimsFull, 1.0);
   pos = pos * dim;
   vec4 shim = vec4(-0.5, -0.5, -0.5, 0.0);
   pos += shim;
@@ -56,10 +84,14 @@ float frac2ndc(vec3 frac) {
 }
 
 vec3 GetBackPosition(vec3 startTex) {
+  // Clip ray to the chunk's sub-cube in object space, not the full cube.
+  // For non-chunked: subMin=0, subMax=volScale (identical to original).
+  vec3 subMin = chunkSubOrigin * volScale;
+  vec3 subMax = (chunkSubOrigin + chunkSubSize) * volScale;
   vec3 startObj = startTex * volScale;
   vec3 invR = 1.0 / rayDir;
-  vec3 tbot = invR * (-startObj);
-  vec3 ttop = invR * (volScale - startObj);
+  vec3 tbot = invR * (subMin - startObj);
+  vec3 ttop = invR * (subMax - startObj);
   vec3 tmax = max(ttop, tbot);
   float t = min(tmax.x, min(tmax.y, tmax.z));
   return (startObj + (rayDir * t)) / volScale;

@@ -9,6 +9,7 @@ import {
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
 import { ChunkResidencyManager } from '@/volume/ChunkResidency'
+import { chunksInFrustum } from '@/volume/ChunkVisibility'
 import {
   bytesPerSourceVoxel,
   estimateChunkedBytes,
@@ -58,6 +59,12 @@ const MAX_CHUNKS_PER_TILE = 32
  * stalling at load. Raising this trades smoother streaming for larger hitches.
  */
 const CHUNK_UPLOADS_PER_FRAME = 1
+
+/**
+ * Near-plane depth convention for this backend's clip space. WebGPU clip space
+ * has z in [0, w]; `chunksInFrustum` uses this to cull against the near plane.
+ */
+const CLIP_SPACE_ZERO_TO_ONE = true
 
 type Vec3f = [number, number, number]
 
@@ -505,11 +512,12 @@ export class VolumeRenderer extends NVRenderer {
           },
         )
         // Phase 3c: upload only the first chunk synchronously so the volume
-        // is immediately present (hasVolume/volumeTexture guards pass), then
-        // queue the rest — the per-frame pump streams them in over the next
-        // frames instead of stalling the main thread at load.
+        // is immediately present (hasVolume/volumeTexture guards pass). The
+        // remaining chunks are not queued here — the view computes a
+        // visibility-driven working set each frame and calls
+        // requestVisibleChunks / requestChunksInFrustum, so only chunks a
+        // tile actually needs stream in.
         manager.admit(0, await uploader.uploadChunk(0))
-        for (let i = 1; i < plan.chunks.length; i++) manager.requestUpload(i)
         chunkedEntry = {
           kind: 'chunked',
           manager,
@@ -642,6 +650,30 @@ export class VolumeRenderer extends NVRenderer {
           ? this.paqdChunks
           : null,
     }
+  }
+
+  /**
+   * Phase 3c: queue the active chunked volume's chunks for streaming upload.
+   * `requestUpload` is idempotent — already-resident or already-queued chunks
+   * are skipped — so the view may call this every frame with a tile's working
+   * set. No-op when the active volume is not chunked.
+   */
+  requestVisibleChunks(chunkIndices: readonly number[]): void {
+    const entry = this._activeChunked
+    if (!entry) return
+    for (const ci of chunkIndices) entry.manager.requestUpload(ci)
+  }
+
+  /**
+   * Phase 3c: frustum-cull the active chunked volume against a 3D render
+   * tile's MVP and queue the visible chunks for streaming. No-op when the
+   * active volume is not chunked.
+   */
+  requestChunksInFrustum(mvp: Float32Array | number[]): void {
+    const entry = this._activeChunked
+    if (!entry) return
+    const visible = chunksInFrustum(entry.plan, mvp, CLIP_SPACE_ZERO_TO_ONE)
+    for (const ci of visible) entry.manager.requestUpload(ci)
   }
 
   /**

@@ -207,3 +207,20 @@ Excellent work on the async GPU upload mechanics. The streaming pump handles the
 3. **Splitting the GPU work again:** Yes, this was highly useful. The async re-entrancy logic for WebGPU is tricky enough to warrant its own focused review before mixing in the frustum-culling math.
 
 **Clear to proceed to the final piece of Phase 3c (Visibility-driven working sets)!**
+
+---
+
+## Phase 3c (Final - Visibility Working Set) Review
+
+**Status:** Acknowledged and Approved ✅
+
+Outstanding work wiring the culling math into the streaming pump. The volume streaming is now fully reactive to the user's view, which is the core of Phase 3!
+
+### Answers to Phase 3c (Final) Questions
+1. **Method split:** The asymmetry is exactly right. The view already has the 2D intersection list because it needs it to draw the quads, so passing it down avoids redundant CPU work. The renderer doing the 3D frustum math makes sense as it owns the MVP and clipping conventions. Keep the split!
+2. **Dropping `unionChunkSets` from call path:** Absolutely. Letting the `ChunkResidencyManager`'s upload queue naturally deduplicate requests is much cleaner and less prone to edge-case bugs than maintaining an explicit union per-frame in the view.
+3. **One-frame sparse start:** A one-frame delay (16ms) is imperceptible. Keeping the `updateVolume` load path as lean as possible is more important than prefetching the crosshair right now. We can add a speculative prefetch later if UX testing demands it.
+
+**Phase 3c is complete!**
+
+Clear to proceed to the final phase: Phase 3d (Eviction + configurable budget).

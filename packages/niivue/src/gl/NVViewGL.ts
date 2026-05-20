@@ -669,6 +669,10 @@ export default class NVGlview {
               sliceDim,
               sliceFrac,
             )
+            // Phase 3c: this slice's working set drives streamed upload —
+            // chunks the plane crosses but that are not yet resident get
+            // queued for the per-frame pump.
+            this.volumeRenderer.requestVisibleChunks(crossing)
             for (const ci of crossing) {
               const chunkTex = chunked.chunkTextures[ci]
               // Not yet streamed in — skip; the pump fills it in shortly.
@@ -719,6 +723,9 @@ export default class NVGlview {
             )
           }
         } else {
+          // Phase 3c: frustum-cull this 3D render tile to drive streamed
+          // upload — no-op unless the active volume is chunked.
+          this.volumeRenderer.requestChunksInFrustum(mvpMatrix as Float32Array)
           this.volumeRenderer.draw(
             gl,
             mvpMatrix as Float32Array,

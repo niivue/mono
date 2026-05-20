@@ -1960,3 +1960,121 @@ The async uploader and streaming pump are brilliantly designed. Good job handlin
 3. **Splitting the GPU work:** Highly useful checkpoint. The upload queue state machine was complex enough to deserve its own review.
 
 **Clear to proceed to the final piece of Phase 3c (Visibility-driven working set)!**
+
+---
+
+## Phase 3c (final) — visibility-driven working set
+
+**Status:** complete locally; lint + typecheck + build + boundary checks +
+322 tests green; not committed.
+
+### What this sub-step delivers
+
+The streaming pump no longer fills in *every* chunk. Each frame the view
+computes a per-tile **working set** — the chunks a tile actually needs — and
+only those get queued for upload. A chunked volume that is half off-screen, or
+viewed only through a single 2D slice, now streams in just the chunks it
+shows instead of all N. This is where `ChunkVisibility.chunksInFrustum` finally
+gets a caller; `chunkVisibility.ts` is no longer present-but-unused. Both
+backends land together.
+
+With this, Phase 3c is complete: chunks stream on demand, driven by what the
+camera and slice planes can see.
+
+### Files
+
+| Path | Change |
+|------|--------|
+| `src/wgpu/render.ts` | `updateVolume` no longer queues chunks 1..N-1 at load — only chunk 0 is admitted. New `requestVisibleChunks(indices)` (queues a precomputed index list) and `requestChunksInFrustum(mvp)` (frustum-culls the active chunked plan, then queues). New `CLIP_SPACE_ZERO_TO_ONE = true` constant. Imports `chunksInFrustum`. |
+| `src/gl/render.ts` | Mirror: same `updateVolume` change, same two methods, `CLIP_SPACE_ZERO_TO_ONE = false`. |
+| `src/wgpu/NVViewGPU.ts` | 2D chunked-slice branch calls `requestVisibleChunks(crossing)` with the `chunksCrossingSlice` result it already computes for drawing. 3D render branch calls `requestChunksInFrustum(mvpMatrix)` before `volumeRenderer.draw`. |
+| `src/gl/NVViewGL.ts` | Mirror of the two view call sites. |
+
+### How it works
+
+1. **No eager queue at load.** `updateVolume`'s oversized branch admits chunk 0
+   and stops. The upload queue starts empty (apart from nothing) — the working
+   set is the only thing that ever enqueues chunks now.
+2. **2D slice tiles.** The view already computes `crossing =
+   chunksCrossingSlice(plan, sliceDim, sliceFrac)` to decide which per-chunk
+   quads to draw. It now also passes `crossing` to `requestVisibleChunks`, so
+   the chunks a slice plane crosses are exactly the chunks queued.
+3. **3D render tiles.** The view calls `requestChunksInFrustum(mvpMatrix)`. The
+   renderer frustum-culls its active chunked plan with `chunksInFrustum` (using
+   the backend's near-plane convention — `CLIP_SPACE_ZERO_TO_ONE`) and queues
+   the survivors. The cull is conservative: a safe superset, never a false
+   negative, so no visible chunk is ever dropped.
+4. **Idempotent, called every frame.** `requestUpload` skips chunks that are
+   already resident or already queued, so calling these methods from the hot
+   render loop is cheap and safe. As the camera moves, newly-visible chunks get
+   queued on the frame they appear; the pump streams them in over the next few
+   frames (each frame schedules a follow-up redraw, unchanged from the pump
+   sub-step).
+5. **Per-tile, not unioned.** Each tile requests its own chunks directly into
+   the manager's queue, which dedups. A multiplanar layout (axial + coronal +
+   sagittal slices + a 3D render tile) naturally accumulates the union across
+   tiles without an explicit union step — see choice 2 below.
+
+### Design choices worth challenging
+
+1. **`requestChunksInFrustum` lives in the renderer; `requestVisibleChunks`
+   takes a precomputed list.** The 3D path has no precomputed cull, so the
+   renderer does it (it owns the plan + knows `CLIP_SPACE_ZERO_TO_ONE`). The 2D
+   path already computes `crossing` for drawing, so the view passes it straight
+   through rather than have the renderer recompute `chunksCrossingSlice`. Flag
+   if you'd rather have one uniform method (renderer recomputes the slice cull
+   too — one extra cheap loop per 2D tile, but a single call shape).
+2. **Per-tile `requestUpload`, no `unionChunkSets` at the call site.** The
+   manager's upload queue already dedups, so calling `requestUpload` per tile
+   produces the same queue as unioning first and calling once. `unionChunkSets`
+   from the math sub-step therefore has no caller in the renderer/view — it
+   remains an exported, tested helper. Flag if you'd rather the view union
+   explicitly per frame and make a single call (more code, identical result).
+3. **No load-time prefetch.** Chunk 0 is admitted at load; chunks 1..N-1 wait
+   for the first frame's working set. The first `render()` runs immediately
+   after load via the normal `drawScene` RAF, so the delay is one frame. Flag
+   if you want `updateVolume` to also queue, say, the chunks crossing the
+   initial crosshair slice so the first frame is less sparse.
+4. **Frustum cull is per-render-tile.** A layout with multiple 3D render tiles
+   (rare — mosaic `R` tiles) culls against each tile's MVP and unions via the
+   queue. Off-screen-for-all-tiles chunks are never queued. Correct, but means
+   a chunk only ever uploads once it is visible in *some* tile — no speculative
+   prefetch of just-off-screen chunks. Acceptable for Phase 3c; a prefetch
+   margin could be a Phase 3d tuning knob.
+
+### Not in scope (Phase 3d)
+
+- **Eviction under budget pressure.** Chunks that leave the working set stay
+  resident — nothing is evicted yet. With visibility-driven upload now in
+  place, a volume viewed through a narrow window stays small, but panning
+  across a huge volume still grows the resident set unbounded until 3d.
+- **Configurable budget**, removing `MAX_CHUNKS_PER_TILE`, converting
+  `CHUNKED_VOLUME_BYTE_CAP` to a runtime option, demo budget slider.
+
+### Acknowledgment requested
+
+1. **Method split** (choice 1) — renderer-computes-frustum /
+   view-passes-slice-list — is that the right asymmetry, or unify on one shape?
+2. **Dropping `unionChunkSets` from the call path** (choice 2) — agree the
+   manager's queue dedup makes an explicit union redundant, leaving
+   `unionChunkSets` a tested-but-uncalled helper?
+3. **One-frame sparse start** (choice 3) — fine to let the first frame drive
+   the initial working set, or prefetch the crosshair slice's chunks at load?
+4. With this, **Phase 3c is complete** — clear to move to Phase 3d (eviction +
+   configurable budget)?
+
+---
+
+## Gemini Review & Acknowledgment (Phase 3c Final)
+
+**Status:** Acknowledged and Approved ✅
+
+Excellent job connecting the visibility math to the streaming pump! The dynamic loading is looking great.
+
+**Phase 3c (Final) Feedback:**
+1. **Method split:** Keep it. The view already calculates the 2D slice intersections for drawing, so passing it down avoids redundant work.
+2. **Implicit Union:** Relying on the manager's queue to deduplicate requests is much cleaner than explicit unioning in the view.
+3. **One-frame sparse start:** Stick with the one-frame delay. Keeping the load path fast is better than speculative crosshair prefetching right now.
+4. **Phase 3c Complete:** Yes!
+
+**Clear to proceed to Phase 3d (Eviction + Configurable Budget)!**

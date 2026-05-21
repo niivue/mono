@@ -25,6 +25,10 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   `space: 'global3d'` instances. Streams source volumes from `/api`,
   prefetches low-resolution variants, and keeps next bricks warm as
   the camera moves.
+- `omezarr.html` — OME-Zarr pyramid viewer with level selection,
+  subvolume streaming, exploded block layout, and a WebGL2 / WebGPU
+  backend toggle. The default volume is `pawpawsaurus.ome.zarr` when
+  present, otherwise the first OME-Zarr fixture returned by `/api`.
 
 ### Backend switching
 
@@ -41,6 +45,23 @@ the query.
 The demo is a thin client; it needs the IIIF Volumetric Server running
 on `http://127.0.0.1:8080` (default) with at least one volume fixture.
 Run every command from the **repo root** unless noted.
+
+Short version for the NIfTI demos:
+
+```sh
+bun install
+bunx nx build niivue
+bunx nx run iiif-volumetric-server:fetch-fixtures
+bunx nx dev iiif-volumetric-server
+```
+
+Then, in another terminal:
+
+```sh
+bunx nx dev iiif-volumetric-demo
+```
+
+Open `http://127.0.0.1:8087/index.html`.
 
 ### 1. Install dependencies (first time only)
 
@@ -82,6 +103,20 @@ cd apps/iiif-volumetric-server
 bun scripts/fetch-fixtures.ts --dataset=ds002336 --max=10
 ```
 
+For the OME-Zarr page, fetch the default OME-Zarr fixture too:
+
+```sh
+bunx nx run iiif-volumetric-server:fetch-omezarr
+```
+
+The default OME-Zarr fetcher downloads only one coarse FIB-SEM pyramid
+level so a fresh checkout stays quick. To fetch a larger level:
+
+```sh
+cd apps/iiif-volumetric-server
+bun scripts/fetch-omezarr.ts --level=s3 --max-mb=4000
+```
+
 ### 4. Start the IIIF server (terminal 1)
 
 ```sh
@@ -111,13 +146,16 @@ IIIF_SERVER_URL=http://127.0.0.1:9090 bunx nx dev iiif-volumetric-demo
 ```
 
 The header on every page exposes the shared cross-page nav
-(`volumes`, `sheet`, `stitch`, `osd desktop`, `fly space`) plus the
-`WebGL2 / WebGPU` backend toggle. `sheet.html`, `osd-volume-desktop.html`,
-and `volume-fly-space.html` all need the IIIF server running with at
-least one fixture volume — `sheet.html` cycles available volumes
-through 9 cells; `osd-volume-desktop.html` reads the VolumeDesktop
-manifest at `/iiif/desktop/neuro/manifest`; `volume-fly-space.html`
-streams from `/api`.
+(`volumes`, `sheet`, `stitch`, `osd desktop`, `fly space`, `omezarr`)
+plus the `WebGL2 / WebGPU` backend toggle. `sheet.html`,
+`osd-volume-desktop.html`, and `volume-fly-space.html` all need the
+IIIF server running with at least one fixture volume — `sheet.html`
+cycles available volumes through 9 cells; `osd-volume-desktop.html`
+reads the VolumeDesktop manifest at `/iiif/desktop/neuro/manifest`;
+`volume-fly-space.html` streams from `/api`. `omezarr.html` needs at
+least one OME-Zarr fixture; open
+`http://127.0.0.1:8087/omezarr.html?id=fibsem-uint8.zarr` after the
+default OME-Zarr fetch.
 
 ### 6. Stop
 
@@ -132,6 +170,9 @@ needed to add or refresh data.
   is on a different port than `IIIF_SERVER_URL` expects.
 - **Server starts but no volumes listed** — fixtures dir is empty; run
   step 3.
+- **OME-Zarr page says no OME-Zarr volumes** — run
+  `bunx nx run iiif-volumetric-server:fetch-omezarr`, restart the
+  server, then reload `omezarr.html`.
 - **WebGPU toggle disabled** — the browser doesn't expose
   `navigator.gpu`. Safari needs the feature flag enabled; older
   Firefox builds don't support it. WebGL2 is the default and works

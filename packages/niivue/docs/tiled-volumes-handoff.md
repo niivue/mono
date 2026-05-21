@@ -643,7 +643,7 @@ After the loop: destroy the shared uniform buffer + colormap textures.
    `await onSubmittedWorkDone()` going to bite us in latency for the
    common case (a few chunks)? For 27-chunk monster volumes the sync
    is dwarfed by upload time, but for a typical 4-chunk case the
-   round-trip might be measurable. Worth pre-emptively batching, or
+   round-trip might be measurable. Worth preemptively batching, or
    wait for a real profile?
 2. **One CPU allocation per chunk (choice #2).** Comfortable with the
    peak extra memory, or would you prefer a smaller-chunk-at-a-time

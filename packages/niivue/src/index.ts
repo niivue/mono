@@ -88,6 +88,7 @@ export type {
   SyncOpts,
   TypedVoxelArray,
   ViewHitTest,
+  VolumeChunkExplode,
   VolumeChunkSource,
   VolumeChunkSourceRequest,
   VolumeUpdate,

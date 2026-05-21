@@ -2,12 +2,17 @@ import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVShapes from '@/mesh/NVShapes'
 import { isPaqd } from '@/NVConstants'
-import type { NVImage } from '@/NVTypes'
+import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
+import {
+  chunkExplodedMatRAS,
+  chunkExplodeEnabled,
+  chunkExplodeOffsetFrac,
+} from '@/volume/ChunkExplode'
 import { ChunkResidencyManager } from '@/volume/ChunkResidency'
 import { chunksBackToFront, chunksInFrustum } from '@/volume/ChunkVisibility'
 import {
@@ -98,6 +103,8 @@ interface SingleTexEntry {
 /** Chunked (tiled) volume: one or more axes exceed maxTextureDimension3D. */
 interface ChunkedTexEntry {
   kind: 'chunked'
+  /** Volume object that owns mutable per-volume render options. */
+  volume: NVImage
   /** GPU residency bookkeeping for the volume's chunks. */
   manager: ChunkResidencyManager<VolumeChunkGPU>
   /** On-demand uploader the streaming pump drives to fill the manager. */
@@ -157,6 +164,15 @@ function chunkUniformsFor(plan: ChunkPlan, chunkIndex: number): ChunkUniforms {
       desc.voxelDims[2] / tz,
     ],
   }
+}
+
+function chunkOffsetFor(
+  plan: ChunkPlan,
+  explode: VolumeChunkExplode | undefined,
+): ((chunkIndex: number) => Vec3f) | undefined {
+  if (!chunkExplodeEnabled(explode)) return undefined
+  return (chunkIndex: number) =>
+    chunkExplodeOffsetFrac(plan, chunkIndex, explode)
 }
 
 export class VolumeRenderer extends NVRenderer {
@@ -541,6 +557,7 @@ export class VolumeRenderer extends NVRenderer {
       let chunkedEntry: ChunkedTexEntry
       if (existing && existing.kind === 'chunked') {
         chunkedEntry = existing
+        chunkedEntry.volume = vol
       } else {
         if (existing) this._destroyTexEntry(existing)
         const uploader = await createChunkUploaderGPU(device, vol, plan)
@@ -569,6 +586,7 @@ export class VolumeRenderer extends NVRenderer {
         manager.admit(0, await uploader.uploadChunk(0))
         chunkedEntry = {
           kind: 'chunked',
+          volume: vol,
           manager,
           uploader,
           plan,
@@ -729,6 +747,7 @@ export class VolumeRenderer extends NVRenderer {
       mvp,
       CLIP_SPACE_ZERO_TO_ONE,
       matRAS,
+      chunkOffsetFor(entry.plan, entry.volume.chunkExplode),
     )
     for (const ci of visible) entry.manager.requestUpload(ci)
   }
@@ -1508,7 +1527,12 @@ export class VolumeRenderer extends NVRenderer {
         ? this.paqdChunks
         : null
 
-    const order = chunksBackToFront(entry.plan, rayDir)
+    const explode = entry.volume.chunkExplode
+    const order = chunksBackToFront(
+      entry.plan,
+      rayDir,
+      chunkOffsetFor(entry.plan, explode),
+    )
 
     const chunkBase = MAX_TILES * alignedRenderSize
 
@@ -1572,7 +1596,7 @@ export class VolumeRenderer extends NVRenderer {
         renderOffset,
         mvpMatrix,
         normalMatrix,
-        matRAS,
+        chunkExplodedMatRAS(entry.plan, chunkIndex, matRAS, explode),
         volScale,
         rayDir,
         gradientAmount,

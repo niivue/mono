@@ -94,6 +94,18 @@ describe('chunksInFrustum', () => {
       1, 2, 3,
     ])
   })
+
+  test('optional chunk offsets move the culling AABB', () => {
+    const plan = fourChunkPlan()
+    const visible = chunksInFrustum(
+      plan,
+      translate(-1.3, 0, 0),
+      true,
+      undefined,
+      (chunkIndex) => (chunkIndex === 0 ? [0.4, 0, 0] : [0, 0, 0]),
+    )
+    expect(visible).toEqual([0, 1, 2, 3])
+  })
 })
 
 describe('chunksBackToFront', () => {
@@ -112,6 +124,15 @@ describe('chunksBackToFront', () => {
     const order = chunksBackToFront(plan, [1, 1, 0])
     expect(order.at(0)).toBe(3)
     expect(order.at(-1)).toBe(0)
+  })
+
+  test('includes chunk offsets in draw order', () => {
+    const plan = chunkVolume([4, 2, 2], 2, [0, 0, 0])
+    expect(
+      chunksBackToFront(plan, [1, 0, 0], (chunkIndex) =>
+        chunkIndex === 0 ? [2, 0, 0] : [0, 0, 0],
+      ),
+    ).toEqual([0, 1])
   })
 
   test('keeps plan order when the ray direction is degenerate', () => {

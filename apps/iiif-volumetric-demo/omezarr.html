@@ -59,7 +59,7 @@
         width: 110px;
       }
       header input[type='range'] {
-        width: 110px;
+        width: 96px;
         vertical-align: middle;
       }
       header #bbox {
@@ -180,6 +180,10 @@
         vertical-align: middle;
         margin-right: 4px;
       }
+      .plan {
+        font-family: ui-monospace, monospace;
+        color: #8a8c8f;
+      }
     </style>
   </head>
   <body>
@@ -197,6 +201,49 @@
         <label for="subvolume">Subvol</label>
         <select id="subvolume"></select>
       </span>
+      <span
+        class="control"
+        title="Separate streamed chunk cubes while sampling the original voxel coordinates"
+      >
+        <label for="explodedToggle">
+          <input type="checkbox" id="explodedToggle" />
+          explode
+        </label>
+      </span>
+      <span class="control">
+        <label for="explodeEx">ex <span id="valEx">1.5</span></label>
+        <input
+          type="range"
+          id="explodeEx"
+          min="1"
+          max="5"
+          step="0.1"
+          value="1.5"
+        />
+      </span>
+      <span class="control">
+        <label for="explodeEy">ey <span id="valEy">1.5</span></label>
+        <input
+          type="range"
+          id="explodeEy"
+          min="1"
+          max="5"
+          step="0.1"
+          value="1.5"
+        />
+      </span>
+      <span class="control">
+        <label for="explodeEz">ez <span id="valEz">1.5</span></label>
+        <input
+          type="range"
+          id="explodeEz"
+          min="1"
+          max="5"
+          step="0.1"
+          value="1.5"
+        />
+      </span>
+      <span class="control plan" id="explodePlan"></span>
       <span class="control">
         <label for="colormap">Colormap</label>
         <select id="colormap">

@@ -39,7 +39,11 @@
 // Rendering is the off-the-shelf niivue 3D viewer — the point here is the
 // server-side pyramid + subvolume plumbing, not viewer features.
 
-import NiiVue, { type NVImage, type VolumeChunkSource } from '@niivue/niivue'
+import NiiVue, {
+  type NVImage,
+  type VolumeChunkExplode,
+  type VolumeChunkSource,
+} from '@niivue/niivue'
 
 import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
@@ -87,6 +91,11 @@ const els = {
   volume: el<HTMLSelectElement>('volume'),
   level: el<HTMLSelectElement>('level'),
   subvolume: el<HTMLSelectElement>('subvolume'),
+  explodedToggle: el<HTMLInputElement>('explodedToggle'),
+  explodeEx: el<HTMLInputElement>('explodeEx'),
+  explodeEy: el<HTMLInputElement>('explodeEy'),
+  explodeEz: el<HTMLInputElement>('explodeEz'),
+  explodePlan: el<HTMLSpanElement>('explodePlan'),
   colormap: el<HTMLSelectElement>('colormap'),
   window: el<HTMLInputElement>('window'),
   bbox: el<HTMLInputElement>('bbox'),
@@ -146,6 +155,23 @@ const GRID_SUBVOLUME_DIVS = 3
 const STREAMING_CHUNK_EDGE = 256
 const STREAMING_CHUNK_LIMIT = 256
 
+const initialParams = new URLSearchParams(window.location.search)
+if (
+  initialParams.get('mode') === 'exploded' ||
+  initialParams.get('explode') === '1'
+) {
+  els.explodedToggle.checked = true
+}
+for (const [param, input] of [
+  ['ex', els.explodeEx],
+  ['ey', els.explodeEy],
+  ['ez', els.explodeEz],
+] as const) {
+  const value = initialParams.get(param)
+  if (value && Number.isFinite(Number(value))) input.value = value
+}
+syncExplodeLabels()
+
 main().catch((err: unknown) => {
   console.error(err)
   showFallback(err instanceof Error ? err.message : String(err))
@@ -169,12 +195,23 @@ async function main(): Promise<void> {
     clearAutoBbox()
     populateSubvolumeSelect(currentVolume())
     applySubvolumeSelection(currentVolume())
+    renderExplodePlan(currentVolume())
     void reload()
   })
   els.subvolume.addEventListener('change', () => {
     applySubvolumeSelection(currentVolume())
+    renderExplodePlan(currentVolume())
     void reload()
   })
+  els.explodedToggle.addEventListener('change', () => {
+    applyExplodeToLoadedVolume()
+  })
+  for (const input of [els.explodeEx, els.explodeEy, els.explodeEz]) {
+    input.addEventListener('input', () => {
+      syncExplodeLabels()
+      applyExplodeToLoadedVolume()
+    })
+  }
   els.colormap.addEventListener('change', () => {
     void reload()
   })
@@ -331,6 +368,7 @@ async function selectVolume(id: string): Promise<void> {
   populateLevelSelect(found)
   populateSubvolumeSelect(found)
   applySubvolumeSelection(found)
+  renderExplodePlan(found)
   await reload()
 }
 
@@ -417,6 +455,69 @@ function currentVolume(): VolumeApiEntry | null {
 
 function isStreamingMode(): boolean {
   return els.subvolume.value === 'stream'
+}
+
+function currentChunkExplode(): VolumeChunkExplode | undefined {
+  if (!isStreamingMode() || !els.explodedToggle.checked) return undefined
+  return {
+    enabled: true,
+    scale: [
+      readExplodeScale(els.explodeEx),
+      readExplodeScale(els.explodeEy),
+      readExplodeScale(els.explodeEz),
+    ],
+  }
+}
+
+function readExplodeScale(input: HTMLInputElement): number {
+  const value = Number(input.value)
+  if (!Number.isFinite(value)) return 1
+  return Math.max(1, value)
+}
+
+function applyExplodeToLoadedVolume(): void {
+  syncExplodeLabels()
+  const v = currentVolume()
+  renderExplodePlan(v)
+  if (!nv) return
+  const vol = nv.volumes[0]
+  if (vol) {
+    vol.chunkExplode = currentChunkExplode()
+  }
+  if (v) renderHud(v, Number(els.level.value))
+  nv.drawScene()
+}
+
+function syncExplodeLabels(): void {
+  el<HTMLSpanElement>('valEx').textContent = els.explodeEx.value
+  el<HTMLSpanElement>('valEy').textContent = els.explodeEy.value
+  el<HTMLSpanElement>('valEz').textContent = els.explodeEz.value
+}
+
+function renderExplodePlan(v: VolumeApiEntry | null): void {
+  if (!v) {
+    els.explodePlan.textContent = ''
+    return
+  }
+  const shape = currentLevelShape(v) ?? v.shape
+  if (!isStreamingMode()) {
+    els.explodePlan.textContent = 'streamed bricks only'
+    return
+  }
+  const grid = estimateStreamingGrid(shape)
+  const total = grid[0] * grid[1] * grid[2]
+  els.explodePlan.textContent = els.explodedToggle.checked
+    ? `${grid.join('×')} = ${total} bricks`
+    : `${grid.join('×')} streamed bricks`
+}
+
+function estimateStreamingGrid(shape: Shape3): Shape3 {
+  const stride = Math.max(1, STREAMING_CHUNK_EDGE - 6)
+  return [
+    Math.ceil(shape[0] / stride),
+    Math.ceil(shape[1] / stride),
+    Math.ceil(shape[2] / stride),
+  ]
 }
 
 async function ensureNiivue(): Promise<void> {
@@ -811,6 +912,7 @@ function createStreamingVolume(
     isLegendVisible: false,
     colormapLabel: null,
     chunkSource,
+    chunkExplode: currentChunkExplode(),
   } as NVImage
 }
 
@@ -1348,6 +1450,10 @@ function renderHud(v: VolumeApiEntry, level: number): void {
     (bbox || streaming) && lastSubvolumeLabel
       ? `<div class="row"><span class="key">subvol</span><span>${lastSubvolumeLabel}</span></div>`
       : ''
+  const explode = currentChunkExplode()
+  const explodeRow = explode?.scale
+    ? `<div class="row"><span class="key">explode</span><span>${explode.scale.map((n) => n.toFixed(1)).join('×')}</span></div>`
+    : ''
   const lodRow = lastLodEvent
     ? `<div class="row"><span class="key">auto-LOD</span><span>L${lastLodEvent.from} → L${lastLodEvent.to} · ${lastLodEvent.reason}</span></div>`
     : ''
@@ -1357,6 +1463,7 @@ function renderHud(v: VolumeApiEntry, level: number): void {
     <div class="row"><span class="key">level</span><strong>L${level}</strong> · ${levelShape.join('×')}</div>
     ${bboxRow}
     ${subvolumeRow}
+    ${explodeRow}
     ${lodRow}
     <div class="row"><span class="key">shape</span><span>${shownShape.join('×')} (${voxels.toLocaleString()} vox)</span></div>
     <div class="row"><span class="key">spacing (mm)</span><span>${formatSpacing(spacing)}</span></div>

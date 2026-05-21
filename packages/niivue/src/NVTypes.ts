@@ -39,6 +39,13 @@ export type VolumeChunkSource = (
   | TypedVoxelArray
   | Promise<ArrayBuffer | Uint8Array | TypedVoxelArray>
 
+export interface VolumeChunkExplode {
+  /** Enable draw-time spacing between streamed chunk cubes. */
+  enabled?: boolean
+  /** Per-axis spacing multiplier. 1 is compact, 1.5 leaves half-cell gaps. */
+  scale?: [number, number, number]
+}
+
 export type NIFTIHeader = {
   littleEndian: boolean
   dim_info: number
@@ -170,6 +177,8 @@ export type NVImage = {
   chunkPlan?: ChunkPlan
   /** Optional source-backed chunk loader for volumes whose full voxel array is not resident in browser memory. */
   chunkSource?: VolumeChunkSource
+  /** Optional draw-time spacing for chunked 3D rendering. Sampling remains in original voxel coordinates. */
+  chunkExplode?: VolumeChunkExplode
   [key: string]: unknown
 }
 

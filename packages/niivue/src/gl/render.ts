@@ -3,13 +3,18 @@ import * as NVTransforms from '@/math/NVTransforms'
 import * as NVShapes from '@/mesh/NVShapes'
 import { isPaqd } from '@/NVConstants'
 import { applyCORS } from '@/NVLoader'
-import type { NVImage } from '@/NVTypes'
+import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
 import { blendOverlayData } from '@/view/NVMeshView'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
+import {
+  chunkExplodedMatRAS,
+  chunkExplodeEnabled,
+  chunkExplodeOffsetFrac,
+} from '@/volume/ChunkExplode'
 import { ChunkResidencyManager } from '@/volume/ChunkResidency'
 import { chunksBackToFront, chunksInFrustum } from '@/volume/ChunkVisibility'
 import {
@@ -98,6 +103,8 @@ interface SingleTexEntry {
 /** Chunked (tiled) volume: one or more axes exceed max3D. */
 interface ChunkedTexEntry {
   kind: 'chunked'
+  /** Volume object that owns mutable per-volume render options. */
+  volume: NVImage
   /** GPU residency bookkeeping for the volume's chunks. */
   manager: ChunkResidencyManager<VolumeChunkGL>
   /** On-demand uploader the streaming pump drives to fill the manager. */
@@ -146,6 +153,15 @@ function chunkUniformsFor(plan: ChunkPlan, chunkIndex: number): ChunkUniforms {
       desc.voxelDims[2] / tz,
     ],
   }
+}
+
+function chunkOffsetFor(
+  plan: ChunkPlan,
+  explode: VolumeChunkExplode | undefined,
+): ((chunkIndex: number) => Vec3f) | undefined {
+  if (!chunkExplodeEnabled(explode)) return undefined
+  return (chunkIndex: number) =>
+    chunkExplodeOffsetFrac(plan, chunkIndex, explode)
 }
 
 export class VolumeRenderer extends NVRenderer {
@@ -425,6 +441,7 @@ export class VolumeRenderer extends NVRenderer {
       let chunkedEntry: ChunkedTexEntry
       if (existing && existing.kind === 'chunked') {
         chunkedEntry = existing
+        chunkedEntry.volume = vol
       } else {
         if (existing) this._destroyTexEntry(gl, existing)
         const uploader = createChunkUploaderGL(gl, vol, plan)
@@ -445,6 +462,7 @@ export class VolumeRenderer extends NVRenderer {
         manager.admit(0, await uploader.uploadChunk(0))
         chunkedEntry = {
           kind: 'chunked',
+          volume: vol,
           manager,
           uploader,
           plan,
@@ -608,6 +626,7 @@ export class VolumeRenderer extends NVRenderer {
       mvp,
       CLIP_SPACE_ZERO_TO_ONE,
       matRAS,
+      chunkOffsetFor(entry.plan, entry.volume.chunkExplode),
     )
     for (const ci of visible) entry.manager.requestUpload(ci)
   }
@@ -1221,7 +1240,13 @@ export class VolumeRenderer extends NVRenderer {
     // 5. Draw with premultiplied alpha blending (shader outputs premultiplied colors)
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
     if (this._activeChunked) {
-      this._drawChunkedVolume(gl, shader, indexCount, rayDirVec as number[])
+      this._drawChunkedVolume(
+        gl,
+        shader,
+        indexCount,
+        rayDirVec as number[],
+        matRAS,
+      )
     } else {
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_3D, this.volumeTexture)
@@ -1273,6 +1298,7 @@ export class VolumeRenderer extends NVRenderer {
     shader: Shader,
     indexCount: number,
     rayDir: number[],
+    matRAS: Float32Array,
   ): void {
     const entry = this._activeChunked
     if (!entry || entry.manager.chunkCount === 0) return
@@ -1282,7 +1308,12 @@ export class VolumeRenderer extends NVRenderer {
     // against each other, or a chunk behind an already-drawn chunk is
     // rejected and its contribution is lost. Restored to LESS after the loop.
     gl.depthFunc(gl.ALWAYS)
-    const order = chunksBackToFront(entry.plan, rayDir)
+    const explode = entry.volume.chunkExplode
+    const order = chunksBackToFront(
+      entry.plan,
+      rayDir,
+      chunkOffsetFor(entry.plan, explode),
+    )
     // Per-chunk drawing textures align 1:1 with the volume chunks (shared
     // ChunkPlan). When present, swap units 5 (nearest) and 7 (linear) to the
     // matching chunk so the drawing layer reads its own sub-texture; the
@@ -1331,6 +1362,13 @@ export class VolumeRenderer extends NVRenderer {
         shader,
         chunkUniformsFor(entry.plan, chunkIndex),
       )
+      if (shader.uniforms.matRAS) {
+        gl.uniformMatrix4fv(
+          shader.uniforms.matRAS,
+          false,
+          chunkExplodedMatRAS(entry.plan, chunkIndex, matRAS, explode),
+        )
+      }
       gl.drawElements(gl.TRIANGLE_STRIP, indexCount, gl.UNSIGNED_SHORT, 0)
     }
     gl.depthFunc(gl.LESS)

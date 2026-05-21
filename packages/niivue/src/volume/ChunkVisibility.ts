@@ -11,7 +11,9 @@
  * adds the 3D frustum cull and a small union helper.
  */
 
-import type { ChunkPlan } from './chunking'
+import type { ChunkPlan, Vec3f } from './chunking'
+
+type ChunkOffsetFor = (chunkIndex: number) => Vec3f
 
 /**
  * Back-to-front draw order for a chunked 3D volume render.
@@ -27,6 +29,7 @@ import type { ChunkPlan } from './chunking'
 export function chunksBackToFront(
   plan: ChunkPlan,
   rayDir: ArrayLike<number>,
+  chunkOffsetFor?: ChunkOffsetFor,
 ): number[] {
   const rx = finiteRayComponent(rayDir, 0)
   const ry = finiteRayComponent(rayDir, 1)
@@ -36,14 +39,19 @@ export function chunksBackToFront(
   }
 
   const [vx, vy, vz] = plan.volumeDims
-  const depth = plan.chunks.map((c) => {
+  const depth = plan.chunks.map((c, i) => {
+    const offset = chunkOffsetFor?.(i)
     const x =
       rx >= 0 ? (c.voxelOrigin[0] + c.voxelDims[0]) / vx : c.voxelOrigin[0] / vx
     const y =
       ry >= 0 ? (c.voxelOrigin[1] + c.voxelDims[1]) / vy : c.voxelOrigin[1] / vy
     const z =
       rz >= 0 ? (c.voxelOrigin[2] + c.voxelDims[2]) / vz : c.voxelOrigin[2] / vz
-    return x * rx + y * ry + z * rz
+    return (
+      (x + (offset?.[0] ?? 0)) * rx +
+      (y + (offset?.[1] ?? 0)) * ry +
+      (z + (offset?.[2] ?? 0)) * rz
+    )
   })
 
   return plan.chunks
@@ -80,6 +88,7 @@ export function chunksInFrustum(
   mvp: Float32Array | number[],
   clipSpaceZeroToOne: boolean,
   matRAS?: Float32Array | number[],
+  chunkOffsetFor?: ChunkOffsetFor,
 ): number[] {
   const [vx, vy, vz] = plan.volumeDims
   const nearLimit = clipSpaceZeroToOne ? 0 : -1
@@ -92,6 +101,7 @@ export function chunksInFrustum(
     const x1 = (desc.voxelOrigin[0] + desc.voxelDims[0]) / vx
     const y1 = (desc.voxelOrigin[1] + desc.voxelDims[1]) / vy
     const z1 = (desc.voxelOrigin[2] + desc.voxelDims[2]) / vz
+    const offset = chunkOffsetFor?.(ci)
     // "All 8 corners outside" accumulators, one per frustum plane. A plane
     // culls the chunk only if its flag survives all 8 corners as true.
     let outL = true
@@ -108,8 +118,21 @@ export function chunksInFrustum(
       const py = c & 2 ? y1 : y0
       const pz = c & 4 ? z1 : z0
       const model = matRAS
-        ? chunkCornerToModel(px, py, pz, vx, vy, vz, matRAS)
-        : [px, py, pz, 1]
+        ? chunkCornerToModel(
+            px + (offset?.[0] ?? 0),
+            py + (offset?.[1] ?? 0),
+            pz + (offset?.[2] ?? 0),
+            vx,
+            vy,
+            vz,
+            matRAS,
+          )
+        : [
+            px + (offset?.[0] ?? 0),
+            py + (offset?.[1] ?? 0),
+            pz + (offset?.[2] ?? 0),
+            1,
+          ]
       const cx =
         mvp[0] * model[0] +
         mvp[4] * model[1] +

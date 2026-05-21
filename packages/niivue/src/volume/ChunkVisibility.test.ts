@@ -135,6 +135,20 @@ describe('chunksBackToFront', () => {
     ).toEqual([0, 1])
   })
 
+  test('sorts in scaled object space for anisotropic volumes', () => {
+    const plan = chunkVolume([4, 4, 1], 2, [0, 0, 0])
+    expect(chunksBackToFront(plan, [0.4, 1, 0]).indexOf(2)).toBeLessThan(
+      chunksBackToFront(plan, [0.4, 1, 0]).indexOf(1),
+    )
+    const scaledOrder = chunksBackToFront(
+      plan,
+      [0.4, 1, 0],
+      undefined,
+      [1, 0.1, 1],
+    )
+    expect(scaledOrder.indexOf(1)).toBeLessThan(scaledOrder.indexOf(2))
+  })
+
   test('keeps plan order when the ray direction is degenerate', () => {
     const plan = fourChunkPlan()
     expect(chunksBackToFront(plan, [0, 0, 0])).toEqual([0, 1, 2, 3])

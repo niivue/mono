@@ -1246,6 +1246,7 @@ export class VolumeRenderer extends NVRenderer {
         indexCount,
         rayDirVec as number[],
         matRAS,
+        volScale,
       )
     } else {
       gl.activeTexture(gl.TEXTURE0)
@@ -1299,6 +1300,7 @@ export class VolumeRenderer extends NVRenderer {
     indexCount: number,
     rayDir: number[],
     matRAS: Float32Array,
+    volScale: Float32Array | number[],
   ): void {
     const entry = this._activeChunked
     if (!entry || entry.manager.chunkCount === 0) return
@@ -1313,6 +1315,7 @@ export class VolumeRenderer extends NVRenderer {
       entry.plan,
       rayDir,
       chunkOffsetFor(entry.plan, explode),
+      volScale,
     )
     // Per-chunk drawing textures align 1:1 with the volume chunks (shared
     // ChunkPlan). When present, swap units 5 (nearest) and 7 (linear) to the

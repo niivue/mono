@@ -18,14 +18,18 @@ vec4 packDepth(float d) {
 }
 
 void main() {
-  vec3 start = vColor;
-  vec3 backPosition = GetBackPosition(start);
+  vec3 rayStart = vColor;
+  vec3 start = GetFrontPosition(rayStart);
+  vec3 backPosition = GetBackPosition(rayStart);
   vec3 dirVec = backPosition - start;
   float len = length(dirVec);
+  if (!(len > 0.0) || len > 3.0) {
+    discard;
+  }
   vec3 dir = dirVec / len;
   vec3 texVox = volumeTexDimsFull;
   float lenVox = length(dirVec * texVox);
-  if (lenVox < 0.5 || len > 3.0) {
+  if (lenVox < 0.5) {
     discard;
   }
   // Save original ray for overlay passes (overlay ignores clip planes)

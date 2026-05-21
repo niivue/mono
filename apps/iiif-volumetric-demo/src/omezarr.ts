@@ -526,8 +526,10 @@ async function ensureNiivue(): Promise<void> {
     backend: BACKEND,
     backgroundColor: [0, 0, 0, 1],
     isColorbarVisible: true,
+    is3DCrosshairVisible: false,
     isDragDropEnabled: false,
     maxTextureDimension3D: STREAMING_CHUNK_EDGE,
+    meshXRay: 0,
   })
   nv.opts.isDragDropEnabled = false
   await nv.attachToCanvas(els.canvas)

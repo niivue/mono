@@ -206,14 +206,18 @@ float distance2Plane(vec4 samplePos, vec4 clipPlane) {
 }
 
 void main() {
-  vec3 start = vColor;
-  vec3 backPosition = GetBackPosition(start);
+  vec3 rayStart = vColor;
+  vec3 start = GetFrontPosition(rayStart);
+  vec3 backPosition = GetBackPosition(rayStart);
   vec3 dirVec = backPosition - start;
   float len = length(dirVec);
+  if (!(len > 0.0) || len > 3.0) {
+    discard;
+  }
   vec3 dir = dirVec / len;
   vec3 texVox = volumeTexDimsFull;
   float lenVox = length(dirVec * texVox);
-  if (lenVox < 0.5 || len > 3.0) {
+  if (lenVox < 0.5) {
     discard;
   }
   // Save original ray for overlay passes (overlay ignores clip planes)
@@ -224,6 +228,7 @@ void main() {
   if (clipPlaneColorX.a < 0.0) {
     clipPlaneColorX.a = 0.0;
   }
+  bool chunkedDraw = any(lessThan(chunkSubSize, vec3(0.999)));
   float stepSize = len / lenVox;
   vec4 deltaDir = vec4(dir * stepSize, stepSize);
   float localGradientAmount = gradientAmount;
@@ -251,7 +256,7 @@ void main() {
   float ran = origRan;
   float stepSizeFast = stepSize * 1.9;
   vec4 deltaDirFast = vec4(dir * stepSizeFast, stepSizeFast);
-  // earlyTermination is a fragment-shader uniform (declared above).
+  float localEarlyTermination = chunkedDraw ? 1.0 : earlyTermination;
   // --- Background passes ---
   vec4 colAcc = vec4(0.0);
   vec4 firstHit = vec4(0.0, 0.0, 0.0, 2.0 * origLen);
@@ -288,7 +293,7 @@ void main() {
     }
     if (samplePos.a >= len) {
       // Background fast pass found nothing — use clip plane color as fallback
-      if (isClip) {
+      if (isClip && !chunkedDraw) {
         float clipAlpha = clipPlaneColorX.a;
         colAcc = vec4(clipPlaneColorX.rgb * clipAlpha, clipAlpha);
       }
@@ -333,7 +338,7 @@ void main() {
           vec3 finalRGB = blendedRGB * colorSample.rgb;
           vec4 premultiplied = vec4(finalRGB * colorSample.a, colorSample.a);
           colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
-          if (colAcc.a > earlyTermination) { break; }
+          if (colAcc.a > localEarlyTermination) { break; }
         }
         samplePos += deltaDir;
       }
@@ -366,7 +371,7 @@ void main() {
       }
       // If fine pass produced nothing, use clip plane color as fallback
       if (colAcc.a <= 0.001 || !bgHasHit) {
-        if (isClip) {
+        if (isClip && !chunkedDraw) {
           float clipAlpha = clipPlaneColorX.a;
           colAcc = vec4(clipPlaneColorX.rgb * clipAlpha, clipAlpha);
         }
@@ -380,17 +385,17 @@ void main() {
   float depthFactor = 0.3;
   // Overlay pass
   if (textureSize(overlay, 0).x > 2) {
-    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination);
+    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination);
     depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
   }
   // PAQD pass (raw data with GPU-side LUT lookup + easing)
   if (textureSize(paqd, 0).x > 2) {
-    RayResult result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, paqdUniforms);
+    RayResult result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, paqdUniforms);
     depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
   }
   // Drawing pass (nearest-neighbor sampling — NEAREST filter set by CPU)
   if (textureSize(drawing, 0).x > 2) {
-    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination);
+    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination);
     // Matcap lighting at first hit. 6-tap central-difference gradient on
     // the drawing texture with LINEAR filtering — each tap is a trilinear
     // blend of 8 texels, which approximates a Gaussian-smoothed sample
@@ -433,14 +438,13 @@ void main() {
   if (colAcc.a <= 0.001) {
     discard;
   }
-  bool chunkedDraw = any(lessThan(chunkSubSize, vec3(0.999)));
   // Single full-volume draws can present an early-terminated ray as opaque.
   // Chunked draws must emit the true per-segment premultiplied alpha so the
   // back-to-front chunk blend reconstructs the full ray without over-occluding
   // deeper chunks.
   if (chunkedDraw) {
     FragColor = colAcc;
-  } else if (colAcc.a >= earlyTermination) {
+  } else if (colAcc.a >= localEarlyTermination) {
     FragColor = vec4(colAcc.rgb / colAcc.a, 1.0);
   } else {
     FragColor = colAcc;

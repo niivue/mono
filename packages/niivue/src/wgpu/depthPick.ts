@@ -19,14 +19,20 @@ fn packDepth(d_in: f32) -> vec4f {
 
 @fragment
 fn fragment_main(in: VertexOutput) -> FragmentOutput {
-  var start = in.vColor;
-  let backPosition = GetBackPosition(start);
+  let rayStart = in.vColor;
+  var start = GetFrontPosition(rayStart);
+  let backPosition = GetBackPosition(rayStart);
   let dirVec = backPosition - start;
   var len = length(dirVec);
+  if (!(len > 0.0) || len > 3.0) {
+    discard;
+    var dummy: FragmentOutput;
+    return dummy;
+  }
   let dir = dirVec / len;
   let texVox = params.volumeTexDimsFull.xyz;
   let lenVox = length(dirVec * texVox);
-  if (lenVox < 0.5 || len > 3.0) {
+  if (lenVox < 0.5) {
     discard;
     var dummy: FragmentOutput;
     return dummy;

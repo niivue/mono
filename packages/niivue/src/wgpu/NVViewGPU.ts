@@ -2243,7 +2243,35 @@ export default class NVView {
     if (vr.hasVolume() && volumes.length > 0 && (volumes[0].opacity ?? 1) > 0) {
       const matRAS = volumes[0].matRAS
       const volScale = volumes[0].volScale
-      if (matRAS && volScale) {
+      const volumeTexture = vr.volumeTexture
+      if (matRAS && volScale && volumeTexture) {
+        const volumeTexDimsFull = [
+          volumeTexture.width,
+          volumeTexture.height,
+          volumeTexture.depthOrArrayLayers,
+        ]
+        const zeroPaqdUniforms = [0, 0, 0, 0]
+        const renderParamPadding = [0, 0, 0, 0, 0, 0, 0]
+        const identityChunkUniforms = [
+          ...volumeTexDimsFull,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          1,
+        ]
         volumeUniformData = new Float32Array([
           ...pickMVP,
           ...(normalMatrix as Float32Array),
@@ -2258,6 +2286,10 @@ export default class NVView {
           0.0,
           ...md.scene.clipPlaneColor,
           ...md.clipPlanes,
+          ...zeroPaqdUniforms,
+          0.95,
+          ...renderParamPadding,
+          ...identityChunkUniforms,
         ])
       }
     }

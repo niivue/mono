@@ -1532,6 +1532,7 @@ export class VolumeRenderer extends NVRenderer {
       entry.plan,
       rayDir,
       chunkOffsetFor(entry.plan, explode),
+      volScale,
     )
 
     const chunkBase = MAX_TILES * alignedRenderSize

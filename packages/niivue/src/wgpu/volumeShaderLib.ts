@@ -25,10 +25,11 @@ struct Params {
     //   chunkSubSize      = (1,1,1)
     //   dataOriginTexFrac = (0,0,0)
     //   dataSizeTexFrac   = (1,1,1)
-    // The vertex shader scales the unit cube into the sub-cube region of the
-    // full volume; the fragment shader remaps sample positions from full-volume
-    // [0,1] space to the chunk texture's [dataOrigin, dataOrigin+dataSize] region,
-    // letting trilinear sampling pull from halo voxels for seam-free chunk joins.
+    // The vertex shader scales the unit cube into the chunk texture footprint
+    // (data plus halo) so separately-rasterized chunk cubes overlap by their
+    // halo. The fragment shader then clips ray marching back to the chunk's
+    // owned data sub-cube and remaps samples into [dataOrigin, dataOrigin+dataSize],
+    // letting trilinear sampling pull from halo voxels without double-counting them.
     volumeTexDimsFull: vec4f,
     chunkSubOrigin: vec4f,
     chunkSubSize: vec4f,
@@ -42,6 +43,35 @@ struct Params {
 fn chunkTexCoord(samplePos: vec3f) -> vec3f {
     let chunkLocal = (samplePos - params.chunkSubOrigin.xyz) / params.chunkSubSize.xyz;
     return params.dataOriginTexFrac.xyz + chunkLocal * params.dataSizeTexFrac.xyz;
+}
+
+fn rayAxisRange(start: f32, dir: f32, boxMin: f32, boxMax: f32) -> vec2f {
+    if (abs(dir) < 1e-8) {
+        if (start < boxMin || start > boxMax) {
+            return vec2f(1e20, -1e20);
+        }
+        return vec2f(-1e20, 1e20);
+    }
+    let t0 = (boxMin - start) / dir;
+    let t1 = (boxMax - start) / dir;
+    return vec2f(min(t0, t1), max(t0, t1));
+}
+
+fn rayBoxRange(startObj: vec3f, dir: vec3f, boxMin: vec3f, boxMax: vec3f) -> vec2f {
+    let rx = rayAxisRange(startObj.x, dir.x, boxMin.x, boxMax.x);
+    let ry = rayAxisRange(startObj.y, dir.y, boxMin.y, boxMax.y);
+    let rz = rayAxisRange(startObj.z, dir.z, boxMin.z, boxMax.z);
+    return vec2f(max(rx.x, max(ry.x, rz.x)), min(rx.y, min(ry.y, rz.y)));
+}
+
+fn chunkDrawOrigin() -> vec3f {
+    let dataSize = max(params.dataSizeTexFrac.xyz, vec3f(1e-8));
+    return params.chunkSubOrigin.xyz - params.chunkSubSize.xyz * (params.dataOriginTexFrac.xyz / dataSize);
+}
+
+fn chunkDrawSize() -> vec3f {
+    let dataSize = max(params.dataSizeTexFrac.xyz, vec3f(1e-8));
+    return params.chunkSubSize.xyz / dataSize;
 }
 
 struct VertexInput {
@@ -91,10 +121,9 @@ var paqdLut: texture_2d<f32>;
 @vertex
 fn vertex_main(vert: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    // Place this draw's cube into the sub-cube region of the full volume's
-    // [0,1] cube. For non-chunked: chunkSubOrigin=0, chunkSubSize=1 so
-    // subPos == vert.position (unchanged from the legacy path).
-    let subPos = params.chunkSubOrigin.xyz + vert.position * params.chunkSubSize.xyz;
+    // Place this draw's cube into the chunk texture footprint in the full
+    // volume's [0,1] cube. For non-chunked draws, drawOrigin=0 and drawSize=1.
+    let subPos = chunkDrawOrigin() + vert.position * chunkDrawSize();
     let texVox = params.volumeTexDimsFull.xyz;
     let voxelSpacePos = (subPos * texVox) - 0.5;
     let vPos = (vec4<f32>(voxelSpacePos, 1.0) * params.matRAS).xyz;
@@ -127,11 +156,18 @@ fn GetBackPosition(startTex: vec3f) -> vec3f {
     let subMin = params.chunkSubOrigin.xyz * volScale;
     let subMax = (params.chunkSubOrigin.xyz + params.chunkSubSize.xyz) * volScale;
     let startObj = startTex * volScale;
-    let invR = 1.0 / rayDir;
-    let tbot = invR * (subMin - startObj);
-    let ttop = invR * (subMax - startObj);
-    let tmax = max(ttop, tbot);
-    let t = min(tmax.x, min(tmax.y, tmax.z));
+    let range = rayBoxRange(startObj, rayDir, subMin, subMax);
+    let t = max(range.y, max(range.x, 0.0));
+    return (startObj + (rayDir * t)) / volScale;
+}
+
+fn GetFrontPosition(startTex: vec3f) -> vec3f {
+    let volScale = params.volScale.xyz;
+    let rayDir = params.rayDir.xyz;
+    let subMin = params.chunkSubOrigin.xyz * volScale;
+    let subMax = (params.chunkSubOrigin.xyz + params.chunkSubSize.xyz) * volScale;
+    let startObj = startTex * volScale;
+    let t = max(rayBoxRange(startObj, rayDir, subMin, subMax).x, 0.0);
     return (startObj + (rayDir * t)) / volScale;
 }
 
@@ -139,11 +175,7 @@ fn GetFullFrontPosition(startTex: vec3f) -> vec3f {
     let volScale = params.volScale.xyz;
     let rayDir = params.rayDir.xyz;
     let startObj = startTex * volScale;
-    let invR = 1.0 / -rayDir;
-    let tbot = invR * (vec3f(0.0) - startObj);
-    let ttop = invR * (volScale - startObj);
-    let tmax = max(ttop, tbot);
-    let t = min(tmax.x, min(tmax.y, tmax.z));
+    let t = rayBoxRange(startObj, -rayDir, vec3f(0.0), volScale).y;
     return (startObj - (rayDir * t)) / volScale;
 }
 

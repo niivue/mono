@@ -191,16 +191,20 @@ fn distance2Plane(samplePos: vec4f, clipPlane: vec4f) -> f32 {
 
 @fragment
 fn fragment_main(in: VertexOutput) -> FragmentOutput {
-	var start = in.vColor;
-	let backPosition = GetBackPosition(start);
+	let rayStart = in.vColor;
+	var start = GetFrontPosition(rayStart);
+	let backPosition = GetBackPosition(rayStart);
 	let dirVec = backPosition - start;
 	var len = length(dirVec);
+	if (!(len > 0.0) || len > 3.0) {
+		discard;
+	}
 	let dir = dirVec / len;
 	// Step size is per-voxel of the FULL volume (not the chunk texture, which
 	// may include halo). For non-chunked: volumeTexDimsFull == textureDimensions(volume, 0).
 	let texVox = params.volumeTexDimsFull.xyz;
 	let lenVox = length(dirVec * texVox);
-	if (lenVox < 0.5 || len > 3.0) {
+	if (lenVox < 0.5) {
 		discard;
 	}
 	// Save original ray for overlay passes (overlay ignores clip planes)
@@ -211,6 +215,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	if (clipPlaneColorX.a < 0.0) {
 		clipPlaneColorX.a = 0.0;
 	}
+	let chunkedDraw = any(params.chunkSubSize.xyz < vec3f(0.999));
 	let stepSize = len / lenVox;
 	let deltaDir = vec4f(dir * stepSize, stepSize);
 	var localGradientAmount = params.gradientAmount;
@@ -238,7 +243,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	var ran = origRan;
 	let stepSizeFast = stepSize * 1.9;
 	let deltaDirFast = vec4f(dir * stepSizeFast, stepSizeFast);
-	let earlyTermination = params.earlyTermination;
+	let earlyTermination = select(params.earlyTermination, 1.0, chunkedDraw);
 	// --- Background passes ---
 	var colAcc = vec4f(0.0);
 	var firstHit = vec4f(2.0 * origLen);
@@ -275,7 +280,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 		}
 		if (samplePos.a >= len) {
 			// Background fast pass found nothing — use clip plane color as fallback
-			if (isClip) {
+			if (isClip && !chunkedDraw) {
 				let clipAlpha = clipPlaneColorX.a;
 				colAcc = vec4f(clipPlaneColorX.rgb * clipAlpha, clipAlpha);
 			}
@@ -353,7 +358,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 			}
 			// If fine pass produced nothing, use clip plane color as fallback
 			if (colAcc.a <= 0.001 || !bgHasHit) {
-				if (isClip) {
+				if (isClip && !chunkedDraw) {
 					let clipAlpha = clipPlaneColorX.a;
 					colAcc = vec4f(clipPlaneColorX.rgb * clipAlpha, clipAlpha);
 				}
@@ -421,7 +426,6 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 		discard;
 	}
 	var output: FragmentOutput;
-	let chunkedDraw = any(params.chunkSubSize.xyz < vec3f(0.999));
 	// Single full-volume draws can present an early-terminated ray as opaque.
 	// Chunked draws must emit the true per-segment premultiplied alpha so the
 	// back-to-front chunk blend reconstructs the full ray without over-occluding

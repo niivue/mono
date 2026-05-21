@@ -447,6 +447,19 @@ describe('chunkSampleTransform', () => {
       ((p - t.subOrigin[0]) / t.subSize[0]) * t.dataSize[0] + t.dataOrigin[0]
     expect(local).toBeCloseTo(t.dataOrigin[0], 10)
   })
+
+  test('halo-expanded draw footprint matches the texture extent', () => {
+    const plan = chunkVolume([600, 10, 10], 256, [3, 0, 0])
+    const c = plan.chunks[1]
+    const t = chunkSampleTransform(plan, 1)
+    const drawOrigin =
+      t.subOrigin[0] - t.subSize[0] * (t.dataOrigin[0] / t.dataSize[0])
+    const drawSize = t.subSize[0] / t.dataSize[0]
+
+    expect(c.texOrigin[0]).toBe(c.voxelOrigin[0] - c.haloLow[0])
+    expect(drawOrigin).toBeCloseTo(c.texOrigin[0] / plan.volumeDims[0], 10)
+    expect(drawSize).toBeCloseTo(c.texDims[0] / plan.volumeDims[0], 10)
+  })
 })
 
 describe('identityChunkSampleTransform', () => {

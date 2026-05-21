@@ -12,16 +12,22 @@ uniform mat4 matRAS;
 //   volumeTexDimsFull = full RAS volume dims
 //   chunkSubOrigin    = (0,0,0)
 //   chunkSubSize      = (1,1,1)
+//   dataOriginTexFrac = (0,0,0)
+//   dataSizeTexFrac   = (1,1,1)
 uniform vec3 volumeTexDimsFull;
 uniform vec3 chunkSubOrigin;
 uniform vec3 chunkSubSize;
+uniform vec3 dataOriginTexFrac;
+uniform vec3 dataSizeTexFrac;
 out vec3 vColor;
 
 void main() {
-  // Place this draw's cube into the sub-cube region of the full volume's
-  // [0,1] cube. For non-chunked: chunkSubOrigin=0, chunkSubSize=1 so
-  // subPos == aPos (unchanged from the legacy path).
-  vec3 subPos = chunkSubOrigin + aPos * chunkSubSize;
+  // Place this draw's cube into the chunk texture footprint in the full
+  // volume's [0,1] cube. For non-chunked draws, drawOrigin=0 and drawSize=1.
+  vec3 safeDataSize = max(dataSizeTexFrac, vec3(1e-8));
+  vec3 drawOrigin = chunkSubOrigin - chunkSubSize * (dataOriginTexFrac / safeDataSize);
+  vec3 drawSize = chunkSubSize / safeDataSize;
+  vec3 subPos = drawOrigin + aPos * drawSize;
   vec3 texVox = volumeTexDimsFull;
   vec3 voxelSpacePos = (subPos * texVox) - 0.5;
   vec3 vPos = (vec4(voxelSpacePos, 1.0) * matRAS).xyz;
@@ -54,9 +60,12 @@ uniform sampler3D volume;
 //   chunkSubSize      = (1,1,1)
 //   dataOriginTexFrac = (0,0,0)
 //   dataSizeTexFrac   = (1,1,1)
-// chunkTexCoord remaps a sample position from full-volume [0,1] cube space
-// to the local chunk texture's [dataOrigin, dataOrigin+dataSize] region,
-// letting trilinear sampling pull from halo voxels for seam-free chunk joins.
+// The vertex shader scales the unit cube into the chunk texture footprint
+// (data plus halo) so separately-rasterized chunk cubes overlap by their
+// halo. The fragment shader clips ray marching back to the chunk's owned
+// data sub-cube, and chunkTexCoord remaps samples into
+// [dataOrigin, dataOrigin+dataSize], letting trilinear sampling pull from
+// halo voxels without double-counting them.
 uniform vec3 volumeTexDimsFull;
 uniform vec3 chunkSubOrigin;
 uniform vec3 chunkSubSize;
@@ -69,6 +78,25 @@ out vec4 FragColor;
 vec3 chunkTexCoord(vec3 samplePos) {
   vec3 chunkLocal = (samplePos - chunkSubOrigin) / chunkSubSize;
   return dataOriginTexFrac + chunkLocal * dataSizeTexFrac;
+}
+
+vec2 rayAxisRange(float start, float dir, float boxMin, float boxMax) {
+  if (abs(dir) < 1e-8) {
+    if (start < boxMin || start > boxMax) {
+      return vec2(1e20, -1e20);
+    }
+    return vec2(-1e20, 1e20);
+  }
+  float t0 = (boxMin - start) / dir;
+  float t1 = (boxMax - start) / dir;
+  return vec2(min(t0, t1), max(t0, t1));
+}
+
+vec2 rayBoxRange(vec3 startObj, vec3 dir, vec3 boxMin, vec3 boxMax) {
+  vec2 rx = rayAxisRange(startObj.x, dir.x, boxMin.x, boxMax.x);
+  vec2 ry = rayAxisRange(startObj.y, dir.y, boxMin.y, boxMax.y);
+  vec2 rz = rayAxisRange(startObj.z, dir.z, boxMin.z, boxMax.z);
+  return vec2(max(rx.x, max(ry.x, rz.x)), min(rx.y, min(ry.y, rz.y)));
 }
 
 float frac2ndc(vec3 frac) {
@@ -89,21 +117,22 @@ vec3 GetBackPosition(vec3 startTex) {
   vec3 subMin = chunkSubOrigin * volScale;
   vec3 subMax = (chunkSubOrigin + chunkSubSize) * volScale;
   vec3 startObj = startTex * volScale;
-  vec3 invR = 1.0 / rayDir;
-  vec3 tbot = invR * (subMin - startObj);
-  vec3 ttop = invR * (subMax - startObj);
-  vec3 tmax = max(ttop, tbot);
-  float t = min(tmax.x, min(tmax.y, tmax.z));
+  vec2 range = rayBoxRange(startObj, rayDir, subMin, subMax);
+  float t = max(range.y, max(range.x, 0.0));
+  return (startObj + (rayDir * t)) / volScale;
+}
+
+vec3 GetFrontPosition(vec3 startTex) {
+  vec3 subMin = chunkSubOrigin * volScale;
+  vec3 subMax = (chunkSubOrigin + chunkSubSize) * volScale;
+  vec3 startObj = startTex * volScale;
+  float t = max(rayBoxRange(startObj, rayDir, subMin, subMax).x, 0.0);
   return (startObj + (rayDir * t)) / volScale;
 }
 
 vec3 GetFullFrontPosition(vec3 startTex) {
   vec3 startObj = startTex * volScale;
-  vec3 invR = 1.0 / -rayDir;
-  vec3 tbot = invR * (vec3(0.0) - startObj);
-  vec3 ttop = invR * (volScale - startObj);
-  vec3 tmax = max(ttop, tbot);
-  float t = min(tmax.x, min(tmax.y, tmax.z));
+  float t = rayBoxRange(startObj, -rayDir, vec3(0.0), volScale).y;
   return (startObj - (rayDir * t)) / volScale;
 }
 

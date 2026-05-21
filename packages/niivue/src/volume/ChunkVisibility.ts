@@ -23,13 +23,15 @@ type ChunkOffsetFor = (chunkIndex: number) => Vec3f
  * by blending those segment colors, so chunks must be drawn farthest first in
  * the same ray-direction convention used by `calculateRayDirection`.
  *
- * Use each chunk's far AABB corner, not its center, so edge chunks with
- * nonuniform sizes sort according to the farthest possible segment endpoint.
+ * Use each chunk's far AABB corner in scaled object space, not its center, so
+ * edge chunks with nonuniform sizes sort according to the farthest possible
+ * segment endpoint.
  */
 export function chunksBackToFront(
   plan: ChunkPlan,
   rayDir: ArrayLike<number>,
   chunkOffsetFor?: ChunkOffsetFor,
+  volScale?: ArrayLike<number>,
 ): number[] {
   const rx = finiteRayComponent(rayDir, 0)
   const ry = finiteRayComponent(rayDir, 1)
@@ -39,6 +41,9 @@ export function chunksBackToFront(
   }
 
   const [vx, vy, vz] = plan.volumeDims
+  const sx = finiteScaleComponent(volScale, 0)
+  const sy = finiteScaleComponent(volScale, 1)
+  const sz = finiteScaleComponent(volScale, 2)
   const depth = plan.chunks.map((c, i) => {
     const offset = chunkOffsetFor?.(i)
     const x =
@@ -48,9 +53,9 @@ export function chunksBackToFront(
     const z =
       rz >= 0 ? (c.voxelOrigin[2] + c.voxelDims[2]) / vz : c.voxelOrigin[2] / vz
     return (
-      (x + (offset?.[0] ?? 0)) * rx +
-      (y + (offset?.[1] ?? 0)) * ry +
-      (z + (offset?.[2] ?? 0)) * rz
+      (x + (offset?.[0] ?? 0)) * sx * rx +
+      (y + (offset?.[1] ?? 0)) * sy * ry +
+      (z + (offset?.[2] ?? 0)) * sz * rz
     )
   })
 
@@ -62,6 +67,16 @@ export function chunksBackToFront(
 function finiteRayComponent(rayDir: ArrayLike<number>, axis: number): number {
   const value = rayDir[axis]
   return Number.isFinite(value) ? value : 0
+}
+
+function finiteScaleComponent(
+  volScale: ArrayLike<number> | undefined,
+  axis: number,
+): number {
+  const value = volScale?.[axis]
+  return typeof value === 'number' && Number.isFinite(value) && value !== 0
+    ? value
+    : 1
 }
 
 /**

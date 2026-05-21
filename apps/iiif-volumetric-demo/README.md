@@ -28,7 +28,8 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
 - `omezarr.html` — OME-Zarr pyramid viewer with level selection,
   subvolume streaming, exploded block layout, and a WebGL2 / WebGPU
   backend toggle. The default volume is `pawpawsaurus.ome.zarr` when
-  present, otherwise the first OME-Zarr fixture returned by `/api`.
+  present, otherwise the first OME-Zarr fixture returned by `/api`;
+  the tracked fixture fetcher downloads `fibsem-uint8.zarr`.
 
 ### Backend switching
 
@@ -50,6 +51,8 @@ Short version for the NIfTI demos:
 
 ```sh
 bun install
+git lfs install
+git lfs pull
 bunx nx build niivue
 bunx nx run iiif-volumetric-server:fetch-fixtures
 bunx nx dev iiif-volumetric-server
@@ -62,6 +65,11 @@ bunx nx dev iiif-volumetric-demo
 ```
 
 Open `http://127.0.0.1:8087/index.html`.
+
+`git lfs pull` is needed for pages that use `@niivue/dev-images`
+assets, especially `sheet.html` and its mesh selector. Without it,
+those files may be Git LFS pointer text instead of loadable volume or
+mesh binaries.
 
 ### 1. Install dependencies (first time only)
 

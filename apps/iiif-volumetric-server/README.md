@@ -10,6 +10,8 @@ For the NIfTI-backed demos:
 
 ```bash
 bun install
+git lfs install
+git lfs pull
 bunx nx build niivue
 bunx nx run iiif-volumetric-server:fetch-fixtures
 bunx nx dev iiif-volumetric-server
@@ -33,8 +35,10 @@ bunx nx run iiif-volumetric-server:fetch-omezarr
 bunx nx dev iiif-volumetric-server
 ```
 
-Then visit `http://127.0.0.1:8087/omezarr.html`. If you only fetched
-the default OME-Zarr fixture, you can also open it directly with
+Then visit `http://127.0.0.1:8087/omezarr.html`. The page prefers
+`pawpawsaurus.ome.zarr` when that fixture exists; the tracked
+`fetch-omezarr` script downloads `fibsem-uint8.zarr`, so a fresh
+checkout falls back to that volume. You can also open it directly with
 `http://127.0.0.1:8087/omezarr.html?id=fibsem-uint8.zarr`.
 
 ## Demo pages
@@ -65,6 +69,11 @@ renderer. WebGL2 is the default.
 ## Fixtures
 
 Fixture volumes are **not** committed.
+
+The demo app also serves shared meshes and the `chris_t1.nii.gz`
+headline volume from `@niivue/dev-images`, which is Git LFS-backed.
+Run `git lfs install && git lfs pull` once after cloning so those files
+are real binaries instead of pointer files.
 
 - `bunx nx run iiif-volumetric-server:fetch-fixtures` downloads a small
   OpenNeuro NIfTI sample set into `fixtures/`.

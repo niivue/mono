@@ -103,8 +103,6 @@ interface ChunkedTexEntry {
   /** On-demand uploader the streaming pump drives to fill the manager. */
   uploader: ChunkUploaderGPU
   plan: ChunkPlan
-  /** Per-chunk data-region center in the full-volume [0,1] cube (for sort). */
-  centers: Vec3f[]
   /** Per-chunk cached bind group; null until built or after invalidation. */
   bindGroups: (GPUBindGroup | null)[]
 }
@@ -119,19 +117,6 @@ type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 const renderParamsSize = 480
 export const alignedRenderSize =
   Math.ceil(renderParamsSize / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
-
-/**
- * Per-chunk data-region center in the full-volume [0,1] cube. Used to depth-
- * sort chunks back-to-front before compositing. Centers exclude halo voxels.
- */
-function computeChunkCenters(plan: ChunkPlan): Vec3f[] {
-  const [vx, vy, vz] = plan.volumeDims
-  return plan.chunks.map((c) => [
-    (c.voxelOrigin[0] + c.voxelDims[0] / 2) / vx,
-    (c.voxelOrigin[1] + c.voxelDims[1] / 2) / vy,
-    (c.voxelOrigin[2] + c.voxelDims[2] / 2) / vz,
-  ])
-}
 
 /**
  * Steady-state GPU bytes one resident chunk occupies. The scalar source
@@ -176,6 +161,15 @@ function chunkUniformsFor(plan: ChunkPlan, chunkIndex: number): ChunkUniforms {
 
 export class VolumeRenderer extends NVRenderer {
   pipeline: GPURenderPipeline | null
+  /**
+   * Chunked-volume variant of `pipeline` — identical except `depthCompare`
+   * is `'always'`. A chunked volume issues N cube draws into one pass; with
+   * `'less'` the chunks depth-test against each other and a chunk whose
+   * first-hit lands behind an already-drawn chunk is rejected, dropping its
+   * OVER contribution. Transparent layers composited back-to-front must not
+   * depth-test against each other. Safe because meshes draw after the volume.
+   */
+  pipelineChunked: GPURenderPipeline | null
   bindLayout: GPUBindGroupLayout | null
   bindGroup: GPUBindGroup | null
   matcapTexture: GPUTexture | null
@@ -249,6 +243,7 @@ export class VolumeRenderer extends NVRenderer {
   constructor() {
     super()
     this.pipeline = null
+    this.pipelineChunked = null
     this.bindLayout = null
     this.bindGroup = null
     this.matcapTexture = null
@@ -446,6 +441,50 @@ export class VolumeRenderer extends NVRenderer {
       },
     })
 
+    this.pipelineChunked = device.createRenderPipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [this.bindLayout],
+      }),
+      multisample: { count: msaaCount },
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vertex_main',
+        buffers: [
+          {
+            arrayStride: 12,
+            attributes: [{ format: 'float32x3', offset: 0, shaderLocation: 0 }],
+          },
+        ],
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fragment_main',
+        targets: [
+          {
+            format: format,
+            blend: {
+              color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+            },
+          },
+        ],
+      },
+      // depthCompare 'always' (vs 'less' above): the per-chunk cube draws
+      // composite back-to-front with OVER blending and must not depth-test
+      // against each other, or a chunk behind an already-drawn chunk is
+      // rejected and its contribution is lost.
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'always',
+        format: this.depthFormat,
+      },
+      primitive: {
+        topology: 'triangle-strip',
+        stripIndexFormat: 'uint16',
+        cullMode: 'back',
+      },
+    })
+
     this.isReady = true
   }
 
@@ -473,8 +512,11 @@ export class VolumeRenderer extends NVRenderer {
     if (oversized) {
       // Compute the chunk plan against RAS dims (output texture dimensions)
       // and stash it on the volume so the data model carries the tiling
-      // metadata.
-      const plan = chunkVolume(rasDims, limit)
+      // metadata. Halo is 3 (not the [1,1,1] default): the per-chunk
+      // gradient runs a sobel (radius 1) + blur (radius 1) stencil, and
+      // trilinear sampling at the data edge reaches one voxel further, so
+      // the gradient is only seam-free between chunks with a 3-voxel halo.
+      const plan = chunkVolume(rasDims, limit, [3, 3, 3])
       vol.chunkPlan = plan
       const bpv = bytesPerSourceVoxel(vol.hdr.datatypeCode) || 4
       const budget = estimateChunkedBytes(plan, bpv)
@@ -529,7 +571,6 @@ export class VolumeRenderer extends NVRenderer {
           manager,
           uploader,
           plan,
-          centers: computeChunkCenters(plan),
           bindGroups,
         }
         if (cacheKey) this._texCache.set(cacheKey, chunkedEntry)
@@ -1412,7 +1453,7 @@ export class VolumeRenderer extends NVRenderer {
     const entry = this._activeChunked
     if (
       !entry ||
-      !this.pipeline ||
+      !this.pipelineChunked ||
       !this.paramsBuffer ||
       !this.vertexBuffer ||
       !this.indexBuffer ||
@@ -1452,17 +1493,31 @@ export class VolumeRenderer extends NVRenderer {
         ? this.paqdChunks
         : null
 
-    // Back-to-front order: farthest chunk first. dot(rayDir, center) grows
-    // along the ray-march direction (start -> back), so descending dot puts
-    // the chunk whose center is deepest along the ray first.
+    // Back-to-front order: farthest chunk first. Use each chunk's far AABB
+    // corner instead of its center so nonuniform edge chunks sort correctly.
     const [rx, ry, rz] = [rayDir[0], rayDir[1], rayDir[2]]
-    const order = entry.centers.map((_, i) => i)
-    const depth = entry.centers.map((c) => c[0] * rx + c[1] * ry + c[2] * rz)
+    const order = entry.plan.chunks.map((_, i) => i)
+    const depth = entry.plan.chunks.map((c) => {
+      const [vx, vy, vz] = entry.plan.volumeDims
+      const x =
+        rx >= 0
+          ? (c.voxelOrigin[0] + c.voxelDims[0]) / vx
+          : c.voxelOrigin[0] / vx
+      const y =
+        ry >= 0
+          ? (c.voxelOrigin[1] + c.voxelDims[1]) / vy
+          : c.voxelOrigin[1] / vy
+      const z =
+        rz >= 0
+          ? (c.voxelOrigin[2] + c.voxelDims[2]) / vz
+          : c.voxelOrigin[2] / vz
+      return x * rx + y * ry + z * rz
+    })
     order.sort((a, b) => depth[b] - depth[a])
 
     const chunkBase = MAX_TILES * alignedRenderSize
 
-    pass.setPipeline(this.pipeline)
+    pass.setPipeline(this.pipelineChunked)
     pass.setVertexBuffer(0, this.vertexBuffer)
     pass.setIndexBuffer(this.indexBuffer, 'uint16')
 
@@ -1678,6 +1733,7 @@ export class VolumeRenderer extends NVRenderer {
     this.sampler = null
     this.samplerNearest = null
     this.pipeline = null
+    this.pipelineChunked = null
     this.bindLayout = null
     this._bindTexVol = null
     this._bindTexGrad = null

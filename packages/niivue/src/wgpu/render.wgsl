@@ -232,8 +232,10 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 			skipBackground = true;
 		}
 	}
-	// Shared values for all passes
-	let ran = fract(sin(in.position.x * 12.9898 + in.position.y * 78.233) * 43758.5453);
+	// Shared values for all passes. Keep samples on a centered full-volume
+	// lattice so adjacent chunks do not reset the ray phase at their seams.
+	let origRan = raySamplePhase(origStart, stepSize);
+	var ran = origRan;
 	let stepSizeFast = stepSize * 1.9;
 	let deltaDirFast = vec4f(dir * stepSizeFast, stepSizeFast);
 	let earlyTermination = params.earlyTermination;
@@ -255,6 +257,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 				clipSurfaceHit = true;
 			}
 		}
+		ran = raySamplePhase(start, stepSize);
 		var samplePos = vec4f(start + dir * (stepSize * ran), stepSize * ran);
 		// --- Background Fast Pass ---
 		let samplePosStart = samplePos;
@@ -294,7 +297,6 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 			}
 			// --- Background Fine Pass ---
 			let norm3 = mat3x3f(params.normMtx[0].xyz, params.normMtx[1].xyz, params.normMtx[2].xyz);
-			let brighten = 1.0 + (localGradientAmount / 3.0);
 			for (var fi: i32 = 0; fi < 2048; fi++) {
 				if (samplePos.a > len) { break; }
 				if (cutaway && isClip && samplePos.a >= sampleRange.x && samplePos.a <= sampleRange.y) {
@@ -312,8 +314,9 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 					let localNormal = normalize(gradRaw * 2.0 - 1.0);
 					let n = norm3 * localNormal;
 					let uv = n.xy * 0.5 + 0.5;
-					let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * brighten;
-					let blendedRGB = mix(vec3f(1.0), mc_rgb, localGradientAmount);
+					let lightingAmount = localGradientAmount;
+					let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * (1.0 + (lightingAmount / 3.0));
+					let blendedRGB = mix(vec3f(1.0), mc_rgb, lightingAmount);
 					let finalRGB = blendedRGB * colorSample.rgb;
 					let premultiplied = vec4f(finalRGB * colorSample.a, colorSample.a);
 					colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
@@ -364,21 +367,21 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	let depthFactor = 0.3;
 	// Overlay pass
 	if (textureDimensions(overlay, 0).x > 2) {
-		let result = rayMarchPass(overlay, tex_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+		let result = rayMarchPass(overlay, tex_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination);
 		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor);
 	}
 	// PAQD pass (raw data with GPU-side LUT lookup + easing)
 	if (textureDimensions(paqd, 0).x > 2) {
-		let result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination, params.paqdUniforms);
+		let result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, params.paqdUniforms);
 		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor);
 	}
 	// Drawing pass (nearest-neighbor sampling for ray-march, linear for gradient)
 	if (textureDimensions(drawing, 0).x > 2) {
-		var result = rayMarchPass(drawing, nearest_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+		var result = rayMarchPass(drawing, nearest_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination);
 		// Matcap lighting at first hit. 6-tap central-difference gradient
 		// sampled at 1.5 voxels out through the filtering sampler — each
 		// tap is a trilinear blend of 8 texels ("Gaussian for free"),
-		// which smooths away ray-march step jitter without any
+		// which smooths away ray-march step discretization without any
 		// precomputed drawingGradient texture. Sign: value(+X) - value(-X)
 		// matches the volume gradient's inward-pointing convention.
 		if (result.color.a > 0.001 && params.gradientAmount > 0.0) {
@@ -418,9 +421,18 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 		discard;
 	}
 	var output: FragmentOutput;
-	// Scale rgb and alpha together so the fragment stays premultiplied —
-	// chunked volumes composite multiple draws with one,one-minus-src-alpha.
-	output.color = colAcc / earlyTermination;
+	let chunkedDraw = any(params.chunkSubSize.xyz < vec3f(0.999));
+	// Single full-volume draws can present an early-terminated ray as opaque.
+	// Chunked draws must emit the true per-segment premultiplied alpha so the
+	// back-to-front chunk blend reconstructs the full ray without over-occluding
+	// deeper chunks.
+	if (chunkedDraw) {
+		output.color = colAcc;
+	} else if (colAcc.a >= earlyTermination) {
+		output.color = vec4f(colAcc.rgb / colAcc.a, 1.0);
+	} else {
+		output.color = colAcc;
+	}
 	output.fragDepth = fragDepth;
 	return output;
 }

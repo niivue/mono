@@ -51,8 +51,9 @@ void main() {
       skipBackground = true;
     }
   }
-  // Shared values
-  float ran = fract(sin(gl_FragCoord.x * 12.9898 + gl_FragCoord.y * 78.233) * 43758.5453);
+  // Match the visual renderer's full-volume ray-sample phase.
+  float origRan = raySamplePhase(origStart, stepSize);
+  float ran = origRan;
   float stepSizeFast = stepSize * 1.9;
   vec4 deltaDirFast = vec4(dir * stepSizeFast, stepSizeFast);
   // --- Background depth pick ---
@@ -63,6 +64,7 @@ void main() {
       start += dir * sampleRange.x;
       len = sampleRange.y - sampleRange.x;
     }
+    ran = raySamplePhase(start, stepSize);
     vec4 samplePos = vec4(start + dir * (stepSize * ran), stepSize * ran);
     vec4 samplePosStart = samplePos;
     // Fast pass
@@ -111,7 +113,7 @@ void main() {
   float overDepth = 1.0;
   bool overHit = false;
   if (numVolumes > 1.0) {
-    vec4 overSamplePos = vec4(origStart + dir * (stepSize * ran), stepSize * ran);
+    vec4 overSamplePos = vec4(origStart + dir * (stepSize * origRan), stepSize * origRan);
     vec4 overSamplePosStart = overSamplePos;
     // Overlay fast pass
     for (int oj = 0; oj < 1024; oj++) {

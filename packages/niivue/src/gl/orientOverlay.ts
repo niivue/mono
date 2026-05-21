@@ -1390,7 +1390,7 @@ export function orientChunkToTexture(
   if (uniforms.intensityVol) gl.uniform1i(uniforms.intensityVol, 0)
   if (uniforms.colormap) gl.uniform1i(uniforms.colormap, 1)
   if (uniforms.colormapNeg) gl.uniform1i(uniforms.colormapNeg, 2)
-  const u = buildOrientUniforms(nvimage, 1)
+  const u = buildOrientUniforms(nvimage, 0)
   if (uniforms.scl_slope) gl.uniform1f(uniforms.scl_slope, u.slope)
   if (uniforms.scl_inter) gl.uniform1f(uniforms.scl_inter, u.intercept)
   if (uniforms.cal_min) gl.uniform1f(uniforms.cal_min, u.calMin)

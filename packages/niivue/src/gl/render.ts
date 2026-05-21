@@ -103,24 +103,9 @@ interface ChunkedTexEntry {
   /** On-demand uploader the streaming pump drives to fill the manager. */
   uploader: ChunkUploaderGL
   plan: ChunkPlan
-  /** Per-chunk data-region center in the full-volume [0,1] cube (for sort). */
-  centers: Vec3f[]
 }
 
 type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
-
-/**
- * Per-chunk data-region center in the full-volume [0,1] cube. Used to depth-
- * sort chunks back-to-front before compositing. Centers exclude halo voxels.
- */
-function computeChunkCenters(plan: ChunkPlan): Vec3f[] {
-  const [vx, vy, vz] = plan.volumeDims
-  return plan.chunks.map((c) => [
-    (c.voxelOrigin[0] + c.voxelDims[0] / 2) / vx,
-    (c.voxelOrigin[1] + c.voxelDims[1] / 2) / vy,
-    (c.voxelOrigin[2] + c.voxelDims[2] / 2) / vz,
-  ])
-}
 
 /**
  * Steady-state GPU bytes one resident chunk occupies. The scalar source
@@ -410,7 +395,11 @@ export class VolumeRenderer extends NVRenderer {
     const cacheKey = vol.url || vol.name
 
     if (oversized) {
-      const plan = chunkVolume(rasDims, limit)
+      // Halo is 3 (not the [1,1,1] default): the per-chunk gradient runs a
+      // sobel (radius 1) + blur (radius 1) stencil, and trilinear sampling
+      // at the data edge reaches one voxel further, so the gradient is only
+      // seam-free between chunks with a 3-voxel halo.
+      const plan = chunkVolume(rasDims, limit, [3, 3, 3])
       vol.chunkPlan = plan
       const bpv = bytesPerSourceVoxel(vol.hdr.datatypeCode) || 4
       const budget = estimateChunkedBytes(plan, bpv)
@@ -457,7 +446,6 @@ export class VolumeRenderer extends NVRenderer {
           manager,
           uploader,
           plan,
-          centers: computeChunkCenters(plan),
         }
         if (cacheKey) this._texCache.set(cacheKey, chunkedEntry)
       }
@@ -1266,11 +1254,31 @@ export class VolumeRenderer extends NVRenderer {
     const entry = this._activeChunked
     if (!entry || entry.manager.chunkCount === 0) return
     const chunkCount = entry.manager.chunkCount
-    // Back-to-front: farthest chunk first. dot(rayDir, center) grows along
-    // the ray-march direction, so descending dot draws the deepest first.
+    // depthFunc ALWAYS (vs the global LESS): the per-chunk cube draws
+    // composite back-to-front with OVER blending and must not depth-test
+    // against each other, or a chunk behind an already-drawn chunk is
+    // rejected and its contribution is lost. Restored to LESS after the loop.
+    gl.depthFunc(gl.ALWAYS)
+    // Back-to-front: farthest chunk first. Use each chunk's far AABB corner
+    // instead of its center so nonuniform edge chunks sort correctly.
     const [rx, ry, rz] = [rayDir[0], rayDir[1], rayDir[2]]
-    const depth = entry.centers.map((c) => c[0] * rx + c[1] * ry + c[2] * rz)
-    const order = entry.centers.map((_, i) => i)
+    const depth = entry.plan.chunks.map((c) => {
+      const [vx, vy, vz] = entry.plan.volumeDims
+      const x =
+        rx >= 0
+          ? (c.voxelOrigin[0] + c.voxelDims[0]) / vx
+          : c.voxelOrigin[0] / vx
+      const y =
+        ry >= 0
+          ? (c.voxelOrigin[1] + c.voxelDims[1]) / vy
+          : c.voxelOrigin[1] / vy
+      const z =
+        rz >= 0
+          ? (c.voxelOrigin[2] + c.voxelDims[2]) / vz
+          : c.voxelOrigin[2] / vz
+      return x * rx + y * ry + z * rz
+    })
+    const order = entry.plan.chunks.map((_, i) => i)
     order.sort((a, b) => depth[b] - depth[a])
     // Per-chunk drawing textures align 1:1 with the volume chunks (shared
     // ChunkPlan). When present, swap units 5 (nearest) and 7 (linear) to the
@@ -1322,6 +1330,7 @@ export class VolumeRenderer extends NVRenderer {
       )
       gl.drawElements(gl.TRIANGLE_STRIP, indexCount, gl.UNSIGNED_SHORT, 0)
     }
+    gl.depthFunc(gl.LESS)
   }
 
   drawDepthPick(

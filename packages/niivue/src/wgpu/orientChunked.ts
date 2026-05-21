@@ -80,7 +80,7 @@ function writeIdentityOrientUniforms(
   const ab = new ArrayBuffer(7 * 16)
   const dv = new DataView(ab)
   for (let i = 0; i < 16; i++) dv.setFloat32(i * 4, IDENTITY_MAT4[i], true)
-  const u = buildOrientUniforms(nvimage, 1)
+  const u = buildOrientUniforms(nvimage, 0)
   dv.setFloat32(64, u.slope, true)
   dv.setFloat32(68, u.intercept, true)
   dv.setFloat32(72, u.calMin, true)
@@ -105,7 +105,7 @@ async function createColormapResources(
   hasNegativeColormap: boolean
   sampler: GPUSampler
 }> {
-  const u = buildOrientUniforms(nvimage, 1)
+  const u = buildOrientUniforms(nvimage, 0)
   if (u.isLabel > 0) {
     const labelLut = nvimage.colormapLabel?.lut
     if (!labelLut) {

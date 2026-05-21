@@ -97,6 +97,30 @@ vec3 GetBackPosition(vec3 startTex) {
   return (startObj + (rayDir * t)) / volScale;
 }
 
+vec3 GetFullFrontPosition(vec3 startTex) {
+  vec3 startObj = startTex * volScale;
+  vec3 invR = 1.0 / -rayDir;
+  vec3 tbot = invR * (vec3(0.0) - startObj);
+  vec3 ttop = invR * (volScale - startObj);
+  vec3 tmax = max(ttop, tbot);
+  float t = min(tmax.x, min(tmax.y, tmax.z));
+  return (startObj - (rayDir * t)) / volScale;
+}
+
+float raySamplePhase(vec3 startTex, float stepSize) {
+  vec3 fullFront = GetFullFrontPosition(startTex);
+  float traveled = length(startTex - fullFront);
+  float grid = traveled / max(stepSize, 1e-8);
+  // Continue the full-volume centered sample lattice through each chunk.
+  // If a global sample lands exactly on a chunk boundary, use the next
+  // sample in the nearer chunk so the boundary is not double-counted.
+  float phase = floor(grid + 0.5) + 0.5 - grid;
+  if (phase <= 0.001) {
+    phase = 1.0;
+  }
+  return clamp(phase, 0.001, 1.0);
+}
+
 // see if clip plane trims ray sampling range sampleStartEnd.x..y
 void clipSampleRange(vec3 dir, vec4 rayStart, vec4 clipPlane, inout vec2 sampleStartEnd, inout bool hasClip) {
   const float CSR_EPS = 1e-6;

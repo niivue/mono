@@ -245,8 +245,10 @@ void main() {
       skipBackground = true;
     }
   }
-  // Shared values for all passes
-  float ran = fract(sin(gl_FragCoord.x * 12.9898 + gl_FragCoord.y * 78.233) * 43758.5453);
+  // Shared values for all passes. Keep samples on a centered full-volume
+  // lattice so adjacent chunks do not reset the ray phase at their seams.
+  float origRan = raySamplePhase(origStart, stepSize);
+  float ran = origRan;
   float stepSizeFast = stepSize * 1.9;
   vec4 deltaDirFast = vec4(dir * stepSizeFast, stepSizeFast);
   // earlyTermination is a fragment-shader uniform (declared above).
@@ -268,6 +270,7 @@ void main() {
         clipSurfaceHit = true;
       }
     }
+    ran = raySamplePhase(start, stepSize);
     vec4 samplePos = vec4(start + dir * (stepSize * ran), stepSize * ran);
     // --- Background Fast Pass ---
     vec4 samplePosStart = samplePos;
@@ -307,7 +310,6 @@ void main() {
       }
       // --- Background Fine Pass ---
       mat3 norm3 = mat3(normMtx);
-      float brighten = 1.0 + (localGradientAmount / 3.0);
       for (int fi = 0; fi < 2048; fi++) {
         if (samplePos.a > len) { break; }
         if (cutaway && isClip && samplePos.a >= sampleRange.x && samplePos.a <= sampleRange.y) {
@@ -325,8 +327,9 @@ void main() {
           vec3 localNormal = normalize(gradRaw * 2.0 - 1.0);
           vec3 n = norm3 * localNormal;
           vec2 uv = n.xy * 0.5 + 0.5;
-          vec3 mc_rgb = texture(matcap, uv).rgb * brighten;
-          vec3 blendedRGB = mix(vec3(1.0), mc_rgb, localGradientAmount);
+          float lightingAmount = localGradientAmount;
+          vec3 mc_rgb = texture(matcap, uv).rgb * (1.0 + (lightingAmount / 3.0));
+          vec3 blendedRGB = mix(vec3(1.0), mc_rgb, lightingAmount);
           vec3 finalRGB = blendedRGB * colorSample.rgb;
           vec4 premultiplied = vec4(finalRGB * colorSample.a, colorSample.a);
           colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
@@ -377,23 +380,23 @@ void main() {
   float depthFactor = 0.3;
   // Overlay pass
   if (textureSize(overlay, 0).x > 2) {
-    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination);
     depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
   }
   // PAQD pass (raw data with GPU-side LUT lookup + easing)
   if (textureSize(paqd, 0).x > 2) {
-    RayResult result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination, paqdUniforms);
+    RayResult result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, paqdUniforms);
     depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
   }
   // Drawing pass (nearest-neighbor sampling — NEAREST filter set by CPU)
   if (textureSize(drawing, 0).x > 2) {
-    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination);
     // Matcap lighting at first hit. 6-tap central-difference gradient on
     // the drawing texture with LINEAR filtering — each tap is a trilinear
     // blend of 8 texels, which approximates a Gaussian-smoothed sample
     // (the "bilinear free smoothing" trick). Sampling at 1.5 voxels out
     // widens the stencil, further reducing per-pixel noise from the
-    // ray-march step discretization and ran jitter. Sign convention:
+    // ray-march step discretization. Sign convention:
     // gx = value(+x) - value(-x), matching the volume gradient (inward-
     // pointing toward higher drawing density).
     if (result.color.a > 0.001 && gradientAmount > 0.0) {
@@ -430,9 +433,18 @@ void main() {
   if (colAcc.a <= 0.001) {
     discard;
   }
-  // Scale rgb and alpha together so the fragment stays premultiplied —
-  // chunked volumes composite multiple draws with ONE,ONE_MINUS_SRC_ALPHA.
-  FragColor = colAcc / earlyTermination;
+  bool chunkedDraw = any(lessThan(chunkSubSize, vec3(0.999)));
+  // Single full-volume draws can present an early-terminated ray as opaque.
+  // Chunked draws must emit the true per-segment premultiplied alpha so the
+  // back-to-front chunk blend reconstructs the full ray without over-occluding
+  // deeper chunks.
+  if (chunkedDraw) {
+    FragColor = colAcc;
+  } else if (colAcc.a >= earlyTermination) {
+    FragColor = vec4(colAcc.rgb / colAcc.a, 1.0);
+  } else {
+    FragColor = colAcc;
+  }
   gl_FragDepth = fragDepth;
 }
 `

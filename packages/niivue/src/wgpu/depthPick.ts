@@ -54,8 +54,9 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
       skipBackground = true;
     }
   }
-  // Shared values
-  let ran = fract(sin(in.position.x * 12.9898 + in.position.y * 78.233) * 43758.5453);
+  // Match the visual renderer's full-volume ray-sample phase.
+  let origRan = raySamplePhase(origStart, stepSize);
+  var ran = origRan;
   let stepSizeFast = stepSize * 1.9;
   let deltaDirFast = vec4f(dir * stepSizeFast, stepSizeFast);
   // --- Background depth pick ---
@@ -66,6 +67,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
       start += dir * sampleRange.x;
       len = sampleRange.y - sampleRange.x;
     }
+    ran = raySamplePhase(start, stepSize);
     var samplePos = vec4f(start + dir * (stepSize * ran), stepSize * ran);
     let samplePosStart = samplePos;
     // Fast pass
@@ -114,7 +116,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
   var overDepth = 1.0;
   var overHit = false;
   if (params.numVolumes > 1.0) {
-    var overSamplePos = vec4f(origStart + dir * (stepSize * ran), stepSize * ran);
+    var overSamplePos = vec4f(origStart + dir * (stepSize * origRan), stepSize * origRan);
     let overSamplePosStart = overSamplePos;
     // Overlay fast pass
     for (var oj: i32 = 0; oj < 1024; oj++) {

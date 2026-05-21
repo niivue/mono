@@ -5,6 +5,9 @@
 //   GET /volumes/{id}/raw?bbox=x0,y0,z0,x1,y1,z1
 //                                   → re-emitted NIfTI cropped to the box
 //                                     (subvolume support for the 3D draft)
+//   GET /volumes/{id}/raw.bin?bbox=x0,y0,z0,x1,y1,z1
+//                                   → raw typed-array bytes cropped to the box
+//                                     for brick streaming clients
 //
 // For non-NIfTI sources, /raw returns the original file (NRRD, OME-Zarr
 // will need range-based access; here we just send what we have).
@@ -69,6 +72,33 @@ const cropResponseCache = new Map<string, Buffer>()
 let cropResponseCacheBytes = 0
 
 export function mountVolumeRoutes(app: Express, registry: Registry): void {
+  app.get(
+    '/volumes/:volId/raw.bin',
+    asyncHandler(async (req, res) => {
+      const entry = registry.get(req.params.volId)
+      if (!entry) {
+        throw new HttpError(404, `Unknown volume id: ${req.params.volId}`)
+      }
+      const bbox = parseBbox(req.query.bbox)
+      if (!bbox) {
+        throw new HttpError(400, 'raw.bin requires bbox=x0,y0,z0,x1,y1,z1')
+      }
+      const levelIdx = parseLevel(req.query.level)
+      const { volume } = await registry.loadSubvolume(entry.id, levelIdx, bbox)
+      const body = Buffer.from(
+        volume.data.buffer,
+        volume.data.byteOffset,
+        volume.data.byteLength,
+      )
+      res.set('Content-Type', 'application/octet-stream')
+      res.set('Content-Length', String(body.byteLength))
+      res.set('Cache-Control', 'public, max-age=3600')
+      res.set('X-Volume-Shape', volume.shape.join(','))
+      res.set('X-Volume-Dtype', volume.dtype)
+      res.send(body)
+    }),
+  )
+
   app.get(
     [
       '/volumes/:volId/raw',

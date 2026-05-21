@@ -44,6 +44,8 @@ export type {
   SaveVolumeOptions,
   SyncOpts,
   ViewHitTest,
+  VolumeChunkSource,
+  VolumeChunkSourceRequest,
   VolumeUpdate,
 } from './NVTypes'
 export type { TransformInfo, TransformOptions } from './volume/transforms'

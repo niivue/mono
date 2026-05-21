@@ -669,6 +669,53 @@ describe('volume routes', () => {
     }
   })
 
+  test('/raw.bin streams bbox payload bytes without NIfTI wrapper', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'iiif-raw-bin-'))
+    const shape: readonly [number, number, number] = [8, 7, 6]
+    const data = new Uint8Array(shape[0] * shape[1] * shape[2])
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (i * 3) & 0xff
+    }
+    const buf = makeUint8NiftiBuffer(shape, data)
+    await fs.writeFile(path.join(dir, 'rawbin.nii.gz'), gzipSync(buf))
+
+    const reg = new Registry()
+    await reg.scan(dir)
+    await reg.awaitPyramid('rawbin')
+    await reg.load('rawbin')
+
+    const app = express()
+    mountVolumeRoutes(app, reg)
+    const server = http.createServer(app)
+    const port = await listenAnywhere(server)
+    const bbox = [1, 2, 3, 5, 5, 6]
+
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${port}/volumes/rawbin/raw.bin?level=0&bbox=${bbox.join(',')}`,
+      )
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toBe('application/octet-stream')
+      expect(res.headers.get('x-volume-shape')).toBe('4,3,3')
+      expect(res.headers.get('x-volume-dtype')).toBe('uint8')
+
+      const body = new Uint8Array(await res.arrayBuffer())
+      const expected: number[] = []
+      for (let z = bbox[2]; z < bbox[5]; z++) {
+        for (let y = bbox[1]; y < bbox[4]; y++) {
+          for (let x = bbox[0]; x < bbox[3]; x++) {
+            expected.push(data[x + y * shape[0] + z * shape[0] * shape[1]])
+          }
+        }
+      }
+      expect(body.byteLength).toBe(expected.length)
+      expect(Array.from(body)).toEqual(expected)
+    } finally {
+      await closeServer(server)
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
   test('/raw.nii serves uncompressed bytes with Range support', async () => {
     const synthetic = registry.list().find((v) => v.id === 'synthetic')
     if (!synthetic) return

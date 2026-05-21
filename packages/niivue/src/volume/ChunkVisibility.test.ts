@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { chunksInFrustum, unionChunkSets } from './ChunkVisibility'
+import {
+  chunksBackToFront,
+  chunksInFrustum,
+  unionChunkSets,
+} from './ChunkVisibility'
 import { chunkVolume } from './chunking'
 
 /** Column-major 4x4 identity. */
@@ -8,6 +12,17 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 /** Column-major 4x4 with a translation — gl-matrix stores it in m[12..14]. */
 function translate(tx: number, ty: number, tz: number): number[] {
   return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, tx, ty, tz, 1]
+}
+
+function scaleTranslate(
+  sx: number,
+  sy: number,
+  sz: number,
+  tx: number,
+  ty: number,
+  tz: number,
+): number[] {
+  return [sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, sz, 0, tx, ty, tz, 1]
 }
 
 /** A 4-chunk-along-x plan: chunk i covers x in [i*0.25, (i+1)*0.25]. */
@@ -60,6 +75,49 @@ describe('chunksInFrustum', () => {
     const mvp = translate(0, 0, -2)
     expect(chunksInFrustum(plan, mvp, true)).toEqual([]) // WebGPU: culled
     expect(chunksInFrustum(plan, mvp, false)).toEqual([0]) // WebGL2: kept
+  })
+
+  test('matRAS path matches the volume vertex shader transform', () => {
+    const plan = fourChunkPlan()
+    // The render shader maps fraction -> voxel-space `(frac * dims) - 0.5`,
+    // then row-vector multiplies by matRAS before the MVP. This MVP maps that
+    // voxel x back to `frac.x - 1.3`, reproducing the partial-cull case above.
+    const voxelXToShiftedFrac = scaleTranslate(
+      1 / 8,
+      0,
+      0,
+      0.5 / 8 - 1.3,
+      0,
+      0.5,
+    )
+    expect(chunksInFrustum(plan, voxelXToShiftedFrac, true, IDENTITY)).toEqual([
+      1, 2, 3,
+    ])
+  })
+})
+
+describe('chunksBackToFront', () => {
+  test('draws high-x chunks first for a positive x ray', () => {
+    const plan = chunkVolume([4, 2, 2], 2, [0, 0, 0])
+    expect(chunksBackToFront(plan, [1, 0, 0])).toEqual([1, 0])
+  })
+
+  test('draws low-x chunks first for a negative x ray', () => {
+    const plan = chunkVolume([4, 2, 2], 2, [0, 0, 0])
+    expect(chunksBackToFront(plan, [-1, 0, 0])).toEqual([0, 1])
+  })
+
+  test('uses the far AABB corner for diagonal rays', () => {
+    const plan = chunkVolume([4, 4, 2], 2, [0, 0, 0])
+    const order = chunksBackToFront(plan, [1, 1, 0])
+    expect(order.at(0)).toBe(3)
+    expect(order.at(-1)).toBe(0)
+  })
+
+  test('keeps plan order when the ray direction is degenerate', () => {
+    const plan = fourChunkPlan()
+    expect(chunksBackToFront(plan, [0, 0, 0])).toEqual([0, 1, 2, 3])
+    expect(chunksBackToFront(plan, [Number.NaN, 0, 0])).toEqual([0, 1, 2, 3])
   })
 })
 

@@ -88,6 +88,8 @@ export type {
   SyncOpts,
   TypedVoxelArray,
   ViewHitTest,
+  VolumeChunkSource,
+  VolumeChunkSourceRequest,
   VolumeUpdate,
 } from './NVTypes'
 // Transform types

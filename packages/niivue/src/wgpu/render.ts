@@ -9,7 +9,7 @@ import {
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
 import { ChunkResidencyManager } from '@/volume/ChunkResidency'
-import { chunksInFrustum } from '@/volume/ChunkVisibility'
+import { chunksBackToFront, chunksInFrustum } from '@/volume/ChunkVisibility'
 import {
   bytesPerSourceVoxel,
   estimateChunkedBytes,
@@ -51,7 +51,7 @@ const DEFAULT_CHUNK_RESIDENCY_BYTES = 1_500_000_000
  * error — a structural limit of the fixed-size uniform buffer, not a memory
  * budget (memory pressure is handled by chunk eviction).
  */
-const MAX_CHUNKS_PER_TILE = 32
+const MAX_CHUNKS_PER_TILE = 256
 
 /**
  * Chunks uploaded per frame by the streaming pump. A chunked volume's chunks
@@ -504,19 +504,20 @@ export class VolumeRenderer extends NVRenderer {
       ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
       : srcDims
     const limit = this.maxTextureDimension3D
+    const forcedPlan = vol.chunkPlan
     const oversized =
       needsChunking(srcDims, limit) || needsChunking(rasDims, limit)
 
     const cacheKey = vol.url || vol.name
 
-    if (oversized) {
+    if (forcedPlan || oversized) {
       // Compute the chunk plan against RAS dims (output texture dimensions)
       // and stash it on the volume so the data model carries the tiling
       // metadata. Halo is 3 (not the [1,1,1] default): the per-chunk
       // gradient runs a sobel (radius 1) + blur (radius 1) stencil, and
       // trilinear sampling at the data edge reaches one voxel further, so
       // the gradient is only seam-free between chunks with a 3-voxel halo.
-      const plan = chunkVolume(rasDims, limit, [3, 3, 3])
+      const plan = forcedPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
       vol.chunkPlan = plan
       const bpv = bytesPerSourceVoxel(vol.hdr.datatypeCode) || 4
       const budget = estimateChunkedBytes(plan, bpv)
@@ -644,8 +645,9 @@ export class VolumeRenderer extends NVRenderer {
     if (!entry) return false
     this._activeVolKey = cacheKey
     if (entry.kind === 'chunked') {
-      // Chunked draws build per-chunk bind groups in draw(); the active
-      // single-texture state is set only so hasVolume()/guards pass.
+      // Chunked draws build per-chunk bind groups in draw(); these legacy
+      // single-texture pointers are best-effort aliases for callers that
+      // inspect them, not the chunked volume's readiness signal.
       this._activeChunked = entry
       this.volumeTexture = entry.manager.getChunk(0)?.volumeTexture ?? null
       this.volumeGradientTexture =
@@ -716,10 +718,18 @@ export class VolumeRenderer extends NVRenderer {
    * tile's MVP and queue the visible chunks for streaming. No-op when the
    * active volume is not chunked.
    */
-  requestChunksInFrustum(mvp: Float32Array | number[]): void {
+  requestChunksInFrustum(
+    mvp: Float32Array | number[],
+    matRAS: Float32Array | number[],
+  ): void {
     const entry = this._activeChunked
     if (!entry) return
-    const visible = chunksInFrustum(entry.plan, mvp, CLIP_SPACE_ZERO_TO_ONE)
+    const visible = chunksInFrustum(
+      entry.plan,
+      mvp,
+      CLIP_SPACE_ZERO_TO_ONE,
+      matRAS,
+    )
     for (const ci of visible) entry.manager.requestUpload(ci)
   }
 
@@ -754,7 +764,12 @@ export class VolumeRenderer extends NVRenderer {
         if (budget <= 0) continue
         const indices = entry.manager.takePendingUploads(budget)
         for (const i of indices) {
-          entry.manager.admit(i, await entry.uploader.uploadChunk(i))
+          try {
+            entry.manager.admit(i, await entry.uploader.uploadChunk(i))
+          } catch (err) {
+            entry.manager.failUpload(i)
+            throw err
+          }
           admitted = true
           budget--
         }
@@ -1493,27 +1508,7 @@ export class VolumeRenderer extends NVRenderer {
         ? this.paqdChunks
         : null
 
-    // Back-to-front order: farthest chunk first. Use each chunk's far AABB
-    // corner instead of its center so nonuniform edge chunks sort correctly.
-    const [rx, ry, rz] = [rayDir[0], rayDir[1], rayDir[2]]
-    const order = entry.plan.chunks.map((_, i) => i)
-    const depth = entry.plan.chunks.map((c) => {
-      const [vx, vy, vz] = entry.plan.volumeDims
-      const x =
-        rx >= 0
-          ? (c.voxelOrigin[0] + c.voxelDims[0]) / vx
-          : c.voxelOrigin[0] / vx
-      const y =
-        ry >= 0
-          ? (c.voxelOrigin[1] + c.voxelDims[1]) / vy
-          : c.voxelOrigin[1] / vy
-      const z =
-        rz >= 0
-          ? (c.voxelOrigin[2] + c.voxelDims[2]) / vz
-          : c.voxelOrigin[2] / vz
-      return x * rx + y * ry + z * rz
-    })
-    order.sort((a, b) => depth[b] - depth[a])
+    const order = chunksBackToFront(entry.plan, rayDir)
 
     const chunkBase = MAX_TILES * alignedRenderSize
 
@@ -1673,7 +1668,7 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   hasVolume(): boolean {
-    return this.volumeTexture !== null
+    return this._activeChunked !== null || this.volumeTexture !== null
   }
 
   hasOverlay(): boolean {

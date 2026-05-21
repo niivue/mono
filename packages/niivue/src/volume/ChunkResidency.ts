@@ -47,6 +47,7 @@ export class ChunkResidencyManager<TChunk> {
   private readonly _hooks: ChunkResidencyHooks<TChunk>
   private readonly _resident: Map<number, ResidentChunk<TChunk>> = new Map()
   private readonly _uploadQueue: number[] = []
+  private readonly _inFlightUploads = new Set<number>()
   private _residentBytes = 0
   private _budgetBytes: number
   private _frame = 0
@@ -86,8 +87,8 @@ export class ChunkResidencyManager<TChunk> {
     const bytes = this._hooks.bytesOf(chunk)
     this._resident.set(chunkIndex, { chunk, lastFrame: this._frame, bytes })
     this._residentBytes += bytes
-    const q = this._uploadQueue.indexOf(chunkIndex)
-    if (q >= 0) this._uploadQueue.splice(q, 1)
+    this._inFlightUploads.delete(chunkIndex)
+    this._removeQueuedUpload(chunkIndex)
     this._evictToFit(chunkIndex)
   }
 
@@ -136,6 +137,7 @@ export class ChunkResidencyManager<TChunk> {
       resident.lastFrame = this._frame
       return
     }
+    if (this._inFlightUploads.has(chunkIndex)) return
     if (this._uploadQueue.includes(chunkIndex)) return
     this._uploadQueue.push(chunkIndex)
   }
@@ -145,12 +147,36 @@ export class ChunkResidencyManager<TChunk> {
     return this._uploadQueue.length
   }
 
+  /** Number of chunks removed from the queue and currently being uploaded. */
+  get inFlightUploadCount(): number {
+    return this._inFlightUploads.size
+  }
+
   /**
    * Remove and return up to `max` queued chunk indices, oldest first, for the
-   * backend to upload this frame. The backend `admit`s each once uploaded.
+   * backend to upload this frame. Returned indices are marked in-flight until
+   * the backend either `admit`s them or calls `failUpload`.
    */
   takePendingUploads(max: number): number[] {
-    return this._uploadQueue.splice(0, Math.max(0, max))
+    const out: number[] = []
+    const limit = Math.max(0, max)
+    while (out.length < limit && this._uploadQueue.length > 0) {
+      const chunkIndex = this._uploadQueue.shift()
+      if (chunkIndex === undefined) break
+      if (this._resident.has(chunkIndex)) continue
+      if (this._inFlightUploads.has(chunkIndex)) continue
+      this._inFlightUploads.add(chunkIndex)
+      out.push(chunkIndex)
+    }
+    return out
+  }
+
+  /**
+   * Clear an in-flight upload after the backend fails to upload the chunk.
+   * A later working-set request may enqueue the chunk again.
+   */
+  failUpload(chunkIndex: number): void {
+    this._inFlightUploads.delete(chunkIndex)
   }
 
   /**
@@ -184,5 +210,12 @@ export class ChunkResidencyManager<TChunk> {
     this._resident.clear()
     this._residentBytes = 0
     this._uploadQueue.length = 0
+    this._inFlightUploads.clear()
+  }
+
+  private _removeQueuedUpload(chunkIndex: number): void {
+    for (let i = this._uploadQueue.length - 1; i >= 0; i--) {
+      if (this._uploadQueue[i] === chunkIndex) this._uploadQueue.splice(i, 1)
+    }
   }
 }

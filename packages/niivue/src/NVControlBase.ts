@@ -137,6 +137,8 @@ type InfrastructureOpts = {
   showBoundsBorder?: boolean
   boundsBorderColor?: [number, number, number, number]
   boundsBorderThickness?: number
+  maxTextureDimension3D?: number
+  maxChunkResidencyBytes?: number
 }
 const DEFAULT_MATCAPS: Record<string, string> = { cortex }
 
@@ -199,7 +201,7 @@ export default class NiiVueGPU extends EventTarget {
   _eventListeners: Record<string, EventHandler | null>
   private _updating = false
   private _pendingUpdate = false
-  private _deferredVolumes: ImageFromUrlOptions[] | null = null
+  private _deferredVolumes: Array<ImageFromUrlOptions | NVImage> | null = null
   private _deferredMeshes: MeshFromUrlOptions[] | null = null
   private _viewLifecycle: ViewLifecycle
   private _distributionBackend: DistributionBackend
@@ -275,6 +277,8 @@ export default class NiiVueGPU extends EventTarget {
       showBoundsBorder: options.showBoundsBorder ?? false,
       boundsBorderColor: options.boundsBorderColor ?? [1, 1, 1, 1],
       boundsBorderThickness: options.boundsBorderThickness ?? 2,
+      maxTextureDimension3D: options.maxTextureDimension3D,
+      maxChunkResidencyBytes: options.maxChunkResidencyBytes,
     }
     // Public properties (controller-level)
     this.isDragging = false
@@ -1543,7 +1547,10 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   async loadVolumes(
-    volumes: ImageFromUrlOptions | ImageFromUrlOptions[],
+    volumes:
+      | ImageFromUrlOptions
+      | NVImage
+      | Array<ImageFromUrlOptions | NVImage>,
   ): Promise<this> {
     if (!Array.isArray(volumes)) volumes = [volumes]
     if (this.model.ui.isThumbnailVisible) {

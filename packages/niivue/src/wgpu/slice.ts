@@ -18,7 +18,7 @@ const alignedSliceSize =
 const MAX_TILES = 128
 // Max chunks one chunked volume may contribute to a single slice tile.
 // Mirrors the 3D render path's per-tile chunk cap.
-const MAX_CHUNKS_PER_TILE = 32
+const MAX_CHUNKS_PER_TILE = 256
 
 export class SliceRenderer extends NVRenderer {
   pipeline: GPURenderPipeline | null

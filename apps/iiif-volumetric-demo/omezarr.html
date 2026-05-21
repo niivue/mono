@@ -149,6 +149,21 @@
         font-style: italic;
         color: #8a8c8f;
       }
+      .busy {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        background: rgba(0, 0, 0, 0.72);
+        padding: 6px 12px;
+        border-radius: 5px;
+        font-size: 0.72rem;
+        color: #8ab4f8;
+        pointer-events: none;
+        font-family: ui-monospace, monospace;
+      }
+      .busy[hidden] {
+        display: none;
+      }
       .hint {
         position: absolute;
         bottom: 12px;
@@ -177,6 +192,10 @@
       <span class="control">
         <label for="level">Level</label>
         <select id="level"></select>
+      </span>
+      <span class="control">
+        <label for="subvolume">Subvol</label>
+        <select id="subvolume"></select>
       </span>
       <span class="control">
         <label for="colormap">Colormap</label>
@@ -254,9 +273,10 @@
     <main>
       <canvas id="nv-canvas" aria-label="OME-Zarr volume render"></canvas>
       <div class="hud" id="hud">Loading...</div>
+      <div class="busy" id="busy" hidden></div>
       <div class="hint">
         Scroll or Zoom slider (auto-LOD swaps level) · Left-drag to orbit ·
-        Pan X/Y to translate · Shift-click to fetch a 128³ slab at L0
+        Pan X/Y to translate · stream L0 whole level or choose a subvolume
       </div>
       <div class="fallback" id="fallback" hidden></div>
     </main>

@@ -112,7 +112,9 @@ describe('ChunkResidencyManager upload queue', () => {
 
     expect(m.takePendingUploads(2)).toEqual([2, 4])
     expect(m.pendingUploadCount).toBe(1)
+    expect(m.inFlightUploadCount).toBe(2)
     expect(m.takePendingUploads(10)).toEqual([1])
+    expect(m.inFlightUploadCount).toBe(3)
   })
 
   test('admitting a queued chunk removes it from the queue', () => {
@@ -121,6 +123,38 @@ describe('ChunkResidencyManager upload queue', () => {
     m.admit(1, fakeChunk('b', 1))
 
     expect(m.pendingUploadCount).toBe(0)
+  })
+
+  test('requestUpload ignores chunks already uploading', () => {
+    const m = manager(3)
+    m.requestUpload(1)
+    expect(m.takePendingUploads(1)).toEqual([1])
+
+    m.requestUpload(1)
+
+    expect(m.pendingUploadCount).toBe(0)
+    expect(m.inFlightUploadCount).toBe(1)
+  })
+
+  test('admit clears an in-flight upload', () => {
+    const m = manager(3)
+    m.requestUpload(1)
+    expect(m.takePendingUploads(1)).toEqual([1])
+    m.admit(1, fakeChunk('b', 1))
+
+    expect(m.inFlightUploadCount).toBe(0)
+    expect(m.pendingUploadCount).toBe(0)
+  })
+
+  test('failUpload allows a later request to retry', () => {
+    const m = manager(3)
+    m.requestUpload(1)
+    expect(m.takePendingUploads(1)).toEqual([1])
+    m.failUpload(1)
+    m.requestUpload(1)
+
+    expect(m.inFlightUploadCount).toBe(0)
+    expect(m.pendingUploadCount).toBe(1)
   })
 })
 
@@ -206,12 +240,14 @@ describe('ChunkResidencyManager eviction', () => {
 
 describe('ChunkResidencyManager destroy', () => {
   test('destroy releases every resident chunk and resets state', () => {
-    const m = manager(2)
+    const m = manager(3)
     const a = fakeChunk('a', 100)
     const b = fakeChunk('b', 200)
     m.admit(0, a)
     m.admit(1, b)
     m.requestUpload(0) // resident — no-op, queue stays empty
+    m.requestUpload(2)
+    expect(m.takePendingUploads(1)).toEqual([2])
     m.destroy()
 
     expect(a.destroyed).toBe(true)
@@ -219,5 +255,6 @@ describe('ChunkResidencyManager destroy', () => {
     expect(m.residentCount).toBe(0)
     expect(m.residentBytes).toBe(0)
     expect(m.isResident(0)).toBe(false)
+    expect(m.inFlightUploadCount).toBe(0)
   })
 })

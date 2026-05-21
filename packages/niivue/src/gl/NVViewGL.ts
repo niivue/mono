@@ -736,7 +736,10 @@ export default class NVGlview {
         } else {
           // Phase 3c: frustum-cull this 3D render tile to drive streamed
           // upload — no-op unless the active volume is chunked.
-          this.volumeRenderer.requestChunksInFrustum(mvpMatrix as Float32Array)
+          this.volumeRenderer.requestChunksInFrustum(
+            mvpMatrix as Float32Array,
+            matRAS as Float32Array,
+          )
           this.volumeRenderer.draw(
             gl,
             mvpMatrix as Float32Array,
@@ -1191,9 +1194,12 @@ export default class NVGlview {
     markEnd()
     // Stream in any not-yet-resident chunks of oversized volumes, then
     // schedule a follow-up frame so the freshly-uploaded data appears.
-    if (this.volumeRenderer.pumpChunkUploads()) {
-      requestAnimationFrame(() => this.render())
-    }
+    this.volumeRenderer
+      .pumpChunkUploads()
+      .then((changed) => {
+        if (changed) requestAnimationFrame(() => this.render())
+      })
+      .catch((err) => log.error('chunk upload pump failed', err))
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */

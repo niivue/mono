@@ -14,18 +14,62 @@
 import type { ChunkPlan } from './chunking'
 
 /**
+ * Back-to-front draw order for a chunked 3D volume render.
+ *
+ * The fragment shader ray-marches each chunk cube independently and outputs a
+ * premultiplied segment color. The framebuffer then reconstructs the full ray
+ * by blending those segment colors, so chunks must be drawn farthest first in
+ * the same ray-direction convention used by `calculateRayDirection`.
+ *
+ * Use each chunk's far AABB corner, not its center, so edge chunks with
+ * nonuniform sizes sort according to the farthest possible segment endpoint.
+ */
+export function chunksBackToFront(
+  plan: ChunkPlan,
+  rayDir: ArrayLike<number>,
+): number[] {
+  const rx = finiteRayComponent(rayDir, 0)
+  const ry = finiteRayComponent(rayDir, 1)
+  const rz = finiteRayComponent(rayDir, 2)
+  if (rx * rx + ry * ry + rz * rz <= 1e-12) {
+    return plan.chunks.map((_, i) => i)
+  }
+
+  const [vx, vy, vz] = plan.volumeDims
+  const depth = plan.chunks.map((c) => {
+    const x =
+      rx >= 0 ? (c.voxelOrigin[0] + c.voxelDims[0]) / vx : c.voxelOrigin[0] / vx
+    const y =
+      ry >= 0 ? (c.voxelOrigin[1] + c.voxelDims[1]) / vy : c.voxelOrigin[1] / vy
+    const z =
+      rz >= 0 ? (c.voxelOrigin[2] + c.voxelDims[2]) / vz : c.voxelOrigin[2] / vz
+    return x * rx + y * ry + z * rz
+  })
+
+  return plan.chunks
+    .map((_, i) => i)
+    .sort((a, b) => depth[b] - depth[a] || a - b)
+}
+
+function finiteRayComponent(rayDir: ArrayLike<number>, axis: number): number {
+  const value = rayDir[axis]
+  return Number.isFinite(value) ? value : 0
+}
+
+/**
  * Conservative view-frustum cull for a chunked volume's 3D render tile.
  *
  * Returns the indices of chunks whose data sub-region may be visible under
- * `mvp` — the model-view-projection matrix that maps the full-volume [0,1]
- * cube to clip space (the same matrix the chunked cube draw uses). Each
- * chunk's 8 sub-AABB corners are transformed to clip space; a chunk is
- * culled only when all 8 corners fall outside one frustum plane. This admits
- * false positives (a chunk straddling a frustum edge diagonally can survive)
- * but never false negatives, so the result is always a safe superset of the
- * truly-visible chunks — correct for a streaming working set, where dropping
- * a visible chunk would punch a hole but keeping an extra one only costs
- * budget.
+ * `mvp`. When `matRAS` is supplied, chunk corners follow the same path as the
+ * volume vertex shader: full-volume fraction -> voxel space -> matRAS -> MVP.
+ * Without `matRAS`, this keeps the legacy/unit-test behavior where `mvp` maps
+ * the full-volume [0,1] cube directly to clip space. Each chunk's 8 sub-AABB
+ * corners are transformed to clip space; a chunk is culled only when all 8
+ * corners fall outside one frustum plane. This admits false positives (a
+ * chunk straddling a frustum edge diagonally can survive) but never false
+ * negatives, so the result is always a safe superset of the truly-visible
+ * chunks — correct for a streaming working set, where dropping a visible chunk
+ * would punch a hole but keeping an extra one only costs budget.
  *
  * `mvp` is column-major (gl-matrix convention), matching both renderers.
  * `clipSpaceZeroToOne` selects the near-plane depth convention: `true` for
@@ -35,6 +79,7 @@ export function chunksInFrustum(
   plan: ChunkPlan,
   mvp: Float32Array | number[],
   clipSpaceZeroToOne: boolean,
+  matRAS?: Float32Array | number[],
 ): number[] {
   const [vx, vy, vz] = plan.volumeDims
   const nearLimit = clipSpaceZeroToOne ? 0 : -1
@@ -62,10 +107,29 @@ export function chunksInFrustum(
       const px = c & 1 ? x1 : x0
       const py = c & 2 ? y1 : y0
       const pz = c & 4 ? z1 : z0
-      const cx = mvp[0] * px + mvp[4] * py + mvp[8] * pz + mvp[12]
-      const cy = mvp[1] * px + mvp[5] * py + mvp[9] * pz + mvp[13]
-      const cz = mvp[2] * px + mvp[6] * py + mvp[10] * pz + mvp[14]
-      const cw = mvp[3] * px + mvp[7] * py + mvp[11] * pz + mvp[15]
+      const model = matRAS
+        ? chunkCornerToModel(px, py, pz, vx, vy, vz, matRAS)
+        : [px, py, pz, 1]
+      const cx =
+        mvp[0] * model[0] +
+        mvp[4] * model[1] +
+        mvp[8] * model[2] +
+        mvp[12] * model[3]
+      const cy =
+        mvp[1] * model[0] +
+        mvp[5] * model[1] +
+        mvp[9] * model[2] +
+        mvp[13] * model[3]
+      const cz =
+        mvp[2] * model[0] +
+        mvp[6] * model[1] +
+        mvp[10] * model[2] +
+        mvp[14] * model[3]
+      const cw =
+        mvp[3] * model[0] +
+        mvp[7] * model[1] +
+        mvp[11] * model[2] +
+        mvp[15] * model[3]
       if (cw <= 1e-6) {
         nearCamera = true
         break
@@ -82,6 +146,26 @@ export function chunksInFrustum(
     }
   }
   return out
+}
+
+function chunkCornerToModel(
+  xFrac: number,
+  yFrac: number,
+  zFrac: number,
+  vx: number,
+  vy: number,
+  vz: number,
+  matRAS: Float32Array | number[],
+): [number, number, number, number] {
+  const x = xFrac * vx - 0.5
+  const y = yFrac * vy - 0.5
+  const z = zFrac * vz - 0.5
+  return [
+    x * matRAS[0] + y * matRAS[1] + z * matRAS[2] + matRAS[3],
+    x * matRAS[4] + y * matRAS[5] + z * matRAS[6] + matRAS[7],
+    x * matRAS[8] + y * matRAS[9] + z * matRAS[10] + matRAS[11],
+    x * matRAS[12] + y * matRAS[13] + z * matRAS[14] + matRAS[15],
+  ]
 }
 
 /**

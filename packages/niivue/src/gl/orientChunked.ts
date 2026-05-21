@@ -42,9 +42,27 @@ export interface VolumeChunkGL {
  */
 export interface ChunkUploaderGL {
   /** Upload, orient, and gradient the chunk at `index` in the plan. */
-  uploadChunk(index: number): VolumeChunkGL
+  uploadChunk(index: number): Promise<VolumeChunkGL>
   /** No-op; present for parity with the WebGPU uploader. */
   dispose(): void
+}
+
+function bytesFromChunkSource(
+  data: ArrayBuffer | Uint8Array | NonNullable<NVImage['img']>,
+  expectedBytes: number,
+): Uint8Array {
+  const bytes =
+    data instanceof ArrayBuffer
+      ? new Uint8Array(data)
+      : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+  if (bytes.byteLength !== expectedBytes) {
+    throw new Error(
+      `orientChunkedGL: chunk source returned ${bytes.byteLength} bytes, expected ${expectedBytes}`,
+    )
+  }
+  return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+    ? bytes
+    : new Uint8Array(bytes)
 }
 
 /**
@@ -63,7 +81,8 @@ export function createChunkUploaderGL(
   if (!nvimage.dimsRAS) {
     throw new Error('orientChunkedGL: missing dimsRAS')
   }
-  if (!nvimage.img) {
+  const chunkSource = nvimage.chunkSource
+  if (!nvimage.img && !chunkSource) {
     throw new Error('orientChunkedGL: missing image data')
   }
   const dt = nvimage.hdr.datatypeCode
@@ -99,37 +118,51 @@ export function createChunkUploaderGL(
 
   const frame4D = nvimage.frame4D ?? 0
   const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
-  const srcBytes = new Uint8Array(
-    nvimage.img.buffer,
-    nvimage.img.byteOffset + frameByteOffset,
-    nvimage.nVox3D * bytesPerVoxel,
-  )
+  const srcBytes = nvimage.img
+    ? new Uint8Array(
+        nvimage.img.buffer,
+        nvimage.img.byteOffset + frameByteOffset,
+        nvimage.nVox3D * bytesPerVoxel,
+      )
+    : null
 
-  const identity = isIdentityPermutation(nvimage)
+  const identity = chunkSource ? true : isIdentityPermutation(nvimage)
   const img2RASstart = nvimage.img2RASstart
   const img2RASstep = nvimage.img2RASstep
-  if (!identity && (!img2RASstep || !img2RASstart)) {
+  if (!chunkSource && !identity && (!img2RASstep || !img2RASstart)) {
     throw new Error(
       'orientChunkedGL: source is non-RAS but missing RAS mapping',
     )
   }
 
-  function uploadChunk(index: number): VolumeChunkGL {
+  async function uploadChunk(index: number): Promise<VolumeChunkGL> {
     const desc = plan.chunks[index]
     if (!desc) {
       throw new Error(`orientChunkedGL: chunk index ${index} out of range`)
     }
-    const chunkBytes =
-      identity || !img2RASstart || !img2RASstep
+    const expectedBytes =
+      desc.texDims[0] * desc.texDims[1] * desc.texDims[2] * bytesPerVoxel
+    const chunkBytes = chunkSource
+      ? bytesFromChunkSource(
+          await chunkSource({
+            chunkIndex: index,
+            desc,
+            plan,
+            datatypeCode: dt,
+            bytesPerVoxel,
+          }),
+          expectedBytes,
+        )
+      : identity || !img2RASstart || !img2RASstep
         ? extractChunkBytes(
-            srcBytes,
+            srcBytes as Uint8Array,
             volumeDims,
             bytesPerVoxel,
             desc.texOrigin,
             desc.texDims,
           )
         : extractChunkBytesReoriented(
-            srcBytes,
+            srcBytes as Uint8Array,
             bytesPerVoxel,
             desc.texOrigin,
             desc.texDims,

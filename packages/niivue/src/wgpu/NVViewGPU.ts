@@ -1057,7 +1057,10 @@ export default class NVView {
         } else {
           // Phase 3c: frustum-cull this 3D render tile to drive streamed
           // upload — no-op unless the active volume is chunked.
-          this.volumeRenderer.requestChunksInFrustum(mvpMatrix as Float32Array)
+          this.volumeRenderer.requestChunksInFrustum(
+            mvpMatrix as Float32Array,
+            matRAS as Float32Array,
+          )
           this.volumeRenderer.draw(
             device,
             pass,

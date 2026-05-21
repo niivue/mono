@@ -1,7 +1,7 @@
 import type { mat4, vec2, vec3, vec4 } from 'gl-matrix'
 import type { LogLevel } from '@/logger'
 import type { FontMetrics } from '@/view/NVFont'
-import type { ChunkPlan } from '@/volume/chunking'
+import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 
 export type TypedVoxelArray =
   | Float32Array
@@ -22,6 +22,22 @@ export type TypedNumberArray =
   | Int32Array
   | Int16Array
   | Int8Array
+
+export interface VolumeChunkSourceRequest {
+  chunkIndex: number
+  desc: VolumeChunkDesc
+  plan: ChunkPlan
+  datatypeCode: number
+  bytesPerVoxel: number
+}
+
+export type VolumeChunkSource = (
+  request: VolumeChunkSourceRequest,
+) =>
+  | ArrayBuffer
+  | Uint8Array
+  | TypedVoxelArray
+  | Promise<ArrayBuffer | Uint8Array | TypedVoxelArray>
 
 export type NIFTIHeader = {
   littleEndian: boolean
@@ -152,6 +168,8 @@ export type NVImage = {
   _modulationData?: Float32Array | null
   /** Tiling plan for volumes whose dims exceed maxTextureDimension3D. Absent ⇒ legacy single-texture path. */
   chunkPlan?: ChunkPlan
+  /** Optional source-backed chunk loader for volumes whose full voxel array is not resident in browser memory. */
+  chunkSource?: VolumeChunkSource
   [key: string]: unknown
 }
 

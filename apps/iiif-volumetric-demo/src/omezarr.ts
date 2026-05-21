@@ -3,8 +3,9 @@
 // Discovers OME-Zarr volumes from /api, lets the user pick one and choose
 // which pyramid level to load. The level dropdown is driven by the
 // server's native pyramid metadata (probeLevels), and each switch fetches
-// `/volumes/{id}/raw?level=N` so the wire path matches what a real client
-// would use.
+// `/volumes/{id}/raw.nii.gz?level=N` for regular levels, or streams visible
+// bricks from `/volumes/{id}/raw.bin?level=N&bbox=...` for whole levels that
+// are too large to materialize without freezing the page.
 //
 // Load strategy (lazy / progressive):
 //
@@ -18,24 +19,27 @@
 //   - Colormap and window edits trigger a reload of the current level so
 //     the 3D render texture is rebuilt — the bytes come from browser cache,
 //     so this is cheap at the coarse levels the demo paints first.
+//   - Manual L0/full-detail selection remains available as a streamed whole
+//     level or legacy full-level load. A separate Subvol control can route the
+//     same level through focused or 3×3 grid bbox reads:
+//     `/raw.nii.gz?level=N&bbox=...`.
 //
 // Two automatic behaviours showcase the server's strengths:
 //
-//   - Auto-LOD: scrolling to zoom in/out triggers a level swap so the
-//     server only ever streams the resolution the user can actually see.
-//     Heuristic is pixels-per-voxel ≈ 1 in log space — the level whose
-//     longest dim divides into roughly 1 voxel per screen pixel wins.
+//   - Auto-LOD: scrolling to zoom in/out triggers a level swap among
+//     full-levels that fit the interactive render budget. Deep detail comes
+//     from the explicit subvolume selector.
 //
 //   - Shift-click subvolume: clicking on any feature in the canvas while
 //     holding Shift maps the click → L0 voxel coords → 128³ bbox →
-//     `/raw?level=0&bbox=...`. The server reads only the intersecting
+//     `/raw.nii.gz?level=0&bbox=...`. The server reads only the intersecting
 //     OME-Zarr chunks, so a 1 MB window can come out of a multi-GB
 //     volume in tens of milliseconds.
 //
 // Rendering is the off-the-shelf niivue 3D viewer — the point here is the
 // server-side pyramid + subvolume plumbing, not viewer features.
 
-import NiiVue from '@niivue/niivue'
+import NiiVue, { type NVImage, type VolumeChunkSource } from '@niivue/niivue'
 
 import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
@@ -70,6 +74,9 @@ interface LoadStats {
   decodeMs: number
 }
 
+type Shape3 = [number, number, number]
+type Bbox6 = [number, number, number, number, number, number]
+
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
   if (!node) throw new Error(`Missing #${id}`)
@@ -79,6 +86,7 @@ function el<T extends HTMLElement>(id: string): T {
 const els = {
   volume: el<HTMLSelectElement>('volume'),
   level: el<HTMLSelectElement>('level'),
+  subvolume: el<HTMLSelectElement>('subvolume'),
   colormap: el<HTMLSelectElement>('colormap'),
   window: el<HTMLInputElement>('window'),
   bbox: el<HTMLInputElement>('bbox'),
@@ -91,6 +99,7 @@ const els = {
   canvas: el<HTMLCanvasElement>('nv-canvas'),
   hud: el<HTMLDivElement>('hud'),
   fallback: el<HTMLDivElement>('fallback'),
+  busy: el<HTMLDivElement>('busy'),
 }
 
 const baseUrl = window.location.origin
@@ -98,7 +107,11 @@ let nv: NiiVue | null = null
 let volumes: VolumeApiEntry[] = []
 let lastStats: LoadStats | null = null
 let lodTimer: ReturnType<typeof setTimeout> | null = null
-let lastClickVox: [number, number, number] | null = null
+let lastFocusFrac: [number, number, number] | null = null
+let loadedLevelShape: Shape3 | null = null
+let loadedBbox: Bbox6 | null = null
+let autoBboxValue: string | null = null
+let lastSubvolumeLabel: string | null = null
 // Set true while reload() is mid-flight so the wheel handler doesn't
 // stampede the server with overlapping level swaps during a single zoom.
 let reloading = false
@@ -117,6 +130,21 @@ let reloadEpoch = 0
 // 3D render; we re-window onto the upper half of the robust range once,
 // on first load, unless the user has set a window explicitly.
 const autoWindowed = new Set<string>()
+// GPU 3D-texture limit. A level whose longest dim exceeds this can't fit a
+// single texture — niivue falls back to a slower tiled path, and the level
+// is multi-GB anyway. We mark such levels in the dropdown and keep auto-LOD
+// off them (deep detail is meant to come from the subvolume path).
+// Read from the live GL context after niivue attaches; 2048 is the safe
+// WebGL2/WebGPU floor used until then.
+let maxTexDim = 2048
+// Full OME-Zarr levels above this estimated render footprint are flagged in
+// the UI so the user can choose a subvolume before rendering. "Full level"
+// remains available for parity with the old whole-volume path.
+const FULL_LEVEL_RENDER_BYTE_BUDGET = 256 * 1024 * 1024
+const AUTO_SUBVOLUME_EDGE = 192
+const GRID_SUBVOLUME_DIVS = 3
+const STREAMING_CHUNK_EDGE = 256
+const STREAMING_CHUNK_LIMIT = 256
 
 main().catch((err: unknown) => {
   console.error(err)
@@ -138,6 +166,13 @@ async function main(): Promise<void> {
     void selectVolume(els.volume.value)
   })
   els.level.addEventListener('change', () => {
+    clearAutoBbox()
+    populateSubvolumeSelect(currentVolume())
+    applySubvolumeSelection(currentVolume())
+    void reload()
+  })
+  els.subvolume.addEventListener('change', () => {
+    applySubvolumeSelection(currentVolume())
     void reload()
   })
   els.colormap.addEventListener('change', () => {
@@ -147,16 +182,21 @@ async function main(): Promise<void> {
     void reload()
   })
   els.bbox.addEventListener('change', () => {
+    markCustomSubvolume('custom bbox')
     void reload()
   })
   els.bboxRandom.addEventListener('click', () => {
     const v = currentVolume()
     const lvl = currentLevelShape(v)
     if (!lvl) return
+    markCustomSubvolume('random 128³')
     els.bbox.value = randomBboxString(lvl, 128)
     void reload()
   })
   els.bboxClear.addEventListener('click', () => {
+    autoBboxValue = null
+    lastSubvolumeLabel = null
+    els.subvolume.value = 'full'
     els.bbox.value = ''
     void reload()
   })
@@ -170,9 +210,93 @@ async function main(): Promise<void> {
     applyPanFromSliders()
   })
   await ensureNiivue()
+  maxTexDim = readMaxTexDim()
   const initial = readInitialVolumeId()
   els.volume.value = initial
   await selectVolume(initial)
+}
+
+// niivue attached its rendering context to the canvas; for the WebGL2
+// backend we can re-request it (browsers hand back the same context) and
+// read the real MAX_3D_TEXTURE_SIZE. WebGPU returns null here — we keep
+// the conservative 2048 floor in that case.
+function readMaxTexDim(): number {
+  const gl = els.canvas.getContext('webgl2')
+  if (gl) {
+    const v = gl.getParameter(gl.MAX_3D_TEXTURE_SIZE)
+    if (typeof v === 'number' && v > 0) return v
+  }
+  return 2048
+}
+
+// True when the level's longest spatial dim won't fit a single 3D texture.
+function levelOversized(shape: [number, number, number]): boolean {
+  return Math.max(shape[0], shape[1], shape[2]) > maxTexDim
+}
+
+// niivue's hard cap on GPU bytes for a chunked (tiled) volume — mirrors the
+// CHUNKED_VOLUME_BYTE_CAP constant in its gl/render.ts and wgpu backend.
+// Past this, loadVolumes throws "too large to render" on every machine.
+const CHUNKED_VOLUME_BYTE_CAP = 1_500_000_000
+
+function bytesPerVoxel(dtype: string): number {
+  switch (dtype) {
+    case 'uint8':
+    case 'int8':
+      return 1
+    case 'uint16':
+    case 'int16':
+      return 2
+    case 'uint32':
+    case 'int32':
+    case 'float32':
+      return 4
+    case 'float64':
+      return 8
+    default:
+      return 2
+  }
+}
+
+// True when a full-level load would blow niivue's chunked-volume memory cap.
+// Those levels are still usable in this demo; they go through bbox subvolume
+// URLs so neither the server nor niivue materialises the full native level.
+function levelTooLargeToRender(
+  shape: [number, number, number],
+  dtype: string,
+): boolean {
+  if (!levelOversized(shape)) return false
+  return estimateRenderBytes(shape, dtype) > CHUNKED_VOLUME_BYTE_CAP
+}
+
+function estimateRenderBytes(
+  shape: [number, number, number],
+  dtype: string,
+): number {
+  const voxels = shape[0] * shape[1] * shape[2]
+  return voxels * (bytesPerVoxel(dtype) + 8)
+}
+
+function levelNeedsSubvolume(
+  shape: [number, number, number],
+  dtype: string,
+): boolean {
+  return (
+    levelTooLargeToRender(shape, dtype) ||
+    estimateRenderBytes(shape, dtype) > FULL_LEVEL_RENDER_BYTE_BUDGET
+  )
+}
+
+function canStreamWholeLevel(shape: [number, number, number]): boolean {
+  return (
+    Math.max(shape[0], shape[1], shape[2]) > STREAMING_CHUNK_EDGE &&
+    estimateStreamingChunkCount(shape) <= STREAMING_CHUNK_LIMIT
+  )
+}
+
+function estimateStreamingChunkCount(shape: [number, number, number]): number {
+  const stride = Math.max(1, STREAMING_CHUNK_EDGE - 6)
+  return shape.reduce((count, dim) => count * Math.ceil(dim / stride), 1)
 }
 
 function populateVolumeSelect(): void {
@@ -196,7 +320,17 @@ function readInitialVolumeId(): string {
 async function selectVolume(id: string): Promise<void> {
   const found = volumes.find((v) => v.id === id)
   if (!found) return
+  // Window and bbox are voxel-range / index specific to one volume. Carrying
+  // them to a different volume renders nothing (e.g. a uint16 window on a
+  // uint8 volume puts every voxel below calMin). Clear them so the new
+  // volume gets its own auto-window on first paint.
+  els.window.value = ''
+  els.bbox.value = ''
+  autoBboxValue = null
+  lastSubvolumeLabel = null
   populateLevelSelect(found)
+  populateSubvolumeSelect(found)
+  applySubvolumeSelection(found)
   await reload()
 }
 
@@ -215,7 +349,11 @@ function populateLevelSelect(v: VolumeApiEntry): void {
   for (const l of lvls) {
     const opt = document.createElement('option')
     opt.value = String(l.level)
-    opt.textContent = `L${l.level} · ${l.shape.join('×')}`
+    let tag = ''
+    if (levelTooLargeToRender(l.shape, v.dtype)) tag = ' · huge'
+    else if (levelNeedsSubvolume(l.shape, v.dtype)) tag = ' · use subvol'
+    else if (levelOversized(l.shape)) tag = ' · large, slow'
+    opt.textContent = `L${l.level} · ${l.shape.join('×')}${tag}`
     els.level.appendChild(opt)
   }
   // Lazy load: start at the coarsest level so even multi-GB volumes paint
@@ -225,8 +363,60 @@ function populateLevelSelect(v: VolumeApiEntry): void {
   els.level.value = String(coarsest)
 }
 
+function populateSubvolumeSelect(v: VolumeApiEntry | null): void {
+  els.subvolume.innerHTML = ''
+  if (!v) return
+  const shape = currentLevelShape(v) ?? v.shape
+  const needsSubvolume = levelNeedsSubvolume(shape, v.dtype)
+  const canStream = canStreamWholeLevel(shape)
+  if (canStream) {
+    addSubvolumeOption(
+      'stream',
+      `whole level · streamed ${STREAMING_CHUNK_EDGE}³ bricks`,
+    )
+  }
+  addSubvolumeOption(
+    'full',
+    needsSubvolume ? 'full level legacy · may pause' : 'full level',
+  )
+  const focusEdge = chooseAutoSubvolumeEdge(shape, v.dtype)
+  addSubvolumeOption('focus', `focus ${focusEdge}³`)
+
+  const header = document.createElement('option')
+  header.disabled = true
+  header.textContent = '3×3 grid'
+  els.subvolume.appendChild(header)
+
+  for (let i = 0; i < GRID_SUBVOLUME_DIVS * GRID_SUBVOLUME_DIVS; i++) {
+    const bbox = buildGridSubvolumeBbox(shape, i)
+    const size = bboxSize(bbox)
+    const pct = (
+      (100 * size[0] * size[1] * size[2]) /
+      voxelCount(shape)
+    ).toFixed(1)
+    addSubvolumeOption(`tile:${i}`, gridSubvolumeLabel(shape, i, size, pct))
+  }
+
+  els.subvolume.value = needsSubvolume
+    ? canStream
+      ? 'stream'
+      : 'focus'
+    : 'full'
+}
+
+function addSubvolumeOption(value: string, text: string): void {
+  const opt = document.createElement('option')
+  opt.value = value
+  opt.textContent = text
+  els.subvolume.appendChild(opt)
+}
+
 function currentVolume(): VolumeApiEntry | null {
   return volumes.find((v) => v.id === els.volume.value) ?? null
+}
+
+function isStreamingMode(): boolean {
+  return els.subvolume.value === 'stream'
 }
 
 async function ensureNiivue(): Promise<void> {
@@ -236,6 +426,7 @@ async function ensureNiivue(): Promise<void> {
     backgroundColor: [0, 0, 0, 1],
     isColorbarVisible: true,
     isDragDropEnabled: false,
+    maxTextureDimension3D: STREAMING_CHUNK_EDGE,
   })
   nv.opts.isDragDropEnabled = false
   await nv.attachToCanvas(els.canvas)
@@ -248,7 +439,7 @@ async function ensureNiivue(): Promise<void> {
     const detail = (evt as CustomEvent<{ vox?: number[] }>).detail
     const vox = detail?.vox
     if (Array.isArray(vox) && vox.length >= 3) {
-      lastClickVox = [vox[0] ?? 0, vox[1] ?? 0, vox[2] ?? 0]
+      rememberFocusFromVoxel([vox[0] ?? 0, vox[1] ?? 0, vox[2] ?? 0])
     }
   })
 
@@ -289,14 +480,30 @@ async function reload(): Promise<void> {
   if (!v || !nv) return
   const level = Number(els.level.value)
   const bbox = parseBbox(els.bbox.value)
+  const shape = currentLevelShape(v) ?? v.shape
+  const streaming = isStreamingMode()
+  const loadingSubvolume = Boolean(bbox)
+  const oversized = !loadingSubvolume && levelOversized(shape)
+  if (streaming) {
+    await reloadStreamingLevel(v, level, shape, myEpoch)
+    return
+  }
+  setBusy(
+    loadingSubvolume
+      ? `loading L${level} subvolume…`
+      : oversized
+        ? `loading L${level} — large, please wait…`
+        : `loading L${level}…`,
+  )
   const bboxQuery = bbox ? `&bbox=${bbox.join(',')}` : ''
-  const url = `${baseUrl}/volumes/${encodeURIComponent(v.id)}/raw?level=${level}${bboxQuery}`
+  const url = `${baseUrl}/volumes/${encodeURIComponent(v.id)}/raw.nii.gz?level=${level}${bboxQuery}`
   reloading = true
   let stats: LoadStats
   try {
     stats = await measureLoad(url)
   } catch (err) {
     reloading = false
+    if (myEpoch === reloadEpoch) setBusy(null)
     const msg = err instanceof Error ? err.message : String(err)
     showFallback(msg)
     return
@@ -306,6 +513,22 @@ async function reload(): Promise<void> {
     return
   }
   lastStats = stats
+
+  // The bytes are now in cache; what remains — decode, RGBA build, GPU
+  // upload — runs synchronously and freezes the page. Switch the badge to
+  // say so and yield a frame so the message paints before the freeze.
+  setBusy(
+    loadingSubvolume
+      ? `rendering L${level} subvolume…`
+      : oversized
+        ? `rendering L${level} — large volume, the page will pause briefly…`
+        : `rendering L${level}…`,
+  )
+  await yieldPaint()
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
+    return
+  }
 
   // Reload via the URL so niivue's pipeline (fetch → decode → upload) runs.
   // The measured timings above are a parallel fetch we use just to surface
@@ -329,33 +552,539 @@ async function reload(): Promise<void> {
       return
     }
     nv.sliceType = 4
+    loadedLevelShape = shape
+    loadedBbox = bbox
     showCanvas()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     showFallback(`niivue failed to load level ${level}: ${msg}`)
     reloading = false
+    if (myEpoch === reloadEpoch) setBusy(null)
     return
   }
   // First paint of a volume: niivue auto-calibrated a wide 2-98% window
   // that renders the low-intensity matrix as translucent haze, dulling the
-  // whole image. Re-window onto the upper half of the robust range so
-  // dense structure reads as bright, then reload once to rebuild the 3D
-  // texture (bytes come from cache). Skipped if the user set a window.
+  // whole image. Re-window onto the upper half of the robust range so dense
+  // structure reads as bright. setVolume rebuilds the RGBA texture from the
+  // already-decoded image — no second fetch/decode, unlike a full reload().
+  // Skipped if the user set a window.
   if (!autoWindowed.has(v.id) && !els.window.value && nv.volumes[0]) {
     autoWindowed.add(v.id)
     const w = punchyWindow(nv.volumes[0])
     if (w) {
       els.window.value = `${w.min},${w.max}`
-      reloading = false
-      void reload()
-      return
+      setBusy(`rendering L${level}${loadingSubvolume ? ' subvolume' : ''}…`)
+      await yieldPaint()
+      await nv.setVolume(0, { calMin: w.min, calMax: w.max })
+      if (myEpoch !== reloadEpoch) {
+        reloading = false
+        return
+      }
     }
   }
   renderHud(v, level)
   reloading = false
+  setBusy(null)
   // loadVolumes can reset the camera/zoom, so the sliders may now be stale.
   syncCameraSliders()
   scheduleProgressiveUpgrade(v, level)
+}
+
+async function reloadStreamingLevel(
+  v: VolumeApiEntry,
+  level: number,
+  shape: [number, number, number],
+  myEpoch: number,
+): Promise<void> {
+  if (!nv) return
+  reloading = true
+  lastStats = null
+  setBusy(`streaming L${level} visible bricks…`)
+  await yieldPaint()
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
+    return
+  }
+  const volume = createStreamingVolume(v, level, shape)
+  try {
+    await nv.loadVolumes([volume])
+    if (myEpoch !== reloadEpoch) {
+      reloading = false
+      return
+    }
+    nv.sliceType = 4
+    loadedLevelShape = shape
+    loadedBbox = null
+    showCanvas()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    showFallback(`niivue failed to stream level ${level}: ${msg}`)
+    reloading = false
+    if (myEpoch === reloadEpoch) setBusy(null)
+    return
+  }
+  renderHud(v, level)
+  reloading = false
+  setBusy(null)
+  syncCameraSliders()
+}
+
+function createStreamingVolume(
+  v: VolumeApiEntry,
+  level: number,
+  shape: [number, number, number],
+): NVImage {
+  const lvl = v.levels?.find((l) => l.level === level)
+  const spacing = lvl?.spacing ?? v.spacing
+  const dtype = niftiDatatype(v.dtype)
+  const win = parseWindow(els.window.value)
+  const calMin = win?.min ?? dtype.displayMin
+  const calMax = win?.max ?? dtype.displayMax
+  const dims = [3, shape[0], shape[1], shape[2], 1, 1, 1, 1]
+  const pixDims = [1, spacing[0], spacing[1], spacing[2], 1, 1, 1, 1]
+  const affine = [
+    [spacing[0], 0, 0, 0],
+    [0, spacing[1], 0, 0],
+    [0, 0, spacing[2], 0],
+    [0, 0, 0, 1],
+  ]
+  const dimsMM: Shape3 = [
+    shape[0] * spacing[0],
+    shape[1] * spacing[1],
+    shape[2] * spacing[2],
+  ]
+  const longestAxis = Math.max(dimsMM[0], dimsMM[1], dimsMM[2])
+  const matRAS = new Float32Array([
+    spacing[0],
+    0,
+    0,
+    0,
+    0,
+    spacing[1],
+    0,
+    0,
+    0,
+    0,
+    spacing[2],
+    0,
+    0,
+    0,
+    0,
+    1,
+  ])
+  const frac2mm = new Float32Array([
+    dimsMM[0],
+    0,
+    0,
+    0,
+    0,
+    dimsMM[1],
+    0,
+    0,
+    0,
+    0,
+    dimsMM[2],
+    0,
+    -0.5 * spacing[0],
+    -0.5 * spacing[1],
+    -0.5 * spacing[2],
+    1,
+  ])
+  const identity = new Float32Array([
+    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+  ])
+  const chunkCache = new Map<number, Promise<Uint8Array>>()
+  const chunkSource: VolumeChunkSource = (request) => {
+    const cached = chunkCache.get(request.chunkIndex)
+    if (cached) return cached
+    const next = fetchRawChunk(v.id, level, request.desc, request.bytesPerVoxel)
+    chunkCache.set(request.chunkIndex, next)
+    return next
+  }
+  const name = `${v.id} L${level} streamed`
+  const url = `omezarr-stream://${encodeURIComponent(v.id)}/L${level}?cm=${encodeURIComponent(els.colormap.value)}&w=${encodeURIComponent(els.window.value)}`
+  return {
+    name,
+    id: name,
+    url,
+    img: null,
+    hdr: {
+      littleEndian: true,
+      dim_info: 0,
+      dims,
+      pixDims,
+      intent_p1: 0,
+      intent_p2: 0,
+      intent_p3: 0,
+      intent_code: 0,
+      datatypeCode: dtype.code,
+      numBitsPerVoxel: dtype.bits,
+      slice_start: 0,
+      vox_offset: 352,
+      scl_slope: 1,
+      scl_inter: 0,
+      slice_end: 0,
+      slice_code: 0,
+      xyzt_units: 10,
+      cal_max: calMax,
+      cal_min: calMin,
+      slice_duration: 0,
+      toffset: 0,
+      description: 'OME-Zarr streamed logical volume',
+      aux_file: '',
+      qform_code: 0,
+      sform_code: 1,
+      quatern_b: 0,
+      quatern_c: 0,
+      quatern_d: 0,
+      qoffset_x: 0,
+      qoffset_y: 0,
+      qoffset_z: 0,
+      affine,
+      intent_name: '',
+      magic: 'n+1',
+    },
+    originalAffine: affine.map((row) => [...row]),
+    dims: dims.slice(0, 4),
+    nVox3D: voxelCount(shape),
+    extentsMin: [-0.5 * spacing[0], -0.5 * spacing[1], -0.5 * spacing[2]],
+    extentsMax: [
+      (shape[0] - 0.5) * spacing[0],
+      (shape[1] - 0.5) * spacing[1],
+      (shape[2] - 0.5) * spacing[2],
+    ],
+    calMin,
+    calMax,
+    robustMin: calMin,
+    robustMax: calMax,
+    globalMin: dtype.displayMin,
+    globalMax: dtype.displayMax,
+    pixDimsRAS: pixDims.slice(0, 4),
+    dimsRAS: dims.slice(0, 4),
+    permRAS: [1, 2, 3],
+    matRAS,
+    obliqueRAS: identity,
+    frac2mm,
+    frac2mmOrtho: frac2mm,
+    extentsMinOrtho: [-0.5 * spacing[0], -0.5 * spacing[1], -0.5 * spacing[2]],
+    extentsMaxOrtho: [
+      (shape[0] - 0.5) * spacing[0],
+      (shape[1] - 0.5) * spacing[1],
+      (shape[2] - 0.5) * spacing[2],
+    ],
+    mm2ortho: identity,
+    img2RASstep: [1, shape[0], shape[0] * shape[1]],
+    img2RASstart: [0, 0, 0],
+    toRAS: identity,
+    toRASvox: identity,
+    mm000: [-0.5 * spacing[0], -0.5 * spacing[1], -0.5 * spacing[2]],
+    mm100: [
+      (shape[0] - 0.5) * spacing[0],
+      -0.5 * spacing[1],
+      -0.5 * spacing[2],
+    ],
+    mm010: [
+      -0.5 * spacing[0],
+      (shape[1] - 0.5) * spacing[1],
+      -0.5 * spacing[2],
+    ],
+    mm001: [
+      -0.5 * spacing[0],
+      -0.5 * spacing[1],
+      (shape[2] - 0.5) * spacing[2],
+    ],
+    oblique_angle: 0,
+    maxShearDeg: 0,
+    volScale: [
+      dimsMM[0] / longestAxis,
+      dimsMM[1] / longestAxis,
+      dimsMM[2] / longestAxis,
+    ],
+    frame4D: 0,
+    nFrame4D: 1,
+    nTotalFrame4D: 1,
+    colormap: els.colormap.value || 'gray',
+    isTransparentBelowCalMin: true,
+    opacity: 1,
+    modulateAlpha: 0,
+    isColorbarVisible: true,
+    isLegendVisible: false,
+    colormapLabel: null,
+    chunkSource,
+  } as NVImage
+}
+
+async function fetchRawChunk(
+  id: string,
+  level: number,
+  desc: { texOrigin: Shape3; texDims: Shape3 },
+  bytesPerVoxel: number,
+): Promise<Uint8Array> {
+  const bbox: Bbox6 = [
+    desc.texOrigin[0],
+    desc.texOrigin[1],
+    desc.texOrigin[2],
+    desc.texOrigin[0] + desc.texDims[0],
+    desc.texOrigin[1] + desc.texDims[1],
+    desc.texOrigin[2] + desc.texDims[2],
+  ]
+  const url = `${baseUrl}/volumes/${encodeURIComponent(id)}/raw.bin?level=${level}&bbox=${bbox.join(',')}`
+  const t0 = performance.now()
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`GET ${url} -> ${res.status} ${res.statusText}`)
+  }
+  const buf = await res.arrayBuffer()
+  const expectedBytes =
+    desc.texDims[0] * desc.texDims[1] * desc.texDims[2] * bytesPerVoxel
+  if (buf.byteLength !== expectedBytes) {
+    throw new Error(
+      `raw chunk ${bbox.join(',')} returned ${buf.byteLength} bytes, expected ${expectedBytes}`,
+    )
+  }
+  lastStats = {
+    bytes: (lastStats?.bytes ?? 0) + buf.byteLength,
+    fetchMs: (lastStats?.fetchMs ?? 0) + (performance.now() - t0),
+    decodeMs: 0,
+  }
+  return new Uint8Array(buf)
+}
+
+function niftiDatatype(dtype: string): {
+  code: number
+  bits: number
+  displayMin: number
+  displayMax: number
+} {
+  switch (dtype) {
+    case 'uint8':
+      return { code: 2, bits: 8, displayMin: 0, displayMax: 255 }
+    case 'int8':
+      return { code: 256, bits: 8, displayMin: -128, displayMax: 127 }
+    case 'uint16':
+      return { code: 512, bits: 16, displayMin: 0, displayMax: 65535 }
+    case 'int16':
+      return { code: 4, bits: 16, displayMin: -32768, displayMax: 32767 }
+    case 'uint32':
+      return { code: 768, bits: 32, displayMin: 0, displayMax: 4294967295 }
+    case 'int32':
+      return {
+        code: 8,
+        bits: 32,
+        displayMin: -2147483648,
+        displayMax: 2147483647,
+      }
+    case 'float32':
+      return { code: 16, bits: 32, displayMin: 0, displayMax: 1 }
+    default:
+      return { code: 512, bits: 16, displayMin: 0, displayMax: 65535 }
+  }
+}
+
+function applySubvolumeSelection(v: VolumeApiEntry | null): void {
+  if (!v) return
+  const shape = currentLevelShape(v) ?? v.shape
+  const mode = els.subvolume.value
+  autoBboxValue = null
+  lastSubvolumeLabel = null
+
+  if (mode === 'full') {
+    els.bbox.value = ''
+    return
+  }
+
+  if (mode === 'stream') {
+    els.bbox.value = ''
+    lastSubvolumeLabel = `streamed ${STREAMING_CHUNK_EDGE}³ bricks`
+    return
+  }
+
+  if (mode === 'focus') {
+    const bbox = buildAutoSubvolumeBbox(shape, v.dtype)
+    autoBboxValue = bbox.join(',')
+    els.bbox.value = autoBboxValue
+    lastSubvolumeLabel = `focus ${bboxSize(bbox).join('×')}`
+    return
+  }
+
+  const tile = parseTileValue(mode)
+  if (tile !== null) {
+    const bbox = buildGridSubvolumeBbox(shape, tile)
+    autoBboxValue = bbox.join(',')
+    els.bbox.value = autoBboxValue
+    lastSubvolumeLabel = `tile ${tile + 1}/9`
+    return
+  }
+
+  if (mode === 'custom' && parseBbox(els.bbox.value)) {
+    lastSubvolumeLabel = 'custom bbox'
+  }
+}
+
+function buildAutoSubvolumeBbox(
+  shape: [number, number, number],
+  dtype: string,
+): Bbox6 {
+  const center = focusCenterForShape(shape)
+  const edge = chooseAutoSubvolumeEdge(shape, dtype)
+  return centeredBbox(shape, center, edge)
+}
+
+function chooseAutoSubvolumeEdge(
+  shape: [number, number, number],
+  dtype: string,
+): number {
+  let edge = Math.min(AUTO_SUBVOLUME_EDGE, ...shape)
+  while (
+    edge > 64 &&
+    estimateRenderBytes([edge, edge, edge], dtype) >
+      FULL_LEVEL_RENDER_BYTE_BUDGET
+  ) {
+    edge = Math.floor(edge * 0.8)
+  }
+  return Math.max(16, edge)
+}
+
+function focusCenterForShape(shape: [number, number, number]): Shape3 {
+  const frac = lastFocusFrac ?? [0.5, 0.5, 0.5]
+  return [
+    clampInt(Math.floor(frac[0] * shape[0]), 0, shape[0] - 1),
+    clampInt(Math.floor(frac[1] * shape[1]), 0, shape[1] - 1),
+    clampInt(Math.floor(frac[2] * shape[2]), 0, shape[2] - 1),
+  ]
+}
+
+function centeredBbox(
+  shape: [number, number, number],
+  center: [number, number, number],
+  edge: number,
+): Bbox6 {
+  const spans = [0, 1, 2].map((axis) => {
+    const size = Math.min(edge, shape[axis] ?? edge)
+    const maxStart = Math.max(0, (shape[axis] ?? size) - size)
+    const start = clampInt(
+      Math.floor((center[axis] ?? 0) - size / 2),
+      0,
+      maxStart,
+    )
+    return [start, start + size] as const
+  })
+  return [
+    spans[0][0],
+    spans[1][0],
+    spans[2][0],
+    spans[0][1],
+    spans[1][1],
+    spans[2][1],
+  ]
+}
+
+function bboxSize(bbox: Bbox6): Shape3 {
+  return [bbox[3] - bbox[0], bbox[4] - bbox[1], bbox[5] - bbox[2]]
+}
+
+function buildGridSubvolumeBbox(
+  shape: [number, number, number],
+  tile: number,
+): Bbox6 {
+  const [axisA, axisB] = gridAxes(shape)
+  const i = tile % GRID_SUBVOLUME_DIVS
+  const j = Math.floor(tile / GRID_SUBVOLUME_DIVS)
+  const bbox: Bbox6 = [0, 0, 0, shape[0], shape[1], shape[2]]
+  const a = partitionSpan(shape[axisA], GRID_SUBVOLUME_DIVS, i)
+  const b = partitionSpan(shape[axisB], GRID_SUBVOLUME_DIVS, j)
+  bbox[axisA] = a[0]
+  bbox[axisA + 3] = a[1]
+  bbox[axisB] = b[0]
+  bbox[axisB + 3] = b[1]
+  return bbox
+}
+
+function gridSubvolumeLabel(
+  shape: [number, number, number],
+  tile: number,
+  size: [number, number, number],
+  pct: string,
+): string {
+  const [axisA, axisB] = gridAxes(shape)
+  const i = tile % GRID_SUBVOLUME_DIVS
+  const j = Math.floor(tile / GRID_SUBVOLUME_DIVS)
+  return `tile ${tile + 1}/9 · ${axisName(axisA)}${i + 1}/${axisName(axisB)}${j + 1} · ${size.join('×')} · ${pct}%`
+}
+
+function gridAxes(shape: [number, number, number]): [0 | 1 | 2, 0 | 1 | 2] {
+  const axes: Array<0 | 1 | 2> = [0, 1, 2]
+  axes.sort((a, b) => shape[b] - shape[a])
+  return [axes[0] ?? 0, axes[1] ?? 1]
+}
+
+function axisName(axis: 0 | 1 | 2): string {
+  return axis === 0 ? 'x' : axis === 1 ? 'y' : 'z'
+}
+
+function partitionSpan(
+  length: number,
+  parts: number,
+  index: number,
+): [number, number] {
+  const start = Math.floor((length * index) / parts)
+  const end = Math.floor((length * (index + 1)) / parts)
+  return [start, Math.max(start + 1, end)]
+}
+
+function parseTileValue(value: string): number | null {
+  const match = /^tile:(\d+)$/.exec(value)
+  if (!match) return null
+  const tile = Number(match[1])
+  if (!Number.isInteger(tile)) return null
+  const max = GRID_SUBVOLUME_DIVS * GRID_SUBVOLUME_DIVS
+  if (tile < 0 || tile >= max) return null
+  return tile
+}
+
+function voxelCount(shape: [number, number, number]): number {
+  return shape[0] * shape[1] * shape[2]
+}
+
+function rememberFocusFromVoxel(vox: [number, number, number]): void {
+  if (!loadedLevelShape) return
+  const ox = loadedBbox?.[0] ?? 0
+  const oy = loadedBbox?.[1] ?? 0
+  const oz = loadedBbox?.[2] ?? 0
+  lastFocusFrac = [
+    clamp01((ox + vox[0] + 0.5) / loadedLevelShape[0]),
+    clamp01((oy + vox[1] + 0.5) / loadedLevelShape[1]),
+    clamp01((oz + vox[2] + 0.5) / loadedLevelShape[2]),
+  ]
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0.5
+  return Math.max(0, Math.min(1, value))
+}
+
+function clampInt(value: number, lo: number, hi: number): number {
+  if (!Number.isFinite(value)) return lo
+  return Math.max(lo, Math.min(hi, value))
+}
+
+function clearAutoBbox(): void {
+  if (autoBboxValue && els.bbox.value === autoBboxValue) {
+    els.bbox.value = ''
+  }
+  autoBboxValue = null
+  lastSubvolumeLabel = null
+}
+
+function markCustomSubvolume(label: string): void {
+  autoBboxValue = null
+  lastSubvolumeLabel = label
+  const existing = [...els.subvolume.options].find((o) => o.value === 'custom')
+  const opt = existing ?? document.createElement('option')
+  opt.value = 'custom'
+  opt.textContent = label
+  if (!existing) els.subvolume.appendChild(opt)
+  els.subvolume.value = 'custom'
 }
 
 // Drive niivue's 3D zoom from the slider. Independent of mouse interactions,
@@ -423,18 +1152,20 @@ function scheduleProgressiveUpgrade(
   const levels = v.levels
   if (!levels || levels.length < 2) return
   if (parseBbox(els.bbox.value)) return // explicit subvolume — user picked the level
+  if (isStreamingMode()) return
   const canvasPx = Math.max(
     els.canvas.clientWidth,
     els.canvas.clientHeight,
     256,
   )
-  const target = chooseLevel(1, levels, canvasPx)
+  const target = chooseLevel(1, levels, canvasPx, v.dtype)
   if (target >= loadedLevel) return // we're already at or finer than comfort
   upgradeTimer = setTimeout(() => {
     upgradeTimer = null
     if (reloading) return
     if (Number(els.level.value) !== loadedLevel) return
     if (parseBbox(els.bbox.value)) return
+    if (isStreamingMode()) return
     lastLodEvent = {
       from: loadedLevel,
       to: target,
@@ -460,11 +1191,17 @@ function chooseLevel(
   scale: number,
   levels: VolumeLevel[],
   canvasPx: number,
+  dtype: string,
 ): number {
   if (!levels.length) return 0
-  let best = levels[0]?.level ?? 0
+  // Auto-LOD and the progressive upgrade never land on full levels that need
+  // the subvolume path. Deep detail comes from manual L0 selection or
+  // shift-click, both of which request a bounded bbox instead.
+  const usable = levels.filter((l) => !levelNeedsSubvolume(l.shape, dtype))
+  const pool = usable.length > 0 ? usable : levels
+  let best = pool[0]?.level ?? 0
   let bestScore = Number.POSITIVE_INFINITY
-  for (const lvl of levels) {
+  for (const lvl of pool) {
     const longest = Math.max(...lvl.shape)
     if (longest <= 0) continue
     const pixPerVox = (canvasPx * scale) / longest
@@ -488,6 +1225,7 @@ function scheduleAutoLod(): void {
   if (!els.autoLod.checked) return
   if (!nv) return
   if (parseBbox(els.bbox.value)) return // Don't override an explicit subvolume
+  if (isStreamingMode()) return
   if (lodTimer) clearTimeout(lodTimer)
   lodTimer = setTimeout(evaluateAutoLod, 160)
 }
@@ -505,7 +1243,7 @@ function evaluateAutoLod(): void {
     els.canvas.clientHeight,
     256,
   )
-  const target = chooseLevel(scale, levels, canvasPx)
+  const target = chooseLevel(scale, levels, canvasPx, v.dtype)
   const current = Number(els.level.value)
   if (target === current) return
   lastLodEvent = {
@@ -534,38 +1272,21 @@ function readViewerScale(viewer: NiiVue): number {
   return 1
 }
 
-// Maps the last-known crosshair voxel (in the currently-loaded level's
-// coord system) up to L0 coords, builds a 128³ bbox centered there, and
-// fires the same reload path the manual bbox controls use. The server
-// reads only the OME-Zarr chunks that intersect the slab.
+// Maps the last-known focus point into L0 coords, builds a 128³ bbox centered
+// there, and fires the same reload path the manual bbox controls use. The
+// server reads only the OME-Zarr chunks that intersect the slab.
 async function fetchSlabAtCursor(): Promise<void> {
   const v = currentVolume()
-  if (!v || !lastClickVox) return
+  if (!v || !lastFocusFrac) return
   const currentLevelIdx = Number(els.level.value)
-  const currentShape = currentLevelShape(v)
   const l0 = v.levels?.find((l) => l.level === 0) ?? null
-  if (!currentShape || !l0) return
-  const scale: [number, number, number] = [
-    l0.shape[0] / currentShape[0],
-    l0.shape[1] / currentShape[1],
-    l0.shape[2] / currentShape[2],
-  ]
-  const center = [
-    Math.round(lastClickVox[0] * scale[0]),
-    Math.round(lastClickVox[1] * scale[1]),
-    Math.round(lastClickVox[2] * scale[2]),
-  ] as [number, number, number]
-  const half = 64
-  const bbox: [number, number, number, number, number, number] = [
-    Math.max(0, center[0] - half),
-    Math.max(0, center[1] - half),
-    Math.max(0, center[2] - half),
-    Math.min(l0.shape[0], center[0] + half),
-    Math.min(l0.shape[1], center[1] + half),
-    Math.min(l0.shape[2], center[2] + half),
-  ]
-  els.bbox.value = bbox.join(',')
+  if (!l0) return
+  const center = focusCenterForShape(l0.shape)
+  const bbox = centeredBbox(l0.shape, center, 128)
   els.level.value = '0'
+  populateSubvolumeSelect(v)
+  markCustomSubvolume('shift-click 128³')
+  els.bbox.value = bbox.join(',')
   lastLodEvent = {
     from: currentLevelIdx,
     to: 0,
@@ -582,8 +1303,9 @@ async function measureLoad(url: string): Promise<LoadStats> {
   }
   const buf = await res.arrayBuffer()
   const t1 = performance.now()
-  // Server returns gzipped NIfTI when client accepts it; the browser
-  // auto-decompresses. arrayBuffer().byteLength is the decoded size.
+  // The .nii.gz route returns gzip-wrapped NIfTI without Content-Encoding so
+  // niivue can identify and decompress it from the URL. byteLength is wire
+  // size, which is what the demo HUD cares about for transfer cost.
   return { bytes: buf.byteLength, fetchMs: t1 - t0, decodeMs: 0 }
 }
 
@@ -607,15 +1329,25 @@ function renderHud(v: VolumeApiEntry, level: number): void {
       return `<div${cls}><span>L${l.level}</span><span>${l.shape.join('×')}</span><span>${formatSpacingShort(l.spacing)}</span></div>`
     })
     .join('')
+  const streaming = isStreamingMode()
   const fetchMs = lastStats ? lastStats.fetchMs.toFixed(0) : '-'
   const bytesKb = lastStats
     ? (lastStats.bytes / 1024).toLocaleString(undefined, {
         maximumFractionDigits: 0,
       })
     : '-'
+  const fetchedText = streaming
+    ? lastStats
+      ? `${bytesKb} KB streamed across visible bricks`
+      : 'streaming visible bricks'
+    : `${bytesKb} KB in ${fetchMs} ms`
   const bboxRow = bbox
     ? `<div class="row"><span class="key">bbox</span><span>${bbox.slice(0, 3).join(',')} → ${bbox.slice(3).join(',')} (${pct}%)</span></div>`
     : ''
+  const subvolumeRow =
+    (bbox || streaming) && lastSubvolumeLabel
+      ? `<div class="row"><span class="key">subvol</span><span>${lastSubvolumeLabel}</span></div>`
+      : ''
   const lodRow = lastLodEvent
     ? `<div class="row"><span class="key">auto-LOD</span><span>L${lastLodEvent.from} → L${lastLodEvent.to} · ${lastLodEvent.reason}</span></div>`
     : ''
@@ -624,10 +1356,11 @@ function renderHud(v: VolumeApiEntry, level: number): void {
     <div class="row"><span class="key">format</span><span>${v.format} · ${v.dtype}</span></div>
     <div class="row"><span class="key">level</span><strong>L${level}</strong> · ${levelShape.join('×')}</div>
     ${bboxRow}
+    ${subvolumeRow}
     ${lodRow}
     <div class="row"><span class="key">shape</span><span>${shownShape.join('×')} (${voxels.toLocaleString()} vox)</span></div>
     <div class="row"><span class="key">spacing (mm)</span><span>${formatSpacing(spacing)}</span></div>
-    <div class="row"><span class="key">fetched</span><span>${bytesKb} KB in ${fetchMs} ms</span></div>
+    <div class="row"><span class="key">fetched</span><span>${fetchedText}</span></div>
     <div class="levels">${levelRows}</div>
   `
 }
@@ -701,4 +1434,27 @@ function showCanvas(): void {
   els.fallback.hidden = true
   els.fallback.textContent = ''
   els.canvas.style.display = 'block'
+}
+
+// Loading badge. A level swap fetches, decodes and uploads the volume —
+// a coarse level is a sub-second flicker, but an oversized one runs for
+// tens of seconds with the main thread blocked during the GPU upload.
+// The badge tells the user the demo is working, not wedged.
+function setBusy(label: string | null): void {
+  if (label) {
+    els.busy.textContent = label
+    els.busy.hidden = false
+  } else {
+    els.busy.hidden = true
+  }
+}
+
+// niivue's decode + RGBA build + 3D-texture upload runs synchronously and
+// blocks the main thread — the page is frozen for its duration. Awaiting two
+// animation frames lets the browser paint a pending DOM update (the busy
+// badge) so the freeze is explained, not mistaken for a wedged tab.
+function yieldPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
 }

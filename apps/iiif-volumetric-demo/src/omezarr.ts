@@ -40,6 +40,7 @@
 // server-side pyramid + subvolume plumbing, not viewer features.
 
 import NiiVue, {
+  chunkVolumeGrid,
   type NVImage,
   type VolumeChunkExplode,
   type VolumeChunkSource,
@@ -153,7 +154,10 @@ const FULL_LEVEL_RENDER_BYTE_BUDGET = 256 * 1024 * 1024
 const AUTO_SUBVOLUME_EDGE = 192
 const GRID_SUBVOLUME_DIVS = 3
 const STREAMING_CHUNK_EDGE = 256
+const STREAMING_CHUNK_HALO: Shape3 = [3, 3, 3]
 const STREAMING_CHUNK_LIMIT = 256
+const EXPLODED_GRID_LONG_AXIS_BLOCKS = 4
+const DEFAULT_OME_ZARR_ID = 'pawpawsaurus.ome.zarr'
 
 const initialParams = new URLSearchParams(window.location.search)
 if (
@@ -204,7 +208,9 @@ async function main(): Promise<void> {
     void reload()
   })
   els.explodedToggle.addEventListener('change', () => {
-    applyExplodeToLoadedVolume()
+    syncExplodeLabels()
+    renderExplodePlan(currentVolume())
+    void reload()
   })
   for (const input of [els.explodeEx, els.explodeEy, els.explodeEz]) {
     input.addEventListener('input', () => {
@@ -332,8 +338,8 @@ function canStreamWholeLevel(shape: [number, number, number]): boolean {
 }
 
 function estimateStreamingChunkCount(shape: [number, number, number]): number {
-  const stride = Math.max(1, STREAMING_CHUNK_EDGE - 6)
-  return shape.reduce((count, dim) => count * Math.ceil(dim / stride), 1)
+  const grid = estimateStreamingGrid(shape)
+  return grid[0] * grid[1] * grid[2]
 }
 
 function populateVolumeSelect(): void {
@@ -351,6 +357,9 @@ function readInitialVolumeId(): string {
   const params = new URLSearchParams(window.location.search)
   const wanted = params.get('id')
   if (wanted && volumes.some((v) => v.id === wanted)) return wanted
+  if (volumes.some((v) => v.id === DEFAULT_OME_ZARR_ID)) {
+    return DEFAULT_OME_ZARR_ID
+  }
   return volumes[0]?.id ?? ''
 }
 
@@ -458,7 +467,7 @@ function isStreamingMode(): boolean {
 }
 
 function currentChunkExplode(): VolumeChunkExplode | undefined {
-  if (!isStreamingMode() || !els.explodedToggle.checked) return undefined
+  if (!els.explodedToggle.checked) return undefined
   return {
     enabled: true,
     scale: [
@@ -473,6 +482,98 @@ function readExplodeScale(input: HTMLInputElement): number {
   const value = Number(input.value)
   if (!Number.isFinite(value)) return 1
   return Math.max(1, value)
+}
+
+function shouldUseExplodedGrid(shape: Shape3, bbox: Bbox6 | null): boolean {
+  return !bbox && els.explodedToggle.checked && canUseExplodedGrid(shape)
+}
+
+function canUseExplodedGrid(shape: Shape3): boolean {
+  return explodedGridDimsForShape(shape) !== null
+}
+
+function createExplodedGridPlan(
+  shape: Shape3,
+): NonNullable<NVImage['chunkPlan']> {
+  const gridDims = explodedGridDimsForShape(shape)
+  if (!gridDims) {
+    throw new Error(`No exploded grid fits shape ${shape.join('×')}`)
+  }
+  return chunkVolumeGrid(
+    shape,
+    gridDims,
+    STREAMING_CHUNK_EDGE,
+    STREAMING_CHUNK_HALO,
+  )
+}
+
+function explodedGridDimsForShape(shape: Shape3): Shape3 | null {
+  const longest = Math.max(shape[0], shape[1], shape[2])
+  const gridDims: Shape3 = [
+    aspectBlockCount(shape[0], longest),
+    aspectBlockCount(shape[1], longest),
+    aspectBlockCount(shape[2], longest),
+  ]
+  while (!explodedGridFits(shape, gridDims)) {
+    if (blockCount(gridDims) >= STREAMING_CHUNK_LIMIT) return null
+    const axis = axisNeedingMoreBlocks(shape, gridDims)
+    if (gridDims[axis] >= shape[axis]) return null
+    gridDims[axis] += 1
+    if (blockCount(gridDims) > STREAMING_CHUNK_LIMIT) return null
+  }
+  return gridDims
+}
+
+function aspectBlockCount(dim: number, longest: number): number {
+  if (longest <= 0) return 1
+  return clampInt(
+    Math.round((dim / longest) * EXPLODED_GRID_LONG_AXIS_BLOCKS),
+    1,
+    dim,
+  )
+}
+
+function axisNeedingMoreBlocks(shape: Shape3, gridDims: Shape3): 0 | 1 | 2 {
+  let axis: 0 | 1 | 2 = 0
+  let worst = Number.NEGATIVE_INFINITY
+  for (const a of [0, 1, 2] as const) {
+    const texDim = explodedGridMaxTexDim(shape, gridDims, a)
+    const overage = texDim - STREAMING_CHUNK_EDGE
+    if (overage <= 0) continue
+    const blockDim = shape[a] / gridDims[a]
+    const score = overage + blockDim * 0.001
+    if (score > worst) {
+      axis = a
+      worst = score
+    }
+  }
+  return axis
+}
+
+function explodedGridFits(shape: Shape3, gridDims: Shape3): boolean {
+  for (const a of [0, 1, 2] as const) {
+    if (gridDims[a] < 1 || gridDims[a] > shape[a]) return false
+    if (explodedGridMaxTexDim(shape, gridDims, a) > STREAMING_CHUNK_EDGE) {
+      return false
+    }
+  }
+  return true
+}
+
+function explodedGridMaxTexDim(
+  shape: Shape3,
+  gridDims: Shape3,
+  axis: 0 | 1 | 2,
+): number {
+  const stride = Math.ceil(shape[axis] / gridDims[axis])
+  let halo = 0
+  if (gridDims[axis] === 2) halo = STREAMING_CHUNK_HALO[axis]
+  else if (gridDims[axis] > 2) halo = 2 * STREAMING_CHUNK_HALO[axis]
+  return stride + halo
+}
+
+function blockCount(gridDims: Shape3): number {
+  return gridDims[0] * gridDims[1] * gridDims[2]
 }
 
 function applyExplodeToLoadedVolume(): void {
@@ -500,8 +601,22 @@ function renderExplodePlan(v: VolumeApiEntry | null): void {
     return
   }
   const shape = currentLevelShape(v) ?? v.shape
+  const bbox = parseBbox(els.bbox.value)
+  if (shouldUseExplodedGrid(shape, bbox)) {
+    const grid = explodedGridDimsForShape(shape) ?? [1, 1, 1]
+    els.explodePlan.textContent = `${grid.join('×')} = ${blockCount(grid)} blocks`
+    return
+  }
+  if (bbox && els.explodedToggle.checked && canUseExplodedGrid(shape)) {
+    const grid = explodedGridDimsForShape(shape) ?? [1, 1, 1]
+    els.explodePlan.textContent = `clear subvol for ${grid.join('×')} blocks`
+    return
+  }
   if (!isStreamingMode()) {
-    els.explodePlan.textContent = 'streamed bricks only'
+    const grid = explodedGridDimsForShape(shape)
+    els.explodePlan.textContent = grid
+      ? `${grid.join('×')} blocks when exploded`
+      : 'streamed bricks only'
     return
   }
   const grid = estimateStreamingGrid(shape)
@@ -512,11 +627,19 @@ function renderExplodePlan(v: VolumeApiEntry | null): void {
 }
 
 function estimateStreamingGrid(shape: Shape3): Shape3 {
-  const stride = Math.max(1, STREAMING_CHUNK_EDGE - 6)
   return [
-    Math.ceil(shape[0] / stride),
-    Math.ceil(shape[1] / stride),
-    Math.ceil(shape[2] / stride),
+    Math.ceil(
+      shape[0] /
+        Math.max(1, STREAMING_CHUNK_EDGE - 2 * STREAMING_CHUNK_HALO[0]),
+    ),
+    Math.ceil(
+      shape[1] /
+        Math.max(1, STREAMING_CHUNK_EDGE - 2 * STREAMING_CHUNK_HALO[1]),
+    ),
+    Math.ceil(
+      shape[2] /
+        Math.max(1, STREAMING_CHUNK_EDGE - 2 * STREAMING_CHUNK_HALO[2]),
+    ),
   ]
 }
 
@@ -584,7 +707,8 @@ async function reload(): Promise<void> {
   const level = Number(els.level.value)
   const bbox = parseBbox(els.bbox.value)
   const shape = currentLevelShape(v) ?? v.shape
-  const streaming = isStreamingMode()
+  const explodedGrid = shouldUseExplodedGrid(shape, bbox)
+  const streaming = isStreamingMode() || explodedGrid
   const loadingSubvolume = Boolean(bbox)
   const oversized = !loadingSubvolume && levelOversized(shape)
   if (streaming) {
@@ -654,6 +778,10 @@ async function reload(): Promise<void> {
       reloading = false
       return
     }
+    const vol = nv.volumes[0]
+    if (vol) {
+      vol.chunkExplode = currentChunkExplode()
+    }
     nv.sliceType = 4
     loadedLevelShape = shape
     loadedBbox = bbox
@@ -702,7 +830,12 @@ async function reloadStreamingLevel(
   if (!nv) return
   reloading = true
   lastStats = null
-  setBusy(`streaming L${level} visible bricks…`)
+  const explodedGrid = explodedGridDimsForShape(shape)
+  setBusy(
+    els.explodedToggle.checked && explodedGrid
+      ? `streaming L${level} ${explodedGrid.join('×')} exploded blocks…`
+      : `streaming L${level} visible bricks…`,
+  )
   await yieldPaint()
   if (myEpoch !== reloadEpoch) {
     reloading = false
@@ -745,6 +878,12 @@ function createStreamingVolume(
   const calMax = win?.max ?? dtype.displayMax
   const dims = [3, shape[0], shape[1], shape[2], 1, 1, 1, 1]
   const pixDims = [1, spacing[0], spacing[1], spacing[2], 1, 1, 1, 1]
+  const chunkPlan = shouldUseExplodedGrid(shape, null)
+    ? createExplodedGridPlan(shape)
+    : undefined
+  const planKey = chunkPlan
+    ? `grid-${chunkPlan.gridDims.join('x')}`
+    : `edge-${STREAMING_CHUNK_EDGE}`
   const affine = [
     [spacing[0], 0, 0, 0],
     [0, spacing[1], 0, 0],
@@ -805,7 +944,7 @@ function createStreamingVolume(
     return next
   }
   const name = `${v.id} L${level} streamed`
-  const url = `omezarr-stream://${encodeURIComponent(v.id)}/L${level}?cm=${encodeURIComponent(els.colormap.value)}&w=${encodeURIComponent(els.window.value)}`
+  const url = `omezarr-stream://${encodeURIComponent(v.id)}/L${level}?plan=${planKey}&cm=${encodeURIComponent(els.colormap.value)}&w=${encodeURIComponent(els.window.value)}`
   return {
     name,
     id: name,
@@ -913,6 +1052,7 @@ function createStreamingVolume(
     isColorbarVisible: true,
     isLegendVisible: false,
     colormapLabel: null,
+    chunkPlan,
     chunkSource,
     chunkExplode: currentChunkExplode(),
   } as NVImage
@@ -1433,7 +1573,11 @@ function renderHud(v: VolumeApiEntry, level: number): void {
       return `<div${cls}><span>L${l.level}</span><span>${l.shape.join('×')}</span><span>${formatSpacingShort(l.spacing)}</span></div>`
     })
     .join('')
-  const streaming = isStreamingMode()
+  const explodedGridDims = shouldUseExplodedGrid(levelShape, bbox)
+    ? explodedGridDimsForShape(levelShape)
+    : null
+  const explodedGrid = explodedGridDims !== null
+  const streaming = isStreamingMode() || explodedGrid
   const fetchMs = lastStats ? lastStats.fetchMs.toFixed(0) : '-'
   const bytesKb = lastStats
     ? (lastStats.bytes / 1024).toLocaleString(undefined, {
@@ -1442,17 +1586,20 @@ function renderHud(v: VolumeApiEntry, level: number): void {
     : '-'
   const fetchedText = streaming
     ? lastStats
-      ? `${bytesKb} KB streamed across visible bricks`
-      : 'streaming visible bricks'
+      ? `${bytesKb} KB streamed across ${explodedGrid ? 'exploded blocks' : 'visible bricks'}`
+      : `streaming ${explodedGrid ? 'exploded blocks' : 'visible bricks'}`
     : `${bytesKb} KB in ${fetchMs} ms`
   const bboxRow = bbox
     ? `<div class="row"><span class="key">bbox</span><span>${bbox.slice(0, 3).join(',')} → ${bbox.slice(3).join(',')} (${pct}%)</span></div>`
     : ''
+  const subvolumeText = explodedGrid
+    ? `${explodedGridDims?.join('×') ?? 'aspect'} exploded blocks`
+    : lastSubvolumeLabel
   const subvolumeRow =
-    (bbox || streaming) && lastSubvolumeLabel
-      ? `<div class="row"><span class="key">subvol</span><span>${lastSubvolumeLabel}</span></div>`
+    (bbox || streaming) && subvolumeText
+      ? `<div class="row"><span class="key">subvol</span><span>${subvolumeText}</span></div>`
       : ''
-  const explode = currentChunkExplode()
+  const explode = nv?.volumes[0]?.chunkPlan ? currentChunkExplode() : undefined
   const explodeRow = explode?.scale
     ? `<div class="row"><span class="key">explode</span><span>${explode.scale.map((n) => n.toFixed(1)).join('×')}</span></div>`
     : ''

@@ -5,6 +5,7 @@ import {
   chunkSampleTransform,
   chunksCrossingSlice,
   chunkVolume,
+  chunkVolumeGrid,
   identityChunkSampleTransform,
   needsChunking,
   type Vec3i,
@@ -253,6 +254,23 @@ describe('chunkVolume — halo variants', () => {
       expect(c.haloLow[2]).toBe(0)
       expect(c.haloHigh[2]).toBe(0)
     }
+  })
+})
+
+describe('chunkVolumeGrid', () => {
+  test('forces a 3x3x3 grid for a sub-limit volume', () => {
+    const plan = chunkVolumeGrid([240, 90, 150], [3, 3, 3], 256, [3, 3, 3])
+    expect(plan.gridDims).toEqual([3, 3, 3])
+    expect(plan.stride).toEqual([80, 30, 50])
+    expect(plan.chunks).toHaveLength(27)
+    expectChunkInvariants(plan)
+    expect(totalDataVoxels(plan)).toBe(240 * 90 * 150)
+  })
+
+  test('rejects explicit grids that would exceed the device limit', () => {
+    expect(() =>
+      chunkVolumeGrid([900, 90, 150], [3, 3, 3], 256, [3, 3, 3]),
+    ).toThrow(/exceeds deviceLimit/)
   })
 })
 

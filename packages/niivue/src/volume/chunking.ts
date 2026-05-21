@@ -152,6 +152,118 @@ export function chunkVolume(
 }
 
 /**
+ * Build a chunk plan with an explicit grid size.
+ *
+ * This is useful for visualization modes that want stable semantic cells
+ * (for example a 3x3x3 exploded view) even when the source volume would
+ * otherwise fit in one texture. Each axis is partitioned into `gridDims[a]`
+ * non-empty chunks using a constant ceil stride so `chunkAtVoxel` remains
+ * well-defined.
+ */
+export function chunkVolumeGrid(
+  volumeDims: Vec3i,
+  gridDims: Vec3i,
+  deviceLimit: number,
+  haloSize: Vec3i = [1, 1, 1],
+): ChunkPlan {
+  if (deviceLimit < 1) {
+    throw new Error(
+      `chunkVolumeGrid: deviceLimit must be >= 1 (got ${deviceLimit})`,
+    )
+  }
+
+  const stride: Vec3i = [0, 0, 0]
+  for (let a = 0; a < 3; a++) {
+    if (volumeDims[a] < 1) {
+      throw new Error(
+        `chunkVolumeGrid: volumeDims[${a}] must be >= 1 (got ${volumeDims[a]})`,
+      )
+    }
+    if (!Number.isInteger(gridDims[a]) || gridDims[a] < 1) {
+      throw new Error(
+        `chunkVolumeGrid: gridDims[${a}] must be a positive integer (got ${gridDims[a]})`,
+      )
+    }
+    if (gridDims[a] > volumeDims[a]) {
+      throw new Error(
+        `chunkVolumeGrid: gridDims[${a}] (${gridDims[a]}) cannot exceed ` +
+          `volumeDims[${a}] (${volumeDims[a]})`,
+      )
+    }
+    if (haloSize[a] < 0) {
+      throw new Error(
+        `chunkVolumeGrid: haloSize[${a}] must be >= 0 (got ${haloSize[a]})`,
+      )
+    }
+    if (deviceLimit < 2 * haloSize[a] + 1) {
+      throw new Error(
+        `chunkVolumeGrid: deviceLimit (${deviceLimit}) too small for halo ` +
+          `${haloSize[a]} on axis ${a}; need at least ${2 * haloSize[a] + 1}`,
+      )
+    }
+    stride[a] = Math.ceil(volumeDims[a] / gridDims[a])
+  }
+
+  const chunks: VolumeChunkDesc[] = []
+  for (let cz = 0; cz < gridDims[2]; cz++) {
+    for (let cy = 0; cy < gridDims[1]; cy++) {
+      for (let cx = 0; cx < gridDims[0]; cx++) {
+        const gridIndex: Vec3i = [cx, cy, cz]
+        const voxelOrigin: Vec3i = [0, 0, 0]
+        const voxelDims: Vec3i = [0, 0, 0]
+        const haloLow: Vec3i = [0, 0, 0]
+        const haloHigh: Vec3i = [0, 0, 0]
+        const texOrigin: Vec3i = [0, 0, 0]
+        const texDims: Vec3i = [0, 0, 0]
+        for (let a = 0; a < 3; a++) {
+          const idx = gridIndex[a]
+          const origin = idx * stride[a]
+          const dataEnd = Math.min(origin + stride[a], volumeDims[a])
+          const data = dataEnd - origin
+          const hLow = idx === 0 ? 0 : haloSize[a]
+          const hHigh = idx === gridDims[a] - 1 ? 0 : haloSize[a]
+          voxelOrigin[a] = origin
+          voxelDims[a] = data
+          haloLow[a] = hLow
+          haloHigh[a] = hHigh
+          texOrigin[a] = origin - hLow
+          texDims[a] = data + hLow + hHigh
+          if (data < 1) {
+            throw new Error(
+              `chunkVolumeGrid: gridDims[${a}] produced an empty chunk`,
+            )
+          }
+          if (texDims[a] > deviceLimit) {
+            throw new Error(
+              `chunkVolumeGrid: chunk texture dim ${texDims[a]} on axis ${a} ` +
+                `exceeds deviceLimit ${deviceLimit}`,
+            )
+          }
+        }
+        chunks.push({
+          voxelOrigin,
+          voxelDims,
+          haloLow,
+          haloHigh,
+          texDims,
+          texOrigin,
+          gridIndex,
+        })
+      }
+    }
+  }
+
+  return {
+    gridDims,
+    stride,
+    chunks,
+    volumeDims,
+    deviceLimit,
+    haloSize,
+  }
+}
+
+/**
  * True when a volume of the given dims needs to be chunked (any axis
  * exceeds the device limit). Cheap pre-check before calling `chunkVolume`.
  */

@@ -93,6 +93,13 @@ export type {
   VolumeChunkSourceRequest,
   VolumeUpdate,
 } from './NVTypes'
+export type {
+  ChunkPlan,
+  Vec3f,
+  Vec3i,
+  VolumeChunkDesc,
+} from './volume/chunking'
+export { chunkVolumeGrid } from './volume/chunking'
 // Transform types
 export type {
   OptionField,

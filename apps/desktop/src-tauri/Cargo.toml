@@ -1,0 +1,21 @@
+[package]
+name = "neurovue"
+version = "0.1.0"
+description = "NeuroVue desktop viewer"
+edition = "2021"
+
+[lib]
+name = "neurovue_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+axum = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tokio = { version = "1", features = ["fs", "macros", "net", "rt-multi-thread", "sync"] }
+tower-http = { version = "0.6", features = ["cors"] }
+

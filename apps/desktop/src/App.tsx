@@ -1,24 +1,63 @@
-import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 import {
-  Box,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  type WheelEvent as ReactWheelEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
+import {
   ChevronDown,
   CircleDot,
   Database,
   Eye,
+  FileJson,
+  GripVertical,
   Layers3,
+  Maximize2,
   RotateCcw,
   Save,
-  SlidersHorizontal
+  SlidersHorizontal,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react'
 import { NiivueStage } from './components/NiivueStage'
-import type { Backend, ClipPlane, DesktopItem, DesktopManifest } from './domain/desktop'
+import type {
+  Backend,
+  ClipPlane,
+  DesktopItem,
+  DesktopManifest,
+  VolumeMetadata,
+  WorldRect
+} from './domain/desktop'
 import {
   defaultClipPlanes,
   fetchDesktopManifest,
+  fetchVolumeMetadata,
   resolveServerUrl
 } from './domain/desktop'
 
+const MIN_SPLIT = 34
+const MAX_SPLIT = 68
+const MIN_DESKTOP_ZOOM = 0.5
+const MAX_DESKTOP_ZOOM = 4
+type MouseContext = 'desktop' | 'niivue' | null
+
+interface DesktopDragState {
+  pointerId: number
+  startX: number
+  startY: number
+  scrollLeft: number
+  scrollTop: number
+  moved: boolean
+}
+
 export function App(): JSX.Element {
+  const splitRef = useRef<HTMLElement | null>(null)
   const [serverUrl, setServerUrl] = useState('')
   const [manifest, setManifest] = useState<DesktopManifest | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -26,7 +65,12 @@ export function App(): JSX.Element {
   const [colormap, setColormap] = useState('gray')
   const [clipPlanes, setClipPlanes] = useState(defaultClipPlanes)
   const [status, setStatus] = useState('Starting NeuroVue.')
+  const [metadataStatus, setMetadataStatus] = useState('No metadata loaded.')
+  const [metadata, setMetadata] = useState<VolumeMetadata | null>(null)
   const [query, setQuery] = useState('')
+  const [splitPercent, setSplitPercent] = useState(52)
+  const [desktopZoom, setDesktopZoom] = useState(1)
+  const [mouseContext, setMouseContext] = useState<MouseContext>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -61,6 +105,43 @@ export function App(): JSX.Element {
       [item.label, item.id, item.format, item.dtype].join(' ').toLowerCase().includes(normalized)
     )
   }, [items, query])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadMetadata(item: DesktopItem): Promise<void> {
+      setMetadata(null)
+      setMetadataStatus('Loading metadata.')
+      try {
+        const nextMetadata = await fetchVolumeMetadata(item)
+        if (cancelled) return
+        const sidecarCount = nextMetadata.sidecars?.length ?? 0
+        setMetadata(nextMetadata)
+        setMetadataStatus(
+          sidecarCount > 0
+            ? `${sidecarCount} JSON sidecar${sidecarCount === 1 ? '' : 's'} loaded.`
+            : 'No JSON sidecars discovered.'
+        )
+      } catch (error) {
+        if (cancelled) return
+        setMetadata(null)
+        setMetadataStatus(error instanceof Error ? error.message : String(error))
+      }
+    }
+
+    if (!selected) {
+      setMetadata(null)
+      setMetadataStatus('No volume selected.')
+      return () => {
+        cancelled = true
+      }
+    }
+
+    void loadMetadata(selected)
+    return () => {
+      cancelled = true
+    }
+  }, [selected?.id, selected?.metadata])
 
   return (
     <main className="nv-app">
@@ -104,10 +185,18 @@ export function App(): JSX.Element {
             <ChevronDown size={14} />
           </label>
 
-          <button className="nv-icon-button" title="Reset clip planes" onClick={() => setClipPlanes(defaultClipPlanes())}>
+          <button
+            className="nv-icon-button"
+            title="Reset clip planes"
+            onClick={() => setClipPlanes(defaultClipPlanes())}
+          >
             <RotateCcw size={16} />
           </button>
-          <button className="nv-icon-button" title="Save correction patch" onClick={() => void savePatch(serverUrl, selected, clipPlanes, backend)}>
+          <button
+            className="nv-icon-button"
+            title="Save correction patch"
+            onClick={() => void savePatch(serverUrl, selected, clipPlanes, backend)}
+          >
             <Save size={16} />
           </button>
         </div>
@@ -120,7 +209,7 @@ export function App(): JSX.Element {
               <Database size={15} />
               Dataset
             </span>
-            <em>{items.length}</em>
+            <em>{filteredItems.length}/{items.length}</em>
           </div>
 
           <input
@@ -148,75 +237,98 @@ export function App(): JSX.Element {
           </div>
         </aside>
 
-        <section className="nv-center">
-          <div className="nv-desktop-strip" aria-label="OSD desktop preview">
-            {items.map((item) => (
-              <button
-                className={`nv-desktop-tile ${selected?.id === item.id ? 'is-selected' : ''}`}
-                key={item.id}
-                onClick={() => setSelectedId(item.id)}
-                style={{
-                  '--tile-x': item.bounds.x,
-                  '--tile-y': item.bounds.y
-                } as CSSProperties}
-                type="button"
-              >
-                <img src={item.preview.image} alt="" />
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
+        <section
+          className="nv-split-workspace"
+          ref={splitRef}
+          style={{ '--split-left': `${splitPercent}%` } as CSSProperties}
+        >
+          <section
+            className={`nv-dataset-pane ${mouseContext === 'desktop' ? 'is-context-active' : ''}`}
+            aria-label="OSD dataset viewer"
+            onPointerEnter={() => setMouseContext('desktop')}
+            onPointerLeave={() => setMouseContext(null)}
+          >
+            <DatasetDesktop
+              items={filteredItems}
+              manifest={manifest}
+              selected={selected}
+              isActive={mouseContext === 'desktop'}
+              zoom={desktopZoom}
+              onZoom={setDesktopZoom}
+              onSelect={(item) => setSelectedId(item.id)}
+            />
+          </section>
 
-          <NiivueStage
-            backend={backend}
-            clipPlanes={clipPlanes}
-            colormap={colormap}
-            item={selected}
-          />
+          <button
+            aria-label="Resize dataset and NiiVue panes"
+            aria-valuemax={MAX_SPLIT}
+            aria-valuemin={MIN_SPLIT}
+            aria-valuenow={splitPercent}
+            className="nv-splitter"
+            onPointerDown={(event) => beginSplitDrag(event, splitRef, setSplitPercent)}
+            role="separator"
+            title="Resize panes"
+            type="button"
+          >
+            <GripVertical size={16} />
+          </button>
+
+          <section
+            className={`nv-niivue-pane ${mouseContext === 'niivue' ? 'is-context-active' : ''}`}
+            aria-label="NiiVue render window"
+            onPointerEnter={() => setMouseContext('niivue')}
+            onPointerLeave={() => setMouseContext(null)}
+          >
+            <div className="nv-stage-title nv-niivue-title" aria-hidden="true">
+              <span>NiiVue Window</span>
+              <strong>{selected?.label ?? 'No selection'}</strong>
+              <em>{mouseContext === 'niivue' ? 'mouse' : backend.toUpperCase()}</em>
+            </div>
+            <NiivueStage
+              backend={backend}
+              clipPlanes={clipPlanes}
+              colormap={colormap}
+              item={selected}
+            />
+          </section>
         </section>
 
         <aside className="nv-controls">
-          <div className="nv-panel-heading">
-            <span>
-              <SlidersHorizontal size={15} />
-              Clip Planes
-            </span>
-            <em>{clipPlanes.filter((plane) => plane.enabled).length}</em>
+          <div className="nv-inspector-tools" aria-label="Desktop controls">
+            <DesktopZoomControls
+              zoom={desktopZoom}
+              onFit={() => setDesktopZoom(1)}
+              onZoomIn={() => setDesktopZoom((zoom) => zoomBy(zoom, 1.25))}
+              onZoomOut={() => setDesktopZoom((zoom) => zoomBy(zoom, 0.8))}
+            />
+            <span className="nv-zoom-readout">{Math.round(desktopZoom * 100)}%</span>
           </div>
 
-          <div className="nv-clip-list">
-            {clipPlanes.map((plane) => (
-              <ClipPlaneEditor
-                key={plane.id}
-                plane={plane}
-                onChange={(nextPlane) => {
-                  setClipPlanes((planes) =>
-                    planes.map((candidate) => candidate.id === plane.id ? nextPlane : candidate)
-                  )
-                }}
-              />
-            ))}
-          </div>
+          <SelectionPanel item={selected} metadataStatus={metadataStatus} />
+          <MetadataPanel item={selected} metadata={metadata} status={metadataStatus} />
 
-          <section className="nv-readout">
-            <h2>
-              <Eye size={15} />
-              Selection
-            </h2>
-            {selected ? (
-              <dl>
-                <dt>ID</dt>
-                <dd>{selected.id}</dd>
-                <dt>Format</dt>
-                <dd>{selected.format}</dd>
-                <dt>Spacing</dt>
-                <dd>{selected.spacing.join(' x ')}</dd>
-                <dt>Manifest</dt>
-                <dd>{selected.manifest}</dd>
-              </dl>
-            ) : (
-              <p>No volume selected.</p>
-            )}
+          <section className="nv-control-section">
+            <div className="nv-panel-heading">
+              <span>
+                <SlidersHorizontal size={15} />
+                Clip Planes
+              </span>
+              <em>{clipPlanes.filter((plane) => plane.enabled).length}</em>
+            </div>
+
+            <div className="nv-clip-list">
+              {clipPlanes.map((plane) => (
+                <ClipPlaneEditor
+                  key={plane.id}
+                  plane={plane}
+                  onChange={(nextPlane) => {
+                    setClipPlanes((planes) =>
+                      planes.map((candidate) => candidate.id === plane.id ? nextPlane : candidate)
+                    )
+                  }}
+                />
+              ))}
+            </div>
           </section>
         </aside>
       </section>
@@ -226,9 +338,259 @@ export function App(): JSX.Element {
           <CircleDot size={12} />
           {status}
         </span>
-        <span>{manifest?.label ?? 'VolumeDesktop manifest'}</span>
+        <span>{mouseContextLabel(mouseContext)}</span>
       </footer>
     </main>
+  )
+}
+
+function DesktopZoomControls({
+  zoom,
+  onFit,
+  onZoomIn,
+  onZoomOut
+}: {
+  zoom: number
+  onFit: () => void
+  onZoomIn: () => void
+  onZoomOut: () => void
+}): JSX.Element {
+  return (
+    <>
+      <button
+        className="nv-pane-icon-button"
+        disabled={zoom <= MIN_DESKTOP_ZOOM}
+        onClick={onZoomOut}
+        title="Zoom out"
+        type="button"
+      >
+        <ZoomOut size={15} />
+      </button>
+      <button
+        className="nv-pane-icon-button"
+        disabled={zoom >= MAX_DESKTOP_ZOOM}
+        onClick={onZoomIn}
+        title="Zoom in"
+        type="button"
+      >
+        <ZoomIn size={15} />
+      </button>
+      <button
+        className="nv-pane-icon-button"
+        disabled={zoom === 1}
+        onClick={onFit}
+        title="Fit grid"
+        type="button"
+      >
+        <Maximize2 size={15} />
+      </button>
+    </>
+  )
+}
+
+function DatasetDesktop({
+  manifest,
+  items,
+  selected,
+  isActive,
+  zoom,
+  onZoom,
+  onSelect
+}: {
+  manifest: DesktopManifest | null
+  items: DesktopItem[]
+  selected: DesktopItem | null
+  isActive: boolean
+  zoom: number
+  onZoom: (zoom: number) => void
+  onSelect: (item: DesktopItem) => void
+}): JSX.Element {
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  const dragRef = useRef<DesktopDragState | null>(null)
+  const suppressClickRef = useRef(false)
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const world = manifest?.world ?? {
+    width: 1,
+    height: 1,
+    units: 'desktop-px',
+    columns: 0,
+    rows: 0
+  }
+  const selectedStyle = selected ? worldRectStyle(selected.bounds, world) : undefined
+  const worldSize = useMemo(
+    () => fittedWorldSize(stageSize, world, zoom),
+    [stageSize, world, zoom]
+  )
+
+  return (
+    <div
+      className={`nv-osd-stage ${isPanning ? 'is-panning' : ''}`}
+      onClickCapture={(event) => suppressDesktopClickAfterDrag(event, suppressClickRef)}
+      onPointerCancel={(event) => endDesktopPan(event, dragRef, suppressClickRef, setIsPanning)}
+      onPointerDown={(event) => beginDesktopPan(event, dragRef)}
+      onPointerMove={(event) => moveDesktopPan(event, dragRef, setIsPanning)}
+      onPointerUp={(event) => endDesktopPan(event, dragRef, suppressClickRef, setIsPanning)}
+      onWheel={(event) => zoomDesktopWithWheel(event, zoom, onZoom)}
+      ref={stageRef}
+    >
+      <StageResizeObserver stageRef={stageRef} onResize={setStageSize} />
+      <div className="nv-stage-title" aria-hidden="true">
+        <span>OSD Desktop</span>
+        <strong>{manifest?.label ?? 'VolumeDesktop'}</strong>
+        <em>{isActive ? 'mouse' : `${Math.round(zoom * 100)}%`}</em>
+      </div>
+      <div className="nv-osd-world" style={worldSize}>
+        {items.map((item) => (
+          <button
+            className={`nv-osd-tile ${selected?.id === item.id ? 'is-selected' : ''}`}
+            key={item.id}
+            onClick={() => onSelect(item)}
+            style={worldRectStyle(item.bounds, world)}
+            type="button"
+          >
+            <img src={item.preview.image} alt="" />
+            <span className="nv-osd-index">L0</span>
+            <span className="nv-osd-label">{item.label}</span>
+          </button>
+        ))}
+        {items.length === 0 ? <div className="nv-empty-state">No matching volumes.</div> : null}
+      </div>
+
+      <div className="nv-hud" aria-hidden="true">
+        <span>zoom {Math.round(zoom * 100)}%</span>
+        <span>{isActive ? 'wheel zoom / drag pan' : 'idle'}</span>
+        <span>{items.length} visible</span>
+        <span>{world.width} x {world.height}</span>
+      </div>
+
+      <div className="nv-minimap" aria-hidden="true">
+        {selectedStyle ? <div className="nv-minimap-window" style={selectedStyle} /> : null}
+      </div>
+    </div>
+  )
+}
+
+function StageResizeObserver({
+  stageRef,
+  onResize
+}: {
+  stageRef: RefObject<HTMLDivElement>
+  onResize: (size: { width: number; height: number }) => void
+}): null {
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const stageElement = stage
+
+    function update(): void {
+      onResize({
+        width: stageElement.clientWidth,
+        height: stageElement.clientHeight
+      })
+    }
+
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(stageElement)
+    return () => observer.disconnect()
+  }, [onResize, stageRef])
+
+  return null
+}
+
+function SelectionPanel({
+  item,
+  metadataStatus
+}: {
+  item: DesktopItem | null
+  metadataStatus: string
+}): JSX.Element {
+  return (
+    <section className="nv-readout">
+      <h2>
+        <Eye size={15} />
+        Focus
+      </h2>
+      {item ? (
+        <dl>
+          <dt>ID</dt>
+          <dd>{item.id}</dd>
+          <dt>Format</dt>
+          <dd>{item.format}</dd>
+          <dt>Shape</dt>
+          <dd>{item.shape.join(' x ')}</dd>
+          <dt>Spacing</dt>
+          <dd>{item.spacing.join(' x ')}</dd>
+          <dt>Metadata</dt>
+          <dd>{metadataStatus}</dd>
+        </dl>
+      ) : (
+        <p>No volume selected.</p>
+      )}
+    </section>
+  )
+}
+
+function MetadataPanel({
+  item,
+  metadata,
+  status
+}: {
+  item: DesktopItem | null
+  metadata: VolumeMetadata | null
+  status: string
+}): JSX.Element {
+  const sidecars = metadata?.sidecars ?? []
+  const embeddedMetadata = metadata ? volumeMetadataJson(metadata) : null
+
+  return (
+    <section className="nv-readout nv-metadata-panel">
+      <h2>
+        <FileJson size={15} />
+        JSON Sidecars
+      </h2>
+      {item ? (
+        <>
+          <p>{status}</p>
+          {metadata?.sourcePath ? (
+            <dl>
+              <dt>Source</dt>
+              <dd>{metadata.sourcePath}</dd>
+            </dl>
+          ) : null}
+          {sidecars.length > 0 ? (
+            <div className="nv-sidecar-list">
+              {sidecars.map((sidecar) => (
+                <details className="nv-sidecar" key={sidecar.path ?? sidecar.name} open>
+                  <summary>
+                    <span>{sidecar.name}</span>
+                    <em>{sidecar.kind}</em>
+                  </summary>
+                  <pre>{formatJsonForDisplay(sidecar.metadata)}</pre>
+                </details>
+              ))}
+            </div>
+          ) : null}
+          {embeddedMetadata ? (
+            <div className="nv-sidecar-list">
+              <details className="nv-sidecar" open={sidecars.length === 0}>
+                <summary>
+                  <span>metadata response</span>
+                  <em>json</em>
+                </summary>
+                <pre>{formatJsonForDisplay(embeddedMetadata)}</pre>
+              </details>
+            </div>
+          ) : null}
+          {sidecars.length === 0 && !embeddedMetadata ? (
+            <div className="nv-empty-meta">No JSON sidecar attached to this volume.</div>
+          ) : null}
+        </>
+      ) : (
+        <p>Select a volume to inspect sidecar metadata.</p>
+      )}
+    </section>
   )
 }
 
@@ -286,6 +648,210 @@ function Slider({
       <code>{value.toFixed(step < 1 ? 2 : 0)}</code>
     </label>
   )
+}
+
+function beginSplitDrag(
+  event: ReactPointerEvent<HTMLButtonElement>,
+  workspaceRef: RefObject<HTMLElement>,
+  onChange: (value: number) => void
+): void {
+  const workspace = workspaceRef.current
+  if (!workspace) return
+  const workspaceElement = workspace
+
+  event.preventDefault()
+  const handle = event.currentTarget
+  const pointerId = event.pointerId
+
+  function update(clientX: number): void {
+    const rect = workspaceElement.getBoundingClientRect()
+    const next = ((clientX - rect.left) / rect.width) * 100
+    onChange(clamp(next, MIN_SPLIT, MAX_SPLIT))
+  }
+
+  function onMove(moveEvent: PointerEvent): void {
+    update(moveEvent.clientX)
+  }
+
+  function onUp(): void {
+    handle.removeEventListener('pointermove', onMove)
+    handle.removeEventListener('pointerup', onUp)
+    handle.removeEventListener('pointercancel', onUp)
+    if (handle.hasPointerCapture(pointerId)) {
+      handle.releasePointerCapture(pointerId)
+    }
+  }
+
+  update(event.clientX)
+  handle.setPointerCapture(pointerId)
+  handle.addEventListener('pointermove', onMove)
+  handle.addEventListener('pointerup', onUp)
+  handle.addEventListener('pointercancel', onUp)
+}
+
+function beginDesktopPan(
+  event: ReactPointerEvent<HTMLDivElement>,
+  dragRef: MutableRefObject<DesktopDragState | null>
+): void {
+  if (event.button !== 0) return
+  const stage = event.currentTarget
+  dragRef.current = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    scrollLeft: stage.scrollLeft,
+    scrollTop: stage.scrollTop,
+    moved: false
+  }
+  stage.setPointerCapture(event.pointerId)
+}
+
+function moveDesktopPan(
+  event: ReactPointerEvent<HTMLDivElement>,
+  dragRef: MutableRefObject<DesktopDragState | null>,
+  setIsPanning: (isPanning: boolean) => void
+): void {
+  const drag = dragRef.current
+  if (!drag || drag.pointerId !== event.pointerId) return
+
+  const deltaX = event.clientX - drag.startX
+  const deltaY = event.clientY - drag.startY
+  const hasMoved = Math.hypot(deltaX, deltaY) > 3
+  if (!hasMoved && !drag.moved) return
+
+  event.preventDefault()
+  const stage = event.currentTarget
+  stage.scrollLeft = drag.scrollLeft - deltaX
+  stage.scrollTop = drag.scrollTop - deltaY
+  if (!drag.moved) {
+    drag.moved = true
+    setIsPanning(true)
+  }
+}
+
+function endDesktopPan(
+  event: ReactPointerEvent<HTMLDivElement>,
+  dragRef: MutableRefObject<DesktopDragState | null>,
+  suppressClickRef: MutableRefObject<boolean>,
+  setIsPanning: (isPanning: boolean) => void
+): void {
+  const drag = dragRef.current
+  if (!drag || drag.pointerId !== event.pointerId) return
+
+  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+  suppressClickRef.current = drag.moved
+  dragRef.current = null
+  setIsPanning(false)
+}
+
+function suppressDesktopClickAfterDrag(
+  event: ReactMouseEvent<HTMLDivElement>,
+  suppressClickRef: MutableRefObject<boolean>
+): void {
+  if (!suppressClickRef.current) return
+  suppressClickRef.current = false
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function zoomDesktopWithWheel(
+  event: ReactWheelEvent<HTMLDivElement>,
+  zoom: number,
+  onZoom: (zoom: number) => void
+): void {
+  const stage = event.currentTarget
+  const nextZoom = zoomBy(zoom, event.deltaY < 0 ? 1.12 : 0.89)
+  if (nextZoom === zoom) return
+
+  event.preventDefault()
+  const rect = stage.getBoundingClientRect()
+  const viewportX = event.clientX - rect.left
+  const viewportY = event.clientY - rect.top
+  const anchorX = stage.scrollLeft + viewportX
+  const anchorY = stage.scrollTop + viewportY
+  const ratio = nextZoom / zoom
+
+  onZoom(nextZoom)
+  window.requestAnimationFrame(() => {
+    stage.scrollLeft = anchorX * ratio - viewportX
+    stage.scrollTop = anchorY * ratio - viewportY
+  })
+}
+
+function worldRectStyle(
+  rect: WorldRect,
+  world: DesktopManifest['world']
+): CSSProperties {
+  const width = Math.max(world.width, 1)
+  const height = Math.max(world.height, 1)
+
+  return {
+    left: `${(rect.x / width) * 100}%`,
+    top: `${(rect.y / height) * 100}%`,
+    width: `${(rect.width / width) * 100}%`,
+    height: `${(rect.height / height) * 100}%`
+  }
+}
+
+function fittedWorldSize(
+  stageSize: { width: number; height: number },
+  world: DesktopManifest['world'],
+  zoom: number
+): CSSProperties {
+  const availableWidth = Math.max(stageSize.width - 44, 180)
+  const availableHeight = Math.max(stageSize.height - 44, 180)
+  const aspect = Math.max(world.width, 1) / Math.max(world.height, 1)
+  let fitWidth = availableWidth
+  let fitHeight = fitWidth / aspect
+
+  if (fitHeight > availableHeight) {
+    fitHeight = availableHeight
+    fitWidth = fitHeight * aspect
+  }
+
+  return {
+    width: `${Math.max(160, fitWidth * zoom)}px`,
+    height: `${Math.max(160, fitHeight * zoom)}px`
+  }
+}
+
+function volumeMetadataJson(metadata: VolumeMetadata): unknown | null {
+  const {
+    id: _id,
+    label: _label,
+    format: _format,
+    shape: _shape,
+    spacing: _spacing,
+    dtype: _dtype,
+    sourcePath: _sourcePath,
+    sidecars: _sidecars,
+    ...extra
+  } = metadata
+
+  if (extra.metadata !== undefined) return extra.metadata
+  return Object.keys(extra).length > 0 ? extra : null
+}
+
+function formatJsonForDisplay(value: unknown): string {
+  const text = JSON.stringify(value, null, 2) ?? String(value)
+  if (text.length <= 7000) return text
+  return `${text.slice(0, 7000)}\n... truncated`
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function zoomBy(zoom: number, factor: number): number {
+  return clamp(Number((zoom * factor).toFixed(2)), MIN_DESKTOP_ZOOM, MAX_DESKTOP_ZOOM)
+}
+
+function mouseContextLabel(context: MouseContext): string {
+  if (context === 'desktop') return 'Mouse: desktop grid controls'
+  if (context === 'niivue') return 'Mouse: NiiVue controls'
+  return 'Mouse: no pane'
 }
 
 async function savePatch(

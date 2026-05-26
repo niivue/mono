@@ -1,34 +1,47 @@
 :root {
-  color: #e8edf0;
-  background: #0b1011;
+  color: #f0eee2;
+  background: #10110f;
   font-family:
     "Avenir Next",
-    "Segoe UI",
+    "Gill Sans",
+    "Trebuchet MS",
     system-ui,
     sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #e8edf0;
-  --muted: #94a09f;
-  --panel: #111819;
-  --panel-2: #162021;
-  --line: #273635;
-  --accent: #6ad3bd;
-  --accent-2: #f2c14e;
-  --danger: #fb6f73;
+  --ink: #f0eee2;
+  --muted: #a6a18f;
+  --faint: #6f6a5b;
+  --panel: #181914;
+  --panel-2: #202117;
+  --panel-3: #12130f;
+  --line: #343426;
+  --amber: #d7a642;
+  --green: #73c69b;
+  --blue: #8ea8ff;
+  --danger: #e26d5a;
+  --shadow: rgba(0, 0, 0, 0.42);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
+body {
+  width: 100%;
+  height: 100%;
+}
+
 body {
   margin: 0;
-  min-width: 1024px;
+  min-width: 1120px;
   min-height: 100vh;
+  overflow: hidden;
   background:
-    linear-gradient(135deg, rgba(106, 211, 189, 0.08), transparent 34%),
-    linear-gradient(180deg, #0d1314, #070b0c);
+    linear-gradient(135deg, rgba(215, 166, 66, 0.07), transparent 34%),
+    linear-gradient(180deg, #151611, #090a08);
+  color: var(--ink);
 }
 
 button,
@@ -43,7 +56,8 @@ button {
 
 .nv-app {
   display: grid;
-  grid-template-rows: 72px minmax(0, 1fr) 34px;
+  grid-template-rows: 64px minmax(0, 1fr) 34px;
+  width: 100vw;
   height: 100vh;
   overflow: hidden;
 }
@@ -54,11 +68,13 @@ button {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--line);
-  background: rgba(13, 19, 20, 0.94);
+  background: linear-gradient(180deg, #1d1e18, #151611);
+  box-shadow: 0 8px 30px var(--shadow);
+  z-index: 4;
 }
 
 .nv-topbar {
-  padding: 0 18px;
+  padding: 0 14px;
 }
 
 .nv-status {
@@ -67,17 +83,23 @@ button {
   color: var(--muted);
   font-size: 12px;
   padding: 0 14px;
+  box-shadow: none;
 }
 
 .nv-status span {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nv-brand {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 12px;
 }
 
@@ -86,45 +108,55 @@ button {
   place-items: center;
   width: 38px;
   height: 38px;
-  border: 1px solid rgba(106, 211, 189, 0.5);
-  background: #0f2624;
+  border: 1px solid rgba(215, 166, 66, 0.5);
+  background:
+    linear-gradient(90deg, transparent 47%, rgba(215, 166, 66, 0.8) 48% 52%, transparent 53%),
+    linear-gradient(0deg, transparent 47%, rgba(115, 198, 155, 0.74) 48% 52%, transparent 53%),
+    #12130f;
+  color: var(--amber);
 }
 
 .nv-brand h1 {
   margin: 0;
   font-size: 18px;
+  line-height: 1.1;
   letter-spacing: 0;
 }
 
 .nv-brand p {
-  margin: 2px 0 0;
+  max-width: 52vw;
+  margin: 3px 0 0;
+  overflow: hidden;
   color: var(--muted);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nv-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
 }
 
 .nv-segmented {
   display: inline-grid;
   grid-auto-flow: column;
   border: 1px solid var(--line);
+  background: #10110d;
 }
 
 .nv-segmented button,
 .nv-icon-button {
-  min-height: 34px;
+  min-height: 32px;
   border: 0;
-  background: #101718;
+  background: #12130f;
   color: var(--muted);
   cursor: pointer;
 }
 
 .nv-segmented button {
-  min-width: 76px;
+  min-width: 74px;
   padding: 0 12px;
   border-right: 1px solid var(--line);
 }
@@ -134,186 +166,443 @@ button {
 }
 
 .nv-segmented button.is-active {
-  background: #14332f;
-  color: var(--accent);
+  background: #252112;
+  color: var(--amber);
 }
 
 .nv-icon-button {
   display: grid;
   place-items: center;
-  width: 36px;
+  width: 34px;
   border: 1px solid var(--line);
 }
 
 .nv-icon-button:hover,
 .nv-volume-card:hover,
-.nv-desktop-tile:hover {
-  border-color: rgba(106, 211, 189, 0.7);
+.nv-osd-tile:hover {
+  border-color: var(--amber);
 }
 
 .nv-select {
   display: grid;
-  grid-template-columns: auto minmax(92px, 1fr) auto;
+  grid-template-columns: auto minmax(88px, 1fr) auto;
   align-items: center;
   gap: 6px;
-  height: 34px;
+  height: 32px;
   padding: 0 8px;
   border: 1px solid var(--line);
-  background: #101718;
+  background: #12130f;
   color: var(--muted);
 }
 
 .nv-select select {
   min-width: 0;
-  color: var(--ink);
-  background: transparent;
   border: 0;
-  appearance: none;
   outline: none;
+  appearance: none;
+  background: transparent;
+  color: var(--ink);
 }
 
 .nv-workbench {
   display: grid;
-  grid-template-columns: 270px minmax(480px, 1fr) 320px;
+  grid-template-columns: 248px minmax(0, 1fr) 350px;
   min-height: 0;
 }
 
 .nv-sidebar,
 .nv-controls {
+  min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--line);
-  background: rgba(17, 24, 25, 0.96);
-  padding: 14px;
   overflow: hidden;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.nv-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px;
 }
 
 .nv-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
   border-right: 0;
   border-left: 1px solid var(--line);
+  padding: 0 12px 12px;
 }
 
 .nv-panel-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  min-height: 30px;
+  margin-bottom: 10px;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .nv-panel-heading span,
 .nv-readout h2 {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   gap: 8px;
 }
 
 .nv-panel-heading em {
-  color: var(--accent);
+  color: var(--green);
   font-style: normal;
 }
 
 .nv-search {
   width: 100%;
-  height: 34px;
+  height: 32px;
   margin-bottom: 12px;
   border: 1px solid var(--line);
-  background: #0d1314;
+  outline: none;
+  background: #10110d;
   color: var(--ink);
   padding: 0 10px;
-  outline: none;
+}
+
+.nv-search:focus {
+  border-color: var(--green);
 }
 
 .nv-volume-list,
 .nv-clip-list {
   display: grid;
-  gap: 10px;
-  max-height: calc(100vh - 178px);
+  gap: 8px;
+  min-height: 0;
   overflow: auto;
+}
+
+.nv-volume-list {
+  flex: 1;
+  align-content: start;
 }
 
 .nv-volume-card {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 54px minmax(0, 1fr);
   gap: 10px;
   width: 100%;
-  min-height: 72px;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
+  min-height: 70px;
+  border: 1px solid transparent;
+  background: transparent;
   text-align: left;
   cursor: pointer;
   padding: 8px;
 }
 
 .nv-volume-card img {
-  width: 56px;
-  height: 56px;
+  width: 54px;
+  height: 54px;
   object-fit: cover;
-  background: #050808;
+  background: #050604;
 }
 
 .nv-volume-card strong,
-.nv-volume-card small,
-.nv-desktop-tile span {
+.nv-volume-card small {
   display: block;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nv-volume-card small {
+  margin-top: 5px;
   color: var(--muted);
   font-size: 11px;
-  margin-top: 5px;
 }
 
-.nv-volume-card.is-selected,
-.nv-desktop-tile.is-selected {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px rgba(106, 211, 189, 0.35);
+.nv-volume-card.is-selected {
+  border-color: var(--amber);
+  background: #252112;
 }
 
-.nv-center {
+.nv-split-workspace {
+  --split-left: 52%;
   display: grid;
-  grid-template-rows: 168px minmax(0, 1fr);
+  grid-template-columns: minmax(220px, var(--split-left)) 12px minmax(220px, 1fr);
   min-width: 0;
   min-height: 0;
-  background: #080c0d;
+  background: #090a08;
 }
 
-.nv-desktop-strip {
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
+.nv-dataset-pane,
+.nv-niivue-pane {
+  position: relative;
   min-width: 0;
-  padding: 14px;
-  border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  background:
-    linear-gradient(90deg, rgba(242, 193, 78, 0.05), transparent 35%),
-    #0b1011;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.nv-desktop-tile {
-  flex: 0 0 146px;
+.nv-dataset-pane.is-context-active,
+.nv-niivue-pane.is-context-active {
+  box-shadow: inset 0 0 0 1px rgba(115, 198, 155, 0.35);
+}
+
+.nv-inspector-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin: 0 -12px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.nv-zoom-readout {
+  margin-left: auto;
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(17, 17, 15, 0.78);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 4px 7px;
+}
+
+.nv-stage-title {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 3;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
+  max-width: min(560px, calc(100% - 28px));
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(17, 17, 15, 0.78);
+  color: var(--muted);
+  padding: 6px 8px;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+.nv-stage-title span {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nv-stage-title strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-stage-title em {
+  color: var(--amber);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.nv-pane-icon-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--line);
-  background: #101718;
-  padding: 8px;
-  text-align: left;
+  background: #12130f;
+  color: var(--muted);
   cursor: pointer;
 }
 
-.nv-desktop-tile img {
-  width: 100%;
-  height: 104px;
-  object-fit: cover;
-  background: #050808;
+.nv-pane-icon-button:hover:not(:disabled),
+.nv-pane-icon-button:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
 }
 
-.nv-desktop-tile span {
+.nv-pane-icon-button:disabled {
+  cursor: default;
+  opacity: 0.36;
+}
+
+.nv-splitter {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  min-width: 12px;
+  height: 100%;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  background: #10110d;
+  color: var(--faint);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.nv-splitter:hover,
+.nv-splitter:focus-visible {
+  color: var(--amber);
+  background: #1d1e18;
+  outline: none;
+}
+
+.nv-osd-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  cursor: grab;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    radial-gradient(circle at 55% 42%, rgba(115, 198, 155, 0.08), transparent 42%),
+    #090a08;
+  background-size: 44px 44px, 44px 44px, auto, auto;
+}
+
+.nv-osd-stage.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.nv-osd-world {
+  position: relative;
+  margin: 22px;
+}
+
+.nv-niivue-pane > .nv-render-stage {
+  width: 100%;
+  height: 100%;
+}
+
+.nv-niivue-title {
+  right: 14px;
+}
+
+.nv-osd-tile {
+  position: absolute;
+  display: block;
+  min-width: 74px;
+  min-height: 74px;
+  overflow: hidden;
+  border: 1px solid #464631;
+  background: #11120e;
+  cursor: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.nv-osd-tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+  opacity: 0.92;
+}
+
+.nv-osd-tile.is-selected {
+  border-color: var(--amber);
+  box-shadow:
+    inset 0 0 0 1px rgba(215, 166, 66, 0.5),
+    0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.nv-osd-index,
+.nv-osd-label {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(8, 8, 6, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.nv-osd-index {
+  top: 8px;
+  left: 8px;
+  border: 1px solid rgba(115, 198, 155, 0.34);
+  color: var(--green);
+  font-size: 11px;
+  padding: 3px 6px;
+}
+
+.nv-osd-label {
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  padding: 6px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-empty-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.nv-hud {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  max-width: calc(100% - 188px);
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.nv-hud span,
+.nv-minimap {
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(17, 17, 15, 0.78);
   color: var(--muted);
   font-size: 11px;
+  padding: 4px 7px;
+  backdrop-filter: blur(8px);
+}
+
+.nv-minimap {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 148px;
+  height: 108px;
+  padding: 0;
+}
+
+.nv-minimap::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.nv-minimap-window {
+  position: absolute;
+  border: 1px solid var(--green);
+  background: rgba(115, 198, 155, 0.18);
 }
 
 .nv-render-stage {
@@ -323,7 +612,7 @@ button {
   background:
     linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    #050808;
+    #050604;
   background-size: 28px 28px;
 }
 
@@ -331,6 +620,7 @@ button {
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: none;
 }
 
 .nv-render-status {
@@ -338,17 +628,21 @@ button {
   left: 14px;
   bottom: 14px;
   max-width: min(520px, calc(100% - 28px));
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  background: rgba(5, 8, 8, 0.78);
+  overflow: hidden;
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(8, 8, 6, 0.78);
   color: var(--muted);
-  padding: 7px 9px;
   font-size: 12px;
+  padding: 7px 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.nv-control-section,
 .nv-clip-card,
 .nv-readout {
   border: 1px solid var(--line);
-  background: var(--panel);
+  background: var(--panel-3);
   padding: 12px;
 }
 
@@ -360,7 +654,7 @@ button {
 }
 
 .nv-toggle input {
-  accent-color: var(--accent);
+  accent-color: var(--amber);
 }
 
 .nv-slider {
@@ -368,23 +662,22 @@ button {
   grid-template-columns: 62px minmax(0, 1fr) 44px;
   align-items: center;
   gap: 8px;
+  margin-top: 8px;
   color: var(--muted);
   font-size: 12px;
-  margin-top: 8px;
 }
 
 .nv-slider input {
   min-width: 0;
-  accent-color: var(--accent);
+  accent-color: var(--green);
 }
 
 .nv-slider code {
-  color: var(--accent-2);
+  color: var(--amber);
   text-align: right;
 }
 
 .nv-readout {
-  margin-top: 14px;
   color: var(--muted);
 }
 
@@ -394,26 +687,105 @@ button {
   font-size: 13px;
 }
 
+.nv-readout p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .nv-readout dl {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: 76px minmax(0, 1fr);
   gap: 8px;
   margin: 0;
   font-size: 12px;
 }
 
+.nv-readout dl + dl,
+.nv-readout p + dl {
+  margin-top: 10px;
+}
+
 .nv-readout dt {
-  color: var(--accent);
+  color: var(--green);
 }
 
 .nv-readout dd {
+  min-width: 0;
   margin: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-@media (max-width: 1180px) {
+.nv-metadata-panel {
+  min-height: 220px;
+}
+
+.nv-sidecar-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.nv-sidecar {
+  border: 1px solid var(--line);
+  background: #0d0e0b;
+}
+
+.nv-sidecar summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 9px;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.nv-sidecar summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-sidecar summary em {
+  color: var(--blue);
+  font-style: normal;
+}
+
+.nv-sidecar pre {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  color: #d8d2bd;
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.nv-empty-meta {
+  margin-top: 12px;
+  border: 1px dashed #464631;
+  color: var(--faint);
+  font-size: 12px;
+  padding: 10px;
+}
+
+@media (max-width: 1280px) {
   .nv-workbench {
-    grid-template-columns: 240px minmax(420px, 1fr) 286px;
+    grid-template-columns: 230px minmax(0, 1fr) 326px;
+  }
+
+  .nv-sidebar {
+    padding-right: 10px;
+    padding-left: 10px;
   }
 }
-

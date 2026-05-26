@@ -1,15 +1,17 @@
 import {
   type CSSProperties,
+  type Dispatch,
   type MouseEvent as ReactMouseEvent,
   type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
-  type WheelEvent as ReactWheelEvent,
+  type SetStateAction,
   useEffect,
   useMemo,
   useRef,
   useState
 } from 'react'
+import { flushSync } from 'react-dom'
 import {
   ChevronDown,
   CircleDot,
@@ -54,6 +56,13 @@ interface DesktopDragState {
   scrollLeft: number
   scrollTop: number
   moved: boolean
+}
+
+interface MinimapViewport {
+  left: number
+  top: number
+  width: number
+  height: number
 }
 
 export function App(): JSX.Element {
@@ -406,10 +415,18 @@ function DatasetDesktop({
   onSelect: (item: DesktopItem) => void
 }): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
+  const minimapRef = useRef<HTMLButtonElement | null>(null)
+  const zoomRef = useRef(zoom)
   const dragRef = useRef<DesktopDragState | null>(null)
   const suppressClickRef = useRef(false)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const [isPanning, setIsPanning] = useState(false)
+  const [viewport, setViewport] = useState<MinimapViewport>({
+    left: 0,
+    top: 0,
+    width: 100,
+    height: 100
+  })
   const world = manifest?.world ?? {
     width: 1,
     height: 1,
@@ -423,38 +440,69 @@ function DatasetDesktop({
     [stageSize, world, zoom]
   )
 
+  useEffect(() => {
+    zoomRef.current = zoom
+  }, [zoom])
+
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const stageElement = stage
+    const minimap = minimapRef.current
+
+    function onWheel(event: WheelEvent): void {
+      zoomRef.current = zoomDesktopWithWheel(event, stageElement, zoomRef.current, onZoom)
+    }
+
+    stageElement.addEventListener('wheel', onWheel, { passive: false })
+    minimap?.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      stageElement.removeEventListener('wheel', onWheel)
+      minimap?.removeEventListener('wheel', onWheel)
+    }
+  }, [onZoom])
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      updateDesktopViewport(stageRef.current, setViewport)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [items.length, stageSize.height, stageSize.width, worldSize, zoom])
+
   return (
-    <div
-      className={`nv-osd-stage ${isPanning ? 'is-panning' : ''}`}
-      onClickCapture={(event) => suppressDesktopClickAfterDrag(event, suppressClickRef)}
-      onPointerCancel={(event) => endDesktopPan(event, dragRef, suppressClickRef, setIsPanning)}
-      onPointerDown={(event) => beginDesktopPan(event, dragRef)}
-      onPointerMove={(event) => moveDesktopPan(event, dragRef, setIsPanning)}
-      onPointerUp={(event) => endDesktopPan(event, dragRef, suppressClickRef, setIsPanning)}
-      onWheel={(event) => zoomDesktopWithWheel(event, zoom, onZoom)}
-      ref={stageRef}
-    >
-      <StageResizeObserver stageRef={stageRef} onResize={setStageSize} />
+    <div className="nv-osd-stage">
+      <div
+        className={`nv-osd-scrollport ${isPanning ? 'is-panning' : ''}`}
+        onClickCapture={(event) => suppressDesktopClickAfterDrag(event, suppressClickRef)}
+        onPointerDown={(event) =>
+          beginDesktopPan(event, dragRef, suppressClickRef, setIsPanning)
+        }
+        onScroll={() => updateDesktopViewport(stageRef.current, setViewport)}
+        ref={stageRef}
+      >
+        <StageResizeObserver stageRef={stageRef} onResize={setStageSize} />
+        <div className="nv-osd-world" style={worldSize}>
+          {items.map((item) => (
+            <button
+              className={`nv-osd-tile ${selected?.id === item.id ? 'is-selected' : ''}`}
+              key={item.id}
+              onClick={() => onSelect(item)}
+              style={worldRectStyle(item.bounds, world)}
+              type="button"
+            >
+              <img src={item.preview.image} alt="" draggable={false} />
+              <span className="nv-osd-index">L0</span>
+              <span className="nv-osd-label">{item.label}</span>
+            </button>
+          ))}
+          {items.length === 0 ? <div className="nv-empty-state">No matching volumes.</div> : null}
+        </div>
+      </div>
+
       <div className="nv-stage-title" aria-hidden="true">
         <span>OSD Desktop</span>
         <strong>{manifest?.label ?? 'VolumeDesktop'}</strong>
         <em>{isActive ? 'mouse' : `${Math.round(zoom * 100)}%`}</em>
-      </div>
-      <div className="nv-osd-world" style={worldSize}>
-        {items.map((item) => (
-          <button
-            className={`nv-osd-tile ${selected?.id === item.id ? 'is-selected' : ''}`}
-            key={item.id}
-            onClick={() => onSelect(item)}
-            style={worldRectStyle(item.bounds, world)}
-            type="button"
-          >
-            <img src={item.preview.image} alt="" />
-            <span className="nv-osd-index">L0</span>
-            <span className="nv-osd-label">{item.label}</span>
-          </button>
-        ))}
-        {items.length === 0 ? <div className="nv-empty-state">No matching volumes.</div> : null}
       </div>
 
       <div className="nv-hud" aria-hidden="true">
@@ -464,9 +512,20 @@ function DatasetDesktop({
         <span>{world.width} x {world.height}</span>
       </div>
 
-      <div className="nv-minimap" aria-hidden="true">
-        {selectedStyle ? <div className="nv-minimap-window" style={selectedStyle} /> : null}
-      </div>
+      <button
+        aria-label="Click to center the desktop dataset"
+        className="nv-minimap"
+        onClick={(event) => jumpDesktopToMinimapPoint(event, stageRef, setViewport)}
+        onPointerDown={(event) => event.stopPropagation()}
+        ref={minimapRef}
+        title="Click to center desktop"
+        type="button"
+      >
+        <span className="nv-minimap-map" aria-hidden="true">
+          {selectedStyle ? <span className="nv-minimap-selection" style={selectedStyle} /> : null}
+          <span className="nv-minimap-window" style={minimapViewportStyle(viewport)} />
+        </span>
+      </button>
     </div>
   )
 }
@@ -691,59 +750,57 @@ function beginSplitDrag(
 
 function beginDesktopPan(
   event: ReactPointerEvent<HTMLDivElement>,
-  dragRef: MutableRefObject<DesktopDragState | null>
+  dragRef: MutableRefObject<DesktopDragState | null>,
+  suppressClickRef: MutableRefObject<boolean>,
+  setIsPanning: (isPanning: boolean) => void
 ): void {
   if (event.button !== 0) return
   const stage = event.currentTarget
+  const pointerId = event.pointerId
+
   dragRef.current = {
-    pointerId: event.pointerId,
+    pointerId,
     startX: event.clientX,
     startY: event.clientY,
     scrollLeft: stage.scrollLeft,
     scrollTop: stage.scrollTop,
     moved: false
   }
-  stage.setPointerCapture(event.pointerId)
-}
 
-function moveDesktopPan(
-  event: ReactPointerEvent<HTMLDivElement>,
-  dragRef: MutableRefObject<DesktopDragState | null>,
-  setIsPanning: (isPanning: boolean) => void
-): void {
-  const drag = dragRef.current
-  if (!drag || drag.pointerId !== event.pointerId) return
+  function onMove(moveEvent: PointerEvent): void {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== pointerId) return
 
-  const deltaX = event.clientX - drag.startX
-  const deltaY = event.clientY - drag.startY
-  const hasMoved = Math.hypot(deltaX, deltaY) > 3
-  if (!hasMoved && !drag.moved) return
+    const deltaX = moveEvent.clientX - drag.startX
+    const deltaY = moveEvent.clientY - drag.startY
+    const hasMoved = Math.hypot(deltaX, deltaY) > 3
+    if (!hasMoved && !drag.moved) return
 
-  event.preventDefault()
-  const stage = event.currentTarget
-  stage.scrollLeft = drag.scrollLeft - deltaX
-  stage.scrollTop = drag.scrollTop - deltaY
-  if (!drag.moved) {
-    drag.moved = true
-    setIsPanning(true)
+    moveEvent.preventDefault()
+    stage.scrollLeft = drag.scrollLeft - deltaX
+    stage.scrollTop = drag.scrollTop - deltaY
+    if (!drag.moved) {
+      drag.moved = true
+      setIsPanning(true)
+    }
   }
-}
 
-function endDesktopPan(
-  event: ReactPointerEvent<HTMLDivElement>,
-  dragRef: MutableRefObject<DesktopDragState | null>,
-  suppressClickRef: MutableRefObject<boolean>,
-  setIsPanning: (isPanning: boolean) => void
-): void {
-  const drag = dragRef.current
-  if (!drag || drag.pointerId !== event.pointerId) return
+  function onEnd(): void {
+    const drag = dragRef.current
+    if (drag?.pointerId === pointerId) {
+      suppressClickRef.current = drag.moved
+      dragRef.current = null
+      setIsPanning(false)
+    }
 
-  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-    event.currentTarget.releasePointerCapture(event.pointerId)
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onEnd)
+    window.removeEventListener('pointercancel', onEnd)
   }
-  suppressClickRef.current = drag.moved
-  dragRef.current = null
-  setIsPanning(false)
+
+  window.addEventListener('pointermove', onMove, { passive: false })
+  window.addEventListener('pointerup', onEnd)
+  window.addEventListener('pointercancel', onEnd)
 }
 
 function suppressDesktopClickAfterDrag(
@@ -757,15 +814,15 @@ function suppressDesktopClickAfterDrag(
 }
 
 function zoomDesktopWithWheel(
-  event: ReactWheelEvent<HTMLDivElement>,
+  event: WheelEvent,
+  stage: HTMLDivElement,
   zoom: number,
   onZoom: (zoom: number) => void
-): void {
-  const stage = event.currentTarget
-  const nextZoom = zoomBy(zoom, event.deltaY < 0 ? 1.12 : 0.89)
-  if (nextZoom === zoom) return
-
+): number {
   event.preventDefault()
+  const nextZoom = zoomBy(zoom, event.deltaY < 0 ? 1.12 : 0.89)
+  if (nextZoom === zoom) return zoom
+
   const rect = stage.getBoundingClientRect()
   const viewportX = event.clientX - rect.left
   const viewportY = event.clientY - rect.top
@@ -773,11 +830,83 @@ function zoomDesktopWithWheel(
   const anchorY = stage.scrollTop + viewportY
   const ratio = nextZoom / zoom
 
-  onZoom(nextZoom)
-  window.requestAnimationFrame(() => {
-    stage.scrollLeft = anchorX * ratio - viewportX
-    stage.scrollTop = anchorY * ratio - viewportY
+  flushSync(() => {
+    onZoom(nextZoom)
   })
+  stage.scrollLeft = anchorX * ratio - viewportX
+  stage.scrollTop = anchorY * ratio - viewportY
+
+  return nextZoom
+}
+
+function jumpDesktopToMinimapPoint(
+  event: ReactMouseEvent<HTMLElement>,
+  stageRef: RefObject<HTMLDivElement>,
+  setViewport: Dispatch<SetStateAction<MinimapViewport>>
+): void {
+  const stage = stageRef.current
+  if (!stage) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const minimap = event.currentTarget
+  const map = minimap.querySelector<HTMLElement>('.nv-minimap-map')
+  const rect = (map ?? minimap).getBoundingClientRect()
+  const x = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1)
+  const y = clamp((event.clientY - rect.top) / Math.max(rect.height, 1), 0, 1)
+
+  centerDesktopAtFraction(stage, x, y)
+  updateDesktopViewport(stage, setViewport)
+}
+
+function centerDesktopAtFraction(stage: HTMLDivElement, x: number, y: number): void {
+  const maxScrollLeft = Math.max(stage.scrollWidth - stage.clientWidth, 0)
+  const maxScrollTop = Math.max(stage.scrollHeight - stage.clientHeight, 0)
+
+  stage.scrollLeft = clamp(x * stage.scrollWidth - stage.clientWidth / 2, 0, maxScrollLeft)
+  stage.scrollTop = clamp(y * stage.scrollHeight - stage.clientHeight / 2, 0, maxScrollTop)
+}
+
+function updateDesktopViewport(
+  stage: HTMLDivElement | null,
+  setViewport: Dispatch<SetStateAction<MinimapViewport>>
+): void {
+  if (!stage) return
+  const next = desktopViewportFromStage(stage)
+  setViewport((current) => (sameMinimapViewport(current, next) ? current : next))
+}
+
+function desktopViewportFromStage(stage: HTMLDivElement): MinimapViewport {
+  const scrollWidth = Math.max(stage.scrollWidth, stage.clientWidth, 1)
+  const scrollHeight = Math.max(stage.scrollHeight, stage.clientHeight, 1)
+  const width = clamp((stage.clientWidth / scrollWidth) * 100, 0, 100)
+  const height = clamp((stage.clientHeight / scrollHeight) * 100, 0, 100)
+
+  return {
+    left: clamp((stage.scrollLeft / scrollWidth) * 100, 0, 100 - width),
+    top: clamp((stage.scrollTop / scrollHeight) * 100, 0, 100 - height),
+    width,
+    height
+  }
+}
+
+function sameMinimapViewport(left: MinimapViewport, right: MinimapViewport): boolean {
+  return (
+    Math.abs(left.left - right.left) < 0.1 &&
+    Math.abs(left.top - right.top) < 0.1 &&
+    Math.abs(left.width - right.width) < 0.1 &&
+    Math.abs(left.height - right.height) < 0.1
+  )
+}
+
+function minimapViewportStyle(viewport: MinimapViewport): CSSProperties {
+  return {
+    left: `${viewport.left}%`,
+    top: `${viewport.top}%`,
+    width: `${viewport.width}%`,
+    height: `${viewport.height}%`
+  }
 }
 
 function worldRectStyle(

@@ -46,7 +46,7 @@ const CORONAL_SNAP: RenderViewSnap = {
   id: 'coronal',
   label: 'Coronal',
   shortLabel: 'Cor',
-  azimuth: 0,
+  azimuth: 180,
   elevation: 0,
   shortcut: 'Numpad 1'
 }
@@ -73,7 +73,7 @@ const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; revers
     reverse: {
       ...CORONAL_SNAP,
       label: 'Posterior coronal',
-      azimuth: 180,
+      azimuth: 0,
       shortcut: 'Ctrl+Numpad 1'
     }
   },

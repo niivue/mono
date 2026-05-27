@@ -15,6 +15,7 @@ import { flushSync } from 'react-dom'
 import {
   ChevronDown,
   CircleDot,
+  Calculator,
   Database,
   Eye,
   FileJson,
@@ -25,6 +26,7 @@ import {
   RotateCcw,
   Save,
   SlidersHorizontal,
+  Play,
   ZoomIn,
   ZoomOut
 } from 'lucide-react'
@@ -43,6 +45,7 @@ import {
   fetchVolumeMetadata,
   resolveServerUrl
 } from './domain/desktop'
+import { runNiimathTask, type NiimathOperation, type NiimathTaskResult } from './domain/niimath'
 import neurovueIconUrl from '../src-tauri/icons/neurovue-icon.svg?url'
 
 const MIN_SPLIT = 34
@@ -53,12 +56,56 @@ const SIDEBAR_PREVIEW_SIZE = 96
 const DESKTOP_PREVIEW_TIERS = [96, 192, 384, 768, 1024] as const
 const PREVIEW_TIER_SETTLE_MS = 180
 const PREVIEW_IMAGE_VERSION = 5
+const NIIMATH_OPERATIONS: Array<{
+  id: NiimathOperation
+  label: string
+  needsOperand: boolean
+  needsMask: boolean
+  help: string
+}> = [
+  {
+    id: 'smooth',
+    label: 'Smooth',
+    needsOperand: true,
+    needsMask: false,
+    help: 'Apply Gaussian smoothing to a temporary output volume.'
+  },
+  {
+    id: 'threshold',
+    label: 'Threshold',
+    needsOperand: true,
+    needsMask: false,
+    help: 'Keep values above the lower threshold.'
+  },
+  {
+    id: 'upperThreshold',
+    label: 'Upper Threshold',
+    needsOperand: true,
+    needsMask: false,
+    help: 'Keep values below the upper threshold.'
+  },
+  {
+    id: 'binarize',
+    label: 'Binarize',
+    needsOperand: false,
+    needsMask: false,
+    help: 'Convert non-zero voxels to a binary mask.'
+  },
+  {
+    id: 'mask',
+    label: 'Apply Mask',
+    needsOperand: false,
+    needsMask: true,
+    help: 'Apply another NIfTI volume as a mask.'
+  }
+]
 const FLIPPED_CLIP_ORIENTATIONS: Record<string, Pick<ClipPlane, 'azimuth' | 'elevation'>> = {
   anterior: { azimuth: 0, elevation: 0 },
   inferior: { azimuth: 0, elevation: 90 },
   right: { azimuth: 270, elevation: 0 }
 }
 type MouseContext = 'desktop' | 'niivue' | null
+type SidePanelTab = 'inspect' | 'operations'
 
 interface DesktopDragState {
   pointerId: number
@@ -92,6 +139,7 @@ export function App(): JSX.Element {
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
   const [isFileListCollapsed, setIsFileListCollapsed] = useState(false)
+  const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
 
   useEffect(() => {
     let favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
@@ -356,32 +404,46 @@ export function App(): JSX.Element {
             <span className="nv-zoom-readout">{Math.round(desktopZoom * 100)}%</span>
           </div>
 
-          <SelectionPanel item={selected} metadataStatus={metadataStatus} />
-          <MetadataPanel item={selected} metadata={metadata} status={metadataStatus} />
+          <SidePanelTabs activeTab={sidePanelTab} onChange={setSidePanelTab} />
 
-          <section className="nv-control-section">
-            <div className="nv-panel-heading">
-              <span>
-                <SlidersHorizontal size={15} />
-                Clip Planes
-              </span>
-              <em>{clipPlanes.filter((plane) => plane.enabled).length}</em>
-            </div>
+          <div className="nv-sidepanel-content">
+            {sidePanelTab === 'inspect' ? (
+              <>
+                <SelectionPanel item={selected} metadataStatus={metadataStatus} />
+                <MetadataPanel item={selected} metadata={metadata} status={metadataStatus} />
 
-            <div className="nv-clip-list">
-              {clipPlanes.map((plane) => (
-                <ClipPlaneEditor
-                  key={plane.id}
-                  plane={plane}
-                  onChange={(nextPlane) => {
-                    setClipPlanes((planes) =>
-                      planes.map((candidate) => candidate.id === plane.id ? nextPlane : candidate)
-                    )
-                  }}
-                />
-              ))}
-            </div>
-          </section>
+                <section className="nv-control-section">
+                  <div className="nv-panel-heading">
+                    <span>
+                      <SlidersHorizontal size={15} />
+                      Clip Planes
+                    </span>
+                    <em>{clipPlanes.filter((plane) => plane.enabled).length}</em>
+                  </div>
+
+                  <div className="nv-clip-list">
+                    {clipPlanes.map((plane) => (
+                      <ClipPlaneEditor
+                        key={plane.id}
+                        plane={plane}
+                        onChange={(nextPlane) => {
+                          setClipPlanes((planes) =>
+                            planes.map((candidate) => candidate.id === plane.id ? nextPlane : candidate)
+                          )
+                        }}
+                      />
+                    ))}
+                  </div>
+                </section>
+              </>
+            ) : (
+              <NiimathOperationsPanel
+                item={selected}
+                metadata={metadata}
+                onStatus={setStatus}
+              />
+            )}
+          </div>
         </aside>
       </section>
 
@@ -393,6 +455,39 @@ export function App(): JSX.Element {
         <span>{mouseContextLabel(mouseContext)}</span>
       </footer>
     </main>
+  )
+}
+
+function SidePanelTabs({
+  activeTab,
+  onChange
+}: {
+  activeTab: SidePanelTab
+  onChange: (tab: SidePanelTab) => void
+}): JSX.Element {
+  return (
+    <div className="nv-sidepanel-tabs" role="tablist" aria-label="Side panel sections">
+      <button
+        aria-selected={activeTab === 'inspect'}
+        className={activeTab === 'inspect' ? 'is-active' : ''}
+        onClick={() => onChange('inspect')}
+        role="tab"
+        type="button"
+      >
+        <Eye size={14} />
+        Inspect
+      </button>
+      <button
+        aria-selected={activeTab === 'operations'}
+        className={activeTab === 'operations' ? 'is-active' : ''}
+        onClick={() => onChange('operations')}
+        role="tab"
+        type="button"
+      >
+        <Calculator size={14} />
+        Operations
+      </button>
+    </div>
   )
 }
 
@@ -772,6 +867,127 @@ function MetadataPanel({
       ) : (
         <p>Select a volume to inspect sidecar metadata.</p>
       )}
+    </section>
+  )
+}
+
+function NiimathOperationsPanel({
+  item,
+  metadata,
+  onStatus
+}: {
+  item: DesktopItem | null
+  metadata: VolumeMetadata | null
+  onStatus: (status: string) => void
+}): JSX.Element {
+  const [operation, setOperation] = useState<NiimathOperation>('smooth')
+  const [operand, setOperand] = useState('2')
+  const [maskPath, setMaskPath] = useState('')
+  const [isRunning, setIsRunning] = useState(false)
+  const [taskStatus, setTaskStatus] = useState('Ready.')
+  const [result, setResult] = useState<NiimathTaskResult | null>(null)
+  const selectedOperation = NIIMATH_OPERATIONS.find((candidate) => candidate.id === operation) ?? NIIMATH_OPERATIONS[0]
+  const sourcePath = typeof metadata?.sourcePath === 'string' ? metadata.sourcePath : ''
+  const parsedOperand = Number(operand)
+  const hasOperand = !selectedOperation.needsOperand || Number.isFinite(parsedOperand)
+  const hasMask = !selectedOperation.needsMask || maskPath.trim().length > 0
+  const canRun = Boolean(item && sourcePath && hasOperand && hasMask && !isRunning)
+
+  async function runTask(): Promise<void> {
+    if (!item || !sourcePath || !canRun) return
+
+    setIsRunning(true)
+    setResult(null)
+    setTaskStatus(`Running ${selectedOperation.label.toLowerCase()}.`)
+    onStatus(`Running niimath ${selectedOperation.label.toLowerCase()} on ${item.label}.`)
+
+    try {
+      const nextResult = await runNiimathTask({
+        sourcePath,
+        operation,
+        operand: selectedOperation.needsOperand ? parsedOperand : undefined,
+        maskPath: selectedOperation.needsMask ? maskPath.trim() : undefined
+      })
+      setResult(nextResult)
+      setTaskStatus('Done.')
+      onStatus(`niimath wrote ${nextResult.outputPath}.`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setTaskStatus(message)
+      onStatus(message)
+    } finally {
+      setIsRunning(false)
+    }
+  }
+
+  return (
+    <section className="nv-control-section nv-operation-panel">
+      <div className="nv-panel-heading">
+        <span>
+          <Calculator size={15} />
+          Operations
+        </span>
+        <em>niimath</em>
+      </div>
+
+      <div className="nv-operation-grid">
+        <label className="nv-field">
+          <span>Task</span>
+          <select value={operation} onChange={(event) => setOperation(event.target.value as NiimathOperation)}>
+            {NIIMATH_OPERATIONS.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {selectedOperation.needsOperand ? (
+          <label className="nv-field">
+            <span>Value</span>
+            <input
+              className="nv-text-input"
+              inputMode="decimal"
+              onChange={(event) => setOperand(event.target.value)}
+              type="number"
+              value={operand}
+            />
+          </label>
+        ) : null}
+
+        {selectedOperation.needsMask ? (
+          <label className="nv-field nv-field-wide">
+            <span>Mask Path</span>
+            <input
+              className="nv-text-input"
+              onChange={(event) => setMaskPath(event.target.value)}
+              placeholder="/path/to/mask.nii.gz"
+              type="text"
+              value={maskPath}
+            />
+          </label>
+        ) : null}
+      </div>
+
+      <p className="nv-operation-help">{selectedOperation.help}</p>
+
+      <button
+        className="nv-primary-action"
+        disabled={!canRun}
+        onClick={() => void runTask()}
+        type="button"
+      >
+        <Play size={14} />
+        <span>{isRunning ? 'Running' : 'Run'}</span>
+      </button>
+
+      <div className="nv-task-status">
+        <strong>{sourcePath ? item?.label : 'No source volume'}</strong>
+        <span>{sourcePath ? taskStatus : 'Select a local NIfTI volume.'}</span>
+        {result ? (
+          <code title={result.outputPath}>{result.outputPath}</code>
+        ) : null}
+      </div>
     </section>
   )
 }

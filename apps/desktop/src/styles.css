@@ -438,6 +438,48 @@ button {
   padding: 4px 7px;
 }
 
+.nv-sidepanel-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin: 10px 0 0;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.nv-sidepanel-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 34px;
+  border: 0;
+  background: #10110d;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nv-sidepanel-tabs button:hover,
+.nv-sidepanel-tabs button:focus-visible {
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-sidepanel-tabs button.is-active {
+  background: #252112;
+  color: var(--amber);
+}
+
+.nv-sidepanel-content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 10px;
+}
+
 .nv-stage-title {
   position: absolute;
   top: 14px;
@@ -871,6 +913,108 @@ button {
 .nv-slider code {
   color: var(--amber);
   text-align: right;
+}
+
+.nv-operation-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.nv-operation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, 0.45fr);
+  gap: 8px;
+}
+
+.nv-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-field-wide {
+  grid-column: 1 / -1;
+}
+
+.nv-field select,
+.nv-text-input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid var(--line);
+  outline: none;
+  background: #10110d;
+  color: var(--ink);
+  padding: 0 8px;
+}
+
+.nv-field select:focus,
+.nv-text-input:focus {
+  border-color: var(--green);
+}
+
+.nv-operation-help {
+  min-height: 34px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.nv-primary-action {
+  display: inline-grid;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid rgba(115, 198, 155, 0.42);
+  background: #162018;
+  color: var(--green);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.nv-primary-action:hover:not(:disabled),
+.nv-primary-action:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-primary-action:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.nv-task-status {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  padding-top: 9px;
+}
+
+.nv-task-status strong,
+.nv-task-status span,
+.nv-task-status code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-task-status strong {
+  color: var(--ink);
+}
+
+.nv-task-status code {
+  color: var(--amber);
 }
 
 .nv-readout {

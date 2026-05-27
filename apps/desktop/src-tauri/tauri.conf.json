@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "org.neurovue.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run ensure-niimath && npm run dev",
     "devUrl": "http://127.0.0.1:5175",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run ensure-niimath && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -26,6 +26,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "binaries/niimath"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

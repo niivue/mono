@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5175 --strictPort",
+    "ensure-niimath": "node scripts/ensure-niimath.cjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4174",
     "tauri:dev": "tauri dev",

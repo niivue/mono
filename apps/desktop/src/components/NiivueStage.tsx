@@ -11,6 +11,7 @@ interface NiivueStageProps {
 }
 
 interface NiiVueLike {
+  canvas?: HTMLCanvasElement
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(volumes: Array<{ url: string; name: string; colormap?: string }>): Promise<unknown>
   azimuth?: number
@@ -171,13 +172,15 @@ export function NiivueStage({
         nvRef.current = nv
         await nv.attachToCanvas(canvas)
         if (cancelled) return
-        resizeNiiVue(nv, canvas, stage)
+        const attachedCanvas = activeCanvasFor(nv, canvas)
+        canvasRef.current = attachedCanvas
+        resizeNiiVue(nv, attachedCanvas, stage)
         await loadRenderVolumeLods({
           item,
           nv,
           colormap,
           clipPlanes,
-          canvas,
+          canvas: attachedCanvas,
           stage,
           isCancelled: () => cancelled,
           setStatus
@@ -271,8 +274,13 @@ export function NiivueStage({
   }
 
   return (
-    <div className="nv-render-stage" ref={stageRef}>
-      <canvas ref={canvasRef} onPointerDown={clearSnapSelection} onWheel={clearSnapSelection} />
+    <div
+      className="nv-render-stage"
+      onPointerDown={clearSnapSelection}
+      onWheel={clearSnapSelection}
+      ref={stageRef}
+    >
+      <canvas key={backend} ref={canvasRef} />
       <div className="nv-render-snap-controls" aria-label="Snap render view">
         {RENDER_VIEW_SNAPS.map((snap) => (
           <button
@@ -447,6 +455,10 @@ function resizeNiiVue(
   if (canvas) syncCanvasSize(canvas, stage)
   nv.resize?.()
   nv.drawScene()
+}
+
+function activeCanvasFor(nv: NiiVueLike, fallback: HTMLCanvasElement): HTMLCanvasElement {
+  return nv.canvas instanceof HTMLCanvasElement ? nv.canvas : fallback
 }
 
 function syncCanvasSize(canvas: HTMLCanvasElement, stage: HTMLDivElement | null): void {

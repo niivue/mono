@@ -53,6 +53,11 @@ const SIDEBAR_PREVIEW_SIZE = 96
 const DESKTOP_PREVIEW_TIERS = [96, 192, 384, 768, 1024] as const
 const PREVIEW_TIER_SETTLE_MS = 180
 const PREVIEW_IMAGE_VERSION = 5
+const FLIPPED_CLIP_ORIENTATIONS: Record<string, Pick<ClipPlane, 'azimuth' | 'elevation'>> = {
+  anterior: { azimuth: 0, elevation: 0 },
+  inferior: { azimuth: 0, elevation: 90 },
+  right: { azimuth: 270, elevation: 0 }
+}
 type MouseContext = 'desktop' | 'niivue' | null
 
 interface DesktopDragState {
@@ -778,15 +783,39 @@ function ClipPlaneEditor({
   plane: ClipPlane
   onChange: (plane: ClipPlane) => void
 }): JSX.Element {
+  const defaultPlane = defaultClipPlaneFor(plane)
+  const isFlipped = isClipPlaneFlipped(plane)
+
   return (
     <section className="nv-clip-card">
-      <label className="nv-toggle">
+      <div className="nv-clip-card-header">
+        <label className="nv-toggle">
+          <input
+            checked={plane.enabled}
+            onChange={(event) => onChange({ ...plane, enabled: event.target.checked })}
+            type="checkbox"
+          />
+          <span>{plane.label}</span>
+        </label>
+
+        <button
+          aria-label={`Reset ${plane.label} clip plane`}
+          className="nv-pane-icon-button"
+          onClick={() => onChange(defaultPlane)}
+          title="Reset clip plane"
+          type="button"
+        >
+          <RotateCcw size={14} />
+        </button>
+      </div>
+
+      <label className="nv-toggle nv-clip-flip">
         <input
-          checked={plane.enabled}
-          onChange={(event) => onChange({ ...plane, enabled: event.target.checked })}
+          checked={isFlipped}
+          onChange={(event) => onChange(setClipPlaneFlipped(plane, event.target.checked))}
           type="checkbox"
         />
-        <span>{plane.label}</span>
+        <span>Flip</span>
       </label>
 
       <Slider label="Depth" max={1} min={0} step={0.01} value={plane.depth} onChange={(depth) => onChange({ ...plane, depth })} />
@@ -794,6 +823,42 @@ function ClipPlaneEditor({
       <Slider label="Elevation" max={180} min={-180} step={1} value={plane.elevation} onChange={(elevation) => onChange({ ...plane, elevation })} />
     </section>
   )
+}
+
+function defaultClipPlaneFor(plane: ClipPlane): ClipPlane {
+  return defaultClipPlanes().find((candidate) => candidate.id === plane.id) ?? plane
+}
+
+function setClipPlaneFlipped(plane: ClipPlane, flipped: boolean): ClipPlane {
+  const defaultPlane = defaultClipPlaneFor(plane)
+  const orientation = flipped ? flippedClipOrientation(defaultPlane) : defaultPlane
+  return {
+    ...plane,
+    azimuth: orientation.azimuth,
+    elevation: orientation.elevation
+  }
+}
+
+function isClipPlaneFlipped(plane: ClipPlane): boolean {
+  const flipped = flippedClipOrientation(defaultClipPlaneFor(plane))
+  return degreesEqual(plane.azimuth, flipped.azimuth) && degreesEqual(plane.elevation, flipped.elevation)
+}
+
+function flippedClipOrientation(plane: ClipPlane): Pick<ClipPlane, 'azimuth' | 'elevation'> {
+  return (
+    FLIPPED_CLIP_ORIENTATIONS[plane.id] ?? {
+      azimuth: plane.azimuth + 180,
+      elevation: -plane.elevation
+    }
+  )
+}
+
+function degreesEqual(a: number, b: number): boolean {
+  return Math.abs(normalizeDegrees(a) - normalizeDegrees(b)) < 0.0001
+}
+
+function normalizeDegrees(value: number): number {
+  return ((value % 360) + 360) % 360
 }
 
 function Slider({

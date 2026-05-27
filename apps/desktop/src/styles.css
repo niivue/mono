@@ -835,6 +835,24 @@ button {
   accent-color: var(--amber);
 }
 
+.nv-clip-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nv-clip-card-header .nv-toggle,
+.nv-clip-flip {
+  margin-bottom: 0;
+}
+
+.nv-clip-flip {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .nv-slider {
   display: grid;
   grid-template-columns: minmax(54px, 24%) minmax(0, 1fr) minmax(34px, auto);

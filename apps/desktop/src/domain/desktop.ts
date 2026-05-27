@@ -143,15 +143,15 @@ export function defaultClipPlanes(): ClipPlane[] {
       id: 'anterior',
       label: 'Anterior',
       enabled: true,
-      depth: 0.08,
+      depth: 0,
       azimuth: 180,
-      elevation: 20
+      elevation: 0
     },
     {
       id: 'inferior',
       label: 'Inferior',
       enabled: true,
-      depth: 0.08,
+      depth: 0,
       azimuth: 0,
       elevation: -90
     },
@@ -159,7 +159,7 @@ export function defaultClipPlanes(): ClipPlane[] {
       id: 'right',
       label: 'Right',
       enabled: false,
-      depth: 0.18,
+      depth: 0,
       azimuth: 90,
       elevation: 0
     }

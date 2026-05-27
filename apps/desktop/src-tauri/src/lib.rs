@@ -1,6 +1,7 @@
 mod volumetric_server;
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -45,6 +46,7 @@ struct NiimathTaskResult {
     operation: NiimathOperation,
     source_path: String,
     output_path: String,
+    volume_id: String,
     argv: Vec<String>,
     stdout: String,
     stderr: String,
@@ -55,18 +57,25 @@ fn neurovue_server_info(state: tauri::State<'_, NeuroVueState>) -> NeuroVueServe
     NeuroVueServerInfo {
         url: state.server.url.clone(),
         port: state.server.port,
-        volume_count: state.server.volume_count,
+        volume_count: volumetric_server::volume_count(&state.server),
     }
 }
 
 #[tauri::command]
-async fn run_niimath_task(request: NiimathTaskRequest) -> Result<NiimathTaskResult, String> {
-    tauri::async_runtime::spawn_blocking(move || run_niimath_task_blocking(request))
+async fn run_niimath_task(
+    state: tauri::State<'_, NeuroVueState>,
+    request: NiimathTaskRequest,
+) -> Result<NiimathTaskResult, String> {
+    let server = state.server.clone();
+    tauri::async_runtime::spawn_blocking(move || run_niimath_task_blocking(server, request))
         .await
         .map_err(|error| format!("run_niimath_task: join error: {error}"))?
 }
 
-fn run_niimath_task_blocking(request: NiimathTaskRequest) -> Result<NiimathTaskResult, String> {
+fn run_niimath_task_blocking(
+    server: volumetric_server::ServerHandle,
+    request: NiimathTaskRequest,
+) -> Result<NiimathTaskResult, String> {
     let source_path = validate_nifti_path("sourcePath", &request.source_path)?;
     let output_path = niimath_output_path(&source_path, request.operation)?;
     let mut argv = vec![source_path.display().to_string()];
@@ -138,10 +147,19 @@ fn run_niimath_task_blocking(request: NiimathTaskRequest) -> Result<NiimathTaskR
         ));
     }
 
+    write_niimath_sidecar(&output_path, &request, &source_path, &argv, &stdout, &stderr)?;
+    let volume_id = volumetric_server::register_derived_volume(
+        &server,
+        &source_path,
+        &output_path,
+        operation_file_label(request.operation),
+    )?;
+
     Ok(NiimathTaskResult {
         operation: request.operation,
         source_path: source_path.display().to_string(),
         output_path: output_path.display().to_string(),
+        volume_id,
         argv,
         stdout,
         stderr,
@@ -204,6 +222,57 @@ fn niimath_output_path(source_path: &Path, operation: NiimathOperation) -> Resul
         operation_file_label(operation),
         timestamp_ms
     )))
+}
+
+fn write_niimath_sidecar(
+    output_path: &Path,
+    request: &NiimathTaskRequest,
+    source_path: &Path,
+    argv: &[String],
+    stdout: &str,
+    stderr: &str,
+) -> Result<(), String> {
+    let sidecar_path = nifti_json_sidecar_path(output_path);
+    let payload = json!({
+        "NeuroVueGenerated": true,
+        "DerivativeType": "working",
+        "SourceImage": source_path.display().to_string(),
+        "GeneratedBy": [{
+            "Name": "niimath",
+            "Description": "NeuroVue interactive operation preview"
+        }],
+        "NeuroVueOperation": request.operation,
+        "NeuroVueOperand": request.operand,
+        "NeuroVueMask": request.mask_path,
+        "NeuroVueArgv": argv,
+        "NeuroVueStdout": stdout,
+        "NeuroVueStderr": stderr,
+        "CreatedAt": match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(duration) => format!("unix-ms:{}", duration.as_millis()),
+            Err(_) => "unix-ms:0".to_string()
+        }
+    });
+
+    fs::write(
+        &sidecar_path,
+        serde_json::to_string_pretty(&payload)
+            .map_err(|error| format!("run_niimath_task: serialize sidecar: {error}"))?,
+    )
+    .map_err(|error| {
+        format!(
+            "run_niimath_task: write sidecar {}: {error}",
+            sidecar_path.display()
+        )
+    })
+}
+
+fn nifti_json_sidecar_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("volume.nii.gz");
+    let stem = strip_nifti_suffix(file_name);
+    path.with_file_name(format!("{stem}.json"))
 }
 
 fn sidecar_binary(name: &str) -> Result<PathBuf, String> {

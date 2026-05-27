@@ -13,6 +13,7 @@ export interface NiimathTaskResult {
   operation: NiimathOperation
   sourcePath: string
   outputPath: string
+  volumeId: string
   argv: string[]
   stdout: string
   stderr: string

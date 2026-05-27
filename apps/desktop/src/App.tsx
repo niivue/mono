@@ -223,6 +223,16 @@ export function App(): JSX.Element {
     }
   }, [selected?.id, selected?.metadata])
 
+  async function refreshDesktopManifest(selectId?: string): Promise<void> {
+    if (!serverUrl) return
+    const nextManifest = await fetchDesktopManifest(serverUrl)
+    setManifest(nextManifest)
+    if (selectId && nextManifest.items.some((item) => item.id === selectId)) {
+      setSelectedId(selectId)
+    }
+    setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
+  }
+
   return (
     <main className="nv-app">
       <header className="nv-topbar">
@@ -440,6 +450,7 @@ export function App(): JSX.Element {
               <NiimathOperationsPanel
                 item={selected}
                 metadata={metadata}
+                onDerivedVolume={refreshDesktopManifest}
                 onStatus={setStatus}
               />
             )}
@@ -583,6 +594,13 @@ function DatasetDesktop({
     () => fittedWorldSize(stageSize, world, zoom),
     [stageSize, world, zoom]
   )
+  const sections = useMemo(() => desktopSections(items, world), [items, world.height, world.width])
+  const derivedSourceId = selected?.role === 'derived' ? selected.derivedFrom : null
+  const derivedSource = derivedSourceId
+    ? items.find((item) => item.id === derivedSourceId) ?? null
+    : null
+  const sourceStyle = derivedSource ? worldRectStyle(derivedSource.bounds, world) : undefined
+  const isOverview = renderedDesktopTileSize(worldSize, world, manifest?.tileSize ?? 1024) < 112
 
   useEffect(() => {
     zoomRef.current = zoom
@@ -622,7 +640,7 @@ function DatasetDesktop({
   }, [items.length, stageSize.height, stageSize.width, worldSize, zoom])
 
   return (
-    <div className={`nv-osd-stage ${previewSize < 384 ? 'is-overview' : ''}`}>
+    <div className={`nv-osd-stage ${isOverview ? 'is-overview' : ''}`}>
       <div
         className={`nv-osd-scrollport ${isPanning ? 'is-panning' : ''}`}
         onClickCapture={(event) => suppressDesktopClickAfterDrag(event, suppressClickRef)}
@@ -634,9 +652,20 @@ function DatasetDesktop({
       >
         <StageResizeObserver stageRef={stageRef} onResize={setStageSize} />
         <div className="nv-osd-world" style={worldSize}>
+          {sections.map((section) => (
+            <div
+              aria-hidden="true"
+              className={`nv-osd-section nv-osd-section-${section.id}`}
+              key={section.id}
+              style={worldRectStyle(section.bounds, world)}
+            >
+              <span>{section.label}</span>
+              <em>{section.count}</em>
+            </div>
+          ))}
           {items.map((item) => (
             <button
-              className={`nv-osd-tile ${selected?.id === item.id ? 'is-selected' : ''}`}
+              className={desktopTileClassName(item, selected, derivedSourceId)}
               key={item.id}
               onClick={() => onSelect(item)}
               style={worldRectStyle(item.bounds, world)}
@@ -647,7 +676,7 @@ function DatasetDesktop({
                 frameClassName="nv-osd-image-frame"
                 draggable={false}
               />
-              <span className="nv-osd-index">L0</span>
+              <span className="nv-osd-index">{item.role === 'derived' ? 'D' : 'L0'}</span>
               <span className="nv-osd-label">{item.label}</span>
             </button>
           ))}
@@ -655,19 +684,34 @@ function DatasetDesktop({
         </div>
       </div>
 
-      <div className="nv-stage-title" aria-hidden="true">
+      <div className="nv-stage-title nv-osd-title" aria-hidden="true">
         <span>OSD Desktop</span>
         <strong>{manifest?.label ?? 'VolumeDesktop'}</strong>
         <em>{isActive ? 'mouse' : `${Math.round(zoom * 100)}%`}</em>
       </div>
 
-      <div className="nv-hud" aria-hidden="true">
-        <span>zoom {Math.round(zoom * 100)}%</span>
-        <span>preview L{previewLevel} / {previewSize}px</span>
-        <span>{isActive ? 'wheel zoom / drag pan' : 'idle'}</span>
-        <span>{items.length} visible</span>
-        <span>{world.width} x {world.height}</span>
-      </div>
+      <footer className="nv-osd-footer" aria-hidden="true">
+        <div className="nv-hud">
+          <span>zoom {Math.round(zoom * 100)}%</span>
+          <span>LOD L{previewLevel}</span>
+          <span>{previewSize}px previews</span>
+          <span>{items.length} visible</span>
+          <span>{world.width} x {world.height}</span>
+        </div>
+        {derivedSource ? (
+          <div className="nv-osd-source-key">
+            <span className="nv-osd-source-swatch" />
+            <strong>Original</strong>
+            <span>{derivedSource.label}</span>
+          </div>
+        ) : (
+          <div className="nv-osd-source-key is-muted">
+            <span className="nv-osd-source-swatch" />
+            <strong>Original</strong>
+            <span>none selected</span>
+          </div>
+        )}
+      </footer>
 
       <button
         aria-label="Click to center the desktop dataset"
@@ -679,12 +723,28 @@ function DatasetDesktop({
         type="button"
       >
         <span className="nv-minimap-map" aria-hidden="true">
+          {sourceStyle ? <span className="nv-minimap-source" style={sourceStyle} /> : null}
           {selectedStyle ? <span className="nv-minimap-selection" style={selectedStyle} /> : null}
           <span className="nv-minimap-window" style={minimapViewportStyle(viewport)} />
         </span>
       </button>
     </div>
   )
+}
+
+function desktopTileClassName(
+  item: DesktopItem,
+  selected: DesktopItem | null,
+  derivedSourceId: string | null | undefined
+): string {
+  return [
+    'nv-osd-tile',
+    selected?.id === item.id ? 'is-selected' : '',
+    item.role === 'derived' ? 'is-derived' : '',
+    derivedSourceId === item.id ? 'is-derived-source' : ''
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
 function StageResizeObserver({
@@ -793,6 +853,14 @@ function SelectionPanel({
           <dd>{item.id}</dd>
           <dt>Format</dt>
           <dd>{item.format}</dd>
+          <dt>Role</dt>
+          <dd>{item.role ?? 'source'}</dd>
+          {item.derivedFrom ? (
+            <>
+              <dt>Source</dt>
+              <dd>{item.derivedFrom}</dd>
+            </>
+          ) : null}
           <dt>Shape</dt>
           <dd>{item.shape.join(' x ')}</dd>
           <dt>Spacing</dt>
@@ -874,10 +942,12 @@ function MetadataPanel({
 function NiimathOperationsPanel({
   item,
   metadata,
+  onDerivedVolume,
   onStatus
 }: {
   item: DesktopItem | null
   metadata: VolumeMetadata | null
+  onDerivedVolume: (volumeId: string) => Promise<void>
   onStatus: (status: string) => void
 }): JSX.Element {
   const [operation, setOperation] = useState<NiimathOperation>('smooth')
@@ -911,6 +981,7 @@ function NiimathOperationsPanel({
       setResult(nextResult)
       setTaskStatus('Done.')
       onStatus(`niimath wrote ${nextResult.outputPath}.`)
+      await onDerivedVolume(nextResult.volumeId)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setTaskStatus(message)
@@ -1308,6 +1379,41 @@ function minimapViewportStyle(viewport: MinimapViewport): CSSProperties {
   }
 }
 
+function desktopSections(
+  items: DesktopItem[],
+  world: DesktopManifest['world']
+): Array<{ id: 'sources' | 'derived'; label: string; count: number; bounds: WorldRect }> {
+  return [
+    desktopSectionForRole(items.filter((item) => item.role !== 'derived'), world, 'sources', 'Source Volumes'),
+    desktopSectionForRole(items.filter((item) => item.role === 'derived'), world, 'derived', 'Working Derivatives')
+  ].filter((section): section is { id: 'sources' | 'derived'; label: string; count: number; bounds: WorldRect } => Boolean(section))
+}
+
+function desktopSectionForRole(
+  items: DesktopItem[],
+  world: DesktopManifest['world'],
+  id: 'sources' | 'derived',
+  label: string
+): { id: 'sources' | 'derived'; label: string; count: number; bounds: WorldRect } | null {
+  if (items.length === 0) return null
+  const minY = Math.min(...items.map((item) => item.bounds.y))
+  const maxY = Math.max(...items.map((item) => item.bounds.y + item.bounds.height))
+  const topPadding = Math.min(80, minY)
+  const bottomPadding = 56
+
+  return {
+    id,
+    label,
+    count: items.length,
+    bounds: {
+      x: 0,
+      y: Math.max(0, minY - topPadding),
+      width: Math.max(world.width, 1),
+      height: Math.max(maxY - minY + topPadding + bottomPadding, 1)
+    }
+  }
+}
+
 function worldRectStyle(
   rect: WorldRect,
   world: DesktopManifest['world']
@@ -1333,6 +1439,19 @@ function fittedWorldSize(
     width: `${dimensions.width}px`,
     height: `${dimensions.height}px`
   }
+}
+
+function renderedDesktopTileSize(
+  worldSize: CSSProperties,
+  world: DesktopManifest['world'],
+  tileSize: number
+): number {
+  const renderedWorldWidth = Number.parseFloat(String(worldSize.width ?? '0'))
+  const renderedWorldHeight = Number.parseFloat(String(worldSize.height ?? '0'))
+  const tileWidth = renderedWorldWidth * tileSize / Math.max(world.width, 1)
+  const tileHeight = renderedWorldHeight * tileSize / Math.max(world.height, 1)
+
+  return Math.min(tileWidth, tileHeight)
 }
 
 function fittedWorldDimensions(

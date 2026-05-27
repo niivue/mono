@@ -25,12 +25,15 @@ pub struct ServerHandle {
     pub url: String,
     pub port: u16,
     pub volume_count: usize,
+    volumes: VolumeStore,
 }
+
+type VolumeStore = Arc<Mutex<Vec<VolumeEntry>>>;
 
 #[derive(Clone)]
 struct AppState {
     base_url: String,
-    volumes: Arc<Vec<VolumeEntry>>,
+    volumes: VolumeStore,
     preview_cache: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     pyramid_lock: Arc<Mutex<()>>,
     patch: Arc<Mutex<Option<Value>>>,
@@ -41,12 +44,30 @@ struct AppState {
 struct VolumeEntry {
     id: String,
     label: String,
+    role: VolumeRole,
     format: String,
     shape: [u16; 3],
     spacing: [f32; 3],
     dtype: String,
     source_path: Option<PathBuf>,
     sidecar_paths: Vec<PathBuf>,
+    derived_from: Option<String>,
+    derivation: Option<VolumeDerivation>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum VolumeRole {
+    Source,
+    Derived,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VolumeDerivation {
+    operation: String,
+    source_path: String,
+    output_path: String,
 }
 
 #[derive(Deserialize)]
@@ -90,14 +111,15 @@ pub fn spawn_default() -> ServerHandle {
 
     let base_url = format!("http://{}", addr);
     let volumes = discover_volumes();
+    let volume_count = volumes.len();
+    let volumes = Arc::new(Mutex::new(volumes));
     let state = AppState {
         base_url: base_url.clone(),
-        volumes: Arc::new(volumes),
+        volumes: volumes.clone(),
         preview_cache: Arc::new(Mutex::new(HashMap::new())),
         pyramid_lock: Arc::new(Mutex::new(())),
         patch: Arc::new(Mutex::new(None)),
     };
-    let volume_count = state.volumes.len();
 
     std::thread::spawn(move || {
         let runtime = Builder::new_multi_thread()
@@ -146,18 +168,85 @@ pub fn spawn_default() -> ServerHandle {
         url: base_url,
         port: addr.port(),
         volume_count,
+        volumes,
     }
 }
 
+pub fn volume_count(handle: &ServerHandle) -> usize {
+    handle
+        .volumes
+        .lock()
+        .map(|volumes| volumes.len())
+        .unwrap_or(handle.volume_count)
+}
+
+pub fn register_derived_volume(
+    handle: &ServerHandle,
+    source_path: &std::path::Path,
+    output_path: &std::path::Path,
+    operation: &str,
+) -> Result<String, String> {
+    let header = read_nifti_header(output_path)
+        .ok_or_else(|| format!("register_derived_volume: unreadable NIfTI {}", output_path.display()))?;
+    let output_parent = output_path.parent().unwrap_or_else(|| FsPath::new(""));
+    let output_id = volume_id(output_path, output_parent);
+    let source_path = fs::canonicalize(source_path)
+        .map_err(|error| format!("register_derived_volume: source {}: {error}", source_path.display()))?;
+    let output_path = fs::canonicalize(output_path)
+        .map_err(|error| format!("register_derived_volume: output {}: {error}", output_path.display()))?;
+    let mut volumes = handle
+        .volumes
+        .lock()
+        .map_err(|_| "register_derived_volume: volume store is unavailable".to_string())?;
+    let source_id = volumes
+        .iter()
+        .find(|volume| {
+            volume
+                .source_path
+                .as_deref()
+                .is_some_and(|path| same_canonical_path(path, &source_path))
+        })
+        .map(|volume| volume.id.clone());
+    let unique_id = unique_volume_id(&volumes, &format!("derived__{output_id}"));
+    let source_label = source_id
+        .as_deref()
+        .and_then(|id| volumes.iter().find(|volume| volume.id == id))
+        .map(|volume| volume.label.clone())
+        .unwrap_or_else(|| "Derived volume".to_string());
+
+    volumes.push(VolumeEntry {
+        id: unique_id.clone(),
+        label: format!("{source_label} / {operation}"),
+        role: VolumeRole::Derived,
+        format: "nifti".to_string(),
+        shape: header.shape,
+        spacing: header.spacing,
+        dtype: header.dtype,
+        source_path: Some(output_path.clone()),
+        sidecar_paths: find_json_sidecars(&output_path, output_parent),
+        derived_from: source_id,
+        derivation: Some(VolumeDerivation {
+            operation: operation.to_string(),
+            source_path: source_path.display().to_string(),
+            output_path: output_path.display().to_string(),
+        }),
+    });
+
+    Ok(unique_id)
+}
+
 async fn api_info(State(state): State<AppState>) -> Json<Value> {
+    let volumes = state.volumes.lock().map(|volumes| volumes.clone()).unwrap_or_default();
     Json(json!({
         "service": "neurovue-volumetric-server",
         "version": "0.1.0",
         "desktop": format!("{}/iiif/desktop/neuro/manifest", state.base_url),
-        "volumes": state.volumes.iter().map(|volume| {
+        "volumes": volumes.iter().map(|volume| {
             let encoded = url_component(&volume.id);
             json!({
                 "id": volume.id,
+                "role": volume.role,
+                "derivedFrom": volume.derived_from.as_deref(),
                 "format": volume.format,
                 "shape": volume.shape,
                 "spacing": volume.spacing,
@@ -179,26 +268,84 @@ async fn desktops(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
+fn grid_rows(count: u32, columns: u32) -> u32 {
+    if count == 0 {
+        0
+    } else {
+        count.div_ceil(columns.max(1))
+    }
+}
+
+fn grid_height(rows: u32, tile_size: u32, gap: u32) -> u32 {
+    if rows == 0 {
+        0
+    } else {
+        rows * tile_size + rows.saturating_sub(1) * gap
+    }
+}
+
 async fn desktop_manifest(
     Path(desktop_id): Path<String>,
     State(state): State<AppState>,
 ) -> Json<Value> {
+    let volumes = state.volumes.lock().map(|volumes| volumes.clone()).unwrap_or_default();
     let tile_size = 1024_u32;
     let gap = 96_u32;
-    let columns = (state.volumes.len() as f64).sqrt().ceil().max(1.0) as u32;
-    let rows = ((state.volumes.len() as f64) / f64::from(columns))
-        .ceil()
-        .max(1.0) as u32;
     let pitch = tile_size + gap;
+    let section_label_space = 96_u32;
+    let section_gap = 512_u32;
+    let source_count = volumes
+        .iter()
+        .filter(|volume| volume.role != VolumeRole::Derived)
+        .count() as u32;
+    let derived_count = volumes
+        .iter()
+        .filter(|volume| volume.role == VolumeRole::Derived)
+        .count() as u32;
+    let layout_count = source_count.max(derived_count).max(1);
+    let columns = (layout_count as f64).sqrt().ceil().max(1.0) as u32;
+    let source_rows = grid_rows(source_count, columns);
+    let derived_rows = grid_rows(derived_count, columns);
+    let source_top = section_label_space;
+    let source_height = grid_height(source_rows, tile_size, gap);
+    let derived_top = if derived_count > 0 {
+        source_top + source_height + section_gap + section_label_space
+    } else {
+        0
+    };
+    let derived_height = grid_height(derived_rows, tile_size, gap);
+    let rows = source_rows + derived_rows;
+    let world_width = columns * tile_size + columns.saturating_sub(1) * gap;
+    let world_height = if derived_count > 0 {
+        derived_top + derived_height
+    } else {
+        source_top + source_height
+    }
+    .max(tile_size);
 
-    let items = state
-        .volumes
+    let mut source_index = 0_u32;
+    let mut derived_index = 0_u32;
+    let items = volumes
         .iter()
         .enumerate()
         .map(|(index, volume)| {
             let encoded = url_component(&volume.id);
-            let col = index as u32 % columns;
-            let row = index as u32 / columns;
+            let role_index = if volume.role == VolumeRole::Derived {
+                let next = derived_index;
+                derived_index += 1;
+                next
+            } else {
+                let next = source_index;
+                source_index += 1;
+                next
+            };
+            let col = role_index % columns;
+            let row = role_index / columns;
+            let top = if volume.role == VolumeRole::Derived {
+                derived_top
+            } else {
+                source_top
+            };
             let preview_slice = volume.shape[2] / 2;
             let preview_service = format!(
                 "{}/iiif/image/{}/axial/{}",
@@ -209,10 +356,11 @@ async fn desktop_manifest(
                 "id": volume.id,
                 "type": "NiftiVolumeItem",
                 "label": volume.label,
+                "role": volume.role,
                 "index": index,
                 "bounds": {
                     "x": col * pitch,
-                    "y": row * pitch,
+                    "y": top + row * pitch,
                     "width": tile_size,
                     "height": tile_size
                 },
@@ -220,6 +368,8 @@ async fn desktop_manifest(
                 "shape": volume.shape,
                 "spacing": volume.spacing,
                 "dtype": volume.dtype,
+                "derivedFrom": volume.derived_from.as_deref(),
+                "derivation": volume.derivation.as_ref(),
                 "manifest": format!("{}/iiif/presentation/{}/manifest", state.base_url, encoded),
                 "metadata": format!("{}/volumes/{}/metadata", state.base_url, encoded),
                 "preview": {
@@ -247,8 +397,8 @@ async fn desktop_manifest(
         "tileSize": tile_size,
         "gap": gap,
         "world": {
-            "width": columns * tile_size + columns.saturating_sub(1) * gap,
-            "height": rows * tile_size + rows.saturating_sub(1) * gap,
+            "width": world_width,
+            "height": world_height,
             "units": "desktop-px",
             "columns": columns,
             "rows": rows
@@ -280,10 +430,13 @@ async fn volume_metadata(
     Ok(Json(json!({
         "id": volume.id,
         "label": volume.label,
+        "role": volume.role,
         "format": volume.format,
         "shape": volume.shape,
         "spacing": volume.spacing,
         "dtype": volume.dtype,
+        "derivedFrom": volume.derived_from,
+        "derivation": volume.derivation,
         "sourcePath": volume.source_path.as_ref().map(|path| path.display().to_string()),
         "sidecars": sidecars
     })))
@@ -316,7 +469,7 @@ async fn raw_level_volume(
     let path = if level == 0 {
         volume.source_path.clone().ok_or(StatusCode::NOT_FOUND)?
     } else {
-        ensure_downsampled_nifti(volume, level, &state.pyramid_lock)
+        ensure_downsampled_nifti(&volume, level, &state.pyramid_lock)
             .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?
     };
     let body = tokio::fs::read(&path)
@@ -336,8 +489,8 @@ async fn image_info(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, StatusCode> {
     let volume = find_volume(&state, &path.vol_id).ok_or(StatusCode::NOT_FOUND)?;
-    let (width, height) = slice_dims(volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
-    let max_slice = slice_count(volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
+    let (width, height) = slice_dims(&volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
+    let max_slice = slice_count(&volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
     if path.slice >= max_slice {
         return Err(StatusCode::RANGE_NOT_SATISFIABLE);
     }
@@ -371,8 +524,8 @@ async fn image_tile(
     State(state): State<AppState>,
 ) -> Result<Response, StatusCode> {
     let volume = find_volume(&state, &path.vol_id).ok_or(StatusCode::NOT_FOUND)?;
-    let (width, height) = slice_dims(volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
-    let max_slice = slice_count(volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
+    let (width, height) = slice_dims(&volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
+    let max_slice = slice_count(&volume, &path.axis).ok_or(StatusCode::BAD_REQUEST)?;
     if path.slice >= max_slice {
         return Err(StatusCode::RANGE_NOT_SATISFIABLE);
     }
@@ -405,7 +558,7 @@ async fn image_tile(
     }
 
     if let Some(bmp) = render_slice_bmp(
-        volume,
+        &volume,
         &path.axis,
         path.slice,
         &path.size,
@@ -419,7 +572,7 @@ async fn image_tile(
         return Ok((headers, bmp).into_response());
     }
 
-    let svg = preview_svg(volume, &path.axis, path.slice, width, height, &path);
+    let svg = preview_svg(&volume, &path.axis, path.slice, width, height, &path);
     headers.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("image/svg+xml; charset=utf-8"),
@@ -582,12 +735,15 @@ fn volume_entry(path: &FsPath, root: &FsPath) -> Option<VolumeEntry> {
     Some(VolumeEntry {
         id,
         label,
+        role: VolumeRole::Source,
         format: "nifti".to_string(),
         shape: header.shape,
         spacing: header.spacing,
         dtype: header.dtype,
         source_path: Some(path.to_path_buf()),
         sidecar_paths: find_json_sidecars(path, root),
+        derived_from: None,
+        derivation: None,
     })
 }
 
@@ -611,6 +767,7 @@ fn fallback_mni152_volume() -> Option<VolumeEntry> {
     Some(VolumeEntry {
         id: "mni152".to_string(),
         label: "MNI152 reference".to_string(),
+        role: VolumeRole::Source,
         format: "nifti".to_string(),
         shape: header.shape,
         spacing: header.spacing,
@@ -620,6 +777,8 @@ fn fallback_mni152_volume() -> Option<VolumeEntry> {
             .map(|path| find_json_sidecars(path, path.parent().unwrap_or_else(|| FsPath::new(""))))
             .unwrap_or_default(),
         source_path,
+        derived_from: None,
+        derivation: None,
     })
 }
 
@@ -726,6 +885,25 @@ fn volume_id(path: &FsPath, root: &FsPath) -> String {
     strip_nifti_extension(relative)
         .to_string_lossy()
         .replace(std::path::MAIN_SEPARATOR, "__")
+}
+
+fn unique_volume_id(volumes: &[VolumeEntry], base: &str) -> String {
+    if !volumes.iter().any(|volume| volume.id == base) {
+        return base.to_string();
+    }
+
+    for suffix in 2.. {
+        let candidate = format!("{base}_{suffix}");
+        if !volumes.iter().any(|volume| volume.id == candidate) {
+            return candidate;
+        }
+    }
+
+    base.to_string()
+}
+
+fn same_canonical_path(left: &FsPath, right: &FsPath) -> bool {
+    fs::canonicalize(left).map(|path| path == right).unwrap_or_else(|_| left == right)
 }
 
 fn strip_nifti_extension(path: &FsPath) -> PathBuf {
@@ -983,8 +1161,12 @@ fn read_json_sidecar(path: &FsPath) -> Option<Value> {
         .and_then(|body| serde_json::from_str(&body).ok())
 }
 
-fn find_volume<'a>(state: &'a AppState, vol_id: &str) -> Option<&'a VolumeEntry> {
-    state.volumes.iter().find(|volume| volume.id == vol_id)
+fn find_volume(state: &AppState, vol_id: &str) -> Option<VolumeEntry> {
+    state
+        .volumes
+        .lock()
+        .ok()
+        .and_then(|volumes| volumes.iter().find(|volume| volume.id == vol_id).cloned())
 }
 
 fn preview_level_for_size(size: &str) -> u8 {

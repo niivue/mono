@@ -24,6 +24,7 @@ export interface DesktopItem {
   id: string
   type: string
   label: string
+  role?: 'source' | 'derived'
   index: number
   bounds: WorldRect
   format: string
@@ -41,6 +42,8 @@ export interface DesktopItem {
   levels: DesktopVolumeLevel[]
   brickTemplate?: string
   sliceServices?: Record<Axis, string>
+  derivedFrom?: string | null
+  derivation?: VolumeDerivation | null
 }
 
 export type JsonValue =
@@ -61,13 +64,22 @@ export interface JsonSidecar {
 export interface VolumeMetadata {
   id: string
   label?: string
+  role?: 'source' | 'derived'
   format?: string
   shape?: [number, number, number]
   spacing?: [number, number, number]
   dtype?: string
   sourcePath?: string | null
+  derivedFrom?: string | null
+  derivation?: VolumeDerivation | null
   sidecars?: JsonSidecar[]
-  [key: string]: JsonValue | JsonSidecar[] | undefined
+  [key: string]: JsonValue | JsonSidecar[] | VolumeDerivation | undefined
+}
+
+export interface VolumeDerivation {
+  operation: string
+  sourcePath: string
+  outputPath: string
 }
 
 export interface DesktopManifest {

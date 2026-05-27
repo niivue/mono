@@ -48,7 +48,7 @@ const CORONAL_SNAP: RenderViewSnap = {
   shortLabel: 'Cor',
   azimuth: 180,
   elevation: 0,
-  shortcut: 'Numpad 1'
+  shortcut: '1 / Numpad 1'
 }
 const SAGITTAL_SNAP: RenderViewSnap = {
   id: 'sagittal',
@@ -56,7 +56,7 @@ const SAGITTAL_SNAP: RenderViewSnap = {
   shortLabel: 'Sag',
   azimuth: -90,
   elevation: 0,
-  shortcut: 'Numpad 3'
+  shortcut: '3 / Numpad 3'
 }
 const AXIAL_SNAP: RenderViewSnap = {
   id: 'axial',
@@ -64,10 +64,19 @@ const AXIAL_SNAP: RenderViewSnap = {
   shortLabel: 'Ax',
   azimuth: 0,
   elevation: 90,
-  shortcut: 'Numpad 7'
+  shortcut: '7 / Numpad 7'
 }
 const RENDER_VIEW_SNAPS = [CORONAL_SNAP, SAGITTAL_SNAP, AXIAL_SNAP]
 const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; reverse: RenderViewSnap }> = {
+  Digit1: {
+    normal: CORONAL_SNAP,
+    reverse: {
+      ...CORONAL_SNAP,
+      label: 'Posterior coronal',
+      azimuth: 0,
+      shortcut: 'Ctrl+1'
+    }
+  },
   Numpad1: {
     normal: CORONAL_SNAP,
     reverse: {
@@ -77,6 +86,15 @@ const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; revers
       shortcut: 'Ctrl+Numpad 1'
     }
   },
+  Digit3: {
+    normal: SAGITTAL_SNAP,
+    reverse: {
+      ...SAGITTAL_SNAP,
+      label: 'Left sagittal',
+      azimuth: 90,
+      shortcut: 'Ctrl+3'
+    }
+  },
   Numpad3: {
     normal: SAGITTAL_SNAP,
     reverse: {
@@ -84,6 +102,15 @@ const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; revers
       label: 'Left sagittal',
       azimuth: 90,
       shortcut: 'Ctrl+Numpad 3'
+    }
+  },
+  Digit7: {
+    normal: AXIAL_SNAP,
+    reverse: {
+      ...AXIAL_SNAP,
+      label: 'Inferior axial',
+      elevation: -90,
+      shortcut: 'Ctrl+7'
     }
   },
   Numpad7: {

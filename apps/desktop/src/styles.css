@@ -109,11 +109,14 @@ button {
   width: 38px;
   height: 38px;
   border: 1px solid rgba(215, 166, 66, 0.5);
-  background:
-    linear-gradient(90deg, transparent 47%, rgba(215, 166, 66, 0.8) 48% 52%, transparent 53%),
-    linear-gradient(0deg, transparent 47%, rgba(115, 198, 155, 0.74) 48% 52%, transparent 53%),
-    #12130f;
+  background: #12130f;
   color: var(--amber);
+}
+
+.nv-mark img {
+  width: 30px;
+  height: 30px;
+  display: block;
 }
 
 .nv-brand h1 {

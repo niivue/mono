@@ -19,7 +19,6 @@ import {
   Eye,
   FileJson,
   GripVertical,
-  Layers3,
   Maximize2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -44,6 +43,7 @@ import {
   fetchVolumeMetadata,
   resolveServerUrl
 } from './domain/desktop'
+import neurovueIconUrl from '../src-tauri/icons/neurovue-icon.svg?url'
 
 const MIN_SPLIT = 34
 const MAX_SPLIT = 68
@@ -87,6 +87,17 @@ export function App(): JSX.Element {
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
   const [isFileListCollapsed, setIsFileListCollapsed] = useState(false)
+
+  useEffect(() => {
+    let favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    if (!favicon) {
+      favicon = document.createElement('link')
+      favicon.rel = 'icon'
+      document.head.appendChild(favicon)
+    }
+    favicon.type = 'image/svg+xml'
+    favicon.href = neurovueIconUrl
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -164,7 +175,7 @@ export function App(): JSX.Element {
       <header className="nv-topbar">
         <div className="nv-brand">
           <div className="nv-mark">
-            <Layers3 size={18} />
+            <img alt="" src={neurovueIconUrl} />
           </div>
           <div>
             <h1>NeuroVue</h1>

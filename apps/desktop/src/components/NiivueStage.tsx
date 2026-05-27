@@ -7,6 +7,7 @@ interface NiivueStageProps {
   backend: Backend
   colormap: string
   clipPlanes: ClipPlane[]
+  isActive: boolean
 }
 
 interface NiiVueLike {
@@ -27,24 +28,81 @@ interface RenderVolumeLevel {
   shape?: [number, number, number]
 }
 
+interface RenderViewSnap {
+  id: RenderSnapId
+  label: string
+  shortLabel: string
+  azimuth: number
+  elevation: number
+  shortcut?: string
+}
+
+type RenderSnapId = 'coronal' | 'sagittal' | 'axial'
 type NiiVueConstructor = new (options?: Record<string, unknown>) => NiiVueLike
 
 const NIVUE_SLICE_TYPE_RENDER = 4
 const NIVUE_SHOW_RENDER_ALWAYS = 1
-const RENDER_VIEW_SNAPS = [
-  { id: 'sagittal', label: 'Sagittal', shortLabel: 'Sag', azimuth: -90, elevation: 0 },
-  { id: 'axial', label: 'Axial', shortLabel: 'Ax', azimuth: 0, elevation: 90 },
-  { id: 'coronal', label: 'Coronal', shortLabel: 'Cor', azimuth: 0, elevation: 0 }
-] as const
-
-type RenderViewSnap = (typeof RENDER_VIEW_SNAPS)[number]
-type RenderSnapId = RenderViewSnap['id']
+const CORONAL_SNAP: RenderViewSnap = {
+  id: 'coronal',
+  label: 'Coronal',
+  shortLabel: 'Cor',
+  azimuth: 0,
+  elevation: 0,
+  shortcut: 'Numpad 1'
+}
+const SAGITTAL_SNAP: RenderViewSnap = {
+  id: 'sagittal',
+  label: 'Sagittal',
+  shortLabel: 'Sag',
+  azimuth: -90,
+  elevation: 0,
+  shortcut: 'Numpad 3'
+}
+const AXIAL_SNAP: RenderViewSnap = {
+  id: 'axial',
+  label: 'Axial',
+  shortLabel: 'Ax',
+  azimuth: 0,
+  elevation: 90,
+  shortcut: 'Numpad 7'
+}
+const RENDER_VIEW_SNAPS = [CORONAL_SNAP, SAGITTAL_SNAP, AXIAL_SNAP]
+const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; reverse: RenderViewSnap }> = {
+  Numpad1: {
+    normal: CORONAL_SNAP,
+    reverse: {
+      ...CORONAL_SNAP,
+      label: 'Posterior coronal',
+      azimuth: 180,
+      shortcut: 'Ctrl+Numpad 1'
+    }
+  },
+  Numpad3: {
+    normal: SAGITTAL_SNAP,
+    reverse: {
+      ...SAGITTAL_SNAP,
+      label: 'Left sagittal',
+      azimuth: 90,
+      shortcut: 'Ctrl+Numpad 3'
+    }
+  },
+  Numpad7: {
+    normal: AXIAL_SNAP,
+    reverse: {
+      ...AXIAL_SNAP,
+      label: 'Inferior axial',
+      elevation: -90,
+      shortcut: 'Ctrl+Numpad 7'
+    }
+  }
+}
 
 export function NiivueStage({
   item,
   backend,
   colormap,
-  clipPlanes
+  clipPlanes,
+  isActive
 }: NiivueStageProps): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -154,6 +212,23 @@ export function NiivueStage({
     resizeNiiVue(nv, canvasRef.current, stageRef.current)
   }, [clipPlanes])
 
+  useEffect(() => {
+    if (!isActive || !item) return
+
+    function onKeyDown(event: KeyboardEvent): void {
+      if (isEditableTarget(event.target)) return
+      const snap = blenderSnapForEvent(event)
+      if (!snap) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      snapRenderView(snap)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isActive, item])
+
   function snapRenderView(snap: RenderViewSnap): void {
     const nv = nvRef.current
     if (!nv || !('azimuth' in nv) || !('elevation' in nv)) return
@@ -180,7 +255,7 @@ export function NiivueStage({
             disabled={!item}
             key={snap.id}
             onClick={() => snapRenderView(snap)}
-            title={`Snap to ${snap.label}`}
+            title={`Snap to ${snap.label} (${snap.shortcut})`}
             type="button"
           >
             {snap.shortLabel}
@@ -210,6 +285,21 @@ async function loadNiiVue(backend: Backend): Promise<NiiVueConstructor> {
     const module = await import('@niivue/niivue')
     return module.default as NiiVueConstructor
   }
+}
+
+function blenderSnapForEvent(event: KeyboardEvent): RenderViewSnap | null {
+  if (event.altKey || event.metaKey || event.shiftKey) return null
+
+  const snap = BLENDER_RENDER_VIEW_SNAPS[event.code]
+  if (!snap) return null
+
+  return event.ctrlKey ? snap.reverse : snap.normal
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  return ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)
 }
 
 async function loadRenderVolumeLods({

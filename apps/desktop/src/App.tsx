@@ -323,6 +323,7 @@ export function App(): JSX.Element {
               backend={backend}
               clipPlanes={clipPlanes}
               colormap={colormap}
+              isActive={mouseContext === 'niivue'}
               item={selected}
             />
           </section>

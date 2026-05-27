@@ -439,6 +439,12 @@ button {
   padding: 4px 7px;
 }
 
+.nv-wheel-mode-select {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  width: 100%;
+  margin: 10px 0;
+}
+
 .nv-sidepanel-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1055,14 +1061,40 @@ button {
 .nv-clip-card-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   min-width: 0;
+}
+
+.nv-clip-card.is-active {
+  border-color: rgba(197, 156, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(197, 156, 255, 0.24);
 }
 
 .nv-clip-card-header .nv-toggle,
 .nv-clip-flip {
   margin-bottom: 0;
+}
+
+.nv-clip-card-header .nv-toggle {
+  min-width: 0;
+  margin-right: auto;
+}
+
+.nv-clip-card-header .nv-toggle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-clip-active-badge {
+  border: 1px solid rgba(197, 156, 255, 0.52);
+  background: rgba(197, 156, 255, 0.12);
+  color: var(--association);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  text-transform: uppercase;
 }
 
 .nv-clip-flip {

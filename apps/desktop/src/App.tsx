@@ -106,6 +106,7 @@ const FLIPPED_CLIP_ORIENTATIONS: Record<string, Pick<ClipPlane, 'azimuth' | 'ele
 }
 type MouseContext = 'desktop' | 'niivue' | null
 type SidePanelTab = 'inspect' | 'operations'
+type RenderWheelMode = 'zoom' | 'clip-plane'
 
 interface DesktopDragState {
   pointerId: number
@@ -142,6 +143,10 @@ export function App(): JSX.Element {
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
   const [isFileListCollapsed, setIsFileListCollapsed] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
+  const [activeClipPlaneId, setActiveClipPlaneId] = useState(
+    () => defaultClipPlanes()[0]?.id ?? 'anterior'
+  )
+  const [renderWheelMode, setRenderWheelMode] = useState<RenderWheelMode>('zoom')
 
   useEffect(() => {
     manifestRef.current = manifest
@@ -188,6 +193,7 @@ export function App(): JSX.Element {
 
   const items = manifest?.items ?? []
   const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null
+  const activeClipPlane = clipPlanes.find((plane) => plane.id === activeClipPlaneId) ?? clipPlanes[0]
   const filteredItems = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     if (!normalized) return items
@@ -241,6 +247,18 @@ export function App(): JSX.Element {
       setSelectedId(selectId)
     }
     setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
+  }
+
+  function bindActiveClipPlane(planeId: string): void {
+    setActiveClipPlaneId(planeId)
+    setRenderWheelMode('clip-plane')
+  }
+
+  function updateClipPlane(plane: ClipPlane): void {
+    bindActiveClipPlane(plane.id)
+    setClipPlanes((planes) =>
+      planes.map((candidate) => candidate.id === plane.id ? plane : candidate)
+    )
   }
 
   useEffect(() => {
@@ -440,14 +458,20 @@ export function App(): JSX.Element {
             <div className="nv-stage-title nv-niivue-title" aria-hidden="true">
               <span>NiiVue Window</span>
               <strong>{selected?.label ?? 'No selection'}</strong>
-              <em>{mouseContext === 'niivue' ? 'mouse' : backend.toUpperCase()}</em>
+              <em>
+                {renderWheelMode === 'clip-plane'
+                  ? `wheel ${activeClipPlane?.label ?? 'clip'}`
+                  : backend.toUpperCase()}
+              </em>
             </div>
             <NiivueStage
+              activeClipPlaneId={activeClipPlaneId}
               backend={backend}
               clipPlanes={clipPlanes}
               colormap={colormap}
               isActive={mouseContext === 'niivue'}
               item={selected}
+              renderWheelMode={renderWheelMode}
             />
           </section>
         </section>
@@ -477,19 +501,29 @@ export function App(): JSX.Element {
                       <SlidersHorizontal size={15} />
                       Clip Planes
                     </span>
-                    <em>{clipPlanes.filter((plane) => plane.enabled).length}</em>
+                    <em>{clipPlanes.find((plane) => plane.id === activeClipPlaneId)?.label ?? 'none'}</em>
                   </div>
+
+                  <label className="nv-select nv-wheel-mode-select">
+                    <span>Wheel</span>
+                    <select
+                      value={renderWheelMode}
+                      onChange={(event) => setRenderWheelMode(event.target.value as RenderWheelMode)}
+                    >
+                      <option value="zoom">Zoom render</option>
+                      <option value="clip-plane">Move active clip plane</option>
+                    </select>
+                    <ChevronDown size={14} />
+                  </label>
 
                   <div className="nv-clip-list">
                     {clipPlanes.map((plane) => (
                       <ClipPlaneEditor
+                        active={plane.id === activeClipPlaneId}
                         key={plane.id}
                         plane={plane}
-                        onChange={(nextPlane) => {
-                          setClipPlanes((planes) =>
-                            planes.map((candidate) => candidate.id === plane.id ? nextPlane : candidate)
-                          )
-                        }}
+                        onActivate={() => bindActiveClipPlane(plane.id)}
+                        onChange={updateClipPlane}
                       />
                     ))}
                   </div>
@@ -1150,9 +1184,13 @@ function NiimathOperationsPanel({
 }
 
 function ClipPlaneEditor({
+  active,
+  onActivate,
   plane,
   onChange
 }: {
+  active: boolean
+  onActivate: () => void
   plane: ClipPlane
   onChange: (plane: ClipPlane) => void
 }): JSX.Element {
@@ -1160,7 +1198,11 @@ function ClipPlaneEditor({
   const isFlipped = isClipPlaneFlipped(plane)
 
   return (
-    <section className="nv-clip-card">
+    <section
+      className={`nv-clip-card ${active ? 'is-active' : ''}`}
+      onFocusCapture={onActivate}
+      onPointerDownCapture={onActivate}
+    >
       <div className="nv-clip-card-header">
         <label className="nv-toggle">
           <input
@@ -1170,6 +1212,7 @@ function ClipPlaneEditor({
           />
           <span>{plane.label}</span>
         </label>
+        {active ? <span className="nv-clip-active-badge">wheel</span> : null}
 
         <button
           aria-label={`Reset ${plane.label} clip plane`}

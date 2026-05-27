@@ -1,21 +1,29 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type WheelEvent as ReactWheelEvent } from 'react'
 import type { Backend, ClipPlane, DesktopItem } from '../domain/desktop'
 import { rawVolumeUrl } from '../domain/desktop'
 
 interface NiivueStageProps {
   item: DesktopItem | null
+  activeClipPlaneId: string
   backend: Backend
   colormap: string
   clipPlanes: ClipPlane[]
   isActive: boolean
+  renderWheelMode: 'zoom' | 'clip-plane'
 }
 
 interface NiiVueLike {
   canvas?: HTMLCanvasElement
+  activeClipPlaneIndex?: number
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(volumes: Array<{ url: string; name: string; colormap?: string }>): Promise<unknown>
   azimuth?: number
   elevation?: number
+  model?: {
+    scene?: {
+      scaleMultiplier?: number
+    }
+  }
   setClipPlanes?(planes: number[][]): void
   setClipPlane?(plane: number[]): void
   drawScene(): void
@@ -127,10 +135,12 @@ const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; revers
 
 export function NiivueStage({
   item,
+  activeClipPlaneId,
   backend,
   colormap,
   clipPlanes,
-  isActive
+  isActive,
+  renderWheelMode
 }: NiivueStageProps): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -185,6 +195,7 @@ export function NiivueStage({
           isCancelled: () => cancelled,
           setStatus
         })
+        applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
       } catch (error) {
         if (!cancelled) {
           nvRef.current = null
@@ -238,9 +249,10 @@ export function NiivueStage({
   useEffect(() => {
     const nv = nvRef.current
     if (!nv) return
+    applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
     applyClipPlanes(nv, clipPlanes)
     resizeNiiVue(nv, canvasRef.current, stageRef.current)
-  }, [clipPlanes])
+  }, [activeClipPlaneId, clipPlanes])
 
   useEffect(() => {
     if (!isActive || !item) return
@@ -273,11 +285,26 @@ export function NiivueStage({
     if (snapId) setSnapId(null)
   }
 
+  function handleWheelCapture(event: ReactWheelEvent<HTMLDivElement>): void {
+    clearSnapSelection()
+    if (renderWheelMode === 'clip-plane') {
+      const nv = nvRef.current
+      if (nv) applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
+      return
+    }
+
+    const nv = nvRef.current
+    if (!nv) return
+    event.preventDefault()
+    event.stopPropagation()
+    zoomRenderWithWheel(nv, event.deltaY)
+  }
+
   return (
     <div
       className="nv-render-stage"
       onPointerDown={clearSnapSelection}
-      onWheel={clearSnapSelection}
+      onWheelCapture={handleWheelCapture}
       ref={stageRef}
     >
       <canvas key={backend} ref={canvasRef} />
@@ -445,6 +472,35 @@ function applyClipPlanes(nv: NiiVueLike, clipPlanes: ClipPlane[]): void {
   if (nv.setClipPlane) {
     nv.setClipPlane(planes[0] ?? [2, 0, 0])
   }
+}
+
+function applyActiveClipPlane(
+  nv: NiiVueLike,
+  clipPlanes: ClipPlane[],
+  activeClipPlaneId: string
+): void {
+  const activeIndex = clipPlanes
+    .filter((plane) => plane.enabled)
+    .findIndex((plane) => plane.id === activeClipPlaneId)
+
+  if (activeIndex >= 0) {
+    nv.activeClipPlaneIndex = activeIndex
+  }
+}
+
+function zoomRenderWithWheel(nv: NiiVueLike, deltaY: number): void {
+  const scene = nv.model?.scene
+  if (!scene) return
+
+  const current = typeof scene.scaleMultiplier === 'number'
+    ? scene.scaleMultiplier
+    : 1
+  scene.scaleMultiplier = clamp(current + deltaY * 0.001, 0.5, 2)
+  nv.drawScene()
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
 }
 
 function resizeNiiVue(

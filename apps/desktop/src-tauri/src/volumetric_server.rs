@@ -292,7 +292,7 @@ async fn desktop_manifest(
     let tile_size = 1024_u32;
     let gap = 96_u32;
     let pitch = tile_size + gap;
-    let section_label_space = 96_u32;
+    let section_label_space = tile_size * 2;
     let section_gap = 512_u32;
     let source_count = volumes
         .iter()
@@ -630,13 +630,130 @@ fn discover_volumes() -> Vec<VolumeEntry> {
         .unwrap_or(DEFAULT_MAX_VOLUMES);
 
     for root in discovery_roots() {
-        let volumes = discover_volumes_in_root(&root, max_volumes);
+        let mut volumes = discover_volumes_in_root(&root, max_volumes);
         if !volumes.is_empty() {
+            append_working_derivatives(&mut volumes);
             return volumes;
         }
     }
 
-    fallback_mni152_volume().into_iter().collect()
+    let mut volumes = fallback_mni152_volume().into_iter().collect();
+    append_working_derivatives(&mut volumes);
+    volumes
+}
+
+fn append_working_derivatives(volumes: &mut Vec<VolumeEntry>) {
+    let output_dir = std::env::temp_dir().join("neurovue-niimath");
+    let entries = match fs::read_dir(&output_dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    let mut paths = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && is_nifti_path(path))
+        .collect::<Vec<_>>();
+
+    paths.sort();
+    for path in paths {
+        if let Some(entry) = working_derivative_entry(&path, &output_dir, volumes) {
+            volumes.push(entry);
+        }
+    }
+}
+
+fn working_derivative_entry(
+    output_path: &FsPath,
+    output_root: &FsPath,
+    volumes: &[VolumeEntry],
+) -> Option<VolumeEntry> {
+    let sidecar_path = nifti_json_sidecar_path(output_path);
+    let metadata = read_json_sidecar(&sidecar_path)?;
+    if !metadata
+        .get("NeuroVueGenerated")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    if metadata
+        .get("DerivativeType")
+        .and_then(Value::as_str)
+        .is_some_and(|kind| kind != "working")
+    {
+        return None;
+    }
+
+    let source_path = metadata
+        .get("SourceImage")
+        .and_then(Value::as_str)
+        .and_then(|path| fs::canonicalize(path).ok())?;
+    let output_path = fs::canonicalize(output_path).ok()?;
+    if volumes.iter().any(|volume| {
+        volume
+            .source_path
+            .as_deref()
+            .is_some_and(|path| same_canonical_path(path, &output_path))
+    }) {
+        return None;
+    }
+
+    let header = read_nifti_header(&output_path)?;
+    let output_parent = output_path.parent().unwrap_or(output_root);
+    let output_id = volume_id(&output_path, output_root);
+    let operation = metadata
+        .get("NeuroVueOperation")
+        .and_then(Value::as_str)
+        .unwrap_or("operation")
+        .to_string();
+    let source_id = volumes
+        .iter()
+        .find(|volume| {
+            volume
+                .source_path
+                .as_deref()
+                .is_some_and(|path| same_canonical_path(path, &source_path))
+        })
+        .map(|volume| volume.id.clone());
+    let source_label = source_id
+        .as_deref()
+        .and_then(|id| volumes.iter().find(|volume| volume.id == id))
+        .map(|volume| volume.label.clone())
+        .unwrap_or_else(|| "Restored derivative".to_string());
+
+    Some(VolumeEntry {
+        id: unique_volume_id(volumes, &format!("derived__{output_id}")),
+        label: format!("{source_label} / {operation}"),
+        role: VolumeRole::Derived,
+        format: "nifti".to_string(),
+        shape: header.shape,
+        spacing: header.spacing,
+        dtype: header.dtype,
+        source_path: Some(output_path.clone()),
+        sidecar_paths: find_json_sidecars(&output_path, output_parent),
+        derived_from: source_id,
+        derivation: Some(VolumeDerivation {
+            operation,
+            source_path: source_path.display().to_string(),
+            output_path: output_path.display().to_string(),
+        }),
+    })
+}
+
+fn nifti_json_sidecar_path(path: &FsPath) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("volume.nii.gz");
+    let stem = strip_nifti_file_suffix(file_name);
+    path.with_file_name(format!("{stem}.json"))
+}
+
+fn strip_nifti_file_suffix(value: &str) -> &str {
+    value
+        .strip_suffix(".nii.gz")
+        .or_else(|| value.strip_suffix(".nii"))
+        .unwrap_or(value)
 }
 
 fn discovery_roots() -> Vec<PathBuf> {

@@ -125,6 +125,8 @@ interface MinimapViewport {
 
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
+  const manifestRef = useRef<DesktopManifest | null>(null)
+  const selectedIdRef = useRef<string | null>(null)
   const [serverUrl, setServerUrl] = useState('')
   const [manifest, setManifest] = useState<DesktopManifest | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -140,6 +142,14 @@ export function App(): JSX.Element {
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
   const [isFileListCollapsed, setIsFileListCollapsed] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
+
+  useEffect(() => {
+    manifestRef.current = manifest
+  }, [manifest])
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId
+  }, [selectedId])
 
   useEffect(() => {
     let favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
@@ -232,6 +242,45 @@ export function App(): JSX.Element {
     }
     setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
   }
+
+  useEffect(() => {
+    if (!serverUrl) return
+    let cancelled = false
+
+    async function refreshChangedManifest(): Promise<void> {
+      try {
+        const nextManifest = await fetchDesktopManifest(serverUrl)
+        if (cancelled) return
+        const currentManifest = manifestRef.current
+        if (
+          currentManifest &&
+          desktopManifestSignature(currentManifest) === desktopManifestSignature(nextManifest)
+        ) {
+          return
+        }
+
+        setManifest(nextManifest)
+        const currentSelectedId = selectedIdRef.current
+        if (!currentSelectedId || !nextManifest.items.some((item) => item.id === currentSelectedId)) {
+          setSelectedId(nextManifest.items[0]?.id ?? null)
+        }
+        setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
+      } catch {
+        // The embedded server may briefly disappear while Tauri dev rebuilds.
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshChangedManifest()
+    }, 5000)
+    window.addEventListener('focus', refreshChangedManifest)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshChangedManifest)
+    }
+  }, [serverUrl])
 
   return (
     <main className="nv-app">
@@ -583,24 +632,40 @@ function DatasetDesktop({
     columns: 0,
     rows: 0
   }
-  const selectedStyle = selected ? worldRectStyle(selected.bounds, world) : undefined
+  const tileSize = manifest?.tileSize ?? 1024
+  const gap = manifest?.gap ?? 96
+  const desktopLayout = useMemo(
+    () => normalizeDesktopLayout(items, world, tileSize, gap),
+    [gap, items, tileSize, world]
+  )
+  const layoutItems = desktopLayout.items
+  const layoutWorld = desktopLayout.world
+  const selectedLayoutItem = selected
+    ? layoutItems.find((item) => item.id === selected.id) ?? selected
+    : null
+  const selectedStyle = selectedLayoutItem ? worldRectStyle(selectedLayoutItem.bounds, layoutWorld) : undefined
   const targetPreviewSize = useMemo(
-    () => desktopPreviewSize(stageSize, world, manifest?.tileSize ?? 1024, zoom),
-    [manifest?.tileSize, stageSize, world, zoom]
+    () => desktopPreviewSize(stageSize, layoutWorld, tileSize, zoom),
+    [layoutWorld, stageSize, tileSize, zoom]
   )
   const [previewSize, setPreviewSize] = useState<number>(SIDEBAR_PREVIEW_SIZE)
-  const previewLevel = previewLevelForSize(previewSize, manifest?.items[0])
+  const previewLevel = previewLevelForSize(previewSize, layoutItems[0])
   const worldSize = useMemo(
-    () => fittedWorldSize(stageSize, world, zoom),
-    [stageSize, world, zoom]
+    () => fittedWorldSize(stageSize, layoutWorld, zoom),
+    [stageSize, layoutWorld, zoom]
   )
-  const sections = useMemo(() => desktopSections(items, world), [items, world.height, world.width])
-  const derivedSourceId = selected?.role === 'derived' ? selected.derivedFrom : null
-  const derivedSource = derivedSourceId
-    ? items.find((item) => item.id === derivedSourceId) ?? null
+  const sections = useMemo(
+    () => desktopSections(layoutItems, layoutWorld),
+    [layoutItems, layoutWorld.height, layoutWorld.width]
+  )
+  const derivedSourceId = selectedLayoutItem && isDerivedItem(selectedLayoutItem)
+    ? selectedLayoutItem.derivedFrom
     : null
-  const sourceStyle = derivedSource ? worldRectStyle(derivedSource.bounds, world) : undefined
-  const isOverview = renderedDesktopTileSize(worldSize, world, manifest?.tileSize ?? 1024) < 112
+  const derivedSource = derivedSourceId
+    ? layoutItems.find((item) => item.id === derivedSourceId) ?? null
+    : null
+  const sourceStyle = derivedSource ? worldRectStyle(derivedSource.bounds, layoutWorld) : undefined
+  const isOverview = renderedDesktopTileSize(worldSize, layoutWorld, tileSize) < 112
 
   useEffect(() => {
     zoomRef.current = zoom
@@ -637,7 +702,7 @@ function DatasetDesktop({
       updateDesktopViewport(stageRef.current, setViewport)
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [items.length, stageSize.height, stageSize.width, worldSize, zoom])
+  }, [layoutItems.length, stageSize.height, stageSize.width, worldSize, zoom])
 
   return (
     <div className={`nv-osd-stage ${isOverview ? 'is-overview' : ''}`}>
@@ -657,18 +722,15 @@ function DatasetDesktop({
               aria-hidden="true"
               className={`nv-osd-section nv-osd-section-${section.id}`}
               key={section.id}
-              style={worldRectStyle(section.bounds, world)}
-            >
-              <span>{section.label}</span>
-              <em>{section.count}</em>
-            </div>
+              style={worldRectStyle(section.bounds, layoutWorld)}
+            />
           ))}
-          {items.map((item) => (
+          {layoutItems.map((item) => (
             <button
               className={desktopTileClassName(item, selected, derivedSourceId)}
               key={item.id}
               onClick={() => onSelect(item)}
-              style={worldRectStyle(item.bounds, world)}
+              style={worldRectStyle(item.bounds, layoutWorld)}
               type="button"
             >
               <StablePreviewImage
@@ -676,11 +738,22 @@ function DatasetDesktop({
                 frameClassName="nv-osd-image-frame"
                 draggable={false}
               />
-              <span className="nv-osd-index">{item.role === 'derived' ? 'D' : 'L0'}</span>
+              <span className="nv-osd-index">{isDerivedItem(item) ? 'D' : 'L0'}</span>
               <span className="nv-osd-label">{item.label}</span>
             </button>
           ))}
-          {items.length === 0 ? <div className="nv-empty-state">No matching volumes.</div> : null}
+          {sections.map((section) => (
+            <div
+              aria-hidden="true"
+              className={`nv-osd-section-label nv-osd-section-label-${section.id}`}
+              key={`${section.id}-label`}
+              style={worldRectStyle(section.bounds, layoutWorld)}
+            >
+              <span>{section.label}</span>
+              <em>{section.count}</em>
+            </div>
+          ))}
+          {layoutItems.length === 0 ? <div className="nv-empty-state">No matching volumes.</div> : null}
         </div>
       </div>
 
@@ -695,8 +768,8 @@ function DatasetDesktop({
           <span>zoom {Math.round(zoom * 100)}%</span>
           <span>LOD L{previewLevel}</span>
           <span>{previewSize}px previews</span>
-          <span>{items.length} visible</span>
-          <span>{world.width} x {world.height}</span>
+          <span>{layoutItems.length} visible</span>
+          <span>{layoutWorld.width} x {layoutWorld.height}</span>
         </div>
         {derivedSource ? (
           <div className="nv-osd-source-key">
@@ -740,11 +813,24 @@ function desktopTileClassName(
   return [
     'nv-osd-tile',
     selected?.id === item.id ? 'is-selected' : '',
-    item.role === 'derived' ? 'is-derived' : '',
+    isDerivedItem(item) ? 'is-derived' : '',
     derivedSourceId === item.id ? 'is-derived-source' : ''
   ]
     .filter(Boolean)
     .join(' ')
+}
+
+function isDerivedItem(item: DesktopItem): boolean {
+  return item.role === 'derived' || Boolean(item.derivedFrom || item.derivation)
+}
+
+function desktopManifestSignature(manifest: DesktopManifest): string {
+  return [
+    manifest.itemCount,
+    manifest.world.width,
+    manifest.world.height,
+    ...manifest.items.map((item) => `${item.id}:${item.role ?? 'source'}:${item.derivedFrom ?? ''}`)
+  ].join('|')
 }
 
 function StageResizeObserver({
@@ -1379,13 +1465,84 @@ function minimapViewportStyle(viewport: MinimapViewport): CSSProperties {
   }
 }
 
+function normalizeDesktopLayout(
+  items: DesktopItem[],
+  world: DesktopManifest['world'],
+  tileSize: number,
+  gap: number
+): { items: DesktopItem[]; world: DesktopManifest['world'] } {
+  if (items.length === 0) return { items, world }
+  const sources = items.filter((item) => !isDerivedItem(item))
+  const derivatives = items.filter((item) => isDerivedItem(item))
+  const layoutCount = Math.max(sources.length, derivatives.length, 1)
+  const columns = Math.max(1, Math.ceil(Math.sqrt(layoutCount)))
+  const sourceRows = layoutRows(sources.length, columns)
+  const derivedRows = layoutRows(derivatives.length, columns)
+  const pitch = tileSize + gap
+  const sectionLabelSpace = tileSize * 2
+  const sectionGap = Math.max(Math.round(tileSize / 2), gap)
+  const sourceTop = sectionLabelSpace
+  const sourceHeight = layoutGridHeight(sourceRows, tileSize, gap)
+  const derivedTop = derivatives.length > 0
+    ? sourceTop + sourceHeight + sectionGap + sectionLabelSpace
+    : 0
+  const derivedHeight = layoutGridHeight(derivedRows, tileSize, gap)
+  const nextBounds = new Map<string, WorldRect>()
+
+  function placeGroup(group: DesktopItem[], top: number): void {
+    group.forEach((item, index) => {
+      const col = index % columns
+      const row = Math.floor(index / columns)
+      nextBounds.set(item.id, {
+        x: col * pitch,
+        y: top + row * pitch,
+        width: tileSize,
+        height: tileSize
+      })
+    })
+  }
+
+  placeGroup(sources, sourceTop)
+  placeGroup(derivatives, derivedTop)
+
+  const width = columns * tileSize + Math.max(columns - 1, 0) * gap
+  const height = Math.max(
+    derivatives.length > 0
+      ? derivedTop + derivedHeight
+      : sourceTop + sourceHeight,
+    tileSize
+  )
+
+  return {
+    items: items.map((item) => ({
+      ...item,
+      bounds: nextBounds.get(item.id) ?? item.bounds
+    })),
+    world: {
+      ...world,
+      width,
+      height,
+      columns,
+      rows: sourceRows + derivedRows
+    }
+  }
+}
+
+function layoutRows(count: number, columns: number): number {
+  return count === 0 ? 0 : Math.ceil(count / Math.max(columns, 1))
+}
+
+function layoutGridHeight(rows: number, tileSize: number, gap: number): number {
+  return rows === 0 ? 0 : rows * tileSize + Math.max(rows - 1, 0) * gap
+}
+
 function desktopSections(
   items: DesktopItem[],
   world: DesktopManifest['world']
 ): Array<{ id: 'sources' | 'derived'; label: string; count: number; bounds: WorldRect }> {
   return [
-    desktopSectionForRole(items.filter((item) => item.role !== 'derived'), world, 'sources', 'Source Volumes'),
-    desktopSectionForRole(items.filter((item) => item.role === 'derived'), world, 'derived', 'Working Derivatives')
+    desktopSectionForRole(items.filter((item) => !isDerivedItem(item)), world, 'sources', 'Source Volumes'),
+    desktopSectionForRole(items.filter((item) => isDerivedItem(item)), world, 'derived', 'Working Derivatives')
   ].filter((section): section is { id: 'sources' | 'derived'; label: string; count: number; bounds: WorldRect } => Boolean(section))
 }
 
@@ -1398,7 +1555,8 @@ function desktopSectionForRole(
   if (items.length === 0) return null
   const minY = Math.min(...items.map((item) => item.bounds.y))
   const maxY = Math.max(...items.map((item) => item.bounds.y + item.bounds.height))
-  const topPadding = Math.min(80, minY)
+  const headerSpace = (items[0]?.bounds.height ?? 1024) * 2
+  const topPadding = Math.min(headerSpace, minY)
   const bottomPadding = 56
 
   return {

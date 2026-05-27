@@ -634,10 +634,16 @@ button {
     linear-gradient(180deg, rgba(18, 35, 24, 0.72), rgba(8, 16, 10, 0.32));
 }
 
-.nv-osd-section span,
-.nv-osd-section em {
+.nv-osd-section-label {
   position: absolute;
-  top: 22px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.nv-osd-section-label span,
+.nv-osd-section-label em {
+  position: absolute;
+  top: 14px;
   display: inline-flex;
   align-items: center;
   min-height: 26px;
@@ -651,14 +657,19 @@ button {
   text-transform: uppercase;
 }
 
-.nv-osd-section span {
+.nv-osd-section-label span {
   left: 22px;
 }
 
-.nv-osd-section em {
+.nv-osd-section-label em {
   right: 22px;
   color: var(--green);
   font-style: normal;
+}
+
+.nv-osd-section-label-derived span,
+.nv-osd-section-label-derived em {
+  border-color: rgba(115, 198, 155, 0.32);
 }
 
 .nv-niivue-pane > .nv-render-stage {

@@ -21,6 +21,12 @@ interface NiiVueLike {
   destroy?: () => void
 }
 
+interface RenderVolumeLevel {
+  level: number
+  url: string
+  shape?: [number, number, number]
+}
+
 type NiiVueConstructor = new (options?: Record<string, unknown>) => NiiVueLike
 
 const NIVUE_SLICE_TYPE_RENDER = 4
@@ -81,17 +87,16 @@ export function NiivueStage({
         await nv.attachToCanvas(canvas)
         if (cancelled) return
         resizeNiiVue(nv, canvas, stage)
-        await nv.loadVolumes([
-          {
-            url: rawVolumeUrl(item),
-            name: item.label,
-            colormap
-          }
-        ])
-        if (cancelled) return
-        applyClipPlanes(nv, clipPlanes)
-        resizeNiiVue(nv, canvas, stage)
-        setStatus(`${item.label} ready.`)
+        await loadRenderVolumeLods({
+          item,
+          nv,
+          colormap,
+          clipPlanes,
+          canvas,
+          stage,
+          isCancelled: () => cancelled,
+          setStatus
+        })
       } catch (error) {
         if (!cancelled) {
           nvRef.current = null
@@ -205,6 +210,101 @@ async function loadNiiVue(backend: Backend): Promise<NiiVueConstructor> {
     const module = await import('@niivue/niivue')
     return module.default as NiiVueConstructor
   }
+}
+
+async function loadRenderVolumeLods({
+  item,
+  nv,
+  colormap,
+  clipPlanes,
+  canvas,
+  stage,
+  isCancelled,
+  setStatus
+}: {
+  item: DesktopItem
+  nv: NiiVueLike
+  colormap: string
+  clipPlanes: ClipPlane[]
+  canvas: HTMLCanvasElement
+  stage: HTMLDivElement | null
+  isCancelled: () => boolean
+  setStatus: (status: string) => void
+}): Promise<void> {
+  const levels = renderVolumeLevels(item)
+
+  for (const [index, level] of levels.entries()) {
+    if (isCancelled()) return
+
+    if (index > 0) {
+      setStatus(`${item.label} refining to L${level.level} (${renderLevelShape(level)}).`)
+      await waitForIdle()
+      if (isCancelled()) return
+    }
+
+    try {
+      await nv.loadVolumes([
+        {
+          url: level.url,
+          name: `${item.label} L${level.level}`,
+          colormap
+        }
+      ])
+    } catch (error) {
+      if (index === 0) throw error
+      if (!isCancelled()) {
+        const lastLevel = levels[index - 1]
+        setStatus(`${item.label} stayed at L${lastLevel.level}; L${level.level} refinement failed.`)
+      }
+      return
+    }
+    if (isCancelled()) return
+
+    applyClipPlanes(nv, clipPlanes)
+    resizeNiiVue(nv, canvas, stage)
+
+    if (index === 0 && levels.length > 1) {
+      setStatus(`${item.label} visible at L${level.level} (${renderLevelShape(level)}).`)
+    } else if (index === levels.length - 1) {
+      setStatus(`${item.label} ready at L${level.level} (${renderLevelShape(level)}).`)
+    }
+  }
+}
+
+function renderVolumeLevels(item: DesktopItem): RenderVolumeLevel[] {
+  const levels = item.levels
+    .filter((level) => level.raw)
+    .map((level) => ({
+      level: level.level,
+      url: level.raw as string,
+      shape: level.shape
+    }))
+    .sort((left, right) => right.level - left.level)
+
+  if (levels.length > 0) return levels
+
+  return [
+    {
+      level: 0,
+      url: rawVolumeUrl(item),
+      shape: item.shape
+    }
+  ]
+}
+
+function renderLevelShape(level: RenderVolumeLevel): string {
+  return level.shape?.join(' x ') ?? 'volume'
+}
+
+function waitForIdle(): Promise<void> {
+  return new Promise((resolve) => {
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(() => resolve(), { timeout: 600 })
+      return
+    }
+
+    setTimeout(resolve, 80)
+  })
 }
 
 function applyClipPlanes(nv: NiiVueLike, clipPlanes: ClipPlane[]): void {

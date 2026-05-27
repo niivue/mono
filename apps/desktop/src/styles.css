@@ -35,7 +35,7 @@ body {
 
 body {
   margin: 0;
-  min-width: 1120px;
+  min-width: 0;
   min-height: 100vh;
   overflow: hidden;
   background:
@@ -206,7 +206,7 @@ button {
 
 .nv-workbench {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr) 350px;
+  grid-template-columns: clamp(188px, 17vw, 248px) minmax(0, 1fr) clamp(260px, 24vw, 350px);
   min-height: 0;
 }
 
@@ -222,17 +222,21 @@ button {
 .nv-sidebar {
   display: flex;
   flex-direction: column;
-  padding: 14px 12px;
+  padding: 14px clamp(8px, 1vw, 12px);
 }
 
 .nv-controls {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   overflow: auto;
   border-right: 0;
   border-left: 1px solid var(--line);
-  padding: 0 12px 12px;
+  padding: 0 clamp(8px, 1vw, 12px) 12px;
+}
+
+.nv-controls > * {
+  flex: 0 0 auto;
 }
 
 .nv-panel-heading {
@@ -291,10 +295,10 @@ button {
 
 .nv-volume-card {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: clamp(44px, 4.6vw, 54px) minmax(0, 1fr);
+  gap: clamp(7px, 0.8vw, 10px);
   width: 100%;
-  min-height: 70px;
+  min-height: clamp(58px, 6vw, 70px);
   border: 1px solid transparent;
   background: transparent;
   text-align: left;
@@ -302,11 +306,13 @@ button {
   padding: 8px;
 }
 
-.nv-volume-card img {
-  width: 54px;
-  height: 54px;
-  object-fit: cover;
+.nv-volume-thumb {
+  position: relative;
+  display: block;
+  width: clamp(44px, 4.6vw, 54px);
+  height: clamp(44px, 4.6vw, 54px);
   background: #050604;
+  overflow: hidden;
 }
 
 .nv-volume-card strong,
@@ -332,10 +338,10 @@ button {
 .nv-split-workspace {
   --split-left: 52%;
   display: grid;
-  grid-template-columns: minmax(220px, var(--split-left)) 12px minmax(220px, 1fr);
+  grid-template-columns: minmax(160px, var(--split-left)) 12px minmax(160px, 1fr);
   min-width: 0;
   min-height: 0;
-  background: #090a08;
+  background: #080a07;
 }
 
 .nv-dataset-pane,
@@ -356,8 +362,8 @@ button {
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  margin: 0 -12px;
-  padding: 7px 12px;
+  margin: 0 calc(clamp(8px, 1vw, 12px) * -1);
+  padding: 7px clamp(8px, 1vw, 12px);
   border-bottom: 1px solid var(--line);
   background: var(--panel-2);
 }
@@ -460,6 +466,9 @@ button {
 }
 
 .nv-osd-stage {
+  --grid-background: #080a07;
+  --grid-line: rgba(146, 160, 102, 0.22);
+  --tile-padding: clamp(0px, 0.45%, 6px);
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -467,10 +476,10 @@ button {
   height: 100%;
   overflow: hidden;
   background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(0deg, var(--grid-line) 1px, transparent 1px),
     radial-gradient(circle at 55% 42%, rgba(115, 198, 155, 0.08), transparent 42%),
-    #090a08;
+    var(--grid-background);
   background-size: 44px 44px, 44px 44px, auto, auto;
 }
 
@@ -493,6 +502,7 @@ button {
 .nv-osd-world {
   position: relative;
   margin: 22px;
+  background: rgba(8, 10, 7, 0.72);
 }
 
 .nv-niivue-pane > .nv-render-stage {
@@ -507,23 +517,39 @@ button {
 .nv-osd-tile {
   position: absolute;
   display: block;
-  min-width: 74px;
-  min-height: 74px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid #464631;
-  background: #11120e;
+  border: 1px solid rgba(146, 160, 102, 0.42);
+  background: #10120d;
   cursor: inherit;
-  padding: 0;
+  padding: var(--tile-padding);
   text-align: left;
 }
 
-.nv-osd-tile img {
+.nv-osd-image-frame {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  image-rendering: pixelated;
+  overflow: hidden;
+  background: #050604;
+}
+
+.nv-preview-image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   opacity: 0.92;
+}
+
+.nv-preview-image.is-pending {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .nv-osd-tile.is-selected {
@@ -560,6 +586,11 @@ button {
   padding: 6px 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nv-osd-stage.is-overview .nv-osd-index,
+.nv-osd-stage.is-overview .nv-osd-label {
+  display: none;
 }
 
 .nv-empty-state {
@@ -646,8 +677,12 @@ button {
 
 .nv-render-stage {
   position: relative;
+  width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  contain: size layout paint;
   background:
     linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
@@ -656,6 +691,8 @@ button {
 }
 
 .nv-render-stage canvas {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -682,7 +719,7 @@ button {
 .nv-readout {
   border: 1px solid var(--line);
   background: var(--panel-3);
-  padding: 12px;
+  padding: clamp(9px, 1vw, 12px);
 }
 
 .nv-toggle {
@@ -698,7 +735,7 @@ button {
 
 .nv-slider {
   display: grid;
-  grid-template-columns: 62px minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(54px, 24%) minmax(0, 1fr) minmax(34px, auto);
   align-items: center;
   gap: 8px;
   margin-top: 8px;
@@ -735,7 +772,7 @@ button {
 
 .nv-readout dl {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-columns: minmax(62px, 28%) minmax(0, 1fr);
   gap: 8px;
   margin: 0;
   font-size: 12px;
@@ -758,8 +795,17 @@ button {
   white-space: nowrap;
 }
 
+.nv-readout dd.nv-path-value {
+  overflow: visible;
+  color: #d8d2bd;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .nv-metadata-panel {
-  min-height: 220px;
+  min-height: 0;
 }
 
 .nv-sidecar-list {
@@ -789,7 +835,8 @@ button {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .nv-sidecar summary em {
@@ -798,7 +845,7 @@ button {
 }
 
 .nv-sidecar pre {
-  max-height: 260px;
+  max-height: clamp(132px, 22vh, 260px);
   margin: 0;
   overflow: auto;
   border-top: 1px solid var(--line);
@@ -820,11 +867,50 @@ button {
 
 @media (max-width: 1280px) {
   .nv-workbench {
-    grid-template-columns: 230px minmax(0, 1fr) 326px;
+    grid-template-columns: clamp(176px, 18vw, 230px) minmax(0, 1fr) clamp(246px, 28vw, 326px);
   }
 
   .nv-sidebar {
     padding-right: 10px;
     padding-left: 10px;
+  }
+}
+
+@media (max-width: 1040px) {
+  .nv-topbar {
+    gap: 10px;
+  }
+
+  .nv-brand p {
+    max-width: 28vw;
+  }
+
+  .nv-toolbar {
+    gap: 6px;
+  }
+
+  .nv-segmented button {
+    min-width: 62px;
+    padding: 0 8px;
+  }
+
+  .nv-select {
+    grid-template-columns: auto minmax(64px, 1fr) auto;
+  }
+
+  .nv-workbench {
+    grid-template-columns: minmax(154px, 18vw) minmax(0, 1fr) minmax(222px, 30vw);
+  }
+
+  .nv-split-workspace {
+    grid-template-columns: minmax(132px, var(--split-left)) 12px minmax(132px, 1fr);
+  }
+
+  .nv-volume-card {
+    padding: 6px;
+  }
+
+  .nv-panel-heading {
+    font-size: 11px;
   }
 }

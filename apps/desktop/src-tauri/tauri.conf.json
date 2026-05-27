@@ -5,7 +5,7 @@
   "identifier": "org.neurovue.app",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://127.0.0.1:5174",
+    "devUrl": "http://127.0.0.1:5175",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -15,8 +15,8 @@
         "title": "NeuroVue",
         "width": 1480,
         "height": 940,
-        "minWidth": 1120,
-        "minHeight": 720
+        "minWidth": 900,
+        "minHeight": 640
       }
     ],
     "security": {
@@ -29,4 +29,3 @@
     "icon": []
   }
 }
-

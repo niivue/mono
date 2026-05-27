@@ -47,6 +47,10 @@ const MIN_SPLIT = 34
 const MAX_SPLIT = 68
 const MIN_DESKTOP_ZOOM = 0.5
 const MAX_DESKTOP_ZOOM = 4
+const SIDEBAR_PREVIEW_SIZE = 96
+const DESKTOP_PREVIEW_TIERS = [96, 192, 384, 768, 1024] as const
+const PREVIEW_TIER_SETTLE_MS = 180
+const PREVIEW_IMAGE_VERSION = 5
 type MouseContext = 'desktop' | 'niivue' | null
 
 interface DesktopDragState {
@@ -236,7 +240,10 @@ export function App(): JSX.Element {
                 onClick={() => setSelectedId(item.id)}
                 type="button"
               >
-                <img src={item.preview.image} alt="" />
+                <StablePreviewImage
+                  src={previewImageForSize(item, SIDEBAR_PREVIEW_SIZE)}
+                  frameClassName="nv-volume-thumb"
+                />
                 <span>
                   <strong>{item.label}</strong>
                   <small>{item.shape.join(' x ')} / {item.dtype}</small>
@@ -435,6 +442,12 @@ function DatasetDesktop({
     rows: 0
   }
   const selectedStyle = selected ? worldRectStyle(selected.bounds, world) : undefined
+  const targetPreviewSize = useMemo(
+    () => desktopPreviewSize(stageSize, world, manifest?.tileSize ?? 1024, zoom),
+    [manifest?.tileSize, stageSize, world, zoom]
+  )
+  const [previewSize, setPreviewSize] = useState<number>(SIDEBAR_PREVIEW_SIZE)
+  const previewLevel = previewLevelForSize(previewSize, manifest?.items[0])
   const worldSize = useMemo(
     () => fittedWorldSize(stageSize, world, zoom),
     [stageSize, world, zoom]
@@ -443,6 +456,14 @@ function DatasetDesktop({
   useEffect(() => {
     zoomRef.current = zoom
   }, [zoom])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setPreviewSize(targetPreviewSize)
+    }, PREVIEW_TIER_SETTLE_MS)
+
+    return () => window.clearTimeout(timeout)
+  }, [targetPreviewSize])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -470,7 +491,7 @@ function DatasetDesktop({
   }, [items.length, stageSize.height, stageSize.width, worldSize, zoom])
 
   return (
-    <div className="nv-osd-stage">
+    <div className={`nv-osd-stage ${previewSize < 384 ? 'is-overview' : ''}`}>
       <div
         className={`nv-osd-scrollport ${isPanning ? 'is-panning' : ''}`}
         onClickCapture={(event) => suppressDesktopClickAfterDrag(event, suppressClickRef)}
@@ -490,7 +511,11 @@ function DatasetDesktop({
               style={worldRectStyle(item.bounds, world)}
               type="button"
             >
-              <img src={item.preview.image} alt="" draggable={false} />
+              <StablePreviewImage
+                src={previewImageForSize(item, previewSize)}
+                frameClassName="nv-osd-image-frame"
+                draggable={false}
+              />
               <span className="nv-osd-index">L0</span>
               <span className="nv-osd-label">{item.label}</span>
             </button>
@@ -507,6 +532,7 @@ function DatasetDesktop({
 
       <div className="nv-hud" aria-hidden="true">
         <span>zoom {Math.round(zoom * 100)}%</span>
+        <span>preview L{previewLevel} / {previewSize}px</span>
         <span>{isActive ? 'wheel zoom / drag pan' : 'idle'}</span>
         <span>{items.length} visible</span>
         <span>{world.width} x {world.height}</span>
@@ -537,16 +563,22 @@ function StageResizeObserver({
   stageRef: RefObject<HTMLDivElement>
   onResize: (size: { width: number; height: number }) => void
 }): null {
+  const lastSizeRef = useRef({ width: 0, height: 0 })
+
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
     const stageElement = stage
 
     function update(): void {
-      onResize({
+      const nextSize = {
         width: stageElement.clientWidth,
         height: stageElement.clientHeight
-      })
+      }
+      const lastSize = lastSizeRef.current
+      if (lastSize.width === nextSize.width && lastSize.height === nextSize.height) return
+      lastSizeRef.current = nextSize
+      onResize(nextSize)
     }
 
     update()
@@ -556,6 +588,59 @@ function StageResizeObserver({
   }, [onResize, stageRef])
 
   return null
+}
+
+function StablePreviewImage({
+  src,
+  frameClassName,
+  draggable
+}: {
+  src: string
+  frameClassName: string
+  draggable?: boolean
+}): JSX.Element {
+  const [currentSrc, setCurrentSrc] = useState(src)
+  const [pendingSrc, setPendingSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (src === currentSrc) {
+      setPendingSrc(null)
+      return
+    }
+
+    setPendingSrc(src)
+  }, [currentSrc, src])
+
+  function commitPendingSrc(): void {
+    if (!pendingSrc) return
+    setCurrentSrc(pendingSrc)
+    setPendingSrc(null)
+  }
+
+  return (
+    <span className={frameClassName}>
+      <img
+        className="nv-preview-image"
+        src={currentSrc}
+        alt=""
+        draggable={draggable}
+        loading="eager"
+        decoding="async"
+      />
+      {pendingSrc ? (
+        <img
+          className="nv-preview-image is-pending"
+          src={pendingSrc}
+          alt=""
+          draggable={draggable}
+          loading="eager"
+          decoding="async"
+          onLoad={commitPendingSrc}
+          onError={() => setPendingSrc(null)}
+        />
+      ) : null}
+    </span>
+  )
 }
 
 function SelectionPanel({
@@ -615,13 +700,15 @@ function MetadataPanel({
           {metadata?.sourcePath ? (
             <dl>
               <dt>Source</dt>
-              <dd>{metadata.sourcePath}</dd>
+              <dd className="nv-path-value" title={metadata.sourcePath}>
+                {metadata.sourcePath}
+              </dd>
             </dl>
           ) : null}
           {sidecars.length > 0 ? (
             <div className="nv-sidecar-list">
               {sidecars.map((sidecar) => (
-                <details className="nv-sidecar" key={sidecar.path ?? sidecar.name} open>
+                <details className="nv-sidecar" key={sidecar.path ?? sidecar.name}>
                   <summary>
                     <span>{sidecar.name}</span>
                     <em>{sidecar.kind}</em>
@@ -633,7 +720,7 @@ function MetadataPanel({
           ) : null}
           {embeddedMetadata ? (
             <div className="nv-sidecar-list">
-              <details className="nv-sidecar" open={sidecars.length === 0}>
+              <details className="nv-sidecar">
                 <summary>
                   <span>metadata response</span>
                   <em>json</em>
@@ -929,6 +1016,18 @@ function fittedWorldSize(
   world: DesktopManifest['world'],
   zoom: number
 ): CSSProperties {
+  const dimensions = fittedWorldDimensions(stageSize, world, zoom)
+  return {
+    width: `${dimensions.width}px`,
+    height: `${dimensions.height}px`
+  }
+}
+
+function fittedWorldDimensions(
+  stageSize: { width: number; height: number },
+  world: DesktopManifest['world'],
+  zoom: number
+): { width: number; height: number } {
   const availableWidth = Math.max(stageSize.width - 44, 180)
   const availableHeight = Math.max(stageSize.height - 44, 180)
   const aspect = Math.max(world.width, 1) / Math.max(world.height, 1)
@@ -941,9 +1040,40 @@ function fittedWorldSize(
   }
 
   return {
-    width: `${Math.max(160, fitWidth * zoom)}px`,
-    height: `${Math.max(160, fitHeight * zoom)}px`
+    width: Math.max(160, fitWidth * zoom),
+    height: Math.max(160, fitHeight * zoom)
   }
+}
+
+function desktopPreviewSize(
+  stageSize: { width: number; height: number },
+  world: DesktopManifest['world'],
+  tileSize: number,
+  zoom: number
+): number {
+  const dimensions = fittedWorldDimensions(stageSize, world, zoom)
+  const renderedTileWidth = dimensions.width * tileSize / Math.max(world.width, 1)
+  const renderedTileHeight = dimensions.height * tileSize / Math.max(world.height, 1)
+  const density = typeof window === 'undefined' ? 1 : Math.max(window.devicePixelRatio || 1, 1)
+  const targetPixels = Math.max(renderedTileWidth, renderedTileHeight) * density
+
+  return (
+    DESKTOP_PREVIEW_TIERS.find((tier) => tier >= targetPixels) ??
+    DESKTOP_PREVIEW_TIERS[DESKTOP_PREVIEW_TIERS.length - 1]
+  )
+}
+
+function previewImageForSize(item: DesktopItem, size: number): string {
+  if (!item.preview.service) return item.preview.image
+  const level = previewLevelForSize(size, item)
+  return `${item.preview.service}/full/${size},${size}/0/default.png?level=${level}&v=${PREVIEW_IMAGE_VERSION}`
+}
+
+function previewLevelForSize(size: number, item?: DesktopItem): number {
+  const requestedLevel = size <= 192 ? 2 : size <= 384 ? 1 : 0
+  const availableLevels = item?.levels?.map((level) => level.level) ?? [0]
+  const maxLevel = Math.max(0, ...availableLevels)
+  return Math.min(requestedLevel, maxLevel)
 }
 
 function volumeMetadataJson(metadata: VolumeMetadata): unknown | null {

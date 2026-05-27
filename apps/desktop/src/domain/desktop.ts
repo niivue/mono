@@ -12,6 +12,7 @@ export interface WorldRect {
 
 export interface DesktopVolumeLevel {
   level: number
+  factor?: number
   shape: [number, number, number]
   spacing?: [number, number, number]
   ready?: boolean

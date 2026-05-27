@@ -21,6 +21,8 @@ import {
   GripVertical,
   Layers3,
   Maximize2,
+  PanelLeftClose,
+  PanelLeftOpen,
   RotateCcw,
   Save,
   SlidersHorizontal,
@@ -84,6 +86,7 @@ export function App(): JSX.Element {
   const [splitPercent, setSplitPercent] = useState(52)
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
+  const [isFileListCollapsed, setIsFileListCollapsed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -215,42 +218,58 @@ export function App(): JSX.Element {
         </div>
       </header>
 
-      <section className="nv-workbench">
-        <aside className="nv-sidebar">
+      <section className={`nv-workbench ${isFileListCollapsed ? 'is-file-list-collapsed' : ''}`}>
+        <aside className={`nv-sidebar ${isFileListCollapsed ? 'is-collapsed' : ''}`}>
           <div className="nv-panel-heading">
             <span>
               <Database size={15} />
-              Dataset
+              <span className="nv-sidebar-title">Dataset</span>
             </span>
-            <em>{filteredItems.length}/{items.length}</em>
-          </div>
-
-          <input
-            className="nv-search"
-            placeholder="Filter volumes"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-
-          <div className="nv-volume-list">
-            {filteredItems.map((item) => (
+            <div className="nv-sidebar-heading-tools">
+              <em>{filteredItems.length}/{items.length}</em>
               <button
-                className={`nv-volume-card ${selected?.id === item.id ? 'is-selected' : ''}`}
-                key={item.id}
-                onClick={() => setSelectedId(item.id)}
+                aria-expanded={!isFileListCollapsed}
+                aria-label={isFileListCollapsed ? 'Expand dataset file list' : 'Collapse dataset file list'}
+                className="nv-sidebar-toggle"
+                onClick={() => setIsFileListCollapsed((collapsed) => !collapsed)}
+                title={isFileListCollapsed ? 'Expand file list' : 'Collapse file list'}
                 type="button"
               >
-                <StablePreviewImage
-                  src={previewImageForSize(item, SIDEBAR_PREVIEW_SIZE)}
-                  frameClassName="nv-volume-thumb"
-                />
-                <span>
-                  <strong>{item.label}</strong>
-                  <small>{item.shape.join(' x ')} / {item.dtype}</small>
-                </span>
+                {isFileListCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
               </button>
-            ))}
+            </div>
           </div>
+
+          {!isFileListCollapsed ? (
+            <>
+              <input
+                className="nv-search"
+                placeholder="Filter volumes"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+
+              <div className="nv-volume-list">
+                {filteredItems.map((item) => (
+                  <button
+                    className={`nv-volume-card ${selected?.id === item.id ? 'is-selected' : ''}`}
+                    key={item.id}
+                    onClick={() => setSelectedId(item.id)}
+                    type="button"
+                  >
+                    <StablePreviewImage
+                      src={previewImageForSize(item, SIDEBAR_PREVIEW_SIZE)}
+                      frameClassName="nv-volume-thumb"
+                    />
+                    <span>
+                      <strong>{item.label}</strong>
+                      <small>{item.shape.join(' x ')} / {item.dtype}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
         </aside>
 
         <section

@@ -205,9 +205,15 @@ button {
 }
 
 .nv-workbench {
+  --file-list-width: clamp(188px, 17vw, 248px);
+  --controls-width: clamp(260px, 24vw, 350px);
   display: grid;
-  grid-template-columns: clamp(188px, 17vw, 248px) minmax(0, 1fr) clamp(260px, 24vw, 350px);
+  grid-template-columns: var(--file-list-width) minmax(0, 1fr) var(--controls-width);
   min-height: 0;
+}
+
+.nv-workbench.is-file-list-collapsed {
+  --file-list-width: 52px;
 }
 
 .nv-sidebar,
@@ -223,6 +229,12 @@ button {
   display: flex;
   flex-direction: column;
   padding: 14px clamp(8px, 1vw, 12px);
+}
+
+.nv-sidebar.is-collapsed {
+  align-items: center;
+  padding-right: 8px;
+  padding-left: 8px;
 }
 
 .nv-controls {
@@ -263,6 +275,52 @@ button {
 .nv-panel-heading em {
   color: var(--green);
   font-style: normal;
+}
+
+.nv-sidebar-heading-tools {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.nv-sidebar-toggle {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.nv-sidebar-toggle:hover,
+.nv-sidebar-toggle:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-sidebar.is-collapsed .nv-panel-heading {
+  width: 100%;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.nv-sidebar.is-collapsed .nv-panel-heading > span,
+.nv-sidebar.is-collapsed .nv-sidebar-heading-tools {
+  justify-content: center;
+  width: 100%;
+  margin-left: 0;
+}
+
+.nv-sidebar.is-collapsed .nv-sidebar-title,
+.nv-sidebar.is-collapsed .nv-panel-heading em {
+  display: none;
 }
 
 .nv-search {
@@ -867,7 +925,8 @@ button {
 
 @media (max-width: 1280px) {
   .nv-workbench {
-    grid-template-columns: clamp(176px, 18vw, 230px) minmax(0, 1fr) clamp(246px, 28vw, 326px);
+    --file-list-width: clamp(176px, 18vw, 230px);
+    --controls-width: clamp(246px, 28vw, 326px);
   }
 
   .nv-sidebar {
@@ -899,7 +958,8 @@ button {
   }
 
   .nv-workbench {
-    grid-template-columns: minmax(154px, 18vw) minmax(0, 1fr) minmax(222px, 30vw);
+    --file-list-width: minmax(154px, 18vw);
+    --controls-width: minmax(222px, 30vw);
   }
 
   .nv-split-workspace {

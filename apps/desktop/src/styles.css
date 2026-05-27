@@ -757,6 +757,47 @@ button {
   touch-action: none;
 }
 
+.nv-render-snap-controls {
+  position: absolute;
+  top: 56px;
+  right: 14px;
+  z-index: 4;
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(215, 166, 66, 0.32);
+  background: rgba(8, 8, 6, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.nv-render-snap-controls button {
+  min-width: 42px;
+  height: 28px;
+  border: 0;
+  background: rgba(17, 17, 15, 0.82);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.nv-render-snap-controls button:hover:not(:disabled),
+.nv-render-snap-controls button:focus-visible {
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-render-snap-controls button.is-active {
+  background: #252112;
+  color: var(--amber);
+}
+
+.nv-render-snap-controls button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
 .nv-render-status {
   position: absolute;
   left: 14px;

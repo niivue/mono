@@ -12,6 +12,8 @@ interface NiivueStageProps {
 interface NiiVueLike {
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(volumes: Array<{ url: string; name: string; colormap?: string }>): Promise<unknown>
+  azimuth?: number
+  elevation?: number
   setClipPlanes?(planes: number[][]): void
   setClipPlane?(plane: number[]): void
   drawScene(): void
@@ -23,6 +25,14 @@ type NiiVueConstructor = new (options?: Record<string, unknown>) => NiiVueLike
 
 const NIVUE_SLICE_TYPE_RENDER = 4
 const NIVUE_SHOW_RENDER_ALWAYS = 1
+const RENDER_VIEW_SNAPS = [
+  { id: 'sagittal', label: 'Sagittal', shortLabel: 'Sag', azimuth: -90, elevation: 0 },
+  { id: 'axial', label: 'Axial', shortLabel: 'Ax', azimuth: 0, elevation: 90 },
+  { id: 'coronal', label: 'Coronal', shortLabel: 'Cor', azimuth: 0, elevation: 0 }
+] as const
+
+type RenderViewSnap = (typeof RENDER_VIEW_SNAPS)[number]
+type RenderSnapId = RenderViewSnap['id']
 
 export function NiivueStage({
   item,
@@ -34,6 +44,7 @@ export function NiivueStage({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const nvRef = useRef<NiiVueLike | null>(null)
   const [status, setStatus] = useState('Waiting for a dataset selection.')
+  const [snapId, setSnapId] = useState<RenderSnapId | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -43,10 +54,12 @@ export function NiivueStage({
       const canvas = canvasRef.current
       const stage = stageRef.current
       if (!canvas || !item) {
+        setSnapId(null)
         setStatus('Waiting for a dataset selection.')
         return
       }
 
+      setSnapId(null)
       syncCanvasSize(canvas, stage)
       setStatus(`Loading ${item.label} with ${backend.toUpperCase()}.`)
       try {
@@ -136,9 +149,39 @@ export function NiivueStage({
     resizeNiiVue(nv, canvasRef.current, stageRef.current)
   }, [clipPlanes])
 
+  function snapRenderView(snap: RenderViewSnap): void {
+    const nv = nvRef.current
+    if (!nv || !('azimuth' in nv) || !('elevation' in nv)) return
+
+    nv.azimuth = snap.azimuth
+    nv.elevation = snap.elevation
+    setSnapId(snap.id)
+    resizeNiiVue(nv, canvasRef.current, stageRef.current)
+  }
+
+  function clearSnapSelection(): void {
+    if (snapId) setSnapId(null)
+  }
+
   return (
     <div className="nv-render-stage" ref={stageRef}>
-      <canvas ref={canvasRef} />
+      <canvas ref={canvasRef} onPointerDown={clearSnapSelection} onWheel={clearSnapSelection} />
+      <div className="nv-render-snap-controls" aria-label="Snap render view">
+        {RENDER_VIEW_SNAPS.map((snap) => (
+          <button
+            aria-label={`Snap to ${snap.label} view`}
+            aria-pressed={snapId === snap.id}
+            className={snapId === snap.id ? 'is-active' : ''}
+            disabled={!item}
+            key={snap.id}
+            onClick={() => snapRenderView(snap)}
+            title={`Snap to ${snap.label}`}
+            type="button"
+          >
+            {snap.shortLabel}
+          </button>
+        ))}
+      </div>
       <div className="nv-render-status">{status}</div>
     </div>
   )

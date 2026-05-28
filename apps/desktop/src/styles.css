@@ -209,7 +209,7 @@ button {
 }
 
 .nv-workbench {
-  --file-list-width: clamp(188px, 17vw, 248px);
+  --file-list-width: clamp(210px, 18vw, 270px);
   --controls-width: clamp(260px, 24vw, 350px);
   display: grid;
   grid-template-columns: var(--file-list-width) minmax(0, 1fr) var(--controls-width);
@@ -330,7 +330,6 @@ button {
 .nv-search {
   width: 100%;
   height: 32px;
-  margin-bottom: 12px;
   border: 1px solid var(--line);
   outline: none;
   background: #10110d;
@@ -340,6 +339,145 @@ button {
 
 .nv-search:focus {
   border-color: var(--green);
+}
+
+.nv-volume-filter {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) minmax(128px, auto);
+  flex: 1;
+  gap: 8px;
+  min-height: 0;
+}
+
+.nv-volume-filter-panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: #10110d;
+  padding: 8px;
+}
+
+.nv-volume-filter-facets {
+  display: grid;
+  gap: 8px;
+  max-height: clamp(178px, 30vh, 292px);
+  min-height: 0;
+  overflow: auto;
+}
+
+.nv-filter-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nv-filter-clear {
+  min-width: 48px;
+  height: 32px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.nv-filter-clear:hover:not(:disabled),
+.nv-filter-clear:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-filter-clear:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.nv-filter-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.nv-filter-panel-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-filter-panel-title em {
+  color: var(--green);
+  font-style: normal;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.nv-filter-facet-group {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.nv-filter-facet-options {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nv-filter-facet-option {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 24px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.nv-filter-facet-option:hover {
+  background: #181914;
+  color: var(--ink);
+}
+
+.nv-filter-facet-option input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--green);
+}
+
+.nv-filter-facet-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-filter-facet-option em {
+  color: var(--faint);
+  font-style: normal;
+}
+
+.nv-volume-results-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.nv-volume-results-panel .nv-filter-panel-title {
+  margin-bottom: 8px;
 }
 
 .nv-volume-list,
@@ -353,6 +491,54 @@ button {
 .nv-volume-list {
   flex: 1;
   align-content: start;
+}
+
+.nv-volume-results-panel .nv-volume-list {
+  min-height: 0;
+  overflow: auto;
+}
+
+.nv-volume-filter-details {
+  max-height: clamp(132px, 27vh, 232px);
+  overflow: auto;
+}
+
+.nv-volume-filter-details .nv-filter-panel-title {
+  margin-bottom: 8px;
+}
+
+.nv-volume-filter-details dl {
+  display: grid;
+  grid-template-columns: minmax(58px, auto) minmax(0, 1fr);
+  gap: 6px 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.nv-volume-filter-details dt {
+  color: var(--faint);
+}
+
+.nv-volume-filter-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-filter-empty {
+  border: 1px dashed #464631;
+  color: var(--faint);
+  font-size: 12px;
+  padding: 9px;
+}
+
+.nv-filter-facet-options .nv-filter-empty {
+  border: 0;
+  padding: 2px 4px;
 }
 
 .nv-volume-card {
@@ -1338,7 +1524,7 @@ button {
 
 @media (max-width: 1280px) {
   .nv-workbench {
-    --file-list-width: clamp(176px, 18vw, 230px);
+    --file-list-width: clamp(200px, 19vw, 250px);
     --controls-width: clamp(246px, 28vw, 326px);
   }
 
@@ -1371,7 +1557,7 @@ button {
   }
 
   .nv-workbench {
-    --file-list-width: minmax(154px, 18vw);
+    --file-list-width: minmax(184px, 22vw);
     --controls-width: minmax(222px, 30vw);
   }
 

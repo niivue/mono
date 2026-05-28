@@ -104,6 +104,34 @@ const FLIPPED_CLIP_ORIENTATIONS: Record<string, Pick<ClipPlane, 'azimuth' | 'ele
   inferior: { azimuth: 0, elevation: 90 },
   right: { azimuth: 270, elevation: 0 }
 }
+const BIDS_IMAGE_TYPE_LABELS: Record<string, string> = {
+  asl: 'ASL',
+  bold: 'BOLD',
+  dwi: 'DWI',
+  epi: 'EPI',
+  fieldmap: 'Field map',
+  flair: 'FLAIR',
+  inplanet1: 'Inplane T1',
+  inplanet2: 'Inplane T2',
+  magnitude1: 'Magnitude',
+  magnitude2: 'Magnitude',
+  m0scan: 'M0',
+  phasediff: 'Phase diff',
+  pd: 'PD',
+  pdw: 'PDw',
+  pet: 'PET',
+  sbref: 'SBRef',
+  t1map: 'T1 map',
+  t1rho: 'T1rho',
+  t1w: 'T1w',
+  t2map: 'T2 map',
+  t2star: 'T2star',
+  t2starmap: 'T2star map',
+  t2starw: 'T2starw',
+  t2w: 'T2w',
+  tof: 'TOF',
+  unit1: 'UNIT1'
+}
 type MouseContext = 'desktop' | 'niivue' | null
 type SidePanelTab = 'inspect' | 'operations'
 type RenderWheelMode = 'zoom' | 'clip-plane'
@@ -138,6 +166,11 @@ export function App(): JSX.Element {
   const [metadataStatus, setMetadataStatus] = useState('No metadata loaded.')
   const [metadata, setMetadata] = useState<VolumeMetadata | null>(null)
   const [query, setQuery] = useState('')
+  const [selectedRoles, setSelectedRoles] = useState<Set<string>>(() => new Set())
+  const [selectedImageTypes, setSelectedImageTypes] = useState<Set<string>>(() => new Set())
+  const [selectedFormats, setSelectedFormats] = useState<Set<string>>(() => new Set())
+  const [selectedDtypes, setSelectedDtypes] = useState<Set<string>>(() => new Set())
+  const [activeFilterItemId, setActiveFilterItemId] = useState<string | null>(null)
   const [splitPercent, setSplitPercent] = useState(52)
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
@@ -196,11 +229,15 @@ export function App(): JSX.Element {
   const activeClipPlane = clipPlanes.find((plane) => plane.id === activeClipPlaneId) ?? clipPlanes[0]
   const filteredItems = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    if (!normalized) return items
-    return items.filter((item) =>
-      [item.label, item.id, item.format, item.dtype].join(' ').toLowerCase().includes(normalized)
-    )
-  }, [items, query])
+    return items.filter((item) => {
+      if (selectedRoles.size > 0 && !selectedRoles.has(volumeRoleLabel(item))) return false
+      if (selectedImageTypes.size > 0 && !selectedImageTypes.has(volumeImageTypeLabel(item))) return false
+      if (selectedFormats.size > 0 && !selectedFormats.has(volumeFacetValue(item.format))) return false
+      if (selectedDtypes.size > 0 && !selectedDtypes.has(volumeFacetValue(item.dtype))) return false
+      if (!normalized) return true
+      return volumeSearchText(item).includes(normalized)
+    })
+  }, [items, query, selectedDtypes, selectedFormats, selectedImageTypes, selectedRoles])
 
   useEffect(() => {
     let cancelled = false
@@ -382,34 +419,31 @@ export function App(): JSX.Element {
           </div>
 
           {!isFileListCollapsed ? (
-            <>
-              <input
-                className="nv-search"
-                placeholder="Filter volumes"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-
-              <div className="nv-volume-list">
-                {filteredItems.map((item) => (
-                  <button
-                    className={`nv-volume-card ${selected?.id === item.id ? 'is-selected' : ''}`}
-                    key={item.id}
-                    onClick={() => setSelectedId(item.id)}
-                    type="button"
-                  >
-                    <StablePreviewImage
-                      src={previewImageForSize(item, SIDEBAR_PREVIEW_SIZE)}
-                      frameClassName="nv-volume-thumb"
-                    />
-                    <span>
-                      <strong>{item.label}</strong>
-                      <small>{item.shape.join(' x ')} / {item.dtype}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </>
+            <VolumeFilterPanel
+              activeItemId={activeFilterItemId}
+              filteredItems={filteredItems}
+              items={items}
+              query={query}
+              selected={selected}
+              selectedDtypes={selectedDtypes}
+              selectedFormats={selectedFormats}
+              selectedImageTypes={selectedImageTypes}
+              selectedRoles={selectedRoles}
+              onActiveItem={setActiveFilterItemId}
+              onClearFilters={() => {
+                setQuery('')
+                setSelectedRoles(new Set())
+                setSelectedImageTypes(new Set())
+                setSelectedFormats(new Set())
+                setSelectedDtypes(new Set())
+              }}
+              onQueryChange={setQuery}
+              onSelect={(item) => setSelectedId(item.id)}
+              onToggleDtype={(value) => toggleFilterSet(setSelectedDtypes, value)}
+              onToggleFormat={(value) => toggleFilterSet(setSelectedFormats, value)}
+              onToggleImageType={(value) => toggleFilterSet(setSelectedImageTypes, value)}
+              onToggleRole={(value) => toggleFilterSet(setSelectedRoles, value)}
+            />
           ) : null}
         </aside>
 
@@ -626,6 +660,229 @@ function DesktopZoomControls({
         <Maximize2 size={15} />
       </button>
     </>
+  )
+}
+
+function VolumeFilterPanel({
+  activeItemId,
+  filteredItems,
+  items,
+  query,
+  selected,
+  selectedDtypes,
+  selectedFormats,
+  selectedImageTypes,
+  selectedRoles,
+  onActiveItem,
+  onClearFilters,
+  onQueryChange,
+  onSelect,
+  onToggleDtype,
+  onToggleFormat,
+  onToggleImageType,
+  onToggleRole
+}: {
+  activeItemId: string | null
+  filteredItems: DesktopItem[]
+  items: DesktopItem[]
+  query: string
+  selected: DesktopItem | null
+  selectedDtypes: Set<string>
+  selectedFormats: Set<string>
+  selectedImageTypes: Set<string>
+  selectedRoles: Set<string>
+  onActiveItem: (id: string | null) => void
+  onClearFilters: () => void
+  onQueryChange: (query: string) => void
+  onSelect: (item: DesktopItem) => void
+  onToggleDtype: (value: string) => void
+  onToggleFormat: (value: string) => void
+  onToggleImageType: (value: string) => void
+  onToggleRole: (value: string) => void
+}): JSX.Element {
+  const roleCounts = useMemo(() => volumeFacetCounts(items, volumeRoleLabel), [items])
+  const imageTypeCounts = useMemo(() => volumeFacetCounts(items, volumeImageTypeLabel), [items])
+  const formatCounts = useMemo(
+    () => volumeFacetCounts(items, (item) => volumeFacetValue(item.format)),
+    [items]
+  )
+  const dtypeCounts = useMemo(
+    () => volumeFacetCounts(items, (item) => volumeFacetValue(item.dtype)),
+    [items]
+  )
+  const activeItem =
+    filteredItems.find((item) => item.id === activeItemId) ??
+    (selected && filteredItems.some((item) => item.id === selected.id) ? selected : null) ??
+    filteredItems[0] ??
+    null
+  const hasFilters =
+    query.trim().length > 0 ||
+    selectedRoles.size > 0 ||
+    selectedImageTypes.size > 0 ||
+    selectedFormats.size > 0 ||
+    selectedDtypes.size > 0
+
+  return (
+    <div className="nv-volume-filter">
+      <section className="nv-volume-filter-panel nv-volume-filter-facets" aria-label="Volume filters">
+        <div className="nv-filter-search-row">
+          <input
+            className="nv-search"
+            placeholder="Filter volumes"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+          />
+          <button
+            className="nv-filter-clear"
+            disabled={!hasFilters}
+            onClick={onClearFilters}
+            type="button"
+          >
+            Clear
+          </button>
+        </div>
+
+        <VolumeFacetGroup
+          counts={roleCounts}
+          selected={selectedRoles}
+          title="Role"
+          onToggle={onToggleRole}
+        />
+        <VolumeFacetGroup
+          counts={imageTypeCounts}
+          selected={selectedImageTypes}
+          title="Image"
+          onToggle={onToggleImageType}
+        />
+        <VolumeFacetGroup
+          counts={formatCounts}
+          selected={selectedFormats}
+          title="Format"
+          onToggle={onToggleFormat}
+        />
+        <VolumeFacetGroup
+          counts={dtypeCounts}
+          selected={selectedDtypes}
+          title="Dtype"
+          onToggle={onToggleDtype}
+        />
+      </section>
+
+      <section className="nv-volume-filter-panel nv-volume-results-panel" aria-label="Filtered volumes">
+        <div className="nv-filter-panel-title">
+          <span>Volumes</span>
+          <em>{filteredItems.length}</em>
+        </div>
+
+        <div className="nv-volume-list">
+          {filteredItems.map((item) => (
+            <button
+              className={`nv-volume-card ${selected?.id === item.id ? 'is-selected' : ''}`}
+              key={item.id}
+              onClick={() => onSelect(item)}
+              onFocus={() => onActiveItem(item.id)}
+              onMouseEnter={() => onActiveItem(item.id)}
+              type="button"
+            >
+              <StablePreviewImage
+                src={previewImageForSize(item, SIDEBAR_PREVIEW_SIZE)}
+                frameClassName="nv-volume-thumb"
+              />
+              <span>
+                <strong>{item.label}</strong>
+                <small>{volumeImageTypeLabel(item)} / {item.shape.join(' x ')} / {item.dtype}</small>
+              </span>
+            </button>
+          ))}
+          {filteredItems.length === 0 ? (
+            <div className="nv-filter-empty">No matching volumes.</div>
+          ) : null}
+        </div>
+      </section>
+
+      <VolumeFilterDetails item={activeItem} />
+    </div>
+  )
+}
+
+function VolumeFacetGroup({
+  counts,
+  selected,
+  title,
+  onToggle
+}: {
+  counts: Map<string, number>
+  selected: Set<string>
+  title: string
+  onToggle: (value: string) => void
+}): JSX.Element {
+  const entries = Array.from(counts.entries()).sort((left, right) => left[0].localeCompare(right[0]))
+
+  return (
+    <div className="nv-filter-facet-group">
+      <div className="nv-filter-panel-title">
+        <span>{title}</span>
+        <em>{selected.size > 0 ? selected.size : 'all'}</em>
+      </div>
+      <div className="nv-filter-facet-options">
+        {entries.map(([value, count]) => (
+          <label className="nv-filter-facet-option" key={value} title={value}>
+            <input
+              checked={selected.has(value)}
+              onChange={() => onToggle(value)}
+              type="checkbox"
+            />
+            <span>{value}</span>
+            <em>{count}</em>
+          </label>
+        ))}
+        {entries.length === 0 ? <div className="nv-filter-empty">None</div> : null}
+      </div>
+    </div>
+  )
+}
+
+function VolumeFilterDetails({ item }: { item: DesktopItem | null }): JSX.Element {
+  return (
+    <section className="nv-volume-filter-panel nv-volume-filter-details" aria-label="Volume metadata">
+      <div className="nv-filter-panel-title">
+        <span>Metadata</span>
+        <em>{item ? volumeRoleLabel(item) : 'none'}</em>
+      </div>
+
+      {item ? (
+        <dl>
+          <dt>Label</dt>
+          <dd title={item.label}>{item.label}</dd>
+          <dt>ID</dt>
+          <dd title={item.id}>{item.id}</dd>
+          <dt>Format</dt>
+          <dd>{volumeFacetValue(item.format)}</dd>
+          <dt>Image</dt>
+          <dd>{volumeImageTypeLabel(item)}</dd>
+          <dt>Dtype</dt>
+          <dd>{volumeFacetValue(item.dtype)}</dd>
+          <dt>Shape</dt>
+          <dd>{item.shape.join(' x ')}</dd>
+          <dt>Spacing</dt>
+          <dd>{item.spacing.join(' x ')}</dd>
+          {item.derivedFrom ? (
+            <>
+              <dt>Source</dt>
+              <dd title={item.derivedFrom}>{item.derivedFrom}</dd>
+            </>
+          ) : null}
+          {item.derivation?.operation ? (
+            <>
+              <dt>Operation</dt>
+              <dd>{item.derivation.operation}</dd>
+            </>
+          ) : null}
+        </dl>
+      ) : (
+        <div className="nv-filter-empty">No volume selected.</div>
+      )}
+    </section>
   )
 }
 
@@ -858,6 +1115,106 @@ function isDerivedItem(item: DesktopItem): boolean {
   return item.role === 'derived' || Boolean(item.derivedFrom || item.derivation)
 }
 
+function volumeRoleLabel(item: DesktopItem): string {
+  return isDerivedItem(item) ? 'Derived' : 'Source'
+}
+
+function volumeImageTypeLabel(item: DesktopItem): string {
+  const tokens = volumeIdentityCandidates(item).flatMap(volumeIdentityTokens)
+  for (let index = tokens.length - 1; index >= 0; index -= 1) {
+    const label = BIDS_IMAGE_TYPE_LABELS[tokens[index]]
+    if (label) return label
+  }
+  return 'Unknown'
+}
+
+function volumeFacetValue(value: string | null | undefined): string {
+  const normalized = value?.trim()
+  return normalized && normalized.length > 0 ? normalized : 'Unknown'
+}
+
+function volumeSearchText(item: DesktopItem): string {
+  return [
+    item.label,
+    item.id,
+    item.type,
+    item.format,
+    item.dtype,
+    volumeRoleLabel(item),
+    volumeImageTypeLabel(item),
+    item.shape.join(' x '),
+    item.spacing.join(' x '),
+    item.derivedFrom ?? '',
+    item.derivation?.operation ?? ''
+  ]
+    .join(' ')
+    .toLowerCase()
+}
+
+function volumeIdentityCandidates(item: DesktopItem): string[] {
+  return [
+    item.label,
+    item.id,
+    item.manifest,
+    item.metadata,
+    item.preview.image,
+    item.preview.service,
+    item.derivedFrom ?? '',
+    item.derivation?.sourcePath ?? '',
+    item.derivation?.outputPath ?? ''
+  ].filter((value) => value.length > 0)
+}
+
+function volumeIdentityTokens(value: string): string[] {
+  const decoded = safeDecodeURIComponent(value)
+  const withoutQuery = decoded.split(/[?#]/)[0]
+  const filename = withoutQuery.split(/[\\/]/).pop() ?? withoutQuery
+  const stem = filename
+    .replace(/\.nii(\.gz)?$/i, '')
+    .replace(/\.json$/i, '')
+    .replace(/\.png$/i, '')
+
+  return stem
+    .split(/[_\s.-]+/)
+    .map((token) => token.toLowerCase())
+    .filter(Boolean)
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function volumeFacetCounts(
+  items: DesktopItem[],
+  valueForItem: (item: DesktopItem) => string
+): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const item of items) {
+    const value = valueForItem(item)
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  return counts
+}
+
+function toggleFilterSet(
+  setter: Dispatch<SetStateAction<Set<string>>>,
+  value: string
+): void {
+  setter((current) => {
+    const next = new Set(current)
+    if (next.has(value)) {
+      next.delete(value)
+    } else {
+      next.add(value)
+    }
+    return next
+  })
+}
+
 function desktopManifestSignature(manifest: DesktopManifest): string {
   return [
     manifest.itemCount,
@@ -973,6 +1330,8 @@ function SelectionPanel({
           <dd>{item.id}</dd>
           <dt>Format</dt>
           <dd>{item.format}</dd>
+          <dt>Image</dt>
+          <dd>{volumeImageTypeLabel(item)}</dd>
           <dt>Role</dt>
           <dd>{item.role ?? 'source'}</dd>
           {item.derivedFrom ? (

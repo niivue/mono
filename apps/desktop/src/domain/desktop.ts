@@ -104,6 +104,16 @@ export interface ServerInfo {
   url: string
   port: number
   volumeCount: number
+  datasetRoot?: string | null
+  cacheRoot?: string
+}
+
+export interface DatasetOpenResult {
+  url: string
+  port: number
+  volumeCount: number
+  datasetRoot: string
+  cacheRoot: string
 }
 
 export interface ClipPlane {
@@ -117,16 +127,23 @@ export interface ClipPlane {
 
 const BROWSER_REFERENCE_SERVER = 'http://127.0.0.1:8087'
 
+export async function resolveServerInfo(): Promise<ServerInfo | null> {
+  try {
+    const info = await invoke<ServerInfo>('neurovue_server_info')
+    return {
+      ...info,
+      url: trimTrailingSlash(info.url)
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function resolveServerUrl(): Promise<string> {
   const queryUrl = new URLSearchParams(window.location.search).get('server')
   if (queryUrl) return trimTrailingSlash(queryUrl)
 
-  try {
-    const info = await invoke<ServerInfo>('neurovue_server_info')
-    return trimTrailingSlash(info.url)
-  } catch {
-    return BROWSER_REFERENCE_SERVER
-  }
+  return (await resolveServerInfo())?.url ?? BROWSER_REFERENCE_SERVER
 }
 
 export async function fetchDesktopManifest(serverUrl: string): Promise<DesktopManifest> {
@@ -147,6 +164,16 @@ export async function fetchVolumeMetadata(item: DesktopItem): Promise<VolumeMeta
 
 export function rawVolumeUrl(item: DesktopItem): string {
   return item.levels.find((level) => level.level === 0)?.raw ?? item.levels[0]?.raw ?? item.manifest
+}
+
+export async function openDatasetDirectory(): Promise<DatasetOpenResult | null> {
+  const result = await invoke<DatasetOpenResult | null>('open_dataset_directory')
+  return result
+    ? {
+        ...result,
+        url: trimTrailingSlash(result.url)
+      }
+    : null
 }
 
 export function defaultClipPlanes(): ClipPlane[] {

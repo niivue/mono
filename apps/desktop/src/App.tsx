@@ -12,6 +12,7 @@ import {
   useState
 } from 'react'
 import { flushSync } from 'react-dom'
+import { listen } from '@tauri-apps/api/event'
 import {
   ChevronDown,
   CircleDot,
@@ -19,6 +20,7 @@ import {
   Database,
   Eye,
   FileJson,
+  FolderOpen,
   GripVertical,
   Maximize2,
   PanelLeftClose,
@@ -43,6 +45,8 @@ import {
   defaultClipPlanes,
   fetchDesktopManifest,
   fetchVolumeMetadata,
+  openDatasetDirectory,
+  resolveServerInfo,
   resolveServerUrl
 } from './domain/desktop'
 import { runNiimathTask, type NiimathOperation, type NiimathTaskResult } from './domain/niimath'
@@ -156,7 +160,10 @@ export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const manifestRef = useRef<DesktopManifest | null>(null)
   const selectedIdRef = useRef<string | null>(null)
+  const isOpeningDatasetRef = useRef(false)
   const [serverUrl, setServerUrl] = useState('')
+  const [datasetRoot, setDatasetRoot] = useState('')
+  const [cacheRoot, setCacheRoot] = useState('')
   const [manifest, setManifest] = useState<DesktopManifest | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [backend, setBackend] = useState<Backend>('webgl2')
@@ -180,6 +187,7 @@ export function App(): JSX.Element {
     () => defaultClipPlanes()[0]?.id ?? 'anterior'
   )
   const [renderWheelMode, setRenderWheelMode] = useState<RenderWheelMode>('zoom')
+  const [isOpeningDataset, setIsOpeningDataset] = useState(false)
 
   useEffect(() => {
     manifestRef.current = manifest
@@ -205,9 +213,12 @@ export function App(): JSX.Element {
 
     async function load(): Promise<void> {
       try {
-        const resolved = await resolveServerUrl()
+        const serverInfo = await resolveServerInfo()
+        const resolved = serverInfo?.url ?? await resolveServerUrl()
         if (cancelled) return
         setServerUrl(resolved)
+        setDatasetRoot(serverInfo?.datasetRoot ?? '')
+        setCacheRoot(serverInfo?.cacheRoot ?? '')
         const nextManifest = await fetchDesktopManifest(resolved)
         if (cancelled) return
         setManifest(nextManifest)
@@ -221,6 +232,22 @@ export function App(): JSX.Element {
     void load()
     return () => {
       cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null
+
+    void listen('neurovue-open-directory', () => {
+      void openLocalDataset()
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten
+    }).catch(() => {
+      unlisten = null
+    })
+
+    return () => {
+      unlisten?.()
     }
   }, [])
 
@@ -286,6 +313,41 @@ export function App(): JSX.Element {
     setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
   }
 
+  async function openLocalDataset(): Promise<void> {
+    if (isOpeningDatasetRef.current) return
+
+    isOpeningDatasetRef.current = true
+    setIsOpeningDataset(true)
+    setStatus('Choosing dataset directory.')
+    try {
+      const result = await openDatasetDirectory()
+      if (!result) {
+        setStatus('Open directory cancelled.')
+        return
+      }
+
+      setServerUrl(result.url)
+      setDatasetRoot(result.datasetRoot)
+      setCacheRoot(result.cacheRoot)
+      setQuery('')
+      setSelectedRoles(new Set())
+      setSelectedImageTypes(new Set())
+      setSelectedFormats(new Set())
+      setSelectedDtypes(new Set())
+      setActiveFilterItemId(null)
+
+      const nextManifest = await fetchDesktopManifest(result.url)
+      setManifest(nextManifest)
+      setSelectedId(nextManifest.items[0]?.id ?? null)
+      setStatus(`${nextManifest.itemCount} volume item(s) loaded from ${result.datasetRoot}.`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      isOpeningDatasetRef.current = false
+      setIsOpeningDataset(false)
+    }
+  }
+
   function bindActiveClipPlane(planeId: string): void {
     setActiveClipPlaneId(planeId)
     setRenderWheelMode('clip-plane')
@@ -321,10 +383,16 @@ export function App(): JSX.Element {
         }
         setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
       } catch {
-        // The embedded server may briefly disappear while Tauri dev rebuilds.
+        const serverInfo = await resolveServerInfo()
+        if (cancelled || !serverInfo || serverInfo.url === serverUrl) return
+
+        setServerUrl(serverInfo.url)
+        setDatasetRoot(serverInfo.datasetRoot ?? '')
+        setCacheRoot(serverInfo.cacheRoot ?? '')
       }
     }
 
+    void refreshChangedManifest()
     const interval = window.setInterval(() => {
       void refreshChangedManifest()
     }, 5000)
@@ -346,11 +414,22 @@ export function App(): JSX.Element {
           </div>
           <div>
             <h1>NeuroVue</h1>
-            <p>{serverUrl || 'Resolving local server'}</p>
+            <p>{datasetRoot || serverUrl || 'Resolving local server'}</p>
           </div>
         </div>
 
         <div className="nv-toolbar" aria-label="Viewer controls">
+          <button
+            className="nv-tool-button"
+            disabled={isOpeningDataset}
+            onClick={() => void openLocalDataset()}
+            title={cacheRoot ? `Open dataset directory. Temp cache: ${cacheRoot}` : 'Open dataset directory'}
+            type="button"
+          >
+            <FolderOpen size={15} />
+            <span>{isOpeningDataset ? 'Opening' : 'Open'}</span>
+          </button>
+
           <div className="nv-segmented" aria-label="Backend">
             <button
               className={backend === 'webgl2' ? 'is-active' : ''}

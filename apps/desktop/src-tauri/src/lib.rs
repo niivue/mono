@@ -8,6 +8,12 @@ use std::{
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
+use tauri::{
+    menu::{Menu, MenuItem, Submenu},
+    Emitter,
+};
+
+const OPEN_DIRECTORY_MENU_ID: &str = "neurovue-open-directory";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,6 +21,8 @@ struct NeuroVueServerInfo {
     url: String,
     port: u16,
     volume_count: usize,
+    dataset_root: Option<String>,
+    cache_root: String,
 }
 
 struct NeuroVueState {
@@ -52,13 +60,53 @@ struct NiimathTaskResult {
     stderr: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DatasetOpenResult {
+    url: String,
+    port: u16,
+    volume_count: usize,
+    dataset_root: String,
+    cache_root: String,
+}
+
 #[tauri::command]
 fn neurovue_server_info(state: tauri::State<'_, NeuroVueState>) -> NeuroVueServerInfo {
     NeuroVueServerInfo {
         url: state.server.url.clone(),
         port: state.server.port,
         volume_count: volumetric_server::volume_count(&state.server),
+        dataset_root: volumetric_server::dataset_root(&state.server)
+            .map(|path| path.display().to_string()),
+        cache_root: volumetric_server::cache_root().display().to_string(),
     }
+}
+
+#[tauri::command]
+async fn open_dataset_directory(
+    state: tauri::State<'_, NeuroVueState>,
+) -> Result<Option<DatasetOpenResult>, String> {
+    let server = state.server.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(root) = choose_dataset_directory()? else {
+            return Ok(None);
+        };
+        let volume_count = volumetric_server::open_dataset_root(&server, &root)?;
+        let dataset_root = volumetric_server::dataset_root(&server)
+            .unwrap_or(root)
+            .display()
+            .to_string();
+
+        Ok(Some(DatasetOpenResult {
+            url: server.url.clone(),
+            port: server.port,
+            volume_count,
+            dataset_root,
+            cache_root: volumetric_server::cache_root().display().to_string(),
+        }))
+    })
+    .await
+    .map_err(|error| format!("open_dataset_directory: join error: {error}"))?
 }
 
 #[tauri::command]
@@ -147,7 +195,14 @@ fn run_niimath_task_blocking(
         ));
     }
 
-    write_niimath_sidecar(&output_path, &request, &source_path, &argv, &stdout, &stderr)?;
+    write_niimath_sidecar(
+        &output_path,
+        &request,
+        &source_path,
+        &argv,
+        &stdout,
+        &stderr,
+    )?;
     let volume_id = volumetric_server::register_derived_volume(
         &server,
         &source_path,
@@ -178,7 +233,9 @@ fn required_operand(value: Option<f64>, label: &str) -> Result<f64, String> {
 fn validate_nifti_path(label: &str, value: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(value);
     if !path.is_absolute() {
-        return Err(format!("run_niimath_task: {label} must be an absolute path"));
+        return Err(format!(
+            "run_niimath_task: {label} must be an absolute path"
+        ));
     }
     let path = fs::canonicalize(&path)
         .map_err(|error| format!("run_niimath_task: {label} {}: {error}", path.display()))?;
@@ -198,7 +255,7 @@ fn validate_nifti_path(label: &str, value: &str) -> Result<PathBuf, String> {
 }
 
 fn niimath_output_path(source_path: &Path, operation: NiimathOperation) -> Result<PathBuf, String> {
-    let output_dir = std::env::temp_dir().join("neurovue-niimath");
+    let output_dir = volumetric_server::working_derivatives_dir();
     fs::create_dir_all(&output_dir).map_err(|error| {
         format!(
             "run_niimath_task: create output directory {}: {error}",
@@ -409,14 +466,68 @@ fn format_operand(value: f64) -> String {
     text
 }
 
+fn choose_dataset_directory() -> Result<Option<PathBuf>, String> {
+    choose_dataset_directory_platform()
+}
+
+#[cfg(target_os = "macos")]
+fn choose_dataset_directory_platform() -> Result<Option<PathBuf>, String> {
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(r#"POSIX path of (choose folder with prompt "Open NeuroVue dataset folder")"#)
+        .output()
+        .map_err(|error| format!("open_dataset_directory: launch folder picker: {error}"))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Ok((!path.is_empty()).then(|| PathBuf::from(path)));
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("User canceled") || stderr.contains("-128") {
+        return Ok(None);
+    }
+
+    Err(format!(
+        "open_dataset_directory: folder picker failed: {}",
+        stderr.trim()
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn choose_dataset_directory_platform() -> Result<Option<PathBuf>, String> {
+    Err("open_dataset_directory: native folder picker is not available on this platform yet".into())
+}
+
+fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let menu = Menu::default(handle)?;
+    let open_directory = MenuItem::with_id(
+        handle,
+        OPEN_DIRECTORY_MENU_ID,
+        "Open Directory...",
+        true,
+        Some("CmdOrCtrl+O"),
+    )?;
+    let dataset_menu = Submenu::with_items(handle, "Dataset", true, &[&open_directory])?;
+    menu.insert(&dataset_menu, 1)?;
+    Ok(menu)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let server = volumetric_server::spawn_default();
 
     tauri::Builder::default()
+        .menu(neurovue_menu)
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == OPEN_DIRECTORY_MENU_ID {
+                let _ = app.emit("neurovue-open-directory", ());
+            }
+        })
         .manage(NeuroVueState { server })
         .invoke_handler(tauri::generate_handler![
             neurovue_server_info,
+            open_dataset_directory,
             run_niimath_task
         ])
         .run(tauri::generate_context!())

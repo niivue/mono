@@ -9,8 +9,9 @@ use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
     fs::{self, File},
+    hash::{Hash, Hasher},
     io::Read,
     net::TcpListener,
     path::{Path as FsPath, PathBuf},
@@ -26,6 +27,8 @@ pub struct ServerHandle {
     pub port: u16,
     pub volume_count: usize,
     volumes: VolumeStore,
+    dataset_root: Arc<Mutex<Option<PathBuf>>>,
+    preview_cache: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 }
 
 type VolumeStore = Arc<Mutex<Vec<VolumeEntry>>>;
@@ -110,13 +113,15 @@ pub fn spawn_default() -> ServerHandle {
         .expect("set NeuroVue listener nonblocking");
 
     let base_url = format!("http://{}", addr);
-    let volumes = discover_volumes();
-    let volume_count = volumes.len();
-    let volumes = Arc::new(Mutex::new(volumes));
+    let discovery = discover_volumes();
+    let volume_count = discovery.volumes.len();
+    let volumes = Arc::new(Mutex::new(discovery.volumes));
+    let dataset_root = Arc::new(Mutex::new(discovery.root));
+    let preview_cache = Arc::new(Mutex::new(HashMap::new()));
     let state = AppState {
         base_url: base_url.clone(),
         volumes: volumes.clone(),
-        preview_cache: Arc::new(Mutex::new(HashMap::new())),
+        preview_cache: preview_cache.clone(),
         pyramid_lock: Arc::new(Mutex::new(())),
         patch: Arc::new(Mutex::new(None)),
     };
@@ -169,7 +174,60 @@ pub fn spawn_default() -> ServerHandle {
         port: addr.port(),
         volume_count,
         volumes,
+        dataset_root,
+        preview_cache,
     }
+}
+
+pub fn dataset_root(handle: &ServerHandle) -> Option<PathBuf> {
+    handle
+        .dataset_root
+        .lock()
+        .ok()
+        .and_then(|root| root.clone())
+}
+
+pub fn cache_root() -> PathBuf {
+    std::env::temp_dir().join("neurovue")
+}
+
+pub fn working_derivatives_dir() -> PathBuf {
+    cache_root().join("working-derivatives")
+}
+
+pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Result<usize, String> {
+    let root = fs::canonicalize(root)
+        .map_err(|error| format!("open_dataset_root: {}: {error}", root.display()))?;
+    if !root.is_dir() {
+        return Err(format!(
+            "open_dataset_root: not a directory: {}",
+            root.display()
+        ));
+    }
+
+    let mut volumes = discover_volumes_in_root(&root, max_volume_count());
+    if volumes.is_empty() {
+        return Err(format!(
+            "open_dataset_root: no NIfTI volumes found under {}",
+            root.display()
+        ));
+    }
+    append_working_derivatives(&mut volumes, Some(&root));
+    let volume_count = volumes.len();
+
+    *handle
+        .volumes
+        .lock()
+        .map_err(|_| "open_dataset_root: volume store is unavailable".to_string())? = volumes;
+    *handle
+        .dataset_root
+        .lock()
+        .map_err(|_| "open_dataset_root: dataset root is unavailable".to_string())? = Some(root);
+    if let Ok(mut cache) = handle.preview_cache.lock() {
+        cache.clear();
+    }
+
+    Ok(volume_count)
 }
 
 pub fn volume_count(handle: &ServerHandle) -> usize {
@@ -186,14 +244,26 @@ pub fn register_derived_volume(
     output_path: &std::path::Path,
     operation: &str,
 ) -> Result<String, String> {
-    let header = read_nifti_header(output_path)
-        .ok_or_else(|| format!("register_derived_volume: unreadable NIfTI {}", output_path.display()))?;
+    let header = read_nifti_header(output_path).ok_or_else(|| {
+        format!(
+            "register_derived_volume: unreadable NIfTI {}",
+            output_path.display()
+        )
+    })?;
     let output_parent = output_path.parent().unwrap_or_else(|| FsPath::new(""));
     let output_id = volume_id(output_path, output_parent);
-    let source_path = fs::canonicalize(source_path)
-        .map_err(|error| format!("register_derived_volume: source {}: {error}", source_path.display()))?;
-    let output_path = fs::canonicalize(output_path)
-        .map_err(|error| format!("register_derived_volume: output {}: {error}", output_path.display()))?;
+    let source_path = fs::canonicalize(source_path).map_err(|error| {
+        format!(
+            "register_derived_volume: source {}: {error}",
+            source_path.display()
+        )
+    })?;
+    let output_path = fs::canonicalize(output_path).map_err(|error| {
+        format!(
+            "register_derived_volume: output {}: {error}",
+            output_path.display()
+        )
+    })?;
     let mut volumes = handle
         .volumes
         .lock()
@@ -236,7 +306,11 @@ pub fn register_derived_volume(
 }
 
 async fn api_info(State(state): State<AppState>) -> Json<Value> {
-    let volumes = state.volumes.lock().map(|volumes| volumes.clone()).unwrap_or_default();
+    let volumes = state
+        .volumes
+        .lock()
+        .map(|volumes| volumes.clone())
+        .unwrap_or_default();
     Json(json!({
         "service": "neurovue-volumetric-server",
         "version": "0.1.0",
@@ -288,7 +362,11 @@ async fn desktop_manifest(
     Path(desktop_id): Path<String>,
     State(state): State<AppState>,
 ) -> Json<Value> {
-    let volumes = state.volumes.lock().map(|volumes| volumes.clone()).unwrap_or_default();
+    let volumes = state
+        .volumes
+        .lock()
+        .map(|volumes| volumes.clone())
+        .unwrap_or_default();
     let tile_size = 1024_u32;
     let gap = 96_u32;
     let pitch = tile_size + gap;
@@ -608,7 +686,12 @@ async fn write_patch(
 
 const DEFAULT_MAX_VOLUMES: usize = 512;
 const MAX_PYRAMID_LEVEL: u8 = 3;
-const PYRAMID_CACHE_NAME: &str = "neurovue-nifti-pyramid-v3";
+const PYRAMID_CACHE_NAME: &str = "nifti-pyramid-v3";
+
+struct VolumeDiscovery {
+    root: Option<PathBuf>,
+    volumes: Vec<VolumeEntry>,
+}
 
 struct NiftiHeader {
     shape: [u16; 3],
@@ -622,28 +705,42 @@ struct NiftiHeader {
     scl_inter: f32,
 }
 
-fn discover_volumes() -> Vec<VolumeEntry> {
-    let max_volumes = std::env::var("NEUROVUE_MAX_VOLUMES")
+fn max_volume_count() -> usize {
+    std::env::var("NEUROVUE_MAX_VOLUMES")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(DEFAULT_MAX_VOLUMES);
+        .unwrap_or(DEFAULT_MAX_VOLUMES)
+}
 
+fn discover_volumes() -> VolumeDiscovery {
+    let max_volumes = max_volume_count();
     for root in discovery_roots() {
         let mut volumes = discover_volumes_in_root(&root, max_volumes);
         if !volumes.is_empty() {
-            append_working_derivatives(&mut volumes);
-            return volumes;
+            let root = if root.is_file() {
+                root.parent().map(FsPath::to_path_buf)
+            } else {
+                Some(root)
+            }
+            .map(|path| fs::canonicalize(&path).unwrap_or(path));
+            append_working_derivatives(&mut volumes, root.as_deref());
+            return VolumeDiscovery { root, volumes };
         }
     }
 
-    let mut volumes = fallback_mni152_volume().into_iter().collect();
-    append_working_derivatives(&mut volumes);
-    volumes
+    let mut volumes: Vec<VolumeEntry> = fallback_mni152_volume().into_iter().collect();
+    let root = volumes
+        .first()
+        .and_then(|volume| volume.source_path.as_ref())
+        .and_then(|path| path.parent())
+        .map(FsPath::to_path_buf);
+    append_working_derivatives(&mut volumes, root.as_deref());
+    VolumeDiscovery { root, volumes }
 }
 
-fn append_working_derivatives(volumes: &mut Vec<VolumeEntry>) {
-    let output_dir = std::env::temp_dir().join("neurovue-niimath");
+fn append_working_derivatives(volumes: &mut Vec<VolumeEntry>, dataset_root: Option<&FsPath>) {
+    let output_dir = working_derivatives_dir();
     let entries = match fs::read_dir(&output_dir) {
         Ok(entries) => entries,
         Err(_) => return,
@@ -656,7 +753,7 @@ fn append_working_derivatives(volumes: &mut Vec<VolumeEntry>) {
 
     paths.sort();
     for path in paths {
-        if let Some(entry) = working_derivative_entry(&path, &output_dir, volumes) {
+        if let Some(entry) = working_derivative_entry(&path, &output_dir, volumes, dataset_root) {
             volumes.push(entry);
         }
     }
@@ -666,6 +763,7 @@ fn working_derivative_entry(
     output_path: &FsPath,
     output_root: &FsPath,
     volumes: &[VolumeEntry],
+    dataset_root: Option<&FsPath>,
 ) -> Option<VolumeEntry> {
     let sidecar_path = nifti_json_sidecar_path(output_path);
     let metadata = read_json_sidecar(&sidecar_path)?;
@@ -688,6 +786,9 @@ fn working_derivative_entry(
         .get("SourceImage")
         .and_then(Value::as_str)
         .and_then(|path| fs::canonicalize(path).ok())?;
+    if !source_belongs_to_dataset(&source_path, dataset_root) {
+        return None;
+    }
     let output_path = fs::canonicalize(output_path).ok()?;
     if volumes.iter().any(|volume| {
         volume
@@ -738,6 +839,12 @@ fn working_derivative_entry(
             output_path: output_path.display().to_string(),
         }),
     })
+}
+
+fn source_belongs_to_dataset(source_path: &FsPath, dataset_root: Option<&FsPath>) -> bool {
+    dataset_root
+        .map(|root| source_path.starts_with(root))
+        .unwrap_or(true)
 }
 
 fn nifti_json_sidecar_path(path: &FsPath) -> PathBuf {
@@ -1020,7 +1127,9 @@ fn unique_volume_id(volumes: &[VolumeEntry], base: &str) -> String {
 }
 
 fn same_canonical_path(left: &FsPath, right: &FsPath) -> bool {
-    fs::canonicalize(left).map(|path| path == right).unwrap_or_else(|_| left == right)
+    fs::canonicalize(left)
+        .map(|path| path == right)
+        .unwrap_or_else(|_| left == right)
 }
 
 fn strip_nifti_extension(path: &FsPath) -> PathBuf {
@@ -1383,18 +1492,25 @@ fn downsampled_nifti_cache_path(volume: &VolumeEntry, level: u8) -> Option<PathB
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
     let source_key = format!(
-        "{}-{}-{}",
+        "{}-{}-{}-{:016x}",
         sanitize_cache_component(&volume.id),
         metadata.len(),
-        modified
+        modified,
+        stable_path_hash(source_path)
     );
 
     Some(
-        std::env::temp_dir()
+        cache_root()
             .join(PYRAMID_CACHE_NAME)
             .join(source_key)
             .join(format!("level-{level}.nii")),
     )
+}
+
+fn stable_path_hash(path: &FsPath) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    hasher.finish()
 }
 
 fn sanitize_cache_component(value: &str) -> String {
@@ -1817,10 +1933,10 @@ fn resize_gray_letterboxed(
     let scale = (inner_width as f64 / source_width.max(1) as f64)
         .min(inner_height as f64 / source_height.max(1) as f64)
         .max(f64::EPSILON);
-    let target_width = ((source_width as f64 * scale).round() as usize)
-        .clamp(1, inner_width.max(1));
-    let target_height = ((source_height as f64 * scale).round() as usize)
-        .clamp(1, inner_height.max(1));
+    let target_width =
+        ((source_width as f64 * scale).round() as usize).clamp(1, inner_width.max(1));
+    let target_height =
+        ((source_height as f64 * scale).round() as usize).clamp(1, inner_height.max(1));
     let offset_x = (output_width.saturating_sub(target_width)) / 2;
     let offset_y = (output_height.saturating_sub(target_height)) / 2;
 

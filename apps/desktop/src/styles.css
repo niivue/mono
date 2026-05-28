@@ -150,6 +150,34 @@ button {
   background: #10110d;
 }
 
+.nv-tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 74px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nv-tool-button:hover:not(:disabled),
+.nv-tool-button:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+  outline: none;
+}
+
+.nv-tool-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
 .nv-segmented button,
 .nv-icon-button {
   min-height: 32px;

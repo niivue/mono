@@ -384,11 +384,13 @@ async function loadRenderVolumeLods({
   setStatus: (status: string) => void
 }): Promise<void> {
   const levels = renderVolumeLevels(item)
+  let loadedLevel: RenderVolumeLevel | null = null
+  let lastError: unknown = null
 
   for (const [index, level] of levels.entries()) {
     if (isCancelled()) return
 
-    if (index > 0) {
+    if (loadedLevel) {
       setStatus(`${item.label} refining to L${level.level} (${renderLevelShape(level)}).`)
       await waitForIdle()
       if (isCancelled()) return
@@ -403,15 +405,22 @@ async function loadRenderVolumeLods({
         }
       ])
     } catch (error) {
-      if (index === 0) throw error
+      lastError = error
+      if (!loadedLevel) {
+        if (!isCancelled()) {
+          setStatus(`${item.label} L${level.level} failed; trying finer volume.`)
+        }
+        continue
+      }
+
       if (!isCancelled()) {
-        const lastLevel = levels[index - 1]
-        setStatus(`${item.label} stayed at L${lastLevel.level}; L${level.level} refinement failed.`)
+        setStatus(`${item.label} stayed at L${loadedLevel.level}; L${level.level} refinement failed.`)
       }
       return
     }
     if (isCancelled()) return
 
+    loadedLevel = level
     applyClipPlanes(nv, clipPlanes)
     resizeNiiVue(nv, canvas, stage)
 
@@ -420,6 +429,10 @@ async function loadRenderVolumeLods({
     } else if (index === levels.length - 1) {
       setStatus(`${item.label} ready at L${level.level} (${renderLevelShape(level)}).`)
     }
+  }
+
+  if (!loadedLevel && lastError) {
+    throw lastError
   }
 }
 

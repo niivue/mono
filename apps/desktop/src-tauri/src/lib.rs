@@ -91,22 +91,40 @@ async fn open_dataset_directory(
         let Some(root) = choose_dataset_directory()? else {
             return Ok(None);
         };
-        let volume_count = volumetric_server::open_dataset_root(&server, &root)?;
-        let dataset_root = volumetric_server::dataset_root(&server)
-            .unwrap_or(root)
-            .display()
-            .to_string();
-
-        Ok(Some(DatasetOpenResult {
-            url: server.url.clone(),
-            port: server.port,
-            volume_count,
-            dataset_root,
-            cache_root: volumetric_server::cache_root().display().to_string(),
-        }))
+        open_dataset_at_path(&server, &root).map(Some)
     })
     .await
     .map_err(|error| format!("open_dataset_directory: join error: {error}"))?
+}
+
+#[tauri::command]
+async fn open_dataset_path(
+    state: tauri::State<'_, NeuroVueState>,
+    path: String,
+) -> Result<DatasetOpenResult, String> {
+    let server = state.server.clone();
+    tauri::async_runtime::spawn_blocking(move || open_dataset_at_path(&server, Path::new(&path)))
+        .await
+        .map_err(|error| format!("open_dataset_path: join error: {error}"))?
+}
+
+fn open_dataset_at_path(
+    server: &volumetric_server::ServerHandle,
+    root: &Path,
+) -> Result<DatasetOpenResult, String> {
+    let volume_count = volumetric_server::open_dataset_root(server, root)?;
+    let dataset_root = volumetric_server::dataset_root(server)
+        .unwrap_or_else(|| root.to_path_buf())
+        .display()
+        .to_string();
+
+    Ok(DatasetOpenResult {
+        url: server.url.clone(),
+        port: server.port,
+        volume_count,
+        dataset_root,
+        cache_root: volumetric_server::cache_root().display().to_string(),
+    })
 }
 
 #[tauri::command]
@@ -474,6 +492,8 @@ fn choose_dataset_directory() -> Result<Option<PathBuf>, String> {
 fn choose_dataset_directory_platform() -> Result<Option<PathBuf>, String> {
     let output = Command::new("osascript")
         .arg("-e")
+        .arg("tell application \"System Events\" to activate")
+        .arg("-e")
         .arg(r#"POSIX path of (choose folder with prompt "Open NeuroVue dataset folder")"#)
         .output()
         .map_err(|error| format!("open_dataset_directory: launch folder picker: {error}"))?;
@@ -528,6 +548,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             neurovue_server_info,
             open_dataset_directory,
+            open_dataset_path,
             run_niimath_task
         ])
         .run(tauri::generate_context!())

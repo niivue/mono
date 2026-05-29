@@ -215,6 +215,95 @@ button {
   border-color: var(--amber);
 }
 
+.nv-open-group {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.nv-recent-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  min-width: 280px;
+  max-width: 480px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: #12130f;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+}
+
+.nv-recent-empty {
+  margin: 0;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-recent-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.nv-recent-item {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 3px;
+  min-width: 0;
+}
+
+.nv-recent-item:hover,
+.nv-recent-item:focus-visible {
+  background: #1c1d18;
+  color: var(--amber);
+}
+
+.nv-recent-item-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.nv-recent-item-path {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.nv-recent-remove {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.nv-recent-remove:hover,
+.nv-recent-remove:focus-visible {
+  background: #1c1d18;
+  color: var(--amber);
+}
+
 .nv-select {
   display: grid;
   grid-template-columns: auto minmax(88px, 1fr) auto;

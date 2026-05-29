@@ -22,6 +22,8 @@ import {
   FileJson,
   FolderOpen,
   GripVertical,
+  History,
+  X,
   Maximize2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -36,6 +38,7 @@ import { NiivueStage } from './components/NiivueStage'
 import type {
   Backend,
   ClipPlane,
+  DatasetOpenResult,
   DesktopItem,
   DesktopManifest,
   VolumeMetadata,
@@ -45,6 +48,7 @@ import {
   defaultClipPlanes,
   fetchDesktopManifest,
   fetchVolumeMetadata,
+  openDatasetByPath,
   openDatasetDirectory,
   resolveServerInfo,
   resolveServerUrl
@@ -60,6 +64,8 @@ const SIDEBAR_PREVIEW_SIZE = 96
 const DESKTOP_PREVIEW_TIERS = [96, 192, 384, 768, 1024] as const
 const PREVIEW_TIER_SETTLE_MS = 180
 const PREVIEW_IMAGE_VERSION = 5
+const RECENT_DATASETS_KEY = 'neurovue.recentDatasets.v1'
+const MAX_RECENT_DATASETS = 10
 const NIIMATH_OPERATIONS: Array<{
   id: NiimathOperation
   label: string
@@ -156,6 +162,40 @@ interface MinimapViewport {
   height: number
 }
 
+function loadRecentDatasets(): string[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_DATASETS_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+  } catch {
+    return []
+  }
+}
+
+function persistRecentDatasets(entries: string[]): string[] {
+  try {
+    window.localStorage.setItem(RECENT_DATASETS_KEY, JSON.stringify(entries))
+  } catch {
+    // localStorage may be disabled — recents stay in-memory for this session.
+  }
+  return entries
+}
+
+function promoteRecentDataset(entries: string[], path: string): string[] {
+  const trimmed = path.trim()
+  if (!trimmed) return entries
+  const filtered = entries.filter((entry) => entry !== trimmed)
+  return [trimmed, ...filtered].slice(0, MAX_RECENT_DATASETS)
+}
+
+function recentDatasetLabel(path: string): string {
+  const stripped = path.replace(/\/+$/, '')
+  const segments = stripped.split('/').filter(Boolean)
+  return segments[segments.length - 1] ?? path
+}
+
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const manifestRef = useRef<DesktopManifest | null>(null)
@@ -188,6 +228,9 @@ export function App(): JSX.Element {
   )
   const [renderWheelMode, setRenderWheelMode] = useState<RenderWheelMode>('zoom')
   const [isOpeningDataset, setIsOpeningDataset] = useState(false)
+  const [recentDatasets, setRecentDatasets] = useState<string[]>(() => loadRecentDatasets())
+  const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
+  const recentMenuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     manifestRef.current = manifest
@@ -251,6 +294,26 @@ export function App(): JSX.Element {
     }
   }, [])
 
+  useEffect(() => {
+    if (!isRecentMenuOpen) return
+
+    function handleMouseDown(event: MouseEvent): void {
+      if (!recentMenuRef.current) return
+      if (recentMenuRef.current.contains(event.target as Node)) return
+      setIsRecentMenuOpen(false)
+    }
+    function handleKey(event: KeyboardEvent): void {
+      if (event.key === 'Escape') setIsRecentMenuOpen(false)
+    }
+
+    window.addEventListener('mousedown', handleMouseDown)
+    window.addEventListener('keydown', handleKey)
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown)
+      window.removeEventListener('keydown', handleKey)
+    }
+  }, [isRecentMenuOpen])
+
   const items = manifest?.items ?? []
   const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null
   const activeClipPlane = clipPlanes.find((plane) => plane.id === activeClipPlaneId) ?? clipPlanes[0]
@@ -313,6 +376,29 @@ export function App(): JSX.Element {
     setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
   }
 
+  async function applyDatasetOpenResult(result: DatasetOpenResult): Promise<void> {
+    setManifest(null)
+    setSelectedId(null)
+    setMetadata(null)
+    setMetadataStatus('No metadata loaded.')
+    setServerUrl(result.url)
+    setDatasetRoot(result.datasetRoot)
+    setCacheRoot(result.cacheRoot)
+    setQuery('')
+    setSelectedRoles(new Set())
+    setSelectedImageTypes(new Set())
+    setSelectedFormats(new Set())
+    setSelectedDtypes(new Set())
+    setActiveFilterItemId(null)
+    setStatus(`Loading ${result.datasetRoot}.`)
+
+    const nextManifest = await fetchDesktopManifest(result.url)
+    setManifest(nextManifest)
+    setSelectedId(nextManifest.items[0]?.id ?? null)
+    setStatus(`${nextManifest.itemCount} volume item(s) loaded from ${result.datasetRoot}.`)
+    setRecentDatasets((previous) => persistRecentDatasets(promoteRecentDataset(previous, result.datasetRoot)))
+  }
+
   async function openLocalDataset(): Promise<void> {
     if (isOpeningDatasetRef.current) return
 
@@ -325,27 +411,35 @@ export function App(): JSX.Element {
         setStatus('Open directory cancelled.')
         return
       }
-
-      setServerUrl(result.url)
-      setDatasetRoot(result.datasetRoot)
-      setCacheRoot(result.cacheRoot)
-      setQuery('')
-      setSelectedRoles(new Set())
-      setSelectedImageTypes(new Set())
-      setSelectedFormats(new Set())
-      setSelectedDtypes(new Set())
-      setActiveFilterItemId(null)
-
-      const nextManifest = await fetchDesktopManifest(result.url)
-      setManifest(nextManifest)
-      setSelectedId(nextManifest.items[0]?.id ?? null)
-      setStatus(`${nextManifest.itemCount} volume item(s) loaded from ${result.datasetRoot}.`)
+      await applyDatasetOpenResult(result)
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
       isOpeningDatasetRef.current = false
       setIsOpeningDataset(false)
     }
+  }
+
+  async function openRecentDataset(path: string): Promise<void> {
+    if (isOpeningDatasetRef.current) return
+
+    isOpeningDatasetRef.current = true
+    setIsOpeningDataset(true)
+    setIsRecentMenuOpen(false)
+    setStatus(`Opening ${path}.`)
+    try {
+      const result = await openDatasetByPath(path)
+      await applyDatasetOpenResult(result)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      isOpeningDatasetRef.current = false
+      setIsOpeningDataset(false)
+    }
+  }
+
+  function removeRecentDataset(path: string): void {
+    setRecentDatasets((previous) => persistRecentDatasets(previous.filter((entry) => entry !== path)))
   }
 
   function bindActiveClipPlane(planeId: string): void {
@@ -419,16 +513,60 @@ export function App(): JSX.Element {
         </div>
 
         <div className="nv-toolbar" aria-label="Viewer controls">
-          <button
-            className="nv-tool-button"
-            disabled={isOpeningDataset}
-            onClick={() => void openLocalDataset()}
-            title={cacheRoot ? `Open dataset directory. Temp cache: ${cacheRoot}` : 'Open dataset directory'}
-            type="button"
-          >
-            <FolderOpen size={15} />
-            <span>{isOpeningDataset ? 'Opening' : 'Open'}</span>
-          </button>
+          <div className="nv-open-group" ref={recentMenuRef}>
+            <button
+              className="nv-tool-button"
+              disabled={isOpeningDataset}
+              onClick={() => void openLocalDataset()}
+              title={cacheRoot ? `Open dataset directory. Temp cache: ${cacheRoot}` : 'Open dataset directory'}
+              type="button"
+            >
+              <FolderOpen size={15} />
+              <span>{isOpeningDataset ? 'Opening' : 'Open'}</span>
+            </button>
+            <button
+              className="nv-icon-button"
+              disabled={isOpeningDataset}
+              onClick={() => setIsRecentMenuOpen((open) => !open)}
+              title="Recent datasets"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={isRecentMenuOpen}
+            >
+              <History size={15} />
+            </button>
+            {isRecentMenuOpen ? (
+              <div className="nv-recent-menu" role="menu">
+                {recentDatasets.length === 0 ? (
+                  <p className="nv-recent-empty">No recent datasets yet.</p>
+                ) : (
+                  recentDatasets.map((path) => (
+                    <div key={path} className="nv-recent-row">
+                      <button
+                        className="nv-recent-item"
+                        onClick={() => void openRecentDataset(path)}
+                        title={path}
+                        type="button"
+                        role="menuitem"
+                      >
+                        <span className="nv-recent-item-name">{recentDatasetLabel(path)}</span>
+                        <span className="nv-recent-item-path">{path}</span>
+                      </button>
+                      <button
+                        className="nv-recent-remove"
+                        onClick={() => removeRecentDataset(path)}
+                        title="Remove from recents"
+                        type="button"
+                        aria-label={`Remove ${path} from recents`}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
 
           <div className="nv-segmented" aria-label="Backend">
             <button

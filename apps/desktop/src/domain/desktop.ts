@@ -176,6 +176,14 @@ export async function openDatasetDirectory(): Promise<DatasetOpenResult | null> 
     : null
 }
 
+export async function openDatasetByPath(path: string): Promise<DatasetOpenResult> {
+  const result = await invoke<DatasetOpenResult>('open_dataset_path', { path })
+  return {
+    ...result,
+    url: trimTrailingSlash(result.url)
+  }
+}
+
 export function defaultClipPlanes(): ClipPlane[] {
   return [
     {

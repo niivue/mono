@@ -207,8 +207,17 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
 
     let mut volumes = discover_volumes_in_root(&root, max_volume_count());
     if volumes.is_empty() {
+        let mut candidates = Vec::new();
+        collect_nifti_paths(&root, &mut candidates, max_volume_count());
+        if candidates.is_empty() {
+            return Err(format!(
+                "open_dataset_root: no .nii or .nii.gz files found under {}",
+                root.display()
+            ));
+        }
         return Err(format!(
-            "open_dataset_root: no NIfTI volumes found under {}",
+            "open_dataset_root: found {} .nii/.nii.gz file(s) under {} but none have a readable NIfTI header (likely empty stubs or unsupported variants)",
+            candidates.len(),
             root.display()
         ));
     }
@@ -635,6 +644,27 @@ async fn image_tile(
         return Ok((headers, cached).into_response());
     }
 
+    let disk_path = disk_preview_cache_path(
+        &volume,
+        &path.axis,
+        path.slice,
+        &path.region,
+        &path.size,
+        &path.rotation,
+        &path.quality_format,
+        query.level,
+        query.v.as_deref().unwrap_or(""),
+    );
+    if let Some(ref dp) = disk_path {
+        if let Ok(bytes) = fs::read(dp) {
+            if let Ok(mut cache) = state.preview_cache.lock() {
+                cache.insert(cache_key.clone(), bytes.clone());
+            }
+            headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/bmp"));
+            return Ok((headers, bytes).into_response());
+        }
+    }
+
     if let Some(bmp) = render_slice_bmp(
         &volume,
         &path.axis,
@@ -645,6 +675,9 @@ async fn image_tile(
     ) {
         if let Ok(mut cache) = state.preview_cache.lock() {
             cache.insert(cache_key, bmp.clone());
+        }
+        if let Some(dp) = disk_path {
+            write_preview_to_disk(&dp, &bmp);
         }
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/bmp"));
         return Ok((headers, bmp).into_response());
@@ -687,6 +720,7 @@ async fn write_patch(
 const DEFAULT_MAX_VOLUMES: usize = 512;
 const MAX_PYRAMID_LEVEL: u8 = 3;
 const PYRAMID_CACHE_NAME: &str = "nifti-pyramid-v3";
+const PREVIEW_DISK_CACHE_NAME: &str = "preview-cache-v1";
 
 struct VolumeDiscovery {
     root: Option<PathBuf>,
@@ -1483,6 +1517,16 @@ fn ensure_downsampled_nifti(
 }
 
 fn downsampled_nifti_cache_path(volume: &VolumeEntry, level: u8) -> Option<PathBuf> {
+    let signature = source_signature(volume)?;
+    Some(
+        cache_root()
+            .join(PYRAMID_CACHE_NAME)
+            .join(signature)
+            .join(format!("level-{level}.nii")),
+    )
+}
+
+fn source_signature(volume: &VolumeEntry) -> Option<String> {
     let source_path = volume.source_path.as_ref()?;
     let metadata = fs::metadata(source_path).ok()?;
     let modified = metadata
@@ -1491,20 +1535,69 @@ fn downsampled_nifti_cache_path(volume: &VolumeEntry, level: u8) -> Option<PathB
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
-    let source_key = format!(
+    Some(format!(
         "{}-{}-{}-{:016x}",
         sanitize_cache_component(&volume.id),
         metadata.len(),
         modified,
         stable_path_hash(source_path)
-    );
+    ))
+}
 
+#[allow(clippy::too_many_arguments)]
+fn disk_preview_cache_path(
+    volume: &VolumeEntry,
+    axis: &str,
+    slice: u16,
+    region: &str,
+    size: &str,
+    rotation: &str,
+    quality_format: &str,
+    level: Option<u8>,
+    version: &str,
+) -> Option<PathBuf> {
+    let signature = source_signature(volume)?;
+    let level_part = level
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "auto".to_string());
+    let version_part = if version.is_empty() {
+        "v".to_string()
+    } else {
+        sanitize_cache_component(version)
+    };
+    let file_name = format!(
+        "{}-{}-{}-{}-{}-{}-{}-{}.bmp",
+        level_part,
+        sanitize_cache_component(axis),
+        slice,
+        sanitize_cache_component(size),
+        sanitize_cache_component(region),
+        sanitize_cache_component(rotation),
+        sanitize_cache_component(quality_format),
+        version_part,
+    );
     Some(
         cache_root()
-            .join(PYRAMID_CACHE_NAME)
-            .join(source_key)
-            .join(format!("level-{level}.nii")),
+            .join(PREVIEW_DISK_CACHE_NAME)
+            .join(signature)
+            .join(file_name),
     )
+}
+
+fn write_preview_to_disk(path: &FsPath, bytes: &[u8]) {
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let temp_path = path.with_extension(format!("bmp.tmp.{}", std::process::id()));
+    if fs::write(&temp_path, bytes).is_err() {
+        return;
+    }
+    if fs::rename(&temp_path, path).is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
 }
 
 fn stable_path_hash(path: &FsPath) -> u64 {

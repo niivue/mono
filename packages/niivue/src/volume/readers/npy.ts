@@ -154,7 +154,7 @@ function readNPYBuffer(buffer: ArrayBuffer): {
 
   const hdr = new nifti.NIFTI1() as NIFTI1
   hdr.dims = [shape.length, width, height, slices, timepoints, 1, 1, 1]
-  hdr.pixDims = [1, 1, 1, 1, 1, 1, 1, 1]
+  hdr.pixDims = [1, 1, 1, 1, 1, 0, 0, 0]
   hdr.affine = [
     [hdr.pixDims[1], 0, 0, -(hdr.dims[1] - 2) * 0.5 * hdr.pixDims[1]],
     [0, -hdr.pixDims[2], 0, (hdr.dims[2] - 2) * 0.5 * hdr.pixDims[2]],

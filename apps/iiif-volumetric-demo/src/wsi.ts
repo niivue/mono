@@ -5,17 +5,18 @@
 // page renders it the way a pathologist navigates a slide: a whole-slide
 // overview that you fluidly zoom and pan into, OpenSeadragon-style.
 //
-// Smoothness comes from niivue's built-in 2D pan/zoom (cursor-anchored wheel
-// zoom + drag pan, enabled by DRAG_MODE.pan) acting on the currently-loaded
-// texture. Sharpness comes from an auto-LOD layer on top: the view is tracked
-// as a viewport over the slide — a centre and a span, both in base-level
-// pixels — and when the zoom crosses a pyramid boundary the underlying window
-// is reloaded at the level whose pixels are ~1:1 with the screen, scale-matched
-// so the swap keeps the same framing (only the detail sharpens). Coarse levels
-// that fit one GPU texture load whole; finer levels load only the visible
-// window via the server's bbox subvolume read, so the 2.66-gigapixel base level
-// is never materialised. (Streaming the whole base level as tiled chunks needs
-// RGB support in niivue's chunked path — a tracked follow-up.)
+// The view is tracked as a viewport over the slide — a centre and a span, both
+// in base-level pixels — which the wheel (centred zoom) and drag (pan) handlers
+// own directly, re-aiming niivue's 2D pan/zoom each frame so motion is smooth
+// and never drifts. A window MARGIN larger than the viewport is loaded so small
+// zooms/pans stay within the texture; a debounced settle pass swaps the pyramid
+// level (and reloads the window) only when the texture would get too blurry /
+// too coarse or the view nears the window edge, picking the level whose pixels
+// are ~1:1 with the screen. Coarse levels that fit one GPU texture load whole;
+// finer levels load only the visible window via the server's bbox subvolume
+// read, so the 2.66-gigapixel base level is never materialised. (Streaming the
+// whole base level as tiled chunks needs RGB support in niivue's chunked path —
+// a tracked follow-up.)
 
 import NiiVue, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
@@ -64,8 +65,9 @@ const nv = new NiiVue({
   backgroundColor: [0.05, 0.05, 0.06, 1],
   isColorbarVisible: false,
   is3DCrosshairVisible: false,
-  // Enables niivue's 2D cursor-anchored wheel zoom + drag pan.
-  primaryDragMode: DRAG_MODE.pan,
+  // We drive pan and zoom ourselves (see the wheel/pointer handlers), so keep
+  // niivue's own drag/zoom behaviour out of the way.
+  primaryDragMode: DRAG_MODE.none,
 })
 
 let volumes: WsiVolume[] = []
@@ -73,10 +75,30 @@ let current: WsiVolume | null = null
 // The viewport over the slide, in base-level pixels.
 let centerL0: [number, number] = [0, 0]
 let spanL0 = 1 // visible width across the viewport, in base px
-// The window currently uploaded to niivue.
-let loaded = { level: 0, factor: 1, baseX: 0, baseY: 0, baseW: 1, baseH: 1 }
+// The window currently uploaded to niivue, in base-level pixels, plus the
+// base-px-per-mm scale niivue's pan2Dxyzmm uses (spacing is [1,1,1] for WSI,
+// so this is just the level downsample factor, but we keep it general).
+let loaded = {
+  level: 0,
+  factor: 1,
+  baseX: 0,
+  baseY: 0,
+  baseW: 1,
+  baseH: 1,
+  basePerMmU: 1,
+  basePerMmV: 1,
+  spanAtLoad: 1,
+}
 let loadToken = 0
 let settleTimer: ReturnType<typeof setTimeout> | null = null
+
+// Load a window this many times larger than the visible viewport, so panning
+// and zooming a little move within the loaded texture without a reload.
+const MARGIN = 1.8
+// Reload to a finer/coarser level when a texel grows past / shrinks below these
+// many screen pixels (a wide dead-band so small zooms don't thrash levels).
+const TEXEL_BLUR = 1.7
+const TEXEL_WASTE = 0.38
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x))
@@ -93,20 +115,37 @@ function levelAt(v: WsiVolume, idx: number): ApiLevel {
 function factorOf(v: WsiVolume, lvl: ApiLevel): number {
   return baseLevel(v).shape[0] / lvl.shape[0]
 }
+function canvasW(): number {
+  return els.canvas.clientWidth || 1
+}
 function canvasAspect(): number {
-  const w = els.canvas.clientWidth || 1
-  const h = els.canvas.clientHeight || 1
-  return h / w
+  return (els.canvas.clientHeight || 1) / canvasW()
 }
 
-// Pick the finest pyramid level whose window for this span still fits one
-// texture — i.e. the sharpest level that isn't wastefully upsampled.
+// Pick the pyramid level whose pixels are ~1:1 with the screen for this span:
+// the coarsest level that is still at least screen resolution (so the texture
+// is sharp but we move the least data). When zoomed past the base resolution,
+// the base level (finest) is the best we can do.
 function pickLevel(v: WsiVolume, span: number): number {
-  const ordered = [...v.levels].sort((a, b) => a.level - b.level) // finest first
-  for (const l of ordered) {
-    if (span / factorOf(v, l) <= MAX_EDGE) return l.level
+  const idealF = span / canvasW() // base px per screen px
+  let chosen = 0
+  let chosenF = 1
+  for (const l of v.levels) {
+    const f = factorOf(v, l)
+    if (f <= idealF && f >= chosenF) {
+      chosen = l.level
+      chosenF = f
+    }
   }
-  return maxLevel(v)
+  // If the window for this span won't fit one texture, step coarser (bigger
+  // level index = bigger downsample = smaller window) until it does.
+  while (
+    chosen < maxLevel(v) &&
+    (span * MARGIN) / factorOf(v, levelAt(v, chosen)) > MAX_EDGE
+  ) {
+    chosen += 1
+  }
+  return chosen
 }
 
 function showFallback(msg: string): void {
@@ -115,17 +154,6 @@ function showFallback(msg: string): void {
 }
 function setHud(text: string): void {
   els.hud.textContent = text
-}
-function niivueZoom(): number {
-  const z = (nv.pan2Dxyzmm as unknown as number[])[3]
-  return typeof z === 'number' && z > 0 ? z : 1
-}
-function resetNiivueView(): void {
-  const p = nv.pan2Dxyzmm as unknown as number[]
-  p[0] = 0
-  p[1] = 0
-  p[2] = 0
-  p[3] = 1
 }
 
 async function loadApi(): Promise<void> {
@@ -171,21 +199,48 @@ function selectVolume(v: WsiVolume): void {
   void loadViewport()
 }
 
-// Load the window for the current (centerL0, spanL0) viewport at the best
-// level, scale-matched so resetting niivue's zoom to 1 keeps the framing.
+// Position niivue's 2D pan/zoom so the loaded window shows `span` base px
+// centred on (cx, cy). We own pan and zoom entirely (niivue's own wheel zoom is
+// disabled via primaryDragMode `none`), so the viewport state is authoritative
+// and this is the only thing that drives niivue's view. Derivation: niivue's
+// ortho shows visible-width = volumeWidthMM / zoom centred at
+// volumeCentreMM - pan; expressed relative to the window centre (which maps to
+// the volume centre regardless of the affine origin) that inverts to the below.
+function setNiivueView(cx: number, cy: number, span: number): void {
+  const p = nv.pan2Dxyzmm as unknown as number[]
+  p[3] = loaded.baseW / span
+  p[0] = (loaded.baseX + loaded.baseW / 2 - cx) / loaded.basePerMmU
+  p[1] = (loaded.baseY + loaded.baseH / 2 - cy) / loaded.basePerMmV
+}
+
+// Base px shown per screen pixel at the current span.
+function basePerScreenPx(): number {
+  return spanL0 / canvasW()
+}
+
+// Load a window (MARGIN larger than the viewport) at the level whose pixels are
+// ~1:1 with the screen for the current span, then aim niivue's pan/zoom at the
+// viewport so the visible framing is preserved across the swap.
 async function loadViewport(): Promise<void> {
   if (!current) return
   const v = current
   const base = baseLevel(v)
   spanL0 = clamp(spanL0, MIN_SPAN, base.shape[0])
+  centerL0 = [
+    clamp(centerL0[0], 0, base.shape[0]),
+    clamp(centerL0[1], 0, base.shape[1]),
+  ]
   const lvl = levelAt(v, pickLevel(v, spanL0))
   const f = factorOf(v, lvl)
-  const spanH = spanL0 * canvasAspect()
+  const aspect = canvasAspect()
 
-  let winW = Math.min(Math.ceil(spanL0 / f), lvl.shape[0], MAX_EDGE)
-  let winH = Math.min(Math.ceil(spanH / f), lvl.shape[1], MAX_EDGE)
+  let winW = Math.min(Math.ceil((spanL0 * MARGIN) / f), lvl.shape[0], MAX_EDGE)
+  let winH = Math.min(
+    Math.ceil((spanL0 * aspect * MARGIN) / f),
+    lvl.shape[1],
+    MAX_EDGE,
+  )
   const whole = winW >= lvl.shape[0] && winH >= lvl.shape[1]
-
   let url = `/volumes/${encodeURIComponent(v.id)}/raw.nii.gz?level=${lvl.level}`
   let x0 = 0
   let y0 = 0
@@ -215,26 +270,40 @@ async function loadViewport(): Promise<void> {
     baseY: y0 * f,
     baseW: winW * f,
     baseH: winH * f,
+    basePerMmU: f / (lvl.spacing[0] || 1),
+    basePerMmV: f / (lvl.spacing[1] || 1),
+    spanAtLoad: spanL0,
   }
   nv.sliceType = SLICE_TYPE.AXIAL
-  resetNiivueView()
+  setNiivueView(centerL0[0], centerL0[1], spanL0)
   nv.drawScene()
   els.level.value = String(lvl.level)
   syncUi()
 }
 
-// Convert niivue's live pan/zoom into the viewport, swapping the level if the
-// zoom has crossed a pyramid boundary. Runs after the wheel settles.
+// After interaction settles, fold niivue's live pan/zoom into the viewport and
+// reload only when the texture is too blurry / too wasteful, or the view has
+// drifted near the loaded window's edge. Otherwise niivue keeps showing the
+// pan/zoom smoothly and we just refresh the readouts.
 function onSettle(): void {
   if (!current) return
-  const z = niivueZoom()
-  spanL0 = clamp(loaded.baseW / z, MIN_SPAN, baseLevel(current).shape[0])
-  if (pickLevel(current, spanL0) !== loaded.level) {
-    // Crossed a level boundary — reload sharper/coarser, scale-matched.
+  const v = current
+  const texelPx = (loaded.factor * canvasW()) / spanL0
+  const wantLevel = pickLevel(v, spanL0)
+  const halfW = spanL0 / 2
+  const halfH = (spanL0 * canvasAspect()) / 2
+  const edge = spanL0 * 0.08
+  const outOfWindow =
+    centerL0[0] - halfW < loaded.baseX + edge ||
+    centerL0[0] + halfW > loaded.baseX + loaded.baseW - edge ||
+    centerL0[1] - halfH < loaded.baseY + edge ||
+    centerL0[1] + halfH > loaded.baseY + loaded.baseH - edge
+
+  const blurry = texelPx > TEXEL_BLUR && wantLevel < loaded.level
+  const wasteful = texelPx < TEXEL_WASTE && wantLevel > loaded.level
+  if (blurry || wasteful || outOfWindow) {
     void loadViewport()
   } else {
-    // Same level: niivue is already showing the zoom smoothly; just refresh
-    // the readouts and the minimap box.
     syncUi()
   }
 }
@@ -248,13 +317,14 @@ function syncUi(): void {
   if (!current) return
   const v = current
   const base = baseLevel(v)
-  // Effective visible span tracks niivue's live zoom between reloads.
-  const span = clamp(loaded.baseW / niivueZoom(), MIN_SPAN, base.shape[0])
+  const span = spanL0
   const spanH = span * canvasAspect()
+  const cx = centerL0[0]
+  const cy = centerL0[1]
   // Minimap box: the visible rectangle in base px, as a fraction of the slide.
   const pct = (a: number, b: number) => `${clamp((100 * a) / b, 0, 100)}%`
-  els.miniBox.style.left = pct(centerL0[0] - span / 2, base.shape[0])
-  els.miniBox.style.top = pct(centerL0[1] - spanH / 2, base.shape[1])
+  els.miniBox.style.left = pct(cx - span / 2, base.shape[0])
+  els.miniBox.style.top = pct(cy - spanH / 2, base.shape[1])
   els.miniBox.style.width = pct(span, base.shape[0])
   els.miniBox.style.height = pct(spanH, base.shape[1])
   // Zoom slider: 0 = whole slide, 1000 = MIN_SPAN, log-scaled.
@@ -265,7 +335,7 @@ function syncUi(): void {
   setHud(
     `${v.id}\n` +
       `viewing ${Math.round(span)}×${Math.round(spanH)} base px @ level ${lvl.level} (${lvl.shape[0]}×${lvl.shape[1]})\n` +
-      `base ${base.shape[0]}×${base.shape[1]} · center ${Math.round(centerL0[0])},${Math.round(centerL0[1])}`,
+      `base ${base.shape[0]}×${base.shape[1]} · center ${Math.round(cx)},${Math.round(cy)}`,
   )
 }
 
@@ -278,8 +348,54 @@ function jumpTo(baseX: number, baseY: number, zoomFactor: number): void {
   void loadViewport()
 }
 
-// niivue handles the wheel zoom; we just re-evaluate the level once it settles.
-els.canvas.addEventListener('wheel', scheduleSettle, { passive: true })
+// Render the current viewport on the loaded texture (smooth, no reload), then
+// arm the settle pass that decides whether to swap the level / window.
+function applyView(): void {
+  setNiivueView(centerL0[0], centerL0[1], spanL0)
+  nv.drawScene()
+  syncUi()
+  scheduleSettle()
+}
+
+// Wheel = smooth centred zoom. We keep the centre fixed and shrink/grow the
+// span, then re-aim niivue's view — so it never drifts (niivue's own crosshair-
+// anchored wheel zoom is disabled). The settle pass swaps the pyramid level
+// once the texture would get too blurry / too coarse.
+els.canvas.addEventListener(
+  'wheel',
+  (e: WheelEvent) => {
+    if (!current) return
+    const factor = e.deltaY < 0 ? 1 / 1.15 : 1.15
+    spanL0 = clamp(spanL0 * factor, MIN_SPAN, baseLevel(current).shape[0])
+    applyView()
+  },
+  { passive: true },
+)
+
+// Drag = pan. We move the viewport centre by the drag delta (converted from
+// screen px to base px) and re-aim niivue — smooth within the loaded window;
+// the settle pass reloads when the view nears the window edge.
+let dragLast: { x: number; y: number } | null = null
+els.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
+  dragLast = { x: e.clientX, y: e.clientY }
+  els.canvas.setPointerCapture(e.pointerId)
+})
+els.canvas.addEventListener('pointermove', (e: PointerEvent) => {
+  if (!dragLast || !current) return
+  const base = baseLevel(current)
+  const k = basePerScreenPx()
+  centerL0 = [
+    clamp(centerL0[0] - (e.clientX - dragLast.x) * k, 0, base.shape[0]),
+    clamp(centerL0[1] - (e.clientY - dragLast.y) * k, 0, base.shape[1]),
+  ]
+  dragLast = { x: e.clientX, y: e.clientY }
+  applyView()
+})
+els.canvas.addEventListener('pointerup', (e: PointerEvent) => {
+  dragLast = null
+  els.canvas.releasePointerCapture(e.pointerId)
+  scheduleSettle()
+})
 
 els.volume.addEventListener('change', () => {
   const v = volumes.find((x) => x.id === els.volume.value)
@@ -290,7 +406,9 @@ els.volume.addEventListener('change', () => {
 els.level.addEventListener('change', () => {
   if (!current) return
   const lvl = levelAt(current, Number(els.level.value))
-  spanL0 = Math.min(MAX_EDGE, lvl.shape[0]) * factorOf(current, lvl)
+  // Span that lands on this level: a window of it (plus margin) must fit one
+  // texture, so cap the span so pickLevel actually chooses this level.
+  spanL0 = Math.min(MAX_EDGE / MARGIN, lvl.shape[0]) * factorOf(current, lvl)
   void loadViewport()
 })
 // Zoom slider: log-scaled span from whole slide to MIN_SPAN.

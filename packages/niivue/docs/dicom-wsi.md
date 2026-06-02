@@ -130,26 +130,29 @@ viewer built on the single-texture RGB path (no niivue changes):
   slide face. Verified that niivue accepts `[W,H,1]` RGB volumes for both a
   whole coarse level and a bbox subvolume.
 - **Smooth OpenSeadragon-style zoom/pan**: the view is tracked as a viewport
-  over the slide — a centre and a span, both in base-level pixels.
-  niivue's built-in 2D pan/zoom (`primaryDragMode: DRAG_MODE.pan` →
-  cursor-anchored wheel zoom + drag pan) drives the fluid motion on the loaded
-  texture; a debounced auto-LOD layer reads niivue's live zoom
-  (`pan2Dxyzmm[3]`), and when it crosses a pyramid boundary reloads the window
-  at the level whose pixels are ~1:1 with the screen — **scale-matched**, so
-  the swap keeps the framing and only the detail sharpens.
+  over the slide — a centre and a span, both in base-level pixels — which the
+  wheel (centred zoom) and drag (pan) handlers own directly, re-aiming niivue's
+  2D pan/zoom (`pan2Dxyzmm`) each frame via `setNiivueView`. We drive it
+  ourselves rather than using niivue's built-in wheel zoom because that anchors
+  on the crosshair and, for a window volume whose mm origin isn't at its centre,
+  drifts the view — so `primaryDragMode` is `none` and the viewport state is
+  authoritative (no mm round-trip, no drift).
+- **Auto-LOD with a margin window**: a window `MARGIN`× larger than the viewport
+  is loaded, so small zooms/pans stay within the texture. A debounced settle
+  pass swaps the pyramid level (and reloads the window, scale-matched and
+  recentred so the framing is preserved) only when a texel would grow past
+  `TEXEL_BLUR` / shrink below `TEXEL_WASTE` screen pixels, or the view nears the
+  window edge — picking the level whose pixels are ~1:1 with the screen. The
+  dead-band stops levels thrashing during a continuous zoom.
 - **Whole-slide overview**: the coarsest level fits one texture and loads whole.
 - **Deep zoom**: finer levels exceed the 2048 texture limit, so the viewer
   loads only the visible window via the bbox subvolume read — the
   2.66-gigapixel base level is never materialised.
-- Controls: scroll to zoom, drag to pan, a log-scaled zoom slider, a level
-  dropdown, double-click / "zoom in" to dive at centre, a "whole slide" reset,
-  and a minimap with a viewport box and click-to-jump. Navigation math
-  (level pick, scale-matched window placement, viewport↔base mapping) is in
-  `wsi.ts`.
-- *Known limitation:* a drag-pan isn't folded back into the tracked centre, so
-  crossing a zoom level after panning recentres on the previous centre. Pan
-  within a level is smooth; recentre via the minimap or by zooming. Tracking
-  the pan offset from `pan2Dxyzmm` would remove this.
+- Controls: scroll to zoom (centred), drag to pan, a log-scaled zoom slider, a
+  level dropdown, double-click / "zoom in" to dive at centre, a "whole slide"
+  reset, and a minimap with a viewport box and click-to-jump. Navigation math
+  (level pick with the texture-fit guard, margin-window placement,
+  viewport→niivue mapping) is in `wsi.ts`.
 
 ### Remaining follow-up — chunked RGB streaming
 

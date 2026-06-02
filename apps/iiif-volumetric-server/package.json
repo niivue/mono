@@ -11,7 +11,9 @@
   "dependencies": {
     "@zarrita/storage": "^0.2.0",
     "cors": "^2.8.5",
+    "dicom-parser": "^1.8.21",
     "express": "^4.19.2",
+    "jpeg-js": "^0.4.4",
     "morgan": "^1.10.0",
     "nifti-reader-js": "^0.6.8",
     "nrrd-js": "^0.2.1",

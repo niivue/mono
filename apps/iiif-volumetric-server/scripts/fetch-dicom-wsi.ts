@@ -39,7 +39,15 @@ interface S3Object {
   size: number
 }
 
-const DEFAULT_SERIES = 'cdac3f73-4fc9-4e0d-913b-b64aa3100977'
+// Default: a real CPTAC-BRCA whole-slide pyramid on idc-open-data — 7
+// instances, ~487 MB, a 4-level TILED_FULL JPEG pyramid (53783x49534 base
+// down to 1680x1547) plus label/overview/thumbnail. Verified anonymously
+// readable. Pick another series UUID from
+// https://portal.imaging.datacommons.cancer.gov/ (it is the bucket key:
+// `s3://idc-open-data/<series-uuid>/`). The previous default
+// (cdac3f73-...) was a single 94 KB instance — too small to exercise the
+// pyramid/streaming path, so it is no longer the default.
+const DEFAULT_SERIES = '37cb2625-cd6b-40f8-9c95-e0168ce52d0f'
 
 function parseArgs(): Options {
   const args = new Map<string, string>()
@@ -171,6 +179,33 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
+// The registry only scans the top level of the fixtures directory, so a
+// series sitting under `fixtures/dicom-wsi/<name>_dicom` is invisible to it.
+// Drop a top-level symlink `fixtures/<name>_dicom -> dicom-wsi/<name>_dicom`
+// (relative, so the checkout stays portable). The `_dicom` suffix is what
+// dicomAdapter.canHandle() matches. Mirrors how the OME-Zarr fixtures are
+// surfaced via top-level symlinks into `fixtures/omezarr/`.
+async function ensureRegistrationSymlink(outDir: string): Promise<void> {
+  const name = path.basename(outDir) // e.g. cptac-brca_dicom
+  const fixturesDir = path.resolve(outDir, '..', '..')
+  const linkPath = path.join(fixturesDir, name)
+  const target = path.join('dicom-wsi', name)
+  if (path.resolve(linkPath) === path.resolve(outDir)) return // not nested
+  try {
+    const existing = await fs.readlink(linkPath).catch(() => null)
+    if (existing === target) return
+    if (existing !== null) await fs.unlink(linkPath)
+    await fs.symlink(target, linkPath)
+    console.log(`Registered: ${linkPath} -> ${target}`)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn(
+      `Could not create registration symlink ${linkPath}: ${msg}. ` +
+        `Create it manually so the server discovers the series.`,
+    )
+  }
+}
+
 async function main(): Promise<void> {
   const opts = parseArgs()
   console.log(`Fetching DICOM-WSI series:`)
@@ -231,6 +266,7 @@ async function main(): Promise<void> {
   console.log(
     `Done. downloaded=${downloaded} skipped=${skipped} failed=${failed} -> ${opts.outDir}`,
   )
+  await ensureRegistrationSymlink(opts.outDir)
   if (failed > 0) process.exit(1)
 }
 

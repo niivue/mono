@@ -3,25 +3,32 @@
 // A whole slide is served by the IIIF volumetric server as a multiscale
 // pyramid of depth-1 RGB volumes (see packages/niivue/docs/dicom-wsi.md). This
 // page renders it the way a pathologist navigates a slide: a whole-slide
-// overview, then click-to-zoom into a high-resolution window.
+// overview that you fluidly zoom and pan into, OpenSeadragon-style.
 //
-// Each view is a single niivue RGB volume drawn as a 2D axial slice (the slide
-// face). Coarse pyramid levels that fit a single GPU texture load whole; finer
-// levels load only a centred window via the server's bbox subvolume read, so
-// the 2.66-gigapixel base level never has to be materialised. (Streaming the
-// whole base level as tiled chunks needs RGB support in niivue's chunked
-// path — a tracked follow-up; this viewer stays on the single-texture path.)
+// Smoothness comes from niivue's built-in 2D pan/zoom (cursor-anchored wheel
+// zoom + drag pan, enabled by DRAG_MODE.pan) acting on the currently-loaded
+// texture. Sharpness comes from an auto-LOD layer on top: the view is tracked
+// as a viewport over the slide — a centre and a span, both in base-level
+// pixels — and when the zoom crosses a pyramid boundary the underlying window
+// is reloaded at the level whose pixels are ~1:1 with the screen, scale-matched
+// so the swap keeps the same framing (only the detail sharpens). Coarse levels
+// that fit one GPU texture load whole; finer levels load only the visible
+// window via the server's bbox subvolume read, so the 2.66-gigapixel base level
+// is never materialised. (Streaming the whole base level as tiled chunks needs
+// RGB support in niivue's chunked path — a tracked follow-up.)
 
-import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+import NiiVue, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
 
 installNav()
 
-// Largest level we load whole; bigger levels load a centred window of WINDOW
-// pixels. Both stay within the common 2048 3D-texture limit.
+// Single-texture cap (common 2048 3D-texture limit) and the smallest visible
+// span we allow (don't zoom past ~48 base px across the viewport).
 const MAX_EDGE = 2048
-const WINDOW = 1024
+const MIN_SPAN = 48
+// How long after the last wheel tick we re-evaluate the level (ms).
+const SETTLE_MS = 160
 
 interface ApiLevel {
   level: number
@@ -57,40 +64,68 @@ const nv = new NiiVue({
   backgroundColor: [0.05, 0.05, 0.06, 1],
   isColorbarVisible: false,
   is3DCrosshairVisible: false,
+  // Enables niivue's 2D cursor-anchored wheel zoom + drag pan.
+  primaryDragMode: DRAG_MODE.pan,
 })
 
 let volumes: WsiVolume[] = []
 let current: WsiVolume | null = null
-let levelIdx = 0
+// The viewport over the slide, in base-level pixels.
 let centerL0: [number, number] = [0, 0]
-// Maps a displayed voxel (i, j) back to base-level pixels: l0 = origin + vox*scale.
-let view = { originX: 0, originY: 0, scale: 1 }
-// The base-level pixel rectangle currently on screen, for the minimap box.
-let region = { x: 0, y: 0, w: 0, h: 0 }
-let lastVox: [number, number] | null = null
+let spanL0 = 1 // visible width across the viewport, in base px
+// The window currently uploaded to niivue.
+let loaded = { level: 0, factor: 1, baseX: 0, baseY: 0, baseW: 1, baseH: 1 }
 let loadToken = 0
+let settleTimer: ReturnType<typeof setTimeout> | null = null
 
-function maxLevel(v: WsiVolume): number {
-  return Math.max(...v.levels.map((l) => l.level))
+function clamp(x: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, x))
 }
-
 function baseLevel(v: WsiVolume): ApiLevel {
   return v.levels.find((l) => l.level === 0) ?? v.levels[0]
+}
+function maxLevel(v: WsiVolume): number {
+  return Math.max(...v.levels.map((l) => l.level))
 }
 function levelAt(v: WsiVolume, idx: number): ApiLevel {
   return v.levels.find((l) => l.level === idx) ?? v.levels[0]
 }
-// Downsample factor of a level relative to the base (≈ powers of two).
-function levelFactor(v: WsiVolume, lvl: ApiLevel): number {
+function factorOf(v: WsiVolume, lvl: ApiLevel): number {
   return baseLevel(v).shape[0] / lvl.shape[0]
 }
-function clamp(x: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, x))
+function canvasAspect(): number {
+  const w = els.canvas.clientWidth || 1
+  const h = els.canvas.clientHeight || 1
+  return h / w
+}
+
+// Pick the finest pyramid level whose window for this span still fits one
+// texture — i.e. the sharpest level that isn't wastefully upsampled.
+function pickLevel(v: WsiVolume, span: number): number {
+  const ordered = [...v.levels].sort((a, b) => a.level - b.level) // finest first
+  for (const l of ordered) {
+    if (span / factorOf(v, l) <= MAX_EDGE) return l.level
+  }
+  return maxLevel(v)
 }
 
 function showFallback(msg: string): void {
   els.fallback.textContent = msg
   els.fallback.style.display = 'flex'
+}
+function setHud(text: string): void {
+  els.hud.textContent = text
+}
+function niivueZoom(): number {
+  const z = (nv.pan2Dxyzmm as unknown as number[])[3]
+  return typeof z === 'number' && z > 0 ? z : 1
+}
+function resetNiivueView(): void {
+  const p = nv.pan2Dxyzmm as unknown as number[]
+  p[0] = 0
+  p[1] = 0
+  p[2] = 0
+  p[3] = 1
 }
 
 async function loadApi(): Promise<void> {
@@ -117,14 +152,10 @@ async function loadApi(): Promise<void> {
 
 function populateLevels(v: WsiVolume): void {
   els.level.replaceChildren()
-  // Coarsest first (overview) down to the base (finest) so the dropdown reads
-  // like a zoom ladder.
-  const ordered = [...v.levels].sort((a, b) => b.level - a.level)
-  for (const l of ordered) {
+  for (const l of [...v.levels].sort((a, b) => b.level - a.level)) {
     const opt = document.createElement('option')
     opt.value = String(l.level)
-    const f = levelFactor(v, l)
-    opt.textContent = `${l.shape[0]}×${l.shape[1]}  (1/${Math.round(f)} of base)`
+    opt.textContent = `${l.shape[0]}×${l.shape[1]}  (1/${Math.round(factorOf(v, l))})`
     els.level.appendChild(opt)
   }
 }
@@ -134,47 +165,40 @@ function selectVolume(v: WsiVolume): void {
   populateLevels(v)
   const base = baseLevel(v)
   centerL0 = [base.shape[0] / 2, base.shape[1] / 2]
-  // Zoom slider spans 0 (overview) .. maxLevel (base); value is the zoom-in
-  // amount, so we invert against levelIdx when reading/writing it.
-  els.zoom.max = String(maxLevel(v))
-  // Minimap: the coarsest level rendered to a small PNG by the IIIF Image API.
+  spanL0 = base.shape[0] // whole slide
   els.miniImg.src = `/iiif/image/${encodeURIComponent(v.id)}/level/${maxLevel(v)}/axial/0/full/240,/0/default.png`
   els.minimap.hidden = false
-  // Start at the coarsest level — the whole-slide overview.
-  levelIdx = maxLevel(v)
-  void loadView()
+  void loadViewport()
 }
 
-async function loadView(): Promise<void> {
+// Load the window for the current (centerL0, spanL0) viewport at the best
+// level, scale-matched so resetting niivue's zoom to 1 keeps the framing.
+async function loadViewport(): Promise<void> {
   if (!current) return
   const v = current
-  const lvl = levelAt(v, levelIdx)
-  const [W, H] = [lvl.shape[0], lvl.shape[1]]
-  const f = levelFactor(v, lvl)
-  els.level.value = String(levelIdx)
+  const base = baseLevel(v)
+  spanL0 = clamp(spanL0, MIN_SPAN, base.shape[0])
+  const lvl = levelAt(v, pickLevel(v, spanL0))
+  const f = factorOf(v, lvl)
+  const spanH = spanL0 * canvasAspect()
 
-  let url = `/volumes/${encodeURIComponent(v.id)}/raw.nii.gz?level=${levelIdx}`
-  let dispW = W
-  let dispH = H
-  if (W <= MAX_EDGE && H <= MAX_EDGE) {
-    // Whole level fits one texture.
-    view = { originX: 0, originY: 0, scale: f }
+  let winW = Math.min(Math.ceil(spanL0 / f), lvl.shape[0], MAX_EDGE)
+  let winH = Math.min(Math.ceil(spanH / f), lvl.shape[1], MAX_EDGE)
+  const whole = winW >= lvl.shape[0] && winH >= lvl.shape[1]
+
+  let url = `/volumes/${encodeURIComponent(v.id)}/raw.nii.gz?level=${lvl.level}`
+  let x0 = 0
+  let y0 = 0
+  if (whole) {
+    winW = lvl.shape[0]
+    winH = lvl.shape[1]
   } else {
-    // Centred window in this level's pixels.
-    const winW = Math.min(WINDOW, W)
-    const winH = Math.min(WINDOW, H)
-    const cx = centerL0[0] / f
-    const cy = centerL0[1] / f
-    const x0 = clamp(Math.round(cx - winW / 2), 0, W - winW)
-    const y0 = clamp(Math.round(cy - winH / 2), 0, H - winH)
+    x0 = clamp(Math.round(centerL0[0] / f - winW / 2), 0, lvl.shape[0] - winW)
+    y0 = clamp(Math.round(centerL0[1] / f - winH / 2), 0, lvl.shape[1] - winH)
     url += `&bbox=${x0},${y0},0,${x0 + winW},${y0 + winH},1`
-    view = { originX: x0 * f, originY: y0 * f, scale: f }
-    dispW = winW
-    dispH = winH
   }
 
   const token = ++loadToken
-  setHud(`loading level ${levelIdx} (${dispW}×${dispH})…`)
   try {
     await nv.loadVolumes([{ url }])
   } catch (err) {
@@ -184,117 +208,126 @@ async function loadView(): Promise<void> {
     return
   }
   if (token !== loadToken) return
-  // Base-pixel rectangle on screen, for the minimap viewport box.
-  region = {
-    x: view.originX,
-    y: view.originY,
-    w: dispW * view.scale,
-    h: dispH * view.scale,
+  loaded = {
+    level: lvl.level,
+    factor: f,
+    baseX: x0 * f,
+    baseY: y0 * f,
+    baseW: winW * f,
+    baseH: winH * f,
   }
   nv.sliceType = SLICE_TYPE.AXIAL
+  resetNiivueView()
   nv.drawScene()
-  updateInfo(v, lvl, dispW, dispH)
-  updateMinimap(v)
+  els.level.value = String(lvl.level)
+  syncUi()
 }
 
-// Position the minimap viewport box over the overview thumbnail.
-function updateMinimap(v: WsiVolume): void {
+// Convert niivue's live pan/zoom into the viewport, swapping the level if the
+// zoom has crossed a pyramid boundary. Runs after the wheel settles.
+function onSettle(): void {
+  if (!current) return
+  const z = niivueZoom()
+  spanL0 = clamp(loaded.baseW / z, MIN_SPAN, baseLevel(current).shape[0])
+  if (pickLevel(current, spanL0) !== loaded.level) {
+    // Crossed a level boundary — reload sharper/coarser, scale-matched.
+    void loadViewport()
+  } else {
+    // Same level: niivue is already showing the zoom smoothly; just refresh
+    // the readouts and the minimap box.
+    syncUi()
+  }
+}
+
+function scheduleSettle(): void {
+  if (settleTimer) clearTimeout(settleTimer)
+  settleTimer = setTimeout(onSettle, SETTLE_MS)
+}
+
+function syncUi(): void {
+  if (!current) return
+  const v = current
   const base = baseLevel(v)
+  // Effective visible span tracks niivue's live zoom between reloads.
+  const span = clamp(loaded.baseW / niivueZoom(), MIN_SPAN, base.shape[0])
+  const spanH = span * canvasAspect()
+  // Minimap box: the visible rectangle in base px, as a fraction of the slide.
   const pct = (a: number, b: number) => `${clamp((100 * a) / b, 0, 100)}%`
-  els.miniBox.style.left = pct(region.x, base.shape[0])
-  els.miniBox.style.top = pct(region.y, base.shape[1])
-  els.miniBox.style.width = pct(region.w, base.shape[0])
-  els.miniBox.style.height = pct(region.h, base.shape[1])
-  els.zoom.value = String(maxLevel(v) - levelIdx)
-}
-
-function updateInfo(
-  v: WsiVolume,
-  lvl: ApiLevel,
-  dispW: number,
-  dispH: number,
-): void {
-  const f = levelFactor(v, lvl)
-  const whole =
-    view.originX === 0 && view.originY === 0 && dispW === lvl.shape[0]
-  els.mag.textContent = `1/${Math.round(f)} of base`
-  const cx = Math.round(centerL0[0])
-  const cy = Math.round(centerL0[1])
+  els.miniBox.style.left = pct(centerL0[0] - span / 2, base.shape[0])
+  els.miniBox.style.top = pct(centerL0[1] - spanH / 2, base.shape[1])
+  els.miniBox.style.width = pct(span, base.shape[0])
+  els.miniBox.style.height = pct(spanH, base.shape[1])
+  // Zoom slider: 0 = whole slide, 1000 = MIN_SPAN, log-scaled.
+  const t = Math.log(base.shape[0] / span) / Math.log(base.shape[0] / MIN_SPAN)
+  els.zoom.value = String(Math.round(clamp(t, 0, 1) * 1000))
+  const lvl = levelAt(v, loaded.level)
+  els.mag.textContent = `level ${lvl.level} · 1/${Math.round(loaded.factor)} of base`
   setHud(
     `${v.id}\n` +
-      `level ${lvl.level} of ${v.levels.length} · ${dispW}×${dispH} ${whole ? '(whole slide)' : '(window)'}\n` +
-      `base ${baseLevel(v).shape[0]}×${baseLevel(v).shape[1]} · center @ base px ${cx},${cy}`,
+      `viewing ${Math.round(span)}×${Math.round(spanH)} base px @ level ${lvl.level} (${lvl.shape[0]}×${lvl.shape[1]})\n` +
+      `base ${base.shape[0]}×${base.shape[1]} · center ${Math.round(centerL0[0])},${Math.round(centerL0[1])}`,
   )
-  els.zoomIn.disabled = levelIdx === 0
 }
 
-// Step one level finer (zoom in) keeping the current center.
-function zoomInCentered(): void {
-  if (!current || levelIdx === 0) return
-  levelIdx = Math.max(0, levelIdx - 1)
-  void loadView()
+// Recenter the viewport on a feature, optionally zooming in a step.
+function jumpTo(baseX: number, baseY: number, zoomFactor: number): void {
+  if (!current) return
+  const base = baseLevel(current)
+  centerL0 = [clamp(baseX, 0, base.shape[0]), clamp(baseY, 0, base.shape[1])]
+  spanL0 = clamp(spanL0 * zoomFactor, MIN_SPAN, base.shape[0])
+  void loadViewport()
 }
 
-// Recenter on the clicked feature and step one level finer (zoom in).
-function zoomInAtLastClick(): void {
-  if (!current || !lastVox) return
-  centerL0 = [
-    view.originX + lastVox[0] * view.scale,
-    view.originY + lastVox[1] * view.scale,
-  ]
-  levelIdx = Math.max(0, levelIdx - 1)
-  void loadView()
-}
-
-nv.addEventListener('locationChange', (e: Event) => {
-  const vox = (e as CustomEvent<{ vox?: number[] }>).detail?.vox
-  if (Array.isArray(vox) && vox.length >= 2) {
-    lastVox = [vox[0] ?? 0, vox[1] ?? 0]
-  }
-})
+// niivue handles the wheel zoom; we just re-evaluate the level once it settles.
+els.canvas.addEventListener('wheel', scheduleSettle, { passive: true })
 
 els.volume.addEventListener('change', () => {
   const v = volumes.find((x) => x.id === els.volume.value)
   if (v) selectVolume(v)
 })
+// Level dropdown jumps the zoom so a window of that level fills the view:
+// coarse levels => wide span (overview), fine levels => narrow span (zoomed).
 els.level.addEventListener('change', () => {
-  levelIdx = Number(els.level.value)
-  void loadView()
+  if (!current) return
+  const lvl = levelAt(current, Number(els.level.value))
+  spanL0 = Math.min(MAX_EDGE, lvl.shape[0]) * factorOf(current, lvl)
+  void loadViewport()
+})
+// Zoom slider: log-scaled span from whole slide to MIN_SPAN.
+els.zoom.addEventListener('input', () => {
+  if (!current) return
+  const base = baseLevel(current)
+  const t = Number(els.zoom.value) / 1000
+  spanL0 = base.shape[0] * (MIN_SPAN / base.shape[0]) ** t
+  void loadViewport()
 })
 els.overview.addEventListener('click', () => {
   if (!current) return
   const base = baseLevel(current)
   centerL0 = [base.shape[0] / 2, base.shape[1] / 2]
-  levelIdx = maxLevel(current)
-  void loadView()
+  spanL0 = base.shape[0]
+  void loadViewport()
 })
-els.zoomIn.addEventListener('click', zoomInCentered)
-// Double-click the slide to dive into that spot.
-els.canvas.addEventListener('dblclick', zoomInAtLastClick)
-
-// Zoom slider: value is the zoom-in amount (0 = overview), level is inverted.
-els.zoom.addEventListener('input', () => {
-  if (!current) return
-  const next = maxLevel(current) - Number(els.zoom.value)
-  if (next === levelIdx) return
-  levelIdx = next
-  void loadView()
+els.zoomIn.addEventListener('click', () => {
+  jumpTo(centerL0[0], centerL0[1], 0.5)
 })
-
-// Click the minimap to jump the view to that point on the slide.
+// Double-click to dive in a step at the current centre. (In pan-drag mode a
+// click pans rather than picking a voxel, so we zoom on the centre; use the
+// wheel for cursor-anchored zoom and the minimap to recentre.)
+els.canvas.addEventListener('dblclick', () => {
+  jumpTo(centerL0[0], centerL0[1], 0.5)
+})
+// Click the minimap to jump the view there.
 els.minimap.addEventListener('click', (e: MouseEvent) => {
   if (!current) return
   const base = baseLevel(current)
   const r = els.minimap.getBoundingClientRect()
-  const fx = clamp((e.clientX - r.left) / r.width, 0, 1)
-  const fy = clamp((e.clientY - r.top) / r.height, 0, 1)
-  centerL0 = [fx * base.shape[0], fy * base.shape[1]]
-  void loadView()
+  jumpTo(
+    clamp((e.clientX - r.left) / r.width, 0, 1) * base.shape[0],
+    clamp((e.clientY - r.top) / r.height, 0, 1) * base.shape[1],
+    1,
+  )
 })
-
-function setHud(text: string): void {
-  els.hud.textContent = text
-}
 
 async function main(): Promise<void> {
   await nv.attachToCanvas(els.canvas)

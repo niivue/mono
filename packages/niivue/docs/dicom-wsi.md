@@ -129,13 +129,27 @@ viewer built on the single-texture RGB path (no niivue changes):
   straight to `rgba8unorm` via `rgba2Texture`) drawn as a 2D axial slice — the
   slide face. Verified that niivue accepts `[W,H,1]` RGB volumes for both a
   whole coarse level and a bbox subvolume.
+- **Smooth OpenSeadragon-style zoom/pan**: the view is tracked as a viewport
+  over the slide — a centre and a span, both in base-level pixels.
+  niivue's built-in 2D pan/zoom (`primaryDragMode: DRAG_MODE.pan` →
+  cursor-anchored wheel zoom + drag pan) drives the fluid motion on the loaded
+  texture; a debounced auto-LOD layer reads niivue's live zoom
+  (`pan2Dxyzmm[3]`), and when it crosses a pyramid boundary reloads the window
+  at the level whose pixels are ~1:1 with the screen — **scale-matched**, so
+  the swap keeps the framing and only the detail sharpens.
 - **Whole-slide overview**: the coarsest level fits one texture and loads whole.
 - **Deep zoom**: finer levels exceed the 2048 texture limit, so the viewer
-  loads a centred `WINDOW`-px window via the server's bbox subvolume read — the
-  2.66-gigapixel base level is never materialised. Double-click dives into a
-  spot; the zoom/level dropdown and "whole slide" button drive the LOD ladder.
-- All navigation math (level downsample factor, window placement, mapping a
-  displayed voxel back to base-level pixels for recentre) is in `wsi.ts`.
+  loads only the visible window via the bbox subvolume read — the
+  2.66-gigapixel base level is never materialised.
+- Controls: scroll to zoom, drag to pan, a log-scaled zoom slider, a level
+  dropdown, double-click / "zoom in" to dive at centre, a "whole slide" reset,
+  and a minimap with a viewport box and click-to-jump. Navigation math
+  (level pick, scale-matched window placement, viewport↔base mapping) is in
+  `wsi.ts`.
+- *Known limitation:* a drag-pan isn't folded back into the tracked centre, so
+  crossing a zoom level after panning recentres on the previous centre. Pan
+  within a level is smooth; recentre via the minimap or by zooming. Tracking
+  the pan offset from `pan2Dxyzmm` would remove this.
 
 ### Remaining follow-up — chunked RGB streaming
 

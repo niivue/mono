@@ -21,6 +21,7 @@ const PAGES: Page[] = [
   { href: '/osd-volume-desktop.html', label: 'osd desktop' },
   { href: '/volume-fly-space.html', label: 'fly space' },
   { href: '/omezarr.html', label: 'omezarr' },
+  { href: '/wsi.html', label: 'wsi' },
 ]
 
 // Endpoints exposed by the IIIF server — handy to reach from any page when

@@ -120,30 +120,42 @@ microscopy) series exist across `cptac_*`, `tcga_*`, `htan_*`, `cmb_*`, `gtex`.
 
 ---
 
-## 6. Open work — the browser render-finish
+## 6. Browser viewer (done) — `wsi.html`
 
-The server hands the client a `dicom-wsi` multiscale `rgb24` volume; making it
-appear in the demo is the remaining piece, roughly in order:
+`apps/iiif-volumetric-demo/wsi.html` + `src/wsi.ts` is a deep-zoom slide
+viewer built on the single-texture RGB path (no niivue changes):
 
-1. **Confirm niivue renders a depth-1 `rgb24` volume.** RGB volumes upload
-   straight to `rgba8unorm` (`rgba2Texture`); verify a `[W,H,1]` volume
-   slices cleanly in 2D (axial = the slide face) and doesn't trip the 3D
-   ray-march placeholder guards (`textureSize > 2`).
-2. **Stream `rgb24` chunks.** Check the chunk uploader path carries the
-   `rgb24` dtype end to end (orient pass already supports RGB bypass) so
-   `loadSubvolume` bricks upload correctly when the slide exceeds the GPU
-   texture limit (it does: 53783 > maxTextureDimension3D).
-3. **Demo wiring.** Either widen the `omezarr.html` volume filter to include
-   `dicom-wsi`, or add a `wsi.html` page. Default the view to 2D axial,
-   coarse-first, with shift-click / scroll driving bbox + level the way the
-   OME-Zarr page does. The slide is depth-1, so the 3D pane is a thin slab —
-   lead with the slice.
-4. **Aspect / spacing.** WSI `PixelSpacing` is often absent or per-level;
-   confirm the `[W,H,1]` aspect renders square-pixel correct, and that
-   coarse-level spacing scales so levels register.
-5. **Nice-to-haves.** Surface the LABEL/OVERVIEW ancillary images (currently
-   dropped from the pyramid) as a slide thumbnail; lazy per-frame range reads
-   of the base instance instead of buffering all 422 MB.
+- niivue loads each level as a depth-1 `rgb24` volume (datatype 128 → uploaded
+  straight to `rgba8unorm` via `rgba2Texture`) drawn as a 2D axial slice — the
+  slide face. Verified that niivue accepts `[W,H,1]` RGB volumes for both a
+  whole coarse level and a bbox subvolume.
+- **Whole-slide overview**: the coarsest level fits one texture and loads whole.
+- **Deep zoom**: finer levels exceed the 2048 texture limit, so the viewer
+  loads a centred `WINDOW`-px window via the server's bbox subvolume read — the
+  2.66-gigapixel base level is never materialised. Double-click dives into a
+  spot; the zoom/level dropdown and "whole slide" button drive the LOD ladder.
+- All navigation math (level downsample factor, window placement, mapping a
+  displayed voxel back to base-level pixels for recentre) is in `wsi.ts`.
+
+### Remaining follow-up — chunked RGB streaming
+
+The viewer stays on the single-texture path because niivue's **chunked** orient
+path rejects RGB/RGBA (`gl/orientChunked.ts` and `wgpu/orientChunked.ts` throw
+for dt 128/2304). Supporting it would let the whole base level stream as tiled
+chunks (smooth pan across full resolution, and the exploded view) instead of
+the windowed load. The work: per-chunk RGB→RGBA8 extraction + upload (mirroring
+the single-texture `rgba2Texture` bypass) on both backends, plus the gradient
+pass (or skip it for the 2D slice path). Until then, windowed deep-zoom is the
+intended WSI UX and needs no chunked support.
+
+### Other nice-to-haves
+
+- Surface the LABEL / OVERVIEW ancillary images (currently dropped from the
+  pyramid) as a slide thumbnail.
+- Lazy per-frame range reads of the base instance instead of buffering all
+  422 MB into the per-level cache.
+- WSI `PixelSpacing` is often absent (then `[1,1]`, square pixels). If a slide
+  carries real spacing, confirm coarse-level spacing scales so levels register.
 
 ---
 

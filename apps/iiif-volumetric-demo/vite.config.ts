@@ -29,6 +29,7 @@ export default defineConfig({
         osd: resolve(__dirname, 'osd-volume-desktop.html'),
         fly: resolve(__dirname, 'volume-fly-space.html'),
         omezarr: resolve(__dirname, 'omezarr.html'),
+        wsi: resolve(__dirname, 'wsi.html'),
       },
     },
   },

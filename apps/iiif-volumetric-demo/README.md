@@ -30,6 +30,14 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   backend toggle. The default volume is `pawpawsaurus.ome.zarr` when
   present, otherwise the first OME-Zarr fixture returned by `/api`;
   the tracked fixture fetcher downloads `fibsem-uint8.zarr`.
+- `wsi.html` — DICOM whole-slide-imaging deep-zoom viewer. Renders a
+  slide as a depth-1 RGB volume (2D axial = the slide face): a
+  whole-slide overview, a minimap with a viewport box and click-to-jump,
+  a zoom slider, and double-click-to-dive. Coarse levels load whole;
+  finer levels load a centred window via the server's bbox subvolume
+  read. Needs a `dicom-wsi` fixture — run
+  `bunx nx run iiif-volumetric-server:fetch-dicom-wsi` and restart the
+  server. See `packages/niivue/docs/dicom-wsi.md`.
 
 ### Backend switching
 

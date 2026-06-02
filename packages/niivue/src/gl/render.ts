@@ -621,6 +621,21 @@ export class VolumeRenderer extends NVRenderer {
   ): void {
     const entry = this._activeChunked
     if (!entry) return
+    // Exploded view: the whole plan is the working set. Explode spreads the
+    // blocks apart (often beyond the framed extent), so a frustum cull would
+    // drop the blocks that pan off the viewport edges during a rotate; the LRU
+    // would then evict them and the 1-chunk/frame pump cannot refill them
+    // before the next drag frame, so they visibly blink out. Stamping every
+    // chunk each frame keeps them all resident (eviction never drops a chunk
+    // touched this frame) so the separated blocks stay put while the camera
+    // moves. An exploded render is a deliberate "show all blocks" view, so
+    // requesting them all matches intent.
+    if (chunkExplodeEnabled(entry.volume.chunkExplode)) {
+      for (let ci = 0; ci < entry.plan.chunks.length; ci++) {
+        entry.manager.requestUpload(ci)
+      }
+      return
+    }
     const visible = chunksInFrustum(
       entry.plan,
       mvp,

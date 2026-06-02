@@ -30,11 +30,13 @@ import {
   RotateCcw,
   Save,
   SlidersHorizontal,
+  SquareTerminal,
   Play,
   ZoomIn,
   ZoomOut
 } from 'lucide-react'
 import { NiivueStage } from './components/NiivueStage'
+import { TerminalPanel } from './components/TerminalPanel'
 import type {
   Backend,
   ClipPlane,
@@ -66,6 +68,11 @@ const PREVIEW_TIER_SETTLE_MS = 180
 const PREVIEW_IMAGE_VERSION = 5
 const RECENT_DATASETS_KEY = 'neurovue.recentDatasets.v1'
 const MAX_RECENT_DATASETS = 10
+const TERMINAL_OPEN_KEY = 'neurovue.terminalOpen.v1'
+const TERMINAL_HEIGHT_KEY = 'neurovue.terminalHeight.v1'
+const MIN_TERMINAL_HEIGHT = 120
+const MAX_TERMINAL_HEIGHT = 800
+const DEFAULT_TERMINAL_HEIGHT = 280
 const NIIMATH_OPERATIONS: Array<{
   id: NiimathOperation
   label: string
@@ -190,6 +197,42 @@ function promoteRecentDataset(entries: string[], path: string): string[] {
   return [trimmed, ...filtered].slice(0, MAX_RECENT_DATASETS)
 }
 
+function loadTerminalOpen(): boolean {
+  try {
+    return window.localStorage.getItem(TERMINAL_OPEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function loadTerminalHeight(): number {
+  try {
+    const raw = Number(window.localStorage.getItem(TERMINAL_HEIGHT_KEY))
+    if (Number.isFinite(raw) && raw > 0) {
+      return clamp(raw, MIN_TERMINAL_HEIGHT, MAX_TERMINAL_HEIGHT)
+    }
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_TERMINAL_HEIGHT
+}
+
+function persistTerminalOpen(open: boolean): void {
+  try {
+    window.localStorage.setItem(TERMINAL_OPEN_KEY, open ? '1' : '0')
+  } catch {
+    // localStorage may be disabled — state stays in-memory for this session.
+  }
+}
+
+function persistTerminalHeight(height: number): void {
+  try {
+    window.localStorage.setItem(TERMINAL_HEIGHT_KEY, String(Math.round(height)))
+  } catch {
+    // localStorage may be disabled.
+  }
+}
+
 function recentDatasetLabel(path: string): string {
   const stripped = path.replace(/\/+$/, '')
   const segments = stripped.split('/').filter(Boolean)
@@ -231,6 +274,22 @@ export function App(): JSX.Element {
   const [recentDatasets, setRecentDatasets] = useState<string[]>(() => loadRecentDatasets())
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
+  const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(() => loadTerminalOpen())
+  const [terminalHeight, setTerminalHeight] = useState<number>(() => loadTerminalHeight())
+
+  function toggleTerminal(): void {
+    setIsTerminalOpen((open) => {
+      const next = !open
+      persistTerminalOpen(next)
+      return next
+    })
+  }
+
+  function updateTerminalHeight(height: number): void {
+    const clamped = clamp(height, MIN_TERMINAL_HEIGHT, MAX_TERMINAL_HEIGHT)
+    setTerminalHeight(clamped)
+    persistTerminalHeight(clamped)
+  }
 
   useEffect(() => {
     manifestRef.current = manifest
@@ -500,7 +559,10 @@ export function App(): JSX.Element {
   }, [serverUrl])
 
   return (
-    <main className="nv-app">
+    <main
+      className={`nv-app ${isTerminalOpen ? 'has-terminal' : ''}`}
+      style={{ '--terminal-height': `${terminalHeight}px` } as CSSProperties}
+    >
       <header className="nv-topbar">
         <div className="nv-brand">
           <div className="nv-mark">
@@ -609,6 +671,15 @@ export function App(): JSX.Element {
             onClick={() => void savePatch(serverUrl, selected, clipPlanes, backend)}
           >
             <Save size={16} />
+          </button>
+          <button
+            aria-pressed={isTerminalOpen}
+            className={`nv-icon-button ${isTerminalOpen ? 'is-active' : ''}`}
+            title={isTerminalOpen ? 'Hide Python terminal' : 'Show Python terminal'}
+            onClick={toggleTerminal}
+            type="button"
+          >
+            <SquareTerminal size={16} />
           </button>
         </div>
       </header>
@@ -791,6 +862,21 @@ export function App(): JSX.Element {
           </div>
         </aside>
       </section>
+
+      {isTerminalOpen ? (
+        <section className="nv-terminal-dock" aria-label="Python terminal">
+          <button
+            aria-label="Resize terminal"
+            className="nv-hsplitter"
+            onPointerDown={(event) => beginVerticalDrag(event, updateTerminalHeight)}
+            title="Resize terminal"
+            type="button"
+          >
+            <GripVertical size={16} />
+          </button>
+          <TerminalPanel datasetRoot={datasetRoot} onStatus={setStatus} />
+        </section>
+      ) : null}
 
       <footer className="nv-status">
         <span>
@@ -1917,6 +2003,40 @@ function beginSplitDrag(
   }
 
   update(event.clientX)
+  handle.setPointerCapture(pointerId)
+  handle.addEventListener('pointermove', onMove)
+  handle.addEventListener('pointerup', onUp)
+  handle.addEventListener('pointercancel', onUp)
+}
+
+function beginVerticalDrag(
+  event: ReactPointerEvent<HTMLButtonElement>,
+  onChange: (value: number) => void
+): void {
+  event.preventDefault()
+  const handle = event.currentTarget
+  const pointerId = event.pointerId
+  // Footer is a fixed 34px row; the dock fills the gap between the pointer and it.
+  const footerHeight = 34
+
+  function update(clientY: number): void {
+    onChange(window.innerHeight - footerHeight - clientY)
+  }
+
+  function onMove(moveEvent: PointerEvent): void {
+    update(moveEvent.clientY)
+  }
+
+  function onUp(): void {
+    handle.removeEventListener('pointermove', onMove)
+    handle.removeEventListener('pointerup', onUp)
+    handle.removeEventListener('pointercancel', onUp)
+    if (handle.hasPointerCapture(pointerId)) {
+      handle.releasePointerCapture(pointerId)
+    }
+  }
+
+  update(event.clientY)
   handle.setPointerCapture(pointerId)
   handle.addEventListener('pointermove', onMove)
   handle.addEventListener('pointerup', onUp)

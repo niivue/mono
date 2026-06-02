@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { open } from '@tauri-apps/plugin-dialog'
 
 export type Backend = 'webgl2' | 'webgpu'
 export type Axis = 'axial' | 'coronal' | 'sagittal'
@@ -167,13 +168,13 @@ export function rawVolumeUrl(item: DesktopItem): string {
 }
 
 export async function openDatasetDirectory(): Promise<DatasetOpenResult | null> {
-  const result = await invoke<DatasetOpenResult | null>('open_dataset_directory')
-  return result
-    ? {
-        ...result,
-        url: trimTrailingSlash(result.url)
-      }
-    : null
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: 'Open NeuroVue dataset folder'
+  })
+  if (!selected || Array.isArray(selected)) return null
+  return openDatasetByPath(selected)
 }
 
 export async function openDatasetByPath(path: string): Promise<DatasetOpenResult> {

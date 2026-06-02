@@ -1,3 +1,4 @@
+mod terminal;
 mod volumetric_server;
 
 use serde::{Deserialize, Serialize};
@@ -25,8 +26,8 @@ struct NeuroVueServerInfo {
     cache_root: String,
 }
 
-struct NeuroVueState {
-    server: volumetric_server::ServerHandle,
+pub(crate) struct NeuroVueState {
+    pub(crate) server: volumetric_server::ServerHandle,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -80,21 +81,6 @@ fn neurovue_server_info(state: tauri::State<'_, NeuroVueState>) -> NeuroVueServe
             .map(|path| path.display().to_string()),
         cache_root: volumetric_server::cache_root().display().to_string(),
     }
-}
-
-#[tauri::command]
-async fn open_dataset_directory(
-    state: tauri::State<'_, NeuroVueState>,
-) -> Result<Option<DatasetOpenResult>, String> {
-    let server = state.server.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let Some(root) = choose_dataset_directory()? else {
-            return Ok(None);
-        };
-        open_dataset_at_path(&server, &root).map(Some)
-    })
-    .await
-    .map_err(|error| format!("open_dataset_directory: join error: {error}"))?
 }
 
 #[tauri::command]
@@ -484,41 +470,6 @@ fn format_operand(value: f64) -> String {
     text
 }
 
-fn choose_dataset_directory() -> Result<Option<PathBuf>, String> {
-    choose_dataset_directory_platform()
-}
-
-#[cfg(target_os = "macos")]
-fn choose_dataset_directory_platform() -> Result<Option<PathBuf>, String> {
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg("tell application \"System Events\" to activate")
-        .arg("-e")
-        .arg(r#"POSIX path of (choose folder with prompt "Open NeuroVue dataset folder")"#)
-        .output()
-        .map_err(|error| format!("open_dataset_directory: launch folder picker: {error}"))?;
-
-    if output.status.success() {
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return Ok((!path.is_empty()).then(|| PathBuf::from(path)));
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("User canceled") || stderr.contains("-128") {
-        return Ok(None);
-    }
-
-    Err(format!(
-        "open_dataset_directory: folder picker failed: {}",
-        stderr.trim()
-    ))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn choose_dataset_directory_platform() -> Result<Option<PathBuf>, String> {
-    Err("open_dataset_directory: native folder picker is not available on this platform yet".into())
-}
-
 fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::default(handle)?;
     let open_directory = MenuItem::with_id(
@@ -538,6 +489,7 @@ pub fn run() {
     let server = volumetric_server::spawn_default();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .menu(neurovue_menu)
         .on_menu_event(|app, event| {
             if event.id().as_ref() == OPEN_DIRECTORY_MENU_ID {
@@ -545,11 +497,17 @@ pub fn run() {
             }
         })
         .manage(NeuroVueState { server })
+        .manage(terminal::TerminalState::default())
         .invoke_handler(tauri::generate_handler![
             neurovue_server_info,
-            open_dataset_directory,
             open_dataset_path,
-            run_niimath_task
+            run_niimath_task,
+            terminal::terminal_start,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_kill,
+            terminal::discover_python_interpreters,
+            terminal::inspect_python_interpreter
         ])
         .run(tauri::generate_context!())
         .expect("error while running NeuroVue");

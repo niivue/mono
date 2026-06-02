@@ -63,6 +63,10 @@ button {
   overflow: hidden;
 }
 
+.nv-app.has-terminal {
+  grid-template-rows: 64px minmax(0, 1fr) var(--terminal-height, 280px) 34px;
+}
+
 .nv-topbar,
 .nv-status {
   display: flex;
@@ -1689,4 +1693,93 @@ button {
   .nv-panel-heading {
     font-size: 11px;
   }
+}
+
+/* Integrated Python terminal dock */
+.nv-terminal-dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  background: #0d0e0a;
+  box-shadow: 0 -8px 30px var(--shadow);
+  z-index: 3;
+}
+
+.nv-hsplitter {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 10px;
+  min-height: 10px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: #10110d;
+  color: var(--faint);
+  cursor: row-resize;
+  touch-action: none;
+  transform: rotate(90deg);
+}
+
+.nv-hsplitter:hover,
+.nv-hsplitter:focus-visible {
+  color: var(--amber);
+  background: #1d1e18;
+  outline: none;
+}
+
+.nv-terminal-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.nv-terminal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #1d1e18, #151611);
+}
+
+.nv-terminal-interpreter {
+  min-width: 0;
+  flex: 1;
+  max-width: 560px;
+}
+
+.nv-terminal-interpreter select {
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.nv-terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nv-terminal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px 4px;
+  overflow: hidden;
+  background: #12130f;
+}
+
+.nv-terminal-body .xterm,
+.nv-terminal-body .xterm-viewport {
+  height: 100%;
+}
+
+.nv-terminal-body .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.nv-terminal-body .xterm-viewport::-webkit-scrollbar-thumb {
+  background: #2a2c22;
 }

@@ -3,6 +3,6 @@
   "identifier": "default",
   "description": "Default NeuroVue window permissions",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "dialog:allow-open"]
 }
 

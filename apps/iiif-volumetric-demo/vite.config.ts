@@ -30,6 +30,7 @@ export default defineConfig({
         multiplanar: resolve(__dirname, 'multiplanar.html'),
         overlay: resolve(__dirname, 'overlay.html'),
         microscopy: resolve(__dirname, 'microscopy.html'),
+        drawing: resolve(__dirname, 'drawing.html'),
         wsi: resolve(__dirname, 'wsi.html'),
       },
     },

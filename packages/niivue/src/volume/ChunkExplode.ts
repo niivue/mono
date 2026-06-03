@@ -131,7 +131,11 @@ function rayAABBEntry(
  * same exploded matRAS to recover the true voxel (clamped to the chunk's data
  * region). The ray must be in the same mm space as `NVTransforms.vox2mm`.
  *
- * Returns null if the ray misses every block or explode is disabled.
+ * `allowed`, when given, restricts the pick to those chunk indices — pass the
+ * not-clipped-out / resident set so a right-click can't paint a block the clip
+ * plane (or streaming) has hidden.
+ *
+ * Returns null if the ray misses every (allowed) block or explode is disabled.
  */
 export function pickExplodedVoxel(
   plan: ChunkPlan,
@@ -139,12 +143,14 @@ export function pickExplodedVoxel(
   explode: ChunkExplodeOptions | null | undefined,
   rayOrigin: readonly [number, number, number],
   rayDir: readonly [number, number, number],
+  allowed?: ReadonlySet<number>,
 ): { chunkIndex: number; voxel: [number, number, number] } | null {
   if (!chunkExplodeEnabled(explode)) return null
   let bestT = Number.POSITIVE_INFINITY
   let bestCi = -1
   let bestMat: mat4 | null = null
   for (let ci = 0; ci < plan.chunks.length; ci++) {
+    if (allowed && !allowed.has(ci)) continue // hidden block (clipped / unstreamed)
     const desc = plan.chunks[ci]
     const m = chunkExplodedMatRAS(plan, ci, matRAS as Float32Array, explode)
     const vox2mm = voxToMMMatrix(m)

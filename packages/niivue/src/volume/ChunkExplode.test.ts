@@ -103,6 +103,32 @@ describe('pickExplodedVoxel', () => {
     ).toBeNull()
   })
 
+  test('skips blocks not in the allowed (visible) set', () => {
+    // The ray only crosses block 2's slab; excluding it from `allowed` (e.g. a
+    // clip plane hid it) makes the pick miss rather than paint a hidden block.
+    expect(
+      pickExplodedVoxel(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        [6, 0.5, 5],
+        [0, 0, -1],
+        new Set([0, 1, 3]),
+      ),
+    ).toBeNull()
+    // With block 2 allowed, it picks normally.
+    expect(
+      pickExplodedVoxel(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        [6, 0.5, 5],
+        [0, 0, -1],
+        new Set([0, 1, 2, 3]),
+      )?.chunkIndex,
+    ).toBe(2)
+  })
+
   test('picks the nearest block along the ray', () => {
     // Aim down -x at y,z inside every block's slab; should hit the highest-x
     // block first (block 3, exploded x [9,11]).

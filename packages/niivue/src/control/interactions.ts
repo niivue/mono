@@ -28,6 +28,7 @@ import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
+import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
 
 function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -260,12 +261,26 @@ function draw3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): void {
   dx /= len
   dy /= len
   dz /= len
+  // Only blocks the clip plane leaves visible are pickable, so a right-click
+  // can't land on a block hidden behind the cutaway. The shader clips each block
+  // by its un-exploded data position, which is exactly what chunksNotClippedOut
+  // computes (no explode offset).
+  const allIdx = plan.chunks.map((_, i) => i)
+  const visible = new Set(
+    chunksNotClippedOut(
+      plan,
+      allIdx,
+      ctrl.model.clipPlanes,
+      ctrl.model.scene.isClipPlaneCutaway,
+    ),
+  )
   const picked = pickExplodedVoxel(
     plan,
     vol.matRAS as Float32Array,
     vol.chunkExplode,
     [near[0], near[1], near[2]],
     [dx, dy, dz],
+    visible,
   )
   if (!picked || !ctrl.model.drawingVolume) return
   const drawingVol = ctrl.model.drawingVolume as NVImage

@@ -7,9 +7,9 @@
 // RGBA output. Returns one {volumeTexture, volumeGradientTexture} per chunk.
 //
 // Scope:
-//   - Scalar datatypes only (uint8/uint16/uint32, int16/int32, float32). RGB
-//     (128) and RGBA (2304) sources throw — they need a chunked variant of
-//     prepareRGBAData and are deferred.
+//   - Scalar datatypes (uint8/uint16/uint32, int16/int32, float32) orient
+//     through the compute pass; RGB (128) / RGBA (2304) color skips it and
+//     uploads chunk bytes straight into an RGBA8 texture (see chunkRGBA).
 //   - RAS-aligned (identity permutation) sources use a fast strided row copy.
 //     Non-identity sources (axis swaps/flips) are reoriented to RAS order
 //     voxel-by-voxel during the per-chunk CPU extraction, so the orient pass
@@ -25,9 +25,11 @@ import type { NVImage } from '@/NVTypes'
 import { buildOrientUniforms } from '@/view/NVOrient'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
 import {
+  chunkRGBA,
   extractChunkBytes,
   extractChunkBytesReoriented,
   isIdentityPermutation,
+  isRGBAChunkDatatype,
 } from '@/volume/orientChunked'
 import { ensureOrientPipeline } from './orient'
 import * as wgpu from './wgpu'
@@ -188,6 +190,49 @@ function bytesFromChunkSource(
     : new Uint8Array(bytes)
 }
 
+// Shared orient-compute resources for scalar volumes: the source-format
+// texture/pipeline, the identity orient uniforms, and the colormap textures.
+// Built once per chunked volume and reused by every chunk; not built at all for
+// color volumes (which upload to RGBA8 directly).
+interface OrientMachinery {
+  format: GPUTextureFormat
+  cached: ReturnType<typeof ensureOrientPipeline>
+  uniformBuffer: GPUBuffer
+  colormapTexture: GPUTexture
+  negativeColormapTexture: GPUTexture
+  hasNegativeColormap: boolean
+  sampler: GPUSampler
+}
+
+async function buildOrientMachinery(
+  device: GPUDevice,
+  nvimage: NVImage,
+  dt: number,
+): Promise<OrientMachinery> {
+  const { format, pipelineType } = getTextureFormat(dt)
+  const cached = ensureOrientPipeline(device, pipelineType)
+  const uniformBuffer = device.createBuffer({
+    size: 7 * 16,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  })
+  writeIdentityOrientUniforms(device, uniformBuffer, nvimage)
+  const {
+    colormapTexture,
+    negativeColormapTexture,
+    hasNegativeColormap,
+    sampler,
+  } = await createColormapResources(device, nvimage)
+  return {
+    format,
+    cached,
+    uniformBuffer,
+    colormapTexture,
+    negativeColormapTexture,
+    hasNegativeColormap,
+    sampler,
+  }
+}
+
 /**
  * Build an on-demand chunk uploader for a chunked volume.
  *
@@ -197,6 +242,9 @@ function bytesFromChunkSource(
  * returns its RGBA + gradient textures; the transient per-chunk source texture
  * is destroyed before returning. The renderer pumps these calls a few per
  * frame so a tiled volume streams in rather than stalling the main thread.
+ *
+ * Color (RGB/RGBA) volumes skip the orient compute entirely and upload their
+ * chunk bytes straight into an RGBA8 texture.
  */
 export async function createChunkUploaderGPU(
   device: GPUDevice,
@@ -211,11 +259,9 @@ export async function createChunkUploaderGPU(
     throw new Error('orientChunked: missing image data')
   }
   const dt = nvimage.hdr.datatypeCode
-  if (dt === 128 || dt === 2304) {
-    throw new Error(
-      `orientChunked: RGB/RGBA datatypes (${dt}) are not yet supported for chunked volumes`,
-    )
-  }
+  // RGB/RGBA color sources upload straight to RGBA8 (see chunkRGBA), bypassing
+  // the orient/colormap compute pass — the chunked analogue of rgba2Texture.
+  const isRGBA = isRGBAChunkDatatype(dt)
   const volumeDims: Vec3i = [
     nvimage.dimsRAS[1],
     nvimage.dimsRAS[2],
@@ -232,21 +278,15 @@ export async function createChunkUploaderGPU(
     )
   }
 
-  const { format, pipelineType, bytesPerVoxel } = getTextureFormat(dt)
-  const cached = ensureOrientPipeline(device, pipelineType)
-
-  // Shared resources: one uniform buffer + colormap + sampler reused per chunk.
-  const uniformBuffer = device.createBuffer({
-    size: 7 * 16,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  })
-  writeIdentityOrientUniforms(device, uniformBuffer, nvimage)
-  const {
-    colormapTexture,
-    negativeColormapTexture,
-    hasNegativeColormap,
-    sampler,
-  } = await createColormapResources(device, nvimage)
+  // Scalar volumes orient through a compute pass (source-format texture +
+  // colormap -> RGBA8). Color volumes skip all of that, so build the orient
+  // machinery only when needed.
+  const bytesPerVoxel = isRGBA
+    ? dt === 128
+      ? 3
+      : 4
+    : getTextureFormat(dt).bytesPerVoxel
+  const orient = isRGBA ? null : await buildOrientMachinery(device, nvimage, dt)
 
   const frame4D = nvimage.frame4D ?? 0
   const frameByteOffset = frame4D * nvimage.nVox3D * bytesPerVoxel
@@ -299,54 +339,76 @@ export async function createChunkUploaderGPU(
             img2RASstart,
             img2RASstep,
           )
-    const sourceTexture = device.createTexture({
-      size: desc.texDims,
-      format,
-      dimension: '3d',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    })
-    device.queue.writeTexture(
-      { texture: sourceTexture },
-      chunkBytes as Uint8Array<ArrayBuffer>,
-      {
-        bytesPerRow: desc.texDims[0] * bytesPerVoxel,
-        rowsPerImage: desc.texDims[1],
-      },
-      desc.texDims,
-    )
-    const rgbaTexture = device.createTexture({
-      size: desc.texDims,
-      format: 'rgba8unorm',
-      dimension: '3d',
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.STORAGE_BINDING |
-        GPUTextureUsage.COPY_SRC,
-    })
-    const bindGroup = device.createBindGroup({
-      layout: cached.layout,
-      entries: [
-        { binding: 0, resource: { buffer: uniformBuffer } },
-        { binding: 1, resource: sourceTexture.createView() },
-        { binding: 2, resource: colormapTexture.createView() },
-        { binding: 3, resource: rgbaTexture.createView() },
-        { binding: 4, resource: sampler },
-        { binding: 5, resource: negativeColormapTexture.createView() },
-      ],
-    })
-    const encoder = device.createCommandEncoder()
-    const pass = encoder.beginComputePass()
-    pass.setPipeline(cached.pipeline)
-    pass.setBindGroup(0, bindGroup)
-    pass.dispatchWorkgroups(
-      Math.ceil(desc.texDims[0] / 8),
-      Math.ceil(desc.texDims[1] / 8),
-      Math.ceil(desc.texDims[2] / 4),
-    )
-    pass.end()
-    device.queue.submit([encoder.finish()])
-    await device.queue.onSubmittedWorkDone()
-    sourceTexture.destroy()
+    let rgbaTexture: GPUTexture
+    if (isRGBA) {
+      // Color: write the expanded RGBA8 bytes straight into the output texture.
+      rgbaTexture = device.createTexture({
+        size: desc.texDims,
+        format: 'rgba8unorm',
+        dimension: '3d',
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.COPY_SRC,
+      })
+      device.queue.writeTexture(
+        { texture: rgbaTexture },
+        chunkRGBA(chunkBytes, dt) as Uint8Array<ArrayBuffer>,
+        { bytesPerRow: desc.texDims[0] * 4, rowsPerImage: desc.texDims[1] },
+        desc.texDims,
+      )
+    } else {
+      // Scalar: source-format texture -> orient compute pass -> RGBA8.
+      const om = orient as OrientMachinery
+      const sourceTexture = device.createTexture({
+        size: desc.texDims,
+        format: om.format,
+        dimension: '3d',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      })
+      device.queue.writeTexture(
+        { texture: sourceTexture },
+        chunkBytes as Uint8Array<ArrayBuffer>,
+        {
+          bytesPerRow: desc.texDims[0] * bytesPerVoxel,
+          rowsPerImage: desc.texDims[1],
+        },
+        desc.texDims,
+      )
+      rgbaTexture = device.createTexture({
+        size: desc.texDims,
+        format: 'rgba8unorm',
+        dimension: '3d',
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.STORAGE_BINDING |
+          GPUTextureUsage.COPY_SRC,
+      })
+      const bindGroup = device.createBindGroup({
+        layout: om.cached.layout,
+        entries: [
+          { binding: 0, resource: { buffer: om.uniformBuffer } },
+          { binding: 1, resource: sourceTexture.createView() },
+          { binding: 2, resource: om.colormapTexture.createView() },
+          { binding: 3, resource: rgbaTexture.createView() },
+          { binding: 4, resource: om.sampler },
+          { binding: 5, resource: om.negativeColormapTexture.createView() },
+        ],
+      })
+      const encoder = device.createCommandEncoder()
+      const pass = encoder.beginComputePass()
+      pass.setPipeline(om.cached.pipeline)
+      pass.setBindGroup(0, bindGroup)
+      pass.dispatchWorkgroups(
+        Math.ceil(desc.texDims[0] / 8),
+        Math.ceil(desc.texDims[1] / 8),
+        Math.ceil(desc.texDims[2] / 4),
+      )
+      pass.end()
+      device.queue.submit([encoder.finish()])
+      await device.queue.onSubmittedWorkDone()
+      sourceTexture.destroy()
+    }
 
     const gradientTexture = await wgpu.volume2TextureGradientRGBA(
       device,
@@ -360,9 +422,10 @@ export async function createChunkUploaderGPU(
   }
 
   function dispose(): void {
-    uniformBuffer.destroy()
-    colormapTexture.destroy()
-    if (hasNegativeColormap) negativeColormapTexture.destroy()
+    if (!orient) return
+    orient.uniformBuffer.destroy()
+    orient.colormapTexture.destroy()
+    if (orient.hasNegativeColormap) orient.negativeColormapTexture.destroy()
   }
 
   return { uploadChunk, dispose }

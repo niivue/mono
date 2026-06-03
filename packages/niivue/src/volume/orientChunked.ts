@@ -7,6 +7,43 @@
 import type { NVImage } from '@/NVTypes'
 import type { Vec3i } from '@/volume/chunking'
 
+/** NIfTI datatype codes for color volumes. */
+export const DT_RGB24 = 128
+export const DT_RGBA32 = 2304
+
+/** Whether a datatype is a color (RGB/RGBA) source uploaded straight to RGBA8. */
+export function isRGBAChunkDatatype(datatypeCode: number): boolean {
+  return datatypeCode === DT_RGB24 || datatypeCode === DT_RGBA32
+}
+
+/**
+ * Convert a chunk's extracted color bytes to RGBA8, the format both backends
+ * upload for color volumes. RGB24 (3 bytes/voxel) is expanded with an opaque
+ * alpha; RGBA32 (4 bytes/voxel) is already in the target layout and returned
+ * as-is. This is the per-chunk analogue of the single-texture `rgba2Texture`
+ * bypass — color sources skip the orient/colormap shader entirely.
+ *
+ * Pure CPU function, exported for unit testing.
+ */
+export function chunkRGBA(
+  chunkBytes: Uint8Array,
+  datatypeCode: number,
+): Uint8Array {
+  if (datatypeCode === DT_RGBA32) return chunkBytes
+  if (datatypeCode !== DT_RGB24) {
+    throw new Error(`chunkRGBA: datatype ${datatypeCode} is not RGB/RGBA`)
+  }
+  const voxels = (chunkBytes.length / 3) | 0
+  const out = new Uint8Array(voxels * 4)
+  for (let v = 0, s = 0, d = 0; v < voxels; v++, s += 3, d += 4) {
+    out[d] = chunkBytes[s] ?? 0
+    out[d + 1] = chunkBytes[s + 1] ?? 0
+    out[d + 2] = chunkBytes[s + 2] ?? 0
+    out[d + 3] = 255
+  }
+  return out
+}
+
 /**
  * True when the source image's storage order matches RAS without any permutation
  * or flip — i.e. source voxel (x,y,z) is at CPU offset (z*dy+y)*dx+x.

@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import type { Vec3i } from '@/volume/chunking'
-import { extractChunkBytes, extractChunkBytesReoriented } from './orientChunked'
+import {
+  chunkRGBA,
+  extractChunkBytes,
+  extractChunkBytesReoriented,
+  isRGBAChunkDatatype,
+} from './orientChunked'
 
 // Build a row-major source buffer where each voxel's value is a deterministic
 // function of (x, y, z): byteValue = (z * 100 + y * 10 + x) & 0xff.
@@ -262,5 +267,46 @@ describe('extractChunkBytesReoriented', () => {
     const idx = ((1 * rasDims[1] + 1) * rasDims[0] + 2) * 2
     expect(out[idx]).toBe(12 & 0xff)
     expect(out[idx + 1]).toBe((12 >> 8) & 0xff)
+  })
+})
+
+describe('chunkRGBA (color chunk → RGBA8)', () => {
+  test('isRGBAChunkDatatype flags 128 and 2304 only', () => {
+    expect(isRGBAChunkDatatype(128)).toBe(true)
+    expect(isRGBAChunkDatatype(2304)).toBe(true)
+    expect(isRGBAChunkDatatype(2)).toBe(false)
+    expect(isRGBAChunkDatatype(16)).toBe(false)
+  })
+
+  test('RGB24 expands 3→4 bytes with opaque alpha', () => {
+    // two voxels: (10,20,30) and (40,50,60)
+    const rgb = new Uint8Array([10, 20, 30, 40, 50, 60])
+    const out = chunkRGBA(rgb, 128)
+    expect(Array.from(out)).toEqual([10, 20, 30, 255, 40, 50, 60, 255])
+  })
+
+  test('RGB24 expansion preserves a full chunk extracted at bpv=3', () => {
+    // 2x2x1 RGB source; extract the whole thing then expand
+    const dims: Vec3i = [2, 2, 1]
+    const src = makeSource(dims, 3, (x, y, _z, b) => x * 50 + y * 20 + b)
+    const chunk = extractChunkBytes(src, dims, 3, [0, 0, 0], dims)
+    const rgba = chunkRGBA(chunk, 128)
+    expect(rgba.length).toBe(2 * 2 * 1 * 4)
+    // voxel (1,1): src value x*50+y*20+b = 50+20+b
+    const v11 = (1 * 2 + 1) * 4
+    expect(rgba[v11]).toBe(70)
+    expect(rgba[v11 + 1]).toBe(71)
+    expect(rgba[v11 + 2]).toBe(72)
+    expect(rgba[v11 + 3]).toBe(255)
+  })
+
+  test('RGBA32 passes through unchanged', () => {
+    const rgba = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
+    const out = chunkRGBA(rgba, 2304)
+    expect(out).toBe(rgba) // same reference, already RGBA8
+  })
+
+  test('throws for a non-color datatype', () => {
+    expect(() => chunkRGBA(new Uint8Array(4), 16)).toThrow()
   })
 })

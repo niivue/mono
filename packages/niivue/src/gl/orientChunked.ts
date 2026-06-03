@@ -7,8 +7,9 @@
 // {volumeTexture, volumeGradientTexture} per chunk.
 //
 // Scope:
-//   - Scalar datatypes only. RGB (128), RGBA (2304), and float64 (64) sources
-//     throw — they need a chunked variant of the CPU conversion path.
+//   - Scalar datatypes plus RGB (128) / RGBA (2304) color: scalars go through
+//     the orient/colormap shader, color uploads straight to RGBA8 via
+//     rgba2TextureChunk (the chunked rgba2Texture bypass). float64 (64) throws.
 //   - RAS-aligned (identity permutation) sources use a fast strided row copy.
 //     Non-identity sources are reoriented to RAS order during the per-chunk CPU
 //     extraction, so the orient pass runs with an identity matrix.
@@ -17,12 +18,14 @@ import type { NVImage } from '@/NVTypes'
 import { bytesPerSourceVoxel } from '@/volume/chunkBudget'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from '@/volume/chunking'
 import {
+  chunkRGBA,
   extractChunkBytes,
   extractChunkBytesReoriented,
   isIdentityPermutation,
+  isRGBAChunkDatatype,
 } from '@/volume/orientChunked'
 import * as gradient from './gradient'
-import { orientChunkToTexture } from './orientOverlay'
+import { orientChunkToTexture, rgba2TextureChunk } from './orientOverlay'
 
 export interface VolumeChunkGL {
   /** RGBA8 color texture for this chunk; sized desc.texDims (includes halo). */
@@ -86,11 +89,9 @@ export function createChunkUploaderGL(
     throw new Error('orientChunkedGL: missing image data')
   }
   const dt = nvimage.hdr.datatypeCode
-  if (dt === 128 || dt === 2304) {
-    throw new Error(
-      `orientChunkedGL: RGB/RGBA datatypes (${dt}) are not yet supported for chunked volumes`,
-    )
-  }
+  // RGB/RGBA color sources upload straight to RGBA8 (see chunkRGBA), bypassing
+  // the orient/colormap shader — the chunked analogue of rgba2Texture.
+  const isRGBA = isRGBAChunkDatatype(dt)
   if (dt === 64) {
     throw new Error(
       'orientChunkedGL: float64 (64) is not supported for chunked volumes',
@@ -169,13 +170,9 @@ export function createChunkUploaderGL(
             img2RASstart,
             img2RASstep,
           )
-    const volumeTexture = orientChunkToTexture(
-      gl,
-      chunkBytes,
-      dt,
-      desc.texDims,
-      nvimage,
-    )
+    const volumeTexture = isRGBA
+      ? rgba2TextureChunk(gl, chunkRGBA(chunkBytes, dt), desc.texDims)
+      : orientChunkToTexture(gl, chunkBytes, dt, desc.texDims, nvimage)
     const volumeGradientTexture = gradient.volume2TextureGradientRGBA(
       gl,
       volumeTexture,

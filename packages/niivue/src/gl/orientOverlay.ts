@@ -76,6 +76,44 @@ export function rgba2Texture(
   return tex
 }
 
+/**
+ * Per-chunk analogue of `rgba2Texture`: upload an already-RGBA8 chunk buffer
+ * (see `chunkRGBA`) straight into an `RGBA8` 3D texture sized to the chunk.
+ * Color sources skip the orient/colormap shader entirely, so this is the
+ * chunked replacement for `orientChunkToTexture` on RGB/RGBA volumes.
+ */
+export function rgba2TextureChunk(
+  gl: WebGL2RenderingContext,
+  rgbaData: Uint8Array,
+  texDims: readonly [number, number, number],
+): WebGLTexture {
+  const tex = gl.createTexture()
+  if (!tex) {
+    throw new Error('rgba2TextureChunk: failed to create texture')
+  }
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texImage3D(
+    gl.TEXTURE_3D,
+    0,
+    gl.RGBA8,
+    texDims[0],
+    texDims[1],
+    texDims[2],
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    rgbaData,
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  return tex
+}
+
 // Vertex shader - renders a full-screen quad for each output slice
 const vertShader = `#version 300 es
 precision highp float;

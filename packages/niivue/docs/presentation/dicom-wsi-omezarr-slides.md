@@ -257,10 +257,10 @@ data, no vendor lock-in.
 - Request visible Level-3 chunks → tiny payloads → upload
 
 **Zooming in (drill down)**
-- Screen-space error rises → swap to the finer level whose texels are ~1:1
+- Screen-space error rises → swap to the finer level (~1:1 texels)
 - Request the visible chunks **centre-first, spiralling outward**
-- The middle of the view sharpens first, detail filling toward the edges
-- VRAM tight? LRU evicts the high-res chunks that just panned off-edge
+- The centre sharpens first; detail fills outward
+- VRAM tight? LRU evicts chunks that panned off-edge
 
 <!--
 Presenter: Tie the two halves together with the user's actual experience. The
@@ -358,12 +358,9 @@ NiiVue's axial slice *is* the slide face — **no new render path.**
   (coarsest level, whole)  →  (chunked window)     →   (L0 tiles, ~1:1)
 ```
 
-- `wsi.html`: **OpenSeadragon-style** smooth zoom + pan, minimap, click-to-jump
-- **Auto-LOD** swaps the pyramid window when a texel crosses ~1:1 with the
-  screen — scale-matched, so only the detail sharpens
-- Finer levels stream as a **chunked RGB window**: only on-screen tiles upload,
-  **centre-first**; CPTAC-BRCA base is **2.66 gigapixels** (53783×49534) and
-  never materialised (~6 tiles per view)
+- `wsi.html`: **OSD-style** smooth zoom + pan, minimap, click-to-jump
+- **Auto-LOD** swaps the window at ~1:1 texels — scale-matched, detail-only
+- **Chunked RGB window**, centre-first — 2.66 GP base, never whole
 
 <!--
 Presenter: This is the most relatable demo — a pathology slide you deep-zoom
@@ -430,20 +427,19 @@ is already live, skip this entirely.
 
 ## Where it stands
 
+<style scoped>section { font-size: 0.8em; }</style>
+
 **Done**
 - Tiled rendering past `maxTextureDimension3D`, both backends
-- Chunk streaming + LRU residency with tunable budget (Phase 3a–3d)
-- OME-Zarr (real chunk reads) + DICOM-WSI (real JPEG-tile decode) adapters
-- **DICOM-WSI deep-zoom viewer** (`wsi.html`): OSD-style zoom/pan, auto-LOD, minimap
-- **Chunked RGB** in niivue → the WSI streams as chunked-RGB bricks on both
-  viewers, viewport-bounded by the frustum cull (3D) and slice cull (2D)
-- **2D-slice viewport cull** + **centre-first ordering** → `wsi.html` streams the
-  gigapixel base level directly, sharpening from the centre out (~6 tiles/view)
+- Chunk streaming + LRU residency, tunable budget (Phase 3a–3d)
+- OME-Zarr + DICOM-WSI adapters (real chunk reads / JPEG decode)
+- **WSI deep-zoom viewer** (`wsi.html`): OSD zoom/pan, auto-LOD, minimap
+- **Chunked RGB** streaming — gigapixel base direct, centre-first, 2D+3D cull
 - Seam-free gradients, correctness invariants, unit-tested chunk math
 
 **Next**
 - Server-driven lazy chunk streaming for s0 of multi-GB EM stacks
-- Dedicated chunked-path benchmark; cloud deployment (`CLOUD_DEPLOYMENT_PLAN.md`)
+- Chunked-path benchmark; cloud deployment (`CLOUD_DEPLOYMENT_PLAN.md`)
 
 <!--
 Presenter: Be honest about the boundary. What works today: rendering past the

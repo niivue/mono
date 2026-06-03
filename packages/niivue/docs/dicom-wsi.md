@@ -172,20 +172,19 @@ residency already counts RGBA8 + gradient (8 bytes/voxel). Verified end to end:
 loading the WSI L2 (3361×3095, dt 128) tiles into 4 chunks and uploads without
 the old "RGB not supported" throw.
 
-**Demo wiring (done via the streaming viewer):** `omezarr.html` now also lists
-and streams `dicom-wsi` volumes — the same multiscale + bbox-subvolume pipeline
-serves both, and the WSI rides niivue's RGB chunked upload. The WSI streams as
-256³ chunked-RGB bricks (verified: L2 in `stream` mode reports "streamed 256³
-bricks"), and the 3D render tile's frustum cull bounds streaming to the
-viewport so even the gigapixel base level only pulls visible tiles.
+**Demo wiring (done):** both viewers now stream the WSI as chunked RGB.
 
-**Still windowed:** the dedicated `wsi.html` 2D OSD viewer keeps the
-single-texture windowed path. Streaming it there needs an in-plane viewport
-cull on the 2D chunked slice path — today `chunksCrossingSlice` returns every
-chunk for a depth-1 volume (they all cross the single axial plane), so a 2D
-chunked load would request the whole level. Adding a 2D frustum/viewport cull
-(mirroring the 3D tile's `chunksInFrustum`) is the remaining niivue step to give
-`wsi.html` viewport-bounded full-resolution streaming.
+- `omezarr.html` lists and streams `dicom-wsi` volumes through the same
+  multiscale + bbox pipeline; the 3D render tile's frustum cull bounds streaming
+  to the viewport.
+- `wsi.html` (the 2D OSD viewer) loads the LOD-selected level as a chunked RGB
+  **streaming window** (`createStreamingRGBVolume`): `img` is null and a
+  `chunkSource` fetches tiles via `raw.bin`. The new **2D-slice viewport cull**
+  (`requestVisibleChunksInView`, both backends) intersects the slice-crossing
+  set with the tile's ortho frustum, so only on-screen tiles stream. Verified: a
+  base-level (53783×49534) view fetches ~6 tiles, not the whole level. The
+  window is bounded to niivue's 256-chunk-per-volume cap and reloads only on a
+  pan to its edge or a zoom-level swap.
 
 ### Other nice-to-haves
 

@@ -8,26 +8,39 @@
 // The view is tracked as a viewport over the slide — a centre and a span, both
 // in base-level pixels — which the wheel (centred zoom) and drag (pan) handlers
 // own directly, re-aiming niivue's 2D pan/zoom each frame so motion is smooth
-// and never drifts. A window MARGIN larger than the viewport is loaded so small
-// zooms/pans stay within the texture; a debounced settle pass swaps the pyramid
-// level (and reloads the window) only when the texture would get too blurry /
-// too coarse or the view nears the window edge, picking the level whose pixels
-// are ~1:1 with the screen. Coarse levels that fit one GPU texture load whole;
-// finer levels load only the visible window via the server's bbox subvolume
-// read, so the 2.66-gigapixel base level is never materialised. (niivue's
-// chunked path now accepts RGB, so a future version could instead load the
-// whole base level as a chunked RGB volume and let niivue stream the tiles —
-// see packages/niivue/docs/dicom-wsi.md §6.)
+// and never drifts. The pyramid level whose pixels are ~1:1 with the screen is
+// loaded as a chunked RGB *streaming* volume over a window of that level (`img`
+// is null, a `chunkSource` fetches tiles via the server's bbox subvolume read).
+// niivue tiles it and — thanks to the 2D-slice viewport cull — streams only the
+// on-screen tiles, so even the 2.66-gigapixel base level pans at full
+// resolution within the residency budget, fetching only the visible tiles
+// (verified: a base-level view fetches ~6 tiles, not the whole level). The
+// window is bounded to niivue's 256-chunk cap; we reload it only when the view
+// nears its edge (pan) or a texel gets too blurry/coarse (zoom level swap).
 
-import NiiVue, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
+import NiiVue, {
+  DRAG_MODE,
+  type NVImage,
+  SLICE_TYPE,
+  type VolumeChunkSource,
+} from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
 
 installNav()
 
-// Single-texture cap (common 2048 3D-texture limit) and the smallest visible
-// span we allow (don't zoom past ~48 base px across the viewport).
-const MAX_EDGE = 2048
+// The view loads a chunked RGB streaming volume: niivue tiles it at CHUNK_EDGE
+// and — via the 2D viewport cull — streams only the on-screen tiles. niivue
+// caps a volume at 256 chunks, so we load a *window* of the level (much larger
+// than a single 2048 texture, up to WINDOW_MAX px ⇒ ≤ (WINDOW_MAX/CHUNK_EDGE)²
+// chunks) centred on the viewport, and reload it only when the view nears the
+// window edge or crosses a zoom level. So even the gigapixel base level pans at
+// full resolution within the residency budget, fetching only visible tiles.
+const CHUNK_EDGE = 512
+const WINDOW_MAX = 12 * CHUNK_EDGE // 6144 px ⇒ ≤ 12×12 = 144 chunks
+const MARGIN = 2.2 // window covers this many times the viewport
+const RESIDENCY_BYTES = 1_500_000_000
+// Smallest visible span we allow (don't zoom past ~48 base px across the view).
 const MIN_SPAN = 48
 // How long after the last wheel tick we re-evaluate the level (ms).
 const SETTLE_MS = 160
@@ -69,6 +82,10 @@ const nv = new NiiVue({
   // We drive pan and zoom ourselves (see the wheel/pointer handlers), so keep
   // niivue's own drag/zoom behaviour out of the way.
   primaryDragMode: DRAG_MODE.none,
+  // Force every level to tile at CHUNK_EDGE so niivue streams it; cap how much
+  // tile data stays resident.
+  maxTextureDimension3D: CHUNK_EDGE,
+  maxChunkResidencyBytes: RESIDENCY_BYTES,
 })
 
 let volumes: WsiVolume[] = []
@@ -76,7 +93,7 @@ let current: WsiVolume | null = null
 // The viewport over the slide, in base-level pixels.
 let centerL0: [number, number] = [0, 0]
 let spanL0 = 1 // visible width across the viewport, in base px
-// The window currently uploaded to niivue, in base-level pixels, plus the
+// The level currently streamed to niivue, in base-level pixels, plus the
 // base-px-per-mm scale niivue's pan2Dxyzmm uses (spacing is [1,1,1] for WSI,
 // so this is just the level downsample factor, but we keep it general).
 let loaded = {
@@ -93,10 +110,7 @@ let loaded = {
 let loadToken = 0
 let settleTimer: ReturnType<typeof setTimeout> | null = null
 
-// Load a window this many times larger than the visible viewport, so panning
-// and zooming a little move within the loaded texture without a reload.
-const MARGIN = 1.8
-// Reload to a finer/coarser level when a texel grows past / shrinks below these
+// Swap to a finer/coarser level when a texel grows past / shrinks below these
 // many screen pixels (a wide dead-band so small zooms don't thrash levels).
 const TEXEL_BLUR = 1.7
 const TEXEL_WASTE = 0.38
@@ -137,14 +151,6 @@ function pickLevel(v: WsiVolume, span: number): number {
       chosen = l.level
       chosenF = f
     }
-  }
-  // If the window for this span won't fit one texture, step coarser (bigger
-  // level index = bigger downsample = smaller window) until it does.
-  while (
-    chosen < maxLevel(v) &&
-    (span * MARGIN) / factorOf(v, levelAt(v, chosen)) > MAX_EDGE
-  ) {
-    chosen += 1
   }
   return chosen
 }
@@ -219,9 +225,227 @@ function basePerScreenPx(): number {
   return spanL0 / canvasW()
 }
 
-// Load a window (MARGIN larger than the viewport) at the level whose pixels are
-// ~1:1 with the screen for the current span, then aim niivue's pan/zoom at the
-// viewport so the visible framing is preserved across the swap.
+// Fetch one chunk's RGB bytes from the server's bbox subvolume read. niivue
+// requests chunks by their voxel range within the loaded window (texOrigin +
+// texDims, halo included); add the window origin to get the level bbox. raw.bin
+// returns rgb24 (3 bytes/voxel), which niivue expands to RGBA8.
+function fetchRGBChunk(
+  id: string,
+  level: number,
+  originX: number,
+  originY: number,
+  desc: { texOrigin: readonly number[]; texDims: readonly number[] },
+  bytesPerVoxel: number,
+): Promise<Uint8Array> {
+  const bbox = [
+    originX + desc.texOrigin[0],
+    originY + desc.texOrigin[1],
+    desc.texOrigin[2],
+    originX + desc.texOrigin[0] + desc.texDims[0],
+    originY + desc.texOrigin[1] + desc.texDims[1],
+    desc.texOrigin[2] + desc.texDims[2],
+  ]
+  const url = `/volumes/${encodeURIComponent(id)}/raw.bin?level=${level}&bbox=${bbox.join(',')}`
+  return fetch(url).then(async (res) => {
+    if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`)
+    const buf = new Uint8Array(await res.arrayBuffer())
+    const expected =
+      desc.texDims[0] * desc.texDims[1] * desc.texDims[2] * bytesPerVoxel
+    if (buf.byteLength !== expected) {
+      throw new Error(
+        `chunk ${bbox} got ${buf.byteLength}B, expected ${expected}`,
+      )
+    }
+    return buf
+  })
+}
+
+// Build a logical, fully-streamed RGB volume for a window [x0,y0,winW,winH] of
+// one pyramid level: dims and transforms describe the window, but `img` is null
+// and a `chunkSource` fetches its tiles on demand (offset by the window origin
+// into the level). niivue tiles it (CHUNK_EDGE) and streams only the on-screen
+// tiles. Modelled on the OME-Zarr streaming volume, minus the scalar-only
+// colormap/window state (colour ignores them).
+function createStreamingRGBVolume(
+  v: WsiVolume,
+  lvl: ApiLevel,
+  x0: number,
+  y0: number,
+  winW: number,
+  winH: number,
+): NVImage {
+  const shape: [number, number, number] = [winW, winH, 1]
+  const spacing = lvl.spacing
+  const dims = [3, shape[0], shape[1], shape[2], 1, 1, 1, 1]
+  const pixDims = [1, spacing[0], spacing[1], spacing[2], 1, 1, 1, 1]
+  const affine = [
+    [spacing[0], 0, 0, 0],
+    [0, spacing[1], 0, 0],
+    [0, 0, spacing[2], 0],
+    [0, 0, 0, 1],
+  ]
+  const dimsMM = [
+    shape[0] * spacing[0],
+    shape[1] * spacing[1],
+    shape[2] * spacing[2],
+  ] as [number, number, number]
+  const longest = Math.max(dimsMM[0], dimsMM[1], dimsMM[2])
+  const matRAS = new Float32Array([
+    spacing[0],
+    0,
+    0,
+    0,
+    0,
+    spacing[1],
+    0,
+    0,
+    0,
+    0,
+    spacing[2],
+    0,
+    0,
+    0,
+    0,
+    1,
+  ])
+  const frac2mm = new Float32Array([
+    dimsMM[0],
+    0,
+    0,
+    0,
+    0,
+    dimsMM[1],
+    0,
+    0,
+    0,
+    0,
+    dimsMM[2],
+    0,
+    -0.5 * spacing[0],
+    -0.5 * spacing[1],
+    -0.5 * spacing[2],
+    1,
+  ])
+  const identity = new Float32Array([
+    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+  ])
+  const cache = new Map<number, Promise<Uint8Array>>()
+  const chunkSource: VolumeChunkSource = (request) => {
+    const hit = cache.get(request.chunkIndex)
+    if (hit) return hit
+    const next = fetchRGBChunk(
+      v.id,
+      lvl.level,
+      x0,
+      y0,
+      request.desc,
+      request.bytesPerVoxel,
+    )
+    cache.set(request.chunkIndex, next)
+    return next
+  }
+  const minMM: [number, number, number] = [
+    -0.5 * spacing[0],
+    -0.5 * spacing[1],
+    -0.5 * spacing[2],
+  ]
+  const maxMM: [number, number, number] = [
+    (shape[0] - 0.5) * spacing[0],
+    (shape[1] - 0.5) * spacing[1],
+    (shape[2] - 0.5) * spacing[2],
+  ]
+  return {
+    name: `${v.id} L${lvl.level}`,
+    id: `${v.id} L${lvl.level}`,
+    url: `wsi-stream://${encodeURIComponent(v.id)}/L${lvl.level}`,
+    img: null,
+    hdr: {
+      littleEndian: true,
+      dim_info: 0,
+      dims,
+      pixDims,
+      intent_p1: 0,
+      intent_p2: 0,
+      intent_p3: 0,
+      intent_code: 0,
+      datatypeCode: 128, // DT_RGB24
+      numBitsPerVoxel: 24,
+      slice_start: 0,
+      vox_offset: 352,
+      scl_slope: 1,
+      scl_inter: 0,
+      slice_end: 0,
+      slice_code: 0,
+      xyzt_units: 10,
+      cal_max: 255,
+      cal_min: 0,
+      slice_duration: 0,
+      toffset: 0,
+      description: 'DICOM-WSI streamed level',
+      aux_file: '',
+      qform_code: 0,
+      sform_code: 1,
+      quatern_b: 0,
+      quatern_c: 0,
+      quatern_d: 0,
+      qoffset_x: 0,
+      qoffset_y: 0,
+      qoffset_z: 0,
+      affine,
+      intent_name: '',
+      magic: 'n+1',
+    },
+    originalAffine: affine.map((row) => [...row]),
+    dims: dims.slice(0, 4),
+    nVox3D: shape[0] * shape[1] * shape[2],
+    extentsMin: minMM,
+    extentsMax: maxMM,
+    calMin: 0,
+    calMax: 255,
+    robustMin: 0,
+    robustMax: 255,
+    globalMin: 0,
+    globalMax: 255,
+    pixDimsRAS: pixDims.slice(0, 4),
+    dimsRAS: dims.slice(0, 4),
+    permRAS: [1, 2, 3],
+    matRAS,
+    obliqueRAS: identity,
+    frac2mm,
+    frac2mmOrtho: frac2mm,
+    extentsMinOrtho: minMM,
+    extentsMaxOrtho: maxMM,
+    mm2ortho: identity,
+    img2RASstep: [1, shape[0], shape[0] * shape[1]],
+    img2RASstart: [0, 0, 0],
+    toRAS: identity,
+    toRASvox: identity,
+    mm000: minMM,
+    mm100: [maxMM[0], minMM[1], minMM[2]],
+    mm010: [minMM[0], maxMM[1], minMM[2]],
+    mm001: [minMM[0], minMM[1], maxMM[2]],
+    oblique_angle: 0,
+    maxShearDeg: 0,
+    volScale: [dimsMM[0] / longest, dimsMM[1] / longest, dimsMM[2] / longest],
+    frame4D: 0,
+    nFrame4D: 1,
+    nTotalFrame4D: 1,
+    colormap: 'gray',
+    isTransparentBelowCalMin: false,
+    opacity: 1,
+    modulateAlpha: 0,
+    isColorbarVisible: false,
+    isLegendVisible: false,
+    colormapLabel: null,
+    chunkSource,
+  } as unknown as NVImage
+}
+
+// Load a chunked-RGB streaming window of the level whose pixels are ~1:1 with
+// the screen — a window large enough to give panning room but bounded to niivue's
+// 256-chunk cap — then aim niivue's pan/zoom at the viewport. niivue streams
+// only the on-screen tiles; we reload only when the view nears the window edge
+// (pan) or crosses a zoom level.
 async function loadViewport(): Promise<void> {
   if (!current) return
   const v = current
@@ -235,28 +459,32 @@ async function loadViewport(): Promise<void> {
   const f = factorOf(v, lvl)
   const aspect = canvasAspect()
 
-  let winW = Math.min(Math.ceil((spanL0 * MARGIN) / f), lvl.shape[0], MAX_EDGE)
-  let winH = Math.min(
+  // Window (in this level's px), bounded to WINDOW_MAX so chunk count stays
+  // under niivue's cap, centred on the viewport.
+  const winW = Math.min(
+    Math.ceil((spanL0 * MARGIN) / f),
+    lvl.shape[0],
+    WINDOW_MAX,
+  )
+  const winH = Math.min(
     Math.ceil((spanL0 * aspect * MARGIN) / f),
     lvl.shape[1],
-    MAX_EDGE,
+    WINDOW_MAX,
   )
-  const whole = winW >= lvl.shape[0] && winH >= lvl.shape[1]
-  let url = `/volumes/${encodeURIComponent(v.id)}/raw.nii.gz?level=${lvl.level}`
-  let x0 = 0
-  let y0 = 0
-  if (whole) {
-    winW = lvl.shape[0]
-    winH = lvl.shape[1]
-  } else {
-    x0 = clamp(Math.round(centerL0[0] / f - winW / 2), 0, lvl.shape[0] - winW)
-    y0 = clamp(Math.round(centerL0[1] / f - winH / 2), 0, lvl.shape[1] - winH)
-    url += `&bbox=${x0},${y0},0,${x0 + winW},${y0 + winH},1`
-  }
+  const x0 = clamp(
+    Math.round(centerL0[0] / f - winW / 2),
+    0,
+    lvl.shape[0] - winW,
+  )
+  const y0 = clamp(
+    Math.round(centerL0[1] / f - winH / 2),
+    0,
+    lvl.shape[1] - winH,
+  )
 
   const token = ++loadToken
   try {
-    await nv.loadVolumes([{ url }])
+    await nv.loadVolumes([createStreamingRGBVolume(v, lvl, x0, y0, winW, winH)])
   } catch (err) {
     showFallback(
       `niivue failed to load: ${err instanceof Error ? err.message : err}`,
@@ -282,10 +510,10 @@ async function loadViewport(): Promise<void> {
   syncUi()
 }
 
-// After interaction settles, fold niivue's live pan/zoom into the viewport and
-// reload only when the texture is too blurry / too wasteful, or the view has
-// drifted near the loaded window's edge. Otherwise niivue keeps showing the
-// pan/zoom smoothly and we just refresh the readouts.
+// After interaction settles, reload the streaming window when a texel would get
+// too blurry / too coarse (swap level) or the viewport nears the window edge
+// (pan). Within the window niivue streams the on-screen tiles, so small
+// pans/zooms don't reload.
 function onSettle(): void {
   if (!current) return
   const v = current
@@ -293,18 +521,18 @@ function onSettle(): void {
   const wantLevel = pickLevel(v, spanL0)
   const halfW = spanL0 / 2
   const halfH = (spanL0 * canvasAspect()) / 2
-  const edge = spanL0 * 0.08
+  const edge = spanL0 * 0.1
   const outOfWindow =
     centerL0[0] - halfW < loaded.baseX + edge ||
     centerL0[0] + halfW > loaded.baseX + loaded.baseW - edge ||
     centerL0[1] - halfH < loaded.baseY + edge ||
     centerL0[1] + halfH > loaded.baseY + loaded.baseH - edge
-
   const blurry = texelPx > TEXEL_BLUR && wantLevel < loaded.level
   const wasteful = texelPx < TEXEL_WASTE && wantLevel > loaded.level
   if (blurry || wasteful || outOfWindow) {
     void loadViewport()
   } else {
+    nv.drawScene()
     syncUi()
   }
 }
@@ -404,14 +632,16 @@ els.volume.addEventListener('change', () => {
   const v = volumes.find((x) => x.id === els.volume.value)
   if (v) selectVolume(v)
 })
-// Level dropdown jumps the zoom so a window of that level fills the view:
-// coarse levels => wide span (overview), fine levels => narrow span (zoomed).
+// Level dropdown jumps the zoom to ~1:1 with the chosen level (coarse => wide
+// span / zoomed out, fine => narrow span / zoomed in).
 els.level.addEventListener('change', () => {
   if (!current) return
   const lvl = levelAt(current, Number(els.level.value))
-  // Span that lands on this level: a window of it (plus margin) must fit one
-  // texture, so cap the span so pickLevel actually chooses this level.
-  spanL0 = Math.min(MAX_EDGE / MARGIN, lvl.shape[0]) * factorOf(current, lvl)
+  spanL0 = clamp(
+    factorOf(current, lvl) * canvasW(),
+    MIN_SPAN,
+    baseLevel(current).shape[0],
+  )
   void loadViewport()
 })
 // Zoom slider: log-scaled span from whole slide to MIN_SPAN.

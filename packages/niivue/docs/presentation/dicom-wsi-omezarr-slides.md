@@ -438,8 +438,10 @@ is already live, skip this entirely.
   streaming viewer (`omezarr.html`), viewport-bounded by the frustum cull
 - Seam-free gradients, correctness invariants, unit-tested chunk math
 
+- **2D-slice viewport cull** → `wsi.html` streams the gigapixel base level
+  directly (a base-level view fetches ~6 tiles, not the whole level)
+
 **Next**
-- 2D-slice viewport cull → chunked RGB streaming inside the `wsi.html` 2D viewer
 - Server-driven lazy chunk streaming for s0 of multi-GB EM stacks
 - Dedicated chunked-path benchmark; cloud deployment (`CLOUD_DEPLOYMENT_PLAN.md`)
 

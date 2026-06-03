@@ -160,16 +160,24 @@ viewer built on the single-texture RGB path (no niivue changes):
   `scaleY(-1)` to match, the minimap click inverts Y, and the drag-pan adds
   `+dy` on Y (it subtracts `dx` on X, which is not flipped).
 
-### Remaining follow-up — chunked RGB streaming
+### Chunked RGB streaming — niivue support landed
 
-The viewer stays on the single-texture path because niivue's **chunked** orient
-path rejects RGB/RGBA (`gl/orientChunked.ts` and `wgpu/orientChunked.ts` throw
-for dt 128/2304). Supporting it would let the whole base level stream as tiled
-chunks (smooth pan across full resolution, and the exploded view) instead of
-the windowed load. The work: per-chunk RGB→RGBA8 extraction + upload (mirroring
-the single-texture `rgba2Texture` bypass) on both backends, plus the gradient
-pass (or skip it for the 2D slice path). Until then, windowed deep-zoom is the
-intended WSI UX and needs no chunked support.
+niivue's **chunked** orient path now accepts RGB/RGBA color. Color sources skip
+the orient/colormap shader and upload their chunk bytes straight into an RGBA8
+texture via the per-chunk `chunkRGBA` + `rgba2TextureChunk` (WebGL2) /
+`writeTexture` (WebGPU) bypass — the chunked analogue of the single-texture
+`rgba2Texture`. The shared `chunkRGBA` helper (RGB24→RGBA8 expand, RGBA32
+pass-through) lives in `volume/orientChunked.ts` and is unit-tested; per-chunk
+residency already counts RGBA8 + gradient (8 bytes/voxel). Verified end to end:
+loading the WSI L2 (3361×3095, dt 128) tiles into 4 chunks and uploads without
+the old "RGB not supported" throw.
+
+**Remaining (demo wiring):** `wsi.html` still uses the single-texture windowed
+path. Switching it to load the whole base level as a chunked RGB volume (a
+`chunkSource` that fetches tiles via bbox, like the OME-Zarr streaming volume)
+would give smooth pan across full resolution with niivue's own
+visibility-driven streaming, retiring the manual window-swap. The capability is
+there; the viewer just needs to use it.
 
 ### Other nice-to-haves
 
@@ -227,15 +235,16 @@ the viewer sets `primaryDragMode: none` (which disables that branch) and drives
 a **centred** wheel zoom and a drag pan itself, writing `pan2Dxyzmm` directly.
 This is the single most important niivue-facing detail of the WSI work.
 
-### The one niivue limitation that bounds the design
+### What the demo orchestrates (and what niivue now supports)
 
-niivue renders **one texture per volume**; there is no native tiling of a single
-volume, and the chunked path **rejects RGB** (`gl/orientChunked.ts` /
-`wgpu/orientChunked.ts` throw for datatype 128/2304). So the deep-zoom across
-the gigapixel slide is orchestrated by the demo (swap which window niivue
-shows), not by niivue. Adding RGB to the chunked orient path is the change that
-would let niivue stream the whole base level itself — see §6 "Remaining
-follow-up".
+niivue renders **one texture per volume** for the single-texture path the WSI
+viewer currently uses, so the deep-zoom is orchestrated by the demo (swap which
+window niivue shows). niivue **does** tile a single oversized volume into chunks
+— and the chunked orient path now accepts **RGB/RGBA** color
+(`gl/orientChunked.ts` / `wgpu/orientChunked.ts` upload color straight to RGBA8
+via `chunkRGBA`). So the capability to stream the whole base level as tiles
+exists; wiring `wsi.html` to use it (a chunked RGB volume with a tile-fetching
+`chunkSource`) is the remaining demo step — see §6.
 
 ---
 

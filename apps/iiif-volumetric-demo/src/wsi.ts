@@ -14,9 +14,10 @@
 // too coarse or the view nears the window edge, picking the level whose pixels
 // are ~1:1 with the screen. Coarse levels that fit one GPU texture load whole;
 // finer levels load only the visible window via the server's bbox subvolume
-// read, so the 2.66-gigapixel base level is never materialised. (Streaming the
-// whole base level as tiled chunks needs RGB support in niivue's chunked path —
-// a tracked follow-up.)
+// read, so the 2.66-gigapixel base level is never materialised. (niivue's
+// chunked path now accepts RGB, so a future version could instead load the
+// whole base level as a chunked RGB volume and let niivue stream the tiles —
+// see packages/niivue/docs/dicom-wsi.md §6.)
 
 import NiiVue, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'

@@ -229,18 +229,23 @@ abstraction across four formats — the adapters hide the format differences.
 
 ### DICOM-WSI (whole-slide imaging)
 
-- Series adapter reads pyramid/tile-group `.dcm` instances
-- Fixtures pulled from the public **NCI Imaging Data Commons** (IDC)
-- e.g. CPTAC-BRCA, TCGA whole-slide pathology series
+- One instance per pyramid level; **TILED_FULL** JPEG tiles decoded on demand
+  (`dicom-parser` + `jpeg-js`) — a bbox read decodes only the covering tiles
+- Surfaced as a **depth-1 RGB volume** per level → renders on niivue unchanged
+- Fixtures pulled from the public **NCI Imaging Data Commons** (IDC):
+  CPTAC-BRCA, TCGA, … whole-slide pathology
 
 <!--
 Presenter: These are the two new sources this branch adds. OME-Zarr (a.k.a.
 NGFF) is the emerging open standard for bioimaging — we read real compressed
 chunks with zarrita, both Zarr v2 and v3. Nice detail: the axis order lines up
 with ours so there's no transpose, it's a pure relabel. DICOM-WSI is digital
-pathology — gigapixel slides stored as a tiled pyramid of DICOM instances. We
-pull real anonymised series from NCI's public Imaging Data Commons, so anyone
-can reproduce. Mention these are open standards + open data — no vendor lock-in.
+pathology — gigapixel slides stored as a tiled JPEG pyramid of DICOM instances.
+Two facts to land: (1) we decode the JPEG tiles on demand, only the ones a
+view covers; (2) a slide is just a volume that's one voxel deep and RGB, so it
+reuses the viewer with no new render path — next slide. We pull real anonymised
+series from NCI's public IDC, so anyone can reproduce — open standards + open
+data, no vendor lock-in.
 -->
 
 ---
@@ -343,23 +348,55 @@ into a documented invariant with a unit test so it can't silently regress.
 
 ---
 
+## DICOM-WSI — whole slides, no new render path
+
+A slide is a 2D image, so each level is a **depth-1 RGB volume** `[W,H,1]`.
+NiiVue's axial slice *is* the slide face — **reused unchanged, zero niivue edits.**
+
+```
+  whole-slide overview        zoom toward cursor       cellular detail
+  (coarsest level, whole)  →  (window via bbox)    →   (L0 tiles, ~1:1)
+```
+
+- `wsi.html`: **OpenSeadragon-style** smooth zoom + pan, minimap, click-to-jump
+- **Auto-LOD** swaps the pyramid window when a texel crosses ~1:1 with the
+  screen — scale-matched, so only the detail sharpens
+- Same **bbox subvolume** API as OME-Zarr; CPTAC-BRCA base is **2.66 gigapixels**
+  (53783×49534) and never materialised
+
+<!--
+Presenter: This is the most relatable demo — a pathology slide you deep-zoom
+like Google Maps, in a plain browser, no plugin. The clever, honest bit: it
+needed NO new niivue rendering code. A whole slide is just a volume that's one
+voxel deep and RGB, so it drops straight into the 2D slice path. The deep-zoom
+(overview -> window -> cells) reuses the exact same bounding-box subvolume API
+OME-Zarr uses. All the OpenSeadragon-style smoothness — cursor-anchored zoom,
+drag pan, the auto-LOD window swap, the minimap — is demo code driving niivue's
+2D pan/zoom. If the demo is live, THIS is the one to show: open wsi.html, scroll
+into the tissue until individual nuclei resolve, drag around, click the minimap.
+-->
+
+---
+
 ## Live demos
 
 `apps/iiif-volumetric-demo` — every page has a `?backend=webgl2|webgpu` toggle:
 
+- **`wsi.html`** — DICOM whole-slide deep zoom: OSD-style smooth zoom/pan,
+  minimap, auto-LOD *(headline — pathology slide)*
 - **`omezarr.html`** — OME-Zarr pyramid viewer: level selection, subvolume
-  streaming, exploded-block layout, backend switch *(headline demo)*
+  streaming, exploded-block layout *(headline — 3D streaming)*
 - `index.html` — 3-pane IIIF slices + 3D render from a Presentation 4.0 manifest
-- `volume-fly-space.html` — WASD-fly through many volumes in one shared 3D scene
 - `osd-volume-desktop.html` — deep-zoom 2D desktop with a matched-LOD 3D pane
 - `sheet.html` — 3×3 grid of independent volumes on one zoomable canvas
 
 <!--
-Presenter: Lead with omezarr.html — that's the headline. Show the level selector
-and the backend toggle live so people see WebGPU and WebGL2 give the same image.
-The other pages are proof of range: fly-space shows many volumes in one scene,
-osd-desktop shows the 2D-deep-zoom + matched 3D pairing pathologists expect,
-sheet shows independent instances. Don't demo all five — pick omezarr plus one.
+Presenter: Two headliners now. wsi.html is the crowd-pleaser — a gigapixel
+pathology slide you deep-zoom smoothly; lead with it for a clinical/biology
+audience. omezarr.html is the 3D-streaming headliner — show the level selector
+and the backend toggle so people see WebGPU and WebGL2 give the same image; lead
+with it for a graphics/infra audience. The rest are proof of range. Don't demo
+all of them — pick the headliner that fits the room, plus one more.
 -->
 
 ---
@@ -378,7 +415,7 @@ bunx nx dev iiif-volumetric-server                 # :8080
 bunx nx dev iiif-volumetric-demo                   # :8087
 ```
 
-Open `http://127.0.0.1:8087/omezarr.html`
+Open `http://localhost:8087/wsi.html` · `…/omezarr.html`
 
 <!--
 Presenter: Backup slide — only show if someone asks "how do I run it" or the
@@ -395,21 +432,24 @@ is already live, skip this entirely.
 **Done**
 - Tiled rendering past `maxTextureDimension3D`, both backends
 - Chunk streaming + LRU residency with tunable budget (Phase 3a–3d)
-- OME-Zarr (real chunk reads) + DICOM-WSI adapters
+- OME-Zarr (real chunk reads) + DICOM-WSI (real JPEG-tile decode) adapters
+- **DICOM-WSI deep-zoom viewer** (`wsi.html`): OSD-style zoom/pan, auto-LOD, minimap
 - Seam-free gradients, correctness invariants, unit-tested chunk math
 
 **Next**
+- Chunked **RGB** support → stream the whole WSI base level (not just windows)
 - Server-driven lazy chunk streaming for s0 of multi-GB EM stacks
-- Dedicated chunked-path benchmark scenario
-- Cloud deployment (`CLOUD_DEPLOYMENT_PLAN.md`)
+- Dedicated chunked-path benchmark; cloud deployment (`CLOUD_DEPLOYMENT_PLAN.md`)
 
 <!--
 Presenter: Be honest about the boundary. What works today: rendering past the
-texture limit on both backends, streaming + LRU residency, both new formats,
-correct seam-free output. The big remaining piece is fully server-driven lazy
-streaming for the largest level (s0) of multi-GB EM stacks — today the adapter
-reads a whole level into RAM, fine for coarse tiers, not for s0. That plus a
-chunked-path benchmark and cloud hosting are the roadmap. Invite collaboration.
+texture limit on both backends, streaming + LRU residency, both new formats with
+real decode, and a polished pathology deep-zoom viewer. Two remaining pieces: (1)
+the WSI viewer streams windows (single-texture RGB) because niivue's chunked path
+doesn't take RGB yet — adding that lets the whole base level stream/tile; (2)
+fully server-driven lazy streaming for s0 of multi-GB EM stacks (today the
+adapter reads a whole level into RAM, fine for coarse tiers, not s0). Plus a
+chunked-path benchmark and cloud hosting. Invite collaboration.
 -->
 
 ---
@@ -428,11 +468,13 @@ Questions?
 <!--
 Presenter: Land the four takeaways, then stop talking. If you only get one
 sentence in someone's memory, make it the title line. Anticipated Q&A:
-- "How big has it actually rendered?" — bounded by server + budget, not voxel
-  count; the texture-limit wall is gone on both backends.
+- "How big has it actually rendered?" — a 2.66-gigapixel pathology slide deep-zooms
+  smoothly today; for 3D, bounded by server + budget, not voxel count.
+- "Did the whole-slide viewer need new niivue rendering?" — no; a slide is a
+  depth-1 RGB volume, so it reuses the 2D slice path. The OSD navigation is demo code.
 - "Why not just WebGPU?" — reach; WebGL2 covers Safari/older browsers today.
-- "Is OME-Zarr/DICOM streaming production-ready?" — adapters are proof-of-concept;
-  coarse tiers stream now, s0 lazy streaming is the next milestone.
+- "Production-ready?" — adapters + viewer work end to end; coarse/window tiers
+  stream now, chunked-RGB and s0 lazy streaming are the next milestones.
 - "Does it need a GPU workstation?" — no, runs on laptop integrated GPUs.
 -->
 

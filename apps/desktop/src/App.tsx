@@ -1597,6 +1597,7 @@ function StablePreviewImage({
         draggable={draggable}
         loading="eager"
         decoding="async"
+        fetchPriority="low"
       />
       {pendingSrc ? (
         <img
@@ -1606,6 +1607,7 @@ function StablePreviewImage({
           draggable={draggable}
           loading="eager"
           decoding="async"
+          fetchPriority="low"
           onLoad={commitPendingSrc}
           onError={() => setPendingSrc(null)}
         />

@@ -148,6 +148,27 @@ export function NiivueStage({
   const [status, setStatus] = useState('Waiting for a dataset selection.')
   const [snapId, setSnapId] = useState<RenderSnapId | null>(null)
 
+  // Kick off the coarse-volume fetch the instant a volume is selected — in
+  // parallel with NiiVue init and ahead of the 2D preview tiles — so the bytes
+  // are already in flight (and HTTP-cached) by the time loadVolumes runs.
+  useEffect(() => {
+    if (!item) return
+    const coarse = renderVolumeLevels(item)[0]
+    if (!coarse) return
+
+    const controller = new AbortController()
+    const init: RequestInit & { priority?: 'high' | 'low' | 'auto' } = {
+      signal: controller.signal,
+      cache: 'force-cache',
+      priority: 'high'
+    }
+    void fetch(coarse.url, init).catch(() => {
+      // Best-effort prefetch; loadVolumes still fetches and reports real errors.
+    })
+
+    return () => controller.abort()
+  }, [item])
+
   useEffect(() => {
     let cancelled = false
     let localNv: NiiVueLike | null = null

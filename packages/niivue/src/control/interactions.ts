@@ -1,3 +1,4 @@
+import type { mat4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
 import * as DragModes from '@/control/dragModes'
 import { computeBoundsPixelRect } from '@/control/viewBoth'
@@ -6,6 +7,7 @@ import {
   drawLine,
   drawPenFilled,
   drawPoint,
+  drawSphere,
   isSamePoint,
 } from '@/drawing/penTool'
 import { computeSlicePointerEvent } from '@/extension/context'
@@ -25,6 +27,7 @@ import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
 import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
+import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 
 function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -215,6 +218,89 @@ function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
   }
 }
 
+// Paint the exploded block under the cursor on the 3D render tile. Builds the
+// render tile's MVP exactly as depthPick does, unprojects the click to a world
+// ray (in vox2mm mm-space), CPU-ray-casts the exploded chunk AABBs to find the
+// block + voxel, then paints a 3D ball there. Refreshes via the incremental
+// drawing flush so only the touched chunk re-uploads.
+function draw3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): void {
+  const hit = ctrl.activeTileHit
+  const plan = vol.chunkPlan
+  if (!hit || !plan) return
+  const tile = ctrl.view?.screenSlices[hit.tileIndex]
+  const ltwh = tile?.leftTopWidthHeight
+  if (!ltwh) return
+  const md = ctrl.model
+  const mvp = NVTransforms.calculateMvpMatrix(
+    ltwh,
+    md.scene.azimuth,
+    md.scene.elevation,
+    md.pivot3D,
+    md.furthestFromPivot,
+    md.scene.scaleMultiplier,
+    vol.obliqueRAS as mat4 | undefined,
+    md.scene.renderPan,
+  )[0] as mat4
+  const near = NVTransforms.unprojectScreen(
+    hit.normalizedX,
+    hit.normalizedY,
+    0,
+    mvp,
+  )
+  const far = NVTransforms.unprojectScreen(
+    hit.normalizedX,
+    hit.normalizedY,
+    1,
+    mvp,
+  )
+  let dx = far[0] - near[0]
+  let dy = far[1] - near[1]
+  let dz = far[2] - near[2]
+  const len = Math.hypot(dx, dy, dz) || 1
+  dx /= len
+  dy /= len
+  dz /= len
+  const picked = pickExplodedVoxel(
+    plan,
+    vol.matRAS as Float32Array,
+    vol.chunkExplode,
+    [near[0], near[1], near[2]],
+    [dx, dy, dz],
+  )
+  if (!picked || !ctrl.model.drawingVolume) return
+  const drawingVol = ctrl.model.drawingVolume as NVImage
+  // Undo snapshot before the stroke (matches the 2D draw path).
+  const undoResult = addUndoBitmap({
+    drawBitmap: getDrawingBitmap(drawingVol),
+    drawUndoBitmaps: ctrl.drawUndoBitmaps,
+    currentDrawUndoBitmap: ctrl.currentDrawUndoBitmap,
+    maxDrawUndoBitmaps: ctrl.maxDrawUndoBitmaps,
+    drawFillOverwrites: ctrl.model.draw.isFillOverwriting,
+  })
+  ctrl.drawUndoBitmaps = undoResult.drawUndoBitmaps
+  ctrl.currentDrawUndoBitmap = undoResult.currentDrawUndoBitmap
+  if (undoResult.drawBitmap) drawingVol.img = undoResult.drawBitmap
+  const radius = Math.max(0, Math.floor(ctrl.model.draw.penSize / 2))
+  drawSphere({
+    x: picked.voxel[0],
+    y: picked.voxel[1],
+    z: picked.voxel[2],
+    radius,
+    penValue: ctrl.model.draw.penValue,
+    drawBitmap: getDrawingBitmap(drawingVol),
+    dims: vol.dimsRAS as number[],
+    penOverwrites: ctrl.model.draw.isFillOverwriting,
+  })
+  ctrl.markDrawDirty(
+    picked.voxel[0],
+    picked.voxel[1],
+    picked.voxel[2],
+    ctrl.model.draw.penSize,
+  )
+  ctrl.refreshDrawing()
+  ctrl.emit('drawingChanged', { action: 'stroke' })
+}
+
 export function initInteraction(ctrl: NiiVueGPU): void {
   // Prevent browser default touch gestures so pointer events fire instead
   if (ctrl.canvas) ctrl.canvas.style.touchAction = 'none'
@@ -259,6 +345,26 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (graphHit) return
 
     ctrl.activeTileHit = ctrl.view?.hitTest(px, py) ?? null
+    // 3D drawing on exploded blocks: a left-click on the render tile paints the
+    // block the pick ray hits. Depth-pick can't see the explode (it ray-marches
+    // the un-exploded single texture), so we CPU-ray-cast the exploded chunk
+    // AABBs. Only intercept when the active volume is actually exploded, so a
+    // normal render-tile drag still rotates the camera.
+    {
+      const drawVol = ctrl.model.getVolumes()[0]
+      if (
+        ctrl.model.draw.isEnabled &&
+        ctrl.model.drawingVolume &&
+        ctrl.activeTileHit?.isRender &&
+        evt.button === 0 &&
+        drawVol?.matRAS &&
+        drawVol.chunkPlan &&
+        chunkExplodeEnabled(drawVol.chunkExplode)
+      ) {
+        draw3DOnExplodedBlock(ctrl, drawVol)
+        return
+      }
+    }
     // Drawing intercept: if drawing enabled and click is on a 2D slice
     if (
       ctrl.model.draw.isEnabled &&

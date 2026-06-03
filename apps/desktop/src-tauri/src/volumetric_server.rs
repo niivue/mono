@@ -742,11 +742,167 @@ async fn write_patch(
         .lock()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     *patch = Some(payload.clone());
+    // Best-effort persistence under NeuroFlow: never fail the HTTP response.
+    let persisted_path = persist_correction_patch(&payload);
     Ok(Json(json!({
         "ok": true,
-        "path": "session://neurovue/correction.patch.json",
+        "path": persisted_path.unwrap_or_else(|| "session://neurovue/correction.patch.json".to_string()),
         "patch": payload
     })))
+}
+
+/// Resolved NeuroFlow launch context, present only when running under a session.
+struct NeuroflowContext {
+    session_dir: PathBuf,
+    output_dir: PathBuf,
+    step: String,
+    tool: String,
+    context: Value,
+}
+
+/// Read the NeuroFlow session context from the environment, if any.
+///
+/// Returns `None` when `NEUROFLOW_SESSION` is unset, preserving the legacy
+/// in-memory-only behavior.
+fn neuroflow_context() -> Option<NeuroflowContext> {
+    let session_dir = PathBuf::from(std::env::var_os("NEUROFLOW_SESSION")?);
+    let context = fs::read(session_dir.join("context.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .unwrap_or_else(|| json!({}));
+
+    let step = std::env::var("NEUROFLOW_STEP").ok().or_else(|| {
+        context
+            .get("step")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    });
+    let step = step.unwrap_or_else(|| "explore".to_string());
+
+    let output_dir = std::env::var_os("NEUROFLOW_OUTPUT_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            context
+                .get("outputDir")
+                .and_then(Value::as_str)
+                .map(PathBuf::from)
+        })
+        .unwrap_or_else(|| session_dir.join("outputs").join(&step));
+
+    let tool = context
+        .get("tool")
+        .and_then(Value::as_str)
+        .unwrap_or("neuroflow.gallery.tools/neurovue")
+        .to_string();
+
+    Some(NeuroflowContext {
+        session_dir,
+        output_dir,
+        step,
+        tool,
+        context,
+    })
+}
+
+/// Dataset roots declared by the NeuroFlow launch context (`inputs.bids_dir`
+/// and the parent directories of `inputs.volumes`).
+fn neuroflow_dataset_roots() -> Vec<PathBuf> {
+    let Some(ctx) = neuroflow_context() else {
+        return Vec::new();
+    };
+    let inputs = ctx.context.get("inputs");
+    let mut roots = Vec::new();
+
+    if let Some(bids_dir) = inputs
+        .and_then(|inputs| inputs.get("bids_dir"))
+        .and_then(Value::as_str)
+    {
+        roots.push(PathBuf::from(bids_dir));
+    }
+
+    if let Some(volumes) = inputs
+        .and_then(|inputs| inputs.get("volumes"))
+        .and_then(Value::as_array)
+    {
+        for volume in volumes.iter().filter_map(Value::as_str) {
+            let path = PathBuf::from(volume);
+            if let Some(parent) = path.parent() {
+                let parent = parent.to_path_buf();
+                if !roots.contains(&parent) {
+                    roots.push(parent);
+                }
+            }
+        }
+    }
+
+    roots
+}
+
+/// Persist a saved correction patch to disk and append a provenance line when
+/// running under NeuroFlow. Returns the disk path written, if any. All failures
+/// are swallowed so HTTP saves never break.
+fn persist_correction_patch(payload: &Value) -> Option<String> {
+    let ctx = neuroflow_context()?;
+
+    let patch_path = ctx.output_dir.join("correction.patch.json");
+    if let Some(parent) = patch_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let written = serde_json::to_vec_pretty(payload)
+        .ok()
+        .and_then(|bytes| fs::write(&patch_path, bytes).ok())
+        .is_some();
+
+    let provenance = json!({
+        "ts": iso8601_utc_now(),
+        "step": ctx.step,
+        "tool": ctx.tool,
+        "action": "correction.save",
+        "outputs": { "correction.patch.json": "correction.patch.json" },
+        "agent": "neurovue@neuroflow-aware"
+    });
+    if let Ok(mut line) = serde_json::to_vec(&provenance) {
+        line.push(b'\n');
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(ctx.session_dir.join("provenance.jsonl"))
+        {
+            let _ = std::io::Write::write_all(&mut file, &line);
+        }
+    }
+
+    written.then(|| patch_path.display().to_string())
+}
+
+/// Format the current time as an ISO-8601 UTC timestamp (e.g.
+/// `2026-06-02T18:30:00Z`) without pulling in a date/time dependency.
+fn iso8601_utc_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    // Days since the Unix epoch and seconds within the day.
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let (hour, minute, second) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+
+    // Civil-from-days algorithm (Howard Hinnant), valid for all Gregorian dates.
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as i64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { y + 1 } else { y };
+
+    format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z"
+    )
 }
 
 const DEFAULT_MAX_VOLUMES: usize = 512;
@@ -940,6 +1096,11 @@ fn discovery_roots() -> Vec<PathBuf> {
             roots.extend(std::env::split_paths(&value));
         }
     }
+
+    // When launched under NeuroFlow, auto-discover the dataset named in the
+    // session context (composes with the NEUROVUE_* env vars above, takes
+    // priority over the hardcoded development fallbacks below).
+    roots.extend(neuroflow_dataset_roots());
 
     roots.extend([
         home.join("Dev/NiivueRL/data/ds000030_t1w"),

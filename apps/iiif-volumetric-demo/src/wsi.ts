@@ -109,6 +109,8 @@ let loaded = {
 }
 let loadToken = 0
 let settleTimer: ReturnType<typeof setTimeout> | null = null
+// Set while a drag-pan is in progress; suppresses window reloads mid-drag.
+let dragLast: { x: number; y: number } | null = null
 
 // Swap to a finer/coarser level when a texel grows past / shrinks below these
 // many screen pixels (a wide dead-band so small zooms don't thrash levels).
@@ -354,10 +356,15 @@ function createStreamingRGBVolume(
     (shape[1] - 0.5) * spacing[1],
     (shape[2] - 0.5) * spacing[2],
   ]
+  // The url/name is niivue's per-volume chunk-cache key, so it must encode the
+  // window — otherwise panning to a new window of the same level collides with
+  // the old entry and niivue reuses the old window's chunks (the view "snaps
+  // back" to where the pan started).
+  const key = `${v.id} L${lvl.level} ${x0},${y0},${winW},${winH}`
   return {
-    name: `${v.id} L${lvl.level}`,
-    id: `${v.id} L${lvl.level}`,
-    url: `wsi-stream://${encodeURIComponent(v.id)}/L${lvl.level}`,
+    name: key,
+    id: key,
+    url: `wsi-stream://${encodeURIComponent(v.id)}/L${lvl.level}/${x0},${y0},${winW},${winH}`,
     img: null,
     hdr: {
       littleEndian: true,
@@ -516,6 +523,10 @@ async function loadViewport(): Promise<void> {
 // pans/zooms don't reload.
 function onSettle(): void {
   if (!current) return
+  // Don't reload mid-drag: loadVolumes swaps the volume and momentarily resets
+  // niivue's pan, which reads as the view snapping back. Pan/stream within the
+  // loaded window during the drag; the pointerup settle reloads if needed.
+  if (dragLast) return
   const v = current
   const texelPx = (loaded.factor * canvasW()) / spanL0
   const wantLevel = pickLevel(v, spanL0)
@@ -604,7 +615,6 @@ els.canvas.addEventListener(
 // Drag = pan. We move the viewport centre by the drag delta (converted from
 // screen px to base px) and re-aim niivue — smooth within the loaded window;
 // the settle pass reloads when the view nears the window edge.
-let dragLast: { x: number; y: number } | null = null
 els.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
   dragLast = { x: e.clientX, y: e.clientY }
   els.canvas.setPointerCapture(e.pointerId)

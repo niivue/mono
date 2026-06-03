@@ -17,6 +17,7 @@ import { ChunkResidencyManager } from '@/volume/ChunkResidency'
 import {
   chunksBackToFront,
   chunksInFrustum,
+  chunksNotClippedOut,
   orderByViewCenter,
 } from '@/volume/ChunkVisibility'
 import {
@@ -743,6 +744,8 @@ export class VolumeRenderer extends NVRenderer {
   requestChunksInFrustum(
     mvp: Float32Array | number[],
     matRAS: Float32Array | number[],
+    clipPlanes: number[],
+    isCutaway: boolean,
   ): void {
     const entry = this._activeChunked
     if (!entry) return
@@ -769,10 +772,19 @@ export class VolumeRenderer extends NVRenderer {
       matRAS,
       offset,
     )
+    // Drop chunks a clip plane removes entirely from the cutaway, so we never
+    // stream blocks the 3D render hides.
+    const unclipped = chunksNotClippedOut(
+      entry.plan,
+      visible,
+      clipPlanes,
+      isCutaway,
+      offset,
+    )
     // Stream the centre of the view first, then spiral outward.
     for (const ci of orderByViewCenter(
       entry.plan,
-      visible,
+      unclipped,
       mvp,
       matRAS,
       offset,

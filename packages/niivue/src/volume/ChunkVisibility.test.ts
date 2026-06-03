@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   chunksBackToFront,
   chunksInFrustum,
+  chunksNotClippedOut,
   orderByViewCenter,
   unionChunkSets,
 } from './ChunkVisibility'
@@ -198,5 +199,88 @@ describe('orderByViewCenter', () => {
     // w row negates w across the cube; all chunks score +Infinity, stable order.
     const mvp = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0]
     expect(orderByViewCenter(plan, [0, 1, 2, 3], mvp)).toEqual([0, 1, 2, 3])
+  })
+})
+
+describe('chunksNotClippedOut', () => {
+  // Pad active planes out to model.clipPlanes' 6-plane / 24-float layout with
+  // the [0,0,0,2] "no clip" sentinel.
+  const SENTINEL = [0, 0, 0, 2]
+  function clip(...planes: number[][]): number[] {
+    const out: number[] = []
+    for (const p of planes) out.push(...p)
+    while (out.length < 6 * 4) out.push(...SENTINEL)
+    return out
+  }
+
+  test('no active planes (all sentinel) keeps every chunk', () => {
+    const plan = fourChunkPlan()
+    expect(chunksNotClippedOut(plan, [0, 1, 2, 3], clip(), false)).toEqual([
+      0, 1, 2, 3,
+    ])
+  })
+
+  test('a plane culls chunks fully on the removed side, keeps straddlers', () => {
+    const plan = fourChunkPlan()
+    // n=[1,0,0], a=0 cuts at x=0.5; kept side is dot(n,p-0.5)-a >= 0 ⇒ x >= 0.5.
+    // chunk 0 (x∈[0,.25]) is fully removed; chunk 1 (x∈[.25,.5]) has its far
+    // corner exactly on the plane (f=0, kept) so it survives conservatively.
+    expect(
+      chunksNotClippedOut(plan, [0, 1, 2, 3], clip([1, 0, 0, 0]), false),
+    ).toEqual([1, 2, 3])
+  })
+
+  test('on-plane corner is conservatively kept', () => {
+    const plan = fourChunkPlan()
+    // chunk 1's far face sits exactly on the x=0.5 plane — must not be culled.
+    expect(chunksNotClippedOut(plan, [1], clip([1, 0, 0, 0]), false)).toEqual([
+      1,
+    ])
+  })
+
+  test('cutaway flag disables culling (keeps all)', () => {
+    const plan = fourChunkPlan()
+    expect(
+      chunksNotClippedOut(plan, [0, 1, 2, 3], clip([1, 0, 0, 0]), true),
+    ).toEqual([0, 1, 2, 3])
+  })
+
+  test('multiple planes intersect (a chunk culled by either is dropped)', () => {
+    const plan = fourChunkPlan()
+    // Plane A removes chunk 0 (x<0.5); plane B (n=[-1,0,0], a=0) keeps x<=0.5,
+    // removing chunk 3 (x∈[.75,1]). Together: chunks 1,2 survive.
+    expect(
+      chunksNotClippedOut(
+        plan,
+        [0, 1, 2, 3],
+        clip([1, 0, 0, 0], [-1, 0, 0, 0]),
+        false,
+      ),
+    ).toEqual([1, 2])
+  })
+
+  test('explode offset shifts the corners across the plane', () => {
+    const plan = fourChunkPlan()
+    // n=[1,0,0], a=0 would cull chunk 0, but an explode offset of +0.5 in x
+    // pushes its corners to the kept side, so it survives.
+    const offsetFor = (ci: number): [number, number, number] =>
+      ci === 0 ? [0.5, 0, 0] : [0, 0, 0]
+    expect(
+      chunksNotClippedOut(
+        plan,
+        [0, 1, 2, 3],
+        clip([1, 0, 0, 0]),
+        false,
+        offsetFor,
+      ),
+    ).toEqual([0, 1, 2, 3])
+  })
+
+  test('degenerate normal is treated as inactive', () => {
+    const plan = fourChunkPlan()
+    // n=[0,0,0] with an in-range a must not cull anything.
+    expect(
+      chunksNotClippedOut(plan, [0, 1, 2, 3], clip([0, 0, 0, 0]), false),
+    ).toEqual([0, 1, 2, 3])
   })
 })

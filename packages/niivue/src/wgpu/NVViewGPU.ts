@@ -1064,6 +1064,8 @@ export default class NVView {
           this.volumeRenderer.requestChunksInFrustum(
             mvpMatrix as Float32Array,
             matRAS as Float32Array,
+            md.clipPlanes,
+            md.scene.isClipPlaneCutaway,
           )
           this.volumeRenderer.draw(
             device,

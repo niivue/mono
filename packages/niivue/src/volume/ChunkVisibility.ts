@@ -270,6 +270,92 @@ export function orderByViewCenter(
 }
 
 /**
+ * Drop chunks that a clip plane removes entirely from a 3D render, so the
+ * streaming working set never fetches blocks the cutaway hides. This is the
+ * clip-plane analogue of the frustum cull: the renderer already trims the
+ * ray-march to the clip plane per sample (`clipSampleRange`), but without this
+ * the hidden chunks still stream and stay resident.
+ *
+ * Convention pinned to the volume shader's `clipSampleRange`
+ * (`gl/volumeShaderLib.ts`): each plane is `[nx, ny, nz, a]` in the volume's
+ * texture-fraction space `[0,1]^3`, the **kept** (visible) half-space is
+ * `dot(n, p - 0.5) - a >= 0`, and the removed/front side is `< 0`. The sentinel
+ * `[0,0,0,2]` (a > 1) means "no clip". Multiple planes intersect (a sample is
+ * visible only if every plane keeps it), so a chunk is removed when **any**
+ * active plane has all 8 of its data-region AABB corners strictly on that
+ * plane's removed side. Keeping a chunk whose box straddles a plane is a
+ * conservative superset — false positives cost a little budget, a false
+ * negative would punch a hole.
+ *
+ * `isCutaway` (scene.isClipPlaneCutaway) carves an interior slab rather than a
+ * half-space, so culling is unsafe there — return the input unchanged. Clip
+ * planes are a 3D-render feature; 2D slices ignore them, so only the 3D frustum
+ * path calls this. `chunkOffsetFor` matches the frustum path's explode offset.
+ */
+export function chunksNotClippedOut(
+  plan: ChunkPlan,
+  indices: readonly number[],
+  clipPlanes: ArrayLike<number>,
+  isCutaway: boolean,
+  chunkOffsetFor?: ChunkOffsetFor,
+): number[] {
+  if (isCutaway) return [...indices]
+  // Collect the active planes once (skip the [0,0,0,2] sentinel + degenerates).
+  const planes: number[][] = []
+  const planeCount = Math.floor(clipPlanes.length / 4)
+  for (let p = 0; p < planeCount; p++) {
+    const nx = clipPlanes[p * 4 + 0]
+    const ny = clipPlanes[p * 4 + 1]
+    const nz = clipPlanes[p * 4 + 2]
+    const a = clipPlanes[p * 4 + 3]
+    if (a > 1 || a < -1) continue // sentinel: no clip
+    if (nx * nx + ny * ny + nz * nz < 1e-12) continue // degenerate normal
+    planes.push([nx, ny, nz, a])
+  }
+  if (planes.length === 0) return [...indices]
+
+  const [vx, vy, vz] = plan.volumeDims
+  const out: number[] = []
+  for (const ci of indices) {
+    const desc = plan.chunks[ci]
+    if (!desc) {
+      out.push(ci) // unknown chunk: keep conservatively
+      continue
+    }
+    const offset = chunkOffsetFor?.(ci)
+    const ox = offset?.[0] ?? 0
+    const oy = offset?.[1] ?? 0
+    const oz = offset?.[2] ?? 0
+    const x0 = desc.voxelOrigin[0] / vx + ox
+    const y0 = desc.voxelOrigin[1] / vy + oy
+    const z0 = desc.voxelOrigin[2] / vz + oz
+    const x1 = (desc.voxelOrigin[0] + desc.voxelDims[0]) / vx + ox
+    const y1 = (desc.voxelOrigin[1] + desc.voxelDims[1]) / vy + oy
+    const z1 = (desc.voxelOrigin[2] + desc.voxelDims[2]) / vz + oz
+    let clippedOut = false
+    for (const [nx, ny, nz, a] of planes) {
+      let allRemoved = true
+      for (let c = 0; c < 8; c++) {
+        const px = c & 1 ? x1 : x0
+        const py = c & 2 ? y1 : y0
+        const pz = c & 4 ? z1 : z0
+        const f = nx * (px - 0.5) + ny * (py - 0.5) + nz * (pz - 0.5) - a
+        if (f >= 0) {
+          allRemoved = false // a corner is on the kept side
+          break
+        }
+      }
+      if (allRemoved) {
+        clippedOut = true
+        break
+      }
+    }
+    if (!clippedOut) out.push(ci)
+  }
+  return out
+}
+
+/**
  * Union of several per-tile chunk-index lists into one deduplicated,
  * ascending working set. The renderer collects one list per layout tile
  * (frustum cull for 3D tiles, `chunksCrossingSlice` for 2D tiles) and folds

@@ -29,6 +29,7 @@ export default defineConfig({
         omezarr: resolve(__dirname, 'omezarr.html'),
         multiplanar: resolve(__dirname, 'multiplanar.html'),
         overlay: resolve(__dirname, 'overlay.html'),
+        microscopy: resolve(__dirname, 'microscopy.html'),
         wsi: resolve(__dirname, 'wsi.html'),
       },
     },

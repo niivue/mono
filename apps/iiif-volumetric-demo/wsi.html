@@ -22,7 +22,10 @@
       .hud { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.55); padding: 6px 9px; border-radius: 5px; font-size: 11px; white-space: pre; pointer-events: none; max-width: 46ch; }
       .hint { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.55); padding: 5px 9px; border-radius: 5px; font-size: 11px; color: #9aa0a6; }
       .fallback { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; color: #f28b82; }
-      .minimap { position: absolute; top: 8px; right: 8px; width: 200px; border: 1px solid #2a2d31; border-radius: 5px; overflow: hidden; background: #000; cursor: crosshair; box-shadow: 0 2px 12px rgba(0,0,0,0.5); line-height: 0; }
+      /* scaleY(-1): niivue renders the axial slide with +Y up (data row 0 at
+         the bottom), but the IIIF thumbnail has row 0 at the top — flip the
+         minimap so it matches the main view. */
+      .minimap { position: absolute; top: 8px; right: 8px; width: 200px; border: 1px solid #2a2d31; border-radius: 5px; overflow: hidden; background: #000; cursor: crosshair; box-shadow: 0 2px 12px rgba(0,0,0,0.5); line-height: 0; transform: scaleY(-1); }
       .minimap img { width: 100%; display: block; }
       .minimap .box { position: absolute; border: 2px solid #8ab4f8; box-shadow: 0 0 0 9999px rgba(0,0,0,0.35); box-sizing: border-box; pointer-events: none; min-width: 2px; min-height: 2px; }
       .zoomwrap { display: flex; align-items: center; gap: 6px; }

@@ -153,6 +153,12 @@ viewer built on the single-texture RGB path (no niivue changes):
   reset, and a minimap with a viewport box and click-to-jump. Navigation math
   (level pick with the texture-fit guard, margin-window placement,
   viewport→niivue mapping) is in `wsi.ts`.
+- **Axial Y orientation**: the window NIfTI carries no affine, so niivue orients
+  it by pixdim — `frac2mm` Y is **positive** and the view is **not**
+  radiological, i.e. axial is **+Y up** (data row 0 at the bottom). The IIIF
+  thumbnail used by the minimap has row 0 at the top, so the minimap is flipped
+  `scaleY(-1)` to match, the minimap click inverts Y, and the drag-pan adds
+  `+dy` on Y (it subtracts `dx` on X, which is not flipped).
 
 ### Remaining follow-up — chunked RGB streaming
 

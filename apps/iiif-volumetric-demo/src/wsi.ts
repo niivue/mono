@@ -384,9 +384,11 @@ els.canvas.addEventListener('pointermove', (e: PointerEvent) => {
   if (!dragLast || !current) return
   const base = baseLevel(current)
   const k = basePerScreenPx()
+  // niivue's axial slice has +Y up (frac2mm Y is positive, not radiological),
+  // so dragging down moves toward larger data Y — hence +dy on Y, -dx on X.
   centerL0 = [
     clamp(centerL0[0] - (e.clientX - dragLast.x) * k, 0, base.shape[0]),
-    clamp(centerL0[1] - (e.clientY - dragLast.y) * k, 0, base.shape[1]),
+    clamp(centerL0[1] + (e.clientY - dragLast.y) * k, 0, base.shape[1]),
   ]
   dragLast = { x: e.clientX, y: e.clientY }
   applyView()
@@ -435,14 +437,15 @@ els.zoomIn.addEventListener('click', () => {
 els.canvas.addEventListener('dblclick', () => {
   jumpTo(centerL0[0], centerL0[1], 0.5)
 })
-// Click the minimap to jump the view there.
+// Click the minimap to jump the view there. The minimap is flipped vertically
+// in CSS to match niivue's +Y-up axial slice, so invert the click's Y.
 els.minimap.addEventListener('click', (e: MouseEvent) => {
   if (!current) return
   const base = baseLevel(current)
   const r = els.minimap.getBoundingClientRect()
   jumpTo(
     clamp((e.clientX - r.left) / r.width, 0, 1) * base.shape[0],
-    clamp((e.clientY - r.top) / r.height, 0, 1) * base.shape[1],
+    (1 - clamp((e.clientY - r.top) / r.height, 0, 1)) * base.shape[1],
     1,
   )
 })

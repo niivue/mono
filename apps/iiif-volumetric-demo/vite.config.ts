@@ -25,7 +25,6 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, 'index.html'),
         sheet: resolve(__dirname, 'sheet.html'),
-        stitch: resolve(__dirname, 'stitch.html'),
         osd: resolve(__dirname, 'osd-volume-desktop.html'),
         omezarr: resolve(__dirname, 'omezarr.html'),
         wsi: resolve(__dirname, 'wsi.html'),

@@ -10,12 +10,6 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   zoomable canvas. Each cell loads a different IIIF volume from the
   server plus the same `.mz3` mesh (colored differently per cell).
   Drag to pan, wheel to zoom, +/−/fit buttons to step.
-- `stitch.html` — standalone WebGL2 diagnostic for texture-stitching
-  boundary artifacts. A single test pattern is split into NxN GPU
-  textures rendered as adjacent quads under a global shear matrix.
-  Toggle filter / wrap / overlap padding / pattern / tile count and
-  compare against the single-texture reference. No niivue, no IIIF
-  dependency.
 - `osd-volume-desktop.html` — OpenSeadragon-style deep-zoom 2D desktop
   of NIfTI tile previews fed from an IIIF VolumeDesktop manifest, with
   an embedded niivue 3D pane that loads the selected volume at the
@@ -44,8 +38,7 @@ passes it to the `NiiVue` constructor (default: `webgl2`). The shared
 nav ribbon exposes a `WebGL2 / WebGPU` toggle that reloads the page
 with the new query; the WebGPU option is disabled when
 `navigator.gpu` is absent. The choice is preserved across in-app
-navigation. `stitch.html` is raw WebGL2 with no NiiVue and ignores
-the query.
+navigation.
 
 ## Running
 
@@ -160,7 +153,7 @@ IIIF_SERVER_URL=http://127.0.0.1:9090 bunx nx dev iiif-volumetric-demo
 ```
 
 The header on every page exposes the shared cross-page nav
-(`volumes`, `sheet`, `stitch`, `osd desktop`, `omezarr`, `wsi`)
+(`volumes`, `sheet`, `osd desktop`, `omezarr`, `wsi`)
 plus the `WebGL2 / WebGPU` backend toggle. `sheet.html` and
 `osd-volume-desktop.html` both need the IIIF server running with at
 least one fixture volume — `sheet.html` cycles available volumes
@@ -170,12 +163,15 @@ least one OME-Zarr fixture; open
 `http://127.0.0.1:8087/omezarr.html?id=fibsem-uint8.zarr` after the
 default OME-Zarr fetch.
 
-> **Retired POC:** `volume-fly-space.html` (WASD-fly through a
-> constellation of NIfTI volumes via niivue's `space: 'global3d'`
-> instances) was a proof-of-concept for planning the subvolume
-> streaming strategy. Its source is kept in the repo, but it is no
-> longer in the nav or the production build. Open it directly during
-> development with `http://127.0.0.1:8087/volume-fly-space.html`.
+> **Hidden pages** (source kept in the repo, but not in the nav or the
+> production build — open directly during development):
+>
+> - `volume-fly-space.html` — WASD-fly through a constellation of NIfTI
+>   volumes via niivue's `space: 'global3d'` instances. A retired
+>   proof-of-concept for planning the subvolume streaming strategy.
+> - `stitch.html` — standalone WebGL2 diagnostic for texture-stitching
+>   boundary artifacts (NxN GPU textures as adjacent quads under a shear
+>   matrix). Raw WebGL2, no niivue, no IIIF dependency.
 
 ### 6. Stop
 

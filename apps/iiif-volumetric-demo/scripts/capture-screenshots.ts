@@ -196,19 +196,6 @@ async function main(): Promise<void> {
     console.log('capturing sheet.html…')
     await captureSheet(page)
 
-    console.log('capturing stitch.html…')
-    await page.goto(`${DEMO_ORIGIN}/stitch.html`, { waitUntil: 'networkidle' })
-    await page.waitForSelector('canvas')
-    await dismissIntroPanels(page)
-    await sleep(STEADY_STATE_MS)
-    await page.screenshot({
-      path: path.join(OUT_DIR, 'stitch.jpg'),
-      fullPage: false,
-      type: 'jpeg',
-      quality: 85,
-    })
-    console.log('  -> stitch.jpg')
-
     await browser.close()
     console.log(`\ndone — screenshots written to ${OUT_DIR}`)
   } finally {

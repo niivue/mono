@@ -15,7 +15,10 @@ use std::{
     io::Read,
     net::TcpListener,
     path::{Path as FsPath, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::UNIX_EPOCH,
 };
 use tokio::runtime::Builder;
@@ -29,16 +32,21 @@ pub struct ServerHandle {
     volumes: VolumeStore,
     dataset_root: Arc<Mutex<Option<PathBuf>>>,
     preview_cache: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    pyramid_locks: PyramidLocks,
+    warm_generation: Arc<AtomicU64>,
 }
 
 type VolumeStore = Arc<Mutex<Vec<VolumeEntry>>>;
+/// Per-volume build locks keyed by source signature, so different volumes can
+/// build their pyramids concurrently while same-volume builds stay serialized.
+type PyramidLocks = Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>;
 
 #[derive(Clone)]
 struct AppState {
     base_url: String,
     volumes: VolumeStore,
     preview_cache: Arc<Mutex<HashMap<String, Vec<u8>>>>,
-    pyramid_lock: Arc<Mutex<()>>,
+    pyramid_locks: PyramidLocks,
     patch: Arc<Mutex<Option<Value>>>,
 }
 
@@ -115,16 +123,28 @@ pub fn spawn_default() -> ServerHandle {
     let base_url = format!("http://{}", addr);
     let discovery = discover_volumes();
     let volume_count = discovery.volumes.len();
+    let warm_volumes = discovery.volumes.clone();
     let volumes = Arc::new(Mutex::new(discovery.volumes));
     let dataset_root = Arc::new(Mutex::new(discovery.root));
     let preview_cache = Arc::new(Mutex::new(HashMap::new()));
+    let pyramid_locks: PyramidLocks = Arc::new(Mutex::new(HashMap::new()));
+    let warm_generation = Arc::new(AtomicU64::new(0));
     let state = AppState {
         base_url: base_url.clone(),
         volumes: volumes.clone(),
         preview_cache: preview_cache.clone(),
-        pyramid_lock: Arc::new(Mutex::new(())),
+        pyramid_locks: pyramid_locks.clone(),
         patch: Arc::new(Mutex::new(None)),
     };
+
+    // Warm the coarsest pyramid level for the startup sample in the background.
+    let my_gen = warm_generation.load(Ordering::SeqCst);
+    spawn_coarse_warm(
+        warm_volumes,
+        pyramid_locks.clone(),
+        warm_generation.clone(),
+        my_gen,
+    );
 
     std::thread::spawn(move || {
         let runtime = Builder::new_multi_thread()
@@ -176,6 +196,8 @@ pub fn spawn_default() -> ServerHandle {
         volumes,
         dataset_root,
         preview_cache,
+        pyramid_locks,
+        warm_generation,
     }
 }
 
@@ -223,6 +245,7 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
     }
     append_working_derivatives(&mut volumes, Some(&root));
     let volume_count = volumes.len();
+    let warm_volumes = volumes.clone();
 
     *handle
         .volumes
@@ -235,6 +258,15 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
     if let Ok(mut cache) = handle.preview_cache.lock() {
         cache.clear();
     }
+
+    // Cancel any in-flight warming for the previous dataset, then warm the new one.
+    let my_gen = handle.warm_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    spawn_coarse_warm(
+        warm_volumes,
+        handle.pyramid_locks.clone(),
+        handle.warm_generation.clone(),
+        my_gen,
+    );
 
     Ok(volume_count)
 }
@@ -556,7 +588,7 @@ async fn raw_level_volume(
     let path = if level == 0 {
         volume.source_path.clone().ok_or(StatusCode::NOT_FOUND)?
     } else {
-        ensure_downsampled_nifti(&volume, level, &state.pyramid_lock)
+        ensure_downsampled_nifti(&volume, level, &state.pyramid_locks)
             .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?
     };
     let body = tokio::fs::read(&path)
@@ -671,7 +703,7 @@ async fn image_tile(
         path.slice,
         &path.size,
         query.level,
-        &state.pyramid_lock,
+        &state.pyramid_locks,
     ) {
         if let Ok(mut cache) = state.preview_cache.lock() {
             cache.insert(cache_key, bmp.clone());
@@ -1452,68 +1484,143 @@ fn requested_size_bound(size: &str) -> Option<usize> {
         .max()
 }
 
+/// Resolve (creating on first use) the per-volume build lock for a source
+/// signature, so same-volume builds serialize while different volumes run free.
+fn pyramid_lock_for(locks: &PyramidLocks, signature: &str) -> Option<Arc<Mutex<()>>> {
+    let mut map = locks.lock().ok()?;
+    Some(
+        map.entry(signature.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone(),
+    )
+}
+
 fn ensure_downsampled_nifti(
     volume: &VolumeEntry,
     level: u8,
-    pyramid_lock: &Mutex<()>,
+    locks: &PyramidLocks,
 ) -> Option<PathBuf> {
     let cache_path = downsampled_nifti_cache_path(volume, level)?;
     if cache_path.is_file() {
         return Some(cache_path);
     }
 
-    let _guard = pyramid_lock.lock().ok()?;
-    if cache_path.is_file() {
-        return Some(cache_path);
+    // One decode builds every missing level up to the max, so later coarse/fine
+    // requests for this volume become warm cache hits.
+    let targets: Vec<u8> = (1..=max_pyramid_level(volume.shape)).collect();
+    build_pyramid_levels(volume, &targets, locks)?;
+
+    cache_path.is_file().then_some(cache_path)
+}
+
+/// Decode the source NIfTI once and write any of `targets` not already cached.
+/// Serialized per-volume via the signature lock; safe to call from request
+/// handlers and the background warmer alike.
+fn build_pyramid_levels(volume: &VolumeEntry, targets: &[u8], locks: &PyramidLocks) -> Option<()> {
+    let signature = source_signature(volume)?;
+    let lock = pyramid_lock_for(locks, &signature)?;
+    let _guard = lock.lock().ok()?;
+
+    // Recompute pending under the lock so concurrent builders don't duplicate work.
+    let pending: Vec<u8> = targets
+        .iter()
+        .copied()
+        .filter(|&level| level >= 1)
+        .filter(|&level| {
+            downsampled_nifti_cache_path(volume, level)
+                .map(|path| !path.is_file())
+                .unwrap_or(false)
+        })
+        .collect();
+    if pending.is_empty() {
+        return Some(());
     }
 
-    let parent = cache_path.parent()?;
-    fs::create_dir_all(parent).ok()?;
     let source_path = volume.source_path.as_ref()?;
     let (header, bytes) = read_nifti_file(source_path)?;
     let source_header: [u8; 348] = bytes.get(..348)?.try_into().ok()?;
     let data = bytes.get(header.vox_offset..)?;
-    let factor = pyramid_factor(level);
-    let shape = downsampled_shape(header.shape, factor);
-    let spacing = [
-        header.spacing[0] * factor as f32,
-        header.spacing[1] * factor as f32,
-        header.spacing[2] * factor as f32,
-    ];
     let dim_x = usize::from(header.shape[0]);
     let dim_y = usize::from(header.shape[1]);
     let dim_z = usize::from(header.shape[2]);
-    let output_x = usize::from(shape[0]);
-    let output_y = usize::from(shape[1]);
-    let output_z = usize::from(shape[2]);
-    let mut voxels = Vec::with_capacity(output_x.checked_mul(output_y)?.checked_mul(output_z)?);
 
-    for z in 0..output_z {
-        let source_z = (z * factor).min(dim_z.saturating_sub(1));
-        for y in 0..output_y {
-            let source_y = (y * factor).min(dim_y.saturating_sub(1));
-            for x in 0..output_x {
-                let source_x = (x * factor).min(dim_x.saturating_sub(1));
-                voxels.push(
-                    average_nifti_block(
-                        data, &header, source_x, source_y, source_z, factor, dim_x, dim_y, dim_z,
-                    )
-                    .unwrap_or(0.0),
-                );
+    for level in pending {
+        let cache_path = downsampled_nifti_cache_path(volume, level)?;
+        let parent = cache_path.parent()?;
+        fs::create_dir_all(parent).ok()?;
+        let factor = pyramid_factor(level);
+        let shape = downsampled_shape(header.shape, factor);
+        let spacing = [
+            header.spacing[0] * factor as f32,
+            header.spacing[1] * factor as f32,
+            header.spacing[2] * factor as f32,
+        ];
+        let output_x = usize::from(shape[0]);
+        let output_y = usize::from(shape[1]);
+        let output_z = usize::from(shape[2]);
+        let mut voxels =
+            Vec::with_capacity(output_x.checked_mul(output_y)?.checked_mul(output_z)?);
+
+        for z in 0..output_z {
+            let source_z = (z * factor).min(dim_z.saturating_sub(1));
+            for y in 0..output_y {
+                let source_y = (y * factor).min(dim_y.saturating_sub(1));
+                for x in 0..output_x {
+                    let source_x = (x * factor).min(dim_x.saturating_sub(1));
+                    voxels.push(
+                        average_nifti_block(
+                            data, &header, source_x, source_y, source_z, factor, dim_x, dim_y,
+                            dim_z,
+                        )
+                        .unwrap_or(0.0),
+                    );
+                }
             }
         }
+
+        let temp_path = cache_path.with_extension(format!("nii.tmp.{}", std::process::id()));
+        write_nifti_f32(&temp_path, &source_header, shape, spacing, &voxels)?;
+        fs::rename(&temp_path, &cache_path)
+            .or_else(|_| {
+                fs::copy(&temp_path, &cache_path)?;
+                fs::remove_file(&temp_path)
+            })
+            .ok()?;
     }
 
-    let temp_path = cache_path.with_extension(format!("nii.tmp.{}", std::process::id()));
-    write_nifti_f32(&temp_path, &source_header, shape, spacing, &voxels)?;
-    fs::rename(&temp_path, &cache_path)
-        .or_else(|_| {
-            fs::copy(&temp_path, &cache_path)?;
-            fs::remove_file(&temp_path)
-        })
-        .ok()?;
+    Some(())
+}
 
-    Some(cache_path)
+/// Background-build the coarsest pyramid level for each source volume so the
+/// first paint is instant everywhere. Cancels as soon as a newer dataset opens
+/// (generation changed) and skips volumes whose coarse level is already cached.
+fn spawn_coarse_warm(
+    volumes: Vec<VolumeEntry>,
+    locks: PyramidLocks,
+    generation: Arc<AtomicU64>,
+    my_gen: u64,
+) {
+    std::thread::spawn(move || {
+        for volume in volumes {
+            if generation.load(Ordering::SeqCst) != my_gen {
+                return;
+            }
+            if volume.source_path.is_none() {
+                continue;
+            }
+            let max_level = max_pyramid_level(volume.shape);
+            if max_level == 0 {
+                continue;
+            }
+            if downsampled_nifti_cache_path(&volume, max_level)
+                .map(|path| path.is_file())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            let _ = build_pyramid_levels(&volume, &[max_level], &locks);
+        }
+    });
 }
 
 fn downsampled_nifti_cache_path(volume: &VolumeEntry, level: u8) -> Option<PathBuf> {
@@ -1684,7 +1791,7 @@ fn render_slice_bmp(
     slice: u16,
     size: &str,
     requested_level: Option<u8>,
-    pyramid_lock: &Mutex<()>,
+    pyramid_locks: &PyramidLocks,
 ) -> Option<Vec<u8>> {
     let level = clamp_pyramid_level(
         requested_level.unwrap_or_else(|| preview_level_for_size(size)),
@@ -1694,7 +1801,7 @@ fn render_slice_bmp(
     let path = if level == 0 {
         volume.source_path.clone()?
     } else {
-        ensure_downsampled_nifti(volume, level, pyramid_lock)?
+        ensure_downsampled_nifti(volume, level, pyramid_locks)?
     };
     let (header, bytes) = read_nifti_file(&path)?;
     let data = bytes.get(header.vox_offset..)?;

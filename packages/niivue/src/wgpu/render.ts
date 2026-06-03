@@ -14,7 +14,11 @@ import {
   chunkExplodeOffsetFrac,
 } from '@/volume/ChunkExplode'
 import { ChunkResidencyManager } from '@/volume/ChunkResidency'
-import { chunksBackToFront, chunksInFrustum } from '@/volume/ChunkVisibility'
+import {
+  chunksBackToFront,
+  chunksInFrustum,
+  orderByViewCenter,
+} from '@/volume/ChunkVisibility'
 import {
   bytesPerSourceVoxel,
   estimateChunkedBytes,
@@ -757,14 +761,23 @@ export class VolumeRenderer extends NVRenderer {
       }
       return
     }
+    const offset = chunkOffsetFor(entry.plan, entry.volume.chunkExplode)
     const visible = chunksInFrustum(
       entry.plan,
       mvp,
       CLIP_SPACE_ZERO_TO_ONE,
       matRAS,
-      chunkOffsetFor(entry.plan, entry.volume.chunkExplode),
+      offset,
     )
-    for (const ci of visible) entry.manager.requestUpload(ci)
+    // Stream the centre of the view first, then spiral outward.
+    for (const ci of orderByViewCenter(
+      entry.plan,
+      visible,
+      mvp,
+      matRAS,
+      offset,
+    ))
+      entry.manager.requestUpload(ci)
   }
 
   /**
@@ -786,18 +799,20 @@ export class VolumeRenderer extends NVRenderer {
       for (const ci of crossing) entry.manager.requestUpload(ci)
       return
     }
+    const offset = chunkOffsetFor(entry.plan, entry.volume.chunkExplode)
     const inView = new Set(
-      chunksInFrustum(
-        entry.plan,
-        mvp,
-        CLIP_SPACE_ZERO_TO_ONE,
-        matRAS,
-        chunkOffsetFor(entry.plan, entry.volume.chunkExplode),
-      ),
+      chunksInFrustum(entry.plan, mvp, CLIP_SPACE_ZERO_TO_ONE, matRAS, offset),
     )
-    for (const ci of crossing) {
-      if (inView.has(ci)) entry.manager.requestUpload(ci)
-    }
+    const visible = crossing.filter((ci) => inView.has(ci))
+    // Stream the centre of the view first, then spiral outward.
+    for (const ci of orderByViewCenter(
+      entry.plan,
+      visible,
+      mvp,
+      matRAS,
+      offset,
+    ))
+      entry.manager.requestUpload(ci)
   }
 
   /**

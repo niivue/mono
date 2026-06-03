@@ -207,6 +207,69 @@ function chunkCornerToModel(
 }
 
 /**
+ * Order a set of visible chunk indices center-first: nearest the centre of the
+ * view (the NDC origin, where the frustum's central axis hits the screen) comes
+ * first, then progressively outward. The streaming pump uploads in queue order,
+ * so requesting in this order makes the centre of what you're looking at sharpen
+ * first and the surrounding tiles spiral in afterwards.
+ *
+ * Each chunk's centre is projected through `matRAS` then `mvp` to clip space and
+ * scored by its squared NDC distance from the origin. Chunks at/behind the
+ * camera (w <= 0) sort last. Pure and order-stable for equal scores.
+ */
+export function orderByViewCenter(
+  plan: ChunkPlan,
+  indices: readonly number[],
+  mvp: Float32Array | number[],
+  matRAS?: Float32Array | number[],
+  chunkOffsetFor?: ChunkOffsetFor,
+): number[] {
+  const [vx, vy, vz] = plan.volumeDims
+  const score = new Map<number, number>()
+  for (let k = 0; k < indices.length; k++) {
+    const ci = indices[k]
+    const desc = plan.chunks[ci]
+    if (!desc) {
+      score.set(ci, Number.POSITIVE_INFINITY)
+      continue
+    }
+    const offset = chunkOffsetFor?.(ci)
+    const cx =
+      (desc.voxelOrigin[0] + desc.voxelDims[0] / 2) / vx + (offset?.[0] ?? 0)
+    const cy =
+      (desc.voxelOrigin[1] + desc.voxelDims[1] / 2) / vy + (offset?.[1] ?? 0)
+    const cz =
+      (desc.voxelOrigin[2] + desc.voxelDims[2] / 2) / vz + (offset?.[2] ?? 0)
+    const model = matRAS
+      ? chunkCornerToModel(cx, cy, cz, vx, vy, vz, matRAS)
+      : [cx, cy, cz, 1]
+    const cw =
+      mvp[3] * model[0] +
+      mvp[7] * model[1] +
+      mvp[11] * model[2] +
+      mvp[15] * model[3]
+    if (cw <= 1e-6) {
+      score.set(ci, Number.POSITIVE_INFINITY)
+      continue
+    }
+    const ndcX =
+      (mvp[0] * model[0] +
+        mvp[4] * model[1] +
+        mvp[8] * model[2] +
+        mvp[12] * model[3]) /
+      cw
+    const ndcY =
+      (mvp[1] * model[0] +
+        mvp[5] * model[1] +
+        mvp[9] * model[2] +
+        mvp[13] * model[3]) /
+      cw
+    score.set(ci, ndcX * ndcX + ndcY * ndcY)
+  }
+  return [...indices].sort((a, b) => (score.get(a) ?? 0) - (score.get(b) ?? 0))
+}
+
+/**
  * Union of several per-tile chunk-index lists into one deduplicated,
  * ascending working set. The renderer collects one list per layout tile
  * (frustum cull for 3D tiles, `chunksCrossingSlice` for 2D tiles) and folds

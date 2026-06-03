@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   chunksBackToFront,
   chunksInFrustum,
+  orderByViewCenter,
   unionChunkSets,
 } from './ChunkVisibility'
 import { chunkVolume } from './chunking'
@@ -164,5 +165,38 @@ describe('unionChunkSets', () => {
   test('empty input yields an empty set', () => {
     expect(unionChunkSets([])).toEqual([])
     expect(unionChunkSets([[], []])).toEqual([])
+  })
+})
+
+describe('orderByViewCenter', () => {
+  // Map frac [0,1] -> NDC [-1,1] so frac 0.5 is the screen centre. The
+  // 4-chunk-along-x plan has chunk centres at frac x = 0.125/0.375/0.625/0.875,
+  // i.e. NDC x = -0.75/-0.25/+0.25/+0.75 — chunks 1 and 2 are nearest centre.
+  const CENTER_MVP = scaleTranslate(2, 2, 2, -1, -1, -1)
+
+  test('orders chunks centre-first, then outward', () => {
+    const plan = fourChunkPlan()
+    expect(orderByViewCenter(plan, [0, 1, 2, 3], CENTER_MVP)).toEqual([
+      1, 2, 0, 3,
+    ])
+  })
+
+  test('is a permutation of the input set', () => {
+    const plan = fourChunkPlan()
+    const out = orderByViewCenter(plan, [3, 2, 1, 0], CENTER_MVP)
+    expect([...out].sort((a, b) => a - b)).toEqual([0, 1, 2, 3])
+  })
+
+  test('respects the input subset (only orders what it is given)', () => {
+    const plan = fourChunkPlan()
+    expect(orderByViewCenter(plan, [0, 3], CENTER_MVP)).toEqual([0, 3])
+    expect(orderByViewCenter(plan, [2, 0], CENTER_MVP)).toEqual([2, 0])
+  })
+
+  test('chunks at/behind the camera (w <= 0) sort last', () => {
+    const plan = fourChunkPlan()
+    // w row negates w across the cube; all chunks score +Infinity, stable order.
+    const mvp = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0]
+    expect(orderByViewCenter(plan, [0, 1, 2, 3], mvp)).toEqual([0, 1, 2, 3])
   })
 })

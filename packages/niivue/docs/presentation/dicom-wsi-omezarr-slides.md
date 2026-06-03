@@ -257,19 +257,19 @@ data, no vendor lock-in.
 - Request visible Level-3 chunks → tiny payloads → upload
 
 **Zooming in (drill down)**
-- Screen-space error rises → request Level-0 chunks for the center
-- Keep showing blurry Level-3 as a **placeholder** while they load
-- Level-0 arrives → cache admits it → view **pops** into sharp focus
+- Screen-space error rises → swap to the finer level whose texels are ~1:1
+- Request the visible chunks **centre-first, spiralling outward**
+- The middle of the view sharpens first, detail filling toward the edges
 - VRAM tight? LRU evicts the high-res chunks that just panned off-edge
 
 <!--
 Presenter: Tie the two halves together with the user's actual experience. The
-"placeholder" behaviour is the bit that feels good live: you never stare at a
-blank region — you see a blurry version immediately and it sharpens as full-res
-arrives. That's coarse-first / progressive refinement. If the demo is up, this
-is the slide to switch to it: zoom out (instant, coarse), then zoom in and let
-the audience watch it pop. The LRU eviction on pan is what keeps it from ever
-running out of VRAM during exploration.
+bit that feels good live is centre-first streaming: when you zoom or pan, the
+middle of what you're looking at resolves first and detail fills outward, so your
+eye always has something sharp where it's pointed. If the demo is up, this is the
+slide to switch to it: zoom out (instant, coarse level), then zoom in and watch
+the centre sharpen and spiral out. The LRU eviction on pan is what keeps it from
+ever running out of VRAM during exploration.
 -->
 
 ---
@@ -351,18 +351,19 @@ into a documented invariant with a unit test so it can't silently regress.
 ## DICOM-WSI — whole slides, no new render path
 
 A slide is a 2D image, so each level is a **depth-1 RGB volume** `[W,H,1]`.
-NiiVue's axial slice *is* the slide face — **reused unchanged, zero niivue edits.**
+NiiVue's axial slice *is* the slide face — **no new render path.**
 
 ```
   whole-slide overview        zoom toward cursor       cellular detail
-  (coarsest level, whole)  →  (window via bbox)    →   (L0 tiles, ~1:1)
+  (coarsest level, whole)  →  (chunked window)     →   (L0 tiles, ~1:1)
 ```
 
 - `wsi.html`: **OpenSeadragon-style** smooth zoom + pan, minimap, click-to-jump
 - **Auto-LOD** swaps the pyramid window when a texel crosses ~1:1 with the
   screen — scale-matched, so only the detail sharpens
-- Same **bbox subvolume** API as OME-Zarr; CPTAC-BRCA base is **2.66 gigapixels**
-  (53783×49534) and never materialised
+- Finer levels stream as a **chunked RGB window**: only on-screen tiles upload,
+  **centre-first**; CPTAC-BRCA base is **2.66 gigapixels** (53783×49534) and
+  never materialised (~6 tiles per view)
 
 <!--
 Presenter: This is the most relatable demo — a pathology slide you deep-zoom
@@ -434,12 +435,11 @@ is already live, skip this entirely.
 - Chunk streaming + LRU residency with tunable budget (Phase 3a–3d)
 - OME-Zarr (real chunk reads) + DICOM-WSI (real JPEG-tile decode) adapters
 - **DICOM-WSI deep-zoom viewer** (`wsi.html`): OSD-style zoom/pan, auto-LOD, minimap
-- **Chunked RGB** in niivue → the WSI streams as chunked-RGB bricks in the
-  streaming viewer (`omezarr.html`), viewport-bounded by the frustum cull
+- **Chunked RGB** in niivue → the WSI streams as chunked-RGB bricks on both
+  viewers, viewport-bounded by the frustum cull (3D) and slice cull (2D)
+- **2D-slice viewport cull** + **centre-first ordering** → `wsi.html` streams the
+  gigapixel base level directly, sharpening from the centre out (~6 tiles/view)
 - Seam-free gradients, correctness invariants, unit-tested chunk math
-
-- **2D-slice viewport cull** → `wsi.html` streams the gigapixel base level
-  directly (a base-level view fetches ~6 tiles, not the whole level)
 
 **Next**
 - Server-driven lazy chunk streaming for s0 of multi-GB EM stacks
@@ -448,12 +448,12 @@ is already live, skip this entirely.
 <!--
 Presenter: Be honest about the boundary. What works today: rendering past the
 texture limit on both backends, streaming + LRU residency, both new formats with
-real decode, and a polished pathology deep-zoom viewer. Two remaining pieces: (1)
-the WSI viewer streams windows (single-texture RGB) because niivue's chunked path
-doesn't take RGB yet — adding that lets the whole base level stream/tile; (2)
-fully server-driven lazy streaming for s0 of multi-GB EM stacks (today the
-adapter reads a whole level into RAM, fine for coarse tiers, not s0). Plus a
-chunked-path benchmark and cloud hosting. Invite collaboration.
+real decode, a polished pathology deep-zoom viewer, and chunked-RGB streaming so
+the WSI viewer streams the 2.66-gigapixel base level directly (centre-first,
+~6 tiles per view). The remaining piece is fully server-driven lazy streaming for
+s0 of multi-GB EM stacks — today the adapter reads a whole level into RAM, fine
+for coarse tiers, not s0. Plus a chunked-path benchmark and cloud hosting.
+Invite collaboration.
 -->
 
 ---
@@ -477,8 +477,9 @@ sentence in someone's memory, make it the title line. Anticipated Q&A:
 - "Did the whole-slide viewer need new niivue rendering?" — no; a slide is a
   depth-1 RGB volume, so it reuses the 2D slice path. The OSD navigation is demo code.
 - "Why not just WebGPU?" — reach; WebGL2 covers Safari/older browsers today.
-- "Production-ready?" — adapters + viewer work end to end; coarse/window tiers
-  stream now, chunked-RGB and s0 lazy streaming are the next milestones.
+- "Production-ready?" — adapters + viewer work end to end; coarse, window, and
+  chunked-RGB streaming all ship now (the gigapixel base streams directly,
+  centre-first); s0 lazy streaming is the next milestone.
 - "Does it need a GPU workstation?" — no, runs on laptop integrated GPUs.
 -->
 

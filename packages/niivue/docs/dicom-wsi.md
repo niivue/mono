@@ -1,8 +1,9 @@
 # DICOM Whole-Slide Imaging (WSI) rendering
 
 How a gigapixel pathology slide stored as DICOM is served and rendered by the
-same machinery that handles OME-Zarr. The server side is implemented and
-verified; the browser render-finish is the open work (see section 6).
+same machinery that handles OME-Zarr. The server side and the browser deep-zoom
+viewer are both implemented and verified, including chunked RGB streaming of the
+2.66-gigapixel base level (see sections 3 and 6).
 
 ---
 
@@ -123,7 +124,8 @@ microscopy) series exist across `cptac_*`, `tcga_*`, `htan_*`, `cmb_*`, `gtex`.
 ## 6. Browser viewer (done) — `wsi.html`
 
 `apps/iiif-volumetric-demo/wsi.html` + `src/wsi.ts` is a deep-zoom slide
-viewer built on the single-texture RGB path (no niivue changes):
+viewer built on niivue's RGB volume support — a single texture for the
+whole-slide overview, a chunked RGB **streaming window** for deep zoom:
 
 - niivue loads each level as a depth-1 `rgb24` volume (datatype 128 → uploaded
   straight to `rgba8unorm` via `rgba2Texture`) drawn as a 2D axial slice — the
@@ -146,8 +148,9 @@ viewer built on the single-texture RGB path (no niivue changes):
   dead-band stops levels thrashing during a continuous zoom.
 - **Whole-slide overview**: the coarsest level fits one texture and loads whole.
 - **Deep zoom**: finer levels exceed the 2048 texture limit, so the viewer
-  loads only the visible window via the bbox subvolume read — the
-  2.66-gigapixel base level is never materialised.
+  streams a chunked window of the level and uploads only the on-screen tiles
+  (see "Chunked RGB streaming" below) — the 2.66-gigapixel base level is never
+  materialised.
 - Controls: scroll to zoom (centred), drag to pan, a log-scaled zoom slider, a
   level dropdown, double-click / "zoom in" to dive at centre, a "whole slide"
   reset, and a minimap with a viewport box and click-to-jump. Navigation math
@@ -184,7 +187,13 @@ the old "RGB not supported" throw.
   set with the tile's ortho frustum, so only on-screen tiles stream. Verified: a
   base-level (53783×49534) view fetches ~6 tiles, not the whole level. The
   window is bounded to niivue's 256-chunk-per-volume cap and reloads only on a
-  pan to its edge or a zoom-level swap.
+  pan to its edge or a zoom-level swap. Visible tiles are requested
+  **centre-first, spiralling outward** (`orderByViewCenter`, both backends), so
+  the middle of what you are looking at sharpens first.
+- The streaming volume's `url`/`name` (niivue's per-volume chunk-cache key)
+  encodes the window rect, and mid-drag window reloads are suppressed — without
+  both, a pan to a new window of the same level reuses the old window's chunks
+  and the view **snaps back** to where the pan started.
 
 ### Other nice-to-haves
 
@@ -242,16 +251,24 @@ the viewer sets `primaryDragMode: none` (which disables that branch) and drives
 a **centred** wheel zoom and a drag pan itself, writing `pan2Dxyzmm` directly.
 This is the single most important niivue-facing detail of the WSI work.
 
-### What the demo orchestrates (and what niivue now supports)
+### Streaming path — the niivue features it added
 
-niivue renders **one texture per volume** for the single-texture path the WSI
-viewer currently uses, so the deep-zoom is orchestrated by the demo (swap which
-window niivue shows). niivue **does** tile a single oversized volume into chunks
-— and the chunked orient path now accepts **RGB/RGBA** color
-(`gl/orientChunked.ts` / `wgpu/orientChunked.ts` upload color straight to RGBA8
-via `chunkRGBA`). So the capability to stream the whole base level as tiles
-exists; wiring `wsi.html` to use it (a chunked RGB volume with a tile-fetching
-`chunkSource`) is the remaining demo step — see §6.
+The OSD *navigation* above is zero-niivue-change, but the chunked **streaming**
+the viewer now uses (§6) did extend niivue — all landed, on both backends:
+
+- **RGB/RGBA chunks**: the chunked orient path uploads color straight to RGBA8
+  via `chunkRGBA` (`gl/orientChunked.ts` / `wgpu/orientChunked.ts`), so a WSI
+  level can be a chunked RGB volume fed by a tile-fetching `chunkSource`.
+- **2D-slice viewport cull** (`requestVisibleChunksInView`): the slice-crossing
+  set is intersected with the tile's ortho frustum, so only on-screen tiles
+  stream — the 2.66-gigapixel base pans at full resolution fetching ~6 tiles.
+- **Centre-first chunk order** (`orderByViewCenter`): visible tiles are requested
+  nearest-the-view-centre first, spiralling outward, so the middle sharpens
+  first.
+
+`wsi.html` drives all three through a chunked RGB streaming window — see §6. The
+remaining nice-to-haves are listed there (ancillary thumbnails, lazy base-frame
+reads, real `PixelSpacing`).
 
 ---
 

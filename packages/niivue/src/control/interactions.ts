@@ -345,18 +345,19 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (graphHit) return
 
     ctrl.activeTileHit = ctrl.view?.hitTest(px, py) ?? null
-    // 3D drawing on exploded blocks: a left-click on the render tile paints the
-    // block the pick ray hits. Depth-pick can't see the explode (it ray-marches
-    // the un-exploded single texture), so we CPU-ray-cast the exploded chunk
-    // AABBs. Only intercept when the active volume is actually exploded, so a
-    // normal render-tile drag still rotates the camera.
+    // 3D drawing on exploded blocks: a RIGHT-click on the render tile paints the
+    // block the pick ray hits, leaving left-drag free to rotate the camera.
+    // Depth-pick can't see the explode (it ray-marches the un-exploded single
+    // texture), so we CPU-ray-cast the exploded chunk AABBs. Only intercept when
+    // the active volume is actually exploded, so right-drag still adjusts the
+    // clip plane otherwise.
     {
       const drawVol = ctrl.model.getVolumes()[0]
       if (
         ctrl.model.draw.isEnabled &&
         ctrl.model.drawingVolume &&
         ctrl.activeTileHit?.isRender &&
-        evt.button === 0 &&
+        evt.button === 2 &&
         drawVol?.matRAS &&
         drawVol.chunkPlan &&
         chunkExplodeEnabled(drawVol.chunkExplode)

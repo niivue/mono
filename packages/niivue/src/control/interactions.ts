@@ -29,6 +29,7 @@ import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
+import { getImageDataRAS } from '@/volume/utils'
 
 function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -266,21 +267,37 @@ function draw3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): void {
   // by its un-exploded data position, which is exactly what chunksNotClippedOut
   // computes (no explode offset).
   const allIdx = plan.chunks.map((_, i) => i)
+  const clipPlanes = ctrl.model.clipPlanes
+  const isCutaway = ctrl.model.scene.isClipPlaneCutaway
   const visible = new Set(
-    chunksNotClippedOut(
-      plan,
-      allIdx,
-      ctrl.model.clipPlanes,
-      ctrl.model.scene.isClipPlaneCutaway,
-    ),
+    chunksNotClippedOut(plan, allIdx, clipPlanes, isCutaway),
   )
+  // March the volume's data so the paint lands on the visible tissue surface
+  // (first voxel above the transparency threshold), not the block's empty
+  // bounding-box face, and skips the clipped-away portion of a straddling block.
+  const data = getImageDataRAS(vol)
+  const dimX = (vol.dimsRAS as number[])[1]
+  const dimXY = dimX * (vol.dimsRAS as number[])[2]
+  const sample = data
+    ? (x: number, y: number, z: number): number =>
+        data[x + y * dimX + z * dimXY]
+    : undefined
+  // The window cal_min/cal_max are in display units; convert to the raw scale
+  // getImageDataRAS returns. The first faintly-non-zero voxel is near-transparent
+  // ("cloud"), so threshold a short way up the window so the paint lands on the
+  // first clearly-visible voxel instead.
+  const sclSlope = vol.hdr?.scl_slope || 1
+  const sclInter = vol.hdr?.scl_inter || 0
+  const winLo = (vol.calMin - sclInter) / sclSlope
+  const winHi = (vol.calMax - sclInter) / sclSlope
+  const threshold = winLo + 0.15 * (winHi - winLo)
   const picked = pickExplodedVoxel(
     plan,
     vol.matRAS as Float32Array,
     vol.chunkExplode,
     [near[0], near[1], near[2]],
     [dx, dy, dz],
-    visible,
+    { allowed: visible, clipPlanes, isCutaway, sample, threshold },
   )
   if (!picked || !ctrl.model.drawingVolume) return
   const drawingVol = ctrl.model.drawingVolume as NVImage

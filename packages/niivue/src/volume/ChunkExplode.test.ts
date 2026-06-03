@@ -113,7 +113,9 @@ describe('pickExplodedVoxel', () => {
         explode,
         [6, 0.5, 5],
         [0, 0, -1],
-        new Set([0, 1, 3]),
+        {
+          allowed: new Set([0, 1, 3]),
+        },
       ),
     ).toBeNull()
     // With block 2 allowed, it picks normally.
@@ -124,9 +126,42 @@ describe('pickExplodedVoxel', () => {
         explode,
         [6, 0.5, 5],
         [0, 0, -1],
-        new Set([0, 1, 2, 3]),
+        {
+          allowed: new Set([0, 1, 2, 3]),
+        },
       )?.chunkIndex,
     ).toBe(2)
+  })
+
+  test('with a sampler, marches past empty space to the first opaque voxel', () => {
+    // Single 8x8x8 chunk; only z<4 is "tissue". A -z ray entering at z=8 should
+    // skip the empty front (z>=4) and land on the first tissue voxel (z<4),
+    // not the bounding-box face at z=8.
+    const p = chunkVolume([8, 8, 8], 16, [0, 0, 0])
+    const sample = (_x: number, _y: number, z: number) => (z < 4 ? 1 : 0)
+    const hit = pickExplodedVoxel(
+      p,
+      IDENTITY_RAS,
+      { enabled: true, scale: [1.5, 1.5, 1.5] },
+      [4, 4, 20],
+      [0, 0, -1],
+      { sample, threshold: 0.5 },
+    )
+    expect(hit).not.toBeNull()
+    expect(hit?.voxel[2]).toBeLessThan(4) // skipped the empty z>=4 front
+  })
+
+  test('a sampler that is empty everywhere yields a miss', () => {
+    const p = chunkVolume([8, 8, 8], 16, [0, 0, 0])
+    const hit = pickExplodedVoxel(
+      p,
+      IDENTITY_RAS,
+      { enabled: true, scale: [1.5, 1.5, 1.5] },
+      [4, 4, 20],
+      [0, 0, -1],
+      { sample: () => 0, threshold: 0.5 },
+    )
+    expect(hit).toBeNull()
   })
 
   test('picks the nearest block along the ray', () => {

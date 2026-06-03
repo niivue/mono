@@ -93,14 +93,15 @@ function applyMat(
   return [p[0], p[1], p[2]]
 }
 
-// Slab ray/AABB intersection. Returns the entry distance `t >= 0` along the ray
-// (origin + t·dir) where it first enters [min,max], or null if it misses.
-function rayAABBEntry(
+// Slab ray/AABB intersection. Returns the entry/exit distances along the ray
+// (origin + t·dir) that bound [min,max], or null if it misses. `tEntry` is
+// clamped to 0 when the origin is inside the box.
+function rayAABBRange(
   o: readonly [number, number, number],
   d: readonly [number, number, number],
   lo: readonly [number, number, number],
   hi: readonly [number, number, number],
-): number | null {
+): { tEntry: number; tExit: number } | null {
   let tmin = Number.NEGATIVE_INFINITY
   let tmax = Number.POSITIVE_INFINITY
   for (let i = 0; i < 3; i++) {
@@ -118,7 +119,43 @@ function rayAABBEntry(
     }
   }
   if (tmax < 0) return null // box behind the ray
-  return tmin >= 0 ? tmin : 0 // origin inside the box -> entry at 0
+  return { tEntry: Math.max(0, tmin), tExit: tmax }
+}
+
+// Parse model clip planes into active half-spaces [nx,ny,nz,a] in [0,1]^3 object
+// space (kept side is dot(n,p-0.5)-a >= 0). Cutaway carves an interior slab, so
+// return none there (matching chunksNotClippedOut's conservative choice).
+function activeClipPlanes(
+  clipPlanes: ArrayLike<number> | undefined,
+  isCutaway: boolean | undefined,
+): number[][] {
+  if (!clipPlanes || isCutaway) return []
+  const out: number[][] = []
+  const count = Math.floor(clipPlanes.length / 4)
+  for (let p = 0; p < count; p++) {
+    const nx = clipPlanes[p * 4 + 0]
+    const ny = clipPlanes[p * 4 + 1]
+    const nz = clipPlanes[p * 4 + 2]
+    const a = clipPlanes[p * 4 + 3]
+    if (a > 1 || a < -1) continue
+    if (nx * nx + ny * ny + nz * nz < 1e-12) continue
+    out.push([nx, ny, nz, a])
+  }
+  return out
+}
+
+export interface PickExplodedOptions {
+  // Restrict the pick to these chunk indices (e.g. the not-clipped / resident set).
+  allowed?: ReadonlySet<number>
+  // Active clip planes + cutaway flag, for per-voxel skipping of the clipped-away
+  // portion of a block that only partly survives the plane.
+  clipPlanes?: ArrayLike<number>
+  isCutaway?: boolean
+  // Voxel value lookup (RAS order) + the transparency threshold. When given, the
+  // ray marches into the block and lands on the first voxel whose value exceeds
+  // the threshold (the visible tissue surface) instead of the bounding-box face.
+  sample?: (x: number, y: number, z: number) => number
+  threshold?: number
 }
 
 /**
@@ -143,76 +180,125 @@ export function pickExplodedVoxel(
   explode: ChunkExplodeOptions | null | undefined,
   rayOrigin: readonly [number, number, number],
   rayDir: readonly [number, number, number],
-  allowed?: ReadonlySet<number>,
+  opts: PickExplodedOptions = {},
 ): { chunkIndex: number; voxel: [number, number, number] } | null {
   if (!chunkExplodeEnabled(explode)) return null
+  const planes = activeClipPlanes(opts.clipPlanes, opts.isCutaway)
+  const [vx, vy, vz] = plan.volumeDims
+  const threshold = opts.threshold ?? 0
   let bestT = Number.POSITIVE_INFINITY
   let bestCi = -1
-  let bestMat: mat4 | null = null
+  let bestVoxel: [number, number, number] | null = null
+
   for (let ci = 0; ci < plan.chunks.length; ci++) {
-    if (allowed && !allowed.has(ci)) continue // hidden block (clipped / unstreamed)
+    if (opts.allowed && !opts.allowed.has(ci)) continue // hidden (clipped/unstreamed)
     const desc = plan.chunks[ci]
-    const m = chunkExplodedMatRAS(plan, ci, matRAS as Float32Array, explode)
-    const vox2mm = voxToMMMatrix(m)
-    const x0 = desc.voxelOrigin[0]
-    const y0 = desc.voxelOrigin[1]
-    const z0 = desc.voxelOrigin[2]
-    const x1 = x0 + desc.voxelDims[0]
-    const y1 = y0 + desc.voxelDims[1]
-    const z1 = z0 + desc.voxelDims[2]
+    const ox = desc.voxelOrigin[0]
+    const oy = desc.voxelOrigin[1]
+    const oz = desc.voxelOrigin[2]
+    const ex = ox + desc.voxelDims[0]
+    const ey = oy + desc.voxelDims[1]
+    const ez = oz + desc.voxelDims[2]
+    const vox2mm = voxToMMMatrix(
+      chunkExplodedMatRAS(plan, ci, matRAS as Float32Array, explode),
+    )
     const lo: [number, number, number] = [Infinity, Infinity, Infinity]
     const hi: [number, number, number] = [-Infinity, -Infinity, -Infinity]
     for (let c = 0; c < 8; c++) {
       const p = applyMat(
         vox2mm,
-        c & 1 ? x1 : x0,
-        c & 2 ? y1 : y0,
-        c & 4 ? z1 : z0,
+        c & 1 ? ex : ox,
+        c & 2 ? ey : oy,
+        c & 4 ? ez : oz,
       )
       for (let k = 0; k < 3; k++) {
         lo[k] = Math.min(lo[k], p[k])
         hi[k] = Math.max(hi[k], p[k])
       }
     }
-    const t = rayAABBEntry(rayOrigin, rayDir, lo, hi)
-    if (t !== null && t < bestT) {
-      bestT = t
+    const range = rayAABBRange(rayOrigin, rayDir, lo, hi)
+    if (!range || range.tEntry >= bestT) continue
+    const inv = mat4.create()
+    if (!mat4.invert(inv, vox2mm)) continue
+
+    // No data sampler: land on the box-entry voxel (the legacy behaviour, used by
+    // tests). Block-level `allowed` has already dropped fully-clipped blocks.
+    if (!opts.sample) {
+      const hitMM = applyMat(
+        inv,
+        rayOrigin[0] + range.tEntry * rayDir[0],
+        rayOrigin[1] + range.tEntry * rayDir[1],
+        rayOrigin[2] + range.tEntry * rayDir[2],
+      )
+      bestT = range.tEntry
       bestCi = ci
-      bestMat = vox2mm
+      bestVoxel = [
+        clampInt(hitMM[0], ox, ex - 1),
+        clampInt(hitMM[1], oy, ey - 1),
+        clampInt(hitMM[2], oz, ez - 1),
+      ]
+      continue
+    }
+
+    // March the block's data: step ~half a voxel from entry to exit and stop at
+    // the first voxel that is opaque (value > threshold) AND on the kept side of
+    // every clip plane — the visible tissue surface, not the bounding-box face.
+    const vEntry = applyMat(
+      inv,
+      rayOrigin[0] + range.tEntry * rayDir[0],
+      rayOrigin[1] + range.tEntry * rayDir[1],
+      rayOrigin[2] + range.tEntry * rayDir[2],
+    )
+    const vExit = applyMat(
+      inv,
+      rayOrigin[0] + range.tExit * rayDir[0],
+      rayOrigin[1] + range.tExit * rayDir[1],
+      rayOrigin[2] + range.tExit * rayDir[2],
+    )
+    const span = Math.hypot(
+      vExit[0] - vEntry[0],
+      vExit[1] - vEntry[1],
+      vExit[2] - vEntry[2],
+    )
+    const steps = Math.min(2048, Math.max(1, Math.ceil(span * 2)))
+    for (let s = 0; s <= steps; s++) {
+      const f = s / steps
+      const ix = Math.round(vEntry[0] + (vExit[0] - vEntry[0]) * f)
+      const iy = Math.round(vEntry[1] + (vExit[1] - vEntry[1]) * f)
+      const iz = Math.round(vEntry[2] + (vExit[2] - vEntry[2]) * f)
+      if (ix < ox || ix >= ex || iy < oy || iy >= ey || iz < oz || iz >= ez) {
+        continue
+      }
+      if (planes.length > 0) {
+        const fx = (ix + 0.5) / vx - 0.5
+        const fy = (iy + 0.5) / vy - 0.5
+        const fz = (iz + 0.5) / vz - 0.5
+        let clipped = false
+        for (const [nx, ny, nz, a] of planes) {
+          if (nx * fx + ny * fy + nz * fz - a < 0) {
+            clipped = true
+            break
+          }
+        }
+        if (clipped) continue
+      }
+      if (opts.sample(ix, iy, iz) > threshold) {
+        const t = range.tEntry + (range.tExit - range.tEntry) * f
+        if (t < bestT) {
+          bestT = t
+          bestCi = ci
+          bestVoxel = [ix, iy, iz]
+        }
+        break
+      }
     }
   }
-  if (bestCi < 0 || !bestMat) return null
-  const hitMM: [number, number, number] = [
-    rayOrigin[0] + bestT * rayDir[0],
-    rayOrigin[1] + bestT * rayDir[1],
-    rayOrigin[2] + bestT * rayDir[2],
-  ]
-  const inv = mat4.create()
-  if (!mat4.invert(inv, bestMat)) return null
-  const v = applyMat(inv, hitMM[0], hitMM[1], hitMM[2])
-  const desc = plan.chunks[bestCi]
-  const clamp = (val: number, lo2: number, hi2: number) =>
-    Math.max(lo2, Math.min(hi2, Math.round(val)))
-  return {
-    chunkIndex: bestCi,
-    voxel: [
-      clamp(
-        v[0],
-        desc.voxelOrigin[0],
-        desc.voxelOrigin[0] + desc.voxelDims[0] - 1,
-      ),
-      clamp(
-        v[1],
-        desc.voxelOrigin[1],
-        desc.voxelOrigin[1] + desc.voxelDims[1] - 1,
-      ),
-      clamp(
-        v[2],
-        desc.voxelOrigin[2],
-        desc.voxelOrigin[2] + desc.voxelDims[2] - 1,
-      ),
-    ],
-  }
+  if (bestCi < 0 || !bestVoxel) return null
+  return { chunkIndex: bestCi, voxel: bestVoxel }
+}
+
+function clampInt(val: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, Math.round(val)))
 }
 
 export function chunkExplodedMatRAS(

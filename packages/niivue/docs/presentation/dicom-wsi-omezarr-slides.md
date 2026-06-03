@@ -5,6 +5,10 @@ paginate: true
 title: Massive Volumetric Imaging in the Browser
 author: NiiVue
 class: lead
+style: |
+  /* gaia's default size overflows several content-dense slides; scale the
+     whole deck down a touch so every slide fits the frame. */
+  section { font-size: 0.78em; }
 ---
 
 <!--
@@ -426,8 +430,6 @@ is already live, skip this entirely.
 ---
 
 ## Where it stands
-
-<style scoped>section { font-size: 0.8em; }</style>
 
 **Done**
 - Tiled rendering past `maxTextureDimension3D`, both backends

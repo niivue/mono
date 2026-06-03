@@ -45,6 +45,7 @@ type PyramidLocks = Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>;
 struct AppState {
     base_url: String,
     volumes: VolumeStore,
+    dataset_root: Arc<Mutex<Option<PathBuf>>>,
     preview_cache: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     pyramid_locks: PyramidLocks,
     patch: Arc<Mutex<Option<Value>>>,
@@ -124,6 +125,7 @@ pub fn spawn_default() -> ServerHandle {
     let discovery = discover_volumes();
     let volume_count = discovery.volumes.len();
     let warm_volumes = discovery.volumes.clone();
+    let warm_root = discovery.root.clone();
     let volumes = Arc::new(Mutex::new(discovery.volumes));
     let dataset_root = Arc::new(Mutex::new(discovery.root));
     let preview_cache = Arc::new(Mutex::new(HashMap::new()));
@@ -132,6 +134,7 @@ pub fn spawn_default() -> ServerHandle {
     let state = AppState {
         base_url: base_url.clone(),
         volumes: volumes.clone(),
+        dataset_root: dataset_root.clone(),
         preview_cache: preview_cache.clone(),
         pyramid_locks: pyramid_locks.clone(),
         patch: Arc::new(Mutex::new(None)),
@@ -141,6 +144,7 @@ pub fn spawn_default() -> ServerHandle {
     let my_gen = warm_generation.load(Ordering::SeqCst);
     spawn_coarse_warm(
         warm_volumes,
+        warm_root,
         pyramid_locks.clone(),
         warm_generation.clone(),
         my_gen,
@@ -246,6 +250,7 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
     append_working_derivatives(&mut volumes, Some(&root));
     let volume_count = volumes.len();
     let warm_volumes = volumes.clone();
+    let warm_root = Some(root.clone());
 
     *handle
         .volumes
@@ -263,6 +268,7 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
     let my_gen = handle.warm_generation.fetch_add(1, Ordering::SeqCst) + 1;
     spawn_coarse_warm(
         warm_volumes,
+        warm_root,
         handle.pyramid_locks.clone(),
         handle.warm_generation.clone(),
         my_gen,
@@ -584,11 +590,12 @@ async fn raw_level_volume(
     State(state): State<AppState>,
 ) -> Result<Response, StatusCode> {
     let volume = find_volume(&state, &path.vol_id).ok_or(StatusCode::NOT_FOUND)?;
+    let dataset_root = current_dataset_root(&state);
     let level = clamp_pyramid_level(path.level, volume.shape);
     let path = if level == 0 {
         volume.source_path.clone().ok_or(StatusCode::NOT_FOUND)?
     } else {
-        ensure_downsampled_nifti(&volume, level, &state.pyramid_locks)
+        ensure_downsampled_nifti(&volume, level, &state.pyramid_locks, dataset_root.as_deref())
             .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?
     };
     let body = tokio::fs::read(&path)
@@ -676,6 +683,7 @@ async fn image_tile(
         return Ok((headers, cached).into_response());
     }
 
+    let dataset_root = current_dataset_root(&state);
     let disk_path = disk_preview_cache_path(
         &volume,
         &path.axis,
@@ -686,6 +694,7 @@ async fn image_tile(
         &path.quality_format,
         query.level,
         query.v.as_deref().unwrap_or(""),
+        dataset_root.as_deref(),
     );
     if let Some(ref dp) = disk_path {
         if let Ok(bytes) = fs::read(dp) {
@@ -704,6 +713,7 @@ async fn image_tile(
         &path.size,
         query.level,
         &state.pyramid_locks,
+        dataset_root.as_deref(),
     ) {
         if let Ok(mut cache) = state.preview_cache.lock() {
             cache.insert(cache_key, bmp.clone());
@@ -1622,6 +1632,12 @@ fn find_volume(state: &AppState, vol_id: &str) -> Option<VolumeEntry> {
         .and_then(|volumes| volumes.iter().find(|volume| volume.id == vol_id).cloned())
 }
 
+/// The currently-open dataset root. Every volume in the store belongs to it, so
+/// it scopes the per-dataset image cache directory.
+fn current_dataset_root(state: &AppState) -> Option<PathBuf> {
+    state.dataset_root.lock().ok().and_then(|root| root.clone())
+}
+
 fn preview_level_for_size(size: &str) -> u8 {
     let max_dimension = requested_size_bound(size).unwrap_or(96);
     match max_dimension {
@@ -1660,8 +1676,9 @@ fn ensure_downsampled_nifti(
     volume: &VolumeEntry,
     level: u8,
     locks: &PyramidLocks,
+    dataset_root: Option<&FsPath>,
 ) -> Option<PathBuf> {
-    let cache_path = downsampled_nifti_cache_path(volume, level)?;
+    let cache_path = downsampled_nifti_cache_path(volume, level, dataset_root)?;
     if cache_path.is_file() {
         return Some(cache_path);
     }
@@ -1669,7 +1686,7 @@ fn ensure_downsampled_nifti(
     // One decode builds every missing level up to the max, so later coarse/fine
     // requests for this volume become warm cache hits.
     let targets: Vec<u8> = (1..=max_pyramid_level(volume.shape)).collect();
-    build_pyramid_levels(volume, &targets, locks)?;
+    build_pyramid_levels(volume, &targets, locks, dataset_root)?;
 
     cache_path.is_file().then_some(cache_path)
 }
@@ -1677,7 +1694,12 @@ fn ensure_downsampled_nifti(
 /// Decode the source NIfTI once and write any of `targets` not already cached.
 /// Serialized per-volume via the signature lock; safe to call from request
 /// handlers and the background warmer alike.
-fn build_pyramid_levels(volume: &VolumeEntry, targets: &[u8], locks: &PyramidLocks) -> Option<()> {
+fn build_pyramid_levels(
+    volume: &VolumeEntry,
+    targets: &[u8],
+    locks: &PyramidLocks,
+    dataset_root: Option<&FsPath>,
+) -> Option<()> {
     let signature = source_signature(volume)?;
     let lock = pyramid_lock_for(locks, &signature)?;
     let _guard = lock.lock().ok()?;
@@ -1688,7 +1710,7 @@ fn build_pyramid_levels(volume: &VolumeEntry, targets: &[u8], locks: &PyramidLoc
         .copied()
         .filter(|&level| level >= 1)
         .filter(|&level| {
-            downsampled_nifti_cache_path(volume, level)
+            downsampled_nifti_cache_path(volume, level, dataset_root)
                 .map(|path| !path.is_file())
                 .unwrap_or(false)
         })
@@ -1706,7 +1728,7 @@ fn build_pyramid_levels(volume: &VolumeEntry, targets: &[u8], locks: &PyramidLoc
     let dim_z = usize::from(header.shape[2]);
 
     for level in pending {
-        let cache_path = downsampled_nifti_cache_path(volume, level)?;
+        let cache_path = downsampled_nifti_cache_path(volume, level, dataset_root)?;
         let parent = cache_path.parent()?;
         fs::create_dir_all(parent).ok()?;
         let factor = pyramid_factor(level);
@@ -1757,11 +1779,13 @@ fn build_pyramid_levels(volume: &VolumeEntry, targets: &[u8], locks: &PyramidLoc
 /// (generation changed) and skips volumes whose coarse level is already cached.
 fn spawn_coarse_warm(
     volumes: Vec<VolumeEntry>,
+    dataset_root: Option<PathBuf>,
     locks: PyramidLocks,
     generation: Arc<AtomicU64>,
     my_gen: u64,
 ) {
     std::thread::spawn(move || {
+        let dataset_root = dataset_root.as_deref();
         for volume in volumes {
             if generation.load(Ordering::SeqCst) != my_gen {
                 return;
@@ -1773,25 +1797,51 @@ fn spawn_coarse_warm(
             if max_level == 0 {
                 continue;
             }
-            if downsampled_nifti_cache_path(&volume, max_level)
+            if downsampled_nifti_cache_path(&volume, max_level, dataset_root)
                 .map(|path| path.is_file())
                 .unwrap_or(false)
             {
                 continue;
             }
-            let _ = build_pyramid_levels(&volume, &[max_level], &locks);
+            let _ = build_pyramid_levels(&volume, &[max_level], &locks, dataset_root);
         }
     });
 }
 
-fn downsampled_nifti_cache_path(volume: &VolumeEntry, level: u8) -> Option<PathBuf> {
+fn downsampled_nifti_cache_path(
+    volume: &VolumeEntry,
+    level: u8,
+    dataset_root: Option<&FsPath>,
+) -> Option<PathBuf> {
     let signature = source_signature(volume)?;
     Some(
-        cache_root()
+        dataset_cache_dir(dataset_root)
             .join(PYRAMID_CACHE_NAME)
             .join(signature)
             .join(format!("level-{level}.nii")),
     )
+}
+
+/// Cache root scoped to a dataset: `<cache_root>/datasets/<root-segment>`. This
+/// keeps each dataset's image caches grouped together (so they can be located or
+/// cleared as a unit) while still living outside the dataset and out of git.
+fn dataset_cache_dir(dataset_root: Option<&FsPath>) -> PathBuf {
+    cache_root().join("datasets").join(dataset_segment(dataset_root))
+}
+
+fn dataset_segment(dataset_root: Option<&FsPath>) -> String {
+    match dataset_root {
+        Some(root) => {
+            let name = root
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(sanitize_cache_component)
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| "dataset".to_string());
+            format!("{}-{:016x}", name, stable_path_hash(root))
+        }
+        None => "default".to_string(),
+    }
 }
 
 fn source_signature(volume: &VolumeEntry) -> Option<String> {
@@ -1823,6 +1873,7 @@ fn disk_preview_cache_path(
     quality_format: &str,
     level: Option<u8>,
     version: &str,
+    dataset_root: Option<&FsPath>,
 ) -> Option<PathBuf> {
     let signature = source_signature(volume)?;
     let level_part = level
@@ -1845,7 +1896,7 @@ fn disk_preview_cache_path(
         version_part,
     );
     Some(
-        cache_root()
+        dataset_cache_dir(dataset_root)
             .join(PREVIEW_DISK_CACHE_NAME)
             .join(signature)
             .join(file_name),
@@ -1953,6 +2004,7 @@ fn render_slice_bmp(
     size: &str,
     requested_level: Option<u8>,
     pyramid_locks: &PyramidLocks,
+    dataset_root: Option<&FsPath>,
 ) -> Option<Vec<u8>> {
     let level = clamp_pyramid_level(
         requested_level.unwrap_or_else(|| preview_level_for_size(size)),
@@ -1962,7 +2014,7 @@ fn render_slice_bmp(
     let path = if level == 0 {
         volume.source_path.clone()?
     } else {
-        ensure_downsampled_nifti(volume, level, pyramid_locks)?
+        ensure_downsampled_nifti(volume, level, pyramid_locks, dataset_root)?
     };
     let (header, bytes) = read_nifti_file(&path)?;
     let data = bytes.get(header.vox_offset..)?;

@@ -20,11 +20,6 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   of NIfTI tile previews fed from an IIIF VolumeDesktop manifest, with
   an embedded niivue 3D pane that loads the selected volume at the
   matching LOD.
-- `volume-fly-space.html` — WASD-fly through a constellation of NIfTI
-  volumes rendered in a single shared 3D scene via niivue's
-  `space: 'global3d'` instances. Streams source volumes from `/api`,
-  prefetches low-resolution variants, and keeps next bricks warm as
-  the camera moves.
 - `omezarr.html` — OME-Zarr pyramid viewer with level selection,
   subvolume streaming, exploded block layout, and a WebGL2 / WebGPU
   backend toggle. The default volume is `pawpawsaurus.ome.zarr` when
@@ -165,16 +160,22 @@ IIIF_SERVER_URL=http://127.0.0.1:9090 bunx nx dev iiif-volumetric-demo
 ```
 
 The header on every page exposes the shared cross-page nav
-(`volumes`, `sheet`, `stitch`, `osd desktop`, `fly space`, `omezarr`)
-plus the `WebGL2 / WebGPU` backend toggle. `sheet.html`,
-`osd-volume-desktop.html`, and `volume-fly-space.html` all need the
-IIIF server running with at least one fixture volume — `sheet.html`
-cycles available volumes through 9 cells; `osd-volume-desktop.html`
-reads the VolumeDesktop manifest at `/iiif/desktop/neuro/manifest`;
-`volume-fly-space.html` streams from `/api`. `omezarr.html` needs at
+(`volumes`, `sheet`, `stitch`, `osd desktop`, `omezarr`, `wsi`)
+plus the `WebGL2 / WebGPU` backend toggle. `sheet.html` and
+`osd-volume-desktop.html` both need the IIIF server running with at
+least one fixture volume — `sheet.html` cycles available volumes
+through 9 cells; `osd-volume-desktop.html` reads the VolumeDesktop
+manifest at `/iiif/desktop/neuro/manifest`. `omezarr.html` needs at
 least one OME-Zarr fixture; open
 `http://127.0.0.1:8087/omezarr.html?id=fibsem-uint8.zarr` after the
 default OME-Zarr fetch.
+
+> **Retired POC:** `volume-fly-space.html` (WASD-fly through a
+> constellation of NIfTI volumes via niivue's `space: 'global3d'`
+> instances) was a proof-of-concept for planning the subvolume
+> streaming strategy. Its source is kept in the repo, but it is no
+> longer in the nav or the production build. Open it directly during
+> development with `http://127.0.0.1:8087/volume-fly-space.html`.
 
 ### 6. Stop
 

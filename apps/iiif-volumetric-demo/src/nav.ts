@@ -19,7 +19,6 @@ const PAGES: Page[] = [
   { href: '/sheet.html', label: 'sheet' },
   { href: '/stitch.html', label: 'stitch' },
   { href: '/osd-volume-desktop.html', label: 'osd desktop' },
-  { href: '/volume-fly-space.html', label: 'fly space' },
   { href: '/omezarr.html', label: 'omezarr' },
   { href: '/wsi.html', label: 'wsi' },
 ]

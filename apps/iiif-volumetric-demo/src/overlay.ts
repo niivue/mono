@@ -78,6 +78,7 @@ let nv: NiiVue | null = null
 let volumes: VolumeApiEntry[] = []
 let current: VolumeApiEntry | null = null
 let fetched = new Set<number>()
+let bgWin: { min: number; max: number } = { min: 0, max: 1 }
 
 function showFallback(msg: string): void {
   els.fallback.textContent = msg
@@ -125,7 +126,57 @@ function fetchRawChunk(
   })
 }
 
-function createBackground(v: VolumeApiEntry, lvl: VolumeLevel): NVImage {
+// Robust display window (2nd-98th percentile of the non-zero/object voxels) via
+// a cheap histogram, so the streamed background shows real structure instead of
+// rendering near-black under a full-range window (e.g. uint16 [0, 65535]).
+function robustWindow(scalars: Float32Array): { min: number; max: number } {
+  let lo = Number.POSITIVE_INFINITY
+  let hi = Number.NEGATIVE_INFINITY
+  let count = 0
+  for (let i = 0; i < scalars.length; i++) {
+    const s = scalars[i]
+    if (s > 0) {
+      if (s < lo) lo = s
+      if (s > hi) hi = s
+      count++
+    }
+  }
+  if (count === 0 || hi <= lo) return { min: 0, max: 1 }
+  const BINS = 256
+  const hist = new Uint32Array(BINS)
+  const scale = (BINS - 1) / (hi - lo)
+  for (let i = 0; i < scalars.length; i++) {
+    const s = scalars[i]
+    if (s > 0) hist[Math.floor((s - lo) * scale)]++
+  }
+  const loCut = count * 0.02
+  const hiCut = count * 0.98
+  let cum = 0
+  let pLo = lo
+  let pHi = hi
+  for (let b = 0; b < BINS; b++) {
+    cum += hist[b]
+    if (cum >= loCut) {
+      pLo = lo + b / scale
+      break
+    }
+  }
+  cum = 0
+  for (let b = 0; b < BINS; b++) {
+    cum += hist[b]
+    if (cum >= hiCut) {
+      pHi = lo + b / scale
+      break
+    }
+  }
+  return { min: pLo, max: pHi > pLo ? pHi : pLo + 1 }
+}
+
+function createBackground(
+  v: VolumeApiEntry,
+  lvl: VolumeLevel,
+  win: { min: number; max: number },
+): NVImage {
   const dt = niftiDatatype(v.dtype)
   const cache = new Map<number, Promise<Uint8Array>>()
   const chunkSource: VolumeChunkSource = (request) => {
@@ -152,8 +203,8 @@ function createBackground(v: VolumeApiEntry, lvl: VolumeLevel): NVImage {
     spacing: lvl.spacing,
     datatypeCode: dt.code,
     numBitsPerVoxel: dt.bits,
-    calMin: dt.displayMin,
-    calMax: dt.displayMax,
+    calMin: win.min,
+    calMax: win.max,
     colormap: 'gray',
     chunkSource,
   })
@@ -265,6 +316,7 @@ function renderHud(): void {
   els.hud.textContent =
     `background: ${current.id}\n` +
     `level ${lvl.level} · ${lvl.shape.join('×')} · ${current.dtype}\n` +
+    `window: ${Math.round(bgWin.min)}–${Math.round(bgWin.max)}\n` +
     `bricks fetched: ${fetched.size}\n` +
     `z-score overlay: ${els.overlayOn.checked ? `${els.cmap.value}, opacity ${els.opacity.value}` : 'off'}`
 }
@@ -274,21 +326,23 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
   current = v
   fetched = new Set()
   const lvl = streamLevel(v)
-  const list = [createBackground(v, lvl)]
+  const ovLvl = overlayLevel(v)
+  els.mag.textContent = `streaming L${lvl.level} · windowing from L${ovLvl.level}…`
+  // One coarse-level fetch drives both the background's display window and the
+  // z-score overlay (same volume), so the anatomy is visible and registered.
+  let scalars: Float32Array
+  try {
+    scalars = await fetchLevelScalars(v, ovLvl)
+  } catch (err) {
+    showFallback(
+      `level fetch failed: ${err instanceof Error ? err.message : err}`,
+    )
+    return
+  }
+  bgWin = robustWindow(scalars)
+  const list = [createBackground(v, lvl, bgWin)]
   if (els.overlayOn.checked) {
-    const ovLvl = overlayLevel(v)
-    els.mag.textContent = `streaming L${lvl.level} · z-overlay from L${ovLvl.level}…`
-    try {
-      const scalars = await fetchLevelScalars(v, ovLvl)
-      list.push(createStatOverlay(v, ovLvl, scalars))
-    } catch (err) {
-      showFallback(
-        `overlay fetch failed: ${err instanceof Error ? err.message : err}`,
-      )
-      return
-    }
-  } else {
-    els.mag.textContent = `streaming L${lvl.level} at ${CHUNK_EDGE}³ bricks`
+    list.push(createStatOverlay(v, ovLvl, scalars))
   }
   try {
     await nv.loadVolumes(list)

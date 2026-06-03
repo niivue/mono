@@ -30,6 +30,13 @@ jobs:
       - name: Codegen (ipyniivue)
         run: bunx nx run ipyniivue:codegen
 
+      - name: Verify generated ipyniivue API is current
+        run: |
+          git diff --exit-code -- \
+            packages/ipyniivue/api.generated.json \
+            packages/ipyniivue/src/ipyniivue/_generated.py \
+            packages/ipyniivue/src/ipyniivue/static/_widget.template.js
+
       # Pixi provisions the Python dev env used by ipyniivue's Nx
       # targets (ruff, mypy, pytest, hatchling/python-build, jupyter).
       # Cached across runs by prefix-dev/setup-pixi.

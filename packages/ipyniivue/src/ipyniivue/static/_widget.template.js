@@ -36,6 +36,7 @@ const PROPS_RW = [
   ["crosshairGap", "crosshair_gap"],
   ["crosshairPos", "crosshair_pos"],
   ["crosshairWidth", "crosshair_width"],
+  ["crosshairXRayOpacity", "crosshair_x_ray_opacity"],
   ["devicePixelRatio", "device_pixel_ratio"],
   ["drawColormap", "draw_colormap"],
   ["drawIsEnabled", "draw_is_enabled"],

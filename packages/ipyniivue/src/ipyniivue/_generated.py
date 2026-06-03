@@ -111,6 +111,7 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
     crosshair_gap = traitlets.Float(None, allow_none=True).tag(sync=True)
     crosshair_pos = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=3, maxlen=3, allow_none=True).tag(sync=True)
     crosshair_width = traitlets.Float(None, allow_none=True).tag(sync=True)
+    crosshair_x_ray_opacity = traitlets.Float(None, allow_none=True).tag(sync=True)
     device_pixel_ratio = traitlets.Float(None, allow_none=True).tag(sync=True)
     draw_colormap = traitlets.Unicode(None, allow_none=True).tag(sync=True)
     draw_is_enabled = traitlets.Bool(None, allow_none=True).tag(sync=True)

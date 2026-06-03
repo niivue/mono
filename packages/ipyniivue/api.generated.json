@@ -186,6 +186,17 @@
       "doc": null
     },
     {
+      "jsName": "crosshairXRayOpacity",
+      "pyName": "crosshair_x_ray_opacity",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "devicePixelRatio",
       "pyName": "device_pixel_ratio",
       "tsType": "number",

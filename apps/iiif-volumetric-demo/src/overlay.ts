@@ -29,9 +29,9 @@ const baseUrl = window.location.origin
 const CHUNK_EDGE = 256
 const RESIDENCY_BYTES = 1_500_000_000
 const DEFAULT_ID = 'pawpawsaurus.ome.zarr'
-// The synthetic overlay is a modest grid resampled onto the background; it only
-// needs to be smooth, not high-res (niivue interpolates it per brick).
-const OVERLAY_EDGE = 96
+// Longest-edge cap for the level the statistical overlay is computed from: small
+// enough to fetch whole in one request, detailed enough to read as a stat map.
+const OVERLAY_MAX = 384
 
 type Bbox6 = [number, number, number, number, number, number]
 
@@ -156,48 +156,99 @@ function createBackground(v: VolumeApiEntry, lvl: VolumeLevel): NVImage {
   })
 }
 
-// Smooth scalar field (sum of Gaussian blobs) on an OVERLAY_EDGE grid, sized in
-// mm to cover the same box as the background level so the two register.
-function createOverlay(v: VolumeApiEntry, lvl: VolumeLevel): NVImage {
-  const n = OVERLAY_EDGE
-  const dimsMM: Shape3 = [
-    lvl.shape[0] * lvl.spacing[0],
-    lvl.shape[1] * lvl.spacing[1],
-    lvl.shape[2] * lvl.spacing[2],
-  ]
-  const spacing: Shape3 = [dimsMM[0] / n, dimsMM[1] / n, dimsMM[2] / n]
-  const blobs: Array<{ c: Shape3; r: number }> = [
-    { c: [0.5, 0.5, 0.5], r: 0.16 },
-    { c: [0.34, 0.6, 0.46], r: 0.1 },
-    { c: [0.66, 0.4, 0.56], r: 0.09 },
-  ]
-  const img = new Float32Array(n * n * n)
-  for (let z = 0; z < n; z++) {
-    const fz = (z + 0.5) / n
-    for (let y = 0; y < n; y++) {
-      const fy = (y + 0.5) / n
-      for (let x = 0; x < n; x++) {
-        const fx = (x + 0.5) / n
-        let val = 0
-        for (const b of blobs) {
-          const dx = fx - b.c[0]
-          const dy = fy - b.c[1]
-          const dz = fz - b.c[2]
-          val += Math.exp(-(dx * dx + dy * dy + dz * dz) / (2 * b.r * b.r))
-        }
-        img[x + y * n + z * n * n] = Math.min(1, val)
-      }
+// Pick a coarse level for the overlay: the finest whose longest edge fits
+// OVERLAY_MAX, so the whole level is a quick single fetch. It covers the same mm
+// box as the streamed background (same pyramid), so the two register.
+function overlayLevel(v: VolumeApiEntry): VolumeLevel {
+  const levels =
+    v.levels && v.levels.length > 0
+      ? v.levels
+      : [{ level: 0, shape: v.shape, spacing: v.spacing, bytes: null }]
+  for (const l of [...levels].sort((a, b) => a.level - b.level)) {
+    if (Math.max(...l.shape) <= OVERLAY_MAX) return l
+  }
+  return levels[levels.length - 1]
+}
+
+// Fetch a whole pyramid level as scalar intensities (one number per voxel).
+async function fetchLevelScalars(
+  v: VolumeApiEntry,
+  lvl: VolumeLevel,
+): Promise<Float32Array> {
+  const bbox = [0, 0, 0, lvl.shape[0], lvl.shape[1], lvl.shape[2]]
+  const url = `${baseUrl}/volumes/${encodeURIComponent(v.id)}/raw.bin?level=${lvl.level}&bbox=${bbox.join(',')}`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`)
+  const buf = await res.arrayBuffer()
+  const n = lvl.shape[0] * lvl.shape[1] * lvl.shape[2]
+  const out = new Float32Array(n)
+  switch (v.dtype) {
+    case 'uint8':
+    case 'int8': {
+      const a = new Uint8Array(buf)
+      for (let i = 0; i < n; i++) out[i] = a[i]
+      break
+    }
+    case 'int16': {
+      const a = new Int16Array(buf)
+      for (let i = 0; i < n; i++) out[i] = a[i]
+      break
+    }
+    case 'float32': {
+      out.set(new Float32Array(buf).subarray(0, n))
+      break
+    }
+    default: {
+      const a = new Uint16Array(buf)
+      for (let i = 0; i < n; i++) out[i] = a[i]
+      break
     }
   }
+  return out
+}
+
+// Turn the volume's own intensities into a statistical (z-score) overlay: per
+// voxel z = (intensity - mean) / std over the non-zero (object) voxels. Shown in
+// a hot colormap above z = 1, it reads like a stat map on the anatomy — the same
+// image, overlaid on itself, highlighting the denser-than-average structure.
+function createStatOverlay(
+  v: VolumeApiEntry,
+  lvl: VolumeLevel,
+  scalars: Float32Array,
+): NVImage {
+  let sum = 0
+  let count = 0
+  for (let i = 0; i < scalars.length; i++) {
+    const s = scalars[i]
+    if (s > 0) {
+      sum += s
+      count++
+    }
+  }
+  const mean = count ? sum / count : 0
+  let varSum = 0
+  for (let i = 0; i < scalars.length; i++) {
+    const s = scalars[i]
+    if (s > 0) {
+      const d = s - mean
+      varSum += d * d
+    }
+  }
+  const std = count ? Math.sqrt(varSum / count) || 1 : 1
+  const img = new Float32Array(scalars.length)
+  for (let i = 0; i < scalars.length; i++) {
+    const s = scalars[i]
+    img[i] = s > 0 ? (s - mean) / std : 0
+  }
   return buildLogicalVolume({
-    id: 'overlay (synthetic)',
-    url: 'ov-overlay://synthetic',
-    shape: [n, n, n],
-    spacing,
+    id: `${v.id} z-overlay`,
+    url: `ov-stat://${encodeURIComponent(v.id)}/L${lvl.level}`,
+    shape: lvl.shape,
+    spacing: lvl.spacing,
     datatypeCode: 16, // DT_FLOAT32
     numBitsPerVoxel: 32,
-    calMin: 0.25,
-    calMax: 1.0,
+    calMin: 1.0,
+    calMax: 4.0,
     colormap: els.cmap.value || 'warm',
     opacity: Number(els.opacity.value),
     isTransparentBelowCalMin: true,
@@ -212,7 +263,7 @@ function renderHud(): void {
     `background: ${current.id}\n` +
     `level ${lvl.level} · ${lvl.shape.join('×')} · ${current.dtype}\n` +
     `bricks fetched: ${fetched.size}\n` +
-    `overlay: ${els.overlayOn.checked ? `${els.cmap.value}, opacity ${els.opacity.value}` : 'off'}`
+    `z-score overlay: ${els.overlayOn.checked ? `${els.cmap.value}, opacity ${els.opacity.value}` : 'off'}`
 }
 
 async function loadAll(v: VolumeApiEntry): Promise<void> {
@@ -220,10 +271,22 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
   current = v
   fetched = new Set()
   const lvl = streamLevel(v)
-  els.mag.textContent = `streaming L${lvl.level} at ${CHUNK_EDGE}³ bricks`
-  const list = els.overlayOn.checked
-    ? [createBackground(v, lvl), createOverlay(v, lvl)]
-    : [createBackground(v, lvl)]
+  const list = [createBackground(v, lvl)]
+  if (els.overlayOn.checked) {
+    const ovLvl = overlayLevel(v)
+    els.mag.textContent = `streaming L${lvl.level} · z-overlay from L${ovLvl.level}…`
+    try {
+      const scalars = await fetchLevelScalars(v, ovLvl)
+      list.push(createStatOverlay(v, ovLvl, scalars))
+    } catch (err) {
+      showFallback(
+        `overlay fetch failed: ${err instanceof Error ? err.message : err}`,
+      )
+      return
+    }
+  } else {
+    els.mag.textContent = `streaming L${lvl.level} at ${CHUNK_EDGE}³ bricks`
+  }
   try {
     await nv.loadVolumes(list)
   } catch (err) {

@@ -1368,10 +1368,27 @@ export default class NVGlview {
     return null
   }
 
-  refreshDrawing(rgba: Uint8Array, dims: number[], plan?: ChunkPlan): void {
+  refreshDrawing(
+    rgba: Uint8Array,
+    dims: number[],
+    plan?: ChunkPlan,
+    dirtyChunks?: readonly number[],
+  ): void {
     if (!this.gl) return
-    this.sliceRenderer.updateDrawingTexture(this.gl, rgba, dims, plan)
-    this.volumeRenderer.updateDrawingTexture(this.gl, rgba, dims, plan)
+    this.sliceRenderer.updateDrawingTexture(
+      this.gl,
+      rgba,
+      dims,
+      plan,
+      dirtyChunks,
+    )
+    this.volumeRenderer.updateDrawingTexture(
+      this.gl,
+      rgba,
+      dims,
+      plan,
+      dirtyChunks,
+    )
   }
 
   clearDrawing(): void {

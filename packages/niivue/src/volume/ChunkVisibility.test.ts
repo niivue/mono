@@ -3,6 +3,7 @@ import {
   chunksBackToFront,
   chunksInFrustum,
   chunksNotClippedOut,
+  chunksOverlappingVoxelBox,
   orderByViewCenter,
   unionChunkSets,
 } from './ChunkVisibility'
@@ -282,5 +283,37 @@ describe('chunksNotClippedOut', () => {
     expect(
       chunksNotClippedOut(plan, [0, 1, 2, 3], clip([0, 0, 0, 0]), false),
     ).toEqual([0, 1, 2, 3])
+  })
+})
+
+describe('chunksOverlappingVoxelBox', () => {
+  // fourChunkPlan: chunks cover x voxels [0,2),[2,4),[4,6),[6,8); y,z = [0,1).
+  test('a box inside one chunk hits only that chunk', () => {
+    const plan = fourChunkPlan()
+    expect(chunksOverlappingVoxelBox(plan, [0, 0, 0], [1, 0, 0])).toEqual([0])
+    expect(chunksOverlappingVoxelBox(plan, [4, 0, 0], [4, 0, 0])).toEqual([2])
+  })
+
+  test('a box straddling a boundary hits both chunks', () => {
+    const plan = fourChunkPlan()
+    // voxels 1..2: voxel 1 in chunk 0, voxel 2 in chunk 1.
+    expect(chunksOverlappingVoxelBox(plan, [1, 0, 0], [2, 0, 0])).toEqual([
+      0, 1,
+    ])
+    expect(chunksOverlappingVoxelBox(plan, [3, 0, 0], [5, 0, 0])).toEqual([
+      1, 2,
+    ])
+  })
+
+  test('a box spanning the volume hits every chunk', () => {
+    const plan = fourChunkPlan()
+    expect(chunksOverlappingVoxelBox(plan, [0, 0, 0], [7, 0, 0])).toEqual([
+      0, 1, 2, 3,
+    ])
+  })
+
+  test('a box outside the volume on any axis hits nothing', () => {
+    const plan = fourChunkPlan()
+    expect(chunksOverlappingVoxelBox(plan, [0, 1, 0], [7, 1, 0])).toEqual([])
   })
 })

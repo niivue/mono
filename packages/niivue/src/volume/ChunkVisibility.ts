@@ -356,6 +356,39 @@ export function chunksNotClippedOut(
 }
 
 /**
+ * Indices of chunks whose texture region (data + halo) overlaps an inclusive
+ * voxel box `[boxMin, boxMax]`. Used to upload only the drawing chunks a pen
+ * stroke touched instead of re-uploading the whole volume's drawing layer.
+ *
+ * The test uses each chunk's `texOrigin`/`texDims` (halo-inclusive), so a voxel
+ * painted near a chunk boundary also refreshes the neighbour whose halo covers
+ * it — keeping trilinear sampling seamless across the seam.
+ */
+export function chunksOverlappingVoxelBox(
+  plan: ChunkPlan,
+  boxMin: readonly number[],
+  boxMax: readonly number[],
+): number[] {
+  const out: number[] = []
+  for (let ci = 0; ci < plan.chunks.length; ci++) {
+    const d = plan.chunks[ci]
+    const ox = d.texOrigin[0]
+    const oy = d.texOrigin[1]
+    const oz = d.texOrigin[2]
+    const ex = ox + d.texDims[0]
+    const ey = oy + d.texDims[1]
+    const ez = oz + d.texDims[2]
+    // Chunk covers [o, e) per axis; box is inclusive. No overlap if the box is
+    // entirely left of, or entirely at/right of, the chunk on any axis.
+    if (boxMax[0] < ox || boxMin[0] >= ex) continue
+    if (boxMax[1] < oy || boxMin[1] >= ey) continue
+    if (boxMax[2] < oz || boxMin[2] >= ez) continue
+    out.push(ci)
+  }
+  return out
+}
+
+/**
  * Union of several per-tile chunk-index lists into one deduplicated,
  * ascending working set. The renderer collects one list per layout tile
  * (frustum cull for 3D tiles, `chunksCrossingSlice` for 2D tiles) and folds

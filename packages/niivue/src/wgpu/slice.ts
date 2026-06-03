@@ -403,10 +403,11 @@ export class SliceRenderer extends NVRenderer {
     rgba: Uint8Array,
     dims: number[],
     plan?: ChunkPlan,
+    dirtyChunks?: readonly number[],
   ): void {
     if (!this.isReady) return
     if (plan) {
-      this._updateDrawingChunks(device, rgba, dims, plan)
+      this._updateDrawingChunks(device, rgba, dims, plan, dirtyChunks)
       return
     }
     // Non-chunked path: switching back from a chunked volume frees the
@@ -438,6 +439,7 @@ export class SliceRenderer extends NVRenderer {
     rgba: Uint8Array,
     dims: number[],
     plan: ChunkPlan,
+    dirtyChunks?: readonly number[],
   ): void {
     if (this.drawingTexture) {
       this.drawingTexture.destroy()
@@ -452,7 +454,12 @@ export class SliceRenderer extends NVRenderer {
       this.drawingChunks = []
     }
     const chunks = this.drawingChunks ?? []
-    for (let i = 0; i < plan.chunks.length; i++) {
+    // Reusing textures: re-upload only the chunks a pen stroke dirtied.
+    const indices =
+      reuse && dirtyChunks
+        ? dirtyChunks
+        : Array.from({ length: plan.chunks.length }, (_, i) => i)
+    for (const i of indices) {
       const desc = plan.chunks[i]
       const bytes = extractChunkBytes(
         rgba,

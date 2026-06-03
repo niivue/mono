@@ -1345,10 +1345,11 @@ export class VolumeRenderer extends NVRenderer {
     rgba: Uint8Array,
     dims: number[],
     plan?: ChunkPlan,
+    dirtyChunks?: readonly number[],
   ): void {
     if (!this.isReady) return
     if (plan) {
-      this._updateDrawingChunks(device, rgba, dims, plan)
+      this._updateDrawingChunks(device, rgba, dims, plan, dirtyChunks)
       return
     }
     // Non-chunked path: switching back from a chunked volume frees the
@@ -1382,6 +1383,7 @@ export class VolumeRenderer extends NVRenderer {
     rgba: Uint8Array,
     dims: number[],
     plan: ChunkPlan,
+    dirtyChunks?: readonly number[],
   ): void {
     // Switching to chunked frees the single-texture representation.
     if (this.drawingTexture) {
@@ -1397,7 +1399,13 @@ export class VolumeRenderer extends NVRenderer {
       this.drawingChunks = []
     }
     const chunks = this.drawingChunks ?? []
-    for (let i = 0; i < plan.chunks.length; i++) {
+    // When reusing existing textures, a pen stroke only dirties a few chunks;
+    // re-upload just those. A fresh build (or no dirty set) uploads everything.
+    const indices =
+      reuse && dirtyChunks
+        ? dirtyChunks
+        : Array.from({ length: plan.chunks.length }, (_, i) => i)
+    for (const i of indices) {
       const desc = plan.chunks[i]
       const bytes = extractChunkBytes(
         rgba,

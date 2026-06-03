@@ -310,6 +310,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
             penAxCorSag: ctrl._drawPenAxCorSag,
             penOverwrites: ctrl.model.draw.isFillOverwriting,
           })
+          ctrl.markDrawDirty(pt[0], pt[1], pt[2], ctrl.model.draw.penSize)
           ctrl.refreshDrawing()
           ctrl.setCrosshairPos(mm)
         }
@@ -492,6 +493,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
           if (fillResult.success) {
             ;(ctrl.model.drawingVolume as NVImage).img = fillResult.drawBitmap
           }
+        }
+        const penSize = ctrl.model.draw.penSize
+        for (const p of ctrl._drawPenFillPts) {
+          ctrl.markDrawDirty(p[0], p[1], p[2], penSize)
         }
         ctrl.refreshDrawing()
       }
@@ -777,6 +782,14 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               penAxCorSag: ctrl._drawPenAxCorSag,
               penOverwrites: ctrl.model.draw.isFillOverwriting,
             })
+            const penSize = ctrl.model.draw.penSize
+            ctrl.markDrawDirty(
+              ctrl._drawPenLocation[0],
+              ctrl._drawPenLocation[1],
+              ctrl._drawPenLocation[2],
+              penSize,
+            )
+            ctrl.markDrawDirty(newPt[0], newPt[1], newPt[2], penSize)
             ctrl._drawPenLocation = newPt
             ctrl._drawPenFillPts.push(newPt.slice())
             ctrl.refreshDrawing()

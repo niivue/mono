@@ -2116,12 +2116,29 @@ export default class NVView {
     return null
   }
 
-  refreshDrawing(rgba: Uint8Array, dims: number[], plan?: ChunkPlan): void {
+  refreshDrawing(
+    rgba: Uint8Array,
+    dims: number[],
+    plan?: ChunkPlan,
+    dirtyChunks?: readonly number[],
+  ): void {
     if (!this.device) return
     const needsRebind =
       !this.sliceRenderer.drawingTexture || !this.volumeRenderer.drawingTexture
-    this.sliceRenderer.updateDrawingTexture(this.device, rgba, dims, plan)
-    this.volumeRenderer.updateDrawingTexture(this.device, rgba, dims, plan)
+    this.sliceRenderer.updateDrawingTexture(
+      this.device,
+      rgba,
+      dims,
+      plan,
+      dirtyChunks,
+    )
+    this.volumeRenderer.updateDrawingTexture(
+      this.device,
+      rgba,
+      dims,
+      plan,
+      dirtyChunks,
+    )
     if (needsRebind) {
       // Rebuild bind groups to reference the newly created drawing textures
       if (this.volumeRenderer.volumeTexture) {

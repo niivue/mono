@@ -80,6 +80,7 @@ import {
 } from '@/view/NVPerfMarks'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import { validateCustomLayout } from '@/view/NVSliceLayout'
+import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
 import type { ChunkPlan } from '@/volume/chunking'
 import { computeModulationData } from '@/volume/modulation'
 import * as NVVolume from '@/volume/NVVolume'
@@ -112,7 +113,12 @@ type ViewBackend = {
   legendLayout: LegendLayout | null
   graphLayout: GraphLayout | null
   getAvailableShaders: () => string[]
-  refreshDrawing: (rgba: Uint8Array, dims: number[], plan?: ChunkPlan) => void
+  refreshDrawing: (
+    rgba: Uint8Array,
+    dims: number[],
+    plan?: ChunkPlan,
+    dirtyChunks?: readonly number[],
+  ) => void
   clearDrawing: () => void
   destroy: () => void
   forceDevicePixelRatio: number
@@ -211,6 +217,13 @@ export default class NiiVueGPU extends EventTarget {
   _drawPenFillPts: number[][] = []
   _drawLut: LUT | null = null
   _drawingDirty = false
+  // Inclusive voxel AABB of pen strokes since the last drawing flush. When set
+  // on a chunked background, only the chunks overlapping it are re-uploaded;
+  // null means a full upload (first build, undo, clear, colormap change, …).
+  _drawDirtyBox: {
+    min: [number, number, number]
+    max: [number, number, number]
+  } | null = null
   drawPenAutoClose = false
   drawPenFilled = false
   // Undo state (controller-owned — not persisted in documents)
@@ -2946,6 +2959,27 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Expand the pending pen-stroke dirty box by a voxel and its pen radius, so
+   * the next drawing flush re-uploads only the chunks that region touches. Call
+   * this right before `refreshDrawing()` at each pen-stroke site; whole-bitmap
+   * changes (undo, clear, recolour) skip it and fall back to a full upload.
+   */
+  markDrawDirty(x: number, y: number, z: number, radius = 0): void {
+    const r = Math.max(0, Math.ceil(radius))
+    const lo: [number, number, number] = [x - r, y - r, z - r]
+    const hi: [number, number, number] = [x + r, y + r, z + r]
+    if (!this._drawDirtyBox) {
+      this._drawDirtyBox = { min: lo, max: hi }
+      return
+    }
+    const b = this._drawDirtyBox
+    for (let i = 0; i < 3; i++) {
+      b.min[i] = Math.min(b.min[i], lo[i])
+      b.max[i] = Math.max(b.max[i], hi[i])
+    }
+  }
+
   /** Perform the actual bitmap→RGBA conversion and GPU texture upload. Called from drawScene RAF. */
   private _flushDrawing(): void {
     if (!this.model.drawingVolume || !this.view) return
@@ -2970,7 +3004,25 @@ export default class NiiVueGPU extends EventTarget {
     // halo) so chunk indices and texDims line up. Passing it switches both
     // renderers to per-chunk drawing textures for oversized volumes.
     const plan = this.model.volumes[0]?.chunkPlan
-    this.view.refreshDrawing(rgba, [dims[1], dims[2], dims[3]], plan)
+    // Incremental upload: if a pen stroke recorded a dirty box, refresh only the
+    // chunks it touched (halo-inclusive). A null box (undo/clear/recolour/first
+    // build) uploads every chunk. NOTE: the rgba above is still built from the
+    // whole bitmap — a fully chunked drawing bitmap is Phase 2.
+    const dirtyChunks =
+      plan && this._drawDirtyBox
+        ? chunksOverlappingVoxelBox(
+            plan,
+            this._drawDirtyBox.min,
+            this._drawDirtyBox.max,
+          )
+        : undefined
+    this._drawDirtyBox = null
+    this.view.refreshDrawing(
+      rgba,
+      [dims[1], dims[2], dims[3]],
+      plan,
+      dirtyChunks,
+    )
   }
 
   async saveDrawing(filename = 'drawing.nii'): Promise<boolean | Uint8Array> {

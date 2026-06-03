@@ -176,7 +176,64 @@ intended WSI UX and needs no chunked support.
 
 ---
 
-## 7. Files
+## 7. niivue integration contract (no niivue changes)
+
+The OSD-style WSI navigation required **zero changes to niivue source** — it is
+entirely demo code (`apps/iiif-volumetric-demo/src/wsi.ts`) driving niivue's
+existing public API. This section pins down exactly which niivue behaviours the
+viewer depends on, so a future niivue change that breaks one is recognised as
+breaking WSI navigation.
+
+### API surface the viewer relies on
+
+| niivue API | How the WSI viewer uses it |
+| --- | --- |
+| `new NiiVue({ primaryDragMode: DRAG_MODE.none, backend })` | Disables niivue's own drag/zoom so the viewer fully owns pan/zoom (see the quirk below). |
+| `nv.loadVolumes([{ url }])` | Loads each pyramid level / window — an `rgb24` NIfTI from the server — as an ordinary volume. |
+| RGB volume support (`datatypeCode` 128 → `rgba8unorm` via `rgba2Texture`) | A WSI level is a depth-1 **RGB** volume; niivue uploads it straight to an RGBA8 texture (`wgpu/orient.ts` / `gl/orientOverlay.ts`), no colormap. |
+| Depth-1 volume + `nv.sliceType = SLICE_TYPE.AXIAL` | A `[W, H, 1]` volume's axial slice **is** the slide face. |
+| `nv.pan2Dxyzmm` (`vec4` `[panX_mm, panY_mm, panZ_mm, zoom]`) | The viewer writes this every frame to aim the 2D view; it is the entire camera. |
+| `nv.drawScene()` | Repaint after the viewer changes `pan2Dxyzmm`. |
+
+### The 2D ortho contract we invert
+
+`setNiivueView()` depends on the exact 2D-ortho math in
+`math/NVTransforms.ts:calculateMvpMatrix2D` (and the pan mapping in
+`view/NVSliceLayout.ts:slicePanUV`):
+
+- **visible width** on screen = `volumeWidthMM / zoom`
+- **screen-centre** (mm) = `volumeCentreMM - panU`
+
+Expressed relative to the volume centre (which maps to the window centre
+regardless of the affine origin), that inverts to the `setNiivueView` /
+viewport formulas in `wsi.ts`. WSI volumes carry spacing `[1,1,1]`, so
+`base-px-per-mm = level downsample factor`. If niivue's 2D pan/zoom convention
+changes, these formulas must change with it.
+
+### The quirk we work around
+
+niivue's built-in 2D **wheel zoom anchors on the crosshair**
+(`control/interactions.ts`, the `isPanZoomMode` branch:
+`pan2Dxyzmm[0] += zoomChange * scene2mm(crosshairPos)[0]`). For a volume whose
+mm origin is **not** at its centre — which our server-built window volumes are —
+that term is non-zero and the view **drifts toward a corner** as you zoom. So
+the viewer sets `primaryDragMode: none` (which disables that branch) and drives
+a **centred** wheel zoom and a drag pan itself, writing `pan2Dxyzmm` directly.
+This is the single most important niivue-facing detail of the WSI work.
+
+### The one niivue limitation that bounds the design
+
+niivue renders **one texture per volume**; there is no native tiling of a single
+volume, and the chunked path **rejects RGB** (`gl/orientChunked.ts` /
+`wgpu/orientChunked.ts` throw for datatype 128/2304). So the deep-zoom across
+the gigapixel slide is orchestrated by the demo (swap which window niivue
+shows), not by niivue. Adding RGB to the chunked orient path is the change that
+would let niivue stream the whole base level itself — see §6 "Remaining
+follow-up".
+
+---
+
+## 8. Files
 
 | File | Role |
 | --- | --- |

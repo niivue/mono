@@ -172,12 +172,20 @@ residency already counts RGBA8 + gradient (8 bytes/voxel). Verified end to end:
 loading the WSI L2 (3361×3095, dt 128) tiles into 4 chunks and uploads without
 the old "RGB not supported" throw.
 
-**Remaining (demo wiring):** `wsi.html` still uses the single-texture windowed
-path. Switching it to load the whole base level as a chunked RGB volume (a
-`chunkSource` that fetches tiles via bbox, like the OME-Zarr streaming volume)
-would give smooth pan across full resolution with niivue's own
-visibility-driven streaming, retiring the manual window-swap. The capability is
-there; the viewer just needs to use it.
+**Demo wiring (done via the streaming viewer):** `omezarr.html` now also lists
+and streams `dicom-wsi` volumes — the same multiscale + bbox-subvolume pipeline
+serves both, and the WSI rides niivue's RGB chunked upload. The WSI streams as
+256³ chunked-RGB bricks (verified: L2 in `stream` mode reports "streamed 256³
+bricks"), and the 3D render tile's frustum cull bounds streaming to the
+viewport so even the gigapixel base level only pulls visible tiles.
+
+**Still windowed:** the dedicated `wsi.html` 2D OSD viewer keeps the
+single-texture windowed path. Streaming it there needs an in-plane viewport
+cull on the 2D chunked slice path — today `chunksCrossingSlice` returns every
+chunk for a depth-1 volume (they all cross the single axial plane), so a 2D
+chunked load would request the whole level. Adding a 2D frustum/viewport cull
+(mirroring the 3D tile's `chunksInFrustum`) is the remaining niivue step to give
+`wsi.html` viewport-bounded full-resolution streaming.
 
 ### Other nice-to-haves
 

@@ -434,10 +434,12 @@ is already live, skip this entirely.
 - Chunk streaming + LRU residency with tunable budget (Phase 3a–3d)
 - OME-Zarr (real chunk reads) + DICOM-WSI (real JPEG-tile decode) adapters
 - **DICOM-WSI deep-zoom viewer** (`wsi.html`): OSD-style zoom/pan, auto-LOD, minimap
+- **Chunked RGB** in niivue → the WSI streams as chunked-RGB bricks in the
+  streaming viewer (`omezarr.html`), viewport-bounded by the frustum cull
 - Seam-free gradients, correctness invariants, unit-tested chunk math
 
 **Next**
-- Chunked **RGB** support → stream the whole WSI base level (not just windows)
+- 2D-slice viewport cull → chunked RGB streaming inside the `wsi.html` 2D viewer
 - Server-driven lazy chunk streaming for s0 of multi-GB EM stacks
 - Dedicated chunked-path benchmark; cloud deployment (`CLOUD_DEPLOYMENT_PLAN.md`)
 

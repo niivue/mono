@@ -184,10 +184,16 @@ main().catch((err: unknown) => {
 async function main(): Promise<void> {
   const res = await fetch('/api')
   const api = (await res.json()) as ApiResponse
-  volumes = (api.volumes ?? []).filter((v) => v.format === 'ome-zarr')
+  // OME-Zarr and DICOM-WSI both expose a multiscale pyramid + bbox subvolume
+  // reads, so the same chunk-streaming path serves both. DICOM-WSI is rgb24
+  // (a depth-1 colour slab) and rides niivue's RGB chunked-upload support.
+  volumes = (api.volumes ?? []).filter(
+    (v) => v.format === 'ome-zarr' || v.format === 'dicom-wsi',
+  )
   if (volumes.length === 0) {
     showFallback(
-      'No OME-Zarr volumes in /api. Run `bun run fetch-omezarr` in the server and restart.',
+      'No OME-Zarr or DICOM-WSI volumes in /api. Run `bun run fetch-omezarr` ' +
+        'or `fetch-dicom-wsi` in the server and restart.',
     )
     return
   }
@@ -296,6 +302,8 @@ function bytesPerVoxel(dtype: string): number {
       return 4
     case 'float64':
       return 8
+    case 'rgb24':
+      return 3 // DICOM-WSI colour; uploaded as RGBA8 (4B) on the GPU
     default:
       return 2
   }
@@ -1120,6 +1128,10 @@ function niftiDatatype(dtype: string): {
       }
     case 'float32':
       return { code: 16, bits: 32, displayMin: 0, displayMax: 1 }
+    case 'rgb24':
+      // DICOM-WSI colour: NIfTI DT_RGB24. niivue uploads it straight to RGBA8
+      // (cal_min/max and colormap are ignored for colour volumes).
+      return { code: 128, bits: 24, displayMin: 0, displayMax: 255 }
     default:
       return { code: 512, bits: 16, displayMin: 0, displayMax: 65535 }
   }

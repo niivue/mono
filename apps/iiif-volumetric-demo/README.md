@@ -14,11 +14,13 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   of NIfTI tile previews fed from an IIIF VolumeDesktop manifest, with
   an embedded niivue 3D pane that loads the selected volume at the
   matching LOD.
-- `omezarr.html` — OME-Zarr pyramid viewer with level selection,
+- `omezarr.html` — multiscale streaming viewer with level selection,
   subvolume streaming, exploded block layout, and a WebGL2 / WebGPU
-  backend toggle. The default volume is `pawpawsaurus.ome.zarr` when
-  present, otherwise the first OME-Zarr fixture returned by `/api`;
-  the tracked fixture fetcher downloads `fibsem-uint8.zarr`.
+  backend toggle. Lists both OME-Zarr **and DICOM-WSI** volumes (the WSI
+  streams as chunked RGB via niivue's RGB chunked-upload support). The
+  default volume is `pawpawsaurus.ome.zarr` when present, otherwise the
+  first streaming fixture returned by `/api`; open a specific one with
+  `?id=...` (e.g. `?id=cptac-brca_dicom`).
 - `wsi.html` — DICOM whole-slide-imaging deep-zoom viewer. Renders a
   slide as a depth-1 RGB volume (2D axial = the slide face) with smooth,
   OpenSeadragon-style zoom/pan: scroll to zoom (cursor-anchored), drag to

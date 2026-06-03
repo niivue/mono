@@ -27,6 +27,7 @@ export default defineConfig({
         sheet: resolve(__dirname, 'sheet.html'),
         osd: resolve(__dirname, 'osd-volume-desktop.html'),
         omezarr: resolve(__dirname, 'omezarr.html'),
+        multiplanar: resolve(__dirname, 'multiplanar.html'),
         wsi: resolve(__dirname, 'wsi.html'),
       },
     },

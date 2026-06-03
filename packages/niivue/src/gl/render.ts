@@ -647,6 +647,39 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /**
+   * Queue a 2D-slice working set, viewport-bounded: of the chunks the slice
+   * plane crosses (`crossing`), request only those also inside the slice tile's
+   * ortho frustum. Without this, a depth-1 volume (every chunk crosses the one
+   * axial plane) would stream the whole level; with it, only the on-screen
+   * tiles stream — so a gigapixel slide pans at full resolution within budget.
+   * Falls back to all `crossing` for an exploded view (intent: show all blocks).
+   */
+  requestVisibleChunksInView(
+    crossing: readonly number[],
+    mvp: Float32Array | number[],
+    matRAS: Float32Array | number[],
+  ): void {
+    const entry = this._activeChunked
+    if (!entry) return
+    if (chunkExplodeEnabled(entry.volume.chunkExplode)) {
+      for (const ci of crossing) entry.manager.requestUpload(ci)
+      return
+    }
+    const inView = new Set(
+      chunksInFrustum(
+        entry.plan,
+        mvp,
+        CLIP_SPACE_ZERO_TO_ONE,
+        matRAS,
+        chunkOffsetFor(entry.plan, entry.volume.chunkExplode),
+      ),
+    )
+    for (const ci of crossing) {
+      if (inView.has(ci)) entry.manager.requestUpload(ci)
+    }
+  }
+
+  /**
    * Phase 3d: advance every chunked volume's LRU clock. Must be called once at
    * the start of each frame, before the view requests its working set, so
    * working-set `requestUpload` calls stamp the current frame and a same-frame

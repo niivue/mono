@@ -999,10 +999,14 @@ export default class NVView {
               sliceDim,
               sliceFrac,
             )
-            // Phase 3c: this slice's working set drives streamed upload —
-            // chunks the plane crosses but that are not yet resident get
-            // queued for the per-frame pump.
-            this.volumeRenderer.requestVisibleChunks(crossing)
+            // This slice's working set drives streamed upload — but cull the
+            // crossing chunks to the tile's viewport so a depth-1 (whole-slide)
+            // volume streams only on-screen tiles, not every chunk on the plane.
+            this.volumeRenderer.requestVisibleChunksInView(
+              crossing,
+              mvpMatrix as Float32Array,
+              matRAS as Float32Array,
+            )
             for (const ci of crossing) {
               const chunkTex = chunked.chunkTextures[ci]
               // Not yet streamed in — skip; the pump fills it in shortly.

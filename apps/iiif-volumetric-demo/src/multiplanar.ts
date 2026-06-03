@@ -30,8 +30,13 @@ const baseUrl = window.location.origin
 // niivue tiles a streaming volume into chunks of this edge and streams only the
 // visible ones; cap how much brick data stays resident.
 const CHUNK_EDGE = 256
-const RESIDENCY_BYTES = 1_500_000_000
+const RESIDENCY_BYTES = 2_000_000_000
 const DEFAULT_ID = 'pawpawsaurus.ome.zarr'
+// Resident GPU bytes per level-voxel (RGBA8 + gradient, ~8, times a halo factor).
+// The 3D render tile needs every chunk resident at once, so we stream the finest
+// level whose whole footprint fits the budget — otherwise the LRU thrashes and
+// the view crawls.
+const RESIDENT_BYTES_PER_VOXEL = 12
 
 type Bbox6 = [number, number, number, number, number, number]
 
@@ -91,15 +96,12 @@ function streamLevel(v: VolumeApiEntry): VolumeLevel {
     v.levels && v.levels.length > 0
       ? v.levels
       : [{ level: 0, shape: v.shape, spacing: v.spacing, bytes: null }]
-  const usable = CHUNK_EDGE - 6 // halo margin
-  for (const l of [...levels].sort((a, b) => a.level - b.level)) {
-    const grid =
-      Math.ceil(l.shape[0] / usable) *
-      Math.ceil(l.shape[1] / usable) *
-      Math.ceil(l.shape[2] / usable)
-    if (grid <= 256) return l
+  const sorted = [...levels].sort((a, b) => a.level - b.level) // finest first
+  for (const l of sorted) {
+    const voxels = l.shape[0] * l.shape[1] * l.shape[2]
+    if (voxels * RESIDENT_BYTES_PER_VOXEL <= RESIDENCY_BYTES) return l
   }
-  return levels[levels.length - 1]
+  return sorted[sorted.length - 1] // coarsest as a last resort
 }
 
 function fetchRawChunk(

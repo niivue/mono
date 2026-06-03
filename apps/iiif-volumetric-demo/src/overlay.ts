@@ -27,8 +27,14 @@ const BACKEND = getBackendFromUrl()
 const baseUrl = window.location.origin
 
 const CHUNK_EDGE = 256
-const RESIDENCY_BYTES = 1_500_000_000
+const RESIDENCY_BYTES = 2_000_000_000
 const DEFAULT_ID = 'pawpawsaurus.ome.zarr'
+// Resident GPU bytes per level-voxel: background RGBA8 + gradient (8) plus the
+// overlay chunk (~4), times a halo-overlap factor (~1.4). The 3D render tile
+// needs *every* chunk resident at once, so we stream the finest level whose whole
+// footprint fits the budget — otherwise the LRU thrashes (evict + re-stream +
+// re-reslice the overlay each frame), which is what made it crawl.
+const RESIDENT_BYTES_PER_VOXEL = 16
 // Longest-edge cap for the level the statistical overlay is computed from: small
 // enough to fetch whole in one request, detailed enough to read as a stat map.
 const OVERLAY_MAX = 384
@@ -83,15 +89,12 @@ function streamLevel(v: VolumeApiEntry): VolumeLevel {
     v.levels && v.levels.length > 0
       ? v.levels
       : [{ level: 0, shape: v.shape, spacing: v.spacing, bytes: null }]
-  const usable = CHUNK_EDGE - 6
-  for (const l of [...levels].sort((a, b) => a.level - b.level)) {
-    const grid =
-      Math.ceil(l.shape[0] / usable) *
-      Math.ceil(l.shape[1] / usable) *
-      Math.ceil(l.shape[2] / usable)
-    if (grid <= 256) return l
+  const sorted = [...levels].sort((a, b) => a.level - b.level) // finest first
+  for (const l of sorted) {
+    const voxels = l.shape[0] * l.shape[1] * l.shape[2]
+    if (voxels * RESIDENT_BYTES_PER_VOXEL <= RESIDENCY_BYTES) return l
   }
-  return levels[levels.length - 1]
+  return sorted[sorted.length - 1] // coarsest as a last resort
 }
 
 function fetchRawChunk(

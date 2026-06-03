@@ -7,10 +7,11 @@
 // visibility-driven working set as the background — only the visible bricks
 // carry overlay texels.
 //
-// The overlay here is synthesized client-side (a few smooth blobs) sized to the
-// background's mm box so the two register, which keeps the demo self-contained;
-// in practice the overlay would be a segmentation / activation / heatmap volume
-// served alongside the background.
+// The overlay here is derived from the volume itself: a coarse pyramid level is
+// fetched whole and z-scored into a statistical map (hot where denser than
+// average), co-registered because it is the same pyramid. The same coarse fetch
+// also drives the background's "punchy" display window (the omezarr-style upper-
+// half-of-robust-range), so the underlying anatomy reads bright under the overlay.
 
 import NiiVue, { type NVImage, type VolumeChunkSource } from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
@@ -126,10 +127,14 @@ function fetchRawChunk(
   })
 }
 
-// Robust display window (2nd-98th percentile of the non-zero/object voxels) via
-// a cheap histogram, so the streamed background shows real structure instead of
-// rendering near-black under a full-range window (e.g. uint16 [0, 65535]).
-function robustWindow(scalars: Float32Array): { min: number; max: number } {
+// The same "punchy" display window the omezarr demo uses. niivue auto-calibrates
+// a wide 2-98% robust range whose low end renders as translucent haze; omezarr
+// re-windows onto the *upper half* of that range and stretches the max to the
+// global peak so dense structure reads bright. The streamed background here has
+// no img for niivue to auto-calibrate, so we compute the robust 2-98% range from
+// the coarse scalars (cheap histogram over the non-zero object voxels) and apply
+// the same transform.
+function punchyWindow(scalars: Float32Array): { min: number; max: number } {
   let lo = Number.POSITIVE_INFINITY
   let hi = Number.NEGATIVE_INFINITY
   let count = 0
@@ -169,7 +174,13 @@ function robustWindow(scalars: Float32Array): { min: number; max: number } {
       break
     }
   }
-  return { min: pLo, max: pHi > pLo ? pHi : pLo + 1 }
+  // omezarr's punchyWindow: min = midpoint of the robust range, max = global peak.
+  const min = pLo + 0.5 * (pHi - pLo)
+  const max = hi > pHi ? hi : pHi
+  return {
+    min: Math.round(min),
+    max: max > min ? Math.round(max) : Math.round(min) + 1,
+  }
 }
 
 function createBackground(
@@ -339,7 +350,7 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
     )
     return
   }
-  bgWin = robustWindow(scalars)
+  bgWin = punchyWindow(scalars)
   const list = [createBackground(v, lvl, bgWin)]
   if (els.overlayOn.checked) {
     list.push(createStatOverlay(v, ovLvl, scalars))

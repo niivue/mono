@@ -42,6 +42,7 @@
       </select>
       <label>size <input type="range" id="size" min="1" max="15" step="1" value="4" /></label>
       <label><input type="checkbox" id="drawOn" checked /> draw</label>
+      <label><input type="checkbox" id="explode" /> explode (3D)</label>
       <button id="clear" type="button">clear</button>
       <button id="undo" type="button">undo</button>
       <span id="mag" style="color:#9aa0a6"></span>
@@ -49,7 +50,7 @@
     <main>
       <canvas id="nv-canvas"></canvas>
       <div class="hud" id="hud">loading…</div>
-      <div class="hint">the volume is tiled into chunks · drawing a stroke re-uploads only the chunks it touches (halo-inclusive), not the whole volume</div>
+      <div class="hint">2D: draw on the slices; a stroke re-uploads only the chunks it touches · explode (3D): the blocks separate — click a block to paint directly on it in 3D</div>
       <div class="fallback" id="fallback"></div>
     </main>
     <script type="module" src="/src/drawing.ts"></script>

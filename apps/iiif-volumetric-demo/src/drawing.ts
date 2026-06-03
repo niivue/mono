@@ -39,6 +39,7 @@ const els = {
   pen: el<HTMLSelectElement>('pen'),
   size: el<HTMLInputElement>('size'),
   drawOn: el<HTMLInputElement>('drawOn'),
+  explode: el<HTMLInputElement>('explode'),
   clear: el<HTMLButtonElement>('clear'),
   undo: el<HTMLButtonElement>('undo'),
   mag: el<HTMLSpanElement>('mag'),
@@ -61,6 +62,24 @@ function applyPen(): void {
   nv.drawPenValue = Number(els.pen.value)
   nv.drawPenSize = Number(els.size.value)
   nv.drawIsEnabled = els.drawOn.checked
+  renderHud()
+}
+
+// Explode separates the chunked volume into floating blocks in the 3D render;
+// with drawing on, clicking a block paints directly on it (the F path). Off,
+// the volume is whole and we draw on 2D slices.
+function applyExplode(): void {
+  if (!nv) return
+  const vol = nv.volumes[0]
+  if (vol) {
+    vol.chunkExplode = els.explode.checked
+      ? { enabled: true, scale: [1.6, 1.6, 1.6] }
+      : undefined
+  }
+  nv.sliceType = els.explode.checked
+    ? SLICE_TYPE.RENDER
+    : SLICE_TYPE.MULTIPLANAR
+  nv.drawScene()
   renderHud()
 }
 
@@ -89,10 +108,9 @@ async function loadVolume(id: string): Promise<void> {
     showFallback(`load failed: ${err instanceof Error ? err.message : err}`)
     return
   }
-  nv.sliceType = SLICE_TYPE.MULTIPLANAR
   nv.createEmptyDrawing()
   applyPen()
-  nv.drawScene()
+  applyExplode()
   renderHud()
 }
 
@@ -129,6 +147,7 @@ async function main(): Promise<void> {
   for (const c of [els.pen, els.size, els.drawOn]) {
     c.addEventListener('input', applyPen)
   }
+  els.explode.addEventListener('change', applyExplode)
   els.clear.addEventListener('click', () => {
     if (nv) {
       nv.createEmptyDrawing()

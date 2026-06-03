@@ -1213,6 +1213,10 @@ button {
   display: block;
   right: 14px;
   bottom: calc(var(--osd-footer-height) + 14px);
+  /* Float above the preview tiles (z-index 1) and section labels (z-index 2),
+     which share the stage's stacking context because the scrollport doesn't
+     create its own. Without this the tiles paint over and hide the minimap. */
+  z-index: 6;
   width: 148px;
   height: 108px;
   appearance: none;
@@ -1220,6 +1224,7 @@ button {
   cursor: pointer;
   pointer-events: auto;
   touch-action: manipulation;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
 .nv-minimap:hover,

@@ -28,6 +28,7 @@ export default defineConfig({
         osd: resolve(__dirname, 'osd-volume-desktop.html'),
         omezarr: resolve(__dirname, 'omezarr.html'),
         multiplanar: resolve(__dirname, 'multiplanar.html'),
+        overlay: resolve(__dirname, 'overlay.html'),
         wsi: resolve(__dirname, 'wsi.html'),
       },
     },

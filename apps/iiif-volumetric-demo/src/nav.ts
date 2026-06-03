@@ -20,6 +20,7 @@ const PAGES: Page[] = [
   { href: '/osd-volume-desktop.html', label: 'osd desktop' },
   { href: '/omezarr.html', label: 'omezarr' },
   { href: '/multiplanar.html', label: 'multiplanar' },
+  { href: '/overlay.html', label: 'overlay' },
   { href: '/wsi.html', label: 'wsi' },
 ]
 

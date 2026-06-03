@@ -1,17 +1,16 @@
-// Multiplanar streaming demo.
+// Overlay-on-a-large-volume demo.
 //
-// Loads a large OME-Zarr volume as a chunked *streaming* volume (`img` is null,
-// a `chunkSource` fetches bricks from `/volumes/{id}/raw.bin?level=N&bbox=...`)
-// and renders it in niivue's multiplanar layout (axial/coronal/sagittal slices
-// + a 3D render tile). niivue unions the chunk working set across all four
-// tiles, so only the bricks each slice crosses and the 3D frustum sees are
-// streamed — never the whole level.
+// A large OME-Zarr volume is loaded as a chunked *streaming* background, and a
+// co-registered scalar overlay is layered on top via `nv.loadVolumes([bg, ov])`.
+// niivue reslices the overlay onto each background brick as it streams in (the
+// chunked-overlay path: `overlay2TextureChunked`), so the overlay rides the same
+// visibility-driven working set as the background — only the visible bricks
+// carry overlay texels.
 //
-// The clip-plane controls double as a live demo of the streaming clip cull
-// (packages/niivue/src/volume/ChunkVisibility.ts `chunksNotClippedOut`): turning
-// the clip plane on drops the bricks it hides from the 3D tile's fetch set, so
-// the "bricks fetched" counter climbs more slowly. The counter is measured
-// demo-side by counting the unique chunk indices the `chunkSource` is asked for.
+// The overlay here is synthesized client-side (a few smooth blobs) sized to the
+// background's mm box so the two register, which keeps the demo self-contained;
+// in practice the overlay would be a segmentation / activation / heatmap volume
+// served alongside the background.
 
 import NiiVue, { type NVImage, type VolumeChunkSource } from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
@@ -27,11 +26,12 @@ installNav()
 const BACKEND = getBackendFromUrl()
 const baseUrl = window.location.origin
 
-// niivue tiles a streaming volume into chunks of this edge and streams only the
-// visible ones; cap how much brick data stays resident.
 const CHUNK_EDGE = 256
 const RESIDENCY_BYTES = 1_500_000_000
 const DEFAULT_ID = 'pawpawsaurus.ome.zarr'
+// The synthetic overlay is a modest grid resampled onto the background; it only
+// needs to be smooth, not high-res (niivue interpolates it per brick).
+const OVERLAY_EDGE = 96
 
 type Bbox6 = [number, number, number, number, number, number]
 
@@ -59,13 +59,10 @@ function el<T extends HTMLElement>(id: string): T {
 const els = {
   volume: el<HTMLSelectElement>('volume'),
   layout: el<HTMLSelectElement>('layout'),
-  reset: el<HTMLButtonElement>('reset'),
+  cmap: el<HTMLSelectElement>('cmap'),
+  opacity: el<HTMLInputElement>('opacity'),
+  overlayOn: el<HTMLInputElement>('overlayOn'),
   mag: el<HTMLSpanElement>('mag'),
-  clipOn: el<HTMLInputElement>('clipOn'),
-  clipDepth: el<HTMLInputElement>('clipDepth'),
-  clipAzi: el<HTMLInputElement>('clipAzi'),
-  clipElev: el<HTMLInputElement>('clipElev'),
-  clipCutaway: el<HTMLInputElement>('clipCutaway'),
   canvas: el<HTMLCanvasElement>('nv-canvas'),
   hud: el<HTMLDivElement>('hud'),
   fallback: el<HTMLDivElement>('fallback'),
@@ -74,24 +71,19 @@ const els = {
 let nv: NiiVue | null = null
 let volumes: VolumeApiEntry[] = []
 let current: VolumeApiEntry | null = null
-// Unique chunk indices the active volume's chunkSource has been asked for.
 let fetched = new Set<number>()
-let fetchedBytes = 0
 
 function showFallback(msg: string): void {
   els.fallback.textContent = msg
   els.fallback.style.display = 'flex'
 }
 
-// Pick the finest level whose longest edge still fits niivue's 256-brick cap so
-// the whole level streams (> ~4M bricks would exceed it). For these fixtures L0
-// is comfortably under the cap, so this is just a safety net.
 function streamLevel(v: VolumeApiEntry): VolumeLevel {
   const levels =
     v.levels && v.levels.length > 0
       ? v.levels
       : [{ level: 0, shape: v.shape, spacing: v.spacing, bytes: null }]
-  const usable = CHUNK_EDGE - 6 // halo margin
+  const usable = CHUNK_EDGE - 6
   for (const l of [...levels].sort((a, b) => a.level - b.level)) {
     const grid =
       Math.ceil(l.shape[0] / usable) *
@@ -130,12 +122,7 @@ function fetchRawChunk(
   })
 }
 
-// Build a fully-streamed logical volume for one pyramid level: `img` is null and
-// a `chunkSource` fetches bricks on demand, which the shared factory wraps with
-// the level's geometry. niivue auto-tiles it at CHUNK_EDGE and streams only the
-// visible bricks. The chunkSource also records the unique brick indices fetched
-// for the HUD.
-function createStreamingVolume(v: VolumeApiEntry, lvl: VolumeLevel): NVImage {
+function createBackground(v: VolumeApiEntry, lvl: VolumeLevel): NVImage {
   const dt = niftiDatatype(v.dtype)
   const cache = new Map<number, Promise<Uint8Array>>()
   const chunkSource: VolumeChunkSource = (request) => {
@@ -148,7 +135,6 @@ function createStreamingVolume(v: VolumeApiEntry, lvl: VolumeLevel): NVImage {
       request.desc,
       request.bytesPerVoxel,
     ).then((buf) => {
-      fetchedBytes += buf.byteLength
       renderHud()
       return buf
     })
@@ -157,8 +143,8 @@ function createStreamingVolume(v: VolumeApiEntry, lvl: VolumeLevel): NVImage {
     return next
   }
   return buildLogicalVolume({
-    id: `${v.id} L${lvl.level} streamed`,
-    url: `mpr-stream://${encodeURIComponent(v.id)}/L${lvl.level}`,
+    id: `${v.id} L${lvl.level} background`,
+    url: `ov-bg://${encodeURIComponent(v.id)}/L${lvl.level}`,
     shape: lvl.shape,
     spacing: lvl.spacing,
     datatypeCode: dt.code,
@@ -170,45 +156,76 @@ function createStreamingVolume(v: VolumeApiEntry, lvl: VolumeLevel): NVImage {
   })
 }
 
+// Smooth scalar field (sum of Gaussian blobs) on an OVERLAY_EDGE grid, sized in
+// mm to cover the same box as the background level so the two register.
+function createOverlay(v: VolumeApiEntry, lvl: VolumeLevel): NVImage {
+  const n = OVERLAY_EDGE
+  const dimsMM: Shape3 = [
+    lvl.shape[0] * lvl.spacing[0],
+    lvl.shape[1] * lvl.spacing[1],
+    lvl.shape[2] * lvl.spacing[2],
+  ]
+  const spacing: Shape3 = [dimsMM[0] / n, dimsMM[1] / n, dimsMM[2] / n]
+  const blobs: Array<{ c: Shape3; r: number }> = [
+    { c: [0.5, 0.5, 0.5], r: 0.16 },
+    { c: [0.34, 0.6, 0.46], r: 0.1 },
+    { c: [0.66, 0.4, 0.56], r: 0.09 },
+  ]
+  const img = new Float32Array(n * n * n)
+  for (let z = 0; z < n; z++) {
+    const fz = (z + 0.5) / n
+    for (let y = 0; y < n; y++) {
+      const fy = (y + 0.5) / n
+      for (let x = 0; x < n; x++) {
+        const fx = (x + 0.5) / n
+        let val = 0
+        for (const b of blobs) {
+          const dx = fx - b.c[0]
+          const dy = fy - b.c[1]
+          const dz = fz - b.c[2]
+          val += Math.exp(-(dx * dx + dy * dy + dz * dz) / (2 * b.r * b.r))
+        }
+        img[x + y * n + z * n * n] = Math.min(1, val)
+      }
+    }
+  }
+  return buildLogicalVolume({
+    id: 'overlay (synthetic)',
+    url: 'ov-overlay://synthetic',
+    shape: [n, n, n],
+    spacing,
+    datatypeCode: 16, // DT_FLOAT32
+    numBitsPerVoxel: 32,
+    calMin: 0.25,
+    calMax: 1.0,
+    colormap: els.cmap.value || 'warm',
+    opacity: Number(els.opacity.value),
+    isTransparentBelowCalMin: true,
+    img,
+  })
+}
+
 function renderHud(): void {
   if (!current) return
   const lvl = streamLevel(current)
-  const mb = (fetchedBytes / (1024 * 1024)).toFixed(1)
-  const clip = els.clipOn.checked
-    ? `on (depth ${els.clipDepth.value}, azim ${els.clipAzi.value}, elev ${els.clipElev.value}${els.clipCutaway.checked ? ', cutaway' : ''})`
-    : 'off'
   els.hud.textContent =
-    `${current.id}\n` +
+    `background: ${current.id}\n` +
     `level ${lvl.level} · ${lvl.shape.join('×')} · ${current.dtype}\n` +
-    `bricks fetched: ${fetched.size} (${mb} MB)\n` +
-    `clip plane: ${clip}`
+    `bricks fetched: ${fetched.size}\n` +
+    `overlay: ${els.overlayOn.checked ? `${els.cmap.value}, opacity ${els.opacity.value}` : 'off'}`
 }
 
-function applyClip(): void {
-  if (!nv) return
-  if (els.clipOn.checked) {
-    nv.setClipPlane([
-      Number(els.clipDepth.value),
-      Number(els.clipAzi.value),
-      Number(els.clipElev.value),
-    ])
-  } else {
-    // depth > 1 is niivue's "no clip" sentinel.
-    nv.setClipPlane([2, 0, 0])
-  }
-  nv.isClipPlaneCutaway = els.clipCutaway.checked
-  renderHud()
-}
-
-async function loadVolume(v: VolumeApiEntry): Promise<void> {
+async function loadAll(v: VolumeApiEntry): Promise<void> {
   if (!nv) return
   current = v
   fetched = new Set()
-  fetchedBytes = 0
   const lvl = streamLevel(v)
   els.mag.textContent = `streaming L${lvl.level} at ${CHUNK_EDGE}³ bricks`
+  const list = els.overlayOn.checked
+    ? [createBackground(v, lvl), createOverlay(v, lvl)]
+    : [createBackground(v, lvl)]
   try {
-    await nv.loadVolumes([createStreamingVolume(v, lvl)])
+    await nv.loadVolumes(list)
   } catch (err) {
     showFallback(
       `niivue failed to load: ${err instanceof Error ? err.message : err}`,
@@ -216,7 +233,6 @@ async function loadVolume(v: VolumeApiEntry): Promise<void> {
     return
   }
   nv.sliceType = Number(els.layout.value)
-  applyClip()
   nv.drawScene()
   renderHud()
 }
@@ -225,7 +241,6 @@ async function main(): Promise<void> {
   const res = await fetch('/api')
   if (!res.ok) throw new Error(`/api ${res.status}`)
   const json = (await res.json()) as { volumes?: VolumeApiEntry[] }
-  // 3D OME-Zarr only (depth-1 WSI slabs make no sense in multiplanar).
   volumes = (json.volumes ?? []).filter(
     (v) => v.format === 'ome-zarr' && Math.min(...v.shape) > 1,
   )
@@ -256,27 +271,28 @@ async function main(): Promise<void> {
 
   els.volume.addEventListener('change', () => {
     const v = volumes.find((x) => x.id === els.volume.value)
-    if (v) void loadVolume(v)
+    if (v) void loadAll(v)
   })
   els.layout.addEventListener('change', () => {
     if (!nv) return
     nv.sliceType = Number(els.layout.value)
     nv.drawScene()
   })
-  els.reset.addEventListener('click', () => {
-    if (current) void loadVolume(current)
+  els.overlayOn.addEventListener('change', () => {
+    if (current) void loadAll(current)
   })
-  for (const input of [
-    els.clipOn,
-    els.clipDepth,
-    els.clipAzi,
-    els.clipElev,
-    els.clipCutaway,
-  ]) {
-    input.addEventListener('input', applyClip)
-  }
+  els.cmap.addEventListener('change', () => {
+    if (nv && nv.volumes[1]) void nv.setVolume(1, { colormap: els.cmap.value })
+    renderHud()
+  })
+  els.opacity.addEventListener('input', () => {
+    if (nv && nv.volumes[1]) {
+      void nv.setVolume(1, { opacity: Number(els.opacity.value) })
+    }
+    renderHud()
+  })
 
-  await loadVolume(initial)
+  await loadAll(initial)
 }
 
 main().catch((err: unknown) => {

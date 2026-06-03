@@ -306,6 +306,10 @@ All overlay volumes are resliced to match the background volume's grid, so `tex2
 
 Each `SliceTile` caches `mvpMatrix`, `planeNormal`, and `planePoint` during render. `screenSlicePick` uses these for fast ray-plane intersection. For mosaic tiles with `sliceMM`, uses `getSliceTexFracAtMM()` instead of crosshair. Depth picking (double-click on 3D tiles) reads back depth buffer and unprojects to mm-space.
 
+### 2D pan/zoom (`pan2Dxyzmm`) — external dependency
+
+`scene.pan2Dxyzmm` is `[panX_mm, panY_mm, panZ_mm, zoom]`. `calculateMvpMatrix2D` applies it so the **visible width = volumeWidthMM / zoom** centered at **volumeCentreMM − pan**. An external consumer — the DICOM-WSI / OpenSeadragon viewer (`apps/iiif-volumetric-demo`) — *inverts* this convention to drive deep-zoom navigation of whole slides, and works around the fact that the built-in wheel zoom (`control/interactions.ts`, `isPanZoomMode` branch) anchors on `crosshairPos`, which drifts the view for a volume whose mm origin isn't its centre. **Before changing the 2D pan/zoom math or the wheel-zoom anchoring, read the integration contract in `docs/dicom-wsi.md` §7** — those formulas are pinned to this behavior.
+
 ## Format extensibility
 
 All format readers use Vite's `import.meta.glob` for automatic discovery. To add a new reader:

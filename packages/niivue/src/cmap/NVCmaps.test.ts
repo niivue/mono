@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { ColorMap } from '@/NVTypes'
 import { makeLabelLut, makeLut } from './NVCmaps'
 
 // ---------------------------------------------------------------------------
@@ -91,5 +92,24 @@ describe('makeLabelLut', () => {
     const result = makeLabelLut(cm)
     expect(result.min).toBe(5)
     expect(result.max).toBe(7)
+  })
+
+  test('doesNotMutateIndicesWhenClamping', () => {
+    const cm: ColorMap = {
+      R: [0, 255, 0],
+      G: [0, 0, 255],
+      B: [0, 0, 0],
+      A: [0, 255, 128],
+      I: [0, 2, 10],
+    }
+    const originalIndices = cm.I.slice()
+
+    const first = makeLabelLut(cm, 255, 4)
+    const second = makeLabelLut(cm, 255, 4)
+
+    expect(cm.I).toEqual(originalIndices)
+    expect(Array.from(second.lut)).toEqual(Array.from(first.lut))
+    expect(second.min).toBe(first.min)
+    expect(second.max).toBe(first.max)
   })
 })

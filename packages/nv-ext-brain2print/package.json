@@ -2,7 +2,7 @@
   "name": "@niivue/nv-ext-brain2print",
   "version": "1.0.0-rc.0",
   "type": "module",
-  "description": "Tinygrad-generated WebGPU brain segmentation models for NiiVue (subcortical and tissue_fast)",
+  "description": "Tinygrad-generated WebGPU brain segmentation models for NiiVue (tissue_fast, subcortical, and mindgrab)",
   "main": "./dist/nv-ext-brain2print.js",
   "module": "./dist/nv-ext-brain2print.js",
   "types": "./dist/index.d.ts",

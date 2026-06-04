@@ -506,6 +506,22 @@ describe('chunkSampleTransform', () => {
       expect(t.subOrigin[0] + t.subSize[0]).toBeLessThanOrEqual(1 + 1e-9)
     }
   })
+
+  // Strategy A (streamed combined overlay): an overlay co-registered at the base
+  // grid (same dims) must produce a ChunkPlan identical to the base's, so chunk
+  // i covers exactly base chunk i — alignment without reslicing.
+  test('same dims yield an identical, chunk-aligned plan', () => {
+    const base = chunkVolume([4092, 300, 260], 2048, [3, 3, 3])
+    const overlay = chunkVolume([4092, 300, 260], 2048, [3, 3, 3])
+    expect(overlay.gridDims).toEqual(base.gridDims)
+    expect(overlay.stride).toEqual(base.stride)
+    expect(overlay.chunks.length).toBe(base.chunks.length)
+    for (let i = 0; i < base.chunks.length; i++) {
+      expect(overlay.chunks[i].voxelOrigin).toEqual(base.chunks[i].voxelOrigin)
+      expect(overlay.chunks[i].voxelDims).toEqual(base.chunks[i].voxelDims)
+      expect(overlay.chunks[i].texDims).toEqual(base.chunks[i].texDims)
+    }
+  })
 })
 
 describe('identityChunkSampleTransform', () => {

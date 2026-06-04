@@ -340,6 +340,18 @@ describe('prefetch hook + peekPendingUploads', () => {
     expect(prefetched).toEqual([3, 5])
   })
 
+  test('onAdmit fires after a chunk becomes resident', () => {
+    const admitted: number[] = []
+    const m = new ChunkResidencyManager<FakeChunk>(4, 1_000_000, {
+      bytesOf: (c) => c.bytes,
+      destroy: () => {},
+      onAdmit: (i) => admitted.push(i),
+    })
+    m.admit(2, fakeChunk('a', 100))
+    m.admit(0, fakeChunk('b', 100))
+    expect(admitted).toEqual([2, 0])
+  })
+
   test('prefetch does not fire for resident or in-flight chunks', () => {
     const { m, prefetched } = prefetchingManager(8)
     m.admit(0, fakeChunk('a', 100)) // resident

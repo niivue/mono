@@ -38,6 +38,12 @@ export interface ChunkResidencyHooks<TChunk> {
    * best-effort — the upload path must still work if it is a no-op.
    */
   prefetch?(chunkIndex: number): void
+  /**
+   * Called with a chunk index just after it becomes resident (admitted). Lets
+   * the backend invalidate caches that sample this chunk — e.g. a streamed
+   * overlay chunk feeding another volume's per-chunk bind group.
+   */
+  onAdmit?(chunkIndex: number): void
 }
 
 interface ResidentChunk<TChunk> {
@@ -97,6 +103,7 @@ export class ChunkResidencyManager<TChunk> {
     this._inFlightUploads.delete(chunkIndex)
     this._removeQueuedUpload(chunkIndex)
     this._evictToFit(chunkIndex)
+    this._hooks.onAdmit?.(chunkIndex)
   }
 
   /** The resident chunk for an index, or null. Pure lookup — does not affect

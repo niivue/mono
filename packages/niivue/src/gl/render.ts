@@ -231,6 +231,12 @@ export class VolumeRenderer extends NVRenderer {
   // translucent chunk cubes over the base, instead of being resliced onto the
   // base grid. Null when no such overlay is present (base path unchanged).
   private _activeOverlayChunked: ChunkedTexEntry | null = null
+  // Streamed combined overlays (strategy A): base-aligned chunked overlay
+  // entries (chunkSource, co-registered at the base grid) that stream via the
+  // pump and feed the base block's overlay texture unit — base ray-march / clip
+  // plane / compositing reused unchanged. WebGL2 rebinds overlay textures each
+  // draw, so no bind-group invalidation is needed.
+  private _combinedOverlayEntries: ChunkedTexEntry[] = []
   // Full RAS dims of the active single-texture volume. WebGL cannot query a
   // texture's size, so the renderer tracks it for the volumeTexDimsFull
   // uniform on non-chunked draws and depth picks.
@@ -697,6 +703,9 @@ export class VolumeRenderer extends NVRenderer {
       matRAS,
       clipPlanes,
       isCutaway,
+      // Streamed combined overlays share the base grid, so mirror the base's
+      // visible working set onto their managers (same chunk indices).
+      this._combinedOverlayEntries.map((e) => e.manager),
     )
   }
 
@@ -726,6 +735,7 @@ export class VolumeRenderer extends NVRenderer {
     matRAS: Float32Array | number[],
     clipPlanes: number[],
     isCutaway: boolean,
+    mirrors: ChunkResidencyManager<VolumeChunkGL>[] = [],
   ): void {
     if (!entry) return
     // Exploded view: the whole plan is the working set. Explode spreads the
@@ -740,6 +750,7 @@ export class VolumeRenderer extends NVRenderer {
     if (chunkExplodeEnabled(entry.volume.chunkExplode)) {
       for (let ci = 0; ci < entry.plan.chunks.length; ci++) {
         entry.manager.requestUpload(ci)
+        for (const m of mirrors) m.requestUpload(ci)
       }
       return
     }
@@ -760,15 +771,18 @@ export class VolumeRenderer extends NVRenderer {
       isCutaway,
       offset,
     )
-    // Stream the centre of the view first, then spiral outward.
+    // Stream the centre of the view first, then spiral outward. Streamed
+    // combined overlays share the base grid, so the same indices apply.
     for (const ci of orderByViewCenter(
       entry.plan,
       unclipped,
       mvp,
       matRAS,
       offset,
-    ))
+    )) {
       entry.manager.requestUpload(ci)
+      for (const m of mirrors) m.requestUpload(ci)
+    }
   }
 
   /**
@@ -913,6 +927,8 @@ export class VolumeRenderer extends NVRenderer {
       if (this._activeChunked === entry) this._activeChunked = null
       if (this._activeOverlayChunked === entry)
         this._activeOverlayChunked = null
+      const ci = this._combinedOverlayEntries.indexOf(entry)
+      if (ci >= 0) this._combinedOverlayEntries.splice(ci, 1)
     } else {
       gl.deleteTexture(entry.volumeTexture)
       gl.deleteTexture(entry.volumeGradientTexture)
@@ -1039,10 +1055,21 @@ export class VolumeRenderer extends NVRenderer {
     // Chunked (oversized) background: build per-chunk overlay textures and
     // skip the single-texture path entirely.
     if (baseVol.chunkPlan) {
-      this._updateOverlayChunks(gl, baseVol, baseVol.chunkPlan, reslicedVols)
+      // Strategy A: a resliced overlay carrying a chunkSource and co-registered
+      // at the base grid streams as a base-aligned chunked entry and feeds the
+      // base block's overlay slot, instead of being resliced whole in memory.
+      const streamedCombined = reslicedVols.filter(
+        (v) => v.chunkSource && this._dimsMatchBase(v, baseVol),
+      )
+      const wholeReslice = reslicedVols.filter(
+        (v) => !(v.chunkSource && this._dimsMatchBase(v, baseVol)),
+      )
+      await this._updateCombinedOverlayChunked(gl, streamedCombined)
+      this._updateOverlayChunks(gl, baseVol, baseVol.chunkPlan, wholeReslice)
       return
     }
     // Non-chunked: drop any per-chunk overlay textures from a prior volume.
+    this._clearCombinedOverlayChunked()
     this._destroyOverlayChunks(gl)
 
     // Upload standard overlays
@@ -1161,6 +1188,7 @@ export class VolumeRenderer extends NVRenderer {
     this.overlayOrientCache = null
     this._destroyOverlayChunks(gl)
     this.clearOverlayChunked()
+    this._clearCombinedOverlayChunked()
   }
 
   /**
@@ -1202,6 +1230,46 @@ export class VolumeRenderer extends NVRenderer {
 
   hasOverlayChunked(): boolean {
     return this._activeOverlayChunked !== null
+  }
+
+  /** Whether an overlay is co-registered at the base grid (same RAS dims). */
+  private _dimsMatchBase(vol: NVImage, baseVol: NVImage): boolean {
+    const a = vol.dimsRAS
+    const b = baseVol.dimsRAS
+    return !!a && !!b && a[1] === b[1] && a[2] === b[2] && a[3] === b[3]
+  }
+
+  /**
+   * Strategy A: build (or reuse) a base-aligned chunked entry for each streamed
+   * combined overlay. They stream via the pump and feed the base block's overlay
+   * texture unit, so the base ray-march / clip plane / compositing are reused
+   * unchanged.
+   */
+  private async _updateCombinedOverlayChunked(
+    gl: WebGL2RenderingContext,
+    vols: NVImage[],
+  ): Promise<void> {
+    this._combinedOverlayEntries = []
+    if (vols.length === 0) return
+    const overlayBudget =
+      (this._chunkResidencyBytes * OVERLAY_RESIDENCY_FRACTION) / vols.length
+    for (const vol of vols) {
+      const entry = await this._ensureChunkedVolumeEntry(gl, vol, overlayBudget)
+      entry.manager.setBudgetBytes(overlayBudget)
+      this._combinedOverlayEntries.push(entry)
+    }
+    if (this._activeChunked) {
+      this._activeChunked.manager.setBudgetBytes(
+        this._chunkResidencyBytes * (1 - OVERLAY_RESIDENCY_FRACTION),
+      )
+    }
+  }
+
+  /** Forget the streamed combined overlays; base reclaims the full budget. */
+  private _clearCombinedOverlayChunked(): void {
+    if (this._combinedOverlayEntries.length === 0) return
+    this._combinedOverlayEntries = []
+    this._activeChunked?.manager.setBudgetBytes(this._chunkResidencyBytes)
   }
 
   /** The NVImage backing the active independent chunked overlay (or null). */
@@ -1657,6 +1725,15 @@ export class VolumeRenderer extends NVRenderer {
       !overlayMode && this.paqdChunks && this.paqdChunks.length === chunkCount
         ? this.paqdChunks
         : null
+    // Streamed combined overlay (strategy A): for the base entry, base block i's
+    // overlay unit is the streamed overlay's resident chunk i (placeholder until
+    // it streams in). Takes precedence over the whole-reslice overlayChunks.
+    const combinedOverlay =
+      !overlayMode &&
+      entry === this._activeChunked &&
+      this._combinedOverlayEntries.length === 1
+        ? this._combinedOverlayEntries[0]
+        : null
     for (const chunkIndex of order) {
       const chunk = entry.manager.getChunk(chunkIndex)
       if (!chunk) continue
@@ -1664,7 +1741,14 @@ export class VolumeRenderer extends NVRenderer {
       gl.bindTexture(gl.TEXTURE_3D, chunk.volumeTexture)
       gl.activeTexture(gl.TEXTURE2)
       gl.bindTexture(gl.TEXTURE_3D, chunk.volumeGradientTexture)
-      if (overlayChunks) {
+      if (combinedOverlay) {
+        gl.activeTexture(gl.TEXTURE3)
+        gl.bindTexture(
+          gl.TEXTURE_3D,
+          combinedOverlay.manager.getChunk(chunkIndex)?.volumeTexture ??
+            this.placeholderOverlay,
+        )
+      } else if (overlayChunks) {
         gl.activeTexture(gl.TEXTURE3)
         gl.bindTexture(gl.TEXTURE_3D, overlayChunks[chunkIndex])
       }
@@ -2077,6 +2161,7 @@ export class VolumeRenderer extends NVRenderer {
     this._texCache.clear()
     this._activeChunked = null
     this._activeOverlayChunked = null
+    this._combinedOverlayEntries = []
     this.volumeTexture = null
     this.volumeGradientTexture = null
     this.clearOverlay(gl)

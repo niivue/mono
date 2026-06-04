@@ -132,13 +132,6 @@ function streamLevel(v: VolumeApiEntry): VolumeLevel {
   return levelFitting(v, RESIDENCY_BYTES)
 }
 
-// The level one step coarser than `lvl` (clamped to the coarsest available).
-function coarserLevel(v: VolumeApiEntry, lvl: VolumeLevel): VolumeLevel {
-  const sorted = levelsSorted(v)
-  const idx = sorted.findIndex((l) => l.level === lvl.level)
-  return sorted[Math.min(idx + 1, sorted.length - 1)]
-}
-
 function bytesPerVoxelForDtype(dtype: string): number {
   switch (dtype) {
     case 'uint8':
@@ -416,16 +409,15 @@ function createStatOverlay(
   })
 }
 
-// Streamed, higher-resolution variant of the z-score overlay: its own ChunkPlan
-// + residency, fetched brick-by-brick at a *finer* level than the base and
-// z-scored client-side per chunk (using the coarse-level mean/std). chunkOverlayOf
-// makes niivue composite it as translucent cubes over the base, sampled through
-// its own (finer) grid instead of reslicing onto the coarse base grid.
+// Streamed z-score overlay. With `baseUrlKey` it is an independent hi-res layer
+// (strategy B, chunkOverlayOf, own grid). Without it the overlay is co-registered
+// at the base grid (same level) and streams as a base-aligned combined overlay
+// (strategy A) — combined per block and sampled by the base block's ray-march.
 function createStreamedStatOverlay(
   v: VolumeApiEntry,
   lvl: VolumeLevel,
   stats: { mean: number; std: number },
-  baseUrlKey: string,
+  baseUrlKey?: string,
 ): NVImage {
   const srcBpv = bytesPerVoxelForDtype(v.dtype)
   const cache = new Map<number, Promise<Uint8Array>>()
@@ -453,7 +445,7 @@ function createStreamedStatOverlay(
   }
   return buildLogicalVolume({
     id: `${v.id} z-overlay (streamed L${lvl.level})`,
-    url: `ov-stat-stream://${encodeURIComponent(v.id)}/L${lvl.level}`,
+    url: `ov-stat-stream://${encodeURIComponent(v.id)}/L${lvl.level}/${baseUrlKey ? 'hires' : 'combined'}`,
     shape: lvl.shape,
     spacing: lvl.spacing,
     datatypeCode: 16, // DT_FLOAT32 (z-score baked client-side per chunk)
@@ -464,6 +456,8 @@ function createStreamedStatOverlay(
     opacity: Number(els.opacity.value),
     isTransparentBelowCalMin: true,
     chunkSource,
+    // baseUrlKey set => strategy B (independent hi-res); omitted => strategy A
+    // (base-grid combined, no chunkOverlayOf).
     chunkOverlayOf: baseUrlKey,
     chunkOverlayOpacity: Number(els.opacity.value),
   })
@@ -475,7 +469,7 @@ function renderHud(): void {
   const ovLine = !els.overlayOn.checked
     ? 'z-score overlay: off'
     : streamed
-      ? `z-score overlay: streamed L${loadedOvLevel} (hi-res), ` +
+      ? `z-score overlay: streamed combined L${loadedOvLevel}, ` +
         `${els.cmap.value}, opacity ${els.opacity.value}\n` +
         `overlay bricks fetched: ${overlayFetched.size}`
       : `z-score overlay: resliced (coarse), ${els.cmap.value}, ` +
@@ -519,25 +513,22 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
   fetched = new Set()
   overlayFetched = new Set()
   const streamed = els.streamHiRes.checked && els.overlayOn.checked
-  // Hi-res streamed overlay: the overlay takes the finer level (fits half the
-  // budget) and the base drops one level coarser, so the overlay visibly
-  // out-resolves the base. Otherwise the base takes the finest fitting level
-  // and the overlay is the coarse resliced map.
-  const ovStreamLvl = streamed ? levelFitting(v, RESIDENCY_BYTES * 0.5) : null
+  // Strategy A (streamed combined overlay): the overlay streams at the SAME
+  // level as the base (co-registered, base grid) and is combined per block,
+  // sampled by the base block's ray-march. Otherwise the overlay is the legacy
+  // coarse resliced map.
   // ?level=N pins the base to that pyramid level (e.g. 0 = full-res L0),
   // overriding the budget-based pick. Use with a large ?budgetGB.
   const pinned =
     forcedLevel != null
       ? levelsSorted(v).find((l) => l.level === forcedLevel)
       : undefined
-  const bgLvl =
-    pinned ??
-    (ovStreamLvl != null ? coarserLevel(v, ovStreamLvl) : streamLevel(v))
+  const bgLvl = pinned ?? streamLevel(v)
   const coarseLvl = overlayLevel(v) // window + z-score stats source
   loadedBgLevel = bgLvl.level
-  loadedOvLevel = (ovStreamLvl ?? coarseLvl).level
+  loadedOvLevel = streamed ? bgLvl.level : coarseLvl.level
   els.mag.textContent = streamed
-    ? `base L${bgLvl.level} · overlay L${ovStreamLvl?.level}…`
+    ? `streaming L${bgLvl.level} · combined overlay…`
     : `streaming L${bgLvl.level} · windowing from L${coarseLvl.level}…`
   // One coarse-level fetch drives the background's display window and the
   // z-score normalisation stats (same volume), so the anatomy is visible and
@@ -552,17 +543,12 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
     return
   }
   bgWin = punchyWindow(scalars)
-  const bgUrlKey = `ov-bg://${encodeURIComponent(v.id)}/L${bgLvl.level}`
   const list = [createBackground(v, bgLvl, bgWin)]
   if (els.overlayOn.checked) {
     list.push(
-      ovStreamLvl != null
-        ? createStreamedStatOverlay(
-            v,
-            ovStreamLvl,
-            computeStats(scalars),
-            bgUrlKey,
-          )
+      streamed
+        ? // Strategy A: combined streamed overlay at the base level (no baseUrlKey).
+          createStreamedStatOverlay(v, bgLvl, computeStats(scalars))
         : createStatOverlay(v, coarseLvl, scalars),
     )
   }

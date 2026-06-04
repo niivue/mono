@@ -279,6 +279,12 @@ export class VolumeRenderer extends NVRenderer {
   // translucent chunk cubes over the base, instead of being resliced onto the
   // base grid. Null when no such overlay is present (base path unchanged).
   private _activeOverlayChunked: ChunkedTexEntry | null = null
+  // Streamed combined overlays (strategy A): overlays that carry a chunkSource
+  // and are co-registered at the base grid. Each becomes a chunked entry whose
+  // plan matches the base (chunk i covers base chunk i), streams via the pump,
+  // and feeds the base block's overlay slot (binding 5) — so the base
+  // ray-march, clip plane, and compositing are reused unchanged.
+  private _combinedOverlayEntries: ChunkedTexEntry[] = []
   // True while pumpChunkUploads has an async upload in flight. Guards against
   // re-entrant pumps double-uploading a chunk that is queued but not yet
   // admitted (admit clears the queue, so one pump at a time stays correct).
@@ -632,6 +638,7 @@ export class VolumeRenderer extends NVRenderer {
     device: GPUDevice,
     vol: NVImage,
     budgetBytes: number,
+    onResidencyChange?: (chunkIndex: number) => void,
   ): Promise<ChunkedTexEntry> {
     const srcDims: Vec3i = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
     const rasDims: Vec3i = vol.dimsRAS
@@ -678,8 +685,10 @@ export class VolumeRenderer extends NVRenderer {
         destroy: (c) => destroyVolumeChunksGPU([c]),
         onEvict: (ci) => {
           bindGroups[ci] = null
+          onResidencyChange?.(ci)
         },
         prefetch: (ci) => uploader.prefetchChunk(ci),
+        onAdmit: onResidencyChange,
       },
     )
     manager.admit(0, await uploader.uploadChunk(0))
@@ -829,6 +838,9 @@ export class VolumeRenderer extends NVRenderer {
       matRAS,
       clipPlanes,
       isCutaway,
+      // Streamed combined overlays share the base grid, so mirror the base's
+      // visible working set onto their managers (same chunk indices).
+      this._combinedOverlayEntries.map((e) => e.manager),
     )
   }
 
@@ -858,6 +870,7 @@ export class VolumeRenderer extends NVRenderer {
     matRAS: Float32Array | number[],
     clipPlanes: number[],
     isCutaway: boolean,
+    mirrors: ChunkResidencyManager<VolumeChunkGPU>[] = [],
   ): void {
     if (!entry) return
     // Exploded view: the whole plan is the working set. Explode spreads the
@@ -872,6 +885,7 @@ export class VolumeRenderer extends NVRenderer {
     if (chunkExplodeEnabled(entry.volume.chunkExplode)) {
       for (let ci = 0; ci < entry.plan.chunks.length; ci++) {
         entry.manager.requestUpload(ci)
+        for (const m of mirrors) m.requestUpload(ci)
       }
       return
     }
@@ -892,15 +906,18 @@ export class VolumeRenderer extends NVRenderer {
       isCutaway,
       offset,
     )
-    // Stream the centre of the view first, then spiral outward.
+    // Stream the centre of the view first, then spiral outward. Streamed
+    // combined overlays share the base grid, so the same indices apply.
     for (const ci of orderByViewCenter(
       entry.plan,
       unclipped,
       mvp,
       matRAS,
       offset,
-    ))
+    )) {
       entry.manager.requestUpload(ci)
+      for (const m of mirrors) m.requestUpload(ci)
+    }
   }
 
   /**
@@ -1044,6 +1061,8 @@ export class VolumeRenderer extends NVRenderer {
       if (this._activeChunked === entry) this._activeChunked = null
       if (this._activeOverlayChunked === entry)
         this._activeOverlayChunked = null
+      const ci = this._combinedOverlayEntries.indexOf(entry)
+      if (ci >= 0) this._combinedOverlayEntries.splice(ci, 1)
     } else {
       entry.volumeTexture.destroy()
       entry.volumeGradientTexture.destroy()
@@ -1158,15 +1177,26 @@ export class VolumeRenderer extends NVRenderer {
     // Chunked (oversized) background: build per-chunk overlay textures and
     // skip the single-texture path entirely.
     if (baseVol.chunkPlan) {
+      // Strategy A: a resliced overlay carrying a chunkSource and co-registered
+      // at the base grid streams as a base-aligned chunked entry and feeds the
+      // base block's overlay slot, instead of being resliced whole in memory.
+      const streamedCombined = reslicedVols.filter(
+        (v) => v.chunkSource && this._dimsMatchBase(v, baseVol),
+      )
+      const wholeReslice = reslicedVols.filter(
+        (v) => !(v.chunkSource && this._dimsMatchBase(v, baseVol)),
+      )
+      await this._updateCombinedOverlayChunked(device, streamedCombined)
       await this._updateOverlayChunks(
         device,
         baseVol,
         baseVol.chunkPlan,
-        reslicedVols,
+        wholeReslice,
       )
       return
     }
     // Non-chunked: drop any per-chunk overlay textures from a prior volume.
+    this._clearCombinedOverlayChunked()
     this._destroyOverlayChunks()
 
     // Upload standard overlays
@@ -1267,6 +1297,7 @@ export class VolumeRenderer extends NVRenderer {
     this.overlayOrientCache = null
     this._destroyOverlayChunks()
     this.clearOverlayChunked()
+    this._clearCombinedOverlayChunked()
     this._invalidateBindGroupCache()
   }
 
@@ -1314,6 +1345,60 @@ export class VolumeRenderer extends NVRenderer {
 
   hasOverlayChunked(): boolean {
     return this._activeOverlayChunked !== null
+  }
+
+  /** Whether an overlay is co-registered at the base grid (same RAS dims). */
+  private _dimsMatchBase(vol: NVImage, baseVol: NVImage): boolean {
+    const a = vol.dimsRAS
+    const b = baseVol.dimsRAS
+    return !!a && !!b && a[1] === b[1] && a[2] === b[2] && a[3] === b[3]
+  }
+
+  /**
+   * Strategy A: build (or reuse) a base-aligned chunked entry for each streamed
+   * combined overlay (a chunkSource overlay co-registered at the base grid).
+   * They stream via the per-frame pump and feed the base block's overlay slot,
+   * so the base ray-march / clip plane / compositing are reused unchanged. The
+   * onResidencyChange hook invalidates the base chunk's bind group when an
+   * overlay chunk arrives or is evicted, so binding 5 tracks residency.
+   */
+  private async _updateCombinedOverlayChunked(
+    device: GPUDevice,
+    vols: NVImage[],
+  ): Promise<void> {
+    this._combinedOverlayEntries = []
+    if (vols.length === 0) return
+    // Split the configured budget: overlays share OVERLAY_RESIDENCY_FRACTION
+    // between them, the base keeps the rest.
+    const overlayBudget =
+      (this._chunkResidencyBytes * OVERLAY_RESIDENCY_FRACTION) / vols.length
+    for (const vol of vols) {
+      const entry = await this._ensureChunkedVolumeEntry(
+        device,
+        vol,
+        overlayBudget,
+        (ci) => {
+          const base = this._activeChunked
+          if (base) base.bindGroups[ci] = null
+        },
+      )
+      entry.manager.setBudgetBytes(overlayBudget)
+      this._combinedOverlayEntries.push(entry)
+    }
+    if (this._activeChunked) {
+      this._activeChunked.manager.setBudgetBytes(
+        this._chunkResidencyBytes * (1 - OVERLAY_RESIDENCY_FRACTION),
+      )
+    }
+    this._invalidateBindGroupCache()
+  }
+
+  /** Forget the streamed combined overlays; base reclaims the full budget. */
+  private _clearCombinedOverlayChunked(): void {
+    if (this._combinedOverlayEntries.length === 0) return
+    this._combinedOverlayEntries = []
+    this._activeChunked?.manager.setBudgetBytes(this._chunkResidencyBytes)
+    this._invalidateBindGroupCache()
   }
 
   /** The NVImage backing the active independent chunked overlay (or null). */
@@ -1982,6 +2067,15 @@ export class VolumeRenderer extends NVRenderer {
       !overlayMode && this.paqdChunks && this.paqdChunks.length === chunkCount
         ? this.paqdChunks
         : null
+    // Streamed combined overlay (strategy A): for the base entry, base block i's
+    // overlay slot is the streamed overlay's resident chunk i (placeholder until
+    // it streams in). Takes precedence over the whole-reslice overlayChunks.
+    const combinedOverlay =
+      !overlayMode &&
+      entry === this._activeChunked &&
+      this._combinedOverlayEntries.length === 1
+        ? this._combinedOverlayEntries[0]
+        : null
 
     const explode = entry.volume.chunkExplode
     const order = chunksBackToFront(
@@ -2017,9 +2111,12 @@ export class VolumeRenderer extends NVRenderer {
             },
             {
               binding: 5,
-              resource: (overlayChunks
-                ? overlayChunks[chunkIndex]
-                : overlayTex
+              resource: (combinedOverlay
+                ? (combinedOverlay.manager.getChunk(chunkIndex)
+                    ?.volumeTexture ?? this.placeholderOverlay)
+                : overlayChunks
+                  ? overlayChunks[chunkIndex]
+                  : overlayTex
               ).createView(),
             },
             {
@@ -2175,6 +2272,7 @@ export class VolumeRenderer extends NVRenderer {
     this._bindGroupCache.clear()
     this._activeChunked = null
     this._activeOverlayChunked = null
+    this._combinedOverlayEntries = []
     this._activeVolKey = null
     this.volumeTexture = null
     this.volumeGradientTexture = null

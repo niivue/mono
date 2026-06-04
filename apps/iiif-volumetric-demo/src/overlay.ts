@@ -27,8 +27,24 @@ installNav()
 const BACKEND = getBackendFromUrl()
 const baseUrl = window.location.origin
 
+// Experiment knobs (URL params):
+//   ?budgetGB=N  — override the residency budget (default 2 GB). Raise it to fit
+//                  a finer level's whole footprint resident for the 3D render.
+//   ?level=N     — pin the base stream level (e.g. 0 = full-res L0), bypassing
+//                  the budget-based pick. Combine with a large budget for L0.
+const urlParams = new URLSearchParams(window.location.search)
+const budgetGB = Number(urlParams.get('budgetGB'))
+const forcedLevelParam = urlParams.get('level')
+const forcedLevel =
+  forcedLevelParam != null && forcedLevelParam !== ''
+    ? Number(forcedLevelParam)
+    : null
+
 const CHUNK_EDGE = 256
-const RESIDENCY_BYTES = 2_000_000_000
+const RESIDENCY_BYTES =
+  Number.isFinite(budgetGB) && budgetGB > 0
+    ? Math.round(budgetGB * 1_000_000_000)
+    : 2_000_000_000
 const DEFAULT_ID = 'pawpawsaurus.ome.zarr'
 // Resident GPU bytes per level-voxel: background RGBA8 + gradient (8) plus the
 // overlay chunk (~4), times a halo-overlap factor (~1.4). The 3D render tile
@@ -69,6 +85,7 @@ const els = {
   cmap: el<HTMLSelectElement>('cmap'),
   opacity: el<HTMLInputElement>('opacity'),
   overlayOn: el<HTMLInputElement>('overlayOn'),
+  streamHiRes: el<HTMLInputElement>('streamHiRes'),
   mag: el<HTMLSpanElement>('mag'),
   canvas: el<HTMLCanvasElement>('nv-canvas'),
   hud: el<HTMLDivElement>('hud'),
@@ -79,24 +96,94 @@ let nv: NiiVue | null = null
 let volumes: VolumeApiEntry[] = []
 let current: VolumeApiEntry | null = null
 let fetched = new Set<number>()
+let overlayFetched = new Set<number>()
 let bgWin: { min: number; max: number } = { min: 0, max: 1 }
+// Levels chosen for the current load (for the HUD); updated in loadAll.
+let loadedBgLevel = 0
+let loadedOvLevel = 0
 
 function showFallback(msg: string): void {
   els.fallback.textContent = msg
   els.fallback.style.display = 'flex'
 }
 
-function streamLevel(v: VolumeApiEntry): VolumeLevel {
+function levelsSorted(v: VolumeApiEntry): VolumeLevel[] {
   const levels =
     v.levels && v.levels.length > 0
       ? v.levels
       : [{ level: 0, shape: v.shape, spacing: v.spacing, bytes: null }]
-  const sorted = [...levels].sort((a, b) => a.level - b.level) // finest first
+  return [...levels].sort((a, b) => a.level - b.level) // finest first
+}
+
+// Finest level whose whole footprint fits `budget` resident GPU bytes. The 3D
+// render tile needs every chunk resident at once, so streaming a finer level
+// than this just thrashes the LRU.
+function levelFitting(v: VolumeApiEntry, budget: number): VolumeLevel {
+  const sorted = levelsSorted(v)
   for (const l of sorted) {
     const voxels = l.shape[0] * l.shape[1] * l.shape[2]
-    if (voxels * RESIDENT_BYTES_PER_VOXEL <= RESIDENCY_BYTES) return l
+    if (voxels * RESIDENT_BYTES_PER_VOXEL <= budget) return l
   }
   return sorted[sorted.length - 1] // coarsest as a last resort
+}
+
+function streamLevel(v: VolumeApiEntry): VolumeLevel {
+  return levelFitting(v, RESIDENCY_BYTES)
+}
+
+// The level one step coarser than `lvl` (clamped to the coarsest available).
+function coarserLevel(v: VolumeApiEntry, lvl: VolumeLevel): VolumeLevel {
+  const sorted = levelsSorted(v)
+  const idx = sorted.findIndex((l) => l.level === lvl.level)
+  return sorted[Math.min(idx + 1, sorted.length - 1)]
+}
+
+function bytesPerVoxelForDtype(dtype: string): number {
+  switch (dtype) {
+    case 'uint8':
+    case 'int8':
+      return 1
+    case 'float32':
+      return 4
+    default:
+      return 2 // uint16 / int16
+  }
+}
+
+function decodeScalarChunk(
+  buf: Uint8Array,
+  dtype: string,
+  n: number,
+): Float32Array {
+  const out = new Float32Array(n)
+  const ab = buf.buffer as ArrayBuffer
+  const off = buf.byteOffset
+  switch (dtype) {
+    case 'uint8': {
+      for (let i = 0; i < n; i++) out[i] = buf[i]
+      break
+    }
+    case 'int8': {
+      const a = new Int8Array(ab, off, n)
+      for (let i = 0; i < n; i++) out[i] = a[i]
+      break
+    }
+    case 'int16': {
+      const a = new Int16Array(ab, off, n)
+      for (let i = 0; i < n; i++) out[i] = a[i]
+      break
+    }
+    case 'float32': {
+      out.set(new Float32Array(ab, off, n))
+      break
+    }
+    default: {
+      const a = new Uint16Array(ab, off, n)
+      for (let i = 0; i < n; i++) out[i] = a[i]
+      break
+    }
+  }
+  return out
 }
 
 function fetchRawChunk(
@@ -272,15 +359,8 @@ async function fetchLevelScalars(
   return out
 }
 
-// Turn the volume's own intensities into a statistical (z-score) overlay: per
-// voxel z = (intensity - mean) / std over the non-zero (object) voxels. Shown in
-// a hot colormap above z = 1, it reads like a stat map on the anatomy — the same
-// image, overlaid on itself, highlighting the denser-than-average structure.
-function createStatOverlay(
-  v: VolumeApiEntry,
-  lvl: VolumeLevel,
-  scalars: Float32Array,
-): NVImage {
+// Mean/std of the non-zero (object) voxels — the z-score normalisation stats.
+function computeStats(scalars: Float32Array): { mean: number; std: number } {
   let sum = 0
   let count = 0
   for (let i = 0; i < scalars.length; i++) {
@@ -300,6 +380,20 @@ function createStatOverlay(
     }
   }
   const std = count ? Math.sqrt(varSum / count) || 1 : 1
+  return { mean, std }
+}
+
+// Turn the volume's own intensities into a statistical (z-score) overlay: per
+// voxel z = (intensity - mean) / std over the non-zero (object) voxels. Shown in
+// a hot colormap above z = 1, it reads like a stat map on the anatomy — the same
+// image, overlaid on itself, highlighting the denser-than-average structure.
+// In-memory variant: a coarse whole level, resliced onto the base grid.
+function createStatOverlay(
+  v: VolumeApiEntry,
+  lvl: VolumeLevel,
+  scalars: Float32Array,
+): NVImage {
+  const { mean, std } = computeStats(scalars)
   const img = new Float32Array(scalars.length)
   for (let i = 0; i < scalars.length; i++) {
     const s = scalars[i]
@@ -321,29 +415,110 @@ function createStatOverlay(
   })
 }
 
+// Streamed, higher-resolution variant of the z-score overlay: its own ChunkPlan
+// + residency, fetched brick-by-brick at a *finer* level than the base and
+// z-scored client-side per chunk (using the coarse-level mean/std). chunkOverlayOf
+// makes niivue composite it as translucent cubes over the base, sampled through
+// its own (finer) grid instead of reslicing onto the coarse base grid.
+function createStreamedStatOverlay(
+  v: VolumeApiEntry,
+  lvl: VolumeLevel,
+  stats: { mean: number; std: number },
+  baseUrlKey: string,
+): NVImage {
+  const srcBpv = bytesPerVoxelForDtype(v.dtype)
+  const cache = new Map<number, Promise<Uint8Array>>()
+  const chunkSource: VolumeChunkSource = (request) => {
+    const hit = cache.get(request.chunkIndex)
+    if (hit) return hit
+    overlayFetched.add(request.chunkIndex)
+    const td = request.desc.texDims
+    const n = td[0] * td[1] * td[2]
+    const next = fetchRawChunk(v.id, lvl.level, request.desc, srcBpv).then(
+      (raw) => {
+        const s = decodeScalarChunk(raw, v.dtype, n)
+        const z = new Float32Array(n)
+        for (let i = 0; i < n; i++) {
+          const val = s[i]
+          z[i] = val > 0 ? (val - stats.mean) / stats.std : 0
+        }
+        renderHud()
+        return new Uint8Array(z.buffer)
+      },
+    )
+    cache.set(request.chunkIndex, next)
+    renderHud()
+    return next
+  }
+  return buildLogicalVolume({
+    id: `${v.id} z-overlay (streamed L${lvl.level})`,
+    url: `ov-stat-stream://${encodeURIComponent(v.id)}/L${lvl.level}`,
+    shape: lvl.shape,
+    spacing: lvl.spacing,
+    datatypeCode: 16, // DT_FLOAT32 (z-score baked client-side per chunk)
+    numBitsPerVoxel: 32,
+    calMin: 1.0,
+    calMax: 4.0,
+    colormap: els.cmap.value || 'warm',
+    opacity: Number(els.opacity.value),
+    isTransparentBelowCalMin: true,
+    chunkSource,
+    chunkOverlayOf: baseUrlKey,
+    chunkOverlayOpacity: Number(els.opacity.value),
+  })
+}
+
 function renderHud(): void {
   if (!current) return
-  const lvl = streamLevel(current)
+  const streamed = els.streamHiRes.checked && els.overlayOn.checked
+  const ovLine = !els.overlayOn.checked
+    ? 'z-score overlay: off'
+    : streamed
+      ? `z-score overlay: streamed L${loadedOvLevel} (hi-res), ` +
+        `${els.cmap.value}, opacity ${els.opacity.value}\n` +
+        `overlay bricks fetched: ${overlayFetched.size}`
+      : `z-score overlay: resliced (coarse), ${els.cmap.value}, ` +
+        `opacity ${els.opacity.value}`
   els.hud.textContent =
     `background: ${current.id}\n` +
-    `level ${lvl.level} · ${lvl.shape.join('×')} · ${current.dtype}\n` +
+    `base level ${loadedBgLevel} · ${current.dtype}\n` +
     `window: ${Math.round(bgWin.min)}–${Math.round(bgWin.max)}\n` +
-    `bricks fetched: ${fetched.size}\n` +
-    `z-score overlay: ${els.overlayOn.checked ? `${els.cmap.value}, opacity ${els.opacity.value}` : 'off'}`
+    `base bricks fetched: ${fetched.size}\n` +
+    ovLine
 }
 
 async function loadAll(v: VolumeApiEntry): Promise<void> {
   if (!nv) return
   current = v
   fetched = new Set()
-  const lvl = streamLevel(v)
-  const ovLvl = overlayLevel(v)
-  els.mag.textContent = `streaming L${lvl.level} · windowing from L${ovLvl.level}…`
-  // One coarse-level fetch drives both the background's display window and the
-  // z-score overlay (same volume), so the anatomy is visible and registered.
+  overlayFetched = new Set()
+  const streamed = els.streamHiRes.checked && els.overlayOn.checked
+  // Hi-res streamed overlay: the overlay takes the finer level (fits half the
+  // budget) and the base drops one level coarser, so the overlay visibly
+  // out-resolves the base. Otherwise the base takes the finest fitting level
+  // and the overlay is the coarse resliced map.
+  const ovStreamLvl = streamed ? levelFitting(v, RESIDENCY_BYTES * 0.5) : null
+  // ?level=N pins the base to that pyramid level (e.g. 0 = full-res L0),
+  // overriding the budget-based pick. Use with a large ?budgetGB.
+  const pinned =
+    forcedLevel != null
+      ? levelsSorted(v).find((l) => l.level === forcedLevel)
+      : undefined
+  const bgLvl =
+    pinned ??
+    (ovStreamLvl != null ? coarserLevel(v, ovStreamLvl) : streamLevel(v))
+  const coarseLvl = overlayLevel(v) // window + z-score stats source
+  loadedBgLevel = bgLvl.level
+  loadedOvLevel = (ovStreamLvl ?? coarseLvl).level
+  els.mag.textContent = streamed
+    ? `base L${bgLvl.level} · overlay L${ovStreamLvl?.level}…`
+    : `streaming L${bgLvl.level} · windowing from L${coarseLvl.level}…`
+  // One coarse-level fetch drives the background's display window and the
+  // z-score normalisation stats (same volume), so the anatomy is visible and
+  // the overlay registers.
   let scalars: Float32Array
   try {
-    scalars = await fetchLevelScalars(v, ovLvl)
+    scalars = await fetchLevelScalars(v, coarseLvl)
   } catch (err) {
     showFallback(
       `level fetch failed: ${err instanceof Error ? err.message : err}`,
@@ -351,9 +526,19 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
     return
   }
   bgWin = punchyWindow(scalars)
-  const list = [createBackground(v, lvl, bgWin)]
+  const bgUrlKey = `ov-bg://${encodeURIComponent(v.id)}/L${bgLvl.level}`
+  const list = [createBackground(v, bgLvl, bgWin)]
   if (els.overlayOn.checked) {
-    list.push(createStatOverlay(v, ovLvl, scalars))
+    list.push(
+      ovStreamLvl != null
+        ? createStreamedStatOverlay(
+            v,
+            ovStreamLvl,
+            computeStats(scalars),
+            bgUrlKey,
+          )
+        : createStatOverlay(v, coarseLvl, scalars),
+    )
   }
   try {
     await nv.loadVolumes(list)
@@ -363,6 +548,9 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
     )
     return
   }
+  // The streamed overlay only composites in the 3D render; force that layout so
+  // the hi-res layer is visible.
+  if (streamed) els.layout.value = '4'
   nv.sliceType = Number(els.layout.value)
   nv.drawScene()
   renderHud()
@@ -410,6 +598,9 @@ async function main(): Promise<void> {
     nv.drawScene()
   })
   els.overlayOn.addEventListener('change', () => {
+    if (current) void loadAll(current)
+  })
+  els.streamHiRes.addEventListener('change', () => {
     if (current) void loadAll(current)
   })
   els.cmap.addEventListener('change', () => {

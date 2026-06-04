@@ -761,6 +761,34 @@ export default class NVGlview {
             md.volume.paqdUniforms,
             md.volume.transmittanceCutoff,
           )
+          // Independent hi-res chunked overlay: stream its own working set and
+          // draw it as translucent cubes over the base, in the same pass. Uses
+          // the overlay volume's own matRAS/volScale (co-registered grid) with
+          // the shared camera. No-op when no chunked overlay is active.
+          const ovVol = this.volumeRenderer.getOverlayChunkedVolume()
+          if (ovVol?.matRAS && ovVol.volScale) {
+            this.volumeRenderer.requestOverlayChunksInFrustum(
+              mvpMatrix as Float32Array,
+              ovVol.matRAS as Float32Array,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+            this.volumeRenderer.drawOverlayChunked(
+              gl,
+              mvpMatrix as Float32Array,
+              normalMatrix as Float32Array,
+              ovVol.matRAS as Float32Array,
+              ovVol.volScale,
+              rayDir as Float32Array,
+              md.volume.illumination,
+              Math.min(volumes.length, 2),
+              md.scene.clipPlaneColor,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+              md.volume.paqdUniforms,
+              md.volume.transmittanceCutoff,
+            )
+          }
         }
       }
       // Layer 2a: Crosshairs (skip on all mosaic tiles)

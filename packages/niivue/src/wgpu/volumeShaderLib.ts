@@ -13,7 +13,10 @@ struct Params {
     gradientAmount: f32,
     numVolumes: f32,
     isClipCutaway: f32,
-    numPaqd: f32,
+    // 1.0 when this draw is an independent hi-res overlay chunk cube (skip the
+    // clip-surface/AO/matcap base treatment, composite as a translucent layer);
+    // 0.0 for normal base/non-chunked draws. (Formerly the unused numPaqd.)
+    overlayLayerMode: f32,
     clipPlaneColor: vec4f,
     clipPlanes: array<vec4f, 6>,
     paqdUniforms: vec4f,

@@ -179,6 +179,17 @@ export type NVImage = {
   chunkSource?: VolumeChunkSource
   /** Optional draw-time spacing for chunked 3D rendering. Sampling remains in original voxel coordinates. */
   chunkExplode?: VolumeChunkExplode
+  /**
+   * Marks this volume as an independently-streamed hi-res overlay layer that
+   * composites over a chunked base volume. The value is the cache-key of the
+   * base volume it sits on. When set, the renderer streams this volume in its
+   * own ChunkResidencyManager working set and draws it as translucent chunk
+   * cubes over the base, instead of reslicing it onto the base grid. Absent ⇒
+   * legacy overlay path (resliced to the base grid).
+   */
+  chunkOverlayOf?: string
+  /** Layer opacity for an independently-streamed chunked overlay ([0,1], default 1). */
+  chunkOverlayOpacity?: number
   [key: string]: unknown
 }
 

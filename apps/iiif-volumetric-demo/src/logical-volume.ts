@@ -52,6 +52,11 @@ export interface LogicalVolumeOpts {
   // (`chunkSource`, with `img` null and niivue tiling it).
   img?: ArrayBufferView | null
   chunkSource?: VolumeChunkSource
+  // Set on an overlay volume to make niivue stream it as an independent hi-res
+  // chunked layer over the chunked base whose cache-key (url/name) this names,
+  // instead of reslicing it onto the base grid.
+  chunkOverlayOf?: string
+  chunkOverlayOpacity?: number
 }
 
 // Build a depth-correct, axis-aligned NVImage from a level's shape + spacing.
@@ -206,5 +211,7 @@ export function buildLogicalVolume(o: LogicalVolumeOpts): NVImage {
     isLegendVisible: false,
     colormapLabel: null,
     chunkSource: o.chunkSource,
+    chunkOverlayOf: o.chunkOverlayOf,
+    chunkOverlayOpacity: o.chunkOverlayOpacity,
   } as unknown as NVImage
 }

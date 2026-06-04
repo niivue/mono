@@ -317,3 +317,39 @@ describe('chunksOverlappingVoxelBox', () => {
     expect(chunksOverlappingVoxelBox(plan, [0, 1, 0], [7, 1, 0])).toEqual([])
   })
 })
+
+// An independently-streamed hi-res overlay is culled against its OWN plan and
+// matRAS but the SAME scene MVP as the base (shared camera). The visibility
+// helpers must read only their arguments — no shared/cached state — so a base
+// and a finer overlay plan produce independent, plan-correct working sets.
+describe('independent overlay working set (shared MVP, own plan/matRAS)', () => {
+  test('frustum cull selects per-plan; base stays stable after overlay', () => {
+    const base = fourChunkPlan() // 4 chunks along x
+    const overlay = chunkVolume([16, 1, 1], 2, [0, 0, 0]) // 8 chunks along x
+    expect(overlay.chunks.length).toBe(8)
+
+    // Shrink the visible cube to the left half via the SAME MVP for both.
+    const mvp = scaleTranslate(2, 1, 1, -1, 0, 0)
+    const baseVisible = chunksInFrustum(base, mvp, true)
+    const overlayVisible = chunksInFrustum(overlay, mvp, true)
+
+    // The finer overlay resolves more chunks in the same view region.
+    expect(overlayVisible.length).toBeGreaterThan(baseVisible.length)
+    // Each selection is bounded by its own plan's chunk count.
+    for (const ci of overlayVisible) expect(ci).toBeLessThan(8)
+    for (const ci of baseVisible) expect(ci).toBeLessThan(4)
+
+    // Recomputing the base after touching the overlay is identical (no shared
+    // state leaked between plans).
+    expect(chunksInFrustum(base, mvp, true)).toEqual(baseVisible)
+  })
+
+  test('center-first ordering and back-to-front run on the overlay plan', () => {
+    const overlay = chunkVolume([16, 1, 1], 2, [0, 0, 0])
+    const all = overlay.chunks.map((_, i) => i)
+    const centered = orderByViewCenter(overlay, all, IDENTITY)
+    expect([...centered].sort((a, b) => a - b)).toEqual(all)
+    const order = chunksBackToFront(overlay, [0, 0, 1])
+    expect([...order].sort((a, b) => a - b)).toEqual(all)
+  })
+})

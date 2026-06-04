@@ -258,3 +258,30 @@ describe('ChunkResidencyManager destroy', () => {
     expect(m.inFlightUploadCount).toBe(0)
   })
 })
+
+// A chunked base + an independently-streamed hi-res overlay each get their own
+// ChunkResidencyManager. The managers must be fully independent: eviction
+// pressure in one never touches the other's resident set.
+describe('two independent managers (base + overlay)', () => {
+  test('eviction in one manager does not affect the other', () => {
+    const base = manager(4, 250) // fits 2 chunks of 100
+    const overlay = manager(4, 250)
+
+    base.admit(0, fakeChunk('b0', 100)) // frame 0
+    overlay.admit(0, fakeChunk('o0', 100))
+    overlay.admit(1, fakeChunk('o1', 100))
+
+    // Overfill the base so it evicts within its own budget. beginFrame advances
+    // the LRU clock so the earlier base chunk is the eviction target.
+    base.beginFrame()
+    base.admit(1, fakeChunk('b1', 100)) // frame 1
+    base.beginFrame()
+    base.admit(2, fakeChunk('b2', 100)) // frame 2 — 300 > 250, evict oldest (b0)
+
+    expect(base.isResident(0)).toBe(false) // base evicted its own LRU
+    // The overlay manager is untouched by the base's eviction.
+    expect(overlay.isResident(0)).toBe(true)
+    expect(overlay.isResident(1)).toBe(true)
+    expect(overlay.residentCount).toBe(2)
+  })
+})

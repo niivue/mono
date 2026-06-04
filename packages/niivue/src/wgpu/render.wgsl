@@ -216,9 +216,14 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 		clipPlaneColorX.a = 0.0;
 	}
 	let chunkedDraw = any(params.chunkSubSize.xyz < vec3f(0.999));
+	// Independent hi-res overlay cube draw: composite as a flat translucent
+	// layer over the base. Skip the opaque clip-surface treatment (AO, clip
+	// plane colour) and matcap lighting; still respect clip-plane ray trimming
+	// so the overlay is clipped together with the base.
+	let overlayMode = params.overlayLayerMode > 0.5;
 	let stepSize = len / lenVox;
 	let deltaDir = vec4f(dir * stepSize, stepSize);
-	var localGradientAmount = params.gradientAmount;
+	var localGradientAmount = select(params.gradientAmount, 0.0, overlayMode);
 	var sampleRange = vec2f(0.0, len);
 	let cutaway = params.isClipCutaway > 0.5;
 	var hasClip = false;
@@ -252,7 +257,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	var clipOffset = 0.0;
 	var clipSurfaceHit = false;
 	if (!skipBackground) {
-		if (!cutaway && isClip) {
+		if (!cutaway && isClip && !overlayMode) {
 			clipOffset = sampleRange.x;
 			start += dir * sampleRange.x;
 			len = sampleRange.y - sampleRange.x;
@@ -286,7 +291,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 			}
 		} else {
 			// Background fast pass found something
-			if (cutaway && isClip) {
+			if (cutaway && isClip && !overlayMode) {
 				let dx = abs(sampleRange.x - samplePos.a);
 				let dx2 = abs(sampleRange.y - samplePos.a);
 				if (min(dx, dx2) < stepSizeFast) {

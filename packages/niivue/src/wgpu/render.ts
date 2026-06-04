@@ -129,6 +129,12 @@ type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 const renderParamsSize = 480
 export const alignedRenderSize =
   Math.ceil(renderParamsSize / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
+// Byte offset of the base chunk-params region (after the per-tile non-chunked
+// slots) and of the independent-overlay chunk-params region (after the base
+// chunk region). See paramsBuffer allocation for the full layout.
+const CHUNK_PARAMS_BASE = MAX_TILES * alignedRenderSize
+const OVERLAY_CHUNK_PARAMS_BASE =
+  MAX_TILES * alignedRenderSize * (1 + MAX_CHUNKS_PER_TILE)
 
 /**
  * Steady-state GPU bytes one resident chunk occupies. The scalar source
@@ -249,6 +255,12 @@ export class VolumeRenderer extends NVRenderer {
   // Set when bindCachedVolume selects a chunked entry; null for single
   // entries. draw() branches on this to run the multi-chunk loop.
   private _activeChunked: ChunkedTexEntry | null = null
+  // Set when an independently-streamed hi-res overlay (chunkOverlayOf) is
+  // loaded over a chunked base. It has its OWN ChunkPlan + residency manager
+  // (a second _texCache entry, keyed by its own url/name) and is drawn as
+  // translucent chunk cubes over the base, instead of being resliced onto the
+  // base grid. Null when no such overlay is present (base path unchanged).
+  private _activeOverlayChunked: ChunkedTexEntry | null = null
   // True while pumpChunkUploads has an async upload in flight. Guards against
   // re-entrant pumps double-uploading a chunk that is queued but not yet
   // admitted (admit clears the queue, so one pump at a time stays correct).
@@ -333,11 +345,16 @@ export class VolumeRenderer extends NVRenderer {
     new Uint16Array(this.indexBuffer.getMappedRange()).set(this.cube.indices)
     this.indexBuffer.unmap()
 
-    // Create uniform buffer. The first MAX_TILES slots hold one set of render
-    // params per tile (non-chunked draws). The remaining slots hold per-chunk
-    // params: tile i, chunk j uses slot MAX_TILES + i * MAX_CHUNKS_PER_TILE + j.
+    // Create uniform buffer. Layout (each region alignedRenderSize per slot):
+    //   [0, MAX_TILES)                          — one non-chunked draw per tile
+    //   base chunk region: MAX_TILES*MAX_CHUNKS_PER_TILE slots (base cubes)
+    //   overlay chunk region: MAX_TILES*MAX_CHUNKS_PER_TILE slots (independent
+    //     hi-res overlay cubes — its own region so overlay cube uniforms never
+    //     collide with base cube uniforms within a frame).
+    // base tile i, chunk j  uses CHUNK_PARAMS_BASE   + (i*MAX_CHUNKS_PER_TILE+j)
+    // overlay tile i, chunk j uses OVERLAY_CHUNK_PARAMS_BASE + (i*MAX_...+j)
     this.paramsBuffer = device.createBuffer({
-      size: alignedRenderSize * MAX_TILES * (1 + MAX_CHUNKS_PER_TILE),
+      size: alignedRenderSize * MAX_TILES * (1 + 2 * MAX_CHUNKS_PER_TILE),
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
 
@@ -532,73 +549,11 @@ export class VolumeRenderer extends NVRenderer {
     const cacheKey = vol.url || vol.name
 
     if (forcedPlan || oversized) {
-      // Compute the chunk plan against RAS dims (output texture dimensions)
-      // and stash it on the volume so the data model carries the tiling
-      // metadata. Halo is 3 (not the [1,1,1] default): the per-chunk
-      // gradient runs a sobel (radius 1) + blur (radius 1) stencil, and
-      // trilinear sampling at the data edge reaches one voxel further, so
-      // the gradient is only seam-free between chunks with a 3-voxel halo.
-      const plan = forcedPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
-      vol.chunkPlan = plan
-      const bpv = bytesPerSourceVoxel(vol.hdr.datatypeCode) || 4
-      const budget = estimateChunkedBytes(plan, bpv)
-      log.warn(
-        `Volume ${vol.name} (${rasDims.join('x')}) exceeds ` +
-          `maxTextureDimension3D=${limit}. Chunk plan: ` +
-          `${plan.gridDims.join('x')} = ${budget.chunkCount} chunks, ` +
-          `~${formatBytes(budget.totalBytes)} GPU memory ` +
-          `(${formatBytes(budget.scalarBytes)} scalar + ` +
-          `${formatBytes(budget.rgbaBytes)} RGBA + ` +
-          `${formatBytes(budget.gradientBytes)} gradient).`,
+      const chunkedEntry = await this._ensureChunkedVolumeEntry(
+        device,
+        vol,
+        this._chunkResidencyBytes,
       )
-      if (plan.chunks.length > MAX_CHUNKS_PER_TILE) {
-        throw new Error(
-          `Volume ${vol.name} tiles into ${plan.chunks.length} chunks, ` +
-            `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}. ` +
-            `Use a coarser pyramid level or crop the volume.`,
-        )
-      }
-      const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
-      let chunkedEntry: ChunkedTexEntry
-      if (existing && existing.kind === 'chunked') {
-        chunkedEntry = existing
-        chunkedEntry.volume = vol
-      } else {
-        if (existing) this._destroyTexEntry(existing)
-        const uploader = await createChunkUploaderGPU(device, vol, plan)
-        // Per-chunk bind groups, indexed by chunk index. Hoisted above the
-        // manager so the onEvict hook can null the slot of an evicted chunk —
-        // a re-admitted chunk gets a fresh texture, so its old bind group
-        // would dangle.
-        const bindGroups: (GPUBindGroup | null)[] = plan.chunks.map(() => null)
-        const manager = new ChunkResidencyManager<VolumeChunkGPU>(
-          plan.chunks.length,
-          this._chunkResidencyBytes,
-          {
-            bytesOf: chunkResidentBytes,
-            destroy: (c) => destroyVolumeChunksGPU([c]),
-            onEvict: (ci) => {
-              bindGroups[ci] = null
-            },
-          },
-        )
-        // Phase 3c: upload only the first chunk synchronously so the volume
-        // is immediately present (hasVolume/volumeTexture guards pass). The
-        // remaining chunks are not queued here — the view computes a
-        // visibility-driven working set each frame and calls
-        // requestVisibleChunks / requestChunksInFrustum, so only chunks a
-        // tile actually needs stream in.
-        manager.admit(0, await uploader.uploadChunk(0))
-        chunkedEntry = {
-          kind: 'chunked',
-          volume: vol,
-          manager,
-          uploader,
-          plan,
-          bindGroups,
-        }
-        if (cacheKey) this._texCache.set(cacheKey, chunkedEntry)
-      }
       this._activeChunked = chunkedEntry
       this._activeVolKey = cacheKey || null
       this.volumeTexture =
@@ -636,6 +591,89 @@ export class VolumeRenderer extends NVRenderer {
     this._activeVolKey = cacheKey || null
 
     await this._ensureMatcap(device, matcap)
+  }
+
+  /**
+   * Build (or reuse from the texture cache) the chunked GPU entry for an
+   * oversized / forced-plan volume: compute the ChunkPlan against RAS dims,
+   * log the budget, enforce MAX_CHUNKS_PER_TILE, create the uploader +
+   * residency manager, and admit chunk 0 synchronously so the volume is
+   * immediately present. The remaining chunks stream on demand once the view
+   * computes a visibility-driven working set.
+   *
+   * Used for the base volume AND for an independently-streamed hi-res chunked
+   * overlay — each gets its own cache entry + residency manager, keyed by its
+   * own url/name, and the per-frame pump (pumpChunkUploads) drives them all.
+   *
+   * Halo is 3 (not the [1,1,1] default): the per-chunk gradient runs a sobel
+   * (radius 1) + blur (radius 1) stencil, and trilinear sampling at the data
+   * edge reaches one voxel further, so the gradient is only seam-free between
+   * chunks with a 3-voxel halo.
+   */
+  private async _ensureChunkedVolumeEntry(
+    device: GPUDevice,
+    vol: NVImage,
+    budgetBytes: number,
+  ): Promise<ChunkedTexEntry> {
+    const srcDims: Vec3i = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
+    const rasDims: Vec3i = vol.dimsRAS
+      ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
+      : srcDims
+    const limit = this.maxTextureDimension3D
+    const plan = vol.chunkPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
+    vol.chunkPlan = plan
+    const bpv = bytesPerSourceVoxel(vol.hdr.datatypeCode) || 4
+    const budget = estimateChunkedBytes(plan, bpv)
+    log.warn(
+      `Volume ${vol.name} (${rasDims.join('x')}) exceeds ` +
+        `maxTextureDimension3D=${limit}. Chunk plan: ` +
+        `${plan.gridDims.join('x')} = ${budget.chunkCount} chunks, ` +
+        `~${formatBytes(budget.totalBytes)} GPU memory ` +
+        `(${formatBytes(budget.scalarBytes)} scalar + ` +
+        `${formatBytes(budget.rgbaBytes)} RGBA + ` +
+        `${formatBytes(budget.gradientBytes)} gradient).`,
+    )
+    if (plan.chunks.length > MAX_CHUNKS_PER_TILE) {
+      throw new Error(
+        `Volume ${vol.name} tiles into ${plan.chunks.length} chunks, ` +
+          `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}. ` +
+          `Use a coarser pyramid level or crop the volume.`,
+      )
+    }
+    const cacheKey = vol.url || vol.name
+    const existing = cacheKey ? this._texCache.get(cacheKey) : undefined
+    if (existing && existing.kind === 'chunked') {
+      existing.volume = vol
+      return existing
+    }
+    if (existing) this._destroyTexEntry(existing)
+    const uploader = await createChunkUploaderGPU(device, vol, plan)
+    // Per-chunk bind groups, indexed by chunk index. Hoisted above the manager
+    // so the onEvict hook can null the slot of an evicted chunk — a re-admitted
+    // chunk gets a fresh texture, so its old bind group would dangle.
+    const bindGroups: (GPUBindGroup | null)[] = plan.chunks.map(() => null)
+    const manager = new ChunkResidencyManager<VolumeChunkGPU>(
+      plan.chunks.length,
+      budgetBytes,
+      {
+        bytesOf: chunkResidentBytes,
+        destroy: (c) => destroyVolumeChunksGPU([c]),
+        onEvict: (ci) => {
+          bindGroups[ci] = null
+        },
+      },
+    )
+    manager.admit(0, await uploader.uploadChunk(0))
+    const entry: ChunkedTexEntry = {
+      kind: 'chunked',
+      volume: vol,
+      manager,
+      uploader,
+      plan,
+      bindGroups,
+    }
+    if (cacheKey) this._texCache.set(cacheKey, entry)
+    return entry
   }
 
   /**
@@ -737,6 +775,25 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /**
+   * When an independently-streamed hi-res overlay is active, expose its plan
+   * and per-chunk color textures so the 2D slice renderer can draw one
+   * in-plane-restricted quad per overlay chunk. Returns null when no such
+   * overlay is present.
+   */
+  getActiveOverlayChunkedSlice(): {
+    plan: ChunkPlan
+    chunkTextures: (GPUTexture | null)[]
+  } | null {
+    const entry = this._activeOverlayChunked
+    if (!entry) return null
+    const chunkTextures: (GPUTexture | null)[] = []
+    for (let i = 0; i < entry.manager.chunkCount; i++) {
+      chunkTextures.push(entry.manager.getChunk(i)?.volumeTexture ?? null)
+    }
+    return { plan: entry.plan, chunkTextures }
+  }
+
+  /**
    * Phase 3c: frustum-cull the active chunked volume against a 3D render
    * tile's MVP and queue the visible chunks for streaming. No-op when the
    * active volume is not chunked.
@@ -747,7 +804,42 @@ export class VolumeRenderer extends NVRenderer {
     clipPlanes: number[],
     isCutaway: boolean,
   ): void {
-    const entry = this._activeChunked
+    this._requestChunksInFrustum(
+      this._activeChunked,
+      mvp,
+      matRAS,
+      clipPlanes,
+      isCutaway,
+    )
+  }
+
+  /**
+   * Same frustum-driven working set for the independently-streamed hi-res
+   * overlay. The overlay is culled against its OWN plan + matRAS but the same
+   * scene MVP (shared camera). No-op when no chunked overlay is active.
+   */
+  requestOverlayChunksInFrustum(
+    mvp: Float32Array | number[],
+    matRAS: Float32Array | number[],
+    clipPlanes: number[],
+    isCutaway: boolean,
+  ): void {
+    this._requestChunksInFrustum(
+      this._activeOverlayChunked,
+      mvp,
+      matRAS,
+      clipPlanes,
+      isCutaway,
+    )
+  }
+
+  private _requestChunksInFrustum(
+    entry: ChunkedTexEntry | null,
+    mvp: Float32Array | number[],
+    matRAS: Float32Array | number[],
+    clipPlanes: number[],
+    isCutaway: boolean,
+  ): void {
     if (!entry) return
     // Exploded view: the whole plan is the working set. Explode spreads the
     // blocks apart (often beyond the framed extent), so a frustum cull would
@@ -805,7 +897,29 @@ export class VolumeRenderer extends NVRenderer {
     mvp: Float32Array | number[],
     matRAS: Float32Array | number[],
   ): void {
-    const entry = this._activeChunked
+    this._requestVisibleChunksInView(this._activeChunked, crossing, mvp, matRAS)
+  }
+
+  /** 2D-slice working set for the independently-streamed hi-res overlay. */
+  requestOverlayVisibleChunksInView(
+    crossing: readonly number[],
+    mvp: Float32Array | number[],
+    matRAS: Float32Array | number[],
+  ): void {
+    this._requestVisibleChunksInView(
+      this._activeOverlayChunked,
+      crossing,
+      mvp,
+      matRAS,
+    )
+  }
+
+  private _requestVisibleChunksInView(
+    entry: ChunkedTexEntry | null,
+    crossing: readonly number[],
+    mvp: Float32Array | number[],
+    matRAS: Float32Array | number[],
+  ): void {
     if (!entry) return
     if (chunkExplodeEnabled(entry.volume.chunkExplode)) {
       for (const ci of crossing) entry.manager.requestUpload(ci)
@@ -880,6 +994,8 @@ export class VolumeRenderer extends NVRenderer {
       entry.manager.destroy()
       entry.uploader.dispose()
       if (this._activeChunked === entry) this._activeChunked = null
+      if (this._activeOverlayChunked === entry)
+        this._activeOverlayChunked = null
     } else {
       entry.volumeTexture.destroy()
       entry.volumeGradientTexture.destroy()
@@ -973,6 +1089,24 @@ export class VolumeRenderer extends NVRenderer {
       }
     }
 
+    // Independently-streamed hi-res overlays carry chunkOverlayOf: they have
+    // their own ChunkPlan + residency and draw as their own chunk cubes over
+    // the base, rather than being resliced onto the base grid. Split them out
+    // from the base-grid-resliced overlays.
+    const independentVols = standardVols.filter((v) => v.chunkOverlayOf)
+    const reslicedVols = standardVols.filter((v) => !v.chunkOverlayOf)
+    if (independentVols.length > 0) {
+      await this._updateOverlayChunkedIndependent(device, independentVols[0])
+      if (independentVols.length > 1) {
+        log.warn(
+          'only one independently-chunked overlay is supported; ' +
+            'extra ones are ignored',
+        )
+      }
+    } else {
+      this.clearOverlayChunked()
+    }
+
     // Chunked (oversized) background: build per-chunk overlay textures and
     // skip the single-texture path entirely.
     if (baseVol.chunkPlan) {
@@ -980,7 +1114,7 @@ export class VolumeRenderer extends NVRenderer {
         device,
         baseVol,
         baseVol.chunkPlan,
-        standardVols,
+        reslicedVols,
       )
       return
     }
@@ -988,10 +1122,10 @@ export class VolumeRenderer extends NVRenderer {
     this._destroyOverlayChunks()
 
     // Upload standard overlays
-    if (standardVols.length === 0) {
+    if (reslicedVols.length === 0) {
       this.clearOverlay()
-    } else if (standardVols.length === 1) {
-      const vol = standardVols[0]
+    } else if (reslicedVols.length === 1) {
+      const vol = reslicedVols[0]
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
         this.clearOverlay()
@@ -1015,12 +1149,12 @@ export class VolumeRenderer extends NVRenderer {
       )
       orient.dispatchOrient(device, this.overlayOrientCache)
       this.overlayTexture = this.overlayOrientCache.outputTexture
-    } else if (standardVols.length > 1) {
+    } else if (reslicedVols.length > 1) {
       this.destroyNonCachedOverlayTexture()
       orient.destroyOrientTextureCache(this.overlayOrientCache)
       this.overlayOrientCache = null
       const overlayTextures: GPUTexture[] = []
-      for (const vol of standardVols) {
+      for (const vol of reslicedVols) {
         const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
         overlayTextures.push(
           await orient.volume2Texture(
@@ -1084,7 +1218,45 @@ export class VolumeRenderer extends NVRenderer {
     orient.destroyOrientTextureCache(this.overlayOrientCache)
     this.overlayOrientCache = null
     this._destroyOverlayChunks()
+    this.clearOverlayChunked()
     this._invalidateBindGroupCache()
+  }
+
+  /**
+   * Build (or reuse) the independent chunked entry for a hi-res streamed
+   * overlay and mark it active. The entry lives in _texCache under the
+   * overlay's own key, so the per-frame pump streams it alongside the base.
+   * Drawn as translucent chunk cubes over the base in _drawOverlayChunked.
+   */
+  private async _updateOverlayChunkedIndependent(
+    device: GPUDevice,
+    vol: NVImage,
+  ): Promise<void> {
+    const entry = await this._ensureChunkedVolumeEntry(
+      device,
+      vol,
+      this._chunkResidencyBytes,
+    )
+    this._activeOverlayChunked = entry
+    this._invalidateBindGroupCache()
+  }
+
+  /**
+   * Forget the active independent chunked overlay. The cache entry itself is
+   * left in _texCache for reuse / normal pruneVolumeCache lifecycle; only the
+   * active pointer is cleared so it is no longer drawn or requested.
+   */
+  clearOverlayChunked(): void {
+    this._activeOverlayChunked = null
+  }
+
+  hasOverlayChunked(): boolean {
+    return this._activeOverlayChunked !== null
+  }
+
+  /** The NVImage backing the active independent chunked overlay (or null). */
+  getOverlayChunkedVolume(): NVImage | null {
+    return this._activeOverlayChunked?.volume ?? null
   }
 
   /**
@@ -1567,7 +1739,112 @@ export class VolumeRenderer extends NVRenderer {
     paqdUniforms: readonly number[],
     earlyTermination: number,
   ): void {
-    const entry = this._activeChunked
+    this._drawChunkedEntry(
+      device,
+      pass,
+      this._activeChunked,
+      false,
+      CHUNK_PARAMS_BASE,
+      tileIndex,
+      mvpMatrix,
+      normalMatrix,
+      matRAS,
+      volScale,
+      rayDir,
+      gradientAmount,
+      volumeCount,
+      clipPlaneColor,
+      clipPlanes,
+      isClipCutaway,
+      paqdUniforms,
+      earlyTermination,
+    )
+  }
+
+  /**
+   * Draw the independently-streamed hi-res overlay as its own translucent
+   * chunk cubes over the base, in the same render pass. Composited via the
+   * premultiplied-alpha OVER framebuffer blend. matRAS is the OVERLAY volume's
+   * matRAS (its own grid); the camera (mvp/volScale/rayDir) is shared with the
+   * base tile.
+   *
+   * Compositing-order limitation: the base and overlay cube sets are each
+   * sorted back-to-front internally, but the overlay set is drawn entirely
+   * after the base, so per-pixel the overlay always composites over the base
+   * regardless of true depth. Correct for a translucent layer sitting on top of
+   * anatomy; an approximation where a base chunk is physically in front of an
+   * overlay chunk. A globally-merged order is a future improvement (mirrors the
+   * existing per-chunk back-to-front approximation between neighbouring base
+   * chunks).
+   */
+  drawOverlayChunked(
+    device: GPUDevice,
+    pass: GPURenderPassEncoder,
+    tileIndex: number,
+    mvpMatrix: Float32Array | number[],
+    normalMatrix: Float32Array | number[],
+    matRAS: Float32Array | number[],
+    volScale: Float32Array | number[],
+    rayDir: Float32Array | number[],
+    gradientAmount: number,
+    volumeCount: number,
+    clipPlaneColor: number[],
+    clipPlanes: number[],
+    isClipCutaway = false,
+    paqdUniforms: readonly number[] = [0, 0, 0, 0],
+    earlyTermination = 0.95,
+  ): void {
+    if (!this._activeOverlayChunked) return
+    this._drawChunkedEntry(
+      device,
+      pass,
+      this._activeOverlayChunked,
+      true,
+      OVERLAY_CHUNK_PARAMS_BASE,
+      tileIndex,
+      mvpMatrix,
+      normalMatrix,
+      matRAS,
+      volScale,
+      rayDir,
+      gradientAmount,
+      volumeCount,
+      clipPlaneColor,
+      clipPlanes,
+      isClipCutaway,
+      paqdUniforms,
+      earlyTermination,
+    )
+  }
+
+  /**
+   * Shared chunked-cube draw loop for both the base volume and the independent
+   * hi-res overlay. `overlayMode` forces the optional overlay/paqd/drawing
+   * layers to placeholders (so only the chunk's own volume is ray-marched) and
+   * sets overlayLayerMode=1 so the shader skips the base clip-surface/AO/matcap
+   * treatment. `chunkSlotBase` selects the per-entry uniform region so the two
+   * cube sets never share uniform slots within a frame.
+   */
+  private _drawChunkedEntry(
+    device: GPUDevice,
+    pass: GPURenderPassEncoder,
+    entry: ChunkedTexEntry | null,
+    overlayMode: boolean,
+    chunkSlotBase: number,
+    tileIndex: number,
+    mvpMatrix: Float32Array | number[],
+    normalMatrix: Float32Array | number[],
+    matRAS: Float32Array | number[],
+    volScale: Float32Array | number[],
+    rayDir: Float32Array | number[],
+    gradientAmount: number,
+    volumeCount: number,
+    clipPlaneColor: number[],
+    clipPlanes: number[],
+    isClipCutaway: boolean,
+    paqdUniforms: readonly number[],
+    earlyTermination: number,
+  ): void {
     if (
       !entry ||
       !this.pipelineChunked ||
@@ -1585,28 +1862,37 @@ export class VolumeRenderer extends NVRenderer {
     if (entry.manager.chunkCount === 0) return
     if (tileIndex < 0 || tileIndex >= MAX_TILES) return
 
-    const overlayTex = this.overlayTexture || this.placeholderOverlay
-    const paqdTex = this.paqdTexture || this.placeholderOverlay
-    const drawTex = this.drawingTexture || this.placeholderOverlay
     const paqdLutTex = this.paqdLutTexture || this.placeholderLut2D
-    // Per-chunk drawing textures align 1:1 with the volume chunks (shared
-    // ChunkPlan); fall back to the shared drawTex when the drawing layer is
-    // not chunked or absent.
+    // The overlay layer draws only its own chunk volume — force the optional
+    // overlay/paqd/drawing layers to the transparent placeholder so their
+    // shader passes (guarded on textureDimensions > 2) stay inert.
+    const overlayTex = overlayMode
+      ? this.placeholderOverlay
+      : this.overlayTexture || this.placeholderOverlay
+    const paqdTex = overlayMode
+      ? this.placeholderOverlay
+      : this.paqdTexture || this.placeholderOverlay
+    const drawTex = overlayMode
+      ? this.placeholderOverlay
+      : this.drawingTexture || this.placeholderOverlay
+    // Per-chunk drawing/overlay/PAQD textures align 1:1 with the volume chunks
+    // (shared ChunkPlan); fall back to the shared texture when not chunked or
+    // when drawing the overlay layer itself.
     const chunkCount = entry.manager.chunkCount
     const drawingChunks =
-      this.drawingChunks && this.drawingChunks.length === chunkCount
+      !overlayMode &&
+      this.drawingChunks &&
+      this.drawingChunks.length === chunkCount
         ? this.drawingChunks
         : null
-    // Per-chunk overlay textures, likewise 1:1 with the volume chunks; fall
-    // back to the shared overlayTex when the overlay layer is not chunked.
     const overlayChunks =
-      this.overlayChunks && this.overlayChunks.length === chunkCount
+      !overlayMode &&
+      this.overlayChunks &&
+      this.overlayChunks.length === chunkCount
         ? this.overlayChunks
         : null
-    // Per-chunk raw PAQD textures, likewise 1:1 with the volume chunks; fall
-    // back to the shared paqdTex when the PAQD layer is not chunked.
     const paqdChunks =
-      this.paqdChunks && this.paqdChunks.length === chunkCount
+      !overlayMode && this.paqdChunks && this.paqdChunks.length === chunkCount
         ? this.paqdChunks
         : null
 
@@ -1617,8 +1903,6 @@ export class VolumeRenderer extends NVRenderer {
       chunkOffsetFor(entry.plan, explode),
       volScale,
     )
-
-    const chunkBase = MAX_TILES * alignedRenderSize
 
     pass.setPipeline(this.pipelineChunked)
     pass.setVertexBuffer(0, this.vertexBuffer)
@@ -1673,7 +1957,8 @@ export class VolumeRenderer extends NVRenderer {
       }
 
       const renderOffset =
-        chunkBase + (tileIndex * MAX_CHUNKS_PER_TILE + slot) * alignedRenderSize
+        chunkSlotBase +
+        (tileIndex * MAX_CHUNKS_PER_TILE + slot) * alignedRenderSize
       this._writeRenderParams(
         device,
         this.paramsBuffer,
@@ -1691,6 +1976,7 @@ export class VolumeRenderer extends NVRenderer {
         clipPlaneColor,
         clipPlanes,
         chunkUniformsFor(entry.plan, chunkIndex),
+        overlayMode ? 1 : 0,
       )
 
       pass.setBindGroup(0, bindGroup, [renderOffset])
@@ -1715,6 +2001,7 @@ export class VolumeRenderer extends NVRenderer {
     clipPlaneColor: number[],
     clipPlanes: number[],
     chunkUniforms: ChunkUniforms,
+    overlayLayerMode = 0,
   ): void {
     device.queue.writeBuffer(
       paramsBuffer,
@@ -1730,7 +2017,9 @@ export class VolumeRenderer extends NVRenderer {
         gradientAmount,
         volumeCount,
         isClipCutaway ? 1.0 : 0.0,
-        0.0,
+        // overlayLayerMode (was numPaqd, unused): 1 for an independent hi-res
+        // overlay cube draw (skip clip-surface/AO/matcap), 0 otherwise.
+        overlayLayerMode,
         ...clipPlaneColor,
         ...clipPlanes,
         ...paqdUniforms,
@@ -1798,6 +2087,7 @@ export class VolumeRenderer extends NVRenderer {
     this._texCache.clear()
     this._bindGroupCache.clear()
     this._activeChunked = null
+    this._activeOverlayChunked = null
     this._activeVolKey = null
     this.volumeTexture = null
     this.volumeGradientTexture = null

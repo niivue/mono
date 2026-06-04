@@ -47,12 +47,13 @@
       </select>
       <label>opacity <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.7" /></label>
       <label><input type="checkbox" id="overlayOn" checked /> overlay</label>
+      <label title="Stream the overlay as its own higher-resolution chunked layer (3D render only) instead of reslicing a coarse overlay onto the base grid"><input type="checkbox" id="streamHiRes" /> stream hi-res</label>
       <span id="mag" style="color:#9aa0a6"></span>
     </div>
     <main>
       <canvas id="nv-canvas"></canvas>
       <div class="hud" id="hud">loading…</div>
-      <div class="hint">the streamed volume's own intensities become a z-score statistical overlay (hot where denser than average), co-registered and resliced onto each background brick as it streams in</div>
+      <div class="hint">the volume's own intensities become a z-score statistical overlay (hot where denser than average). default: a coarse overlay resliced onto each background brick. "stream hi-res" (3D render): the overlay streams as its own higher-resolution chunked layer composited over a coarser base</div>
       <div class="fallback" id="fallback"></div>
     </main>
     <script type="module" src="/src/overlay.ts"></script>

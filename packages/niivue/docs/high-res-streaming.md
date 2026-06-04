@@ -204,3 +204,43 @@ These hold across both backends and both paths. Breaking any of them produces a 
 | Chunked, 2×2×2, halo `[3,3,3]` | ~13–14 (≈80% halo overhead × 8) | 8 (one per chunk) | 8 × (orient + gradient) per full re-upload; only the affected chunk on stream-in |
 
 For real-GPU frame times on the single-texture path, see the headed table in `docs/perf.md`. The chunked path doesn't yet have a dedicated benchmark scenario — see the open follow-up at the bottom of `docs/tiled-volumes-handoff.md`.
+
+---
+
+## 10. Independent hi-res overlay (`chunkOverlayOf`)
+
+By default an overlay over a chunked base is **resliced onto the base grid**
+(`_updateOverlayChunks` -> `orient.overlay2TextureChunked`), so the overlay can
+never out-resolve the base. An overlay volume carrying `chunkOverlayOf` (the
+base's cache-key) is instead streamed as a **second, independently-chunked
+volume**: its own `ChunkPlan`, its own `ChunkResidencyManager` working set, its
+own streaming chunk source. It is drawn as its own translucent chunk cubes over
+the base, sampled through its own (finer) grid.
+
+How it rides the existing machinery:
+
+- It is a second `_texCache` entry, so `beginChunkFrame()` / `pumpChunkUploads()`
+  (which already iterate every chunked entry) stream it for free.
+- `_activeOverlayChunked` is the active pointer; `requestOverlayChunksInFrustum`
+  / `requestOverlayVisibleChunksInView` drive its working set (culled against the
+  overlay's own plan + `matRAS`, the shared scene MVP).
+- `drawOverlayChunked` (both backends) draws its cubes after the base in the same
+  pass; `overlayLayerMode=1` (a shader uniform, formerly the unused `numPaqd`)
+  makes the fragment skip the base clip-surface / AO / matcap treatment and
+  composite as a flat translucent layer. WebGPU uses a dedicated
+  `OVERLAY_CHUNK_PARAMS_BASE` region of the params buffer so its cube uniforms
+  never collide with base cube uniforms within a frame.
+
+Scope / limitations (current):
+
+| Limitation | Detail |
+| --- | --- |
+| 3D render only | The overlay composites in the 3D render tile; it is **not** drawn on 2D multiplanar slices yet. Load a base-grid-resliced overlay for 2D. |
+| Co-registered, axis-aligned | Assumes the overlay shares the base's orientation/extent (e.g. a finer pyramid level). Arbitrary base->overlay affine is a follow-up (compose via `calculateOverlayTransformMatrix`). |
+| Compositing order | Base and overlay cube sets are each sorted back-to-front but drawn as two sets (overlay always over base) — the same per-cube approximation already used between neighbouring base chunks. |
+| Residency budget | Each `ChunkResidencyManager` uses the full configured `maxChunkResidencyBytes`. With a base + overlay both resident the total can approach 2x; size the streamed levels so base + overlay fit (the demo streams the overlay at one finer level than a deliberately-coarser base). A single split budget is a follow-up. |
+| Layer mix | `chunkExplode` is per-entry, so exploding the base does not explode the overlay. |
+
+Demo: `apps/iiif-volumetric-demo` overlay page, "stream hi-res" toggle (3D
+render). The overlay streams a finer pyramid level than the base and z-scores
+each brick client-side.

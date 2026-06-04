@@ -6,7 +6,10 @@ export const fragmentShader = `${fragmentPreamble}
 uniform mat4 normMtx;
 uniform float gradientAmount;
 uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
-uniform float numPaqd;
+// 1.0 when this draw is an independent hi-res overlay chunk cube (skip the
+// clip-surface/AO/matcap base treatment, composite as a translucent layer);
+// 0.0 for normal base/non-chunked draws. (Formerly the unused numPaqd.)
+uniform float overlayLayerMode;
 uniform float earlyTermination;
 uniform vec4 clipPlaneColor;
 uniform vec4 paqdUniforms;
@@ -229,9 +232,13 @@ void main() {
     clipPlaneColorX.a = 0.0;
   }
   bool chunkedDraw = any(lessThan(chunkSubSize, vec3(0.999)));
+  // Independent hi-res overlay cube draw: composite as a flat translucent layer
+  // over the base. Skip the opaque clip-surface treatment (AO, clip plane
+  // colour) and matcap lighting; still respect clip-plane ray trimming.
+  bool overlayMode = overlayLayerMode > 0.5;
   float stepSize = len / lenVox;
   vec4 deltaDir = vec4(dir * stepSize, stepSize);
-  float localGradientAmount = gradientAmount;
+  float localGradientAmount = overlayMode ? 0.0 : gradientAmount;
   vec2 sampleRange = vec2(0.0, len);
   bool cutaway = isClipCutaway > 0.5;
   bool hasClip = false;
@@ -265,7 +272,7 @@ void main() {
   float clipOffset = 0.0;
   bool clipSurfaceHit = false;
   if (!skipBackground) {
-    if (!cutaway && isClip) {
+    if (!cutaway && isClip && !overlayMode) {
       clipOffset = sampleRange.x;
       start += dir * sampleRange.x;
       len = sampleRange.y - sampleRange.x;
@@ -299,7 +306,7 @@ void main() {
       }
     } else {
       // Background fast pass found something
-      if (cutaway && isClip) {
+      if (cutaway && isClip && !overlayMode) {
         float dx = abs(sampleRange.x - samplePos.a);
         float dx2 = abs(sampleRange.y - samplePos.a);
         if (min(dx, dx2) < stepSizeFast) {

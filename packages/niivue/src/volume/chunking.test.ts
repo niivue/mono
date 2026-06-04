@@ -478,6 +478,34 @@ describe('chunkSampleTransform', () => {
     expect(drawOrigin).toBeCloseTo(c.texOrigin[0] / plan.volumeDims[0], 10)
     expect(drawSize).toBeCloseTo(c.texDims[0] / plan.volumeDims[0], 10)
   })
+
+  // An independently-streamed hi-res overlay uses its own (finer) ChunkPlan
+  // alongside the base plan. chunkSampleTransform must read only from the plan
+  // it is given — no shared module state — so a base and an overlay plan
+  // produce independent, plan-correct transforms.
+  test('two distinct plans yield independent, plan-local transforms', () => {
+    const base = chunkVolume([4092, 100, 100], 2048)
+    const overlay = chunkVolume([8184, 200, 200], 2048) // finer/larger grid
+    expect(overlay.chunks.length).toBeGreaterThan(base.chunks.length)
+
+    // Each transform reflects its own plan's dims, independent of the other.
+    const tb = chunkSampleTransform(base, 1)
+    const to = chunkSampleTransform(overlay, 1)
+    expect(tb.volumeDims).toEqual([4092, 100, 100])
+    expect(to.volumeDims).toEqual([8184, 200, 200])
+    expect(to.subSize[0]).not.toBeCloseTo(tb.subSize[0], 6)
+
+    // Recomputing the base transform after touching the overlay plan is stable
+    // (no cached cross-plan state).
+    const tbAgain = chunkSampleTransform(base, 1)
+    expect(tbAgain).toEqual(tb)
+
+    // Every chunk index of each plan stays within its own bounds.
+    for (let i = 0; i < overlay.chunks.length; i++) {
+      const t = chunkSampleTransform(overlay, i)
+      expect(t.subOrigin[0] + t.subSize[0]).toBeLessThanOrEqual(1 + 1e-9)
+    }
+  })
 })
 
 describe('identityChunkSampleTransform', () => {

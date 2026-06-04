@@ -84,6 +84,7 @@ const els = {
   layout: el<HTMLSelectElement>('layout'),
   cmap: el<HTMLSelectElement>('cmap'),
   opacity: el<HTMLInputElement>('opacity'),
+  zoom: el<HTMLInputElement>('zoom'),
   overlayOn: el<HTMLInputElement>('overlayOn'),
   streamHiRes: el<HTMLInputElement>('streamHiRes'),
   mag: el<HTMLSpanElement>('mag'),
@@ -628,6 +629,13 @@ async function main(): Promise<void> {
   })
   els.streamHiRes.addEventListener('change', () => {
     if (current) void loadAll(current)
+  })
+  // 3D zoom (scene scale). Lets you zoom into the clipped interior (right-drag a
+  // 3D-render tile to set the clip plane) without re-streaming.
+  els.zoom.addEventListener('input', () => {
+    if (!nv) return
+    nv.scaleMultiplier = Number(els.zoom.value)
+    nv.drawScene()
   })
   els.cmap.addEventListener('change', () => {
     if (nv && nv.volumes[1]) void nv.setVolume(1, { colormap: els.cmap.value })

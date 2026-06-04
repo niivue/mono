@@ -50,9 +50,14 @@ backends) -> `NVViewGPU/GL.chunkStreamStats` -> `nv.chunkStreamStats()`
   chunked volumes until a per-frame **wall-clock budget** (`CHUNK_UPLOAD_BUDGET_MS`
   = 8) or cap (`MAX_CHUNK_UPLOADS_PER_FRAME` = 24), instead of a fixed 1
   chunk/frame. Both backends. Self-tunes the fill rate to upload cost.
-  Follow-on idea if fetch latency dominates: parallel-prefetch the working set's
-  `chunkSource` fetches ahead of GPU upload (today the fetch is awaited serially
-  inside `uploadChunk`, inside the serialized pump).
+- **P1b — Parallel prefetch — DONE.** The `chunkSource` source-byte fetch was
+  awaited serially inside `uploadChunk` inside the serialized pump, so on a cold
+  load bricks fetched one at a time. The uploader now splits a cached
+  `fetchBytes` out of `uploadChunk` and exposes `prefetchChunk` (bounded by
+  `MAX_PREFETCHED_CHUNKS` = 16 outstanding buffers, no-op for in-memory). The
+  residency manager fires a `prefetch` hook when a chunk is first queued, and
+  the pump tops up the fetch window each call via `peekPendingUploads`, so the
+  next bricks' fetches run in parallel ahead of the GPU upload. Both backends.
 - **P2 — Coarse-first / progressive LOD.** Show a coarse whole-volume texture
   immediately and refine as fine bricks stream in, so interaction stays
   responsive and frames are never blank/partial. Larger change.

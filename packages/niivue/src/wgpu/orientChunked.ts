@@ -168,9 +168,22 @@ async function createColormapResources(
 export interface ChunkUploaderGPU {
   /** Upload, orient, and gradient the chunk at `index` in the plan. */
   uploadChunk(index: number): Promise<VolumeChunkGPU>
+  /**
+   * Kick off (and cache) the source-byte fetch for `index` ahead of upload, so
+   * network-backed fetches for the working set run in parallel instead of
+   * serially inside the pump. Bounded and a no-op for in-memory volumes.
+   */
+  prefetchChunk(index: number): void
   /** Release the shared uniform/colormap GPU resources. */
   dispose(): void
 }
+
+/**
+ * Max outstanding prefetched (fetched-but-not-yet-uploaded) chunk byte buffers
+ * per uploader. Bounds CPU memory held by parallel prefetch: at ~256^3 * bpv
+ * per buffer this caps a uint16 source at roughly half a gigabyte.
+ */
+const MAX_PREFETCHED_CHUNKS = 16
 
 function bytesFromChunkSource(
   data: ArrayBuffer | Uint8Array | NonNullable<NVImage['img']>,
@@ -305,25 +318,33 @@ export async function createChunkUploaderGPU(
     throw new Error('orientChunked: source is non-RAS but missing RAS mapping')
   }
 
-  async function uploadChunk(index: number): Promise<VolumeChunkGPU> {
+  // Cache of in-flight / ready source-byte fetches, keyed by chunk index. Only
+  // populated for chunkSource (network-backed) volumes; in-memory extraction is
+  // synchronous and cheap, so it is computed on demand without caching.
+  const fetchCache = new Map<number, Promise<Uint8Array>>()
+
+  function computeBytes(index: number): Promise<Uint8Array> {
     const desc = plan.chunks[index]
     if (!desc) {
-      throw new Error(`orientChunked: chunk index ${index} out of range`)
+      return Promise.reject(
+        new Error(`orientChunked: chunk index ${index} out of range`),
+      )
     }
     const expectedBytes =
       desc.texDims[0] * desc.texDims[1] * desc.texDims[2] * bytesPerVoxel
-    const chunkBytes = chunkSource
-      ? bytesFromChunkSource(
-          await chunkSource({
-            chunkIndex: index,
-            desc,
-            plan,
-            datatypeCode: dt,
-            bytesPerVoxel,
-          }),
-          expectedBytes,
-        )
-      : identity || !img2RASstart || !img2RASstep
+    if (chunkSource) {
+      return Promise.resolve(
+        chunkSource({
+          chunkIndex: index,
+          desc,
+          plan,
+          datatypeCode: dt,
+          bytesPerVoxel,
+        }),
+      ).then((r) => bytesFromChunkSource(r, expectedBytes))
+    }
+    const bytes =
+      identity || !img2RASstart || !img2RASstep
         ? extractChunkBytes(
             srcBytes as Uint8Array,
             volumeDims,
@@ -339,6 +360,37 @@ export async function createChunkUploaderGPU(
             img2RASstart,
             img2RASstep,
           )
+    return Promise.resolve(bytes)
+  }
+
+  function fetchBytes(index: number): Promise<Uint8Array> {
+    if (!chunkSource) return computeBytes(index)
+    const cached = fetchCache.get(index)
+    if (cached) return cached
+    const p = computeBytes(index)
+    fetchCache.set(index, p)
+    // Don't cache rejections: drop the entry so a re-queued chunk retries fresh.
+    p.catch(() => {
+      if (fetchCache.get(index) === p) fetchCache.delete(index)
+    })
+    return p
+  }
+
+  function prefetchChunk(index: number): void {
+    if (!chunkSource) return
+    if (fetchCache.has(index)) return
+    if (fetchCache.size >= MAX_PREFETCHED_CHUNKS) return
+    void fetchBytes(index)
+  }
+
+  async function uploadChunk(index: number): Promise<VolumeChunkGPU> {
+    const desc = plan.chunks[index]
+    if (!desc) {
+      throw new Error(`orientChunked: chunk index ${index} out of range`)
+    }
+    const chunkBytes = await fetchBytes(index)
+    // Consumed — free the CPU buffer reference so prefetch headroom recovers.
+    fetchCache.delete(index)
     let rgbaTexture: GPUTexture
     if (isRGBA) {
       // Color: write the expanded RGBA8 bytes straight into the output texture.
@@ -422,13 +474,14 @@ export async function createChunkUploaderGPU(
   }
 
   function dispose(): void {
+    fetchCache.clear()
     if (!orient) return
     orient.uniformBuffer.destroy()
     orient.colormapTexture.destroy()
     if (orient.hasNegativeColormap) orient.negativeColormapTexture.destroy()
   }
 
-  return { uploadChunk, dispose }
+  return { uploadChunk, prefetchChunk, dispose }
 }
 
 /** Release all per-chunk GPU textures from a previous build. */

@@ -74,6 +74,12 @@ const MAX_CHUNKS_PER_TILE = 256
  */
 const CHUNK_UPLOAD_BUDGET_MS = 8
 const MAX_CHUNK_UPLOADS_PER_FRAME = 24
+/**
+ * How many upcoming queued chunks the pump prefetches (source fetch) ahead of
+ * upload, per chunked volume per pump. Matched to the uploader's internal
+ * outstanding-fetch cap so the fetch window stays full as uploads drain it.
+ */
+const CHUNK_PREFETCH_WINDOW = 16
 
 /**
  * Near-plane depth convention for this backend's clip space. WebGPU clip space
@@ -665,6 +671,7 @@ export class VolumeRenderer extends NVRenderer {
         onEvict: (ci) => {
           bindGroups[ci] = null
         },
+        prefetch: (ci) => uploader.prefetchChunk(ci),
       },
     )
     manager.admit(0, await uploader.uploadChunk(0))
@@ -974,6 +981,17 @@ export class VolumeRenderer extends NVRenderer {
     let uploaded = 0
     const start = performance.now()
     try {
+      // Kick off source fetches for the upcoming working set so they run in
+      // parallel ahead of the serial upload below. prefetchChunk is idempotent
+      // and self-bounded, so topping up the window every pump keeps it full as
+      // uploads drain it.
+      for (const entry of this._texCache.values()) {
+        if (entry.kind !== 'chunked') continue
+        for (const ci of entry.manager.peekPendingUploads(
+          CHUNK_PREFETCH_WINDOW,
+        ))
+          entry.uploader.prefetchChunk(ci)
+      }
       // Round-robin: each pass takes at most one queued chunk from each chunked
       // entry, so a busy base does not starve the overlay (and vice versa).
       let progressed = true

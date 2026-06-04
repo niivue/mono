@@ -285,3 +285,47 @@ describe('two independent managers (base + overlay)', () => {
     expect(overlay.residentCount).toBe(2)
   })
 })
+
+// Parallel prefetch: the prefetch hook fires once per chunk when it is first
+// queued, and peekPendingUploads exposes the upcoming working set non-destructively.
+describe('prefetch hook + peekPendingUploads', () => {
+  function prefetchingManager(chunkCount: number) {
+    const prefetched: number[] = []
+    const m = new ChunkResidencyManager<FakeChunk>(chunkCount, 1_000_000, {
+      bytesOf: (c) => c.bytes,
+      destroy: () => {},
+      prefetch: (i) => prefetched.push(i),
+    })
+    return { m, prefetched }
+  }
+
+  test('prefetch fires once per chunk on first enqueue', () => {
+    const { m, prefetched } = prefetchingManager(8)
+    m.requestUpload(3)
+    m.requestUpload(5)
+    m.requestUpload(3) // already queued — no second prefetch
+    expect(prefetched).toEqual([3, 5])
+  })
+
+  test('prefetch does not fire for resident or in-flight chunks', () => {
+    const { m, prefetched } = prefetchingManager(8)
+    m.admit(0, fakeChunk('a', 100)) // resident
+    m.requestUpload(0) // resident — refreshes recency, no prefetch
+    m.requestUpload(1)
+    const taken = m.takePendingUploads(1) // 1 is now in-flight
+    expect(taken).toEqual([1])
+    m.requestUpload(1) // in-flight — no prefetch
+    expect(prefetched).toEqual([1])
+  })
+
+  test('peekPendingUploads returns the queue front without removing it', () => {
+    const { m } = prefetchingManager(8)
+    m.requestUpload(2)
+    m.requestUpload(4)
+    m.requestUpload(6)
+    expect(m.peekPendingUploads(2)).toEqual([2, 4])
+    // Non-destructive: the queue is unchanged, so a later take still drains it.
+    expect(m.pendingUploadCount).toBe(3)
+    expect(m.takePendingUploads(3)).toEqual([2, 4, 6])
+  })
+})

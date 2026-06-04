@@ -31,6 +31,13 @@ export interface ChunkResidencyHooks<TChunk> {
    * would otherwise dangle once the chunk's GPU resources are released.
    */
   onEvict?(chunkIndex: number): void
+  /**
+   * Called once when a chunk is first enqueued for upload (not when it is
+   * already resident, in-flight, or queued), so the backend can begin fetching
+   * its source bytes in parallel ahead of the serial upload pump. Optional and
+   * best-effort — the upload path must still work if it is a no-op.
+   */
+  prefetch?(chunkIndex: number): void
 }
 
 interface ResidentChunk<TChunk> {
@@ -140,6 +147,8 @@ export class ChunkResidencyManager<TChunk> {
     if (this._inFlightUploads.has(chunkIndex)) return
     if (this._uploadQueue.includes(chunkIndex)) return
     this._uploadQueue.push(chunkIndex)
+    // Newly queued — start its source fetch in parallel ahead of the pump.
+    this._hooks.prefetch?.(chunkIndex)
   }
 
   /** Number of chunks queued for upload but not yet resident. */
@@ -150,6 +159,23 @@ export class ChunkResidencyManager<TChunk> {
   /** Number of chunks removed from the queue and currently being uploaded. */
   get inFlightUploadCount(): number {
     return this._inFlightUploads.size
+  }
+
+  /**
+   * Return (without removing) up to `max` queued chunk indices, oldest first —
+   * the chunks the next `takePendingUploads` calls will drain. Lets the backend
+   * prefetch the upcoming working set ahead of the serial upload pump.
+   */
+  peekPendingUploads(max: number): number[] {
+    const out: number[] = []
+    const limit = Math.max(0, max)
+    for (const ci of this._uploadQueue) {
+      if (out.length >= limit) break
+      if (this._resident.has(ci)) continue
+      if (this._inFlightUploads.has(ci)) continue
+      out.push(ci)
+    }
+    return out
   }
 
   /**

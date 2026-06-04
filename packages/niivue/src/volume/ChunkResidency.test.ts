@@ -286,6 +286,39 @@ describe('two independent managers (base + overlay)', () => {
   })
 })
 
+// Budget split: an independent overlay shares the configured residency budget
+// with the base, so each manager's budget can be resized at runtime.
+describe('setBudgetBytes', () => {
+  test('shrinking the budget evicts least-recently-needed chunks to fit', () => {
+    const m = manager(4, 1_000_000)
+    m.admit(0, fakeChunk('a', 100)) // frame 0
+    m.beginFrame()
+    m.admit(1, fakeChunk('b', 100)) // frame 1
+    m.beginFrame()
+    m.admit(2, fakeChunk('c', 100)) // frame 2 (current frame — protected)
+    expect(m.residentBytes).toBe(300)
+
+    m.setBudgetBytes(150)
+
+    // Evicts the two oldest (a, b); c is protected as it was touched this frame.
+    expect(m.isResident(0)).toBe(false)
+    expect(m.isResident(1)).toBe(false)
+    expect(m.isResident(2)).toBe(true)
+    expect(m.budgetBytes).toBe(150)
+    expect(m.residentBytes).toBe(100)
+  })
+
+  test('growing the budget evicts nothing', () => {
+    const m = manager(4, 250)
+    m.admit(0, fakeChunk('a', 100))
+    m.beginFrame()
+    m.admit(1, fakeChunk('b', 100))
+    m.setBudgetBytes(1_000_000)
+    expect(m.residentCount).toBe(2)
+    expect(m.budgetBytes).toBe(1_000_000)
+  })
+})
+
 // Parallel prefetch: the prefetch hook fires once per chunk when it is first
 // queued, and peekPendingUploads exposes the upcoming working set non-destructively.
 describe('prefetch hook + peekPendingUploads', () => {

@@ -61,8 +61,11 @@ backends) -> `NVViewGPU/GL.chunkStreamStats` -> `nv.chunkStreamStats()`
 - **P2 — Coarse-first / progressive LOD.** Show a coarse whole-volume texture
   immediately and refine as fine bricks stream in, so interaction stays
   responsive and frames are never blank/partial. Larger change.
-- **P3 — Residency budget split.** Split the configured `maxChunkResidencyBytes`
-  between base and overlay managers (e.g. 60/40) so 3D doesn't over-commit VRAM.
+- **P3 — Residency budget split — DONE.** When an independent overlay is active
+  the single configured `maxChunkResidencyBytes` is split 60/40 base/overlay
+  (`OVERLAY_RESIDENCY_FRACTION`) via `ChunkResidencyManager.setBudgetBytes`, so
+  the two all-resident layers can't over-commit VRAM in the 3D render. The base
+  reclaims the full budget when the overlay is cleared. Both backends.
 - **P4 — No redundant GPU work.** Audit that camera-only changes (pan/zoom/
   rotate) never re-orient/re-gradient or rebuild bind groups for resident bricks.
 - **P5 — 2D-slice independent overlay** (also unblocks streaming only *visible*

@@ -80,6 +80,14 @@ const MAX_CHUNK_UPLOADS_PER_FRAME = 24
  * outstanding-fetch cap so the fetch window stays full as uploads drain it.
  */
 const CHUNK_PREFETCH_WINDOW = 16
+/**
+ * Share of the single configured `maxChunkResidencyBytes` given to an
+ * independent hi-res overlay's residency manager; the base keeps the rest. In
+ * the 3D render both layers are all-resident, so without a split base + overlay
+ * could each fill the full budget and over-commit VRAM. The overlay gets the
+ * smaller share since the base is the primary anatomy.
+ */
+const OVERLAY_RESIDENCY_FRACTION = 0.4
 
 /**
  * Near-plane depth convention for this backend's clip space. WebGPU clip space
@@ -1272,22 +1280,36 @@ export class VolumeRenderer extends NVRenderer {
     device: GPUDevice,
     vol: NVImage,
   ): Promise<void> {
+    // Split the single configured residency budget: the overlay gets a share,
+    // the base keeps the rest, so base + overlay together stay within the
+    // configured cap instead of each filling it.
+    const overlayBudget = this._chunkResidencyBytes * OVERLAY_RESIDENCY_FRACTION
     const entry = await this._ensureChunkedVolumeEntry(
       device,
       vol,
-      this._chunkResidencyBytes,
+      overlayBudget,
     )
+    // Apply the split even when the entry was reused from the cache (its
+    // manager may have been built with a different budget).
+    entry.manager.setBudgetBytes(overlayBudget)
     this._activeOverlayChunked = entry
+    if (this._activeChunked && this._activeChunked !== entry) {
+      this._activeChunked.manager.setBudgetBytes(
+        this._chunkResidencyBytes * (1 - OVERLAY_RESIDENCY_FRACTION),
+      )
+    }
     this._invalidateBindGroupCache()
   }
 
   /**
    * Forget the active independent chunked overlay. The cache entry itself is
    * left in _texCache for reuse / normal pruneVolumeCache lifecycle; only the
-   * active pointer is cleared so it is no longer drawn or requested.
+   * active pointer is cleared so it is no longer drawn or requested. The base
+   * reclaims the full residency budget the overlay had been sharing.
    */
   clearOverlayChunked(): void {
     this._activeOverlayChunked = null
+    this._activeChunked?.manager.setBudgetBytes(this._chunkResidencyBytes)
   }
 
   hasOverlayChunked(): boolean {

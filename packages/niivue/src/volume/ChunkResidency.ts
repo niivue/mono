@@ -131,6 +131,17 @@ export class ChunkResidencyManager<TChunk> {
   }
 
   /**
+   * Adjust the GPU byte budget (e.g. to split a single configured budget across
+   * a base volume and an independent overlay). Shrinking evicts the
+   * least-recently-needed resident chunks to fit, subject to the same
+   * current-frame protection as admit-time eviction.
+   */
+  setBudgetBytes(bytes: number): void {
+    this._budgetBytes = Math.max(0, bytes)
+    this._evictToFit(-1)
+  }
+
+  /**
    * Mark a chunk as needed this frame. A resident chunk is stamped with the
    * current frame so eviction will not drop it; a non-resident, not-yet-queued
    * chunk is enqueued for upload. Already-queued chunks are left as-is. This is

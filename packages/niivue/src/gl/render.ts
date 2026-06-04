@@ -644,15 +644,40 @@ export class VolumeRenderer extends NVRenderer {
     return {
       plan: this._activeChunked.plan,
       chunkTextures,
+      // A streamed combined overlay (strategy A) feeds the slice overlay slot
+      // from its resident chunks (transparent placeholder until each streams
+      // in); otherwise the whole-reslice overlayChunks apply.
       overlayChunks:
-        this.overlayChunks && this.overlayChunks.length === chunkCount
+        this._combinedOverlaySliceChunks(chunkCount) ??
+        (this.overlayChunks && this.overlayChunks.length === chunkCount
           ? this.overlayChunks
-          : null,
+          : null),
       paqdChunks:
         this.paqdChunks && this.paqdChunks.length === chunkCount
           ? this.paqdChunks
           : null,
     }
+  }
+
+  /**
+   * Per-chunk overlay textures for the active streamed combined overlay, sized
+   * to the base chunk count, with the transparent placeholder where a chunk is
+   * not yet resident. Null when no single combined overlay is active.
+   */
+  private _combinedOverlaySliceChunks(
+    chunkCount: number,
+  ): WebGLTexture[] | null {
+    if (this._combinedOverlayEntries.length !== 1 || !this.placeholderOverlay) {
+      return null
+    }
+    const entry = this._combinedOverlayEntries[0]
+    if (entry.manager.chunkCount !== chunkCount) return null
+    const placeholder = this.placeholderOverlay
+    const out: WebGLTexture[] = []
+    for (let i = 0; i < chunkCount; i++) {
+      out.push(entry.manager.getChunk(i)?.volumeTexture ?? placeholder)
+    }
+    return out
   }
 
   /**
@@ -798,7 +823,15 @@ export class VolumeRenderer extends NVRenderer {
     mvp: Float32Array | number[],
     matRAS: Float32Array | number[],
   ): void {
-    this._requestVisibleChunksInView(this._activeChunked, crossing, mvp, matRAS)
+    this._requestVisibleChunksInView(
+      this._activeChunked,
+      crossing,
+      mvp,
+      matRAS,
+      // Streamed combined overlays share the base grid — mirror the slice
+      // working set so the overlay streams alongside the base on 2D slices too.
+      this._combinedOverlayEntries.map((e) => e.manager),
+    )
   }
 
   /** 2D-slice working set for the independently-streamed hi-res overlay. */
@@ -820,10 +853,14 @@ export class VolumeRenderer extends NVRenderer {
     crossing: readonly number[],
     mvp: Float32Array | number[],
     matRAS: Float32Array | number[],
+    mirrors: ChunkResidencyManager<VolumeChunkGL>[] = [],
   ): void {
     if (!entry) return
     if (chunkExplodeEnabled(entry.volume.chunkExplode)) {
-      for (const ci of crossing) entry.manager.requestUpload(ci)
+      for (const ci of crossing) {
+        entry.manager.requestUpload(ci)
+        for (const m of mirrors) m.requestUpload(ci)
+      }
       return
     }
     const offset = chunkOffsetFor(entry.plan, entry.volume.chunkExplode)
@@ -838,8 +875,10 @@ export class VolumeRenderer extends NVRenderer {
       mvp,
       matRAS,
       offset,
-    ))
+    )) {
       entry.manager.requestUpload(ci)
+      for (const m of mirrors) m.requestUpload(ci)
+    }
   }
 
   /**

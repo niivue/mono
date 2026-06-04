@@ -560,9 +560,8 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
     )
     return
   }
-  // The streamed overlay only composites in the 3D render; force that layout so
-  // the hi-res layer is visible.
-  if (streamed) els.layout.value = '4'
+  // The streamed combined overlay (strategy A) renders in both the 3D render
+  // and 2D multiplanar slices, so honor the selected layout.
   nv.sliceType = Number(els.layout.value)
   nv.drawScene()
   renderHud()

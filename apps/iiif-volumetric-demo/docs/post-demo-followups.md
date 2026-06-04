@@ -27,14 +27,19 @@ three items from the original demo feedback have all shipped; we are now in a
    block, and is ray-marched by the base block — base fragment / clip plane /
    compositing reused unchanged. Both backends. Demo: "stream overlay" toggle.
 
+6. **Strategy A combined overlays on 2D slices** — DONE, commit `4ffe1b4`.
+   `getActiveChunkedSlice` feeds the slice overlay slot from the combined
+   overlay's resident chunks (placeholder until streamed); the 2D working-set
+   request mirrors onto the combined managers. Renders in 3D render + multiplanar.
+
 ## Open follow-ons
 - **Multiple streamed overlays** (strategy A Stage 2): per-block blend of N
-  resident overlay chunks via `blendOverlaysGPU` / `blendOverlayData`, cached
-  with a per-chunk dirty flag. Single overlay works today.
-- **Strategy B for 2D / finer-than-base overlays**: the independent `chunkOverlayOf`
-  grid (committed `ef1b77d`) is 3D-render-only and finer-grid; a 2D-slice strategy
-  for finer overlays is still to design.
-- Strategy A combined overlays render in the **3D tile only** (not 2D slices yet).
+  resident overlay chunks via `blendOverlaysGPU` (wgpu, fast) — GL needs a new
+  GPU-blend shader (CPU `blendOverlayData` readback is too slow for streaming) +
+  a per-chunk blend cache with a dirty flag. Single overlay works today.
+- **Strategy B for finer-than-base overlays**: the independent `chunkOverlayOf`
+  grid (committed `ef1b77d`) is finer-grid; a strategy for overlays finer than the
+  base (esp. on 2D images) is still to design.
 
 ---
 

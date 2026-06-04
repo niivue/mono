@@ -479,12 +479,37 @@ function renderHud(): void {
         `overlay bricks fetched: ${overlayFetched.size}`
       : `z-score overlay: resliced (coarse), ${els.cmap.value}, ` +
         `opacity ${els.opacity.value}`
+  const s = nv?.chunkStreamStats?.() ?? null
+  const gpuLine = s
+    ? `\nGPU bricks resident: ${s.resident}/${s.total}` +
+      (s.pending || s.inFlight
+        ? ` (streaming: ${s.inFlight} in-flight, ${s.pending} queued)`
+        : ' (settled)')
+    : ''
   els.hud.textContent =
     `background: ${current.id}\n` +
     `base level ${loadedBgLevel} · ${current.dtype}\n` +
     `window: ${Math.round(bgWin.min)}–${Math.round(bgWin.max)}\n` +
     `base bricks fetched: ${fetched.size}\n` +
-    ovLine
+    ovLine +
+    gpuLine
+}
+
+// While bricks are still streaming in, refresh the HUD each frame so the
+// resident/queued counts update live (uploads happen async between frames).
+let streamPollHandle = 0
+function pollStreamingHud(): void {
+  if (streamPollHandle) cancelAnimationFrame(streamPollHandle)
+  const tick = () => {
+    renderHud()
+    const s = nv?.chunkStreamStats?.() ?? null
+    if (s && (s.pending > 0 || s.inFlight > 0)) {
+      streamPollHandle = requestAnimationFrame(tick)
+    } else {
+      streamPollHandle = 0
+    }
+  }
+  streamPollHandle = requestAnimationFrame(tick)
 }
 
 async function loadAll(v: VolumeApiEntry): Promise<void> {
@@ -554,6 +579,7 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
   nv.sliceType = Number(els.layout.value)
   nv.drawScene()
   renderHud()
+  pollStreamingHud()
 }
 
 async function main(): Promise<void> {

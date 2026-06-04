@@ -64,12 +64,16 @@ const DEFAULT_CHUNK_RESIDENCY_BYTES = 1_500_000_000
 const MAX_CHUNKS_PER_TILE = 256
 
 /**
- * Chunks uploaded per frame by the streaming pump. A chunked volume's chunks
- * are uploaded one (orient + gradient) at a time so each frame's main-thread
- * cost is bounded — the volume streams in over `chunkCount` frames instead of
- * stalling at load. Raising this trades smoother streaming for larger hitches.
+ * Streaming-pump budget per `pumpChunkUploads` call. The pump uploads chunks
+ * (each: source fetch + orient + gradient) round-robin across chunked volumes
+ * until either the wall-clock budget or the hard cap is reached, then yields so
+ * the next frame can present the freshly-resident bricks. A wall-clock budget
+ * (rather than a fixed count) self-tunes: when uploads are cheap (cached fetch,
+ * fast GPU) many land per frame for a quick fill; when they are expensive the
+ * frame still yields promptly. The cap bounds the worst case.
  */
-const CHUNK_UPLOADS_PER_FRAME = 1
+const CHUNK_UPLOAD_BUDGET_MS = 8
+const MAX_CHUNK_UPLOADS_PER_FRAME = 24
 
 /**
  * Near-plane depth convention for this backend's clip space. WebGPU clip space
@@ -955,23 +959,40 @@ export class VolumeRenderer extends NVRenderer {
 
   /**
    * Stream in queued chunks for every cached chunked volume — the per-frame
-   * upload pump. Uploads at most `CHUNK_UPLOADS_PER_FRAME` chunks total, then
-   * `admit`s them. Returns true if any chunk was admitted, so the view can
-   * schedule a follow-up frame to show the newly-resident data. A single pump
-   * runs at a time: a re-entrant call while an async upload is in flight
-   * returns false immediately.
+   * upload pump. Uploads chunks round-robin across chunked volumes (one per
+   * volume per round, so base and overlay fill together) until the wall-clock
+   * budget `CHUNK_UPLOAD_BUDGET_MS` or the cap `MAX_CHUNK_UPLOADS_PER_FRAME` is
+   * reached, then `admit`s them. Returns true if any chunk was admitted, so the
+   * view can schedule a follow-up frame to present the newly-resident data and
+   * keep the pump going. A single pump runs at a time: a re-entrant call while
+   * an async upload is in flight returns false immediately.
    */
   async pumpChunkUploads(): Promise<boolean> {
     if (this._pumpInFlight) return false
-    let budget = CHUNK_UPLOADS_PER_FRAME
     this._pumpInFlight = true
     let admitted = false
+    let uploaded = 0
+    const start = performance.now()
     try {
-      for (const entry of this._texCache.values()) {
-        if (entry.kind !== 'chunked') continue
-        if (budget <= 0) continue
-        const indices = entry.manager.takePendingUploads(budget)
-        for (const i of indices) {
+      // Round-robin: each pass takes at most one queued chunk from each chunked
+      // entry, so a busy base does not starve the overlay (and vice versa).
+      let progressed = true
+      while (
+        progressed &&
+        uploaded < MAX_CHUNK_UPLOADS_PER_FRAME &&
+        performance.now() - start < CHUNK_UPLOAD_BUDGET_MS
+      ) {
+        progressed = false
+        for (const entry of this._texCache.values()) {
+          if (entry.kind !== 'chunked') continue
+          if (
+            uploaded >= MAX_CHUNK_UPLOADS_PER_FRAME ||
+            performance.now() - start >= CHUNK_UPLOAD_BUDGET_MS
+          )
+            break
+          const indices = entry.manager.takePendingUploads(1)
+          if (indices.length === 0) continue
+          const i = indices[0]
           try {
             entry.manager.admit(i, await entry.uploader.uploadChunk(i))
           } catch (err) {
@@ -979,7 +1000,8 @@ export class VolumeRenderer extends NVRenderer {
             throw err
           }
           admitted = true
-          budget--
+          uploaded++
+          progressed = true
         }
       }
     } finally {
@@ -1257,6 +1279,31 @@ export class VolumeRenderer extends NVRenderer {
   /** The NVImage backing the active independent chunked overlay (or null). */
   getOverlayChunkedVolume(): NVImage | null {
     return this._activeOverlayChunked?.volume ?? null
+  }
+
+  /**
+   * Aggregate streaming stats across all chunked volumes (base + overlay), for
+   * HUD / debug instrumentation. `resident` is bricks currently on the GPU,
+   * `pending` queued for upload, `inFlight` mid-upload, `total` the chunk count.
+   */
+  chunkStreamStats(): {
+    resident: number
+    pending: number
+    inFlight: number
+    total: number
+  } {
+    let resident = 0
+    let pending = 0
+    let inFlight = 0
+    let total = 0
+    for (const entry of this._texCache.values()) {
+      if (entry.kind !== 'chunked') continue
+      resident += entry.manager.residentCount
+      pending += entry.manager.pendingUploadCount
+      inFlight += entry.manager.inFlightUploadCount
+      total += entry.manager.chunkCount
+    }
+    return { resident, pending, inFlight, total }
   }
 
   /**

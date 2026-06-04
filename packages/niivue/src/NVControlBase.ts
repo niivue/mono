@@ -122,6 +122,12 @@ type ViewBackend = {
   clearDrawing: () => void
   destroy: () => void
   forceDevicePixelRatio: number
+  chunkStreamStats: () => {
+    resident: number
+    pending: number
+    inFlight: number
+    total: number
+  }
 }
 
 export type { NiiVueOptions }
@@ -2314,6 +2320,22 @@ export default class NiiVueGPU extends EventTarget {
    */
   getViewport(): CanvasViewport {
     return getCanvasViewport(this.canvas)
+  }
+
+  /**
+   * Streaming stats across all chunked volumes (base + independent overlay) on
+   * the active backend: `{ resident, pending, inFlight, total }` brick counts.
+   * Returns null before a view is attached. Useful for HUD / debug overlays:
+   * `resident < total` with `pending > 0` for many frames indicates the working
+   * set exceeds the residency budget (thrashing).
+   */
+  chunkStreamStats(): {
+    resident: number
+    pending: number
+    inFlight: number
+    total: number
+  } | null {
+    return this.view?.chunkStreamStats() ?? null
   }
 
   /**

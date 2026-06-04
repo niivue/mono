@@ -1343,6 +1343,15 @@ export default class NVGlview {
     )
   }
 
+  chunkStreamStats(): {
+    resident: number
+    pending: number
+    inFlight: number
+    total: number
+  } {
+    return this.volumeRenderer.chunkStreamStats()
+  }
+
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {
     return this.meshResources.get(m) ?? null
   }

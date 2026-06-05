@@ -31,12 +31,20 @@ three items from the original demo feedback have all shipped; we are now in a
    `getActiveChunkedSlice` feeds the slice overlay slot from the combined
    overlay's resident chunks (placeholder until streamed); the 2D working-set
    request mirrors onto the combined managers. Renders in 3D render + multiplanar.
+7. **Multiple overlays combined** — DONE via RGBA source, commit `cf261b9`.
+   niivue's combined-overlay path accepts RGBA (the chunk uploader's isRGBA path;
+   the trigger has no datatype filter), so multiple colored layers are combined
+   client-side into one premultiplied-RGBA `chunkSource` (DT_RGBA32) and streamed
+   per block — no in-niivue N-image blend. Demo "RGBA combine" toggle (two z-score
+   bands). Both backends, 2D + 3D.
 
 ## Open follow-ons
-- **Multiple streamed overlays** (strategy A Stage 2): per-block blend of N
-  resident overlay chunks via `blendOverlaysGPU` (wgpu, fast) — GL needs a new
-  GPU-blend shader (CPU `blendOverlayData` readback is too slow for streaming) +
-  a per-chunk blend cache with a dirty flag. Single overlay works today.
+- **In-niivue blend of separate overlay NVImages** (vs. one pre-combined RGBA
+  source): would let `loadVolumes([base, ov1, ov2])` blend streamed overlays per
+  block. Needs `blendOverlaysGPU` per chunk on WebGPU + a new GL GPU-blend shader
+  (CPU `blendOverlayData` readback is too slow; GL 3D-texture blending is awkward)
+  + a per-chunk blend cache. The RGBA-source path (above) covers the practical
+  case without this.
 - **Strategy B for finer-than-base overlays**: the independent `chunkOverlayOf`
   grid (committed `ef1b77d`) is finer-grid; a strategy for overlays finer than the
   base (esp. on 2D images) is still to design.

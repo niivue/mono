@@ -87,6 +87,7 @@ const els = {
   zoom: el<HTMLInputElement>('zoom'),
   overlayOn: el<HTMLInputElement>('overlayOn'),
   streamHiRes: el<HTMLInputElement>('streamHiRes'),
+  rgbaCombine: el<HTMLInputElement>('rgbaCombine'),
   mag: el<HTMLSpanElement>('mag'),
   canvas: el<HTMLCanvasElement>('nv-canvas'),
   hud: el<HTMLDivElement>('hud'),
@@ -463,14 +464,92 @@ function createStreamedStatOverlay(
   })
 }
 
+// Multi-layer combined overlay, client-blended into ONE premultiplied-RGBA
+// streamed layer (datatype DT_RGBA32). Demonstrates that niivue's combined-
+// overlay path accepts RGBA: two colored layers — warm hotspots (z > 1) and cool
+// coldspots (z < -1) — are blended per chunk and streamed as a single overlay,
+// combined per block by the base ray-march. (rgb is straight, not premultiplied;
+// the shader multiplies by alpha.)
+function createRgbaCombinedOverlay(
+  v: VolumeApiEntry,
+  lvl: VolumeLevel,
+  stats: { mean: number; std: number },
+): NVImage {
+  const srcBpv = bytesPerVoxelForDtype(v.dtype)
+  const op = Number(els.opacity.value)
+  const cache = new Map<number, Promise<Uint8Array>>()
+  const chunkSource: VolumeChunkSource = (request) => {
+    const hit = cache.get(request.chunkIndex)
+    if (hit) return hit
+    overlayFetched.add(request.chunkIndex)
+    const td = request.desc.texDims
+    const n = td[0] * td[1] * td[2]
+    const next = fetchRawChunk(v.id, lvl.level, request.desc, srcBpv).then(
+      (raw) => {
+        const s = decodeScalarChunk(raw, v.dtype, n)
+        const rgba = new Uint8Array(n * 4)
+        for (let i = 0; i < n; i++) {
+          const val = s[i]
+          if (val <= 0) continue
+          const z = (val - stats.mean) / stats.std
+          let r = 0
+          let g = 0
+          let b = 0
+          let a = 0
+          // Two colored layers over the VISIBLE (dense) structure of bimodal
+          // data: the densest cores warm (red -> yellow), the surrounding bone
+          // cool (blue -> cyan). Both land on the same visible object, so the
+          // combine reads as two tones rather than one. (Below z ~ 0.3 the data
+          // is mostly air here, so it stays transparent.)
+          if (z > 1.5) {
+            // warm cores
+            r = 255
+            g = Math.round(Math.min((z - 1.5) / 2, 1) * 220)
+            a = 0.85 * op
+          } else if (z > 0.3) {
+            // cool surround
+            b = 255
+            g = Math.round(Math.min((1.5 - z) / 1.2, 1) * 200)
+            a = 0.6 * op
+          }
+          const o = i * 4
+          rgba[o] = r
+          rgba[o + 1] = g
+          rgba[o + 2] = b
+          rgba[o + 3] = Math.round(a * 255)
+        }
+        renderHud()
+        return rgba
+      },
+    )
+    cache.set(request.chunkIndex, next)
+    renderHud()
+    return next
+  }
+  return buildLogicalVolume({
+    id: `${v.id} z-overlay (rgba L${lvl.level})`,
+    url: `ov-stat-rgba://${encodeURIComponent(v.id)}/L${lvl.level}`,
+    shape: lvl.shape,
+    spacing: lvl.spacing,
+    datatypeCode: 2304, // DT_RGBA32 — uploaded straight (no colormap)
+    numBitsPerVoxel: 32,
+    calMin: 0,
+    calMax: 1,
+    colormap: 'gray',
+    opacity: 1,
+    chunkSource,
+  })
+}
+
 function renderHud(): void {
   if (!current) return
   const streamed = els.streamHiRes.checked && els.overlayOn.checked
   const ovLine = !els.overlayOn.checked
     ? 'z-score overlay: off'
     : streamed
-      ? `z-score overlay: streamed combined L${loadedOvLevel}, ` +
-        `${els.cmap.value}, opacity ${els.opacity.value}\n` +
+      ? `z-score overlay: streamed combined L${loadedOvLevel}` +
+        (els.rgbaCombine.checked ? ' (RGBA two-tone)' : `, ${els.cmap.value}`) +
+        `, opacity ${els.opacity.value}\n` +
         `overlay bricks fetched: ${overlayFetched.size}`
       : `z-score overlay: resliced (coarse), ${els.cmap.value}, ` +
         `opacity ${els.opacity.value}`
@@ -547,8 +626,11 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
   if (els.overlayOn.checked) {
     list.push(
       streamed
-        ? // Strategy A: combined streamed overlay at the base level (no baseUrlKey).
-          createStreamedStatOverlay(v, bgLvl, computeStats(scalars))
+        ? els.rgbaCombine.checked
+          ? // Two colored layers blended into one premultiplied-RGBA overlay.
+            createRgbaCombinedOverlay(v, bgLvl, computeStats(scalars))
+          : // Strategy A: scalar combined streamed overlay at the base level.
+            createStreamedStatOverlay(v, bgLvl, computeStats(scalars))
         : createStatOverlay(v, coarseLvl, scalars),
     )
   }
@@ -613,6 +695,9 @@ async function main(): Promise<void> {
     if (current) void loadAll(current)
   })
   els.streamHiRes.addEventListener('change', () => {
+    if (current) void loadAll(current)
+  })
+  els.rgbaCombine.addEventListener('change', () => {
     if (current) void loadAll(current)
   })
   // 3D zoom (scene scale). Lets you zoom into the clipped interior (right-drag a

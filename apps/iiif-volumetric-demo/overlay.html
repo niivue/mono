@@ -48,7 +48,8 @@
       <label>opacity <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.7" /></label>
       <label>zoom <input type="range" id="zoom" min="0.5" max="8" step="0.1" value="1" /></label>
       <label><input type="checkbox" id="overlayOn" checked /> overlay</label>
-      <label title="Stream the overlay as a base-aligned chunked layer combined per block (strategy A, 3D render) instead of reslicing a coarse overlay whole onto the base grid"><input type="checkbox" id="streamHiRes" /> stream overlay</label>
+      <label title="Stream the overlay as a base-aligned chunked layer combined per block (strategy A) instead of reslicing a coarse overlay whole onto the base grid"><input type="checkbox" id="streamHiRes" /> stream overlay</label>
+      <label title="Combine two colored layers (warm densest cores + cool surrounding structure) into one RGBA streamed overlay (requires stream overlay)"><input type="checkbox" id="rgbaCombine" /> RGBA combine</label>
       <span id="mag" style="color:#9aa0a6"></span>
     </div>
     <main>

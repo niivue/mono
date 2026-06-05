@@ -83,7 +83,8 @@ const els = {
   volume: el<HTMLSelectElement>('volume'),
   layout: el<HTMLSelectElement>('layout'),
   cmap: el<HTMLSelectElement>('cmap'),
-  opacity: el<HTMLInputElement>('opacity'),
+  opacityWarm: el<HTMLInputElement>('opacityWarm'),
+  opacityCool: el<HTMLInputElement>('opacityCool'),
   zoom: el<HTMLInputElement>('zoom'),
   overlayOn: el<HTMLInputElement>('overlayOn'),
   streamHiRes: el<HTMLInputElement>('streamHiRes'),
@@ -93,6 +94,20 @@ const els = {
   hud: el<HTMLDivElement>('hud'),
   fallback: el<HTMLDivElement>('fallback'),
 }
+
+// Opacity of the two stacked overlays. The warm overlay carries the densest cores
+// (z > 1.5), the cool overlay the surrounding structure (0.3 < z <= 1.5).
+const warmOpacity = (): number => Number(els.opacityWarm.value)
+const coolOpacity = (): number => Number(els.opacityCool.value)
+
+// The currently-loaded streamed overlay's per-brick cache and how its opacity is
+// applied, so an opacity change can re-bake in place (nv.rebakeChunkedOverlays())
+// instead of reloading the whole volume. 'scalar': opacity is baked by niivue from
+// vol.opacity at orient time. 'rgba': opacity is baked into alpha by the chunkSource
+// below, so its cache must be cleared to force a re-bake. null in the resliced mode
+// (two real stacked overlays, opacity is live-settable via setVolume).
+let streamedOverlayCache: Map<number, Promise<Uint8Array>> | null = null
+let streamedOverlayKind: 'scalar' | 'rgba' | null = null
 
 let nv: NiiVue | null = null
 let volumes: VolumeApiEntry[] = []
@@ -382,32 +397,56 @@ function computeStats(scalars: Float32Array): { mean: number; std: number } {
 // voxel z = (intensity - mean) / std over the non-zero (object) voxels. Shown in
 // a hot colormap above z = 1, it reads like a stat map on the anatomy — the same
 // image, overlaid on itself, highlighting the denser-than-average structure.
-// In-memory variant: a coarse whole level, resliced onto the base grid.
-function createStatOverlay(
+// In-memory variant: a coarse whole level, resliced onto the base grid. Split
+// into TWO stacked overlays so each band gets its own colormap and opacity
+// slider: a warm map over the densest cores (z > 1.5) and a cool map over the
+// surrounding structure (0.3 < z <= 1.5). niivue blends both resliced overlays
+// onto the streamed background (volumes[1] = warm, volumes[2] = cool).
+function createStatOverlays(
   v: VolumeApiEntry,
   lvl: VolumeLevel,
   scalars: Float32Array,
-): NVImage {
+): NVImage[] {
   const { mean, std } = computeStats(scalars)
-  const img = new Float32Array(scalars.length)
+  const warm = new Float32Array(scalars.length)
+  const cool = new Float32Array(scalars.length)
   for (let i = 0; i < scalars.length; i++) {
     const s = scalars[i]
-    img[i] = s > 0 ? (s - mean) / std : 0
+    if (s <= 0) continue
+    const z = (s - mean) / std
+    if (z > 1.5) warm[i] = z
+    else if (z > 0.3) cool[i] = z
   }
-  return buildLogicalVolume({
-    id: `${v.id} z-overlay`,
-    url: `ov-stat://${encodeURIComponent(v.id)}/L${lvl.level}`,
-    shape: lvl.shape,
-    spacing: lvl.spacing,
-    datatypeCode: 16, // DT_FLOAT32
-    numBitsPerVoxel: 32,
-    calMin: 1.0,
-    calMax: 4.0,
-    colormap: els.cmap.value || 'warm',
-    opacity: Number(els.opacity.value),
-    isTransparentBelowCalMin: true,
-    img,
-  })
+  return [
+    buildLogicalVolume({
+      id: `${v.id} z-overlay warm`,
+      url: `ov-stat-warm://${encodeURIComponent(v.id)}/L${lvl.level}`,
+      shape: lvl.shape,
+      spacing: lvl.spacing,
+      datatypeCode: 16, // DT_FLOAT32
+      numBitsPerVoxel: 32,
+      calMin: 1.5,
+      calMax: 4.0,
+      colormap: els.cmap.value || 'warm',
+      opacity: warmOpacity(),
+      isTransparentBelowCalMin: true,
+      img: warm,
+    }),
+    buildLogicalVolume({
+      id: `${v.id} z-overlay cool`,
+      url: `ov-stat-cool://${encodeURIComponent(v.id)}/L${lvl.level}`,
+      shape: lvl.shape,
+      spacing: lvl.spacing,
+      datatypeCode: 16, // DT_FLOAT32
+      numBitsPerVoxel: 32,
+      calMin: 0.3,
+      calMax: 1.5,
+      colormap: 'cool',
+      opacity: coolOpacity(),
+      isTransparentBelowCalMin: true,
+      img: cool,
+    }),
+  ]
 }
 
 // Streamed z-score overlay. With `baseUrlKey` it is an independent hi-res layer
@@ -422,6 +461,9 @@ function createStreamedStatOverlay(
 ): NVImage {
   const srcBpv = bytesPerVoxelForDtype(v.dtype)
   const cache = new Map<number, Promise<Uint8Array>>()
+  // Re-bake driven by niivue from vol.opacity (the z-score bricks are opacity-free).
+  streamedOverlayCache = cache
+  streamedOverlayKind = 'scalar'
   const chunkSource: VolumeChunkSource = (request) => {
     const hit = cache.get(request.chunkIndex)
     if (hit) return hit
@@ -454,13 +496,15 @@ function createStreamedStatOverlay(
     calMin: 1.0,
     calMax: 4.0,
     colormap: els.cmap.value || 'warm',
-    opacity: Number(els.opacity.value),
+    // Only one streamed/chunked overlay can render at a time, so the streamed
+    // mode is a single layer driven by the warm slider.
+    opacity: warmOpacity(),
     isTransparentBelowCalMin: true,
     chunkSource,
     // baseUrlKey set => strategy B (independent hi-res); omitted => strategy A
     // (base-grid combined, no chunkOverlayOf).
     chunkOverlayOf: baseUrlKey,
-    chunkOverlayOpacity: Number(els.opacity.value),
+    chunkOverlayOpacity: warmOpacity(),
   })
 }
 
@@ -476,8 +520,12 @@ function createRgbaCombinedOverlay(
   stats: { mean: number; std: number },
 ): NVImage {
   const srcBpv = bytesPerVoxelForDtype(v.dtype)
-  const op = Number(els.opacity.value)
   const cache = new Map<number, Promise<Uint8Array>>()
+  // The two tones are baked into one streamed RGBA layer, so the two sliders set
+  // each tone's alpha directly. Opacity is read live per (re-)bake; an opacity
+  // change clears this cache and re-streams the affected frustum bricks.
+  streamedOverlayCache = cache
+  streamedOverlayKind = 'rgba'
   const chunkSource: VolumeChunkSource = (request) => {
     const hit = cache.get(request.chunkIndex)
     if (hit) return hit
@@ -486,6 +534,8 @@ function createRgbaCombinedOverlay(
     const n = td[0] * td[1] * td[2]
     const next = fetchRawChunk(v.id, lvl.level, request.desc, srcBpv).then(
       (raw) => {
+        const opWarm = warmOpacity()
+        const opCool = coolOpacity()
         const s = decodeScalarChunk(raw, v.dtype, n)
         const rgba = new Uint8Array(n * 4)
         for (let i = 0; i < n; i++) {
@@ -505,12 +555,12 @@ function createRgbaCombinedOverlay(
             // warm cores
             r = 255
             g = Math.round(Math.min((z - 1.5) / 2, 1) * 220)
-            a = 0.85 * op
+            a = opWarm
           } else if (z > 0.3) {
             // cool surround
             b = 255
             g = Math.round(Math.min((1.5 - z) / 1.2, 1) * 200)
-            a = 0.6 * op
+            a = opCool
           }
           const o = i * 4
           rgba[o] = r
@@ -548,11 +598,12 @@ function renderHud(): void {
     ? 'z-score overlay: off'
     : streamed
       ? `z-score overlay: streamed combined L${loadedOvLevel}` +
-        (els.rgbaCombine.checked ? ' (RGBA two-tone)' : `, ${els.cmap.value}`) +
-        `, opacity ${els.opacity.value}\n` +
-        `overlay bricks fetched: ${overlayFetched.size}`
-      : `z-score overlay: resliced (coarse), ${els.cmap.value}, ` +
-        `opacity ${els.opacity.value}`
+        (els.rgbaCombine.checked
+          ? ` (RGBA two-tone), warm ${els.opacityWarm.value}/cool ${els.opacityCool.value}`
+          : `, ${els.cmap.value}, opacity ${els.opacityWarm.value}`) +
+        `\noverlay bricks fetched: ${overlayFetched.size}`
+      : `z-score overlay: resliced (coarse), warm ${els.cmap.value} ` +
+        `${els.opacityWarm.value}/cool ${els.opacityCool.value}`
   const s = nv?.chunkStreamStats?.() ?? null
   const gpuLine = s
     ? `\nGPU bricks resident: ${s.resident}/${s.total}` +
@@ -586,11 +637,23 @@ function pollStreamingHud(): void {
   streamPollHandle = requestAnimationFrame(tick)
 }
 
+// The cool slider drives a real overlay only in the resliced mode (volumes[2])
+// and the RGBA two-tone bake. In the plain streamed scalar mode there is a single
+// warm layer and nothing for it to control, so disable it to avoid a dead knob.
+function syncControls(): void {
+  const plainStreamed =
+    els.streamHiRes.checked && !els.rgbaCombine.checked && els.overlayOn.checked
+  els.opacityCool.disabled = plainStreamed
+}
+
 async function loadAll(v: VolumeApiEntry): Promise<void> {
   if (!nv) return
   current = v
   fetched = new Set()
   overlayFetched = new Set()
+  // Reset streamed-overlay re-bake state; the create* helpers set it when streamed.
+  streamedOverlayCache = null
+  streamedOverlayKind = null
   const streamed = els.streamHiRes.checked && els.overlayOn.checked
   // Strategy A (streamed combined overlay): the overlay streams at the SAME
   // level as the base (co-registered, base grid) and is combined per block,
@@ -624,15 +687,19 @@ async function loadAll(v: VolumeApiEntry): Promise<void> {
   bgWin = punchyWindow(scalars)
   const list = [createBackground(v, bgLvl, bgWin)]
   if (els.overlayOn.checked) {
-    list.push(
-      streamed
-        ? els.rgbaCombine.checked
+    if (streamed) {
+      // Only one streamed/chunked overlay renders at a time.
+      list.push(
+        els.rgbaCombine.checked
           ? // Two colored layers blended into one premultiplied-RGBA overlay.
             createRgbaCombinedOverlay(v, bgLvl, computeStats(scalars))
           : // Strategy A: scalar combined streamed overlay at the base level.
-            createStreamedStatOverlay(v, bgLvl, computeStats(scalars))
-        : createStatOverlay(v, coarseLvl, scalars),
-    )
+            createStreamedStatOverlay(v, bgLvl, computeStats(scalars)),
+      )
+    } else {
+      // Two stacked resliced overlays (warm cores + cool surround).
+      list.push(...createStatOverlays(v, coarseLvl, scalars))
+    }
   }
   try {
     await nv.loadVolumes(list)
@@ -692,12 +759,15 @@ async function main(): Promise<void> {
     nv.drawScene()
   })
   els.overlayOn.addEventListener('change', () => {
+    syncControls()
     if (current) void loadAll(current)
   })
   els.streamHiRes.addEventListener('change', () => {
+    syncControls()
     if (current) void loadAll(current)
   })
   els.rgbaCombine.addEventListener('change', () => {
+    syncControls()
     if (current) void loadAll(current)
   })
   // 3D zoom (scene scale). Lets you zoom into the clipped interior (right-drag a
@@ -708,16 +778,43 @@ async function main(): Promise<void> {
     nv.drawScene()
   })
   els.cmap.addEventListener('change', () => {
-    if (nv && nv.volumes[1]) void nv.setVolume(1, { colormap: els.cmap.value })
+    // volumes[1] is the warm overlay (resliced) or the single streamed overlay.
+    if (nv?.volumes[1]) void nv.setVolume(1, { colormap: els.cmap.value })
     renderHud()
   })
-  els.opacity.addEventListener('input', () => {
-    if (nv && nv.volumes[1]) {
-      void nv.setVolume(1, { opacity: Number(els.opacity.value) })
+  // In the resliced mode the two overlays are real stacked volumes, so opacity is
+  // live-settable: warm = volumes[1], cool = volumes[2]. The streamed modes bake
+  // opacity into each chunk, so a slider change there re-streams on release.
+  const isStreamed = (): boolean =>
+    els.streamHiRes.checked && els.overlayOn.checked
+  const applyOpacityLive = (): void => {
+    if (!nv || isStreamed()) return
+    if (nv.volumes[1]) void nv.setVolume(1, { opacity: warmOpacity() })
+    if (nv.volumes[2]) void nv.setVolume(2, { opacity: coolOpacity() })
+    renderHud()
+  }
+  // Streamed overlays bake opacity into each brick, so re-bake in place: update the
+  // baked value, then drop the resident overlay bricks so niivue re-streams only the
+  // blocks in the current frustum (the base volume stays resident). Fires on release
+  // ('change') rather than every 'input' tick since each re-bake re-streams bricks.
+  const rebakeIfStreamed = (): void => {
+    if (!nv || !isStreamed()) return
+    if (streamedOverlayKind === 'scalar') {
+      if (nv.volumes[1]) nv.volumes[1].opacity = warmOpacity()
+    } else if (streamedOverlayKind === 'rgba') {
+      streamedOverlayCache?.clear()
+      overlayFetched = new Set()
     }
+    nv.rebakeChunkedOverlays()
     renderHud()
-  })
+    pollStreamingHud()
+  }
+  els.opacityWarm.addEventListener('input', applyOpacityLive)
+  els.opacityCool.addEventListener('input', applyOpacityLive)
+  els.opacityWarm.addEventListener('change', rebakeIfStreamed)
+  els.opacityCool.addEventListener('change', rebakeIfStreamed)
 
+  syncControls()
   await loadAll(initial)
 }
 

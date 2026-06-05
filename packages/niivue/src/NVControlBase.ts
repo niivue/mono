@@ -128,6 +128,7 @@ type ViewBackend = {
     inFlight: number
     total: number
   }
+  rebakeChunkedOverlays: () => void
 }
 
 export type { NiiVueOptions }
@@ -2336,6 +2337,19 @@ export default class NiiVueGPU extends EventTarget {
     total: number
   } | null {
     return this.view?.chunkStreamStats() ?? null
+  }
+
+  /**
+   * Re-bake the streamed/chunked overlays in place: drop their resident bricks so
+   * the next frame re-requests and re-bakes only the blocks in the current view
+   * frustum, leaving the base volume resident. Use after changing a streamed
+   * overlay's `opacity` (or any `chunkSource` whose output changed) to apply it
+   * without the cost of a full `loadVolumes` reload. No-op before a view attaches.
+   */
+  rebakeChunkedOverlays(): void {
+    if (!this.view) return
+    this.view.rebakeChunkedOverlays()
+    this.drawScene()
   }
 
   /**

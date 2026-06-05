@@ -2123,6 +2123,10 @@ export default class NVView {
     return this.volumeRenderer.chunkStreamStats()
   }
 
+  rebakeChunkedOverlays(): void {
+    this.volumeRenderer.rebakeChunkedOverlays()
+  }
+
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {
     return this.meshResources.get(m) ?? null
   }

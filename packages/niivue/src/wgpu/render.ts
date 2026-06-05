@@ -1469,6 +1469,20 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /**
+   * Drop the resident bricks of every streamed overlay (the base-aligned combined
+   * overlays and an independent hi-res overlay), leaving the base volume resident.
+   * The next frame re-requests and re-bakes only the overlay blocks in the current
+   * view frustum, picking up the overlays' current `opacity` (and any chunkSource
+   * whose output changed). Lets a changed overlay opacity apply without a full
+   * volume reload.
+   */
+  rebakeChunkedOverlays(): void {
+    for (const entry of this._combinedOverlayEntries) entry.manager.destroy()
+    this._activeOverlayChunked?.manager.destroy()
+    this._invalidateBindGroupCache()
+  }
+
+  /**
    * Build one RGBA8 overlay texture per chunk for a chunked oversized volume.
    * The overlay layer shares the background volume's ChunkPlan, so the chunk
    * textures align 1:1 with the volume chunks. A single overlay is oriented

@@ -31,7 +31,9 @@ const baseUrl = window.location.origin
 //   ?budgetGB=N  — override the residency budget (default 2 GB). Raise it to fit
 //                  a finer level's whole footprint resident for the 3D render.
 //   ?level=N     — pin the base stream level (e.g. 0 = full-res L0), bypassing
-//                  the budget-based pick. Combine with a large budget for L0.
+//                  the budget-based pick. With no ?budgetGB, the residency budget
+//                  is auto-sized to fit that whole level (base + overlay), so the
+//                  streamed overlay doesn't starve against the base.
 const urlParams = new URLSearchParams(window.location.search)
 const budgetGB = Number(urlParams.get('budgetGB'))
 const forcedLevelParam = urlParams.get('level')
@@ -41,10 +43,10 @@ const forcedLevel =
     : null
 
 const CHUNK_EDGE = 256
-const RESIDENCY_BYTES =
-  Number.isFinite(budgetGB) && budgetGB > 0
-    ? Math.round(budgetGB * 1_000_000_000)
-    : 2_000_000_000
+const hasExplicitBudget = Number.isFinite(budgetGB) && budgetGB > 0
+const RESIDENCY_BYTES = hasExplicitBudget
+  ? Math.round(budgetGB * 1_000_000_000)
+  : 2_000_000_000
 const DEFAULT_ID = 'pawpawsaurus.ome.zarr'
 // Resident GPU bytes per level-voxel: background RGBA8 + gradient (8) plus the
 // overlay chunk (~4), times a halo-overlap factor (~1.4). The 3D render tile
@@ -118,6 +120,8 @@ let bgWin: { min: number; max: number } = { min: 0, max: 1 }
 // Levels chosen for the current load (for the HUD); updated in loadAll.
 let loadedBgLevel = 0
 let loadedOvLevel = 0
+// Residency budget handed to niivue (auto-sized when ?level pins a level); HUD.
+let activeBudgetBytes = RESIDENCY_BYTES
 
 function showFallback(msg: string): void {
   els.fallback.textContent = msg
@@ -146,6 +150,19 @@ function levelFitting(v: VolumeApiEntry, budget: number): VolumeLevel {
 
 function streamLevel(v: VolumeApiEntry): VolumeLevel {
   return levelFitting(v, RESIDENCY_BYTES)
+}
+
+// The residency budget for niivue's chunk manager. When ?level pins a base level
+// and no ?budgetGB is given, size it to hold that whole level resident (base +
+// overlay + halo, ~RESIDENT_BYTES_PER_VOXEL each) so the streamed overlay keeps
+// pace with the base instead of being evicted out of the 40% it is allotted.
+// An explicit ?budgetGB always wins.
+function residencyBudgetFor(v: VolumeApiEntry): number {
+  if (hasExplicitBudget || forcedLevel == null) return RESIDENCY_BYTES
+  const lvl = levelsSorted(v).find((l) => l.level === forcedLevel)
+  if (!lvl) return RESIDENCY_BYTES
+  const voxels = lvl.shape[0] * lvl.shape[1] * lvl.shape[2]
+  return Math.max(RESIDENCY_BYTES, voxels * RESIDENT_BYTES_PER_VOXEL)
 }
 
 function bytesPerVoxelForDtype(dtype: string): number {
@@ -613,7 +630,7 @@ function renderHud(): void {
     : ''
   els.hud.textContent =
     `background: ${current.id}\n` +
-    `base level ${loadedBgLevel} · ${current.dtype}\n` +
+    `base level ${loadedBgLevel} · ${current.dtype} · budget ${(activeBudgetBytes / 1e9).toFixed(1)}GB\n` +
     `window: ${Math.round(bgWin.min)}–${Math.round(bgWin.max)}\n` +
     `base bricks fetched: ${fetched.size}\n` +
     ovLine +
@@ -740,12 +757,16 @@ async function main(): Promise<void> {
   const initial = volumes.find((v) => v.id === DEFAULT_ID) ?? volumes[0]
   els.volume.value = initial.id
 
+  // Auto-size the residency budget to the pinned level (if any) so the streamed
+  // overlay holds its working set against the base; ?budgetGB still overrides.
+  activeBudgetBytes = residencyBudgetFor(initial)
+
   nv = new NiiVue({
     backend: BACKEND,
     backgroundColor: [0.05, 0.05, 0.06, 1],
     isColorbarVisible: false,
     maxTextureDimension3D: CHUNK_EDGE,
-    maxChunkResidencyBytes: RESIDENCY_BYTES,
+    maxChunkResidencyBytes: activeBudgetBytes,
   })
   await nv.attachToCanvas(els.canvas)
 

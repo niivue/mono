@@ -11,7 +11,6 @@ import type {
   CompletedMeasurement,
   DragOverlay,
   DrawConfig,
-  GraphConfig,
   ImageFromUrlOptions,
   InteractionConfig,
   LayoutConfig,
@@ -20,11 +19,14 @@ import type {
   NiiVueOptions,
   NVImage,
   NVMesh as NVMeshType,
+  NVSignal,
   SceneConfig,
   UIConfig,
   VectorAnnotation,
   VolumeRenderConfig,
 } from '@/NVTypes'
+import { deriveSeries, type SignalPlot } from '@/signal/processing'
+import type { GraphData } from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import * as NVVolume from '@/volume/NVVolume'
@@ -44,6 +46,14 @@ export default class NVModel {
   // --- Data ---
   meshes: NVMeshType[]
   volumes: NVImage[]
+  signals: NVSignal[]
+  /** x-axis value of the signal graph cursor (null = no selection) */
+  signalCursorX: number | null
+  /** per-signal derived-plot memo, keyed by display state (transient cache) */
+  private _signalPlotCache = new WeakMap<
+    NVSignal,
+    { key: string; plot: SignalPlot }
+  >()
   clipPlanes: number[]
   annotations: VectorAnnotation[]
 
@@ -324,6 +334,8 @@ export default class NVModel {
     this.annotations = []
     this.meshes = []
     this.volumes = []
+    this.signals = []
+    this.signalCursorX = null
     this.clipPlanes = Array(NVConstants.NUM_CLIP_PLANE)
       .fill(null)
       .flatMap(() => [...NVConstants.DEFAULT_CLIP_PLANE])
@@ -342,6 +354,40 @@ export default class NVModel {
 
   getVolumes(): NVImage[] {
     return this.volumes
+  }
+
+  getSignals(): NVSignal[] {
+    return this.signals
+  }
+
+  getSignal(id: string): NVSignal | undefined {
+    return this.signals.find((s) => s.id === id)
+  }
+
+  /** Add a signal, ensuring its id is unique within the model. */
+  addSignal(signal: NVSignal): void {
+    let id = signal.id
+    let n = 1
+    while (this.signals.some((s) => s.id === id)) id = `${signal.id}-${n++}`
+    signal.id = id
+    this.signals.push(signal)
+  }
+
+  removeSignal(index: number): NVSignal | null {
+    if (index < 0 || index >= this.signals.length) return null
+    const [removed] = this.signals.splice(index, 1)
+    // The cursor belonged to the previous signal set; clear it.
+    this.signalCursorX = null
+    return removed
+  }
+
+  /** True when a signal is loaded but no spatial data (volume/mesh) is. */
+  isSignalOnlyScene(): boolean {
+    return (
+      this.signals.length > 0 &&
+      this.volumes.length === 0 &&
+      this.meshes.length === 0
+    )
   }
 
   getClipPlaneDepthAziElev(clipPlaneIndex = 0): [number, number, number] {
@@ -624,18 +670,85 @@ export default class NVModel {
   }
 
   /**
-   * Collect per-frame voxel intensities at the current crosshair for the first 4D volume.
-   * Returns null if graph is disabled, or there is no 4D volume.
+   * Derive (and memoize) a signal's plot. Cached by the signal's display state
+   * so repeated graph collections during interaction skip the FFT/averaging
+   * work; the cache is keyed per-signal and drops with the signal (WeakMap).
    */
-  collectGraphData(): {
-    lines: number[][]
-    selectedColumn: number
-    calMin: number
-    calMax: number
-    nTotalFrame4D: number
-    graphConfig: GraphConfig
-  } | null {
+  private derivePlotCached(sig: NVSignal): SignalPlot {
+    const key = JSON.stringify(sig.display)
+    const cached = this._signalPlotCache.get(sig)
+    if (cached && cached.key === key) return cached.plot
+    const plot = deriveSeries(sig.raw, sig.display)
+    this._signalPlotCache.set(sig, { key, plot })
+    return plot
+  }
+
+  /**
+   * Build multi-series graph data by merging the traces of every loaded signal
+   * onto a shared axis, or null when no signal is loaded. Series are derived on
+   * demand (memoized by display state) from the raw data and current display
+   * state (FFT/averaging/windowing for spectroscopy, time-axis selection for
+   * physio). Merging supports showing multiple physiological recordings (e.g.
+   * cardiac + respiratory at different sampling rates) on one time axis,
+   * distinguished by the legend.
+   */
+  collectSignalGraphData(): GraphData | null {
+    if (this.signals.length === 0) return null
+    // Only signals whose axis matches the first signal's are merged, so a
+    // ppm spectrum and a time-axis physio trace never share one (misleading)
+    // axis. Incompatible signals are skipped (use one instance each, or a
+    // future multi-panel layout).
+    const axis = { ...this.derivePlotCached(this.signals[0]).axis }
+    const series: GraphData['series'] = []
+    const mins: number[] = []
+    const maxs: number[] = []
+    let merged = 0
+    for (const sig of this.signals) {
+      const plot = this.derivePlotCached(sig)
+      if (
+        plot.axis.label !== axis.label ||
+        plot.axis.reversed !== axis.reversed
+      ) {
+        continue
+      }
+      merged++
+      for (const s of plot.series) {
+        series.push({ label: s.label, x: s.x, y: s.y, color: s.color })
+      }
+      if (plot.axis.min !== null) mins.push(plot.axis.min)
+      if (plot.axis.max !== null) maxs.push(plot.axis.max)
+    }
+    if (series.length === 0) return null
+    // Use an explicit window only when every merged signal supplied one;
+    // otherwise autoscale across the merged data.
+    axis.min = mins.length === merged ? Math.min(...mins) : null
+    axis.max = maxs.length === merged ? Math.max(...maxs) : null
+    return {
+      lines: [],
+      selectedColumn: -1,
+      calMin: 0,
+      calMax: 0,
+      nTotalFrame4D: 0,
+      graphConfig: this.ui.graph,
+      series,
+      xAxis: axis,
+      showLegend: this.signals[0].display.showLegend,
+      // With no spatial data, let the plot fill the whole instance area.
+      fullCanvas: this.isSignalOnlyScene(),
+      cursorX: this.signalCursorX,
+    }
+  }
+
+  /**
+   * Collect graph data. Prefers signal (multi-series) data when a signal is
+   * loaded; otherwise falls back to per-frame voxel intensities at the current
+   * crosshair for the first 4D volume. Returns null if the graph is disabled or
+   * there is nothing to plot.
+   */
+  collectGraphData(): GraphData | null {
     if (!this.ui.isGraphVisible) return null
+    const signalData = this.collectSignalGraphData()
+    if (signalData) return signalData
     if (this.getMaxVols() < 2) return null
     const vol = this.volumes[0]
     if (!vol) return null

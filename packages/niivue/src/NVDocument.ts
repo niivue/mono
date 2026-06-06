@@ -24,10 +24,16 @@ import type {
   VectorAnnotation,
   VolumeRenderConfig,
 } from '@/NVTypes'
+import {
+  reconstructSignal,
+  type SerializedSignal,
+  serializeSignal,
+} from '@/signal/persistence'
 import * as NVVolume from '@/volume/NVVolume'
 import { computeVolumeLabelCentroids } from '@/volume/utils'
 
-const DOCUMENT_VERSION = 7
+// v8 added the optional `signals` array (NVSignal persistence).
+const DOCUMENT_VERSION = 8
 
 /**
  * Embedded volume data for self-contained documents.
@@ -174,6 +180,7 @@ export type NVDocumentData = {
   drawingBitmapLength?: number
   volumes: NVDocumentVolume[]
   meshes: NVDocumentMesh[]
+  signals?: SerializedSignal[]
   annotations?: VectorAnnotation[]
   annotationConfig?: AnnotationConfig
 }
@@ -388,6 +395,8 @@ export function serialize(model: NVModel): Uint8Array {
     return mesh
   })
 
+  const signals: SerializedSignal[] = model.signals.map(serializeSignal)
+
   const doc: NVDocumentData = {
     version: DOCUMENT_VERSION,
     created: new Date().toISOString(),
@@ -431,6 +440,7 @@ export function serialize(model: NVModel): Uint8Array {
       : undefined,
     volumes,
     meshes,
+    signals: signals.length > 0 ? signals : undefined,
     annotations: model.annotations.length > 0 ? model.annotations : undefined,
     annotationConfig: { ...model.annotation },
   }
@@ -520,6 +530,10 @@ export function applyDocumentToModel(
   } else {
     model.annotation = { ...NVConstants.ANNOTATION_DEFAULTS }
   }
+
+  // Restore signals (data is embedded, so no async fetch is needed).
+  model.signals = (doc.signals ?? []).map(reconstructSignal)
+  model.signalCursorX = null
 
   // Drawing bitmap restoration is handled by the controller's loadDocument()
   // after volumes are reconstructed, since we need a background volume to

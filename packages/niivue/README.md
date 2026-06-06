@@ -82,6 +82,29 @@ In backend-only builds, selecting the missing backend throws an explicit error.
 await nv.loadMeshes([{ url: '/meshes/brain.mz3' }])
 ```
 
+### Signals (physio and spectroscopy)
+
+Alongside spatial volumes and meshes, NiiVue can load **signals** — a third,
+non-spatial data class shown as 2-D line plots rather than slices. Two kinds are
+supported: `physio` (BIDS time-series TSV) and `spectroscopy` (NIfTI-MRS complex
+FID). Sibling `.json` sidecars are fetched automatically for axis metadata
+(sampling rate / StartTime for physio, SpectrometerFrequency / ResonantNucleus
+for spectroscopy).
+
+```js
+// BIDS physio (auto-fetches the sibling .json sidecar)
+await nv.loadSignals([{ url: '/signals/recording_physio.tsv.gz' }])
+
+// NIfTI-MRS spectroscopy; setSignal drives the on-demand FFT + ppm windowing
+await nv.loadSignals([{ url: '/signals/svs_se_30.nii.gz' }])
+nv.setSignal(0, { display: { average: true, mode: 'real', ppmRange: [1.9, 3.3] } })
+```
+
+NIfTI files are routed to the signal loader when they have no spatial extent
+(dim1-3 == 1, dim4 > 1) or carry MRS sidecar fields; pass `asSignal` to override.
+See `examples/svs.html` (spectroscopy) and `examples/physio.html` (physio) for
+interactive demos.
+
 ### Change slice type and colormap
 
 ```js

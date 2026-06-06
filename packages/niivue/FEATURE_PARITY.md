@@ -453,6 +453,27 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 
 ---
 
+## 34. Signals (physio / spectroscopy)
+
+New non-spatial data class (no equivalent in the old package), rendered as 2-D
+line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Signal data class (`NVModel.signals`) | ✅ | `physio` (BIDS TSV) and `spectroscopy` (NIfTI-MRS complex FID) |
+| Readers (`tsv`, `nii`) | ✅ | Auto-discovered via `import.meta.glob`; gz-aware; NaN gaps; `scl_slope`/`scl_inter` applied for real NIfTI |
+| BIDS/MRS sidecar | ✅ | Sibling `.json` fetched by URL or paired on drag-drop; `SpectrometerFrequency`/`ResonantNucleus` |
+| NIfTI signal-vs-volume routing | ✅ | `detect.ts`: non-spatial or MRS fields; `asSignal` override |
+| Processing (FFT/avg/ppm) | ✅ | Radix-2 FFT; non-pow2 zero-filled to next pow2; transient averaging; ppm/Hz axis; windowed y |
+| Controller API | ✅ | `loadSignals`/`addSignal`/`removeSignal`/`removeAllSignals`/`setSignal`/`setSignalCursorFraction` |
+| Events | ✅ | `signalLoaded`, `signalRemoved`, `signalLocationChange` |
+| Graph rendering (`NVGraph` signal mode) | ✅ | Multi-color series, legend (capped), reversible/windowed x-axis, full-canvas when signal-only, dense-series decimation, derived-plot cache |
+| Persistence (NVD) | ✅ | Document version 8 (`signal/persistence.ts`) |
+| Demos | ✅ | `examples/svs.html`, `examples/physio.html` |
+| Volume-frame ↔ physio-time alignment marker | ⏳ | Deferred pending a chosen convention; association storage (`attachedToId`) and simultaneous display work |
+
+---
+
 ## Summary of Key Missing Features
 
 ### High Priority (Core Functionality)

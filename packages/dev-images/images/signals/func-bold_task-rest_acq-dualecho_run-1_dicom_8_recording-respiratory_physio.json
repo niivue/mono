@@ -1,0 +1,5 @@
+{
+	"Columns":	["respiratory", "trigger"],
+	"SamplingFrequency":	50,
+	"StartTime":	-13.72
+}

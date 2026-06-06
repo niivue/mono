@@ -346,6 +346,114 @@ Fragment shaders in `gl/meshShader.ts` (GLSL) and `wgpu/mesh.wgsl` (WGSL): phong
 
 **Mesh clipping on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): Constrains near/far clip planes to show only mesh geometry within `±thicknessOn2D` mm of the slice plane. Uses `clipSpaceZeroToOne` parameter on `calculateMvpMatrix2D()`: `orthoZO` for WebGPU ([0,1] NDC), `ortho` for WebGL2 ([-1,1] NDC). `sliceTypeDim()` in `NVConstants.ts` maps AXIAL→2, CORONAL→1, SAGITTAL→0.
 
+## Signal data class
+
+A third, **non-spatial** data class alongside volumes and meshes, rendered as 2-D
+line plots instead of slices. Source lives in `src/signal/`, with format readers
+in `src/signal/readers/` auto-discovered via `import.meta.glob` (same pattern as
+volume/mesh readers — export `extensions` + `read`). Two kinds, discriminated by
+`kind: SignalKind`:
+
+| Kind | Source | Stored as |
+|------|--------|-----------|
+| `physio` | BIDS time-series TSV | `columns: Float32Array[]`, `columnLabels`, `samplingFrequency`, `startTime` |
+| `spectroscopy` | NIfTI-MRS complex FID | interleaved `fid`, `nPoints`, `nTransients`, `dwell`, `spectrometerFreq`, `nucleus` |
+
+**Readers** (`readers/tsv.ts`, `readers/nii.ts`):
+
+- `tsv` — BIDS physio, gz-aware (`NVGz.maybeDecompress`). Blank/`n/a`/`NaN` cells
+  become NaN trace gaps; a stray all-non-numeric leading row is treated as column
+  labels. Labels prefer the sidecar `Columns`, then an in-file header, then a
+  generic fallback.
+- `nii` — reuses `nifti-reader-js` header parsing but does **not** call
+  `nii2volume` (which is GPU-volume specific and would discard complex data).
+  Complex datatype -> spectroscopy FID; real non-spatial -> physio (dim4 is the
+  time axis, dims5..7 are columns).
+
+**Sidecar** (`sidecar.ts`): sibling `.json`, auto-fetched by URL (`fetchSidecar`,
+404/sandbox tolerant) or paired on multi-file drag-drop at the controller layer.
+MRS fields are `SpectrometerFrequency` / `ResonantNucleus`. `ImagingFrequency` is
+deliberately **not** treated as an MRS marker (it appears in plain fMRI sidecars).
+
+**NIfTI routing** (`detect.ts`, `niftiBufferIsSignal`): a NIfTI is a signal when it
+is non-spatial (dim1-3 == 1 and dim4 > 1) **or** the sidecar carries MRS fields.
+Datatype/complex is NOT a trigger — spatial MR is routinely complex. The
+`asSignal` load option (`true`/`false`) overrides the sniff.
+
+**Processing** (`processing.ts`, pure/CPU): in-place radix-2 Cooley-Tukey FFT with
+a direct DFT fallback for non-power-of-two lengths; optional transient averaging
+before the transform; fftshift to centre zero frequency; projection to a real
+component (`real`/`imag`/`magnitude`/`phase`). Spectroscopy x-axis is ppm
+(MR convention, drawn high-to-low via `axis.reversed` rather than reversing the
+data) or Hz. Y-range is windowed to the visible x-domain. Physio x-axis is
+`startTime + i / samplingFrequency` (Time (s)), falling back to a sample-index
+axis when the rate is unknown.
+
+**Rendering** (`view/NVGraph.ts`): the GPU graph was extended with a "signal mode"
+(multi-color Okabe-Ito series, legend, real/reversible/windowed x-axis) gated on a
+non-empty `series` field; the legacy 4D-volume graph path is unchanged. When the
+scene is signal-only (a signal but no volume/mesh) the plot fills the instance area
+and BOTH renderers skip the entire spatial pass — no slices, crosshair, or
+orientation labels (`NVViewGPU.ts` / `NVViewGL.ts` compute `signalOnly`).
+
+**Model/controller API:** `NVModel.signals[]`, `NVModel.signalCursorX`,
+`collectSignalGraphData()` (merges every loaded signal's derived series onto a
+shared axis). Controller (`NVControlBase.ts`): `loadSignals`, `addSignal`,
+`removeSignal`, `removeAllSignals`, `setSignal` (updates display state, driving the
+on-demand transform), `setSignalCursorFraction`. Events: `signalLoaded`,
+`signalRemoved`, `signalLocationChange`. Clicking the plot sets a cursor marker and
+emits the values at that x for the status bar.
+
+**Persistence** (`signal/persistence.ts`): NVD documents serialize signals at
+document version 8 (`serializeSignal` / `reconstructSignal`, CBOR-friendly raw
+bytes).
+
+**Demos:** `examples/svs.html` (spectroscopy: average / component / ppm-range) and
+`examples/physio.html` (cardiac / respiratory selector). Sample fixtures in
+`packages/dev-images/images/signals/`, served at `/signals/...`.
+
+**Known open item:** the 4D-volume-frame <-> physio-time alignment **marker** is
+deferred pending a chosen convention. Association storage (`attachedToId`) and
+simultaneous display already work.
+
+### Signal audit notes
+
+Applied from the audit (all landed):
+
+- Real-NIfTI physio reader applies `scl_slope` / `scl_inter` (raw values from
+  `toTypedViewOrU8` would otherwise plot wrong magnitudes).
+- Spectroscopy FID geometry is clamped to the bytes actually present before the
+  transform (guards truncated/corrupt files from out-of-range reads).
+- Signal types + event details are exported from `src/index.ts`.
+- Signal-only-scene detection is centralized in `NVModel.isSignalOnlyScene()`
+  (used by both renderers and `collectSignalGraphData`).
+- Drag-drop sidecar pairing is case-insensitive; `_dispatchImage` resolves the
+  sidecar before fetching image bytes (skips the buffer fetch when MRS fields
+  already prove a signal).
+
+Second audit round (all landed):
+
+- `vite.config.examples.ts` rewrites `/signals/` (alongside `/volumes//meshes/`)
+  for `VITE_BASE` GitHub Pages deploys.
+- Non-power-of-two FIDs are zero-filled to the next power of two so the FFT
+  always uses the radix-2 path (no O(n^2) DFT freeze on real-size data).
+- Derived plots are memoized per signal by display state
+  (`NVModel.derivePlotCached`, WeakMap); dense series render a per-pixel-column
+  min/max envelope (`drawDecimatedSeries`) so the line buffer is bounded by plot
+  width; the legend is capped (`LEGEND_MAX_ROWS`, overflow -> "+N more").
+- `collectSignalGraphData` only merges signals whose axis (label + reversed)
+  matches the first, so ppm and time-axis signals never share one axis.
+- Signal types exported from the `webgpu`/`webgl2` subpath entries too.
+- Dead fields removed: `SignalFromUrlOptions.kind`, `NVSignalDisplay.stacked`,
+  `SignalSeries.visible`.
+- Demos use `textContent` (not `innerHTML`) for the sidecar-derived status line.
+- `FEATURE_PARITY.md` section 34 records the signal data class.
+
+Still open (design decision): the 4D-frame <-> physio-time alignment marker.
+Deferred (low priority, documented): full buffer-threading to remove the
+ambiguous-NIfTI double fetch; two-pass/streaming TSV parser; `loadImage` keeps
+append semantics for signals by design (so multi-file physio drops accumulate).
+
 ## Colormap conventions
 
 **Negative colormaps:** Enabled by setting `colormapNegative` to a non-empty string. `calMinNeg`/`calMaxNeg` default to mirroring `calMin`/`calMax`.

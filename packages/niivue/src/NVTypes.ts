@@ -1005,3 +1005,121 @@ export type AnnotationConfig = {
   tool: AnnotationTool
   style: AnnotationStyle
 }
+
+// ============================================================
+// Signal data (NVSignal) — non-spatial datasets shown as 2D plots
+// ============================================================
+
+/** Two species of signal: physiological time-series and MR spectroscopy. */
+export type SignalKind = 'physio' | 'spectroscopy'
+
+/**
+ * BIDS-style sidecar metadata, parsed and normalized from a `.json` companion
+ * (or, for MRS, a NIfTI header extension). All fields optional: a signal can
+ * load without a sidecar and degrade to a sample-index x-axis.
+ */
+export type SignalSidecar = {
+  // physio
+  columns?: string[]
+  /** Hz */
+  samplingFrequency?: number
+  /** seconds (BIDS StartTime, often negative for a pre-scan lead-in) */
+  startTime?: number
+  // spectroscopy (MRS)
+  /** MHz */
+  spectrometerFrequency?: number
+  resonantNucleus?: string
+  /** seconds */
+  dwellTime?: number
+}
+
+/** Real-valued, multi-column physiological time-series (e.g. cardiac, respiratory). */
+export type NVSignalPhysioRaw = {
+  kind: 'physio'
+  /** one entry per column; non-numeric cells are stored as NaN (gaps) */
+  columns: Float32Array[]
+  columnLabels: string[]
+  /** Hz; null means the x-axis is a plain sample index */
+  samplingFrequency: number | null
+  /** seconds */
+  startTime: number
+}
+
+/** Complex MR spectroscopy free-induction-decay (FID). */
+export type NVSignalSpectroscopyRaw = {
+  kind: 'spectroscopy'
+  /**
+   * Complex FID with real/imag interleaved: [re0, im0, re1, im1, ...].
+   * Length is `nPoints * nTransients * 2`. Points are contiguous within a
+   * transient (NIfTI column-major: dim4 spectral varies faster than dim5+),
+   * so the complex sample for transient `t`, point `p` is at index
+   * `2 * (t * nPoints + p)`.
+   */
+  fid: Float32Array
+  nPoints: number
+  nTransients: number
+  /** seconds (NIfTI pixDim[4], the spectral dwell time) */
+  dwell: number
+  /** MHz; null means only a Hz axis can be derived */
+  spectrometerFreq: number | null
+  /** resonant nucleus, e.g. '1H', '31P' */
+  nucleus: string
+}
+
+/** Reader output: raw signal data before any display transform. */
+export type NVSignalRaw = NVSignalPhysioRaw | NVSignalSpectroscopyRaw
+
+/** A single plotted trace produced by a display transform. */
+export type SignalSeries = {
+  label: string
+  /** dependent values */
+  y: Float32Array
+  /** independent-axis values, same length as `y`; null means index 0..n-1 */
+  x: Float32Array | null
+  /** optional RGBA [0..1] override; otherwise the graph assigns a palette color */
+  color?: [number, number, number, number]
+}
+
+/** Independent-axis description shared by all series of a signal. */
+export type SignalAxis = {
+  label: string
+  /** draw high-to-low (MR ppm convention) */
+  reversed: boolean
+  /** optional fixed window; null autoscales to the data */
+  min: number | null
+  max: number | null
+}
+
+/** How a transformed component of a complex spectrum is projected to a real trace. */
+export type SignalSpectrumMode = 'real' | 'imag' | 'magnitude' | 'phase'
+
+/** A loaded signal instance held by the model. */
+export type NVSignal = {
+  id: string
+  name: string
+  url?: string
+  kind: SignalKind
+  /** raw, undisplayed data (FID or physio columns) */
+  raw: NVSignalRaw
+  /** current display state (drives the on-demand transform) */
+  display: NVSignalDisplay
+  /** id of an associated volume/mesh this signal is bound to (optional) */
+  attachedToId?: string
+}
+
+/** User-controllable display state for a signal (drives the on-demand transform). */
+export type NVSignalDisplay = {
+  // spectroscopy
+  average: boolean
+  mode: SignalSpectrumMode
+  /** [low, high] ppm window; null autoscales */
+  ppmRange: [number, number] | null
+  /** ppm reference offset; null uses the nucleus default */
+  ppmRef: number | null
+  useHz: boolean
+  // physio
+  /** indices of columns to show; null shows all */
+  selectedColumns: number[] | null
+  // shared
+  showLegend: boolean
+}

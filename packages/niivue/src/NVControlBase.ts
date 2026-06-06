@@ -52,16 +52,27 @@ import type {
   NVImage,
   NVMeshLayer,
   NVMesh as NVMeshType,
+  NVSignalDisplay,
+  NVSignal as NVSignalType,
   NVTractOptions,
   SaveVolumeOptions,
+  SignalSidecar,
   SyncOpts,
   VectorAnnotation,
   ViewHitTest,
   VolumeUpdate,
 } from '@/NVTypes'
+import { niftiBufferIsSignal } from '@/signal/detect'
+import type { SignalFromUrlOptions } from '@/signal/NVSignal'
+import * as NVSignal from '@/signal/NVSignal'
+import { fetchSidecar, hasMrsFields } from '@/signal/sidecar'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
-import type { GraphLayout } from '@/view/NVGraph'
+import {
+  type GraphLayout,
+  signalValuesAt,
+  signalXValueAtFrac,
+} from '@/view/NVGraph'
 import type { LegendLayout } from '@/view/NVLegend'
 import {
   arePerfMarksEnabled,
@@ -1561,41 +1572,165 @@ export default class NiiVueGPU extends EventTarget {
     return this
   }
 
+  get signals(): NVSignalType[] {
+    return this.model.signals
+  }
+
+  /** Add a pre-built signal or load one from a URL/File. */
+  async addSignal(signal: SignalFromUrlOptions | NVSignalType): Promise<this> {
+    const sig = 'raw' in signal ? signal : await NVSignal.loadSignal(signal)
+    this.model.addSignal(sig)
+    this.emit('signalLoaded', { signal: sig })
+    this.drawScene()
+    return this
+  }
+
+  /** Load one or more signals (physio TSV or NIfTI/NIfTI-MRS). */
+  async loadSignals(
+    signals: SignalFromUrlOptions | SignalFromUrlOptions[],
+  ): Promise<this> {
+    if (!Array.isArray(signals)) signals = [signals]
+    const loaded = await Promise.all(signals.map((s) => NVSignal.loadSignal(s)))
+    for (const sig of loaded) {
+      this.model.addSignal(sig)
+      this.emit('signalLoaded', { signal: sig })
+    }
+    this.drawScene()
+    return this
+  }
+
+  removeSignal(index: number): this {
+    const removed = this.model.removeSignal(index)
+    if (removed) {
+      this.emit('signalRemoved', { signal: removed, index })
+      this.drawScene()
+    }
+    return this
+  }
+
+  removeAllSignals(): this {
+    for (let i = this.model.signals.length - 1; i >= 0; i--) {
+      const removed = this.model.removeSignal(i)
+      if (removed) this.emit('signalRemoved', { signal: removed, index: i })
+    }
+    this.drawScene()
+    return this
+  }
+
+  /**
+   * Set the signal graph cursor from a plot-relative x fraction (0 = left edge,
+   * 1 = right edge). Draws a faint marker line and emits `signalLocationChange`
+   * with the values of every series at that location (for a status-bar readout).
+   */
+  setSignalCursorFraction(xFrac: number): this {
+    const data = this.model.collectSignalGraphData()
+    if (!data) return this
+    const xValue = signalXValueAtFrac(data, xFrac)
+    this.model.signalCursorX = xValue
+    const values = signalValuesAt(data, xValue)
+    const xLabel = data.xAxis?.label ?? ''
+    const fmt = (n: number) =>
+      Number.isFinite(n)
+        ? Number.isInteger(n)
+          ? String(n)
+          : n.toPrecision(4)
+        : 'n/a'
+    const parts = values.map((v) => `${v.label}=${fmt(v.value)}`)
+    const string = `${xLabel} ${fmt(xValue)}  ${parts.join('  ')}`
+    this.emit('signalLocationChange', { xValue, xLabel, values, string })
+    this.drawScene()
+    return this
+  }
+
+  /** Update a loaded signal's display state (drives the on-demand transform). */
+  setSignal(
+    index: number,
+    opts: { display?: Partial<NVSignalDisplay>; attachToId?: string },
+  ): this {
+    const sig = this.model.signals[index]
+    if (!sig) return this
+    if (opts.display) sig.display = { ...sig.display, ...opts.display }
+    if (opts.attachToId !== undefined) sig.attachedToId = opts.attachToId
+    this.drawScene()
+    return this
+  }
+
   async addImage(
     pathOrFile: string | File,
     options: Record<string, unknown> = {},
   ): Promise<void> {
-    const ext = NVLoader.getFileExt(
-      typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.name,
-    )
-    const meshExts = NVMesh.meshExtensions()
-    if (meshExts.includes(ext)) {
-      await this.addMesh({ url: pathOrFile, ...options } as MeshFromUrlOptions)
-    } else {
-      await this.addVolume({
-        url: pathOrFile,
-        ...options,
-      } as ImageFromUrlOptions)
-    }
+    await this._dispatchImage(pathOrFile, options, false)
   }
 
   async loadImage(
     pathOrFile: string | File,
     options: Record<string, unknown> = {},
   ): Promise<void> {
+    await this._dispatchImage(pathOrFile, options, true)
+  }
+
+  /**
+   * Route a file/URL to the signal, mesh, or volume loader.
+   *
+   * - Signal-only extensions (e.g. TSV) and `asSignal: true` go to signals.
+   * - Mesh extensions go to meshes.
+   * - NIfTI is ambiguous: unless `asSignal: false`, its bytes/sidecar are
+   *   sniffed (no spatial extent, or MRS fields present) to choose signal vs
+   *   volume. See {@link niftiBufferIsSignal}.
+   * - Everything else is a volume.
+   *
+   * `replace` selects load-semantics (replace existing volumes/meshes) vs
+   * add-semantics; signals always append.
+   */
+  private async _dispatchImage(
+    pathOrFile: string | File,
+    options: Record<string, unknown>,
+    replace: boolean,
+  ): Promise<void> {
     const ext = NVLoader.getFileExt(
       typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.name,
     )
+    const asSignal = options.asSignal as boolean | undefined
+    const sidecar = (options.sidecar as SignalSidecar | undefined) ?? null
+    const { asSignal: _as, sidecar: _sc, ...rest } = options
+
     const meshExts = NVMesh.meshExtensions()
-    if (meshExts.includes(ext)) {
-      await this.loadMeshes([
-        { url: pathOrFile, ...options } as MeshFromUrlOptions,
-      ])
-    } else {
-      await this.loadVolumes([
-        { url: pathOrFile, ...options } as ImageFromUrlOptions,
-      ])
+    const signalExts = NVSignal.signalExtensions()
+    const volumeExts = NVVolume.volumeExtensions()
+    const signalOnly = signalExts.filter(
+      (e) => !volumeExts.includes(e) && !meshExts.includes(e),
+    )
+
+    if (asSignal === true || signalOnly.includes(ext)) {
+      await this.loadSignals([{ url: pathOrFile, sidecar }])
+      return
     }
+    if (meshExts.includes(ext)) {
+      const opts = { url: pathOrFile, ...rest } as MeshFromUrlOptions
+      await (replace ? this.loadMeshes([opts]) : this.addMesh(opts))
+      return
+    }
+    if ((ext === 'NII' || ext === 'NII.GZ') && asSignal !== false) {
+      // Resolve the sidecar first: if it declares MRS fields we can route to a
+      // signal without fetching the (potentially large) image to sniff dims.
+      let meta = sidecar
+      if (!meta && typeof pathOrFile === 'string') {
+        meta = await fetchSidecar(pathOrFile)
+      }
+      let isSignal = !!meta && hasMrsFields(meta)
+      if (!isSignal) {
+        // Fall back to a content sniff (non-spatial dims). This re-reads the
+        // file in the volume branch below; acceptable for the ambiguous case.
+        const buffer = await NVLoader.fetchFile(pathOrFile)
+        isSignal = niftiBufferIsSignal(buffer, meta)
+      }
+      if (isSignal) {
+        await this.loadSignals([{ url: pathOrFile, sidecar: meta }])
+        return
+      }
+    }
+    const volOpts = { url: pathOrFile, ...rest } as ImageFromUrlOptions
+    await (replace ? this.loadVolumes([volOpts]) : this.addVolume(volOpts))
   }
 
   async removeMesh(meshIndex: number): Promise<void> {

@@ -436,26 +436,32 @@ export default class NVGlview {
     const graphWidth = graphData
       ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
       : 0
-    const screenSlices = NVSliceLayout.screenSlicesLayout({
-      canvasWH: [
-        canvasWidth - legendWidth - graphWidth,
-        canvasHeight - cbHeight,
-      ],
-      sliceType: md.layout.sliceType,
-      tileMargin: md.layout.margin,
-      extentsMin: md.extentsMin,
-      extentsMax: md.extentsMax,
-      isRadiologicalConvention: md.layout.isRadiological,
-      multiplanarLayout: md.layout.multiplanarType,
-      multiplanarShowRender: md.layout.showRender,
-      sliceMosaicString: md.layout.mosaicString,
-      heroImageFraction: md.layout.heroFraction,
-      heroSliceType: md.layout.heroSliceType,
-      isMultiplanarEqualSize: md.layout.isEqualSize,
-      isCrossLines: md.ui.isCrossLinesVisible,
-      isCenterMosaic: md.layout.isMosaicCentered,
-      customLayout: md.layout.customLayout,
-    })
+    // Signal-only scene (a signal loaded, no volume/mesh): skip all spatial
+    // tiles so no slices, crosshairs, or orientation labels render; the signal
+    // graph fills the instance area on its own.
+    const signalOnly = md.isSignalOnlyScene()
+    const screenSlices = signalOnly
+      ? []
+      : NVSliceLayout.screenSlicesLayout({
+          canvasWH: [
+            canvasWidth - legendWidth - graphWidth,
+            canvasHeight - cbHeight,
+          ],
+          sliceType: md.layout.sliceType,
+          tileMargin: md.layout.margin,
+          extentsMin: md.extentsMin,
+          extentsMax: md.extentsMax,
+          isRadiologicalConvention: md.layout.isRadiological,
+          multiplanarLayout: md.layout.multiplanarType,
+          multiplanarShowRender: md.layout.showRender,
+          sliceMosaicString: md.layout.mosaicString,
+          heroImageFraction: md.layout.heroFraction,
+          heroSliceType: md.layout.heroSliceType,
+          isMultiplanarEqualSize: md.layout.isEqualSize,
+          isCrossLines: md.ui.isCrossLinesVisible,
+          isCenterMosaic: md.layout.isMosaicCentered,
+          customLayout: md.layout.customLayout,
+        })
     this.screenSlices = screenSlices
     // Update crosshair geometry based on current model state
     if (this.crosshairRenderer.isReady) {
@@ -852,7 +858,10 @@ export default class NVGlview {
     // Layer 4: Lines — used by graph
     let graphLines: ReturnType<typeof buildLine>[] = []
     // Layer 5: Font/text
-    const hasContent = this.model.getMeshes().length > 0 || volumes.length > 0
+    const hasContent =
+      this.model.getMeshes().length > 0 ||
+      volumes.length > 0 ||
+      this.model.signals.length > 0
     const headerStr = resolveHeaderLabel(
       this.model.ui.placeholderText,
       hasContent,

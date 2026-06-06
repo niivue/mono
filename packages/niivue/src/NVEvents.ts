@@ -8,6 +8,7 @@ import type {
   NiiVueLocation,
   NVImage,
   NVMesh,
+  NVSignal,
   VectorAnnotation,
   VolumeUpdate,
 } from '@/NVTypes'
@@ -22,6 +23,16 @@ export type VolumeLoadedDetail = { volume: NVImage }
 export type MeshLoadedDetail = { mesh: NVMesh }
 export type VolumeRemovedDetail = { volume: NVImage; index: number }
 export type MeshRemovedDetail = { mesh: NVMesh; index: number }
+export type SignalLoadedDetail = { signal: NVSignal }
+export type SignalRemovedDetail = { signal: NVSignal; index: number }
+export type SignalLocationDetail = {
+  /** selected x-axis value (ppm, Hz, time, or sample index) */
+  xValue: number
+  xLabel: string
+  values: { label: string; value: number; color: number[] }[]
+  /** preformatted status-bar string */
+  string: string
+}
 export type AzimuthElevationChangeDetail = {
   azimuth: number
   elevation: number
@@ -88,6 +99,9 @@ export interface NVEventMap {
   meshLoaded: MeshLoadedDetail
   volumeRemoved: VolumeRemovedDetail
   meshRemoved: MeshRemovedDetail
+  signalLoaded: SignalLoadedDetail
+  signalRemoved: SignalRemovedDetail
+  signalLocationChange: SignalLocationDetail
   documentLoaded: undefined
 
   // View lifecycle

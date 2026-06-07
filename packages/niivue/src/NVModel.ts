@@ -702,6 +702,7 @@ export default class NVModel {
     // future multi-panel layout).
     const axis = { ...this.derivePlotCached(this.signals[0]).axis }
     const series: GraphData['series'] = []
+    const annotations: GraphData['annotations'] = []
     const mins: number[] = []
     const maxs: number[] = []
     let merged = 0
@@ -716,6 +717,11 @@ export default class NVModel {
       merged++
       for (const s of plot.series) {
         series.push({ label: s.label, x: s.x, y: s.y, color: s.color })
+      }
+      // Annotations live in the signal's axis units, so only merge those whose
+      // signal shares the common axis (skipped above for incompatible signals).
+      for (const a of sig.annotations ?? []) {
+        annotations.push({ text: a.text, x: a.x, y: a.y, color: a.color })
       }
       if (plot.axis.min !== null) mins.push(plot.axis.min)
       if (plot.axis.max !== null) maxs.push(plot.axis.max)
@@ -738,6 +744,7 @@ export default class NVModel {
       // With no spatial data, let the plot fill the whole instance area.
       fullCanvas: this.isSignalOnlyScene(),
       cursorX: this.signalCursorX,
+      annotations: annotations.length > 0 ? annotations : undefined,
     }
   }
 

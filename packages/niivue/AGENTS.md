@@ -413,16 +413,32 @@ the live `hdr.toFormattedString()` via a Header button.
 **Model/controller API:** `NVModel.signals[]`, `NVModel.signalCursorX`,
 `collectSignalGraphData()` (merges every loaded signal's derived series onto a
 shared axis). Controller (`NVControlBase.ts`): `loadSignals`, `addSignal`,
-`removeSignal`, `removeAllSignals`, `setSignal` (updates display state, driving the
-on-demand transform), `setSignalCursorFraction`. Events: `signalLoaded`,
-`signalRemoved`, `signalLocationChange`. Clicking the plot sets a cursor marker and
-emits the values at that x for the status bar.
+`removeSignal`, `removeAllSignals`, `setSignal` (updates display state /
+attachment / annotations, driving the on-demand transform),
+`setSignalCursorFraction`. Events: `signalLoaded`, `signalRemoved`,
+`signalLocationChange`. Clicking the plot sets a cursor marker and emits the
+values at that x for the status bar.
+
+**Annotations** (`SignalAnnotation`, on `NVSignal.annotations`): text labels
+anchored to a position in the signal's own axis data-units `{ text, x, y, color? }`.
+They are merged into `GraphData.annotations` (only for signals sharing the common
+axis) and drawn in `buildSignalGraphElements`: x is mapped through the visible
+window (`mapSignalX`), so labels pan/zoom with the data and are hidden once their
+x leaves the window. A `y` of `-Infinity`/`+Infinity` pins the label to the
+bottom/top of the plot (a faint vertical guide marks its x); a finite `y` maps to
+the value, clamped into the plot. Set via the load options
+(`loadSignals`/`addSignal`) or `setSignal(i, { annotations })`; persisted in NVD.
+`examples/svs.html` labels NAA/Cr/Cho at their ppm positions.
 
 **Persistence** (`signal/persistence.ts`): NVD documents serialize signals at
 document version 8 (`serializeSignal` / `reconstructSignal`, CBOR-friendly raw
 bytes).
 
-**Demos:** `examples/svs.html` (spectroscopy: average / component / ppm-range) and
+**Demos:** `examples/svs.html` (spectroscopy: average / component / ppm-range;
+plus a "Show" scene selector — MRS only / MRI only / MRI + MRS / MRI + MRS + voxel
+— that pairs the spectrum with the participant's T2w and a one-node connectome
+"voxel" marker rendered with the outline shader at the MRS sampling location, and
+a "View" menu offering single slices / render / multiplanar) and
 `examples/physio.html` (cardiac / respiratory selector). Sample fixtures in
 `packages/dev-images/images/signals/`, served at `/signals/...`.
 
@@ -507,14 +523,105 @@ Fifth audit round (all landed):
 - `collectAssociatedTimeGraphData` is memoized by crosshair/frame/signal state
   (`_assocCache`) so the refresh + render passes in one frame build once.
 
+Sixth audit round (signal annotations feature; all landed):
+
+- Annotation `y` is classified once into pinBottom (`-Infinity`) / pinTop
+  (`+Infinity`) / finite; a malformed finite-but-`NaN` y is skipped (it has no
+  plot position and must not be mistaken for an edge sentinel — previously it
+  drew a spurious guide line and a `NaN`-positioned label). NaN/out-of-range x is
+  rejected by the window comparison.
+- Shared `mapSignalY` helper (clamped y projection) replaces three inlined copies
+  (data-line, decimation, annotation finite branch); mirrors `mapSignalX`. The
+  grid stays unclamped by design (drawn only when in range).
+- Faint vertical-line alphas are named constants: `CURSOR_ALPHA` (0.5),
+  `GUIDE_ALPHA` (0.35). The edge-pinned guide uses `gridThick`; the cursor uses
+  `lineThick`.
+- `SignalAnnotation` (NVTypes, domain) vs `GraphAnnotation` (NVGraph, renderer)
+  is a deliberate mirror of the `SignalSeries`->`GraphSeries` split, keeping the
+  graph view decoupled from signal-domain types. `collectSignalGraphData` copies
+  annotations field-by-field and only for signals sharing the common axis.
+
+Seventh audit round (svs.html MRI/MRS/voxel demo; all landed):
+
+- **PII**: `svs_se_30.json` shipped real site/device identifiers (institution name +
+  street address, device serial, station name, acquisition time, internal study
+  labels). The demo fetches and serves this sidecar publicly (GitHub Pages), so the
+  fields were stripped, keeping only technical/MRS keys (`SpectrometerFrequency`,
+  `ResonantNucleus`, `DwellTime`, sequence/coil params). LESSON: any DICOM-derived
+  sidecar added under `packages/dev-images/` must be PII-scrubbed before it ships
+  in a demo (cf. the fourth-round `fmri.json` scrub).
+- **New binary assets need Git LFS + staging**: `svs_T2w.nii.gz` was on disk but
+  untracked; the `*.nii.gz` LFS filter only applies on `git add`. Untracked = the
+  deployed demo 404s. `git add` it so the index holds an LFS pointer, not the blob.
+- `applyScene` is serialized with a `sceneSeq` token and wrapped in try/catch:
+  rapid "Show" changes (or a switch mid-load) cannot interleave and desync the
+  volume list / `nodeShown` / `isGraphVisible`, and a failed fetch no longer leaks
+  an unhandled rejection. The View menu is disabled in signal-only (MRS only) mode
+  since `sliceType` has no effect when the spatial pass is skipped.
+- The voxel marker is an inline one-node connectome built as a `File` (loadMeshes
+  dispatches the reader by `.jcon` extension); a `Blob`/`File` is re-readable so it
+  is reused across show/hide cycles.
+
+Eighth audit round (external review + fixes; see `audit_response.md`):
+
+- **Recurring PII**: re-exporting `svs_se_30.json` with dcm2niix re-introduces
+  DICOM identifiers (department name, procedure/study description, acquisition
+  time, image comments) every time; they were scrubbed again. The `.nii.gz` has
+  NO NIfTI-MRS header extension (verified: `vox_offset` 352, no ecode 44), so the
+  sidecar is REQUIRED and cannot be deleted. The reader only consumes
+  `SpectrometerFrequency` / `ResonantNucleus` / `DwellTime` (+ `ImagingFrequency`
+  fallback), and the parser unwraps the NIfTI-MRS array forms (`[297.1]`, `["1H"]`)
+  via `firstNumber`/`firstString`. RESOLVED: `svs_se_30.json` is now a minimal
+  hand-authored sidecar containing only `SpectrometerFrequency` / `ResonantNucleus`
+  / `DwellTime` (+ a `_comment` warning against re-dumping), so there is no PII to
+  re-acquire. Do NOT replace it with a raw dcm2niix dump. The ppm axis is unchanged
+  (verified) and all 320 tests (which read the fixture) pass.
+- **Scene race (real)**: the prior `sceneSeq` token was checked only *after* the
+  async volume/mesh mutations, so a stale call could still mutate state. Replaced
+  with a mutex — `applyScene` chains through a single promise (`sceneChain.then(...)`)
+  so calls cannot interleave; last mode wins. Demo load failures now surface in the
+  `#location` footer, not console-only.
+- **Annotation copy at boundaries**: `createSignal`/`setSignal` now clone the
+  annotations array + objects (`.map(a => ({ ...a }))`), matching `display`, so
+  post-load caller mutation cannot silently change render state.
+- **T2w data governance (RESOLVED)**: `svs_T2w.nii.gz` was defaced with mindgrab
+  (maintainer confirmed), so the public demo asset is de-identified. Sidecar PII
+  was separately scrubbed (now a minimal hand-authored file).
+
+Ninth audit round (second external review; see `audit_response.md`):
+
+- **Routing docs corrected**: README + `_dispatchImage` JSDoc claimed MRS sidecar
+  fields route NIfTI to signals; the implementation (`detect.ts`) is dims-only
+  (signal iff dim1-3==1 & dim4>1) and ignores MRS fields by design. Docs aligned.
+- **Annotation color deep-copied**: `cloneAnnotation` (in `signal/NVSignal.ts`)
+  copies the color tuple too; used by `createSignal` + `setSignal`. The `display`
+  shallow-merge and the `signals` live getter are left as established API
+  convention (mutate via `setSignal`). `persistence.ts` shallow copy is safe
+  (CBOR-encoded immediately / reconstructed from fresh decoded data).
+- **Demo scene switching coalesced**: `applyScene` records `pendingMode` and each
+  queued task runs only if still latest, so rapid input skips intermediate
+  load/remove churn. Initial `loadSignals` is now wrapped (footer error message).
+- **No bare annotation guides**: annotations skip entirely when `fontSize <= 6`
+  (guide was previously drawn even when the label was suppressed).
+- Won't-fix (documented): full-`NVDocument` signal round-trip test is not runnable
+  under the Bun harness (`import.meta.glob`); the signal path is covered by
+  `persistence.test.ts` (serialize/reconstruct + real CBOR, incl. `-Infinity` y).
+
 Deferred (low priority, documented): two-pass/streaming TSV parser;
+annotations render only in the signal-only graph, not the volume+physio
+association view (`collectAssociatedTimeGraphData`); annotation count/long-label
+truncation/collision handling is unbounded by design (user-supplied, not
+amplified); no committed Playwright e2e for the svs demo (manual headless smoke
+each round, matching the repo's manual-rendering-verification convention);
 ambiguous-NIfTI double read (dispatcher sniffs then loader re-reads);
 `loadImage` keeps append semantics for signals by design; per-draw O(samples)
 domain/range scans in the graph; incompatible signals are silently dropped from
 a merged graph (warning/event is a future item); public setters to correct
 `SamplingFrequency`/`StartTime`/`SpectrometerFrequency`/`DwellTime` after load
 are not exposed (`setSignal` updates display/attachment only); rapid graph
-scrubs queue async `setFrame4D` uploads without coalescing.
+scrubs queue async `setFrame4D` uploads without coalescing; annotations have no
+add/clear convenience or per-annotation visibility (`setSignal({ annotations })`
+is full-replace by design, matching the `setVolume`/`setSignal` options pattern).
 
 ## Colormap conventions
 

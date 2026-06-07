@@ -101,14 +101,38 @@ nv.setSignal(0, { display: { average: true, mode: 'real', ppmRange: [1.9, 3.3] }
 ```
 
 NIfTI files are routed to the signal loader when they have no spatial extent
-(dim1-3 == 1, dim4 > 1) or carry MRS sidecar fields; pass `asSignal` to override.
+(dim1-3 == 1, dim4 > 1); pass `asSignal` to override. MRS sidecar/header fields do
+**not** affect routing — a spatial spectroscopic image (MRSI/CSI) carries them too,
+so it stays on the volume path.
 
 A physio signal can be associated with a 4D volume by passing `attachToId` (the
 volume's id). The graph then shows the crosshair BOLD time-course together with
 each physio trace at its native sampling rate on a shared time axis, clamped to
 the imaging window; clicking the graph scrubs the volume to the nearest frame.
 
-See `examples/svs.html` (spectroscopy), `examples/physio.html` (physio), and
+Signals can carry **annotations** — text labels anchored to a position in the
+graph's own data units (e.g. ppm for spectroscopy). They translate as the x-axis
+window is panned/zoomed and are hidden when out of range. A `y` of `-Infinity` or
+`+Infinity` pins the label to the bottom or top of the plot. Annotations render on
+the signal graph (spectrum / physio plot); they are not currently drawn on the
+volume+physio association time-course view.
+
+```js
+// Label metabolite peaks pinned to the bottom of the spectrum
+await nv.loadSignals([{
+  url: '/signals/svs_se_30.nii.gz',
+  annotations: [
+    { text: 'NAA', x: 2.0, y: -Infinity },
+    { text: 'Cr',  x: 3.0, y: -Infinity },
+    { text: 'Cho', x: 3.2, y: -Infinity },
+  ],
+}])
+nv.setSignal(0, { annotations: [/* replace the full set */] })
+```
+
+See `examples/svs.html` (spectroscopy, with NAA/Cr/Cho annotations and a scene
+selector pairing the spectrum with the participant's T2w and an outline-shaded
+"voxel" marker at the sampling location), `examples/physio.html` (physio), and
 `examples/physio.bold.html` (fMRI + physio association) for interactive demos.
 
 ### Change slice type and colormap

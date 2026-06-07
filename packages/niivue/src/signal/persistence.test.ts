@@ -71,4 +71,39 @@ describe('signal persistence round-trip', () => {
     expect(out.raw.nucleus).toBe('1H')
     expect(Array.from(out.raw.fid)).toEqual(Array.from(fid))
   })
+
+  test('annotationsRoundTripIncludingInfiniteY', () => {
+    const sig: NVSignal = {
+      id: 'svs',
+      name: 'svs',
+      kind: 'spectroscopy',
+      raw: {
+        kind: 'spectroscopy',
+        fid: new Float32Array([1, 0, 2, 0]),
+        nPoints: 2,
+        nTransients: 1,
+        dwell: 0.0005,
+        spectrometerFreq: 297.155,
+        nucleus: '1H',
+      },
+      display: { ...defaultSignalDisplay() },
+      annotations: [
+        { text: 'NAA', x: 2.0, y: Number.NEGATIVE_INFINITY },
+        { text: 'Cho', x: 3.2, y: 1.5, color: [1, 0, 0, 1] },
+      ],
+    }
+    const out = roundTrip(sig)
+    expect(out.annotations).toHaveLength(2)
+    expect(out.annotations?.[0]).toEqual({
+      text: 'NAA',
+      x: 2.0,
+      y: Number.NEGATIVE_INFINITY,
+    })
+    expect(out.annotations?.[1]).toEqual({
+      text: 'Cho',
+      x: 3.2,
+      y: 1.5,
+      color: [1, 0, 0, 1],
+    })
+  })
 })

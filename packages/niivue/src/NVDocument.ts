@@ -32,7 +32,8 @@ import {
 import * as NVVolume from '@/volume/NVVolume'
 import { computeVolumeLabelCentroids } from '@/volume/utils'
 
-// v8 added the optional `signals` array (NVSignal persistence).
+// v8 added the optional `signals` array (NVSignal persistence, incl. each
+// signal's optional `annotations`).
 const DOCUMENT_VERSION = 8
 
 /**

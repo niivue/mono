@@ -468,6 +468,7 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Controller API | ✅ | `loadSignals`/`addSignal`/`removeSignal`/`removeAllSignals`/`setSignal`/`setSignalCursorFraction` |
 | Events | ✅ | `signalLoaded`, `signalRemoved`, `signalLocationChange` |
 | Graph rendering (`NVGraph` signal mode) | ✅ | Multi-color series, legend (capped), reversible/windowed x-axis, full-canvas when signal-only, dense-series decimation, derived-plot cache |
+| Annotations (`SignalAnnotation`) | ✅ | Data-space text labels (`{text,x,y,color?}`) that pan/zoom with the window and hide when out of range; `y` of `±Infinity` pins to plot bottom/top; set via load options or `setSignal`, persisted in NVD. Render on the signal graph only (not the volume+physio association view) |
 | Persistence (NVD) | ✅ | Document version 8 (`signal/persistence.ts`) |
 | Demos | ✅ | `examples/svs.html`, `examples/physio.html`, `examples/physio.bold.html` |
 | Volume + physio association | ✅ | `collectAssociatedTimeGraphData`: BOLD time-course + attached physio on a shared Time(s) axis at native rates, clamped to the imaging window, normalized, with a current-frame marker (`attachToId`) |

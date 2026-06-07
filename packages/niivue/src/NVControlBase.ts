@@ -56,6 +56,7 @@ import type {
   NVSignal as NVSignalType,
   NVTractOptions,
   SaveVolumeOptions,
+  SignalAnnotation,
   SignalSidecar,
   SyncOpts,
   VectorAnnotation,
@@ -1707,12 +1708,19 @@ export default class NiiVueGPU extends EventTarget {
   /** Update a loaded signal's display state (drives the on-demand transform). */
   setSignal(
     index: number,
-    opts: { display?: Partial<NVSignalDisplay>; attachToId?: string },
+    opts: {
+      display?: Partial<NVSignalDisplay>
+      attachToId?: string
+      annotations?: SignalAnnotation[]
+    },
   ): this {
     const sig = this.model.signals[index]
     if (!sig) return this
     if (opts.display) sig.display = { ...sig.display, ...opts.display }
     if (opts.attachToId !== undefined) sig.attachedToId = opts.attachToId
+    // Copy so later caller mutation cannot silently change render state.
+    if (opts.annotations !== undefined)
+      sig.annotations = opts.annotations.map(NVSignal.cloneAnnotation)
     this.drawScene()
     return this
   }
@@ -1736,9 +1744,9 @@ export default class NiiVueGPU extends EventTarget {
    *
    * - Signal-only extensions (e.g. TSV) and `asSignal: true` go to signals.
    * - Mesh extensions go to meshes.
-   * - NIfTI is ambiguous: unless `asSignal: false`, its bytes/sidecar are
-   *   sniffed (no spatial extent, or MRS fields present) to choose signal vs
-   *   volume. See {@link niftiBufferIsSignal}.
+   * - NIfTI is ambiguous: unless `asSignal: false`, its header dims are sniffed
+   *   (signal only when it has no spatial extent: dim1-3 == 1, dim4 > 1). MRS
+   *   sidecar/header fields do NOT affect routing. See {@link niftiBufferIsSignal}.
    * - Everything else is a volume.
    *
    * `replace` selects load-semantics (replace existing volumes/meshes) vs

@@ -83,6 +83,7 @@ export type {
   NVSignalRaw,
   NVTractOptions,
   SaveVolumeOptions,
+  SignalAnnotation,
   SignalAxis,
   SignalKind,
   SignalSeries,

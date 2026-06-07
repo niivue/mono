@@ -1099,6 +1099,27 @@ export type SignalAxis = {
 /** How a transformed component of a complex spectrum is projected to a real trace. */
 export type SignalSpectrumMode = 'real' | 'imag' | 'magnitude' | 'phase'
 
+/**
+ * A text label anchored to a position in a signal graph's data space (e.g. a
+ * peak assignment on a spectrum). The label is mapped through the same axis
+ * window as the data, so it pans/zooms with the graph and is hidden when its x
+ * falls outside the visible window.
+ */
+export type SignalAnnotation = {
+  /** label text (e.g. 'NAA') */
+  text: string
+  /** x position in axis data units (e.g. ppm for spectroscopy, seconds for physio) */
+  x: number
+  /**
+   * y position in data units. The sentinels `-Infinity` and `+Infinity` are
+   * shorthand for "bottom of plot" and "top of plot" respectively, so a label
+   * can be pinned to an axis edge regardless of the autoscaled y-range.
+   */
+  y: number
+  /** optional RGBA [0..1] color override; otherwise the graph font color is used */
+  color?: [number, number, number, number]
+}
+
 /** A loaded signal instance held by the model. */
 export type NVSignal = {
   id: string
@@ -1111,6 +1132,8 @@ export type NVSignal = {
   display: NVSignalDisplay
   /** id of an associated volume/mesh this signal is bound to (optional) */
   attachedToId?: string
+  /** text labels anchored to positions in the graph's data space (optional) */
+  annotations?: SignalAnnotation[]
 }
 
 /** User-controllable display state for a signal (drives the on-demand transform). */

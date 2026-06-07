@@ -222,6 +222,134 @@ describe('signal-mode hit test + cursor', () => {
   })
 })
 
+describe('signal-mode annotations', () => {
+  const series: GraphSeries[] = [
+    { label: 'spec', x: [1, 2, 3, 4], y: [0, 5, 2, 1] },
+  ]
+
+  test('annotationTextRenderedWhenInsideWindow', () => {
+    const data = signalData(series, {
+      xAxis: { label: 'ppm', reversed: true, min: 1, max: 4 },
+      annotations: [{ text: 'NAA', x: 2, y: Number.NEGATIVE_INFINITY }],
+    })
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const { texts, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    expect(texts.map((t) => t.str)).toContain('NAA')
+  })
+
+  test('annotationHiddenWhenOutsideWindow', () => {
+    const data = signalData(series, {
+      xAxis: { label: 'ppm', reversed: true, min: 1, max: 4 },
+      annotations: [{ text: 'OOR', x: 9, y: Number.NEGATIVE_INFINITY }],
+    })
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const { texts, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    expect(texts.map((t) => t.str)).not.toContain('OOR')
+  })
+
+  test('negativeInfinityPinsToBottomPositiveInfinityToTop', () => {
+    const data = signalData(series, {
+      xAxis: { label: 'ppm', reversed: false, min: 1, max: 4 },
+      annotations: [
+        { text: 'bot', x: 2, y: Number.NEGATIVE_INFINITY },
+        { text: 'top', x: 3, y: Number.POSITIVE_INFINITY },
+      ],
+    })
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const { texts, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    const [, pT, , pH] = layout.plotLTWH
+    const bot = texts.find((t) => t.str === 'bot')
+    const top = texts.find((t) => t.str === 'top')
+    expect(bot).toBeDefined()
+    expect(top).toBeDefined()
+    // bottom-pinned label sits below the top-pinned one
+    expect((bot?.y ?? 0) > (top?.y ?? 0)).toBe(true)
+    expect(top?.y ?? 0).toBeLessThan(pT + pH * 0.5)
+  })
+
+  test('edgePinnedAnnotationDrawsGuideAtMappedX', () => {
+    const data = signalData(series, {
+      xAxis: { label: 'ppm', reversed: true, min: 1, max: 4 },
+      annotations: [
+        { text: 'NAA', x: 2, y: Number.NEGATIVE_INFINITY, color: [1, 0, 0, 1] },
+      ],
+    })
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    const guide = lines.find(
+      (l) =>
+        l.color[0] === 1 &&
+        l.color[3] === 0.35 &&
+        Math.abs(l.x0 - l.x1) < 0.001,
+    )
+    expect(guide).toBeDefined()
+    // reversed axis: t=(2-1)/(4-1)=1/3, drawn at (1-t)=2/3 across the plot
+    const [pL, , pW] = layout.plotLTWH
+    expect(guide?.x0).toBeCloseTo(pL + (2 / 3) * pW, 1)
+  })
+
+  test('finiteYAnnotationDrawsNoGuide', () => {
+    const data = signalData(series, {
+      xAxis: { label: 'ppm', reversed: false, min: 1, max: 4 },
+      annotations: [{ text: 'mid', x: 2, y: 3 }],
+    })
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const { lines, texts, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    expect(texts.map((t) => t.str)).toContain('mid')
+    expect(lines.some((l) => l.color[3] === 0.35)).toBe(false)
+  })
+
+  test('nanYAnnotationSkippedNoTextNoGuideNoNaNPosition', () => {
+    const data = signalData(series, {
+      xAxis: { label: 'ppm', reversed: false, min: 1, max: 4 },
+      annotations: [{ text: 'bad', x: 2, y: Number.NaN }],
+    })
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const { lines, texts, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    // Malformed NaN y: no label, no spurious guide, no NaN screen positions.
+    expect(texts.map((t) => t.str)).not.toContain('bad')
+    expect(lines.some((l) => l.color[3] === 0.35)).toBe(false)
+    expect(
+      texts.every((t) => Number.isFinite(t.x) && Number.isFinite(t.y)),
+    ).toBe(true)
+    expect(
+      lines.every(
+        (l) =>
+          Number.isFinite(l.x0) &&
+          Number.isFinite(l.y0) &&
+          Number.isFinite(l.x1) &&
+          Number.isFinite(l.y1),
+      ),
+    ).toBe(true)
+  })
+
+  test('nanXAnnotationSkipped', () => {
+    const data = signalData(series, {
+      xAxis: { label: 'ppm', reversed: false, min: 1, max: 4 },
+      annotations: [
+        { text: 'badx', x: Number.NaN, y: Number.NEGATIVE_INFINITY },
+      ],
+    })
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const { texts, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    expect(texts.map((t) => t.str)).not.toContain('badx')
+  })
+})
+
 describe('signal-mode performance bounds', () => {
   function dataLines(lines: LineCall[]): LineCall[] {
     const maxThick = Math.max(...lines.map((l) => l.thick))

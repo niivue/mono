@@ -3,10 +3,24 @@ import type {
   NVSignal,
   NVSignalDisplay,
   NVSignalRaw,
+  SignalAnnotation,
   SignalSidecar,
 } from '@/NVTypes'
 import { defaultSignalDisplay } from './processing'
 import { fetchSidecar } from './sidecar'
+
+/**
+ * Deep-copy a signal annotation, including its color tuple, so a caller cannot
+ * mutate live render state after passing annotations to loadSignals/setSignal.
+ */
+export function cloneAnnotation(a: SignalAnnotation): SignalAnnotation {
+  return {
+    ...a,
+    color: a.color
+      ? [a.color[0], a.color[1], a.color[2], a.color[3]]
+      : undefined,
+  }
+}
 
 type SignalReader = {
   extensions?: string[]
@@ -62,6 +76,8 @@ export type SignalFromUrlOptions = {
   display?: Partial<NVSignalDisplay>
   /** id of a volume/mesh to associate with */
   attachToId?: string
+  /** text labels anchored to positions in the graph's data space */
+  annotations?: SignalAnnotation[]
 }
 
 /** Wrap raw signal data into a displayable NVSignal instance. */
@@ -72,6 +88,7 @@ export function createSignal(
     url?: string
     display?: Partial<NVSignalDisplay>
     attachToId?: string
+    annotations?: SignalAnnotation[]
   },
 ): NVSignal {
   return {
@@ -82,6 +99,8 @@ export function createSignal(
     raw,
     display: { ...defaultSignalDisplay(), ...(opts.display ?? {}) },
     attachedToId: opts.attachToId,
+    // Deep-copy so later caller mutation cannot silently change render state.
+    annotations: opts.annotations?.map(cloneAnnotation),
   }
 }
 
@@ -97,5 +116,6 @@ export async function loadSignal(
     url,
     display: opts.display,
     attachToId: opts.attachToId,
+    annotations: opts.annotations,
   })
 }

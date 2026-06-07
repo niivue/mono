@@ -28,6 +28,19 @@ export type GraphAxis = {
   max: number | null
 }
 
+/**
+ * A text label anchored to a position in signal-graph data space. Mapped through
+ * the same axis window as the series, so it translates as the graph is panned or
+ * zoomed and is omitted when its x is outside the visible window. A y of
+ * `-Infinity`/`+Infinity` pins the label to the bottom/top of the plot area.
+ */
+export type GraphAnnotation = {
+  text: string
+  x: number
+  y: number
+  color?: [number, number, number, number]
+}
+
 export type GraphData = {
   lines: number[][]
   selectedColumn: number
@@ -55,6 +68,11 @@ export type GraphData = {
    * vertical line. null hides the cursor.
    */
   cursorX?: number | null
+  /**
+   * Signal mode only: text labels anchored to data-space positions, mapped
+   * through the visible x-window (hidden when out of range).
+   */
+  annotations?: GraphAnnotation[]
 }
 
 export type GraphLayout = {
@@ -96,6 +114,8 @@ const GRAPH_FONT_SCALE = 0.7 // Multiplier for buildText (same convention as leg
 const LINE_THICKNESS = 2 // Base thickness for all lines (scaled by DPR)
 const LINE_RGB = [0.8, 0, 0]
 const LEGEND_MAX_ROWS = 12 // Cap signal legend rows (overflow -> "+N more")
+const CURSOR_ALPHA = 0.5 // Faint vertical cursor line
+const GUIDE_ALPHA = 0.35 // Faint vertical guide for edge-pinned annotations
 
 // Color-blind-safe categorical palette (Okabe-Ito) for multi-series signals.
 const SERIES_PALETTE: [number, number, number, number][] = [
@@ -187,6 +207,18 @@ function mapSignalX(
   return pL + (reversed ? 1 - t : t) * pW
 }
 
+/** Map a y data value to a screen y, clamped into the plot's [pT, plotBottom]. */
+function mapSignalY(
+  yv: number,
+  yMin: number,
+  scaleH: number,
+  pT: number,
+  plotBottom: number,
+): number {
+  const sy = plotBottom - (yv - yMin) * scaleH
+  return Math.max(pT, Math.min(plotBottom, sy))
+}
+
 function signalPointCount(data: GraphData): number {
   let n = 0
   for (const s of data.series ?? []) n = Math.max(n, s.y.length)
@@ -226,8 +258,7 @@ function drawDecimatedSeries(
     let col = Math.round(sx - pL)
     if (col < 0) col = 0
     else if (col >= cols) col = cols - 1
-    let sy = plotBottom - (yv - yMin) * scaleH
-    sy = Math.max(pT, Math.min(plotBottom, sy))
+    const sy = mapSignalY(yv, yMin, scaleH, pT, plotBottom)
     if (sy < minY[col]) minY[col] = sy
     if (sy > maxY[col]) maxY[col] = sy
   }
@@ -662,8 +693,7 @@ function buildSignalGraphElements(
       const inside = xv >= xMin && xv <= xMax && Number.isFinite(yv)
       if (inside) {
         const sx = mapSignalX(xv, xMin, xMax, pL, pW, reversed)
-        let sy = plotBottom - (yv - yMin) * scaleH
-        sy = Math.max(pT, Math.min(plotBottom, sy))
+        const sy = mapSignalY(yv, yMin, scaleH, pT, plotBottom)
         if (prevInside) {
           lineSegments.push(buildLine(prevSX, prevSY, sx, sy, lineThick, color))
         }
@@ -682,8 +712,68 @@ function buildSignalGraphElements(
     data.cursorX <= xMax
   ) {
     const sx = mapSignalX(data.cursorX, xMin, xMax, pL, pW, reversed)
-    const faint: number[] = [fontColor[0], fontColor[1], fontColor[2], 0.5]
+    const faint: number[] = [
+      fontColor[0],
+      fontColor[1],
+      fontColor[2],
+      CURSOR_ALPHA,
+    ]
     lineSegments.push(buildLine(sx, pT, sx, plotBottom, lineThick, faint))
+  }
+
+  // 5c) Annotations: text labels anchored to data-space (x, y) positions. The x
+  // is mapped through the visible window (skipped when out of range) so labels
+  // pan/zoom with the data. A y of -Inf/+Inf pins the label to the bottom/top of
+  // the plot; finite y maps to the value, clamped into the plot area. Edge-pinned
+  // labels also draw a faint vertical guide marking the x position (e.g. a
+  // spectral peak).
+  for (const a of data.annotations ?? []) {
+    // Window test rejects out-of-range and NaN x (NaN fails both comparisons).
+    if (!(a.x >= xMin && a.x <= xMax)) continue
+    const pinBottom = a.y === Number.NEGATIVE_INFINITY
+    const pinTop = a.y === Number.POSITIVE_INFINITY
+    // Reject a malformed finite-but-NaN y: it has no plot position and must not
+    // be treated as an edge sentinel.
+    if (!pinBottom && !pinTop && !Number.isFinite(a.y)) continue
+    // Skip entirely when the label cannot render (tiny canvas): a bare guide line
+    // with no label is just an unexplained vertical mark.
+    if (fontSize <= 6) continue
+    const sx = mapSignalX(a.x, xMin, xMax, pL, pW, reversed)
+    const annColor: [number, number, number, number] = a.color ?? fontColor
+    let sy: number
+    let alignY: number
+    if (pinBottom) {
+      sy = plotBottom - fontSize * 0.2
+      alignY = 1 // text sits just above the bottom axis
+    } else if (pinTop) {
+      sy = pT + fontSize * 0.2
+      alignY = 0 // text hangs just below the top axis
+    } else {
+      sy = mapSignalY(a.y, yMin, scaleH, pT, plotBottom)
+      alignY = 0.5
+    }
+    if (pinBottom || pinTop) {
+      // Faint full-height guide to tie an edge-pinned label to its x position.
+      const guide: number[] = [
+        annColor[0],
+        annColor[1],
+        annColor[2],
+        GUIDE_ALPHA,
+      ]
+      lineSegments.push(buildLine(sx, pT, sx, plotBottom, gridThick, guide))
+    }
+    const tb = buildText(
+      a.text,
+      sx,
+      sy,
+      fntScale,
+      annColor,
+      0.5,
+      alignY,
+      noBack,
+    )
+    tb.backRect = []
+    labels.push(tb)
   }
 
   // 6) Legend (top-right inside plot). Capped so a high-cardinality series set

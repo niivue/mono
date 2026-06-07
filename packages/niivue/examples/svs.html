@@ -30,6 +30,23 @@
       <label for="fullRangeBtn"></label>
       <button type="button" id="fullRangeBtn">Full range</button>
       &nbsp;
+      <label for="sceneSelect">Show</label>
+      <select id="sceneSelect">
+        <option value="mrs">MRS only</option>
+        <option value="mri">MRI only</option>
+        <option value="both">MRI + MRS</option>
+        <option value="all" selected>MRI + MRS + voxel</option>
+      </select>
+      &nbsp;
+      <label for="viewSelect">View</label>
+      <select id="viewSelect">
+        <option value="0" selected>Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3">A+C+S+R</option>
+      </select>
+      &nbsp;
       <input type="color" id="colorBtn" value="#191923" />
       &nbsp;
       <label for="webgpuCheck">WebGPU</label>

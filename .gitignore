@@ -15,3 +15,6 @@ __pycache__/
 # codegen outputs (`_widget.template.js`, `_generated.py`,
 # `api.generated.json`) stay committed as a code-review surface.
 packages/ipyniivue/src/ipyniivue/static/widget.js
+
+# Transient audit scratch/response files (see the /audit workflow).
+audit_*.md

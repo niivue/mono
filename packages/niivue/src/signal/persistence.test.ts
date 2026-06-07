@@ -72,6 +72,42 @@ describe('signal persistence round-trip', () => {
     expect(Array.from(out.raw.fid)).toEqual(Array.from(fid))
   })
 
+  test('mrsiCrosshairSignalPreservesFollowsCrosshairAndAttachment', () => {
+    // A crosshair-following MRSI spectrum: placeholder FID + attachment to the
+    // complex volume + the followsCrosshair flag must survive an NVD round-trip.
+    const sig: NVSignal = {
+      id: 'MRSI spectrum',
+      name: 'MRSI spectrum',
+      kind: 'spectroscopy',
+      raw: {
+        kind: 'spectroscopy',
+        fid: new Float32Array(8),
+        nPoints: 4,
+        nTransients: 1,
+        dwell: 0.0008,
+        spectrometerFreq: 123.227,
+        nucleus: '1H',
+      },
+      display: {
+        ...defaultSignalDisplay(),
+        halveFirstPoint: true,
+        average: false,
+      },
+      attachedToId: '/signals/mrsi.nii.gz',
+      followsCrosshair: true,
+      annotations: [{ text: 'NAA', x: 2.0, y: Number.NEGATIVE_INFINITY }],
+    }
+    const out = roundTrip(sig)
+    expect(out.followsCrosshair).toBe(true)
+    expect(out.attachedToId).toBe('/signals/mrsi.nii.gz')
+    expect(out.display.halveFirstPoint).toBe(true)
+    expect(out.display.average).toBe(false)
+    if (out.raw.kind !== 'spectroscopy') throw new Error('kind')
+    expect(out.raw.nPoints).toBe(4)
+    expect(out.raw.dwell).toBeCloseTo(0.0008, 7)
+    expect(out.annotations?.[0].text).toBe('NAA')
+  })
+
   test('annotationsRoundTripIncludingInfiniteY', () => {
     const sig: NVSignal = {
       id: 'svs',

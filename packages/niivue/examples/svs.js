@@ -135,11 +135,19 @@ function update() {
   const hi = parseFloat(ppmHigh.value)
   ppmLowVal.textContent = lo.toFixed(1)
   ppmHighVal.textContent = hi.toFixed(1)
+  // Apodization and phase correction are core spectroscopy transforms
+  // (signal/processing.ts) driven by display flags — no extension required.
+  apodVal.textContent = apod.value
+  p0Val.textContent = p0.value
+  p1Val.textContent = parseFloat(p1.value).toFixed(1)
   nv1.setSignal(0, {
     display: {
       average: avgCheck.checked,
       mode: modeSelect.value,
       ppmRange: lo < hi ? [lo, hi] : null,
+      apodizeHz: parseFloat(apod.value),
+      phase0: parseFloat(p0.value),
+      phase1Ms: parseFloat(p1.value),
     },
   })
 }
@@ -148,6 +156,9 @@ ppmLow.oninput = update
 ppmHigh.oninput = update
 avgCheck.onchange = update
 modeSelect.onchange = update
+apod.oninput = update
+p0.oninput = update
+p1.oninput = update
 fullRangeBtn.onclick = () => {
   nv1.setSignal(0, { display: { ppmRange: null } })
 }

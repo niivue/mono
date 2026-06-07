@@ -21,6 +21,15 @@
         <option value="phase">Phase</option>
       </select>
       &nbsp;
+      <label for="apod">Apodize (Hz) <span id="apodVal">0</span></label>
+      <input type="range" id="apod" min="0" max="20" step="1" value="0" />
+      &nbsp;
+      <label for="p0">Phase0 (&deg;) <span id="p0Val">0</span></label>
+      <input type="range" id="p0" min="-180" max="180" step="1" value="0" />
+      &nbsp;
+      <label for="p1">Phase1 (ms) <span id="p1Val">0</span></label>
+      <input type="range" id="p1" min="-5" max="5" step="0.1" value="0" />
+      &nbsp;
       <label for="ppmLow">ppm low <span id="ppmLowVal">1.9</span></label>
       <input type="range" id="ppmLow" min="0" max="6" step="0.1" value="1.9" />
       &nbsp;

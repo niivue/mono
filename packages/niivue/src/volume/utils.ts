@@ -635,6 +635,62 @@ export function getVoxelValue(
 }
 
 /**
+ * Extract the complex FID at a RAS voxel of a spatial spectroscopic image
+ * (MRSI), as an interleaved `[re0, im0, ...]` Float32Array of length
+ * `2 * mrsMeta.nPoints`, or null when the volume carries no FID / the voxel is
+ * out of bounds. The retained `complexFID` is in native order, so the same
+ * `img2RASstart`/`img2RASstep` mapping used by {@link getVoxelValue} converts
+ * the RAS voxel to its native spatial index; the spectral point `p` of voxel
+ * `v` lives at complex index `v + p*nVox3D` (NIfTI frame-major layout).
+ */
+export function extractVoxelFid(
+  volume: NVImage,
+  rx: number,
+  ry: number,
+  rz: number,
+): Float32Array | null {
+  const fid = volume.complexFID
+  const meta = volume.mrsMeta
+  if (
+    !fid ||
+    !meta ||
+    !volume.dimsRAS ||
+    !volume.img2RASstep ||
+    !volume.img2RASstart
+  ) {
+    return null
+  }
+  const dims = volume.dimsRAS
+  const ix = Math.round(rx)
+  const iy = Math.round(ry)
+  const iz = Math.round(rz)
+  if (
+    ix < 0 ||
+    ix >= dims[1] ||
+    iy < 0 ||
+    iy >= dims[2] ||
+    iz < 0 ||
+    iz >= dims[3]
+  ) {
+    return null
+  }
+  const start = volume.img2RASstart
+  const step = volume.img2RASstep
+  const native =
+    start[0] + ix * step[0] + start[1] + iy * step[1] + start[2] + iz * step[2]
+  const nPoints = meta.nPoints
+  const nVox = volume.nVox3D
+  const out = new Float32Array(nPoints * 2)
+  for (let p = 0; p < nPoints; p++) {
+    const ci = 2 * (native + p * nVox)
+    if (ci + 1 >= fid.length) break
+    out[2 * p] = fid[ci]
+    out[2 * p + 1] = fid[ci + 1]
+  }
+  return out
+}
+
+/**
  * Read 4 raw RGBA bytes at a RAS voxel position (no slope/intercept).
  * Used for PAQD volumes where bytes encode region indices and probabilities.
  */

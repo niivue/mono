@@ -7,10 +7,16 @@ import type {
   NVSignalSpectroscopyRaw,
 } from '@/NVTypes'
 import {
+  apodize,
   defaultSignalDisplay,
   derivePhysioSeries,
   deriveSpectroscopySeries,
   fft,
+  halveFirstPoint,
+  integratePpmBandMap,
+  PPM_RANGE,
+  PPM_SHIFT,
+  phaseCorrection,
   ppmRefForNucleus,
 } from './processing'
 import { read } from './readers/nii'
@@ -155,6 +161,104 @@ describe('deriveSpectroscopySeries', () => {
     expect(axis.reversed).toBe(false)
     const x = series[0].x as Float32Array
     expect(x[0]).toBeLessThan(x[x.length - 1])
+  })
+})
+
+describe('FSL-MRS parity (fsleyes-plugin-mrs)', () => {
+  test('nucleusConstants', () => {
+    expect(PPM_SHIFT['1H']).toBe(4.65)
+    expect(PPM_SHIFT['2H']).toBe(4.8)
+    expect(PPM_RANGE['1H']).toEqual([0.2, 4.2])
+    expect(PPM_RANGE['31P']).toEqual([-20, 10])
+  })
+
+  test('halveFirstPointScalesDcSample', () => {
+    const re = new Float64Array([1, 2, 3, 4])
+    const im = new Float64Array([5, 6, 7, 8])
+    halveFirstPoint(re, im)
+    expect(re[0]).toBe(0.5)
+    expect(im[0]).toBe(2.5)
+    expect(re[1]).toBe(2) // unchanged
+    expect(im[3]).toBe(8)
+  })
+
+  test('apodizeMatchesExpWindow', () => {
+    // fsleyes test_utils.py: data [1,2,3,4], dwell 0.1, broadening 1.
+    const re = new Float64Array([1, 2, 3, 4])
+    const im = new Float64Array(4)
+    apodize(re, im, 0.1, 1)
+    const t = [0, 0.1, 0.2, 0.3]
+    for (let i = 0; i < 4; i++) {
+      expect(re[i]).toBeCloseTo([1, 2, 3, 4][i] * Math.exp(-t[i] * 1), 6)
+    }
+  })
+
+  test('apodizeNonPositiveIsNoOp', () => {
+    const re = new Float64Array([1, 2, 3, 4])
+    const im = new Float64Array(4)
+    apodize(re, im, 0.1, 0)
+    expect(Array.from(re)).toEqual([1, 2, 3, 4])
+  })
+
+  test('phaseCorrectionZeroOrderRotates', () => {
+    // p0 = 90 deg, freqs = 0 -> multiply by exp(i*pi/2) = i: (1,0) -> (0,1).
+    const re = new Float64Array([1])
+    const im = new Float64Array([0])
+    phaseCorrection(re, im, new Float64Array([0]), 90, 0)
+    expect(re[0]).toBeCloseTo(0, 6)
+    expect(im[0]).toBeCloseTo(1, 6)
+  })
+
+  test('calcSpectrumMatchesNumpyFftshift', () => {
+    // fsleyes calcSpectrum([1,2,3,4]): fid[0]*=0.5 -> fft -> fftshift.
+    // numpy reference: fftshift(fft([0.5,2,3,4])) = [-2.5, -2.5-2j, 9.5, -2.5+2j]
+    const raw: NVSignalSpectroscopyRaw = {
+      kind: 'spectroscopy',
+      fid: new Float32Array([1, 0, 2, 0, 3, 0, 4, 0]),
+      nPoints: 4,
+      nTransients: 1,
+      dwell: 0.001,
+      spectrometerFreq: 100,
+      nucleus: '1H',
+    }
+    const reSpec = deriveSpectroscopySeries(raw, {
+      ...defaultSignalDisplay(),
+      useHz: true, // avoid ppm reversal so order matches numpy fftshift
+      halveFirstPoint: true,
+      mode: 'real',
+    })
+    const imSpec = deriveSpectroscopySeries(raw, {
+      ...defaultSignalDisplay(),
+      useHz: true,
+      halveFirstPoint: true,
+      mode: 'imag',
+    })
+    const expRe = [-2.5, -2.5, 9.5, -2.5]
+    const expIm = [0, -2, 0, 2]
+    for (let i = 0; i < 4; i++) {
+      expect(reSpec.series[0].y[i]).toBeCloseTo(expRe[i], 5)
+      expect(imSpec.series[0].y[i]).toBeCloseTo(expIm[i], 5)
+    }
+  })
+
+  test('integratePpmBandMapFirstPointMagnitudeFallback', () => {
+    // No spectrometer freq -> first-point magnitude map. One voxel, FID[0]=3+4i.
+    const fid = new Float32Array([3, 4, 0, 0, 0, 0, 0, 0])
+    const map = integratePpmBandMap(fid, 1, 4, 1, 0.1, null, '1H', [0, 5])
+    expect(map.length).toBe(1)
+    expect(map[0]).toBeCloseTo(5, 6)
+  })
+
+  test('integratePpmBandMapSumsRealOverBand', () => {
+    // One voxel, FID [1,2,3,4] real. nFFT=4, dwell=0.1, sf=1 MHz, ref 4.65.
+    // ppm bins (ascending Hz order) = [9.65, 7.15, 4.65, 2.15].
+    // band [2,8] -> bins 1,2,3. shifted real spectrum = [-2, -2, 10, -2].
+    // sum real over bins 1..3 = -2 + 10 - 2 = 6.
+    const fid = new Float32Array([1, 0, 2, 0, 3, 0, 4, 0])
+    const map = integratePpmBandMap(fid, 1, 4, 1, 0.1, 1, '1H', [2, 8], {
+      mode: 'real',
+    })
+    expect(map[0]).toBeCloseTo(6, 5)
   })
 })
 

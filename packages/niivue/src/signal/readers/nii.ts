@@ -1,47 +1,16 @@
 import * as nifti from 'nifti-reader-js'
 import { log } from '@/logger'
-import { NiiDataType } from '@/NVConstants'
 import type { NVSignalRaw, SignalSidecar } from '@/NVTypes'
 import { temporalUnitScale, toTypedViewOrU8 } from '@/volume/utils'
-import { parseMrsExtension } from '../sidecar'
+import {
+  decodeComplexFID,
+  dimProduct,
+  isComplexDatatype,
+  mrsFromHeaderExtensions,
+} from '../mrs'
 
 export const extensions = ['nii', 'nii.gz']
 export const type = 'nii'
-
-function isComplex(code: number): boolean {
-  return code === NiiDataType.DT_COMPLEX64 || code === NiiDataType.DT_COMPLEX128
-}
-
-function product(dims: number[], from: number, to: number): number {
-  let n = 1
-  for (let i = from; i <= to; i++) n *= dims[i] > 1 ? dims[i] : 1
-  return n
-}
-
-/**
- * Extract MRS metadata from NIfTI header extensions (NIfTI-MRS / BEP005 stores a
- * JSON document, conventionally in ecode 44). Used as a fallback when no JSON
- * sidecar is present. Returns an empty sidecar when nothing parses.
- */
-function mrsFromHeaderExtensions(
-  hdr: nifti.NIFTI1 | nifti.NIFTI2,
-): SignalSidecar {
-  const exts = hdr.extensions ?? []
-  for (const ext of exts) {
-    // NIfTI-MRS (BEP005) uses developer ecode 44.
-    if (ext.ecode !== 44) continue
-    const meta = parseMrsExtension(ext.edata)
-    if (
-      meta.spectrometerFrequency !== undefined ||
-      meta.resonantNucleus !== undefined ||
-      meta.imagingFrequency !== undefined ||
-      meta.dwellTime !== undefined
-    ) {
-      return meta
-    }
-  }
-  return {}
-}
 
 /**
  * Read a NIfTI file as a non-spatial signal. Reuses `nifti-reader-js` header
@@ -68,7 +37,7 @@ export async function read(
   const pixDims = hdr.pixDims
   const isSpatial = !(dims[1] === 1 && dims[2] === 1 && dims[3] === 1)
 
-  if (isComplex(hdr.datatypeCode)) {
+  if (isComplexDatatype(hdr.datatypeCode)) {
     // Spatial+spectral spectroscopy (MRSI/CSI) cannot be represented by the 1-D
     // signal model; the loader keeps such files on the volume path, so reaching
     // here (e.g. a forced asSignal) is an explicit, unsupported case.
@@ -83,19 +52,12 @@ export async function read(
       ...mrsFromHeaderExtensions(hdr),
       ...(sidecar ?? {}),
     }
-    let fid: Float32Array
-    if (hdr.datatypeCode === NiiDataType.DT_COMPLEX128) {
-      const f64 = new Float64Array(img)
-      fid = new Float32Array(f64.length)
-      for (let i = 0; i < f64.length; i++) fid[i] = f64[i]
-    } else {
-      fid = new Float32Array(img)
-    }
+    const fid = decodeComplexFID(img, hdr.datatypeCode)
     // Clamp the declared geometry to what the data actually holds so the
     // transform never indexes past the end (truncated/corrupt files).
     const available = Math.floor(fid.length / 2)
     let nPoints = dims[4] > 1 ? dims[4] : 1
-    let nTransients = product(dims, 5, 7)
+    let nTransients = dimProduct(dims, 5, 7)
     if (nPoints * nTransients > available) {
       log.warn(
         `nii signal: declared ${nPoints}x${nTransients} complex samples exceed ${available} available; clamping`,
@@ -120,7 +82,7 @@ export async function read(
   // (scl_slope/scl_inter) the same way volumes do, since toTypedViewOrU8
   // returns raw, unscaled values.
   const nSamples = dims[4] > 1 ? dims[4] : 1
-  const nCols = product(dims, 5, 7)
+  const nCols = dimProduct(dims, 5, 7)
   const flat = toTypedViewOrU8(img, hdr.datatypeCode)
   const slope = hdr.scl_slope !== 0 ? hdr.scl_slope : 1
   const inter = hdr.scl_inter

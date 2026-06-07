@@ -66,6 +66,7 @@ import type {
 import { niftiBufferIsSignal } from '@/signal/detect'
 import type { SignalFromUrlOptions } from '@/signal/NVSignal'
 import * as NVSignal from '@/signal/NVSignal'
+import { defaultSignalDisplay } from '@/signal/processing'
 import { fetchSidecar } from '@/signal/sidecar'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
@@ -1599,6 +1600,61 @@ export default class NiiVueGPU extends EventTarget {
       this.model.addSignal(sig)
       this.emit('signalLoaded', { signal: sig })
     }
+    this.drawScene()
+    return this
+  }
+
+  /**
+   * Add a spectroscopy signal whose spectrum is read live from the crosshair
+   * voxel of a complex MRSI volume (loaded on the volume path; carries
+   * `complexFID` + `mrsMeta`). The graph re-derives the voxel's spectrum on
+   * every crosshair move — the core enabler for MRSI navigation. FSL-MRS
+   * `halveFirstPoint` is on by default; pass `display` to override or to set a
+   * ppm window/component. Throws if `volumeId` is not a loaded MRSI volume.
+   */
+  addMrsiSignal(
+    volumeId: string,
+    opts: {
+      name?: string
+      display?: Partial<NVSignalDisplay>
+      annotations?: SignalAnnotation[]
+    } = {},
+  ): this {
+    const vol = this.model.volumes.find((v) => v.id === volumeId)
+    if (!vol?.complexFID || !vol.mrsMeta) {
+      throw new Error(
+        `addMrsiSignal: "${volumeId}" is not a loaded complex MRSI volume`,
+      )
+    }
+    const m = vol.mrsMeta
+    const name = opts.name ?? `${vol.name} spectrum`
+    const sig: NVSignalType = {
+      id: name,
+      name,
+      kind: 'spectroscopy',
+      // Placeholder FID; the live spectrum is extracted per crosshair voxel.
+      raw: {
+        kind: 'spectroscopy',
+        fid: new Float32Array(m.nPoints * 2),
+        nPoints: m.nPoints,
+        nTransients: 1,
+        dwell: m.dwell,
+        spectrometerFreq: m.spectrometerFreq,
+        nucleus: m.nucleus,
+      },
+      display: {
+        ...defaultSignalDisplay(),
+        average: false,
+        halveFirstPoint: true,
+        ...(opts.display ?? {}),
+      },
+      attachedToId: volumeId,
+      followsCrosshair: true,
+      // Copy so later caller mutation cannot change render state.
+      annotations: opts.annotations?.map(NVSignal.cloneAnnotation) ?? [],
+    }
+    this.model.addSignal(sig)
+    this.emit('signalLoaded', { signal: sig })
     this.drawScene()
     return this
   }

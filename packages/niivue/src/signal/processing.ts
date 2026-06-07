@@ -14,16 +14,40 @@ export type SignalPlot = {
   axis: SignalAxis
 }
 
-/** Standard ppm reference (receiver-centre chemical shift) per nucleus. */
-const PPM_REF: Record<string, number> = {
+// ---------------------------------------------------------------------------
+// Nucleus constants (ported verbatim from fsleyes-plugin-mrs constants.py,
+// BSD-3, (c) 2021 William Clarke, University of Oxford). See nv-ext-mrs/PORTING.md.
+// ---------------------------------------------------------------------------
+
+/** Gyromagnetic ratio (MHz/T) per nucleus. */
+export const GYRO_MAG_RATIO: Record<string, number> = {
+  '1H': 42.576,
+  '2H': 6.536,
+  '13C': 10.7084,
+  '31P': 17.235,
+}
+
+/**
+ * Receiver-centre chemical-shift reference (ppm) per nucleus — the ppm value of
+ * the 0 Hz bin. Used as the additive offset of the Hz->ppm display transform.
+ */
+export const PPM_SHIFT: Record<string, number> = {
   '1H': 4.65,
-  '2H': 4.65,
-  '31P': 0,
-  '13C': 0,
+  '2H': 4.8,
+  '13C': 0.0,
+  '31P': 0.0,
+}
+
+/** Default ppm display window [lo, hi] per nucleus. */
+export const PPM_RANGE: Record<string, [number, number]> = {
+  '1H': [0.2, 4.2],
+  '2H': [0.0, 6],
+  '13C': [10, 100],
+  '31P': [-20, 10],
 }
 
 export function ppmRefForNucleus(nucleus: string): number {
-  return PPM_REF[nucleus] ?? 0
+  return PPM_SHIFT[nucleus] ?? 0
 }
 
 /** Default display state for a freshly loaded signal. */
@@ -34,8 +58,73 @@ export function defaultSignalDisplay(): NVSignalDisplay {
     ppmRange: null,
     ppmRef: null,
     useHz: false,
+    // FSL-MRS spectral processing (all off by default so the existing svs.html
+    // baseline is unchanged; nv-ext-mrs opts in to halveFirstPoint etc.).
+    halveFirstPoint: false,
+    apodizeHz: 0,
+    phase0: 0,
+    phase1Ms: 0,
     selectedColumns: null,
     showLegend: true,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FSL-MRS spectral transforms (ports of fsleyes-plugin-mrs utils.py /
+// fsleyes powerspectrumseries.py). See nv-ext-mrs/PORTING.md for provenance.
+// ---------------------------------------------------------------------------
+
+/**
+ * Halve the first complex FID sample in place. FSL-MRS `calcSpectrum` does
+ * `fid[0] *= 0.5` before the FFT to correct the DC/baseline offset of a
+ * discretely-sampled FID (the first point is half-weighted in the integral).
+ */
+export function halveFirstPoint(re: Float64Array, im: Float64Array): void {
+  re[0] *= 0.5
+  im[0] *= 0.5
+}
+
+/**
+ * Exponential apodization (Lorentzian line-broadening) of a complex FID, in
+ * place. Mirrors FSL-MRS `apodize`: `window[t] = exp(-t / (1/broadeningHz))`
+ * with `t = i * dwell` (seconds). A non-positive broadening is a no-op.
+ */
+export function apodize(
+  re: Float64Array,
+  im: Float64Array,
+  dwell: number,
+  broadeningHz: number,
+): void {
+  if (!(broadeningHz > 0)) return
+  for (let i = 0; i < re.length; i++) {
+    const w = Math.exp(-i * dwell * broadeningHz)
+    re[i] *= w
+    im[i] *= w
+  }
+}
+
+/**
+ * Apply 0th + 1st order phase correction to a complex spectrum in place.
+ * Mirrors fsleyes `phaseCorrection`: multiply by
+ * `exp(1j * 2*pi * (p0/360 + freqs*p1))`, with `p0` in degrees and `p1` in
+ * seconds. `freqs` are the Hz bins in the same order as `re`/`im`.
+ */
+export function phaseCorrection(
+  re: Float64Array,
+  im: Float64Array,
+  freqs: Float64Array,
+  p0deg: number,
+  p1sec: number,
+): void {
+  if (p0deg === 0 && p1sec === 0) return
+  for (let i = 0; i < re.length; i++) {
+    const ang = 2 * Math.PI * (p0deg / 360 + freqs[i] * p1sec)
+    const c = Math.cos(ang)
+    const s = Math.sin(ang)
+    const r = re[i]
+    const m = im[i]
+    re[i] = r * c - m * s
+    im[i] = r * s + m * c
   }
 }
 
@@ -202,22 +291,40 @@ export function deriveSpectroscopySeries(
   }
 
   // Shared x-axis, computed in fftshift (ascending Hz) order over nFFT bins.
+  // `hzShift` keeps the Hz bins regardless of the display axis; phase
+  // correction is defined in Hz so it needs them even when ppm is shown.
   const half = Math.floor(nFFT / 2)
   const shift = Math.ceil(nFFT / 2)
   const xShift = new Float32Array(nFFT)
+  const hzShift = new Float64Array(nFFT)
   for (let i = 0; i < nFFT; i++) {
     const hz = dwell > 0 ? (i - half) / (nFFT * dwell) : i - half
+    hzShift[i] = hz
     xShift[i] = useHz ? hz : -hz / (spectrometerFreq as number) + ref
   }
   const reverse = !useHz // ppm descends with Hz; reverse to keep x ascending
   const x = reverse ? reversedF32(xShift) : xShift
 
+  const p1sec = (display.phase1Ms ?? 0) / 1000
+  const p0deg = display.phase0 ?? 0
+  const apodizeHz = display.apodizeHz ?? 0
   const series: SignalSeries[] = inputs.map(({ re, im, label }) => {
+    // Time-domain processing (FSL-MRS order: apodize, then halve first point).
+    apodize(re, im, dwell, apodizeHz)
+    if (display.halveFirstPoint) halveFirstPoint(re, im)
     fft(re, im)
-    const y = new Float32Array(nFFT)
+    // fftshift into ascending-Hz order so phase correction sees matching bins.
+    const sre = new Float64Array(nFFT)
+    const sim = new Float64Array(nFFT)
     for (let i = 0; i < nFFT; i++) {
       const src = (i + shift) % nFFT
-      y[i] = projectComponent(re[src], im[src], display.mode)
+      sre[i] = re[src]
+      sim[i] = im[src]
+    }
+    phaseCorrection(sre, sim, hzShift, p0deg, p1sec)
+    const y = new Float32Array(nFFT)
+    for (let i = 0; i < nFFT; i++) {
+      y[i] = projectComponent(sre[i], sim[i], display.mode)
     }
     return { label, x, y: reverse ? reversedF32(y) : y }
   })
@@ -235,6 +342,109 @@ function reversedF32(a: Float32Array): Float32Array {
   const n = a.length
   const out = new Float32Array(n)
   for (let i = 0; i < n; i++) out[i] = a[n - 1 - i]
+  return out
+}
+
+/** Options for {@link integratePpmBandMap}, mirroring the FSL-MRS range tool. */
+export type PpmBandOptions = {
+  /** integrate `|spectrum|` ('magnitude', default) or `real(spectrum)` ('real') */
+  mode?: 'magnitude' | 'real'
+  apodizeHz?: number
+  /** 0th-order phase, degrees */
+  phase0?: number
+  /** 1st-order phase, milliseconds */
+  phase1Ms?: number
+  halveFirstPoint?: boolean
+}
+
+/**
+ * Integrate a ppm band across every spatial voxel of a complex MRSI FID buffer,
+ * producing a 3D scalar metabolite map (one value per voxel, native order).
+ * Ports fsleyes-plugin-mrs `range_tool.draw_overlay`: per voxel, average any
+ * transients, apodize, halve first point, FFT, fftshift, phase-correct, then
+ * sum `|spectrum|` (or `real`) over the bins whose ppm falls in `band`.
+ *
+ * `complexFID` is interleaved re/im in NIfTI native order, indexed so the
+ * complex sample for spatial voxel `v`, spectral point `p`, transient `t` is at
+ * `2 * (v + p*nVox3D + t*nVox3D*nPoints)`.
+ *
+ * When `spectrometerFreq` is null no ppm axis exists, so the map degrades to a
+ * first-point magnitude image (a cheap "total signal" proxy).
+ */
+export function integratePpmBandMap(
+  complexFID: Float32Array,
+  nVox3D: number,
+  nPoints: number,
+  nTransients: number,
+  dwell: number,
+  spectrometerFreq: number | null,
+  nucleus: string,
+  band: [number, number],
+  opts: PpmBandOptions = {},
+): Float32Array {
+  const useMag = (opts.mode ?? 'magnitude') === 'magnitude'
+  const out = new Float32Array(nVox3D)
+  if (!spectrometerFreq) {
+    for (let v = 0; v < nVox3D; v++) {
+      const ci = 2 * v
+      out[v] = Math.hypot(complexFID[ci] ?? 0, complexFID[ci + 1] ?? 0)
+    }
+    return out
+  }
+  const nFFT = nextPow2(nPoints)
+  const half = Math.floor(nFFT / 2)
+  const shift = Math.ceil(nFFT / 2)
+  const ref = PPM_SHIFT[nucleus] ?? 0
+  const lo = Math.min(band[0], band[1])
+  const hi = Math.max(band[0], band[1])
+  const hzShift = new Float64Array(nFFT)
+  const bandIdx: number[] = []
+  for (let i = 0; i < nFFT; i++) {
+    const hz = dwell > 0 ? (i - half) / (nFFT * dwell) : i - half
+    hzShift[i] = hz
+    const ppm = -hz / spectrometerFreq + ref
+    if (ppm >= lo && ppm <= hi) bandIdx.push(i)
+  }
+  if (bandIdx.length === 0) return out
+  const p1sec = (opts.phase1Ms ?? 0) / 1000
+  const p0deg = opts.phase0 ?? 0
+  const apoHz = opts.apodizeHz ?? 0
+  const halveFP = opts.halveFirstPoint ?? false
+  const re = new Float64Array(nFFT)
+  const im = new Float64Array(nFFT)
+  const sre = new Float64Array(nFFT)
+  const sim = new Float64Array(nFFT)
+  for (let v = 0; v < nVox3D; v++) {
+    re.fill(0)
+    im.fill(0)
+    for (let t = 0; t < nTransients; t++) {
+      const tBase = t * nVox3D * nPoints
+      for (let p = 0; p < nPoints; p++) {
+        const ci = 2 * (v + p * nVox3D + tBase)
+        // `?? 0` guards a truncated/short buffer (no NaN propagation).
+        re[p] += complexFID[ci] ?? 0
+        im[p] += complexFID[ci + 1] ?? 0
+      }
+    }
+    if (nTransients > 1) {
+      for (let p = 0; p < nPoints; p++) {
+        re[p] /= nTransients
+        im[p] /= nTransients
+      }
+    }
+    apodize(re, im, dwell, apoHz)
+    if (halveFP) halveFirstPoint(re, im)
+    fft(re, im)
+    for (let i = 0; i < nFFT; i++) {
+      const src = (i + shift) % nFFT
+      sre[i] = re[src]
+      sim[i] = im[src]
+    }
+    phaseCorrection(sre, sim, hzShift, p0deg, p1sec)
+    let s = 0
+    for (const i of bandIdx) s += useMag ? Math.hypot(sre[i], sim[i]) : sre[i]
+    out[v] = s
+  }
   return out
 }
 

@@ -81,6 +81,20 @@ export type AffineTransform = {
 // ============================================================
 // Per-Volume Data (NVImage)
 // ============================================================
+/** Spectral metadata retained alongside a complex MRSI volume's FID buffer. */
+export type MrsVolumeMeta = {
+  /** MHz; null means only a Hz spectral axis can be derived */
+  spectrometerFreq: number | null
+  /** resonant nucleus, e.g. '1H', '31P' */
+  nucleus: string
+  /** seconds (spectral dwell time, NIfTI pixDim[4]) */
+  dwell: number
+  /** spectral samples per voxel (dim4) */
+  nPoints: number
+  /** transients/averages per voxel (product of dims 5..7) */
+  nTransients: number
+}
+
 export type NVImage = {
   name: string
   url?: string
@@ -145,6 +159,15 @@ export type NVImage = {
   colormapLabel?: LUT | null
   /** Whether this volume has imaginary data (complex) */
   isImaginary?: boolean
+  /**
+   * Raw complex FID buffer for a spatial spectroscopic image (MRSI/CSI),
+   * interleaved re/im in NIfTI native order. Retained on the CPU only (never
+   * uploaded to the GPU — the GPU shows the derived scalar `img` instead) so
+   * the graph/extension can extract any voxel's spectrum. See {@link mrsMeta}.
+   */
+  complexFID?: Float32Array
+  /** Spectral/MRS metadata describing {@link complexFID}. */
+  mrsMeta?: MrsVolumeMeta
   /** ID of the volume used to modulate this volume's brightness/opacity (empty = no modulation) */
   modulationImage?: string
   /** @internal Pre-computed modulation data in RAS order (Float32Array of [0,1] values) */
@@ -1132,6 +1155,13 @@ export type NVSignal = {
   display: NVSignalDisplay
   /** id of an associated volume/mesh this signal is bound to (optional) */
   attachedToId?: string
+  /**
+   * When true (spectroscopy only), the spectrum is extracted live from the
+   * crosshair voxel of the complex MRSI volume named by {@link attachedToId},
+   * re-derived on every crosshair move. The signal's own `raw.fid` is then a
+   * placeholder used only as a fallback / metadata template.
+   */
+  followsCrosshair?: boolean
   /** text labels anchored to positions in the graph's data space (optional) */
   annotations?: SignalAnnotation[]
 }
@@ -1146,6 +1176,16 @@ export type NVSignalDisplay = {
   /** ppm reference offset; null uses the nucleus default */
   ppmRef: number | null
   useHz: boolean
+  // FSL-MRS spectral processing (optional; absent/false/0 leaves the spectrum
+  // unprocessed, preserving the svs.html baseline)
+  /** halve the first FID point before the FFT (FSL-MRS calcSpectrum) */
+  halveFirstPoint?: boolean
+  /** exponential apodization / line-broadening in Hz (0 = none) */
+  apodizeHz?: number
+  /** 0th-order phase correction, degrees */
+  phase0?: number
+  /** 1st-order phase correction, milliseconds */
+  phase1Ms?: number
   // physio
   /** indices of columns to show; null shows all */
   selectedColumns: number[] | null

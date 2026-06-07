@@ -322,6 +322,40 @@ Float32 RGB vector volumes (NIfTI `intent_code` 2003, `dim4=3`) are auto-convert
 
 `setModulationImage(targetId, modulatorId)` scales overlay brightness by another volume's scalar values. `_modulationData` on `NVImage` is a `Float32Array` of [0, 1] values applied CPU-side during `prepareRGBAData()`. Only RGB modulated — alpha preserved for V1 polarity bits.
 
+#### Known limitation: modulation is a no-op for colormapped SCALAR overlays (future work)
+
+`setModulationImage` **only affects RGB/RGBA volumes** (V1 tensors, pre-baked
+RGBA). It is a **silent no-op for a plain scalar overlay** because the
+modulation is applied in `prepareRGBAData()` (the CPU RGB/RGBA path), whereas a
+scalar overlay is uploaded as a raw scalar 3D texture and colormapped in a **GPU
+prepass** (`gl/orientOverlay.ts` `overlay2Texture` / `wgpu/orient.ts`), which
+never sees `_modulationData`. Setting `modulationImage` on a scalar overlay
+changes nothing on screen — a sharp edge worth knowing.
+
+Why it matters / use cases that want this: SNR- or confidence-weighting a
+metabolite/statistic map, alpha-by-another-volume, restricting a scalar overlay
+to a brain/ROI mask (the MRSI demo's "Mask"), uncertainty fade-out. All natural
+"modulate a scalar overlay by another volume" operations that currently can't be
+expressed via `setModulationImage`.
+
+Why it isn't done yet: a proper fix is **GPU shader work in BOTH backends** —
+bind `_modulationData` as a modulation texture in the overlay colormap prepass
+(GLSL in `gl/orientOverlay.ts`, WGSL in `wgpu/orient.ts`), sample it, and
+multiply the overlay alpha (and/or RGB). That's a moderate, cross-backend change
+to the core overlay pipeline with real rendering-regression risk, so it was left
+as a deliberate follow-up rather than folded into a feature PR.
+
+Workaround (used by `@niivue/nv-ext-mrs` `MrsScene.setMaskEnabled`): **bake the
+modulation/mask into the scalar data** — set out-of-mask voxels to a sentinel
+well below `calMin` so the existing transparent-below-`calMin` path hides them.
+**Critical gotcha:** both backends cache the overlay texture keyed on
+`img.buffer` identity (`existingCache.imageBuffer === nvimage.img.buffer`), so an
+**in-place** edit of `img` will NOT re-upload — you must assign a **fresh
+`Float32Array`** (new buffer) to `vol.img`, then call `updateGLVolume()`, to
+force the cache to invalidate and the texture to re-upload. (`isDirty` on
+`NVImage` is currently a dead flag — set in several places, read nowhere — so it
+does not trigger a re-upload.)
+
 ## Three mesh species
 
 Discriminated by `kind: MeshKind`. All share GPU pipeline (`positions`/`indices`/`colors`) but differ in source data:
@@ -622,6 +656,66 @@ are not exposed (`setSignal` updates display/attachment only); rapid graph
 scrubs queue async `setFrame4D` uploads without coalescing; annotations have no
 add/clear convenience or per-annotation visibility (`setSignal({ annotations })`
 is full-replace by design, matching the `setVolume`/`setSignal` options pattern).
+
+### MRSI (spatial spectroscopic imaging)
+
+MRSI/CSI is a **complex 4-D volume** (dim1-3 = space, dim4 = FID), so it stays
+on the **volume path** (not the 1-D signal reader, which throws on spatial MRS).
+`volume/mrsi.ts` (`isMrsiVolume`/`prepareMrsiVolume`, wired into `nii2volume`)
+detects a complex spatial 4-D NIfTI and replaces its `img` with a derived scalar
+**total-signal map** (integral of `|spectrum|` over the nucleus' `PPM_RANGE`,
+`halveFirstPoint` on), while **retaining the raw complex FID + spectral metadata
+on the NVImage** (`complexFID` / `mrsMeta`). The complex buffer is CPU-only —
+the GPU only ever sees the scalar map, so texture handling is unaffected.
+
+Complex decode + the NIfTI-MRS ecode-44 parse are shared between the SVS signal
+reader and the MRSI volume path via `signal/mrs.ts` (`isComplexDatatype`,
+`decodeComplexFID`, `mrsFromHeaderExtensions`).
+
+The **crosshair-voxel spectrum** reuses the signal graph: `addMrsiSignal(volumeId)`
+adds a spectroscopy `NVSignal` with `followsCrosshair = true` + `attachedToId`
+pointing at the MRSI volume. In `collectSignalGraphData`, `plotFor` ->
+`crosshairSpectroscopyPlot` extracts the crosshair voxel's FID
+(`extractVoxelFid`, using the volume's `img2RASstart`/`step` native mapping) and
+re-derives the spectrum **fresh every collect** (not memoized — one 1024-pt FFT
+per frame is cheap and keeps the cursor live without the display-keyed plot
+cache going stale). Moving the crosshair triggers `drawScene` -> render ->
+`collectGraphData`, so the spectrum tracks the crosshair like the fsleyes MRS
+plugin. The status-bar readout still requires a graph-cursor click (no
+associated 4-D volume), but the plotted spectrum updates on every move.
+
+FSL-MRS spectral transforms live in `signal/processing.ts`: `halveFirstPoint`,
+`apodize` (exp line-broadening), `phaseCorrection` (0th deg / 1st ms), the
+`GYRO_MAG_RATIO`/`PPM_SHIFT`/`PPM_RANGE` constants, and `integratePpmBandMap`
+(the range->map engine, also the default-display-map engine). All new display
+flags (`halveFirstPoint`/`apodizeHz`/`phase0`/`phase1Ms`) default off/0 so the
+`svs.html` baseline is unchanged; parity-tested against fsleyes in
+`processing.test.ts`. The FSL-MRS workflow + range->map tool + scene controller
+are packaged as `@niivue/nv-ext-mrs` (demo `apps/demo-ext-mrs`, `mrsi.html`);
+`context.mrs` (`MrsVolumeAccess`, first MRSI volume) / `context.mrsById(id)`
+(multi-MRSI safe) expose the complex buffer read-only.
+Fit-results overlays are deferred (no results dataset). Ported from
+fsleyes-plugin-mrs (BSD-3) — provenance in that package's `PORTING.md`.
+
+Audit-hardened invariants (keep these true):
+- **Detection is metadata-gated.** `isMrsiVolume` requires complex + spatial +
+  dim4>1 AND NIfTI-MRS ecode-44 fields (`hasMrsFields`), so a non-MRS complex
+  4-D volume (e.g. complex fMRI) is NOT silently rewritten into a scalar map.
+- **Truncation-safe.** `prepareMrsiVolume` clamps `nPoints*nTransients` to the
+  bytes present and `integratePpmBandMap` guards reads with `?? 0` (no NaN map).
+- **Not `isImaginary`.** The derived scalar overlay must NOT set
+  `volume.isImaginary` (it's a real map; the complex data is in `complexFID`) —
+  otherwise `control/locationTracking` appends a bogus imaginary readout.
+- **No fake placeholder.** An unresolved `followsCrosshair` signal (volume
+  removed / off-grid / NVD reload without `complexFID`) is dropped from the
+  graph (`plotFor` returns null), never drawn as a flat zero-FID line.
+- **NVD limitation:** `complexFID`/`mrsMeta` are NOT serialized to NVD (only the
+  derived scalar `img`); a reloaded crosshair spectrum is unavailable until the
+  MRSI volume is re-added. Persisting the ~18 MiB buffer is deferred by design.
+- **Mask is baked, not modulated.** `setModulationImage` is a no-op for scalar
+  overlays (see the modulation limitation above); nv-ext-mrs validates the mask
+  shares the MRSI grid then bakes a below-`calMin` sentinel into a FRESH
+  `Float32Array` (buffer-swap forces texture re-upload).
 
 ## Colormap conventions
 

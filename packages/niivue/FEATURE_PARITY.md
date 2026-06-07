@@ -463,7 +463,7 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Signal data class (`NVModel.signals`) | ✅ | `physio` (BIDS TSV) and `spectroscopy` (NIfTI-MRS complex FID) |
 | Readers (`tsv`, `nii`) | ✅ | Auto-discovered via `import.meta.glob`; gz-aware; NaN gaps; `scl_slope`/`scl_inter` applied for real NIfTI |
 | BIDS/MRS sidecar | ✅ | Sibling `.json` fetched by URL or paired on drag-drop; `SpectrometerFrequency`/`ResonantNucleus` |
-| NIfTI signal-vs-volume routing | ✅ | `detect.ts`: non-spatial or MRS fields; `asSignal` override |
+| NIfTI signal-vs-volume routing | ✅ | `detect.ts`: dims-only (non-spatial: dim1-3==1 & dim4>1); MRS fields do NOT route here; `asSignal` override |
 | Processing (FFT/avg/ppm) | ✅ | Radix-2 FFT; non-pow2 zero-filled to next pow2; transient averaging; ppm/Hz axis; windowed y |
 | Controller API | ✅ | `loadSignals`/`addSignal`/`removeSignal`/`removeAllSignals`/`setSignal`/`setSignalCursorFraction` |
 | Events | ✅ | `signalLoaded`, `signalRemoved`, `signalLocationChange` |
@@ -472,6 +472,32 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Persistence (NVD) | ✅ | Document version 8 (`signal/persistence.ts`) |
 | Demos | ✅ | `examples/svs.html`, `examples/physio.html`, `examples/physio.bold.html` |
 | Volume + physio association | ✅ | `collectAssociatedTimeGraphData`: BOLD time-course + attached physio on a shared Time(s) axis at native rates, clamped to the imaging window, normalized, with a current-frame marker (`attachToId`) |
+
+---
+
+## 35. MRSI (MR spectroscopic imaging)
+
+Spatial spectroscopic imaging (MRSI/CSI): a complex 4-D NIfTI where dim1-3 are
+space and dim4 is the FID. Core enablers live in `src/volume/mrsi.ts`,
+`src/signal/processing.ts`, and `src/signal/mrs.ts`; the FSL-MRS workflow
+(navigation, manipulation, range-to-map) is packaged as
+`@niivue/nv-ext-mrs` with a demo at `apps/demo-ext-mrs` (`mrsi.html`). Ports
+algorithms from fsleyes-plugin-mrs (BSD-3) — see that package's `PORTING.md`.
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Complex MRSI volume load | ✅ | `isMrsiVolume`/`prepareMrsiVolume` in `volume/mrsi.ts`: complex spatial 4-D NIfTI **with NIfTI-MRS ecode-44 metadata** retains raw FID + spectral metadata (`NVImage.complexFID`/`mrsMeta`) and shows a derived total-signal map (GPU never sees the complex buffer). The MRS-metadata gate prevents non-MRS complex 4-D volumes from being rewritten. Geometry is clamped to the bytes present (truncation-safe). The derived scalar overlay does NOT set `isImaginary` (the readout treats it as a plain scalar) |
+| Shared complex/ecode-44 decode | ✅ | `signal/mrs.ts` (`isComplexDatatype`/`decodeComplexFID`/`mrsFromHeaderExtensions`) used by both signal (SVS) and volume (MRSI) paths |
+| Crosshair-voxel spectrum | ✅ | `addMrsiSignal(volumeId)` + `NVSignal.followsCrosshair`: the graph extracts the crosshair voxel's FID (`extractVoxelFid`) and re-derives the spectrum on every crosshair move. When the FID can't be resolved (volume removed / off-grid / NVD reload without the buffer) the signal is dropped from the graph rather than drawing a fake flat placeholder |
+| NVD persistence of MRSI | ⚠ partial | `followsCrosshair` signals serialize, but the volume's `complexFID` is NOT written to NVD (only the derived scalar `img`). On reload the crosshair spectrum is unavailable (graph drops it, no fake line) until the MRSI volume is re-added. Persisting the 18 MiB complex buffer is deferred by design |
+| Sampled-voxel marker | ✅ | nv-ext-mrs `enableVoxelSnap`: crosshair snaps to the MRSI voxel-grid centre (`context.mrs.voxelCenterMm`) within the slab, marking the coarse cell being read; free over the surrounding anatomy |
+| FSL-MRS spectral transforms | ✅ | `halveFirstPoint`, `apodize` (exp line-broadening), `phaseCorrection` (0/1-order); off by default so the `svs.html` baseline is unchanged; parity-tested vs fsleyes |
+| Nucleus constants | ✅ | `GYRO_MAG_RATIO`, `PPM_SHIFT`, `PPM_RANGE` ported verbatim |
+| ppm-band metabolite map | ✅ | `integratePpmBandMap` + `makeMetaboliteMap` (nv-ext-mrs): integrate `|spectrum|`/`real` over a ppm band across all voxels -> `SpecSum_{lo}_{hi}` overlay |
+| Extension context exposure | ✅ | `context.mrs` (`MrsVolumeAccess`): read-only complex buffer + metadata + `makeScalarOverlay` |
+| Demo (`mrsi.html`) | ✅ | T1 + MRSI grid + mask, crosshair->spectrum, component/apodize/phase/ppm controls, make-map |
+| Fit-results overlay | ⛔ Deferred | fit/baseline/residual spectra + concentration/QC maps (`tools.py`); blocked on a `fsl_mrsi` results directory |
+| Interactive Ctrl/Shift-drag phasing | ⛔ Deferred | demo uses sliders |
 
 ---
 

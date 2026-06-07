@@ -30,7 +30,7 @@ import type { GraphData } from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import * as NVVolume from '@/volume/NVVolume'
-import { getVoxelValue, volumeTR } from '@/volume/utils'
+import { extractVoxelFid, getVoxelValue, volumeTR } from '@/volume/utils'
 
 export default class NVModel {
   // --- Config groups ---
@@ -686,6 +686,56 @@ export default class NVModel {
   }
 
   /**
+   * Derive a crosshair-following spectroscopy signal's plot by extracting the
+   * complex FID at the current crosshair voxel of its attached MRSI volume and
+   * running the spectroscopy transform with the signal's display state. Returns
+   * null when the signal is not crosshair-following or the attachment cannot be
+   * resolved to a complex MRSI volume. Not memoized (the crosshair changes
+   * often and a single 1024-point FFT per frame is cheap), so the cursor stays
+   * live without invalidating the display-keyed `_signalPlotCache`.
+   */
+  private crosshairSpectroscopyPlot(sig: NVSignal): SignalPlot | null {
+    if (
+      !sig.followsCrosshair ||
+      sig.raw.kind !== 'spectroscopy' ||
+      !sig.attachedToId
+    ) {
+      return null
+    }
+    const vol = this.volumes.find((v) => v.id === sig.attachedToId)
+    if (!vol?.complexFID || !vol.mrsMeta) return null
+    const mm = this.scene2mm(this.scene.crosshairPos)
+    const rasVox = NVTransforms.mm2vox(vol, mm)
+    const fid = extractVoxelFid(vol, rasVox[0], rasVox[1], rasVox[2])
+    if (!fid) return null
+    const m = vol.mrsMeta
+    return deriveSeries(
+      {
+        kind: 'spectroscopy',
+        fid,
+        nPoints: m.nPoints,
+        nTransients: 1,
+        dwell: m.dwell,
+        spectrometerFreq: m.spectrometerFreq,
+        nucleus: m.nucleus,
+      },
+      sig.display,
+    )
+  }
+
+  /**
+   * Derived plot for a signal, or null when a crosshair-following spectrum
+   * cannot currently resolve its source (no attached MRSI volume / crosshair
+   * off the grid / NVD reload without the retained complex buffer). Returning
+   * null — rather than the placeholder zero-FID — keeps an unresolved MRSI
+   * signal OUT of the graph instead of drawing a misleading flat line.
+   */
+  private plotFor(sig: NVSignal): SignalPlot | null {
+    if (sig.followsCrosshair) return this.crosshairSpectroscopyPlot(sig)
+    return this.derivePlotCached(sig)
+  }
+
+  /**
    * Build multi-series graph data by merging the traces of every loaded signal
    * onto a shared axis, or null when no signal is loaded. Series are derived on
    * demand (memoized by display state) from the raw data and current display
@@ -696,18 +746,27 @@ export default class NVModel {
    */
   collectSignalGraphData(): GraphData | null {
     if (this.signals.length === 0) return null
-    // Only signals whose axis matches the first signal's are merged, so a
-    // ppm spectrum and a time-axis physio trace never share one (misleading)
+    // Resolve each signal's plot first, dropping crosshair-following signals
+    // that cannot currently resolve their FID (MRSI volume removed / crosshair
+    // off the grid / NVD reload without the complex buffer): an empty graph is
+    // better than a fake flat placeholder spectrum.
+    const resolved: { sig: NVSignal; plot: SignalPlot }[] = []
+    for (const sig of this.signals) {
+      const plot = this.plotFor(sig)
+      if (plot) resolved.push({ sig, plot })
+    }
+    if (resolved.length === 0) return null
+    // Only signals whose axis matches the first resolved signal's are merged, so
+    // a ppm spectrum and a time-axis physio trace never share one (misleading)
     // axis. Incompatible signals are skipped (use one instance each, or a
     // future multi-panel layout).
-    const axis = { ...this.derivePlotCached(this.signals[0]).axis }
+    const axis = { ...resolved[0].plot.axis }
     const series: GraphData['series'] = []
     const annotations: GraphData['annotations'] = []
     const mins: number[] = []
     const maxs: number[] = []
     let merged = 0
-    for (const sig of this.signals) {
-      const plot = this.derivePlotCached(sig)
+    for (const { sig, plot } of resolved) {
       if (
         plot.axis.label !== axis.label ||
         plot.axis.reversed !== axis.reversed
@@ -740,7 +799,7 @@ export default class NVModel {
       graphConfig: this.ui.graph,
       series,
       xAxis: axis,
-      showLegend: this.signals[0].display.showLegend,
+      showLegend: resolved[0].sig.display.showLegend,
       // With no spatial data, let the plot fill the whole instance area.
       fullCanvas: this.isSignalOnlyScene(),
       cursorX: this.signalCursorX,

@@ -14,6 +14,7 @@ export type SerializedSignal = {
   kind: SignalKind
   display: NVSignalDisplay
   attachedToId?: string
+  followsCrosshair?: boolean
   annotations?: SignalAnnotation[]
   // physio: each column's Float32 samples stored as raw bytes
   columns?: Uint8Array[]
@@ -51,6 +52,7 @@ export function serializeSignal(s: NVSignal): SerializedSignal {
     kind: s.kind,
     display: { ...s.display },
     attachedToId: s.attachedToId,
+    followsCrosshair: s.followsCrosshair,
     annotations: s.annotations
       ? s.annotations.map((a) => ({ ...a }))
       : undefined,
@@ -101,6 +103,7 @@ export function reconstructSignal(doc: SerializedSignal): NVSignal {
     raw,
     display: { ...doc.display },
     attachedToId: doc.attachedToId,
+    followsCrosshair: doc.followsCrosshair,
     annotations: doc.annotations
       ? doc.annotations.map((a) => ({ ...a }))
       : undefined,

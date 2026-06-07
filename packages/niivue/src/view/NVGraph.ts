@@ -9,6 +9,11 @@ export type GraphSeries = {
   /** independent-axis values; null means a plain 0..n-1 index */
   x: ArrayLike<number> | null
   y: ArrayLike<number>
+  /**
+   * optional un-normalized values (same length as `y`) used for the cursor
+   * readout when `y` has been scaled for display (e.g. the association view).
+   */
+  rawY?: ArrayLike<number>
   /** optional RGBA [0..1] override; otherwise a palette color is assigned */
   color?: [number, number, number, number]
 }
@@ -226,10 +231,23 @@ function drawDecimatedSeries(
     if (sy < minY[col]) minY[col] = sy
     if (sy > maxY[col]) maxY[col] = sy
   }
+  // Connect columns into a continuous line: from the previous column up to this
+  // column's min, then a vertical bar across its [min,max] range. This keeps
+  // smooth signals (low per-column range) continuous instead of collapsing to
+  // disconnected dots, while still showing the full envelope of dense regions.
+  let havePrev = false
+  let prevX = 0
+  let prevY = 0
   for (let col = 0; col < cols; col++) {
     if (maxY[col] < minY[col]) continue
     const x = pL + col
+    if (havePrev) {
+      out.push(buildLine(prevX, prevY, x, minY[col], lineThick, color))
+    }
     out.push(buildLine(x, minY[col], x, maxY[col], lineThick, color))
+    havePrev = true
+    prevX = x
+    prevY = maxY[col]
   }
 }
 
@@ -322,10 +340,12 @@ function computeSignalGraphLayout(
   canvasHeight: number,
   colorbarHeight: number,
   dpr: number,
+  totalWidthOverride?: number,
 ): GraphLayout | null {
   const nPts = signalPointCount(data)
   if (nPts < 2) return null
-  const totalWidth = graphTotalWidth(data, canvasWidth, canvasHeight)
+  const totalWidth =
+    totalWidthOverride ?? graphTotalWidth(data, canvasWidth, canvasHeight)
   const height = canvasHeight - colorbarHeight
   const x = canvasWidth - totalWidth
   const baseFontSize = estimateFontSize(canvasWidth, canvasHeight)
@@ -370,7 +390,9 @@ function computeSignalGraphLayout(
 }
 
 /**
- * Compute graph layout including the plot area.
+ * Compute graph layout including the plot area. `totalWidthOverride` lets the
+ * caller widen the graph beyond its base width (e.g. when a single narrow slice
+ * leaves horizontal slack the graph should fill).
  */
 export function computeGraphLayout(
   data: GraphData,
@@ -378,6 +400,7 @@ export function computeGraphLayout(
   canvasHeight: number,
   colorbarHeight: number,
   dpr: number = 1,
+  totalWidthOverride?: number,
 ): GraphLayout | null {
   if (isSignalMode(data)) {
     return computeSignalGraphLayout(
@@ -386,10 +409,12 @@ export function computeGraphLayout(
       canvasHeight,
       colorbarHeight,
       dpr,
+      totalWidthOverride,
     )
   }
   if (data.lines.length === 0 || data.lines[0].length < 2) return null
-  const totalWidth = graphTotalWidth(data, canvasWidth, canvasHeight)
+  const totalWidth =
+    totalWidthOverride ?? graphTotalWidth(data, canvasWidth, canvasHeight)
   const availableHeight = canvasHeight - colorbarHeight
   const x = canvasWidth - totalWidth
   const y = 0
@@ -1042,6 +1067,14 @@ export function signalXValueAtFrac(data: GraphData, frac: number): number {
   return xMin + t * (xMax - xMin)
 }
 
+/** Inverse of {@link signalXValueAtFrac}: x-axis data value -> plot fraction. */
+export function signalFracAtXValue(data: GraphData, xValue: number): number {
+  const [xMin, xMax] = signalXDomain(data)
+  if (xMax <= xMin) return 0
+  const t = (xValue - xMin) / (xMax - xMin)
+  return data.xAxis?.reversed ? 1 - t : t
+}
+
 /** A series value sampled at an x location, for the status-bar readout. */
 export type SignalValueAt = {
   label: string
@@ -1058,17 +1091,26 @@ export function signalValuesAt(
   xValue: number,
 ): SignalValueAt[] {
   const series = data.series ?? []
+  // Constrain the readout to the visible x-window so it never reports a sample
+  // outside the plotted domain (e.g. physio logged before/after the scan).
+  const ax = data.xAxis
+  const lo = ax && ax.min !== null ? ax.min : Number.NEGATIVE_INFINITY
+  const hi = ax && ax.max !== null ? ax.max : Number.POSITIVE_INFINITY
   return series.map((s, i) => {
-    let best = 0
+    let best = -1
     let bestDist = Number.POSITIVE_INFINITY
     for (let k = 0; k < s.y.length; k++) {
       const xv = seriesX(s, k)
+      if (xv < lo || xv > hi) continue
       const d = Math.abs(xv - xValue)
       if (d < bestDist) {
         bestDist = d
         best = k
       }
     }
-    return { label: s.label, value: s.y[best], color: seriesColor(s, i) }
+    // Prefer un-normalized values for the readout when present.
+    const arr = s.rawY ?? s.y
+    const value = best >= 0 ? arr[best] : Number.NaN
+    return { label: s.label, value, color: seriesColor(s, i) }
   })
 }

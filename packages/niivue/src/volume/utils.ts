@@ -14,6 +14,34 @@ import type {
   TypedVoxelArray,
 } from '@/NVTypes'
 
+/**
+ * Scale factor converting the NIfTI temporal pixdim to seconds, decoded from the
+ * temporal bits of `xyzt_units` (NIFTI_UNITS_SEC=8, MSEC=16, USEC=24). Unknown
+ * or unspecified units are treated as seconds.
+ */
+export function temporalUnitScale(xyztUnits: number): number {
+  switch (xyztUnits & 0x38) {
+    case 16:
+      return 1e-3 // milliseconds
+    case 24:
+      return 1e-6 // microseconds
+    default:
+      return 1 // seconds (8) or unspecified
+  }
+}
+
+/**
+ * Repetition time in **seconds** for a 4D volume: the NIfTI temporal pixdim
+ * (`pixDims[4]`) scaled by its `xyzt_units` (so ms/us headers are not 1000x or
+ * 1e6x off), with a 1 s fallback when unset. Centralizes the TR convention so
+ * signal/graph code agrees on the time axis.
+ */
+export function volumeTR(vol: NVImage): number {
+  const px = vol.hdr.pixDims[4]
+  if (!(px > 0)) return 1
+  return px * temporalUnitScale(vol.hdr.xyzt_units)
+}
+
 // ============================================================================
 // Data Type Utilities
 // ============================================================================

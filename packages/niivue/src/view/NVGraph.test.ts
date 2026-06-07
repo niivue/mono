@@ -8,6 +8,7 @@ import {
   type GraphSeries,
   graphHitTest,
   graphTotalWidth,
+  signalFracAtXValue,
   signalValuesAt,
   signalXValueAtFrac,
 } from './NVGraph'
@@ -238,8 +239,9 @@ describe('signal-mode performance bounds', () => {
     const { lines, buildText, buildLine } = makeStubs()
     buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
     const segs = dataLines(lines)
-    // envelope: at most ~one vertical bar per pixel column, never ~5000 segments
-    expect(segs.length).toBeLessThanOrEqual(Math.ceil(pW) + 1)
+    // connected envelope: at most ~2 segments per pixel column (connector + bar),
+    // never ~5000 segments
+    expect(segs.length).toBeLessThanOrEqual(2 * (Math.ceil(pW) + 1))
     expect(segs.length).toBeLessThan(n)
   })
 
@@ -283,5 +285,37 @@ describe('signal cursor mapping', () => {
     expect(v[0].label).toBe('a')
     expect(v[0].value).toBe(20)
     expect(v[1].value).toBe(6)
+  })
+
+  test('fracAtXValueInvertsXValueAtFrac', () => {
+    for (const reversed of [false, true]) {
+      const d = signalData([{ label: 'a', x: [0, 10], y: [1, 2] }], {
+        xAxis: { label: 'x', reversed, min: 2, max: 8 },
+      })
+      for (const frac of [0, 0.25, 0.5, 1]) {
+        const xv = signalXValueAtFrac(d, frac)
+        expect(signalFracAtXValue(d, xv)).toBeCloseTo(frac, 5)
+      }
+    }
+  })
+
+  test('valuesAtPrefersRawYWhenPresent', () => {
+    // Display y is normalized [0,1]; rawY carries the real values for readout.
+    const d = signalData([
+      { label: 'bold', x: [0, 1, 2], y: [0, 0.5, 1], rawY: [100, 150, 200] },
+    ])
+    const v = signalValuesAt(d, 1)
+    expect(v[0].value).toBe(150)
+  })
+
+  test('valuesAtConstrainedToWindow', () => {
+    // Samples at x=2,3 are outside the [0,1] window and must not be reported.
+    const d = signalData(
+      [{ label: 'a', x: [0, 1, 2, 3], y: [10, 20, 30, 40] }],
+      {
+        xAxis: { label: 'x', reversed: false, min: 0, max: 1 },
+      },
+    )
+    expect(signalValuesAt(d, 0.9)[0].value).toBe(20)
   })
 })

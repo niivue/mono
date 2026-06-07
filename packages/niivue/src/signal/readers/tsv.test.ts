@@ -28,6 +28,15 @@ describe('parseTsv', () => {
     expect(Array.from(r.columns[0])).toEqual([2288, 2345])
   })
 
+  test('allMissingFirstRowKeptAsData', () => {
+    // A first data row of all missing tokens must not be mistaken for a header.
+    const r = parseTsv('n/a\tn/a\n2288\t0\n')
+    expect(r.columns[0].length).toBe(2)
+    expect(Number.isNaN(r.columns[0][0])).toBe(true)
+    expect(r.columns[0][1]).toBe(2288)
+    expect(r.columnLabels).toEqual(['column 0', 'column 1'])
+  })
+
   test('nonNumericCellsBecomeNaN', () => {
     const r = parseTsv('1\tn/a\n2\t\n3\tx\n')
     expect(Number.isNaN(r.columns[1][0])).toBe(true)
@@ -72,9 +81,7 @@ describe('tsv fixtures (real BIDS physio)', () => {
   }
 
   test('cardiac_200Hz_twoColumns', () => {
-    const r = loadFixture(
-      'func-bold_task-rest_acq-dualecho_run-1_dicom_8_recording-cardiac_physio',
-    )
+    const r = loadFixture('cardiac')
     expect(r.columnLabels).toEqual(['cardiac', 'trigger'])
     expect(r.samplingFrequency).toBe(200)
     expect(r.startTime).toBeCloseTo(-13.72, 5)
@@ -83,9 +90,7 @@ describe('tsv fixtures (real BIDS physio)', () => {
   })
 
   test('respiratory_50Hz_twoColumns', () => {
-    const r = loadFixture(
-      'func-bold_task-rest_acq-dualecho_run-1_dicom_8_recording-respiratory_physio',
-    )
+    const r = loadFixture('respiratory')
     expect(r.columnLabels).toEqual(['respiratory', 'trigger'])
     expect(r.samplingFrequency).toBe(50)
     expect(r.columns.length).toBe(2)

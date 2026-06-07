@@ -1026,8 +1026,14 @@ export type SignalSidecar = {
   /** seconds (BIDS StartTime, often negative for a pre-scan lead-in) */
   startTime?: number
   // spectroscopy (MRS)
-  /** MHz */
+  /** MHz; authoritative MRS field */
   spectrometerFrequency?: number
+  /**
+   * MHz; ppm fallback only. Present in most MR sidecars (incl. plain fMRI), so
+   * it is NOT an MRS marker and never drives signal-vs-volume routing — used to
+   * derive the ppm axis only after a file is already known to be spectroscopy.
+   */
+  imagingFrequency?: number
   resonantNucleus?: string
   /** seconds */
   dwellTime?: number

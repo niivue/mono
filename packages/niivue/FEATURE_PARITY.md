@@ -469,8 +469,8 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Events | ✅ | `signalLoaded`, `signalRemoved`, `signalLocationChange` |
 | Graph rendering (`NVGraph` signal mode) | ✅ | Multi-color series, legend (capped), reversible/windowed x-axis, full-canvas when signal-only, dense-series decimation, derived-plot cache |
 | Persistence (NVD) | ✅ | Document version 8 (`signal/persistence.ts`) |
-| Demos | ✅ | `examples/svs.html`, `examples/physio.html` |
-| Volume-frame ↔ physio-time alignment marker | ⏳ | Deferred pending a chosen convention; association storage (`attachedToId`) and simultaneous display work |
+| Demos | ✅ | `examples/svs.html`, `examples/physio.html`, `examples/physio.bold.html` |
+| Volume + physio association | ✅ | `collectAssociatedTimeGraphData`: BOLD time-course + attached physio on a shared Time(s) axis at native rates, clamped to the imaging window, normalized, with a current-frame marker (`attachToId`) |
 
 ---
 

@@ -52,11 +52,32 @@ export function parseSidecar(json: unknown): SignalSidecar {
   // spectroscopy (MRS)
   const sf = firstNumber(j.SpectrometerFrequency)
   if (sf !== undefined) out.spectrometerFrequency = sf
+  // ppm fallback only (not an MRS marker — see SignalSidecar.imagingFrequency).
+  const imf = firstNumber(j.ImagingFrequency)
+  if (imf !== undefined) out.imagingFrequency = imf
   const nuc = firstString(j.ResonantNucleus)
   if (nuc !== undefined) out.resonantNucleus = nuc
   const dwell = firstNumber(j.DwellTime)
   if (dwell !== undefined) out.dwellTime = dwell
   return out
+}
+
+/**
+ * Parse MRS metadata from a NIfTI header-extension payload (NIfTI-MRS / BEP005,
+ * ecode 44). Extension payloads are NUL-padded to a 16-byte multiple, so the
+ * trailing NULs/whitespace are trimmed before `JSON.parse`. Returns an empty
+ * sidecar when the bytes are not parseable JSON.
+ */
+export function parseMrsExtension(edata: ArrayBuffer): SignalSidecar {
+  try {
+    const text = new TextDecoder()
+      .decode(new Uint8Array(edata))
+      .replace(/\0+$/, '')
+      .trim()
+    return parseSidecar(JSON.parse(text))
+  } catch {
+    return {}
+  }
 }
 
 /** True when the sidecar carries MRS-defining fields (used for NIfTI routing). */

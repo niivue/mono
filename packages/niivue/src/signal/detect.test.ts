@@ -14,30 +14,19 @@ function ab(rel: string): ArrayBuffer {
 }
 
 describe('niftiBufferIsSignal', () => {
-  test('nonSpatialMrsFileIsSignal', () => {
+  test('nonSpatialFileIsSignal', () => {
     // 1x1x1x1024x64 complex SVS: routed to signal by lack of spatial extent
     expect(niftiBufferIsSignal(ab('signals/svs_se_30.nii.gz'))).toBe(true)
   })
 
   test('spatialVolumeIsNotSignal', () => {
+    // A spatial volume stays a volume even if it (hypothetically) carried MRS
+    // fields — spatial spectroscopy (MRSI) is not routed to the signal path.
     expect(niftiBufferIsSignal(ab('volumes/RAS.nii.gz'))).toBe(false)
   })
 
-  test('mrsSidecarShortCircuits', () => {
-    // Even non-NIfTI bytes are treated as signal when the sidecar declares MRS.
-    const garbage = new Uint8Array([1, 2, 3, 4]).buffer
-    expect(
-      niftiBufferIsSignal(garbage, { spectrometerFrequency: 297.155 }),
-    ).toBe(true)
-  })
-
-  test('garbageWithoutSidecarIsNotSignal', () => {
+  test('garbageIsNotSignal', () => {
     const garbage = new Uint8Array([1, 2, 3, 4]).buffer
     expect(niftiBufferIsSignal(garbage)).toBe(false)
-  })
-
-  test('spatialVolumeWithImagingFrequencyStillVolume', () => {
-    // ImagingFrequency is not an MRS marker, so a normal volume stays a volume.
-    expect(niftiBufferIsSignal(ab('volumes/RAS.nii.gz'), {})).toBe(false)
   })
 })

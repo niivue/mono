@@ -376,9 +376,18 @@ MRS fields are `SpectrometerFrequency` / `ResonantNucleus`. `ImagingFrequency` i
 deliberately **not** treated as an MRS marker (it appears in plain fMRI sidecars).
 
 **NIfTI routing** (`detect.ts`, `niftiBufferIsSignal`): a NIfTI is a signal when it
-is non-spatial (dim1-3 == 1 and dim4 > 1) **or** the sidecar carries MRS fields.
-Datatype/complex is NOT a trigger — spatial MR is routinely complex. The
-`asSignal` load option (`true`/`false`) overrides the sniff.
+is non-spatial (dim1-3 == 1 and dim4 > 1). MRS sidecar/header fields do NOT route
+here — a spatial spectroscopic image (MRSI/CSI) carries them too but its dim1-3
+encode space, which the 1-D signal reader cannot represent, so it stays on the
+volume path (the reader throws if MRSI is forced via `asSignal`). Datatype/complex
+is NOT a trigger — spatial MR is routinely complex. The `asSignal` load option
+(`true`/`false`) overrides the sniff.
+
+**MRS metadata** is resolved sidecar-first, then from the NIfTI-MRS header
+extension (ecode 44 JSON, parsed by `mrsFromHeaderExtensions`); the ppm
+spectrometer frequency falls back to `ImagingFrequency` (which is itself never an
+MRS routing marker). `volumeTR()` decodes `xyzt_units` so ms/us temporal pixdims
+are not 1000x/1e6x off.
 
 **Processing** (`processing.ts`, pure/CPU): in-place radix-2 Cooley-Tukey FFT with
 a direct DFT fallback for non-power-of-two lengths; optional transient averaging
@@ -396,6 +405,11 @@ scene is signal-only (a signal but no volume/mesh) the plot fills the instance a
 and BOTH renderers skip the entire spatial pass — no slices, crosshair, or
 orientation labels (`NVViewGPU.ts` / `NVViewGL.ts` compute `signalOnly`).
 
+**Graph wheel:** scrolling over the graph steps the 4D frame when a spatial
+volume is present; for a signal-only graph it falls back to scrubbing the cursor
+(`stepSignalCursor` -> `setSignalCursorFraction`). `physio.bold.html` also exposes
+the live `hdr.toFormattedString()` via a Header button.
+
 **Model/controller API:** `NVModel.signals[]`, `NVModel.signalCursorX`,
 `collectSignalGraphData()` (merges every loaded signal's derived series onto a
 shared axis). Controller (`NVControlBase.ts`): `loadSignals`, `addSignal`,
@@ -412,9 +426,8 @@ bytes).
 `examples/physio.html` (cardiac / respiratory selector). Sample fixtures in
 `packages/dev-images/images/signals/`, served at `/signals/...`.
 
-**Known open item:** the 4D-volume-frame <-> physio-time alignment **marker** is
-deferred pending a chosen convention. Association storage (`attachedToId`) and
-simultaneous display already work.
+(The 4D-volume-frame <-> physio-time alignment marker and association graph are
+implemented — see "Volume+physio association" below.)
 
 ### Signal audit notes
 
@@ -427,9 +440,9 @@ Applied from the audit (all landed):
 - Signal types + event details are exported from `src/index.ts`.
 - Signal-only-scene detection is centralized in `NVModel.isSignalOnlyScene()`
   (used by both renderers and `collectSignalGraphData`).
-- Drag-drop sidecar pairing is case-insensitive; `_dispatchImage` resolves the
-  sidecar before fetching image bytes (skips the buffer fetch when MRS fields
-  already prove a signal).
+- Drag-drop sidecar pairing is case-insensitive. (Routing later changed: see the
+  fourth-round note — `_dispatchImage` always sniffs header dims; MRS fields no
+  longer short-circuit routing.)
 
 Second audit round (all landed):
 
@@ -449,10 +462,59 @@ Second audit round (all landed):
 - Demos use `textContent` (not `innerHTML`) for the sidecar-derived status line.
 - `FEATURE_PARITY.md` section 34 records the signal data class.
 
-Still open (design decision): the 4D-frame <-> physio-time alignment marker.
-Deferred (low priority, documented): full buffer-threading to remove the
-ambiguous-NIfTI double fetch; two-pass/streaming TSV parser; `loadImage` keeps
-append semantics for signals by design (so multi-file physio drops accumulate).
+Volume+physio association (`NVModel.collectAssociatedTimeGraphData`): when a
+physio signal sets `attachedToId` to a loaded 4D volume, the graph shows the
+crosshair BOLD time-course (frame i at i*TR seconds, t=0 = first volume) plus
+each attached physio trace at its native sampling rate (no resampling) on a
+shared Time (s) axis. The window is clamped to the imaging period
+`[0, (nFrames-1)*TR]` (physio logged before/after the scan is dropped); each
+series is min-max normalized for display, but carries un-normalized values in
+`GraphSeries.rawY` so the status-bar readout (`signalValuesAt`) reports the real
+BOLD intensity / physio counts. A cursor marks the current frame's time and a
+graph click scrubs the 4D volume to the nearest frame. The readout also refreshes
+on crosshair move and frame change (`createOnLocationChange -> refreshSignalLocation`).
+TR comes from `volumeTR(vol)` (`pixDims[4]`, seconds via `xyzt_units`). Crosshair
+voxel sampling is shared via `NVModel.sampleVolumeTimeCourse` (guards `matRAS`).
+Demo: `examples/physio.bold.html`.
+
+Third audit round (all landed):
+
+- `refreshSignalLocation` early-returns when no signal is loaded (no wasteful
+  per-crosshair-move `collectGraphData` rebuild for plain 4D volumes).
+- `sampleVolumeTimeCourse` guards a missing `matRAS` (no throw on every move) and
+  is shared by the association and legacy 4D-graph paths.
+- Association readout now reports raw values via `rawY` (not normalized).
+- TR convention centralized in `volumeTR` (`volume/utils`).
+
+Fourth audit round (all landed):
+
+- NIfTI routing is **non-spatial only** (no MRS-field short-circuit); spatial
+  MRS/MRSI stays a volume and the reader throws if forced via `asSignal`.
+- `volumeTR` decodes `xyzt_units` (s/ms/us) so ms/us TRs are not 1000x/1e6x off.
+- MRS metadata falls back to `ImagingFrequency` and the NIfTI-MRS header
+  extension; `fmri.json` fixture stripped of site/PII fields.
+
+Fifth audit round (all landed):
+
+- Physio-NIfTI `samplingFrequency` also decodes `xyzt_units` (`temporalUnitScale`).
+- Header-extension parse requires ecode 44 and trims NUL padding
+  (`parseMrsExtension`).
+- TSV header heuristic no longer treats an all-missing-token first data row as
+  labels (needs a genuine non-numeric, non-missing token).
+- Association skips physio traces with no samples in the imaging window;
+  `signalValuesAt` is constrained to the visible x-window.
+- Graph-wheel steps the associated volume (matches graph-click), not `volumes[0]`.
+- `collectAssociatedTimeGraphData` is memoized by crosshair/frame/signal state
+  (`_assocCache`) so the refresh + render passes in one frame build once.
+
+Deferred (low priority, documented): two-pass/streaming TSV parser;
+ambiguous-NIfTI double read (dispatcher sniffs then loader re-reads);
+`loadImage` keeps append semantics for signals by design; per-draw O(samples)
+domain/range scans in the graph; incompatible signals are silently dropped from
+a merged graph (warning/event is a future item); public setters to correct
+`SamplingFrequency`/`StartTime`/`SpectrometerFrequency`/`DwellTime` after load
+are not exposed (`setSignal` updates display/attachment only); rapid graph
+scrubs queue async `setFrame4D` uploads without coalescing.
 
 ## Colormap conventions
 

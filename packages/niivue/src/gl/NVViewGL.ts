@@ -433,35 +433,44 @@ export default class NVGlview {
         ? NVLegend.legendTotalWidth(legendEntries, canvasWidth, canvasHeight)
         : 0
     const graphData = md.collectGraphData()
-    const graphWidth = graphData
+    const baseGraphWidth = graphData
       ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
       : 0
     // Signal-only scene (a signal loaded, no volume/mesh): skip all spatial
     // tiles so no slices, crosshairs, or orientation labels render; the signal
-    // graph fills the instance area on its own.
+    // graph fills the instance area on its own. Otherwise lay out the slices and
+    // let the graph reclaim any horizontal slack (fitSlicesAndGraph).
     const signalOnly = md.isSignalOnlyScene()
-    const screenSlices = signalOnly
-      ? []
-      : NVSliceLayout.screenSlicesLayout({
-          canvasWH: [
-            canvasWidth - legendWidth - graphWidth,
-            canvasHeight - cbHeight,
-          ],
-          sliceType: md.layout.sliceType,
-          tileMargin: md.layout.margin,
-          extentsMin: md.extentsMin,
-          extentsMax: md.extentsMax,
-          isRadiologicalConvention: md.layout.isRadiological,
-          multiplanarLayout: md.layout.multiplanarType,
-          multiplanarShowRender: md.layout.showRender,
-          sliceMosaicString: md.layout.mosaicString,
-          heroImageFraction: md.layout.heroFraction,
-          heroSliceType: md.layout.heroSliceType,
-          isMultiplanarEqualSize: md.layout.isEqualSize,
-          isCrossLines: md.ui.isCrossLinesVisible,
-          isCenterMosaic: md.layout.isMosaicCentered,
-          customLayout: md.layout.customLayout,
-        })
+    const fit = signalOnly
+      ? {
+          screenSlices: [] as NVSliceLayout.SliceTile[],
+          graphWidth: baseGraphWidth,
+        }
+      : NVSliceLayout.fitSlicesAndGraph(
+          {
+            canvasWH: [
+              canvasWidth - legendWidth - baseGraphWidth,
+              canvasHeight - cbHeight,
+            ],
+            sliceType: md.layout.sliceType,
+            tileMargin: md.layout.margin,
+            extentsMin: md.extentsMin,
+            extentsMax: md.extentsMax,
+            isRadiologicalConvention: md.layout.isRadiological,
+            multiplanarLayout: md.layout.multiplanarType,
+            multiplanarShowRender: md.layout.showRender,
+            sliceMosaicString: md.layout.mosaicString,
+            heroImageFraction: md.layout.heroFraction,
+            heroSliceType: md.layout.heroSliceType,
+            isMultiplanarEqualSize: md.layout.isEqualSize,
+            isCrossLines: md.ui.isCrossLinesVisible,
+            isCenterMosaic: md.layout.isMosaicCentered,
+            customLayout: md.layout.customLayout,
+          },
+          baseGraphWidth,
+        )
+    const graphWidth = fit.graphWidth
+    const screenSlices = fit.screenSlices
     this.screenSlices = screenSlices
     // Update crosshair geometry based on current model state
     if (this.crosshairRenderer.isReady) {
@@ -926,6 +935,7 @@ export default class NVGlview {
           canvasHeight,
           cbHeight,
           graphDpr,
+          graphWidth,
         )
         if (this.graphLayout) {
           const graphElements = NVGraph.buildGraphElements(

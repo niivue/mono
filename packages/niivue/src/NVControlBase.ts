@@ -65,11 +65,13 @@ import type {
 import { niftiBufferIsSignal } from '@/signal/detect'
 import type { SignalFromUrlOptions } from '@/signal/NVSignal'
 import * as NVSignal from '@/signal/NVSignal'
-import { fetchSidecar, hasMrsFields } from '@/signal/sidecar'
+import { fetchSidecar } from '@/signal/sidecar'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
 import {
+  type GraphData,
   type GraphLayout,
+  signalFracAtXValue,
   signalValuesAt,
   signalXValueAtFrac,
 } from '@/view/NVGraph'
@@ -98,6 +100,7 @@ import {
   computeVolumeLabelCentroids,
   reorientDrawingToNative,
   toTypedViewOrU8,
+  volumeTR,
 } from '@/volume/utils'
 
 type ViewBackend = {
@@ -1617,16 +1620,8 @@ export default class NiiVueGPU extends EventTarget {
     return this
   }
 
-  /**
-   * Set the signal graph cursor from a plot-relative x fraction (0 = left edge,
-   * 1 = right edge). Draws a faint marker line and emits `signalLocationChange`
-   * with the values of every series at that location (for a status-bar readout).
-   */
-  setSignalCursorFraction(xFrac: number): this {
-    const data = this.model.collectSignalGraphData()
-    if (!data) return this
-    const xValue = signalXValueAtFrac(data, xFrac)
-    this.model.signalCursorX = xValue
+  /** Emit a `signalLocationChange` readout for the given graph data + x value. */
+  private emitSignalLocation(data: GraphData, xValue: number): void {
     const values = signalValuesAt(data, xValue)
     const xLabel = data.xAxis?.label ?? ''
     const fmt = (n: number) =>
@@ -1638,8 +1633,75 @@ export default class NiiVueGPU extends EventTarget {
     const parts = values.map((v) => `${v.label}=${fmt(v.value)}`)
     const string = `${xLabel} ${fmt(xValue)}  ${parts.join('  ')}`
     this.emit('signalLocationChange', { xValue, xLabel, values, string })
-    this.drawScene()
+  }
+
+  /**
+   * Set the signal graph cursor from a plot-relative x fraction (0 = left edge,
+   * 1 = right edge). Draws a faint marker line and emits `signalLocationChange`
+   * with the values of every series at that location (for a status-bar readout).
+   * In an associated volume+physio view it also scrubs the 4D volume to the
+   * nearest frame.
+   */
+  setSignalCursorFraction(xFrac: number): this {
+    // Use the dispatched graph data so the readout matches what is drawn
+    // (signal-only or associated volume+physio time view).
+    const data = this.model.collectGraphData()
+    if (!data?.series) return this
+    const xValue = signalXValueAtFrac(data, xFrac)
+    this.model.signalCursorX = xValue
+    this.emitSignalLocation(data, xValue)
+    const vol = this.model.getAssociatedVolume()
+    if (vol?.id) {
+      const tr = volumeTR(vol)
+      const nFrames = vol.nFrame4D ?? 1
+      const frame = Math.max(0, Math.min(nFrames - 1, Math.round(xValue / tr)))
+      // setFrame4D updates GPU state and redraws; no extra drawScene needed.
+      this.setFrame4D(vol.id, frame)
+    } else {
+      this.drawScene()
+    }
     return this
+  }
+
+  /**
+   * Step the signal cursor along the x-axis by one wheel tick (fraction of the
+   * visible window). Fallback scroll gesture for a signal graph with no spatial
+   * volume to scrub (when a 4D volume is present, the wheel steps frames
+   * instead). Starts from the window centre if no cursor has been set.
+   */
+  stepSignalCursor(direction: number): this {
+    const data = this.model.collectGraphData()
+    if (!data?.series) return this
+    const cur =
+      this.model.signalCursorX !== null
+        ? signalFracAtXValue(data, this.model.signalCursorX)
+        : 0.5
+    const step = 0.02 * (direction > 0 ? 1 : -1)
+    const frac = Math.max(0, Math.min(1, cur + step))
+    return this.setSignalCursorFraction(frac)
+  }
+
+  /**
+   * Re-emit the signal readout at the current marker (the associated volume's
+   * frame time, else the last clicked cursor). Called on crosshair/frame changes
+   * so the status bar reflects the current voxel value without a graph click.
+   */
+  refreshSignalLocation(): void {
+    // Only signals (or an association) produce a readout; skip the work — and a
+    // wasteful collectGraphData rebuild — when no signal is loaded.
+    if (this.model.signals.length === 0) return
+    const data = this.model.collectGraphData()
+    if (!data?.series) return
+    const vol = this.model.getAssociatedVolume()
+    let xValue: number
+    if (vol) {
+      xValue = (vol.frame4D ?? 0) * volumeTR(vol)
+    } else if (this.model.signalCursorX !== null) {
+      xValue = this.model.signalCursorX
+    } else {
+      return
+    }
+    this.emitSignalLocation(data, xValue)
   }
 
   /** Update a loaded signal's display state (drives the on-demand transform). */
@@ -1711,20 +1773,16 @@ export default class NiiVueGPU extends EventTarget {
       return
     }
     if ((ext === 'NII' || ext === 'NII.GZ') && asSignal !== false) {
-      // Resolve the sidecar first: if it declares MRS fields we can route to a
-      // signal without fetching the (potentially large) image to sniff dims.
-      let meta = sidecar
-      if (!meta && typeof pathOrFile === 'string') {
-        meta = await fetchSidecar(pathOrFile)
-      }
-      let isSignal = !!meta && hasMrsFields(meta)
-      if (!isSignal) {
-        // Fall back to a content sniff (non-spatial dims). This re-reads the
-        // file in the volume branch below; acceptable for the ambiguous case.
-        const buffer = await NVLoader.fetchFile(pathOrFile)
-        isSignal = niftiBufferIsSignal(buffer, meta)
-      }
-      if (isSignal) {
+      // Sniff the header: only NON-SPATIAL NIfTI (dim1-3==1, dim4>1) is a
+      // signal. Spatial spectroscopy (MRSI/CSI) stays on the volume path even
+      // when it carries MRS fields, since the 1-D signal model cannot represent
+      // its spatial dimensions.
+      const buffer = await NVLoader.fetchFile(pathOrFile)
+      if (niftiBufferIsSignal(buffer)) {
+        let meta = sidecar
+        if (!meta && typeof pathOrFile === 'string') {
+          meta = await fetchSidecar(pathOrFile)
+        }
         await this.loadSignals([{ url: pathOrFile, sidecar: meta }])
         return
       }
@@ -2351,6 +2409,9 @@ export default class NiiVueGPU extends EventTarget {
   createOnLocationChange(axCorSag = NaN): void {
     const msg = buildLocationMessage(this, axCorSag)
     if (msg) this.emit('locationChange', msg)
+    // Refresh the signal readout so the status bar reflects the new voxel value
+    // when the crosshair moves or the 4D frame changes (no-op without signals).
+    this.refreshSignalLocation()
   }
 
   /**

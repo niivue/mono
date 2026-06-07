@@ -53,4 +53,23 @@ describe('nii signal reader (real NIfTI-MRS SVS)', () => {
     expect(raw.spectrometerFreq).toBeNull()
     expect(raw.nucleus).toBe('1H')
   })
+
+  test('fallsBackToImagingFrequencyForPpm', async () => {
+    const buffer = toArrayBuffer('svs_se_30.nii.gz')
+    // Sidecar without SpectrometerFrequency: the ppm axis falls back to
+    // ImagingFrequency.
+    const raw = (await read(buffer, 'svs_se_30.nii.gz', {
+      imagingFrequency: 123.45,
+    })) as NVSignalSpectroscopyRaw
+    expect(raw.spectrometerFreq).toBeCloseTo(123.45, 3)
+  })
+
+  test('prefersSpectrometerFrequencyOverImaging', async () => {
+    const buffer = toArrayBuffer('svs_se_30.nii.gz')
+    const raw = (await read(buffer, 'svs_se_30.nii.gz', {
+      spectrometerFrequency: 297.155,
+      imagingFrequency: 123.45,
+    })) as NVSignalSpectroscopyRaw
+    expect(raw.spectrometerFreq).toBeCloseTo(297.155, 3)
+  })
 })

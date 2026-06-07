@@ -12,8 +12,10 @@ import {
   getVoxelValue,
   hdrToArrayBuffer,
   reorientDrawingToNative,
+  temporalUnitScale,
   toTypedView,
   toTypedViewOrU8,
+  volumeTR,
 } from './utils'
 
 // ---------------------------------------------------------------------------
@@ -87,6 +89,66 @@ function makeMinimalVolume(overrides: Partial<NVImage> = {}): NVImage {
     ...overrides,
   } as NVImage
 }
+
+// ---------------------------------------------------------------------------
+// temporalUnitScale / volumeTR
+// ---------------------------------------------------------------------------
+describe('temporalUnitScale', () => {
+  test('seconds_code8_returns1', () => {
+    expect(temporalUnitScale(8)).toBe(1)
+  })
+  test('milliseconds_code16_returns1e-3', () => {
+    expect(temporalUnitScale(16)).toBe(1e-3)
+  })
+  test('microseconds_code24_returns1e-6', () => {
+    expect(temporalUnitScale(24)).toBe(1e-6)
+  })
+  test('spatialBitsIgnored_combinedUnits', () => {
+    // xyzt_units = mm(2) | sec(8) = 10 -> seconds
+    expect(temporalUnitScale(10)).toBe(1)
+    // mm(2) | msec(16) = 18 -> milliseconds
+    expect(temporalUnitScale(18)).toBe(1e-3)
+  })
+  test('unspecified_returns1', () => {
+    expect(temporalUnitScale(0)).toBe(1)
+  })
+})
+
+describe('volumeTR', () => {
+  test('secondsHeader_returnsPixdim4', () => {
+    const vol = makeMinimalVolume({
+      hdr: makeMinimalHeader({
+        pixDims: [1, 1, 1, 1, 2.01, 0, 0, 0],
+        xyzt_units: 10, // mm | sec
+      }),
+    })
+    expect(volumeTR(vol)).toBeCloseTo(2.01, 5)
+  })
+  test('millisecondsHeader_scaledToSeconds', () => {
+    const vol = makeMinimalVolume({
+      hdr: makeMinimalHeader({
+        pixDims: [1, 1, 1, 1, 2010, 0, 0, 0],
+        xyzt_units: 2 | 16, // mm | msec
+      }),
+    })
+    expect(volumeTR(vol)).toBeCloseTo(2.01, 5)
+  })
+  test('microsecondsHeader_scaledToSeconds', () => {
+    const vol = makeMinimalVolume({
+      hdr: makeMinimalHeader({
+        pixDims: [1, 1, 1, 1, 2_010_000, 0, 0, 0],
+        xyzt_units: 2 | 24, // mm | usec
+      }),
+    })
+    expect(volumeTR(vol)).toBeCloseTo(2.01, 5)
+  })
+  test('unsetPixdim_returns1', () => {
+    const vol = makeMinimalVolume({
+      hdr: makeMinimalHeader({ pixDims: [1, 1, 1, 1, 0, 0, 0, 0] }),
+    })
+    expect(volumeTR(vol)).toBe(1)
+  })
+})
 
 // ---------------------------------------------------------------------------
 // ensureValidNonZero

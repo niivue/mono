@@ -1120,10 +1120,17 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     // Wheel over the 4D timeline graph: step to previous/next frame
     const graphLayout = ctrl.view?.graphLayout as GraphLayout | null
     if (graphLayout && graphHitTest(px, py, graphLayout)) {
-      const vol = ctrl.volumes[0]
+      // Target the associated volume (matches graph-click scrubbing) when a
+      // physio signal is bound to one, else the background volume.
+      const vol = ctrl.model.getAssociatedVolume() ?? ctrl.volumes[0]
+      const delta = evt.deltaY > 0 ? 1 : -1
       if (vol?.id && (vol.nFrame4D ?? 1) > 1) {
-        const delta = evt.deltaY > 0 ? 1 : -1
+        // Spatial 4D volume: discrete per-frame stepping takes precedence.
         ctrl.setFrame4D(vol.id, (vol.frame4D ?? 0) + delta)
+      } else if (ctrl.signals.length > 0) {
+        // Fallback for a non-spatial signal graph: scrub the cursor. Negated so
+        // the marker moves on screen the same way the 4D frame marker does.
+        ctrl.stepSignalCursor(-delta)
       }
       return
     }

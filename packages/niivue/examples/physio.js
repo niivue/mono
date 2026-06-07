@@ -5,11 +5,10 @@ import NiiVue from '../src/index.ts'
 // rate and StartTime, so both traces share a common Time (s) axis even though
 // they were sampled at different rates (cardiac 200 Hz, respiratory 50 Hz).
 
-const STEM =
-  '/signals/func-bold_task-rest_acq-dualecho_run-1_dicom_8_recording-'
+const STEM = '/signals/'
 const FILES = {
-  cardiac: `${STEM}cardiac_physio.tsv.gz`,
-  respiratory: `${STEM}respiratory_physio.tsv.gz`,
+  cardiac: `${STEM}cardiac.tsv.gz`,
+  respiratory: `${STEM}respiratory.tsv.gz`,
 }
 
 const nv1 = new NiiVue({

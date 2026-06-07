@@ -30,7 +30,7 @@ import type { GraphData } from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import * as NVVolume from '@/volume/NVVolume'
-import { getVoxelValue } from '@/volume/utils'
+import { getVoxelValue, volumeTR } from '@/volume/utils'
 
 export default class NVModel {
   // --- Config groups ---
@@ -54,6 +54,8 @@ export default class NVModel {
     NVSignal,
     { key: string; plot: SignalPlot }
   >()
+  /** associated volume+physio graph memo, keyed by crosshair/frame/signals */
+  private _assocCache: { key: string; data: GraphData } | null = null
   clipPlanes: number[]
   annotations: VectorAnnotation[]
 
@@ -739,14 +741,154 @@ export default class NVModel {
     }
   }
 
+  /** Min-max normalize a series to [0,1] over the samples inside [lo,hi]. */
+  private normalizeWindow(
+    x: Float32Array,
+    y: Float32Array,
+    lo: number,
+    hi: number,
+  ): Float32Array {
+    let mn = Number.POSITIVE_INFINITY
+    let mx = Number.NEGATIVE_INFINITY
+    for (let i = 0; i < y.length; i++) {
+      if (x[i] < lo || x[i] > hi || !Number.isFinite(y[i])) continue
+      if (y[i] < mn) mn = y[i]
+      if (y[i] > mx) mx = y[i]
+    }
+    const out = new Float32Array(y.length)
+    if (!(mx > mn)) return out
+    const r = mx - mn
+    for (let i = 0; i < y.length; i++) out[i] = (y[i] - mn) / r
+    return out
+  }
+
+  /** The 4D volume a loaded physio signal is attached to, if any. */
+  getAssociatedVolume(): NVImage | null {
+    if (this.signals.length === 0 || this.volumes.length === 0) return null
+    for (const s of this.signals) {
+      if (!s.attachedToId) continue
+      const v = this.volumes.find((vv) => vv.id === s.attachedToId)
+      if (v && (v.nFrame4D ?? 1) > 1) return v
+    }
+    return null
+  }
+
   /**
-   * Collect graph data. Prefers signal (multi-series) data when a signal is
-   * loaded; otherwise falls back to per-frame voxel intensities at the current
-   * crosshair for the first 4D volume. Returns null if the graph is disabled or
-   * there is nothing to plot.
+   * Sample a 4D volume's voxel time-course at the current crosshair. Returns one
+   * value per frame, or null if the volume lacks the RAS transform needed to map
+   * the crosshair to a voxel.
+   */
+  private sampleVolumeTimeCourse(vol: NVImage): Float32Array | null {
+    if (!vol.matRAS) return null
+    const nFrames = vol.nFrame4D ?? 1
+    const mm = this.scene2mm(this.scene.crosshairPos)
+    const rasVox = NVTransforms.mm2vox(vol, mm)
+    const y = new Float32Array(nFrames)
+    for (let j = 0; j < nFrames; j++) {
+      y[j] = getVoxelValue(vol, rasVox[0], rasVox[1], rasVox[2], j)
+    }
+    return y
+  }
+
+  /**
+   * When a physio signal is associated with a loaded 4D volume (via
+   * `attachedToId`), build a combined time-axis graph: the volume's crosshair
+   * time-course (frame i at i*TR seconds, t=0 = first volume) plus each attached
+   * physio trace at its native sampling rate (no resampling). The window is
+   * clamped to the imaging period [0, (nFrames-1)*TR], so physio samples logged
+   * before/after the scan are ignored. Each series is min-max normalized to
+   * [0,1] so the very different magnitudes (BOLD intensity vs cardiac/respiratory
+   * counts) are all visible; `rawY` carries the un-normalized values for the
+   * cursor readout. A cursor marks the current frame's time. Returns null when
+   * no such association exists.
+   */
+  /** True if any finite sample of (x,y) falls inside [lo,hi]. */
+  private hasWindowSamples(
+    x: ArrayLike<number>,
+    y: ArrayLike<number>,
+    lo: number,
+    hi: number,
+  ): boolean {
+    for (let i = 0; i < y.length; i++) {
+      if (x[i] >= lo && x[i] <= hi && Number.isFinite(y[i])) return true
+    }
+    return false
+  }
+
+  collectAssociatedTimeGraphData(): GraphData | null {
+    const vol = this.getAssociatedVolume()
+    if (!vol) return null
+    // Memoize: this is rebuilt on every crosshair/frame change (and again by the
+    // renderer in the same frame). Key on the inputs so repeated calls with no
+    // change return the cached graph instead of resampling/normalizing again.
+    const cp = this.scene.crosshairPos
+    const attached = this.signals.filter((s) => s.attachedToId === vol.id)
+    const key = `${vol.id}|${vol.frame4D ?? 0}|${cp[0]},${cp[1]},${cp[2]}|${attached
+      .map((s) => `${s.id}:${JSON.stringify(s.display)}`)
+      .join(';')}`
+    if (this._assocCache && this._assocCache.key === key) {
+      return this._assocCache.data
+    }
+    const vy = this.sampleVolumeTimeCourse(vol)
+    if (!vy) return null
+    const nFrames = vol.nFrame4D ?? 1
+    const tr = volumeTR(vol)
+    const tMax = (nFrames - 1) * tr
+    const series: GraphData['series'] = []
+    // 1) Volume time-course at the crosshair.
+    const vx = new Float32Array(nFrames)
+    for (let j = 0; j < nFrames; j++) vx[j] = j * tr
+    series.push({
+      label: 'BOLD',
+      x: vx,
+      y: this.normalizeWindow(vx, vy, 0, tMax),
+      rawY: vy,
+    })
+    // 2) Each attached physio trace at its native rate, clamped + normalized.
+    //    Skip traces with no samples inside the imaging window (they would not
+    //    draw and could otherwise feed an out-of-window readout).
+    for (const s of attached) {
+      const plot = this.derivePlotCached(s)
+      if (plot.axis.label !== 'Time (s)') continue
+      for (const ps of plot.series) {
+        if (!ps.x || !this.hasWindowSamples(ps.x, ps.y, 0, tMax)) continue
+        series.push({
+          label: ps.label,
+          x: ps.x,
+          y: this.normalizeWindow(ps.x, ps.y, 0, tMax),
+          rawY: ps.y,
+        })
+      }
+    }
+    if (series.length < 2) return null // need the volume plus >=1 physio trace
+    const data: GraphData = {
+      lines: [],
+      selectedColumn: -1,
+      calMin: 0,
+      calMax: 0,
+      nTotalFrame4D: 0,
+      graphConfig: this.ui.graph,
+      series,
+      xAxis: { label: 'Time (s)', reversed: false, min: 0, max: tMax },
+      showLegend: true,
+      fullCanvas: false,
+      // Marker at the current frame's time ties 4D scrubbing to the time axis.
+      cursorX: (vol.frame4D ?? 0) * tr,
+    }
+    this._assocCache = { key, data }
+    return data
+  }
+
+  /**
+   * Collect graph data. Prefers an associated volume+physio time view, then a
+   * signal-only (multi-series) graph, otherwise per-frame voxel intensities at
+   * the current crosshair for the first 4D volume. Returns null if the graph is
+   * disabled or there is nothing to plot.
    */
   collectGraphData(): GraphData | null {
     if (!this.ui.isGraphVisible) return null
+    const associated = this.collectAssociatedTimeGraphData()
+    if (associated) return associated
     const signalData = this.collectSignalGraphData()
     if (signalData) return signalData
     if (this.getMaxVols() < 2) return null
@@ -754,12 +896,9 @@ export default class NVModel {
     if (!vol) return null
     const nFrames = vol.nFrame4D ?? 1
     if (nFrames < 2) return null
-    const mm = this.scene2mm(this.scene.crosshairPos)
-    const rasVox = NVTransforms.mm2vox(vol, mm)
-    const line: number[] = []
-    for (let j = 0; j < nFrames; j++) {
-      line.push(getVoxelValue(vol, rasVox[0], rasVox[1], rasVox[2], j))
-    }
+    const sampled = this.sampleVolumeTimeCourse(vol)
+    if (!sampled) return null
+    const line = Array.from(sampled)
     return {
       lines: [line],
       selectedColumn: vol.frame4D ?? 0,

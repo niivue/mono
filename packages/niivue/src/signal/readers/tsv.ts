@@ -5,14 +5,21 @@ export const extensions = ['tsv', 'tsv.gz']
 export const type = 'tsv'
 
 /** Parse a single cell as float; blank/non-numeric becomes NaN (a trace gap). */
+/** Blank or a recognized BIDS missing-value token. */
+function isMissingToken(token: string): boolean {
+  const t = token.trim().toLowerCase()
+  return t === '' || t === 'n/a' || t === 'na' || t === 'nan'
+}
+
 function toFloat(token: string): number {
-  const t = token.trim()
-  const lower = t.toLowerCase()
-  if (t === '' || lower === 'n/a' || lower === 'na' || lower === 'nan') {
-    return Number.NaN
-  }
-  const v = Number(t)
+  if (isMissingToken(token)) return Number.NaN
+  const v = Number(token.trim())
   return Number.isNaN(v) ? Number.NaN : v
+}
+
+/** A genuine text label: non-empty, not a missing token, and not numeric. */
+function isLabelToken(token: string): boolean {
+  return !isMissingToken(token) && Number.isNaN(Number(token.trim()))
 }
 
 /**
@@ -34,10 +41,11 @@ export function parseTsv(
     if (line.trim() === '') continue
     const cells = line.split('\t')
     if (rows.length === 0 && header === null) {
-      const parsed = cells.map(toFloat)
-      const allNaN = parsed.every((v) => Number.isNaN(v))
-      const anyText = cells.some((c) => c.trim() !== '')
-      if (allNaN && anyText) {
+      // A leading row is a header only if every cell is non-numeric AND at least
+      // one is a genuine label (not just missing-value tokens) — so a first data
+      // row of all-missing values is kept as data, not mistaken for labels.
+      const allNonNumeric = cells.every((c) => Number.isNaN(toFloat(c)))
+      if (allNonNumeric && cells.some(isLabelToken)) {
         header = cells.map((c) => c.trim())
         continue
       }

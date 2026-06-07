@@ -102,8 +102,14 @@ nv.setSignal(0, { display: { average: true, mode: 'real', ppmRange: [1.9, 3.3] }
 
 NIfTI files are routed to the signal loader when they have no spatial extent
 (dim1-3 == 1, dim4 > 1) or carry MRS sidecar fields; pass `asSignal` to override.
-See `examples/svs.html` (spectroscopy) and `examples/physio.html` (physio) for
-interactive demos.
+
+A physio signal can be associated with a 4D volume by passing `attachToId` (the
+volume's id). The graph then shows the crosshair BOLD time-course together with
+each physio trace at its native sampling rate on a shared time axis, clamped to
+the imaging window; clicking the graph scrubs the volume to the nearest frame.
+
+See `examples/svs.html` (spectroscopy), `examples/physio.html` (physio), and
+`examples/physio.bold.html` (fMRI + physio association) for interactive demos.
 
 ### Change slice type and colormap
 

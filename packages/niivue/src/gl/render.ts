@@ -218,6 +218,9 @@ export class VolumeRenderer extends NVRenderer {
   // GPU memory budget for a chunked volume's resident chunk set. Set from the
   // maxChunkResidencyBytes option in init; passed to each ChunkResidencyManager.
   private _chunkResidencyBytes = DEFAULT_CHUNK_RESIDENCY_BYTES
+  // Scene flag (set per-frame from md.scene): clip the overlay/PAQD/drawing passes
+  // with the base volume instead of letting them ignore the clip plane.
+  clipPlaneOverlay = false
   // Per-volume GPU texture cache. Populated by updateVolume; consumed by
   // bindCachedVolume to switch the active volume/gradient texture per tile
   // when rendering multi-instance global3d scenes.
@@ -1664,6 +1667,11 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform4fv(shader.uniforms.clipPlaneColor, clipPlaneColor)
     if (shader.uniforms.isClipCutaway)
       gl.uniform1f(shader.uniforms.isClipCutaway, isClipCutaway ? 1.0 : 0.0)
+    if (shader.uniforms.clipPlaneOverlay)
+      gl.uniform1f(
+        shader.uniforms.clipPlaneOverlay,
+        this.clipPlaneOverlay ? 1.0 : 0.0,
+      )
     if (shader.uniforms.overlayLayerMode)
       gl.uniform1f(shader.uniforms.overlayLayerMode, 0.0)
     if (shader.uniforms.paqdUniforms)
@@ -1919,6 +1927,11 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform4fv(shader.uniforms.clipPlaneColor, clipPlaneColor)
     if (shader.uniforms.isClipCutaway)
       gl.uniform1f(shader.uniforms.isClipCutaway, isClipCutaway ? 1.0 : 0.0)
+    if (shader.uniforms.clipPlaneOverlay)
+      gl.uniform1f(
+        shader.uniforms.clipPlaneOverlay,
+        this.clipPlaneOverlay ? 1.0 : 0.0,
+      )
     if (shader.uniforms.overlayLayerMode)
       gl.uniform1f(shader.uniforms.overlayLayerMode, 1.0)
     if (shader.uniforms.paqdUniforms)
@@ -1994,6 +2007,11 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform4fv(shader.uniforms.clipPlanes, clipPlanes)
     if (shader.uniforms.isClipCutaway)
       gl.uniform1f(shader.uniforms.isClipCutaway, isClipCutaway ? 1.0 : 0.0)
+    if (shader.uniforms.clipPlaneOverlay)
+      gl.uniform1f(
+        shader.uniforms.clipPlaneOverlay,
+        this.clipPlaneOverlay ? 1.0 : 0.0,
+      )
     if (shader.uniforms.numVolumes)
       gl.uniform1f(shader.uniforms.numVolumes, volumeCount)
     // Depth pick uses a single volume texture; pass identity chunk uniforms

@@ -498,6 +498,15 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  get clipPlaneOverlay(): boolean {
+    return this.model.scene.clipPlaneOverlay
+  }
+  set clipPlaneOverlay(v: boolean) {
+    this.model.scene.clipPlaneOverlay = v
+    this.emit('change', { property: 'clipPlaneOverlay', value: v })
+    this.drawScene()
+  }
+
   // --- Layout Properties ---
 
   get sliceType(): number {

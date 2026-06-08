@@ -91,6 +91,7 @@ const els = {
   overlayOn: el<HTMLInputElement>('overlayOn'),
   streamHiRes: el<HTMLInputElement>('streamHiRes'),
   rgbaCombine: el<HTMLInputElement>('rgbaCombine'),
+  clipOverlay: el<HTMLInputElement>('clipOverlay'),
   mag: el<HTMLSpanElement>('mag'),
   canvas: el<HTMLCanvasElement>('nv-canvas'),
   hud: el<HTMLDivElement>('hud'),
@@ -790,6 +791,10 @@ async function main(): Promise<void> {
   els.rgbaCombine.addEventListener('change', () => {
     syncControls()
     if (current) void loadAll(current)
+  })
+  // Clip the overlay with the base in the 3D render (vs. overlay showing through).
+  els.clipOverlay.addEventListener('change', () => {
+    if (nv) nv.clipPlaneOverlay = els.clipOverlay.checked
   })
   // 3D zoom (scene scale). Lets you zoom into the clipped interior (right-drag a
   // 3D-render tile to set the clip plane) without re-streaming.

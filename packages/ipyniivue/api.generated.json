@@ -1,5 +1,5 @@
 {
-  "niivueVersion": "1.0.0-rc.3",
+  "niivueVersion": "1.0.0-rc.8",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVueGPU",
   "properties": [
@@ -697,6 +697,21 @@
       "doc": null
     },
     {
+      "jsName": "renderPan",
+      "pyName": "render_pan",
+      "tsType": "vec2",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": 2
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "rulerWidth",
       "pyName": "ruler_width",
       "tsType": "number",
@@ -886,6 +901,17 @@
           "kind": "Float"
         },
         "length": 4
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeTransmittanceCutoff",
+      "pyName": "volume_transmittance_cutoff",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
       },
       "hasGetter": true,
       "hasSetter": true,
@@ -1285,6 +1311,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "chunkStreamStats",
+      "pyName": "chunk_stream_stats",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "{ resident: number; pending: number; inFlight: number; total: number; } | null",
+      "doc": "Streaming stats across all chunked volumes (base + independent overlay) on\nthe active backend: `{ resident, pending, inFlight, total }` brick counts.\nReturns null before a view is attached. Useful for HUD / debug overlays:\n`resident < total` with `pending > 0` for many frames indicates the working\nset exceeds the residency budget (thrashing).",
+      "returnsDoc": null
+    },
+    {
       "jsName": "clearAnnotations",
       "pyName": "clear_annotations",
       "isAsync": false,
@@ -1484,6 +1520,16 @@
       ],
       "returns": "string[]",
       "doc": "Get the group names for a tract mesh.\nReturns an empty array if the mesh is not a tract or has no groups.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "getViewport",
+      "pyName": "get_viewport",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "CanvasViewport",
+      "doc": "Read the canvas-level viewport (virtual camera) shared with sibling instances.\nThe viewport applies a pan + zoom over the entire canvas before each instance's\n`bounds` are projected to pixels. Identity is `{pan: [0, 0], zoom: 1}`.",
       "returnsDoc": null
     },
     {
@@ -1705,13 +1751,48 @@
       "params": [
         {
           "name": "volumes",
-          "tsType": "ImageFromUrlOptions | ImageFromUrlOptions[]",
+          "tsType": "NVImage | ImageFromUrlOptions | (NVImage | ImageFromUrlOptions)[]",
           "optional": false,
           "doc": null
         }
       ],
       "returns": "Promise<this>",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "markDrawDirty",
+      "pyName": "mark_draw_dirty",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "x",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "y",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "z",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "radius",
+          "tsType": "number",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Expand the pending pen-stroke dirty box by a voxel and its pen radius, so\nthe next drawing flush re-uploads only the chunks that region touches. Call\nthis right before `refreshDrawing()` at each pen-stroke site; whole-bitmap\nchanges (undo, clear, recolour) skip it and fall back to a full upload.",
       "returnsDoc": null
     },
     {
@@ -1809,6 +1890,16 @@
       ],
       "returns": "Promise<void>",
       "doc": "Move a volume up one index position in the stack of loaded volumes (toward the top layer).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "rebakeChunkedOverlays",
+      "pyName": "rebake_chunked_overlays",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Re-bake the streamed/chunked overlays in place: drop their resident bricks so\nthe next frame re-requests and re-bakes only the blocks in the current view\nfrustum, leaving the base volume resident. Use after changing a streamed\noverlay's `opacity` (or any `chunkSource` whose output changed) to apply it\nwithout the cost of a full `loadVolumes` reload. No-op before a view attaches.",
       "returnsDoc": null
     },
     {
@@ -2342,6 +2433,40 @@
       "returnsDoc": null
     },
     {
+      "jsName": "setGlobalCamera",
+      "pyName": "set_global_camera",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "camera",
+          "tsType": "NVGlobalCamera",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Update the shared 3D camera used by `space === 'global3d'` instances.\nSupported on both WebGL2 and WebGPU backends.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setInstances",
+      "pyName": "set_instances",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "instances",
+          "tsType": "NVInstance[]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Replace the multi-instance descriptor list (canvas tiling + optional global3d\nvolumes). Triggers a tile rebuild and redraw. Supported on both WebGL2 and\nWebGPU backends.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "setMesh",
       "pyName": "set_mesh",
       "isAsync": true,
@@ -2466,6 +2591,23 @@
       ],
       "returns": "Promise<void>",
       "doc": "Update tract tessellation/display options and re-tessellate.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setViewport",
+      "pyName": "set_viewport",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "viewport",
+          "tsType": "CanvasViewport",
+          "optional": false,
+          "doc": "`{ pan: [x, y], zoom }`. Default identity keeps existing behavior."
+        }
+      ],
+      "returns": "void",
+      "doc": "Update the canvas-level viewport (virtual camera). All controllers sharing this\ncanvas resize and redraw together. `pan` is in normalized canvas units (GL convention,\ny up); `zoom` is a positive scalar around the canvas centre.",
       "returnsDoc": null
     },
     {
@@ -2664,6 +2806,12 @@
       "doc": null
     },
     {
+      "jsName": "perfFrame",
+      "pyName": "perf_frame",
+      "detailType": "FrameReport",
+      "doc": null
+    },
+    {
       "jsName": "pointerUp",
       "pyName": "pointer_up",
       "detailType": "PointerUpDetail",
@@ -2738,6 +2886,11 @@
         "jsName": "meshes",
         "tsType": "NVMesh",
         "reason": "non-serializable nominal type: NVMesh"
+      },
+      {
+        "jsName": "perf",
+        "tsType": "NiiVuePerf",
+        "reason": "non-serializable nominal type: NiiVuePerf"
       },
       {
         "jsName": "volumes",

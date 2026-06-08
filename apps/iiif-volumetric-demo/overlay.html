@@ -51,6 +51,7 @@
       <label><input type="checkbox" id="overlayOn" checked /> overlay</label>
       <label title="Stream the overlay as a base-aligned chunked layer combined per block (strategy A) instead of reslicing a coarse overlay whole onto the base grid"><input type="checkbox" id="streamHiRes" /> stream overlay</label>
       <label title="Combine two colored layers (warm densest cores + cool surrounding structure) into one RGBA streamed overlay (requires stream overlay)"><input type="checkbox" id="rgbaCombine" /> RGBA combine</label>
+      <label title="Clip the overlay together with the base volume in the 3D render (right-drag a 3D tile to set the clip plane). Off: overlays show through the clipped base."><input type="checkbox" id="clipOverlay" /> clip overlay</label>
       <span id="mag" style="color:#9aa0a6"></span>
     </div>
     <main>

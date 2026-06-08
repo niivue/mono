@@ -97,6 +97,7 @@ export default class NVModel {
       backgroundColor: options.backgroundColor ?? [0, 0, 0, 1],
       clipPlaneColor: options.clipPlaneColor ?? [0.7, 0, 0.7, 0.4],
       isClipPlaneCutaway: options.isClipPlaneCutaway ?? false,
+      clipPlaneOverlay: options.clipPlaneOverlay ?? false,
     }
     // Layout — flat options mapped to layout group
     this.layout = {

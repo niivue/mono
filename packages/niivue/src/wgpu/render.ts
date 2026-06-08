@@ -250,6 +250,9 @@ export class VolumeRenderer extends NVRenderer {
   // GPU memory budget for a chunked volume's resident chunk set. Set from the
   // maxChunkResidencyBytes option in init; passed to each ChunkResidencyManager.
   private _chunkResidencyBytes = DEFAULT_CHUNK_RESIDENCY_BYTES
+  // Scene flag (set per-frame from md.scene): clip the overlay/PAQD/drawing passes
+  // with the base volume instead of letting them ignore the clip plane.
+  clipPlaneOverlay = false
   private _matcapUrl: string | null = null
   private _bindTexVol: GPUTexture | null = null
   private _bindTexGrad: GPUTexture | null = null
@@ -2259,10 +2262,10 @@ export class VolumeRenderer extends NVRenderer {
         ...clipPlanes,
         ...paqdUniforms,
         earlyTermination,
-        // _pad0: vec3f starts at WGSL offset 384 (after earlyTermination at
-        // 368-372). Write 7 zero floats to advance the byte cursor from
-        // 372 → 400 (12 bytes _pad0 + 16 bytes alignment to next vec4f).
-        0,
+        // clipPlaneOverlay sits at WGSL offset 372 (the f32 immediately after
+        // earlyTermination); the following _pad0: vec3f aligns to 384. These 7
+        // floats advance the byte cursor 372 → 400 (to the next vec4f), unchanged.
+        this.clipPlaneOverlay ? 1.0 : 0.0,
         0,
         0,
         0,

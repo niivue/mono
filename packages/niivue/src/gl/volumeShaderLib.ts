@@ -51,6 +51,7 @@ uniform mat4 matRAS;
 uniform vec3 volScale;
 uniform vec3 rayDir;
 uniform float isClipCutaway;
+uniform float clipPlaneOverlay;
 uniform vec4 clipPlanes[MAX_CLIP_PLANES];
 uniform sampler3D volume;
 

@@ -510,6 +510,9 @@ export type SceneConfig = {
   backgroundColor: [number, number, number, number]
   clipPlaneColor: number[]
   isClipPlaneCutaway: boolean
+  /** Clip the overlay/PAQD/drawing layers along with the base volume in the 3D
+   * render. Default false: overlays ignore the clip plane (show through). */
+  clipPlaneOverlay: boolean
 }
 
 /** Layout config: slice type, mosaic, multiplanar, hero, tiling */
@@ -743,6 +746,7 @@ export type NiiVueOptions = {
   backgroundColor?: [number, number, number, number]
   clipPlaneColor?: number[]
   isClipPlaneCutaway?: boolean
+  clipPlaneOverlay?: boolean
 
   // Layout
   sliceType?: number

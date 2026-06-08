@@ -21,6 +21,11 @@ struct Params {
     clipPlanes: array<vec4f, 6>,
     paqdUniforms: vec4f,
     earlyTermination: f32,
+    // 1.0 to clip the overlay/PAQD/drawing passes with the base (else they ignore
+    // the clip plane). Sits in what was implicit padding before _pad0 (WGSL aligns
+    // the following vec3f to 16 bytes), so the struct size and all later vec4f
+    // offsets are unchanged.
+    clipPlaneOverlay: f32,
     _pad0: vec3f,
     // Tiled-volume fields. Pass-through values for non-chunked volumes:
     //   volumeTexDimsFull = textureDimensions(volume, 0)

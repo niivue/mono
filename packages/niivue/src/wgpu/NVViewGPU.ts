@@ -1067,6 +1067,7 @@ export default class NVView {
             md.clipPlanes,
             md.scene.isClipPlaneCutaway,
           )
+          this.volumeRenderer.clipPlaneOverlay = md.scene.clipPlaneOverlay
           this.volumeRenderer.draw(
             device,
             pass,

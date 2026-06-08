@@ -746,6 +746,7 @@ export default class NVGlview {
             md.clipPlanes,
             md.scene.isClipPlaneCutaway,
           )
+          this.volumeRenderer.clipPlaneOverlay = md.scene.clipPlaneOverlay
           this.volumeRenderer.draw(
             gl,
             mvpMatrix as Float32Array,

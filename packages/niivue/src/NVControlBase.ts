@@ -86,7 +86,10 @@ import {
 } from '@/view/NVPerfMarks'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import { validateCustomLayout } from '@/view/NVSliceLayout'
-import { computeModulationData } from '@/volume/modulation'
+import {
+  computeModulationData,
+  computeModulationWeights,
+} from '@/volume/modulation'
 import * as NVVolume from '@/volume/NVVolume'
 import * as NVTensorProcessing from '@/volume/TensorProcessing'
 import type {
@@ -1361,14 +1364,38 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   /**
-   * Set a modulation image for a target volume.
-   * The modulator's intensity scales the target volume's brightness and opacity.
+   * Set a modulation image for a target volume. The modulator's intensity
+   * (windowed by its own calMin/calMax) scales the target volume's brightness
+   * (RGB) or opacity (alpha) per voxel.
+   *
+   * Works for both pre-baked RGB/RGBA volumes (V1 tensors) and plain
+   * colormapped SCALAR overlays — for scalar overlays the weight is sampled in
+   * the colormap GPU prepass through the modulator's overlay transform matrix,
+   * so the modulator may live on any co-registered grid.
+   *
+   * NOTE: `modulateAlpha` differs by target type. For SCALAR overlays it selects
+   * RGB (0) vs alpha (non-zero) modulation. For RGB/RGBA (V1 tensor) volumes,
+   * only RGB is ever scaled — alpha is preserved to keep V1 sign-polarity bits
+   * intact — so a non-zero `modulateAlpha` does NOT produce alpha modulation
+   * there (it only sets the exponent for the unused alpha path). Background-volume
+   * alpha modulation additionally needs `volumeIsAlphaClipDark` to show as
+   * transparency.
    * @param targetId - ID of the volume to modulate
    * @param modulatorId - ID of the volume providing modulation (empty string to clear)
+   * @param modulateAlpha - scalar overlays: 0 modulates RGB, non-zero modulates
+   *   ALPHA with exponent `max(1, |modulateAlpha|)` (matching the original
+   *   NiiVue). RGB/RGBA volumes always modulate RGB only.
+   *
+   * Re-invalidation: the scalar weight is cached by the modulator's buffer
+   * identity + window, so it does NOT detect an IN-PLACE edit of the modulator's
+   * voxel data (same buffer). After mutating a modulator in place (e.g. a
+   * drawing/segmentation used as a modulator), call this method again (same
+   * target + modulator) to force a recompute.
    */
   async setModulationImage(
     targetId: string,
     modulatorId: string,
+    modulateAlpha = 0,
   ): Promise<void> {
     const target = this.volumes.find((v) => v.id === targetId)
     if (!target) {
@@ -1376,7 +1403,10 @@ export default class NiiVueGPU extends EventTarget {
       return
     }
     target.modulationImage = modulatorId || undefined
+    target.modulateAlpha = modulateAlpha
     target._modulationData = null
+    target._modulationWeight = null
+    target._modulationWeightKey = undefined
     target.isDirty = true
     await this.updateGLVolume()
   }
@@ -1412,6 +1442,7 @@ export default class NiiVueGPU extends EventTarget {
   /** Compute modulation data for all volumes that have modulationImage set. */
   private _computeModulationData(): void {
     computeModulationData(this.volumes)
+    computeModulationWeights(this.volumes)
   }
 
   get backend(): BackendType | undefined {
@@ -3324,14 +3355,17 @@ export default class NiiVueGPU extends EventTarget {
       if (this.view) await this.view.loadThumbnail(this.model.ui.thumbnailUrl)
     }
 
-    // Reconstruct volumes and meshes from document entries (parallel)
-    const volumePromises = doc.volumes.map((v) =>
-      NVDocument.reconstructVolume(this.model, v),
+    // Reconstruct volumes SEQUENTIALLY so document order is preserved —
+    // addVolume pushes when its async prepare resolves, so a parallel map would
+    // let a fast-loading volume land in the wrong slot (volume order defines
+    // background vs overlays, and modulator/drawing links depend on it).
+    for (const v of doc.volumes) {
+      await NVDocument.reconstructVolume(this.model, v)
+    }
+    // Meshes have no background/overlay ordering role; load them in parallel.
+    await Promise.all(
+      doc.meshes.map((m) => NVDocument.reconstructMesh(this.model, m)),
     )
-    const meshPromises = doc.meshes.map((m) =>
-      NVDocument.reconstructMesh(this.model, m),
-    )
-    await Promise.all([...volumePromises, ...meshPromises])
 
     // Update GPU resources and render
     await this.updateGLVolume()

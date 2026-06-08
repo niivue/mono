@@ -320,41 +320,80 @@ Float32 RGB vector volumes (NIfTI `intent_code` 2003, `dim4=3`) are auto-convert
 
 ### Volume modulation
 
-`setModulationImage(targetId, modulatorId)` scales overlay brightness by another volume's scalar values. `_modulationData` on `NVImage` is a `Float32Array` of [0, 1] values applied CPU-side during `prepareRGBAData()`. Only RGB modulated — alpha preserved for V1 polarity bits.
+`setModulationImage(targetId, modulatorId, modulateAlpha = 0)` scales a target
+volume's brightness (RGB) or opacity (alpha) by another volume's windowed scalar
+values. Works for **both** pre-baked RGB/RGBA volumes (V1 tensors) **and** plain
+colormapped scalar overlays — but `modulateAlpha` means different things per type:
 
-#### Known limitation: modulation is a no-op for colormapped SCALAR overlays (future work)
+- **Scalar overlays:** `modulateAlpha === 0` modulates RGB; non-zero modulates
+  ALPHA with exponent `max(1, |modulateAlpha|)` (matching the original NiiVue).
+- **RGB/RGBA (V1) volumes:** **RGB only, always** — alpha is preserved for V1
+  sign-polarity bits, so a non-zero `modulateAlpha` does NOT alpha-modulate them.
 
-`setModulationImage` **only affects RGB/RGBA volumes** (V1 tensors, pre-baked
-RGBA). It is a **silent no-op for a plain scalar overlay** because the
-modulation is applied in `prepareRGBAData()` (the CPU RGB/RGBA path), whereas a
-scalar overlay is uploaded as a raw scalar 3D texture and colormapped in a **GPU
-prepass** (`gl/orientOverlay.ts` `overlay2Texture` / `wgpu/orient.ts`), which
-never sees `_modulationData`. Setting `modulationImage` on a scalar overlay
-changes nothing on screen — a sharp edge worth knowing.
+The two code paths are mutually exclusive by target datatype (each compute
+function early-returns for the other's datatype, so only one of `_modulationData`
+/ `_modulationWeight` is built per target). Both window by the modulator's own
+`calMin/calMax`:
 
-Why it matters / use cases that want this: SNR- or confidence-weighting a
-metabolite/statistic map, alpha-by-another-volume, restricting a scalar overlay
-to a brain/ROI mask (the MRSI demo's "Mask"), uncertainty fade-out. All natural
-"modulate a scalar overlay by another volume" operations that currently can't be
-expressed via `setModulationImage`.
+- **RGB/RGBA (V1) path:** `computeModulationData()` -> `_modulationData`
+  (`Float32Array`, RAS order), applied CPU-side in `prepareRGBAData()`. Only RGB
+  is scaled.
+- **Scalar overlay path:** `computeModulationWeights()` -> `_modulationWeight`
+  (`Float32Array`, **modulator native order**, already raised to the
+  `modulateAlpha` exponent, cached by `_modulationWeightKey` — keyed on the
+  modulator's buffer identity + offset + datatype + dims + scaling + frame +
+  window + exponent, so a swapped/rescaled/re-windowed modulator invalidates the
+  cached weight and its GPU texture). The scalar
+  colormap GPU prepass (`gl/orientOverlay.ts` / `wgpu/orient.ts` + `orient.wgsl`)
+  uploads it as an **R32F weight texture** and samples it through the modulator's
+  overlay transform matrix (`buildModulationParams` -> `calculateOverlayTransformMatrix(baseVol, modVol)`)
+  — the same mechanism used for the intensity volume, so the modulator may live
+  on **any co-registered grid** (it does not need to match the target or
+  background dims). Inside the prepass, `modulation == 1` does `rgb *= w`,
+  `modulation == 2` does `a *= w`, applied before the overlay-opacity bake.
 
-Why it isn't done yet: a proper fix is **GPU shader work in BOTH backends** —
-bind `_modulationData` as a modulation texture in the overlay colormap prepass
-(GLSL in `gl/orientOverlay.ts`, WGSL in `wgpu/orient.ts`), sample it, and
-multiply the overlay alpha (and/or RGB). That's a moderate, cross-backend change
-to the core overlay pipeline with real rendering-regression risk, so it was left
-as a deliberate follow-up rather than folded into a feature PR.
+The prepass texture cache key includes the modulation state
+(`modKey`/`_modulationWeightKey`), so toggling/repointing the modulator or
+changing its window correctly re-uploads. The weight texture binds to WebGL2
+texture unit 4 and WebGPU bind-group binding 6; a 1x1x1 placeholder is bound when
+modulation is inactive. Modulation applies to **both overlays and the background
+volume** — `updateVolume(...)` threads the full volume list so the background's
+prepass (`overlay2Texture`/`volume2Texture`) can resolve and sample the
+modulator. Alpha-modulating the background only *shows* as transparency when
+`volumeIsAlphaClipDark` is on (the per-voxel background-alpha clip path); RGB
+modulation of the background needs no flag.
 
-Workaround (used by `@niivue/nv-ext-mrs` `MrsScene.setMaskEnabled`): **bake the
-modulation/mask into the scalar data** — set out-of-mask voxels to a sentinel
-well below `calMin` so the existing transparent-below-`calMin` path hides them.
-**Critical gotcha:** both backends cache the overlay texture keyed on
-`img.buffer` identity (`existingCache.imageBuffer === nvimage.img.buffer`), so an
-**in-place** edit of `img` will NOT re-upload — you must assign a **fresh
-`Float32Array`** (new buffer) to `vol.img`, then call `updateGLVolume()`, to
-force the cache to invalidate and the texture to re-upload. (`isDirty` on
-`NVImage` is currently a dead flag — set in several places, read nowhere — so it
-does not trigger a re-upload.)
+Demo: `examples/vox.modulate.scalar.html` — grayscale MNI152 + a binary mask
+(`mni152_mask.nii.gz`), with a `volume / mask / volume + mask / volume * mask
+(modulate)` selector and a background-colour picker. The "modulate" mode
+alpha-modulates the **background** by the mask (`volumeIsAlphaClipDark` on) so
+anatomy outside the mask becomes transparent and the canvas colour shows through
+(2D + 3D), WebGPU+WebGL2 parity. The MRSI mask can now use `setModulationImage`
+instead of the bake workaround (see the MRSI invariant below).
+
+**NVD persistence:** both `modulateAlpha` and `modulationImage` (the modulator
+volume-id link) are serialized and restored — the link is reapplied in the
+post-load pass (find-by-id at render time), so it survives even if the modulator
+volume is restored later in the document. The `_modulationData`/`_modulationWeight`
+arrays are derived (never serialized).
+
+**Edge cases / invariants (keep these true):**
+- **Label/atlas targets are NOT modulated** — their colormap prepass returns
+  before the modulation block, so `buildModulationParams`/`computeModulationWeights`
+  early-return for `colormapLabel` targets (no wasted setup).
+- **NaN-safe weights** — both compute loops map a NaN/`<=0` window AND any NaN
+  modulator voxel (finite window) to weight 0 (transparent), never NaN.
+- **Cache key = modulator buffer identity** (WeakMap id) + offset + datatype +
+  dims + scaling + frame + window + exponent. It does NOT detect **in-place**
+  mutation of `mod.img` (a drawing/segmentation modulator edited without swapping
+  the buffer) — re-call `setModulationImage` after such an edit. A repo-wide
+  `NVImage` data-revision token is the deferred general fix.
+- **Affine fast path** (`updateAffineOverlays`, 2-volume case) bails to a full
+  update when `vols[0].modulationImage` is set — otherwise a modulated
+  background's baked modulator matrix would go stale on an overlay affine change.
+- **NVD volume order** is preserved by reconstructing volumes sequentially
+  (`addVolume` pushes on async-prepare completion; a parallel restore would
+  reorder background vs overlays).
 
 ## Three mesh species
 
@@ -712,10 +751,28 @@ Audit-hardened invariants (keep these true):
 - **NVD limitation:** `complexFID`/`mrsMeta` are NOT serialized to NVD (only the
   derived scalar `img`); a reloaded crosshair spectrum is unavailable until the
   MRSI volume is re-added. Persisting the ~18 MiB buffer is deferred by design.
-- **Mask is baked, not modulated.** `setModulationImage` is a no-op for scalar
-  overlays (see the modulation limitation above); nv-ext-mrs validates the mask
-  shares the MRSI grid then bakes a below-`calMin` sentinel into a FRESH
-  `Float32Array` (buffer-swap forces texture re-upload).
+- **Mask is modulated, not baked.** `nv-ext-mrs` `setMaskEnabled` calls
+  `setModulationImage(mrsiId, maskId, 1)` (alpha) — the mask is loaded as a
+  hidden volume (`opacity 0`, `calMin/calMax 0..1`) and consumed as the
+  modulator; the core scalar-overlay modulation path (see Volume modulation
+  above) makes out-of-mask voxels transparent in the GPU prepass. No more
+  sentinel bake, buffer-swap, or `unmaskedMap`/`maskRAS` shadow copies.
+- **Mask also applies to generated maps.** `setMaskEnabled` modulates the MRSI
+  overlay AND every `makeMap` overlay (tracked in `mapIds`); a new `makeMap` while
+  the mask is on inherits it. `sameGrid` is a dims heuristic and an **extension
+  policy** (warn + skip on mismatch), NOT a core-modulation limit — core samples
+  the modulator through the transform matrix and tolerates any co-registered grid.
+- **`MrsScene` lifecycle.** `load()` is idempotent: it removes this scene's prior
+  crosshair signal (via `removeSceneSignal`, which is scoped by
+  `attachedToId === mrsiId && followsCrosshair` — NOT the first global
+  `followsCrosshair` signal) and resets `mrsiId`/`maskId`/`maskEnabled`/`mapIds`
+  before reloading. The `mrs` getter returns null (no global fallback) when
+  `mrsiId` is null. `dispose()` removes the scene signal + detaches the snap
+  listener. KNOWN GAP: the scene's volumes (MRSI grid, hidden mask, generated
+  maps) are NOT removed on reload-without-anatomy or dispose — the controller
+  exposes no single-volume removal to extensions (only `removeAllVolumes`); the
+  demo always reloads with anatomy (`loadVolumes` -> `removeAllVolumes` clears
+  them). Exposing per-volume removal to extensions is a tracked follow-up.
 
 ## Colormap conventions
 

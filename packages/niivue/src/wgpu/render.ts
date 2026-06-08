@@ -8,6 +8,7 @@ import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
+import { buildModulationParams } from '@/volume/modulation'
 import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
 import * as orient from './orient'
 import renderFragment from './render.wgsl?raw'
@@ -249,6 +250,7 @@ export class VolumeRenderer extends NVRenderer {
     device: GPUDevice,
     vol: NVImage,
     matcap: string = '',
+    allVolumes: NVImage[] = [vol],
   ): Promise<void> {
     if (!this.isReady) return
 
@@ -275,6 +277,7 @@ export class VolumeRenderer extends NVRenderer {
       vol,
       mtx as Float32Array,
       0,
+      buildModulationParams(vol, vol, allVolumes),
     )
     this.volumeGradientTexture = await wgpu.volume2TextureGradientRGBA(
       device,
@@ -366,6 +369,7 @@ export class VolumeRenderer extends NVRenderer {
         mtx as Float32Array,
         vol.opacity ?? 1,
         this.overlayOrientCache,
+        buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
       )
       orient.dispatchOrient(device, this.overlayOrientCache)
       this.overlayTexture = this.overlayOrientCache.outputTexture
@@ -383,6 +387,7 @@ export class VolumeRenderer extends NVRenderer {
             baseVol,
             mtx as Float32Array,
             vol.opacity ?? 1,
+            buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
           ),
         )
       }
@@ -417,6 +422,7 @@ export class VolumeRenderer extends NVRenderer {
       mtx as Float32Array,
       overlayVol.opacity ?? 1,
       this.overlayOrientCache,
+      buildModulationParams(overlayVol, baseVol, [baseVol, overlayVol]),
     )
     orient.dispatchOrient(device, this.overlayOrientCache)
     this.overlayTexture = this.overlayOrientCache.outputTexture

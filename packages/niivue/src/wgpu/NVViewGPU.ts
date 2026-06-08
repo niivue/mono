@@ -488,6 +488,9 @@ export default class NVView {
     const vols = this.model.getVolumes()
     if (vols.length !== 2) return false
     if (this.model.volume.isBackgroundMasking) return false
+    // A modulated background's prepass bakes the modulator matrix; the fast path
+    // only rebuilds the overlay prepass, so it would leave that matrix stale.
+    if (vols[0].modulationImage) return false
     const overlay = vols[1]
     if ((overlay.opacity ?? 1) <= 0) return false
     const handled = await this.volumeRenderer.updateAffineOverlay(
@@ -526,6 +529,7 @@ export default class NVView {
         device,
         vols[0],
         this.model.volume.matcap,
+        vols,
       )
     }
     if (vols.length > 1) {

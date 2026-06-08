@@ -33,7 +33,10 @@ import * as NVVolume from '@/volume/NVVolume'
 import { computeVolumeLabelCentroids } from '@/volume/utils'
 
 // v8 added the optional `signals` array (NVSignal persistence, incl. each
-// signal's optional `annotations`).
+// signal's optional `annotations`). Later additive optional volume fields
+// (e.g. `modulationImage`) did NOT bump the version: they round-trip as absent
+// on older readers/writers (forward- and backward-compatible), so no schema
+// break. Bump only when adding a field that older code would misread.
 const DOCUMENT_VERSION = 8
 
 /**
@@ -59,6 +62,7 @@ export type NVDocumentVolume = {
   colormapType?: number
   isTransparentBelowCalMin?: boolean
   modulateAlpha?: number
+  modulationImage?: string
   isColorbarVisible?: boolean
   isLegendVisible?: boolean
   frame4D?: number
@@ -252,6 +256,7 @@ export function serialize(model: NVModel): Uint8Array {
       colormapType: v.colormapType,
       isTransparentBelowCalMin: v.isTransparentBelowCalMin,
       modulateAlpha: v.modulateAlpha,
+      modulationImage: v.modulationImage,
       isColorbarVisible: v.isColorbarVisible,
       isLegendVisible: v.isLegendVisible,
       frame4D: v.frame4D,
@@ -605,6 +610,11 @@ export async function reconstructVolume(
       if (v.isLegendVisible !== undefined)
         vol.isLegendVisible = v.isLegendVisible
       if (v.frame4D !== undefined) vol.frame4D = v.frame4D
+      // The modulator link is just a volume-id string; resolution is deferred
+      // to render time (find-by-id), so it is safe even if the modulator volume
+      // is restored later in this loop.
+      if (v.modulationImage !== undefined)
+        vol.modulationImage = v.modulationImage
       // Restore label colormap if present in document
       if (v.colormapLabel) {
         const lutData = v.colormapLabel.lut

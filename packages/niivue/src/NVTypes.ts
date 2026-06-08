@@ -172,6 +172,18 @@ export type NVImage = {
   modulationImage?: string
   /** @internal Pre-computed modulation data in RAS order (Float32Array of [0,1] values) */
   _modulationData?: Float32Array | null
+  /**
+   * @internal Pre-computed modulation weight in the MODULATOR's native voxel
+   * order (Float32Array of [0,1] values, already windowed by the modulator's
+   * calMin/calMax and raised to the modulateAlpha exponent). Used by the scalar
+   * overlay colormap prepass, which samples it through the modulator's overlay
+   * transform matrix (the same way the intensity texture is sampled), so it
+   * works for any co-registered grid. Distinct from {@link _modulationData},
+   * which is the RAS-order array consumed by the RGB/RGBA (V1) CPU path.
+   */
+  _modulationWeight?: Float32Array | null
+  /** @internal Cache key for {@link _modulationWeight} (modulator id/buffer/window/exponent). */
+  _modulationWeightKey?: string
   [key: string]: unknown
 }
 

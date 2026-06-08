@@ -147,7 +147,12 @@ mapOpacity.oninput = () => {
   mapOpacityVal.textContent = parseFloat(mapOpacity.value).toFixed(2)
   if (!lastMapId) return
   const idx = nv.volumes.findIndex((v) => v.id === lastMapId)
-  if (idx >= 0) nv.setVolume(idx, { opacity: parseFloat(mapOpacity.value) })
+  if (idx >= 0) {
+    // High-frequency slider: silence rejections (don't spam the footer).
+    void nv
+      .setVolume(idx, { opacity: parseFloat(mapOpacity.value) })
+      .catch(() => {})
+  }
 }
 
 // Configure the threshold slider to the MRSI overlay's total-signal range.
@@ -168,7 +173,15 @@ threshold.oninput = () => {
 
 cmapSelect.onchange = () => scene.setColormap(cmapSelect.value)
 colorbarCheck.onchange = () => scene.showColorbar(colorbarCheck.checked)
-maskCheck.onchange = () => scene.setMaskEnabled(maskCheck.checked)
+maskCheck.onchange = () => {
+  // Surface a failed mask render in the footer and revert the checkbox so it
+  // does not diverge from the displayed state.
+  const want = maskCheck.checked
+  scene.setMaskEnabled(want).catch((err) => {
+    fail('Mask toggle failed', err)
+    maskCheck.checked = !want
+  })
+}
 snapCheck.onchange = () => scene.enableVoxelSnap(snapCheck.checked)
 
 viewSelect.onchange = () => {
@@ -186,7 +199,12 @@ colorBtn.addEventListener('input', (event) => {
 })
 
 webgpuCheck.onclick = () => {
-  nv.reinitializeView({ backend: webgpuCheck.checked ? 'webgpu' : 'webgl2' })
+  const want = webgpuCheck.checked
+  const backend = want ? 'webgpu' : 'webgl2'
+  nv.reinitializeView({ backend }).catch((err) => {
+    fail(`Could not switch to ${backend}`, err)
+    webgpuCheck.checked = !want // revert: the switch did not take effect
+  })
 }
 
 nv.addEventListener('signalLocationChange', (e) => {

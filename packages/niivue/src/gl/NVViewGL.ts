@@ -316,6 +316,7 @@ export default class NVGlview {
         gl,
         vols[0],
         this.model.volume.matcap,
+        vols,
       )
     }
 
@@ -358,6 +359,9 @@ export default class NVGlview {
     const vols = this.model.getVolumes()
     if (vols.length !== 2) return false
     if (this.model.volume.isBackgroundMasking) return false
+    // A modulated background's prepass bakes the modulator matrix; the fast path
+    // only rebuilds the overlay prepass, so it would leave that matrix stale.
+    if (vols[0].modulationImage) return false
     const overlay = vols[1]
     if ((overlay.opacity ?? 1) <= 0) return false
     return this.volumeRenderer.updateAffineOverlay(gl, vols[0], overlay)

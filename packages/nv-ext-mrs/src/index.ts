@@ -36,7 +36,6 @@
 
 import NiiVue, {
   GYRO_MAG_RATIO,
-  getImageDataRAS,
   integratePpmBandMap,
   type MrsVolumeAccess,
   type NVExtensionContext,
@@ -184,10 +183,12 @@ export class MrsScene {
   private ctx: NVExtensionContext
   /** id of the loaded MRSI volume, set after {@link load} */
   mrsiId: string | null = null
-  /** mask values in RAS voxel order (cached at load) */
-  private maskRAS: Float32Array | null = null
-  /** the unmasked derived map (native voxel order) so the mask can be toggled */
-  private unmaskedMap: Float32Array | null = null
+  /** id of the (hidden) mask volume used to modulate the MRSI overlay, if any */
+  private maskId: string | null = null
+  /** whether the brain mask is currently applied (so generated maps match) */
+  private maskEnabled = false
+  /** ids of metabolite maps this scene added via {@link makeMap} */
+  private mapIds: string[] = []
   private snapEnabled = false
   private snapping = false
   private snapListener: ((e: CustomEvent<{ mm?: number[] }>) => void) | null =
@@ -198,9 +199,13 @@ export class MrsScene {
     this.ctx = nv.createExtensionContext()
   }
 
-  /** Live read-only access to THIS scene's MRSI volume's FID + metadata. */
+  /**
+   * Live read-only access to THIS scene's MRSI volume's FID + metadata, or null
+   * before {@link load} resolves. Does NOT fall back to the first global MRSI —
+   * a scene with no bound volume owns nothing.
+   */
   get mrs(): MrsVolumeAccess | null {
-    return this.mrsiId ? this.ctx.mrsById(this.mrsiId) : this.ctx.mrs
+    return this.mrsiId ? this.ctx.mrsById(this.mrsiId) : null
   }
 
   /** The loaded MRSI NVImage, or undefined. */
@@ -208,7 +213,12 @@ export class MrsScene {
     return this.nv.volumes.find((v) => v.id === this.mrsiId)
   }
 
-  /** True when two volumes share the same RAS voxel grid (dims match). */
+  /**
+   * Heuristic: do two volumes share RAS voxel DIMENSIONS (not full affine)?
+   * Used only as a sanity gate for the mask — core modulation itself samples the
+   * modulator through its overlay transform matrix and so tolerates any
+   * co-registered grid; this gate just rejects an obviously mismatched mask.
+   */
   private sameGrid(a: NVImage, b: NVImage | undefined): boolean {
     const da = a.dimsRAS
     const db = b?.dimsRAS
@@ -221,7 +231,24 @@ export class MrsScene {
    * derived total-signal map), optional mask, and a crosshair-following
    * spectrum. After this resolves, moving the crosshair updates the spectrum.
    */
+  /**
+   * Drop all per-scene bindings (crosshair signal, snap listener, MRSI/mask ids,
+   * mask flag, generated-map ids). Idempotent. Shared by {@link load} (so a
+   * reused controller / retry can't carry stale bindings onto new volumes) and
+   * {@link dispose}. `removeSceneSignal()` uses the still-current `mrsiId`, so it
+   * MUST run before the ids are cleared.
+   */
+  private resetState(): void {
+    this.removeSceneSignal()
+    this.enableVoxelSnap(false)
+    this.mrsiId = null
+    this.maskId = null
+    this.maskEnabled = false
+    this.mapIds = []
+  }
+
   async load(opts: MrsSceneOptions): Promise<void> {
+    this.resetState()
     if (opts.anatomyUrl) {
       // Suppress the anatomy colorbar: only the MRSI overlay's intensity scale
       // is meaningful, so it owns the (toggleable) colorbar.
@@ -235,33 +262,38 @@ export class MrsScene {
       opacity: opts.mrsiOpacity ?? 0.7,
       isColorbarVisible: true,
     })
-    const mrs = this.ctx.mrs
+    // Bind to the volume just added (not the global-first MRSI), so a second
+    // MrsScene over an instance that already holds an MRSI volume targets the
+    // right one.
+    const addedId = this.nv.volumes[this.nv.volumes.length - 1]?.id ?? null
+    const mrs = addedId ? this.ctx.mrsById(addedId) : null
     if (!mrs) {
       throw new Error(
         'MrsScene.load: the loaded MRSI volume is not complex/spectroscopic',
       )
     }
     this.mrsiId = mrs.id
-    // Restrict the MRSI overlay to in-mask (brain) voxels. The grid is a
-    // colormapped scalar overlay, and NiiVue's volume modulation only affects
-    // RGB/RGBA volumes (it is a no-op for scalar overlays — the colormap runs
-    // on the GPU), so we bake the mask into the scalar data instead: out-of-mask
-    // voxels become a below-threshold sentinel and are drawn transparent. The
-    // mask is loaded only to read its data (kept hidden at opacity 0).
+    // Restrict the MRSI overlay to in-mask (brain) voxels by modulating the
+    // overlay's alpha with the mask (out-of-mask weight 0 -> transparent). The
+    // mask is loaded as a hidden volume (opacity 0) and consumed only as the
+    // modulator; calMin/calMax 0..1 so a 0/1 (or 0/255) binary mask yields a
+    // clean 0/1 weight. See setMaskEnabled.
     if (opts.maskUrl) {
       try {
         await this.nv.addVolume({
           url: opts.maskUrl,
           opacity: 0,
+          calMin: 0,
+          calMax: 1,
           isColorbarVisible: false,
         })
         const maskVol = this.nv.volumes[this.nv.volumes.length - 1]
-        // Validate the mask shares the MRSI grid before baking — otherwise the
-        // RAS-index mapping in setMaskEnabled would corrupt the overlay.
+        // Modulation tolerates any co-registered grid, but a same-grid mask is
+        // the intended case; warn (and skip) on a mismatch rather than masking
+        // with a surprising reslice.
         const mrsiVol = this.mrsiVol()
         if (maskVol && this.sameGrid(maskVol, mrsiVol)) {
-          const ras = getImageDataRAS(maskVol)
-          this.maskRAS = ras ? Float32Array.from(ras) : null
+          this.maskId = maskVol.id ?? null
         } else {
           console.warn(
             'MrsScene: mask grid does not match the MRSI grid; mask ignored',
@@ -289,63 +321,45 @@ export class MrsScene {
     // Marker: snap the crosshair to the sampled MRSI voxel centre so the cursor
     // sits in the middle of the coarse grid cell being read (default on).
     this.enableVoxelSnap(opts.snapToVoxel ?? true)
-    // Cache the unmasked map, then apply the brain mask by default.
-    const mrsiVol = this.mrsiVol()
-    if (mrsiVol?.img) this.unmaskedMap = Float32Array.from(mrsiVol.img)
-    this.setMaskEnabled(opts.mask ?? true)
+    // Apply the brain mask by default (awaited so load() resolves after the
+    // first masked render is committed).
+    await this.setMaskEnabled(opts.mask ?? true)
   }
 
   /**
    * Toggle the mask restricting the MRSI overlay to in-mask (brain) voxels.
-   * Bakes the mask into the scalar overlay (out-of-mask voxels become a
-   * below-threshold sentinel, drawn transparent). No-op if no mask was loaded.
+   * Alpha-modulates the MRSI overlay by the (hidden) mask volume: out-of-mask
+   * voxels get weight 0 and are drawn transparent, revealing the anatomy. No-op
+   * if no mask was loaded.
    *
-   * Volume modulation (`setModulationImage`) only affects RGB/RGBA volumes — it
-   * is a no-op for a colormapped scalar overlay (the colormap runs on the GPU),
-   * so we edit the scalar data directly. The new data is written to a FRESH
-   * Float32Array: both renderers cache the overlay texture keyed on
-   * `img.buffer` identity, so reusing the same buffer would not re-upload —
-   * swapping the buffer invalidates the cache. Mapping is done in RAS order via
-   * the overlay's native index map, so it is correct regardless of orientation.
+   * Uses core scalar-overlay modulation (`setModulationImage(targetId,
+   * modulatorId, modulateAlpha = 1)`): the colormap GPU prepass samples the mask
+   * through its overlay transform matrix, so no per-voxel CPU baking, buffer
+   * swap, or shadow copy is needed, and the masked map data stays intact.
+   *
+   * Returns the underlying render-update promise so callers can await the masked
+   * render (no-op resolved promise when no mask was loaded).
    */
-  setMaskEnabled(on: boolean): void {
-    const vol = this.mrsiVol()
-    const base = this.unmaskedMap
-    if (!vol?.img || !base) return
-    const out = new Float32Array(base) // fresh buffer -> cache invalidates
-    const d = vol.dimsRAS
-    if (
-      on &&
-      this.maskRAS &&
-      d &&
-      vol.img2RASstart &&
-      vol.img2RASstep &&
-      // mask must cover exactly the MRSI RAS grid (guards a mismatched mask)
-      this.maskRAS.length === d[1] * d[2] * d[3]
-    ) {
-      const start = vol.img2RASstart
-      const step = vol.img2RASstep
-      const mask = this.maskRAS
-      const SENTINEL = -1e20 // always below any (>=0) display threshold
-      let rasIdx = 0
-      for (let rz = 0; rz < d[3]; rz++) {
-        for (let ry = 0; ry < d[2]; ry++) {
-          for (let rx = 0; rx < d[1]; rx++) {
-            const nativeIdx =
-              start[0] +
-              rx * step[0] +
-              start[1] +
-              ry * step[1] +
-              start[2] +
-              rz * step[2]
-            if (!(mask[rasIdx] > 0.5)) out[nativeIdx] = SENTINEL
-            rasIdx++
-          }
-        }
-      }
-    }
-    vol.img = out
-    void this.nv.updateGLVolume()
+  setMaskEnabled(on: boolean): Promise<void> {
+    if (!this.maskId) return Promise.resolve()
+    const prev = this.maskEnabled
+    this.maskEnabled = on
+    // Apply (or clear) the mask on the MRSI overlay AND every generated map, so
+    // a metabolite map does not show values outside the masked brain region.
+    const targets = [this.mrsiId, ...this.mapIds].filter(
+      (id): id is string => !!id,
+    )
+    const modId = on ? this.maskId : ''
+    return Promise.all(
+      targets.map((id) => this.nv.setModulationImage(id, modId, 1)),
+    )
+      .then(() => undefined)
+      .catch((err) => {
+        // Keep maskEnabled in sync with what actually rendered, so a later
+        // makeMap doesn't inherit a state the UI never committed.
+        this.maskEnabled = prev
+        throw err
+      })
   }
 
   /**
@@ -426,9 +440,19 @@ export class MrsScene {
     this.nv.setCrosshairPos(mm)
   }
 
-  /** Index of the crosshair-following spectrum signal, or -1. */
+  /** Index of THIS scene's crosshair-following spectrum signal, or -1. Scoped
+   * by attachedToId so multiple scenes / leaked signals don't cross-talk. */
   private signalIndex(): number {
-    return this.nv.signals.findIndex((s) => s.followsCrosshair)
+    if (!this.mrsiId) return -1
+    return this.nv.signals.findIndex(
+      (s) => s.followsCrosshair && s.attachedToId === this.mrsiId,
+    )
+  }
+
+  /** Remove this scene's crosshair signal if present (idempotent). */
+  private removeSceneSignal(): void {
+    const i = this.signalIndex()
+    if (i >= 0) this.nv.removeSignal(i)
   }
 
   private updateDisplay(display: Partial<NVSignalDisplay>): void {
@@ -446,9 +470,11 @@ export class MrsScene {
    * the perceptually-uniform, colorblind-safe options `cividis`, `viridis`,
    * `magma`, and `lipari` ship with NiiVue.
    */
-  setColormap(name: string): void {
+  setColormap(name: string): Promise<void> {
     const idx = this.mrsiIndex()
-    if (idx >= 0) this.nv.setVolume(idx, { colormap: name })
+    return idx >= 0
+      ? this.nv.setVolume(idx, { colormap: name })
+      : Promise.resolve()
   }
 
   /**
@@ -486,11 +512,11 @@ export class MrsScene {
    * uses MIN_TO_MAX with transparent-below-calMin, raising this hides
    * low-signal voxels (e.g. residual signal outside the head).
    */
-  setThreshold(calMin: number): void {
+  setThreshold(calMin: number): Promise<void> {
     const idx = this.mrsiIndex()
-    if (idx >= 0) {
-      this.nv.setVolume(idx, { calMin, isTransparentBelowCalMin: true })
-    }
+    return idx >= 0
+      ? this.nv.setVolume(idx, { calMin, isTransparentBelowCalMin: true })
+      : Promise.resolve()
   }
 
   /** Set the displayed spectral component. */
@@ -545,6 +571,7 @@ export class MrsScene {
       name,
     })
     await this.nv.addVolume(map)
+    if (map.id) this.mapIds.push(map.id)
     const idx = this.nv.volumes.findIndex((v) => v.id === map.id)
     if (idx >= 0) {
       await this.nv.setVolume(idx, {
@@ -553,11 +580,24 @@ export class MrsScene {
         colormapType: 1, // zero-to-max, transparent below calMin
       })
     }
+    // Match the overlay: if the brain mask is on, restrict the new map to it too.
+    if (this.maskEnabled && this.maskId && map.id) {
+      await this.nv.setModulationImage(map.id, this.maskId, 1)
+    }
     return map
   }
 
-  /** Release the extension context's subscriptions. */
+  /**
+   * Release scene-owned resources: remove this scene's crosshair signal, detach
+   * the snap listener, and dispose the extension context's subscriptions.
+   *
+   * NOTE: the scene's volumes (MRSI grid, hidden mask, generated metabolite
+   * maps) are NOT removed — the controller exposes no single-volume removal to
+   * extensions (only `removeAllVolumes`), which would clobber the host's other
+   * volumes. Callers that own the whole instance should `removeAllVolumes()`.
+   */
   dispose(): void {
+    this.resetState()
     this.ctx.dispose()
   }
 }

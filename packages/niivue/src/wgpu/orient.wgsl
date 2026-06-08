@@ -10,6 +10,11 @@ struct Uniforms {
   params    : vec4<f32>,  // slope, intercept, cal_min, cal_max
   negParams : vec4<f32>,  // cal_minNeg, cal_maxNeg, isAlphaThreshold, isColorbarFromZero
   flags     : vec4<f32>,  // overlayOpacity, isLabel, labelMin, labelWidth
+  modMtxRow0 : vec4<f32>, // modulation matrix row 0 (output → modulator texture coords)
+  modMtxRow1 : vec4<f32>, // modulation matrix row 1
+  modMtxRow2 : vec4<f32>, // modulation matrix row 2
+  modMtxRow3 : vec4<f32>, // modulation matrix row 3
+  modFlags  : vec4<f32>,  // x = modulation mode (0 none, 1 RGB, 2 alpha)
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -20,6 +25,8 @@ struct Uniforms {
 @group(0) @binding(3) var rgbaOut   : texture_storage_3d<rgba8unorm, write>;
 @group(0) @binding(4) var samp      : sampler;
 @group(0) @binding(5) var colorMapNeg : texture_2d<f32>;
+// Modulation weight (always f32, [0,1], modulator native order); textureLoad (no sampler).
+@group(0) @binding(6) var modTex : texture_3d<f32>;
 
 @compute @workgroup_size(8, 8, 4)
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
@@ -137,6 +144,26 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
       color.a = 0.0;
     } else if (f > 0.0 && calmin > 0.0 && f < calmin) {
       color.a = 0.0;
+    }
+  }
+
+  // Modulation: scale RGB (mode 1) or alpha (mode 2) by another volume.
+  let modMode = i32(u.modFlags.x);
+  if (modMode > 0) {
+    let mPos = vec4<f32>(outUVW, 1.0);
+    let mU = dot(u.modMtxRow0, mPos);
+    let mV = dot(u.modMtxRow1, mPos);
+    let mW = dot(u.modMtxRow2, mPos);
+    var w = 0.0;
+    if (mU >= 0.0 && mU <= 1.0 && mV >= 0.0 && mV <= 1.0 && mW >= 0.0 && mW <= 1.0) {
+      let modDims = vec3<f32>(textureDimensions(modTex));
+      let mc = vec3<i32>(clamp(vec3<f32>(mU, mV, mW) * modDims, vec3<f32>(0.0), modDims - vec3<f32>(1.0)));
+      w = textureLoad(modTex, mc, 0).r;
+    }
+    if (modMode == 1) {
+      color = vec4<f32>(color.rgb * w, color.a);
+    } else {
+      color.a = color.a * w;
     }
   }
 

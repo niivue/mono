@@ -204,7 +204,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `binarize()` | ⚠️ | Available through connected-label/threshold transform options, not standalone legacy method |
 | `conform()` — 1mm isotropic | ✅ | Volume transform |
 | `createConnectedLabelImage()` | ✅ | Volume transform |
-| `setModulationImage()` | ✅ | |
+| `setModulationImage()` | ✅ | Scalar overlays/background: RGB + alpha via GPU prepass (both backends), `examples/vox.modulate.scalar.html`. RGB/RGBA (V1) volumes: RGB only (alpha preserved for sign bits). `modulationImage` + `modulateAlpha` persisted to NVD. Backend parity verified manually (no Playwright). |
 | `isAlphaClipDark` | ✅ | `volumeIsAlphaClipDark` |
 | `setAtlasOutline()` | ❌ | |
 | `overlayOutlineWidth` | ✅ | `volumeOutlineWidth` |

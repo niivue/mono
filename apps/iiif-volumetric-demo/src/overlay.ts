@@ -664,7 +664,24 @@ function syncControls(): void {
   els.opacityCool.disabled = plainStreamed
 }
 
-async function loadAll(v: VolumeApiEntry): Promise<void> {
+// Serialize loads. Each overlay-option change calls loadAll(); nv.loadVolumes()
+// is async, so two rapid changes would otherwise run concurrently and one
+// load's in-flight overlay reslice could touch a volume the other load has
+// already freed (crash: "overlay2Texture: missing image data"). Chain loads so
+// they never overlap, and coalesce a burst of changes to only the latest.
+let loadChain: Promise<void> = Promise.resolve()
+let loadSeq = 0
+function loadAll(v: VolumeApiEntry): Promise<void> {
+  const seq = ++loadSeq
+  const next = loadChain.then(() =>
+    // Skip stale loads superseded by a newer request while we waited our turn.
+    seq === loadSeq ? loadAllImpl(v) : undefined,
+  )
+  loadChain = next.catch(() => {}) // keep the chain alive if a load fails
+  return next
+}
+
+async function loadAllImpl(v: VolumeApiEntry): Promise<void> {
   if (!nv) return
   current = v
   fetched = new Set()

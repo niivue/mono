@@ -1114,11 +1114,26 @@ export class VolumeRenderer extends NVRenderer {
     this._clearCombinedOverlayChunked()
     this._destroyOverlayChunks(gl)
 
+    // A streamed overlay (chunkSource, no in-memory `img`) can only render via
+    // the chunked path above. It reaches here only transiently — e.g. an
+    // overlay-option change fires loadVolumes() while a prior base load is still
+    // in flight, so updateOverlays runs before the base's chunkPlan is set.
+    // Reslicing it would call overlay2Texture/prepareOverlayTextureCache on a
+    // null `img` and throw "image data missing"; skip it until the next update
+    // (once the base is chunked) renders it through the combined path.
+    const inMem = reslicedVols.filter((v) => v.img)
+    if (inMem.length < reslicedVols.length) {
+      log.warn(
+        'updateOverlays: skipping streamed overlay(s) with no in-memory image ' +
+          'until the base volume is chunked',
+      )
+    }
+
     // Upload standard overlays
-    if (reslicedVols.length === 0) {
+    if (inMem.length === 0) {
       this.clearOverlay(gl)
-    } else if (reslicedVols.length === 1) {
-      const vol = reslicedVols[0]
+    } else if (inMem.length === 1) {
+      const vol = inMem[0]
       const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
       if (isRgbaDatatype(vol.hdr.datatypeCode)) {
         this.clearOverlay(gl)
@@ -1143,12 +1158,12 @@ export class VolumeRenderer extends NVRenderer {
       )
       this.overlayTexture = this.overlayOrientCache.outputTexture
       gl.bindTexture(gl.TEXTURE_3D, null)
-    } else if (reslicedVols.length > 1) {
+    } else if (inMem.length > 1) {
       this.deleteNonCachedOverlayTexture(gl)
       orientOverlay.destroyOverlayTextureCache(gl, this.overlayOrientCache)
       this.overlayOrientCache = null
       const overlayData: Uint8Array[] = []
-      for (const vol of reslicedVols) {
+      for (const vol of inMem) {
         const mtx = NVTransforms.calculateOverlayTransformMatrix(baseVol, vol)
         const tex = orientOverlay.overlay2Texture(
           gl,
@@ -1381,12 +1396,13 @@ export class VolumeRenderer extends NVRenderer {
     this._destroyOverlayChunks(gl)
 
     const supported = standardVols.filter(
-      (v) => !isRgbaDatatype(v.hdr.datatypeCode),
+      (v) => !isRgbaDatatype(v.hdr.datatypeCode) && v.img,
     )
     if (supported.length < standardVols.length) {
       log.warn(
         'chunked overlay: RGB/RGBA-datatype overlays are not yet supported ' +
-          'on oversized volumes; skipped',
+          'on oversized volumes, and streamed overlays without an in-memory ' +
+          'image cannot be resliced whole; skipped',
       )
     }
     if (supported.length === 0) return

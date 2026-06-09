@@ -8,6 +8,7 @@ import * as NVShapes from '@/mesh/NVShapes'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
 import type {
+  FloorPlacement,
   NVImage,
   NVMesh,
   NVViewOptions,
@@ -397,10 +398,13 @@ export default class NVGlview {
     this.isBusy = false
   }
 
-  async setCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+  async setCoarseFloor(
+    coarseVol: NVImage | null,
+    placement: FloorPlacement | null = null,
+  ): Promise<void> {
     const gl = this.gl
     if (!gl) return
-    this.volumeRenderer.setCoarseFloor(gl, coarseVol)
+    this.volumeRenderer.setCoarseFloor(gl, coarseVol, placement)
   }
 
   async updateAffineOverlays(): Promise<boolean> {
@@ -686,6 +690,19 @@ export default class NVGlview {
             // draw over it (2D alpha-over, disjoint), sharpening as they arrive.
             const floorTex = this.volumeRenderer.coarseFloorTexture
             if (floorTex) {
+              const baseDims: [number, number, number] = vol.dimsRAS
+                ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
+                : [1, 1, 1]
+              const fp = this.volumeRenderer.coarseFloorPlacement
+              const floorTransform = fp
+                ? {
+                    subOrigin: [0, 0, 0] as [number, number, number],
+                    subSize: [1, 1, 1] as [number, number, number],
+                    dataOrigin: fp.origin,
+                    dataSize: fp.size,
+                    volumeDims: baseDims,
+                  }
+                : identityChunkSampleTransform(baseDims)
               this.sliceRenderer.draw(
                 gl,
                 floorTex,
@@ -703,12 +720,9 @@ export default class NVGlview {
                 0,
                 md.volume.paqdUniforms,
                 md.volume.isV1SliceShader,
-                identityChunkSampleTransform(
-                  vol.dimsRAS
-                    ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
-                    : [1, 1, 1],
-                ),
+                floorTransform,
                 -1,
+                true, // floor backdrop: do not write depth
               )
             }
             // Oversized volume: draw one in-plane-restricted quad per chunk

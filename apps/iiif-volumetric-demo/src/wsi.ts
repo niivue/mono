@@ -44,6 +44,9 @@ const RESIDENCY_BYTES = 1_500_000_000
 const MIN_SPAN = 48
 // How long after the last wheel tick we re-evaluate the level (ms).
 const SETTLE_MS = 160
+// Debug A/B: ?nofloor disables the coarse whole-slide floor so the streaming
+// gap on a level swap is visible (for verifying the floor's effect).
+const NO_FLOOR = new URLSearchParams(location.search).has('nofloor')
 
 interface ApiLevel {
   level: number
@@ -200,6 +203,8 @@ function populateLevels(v: WsiVolume): void {
 function selectVolume(v: WsiVolume): void {
   current = v
   populateLevels(v)
+  // New slide: drop the previous slide's floor (loadViewport rebuilds it).
+  void nv.setBaseCoarseFloor(null)
   const base = baseLevel(v)
   centerL0 = [base.shape[0] / 2, base.shape[1] / 2]
   spanL0 = base.shape[0] // whole slide
@@ -448,6 +453,41 @@ function createStreamingRGBVolume(
   } as unknown as NVImage
 }
 
+// Build a coarse floor for the *same* window region the fine window covers, a
+// few pyramid levels coarser so the whole region fits in one texture. Because
+// it spans the identical mm box as the fine window, it aligns with an identity
+// placement: the slice samples it where fine tiles haven't streamed yet, so a
+// level swap shows near-final (mildly blurry) detail immediately and sharpens
+// as the fine window streams. One small bbox fetch (~1/16+ of the fine data);
+// `img` is populated so setBaseCoarseFloor orients it as a single texture.
+async function createWindowFloorVolume(
+  v: WsiVolume,
+  baseRegion: { x: number; y: number; w: number; h: number },
+): Promise<NVImage> {
+  // Coarsest-enough factor so the region fits one texture; pick the finest
+  // (sharpest) available level that still fits.
+  const need = Math.max(baseRegion.w, baseRegion.h) / CHUNK_EDGE
+  const fits = v.levels.filter((l) => factorOf(v, l) >= need)
+  const floorLvl = fits.length
+    ? fits.reduce((a, b) => (factorOf(v, b) < factorOf(v, a) ? b : a))
+    : v.levels.reduce((a, b) => (factorOf(v, b) > factorOf(v, a) ? b : a))
+  const ff = factorOf(v, floorLvl)
+  const fx = Math.floor(baseRegion.x / ff)
+  const fy = Math.floor(baseRegion.y / ff)
+  const fw = Math.max(1, Math.min(Math.ceil(baseRegion.w / ff), floorLvl.shape[0] - fx))
+  const fh = Math.max(1, Math.min(Math.ceil(baseRegion.h / ff), floorLvl.shape[1] - fy))
+  const url = `/volumes/${encodeURIComponent(v.id)}/raw.bin?level=${floorLvl.level}&bbox=${fx},${fy},0,${fx + fw},${fy + fh},1`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`floor GET ${url} -> ${res.status}`)
+  const bytes = new Uint8Array(await res.arrayBuffer())
+  const floor = createStreamingRGBVolume(v, floorLvl, fx, fy, fw, fh)
+  floor.img = bytes as unknown as NVImage['img']
+  floor.name = `${v.id} floor L${floorLvl.level} ${fx},${fy},${fw},${fh}`
+  floor.id = floor.name
+  floor.url = `wsi-floor://${encodeURIComponent(v.id)}/L${floorLvl.level}/${fx},${fy},${fw},${fh}`
+  return floor
+}
+
 // Load a chunked-RGB streaming window of the level whose pixels are ~1:1 with
 // the screen — a window large enough to give panning room but bounded to niivue's
 // 256-chunk cap — then aim niivue's pan/zoom at the viewport. niivue streams
@@ -512,6 +552,22 @@ async function loadViewport(): Promise<void> {
   }
   nv.sliceType = SLICE_TYPE.AXIAL
   setNiivueView(centerL0[0], centerL0[1], spanL0)
+  // Coarse floor of the SAME window region (a few levels coarser, identity-
+  // aligned): shows near-final detail behind the streaming window so a level
+  // swap (or panning into un-streamed tiles) never blanks, sharpening as the
+  // fine tiles arrive. Rebuilt per window load (small fetch).
+  try {
+    if (NO_FLOOR) throw new Error('floor disabled (?nofloor)')
+    const floor = await createWindowFloorVolume(v, {
+      x: x0 * f,
+      y: y0 * f,
+      w: winW * f,
+      h: winH * f,
+    })
+    if (token === loadToken) await nv.setBaseCoarseFloor(floor)
+  } catch {
+    // Non-fatal: without a floor the window just blanks-while-streaming.
+  }
   nv.drawScene()
   els.level.value = String(lvl.level)
   syncUi()

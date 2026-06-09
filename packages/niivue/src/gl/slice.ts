@@ -189,6 +189,9 @@ export class SliceRenderer extends NVRenderer {
     isV1SliceShader = false,
     chunkTransform?: ChunkSampleTransform,
     chunkIndex = -1,
+    // Coarse floor backdrop: covers the whole slice, so it must not write depth
+    // or the coplanar fine chunks drawn after would be depth-occluded.
+    noDepthWrite = false,
   ): void {
     if (
       !this.isReady ||
@@ -328,7 +331,8 @@ export class SliceRenderer extends NVRenderer {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
     // Enable depth writing so slices correctly interact with meshes in 2D views
-    gl.depthMask(true)
+    // (but a coarse floor backdrop must not write depth — see noDepthWrite).
+    gl.depthMask(!noDepthWrite)
 
     // Disable face culling for the quad
     gl.disable(gl.CULL_FACE)

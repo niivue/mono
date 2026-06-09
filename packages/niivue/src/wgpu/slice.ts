@@ -22,6 +22,9 @@ const MAX_CHUNKS_PER_TILE = 256
 
 export class SliceRenderer extends NVRenderer {
   pipeline: GPURenderPipeline | null
+  // Floor backdrop pipeline: same as `pipeline` but does not write depth (see
+  // its creation), so coplanar fine chunks drawn after the floor are not occluded.
+  pipelineFloor: GPURenderPipeline | null = null
   bindLayout: GPUBindGroupLayout | null
   paramsBuffer: GPUBuffer | null
   placeholderOverlay: GPUTexture | null
@@ -183,7 +186,7 @@ export class SliceRenderer extends NVRenderer {
 
     // Create pipeline
     const sliceModule = device.createShaderModule({ code: sliceShaderCode })
-    this.pipeline = device.createRenderPipeline({
+    const pipelineDesc: GPURenderPipelineDescriptor = {
       layout: device.createPipelineLayout({
         bindGroupLayouts: [this.bindLayout],
       }),
@@ -211,6 +214,18 @@ export class SliceRenderer extends NVRenderer {
         format: 'depth24plus',
       },
       primitive: { topology: 'triangle-strip' },
+    }
+    this.pipeline = device.createRenderPipeline(pipelineDesc)
+    // Floor variant: a coarse-LOD backdrop quad covers the whole slice, so it
+    // must NOT write depth — otherwise the coplanar fine chunk quads drawn after
+    // it (same slice plane) would fail the 'less' depth test and be occluded.
+    this.pipelineFloor = device.createRenderPipeline({
+      ...pipelineDesc,
+      depthStencil: {
+        depthWriteEnabled: false,
+        depthCompare: 'less',
+        format: 'depth24plus',
+      },
     })
 
     this.isReady = true
@@ -639,7 +654,13 @@ export class SliceRenderer extends NVRenderer {
 
     device.queue.writeBuffer(this.paramsBuffer, dynamicOffset, uniformData)
 
-    pass.setPipeline(this.pipeline)
+    // The coarse floor backdrop uses the no-depth-write pipeline so the fine
+    // chunks drawn after it (same slice plane) are not depth-occluded.
+    pass.setPipeline(
+      chunk?.useBaseSlot && this.pipelineFloor
+        ? this.pipelineFloor
+        : this.pipeline,
+    )
     pass.setBindGroup(0, bindGroup, [dynamicOffset])
     pass.draw(4)
   }

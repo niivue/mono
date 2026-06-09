@@ -2,7 +2,7 @@ import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVShapes from '@/mesh/NVShapes'
 import { isPaqd } from '@/NVConstants'
-import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
+import type { FloorPlacement, NVImage, VolumeChunkExplode } from '@/NVTypes'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
   isRgbaDatatype,
@@ -294,6 +294,11 @@ export class VolumeRenderer extends NVRenderer {
   // immediately and sharpens as chunks arrive. Oriented once from a coarse
   // pyramid level the app supplies (niivue stays LOD-agnostic). Null when unset.
   coarseFloorTexture: GPUTexture | null = null
+  // Where the active base sits within the floor texture, in floor texture
+  // fraction. Null => the floor spans the whole base (identity). A whole-slide
+  // thumbnail floor backing a sub-region window (WSI deep-zoom) sets it so the
+  // slice samples the floor at origin + baseFrac * size.
+  coarseFloorPlacement: FloorPlacement | null = null
   private _coarseFloorKey: string | null = null
   // True while pumpChunkUploads has an async upload in flight. Guards against
   // re-entrant pumps double-uploading a chunk that is queued but not yet
@@ -2335,8 +2340,13 @@ export class VolumeRenderer extends NVRenderer {
   async setCoarseFloor(
     device: GPUDevice,
     coarseVol: NVImage | null,
+    placement: FloorPlacement | null = null,
   ): Promise<void> {
     if (!this.isReady) return
+    // Placement: where the active base sits within the floor texture, in floor
+    // texture fraction (null => identity, floor spans the whole base). A whole-
+    // slide thumbnail floor backing a sub-region window (WSI deep-zoom) sets it.
+    this.coarseFloorPlacement = placement
     if (!coarseVol) {
       this.coarseFloorTexture?.destroy()
       this.coarseFloorTexture = null

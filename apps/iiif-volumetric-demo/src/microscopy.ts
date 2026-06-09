@@ -140,7 +140,7 @@ function renderHud(): void {
 }
 
 async function applyOrientation(): Promise<void> {
-  if (!nv || !nv.volumes[1]) return
+  if (!nv?.volumes[1]) return
   await nv.setVolumeAffine(
     1,
     patchAffine(Number(els.yaw.value), Number(els.pitch.value)),
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
     })
   }
   els.opacity.addEventListener('input', () => {
-    if (nv && nv.volumes[1]) {
+    if (nv?.volumes[1]) {
       void nv.setVolume(1, { opacity: Number(els.opacity.value) })
     }
     renderHud()

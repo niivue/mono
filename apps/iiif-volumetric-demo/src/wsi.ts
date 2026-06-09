@@ -474,8 +474,14 @@ async function createWindowFloorVolume(
   const ff = factorOf(v, floorLvl)
   const fx = Math.floor(baseRegion.x / ff)
   const fy = Math.floor(baseRegion.y / ff)
-  const fw = Math.max(1, Math.min(Math.ceil(baseRegion.w / ff), floorLvl.shape[0] - fx))
-  const fh = Math.max(1, Math.min(Math.ceil(baseRegion.h / ff), floorLvl.shape[1] - fy))
+  const fw = Math.max(
+    1,
+    Math.min(Math.ceil(baseRegion.w / ff), floorLvl.shape[0] - fx),
+  )
+  const fh = Math.max(
+    1,
+    Math.min(Math.ceil(baseRegion.h / ff), floorLvl.shape[1] - fy),
+  )
   const url = `/volumes/${encodeURIComponent(v.id)}/raw.bin?level=${floorLvl.level}&bbox=${fx},${fy},0,${fx + fw},${fy + fh},1`
   const res = await fetch(url)
   if (!res.ok) throw new Error(`floor GET ${url} -> ${res.status}`)

@@ -744,6 +744,27 @@ async function loadAllImpl(v: VolumeApiEntry): Promise<void> {
     )
     return
   }
+  // Coarse LOD floor for the streamed base: reuse the coarse level we already
+  // fetched for the window/stats, so a deep-zoom 2D slice shows coarse detail
+  // immediately and never blanks while the base streams in (it sharpens as fine
+  // chunks arrive). Same gray colormap + window as the base.
+  try {
+    const floor = buildLogicalVolume({
+      id: `${v.id} floor`,
+      url: `floor://${encodeURIComponent(v.id)}/L${coarseLvl.level}`,
+      shape: coarseLvl.shape,
+      spacing: coarseLvl.spacing,
+      datatypeCode: 16, // DT_FLOAT32 (fetchLevelScalars returns Float32)
+      numBitsPerVoxel: 32,
+      calMin: bgWin.min,
+      calMax: bgWin.max,
+      colormap: 'gray',
+      img: scalars,
+    })
+    await nv.setBaseCoarseFloor(floor)
+  } catch {
+    // Non-fatal: without a floor the slice just falls back to blank-while-streaming.
+  }
   // The streamed combined overlay (strategy A) renders in both the 3D render
   // and 2D multiplanar slices, so honor the selected layout.
   nv.sliceType = Number(els.layout.value)

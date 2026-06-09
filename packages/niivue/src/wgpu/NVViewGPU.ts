@@ -8,6 +8,7 @@ import * as NVShapes from '@/mesh/NVShapes'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
 import type {
+  NVImage,
   NVMesh,
   NVViewOptions,
   ViewHitTest,
@@ -31,6 +32,7 @@ import {
   type ChunkPlan,
   chunkSampleTransform,
   chunksCrossingSlice,
+  identityChunkSampleTransform,
 } from '@/volume/chunking'
 import { WGPUBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
@@ -526,6 +528,12 @@ export default class NVView {
     }
   }
 
+  async setCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+    const device = this.device
+    if (!device) return
+    await this.volumeRenderer.setCoarseFloor(device, coarseVol)
+  }
+
   async updateAffineOverlays(): Promise<boolean> {
     const device = this.device
     if (!device) return false
@@ -991,6 +999,41 @@ export default class NVView {
               : 0
           const chunked = this.volumeRenderer.getActiveChunkedSlice()
           if (chunked) {
+            // Coarse LOD floor: draw the whole-volume coarse texture as one
+            // full-coverage quad first, so regions whose fine chunk has not yet
+            // streamed show coarse detail instead of blank. Fine chunk quads
+            // below draw over it (2D alpha-over, disjoint), sharpening as they
+            // arrive. Uses the per-tile base uniform slot (free for chunked).
+            const floorTex = this.volumeRenderer.coarseFloorTexture
+            if (floorTex) {
+              this.sliceRenderer.draw(
+                device,
+                pass,
+                vol,
+                sliceMd,
+                mvpMatrix as Float32Array,
+                tile.axCorSag,
+                sliceFrac,
+                i,
+                numSliceVolumes,
+                md.volume.isNearestInterpolation,
+                1,
+                0,
+                md.volume.paqdUniforms,
+                md.volume.isV1SliceShader,
+                {
+                  volumeTexture: floorTex,
+                  transform: identityChunkSampleTransform(
+                    vol.dimsRAS
+                      ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
+                      : [1, 1, 1],
+                  ),
+                  slot: 0,
+                  chunkIndex: -1,
+                  useBaseSlot: true,
+                },
+              )
+            }
             // Oversized volume: draw one in-plane-restricted quad per chunk
             // the slice crosses. Quads are spatially disjoint, so draw order
             // does not matter.

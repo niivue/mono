@@ -106,6 +106,7 @@ type ViewBackend = {
   render: () => void
   updateBindGroups: () => Promise<void>
   updateAffineOverlays?: () => Promise<boolean>
+  setCoarseFloor?: (coarseVol: NVImage | null) => Promise<void>
   hitTest: (x: number, y: number) => ViewHitTest | null
   depthPick: (x: number, y: number) => Promise<[number, number, number] | null>
   loadThumbnail: (url: string) => Promise<void>
@@ -2358,6 +2359,20 @@ export default class NiiVueGPU extends EventTarget {
   rebakeChunkedOverlays(): void {
     if (!this.view) return
     this.view.rebakeChunkedOverlays()
+    this.drawScene()
+  }
+
+  /**
+   * Set (or clear, with null) a coarse whole-volume "floor" for the streamed
+   * base. On 2D slices the floor renders behind the resident fine chunks, so a
+   * deep-zoom slice shows coarse detail immediately and never blanks while
+   * finer chunks stream in — a smooth level-of-detail transition. `coarseVol`
+   * is a small in-memory pyramid level (its own colormap/window); niivue stays
+   * level-of-detail-agnostic and the app supplies it. No-op before a view
+   * attaches or on a backend that has not implemented it.
+   */
+  async setBaseCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+    await this.view?.setCoarseFloor?.(coarseVol)
     this.drawScene()
   }
 

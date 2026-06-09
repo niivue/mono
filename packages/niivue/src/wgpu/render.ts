@@ -288,6 +288,13 @@ export class VolumeRenderer extends NVRenderer {
   // and feeds the base block's overlay slot (binding 5) — so the base
   // ray-march, clip plane, and compositing are reused unchanged.
   private _combinedOverlayEntries: ChunkedTexEntry[] = []
+  // Coarse whole-volume "floor" texture for the active base. On 2D slices it is
+  // drawn as one full-coverage quad behind the resident fine chunks, so a deep-
+  // zoom slice never blanks while finer chunks stream — coarse detail shows
+  // immediately and sharpens as chunks arrive. Oriented once from a coarse
+  // pyramid level the app supplies (niivue stays LOD-agnostic). Null when unset.
+  coarseFloorTexture: GPUTexture | null = null
+  private _coarseFloorKey: string | null = null
   // True while pumpChunkUploads has an async upload in flight. Guards against
   // re-entrant pumps double-uploading a chunk that is queued but not yet
   // admitted (admit clears the queue, so one pump at a time stays correct).
@@ -2318,6 +2325,44 @@ export class VolumeRenderer extends NVRenderer {
     }
   }
 
+  /**
+   * Set (or clear, with null) the coarse whole-volume floor texture for the
+   * active base. `coarseVol` is a small in-memory pyramid level supplied by the
+   * app; it is oriented once into a single RGBA texture (its own colormap /
+   * calibration) that the 2D slice path samples behind the resident fine
+   * chunks. Re-orients only when the source/colormap/window changes.
+   */
+  async setCoarseFloor(
+    device: GPUDevice,
+    coarseVol: NVImage | null,
+  ): Promise<void> {
+    if (!this.isReady) return
+    if (!coarseVol) {
+      this.coarseFloorTexture?.destroy()
+      this.coarseFloorTexture = null
+      this._coarseFloorKey = null
+      return
+    }
+    const key = `${coarseVol.url || coarseVol.name}|${coarseVol.colormap}|${coarseVol.calMin}|${coarseVol.calMax}`
+    if (key === this._coarseFloorKey && this.coarseFloorTexture) return
+    // Orient the coarse level into its own (small) RGBA grid. It shares the base
+    // volume's mm box, so the slice can sample it at the base's texture fraction.
+    const mtx = NVTransforms.calculateOverlayTransformMatrix(
+      coarseVol,
+      coarseVol,
+    )
+    const tex = await orient.volume2Texture(
+      device,
+      coarseVol,
+      coarseVol,
+      mtx as Float32Array,
+      1,
+    )
+    this.coarseFloorTexture?.destroy()
+    this.coarseFloorTexture = tex
+    this._coarseFloorKey = key
+  }
+
   hasVolume(): boolean {
     return this._activeChunked !== null || this.volumeTexture !== null
   }
@@ -2346,6 +2391,9 @@ export class VolumeRenderer extends NVRenderer {
     this._activeVolKey = null
     this.volumeTexture = null
     this.volumeGradientTexture = null
+    this.coarseFloorTexture?.destroy()
+    this.coarseFloorTexture = null
+    this._coarseFloorKey = null
     this.clearOverlay()
     if (this.paqdTexture) {
       this.paqdTexture.destroy()

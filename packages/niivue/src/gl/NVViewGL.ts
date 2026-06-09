@@ -8,6 +8,7 @@ import * as NVShapes from '@/mesh/NVShapes'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
 import type {
+  NVImage,
   NVMesh,
   NVViewOptions,
   ViewHitTest,
@@ -31,6 +32,7 @@ import {
   type ChunkPlan,
   chunkSampleTransform,
   chunksCrossingSlice,
+  identityChunkSampleTransform,
 } from '@/volume/chunking'
 import { GLBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
@@ -395,6 +397,12 @@ export default class NVGlview {
     this.isBusy = false
   }
 
+  async setCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+    const gl = this.gl
+    if (!gl) return
+    this.volumeRenderer.setCoarseFloor(gl, coarseVol)
+  }
+
   async updateAffineOverlays(): Promise<boolean> {
     const gl = this.gl
     if (!gl) return false
@@ -672,6 +680,37 @@ export default class NVGlview {
               : 0
           const chunked = this.volumeRenderer.getActiveChunkedSlice()
           if (chunked) {
+            // Coarse LOD floor: draw the whole-volume coarse texture first as a
+            // full-coverage quad, so regions whose fine chunk has not streamed
+            // yet show coarse detail instead of blank. Fine chunk quads below
+            // draw over it (2D alpha-over, disjoint), sharpening as they arrive.
+            const floorTex = this.volumeRenderer.coarseFloorTexture
+            if (floorTex) {
+              this.sliceRenderer.draw(
+                gl,
+                floorTex,
+                this.volumeRenderer.overlayTexture,
+                vol,
+                sliceMd,
+                mvpMatrix as Float32Array,
+                tile.axCorSag,
+                sliceFrac,
+                numSliceVolumes,
+                md.volume.isNearestInterpolation,
+                1,
+                this.volumeRenderer.paqdTexture,
+                this.volumeRenderer.paqdLutTexture,
+                0,
+                md.volume.paqdUniforms,
+                md.volume.isV1SliceShader,
+                identityChunkSampleTransform(
+                  vol.dimsRAS
+                    ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
+                    : [1, 1, 1],
+                ),
+                -1,
+              )
+            }
             // Oversized volume: draw one in-plane-restricted quad per chunk
             // the slice crosses. Quads are spatially disjoint, so draw order
             // does not matter.

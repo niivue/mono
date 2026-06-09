@@ -221,6 +221,12 @@ export class VolumeRenderer extends NVRenderer {
   // Scene flag (set per-frame from md.scene): clip the overlay/PAQD/drawing passes
   // with the base volume instead of letting them ignore the clip plane.
   clipPlaneOverlay = false
+  // Coarse whole-volume "floor" texture for the active base, drawn behind the
+  // resident fine chunks on 2D slices so a deep-zoom slice never blanks while
+  // finer chunks stream. Oriented once from a coarse pyramid level the app
+  // supplies (niivue stays LOD-agnostic). Null when unset.
+  coarseFloorTexture: WebGLTexture | null = null
+  private _coarseFloorKey: string | null = null
   // Per-volume GPU texture cache. Populated by updateVolume; consumed by
   // bindCachedVolume to switch the active volume/gradient texture per tile
   // when rendering multi-instance global3d scenes.
@@ -1249,6 +1255,40 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /**
+   * Set (or clear, with null) the coarse whole-volume floor texture for the
+   * active base. `coarseVol` is a small in-memory pyramid level supplied by the
+   * app; it is oriented once into a single RGBA texture (its own colormap /
+   * calibration) that the 2D slice path samples behind the resident fine
+   * chunks. Re-orients only when the source/colormap/window changes.
+   */
+  setCoarseFloor(gl: WebGL2RenderingContext, coarseVol: NVImage | null): void {
+    if (!coarseVol) {
+      if (this.coarseFloorTexture) gl.deleteTexture(this.coarseFloorTexture)
+      this.coarseFloorTexture = null
+      this._coarseFloorKey = null
+      return
+    }
+    const key = `${coarseVol.url || coarseVol.name}|${coarseVol.colormap}|${coarseVol.calMin}|${coarseVol.calMax}`
+    if (key === this._coarseFloorKey && this.coarseFloorTexture) return
+    // Orient the coarse level into its own (small) RGBA grid. It shares the base
+    // volume's mm box, so the slice samples it at the base's texture fraction.
+    const mtx = NVTransforms.calculateOverlayTransformMatrix(
+      coarseVol,
+      coarseVol,
+    )
+    const tex = orientOverlay.overlay2Texture(
+      gl,
+      coarseVol,
+      coarseVol,
+      mtx as Float32Array,
+      1,
+    )
+    if (this.coarseFloorTexture) gl.deleteTexture(this.coarseFloorTexture)
+    this.coarseFloorTexture = tex
+    this._coarseFloorKey = key
+  }
+
+  /**
    * Build (or reuse) the independent chunked entry for a hi-res streamed
    * overlay and mark it active. The entry lives in _texCache under the
    * overlay's own key, so the per-frame pump streams it alongside the base.
@@ -2251,6 +2291,9 @@ export class VolumeRenderer extends NVRenderer {
     this._combinedOverlayEntries = []
     this.volumeTexture = null
     this.volumeGradientTexture = null
+    if (this.coarseFloorTexture) gl.deleteTexture(this.coarseFloorTexture)
+    this.coarseFloorTexture = null
+    this._coarseFloorKey = null
     this.clearOverlay(gl)
     if (this.paqdTexture) gl.deleteTexture(this.paqdTexture)
     this._destroyPaqdChunks(gl)

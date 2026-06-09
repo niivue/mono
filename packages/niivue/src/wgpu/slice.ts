@@ -547,6 +547,12 @@ export class SliceRenderer extends NVRenderer {
       chunkIndex: number
       overlayTexture?: GPUTexture
       paqdTexture?: GPUTexture
+      // Coarse-LOD floor draw: a whole-volume texture rendered as one full-
+      // coverage quad behind the resident fine chunks so a deep-zoom slice
+      // never blanks while finer chunks stream. Uses the per-tile base region
+      // of the uniform buffer (unused by chunked base draws) instead of a chunk
+      // slot, so it never collides with a real chunk's uniforms.
+      useBaseSlot?: boolean
     },
   ): void {
     if (!this.isReady || !this.paramsBuffer || !this.pipeline) return
@@ -571,11 +577,13 @@ export class SliceRenderer extends NVRenderer {
     if (!bindGroup) return
 
     // Chunked draws live in the chunk region of the buffer, one slot per
-    // (tile, chunk); non-chunked draws use the per-tile base region.
-    const dynamicOffset = chunk
-      ? MAX_TILES * alignedSliceSize +
-        (tileIndex * MAX_CHUNKS_PER_TILE + chunk.slot) * alignedSliceSize
-      : tileIndex * alignedSliceSize
+    // (tile, chunk); non-chunked draws (and the coarse floor) use the per-tile
+    // base region.
+    const dynamicOffset =
+      chunk && !chunk.useBaseSlot
+        ? MAX_TILES * alignedSliceSize +
+          (tileIndex * MAX_CHUNKS_PER_TILE + chunk.slot) * alignedSliceSize
+        : tileIndex * alignedSliceSize
 
     // Chunked volumes pass a per-chunk transform; non-chunked volumes use the
     // identity transform sized to the volume's full RAS dims.

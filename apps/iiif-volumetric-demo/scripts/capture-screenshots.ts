@@ -25,8 +25,8 @@ const DEMO_DIR = path.resolve(__dirname, '..')
 const SERVER_DIR = path.resolve(DEMO_DIR, '../iiif-volumetric-server')
 const OUT_DIR = path.resolve(DEMO_DIR, 'docs/screenshots')
 
-const IIIF_ORIGIN = 'http://127.0.0.1:8080'
-const DEMO_ORIGIN = 'http://127.0.0.1:8087'
+const IIIF_ORIGIN = 'http://localhost:8080'
+const DEMO_ORIGIN = 'http://localhost:8087'
 
 // 1600×1000 at DPR 2 produces ~3200×2000 PNGs — large enough for a PR
 // reviewer to zoom in on the multiplanar tiles without aliasing.

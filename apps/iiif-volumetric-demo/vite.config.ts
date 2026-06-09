@@ -3,7 +3,7 @@ import { devImagesPlugin } from '@niivue/dev-images/vite-plugin'
 import { defineConfig } from 'vite'
 
 const ghBase = process.env.VITE_BASE ?? ''
-const apiTarget = process.env.IIIF_SERVER_URL ?? 'http://127.0.0.1:8080'
+const apiTarget = process.env.IIIF_SERVER_URL ?? 'http://localhost:8080'
 
 export default defineConfig({
   base: ghBase || '/',

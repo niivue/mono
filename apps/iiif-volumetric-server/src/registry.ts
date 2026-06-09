@@ -184,9 +184,9 @@ export class Registry {
       throw err
     }
 
-    for (const item of items) {
-      if (item.name === '.cache') continue
-      const full = path.join(dir, item.name)
+    const scanItem = async (item: import('node:fs').Dirent, parent: string) => {
+      if (item.name === '.cache') return
+      const full = path.join(parent, item.name)
       try {
         // Resolve symlinks so a `fixtures/foo.zarr -> omezarr/foo.zarr`
         // pointer is treated as the directory it targets.
@@ -200,27 +200,32 @@ export class Registry {
           const adapter = ADAPTERS.find((a) =>
             a.canHandle(full, { isDirectory: true }),
           )
-          if (!adapter) continue
-          const id = sanitizeId(item.name)
-          const probe = await adapter.probe(full)
-          entry = {
-            id,
-            format: adapter.format,
-            adapter,
-            source: full,
-            shape: probe.shape,
-            dtype: probe.dtype,
-            spacing: probe.spacing,
-            affine: probe.affine,
-            levels: [],
-            levelVolumes: new Map(),
-            volume: null,
+          if (adapter) {
+            const id = sanitizeId(item.name)
+            const probe = await adapter.probe(full)
+            entry = {
+              id,
+              format: adapter.format,
+              adapter,
+              source: full,
+              shape: probe.shape,
+              dtype: probe.dtype,
+              spacing: probe.spacing,
+              affine: probe.affine,
+              levels: [],
+              levelVolumes: new Map(),
+              volume: null,
+            }
+          } else {
+            const children = await fs.readdir(full, { withFileTypes: true })
+            for (const child of children) await scanItem(child, full)
+            return
           }
         } else if (isFile) {
           const adapter = ADAPTERS.find((a) =>
             a.canHandle(full, { isDirectory: false }),
           )
-          if (!adapter) continue
+          if (!adapter) return
           const id = sanitizeId(stripVolumeExtensions(item.name))
           const probe = await adapter.probe(full)
           entry = {
@@ -247,6 +252,8 @@ export class Registry {
         console.warn(`Skipping ${full}: ${message} (probe failed)`)
       }
     }
+
+    for (const item of items) await scanItem(item, dir)
   }
 
   async loadLevel(id: string, levelIndex = 0): Promise<LoadLevelResult> {

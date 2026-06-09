@@ -28,7 +28,7 @@ const SOURCE_SIZE = 768
 const VIEWPORT_FILL = 0.86 // fraction of canvas the image occupies at zoom=1
 
 type SyntheticPattern = 'gradient' | 'grid' | 'checker' | 'rings' | 'noise'
-type ImageKey = 'cytology' | 'pillars'
+type ImageKey = 'cytology'
 type Source = ImageKey | SyntheticPattern
 type Filter = 'linear' | 'nearest'
 type Wrap = 'clamp' | 'repeat'
@@ -41,10 +41,6 @@ const IMAGE_SOURCES: Record<ImageKey, ImageSpec> = {
   cytology: {
     url: '/textures/cytology-peritoneal-fluid.jpg',
     label: 'Cytology peritoneal fluid (4272×2848)',
-  },
-  pillars: {
-    url: '/textures/pillars-of-creation.jpg',
-    label: 'Hubble pillars (6780×7071, ~45MB)',
   },
 }
 
@@ -168,7 +164,7 @@ const lineUColor = gl.getUniformLocation(lineProg, 'u_color')
 // Master RGBA8 source image (CPU-side; persists across pattern switches so
 // the tile rebuild path can re-slice from the same buffer). Generated
 // patterns are SOURCE_SIZE x SOURCE_SIZE; image-backed patterns (e.g.
-// 'pillars') keep their native dimensions, so sourceW / sourceH are tracked
+// 'cytology') keep their native dimensions, so sourceW / sourceH are tracked
 // separately rather than assumed equal to SOURCE_SIZE.
 let sourcePixels: Uint8Array = generatePattern('gradient', SOURCE_SIZE)
 let sourceW = SOURCE_SIZE
@@ -555,7 +551,7 @@ let needsRebuild = true
 // --- Image loading ---------------------------------------------------------
 
 // Decode a JPEG/PNG to RGBA8 via the browser, then read the pixels out of a
-// 2D canvas. Used for the 'pillars' pattern.
+// 2D canvas. Used for image-backed sources (e.g. 'cytology').
 async function loadImageRgba(
   url: string,
 ): Promise<{ pixels: Uint8Array; w: number; h: number }> {

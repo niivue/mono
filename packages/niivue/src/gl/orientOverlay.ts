@@ -841,6 +841,143 @@ export function renderOverlayCache(
   gl.bindVertexArray(savedVAO)
 }
 
+// Texture-to-texture geometric resampler (WebGL2 mirror of wgpu/orient.ts
+// resampleInto). Maps an existing RGBA 3D texture into a new grid via the same
+// orient matrix convention (`vec4(uv, z, 1) * mtx` -> source frac), LINEAR
+// sampling, no colormap; out-of-bounds outputs transparent. The texture-level
+// analogue of the scalar orient pass: stretch a coarser-LOD texture into a
+// higher-resolution space (placeholder while finer tiles stream) or map a
+// higher-LOD texture into a coarser space.
+const resampleFragShader = `#version 300 es
+precision highp float;
+in vec2 TexCoord;
+out vec4 FragColor;
+uniform highp sampler3D srcTex;
+uniform float coordZ;
+uniform mat4 mtx;
+void main(void) {
+  vec4 s = vec4(TexCoord.xy, coordZ, 1.0) * mtx;
+  if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z < 0.0 || s.z > 1.0) {
+    FragColor = vec4(0.0);
+    return;
+  }
+  FragColor = texture(srcTex, s.xyz);
+}`
+
+type ResampleResources = {
+  program: WebGLProgram
+  vao: WebGLVertexArrayObject
+  vbo: WebGLBuffer
+  framebuffer: WebGLFramebuffer
+  uSrc: WebGLUniformLocation | null
+  uCoordZ: WebGLUniformLocation | null
+  uMtx: WebGLUniformLocation | null
+}
+const _resampleCache = new WeakMap<WebGL2RenderingContext, ResampleResources>()
+
+function getOrCreateResample(gl: WebGL2RenderingContext): ResampleResources {
+  const existing = _resampleCache.get(gl)
+  if (existing) return existing
+  const program = createProgram(gl, vertShader, resampleFragShader)
+  const { vao, vbo } = createQuadGeometry(gl, program)
+  const framebuffer = gl.createFramebuffer()
+  if (!framebuffer)
+    throw new Error('resampleInto: failed to create framebuffer')
+  const res: ResampleResources = {
+    program,
+    vao,
+    vbo,
+    framebuffer,
+    uSrc: gl.getUniformLocation(program, 'srcTex'),
+    uCoordZ: gl.getUniformLocation(program, 'coordZ'),
+    uMtx: gl.getUniformLocation(program, 'mtx'),
+  }
+  _resampleCache.set(gl, res)
+  return res
+}
+
+/**
+ * Resample an RGBA 3D texture into a new grid of `dstDims` via a 4x4 row-major
+ * `fracMatrix` (target-frac -> source-frac; same convention as overlay2Texture
+ * and NVTransforms.calculateOverlayTransformMatrix). Linear sampling; out-of-
+ * bounds outputs transparent. Returns a new RGBA8 3D texture (caller owns it;
+ * the source texture is left intact apart from having its filter set to LINEAR).
+ */
+export function resampleInto(
+  gl: WebGL2RenderingContext,
+  srcTexture: WebGLTexture,
+  fracMatrix: Float32Array,
+  dstDims: readonly number[],
+): WebGLTexture {
+  const res = getOrCreateResample(gl)
+  const outputTexture = gl.createTexture()
+  if (!outputTexture) throw new Error('resampleInto: failed to create texture')
+  gl.bindTexture(gl.TEXTURE_3D, outputTexture)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texStorage3D(
+    gl.TEXTURE_3D,
+    1,
+    gl.RGBA8,
+    dstDims[0],
+    dstDims[1],
+    dstDims[2],
+  )
+
+  const savedViewport = gl.getParameter(gl.VIEWPORT) as Int32Array
+  const savedCullFace = gl.isEnabled(gl.CULL_FACE)
+  const savedBlend = gl.isEnabled(gl.BLEND)
+  const savedDepthTest = gl.isEnabled(gl.DEPTH_TEST)
+  const savedActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE) as number
+  const savedVAO = gl.getParameter(
+    gl.VERTEX_ARRAY_BINDING,
+  ) as WebGLVertexArrayObject | null
+
+  gl.useProgram(res.program)
+  gl.activeTexture(gl.TEXTURE0)
+  gl.bindTexture(gl.TEXTURE_3D, srcTexture)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.bindFramebuffer(gl.FRAMEBUFFER, res.framebuffer)
+  gl.viewport(0, 0, dstDims[0], dstDims[1])
+  gl.disable(gl.CULL_FACE)
+  gl.disable(gl.BLEND)
+  gl.disable(gl.DEPTH_TEST)
+  gl.bindVertexArray(res.vao)
+  if (res.uSrc) gl.uniform1i(res.uSrc, 0)
+  if (res.uMtx) gl.uniformMatrix4fv(res.uMtx, false, fracMatrix)
+  for (let z = 0; z < dstDims[2]; z++) {
+    if (res.uCoordZ) gl.uniform1f(res.uCoordZ, (z + 0.5) / dstDims[2])
+    gl.framebufferTextureLayer(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      outputTexture,
+      0,
+      z,
+    )
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+  }
+
+  gl.bindVertexArray(savedVAO)
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  gl.viewport(
+    savedViewport[0],
+    savedViewport[1],
+    savedViewport[2],
+    savedViewport[3],
+  )
+  if (savedCullFace) gl.enable(gl.CULL_FACE)
+  if (savedBlend) gl.enable(gl.BLEND)
+  if (savedDepthTest) gl.enable(gl.DEPTH_TEST)
+  gl.activeTexture(gl.TEXTURE0)
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  gl.activeTexture(savedActiveTexture)
+  return outputTexture
+}
+
 /**
  * Transform a scalar volume to an RGBA8 3D texture by applying calibration
  * and colormap lookup.

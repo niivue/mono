@@ -3,7 +3,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import * as NVShapes from '@/mesh/NVShapes'
 import { isPaqd } from '@/NVConstants'
 import { applyCORS } from '@/NVLoader'
-import type { FloorPlacement, NVImage, VolumeChunkExplode } from '@/NVTypes'
+import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
 import { blendOverlayData } from '@/view/NVMeshView'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
@@ -226,10 +226,6 @@ export class VolumeRenderer extends NVRenderer {
   // finer chunks stream. Oriented once from a coarse pyramid level the app
   // supplies (niivue stays LOD-agnostic). Null when unset.
   coarseFloorTexture: WebGLTexture | null = null
-  // Where the active base sits within the floor texture, in floor texture
-  // fraction. Null => the floor spans the whole base. A whole-slide thumbnail
-  // floor backing a sub-region window (WSI deep-zoom) sets it.
-  coarseFloorPlacement: FloorPlacement | null = null
   private _coarseFloorKey: string | null = null
   // Per-volume GPU texture cache. Populated by updateVolume; consumed by
   // bindCachedVolume to switch the active volume/gradient texture per tile
@@ -1265,12 +1261,7 @@ export class VolumeRenderer extends NVRenderer {
    * calibration) that the 2D slice path samples behind the resident fine
    * chunks. Re-orients only when the source/colormap/window changes.
    */
-  setCoarseFloor(
-    gl: WebGL2RenderingContext,
-    coarseVol: NVImage | null,
-    placement: FloorPlacement | null = null,
-  ): void {
-    this.coarseFloorPlacement = placement
+  setCoarseFloor(gl: WebGL2RenderingContext, coarseVol: NVImage | null): void {
     if (!coarseVol) {
       if (this.coarseFloorTexture) gl.deleteTexture(this.coarseFloorTexture)
       this.coarseFloorTexture = null

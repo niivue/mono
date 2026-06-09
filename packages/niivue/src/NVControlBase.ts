@@ -47,7 +47,6 @@ import type {
   CanvasViewport,
   ColorMap,
   CustomLayoutTile,
-  FloorPlacement,
   ImageFromUrlOptions,
   LUT,
   MeshFromUrlOptions,
@@ -107,10 +106,7 @@ type ViewBackend = {
   render: () => void
   updateBindGroups: () => Promise<void>
   updateAffineOverlays?: () => Promise<boolean>
-  setCoarseFloor?: (
-    coarseVol: NVImage | null,
-    placement?: FloorPlacement | null,
-  ) => Promise<void>
+  setCoarseFloor?: (coarseVol: NVImage | null) => Promise<void>
   hitTest: (x: number, y: number) => ViewHitTest | null
   depthPick: (x: number, y: number) => Promise<[number, number, number] | null>
   loadThumbnail: (url: string) => Promise<void>
@@ -2375,11 +2371,8 @@ export default class NiiVueGPU extends EventTarget {
    * level-of-detail-agnostic and the app supplies it. No-op before a view
    * attaches or on a backend that has not implemented it.
    */
-  async setBaseCoarseFloor(
-    coarseVol: NVImage | null,
-    placement: FloorPlacement | null = null,
-  ): Promise<void> {
-    await this.view?.setCoarseFloor?.(coarseVol, placement)
+  async setBaseCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+    await this.view?.setCoarseFloor?.(coarseVol)
     this.drawScene()
   }
 

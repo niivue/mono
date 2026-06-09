@@ -46,18 +46,6 @@ export interface VolumeChunkExplode {
   scale?: [number, number, number]
 }
 
-/**
- * Where the active base volume sits within a coarse "floor" texture, in floor
- * texture fraction. Identity (origin 0, size 1) when the floor spans the whole
- * base (a coarse level of it). A whole-slide thumbnail floor backing a
- * sub-region window (e.g. WSI deep-zoom) sets the window's sub-rectangle here,
- * so the slice samples the floor at `origin + baseFrac * size`.
- */
-export interface FloorPlacement {
-  origin: [number, number, number]
-  size: [number, number, number]
-}
-
 export type NIFTIHeader = {
   littleEndian: boolean
   dim_info: number

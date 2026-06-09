@@ -8,7 +8,6 @@ import * as NVShapes from '@/mesh/NVShapes'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
 import type {
-  FloorPlacement,
   NVImage,
   NVMesh,
   NVViewOptions,
@@ -529,13 +528,10 @@ export default class NVView {
     }
   }
 
-  async setCoarseFloor(
-    coarseVol: NVImage | null,
-    placement: FloorPlacement | null = null,
-  ): Promise<void> {
+  async setCoarseFloor(coarseVol: NVImage | null): Promise<void> {
     const device = this.device
     if (!device) return
-    await this.volumeRenderer.setCoarseFloor(device, coarseVol, placement)
+    await this.volumeRenderer.setCoarseFloor(device, coarseVol)
   }
 
   async updateAffineOverlays(): Promise<boolean> {
@@ -1013,19 +1009,9 @@ export default class NVView {
               const baseDims: [number, number, number] = vol.dimsRAS
                 ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
                 : [1, 1, 1]
-              // Placement maps the base's texture fraction into the floor: the
-              // slice samples floor at origin + baseFrac * size. Null => the
-              // floor spans the whole base (identity).
-              const fp = this.volumeRenderer.coarseFloorPlacement
-              const floorTransform = fp
-                ? {
-                    subOrigin: [0, 0, 0] as [number, number, number],
-                    subSize: [1, 1, 1] as [number, number, number],
-                    dataOrigin: fp.origin,
-                    dataSize: fp.size,
-                    volumeDims: baseDims,
-                  }
-                : identityChunkSampleTransform(baseDims)
+              // The floor spans the whole base (a coarse level of it), so it is
+              // sampled with the identity transform at the slice's texture frac.
+              const floorTransform = identityChunkSampleTransform(baseDims)
               this.sliceRenderer.draw(
                 device,
                 pass,

@@ -476,6 +476,9 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	} else {
 		output.color = colAcc;
 	}
+	// Cross-fade a streaming chunk in over the coarse floor (premultiplied, so
+	// scaling the whole vec4 fades presence + coverage together). 1.0 = no-op.
+	output.color = output.color * params.fadeAlpha;
 	output.fragDepth = fragDepth;
 	return output;
 }

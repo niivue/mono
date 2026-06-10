@@ -26,7 +26,12 @@ struct Params {
     // the following vec3f to 16 bytes), so the struct size and all later vec4f
     // offsets are unchanged.
     clipPlaneOverlay: f32,
-    _pad0: vec3f,
+    // Cross-fade weight in [0,1] for a streaming chunk: the final premultiplied
+    // color is multiplied by this so a freshly-resident fine chunk dissolves in
+    // over the coarse floor instead of popping. 1.0 for every non-fading draw.
+    // Lives in what was _pad0's first lane, so struct size/offsets are unchanged.
+    fadeAlpha: f32,
+    _pad0: vec2f,
     // Tiled-volume fields. Pass-through values for non-chunked volumes:
     //   volumeTexDimsFull = textureDimensions(volume, 0)
     //   chunkSubOrigin    = (0,0,0)

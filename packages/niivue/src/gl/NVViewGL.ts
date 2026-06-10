@@ -757,6 +757,9 @@ export default class NVGlview {
                 md.volume.isV1SliceShader,
                 chunkSampleTransform(chunked.plan, ci),
                 ci,
+                false,
+                // Dissolve a freshly-resident fine chunk in over the floor.
+                this.volumeRenderer.activeChunkedSliceFade(ci),
               )
             }
           } else {
@@ -1271,10 +1274,12 @@ export default class NVGlview {
     markEnd()
     // Stream in any not-yet-resident chunks of oversized volumes, then
     // schedule a follow-up frame so the freshly-uploaded data appears.
+    // Re-render also if a streaming cross-fade is still animating.
+    const fading = this.volumeRenderer.fadeActive
     this.volumeRenderer
       .pumpChunkUploads()
       .then((changed) => {
-        if (changed) requestAnimationFrame(() => this.render())
+        if (changed || fading) requestAnimationFrame(() => this.render())
       })
       .catch((err) => log.error('chunk upload pump failed', err))
   }

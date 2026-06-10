@@ -68,6 +68,8 @@ uniform vec3 chunkDataSize;
 // Full volume voxel dims — texture-size-independent (the bound volume
 // texture may be a single chunk smaller than the whole volume).
 uniform vec3 volumeTexDimsFull;
+// Streaming cross-fade weight [0,1]; 1 = fully present (floor / settled chunk).
+uniform float fadeAlpha;
 
 in vec3 texPos;
 out vec4 color;
@@ -231,5 +233,9 @@ void main() {
     color.rgb = mix(color.rgb, drawColor.rgb, da);
     color.a = max(color.a, drawColor.a);
   }
+  // Cross-fade a streaming fine chunk in over the coarse floor: scale only the
+  // alpha (straight-alpha blend), so the floor behind shows through until the
+  // chunk has fully faded in. 1.0 = no-op (floor draws + settled chunks).
+  color.a *= fadeAlpha;
 }
 `

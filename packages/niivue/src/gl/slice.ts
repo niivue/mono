@@ -192,6 +192,9 @@ export class SliceRenderer extends NVRenderer {
     // Coarse floor backdrop: covers the whole slice, so it must not write depth
     // or the coplanar fine chunks drawn after would be depth-occluded.
     noDepthWrite = false,
+    // Streaming cross-fade weight in [0,1]: the fine chunk's alpha is scaled by
+    // this so it dissolves in over the coarse floor. 1 = floor / settled chunk.
+    fadeAlpha = 1,
   ): void {
     if (
       !this.isReady ||
@@ -319,6 +322,8 @@ export class SliceRenderer extends NVRenderer {
       gl.uniform3fv(this._shader.uniforms.chunkDataSize, ct.dataSize)
     if (this._shader.uniforms.volumeTexDimsFull)
       gl.uniform3fv(this._shader.uniforms.volumeTexDimsFull, ct.volumeDims)
+    if (this._shader.uniforms.fadeAlpha)
+      gl.uniform1f(this._shader.uniforms.fadeAlpha, fadeAlpha)
 
     // Transform matrices
     if (this._shader.uniforms.frac2mm)

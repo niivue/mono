@@ -20,6 +20,7 @@ struct SliceUniforms {
     chunkDataOrigin: vec3f,
     chunkDataSize: vec3f,
     volumeTexDimsFull: vec3f,     // full volume voxel dims (texture-size-independent)
+    fadeAlpha: f32,               // streaming cross-fade weight [0,1]; 1 = fully present
 };
 
 @group(0) @binding(0) var<uniform> u: SliceUniforms;
@@ -236,5 +237,9 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
         }
         color = vec4f(mix(color.rgb, drawColor.rgb, da), max(color.a, drawColor.a));
     }
+    // Cross-fade a streaming fine chunk in over the coarse floor: scale only the
+    // alpha (straight-alpha blend), so the floor behind shows through until the
+    // chunk has fully faded in. 1.0 = no-op (floor draws + settled chunks).
+    color.a = color.a * u.fadeAlpha;
     return color;
 }

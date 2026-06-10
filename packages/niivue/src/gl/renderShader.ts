@@ -10,6 +10,10 @@ uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has
 // clip-surface/AO/matcap base treatment, composite as a translucent layer);
 // 0.0 for normal base/non-chunked draws. (Formerly the unused numPaqd.)
 uniform float overlayLayerMode;
+// Cross-fade weight in [0,1] for a streaming chunk: the final premultiplied
+// color is multiplied by this so a freshly-resident fine chunk dissolves in
+// over the coarse floor instead of popping. 1.0 for every non-fading draw.
+uniform float fadeAlpha;
 uniform float earlyTermination;
 uniform vec4 clipPlaneColor;
 uniform vec4 paqdUniforms;
@@ -486,6 +490,9 @@ void main() {
   } else {
     FragColor = colAcc;
   }
+  // Cross-fade a streaming chunk in over the coarse floor (premultiplied, so
+  // scaling the whole vec4 fades presence + coverage together). 1.0 = no-op.
+  FragColor = FragColor * fadeAlpha;
   gl_FragDepth = fragDepth;
 }
 `

@@ -1082,6 +1082,8 @@ export default class NVView {
                   paqdTexture: chunked.paqdChunks
                     ? chunked.paqdChunks[ci]
                     : undefined,
+                  // Dissolve a freshly-resident fine chunk in over the floor.
+                  fadeAlpha: this.volumeRenderer.activeChunkedSliceFade(ci),
                 },
               )
             }
@@ -1694,10 +1696,13 @@ export default class NVView {
     markEnd()
     // Stream in any not-yet-resident chunks of oversized volumes, then
     // schedule a follow-up frame so the freshly-uploaded data appears.
+    // Re-render if new chunks were admitted (present them) or a streaming
+    // cross-fade is still animating (drive it to completion).
+    const fading = this.volumeRenderer.fadeActive
     this.volumeRenderer
       .pumpChunkUploads()
       .then((changed) => {
-        if (changed) requestAnimationFrame(() => this.render())
+        if (changed || fading) requestAnimationFrame(() => this.render())
       })
       .catch((err) => log.error('chunk upload pump failed', err))
   }

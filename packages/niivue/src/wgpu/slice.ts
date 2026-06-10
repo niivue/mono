@@ -568,6 +568,10 @@ export class SliceRenderer extends NVRenderer {
       // of the uniform buffer (unused by chunked base draws) instead of a chunk
       // slot, so it never collides with a real chunk's uniforms.
       useBaseSlot?: boolean
+      // Streaming cross-fade weight in [0,1]: the fine chunk's alpha is scaled
+      // by this so it dissolves in over the coarse floor instead of popping.
+      // Omitted/1 for the floor quad and settled chunks.
+      fadeAlpha?: number
     },
   ): void {
     if (!this.isReady || !this.paramsBuffer || !this.pipeline) return
@@ -651,6 +655,8 @@ export class SliceRenderer extends NVRenderer {
     uniformData[64] = ct.volumeDims[0]
     uniformData[65] = ct.volumeDims[1]
     uniformData[66] = ct.volumeDims[2]
+    // fadeAlpha lives in volumeTexDimsFull's trailing pad lane (float 67).
+    uniformData[67] = chunk?.fadeAlpha ?? 1
 
     device.queue.writeBuffer(this.paramsBuffer, dynamicOffset, uniformData)
 

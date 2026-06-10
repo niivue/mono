@@ -153,6 +153,14 @@ export const alignedRenderSize =
 const CHUNK_PARAMS_BASE = MAX_TILES * alignedRenderSize
 const OVERLAY_CHUNK_PARAMS_BASE =
   MAX_TILES * alignedRenderSize * (1 + MAX_CHUNKS_PER_TILE)
+// Coarse-floor cube params live in their own bank so a chunk that is mid
+// cross-fade can draw both its floor cube (this bank) and its fine cube (the
+// base bank) in one frame without their dynamic-offset uniforms colliding.
+const FLOOR_CHUNK_PARAMS_BASE =
+  MAX_TILES * alignedRenderSize * (1 + 2 * MAX_CHUNKS_PER_TILE)
+// Duration of the streaming-chunk cross-fade. A chunk admitted this long ago
+// (or longer) draws at full strength; younger chunks dissolve in over the floor.
+const CHUNK_FADE_MS = 260
 
 /**
  * Steady-state GPU bytes one resident chunk occupies. The scalar source
@@ -302,6 +310,12 @@ export class VolumeRenderer extends NVRenderer {
   // matcap changes. Per-cube geometry differs only via the uniform offset.
   private _floorBindGroup: GPUBindGroup | null = null
   private _coarseFloorKey: string | null = null
+  // Wall-clock stamp captured once per frame in beginChunkFrame, so every chunk
+  // draw in the frame measures fade age against the same instant.
+  private _frameNow = 0
+  // Set true during a frame whenever a chunk drew mid cross-fade, so the view
+  // schedules a follow-up frame to keep the fade animating to completion.
+  private _fadeActive = false
   // True while pumpChunkUploads has an async upload in flight. Guards against
   // re-entrant pumps double-uploading a chunk that is queued but not yet
   // admitted (admit clears the queue, so one pump at a time stays correct).
@@ -392,10 +406,14 @@ export class VolumeRenderer extends NVRenderer {
     //   overlay chunk region: MAX_TILES*MAX_CHUNKS_PER_TILE slots (independent
     //     hi-res overlay cubes — its own region so overlay cube uniforms never
     //     collide with base cube uniforms within a frame).
+    //   floor chunk region: MAX_TILES*MAX_CHUNKS_PER_TILE slots (coarse-floor
+    //     cubes — its own region so a mid-fade chunk can draw its floor cube
+    //     and its fine cube in the same frame without uniform collision).
     // base tile i, chunk j  uses CHUNK_PARAMS_BASE   + (i*MAX_CHUNKS_PER_TILE+j)
     // overlay tile i, chunk j uses OVERLAY_CHUNK_PARAMS_BASE + (i*MAX_...+j)
+    // floor tile i, chunk j uses FLOOR_CHUNK_PARAMS_BASE + (i*MAX_...+j)
     this.paramsBuffer = device.createBuffer({
-      size: alignedRenderSize * MAX_TILES * (1 + 2 * MAX_CHUNKS_PER_TILE),
+      size: alignedRenderSize * MAX_TILES * (1 + 3 * MAX_CHUNKS_PER_TILE),
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
 
@@ -831,6 +849,25 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /**
+   * Streaming cross-fade weight in [0,1] for one chunk of the active chunked
+   * base, for the 2D slice path: ramps 0->1 over CHUNK_FADE_MS from admit, so a
+   * fine chunk slice dissolves in over the coarse floor instead of popping.
+   * Returns 1 (no fade) when there is no floor to dissolve into or no active
+   * chunked base. Flags fadeActive while a chunk is mid-fade so the view keeps
+   * re-rendering to animate it.
+   */
+  activeChunkedSliceFade(chunkIndex: number): number {
+    if (!this._activeChunked || this.coarseFloorTexture === null) return 1
+    const fade = this._activeChunked.manager.fadeFraction(
+      chunkIndex,
+      this._frameNow,
+      CHUNK_FADE_MS,
+    )
+    if (fade < 1) this._fadeActive = true
+    return fade
+  }
+
+  /**
    * Phase 3c: queue the active chunked volume's chunks for streaming upload.
    * `requestUpload` is idempotent — already-resident or already-queued chunks
    * are skipped — so the view may call this every frame with a tile's working
@@ -1038,9 +1075,20 @@ export class VolumeRenderer extends NVRenderer {
    * eviction in `pumpChunkUploads` cannot drop a visible chunk.
    */
   beginChunkFrame(): void {
+    this._frameNow = performance.now()
+    this._fadeActive = false
     for (const entry of this._texCache.values()) {
       if (entry.kind === 'chunked') entry.manager.beginFrame()
     }
+  }
+
+  /**
+   * True if any chunk drew mid cross-fade in the last frame. The view ORs this
+   * into its follow-up-frame decision so a fade animates to completion even
+   * when no further chunks are streaming in.
+   */
+  get fadeActive(): boolean {
+    return this._fadeActive
   }
 
   /**
@@ -2177,82 +2225,110 @@ export class VolumeRenderer extends NVRenderer {
     // Coarse floor: when a fine chunk of the base volume has not streamed in,
     // draw a coarse-floor cube for that chunk's region instead of skipping it,
     // so the 3D view shows coarse detail immediately and never pops in from
-    // blank. Each region is drawn exactly once (fine if resident, else coarse),
-    // so there is no volumetric double-exposure.
+    // blank. A freshly-resident fine chunk then cross-fades in over its floor
+    // cube (drawn behind it) so detail dissolves in instead of popping. Once
+    // settled, each region is drawn exactly once (fine if faded in, else
+    // coarse), so there is no steady-state volumetric double-exposure.
     const floorActive =
       !overlayMode &&
       entry === this._activeChunked &&
       this.coarseFloorTexture !== null &&
       this.coarseFloorGradientTexture !== null
 
+    // Captured (narrowed) locals so the floor-cube closure can reference them
+    // without re-deriving non-null narrowing inside the nested scope.
+    const paramsBuffer = this.paramsBuffer
+    const matcapTexture = this.matcapTexture
+    const placeholderOverlay = this.placeholderOverlay
+    const bindLayout = this.bindLayout
+    const sampler = this.sampler
+    const samplerNearest = this.samplerNearest
+
+    // Draw the coarse-floor cube for one chunk region. It uses its own uniform
+    // bank (FLOOR_CHUNK_PARAMS_BASE) so a mid-fade chunk's floor cube and fine
+    // cube never share a dynamic offset within a frame. Samples the coarse
+    // whole-volume texture at the chunk's full-volume fraction: data{Origin,Size}
+    // = chunkSub{Origin,Size} makes chunkTexCoord the identity into the
+    // (halo-less) coarse texture. The bind group (coarse texture + its gradient
+    // + transparent placeholders) is identical for every cube, so it is cached.
+    const drawFloorCube = (chunkIndex: number, slot: number): void => {
+      const floorTex = this.coarseFloorTexture
+      if (!floorTex) return
+      if (!this._floorBindGroup) {
+        this._floorBindGroup = device.createBindGroup({
+          layout: bindLayout,
+          entries: [
+            {
+              binding: 0,
+              resource: { buffer: paramsBuffer, size: renderParamsSize },
+            },
+            { binding: 1, resource: floorTex.createView() },
+            { binding: 2, resource: matcapTexture.createView() },
+            { binding: 3, resource: sampler },
+            {
+              binding: 4,
+              resource: (
+                this.coarseFloorGradientTexture ?? floorTex
+              ).createView(),
+            },
+            { binding: 5, resource: placeholderOverlay.createView() },
+            { binding: 6, resource: placeholderOverlay.createView() },
+            { binding: 7, resource: placeholderOverlay.createView() },
+            { binding: 8, resource: samplerNearest },
+            { binding: 9, resource: paqdLutTex.createView() },
+          ],
+        })
+      }
+      const cu = chunkUniformsFor(entry.plan, chunkIndex)
+      const floorRenderOffset =
+        FLOOR_CHUNK_PARAMS_BASE +
+        (tileIndex * MAX_CHUNKS_PER_TILE + slot) * alignedRenderSize
+      this._writeRenderParams(
+        device,
+        paramsBuffer,
+        floorRenderOffset,
+        mvpMatrix,
+        normalMatrix,
+        chunkExplodedMatRAS(entry.plan, chunkIndex, matRAS, explode),
+        volScale,
+        rayDir,
+        gradientAmount,
+        volumeCount,
+        isClipCutaway,
+        paqdUniforms,
+        earlyTermination,
+        clipPlaneColor,
+        clipPlanes,
+        {
+          volumeTexDimsFull: cu.volumeTexDimsFull,
+          chunkSubOrigin: cu.chunkSubOrigin,
+          chunkSubSize: cu.chunkSubSize,
+          dataOriginTexFrac: cu.chunkSubOrigin,
+          dataSizeTexFrac: cu.chunkSubSize,
+        },
+        0,
+      )
+      pass.setBindGroup(0, this._floorBindGroup, [floorRenderOffset])
+      pass.drawIndexed(this.cube.indices.length)
+    }
+
     for (let slot = 0; slot < order.length; slot++) {
       const chunkIndex = order[slot]
       const chunk = entry.manager.getChunk(chunkIndex)
       if (!chunk) {
-        if (!floorActive || !this.coarseFloorTexture) continue
-        // Floor bind group: coarse texture + its gradient + transparent
-        // placeholders. Identical for every missing chunk (per-cube geometry
-        // differs only via the uniform offset), so it is cached.
-        if (!this._floorBindGroup) {
-          this._floorBindGroup = device.createBindGroup({
-            layout: this.bindLayout,
-            entries: [
-              {
-                binding: 0,
-                resource: { buffer: this.paramsBuffer, size: renderParamsSize },
-              },
-              { binding: 1, resource: this.coarseFloorTexture.createView() },
-              { binding: 2, resource: this.matcapTexture.createView() },
-              { binding: 3, resource: this.sampler },
-              {
-                binding: 4,
-                resource: (
-                  this.coarseFloorGradientTexture ?? this.coarseFloorTexture
-                ).createView(),
-              },
-              { binding: 5, resource: this.placeholderOverlay.createView() },
-              { binding: 6, resource: this.placeholderOverlay.createView() },
-              { binding: 7, resource: this.placeholderOverlay.createView() },
-              { binding: 8, resource: this.samplerNearest },
-              { binding: 9, resource: paqdLutTex.createView() },
-            ],
-          })
-        }
-        // Sample the coarse whole-volume texture at the chunk's full-volume
-        // fraction: data{Origin,Size} = chunkSub{Origin,Size} makes chunkTexCoord
-        // the identity into the coarse texture (which has no halo).
-        const cu = chunkUniformsFor(entry.plan, chunkIndex)
-        const floorRenderOffset =
-          chunkSlotBase +
-          (tileIndex * MAX_CHUNKS_PER_TILE + slot) * alignedRenderSize
-        this._writeRenderParams(
-          device,
-          this.paramsBuffer,
-          floorRenderOffset,
-          mvpMatrix,
-          normalMatrix,
-          chunkExplodedMatRAS(entry.plan, chunkIndex, matRAS, explode),
-          volScale,
-          rayDir,
-          gradientAmount,
-          volumeCount,
-          isClipCutaway,
-          paqdUniforms,
-          earlyTermination,
-          clipPlaneColor,
-          clipPlanes,
-          {
-            volumeTexDimsFull: cu.volumeTexDimsFull,
-            chunkSubOrigin: cu.chunkSubOrigin,
-            chunkSubSize: cu.chunkSubSize,
-            dataOriginTexFrac: cu.chunkSubOrigin,
-            dataSizeTexFrac: cu.chunkSubSize,
-          },
-          0,
-        )
-        pass.setBindGroup(0, this._floorBindGroup, [floorRenderOffset])
-        pass.drawIndexed(this.cube.indices.length)
+        if (floorActive) drawFloorCube(chunkIndex, slot)
         continue
+      }
+      // Cross-fade a freshly-resident fine chunk in over its coarse floor: draw
+      // the floor cube first (full strength), then the fine cube composites over
+      // it with premultiplied weight `fade`. Once settled (fade === 1) the floor
+      // cube is skipped and only the fine cube is drawn.
+      const fade = floorActive
+        ? entry.manager.fadeFraction(chunkIndex, this._frameNow, CHUNK_FADE_MS)
+        : 1
+      if (fade < 1) {
+        drawFloorCube(chunkIndex, slot)
+        this._fadeActive = true
       }
       let bindGroup = entry.bindGroups[chunkIndex]
       if (!bindGroup) {
@@ -2322,6 +2398,7 @@ export class VolumeRenderer extends NVRenderer {
         clipPlanes,
         chunkUniformsFor(entry.plan, chunkIndex),
         overlayMode ? 1 : 0,
+        fade,
       )
 
       pass.setBindGroup(0, bindGroup, [renderOffset])
@@ -2347,6 +2424,7 @@ export class VolumeRenderer extends NVRenderer {
     clipPlanes: number[],
     chunkUniforms: ChunkUniforms,
     overlayLayerMode = 0,
+    fadeAlpha = 1,
   ): void {
     device.queue.writeBuffer(
       paramsBuffer,
@@ -2373,7 +2451,8 @@ export class VolumeRenderer extends NVRenderer {
         // earlyTermination); the following _pad0: vec3f aligns to 384. These 7
         // floats advance the byte cursor 372 → 400 (to the next vec4f), unchanged.
         this.clipPlaneOverlay ? 1.0 : 0.0,
-        0,
+        // fadeAlpha (lane after clipPlaneOverlay): streaming cross-fade weight.
+        fadeAlpha,
         0,
         0,
         0,

@@ -52,6 +52,12 @@ interface ResidentChunk<TChunk> {
   lastFrame: number
   /** Cached `bytesOf(chunk)` so eviction accounting needs no recompute. */
   bytes: number
+  /**
+   * Wall-clock (`performance.now()`) at admit, so the renderer can cross-fade a
+   * freshly streamed chunk in over the coarse floor instead of popping it in.
+   * Reset on re-admit (a re-streamed chunk fades again).
+   */
+  admittedAt: number
 }
 
 export class ChunkResidencyManager<TChunk> {
@@ -98,7 +104,12 @@ export class ChunkResidencyManager<TChunk> {
       this._residentBytes -= prev.bytes
     }
     const bytes = this._hooks.bytesOf(chunk)
-    this._resident.set(chunkIndex, { chunk, lastFrame: this._frame, bytes })
+    this._resident.set(chunkIndex, {
+      chunk,
+      lastFrame: this._frame,
+      bytes,
+      admittedAt: performance.now(),
+    })
     this._residentBytes += bytes
     this._inFlightUploads.delete(chunkIndex)
     this._removeQueuedUpload(chunkIndex)
@@ -115,6 +126,22 @@ export class ChunkResidencyManager<TChunk> {
   /** Whether a chunk index is currently GPU-resident. */
   isResident(chunkIndex: number): boolean {
     return this._resident.has(chunkIndex)
+  }
+
+  /**
+   * Fade-in fraction in [0,1] for a resident chunk: how far through a
+   * `durationMs` cross-fade the chunk is, given the current wall-clock `now`
+   * (`performance.now()`). Returns 1 for chunks admitted longer ago than the
+   * duration, for a non-positive duration, or for a non-resident index — i.e.
+   * "draw fully" is the safe default. The renderer multiplies a streaming
+   * chunk's premultiplied color by this so fine detail dissolves in over the
+   * coarse floor instead of popping.
+   */
+  fadeFraction(chunkIndex: number, now: number, durationMs: number): number {
+    const r = this._resident.get(chunkIndex)
+    if (!r || durationMs <= 0) return 1
+    const t = (now - r.admittedAt) / durationMs
+    return t >= 1 ? 1 : t <= 0 ? 0 : t
   }
 
   /** Count of currently-resident chunks. */

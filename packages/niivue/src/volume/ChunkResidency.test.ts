@@ -374,3 +374,34 @@ describe('prefetch hook + peekPendingUploads', () => {
     expect(m.takePendingUploads(3)).toEqual([2, 4, 6])
   })
 })
+
+describe('ChunkResidencyManager fadeFraction (streaming cross-fade)', () => {
+  test('ramps 0 -> 1 across the fade window from admit', () => {
+    const m = manager(3)
+    const before = performance.now()
+    m.admit(0, fakeChunk('a', 1))
+    const after = performance.now()
+    // admittedAt is in [before, after]; with a 10s window these now-values land
+    // cleanly in the <0, ~mid, and >1 regions regardless of the tiny admit delta.
+    expect(m.fadeFraction(0, before - 1000, 10_000)).toBe(0)
+    expect(m.fadeFraction(0, after + 5_000, 10_000)).toBeCloseTo(0.5, 1)
+    expect(m.fadeFraction(0, after + 20_000, 10_000)).toBe(1)
+  })
+
+  test('non-positive duration and non-resident index both return 1 (draw fully)', () => {
+    const m = manager(3)
+    m.admit(0, fakeChunk('a', 1))
+    expect(m.fadeFraction(0, performance.now(), 0)).toBe(1)
+    expect(m.fadeFraction(2, performance.now(), 260)).toBe(1)
+  })
+
+  test('re-admit resets the fade so a re-streamed chunk fades again', () => {
+    const m = manager(3)
+    m.admit(0, fakeChunk('a', 1))
+    // Long after the first admit it is fully faded in.
+    expect(m.fadeFraction(0, performance.now() + 10_000, 260)).toBe(1)
+    // Re-admit (re-streamed): admittedAt resets, so it is mid/early-fade again.
+    m.admit(0, fakeChunk('a2', 1))
+    expect(m.fadeFraction(0, performance.now() - 1000, 260)).toBe(0)
+  })
+})

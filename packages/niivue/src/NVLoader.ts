@@ -25,17 +25,21 @@ export function getFileExt(
 ): string {
   const fullname = getName(pathOrFile)
   if (!fullname) return ''
+  const cleanName =
+    typeof pathOrFile === 'string'
+      ? (fullname.split('?')[0]?.split('#')[0] ?? '')
+      : fullname
   const re = /(?:\.([^.]+))?$/
-  let ext = re.exec(fullname)?.[1] ?? ''
+  let ext = re.exec(cleanName)?.[1] ?? ''
   ext = ext.toUpperCase()
   if (ext === 'GZ') {
     // img.trk.gz -> trk
-    ext = re.exec(fullname.slice(0, -3))?.[1] ?? ''
+    ext = re.exec(cleanName.slice(0, -3))?.[1] ?? ''
     ext = ext.toUpperCase()
   } else if (ext === 'CBOR') {
     // img.iwi.cbor -> IWI.CBOR
     const endExt = ext
-    ext = re.exec(fullname.slice(0, -5))?.[1] ?? ''
+    ext = re.exec(cleanName.slice(0, -5))?.[1] ?? ''
     ext = `${ext.toUpperCase()}.${endExt}`
   }
   return upperCase ? ext : ext.toLowerCase()

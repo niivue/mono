@@ -1,4 +1,5 @@
 import { mat4 } from 'gl-matrix'
+import { getCanvasViewport } from '@/control/viewBoth'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
@@ -7,6 +8,7 @@ import * as NVShapes from '@/mesh/NVShapes'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
 import type {
+  NVImage,
   NVMesh,
   NVViewOptions,
   ViewHitTest,
@@ -26,6 +28,12 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import {
+  type ChunkPlan,
+  chunkSampleTransform,
+  chunksCrossingSlice,
+  identityChunkSampleTransform,
+} from '@/volume/chunking'
 import { GLBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
@@ -75,6 +83,8 @@ export default class NVGlview {
   private _boundsOffsetX = 0
   private _boundsOffsetY = 0
   private _isSubCanvasBounds = false
+  /** True when the bounds rect (after viewport pan/zoom) is entirely off-canvas */
+  _isBoundsOffscreen = false
   // Narrow public getters for bench.ts to read current render-area size
   // without making the backing fields public or mutable.
   get boundsWidth(): number {
@@ -220,8 +230,23 @@ export default class NVGlview {
   async _createResources(): Promise<void> {
     const gl = this.gl
     if (!gl) return
-    // Initialize volume renderer
-    await this.volumeRenderer.init(gl, this.max3D)
+    // Initialize volume renderer. A `maxTextureDimension3D` option, when set,
+    // caps the chunking threshold below the GPU limit so the tiled-volume
+    // path can be exercised on normally-sized volumes.
+    const override = this.options.maxTextureDimension3D
+    const chunkLimit =
+      typeof override === 'number' && override > 0
+        ? Math.min(this.max3D, override)
+        : this.max3D
+    // `maxChunkResidencyBytes`, when set, overrides the GPU memory budget for a
+    // chunked volume's resident chunk set; the manager evicts least-recently-
+    // visible chunks to stay within it. Unset leaves the renderer default.
+    const residencyOverride = this.options.maxChunkResidencyBytes
+    const chunkResidencyBytes =
+      typeof residencyOverride === 'number' && residencyOverride > 0
+        ? residencyOverride
+        : undefined
+    await this.volumeRenderer.init(gl, chunkLimit, chunkResidencyBytes)
     // Initialize crosshair renderer with pre-allocated buffers
     const attrs = mesh.getAttributeLocations(gl, 'phong')
     this.crosshairRenderer.init(
@@ -312,15 +337,35 @@ export default class NVGlview {
       this.model.scene.backgroundColor,
     )
     if (vols.length > 0) {
-      await this.volumeRenderer.updateVolume(
-        gl,
-        vols[0],
-        this.model.volume.matcap,
-      )
+      if (this.options.instances) {
+        // Multi-instance mode (global3d): upload every volume's GPU texture
+        // so the render loop can switch the active texture per tile via
+        // bindCachedVolume. Without this, all tiles would share volumes[0]'s
+        // texture and visibly "jump" as the model's first volume changes.
+        for (const vol of vols) {
+          await this.volumeRenderer.updateVolume(
+            gl,
+            vol,
+            this.model.volume.matcap,
+          )
+        }
+        const keepKeys = new Set<string>()
+        for (const vol of vols) {
+          const key = vol.url || vol.name
+          if (key) keepKeys.add(key)
+        }
+        this.volumeRenderer.pruneVolumeCache(keepKeys)
+      } else {
+        await this.volumeRenderer.updateVolume(
+          gl,
+          vols[0],
+          this.model.volume.matcap,
+        )
+      }
     }
 
     // Handle overlays (all volumes after the first)
-    if (vols.length > 1) {
+    if (vols.length > 1 && !this.options.instances) {
       await this.volumeRenderer.updateOverlays(
         gl,
         vols[0],
@@ -352,6 +397,12 @@ export default class NVGlview {
     this.isBusy = false
   }
 
+  async setCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+    const gl = this.gl
+    if (!gl) return
+    this.volumeRenderer.setCoarseFloor(gl, coarseVol)
+  }
+
   async updateAffineOverlays(): Promise<boolean> {
     const gl = this.gl
     if (!gl) return false
@@ -375,7 +426,13 @@ export default class NVGlview {
       requestAnimationFrame(() => this.render())
       return
     }
+    // Off-screen after viewport transform: skip the entire render pass — scissor would
+    // clip everything and the work is wasted. preserveDrawingBuffer keeps prior pixels.
+    if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
     markCpuStart()
+    // Phase 3d: advance the chunk-residency LRU clock before the tile loop
+    // requests this frame's working set, so eviction protects visible chunks.
+    this.volumeRenderer.beginChunkFrame()
     // Bounds pixel rect (sub-canvas or full canvas)
     const bx = this._boundsOffsetX
     const by = this._boundsOffsetY
@@ -436,27 +493,32 @@ export default class NVGlview {
     const graphWidth = graphData
       ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
       : 0
-    const screenSlices = NVSliceLayout.screenSlicesLayout({
-      canvasWH: [
-        canvasWidth - legendWidth - graphWidth,
-        canvasHeight - cbHeight,
-      ],
-      sliceType: md.layout.sliceType,
-      tileMargin: md.layout.margin,
-      extentsMin: md.extentsMin,
-      extentsMax: md.extentsMax,
-      isRadiologicalConvention: md.layout.isRadiological,
-      multiplanarLayout: md.layout.multiplanarType,
-      multiplanarShowRender: md.layout.showRender,
-      sliceMosaicString: md.layout.mosaicString,
-      heroImageFraction: md.layout.heroFraction,
-      heroSliceType: md.layout.heroSliceType,
-      isMultiplanarEqualSize: md.layout.isEqualSize,
-      isCrossLines: md.ui.isCrossLinesVisible,
-      isCenterMosaic: md.layout.isMosaicCentered,
-      customLayout: md.layout.customLayout,
-    })
-    this.screenSlices = screenSlices
+    // When `options.instances` is set, the controller has already populated
+    // `this.screenSlices` via `updateTilesFromInstances` — skip the slice-layout pass.
+    if (!this.options.instances) {
+      const screenSlices = NVSliceLayout.screenSlicesLayout({
+        canvasWH: [
+          canvasWidth - legendWidth - graphWidth,
+          canvasHeight - cbHeight,
+        ],
+        sliceType: md.layout.sliceType,
+        tileMargin: md.layout.margin,
+        extentsMin: md.extentsMin,
+        extentsMax: md.extentsMax,
+        isRadiologicalConvention: md.layout.isRadiological,
+        multiplanarLayout: md.layout.multiplanarType,
+        multiplanarShowRender: md.layout.showRender,
+        sliceMosaicString: md.layout.mosaicString,
+        heroImageFraction: md.layout.heroFraction,
+        heroSliceType: md.layout.heroSliceType,
+        isMultiplanarEqualSize: md.layout.isEqualSize,
+        isCrossLines: md.ui.isCrossLinesVisible,
+        isCenterMosaic: md.layout.isMosaicCentered,
+        customLayout: md.layout.customLayout,
+      })
+      this.screenSlices = screenSlices
+    }
+    const screenSlices = this.screenSlices
     // Update crosshair geometry based on current model state
     if (this.crosshairRenderer.isReady) {
       this.crosshairRenderer.update(md)
@@ -470,6 +532,10 @@ export default class NVGlview {
       const tile = screenSlices[i]
       if (!tile) continue
       const ltwh = tile.leftTopWidthHeight as number[]
+      const tileVol =
+        volumes.find(
+          (v) => v.name === tile.volumeId || v.url === tile.volumeId,
+        ) ?? volumes[0]
       // Calculate MVP matrix
       let [mvpMatrix, , normalMatrix, rayDir] = NVTransforms.calculateMvpMatrix(
         ltwh,
@@ -479,11 +545,29 @@ export default class NVGlview {
         md.furthestFromPivot,
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
+        md.scene.renderPan,
       )
+      if (tile.space === 'global3d' && tileVol) {
+        ;[mvpMatrix, , normalMatrix, rayDir] =
+          NVTransforms.calculateGlobalVolumeMvp(
+            ltwh,
+            tile.globalCamera,
+            tile.position ?? [0, 0, 0],
+            tile.scale ?? 1,
+            tile.orientation,
+            tileVol.extentsMin,
+            tileVol.extentsMax,
+            tileVol.obliqueRAS,
+          )
+        tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
+      }
       if (tile.axCorSag === undefined) {
         continue
       }
-      if (tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER) {
+      if (
+        tile.space !== 'global3d' &&
+        tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+      ) {
         const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
         const pan = NVSliceLayout.slicePanUV(md.scene.pan2Dxyzmm, tile.axCorSag)
         ;[mvpMatrix, , normalMatrix, rayDir] =
@@ -560,8 +644,18 @@ export default class NVGlview {
       )
       // Layer 1: Volume rendering
       if (this.volumeRenderer.hasVolume() && volumes.length > 0) {
-        const vol = volumes[0]
+        // For global3d tiles, render the per-tile resolved volume (tileVol)
+        // rather than always volumes[0]. This requires rebinding the active
+        // GPU texture from the per-volume cache populated in _updateBindings.
+        const vol = tile.space === 'global3d' && tileVol ? tileVol : volumes[0]
         if (!vol) continue
+        if (tile.space === 'global3d') {
+          this.volumeRenderer.bindCachedVolume(vol.url || vol.name)
+        } else if (volumes[0]) {
+          this.volumeRenderer.bindCachedVolume(
+            volumes[0].url || volumes[0].name,
+          )
+        }
         const matRAS = vol.matRAS
         if (!matRAS || !vol.volScale) {
           continue
@@ -572,31 +666,132 @@ export default class NVGlview {
             tile.sliceMM !== undefined
               ? md.getSliceTexFracAtMM(sliceDim, tile.sliceMM)
               : md.getSliceTexFrac(sliceDim)
-          this.sliceRenderer.draw(
-            gl,
-            this.volumeRenderer.volumeTexture as WebGLTexture,
-            this.volumeRenderer.overlayTexture,
-            vol,
-            {
-              overlayAlphaShader: md.volume.alphaShader,
-              overlayOutlineWidth: md.volume.outlineWidth,
-              isAlphaClipDark: md.volume.isAlphaClipDark,
-              drawRimOpacity: md.draw.rimOpacity,
-              isV1SliceShader: md.volume.isV1SliceShader,
-            },
-            mvpMatrix as Float32Array,
-            tile.axCorSag,
-            sliceFrac,
-            Math.min(volumes.length, 2),
-            md.volume.isNearestInterpolation,
-            1,
-            this.volumeRenderer.paqdTexture,
-            this.volumeRenderer.paqdLutTexture,
-            this.volumeRenderer.paqdTexture ? 1 : 0,
-            md.volume.paqdUniforms,
-            md.volume.isV1SliceShader,
-          )
+          const sliceMd = {
+            overlayAlphaShader: md.volume.alphaShader,
+            overlayOutlineWidth: md.volume.outlineWidth,
+            isAlphaClipDark: md.volume.isAlphaClipDark,
+            drawRimOpacity: md.draw.rimOpacity,
+            isV1SliceShader: md.volume.isV1SliceShader,
+          }
+          const numSliceVolumes = Math.min(volumes.length, 2)
+          const numSlicePaqd =
+            this.volumeRenderer.paqdTexture || this.volumeRenderer.paqdChunks
+              ? 1
+              : 0
+          const chunked = this.volumeRenderer.getActiveChunkedSlice()
+          if (chunked) {
+            // Coarse LOD floor: draw the whole-volume coarse texture first as a
+            // full-coverage quad, so regions whose fine chunk has not streamed
+            // yet show coarse detail instead of blank. Fine chunk quads below
+            // draw over it (2D alpha-over, disjoint), sharpening as they arrive.
+            const floorTex = this.volumeRenderer.coarseFloorTexture
+            if (floorTex) {
+              const baseDims: [number, number, number] = vol.dimsRAS
+                ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
+                : [1, 1, 1]
+              // The floor spans the whole base (a coarse level of it), so it is
+              // sampled with the identity transform at the slice's texture frac.
+              const floorTransform = identityChunkSampleTransform(baseDims)
+              this.sliceRenderer.draw(
+                gl,
+                floorTex,
+                this.volumeRenderer.overlayTexture,
+                vol,
+                sliceMd,
+                mvpMatrix as Float32Array,
+                tile.axCorSag,
+                sliceFrac,
+                numSliceVolumes,
+                md.volume.isNearestInterpolation,
+                1,
+                this.volumeRenderer.paqdTexture,
+                this.volumeRenderer.paqdLutTexture,
+                0,
+                md.volume.paqdUniforms,
+                md.volume.isV1SliceShader,
+                floorTransform,
+                -1,
+                true, // floor backdrop: do not write depth
+              )
+            }
+            // Oversized volume: draw one in-plane-restricted quad per chunk
+            // the slice crosses. Quads are spatially disjoint, so draw order
+            // does not matter.
+            const crossing = chunksCrossingSlice(
+              chunked.plan,
+              sliceDim,
+              sliceFrac,
+            )
+            // This slice's working set drives streamed upload — but cull the
+            // crossing chunks to the tile's viewport so a depth-1 (whole-slide)
+            // volume streams only on-screen tiles, not every chunk on the plane.
+            this.volumeRenderer.requestVisibleChunksInView(
+              crossing,
+              mvpMatrix as Float32Array,
+              matRAS as Float32Array,
+            )
+            for (const ci of crossing) {
+              const chunkTex = chunked.chunkTextures[ci]
+              // Not yet streamed in — skip; the pump fills it in shortly.
+              if (!chunkTex) continue
+              this.sliceRenderer.draw(
+                gl,
+                chunkTex,
+                chunked.overlayChunks
+                  ? chunked.overlayChunks[ci]
+                  : this.volumeRenderer.overlayTexture,
+                vol,
+                sliceMd,
+                mvpMatrix as Float32Array,
+                tile.axCorSag,
+                sliceFrac,
+                numSliceVolumes,
+                md.volume.isNearestInterpolation,
+                1,
+                chunked.paqdChunks
+                  ? chunked.paqdChunks[ci]
+                  : this.volumeRenderer.paqdTexture,
+                this.volumeRenderer.paqdLutTexture,
+                numSlicePaqd,
+                md.volume.paqdUniforms,
+                md.volume.isV1SliceShader,
+                chunkSampleTransform(chunked.plan, ci),
+                ci,
+                false,
+                // Dissolve a freshly-resident fine chunk in over the floor.
+                this.volumeRenderer.activeChunkedSliceFade(ci),
+              )
+            }
+          } else {
+            this.sliceRenderer.draw(
+              gl,
+              this.volumeRenderer.volumeTexture as WebGLTexture,
+              this.volumeRenderer.overlayTexture,
+              vol,
+              sliceMd,
+              mvpMatrix as Float32Array,
+              tile.axCorSag,
+              sliceFrac,
+              numSliceVolumes,
+              md.volume.isNearestInterpolation,
+              1,
+              this.volumeRenderer.paqdTexture,
+              this.volumeRenderer.paqdLutTexture,
+              numSlicePaqd,
+              md.volume.paqdUniforms,
+              md.volume.isV1SliceShader,
+            )
+          }
         } else {
+          // Phase 3c: frustum-cull this 3D render tile to drive streamed
+          // upload — no-op unless the active volume is chunked.
+          this.volumeRenderer.requestChunksInFrustum(
+            mvpMatrix as Float32Array,
+            matRAS as Float32Array,
+            md.clipPlanes,
+            md.scene.isClipPlaneCutaway,
+          )
+          this.volumeRenderer.clipPlaneOverlay = md.scene.clipPlaneOverlay
           this.volumeRenderer.draw(
             gl,
             mvpMatrix as Float32Array,
@@ -610,13 +805,43 @@ export default class NVGlview {
             md.clipPlanes,
             md.scene.isClipPlaneCutaway,
             md.volume.paqdUniforms,
+            md.volume.transmittanceCutoff,
           )
+          // Independent hi-res chunked overlay: stream its own working set and
+          // draw it as translucent cubes over the base, in the same pass. Uses
+          // the overlay volume's own matRAS/volScale (co-registered grid) with
+          // the shared camera. No-op when no chunked overlay is active.
+          const ovVol = this.volumeRenderer.getOverlayChunkedVolume()
+          if (ovVol?.matRAS && ovVol.volScale) {
+            this.volumeRenderer.requestOverlayChunksInFrustum(
+              mvpMatrix as Float32Array,
+              ovVol.matRAS as Float32Array,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+            this.volumeRenderer.drawOverlayChunked(
+              gl,
+              mvpMatrix as Float32Array,
+              normalMatrix as Float32Array,
+              ovVol.matRAS as Float32Array,
+              ovVol.volScale,
+              rayDir as Float32Array,
+              md.volume.illumination,
+              Math.min(volumes.length, 2),
+              md.scene.clipPlaneColor,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+              md.volume.paqdUniforms,
+              md.volume.transmittanceCutoff,
+            )
+          }
         }
       }
       // Layer 2a: Crosshairs (skip on all mosaic tiles)
       const isMosaicTile =
         tile.renderOrientation !== undefined || tile.sliceMM !== undefined
       if (
+        tile.space !== 'global3d' &&
         md.ui.is3DCrosshairVisible &&
         !isMosaicTile &&
         this.crosshairRenderer.isReady
@@ -629,9 +854,10 @@ export default class NVGlview {
         )
       }
       // Layer 2b: Meshes
-      const meshes = (md.getMeshes() as NVMesh[]).filter(
-        (m) => (m.opacity ?? 1.0) > 0.0,
-      )
+      const meshes =
+        tile.space === 'global3d'
+          ? []
+          : (md.getMeshes() as NVMesh[]).filter((m) => (m.opacity ?? 1.0) > 0.0)
       const ccMM = crosscutMM(md, tile.axCorSag)
       // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
       let meshMvp = mvpMatrix
@@ -716,6 +942,7 @@ export default class NVGlview {
       }
       // Layer 2b-ann: 3D annotations (RENDER tiles only)
       if (
+        tile.space !== 'global3d' &&
         tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
         ann3DData &&
         this.polygon3DRenderer.isReady
@@ -1045,6 +1272,16 @@ export default class NVGlview {
     }
     markSubmitStart()
     markEnd()
+    // Stream in any not-yet-resident chunks of oversized volumes, then
+    // schedule a follow-up frame so the freshly-uploaded data appears.
+    // Re-render also if a streaming cross-fade is still animating.
+    const fading = this.volumeRenderer.fadeActive
+    this.volumeRenderer
+      .pumpChunkUploads()
+      .then((changed) => {
+        if (changed || fading) requestAnimationFrame(() => this.render())
+      })
+      .catch((err) => log.error('chunk upload pump failed', err))
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */
@@ -1075,8 +1312,10 @@ export default class NVGlview {
       dpr = this.forceDevicePixelRatio
     }
     const rect = this.canvas.getBoundingClientRect()
-    this.canvas.width = Math.max(1, Math.floor(rect.width * dpr))
-    this.canvas.height = Math.max(1, Math.floor(rect.height * dpr))
+    const targetW = Math.max(1, Math.floor(rect.width * dpr))
+    const targetH = Math.max(1, Math.floor(rect.height * dpr))
+    if (this.canvas.width !== targetW) this.canvas.width = targetW
+    if (this.canvas.height !== targetH) this.canvas.height = targetH
     // Compute bounds pixel rect
     this._computeBoundsPixels()
     const bw = this._boundsWidth
@@ -1100,31 +1339,49 @@ export default class NVGlview {
     const bounds = this.options.bounds
     const cw = this.canvas.width
     const ch = this.canvas.height
+    const vp = getCanvasViewport(this.canvas)
+    const isIdentity = vp.pan[0] === 0 && vp.pan[1] === 0 && vp.zoom === 1
     if (
-      !bounds ||
-      (bounds[0][0] === 0 &&
-        bounds[0][1] === 0 &&
-        bounds[1][0] === 1 &&
-        bounds[1][1] === 1)
+      isIdentity &&
+      (!bounds ||
+        (bounds[0][0] === 0 &&
+          bounds[0][1] === 0 &&
+          bounds[1][0] === 1 &&
+          bounds[1][1] === 1))
     ) {
       this._boundsOffsetX = 0
       this._boundsOffsetY = 0
       this._boundsWidth = cw
       this._boundsHeight = ch
       this._isSubCanvasBounds = false
+      this._isBoundsOffscreen = false
       return
     }
+    const worldX1 = bounds ? bounds[0][0] : 0
+    const worldY1 = bounds ? bounds[0][1] : 0
+    const worldX2 = bounds ? bounds[1][0] : 1
+    const worldY2 = bounds ? bounds[1][1] : 1
+    // Apply viewport: world -> screen-normalized (zoom around centre, then translate by pan)
+    const z = vp.zoom
+    const px = vp.pan[0]
+    const py = vp.pan[1]
+    const sx1 = (worldX1 - 0.5) * z + 0.5 + px
+    const sx2 = (worldX2 - 0.5) * z + 0.5 + px
+    const sy1 = (worldY1 - 0.5) * z + 0.5 + py
+    const sy2 = (worldY2 - 0.5) * z + 0.5 + py
     // Round pixel edges, then derive size by subtraction to prevent
     // offset + size > canvas (which breaks copyTextureToTexture on odd dimensions)
-    const left = Math.round(bounds[0][0] * cw)
-    const right = Math.round(bounds[1][0] * cw)
-    const top = Math.round((1 - bounds[1][1]) * ch)
-    const bottom = Math.round((1 - bounds[0][1]) * ch)
+    const left = Math.round(sx1 * cw)
+    const right = Math.round(sx2 * cw)
+    const top = Math.round((1 - sy2) * ch)
+    const bottom = Math.round((1 - sy1) * ch)
     this._boundsOffsetX = left
     this._boundsOffsetY = top
     this._boundsWidth = Math.max(1, right - left)
     this._boundsHeight = Math.max(1, bottom - top)
     this._isSubCanvasBounds = true
+    this._isBoundsOffscreen =
+      right <= 0 || left >= cw || bottom <= 0 || top >= ch
   }
 
   getAvailableShaders(): string[] {
@@ -1132,6 +1389,19 @@ export default class NVGlview {
     return Object.keys(this.meshPipelines).filter(
       (s) => !s.startsWith('vertexColor'),
     )
+  }
+
+  chunkStreamStats(): {
+    resident: number
+    pending: number
+    inFlight: number
+    total: number
+  } {
+    return this.volumeRenderer.chunkStreamStats()
+  }
+
+  rebakeChunkedOverlays(): void {
+    this.volumeRenderer.rebakeChunkedOverlays()
   }
 
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {
@@ -1187,10 +1457,27 @@ export default class NVGlview {
     return null
   }
 
-  refreshDrawing(rgba: Uint8Array, dims: number[]): void {
+  refreshDrawing(
+    rgba: Uint8Array,
+    dims: number[],
+    plan?: ChunkPlan,
+    dirtyChunks?: readonly number[],
+  ): void {
     if (!this.gl) return
-    this.sliceRenderer.updateDrawingTexture(this.gl, rgba, dims)
-    this.volumeRenderer.updateDrawingTexture(this.gl, rgba, dims)
+    this.sliceRenderer.updateDrawingTexture(
+      this.gl,
+      rgba,
+      dims,
+      plan,
+      dirtyChunks,
+    )
+    this.volumeRenderer.updateDrawingTexture(
+      this.gl,
+      rgba,
+      dims,
+      plan,
+      dirtyChunks,
+    )
   }
 
   clearDrawing(): void {
@@ -1253,6 +1540,7 @@ export default class NVGlview {
         md.furthestFromPivot,
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
+        md.scene.renderPan,
       )
       mvpMatrix = result[0] as mat4
       rayDir = result[3] as Float32Array

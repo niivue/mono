@@ -19,14 +19,20 @@ fn packDepth(d_in: f32) -> vec4f {
 
 @fragment
 fn fragment_main(in: VertexOutput) -> FragmentOutput {
-  var start = in.vColor;
-  let backPosition = GetBackPosition(start);
+  let rayStart = in.vColor;
+  var start = GetFrontPosition(rayStart);
+  let backPosition = GetBackPosition(rayStart);
   let dirVec = backPosition - start;
   var len = length(dirVec);
+  if (!(len > 0.0) || len > 3.0) {
+    discard;
+    var dummy: FragmentOutput;
+    return dummy;
+  }
   let dir = dirVec / len;
-  let texVox = vec3f(textureDimensions(volume, 0));
+  let texVox = params.volumeTexDimsFull.xyz;
   let lenVox = length(dirVec * texVox);
-  if (lenVox < 0.5 || len > 3.0) {
+  if (lenVox < 0.5) {
     discard;
     var dummy: FragmentOutput;
     return dummy;
@@ -54,8 +60,9 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
       skipBackground = true;
     }
   }
-  // Shared values
-  let ran = fract(sin(in.position.x * 12.9898 + in.position.y * 78.233) * 43758.5453);
+  // Match the visual renderer's full-volume ray-sample phase.
+  let origRan = raySamplePhase(origStart, stepSize);
+  var ran = origRan;
   let stepSizeFast = stepSize * 1.9;
   let deltaDirFast = vec4f(dir * stepSizeFast, stepSizeFast);
   // --- Background depth pick ---
@@ -66,6 +73,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
       start += dir * sampleRange.x;
       len = sampleRange.y - sampleRange.x;
     }
+    ran = raySamplePhase(start, stepSize);
     var samplePos = vec4f(start + dir * (stepSize * ran), stepSize * ran);
     let samplePosStart = samplePos;
     // Fast pass
@@ -75,7 +83,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
         samplePos += deltaDirFast;
         continue;
       }
-      let alpha = textureSampleLevel(volume, tex_sampler, samplePos.xyz, 0.0).a;
+      let alpha = textureSampleLevel(volume, tex_sampler, chunkTexCoord(samplePos.xyz), 0.0).a;
       if (alpha >= 0.01) { break; }
       samplePos += deltaDirFast;
     }
@@ -95,7 +103,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
           samplePos += deltaDir;
           continue;
         }
-        let alpha = textureSampleLevel(volume, tex_sampler, samplePos.xyz, 0.0).a;
+        let alpha = textureSampleLevel(volume, tex_sampler, chunkTexCoord(samplePos.xyz), 0.0).a;
         if (alpha >= 0.01) {
           bgDepth = frac2ndc(samplePos.xyz);
           bgHit = true;
@@ -114,7 +122,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
   var overDepth = 1.0;
   var overHit = false;
   if (params.numVolumes > 1.0) {
-    var overSamplePos = vec4f(origStart + dir * (stepSize * ran), stepSize * ran);
+    var overSamplePos = vec4f(origStart + dir * (stepSize * origRan), stepSize * origRan);
     let overSamplePosStart = overSamplePos;
     // Overlay fast pass
     for (var oj: i32 = 0; oj < 1024; oj++) {

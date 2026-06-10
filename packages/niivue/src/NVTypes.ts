@@ -1,6 +1,7 @@
-import type { mat4, vec3, vec4 } from 'gl-matrix'
+import type { mat4, vec2, vec3, vec4 } from 'gl-matrix'
 import type { LogLevel } from '@/logger'
 import type { FontMetrics } from '@/view/NVFont'
+import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 
 export type TypedVoxelArray =
   | Float32Array
@@ -21,6 +22,29 @@ export type TypedNumberArray =
   | Int32Array
   | Int16Array
   | Int8Array
+
+export interface VolumeChunkSourceRequest {
+  chunkIndex: number
+  desc: VolumeChunkDesc
+  plan: ChunkPlan
+  datatypeCode: number
+  bytesPerVoxel: number
+}
+
+export type VolumeChunkSource = (
+  request: VolumeChunkSourceRequest,
+) =>
+  | ArrayBuffer
+  | Uint8Array
+  | TypedVoxelArray
+  | Promise<ArrayBuffer | Uint8Array | TypedVoxelArray>
+
+export interface VolumeChunkExplode {
+  /** Enable draw-time spacing between streamed chunk cubes. */
+  enabled?: boolean
+  /** Per-axis spacing multiplier. 1 is compact, 1.5 leaves half-cell gaps. */
+  scale?: [number, number, number]
+}
 
 export type NIFTIHeader = {
   littleEndian: boolean
@@ -149,6 +173,23 @@ export type NVImage = {
   modulationImage?: string
   /** @internal Pre-computed modulation data in RAS order (Float32Array of [0,1] values) */
   _modulationData?: Float32Array | null
+  /** Tiling plan for volumes whose dims exceed maxTextureDimension3D. Absent ⇒ legacy single-texture path. */
+  chunkPlan?: ChunkPlan
+  /** Optional source-backed chunk loader for volumes whose full voxel array is not resident in browser memory. */
+  chunkSource?: VolumeChunkSource
+  /** Optional draw-time spacing for chunked 3D rendering. Sampling remains in original voxel coordinates. */
+  chunkExplode?: VolumeChunkExplode
+  /**
+   * Marks this volume as an independently-streamed hi-res overlay layer that
+   * composites over a chunked base volume. The value is the cache-key of the
+   * base volume it sits on. When set, the renderer streams this volume in its
+   * own ChunkResidencyManager working set and draws it as translucent chunk
+   * cubes over the base, instead of reslicing it onto the base grid. Absent ⇒
+   * legacy overlay path (resliced to the base grid).
+   */
+  chunkOverlayOf?: string
+  /** Layer opacity for an independently-streamed chunked overlay ([0,1], default 1). */
+  chunkOverlayOpacity?: number
   [key: string]: unknown
 }
 
@@ -461,10 +502,17 @@ export type SceneConfig = {
   crosshairPos: vec3
   pan2Dxyzmm: vec4
   scaleMultiplier: number
+  // Clip-space translation applied after projection in 3D render mode
+  // (sliceType === RENDER). Each component is in NDC units, so renderPan = [0.5, 0.5]
+  // shifts the volume half the viewport right and up. Ignored in 2D / mosaic.
+  renderPan: vec2
   gamma: number
   backgroundColor: [number, number, number, number]
   clipPlaneColor: number[]
   isClipPlaneCutaway: boolean
+  /** Clip the overlay/PAQD/drawing layers along with the base volume in the 3D
+   * render. Default false: overlays ignore the clip plane (show through). */
+  clipPlaneOverlay: boolean
 }
 
 /** Layout config: slice type, mosaic, multiplanar, hero, tiling */
@@ -528,6 +576,7 @@ export type VolumeRenderConfig = {
   isV1SliceShader: boolean
   matcap: string
   paqdUniforms: [number, number, number, number]
+  transmittanceCutoff: number
 }
 
 /** Mesh rendering config: global settings for mesh display */
@@ -568,6 +617,7 @@ export type SyncOpts = {
   sliceType?: boolean
   calMin?: boolean
   calMax?: boolean
+  viewport?: boolean
 }
 
 export type BackendType = 'webgpu' | 'webgl2'
@@ -583,6 +633,44 @@ export type ViewHitTest = {
 /** Normalized bounds [[x1,y1],[x2,y2]] where y=0 is bottom, y=1 is top */
 export type NVBounds = [[number, number], [number, number]]
 
+/**
+ * Canvas-level virtual camera applied to all instances sharing a canvas.
+ * Each instance's `bounds` define its position in *world space*; the viewport
+ * pans (in normalized canvas units, GL convention y-up) and zooms (scalar
+ * around the canvas centre) the world before bounds are projected to pixels.
+ * Identity `{pan: [0, 0], zoom: 1}` reproduces the pre-viewport behavior.
+ */
+export type CanvasViewport = {
+  pan: [number, number]
+  zoom: number
+}
+
+export type NVGlobalCamera = {
+  position: [number, number, number]
+  yaw?: number
+  pitch?: number
+  fov?: number
+  near?: number
+  far?: number
+}
+
+export type NVInstance = {
+  id: string
+  /** Screen-space canvas bounds for classic OSD-style tiled instances. */
+  bounds?: NVBounds
+  /** Set to `global3d` to draw this volume in one shared 3D scene. */
+  space?: 'canvas' | 'global3d'
+  /** Global scene position used when `space` is `global3d`. */
+  position?: [number, number, number]
+  /** Global scene scale in world units, or xyz scale. */
+  scale?: number | [number, number, number]
+  /** Global scene Euler rotation in radians: [x, y, z]. */
+  orientation?: [number, number, number]
+  viewport?: CanvasViewport
+  rotation?: [number, number, number, number]
+  volumeId?: string
+}
+
 export type NVViewOptions = {
   isAntiAlias?: boolean
   devicePixelRatio?: number
@@ -592,6 +680,7 @@ export type NVViewOptions = {
   showBoundsBorder?: boolean
   boundsBorderColor?: [number, number, number, number]
   boundsBorderThickness?: number
+  maxTextureDimension3D?: number
   [key: string]: unknown
 }
 
@@ -613,6 +702,8 @@ export type GraphConfig = {
  */
 export type NiiVueOptions = {
   // Infrastructure (set once at construction)
+  instances?: NVInstance[]
+  globalCamera?: NVGlobalCamera
   backend?: BackendType
   isAntiAlias?: boolean
   devicePixelRatio?: number
@@ -623,8 +714,26 @@ export type NiiVueOptions = {
   font?: NVFontData
   matcaps?: Record<string, string>
   isDragDropEnabled?: boolean
+  isInteractionEnabled?: boolean
   logLevel?: LogLevel
   thumbnail?: string
+  /**
+   * Debug/testing override: caps the effective `maxTextureDimension3D` used to
+   * decide when a volume must be tiled into chunks. GPUs rarely report a limit
+   * low enough to exercise the tiled-volume path on ordinary data; setting a
+   * small value here (e.g. 256) forces normally-sized volumes to chunk. Does
+   * not raise the limit beyond what the device actually supports.
+   */
+  maxTextureDimension3D?: number
+  /**
+   * GPU memory budget, in bytes, for a chunked (tiled) volume's resident chunk
+   * set (scalar + RGBA + gradient across resident chunks). When a chunked
+   * volume's chunks exceed this budget, the least-recently-visible chunks are
+   * evicted and stream back in on demand as the view changes. Unset leaves a
+   * conservative default that fits comfortably below typical discrete-GPU
+   * memory.
+   */
+  maxChunkResidencyBytes?: number
 
   // Scene
   azimuth?: number
@@ -632,10 +741,12 @@ export type NiiVueOptions = {
   crosshairPos?: [number, number, number]
   pan2Dxyzmm?: [number, number, number, number]
   scaleMultiplier?: number
+  renderPan?: [number, number]
   gamma?: number
   backgroundColor?: [number, number, number, number]
   clipPlaneColor?: number[]
   isClipPlaneCutaway?: boolean
+  clipPlaneOverlay?: boolean
 
   // Layout
   sliceType?: number
@@ -687,6 +798,7 @@ export type NiiVueOptions = {
   volumeIsV1SliceShader?: boolean
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
+  volumeTransmittanceCutoff?: number
 
   // Mesh (prefixed)
   meshXRay?: number

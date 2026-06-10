@@ -2,7 +2,7 @@ import { type mat4, vec3, vec4 } from 'gl-matrix'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
-import type { CustomLayoutTile, ViewHitTest } from '@/NVTypes'
+import type { CustomLayoutTile, NVGlobalCamera, ViewHitTest } from '@/NVTypes'
 import type { BuildLineFn, LineData } from './NVLine'
 
 // ---------- Types ----------
@@ -23,6 +23,23 @@ export type SliceTile = {
   mvpMatrix?: mat4
   planeNormal?: vec3
   planePoint?: vec3
+  // --- Multi-instance fields (used when controller is in `instances` mode) ---
+  /** Per-instance 2D pan override (canvas-space normalized) */
+  pan?: [number, number]
+  /** Per-instance 2D zoom override */
+  zoom?: number
+  /** Per-instance volume identifier (selects which loaded volume this tile renders) */
+  volumeId?: string
+  /** When set to `'global3d'`, this tile renders into a shared 3D scene */
+  space?: 'canvas' | 'global3d'
+  /** Global-space position in world units (used when `space === 'global3d'`) */
+  position?: [number, number, number]
+  /** Global-space scale (uniform scalar or per-axis vec3) */
+  scale?: number | [number, number, number]
+  /** Global-space Euler rotation in radians [x, y, z] */
+  orientation?: [number, number, number]
+  /** Shared 3D camera (passed through from controller) */
+  globalCamera?: NVGlobalCamera
 }
 
 export type SliceLayoutConfig = {

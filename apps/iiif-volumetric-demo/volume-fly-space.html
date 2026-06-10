@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NIfTI Volume Fly Space</title>
+    <link rel="stylesheet" href="/volume-fly-space.css" />
+  </head>
+  <body>
+    <main class="fly-shell">
+      <section class="space" id="space" aria-label="NIfTI volume fly space">
+        <canvas
+          id="global-volume-canvas"
+          class="global-volume-canvas"
+          tabindex="0"
+          aria-label="Global niivue volume space"
+        ></canvas>
+        <canvas id="space-backdrop" aria-hidden="true"></canvas>
+      </section>
+
+      <header class="topbar">
+        <a class="home-link" href="/" aria-label="Back to demo index">IIIF</a>
+        <div class="title-block">
+          <h1>NIfTI Fly Space</h1>
+          <p id="scene-subtitle">Starting global renderer</p>
+        </div>
+        <span class="links" data-nav-links></span>
+      </header>
+
+      <aside class="status-panel" aria-label="Scene status" aria-live="polite">
+        <span id="status-visible">0 visible</span>
+        <span id="status-loaded">0 loaded</span>
+        <span id="status-queue">0 queued</span>
+        <span id="status-speed">speed 0</span>
+      </aside>
+
+      <aside class="control-panel" aria-label="Flight controls">
+        <label class="field">
+          <span>Quality</span>
+          <select id="quality">
+            <option value="auto">Auto</option>
+            <option value="low">Low</option>
+            <option value="balanced">Balanced</option>
+            <option value="sharp">Sharp</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Speed</span>
+          <input id="speed" type="range" min="2" max="36" value="14" />
+        </label>
+        <div class="button-row">
+          <button id="pause" type="button">Pause</button>
+          <button id="recenter" type="button">Center</button>
+        </div>
+        <label class="switch">
+          <input id="near-native" type="checkbox" checked />
+          <span>Native closeups</span>
+        </label>
+        <label class="switch">
+          <input id="show-titles" type="checkbox" checked />
+          <span>Volume titles</span>
+        </label>
+      </aside>
+
+      <aside class="probe-panel" aria-label="Nearest volume">
+        <div class="panel-kicker">Nearest</div>
+        <h2 id="nearest-title">No volume</h2>
+        <dl>
+          <div>
+            <dt>Distance</dt>
+            <dd id="nearest-distance">-</dd>
+          </div>
+          <div>
+            <dt>LOD</dt>
+            <dd id="nearest-lod">-</dd>
+          </div>
+          <div>
+            <dt>Shape</dt>
+            <dd id="nearest-shape">-</dd>
+          </div>
+          <div>
+            <dt>Format</dt>
+            <dd id="nearest-format">-</dd>
+          </div>
+        </dl>
+      </aside>
+
+      <aside class="radar-panel" aria-label="Navigator">
+        <canvas id="radar"></canvas>
+      </aside>
+    </main>
+
+    <script type="module" src="/src/volume-fly-space.ts"></script>
+  </body>
+</html>

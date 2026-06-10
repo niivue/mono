@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DICOM-WSI deep zoom — niivue</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; height: 100%; background: #0b0c0e; color: #e8eaed; font: 13px/1.5 system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; }
+      header { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid #1f2227; flex: none; }
+      header strong { font-weight: 600; }
+      .links { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+      .links a { color: #9aa0a6; text-decoration: none; }
+      .controls { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-bottom: 1px solid #1f2227; flex: none; flex-wrap: wrap; }
+      .controls label { color: #9aa0a6; }
+      select, button { background: #16181c; color: #e8eaed; border: 1px solid #2a2d31; border-radius: 4px; padding: 3px 8px; font: inherit; }
+      button { cursor: pointer; }
+      button:hover { border-color: #3a3d41; }
+      main { position: relative; flex: 1; min-height: 0; }
+      canvas { width: 100%; height: 100%; display: block; }
+      .hud { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.55); padding: 6px 9px; border-radius: 5px; font-size: 11px; white-space: pre; pointer-events: none; max-width: 46ch; }
+      .hint { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.55); padding: 5px 9px; border-radius: 5px; font-size: 11px; color: #9aa0a6; }
+      .fallback { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; color: #f28b82; }
+      /* scaleY(-1): niivue renders the axial slide with +Y up (data row 0 at
+         the bottom), but the IIIF thumbnail has row 0 at the top — flip the
+         minimap so it matches the main view. */
+      .minimap { position: absolute; top: 8px; right: 8px; width: 200px; border: 1px solid #2a2d31; border-radius: 5px; overflow: hidden; background: #000; cursor: crosshair; box-shadow: 0 2px 12px rgba(0,0,0,0.5); line-height: 0; transform: scaleY(-1); }
+      .minimap img { width: 100%; display: block; }
+      .minimap .box { position: absolute; border: 2px solid #8ab4f8; box-shadow: 0 0 0 9999px rgba(0,0,0,0.35); box-sizing: border-box; pointer-events: none; min-width: 2px; min-height: 2px; }
+      .zoomwrap { display: flex; align-items: center; gap: 6px; }
+      input[type="range"] { accent-color: #8ab4f8; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>DICOM-WSI deep zoom</strong>
+      <span class="links" data-nav-links></span>
+    </header>
+    <div class="controls">
+      <label for="volume">slide</label>
+      <select id="volume"></select>
+      <label for="level">level</label>
+      <select id="level"></select>
+      <span class="zoomwrap">
+        <label for="zoom">zoom</label>
+        <input type="range" id="zoom" min="0" max="1000" step="1" value="0" />
+      </span>
+      <button id="overview" type="button">whole slide</button>
+      <button id="zoomIn" type="button">zoom in (+)</button>
+      <span id="mag" style="color:#9aa0a6"></span>
+    </div>
+    <main>
+      <canvas id="nv"></canvas>
+      <div class="hud" id="hud">loading…</div>
+      <div class="hint">double-click to dive in · drag the zoom slider · click the minimap to jump · whole-slide resets</div>
+      <div class="minimap" id="minimap" hidden>
+        <img id="miniImg" alt="slide overview" />
+        <div class="box" id="miniBox"></div>
+      </div>
+      <div class="fallback" id="fallback"></div>
+    </main>
+    <script type="module" src="/src/wsi.ts"></script>
+  </body>
+</html>

@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { mat4 } from 'gl-matrix'
-import type { AffineMatrix, NVImage } from '@/NVTypes'
+import { mat4, vec3 } from 'gl-matrix'
+import type { AffineMatrix, NVGlobalCamera, NVImage } from '@/NVTypes'
 import {
   arrayToMat4,
+  calculateGlobalVolumeMvp,
   cart2sphDeg,
   copyAffine,
   createAffineTransformMatrix,
@@ -326,6 +327,212 @@ describe('slicePlaneEquation', () => {
     approx(Math.abs(plane.normal[0]), 1, 0.01)
     approx(Math.abs(plane.normal[1]), 0, 0.01)
     approx(Math.abs(plane.normal[2]), 0, 0.01)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// calculateGlobalVolumeMvp — backend-agnostic helper used by both wgpu and gl
+// renderers for tile.space === 'global3d'. Tests pin the shared math so both
+// backends stay aligned.
+// ---------------------------------------------------------------------------
+describe('calculateGlobalVolumeMvp', () => {
+  const tile = [0, 0, 800, 600]
+  const camera: NVGlobalCamera = {
+    position: [0, 0, 32],
+    yaw: 0,
+    pitch: 0,
+    fov: 55,
+    near: 0.1,
+    far: 900,
+  }
+  const extentsMin = [-10, -10, -10]
+  const extentsMax = [10, 10, 10]
+
+  test('isDeterministic_sameInputProducesSameMvp', () => {
+    const [a] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [5, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    const [b] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [5, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    for (let i = 0; i < 16; i++) approx(a[i], b[i])
+  })
+
+  test('returnsAllFourMatricesAndRay', () => {
+    const result = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    expect(result).toHaveLength(4)
+    const [mvp, model, normal, rayDir] = result
+    expect(mvp.length).toBe(16)
+    expect(model.length).toBe(16)
+    expect(normal.length).toBe(16)
+    expect(rayDir.length).toBe(3)
+    // ray direction is a unit vector
+    const len = Math.sqrt(
+      rayDir[0] * rayDir[0] + rayDir[1] * rayDir[1] + rayDir[2] * rayDir[2],
+    )
+    approx(len, 1, 1e-3)
+  })
+
+  test('positionTranslatesVolumeCenter', () => {
+    // Project the world center (0,0,0) through each model matrix — moving the
+    // tile position must shift the projected center between calls.
+    const [mvpA] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    const [mvpB] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [50, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    const origin = vec3.fromValues(0, 0, 0)
+    const pA = vec3.create()
+    const pB = vec3.create()
+    vec3.transformMat4(pA, origin, mvpA)
+    vec3.transformMat4(pB, origin, mvpB)
+    // x-axis positions in clip space must differ once the tile is offset
+    expect(Math.abs(pA[0] - pB[0])).toBeGreaterThan(1e-4)
+  })
+
+  test('sharedCamera_twoTilesProduceDistinctMvpsForDistinctPositions', () => {
+    // Parity contract: same camera shared across tiles, different positions
+    // must yield different MVPs. This is how global3d puts every volume in one
+    // world space — both backends call this helper per-tile.
+    const [mvpLeft] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [-25, 0, 0],
+      1,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )
+    const [mvpRight] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [25, 0, 0],
+      1,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )
+    let diff = 0
+    for (let i = 0; i < 16; i++) diff += Math.abs(mvpLeft[i] - mvpRight[i])
+    expect(diff).toBeGreaterThan(1e-3)
+  })
+
+  test('cameraUndefined_fallsBackToDefaults', () => {
+    // Function must accept undefined camera and emit a finite MVP using its
+    // documented defaults (eye z=32, yaw=0, pitch=0, fov=55, near=0.1, far=900).
+    const [mvp] = calculateGlobalVolumeMvp(
+      tile,
+      undefined,
+      [0, 0, 0],
+      1,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )
+    for (let i = 0; i < 16; i++) expect(Number.isFinite(mvp[i])).toBe(true)
+  })
+
+  test('scalarScale_equivalentToUniformVec3Scale', () => {
+    const [mvpScalar] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      2,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )
+    const [mvpVec3] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      [2, 2, 2],
+      undefined,
+      extentsMin,
+      extentsMax,
+    )
+    for (let i = 0; i < 16; i++) approx(mvpScalar[i], mvpVec3[i])
+  })
+
+  test('orientationRotates_changesNormalMatrix', () => {
+    const [, , normalA] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    const [, , normalB] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      1,
+      [0, Math.PI / 4, 0],
+      extentsMin,
+      extentsMax,
+    )
+    let diff = 0
+    for (let i = 0; i < 16; i++) diff += Math.abs(normalA[i] - normalB[i])
+    expect(diff).toBeGreaterThan(1e-3)
+  })
+
+  test('aspectRatio_changesProjectionForNonSquareTile', () => {
+    const square = calculateGlobalVolumeMvp(
+      [0, 0, 600, 600],
+      camera,
+      [0, 0, 0],
+      1,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )[0]
+    const wide = calculateGlobalVolumeMvp(
+      [0, 0, 1200, 600],
+      camera,
+      [0, 0, 0],
+      1,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )[0]
+    // First column of the perspective matrix scales by 1/aspect, so the [0,0]
+    // entry must differ for different tile aspect ratios.
+    expect(Math.abs(square[0] - wide[0])).toBeGreaterThan(1e-3)
   })
 })
 

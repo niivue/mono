@@ -2,6 +2,7 @@
  * NiiVueGPU — WebGL2-only distribution.
  */
 
+export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
 // biome-ignore lint/performance/noBarrelFile: package entry point
 export { NVExtensionContext } from './extension/context'
 export type {
@@ -20,6 +21,7 @@ export type {
   AffineMatrix,
   AffineTransform,
   BackendType,
+  CanvasViewport,
   ColorMap,
   CustomLayoutTile,
   DragReleaseInfo,
@@ -30,16 +32,28 @@ export type {
   NiiVueLocation,
   NiiVueLocationValue,
   NiiVueOptions,
+  NVBounds,
   NVConnectomeOptions,
   NVFontData,
+  NVGlobalCamera,
   NVImage,
+  NVInstance,
   NVMesh,
   NVMeshLayer,
   NVTractOptions,
   SaveVolumeOptions,
   SyncOpts,
   ViewHitTest,
+  VolumeChunkSource,
+  VolumeChunkSourceRequest,
   VolumeUpdate,
 } from './NVTypes'
+export type {
+  ChunkPlan,
+  Vec3f,
+  Vec3i,
+  VolumeChunkDesc,
+} from './volume/chunking'
+export { chunkVolumeGrid } from './volume/chunking'
 export type { TransformInfo, TransformOptions } from './volume/transforms'
 export { getImageDataRAS } from './volume/utils'

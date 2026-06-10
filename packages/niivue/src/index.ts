@@ -4,6 +4,10 @@
  * @packageDocumentation
  */
 
+// Viewport controller (OpenSeadragon-style smooth pan/zoom on the shared canvas).
+// Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
+// Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
+export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
 // Extension API
 // biome-ignore lint/performance/noBarrelFile: package entry point
 export { NVExtensionContext } from './extension/context'
@@ -58,6 +62,7 @@ export type {
   AffineMatrix,
   AffineTransform,
   BackendType,
+  CanvasViewport,
   ColorMap,
   CustomLayoutTile,
   DragReleaseInfo,
@@ -70,9 +75,12 @@ export type {
   NiiVueLocation,
   NiiVueLocationValue,
   NiiVueOptions,
+  NVBounds,
   NVConnectomeOptions,
   NVFontData,
+  NVGlobalCamera,
   NVImage,
+  NVInstance,
   NVMesh,
   NVMeshLayer,
   NVTractOptions,
@@ -80,8 +88,18 @@ export type {
   SyncOpts,
   TypedVoxelArray,
   ViewHitTest,
+  VolumeChunkExplode,
+  VolumeChunkSource,
+  VolumeChunkSourceRequest,
   VolumeUpdate,
 } from './NVTypes'
+export type {
+  ChunkPlan,
+  Vec3f,
+  Vec3i,
+  VolumeChunkDesc,
+} from './volume/chunking'
+export { chunkVolumeGrid } from './volume/chunking'
 // Transform types
 export type {
   OptionField,

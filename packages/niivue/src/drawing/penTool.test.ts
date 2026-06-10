@@ -3,6 +3,7 @@ import {
   clampToDimension,
   drawLine,
   drawPoint,
+  drawSphere,
   floodFillSection,
   getSliceIndices,
   isPenLocationValid,
@@ -10,6 +11,84 @@ import {
   PEN_SLICE_TYPE,
   voxelIndex,
 } from './penTool'
+
+describe('drawSphere', () => {
+  const dims = [3, 5, 5, 5] // [ndim, dx, dy, dz]
+  const idx = (x: number, y: number, z: number) => voxelIndex(x, y, z, 5, 5)
+
+  test('radius 0 paints a single voxel', () => {
+    const bmp = new Uint8Array(125)
+    drawSphere({
+      x: 2,
+      y: 2,
+      z: 2,
+      radius: 0,
+      penValue: 7,
+      drawBitmap: bmp,
+      dims,
+      penOverwrites: true,
+    })
+    expect(bmp[idx(2, 2, 2)]).toBe(7)
+    expect(bmp.reduce((a, b) => a + (b ? 1 : 0), 0)).toBe(1)
+  })
+
+  test('radius 1 paints a 6-neighbour ball (centre + face neighbours)', () => {
+    const bmp = new Uint8Array(125)
+    drawSphere({
+      x: 2,
+      y: 2,
+      z: 2,
+      radius: 1,
+      penValue: 3,
+      drawBitmap: bmp,
+      dims,
+      penOverwrites: true,
+    })
+    // centre + 6 axis neighbours are within radius 1; corners (dist² = 2,3) are not
+    expect(bmp[idx(2, 2, 2)]).toBe(3)
+    expect(bmp[idx(1, 2, 2)]).toBe(3)
+    expect(bmp[idx(3, 2, 2)]).toBe(3)
+    expect(bmp[idx(2, 1, 2)]).toBe(3)
+    expect(bmp[idx(2, 2, 3)]).toBe(3)
+    expect(bmp[idx(1, 1, 2)]).toBe(0) // diagonal excluded
+    expect(bmp.reduce((a, b) => a + (b ? 1 : 0), 0)).toBe(7)
+  })
+
+  test('clips at the volume boundary', () => {
+    const bmp = new Uint8Array(125)
+    drawSphere({
+      x: 0,
+      y: 0,
+      z: 0,
+      radius: 1,
+      penValue: 1,
+      drawBitmap: bmp,
+      dims,
+      penOverwrites: true,
+    })
+    // only the in-bounds half of the ball is painted; no out-of-range writes
+    expect(bmp[idx(0, 0, 0)]).toBe(1)
+    expect(bmp[idx(1, 0, 0)]).toBe(1)
+    expect(bmp.reduce((a, b) => a + (b ? 1 : 0), 0)).toBe(4)
+  })
+
+  test('penOverwrites=false skips non-zero voxels', () => {
+    const bmp = new Uint8Array(125)
+    bmp[idx(2, 2, 2)] = 9
+    drawSphere({
+      x: 2,
+      y: 2,
+      z: 2,
+      radius: 1,
+      penValue: 3,
+      drawBitmap: bmp,
+      dims,
+      penOverwrites: false,
+    })
+    expect(bmp[idx(2, 2, 2)]).toBe(9) // preserved
+    expect(bmp[idx(1, 2, 2)]).toBe(3) // empty neighbour painted
+  })
+})
 
 // ---------------------------------------------------------------------------
 // voxelIndex

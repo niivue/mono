@@ -6,7 +6,15 @@ export const fragmentShader = `${fragmentPreamble}
 uniform mat4 normMtx;
 uniform float gradientAmount;
 uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
-uniform float numPaqd;
+// 1.0 when this draw is an independent hi-res overlay chunk cube (skip the
+// clip-surface/AO/matcap base treatment, composite as a translucent layer);
+// 0.0 for normal base/non-chunked draws. (Formerly the unused numPaqd.)
+uniform float overlayLayerMode;
+// Cross-fade weight in [0,1] for a streaming chunk: the final premultiplied
+// color is multiplied by this so a freshly-resident fine chunk dissolves in
+// over the coarse floor instead of popping. 1.0 for every non-fading draw.
+uniform float fadeAlpha;
+uniform float earlyTermination;
 uniform vec4 clipPlaneColor;
 uniform vec4 paqdUniforms;
 uniform sampler2D matcap;
@@ -41,11 +49,24 @@ struct RayResult {
   float farthest;
 };
 
-// Shared fast+fine ray-march for overlay, PAQD, and drawing textures.
+// Shared fast+fine ray-march for overlay and drawing textures. Samples are
+// remapped through chunkTexCoord so a chunked layer (drawing) reads its
+// per-chunk texture; for non-chunked layers chunkTexCoord is the identity.
+// clipMode: 0 = ignore clip plane; 1 = solid clip (keep only [clipLo,clipHi]);
+// 2 = cutaway clip (skip [clipLo,clipHi]). Lets the optional overlay passes be
+// clipped with the base when clipPlaneOverlay is set, matching the background.
+bool clipPassSkip(float sampleA, float clipLo, float clipHi, float clipMode) {
+    if (clipMode < 0.5) { return false; }
+    bool inRange = (sampleA >= clipLo) && (sampleA <= clipHi);
+    if (clipMode < 1.5) { return !inRange; } // solid: drop samples outside
+    return inRange;                          // cutaway: drop samples inside
+}
+
 RayResult rayMarchPass(
     sampler3D tex, vec3 start, vec3 dir, float len,
     vec4 deltaDir, vec4 deltaDirFast,
-    float ran, float earlyTermination
+    float ran, float earlyTermination,
+    float clipLo, float clipHi, float clipMode
 ) {
     RayResult result;
     result.color = vec4(0.0);
@@ -59,7 +80,9 @@ RayResult rayMarchPass(
     // Fast pass
     for (int j = 0; j < 1024; j++) {
         if (samplePos.a > len) { break; }
-        float alpha = texture(tex, samplePos.xyz).a;
+        if (clipMode > 0.5 && clipMode < 1.5 && samplePos.a > clipHi) { break; }
+        if (clipPassSkip(samplePos.a, clipLo, clipHi, clipMode)) { samplePos += deltaDirFast; continue; }
+        float alpha = texture(tex, chunkTexCoord(samplePos.xyz)).a;
         if (alpha >= 0.01) { break; }
         samplePos += deltaDirFast;
     }
@@ -71,7 +94,9 @@ RayResult rayMarchPass(
     // Fine pass
     for (int i = 0; i < 2048; i++) {
         if (samplePos.a > len) { break; }
-        vec4 colorSample = texture(tex, samplePos.xyz);
+        if (clipMode > 0.5 && clipMode < 1.5 && samplePos.a > clipHi) { break; }
+        if (clipPassSkip(samplePos.a, clipLo, clipHi, clipMode)) { samplePos += deltaDir; continue; }
+        vec4 colorSample = texture(tex, chunkTexCoord(samplePos.xyz));
         if (colorSample.a >= 0.01) {
             if (result.firstHit.a > len) {
                 result.firstHit = samplePos;
@@ -107,7 +132,8 @@ RayResult rayMarchPaqd(
     vec3 start, vec3 dir, float len,
     vec4 deltaDir, vec4 deltaDirFast,
     float ran, float earlyTermination,
-    vec4 paqdUni
+    vec4 paqdUni,
+    float clipLo, float clipHi, float clipMode
 ) {
     RayResult result;
     result.color = vec4(0.0);
@@ -124,7 +150,10 @@ RayResult rayMarchPaqd(
     float t0 = paqdUni[0];
     for (int j = 0; j < 1024; j++) {
         if (samplePos.a > len) { break; }
-        ivec3 coord = clamp(ivec3(samplePos.xyz * texDimsF), ivec3(0), texDims - 1);
+        if (clipMode > 0.5 && clipMode < 1.5 && samplePos.a > clipHi) { break; }
+        if (clipPassSkip(samplePos.a, clipLo, clipHi, clipMode)) { samplePos += deltaDirFast; continue; }
+        // chunkTexCoord remaps into the per-chunk PAQD texture (identity when not chunked).
+        ivec3 coord = clamp(ivec3(chunkTexCoord(samplePos.xyz) * texDimsF), ivec3(0), texDims - 1);
         vec4 raw = texelFetch(tex, coord, 0);
         if (raw.b > t0) { break; }
         samplePos += deltaDirFast;
@@ -137,7 +166,9 @@ RayResult rayMarchPaqd(
     // Fine pass: decode and accumulate PAQD colors
     for (int i = 0; i < 2048; i++) {
         if (samplePos.a > len) { break; }
-        ivec3 coord = clamp(ivec3(samplePos.xyz * texDimsF), ivec3(0), texDims - 1);
+        if (clipMode > 0.5 && clipMode < 1.5 && samplePos.a > clipHi) { break; }
+        if (clipPassSkip(samplePos.a, clipLo, clipHi, clipMode)) { samplePos += deltaDir; continue; }
+        ivec3 coord = clamp(ivec3(chunkTexCoord(samplePos.xyz) * texDimsF), ivec3(0), texDims - 1);
         vec4 raw = texelFetch(tex, coord, 0);
         float prob1 = raw.b;
         float prob2 = raw.a;
@@ -202,14 +233,18 @@ float distance2Plane(vec4 samplePos, vec4 clipPlane) {
 }
 
 void main() {
-  vec3 start = vColor;
-  vec3 backPosition = GetBackPosition(start);
+  vec3 rayStart = vColor;
+  vec3 start = GetFrontPosition(rayStart);
+  vec3 backPosition = GetBackPosition(rayStart);
   vec3 dirVec = backPosition - start;
   float len = length(dirVec);
+  if (!(len > 0.0) || len > 3.0) {
+    discard;
+  }
   vec3 dir = dirVec / len;
-  vec3 texVox = vec3(textureSize(volume, 0));
+  vec3 texVox = volumeTexDimsFull;
   float lenVox = length(dirVec * texVox);
-  if (lenVox < 0.5 || len > 3.0) {
+  if (lenVox < 0.5) {
     discard;
   }
   // Save original ray for overlay passes (overlay ignores clip planes)
@@ -220,9 +255,14 @@ void main() {
   if (clipPlaneColorX.a < 0.0) {
     clipPlaneColorX.a = 0.0;
   }
+  bool chunkedDraw = any(lessThan(chunkSubSize, vec3(0.999)));
+  // Independent hi-res overlay cube draw: composite as a flat translucent layer
+  // over the base. Skip the opaque clip-surface treatment (AO, clip plane
+  // colour) and matcap lighting; still respect clip-plane ray trimming.
+  bool overlayMode = overlayLayerMode > 0.5;
   float stepSize = len / lenVox;
   vec4 deltaDir = vec4(dir * stepSize, stepSize);
-  float localGradientAmount = gradientAmount;
+  float localGradientAmount = overlayMode ? 0.0 : gradientAmount;
   vec2 sampleRange = vec2(0.0, len);
   bool cutaway = isClipCutaway > 0.5;
   bool hasClip = false;
@@ -241,11 +281,13 @@ void main() {
       skipBackground = true;
     }
   }
-  // Shared values for all passes
-  float ran = fract(sin(gl_FragCoord.x * 12.9898 + gl_FragCoord.y * 78.233) * 43758.5453);
+  // Shared values for all passes. Keep samples on a centered full-volume
+  // lattice so adjacent chunks do not reset the ray phase at their seams.
+  float origRan = raySamplePhase(origStart, stepSize);
+  float ran = origRan;
   float stepSizeFast = stepSize * 1.9;
   vec4 deltaDirFast = vec4(dir * stepSizeFast, stepSizeFast);
-  const float earlyTermination = 0.95;
+  float localEarlyTermination = chunkedDraw ? 1.0 : earlyTermination;
   // --- Background passes ---
   vec4 colAcc = vec4(0.0);
   vec4 firstHit = vec4(0.0, 0.0, 0.0, 2.0 * origLen);
@@ -254,16 +296,17 @@ void main() {
   float clipOffset = 0.0;
   bool clipSurfaceHit = false;
   if (!skipBackground) {
-    if (!cutaway && isClip) {
+    if (!cutaway && isClip && !overlayMode) {
       clipOffset = sampleRange.x;
       start += dir * sampleRange.x;
       len = sampleRange.y - sampleRange.x;
-      float alpha = texture(volume, start.xyz).a;
-      float alpha1 = texture(volume, start.xyz - deltaDir.xyz).a;
+      float alpha = texture(volume, chunkTexCoord(start.xyz)).a;
+      float alpha1 = texture(volume, chunkTexCoord(start.xyz - deltaDir.xyz)).a;
       if ((alpha > 0.01) && (alpha1 > 0.01)) {
         clipSurfaceHit = true;
       }
     }
+    ran = raySamplePhase(start, stepSize);
     vec4 samplePos = vec4(start + dir * (stepSize * ran), stepSize * ran);
     // --- Background Fast Pass ---
     vec4 samplePosStart = samplePos;
@@ -273,7 +316,7 @@ void main() {
         samplePos += deltaDirFast;
         continue;
       }
-      float alpha = texture(volume, samplePos.xyz).a;
+      float alpha = texture(volume, chunkTexCoord(samplePos.xyz)).a;
       if (alpha >= 0.01) {
         break;
       }
@@ -281,13 +324,13 @@ void main() {
     }
     if (samplePos.a >= len) {
       // Background fast pass found nothing — use clip plane color as fallback
-      if (isClip) {
+      if (isClip && !chunkedDraw) {
         float clipAlpha = clipPlaneColorX.a;
         colAcc = vec4(clipPlaneColorX.rgb * clipAlpha, clipAlpha);
       }
     } else {
       // Background fast pass found something
-      if (cutaway && isClip) {
+      if (cutaway && isClip && !overlayMode) {
         float dx = abs(sampleRange.x - samplePos.a);
         float dx2 = abs(sampleRange.y - samplePos.a);
         if (min(dx, dx2) < stepSizeFast) {
@@ -303,29 +346,30 @@ void main() {
       }
       // --- Background Fine Pass ---
       mat3 norm3 = mat3(normMtx);
-      float brighten = 1.0 + (localGradientAmount / 3.0);
       for (int fi = 0; fi < 2048; fi++) {
         if (samplePos.a > len) { break; }
         if (cutaway && isClip && samplePos.a >= sampleRange.x && samplePos.a <= sampleRange.y) {
           samplePos += deltaDir;
           continue;
         }
-        vec4 colorSample = texture(volume, samplePos.xyz);
+        vec3 volCoord = chunkTexCoord(samplePos.xyz);
+        vec4 colorSample = texture(volume, volCoord);
         if (colorSample.a >= 0.01) {
           if (!bgHasHit) {
             bgHasHit = true;
             firstHit = samplePos;
           }
-          vec3 gradRaw = texture(volumeGradient, samplePos.xyz).rgb;
+          vec3 gradRaw = texture(volumeGradient, volCoord).rgb;
           vec3 localNormal = normalize(gradRaw * 2.0 - 1.0);
           vec3 n = norm3 * localNormal;
           vec2 uv = n.xy * 0.5 + 0.5;
-          vec3 mc_rgb = texture(matcap, uv).rgb * brighten;
-          vec3 blendedRGB = mix(vec3(1.0), mc_rgb, localGradientAmount);
+          float lightingAmount = localGradientAmount;
+          vec3 mc_rgb = texture(matcap, uv).rgb * (1.0 + (lightingAmount / 3.0));
+          vec3 blendedRGB = mix(vec3(1.0), mc_rgb, lightingAmount);
           vec3 finalRGB = blendedRGB * colorSample.rgb;
           vec4 premultiplied = vec4(finalRGB * colorSample.a, colorSample.a);
           colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
-          if (colAcc.a > earlyTermination) { break; }
+          if (colAcc.a > localEarlyTermination) { break; }
         }
         samplePos += deltaDir;
       }
@@ -358,7 +402,7 @@ void main() {
       }
       // If fine pass produced nothing, use clip plane color as fallback
       if (colAcc.a <= 0.001 || !bgHasHit) {
-        if (isClip) {
+        if (isClip && !chunkedDraw) {
           float clipAlpha = clipPlaneColorX.a;
           colAcc = vec4(clipPlaneColorX.rgb * clipAlpha, clipAlpha);
         }
@@ -367,39 +411,52 @@ void main() {
       }
     }
   }
-  // --- Optional passes (no clip plane) ---
+  // --- Optional passes. By default overlays ignore the clip plane (march the
+  // full original ray); when clipPlaneOverlay is set they are clipped with the
+  // base: solid clip keeps [sampleRange.x, sampleRange.y], cutaway skips it. ---
   float backNearest = clipOffset + firstHit.a;
   float depthFactor = 0.3;
+  // Gate on hasClip (clip plane active), not isClip (chunk straddles the plane):
+  // a chunked cube wholly on the removed side has sampleRange == (0,0) and
+  // isClip == false, which left the overlay unclipped and leaking through the
+  // clipped-away region. hasClip + the solid range covers every case.
+  bool clipOverlay = (clipPlaneOverlay > 0.5) && hasClip;
+  float ovClipMode = clipOverlay ? (cutaway ? 2.0 : 1.0) : 0.0;
+  float ovClipLo = sampleRange.x;
+  float ovClipHi = sampleRange.y;
   // Overlay pass
   if (textureSize(overlay, 0).x > 2) {
-    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode);
     depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
   }
   // PAQD pass (raw data with GPU-side LUT lookup + easing)
   if (textureSize(paqd, 0).x > 2) {
-    RayResult result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination, paqdUniforms);
+    RayResult result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, paqdUniforms, ovClipLo, ovClipHi, ovClipMode);
     depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
   }
   // Drawing pass (nearest-neighbor sampling — NEAREST filter set by CPU)
   if (textureSize(drawing, 0).x > 2) {
-    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, ran, earlyTermination);
+    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode);
     // Matcap lighting at first hit. 6-tap central-difference gradient on
     // the drawing texture with LINEAR filtering — each tap is a trilinear
     // blend of 8 texels, which approximates a Gaussian-smoothed sample
     // (the "bilinear free smoothing" trick). Sampling at 1.5 voxels out
     // widens the stencil, further reducing per-pixel noise from the
-    // ray-march step discretization and ran jitter. Sign convention:
+    // ray-march step discretization. Sign convention:
     // gx = value(+x) - value(-x), matching the volume gradient (inward-
     // pointing toward higher drawing density).
     if (result.color.a > 0.001 && gradientAmount > 0.0) {
-      vec3 dv = DRAW_GRAD_OFFSET / vec3(textureSize(drawingLinear, 0));
+      // Offset in full-volume [0,1] space so the stencil width is correct
+      // for chunked drawing (chunk texDims differ from the full volume);
+      // chunkTexCoord then maps each tap into the chunk texture.
+      vec3 dv = DRAW_GRAD_OFFSET / volumeTexDimsFull;
       vec3 hp = result.firstHit.xyz;
-      float vXp = drawScalar(texture(drawingLinear, hp + vec3(dv.x, 0.0, 0.0)));
-      float vXm = drawScalar(texture(drawingLinear, hp - vec3(dv.x, 0.0, 0.0)));
-      float vYp = drawScalar(texture(drawingLinear, hp + vec3(0.0, dv.y, 0.0)));
-      float vYm = drawScalar(texture(drawingLinear, hp - vec3(0.0, dv.y, 0.0)));
-      float vZp = drawScalar(texture(drawingLinear, hp + vec3(0.0, 0.0, dv.z)));
-      float vZm = drawScalar(texture(drawingLinear, hp - vec3(0.0, 0.0, dv.z)));
+      float vXp = drawScalar(texture(drawingLinear, chunkTexCoord(hp + vec3(dv.x, 0.0, 0.0))));
+      float vXm = drawScalar(texture(drawingLinear, chunkTexCoord(hp - vec3(dv.x, 0.0, 0.0))));
+      float vYp = drawScalar(texture(drawingLinear, chunkTexCoord(hp + vec3(0.0, dv.y, 0.0))));
+      float vYm = drawScalar(texture(drawingLinear, chunkTexCoord(hp - vec3(0.0, dv.y, 0.0))));
+      float vZp = drawScalar(texture(drawingLinear, chunkTexCoord(hp + vec3(0.0, 0.0, dv.z))));
+      float vZm = drawScalar(texture(drawingLinear, chunkTexCoord(hp - vec3(0.0, 0.0, dv.z))));
       vec3 grad = vec3(vXp - vXm, vYp - vYm, vZp - vZm);
       if (length(grad) > DRAW_GRAD_EPSILON) {
         vec3 localNormal = normalize(grad);
@@ -422,7 +479,20 @@ void main() {
   if (colAcc.a <= 0.001) {
     discard;
   }
-  FragColor = vec4(colAcc.rgb, colAcc.a / earlyTermination);
+  // Single full-volume draws can present an early-terminated ray as opaque.
+  // Chunked draws must emit the true per-segment premultiplied alpha so the
+  // back-to-front chunk blend reconstructs the full ray without over-occluding
+  // deeper chunks.
+  if (chunkedDraw) {
+    FragColor = colAcc;
+  } else if (colAcc.a >= localEarlyTermination) {
+    FragColor = vec4(colAcc.rgb / colAcc.a, 1.0);
+  } else {
+    FragColor = colAcc;
+  }
+  // Cross-fade a streaming chunk in over the coarse floor (premultiplied, so
+  // scaling the whole vec4 fades presence + coverage together). 1.0 = no-op.
+  FragColor = FragColor * fadeAlpha;
   gl_FragDepth = fragDepth;
 }
 `

@@ -1,4 +1,4 @@
-import { type vec3, vec4 } from 'gl-matrix'
+import { type vec2, type vec3, vec4 } from 'gl-matrix'
 import { getControlPoints } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
@@ -6,6 +6,12 @@ import { cortex } from '@/assets/matcaps'
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { removeInteractionListeners } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
+import {
+  computeBoundsPixelRect,
+  getCanvasInstances,
+  getCanvasViewport,
+  setCanvasViewport,
+} from '@/control/viewBoth'
 import type {
   ReinitializeOptions,
   ViewLifecycle,
@@ -38,6 +44,7 @@ import type {
   AnnotationStyle,
   AnnotationTool,
   BackendType,
+  CanvasViewport,
   ColorMap,
   CustomLayoutTile,
   ImageFromUrlOptions,
@@ -49,7 +56,9 @@ import type {
   NVBounds,
   NVConnectomeOptions,
   NVFontData,
+  NVGlobalCamera,
   NVImage,
+  NVInstance,
   NVMeshLayer,
   NVMesh as NVMeshType,
   NVTractOptions,
@@ -71,6 +80,8 @@ import {
 } from '@/view/NVPerfMarks'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import { validateCustomLayout } from '@/view/NVSliceLayout'
+import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
+import type { ChunkPlan } from '@/volume/chunking'
 import { computeModulationData } from '@/volume/modulation'
 import * as NVVolume from '@/volume/NVVolume'
 import * as NVTensorProcessing from '@/volume/TensorProcessing'
@@ -95,6 +106,7 @@ type ViewBackend = {
   render: () => void
   updateBindGroups: () => Promise<void>
   updateAffineOverlays?: () => Promise<boolean>
+  setCoarseFloor?: (coarseVol: NVImage | null) => Promise<void>
   hitTest: (x: number, y: number) => ViewHitTest | null
   depthPick: (x: number, y: number) => Promise<[number, number, number] | null>
   loadThumbnail: (url: string) => Promise<void>
@@ -102,10 +114,22 @@ type ViewBackend = {
   legendLayout: LegendLayout | null
   graphLayout: GraphLayout | null
   getAvailableShaders: () => string[]
-  refreshDrawing: (rgba: Uint8Array, dims: number[]) => void
+  refreshDrawing: (
+    rgba: Uint8Array,
+    dims: number[],
+    plan?: ChunkPlan,
+    dirtyChunks?: readonly number[],
+  ) => void
   clearDrawing: () => void
   destroy: () => void
   forceDevicePixelRatio: number
+  chunkStreamStats: () => {
+    resident: number
+    pending: number
+    inFlight: number
+    total: number
+  }
+  rebakeChunkedOverlays: () => void
 }
 
 export type { NiiVueOptions }
@@ -115,6 +139,9 @@ type InfrastructureOpts = {
   backend?: BackendType
   isAntiAlias?: boolean
   isDragDropEnabled?: boolean
+  isInteractionEnabled?: boolean
+  instances?: NVInstance[]
+  globalCamera?: NVGlobalCamera
   forceDevicePixelRatio?: number
   logLevel?: LogLevel
   thumbnail?: string
@@ -124,6 +151,8 @@ type InfrastructureOpts = {
   showBoundsBorder?: boolean
   boundsBorderColor?: [number, number, number, number]
   boundsBorderThickness?: number
+  maxTextureDimension3D?: number
+  maxChunkResidencyBytes?: number
 }
 const DEFAULT_MATCAPS: Record<string, string> = { cortex }
 
@@ -190,7 +219,7 @@ export default class NiiVueGPU extends EventTarget {
   _eventListeners: Record<string, EventHandler | null>
   private _updating = false
   private _pendingUpdate = false
-  private _deferredVolumes: ImageFromUrlOptions[] | null = null
+  private _deferredVolumes: Array<ImageFromUrlOptions | NVImage> | null = null
   private _deferredMeshes: MeshFromUrlOptions[] | null = null
   private _viewLifecycle: ViewLifecycle
   private _distributionBackend: DistributionBackend
@@ -200,6 +229,13 @@ export default class NiiVueGPU extends EventTarget {
   _drawPenFillPts: number[][] = []
   _drawLut: LUT | null = null
   _drawingDirty = false
+  // Inclusive voxel AABB of pen strokes since the last drawing flush. When set
+  // on a chunked background, only the chunks overlapping it are re-uploaded;
+  // null means a full upload (first build, undo, clear, colormap change, …).
+  _drawDirtyBox: {
+    min: [number, number, number]
+    max: [number, number, number]
+  } | null = null
   drawPenAutoClose = false
   drawPenFilled = false
   // Undo state (controller-owned — not persisted in documents)
@@ -246,10 +282,14 @@ export default class NiiVueGPU extends EventTarget {
     log.setLogLevel(options.logLevel ?? 'info')
     this.activeClipPlaneIndex = 0
     this.currentClipPlaneIndex = 0
+    const backend = options.backend ?? 'webgpu'
     this.opts = {
-      backend: options.backend ?? 'webgpu',
+      backend,
       isAntiAlias: options.isAntiAlias ?? true,
       isDragDropEnabled: options.isDragDropEnabled ?? true,
+      isInteractionEnabled: options.isInteractionEnabled ?? true,
+      instances: options.instances,
+      globalCamera: options.globalCamera,
       forceDevicePixelRatio: options.devicePixelRatio ?? -1,
       logLevel: options.logLevel ?? 'info',
       thumbnail: options.thumbnail,
@@ -262,6 +302,8 @@ export default class NiiVueGPU extends EventTarget {
       showBoundsBorder: options.showBoundsBorder ?? false,
       boundsBorderColor: options.boundsBorderColor ?? [1, 1, 1, 1],
       boundsBorderThickness: options.boundsBorderThickness ?? 2,
+      maxTextureDimension3D: options.maxTextureDimension3D,
+      maxChunkResidencyBytes: options.maxChunkResidencyBytes,
     }
     // Public properties (controller-level)
     this.isDragging = false
@@ -416,6 +458,15 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  get renderPan(): vec2 {
+    return this.model.scene.renderPan
+  }
+  set renderPan(v: vec2) {
+    this.model.scene.renderPan = v
+    this.emit('change', { property: 'renderPan', value: v })
+    this.drawScene()
+  }
+
   get gamma(): number {
     return this.model.scene.gamma
   }
@@ -449,6 +500,15 @@ export default class NiiVueGPU extends EventTarget {
   set isClipPlaneCutaway(v: boolean) {
     this.model.scene.isClipPlaneCutaway = v
     this.emit('change', { property: 'isClipPlaneCutaway', value: v })
+    this.drawScene()
+  }
+
+  get clipPlaneOverlay(): boolean {
+    return this.model.scene.clipPlaneOverlay
+  }
+  set clipPlaneOverlay(v: boolean) {
+    this.model.scene.clipPlaneOverlay = v
+    this.emit('change', { property: 'clipPlaneOverlay', value: v })
     this.drawScene()
   }
 
@@ -832,6 +892,15 @@ export default class NiiVueGPU extends EventTarget {
   set volumeIllumination(v: number) {
     this.model.volume.illumination = v
     this.emit('change', { property: 'volumeIllumination', value: v })
+    this.drawScene()
+  }
+
+  get volumeTransmittanceCutoff(): number {
+    return this.model.volume.transmittanceCutoff
+  }
+  set volumeTransmittanceCutoff(v: number) {
+    this.model.volume.transmittanceCutoff = v
+    this.emit('change', { property: 'volumeTransmittanceCutoff', value: v })
     this.drawScene()
   }
 
@@ -1512,24 +1581,41 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   async loadVolumes(
-    volumes: ImageFromUrlOptions | ImageFromUrlOptions[],
+    volumes:
+      | ImageFromUrlOptions
+      | NVImage
+      | Array<ImageFromUrlOptions | NVImage>,
   ): Promise<this> {
     if (!Array.isArray(volumes)) volumes = [volumes]
     if (this.model.ui.isThumbnailVisible) {
       this._deferredVolumes = volumes
       return this
     }
-    await this.removeAllVolumes()
-    // Fetch all volumes in parallel, then add in original order
+    // Fetch + parse new volumes in parallel — the old volumes stay rendered
+    // throughout, since prepareVolume only touches local NVImage objects.
     const loaded = await Promise.all(
       volumes.map((v) => NVModel.prepareVolume(v)),
     )
+    // Atomic swap: keep refs to the old volumes so we can release their GPU
+    // resources AFTER the new bind groups are live. Replace the model's
+    // volume array in place — the view's bind groups still point at the old
+    // textures until updateGLVolume rebuilds them, so the canvas keeps
+    // showing the previous frame across the swap instead of flashing blank.
+    const previous = this.model.getVolumes()
+    for (let i = previous.length - 1; i >= 0; i--) {
+      this.emit('volumeRemoved', { volume: previous[i], index: i })
+    }
+    this.model.volumes = loaded
+    this.model._setupPivot3D()
     for (const vol of loaded) {
-      await this.model.addVolume(vol)
-      const vols = this.model.getVolumes()
-      this.emit('volumeLoaded', { volume: vols[vols.length - 1] })
+      this.emit('volumeLoaded', { volume: vol })
     }
     await this.updateGLVolume()
+    // New bind groups are live; the old GPU textures are no longer referenced.
+    for (const vol of previous) {
+      this.model._releaseGPU(vol as unknown as Record<string, unknown>)
+      vol.img = null
+    }
     return this
   }
 
@@ -2242,6 +2328,170 @@ export default class NiiVueGPU extends EventTarget {
     }
   }
 
+  /**
+   * Read the canvas-level viewport (virtual camera) shared with sibling instances.
+   * The viewport applies a pan + zoom over the entire canvas before each instance's
+   * `bounds` are projected to pixels. Identity is `{pan: [0, 0], zoom: 1}`.
+   */
+  getViewport(): CanvasViewport {
+    return getCanvasViewport(this.canvas)
+  }
+
+  /**
+   * Streaming stats across all chunked volumes (base + independent overlay) on
+   * the active backend: `{ resident, pending, inFlight, total }` brick counts.
+   * Returns null before a view is attached. Useful for HUD / debug overlays:
+   * `resident < total` with `pending > 0` for many frames indicates the working
+   * set exceeds the residency budget (thrashing).
+   */
+  chunkStreamStats(): {
+    resident: number
+    pending: number
+    inFlight: number
+    total: number
+  } | null {
+    return this.view?.chunkStreamStats() ?? null
+  }
+
+  /**
+   * Re-bake the streamed/chunked overlays in place: drop their resident bricks so
+   * the next frame re-requests and re-bakes only the blocks in the current view
+   * frustum, leaving the base volume resident. Use after changing a streamed
+   * overlay's `opacity` (or any `chunkSource` whose output changed) to apply it
+   * without the cost of a full `loadVolumes` reload. No-op before a view attaches.
+   */
+  rebakeChunkedOverlays(): void {
+    if (!this.view) return
+    this.view.rebakeChunkedOverlays()
+    this.drawScene()
+  }
+
+  /**
+   * Set (or clear, with null) a coarse whole-volume "floor" for the streamed
+   * base. On 2D slices the floor renders behind the resident fine chunks, so a
+   * deep-zoom slice shows coarse detail immediately and never blanks while
+   * finer chunks stream in — a smooth level-of-detail transition. `coarseVol`
+   * is a small in-memory pyramid level (its own colormap/window); niivue stays
+   * level-of-detail-agnostic and the app supplies it. No-op before a view
+   * attaches or on a backend that has not implemented it.
+   */
+  async setBaseCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+    await this.view?.setCoarseFloor?.(coarseVol)
+    this.drawScene()
+  }
+
+  /**
+   * Update the canvas-level viewport (virtual camera). All controllers sharing this
+   * canvas resize and redraw together. `pan` is in normalized canvas units (GL convention,
+   * y up); `zoom` is a positive scalar around the canvas centre.
+   *
+   * @param viewport - `{ pan: [x, y], zoom }`. Default identity keeps existing behavior.
+   * @example
+   *   nv1.setViewport({ pan: [0, 0], zoom: 1 })          // identity (no transform)
+   *   nv1.setViewport({ pan: [0.5, 0], zoom: 1 })        // shift world right by half a canvas
+   *   nv1.setViewport({ pan: [0, 0], zoom: 2 })          // zoom in 2x around canvas centre
+   */
+  setViewport(viewport: CanvasViewport): void {
+    if (
+      !viewport ||
+      !Array.isArray(viewport.pan) ||
+      viewport.pan.length !== 2
+    ) {
+      throw new Error('setViewport: expected { pan: [x, y], zoom }')
+    }
+    if (!Number.isFinite(viewport.zoom) || viewport.zoom <= 0) {
+      throw new Error('setViewport: zoom must be a positive finite number')
+    }
+    const canvas = this.canvas
+    if (!canvas) return
+    const changed = setCanvasViewport(canvas, viewport)
+    if (!changed) return
+    if (this.opts.instances) this.updateTilesFromInstances()
+    // Fan out to every sibling sharing this canvas: each needs to re-derive its
+    // pixel rect from (bounds × viewport) and redraw.
+    const sibs = getCanvasInstances(canvas)
+    if (sibs) {
+      for (const sib of sibs) {
+        if (sib.view) {
+          sib.view.resize()
+          sib.drawScene(false)
+        }
+      }
+    } else if (this.view) {
+      this.view.resize()
+      this.drawScene(false)
+    }
+    this._syncDirty = true
+  }
+
+  /**
+   * Replace the multi-instance descriptor list (canvas tiling + optional global3d
+   * volumes). Triggers a tile rebuild and redraw. Supported on both WebGL2 and
+   * WebGPU backends.
+   */
+  setInstances(instances: NVInstance[]): void {
+    this.opts.instances = instances
+    if (this.view) {
+      this.updateTilesFromInstances()
+      this.drawScene()
+    }
+  }
+
+  /**
+   * Update the shared 3D camera used by `space === 'global3d'` instances.
+   * Supported on both WebGL2 and WebGPU backends.
+   */
+  setGlobalCamera(camera: NVGlobalCamera): void {
+    this.opts.globalCamera = camera
+    if (this.view && this.opts.instances) {
+      this.updateTilesFromInstances()
+      this.drawScene()
+    }
+  }
+
+  private updateTilesFromInstances(): void {
+    if (!this.view || !this.opts.instances || !this.canvas) return
+    const cw = this.canvas.width
+    const ch = this.canvas.height
+    const canvas = this.canvas
+
+    const tiles: SliceTile[] = this.opts.instances.map((inst) => {
+      if (inst.space === 'global3d' || inst.position) {
+        return {
+          leftTopWidthHeight: [0, 0, cw, ch],
+          axCorSag: 4,
+          volumeId: inst.volumeId,
+          space: 'global3d',
+          position: inst.position ?? [0, 0, 0],
+          scale: inst.scale ?? 1,
+          orientation: inst.orientation,
+          globalCamera: this.opts.globalCamera,
+        }
+      }
+      const b = inst.bounds
+      if (!b) {
+        return {
+          leftTopWidthHeight: [0, 0, cw, ch],
+          axCorSag: 4,
+          volumeId: inst.volumeId,
+        }
+      }
+      // Share the bounds→pixel projection with NVViewGPU/NVViewGL so that
+      // pan/zoom stays consistent across the renderer and the tile rects.
+      const rect = computeBoundsPixelRect(canvas, b)
+      return {
+        leftTopWidthHeight: [rect.left, rect.top, rect.width, rect.height],
+        axCorSag: 4,
+        azimuth: inst.rotation ? inst.rotation[0] : undefined,
+        elevation: inst.rotation ? inst.rotation[1] : undefined,
+        pan: inst.viewport ? inst.viewport.pan : undefined,
+        zoom: inst.viewport ? inst.viewport.zoom : undefined,
+        volumeId: inst.volumeId,
+      }
+    })
+    this.view.screenSlices = tiles
+  }
+
   drawScene(needsSync = true): void {
     if (needsSync) this._syncDirty = true
     if (!this.framePending) {
@@ -2684,6 +2934,18 @@ export default class NiiVueGPU extends EventTarget {
           changed = true
         }
       }
+      if (opts.viewport && target.canvas && target.canvas !== this.canvas) {
+        const srcVp = getCanvasViewport(this.canvas)
+        const dstVp = getCanvasViewport(target.canvas)
+        if (
+          dstVp.pan[0] !== srcVp.pan[0] ||
+          dstVp.pan[1] !== srcVp.pan[1] ||
+          dstVp.zoom !== srcVp.zoom
+        ) {
+          target.setViewport(srcVp)
+          changed = true
+        }
+      }
       if (changed) {
         target.drawScene(false)
         target.createOnLocationChange()
@@ -2761,6 +3023,27 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Expand the pending pen-stroke dirty box by a voxel and its pen radius, so
+   * the next drawing flush re-uploads only the chunks that region touches. Call
+   * this right before `refreshDrawing()` at each pen-stroke site; whole-bitmap
+   * changes (undo, clear, recolour) skip it and fall back to a full upload.
+   */
+  markDrawDirty(x: number, y: number, z: number, radius = 0): void {
+    const r = Math.max(0, Math.ceil(radius))
+    const lo: [number, number, number] = [x - r, y - r, z - r]
+    const hi: [number, number, number] = [x + r, y + r, z + r]
+    if (!this._drawDirtyBox) {
+      this._drawDirtyBox = { min: lo, max: hi }
+      return
+    }
+    const b = this._drawDirtyBox
+    for (let i = 0; i < 3; i++) {
+      b.min[i] = Math.min(b.min[i], lo[i])
+      b.max[i] = Math.max(b.max[i], hi[i])
+    }
+  }
+
   /** Perform the actual bitmap→RGBA conversion and GPU texture upload. Called from drawScene RAF. */
   private _flushDrawing(): void {
     if (!this.model.drawingVolume || !this.view) return
@@ -2781,7 +3064,29 @@ export default class NiiVueGPU extends EventTarget {
       this._drawLut.min ?? 0,
       this.model.draw.opacity,
     )
-    this.view.refreshDrawing(rgba, [dims[1], dims[2], dims[3]])
+    // The drawing layer shares the background volume's ChunkPlan (1-voxel
+    // halo) so chunk indices and texDims line up. Passing it switches both
+    // renderers to per-chunk drawing textures for oversized volumes.
+    const plan = this.model.volumes[0]?.chunkPlan
+    // Incremental upload: if a pen stroke recorded a dirty box, refresh only the
+    // chunks it touched (halo-inclusive). A null box (undo/clear/recolour/first
+    // build) uploads every chunk. NOTE: the rgba above is still built from the
+    // whole bitmap — a fully chunked drawing bitmap is Phase 2.
+    const dirtyChunks =
+      plan && this._drawDirtyBox
+        ? chunksOverlappingVoxelBox(
+            plan,
+            this._drawDirtyBox.min,
+            this._drawDirtyBox.max,
+          )
+        : undefined
+    this._drawDirtyBox = null
+    this.view.refreshDrawing(
+      rgba,
+      [dims[1], dims[2], dims[3]],
+      plan,
+      dirtyChunks,
+    )
   }
 
   async saveDrawing(filename = 'drawing.nii'): Promise<boolean | Uint8Array> {
@@ -2870,6 +3175,7 @@ export default class NiiVueGPU extends EventTarget {
   resize(): void {
     if (!this.view) return
     this.view.resize()
+    if (this.opts.instances) this.updateTilesFromInstances()
   }
 
   destroy(): void {

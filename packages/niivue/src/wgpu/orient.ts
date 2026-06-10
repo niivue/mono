@@ -1,6 +1,8 @@
 import * as NVCmaps from '@/cmap/NVCmaps'
 import type { NVImage } from '@/NVTypes'
 import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
+import type { ChunkPlan } from '@/volume/chunking'
+import { chunkOverlayMatrix } from '@/volume/orientChunked'
 import orientWGSL from './orient.wgsl?raw'
 import * as wgpu from './wgpu'
 
@@ -13,7 +15,7 @@ const _deviceCache = new WeakMap<
   Record<string, PipelineCacheEntry>
 >()
 
-function ensurePipeline(
+export function ensureOrientPipeline(
   device: GPUDevice,
   pipelineType: string,
 ): PipelineCacheEntry {
@@ -240,7 +242,7 @@ export async function prepareOrientTextureCache(
     return existingCache
   }
   destroyOrientTextureCache(existingCache)
-  const cached = ensurePipeline(device, pipelineType)
+  const cached = ensureOrientPipeline(device, pipelineType)
   const sourceTexture = device.createTexture({
     size: dimsIn,
     format,
@@ -356,7 +358,7 @@ export function dispatchOrient(
   device: GPUDevice,
   cache: OrientTextureCache,
 ): void {
-  const cached = ensurePipeline(device, cache.pipelineType)
+  const cached = ensureOrientPipeline(device, cache.pipelineType)
   const [vxOut, vyOut, vzOut] = cache.dimsOut
   const encoder = device.createCommandEncoder()
   const pass = encoder.beginComputePass()
@@ -383,6 +385,7 @@ export async function volume2Texture(
   nvimageTarget: NVImage,
   mtx: Float32Array,
   overlayOpacity = 1,
+  outDimsOverride?: readonly number[],
 ): Promise<GPUTexture> {
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS) {
     throw new Error('overlay2Texture: missing dimsRAS')
@@ -419,13 +422,18 @@ export async function volume2Texture(
     throw new Error(`Unsupported NIfTI datatype ${dt}`)
   }
   const dimsIn = [nvimage.dims[1], nvimage.dims[2], nvimage.dims[3]]
-  const dimsOut = [
-    nvimageTarget.dimsRAS[1],
-    nvimageTarget.dimsRAS[2],
-    nvimageTarget.dimsRAS[3],
-  ]
+  // Output dims default to the target's RAS grid. A chunked caller passes a
+  // chunk's texDims here and a pre-composed mtx (chunkOverlayMatrix) so this
+  // same pass renders one chunk-sized sub-texture.
+  const dimsOut = outDimsOverride
+    ? [outDimsOverride[0], outDimsOverride[1], outDimsOverride[2]]
+    : [
+        nvimageTarget.dimsRAS[1],
+        nvimageTarget.dimsRAS[2],
+        nvimageTarget.dimsRAS[3],
+      ]
   const [vxOut, vyOut, vzOut] = dimsOut
-  const cached = ensurePipeline(device, pipelineType)
+  const cached = ensureOrientPipeline(device, pipelineType)
   // 1) Upload input scalar texture (offset by frame4D for 4D volumes)
   const scalarTexture = device.createTexture({
     size: dimsIn,
@@ -574,6 +582,48 @@ export async function volume2Texture(
   return rgbaTexture
 }
 
+/**
+ * Build one RGBA8 overlay texture per chunk for a chunked oversized volume.
+ *
+ * Each chunk is oriented independently: the output texture is sized to the
+ * chunk's `texDims` (halo included) and `volume2Texture` runs with the matrix
+ * from `chunkOverlayMatrix`, which folds the chunk-local -> full-volume affine
+ * lift into the overlay matrix. The per-chunk textures align 1:1 with the
+ * volume chunks (shared ChunkPlan), so the renderer's per-chunk uniforms and
+ * `chunkTexCoord` sample them seam-free. Returns one texture per `plan.chunks`.
+ */
+export async function overlay2TextureChunked(
+  device: GPUDevice,
+  nvimage: NVImage,
+  nvimageTarget: NVImage,
+  mtx: Float32Array,
+  plan: ChunkPlan,
+  overlayOpacity = 1,
+): Promise<GPUTexture[]> {
+  const [dx, dy, dz] = plan.volumeDims
+  const out: GPUTexture[] = []
+  for (const desc of plan.chunks) {
+    const [ox, oy, oz] = desc.texOrigin
+    const [sx, sy, sz] = desc.texDims
+    const mtxChunk = chunkOverlayMatrix(
+      mtx,
+      [sx / dx, sy / dy, sz / dz],
+      [ox / dx, oy / dy, oz / dz],
+    )
+    out.push(
+      await volume2Texture(
+        device,
+        nvimage,
+        nvimageTarget,
+        mtxChunk,
+        overlayOpacity,
+        desc.texDims,
+      ),
+    )
+  }
+  return out
+}
+
 const maskShaderCode = `
 @group(0) @binding(0) var background: texture_3d<f32>;
 @group(0) @binding(1) var overlayIn: texture_3d<f32>;
@@ -676,6 +726,145 @@ export async function maskOverlayByBackground(
   device.queue.submit([encoder.finish()])
   await device.queue.onSubmittedWorkDone()
   overlayTexture.destroy()
+  return outputTexture
+}
+
+// Texture-to-texture geometric resampler. Maps an existing RGBA 3D texture into
+// a new grid via the same target-frac -> source-frac matrix the orient pass uses
+// (NVTransforms.calculateOverlayTransformMatrix), but samples an already-RGBA
+// source with LINEAR filtering and applies no colormap. This is the texture-level
+// analogue of the volume (scalar) orient pass: a coarser-LOD texture can be
+// stretched into a higher-resolution space (placeholder while finer tiles stream)
+// and a higher-LOD texture can be mapped into a coarser space. Out-of-bounds
+// output voxels are written transparent.
+const resampleShaderCode = `
+struct Uniforms {
+  mtxRow0 : vec4<f32>,
+  mtxRow1 : vec4<f32>,
+  mtxRow2 : vec4<f32>,
+  mtxRow3 : vec4<f32>,
+};
+@group(0) @binding(0) var<uniform> u : Uniforms;
+@group(0) @binding(1) var srcTex : texture_3d<f32>;
+@group(0) @binding(2) var dstOut : texture_storage_3d<rgba8unorm, write>;
+@group(0) @binding(3) var samp   : sampler;
+
+@compute @workgroup_size(8, 8, 4)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let dims = textureDimensions(dstOut);
+  if (gid.x >= dims.x || gid.y >= dims.y || gid.z >= dims.z) { return; }
+  let coord = vec3<i32>(gid);
+  // Output voxel center -> normalized [0,1], transform to source frac coords.
+  let outUVW = (vec3<f32>(gid) + vec3<f32>(0.5)) / vec3<f32>(dims);
+  let outPos = vec4<f32>(outUVW, 1.0);
+  let s = vec3<f32>(dot(u.mtxRow0, outPos), dot(u.mtxRow1, outPos), dot(u.mtxRow2, outPos));
+  if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z < 0.0 || s.z > 1.0) {
+    textureStore(dstOut, coord, vec4<f32>(0.0));
+    return;
+  }
+  textureStore(dstOut, coord, textureSampleLevel(srcTex, samp, s, 0.0));
+}
+`
+
+function ensureResamplePipeline(device: GPUDevice): PipelineCacheEntry {
+  let perDevice = _deviceCache.get(device)
+  if (!perDevice) {
+    perDevice = {}
+    _deviceCache.set(device, perDevice)
+  }
+  if (perDevice.resample) {
+    return perDevice.resample
+  }
+  const module = device.createShaderModule({ code: resampleShaderCode })
+  const layout = device.createBindGroupLayout({
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: 'uniform' },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
+        texture: { sampleType: 'float', viewDimension: '3d' },
+      },
+      {
+        binding: 2,
+        visibility: GPUShaderStage.COMPUTE,
+        storageTexture: { format: 'rgba8unorm', viewDimension: '3d' },
+      },
+      {
+        binding: 3,
+        visibility: GPUShaderStage.COMPUTE,
+        sampler: { type: 'filtering' },
+      },
+    ],
+  })
+  const pipeline = device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+    compute: { module, entryPoint: 'main' },
+  })
+  perDevice.resample = { pipeline, layout }
+  return perDevice.resample
+}
+
+/**
+ * Resample an RGBA 3D texture into a new grid of `dstDims` via a 4x4 row-major
+ * `fracMatrix` (target-frac -> source-frac, same convention as the orient pass
+ * and NVTransforms.calculateOverlayTransformMatrix). Linear sampling; out-of-
+ * bounds outputs are transparent. Returns a new rgba8unorm texture (the caller
+ * owns it; the source texture is left intact).
+ */
+export async function resampleInto(
+  device: GPUDevice,
+  srcTexture: GPUTexture,
+  fracMatrix: Float32Array,
+  dstDims: readonly number[],
+): Promise<GPUTexture> {
+  const cached = ensureResamplePipeline(device)
+  const uniformBuffer = device.createBuffer({
+    size: 4 * 16,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  })
+  const ab = new ArrayBuffer(4 * 16)
+  const dv = new DataView(ab)
+  for (let i = 0; i < 16; i++) dv.setFloat32(i * 4, fracMatrix[i], true)
+  device.queue.writeBuffer(uniformBuffer, 0, ab)
+  const outputTexture = device.createTexture({
+    size: [dstDims[0], dstDims[1], dstDims[2]],
+    format: 'rgba8unorm',
+    dimension: '3d',
+    usage:
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.STORAGE_BINDING |
+      GPUTextureUsage.COPY_SRC,
+  })
+  const sampler = device.createSampler({
+    magFilter: 'linear',
+    minFilter: 'linear',
+  })
+  const bindGroup = device.createBindGroup({
+    layout: cached.layout,
+    entries: [
+      { binding: 0, resource: { buffer: uniformBuffer } },
+      { binding: 1, resource: srcTexture.createView() },
+      { binding: 2, resource: outputTexture.createView() },
+      { binding: 3, resource: sampler },
+    ],
+  })
+  const encoder = device.createCommandEncoder()
+  const pass = encoder.beginComputePass()
+  pass.setPipeline(cached.pipeline)
+  pass.setBindGroup(0, bindGroup)
+  pass.dispatchWorkgroups(
+    Math.ceil(dstDims[0] / 8),
+    Math.ceil(dstDims[1] / 8),
+    Math.ceil(dstDims[2] / 4),
+  )
+  pass.end()
+  device.queue.submit([encoder.finish()])
+  await device.queue.onSubmittedWorkDone()
+  uniformBuffer.destroy()
   return outputTexture
 }
 

@@ -226,6 +226,9 @@ export class VolumeRenderer extends NVRenderer {
   // finer chunks stream. Oriented once from a coarse pyramid level the app
   // supplies (niivue stays LOD-agnostic). Null when unset.
   coarseFloorTexture: WebGLTexture | null = null
+  // Gradient for the coarse floor, used by the 3D ray-march floor cubes for
+  // matcap lighting consistent with the resident fine chunks. Null when unset.
+  coarseFloorGradientTexture: WebGLTexture | null = null
   private _coarseFloorKey: string | null = null
   // Per-volume GPU texture cache. Populated by updateVolume; consumed by
   // bindCachedVolume to switch the active volume/gradient texture per tile
@@ -1264,7 +1267,10 @@ export class VolumeRenderer extends NVRenderer {
   setCoarseFloor(gl: WebGL2RenderingContext, coarseVol: NVImage | null): void {
     if (!coarseVol) {
       if (this.coarseFloorTexture) gl.deleteTexture(this.coarseFloorTexture)
+      if (this.coarseFloorGradientTexture)
+        gl.deleteTexture(this.coarseFloorGradientTexture)
       this.coarseFloorTexture = null
+      this.coarseFloorGradientTexture = null
       this._coarseFloorKey = null
       return
     }
@@ -1283,8 +1289,16 @@ export class VolumeRenderer extends NVRenderer {
       mtx as Float32Array,
       1,
     )
+    // Gradient for the 3D floor cubes' matcap lighting (matches base shading).
+    const dims: [number, number, number] = coarseVol.dimsRAS
+      ? [coarseVol.dimsRAS[1], coarseVol.dimsRAS[2], coarseVol.dimsRAS[3]]
+      : [coarseVol.dims[1] ?? 1, coarseVol.dims[2] ?? 1, coarseVol.dims[3] ?? 1]
+    const grad = gradient.volume2TextureGradientRGBA(gl, tex, dims)
     if (this.coarseFloorTexture) gl.deleteTexture(this.coarseFloorTexture)
+    if (this.coarseFloorGradientTexture)
+      gl.deleteTexture(this.coarseFloorGradientTexture)
     this.coarseFloorTexture = tex
+    this.coarseFloorGradientTexture = grad
     this._coarseFloorKey = key
   }
 
@@ -1851,9 +1865,58 @@ export class VolumeRenderer extends NVRenderer {
       this._combinedOverlayEntries.length === 1
         ? this._combinedOverlayEntries[0]
         : null
+    // Coarse floor: draw a coarse-floor cube for each base chunk region whose
+    // fine chunk has not streamed in (instead of skipping it), so the 3D view
+    // shows coarse detail immediately and never pops in from blank. Each region
+    // is drawn once (fine if resident, else coarse) — no double-exposure.
+    const floorActive =
+      !overlayMode &&
+      entry === this._activeChunked &&
+      this.coarseFloorTexture !== null &&
+      this.coarseFloorGradientTexture !== null
     for (const chunkIndex of order) {
       const chunk = entry.manager.getChunk(chunkIndex)
-      if (!chunk) continue
+      if (!chunk) {
+        if (!floorActive || !this.coarseFloorTexture) continue
+        // Bind the coarse texture + its gradient; transparent placeholders for
+        // overlay/paqd/drawing (2x2x2 -> guarded off in the shader).
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_3D, this.coarseFloorTexture)
+        gl.activeTexture(gl.TEXTURE2)
+        gl.bindTexture(
+          gl.TEXTURE_3D,
+          this.coarseFloorGradientTexture ?? this.coarseFloorTexture,
+        )
+        for (const unit of [
+          gl.TEXTURE3,
+          gl.TEXTURE4,
+          gl.TEXTURE5,
+          gl.TEXTURE7,
+        ]) {
+          gl.activeTexture(unit)
+          gl.bindTexture(gl.TEXTURE_3D, this.placeholderOverlay)
+        }
+        // data{Origin,Size} = chunkSub{Origin,Size} makes chunkTexCoord the
+        // identity into the coarse (halo-less) texture at the chunk's full-volume
+        // fraction.
+        const cu = chunkUniformsFor(entry.plan, chunkIndex)
+        this._setChunkUniforms(gl, shader, {
+          volumeTexDimsFull: cu.volumeTexDimsFull,
+          chunkSubOrigin: cu.chunkSubOrigin,
+          chunkSubSize: cu.chunkSubSize,
+          dataOriginTexFrac: cu.chunkSubOrigin,
+          dataSizeTexFrac: cu.chunkSubSize,
+        })
+        if (shader.uniforms.matRAS) {
+          gl.uniformMatrix4fv(
+            shader.uniforms.matRAS,
+            false,
+            chunkExplodedMatRAS(entry.plan, chunkIndex, matRAS, explode),
+          )
+        }
+        gl.drawElements(gl.TRIANGLE_STRIP, indexCount, gl.UNSIGNED_SHORT, 0)
+        continue
+      }
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_3D, chunk.volumeTexture)
       gl.activeTexture(gl.TEXTURE2)
@@ -2292,7 +2355,10 @@ export class VolumeRenderer extends NVRenderer {
     this.volumeTexture = null
     this.volumeGradientTexture = null
     if (this.coarseFloorTexture) gl.deleteTexture(this.coarseFloorTexture)
+    if (this.coarseFloorGradientTexture)
+      gl.deleteTexture(this.coarseFloorGradientTexture)
     this.coarseFloorTexture = null
+    this.coarseFloorGradientTexture = null
     this._coarseFloorKey = null
     this.clearOverlay(gl)
     if (this.paqdTexture) gl.deleteTexture(this.paqdTexture)

@@ -294,6 +294,13 @@ export class VolumeRenderer extends NVRenderer {
   // immediately and sharpens as chunks arrive. Oriented once from a coarse
   // pyramid level the app supplies (niivue stays LOD-agnostic). Null when unset.
   coarseFloorTexture: GPUTexture | null = null
+  // Gradient for the coarse floor, used by the 3D ray-march floor cubes for
+  // matcap lighting consistent with the resident fine chunks. Null when unset.
+  coarseFloorGradientTexture: GPUTexture | null = null
+  // Cached bind group for the 3D floor cubes (coarse texture + gradient +
+  // placeholders). Reused for every missing chunk; reset when the floor or
+  // matcap changes. Per-cube geometry differs only via the uniform offset.
+  private _floorBindGroup: GPUBindGroup | null = null
   private _coarseFloorKey: string | null = null
   // True while pumpChunkUploads has an async upload in flight. Guards against
   // re-entrant pumps double-uploading a chunk that is queued but not yet
@@ -1128,6 +1135,7 @@ export class VolumeRenderer extends NVRenderer {
 
   private _invalidateBindGroupCache(): void {
     this._bindGroupCache.clear()
+    this._floorBindGroup = null
     for (const entry of this._texCache.values()) {
       if (entry.kind === 'chunked') {
         for (let i = 0; i < entry.bindGroups.length; i++) {
@@ -2166,10 +2174,86 @@ export class VolumeRenderer extends NVRenderer {
     pass.setVertexBuffer(0, this.vertexBuffer)
     pass.setIndexBuffer(this.indexBuffer, 'uint16')
 
+    // Coarse floor: when a fine chunk of the base volume has not streamed in,
+    // draw a coarse-floor cube for that chunk's region instead of skipping it,
+    // so the 3D view shows coarse detail immediately and never pops in from
+    // blank. Each region is drawn exactly once (fine if resident, else coarse),
+    // so there is no volumetric double-exposure.
+    const floorActive =
+      !overlayMode &&
+      entry === this._activeChunked &&
+      this.coarseFloorTexture !== null &&
+      this.coarseFloorGradientTexture !== null
+
     for (let slot = 0; slot < order.length; slot++) {
       const chunkIndex = order[slot]
       const chunk = entry.manager.getChunk(chunkIndex)
-      if (!chunk) continue
+      if (!chunk) {
+        if (!floorActive || !this.coarseFloorTexture) continue
+        // Floor bind group: coarse texture + its gradient + transparent
+        // placeholders. Identical for every missing chunk (per-cube geometry
+        // differs only via the uniform offset), so it is cached.
+        if (!this._floorBindGroup) {
+          this._floorBindGroup = device.createBindGroup({
+            layout: this.bindLayout,
+            entries: [
+              {
+                binding: 0,
+                resource: { buffer: this.paramsBuffer, size: renderParamsSize },
+              },
+              { binding: 1, resource: this.coarseFloorTexture.createView() },
+              { binding: 2, resource: this.matcapTexture.createView() },
+              { binding: 3, resource: this.sampler },
+              {
+                binding: 4,
+                resource: (
+                  this.coarseFloorGradientTexture ?? this.coarseFloorTexture
+                ).createView(),
+              },
+              { binding: 5, resource: this.placeholderOverlay.createView() },
+              { binding: 6, resource: this.placeholderOverlay.createView() },
+              { binding: 7, resource: this.placeholderOverlay.createView() },
+              { binding: 8, resource: this.samplerNearest },
+              { binding: 9, resource: paqdLutTex.createView() },
+            ],
+          })
+        }
+        // Sample the coarse whole-volume texture at the chunk's full-volume
+        // fraction: data{Origin,Size} = chunkSub{Origin,Size} makes chunkTexCoord
+        // the identity into the coarse texture (which has no halo).
+        const cu = chunkUniformsFor(entry.plan, chunkIndex)
+        const floorRenderOffset =
+          chunkSlotBase +
+          (tileIndex * MAX_CHUNKS_PER_TILE + slot) * alignedRenderSize
+        this._writeRenderParams(
+          device,
+          this.paramsBuffer,
+          floorRenderOffset,
+          mvpMatrix,
+          normalMatrix,
+          chunkExplodedMatRAS(entry.plan, chunkIndex, matRAS, explode),
+          volScale,
+          rayDir,
+          gradientAmount,
+          volumeCount,
+          isClipCutaway,
+          paqdUniforms,
+          earlyTermination,
+          clipPlaneColor,
+          clipPlanes,
+          {
+            volumeTexDimsFull: cu.volumeTexDimsFull,
+            chunkSubOrigin: cu.chunkSubOrigin,
+            chunkSubSize: cu.chunkSubSize,
+            dataOriginTexFrac: cu.chunkSubOrigin,
+            dataSizeTexFrac: cu.chunkSubSize,
+          },
+          0,
+        )
+        pass.setBindGroup(0, this._floorBindGroup, [floorRenderOffset])
+        pass.drawIndexed(this.cube.indices.length)
+        continue
+      }
       let bindGroup = entry.bindGroups[chunkIndex]
       if (!bindGroup) {
         bindGroup = device.createBindGroup({
@@ -2329,17 +2413,22 @@ export class VolumeRenderer extends NVRenderer {
    * Set (or clear, with null) the coarse whole-volume floor texture for the
    * active base. `coarseVol` is a small in-memory pyramid level supplied by the
    * app; it is oriented once into a single RGBA texture (its own colormap /
-   * calibration) that the 2D slice path samples behind the resident fine
-   * chunks. Re-orients only when the source/colormap/window changes.
+   * calibration). The 2D slice path samples it behind the resident fine chunks;
+   * the 3D ray-march draws a floor cube (with its gradient, for matcap lighting)
+   * for each chunk region whose fine chunk has not streamed in. Re-orients only
+   * when the source/colormap/window changes.
    */
   async setCoarseFloor(
     device: GPUDevice,
     coarseVol: NVImage | null,
   ): Promise<void> {
     if (!this.isReady) return
+    this._floorBindGroup = null
     if (!coarseVol) {
       this.coarseFloorTexture?.destroy()
+      this.coarseFloorGradientTexture?.destroy()
       this.coarseFloorTexture = null
+      this.coarseFloorGradientTexture = null
       this._coarseFloorKey = null
       return
     }
@@ -2358,8 +2447,12 @@ export class VolumeRenderer extends NVRenderer {
       mtx as Float32Array,
       1,
     )
+    // Gradient for the 3D floor cubes' matcap lighting (matches base shading).
+    const grad = await wgpu.volume2TextureGradientRGBA(device, tex)
     this.coarseFloorTexture?.destroy()
+    this.coarseFloorGradientTexture?.destroy()
     this.coarseFloorTexture = tex
+    this.coarseFloorGradientTexture = grad
     this._coarseFloorKey = key
   }
 
@@ -2392,7 +2485,10 @@ export class VolumeRenderer extends NVRenderer {
     this.volumeTexture = null
     this.volumeGradientTexture = null
     this.coarseFloorTexture?.destroy()
+    this.coarseFloorGradientTexture?.destroy()
     this.coarseFloorTexture = null
+    this.coarseFloorGradientTexture = null
+    this._floorBindGroup = null
     this._coarseFloorKey = null
     this.clearOverlay()
     if (this.paqdTexture) {

@@ -19,6 +19,10 @@ export type {
   SharedBufferHandle,
   SlicePointerEvent,
 } from './extension/types'
+// Whole-slide-image tile viewer (standalone 2D deep-zoom over HTTP byte ranges).
+// NVSlide is the backend-agnostic model; SlideRenderer (WebGL2) /
+// SlideRendererGPU (WebGPU) draw it.
+export { SlideRenderer } from './gl/slide'
 // Logger
 export type { LogLevel } from './logger'
 // Mesh writer types
@@ -94,6 +98,27 @@ export type {
   VolumeUpdate,
 } from './NVTypes'
 export type {
+  NVSlideColor,
+  NVSlideLevelChoice,
+  NVSlideLevelManifest,
+  NVSlideManifest,
+  NVSlideOptions,
+  NVSlideRangeEvent,
+  NVSlideRangeStatus,
+  NVSlideScreen,
+  NVSlideScreenRect,
+  NVSlideSpatialTransform,
+  NVSlideStats,
+  NVSlideTileCodec,
+  NVSlideTileFragment,
+  NVSlideTileManifest,
+  NVSlideViewport,
+  NVSlideVisibleTile,
+  NVSlideVisibleTiles,
+  NVSlideYAxis,
+} from './slide/NVSlide'
+export { NVSlide } from './slide/NVSlide'
+export type {
   ChunkPlan,
   Vec3f,
   Vec3i,
@@ -110,5 +135,6 @@ export type {
 } from './volume/transforms'
 // Volume utilities for extensions
 export { getImageDataRAS } from './volume/utils'
+export { SlideRendererGPU } from './wgpu/slide'
 // Worker bridge for external transform packages
 export { NVWorker } from './workers/NVWorker'

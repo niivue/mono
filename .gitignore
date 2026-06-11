@@ -41,3 +41,7 @@ apps/demo-ext-save-html/public/niivue-standalone.js
 # Pawpawsaurus OME-Zarr fixture for the range.html streaming example. Multi-GB,
 # downloaded on demand by scripts/fetch-pawpawsaurus.ts. Do not check in.
 packages/niivue/public/omezarr/pawpawsaurus.ome.zarr/
+
+# DICOM-WSI fixtures for the slides.html tile viewer. Hundreds of MB per series,
+# downloaded + manifest-generated on demand by scripts/fetch-dicom-wsi.ts.
+packages/niivue/public/dicom-wsi/

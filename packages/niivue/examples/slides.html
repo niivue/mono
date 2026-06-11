@@ -195,6 +195,13 @@
     <header>
       <h1>NiiVue Slides &mdash; NVSlide tile viewer</h1>
       <span class="control">
+        <label for="source">Source</label>
+        <select id="source">
+          <option value="synthetic" selected>synthetic pyramid</option>
+          <option value="dicom-wsi">DICOM-WSI (range)</option>
+        </select>
+      </span>
+      <span class="control">
         <label for="levelMode">Level</label>
         <select id="levelMode">
           <option value="auto" selected>auto lod</option>

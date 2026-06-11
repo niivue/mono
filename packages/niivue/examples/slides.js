@@ -11,7 +11,12 @@
 // has to be downloaded whole.
 import { NVSlide, SlideRenderer, SlideRendererGPU } from '../src/index.ts'
 
-const MANIFEST_PATH = 'tile-range-poc/tiles.json'
+const SYNTHETIC_MANIFEST_PATH = 'tile-range-poc/tiles.json'
+// DICOM-WSI series downloaded + manifest-built by scripts/fetch-dicom-wsi.ts.
+// The manifest is dicom-wsi-range-v1: per-level JPEG tiles addressed by byte
+// offset, which NVSlide fetches over HTTP Range and decodes in-browser. Only
+// present after running the fetch script (the fixture is gitignored).
+const DICOM_WSI_PATH = 'dicom-wsi/cptac-brca/manifest.json'
 const MAX_CACHE_BYTES = 96 * 1024 * 1024
 const TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75
 const RANGE_LOG_LENGTH = 24
@@ -23,6 +28,7 @@ function el(id) {
 }
 
 const els = {
+  source: el('source'),
   levelMode: el('levelMode'),
   zoomOut: el('zoomOut'),
   zoomIn: el('zoomIn'),
@@ -48,10 +54,9 @@ function backendFromUrl() {
 function manifestUrl() {
   const base = import.meta.env.BASE_URL || '/'
   const normalized = base.endsWith('/') ? base : `${base}/`
-  return new URL(
-    `${normalized}${MANIFEST_PATH}`,
-    window.location.href,
-  ).toString()
+  const path =
+    els.source.value === 'dicom-wsi' ? DICOM_WSI_PATH : SYNTHETIC_MANIFEST_PATH
+  return new URL(`${normalized}${path}`, window.location.href).toString()
 }
 
 function html(value) {
@@ -261,18 +266,39 @@ els.showGrid.addEventListener('change', () => {
 els.fit.addEventListener('click', () => slide?.fitToScreen(screenForCanvas()))
 els.zoomIn.addEventListener('click', () => zoomCentered(1.45))
 els.zoomOut.addEventListener('click', () => zoomCentered(1 / 1.45))
+els.source.addEventListener('change', () => {
+  void loadSlide()
+})
 window.addEventListener('resize', requestRender)
+
+async function loadSlide() {
+  els.fallback.setAttribute('aria-hidden', 'true')
+  els.fallback.textContent = ''
+  slide = null
+  hasFit = false
+  try {
+    const next = await NVSlide.fromManifestUrl(manifestUrl(), {
+      maxCacheBytes: MAX_CACHE_BYTES,
+      targetScreenPixelsPerTilePixel: TARGET_SCREEN_PIXELS_PER_TILE_PIXEL,
+      showTileGrid: els.showGrid.checked,
+    })
+    next.addEventListener('change', requestRender)
+    slide = next
+    populateLevels(slide.manifest)
+    requestRender()
+  } catch (err) {
+    console.error(err)
+    const hint =
+      els.source.value === 'dicom-wsi'
+        ? ' Did you run scripts/fetch-dicom-wsi.ts?'
+        : ''
+    showFallback((err instanceof Error ? err.message : String(err)) + hint)
+  }
+}
 
 async function main() {
   view = await createView()
-  slide = await NVSlide.fromManifestUrl(manifestUrl(), {
-    maxCacheBytes: MAX_CACHE_BYTES,
-    targetScreenPixelsPerTilePixel: TARGET_SCREEN_PIXELS_PER_TILE_PIXEL,
-    showTileGrid: els.showGrid.checked,
-  })
-  slide.addEventListener('change', requestRender)
-  populateLevels(slide.manifest)
-  requestRender()
+  await loadSlide()
 }
 
 main().catch((err) => {

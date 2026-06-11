@@ -15,6 +15,7 @@ const nv1 = new NiiVue({
   backgroundColor: [0.1, 0.1, 0.1, 1],
   isGraphVisible: true,
 })
+window.nv1 = nv1
 await nv1.attachToCanvas(gl1)
 
 async function show(view) {

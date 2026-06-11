@@ -28,7 +28,11 @@ import * as NVMesh from '@/mesh/NVMesh'
 import type { WriteOptions } from '@/mesh/writers'
 import { DRAG_MODE, NUM_CLIP_PLANE } from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
-import type { NVEventListener, NVEventMap } from '@/NVEvents'
+import type {
+  GraphRangeChangeDetail,
+  NVEventListener,
+  NVEventMap,
+} from '@/NVEvents'
 import * as NVLoader from '@/NVLoader'
 import NVModel from '@/NVModel'
 import type {
@@ -186,6 +190,15 @@ class NiiVuePerf {
   tagFrame(tag: string): void {
     setNextActionTag(tag)
   }
+}
+
+/** Value-equality for an optional [low, high] range (null = autoscale). */
+function sameRange(
+  a: [number, number] | null | undefined,
+  b: [number, number] | null | undefined,
+): boolean {
+  if (!a || !b) return !a && !b
+  return a[0] === b[0] && a[1] === b[1]
 }
 
 export default class NiiVueGPU extends EventTarget {
@@ -1794,7 +1807,7 @@ export default class NiiVueGPU extends EventTarget {
    */
   private setSignalCursorValue(xValue: number): this {
     this.model.signalCursorX = xValue
-    this.model.panViewWindowTo(xValue)
+    if (this.model.panViewWindowTo(xValue)) this.emitGraphRange()
     const vol = this.model.getAssociatedVolume()
     if (vol?.id) {
       const tr = volumeTR(vol)
@@ -1827,7 +1840,10 @@ export default class NiiVueGPU extends EventTarget {
     const data = this.model.collectGraphData()
     const cx = data?.cursorX
     if (cx === null || cx === undefined) return
-    if (this.model.panViewWindowTo(cx)) this.drawScene()
+    if (this.model.panViewWindowTo(cx)) {
+      this.drawScene()
+      this.emitGraphRange()
+    }
   }
 
   /**
@@ -1861,6 +1877,7 @@ export default class NiiVueGPU extends EventTarget {
   graphZoom(factor = 2): this {
     this.model.graphZoom(factor)
     this.drawScene()
+    this.emitGraphRange()
     return this
   }
 
@@ -1871,6 +1888,7 @@ export default class NiiVueGPU extends EventTarget {
   graphPan(frac: number): this {
     this.model.graphPan(frac)
     this.drawScene()
+    this.emitGraphRange()
     return this
   }
 
@@ -1883,8 +1901,66 @@ export default class NiiVueGPU extends EventTarget {
     if (this.model.signalViewWindow !== null) {
       this.model.signalViewWindow = null
       this.drawScene()
+      this.emitGraphRange()
     }
     return this
+  }
+
+  /**
+   * Set the signal graph's visible x-range to an explicit data-unit range
+   * (order-insensitive), clamped to the full extent; `null` restores the full
+   * view. For a host driving the range reactively (e.g. ppm sliders that mirror
+   * the in-graph zoom via the `graphRangeChange` event). Pairs with
+   * `graphAutoResetView = false` so the window is host-owned.
+   */
+  setGraphRange(range: [number, number] | null): this {
+    this.model.setGraphRange(range)
+    this.drawScene()
+    this.emitGraphRange()
+    return this
+  }
+
+  /**
+   * Whether an explicit-range display change (ppm window / ppm<->Hz / ppm ref)
+   * resets the transient pan/zoom window so the new range is shown in full
+   * (default true — see the `graphRangeChange` event for the reactive
+   * alternative). Set false when a host owns the range via `setGraphRange`.
+   */
+  get graphAutoResetView(): boolean {
+    return this.model.ui.graph.autoResetView !== false
+  }
+  set graphAutoResetView(v: boolean) {
+    this.model.ui.graph.autoResetView = v
+    this.emit('change', { property: 'graphAutoResetView', value: v })
+  }
+
+  /**
+   * The signal graph's current visible x-range (the synchronous counterpart to
+   * the `graphRangeChange` event): `{ min, max, full, axisLabel, isWindowed }`,
+   * or null when no signal graph is shown. Use `full` to drive a "reset to full
+   * extent" control (e.g. jump range sliders to the data limits).
+   */
+  getGraphRange(): GraphRangeChangeDetail | null {
+    const data = this.model.collectGraphData()
+    const full = data?.fullXDomain
+    if (!data?.series || !full) return null
+    return {
+      min: data.xAxis?.min ?? full[0],
+      max: data.xAxis?.max ?? full[1],
+      full,
+      axisLabel: data.xAxis?.label ?? '',
+      isWindowed: this.model.signalViewWindow !== null,
+    }
+  }
+
+  /**
+   * Emit `graphRangeChange` with the signal graph's current visible x-range, so
+   * a host UI (range sliders) can track the in-graph pan/zoom. No-op when no
+   * signal graph is shown.
+   */
+  private emitGraphRange(): void {
+    const r = this.getGraphRange()
+    if (r) this.emit('graphRangeChange', r)
   }
 
   /**
@@ -1931,7 +2007,27 @@ export default class NiiVueGPU extends EventTarget {
   ): this {
     const sig = this.model.signals[index]
     if (!sig) return this
-    if (opts.display) sig.display = { ...sig.display, ...opts.display }
+    let domainMoved = false
+    if (opts.display) {
+      const prev = sig.display
+      const next = { ...prev, ...opts.display }
+      // The pan/zoom view window is a sub-range of the current x-domain. If this
+      // display change MOVES the domain (an explicit ppm window, a ppm<->Hz
+      // switch, or a ppm reference shift), a leftover window is stale and would
+      // be clamped against the new domain — making explicit-range controls (e.g.
+      // the svs.html ppm sliders) look dead. Reset it so the explicit range is
+      // shown in full and zoom/pan restart from there. Compared by value so
+      // re-applying the same display (e.g. nudging an unrelated slider) keeps the
+      // current zoom.
+      domainMoved =
+        !sameRange(prev.ppmRange, next.ppmRange) ||
+        prev.useHz !== next.useHz ||
+        prev.ppmRef !== next.ppmRef
+      if (domainMoved && this.model.ui.graph.autoResetView !== false) {
+        this.model.signalViewWindow = null
+      }
+      sig.display = next
+    }
     if (opts.attachToId !== undefined) sig.attachedToId = opts.attachToId
     // Copy so later caller mutation cannot silently change render state.
     if (opts.annotations !== undefined)
@@ -1940,6 +2036,9 @@ export default class NiiVueGPU extends EventTarget {
     // A display change may have shown/hidden a trace; refresh the readout so the
     // footer doesn't keep reporting a now-hidden series.
     if (opts.display) this.refreshSignalLocation()
+    // A domain-moving change (explicit range / ppm<->Hz / ref) shifts the visible
+    // range — notify reactive hosts (e.g. range sliders).
+    if (domainMoved) this.emitGraphRange()
     return this
   }
 

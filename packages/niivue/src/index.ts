@@ -38,6 +38,7 @@ export type {
   DrawingChangedDetail,
   DrawingEnabledDetail,
   FrameChangeDetail,
+  GraphRangeChangeDetail,
   MeshLoadedDetail,
   MeshRemovedDetail,
   MeshUpdatedDetail,

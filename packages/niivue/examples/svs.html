@@ -31,13 +31,16 @@
       <input type="range" id="p1" min="-5" max="5" step="0.1" value="0" />
       &nbsp;
       <label for="ppmLow">ppm low <span id="ppmLowVal">1.9</span></label>
-      <input type="range" id="ppmLow" min="0" max="6" step="0.1" value="1.9" />
+      <input type="range" id="ppmLow" min="0" max="8" step="0.1" value="1.9" />
       &nbsp;
       <label for="ppmHigh">ppm high <span id="ppmHighVal">3.3</span></label>
-      <input type="range" id="ppmHigh" min="0" max="6" step="0.1" value="3.3" />
+      <input type="range" id="ppmHigh" min="0" max="8" step="0.1" value="3.3" />
       &nbsp;
       <label for="fullRangeBtn"></label>
       <button type="button" id="fullRangeBtn">Full range</button>
+      &nbsp;
+      <label for="reactiveCheck" title="Sliders drive the live view window and follow the in-graph zoom/pan (two-way). Unchecked: sliders set the explicit ppm range and zoom is transient.">Reactive</label>
+      <input type="checkbox" id="reactiveCheck" />
       &nbsp;
       <label for="sceneSelect">Show</label>
       <select id="sceneSelect">

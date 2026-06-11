@@ -214,7 +214,8 @@ export default class NVModel {
         options.graphIsRangeCalMinMax !== undefined ||
         options.graphShowVolumeTimecourse !== undefined ||
         options.graphLineWidth !== undefined ||
-        options.graphLineAlpha !== undefined) && {
+        options.graphLineAlpha !== undefined ||
+        options.graphAutoResetView !== undefined) && {
         graph: {
           ...NVConstants.UI_DEFAULTS.graph,
           ...(options.graphNormalizeValues !== undefined && {
@@ -231,6 +232,9 @@ export default class NVModel {
           }),
           ...(options.graphLineAlpha !== undefined && {
             lineAlpha: options.graphLineAlpha,
+          }),
+          ...(options.graphAutoResetView !== undefined && {
+            autoResetView: options.graphAutoResetView,
           }),
         },
       }),
@@ -1184,6 +1188,25 @@ export default class NVModel {
       [cur[0] + d, cur[1] + d],
       full,
     )
+  }
+
+  /**
+   * Set the zoom/pan window to an explicit data-unit range (order-insensitive),
+   * clamped to the current full domain. `null` restores the full view. Used by a
+   * host that drives the visible range reactively (e.g. ppm sliders bound to the
+   * `graphRangeChange` event).
+   */
+  setGraphRange(range: [number, number] | null): void {
+    if (range === null) {
+      this.signalViewWindow = null
+      return
+    }
+    const domain = this.currentGraphDomain()
+    if (!domain) return
+    const lo = Math.min(range[0], range[1])
+    const hi = Math.max(range[0], range[1])
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo === hi) return
+    this.signalViewWindow = this.clampSignalWindow([lo, hi], domain.full)
   }
 
   removeMesh(index: number): void {

@@ -652,6 +652,14 @@ export type GraphConfig = {
    * below 1 make overlapping traces translucent so intersections are visible.
    */
   lineAlpha?: number
+  /**
+   * When an explicit-range display change (ppm window, ppm<->Hz, ppm reference)
+   * moves the x-domain, reset the transient pan/zoom view window so the new range
+   * is shown in full. Default true. Set false for a host that drives the range
+   * reactively (listening to `graphRangeChange` and setting it via
+   * `setGraphRange`) and so wants to keep the window across range changes.
+   */
+  autoResetView?: boolean
 }
 
 // ============================================================
@@ -731,6 +739,7 @@ export type NiiVueOptions = {
   graphShowVolumeTimecourse?: boolean
   graphLineWidth?: number
   graphLineAlpha?: number
+  graphAutoResetView?: boolean
 
   // Volume (prefixed)
   volumeIllumination?: number

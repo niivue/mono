@@ -16,6 +16,7 @@ const nv1 = new NiiVue({
   backgroundColor: [0.1, 0.1, 0.1, 1],
   isGraphVisible: true,
 })
+window.nv1 = nv1
 await nv1.attachToCanvas(gl1)
 nv1.sliceType = 0 // Axial (default view; the View menu offers Render etc.)
 // A single parasagittal clip plane through the left hemisphere exposes a cut face
@@ -130,37 +131,98 @@ function applyScene(mode) {
 }
 await applyScene(sceneSelect.value)
 
-function update() {
+// Two ways the ppm sliders can relate to the in-graph pan/zoom buttons:
+//
+//   Default (reactive unchecked): the sliders set the EXPLICIT analysis range
+//   (display.ppmRange). Changing them auto-resets any transient zoom so the new
+//   range is shown in full (graphAutoResetView, the default). The on-graph zoom
+//   is a transient overlay and does not move the sliders.
+//
+//   Reactive (checked): graphAutoResetView is turned off and the sliders instead
+//   drive the live view WINDOW via setGraphRange(); the demo subscribes to the
+//   graphRangeChange event so zooming/panning on the graph moves the sliders too
+//   (two-way sync). Zooming out returns to the full spectrum.
+const isReactive = () => reactiveCheck.checked
+
+// Processing transforms (apodization, phase, component, averaging) are core
+// spectroscopy display flags (signal/processing.ts) and never touch the x-range.
+function applyProcessing() {
+  apodVal.textContent = apod.value
+  p0Val.textContent = p0.value
+  p1Val.textContent = parseFloat(p1.value).toFixed(1)
+  const display = {
+    average: avgCheck.checked,
+    mode: modeSelect.value,
+    apodizeHz: parseFloat(apod.value),
+    phase0: parseFloat(p0.value),
+    phase1Ms: parseFloat(p1.value),
+  }
+  // In default mode the sliders own the explicit ppm range; in reactive mode the
+  // window owns it (ppmRange stays null) so processing tweaks don't disturb it.
+  if (!isReactive()) {
+    const lo = parseFloat(ppmLow.value)
+    const hi = parseFloat(ppmHigh.value)
+    display.ppmRange = lo < hi ? [lo, hi] : null
+  }
+  nv1.setSignal(0, { display })
+}
+
+function applyPpmRange() {
   const lo = parseFloat(ppmLow.value)
   const hi = parseFloat(ppmHigh.value)
   ppmLowVal.textContent = lo.toFixed(1)
   ppmHighVal.textContent = hi.toFixed(1)
-  // Apodization and phase correction are core spectroscopy transforms
-  // (signal/processing.ts) driven by display flags — no extension required.
-  apodVal.textContent = apod.value
-  p0Val.textContent = p0.value
-  p1Val.textContent = parseFloat(p1.value).toFixed(1)
-  nv1.setSignal(0, {
-    display: {
-      average: avgCheck.checked,
-      mode: modeSelect.value,
-      ppmRange: lo < hi ? [lo, hi] : null,
-      apodizeHz: parseFloat(apod.value),
-      phase0: parseFloat(p0.value),
-      phase1Ms: parseFloat(p1.value),
-    },
-  })
+  if (isReactive()) nv1.setGraphRange(lo < hi ? [lo, hi] : null)
+  else applyProcessing()
 }
 
-ppmLow.oninput = update
-ppmHigh.oninput = update
-avgCheck.onchange = update
-modeSelect.onchange = update
-apod.oninput = update
-p0.oninput = update
-p1.oninput = update
+// Reflect in-graph zoom/pan back onto the sliders (reactive mode only). Setting
+// .value programmatically does not fire 'input', so there is no feedback loop.
+nv1.addEventListener('graphRangeChange', (e) => {
+  if (!isReactive()) return
+  const lo = Math.min(e.detail.min, e.detail.max)
+  const hi = Math.max(e.detail.min, e.detail.max)
+  ppmLow.value = lo.toFixed(1)
+  ppmHigh.value = hi.toFixed(1)
+  ppmLowVal.textContent = parseFloat(ppmLow.value).toFixed(1)
+  ppmHighVal.textContent = parseFloat(ppmHigh.value).toFixed(1)
+})
+
+reactiveCheck.onchange = () => {
+  nv1.graphAutoResetView = !isReactive()
+  if (isReactive()) {
+    // Hand the range over to the view window: clear the explicit ppmRange (full
+    // spectrum becomes the domain) and seed the window from the current sliders.
+    nv1.setSignal(0, { display: { ppmRange: null } })
+    const lo = parseFloat(ppmLow.value)
+    const hi = parseFloat(ppmHigh.value)
+    nv1.setGraphRange(lo < hi ? [lo, hi] : null)
+  } else {
+    // Back to explicit-range mode: drop the window and bake the sliders into ppmRange.
+    nv1.graphResetView()
+    applyProcessing()
+  }
+}
+
+ppmLow.oninput = applyPpmRange
+ppmHigh.oninput = applyPpmRange
+avgCheck.onchange = applyProcessing
+modeSelect.onchange = applyProcessing
+apod.oninput = applyProcessing
+p0.oninput = applyProcessing
+p1.oninput = applyProcessing
 fullRangeBtn.onclick = () => {
-  nv1.setSignal(0, { display: { ppmRange: null } })
+  if (isReactive()) nv1.setGraphRange(null)
+  else nv1.setSignal(0, { display: { ppmRange: null } })
+  // Jump the sliders to the full data extent (e.g. ~1.3-8.0 ppm) so they reflect
+  // what is shown. getGraphRange() is the synchronous read of the visible range.
+  const r = nv1.getGraphRange()
+  if (r) {
+    ppmLow.value = r.full[0].toFixed(1)
+    ppmHigh.value = r.full[1].toFixed(1)
+    ppmLowVal.textContent = parseFloat(ppmLow.value).toFixed(1)
+    ppmHighVal.textContent = parseFloat(ppmHigh.value).toFixed(1)
+  }
 }
 sceneSelect.onchange = () => applyScene(sceneSelect.value)
 viewSelect.onchange = () => {
@@ -183,4 +245,5 @@ nv1.addEventListener('signalLocationChange', (e) => {
   document.getElementById('location').textContent = `  ${e.detail.string}`
 })
 
-update()
+// Apply the initial slider state (explicit ppm range + processing defaults).
+applyProcessing()

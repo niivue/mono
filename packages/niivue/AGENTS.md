@@ -679,6 +679,29 @@ Signal-graph audit invariants (keep these true):
   `setSignal({ display })` call `refreshSignalLocation()` after redraw, so the
   footer doesn't keep reporting a just-hidden trace; when every trace is hidden the
   readout is cleared (empty `signalLocationChange`) rather than left stale.
+- **Explicit x-range wins over a stale zoom window (default).** The transient
+  `signalViewWindow` (pan/zoom) is a sub-range of the current x-domain. When
+  `setSignal({ display })` MOVES that domain — an explicit `ppmRange`, a ppm<->Hz
+  switch (`useHz`), or a ppm reference shift (`ppmRef`) — the controller resets
+  `signalViewWindow = null` so the explicit range is shown in full and zoom/pan
+  restart from it (otherwise the leftover window clamps against the new domain and
+  the range control, e.g. svs.html's ppm sliders, looks dead). The check is
+  by-value (`sameRange`), so re-applying the same display (nudging an unrelated
+  slider like apodization/phase) keeps the current zoom; physio per-trace toggles
+  never touch these fields, so they preserve it too. This reset is gated on
+  `graphAutoResetView` (default true; flat constructor option + setter).
+- **Reactive range (two-way sync) for hosts that want it.** A host UI (range
+  sliders) can mirror the in-graph pan/zoom: the `graphRangeChange` event fires on
+  every visible-range change (zoom/pan/reset/wheel-follow/auto-reset) with
+  `{ min, max, full, axisLabel, isWindowed }`; `getGraphRange()` is its synchronous
+  read. The host sets the window from a range control via `setGraphRange([lo,hi] |
+  null)` (clamped to the full extent; null = full). The intended reactive recipe
+  (illustrated by the `Reactive` checkbox in `examples/svs.html` and
+  `apps/demo-ext-mrs`): turn OFF `graphAutoResetView`, drive the window with
+  `setGraphRange` instead of `ppmRange`, and update the slider positions from
+  `graphRangeChange` (setting an `<input>` `.value` does not fire `input`, so no
+  feedback loop). nv-ext-mrs's `setPpmWindow` flows through `setSignal`, so its
+  demo gets the default reset for free and adds the reactive toggle on top.
 - **Style setters clamp.** `graphLineWidth` to finite `[0,8]`, `graphLineAlpha` to
   `[0,1]` (no NaN/Infinity into the line buffer). All three new graph settings
   (`graphShowVolumeTimecourse`/`graphLineWidth`/`graphLineAlpha`) also have flat

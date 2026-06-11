@@ -65,6 +65,7 @@ const ppmLowVal = $<HTMLSpanElement>('ppmLowVal')
 const ppmHigh = $<HTMLInputElement>('ppmHigh')
 const ppmHighVal = $<HTMLSpanElement>('ppmHighVal')
 const fullRangeBtn = $<HTMLButtonElement>('fullRangeBtn')
+const reactiveCheck = $<HTMLInputElement>('reactiveCheck')
 const makeMapBtn = $<HTMLButtonElement>('makeMapBtn')
 const threshold = $<HTMLInputElement>('threshold')
 const thresholdVal = $<HTMLSpanElement>('thresholdVal')
@@ -85,11 +86,47 @@ function ppmWindow(): [number, number] | null {
   return lo < hi ? [lo, hi] : null
 }
 
+// See svs.html for the two range modes. Default: the sliders set the explicit
+// ppm window (scene.setPpmWindow -> ppmRange) and the in-graph zoom is transient
+// (it auto-resets on a range change). Reactive (checkbox): the sliders drive the
+// live view window via setGraphRange() and follow the in-graph zoom/pan via the
+// graphRangeChange event. makeMap reads the slider values directly in both modes.
+const isReactive = () => reactiveCheck.checked
+
 function syncPpm(): void {
   ppmLowVal.textContent = parseFloat(ppmLow.value).toFixed(1)
   ppmHighVal.textContent = parseFloat(ppmHigh.value).toFixed(1)
   const w = ppmWindow()
-  if (w) scene.setPpmWindow(w)
+  if (isReactive()) nv.setGraphRange(w)
+  else if (w) scene.setPpmWindow(w)
+}
+
+// Reflect in-graph zoom/pan onto the sliders (reactive mode only). Setting
+// .value programmatically does not fire 'input', so there is no feedback loop.
+nv.addEventListener('graphRangeChange', (e) => {
+  if (!isReactive()) return
+  const lo = Math.min(e.detail.min, e.detail.max)
+  const hi = Math.max(e.detail.min, e.detail.max)
+  ppmLow.value = lo.toFixed(1)
+  ppmHigh.value = hi.toFixed(1)
+  ppmLowVal.textContent = parseFloat(ppmLow.value).toFixed(1)
+  ppmHighVal.textContent = parseFloat(ppmHigh.value).toFixed(1)
+})
+
+reactiveCheck.onchange = () => {
+  nv.graphAutoResetView = !isReactive()
+  const i = nv.signals.findIndex((s) => s.followsCrosshair)
+  if (isReactive()) {
+    // Hand the range to the view window: clear the explicit ppmRange and seed the
+    // window from the current sliders.
+    if (i >= 0) nv.setSignal(i, { display: { ppmRange: null } })
+    nv.setGraphRange(ppmWindow())
+  } else {
+    // Back to explicit-range mode: drop the window and bake the sliders in.
+    nv.graphResetView()
+    const w = ppmWindow()
+    if (w) scene.setPpmWindow(w)
+  }
 }
 
 modeSelect.onchange = () =>
@@ -113,8 +150,20 @@ p1.oninput = syncPhase
 ppmLow.oninput = syncPpm
 ppmHigh.oninput = syncPpm
 fullRangeBtn.onclick = () => {
-  const i = nv.signals.findIndex((s) => s.followsCrosshair)
-  if (i >= 0) nv.setSignal(i, { display: { ppmRange: null } })
+  if (isReactive()) {
+    nv.setGraphRange(null)
+  } else {
+    const i = nv.signals.findIndex((s) => s.followsCrosshair)
+    if (i >= 0) nv.setSignal(i, { display: { ppmRange: null } })
+  }
+  // Jump the sliders to the full data extent so they reflect what is shown.
+  const r = nv.getGraphRange()
+  if (r) {
+    ppmLow.value = r.full[0].toFixed(1)
+    ppmHigh.value = r.full[1].toFixed(1)
+    ppmLowVal.textContent = parseFloat(ppmLow.value).toFixed(1)
+    ppmHighVal.textContent = parseFloat(ppmHigh.value).toFixed(1)
+  }
 }
 
 // Track the most recently added map so the opacity slider targets it.

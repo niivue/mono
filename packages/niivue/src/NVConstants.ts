@@ -149,6 +149,7 @@ export const UI_DEFAULTS: UIConfig = {
     showVolumeTimecourse: true,
     lineWidth: 1,
     lineAlpha: 1,
+    autoResetView: true,
   },
 }
 

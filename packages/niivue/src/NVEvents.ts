@@ -33,6 +33,22 @@ export type SignalLocationDetail = {
   /** preformatted status-bar string */
   string: string
 }
+/**
+ * The signal graph's visible x-range changed (zoom, pan, reset, wheel-follow, or
+ * the explicit-range auto-reset). Lets a host UI (e.g. ppm-range sliders) stay in
+ * sync with the in-graph pan/zoom controls.
+ */
+export type GraphRangeChangeDetail = {
+  /** visible window [min, max] in axis data units (ppm, Hz, time, sample index) */
+  min: number
+  max: number
+  /** the full extent the window sits within ([min, max] when not zoomed) */
+  full: [number, number]
+  /** axis label (e.g. 'Chemical shift (ppm)', 'Time (s)') */
+  axisLabel: string
+  /** true when zoomed/panned (a strict sub-range of `full`), false at full view */
+  isWindowed: boolean
+}
 export type AzimuthElevationChangeDetail = {
   azimuth: number
   elevation: number
@@ -102,6 +118,7 @@ export interface NVEventMap {
   signalLoaded: SignalLoadedDetail
   signalRemoved: SignalRemovedDetail
   signalLocationChange: SignalLocationDetail
+  graphRangeChange: GraphRangeChangeDetail
   documentLoaded: undefined
 
   // View lifecycle

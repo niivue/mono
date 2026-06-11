@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NiiVue Slides (NVSlide tile viewer)</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        --bg: #070909;
+        --panel: #111715;
+        --line: #263530;
+        --muted: #98a7a0;
+        --text: #edf5f1;
+        --cyan: #74d4cf;
+        --green: #a2d97b;
+        --amber: #e4b45f;
+        --red: #ef8d78;
+        --ink: #020303;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        overflow: hidden;
+      }
+      body {
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+      header {
+        min-height: 44px;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel) 92%, #2d3f28);
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 560;
+        white-space: nowrap;
+      }
+      header .control {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+      header select {
+        background: #171d1b;
+        border: 1px solid #2f3d38;
+        color: var(--text);
+        border-radius: 4px;
+        font-size: 0.78rem;
+        padding: 3px 8px;
+      }
+      header button {
+        min-width: 30px;
+        background: #17201d;
+        border: 1px solid #34453e;
+        color: var(--text);
+        padding: 3px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.78rem;
+      }
+      header button:hover,
+      header button:focus-visible {
+        border-color: var(--cyan);
+        outline: none;
+      }
+      header input[type='checkbox'] {
+        margin: 0 3px 0 0;
+      }
+      header .links {
+        margin-left: auto;
+      }
+      header .links a {
+        color: var(--cyan);
+        margin-left: 12px;
+        text-decoration: none;
+        font-size: 0.85rem;
+      }
+      main {
+        position: relative;
+        min-height: 0;
+        background:
+          linear-gradient(rgba(116, 212, 207, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(228, 180, 95, 0.04) 1px, transparent 1px),
+          var(--ink);
+        background-size: 36px 36px;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        outline: none;
+        cursor: grab;
+      }
+      canvas:active {
+        cursor: grabbing;
+      }
+      .hud {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        box-sizing: border-box;
+        width: min(430px, calc(100vw - 24px));
+        border: 1px solid rgba(116, 212, 207, 0.28);
+        background: rgba(5, 8, 8, 0.79);
+        border-radius: 6px;
+        padding: 10px 12px;
+        pointer-events: none;
+        font-family: ui-monospace, monospace;
+        font-size: 0.72rem;
+        line-height: 1.55;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34);
+      }
+      .hud .title {
+        color: var(--text);
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .hud .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        border-top: 1px solid rgba(152, 167, 160, 0.14);
+        padding-top: 3px;
+        margin-top: 3px;
+      }
+      .hud .key {
+        color: var(--muted);
+      }
+      .hud .ok {
+        color: var(--green);
+      }
+      .hud .warn {
+        color: var(--amber);
+      }
+      .hud .bad {
+        color: var(--red);
+      }
+      .range-log {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        width: min(560px, calc(100vw - 24px));
+        display: grid;
+        grid-template-columns: repeat(24, minmax(0, 1fr));
+        gap: 3px;
+        pointer-events: none;
+      }
+      .range-log span {
+        height: 7px;
+        border-radius: 1px;
+        background: #151d1a;
+        border: 1px solid #293831;
+      }
+      .range-log span.hit {
+        background: var(--green);
+        border-color: var(--green);
+      }
+      .range-log span.pending {
+        background: var(--amber);
+        border-color: var(--amber);
+      }
+      .fallback {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: #101412;
+        color: var(--muted);
+        text-align: center;
+        font-size: 0.9rem;
+      }
+      .fallback[aria-hidden='false'] {
+        display: flex;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>NiiVue Slides &mdash; NVSlide tile viewer</h1>
+      <span class="control">
+        <label for="levelMode">Level</label>
+        <select id="levelMode">
+          <option value="auto" selected>auto lod</option>
+        </select>
+      </span>
+      <button id="zoomOut" type="button" title="Zoom out">-</button>
+      <button id="zoomIn" type="button" title="Zoom in">+</button>
+      <button id="fit" type="button" title="Fit view">Fit</button>
+      <label class="control" for="showGrid">
+        <input id="showGrid" type="checkbox" checked />
+        grid
+      </label>
+      <div class="links">
+        <a href="./index.html">Examples</a>
+        <a href="?backend=webgpu">WebGPU</a>
+        <a href="?backend=webgl2">WebGL2</a>
+      </div>
+    </header>
+    <main>
+      <canvas id="tileCanvas" tabindex="0"></canvas>
+      <div id="hud" class="hud" aria-live="polite"></div>
+      <div id="rangeLog" class="range-log" aria-hidden="true"></div>
+      <div id="fallback" class="fallback" aria-hidden="true"></div>
+    </main>
+    <script type="module" src="slides.js"></script>
+  </body>
+</html>

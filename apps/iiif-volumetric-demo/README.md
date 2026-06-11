@@ -27,6 +27,13 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   directly in the browser with `zarrita` and feed the decoded bytes
   through the same `chunkSource` path as the OME-Zarr and WSI pages. See
   [client-only Zarr streaming notes](docs/client-only-zarr-streaming.md).
+- `tile-range.html` — client-only tile streaming proof-of-concept. It
+  loads a static multiscale RGBA tile pyramid from one packed binary
+  shard, requests only visible tiles with HTTP `Range` headers, caches
+  decoded bitmaps in the browser, and composites the result in a 2D
+  canvas. It can also load a DICOM-WSI JSON frame directory from
+  `/dicom-wsi/{id}/manifest.json`, then range-fetch and browser-decode
+  the visible JPEG frames directly from the original `.dcm` files.
 - `wsi.html` — DICOM whole-slide-imaging deep-zoom viewer. Renders a
   slide as a depth-1 RGB volume (2D axial = the slide face) with smooth,
   OpenSeadragon-style zoom/pan: scroll to zoom (cursor-anchored), drag to
@@ -161,7 +168,7 @@ IIIF_SERVER_URL=http://127.0.0.1:9090 bunx nx dev iiif-volumetric-demo
 ```
 
 The header on every page exposes the shared cross-page nav
-(`volumes`, `sheet`, `osd desktop`, `omezarr`, `range`, `wsi`)
+(`volumes`, `sheet`, `osd desktop`, `omezarr`, `range`, `tiles`, `wsi`)
 plus the `WebGL2 / WebGPU` backend toggle. `sheet.html` and
 `osd-volume-desktop.html` both need the IIIF server running with at
 least one fixture volume — `sheet.html` cycles available volumes
@@ -173,6 +180,13 @@ default OME-Zarr fetch. `range.html` does not need the IIIF server for
 the synthetic range shard, but the Pawpawsaurus OME-Zarr source needs
 the server running so the browser can fetch
 `/zarr/pawpawsaurus.ome.zarr/...` chunks.
+`tile-range.html` also does not need the IIIF server for its synthetic
+tile shard; Vite serves both the JSON tile index and packed tile bytes
+as static assets. Its DICOM-WSI source needs the IIIF server running
+with a DICOM WSI fixture so the browser can fetch
+`/dicom-wsi/{id}/manifest.json` and range-read the referenced `.dcm`
+files; for the default fixture open
+`http://127.0.0.1:8087/tile-range.html?source=dicom-wsi&id=cptac-brca_dicom`.
 
 > **Hidden pages** (source kept in the repo, but not in the nav or the
 > production build — open directly during development):

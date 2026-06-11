@@ -23,6 +23,7 @@ import morgan from 'morgan'
 
 import { registry } from './registry.ts'
 import { mountDesktopRoutes } from './routes/desktopRoutes.ts'
+import { mountDicomWsiClientRoutes } from './routes/dicomWsiClientRoutes.ts'
 import { mountImageApi } from './routes/imageApi.ts'
 import { mountPresentationApi } from './routes/presentationApi.ts'
 import { mountVolumeRoutes } from './routes/volumeRoutes.ts'
@@ -236,6 +237,7 @@ async function main(): Promise<void> {
   mountImageApi(app, registry)
   mountPresentationApi(app, registry)
   mountDesktopRoutes(app, registry)
+  mountDicomWsiClientRoutes(app, registry)
   mountVolumeRoutes(app, registry)
 
   app.post(

@@ -110,6 +110,13 @@ volume's id). The graph then shows the crosshair BOLD time-course together with
 each physio trace at its native sampling rate on a shared time axis, clamped to
 the imaging window; clicking the graph scrubs the volume to the nearest frame.
 
+A dense signal graph can be panned and zoomed via on-graph buttons (the view
+follows the cursor on wheel/frame steps) or the controller API (`graphZoom`,
+`graphPan`); `graphLineWidth` / `graphLineAlpha` tune trace thickness and opacity
+for overlapping series, and `graphShowVolumeTimecourse` toggles the BOLD trace.
+Missing physio samples are left as gaps and marked with a short tick along the
+bottom axis (the "missing-data rug").
+
 Signals can carry **annotations** — text labels anchored to a position in the
 graph's own data units (e.g. ppm for spectroscopy). They translate as the x-axis
 window is panned/zoomed and are hidden when out of range. A `y` of `-Infinity` or
@@ -133,7 +140,9 @@ nv.setSignal(0, { annotations: [/* replace the full set */] })
 See `examples/svs.html` (spectroscopy, with NAA/Cr/Cho annotations and a scene
 selector pairing the spectrum with the participant's T2w and an outline-shaded
 "voxel" marker at the sampling location), `examples/physio.html` (physio), and
-`examples/physio.bold.html` (fMRI + physio association) for interactive demos.
+`examples/physio.bold.html` (a task-fMRI run with per-trace fMRI/respiratory/
+cardiac toggles, on-graph pan/zoom, and a volume+physio association graph) for
+interactive demos.
 
 ### Change slice type and colormap
 

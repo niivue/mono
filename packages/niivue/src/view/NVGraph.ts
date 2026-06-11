@@ -73,6 +73,27 @@ export type GraphData = {
    * through the visible x-window (hidden when out of range).
    */
   annotations?: GraphAnnotation[]
+  /**
+   * Signal mode only: the FULL x-domain before any zoom/pan view window is
+   * applied. Derived from the input axis by `applyGraphViewWindow` on every
+   * collect (not persisted) and stamped here so `graphZoom`/`graphPan` can
+   * re-derive the window/orientation from a fresh collect without drift.
+   */
+  fullXDomain?: [number, number]
+}
+
+/** Pan/zoom control buttons drawn at the bottom of a dense signal graph. */
+export type GraphControlId = 'panLeft' | 'zoomOut' | 'zoomIn' | 'panRight'
+export type GraphControl = {
+  id: GraphControlId
+  label: string
+  /** box rect in canvas pixels */
+  x: number
+  y: number
+  w: number
+  h: number
+  /** true when the action is a no-op (drawn grey, not hit-tested) */
+  disabled: boolean
 }
 
 export type GraphLayout = {
@@ -98,6 +119,67 @@ export type GraphLayout = {
   fontSize: number
   /** Device pixel ratio for line thickness scaling */
   dpr: number
+  /** Signal mode: pan/zoom buttons (only for dense graphs); else undefined */
+  controls?: GraphControl[]
+}
+
+// Show the pan/zoom controls only once a signal graph has more samples than fit
+// comfortably across the plot, so individual samples are otherwise unreadable.
+const CONTROL_MIN_POINTS = 20
+
+/**
+ * Lay out the bottom-row pan/zoom buttons (left-aligned, on the axis-title row).
+ * Each button is flagged `disabled` when its action is a no-op given the current
+ * view `window` vs the `full` x-extent (full view, or window already at an edge,
+ * or at the zoom-in limit).
+ */
+function computeGraphControls(
+  pL: number,
+  plotBottom: number,
+  fontSize: number,
+  window: [number, number],
+  full: [number, number],
+  reversed: boolean,
+): GraphControl[] {
+  const w = fontSize * 1.4
+  const h = fontSize * 1.4
+  const gap = fontSize * 0.3
+  const y = plotBottom + fontSize * 0.8
+  const [lo, hi] = window
+  const [f0, f1] = full
+  const fullW = Math.max(1e-9, f1 - f0)
+  const eps = fullW * 1e-4
+  const atDataMin = lo <= f0 + eps
+  const atDataMax = hi >= f1 - eps
+  const atFull = atDataMin && atDataMax
+  const atMinWidth = hi - lo <= (fullW / 1000) * (1 + 1e-4)
+  // On a reversed (ppm) axis the screen-left edge is the data MAX, so the
+  // pan-left/right disabled edges swap.
+  const atScreenLeft = reversed ? atDataMax : atDataMin
+  const atScreenRight = reversed ? atDataMin : atDataMax
+  const disabled: Record<GraphControlId, boolean> = {
+    panLeft: atFull || atScreenLeft,
+    zoomOut: atFull,
+    zoomIn: atMinWidth,
+    panRight: atFull || atScreenRight,
+  }
+  const defs: [GraphControlId, string][] = [
+    ['panLeft', '<'],
+    ['zoomOut', '-'],
+    ['zoomIn', '+'],
+    ['panRight', '>'],
+  ]
+  // Start one button-width in from the plot's left edge so the buttons clear the
+  // leftmost x-axis label (often "0").
+  return defs.map(([id, label], i) => ({
+    id,
+    label,
+    x: pL + (i + 1) * (w + gap),
+    y,
+    w,
+    h,
+    disabled: disabled[id],
+  }))
 }
 
 // Layout constants (em = multiples of fontSize for DPI-consistent spacing)
@@ -195,6 +277,41 @@ function signalYRange(
   return [mn - pad, mx + pad]
 }
 
+/**
+ * Clip a data-space segment (x0,y0)-(x1,y1) to the x-window [xMin,xMax],
+ * interpolating y at the clipped ends. Returns [x0,y0,x1,y1] or null if the
+ * segment lies entirely outside the window. Lets a line reach the plot edge even
+ * when one endpoint (the previous/next sample) is off-window.
+ */
+export function clipSegmentX(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  xMin: number,
+  xMax: number,
+): [number, number, number, number] | null {
+  const dx = x1 - x0
+  let t0 = 0
+  let t1 = 1
+  if (dx === 0) {
+    if (x0 < xMin || x0 > xMax) return null
+  } else {
+    let ta = (xMin - x0) / dx
+    let tb = (xMax - x0) / dx
+    if (ta > tb) {
+      const t = ta
+      ta = tb
+      tb = t
+    }
+    t0 = Math.max(t0, ta)
+    t1 = Math.min(t1, tb)
+    if (t0 > t1) return null
+  }
+  const dy = y1 - y0
+  return [x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy]
+}
+
 function mapSignalX(
   xv: number,
   xMin: number,
@@ -203,7 +320,10 @@ function mapSignalX(
   pW: number,
   reversed: boolean,
 ): number {
-  const t = (xv - xMin) / (xMax - xMin)
+  // Guard a degenerate domain (single-x series / collapsed window): a zero span
+  // would map to Infinity/NaN and corrupt the GPU line buffer.
+  const span = xMax - xMin || 1
+  const t = (xv - xMin) / span
   return pL + (reversed ? 1 - t : t) * pW
 }
 
@@ -279,6 +399,48 @@ function drawDecimatedSeries(
     havePrev = true
     prevX = x
     prevY = maxY[col]
+  }
+}
+
+/**
+ * Mark samples that have no plottable value (BIDS `n/a` -> NaN) as short ticks
+ * along the bottom axis (a "rug"). The trace itself is left gapped (missing data
+ * is not interpolated); this surfaces WHERE it is missing — which is otherwise
+ * invisible for a dense, decimated series. Decimation-safe: at most one tick per
+ * pixel column, so a long run of gaps collapses to a bounded number of ticks.
+ *
+ * Each series gets its own horizontal lane (by `laneIndex`), stacked upward from
+ * the bottom axis, so when two series miss the same sample their ticks sit
+ * side-by-side (vertically) rather than overwriting each other.
+ */
+function drawMissingRug(
+  s: GraphSeries,
+  xMin: number,
+  xMax: number,
+  pL: number,
+  pW: number,
+  plotBottom: number,
+  reversed: boolean,
+  thick: number,
+  laneIndex: number,
+  laneH: number,
+  color: number[],
+  buildLine: BuildLineFn,
+  out: LineData[],
+): void {
+  // Lane laneIndex occupies [yBottom - (laneH-1), yBottom], leaving a 1px gap
+  // between adjacent series' lanes.
+  const yBottom = plotBottom - laneIndex * laneH
+  const yTop = yBottom - Math.max(1, laneH - 1)
+  const seen = new Set<number>()
+  for (let i = 0; i < s.y.length; i++) {
+    if (Number.isFinite(s.y[i])) continue // present sample
+    const xv = s.x ? s.x[i] : i
+    if (xv < xMin || xv > xMax) continue // outside the visible window
+    const px = Math.round(mapSignalX(xv, xMin, xMax, pL, pW, reversed))
+    if (px < pL || px > pL + pW || seen.has(px)) continue
+    seen.add(px)
+    out.push(buildLine(px, yBottom, px, yTop, thick, color))
   }
 }
 
@@ -417,6 +579,26 @@ function computeSignalGraphLayout(
     fontScale,
     fontSize,
     dpr,
+    // Show the buttons whenever they (left-aligned, ~8.2em span) plus the axis
+    // title fit in the plot; the title is then shifted right to clear them (see
+    // buildSignalGraphElements). This keeps the controls visible on typical
+    // right-side associated graphs, not just wide/full-canvas ones.
+    controls:
+      nPts > CONTROL_MIN_POINTS &&
+      fontSize > 6 &&
+      plotWidth >
+        fontSize * 8.2 +
+          (data.xAxis?.label?.length ?? 6) * fontSize * FONT_XADV +
+          fontSize * 1.5
+        ? computeGraphControls(
+            plotLeft,
+            plotTop + plotHeight,
+            fontSize,
+            [xMin, xMax],
+            data.fullXDomain ?? [xMin, xMax],
+            data.xAxis?.reversed ?? false,
+          )
+        : undefined,
   }
 }
 
@@ -573,7 +755,13 @@ function buildSignalGraphElements(
   const noBack = [0, 0, 0, 0]
   const fntScale = layout.fontScale
   const fontSize = layout.fontSize
-  const lineThick = Math.ceil(LINE_THICKNESS * layout.dpr)
+  // Relative line-width multiplier (data lines only; grid stays at the default).
+  const lineWidthMul = data.graphConfig.lineWidth ?? 1
+  const lineAlpha = data.graphConfig.lineAlpha ?? 1
+  const lineThick = Math.max(
+    1,
+    Math.ceil(LINE_THICKNESS * layout.dpr * lineWidthMul),
+  )
   const gridThick = Math.ceil(LINE_THICKNESS * layout.dpr * 0.5)
   const outerMargin = fontSize * GRAPH_OUTER_MARGIN_EM
   const plotBottom = pT + pH
@@ -664,7 +852,13 @@ function buildSignalGraphElements(
   const decimateThreshold = Math.max(2, Math.ceil(pW * 2))
   for (let j = 0; j < series.length; j++) {
     const s = series[j]
-    const color = seriesColor(s, j)
+    const base = seriesColor(s, j)
+    // Translucency for overlapping traces: scale the data line's alpha only
+    // (legend/rug keep full opacity so they stay legible).
+    const color =
+      lineAlpha < 1
+        ? [base[0], base[1], base[2], (base[3] ?? 1) * lineAlpha]
+        : base
     if (s.y.length > decimateThreshold) {
       drawDecimatedSeries(
         s,
@@ -684,24 +878,70 @@ function buildSignalGraphElements(
       )
       continue
     }
-    let prevInside = false
-    let prevSX = 0
-    let prevSY = 0
+    // Connect consecutive finite samples, CLIPPING each segment to the x-window
+    // in data space. This draws the segment from an out-of-window neighbour up to
+    // the plot edge (e.g. a sparse volume time-course whose first/last in-window
+    // sample would otherwise float disconnected from the left/right edge). NaN
+    // (missing) samples break the line so gaps are preserved.
+    let prevX = 0
+    let prevY = 0
+    let havePrev = false
     for (let i = 0; i < s.y.length; i++) {
       const xv = seriesX(s, i)
       const yv = s.y[i]
-      const inside = xv >= xMin && xv <= xMax && Number.isFinite(yv)
-      if (inside) {
-        const sx = mapSignalX(xv, xMin, xMax, pL, pW, reversed)
-        const sy = mapSignalY(yv, yMin, scaleH, pT, plotBottom)
-        if (prevInside) {
-          lineSegments.push(buildLine(prevSX, prevSY, sx, sy, lineThick, color))
-        }
-        prevSX = sx
-        prevSY = sy
+      if (!Number.isFinite(yv)) {
+        havePrev = false
+        continue
       }
-      prevInside = inside
+      if (havePrev) {
+        const seg = clipSegmentX(prevX, prevY, xv, yv, xMin, xMax)
+        if (seg) {
+          lineSegments.push(
+            buildLine(
+              mapSignalX(seg[0], xMin, xMax, pL, pW, reversed),
+              mapSignalY(seg[1], yMin, scaleH, pT, plotBottom),
+              mapSignalX(seg[2], xMin, xMax, pL, pW, reversed),
+              mapSignalY(seg[3], yMin, scaleH, pT, plotBottom),
+              lineThick,
+              color,
+            ),
+          )
+        }
+      }
+      prevX = xv
+      prevY = yv
+      havePrev = true
     }
+  }
+
+  // 5a) Missing-data rug: short ticks at the bottom axis marking samples with no
+  // value (BIDS `n/a`). Gaps are left in the trace (not interpolated); this is
+  // the only on-graph cue for missing data in a dense, decimated series. Each
+  // series gets its own stacked lane so coincident gaps don't overwrite.
+  const rugLaneH = Math.max(2, Math.round(fontSize * 0.35))
+  // Keep the stacked lanes inside a reserved band at the bottom (~20% of plot
+  // height); with many series carrying gaps, excess lanes share the top lane
+  // rather than climbing into the plot.
+  const maxRugLanes = Math.max(
+    1,
+    Math.floor(((plotBottom - pT) * 0.2) / rugLaneH),
+  )
+  for (let j = 0; j < series.length; j++) {
+    drawMissingRug(
+      series[j],
+      xMin,
+      xMax,
+      pL,
+      pW,
+      plotBottom,
+      reversed,
+      lineThick,
+      Math.min(j, maxRugLanes - 1),
+      rugLaneH,
+      seriesColor(series[j], j),
+      buildLine,
+      lineSegments,
+    )
   }
 
   // 5b) Cursor: faint vertical line at the selected x value
@@ -822,16 +1062,55 @@ function buildSignalGraphElements(
     }
   }
 
-  // 7) X-axis label
+  // 7) X-axis label, centered — but shifted right to clear the pan/zoom buttons
+  // when present (the buttons share this row), keeping both visible.
   if (fontSize > 6 && axis) {
+    let titleX = pL + pW * 0.5
+    if (layout.controls?.length) {
+      const buttonsRight = Math.max(...layout.controls.map((c) => c.x + c.w))
+      const halfLabel = (axis.label.length * fontSize * FONT_XADV) / 2
+      const minCenter = buttonsRight + fontSize * 0.5 + halfLabel
+      if (titleX < minCenter) titleX = minCenter
+    }
     const tb = buildText(
       axis.label,
-      pL + pW * 0.5,
+      titleX,
       plotBottom + fontSize * 1.5,
       fntScale,
       fontColor,
       0.5,
       0,
+      noBack,
+    )
+    tb.backRect = []
+    labels.push(tb)
+  }
+
+  // 8) Pan/zoom control buttons (dense graphs only): a bordered box + symbol on
+  // the axis-title row. Hit regions come from the same `layout.controls`.
+  // Disabled buttons (no-op at the current window) are dimmed toward the panel
+  // background so they read as greyed out.
+  const dimColor = [
+    fontColor[0] * 0.4 + backingColor[0] * 0.6,
+    fontColor[1] * 0.4 + backingColor[1] * 0.6,
+    fontColor[2] * 0.4 + backingColor[2] * 0.6,
+    fontColor[3] ?? 1,
+  ]
+  for (const c of layout.controls ?? []) {
+    const { x: bx, y: by, w: bw, h: bh } = c
+    const col = c.disabled ? dimColor : fontColor
+    lineSegments.push(buildLine(bx, by, bx + bw, by, gridThick, col))
+    lineSegments.push(buildLine(bx + bw, by, bx + bw, by + bh, gridThick, col))
+    lineSegments.push(buildLine(bx + bw, by + bh, bx, by + bh, gridThick, col))
+    lineSegments.push(buildLine(bx, by + bh, bx, by, gridThick, col))
+    const tb = buildText(
+      c.label,
+      bx + bw * 0.5,
+      by + bh * 0.5,
+      fntScale,
+      col,
+      0.5,
+      0.5,
       noBack,
     )
     tb.backRect = []
@@ -882,7 +1161,10 @@ export function buildGraphElements(
   const noBack = [0, 0, 0, 0]
   const fntScale = layout.fontScale
   const fontSize = layout.fontSize
-  const lineThick = Math.ceil(LINE_THICKNESS * layout.dpr)
+  const lineThick = Math.max(
+    1,
+    Math.ceil(LINE_THICKNESS * layout.dpr * (data.graphConfig.lineWidth ?? 1)),
+  )
   const gridThick = Math.ceil(LINE_THICKNESS * layout.dpr * 0.5)
 
   const outerMargin = fontSize * GRAPH_OUTER_MARGIN_EM
@@ -1086,6 +1368,7 @@ export function graphHitTest(
   | { type: 'frame'; frame: number }
   | { type: 'deferred' }
   | { type: 'signalCursor'; xFrac: number }
+  | { type: 'graphControl'; id: GraphControlId }
   | null {
   if (!layout) return null
   const [pL, pT, pW, pH] = layout.plotLTWH
@@ -1093,6 +1376,14 @@ export function graphHitTest(
   // backing area the click is consumed (frame -1) so it does not fall through
   // to tile interaction.
   if (layout.isSignal) {
+    // Pan/zoom buttons take priority over the plot-area cursor (disabled ones
+    // are inert).
+    for (const c of layout.controls ?? []) {
+      if (c.disabled) continue
+      if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) {
+        return { type: 'graphControl', id: c.id }
+      }
+    }
     if (x >= pL && x <= pL + pW && y >= pT && y <= pT + pH) {
       return { type: 'signalCursor', xFrac: (x - pL) / pW }
     }

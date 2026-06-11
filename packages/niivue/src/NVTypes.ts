@@ -635,6 +635,23 @@ export type GraphConfig = {
   normalizeValues: boolean
   /** Whether vertical axis range is calMin..calMax (true) or data-driven (false) */
   isRangeCalMinMax: boolean
+  /**
+   * Volume+physio association view only: include the crosshair BOLD/volume
+   * time-course as a series. Default true. Set false to plot only the attached
+   * physio traces (e.g. a "show fMRI trace" toggle).
+   */
+  showVolumeTimecourse?: boolean
+  /**
+   * Data-line thickness multiplier (relative to the default), default 1. The
+   * base is DPI-scaled, so this stays consistent across displays. <1 thins the
+   * lines (e.g. to stop dense traces overlapping); grid/axis lines are unaffected.
+   */
+  lineWidth?: number
+  /**
+   * Opacity (0..1) applied to the multi-series data lines, default 1. Values
+   * below 1 make overlapping traces translucent so intersections are visible.
+   */
+  lineAlpha?: number
 }
 
 // ============================================================
@@ -711,6 +728,9 @@ export type NiiVueOptions = {
   rulerWidth?: number
   graphNormalizeValues?: boolean
   graphIsRangeCalMinMax?: boolean
+  graphShowVolumeTimecourse?: boolean
+  graphLineWidth?: number
+  graphLineAlpha?: number
 
   // Volume (prefixed)
   volumeIllumination?: number

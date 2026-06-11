@@ -834,6 +834,53 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Volume+physio association graph: whether the crosshair BOLD/volume
+   * time-course is shown as a series (default true). Set false to plot only the
+   * attached physio traces (a "show fMRI trace" toggle).
+   */
+  get graphShowVolumeTimecourse(): boolean {
+    return this.model.ui.graph.showVolumeTimecourse !== false
+  }
+  set graphShowVolumeTimecourse(v: boolean) {
+    this.model.ui.graph.showVolumeTimecourse = v
+    this.emit('change', { property: 'graphShowVolumeTimecourse', value: v })
+    this.drawScene()
+    // The set of visible series changed, so the windowed readout may now report a
+    // hidden trace until the next crosshair/frame event — refresh it immediately.
+    this.refreshSignalLocation()
+  }
+
+  /**
+   * Graph data-line thickness multiplier (relative to the DPI-scaled default,
+   * 1). <1 thins lines so dense/overlapping traces separate; grid lines unchanged.
+   */
+  get graphLineWidth(): number {
+    return this.model.ui.graph.lineWidth ?? 1
+  }
+  set graphLineWidth(v: number) {
+    // Clamp to a finite, sane range so NaN/Infinity/negatives can't reach the
+    // line buffer as an infinite/NaN thickness.
+    const clamped = Number.isFinite(v) ? Math.max(0, Math.min(8, v)) : 1
+    this.model.ui.graph.lineWidth = clamped
+    this.emit('change', { property: 'graphLineWidth', value: clamped })
+    this.drawScene()
+  }
+
+  /**
+   * Opacity (0..1) of the multi-series graph data lines (default 1). Below 1,
+   * overlapping traces are translucent so intersections are visible.
+   */
+  get graphLineAlpha(): number {
+    return this.model.ui.graph.lineAlpha ?? 1
+  }
+  set graphLineAlpha(v: number) {
+    const clamped = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1
+    this.model.ui.graph.lineAlpha = clamped
+    this.emit('change', { property: 'graphLineAlpha', value: clamped })
+    this.drawScene()
+  }
+
   get graphIsRangeCalMinMax(): boolean {
     return this.model.ui.graph.isRangeCalMinMax
   }
@@ -1631,6 +1678,8 @@ export default class NiiVueGPU extends EventTarget {
       this.model.addSignal(sig)
       this.emit('signalLoaded', { signal: sig })
     }
+    // A fresh signal set starts at the full x-extent (drop any prior zoom/pan).
+    this.model.signalViewWindow = null
     this.drawScene()
     return this
   }
@@ -1735,27 +1784,58 @@ export default class NiiVueGPU extends EventTarget {
     // (signal-only or associated volume+physio time view).
     const data = this.model.collectGraphData()
     if (!data?.series) return this
-    const xValue = signalXValueAtFrac(data, xFrac)
+    return this.setSignalCursorValue(signalXValueAtFrac(data, xFrac))
+  }
+
+  /**
+   * Set the signal cursor to a data-space x value (the marker). Keeps the marker
+   * visible: if it lies outside the current zoom window, the window pans to it
+   * (explicit zoom / pan buttons may hide the marker; a wheel-step follows it).
+   */
+  private setSignalCursorValue(xValue: number): this {
     this.model.signalCursorX = xValue
-    this.emitSignalLocation(data, xValue)
+    this.model.panViewWindowTo(xValue)
     const vol = this.model.getAssociatedVolume()
     if (vol?.id) {
       const tr = volumeTR(vol)
       const nFrames = vol.nFrame4D ?? 1
       const frame = Math.max(0, Math.min(nFrames - 1, Math.round(xValue / tr)))
-      // setFrame4D updates GPU state and redraws; no extra drawScene needed.
-      this.setFrame4D(vol.id, frame)
-    } else {
-      this.drawScene()
+      // setFrame4D pans + redraws + emits the readout at the new frame marker.
+      // Only fall through to emit here when the frame is unchanged (setFrame4D
+      // early-returns without emitting), so the event fires exactly once.
+      if (frame !== (vol.frame4D ?? 0)) {
+        // Fire-and-forget (this method is sync); route a GPU-upload rejection so
+        // it isn't an unhandled promise rejection.
+        this.setFrame4D(vol.id, frame).catch((e) =>
+          log.error('setFrame4D failed', e),
+        )
+        return this
+      }
     }
+    const data = this.model.collectGraphData() // reflects any pan
+    if (data?.series) this.emitSignalLocation(data, xValue)
+    this.drawScene()
     return this
+  }
+
+  /**
+   * After the marker moves on its own (e.g. the wheel stepped the 4D frame), pan
+   * the zoom window so the marker stays visible. No-op at full extent or when it
+   * is already in view.
+   */
+  ensureGraphCursorVisible(): void {
+    const data = this.model.collectGraphData()
+    const cx = data?.cursorX
+    if (cx === null || cx === undefined) return
+    if (this.model.panViewWindowTo(cx)) this.drawScene()
   }
 
   /**
    * Step the signal cursor along the x-axis by one wheel tick (fraction of the
    * visible window). Fallback scroll gesture for a signal graph with no spatial
    * volume to scrub (when a 4D volume is present, the wheel steps frames
-   * instead). Starts from the window centre if no cursor has been set.
+   * instead). Starts from the window centre if no cursor has been set. When the
+   * step crosses the visible window edge, the window pans to follow the marker.
    */
   stepSignalCursor(direction: number): this {
     const data = this.model.collectGraphData()
@@ -1764,9 +1844,47 @@ export default class NiiVueGPU extends EventTarget {
       this.model.signalCursorX !== null
         ? signalFracAtXValue(data, this.model.signalCursorX)
         : 0.5
-    const step = 0.02 * (direction > 0 ? 1 : -1)
-    const frac = Math.max(0, Math.min(1, cur + step))
-    return this.setSignalCursorFraction(frac)
+    // Unclamped fraction: the value may extrapolate beyond the visible window;
+    // it is then clamped to the full extent and the window pans to follow.
+    let xValue = signalXValueAtFrac(data, cur + 0.02 * (direction > 0 ? 1 : -1))
+    const full = data.fullXDomain
+    if (full) xValue = Math.max(full[0], Math.min(full[1], xValue))
+    return this.setSignalCursorValue(xValue)
+  }
+
+  /**
+   * Zoom the signal graph's x-axis view window: `factor` > 1 zooms in, < 1 zooms
+   * out, centred on the graph cursor when one is set (else the window centre).
+   * Zooming out past the full extent restores the full view. No-op unless a
+   * (dense) signal graph is shown.
+   */
+  graphZoom(factor = 2): this {
+    this.model.graphZoom(factor)
+    this.drawScene()
+    return this
+  }
+
+  /**
+   * Pan the signal graph's x-axis view window by `frac` of its width (negative
+   * pans toward earlier x / left). No-op when the full extent is shown.
+   */
+  graphPan(frac: number): this {
+    this.model.graphPan(frac)
+    this.drawScene()
+    return this
+  }
+
+  /**
+   * Reset the signal graph's zoom/pan to the full x-extent (clears the view
+   * window). The one-click way back from a deep zoom; also bound to a
+   * double-click on the graph. No-op when the full extent is already shown.
+   */
+  graphResetView(): this {
+    if (this.model.signalViewWindow !== null) {
+      this.model.signalViewWindow = null
+      this.drawScene()
+    }
+    return this
   }
 
   /**
@@ -1779,7 +1897,17 @@ export default class NiiVueGPU extends EventTarget {
     // wasteful collectGraphData rebuild — when no signal is loaded.
     if (this.model.signals.length === 0) return
     const data = this.model.collectGraphData()
-    if (!data?.series) return
+    if (!data?.series) {
+      // Signals are loaded but every trace is hidden (no graph): clear the stale
+      // readout rather than leaving the last hidden-trace value in the footer.
+      this.emit('signalLocationChange', {
+        xValue: Number.NaN,
+        xLabel: '',
+        values: [],
+        string: '',
+      })
+      return
+    }
     const vol = this.model.getAssociatedVolume()
     let xValue: number
     if (vol) {
@@ -1809,6 +1937,9 @@ export default class NiiVueGPU extends EventTarget {
     if (opts.annotations !== undefined)
       sig.annotations = opts.annotations.map(NVSignal.cloneAnnotation)
     this.drawScene()
+    // A display change may have shown/hidden a trace; refresh the readout so the
+    // footer doesn't keep reporting a now-hidden series.
+    if (opts.display) this.refreshSignalLocation()
     return this
   }
 
@@ -2369,11 +2500,21 @@ export default class NiiVueGPU extends EventTarget {
       return
     }
     const maxFrame = (vol.nFrame4D ?? 1) - 1
-    const clamped = Math.max(0, Math.min(frame, maxFrame))
+    // Guard NaN/Infinity from a public caller: Math.min(NaN, max) is NaN, and
+    // NaN === frame4D is false, so an unguarded NaN would be assigned + uploaded.
+    const clamped = Number.isFinite(frame)
+      ? Math.max(0, Math.min(frame, maxFrame))
+      : (vol.frame4D ?? 0)
     if (clamped === vol.frame4D) return
     vol.frame4D = clamped
     this.emit('frameChange', { volume: vol, frame: clamped })
     await this.updateGLVolume()
+    // A frame change moves the signal-graph marker (frame*TR); pan the window to
+    // keep it visible FIRST, so the readout that createOnLocationChange emits is
+    // sampled against the new (in-window) marker, not the old window's edge.
+    // No-op without a windowed signal graph; covers Back/Forward, wheel, and
+    // programmatic frame changes alike.
+    this.ensureGraphCursorVisible()
     this.createOnLocationChange()
   }
 

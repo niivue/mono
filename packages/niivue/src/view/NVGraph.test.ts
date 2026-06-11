@@ -3,6 +3,7 @@ import type { GraphConfig } from '@/NVTypes'
 import type { GlyphBatch } from './NVFont'
 import {
   buildGraphElements,
+  clipSegmentX,
   computeGraphLayout,
   type GraphData,
   type GraphSeries,
@@ -174,6 +175,72 @@ describe('signal-mode rendering', () => {
     // only one in-window segment (x=0 -> x=1); its top endpoint near plot top
     const topY = Math.min(...segs.flatMap((s) => [s.y0, s.y1]))
     expect(topY).toBeLessThan(pT + 0.4 * pH)
+  })
+})
+
+describe('missing-data rug (NaN gaps)', () => {
+  // Rug ticks are short VERTICAL lane segments whose bottom sits AT the plot
+  // bottom (lane 0) or above it (stacked lanes) — never below. That cleanly
+  // separates them from full-height grid verticals (too tall) and from x-axis
+  // tick marks (which sit just below the plot bottom in the label gutter).
+  function rugTicks(lines: LineCall[], pT: number, pH: number): LineCall[] {
+    const bottom = pT + pH
+    return lines.filter(
+      (l) =>
+        l.x0 === l.x1 && // vertical
+        Math.abs(l.y1 - l.y0) < 0.25 * pH && // short (not a full grid vertical)
+        Math.max(l.y0, l.y1) <= bottom + 1, // at/above the plot bottom, not below
+    )
+  }
+
+  test('drawsATickPerMissingSample', () => {
+    // gaps at x=1 and x=3 -> two rug ticks
+    const data = signalData([
+      { label: 'a', x: [0, 1, 2, 3, 4], y: [1, NaN, 3, NaN, 5] },
+    ])
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const [, pT, , pH] = layout.plotLTWH
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    expect(rugTicks(lines, pT, pH).length).toBe(2)
+  })
+
+  test('coincidentGapsStackIntoSeparateLanes', () => {
+    // both series miss x=1; their ticks must not overwrite (different y lanes)
+    const data = signalData([
+      { label: 'a', x: [0, 1, 2], y: [1, NaN, 3] },
+      { label: 'b', x: [0, 1, 2], y: [3, NaN, 1] },
+    ])
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const [, pT, , pH] = layout.plotLTWH
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    const ticks = rugTicks(lines, pT, pH)
+    expect(ticks.length).toBe(2)
+    // same x column, different lanes -> different y ranges
+    expect(ticks[0].x0).toBeCloseTo(ticks[1].x0, 5)
+    expect(Math.max(ticks[0].y0, ticks[0].y1)).not.toBeCloseTo(
+      Math.max(ticks[1].y0, ticks[1].y1),
+      5,
+    )
+  })
+
+  test('decimatesToAtMostOneTickPerPixelColumn', () => {
+    // a long all-missing series cannot emit more ticks than the plot is wide
+    const n = 4000
+    const x = Array.from({ length: n }, (_, i) => i)
+    const y = Array.from({ length: n }, () => NaN)
+    const data = signalData([{ label: 'a', x, y }])
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const [, pT, pW, pH] = layout.plotLTWH
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    const ticks = rugTicks(lines, pT, pH)
+    expect(ticks.length).toBeGreaterThan(0)
+    expect(ticks.length).toBeLessThanOrEqual(Math.ceil(pW) + 1)
   })
 })
 
@@ -445,5 +512,143 @@ describe('signal cursor mapping', () => {
       },
     )
     expect(signalValuesAt(d, 0.9)[0].value).toBe(20)
+  })
+})
+
+describe('signal-mode pan/zoom controls', () => {
+  // 100 samples over x in [0,99] on a full-canvas graph so it is wide enough
+  // for the controls to be laid out.
+  const N = 100
+  const x = Float32Array.from({ length: N }, (_, i) => i)
+  const y = Float32Array.from({ length: N }, (_, i) => Math.sin(i * 0.3))
+  const layoutFor = (extra: Partial<GraphData>) => {
+    const data = signalData([{ label: 'a', x, y }], {
+      fullCanvas: true,
+      ...extra,
+    })
+    return computeGraphLayout(data, W, H, 0, 1)
+  }
+  const by = (L: ReturnType<typeof computeGraphLayout>, id: string) =>
+    L?.controls?.find((c) => c.id === id)
+
+  test('noControlsBelowPointThreshold', () => {
+    const data = signalData([{ label: 'a', x: null, y: [1, 2, 3, 4] }], {
+      fullCanvas: true,
+    })
+    expect(computeGraphLayout(data, W, H, 0, 1)?.controls).toBeUndefined()
+  })
+
+  test('fullView_zoomOutAndPanDisabled_zoomInEnabled', () => {
+    const L = layoutFor({
+      xAxis: { label: 't', reversed: false, min: 0, max: 99 },
+      fullXDomain: [0, 99],
+    })
+    expect(L?.controls?.length).toBe(4)
+    expect(by(L, 'zoomIn')?.disabled).toBe(false)
+    expect(by(L, 'zoomOut')?.disabled).toBe(true)
+    expect(by(L, 'panLeft')?.disabled).toBe(true)
+    expect(by(L, 'panRight')?.disabled).toBe(true)
+  })
+
+  test('windowedMiddle_allEnabled', () => {
+    const L = layoutFor({
+      xAxis: { label: 't', reversed: false, min: 40, max: 60 },
+      fullXDomain: [0, 99],
+    })
+    expect(by(L, 'panLeft')?.disabled).toBe(false)
+    expect(by(L, 'panRight')?.disabled).toBe(false)
+    expect(by(L, 'zoomOut')?.disabled).toBe(false)
+  })
+
+  test('windowedAtLeftEdge_panLeftDisabled', () => {
+    const L = layoutFor({
+      xAxis: { label: 't', reversed: false, min: 0, max: 20 },
+      fullXDomain: [0, 99],
+    })
+    expect(by(L, 'panLeft')?.disabled).toBe(true)
+    expect(by(L, 'panRight')?.disabled).toBe(false)
+  })
+
+  test('reversedAxis_swapsScreenEdges', () => {
+    // Window at the data MIN on a reversed (ppm) axis = the screen-RIGHT edge.
+    const L = layoutFor({
+      xAxis: { label: 'ppm', reversed: true, min: 0, max: 20 },
+      fullXDomain: [0, 99],
+    })
+    expect(by(L, 'panRight')?.disabled).toBe(true)
+    expect(by(L, 'panLeft')?.disabled).toBe(false)
+  })
+
+  test('hitTest_enabledControlReturnsId_disabledSkipped', () => {
+    const L = layoutFor({
+      xAxis: { label: 't', reversed: false, min: 40, max: 60 },
+      fullXDomain: [0, 99],
+    })
+    const zin = by(L, 'zoomIn')
+    if (!zin) throw new Error('no zoomIn control')
+    expect(graphHitTest(zin.x + zin.w / 2, zin.y + zin.h / 2, L)).toEqual({
+      type: 'graphControl',
+      id: 'zoomIn',
+    })
+    // At full view panLeft is disabled -> hit-test must NOT report it.
+    const Lfull = layoutFor({
+      xAxis: { label: 't', reversed: false, min: 0, max: 99 },
+      fullXDomain: [0, 99],
+    })
+    const pl = by(Lfull, 'panLeft')
+    if (!pl) throw new Error('no panLeft control')
+    expect(
+      graphHitTest(pl.x + pl.w / 2, pl.y + pl.h / 2, Lfull)?.type,
+    ).not.toBe('graphControl')
+  })
+
+  test('controlsVisibleOnWideSideStripGraph', () => {
+    // NOT full-canvas (side strip), but a wide canvas -> the relaxed gate (button
+    // span + label width) should still show the controls.
+    const data = signalData([{ label: 'a', x, y }], {
+      xAxis: { label: 't', reversed: false, min: 0, max: 99 },
+      fullXDomain: [0, 99],
+    })
+    expect(computeGraphLayout(data, 2400, 800, 0, 1)?.controls?.length).toBe(4)
+  })
+
+  test('axisTitleNeverLeftOfPlotCentreWhenControlsPresent', () => {
+    // The title is shifted right (never left) to clear the left-aligned buttons.
+    const data = signalData([{ label: 'a', x, y }], {
+      xAxis: { label: 'Time (s)', reversed: false, min: 40, max: 60 },
+      fullXDomain: [0, 99],
+    })
+    const L = computeGraphLayout(data, 2400, 800, 0, 1)
+    if (!L?.controls?.length) throw new Error('expected controls')
+    const [pL, , pW] = L.plotLTWH
+    const { texts, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, L, buildText, buildLine, [0, 0, 0])
+    const title = texts.find((t) => t.str === 'Time (s)')
+    expect(title).toBeDefined()
+    expect(title?.x).toBeGreaterThanOrEqual(pL + pW * 0.5)
+  })
+})
+
+describe('clipSegmentX (edge interpolation)', () => {
+  test('bothInside_unchanged', () => {
+    expect(clipSegmentX(2, 10, 8, 40, 0, 10)).toEqual([2, 10, 8, 40])
+  })
+  test('leftNeighbourOutside_clipsToMinAndInterpolatesY', () => {
+    // segment from (-10,0) to (10,100); at x=0 y interpolates to 50
+    const c = clipSegmentX(-10, 0, 10, 100, 0, 10)
+    expect(c?.[0]).toBe(0)
+    expect(c?.[1]).toBeCloseTo(50, 5)
+    expect(c?.[2]).toBe(10)
+  })
+  test('rightNeighbourOutside_clipsToMax', () => {
+    const c = clipSegmentX(5, 0, 25, 200, 0, 10)
+    expect(c?.[2]).toBe(10)
+    expect(c?.[3]).toBeCloseTo(50, 5) // (10-5)/(25-5)*200
+  })
+  test('entirelyOutside_null', () => {
+    expect(clipSegmentX(20, 0, 30, 0, 0, 10)).toBeNull()
+  })
+  test('verticalInRange_kept', () => {
+    expect(clipSegmentX(5, 0, 5, 9, 0, 10)).toEqual([5, 0, 5, 9])
   })
 })

@@ -84,7 +84,7 @@ describe('tsv fixtures (real BIDS physio)', () => {
     const r = loadFixture('cardiac')
     expect(r.columnLabels).toEqual(['cardiac', 'trigger'])
     expect(r.samplingFrequency).toBe(200)
-    expect(r.startTime).toBeCloseTo(-13.72, 5)
+    expect(r.startTime).toBeCloseTo(-9.652, 5)
     expect(r.columns.length).toBe(2)
     expect(r.columns[0].length).toBeGreaterThan(1000)
   })

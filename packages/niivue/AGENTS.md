@@ -435,9 +435,14 @@ volume/mesh readers — export `extensions` + `read`). Two kinds, discriminated 
 **Readers** (`readers/tsv.ts`, `readers/nii.ts`):
 
 - `tsv` — BIDS physio, gz-aware (`NVGz.maybeDecompress`). Blank/`n/a`/`NaN` cells
-  become NaN trace gaps; a stray all-non-numeric leading row is treated as column
-  labels. Labels prefer the sidecar `Columns`, then an in-file header, then a
-  generic fallback.
+  become NaN trace gaps (the line is left gapped — NOT interpolated — and the
+  graph marks each missing sample with a short tick along the bottom axis in the
+  series colour: the "missing-data rug", `drawMissingRug` in `view/NVGraph.ts`,
+  decimation-safe at one tick per pixel column, and stacked into a per-series
+  lane so coincident gaps in two series sit side-by-side, not overwriting). A
+  stray all-non-numeric leading
+  row is treated as column labels. Labels prefer the sidecar `Columns`, then an
+  in-file header, then a generic fallback.
 - `nii` — reuses `nifti-reader-js` header parsing but does **not** call
   `nii2volume` (which is GPU-volume specific and would discard complex data).
   Complex datatype -> spectroscopy FID; real non-spatial -> physio (dim4 is the
@@ -564,7 +569,125 @@ graph click scrubs the 4D volume to the nearest frame. The readout also refreshe
 on crosshair move and frame change (`createOnLocationChange -> refreshSignalLocation`).
 TR comes from `volumeTR(vol)` (`pixDims[4]`, seconds via `xyzt_units`). Crosshair
 voxel sampling is shared via `NVModel.sampleVolumeTimeCourse` (guards `matRAS`).
-Demo: `examples/physio.bold.html`.
+Per-trace visibility: the BOLD/volume series is gated by
+`ui.graph.showVolumeTimecourse` (controller `graphShowVolumeTimecourse`, default
+true); a physio trace is hidden with `setSignal(i, { display: { selectedColumns:
+[] } })`. The builder now needs only `>= 1` visible series (was BOLD + `>= 1`
+physio), so BOLD and each physio toggle independently; hide the whole graph with
+`isGraphVisible = false` when nothing is selected. Demo: `examples/physio.bold.html`
+(a real task-fMRI run with per-trace fMRI/respiratory/cardiac checkboxes; opens
+with the crosshair on an unclamped deep-WM voxel ~20 mm left of the origin since
+the uint8-scaled sample saturates at the origin).
+
+Signal graph pan/zoom: a dense signal graph (`> 20` samples) draws four bottom-row
+buttons (`< - + >` = pan-left / zoom-out / zoom-in / pan-right) on the axis-title
+row (`computeGraphControls` -> `GraphLayout.controls`, rendered + hit-tested from
+that one source; `graphHitTest` returns `{ type: 'graphControl', id }`). They
+drive `NVModel.graphZoom(factor)` / `graphPan(frac)` (controller `graphZoom` /
+`graphPan`) which adjust `signalViewWindow` (`[min,max]` over the x-axis, null =
+full). The window is applied in `applyGraphViewWindow` (called from
+`collectGraphData` for signal-mode data): it derives the full domain from the
+input axis each call, stamps it on `GraphData.fullXDomain`, and rewrites
+`xAxis.min/max`, so the cursor mapping, layout, and render all honour the zoom;
+zooming centres on the graph cursor when set. `graphZoom`/`graphPan`/
+`panViewWindowTo` read the current full domain + axis orientation from a FRESH
+`collectGraphData()` (`NVModel.currentGraphDomain()`) rather than any persisted
+render-time field, so they work immediately after `loadSignals()` (before the
+first RAF) and are genuine no-ops when no signal graph is shown. The window
+persists across crosshair/frame changes and resets on
+`loadSignals`/signal removal. Each button carries a `disabled` flag (no-op at the
+current window: full view, an edge, or the zoom-in limit) — drawn dimmed toward
+the panel background and skipped by `graphHitTest`. Buttons start one button-width
+in from the plot's left edge so they clear the leftmost x-label ("0").
+Sparse data lines (e.g. the volume time-course) are drawn with per-segment x-clip
+(`clipSegmentX`) so a line reaches the plot edge even when the neighbouring sample
+is off-window (no dropped leftmost/rightmost segment).
+
+Reset to full view: `graphResetView()` (controller) clears `signalViewWindow`,
+and a DOUBLE-CLICK on the signal graph does the same (the dblclick handler in
+`control/interactions.ts` checks `graphHitTest` first and resets instead of
+depth-picking — there is nothing to depth-pick on the 2-D plot). This is the
+one-click way back from a deep zoom; zooming out past the full extent still
+auto-resets too. A double-click on a spatial slice is unaffected (still depth-picks).
+
+Marker vs window: explicit zoom/pan may leave the cursor marker off-window (zoom
+only re-centres on the marker when it is already visible; the pan buttons can
+scroll it out of view — both intentional). But when the marker moves ON ITS OWN
+via the scroll wheel (stepping the 4D frame, or `stepSignalCursor` for a
+signal-only graph), the window pans to keep it visible: `NVModel.panViewWindowTo(x)`
+is called from `setSignalCursorValue` and from `ensureGraphCursorVisible()` (the
+latter wired into the wheel/frame-step path in `control/interactions.ts`).
+`stepSignalCursor` no longer clamps the marker to the window — it extrapolates
+(`signalXValueAtFrac`, reversed-aware), clamps to the full extent, then the window
+follows. ALL frame changes follow the marker via `setFrame4D -> ensureGraphCursorVisible`
+(not just the wheel), so the windowed `signalValuesAt` readout stays accurate after
+Back/Forward too. Demo: `examples/physio.bold.html`.
+
+Signal-graph audit invariants (keep these true):
+- **Pan is screen-space + reversed-aware.** `graphPan(screenFrac)` flips the data
+  shift for a reversed (ppm) axis (orientation from the fresh
+  `currentGraphDomain()`), and `computeGraphControls` swaps the disabled
+  pan-left/right edges for reversed. The buttons move the view the same VISUAL
+  direction on Time and ppm graphs.
+- **Hidden BOLD pays nothing.** `collectAssociatedTimeGraphData` samples the volume
+  time-course only inside `if (showVol)`; a hidden BOLD (or a volume without
+  `matRAS`) does NOT block a physio-only graph, and the cache key omits the
+  crosshair when BOLD is hidden.
+- **Assoc cache is cursor-independent + invalidated on mutation.** The key omits
+  `frame4D` (series don't depend on the frame; only `cursorX` does — re-stamped on
+  cache hit), so frame stepping reuses the cached series. `_assocCache` is cleared
+  by `invalidateGraphCache()` on signal/volume add/remove/load (ids are
+  name-derived, so a same-URL reload must not reuse stale data).
+- **Controls gated on a width budget, title yields.** Buttons render when the plot
+  is wide enough to hold the button span plus the leftmost x-label and a gap
+  (`plotWidth > fontSize*8.2 + labelWidth + fontSize*1.5`) — relaxed from the old
+  flat `22*fontSize` so the typical side-strip association graph (e.g.
+  `physio.bold.html`) still shows controls. The centered axis title is shifted
+  right when needed to clear the buttons (`titleX = max(center, buttonsRight +
+  0.5fs + halfLabel)`), so title and buttons never overlap. Rug lanes are capped
+  to a bottom band.
+- **Pan before emit on frame change.** `setFrame4D` calls `ensureGraphCursorVisible()`
+  (which pans the window via `panViewWindowTo`) BEFORE `createOnLocationChange()`
+  emits, so the windowed `signalValuesAt` readout samples the NEW window — not the
+  pre-pan one. Reordering matters whenever a zoomed window must follow a
+  Back/Forward step.
+- **Zoom centers on the VISIBLE marker.** `graphZoom` centers on the fresh
+  `currentGraphDomain().cursorX` (the live frame/association marker) rather than a
+  stale `signalCursorX` left from an old graph click, so zooming in keeps the
+  current frame in view.
+- **Pan/zoom derive from a fresh collect, never render-time cache.** `graphZoom`/
+  `graphPan`/`panViewWindowTo` call `currentGraphDomain()` (a fresh
+  `collectGraphData()`, `_assocCache`-backed) for the full domain + orientation +
+  cursor. There are NO persisted `_signalFullDomain`/`_signalAxisReversed` fields
+  — that render-time-to-setter bridge was removed because it made the setters
+  no-op before the first RAF and could act on a stale/hidden graph's domain.
+  `invalidateGraphCache()` therefore only clears `_assocCache`.
+- **`applyGraphViewWindow` is pure.** It returns a SHALLOW COPY with rewritten
+  `xAxis.min/max` and derives the full domain from `data.xAxis` each call (stamped
+  on the copy's `fullXDomain`) — it does NOT mutate the cached `GraphData` in
+  place (which would compound on repeated collects).
+- **Axis chosen from the first VISIBLE plot.** `collectSignalGraphData` picks the
+  shared axis from the first resolved plot with `>= 1` series, not `resolved[0]`:
+  a hidden first signal (`selectedColumns: []`) still resolves to an empty-series
+  plot carrying its axis, and adopting it would suppress a later visible signal on
+  a different axis. Returns null when no plot has a visible series.
+- **Visibility changes refresh the readout.** `graphShowVolumeTimecourse` and
+  `setSignal({ display })` call `refreshSignalLocation()` after redraw, so the
+  footer doesn't keep reporting a just-hidden trace; when every trace is hidden the
+  readout is cleared (empty `signalLocationChange`) rather than left stale.
+- **Style setters clamp.** `graphLineWidth` to finite `[0,8]`, `graphLineAlpha` to
+  `[0,1]` (no NaN/Infinity into the line buffer). All three new graph settings
+  (`graphShowVolumeTimecourse`/`graphLineWidth`/`graphLineAlpha`) also have flat
+  constructor options (`NiiVueOptions`), matching `graphNormalizeValues`.
+
+Graph line style (`ui.graph`, controller `graphLineWidth` / `graphLineAlpha`):
+`lineWidth` is a RELATIVE multiplier on the DPI-scaled base thickness (default 1;
+`<1` thins dense traces so they stop overlapping; grid/axis lines unaffected).
+`lineAlpha` (0..1, default 1) makes the multi-series DATA lines translucent so
+overlapping traces are readable at intersections (legend/rug stay opaque). Both
+applied in `view/NVGraph.ts`; the line renderer already alpha-blends (the cursor
+draws at 0.5). Additive blending is NOT used (translucency was chosen as
+background-independent; additive would need a graph-pass blend-mode change).
 
 Third audit round (all landed):
 

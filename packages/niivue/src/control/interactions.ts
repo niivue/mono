@@ -97,12 +97,21 @@ function handleGraphHitTest(ctrl: NiiVueGPU, x: number, y: number): boolean {
   if (hit.type === 'frame' && hit.frame >= 0) {
     const vol = ctrl.volumes[0]
     if (vol?.id) {
-      ctrl.setFrame4D(vol.id, hit.frame)
+      ctrl
+        .setFrame4D(vol.id, hit.frame)
+        .catch((e) => log.error('setFrame4D failed', e))
     }
     return true
   }
   if (hit.type === 'signalCursor') {
     ctrl.setSignalCursorFraction(hit.xFrac)
+    return true
+  }
+  if (hit.type === 'graphControl') {
+    if (hit.id === 'zoomIn') ctrl.graphZoom(2)
+    else if (hit.id === 'zoomOut') ctrl.graphZoom(0.5)
+    else if (hit.id === 'panLeft') ctrl.graphPan(-0.25)
+    else if (hit.id === 'panRight') ctrl.graphPan(0.25)
     return true
   }
   // Inside graph but not on a specific element — consume to prevent tile hit
@@ -1126,7 +1135,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       const delta = evt.deltaY > 0 ? 1 : -1
       if (vol?.id && (vol.nFrame4D ?? 1) > 1) {
         // Spatial 4D volume: discrete per-frame stepping takes precedence.
-        ctrl.setFrame4D(vol.id, (vol.frame4D ?? 0) + delta)
+        // setFrame4D keeps the marker in the zoom window (ensureGraphCursorVisible).
+        ctrl
+          .setFrame4D(vol.id, (vol.frame4D ?? 0) + delta)
+          .catch((e) => log.error('setFrame4D failed', e))
       } else if (ctrl.signals.length > 0) {
         // Fallback for a non-spatial signal graph: scrub the cursor. Negated so
         // the marker moves on screen the same way the 4D frame marker does.
@@ -1210,6 +1222,14 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (!dblHit) return // outside this instance's bounds
     setNextActionTag('dblclick')
     const [px, py] = dblHit
+    // A double-click inside the signal graph resets the zoom/pan to the full
+    // view (there is nothing to depth-pick on the 2-D plot, and it is the only
+    // one-click way back from a deep zoom).
+    const graphLayout = ctrl.view?.graphLayout as GraphLayout | null
+    if (graphHitTest(px, py, graphLayout)) {
+      ctrl.graphResetView()
+      return
+    }
     const mm = (await ctrl.view?.depthPick(px, py)) ?? null
     if (mm) {
       ctrl.setCrosshairPos(mm)

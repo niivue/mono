@@ -49,6 +49,8 @@ export default class NVModel {
   signals: NVSignal[]
   /** x-axis value of the signal graph cursor (null = no selection) */
   signalCursorX: number | null
+  /** Zoom/pan view window over the signal graph x-axis (null = full extent). */
+  signalViewWindow: [number, number] | null = null
   /** per-signal derived-plot memo, keyed by display state (transient cache) */
   private _signalPlotCache = new WeakMap<
     NVSignal,
@@ -209,7 +211,10 @@ export default class NVModel {
         rulerWidth: options.rulerWidth,
       }),
       ...((options.graphNormalizeValues !== undefined ||
-        options.graphIsRangeCalMinMax !== undefined) && {
+        options.graphIsRangeCalMinMax !== undefined ||
+        options.graphShowVolumeTimecourse !== undefined ||
+        options.graphLineWidth !== undefined ||
+        options.graphLineAlpha !== undefined) && {
         graph: {
           ...NVConstants.UI_DEFAULTS.graph,
           ...(options.graphNormalizeValues !== undefined && {
@@ -217,6 +222,15 @@ export default class NVModel {
           }),
           ...(options.graphIsRangeCalMinMax !== undefined && {
             isRangeCalMinMax: options.graphIsRangeCalMinMax,
+          }),
+          ...(options.graphShowVolumeTimecourse !== undefined && {
+            showVolumeTimecourse: options.graphShowVolumeTimecourse,
+          }),
+          ...(options.graphLineWidth !== undefined && {
+            lineWidth: options.graphLineWidth,
+          }),
+          ...(options.graphLineAlpha !== undefined && {
+            lineAlpha: options.graphLineAlpha,
           }),
         },
       }),
@@ -338,6 +352,7 @@ export default class NVModel {
     this.volumes = []
     this.signals = []
     this.signalCursorX = null
+    this.signalViewWindow = null
     this.clipPlanes = Array(NVConstants.NUM_CLIP_PLANE)
       .fill(null)
       .flatMap(() => [...NVConstants.DEFAULT_CLIP_PLANE])
@@ -366,6 +381,16 @@ export default class NVModel {
     return this.signals.find((s) => s.id === id)
   }
 
+  /**
+   * Drop the associated-graph memo. Must be called whenever the signal or volume
+   * set changes: the cached `GraphData` holds sampled BOLD arrays + references to
+   * physio arrays, and its key is id-based (ids are derived from name/URL, so a
+   * same-URL reload would otherwise reuse stale data).
+   */
+  private invalidateGraphCache(): void {
+    this._assocCache = null
+  }
+
   /** Add a signal, ensuring its id is unique within the model. */
   addSignal(signal: NVSignal): void {
     let id = signal.id
@@ -373,13 +398,16 @@ export default class NVModel {
     while (this.signals.some((s) => s.id === id)) id = `${signal.id}-${n++}`
     signal.id = id
     this.signals.push(signal)
+    this.invalidateGraphCache()
   }
 
   removeSignal(index: number): NVSignal | null {
     if (index < 0 || index >= this.signals.length) return null
     const [removed] = this.signals.splice(index, 1)
-    // The cursor belonged to the previous signal set; clear it.
+    // The cursor/zoom belonged to the previous signal set; clear them.
     this.signalCursorX = null
+    this.signalViewWindow = null
+    this.invalidateGraphCache()
     return removed
   }
 
@@ -756,11 +784,17 @@ export default class NVModel {
       if (plot) resolved.push({ sig, plot })
     }
     if (resolved.length === 0) return null
-    // Only signals whose axis matches the first resolved signal's are merged, so
-    // a ppm spectrum and a time-axis physio trace never share one (misleading)
-    // axis. Incompatible signals are skipped (use one instance each, or a
-    // future multi-panel layout).
-    const axis = { ...resolved[0].plot.axis }
+    // Choose the common axis from the first VISIBLE plot (>= 1 series), not the
+    // first resolved one: a hidden first signal (`selectedColumns: []`) still
+    // resolves to an empty-series plot carrying its axis, and adopting that axis
+    // would reject a later visible signal on a different axis (e.g. a hidden ppm
+    // spectrum suppressing a visible time-axis physio trace). Only signals whose
+    // axis matches the lead's are merged, so a ppm spectrum and a time-axis
+    // physio trace never share one (misleading) axis; incompatible signals are
+    // skipped (use one instance each, or a future multi-panel layout).
+    const lead = resolved.find((r) => r.plot.series.length > 0)
+    if (!lead) return null
+    const axis = { ...lead.plot.axis }
     const series: GraphData['series'] = []
     const annotations: GraphData['annotations'] = []
     const mins: number[] = []
@@ -799,7 +833,7 @@ export default class NVModel {
       graphConfig: this.ui.graph,
       series,
       xAxis: axis,
-      showLegend: resolved[0].sig.display.showLegend,
+      showLegend: lead.sig.display.showLegend,
       // With no spatial data, let the plot fill the whole instance area.
       fullCanvas: this.isSignalOnlyScene(),
       cursorX: this.signalCursorX,
@@ -889,27 +923,40 @@ export default class NVModel {
     // change return the cached graph instead of resampling/normalizing again.
     const cp = this.scene.crosshairPos
     const attached = this.signals.filter((s) => s.attachedToId === vol.id)
-    const key = `${vol.id}|${vol.frame4D ?? 0}|${cp[0]},${cp[1]},${cp[2]}|${attached
-      .map((s) => `${s.id}:${JSON.stringify(s.display)}`)
-      .join(';')}`
-    if (this._assocCache && this._assocCache.key === key) {
-      return this._assocCache.data
-    }
-    const vy = this.sampleVolumeTimeCourse(vol)
-    if (!vy) return null
+    const showVol = this.ui.graph.showVolumeTimecourse !== false
     const nFrames = vol.nFrame4D ?? 1
     const tr = volumeTR(vol)
     const tMax = (nFrames - 1) * tr
+    // The marker tracks the current frame's time, but the SERIES values do not
+    // depend on the frame (only on the crosshair, and only when BOLD is shown).
+    // So the cache key omits frame4D, and the crosshair when BOLD is hidden — a
+    // frame step then reuses the cached series and just re-marks the cursor.
+    const cursorX = (vol.frame4D ?? 0) * tr
+    const key = `${vol.id}|${showVol}|${showVol ? `${cp[0]},${cp[1]},${cp[2]}` : ''}|${nFrames}|${tr}|${attached
+      .map((s) => `${s.id}:${JSON.stringify(s.display)}`)
+      .join(';')}`
+    if (this._assocCache && this._assocCache.key === key) {
+      const cached = this._assocCache.data
+      cached.cursorX = cursorX
+      return cached
+    }
     const series: GraphData['series'] = []
-    // 1) Volume time-course at the crosshair.
-    const vx = new Float32Array(nFrames)
-    for (let j = 0; j < nFrames; j++) vx[j] = j * tr
-    series.push({
-      label: 'BOLD',
-      x: vx,
-      y: this.normalizeWindow(vx, vy, 0, tMax),
-      rawY: vy,
-    })
+    // 1) Volume time-course at the crosshair (optional via showVolumeTimecourse).
+    //    Only sampled when shown — a hidden BOLD must not pay O(nFrames) sampling
+    //    nor suppress a physio-only graph when the volume lacks `matRAS`.
+    if (showVol) {
+      const vy = this.sampleVolumeTimeCourse(vol)
+      if (vy) {
+        const vx = new Float32Array(nFrames)
+        for (let j = 0; j < nFrames; j++) vx[j] = j * tr
+        series.push({
+          label: 'BOLD',
+          x: vx,
+          y: this.normalizeWindow(vx, vy, 0, tMax),
+          rawY: vy,
+        })
+      }
+    }
     // 2) Each attached physio trace at its native rate, clamped + normalized.
     //    Skip traces with no samples inside the imaging window (they would not
     //    draw and could otherwise feed an out-of-window readout).
@@ -926,7 +973,10 @@ export default class NVModel {
         })
       }
     }
-    if (series.length < 2) return null // need the volume plus >=1 physio trace
+    // Nothing visible -> no association graph. (Previously required volume + >=1
+    // physio; now any one visible series is enough, so the BOLD/physio traces can
+    // be toggled independently.)
+    if (series.length === 0) return null
     const data: GraphData = {
       lines: [],
       selectedColumn: -1,
@@ -939,7 +989,7 @@ export default class NVModel {
       showLegend: true,
       fullCanvas: false,
       // Marker at the current frame's time ties 4D scrubbing to the time axis.
-      cursorX: (vol.frame4D ?? 0) * tr,
+      cursorX,
     }
     this._assocCache = { key, data }
     return data
@@ -954,9 +1004,9 @@ export default class NVModel {
   collectGraphData(): GraphData | null {
     if (!this.ui.isGraphVisible) return null
     const associated = this.collectAssociatedTimeGraphData()
-    if (associated) return associated
+    if (associated) return this.applyGraphViewWindow(associated)
     const signalData = this.collectSignalGraphData()
-    if (signalData) return signalData
+    if (signalData) return this.applyGraphViewWindow(signalData)
     if (this.getMaxVols() < 2) return null
     const vol = this.volumes[0]
     if (!vol) return null
@@ -973,6 +1023,167 @@ export default class NVModel {
       nTotalFrame4D: vol.nTotalFrame4D ?? nFrames,
       graphConfig: this.ui.graph,
     }
+  }
+
+  /**
+   * Apply the zoom/pan view window (if any) to a signal-mode GraphData. The
+   * input's xAxis is always the FULL extent (the collector sets it and we never
+   * mutate it), so the full domain is derived from it directly each call — no
+   * once-captured persistence, and the cached GraphData is left untouched
+   * (render/interaction state don't alias it). Stamps `fullXDomain` on the
+   * returned copy so `graphZoom`/`graphPan` can re-derive the window/orientation
+   * from a fresh collect, and rewrites `xAxis.min/max` to the window.
+   */
+  private applyGraphViewWindow(data: GraphData): GraphData {
+    if (!data.series || !data.xAxis) return data
+    const ax = data.xAxis
+    // Only scan the data when the collector left an axis bound open.
+    const [dMin, dMax] =
+      ax.min == null || ax.max == null
+        ? this.signalDataXExtent(data)
+        : [ax.min, ax.max]
+    const full: [number, number] = [ax.min ?? dMin, ax.max ?? dMax]
+    const w = this.signalViewWindow
+    const [lo, hi] = w ? this.clampSignalWindow(w, full) : full
+    return { ...data, xAxis: { ...ax, min: lo, max: hi }, fullXDomain: full }
+  }
+
+  /**
+   * Current signal-graph full x-domain + axis orientation, derived from a FRESH
+   * `collectGraphData()` (signal mode only). This is the single source of truth
+   * for `graphZoom`/`graphPan`/`panViewWindowTo` — they no longer depend on
+   * render-time state, so they work immediately after `loadSignals()` (before the
+   * first RAF) and are genuine no-ops when no signal graph is shown.
+   */
+  private currentGraphDomain(): {
+    full: [number, number]
+    reversed: boolean
+    cursorX: number | null
+  } | null {
+    const data = this.collectGraphData()
+    if (!data?.series || !data.fullXDomain) return null
+    return {
+      full: data.fullXDomain,
+      reversed: data.xAxis?.reversed ?? false,
+      cursorX: data.cursorX ?? null,
+    }
+  }
+
+  /** Min/max x across all series (single pass); falls back to [0, 1] if empty. */
+  private signalDataXExtent(data: GraphData): [number, number] {
+    let mn = Number.POSITIVE_INFINITY
+    let mx = Number.NEGATIVE_INFINITY
+    for (const s of data.series ?? [])
+      for (let i = 0; i < s.y.length; i++) {
+        const xv = s.x ? s.x[i] : i
+        if (xv < mn) mn = xv
+        if (xv > mx) mx = xv
+      }
+    return [Number.isFinite(mn) ? mn : 0, Number.isFinite(mx) ? mx : 1]
+  }
+
+  /** Clamp a window to the full domain: inside bounds, width <= full width. */
+  private clampSignalWindow(
+    w: [number, number],
+    full: [number, number],
+  ): [number, number] {
+    const fullW = full[1] - full[0]
+    let width = Math.min(Math.max(w[1] - w[0], fullW / 1000), fullW)
+    if (!(width > 0)) width = fullW
+    let lo = w[0]
+    let hi = lo + width
+    if (lo < full[0]) {
+      lo = full[0]
+      hi = lo + width
+    }
+    if (hi > full[1]) {
+      hi = full[1]
+      lo = hi - width
+    }
+    return [Math.max(full[0], lo), Math.min(full[1], hi)]
+  }
+
+  /**
+   * Zoom the signal graph x-window by `factor` (>1 in, <1 out), centred on the
+   * VISIBLE marker (`GraphData.cursorX` — the current-frame time in associated
+   * mode, which `signalCursorX` does not track) when it is in view, else the
+   * window centre. Zooming out past the full extent resets to the full view.
+   */
+  graphZoom(factor: number): void {
+    if (!(factor > 0)) return
+    const domain = this.currentGraphDomain()
+    if (!domain) return
+    const full = domain.full
+    const fullW = full[1] - full[0]
+    const cur = this.signalViewWindow ?? full
+    const newW = (cur[1] - cur[0]) / factor
+    if (newW >= fullW) {
+      this.signalViewWindow = null
+      return
+    }
+    const cx = domain.cursorX ?? this.signalCursorX
+    const center =
+      cx !== null && cx !== undefined && cx >= cur[0] && cx <= cur[1]
+        ? cx
+        : (cur[0] + cur[1]) / 2
+    this.signalViewWindow = this.clampSignalWindow(
+      [center - newW / 2, center + newW / 2],
+      full,
+    )
+  }
+
+  /**
+   * Pan the zoom window just enough to bring data value `x` inside it (used when
+   * the wheel steps the marker past the visible edge). No-op when the full extent
+   * is shown or `x` is already visible. Returns true if the window moved.
+   */
+  panViewWindowTo(x: number): boolean {
+    if (!Number.isFinite(x)) return false
+    const win = this.signalViewWindow
+    const full = this.currentGraphDomain()?.full
+    if (!win || !full) return false
+    const [lo, hi] = win
+    if (x >= lo && x <= hi) return false
+    const width = hi - lo
+    let nLo: number
+    let nHi: number
+    if (x < lo) {
+      nLo = x
+      nHi = x + width
+    } else {
+      nHi = x
+      nLo = x - width
+    }
+    if (nLo < full[0]) {
+      nLo = full[0]
+      nHi = nLo + width
+    }
+    if (nHi > full[1]) {
+      nHi = full[1]
+      nLo = nHi - width
+    }
+    this.signalViewWindow = [nLo, nHi]
+    return true
+  }
+
+  /**
+   * Pan the signal graph x-window by `screenFrac` of its width in SCREEN space
+   * (negative = visually left). Translated to data-x via the axis orientation so
+   * the buttons move the view the same visual direction on a reversed (ppm) axis.
+   */
+  graphPan(screenFrac: number): void {
+    const domain = this.currentGraphDomain()
+    if (!domain) return
+    const full = domain.full
+    const cur = this.signalViewWindow
+    if (!cur) return // full view: nothing to pan
+    const width = cur[1] - cur[0]
+    if (width >= full[1] - full[0]) return
+    const d = screenFrac * width * (domain.reversed ? -1 : 1)
+    this.signalViewWindow = this.clampSignalWindow(
+      [cur[0] + d, cur[1] + d],
+      full,
+    )
   }
 
   removeMesh(index: number): void {
@@ -1015,6 +1226,7 @@ export default class NVModel {
     this._releaseGPU(this.volumes[index])
     this.volumes.splice(index, 1)
     this._setupPivot3D()
+    this.invalidateGraphCache()
   }
 
   /**
@@ -1040,6 +1252,7 @@ export default class NVModel {
     }
     this.volumes = []
     this._setupPivot3D()
+    this.invalidateGraphCache()
   }
 
   static readonly volumeDefaults = {
@@ -1078,6 +1291,7 @@ export default class NVModel {
     const prepared = await NVModel.prepareVolume(volume)
     this.volumes.push(prepared)
     this._setupPivot3D()
+    this.invalidateGraphCache()
   }
 
   async loadVolume(volume: ImageFromUrlOptions): Promise<void> {

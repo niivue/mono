@@ -604,11 +604,15 @@ Sparse data lines (e.g. the volume time-course) are drawn with per-segment x-cli
 is off-window (no dropped leftmost/rightmost segment).
 
 Reset to full view: `graphResetView()` (controller) clears `signalViewWindow`,
-and a DOUBLE-CLICK on the signal graph does the same (the dblclick handler in
-`control/interactions.ts` checks `graphHitTest` first and resets instead of
-depth-picking — there is nothing to depth-pick on the 2-D plot). This is the
-one-click way back from a deep zoom; zooming out past the full extent still
-auto-resets too. A double-click on a spatial slice is unaffected (still depth-picks).
+and a DOUBLE-CLICK on the zoom-out (`-`) button does the same. The reset is
+restricted to that one button: the dblclick handler in `control/interactions.ts`
+resets only when `graphHitTest` returns the `zoomOut` control, so a double-click
+on `+`/`<`/`>` keeps its single-click action (zoom in / pan) instead of being
+overridden by a reset, and a plot double-click just scrubs. Any graph hit still
+consumes the dblclick so it does not fall through to depth-pick (nothing to pick
+on the 2-D plot). This is the one-click way back from a deep zoom; zooming out
+past the full extent still auto-resets too. A double-click on a spatial slice is
+unaffected (still depth-picks).
 
 Marker vs window: explicit zoom/pan may leave the cursor marker off-window (zoom
 only re-centres on the marker when it is already visible; the pan buttons can

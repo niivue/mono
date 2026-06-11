@@ -1222,12 +1222,18 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (!dblHit) return // outside this instance's bounds
     setNextActionTag('dblclick')
     const [px, py] = dblHit
-    // A double-click inside the signal graph resets the zoom/pan to the full
-    // view (there is nothing to depth-pick on the 2-D plot, and it is the only
-    // one-click way back from a deep zoom).
+    // Double-clicking the zoom-out ("-") button jumps straight to the full view
+    // (the one-click way back from a deep zoom). The reset is restricted to that
+    // button: a double-click on "+"/"<"/">" must keep its single-click action
+    // (zoom in / pan) rather than be overridden by a reset, and a plot
+    // double-click just scrubs. Any graph hit still consumes the event so it does
+    // not fall through to depth-pick (there is nothing to pick on the 2-D plot).
     const graphLayout = ctrl.view?.graphLayout as GraphLayout | null
-    if (graphHitTest(px, py, graphLayout)) {
-      ctrl.graphResetView()
+    const graphHit = graphHitTest(px, py, graphLayout)
+    if (graphHit) {
+      if (graphHit.type === 'graphControl' && graphHit.id === 'zoomOut') {
+        ctrl.graphResetView()
+      }
       return
     }
     const mm = (await ctrl.view?.depthPick(px, py)) ?? null

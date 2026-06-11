@@ -1,5 +1,5 @@
 {
-	"Columns":	["cardiac", "trigger"],
-	"SamplingFrequency":	200,
-	"StartTime":	-9.652
+  "Columns": ["cardiac", "trigger"],
+  "SamplingFrequency": 200,
+  "StartTime": -9.652
 }

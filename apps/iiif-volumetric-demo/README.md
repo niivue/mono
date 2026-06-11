@@ -25,7 +25,8 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   load a static chunk-major `uint8` shard from Vite's public assets via
   `Range: bytes=start-end`, or fetch Pawpawsaurus OME-Zarr chunk objects
   directly in the browser with `zarrita` and feed the decoded bytes
-  through the same `chunkSource` path as the OME-Zarr and WSI pages.
+  through the same `chunkSource` path as the OME-Zarr and WSI pages. See
+  [client-only Zarr streaming notes](docs/client-only-zarr-streaming.md).
 - `wsi.html` — DICOM whole-slide-imaging deep-zoom viewer. Renders a
   slide as a depth-1 RGB volume (2D axial = the slide face) with smooth,
   OpenSeadragon-style zoom/pan: scroll to zoom (cursor-anchored), drag to

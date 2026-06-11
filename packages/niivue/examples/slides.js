@@ -48,7 +48,10 @@ function backendFromUrl() {
 function manifestUrl() {
   const base = import.meta.env.BASE_URL || '/'
   const normalized = base.endsWith('/') ? base : `${base}/`
-  return new URL(`${normalized}${MANIFEST_PATH}`, window.location.href).toString()
+  return new URL(
+    `${normalized}${MANIFEST_PATH}`,
+    window.location.href,
+  ).toString()
 }
 
 function html(value) {
@@ -207,7 +210,11 @@ function zoomCentered(factor) {
 
 els.canvas.addEventListener('pointerdown', (event) => {
   els.canvas.setPointerCapture(event.pointerId)
-  drag = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY }
+  drag = {
+    pointerId: event.pointerId,
+    lastX: event.clientX,
+    lastY: event.clientY,
+  }
 })
 
 els.canvas.addEventListener('pointermove', (event) => {

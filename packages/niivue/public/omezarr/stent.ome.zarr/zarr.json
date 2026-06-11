@@ -1,0 +1,315 @@
+{
+  "attributes": {
+    "ome": {
+      "version": "0.5",
+      "multiscales": [
+        {
+          "axes": [
+            {
+              "name": "z",
+              "type": "space"
+            },
+            {
+              "name": "y",
+              "type": "space"
+            },
+            {
+              "name": "x",
+              "type": "space"
+            }
+          ],
+          "datasets": [
+            {
+              "path": "scale0/stent",
+              "coordinateTransformations": [
+                {
+                  "scale": [
+                    3.2,
+                    0.8398,
+                    0.8398
+                  ],
+                  "type": "scale"
+                },
+                {
+                  "translation": [
+                    -278.40000000000003,
+                    -214.9888,
+                    -214.9888
+                  ],
+                  "type": "translation"
+                }
+              ]
+            },
+            {
+              "path": "scale1/stent",
+              "coordinateTransformations": [
+                {
+                  "scale": [
+                    3.2,
+                    1.6796,
+                    1.6796
+                  ],
+                  "type": "scale"
+                },
+                {
+                  "translation": [
+                    -278.40000000000003,
+                    -214.56889999999999,
+                    -214.56889999999999
+                  ],
+                  "type": "translation"
+                }
+              ]
+            },
+            {
+              "path": "scale2/stent",
+              "coordinateTransformations": [
+                {
+                  "scale": [
+                    3.2,
+                    3.3592,
+                    3.3592
+                  ],
+                  "type": "scale"
+                },
+                {
+                  "translation": [
+                    -278.40000000000003,
+                    -213.7291,
+                    -213.7291
+                  ],
+                  "type": "translation"
+                }
+              ]
+            }
+          ],
+          "name": "stent",
+          "type": "dask_image_gaussian",
+          "metadata": {
+            "description": "Smoothed with a discrete gaussian filter to generate a scale space, ideal for intensity images. dask-image implementation based on scipy.",
+            "method": "dask_image.ndfilters.gaussian_filter",
+            "version": "2024.5.3"
+          },
+          "@type": "ngff:Image"
+        }
+      ],
+      "omero": {
+        "channels": [
+          {
+            "color": "FFFFFF",
+            "window": {
+              "min": 0.0,
+              "max": 4095.0,
+              "start": 0.999755859375,
+              "end": 1176.7784373680327
+            },
+            "label": ""
+          }
+        ]
+      }
+    }
+  },
+  "zarr_format": 3,
+  "consolidated_metadata": {
+    "kind": "inline",
+    "must_understand": false,
+    "metadata": {
+      "scale0": {
+        "attributes": {
+          "_ARRAY_DIMENSIONS": [
+            "z",
+            "y",
+            "x"
+          ]
+        },
+        "zarr_format": 3,
+        "consolidated_metadata": {
+          "kind": "inline",
+          "must_understand": false,
+          "metadata": {}
+        },
+        "node_type": "group"
+      },
+      "scale1": {
+        "attributes": {
+          "_ARRAY_DIMENSIONS": [
+            "z",
+            "y",
+            "x"
+          ]
+        },
+        "zarr_format": 3,
+        "consolidated_metadata": {
+          "kind": "inline",
+          "must_understand": false,
+          "metadata": {}
+        },
+        "node_type": "group"
+      },
+      "scale2": {
+        "attributes": {
+          "_ARRAY_DIMENSIONS": [
+            "z",
+            "y",
+            "x"
+          ]
+        },
+        "zarr_format": 3,
+        "consolidated_metadata": {
+          "kind": "inline",
+          "must_understand": false,
+          "metadata": {}
+        },
+        "node_type": "group"
+      },
+      "scale0/stent": {
+        "shape": [
+          174,
+          512,
+          512
+        ],
+        "data_type": "uint16",
+        "chunk_grid": {
+          "name": "regular",
+          "configuration": {
+            "chunk_shape": [
+              44,
+              128,
+              128
+            ]
+          }
+        },
+        "chunk_key_encoding": {
+          "name": "default",
+          "configuration": {
+            "separator": "/"
+          }
+        },
+        "fill_value": 0,
+        "codecs": [
+          {
+            "name": "bytes",
+            "configuration": {
+              "endian": "little"
+            }
+          },
+          {
+            "name": "zstd",
+            "configuration": {
+              "level": 0,
+              "checksum": false
+            }
+          }
+        ],
+        "attributes": {},
+        "dimension_names": [
+          "z",
+          "y",
+          "x"
+        ],
+        "zarr_format": 3,
+        "node_type": "array",
+        "storage_transformers": []
+      },
+      "scale1/stent": {
+        "shape": [
+          174,
+          256,
+          256
+        ],
+        "data_type": "uint16",
+        "chunk_grid": {
+          "name": "regular",
+          "configuration": {
+            "chunk_shape": [
+              44,
+              64,
+              128
+            ]
+          }
+        },
+        "chunk_key_encoding": {
+          "name": "default",
+          "configuration": {
+            "separator": "/"
+          }
+        },
+        "fill_value": 0,
+        "codecs": [
+          {
+            "name": "bytes",
+            "configuration": {
+              "endian": "little"
+            }
+          },
+          {
+            "name": "zstd",
+            "configuration": {
+              "level": 0,
+              "checksum": false
+            }
+          }
+        ],
+        "attributes": {},
+        "dimension_names": [
+          "z",
+          "y",
+          "x"
+        ],
+        "zarr_format": 3,
+        "node_type": "array",
+        "storage_transformers": []
+      },
+      "scale2/stent": {
+        "shape": [
+          174,
+          128,
+          128
+        ],
+        "data_type": "uint16",
+        "chunk_grid": {
+          "name": "regular",
+          "configuration": {
+            "chunk_shape": [
+              44,
+              64,
+              64
+            ]
+          }
+        },
+        "chunk_key_encoding": {
+          "name": "default",
+          "configuration": {
+            "separator": "/"
+          }
+        },
+        "fill_value": 0,
+        "codecs": [
+          {
+            "name": "bytes",
+            "configuration": {
+              "endian": "little"
+            }
+          },
+          {
+            "name": "zstd",
+            "configuration": {
+              "level": 0,
+              "checksum": false
+            }
+          }
+        ],
+        "attributes": {},
+        "dimension_names": [
+          "z",
+          "y",
+          "x"
+        ],
+        "zarr_format": 3,
+        "node_type": "array",
+        "storage_transformers": []
+      }
+    }
+  },
+  "node_type": "group"
+}

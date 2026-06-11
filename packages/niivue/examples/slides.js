@@ -207,6 +207,43 @@ function showFallback(message) {
   els.fallback.setAttribute('aria-hidden', 'false')
 }
 
+// Let the user drag a floating panel (the HUD) out of the way of a tile.
+// Switches the element to left/top positioning and clamps it to the viewport.
+function makeDraggable(node) {
+  let dragging = null
+  node.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return
+    const rect = node.getBoundingClientRect()
+    dragging = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    }
+    node.setPointerCapture(event.pointerId)
+    node.classList.add('dragging')
+  })
+  node.addEventListener('pointermove', (event) => {
+    if (!dragging || dragging.pointerId !== event.pointerId) return
+    const width = node.offsetWidth
+    const height = node.offsetHeight
+    const maxX = Math.max(0, window.innerWidth - width)
+    const maxY = Math.max(0, window.innerHeight - height)
+    const x = Math.min(maxX, Math.max(0, event.clientX - dragging.offsetX))
+    const y = Math.min(maxY, Math.max(0, event.clientY - dragging.offsetY))
+    node.style.left = `${x}px`
+    node.style.top = `${y}px`
+    node.style.right = 'auto'
+    node.style.bottom = 'auto'
+  })
+  const end = (event) => {
+    if (!dragging || dragging.pointerId !== event.pointerId) return
+    dragging = null
+    node.classList.remove('dragging')
+  }
+  node.addEventListener('pointerup', end)
+  node.addEventListener('pointercancel', end)
+}
+
 function zoomCentered(factor) {
   if (!slide) return
   const screen = screenForCanvas()
@@ -297,6 +334,7 @@ async function loadSlide() {
 }
 
 async function main() {
+  makeDraggable(els.hud)
   view = await createView()
   await loadSlide()
 }

@@ -119,11 +119,17 @@
         background: rgba(5, 8, 8, 0.79);
         border-radius: 6px;
         padding: 10px 12px;
-        pointer-events: none;
+        pointer-events: auto;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
         font-family: ui-monospace, monospace;
         font-size: 0.72rem;
         line-height: 1.55;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34);
+      }
+      .hud.dragging {
+        cursor: grabbing;
       }
       .hud .title {
         color: var(--text);

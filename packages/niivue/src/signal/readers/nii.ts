@@ -65,13 +65,15 @@ export async function read(
       nPoints = Math.min(nPoints, available)
       nTransients = nPoints > 0 ? Math.floor(available / nPoints) : 0
     }
-    // pixDims[4] is in the header's temporal units; scale to seconds (the
-    // sidecar DwellTime fallback is already seconds). Mirrors volumeTR and the
-    // physio sampling-rate path that also applies temporalUnitScale.
+    // Dwell time in SECONDS. The sidecar DwellTime wins (sidecar-first, matching
+    // spectrometerFreq/nucleus resolution): a rounded, generic, or unit-
+    // misdeclared header pixdim would otherwise silently skew the ppm/Hz axis.
+    // The header pixDims[4] fallback is in the header's temporal units, so scale
+    // it to seconds via xyzt_units (mirrors volumeTR / the physio path).
+    const headerDwell =
+      pixDims[4] > 0 ? pixDims[4] * temporalUnitScale(hdr.xyzt_units) : 0
     const dwell =
-      pixDims[4] > 0
-        ? pixDims[4] * temporalUnitScale(hdr.xyzt_units)
-        : (meta.dwellTime ?? 0)
+      meta.dwellTime && meta.dwellTime > 0 ? meta.dwellTime : headerDwell
     return {
       kind: 'spectroscopy',
       fid,

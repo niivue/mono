@@ -488,8 +488,12 @@ export function derivePhysioSeries(
   )
   if (trigIdx >= 0 && series.length > 0) {
     const col = columns[trigIdx]
+    // Bound to the x-domain length `n` (= columns[0].length): the TSV reader pads
+    // columns equal, but a programmatic raw could supply a longer trigger column,
+    // which would index past the x-array and yield undefined positions.
+    const m = Math.min(n, col.length)
     const triggers: number[] = []
-    for (let i = 0; i < col.length; i++) {
+    for (let i = 0; i < m; i++) {
       const v = col[i]
       if (Number.isFinite(v) && v !== 0) triggers.push(x ? x[i] : i)
     }

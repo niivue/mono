@@ -244,6 +244,103 @@ describe('missing-data rug (NaN gaps)', () => {
   })
 })
 
+describe('trigger rug (BIDS triggers)', () => {
+  // Trigger ticks are short VERTICAL lane segments whose TOP sits AT the plot top
+  // (lane 0) or below it (stacked lanes) — never near the bottom. Mirror of the
+  // missing-data rug helper but anchored to pT instead of the plot bottom.
+  function triggerTicks(lines: LineCall[], pT: number, pH: number): LineCall[] {
+    return lines.filter(
+      (l) =>
+        l.x0 === l.x1 && // vertical
+        Math.abs(l.y1 - l.y0) < 0.25 * pH && // short (not a full grid vertical)
+        Math.min(l.y0, l.y1) >= pT - 1 && // top endpoint at/below the plot top
+        Math.max(l.y0, l.y1) <= pT + 0.25 * pH, // within the top band, not bottom
+    )
+  }
+
+  test('drawsATickPerVisibleTrigger', () => {
+    const data = signalData([
+      { label: 'a', x: [0, 1, 2, 3, 4], y: [1, 2, 3, 4, 5], triggers: [1, 3] },
+    ])
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const [, pT, , pH] = layout.plotLTWH
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    expect(triggerTicks(lines, pT, pH).length).toBe(2)
+  })
+
+  test('clipsTriggersToVisibleWindow', () => {
+    // triggers at x=1,3,5,7 but window is [0,4] -> only 1 and 3 draw
+    const data = signalData(
+      [{ label: 'a', x: [0, 2, 4], y: [1, 2, 3], triggers: [1, 3, 5, 7] }],
+      { xAxis: { label: 'x', reversed: false, min: 0, max: 4 } },
+    )
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const [, pT, , pH] = layout.plotLTWH
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    expect(triggerTicks(lines, pT, pH).length).toBe(2)
+  })
+
+  test('decimatesToAtMostOneTickPerPixelColumn', () => {
+    const n = 4000
+    const triggers = Array.from({ length: n }, (_, i) => i)
+    const data = signalData([
+      { label: 'a', x: [0, n - 1], y: [1, 1], triggers },
+    ])
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const [, pT, pW, pH] = layout.plotLTWH
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    const ticks = triggerTicks(lines, pT, pH)
+    expect(ticks.length).toBeGreaterThan(0)
+    expect(ticks.length).toBeLessThanOrEqual(Math.ceil(pW) + 1)
+  })
+
+  test('multipleSignalsStackIntoSeparateLanes', () => {
+    const data = signalData([
+      { label: 'a', x: [0, 1, 2], y: [1, 2, 3], triggers: [1] },
+      { label: 'b', x: [0, 1, 2], y: [3, 2, 1], triggers: [1] },
+    ])
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const [, pT, , pH] = layout.plotLTWH
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    const ticks = triggerTicks(lines, pT, pH)
+    expect(ticks.length).toBe(2)
+    expect(ticks[0].x0).toBeCloseTo(ticks[1].x0, 5)
+    // different lanes -> different y ranges
+    expect(Math.max(ticks[0].y0, ticks[0].y1)).not.toBeCloseTo(
+      Math.max(ticks[1].y0, ticks[1].y1),
+      5,
+    )
+  })
+
+  test('carriesCustomSeriesColorIntoTicks', () => {
+    const data = signalData([
+      {
+        label: 'a',
+        x: [0, 1, 2],
+        y: [1, 2, 3],
+        triggers: [1],
+        color: [0.1, 0.2, 0.3, 1],
+      },
+    ])
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const [, pT, , pH] = layout.plotLTWH
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    const ticks = triggerTicks(lines, pT, pH)
+    expect(ticks.length).toBe(1)
+    expect(ticks[0].color).toEqual([0.1, 0.2, 0.3, 1])
+  })
+})
+
 describe('signal-mode hit test + cursor', () => {
   test('plotClickReturnsSignalCursorFraction', () => {
     const data = signalData([{ label: 'a', x: null, y: [1, 2, 3] }])

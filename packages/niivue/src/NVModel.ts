@@ -960,9 +960,14 @@ export default class NVModel {
         const vx = new Float32Array(nFrames)
         for (let j = 0; j < nFrames; j++) vx[j] = j * tr
         // Label the time-course with the volume's basename (this runs for ANY
-        // attached 4D volume, not just BOLD fMRI); fall back to 'volume'.
+        // attached 4D volume, not just BOLD fMRI); fall back to 'volume'. Strip
+        // the directory and one trailing image extension (+ .gz) rather than
+        // splitting on the first dot, so a dotted name like
+        // `sub-01.task-rest.bold.nii.gz` keeps its context.
         const volLabel =
-          (vol.name ?? '').split(/[\\/]/).pop()?.split('.')[0] || 'volume'
+          ((vol.name ?? '').split(/[\\/]/).pop() ?? '')
+            .replace(/\.gz$/i, '')
+            .replace(/\.[^.]+$/, '') || 'volume'
         series.push({
           label: volLabel,
           x: vx,

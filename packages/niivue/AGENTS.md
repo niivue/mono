@@ -846,7 +846,12 @@ amplified); no committed Playwright e2e for the svs demo (manual headless smoke
 each round, matching the repo's manual-rendering-verification convention);
 ambiguous-NIfTI double read (dispatcher sniffs then loader re-reads);
 `loadImage` keeps append semantics for signals by design; per-draw O(samples)
-domain/range scans in the graph; incompatible signals are silently dropped from
+domain/range scans in the graph (a binary-searched visible slice per monotonic
+x-array, threaded as `[start,end)` through the builders, is the deferred fix);
+graph trigger positions are stored as a boxed `number[]` rather than a
+`Float32Array` (fine for sparse event channels; revisit if a dense trigger column
+duplicates a large array into the plot cache); incompatible signals are silently
+dropped from
 a merged graph (warning/event is a future item); public setters to correct
 `SamplingFrequency`/`StartTime`/`SpectrometerFrequency`/`DwellTime` after load
 are not exposed (`setSignal` updates display/attachment only); rapid graph

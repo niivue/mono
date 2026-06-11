@@ -101,13 +101,13 @@ export function prepareMrsiVolume(
     nTransients =
       perFrame > 0 ? Math.max(1, Math.floor(available / perFrame)) : 1
   }
-  // pixDims[4] is in the header's temporal units; scale to seconds (the sidecar
-  // DwellTime fallback is already seconds) so a ms/us header gives the right
-  // frequency axis. Mirrors volumeTR.
+  // Dwell time in SECONDS. The sidecar DwellTime wins (sidecar-first, matching
+  // spectrometerFreq/nucleus); the header pixDims[4] fallback is scaled to
+  // seconds via xyzt_units so a ms/us header gives the right frequency axis.
+  const headerDwell =
+    hdr.pixDims[4] > 0 ? hdr.pixDims[4] * temporalUnitScale(hdr.xyzt_units) : 0
   const dwell =
-    hdr.pixDims[4] > 0
-      ? hdr.pixDims[4] * temporalUnitScale(hdr.xyzt_units)
-      : (meta.dwellTime ?? 0)
+    meta.dwellTime && meta.dwellTime > 0 ? meta.dwellTime : headerDwell
   const spectrometerFreq =
     meta.spectrometerFrequency ?? meta.imagingFrequency ?? null
   const nucleus = meta.resonantNucleus ?? '1H'

@@ -2599,10 +2599,12 @@ export default class NiiVueGPU extends EventTarget {
       return
     }
     const maxFrame = (vol.nFrame4D ?? 1) - 1
-    // Guard NaN/Infinity from a public caller: Math.min(NaN, max) is NaN, and
-    // NaN === frame4D is false, so an unguarded NaN would be assigned + uploaded.
+    // frame4D is a frame INDEX: round to an integer and clamp. Guard NaN/Infinity
+    // from a public caller (Math.min(NaN, max) is NaN, and NaN === frame4D is
+    // false, so an unguarded NaN would be assigned + uploaded); a fractional
+    // value like 1.5 is rounded rather than driving a fractional frame.
     const clamped = Number.isFinite(frame)
-      ? Math.max(0, Math.min(frame, maxFrame))
+      ? Math.max(0, Math.min(Math.round(frame), maxFrame))
       : (vol.frame4D ?? 0)
     if (clamped === vol.frame4D) return
     vol.frame4D = clamped

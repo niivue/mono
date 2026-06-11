@@ -72,4 +72,14 @@ describe('nii signal reader (real NIfTI-MRS SVS)', () => {
     })) as NVSignalSpectroscopyRaw
     expect(raw.spectrometerFreq).toBeCloseTo(297.155, 3)
   })
+
+  test('sidecarDwellTimeOverridesHeaderPixdim', async () => {
+    const buffer = toArrayBuffer('svs_se_30.nii.gz')
+    // Header pixdim dwell is 0.0005 s; a sidecar DwellTime (seconds) must win,
+    // matching the sidecar-first resolution of spectrometerFreq/nucleus.
+    const raw = (await read(buffer, 'svs_se_30.nii.gz', {
+      dwellTime: 0.001,
+    })) as NVSignalSpectroscopyRaw
+    expect(raw.dwell).toBeCloseTo(0.001, 7)
+  })
 })

@@ -475,7 +475,7 @@ function drawTriggerRug(
   const yBottom = yTop + Math.max(1, laneH - 1)
   const seen = new Set<number>()
   for (const xv of triggers) {
-    if (xv < xMin || xv > xMax) continue // outside the visible window
+    if (!Number.isFinite(xv) || xv < xMin || xv > xMax) continue // off-window/invalid
     const px = Math.round(mapSignalX(xv, xMin, xMax, pL, pW, reversed))
     if (px < pL || px > pL + pW || seen.has(px)) continue
     seen.add(px)

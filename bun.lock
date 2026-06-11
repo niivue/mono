@@ -92,6 +92,7 @@
       "name": "iiif-volumetric-demo",
       "dependencies": {
         "@niivue/niivue": "workspace:*",
+        "zarrita": "^0.7.3",
       },
       "devDependencies": {
         "@niivue/dev-images": "workspace:*",

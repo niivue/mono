@@ -34,6 +34,7 @@ const HOST = process.env.HOST || '127.0.0.1'
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://${HOST}:${PORT}`
 const FIXTURES_DIR =
   process.env.FIXTURES_DIR || path.resolve(__dirname, '..', 'fixtures')
+const OMEZARR_FIXTURES_DIR = path.join(FIXTURES_DIR, 'omezarr')
 
 interface NiivuegpuPackage {
   name: string
@@ -126,6 +127,21 @@ async function main(): Promise<void> {
   app.use(cors())
   app.use(morgan('tiny'))
   app.use(express.static(path.resolve(__dirname, '..', 'public')))
+
+  if (fs.existsSync(OMEZARR_FIXTURES_DIR)) {
+    console.log(`Mounting OME-Zarr fixture store from ${OMEZARR_FIXTURES_DIR}`)
+    app.use(
+      '/zarr',
+      express.static(OMEZARR_FIXTURES_DIR, {
+        dotfiles: 'allow',
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('.json')) {
+            res.set('Content-Type', 'application/json')
+          }
+        },
+      }),
+    )
+  }
 
   if (NIIVUEGPU_DIST) {
     console.log(`Mounting niivuegpu dist from ${NIIVUEGPU_DIST}`)

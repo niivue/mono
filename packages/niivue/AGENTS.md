@@ -444,19 +444,24 @@ volume/mesh readers — export `extensions` + `read`). Two kinds, discriminated 
   row is treated as column labels. Labels prefer the sidecar `Columns`, then an
   in-file header, then a generic fallback.
   - **Trigger rug (top):** the optional MEASURE-SPECIFIC trigger column,
-    `<first-column>_trigger` (e.g. `cardiac_trigger` beside a `cardiac` recording,
-    as bidsphysio writes), marks events of the recorded signal (heartbeats,
-    breaths). The plain BIDS `trigger` column is the SCANNER VOLUME trigger (one
-    pulse per TR — the acquisition grid, not a feature of the signal) and is
-    intentionally NOT shown; using `<measure>_trigger` disambiguates the two,
-    which otherwise share the value `1`. `derivePhysioSeries` reads the
-    `<measure>_trigger` column as the x-positions of every cell that is BOTH
-    numeric and non-zero (`n/a`/NaN and 0 are not triggers), attaches them to the
-    signal's first plotted series as `triggers: number[]`, and `drawTriggerRug`
-    draws them as a tick rug along the TOP of the plot — the mirror of the bottom
-    missing-data rug (same per-pixel-column decimation, per-signal stacked lanes,
-    series colour). Trigger columns are not plotted as lines unless explicitly
-    selected.
+    `<label>_trigger` (e.g. `cardiac_trigger` beside a `cardiac` recording, as
+    bidsphysio writes), marks events of the recorded signal (heartbeats, breaths).
+    The plain BIDS `trigger` column is the SCANNER VOLUME trigger (one pulse per
+    TR — the acquisition grid, not a feature of the signal) and is intentionally
+    NOT shown; using `<measure>_trigger` disambiguates the two, which otherwise
+    share the value `1`. `derivePhysioSeries` resolves triggers PER PLOTTED
+    SERIES: for each non-trigger series labelled `L` it finds the `L_trigger`
+    column and attaches the x-positions of every cell that is BOTH numeric and
+    non-zero (`n/a`/NaN and 0 are not) as `triggers: number[]` on THAT series — so
+    a multi-measure file routes each measure's events to its own trace.
+    `drawTriggerRug` draws them as a tick rug along the TOP of the plot — the
+    mirror of the bottom missing-data rug (same per-pixel-column decimation,
+    per-signal stacked lanes, series colour). **Default selection excludes trigger
+    columns:** `selectedColumns: null` plots every NON-trigger column (label
+    `trigger` or `*_trigger`), so a bare `loadSignals` doesn't draw the binary
+    trigger channels as lines or let them dominate the y-range; an explicit
+    `selectedColumns` is honoured verbatim (a caller can still plot a trigger
+    column as a normal line).
 - `nii` — reuses `nifti-reader-js` header parsing but does **not** call
   `nii2volume` (which is GPU-volume specific and would discard complex data).
   Complex datatype -> spectroscopy FID; real non-spatial -> physio (dim4 is the

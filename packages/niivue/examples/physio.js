@@ -23,7 +23,10 @@ async function show(view) {
   await nv1.loadSignals(
     which.map((k) => ({
       url: FILES[k],
-      // column 0 is the recording; column 1 is the acquisition trigger
+      // Columns: [recording, "trigger" (scanner volume trigger), "<k>_trigger"
+      // (the measure's event trigger)]. selectedColumns [0] plots just the
+      // recording line; the <k>_trigger events are drawn as a top tick rug and
+      // the plain volume "trigger" is ignored (both handled by the reader).
       display: { selectedColumns: [0], showLegend: legendCheck.checked },
     })),
   )

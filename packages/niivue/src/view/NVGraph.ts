@@ -17,9 +17,10 @@ export type GraphSeries = {
   /** optional RGBA [0..1] override; otherwise a palette color is assigned */
   color?: [number, number, number, number]
   /**
-   * x-axis positions of BIDS trigger events (numeric, non-zero trigger-column
-   * cells), drawn as a tick rug along the TOP of the plot (mirrors the bottom
-   * missing-data rug). Absent when the signal has no trigger column.
+   * x-axis positions of this measure's BIDS event triggers (numeric, non-zero
+   * cells of its "<label>_trigger" column, NOT the plain scanner-volume
+   * "trigger"), drawn as a tick rug along the TOP of the plot (mirrors the bottom
+   * missing-data rug). Absent when the signal has no matching trigger column.
    */
   triggers?: number[]
 }

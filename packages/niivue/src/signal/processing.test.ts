@@ -285,7 +285,45 @@ describe('derivePhysioSeries', () => {
     const x = series[0].x as Float32Array
     expect(x[0]).toBeCloseTo(-2, 6) // startTime
     expect(x[1]).toBeCloseTo(-2 + 1 / 50, 6)
-    expect(series.length).toBe(3)
+    // default excludes the "trigger" + "cardiac_trigger" columns -> only cardiac
+    expect(series.length).toBe(1)
+    expect(series[0].label).toBe('cardiac')
+  })
+
+  test('defaultExcludesTriggerColumnsFromLines', () => {
+    const { series } = derivePhysioSeries(raw(50), defaultSignalDisplay())
+    const labels = series.map((s) => s.label)
+    expect(labels).toEqual(['cardiac'])
+    expect(labels).not.toContain('trigger')
+    expect(labels).not.toContain('cardiac_trigger')
+  })
+
+  test('multiMeasureRoutesTriggersPerSeries', () => {
+    // [cardiac, respiratory, trigger, cardiac_trigger, respiratory_trigger]
+    const r: NVSignalPhysioRaw = {
+      kind: 'physio',
+      columns: [
+        new Float32Array([1, 2, 3, 4]), // cardiac
+        new Float32Array([5, 6, 7, 8]), // respiratory
+        new Float32Array([1, 0, 1, 0]), // volume trigger
+        new Float32Array([0, 1, 0, 0]), // cardiac_trigger -> index 1
+        new Float32Array([0, 0, 0, 1]), // respiratory_trigger -> index 3
+      ],
+      columnLabels: [
+        'cardiac',
+        'respiratory',
+        'trigger',
+        'cardiac_trigger',
+        'respiratory_trigger',
+      ],
+      samplingFrequency: null,
+      startTime: 0,
+    }
+    const { series } = derivePhysioSeries(r, defaultSignalDisplay())
+    expect(series.map((s) => s.label)).toEqual(['cardiac', 'respiratory'])
+    // each measure gets ITS OWN trigger events, not the first column's
+    expect(series[0].triggers).toEqual([1]) // cardiac_trigger
+    expect(series[1].triggers).toEqual([3]) // respiratory_trigger
   })
 
   test('sampleAxisWhenRateUnknown', () => {

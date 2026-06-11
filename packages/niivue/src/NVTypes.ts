@@ -1149,10 +1149,11 @@ export type SignalSeries = {
   /** optional RGBA [0..1] override; otherwise the graph assigns a palette color */
   color?: [number, number, number, number]
   /**
-   * x-axis positions of BIDS trigger events (a trigger-column cell that is both
-   * numeric and non-zero) for this signal, drawn as a tick rug along the TOP of
-   * the plot. Carried on the signal's first plotted series; absent when the
-   * signal has no `trigger` column.
+   * x-axis positions of this measure's BIDS event triggers — the numeric,
+   * non-zero cells of its "<label>_trigger" column (e.g. `cardiac_trigger` for a
+   * `cardiac` series). Drawn as a tick rug along the TOP of the plot. The plain
+   * scanner volume "trigger" column is intentionally NOT used. Carried per
+   * plotted series; absent when the signal has no matching "<label>_trigger".
    */
   triggers?: number[]
 }

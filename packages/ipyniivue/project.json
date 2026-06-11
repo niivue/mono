@@ -29,7 +29,7 @@
       ]
     },
     "build": {
-      "command": "sh scripts/pixi-or-skip.sh python -m build --wheel --sdist --outdir dist .",
+      "command": "bun scripts/pixi-or-skip.ts python -m build --wheel --sdist --outdir dist .",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["codegen"],
       "inputs": [
@@ -45,8 +45,8 @@
         "cwd": "{projectRoot}",
         "commands": [
           "bunx biome check scripts",
-          "sh scripts/pixi-or-skip.sh ruff check src scripts examples",
-          "sh scripts/pixi-or-skip.sh ruff format --check src"
+          "bun scripts/pixi-or-skip.ts ruff check src scripts examples",
+          "bun scripts/pixi-or-skip.ts ruff format --check src"
         ],
         "parallel": false
       },
@@ -63,8 +63,8 @@
         "cwd": "{projectRoot}",
         "commands": [
           "bunx biome format --write scripts",
-          "sh scripts/pixi-or-skip.sh ruff format src scripts examples",
-          "sh scripts/pixi-or-skip.sh ruff check --fix src scripts examples"
+          "bun scripts/pixi-or-skip.ts ruff format src scripts examples",
+          "bun scripts/pixi-or-skip.ts ruff check --fix src scripts examples"
         ],
         "parallel": false
       },
@@ -79,7 +79,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "commands": ["bunx tsc --noEmit", "sh scripts/pixi-or-skip.sh mypy"],
+        "commands": ["bunx tsc --noEmit", "bun scripts/pixi-or-skip.ts mypy"],
         "parallel": false
       },
       "inputs": [
@@ -90,12 +90,12 @@
       ]
     },
     "test": {
-      "command": "sh scripts/pixi-or-skip.sh pytest",
+      "command": "bun scripts/pixi-or-skip.ts pytest",
       "options": { "cwd": "{projectRoot}" },
       "inputs": ["python", "{projectRoot}/pyproject.toml"]
     },
     "smoke": {
-      "command": "sh scripts/pixi-or-skip.sh smoke",
+      "command": "bun scripts/pixi-or-skip.ts smoke",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["codegen"],
       "inputs": [

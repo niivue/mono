@@ -470,7 +470,22 @@ export function derivePhysioSeries(
     for (let i = 0; i < n; i++) x[i] = startTime + i / samplingFrequency
     axisLabel = 'Time (s)'
   }
-  const selected = display.selectedColumns ?? columns.map((_, i) => i)
+  const labelOf = (i: number): string =>
+    typeof columnLabels[i] === 'string'
+      ? columnLabels[i].trim().toLowerCase()
+      : ''
+  // Trigger columns (BIDS / bidsphysio): the plain "trigger" is the SCANNER
+  // VOLUME trigger (one pulse per TR — the acquisition grid), and each measure
+  // adds its own "<measure>_trigger" event column. Both are markers, not signals.
+  const isTriggerLabel = (l: string): boolean =>
+    l === 'trigger' || l.endsWith('_trigger')
+  // Default (selectedColumns null) plots every NON-trigger column, so a bare
+  // loadSignals doesn't draw the binary trigger channels as lines (or let them
+  // dominate the y-range). An explicit selection is honoured verbatim — a caller
+  // can still plot a trigger column as a normal series if it asks for it.
+  const selected =
+    display.selectedColumns ??
+    columns.map((_, i) => i).filter((i) => !isTriggerLabel(labelOf(i)))
   const series: SignalSeries[] = selected
     .filter((i) => i >= 0 && i < columns.length)
     .map((i) => ({
@@ -478,28 +493,20 @@ export function derivePhysioSeries(
       x,
       y: columns[i],
     }))
-  // Measure-specific trigger column (optional): the column labelled
-  // "<first-column>_trigger" (e.g. "cardiac_trigger" alongside a "cardiac"
-  // recording). In BIDS / bidsphysio the plain "trigger" column is the SCANNER
-  // VOLUME trigger (one pulse per TR), which we intentionally do NOT show — it is
-  // the acquisition grid, not a feature of the physiological signal. The
-  // "<measure>_trigger" column instead marks events of the recorded measure
-  // (heartbeats, breaths). Each cell that is BOTH numeric and non-zero is an
-  // event (n/a -> NaN and 0 are not); the positions are reported on the first
-  // plotted series so the graph draws a trigger rug along the top. The trigger
-  // column itself is not plotted as a line unless the caller selects it.
-  const firstLabel =
-    typeof columnLabels[0] === 'string'
-      ? columnLabels[0].trim().toLowerCase()
-      : ''
-  const trigIdx = firstLabel
-    ? columnLabels.findIndex(
-        (l) =>
-          typeof l === 'string' &&
-          l.trim().toLowerCase() === `${firstLabel}_trigger`,
-      )
-    : -1
-  if (trigIdx >= 0 && series.length > 0) {
+  // Per-series trigger rug: for each plotted measure series, attach its
+  // "<label>_trigger" events (so a multi-measure file routes cardiac events to
+  // the cardiac trace and respiratory events to the respiratory trace). The plain
+  // scanner "trigger" column is never shown. Each cell that is BOTH numeric and
+  // non-zero is an event (n/a -> NaN and 0 are not); positions go on that series
+  // and the graph draws a tick rug along the top.
+  for (const s of series) {
+    const sLabel = s.label.trim().toLowerCase()
+    if (isTriggerLabel(sLabel)) continue // a trigger column plotted explicitly
+    const trigIdx = columnLabels.findIndex(
+      (l) =>
+        typeof l === 'string' && l.trim().toLowerCase() === `${sLabel}_trigger`,
+    )
+    if (trigIdx < 0) continue
     const col = columns[trigIdx]
     // Bound to the x-domain length `n` (= columns[0].length): the TSV reader pads
     // columns equal, but a programmatic raw could supply a longer trigger column,
@@ -510,7 +517,7 @@ export function derivePhysioSeries(
       const v = col[i]
       if (Number.isFinite(v) && v !== 0) triggers.push(x ? x[i] : i)
     }
-    if (triggers.length > 0) series[0].triggers = triggers
+    if (triggers.length > 0) s.triggers = triggers
   }
   const axis: SignalAxis = {
     label: axisLabel,

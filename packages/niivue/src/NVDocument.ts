@@ -537,9 +537,15 @@ export function applyDocumentToModel(
     model.annotation = { ...NVConstants.ANNOTATION_DEFAULTS }
   }
 
-  // Restore signals (data is embedded, so no async fetch is needed).
-  model.signals = (doc.signals ?? []).map(reconstructSignal)
+  // Restore signals (data is embedded, so no async fetch is needed). Route each
+  // through addSignal so unique-id handling and graph-cache invalidation run (a
+  // direct `model.signals = ...` would skip both, leaving a stale _assocCache for
+  // the new signal set). Reset the cursor AND the zoom/pan window so a window
+  // from the previous scene isn't clamped onto the restored graph.
+  model.signals = []
+  for (const sig of doc.signals ?? []) model.addSignal(reconstructSignal(sig))
   model.signalCursorX = null
+  model.signalViewWindow = null
 
   // Drawing bitmap restoration is handled by the controller's loadDocument()
   // after volumes are reconstructed, since we need a background volume to

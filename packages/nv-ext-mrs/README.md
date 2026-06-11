@@ -54,7 +54,7 @@ Lower-level helpers are also exported: `makeMetaboliteMap`, `paddedPpmRange`,
 
 ## Status
 
-v1 covers navigation + spectrum + manipulation + metabolite maps (plan phases
+v1 covers navigation + spectrum + manipulation + metabolite maps (planned phases
 0-2). MRSI fit-results overlays (fit/baseline/residual spectra, concentration/QC
 maps) are deferred — see `PORTING.md`.
 

@@ -250,10 +250,20 @@ colorBtn.addEventListener('input', (event) => {
 webgpuCheck.onclick = () => {
   const want = webgpuCheck.checked
   const backend = want ? 'webgpu' : 'webgl2'
-  nv.reinitializeView({ backend }).catch((err) => {
-    fail(`Could not switch to ${backend}`, err)
-    webgpuCheck.checked = !want // revert: the switch did not take effect
-  })
+  nv.reinitializeView({ backend })
+    .then((ok) => {
+      // reinitializeView RESOLVES false (it does not reject) when the requested
+      // backend is unavailable, e.g. a webgl2-only build. Revert the checkbox so
+      // it matches the actual renderer.
+      if (!ok) {
+        webgpuCheck.checked = !want
+        fail(`Could not switch to ${backend}`)
+      }
+    })
+    .catch((err) => {
+      webgpuCheck.checked = !want
+      fail(`Could not switch to ${backend}`, err)
+    })
 }
 
 nv.addEventListener('signalLocationChange', (e) => {

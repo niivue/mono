@@ -169,12 +169,12 @@ function fftRadix2(re: Float64Array, im: Float64Array): void {
       for (let k = 0; k < len >> 1; k++) {
         const a = i + k
         const b = a + (len >> 1)
-        const tre = cre * re[b] - cim * im[b]
-        const tim = cre * im[b] + cim * re[b]
-        re[b] = re[a] - tre
-        im[b] = im[a] - tim
-        re[a] += tre
-        im[a] += tim
+        const tmpRe = cre * re[b] - cim * im[b]
+        const tmpIm = cre * im[b] + cim * re[b]
+        re[b] = re[a] - tmpRe
+        im[b] = im[a] - tmpIm
+        re[a] += tmpRe
+        im[a] += tmpIm
         const ncre = cre * wre - cim * wim
         cim = cre * wim + cim * wre
         cre = ncre
@@ -186,8 +186,8 @@ function fftRadix2(re: Float64Array, im: Float64Array): void {
 /** Direct O(n^2) DFT fallback for non-power-of-two lengths (correctness over speed). */
 function dft(re: Float64Array, im: Float64Array): void {
   const n = re.length
-  const ore = new Float64Array(n)
-  const oim = new Float64Array(n)
+  const outRe = new Float64Array(n)
+  const outIm = new Float64Array(n)
   for (let k = 0; k < n; k++) {
     let sre = 0
     let sim = 0
@@ -198,11 +198,11 @@ function dft(re: Float64Array, im: Float64Array): void {
       sre += re[t] * c - im[t] * s
       sim += re[t] * s + im[t] * c
     }
-    ore[k] = sre
-    oim[k] = sim
+    outRe[k] = sre
+    outIm[k] = sim
   }
-  re.set(ore)
-  im.set(oim)
+  re.set(outRe)
+  im.set(outIm)
 }
 
 /** Forward FFT in place. Uses radix-2 when possible, else a direct DFT. */
@@ -478,6 +478,23 @@ export function derivePhysioSeries(
       x,
       y: columns[i],
     }))
+  // BIDS trigger column (optional): a column literally labelled "trigger". Each
+  // cell that is BOTH numeric and non-zero is a trigger event (n/a -> NaN and
+  // zero are not). Reported as x-axis positions on the first plotted series so the
+  // graph can draw a trigger rug along the top. The trigger column itself is not
+  // plotted as a line (unless the caller explicitly selects it).
+  const trigIdx = columnLabels.findIndex(
+    (l) => typeof l === 'string' && l.trim().toLowerCase() === 'trigger',
+  )
+  if (trigIdx >= 0 && series.length > 0) {
+    const col = columns[trigIdx]
+    const triggers: number[] = []
+    for (let i = 0; i < col.length; i++) {
+      const v = col[i]
+      if (Number.isFinite(v) && v !== 0) triggers.push(x ? x[i] : i)
+    }
+    if (triggers.length > 0) series[0].triggers = triggers
+  }
   const axis: SignalAxis = {
     label: axisLabel,
     reversed: false,

@@ -16,6 +16,12 @@ export type GraphSeries = {
   rawY?: ArrayLike<number>
   /** optional RGBA [0..1] override; otherwise a palette color is assigned */
   color?: [number, number, number, number]
+  /**
+   * x-axis positions of BIDS trigger events (numeric, non-zero trigger-column
+   * cells), drawn as a tick rug along the TOP of the plot (mirrors the bottom
+   * missing-data rug). Absent when the signal has no trigger column.
+   */
+  triggers?: number[]
 }
 
 /** Independent-axis description for the multi-series (signal) graph mode. */
@@ -206,7 +212,7 @@ const SERIES_PALETTE: [number, number, number, number][] = [
   [0.0, 0.62, 0.451, 1], // bluish green
   [0.8, 0.475, 0.655, 1], // reddish purple
   [0.337, 0.706, 0.914, 1], // sky blue
-  [0.835, 0.369, 0.0, 1], // vermillion
+  [0.835, 0.369, 0.0, 1], // vermilion
   [0.941, 0.894, 0.259, 1], // yellow
   [0.0, 0.0, 0.0, 1], // black
 ]
@@ -441,6 +447,39 @@ function drawMissingRug(
     if (px < pL || px > pL + pW || seen.has(px)) continue
     seen.add(px)
     out.push(buildLine(px, yBottom, px, yTop, thick, color))
+  }
+}
+
+/**
+ * Trigger rug: short ticks along the TOP of the plot marking BIDS trigger events
+ * (x-positions of numeric, non-zero trigger-column cells). Mirror of
+ * `drawMissingRug` (which marks missing samples at the bottom): one tick per
+ * pixel column (decimation-safe) within a stacked lane growing DOWN from the top.
+ */
+function drawTriggerRug(
+  triggers: number[],
+  xMin: number,
+  xMax: number,
+  pL: number,
+  pW: number,
+  plotTop: number,
+  reversed: boolean,
+  thick: number,
+  laneIndex: number,
+  laneH: number,
+  color: number[],
+  buildLine: BuildLineFn,
+  out: LineData[],
+): void {
+  const yTop = plotTop + laneIndex * laneH
+  const yBottom = yTop + Math.max(1, laneH - 1)
+  const seen = new Set<number>()
+  for (const xv of triggers) {
+    if (xv < xMin || xv > xMax) continue // outside the visible window
+    const px = Math.round(mapSignalX(xv, xMin, xMax, pL, pW, reversed))
+    if (px < pL || px > pL + pW || seen.has(px)) continue
+    seen.add(px)
+    out.push(buildLine(px, yTop, px, yBottom, thick, color))
   }
 }
 
@@ -942,6 +981,31 @@ function buildSignalGraphElements(
       buildLine,
       lineSegments,
     )
+  }
+
+  // 5a') Trigger rug: short ticks at the TOP marking BIDS trigger events (a
+  // trigger-column cell that is numeric and non-zero). Mirrors the bottom
+  // missing-data rug; each signal carrying triggers gets its own stacked lane.
+  let trigLane = 0
+  for (let j = 0; j < series.length; j++) {
+    const trig = series[j].triggers
+    if (!trig || trig.length === 0) continue
+    drawTriggerRug(
+      trig,
+      xMin,
+      xMax,
+      pL,
+      pW,
+      pT,
+      reversed,
+      lineThick,
+      Math.min(trigLane, maxRugLanes - 1),
+      rugLaneH,
+      seriesColor(series[j], j),
+      buildLine,
+      lineSegments,
+    )
+    trigLane++
   }
 
   // 5b) Cursor: faint vertical line at the selected x value

@@ -65,7 +65,13 @@ export async function read(
       nPoints = Math.min(nPoints, available)
       nTransients = nPoints > 0 ? Math.floor(available / nPoints) : 0
     }
-    const dwell = pixDims[4] > 0 ? pixDims[4] : (meta.dwellTime ?? 0)
+    // pixDims[4] is in the header's temporal units; scale to seconds (the
+    // sidecar DwellTime fallback is already seconds). Mirrors volumeTR and the
+    // physio sampling-rate path that also applies temporalUnitScale.
+    const dwell =
+      pixDims[4] > 0
+        ? pixDims[4] * temporalUnitScale(hdr.xyzt_units)
+        : (meta.dwellTime ?? 0)
     return {
       kind: 'spectroscopy',
       fid,

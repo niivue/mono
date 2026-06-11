@@ -813,7 +813,13 @@ export default class NVModel {
       }
       merged++
       for (const s of plot.series) {
-        series.push({ label: s.label, x: s.x, y: s.y, color: s.color })
+        series.push({
+          label: s.label,
+          x: s.x,
+          y: s.y,
+          color: s.color,
+          triggers: s.triggers,
+        })
       }
       // Annotations live in the signal's axis units, so only merge those whose
       // signal shares the common axis (skipped above for incompatible signals).
@@ -953,8 +959,12 @@ export default class NVModel {
       if (vy) {
         const vx = new Float32Array(nFrames)
         for (let j = 0; j < nFrames; j++) vx[j] = j * tr
+        // Label the time-course with the volume's basename (this runs for ANY
+        // attached 4D volume, not just BOLD fMRI); fall back to 'volume'.
+        const volLabel =
+          (vol.name ?? '').split(/[\\/]/).pop()?.split('.')[0] || 'volume'
         series.push({
-          label: 'BOLD',
+          label: volLabel,
           x: vx,
           y: this.normalizeWindow(vx, vy, 0, tMax),
           rawY: vy,
@@ -974,6 +984,7 @@ export default class NVModel {
           x: ps.x,
           y: this.normalizeWindow(ps.x, ps.y, 0, tMax),
           rawY: ps.y,
+          triggers: ps.triggers,
         })
       }
     }

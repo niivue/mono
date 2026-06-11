@@ -36,6 +36,7 @@
 
 import NiiVue, {
   GYRO_MAG_RATIO,
+  getImageDataRAS,
   integratePpmBandMap,
   type MrsVolumeAccess,
   type NVExtensionContext,
@@ -227,11 +228,6 @@ export class MrsScene {
   }
 
   /**
-   * Load the scene: anatomy (background), MRSI grid (overlay shown as the
-   * derived total-signal map), optional mask, and a crosshair-following
-   * spectrum. After this resolves, moving the crosshair updates the spectrum.
-   */
-  /**
    * Drop all per-scene bindings (crosshair signal, snap listener, MRSI/mask ids,
    * mask flag, generated-map ids). Idempotent. Shared by {@link load} (so a
    * reused controller / retry can't carry stale bindings onto new volumes) and
@@ -247,6 +243,11 @@ export class MrsScene {
     this.mapIds = []
   }
 
+  /**
+   * Load the scene: anatomy (background), MRSI grid (overlay shown as the
+   * derived total-signal map), optional mask, and a crosshair-following
+   * spectrum. After this resolves, moving the crosshair updates the spectrum.
+   */
   async load(opts: MrsSceneOptions): Promise<void> {
     this.resetState()
     if (opts.anatomyUrl) {
@@ -411,23 +412,29 @@ export class MrsScene {
    */
   private centerOnMrsiPeak(): void {
     const vol = this.mrsiVol()
-    if (!vol?.img || !vol.frac2mm) return
-    const nx = vol.dims[1]
-    const ny = vol.dims[2]
-    const nz = vol.dims[3]
-    const img = vol.img
+    if (!vol?.frac2mm) return
+    // Search the peak in RAS voxel order so the index maps straight through
+    // frac2mm (which is defined in RAS texture space). Iterating the native
+    // `img` buffer and feeding native indices to frac2mm would land on the wrong
+    // world location whenever the volume's storage order != RAS.
+    const rasImg = getImageDataRAS(vol)
+    const dimsRAS = vol.dimsRAS
+    if (!rasImg || !dimsRAS) return
+    const nx = dimsRAS[1]
+    const ny = dimsRAS[2]
+    const nz = dimsRAS[3]
     let best = 0
     let bestV = Number.NEGATIVE_INFINITY
-    for (let i = 0; i < img.length; i++) {
-      if (img[i] > bestV) {
-        bestV = img[i]
+    for (let i = 0; i < rasImg.length; i++) {
+      if (rasImg[i] > bestV) {
+        bestV = rasImg[i]
         best = i
       }
     }
     const x = best % nx
     const y = Math.floor(best / nx) % ny
     const z = Math.floor(best / (nx * ny))
-    // Native texture fraction (voxel centers) -> mm via frac2mm (column-major).
+    // RAS texture fraction (voxel centers) -> mm via frac2mm (column-major).
     const fx = (x + 0.5) / nx
     const fy = (y + 0.5) / ny
     const fz = (z + 0.5) / nz

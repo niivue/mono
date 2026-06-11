@@ -14,6 +14,7 @@ import {
 } from '@/signal/mrs'
 import { integratePpmBandMap, PPM_RANGE } from '@/signal/processing'
 import { hasMrsFields } from '@/signal/sidecar'
+import { temporalUnitScale } from './utils'
 
 /** Read MRS metadata from a NIfTI header's ecode-44 extension (cast-safe). */
 function headerMrsMeta(
@@ -100,7 +101,13 @@ export function prepareMrsiVolume(
     nTransients =
       perFrame > 0 ? Math.max(1, Math.floor(available / perFrame)) : 1
   }
-  const dwell = hdr.pixDims[4] > 0 ? hdr.pixDims[4] : (meta.dwellTime ?? 0)
+  // pixDims[4] is in the header's temporal units; scale to seconds (the sidecar
+  // DwellTime fallback is already seconds) so a ms/us header gives the right
+  // frequency axis. Mirrors volumeTR.
+  const dwell =
+    hdr.pixDims[4] > 0
+      ? hdr.pixDims[4] * temporalUnitScale(hdr.xyzt_units)
+      : (meta.dwellTime ?? 0)
   const spectrometerFreq =
     meta.spectrometerFrequency ?? meta.imagingFrequency ?? null
   const nucleus = meta.resonantNucleus ?? '1H'

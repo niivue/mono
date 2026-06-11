@@ -4,13 +4,13 @@ import type { NVSignalPhysioRaw, SignalSidecar } from '@/NVTypes'
 export const extensions = ['tsv', 'tsv.gz']
 export const type = 'tsv'
 
-/** Parse a single cell as float; blank/non-numeric becomes NaN (a trace gap). */
 /** Blank or a recognized BIDS missing-value token. */
 function isMissingToken(token: string): boolean {
   const t = token.trim().toLowerCase()
   return t === '' || t === 'n/a' || t === 'na' || t === 'nan'
 }
 
+/** Parse a single cell as float; blank/non-numeric becomes NaN (a trace gap). */
 function toFloat(token: string): number {
   if (isMissingToken(token)) return Number.NaN
   const v = Number(token.trim())

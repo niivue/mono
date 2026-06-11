@@ -1148,6 +1148,13 @@ export type SignalSeries = {
   x: Float32Array | null
   /** optional RGBA [0..1] override; otherwise the graph assigns a palette color */
   color?: [number, number, number, number]
+  /**
+   * x-axis positions of BIDS trigger events (a trigger-column cell that is both
+   * numeric and non-zero) for this signal, drawn as a tick rug along the TOP of
+   * the plot. Carried on the signal's first plotted series; absent when the
+   * signal has no `trigger` column.
+   */
+  triggers?: number[]
 }
 
 /** Independent-axis description shared by all series of a signal. */

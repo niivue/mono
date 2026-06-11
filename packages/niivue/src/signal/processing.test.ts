@@ -299,6 +299,48 @@ describe('derivePhysioSeries', () => {
     expect(series.length).toBe(1)
     expect(series[0].label).toBe('cardiac')
   })
+
+  test('triggerColumnReportedOnFirstPlottedSeries', () => {
+    // trigger column is [0, 0, 1, 0] -> one event at index 2 (x = -2 + 2/50)
+    const { series } = derivePhysioSeries(raw(50), {
+      ...defaultSignalDisplay(),
+      selectedColumns: [0], // trigger column itself is not plotted
+    })
+    expect(series[0].triggers).toHaveLength(1)
+    expect(series[0].triggers?.[0]).toBeCloseTo(-2 + 2 / 50, 6)
+  })
+
+  test('triggerOnlyNumericNonZero', () => {
+    // n/a (NaN) and 0 are not triggers; any other numeric value is
+    const r: NVSignalPhysioRaw = {
+      kind: 'physio',
+      columns: [
+        new Float32Array([1, 2, 3, 4, 5]),
+        new Float32Array([0, Number.NaN, 2, 0, -1]),
+      ],
+      columnLabels: ['cardiac', 'trigger'],
+      samplingFrequency: null,
+      startTime: 0,
+    }
+    const { series } = derivePhysioSeries(r, {
+      ...defaultSignalDisplay(),
+      selectedColumns: [0],
+    })
+    // sample-index x (rate unknown): events at indices 2 (=2) and 4 (=-1)
+    expect(series[0].triggers).toEqual([2, 4])
+  })
+
+  test('noTriggersWithoutTriggerColumn', () => {
+    const r: NVSignalPhysioRaw = {
+      kind: 'physio',
+      columns: [new Float32Array([1, 2, 3]), new Float32Array([4, 5, 6])],
+      columnLabels: ['x', 'y'],
+      samplingFrequency: null,
+      startTime: 0,
+    }
+    const { series } = derivePhysioSeries(r, defaultSignalDisplay())
+    expect(series[0].triggers).toBeUndefined()
+  })
 })
 
 describe('real SVS fixture transform', () => {

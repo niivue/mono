@@ -18,11 +18,28 @@ const backend =
     : 'webgl2'
 
 const DEFAULT_RESIDENCY_BYTES = 768 * 1024 * 1024
-const OMEZARR_ID = 'stent.ome.zarr'
-const OMEZARR_NAME = 'Stent OME-Zarr (scale2)'
-const OMEZARR_LEVEL = 2
-const OMEZARR_DEFAULT_WINDOW = { min: 0, max: 1200 }
 const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
+
+// OME-Zarr stores discoverable under ${BASE_URL}omezarr/. `levels` lists the
+// scale indices that may be present on disk, coarsest-first; the loader picks
+// the first one whose array metadata actually resolves, so a store fetched at
+// only its coarsest level still renders. `stent` is bundled (scale2 only);
+// `pawpawsaurus` is downloaded on demand by scripts/fetch-pawpawsaurus.ts and
+// is not checked in (see .gitignore).
+const OMEZARR_STORES = {
+  stent: {
+    id: 'stent.ome.zarr',
+    name: 'Stent OME-Zarr',
+    levels: [2],
+    defaultWindow: { min: 0, max: 1200 },
+  },
+  pawpawsaurus: {
+    id: 'pawpawsaurus.ome.zarr',
+    name: 'Pawpawsaurus OME-Zarr',
+    levels: [3, 2, 1, 0],
+    defaultWindow: { min: 30269, max: 56893 },
+  },
+}
 const STREAMING_CHUNK_EDGE = 256
 const STREAMING_CHUNK_HALO = [3, 3, 3]
 const MAX_CHUNKS_PER_TILE = 256
@@ -340,8 +357,9 @@ function parseWindow(fallback) {
   return { min, max }
 }
 
-function currentSourceKind() {
-  return els.source.value === 'omezarr' ? 'omezarr' : 'synthetic'
+// The source <select> value is either 'synthetic' or an OME-Zarr store key.
+function currentStore() {
+  return OMEZARR_STORES[els.source.value] ?? null
 }
 
 function showFallback(message) {
@@ -354,10 +372,58 @@ function hideFallback() {
   els.fallback.setAttribute('aria-hidden', 'true')
 }
 
-function syncSourceControls() {
-  // Only one OME-Zarr level (scale2) is bundled, so the level control is pinned.
-  els.level.disabled = true
-  els.level.value = String(OMEZARR_LEVEL)
+// Probe a store's configured levels and return those whose array metadata
+// actually resolves on disk, coarsest-first. Used to populate the Level
+// control so the user can only pick levels that have been fetched.
+async function presentLevels(storeDef) {
+  const storeUrl = assetUrl(`omezarr/${storeDef.id}`)
+  const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
+  const multiscale = multiscalesFromRoot(rootMeta)[0]
+  const found = []
+  for (const candidate of storeDef.levels) {
+    const ds = multiscale?.datasets?.[candidate]
+    if (!ds) continue
+    const res = await fetch(`${storeUrl}/${ds.path}/zarr.json`, {
+      method: 'HEAD',
+    })
+    if (res.ok) found.push(candidate)
+  }
+  return found
+}
+
+// Populate the Level <select> for the current source. Synthetic has no
+// pyramid, so the control is disabled with a single "n/a" entry. For an
+// OME-Zarr store, list the levels present on disk (coarsest-first) and select
+// the coarsest by default. Returns the selected level (or null for synthetic).
+async function refreshLevelControl() {
+  const store = currentStore()
+  if (!store) {
+    els.level.replaceChildren(new Option('n/a', ''))
+    els.level.disabled = true
+    return null
+  }
+  let levels = []
+  try {
+    levels = await presentLevels(store)
+  } catch {
+    levels = []
+  }
+  if (levels.length === 0) {
+    els.level.replaceChildren(new Option('none', ''))
+    els.level.disabled = true
+    return null
+  }
+  els.level.replaceChildren(
+    ...levels.map((lvl) => new Option(`L${lvl}`, String(lvl))),
+  )
+  els.level.disabled = levels.length < 2
+  els.level.value = String(levels[0])
+  return levels[0]
+}
+
+function selectedLevel() {
+  const value = Number(els.level.value)
+  return Number.isInteger(value) ? value : null
 }
 
 function formatWindow(win) {
@@ -365,10 +431,10 @@ function formatWindow(win) {
 }
 
 function setDefaultWindowForSelectedSource() {
-  els.window.value =
-    currentSourceKind() === 'omezarr'
-      ? formatWindow(OMEZARR_DEFAULT_WINDOW)
-      : formatWindow(SYNTHETIC_DEFAULT_WINDOW)
+  const store = currentStore()
+  els.window.value = formatWindow(
+    store ? store.defaultWindow : SYNTHETIC_DEFAULT_WINDOW,
+  )
 }
 
 async function fetchJson(url) {
@@ -462,7 +528,7 @@ function createTrackedZarrFetch() {
 }
 
 function shortZarrPath(pathname) {
-  const marker = `/${OMEZARR_ID}/`
+  const marker = '.ome.zarr/'
   const idx = pathname.indexOf(marker)
   if (idx >= 0) return pathname.slice(idx + marker.length)
   return pathname.split('/').filter(Boolean).slice(-5).join('/')
@@ -517,15 +583,10 @@ async function loadSyntheticSource() {
   }
 }
 
-async function loadOmezarrSource() {
-  const level = OMEZARR_LEVEL
-  const storeUrl = assetUrl(`omezarr/${OMEZARR_ID}`)
+async function loadOmezarrSource(storeDef, requestedLevel) {
+  const storeUrl = assetUrl(`omezarr/${storeDef.id}`)
   const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
   const multiscale = multiscalesFromRoot(rootMeta)[0]
-  const dataset = multiscale?.datasets?.[level]
-  if (!dataset) {
-    throw new Error(`OME-Zarr level ${level} not found in ${OMEZARR_ID}`)
-  }
 
   const baseStore = new zarr.FetchStore(storeUrl, {
     fetch: createTrackedZarrFetch(),
@@ -533,12 +594,41 @@ async function loadOmezarrSource() {
   const store = zarr.withByteCaching(baseStore, {
     cache: new ByteLruCache(ZARR_BYTE_CACHE_BYTES),
   })
-  // Open as zarr v3 explicitly: zarr.open() probes v2 metadata (.zarray /
-  // .zattrs) first, which 404s noisily against a static OME-Zarr v3 store.
-  const array = await zarr.open.v3(
-    zarr.root(store).resolve(`/${dataset.path}`),
-    { kind: 'array' },
-  )
+
+  // Try the requested level first, then fall back to the store's configured
+  // levels coarsest-first, using the first whose array metadata resolves. This
+  // keeps a chosen level honored while staying robust to a store fetched at
+  // only its coarsest level (e.g. `fetch-pawpawsaurus.ts --coarse`).
+  const order = [
+    ...(Number.isInteger(requestedLevel) ? [requestedLevel] : []),
+    ...storeDef.levels.filter((lvl) => lvl !== requestedLevel),
+  ]
+  let level = -1
+  let dataset = null
+  let array = null
+  for (const candidate of order) {
+    const ds = multiscale?.datasets?.[candidate]
+    if (!ds) continue
+    try {
+      // Open as zarr v3 explicitly: zarr.open() probes v2 metadata (.zarray /
+      // .zattrs) first, which 404s noisily against a static OME-Zarr v3 store.
+      array = await zarr.open.v3(zarr.root(store).resolve(`/${ds.path}`), {
+        kind: 'array',
+      })
+      level = candidate
+      dataset = ds
+      break
+    } catch {
+      // Level not present on disk -- try the next one.
+    }
+  }
+  if (!dataset || !array) {
+    throw new Error(
+      `No OME-Zarr level found for ${storeDef.id}. ` +
+        'Did you run scripts/fetch-pawpawsaurus.ts?',
+    )
+  }
+
   const dtype = assertSupportedDtype(array.dtype)
   const dtypeInfo = niftiDatatype(dtype)
   const [shapeZ, shapeY, shapeX] = trailingSpatial(array.shape, 'shape')
@@ -553,18 +643,18 @@ async function loadOmezarrSource() {
 
   return {
     kind: 'omezarr',
-    id: `${OMEZARR_ID}:level-${level}`,
-    name: `${OMEZARR_NAME} L${level}`,
+    id: `${storeDef.id}:level-${level}`,
+    name: `${storeDef.name} L${level}`,
     shape,
     spacing: scaleFromDataset(dataset),
     dtype,
     datatypeCode: dtypeInfo.code,
     numBitsPerVoxel: dtypeInfo.bits,
-    defaultWindow: { ...OMEZARR_DEFAULT_WINDOW },
+    defaultWindow: { ...storeDef.defaultWindow },
     chunkGrid,
     chunkShape,
     chunkCount: chunkGrid[0] * chunkGrid[1] * chunkGrid[2],
-    sourceUrl: `${OMEZARR_ID}/${dataset.path}`,
+    sourceUrl: `${storeDef.id}/${dataset.path}`,
     transportLabel: 'OME-Zarr chunk objects',
     array,
     level,
@@ -573,8 +663,9 @@ async function loadOmezarrSource() {
 }
 
 async function loadActiveSource() {
-  return currentSourceKind() === 'omezarr'
-    ? loadOmezarrSource()
+  const store = currentStore()
+  return store
+    ? loadOmezarrSource(store, selectedLevel())
     : loadSyntheticSource()
 }
 
@@ -847,6 +938,14 @@ async function reloadVolume(options = {}) {
       const source = await loadActiveSource()
       activeSource = source
       chunkPlan = createChunkPlan(source)
+      // Reflect the level that actually loaded (may differ if the requested
+      // one wasn't present and the loader fell back).
+      if (source.kind === 'omezarr' && typeof source.level === 'number') {
+        const value = String(source.level)
+        if ([...els.level.options].some((o) => o.value === value)) {
+          els.level.value = value
+        }
+      }
     }
     if (!activeSource) {
       throw new Error('No active source selected')
@@ -860,7 +959,7 @@ async function reloadVolume(options = {}) {
 
 async function main() {
   setDefaultWindowForSelectedSource()
-  syncSourceControls()
+  await refreshLevelControl()
 
   nv = new NiiVue({
     backend,
@@ -872,13 +971,13 @@ async function main() {
   })
   await nv.attachToCanvas(els.canvas)
 
-  els.source.addEventListener('change', () => {
+  els.source.addEventListener('change', async () => {
     setDefaultWindowForSelectedSource()
-    syncSourceControls()
+    await refreshLevelControl()
     void reloadVolume({ reloadSource: true })
   })
   els.level.addEventListener('change', () => {
-    setDefaultWindowForSelectedSource()
+    // Keep the current window; the intensity range is the same across levels.
     void reloadVolume({ reloadSource: true })
   })
   els.layout.addEventListener('change', applyLayout)

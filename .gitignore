@@ -37,3 +37,7 @@ packages/niivue/perf-report.html
 # Generated self-contained niivue bundle (built by prebuild:standalone, fetched
 # at runtime by the save-html demo; regenerated on dev/build).
 apps/demo-ext-save-html/public/niivue-standalone.js
+
+# Pawpawsaurus OME-Zarr fixture for the range.html streaming example. Multi-GB,
+# downloaded on demand by scripts/fetch-pawpawsaurus.ts. Do not check in.
+packages/niivue/public/omezarr/pawpawsaurus.ome.zarr/

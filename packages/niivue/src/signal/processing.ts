@@ -478,14 +478,27 @@ export function derivePhysioSeries(
       x,
       y: columns[i],
     }))
-  // BIDS trigger column (optional): a column literally labelled "trigger". Each
-  // cell that is BOTH numeric and non-zero is a trigger event (n/a -> NaN and
-  // zero are not). Reported as x-axis positions on the first plotted series so the
-  // graph can draw a trigger rug along the top. The trigger column itself is not
-  // plotted as a line (unless the caller explicitly selects it).
-  const trigIdx = columnLabels.findIndex(
-    (l) => typeof l === 'string' && l.trim().toLowerCase() === 'trigger',
-  )
+  // Measure-specific trigger column (optional): the column labelled
+  // "<first-column>_trigger" (e.g. "cardiac_trigger" alongside a "cardiac"
+  // recording). In BIDS / bidsphysio the plain "trigger" column is the SCANNER
+  // VOLUME trigger (one pulse per TR), which we intentionally do NOT show — it is
+  // the acquisition grid, not a feature of the physiological signal. The
+  // "<measure>_trigger" column instead marks events of the recorded measure
+  // (heartbeats, breaths). Each cell that is BOTH numeric and non-zero is an
+  // event (n/a -> NaN and 0 are not); the positions are reported on the first
+  // plotted series so the graph draws a trigger rug along the top. The trigger
+  // column itself is not plotted as a line unless the caller selects it.
+  const firstLabel =
+    typeof columnLabels[0] === 'string'
+      ? columnLabels[0].trim().toLowerCase()
+      : ''
+  const trigIdx = firstLabel
+    ? columnLabels.findIndex(
+        (l) =>
+          typeof l === 'string' &&
+          l.trim().toLowerCase() === `${firstLabel}_trigger`,
+      )
+    : -1
   if (trigIdx >= 0 && series.length > 0) {
     const col = columns[trigIdx]
     // Bound to the x-domain length `n` (= columns[0].length): the TSV reader pads

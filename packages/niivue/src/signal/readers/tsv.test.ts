@@ -80,20 +80,25 @@ describe('tsv fixtures (real BIDS physio)', () => {
     return parseTsv(text, parseSidecar(json))
   }
 
-  test('cardiac_200Hz_twoColumns', () => {
+  test('cardiac_200Hz_recordingVolumeAndMeasureTrigger', () => {
     const r = loadFixture('cardiac')
-    expect(r.columnLabels).toEqual(['cardiac', 'trigger'])
+    // bidsphysio layout: recording, scanner volume trigger, measure trigger
+    expect(r.columnLabels).toEqual(['cardiac', 'trigger', 'cardiac_trigger'])
     expect(r.samplingFrequency).toBe(200)
     expect(r.startTime).toBeCloseTo(-9.652, 5)
-    expect(r.columns.length).toBe(2)
+    expect(r.columns.length).toBe(3)
     expect(r.columns[0].length).toBeGreaterThan(1000)
   })
 
-  test('respiratory_50Hz_twoColumns', () => {
+  test('respiratory_50Hz_recordingVolumeAndMeasureTrigger', () => {
     const r = loadFixture('respiratory')
-    expect(r.columnLabels).toEqual(['respiratory', 'trigger'])
+    expect(r.columnLabels).toEqual([
+      'respiratory',
+      'trigger',
+      'respiratory_trigger',
+    ])
     expect(r.samplingFrequency).toBe(50)
-    expect(r.columns.length).toBe(2)
+    expect(r.columns.length).toBe(3)
     expect(r.columns[0].length).toBeGreaterThan(1000)
   })
 })

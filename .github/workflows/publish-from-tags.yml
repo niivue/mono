@@ -58,4 +58,4 @@ jobs:
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
           INPUT_TAGS: ${{ inputs.tags }}
-        run: bun .github/scripts/publish-tags-to-npm.ts $INPUT_TAGS
+        run: bun .github/scripts/publish-tags-to-npm.ts "$INPUT_TAGS"

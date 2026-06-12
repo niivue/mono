@@ -16,8 +16,9 @@ import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import { MrsScene } from '@niivue/nv-ext-mrs'
 
 // Data lives alongside the other signal fixtures in @niivue/dev-images
-// (images/signals/), served at /signals/.
-const DATA_BASE = '/signals'
+// (images/signals/), served at /signals/. Use full literal `/signals/...` URLs
+// (not a `${base}/file` concatenation) so the GitHub Pages build's URL-rewrite
+// plugin can prefix them with the shared images base (e.g. /mono/signals/...).
 const footer = document.getElementById('location') as HTMLElement
 
 function fail(msg: string, err?: unknown): void {
@@ -37,9 +38,9 @@ const scene = new MrsScene(nv)
 
 try {
   await scene.load({
-    anatomyUrl: `${DATA_BASE}/mrsi_T1.nii.gz`,
-    mrsiUrl: `${DATA_BASE}/mrsi.nii.gz`,
-    maskUrl: `${DATA_BASE}/mrsi_mask.nii.gz`,
+    anatomyUrl: '/signals/mrsi_T1.nii.gz',
+    mrsiUrl: '/signals/mrsi.nii.gz',
+    maskUrl: '/signals/mrsi_mask.nii.gz',
     mrsiColormap: 'warm',
     mrsiOpacity: 0.7,
   })

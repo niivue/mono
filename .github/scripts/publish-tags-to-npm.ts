@@ -33,7 +33,12 @@ const output = (command: string[]): string => {
 const tryOutput = (command: string[]): string | null => {
   const result = Bun.spawnSync(command, { stdout: 'pipe', stderr: 'pipe' })
   if (result.exitCode !== 0) {
-    return null
+    const err = result.stderr.toString()
+    // For `npm view <pkg>@<version> version`, E404 means the version is not published.
+    if (/\bE404\b/.test(err) || /is not in (this|the) registry/i.test(err)) {
+      return null
+    }
+    throw new Error(`Command failed: ${command.join(' ')}\n${err}`)
   }
   return result.stdout.toString().trim()
 }

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Physiology</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="viewSelect">Recording</label>
+      <select id="viewSelect">
+        <option value="both" selected>Respiration + Pulse</option>
+        <option value="respiratory">Respiration only</option>
+        <option value="cardiac">Pulse only</option>
+      </select>
+      &nbsp;
+      <label for="legendCheck">Legend</label>
+      <input type="checkbox" id="legendCheck" checked />
+      &nbsp;
+      <input type="color" id="colorBtn" value="#191923" />
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue::Physiology&nbsp;</footer>
+    <script type="module" src="physio.js"></script>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "demo-ext-mrs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bunx --bun vite --open /mrsi.html",
+    "build": "bunx --bun vite build"
+  },
+  "dependencies": {
+    "@niivue/dev-images": "workspace:*",
+    "@niivue/niivue": "workspace:*",
+    "@niivue/nv-ext-mrs": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.3.2"
+  }
+}

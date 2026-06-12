@@ -11,7 +11,6 @@ import type {
   CompletedMeasurement,
   DragOverlay,
   DrawConfig,
-  GraphConfig,
   ImageFromUrlOptions,
   InteractionConfig,
   LayoutConfig,
@@ -20,15 +19,18 @@ import type {
   NiiVueOptions,
   NVImage,
   NVMesh as NVMeshType,
+  NVSignal,
   SceneConfig,
   UIConfig,
   VectorAnnotation,
   VolumeRenderConfig,
 } from '@/NVTypes'
+import { deriveSeries, type SignalPlot } from '@/signal/processing'
+import type { GraphData } from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import * as NVVolume from '@/volume/NVVolume'
-import { getVoxelValue } from '@/volume/utils'
+import { extractVoxelFid, getVoxelValue, volumeTR } from '@/volume/utils'
 
 export default class NVModel {
   // --- Config groups ---
@@ -44,6 +46,18 @@ export default class NVModel {
   // --- Data ---
   meshes: NVMeshType[]
   volumes: NVImage[]
+  signals: NVSignal[]
+  /** x-axis value of the signal graph cursor (null = no selection) */
+  signalCursorX: number | null
+  /** Zoom/pan view window over the signal graph x-axis (null = full extent). */
+  signalViewWindow: [number, number] | null = null
+  /** per-signal derived-plot memo, keyed by display state (transient cache) */
+  private _signalPlotCache = new WeakMap<
+    NVSignal,
+    { key: string; plot: SignalPlot }
+  >()
+  /** associated volume+physio graph memo, keyed by crosshair/frame/signals */
+  private _assocCache: { key: string; data: GraphData } | null = null
   clipPlanes: number[]
   annotations: VectorAnnotation[]
 
@@ -197,7 +211,11 @@ export default class NVModel {
         rulerWidth: options.rulerWidth,
       }),
       ...((options.graphNormalizeValues !== undefined ||
-        options.graphIsRangeCalMinMax !== undefined) && {
+        options.graphIsRangeCalMinMax !== undefined ||
+        options.graphShowVolumeTimecourse !== undefined ||
+        options.graphLineWidth !== undefined ||
+        options.graphLineAlpha !== undefined ||
+        options.graphAutoResetView !== undefined) && {
         graph: {
           ...NVConstants.UI_DEFAULTS.graph,
           ...(options.graphNormalizeValues !== undefined && {
@@ -205,6 +223,18 @@ export default class NVModel {
           }),
           ...(options.graphIsRangeCalMinMax !== undefined && {
             isRangeCalMinMax: options.graphIsRangeCalMinMax,
+          }),
+          ...(options.graphShowVolumeTimecourse !== undefined && {
+            showVolumeTimecourse: options.graphShowVolumeTimecourse,
+          }),
+          ...(options.graphLineWidth !== undefined && {
+            lineWidth: options.graphLineWidth,
+          }),
+          ...(options.graphLineAlpha !== undefined && {
+            lineAlpha: options.graphLineAlpha,
+          }),
+          ...(options.graphAutoResetView !== undefined && {
+            autoResetView: options.graphAutoResetView,
           }),
         },
       }),
@@ -324,6 +354,9 @@ export default class NVModel {
     this.annotations = []
     this.meshes = []
     this.volumes = []
+    this.signals = []
+    this.signalCursorX = null
+    this.signalViewWindow = null
     this.clipPlanes = Array(NVConstants.NUM_CLIP_PLANE)
       .fill(null)
       .flatMap(() => [...NVConstants.DEFAULT_CLIP_PLANE])
@@ -342,6 +375,53 @@ export default class NVModel {
 
   getVolumes(): NVImage[] {
     return this.volumes
+  }
+
+  getSignals(): NVSignal[] {
+    return this.signals
+  }
+
+  getSignal(id: string): NVSignal | undefined {
+    return this.signals.find((s) => s.id === id)
+  }
+
+  /**
+   * Drop the associated-graph memo. Must be called whenever the signal or volume
+   * set changes: the cached `GraphData` holds sampled BOLD arrays + references to
+   * physio arrays, and its key is id-based (ids are derived from name/URL, so a
+   * same-URL reload would otherwise reuse stale data).
+   */
+  private invalidateGraphCache(): void {
+    this._assocCache = null
+  }
+
+  /** Add a signal, ensuring its id is unique within the model. */
+  addSignal(signal: NVSignal): void {
+    let id = signal.id
+    let n = 1
+    while (this.signals.some((s) => s.id === id)) id = `${signal.id}-${n++}`
+    signal.id = id
+    this.signals.push(signal)
+    this.invalidateGraphCache()
+  }
+
+  removeSignal(index: number): NVSignal | null {
+    if (index < 0 || index >= this.signals.length) return null
+    const [removed] = this.signals.splice(index, 1)
+    // The cursor/zoom belonged to the previous signal set; clear them.
+    this.signalCursorX = null
+    this.signalViewWindow = null
+    this.invalidateGraphCache()
+    return removed
+  }
+
+  /** True when a signal is loaded but no spatial data (volume/mesh) is. */
+  isSignalOnlyScene(): boolean {
+    return (
+      this.signals.length > 0 &&
+      this.volumes.length === 0 &&
+      this.meshes.length === 0
+    )
   }
 
   getClipPlaneDepthAziElev(clipPlaneIndex = 0): [number, number, number] {
@@ -624,29 +704,337 @@ export default class NVModel {
   }
 
   /**
-   * Collect per-frame voxel intensities at the current crosshair for the first 4D volume.
-   * Returns null if graph is disabled, or there is no 4D volume.
+   * Derive (and memoize) a signal's plot. Cached by the signal's display state
+   * so repeated graph collections during interaction skip the FFT/averaging
+   * work; the cache is keyed per-signal and drops with the signal (WeakMap).
    */
-  collectGraphData(): {
-    lines: number[][]
-    selectedColumn: number
-    calMin: number
-    calMax: number
-    nTotalFrame4D: number
-    graphConfig: GraphConfig
-  } | null {
+  private derivePlotCached(sig: NVSignal): SignalPlot {
+    const key = JSON.stringify(sig.display)
+    const cached = this._signalPlotCache.get(sig)
+    if (cached && cached.key === key) return cached.plot
+    const plot = deriveSeries(sig.raw, sig.display)
+    this._signalPlotCache.set(sig, { key, plot })
+    return plot
+  }
+
+  /**
+   * Derive a crosshair-following spectroscopy signal's plot by extracting the
+   * complex FID at the current crosshair voxel of its attached MRSI volume and
+   * running the spectroscopy transform with the signal's display state. Returns
+   * null when the signal is not crosshair-following or the attachment cannot be
+   * resolved to a complex MRSI volume. Not memoized (the crosshair changes
+   * often and a single 1024-point FFT per frame is cheap), so the cursor stays
+   * live without invalidating the display-keyed `_signalPlotCache`.
+   */
+  private crosshairSpectroscopyPlot(sig: NVSignal): SignalPlot | null {
+    if (
+      !sig.followsCrosshair ||
+      sig.raw.kind !== 'spectroscopy' ||
+      !sig.attachedToId
+    ) {
+      return null
+    }
+    const vol = this.volumes.find((v) => v.id === sig.attachedToId)
+    if (!vol?.complexFID || !vol.mrsMeta) return null
+    const mm = this.scene2mm(this.scene.crosshairPos)
+    const rasVox = NVTransforms.mm2vox(vol, mm)
+    const fid = extractVoxelFid(vol, rasVox[0], rasVox[1], rasVox[2])
+    if (!fid) return null
+    const m = vol.mrsMeta
+    return deriveSeries(
+      {
+        kind: 'spectroscopy',
+        fid,
+        nPoints: m.nPoints,
+        nTransients: 1,
+        dwell: m.dwell,
+        spectrometerFreq: m.spectrometerFreq,
+        nucleus: m.nucleus,
+      },
+      sig.display,
+    )
+  }
+
+  /**
+   * Derived plot for a signal, or null when a crosshair-following spectrum
+   * cannot currently resolve its source (no attached MRSI volume / crosshair
+   * off the grid / NVD reload without the retained complex buffer). Returning
+   * null — rather than the placeholder zero-FID — keeps an unresolved MRSI
+   * signal OUT of the graph instead of drawing a misleading flat line.
+   */
+  private plotFor(sig: NVSignal): SignalPlot | null {
+    if (sig.followsCrosshair) return this.crosshairSpectroscopyPlot(sig)
+    return this.derivePlotCached(sig)
+  }
+
+  /**
+   * Build multi-series graph data by merging the traces of every loaded signal
+   * onto a shared axis, or null when no signal is loaded. Series are derived on
+   * demand (memoized by display state) from the raw data and current display
+   * state (FFT/averaging/windowing for spectroscopy, time-axis selection for
+   * physio). Merging supports showing multiple physiological recordings (e.g.
+   * cardiac + respiratory at different sampling rates) on one time axis,
+   * distinguished by the legend.
+   */
+  collectSignalGraphData(): GraphData | null {
+    if (this.signals.length === 0) return null
+    // Resolve each signal's plot first, dropping crosshair-following signals
+    // that cannot currently resolve their FID (MRSI volume removed / crosshair
+    // off the grid / NVD reload without the complex buffer): an empty graph is
+    // better than a fake flat placeholder spectrum.
+    const resolved: { sig: NVSignal; plot: SignalPlot }[] = []
+    for (const sig of this.signals) {
+      const plot = this.plotFor(sig)
+      if (plot) resolved.push({ sig, plot })
+    }
+    if (resolved.length === 0) return null
+    // Choose the common axis from the first VISIBLE plot (>= 1 series), not the
+    // first resolved one: a hidden first signal (`selectedColumns: []`) still
+    // resolves to an empty-series plot carrying its axis, and adopting that axis
+    // would reject a later visible signal on a different axis (e.g. a hidden ppm
+    // spectrum suppressing a visible time-axis physio trace). Only signals whose
+    // axis matches the lead's are merged, so a ppm spectrum and a time-axis
+    // physio trace never share one (misleading) axis; incompatible signals are
+    // skipped (use one instance each, or a future multi-panel layout).
+    const lead = resolved.find((r) => r.plot.series.length > 0)
+    if (!lead) return null
+    const axis = { ...lead.plot.axis }
+    const series: GraphData['series'] = []
+    const annotations: GraphData['annotations'] = []
+    const mins: number[] = []
+    const maxs: number[] = []
+    let merged = 0
+    for (const { sig, plot } of resolved) {
+      if (
+        plot.axis.label !== axis.label ||
+        plot.axis.reversed !== axis.reversed
+      ) {
+        continue
+      }
+      merged++
+      for (const s of plot.series) {
+        series.push({
+          label: s.label,
+          x: s.x,
+          y: s.y,
+          color: s.color,
+          triggers: s.triggers,
+        })
+      }
+      // Annotations live in the signal's axis units, so only merge those whose
+      // signal shares the common axis (skipped above for incompatible signals).
+      for (const a of sig.annotations ?? []) {
+        annotations.push({ text: a.text, x: a.x, y: a.y, color: a.color })
+      }
+      if (plot.axis.min !== null) mins.push(plot.axis.min)
+      if (plot.axis.max !== null) maxs.push(plot.axis.max)
+    }
+    if (series.length === 0) return null
+    // Use an explicit window only when every merged signal supplied one;
+    // otherwise autoscale across the merged data.
+    axis.min = mins.length === merged ? Math.min(...mins) : null
+    axis.max = maxs.length === merged ? Math.max(...maxs) : null
+    return {
+      lines: [],
+      selectedColumn: -1,
+      calMin: 0,
+      calMax: 0,
+      nTotalFrame4D: 0,
+      graphConfig: this.ui.graph,
+      series,
+      xAxis: axis,
+      showLegend: lead.sig.display.showLegend,
+      // With no spatial data, let the plot fill the whole instance area.
+      fullCanvas: this.isSignalOnlyScene(),
+      cursorX: this.signalCursorX,
+      annotations: annotations.length > 0 ? annotations : undefined,
+    }
+  }
+
+  /** Min-max normalize a series to [0,1] over the samples inside [lo,hi]. */
+  private normalizeWindow(
+    x: Float32Array,
+    y: Float32Array,
+    lo: number,
+    hi: number,
+  ): Float32Array {
+    let mn = Number.POSITIVE_INFINITY
+    let mx = Number.NEGATIVE_INFINITY
+    for (let i = 0; i < y.length; i++) {
+      if (x[i] < lo || x[i] > hi || !Number.isFinite(y[i])) continue
+      if (y[i] < mn) mn = y[i]
+      if (y[i] > mx) mx = y[i]
+    }
+    const out = new Float32Array(y.length)
+    if (!(mx > mn)) return out
+    const r = mx - mn
+    for (let i = 0; i < y.length; i++) out[i] = (y[i] - mn) / r
+    return out
+  }
+
+  /** The 4D volume a loaded physio signal is attached to, if any. */
+  getAssociatedVolume(): NVImage | null {
+    if (this.signals.length === 0 || this.volumes.length === 0) return null
+    for (const s of this.signals) {
+      if (!s.attachedToId) continue
+      const v = this.volumes.find((vv) => vv.id === s.attachedToId)
+      if (v && (v.nFrame4D ?? 1) > 1) return v
+    }
+    return null
+  }
+
+  /**
+   * Sample a 4D volume's voxel time-course at the current crosshair. Returns one
+   * value per frame, or null if the volume lacks the RAS transform needed to map
+   * the crosshair to a voxel.
+   */
+  private sampleVolumeTimeCourse(vol: NVImage): Float32Array | null {
+    if (!vol.matRAS) return null
+    const nFrames = vol.nFrame4D ?? 1
+    const mm = this.scene2mm(this.scene.crosshairPos)
+    const rasVox = NVTransforms.mm2vox(vol, mm)
+    const y = new Float32Array(nFrames)
+    for (let j = 0; j < nFrames; j++) {
+      y[j] = getVoxelValue(vol, rasVox[0], rasVox[1], rasVox[2], j)
+    }
+    return y
+  }
+
+  /**
+   * When a physio signal is associated with a loaded 4D volume (via
+   * `attachedToId`), build a combined time-axis graph: the volume's crosshair
+   * time-course (frame i at i*TR seconds, t=0 = first volume) plus each attached
+   * physio trace at its native sampling rate (no resampling). The window is
+   * clamped to the imaging period [0, (nFrames-1)*TR], so physio samples logged
+   * before/after the scan are ignored. Each series is min-max normalized to
+   * [0,1] so the very different magnitudes (BOLD intensity vs cardiac/respiratory
+   * counts) are all visible; `rawY` carries the un-normalized values for the
+   * cursor readout. A cursor marks the current frame's time. Returns null when
+   * no such association exists.
+   */
+  /** True if any finite sample of (x,y) falls inside [lo,hi]. */
+  private hasWindowSamples(
+    x: ArrayLike<number>,
+    y: ArrayLike<number>,
+    lo: number,
+    hi: number,
+  ): boolean {
+    for (let i = 0; i < y.length; i++) {
+      if (x[i] >= lo && x[i] <= hi && Number.isFinite(y[i])) return true
+    }
+    return false
+  }
+
+  collectAssociatedTimeGraphData(): GraphData | null {
+    const vol = this.getAssociatedVolume()
+    if (!vol) return null
+    // Memoize: this is rebuilt on every crosshair/frame change (and again by the
+    // renderer in the same frame). Key on the inputs so repeated calls with no
+    // change return the cached graph instead of resampling/normalizing again.
+    const cp = this.scene.crosshairPos
+    const attached = this.signals.filter((s) => s.attachedToId === vol.id)
+    const showVol = this.ui.graph.showVolumeTimecourse !== false
+    const nFrames = vol.nFrame4D ?? 1
+    const tr = volumeTR(vol)
+    const tMax = (nFrames - 1) * tr
+    // The marker tracks the current frame's time, but the SERIES values do not
+    // depend on the frame (only on the crosshair, and only when BOLD is shown).
+    // So the cache key omits frame4D, and the crosshair when BOLD is hidden — a
+    // frame step then reuses the cached series and just re-marks the cursor.
+    const cursorX = (vol.frame4D ?? 0) * tr
+    const key = `${vol.id}|${showVol}|${showVol ? `${cp[0]},${cp[1]},${cp[2]}` : ''}|${nFrames}|${tr}|${attached
+      .map((s) => `${s.id}:${JSON.stringify(s.display)}`)
+      .join(';')}`
+    if (this._assocCache && this._assocCache.key === key) {
+      const cached = this._assocCache.data
+      cached.cursorX = cursorX
+      return cached
+    }
+    const series: GraphData['series'] = []
+    // 1) Volume time-course at the crosshair (optional via showVolumeTimecourse).
+    //    Only sampled when shown — a hidden BOLD must not pay O(nFrames) sampling
+    //    nor suppress a physio-only graph when the volume lacks `matRAS`.
+    if (showVol) {
+      const vy = this.sampleVolumeTimeCourse(vol)
+      if (vy) {
+        const vx = new Float32Array(nFrames)
+        for (let j = 0; j < nFrames; j++) vx[j] = j * tr
+        // Label the time-course with the volume's basename (this runs for ANY
+        // attached 4D volume, not just BOLD fMRI); fall back to 'volume'. Strip
+        // the directory and one trailing image extension (+ .gz) rather than
+        // splitting on the first dot, so a dotted name like
+        // `sub-01.task-rest.bold.nii.gz` keeps its context.
+        const volLabel =
+          ((vol.name ?? '').split(/[\\/]/).pop() ?? '')
+            .replace(/\.gz$/i, '')
+            .replace(/\.[^.]+$/, '') || 'volume'
+        series.push({
+          label: volLabel,
+          x: vx,
+          y: this.normalizeWindow(vx, vy, 0, tMax),
+          rawY: vy,
+        })
+      }
+    }
+    // 2) Each attached physio trace at its native rate, clamped + normalized.
+    //    Skip traces with no samples inside the imaging window (they would not
+    //    draw and could otherwise feed an out-of-window readout).
+    for (const s of attached) {
+      const plot = this.derivePlotCached(s)
+      if (plot.axis.label !== 'Time (s)') continue
+      for (const ps of plot.series) {
+        if (!ps.x || !this.hasWindowSamples(ps.x, ps.y, 0, tMax)) continue
+        series.push({
+          label: ps.label,
+          x: ps.x,
+          y: this.normalizeWindow(ps.x, ps.y, 0, tMax),
+          rawY: ps.y,
+          triggers: ps.triggers,
+        })
+      }
+    }
+    // Nothing visible -> no association graph. (Previously required volume + >=1
+    // physio; now any one visible series is enough, so the BOLD/physio traces can
+    // be toggled independently.)
+    if (series.length === 0) return null
+    const data: GraphData = {
+      lines: [],
+      selectedColumn: -1,
+      calMin: 0,
+      calMax: 0,
+      nTotalFrame4D: 0,
+      graphConfig: this.ui.graph,
+      series,
+      xAxis: { label: 'Time (s)', reversed: false, min: 0, max: tMax },
+      showLegend: true,
+      fullCanvas: false,
+      // Marker at the current frame's time ties 4D scrubbing to the time axis.
+      cursorX,
+    }
+    this._assocCache = { key, data }
+    return data
+  }
+
+  /**
+   * Collect graph data. Prefers an associated volume+physio time view, then a
+   * signal-only (multi-series) graph, otherwise per-frame voxel intensities at
+   * the current crosshair for the first 4D volume. Returns null if the graph is
+   * disabled or there is nothing to plot.
+   */
+  collectGraphData(): GraphData | null {
     if (!this.ui.isGraphVisible) return null
+    const associated = this.collectAssociatedTimeGraphData()
+    if (associated) return this.applyGraphViewWindow(associated)
+    const signalData = this.collectSignalGraphData()
+    if (signalData) return this.applyGraphViewWindow(signalData)
     if (this.getMaxVols() < 2) return null
     const vol = this.volumes[0]
     if (!vol) return null
     const nFrames = vol.nFrame4D ?? 1
     if (nFrames < 2) return null
-    const mm = this.scene2mm(this.scene.crosshairPos)
-    const rasVox = NVTransforms.mm2vox(vol, mm)
-    const line: number[] = []
-    for (let j = 0; j < nFrames; j++) {
-      line.push(getVoxelValue(vol, rasVox[0], rasVox[1], rasVox[2], j))
-    }
+    const sampled = this.sampleVolumeTimeCourse(vol)
+    if (!sampled) return null
+    const line = Array.from(sampled)
     return {
       lines: [line],
       selectedColumn: vol.frame4D ?? 0,
@@ -655,6 +1043,186 @@ export default class NVModel {
       nTotalFrame4D: vol.nTotalFrame4D ?? nFrames,
       graphConfig: this.ui.graph,
     }
+  }
+
+  /**
+   * Apply the zoom/pan view window (if any) to a signal-mode GraphData. The
+   * input's xAxis is always the FULL extent (the collector sets it and we never
+   * mutate it), so the full domain is derived from it directly each call — no
+   * once-captured persistence, and the cached GraphData is left untouched
+   * (render/interaction state don't alias it). Stamps `fullXDomain` on the
+   * returned copy so `graphZoom`/`graphPan` can re-derive the window/orientation
+   * from a fresh collect, and rewrites `xAxis.min/max` to the window.
+   */
+  private applyGraphViewWindow(data: GraphData): GraphData {
+    if (!data.series || !data.xAxis) return data
+    const ax = data.xAxis
+    // Only scan the data when the collector left an axis bound open.
+    const [dMin, dMax] =
+      ax.min == null || ax.max == null
+        ? this.signalDataXExtent(data)
+        : [ax.min, ax.max]
+    const full: [number, number] = [ax.min ?? dMin, ax.max ?? dMax]
+    const w = this.signalViewWindow
+    const [lo, hi] = w ? this.clampSignalWindow(w, full) : full
+    return { ...data, xAxis: { ...ax, min: lo, max: hi }, fullXDomain: full }
+  }
+
+  /**
+   * Current signal-graph full x-domain + axis orientation, derived from a FRESH
+   * `collectGraphData()` (signal mode only). This is the single source of truth
+   * for `graphZoom`/`graphPan`/`panViewWindowTo` — they no longer depend on
+   * render-time state, so they work immediately after `loadSignals()` (before the
+   * first RAF) and are genuine no-ops when no signal graph is shown.
+   */
+  private currentGraphDomain(): {
+    full: [number, number]
+    reversed: boolean
+    cursorX: number | null
+  } | null {
+    const data = this.collectGraphData()
+    if (!data?.series || !data.fullXDomain) return null
+    return {
+      full: data.fullXDomain,
+      reversed: data.xAxis?.reversed ?? false,
+      cursorX: data.cursorX ?? null,
+    }
+  }
+
+  /** Min/max x across all series (single pass); falls back to [0, 1] if empty. */
+  private signalDataXExtent(data: GraphData): [number, number] {
+    let mn = Number.POSITIVE_INFINITY
+    let mx = Number.NEGATIVE_INFINITY
+    for (const s of data.series ?? [])
+      for (let i = 0; i < s.y.length; i++) {
+        const xv = s.x ? s.x[i] : i
+        if (xv < mn) mn = xv
+        if (xv > mx) mx = xv
+      }
+    return [Number.isFinite(mn) ? mn : 0, Number.isFinite(mx) ? mx : 1]
+  }
+
+  /** Clamp a window to the full domain: inside bounds, width <= full width. */
+  private clampSignalWindow(
+    w: [number, number],
+    full: [number, number],
+  ): [number, number] {
+    const fullW = full[1] - full[0]
+    let width = Math.min(Math.max(w[1] - w[0], fullW / 1000), fullW)
+    if (!(width > 0)) width = fullW
+    let lo = w[0]
+    let hi = lo + width
+    if (lo < full[0]) {
+      lo = full[0]
+      hi = lo + width
+    }
+    if (hi > full[1]) {
+      hi = full[1]
+      lo = hi - width
+    }
+    return [Math.max(full[0], lo), Math.min(full[1], hi)]
+  }
+
+  /**
+   * Zoom the signal graph x-window by `factor` (>1 in, <1 out), centred on the
+   * VISIBLE marker (`GraphData.cursorX` — the current-frame time in associated
+   * mode, which `signalCursorX` does not track) when it is in view, else the
+   * window centre. Zooming out past the full extent resets to the full view.
+   */
+  graphZoom(factor: number): void {
+    if (!(factor > 0)) return
+    const domain = this.currentGraphDomain()
+    if (!domain) return
+    const full = domain.full
+    const fullW = full[1] - full[0]
+    const cur = this.signalViewWindow ?? full
+    const newW = (cur[1] - cur[0]) / factor
+    if (newW >= fullW) {
+      this.signalViewWindow = null
+      return
+    }
+    const cx = domain.cursorX ?? this.signalCursorX
+    const center =
+      cx !== null && cx !== undefined && cx >= cur[0] && cx <= cur[1]
+        ? cx
+        : (cur[0] + cur[1]) / 2
+    this.signalViewWindow = this.clampSignalWindow(
+      [center - newW / 2, center + newW / 2],
+      full,
+    )
+  }
+
+  /**
+   * Pan the zoom window just enough to bring data value `x` inside it (used when
+   * the wheel steps the marker past the visible edge). No-op when the full extent
+   * is shown or `x` is already visible. Returns true if the window moved.
+   */
+  panViewWindowTo(x: number): boolean {
+    if (!Number.isFinite(x)) return false
+    const win = this.signalViewWindow
+    const full = this.currentGraphDomain()?.full
+    if (!win || !full) return false
+    const [lo, hi] = win
+    if (x >= lo && x <= hi) return false
+    const width = hi - lo
+    let nLo: number
+    let nHi: number
+    if (x < lo) {
+      nLo = x
+      nHi = x + width
+    } else {
+      nHi = x
+      nLo = x - width
+    }
+    if (nLo < full[0]) {
+      nLo = full[0]
+      nHi = nLo + width
+    }
+    if (nHi > full[1]) {
+      nHi = full[1]
+      nLo = nHi - width
+    }
+    this.signalViewWindow = [nLo, nHi]
+    return true
+  }
+
+  /**
+   * Pan the signal graph x-window by `screenFrac` of its width in SCREEN space
+   * (negative = visually left). Translated to data-x via the axis orientation so
+   * the buttons move the view the same visual direction on a reversed (ppm) axis.
+   */
+  graphPan(screenFrac: number): void {
+    const domain = this.currentGraphDomain()
+    if (!domain) return
+    const full = domain.full
+    const cur = this.signalViewWindow
+    if (!cur) return // full view: nothing to pan
+    const width = cur[1] - cur[0]
+    if (width >= full[1] - full[0]) return
+    const d = screenFrac * width * (domain.reversed ? -1 : 1)
+    this.signalViewWindow = this.clampSignalWindow(
+      [cur[0] + d, cur[1] + d],
+      full,
+    )
+  }
+
+  /**
+   * Set the zoom/pan window to an explicit data-unit range (order-insensitive),
+   * clamped to the current full domain. `null` restores the full view. Used by a
+   * host that drives the visible range reactively (e.g. ppm sliders bound to the
+   * `graphRangeChange` event).
+   */
+  setGraphRange(range: [number, number] | null): void {
+    if (range === null) {
+      this.signalViewWindow = null
+      return
+    }
+    const domain = this.currentGraphDomain()
+    if (!domain) return
+    const lo = Math.min(range[0], range[1])
+    const hi = Math.max(range[0], range[1])
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo === hi) return
+    this.signalViewWindow = this.clampSignalWindow([lo, hi], domain.full)
   }
 
   removeMesh(index: number): void {
@@ -697,6 +1265,7 @@ export default class NVModel {
     this._releaseGPU(this.volumes[index])
     this.volumes.splice(index, 1)
     this._setupPivot3D()
+    this.invalidateGraphCache()
   }
 
   /**
@@ -722,6 +1291,7 @@ export default class NVModel {
     }
     this.volumes = []
     this._setupPivot3D()
+    this.invalidateGraphCache()
   }
 
   static readonly volumeDefaults = {
@@ -760,6 +1330,7 @@ export default class NVModel {
     const prepared = await NVModel.prepareVolume(volume)
     this.volumes.push(prepared)
     this._setupPivot3D()
+    this.invalidateGraphCache()
   }
 
   async loadVolume(volume: ImageFromUrlOptions): Promise<void> {

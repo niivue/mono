@@ -1,0 +1,63 @@
+name: Publish from tags
+
+# Recovery workflow for partially-failed releases. Use this when
+# `nx release` already created git tags and GitHub Releases but the npm
+# publish step did not complete (for example, an expired NPM_TOKEN).
+#
+# Idempotent: any tag whose <project>@<version> is already on the npm
+# registry is skipped, so it is safe to rerun.
+#
+# The script auto-discovers the most recent release commit reachable from
+# main and publishes the tags pointing at it. Pass an explicit `tags` list
+# to override.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: "Tags to publish (comma-, space-, or newline-separated). Leave blank to publish all release tags at the most recent release commit on main."
+        type: string
+        default: ""
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish tags to npm
+    runs-on: ubuntu-latest
+    # workflow_dispatch can be triggered from any branch. Only allow running the
+    # publishing workflow definition from main to avoid exposing NPM_TOKEN to
+    # unreviewed code.
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Always check out main; the script `git checkout`s the commit the
+          # selected tags point at before building.
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+          lfs: true
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+
+      - run: bun install
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+          INPUT_TAGS: ${{ inputs.tags }}
+        run: bun .github/scripts/publish-tags-to-npm.ts "$INPUT_TAGS"

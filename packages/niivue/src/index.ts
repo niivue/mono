@@ -11,6 +11,7 @@ export type {
   BackgroundVolumeAccess,
   DrawingAccess,
   DrawingDims,
+  MrsVolumeAccess,
   NVExtensionEventMap,
   SharedBufferHandle,
   SlicePointerEvent,
@@ -37,6 +38,7 @@ export type {
   DrawingChangedDetail,
   DrawingEnabledDetail,
   FrameChangeDetail,
+  GraphRangeChangeDetail,
   MeshLoadedDetail,
   MeshRemovedDetail,
   MeshUpdatedDetail,
@@ -46,6 +48,9 @@ export type {
   PenValueChangedDetail,
   PointerUpDetail,
   PropertyChangeDetail,
+  SignalLoadedDetail,
+  SignalLocationDetail,
+  SignalRemovedDetail,
   SliceTypeChangeDetail,
   ViewAttachedDetail,
   VolumeLoadedDetail,
@@ -65,6 +70,7 @@ export type {
   MeshFromUrlOptions,
   MeshLayerFromUrlOptions,
   MeshUpdate,
+  MrsVolumeMeta,
   NIFTI1,
   NIFTI2,
   NiiVueLocation,
@@ -75,13 +81,39 @@ export type {
   NVImage,
   NVMesh,
   NVMeshLayer,
+  NVSignal,
+  NVSignalDisplay,
+  NVSignalRaw,
   NVTractOptions,
   SaveVolumeOptions,
+  SignalAnnotation,
+  SignalAxis,
+  SignalKind,
+  SignalSeries,
+  SignalSidecar,
+  SignalSpectrumMode,
   SyncOpts,
   TypedVoxelArray,
   ViewHitTest,
   VolumeUpdate,
 } from './NVTypes'
+// Signal load options
+export type { SignalFromUrlOptions } from './signal/NVSignal'
+// MRS / spectroscopy processing (for nv-ext-mrs and other spectroscopy extensions)
+export {
+  apodize,
+  deriveSpectroscopySeries,
+  GYRO_MAG_RATIO,
+  halveFirstPoint,
+  integratePpmBandMap,
+  PPM_RANGE,
+  PPM_SHIFT,
+  type PpmBandOptions,
+  phaseCorrection,
+  ppmRefForNucleus,
+} from './signal/processing'
+// MRSI (spatial spectroscopic imaging) volume helpers
+export { buildDerivedScalarVolume, isMrsiVolume } from './volume/mrsi'
 // Transform types
 export type {
   OptionField,
@@ -91,6 +123,6 @@ export type {
   VolumeTransform,
 } from './volume/transforms'
 // Volume utilities for extensions
-export { getImageDataRAS } from './volume/utils'
+export { extractVoxelFid, getImageDataRAS } from './volume/utils'
 // Worker bridge for external transform packages
 export { NVWorker } from './workers/NVWorker'

@@ -143,7 +143,14 @@ export const UI_DEFAULTS: UIConfig = {
   measureLineColor: [1, 0, 0, 1],
   measureTextColor: [1, 0, 0, 1],
   rulerWidth: 2,
-  graph: { normalizeValues: false, isRangeCalMinMax: false },
+  graph: {
+    normalizeValues: false,
+    isRangeCalMinMax: false,
+    showVolumeTimecourse: true,
+    lineWidth: 1,
+    lineAlpha: 1,
+    autoResetView: true,
+  },
 }
 
 export const VOLUME_DEFAULTS: VolumeRenderConfig = {

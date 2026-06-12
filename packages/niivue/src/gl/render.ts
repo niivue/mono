@@ -10,6 +10,7 @@ import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
+import { buildModulationParams } from '@/volume/modulation'
 import * as depthPickShader from './depthPickShader'
 import * as gradient from './gradient'
 import * as orientOverlay from './orientOverlay'
@@ -210,6 +211,7 @@ export class VolumeRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     vol: NVImage,
     matcap: string = '',
+    allVolumes: NVImage[] = [vol],
   ): Promise<void> {
     if (!this.isReady) return
 
@@ -229,6 +231,7 @@ export class VolumeRenderer extends NVRenderer {
     // and similar tweaks are plain uniforms), instead of re-converting and
     // re-uploading the raw volume on every updateGLVolume() tick.
     const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
+    const modParams = buildModulationParams(vol, vol, allVolumes)
     if (isRgbaDatatype(vol.hdr.datatypeCode)) {
       // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
       this.clearVolume(gl)
@@ -238,6 +241,7 @@ export class VolumeRenderer extends NVRenderer {
         vol,
         mtx as Float32Array,
         0,
+        modParams,
       )
     } else {
       this.deleteNonCachedVolumeTexture(gl)
@@ -248,6 +252,7 @@ export class VolumeRenderer extends NVRenderer {
         mtx as Float32Array,
         0,
         this.volumeOrientCache,
+        modParams,
       )
       this.volumeTexture = this.volumeOrientCache.outputTexture
     }
@@ -381,6 +386,7 @@ export class VolumeRenderer extends NVRenderer {
         mtx as Float32Array,
         vol.opacity ?? 1,
         this.overlayOrientCache,
+        buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
       )
       this.overlayTexture = this.overlayOrientCache.outputTexture
       gl.bindTexture(gl.TEXTURE_3D, null)
@@ -397,6 +403,7 @@ export class VolumeRenderer extends NVRenderer {
           baseVol,
           mtx as Float32Array,
           vol.opacity ?? 1,
+          buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
         )
         const data = orientOverlay.readTexture3D(gl, tex, dimsOut)
         gl.deleteTexture(tex)
@@ -450,6 +457,7 @@ export class VolumeRenderer extends NVRenderer {
       mtx as Float32Array,
       overlayVol.opacity ?? 1,
       this.overlayOrientCache,
+      buildModulationParams(overlayVol, baseVol, [baseVol, overlayVol]),
     )
     this.overlayTexture = this.overlayOrientCache.outputTexture
     return true

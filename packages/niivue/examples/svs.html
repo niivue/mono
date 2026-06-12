@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue Spectroscopy (SVS)</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="avgCheck">Average transients</label>
+      <input type="checkbox" id="avgCheck" checked />
+      &nbsp;
+      <label for="modeSelect">Component</label>
+      <select id="modeSelect">
+        <option value="real" selected>Real</option>
+        <option value="imag">Imaginary</option>
+        <option value="magnitude">Magnitude</option>
+        <option value="phase">Phase</option>
+      </select>
+      &nbsp;
+      <label for="apod">Apodize (Hz) <span id="apodVal">0</span></label>
+      <input type="range" id="apod" min="0" max="20" step="1" value="0" />
+      &nbsp;
+      <label for="p0">Phase0 (&deg;) <span id="p0Val">0</span></label>
+      <input type="range" id="p0" min="-180" max="180" step="1" value="0" />
+      &nbsp;
+      <label for="p1">Phase1 (ms) <span id="p1Val">0</span></label>
+      <input type="range" id="p1" min="-5" max="5" step="0.1" value="0" />
+      &nbsp;
+      <label for="ppmLow">ppm low <span id="ppmLowVal">1.9</span></label>
+      <input type="range" id="ppmLow" min="0" max="8" step="0.1" value="1.9" />
+      &nbsp;
+      <label for="ppmHigh">ppm high <span id="ppmHighVal">3.3</span></label>
+      <input type="range" id="ppmHigh" min="0" max="8" step="0.1" value="3.3" />
+      &nbsp;
+      <label for="fullRangeBtn"></label>
+      <button type="button" id="fullRangeBtn">Full range</button>
+      &nbsp;
+      <label for="reactiveCheck" title="Sliders drive the live view window and follow the in-graph zoom/pan (two-way). Unchecked: sliders set the explicit ppm range and zoom is transient.">Reactive</label>
+      <input type="checkbox" id="reactiveCheck" />
+      &nbsp;
+      <label for="sceneSelect">Show</label>
+      <select id="sceneSelect">
+        <option value="mrs">MRS only</option>
+        <option value="mri">MRI only</option>
+        <option value="both">MRI + MRS</option>
+        <option value="all" selected>MRI + MRS + voxel</option>
+      </select>
+      &nbsp;
+      <label for="viewSelect">View</label>
+      <select id="viewSelect">
+        <option value="0" selected>Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3">A+C+S+R</option>
+      </select>
+      &nbsp;
+      <input type="color" id="colorBtn" value="#191923" />
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue::Spectroscopy&nbsp;</footer>
+    <script type="module" src="svs.js"></script>
+  </body>
+</html>

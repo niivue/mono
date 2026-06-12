@@ -15,12 +15,15 @@ import * as NVTransforms from '@/math/NVTransforms'
 import type NiiVueGPU from '@/NVControlBase'
 import type { NVImage, TypedVoxelArray } from '@/NVTypes'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
+import { buildDerivedScalarVolume } from '@/volume/mrsi'
+import { nii2volume } from '@/volume/NVVolume'
 import type { TransformOptions, VolumeTransform } from '@/volume/transforms'
 import { getImageDataRAS } from '@/volume/utils'
 import type {
   BackgroundVolumeAccess,
   DrawingAccess,
   DrawingDims,
+  MrsVolumeAccess,
   NVExtensionEventMap,
   SharedBufferHandle,
   SlicePointerEvent,
@@ -178,6 +181,66 @@ export class NVExtensionContext {
 
   get volumes(): readonly NVImage[] {
     return this.nv.volumes
+  }
+
+  /** Build a read-only MRS access object for a volume, or null if not MRSI. */
+  private mrsAccessFor(vol: NVImage | undefined): MrsVolumeAccess | null {
+    if (!vol?.complexFID || !vol.mrsMeta) return null
+    return {
+      id: vol.id ?? vol.name,
+      complexData: vol.complexFID,
+      meta: vol.mrsMeta,
+      dims: {
+        dimX: vol.dimsRAS?.[1] ?? 0,
+        dimY: vol.dimsRAS?.[2] ?? 0,
+        dimZ: vol.dimsRAS?.[3] ?? 0,
+      },
+      makeScalarOverlay(data: Float32Array, name: string): NVImage {
+        return buildDerivedScalarVolume(vol, data, name, nii2volume)
+      },
+      voxelCenterMm(
+        mm: [number, number, number],
+      ): [number, number, number] | null {
+        const d = vol.dimsRAS
+        if (!vol.matRAS || !d) return null
+        // mm -> nearest MRSI voxel (rounded). Outside the grid -> null (so a
+        // caller leaves the crosshair free over the anatomy, only snapping
+        // within the spectroscopy slab).
+        const v = NVTransforms.mm2vox(vol, mm)
+        const ix = Math.round(v[0])
+        const iy = Math.round(v[1])
+        const iz = Math.round(v[2])
+        if (
+          ix < 0 ||
+          ix >= d[1] ||
+          iy < 0 ||
+          iy >= d[2] ||
+          iz < 0 ||
+          iz >= d[3]
+        )
+          return null
+        const c = NVTransforms.vox2mm(null, [ix, iy, iz], vol.matRAS)
+        return [c[0], c[1], c[2]]
+      },
+    }
+  }
+
+  /**
+   * Read-only access to the first loaded complex MRSI volume (one that retained
+   * a `complexFID` + `mrsMeta` on the volume path), or null if none is loaded.
+   * Exposes the raw FID buffer + spectral metadata for the range-integration
+   * tool and a helper to build derived scalar overlays on the same grid. When
+   * several MRSI volumes may be loaded, prefer {@link mrsById}.
+   */
+  get mrs(): MrsVolumeAccess | null {
+    return this.mrsAccessFor(
+      this.nv.volumes.find((v) => v.complexFID && v.mrsMeta),
+    )
+  }
+
+  /** Read-only MRS access bound to a specific volume id (multi-MRSI safe). */
+  mrsById(id: string): MrsVolumeAccess | null {
+    return this.mrsAccessFor(this.nv.volumes.find((v) => v.id === id))
   }
 
   // ── Events ────────────────────────────────────────────────

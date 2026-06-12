@@ -19,6 +19,7 @@ import type {
   VectorAnnotation,
   ViewHitTest,
 } from '@/NVTypes'
+import { parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
 import { computeTolerance } from '@/view/NVAnnotation'
 import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
 import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
@@ -96,8 +97,21 @@ function handleGraphHitTest(ctrl: NiiVueGPU, x: number, y: number): boolean {
   if (hit.type === 'frame' && hit.frame >= 0) {
     const vol = ctrl.volumes[0]
     if (vol?.id) {
-      ctrl.setFrame4D(vol.id, hit.frame)
+      ctrl
+        .setFrame4D(vol.id, hit.frame)
+        .catch((e) => log.error('setFrame4D failed', e))
     }
+    return true
+  }
+  if (hit.type === 'signalCursor') {
+    ctrl.setSignalCursorFraction(hit.xFrac)
+    return true
+  }
+  if (hit.type === 'graphControl') {
+    if (hit.id === 'zoomIn') ctrl.graphZoom(2)
+    else if (hit.id === 'zoomOut') ctrl.graphZoom(0.5)
+    else if (hit.id === 'panLeft') ctrl.graphPan(-0.25)
+    else if (hit.id === 'panRight') ctrl.graphPan(0.25)
     return true
   }
   // Inside graph but not on a specific element — consume to prevent tile hit
@@ -1115,10 +1129,20 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     // Wheel over the 4D timeline graph: step to previous/next frame
     const graphLayout = ctrl.view?.graphLayout as GraphLayout | null
     if (graphLayout && graphHitTest(px, py, graphLayout)) {
-      const vol = ctrl.volumes[0]
+      // Target the associated volume (matches graph-click scrubbing) when a
+      // physio signal is bound to one, else the background volume.
+      const vol = ctrl.model.getAssociatedVolume() ?? ctrl.volumes[0]
+      const delta = evt.deltaY > 0 ? 1 : -1
       if (vol?.id && (vol.nFrame4D ?? 1) > 1) {
-        const delta = evt.deltaY > 0 ? 1 : -1
-        ctrl.setFrame4D(vol.id, (vol.frame4D ?? 0) + delta)
+        // Spatial 4D volume: discrete per-frame stepping takes precedence.
+        // setFrame4D keeps the marker in the zoom window (ensureGraphCursorVisible).
+        ctrl
+          .setFrame4D(vol.id, (vol.frame4D ?? 0) + delta)
+          .catch((e) => log.error('setFrame4D failed', e))
+      } else if (ctrl.signals.length > 0) {
+        // Fallback for a non-spatial signal graph: scrub the cursor. Negated so
+        // the marker moves on screen the same way the 4D frame marker does.
+        ctrl.stepSignalCursor(-delta)
       }
       return
     }
@@ -1198,6 +1222,20 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (!dblHit) return // outside this instance's bounds
     setNextActionTag('dblclick')
     const [px, py] = dblHit
+    // Double-clicking the zoom-out ("-") button jumps straight to the full view
+    // (the one-click way back from a deep zoom). The reset is restricted to that
+    // button: a double-click on "+"/"<"/">" must keep its single-click action
+    // (zoom in / pan) rather than be overridden by a reset, and a plot
+    // double-click just scrubs. Any graph hit still consumes the event so it does
+    // not fall through to depth-pick (there is nothing to pick on the 2-D plot).
+    const graphLayout = ctrl.view?.graphLayout as GraphLayout | null
+    const graphHit = graphHitTest(px, py, graphLayout)
+    if (graphHit) {
+      if (graphHit.type === 'graphControl' && graphHit.id === 'zoomOut') {
+        ctrl.graphResetView()
+      }
+      return
+    }
     const mm = (await ctrl.view?.depthPick(px, py)) ?? null
     if (mm) {
       ctrl.setCrosshairPos(mm)
@@ -1298,15 +1336,35 @@ export function setupDragAndDrop(ctrl: NiiVueGPU): void {
     evt.preventDefault()
     if (!ctrl.opts.isDragDropEnabled) return
     const files = evt.dataTransfer?.files
-    if (files && files.length > 0) {
-      const file = files[0]
-      try {
-        // Check if it's a NiiVue document file
-        if (file.name.toLowerCase().endsWith('.nvd')) {
-          await ctrl.loadDocument(file)
-        } else {
-          await ctrl.loadImage(file)
+    if (!files || files.length === 0) return
+    const fileList = Array.from(files)
+    // Pair BIDS/MRS JSON sidecars with their data file by basename, so a
+    // dropped data+json pair loads with the sidecar applied (sandbox-safe:
+    // the browser cannot fetch a sibling .json we were not given).
+    // Keyed by lowercased sidecar filename so pairing is case-insensitive.
+    const sidecars = new Map<string, ReturnType<typeof parseSidecar>>()
+    for (const f of fileList) {
+      if (f.name.toLowerCase().endsWith('.json')) {
+        try {
+          sidecars.set(
+            f.name.toLowerCase(),
+            parseSidecar(JSON.parse(await f.text())),
+          )
+        } catch (err) {
+          log.error('Failed to parse sidecar:', f.name, err)
         }
+      }
+    }
+    for (const file of fileList) {
+      const lower = file.name.toLowerCase()
+      if (lower.endsWith('.json')) continue
+      try {
+        if (lower.endsWith('.nvd')) {
+          await ctrl.loadDocument(file)
+          continue
+        }
+        const sidecar = sidecars.get(siblingJsonUrl(lower))
+        await ctrl.loadImage(file, sidecar ? { sidecar } : {})
       } catch (err) {
         log.error('Failed to load dropped file:', err)
       }

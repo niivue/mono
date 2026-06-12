@@ -8,6 +8,7 @@ import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
+import { buildModulationParams } from '@/volume/modulation'
 import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
 import * as orient from './orient'
 import renderFragment from './render.wgsl?raw'
@@ -251,6 +252,7 @@ export class VolumeRenderer extends NVRenderer {
     device: GPUDevice,
     vol: NVImage,
     matcap: string = '',
+    allVolumes: NVImage[] = [vol],
   ): Promise<void> {
     if (!this.isReady) return
 
@@ -280,6 +282,7 @@ export class VolumeRenderer extends NVRenderer {
     // tweaks are plain uniforms), instead of re-uploading the raw volume on
     // every updateGLVolume() tick.
     const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
+    const modParams = buildModulationParams(vol, vol, allVolumes)
     if (isRgbaDatatype(vol.hdr.datatypeCode)) {
       // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
       this.clearVolume()
@@ -289,6 +292,7 @@ export class VolumeRenderer extends NVRenderer {
         vol,
         mtx as Float32Array,
         0,
+        modParams,
       )
     } else {
       this.destroyNonCachedVolumeTexture()
@@ -299,6 +303,7 @@ export class VolumeRenderer extends NVRenderer {
         mtx as Float32Array,
         0,
         this.volumeOrientCache,
+        modParams,
       )
       orient.dispatchOrient(device, this.volumeOrientCache)
       this.volumeTexture = this.volumeOrientCache.outputTexture
@@ -393,6 +398,7 @@ export class VolumeRenderer extends NVRenderer {
         mtx as Float32Array,
         vol.opacity ?? 1,
         this.overlayOrientCache,
+        buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
       )
       orient.dispatchOrient(device, this.overlayOrientCache)
       this.overlayTexture = this.overlayOrientCache.outputTexture
@@ -410,6 +416,7 @@ export class VolumeRenderer extends NVRenderer {
             baseVol,
             mtx as Float32Array,
             vol.opacity ?? 1,
+            buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
           ),
         )
       }
@@ -444,6 +451,7 @@ export class VolumeRenderer extends NVRenderer {
       mtx as Float32Array,
       overlayVol.opacity ?? 1,
       this.overlayOrientCache,
+      buildModulationParams(overlayVol, baseVol, [baseVol, overlayVol]),
     )
     orient.dispatchOrient(device, this.overlayOrientCache)
     this.overlayTexture = this.overlayOrientCache.outputTexture

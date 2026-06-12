@@ -12,6 +12,9 @@ const imagesDir = resolve(__dirname, '../images')
 function walkDir(dir: string, base: string): string[] {
   const results: string[] = []
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    // Skip dotfiles (e.g. macOS .DS_Store) so they are neither served nor
+    // emitted into build output.
+    if (entry.name.startsWith('.')) continue
     const full = resolve(dir, entry.name)
     if (entry.isDirectory()) {
       results.push(...walkDir(full, base))

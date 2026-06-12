@@ -54,6 +54,17 @@ const tags =
     ? explicit
     : output(['git', 'tag', '--points-at', 'HEAD']).split('\n').filter(Boolean)
 
+if (explicit.length > 0) {
+  const head = output(['git', 'rev-parse', 'HEAD'])
+  for (const tag of explicit) {
+    const tagCommit = output(['git', 'rev-list', '-n', '1', tag])
+    if (tagCommit !== head) {
+      throw new Error(
+        `Tag ${tag} does not point at HEAD (${tagCommit} != ${head}). Check out the release commit for that tag before publishing.`,
+      )
+    }
+  }
+}
 if (tags.length === 0) {
   console.log('No tags to publish.')
   process.exit(0)

@@ -6,7 +6,13 @@
  */
 
 import type { NVEventMap } from '@/NVEvents'
-import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
+import type {
+  MrsVolumeMeta,
+  NIFTI1,
+  NIFTI2,
+  NVImage,
+  TypedVoxelArray,
+} from '@/NVTypes'
 
 // ============================================================
 // Shared geometry types
@@ -96,6 +102,37 @@ export interface BackgroundVolumeAccess {
    * Returns null if no image data is available.
    */
   readonly imgRAS: Float32Array | null
+}
+
+/**
+ * Read-only access to a loaded complex MRSI (spectroscopic imaging) volume's
+ * retained FID buffer and spectral metadata, plus a helper to build derived
+ * scalar overlays (e.g. metabolite maps) sharing its spatial grid. Returned by
+ * `context.mrs`; null when no MRSI volume is loaded.
+ */
+export interface MrsVolumeAccess {
+  /** The MRSI volume's id (for `addMrsiSignal` / attachment). */
+  readonly id: string
+  /** Interleaved re/im complex FID in NIfTI native voxel order. */
+  readonly complexData: Float32Array
+  /** Spectral metadata (spectrometer freq, nucleus, dwell, nPoints, nTransients). */
+  readonly meta: MrsVolumeMeta
+  /** Spatial dimensions in RAS space. */
+  readonly dims: DrawingDims
+  /**
+   * Build a derived scalar overlay (native voxel order, length
+   * `dimX*dimY*dimZ`) that shares this volume's grid/affine — e.g. a
+   * range-integration metabolite map. Add it via `context.addVolume(...)`.
+   */
+  makeScalarOverlay(data: Float32Array, name: string): NVImage
+  /**
+   * Snap a world-mm coordinate to the centre of the MRSI voxel that contains
+   * it (round-trip mm -> nearest voxel -> mm), for placing a crosshair/marker
+   * exactly on the coarse spectroscopy grid cell being sampled. Returns null
+   * when `mm` falls outside the MRSI grid (so the caller can leave the
+   * crosshair free over the surrounding anatomy).
+   */
+  voxelCenterMm(mm: [number, number, number]): [number, number, number] | null
 }
 
 /** Handle returned by `acquireSharedBuffer()`. */

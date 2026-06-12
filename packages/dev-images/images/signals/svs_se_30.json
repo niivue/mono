@@ -1,0 +1,6 @@
+{
+  "_comment": "Minimal hand-authored NIfTI-MRS sidecar for the svs.html demo. Contains only the fields NiiVue's signal reader consumes (SpectrometerFrequency + ResonantNucleus drive the ppm axis; DwellTime is a fallback for the NIfTI pixDim[4] spectral dwell). Do NOT replace with a raw dcm2niix dump: that re-introduces site/device/patient PII into this public demo asset (see packages/niivue/AGENTS.md signal audit notes).",
+  "SpectrometerFrequency": 297.154513,
+  "ResonantNucleus": "1H",
+  "DwellTime": 0.0005
+}

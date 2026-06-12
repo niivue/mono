@@ -424,9 +424,16 @@ jupyter lab --no-browser           # Manual inspection
 ```
 
 The `lint`, `format`, `typecheck`, `test`, `build`, and `smoke` Nx
-targets wrap their Python tools in `pixi run -e dev`, so running any
-of them requires `pixi` on `PATH`. Biome and `tsc` are invoked via
-`bunx` and have no Python requirement.
+targets wrap their Python tools (ruff/mypy/pytest/hatchling) via
+[scripts/pixi-or-skip.ts](scripts/pixi-or-skip.ts) (a cross-platform Bun
+wrapper, so it works on Windows too): when `pixi` is on
+`PATH` they run under `pixi run -e dev` and enforce normally (CI
+installs pixi via setup-pixi); when `pixi` is absent the Python step is
+**skipped with a notice and the target still succeeds**, so a
+TypeScript-only contributor's `nx run-many` does not hard-fail on this
+Python project. Biome and `tsc` are invoked via `bunx` and always run
+(no Python requirement). To actually exercise the Python checks
+locally, provision the env first with `pixi install -e dev`.
 
 If JupyterLab restores stale widget state during dev:
 

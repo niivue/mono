@@ -35,11 +35,21 @@ export type {
   NVImage,
   NVMesh,
   NVMeshLayer,
+  NVSignal,
+  NVSignalDisplay,
+  NVSignalRaw,
   NVTractOptions,
   SaveVolumeOptions,
+  SignalAnnotation,
+  SignalAxis,
+  SignalKind,
+  SignalSeries,
+  SignalSidecar,
+  SignalSpectrumMode,
   SyncOpts,
   ViewHitTest,
   VolumeUpdate,
 } from './NVTypes'
+export type { SignalFromUrlOptions } from './signal/NVSignal'
 export type { TransformInfo, TransformOptions } from './volume/transforms'
 export { getImageDataRAS } from './volume/utils'

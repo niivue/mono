@@ -732,6 +732,60 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
 
 // ---------- Main entry point ----------
 
+/** Width of the bounding box enclosing all laid-out tiles. */
+function sliceBoundingWidth(tiles: SliceTile[]): number {
+  let minL = Number.POSITIVE_INFINITY
+  let maxR = Number.NEGATIVE_INFINITY
+  for (const t of tiles) {
+    const r = t.leftTopWidthHeight
+    if (!r) continue
+    minL = Math.min(minL, r[0])
+    maxR = Math.max(maxR, r[0] + r[2])
+  }
+  if (!Number.isFinite(minL) || !Number.isFinite(maxR)) return 0
+  return maxR - minL
+}
+
+/**
+ * Lay out slices and let the graph reclaim horizontal slack. The graph reserves
+ * a base width and the slices fill the rest; for a SINGLE-orientation view the
+ * tile is often narrower than that area (a tall axial slice in a wide pane),
+ * wasting space. In that case the slack is handed to the graph (which grows) and
+ * the slices are re-laid into the reduced area so they sit flush.
+ *
+ * Restricted to single-orientation views (axial/coronal/sagittal, no
+ * mosaic/custom layout) where the tile is one centered rect and re-layout is
+ * stable; grids/mosaics can reflow when the width changes, so they keep the base
+ * graph width. `config.canvasWH[0]` is the base slice-area width.
+ */
+export function fitSlicesAndGraph(
+  config: SliceLayoutConfig,
+  baseGraphWidth: number,
+): { screenSlices: SliceTile[]; graphWidth: number } {
+  const screenSlices = screenSlicesLayout(config)
+  if (baseGraphWidth <= 0) return { screenSlices, graphWidth: 0 }
+  const single =
+    (config.sliceType === NVConstants.SLICE_TYPE.AXIAL ||
+      config.sliceType === NVConstants.SLICE_TYPE.CORONAL ||
+      config.sliceType === NVConstants.SLICE_TYPE.SAGITTAL) &&
+    !config.sliceMosaicString &&
+    !(config.customLayout && config.customLayout.length > 0)
+  if (!single) return { screenSlices, graphWidth: baseGraphWidth }
+  const baseW = config.canvasWH[0]
+  const usedW = sliceBoundingWidth(screenSlices)
+  // Require meaningful slack (avoid churn from sub-pixel rounding).
+  if (usedW <= 0 || usedW >= baseW - 1) {
+    return { screenSlices, graphWidth: baseGraphWidth }
+  }
+  return {
+    screenSlices: screenSlicesLayout({
+      ...config,
+      canvasWH: [usedW, config.canvasWH[1]],
+    }),
+    graphWidth: baseGraphWidth + (baseW - usedW),
+  }
+}
+
 export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
   const { canvasWH, extentsMin, extentsMax } = config
   const sliceType = config.sliceType

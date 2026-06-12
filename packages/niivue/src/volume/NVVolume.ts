@@ -2,7 +2,14 @@ import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { NiiDataType, NiiIntentCode } from '@/NVConstants'
 import * as NVLoader from '@/NVLoader'
-import type { NIFTI1, NIFTI2, NVImage, TypedVoxelArray } from '@/NVTypes'
+import type {
+  MrsVolumeMeta,
+  NIFTI1,
+  NIFTI2,
+  NVImage,
+  TypedVoxelArray,
+} from '@/NVTypes'
+import { isMrsiVolume, prepareMrsiVolume } from './mrsi'
 import {
   calculateWorldExtents,
   calMinMax,
@@ -204,6 +211,17 @@ export function nii2volume(
     hdr = converted.hdr
     img = converted.img
   }
+  // Spatial complex spectroscopic imaging (MRSI/CSI): replace the complex data
+  // with a derived scalar display map and retain the raw FID + spectral
+  // metadata to attach to the NVImage after construction.
+  let mrsiExtra: { complexFID: Float32Array; mrsMeta: MrsVolumeMeta } | null =
+    null
+  if (isMrsiVolume(hdr)) {
+    const prepped = prepareMrsiVolume(hdr, img)
+    hdr = prepped.hdr
+    img = prepped.img
+    mrsiExtra = { complexFID: prepped.complexFID, mrsMeta: prepped.mrsMeta }
+  }
   const { extentsMin, extentsMax } = calculateWorldExtents(
     hdr.dims.slice(1, 4),
     new Float32Array(hdr.affine.flat()),
@@ -268,6 +286,13 @@ export function nii2volume(
   const v1 = (hdr as unknown as { v1?: Float32Array }).v1
   if (v1) {
     volume.v1 = v1
+  }
+  if (mrsiExtra) {
+    volume.complexFID = mrsiExtra.complexFID
+    volume.mrsMeta = mrsiExtra.mrsMeta
+    // NB: do NOT set `isImaginary` — the displayed `img` is the derived REAL
+    // scalar map (the complex data lives in `complexFID`). Setting it would make
+    // locationTracking append a bogus "imaginary" component to the readout.
   }
   NVTransforms.calculateRAS(volume)
   if (!volume.pixDimsRAS || !volume.dimsRAS) {

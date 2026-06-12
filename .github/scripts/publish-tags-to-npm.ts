@@ -59,6 +59,18 @@ const tags =
     ? explicit
     : output(['git', 'tag', '--points-at', 'HEAD']).split('\n').filter(Boolean)
 
+// Safety guard: workflow_dispatch can check out an arbitrary ref. Refuse to run
+// with npm credentials unless HEAD is contained in origin/main.
+run(['git', 'fetch', '--quiet', 'origin', 'main'])
+const onMain = Bun.spawnSync(
+  ['git', 'merge-base', '--is-ancestor', 'HEAD', 'origin/main'],
+  { stdout: 'ignore', stderr: 'inherit' },
+)
+if (onMain.exitCode !== 0) {
+  throw new Error(
+    'Ref at HEAD is not contained in origin/main; refusing to publish with npm credentials.',
+  )
+}
 if (explicit.length > 0) {
   const head = output(['git', 'rev-parse', 'HEAD'])
   for (const tag of explicit) {

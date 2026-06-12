@@ -102,12 +102,19 @@ for (const tag of tags) {
   }
   const pkg = JSON.parse(
     readFileSync(`${projectInfo.root}/package.json`, 'utf8'),
-  ) as { name?: unknown }
+  ) as { name?: unknown; version?: unknown }
   if (typeof pkg.name !== 'string') {
     throw new Error(`Missing package.json "name" for ${project}`)
   }
+  if (typeof pkg.version !== 'string') {
+    throw new Error(`Missing package.json "version" for ${project}`)
+  }
   const pkgName = pkg.name
-
+  if (pkg.version !== version) {
+    throw new Error(
+      `Tag ${tag} version (${version}) does not match ${pkgName} package.json version (${pkg.version}) at the checked-out ref.`,
+    )
+  }
   const existing = tryOutput(['npm', 'view', `${pkgName}@${version}`, 'version'])
   if (existing && existing.trim() === version) {
     console.log(`Skipping ${pkgName}@${version} (already on npm)`)

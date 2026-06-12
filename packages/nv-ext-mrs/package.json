@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-mrs",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "type": "module",
   "description": "MR spectroscopic imaging (MRSI) visualization for NiiVue: crosshair-voxel spectra, FSL-MRS spectral processing, and ppm-band metabolite maps. Ports algorithms from fsleyes-plugin-mrs (BSD-3, (c) 2021 William Clarke, University of Oxford).",
   "main": "./dist/nv-ext-mrs.js",

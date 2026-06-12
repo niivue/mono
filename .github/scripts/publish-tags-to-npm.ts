@@ -6,8 +6,16 @@
 // idempotent: tags whose `<project>@<version>` is already on the registry are
 // skipped, so reruns are safe.
 //
+// Behavior:
+//   - If tags are passed on argv, those are used.
+//   - Otherwise tags are auto-discovered: the most recent commit reachable
+//     from HEAD that has any `<project>@<version>` release tags pointing at
+//     it is selected, and all such tags at that commit are used.
+//   - All selected tags must point at the same commit. The script then
+//     `git checkout`s that commit so the build matches the tagged source.
+//
 // Usage:
-//   bun .github/scripts/publish-tags-to-npm.ts            # tags at HEAD
+//   bun .github/scripts/publish-tags-to-npm.ts            # auto-discover
 //   bun .github/scripts/publish-tags-to-npm.ts <tag>...   # explicit tags
 
 import { readFileSync } from 'node:fs'
@@ -41,6 +49,12 @@ const tryOutput = (command: string[]): string | null => {
 const isNpmReleaseProject = (project: string): boolean =>
   project === 'niivue' || project.startsWith('nv-')
 
+const parseTag = (tag: string): { project: string; version: string } | null => {
+  const atIndex = tag.lastIndexOf('@')
+  if (atIndex < 1) return null
+  return { project: tag.slice(0, atIndex), version: tag.slice(atIndex + 1) }
+}
+
 // Parse explicit tags from argv. Accept whitespace-, comma-, or
 // newline-separated input so the workflow_dispatch text box can be lenient.
 const explicit = Bun.argv
@@ -49,13 +63,32 @@ const explicit = Bun.argv
   .map((tag) => tag.trim())
   .filter(Boolean)
 
-const tags =
-  explicit.length > 0
-    ? explicit
-    : output(['git', 'tag', '--points-at', 'HEAD']).split('\n').filter(Boolean)
+// Discover release tags by walking commits reachable from HEAD until we find
+// one with at least one `<project>@<version>` tag whose project is an npm
+// release project. This is robust against unrelated commits landing on main
+// after the release commit was pushed.
+const discoverReleaseTags = (): string[] => {
+  const commits = output(['git', 'log', '--format=%H', '-n', '500']).split('\n')
+  for (const sha of commits) {
+    const tagsAtCommit = output(['git', 'tag', '--points-at', sha])
+      .split('\n')
+      .filter(Boolean)
+    const releaseTags = tagsAtCommit.filter((tag) => {
+      const parsed = parseTag(tag)
+      return parsed !== null && isNpmReleaseProject(parsed.project)
+    })
+    if (releaseTags.length > 0) {
+      console.log(`Discovered release commit ${sha} with ${releaseTags.length} release tag(s)`)
+      return releaseTags
+    }
+  }
+  return []
+}
+
+const tags = explicit.length > 0 ? explicit : discoverReleaseTags()
 
 if (tags.length === 0) {
-  console.log('No tags to publish.')
+  console.log('No release tags found to publish.')
   process.exit(0)
 }
 
@@ -64,17 +97,48 @@ for (const tag of tags) {
   console.log(`  - ${tag}`)
 }
 
+// Resolve all tags to commits and ensure they agree. Mixing tags from
+// different release commits in one run would build the wrong source for some.
+const tagCommits = new Map<string, string>()
+for (const tag of tags) {
+  const sha = tryOutput(['git', 'rev-list', '-n', '1', tag])
+  if (!sha) {
+    throw new Error(`Tag not found locally: ${tag} (ensure tags were fetched)`)
+  }
+  tagCommits.set(tag, sha)
+}
+const uniqueCommits = new Set(tagCommits.values())
+if (uniqueCommits.size > 1) {
+  console.error('Tags point at multiple commits; refusing to continue:')
+  for (const [tag, sha] of tagCommits) {
+    console.error(`  ${tag} -> ${sha}`)
+  }
+  process.exit(1)
+}
+const targetCommit = [...uniqueCommits][0]
+if (!targetCommit) {
+  throw new Error('Could not resolve target commit from tags')
+}
+
+const headBefore = output(['git', 'rev-parse', 'HEAD'])
+if (headBefore !== targetCommit) {
+  console.log(`Checking out tagged commit ${targetCommit} (was ${headBefore})`)
+  run(['git', 'checkout', '--detach', targetCommit])
+  // Reinstall in case the lockfile at the tagged commit differs from the
+  // workflow branch we initially checked out.
+  console.log('Reinstalling dependencies for tagged commit')
+  run(['bun', 'install', '--frozen-lockfile'])
+}
+
 const summary: string[] = []
 
 for (const tag of tags) {
-  const atIndex = tag.lastIndexOf('@')
-  if (atIndex < 1) {
+  const parsed = parseTag(tag)
+  if (!parsed) {
     console.log(`Skipping ${tag} (not a project@version tag)`)
     continue
   }
-
-  const project = tag.slice(0, atIndex)
-  const version = tag.slice(atIndex + 1)
+  const { project, version } = parsed
 
   if (!isNpmReleaseProject(project)) {
     console.log(`Skipping ${tag} (not an npm release project)`)

@@ -6,16 +6,16 @@ name: Publish from tags
 #
 # Idempotent: any tag whose <project>@<version> is already on the npm
 # registry is skipped, so it is safe to rerun.
+#
+# The script auto-discovers the most recent release commit reachable from
+# main and publishes the tags pointing at it. Pass an explicit `tags` list
+# to override.
 
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: "Git ref to check out (branch, tag, or commit). Defaults to main, where the release commit lives."
-        type: string
-        default: main
       tags:
-        description: "Tags to publish (comma-, space-, or newline-separated). Leave blank to publish all tags pointing at the checked-out commit."
+        description: "Tags to publish (comma-, space-, or newline-separated). Leave blank to publish all release tags at the most recent release commit on main."
         type: string
         default: ""
 
@@ -34,7 +34,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.ref }}
+          # Always check out main; the script `git checkout`s the commit the
+          # selected tags point at before building.
+          ref: main
           fetch-depth: 0
           fetch-tags: true
           lfs: true

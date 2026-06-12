@@ -31,6 +31,10 @@ jobs:
   publish:
     name: Publish tags to npm
     runs-on: ubuntu-latest
+    # workflow_dispatch can be triggered from any branch. Only allow running the
+    # publishing workflow definition from main to avoid exposing NPM_TOKEN to
+    # unreviewed code.
+    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v5
         with:

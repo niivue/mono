@@ -470,6 +470,9 @@ export class VolumeRenderer extends NVRenderer {
     ) {
       gl.deleteTexture(this.volumeTexture)
     }
+    // Always drop the reference: either we just deleted the texture, or the
+    // cache still owns it via volumeOrientCache.outputTexture. The caller
+    // reassigns this.volumeTexture immediately after.
     this.volumeTexture = null
   }
 

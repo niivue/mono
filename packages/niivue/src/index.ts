@@ -124,5 +124,10 @@ export type {
 } from './volume/transforms'
 // Volume utilities for extensions
 export { extractVoxelFid, getImageDataRAS } from './volume/utils'
+// Volume construction/serialization for extensions building derived volumes
+// (e.g. wrapping segmentation labels into an overlay NVImage)
+export { nii2volume, writeVolume } from './volume/NVVolume'
+// Label colormap LUT builder for extensions producing label/atlas volumes
+export { makeLabelLut } from './cmap/NVCmaps'
 // Worker bridge for external transform packages
 export { NVWorker } from './workers/NVWorker'

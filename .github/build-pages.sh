@@ -24,6 +24,7 @@ APPS=(
   demo-ext-save-html
   demo-ext-dcm2niix
   demo-ext-niimath
+  demo-ext-mrs
   demo-nv-web-component
 )
 

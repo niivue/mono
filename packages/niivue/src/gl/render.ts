@@ -36,6 +36,8 @@ export class VolumeRenderer extends NVRenderer {
   cube: { vertices: number[]; indices: number[] }
   max3D: number
   private overlayOrientCache: orientOverlay.OverlayTextureCache | null = null
+  private volumeOrientCache: orientOverlay.OverlayTextureCache | null = null
+  private matcapKey: string | null = null
 
   constructor() {
     super()
@@ -223,26 +225,47 @@ export class VolumeRenderer extends NVRenderer {
       )
     }
 
-    // Create volumeTexture using orientOverlay
+    // Create volumeTexture using orientOverlay. Scalar volumes go through the
+    // orient-texture cache: while datatype/dims/frame4D/img-buffer/colormap
+    // are unchanged, only the cheap orient render pass re-runs (cal_min/max
+    // and similar tweaks are plain uniforms), instead of re-converting and
+    // re-uploading the raw volume on every updateGLVolume() tick.
     const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
-    if (this.volumeTexture) {
-      gl.deleteTexture(this.volumeTexture)
+    const modParams = buildModulationParams(vol, vol, allVolumes)
+    if (isRgbaDatatype(vol.hdr.datatypeCode)) {
+      // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
+      this.clearVolume(gl)
+      this.volumeTexture = await orientOverlay.overlay2Texture(
+        gl,
+        vol,
+        vol,
+        mtx as Float32Array,
+        0,
+        modParams,
+      )
+    } else {
+      this.deleteNonCachedVolumeTexture(gl)
+      this.volumeOrientCache = orientOverlay.prepareOverlayTextureCache(
+        gl,
+        vol,
+        vol,
+        mtx as Float32Array,
+        0,
+        this.volumeOrientCache,
+        modParams,
+      )
+      this.volumeTexture = this.volumeOrientCache.outputTexture
     }
-    this.volumeTexture = await orientOverlay.overlay2Texture(
-      gl,
-      vol,
-      vol,
-      mtx as Float32Array,
-      0,
-      buildModulationParams(vol, vol, allVolumes),
-    )
     gl.bindTexture(gl.TEXTURE_3D, null)
 
-    // Load matcap texture
-    if (this.matcapTexture) {
-      gl.deleteTexture(this.matcapTexture)
+    // Load matcap texture only when the matcap source changed
+    if (!this.matcapTexture || this.matcapKey !== matcap) {
+      if (this.matcapTexture) {
+        gl.deleteTexture(this.matcapTexture)
+      }
+      this.matcapTexture = await this._loadTexture2DOrFallback(gl, matcap)
+      this.matcapKey = matcap
     }
-    this.matcapTexture = await this._loadTexture2DOrFallback(gl, matcap)
 
     // Create gradient texture from volume
     const dims = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
@@ -438,6 +461,25 @@ export class VolumeRenderer extends NVRenderer {
     )
     this.overlayTexture = this.overlayOrientCache.outputTexture
     return true
+  }
+
+  private deleteNonCachedVolumeTexture(gl: WebGL2RenderingContext): void {
+    if (
+      this.volumeTexture &&
+      this.volumeTexture !== this.volumeOrientCache?.outputTexture
+    ) {
+      gl.deleteTexture(this.volumeTexture)
+    }
+    // Always drop the reference: either we just deleted the texture, or the
+    // cache still owns it via volumeOrientCache.outputTexture. The caller
+    // reassigns this.volumeTexture immediately after.
+    this.volumeTexture = null
+  }
+
+  clearVolume(gl: WebGL2RenderingContext): void {
+    this.deleteNonCachedVolumeTexture(gl)
+    orientOverlay.destroyOverlayTextureCache(gl, this.volumeOrientCache)
+    this.volumeOrientCache = null
   }
 
   private deleteNonCachedOverlayTexture(gl: WebGL2RenderingContext): void {
@@ -690,6 +732,7 @@ export class VolumeRenderer extends NVRenderer {
       const newTex = await this._loadTexture2DOrFallback(gl, matcapUrl)
       if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
       this.matcapTexture = newTex
+      this.matcapKey = matcapUrl
     } catch (e) {
       log.warn('Matcap load failed', e)
     }
@@ -772,7 +815,8 @@ export class VolumeRenderer extends NVRenderer {
 
     // Delete textures
     if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
-    if (this.volumeTexture) gl.deleteTexture(this.volumeTexture)
+    this.matcapKey = null
+    this.clearVolume(gl)
     if (this.volumeGradientTexture) gl.deleteTexture(this.volumeGradientTexture)
     this.clearOverlay(gl)
     if (this.paqdTexture) gl.deleteTexture(this.paqdTexture)

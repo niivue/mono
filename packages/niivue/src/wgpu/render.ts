@@ -49,6 +49,8 @@ export class VolumeRenderer extends NVRenderer {
   private _bindTexDraw: GPUTexture | null = null
   private _bindTexLut: GPUTexture | null = null
   private overlayOrientCache: orient.OrientTextureCache | null = null
+  private volumeOrientCache: orient.OrientTextureCache | null = null
+  private matcapKey: string | null = null
 
   constructor() {
     super()
@@ -264,21 +266,48 @@ export class VolumeRenderer extends NVRenderer {
       )
     }
 
-    // Destroy old textures
-    if (this.volumeTexture) this.volumeTexture.destroy()
+    // Destroy old gradient texture (it derives from the old volume content)
     if (this.volumeGradientTexture) this.volumeGradientTexture.destroy()
-    if (this.matcapTexture) this.matcapTexture.destroy()
-    // Create new textures
-    this.matcapTexture = await wgpu.bitmap2textureOrFallback(device, matcap)
+
+    // Load matcap texture only when the matcap source changed
+    if (!this.matcapTexture || this.matcapKey !== matcap) {
+      if (this.matcapTexture) this.matcapTexture.destroy()
+      this.matcapTexture = await wgpu.bitmap2textureOrFallback(device, matcap)
+      this.matcapKey = matcap
+    }
+
+    // Create volumeTexture. Scalar volumes go through the orient-texture
+    // cache: while datatype/dims/frame4D/img-buffer/colormap are unchanged,
+    // only the cheap orient compute pass re-runs (cal_min/max and similar
+    // tweaks are plain uniforms), instead of re-uploading the raw volume on
+    // every updateGLVolume() tick.
     const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
-    this.volumeTexture = await orient.volume2Texture(
-      device,
-      vol,
-      vol,
-      mtx as Float32Array,
-      0,
-      buildModulationParams(vol, vol, allVolumes),
-    )
+    const modParams = buildModulationParams(vol, vol, allVolumes)
+    if (isRgbaDatatype(vol.hdr.datatypeCode)) {
+      // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
+      this.clearVolume()
+      this.volumeTexture = await orient.volume2Texture(
+        device,
+        vol,
+        vol,
+        mtx as Float32Array,
+        0,
+        modParams,
+      )
+    } else {
+      this.destroyNonCachedVolumeTexture()
+      this.volumeOrientCache = await orient.prepareOrientTextureCache(
+        device,
+        vol,
+        vol,
+        mtx as Float32Array,
+        0,
+        this.volumeOrientCache,
+        modParams,
+      )
+      orient.dispatchOrient(device, this.volumeOrientCache)
+      this.volumeTexture = this.volumeOrientCache.outputTexture
+    }
     this.volumeGradientTexture = await wgpu.volume2TextureGradientRGBA(
       device,
       this.volumeTexture,
@@ -427,6 +456,22 @@ export class VolumeRenderer extends NVRenderer {
     orient.dispatchOrient(device, this.overlayOrientCache)
     this.overlayTexture = this.overlayOrientCache.outputTexture
     return true
+  }
+
+  private destroyNonCachedVolumeTexture(): void {
+    if (
+      this.volumeTexture &&
+      this.volumeTexture !== this.volumeOrientCache?.outputTexture
+    ) {
+      this.volumeTexture.destroy()
+    }
+    this.volumeTexture = null
+  }
+
+  clearVolume(): void {
+    this.destroyNonCachedVolumeTexture()
+    orient.destroyOrientTextureCache(this.volumeOrientCache)
+    this.volumeOrientCache = null
   }
 
   private destroyNonCachedOverlayTexture(): void {
@@ -612,6 +657,7 @@ export class VolumeRenderer extends NVRenderer {
       const newTex = await wgpu.bitmap2textureOrFallback(device, matcapUrl)
       if (this.matcapTexture) this.matcapTexture.destroy()
       this.matcapTexture = newTex
+      this.matcapKey = matcapUrl
       // Wait for GPU to finish upload
       await device.queue.onSubmittedWorkDone()
     } catch (e) {
@@ -633,10 +679,8 @@ export class VolumeRenderer extends NVRenderer {
       this.matcapTexture.destroy()
       this.matcapTexture = null
     }
-    if (this.volumeTexture) {
-      this.volumeTexture.destroy()
-      this.volumeTexture = null
-    }
+    this.matcapKey = null
+    this.clearVolume()
     if (this.volumeGradientTexture) {
       this.volumeGradientTexture.destroy()
       this.volumeGradientTexture = null

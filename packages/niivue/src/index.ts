@@ -4,8 +4,10 @@
  * @packageDocumentation
  */
 
+// Label colormap LUT builder for extensions producing label/atlas volumes
+// biome-ignore lint/performance/noBarrelFile: package public API entry point
+export { makeLabelLut } from './cmap/NVCmaps'
 // Extension API
-// biome-ignore lint/performance/noBarrelFile: package entry point
 export { NVExtensionContext } from './extension/context'
 export type {
   BackgroundVolumeAccess,
@@ -114,6 +116,9 @@ export {
 } from './signal/processing'
 // MRSI (spatial spectroscopic imaging) volume helpers
 export { buildDerivedScalarVolume, isMrsiVolume } from './volume/mrsi'
+// Volume construction/serialization for extensions building derived volumes
+// (e.g. wrapping segmentation labels into an overlay NVImage)
+export { nii2volume, writeVolume } from './volume/NVVolume'
 // Transform types
 export type {
   OptionField,
@@ -124,10 +129,5 @@ export type {
 } from './volume/transforms'
 // Volume utilities for extensions
 export { extractVoxelFid, getImageDataRAS } from './volume/utils'
-// Volume construction/serialization for extensions building derived volumes
-// (e.g. wrapping segmentation labels into an overlay NVImage)
-export { nii2volume, writeVolume } from './volume/NVVolume'
-// Label colormap LUT builder for extensions producing label/atlas volumes
-export { makeLabelLut } from './cmap/NVCmaps'
 // Worker bridge for external transform packages
 export { NVWorker } from './workers/NVWorker'

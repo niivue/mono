@@ -424,6 +424,21 @@ export default class NVModel {
     )
   }
 
+  /**
+   * True when no spatial view should render: either the scene has only signals
+   * (nothing spatial to show) or the user chose `SLICE_TYPE.NONE` to hand the
+   * whole canvas to the signal graph while keeping a volume loaded (e.g. a 4D
+   * BOLD time-course). Both renderers skip the spatial pass and the signal graph
+   * fills the instance area (`fullCanvas`). Single source of truth for that
+   * decision so the renderers and graph-data builders stay in agreement.
+   */
+  isSpatialViewHidden(): boolean {
+    return (
+      this.isSignalOnlyScene() ||
+      this.layout.sliceType === NVConstants.SLICE_TYPE.NONE
+    )
+  }
+
   getClipPlaneDepthAziElev(clipPlaneIndex = 0): [number, number, number] {
     if (clipPlaneIndex < 0 || clipPlaneIndex >= NVConstants.NUM_CLIP_PLANE) {
       clipPlaneIndex = 0
@@ -844,8 +859,9 @@ export default class NVModel {
       series,
       xAxis: axis,
       showLegend: lead.sig.display.showLegend,
-      // With no spatial data, let the plot fill the whole instance area.
-      fullCanvas: this.isSignalOnlyScene(),
+      // No spatial view (signal-only scene, or SLICE_TYPE.NONE) -> the plot fills
+      // the whole instance area; otherwise it's a side strip beside the slices.
+      fullCanvas: this.isSpatialViewHidden(),
       cursorX: this.signalCursorX,
       annotations: annotations.length > 0 ? annotations : undefined,
     }
@@ -942,7 +958,10 @@ export default class NVModel {
     // So the cache key omits frame4D, and the crosshair when BOLD is hidden — a
     // frame step then reuses the cached series and just re-marks the cursor.
     const cursorX = (vol.frame4D ?? 0) * tr
-    const key = `${vol.id}|${showVol}|${showVol ? `${cp[0]},${cp[1]},${cp[2]}` : ''}|${nFrames}|${tr}|${attached
+    // `fullCanvas` depends on the spatial-hidden state, so it is part of the key:
+    // toggling SLICE_TYPE.NONE must rebuild the graph (side strip <-> full canvas)
+    // rather than return the stale cached layout.
+    const key = `${vol.id}|${showVol}|${this.isSpatialViewHidden()}|${showVol ? `${cp[0]},${cp[1]},${cp[2]}` : ''}|${nFrames}|${tr}|${attached
       .map((s) => `${s.id}:${JSON.stringify(s.display)}`)
       .join(';')}`
     if (this._assocCache && this._assocCache.key === key) {
@@ -1007,7 +1026,10 @@ export default class NVModel {
       series,
       xAxis: { label: 'Time (s)', reversed: false, min: 0, max: tMax },
       showLegend: true,
-      fullCanvas: false,
+      // Side strip beside the slices by default; full canvas when the user hides
+      // the spatial view with SLICE_TYPE.NONE (the volume stays loaded for the
+      // time-course).
+      fullCanvas: this.isSpatialViewHidden(),
       // Marker at the current frame's time ties 4D scrubbing to the time axis.
       cursorX,
     }

@@ -498,9 +498,18 @@ axis when the rate is unknown.
 **Rendering** (`view/NVGraph.ts`): the GPU graph was extended with a "signal mode"
 (multi-color Okabe-Ito series, legend, real/reversible/windowed x-axis) gated on a
 non-empty `series` field; the legacy 4D-volume graph path is unchanged. When the
-scene is signal-only (a signal but no volume/mesh) the plot fills the instance area
-and BOTH renderers skip the entire spatial pass — no slices, crosshair, or
-orientation labels (`NVViewGPU.ts` / `NVViewGL.ts` compute `signalOnly`).
+spatial view is hidden the plot fills the instance area and BOTH renderers skip the
+entire spatial pass — no slices, crosshair, or orientation labels (`NVViewGPU.ts` /
+`NVViewGL.ts` compute `spatialHidden = md.isSpatialViewHidden()`). The spatial view
+is hidden when the scene is signal-only (a signal but no volume/mesh) OR the user
+selects `SLICE_TYPE.NONE` — the latter hands the whole canvas to the graph while a
+volume stays loaded (e.g. a 4D BOLD time-course wanting full screen real-estate).
+`NVModel.isSpatialViewHidden()` is the single source of truth used by both
+renderers AND the graph-data builders' `fullCanvas` flag, so the slice-skip and the
+graph width never disagree. The association graph's `_assocCache` key includes
+`isSpatialViewHidden()` so toggling `SLICE_TYPE.NONE` rebuilds the layout (side
+strip <-> full canvas) rather than reusing the stale cached graph. Demo:
+`physio.bold.html` exposes a "None (graph only)" slice-type option.
 
 **Graph wheel:** scrolling over the graph steps the 4D frame when a spatial
 volume is present; for a signal-only graph it falls back to scrubbing the cursor
@@ -991,7 +1000,7 @@ Configurable drag interactions on 2D slices. `interaction.primaryDragMode` (defa
 
 `DRAG_MODE` enum: `none`(0), `contrast`(1), `measurement`(2), `pan`(3), `slicer3D`(4), `callbackOnly`(5), `roiSelection`(6), `angle`(7), `crosshair`(8), `windowing`(9).
 
-Public enum exports from the package root (alongside `DRAG_MODE`): `SLICE_TYPE` (axial/coronal/sagittal/multiplanar/render), `MULTIPLANAR_TYPE` (auto/column/grid/row), `SHOW_RENDER`, and `NiiDataType`.
+Public enum exports from the package root (alongside `DRAG_MODE`): `SLICE_TYPE` (axial/coronal/sagittal/multiplanar/render/none — `none` skips the spatial pass so a signal graph fills the canvas, see "signal mode" above), `MULTIPLANAR_TYPE` (auto/column/grid/row), `SHOW_RENDER`, and `NiiDataType`.
 
 **Overlay rendering:** Selection boxes use GlyphBatch panels (`_dragOverlay.rect`). Measurement/angle lines use line renderer (`_dragOverlay.lines`). Overlay state lives on `model._dragOverlay` (transient, not serialized).
 

@@ -732,12 +732,12 @@ export default class NVView {
     const baseGraphWidth = graphData
       ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
       : 0
-    // Signal-only scene (a signal loaded, no volume/mesh): skip all spatial
-    // tiles so no slices, crosshairs, or orientation labels render; the signal
-    // graph fills the instance area on its own. Otherwise lay out the slices and
-    // let the graph reclaim any horizontal slack (fitSlicesAndGraph).
-    const signalOnly = md.isSignalOnlyScene()
-    const fit = signalOnly
+    // No spatial view (a signal-only scene, OR the user chose SLICE_TYPE.NONE):
+    // skip all spatial tiles so no slices, crosshairs, or orientation labels
+    // render; the signal graph fills the instance area on its own. Otherwise lay
+    // out the slices and let the graph reclaim any horizontal slack.
+    const spatialHidden = md.isSpatialViewHidden()
+    const fit = spatialHidden
       ? {
           screenSlices: [] as NVSliceLayout.SliceTile[],
           graphWidth: baseGraphWidth,

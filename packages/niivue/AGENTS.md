@@ -321,6 +321,26 @@ Shared utilities: `NVLoader.buildExtensionMap()` (extension→module maps), `NVG
 
 Same pattern for: mesh readers (`mesh/readers/`), volume readers (`volume/readers/`), tract readers (`mesh/tracts/readers/`), connectome readers (`mesh/connectome/readers/`), layer readers (`mesh/layers/readers/`), volume transforms (`volume/transforms/`).
 
+### Partial 4D loading (`limitFrames4D`)
+
+A 4D NIfTI whose full extent exceeds V8's ~2 GiB single-`ArrayBuffer` cap (e.g. a
+344x344x127x45 float32 PET ≈ 2.5 GiB) can NOT be held in one buffer — decompressing
+it throws `RangeError: Array buffer allocation failed`. `limitFrames4D` is therefore
+not just a speed-up but the only way to open such a file. When it is finite,
+`NVVolume.loadVolume` takes a fast path for a **gzip NIfTI-1**: `loadPartialNiftiGz`
+streams the file and uses fflate's `Gunzip` to inflate ONLY the header + the first N
+frames, stopping early (`codecs/NVGzStream.readFirstDecompressedBytes` cancels the
+fetch once enough decompressed bytes are in hand — the built-in `DecompressionStream`
++ `Response.arrayBuffer()` always drains the whole stream, so it can't early-stop;
+fflate can, at the cost of being slower, hence it is only used here). The ORIGINAL
+header is preserved (its dims still describe the full extent), so `nii2volume`
+truncates the supplied img cleanly and still reports `nFrame4D` "N of `nTotalFrame4D`".
+Graceful `null` fallback to the normal full load on any miss: uncompressed input,
+NIfTI-2/byte-swapped, all frames requested (native decompression is faster for a full
+read), or any decode error. `getFileExt` strips `.gz` (nii.gz → `NII`), so the gz is
+detected by the `.gz` filename suffix. `readFirstDecompressedBytes` is unit-tested
+(fflate is pure JS, so it runs under the Bun harness, unlike `NVGz`).
+
 **Detached-header formats:** AFNI (`.HEAD` + `.BRIK.gz`), NIfTI (`.hdr` + `.img`), NRRD (`.nhdr` + `.*`). The `urlImageData` property provides the image data URL alongside the header URL.
 
 ### V1 RGB vector volumes

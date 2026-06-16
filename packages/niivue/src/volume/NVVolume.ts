@@ -1,3 +1,5 @@
+import * as nifti from 'nifti-reader-js'
+import { readFirstDecompressedBytes } from '@/codecs/NVGzStream'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { NiiDataType, NiiIntentCode } from '@/NVConstants'
@@ -78,16 +80,112 @@ export function registerExternalReader(
   readerByExt.set(fromExt.toUpperCase(), wrappedReader)
 }
 
+/** Get a fresh gzip byte stream for a URL or File (re-callable for each pass). */
+async function gzByteStream(
+  src: string | File,
+): Promise<ReadableStream<Uint8Array> | null> {
+  if (typeof src === 'string') {
+    const r = await fetch(src, { cache: 'force-cache' })
+    return r.ok ? r.body : null
+  }
+  return src.stream()
+}
+
+/**
+ * Fast path for `limitFrames4D` on a gzip-compressed NIfTI-1: stream-inflate only
+ * the header and the first N frames, instead of decompressing the whole file.
+ * This is the only way to open a 4D volume whose full extent exceeds V8's ~2 GiB
+ * ArrayBuffer cap (e.g. a 344x344x127x45 float32 PET = 2.5 GiB). The ORIGINAL
+ * header is preserved (its dims still describe the full extent), so `nii2volume`
+ * truncates cleanly and still reports "N of total" frames.
+ *
+ * Returns `{ hdr, img }` (img = the first N frames, starting at vox_offset) or
+ * `null` to fall back to the normal full load — for any miss: uncompressed input,
+ * NIfTI-2 or byte-swapped header, all frames requested (the native
+ * DecompressionStream is faster for a full read), or any decode error.
+ */
+async function loadPartialNiftiGz(
+  src: string | File,
+  limitFrames4D: number,
+): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer } | null> {
+  if (!Number.isFinite(limitFrames4D) || limitFrames4D < 1) return null
+  try {
+    // 1) Header: inflate just enough to parse the NIfTI-1 header (348 B + any
+    //    extensions, which end at vox_offset).
+    const headStream = await gzByteStream(src)
+    if (!headStream) return null
+    let head = await readFirstDecompressedBytes(headStream, 352)
+    if (head.length < 348) return null
+    const dv = new DataView(head.buffer, head.byteOffset, head.byteLength)
+    // Only NIfTI-1 little-endian (sizeof_hdr == 348); NIfTI-2 / byte-swapped
+    // headers fall back to the full load.
+    if (dv.getInt32(0, true) !== 348) return null
+    // vox_offset (float32 @ byte 108) marks where image data starts; if a header
+    // extension pushes it past the first read, inflate more.
+    const voxOffset = dv.getFloat32(108, true)
+    if (voxOffset > head.length) {
+      const moreStream = await gzByteStream(src)
+      if (!moreStream) return null
+      head = await readFirstDecompressedBytes(moreStream, voxOffset)
+      if (head.length < voxOffset) return null
+    }
+    const hdr = nifti.readHeader(head.buffer as ArrayBuffer) as NIFTI1 | NIFTI2
+    if (!hdr) return null
+    // 2) Frame budget. dims 4-6 give the total 4D frame count.
+    const dims = hdr.dims
+    const dim = (i: number): number => (dims[i] > 1 ? dims[i] : 1)
+    const nVox3D = dim(1) * dim(2) * dim(3)
+    const nTotal = dim(4) * dim(5) * dim(6)
+    const nFrames = Math.max(1, Math.min(Math.floor(limitFrames4D), nTotal))
+    // Want every frame -> let the native full path handle it (faster than fflate).
+    if (nFrames >= nTotal) return null
+    const bpv = hdr.numBitsPerVoxel / 8
+    const bytesToLoad = hdr.vox_offset + nFrames * nVox3D * bpv
+    // 3) Inflate header + N frames only, then slice out the image data.
+    const dataStream = await gzByteStream(src)
+    if (!dataStream) return null
+    const data = await readFirstDecompressedBytes(dataStream, bytesToLoad)
+    if (data.length < bytesToLoad) return null // unexpectedly short -> fall back
+    const img = data.buffer.slice(
+      data.byteOffset + hdr.vox_offset,
+      data.byteOffset + bytesToLoad,
+    ) as ArrayBuffer
+    log.info(
+      `4D partial load: ${nFrames}/${nTotal} frames (~${Math.round(bytesToLoad / 1e6)} MB inflated, not the full volume)`,
+    )
+    return { hdr, img }
+  } catch (e) {
+    log.warn('4D partial load failed; falling back to full load', e)
+    return null
+  }
+}
+
 export async function loadVolume(
   url: string | File,
   pairedImgData: string | File | null = null,
+  limitFrames4D = Infinity,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }> {
+  const ext = NVLoader.getFileExt(url)
+  // Partial fast path: a gzip 4D NIfTI where only some frames are wanted. Avoids
+  // inflating (and allocating) the whole volume; misses fall through to the full
+  // load below. getFileExt strips `.gz` (nii.gz -> "NII"), so detect the gzip via
+  // the `.gz` filename suffix.
+  const srcName = (typeof url === 'string' ? url : url.name)
+    .split('?')[0]
+    .toLowerCase()
+  if (
+    ext === 'NII' &&
+    srcName.endsWith('.gz') &&
+    Number.isFinite(limitFrames4D)
+  ) {
+    const partial = await loadPartialNiftiGz(url, limitFrames4D)
+    if (partial) return partial
+  }
   const result = await NVLoader.fetchFile(url)
   const pairedBuffer = pairedImgData
     ? await NVLoader.fetchFile(pairedImgData)
     : null
   const name = NVLoader.getName(url)
-  const ext = NVLoader.getFileExt(url)
   let reader = readerByExt.get(ext)
   if (!reader || typeof reader.read !== 'function') {
     log.warn(`Unsupported volume format "${ext}", falling back to NIfTI reader`)

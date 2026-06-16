@@ -78,6 +78,7 @@
     "cbor-x": "^1.6.0",
     "clipper2-ts": "^2.0.1-13",
     "earcut": "^3.0.2",
+    "fflate": "^0.8.3",
     "gl-matrix": "^3.4.4",
     "nifti-reader-js": "^0.8.0"
   },

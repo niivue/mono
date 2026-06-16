@@ -341,6 +341,27 @@ read), or any decode error. `getFileExt` strips `.gz` (nii.gz → `NII`), so the
 detected by the `.gz` filename suffix. `readFirstDecompressedBytes` is unit-tested
 (fflate is pure JS, so it runs under the Bun harness, unlike `NVGz`).
 
+**Auto-cap (no `limitFrames4D`, and the "load deferred frames" path).** A user who
+does NOT set `limitFrames4D`, or who clicks the graph to load deferred frames
+(`loadDeferred4DVolumes`, which re-fetches with no limit), must still not blow the
+2 GiB cap. `loadVolume` wraps the full load in try/catch: on a `RangeError` for a gz
+NIfTI it retries `loadPartialNiftiGz(url, Infinity)`, which loads **as many whole
+frames as fit** under `MAX_VOLUME_BYTES` (~1.77 GiB, safely below the cap). When the
+cap — not the caller — reduces the count, it emits an **always-visible**
+`console.warn` (the only justified bypass of the level-gated `log.*`, since silent
+data loss must be surfaced regardless of `logLevel`). `loadPartialNiftiGz` accepts
+`Infinity` ("as many as fit"); the cap math is `maxFramesUnderCap`.
+
+**Frame count follows the data, not the request.** `nii2volume` clamps `nFrame4D`
+to `min(limit-or-total, framesInImg, nTotalFrame4D)` where `framesInImg =
+img.byteLength / (nVox3D·bpv)` — so when a capped load supplies fewer frames than
+the header advertises, `nFrame4D` reflects the data actually present
+(`nTotalFrame4D` keeps the header total). This is essential: without it the graph
+plots `nTotalFrame4D` points and reads past the loaded data, drawing garbage for the
+unloaded frames. The volume correctly enters the partial/deferred state
+(`nFrame4D < nTotalFrame4D` → graph shows the loaded frames + a deferred indicator).
+`loadDeferred4DVolumes` likewise sets `nFrame4D` from the re-loaded img size.
+
 **Detached-header formats:** AFNI (`.HEAD` + `.BRIK.gz`), NIfTI (`.hdr` + `.img`), NRRD (`.nhdr` + `.*`). The `urlImageData` property provides the image data URL alongside the header URL.
 
 ### V1 RGB vector volumes

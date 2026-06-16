@@ -2841,7 +2841,15 @@ export default class NiiVueGPU extends EventTarget {
     // full timeseries; that's the existing initial-load behavior.)
     const [pct2, pct98, mnScale, mxScale] = calMinMax(vol.hdr, nii.img)
     vol.img = toTypedViewOrU8(nii.img, vol.hdr.datatypeCode)
-    vol.nFrame4D = vol.nTotalFrame4D
+    // The re-fetch may have been capped by the ~2 GiB ArrayBuffer limit (huge 4D
+    // volumes), so set nFrame4D to what actually loaded — not the header total.
+    const nVox3D = vol.hdr.dims[1] * vol.hdr.dims[2] * vol.hdr.dims[3]
+    const bpv = vol.hdr.numBitsPerVoxel / 8
+    const loadedFrames = Math.max(
+      1,
+      Math.floor(vol.img.byteLength / (nVox3D * bpv)),
+    )
+    vol.nFrame4D = Math.min(loadedFrames, vol.nTotalFrame4D ?? loadedFrames)
     vol.calMin = pct2
     vol.calMax = pct98
     vol.robustMin = pct2

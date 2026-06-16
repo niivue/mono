@@ -80,6 +80,27 @@ export function registerExternalReader(
   readerByExt.set(fromExt.toUpperCase(), wrappedReader)
 }
 
+/**
+ * Largest 4D image we attempt to hold in a single ArrayBuffer. V8/Chrome caps a
+ * single ArrayBuffer at ~2 GiB (2^31-1); we stay safely below so the decompressed
+ * image plus its typed view and headroom always allocate. A 4D volume bigger than
+ * this can only be opened partially — as many frames as fit.
+ */
+const MAX_VOLUME_BYTES = 1_900_000_000 // ~1.77 GiB
+
+/** Max whole 4D frames that fit under {@link MAX_VOLUME_BYTES}, clamped to nTotal. */
+function maxFramesUnderCap(
+  voxOffset: number,
+  nVox3D: number,
+  bpv: number,
+  nTotal: number,
+): number {
+  const perFrame = nVox3D * bpv
+  if (perFrame <= 0) return nTotal
+  const fit = Math.floor((MAX_VOLUME_BYTES - voxOffset) / perFrame)
+  return Math.max(1, Math.min(fit, nTotal))
+}
+
 /** Get a fresh gzip byte stream for a URL or File (re-callable for each pass). */
 async function gzByteStream(
   src: string | File,
@@ -108,7 +129,9 @@ async function loadPartialNiftiGz(
   src: string | File,
   limitFrames4D: number,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer } | null> {
-  if (!Number.isFinite(limitFrames4D) || limitFrames4D < 1) return null
+  // `Infinity` is allowed: it means "as many frames as fit under the cap" (the
+  // >2 GiB fallback path). NaN / < 1 are rejected.
+  if (!(limitFrames4D >= 1)) return null
   try {
     // 1) Header: inflate just enough to parse the NIfTI-1 header (348 B + any
     //    extensions, which end at vox_offset).
@@ -136,10 +159,25 @@ async function loadPartialNiftiGz(
     const dim = (i: number): number => (dims[i] > 1 ? dims[i] : 1)
     const nVox3D = dim(1) * dim(2) * dim(3)
     const nTotal = dim(4) * dim(5) * dim(6)
-    const nFrames = Math.max(1, Math.min(Math.floor(limitFrames4D), nTotal))
-    // Want every frame -> let the native full path handle it (faster than fflate).
-    if (nFrames >= nTotal) return null
     const bpv = hdr.numBitsPerVoxel / 8
+    const requested = Math.max(1, Math.min(Math.floor(limitFrames4D), nTotal))
+    // Never exceed the ArrayBuffer cap, even when the caller asked for more (or
+    // for everything, via Infinity from the >2 GiB fallback path).
+    const safeFrames = maxFramesUnderCap(hdr.vox_offset, nVox3D, bpv, nTotal)
+    const nFrames = Math.min(requested, safeFrames)
+    // Want every frame and it all fits -> let the native full path handle it.
+    if (nFrames >= nTotal) return null
+    if (safeFrames < requested) {
+      // The ~2 GiB ArrayBuffer cap (not the caller) limited the load. That is
+      // data loss the user must always see, so bypass the level-gated logger.
+      const fullGiB = (
+        (hdr.vox_offset + nTotal * nVox3D * bpv) /
+        2 ** 30
+      ).toFixed(2)
+      console.warn(
+        `NiiVue: 4D volume too large to load fully — ${fullGiB} GiB exceeds the browser's ~2 GiB ArrayBuffer limit. Loaded ${nFrames} of ${nTotal} frames.`,
+      )
+    }
     const bytesToLoad = hdr.vox_offset + nFrames * nVox3D * bpv
     // 3) Inflate header + N frames only, then slice out the image data.
     const dataStream = await gzByteStream(src)
@@ -150,7 +188,7 @@ async function loadPartialNiftiGz(
       data.byteOffset + hdr.vox_offset,
       data.byteOffset + bytesToLoad,
     ) as ArrayBuffer
-    log.info(
+    log.debug(
       `4D partial load: ${nFrames}/${nTotal} frames (~${Math.round(bytesToLoad / 1e6)} MB inflated, not the full volume)`,
     )
     return { hdr, img }
@@ -173,28 +211,40 @@ export async function loadVolume(
   const srcName = (typeof url === 'string' ? url : url.name)
     .split('?')[0]
     .toLowerCase()
-  if (
-    ext === 'NII' &&
-    srcName.endsWith('.gz') &&
-    Number.isFinite(limitFrames4D)
-  ) {
+  const isGzNifti = ext === 'NII' && srcName.endsWith('.gz')
+  if (isGzNifti && Number.isFinite(limitFrames4D)) {
     const partial = await loadPartialNiftiGz(url, limitFrames4D)
     if (partial) return partial
   }
-  const result = await NVLoader.fetchFile(url)
-  const pairedBuffer = pairedImgData
-    ? await NVLoader.fetchFile(pairedImgData)
-    : null
-  const name = NVLoader.getName(url)
-  let reader = readerByExt.get(ext)
-  if (!reader || typeof reader.read !== 'function') {
-    log.warn(`Unsupported volume format "${ext}", falling back to NIfTI reader`)
-    reader = readerByExt.get('NII')
+  try {
+    const result = await NVLoader.fetchFile(url)
+    const pairedBuffer = pairedImgData
+      ? await NVLoader.fetchFile(pairedImgData)
+      : null
+    const name = NVLoader.getName(url)
+    let reader = readerByExt.get(ext)
+    if (!reader || typeof reader.read !== 'function') {
+      log.warn(
+        `Unsupported volume format "${ext}", falling back to NIfTI reader`,
+      )
+      reader = readerByExt.get('NII')
+    }
+    if (!reader) {
+      throw new Error(`No volume reader available for extension ${ext}`)
+    }
+    return await reader.read(result, name, pairedBuffer)
+  } catch (e) {
+    // Decompressing a whole 4D volume can exceed V8's ~2 GiB ArrayBuffer cap
+    // (RangeError: "Array buffer allocation failed"). Even without limitFrames4D
+    // (or on the graph "load deferred frames" re-fetch), retry loading as many
+    // frames as fit — loadPartialNiftiGz caps and emits the always-visible
+    // warning. Other errors propagate.
+    if (isGzNifti && e instanceof RangeError) {
+      const capped = await loadPartialNiftiGz(url, Infinity)
+      if (capped) return capped
+    }
+    throw e
   }
-  if (!reader) {
-    throw new Error(`No volume reader available for extension ${ext}`)
-  }
-  return await reader.read(result, name, pairedBuffer)
 }
 
 /**
@@ -343,11 +393,20 @@ export function nii2volume(
     (acc, i) => acc * (hdr.dims[i] > 1 ? hdr.dims[i] : 1),
     1,
   )
-  // Apply limitFrames4D: truncate img data if fewer frames requested
-  const nFrame4D = Number.isFinite(limitFrames4D)
-    ? Math.max(1, Math.min(limitFrames4D, nTotalFrame4D))
-    : nTotalFrame4D
   const nVox3D = hdr.dims[1] * hdr.dims[2] * hdr.dims[3]
+  // Frames actually present in `img` — may be fewer than the header total when
+  // the loader capped a >2 GiB volume to as many frames as fit (the supplied img
+  // already holds only those). Clamp so nFrame4D never claims more than the data.
+  const framesInImg = Math.max(
+    1,
+    Math.floor(img.byteLength / (nVox3D * (hdr.numBitsPerVoxel / 8))),
+  )
+  // Apply limitFrames4D: truncate img data if fewer frames requested.
+  const nFrame4D = Math.min(
+    Number.isFinite(limitFrames4D) ? Math.max(1, limitFrames4D) : nTotalFrame4D,
+    framesInImg,
+    nTotalFrame4D,
+  )
   let truncatedImg = img
   if (nFrame4D < nTotalFrame4D) {
     const bytesPerVoxel = hdr.numBitsPerVoxel / 8
@@ -358,7 +417,7 @@ export function nii2volume(
       const keepElements = nVox3D * nFrame4D
       truncatedImg = img.slice(0, keepElements)
     }
-    log.info(
+    log.debug(
       `4D: loaded ${nFrame4D} of ${nTotalFrame4D} frames (limitFrames4D=${limitFrames4D})`,
     )
   }

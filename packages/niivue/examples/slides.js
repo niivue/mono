@@ -191,7 +191,7 @@ function populateLevels(manifest) {
   els.levelMode.replaceChildren()
   const auto = document.createElement('option')
   auto.value = 'auto'
-  auto.textContent = 'auto lod'
+  auto.textContent = 'auto LOD'
   els.levelMode.appendChild(auto)
   for (const level of manifest.levels) {
     const option = document.createElement('option')

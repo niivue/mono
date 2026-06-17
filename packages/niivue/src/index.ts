@@ -8,13 +8,16 @@
 // Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
 // Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
 export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
+// Label colormap LUT builder for extensions producing label/atlas volumes
+// biome-ignore lint/performance/noBarrelFile: package public API entry point
+export { makeLabelLut } from './cmap/NVCmaps'
 // Extension API
-// biome-ignore lint/performance/noBarrelFile: package entry point
 export { NVExtensionContext } from './extension/context'
 export type {
   BackgroundVolumeAccess,
   DrawingAccess,
   DrawingDims,
+  MrsVolumeAccess,
   NVExtensionEventMap,
   SharedBufferHandle,
   SlicePointerEvent,
@@ -41,6 +44,7 @@ export type {
   DrawingChangedDetail,
   DrawingEnabledDetail,
   FrameChangeDetail,
+  GraphRangeChangeDetail,
   MeshLoadedDetail,
   MeshRemovedDetail,
   MeshUpdatedDetail,
@@ -50,6 +54,9 @@ export type {
   PenValueChangedDetail,
   PointerUpDetail,
   PropertyChangeDetail,
+  SignalLoadedDetail,
+  SignalLocationDetail,
+  SignalRemovedDetail,
   SliceTypeChangeDetail,
   ViewAttachedDetail,
   VolumeLoadedDetail,
@@ -70,6 +77,7 @@ export type {
   MeshFromUrlOptions,
   MeshLayerFromUrlOptions,
   MeshUpdate,
+  MrsVolumeMeta,
   NIFTI1,
   NIFTI2,
   NiiVueLocation,
@@ -83,8 +91,17 @@ export type {
   NVInstance,
   NVMesh,
   NVMeshLayer,
+  NVSignal,
+  NVSignalDisplay,
+  NVSignalRaw,
   NVTractOptions,
   SaveVolumeOptions,
+  SignalAnnotation,
+  SignalAxis,
+  SignalKind,
+  SignalSeries,
+  SignalSidecar,
+  SignalSpectrumMode,
   SyncOpts,
   TypedVoxelArray,
   ViewHitTest,
@@ -100,6 +117,26 @@ export type {
   VolumeChunkDesc,
 } from './volume/chunking'
 export { chunkVolumeGrid } from './volume/chunking'
+// Signal load options
+export type { SignalFromUrlOptions } from './signal/NVSignal'
+// MRS / spectroscopy processing (for nv-ext-mrs and other spectroscopy extensions)
+export {
+  apodize,
+  deriveSpectroscopySeries,
+  GYRO_MAG_RATIO,
+  halveFirstPoint,
+  integratePpmBandMap,
+  PPM_RANGE,
+  PPM_SHIFT,
+  type PpmBandOptions,
+  phaseCorrection,
+  ppmRefForNucleus,
+} from './signal/processing'
+// MRSI (spatial spectroscopic imaging) volume helpers
+export { buildDerivedScalarVolume, isMrsiVolume } from './volume/mrsi'
+// Volume construction/serialization for extensions building derived volumes
+// (e.g. wrapping segmentation labels into an overlay NVImage)
+export { nii2volume, writeVolume } from './volume/NVVolume'
 // Transform types
 export type {
   OptionField,
@@ -109,6 +146,6 @@ export type {
   VolumeTransform,
 } from './volume/transforms'
 // Volume utilities for extensions
-export { getImageDataRAS } from './volume/utils'
+export { extractVoxelFid, getImageDataRAS } from './volume/utils'
 // Worker bridge for external transform packages
 export { NVWorker } from './workers/NVWorker'

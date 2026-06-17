@@ -14,6 +14,34 @@ import type {
   TypedVoxelArray,
 } from '@/NVTypes'
 
+/**
+ * Scale factor converting the NIfTI temporal pixdim to seconds, decoded from the
+ * temporal bits of `xyzt_units` (NIFTI_UNITS_SEC=8, MSEC=16, USEC=24). Unknown
+ * or unspecified units are treated as seconds.
+ */
+export function temporalUnitScale(xyztUnits: number): number {
+  switch (xyztUnits & 0x38) {
+    case 16:
+      return 1e-3 // milliseconds
+    case 24:
+      return 1e-6 // microseconds
+    default:
+      return 1 // seconds (8) or unspecified
+  }
+}
+
+/**
+ * Repetition time in **seconds** for a 4D volume: the NIfTI temporal pixdim
+ * (`pixDims[4]`) scaled by its `xyzt_units` (so ms/us headers are not 1000x or
+ * 1e6x off), with a 1 s fallback when unset. Centralizes the TR convention so
+ * signal/graph code agrees on the time axis.
+ */
+export function volumeTR(vol: NVImage): number {
+  const px = vol.hdr.pixDims[4]
+  if (!(px > 0)) return 1
+  return px * temporalUnitScale(vol.hdr.xyzt_units)
+}
+
 // ============================================================================
 // Data Type Utilities
 // ============================================================================
@@ -604,6 +632,62 @@ export function getVoxelValue(
   const imgData = volume.img
   if (offset < 0 || offset >= imgData.length) return 0
   return imgData[offset] * volume.hdr.scl_slope + volume.hdr.scl_inter
+}
+
+/**
+ * Extract the complex FID at a RAS voxel of a spatial spectroscopic image
+ * (MRSI), as an interleaved `[re0, im0, ...]` Float32Array of length
+ * `2 * mrsMeta.nPoints`, or null when the volume carries no FID / the voxel is
+ * out of bounds. The retained `complexFID` is in native order, so the same
+ * `img2RASstart`/`img2RASstep` mapping used by {@link getVoxelValue} converts
+ * the RAS voxel to its native spatial index; the spectral point `p` of voxel
+ * `v` lives at complex index `v + p*nVox3D` (NIfTI frame-major layout).
+ */
+export function extractVoxelFid(
+  volume: NVImage,
+  rx: number,
+  ry: number,
+  rz: number,
+): Float32Array | null {
+  const fid = volume.complexFID
+  const meta = volume.mrsMeta
+  if (
+    !fid ||
+    !meta ||
+    !volume.dimsRAS ||
+    !volume.img2RASstep ||
+    !volume.img2RASstart
+  ) {
+    return null
+  }
+  const dims = volume.dimsRAS
+  const ix = Math.round(rx)
+  const iy = Math.round(ry)
+  const iz = Math.round(rz)
+  if (
+    ix < 0 ||
+    ix >= dims[1] ||
+    iy < 0 ||
+    iy >= dims[2] ||
+    iz < 0 ||
+    iz >= dims[3]
+  ) {
+    return null
+  }
+  const start = volume.img2RASstart
+  const step = volume.img2RASstep
+  const native =
+    start[0] + ix * step[0] + start[1] + iy * step[1] + start[2] + iz * step[2]
+  const nPoints = meta.nPoints
+  const nVox = volume.nVox3D
+  const out = new Float32Array(nPoints * 2)
+  for (let p = 0; p < nPoints; p++) {
+    const ci = 2 * (native + p * nVox)
+    if (ci + 1 >= fid.length) break
+    out[2 * p] = fid[ci]
+    out[2 * p + 1] = fid[ci + 1]
+  }
+  return out
 }
 
 /**

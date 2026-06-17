@@ -1,0 +1,31 @@
+{
+  "id": "synthetic-range-shard-v1",
+  "name": "Synthetic HTTP Range shard",
+  "description": "Chunk-major uint8 scalar volume used by range.html to demonstrate client-side HTTP Range chunk loading.",
+  "shape": [
+    96,
+    96,
+    96
+  ],
+  "spacing": [
+    1,
+    1,
+    1
+  ],
+  "dtype": "uint8",
+  "chunkGrid": [
+    4,
+    4,
+    4
+  ],
+  "chunkShape": [
+    24,
+    24,
+    24
+  ],
+  "chunkBytes": 13824,
+  "chunkCount": 64,
+  "byteLength": 884736,
+  "dataUrl": "synthetic-volume.bin",
+  "order": "chunk-major-z-y-x, voxel-major-z-y-x"
+}

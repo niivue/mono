@@ -1,0 +1,320 @@
+{
+  "id": "synthetic-tile-range-shard-v1",
+  "name": "Synthetic HTTP Range tile pyramid",
+  "description": "Multiscale RGBA tile pyramid used by tile-range.html to demonstrate client-only HTTP Range tile loading.",
+  "width": 1536,
+  "height": 1024,
+  "tileSize": 256,
+  "dtype": "uint8",
+  "channels": "rgba",
+  "bytesPerPixel": 4,
+  "byteLength": 8355840,
+  "dataUrl": "tiles.bin",
+  "order": "level-major, tile-row-major, rgba",
+  "levels": [
+    {
+      "index": 0,
+      "width": 1536,
+      "height": 1024,
+      "downsample": 1,
+      "columns": 6,
+      "rows": 4,
+      "tiles": [
+        {
+          "x": 0,
+          "y": 0,
+          "width": 256,
+          "height": 256,
+          "offset": 0,
+          "length": 262144
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "width": 256,
+          "height": 256,
+          "offset": 262144,
+          "length": 262144
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "width": 256,
+          "height": 256,
+          "offset": 524288,
+          "length": 262144
+        },
+        {
+          "x": 3,
+          "y": 0,
+          "width": 256,
+          "height": 256,
+          "offset": 786432,
+          "length": 262144
+        },
+        {
+          "x": 4,
+          "y": 0,
+          "width": 256,
+          "height": 256,
+          "offset": 1048576,
+          "length": 262144
+        },
+        {
+          "x": 5,
+          "y": 0,
+          "width": 256,
+          "height": 256,
+          "offset": 1310720,
+          "length": 262144
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "width": 256,
+          "height": 256,
+          "offset": 1572864,
+          "length": 262144
+        },
+        {
+          "x": 1,
+          "y": 1,
+          "width": 256,
+          "height": 256,
+          "offset": 1835008,
+          "length": 262144
+        },
+        {
+          "x": 2,
+          "y": 1,
+          "width": 256,
+          "height": 256,
+          "offset": 2097152,
+          "length": 262144
+        },
+        {
+          "x": 3,
+          "y": 1,
+          "width": 256,
+          "height": 256,
+          "offset": 2359296,
+          "length": 262144
+        },
+        {
+          "x": 4,
+          "y": 1,
+          "width": 256,
+          "height": 256,
+          "offset": 2621440,
+          "length": 262144
+        },
+        {
+          "x": 5,
+          "y": 1,
+          "width": 256,
+          "height": 256,
+          "offset": 2883584,
+          "length": 262144
+        },
+        {
+          "x": 0,
+          "y": 2,
+          "width": 256,
+          "height": 256,
+          "offset": 3145728,
+          "length": 262144
+        },
+        {
+          "x": 1,
+          "y": 2,
+          "width": 256,
+          "height": 256,
+          "offset": 3407872,
+          "length": 262144
+        },
+        {
+          "x": 2,
+          "y": 2,
+          "width": 256,
+          "height": 256,
+          "offset": 3670016,
+          "length": 262144
+        },
+        {
+          "x": 3,
+          "y": 2,
+          "width": 256,
+          "height": 256,
+          "offset": 3932160,
+          "length": 262144
+        },
+        {
+          "x": 4,
+          "y": 2,
+          "width": 256,
+          "height": 256,
+          "offset": 4194304,
+          "length": 262144
+        },
+        {
+          "x": 5,
+          "y": 2,
+          "width": 256,
+          "height": 256,
+          "offset": 4456448,
+          "length": 262144
+        },
+        {
+          "x": 0,
+          "y": 3,
+          "width": 256,
+          "height": 256,
+          "offset": 4718592,
+          "length": 262144
+        },
+        {
+          "x": 1,
+          "y": 3,
+          "width": 256,
+          "height": 256,
+          "offset": 4980736,
+          "length": 262144
+        },
+        {
+          "x": 2,
+          "y": 3,
+          "width": 256,
+          "height": 256,
+          "offset": 5242880,
+          "length": 262144
+        },
+        {
+          "x": 3,
+          "y": 3,
+          "width": 256,
+          "height": 256,
+          "offset": 5505024,
+          "length": 262144
+        },
+        {
+          "x": 4,
+          "y": 3,
+          "width": 256,
+          "height": 256,
+          "offset": 5767168,
+          "length": 262144
+        },
+        {
+          "x": 5,
+          "y": 3,
+          "width": 256,
+          "height": 256,
+          "offset": 6029312,
+          "length": 262144
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "width": 768,
+      "height": 512,
+      "downsample": 2,
+      "columns": 3,
+      "rows": 2,
+      "tiles": [
+        {
+          "x": 0,
+          "y": 0,
+          "width": 256,
+          "height": 256,
+          "offset": 6291456,
+          "length": 262144
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "width": 256,
+          "height": 256,
+          "offset": 6553600,
+          "length": 262144
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "width": 256,
+          "height": 256,
+          "offset": 6815744,
+          "length": 262144
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "width": 256,
+          "height": 256,
+          "offset": 7077888,
+          "length": 262144
+        },
+        {
+          "x": 1,
+          "y": 1,
+          "width": 256,
+          "height": 256,
+          "offset": 7340032,
+          "length": 262144
+        },
+        {
+          "x": 2,
+          "y": 1,
+          "width": 256,
+          "height": 256,
+          "offset": 7602176,
+          "length": 262144
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "width": 384,
+      "height": 256,
+      "downsample": 4,
+      "columns": 2,
+      "rows": 1,
+      "tiles": [
+        {
+          "x": 0,
+          "y": 0,
+          "width": 256,
+          "height": 256,
+          "offset": 7864320,
+          "length": 262144
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "width": 128,
+          "height": 256,
+          "offset": 8126464,
+          "length": 131072
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "width": 192,
+      "height": 128,
+      "downsample": 8,
+      "columns": 1,
+      "rows": 1,
+      "tiles": [
+        {
+          "x": 0,
+          "y": 0,
+          "width": 192,
+          "height": 128,
+          "offset": 8257536,
+          "length": 98304
+        }
+      ]
+    }
+  ]
+}

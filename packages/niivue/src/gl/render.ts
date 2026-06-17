@@ -33,6 +33,7 @@ import {
   needsChunking,
   type Vec3i,
 } from '@/volume/chunking'
+import { buildModulationParams } from '@/volume/modulation'
 import { chunkOverlayMatrix, extractChunkBytes } from '@/volume/orientChunked'
 import * as depthPickShader from './depthPickShader'
 import * as gradient from './gradient'
@@ -264,6 +265,7 @@ export class VolumeRenderer extends NVRenderer {
   // schedules a follow-up frame to keep the fade animating to completion.
   private _fadeActive = false
   private overlayOrientCache: orientOverlay.OverlayTextureCache | null = null
+  private volumeOrientCache: orientOverlay.OverlayTextureCache | null = null
 
   constructor() {
     super()
@@ -447,6 +449,8 @@ export class VolumeRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     vol: NVImage,
     matcap: string = '',
+    allVolumes: NVImage[] = [vol],
+    perVolumeCache = false,
   ): Promise<void> {
     if (!this.isReady) return
 
@@ -481,39 +485,89 @@ export class VolumeRenderer extends NVRenderer {
       return
     }
 
-    let entry = cacheKey ? this._texCache.get(cacheKey) : undefined
-    if (entry && entry.kind !== 'single') {
-      this._destroyTexEntry(gl, entry)
-      entry = undefined
-    }
-    if (!entry) {
-      const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
-      const volumeTexture = await orientOverlay.overlay2Texture(
-        gl,
-        vol,
-        vol,
-        mtx as Float32Array,
-        0,
-      )
+    const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
+    const modParams = buildModulationParams(vol, vol, allVolumes)
+    this._activeChunked = null
+
+    if (perVolumeCache) {
+      // Multi-instance / global3d: cache each volume's texture by key so the
+      // render loop can switch the active texture per tile via
+      // bindCachedVolume. (volumeOrientCache is a single slot and cannot serve
+      // per-tile volume switching.)
+      let entry = cacheKey ? this._texCache.get(cacheKey) : undefined
+      if (entry && entry.kind !== 'single') {
+        this._destroyTexEntry(gl, entry)
+        entry = undefined
+      }
+      if (!entry) {
+        const volumeTexture = await orientOverlay.overlay2Texture(
+          gl,
+          vol,
+          vol,
+          mtx as Float32Array,
+          0,
+          undefined,
+          modParams,
+        )
+        gl.bindTexture(gl.TEXTURE_3D, null)
+        const dims = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
+        const volumeGradientTexture = gradient.volume2TextureGradientRGBA(
+          gl,
+          volumeTexture,
+          dims as [number, number, number],
+        )
+        entry = {
+          kind: 'single',
+          volumeTexture,
+          volumeGradientTexture,
+          dims: [rasDims[0], rasDims[1], rasDims[2]],
+        }
+        if (cacheKey) this._texCache.set(cacheKey, entry)
+      }
+      this.volumeTexture = entry.volumeTexture
+      this.volumeGradientTexture = entry.volumeGradientTexture
+      this._activeDims = entry.dims
+    } else {
+      // Normal single-volume path: orient-texture cache + modulation. Scalar
+      // volumes go through the orient-texture cache so cal_min/max/colormap
+      // tweaks only re-run the cheap orient pass.
+      if (isRgbaDatatype(vol.hdr.datatypeCode)) {
+        // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
+        this.clearVolume(gl)
+        this.volumeTexture = await orientOverlay.overlay2Texture(
+          gl,
+          vol,
+          vol,
+          mtx as Float32Array,
+          0,
+          undefined,
+          modParams,
+        )
+      } else {
+        this.deleteNonCachedVolumeTexture(gl)
+        this.volumeOrientCache = orientOverlay.prepareOverlayTextureCache(
+          gl,
+          vol,
+          vol,
+          mtx as Float32Array,
+          0,
+          this.volumeOrientCache,
+          modParams,
+        )
+        this.volumeTexture = this.volumeOrientCache.outputTexture
+      }
       gl.bindTexture(gl.TEXTURE_3D, null)
       const dims = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
-      const volumeGradientTexture = gradient.volume2TextureGradientRGBA(
+      if (this.volumeGradientTexture) {
+        gl.deleteTexture(this.volumeGradientTexture)
+      }
+      this.volumeGradientTexture = gradient.volume2TextureGradientRGBA(
         gl,
-        volumeTexture,
+        this.volumeTexture,
         dims as [number, number, number],
       )
-      entry = {
-        kind: 'single',
-        volumeTexture,
-        volumeGradientTexture,
-        dims: [rasDims[0], rasDims[1], rasDims[2]],
-      }
-      if (cacheKey) this._texCache.set(cacheKey, entry)
+      this._activeDims = [rasDims[0], rasDims[1], rasDims[2]]
     }
-    this._activeChunked = null
-    this.volumeTexture = entry.volumeTexture
-    this.volumeGradientTexture = entry.volumeGradientTexture
-    this._activeDims = entry.dims
 
     await this._ensureMatcap(gl, matcap)
   }
@@ -1203,6 +1257,7 @@ export class VolumeRenderer extends NVRenderer {
         mtx as Float32Array,
         vol.opacity ?? 1,
         this.overlayOrientCache,
+        buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
       )
       this.overlayTexture = this.overlayOrientCache.outputTexture
       gl.bindTexture(gl.TEXTURE_3D, null)
@@ -1219,6 +1274,8 @@ export class VolumeRenderer extends NVRenderer {
           baseVol,
           mtx as Float32Array,
           vol.opacity ?? 1,
+          undefined,
+          buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
         )
         const data = orientOverlay.readTexture3D(gl, tex, dimsOut)
         gl.deleteTexture(tex)
@@ -1272,9 +1329,29 @@ export class VolumeRenderer extends NVRenderer {
       mtx as Float32Array,
       overlayVol.opacity ?? 1,
       this.overlayOrientCache,
+      buildModulationParams(overlayVol, baseVol, [baseVol, overlayVol]),
     )
     this.overlayTexture = this.overlayOrientCache.outputTexture
     return true
+  }
+
+  private deleteNonCachedVolumeTexture(gl: WebGL2RenderingContext): void {
+    if (
+      this.volumeTexture &&
+      this.volumeTexture !== this.volumeOrientCache?.outputTexture
+    ) {
+      gl.deleteTexture(this.volumeTexture)
+    }
+    // Always drop the reference: either we just deleted the texture, or the
+    // cache still owns it via volumeOrientCache.outputTexture. The caller
+    // reassigns this.volumeTexture immediately after.
+    this.volumeTexture = null
+  }
+
+  clearVolume(gl: WebGL2RenderingContext): void {
+    this.deleteNonCachedVolumeTexture(gl)
+    orientOverlay.destroyOverlayTextureCache(gl, this.volumeOrientCache)
+    this.volumeOrientCache = null
   }
 
   private deleteNonCachedOverlayTexture(gl: WebGL2RenderingContext): void {
@@ -2410,9 +2487,10 @@ export class VolumeRenderer extends NVRenderer {
 
     // Delete textures (cache owns volume + gradient textures)
     if (this.matcapTexture) gl.deleteTexture(this.matcapTexture)
-    // _texCache owns the volume + gradient textures, so freeing the cache
-    // covers the legacy this.volumeTexture / this.volumeGradientTexture
-    // handles too (those are just pointers into the cache entries).
+    this._matcapUrl = null
+    // _texCache owns chunked + per-volume 'single' entry textures, so freeing
+    // the cache covers any this.volumeTexture / this.volumeGradientTexture
+    // pointers that alias cache entries.
     for (const entry of this._texCache.values()) {
       this._destroyTexEntry(gl, entry)
     }
@@ -2421,7 +2499,10 @@ export class VolumeRenderer extends NVRenderer {
     this._activeOverlayChunked = null
     this._combinedOverlayEntries = []
     this.volumeTexture = null
+    if (this.volumeGradientTexture) gl.deleteTexture(this.volumeGradientTexture)
     this.volumeGradientTexture = null
+    // Release the non-chunked orient-texture cache (normal single-volume path).
+    this.clearVolume(gl)
     if (this.coarseFloorTexture) gl.deleteTexture(this.coarseFloorTexture)
     if (this.coarseFloorGradientTexture)
       gl.deleteTexture(this.coarseFloorGradientTexture)

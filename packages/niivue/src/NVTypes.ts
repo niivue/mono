@@ -105,6 +105,20 @@ export type AffineTransform = {
 // ============================================================
 // Per-Volume Data (NVImage)
 // ============================================================
+/** Spectral metadata retained alongside a complex MRSI volume's FID buffer. */
+export type MrsVolumeMeta = {
+  /** MHz; null means only a Hz spectral axis can be derived */
+  spectrometerFreq: number | null
+  /** resonant nucleus, e.g. '1H', '31P' */
+  nucleus: string
+  /** seconds (spectral dwell time, NIfTI pixDim[4]) */
+  dwell: number
+  /** spectral samples per voxel (dim4) */
+  nPoints: number
+  /** transients/averages per voxel (product of dims 5..7) */
+  nTransients: number
+}
+
 export type NVImage = {
   name: string
   url?: string
@@ -169,6 +183,15 @@ export type NVImage = {
   colormapLabel?: LUT | null
   /** Whether this volume has imaginary data (complex) */
   isImaginary?: boolean
+  /**
+   * Raw complex FID buffer for a spatial spectroscopic image (MRSI/CSI),
+   * interleaved re/im in NIfTI native order. Retained on the CPU only (never
+   * uploaded to the GPU — the GPU shows the derived scalar `img` instead) so
+   * the graph/extension can extract any voxel's spectrum. See {@link mrsMeta}.
+   */
+  complexFID?: Float32Array
+  /** Spectral/MRS metadata describing {@link complexFID}. */
+  mrsMeta?: MrsVolumeMeta
   /** ID of the volume used to modulate this volume's brightness/opacity (empty = no modulation) */
   modulationImage?: string
   /** @internal Pre-computed modulation data in RAS order (Float32Array of [0,1] values) */
@@ -190,6 +213,18 @@ export type NVImage = {
   chunkOverlayOf?: string
   /** Layer opacity for an independently-streamed chunked overlay ([0,1], default 1). */
   chunkOverlayOpacity?: number
+  /**
+   * @internal Pre-computed modulation weight in the MODULATOR's native voxel
+   * order (Float32Array of [0,1] values, already windowed by the modulator's
+   * calMin/calMax and raised to the modulateAlpha exponent). Used by the scalar
+   * overlay colormap prepass, which samples it through the modulator's overlay
+   * transform matrix (the same way the intensity texture is sampled), so it
+   * works for any co-registered grid. Distinct from {@link _modulationData},
+   * which is the RAS-order array consumed by the RGB/RGBA (V1) CPU path.
+   */
+  _modulationWeight?: Float32Array | null
+  /** @internal Cache key for {@link _modulationWeight} (modulator id/buffer/window/exponent). */
+  _modulationWeightKey?: string
   [key: string]: unknown
 }
 
@@ -689,6 +724,31 @@ export type GraphConfig = {
   normalizeValues: boolean
   /** Whether vertical axis range is calMin..calMax (true) or data-driven (false) */
   isRangeCalMinMax: boolean
+  /**
+   * Volume+physio association view only: include the crosshair BOLD/volume
+   * time-course as a series. Default true. Set false to plot only the attached
+   * physio traces (e.g. a "show fMRI trace" toggle).
+   */
+  showVolumeTimecourse?: boolean
+  /**
+   * Data-line thickness multiplier (relative to the default), default 1. The
+   * base is DPI-scaled, so this stays consistent across displays. <1 thins the
+   * lines (e.g. to stop dense traces overlapping); grid/axis lines are unaffected.
+   */
+  lineWidth?: number
+  /**
+   * Opacity (0..1) applied to the multi-series data lines, default 1. Values
+   * below 1 make overlapping traces translucent so intersections are visible.
+   */
+  lineAlpha?: number
+  /**
+   * When an explicit-range display change (ppm window, ppm<->Hz, ppm reference)
+   * moves the x-domain, reset the transient pan/zoom view window so the new range
+   * is shown in full. Default true. Set false for a host that drives the range
+   * reactively (listening to `graphRangeChange` and setting it via
+   * `setGraphRange`) and so wants to keep the window across range changes.
+   */
+  autoResetView?: boolean
 }
 
 // ============================================================
@@ -787,6 +847,10 @@ export type NiiVueOptions = {
   rulerWidth?: number
   graphNormalizeValues?: boolean
   graphIsRangeCalMinMax?: boolean
+  graphShowVolumeTimecourse?: boolean
+  graphLineWidth?: number
+  graphLineAlpha?: number
+  graphAutoResetView?: boolean
 
   // Volume (prefixed)
   volumeIllumination?: number
@@ -1116,4 +1180,176 @@ export type AnnotationConfig = {
   isVisibleIn3D: boolean
   tool: AnnotationTool
   style: AnnotationStyle
+}
+
+// ============================================================
+// Signal data (NVSignal) — non-spatial datasets shown as 2D plots
+// ============================================================
+
+/** Two species of signal: physiological time-series and MR spectroscopy. */
+export type SignalKind = 'physio' | 'spectroscopy'
+
+/**
+ * BIDS-style sidecar metadata, parsed and normalized from a `.json` companion
+ * (or, for MRS, a NIfTI header extension). All fields optional: a signal can
+ * load without a sidecar and degrade to a sample-index x-axis.
+ */
+export type SignalSidecar = {
+  // physio
+  columns?: string[]
+  /** Hz */
+  samplingFrequency?: number
+  /** seconds (BIDS StartTime, often negative for a pre-scan lead-in) */
+  startTime?: number
+  // spectroscopy (MRS)
+  /** MHz; authoritative MRS field */
+  spectrometerFrequency?: number
+  /**
+   * MHz; ppm fallback only. Present in most MR sidecars (incl. plain fMRI), so
+   * it is NOT an MRS marker and never drives signal-vs-volume routing — used to
+   * derive the ppm axis only after a file is already known to be spectroscopy.
+   */
+  imagingFrequency?: number
+  resonantNucleus?: string
+  /** seconds */
+  dwellTime?: number
+}
+
+/** Real-valued, multi-column physiological time-series (e.g. cardiac, respiratory). */
+export type NVSignalPhysioRaw = {
+  kind: 'physio'
+  /** one entry per column; non-numeric cells are stored as NaN (gaps) */
+  columns: Float32Array[]
+  columnLabels: string[]
+  /** Hz; null means the x-axis is a plain sample index */
+  samplingFrequency: number | null
+  /** seconds */
+  startTime: number
+}
+
+/** Complex MR spectroscopy free-induction-decay (FID). */
+export type NVSignalSpectroscopyRaw = {
+  kind: 'spectroscopy'
+  /**
+   * Complex FID with real/imag interleaved: [re0, im0, re1, im1, ...].
+   * Length is `nPoints * nTransients * 2`. Points are contiguous within a
+   * transient (NIfTI column-major: dim4 spectral varies faster than dim5+),
+   * so the complex sample for transient `t`, point `p` is at index
+   * `2 * (t * nPoints + p)`.
+   */
+  fid: Float32Array
+  nPoints: number
+  nTransients: number
+  /** seconds (NIfTI pixDim[4], the spectral dwell time) */
+  dwell: number
+  /** MHz; null means only a Hz axis can be derived */
+  spectrometerFreq: number | null
+  /** resonant nucleus, e.g. '1H', '31P' */
+  nucleus: string
+}
+
+/** Reader output: raw signal data before any display transform. */
+export type NVSignalRaw = NVSignalPhysioRaw | NVSignalSpectroscopyRaw
+
+/** A single plotted trace produced by a display transform. */
+export type SignalSeries = {
+  label: string
+  /** dependent values */
+  y: Float32Array
+  /** independent-axis values, same length as `y`; null means index 0..n-1 */
+  x: Float32Array | null
+  /** optional RGBA [0..1] override; otherwise the graph assigns a palette color */
+  color?: [number, number, number, number]
+  /**
+   * x-axis positions of this measure's BIDS event triggers — the numeric,
+   * non-zero cells of its "<label>_trigger" column (e.g. `cardiac_trigger` for a
+   * `cardiac` series). Drawn as a tick rug along the TOP of the plot. The plain
+   * scanner volume "trigger" column is intentionally NOT used. Carried per
+   * plotted series; absent when the signal has no matching "<label>_trigger".
+   */
+  triggers?: number[]
+}
+
+/** Independent-axis description shared by all series of a signal. */
+export type SignalAxis = {
+  label: string
+  /** draw high-to-low (MR ppm convention) */
+  reversed: boolean
+  /** optional fixed window; null autoscales to the data */
+  min: number | null
+  max: number | null
+}
+
+/** How a transformed component of a complex spectrum is projected to a real trace. */
+export type SignalSpectrumMode = 'real' | 'imag' | 'magnitude' | 'phase'
+
+/**
+ * A text label anchored to a position in a signal graph's data space (e.g. a
+ * peak assignment on a spectrum). The label is mapped through the same axis
+ * window as the data, so it pans/zooms with the graph and is hidden when its x
+ * falls outside the visible window.
+ */
+export type SignalAnnotation = {
+  /** label text (e.g. 'NAA') */
+  text: string
+  /** x position in axis data units (e.g. ppm for spectroscopy, seconds for physio) */
+  x: number
+  /**
+   * y position in data units. The sentinels `-Infinity` and `+Infinity` are
+   * shorthand for "bottom of plot" and "top of plot" respectively, so a label
+   * can be pinned to an axis edge regardless of the autoscaled y-range.
+   */
+  y: number
+  /** optional RGBA [0..1] color override; otherwise the graph font color is used */
+  color?: [number, number, number, number]
+}
+
+/** A loaded signal instance held by the model. */
+export type NVSignal = {
+  id: string
+  name: string
+  url?: string
+  kind: SignalKind
+  /** raw, undisplayed data (FID or physio columns) */
+  raw: NVSignalRaw
+  /** current display state (drives the on-demand transform) */
+  display: NVSignalDisplay
+  /** id of an associated volume/mesh this signal is bound to (optional) */
+  attachedToId?: string
+  /**
+   * When true (spectroscopy only), the spectrum is extracted live from the
+   * crosshair voxel of the complex MRSI volume named by {@link attachedToId},
+   * re-derived on every crosshair move. The signal's own `raw.fid` is then a
+   * placeholder used only as a fallback / metadata template.
+   */
+  followsCrosshair?: boolean
+  /** text labels anchored to positions in the graph's data space (optional) */
+  annotations?: SignalAnnotation[]
+}
+
+/** User-controllable display state for a signal (drives the on-demand transform). */
+export type NVSignalDisplay = {
+  // spectroscopy
+  average: boolean
+  mode: SignalSpectrumMode
+  /** [low, high] ppm window; null autoscales */
+  ppmRange: [number, number] | null
+  /** ppm reference offset; null uses the nucleus default */
+  ppmRef: number | null
+  useHz: boolean
+  // FSL-MRS spectral processing (optional; absent/false/0 leaves the spectrum
+  // unprocessed, preserving the svs.html baseline)
+  /** halve the first FID point before the FFT (FSL-MRS calcSpectrum) */
+  halveFirstPoint?: boolean
+  /** exponential apodization / line-broadening in Hz (0 = none) */
+  apodizeHz?: number
+  /** 0th-order phase correction, degrees */
+  phase0?: number
+  /** 1st-order phase correction, milliseconds */
+  phase1Ms?: number
+  // physio
+  /** indices of columns to show; null shows all */
+  selectedColumns: number[] | null
+  // shared
+  showLegend: boolean
 }

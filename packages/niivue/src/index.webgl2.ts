@@ -40,8 +40,17 @@ export type {
   NVInstance,
   NVMesh,
   NVMeshLayer,
+  NVSignal,
+  NVSignalDisplay,
+  NVSignalRaw,
   NVTractOptions,
   SaveVolumeOptions,
+  SignalAnnotation,
+  SignalAxis,
+  SignalKind,
+  SignalSeries,
+  SignalSidecar,
+  SignalSpectrumMode,
   SyncOpts,
   ViewHitTest,
   VolumeChunkSource,
@@ -55,5 +64,6 @@ export type {
   VolumeChunkDesc,
 } from './volume/chunking'
 export { chunkVolumeGrid } from './volume/chunking'
+export type { SignalFromUrlOptions } from './signal/NVSignal'
 export type { TransformInfo, TransformOptions } from './volume/transforms'
 export { getImageDataRAS } from './volume/utils'

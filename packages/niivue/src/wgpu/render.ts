@@ -31,6 +31,7 @@ import {
   needsChunking,
   type Vec3i,
 } from '@/volume/chunking'
+import { buildModulationParams } from '@/volume/modulation'
 import { chunkOverlayMatrix, extractChunkBytes } from '@/volume/orientChunked'
 import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
 import * as orient from './orient'
@@ -327,6 +328,7 @@ export class VolumeRenderer extends NVRenderer {
     draw: GPUTexture | null
     lut: GPUTexture | null
   } = { matcap: null, overlay: null, paqd: null, draw: null, lut: null }
+  private volumeOrientCache: orient.OrientTextureCache | null = null
 
   constructor() {
     super()
@@ -589,6 +591,8 @@ export class VolumeRenderer extends NVRenderer {
     device: GPUDevice,
     vol: NVImage,
     matcap: string = '',
+    allVolumes: NVImage[] = [vol],
+    perVolumeCache = false,
   ): Promise<void> {
     if (!this.isReady) return
 
@@ -623,31 +627,77 @@ export class VolumeRenderer extends NVRenderer {
       return
     }
 
-    let entry = cacheKey ? this._texCache.get(cacheKey) : undefined
-    if (entry && entry.kind !== 'single') {
-      this._destroyTexEntry(entry)
-      entry = undefined
-    }
-    if (!entry) {
-      const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
-      const volumeTexture = await orient.volume2Texture(
-        device,
-        vol,
-        vol,
-        mtx as Float32Array,
-        0,
-      )
-      const volumeGradientTexture = await wgpu.volume2TextureGradientRGBA(
-        device,
-        volumeTexture,
-      )
-      entry = { kind: 'single', volumeTexture, volumeGradientTexture }
-      if (cacheKey) this._texCache.set(cacheKey, entry)
-    }
+    const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
+    const modParams = buildModulationParams(vol, vol, allVolumes)
     this._activeChunked = null
-    this.volumeTexture = entry.volumeTexture
-    this.volumeGradientTexture = entry.volumeGradientTexture
-    this._activeVolKey = cacheKey || null
+
+    if (perVolumeCache) {
+      // Multi-instance / global3d: cache each volume's texture by key so the
+      // render loop can switch the active texture per tile via
+      // bindCachedVolume. (volumeOrientCache is a single slot and cannot serve
+      // per-tile volume switching.)
+      let entry = cacheKey ? this._texCache.get(cacheKey) : undefined
+      if (entry && entry.kind !== 'single') {
+        this._destroyTexEntry(entry)
+        entry = undefined
+      }
+      if (!entry) {
+        const volumeTexture = await orient.volume2Texture(
+          device,
+          vol,
+          vol,
+          mtx as Float32Array,
+          0,
+          undefined,
+          modParams,
+        )
+        const volumeGradientTexture = await wgpu.volume2TextureGradientRGBA(
+          device,
+          volumeTexture,
+        )
+        entry = { kind: 'single', volumeTexture, volumeGradientTexture }
+        if (cacheKey) this._texCache.set(cacheKey, entry)
+      }
+      this.volumeTexture = entry.volumeTexture
+      this.volumeGradientTexture = entry.volumeGradientTexture
+      this._activeVolKey = cacheKey || null
+    } else {
+      // Normal single-volume path: orient-texture cache + modulation. Scalar
+      // volumes go through the orient-texture cache so cal_min/max/colormap
+      // tweaks only re-run the cheap orient compute pass.
+      if (this.volumeGradientTexture) this.volumeGradientTexture.destroy()
+      if (isRgbaDatatype(vol.hdr.datatypeCode)) {
+        // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
+        this.clearVolume()
+        this.volumeTexture = await orient.volume2Texture(
+          device,
+          vol,
+          vol,
+          mtx as Float32Array,
+          0,
+          undefined,
+          modParams,
+        )
+      } else {
+        this.destroyNonCachedVolumeTexture()
+        this.volumeOrientCache = await orient.prepareOrientTextureCache(
+          device,
+          vol,
+          vol,
+          mtx as Float32Array,
+          0,
+          this.volumeOrientCache,
+          modParams,
+        )
+        orient.dispatchOrient(device, this.volumeOrientCache)
+        this.volumeTexture = this.volumeOrientCache.outputTexture
+      }
+      this.volumeGradientTexture = await wgpu.volume2TextureGradientRGBA(
+        device,
+        this.volumeTexture,
+      )
+      this._activeVolKey = null
+    }
 
     await this._ensureMatcap(device, matcap)
   }
@@ -1342,6 +1392,7 @@ export class VolumeRenderer extends NVRenderer {
         mtx as Float32Array,
         vol.opacity ?? 1,
         this.overlayOrientCache,
+        buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
       )
       orient.dispatchOrient(device, this.overlayOrientCache)
       this.overlayTexture = this.overlayOrientCache.outputTexture
@@ -1359,6 +1410,8 @@ export class VolumeRenderer extends NVRenderer {
             baseVol,
             mtx as Float32Array,
             vol.opacity ?? 1,
+            undefined,
+            buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
           ),
         )
       }
@@ -1393,10 +1446,27 @@ export class VolumeRenderer extends NVRenderer {
       mtx as Float32Array,
       overlayVol.opacity ?? 1,
       this.overlayOrientCache,
+      buildModulationParams(overlayVol, baseVol, [baseVol, overlayVol]),
     )
     orient.dispatchOrient(device, this.overlayOrientCache)
     this.overlayTexture = this.overlayOrientCache.outputTexture
     return true
+  }
+
+  private destroyNonCachedVolumeTexture(): void {
+    if (
+      this.volumeTexture &&
+      this.volumeTexture !== this.volumeOrientCache?.outputTexture
+    ) {
+      this.volumeTexture.destroy()
+    }
+    this.volumeTexture = null
+  }
+
+  clearVolume(): void {
+    this.destroyNonCachedVolumeTexture()
+    orient.destroyOrientTextureCache(this.volumeOrientCache)
+    this.volumeOrientCache = null
   }
 
   private destroyNonCachedOverlayTexture(): void {
@@ -2554,6 +2624,13 @@ export class VolumeRenderer extends NVRenderer {
     // volumeTexture/volumeGradientTexture, which alias an entry).
     for (const entry of this._texCache.values()) {
       this._destroyTexEntry(entry)
+    }
+    // Release the non-chunked orient-texture cache + standalone gradient
+    // (normal single-volume path).
+    this.clearVolume()
+    if (this.volumeGradientTexture) {
+      this.volumeGradientTexture.destroy()
+      this.volumeGradientTexture = null
     }
     this._texCache.clear()
     this._bindGroupCache.clear()

@@ -11,6 +11,7 @@ import { log } from '@/logger'
 import type { NVImage, TypedVoxelArray } from '@/NVTypes'
 import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
+import { IDENTITY_MTX, type ModulationTextureParams } from '@/volume/modulation'
 import { chunkOverlayMatrix } from '@/volume/orientChunked'
 
 type ShaderPrograms = {
@@ -160,6 +161,12 @@ uniform mat4 mtx;
 uniform int isLabel;
 uniform float labelMin;
 uniform float labelWidth;
+// Modulation: scale RGB (mode 1) or alpha (mode 2) by a second volume's
+// windowed intensity. modVol holds [0,1] weights in the modulator's native
+// voxel order; modMtx maps output coords -> modulator native texture coords.
+uniform highp sampler3D modVol;
+uniform mat4 modMtx;
+uniform int modulation;
 
 void main(void) {
     // Transform output coordinates to input coordinates using the matrix
@@ -228,6 +235,17 @@ void main(void) {
             FragColor.a = 0.0;
         else if ((f > 0.0) && (cal_min > 0.0) && (f < cal_min))
             FragColor.a = 0.0;
+    }
+    // Modulation: scale RGB (mode 1) or alpha (mode 2) by another volume.
+    if (modulation > 0) {
+        vec4 mvx = vec4(TexCoord.xy, coordZ, 1.0) * modMtx;
+        float w = 0.0;
+        if ((mvx.x >= 0.0) && (mvx.x <= 1.0) &&
+            (mvx.y >= 0.0) && (mvx.y <= 1.0) &&
+            (mvx.z >= 0.0) && (mvx.z <= 1.0))
+            w = texture(modVol, mvx.xyz).r;
+        if (modulation == 1) FragColor.rgb *= w;
+        else FragColor.a *= w;
     }
     // Bake overlay opacity into alpha for pre-integration
     if (overlayOpacity > 0.0)
@@ -337,7 +355,100 @@ function getUniformLocations(
     isLabel: gl.getUniformLocation(program, 'isLabel'),
     labelMin: gl.getUniformLocation(program, 'labelMin'),
     labelWidth: gl.getUniformLocation(program, 'labelWidth'),
+    modVol: gl.getUniformLocation(program, 'modVol'),
+    modMtx: gl.getUniformLocation(program, 'modMtx'),
+    modulation: gl.getUniformLocation(program, 'modulation'),
   }
+}
+
+const MODULATION_TEXTURE_UNIT = 4
+
+// Per-context 1x1x1 R32F placeholder bound when modulation is inactive, so the
+// modVol sampler always has a valid texture (the shader never samples it).
+const _dummyModTexture = new WeakMap<WebGL2RenderingContext, WebGLTexture>()
+
+function getDummyModTexture(gl: WebGL2RenderingContext): WebGLTexture {
+  let tex = _dummyModTexture.get(gl)
+  if (tex) return tex
+  tex = gl.createTexture()
+  if (!tex) throw new Error('orientOverlay: failed to create dummy mod texture')
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texStorage3D(gl.TEXTURE_3D, 1, gl.R32F, 1, 1, 1)
+  gl.texSubImage3D(
+    gl.TEXTURE_3D,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    gl.RED,
+    gl.FLOAT,
+    new Float32Array([1]),
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  _dummyModTexture.set(gl, tex)
+  return tex
+}
+
+/** Create an R32F 3D texture holding modulation weights in native voxel order. */
+function createModTexture(
+  gl: WebGL2RenderingContext,
+  mod: ModulationTextureParams,
+): WebGLTexture {
+  const tex = gl.createTexture()
+  if (!tex) throw new Error('orientOverlay: failed to create mod texture')
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texStorage3D(
+    gl.TEXTURE_3D,
+    1,
+    gl.R32F,
+    mod.dims[0],
+    mod.dims[1],
+    mod.dims[2],
+  )
+  gl.texSubImage3D(
+    gl.TEXTURE_3D,
+    0,
+    0,
+    0,
+    0,
+    mod.dims[0],
+    mod.dims[1],
+    mod.dims[2],
+    gl.RED,
+    gl.FLOAT,
+    mod.weight,
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  return tex
+}
+
+/** Bind modulation uniforms + texture for a draw (or disable when absent). */
+function bindModulation(
+  gl: WebGL2RenderingContext,
+  uniforms: ReturnType<typeof getUniformLocations>,
+  modTexture: WebGLTexture | null,
+  mod: ModulationTextureParams | null,
+): void {
+  gl.activeTexture(gl.TEXTURE0 + MODULATION_TEXTURE_UNIT)
+  gl.bindTexture(gl.TEXTURE_3D, modTexture ?? getDummyModTexture(gl))
+  if (uniforms.modVol) gl.uniform1i(uniforms.modVol, MODULATION_TEXTURE_UNIT)
+  if (uniforms.modulation) gl.uniform1i(uniforms.modulation, mod ? mod.mode : 0)
+  if (uniforms.modMtx)
+    gl.uniformMatrix4fv(uniforms.modMtx, false, mod ? mod.mtx : IDENTITY_MTX)
 }
 
 /**
@@ -488,6 +599,8 @@ export type OverlayTextureCache = {
   colormapKey: string
   imageBuffer: ArrayBufferLike
   shaderType: keyof ShaderPrograms
+  modTexture: WebGLTexture | null
+  modKey: string
 }
 
 const _labelColormapIds = new WeakMap<object, number>()
@@ -522,6 +635,7 @@ export function destroyOverlayTextureCache(
   gl.deleteTexture(cache.colormapTexture)
   gl.deleteTexture(cache.negColormapTexture)
   gl.deleteTexture(cache.outputTexture)
+  if (cache.modTexture) gl.deleteTexture(cache.modTexture)
   gl.deleteFramebuffer(cache.framebuffer)
   gl.deleteBuffer(cache.vbo)
   gl.deleteVertexArray(cache.vao)
@@ -567,6 +681,7 @@ export function prepareOverlayTextureCache(
   mtx: Float32Array,
   overlayOpacity = 1,
   existingCache: OverlayTextureCache | null = null,
+  mod: ModulationTextureParams | null = null,
 ): OverlayTextureCache {
   if (!nvimageTarget.dimsRAS) {
     throw new Error('overlay2Texture: nvimageTarget.dimsRAS missing')
@@ -585,6 +700,7 @@ export function prepareOverlayTextureCache(
   const texConfig = getTextureConfig(nvimage.hdr.datatypeCode)
   const frame4D = nvimage.frame4D ?? 0
   const colormapKey = overlayColormapKey(nvimage)
+  const modKey = mod ? mod.key : ''
   const canReuse =
     existingCache &&
     existingCache.datatypeCode === nvimage.hdr.datatypeCode &&
@@ -593,9 +709,10 @@ export function prepareOverlayTextureCache(
     existingCache.imageBuffer === nvimage.img.buffer &&
     dimensionsMatch(existingCache.dimsIn, dimsIn) &&
     dimensionsMatch(existingCache.dimsOut, dimsOut) &&
-    existingCache.colormapKey === colormapKey
+    existingCache.colormapKey === colormapKey &&
+    existingCache.modKey === modKey
   if (canReuse) {
-    renderOverlayCache(gl, existingCache, nvimage, mtx, overlayOpacity)
+    renderOverlayCache(gl, existingCache, nvimage, mtx, overlayOpacity, mod)
     return existingCache
   }
   destroyOverlayTextureCache(gl, existingCache)
@@ -734,7 +851,7 @@ export function prepareOverlayTextureCache(
     dimsOut[1],
     dimsOut[2],
   )
-  const cache = {
+  const cache: OverlayTextureCache = {
     inputTexture,
     colormapTexture,
     negColormapTexture,
@@ -751,8 +868,10 @@ export function prepareOverlayTextureCache(
     colormapKey,
     imageBuffer: nvimage.img.buffer,
     shaderType: texConfig.shaderType,
+    modTexture: mod ? createModTexture(gl, mod) : null,
+    modKey,
   }
-  renderOverlayCache(gl, cache, nvimage, mtx, overlayOpacity)
+  renderOverlayCache(gl, cache, nvimage, mtx, overlayOpacity, mod)
   return cache
 }
 
@@ -762,6 +881,7 @@ export function renderOverlayCache(
   nvimage: NVImage,
   mtx: Float32Array,
   overlayOpacity = 1,
+  mod: ModulationTextureParams | null = null,
 ): void {
   const savedViewport = gl.getParameter(gl.VIEWPORT) as Int32Array
   const savedCullFace = gl.isEnabled(gl.CULL_FACE)
@@ -805,6 +925,7 @@ export function renderOverlayCache(
   if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
   if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth)
+  bindModulation(gl, uniforms, cache.modTexture, mod)
   for (let z = 0; z < cache.dimsOut[2]; z++) {
     if (uniforms.coordZ)
       gl.uniform1f(uniforms.coordZ, (z + 0.5) / cache.dimsOut[2])
@@ -837,6 +958,8 @@ export function renderOverlayCache(
   gl.bindTexture(gl.TEXTURE_2D, null)
   gl.activeTexture(gl.TEXTURE2)
   gl.bindTexture(gl.TEXTURE_2D, null)
+  gl.activeTexture(gl.TEXTURE0 + MODULATION_TEXTURE_UNIT)
+  gl.bindTexture(gl.TEXTURE_3D, null)
   gl.activeTexture(savedActiveTexture)
   gl.bindVertexArray(savedVAO)
 }
@@ -996,6 +1119,7 @@ export function overlay2Texture(
   mtx: Float32Array,
   overlayOpacity = 1,
   outDimsOverride?: readonly number[],
+  mod: ModulationTextureParams | null = null,
 ): WebGLTexture {
   if (nvimage.hdr.datatypeCode === 128 || nvimage.hdr.datatypeCode === 2304) {
     return rgba2Texture(gl, nvimage)
@@ -1283,6 +1407,8 @@ export function overlay2Texture(
   if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
   if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth)
+  const modTexture = mod ? createModTexture(gl, mod) : null
+  bindModulation(gl, uniforms, modTexture, mod)
   // Render each output slice
   for (let z = 0; z < dimsOut[2]; z++) {
     // Compute normalized z coordinate (center of voxel)
@@ -1327,11 +1453,14 @@ export function overlay2Texture(
   gl.bindTexture(gl.TEXTURE_2D, null)
   gl.activeTexture(gl.TEXTURE3)
   gl.bindTexture(gl.TEXTURE_3D, null)
+  gl.activeTexture(gl.TEXTURE0 + MODULATION_TEXTURE_UNIT)
+  gl.bindTexture(gl.TEXTURE_3D, null)
   gl.activeTexture(savedActiveTexture)
   // Delete temporary resources
   gl.deleteTexture(inputTexture)
   gl.deleteTexture(colormapTexture)
   gl.deleteTexture(negColormapTexture)
+  if (modTexture) gl.deleteTexture(modTexture)
   gl.deleteBuffer(vbo)
   gl.deleteVertexArray(vao)
   gl.deleteFramebuffer(framebuffer)
@@ -1691,6 +1820,13 @@ export function maskOverlayByBackground(
 }
 
 export function destroy(gl: WebGL2RenderingContext): void {
+  // Delete the per-context 1x1x1 placeholder modulation texture (independent of
+  // the program cache, so do it before the early return).
+  const dummy = _dummyModTexture.get(gl)
+  if (dummy) {
+    gl.deleteTexture(dummy)
+    _dummyModTexture.delete(gl)
+  }
   // If there is no cache for this context, nothing to do
   const cache = _programCache.get(gl)
   if (!cache) return

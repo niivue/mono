@@ -154,6 +154,21 @@ bunx nx affected -t build
 bun run check-boundaries
 ```
 
+**Always run codespell before pushing** — a separate CI job (`codespell.yml`)
+spell-checks `packages/niivue` and a failure blocks the PR. Run it locally with
+the same options CI uses (skip generated dirs that aren't in CI's checkout):
+
+```bash
+codespell --skip './.git,*/dist,*/node_modules,*/coverage,bun.lock' \
+  --ignore-words-list aNormal,inout,aLo,hAx,mater \
+  packages/niivue/src packages/niivue/examples packages/niivue/*.md
+```
+
+Fix real typos in place; for legitimate domain terms or short identifiers
+(e.g. an FFT temp variable), rename to a non-flagged form rather than weakening
+the dictionary, or—only if truly unavoidable—add the word to `ignore_words_list`
+in `.github/workflows/codespell.yml`.
+
 If `nx affected` doesn't detect changes (e.g., on the default branch), target specific projects:
 
 ```bash

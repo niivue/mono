@@ -2,7 +2,14 @@ import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { NiiDataType, NiiIntentCode } from '@/NVConstants'
 import * as NVLoader from '@/NVLoader'
-import type { NIFTI1, NIFTI2, NVImage, TypedVoxelArray } from '@/NVTypes'
+import type {
+  MrsVolumeMeta,
+  NIFTI1,
+  NIFTI2,
+  NVImage,
+  TypedVoxelArray,
+} from '@/NVTypes'
+import { isMrsiVolume, prepareMrsiVolume } from './mrsi'
 import {
   calculateWorldExtents,
   calMinMax,
@@ -161,6 +168,32 @@ export function convertFloat32RGBVector(
   return { hdr: newHdr, img: rgba }
 }
 
+/**
+ * Convert a Float64 volume to Float32. GPU textures top out at 32-bit floats
+ * on both WebGPU and WebGL2, and f32 precision is sufficient for visualization.
+ */
+function convertFloat64ToFloat32(
+  hdr: NIFTI1 | NIFTI2,
+  img: ArrayBuffer | TypedVoxelArray,
+): { hdr: NIFTI1 | NIFTI2; img: Float32Array } {
+  const src =
+    img instanceof Float64Array
+      ? img
+      : img instanceof ArrayBuffer
+        ? new Float64Array(img)
+        : new Float64Array(img.buffer, img.byteOffset, img.byteLength / 8)
+  const dst = Float32Array.from(src)
+  const newHdr = {
+    ...hdr,
+    dims: [...hdr.dims],
+    affine: hdr.affine.map((row) => [...row]),
+  }
+  newHdr.datatypeCode = NiiDataType.DT_FLOAT32
+  newHdr.numBitsPerVoxel = 32
+  log.info('Converted DT_FLOAT64 volume to DT_FLOAT32 for GPU upload')
+  return { hdr: newHdr, img: dst }
+}
+
 export function nii2volume(
   hdr: NIFTI1 | NIFTI2,
   img: ArrayBuffer | TypedVoxelArray,
@@ -176,6 +209,22 @@ export function nii2volume(
     const converted = convertFloat32RGBVector(hdr, img)
     hdr = converted.hdr
     img = converted.img
+  }
+  if (hdr.datatypeCode === NiiDataType.DT_FLOAT64) {
+    const converted = convertFloat64ToFloat32(hdr, img)
+    hdr = converted.hdr
+    img = converted.img
+  }
+  // Spatial complex spectroscopic imaging (MRSI/CSI): replace the complex data
+  // with a derived scalar display map and retain the raw FID + spectral
+  // metadata to attach to the NVImage after construction.
+  let mrsiExtra: { complexFID: Float32Array; mrsMeta: MrsVolumeMeta } | null =
+    null
+  if (isMrsiVolume(hdr)) {
+    const prepped = prepareMrsiVolume(hdr, img)
+    hdr = prepped.hdr
+    img = prepped.img
+    mrsiExtra = { complexFID: prepped.complexFID, mrsMeta: prepped.mrsMeta }
   }
   const { extentsMin, extentsMax } = calculateWorldExtents(
     hdr.dims.slice(1, 4),
@@ -241,6 +290,13 @@ export function nii2volume(
   const v1 = (hdr as unknown as { v1?: Float32Array }).v1
   if (v1) {
     volume.v1 = v1
+  }
+  if (mrsiExtra) {
+    volume.complexFID = mrsiExtra.complexFID
+    volume.mrsMeta = mrsiExtra.mrsMeta
+    // NB: do NOT set `isImaginary` — the displayed `img` is the derived REAL
+    // scalar map (the complex data lives in `complexFID`). Setting it would make
+    // locationTracking append a bogus "imaginary" component to the readout.
   }
   NVTransforms.calculateRAS(volume)
   if (!volume.pixDimsRAS || !volume.dimsRAS) {

@@ -48,4 +48,16 @@ describe('sliceTypeDim', () => {
   test('sagittal_returns0', () => {
     expect(sliceTypeDim(SLICE_TYPE.SAGITTAL)).toBe(0)
   })
+
+  test('noneFallsBackToDefault', () => {
+    // SLICE_TYPE.NONE hides the spatial view (no slice dim applies); the helper
+    // must return its safe default (2) rather than throw or yield NaN.
+    expect(sliceTypeDim(SLICE_TYPE.NONE)).toBe(2)
+  })
+
+  test('sliceTypeNoneIsDistinct', () => {
+    const values = Object.values(SLICE_TYPE)
+    expect(SLICE_TYPE.NONE).toBe(5)
+    expect(new Set(values).size).toBe(values.length) // all enum values unique
+  })
 })

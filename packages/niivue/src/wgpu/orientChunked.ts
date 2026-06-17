@@ -97,7 +97,8 @@ function writeIdentityOrientUniforms(
   dv.setFloat32(108, u.labelWidth, true)
   // modMtx (offset 112, 4 vec4s) + mode flag (offset 176): modulation is
   // disabled for chunks — identity matrix + mode 0.
-  for (let i = 0; i < 16; i++) dv.setFloat32(112 + i * 4, IDENTITY_MAT4[i], true)
+  for (let i = 0; i < 16; i++)
+    dv.setFloat32(112 + i * 4, IDENTITY_MAT4[i], true)
   dv.setFloat32(176, 0, true)
   device.queue.writeBuffer(uniformBuffer, 0, ab)
 }

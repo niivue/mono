@@ -11,7 +11,7 @@ import * as wgpu from './wgpu'
 const ORIENT_UNIFORM_SIZE = 12 * 16
 
 /** Create an r32float 3D modulation-weight texture, or a 1x1x1 placeholder. */
-function createModTexture(
+export function createModTexture(
   device: GPUDevice,
   mod: ModulationTextureParams | null,
 ): GPUTexture {

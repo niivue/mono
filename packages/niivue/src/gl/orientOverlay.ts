@@ -1711,6 +1711,11 @@ export function orientChunkToTexture(
   if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
   if (uniforms.labelWidth) gl.uniform1f(uniforms.labelWidth, u.labelWidth)
+  // Modulation is disabled for chunks, but the shader's modVol sampler must
+  // still point at a valid texture unit (else it collides with the intensity
+  // sampler at unit 0 -> "two textures of different types use the same sampler
+  // location"). Bind the placeholder + modulation=0.
+  bindModulation(gl, uniforms, null, null)
   for (let z = 0; z < texDims[2]; z++) {
     if (uniforms.coordZ) gl.uniform1f(uniforms.coordZ, (z + 0.5) / texDims[2])
     gl.framebufferTextureLayer(

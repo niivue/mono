@@ -16,7 +16,7 @@ const overlays = new WeakMap<HTMLCanvasElement, HTMLElement>()
 export const GRAPHICS_UNAVAILABLE_MESSAGE = [
   'Graphics initialization failed.',
   ' - Fix 1 (Preferred): Enable "Use graphics acceleration when available" in browser settings.',
-  ' - Fix 2 (No GPU): In Chrome, enable chrome://flags/#enable-unsafe-swiftshader.',
+  ' - Fix 2 (No GPU): In Chrome, enable chrome://flags/#enable-unsafe-swiftshader (software fallback; for testing, may reduce security).',
 ].join('\n')
 
 /** Remove any message overlay previously shown for `canvas`. */

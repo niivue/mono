@@ -1,19 +1,20 @@
-// Download the Pawpawsaurus OME-Zarr volume into
-// public/omezarr/pawpawsaurus.ome.zarr/ so the `range.html` chunk-streaming
-// example can discover and stream it. The store is NOT checked into git
-// (see .gitignore) -- run this script once to make the source available.
+// Download an Open SciVis OME-Zarr volume into public/omezarr/<id>/ so the
+// `range.html` chunk-streaming example can discover and stream it. The stores
+// are NOT checked into git (see .gitignore) -- run this script once per volume
+// to make the source available.
 //
-// Pawpawsaurus is a fossil CT scan (958x646x1088, uint16) published in the
-// Open SciVis Datasets collection as an OME-Zarr 0.5 (Zarr v3) pyramid in the
-// public `ome-zarr-scivis` S3 bucket. It is a multi-gigabyte store at full
-// resolution, so by default this fetches only the two coarsest levels
-// (scale2 + scale3) -- enough for the demo to render. Use flags to pull more.
+// These are OME-Zarr 0.5 (Zarr v3) pyramids in the public `ome-zarr-scivis` S3
+// bucket. The demo only supports uint8/uint16 scalar stores, so the catalog
+// below is limited to those. At full resolution they are multi-gigabyte, so by
+// default this fetches only the two coarsest levels -- enough for the demo to
+// render. Use --levels / --all to pull more.
 //
 // Usage:
-//   bun run scripts/fetch-pawpawsaurus.ts            # coarse levels (default)
-//   bun run scripts/fetch-pawpawsaurus.ts --all      # every level (multi-GB)
-//   bun run scripts/fetch-pawpawsaurus.ts --levels=3 # only scale3 (smallest)
-//   bun run scripts/fetch-pawpawsaurus.ts --force    # re-download everything
+//   bun run scripts/fetch-omezarr.ts --list                 # show catalog
+//   bun run scripts/fetch-omezarr.ts --name=pawpawsaurus    # coarse levels
+//   bun run scripts/fetch-omezarr.ts --name=richtmyer_meshkov --all
+//   bun run scripts/fetch-omezarr.ts --name=pawpawsaurus --levels=2,3
+//   bun run scripts/fetch-omezarr.ts --name=pawpawsaurus --force
 //
 // Restart the dev server after fetching so vite serves the new files.
 
@@ -24,17 +25,44 @@ import url from 'node:url'
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url))
 
 const BUCKET = 'ome-zarr-scivis'
-const STORE_PREFIX = 'v0.5/96x2/pawpawsaurus.ome.zarr/'
-// Coarsest-first levels pulled when no --levels/--all flag is given. scale2 and
-// scale3 are small (~tens of MB) and give the demo a usable progressive view.
-const DEFAULT_LEVELS = [2, 3]
+const BASE_PREFIX = 'v0.5/96x2/'
+
+interface CatalogEntry {
+  // Store leaf without the `.ome.zarr` suffix; also the fixture dir name.
+  name: string
+  label: string
+  // Number of pyramid levels (scale0..scaleN-1); largest index is coarsest.
+  levelCount: number
+}
+
+// uint8/uint16/int16 scivis stores (what range.html supports). float32 stores
+// (e.g. miranda) are intentionally omitted.
+const CATALOG: CatalogEntry[] = [
+  {
+    name: 'pawpawsaurus',
+    label: 'fossil CT, 958x646x1088, uint16, 4 levels',
+    levelCount: 4,
+  },
+  {
+    name: 'richtmyer_meshkov',
+    label: 'instability sim, 2048x2048x1920, uint8, 5 levels',
+    levelCount: 5,
+  },
+  {
+    name: 'pig_heart',
+    label: 'microCT, 2048x2048x2612, int16, 5 levels',
+    levelCount: 5,
+  },
+]
 
 interface Options {
+  list: boolean
+  name: string
   all: boolean
   levels: number[]
   force: boolean
   concurrency: number
-  outDir: string
+  out: string | null
 }
 
 interface S3Object {
@@ -56,21 +84,18 @@ function parseArgs(): Options {
   )
   const levels = (flags.get('levels') ?? '')
     .split(',')
-    .map((s) => Number(s.trim()))
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0) // Number('') === 0, so drop empties first
+    .map((s) => Number(s))
     .filter((n) => Number.isInteger(n) && n >= 0)
-  const defaultOut = path.resolve(
-    __dirname,
-    '..',
-    'public',
-    'omezarr',
-    'pawpawsaurus.ome.zarr',
-  )
   return {
+    list: flags.get('list') === 'true',
+    name: flags.get('name') ?? env.OMEZARR_NAME ?? '',
     all: flags.get('all') === 'true',
     levels,
     force: flags.get('force') === 'true',
     concurrency,
-    outDir: path.resolve(flags.get('out') ?? env.PAWPAW_OUT ?? defaultOut),
+    out: flags.get('out') ?? env.OMEZARR_OUT ?? null,
   }
 }
 
@@ -165,29 +190,61 @@ function wantObject(relKey: string, wantedLevels: Set<number> | null): boolean {
   return wantedLevels.has(Number(scaleMatch[1]))
 }
 
+function printCatalog(): void {
+  console.log('Open SciVis OME-Zarr stores supported by range.html:\n')
+  for (const d of CATALOG) {
+    console.log(`  ${d.name.padEnd(20)} ${d.label}`)
+  }
+  console.log('\nPick one with --name=<name>.')
+}
+
+// Default coarse levels: the two coarsest (largest scale indices), which are
+// small (tens of MB) and give the demo a usable progressive view.
+function defaultLevels(entry: CatalogEntry): number[] {
+  const top = entry.levelCount - 1
+  return top > 0 ? [top - 1, top] : [top]
+}
+
 async function main(): Promise<void> {
   const opts = parseArgs()
+  if (opts.list || !opts.name) {
+    printCatalog()
+    return
+  }
+  const entry = CATALOG.find((d) => d.name === opts.name)
+  if (!entry) {
+    throw new Error(
+      `Unknown store '${opts.name}'. Run with --list to see names.`,
+    )
+  }
+
+  const storeId = `${entry.name}.ome.zarr`
+  const storePrefix = `${BASE_PREFIX}${storeId}/`
+  const outDir = path.resolve(
+    opts.out ?? path.resolve(__dirname, '..', 'public', 'omezarr', storeId),
+  )
+
   // null => keep every level; otherwise the explicit set of scale indices.
   const wantedLevels: Set<number> | null = opts.all
     ? null
-    : new Set(opts.levels.length > 0 ? opts.levels : DEFAULT_LEVELS)
+    : new Set(opts.levels.length > 0 ? opts.levels : defaultLevels(entry))
 
   const levelLabel = wantedLevels
     ? `scale ${[...wantedLevels].sort((a, b) => a - b).join(', ')}`
     : 'all levels'
-  console.log(`Fetching pawpawsaurus.ome.zarr (${levelLabel})`)
-  console.log(`  source: s3://${BUCKET}/${STORE_PREFIX}`)
-  console.log(`  dest:   ${opts.outDir}`)
+  console.log(`Fetching ${storeId} (${levelLabel})`)
+  console.log(`  source: s3://${BUCKET}/${storePrefix}`)
+  console.log(`  dest:   ${outDir}`)
   console.log('  listing store ...')
 
   const all: S3Object[] = []
-  for await (const obj of listObjects(STORE_PREFIX)) all.push(obj)
+  for await (const obj of listObjects(storePrefix)) all.push(obj)
   if (all.length === 0) {
-    throw new Error('no objects found — store may have moved')
+    throw new Error('no objects found -- store may have moved')
   }
 
   const selected = all.filter((o) =>
-    wantObject(o.key.slice(STORE_PREFIX.length), wantedLevels),
+    wantObject(o.key.slice(storePrefix.length), wantedLevels),
   )
   const totalBytes = selected.reduce((sum, o) => sum + o.size, 0)
   console.log(
@@ -198,8 +255,8 @@ async function main(): Promise<void> {
   let skipped = 0
   let failed = 0
   await runWithConcurrency(selected, opts.concurrency, async (obj) => {
-    const relKey = obj.key.slice(STORE_PREFIX.length)
-    const dest = path.join(opts.outDir, relKey)
+    const relKey = obj.key.slice(storePrefix.length)
+    const dest = path.join(outDir, relKey)
     if (!opts.force && (await fileExists(dest))) {
       skipped += 1
       return
@@ -218,7 +275,7 @@ async function main(): Promise<void> {
     `\ndone: downloaded=${downloaded} skipped=${skipped} failed=${failed}`,
   )
   console.log(
-    'Restart the dev server, then pick "pawpawsaurus OME-Zarr" in range.html.',
+    `Restart the dev server, then pick "${entry.name}" in range.html.`,
   )
   if (failed > 0) process.exit(1)
 }

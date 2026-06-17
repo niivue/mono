@@ -24,6 +24,7 @@ import {
   bytesPerSourceVoxel,
   estimateChunkedBytes,
   formatBytes,
+  maxChunksForBudget,
 } from '@/volume/chunkBudget'
 import {
   type ChunkPlan,
@@ -56,12 +57,27 @@ const DEFAULT_CHUNK_RESIDENCY_BYTES = 1_500_000_000
 
 /**
  * Maximum chunks a single chunked volume may tile into. Bounds the per-chunk
- * uniform-buffer slot allocation (one slot per chunk per tile). A volume that
- * tiles into more chunks than this fails fast in updateVolume with a clear
+ * uniform-buffer slot allocation (one slot per chunk per chunk-tile). A volume
+ * that tiles into more chunks than this fails fast in updateVolume with a clear
  * error — a structural limit of the fixed-size uniform buffer, not a memory
- * budget (memory pressure is handled by chunk eviction).
+ * budget (memory pressure is handled by chunk eviction). Raised to 1024 (from
+ * 256) so full-resolution pyramid levels of large volumes still load; kept
+ * memory-neutral by sizing the chunk banks with MAX_CHUNK_TILES instead of
+ * MAX_TILES (see paramsBuffer allocation).
  */
-const MAX_CHUNKS_PER_TILE = 256
+const MAX_CHUNKS_PER_TILE = 1024
+
+/**
+ * Maximum simultaneously-drawn tiles a single chunked volume may occupy. The
+ * per-chunk uniform regions are sized MAX_CHUNK_TILES * MAX_CHUNKS_PER_TILE
+ * (rather than MAX_TILES * MAX_CHUNKS_PER_TILE) — a chunked volume realistically
+ * appears in the multiplanar ortho slices + render tile, not a large mosaic, so
+ * a smaller tile factor keeps the buffer the same size while quadrupling the
+ * chunk cap. A chunked draw at a tileIndex >= MAX_CHUNK_TILES is skipped (the
+ * volume still streams in the tiles below the cap), mirroring the existing
+ * tileIndex >= MAX_TILES skip for non-chunked draws.
+ */
+const MAX_CHUNK_TILES = 32
 
 /**
  * Streaming-pump budget per `pumpChunkUploads` call. The pump uploads chunks
@@ -149,18 +165,24 @@ export const alignedRenderSize =
   Math.ceil(renderParamsSize / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
 // Byte offset of the base chunk-params region (after the per-tile non-chunked
 // slots) and of the independent-overlay chunk-params region (after the base
-// chunk region). See paramsBuffer allocation for the full layout.
+// chunk region). The non-chunked region keeps one slot per MAX_TILES tile; each
+// chunk bank holds MAX_CHUNK_TILES * MAX_CHUNKS_PER_TILE slots. See paramsBuffer
+// allocation for the full layout.
 const CHUNK_PARAMS_BASE = MAX_TILES * alignedRenderSize
+const CHUNK_BANK_SLOTS = MAX_CHUNK_TILES * MAX_CHUNKS_PER_TILE
 const OVERLAY_CHUNK_PARAMS_BASE =
-  MAX_TILES * alignedRenderSize * (1 + MAX_CHUNKS_PER_TILE)
+  CHUNK_PARAMS_BASE + CHUNK_BANK_SLOTS * alignedRenderSize
 // Coarse-floor cube params live in their own bank so a chunk that is mid
 // cross-fade can draw both its floor cube (this bank) and its fine cube (the
 // base bank) in one frame without their dynamic-offset uniforms colliding.
 const FLOOR_CHUNK_PARAMS_BASE =
-  MAX_TILES * alignedRenderSize * (1 + 2 * MAX_CHUNKS_PER_TILE)
-// Duration of the streaming-chunk cross-fade. A chunk admitted this long ago
-// (or longer) draws at full strength; younger chunks dissolve in over the floor.
-const CHUNK_FADE_MS = 260
+  CHUNK_PARAMS_BASE + 2 * CHUNK_BANK_SLOTS * alignedRenderSize
+// Duration of the streaming-chunk cross-fade between LOD levels. A chunk
+// admitted this long ago (or longer) draws at full strength; younger chunks
+// dissolve in over the floor. Set to 0 to disable the cross-fade entirely:
+// fadeFraction then returns 1 immediately, so a fine chunk pops in at full
+// strength (the floor is still drawn for chunks that are not yet resident).
+const CHUNK_FADE_MS = 0
 
 /**
  * Steady-state GPU bytes one resident chunk occupies. The scalar source
@@ -402,18 +424,19 @@ export class VolumeRenderer extends NVRenderer {
 
     // Create uniform buffer. Layout (each region alignedRenderSize per slot):
     //   [0, MAX_TILES)                          — one non-chunked draw per tile
-    //   base chunk region: MAX_TILES*MAX_CHUNKS_PER_TILE slots (base cubes)
-    //   overlay chunk region: MAX_TILES*MAX_CHUNKS_PER_TILE slots (independent
-    //     hi-res overlay cubes — its own region so overlay cube uniforms never
-    //     collide with base cube uniforms within a frame).
-    //   floor chunk region: MAX_TILES*MAX_CHUNKS_PER_TILE slots (coarse-floor
-    //     cubes — its own region so a mid-fade chunk can draw its floor cube
-    //     and its fine cube in the same frame without uniform collision).
+    //   base chunk region: CHUNK_BANK_SLOTS slots (base cubes)
+    //   overlay chunk region: CHUNK_BANK_SLOTS slots (independent hi-res overlay
+    //     cubes — its own region so overlay cube uniforms never collide with
+    //     base cube uniforms within a frame).
+    //   floor chunk region: CHUNK_BANK_SLOTS slots (coarse-floor cubes — its own
+    //     region so a mid-fade chunk can draw its floor cube and its fine cube in
+    //     the same frame without uniform collision).
+    // where CHUNK_BANK_SLOTS = MAX_CHUNK_TILES * MAX_CHUNKS_PER_TILE.
     // base tile i, chunk j  uses CHUNK_PARAMS_BASE   + (i*MAX_CHUNKS_PER_TILE+j)
     // overlay tile i, chunk j uses OVERLAY_CHUNK_PARAMS_BASE + (i*MAX_...+j)
     // floor tile i, chunk j uses FLOOR_CHUNK_PARAMS_BASE + (i*MAX_...+j)
     this.paramsBuffer = device.createBuffer({
-      size: alignedRenderSize * MAX_TILES * (1 + 3 * MAX_CHUNKS_PER_TILE),
+      size: alignedRenderSize * (MAX_TILES + 3 * CHUNK_BANK_SLOTS),
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
 
@@ -985,13 +1008,25 @@ export class VolumeRenderer extends NVRenderer {
     )
     // Stream the centre of the view first, then spiral outward. Streamed
     // combined overlays share the base grid, so the same indices apply.
-    for (const ci of orderByViewCenter(
+    const ordered = orderByViewCenter(
       entry.plan,
       unclipped,
       mvp,
       matRAS,
       offset,
-    )) {
+    )
+    // Cap the working set to what the residency budget can hold. A full-volume
+    // render makes every visible chunk needed-this-frame, so eviction can't drop
+    // any of them; without a cap the resident set grows to the entire visible
+    // set and exhausts GPU memory (lost device). Streaming only the most
+    // view-central chunks that fit keeps memory bounded — the coarse floor
+    // covers the rest.
+    const cap = maxChunksForBudget(
+      entry.plan,
+      bytesPerSourceVoxel(entry.volume.hdr.datatypeCode),
+      entry.manager.budgetBytes,
+    )
+    for (const ci of ordered.slice(0, cap)) {
       entry.manager.requestUpload(ci)
       for (const m of mirrors) m.requestUpload(ci)
     }
@@ -1055,14 +1090,15 @@ export class VolumeRenderer extends NVRenderer {
       chunksInFrustum(entry.plan, mvp, CLIP_SPACE_ZERO_TO_ONE, matRAS, offset),
     )
     const visible = crossing.filter((ci) => inView.has(ci))
-    // Stream the centre of the view first, then spiral outward.
-    for (const ci of orderByViewCenter(
+    // Stream the centre of the view first, then spiral outward, capped to what
+    // the residency budget can hold (see _requestChunksInFrustum).
+    const ordered = orderByViewCenter(entry.plan, visible, mvp, matRAS, offset)
+    const cap = maxChunksForBudget(
       entry.plan,
-      visible,
-      mvp,
-      matRAS,
-      offset,
-    )) {
+      bytesPerSourceVoxel(entry.volume.hdr.datatypeCode),
+      entry.manager.budgetBytes,
+    )
+    for (const ci of ordered.slice(0, cap)) {
       entry.manager.requestUpload(ci)
       for (const m of mirrors) m.requestUpload(ci)
     }
@@ -1141,8 +1177,14 @@ export class VolumeRenderer extends NVRenderer {
           try {
             entry.manager.admit(i, await entry.uploader.uploadChunk(i))
           } catch (err) {
+            // Isolate a single chunk's failure: mark it failed and keep pumping.
+            // failUpload clears the in-flight marker so a later working-set pass
+            // re-enqueues it. Rethrowing would reject the whole pump and stop the
+            // view's self-driven re-render loop, freezing all streaming until an
+            // unrelated redraw (e.g. a drag) re-kicks it.
             entry.manager.failUpload(i)
-            throw err
+            log.error('chunk upload failed', err)
+            continue
           }
           admitted = true
           uploaded++
@@ -2165,7 +2207,10 @@ export class VolumeRenderer extends NVRenderer {
     )
       return
     if (entry.manager.chunkCount === 0) return
-    if (tileIndex < 0 || tileIndex >= MAX_TILES) return
+    // Chunk banks are sized for MAX_CHUNK_TILES tiles (not MAX_TILES); a chunked
+    // volume drawn beyond that is skipped rather than overflowing into the next
+    // bank. Real layouts (multiplanar/render, modest mosaics) stay well under it.
+    if (tileIndex < 0 || tileIndex >= MAX_CHUNK_TILES) return
 
     const paqdLutTex = this.paqdLutTexture || this.placeholderLut2D
     // The overlay layer draws only its own chunk volume — force the optional

@@ -3,6 +3,7 @@ import {
   bytesPerSourceVoxel,
   estimateChunkedBytes,
   formatBytes,
+  maxChunksForBudget,
 } from './chunkBudget'
 import { chunkVolume } from './chunking'
 
@@ -65,5 +66,34 @@ describe('formatBytes', () => {
     expect(formatBytes(2 * 1024)).toBe('2.0 KiB')
     expect(formatBytes(5 * 1024 * 1024)).toBe('5.0 MiB')
     expect(formatBytes(2.5 * 1024 * 1024 * 1024)).toBe('2.50 GiB')
+  })
+})
+
+describe('maxChunksForBudget', () => {
+  test('returns the full chunk count when the whole set fits', () => {
+    const plan = chunkVolume([512, 512, 256], 256) // multi-chunk plan
+    const total = estimateChunkedBytes(plan, 2).totalBytes
+    expect(maxChunksForBudget(plan, 2, total)).toBe(plan.chunks.length)
+    expect(maxChunksForBudget(plan, 2, total * 2)).toBe(plan.chunks.length)
+  })
+
+  test('caps to the chunks that fit when the set exceeds the budget', () => {
+    const plan = chunkVolume([512, 512, 256], 256)
+    const total = estimateChunkedBytes(plan, 2).totalBytes
+    const avg = total / plan.chunks.length
+    // Budget for ~3 chunks should cap at 3 (and below the full count).
+    const cap = maxChunksForBudget(plan, 2, avg * 3)
+    expect(cap).toBe(3)
+    expect(cap).toBeLessThan(plan.chunks.length)
+  })
+
+  test('always allows at least one chunk under a tiny budget', () => {
+    const plan = chunkVolume([512, 512, 256], 256)
+    expect(maxChunksForBudget(plan, 2, 1)).toBe(1)
+    expect(maxChunksForBudget(plan, 2, 0)).toBe(1)
+  })
+
+  test('returns 0 for an empty plan', () => {
+    expect(maxChunksForBudget({ chunks: [] } as never, 2, 1000)).toBe(0)
   })
 })

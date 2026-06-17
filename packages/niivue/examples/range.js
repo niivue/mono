@@ -17,15 +17,33 @@ const backend =
     ? 'webgpu'
     : 'webgl2'
 
-const DEFAULT_RESIDENCY_BYTES = 768 * 1024 * 1024
+// The coarse whole-volume floor is OFF by default: rendering a coarser pyramid
+// level behind the fine chunks shows blocky "previous-level" detail in regions
+// the fine chunks have not reached, which reads as an artifact. Pass ?floor to
+// opt back in (A/B: see coarse backdrop vs. fine-only with empty gaps).
+const NO_FLOOR = !new URLSearchParams(location.search).has('floor')
+// Bumped each (re)load so a superseded load's late async work (e.g. the coarse
+// floor build) is discarded instead of stomping a newer scene.
+let reloadToken = 0
+
+// GPU residency budget for the resident chunk set (scalar + RGBA + gradient
+// textures). niivue caps the per-frame working set to the chunks that fit this
+// budget (maxChunksForBudget), so resident VRAM is hard-bounded to roughly this
+// value. For a whole-volume 3D render the view-centred working set never moves
+// off the centre as you rotate, so a too-small budget leaves you stuck on one
+// section of the volume. 8 GB lets the bundled scivis levels that fit a desktop
+// GPU resolve fully (e.g. all of pawpawsaurus L0 ~8 GB). Levels far larger than
+// this (e.g. pig_heart L0 ~119 GB) still cannot render whole — they are
+// region-of-interest only.
+const DEFAULT_RESIDENCY_BYTES = 8192 * 1024 * 1024
 const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
 
 // OME-Zarr stores discoverable under ${BASE_URL}omezarr/. `levels` lists the
 // scale indices that may be present on disk, coarsest-first; the loader picks
 // the first one whose array metadata actually resolves, so a store fetched at
 // only its coarsest level still renders. `stent` is bundled (scale2 only);
-// `pawpawsaurus` is downloaded on demand by scripts/fetch-pawpawsaurus.ts and
-// is not checked in (see .gitignore).
+// the others are downloaded on demand by scripts/fetch-omezarr.ts and are not
+// checked in (see .gitignore).
 const OMEZARR_STORES = {
   stent: {
     id: 'stent.ome.zarr',
@@ -39,10 +57,27 @@ const OMEZARR_STORES = {
     levels: [3, 2, 1, 0],
     defaultWindow: { min: 30269, max: 56893 },
   },
+  richtmyer_meshkov: {
+    id: 'richtmyer_meshkov.ome.zarr',
+    name: 'Richtmyer-Meshkov OME-Zarr',
+    levels: [4, 3, 2, 1, 0],
+    defaultWindow: { min: 0, max: 230 },
+  },
+  pig_heart: {
+    id: 'pig_heart.ome.zarr',
+    name: 'Pig Heart OME-Zarr (int16)',
+    levels: [4, 3, 2, 1, 0],
+    // Background is 0; tissue/structure sits ~400-750 (p90=400, p99=520,
+    // p99.9=750 measured on scale3). calMin just above 0 makes empty space
+    // transparent and ramps the structure across the gray scale.
+    defaultWindow: { min: 40, max: 700 },
+  },
 }
 const STREAMING_CHUNK_EDGE = 256
 const STREAMING_CHUNK_HALO = [3, 3, 3]
-const MAX_CHUNKS_PER_TILE = 256
+// Matches niivue core's MAX_CHUNKS_PER_TILE: above this a level is re-tiled into
+// a coarser streaming grid so it stays within the renderer's per-tile chunk cap.
+const MAX_CHUNKS_PER_TILE = 1024
 const ZARR_BYTE_CACHE_BYTES = 512 * 1024 * 1024
 
 // --- logical-volume helpers (inlined from the demo glue) --------------------
@@ -593,7 +628,7 @@ function trailingSpatial(nums, label) {
 }
 
 function assertSupportedDtype(dtype) {
-  if (dtype === 'uint8' || dtype === 'uint16') return dtype
+  if (dtype === 'uint8' || dtype === 'uint16' || dtype === 'int16') return dtype
   throw new Error(`OME-Zarr dtype '${dtype}' is not supported by this demo`)
 }
 
@@ -635,7 +670,7 @@ async function loadOmezarrSource(storeDef, requestedLevel) {
   // Try the requested level first, then fall back to the store's configured
   // levels coarsest-first, using the first whose array metadata resolves. This
   // keeps a chosen level honored while staying robust to a store fetched at
-  // only its coarsest level (e.g. `fetch-pawpawsaurus.ts --coarse`).
+  // only its coarsest level (e.g. `fetch-omezarr.ts --levels`).
   const order = [
     ...(Number.isInteger(requestedLevel) ? [requestedLevel] : []),
     ...storeDef.levels.filter((lvl) => lvl !== requestedLevel),
@@ -662,7 +697,7 @@ async function loadOmezarrSource(storeDef, requestedLevel) {
   if (!dataset || !array) {
     throw new Error(
       `No OME-Zarr level found for ${storeDef.id}. ` +
-        'Did you run scripts/fetch-pawpawsaurus.ts?',
+        `Did you run scripts/fetch-omezarr.ts --name=${els.source.value}?`,
     )
   }
 
@@ -696,6 +731,50 @@ async function loadOmezarrSource(storeDef, requestedLevel) {
     array,
     level,
     levelPath: dataset.path,
+    // Kept so a coarse whole-volume "floor" can be built from the coarsest
+    // present level (see buildCoarseFloorVolume): the 3D render shows that
+    // coarse detail in regions whose fine chunks have not streamed in yet.
+    store,
+    multiscale,
+    storeDef,
+  }
+}
+
+// Build a small in-memory whole-volume from the coarsest present pyramid level
+// of an OME-Zarr source, to use as niivue's base "coarse floor". The 3D render
+// draws this behind any not-yet-resident fine chunk, so a huge level (whose
+// full chunk set can't fit the residency budget) still shows the whole volume
+// immediately instead of rendering blank. Returns null if no coarser level than
+// the active one is available, or on any error (the floor is best-effort).
+async function buildCoarseFloorVolume(source) {
+  try {
+    const coarsest = Math.max(...source.storeDef.levels)
+    if (coarsest <= source.level) return null // active level is already coarsest
+    const ds = source.multiscale?.datasets?.[coarsest]
+    if (!ds) return null
+    const arr = await zarr.open.v3(
+      zarr.root(source.store).resolve(`/${ds.path}`),
+      { kind: 'array' },
+    )
+    const view = await zarr.get(arr, null) // whole (small) coarse level
+    const img = bytesFromZarrView(view)
+    const [sz, sy, sx] = trailingSpatial(arr.shape, 'coarse shape')
+    const win = parseWindow(source.defaultWindow)
+    return buildLogicalVolume({
+      id: `${source.id}:floor`,
+      url: `client-chunk://${source.id}/floor`,
+      shape: [sx, sy, sz],
+      spacing: scaleFromDataset(ds),
+      datatypeCode: source.datatypeCode,
+      numBitsPerVoxel: source.numBitsPerVoxel,
+      calMin: win.min,
+      calMax: win.max,
+      colormap: els.colormap.value,
+      img,
+    })
+  } catch (err) {
+    console.warn('coarse floor unavailable:', err)
+    return null
   }
 }
 
@@ -775,32 +854,107 @@ function createRangeChunkSource(source) {
         return bytes
       },
     )
+    // Only dedup concurrent in-flight requests; drop the entry once settled so
+    // resolved chunk buffers are not retained. niivue manages residency and
+    // re-requests an evicted chunk through this source when it is visible again,
+    // so caching every resolved buffer here would leak the whole volume (OOM on
+    // large levels).
     cache.set(request.chunkIndex, next)
+    next.finally(() => {
+      if (cache.get(request.chunkIndex) === next) {
+        cache.delete(request.chunkIndex)
+      }
+    })
     renderHud()
     return next
   }
 }
 
+// Max niivue chunks fetched from an OME-Zarr store at once. A single niivue
+// tile bbox can span dozens-to-hundreds of native zarr chunks (each its own
+// HTTP request — pig_heart scale0 has 4-deep Z chunks), and niivue streams
+// several tiles concurrently. Without a gate the browser fires thousands of
+// simultaneous fetches and the connection pool throws "Failed to fetch". This
+// bounds the in-flight niivue-chunk fetches; zarrita still parallelizes the
+// native-chunk requests within each one.
+const OMEZARR_MAX_CONCURRENT_CHUNKS = 6
+
+// Retry a transient network failure ("Failed to fetch" — a refused/dropped
+// connection under load, not a 404, which zarrita handles as fill value 0).
+async function withRetry(fn, attempts = 3) {
+  let lastErr
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastErr = err
+      const transient =
+        err instanceof TypeError ||
+        (err instanceof Error && /failed to fetch/i.test(err.message))
+      if (!transient || i === attempts - 1) throw err
+      await new Promise((r) => setTimeout(r, 80 * 2 ** i))
+    }
+  }
+  throw lastErr
+}
+
 function createOmezarrChunkSource(source) {
   const cache = new Map()
+  let inFlight = 0
+  const waiters = []
+  const acquire = () => {
+    if (inFlight < OMEZARR_MAX_CONCURRENT_CHUNKS) {
+      inFlight++
+      return Promise.resolve()
+    }
+    return new Promise((resolve) => waiters.push(resolve)).then(() => {
+      inFlight++
+    })
+  }
+  const release = () => {
+    inFlight--
+    waiters.shift()?.()
+  }
+
   return (request) => {
     const cached = cache.get(request.chunkIndex)
     if (cached) return cached
 
     stats.requested.add(request.chunkIndex)
-    const next = fetchOmezarrChunk(source, request)
+    const next = acquire()
+      .then(() => withRetry(() => fetchOmezarrChunk(source, request)))
       .then((bytes) => {
+        release()
         stats.completed.add(request.chunkIndex)
         stats.decodedBytes += bytes.byteLength
         renderHud()
         return bytes
       })
       .catch((err) => {
+        release()
         stats.failures++
+        // Surface the real reason instead of only bumping a counter, so a
+        // streaming failure is diagnosable (e.g. a bad range, decode, or shape
+        // mismatch) rather than a silent red number in the HUD.
+        console.error(
+          `chunk ${request.chunkIndex} failed:`,
+          err instanceof Error ? err.message : err,
+        )
+        recordRequest(`ERR ${request.chunkIndex}`)
         renderHud()
         throw err
       })
+    // Only dedup concurrent in-flight requests; drop the entry once settled so
+    // resolved chunk buffers are not retained. niivue manages residency and
+    // re-requests an evicted chunk through this source when it is visible again,
+    // so caching every resolved buffer here would leak the whole volume (OOM on
+    // large levels like pig_heart L0).
     cache.set(request.chunkIndex, next)
+    next.finally(() => {
+      if (cache.get(request.chunkIndex) === next) {
+        cache.delete(request.chunkIndex)
+      }
+    })
     renderHud()
     return next
   }
@@ -809,21 +963,56 @@ function createOmezarrChunkSource(source) {
 async function fetchOmezarrChunk(source, request) {
   const [x0, y0, z0] = request.desc.texOrigin
   const [sx, sy, sz] = request.desc.texDims
+  const [shapeX, shapeY, shapeZ] = source.shape
+  // A streaming tile near a volume edge can extend past the array bounds; clamp
+  // the read to the real extent, then zero-pad back up to the requested texDims
+  // so the texture upload still gets a full [sx,sy,sz] brick (out-of-bounds =
+  // fill value 0). zarr.slice past the end would otherwise return a short region
+  // that mismatches the expected byte count.
+  const ez = Math.min(z0 + sz, shapeZ)
+  const ey = Math.min(y0 + sy, shapeY)
+  const ex = Math.min(x0 + sx, shapeX)
+  const rz = ez - z0
+  const ry = ey - y0
+  const rx = ex - x0
+
   const selection = []
   for (let i = 0; i < source.array.shape.length - 3; i++) selection.push(0)
-  selection.push(zarr.slice(z0, z0 + sz))
-  selection.push(zarr.slice(y0, y0 + sy))
-  selection.push(zarr.slice(x0, x0 + sx))
+  selection.push(zarr.slice(z0, ez))
+  selection.push(zarr.slice(y0, ey))
+  selection.push(zarr.slice(x0, ex))
 
   const view = await zarr.get(source.array, selection)
-  const bytes = bytesFromZarrView(view)
-  const expectedBytes = sx * sy * sz * request.bytesPerVoxel
-  if (bytes.byteLength !== expectedBytes) {
-    throw new Error(
-      `OME-Zarr chunk ${request.chunkIndex} returned ${bytes.byteLength}B, expected ${expectedBytes}B`,
-    )
+  const region = bytesFromZarrView(view)
+  const bpv = request.bytesPerVoxel
+  const expectedBytes = sx * sy * sz * bpv
+
+  // Fast path: the read already covers the full requested brick.
+  if (rz === sz && ry === sy && rx === sx) {
+    if (region.byteLength !== expectedBytes) {
+      throw new Error(
+        `OME-Zarr chunk ${request.chunkIndex} returned ${region.byteLength}B, expected ${expectedBytes}B`,
+      )
+    }
+    return region
   }
-  return bytes
+
+  // Edge tile: copy the clamped [rz,ry,rx] region into a zero-filled [sz,sy,sx]
+  // brick. Layout is z-major then y then x (row of rx*bpv bytes per y line).
+  const out = new Uint8Array(expectedBytes)
+  const rowBytes = rx * bpv
+  const dstRowStride = sx * bpv
+  const dstPlaneStride = sy * dstRowStride
+  let src = 0
+  for (let zz = 0; zz < rz; zz++) {
+    const dstPlane = zz * dstPlaneStride
+    for (let yy = 0; yy < ry; yy++) {
+      const dst = dstPlane + yy * dstRowStride
+      out.set(region.subarray(src, src + rowBytes), dst)
+      src += rowBytes
+    }
+  }
+  return out
 }
 
 function bytesFromZarrView(view) {
@@ -989,6 +1178,18 @@ async function reloadVolume(options = {}) {
     }
     await nv.loadVolumes([createStreamingVolume(activeSource)])
     applyLayout()
+    // Give the 3D render a coarse whole-volume floor so regions whose fine
+    // chunks have not streamed in (or do not fit the residency budget on a huge
+    // level) still show coarse detail instead of rendering blank. Built after
+    // the volume is shown, tagged to this load so a superseded reload's late
+    // floor cannot stomp a newer scene, and skippable via ?nofloor for A/B.
+    const loadToken = ++reloadToken
+    if (activeSource.kind === 'omezarr' && !NO_FLOOR) {
+      const floor = await buildCoarseFloorVolume(activeSource)
+      if (loadToken === reloadToken) await nv.setBaseCoarseFloor(floor)
+    } else {
+      await nv.setBaseCoarseFloor(null)
+    }
   } catch (err) {
     showFallback(err instanceof Error ? err.message : String(err))
   }

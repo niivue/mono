@@ -56,6 +56,8 @@ export default class NVGlview {
   isAntiAlias: boolean
   forceDevicePixelRatio: number
   gl: WebGL2RenderingContext | null
+  /** Set when the WebGL2 context is lost (e.g. GPU OOM); halts the render loop. */
+  private _contextLost = false
   max2D: number
   max3D: number
   fontTexture: WebGLTexture | null
@@ -193,6 +195,21 @@ export default class NVGlview {
     const gl = this.gl
     this.max2D = result.max2D
     this.max3D = result.max3D
+    // Surface a lost WebGL context (commonly GPU VRAM exhaustion — e.g. too many
+    // large streamed chunks resident at once) instead of a silently white
+    // canvas, and stop driving the render loop once lost.
+    this.canvas.addEventListener(
+      'webglcontextlost',
+      (event) => {
+        event.preventDefault()
+        this._contextLost = true
+        log.error(
+          'WebGL2 context lost — likely GPU out of memory. Reduce ' +
+            'maxChunkResidencyBytes or use a coarser level.',
+        )
+      },
+      { once: true },
+    )
     let renderer = ''
     let vendor = ''
     const rendererInfo = gl.getExtension('WEBGL_debug_renderer_info')
@@ -422,6 +439,9 @@ export default class NVGlview {
     const gl = this.gl
     const md = this.model
     if (!gl) return
+    // A lost context (GPU OOM) cannot be drawn to; bail so we don't spin the
+    // streaming loop against a dead context.
+    if (this._contextLost || gl.isContextLost()) return
     if (this.isBusy) {
       requestAnimationFrame(() => this.render())
       return
@@ -1274,14 +1294,30 @@ export default class NVGlview {
     markEnd()
     // Stream in any not-yet-resident chunks of oversized volumes, then
     // schedule a follow-up frame so the freshly-uploaded data appears.
-    // Re-render also if a streaming cross-fade is still animating.
+    // Re-render if a chunk was admitted, a cross-fade is still animating, or
+    // streaming work is still outstanding (chunks queued or mid-fetch). The
+    // last clause keeps the self-driven loop alive across frames where a pump
+    // uploads nothing because its chunks are still being fetched — otherwise
+    // streaming stalls until an unrelated redraw (e.g. a drag) re-kicks it.
     const fading = this.volumeRenderer.fadeActive
     this.volumeRenderer
       .pumpChunkUploads()
       .then((changed) => {
-        if (changed || fading) requestAnimationFrame(() => this.render())
+        const stream = this.volumeRenderer.chunkStreamStats()
+        const busy = stream.pending > 0 || stream.inFlight > 0
+        if (changed || fading || busy) {
+          requestAnimationFrame(() => this.render())
+        }
       })
-      .catch((err) => log.error('chunk upload pump failed', err))
+      .catch((err) => {
+        log.error('chunk upload pump failed', err)
+        // Keep the self-driven loop alive: an unexpected pump rejection must not
+        // permanently freeze streaming while chunks are still outstanding.
+        const stream = this.volumeRenderer.chunkStreamStats()
+        if (stream.pending > 0 || stream.inFlight > 0) {
+          requestAnimationFrame(() => this.render())
+        }
+      })
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */

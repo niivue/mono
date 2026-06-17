@@ -81,6 +81,28 @@ export function estimateChunkedBytes(
   }
 }
 
+/**
+ * Largest number of chunks whose combined GPU footprint stays within
+ * `budgetBytes`, using the plan's average per-chunk cost. Used to cap the
+ * per-frame working set so a level whose full chunk set exceeds the budget
+ * streams only its most view-central chunks (the rest are covered by the coarse
+ * floor) instead of admitting the whole set and exhausting GPU memory. Always
+ * at least 1 so a single chunk can stream even under a tiny budget. Returns the
+ * plan's chunk count when the whole set fits (no cap needed).
+ */
+export function maxChunksForBudget(
+  plan: ChunkPlan,
+  sourceBytesPerVoxel: number,
+  budgetBytes: number,
+): number {
+  const count = plan.chunks.length
+  if (count === 0) return 0
+  const total = estimateChunkedBytes(plan, sourceBytesPerVoxel).totalBytes
+  if (total <= budgetBytes) return count
+  const avgPerChunk = total / count
+  return Math.max(1, Math.min(count, Math.floor(budgetBytes / avgPerChunk)))
+}
+
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`

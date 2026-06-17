@@ -26,6 +26,7 @@ import {
   bytesPerSourceVoxel,
   estimateChunkedBytes,
   formatBytes,
+  maxChunksForBudget,
 } from '@/volume/chunkBudget'
 import {
   type ChunkPlan,
@@ -55,11 +56,13 @@ import { Shader } from './shader'
 const DEFAULT_CHUNK_RESIDENCY_BYTES = 1_500_000_000
 
 /**
- * Maximum chunks a single chunked volume may tile into. Bounds the per-chunk
- * uniform-buffer slot allocation. Mirrors the WebGPU backend's structural
- * limit so cross-backend error behavior stays identical.
+ * Maximum chunks a single chunked volume may tile into. The WebGL2 backend sets
+ * per-chunk uniforms per draw call (no fixed slot buffer), so this is purely a
+ * parity guard mirroring the WebGPU backend's structural limit, keeping
+ * cross-backend error behavior identical. Raised to 1024 (from 256) in lockstep
+ * with the WebGPU paths so full-resolution levels of large volumes load.
  */
-const MAX_CHUNKS_PER_TILE = 256
+const MAX_CHUNKS_PER_TILE = 1024
 
 /**
  * Streaming-pump budget per `pumpChunkUploads` call. Mirrors the WebGPU
@@ -70,9 +73,12 @@ const MAX_CHUNKS_PER_TILE = 256
  */
 const CHUNK_UPLOAD_BUDGET_MS = 8
 const MAX_CHUNK_UPLOADS_PER_FRAME = 24
-// Duration of the streaming-chunk cross-fade. A chunk admitted this long ago
-// (or longer) draws at full strength; younger chunks dissolve in over the floor.
-const CHUNK_FADE_MS = 260
+// Duration of the streaming-chunk cross-fade between LOD levels. A chunk
+// admitted this long ago (or longer) draws at full strength; younger chunks
+// dissolve in over the floor. Set to 0 to disable the cross-fade entirely:
+// fadeFraction then returns 1 immediately, so a fine chunk pops in at full
+// strength (the floor is still drawn for chunks that are not yet resident).
+const CHUNK_FADE_MS = 0
 /**
  * How many upcoming queued chunks the pump prefetches (source fetch) ahead of
  * upload, per chunked volume per pump. Matched to the uploader's internal
@@ -838,13 +844,26 @@ export class VolumeRenderer extends NVRenderer {
     )
     // Stream the centre of the view first, then spiral outward. Streamed
     // combined overlays share the base grid, so the same indices apply.
-    for (const ci of orderByViewCenter(
+    const ordered = orderByViewCenter(
       entry.plan,
       unclipped,
       mvp,
       matRAS,
       offset,
-    )) {
+    )
+    // Cap the working set to what the residency budget can hold. A full-volume
+    // render makes every visible chunk needed-this-frame, so eviction can't drop
+    // any of them; without a cap the resident set grows to the entire visible
+    // set and exhausts GPU memory (white context loss). Streaming only the most
+    // view-central chunks that fit keeps memory bounded — the coarse floor
+    // covers the rest.
+    const budget = bytesPerSourceVoxel(entry.volume.hdr.datatypeCode)
+    const cap = maxChunksForBudget(
+      entry.plan,
+      budget,
+      entry.manager.budgetBytes,
+    )
+    for (const ci of ordered.slice(0, cap)) {
       entry.manager.requestUpload(ci)
       for (const m of mirrors) m.requestUpload(ci)
     }
@@ -908,14 +927,15 @@ export class VolumeRenderer extends NVRenderer {
       chunksInFrustum(entry.plan, mvp, CLIP_SPACE_ZERO_TO_ONE, matRAS, offset),
     )
     const visible = crossing.filter((ci) => inView.has(ci))
-    // Stream the centre of the view first, then spiral outward.
-    for (const ci of orderByViewCenter(
+    // Stream the centre of the view first, then spiral outward, capped to what
+    // the residency budget can hold (see _requestChunksInFrustum).
+    const ordered = orderByViewCenter(entry.plan, visible, mvp, matRAS, offset)
+    const cap = maxChunksForBudget(
       entry.plan,
-      visible,
-      mvp,
-      matRAS,
-      offset,
-    )) {
+      bytesPerSourceVoxel(entry.volume.hdr.datatypeCode),
+      entry.manager.budgetBytes,
+    )
+    for (const ci of ordered.slice(0, cap)) {
       entry.manager.requestUpload(ci)
       for (const m of mirrors) m.requestUpload(ci)
     }
@@ -992,8 +1012,14 @@ export class VolumeRenderer extends NVRenderer {
           try {
             entry.manager.admit(i, await entry.uploader.uploadChunk(i))
           } catch (err) {
+            // Isolate a single chunk's failure: mark it failed and keep pumping.
+            // failUpload clears the in-flight marker so a later working-set pass
+            // re-enqueues it. Rethrowing would reject the whole pump and stop the
+            // view's self-driven re-render loop, freezing all streaming until an
+            // unrelated redraw (e.g. a drag) re-kicks it.
             entry.manager.failUpload(i)
-            throw err
+            log.error('chunk upload failed', err)
+            continue
           }
           admitted = true
           uploaded++

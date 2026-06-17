@@ -106,6 +106,8 @@ export default class NVView {
   isAntiAlias: boolean
   forceDevicePixelRatio: number
   device: GPUDevice | null
+  /** Set when the GPU device is lost (e.g. GPU OOM); halts the render loop. */
+  private _deviceLost = false
   context: GPUCanvasContext | null
   preferredCanvasFormat: GPUTextureFormat
   sampler: GPUSampler | null
@@ -704,6 +706,9 @@ export default class NVView {
   render(): void {
     const md = this.model
     if (!this.device || !this.context || !this.depthTexture) return
+    // A lost device (GPU OOM) cannot be drawn to; bail so we don't spin the
+    // streaming loop against a dead device.
+    if (this._deviceLost) return
     // Skip render if canvas is detached (e.g., replaced during backend switch)
     if (!this.canvas.parentNode) return
     const device = this.device
@@ -1696,15 +1701,31 @@ export default class NVView {
     markEnd()
     // Stream in any not-yet-resident chunks of oversized volumes, then
     // schedule a follow-up frame so the freshly-uploaded data appears.
-    // Re-render if new chunks were admitted (present them) or a streaming
-    // cross-fade is still animating (drive it to completion).
+    // Re-render if new chunks were admitted (present them), a cross-fade is
+    // still animating (drive it to completion), or streaming work is still
+    // outstanding (chunks queued or mid-fetch). The last clause keeps the
+    // self-driven loop alive across frames where a pump uploads nothing because
+    // its chunks are still being fetched — otherwise streaming stalls until an
+    // unrelated redraw (e.g. a drag) re-kicks it.
     const fading = this.volumeRenderer.fadeActive
     this.volumeRenderer
       .pumpChunkUploads()
       .then((changed) => {
-        if (changed || fading) requestAnimationFrame(() => this.render())
+        const stream = this.volumeRenderer.chunkStreamStats()
+        const busy = stream.pending > 0 || stream.inFlight > 0
+        if (changed || fading || busy) {
+          requestAnimationFrame(() => this.render())
+        }
       })
-      .catch((err) => log.error('chunk upload pump failed', err))
+      .catch((err) => {
+        log.error('chunk upload pump failed', err)
+        // Keep the self-driven loop alive: an unexpected pump rejection must not
+        // permanently freeze streaming while chunks are still outstanding.
+        const stream = this.volumeRenderer.chunkStreamStats()
+        if (stream.pending > 0 || stream.inFlight > 0) {
+          requestAnimationFrame(() => this.render())
+        }
+      })
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */
@@ -1834,6 +1855,18 @@ export default class NVView {
         // exceed 2048 in any dim silently upload as a black 3D texture.
         maxTextureDimension3D: this.maxTextureDimension3D,
       },
+    })
+    // Surface a lost device (commonly GPU VRAM exhaustion — e.g. too many large
+    // streamed chunks resident at once) instead of a silently blank canvas, and
+    // stop driving the render loop once lost.
+    void this.device.lost.then((info) => {
+      this._deviceLost = true
+      if (info.reason !== 'destroyed') {
+        log.error(
+          `WebGPU device lost (${info.reason}): ${info.message}. Likely GPU ` +
+            'out of memory — reduce maxChunkResidencyBytes or use a coarser level.',
+        )
+      }
     })
     this.context = this.canvas.getContext('webgpu')
     if (!this.context) {

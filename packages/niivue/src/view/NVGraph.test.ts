@@ -112,6 +112,12 @@ describe('volume-mode fullCanvas (SLICE_TYPE.NONE hands the canvas to the plot)'
   test('fills the canvas when fullCanvas (the regressed case)', () => {
     expect(graphTotalWidth(volumeData({ fullCanvas: true }), W, H)).toBe(W)
   })
+  test('fills a >4096-px backing canvas (not capped to GRAPH_MAX_WIDTH)', () => {
+    // 4K/5K or high-DPR backing widths must not leave a blank strip on NONE.
+    expect(graphTotalWidth(volumeData({ fullCanvas: true }), 5120, H)).toBe(
+      5120,
+    )
+  })
 
   test('computeLayoutFlagsSignalMode', () => {
     const data = signalData([{ label: 'a', x: null, y: [1, 2, 3, 4] }])

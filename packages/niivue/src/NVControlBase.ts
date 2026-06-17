@@ -117,12 +117,9 @@ import type {
 import * as NVVolumeTransforms from '@/volume/transforms'
 import {
   calculateWorldExtents,
-  calMinMax,
   calMinMaxFrame,
   computeVolumeLabelCentroids,
-  framesInImage,
   reorientDrawingToNative,
-  toTypedViewOrU8,
   volumeTR,
 } from '@/volume/utils'
 
@@ -255,6 +252,9 @@ export default class NiiVueGPU extends EventTarget {
   _eventListeners: Record<string, EventHandler | null>
   private _updating = false
   private _pendingUpdate = false
+  /** Volume ids with an in-flight deferred 4D reload (guards rapid ellipsis clicks
+   *  from launching duplicate multi-GB re-fetches and racing rollbacks). */
+  private _deferredReloads = new Set<string>()
   private _deferredVolumes: Array<ImageFromUrlOptions | NVImage> | null = null
   private _deferredMeshes: MeshFromUrlOptions[] | null = null
   private _viewLifecycle: ViewLifecycle
@@ -2859,63 +2859,76 @@ export default class NiiVueGPU extends EventTarget {
       log.warn('loadDeferred4DVolumes: no source (url or File) for re-fetch')
       return
     }
-    const nii = await NVVolume.loadVolume(src)
-    // Compute intensity stats on `nii.img` BEFORE typed-view coercion —
-    // calMinMax's RGB/RGBA sentinel only triggers when its internal
-    // `toTypedView` sees a raw ArrayBuffer; once we've coerced to
-    // Uint8Array via toTypedViewOrU8, calMinMax would scan RGB bytes
-    // as scalar intensities. Matches nii2volume's call order.
-    // (Like nii2volume, this scans the first 3D frame only — so
-    // intensity range may differ from a hypothetical scan over the
-    // full timeseries; that's the existing initial-load behavior.)
-    const [pct2, pct98, mnScale, mxScale] = calMinMax(vol.hdr, nii.img)
-    // Snapshot the CPU-side fields we replace below so a GPU upload failure can
-    // roll them back — otherwise the model would point at an image the GPU never
-    // received (CPU ahead of GPU).
-    const prev = {
-      img: vol.img,
-      nFrame4D: vol.nFrame4D,
-      nTotalFrame4D: vol.nTotalFrame4D,
-      calMin: vol.calMin,
-      calMax: vol.calMax,
-      robustMin: vol.robustMin,
-      robustMax: vol.robustMax,
-      globalMin: vol.globalMin,
-      globalMax: vol.globalMax,
-    }
-    vol.img = toTypedViewOrU8(nii.img, vol.hdr.datatypeCode)
-    // The re-fetch may have been capped by the ~2 GiB ArrayBuffer limit (huge 4D
-    // volumes), so set nFrame4D to what actually loaded — not the header total.
-    const nVox3D = vol.hdr.dims[1] * vol.hdr.dims[2] * vol.hdr.dims[3]
-    const loadedFrames = framesInImage(
-      vol.img.byteLength,
-      nVox3D,
-      vol.hdr.numBitsPerVoxel / 8,
-    )
-    vol.nFrame4D = Math.min(loadedFrames, vol.nTotalFrame4D ?? loadedFrames)
-    // No progress: the reload capped to the same (or fewer) frames — the rest
-    // genuinely don't fit under the ~2 GiB cap. Collapse nTotalFrame4D to the
-    // loaded count so the graph stops showing a deferred ellipsis the user can't
-    // ever satisfy (and re-pay a full re-decode for on every click).
-    if (loadedFrames <= prevFrames && vol.nFrame4D < (vol.nTotalFrame4D ?? 0)) {
-      log.warn(
-        `loadDeferred4DVolumes: only ${vol.nFrame4D} of ${vol.nTotalFrame4D} frames fit under the ~2 GiB limit; remaining frames can't be loaded.`,
-      )
-      vol.nTotalFrame4D = vol.nFrame4D
-    }
-    vol.calMin = pct2
-    vol.calMax = pct98
-    vol.robustMin = pct2
-    vol.robustMax = pct98
-    vol.globalMin = mnScale
-    vol.globalMax = mxScale
+    // One reload per volume at a time: rapid ellipsis clicks would otherwise launch
+    // duplicate multi-GB re-fetch/decompress passes and a stale rollback could undo
+    // a newer success.
+    if (this._deferredReloads.has(id)) return
+    this._deferredReloads.add(id)
     try {
-      await this.updateGLVolume()
-    } catch (e) {
-      // GPU texture allocation/upload failed — restore the prior CPU state so the
-      // model stays consistent with the unchanged GPU texture, then rethrow.
-      Object.assign(vol, prev)
-      throw e
+      const nii = await NVVolume.loadVolume(src)
+      // Reconstruct through nii2volume so datatype/intent conversions (e.g.
+      // DT_FLOAT64 -> DT_FLOAT32) are REAPPLIED. The re-fetched bytes are raw, so
+      // coercing them through the already-converted `vol.hdr` would corrupt a
+      // converted volume (raw f64 bytes read as f32, wrong bytes-per-voxel, wrong
+      // frame count). This yields a fully-converted img + matching header.
+      const rebuilt = NVVolume.nii2volume(
+        nii.hdr,
+        nii.img,
+        vol.name ?? '',
+        Number.POSITIVE_INFINITY,
+      )
+      const loadedFrames = rebuilt.nFrame4D ?? 1
+      // Snapshot the fields we replace so a GPU upload failure rolls them back —
+      // otherwise the model would point at an image the GPU never received.
+      const prev = {
+        img: vol.img,
+        hdr: vol.hdr,
+        nVox3D: vol.nVox3D,
+        nFrame4D: vol.nFrame4D,
+        nTotalFrame4D: vol.nTotalFrame4D,
+        calMin: vol.calMin,
+        calMax: vol.calMax,
+        robustMin: vol.robustMin,
+        robustMax: vol.robustMax,
+        globalMin: vol.globalMin,
+        globalMax: vol.globalMax,
+      }
+      // Adopt the reconstructed image + header + stats (NOT display state like
+      // colormap/opacity, nor frame4D — the user may be parked on a frame).
+      vol.img = rebuilt.img
+      vol.hdr = rebuilt.hdr
+      vol.nVox3D = rebuilt.nVox3D
+      // The re-fetch may have been capped by the ~2 GiB ArrayBuffer limit, so use
+      // the frames actually reconstructed — not the header total.
+      vol.nFrame4D = Math.min(loadedFrames, vol.nTotalFrame4D ?? loadedFrames)
+      // No progress: the reload capped to the same (or fewer) frames — the rest
+      // genuinely don't fit under the cap. Collapse nTotalFrame4D so the graph stops
+      // offering a deferred ellipsis the user can never satisfy.
+      if (
+        loadedFrames <= prevFrames &&
+        vol.nFrame4D < (vol.nTotalFrame4D ?? 0)
+      ) {
+        log.warn(
+          `loadDeferred4DVolumes: only ${vol.nFrame4D} of ${vol.nTotalFrame4D} frames fit under the ~2 GiB limit; remaining frames can't be loaded.`,
+        )
+        vol.nTotalFrame4D = vol.nFrame4D
+      }
+      vol.calMin = rebuilt.calMin
+      vol.calMax = rebuilt.calMax
+      vol.robustMin = rebuilt.robustMin
+      vol.robustMax = rebuilt.robustMax
+      vol.globalMin = rebuilt.globalMin
+      vol.globalMax = rebuilt.globalMax
+      try {
+        await this.updateGLVolume()
+      } catch (e) {
+        // GPU texture allocation/upload failed — restore the prior CPU state so the
+        // model stays consistent with the unchanged GPU texture, then rethrow.
+        Object.assign(vol, prev)
+        throw e
+      }
+    } finally {
+      this._deferredReloads.delete(id)
     }
   }
 

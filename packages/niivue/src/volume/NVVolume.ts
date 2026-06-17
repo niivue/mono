@@ -90,10 +90,12 @@ export function registerExternalReader(
 const MAX_VOLUME_BYTES = 1_900_000_000 // ~1.77 GiB
 /**
  * Maximum acceptable `vox_offset` (header + extensions) for the partial-load path.
- * NIfTI-1 extensions are tiny in practice (a few KB); a 64 KiB cap prevents a
- * malformed file from triggering a large header allocation before image bytes are read.
+ * Bounds the header allocation against a malformed file advertising a huge
+ * vox_offset, while staying generous enough not to reject a valid file with a large
+ * NIfTI-1 extension (e.g. embedded DICOM/XML, which can run to a few MB). 16 MiB is
+ * far above any real extension yet far below the image budget.
  */
-const MAX_HEADER_BYTES = 65_536
+const MAX_HEADER_BYTES = 16 * 1024 * 1024 // 16 MiB
 
 /**
  * Max whole 4D frames that fit under {@link MAX_VOLUME_BYTES}, clamped to nTotal.

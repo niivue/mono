@@ -404,15 +404,28 @@ truncation byte count and the 4D graph / `setFrame4D`). This is essential: witho
 the clamp the graph plots `nTotalFrame4D` points and reads past the loaded data,
 drawing garbage for the unloaded frames. The volume correctly enters the
 partial/deferred state (`nFrame4D < nTotalFrame4D` → graph shows the loaded frames +
-a deferred indicator). `loadDeferred4DVolumes` likewise sets `nFrame4D` from the
-re-loaded img size. A dropped `File` has no URL to re-fetch, so `prepareVolume`
-stashes the original `File` on the volume as runtime-only `_sourceFile` (never
-serialized — NVDocument allowlists fields) and the deferred reload re-opens that.
-When the reload makes **no progress** (the remaining frames still don't fit under
-the cap — e.g. a 2.5 GiB drop stuck at 35/40), it collapses `nTotalFrame4D` to the
-loaded count so the graph stops offering a deferred action the user can't satisfy.
-The deferred graph click (`interactions.ts`) is fire-and-forget with a `.catch` so a
-failed reload can't become an unhandled rejection.
+a deferred indicator). `loadDeferred4DVolumes` re-fetches RAW bytes and rebuilds the
+volume through `nii2volume` (NOT by hand-coercing through the stored header) so any
+datatype/intent conversion is REAPPLIED — a DT_FLOAT64 4D volume is converted to
+Float32 on first load, and reloading raw f64 bytes through the converted header would
+corrupt it. It copies only reconstruction-derived fields (img/hdr/nVox3D/frame
+counts/intensity stats) and preserves display state (colormap/opacity/`frame4D`). A
+dropped `File` has no URL to re-fetch, so `prepareVolume` stashes the original `File`
+as runtime-only `_sourceFile` (never serialized — NVDocument allowlists fields) and
+the reload re-opens that. A per-volume in-flight guard (`_deferredReloads`) drops
+duplicate clicks. When the reload makes **no progress** (the remaining frames still
+don't fit under the cap — e.g. a 2.5 GiB drop stuck at 35/40), it collapses
+`nTotalFrame4D` to the loaded count so the graph stops offering a deferred action the
+user can't satisfy. The deferred graph click (`interactions.ts`) is fire-and-forget
+with a `.catch` (and the reload rolls CPU state back if `updateGLVolume` throws).
+
+**Partial loading assumes time frames.** `loadPartialNifti1` treats `dim4*dim5*dim6`
+as time frames. RGB-vector (`intent_code` 2003, dim4=3) and MRSI (dim4=spectral) are
+NOT time series; setting `limitFrames4D` on such a gz NIfTI-1 would truncate them
+before conversion. In practice RGB volumes are small (never auto-capped) and a frame
+limit on them is user error; a future intent-code gate in the partial path is the
+clean fix. (The deferred path is safe — RGB/MRSI conversions set `nTotalFrame4D=1`, so
+the deferred gate returns before any re-read.)
 
 **Save/restore of a partial `File` volume.** `_sourceFile` is runtime-only, so a
 restored document can't re-open a dropped File. `NVDocument.serialize` therefore

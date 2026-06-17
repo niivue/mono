@@ -23,7 +23,11 @@ export function getFileExt(
   pathOrFile: string | { name?: string } | null | undefined,
   upperCase = true,
 ): string {
-  const fullname = getName(pathOrFile)
+  // Strip any URL `?query` / `#fragment` before parsing the extension, else a
+  // signed/cache-busted URL like `image.nii.gz?token=...` (or `...#v1`) yields a
+  // bogus ext ("GZ?TOKEN..."), breaking format routing for volumes, signals,
+  // meshes, tracts, and layers. Centralized here so every caller is covered.
+  const fullname = getName(pathOrFile).split(/[?#]/)[0]
   if (!fullname) return ''
   const cleanName =
     typeof pathOrFile === 'string'

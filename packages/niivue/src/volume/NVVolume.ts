@@ -1,5 +1,5 @@
 import * as nifti from 'nifti-reader-js'
-import { readFirstBytes } from '@/codecs/NVGzStream'
+import { readFirstBytes, readWindow } from '@/codecs/NVGzStream'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { NiiDataType, NiiIntentCode } from '@/NVConstants'
@@ -147,15 +147,25 @@ async function gunzipStream(
     : null
 }
 
-/** Returns the first `minBytes` bytes of a source, or fewer if it ends first / null
- * if unavailable. Must return a fresh, exactly-sized buffer at byteOffset 0. */
-type ReadPrefix = (minBytes: number) => Promise<Uint8Array | null>
+/**
+ * Byte source for a partial NIfTI-1 read. `readHeader` returns the first `minBytes`
+ * decompressed bytes (header parse); `readImage` returns EXACTLY the window
+ * `[start, start + length)` (the image data after vox_offset) in a fresh, pre-sized
+ * buffer at byteOffset 0 — so the caller never concatenates a whole prefix nor
+ * slices the header off afterwards (those were the two big synchronous multi-GB
+ * copies that froze the main thread). Either returns `null` if the source can't
+ * supply the requested bytes.
+ */
+type PartialSource = {
+  readHeader: (minBytes: number) => Promise<Uint8Array | null>
+  readImage: (start: number, length: number) => Promise<Uint8Array | null>
+}
 
 /**
  * Shared core for opening only the header + first N frames of a NIfTI-1, reading
- * bytes via `readPrefix`. This is the only way to open a 4D volume whose full
- * extent exceeds V8's ~2 GiB ArrayBuffer cap (e.g. a 344x344x127x45 float32 PET =
- * 2.5 GiB). The ORIGINAL header is preserved (its dims still describe the full
+ * bytes via a {@link PartialSource}. This is the only way to open a 4D volume whose
+ * full extent exceeds V8's ~2 GiB ArrayBuffer cap (e.g. a 344x344x127x45 float32 PET
+ * = 2.5 GiB). The ORIGINAL header is preserved (its dims still describe the full
  * extent), so `nii2volume` truncates cleanly and still reports "N of total" frames.
  *
  * Returns `{ hdr, img }` (img = the first N frames, starting at vox_offset) or
@@ -164,7 +174,7 @@ type ReadPrefix = (minBytes: number) => Promise<Uint8Array | null>
  * than slicing for a complete read), or any read/decode error.
  */
 async function loadPartialNifti1(
-  readPrefix: ReadPrefix,
+  source: PartialSource,
   limitFrames4D: number,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer } | null> {
   // `Infinity` is allowed: it means "as many frames as fit under the cap" (the
@@ -173,9 +183,9 @@ async function loadPartialNifti1(
   try {
     // 1) Header: read just enough to parse the NIfTI-1 header (348 B + any
     //    extensions, which end at vox_offset).
-    let head = await readPrefix(352)
+    let head = await source.readHeader(352)
     if (!head || head.length < 348) return null
-    // `readPrefix` returns a fresh, exactly-sized buffer at byteOffset 0, so
+    // `readHeader` returns a fresh, exactly-sized buffer at byteOffset 0, so
     // `head.buffer` IS the header bytes — both this DataView and the
     // `nifti.readHeader(head.buffer)` below (which reads from byte 0) rely on that.
     const dv = new DataView(head.buffer)
@@ -190,7 +200,7 @@ async function loadPartialNifti1(
     // allocate beyond MAX_VOLUME_BYTES before we ever compute that no frame fits.
     if (!(voxOffset >= 348) || voxOffset >= MAX_VOLUME_BYTES) return null
     if (voxOffset > head.length) {
-      head = await readPrefix(voxOffset)
+      head = await source.readHeader(voxOffset)
       if (!head || head.length < voxOffset) return null
     }
     const hdr = nifti.readHeader(head.buffer as ArrayBuffer) as NIFTI1 | NIFTI2
@@ -222,18 +232,15 @@ async function loadPartialNifti1(
         `NiiVue: 4D volume too large to load fully — ${fullGiB} GiB exceeds the browser's ~2 GiB ArrayBuffer limit. Loaded ${nFrames} of ${nTotal} frames.`,
       )
     }
-    const bytesToLoad = hdr.vox_offset + nFrames * nVox3D * bpv
-    // 3) Read header + N frames only, then slice out the image data.
-    const data = await readPrefix(bytesToLoad)
-    if (!data || data.length < bytesToLoad) return null // short -> fall back
-    const img = data.buffer.slice(
-      data.byteOffset + hdr.vox_offset,
-      data.byteOffset + bytesToLoad,
-    ) as ArrayBuffer
+    // 3) Read ONLY the image window [vox_offset, vox_offset + imageBytes) straight
+    //    into one pre-sized buffer — no whole-prefix concat, no header-drop slice.
+    const imageBytes = nFrames * nVox3D * bpv
+    const data = await source.readImage(hdr.vox_offset, imageBytes)
+    if (!data || data.byteLength < imageBytes) return null // short -> fall back
     log.debug(
-      `4D partial load: ${nFrames}/${nTotal} frames (~${Math.round(bytesToLoad / 1e6)} MB, not the full volume)`,
+      `4D partial load: ${nFrames}/${nTotal} frames (~${Math.round(imageBytes / 1e6)} MB, not the full volume)`,
     )
-    return { hdr, img }
+    return { hdr, img: data.buffer as ArrayBuffer }
   } catch (e) {
     log.warn('4D partial load failed; falling back to full load', e)
     return null
@@ -241,27 +248,38 @@ async function loadPartialNifti1(
 }
 
 /**
- * Partial load for a gzip NIfTI-1: inflate the prefix via the native
- * `DecompressionStream`, read incrementally and cancel once enough bytes are in
- * hand (which also aborts the download). A fresh stream per read — gunzip is
- * forward-only, so each prefix re-inflates from the start.
+ * Partial load for a gzip NIfTI-1: inflate via the native `DecompressionStream`,
+ * read incrementally and cancel once enough bytes are in hand (which also aborts
+ * the download). A fresh stream per read — gunzip is forward-only, so each read
+ * re-inflates from the start (cheap: header reads are tiny; the image read skips the
+ * ~352 header bytes and streams the rest straight into the pre-sized buffer).
  */
 function loadPartialNiftiGz(
   src: string | File,
   limitFrames4D: number,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer } | null> {
-  return loadPartialNifti1(async (minBytes) => {
-    const stream = await gunzipStream(src)
-    return stream ? readFirstBytes(stream, minBytes) : null
-  }, limitFrames4D)
+  return loadPartialNifti1(
+    {
+      readHeader: async (minBytes) => {
+        const stream = await gunzipStream(src)
+        return stream ? readFirstBytes(stream, minBytes) : null
+      },
+      readImage: async (start, length) => {
+        const stream = await gunzipStream(src)
+        return stream ? readWindow(stream, start, length) : null
+      },
+    },
+    limitFrames4D,
+  )
 }
 
 /**
- * Partial load for an UNCOMPRESSED NIfTI-1 from a local `File`: slice the first N
- * frames with `Blob.slice`, so a >2 GiB file is never read as one ArrayBuffer
- * (which Chrome rejects with `NotReadableError`). File-only — a remote URL would
- * need HTTP range requests, and uncompressed multi-GB volumes are virtually always
- * local; remote callers should gzip or use `limitFrames4D` on a `.nii.gz`.
+ * Partial load for an UNCOMPRESSED NIfTI-1 from a local `File`: `Blob.slice` reads
+ * any byte range cheaply, so the image window is sliced directly — a >2 GiB file is
+ * never read as one ArrayBuffer (which Chrome rejects with `NotReadableError`).
+ * File-only — a remote URL would need HTTP range requests, and uncompressed multi-GB
+ * volumes are virtually always local; remote callers should gzip or use
+ * `limitFrames4D` on a `.nii.gz`.
  */
 function loadPartialNiftiFile(
   src: string | File,
@@ -269,8 +287,16 @@ function loadPartialNiftiFile(
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer } | null> {
   if (!(src instanceof File)) return Promise.resolve(null)
   return loadPartialNifti1(
-    async (minBytes) =>
-      new Uint8Array(await src.slice(0, minBytes).arrayBuffer()),
+    {
+      readHeader: async (minBytes) =>
+        new Uint8Array(await src.slice(0, minBytes).arrayBuffer()),
+      readImage: async (start, length) => {
+        const u8 = new Uint8Array(
+          await src.slice(start, start + length).arrayBuffer(),
+        )
+        return u8.byteLength >= length ? u8 : null
+      },
+    },
     limitFrames4D,
   )
 }

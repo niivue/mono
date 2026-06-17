@@ -426,17 +426,19 @@ still deferred-reloads on restore. (A full NVD round-trip isn't Bun-testable —
 
 **Known limitations / follow-ups** (from the 2026-06-16 audit; not yet addressed —
 all are edge cases or pre-existing, the common paths are verified working):
-- **Peak memory on a capped load is ~2x `bytesToLoad`.** `readFirstBytes` retains
-  the decompressed chunks AND allocates a contiguous prefix, then the partial core
-  slices `img` out of it — so a near-cap (~1.9 GiB) load can transiently hold several
-  GiB, precisely on the `RangeError`-recovery path. Two cheap copies are already
-  removed: `readFirstBytes` trims the trailing-chunk overshoot (allocates exactly
-  `minBytes`), and `nii2volume` skips its truncation slice when the partial loader
-  already returned exactly `nFrame4D` frames (`img.byteLength === keepBytes`). The
-  remaining ~2x is the chunk list + the contiguous prefix; eliminating it needs
-  streaming chunks directly into one pre-sized buffer (pairs with the single-stream
-  rewrite below). The per-`ArrayBuffer` 2 GiB limit itself is never exceeded (each
-  allocation is ≤ cap); this is total-heap pressure.
+- **Peak memory on a capped load is now ~1x `imageBytes`** (was ~2x). The image is
+  read straight into ONE pre-sized buffer via `codecs/NVGzStream.readWindow` (gzip:
+  stream the window `[vox_offset, vox_offset+imageBytes)`, skipping the header, into
+  the output and dropping each chunk) or `Blob.slice` (uncompressed `File`). No
+  whole-prefix concat and no header-drop `slice` — the two big synchronous multi-GB
+  copies are gone (measured ~550 ms faster + ~1.9 GiB less transient on a 2.5 GiB
+  PET). `nii2volume` also skips its truncation slice when `img.byteLength ===
+  keepBytes` (always true for the partial path now). The per-`ArrayBuffer` 2 GiB
+  limit is never exceeded. NOTE: a ~1 s main-thread freeze remains on a multi-GB
+  capped load, but it is the **GPU texture upload** (scales linearly with image
+  size: ~190/510/990 ms for 5/15/31 frames), NOT the decompression — addressing it
+  needs chunked/frame-by-frame texture upload with yields in the view layer
+  (separate from the load path).
 - **`loadImage()` still full-reads for the signal sniff (partially mitigated).**
   `_dispatchImage` sniffs signal-vs-volume by reading the whole file. Now: it skips
   the sniff entirely when `limitFrames4D` is set (explicit volume intent), and it
@@ -461,14 +463,20 @@ all are edge cases or pre-existing, the common paths are verified working):
 - **Deferred reload is now atomic on GPU-upload failure.** `loadDeferred4DVolumes`
   snapshots the replaced CPU fields (`img`/frame counts/intensity stats) and rolls
   them back if `updateGLVolume()` throws, so the model never ends up ahead of the GPU.
-- **`loadPartialNiftiGz` fetches the URL up to 3x** (header, header-extension
-  re-read, frame data), relying on `cache:'force-cache'` for byte-identical
-  responses. A single forward-only stream — keep one reader alive, read to the
+- **`loadPartialNiftiGz` fetches the URL up to 3x** (header, optional header-extension
+  re-read, image window), relying on `cache:'force-cache'` for byte-identical
+  responses. The image read no longer concatenates a whole prefix (it streams via
+  `readWindow` into the pre-sized buffer), but it is still a separate fetch from the
+  header read. A single forward-only stream — keep one reader alive, read to the
   header, then continue the SAME stream to `bytesToLoad` — would drop the extra
-  fetches and the `force-cache` dependency. Deferred (assessed 2026-06-16): the new
-  stateful-reader cancel discipline lands on the Bun-untestable path, so it pairs
-  naturally with the peak-memory follow-up above as one focused PR (stream chunks
-  into one pre-sized buffer + single reader) with a fresh manual large-volume pass.
+  fetches and the `force-cache` dependency. Deferred (assessed 2026-06-16): the
+  stateful cross-read reader/cancel discipline lands on the Bun-untestable path, so
+  it warrants its own focused PR + manual large-volume pass.
+- **GPU texture upload of a multi-GB capped image blocks the main thread** (~1 s on a
+  31-frame 1.9 GiB load; scales with size). The load/decompress path now yields
+  (streamed `readWindow`), so the remaining freeze is in the view layer's texture
+  upload. A frame-by-frame / chunked upload with `await` yields between batches would
+  fix it; not yet done (touches `wgpu/`/`gl/` upload paths, browser-only).
 
 **Detached-header formats:** AFNI (`.HEAD` + `.BRIK.gz`), NIfTI (`.hdr` + `.img`), NRRD (`.nhdr` + `.*`). The `urlImageData` property provides the image data URL alongside the header URL.
 

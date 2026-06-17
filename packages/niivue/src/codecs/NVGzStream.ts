@@ -61,3 +61,48 @@ export async function readFirstBytes(
   }
   return out
 }
+
+/**
+ * Read the window `[start, start + length)` of an (already-decompressed) stream
+ * straight into ONE pre-sized buffer, then cancel. Unlike collecting the whole
+ * prefix and slicing, this never holds more than the output buffer plus the current
+ * chunk, and the per-chunk copies happen incrementally across `await read()`
+ * boundaries — so a multi-GB image doesn't block the main thread in one big memcpy.
+ * Bytes before `start` (e.g. the NIfTI header) are skipped, not copied. Returns the
+ * exactly-`length` buffer at byteOffset 0, or `null` if the stream ended early. A
+ * read error (invalid gzip) propagates so the caller can fall back to a full load.
+ */
+export async function readWindow(
+  stream: ReadableStream<Uint8Array>,
+  start: number,
+  length: number,
+): Promise<Uint8Array | null> {
+  const reader = stream.getReader()
+  const out = new Uint8Array(length)
+  const end = start + length
+  let pos = 0 // position in the decompressed stream of the next incoming byte
+  let written = 0
+  try {
+    while (written < length) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value || value.length === 0) continue
+      const chunkStart = pos
+      const chunkEnd = pos + value.length
+      pos = chunkEnd
+      if (chunkEnd <= start) continue // entirely before the window (skip header)
+      const from = Math.max(start, chunkStart)
+      const to = Math.min(end, chunkEnd)
+      if (to > from) {
+        out.set(
+          value.subarray(from - chunkStart, to - chunkStart),
+          from - start,
+        )
+        written += to - from
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
+  return written >= length ? out : null
+}

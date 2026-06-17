@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { readFirstBytes } from './NVGzStream'
+import { readFirstBytes, readWindow } from './NVGzStream'
 
 /** A ReadableStream that emits `bytes` in fixed-size chunks. */
 function streamOf(
@@ -61,5 +61,59 @@ describe('readFirstBytes (early-stop stream prefix)', () => {
     const short = new Uint8Array([1, 2, 3, 4])
     const out = await readFirstBytes(streamOf(short), 1000)
     expect(Array.from(out)).toEqual([1, 2, 3, 4])
+  })
+})
+
+describe('readWindow (stream a [start,start+length) window into one buffer)', () => {
+  const data = new Uint8Array(10000)
+  for (let i = 0; i < data.length; i++) data[i] = i & 0xff
+
+  test('returns exactly the window, skipping the prefix', async () => {
+    // window [352, 352+1000) — mimics skipping a NIfTI header then reading frames.
+    const out = await readWindow(streamOf(data), 352, 1000)
+    expect(out).not.toBeNull()
+    expect(out?.length).toBe(1000)
+    expect(out?.buffer.byteLength).toBe(1000) // exactly-sized, byteOffset 0
+    expect(Array.from(out ?? new Uint8Array())).toEqual(
+      Array.from(data.slice(352, 1352)),
+    )
+  })
+
+  test('window at offset 0 (no skip)', async () => {
+    const out = await readWindow(streamOf(data), 0, 128)
+    expect(Array.from(out ?? new Uint8Array())).toEqual(
+      Array.from(data.slice(0, 128)),
+    )
+  })
+
+  test('window spanning chunk boundaries (odd chunk size)', async () => {
+    const out = await readWindow(streamOf(data, 7), 100, 500)
+    expect(Array.from(out ?? new Uint8Array())).toEqual(
+      Array.from(data.slice(100, 600)),
+    )
+  })
+
+  test('stops early — does not drain the whole source', async () => {
+    let produced = 0
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (produced >= data.length) {
+          controller.close()
+          return
+        }
+        const chunk = data.slice(produced, produced + 64)
+        produced += chunk.length
+        controller.enqueue(chunk)
+      },
+    })
+    const out = await readWindow(stream, 0, 200)
+    expect(out?.length).toBe(200)
+    expect(produced).toBeLessThan(data.length) // cancelled before draining
+  })
+
+  test('returns null when the stream ends before the window is filled', async () => {
+    const short = data.slice(0, 500)
+    const out = await readWindow(streamOf(short), 400, 1000)
+    expect(out).toBeNull()
   })
 })

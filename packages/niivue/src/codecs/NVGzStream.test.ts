@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { gzipSync } from 'fflate'
-import { readFirstDecompressedBytes } from './NVGzStream'
+import { readFirstBytes } from './NVGzStream'
 
 /** A ReadableStream that emits `bytes` in fixed-size chunks. */
 function streamOf(
@@ -20,47 +19,47 @@ function streamOf(
   })
 }
 
-describe('readFirstDecompressedBytes', () => {
-  const original = new Uint8Array(10000)
-  for (let i = 0; i < original.length; i++) original[i] = i & 0xff
-  const gz = gzipSync(original)
+describe('readFirstBytes (early-stop stream prefix)', () => {
+  const data = new Uint8Array(10000)
+  for (let i = 0; i < data.length; i++) data[i] = i & 0xff
 
-  test('returns at least minBytes matching the decompressed prefix', async () => {
-    const out = await readFirstDecompressedBytes(streamOf(gz), 100)
-    expect(out.length).toBeGreaterThanOrEqual(100)
-    expect(Array.from(out.slice(0, 100))).toEqual(
-      Array.from(original.slice(0, 100)),
-    )
+  test('returns exactly minBytes matching the prefix (trims overshoot)', async () => {
+    // 64-byte chunks; asking for 100 reads 2 chunks (128 B) but trims to 100.
+    const out = await readFirstBytes(streamOf(data), 100)
+    expect(out.length).toBe(100)
+    expect(out.buffer.byteLength).toBe(100) // exactly-sized buffer, no overshoot
+    expect(Array.from(out)).toEqual(Array.from(data.slice(0, 100)))
   })
 
   test('returns the whole stream when minBytes exceeds the total', async () => {
-    const out = await readFirstDecompressedBytes(streamOf(gz), 1e9)
-    expect(out.length).toBe(original.length)
-    expect(Array.from(out)).toEqual(Array.from(original))
+    const out = await readFirstBytes(streamOf(data), 1e9)
+    expect(out.length).toBe(data.length)
+    expect(Array.from(out)).toEqual(Array.from(data))
   })
 
-  test('stops early — does NOT inflate the whole stream', async () => {
-    // 1 MB original; ask for only 50 bytes. fflate stops after the first chunk(s)
-    // that produce enough output, so the result is far smaller than 1 MB.
-    const big = new Uint8Array(1_000_000)
-    for (let i = 0; i < big.length; i++) big[i] = (i * 7) & 0xff
-    const out = await readFirstDecompressedBytes(
-      streamOf(gzipSync(big), 4096),
-      50,
-    )
+  test('stops early — pulls only enough chunks to reach minBytes', async () => {
+    // Track how much the source actually produced; after we have >= minBytes the
+    // reader is cancelled, so the source must NOT have been drained.
+    let produced = 0
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (produced >= data.length) {
+          controller.close()
+          return
+        }
+        const chunk = data.slice(produced, produced + 64)
+        produced += chunk.length
+        controller.enqueue(chunk)
+      },
+    })
+    const out = await readFirstBytes(stream, 50)
     expect(out.length).toBeGreaterThanOrEqual(50)
-    expect(out.length).toBeLessThan(big.length)
-    expect(Array.from(out.slice(0, 50))).toEqual(Array.from(big.slice(0, 50)))
+    expect(produced).toBeLessThan(data.length) // did not drain the whole source
   })
 
-  test('throws on non-gzip input (caller falls back to full load)', async () => {
-    const notGz = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
-    let threw = false
-    try {
-      await readFirstDecompressedBytes(streamOf(notGz), 4)
-    } catch {
-      threw = true
-    }
-    expect(threw).toBe(true)
+  test('a stream that ends early yields fewer than minBytes', async () => {
+    const short = new Uint8Array([1, 2, 3, 4])
+    const out = await readFirstBytes(streamOf(short), 1000)
+    expect(Array.from(out)).toEqual([1, 2, 3, 4])
   })
 })

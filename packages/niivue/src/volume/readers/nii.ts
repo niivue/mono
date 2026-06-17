@@ -9,13 +9,16 @@ export async function read(
   _name?: string,
   _pairedImgData: ArrayBuffer | null = null,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }> {
-  const hdr = nifti.readHeader(buffer as ArrayBuffer) as
-    | nifti.NIFTI1
-    | nifti.NIFTI2
-  const imageBuffer = nifti.isCompressed(buffer as ArrayBuffer)
-    ? nifti.decompress(buffer as ArrayBuffer)
+  // Decompress once up front. `nifti.readHeader` ALSO decompresses a compressed
+  // input internally, so passing the raw `.nii.gz` to both readHeader and (via
+  // decompress) readImage gunzips the whole volume twice — wasteful CPU and, for a
+  // large 4D volume, double the peak memory, which makes the >2 GiB RangeError more
+  // likely. Inflate once and parse header + image from the same buffer.
+  const raw = nifti.isCompressed(buffer as ArrayBuffer)
+    ? (nifti.decompress(buffer as ArrayBuffer) as ArrayBuffer)
     : buffer
-  const img = nifti.readImage(hdr, imageBuffer as ArrayBuffer) as ArrayBuffer
+  const hdr = nifti.readHeader(raw) as nifti.NIFTI1 | nifti.NIFTI2
+  const img = nifti.readImage(hdr, raw) as ArrayBuffer
 
   return {
     img: img,

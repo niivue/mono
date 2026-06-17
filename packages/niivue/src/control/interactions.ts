@@ -101,7 +101,12 @@ function handleGraphHitTest(ctrl: NiiVueGPU, x: number, y: number): boolean {
   if (hit.type === 'deferred') {
     const vol = ctrl.volumes[0]
     if (vol?.id) {
-      ctrl.loadDeferred4DVolumes(vol.id)
+      // Fire-and-forget from a pointer handler: catch so a failed reload (bad
+      // URL, network error, allocation failure) can't become an unhandled
+      // rejection. loadDeferred4DVolumes leaves the loaded frames intact on error.
+      ctrl.loadDeferred4DVolumes(vol.id).catch((err) => {
+        log.error('Failed to load deferred 4D frames:', err)
+      })
     }
     return true
   }

@@ -4,6 +4,7 @@ import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
 import { cortex } from '@/assets/matcaps'
 import * as NVCmaps from '@/cmap/NVCmaps'
+import { clearCanvasMessage } from '@/control/canvasMessage'
 import { removeInteractionListeners } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
 import {
@@ -119,6 +120,7 @@ import {
   calMinMax,
   calMinMaxFrame,
   computeVolumeLabelCentroids,
+  framesInImage,
   reorientDrawingToNative,
   toTypedViewOrU8,
   volumeTR,
@@ -2262,13 +2264,37 @@ export default class NiiVueGPU extends EventTarget {
       await (replace ? this.loadMeshes([opts]) : this.addMesh(opts))
       return
     }
-    if ((ext === 'NII' || ext === 'NII.GZ') && asSignal !== false) {
+    // `limitFrames4D` is a volume-only option, so setting it is explicit volume
+    // intent — skip the sniff (which would read/decompress the whole file before
+    // the partial loader ever streams just the requested frames).
+    const wantsPartial = Number.isFinite(rest.limitFrames4D as number)
+    if (
+      (ext === 'NII' || ext === 'NII.GZ') &&
+      asSignal !== false &&
+      !wantsPartial
+    ) {
       // Sniff the header: only NON-SPATIAL NIfTI (dim1-3==1, dim4>1) is a
       // signal. Spatial spectroscopy (MRSI/CSI) stays on the volume path even
       // when it carries MRS fields, since the 1-D signal model cannot represent
       // its spatial dimensions.
-      const buffer = await NVLoader.fetchFile(pathOrFile)
-      if (niftiBufferIsSignal(buffer)) {
+      let buffer: ArrayBuffer | null = null
+      try {
+        buffer = await NVLoader.fetchFile(pathOrFile)
+      } catch (e) {
+        // A >2 GiB file can't be read whole for sniffing (NotReadableError for an
+        // uncompressed File, RangeError when decompressing). A 1-D signal is always
+        // tiny (dim1-3==1), so such a file is NEVER a signal — skip the sniff and
+        // let the volume path partial-load it. Other errors propagate.
+        if (
+          !(
+            e instanceof RangeError ||
+            (e instanceof DOMException && e.name === 'NotReadableError')
+          )
+        ) {
+          throw e
+        }
+      }
+      if (buffer && niftiBufferIsSignal(buffer)) {
         let meta = sidecar
         if (!meta && typeof pathOrFile === 'string') {
           meta = await fetchSidecar(pathOrFile)
@@ -2823,14 +2849,17 @@ export default class NiiVueGPU extends EventTarget {
       log.warn(`loadDeferred4DVolumes: volume with id "${id}" not found`)
       return
     }
-    if ((vol.nTotalFrame4D ?? 1) <= (vol.nFrame4D ?? 1)) {
+    const prevFrames = vol.nFrame4D ?? 1
+    if ((vol.nTotalFrame4D ?? 1) <= prevFrames) {
       return // Already fully loaded
     }
-    if (!vol.url) {
-      log.warn('loadDeferred4DVolumes: volume has no url for re-fetch')
+    // A dropped File has no URL to re-fetch — re-open the retained File instead.
+    const src = vol._sourceFile ?? vol.url
+    if (!src) {
+      log.warn('loadDeferred4DVolumes: no source (url or File) for re-fetch')
       return
     }
-    const nii = await NVVolume.loadVolume(vol.url)
+    const nii = await NVVolume.loadVolume(src)
     // Compute intensity stats on `nii.img` BEFORE typed-view coercion —
     // calMinMax's RGB/RGBA sentinel only triggers when its internal
     // `toTypedView` sees a raw ArrayBuffer; once we've coerced to
@@ -2840,23 +2869,54 @@ export default class NiiVueGPU extends EventTarget {
     // intensity range may differ from a hypothetical scan over the
     // full timeseries; that's the existing initial-load behavior.)
     const [pct2, pct98, mnScale, mxScale] = calMinMax(vol.hdr, nii.img)
+    // Snapshot the CPU-side fields we replace below so a GPU upload failure can
+    // roll them back — otherwise the model would point at an image the GPU never
+    // received (CPU ahead of GPU).
+    const prev = {
+      img: vol.img,
+      nFrame4D: vol.nFrame4D,
+      nTotalFrame4D: vol.nTotalFrame4D,
+      calMin: vol.calMin,
+      calMax: vol.calMax,
+      robustMin: vol.robustMin,
+      robustMax: vol.robustMax,
+      globalMin: vol.globalMin,
+      globalMax: vol.globalMax,
+    }
     vol.img = toTypedViewOrU8(nii.img, vol.hdr.datatypeCode)
     // The re-fetch may have been capped by the ~2 GiB ArrayBuffer limit (huge 4D
     // volumes), so set nFrame4D to what actually loaded — not the header total.
     const nVox3D = vol.hdr.dims[1] * vol.hdr.dims[2] * vol.hdr.dims[3]
-    const bpv = vol.hdr.numBitsPerVoxel / 8
-    const loadedFrames = Math.max(
-      1,
-      Math.floor(vol.img.byteLength / (nVox3D * bpv)),
+    const loadedFrames = framesInImage(
+      vol.img.byteLength,
+      nVox3D,
+      vol.hdr.numBitsPerVoxel / 8,
     )
     vol.nFrame4D = Math.min(loadedFrames, vol.nTotalFrame4D ?? loadedFrames)
+    // No progress: the reload capped to the same (or fewer) frames — the rest
+    // genuinely don't fit under the ~2 GiB cap. Collapse nTotalFrame4D to the
+    // loaded count so the graph stops showing a deferred ellipsis the user can't
+    // ever satisfy (and re-pay a full re-decode for on every click).
+    if (loadedFrames <= prevFrames && vol.nFrame4D < (vol.nTotalFrame4D ?? 0)) {
+      log.warn(
+        `loadDeferred4DVolumes: only ${vol.nFrame4D} of ${vol.nTotalFrame4D} frames fit under the ~2 GiB limit; remaining frames can't be loaded.`,
+      )
+      vol.nTotalFrame4D = vol.nFrame4D
+    }
     vol.calMin = pct2
     vol.calMax = pct98
     vol.robustMin = pct2
     vol.robustMax = pct98
     vol.globalMin = mnScale
     vol.globalMax = mxScale
-    await this.updateGLVolume()
+    try {
+      await this.updateGLVolume()
+    } catch (e) {
+      // GPU texture allocation/upload failed — restore the prior CPU state so the
+      // model stays consistent with the unchanged GPU texture, then rethrow.
+      Object.assign(vol, prev)
+      throw e
+    }
   }
 
   /**
@@ -3838,6 +3898,8 @@ export default class NiiVueGPU extends EventTarget {
       this._dprMediaQuery = null
     }
     if (this.view) this.view.destroy()
+    // Clear any "graphics unavailable" overlay left by a failed attach.
+    if (this.canvas) clearCanvasMessage(this.canvas)
     this._viewLifecycle.unregister?.(this)
   }
 

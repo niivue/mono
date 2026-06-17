@@ -1364,15 +1364,31 @@ export default class NVModel {
     if (!url) {
       throw new Error('prepareVolume requires a url or an NVImage object')
     }
+    // Normalize the frame limit ONCE so the loader and the converter agree: a
+    // finite limit floors to an integer >= 1 (a fractional or 0/negative limit is
+    // otherwise handled differently by the gzip fast path vs nii2volume); anything
+    // unset/non-finite means "no limit" (load all that fit).
+    const frameLimit =
+      limitFrames4D == null || !Number.isFinite(limitFrames4D)
+        ? Infinity
+        : Math.max(1, Math.floor(limitFrames4D))
     const urlString = typeof url === 'string' ? url : url.name
     const name = overrides.name ?? urlString
     const base = await loadVolumePrepared(
       url,
       urlImageData ?? null,
-      limitFrames4D,
+      frameLimit,
       name,
     )
-    return { ...base, url: urlString, ...NVModel.volumeDefaults, ...overrides }
+    return {
+      ...base,
+      url: urlString,
+      ...NVModel.volumeDefaults,
+      ...overrides,
+      // A dropped File has no URL to re-fetch; keep it so a deferred 4D reload can
+      // re-open it. Runtime-only (the NVDocument serializer allowlists fields).
+      ...(url instanceof File ? { _sourceFile: url } : {}),
+    }
   }
 
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<void> {

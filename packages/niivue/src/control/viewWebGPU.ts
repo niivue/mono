@@ -3,6 +3,11 @@ import type NiiVueGPU from '@/NVControlBase'
 import type { BackendType } from '@/NVTypes'
 import NVViewGPU from '@/wgpu/NVViewGPU'
 import {
+  clearCanvasMessage,
+  GRAPHICS_UNAVAILABLE_MESSAGE,
+  showCanvasMessage,
+} from './canvasMessage'
+import {
   initInteraction,
   removeInteractionListeners,
   setupDragAndDrop,
@@ -41,6 +46,7 @@ export async function attachToCanvas(
     )
   }
   ctrl.canvas = canvas
+  clearCanvasMessage(canvas)
   registerCanvasInstance(ctrl, canvas)
   ctrl.view = new NVViewGPU(canvas, ctrl.model, ctrl.opts)
   try {
@@ -57,6 +63,8 @@ export async function attachToCanvas(
     return ctrl
   } catch (error) {
     log.error('Failed to initialize view:', error)
+    // WebGPU-only distribution: no WebGL2 fallback, so surface guidance on-canvas.
+    showCanvasMessage(canvas, GRAPHICS_UNAVAILABLE_MESSAGE)
     throw error
   }
 }

@@ -105,6 +105,28 @@ Every controller-level feature must work identically on both `wgpu/NVViewGPU.ts`
 - When the controller threads a new piece of per-tile state, both view tile loops must consume it (see `tile.space === 'global3d'` for the reference shape: per-volume texture cache + per-tile MVP + skip layers that don't apply).
 - Demos that exercise a feature should be backend-agnostic — typically a `?backend=webgl2|webgpu` URL switch — so manual verification is symmetric.
 
+**Backend init fallback (both distribution):** `control/viewBoth.ts` `attachToCanvas`
+tries the configured backend, then — when WebGPU was requested — falls back to WebGL2
+if `init()` throws (e.g. `requestAdapter()` returns null because the browser's graphics
+acceleration is off; note `navigator.gpu` can exist yet yield no adapter, so the
+pre-init `enforceBackendAvailability` check isn't enough). The failed attempt may lock
+the canvas's context type, so the fallback swaps in a fresh canvas via
+`replaceCanvasElement` (now `oldCanvas.cloneNode(false)`, preserving width/height/
+data-*/aria/tabindex; external listeners on the original canvas are NOT preserved).
+The fallback is declined for a SHARED canvas (`canvasInstances` size > 1) — replacing
+it would desync sibling controllers — surfacing the overlay instead. Only `init()` is
+fallback-eligible; post-init failures (thumbnail, etc.) rethrow. On all-backends-fail,
+`attachToCanvas` `unregister`s the controller and restores the originally requested
+backend (so a later retry starts fresh), then `control/canvasMessage.ts`
+(`showCanvasMessage` / `GRAPHICS_UNAVAILABLE_MESSAGE`) overlays a centered DOM message
+with concrete fixes (enable hardware acceleration; or Chrome's
+`#enable-unsafe-swiftshader`) and the error rethrows. The single-backend distributions
+(`viewWebGPU.ts`/`viewWebGL2.ts`) have no fallback but show the same overlay on
+failure. A DOM overlay is used (not canvas 2D) because a failed WebGPU/WebGL2
+`getContext` can lock the canvas context type. The controller's `destroy()` clears
+any overlay. (These `control/` lifecycle paths are DOM-dependent and browser-verified, not
+unit-tested under the Bun harness.)
+
 ### Key source files
 
 | File | Role |
@@ -328,39 +350,125 @@ A 4D NIfTI whose full extent exceeds V8's ~2 GiB single-`ArrayBuffer` cap (e.g. 
 it throws `RangeError: Array buffer allocation failed`. `limitFrames4D` is therefore
 not just a speed-up but the only way to open such a file. When it is finite,
 `NVVolume.loadVolume` takes a fast path for a **gzip NIfTI-1**: `loadPartialNiftiGz`
-streams the file and uses fflate's `Gunzip` to inflate ONLY the header + the first N
-frames, stopping early (`codecs/NVGzStream.readFirstDecompressedBytes` cancels the
-fetch once enough decompressed bytes are in hand — the built-in `DecompressionStream`
-+ `Response.arrayBuffer()` always drains the whole stream, so it can't early-stop;
-fflate can, at the cost of being slower, hence it is only used here). The ORIGINAL
-header is preserved (its dims still describe the full extent), so `nii2volume`
-truncates the supplied img cleanly and still reports `nFrame4D` "N of `nTotalFrame4D`".
-Graceful `null` fallback to the normal full load on any miss: uncompressed input,
-NIfTI-2/byte-swapped, all frames requested (native decompression is faster for a full
-read), or any decode error. `getFileExt` strips `.gz` (nii.gz → `NII`), so the gz is
-detected by the `.gz` filename suffix. `readFirstDecompressedBytes` is unit-tested
-(fflate is pure JS, so it runs under the Bun harness, unlike `NVGz`).
+pipes the fetch body through the browser-native `DecompressionStream` and inflates
+ONLY the header + the first N frames, stopping early. The common belief that
+`DecompressionStream` "must read the whole file" is only true for
+`DecompressionStream` + `Response.arrayBuffer()` (which drains the stream); pulling
+the decompressed output incrementally and `cancel()`-ing once enough bytes are in
+hand stops both the inflate AND the upstream download — so no fflate dependency is
+needed (nifti-reader-js's own `decompressHeaderAsync` uses the same technique). The
+ORIGINAL header is preserved (its dims still describe the full extent), so
+`nii2volume` truncates the supplied img cleanly and still reports `nFrame4D` "N of
+`nTotalFrame4D`". Graceful `null` fallback to the normal full load on any miss:
+NIfTI-2/byte-swapped, all frames requested (a one-shot whole-file read is faster
+than slicing for a complete read), or any decode error. `getFileExt` strips `.gz`
+(nii.gz → `NII`), so the gz is detected by the `.gz` filename suffix.
+`codecs/NVGzStream.readFirstBytes` does the early-stop read; it takes an
+already-decompressed stream (the caller wraps it with `pipeThrough(new
+DecompressionStream('gzip'))`), so it is pure stream logic with no
+`DecompressionStream` dependency and is unit-tested under the Bun harness (which has
+no `DecompressionStream`).
+
+**Shared core + two byte sources.** `loadPartialNifti1(readPrefix, limitFrames4D)`
+holds all the header-parse / frame-budget / cap / slice logic; the two entry points
+differ only in how they fetch the first N bytes:
+- `loadPartialNiftiGz` — gzip: a fresh `DecompressionStream` per `readPrefix` (gunzip
+  is forward-only, so each prefix re-inflates from the start).
+- `loadPartialNiftiFile` — an UNCOMPRESSED `.nii` from a **local `File`**: `Blob.slice`
+  reads only the prefix, so a >2 GiB file is never read as one ArrayBuffer (Chrome
+  rejects that with `NotReadableError`, not `RangeError`). File-only — a remote
+  uncompressed URL would need HTTP range requests; uncompressed multi-GB volumes are
+  virtually always local (remote callers should gzip or use a `.nii.gz`).
 
 **Auto-cap (no `limitFrames4D`, and the "load deferred frames" path).** A user who
 does NOT set `limitFrames4D`, or who clicks the graph to load deferred frames
 (`loadDeferred4DVolumes`, which re-fetches with no limit), must still not blow the
-2 GiB cap. `loadVolume` wraps the full load in try/catch: on a `RangeError` for a gz
-NIfTI it retries `loadPartialNiftiGz(url, Infinity)`, which loads **as many whole
-frames as fit** under `MAX_VOLUME_BYTES` (~1.77 GiB, safely below the cap). When the
+2 GiB cap. `loadVolume` wraps the full load in try/catch: on a `RangeError` (gz
+decompress overflow) OR a `NotReadableError` (Chrome refusing to read a >2 GiB
+uncompressed `File` as one ArrayBuffer) it retries the matching partial loader with
+`Infinity`, which loads **as many whole frames as fit** under `MAX_VOLUME_BYTES`
+(~1.77 GiB, safely below the cap). When the
 cap — not the caller — reduces the count, it emits an **always-visible**
 `console.warn` (the only justified bypass of the level-gated `log.*`, since silent
 data loss must be surfaced regardless of `logLevel`). `loadPartialNiftiGz` accepts
 `Infinity` ("as many as fit"); the cap math is `maxFramesUnderCap`.
 
 **Frame count follows the data, not the request.** `nii2volume` clamps `nFrame4D`
-to `min(limit-or-total, framesInImg, nTotalFrame4D)` where `framesInImg =
-img.byteLength / (nVox3D·bpv)` — so when a capped load supplies fewer frames than
+to `min(floor(limit)-or-total, framesInImg, nTotalFrame4D)` where `framesInImg` is
+the shared `volume/utils.framesInImage(img.byteLength, nVox3D, bpv)` helper (also
+used by `loadDeferred4DVolumes`) — so when a capped load supplies fewer frames than
 the header advertises, `nFrame4D` reflects the data actually present
-(`nTotalFrame4D` keeps the header total). This is essential: without it the graph
-plots `nTotalFrame4D` points and reads past the loaded data, drawing garbage for the
-unloaded frames. The volume correctly enters the partial/deferred state
-(`nFrame4D < nTotalFrame4D` → graph shows the loaded frames + a deferred indicator).
-`loadDeferred4DVolumes` likewise sets `nFrame4D` from the re-loaded img size.
+(`nTotalFrame4D` keeps the header total). The request is floored so a fractional
+`limitFrames4D` can never leak a non-integer `nFrame4D` (which would mis-align the
+truncation byte count and the 4D graph / `setFrame4D`). This is essential: without
+the clamp the graph plots `nTotalFrame4D` points and reads past the loaded data,
+drawing garbage for the unloaded frames. The volume correctly enters the
+partial/deferred state (`nFrame4D < nTotalFrame4D` → graph shows the loaded frames +
+a deferred indicator). `loadDeferred4DVolumes` likewise sets `nFrame4D` from the
+re-loaded img size. A dropped `File` has no URL to re-fetch, so `prepareVolume`
+stashes the original `File` on the volume as runtime-only `_sourceFile` (never
+serialized — NVDocument allowlists fields) and the deferred reload re-opens that.
+When the reload makes **no progress** (the remaining frames still don't fit under
+the cap — e.g. a 2.5 GiB drop stuck at 35/40), it collapses `nTotalFrame4D` to the
+loaded count so the graph stops offering a deferred action the user can't satisfy.
+The deferred graph click (`interactions.ts`) is fire-and-forget with a `.catch` so a
+failed reload can't become an unhandled rejection.
+
+**Save/restore of a partial `File` volume.** `_sourceFile` is runtime-only, so a
+restored document can't re-open a dropped File. `NVDocument.serialize` therefore
+collapses the *saved* header's frame dims (`dims[4]=nFrame4D`, `dims[5..6]=1`) when a
+volume is partial AND non-reloadable (`_sourceFile` present) — the document embeds
+only the loaded frames, so the restored volume correctly presents as complete-at-N
+with no deferred affordance. This is gated strictly on `_sourceFile`, so a partial
+volume from a real URL (e.g. `mpld_asl` with `limitFrames4D`) keeps its full dims and
+still deferred-reloads on restore. (A full NVD round-trip isn't Bun-testable —
+`nii2volume` pulls `import.meta.glob` — so this is browser-verified.)
+
+**Known limitations / follow-ups** (from the 2026-06-16 audit; not yet addressed —
+all are edge cases or pre-existing, the common paths are verified working):
+- **Peak memory on a capped load is ~2x `bytesToLoad`.** `readFirstBytes` retains
+  the decompressed chunks AND allocates a contiguous prefix, then the partial core
+  slices `img` out of it — so a near-cap (~1.9 GiB) load can transiently hold several
+  GiB, precisely on the `RangeError`-recovery path. Two cheap copies are already
+  removed: `readFirstBytes` trims the trailing-chunk overshoot (allocates exactly
+  `minBytes`), and `nii2volume` skips its truncation slice when the partial loader
+  already returned exactly `nFrame4D` frames (`img.byteLength === keepBytes`). The
+  remaining ~2x is the chunk list + the contiguous prefix; eliminating it needs
+  streaming chunks directly into one pre-sized buffer (pairs with the single-stream
+  rewrite below). The per-`ArrayBuffer` 2 GiB limit itself is never exceeded (each
+  allocation is ≤ cap); this is total-heap pressure.
+- **`loadImage()` still full-reads for the signal sniff (partially mitigated).**
+  `_dispatchImage` sniffs signal-vs-volume by reading the whole file. Now: it skips
+  the sniff entirely when `limitFrames4D` is set (explicit volume intent), and it
+  catches a `NotReadableError`/`RangeError` from the whole-read (a >2 GiB file is
+  never a 1-D signal) and falls through to the partial volume path. Remaining
+  follow-up: for a *readable* large `.nii.gz` with no `limitFrames4D`, the sniff
+  still fully decompresses before the volume loader streams frames — a header-only
+  classification (`Blob.slice` / `decompressHeaderAsync`) would remove that.
+- **No automated test exercises the real gzip/`DecompressionStream` partial path**
+  (the Bun harness lacks `DecompressionStream`). `readFirstBytes`' pure stream logic
+  IS unit-tested; the end-to-end path is browser-verified manually against
+  `mpld_asl` (5/25) and a synthetic >2 GiB file (auto-cap 35/40).
+- **`DecompressionStream` is feature-detected** (`HAS_DECOMPRESSION_STREAM`):
+  `gunzipStream` returns null gracefully if it's missing (no `ReferenceError`), the gz
+  partial path then declines, and an oversize gz load emits a specific always-visible
+  `console.warn` (browser requirement) instead of an opaque `RangeError`.
+- **Partial 5D/6D `File` save/restore flattens to 4D** (intentional). The serialize
+  collapse sets `dims[4]=nFrame4D`, `dims[5..6]=1`: only the first `nFrame4D` frames
+  were loaded (not a clean multiple of the higher axes), so a flat 4D count is the
+  only faithful representation of what the document contains. 4D time series (the
+  common case) are unaffected.
+- **Deferred reload is now atomic on GPU-upload failure.** `loadDeferred4DVolumes`
+  snapshots the replaced CPU fields (`img`/frame counts/intensity stats) and rolls
+  them back if `updateGLVolume()` throws, so the model never ends up ahead of the GPU.
+- **`loadPartialNiftiGz` fetches the URL up to 3x** (header, header-extension
+  re-read, frame data), relying on `cache:'force-cache'` for byte-identical
+  responses. A single forward-only stream — keep one reader alive, read to the
+  header, then continue the SAME stream to `bytesToLoad` — would drop the extra
+  fetches and the `force-cache` dependency. Deferred (assessed 2026-06-16): the new
+  stateful-reader cancel discipline lands on the Bun-untestable path, so it pairs
+  naturally with the peak-memory follow-up above as one focused PR (stream chunks
+  into one pre-sized buffer + single reader) with a fresh manual large-volume pass.
 
 **Detached-header formats:** AFNI (`.HEAD` + `.BRIK.gz`), NIfTI (`.hdr` + `.img`), NRRD (`.nhdr` + `.*`). The `urlImageData` property provides the image data URL alongside the header URL.
 

@@ -234,6 +234,13 @@ export type NVImage = {
   _modulationWeight?: Float32Array | null
   /** @internal Cache key for {@link _modulationWeight} (modulator id/buffer/window/exponent). */
   _modulationWeightKey?: string
+  /**
+   * @internal Original dropped/loaded `File` for this volume, kept so a deferred
+   * 4D re-read (`loadDeferred4DVolumes`) can re-open it — a `File` has no URL to
+   * re-fetch. Runtime-only: the serializer (NVDocument) uses an explicit field
+   * allowlist, so this is never written to a saved document.
+   */
+  _sourceFile?: File
   [key: string]: unknown
 }
 
@@ -1000,7 +1007,19 @@ export type ImageFromUrlOptions = {
   colormapType?: number
   /** Whether values below calMin are transparent (true) or clamped to min color (false). Only affects MIN_TO_MAX. Default: true. */
   isTransparentBelowCalMin?: boolean
-  /** Maximum number of 4D frames to load (default: Infinity = load all). Remaining frames can be loaded later via loadDeferred4DVolumes(). */
+  /**
+   * Maximum number of 4D frames to load (default: Infinity = load all). The
+   * optimized partial path reads only the header + first N frames; it covers a
+   * gzip NIfTI-1 (any source) and an uncompressed NIfTI-1 from a local `File`
+   * (other formats fall back to a full load). It is also the only way to open a
+   * 4D volume larger than the browser's ~2 GiB ArrayBuffer cap — such a volume
+   * auto-caps to as-many-frames-as-fit even without this option. Remaining frames
+   * can be loaded later via `loadDeferred4DVolumes()` (not yet supported for a
+   * dropped local `File` whose remaining frames exceed the cap). Note: the generic
+   * `loadImage()` still sniffs signal-vs-volume by reading the whole file unless
+   * `limitFrames4D` (or `asSignal: false`) makes the volume intent explicit; pass
+   * volumes through `loadVolumes([{ url, limitFrames4D }])` to skip the sniff.
+   */
   limitFrames4D?: number
   /** Volume opacity 0-1 (default: 1) */
   opacity?: number

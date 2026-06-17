@@ -7,6 +7,7 @@ import {
   createNiftiArray,
   createNiftiHeader,
   ensureValidNonZero,
+  framesInImage,
   getBitsPerVoxel,
   getTypedArrayConstructor,
   getVoxelValue,
@@ -461,5 +462,32 @@ describe('toTypedViewOrU8', () => {
   test('alreadyTypedArray_returnsAsIs', () => {
     const arr = new Uint8Array([7, 8, 9])
     expect(toTypedViewOrU8(arr, NiiDataType.DT_UINT8)).toBe(arr)
+  })
+})
+
+describe('framesInImage', () => {
+  const nVox3D = 4 * 4 * 4 // 64
+  const bpv = 4 // float32
+
+  test('exact_multiple_returnsFrameCount', () => {
+    expect(framesInImage(64 * 4 * 5, nVox3D, bpv)).toBe(5)
+  })
+
+  test('capped_buffer_reportsFewerThanHeader', () => {
+    // Buffer holds only 3 whole frames even if the header advertised more.
+    expect(framesInImage(64 * 4 * 3, nVox3D, bpv)).toBe(3)
+  })
+
+  test('partial_trailing_frame_floored', () => {
+    expect(framesInImage(64 * 4 * 3 + 10, nVox3D, bpv)).toBe(3)
+  })
+
+  test('never_below_one', () => {
+    expect(framesInImage(0, nVox3D, bpv)).toBe(1)
+    expect(framesInImage(10, nVox3D, bpv)).toBe(1)
+  })
+
+  test('degenerate_frame_size_returnsOne', () => {
+    expect(framesInImage(1000, 0, bpv)).toBe(1)
   })
 })

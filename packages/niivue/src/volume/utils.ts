@@ -42,6 +42,23 @@ export function volumeTR(vol: NVImage): number {
   return px * temporalUnitScale(vol.hdr.xyzt_units)
 }
 
+/**
+ * Whole 4D frames actually present in an image buffer of `byteLength` bytes,
+ * given a 3D frame of `nVox3D` voxels at `bytesPerVoxel` each. Used to clamp
+ * `nFrame4D` to the data after a >2 GiB volume was capped to as many frames as
+ * fit (the supplied buffer then holds fewer frames than the header advertises).
+ * Always at least 1.
+ */
+export function framesInImage(
+  byteLength: number,
+  nVox3D: number,
+  bytesPerVoxel: number,
+): number {
+  const perFrame = nVox3D * bytesPerVoxel
+  if (!(perFrame > 0)) return 1
+  return Math.max(1, Math.floor(byteLength / perFrame))
+}
+
 // ============================================================================
 // Data Type Utilities
 // ============================================================================

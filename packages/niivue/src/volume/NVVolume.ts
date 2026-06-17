@@ -1,5 +1,5 @@
 import * as nifti from 'nifti-reader-js'
-import { readFirstDecompressedBytes } from '@/codecs/NVGzStream'
+import { readFirstBytes } from '@/codecs/NVGzStream'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { NiiDataType, NiiIntentCode } from '@/NVConstants'
@@ -16,6 +16,7 @@ import {
   calculateWorldExtents,
   calMinMax,
   ensureValidNonZero,
+  framesInImage,
   toTypedViewOrU8,
 } from './utils'
 
@@ -88,7 +89,12 @@ export function registerExternalReader(
  */
 const MAX_VOLUME_BYTES = 1_900_000_000 // ~1.77 GiB
 
-/** Max whole 4D frames that fit under {@link MAX_VOLUME_BYTES}, clamped to nTotal. */
+/**
+ * Max whole 4D frames that fit under {@link MAX_VOLUME_BYTES}, clamped to nTotal.
+ * Returns 0 when not even one frame fits (e.g. a pathological header extension
+ * whose vox_offset alone exceeds the cap) — the caller then declines the partial
+ * path rather than loading a single frame that still blows the buffer.
+ */
 function maxFramesUnderCap(
   voxOffset: number,
   nVox3D: number,
@@ -98,59 +104,94 @@ function maxFramesUnderCap(
   const perFrame = nVox3D * bpv
   if (perFrame <= 0) return nTotal
   const fit = Math.floor((MAX_VOLUME_BYTES - voxOffset) / perFrame)
-  return Math.max(1, Math.min(fit, nTotal))
+  return Math.max(0, Math.min(fit, nTotal))
 }
 
-/** Get a fresh gzip byte stream for a URL or File (re-callable for each pass). */
-async function gzByteStream(
-  src: string | File,
-): Promise<ReadableStream<Uint8Array> | null> {
-  if (typeof src === 'string') {
-    const r = await fetch(src, { cache: 'force-cache' })
-    return r.ok ? r.body : null
-  }
-  return src.stream()
-}
+/** Native gzip streaming is the engine of the gz partial path. Every modern browser
+ * (and Bun/Node 18+) has it; feature-detect so a missing API degrades gracefully
+ * (return null -> fall back to full load) instead of a ReferenceError. */
+const HAS_DECOMPRESSION_STREAM = typeof DecompressionStream !== 'undefined'
 
 /**
- * Fast path for `limitFrames4D` on a gzip-compressed NIfTI-1: stream-inflate only
- * the header and the first N frames, instead of decompressing the whole file.
- * This is the only way to open a 4D volume whose full extent exceeds V8's ~2 GiB
- * ArrayBuffer cap (e.g. a 344x344x127x45 float32 PET = 2.5 GiB). The ORIGINAL
- * header is preserved (its dims still describe the full extent), so `nii2volume`
- * truncates cleanly and still reports "N of total" frames.
+ * Fresh DECOMPRESSED (gunzipped) byte stream for a URL or File, re-callable for
+ * each pass. Uses the browser-native `DecompressionStream`; decode errors surface
+ * when the stream is read (so a non-gzip input lands in the caller's catch).
+ * Returns null when `DecompressionStream` is unavailable.
+ */
+async function gunzipStream(
+  src: string | File,
+): Promise<ReadableStream<Uint8Array> | null> {
+  if (!HAS_DECOMPRESSION_STREAM) return null
+  let raw: ReadableStream<Uint8Array> | null
+  if (typeof src === 'string') {
+    // `force-cache`: loadPartialNiftiGz may call this up to 3x for one URL (header,
+    // a header-extension re-read, then the frame data) and needs byte-identical
+    // responses each time; serving from cache guarantees that and avoids
+    // re-downloading the leading bytes. Trade-off: a server-side change won't be
+    // revalidated until the cache entry expires (acceptable for immutable volumes).
+    const r = await fetch(src, { cache: 'force-cache' })
+    raw = r.ok ? r.body : null
+  } else {
+    raw = src.stream()
+  }
+  // DecompressionStream's writable is typed `BufferSource` (wider than the
+  // source's `Uint8Array`), which trips pipeThrough's invariant type check; the
+  // cast is sound (we only ever write Uint8Array chunks).
+  return raw
+    ? raw.pipeThrough(
+        new DecompressionStream('gzip') as unknown as ReadableWritablePair<
+          Uint8Array,
+          Uint8Array
+        >,
+      )
+    : null
+}
+
+/** Returns the first `minBytes` bytes of a source, or fewer if it ends first / null
+ * if unavailable. Must return a fresh, exactly-sized buffer at byteOffset 0. */
+type ReadPrefix = (minBytes: number) => Promise<Uint8Array | null>
+
+/**
+ * Shared core for opening only the header + first N frames of a NIfTI-1, reading
+ * bytes via `readPrefix`. This is the only way to open a 4D volume whose full
+ * extent exceeds V8's ~2 GiB ArrayBuffer cap (e.g. a 344x344x127x45 float32 PET =
+ * 2.5 GiB). The ORIGINAL header is preserved (its dims still describe the full
+ * extent), so `nii2volume` truncates cleanly and still reports "N of total" frames.
  *
  * Returns `{ hdr, img }` (img = the first N frames, starting at vox_offset) or
- * `null` to fall back to the normal full load — for any miss: uncompressed input,
- * NIfTI-2 or byte-swapped header, all frames requested (the native
- * DecompressionStream is faster for a full read), or any decode error.
+ * `null` to fall back to the normal full load — for any miss: NIfTI-2 or
+ * byte-swapped header, all frames requested (a one-shot whole-file read is faster
+ * than slicing for a complete read), or any read/decode error.
  */
-async function loadPartialNiftiGz(
-  src: string | File,
+async function loadPartialNifti1(
+  readPrefix: ReadPrefix,
   limitFrames4D: number,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer } | null> {
   // `Infinity` is allowed: it means "as many frames as fit under the cap" (the
   // >2 GiB fallback path). NaN / < 1 are rejected.
   if (!(limitFrames4D >= 1)) return null
   try {
-    // 1) Header: inflate just enough to parse the NIfTI-1 header (348 B + any
+    // 1) Header: read just enough to parse the NIfTI-1 header (348 B + any
     //    extensions, which end at vox_offset).
-    const headStream = await gzByteStream(src)
-    if (!headStream) return null
-    let head = await readFirstDecompressedBytes(headStream, 352)
-    if (head.length < 348) return null
-    const dv = new DataView(head.buffer, head.byteOffset, head.byteLength)
+    let head = await readPrefix(352)
+    if (!head || head.length < 348) return null
+    // `readPrefix` returns a fresh, exactly-sized buffer at byteOffset 0, so
+    // `head.buffer` IS the header bytes — both this DataView and the
+    // `nifti.readHeader(head.buffer)` below (which reads from byte 0) rely on that.
+    const dv = new DataView(head.buffer)
     // Only NIfTI-1 little-endian (sizeof_hdr == 348); NIfTI-2 / byte-swapped
     // headers fall back to the full load.
     if (dv.getInt32(0, true) !== 348) return null
     // vox_offset (float32 @ byte 108) marks where image data starts; if a header
-    // extension pushes it past the first read, inflate more.
+    // extension pushes it past the first read, read more.
     const voxOffset = dv.getFloat32(108, true)
+    // Sanity-check vox_offset BEFORE reading up to it: a malformed/pathological
+    // header could claim an extension larger than the cap, and reading it would
+    // allocate beyond MAX_VOLUME_BYTES before we ever compute that no frame fits.
+    if (!(voxOffset >= 348) || voxOffset >= MAX_VOLUME_BYTES) return null
     if (voxOffset > head.length) {
-      const moreStream = await gzByteStream(src)
-      if (!moreStream) return null
-      head = await readFirstDecompressedBytes(moreStream, voxOffset)
-      if (head.length < voxOffset) return null
+      head = await readPrefix(voxOffset)
+      if (!head || head.length < voxOffset) return null
     }
     const hdr = nifti.readHeader(head.buffer as ArrayBuffer) as NIFTI1 | NIFTI2
     if (!hdr) return null
@@ -165,6 +206,9 @@ async function loadPartialNiftiGz(
     // for everything, via Infinity from the >2 GiB fallback path).
     const safeFrames = maxFramesUnderCap(hdr.vox_offset, nVox3D, bpv, nTotal)
     const nFrames = Math.min(requested, safeFrames)
+    // Not even one frame fits under the cap -> can't help; fall back (and let the
+    // full load surface the RangeError) rather than load a frame that overflows.
+    if (nFrames < 1) return null
     // Want every frame and it all fits -> let the native full path handle it.
     if (nFrames >= nTotal) return null
     if (safeFrames < requested) {
@@ -179,17 +223,15 @@ async function loadPartialNiftiGz(
       )
     }
     const bytesToLoad = hdr.vox_offset + nFrames * nVox3D * bpv
-    // 3) Inflate header + N frames only, then slice out the image data.
-    const dataStream = await gzByteStream(src)
-    if (!dataStream) return null
-    const data = await readFirstDecompressedBytes(dataStream, bytesToLoad)
-    if (data.length < bytesToLoad) return null // unexpectedly short -> fall back
+    // 3) Read header + N frames only, then slice out the image data.
+    const data = await readPrefix(bytesToLoad)
+    if (!data || data.length < bytesToLoad) return null // short -> fall back
     const img = data.buffer.slice(
       data.byteOffset + hdr.vox_offset,
       data.byteOffset + bytesToLoad,
     ) as ArrayBuffer
     log.debug(
-      `4D partial load: ${nFrames}/${nTotal} frames (~${Math.round(bytesToLoad / 1e6)} MB inflated, not the full volume)`,
+      `4D partial load: ${nFrames}/${nTotal} frames (~${Math.round(bytesToLoad / 1e6)} MB, not the full volume)`,
     )
     return { hdr, img }
   } catch (e) {
@@ -198,22 +240,70 @@ async function loadPartialNiftiGz(
   }
 }
 
+/**
+ * Partial load for a gzip NIfTI-1: inflate the prefix via the native
+ * `DecompressionStream`, read incrementally and cancel once enough bytes are in
+ * hand (which also aborts the download). A fresh stream per read — gunzip is
+ * forward-only, so each prefix re-inflates from the start.
+ */
+function loadPartialNiftiGz(
+  src: string | File,
+  limitFrames4D: number,
+): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer } | null> {
+  return loadPartialNifti1(async (minBytes) => {
+    const stream = await gunzipStream(src)
+    return stream ? readFirstBytes(stream, minBytes) : null
+  }, limitFrames4D)
+}
+
+/**
+ * Partial load for an UNCOMPRESSED NIfTI-1 from a local `File`: slice the first N
+ * frames with `Blob.slice`, so a >2 GiB file is never read as one ArrayBuffer
+ * (which Chrome rejects with `NotReadableError`). File-only — a remote URL would
+ * need HTTP range requests, and uncompressed multi-GB volumes are virtually always
+ * local; remote callers should gzip or use `limitFrames4D` on a `.nii.gz`.
+ */
+function loadPartialNiftiFile(
+  src: string | File,
+  limitFrames4D: number,
+): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer } | null> {
+  if (!(src instanceof File)) return Promise.resolve(null)
+  return loadPartialNifti1(
+    async (minBytes) =>
+      new Uint8Array(await src.slice(0, minBytes).arrayBuffer()),
+    limitFrames4D,
+  )
+}
+
 export async function loadVolume(
   url: string | File,
   pairedImgData: string | File | null = null,
   limitFrames4D = Infinity,
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }> {
   const ext = NVLoader.getFileExt(url)
-  // Partial fast path: a gzip 4D NIfTI where only some frames are wanted. Avoids
-  // inflating (and allocating) the whole volume; misses fall through to the full
-  // load below. getFileExt strips `.gz` (nii.gz -> "NII"), so detect the gzip via
-  // the `.gz` filename suffix.
+  // Partial fast path: a 4D NIfTI where only some frames are wanted. Avoids reading
+  // (and allocating) the whole volume; misses fall through to the full load below.
+  // getFileExt strips `.gz` (nii.gz -> "NII"), so detect the gzip via the `.gz`
+  // filename suffix. Strip both `?query` and `#fragment` first, else a URL like
+  // `image.nii.gz#v1` would skip the fast path (and the oversize recovery, which
+  // gates on the same flag) and error out on a >2 GiB volume.
   const srcName = (typeof url === 'string' ? url : url.name)
-    .split('?')[0]
+    .split(/[?#]/)[0]
     .toLowerCase()
-  const isGzNifti = ext === 'NII' && srcName.endsWith('.gz')
-  if (isGzNifti && Number.isFinite(limitFrames4D)) {
-    const partial = await loadPartialNiftiGz(url, limitFrames4D)
+  const isNifti = ext === 'NII'
+  const isGzNifti = isNifti && srcName.endsWith('.gz')
+  // An uncompressed >2 GiB `.nii` can't be read as one ArrayBuffer either (Chrome
+  // throws NotReadableError); for a local File we can Blob.slice the prefix. Remote
+  // uncompressed URLs have no partial path (would need HTTP range requests).
+  const isUncompressedNiftiFile =
+    isNifti && !srcName.endsWith('.gz') && url instanceof File
+  const partialLoad = isGzNifti
+    ? loadPartialNiftiGz
+    : isUncompressedNiftiFile
+      ? loadPartialNiftiFile
+      : null
+  if (partialLoad && Number.isFinite(limitFrames4D)) {
+    const partial = await partialLoad(url, limitFrames4D)
     if (partial) return partial
   }
   try {
@@ -234,14 +324,26 @@ export async function loadVolume(
     }
     return await reader.read(result, name, pairedBuffer)
   } catch (e) {
-    // Decompressing a whole 4D volume can exceed V8's ~2 GiB ArrayBuffer cap
-    // (RangeError: "Array buffer allocation failed"). Even without limitFrames4D
-    // (or on the graph "load deferred frames" re-fetch), retry loading as many
-    // frames as fit — loadPartialNiftiGz caps and emits the always-visible
-    // warning. Other errors propagate.
-    if (isGzNifti && e instanceof RangeError) {
-      const capped = await loadPartialNiftiGz(url, Infinity)
+    // A whole 4D volume can exceed V8's ~2 GiB ArrayBuffer cap. A gz volume throws
+    // RangeError ("Array buffer allocation failed") while decompressing; an
+    // uncompressed >2 GiB File throws NotReadableError when Chrome can't read it as
+    // one ArrayBuffer. Either way — even without limitFrames4D, or on the graph
+    // "load deferred frames" re-fetch — retry loading as many frames as fit
+    // (partialLoad caps and emits the always-visible warning). Others propagate.
+    const isOversize =
+      e instanceof RangeError ||
+      (e instanceof DOMException && e.name === 'NotReadableError')
+    if (partialLoad && isOversize) {
+      const capped = await partialLoad(url, Infinity)
       if (capped) return capped
+      // gz partial load needs DecompressionStream; without it a >2 GiB gz volume
+      // can't be opened at all. Surface a specific, always-visible reason rather
+      // than the opaque underlying RangeError.
+      if (isGzNifti && !HAS_DECOMPRESSION_STREAM) {
+        console.warn(
+          'NiiVue: cannot open this gzip volume — it exceeds the ~2 GiB ArrayBuffer limit and this runtime lacks DecompressionStream (needed to load it partially). Use a browser with DecompressionStream, or decompress the file.',
+        )
+      }
     }
     throw e
   }
@@ -397,13 +499,18 @@ export function nii2volume(
   // Frames actually present in `img` — may be fewer than the header total when
   // the loader capped a >2 GiB volume to as many frames as fit (the supplied img
   // already holds only those). Clamp so nFrame4D never claims more than the data.
-  const framesInImg = Math.max(
-    1,
-    Math.floor(img.byteLength / (nVox3D * (hdr.numBitsPerVoxel / 8))),
+  const framesInImg = framesInImage(
+    img.byteLength,
+    nVox3D,
+    hdr.numBitsPerVoxel / 8,
   )
-  // Apply limitFrames4D: truncate img data if fewer frames requested.
+  // Apply limitFrames4D: truncate img data if fewer frames requested. Floor the
+  // request — a fractional limit (e.g. 1.5) must not leak a non-integer nFrame4D,
+  // which would mis-align the truncation byte count and the 4D graph/setFrame4D.
   const nFrame4D = Math.min(
-    Number.isFinite(limitFrames4D) ? Math.max(1, limitFrames4D) : nTotalFrame4D,
+    Number.isFinite(limitFrames4D)
+      ? Math.max(1, Math.floor(limitFrames4D))
+      : nTotalFrame4D,
     framesInImg,
     nTotalFrame4D,
   )
@@ -411,11 +518,16 @@ export function nii2volume(
   if (nFrame4D < nTotalFrame4D) {
     const bytesPerVoxel = hdr.numBitsPerVoxel / 8
     const keepBytes = nVox3D * nFrame4D * bytesPerVoxel
-    if (img instanceof ArrayBuffer) {
-      truncatedImg = img.slice(0, keepBytes)
-    } else {
-      const keepElements = nVox3D * nFrame4D
-      truncatedImg = img.slice(0, keepElements)
+    // The partial loader already returns exactly nFrame4D frames, so only copy
+    // when img actually holds MORE (a full load capped by a finite limitFrames4D).
+    // Skipping the no-op slice avoids a redundant multi-GB copy on the recovery path.
+    if (img.byteLength > keepBytes) {
+      if (img instanceof ArrayBuffer) {
+        truncatedImg = img.slice(0, keepBytes)
+      } else {
+        const keepElements = nVox3D * nFrame4D
+        truncatedImg = img.slice(0, keepElements)
+      }
     }
     log.debug(
       `4D: loaded ${nFrame4D} of ${nTotalFrame4D} frames (limitFrames4D=${limitFrames4D})`,

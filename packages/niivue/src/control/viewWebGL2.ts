@@ -3,6 +3,11 @@ import { log } from '@/logger'
 import type NiiVueGPU from '@/NVControlBase'
 import type { BackendType } from '@/NVTypes'
 import {
+  clearCanvasMessage,
+  GRAPHICS_UNAVAILABLE_MESSAGE,
+  showCanvasMessage,
+} from './canvasMessage'
+import {
   initInteraction,
   removeInteractionListeners,
   setupDragAndDrop,
@@ -41,6 +46,7 @@ export async function attachToCanvas(
     )
   }
   ctrl.canvas = canvas
+  clearCanvasMessage(canvas)
   registerCanvasInstance(ctrl, canvas)
   ctrl.view = new NVViewGL(canvas, ctrl.model, ctrl.opts)
   try {
@@ -57,6 +63,7 @@ export async function attachToCanvas(
     return ctrl
   } catch (error) {
     log.error('Failed to initialize view:', error)
+    showCanvasMessage(canvas, GRAPHICS_UNAVAILABLE_MESSAGE)
     throw error
   }
 }

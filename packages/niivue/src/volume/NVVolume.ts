@@ -88,6 +88,12 @@ export function registerExternalReader(
  * this can only be opened partially — as many frames as fit.
  */
 const MAX_VOLUME_BYTES = 1_900_000_000 // ~1.77 GiB
+/**
+ * Maximum acceptable `vox_offset` (header + extensions) for the partial-load path.
+ * NIfTI-1 extensions are tiny in practice (a few KB); a 64 KiB cap prevents a
+ * malformed file from triggering a large header allocation before image bytes are read.
+ */
+const MAX_HEADER_BYTES = 65_536
 
 /**
  * Max whole 4D frames that fit under {@link MAX_VOLUME_BYTES}, clamped to nTotal.
@@ -198,9 +204,10 @@ async function loadPartialNifti1(
     // value can't mis-align the image window or the slice math.
     const voxOffset = Math.floor(dv.getFloat32(108, true))
     // Sanity-check vox_offset BEFORE reading up to it: reject NaN/negative/sub-header
-    // values, and a malformed extension larger than the cap (reading up to which
-    // would allocate beyond MAX_VOLUME_BYTES before we compute that no frame fits).
-    if (!(voxOffset >= 348) || voxOffset >= MAX_VOLUME_BYTES) return null
+    // values, and oversized extensions — MAX_HEADER_BYTES guards against a malformed
+    // file advertising a huge vox_offset that would allocate a large header buffer.
+    // (NIfTI-1 extensions are a few KB in practice; 64 KiB is a generous ceiling.)
+    if (!(voxOffset >= 348) || voxOffset > MAX_HEADER_BYTES) return null
     if (voxOffset > head.length) {
       head = await source.readHeader(voxOffset)
       if (!head || head.length < voxOffset) return null

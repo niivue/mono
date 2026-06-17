@@ -1087,6 +1087,10 @@ export default class NVModel {
       calMax: vol.calMax,
       nTotalFrame4D: vol.nTotalFrame4D ?? nFrames,
       graphConfig: this.ui.graph,
+      // SLICE_TYPE.NONE hides the spatial view -> the volume time-course plot fills
+      // the whole canvas (matches the signal/associated graph builders, which set
+      // this too). Without it, the plain 4D-volume graph stays a side strip on NONE.
+      fullCanvas: this.isSpatialViewHidden(),
     }
   }
 

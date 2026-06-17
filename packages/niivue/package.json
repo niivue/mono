@@ -38,7 +38,8 @@
   "sideEffects": false,
   "scripts": {
     "codegen:assets": "node scripts/generate-assets.js",
-    "dev": "bun run codegen:assets && bunx --bun vite --port 5273 --strictPort --open /examples/index.html",
+    "ensure-samples": "bun scripts/ensure-samples.ts",
+    "dev": "bun run codegen:assets && bun run ensure-samples && bunx --bun vite --port 5273 --strictPort --open /examples/index.html",
     "dev:perf": "bun run codegen:assets && bunx --bun vite --port 5273 --strictPort --open /examples/benchmark.html",
     "build": "bun run codegen:assets && bunx --bun vite build --config vite.config.lib.ts",
     "build:examples": "bun run codegen:assets && bunx --bun vite build --config vite.config.examples.ts",

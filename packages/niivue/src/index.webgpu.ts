@@ -57,6 +57,7 @@ export type {
   VolumeChunkSourceRequest,
   VolumeUpdate,
 } from './NVTypes'
+export type { SignalFromUrlOptions } from './signal/NVSignal'
 export type {
   ChunkPlan,
   Vec3f,
@@ -64,6 +65,5 @@ export type {
   VolumeChunkDesc,
 } from './volume/chunking'
 export { chunkVolumeGrid } from './volume/chunking'
-export type { SignalFromUrlOptions } from './signal/NVSignal'
 export type { TransformInfo, TransformOptions } from './volume/transforms'
 export { getImageDataRAS } from './volume/utils'

@@ -30,7 +30,6 @@ import type { GraphData } from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { resolveNegativeRange } from '@/view/NVUILayout'
 import { loadVolumePrepared } from '@/volume/loadBridge'
-import * as NVVolume from '@/volume/NVVolume'
 import { extractVoxelFid, getVoxelValue, volumeTR } from '@/volume/utils'
 
 export default class NVModel {

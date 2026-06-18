@@ -374,7 +374,9 @@ export async function loadVolume(
     // (partialLoad caps and emits the always-visible warning). Others propagate.
     const isOversize =
       e instanceof RangeError ||
-      (e instanceof DOMException && e.name === 'NotReadableError')
+      (typeof DOMException !== 'undefined' &&
+        e instanceof DOMException &&
+        e.name === 'NotReadableError')
     if (partialLoad && isOversize) {
       const capped = await partialLoad(url, Infinity)
       if (capped) return capped

@@ -2291,7 +2291,9 @@ export default class NiiVueGPU extends EventTarget {
         if (
           !(
             e instanceof RangeError ||
-            (e instanceof DOMException && e.name === 'NotReadableError')
+            (typeof DOMException !== 'undefined' &&
+              e instanceof DOMException &&
+              e.name === 'NotReadableError')
           )
         ) {
           throw e
@@ -2880,6 +2882,11 @@ export default class NiiVueGPU extends EventTarget {
     if (this._deferredReloads.has(id)) return
     this._deferredReloads.add(id)
     try {
+      // No pairedImgData here by construction: nTotalFrame4D > nFrame4D is set ONLY
+      // by the single-stream partial loader, which only runs for self-contained NII
+      // (.nii.gz / uncompressed .nii File). Detached-header formats (AFNI .HEAD+.BRIK,
+      // NIfTI .hdr/.img) can't partial-load, so they load fully and the early-return
+      // above fires — they never reach this re-fetch.
       const nii = await NVVolume.loadVolume(src)
       // Reconstruct through nii2volume so datatype/intent conversions (e.g.
       // DT_FLOAT64 -> DT_FLOAT32) are REAPPLIED. The re-fetched bytes are raw, so

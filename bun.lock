@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "nx-mono-repo-test",
@@ -50,17 +49,6 @@
         "@niivue/dev-images": "workspace:*",
         "@niivue/niivue": "workspace:*",
         "@niivue/nv-ext-image-processing": "workspace:*",
-      },
-      "devDependencies": {
-        "vite": "^6.3.2",
-      },
-    },
-    "apps/demo-ext-mrs": {
-      "name": "demo-ext-mrs",
-      "dependencies": {
-        "@niivue/dev-images": "workspace:*",
-        "@niivue/niivue": "workspace:*",
-        "@niivue/nv-ext-mrs": "workspace:*",
       },
       "devDependencies": {
         "vite": "^6.3.2",
@@ -233,19 +221,6 @@
         "gl-matrix": "^3.4.4",
         "nifti-reader-js": "^0.8.0",
       },
-      "devDependencies": {
-        "@niivue/niivue": "workspace:*",
-        "typescript": "~5.8.3",
-        "vite": "^6.3.2",
-        "vite-plugin-dts": "^4.5.4",
-      },
-      "peerDependencies": {
-        "@niivue/niivue": "workspace:*",
-      },
-    },
-    "packages/nv-ext-mrs": {
-      "name": "@niivue/nv-ext-mrs",
-      "version": "1.0.0-rc.2",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "~5.8.3",
@@ -660,8 +635,6 @@
 
     "@niivue/nv-ext-image-processing": ["@niivue/nv-ext-image-processing@workspace:packages/nv-ext-image-processing"],
 
-    "@niivue/nv-ext-mrs": ["@niivue/nv-ext-mrs@workspace:packages/nv-ext-mrs"],
-
     "@niivue/nv-ext-niimath": ["@niivue/nv-ext-niimath@workspace:packages/nv-ext-niimath"],
 
     "@niivue/nv-ext-save-html": ["@niivue/nv-ext-save-html@workspace:packages/nv-ext-save-html"],
@@ -1029,8 +1002,6 @@
     "demo-ext-fullstack": ["demo-ext-fullstack@workspace:apps/demo-ext-fullstack"],
 
     "demo-ext-image-processing": ["demo-ext-image-processing@workspace:apps/demo-ext-image-processing"],
-
-    "demo-ext-mrs": ["demo-ext-mrs@workspace:apps/demo-ext-mrs"],
 
     "demo-ext-niimath": ["demo-ext-niimath@workspace:apps/demo-ext-niimath"],
 
@@ -1607,8 +1578,6 @@
     "@niivue/nv-ext-drawing/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 
     "@niivue/nv-ext-image-processing/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
-
-    "@niivue/nv-ext-mrs/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 
     "@niivue/nv-ext-niimath/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 

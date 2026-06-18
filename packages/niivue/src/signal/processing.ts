@@ -16,7 +16,7 @@ export type SignalPlot = {
 
 // ---------------------------------------------------------------------------
 // Nucleus constants (ported verbatim from fsleyes-plugin-mrs constants.py,
-// BSD-3, (c) 2021 William Clarke, University of Oxford). See nv-ext-mrs/PORTING.md.
+// BSD-3, (c) 2021 William Clarke, University of Oxford). See PORTING.md.
 // ---------------------------------------------------------------------------
 
 /** Gyromagnetic ratio (MHz/T) per nucleus. */
@@ -59,7 +59,7 @@ export function defaultSignalDisplay(): NVSignalDisplay {
     ppmRef: null,
     useHz: false,
     // FSL-MRS spectral processing (all off by default so the existing svs.html
-    // baseline is unchanged; nv-ext-mrs opts in to halveFirstPoint etc.).
+    // baseline is unchanged; the MrsScene controller opts in to halveFirstPoint etc.).
     halveFirstPoint: false,
     apodizeHz: 0,
     phase0: 0,
@@ -71,7 +71,7 @@ export function defaultSignalDisplay(): NVSignalDisplay {
 
 // ---------------------------------------------------------------------------
 // FSL-MRS spectral transforms (ports of fsleyes-plugin-mrs utils.py /
-// fsleyes powerspectrumseries.py). See nv-ext-mrs/PORTING.md for provenance.
+// fsleyes powerspectrumseries.py). See PORTING.md for provenance.
 // ---------------------------------------------------------------------------
 
 /**

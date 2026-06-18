@@ -16,7 +16,7 @@ interface NiiVueLike {
   canvas?: HTMLCanvasElement
   activeClipPlaneIndex?: number
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
-  loadVolumes(volumes: Array<{ url: string; name: string; colormap?: string }>): Promise<unknown>
+  loadVolumes(volumes: Array<{ url: string | File; name: string; colormap?: string }>): Promise<unknown>
   azimuth?: number
   elevation?: number
   model?: {
@@ -35,6 +35,11 @@ interface RenderVolumeLevel {
   level: number
   url: string
   shape?: [number, number, number]
+}
+
+interface VolumePrefetch {
+  url: string
+  file: Promise<File>
 }
 
 interface RenderViewSnap {
@@ -145,28 +150,37 @@ export function NiivueStage({
   const stageRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const nvRef = useRef<NiiVueLike | null>(null)
+  const prefetchRef = useRef<VolumePrefetch | null>(null)
   const [status, setStatus] = useState('Waiting for a dataset selection.')
   const [snapId, setSnapId] = useState<RenderSnapId | null>(null)
 
-  // Kick off the coarse-volume fetch the instant a volume is selected — in
-  // parallel with NiiVue init and ahead of the 2D preview tiles — so the bytes
-  // are already in flight (and HTTP-cached) by the time loadVolumes runs.
+  // Fetch the coarse volume the instant it is selected — at high priority, in
+  // parallel with NiiVue init, and ahead of the low-priority 2D preview tiles.
+  // We own the bytes and hand them straight to loadVolumes as a File, so NiiVue
+  // never issues a second (default-priority) request that would queue behind the
+  // previews; the only network request for this volume is this prioritized one.
   useEffect(() => {
-    if (!item) return
+    if (!item) {
+      prefetchRef.current = null
+      return
+    }
     const coarse = renderVolumeLevels(item)[0]
-    if (!coarse) return
+    if (!coarse) {
+      prefetchRef.current = null
+      return
+    }
 
     const controller = new AbortController()
-    const init: RequestInit & { priority?: 'high' | 'low' | 'auto' } = {
-      signal: controller.signal,
-      cache: 'force-cache',
-      priority: 'high'
-    }
-    void fetch(coarse.url, init).catch(() => {
-      // Best-effort prefetch; loadVolumes still fetches and reports real errors.
-    })
+    const file = fetchVolumeFile(coarse.url, controller.signal)
+    // Avoid an unhandled rejection; loadRenderVolumeLods awaits and reports it.
+    file.catch(() => {})
+    const prefetch: VolumePrefetch = { url: coarse.url, file }
+    prefetchRef.current = prefetch
 
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      if (prefetchRef.current === prefetch) prefetchRef.current = null
+    }
   }, [item])
 
   useEffect(() => {
@@ -213,6 +227,7 @@ export function NiivueStage({
           clipPlanes,
           canvas: attachedCanvas,
           stage,
+          prefetch: prefetchRef.current,
           isCancelled: () => cancelled,
           setStatus
         })
@@ -392,6 +407,7 @@ async function loadRenderVolumeLods({
   clipPlanes,
   canvas,
   stage,
+  prefetch,
   isCancelled,
   setStatus
 }: {
@@ -401,6 +417,7 @@ async function loadRenderVolumeLods({
   clipPlanes: ClipPlane[]
   canvas: HTMLCanvasElement
   stage: HTMLDivElement | null
+  prefetch: VolumePrefetch | null
   isCancelled: () => boolean
   setStatus: (status: string) => void
 }): Promise<void> {
@@ -417,10 +434,22 @@ async function loadRenderVolumeLods({
       if (isCancelled()) return
     }
 
+    let source: string | File = level.url
+    if (prefetch && prefetch.url === level.url) {
+      try {
+        source = await prefetch.file
+        if (isCancelled()) return
+      } catch {
+        // Prefetch failed (e.g. aborted or network error); fall back to the URL
+        // so NiiVue fetches it itself and surfaces any real error below.
+        source = level.url
+      }
+    }
+
     try {
       await nv.loadVolumes([
         {
-          url: level.url,
+          url: source,
           name: `${item.label} L${level.level}`,
           colormap
         }
@@ -454,6 +483,32 @@ async function loadRenderVolumeLods({
 
   if (!loadedLevel && lastError) {
     throw lastError
+  }
+}
+
+async function fetchVolumeFile(url: string, signal: AbortSignal): Promise<File> {
+  const init: RequestInit & { priority?: 'high' | 'low' | 'auto' } = {
+    signal,
+    cache: 'force-cache',
+    priority: 'high'
+  }
+  const response = await fetch(url, init)
+  if (!response.ok) {
+    throw new Error(`Volume request failed with HTTP ${response.status}.`)
+  }
+  const buffer = await response.arrayBuffer()
+  // Preserve the URL's basename so NiiVue's extension-based format detection
+  // (getFileExt reads File.name) behaves exactly as it would for the URL.
+  return new File([buffer], volumeFileName(url))
+}
+
+function volumeFileName(url: string): string {
+  try {
+    const path = new URL(url, window.location.href).pathname
+    const base = path.slice(path.lastIndexOf('/') + 1)
+    return base || 'volume.nii.gz'
+  } catch {
+    return 'volume.nii.gz'
   }
 }
 

@@ -17,8 +17,8 @@ bun run dev          # Hot-reload dev server
 bun run build        # Library build to ./dist (published npm package)
 bun run deploy       # Production examples-site build to ./dist (GitHub Pages)
 bun run demo         # Build examples site and serve locally
-bun run lint         # ESLint check
-bun run lint:fix     # ESLint auto-fix
+bun run lint         # Biome check
+bun run lint:fix     # Biome auto-fix
 bun run typecheck    # TypeScript type checking (tsc --noEmit)
 ```
 

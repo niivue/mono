@@ -10,7 +10,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 - ❌ = Missing
 - ⚠️ = Partial
 
-*Updated: 2026-05-01*
+*Updated: 2026-06-18*
 
 ---
 
@@ -20,6 +20,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | Constructor with options | ✅ | `new NiiVueGPU(options)` |
 | `attachTo(id)` / `attachToCanvas(canvas)` | ✅ | |
+| WebGPU→WebGL2 init fallback + graphics-unavailable overlay | ✅ | `control/viewBoth.ts` retries WebGL2 when WebGPU `init()` throws (e.g. no GPU adapter); on all-backends-fail `control/canvasMessage.ts` overlays a DOM message with fixes (hardware accel / `#enable-unsafe-swiftshader`). Declined for a shared canvas |
 | `cleanup()` | ✅ | Via `removeInteractionListeners` + resource cleanup |
 | `setDefaults()` | ❌ | No explicit reset-to-defaults method |
 
@@ -245,6 +246,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | `setFrame4D(vol, frame)` | ✅ | |
 | Graph display for 4D | ✅ | `isGraphVisible`, `graphNormalizeValues`, `graphIsRangeCalMinMax` |
+| Large/partial 4D volumes (>2 GiB) | ✅ | `limitFrames4D` + auto-cap under V8's ~2 GiB ArrayBuffer limit; streaming gz / `Blob.slice` partial read; deferred-frame reload via `loadDeferred4DVolumes`. See §2 |
 
 ## 20. Synchronization
 

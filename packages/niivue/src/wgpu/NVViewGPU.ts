@@ -1334,10 +1334,7 @@ export default class NVView {
           device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
           const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
           const shaderType =
-            (isSlice && mGpu.sliceShaderType) ||
-            mGpu.shaderType ||
-            m.shaderType ||
-            'phong'
+            (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
           const pipeline = this.meshPipelines[shaderType]
           if (pipeline) {
             pass.setPipeline(pipeline)
@@ -1395,10 +1392,7 @@ export default class NVView {
             device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
             const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
             const shaderType =
-              (isSlice && mGpu.sliceShaderType) ||
-              mGpu.shaderType ||
-              m.shaderType ||
-              'phong'
+              (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
             const xPipeline = this.meshXRayPipelines[shaderType]
             if (xPipeline) {
               pass.setPipeline(xPipeline)

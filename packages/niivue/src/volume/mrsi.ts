@@ -138,7 +138,7 @@ export function prepareMrsiVolume(
 /**
  * Clone a NIfTI header as a single-frame real float32 scalar header, preserving
  * spatial dims/affine/pixdims. Used for the derived MRSI display map and for
- * range-integration metabolite maps built by nv-ext-mrs.
+ * range-integration metabolite maps built by MrsScene / makeMetaboliteMap.
  */
 function scalarHeaderLike(hdr: NIFTI1 | NIFTI2): NIFTI1 | NIFTI2 {
   const newHdr = {
@@ -159,7 +159,7 @@ function scalarHeaderLike(hdr: NIFTI1 | NIFTI2): NIFTI1 | NIFTI2 {
 /**
  * Build a derived scalar overlay NVImage that shares an MRSI volume's spatial
  * grid/affine. `data` must be in native voxel order, length nVox3D. Used by
- * nv-ext-mrs to add a metabolite map produced by {@link integratePpmBandMap}.
+ * MrsScene / makeMetaboliteMap to add a metabolite map produced by {@link integratePpmBandMap}.
  *
  * `nii2volume` is passed in by the caller to avoid an import cycle
  * (NVVolume imports this module).

@@ -480,9 +480,9 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 Spatial spectroscopic imaging (MRSI/CSI): a complex 4-D NIfTI where dim1-3 are
 space and dim4 is the FID. Core enablers live in `src/volume/mrsi.ts`,
 `src/signal/processing.ts`, and `src/signal/mrs.ts`; the FSL-MRS workflow
-(navigation, manipulation, range-to-map) is packaged as
-`@niivue/nv-ext-mrs` with a demo at `apps/demo-ext-mrs` (`mrsi.html`). Ports
-algorithms from fsleyes-plugin-mrs (BSD-3) — see that package's `PORTING.md`.
+(navigation, manipulation, range-to-map) is provided by the core `MrsScene` controller (`src/mrs/MrsScene.ts`) with a demo
+at `examples/mrsi.html`. Ports algorithms from fsleyes-plugin-mrs (BSD-3) — see
+`PORTING.md`.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -490,10 +490,10 @@ algorithms from fsleyes-plugin-mrs (BSD-3) — see that package's `PORTING.md`.
 | Shared complex/ecode-44 decode | ✅ | `signal/mrs.ts` (`isComplexDatatype`/`decodeComplexFID`/`mrsFromHeaderExtensions`) used by both signal (SVS) and volume (MRSI) paths |
 | Crosshair-voxel spectrum | ✅ | `addMrsiSignal(volumeId)` + `NVSignal.followsCrosshair`: the graph extracts the crosshair voxel's FID (`extractVoxelFid`) and re-derives the spectrum on every crosshair move. When the FID can't be resolved (volume removed / off-grid / NVD reload without the buffer) the signal is dropped from the graph rather than drawing a fake flat placeholder |
 | NVD persistence of MRSI | ⚠ partial | `followsCrosshair` signals serialize, but the volume's `complexFID` is NOT written to NVD (only the derived scalar `img`). On reload the crosshair spectrum is unavailable (graph drops it, no fake line) until the MRSI volume is re-added. Persisting the 18 MiB complex buffer is deferred by design |
-| Sampled-voxel marker | ✅ | nv-ext-mrs `enableVoxelSnap`: crosshair snaps to the MRSI voxel-grid centre (`context.mrs.voxelCenterMm`) within the slab, marking the coarse cell being read; free over the surrounding anatomy |
+| Sampled-voxel marker | ✅ | `MrsScene.enableVoxelSnap`: crosshair snaps to the MRSI voxel-grid centre (`context.mrs.voxelCenterMm`) within the slab, marking the coarse cell being read; free over the surrounding anatomy |
 | FSL-MRS spectral transforms | ✅ | `halveFirstPoint`, `apodize` (exp line-broadening), `phaseCorrection` (0/1-order); off by default so the `svs.html` baseline is unchanged; parity-tested vs fsleyes |
 | Nucleus constants | ✅ | `GYRO_MAG_RATIO`, `PPM_SHIFT`, `PPM_RANGE` ported verbatim |
-| ppm-band metabolite map | ✅ | `integratePpmBandMap` + `makeMetaboliteMap` (nv-ext-mrs): integrate `|spectrum|`/`real` over a ppm band across all voxels -> `SpecSum_{lo}_{hi}` overlay |
+| ppm-band metabolite map | ✅ | `integratePpmBandMap` + `makeMetaboliteMap` / `MrsScene.makeMap` (core): integrate `|spectrum|`/`real` over a ppm band across all voxels -> `SpecSum_{lo}_{hi}` overlay |
 | Extension context exposure | ✅ | `context.mrs` (`MrsVolumeAccess`): read-only complex buffer + metadata + `makeScalarOverlay` |
 | Demo (`mrsi.html`) | ✅ | T1 + MRSI grid + mask, crosshair->spectrum, component/apodize/phase/ppm controls, make-map |
 | Fit-results overlay | ⛔ Deferred | fit/baseline/residual spectra + concentration/QC maps (`tools.py`); blocked on a `fsl_mrsi` results directory |

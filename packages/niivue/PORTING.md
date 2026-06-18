@@ -1,9 +1,9 @@
 # Porting provenance: fsleyes-plugin-mrs -> NiiVue
 
-`@niivue/nv-ext-mrs` and the MRS support in NiiVue core port algorithms from
-**fsleyes-plugin-mrs** (BSD-3-Clause, (c) 2021 William Clarke, University of
-Oxford; co-author Vasilis Karlaftis; acks Paul McCarthy). The upstream license
-is shipped verbatim as `LICENSE.fsleyes-plugin-mrs`.
+NiiVue's MRS support — the core spectral math and the `MrsScene` controller —
+ports algorithms from **fsleyes-plugin-mrs** (BSD-3-Clause, (c) 2021 William
+Clarke, University of Oxford; co-author Vasilis Karlaftis; acks Paul McCarthy).
+The upstream license is shipped verbatim as `LICENSE.fsleyes-plugin-mrs`.
 
 The spectral math lives in NiiVue **core** (`packages/niivue/src/signal/processing.ts`
 and `packages/niivue/src/volume/mrsi.ts`) so it can be shared with single-voxel

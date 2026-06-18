@@ -725,11 +725,10 @@ Signal-graph audit invariants (keep these true):
   read. The host sets the window from a range control via `setGraphRange([lo,hi] |
   null)` (clamped to the full extent; null = full). The intended reactive recipe
   (illustrated by the `Reactive` checkbox in `examples/svs.html` and
-  `apps/demo-ext-mrs`): turn OFF `graphAutoResetView`, drive the window with
+  `examples/mrsi.html`): turn OFF `graphAutoResetView`, drive the window with
   `setGraphRange` instead of `ppmRange`, and update the slider positions from
   `graphRangeChange` (setting an `<input>` `.value` does not fire `input`, so no
-  feedback loop). nv-ext-mrs's `setPpmWindow` flows through `setSignal`, so its
-  demo gets the default reset for free and adds the reactive toggle on top.
+  feedback loop). `MrsScene.setPpmWindow` flows through `setSignal`, so the MRSI demo gets the default reset for free and adds the reactive toggle on top.
 - **Style setters clamp.** `graphLineWidth` to finite `[0,8]`, `graphLineAlpha` to
   `[0,1]` (no NaN/Infinity into the line buffer). All three new graph settings
   (`graphShowVolumeTimecourse`/`graphLineWidth`/`graphLineAlpha`) also have flat
@@ -913,11 +912,11 @@ FSL-MRS spectral transforms live in `signal/processing.ts`: `halveFirstPoint`,
 flags (`halveFirstPoint`/`apodizeHz`/`phase0`/`phase1Ms`) default off/0 so the
 `svs.html` baseline is unchanged; parity-tested against fsleyes in
 `processing.test.ts`. The FSL-MRS workflow + range->map tool + scene controller
-are packaged as `@niivue/nv-ext-mrs` (demo `apps/demo-ext-mrs`, `mrsi.html`);
+are provided by the core `MrsScene` controller (demo `examples/mrsi.html`);
 `context.mrs` (`MrsVolumeAccess`, first MRSI volume) / `context.mrsById(id)`
 (multi-MRSI safe) expose the complex buffer read-only.
 Fit-results overlays are deferred (no results dataset). Ported from
-fsleyes-plugin-mrs (BSD-3) — provenance in that package's `PORTING.md`.
+fsleyes-plugin-mrs (BSD-3) — provenance in `PORTING.md`.
 
 Audit-hardened invariants (keep these true):
 - **Detection is metadata-gated.** `isMrsiVolume` requires complex + spatial +
@@ -934,7 +933,7 @@ Audit-hardened invariants (keep these true):
 - **NVD limitation:** `complexFID`/`mrsMeta` are NOT serialized to NVD (only the
   derived scalar `img`); a reloaded crosshair spectrum is unavailable until the
   MRSI volume is re-added. Persisting the ~18 MiB buffer is deferred by design.
-- **Mask is modulated, not baked.** `nv-ext-mrs` `setMaskEnabled` calls
+- **Mask is modulated, not baked.** `MrsScene.setMaskEnabled` calls
   `setModulationImage(mrsiId, maskId, 1)` (alpha) — the mask is loaded as a
   hidden volume (`opacity 0`, `calMin/calMax 0..1`) and consumed as the
   modulator; the core scalar-overlay modulation path (see Volume modulation

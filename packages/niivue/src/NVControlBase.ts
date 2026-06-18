@@ -255,6 +255,9 @@ export default class NiiVueGPU extends EventTarget {
   /** Volume ids with an in-flight deferred 4D reload (guards rapid ellipsis clicks
    *  from launching duplicate multi-GB re-fetches and racing rollbacks). */
   private _deferredReloads = new Set<string>()
+  /** Set once `destroy()` runs, so an in-flight async op (e.g. a deferred reload)
+   *  can detect a torn-down controller and not mutate/upload against it. */
+  private _destroyed = false
   private _deferredVolumes: Array<ImageFromUrlOptions | NVImage> | null = null
   private _deferredMeshes: MeshFromUrlOptions[] | null = null
   private _viewLifecycle: ViewLifecycle
@@ -2878,6 +2881,15 @@ export default class NiiVueGPU extends EventTarget {
         Number.POSITIVE_INFINITY,
       )
       const loadedFrames = rebuilt.nFrame4D ?? 1
+      // The controller may have been destroyed, the volume removed, or the document
+      // replaced while the multi-GB re-fetch was in flight — don't mutate a detached
+      // volume or upload to a torn-down view.
+      if (this._destroyed || this.volumes.find((v) => v.id === id) !== vol) {
+        log.warn(
+          'loadDeferred4DVolumes: controller destroyed or volume removed during reload; discarding result',
+        )
+        return
+      }
       // Snapshot the fields we replace so a GPU upload failure rolls them back —
       // otherwise the model would point at an image the GPU never received.
       const prev = {
@@ -3891,6 +3903,7 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   destroy(): void {
+    this._destroyed = true
     this.emit('viewDestroyed')
     if (this._perf) this._perf.enabled = false
     if (this._rafId !== null) {

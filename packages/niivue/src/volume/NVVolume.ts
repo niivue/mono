@@ -216,6 +216,11 @@ async function loadPartialNifti1(
     }
     const hdr = nifti.readHeader(head.buffer as ArrayBuffer) as NIFTI1 | NIFTI2
     if (!hdr) return null
+    // Partial loading treats dim4-6 as time frames. An RGB-vector volume uses
+    // dim4=3 as vector components (converted to RGBA8 by nii2volume), so a frame
+    // cap would truncate components before conversion — decline and full-load it.
+    // (These volumes are small, so the full load is never the >2 GiB problem.)
+    if (hdr.intent_code === NiiIntentCode.NIFTI_INTENT_RGB_VECTOR) return null
     // 2) Frame budget. dims 4-6 give the total 4D frame count.
     const dims = hdr.dims
     const dim = (i: number): number => (dims[i] > 1 ? dims[i] : 1)

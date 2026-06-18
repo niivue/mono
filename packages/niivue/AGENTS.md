@@ -421,11 +421,20 @@ with a `.catch` (and the reload rolls CPU state back if `updateGLVolume` throws)
 
 **Partial loading assumes time frames.** `loadPartialNifti1` treats `dim4*dim5*dim6`
 as time frames. RGB-vector (`intent_code` 2003, dim4=3) and MRSI (dim4=spectral) are
-NOT time series; setting `limitFrames4D` on such a gz NIfTI-1 would truncate them
-before conversion. In practice RGB volumes are small (never auto-capped) and a frame
-limit on them is user error; a future intent-code gate in the partial path is the
-clean fix. (The deferred path is safe — RGB/MRSI conversions set `nTotalFrame4D=1`, so
-the deferred gate returns before any re-read.)
+NOT time series, so `loadPartialNifti1` now DECLINES an RGB-vector volume (intent-code
+gate → full load, which converts to RGBA8). MRSI is not yet gated (detection needs MRS
+header fields, not a single intent code) — but it's tiny in practice and unreachable
+via the deferred path (RGB/MRSI conversions set `nTotalFrame4D=1`, so the deferred gate
+returns before any re-read).
+
+**View `isBusy` is try/finally-guarded.** `NVViewGPU.updateBindGroups` /
+`NVViewGL._updateBindings` set `isBusy = true` and reset it in a `finally`, so an early
+return (no device / no mesh layout) or a thrown upload `await` can't leave the flag
+stuck — the render loop skips while busy, so a stuck flag would freeze drawing. The
+deferred reload also re-checks `_destroyed` + that the volume is still mounted after its
+async re-fetch, so a reload finishing after `destroy()`/`removeAllVolumes`/document
+replacement discards its result instead of mutating a detached volume / uploading to a
+torn-down view.
 
 **Save/restore of a partial `File` volume.** `_sourceFile` is runtime-only, so a
 restored document can't re-open a dropped File. `NVDocument.serialize` therefore

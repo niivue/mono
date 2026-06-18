@@ -50,7 +50,10 @@ import { SliceRenderer } from './slice'
 import { ThumbnailRenderer } from './thumbnail'
 import * as wgpu from './wgpu'
 
-type MeshGpuWithShader = WebGPUMeshGPU & { shaderType?: string }
+type MeshGpuWithShader = WebGPUMeshGPU & {
+  shaderType?: string
+  sliceShaderType?: string
+}
 
 /** Shared GPU context per canvas for multi-instance bounds support */
 type SharedGPUContext = {
@@ -684,6 +687,14 @@ export default class NVView {
           )
           shaderType = 'phong'
         }
+        // '' = inherit shaderType on slices; an invalid name also falls back to ''.
+        let sliceShaderType = m.sliceShaderType || ''
+        if (sliceShaderType && !availableShaders.includes(sliceShaderType)) {
+          log.warn(
+            `Slice shader '${sliceShaderType}' not available in WebGPU, falling back to '${shaderType}'`,
+          )
+          sliceShaderType = ''
+        }
         const gpuData = mesh.uploadMeshGPU(device, m, { shaderType })
         const mGpu: MeshGpuWithShader = {
           vertexBuffer: gpuData.vertexBuffer,
@@ -693,6 +704,7 @@ export default class NVView {
           bindGroup: null,
           alignedMeshSize: mesh.alignedMeshSize,
           shaderType,
+          sliceShaderType,
         }
         this.meshResources.set(m, mGpu)
         if (!mGpu) {
@@ -1320,7 +1332,12 @@ export default class NVView {
           // s[37-39] = 0 (pad, zero-initialized at allocation, never written non-zero)
           s.set(ccMM as ArrayLike<number>, 40)
           device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
-          const shaderType = mGpu.shaderType || m.shaderType || 'phong'
+          const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+          const shaderType =
+            (isSlice && mGpu.sliceShaderType) ||
+            mGpu.shaderType ||
+            m.shaderType ||
+            'phong'
           const pipeline = this.meshPipelines[shaderType]
           if (pipeline) {
             pass.setPipeline(pipeline)
@@ -1376,7 +1393,12 @@ export default class NVView {
             s[36] = (m.opacity ?? 1.0) * xrayAlpha
             s.set(ccMM as ArrayLike<number>, 40)
             device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
-            const shaderType = mGpu.shaderType || m.shaderType || 'phong'
+            const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+            const shaderType =
+              (isSlice && mGpu.sliceShaderType) ||
+              mGpu.shaderType ||
+              m.shaderType ||
+              'phong'
             const xPipeline = this.meshXRayPipelines[shaderType]
             if (xPipeline) {
               pass.setPipeline(xPipeline)

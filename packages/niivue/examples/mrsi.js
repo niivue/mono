@@ -1,22 +1,16 @@
 import NiiVue, { MrsScene, SLICE_TYPE } from '../src/index.ts'
 
-// NiiVue MRSI (MR spectroscopic imaging) demo.
-//
-// Reproduces the FSLeyes MRS plugin workflow with the core MrsScene controller:
-//   - T1 anatomy (background) + the complex MRSI grid (overlay shown as a
-//     derived total-signal map, masked to valid voxels)
-//   - move the ortho crosshair -> the spectrum at that voxel updates live
-//   - component / apodization / phase / ppm-window controls
-//   - "Make map": integrate the current ppm band across all voxels -> overlay
-//
-// The spectral math runs inside NiiVue core (signal/processing.ts, ported from
-// fsleyes-plugin-mrs); this page only drives the MrsScene controller and graph.
-//
-// Data lives alongside the other signal fixtures in @niivue/dev-images
-// (images/signals/), served at /signals/. Use full literal `/signals/...` URLs
-// so the GitHub Pages build's URL-rewrite plugin can prefix them with the shared
-// images base (e.g. /mono/signals/...).
+// Reproduces the FSLeyes MRS plugin
+//  https://pages.fmrib.ox.ac.uk/wclarke/fsleyes-plugin-mrs/
 
+const nv = new NiiVue({
+  backgroundColor: [0.1, 0.1, 0.1, 1],
+  isGraphVisible: true,
+})
+await nv.attachToCanvas(gl1)
+nv.sliceType = SLICE_TYPE.AXIAL
+
+// id="location" shadows window.location, so this one element is looked up.
 const footer = document.getElementById('location')
 
 function fail(msg, err) {
@@ -25,15 +19,22 @@ function fail(msg, err) {
   if (err) console.error(msg, err)
 }
 
-const nv = new NiiVue({
-  backgroundColor: [0.1, 0.1, 0.1, 1],
-  isGraphVisible: true,
+let locationStr = ''
+let spectrumStr = ''
+function showStatus() {
+  const gap = locationStr && spectrumStr ? '   ' : ''
+  footer.textContent = `  ${locationStr}${gap}${spectrumStr}`
+}
+nv.addEventListener('locationChange', (e) => {
+  locationStr = e.detail.string
+  showStatus()
 })
-await nv.attachToCanvas(document.getElementById('gl1'))
-nv.sliceType = SLICE_TYPE.AXIAL
+nv.addEventListener('signalLocationChange', (e) => {
+  spectrumStr = e.detail.string
+  showStatus()
+})
 
 const scene = new MrsScene(nv)
-
 try {
   await scene.load({
     anatomyUrl: '/signals/mrsi_T1.nii.gz',
@@ -42,41 +43,12 @@ try {
     mrsiColormap: 'warm',
     mrsiOpacity: 0.7,
   })
-  footer.textContent =
-    '  Move the crosshair over the MRSI grid to inspect a voxel spectrum.'
+  nv.setCrosshairPos([-2, -2, 43])
 } catch (err) {
   fail('Could not load MRSI scene', err)
 }
 
 // --- Controls ---------------------------------------------------------------
-
-const $ = (id) => document.getElementById(id)
-const modeSelect = $('modeSelect')
-const apod = $('apod')
-const apodVal = $('apodVal')
-const p0 = $('p0')
-const p0Val = $('p0Val')
-const p1 = $('p1')
-const p1Val = $('p1Val')
-const ppmLow = $('ppmLow')
-const ppmLowVal = $('ppmLowVal')
-const ppmHigh = $('ppmHigh')
-const ppmHighVal = $('ppmHighVal')
-const fullRangeBtn = $('fullRangeBtn')
-const reactiveCheck = $('reactiveCheck')
-const makeMapBtn = $('makeMapBtn')
-const threshold = $('threshold')
-const thresholdVal = $('thresholdVal')
-const mapOpacity = $('mapOpacity')
-const mapOpacityVal = $('mapOpacityVal')
-const mapMode = $('mapMode')
-const cmapSelect = $('cmapSelect')
-const colorbarCheck = $('colorbarCheck')
-const maskCheck = $('maskCheck')
-const snapCheck = $('snapCheck')
-const viewSelect = $('viewSelect')
-const colorBtn = $('colorBtn')
-const webgpuCheck = $('webgpuCheck')
 
 function ppmWindow() {
   const lo = parseFloat(ppmLow.value)
@@ -103,10 +75,8 @@ function syncPpm() {
 // .value programmatically does not fire 'input', so there is no feedback loop.
 nv.addEventListener('graphRangeChange', (e) => {
   if (!isReactive()) return
-  const lo = Math.min(e.detail.min, e.detail.max)
-  const hi = Math.max(e.detail.min, e.detail.max)
-  ppmLow.value = lo.toFixed(1)
-  ppmHigh.value = hi.toFixed(1)
+  ppmLow.value = Math.min(e.detail.min, e.detail.max).toFixed(1)
+  ppmHigh.value = Math.max(e.detail.min, e.detail.max).toFixed(1)
   ppmLowVal.textContent = parseFloat(ppmLow.value).toFixed(1)
   ppmHighVal.textContent = parseFloat(ppmHigh.value).toFixed(1)
 })
@@ -202,12 +172,15 @@ mapOpacity.oninput = () => {
 // Configure the threshold slider to the MRSI overlay's total-signal range.
 const cal = scene.mrsiCal
 if (cal) {
-  const max = Math.max(1, cal.globalMax)
+  const max = Math.max(1, cal.calMax)
   threshold.min = '0'
-  threshold.max = max.toFixed(2)
+  threshold.max = max.toFixed()
   threshold.step = (max / 200).toPrecision(2)
-  threshold.value = String(cal.calMin)
-  thresholdVal.textContent = cal.calMin.toFixed(1)
+  // Default threshold: midpoint of the overlay's cal range, rounded to integer.
+  const mid = Math.round((cal.calMin + cal.calMax) / 2)
+  threshold.value = String(mid)
+  thresholdVal.textContent = mid.toFixed(1)
+  scene.setThreshold(mid)
 }
 threshold.oninput = () => {
   const t = parseFloat(threshold.value)
@@ -232,15 +205,15 @@ viewSelect.onchange = () => {
   nv.sliceType = parseInt(viewSelect.value, 10)
 }
 
-colorBtn.addEventListener('input', (event) => {
-  const hex = event.target.value
+colorBtn.oninput = () => {
+  const hex = colorBtn.value
   nv.backgroundColor = [
     parseInt(hex.slice(1, 3), 16) / 255,
     parseInt(hex.slice(3, 5), 16) / 255,
     parseInt(hex.slice(5, 7), 16) / 255,
     1.0,
   ]
-})
+}
 
 webgpuCheck.onclick = () => {
   const want = webgpuCheck.checked
@@ -261,6 +234,6 @@ webgpuCheck.onclick = () => {
     })
 }
 
-nv.addEventListener('signalLocationChange', (e) => {
-  footer.textContent = `  ${e.detail.string}`
-})
+// Apply the initial ppm window (sliders default to 1.2-3.3 ppm) to the loaded
+// graph so it opens on the metabolite band rather than the full spectrum.
+syncPpm()

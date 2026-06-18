@@ -33,7 +33,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE.fsleyes-plugin-mrs",
+    "PORTING.md"
   ],
   "sideEffects": false,
   "scripts": {

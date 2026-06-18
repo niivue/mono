@@ -2587,6 +2587,18 @@ export default class NiiVueGPU extends EventTarget {
         return
       }
     }
+    // sliceShaderType '' means "inherit shaderType" (yoked); only a non-empty
+    // value is validated against the available shaders.
+    if (options.sliceShaderType) {
+      options.sliceShaderType = options.sliceShaderType.toLowerCase()
+      const validShaders = this.view?.getAvailableShaders() ?? []
+      if (!validShaders.includes(options.sliceShaderType)) {
+        log.warn(
+          `Invalid slice shader type: ${options.sliceShaderType}. Expected one of: ${validShaders.join(', ')}`,
+        )
+        return
+      }
+    }
     // If color changed on a mesh without per-vertex file colors, recomposite
     if (options.color && !meshes[meshIndex].perVertexColors) {
       const m = meshes[meshIndex]

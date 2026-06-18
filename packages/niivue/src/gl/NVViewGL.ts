@@ -48,7 +48,10 @@ import { VolumeRenderer } from './render'
 import { SliceRenderer } from './slice'
 import { ThumbnailRenderer } from './thumbnail'
 
-type MeshGpuWithShader = WebGLMeshGPU & { shaderType?: string }
+type MeshGpuWithShader = WebGLMeshGPU & {
+  shaderType?: string
+  sliceShaderType?: string
+}
 
 export default class NVGlview {
   canvas: HTMLCanvasElement
@@ -983,10 +986,15 @@ export default class NVGlview {
         )
       }
       if (meshes.length > 0) {
+        const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
         for (const m of meshes) {
           const mGpu = this._getMeshGpu(m)
           if (!mGpu) continue
           const opacity = m.opacity ?? 1.0
+          const shaderType =
+            isSlice && mGpu.sliceShaderType
+              ? mGpu.sliceShaderType
+              : mGpu.shaderType
           mesh.drawWithGpu(
             gl,
             m,
@@ -994,7 +1002,7 @@ export default class NVGlview {
             meshMvp as Float32Array,
             meshNorm as Float32Array,
             opacity,
-            mGpu.shaderType,
+            shaderType,
             ccMM,
           )
         }
@@ -1019,10 +1027,15 @@ export default class NVGlview {
         }
         // Re-draw meshes with xray
         if (meshes.length > 0) {
+          const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
           for (const m of meshes) {
             const mGpu = this._getMeshGpu(m)
             if (!mGpu) continue
             const opacity = (m.opacity ?? 1.0) * xrayAlpha
+            const shaderType =
+              isSlice && mGpu.sliceShaderType
+                ? mGpu.sliceShaderType
+                : mGpu.shaderType
             mesh.drawXRay(
               gl,
               m,
@@ -1030,7 +1043,7 @@ export default class NVGlview {
               meshMvp as Float32Array,
               meshNorm as Float32Array,
               opacity,
-              mGpu.shaderType,
+              shaderType,
               ccMM,
             )
           }
@@ -1532,7 +1545,15 @@ export default class NVGlview {
         )
         shaderType = 'phong'
       }
-      const gpu = mesh.uploadMeshGPU(gl, m, { shaderType })
+      // '' = inherit shaderType on slices; an invalid name also falls back to ''.
+      let sliceShaderType = m.sliceShaderType || ''
+      if (sliceShaderType && !availableShaders.includes(sliceShaderType)) {
+        log.warn(
+          `Slice shader '${sliceShaderType}' not available in WebGL2, falling back to '${shaderType}'`,
+        )
+        sliceShaderType = ''
+      }
+      const gpu = mesh.uploadMeshGPU(gl, m, { shaderType, sliceShaderType })
       this.meshResources.set(m, gpu)
     }
   }

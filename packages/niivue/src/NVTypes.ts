@@ -489,6 +489,8 @@ export type NVMesh = {
   // --- Display properties (shared across all species) ---
   opacity: number
   shaderType: string
+  /** Shader for 2D slice views; '' (default) inherits `shaderType` (yoked). */
+  sliceShaderType: string
   /** RGBA color 0-1 range (default: [1,1,1,1]) */
   color: [number, number, number, number]
   /** Whether to show colorbar (default: true) */
@@ -1087,8 +1089,13 @@ export type MeshFromUrlOptions = {
   isColorbarVisible?: boolean
   /** Whether to show legend (default: false) */
   isLegendVisible?: boolean
-  /** Shader type (default: 'phong') */
+  /** Shader type (default: 'phong'). Used for the 3D render view and, unless
+   * `sliceShaderType` is set, for 2D slice views too. */
   shaderType?: string
+  /** Shader type for 2D slice views. Default '' yokes slices to `shaderType`;
+   * set it to use a different shader on slices (e.g. 'crosscut') than in the
+   * 3D render view. */
+  sliceShaderType?: string
   /** Whether mesh is visible (default: true) */
   visible?: boolean
   /** Scalar overlay layers to load onto this mesh */

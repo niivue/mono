@@ -292,6 +292,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `setCustomMeshShader()` / `setCustomMeshShaderFromUrl()` | ❌ | |
 | `setMeshShader()` | ❌ | |
 | `meshShaderNames()` | ❌ | |
+| Built-in mesh shaders + per-mesh selection | ✅ | phong/flat/matte/toon/outline/rim/silhouette/crevice/vertexColor/crosscut, chosen per-mesh via `shaderType`; `sliceShaderType` (default `''` = inherit) selects a different shader for 2D slice tiles than the 3D render view |
 | Built-in volume render shaders | ✅ | `volumeAlphaShader` |
 
 ## 24. Gestures / Input Configuration

@@ -139,6 +139,7 @@ export type NVDocumentMesh = {
   name?: string
   opacity?: number
   shaderType?: string
+  sliceShaderType?: string
   color?: [number, number, number, number]
   isColorbarVisible?: boolean
   isLegendVisible?: boolean
@@ -316,6 +317,7 @@ export function serialize(model: NVModel): Uint8Array {
       name: m.name,
       opacity: m.opacity,
       shaderType: m.shaderType,
+      sliceShaderType: m.sliceShaderType,
       color: m.color,
       isColorbarVisible: m.isColorbarVisible,
       isLegendVisible: m.isLegendVisible,
@@ -755,6 +757,7 @@ export async function reconstructMesh(
         name: m.name,
         opacity: m.opacity,
         shaderType: m.shaderType,
+        sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
         isLegendVisible: m.isLegendVisible,
@@ -834,6 +837,7 @@ export async function reconstructMesh(
         name: m.name,
         opacity: m.opacity,
         shaderType: m.shaderType,
+        sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
         isLegendVisible: m.isLegendVisible,

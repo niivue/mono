@@ -609,6 +609,20 @@ Fragment shaders in `gl/meshShader.ts` (GLSL) and `wgpu/mesh.wgsl` (WGSL): phong
 
 **Crosscut shader** (`shaderType: 'crosscut'`): Renders crosshair-aligned ribbons using `fwidth()`-based screen-space line width. Unique render state: **no depth test, no face culling**. `crosscutMM` uniform computed by `view/NVCrosscut.ts`.
 
+**Per-mesh slice shader split** (`sliceShaderType`, default `''`): selects the mesh
+shader for 2D slice tiles independently of the 3D render view. Empty string means
+"inherit `shaderType`" (slices yoked to the render shader); a non-empty name (e.g.
+`'crosscut'`) draws a different shader on slices — e.g. crosscut ribbons on slices
+while the render panel stays phong (see `examples/freesurfer.crosscut.html`). Both
+backends pick the shader per tile via an `isSlice` flag from `tile.axCorSag`
+(true for AXIAL/CORONAL/SAGITTAL, false for the RENDER tile), in both the main and
+x-ray mesh passes. `setMesh` validates it (empty = inherit; only a non-empty value
+is checked against `getAvailableShaders()`), the view layer falls back to
+`shaderType` on an unknown name, and it is serialized in NVDocument alongside
+`shaderType`. The mesh shaders pin attribute locations (`layout(location=0/1/2)` in
+`gl/meshShader.ts`) so the single per-mesh VAO is safe to draw with any mesh
+program (slice override, x-ray, depth pick) by construction.
+
 **Mesh clipping on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): Constrains near/far clip planes to show only mesh geometry within `±thicknessOn2D` mm of the slice plane. Uses `clipSpaceZeroToOne` parameter on `calculateMvpMatrix2D()`: `orthoZO` for WebGPU ([0,1] NDC), `ortho` for WebGL2 ([-1,1] NDC). `sliceTypeDim()` in `NVConstants.ts` maps AXIAL→2, CORONAL→1, SAGITTAL→0.
 
 ## Signal data class
@@ -1094,8 +1108,10 @@ re-derives the spectrum **fresh every collect** (not memoized — one 1024-pt FF
 per frame is cheap and keeps the cursor live without the display-keyed plot
 cache going stale). Moving the crosshair triggers `drawScene` -> render ->
 `collectGraphData`, so the spectrum tracks the crosshair like the fsleyes MRS
-plugin. The status-bar readout still requires a graph-cursor click (no
-associated 4-D volume), but the plotted spectrum updates on every move.
+plugin. `refreshSignalLocation()` re-emits `signalLocationChange` on every
+crosshair/frame change (not just a graph-cursor click), so a host can show the
+ppm/spectrum readout live; `examples/mrsi.html` combines it with `locationChange`
+to display world-space mm location + voxel/map values alongside the ppm/spectrum.
 
 FSL-MRS spectral transforms live in `signal/processing.ts`: `halveFirstPoint`,
 `apodize` (exp line-broadening), `phaseCorrection` (0th deg / 1st ms), the
@@ -1147,6 +1163,19 @@ Audit-hardened invariants (keep these true):
   exposes no single-volume removal to extensions (only `removeAllVolumes`); the
   demo always reloads with anatomy (`loadVolumes` -> `removeAllVolumes` clears
   them). Exposing per-volume removal to extensions is a tracked follow-up.
+
+Deferred MRSI follow-ups (from the `mrsi-core` audit round, see
+`audit_response.md`): (1) `MrsScene.load()` is non-transactional — a throw after a
+volume is added orphans it (same root cause as the per-volume-removal gap above);
+(2) `setMaskEnabled`/`makeMap` fan `setModulationImage` over `[mrsiId, ...mapIds]`
+with `Promise.all`, so a mid-fan rejection can leave some overlays modulated while
+`maskEnabled` rolls back (fix: sequential apply with inverse-rollback);
+(3) `integratePpmBandMap` runs a synchronous per-voxel FFT — fine for the demo
+grid, but move map generation to a Web Worker before MRSI scales to clinical CSI
+sizes. Provenance/licensing is settled: `package.json` ships
+`LICENSE.fsleyes-plugin-mrs` + `PORTING.md`, and the root `LICENSE` acknowledges
+the BSD-3 upstream. The MRS API is exported from all three entry subpaths
+(`index.ts`, `index.webgpu.ts`, `index.webgl2.ts`).
 
 ## Colormap conventions
 

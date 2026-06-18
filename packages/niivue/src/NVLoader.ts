@@ -26,8 +26,10 @@ export function getFileExt(
   // Strip any URL `?query` / `#fragment` before parsing the extension, else a
   // signed/cache-busted URL like `image.nii.gz?token=...` (or `...#v1`) yields a
   // bogus ext ("GZ?TOKEN..."), breaking format routing for volumes, signals,
-  // meshes, tracts, and layers. Centralized here so every caller is covered.
-  const fullname = getName(pathOrFile).split(/[?#]/)[0]
+  // meshes, tracts, and layers. Only for URL STRINGS — a local File's `.name` can
+  // legally contain `#`/`?` on some platforms, so leave it intact.
+  const raw = getName(pathOrFile)
+  const fullname = typeof pathOrFile === 'string' ? raw.split(/[?#]/)[0] : raw
   if (!fullname) return ''
   const cleanName =
     typeof pathOrFile === 'string'

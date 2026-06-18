@@ -110,7 +110,10 @@ function maxFramesUnderCap(
   nTotal: number,
 ): number {
   const perFrame = nVox3D * bpv
-  if (perFrame <= 0) return nTotal
+  // Malformed header (0 voxels or 0 bits-per-voxel): decline so the caller falls
+  // back to the full reader (which surfaces the real error) instead of "succeeding"
+  // with a zero-byte image.
+  if (perFrame <= 0) return 0
   const fit = Math.floor((MAX_VOLUME_BYTES - voxOffset) / perFrame)
   return Math.max(0, Math.min(fit, nTotal))
 }
@@ -206,9 +209,9 @@ async function loadPartialNifti1(
     // value can't mis-align the image window or the slice math.
     const voxOffset = Math.floor(dv.getFloat32(108, true))
     // Sanity-check vox_offset BEFORE reading up to it: reject NaN/negative/sub-header
-    // values, and oversized extensions — MAX_HEADER_BYTES guards against a malformed
-    // file advertising a huge vox_offset that would allocate a large header buffer.
-    // (NIfTI-1 extensions are a few KB in practice; 64 KiB is a generous ceiling.)
+    // values, and oversized extensions — MAX_HEADER_BYTES (16 MiB) bounds the header
+    // allocation so a malformed file advertising a huge vox_offset can't make the
+    // partial path allocate near the image budget (a memory-DoS for untrusted input).
     if (!(voxOffset >= 348) || voxOffset > MAX_HEADER_BYTES) return null
     if (voxOffset > head.length) {
       head = await source.readHeader(voxOffset)
@@ -321,15 +324,14 @@ export async function loadVolume(
 ): Promise<{ hdr: NIFTI1 | NIFTI2; img: ArrayBuffer | TypedVoxelArray }> {
   // Partial fast path: a 4D NIfTI where only some frames are wanted. Avoids reading
   // (and allocating) the whole volume; misses fall through to the full load below.
-  // Strip `?query`/`#fragment` BEFORE deriving the extension: getFileExt doesn't
-  // strip them, so `image.nii.gz#v1` would otherwise yield ext "GZ#V1" (not "NII"),
-  // making isNifti false and silently skipping the fast path AND the oversize
-  // recovery (which gate on the same flag) — erroring out on a >2 GiB volume.
-  const srcName = (typeof url === 'string' ? url : url.name)
-    .split(/[?#]/)[0]
-    .toLowerCase()
-  const ext = NVLoader.getFileExt(srcName)
-  // getFileExt strips `.gz` (nii.gz -> "NII"), so detect the gzip via the suffix.
+  // `getFileExt` strips a URL's `?query`/`#fragment` (so `image.nii.gz#v1` routes as
+  // NII, engaging the fast path + oversize recovery), and strips `.gz` (nii.gz ->
+  // "NII"). `srcName` (for the `.gz` suffix check) does the same URL-only strip — a
+  // File's `.name` is left intact since it may legally contain `#`/`?`.
+  const ext = NVLoader.getFileExt(url)
+  const srcName = (
+    typeof url === 'string' ? url.split(/[?#]/)[0] : url.name
+  ).toLowerCase()
   const isNifti = ext === 'NII'
   const isGzNifti = isNifti && srcName.endsWith('.gz')
   // An uncompressed >2 GiB `.nii` can't be read as one ArrayBuffer either (Chrome

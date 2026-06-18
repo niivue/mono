@@ -35,17 +35,7 @@ export function showCanvasMessage(
   message: string,
 ): void {
   clearCanvasMessage(canvas)
-  const host =
-    (canvas.offsetParent as HTMLElement | null) ?? canvas.parentElement
-  if (!host) return
-  const overlay = document.createElement('div')
-  overlay.setAttribute('role', 'alert')
-  overlay.style.cssText = [
-    'position:absolute',
-    `left:${canvas.offsetLeft}px`,
-    `top:${canvas.offsetTop}px`,
-    `width:${canvas.offsetWidth}px`,
-    `height:${canvas.offsetHeight}px`,
+  const common = [
     'display:flex',
     'align-items:center',
     'justify-content:center',
@@ -55,7 +45,38 @@ export function showCanvasMessage(
     'background:rgba(0,0,0,0.78)',
     'pointer-events:none',
     'z-index:10',
-  ].join(';')
+  ]
+  const overlay = document.createElement('div')
+  overlay.setAttribute('role', 'alert')
+  // `offsetLeft/Top` are relative to `offsetParent`, so only that pairing is
+  // self-consistent. When there's an offsetParent, position within it; otherwise
+  // (e.g. a fixed-position canvas / unusual layout) pin to <body> using the canvas's
+  // viewport rect + scroll, which is always correct.
+  const offsetParent = canvas.offsetParent as HTMLElement | null
+  let host: HTMLElement
+  if (offsetParent) {
+    host = offsetParent
+    overlay.style.cssText = [
+      'position:absolute',
+      `left:${canvas.offsetLeft}px`,
+      `top:${canvas.offsetTop}px`,
+      `width:${canvas.offsetWidth}px`,
+      `height:${canvas.offsetHeight}px`,
+      ...common,
+    ].join(';')
+  } else {
+    const r = canvas.getBoundingClientRect()
+    if (r.width === 0 && r.height === 0) return // not laid out -> nothing to cover
+    host = document.body
+    overlay.style.cssText = [
+      'position:absolute',
+      `left:${r.left + window.scrollX}px`,
+      `top:${r.top + window.scrollY}px`,
+      `width:${r.width}px`,
+      `height:${r.height}px`,
+      ...common,
+    ].join(';')
+  }
   // Inner box: left-aligned, whitespace preserved so the fix list stays readable.
   const box = document.createElement('div')
   box.textContent = message

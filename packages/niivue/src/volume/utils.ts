@@ -696,23 +696,25 @@ export function extractVoxelFid(
   const native =
     start[0] + ix * step[0] + start[1] + iy * step[1] + start[2] + iz * step[2]
   const nPoints = meta.nPoints
+  const nTransients = meta.nTransients
   const nVox = volume.nVox3D
-  const nTransients = Math.max(1, meta.nTransients ?? 1)
-  const out = new Float32Array(nPoints * 2)
-  // Average the FID over all transients/coils, mirroring the total-signal map
-  // (`integratePpmBandMap`): otherwise the crosshair spectrum (transient 0 only)
-  // and the displayed map would be computed from different data. `?? 0` guards a
-  // truncated buffer; divide only when there is more than one transient.
-  for (let p = 0; p < nPoints; p++) {
-    let re = 0
-    let im = 0
-    for (let t = 0; t < nTransients; t++) {
-      const ci = 2 * (native + p * nVox + t * nVox * nPoints)
-      re += fid[ci] ?? 0
-      im += fid[ci + 1] ?? 0
+  // Emit ALL transients in the SVS / deriveSpectroscopySeries layout
+  // (transient-major: 2*(t*nPoints+p)), read from the native MRSI complex buffer
+  // (point-major within transient blocks: 2*(native + p*nVox + t*nVox*nPoints)).
+  // Including every transient lets the caller average them the same way
+  // integratePpmBandMap does, so the crosshair spectrum agrees with generated
+  // metabolite maps. (nTransients === 1 reduces to the previous single-transient
+  // behavior.)
+  const out = new Float32Array(nPoints * nTransients * 2)
+  for (let t = 0; t < nTransients; t++) {
+    const tBase = t * nVox * nPoints
+    for (let p = 0; p < nPoints; p++) {
+      const ci = 2 * (native + p * nVox + tBase)
+      if (ci + 1 >= fid.length) break
+      const k = 2 * (t * nPoints + p)
+      out[k] = fid[ci]
+      out[k + 1] = fid[ci + 1]
     }
-    out[2 * p] = nTransients > 1 ? re / nTransients : re
-    out[2 * p + 1] = nTransients > 1 ? im / nTransients : im
   }
   return out
 }

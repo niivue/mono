@@ -1132,6 +1132,11 @@ Audit-hardened invariants (keep these true):
   4-D volume (e.g. complex fMRI) is NOT silently rewritten into a scalar map.
 - **Truncation-safe.** `prepareMrsiVolume` clamps `nPoints*nTransients` to the
   bytes present and `integratePpmBandMap` guards reads with `?? 0` (no NaN map).
+- **Crosshair spectrum vs map transients.** `extractVoxelFid` transposes the native
+  point-major MRSI buffer to SVS transient-major (`2*(t*nPoints+p)`) and emits all
+  transients; `crosshairSpectroscopyPlot` passes the real `nTransients` so
+  `deriveSeries` averages identically to `integratePpmBandMap` — keep these two
+  reductions in sync or the spectrum and a generated map disagree for `nTransients>1`.
 - **Not `isImaginary`.** The derived scalar overlay must NOT set
   `volume.isImaginary` (it's a real map; the complex data is in `complexFID`) —
   otherwise `control/locationTracking` appends a bogus imaginary readout.

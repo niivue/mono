@@ -783,8 +783,11 @@ export default class NVModel {
       {
         kind: 'spectroscopy',
         fid,
+        // extractVoxelFid now returns all transients (SVS layout); pass the real
+        // count so deriveSeries averages them, matching integratePpmBandMap so the
+        // crosshair spectrum agrees with generated metabolite maps.
         nPoints: m.nPoints,
-        nTransients: 1,
+        nTransients: m.nTransients,
         dwell: m.dwell,
         spectrometerFreq: m.spectrometerFreq,
         nucleus: m.nucleus,

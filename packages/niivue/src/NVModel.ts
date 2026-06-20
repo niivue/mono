@@ -1395,6 +1395,14 @@ export default class NVModel {
       // A dropped File has no URL to re-fetch; keep it so a deferred 4D reload can
       // re-open it. Runtime-only (the NVDocument serializer allowlists fields).
       ...(url instanceof File ? { _sourceFile: url } : {}),
+      // Detached-header formats (AFNI .HEAD+.BRIK, NRRD .nhdr+.raw, MRtrix
+      // detached .mif, MetaImage detached .mha) need the paired image bytes
+      // on every (re-)load; without it the readers throw "pairedImgData not
+      // set". prepareVolume destructures urlImageData out of opts, so without
+      // this stash a deferred 4D reload would re-issue loadVolume with only
+      // the header URL/File. Runtime-only, same allowlist contract as
+      // _sourceFile above.
+      ...(urlImageData != null ? { _urlImageData: urlImageData } : {}),
     }
   }
 

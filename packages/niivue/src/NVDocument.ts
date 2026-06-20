@@ -285,10 +285,15 @@ export function serialize(model: NVModel): Uint8Array {
       // after restore: `_sourceFile` is runtime-only (not serialized) and `url` is
       // just the bare filename. Collapse the saved header's frame count to the
       // frames actually embedded, so the restored volume presents as complete and
-      // the graph offers no dead deferred action. URL-sourced partials have no
-      // `_sourceFile`, keep their full dims, and still reload correctly on restore.
+      // the graph offers no dead deferred action. URL-sourced self-contained-NII
+      // partials have no `_sourceFile`, keep their full dims, and still reload
+      // correctly on restore. Detached-header formats (AFNI .HEAD+.BRIK, NRRD
+      // .nhdr+.raw, MRtrix detached .mif, MetaImage detached .mha) also can't be
+      // deferred-reloaded after restore: `_urlImageData` is runtime-only (same
+      // allowlist contract as `_sourceFile`), so a saved partial would offer a
+      // dead deferred action — collapse it too.
       const partial = (v.nFrame4D ?? 1) < (v.nTotalFrame4D ?? 1)
-      if (partial && v._sourceFile != null) {
+      if (partial && (v._sourceFile != null || v._urlImageData != null)) {
         // Represent the loaded prefix as a flat 4D sequence of `nFrame4D` frames.
         // For a rare partial 5D/6D File volume this intentionally flattens the
         // higher axes — only the first nFrame4D frames were loaded (not a clean

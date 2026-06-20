@@ -2882,12 +2882,16 @@ export default class NiiVueGPU extends EventTarget {
     if (this._deferredReloads.has(id)) return
     this._deferredReloads.add(id)
     try {
-      // No pairedImgData here by construction: nTotalFrame4D > nFrame4D is set ONLY
-      // by the single-stream partial loader, which only runs for self-contained NII
-      // (.nii.gz / uncompressed .nii File). Detached-header formats (AFNI .HEAD+.BRIK,
-      // NIfTI .hdr/.img) can't partial-load, so they load fully and the early-return
-      // above fires — they never reach this re-fetch.
-      const nii = await NVVolume.loadVolume(src)
+      // limitFrames4D truncates the IMG via `nii2volume` for every loader (not just
+      // the single-stream NII partial path), so `nTotalFrame4D > nFrame4D` is also
+      // reachable for detached-header formats — AFNI .HEAD+.BRIK, NRRD .nhdr+.raw,
+      // MRtrix detached .mif, MetaImage detached .mha. Those readers REQUIRE
+      // `pairedImgData` on every load and throw "pairedImgData not set" without it.
+      // `prepareVolume` stashes the original `urlImageData` runtime-only on the
+      // NVImage so we can feed it back here. `_urlImageData` is undefined for the
+      // common self-contained-NII case, in which case `loadVolume`'s second arg
+      // (null) just stays at its default.
+      const nii = await NVVolume.loadVolume(src, vol._urlImageData ?? null)
       // Reconstruct through nii2volume so datatype/intent conversions (e.g.
       // DT_FLOAT64 -> DT_FLOAT32) are REAPPLIED. The re-fetched bytes are raw, so
       // coercing them through the already-converted `vol.hdr` would corrupt a

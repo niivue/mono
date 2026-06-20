@@ -241,6 +241,16 @@ export type NVImage = {
    * allowlist, so this is never written to a saved document.
    */
   _sourceFile?: File
+  /**
+   * @internal Original `urlImageData` paired payload for detached-header
+   * formats (AFNI `.HEAD`+`.BRIK`, NRRD `.nhdr`+`.raw`, MRtrix detached `.mif`,
+   * MetaImage detached `.mha`). Kept so a deferred 4D re-read can pass it back
+   * into `NVVolume.loadVolume(url, pairedImgData)` — without it the readers
+   * throw "pairedImgData not set" / "detached header requires paired image
+   * data". Runtime-only: the NVDocument serializer's allowlist excludes it,
+   * matching {@link _sourceFile}.
+   */
+  _urlImageData?: string | File
   [key: string]: unknown
 }
 

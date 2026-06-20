@@ -23,7 +23,8 @@ const nv = new NiiVue({
   isColorbarVisible: false,
 })
 nv.addEventListener('locationChange', (e) => {
-  document.getElementById('location').innerHTML = `&nbsp;&nbsp;${e.detail.string}`
+  document.getElementById('location').innerHTML =
+    `&nbsp;&nbsp;${e.detail.string}`
 })
 await nv.attachTo('gl1')
 

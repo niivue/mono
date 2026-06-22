@@ -375,7 +375,12 @@ export function NiivueStage({
       onWheelCapture={handleWheelCapture}
       ref={stageRef}
     >
-      <canvas key={backend} ref={canvasRef} />
+      <canvas
+        key={backend}
+        ref={canvasRef}
+        role="img"
+        aria-label={item ? `3D render of ${item.label}` : 'NiiVue 3D render — no volume selected'}
+      />
       <div className="nv-render-snap-controls" aria-label="Snap render view">
         {RENDER_VIEW_SNAPS.map((snap) => (
           <button
@@ -392,7 +397,7 @@ export function NiivueStage({
           </button>
         ))}
       </div>
-      <div className="nv-render-status">{status}</div>
+      <div className="nv-render-status" role="status" aria-live="polite">{status}</div>
     </div>
   )
 }

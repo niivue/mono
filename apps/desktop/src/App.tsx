@@ -955,7 +955,11 @@ export function App(): JSX.Element {
                       per-layer control later. */}
                   <label className="nv-select">
                     <span>Map</span>
-                    <select value={colormap} onChange={(event) => setColormap(event.target.value)}>
+                    <select
+                      aria-label="Colormap"
+                      value={colormap}
+                      onChange={(event) => setColormap(event.target.value)}
+                    >
                       <option value="gray">Gray</option>
                       <option value="viridis">Viridis</option>
                       <option value="magma">Magma</option>

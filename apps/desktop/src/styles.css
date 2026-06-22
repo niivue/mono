@@ -314,6 +314,12 @@ button {
   color: var(--ink);
 }
 
+/* The inner <select> suppresses its outline, so surface keyboard focus on the
+   container instead. */
+.nv-select:focus-within {
+  border-color: var(--amber);
+}
+
 .nv-workbench {
   --file-list-width: clamp(210px, 18vw, 270px);
   --controls-width: clamp(260px, 24vw, 350px);

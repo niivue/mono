@@ -1734,6 +1734,8 @@ function StablePreviewImage({
   const [currentSrc, setCurrentSrc] = useState<string | null>(null)
   const [pendingSrc, setPendingSrc] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [visible, setVisible] = useState(false)
+  const frameRef = useRef<HTMLSpanElement>(null)
   const releaseRef = useRef<(() => void) | null>(null)
 
   function releaseSlot(): void {
@@ -1741,8 +1743,31 @@ function StablePreviewImage({
     releaseRef.current = null
   }
 
+  // Only load a preview once its tile is at (or near) the viewport, so a large
+  // list/grid doesn't fetch and decode every thumbnail up front. Once loaded it
+  // stays loaded — this kills the startup storm without reload churn on scroll.
   useEffect(() => {
-    if (src === currentSrc) {
+    const frame = frameRef.current
+    if (!frame) return
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '320px' }
+    )
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!visible || src === currentSrc) {
       releaseSlot()
       setPendingSrc(null)
       setLoading(false)
@@ -1767,7 +1792,7 @@ function StablePreviewImage({
     return () => {
       cancelled = true
     }
-  }, [currentSrc, src])
+  }, [visible, currentSrc, src])
 
   // Release the slot if we unmount mid-load so it can never leak.
   useEffect(() => releaseSlot, [])
@@ -1794,7 +1819,7 @@ function StablePreviewImage({
   }
 
   return (
-    <span className={frameClassName}>
+    <span className={frameClassName} ref={frameRef}>
       {loading && !currentSrc ? (
         // Decorative only: a live region here would fire for every tile on a
         // grid load and spam assistive tech. The spinner is a visual hint.

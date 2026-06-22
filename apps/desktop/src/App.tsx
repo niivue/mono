@@ -23,7 +23,6 @@ import {
   FolderOpen,
   GripHorizontal,
   GripVertical,
-  History,
   LoaderCircle,
   X,
   Maximize2,
@@ -634,52 +633,60 @@ export function App(): JSX.Element {
             <button
               className="nv-tool-button"
               disabled={isOpeningDataset}
-              onClick={() => void openLocalDataset()}
-              title={cacheRoot ? `Open dataset directory. Temp cache: ${cacheRoot}` : 'Open dataset directory'}
-              type="button"
-            >
-              <FolderOpen size={15} />
-              <span>{isOpeningDataset ? 'Opening' : 'Open'}</span>
-            </button>
-            <button
-              className="nv-icon-button"
-              disabled={isOpeningDataset}
               onClick={() => setIsRecentMenuOpen((open) => !open)}
-              title="Recent datasets"
+              title={cacheRoot ? `Datasets. Temp cache: ${cacheRoot}` : 'Datasets'}
               type="button"
               aria-haspopup="menu"
               aria-expanded={isRecentMenuOpen}
             >
-              <History size={15} />
+              <Database size={15} />
+              <span>{isOpeningDataset ? 'Opening' : 'Datasets'}</span>
+              <ChevronDown size={14} />
             </button>
             {isRecentMenuOpen ? (
               <div className="nv-recent-menu" role="menu">
-                {recentDatasets.length === 0 ? (
-                  <p className="nv-recent-empty">No recent datasets yet.</p>
+                <button
+                  className="nv-recent-item nv-recent-open"
+                  disabled={isOpeningDataset}
+                  onClick={() => {
+                    setIsRecentMenuOpen(false)
+                    void openLocalDataset()
+                  }}
+                  type="button"
+                  role="menuitem"
+                >
+                  <FolderOpen size={14} />
+                  <span className="nv-recent-item-name">Open dataset directory…</span>
+                </button>
+                {recentDatasets.length > 0 ? (
+                  <>
+                    <div className="nv-recent-divider" role="separator" />
+                    {recentDatasets.map((path) => (
+                      <div key={path} className="nv-recent-row">
+                        <button
+                          className="nv-recent-item"
+                          onClick={() => void openRecentDataset(path)}
+                          title={path}
+                          type="button"
+                          role="menuitem"
+                        >
+                          <span className="nv-recent-item-name">{recentDatasetLabel(path)}</span>
+                          <span className="nv-recent-item-path">{path}</span>
+                        </button>
+                        <button
+                          className="nv-recent-remove"
+                          onClick={() => removeRecentDataset(path)}
+                          title="Remove from recents"
+                          type="button"
+                          aria-label={`Remove ${path} from recents`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </>
                 ) : (
-                  recentDatasets.map((path) => (
-                    <div key={path} className="nv-recent-row">
-                      <button
-                        className="nv-recent-item"
-                        onClick={() => void openRecentDataset(path)}
-                        title={path}
-                        type="button"
-                        role="menuitem"
-                      >
-                        <span className="nv-recent-item-name">{recentDatasetLabel(path)}</span>
-                        <span className="nv-recent-item-path">{path}</span>
-                      </button>
-                      <button
-                        className="nv-recent-remove"
-                        onClick={() => removeRecentDataset(path)}
-                        title="Remove from recents"
-                        type="button"
-                        aria-label={`Remove ${path} from recents`}
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))
+                  <p className="nv-recent-empty">No recent datasets yet.</p>
                 )}
               </div>
             ) : null}

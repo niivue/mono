@@ -264,6 +264,18 @@ button {
   max-width: 100%;
 }
 
+.nv-recent-open {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.nv-recent-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
 .nv-recent-remove {
   display: grid;
   place-items: center;

@@ -2336,7 +2336,10 @@ function normalizeDesktopLayout(
   const sourceRows = layoutRows(sources.length, columns)
   const derivedRows = layoutRows(derivatives.length, columns)
   const pitch = tileSize + gap
-  const sectionLabelSpace = tileSize * 2
+  // Just enough headroom for the (fixed-size) section label chip — keeping this
+  // small lets the first row of tiles sit near the top of the grid instead of
+  // being pushed to the bottom when a dataset has only a row or two.
+  const sectionLabelSpace = Math.round(tileSize / 2)
   const sectionGap = Math.max(Math.round(tileSize / 2), gap)
   const sourceTop = sectionLabelSpace
   const sourceHeight = layoutGridHeight(sourceRows, tileSize, gap)

@@ -963,6 +963,11 @@ button {
   position: absolute;
   inset: var(--osd-chrome-height) 0 var(--osd-footer-height);
   overflow: auto;
+  /* Reserve the scrollbar's space permanently so clientWidth/Height don't change
+     when a scrollbar toggles. Without this, the world is re-fit to the narrower
+     width, the scrollbar disappears, it re-fits wider, and the grid shivers
+     (most visible at zoom levels sitting right on the scrollbar threshold). */
+  scrollbar-gutter: stable;
   overflow-anchor: none;
   overscroll-behavior: contain;
   cursor: grab;

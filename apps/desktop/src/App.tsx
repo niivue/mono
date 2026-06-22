@@ -251,6 +251,8 @@ export function App(): JSX.Element {
   const isOpeningDatasetRef = useRef(false)
   const [serverUrl, setServerUrl] = useState('')
   const [datasetRoot, setDatasetRoot] = useState('')
+  const [bidsName, setBidsName] = useState('')
+  const [bidsDatasetDoi, setBidsDatasetDoi] = useState('')
   const [cacheRoot, setCacheRoot] = useState('')
   const [manifest, setManifest] = useState<DesktopManifest | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -327,6 +329,8 @@ export function App(): JSX.Element {
         if (cancelled) return
         setServerUrl(resolved)
         setDatasetRoot(serverInfo?.datasetRoot ?? '')
+        setBidsName(serverInfo?.bidsName ?? '')
+        setBidsDatasetDoi(serverInfo?.bidsDatasetDoi ?? '')
         setCacheRoot(serverInfo?.cacheRoot ?? '')
         const nextManifest = await fetchDesktopManifest(resolved)
         if (cancelled) return
@@ -449,6 +453,8 @@ export function App(): JSX.Element {
     setMetadataStatus('No metadata loaded.')
     setServerUrl(result.url)
     setDatasetRoot(result.datasetRoot)
+    setBidsName(result.bidsName ?? '')
+    setBidsDatasetDoi(result.bidsDatasetDoi ?? '')
     setCacheRoot(result.cacheRoot)
     setQuery('')
     setSelectedRoles(new Set())
@@ -563,6 +569,8 @@ export function App(): JSX.Element {
 
         setServerUrl(serverInfo.url)
         setDatasetRoot(serverInfo.datasetRoot ?? '')
+        setBidsName(serverInfo.bidsName ?? '')
+        setBidsDatasetDoi(serverInfo.bidsDatasetDoi ?? '')
         setCacheRoot(serverInfo.cacheRoot ?? '')
       }
     }
@@ -592,7 +600,9 @@ export function App(): JSX.Element {
           </div>
           <div>
             <h1>NeuroVue</h1>
-            <p>{datasetRoot || serverUrl || 'Resolving local server'}</p>
+            <p title={[datasetRoot, bidsDatasetDoi && `DOI: ${bidsDatasetDoi}`].filter(Boolean).join(' · ') || undefined}>
+              {bidsName || datasetRoot || serverUrl || 'Resolving local server'}
+            </p>
           </div>
         </div>
 

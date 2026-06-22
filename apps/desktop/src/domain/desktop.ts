@@ -107,6 +107,9 @@ export interface ServerInfo {
   volumeCount: number
   datasetRoot?: string | null
   cacheRoot?: string
+  bidsName?: string | null
+  bidsVersion?: string | null
+  bidsDatasetDoi?: string | null
 }
 
 export interface DatasetOpenResult {
@@ -115,6 +118,9 @@ export interface DatasetOpenResult {
   volumeCount: number
   datasetRoot: string
   cacheRoot: string
+  bidsName?: string | null
+  bidsVersion?: string | null
+  bidsDatasetDoi?: string | null
 }
 
 export interface ClipPlane {

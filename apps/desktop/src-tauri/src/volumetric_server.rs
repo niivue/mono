@@ -213,6 +213,39 @@ pub fn dataset_root(handle: &ServerHandle) -> Option<PathBuf> {
         .and_then(|root| root.clone())
 }
 
+/// BIDS dataset metadata read from `dataset_description.json`. BIDS defines no
+/// guaranteed-unique dataset id, so this is purely informational (the preview
+/// cache is still keyed by path); `Name` and the optional `DatasetDOI` are the
+/// useful identifiers to surface.
+#[derive(Clone, Default)]
+pub struct BidsDatasetInfo {
+    pub name: Option<String>,
+    pub bids_version: Option<String>,
+    pub dataset_doi: Option<String>,
+}
+
+/// Read `dataset_description.json` at the current dataset root, if present.
+pub fn bids_dataset_info(handle: &ServerHandle) -> Option<BidsDatasetInfo> {
+    read_bids_dataset_info(&dataset_root(handle)?)
+}
+
+fn read_bids_dataset_info(root: &FsPath) -> Option<BidsDatasetInfo> {
+    let text = fs::read_to_string(root.join("dataset_description.json")).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    let string_field = |key: &str| {
+        value
+            .get(key)
+            .and_then(Value::as_str)
+            .map(|raw| raw.trim().to_string())
+            .filter(|trimmed| !trimmed.is_empty())
+    };
+    Some(BidsDatasetInfo {
+        name: string_field("Name"),
+        bids_version: string_field("BIDSVersion"),
+        dataset_doi: string_field("DatasetDOI"),
+    })
+}
+
 pub fn cache_root() -> PathBuf {
     std::env::temp_dir().join("neurovue")
 }

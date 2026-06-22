@@ -24,6 +24,9 @@ struct NeuroVueServerInfo {
     volume_count: usize,
     dataset_root: Option<String>,
     cache_root: String,
+    bids_name: Option<String>,
+    bids_version: Option<String>,
+    bids_dataset_doi: Option<String>,
 }
 
 pub(crate) struct NeuroVueState {
@@ -69,10 +72,14 @@ struct DatasetOpenResult {
     volume_count: usize,
     dataset_root: String,
     cache_root: String,
+    bids_name: Option<String>,
+    bids_version: Option<String>,
+    bids_dataset_doi: Option<String>,
 }
 
 #[tauri::command]
 fn neurovue_server_info(state: tauri::State<'_, NeuroVueState>) -> NeuroVueServerInfo {
+    let bids = volumetric_server::bids_dataset_info(&state.server);
     NeuroVueServerInfo {
         url: state.server.url.clone(),
         port: state.server.port,
@@ -80,6 +87,9 @@ fn neurovue_server_info(state: tauri::State<'_, NeuroVueState>) -> NeuroVueServe
         dataset_root: volumetric_server::dataset_root(&state.server)
             .map(|path| path.display().to_string()),
         cache_root: volumetric_server::cache_root().display().to_string(),
+        bids_name: bids.as_ref().and_then(|info| info.name.clone()),
+        bids_version: bids.as_ref().and_then(|info| info.bids_version.clone()),
+        bids_dataset_doi: bids.as_ref().and_then(|info| info.dataset_doi.clone()),
     }
 }
 
@@ -103,6 +113,7 @@ fn open_dataset_at_path(
         .unwrap_or_else(|| root.to_path_buf())
         .display()
         .to_string();
+    let bids = volumetric_server::bids_dataset_info(server);
 
     Ok(DatasetOpenResult {
         url: server.url.clone(),
@@ -110,6 +121,9 @@ fn open_dataset_at_path(
         volume_count,
         dataset_root,
         cache_root: volumetric_server::cache_root().display().to_string(),
+        bids_name: bids.as_ref().and_then(|info| info.name.clone()),
+        bids_version: bids.as_ref().and_then(|info| info.bids_version.clone()),
+        bids_dataset_doi: bids.as_ref().and_then(|info| info.dataset_doi.clone()),
     })
 }
 

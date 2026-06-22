@@ -40,3 +40,10 @@ packages/niivue/perf-report.html
 # Generated self-contained niivue bundle (built by prebuild:standalone, fetched
 # at runtime by the save-html demo; regenerated on dev/build).
 apps/demo-ext-save-html/public/niivue-standalone.js
+
+# Large generated POC / fixture data (OME-Zarr chunks, DICOM-WSI, tile range
+# probes). Multi-GB, regenerated locally — never committed.
+apps/iiif-volumetric-demo/public/range-poc/
+apps/iiif-volumetric-demo/public/tile-range-poc/
+packages/niivue/public/dicom-wsi/
+packages/niivue/public/omezarr/

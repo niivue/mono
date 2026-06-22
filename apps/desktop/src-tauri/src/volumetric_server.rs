@@ -250,9 +250,9 @@ pub fn spawn_default() -> ServerHandle {
                 .layer(CorsLayer::permissive())
                 .with_state(state);
 
-            axum::serve(listener, app)
-                .await
-                .expect("serve NeuroVue local server");
+            if let Err(error) = axum::serve(listener, app).await {
+                eprintln!("NeuroVue local server stopped: {error}");
+            }
         });
     });
 
@@ -268,12 +268,16 @@ pub fn spawn_default() -> ServerHandle {
     }
 }
 
+/// Lock a mutex, recovering the guard if another thread poisoned it by panicking
+/// while holding it. These locks never wrap panicking work, so the data behind
+/// them stays consistent — and degrading to "every volume vanished" on poison is
+/// far worse than carrying on.
+fn lock_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 pub fn dataset_root(handle: &ServerHandle) -> Option<PathBuf> {
-    handle
-        .dataset_root
-        .lock()
-        .ok()
-        .and_then(|root| root.clone())
+    lock_recover(&handle.dataset_root).clone()
 }
 
 /// BIDS dataset metadata read from `dataset_description.json`. BIDS defines no
@@ -348,17 +352,9 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
     let warm_volumes = volumes.clone();
     let warm_root = Some(root.clone());
 
-    *handle
-        .volumes
-        .lock()
-        .map_err(|_| "open_dataset_root: volume store is unavailable".to_string())? = volumes;
-    *handle
-        .dataset_root
-        .lock()
-        .map_err(|_| "open_dataset_root: dataset root is unavailable".to_string())? = Some(root);
-    if let Ok(mut cache) = handle.preview_cache.lock() {
-        cache.clear();
-    }
+    *lock_recover(&handle.volumes) = volumes;
+    *lock_recover(&handle.dataset_root) = Some(root);
+    lock_recover(&handle.preview_cache).clear();
 
     // Cancel any in-flight warming for the previous dataset, then warm the new one.
     let my_gen = handle.warm_generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -411,10 +407,7 @@ pub fn register_derived_volume(
             output_path.display()
         )
     })?;
-    let mut volumes = handle
-        .volumes
-        .lock()
-        .map_err(|_| "register_derived_volume: volume store is unavailable".to_string())?;
+    let mut volumes = lock_recover(&handle.volumes);
     let source_id = volumes
         .iter()
         .find(|volume| {
@@ -453,11 +446,7 @@ pub fn register_derived_volume(
 }
 
 async fn api_info(State(state): State<AppState>) -> Json<Value> {
-    let volumes = state
-        .volumes
-        .lock()
-        .map(|volumes| volumes.clone())
-        .unwrap_or_default();
+    let volumes = lock_recover(&state.volumes).clone();
     Json(json!({
         "service": "neurovue-volumetric-server",
         "version": "0.1.0",
@@ -509,11 +498,7 @@ async fn desktop_manifest(
     Path(desktop_id): Path<String>,
     State(state): State<AppState>,
 ) -> Json<Value> {
-    let volumes = state
-        .volumes
-        .lock()
-        .map(|volumes| volumes.clone())
-        .unwrap_or_default();
+    let volumes = lock_recover(&state.volumes).clone();
     let tile_size = 1024_u32;
     let gap = 96_u32;
     let pitch = tile_size + gap;
@@ -773,12 +758,7 @@ async fn image_tile(
         query.level,
         query.v.as_deref().unwrap_or("")
     );
-    if let Some(cached) = state
-        .preview_cache
-        .lock()
-        .ok()
-        .and_then(|cache| cache.get(&cache_key).cloned())
-    {
+    if let Some(cached) = lock_recover(&state.preview_cache).get(&cache_key).cloned() {
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/bmp"));
         return Ok((headers, cached).into_response());
     }
@@ -798,9 +778,7 @@ async fn image_tile(
     );
     if let Some(ref dp) = disk_path {
         if let Ok(bytes) = fs::read(dp) {
-            if let Ok(mut cache) = state.preview_cache.lock() {
-                cache.insert(cache_key.clone(), bytes.clone());
-            }
+            lock_recover(&state.preview_cache).insert(cache_key.clone(), bytes.clone());
             headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/bmp"));
             return Ok((headers, bytes).into_response());
         }
@@ -811,12 +789,7 @@ async fn image_tile(
     // failed acquire is unreachable; proceed without a permit if it ever errors.
     let _render_permit = state.render_semaphore.acquire().await.ok();
     // Another request may have rendered this exact tile while we waited.
-    if let Some(cached) = state
-        .preview_cache
-        .lock()
-        .ok()
-        .and_then(|cache| cache.get(&cache_key).cloned())
-    {
+    if let Some(cached) = lock_recover(&state.preview_cache).get(&cache_key).cloned() {
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/bmp"));
         return Ok((headers, cached).into_response());
     }
@@ -830,9 +803,7 @@ async fn image_tile(
         &state.pyramid_locks,
         dataset_root.as_deref(),
     ) {
-        if let Ok(mut cache) = state.preview_cache.lock() {
-            cache.insert(cache_key, bmp.clone());
-        }
+        lock_recover(&state.preview_cache).insert(cache_key, bmp.clone());
         if let Some(dp) = disk_path {
             write_preview_to_disk(&dp, &bmp);
         }
@@ -1780,17 +1751,16 @@ fn read_json_sidecar(path: &FsPath) -> Option<Value> {
 }
 
 fn find_volume(state: &AppState, vol_id: &str) -> Option<VolumeEntry> {
-    state
-        .volumes
-        .lock()
-        .ok()
-        .and_then(|volumes| volumes.iter().find(|volume| volume.id == vol_id).cloned())
+    lock_recover(&state.volumes)
+        .iter()
+        .find(|volume| volume.id == vol_id)
+        .cloned()
 }
 
 /// The currently-open dataset root. Every volume in the store belongs to it, so
 /// it scopes the per-dataset image cache directory.
 fn current_dataset_root(state: &AppState) -> Option<PathBuf> {
-    state.dataset_root.lock().ok().and_then(|root| root.clone())
+    lock_recover(&state.dataset_root).clone()
 }
 
 fn preview_level_for_size(size: &str) -> u8 {

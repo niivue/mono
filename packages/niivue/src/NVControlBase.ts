@@ -51,6 +51,7 @@ import type {
   CanvasViewport,
   ColorMap,
   CustomLayoutTile,
+  FocusBox,
   ImageFromUrlOptions,
   LUT,
   MeshFromUrlOptions,
@@ -469,6 +470,19 @@ export default class NiiVueGPU extends EventTarget {
   set crosshairPos(v: vec3) {
     this.model.scene.crosshairPos = v
     this.emit('change', { property: 'crosshairPos', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Transient world-space box outlined as 12 edges on the 3D render view (e.g. a
+   * focused subvolume). `min`/`max` are in the scene's world-mm space. Set null
+   * to clear. Not serialized.
+   */
+  get focusBox(): FocusBox | null {
+    return this.model._focusBox
+  }
+  set focusBox(box: FocusBox | null) {
+    this.model._focusBox = box
     this.drawScene()
   }
 

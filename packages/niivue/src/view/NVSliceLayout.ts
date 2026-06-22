@@ -2,7 +2,12 @@ import { type mat4, vec3, vec4 } from 'gl-matrix'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
-import type { CustomLayoutTile, NVGlobalCamera, ViewHitTest } from '@/NVTypes'
+import type {
+  CustomLayoutTile,
+  FocusBox,
+  NVGlobalCamera,
+  ViewHitTest,
+} from '@/NVTypes'
 import type { BuildLineFn, LineData } from './NVLine'
 
 // ---------- Types ----------
@@ -1006,6 +1011,70 @@ export function buildCrossLines(
         lines.push(lineFn(x1, y1, x2, y2, thickness, color))
       }
     }
+  }
+  return lines
+}
+
+// ---------- Focus box ----------
+
+// 12 edges of an axis-aligned box, as index pairs into the 8 corners below.
+const FOCUS_BOX_EDGES: [number, number][] = [
+  [0, 1],
+  [1, 3],
+  [3, 2],
+  [2, 0], // min-z face
+  [4, 5],
+  [5, 7],
+  [7, 6],
+  [6, 4], // max-z face
+  [0, 4],
+  [1, 5],
+  [2, 6],
+  [3, 7], // verticals
+]
+
+/**
+ * Build the 12 screen-space edges of a world-mm axis-aligned `box` for a 3D
+ * render tile, projecting its 8 corners through the tile's (perspective) MVP.
+ * Edges with a corner at/behind the camera (clip w <= 0) are dropped. `ltwh` is
+ * the tile's pixel rect; `lineFn` is the backend's `buildLine`.
+ */
+export function buildFocusBoxLines(
+  box: FocusBox,
+  mvpMatrix: mat4,
+  ltwh: number[],
+  lineFn: BuildLineFn,
+): LineData[] {
+  const { min, max } = box
+  const corners: [number, number, number][] = [
+    [min[0], min[1], min[2]],
+    [max[0], min[1], min[2]],
+    [min[0], max[1], min[2]],
+    [max[0], max[1], min[2]],
+    [min[0], min[1], max[2]],
+    [max[0], min[1], max[2]],
+    [min[0], max[1], max[2]],
+    [max[0], max[1], max[2]],
+  ]
+  // Perspective-correct projection (unlike the orthographic slice path): divide
+  // by clip w. Null for corners at/behind the camera.
+  const screen = corners.map((c): [number, number] | null => {
+    const clip = vec4.create()
+    vec4.transformMat4(clip, vec4.fromValues(c[0], c[1], c[2], 1), mvpMatrix)
+    const w = clip[3]
+    if (w <= 1e-6) return null
+    return [
+      ltwh[0] + (clip[0] / w + 1) * 0.5 * ltwh[2],
+      ltwh[1] + (1 - clip[1] / w) * 0.5 * ltwh[3],
+    ]
+  })
+  const thickness = Math.max(1, box.thickness)
+  const lines: LineData[] = []
+  for (const [a, b] of FOCUS_BOX_EDGES) {
+    const p0 = screen[a]
+    const p1 = screen[b]
+    if (p0 && p1)
+      lines.push(lineFn(p0[0], p0[1], p1[0], p1[1], thickness, box.color))
   }
   return lines
 }

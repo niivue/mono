@@ -11,6 +11,7 @@ import type {
   CompletedMeasurement,
   DragOverlay,
   DrawConfig,
+  FocusBox,
   ImageFromUrlOptions,
   InteractionConfig,
   LayoutConfig,
@@ -75,6 +76,8 @@ export default class NVModel {
   // --- Transient state ---
   /** Transient drag overlay for view rendering (controller-owned, not serialized) */
   _dragOverlay: DragOverlay | null = null
+  /** Transient world-space box outlined on 3D render tiles (e.g. focus region) */
+  _focusBox: FocusBox | null = null
   /** Transient annotation preview for live rendering during brush strokes */
   _annotationPreview: VectorAnnotation | null = null
   /** Transient eraser preview: overrides persisted annotations during erase drag */

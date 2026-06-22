@@ -28,6 +28,7 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
   chunkSampleTransform,
@@ -662,6 +663,18 @@ export default class NVGlview {
             ),
           )
         }
+      }
+      // Outline the focus box on 3D render tiles (project its 8 corners through
+      // this tile's MVP; drawn with the crosshair/overlay lines below).
+      if (md._focusBox && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
+        crossLinesList.push(
+          ...NVSliceLayout.buildFocusBoxLines(
+            md._focusBox,
+            mvpMatrix as mat4,
+            ltwh,
+            buildLine,
+          ),
+        )
       }
       gl.viewport(
         bx + ltwh[0],
@@ -1615,6 +1628,46 @@ export default class NVGlview {
           1,
           mvpMatrix,
         )
+        // Exploded view: blocks are displaced, so the un-exploded bounding box no
+        // longer matches what's on screen. Pick against each block's exploded
+        // AABB (first window-visible voxel in the hit block) and map the recovered
+        // un-exploded voxel back to mm for the crosshair.
+        if (
+          vol.chunkPlan &&
+          vol.matRAS &&
+          chunkExplodeEnabled(vol.chunkExplode)
+        ) {
+          const matRAS = vol.matRAS
+          const base = vol.pickSampler
+          const sample = base
+            ? (vx: number, vy: number, vz: number): number => {
+                const mm = NVTransforms.vox2mm(
+                  null,
+                  [vx, vy, vz],
+                  matRAS as mat4,
+                )
+                return base(mm[0], mm[1], mm[2])
+              }
+            : undefined
+          const picked = pickExplodedVoxel(
+            vol.chunkPlan,
+            matRAS,
+            vol.chunkExplode,
+            [near[0], near[1], near[2]],
+            [far[0] - near[0], far[1] - near[1], far[2] - near[2]],
+            {
+              sample,
+              threshold: 0,
+              clipPlanes: md.clipPlanes,
+              isCutaway: md.scene.isClipPlaneCutaway,
+            },
+          )
+          if (picked) {
+            const mm = NVTransforms.vox2mm(null, picked.voxel, matRAS as mat4)
+            return [mm[0], mm[1], mm[2]]
+          }
+          return null
+        }
         // With a CPU sampler (app-supplied coarse data), march to the first
         // window-visible voxel; otherwise land on the bounding-box / clip surface.
         const hitMM = vol.pickSampler

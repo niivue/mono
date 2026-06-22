@@ -72,6 +72,9 @@ const SIDEBAR_PREVIEW_SIZE = 96
 const DESKTOP_PREVIEW_TIERS = [96, 192, 384, 768, 1024] as const
 const PREVIEW_TIER_SETTLE_MS = 180
 const PREVIEW_IMAGE_VERSION = 5
+// Abandon a preview load that never fires load/error, so it can't hold a queue
+// slot forever and stall all other preview loading.
+const PREVIEW_LOAD_TIMEOUT_MS = 15000
 const RECENT_DATASETS_KEY = 'neurovue.recentDatasets.v1'
 const MAX_RECENT_DATASETS = 10
 const TERMINAL_OPEN_KEY = 'neurovue.terminalOpen.v1'
@@ -1704,6 +1707,14 @@ function StablePreviewImage({
 
   // Release the slot if we unmount mid-load so it can never leak.
   useEffect(() => releaseSlot, [])
+
+  // Safety valve: if a pending <img> never fires load or error, abandon it after
+  // a timeout so its queue slot is freed instead of held indefinitely.
+  useEffect(() => {
+    if (!pendingSrc) return
+    const timer = window.setTimeout(abandonPendingSrc, PREVIEW_LOAD_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [pendingSrc])
 
   function commitPendingSrc(): void {
     setCurrentSrc((previous) => (pendingSrc ? pendingSrc : previous))

@@ -419,6 +419,159 @@ export function unprojectScreen(
 }
 
 /**
+ * Entry point (mm) where the segment `near`→`far` first crosses the axis-aligned
+ * mm box `[lo, hi]` while staying on the kept side of any active clip planes, or
+ * null if it misses. `near`/`far` are typically two `unprojectScreen` points
+ * (depth 0 and 1) bounding the view ray. Used to pick a chunked/multi-LOD
+ * volume's near *visible* surface for the crosshair when the GPU depth-pick
+ * cannot sample its (non-single) texture.
+ *
+ * `clipPlanes` is the flat scene clip-plane array ([nx,ny,nz,a] per plane, in the
+ * volume's [0,1] cube where the kept side is `dot(n, f-0.5) - a >= 0`; the
+ * sentinel `|a| > 1` means "no clip"). When a solid clip plane has carved away
+ * the near box face, the entry advances to the clip surface (the visible cut)
+ * instead of the clipped-away box face. Cutaway mode carves an interior slab
+ * rather than a half-space, so clip refinement is skipped there (box entry).
+ */
+interface ClippedRaySegment {
+  o: number[]
+  d: number[]
+  tmin: number
+  tmax: number
+}
+
+/**
+ * Intersect the segment `near`→`far` with the axis-aligned mm box `[lo, hi]`,
+ * then trim to the kept side of each solid clip plane. Returns the surviving
+ * `[tmin, tmax]` sub-segment (and the ray origin/direction), or null if nothing
+ * survives. Shared by `rayBoxEntryMM` and `rayMarchFirstVisibleMM`.
+ */
+function clipRaySegment(
+  near: ArrayLike<number>,
+  far: ArrayLike<number>,
+  lo: ArrayLike<number>,
+  hi: ArrayLike<number>,
+  clipPlanes?: ArrayLike<number>,
+  isCutaway?: boolean,
+): ClippedRaySegment | null {
+  const o = [near[0], near[1], near[2]]
+  const d = [far[0] - near[0], far[1] - near[1], far[2] - near[2]]
+  let tmin = 0
+  let tmax = 1
+  for (let i = 0; i < 3; i++) {
+    const loI = Math.min(lo[i], hi[i])
+    const hiI = Math.max(lo[i], hi[i])
+    if (Math.abs(d[i]) < 1e-9) {
+      if (o[i] < loI || o[i] > hiI) return null
+    } else {
+      let t1 = (loI - o[i]) / d[i]
+      let t2 = (hiI - o[i]) / d[i]
+      if (t1 > t2) {
+        const tmp = t1
+        t1 = t2
+        t2 = tmp
+      }
+      tmin = Math.max(tmin, t1)
+      tmax = Math.min(tmax, t2)
+      if (tmin > tmax) return null
+    }
+  }
+  // Trim the in-box segment to the kept side of each solid clip plane. The plane
+  // value g(t) = dot(n, f(t)-0.5) - a is affine in t (f = (mm-lo)/(hi-lo)), so a
+  // single crossing splits kept (g>=0) from removed (g<0).
+  if (clipPlanes && !isCutaway) {
+    const cx = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]
+    const sz = [hi[0] - lo[0] || 1, hi[1] - lo[1] || 1, hi[2] - lo[2] || 1]
+    const planeCount = Math.floor(clipPlanes.length / 4)
+    for (let p = 0; p < planeCount; p++) {
+      const nx = clipPlanes[p * 4 + 0]
+      const ny = clipPlanes[p * 4 + 1]
+      const nz = clipPlanes[p * 4 + 2]
+      const a = clipPlanes[p * 4 + 3]
+      if (a > 1 || a < -1) continue // sentinel: no clip
+      if (nx * nx + ny * ny + nz * nz < 1e-12) continue // degenerate normal
+      const n = [nx, ny, nz]
+      let g0 = -a
+      let gd = 0
+      for (let i = 0; i < 3; i++) {
+        g0 += (n[i] * (o[i] - cx[i])) / sz[i]
+        gd += (n[i] * d[i]) / sz[i]
+      }
+      if (Math.abs(gd) < 1e-12) {
+        if (g0 < 0) return null // ray wholly on the removed side
+      } else if (gd > 0) {
+        tmin = Math.max(tmin, -g0 / gd) // kept for t >= crossing
+      } else {
+        tmax = Math.min(tmax, -g0 / gd) // kept for t <= crossing
+      }
+      if (tmin > tmax) return null
+    }
+  }
+  return { o, d, tmin, tmax }
+}
+
+/**
+ * Entry point (mm) where the segment `near`→`far` first crosses the axis-aligned
+ * mm box `[lo, hi]` while staying on the kept side of any active clip planes, or
+ * null if it misses. `near`/`far` are typically two `unprojectScreen` points
+ * (depth 0 and 1) bounding the view ray. Used to pick a chunked/multi-LOD
+ * volume's near *visible* surface for the crosshair when the GPU depth-pick
+ * cannot sample its (non-single) texture.
+ *
+ * `clipPlanes` is the flat scene clip-plane array ([nx,ny,nz,a] per plane, in the
+ * volume's [0,1] cube where the kept side is `dot(n, f-0.5) - a >= 0`; the
+ * sentinel `|a| > 1` means "no clip"). When a solid clip plane has carved away
+ * the near box face, the entry advances to the clip surface (the visible cut)
+ * instead of the clipped-away box face. Cutaway mode carves an interior slab
+ * rather than a half-space, so clip refinement is skipped there (box entry).
+ */
+export function rayBoxEntryMM(
+  near: ArrayLike<number>,
+  far: ArrayLike<number>,
+  lo: ArrayLike<number>,
+  hi: ArrayLike<number>,
+  clipPlanes?: ArrayLike<number>,
+  isCutaway?: boolean,
+): [number, number, number] | null {
+  const seg = clipRaySegment(near, far, lo, hi, clipPlanes, isCutaway)
+  if (!seg) return null
+  const { o, d, tmin } = seg
+  return [o[0] + d[0] * tmin, o[1] + d[1] * tmin, o[2] + d[2] * tmin]
+}
+
+/**
+ * March the kept (in-box, un-clipped) part of the view ray and return the mm of
+ * the first sample whose `sampler(x,y,z)` is positive — the first *visible*
+ * voxel given the current window (the app's sampler returns 0 for transparent /
+ * below-threshold values). Returns null if the ray misses or no visible voxel is
+ * crossed. `steps` bounds the march cost (the segment is short — one volume
+ * crossing). See `rayBoxEntryMM` for the clip-plane convention.
+ */
+export function rayMarchFirstVisibleMM(
+  near: ArrayLike<number>,
+  far: ArrayLike<number>,
+  lo: ArrayLike<number>,
+  hi: ArrayLike<number>,
+  sampler: (x: number, y: number, z: number) => number,
+  clipPlanes?: ArrayLike<number>,
+  isCutaway?: boolean,
+  steps = 512,
+): [number, number, number] | null {
+  const seg = clipRaySegment(near, far, lo, hi, clipPlanes, isCutaway)
+  if (!seg) return null
+  const { o, d, tmin, tmax } = seg
+  const n = Math.max(1, Math.floor(steps))
+  for (let s = 0; s <= n; s++) {
+    const t = tmin + ((tmax - tmin) * s) / n
+    const x = o[0] + d[0] * t
+    const y = o[1] + d[1] * t
+    const z = o[2] + d[2] * t
+    if (sampler(x, y, z) > 0) return [x, y, z]
+  }
+  return null
+}
+
+/**
  * Compute the plane equation (normal + point) for a 2D slice defined by the
  * volume's `frac2mm` matrix, a slice type, and a slice fraction.
  * Returns null if the plane degenerates (zero-area cross product).

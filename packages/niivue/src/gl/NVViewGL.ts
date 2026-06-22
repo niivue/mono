@@ -1595,6 +1595,49 @@ export default class NVGlview {
       mvpMatrix = result[0] as mat4
       rayDir = result[3] as Float32Array
     }
+    // Chunked / multi-LOD volumes have no single whole-volume texture, so the
+    // GPU depth-pass cannot sample them. Fall back to a CPU ray/AABB pick against
+    // the volume's mm bounding box and return the near-surface entry under the
+    // cursor — enough to move the crosshair (and thus the multi-LOD focus) in a
+    // 3D render. Mirrors the WebGPU backend.
+    if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
+      const vol = md.volumes[0]
+      if (vol?.extentsMin && vol?.extentsMax) {
+        const near = NVTransforms.unprojectScreen(
+          hit.normalizedX,
+          hit.normalizedY,
+          0,
+          mvpMatrix,
+        )
+        const far = NVTransforms.unprojectScreen(
+          hit.normalizedX,
+          hit.normalizedY,
+          1,
+          mvpMatrix,
+        )
+        // With a CPU sampler (app-supplied coarse data), march to the first
+        // window-visible voxel; otherwise land on the bounding-box / clip surface.
+        const hitMM = vol.pickSampler
+          ? NVTransforms.rayMarchFirstVisibleMM(
+              near,
+              far,
+              vol.extentsMin,
+              vol.extentsMax,
+              vol.pickSampler,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+          : NVTransforms.rayBoxEntryMM(
+              near,
+              far,
+              vol.extentsMin,
+              vol.extentsMax,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+        if (hitMM) return hitMM
+      }
+    }
     // Depth-pick via scissor + readPixels (works for all tile types)
     // Offset by bounds origin for shared-canvas support
     const dpBx = this._boundsOffsetX

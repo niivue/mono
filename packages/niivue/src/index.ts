@@ -127,11 +127,13 @@ export {
 } from './signal/processing'
 export type {
   ChunkPlan,
+  MultiLodFocus,
+  MultiLodOptions,
   Vec3f,
   Vec3i,
   VolumeChunkDesc,
 } from './volume/chunking'
-export { chunkVolumeGrid } from './volume/chunking'
+export { chunkVolumeGrid, chunkVolumeMultiLOD } from './volume/chunking'
 // MRSI (spatial spectroscopic imaging) volume helpers
 export { buildDerivedScalarVolume, isMrsiVolume } from './volume/mrsi'
 // Volume construction/serialization for extensions building derived volumes

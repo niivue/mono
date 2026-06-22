@@ -220,13 +220,24 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 		discard;
 	}
 	let dir = dirVec / len;
-	// Step size is per-voxel of the FULL volume (not the chunk texture, which
-	// may include halo). For non-chunked: volumeTexDimsFull == textureDimensions(volume, 0).
-	let texVox = params.volumeTexDimsFull.xyz;
+	// Step size is per-voxel of this brick's source level across the FULL cube
+	// (not the chunk texture, which may include halo). Equals volumeTexDimsFull
+	// for non-chunked/single-level draws; coarser for multi-LOD bricks so each
+	// steps at its own resolution.
+	let texVox = params.rayStepTexVox.xyz;
 	let lenVox = length(dirVec * texVox);
 	if (lenVox < 0.5) {
 		discard;
 	}
+	// Opacity (step-size) correction. A coarse multi-LOD brick takes fewer
+	// samples along the ray, so without this it accumulates less alpha and
+	// renders dimmer/more transparent than a fine brick of the same material —
+	// a visible brightness seam at LOD boundaries. Scale per-sample alpha up to
+	// the finest (common) sampling density so brightness is resolution-
+	// independent. stepRatio == 1 for single-level/non-chunked draws
+	// (volumeTexDimsFull == rayStepTexVox), leaving them byte-identical.
+	let fineLenVox = length(dirVec * params.volumeTexDimsFull.xyz);
+	let stepRatio = max(1.0, fineLenVox / max(lenVox, 1e-6));
 	// Save original ray for overlay passes (overlay ignores clip planes)
 	let origStart = start;
 	let origLen = len;
@@ -348,7 +359,8 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 					let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * (1.0 + (lightingAmount / 3.0));
 					let blendedRGB = mix(vec3f(1.0), mc_rgb, lightingAmount);
 					let finalRGB = blendedRGB * colorSample.rgb;
-					let premultiplied = vec4f(finalRGB * colorSample.a, colorSample.a);
+					let correctedA = 1.0 - pow(1.0 - colorSample.a, stepRatio);
+					let premultiplied = vec4f(finalRGB * correctedA, correctedA);
 					colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
 					if (colAcc.a > earlyTermination) { break; }
 				}

@@ -6,6 +6,7 @@ import {
   chunksCrossingSlice,
   chunkVolume,
   chunkVolumeGrid,
+  chunkVolumeMultiLOD,
   identityChunkSampleTransform,
   needsChunking,
   type Vec3i,
@@ -539,5 +540,125 @@ describe('identityChunkSampleTransform', () => {
     const a = chunkSampleTransform(plan, 0)
     const b = identityChunkSampleTransform([100, 200, 300])
     expect(a).toEqual(b)
+  })
+})
+
+describe('chunkVolumeMultiLOD', () => {
+  // A 4-level power-of-two pyramid: finest 512^3 down to 64^3.
+  const pyramid: Vec3i[] = [
+    [512, 512, 512],
+    [256, 256, 256],
+    [128, 128, 128],
+    [64, 64, 64],
+  ]
+  const centerFocus = { center: [256, 256, 256] as Vec3i, radius: 96 }
+
+  const brickVolume = (d: { voxelDims: Vec3i }): number =>
+    d.voxelDims[0] * d.voxelDims[1] * d.voxelDims[2]
+
+  test('tiles the whole common grid with no gaps or overlaps', () => {
+    const plan = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+    })
+    // World placement is in the common (finest) grid.
+    expect(plan.volumeDims).toEqual([512, 512, 512])
+    // Sum of brick world volumes equals the whole volume (necessary for an
+    // exact, gap-free, non-overlapping tiling).
+    const total = 512 * 512 * 512
+    const sum = plan.chunks.reduce((s, c) => s + brickVolume(c), 0)
+    expect(sum).toBe(total)
+    // Every sampled voxel lies in exactly one brick (sufficient with the sum).
+    const contains = (c: (typeof plan.chunks)[number], p: Vec3i): boolean =>
+      p[0] >= c.voxelOrigin[0] &&
+      p[0] < c.voxelOrigin[0] + c.voxelDims[0] &&
+      p[1] >= c.voxelOrigin[1] &&
+      p[1] < c.voxelOrigin[1] + c.voxelDims[1] &&
+      p[2] >= c.voxelOrigin[2] &&
+      p[2] < c.voxelOrigin[2] + c.voxelDims[2]
+    const samples: Vec3i[] = [
+      [0, 0, 0],
+      [256, 256, 256],
+      [511, 511, 511],
+      [100, 400, 50],
+      [255, 256, 257],
+      [383, 0, 480],
+    ]
+    for (const p of samples) {
+      const hits = plan.chunks.filter((c) => contains(c, p)).length
+      expect(hits).toBe(1)
+    }
+  })
+
+  test('brick source level rises with distance from the focus', () => {
+    const plan = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+    })
+    const levelAt = (p: Vec3i): number => {
+      for (const c of plan.chunks) {
+        if (
+          p[0] >= c.voxelOrigin[0] &&
+          p[0] < c.voxelOrigin[0] + c.voxelDims[0] &&
+          p[1] >= c.voxelOrigin[1] &&
+          p[1] < c.voxelOrigin[1] + c.voxelDims[1] &&
+          p[2] >= c.voxelOrigin[2] &&
+          p[2] < c.voxelOrigin[2] + c.voxelDims[2]
+        ) {
+          return c.sourceLevel ?? 0
+        }
+      }
+      throw new Error('uncovered point')
+    }
+    // At the focus centre: finest level.
+    expect(levelAt([256, 256, 256])).toBe(0)
+    // A far corner: coarser than the centre.
+    expect(levelAt([8, 8, 8])).toBeGreaterThan(levelAt([256, 256, 256]))
+  })
+
+  test('every brick texture fits the device limit', () => {
+    const deviceLimit = 256
+    const plan = chunkVolumeMultiLOD(pyramid, centerFocus, deviceLimit, {
+      cellEdge: 128,
+    })
+    for (const c of plan.chunks) {
+      expect(c.texDims[0]).toBeLessThanOrEqual(deviceLimit)
+      expect(c.texDims[1]).toBeLessThanOrEqual(deviceLimit)
+      expect(c.texDims[2]).toBeLessThanOrEqual(deviceLimit)
+      expect(c.sourceLevel).toBeGreaterThanOrEqual(0)
+      expect(c.sourceLevel).toBeLessThanOrEqual(3)
+    }
+    // levelDims is carried for per-brick ray-step density.
+    expect(plan.levelDims?.[0]).toEqual([512, 512, 512])
+    expect(plan.levelDims?.length).toBe(4)
+  })
+
+  test('byte budget coarsens the assignment until it fits', () => {
+    const bytesOf = (plan: ChunkPlan): number =>
+      plan.chunks.reduce(
+        (s, c) => s + c.texDims[0] * c.texDims[1] * c.texDims[2] * 8,
+        0,
+      )
+    const unbudgeted = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+    })
+    const budget = Math.floor(bytesOf(unbudgeted) / 2)
+    const budgeted = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+      budgetBytes: budget,
+    })
+    expect(bytesOf(budgeted)).toBeLessThanOrEqual(budget)
+    // Coarsening never drops coverage.
+    const sum = budgeted.chunks.reduce((s, c) => s + brickVolume(c), 0)
+    expect(sum).toBe(512 * 512 * 512)
+  })
+
+  test('a single-level pyramid yields one uniform level', () => {
+    const plan = chunkVolumeMultiLOD([[256, 256, 256]], centerFocus, 2048, {
+      cellEdge: 128,
+    })
+    for (const c of plan.chunks) {
+      expect(c.sourceLevel).toBe(0)
+    }
+    const sum = plan.chunks.reduce((s, c) => s + brickVolume(c), 0)
+    expect(sum).toBe(256 * 256 * 256)
   })
 })

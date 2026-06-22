@@ -2374,6 +2374,49 @@ export default class NVView {
       normalMatrix = result[2] as mat4
       rayDir = result[3] as Float32Array
     }
+    // Chunked / multi-LOD volumes have no single whole-volume texture, so the
+    // GPU depth-pass cannot sample them. Fall back to a CPU ray/AABB pick against
+    // the volume's mm bounding box and return the near-surface entry under the
+    // cursor — enough to move the crosshair (and thus the multi-LOD focus) in a
+    // 3D render. Meshes, if any, still take the GPU path below for 2D tiles.
+    if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
+      const vol = md.volumes[0]
+      if (vol?.extentsMin && vol?.extentsMax) {
+        const near = NVTransforms.unprojectScreen(
+          hit.normalizedX,
+          hit.normalizedY,
+          0,
+          mvpMatrix as mat4,
+        )
+        const far = NVTransforms.unprojectScreen(
+          hit.normalizedX,
+          hit.normalizedY,
+          1,
+          mvpMatrix as mat4,
+        )
+        // With a CPU sampler (app-supplied coarse data), march to the first
+        // window-visible voxel; otherwise land on the bounding-box / clip surface.
+        const hitMM = vol.pickSampler
+          ? NVTransforms.rayMarchFirstVisibleMM(
+              near,
+              far,
+              vol.extentsMin,
+              vol.extentsMax,
+              vol.pickSampler,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+          : NVTransforms.rayBoxEntryMM(
+              near,
+              far,
+              vol.extentsMin,
+              vol.extentsMax,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+        if (hitMM) return hitMM
+      }
+    }
     // Build pick-matrix-modified MVP that zooms to 1 pixel
     const tileW = ltwh[2]
     const tileH = ltwh[3]
@@ -2418,6 +2461,9 @@ export default class NVView {
           1,
           1,
           1,
+          1,
+          // rayStepTexVox: identical to volumeTexDimsFull for a non-chunked pick.
+          ...volumeTexDimsFull,
           1,
         ]
         volumeUniformData = new Float32Array([

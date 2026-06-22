@@ -105,7 +105,7 @@ type Vec3f = [number, number, number]
  * texture (including halo). Non-chunked draws use identity pass-through values.
  */
 interface ChunkUniforms {
-  /** Full volume RAS dims (used for ray step size and frac2ndc). */
+  /** Full volume RAS dims in the COMMON grid (vertex placement + frac2ndc). */
   volumeTexDimsFull: Vec3f
   /** Chunk's sub-cube origin in the full-volume [0,1] cube. */
   chunkSubOrigin: Vec3f
@@ -115,6 +115,14 @@ interface ChunkUniforms {
   dataOriginTexFrac: Vec3f
   /** Data extent in the chunk's local texture (excludes halo on both sides). */
   dataSizeTexFrac: Vec3f
+  /**
+   * Full-volume voxel dims at THIS brick's source pyramid level, used solely for
+   * the ray-march step density (one step ≈ one source-level voxel across the
+   * full cube). Equals `volumeTexDimsFull` for single-level/non-chunked draws;
+   * coarser for multi-LOD bricks so they step (and sample) at their own
+   * resolution instead of being oversampled at the finest density.
+   */
+  rayStepTexVox: Vec3f
 }
 
 /** Single-texture volume: fits within maxTextureDimension3D on all axes. */
@@ -140,12 +148,14 @@ interface ChunkedTexEntry {
 
 type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 
-// 480 bytes = 120 floats:
+// 496 bytes = 124 floats:
 //   16 mvp + 16 norm + 16 matRAS + 4 volScale + 4 rayDir + 4 (gradient/numVol/cutaway/pad)
 //   + 4 clipPlaneColor + 24 clipPlanes + 4 paqd + 1 earlyTermination + 7 _pad0 (vec3 align)
 //   + 4 volumeTexDimsFull + 4 chunkSubOrigin + 4 chunkSubSize
-//   + 4 dataOriginTexFrac + 4 dataSizeTexFrac
-const renderParamsSize = 480
+//   + 4 dataOriginTexFrac + 4 dataSizeTexFrac + 4 rayStepTexVox
+// Still rounds up to the same 512-byte alignedRenderSize (UNIFORM_ALIGNMENT 256),
+// so every *_PARAMS_BASE offset below is unchanged by the added vec4.
+const renderParamsSize = 496
 export const alignedRenderSize =
   Math.ceil(renderParamsSize / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
 // Byte offset of the base chunk-params region (after the per-tile non-chunked
@@ -179,7 +189,12 @@ function chunkUniformsFor(plan: ChunkPlan, chunkIndex: number): ChunkUniforms {
   const desc = plan.chunks[chunkIndex]
   const [vx, vy, vz] = plan.volumeDims
   const [tx, ty, tz] = desc.texDims
+  // Ray-step density comes from this brick's source level (full-volume dims);
+  // for single-level plans levelDims is absent so it falls back to volumeDims.
+  const rayStep = plan.levelDims?.[desc.sourceLevel ?? 0] ?? plan.volumeDims
   return {
+    // World placement uses the COMMON grid (voxelOrigin/voxelDims are common-grid
+    // for multi-LOD bricks; identical to the level grid for single-level plans).
     volumeTexDimsFull: [vx, vy, vz],
     chunkSubOrigin: [
       desc.voxelOrigin[0] / vx,
@@ -191,16 +206,18 @@ function chunkUniformsFor(plan: ChunkPlan, chunkIndex: number): ChunkUniforms {
       desc.voxelDims[1] / vy,
       desc.voxelDims[2] / vz,
     ],
+    // Texture-space remap uses the brick's OWN level grid (texDims + level halo).
     dataOriginTexFrac: [
       desc.haloLow[0] / tx,
       desc.haloLow[1] / ty,
       desc.haloLow[2] / tz,
     ],
     dataSizeTexFrac: [
-      desc.voxelDims[0] / tx,
-      desc.voxelDims[1] / ty,
-      desc.voxelDims[2] / tz,
+      (tx - desc.haloLow[0] - desc.haloHigh[0]) / tx,
+      (ty - desc.haloLow[1] - desc.haloHigh[1]) / ty,
+      (tz - desc.haloLow[2] - desc.haloHigh[2]) / tz,
     ],
+    rayStepTexVox: [rayStep[0], rayStep[1], rayStep[2]],
   }
 }
 
@@ -2080,6 +2097,11 @@ export class VolumeRenderer extends NVRenderer {
         chunkSubSize: [1, 1, 1],
         dataOriginTexFrac: [0, 0, 0],
         dataSizeTexFrac: [1, 1, 1],
+        rayStepTexVox: [
+          this.volumeTexture.width,
+          this.volumeTexture.height,
+          this.volumeTexture.depthOrArrayLayers,
+        ],
       },
     )
 
@@ -2375,6 +2397,9 @@ export class VolumeRenderer extends NVRenderer {
           chunkSubSize: cu.chunkSubSize,
           dataOriginTexFrac: cu.chunkSubOrigin,
           dataSizeTexFrac: cu.chunkSubSize,
+          // Floor cube samples the coarse whole-volume texture; keep its step at
+          // the fine (common) density exactly as before this field existed.
+          rayStepTexVox: cu.volumeTexDimsFull,
         },
         0,
       )
@@ -2538,6 +2563,8 @@ export class VolumeRenderer extends NVRenderer {
         1,
         ...chunkUniforms.dataSizeTexFrac,
         1,
+        ...chunkUniforms.rayStepTexVox,
+        1,
       ]),
     )
   }
@@ -2607,6 +2634,15 @@ export class VolumeRenderer extends NVRenderer {
 
   hasVolume(): boolean {
     return this._activeChunked !== null || this.volumeTexture !== null
+  }
+
+  /**
+   * True when the active base volume is chunked (tiled / multi-LOD). Such a
+   * volume has no single whole-volume texture, so the GPU depth-pick pass cannot
+   * sample it; callers fall back to a CPU bounding-box ray pick.
+   */
+  get hasChunkedVolume(): boolean {
+    return this._activeChunked !== null
   }
 
   hasOverlay(): boolean {

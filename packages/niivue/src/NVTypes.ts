@@ -203,6 +203,15 @@ export type NVImage = {
   /** Optional draw-time spacing for chunked 3D rendering. Sampling remains in original voxel coordinates. */
   chunkExplode?: VolumeChunkExplode
   /**
+   * Optional CPU value lookup in world mm, used by the 3D depth-pick to find the
+   * first visible voxel along the view ray for a chunked/streamed volume (which
+   * has no single GPU texture to sample). Return the window-visible value at the
+   * point (0 / non-positive = transparent, skip). Supplied by the app from a
+   * resident coarse representation; absent ⇒ depth-pick falls back to the
+   * bounding-box surface.
+   */
+  pickSampler?: (x: number, y: number, z: number) => number
+  /**
    * Marks this volume as an independently-streamed hi-res overlay layer that
    * composites over a chunked base volume. The value is the cache-key of the
    * base volume it sits on. When set, the renderer streams this volume in its

@@ -43,17 +43,35 @@ export function chunkExplodeOffsetFrac(
   const desc = plan.chunks[chunkIndex]
   if (!desc) return ZERO_OFFSET
   const scale = chunkExplodeScale(explode)
+  // Spread each brick radially from the volume centre by its own centre's
+  // fractional offset from 0.5. For a uniform grid this is identical to the
+  // legacy gridIndex formula ((i-(n-1)/2)(s-1)/n), but it depends only on the
+  // brick's world centre — so it also separates a heterogeneous multi-LOD
+  // octree, whose bricks share a degenerate gridIndex/gridDims.
+  const [vx, vy, vz] = plan.volumeDims
   return [
-    explodeAxisOffset(desc.gridIndex[0], plan.gridDims[0], scale[0]),
-    explodeAxisOffset(desc.gridIndex[1], plan.gridDims[1], scale[1]),
-    explodeAxisOffset(desc.gridIndex[2], plan.gridDims[2], scale[2]),
+    explodeAxisOffset(
+      desc.voxelOrigin[0] + desc.voxelDims[0] / 2,
+      vx,
+      scale[0],
+    ),
+    explodeAxisOffset(
+      desc.voxelOrigin[1] + desc.voxelDims[1] / 2,
+      vy,
+      scale[1],
+    ),
+    explodeAxisOffset(
+      desc.voxelOrigin[2] + desc.voxelDims[2] / 2,
+      vz,
+      scale[2],
+    ),
   ]
 }
 
-function explodeAxisOffset(index: number, gridDim: number, scale: number) {
-  if (gridDim <= 1 || scale <= 1) return 0
-  const center = (gridDim - 1) / 2
-  return ((index - center) * (scale - 1)) / gridDim
+function explodeAxisOffset(center: number, volumeDim: number, scale: number) {
+  if (volumeDim <= 0 || scale <= 1) return 0
+  const centreFrac = center / volumeDim
+  return (centreFrac - 0.5) * (scale - 1)
 }
 
 // Column-major gl-matrix mat4 that maps voxel -> mm exactly like

@@ -2315,6 +2315,15 @@ export class VolumeRenderer extends NVRenderer {
     return this._activeChunked !== null || this.volumeTexture !== null
   }
 
+  /**
+   * True when the active base volume is chunked (tiled / multi-LOD). Such a
+   * volume has no single whole-volume texture, so the GPU depth-pick pass cannot
+   * sample it; callers fall back to a CPU bounding-box ray pick.
+   */
+  get hasChunkedVolume(): boolean {
+    return this._activeChunked !== null
+  }
+
   hasOverlay(): boolean {
     return this.overlayTexture !== null
   }

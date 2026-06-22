@@ -548,8 +548,13 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (!serverUrl) return
     let cancelled = false
+    let inFlight = false
 
     async function refreshChangedManifest(): Promise<void> {
+      // One refresh at a time: a slow response must not race a newer one and
+      // overwrite it with stale data.
+      if (cancelled || inFlight) return
+      inFlight = true
       try {
         const nextManifest = await fetchDesktopManifest(serverUrl)
         if (cancelled) return
@@ -568,27 +573,36 @@ export function App(): JSX.Element {
         }
         setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
       } catch {
-        const serverInfo = await resolveServerInfo()
-        if (cancelled || !serverInfo || serverInfo.url === serverUrl) return
-
-        setServerUrl(serverInfo.url)
-        setDatasetRoot(serverInfo.datasetRoot ?? '')
-        setBidsName(serverInfo.bidsName ?? '')
-        setBidsDatasetDoi(serverInfo.bidsDatasetDoi ?? '')
-        setCacheRoot(serverInfo.cacheRoot ?? '')
+        try {
+          const serverInfo = await resolveServerInfo()
+          if (cancelled || !serverInfo || serverInfo.url === serverUrl) return
+          setServerUrl(serverInfo.url)
+          setDatasetRoot(serverInfo.datasetRoot ?? '')
+          setBidsName(serverInfo.bidsName ?? '')
+          setBidsDatasetDoi(serverInfo.bidsDatasetDoi ?? '')
+          setCacheRoot(serverInfo.cacheRoot ?? '')
+        } catch {
+          // Server unreachable; keep current state and retry on the next tick.
+        }
+      } finally {
+        inFlight = false
       }
     }
 
     void refreshChangedManifest()
     const interval = window.setInterval(() => {
-      void refreshChangedManifest()
+      // Back off while the window is hidden; the focus listener catches up.
+      if (!document.hidden) void refreshChangedManifest()
     }, 5000)
-    window.addEventListener('focus', refreshChangedManifest)
+    const onFocus = (): void => {
+      void refreshChangedManifest()
+    }
+    window.addEventListener('focus', onFocus)
 
     return () => {
       cancelled = true
       window.clearInterval(interval)
-      window.removeEventListener('focus', refreshChangedManifest)
+      window.removeEventListener('focus', onFocus)
     }
   }, [serverUrl])
 

@@ -705,7 +705,14 @@ export function App(): JSX.Element {
             className="nv-icon-button"
             title="Save correction patch"
             type="button"
-            onClick={() => void savePatch(serverUrl, selected, clipPlanes, backend)}
+            onClick={async () => {
+              try {
+                await savePatch(serverUrl, selected, clipPlanes, backend)
+                setStatus(`Correction patch saved for ${selected?.label ?? 'volume'}.`)
+              } catch (error) {
+                setStatus(error instanceof Error ? error.message : String(error))
+              }
+            }}
           >
             <Save size={16} />
           </button>
@@ -1714,7 +1721,9 @@ function StablePreviewImage({
   return (
     <span className={frameClassName}>
       {loading && !currentSrc ? (
-        <span className="nv-preview-spinner" aria-label="Generating preview" role="status">
+        // Decorative only: a live region here would fire for every tile on a
+        // grid load and spam assistive tech. The spinner is a visual hint.
+        <span className="nv-preview-spinner" aria-hidden="true">
           <LoaderCircle size={18} />
         </span>
       ) : null}
@@ -2579,9 +2588,11 @@ async function savePatch(
   clipPlanes: ClipPlane[],
   backend: Backend
 ): Promise<void> {
-  if (!serverUrl || !item) return
+  if (!serverUrl || !item) {
+    throw new Error('Select a volume before saving a correction patch.')
+  }
 
-  await fetch(`${serverUrl}/session/correction.patch.json`, {
+  const response = await fetch(`${serverUrl}/session/correction.patch.json`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -2596,4 +2607,7 @@ async function savePatch(
       savedAt: new Date().toISOString()
     })
   })
+  if (!response.ok) {
+    throw new Error(`Correction patch save failed with HTTP ${response.status}.`)
+  }
 }

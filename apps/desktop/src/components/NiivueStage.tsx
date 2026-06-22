@@ -18,6 +18,7 @@ interface NiiVueLike {
   activeClipPlaneIndex?: number
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(volumes: Array<{ url: string | File; name: string; colormap?: string }>): Promise<unknown>
+  setVolume?(volumeIndex: number, options: { colormap?: string }): Promise<unknown>
   azimuth?: number
   elevation?: number
   model?: {
@@ -251,7 +252,21 @@ export function NiivueStage({
         nvRef.current = null
       }
     }
-  }, [backend, colormap, item])
+    // colormap is intentionally omitted: a colormap change is applied in place by
+    // the effect below rather than tearing down and reloading the whole volume.
+  }, [backend, item])
+
+  // Apply colormap changes in place. Recreating the NiiVue instance (as the
+  // attach effect does) just to recolor would re-import the module, re-attach
+  // the canvas, and refetch every LOD — far too heavy for a dropdown change.
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv?.setVolume) return
+    void nv.setVolume(0, { colormap }).catch(() => {
+      // No volume loaded yet (or backend lacks setVolume); the attach effect
+      // already loads with the current colormap, so this is safe to ignore.
+    })
+  }, [colormap])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -290,7 +305,10 @@ export function NiivueStage({
     if (!nv) return
     applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
     applyClipPlanes(nv, clipPlanes)
-    resizeNiiVue(nv, canvasRef.current, stageRef.current)
+    // Redraw to reflect the change, but don't resize the canvas — clip planes
+    // move on every wheel tick, and a full resync per tick is what made wheel
+    // clipping janky. The ResizeObserver effect owns actual resizes.
+    nv.drawScene()
   }, [activeClipPlaneId, clipPlanes])
 
   useEffect(() => {

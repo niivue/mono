@@ -9,7 +9,7 @@ use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap, HashSet},
+    collections::{hash_map::DefaultHasher, HashMap, HashSet, VecDeque},
     fs::{self, File},
     hash::{Hash, Hasher},
     io::Read,
@@ -31,7 +31,7 @@ pub struct ServerHandle {
     pub volume_count: usize,
     volumes: VolumeStore,
     dataset_root: Arc<Mutex<Option<PathBuf>>>,
-    preview_cache: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    preview_cache: Arc<Mutex<PreviewCache>>,
     pyramid_locks: PyramidLocks,
     warm_generation: Arc<AtomicU64>,
 }
@@ -41,12 +41,63 @@ type VolumeStore = Arc<Mutex<Vec<VolumeEntry>>>;
 /// build their pyramids concurrently while same-volume builds stay serialized.
 type PyramidLocks = Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>;
 
+/// Total byte budget for the in-memory rendered-preview cache. Cache keys
+/// include client-controlled fields (size, version, region), so without a
+/// ceiling a client could grow this without bound; evict oldest-first past it.
+const PREVIEW_CACHE_MAX_BYTES: usize = 256 * 1024 * 1024;
+
+/// Byte-bounded, insertion-ordered (FIFO) cache of rendered preview BMPs.
+/// Exposes the subset of the HashMap API the call sites use so they stay
+/// unchanged: `get` (read), `insert` (evicts past the budget), and `clear`.
+#[derive(Default)]
+struct PreviewCache {
+    entries: HashMap<String, Vec<u8>>,
+    order: VecDeque<String>,
+    total_bytes: usize,
+}
+
+impl PreviewCache {
+    fn get(&self, key: &str) -> Option<&Vec<u8>> {
+        self.entries.get(key)
+    }
+
+    fn insert(&mut self, key: String, bytes: Vec<u8>) {
+        if let Some(previous) = self.entries.remove(&key) {
+            self.total_bytes = self.total_bytes.saturating_sub(previous.len());
+            if let Some(pos) = self.order.iter().position(|existing| existing == &key) {
+                self.order.remove(pos);
+            }
+        }
+        // A single entry larger than the whole budget is never worth caching.
+        if bytes.len() > PREVIEW_CACHE_MAX_BYTES {
+            return;
+        }
+        self.total_bytes += bytes.len();
+        self.order.push_back(key.clone());
+        self.entries.insert(key, bytes);
+        while self.total_bytes > PREVIEW_CACHE_MAX_BYTES {
+            let Some(evicted) = self.order.pop_front() else {
+                break;
+            };
+            if let Some(removed) = self.entries.remove(&evicted) {
+                self.total_bytes = self.total_bytes.saturating_sub(removed.len());
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.order.clear();
+        self.total_bytes = 0;
+    }
+}
+
 #[derive(Clone)]
 struct AppState {
     base_url: String,
     volumes: VolumeStore,
     dataset_root: Arc<Mutex<Option<PathBuf>>>,
-    preview_cache: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    preview_cache: Arc<Mutex<PreviewCache>>,
     pyramid_locks: PyramidLocks,
     patch: Arc<Mutex<Option<Value>>>,
 }
@@ -128,7 +179,7 @@ pub fn spawn_default() -> ServerHandle {
     let warm_root = discovery.root.clone();
     let volumes = Arc::new(Mutex::new(discovery.volumes));
     let dataset_root = Arc::new(Mutex::new(discovery.root));
-    let preview_cache = Arc::new(Mutex::new(HashMap::new()));
+    let preview_cache = Arc::new(Mutex::new(PreviewCache::default()));
     let pyramid_locks: PyramidLocks = Arc::new(Mutex::new(HashMap::new()));
     let warm_generation = Arc::new(AtomicU64::new(0));
     let state = AppState {

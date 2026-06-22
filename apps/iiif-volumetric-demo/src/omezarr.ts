@@ -40,7 +40,9 @@
 // server-side pyramid + subvolume plumbing, not viewer features.
 
 import NiiVue, {
+  type ChunkPlan,
   chunkVolumeGrid,
+  chunkVolumeMultiLOD,
   type NVImage,
   type VolumeChunkExplode,
   type VolumeChunkSource,
@@ -157,6 +159,11 @@ const STREAMING_CHUNK_EDGE = 256
 const STREAMING_CHUNK_HALO: Shape3 = [3, 3, 3]
 const STREAMING_CHUNK_LIMIT = 256
 const EXPLODED_GRID_LONG_AXIS_BLOCKS = 4
+// Multi-resolution (Neuroglancer-style) rendering: a focused octree of bricks
+// finest near the focus, coarser further out, covering the whole volume.
+const MULTILOD_CELL_EDGE = 128
+const MULTILOD_DEFAULT_BUDGET_BYTES = 512 * 1024 * 1024
+const MULTILOD_HALO: Shape3 = [1, 1, 1]
 const DEFAULT_OME_ZARR_ID = 'pawpawsaurus.ome.zarr'
 
 const initialParams = new URLSearchParams(window.location.search)
@@ -424,6 +431,10 @@ function populateSubvolumeSelect(v: VolumeApiEntry | null): void {
   const shape = currentLevelShape(v) ?? v.shape
   const needsSubvolume = levelNeedsSubvolume(shape, v.dtype)
   const canStream = canStreamWholeLevel(shape)
+  const hasPyramid = (v.levels?.length ?? 0) > 1
+  if (hasPyramid) {
+    addSubvolumeOption('multilod', 'multi-resolution (focus + coarse surround)')
+  }
   if (canStream) {
     addSubvolumeOption(
       'stream',
@@ -452,11 +463,13 @@ function populateSubvolumeSelect(v: VolumeApiEntry | null): void {
     addSubvolumeOption(`tile:${i}`, gridSubvolumeLabel(shape, i, size, pct))
   }
 
-  els.subvolume.value = needsSubvolume
-    ? canStream
-      ? 'stream'
-      : 'focus'
-    : 'full'
+  els.subvolume.value = hasPyramid
+    ? 'multilod'
+    : needsSubvolume
+      ? canStream
+        ? 'stream'
+        : 'focus'
+      : 'full'
 }
 
 function addSubvolumeOption(value: string, text: string): void {
@@ -657,7 +670,7 @@ async function ensureNiivue(): Promise<void> {
     backend: BACKEND,
     backgroundColor: [0, 0, 0, 1],
     isColorbarVisible: true,
-    is3DCrosshairVisible: false,
+    is3DCrosshairVisible: true,
     isDragDropEnabled: false,
     maxTextureDimension3D: STREAMING_CHUNK_EDGE,
     meshXRay: 0,
@@ -674,6 +687,9 @@ async function ensureNiivue(): Promise<void> {
     const vox = detail?.vox
     if (Array.isArray(vox) && vox.length >= 3) {
       rememberFocusFromVoxel([vox[0] ?? 0, vox[1] ?? 0, vox[2] ?? 0])
+      // In multi-resolution mode, move the finest bricks to the new look-at
+      // point once the crosshair settles.
+      scheduleMultiLodRefocus()
     }
   })
 
@@ -715,6 +731,13 @@ async function reload(): Promise<void> {
   const level = Number(els.level.value)
   const bbox = parseBbox(els.bbox.value)
   const shape = currentLevelShape(v) ?? v.shape
+  // Multi-resolution mode owns its own octree of bricks; the explode toggle
+  // spreads THOSE bricks (not a single-level grid), so it must be handled here
+  // before the legacy exploded-grid / stream path.
+  if (els.subvolume.value === 'multilod') {
+    await reloadMultiLod(v, myEpoch)
+    return
+  }
   const explodedGrid = shouldUseExplodedGrid(shape, bbox)
   const streaming = isStreamingMode() || explodedGrid
   const loadingSubvolume = Boolean(bbox)
@@ -849,6 +872,11 @@ async function reloadStreamingLevel(
     reloading = false
     return
   }
+  await ensureStreamingWindow(v)
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
+    return
+  }
   const volume = createStreamingVolume(v, level, shape)
   try {
     await nv.loadVolumes([volume])
@@ -873,10 +901,124 @@ async function reloadStreamingLevel(
   syncCameraSliders()
 }
 
+// Multi-resolution render: stream a single heterogeneous octree of bricks that
+// covers the whole volume — finest at the focus, coarser outward.
+async function reloadMultiLod(
+  v: VolumeApiEntry,
+  myEpoch: number,
+  preserveView = false,
+): Promise<void> {
+  if (!nv) return
+  reloading = true
+  lastStats = null
+  setBusy('streaming multi-resolution bricks…')
+  await yieldPaint()
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
+    return
+  }
+  // Resident coarse level powers both the auto-window and the surface-pick march.
+  await ensureCoarsePickData(v)
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
+    return
+  }
+  await ensureStreamingWindow(v)
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
+    return
+  }
+  const volume = createMultiLodVolume(v)
+  if (!volume) {
+    showFallback('multi-resolution mode needs a multiscale pyramid')
+    reloading = false
+    if (myEpoch === reloadEpoch) setBusy(null)
+    return
+  }
+  // Refocus reloads should not snap the camera or crosshair back to centre —
+  // capture them before loadVolumes (which resets the view) and restore after.
+  const cam = preserveView ? captureView() : null
+  try {
+    await nv.loadVolumes([volume])
+    if (myEpoch !== reloadEpoch) {
+      reloading = false
+      return
+    }
+    nv.sliceType = 4
+    if (cam) restoreView(cam)
+    loadedLevelShape = (volume.dimsRAS?.slice(1, 4) as Shape3) ?? null
+    loadedBbox = null
+    showCanvas()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    showFallback(`niivue failed to stream multi-resolution: ${msg}`)
+    reloading = false
+    if (myEpoch === reloadEpoch) setBusy(null)
+    return
+  }
+  renderHud(v, 0)
+  reloading = false
+  setBusy(null)
+  syncCameraSliders()
+}
+
+interface ViewState {
+  azimuth: number
+  elevation: number
+  scale: number
+  crosshair: [number, number, number]
+}
+
+type CameraView = {
+  azimuth: number
+  elevation: number
+  scaleMultiplier: number
+  crosshairPos: ArrayLike<number>
+}
+
+function captureView(): ViewState | null {
+  if (!nv) return null
+  const n = nv as unknown as CameraView
+  const c = n.crosshairPos
+  return {
+    azimuth: n.azimuth,
+    elevation: n.elevation,
+    scale: n.scaleMultiplier,
+    crosshair: [c[0] ?? 0.5, c[1] ?? 0.5, c[2] ?? 0.5],
+  }
+}
+
+function restoreView(s: ViewState): void {
+  if (!nv) return
+  const n = nv as unknown as CameraView
+  n.azimuth = s.azimuth
+  n.elevation = s.elevation
+  n.scaleMultiplier = s.scale
+  n.crosshairPos = s.crosshair
+}
+
+// Re-stream the multi-LOD octree centred on the new crosshair after the user
+// stops moving it, so the finest bricks follow the look-at point. Debounced
+// (one rebuild per gesture) and view-preserving (camera/crosshair are kept).
+let refocusTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleMultiLodRefocus(): void {
+  if (els.subvolume.value !== 'multilod') return
+  if (refocusTimer !== null) clearTimeout(refocusTimer)
+  refocusTimer = setTimeout(() => {
+    refocusTimer = null
+    if (!nv || reloading || els.subvolume.value !== 'multilod') return
+    const v = currentVolume()
+    if (!v) return
+    reloadEpoch += 1
+    void reloadMultiLod(v, reloadEpoch, true)
+  }, 300)
+}
+
 function createStreamingVolume(
   v: VolumeApiEntry,
   level: number,
   shape: [number, number, number],
+  planOverride?: ChunkPlan,
 ): NVImage {
   const lvl = v.levels?.find((l) => l.level === level)
   const spacing = lvl?.spacing ?? v.spacing
@@ -886,12 +1028,16 @@ function createStreamingVolume(
   const calMax = win?.max ?? dtype.displayMax
   const dims = [3, shape[0], shape[1], shape[2], 1, 1, 1, 1]
   const pixDims = [1, spacing[0], spacing[1], spacing[2], 1, 1, 1, 1]
-  const chunkPlan = shouldUseExplodedGrid(shape, null)
-    ? createExplodedGridPlan(shape)
-    : undefined
-  const planKey = chunkPlan
-    ? `grid-${chunkPlan.gridDims.join('x')}`
-    : `edge-${STREAMING_CHUNK_EDGE}`
+  const chunkPlan =
+    planOverride ??
+    (shouldUseExplodedGrid(shape, null)
+      ? createExplodedGridPlan(shape)
+      : undefined)
+  const planKey = planOverride
+    ? `multilod-${planOverride.chunks.length}`
+    : chunkPlan
+      ? `grid-${chunkPlan.gridDims.join('x')}`
+      : `edge-${STREAMING_CHUNK_EDGE}`
   const affine = [
     [spacing[0], 0, 0, 0],
     [0, spacing[1], 0, 0],
@@ -947,7 +1093,15 @@ function createStreamingVolume(
   const chunkSource: VolumeChunkSource = (request) => {
     const cached = chunkCache.get(request.chunkIndex)
     if (cached) return cached
-    const next = fetchRawChunk(v.id, level, request.desc, request.bytesPerVoxel)
+    // Multi-LOD bricks each carry their own pyramid level; single-level plans
+    // leave sourceLevel undefined and fall back to this volume's level.
+    const brickLevel = request.desc.sourceLevel ?? level
+    const next = fetchRawChunk(
+      v.id,
+      brickLevel,
+      request.desc,
+      request.bytesPerVoxel,
+    )
     chunkCache.set(request.chunkIndex, next)
     return next
   }
@@ -1064,6 +1218,203 @@ function createStreamingVolume(
     chunkSource,
     chunkExplode: currentChunkExplode(),
   } as NVImage
+}
+
+// GPU byte budget for the resident multi-LOD brick set; ?budgetGB overrides.
+function multiLodBudgetBytes(): number {
+  const gb = Number(initialParams.get('budgetGB'))
+  if (Number.isFinite(gb) && gb > 0) return Math.round(gb * 1024 * 1024 * 1024)
+  return MULTILOD_DEFAULT_BUDGET_BYTES
+}
+
+// Build the heterogeneous multi-LOD chunk plan for a volume's pyramid. The
+// finest available level is the common reference grid; bricks within `radius`
+// (finest voxels) of `focusCenter` render at the finest level, coarsening
+// outward. `focusCenter` defaults to the volume centre (Stage 1); later stages
+// drive it from the crosshair / visible slice extents.
+function buildMultiLodPlan(
+  v: VolumeApiEntry,
+  focusCenter?: Shape3,
+): ChunkPlan | null {
+  const levels = (v.levels ?? []).slice().sort((a, b) => a.level - b.level)
+  if (levels.length === 0) return null
+  const levelDims = levels.map((l) => l.shape)
+  const commonShape = levelDims[0]
+  // Focus on the crosshair / look-at point (cached as a [0,1] fraction of the
+  // common grid by locationChange) so the finest bricks sit where the user is
+  // looking; fall back to the volume centre before the first interaction.
+  const center: Shape3 =
+    focusCenter ??
+    (lastFocusFrac
+      ? [
+          lastFocusFrac[0] * commonShape[0],
+          lastFocusFrac[1] * commonShape[1],
+          lastFocusFrac[2] * commonShape[2],
+        ]
+      : [commonShape[0] / 2, commonShape[1] / 2, commonShape[2] / 2])
+  const radius = MULTILOD_CELL_EDGE * 1.5
+  return chunkVolumeMultiLOD(levelDims, { center, radius }, readMaxTexDim(), {
+    cellEdge: MULTILOD_CELL_EDGE,
+    haloSize: MULTILOD_HALO,
+    budgetBytes: multiLodBudgetBytes(),
+  })
+}
+
+// Create a streaming NVImage whose chunk plan is the multi-LOD octree. Geometry
+// is built from the finest (common) grid; each brick fetches from its own level
+// via desc.sourceLevel in createStreamingVolume's chunkSource.
+function createMultiLodVolume(
+  v: VolumeApiEntry,
+  focusCenter?: Shape3,
+): NVImage | null {
+  const plan = buildMultiLodPlan(v, focusCenter)
+  if (!plan) return null
+  const commonShape = plan.volumeDims as Shape3
+  const vol = createStreamingVolume(v, 0, commonShape, plan)
+  // Window-aware surface pick: depth-pick marches this coarse sampler to the
+  // first visible voxel under the cursor (see ensureCoarsePickData).
+  vol.pickSampler = makeCoarsePickSampler(v)
+  return vol
+}
+
+// A scalar view over raw.bin bytes for the given dtype (little-endian, matching
+// the typed arrays on x86/ARM). Colour (rgb24) has no meaningful scalar window.
+function streamScalarView(
+  buf: ArrayBuffer,
+  dtype: string,
+): ArrayLike<number> | null {
+  switch (dtype) {
+    case 'uint8':
+      return new Uint8Array(buf)
+    case 'int8':
+      return new Int8Array(buf)
+    case 'uint16':
+      return new Uint16Array(buf)
+    case 'int16':
+      return new Int16Array(buf)
+    case 'uint32':
+      return new Uint32Array(buf)
+    case 'int32':
+      return new Int32Array(buf)
+    case 'float32':
+      return new Float32Array(buf)
+    case 'rgb24':
+      return null
+    default:
+      return new Uint16Array(buf)
+  }
+}
+
+// The coarsest pyramid level, resident in memory. Reused for the auto-window
+// percentiles AND the depth-pick surface march (first window-visible voxel).
+let coarsePick: {
+  id: string
+  data: ArrayLike<number>
+  shape: Shape3
+  extentsMin: Shape3
+  extentsMax: Shape3
+} | null = null
+
+// Fetch + cache the coarsest level for `v` (once per volume). The mm box uses
+// the FINEST grid (the multi-LOD volume's geometry), since the coarse level
+// covers the same physical extent.
+async function ensureCoarsePickData(v: VolumeApiEntry): Promise<void> {
+  if (coarsePick?.id === v.id) return
+  const levels = (v.levels ?? []).slice().sort((a, b) => a.level - b.level)
+  if (levels.length === 0) return
+  const finest = levels[0]
+  const coarse = levels[levels.length - 1]
+  const [sx, sy, sz] = coarse.shape
+  const url = `${baseUrl}/volumes/${encodeURIComponent(v.id)}/raw.bin?level=${coarse.level}&bbox=0,0,0,${sx},${sy},${sz}`
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return
+    const data = streamScalarView(await res.arrayBuffer(), v.dtype)
+    if (!data || data.length === 0) return
+    const fsp = finest.spacing
+    const fsh = finest.shape
+    coarsePick = {
+      id: v.id,
+      data,
+      shape: coarse.shape,
+      extentsMin: [-0.5 * fsp[0], -0.5 * fsp[1], -0.5 * fsp[2]],
+      extentsMax: [
+        (fsh[0] - 0.5) * fsp[0],
+        (fsh[1] - 0.5) * fsp[1],
+        (fsh[2] - 0.5) * fsp[2],
+      ],
+    }
+  } catch {
+    // leave coarsePick as-is; pick falls back to the bounding-box surface
+  }
+}
+
+// A window-aware value lookup in world mm over the resident coarse level, used
+// by the depth-pick surface march. Returns the voxel value when visible (>=
+// calMin), else 0 (transparent). Reads the current window each call so it tracks
+// window edits.
+function makeCoarsePickSampler(
+  v: VolumeApiEntry,
+): ((x: number, y: number, z: number) => number) | undefined {
+  const cp = coarsePick
+  if (!cp || cp.id !== v.id) return undefined
+  const { data, shape, extentsMin, extentsMax } = cp
+  const [cs0, cs1, cs2] = shape
+  const sx = extentsMax[0] - extentsMin[0] || 1
+  const sy = extentsMax[1] - extentsMin[1] || 1
+  const sz = extentsMax[2] - extentsMin[2] || 1
+  const fallbackMin = niftiDatatype(v.dtype).displayMin
+  return (x, y, z) => {
+    const fx = (x - extentsMin[0]) / sx
+    const fy = (y - extentsMin[1]) / sy
+    const fz = (z - extentsMin[2]) / sz
+    if (fx < 0 || fx >= 1 || fy < 0 || fy >= 1 || fz < 0 || fz >= 1) return 0
+    const vx = Math.min(cs0 - 1, Math.floor(fx * cs0))
+    const vy = Math.min(cs1 - 1, Math.floor(fy * cs1))
+    const vz = Math.min(cs2 - 1, Math.floor(fz * cs2))
+    const value = data[vx + vy * cs0 + vz * cs0 * cs1]
+    const calMin = parseWindow(els.window.value)?.min ?? fallbackMin
+    return value >= calMin && value > 0 ? value : 0
+  }
+}
+
+// Data-driven display window for a streamed volume: the full image is never in
+// memory, so sample the (tiny) resident coarsest level and take robust
+// percentiles. p80 as the low end pushes the bulk background/matrix below
+// calMin (transparent), p99.5 as the high end avoids a few bright outliers
+// blowing out the contrast — revealing the dense interior structure.
+async function computeStreamingWindow(
+  v: VolumeApiEntry,
+): Promise<{ min: number; max: number } | null> {
+  await ensureCoarsePickData(v)
+  if (coarsePick?.id !== v.id) return null
+  const view = coarsePick.data
+  if (view.length === 0) return null
+  // Subsample to cap the sort cost on large coarse levels.
+  const stride = Math.max(1, Math.floor(view.length / 200_000))
+  const samples: number[] = []
+  for (let i = 0; i < view.length; i += stride) {
+    const x = view[i]
+    if (Number.isFinite(x)) samples.push(x)
+  }
+  if (samples.length === 0) return null
+  samples.sort((a, b) => a - b)
+  const pct = (p: number): number =>
+    samples[Math.min(samples.length - 1, Math.floor(p * (samples.length - 1)))]
+  const min = Math.round(pct(0.8))
+  const max = Math.round(pct(0.995))
+  if (!(max > min)) return null
+  return { min, max }
+}
+
+// Set a data-driven window for a streamed volume the first time it is shown,
+// unless the user has typed one. Shared by the multi-LOD and legacy stream paths.
+async function ensureStreamingWindow(v: VolumeApiEntry): Promise<void> {
+  if (els.window.value || autoWindowed.has(v.id)) return
+  const w = await computeStreamingWindow(v)
+  if (!w) return
+  autoWindowed.add(v.id)
+  els.window.value = `${w.min},${w.max}`
 }
 
 async function fetchRawChunk(

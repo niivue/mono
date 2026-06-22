@@ -24,11 +24,14 @@ choices that keep that path open. Concretely:
   app lifecycle). Access server data through the existing `serverUrl` + `fetch`
   seam and avoid HTTP-only semantics (range requests, `Cache-Control` reliance,
   multiple ports) that a custom protocol couldn't replicate.
-- **Subprocess features stay desktop-only and optional.** iOS forbids spawning
-  external executables/PTYs, so the Python terminal (`portable-pty`) and the
-  niimath sidecar binary cannot run there. Keep them feature-gated
-  (`#[cfg(desktop)]`), keep their deps desktop-only, and never make them
-  load-bearing in a core flow.
+- **Subprocess implementations stay desktop-only.** iOS forbids spawning
+  external executables/PTYs. The Python terminal (`portable-pty`) is desktop-only
+  outright (`src-tauri/src/terminal.rs`, `#[cfg(desktop)]`). niimath runs as a
+  native sidecar on desktop (`src-tauri/src/niimath.rs`, `#[cfg(desktop)]`) — but
+  niimath also ships as a **WebAssembly build**, so niimath stays a cross-platform
+  feature: the mobile/web path should run the WASM build behind the same frontend
+  interface (`src/domain/niimath.ts`), not the native command. Keep desktop-only
+  deps behind target cfgs and never make a subprocess command load-bearing.
 - **Don't assume arbitrary filesystem access.** iOS sandboxes the filesystem
   (document-picker URLs / security-scoped bookmarks, not free `canonicalize()`
   of absolute paths). Keep dataset acquisition behind an abstraction.

@@ -56,6 +56,7 @@ import {
   resolveServerUrl
 } from './domain/desktop'
 import { runNiimathTask, type NiimathOperation, type NiimathTaskResult } from './domain/niimath'
+import { acquirePreviewSlot } from './domain/previewLoadQueue'
 import neurovueIconUrl from '../src-tauri/icons/neurovue-icon.svg?url'
 
 const MIN_SPLIT = 34
@@ -1570,35 +1571,72 @@ function StablePreviewImage({
   frameClassName: string
   draggable?: boolean
 }): JSX.Element {
-  const [currentSrc, setCurrentSrc] = useState(src)
+  // currentSrc is the committed, visible image; pendingSrc is the one we've been
+  // granted a load slot for and are now fetching. Gating the fetch behind a slot
+  // keeps a gridful of tiles from saturating the connection pool ahead of the
+  // volume — see acquirePreviewSlot.
+  const [currentSrc, setCurrentSrc] = useState<string | null>(null)
   const [pendingSrc, setPendingSrc] = useState<string | null>(null)
+  const releaseRef = useRef<(() => void) | null>(null)
+
+  function releaseSlot(): void {
+    releaseRef.current?.()
+    releaseRef.current = null
+  }
 
   useEffect(() => {
     if (src === currentSrc) {
+      releaseSlot()
       setPendingSrc(null)
       return
     }
 
-    setPendingSrc(src)
+    // Drop the slot held by any now-stale pending load before queueing the new
+    // one; replacing the <img> src cancels the in-flight request anyway.
+    releaseSlot()
+
+    let cancelled = false
+    void acquirePreviewSlot().then((release) => {
+      if (cancelled) {
+        release()
+        return
+      }
+      releaseRef.current = release
+      setPendingSrc(src)
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [currentSrc, src])
 
+  // Release the slot if we unmount mid-load so it can never leak.
+  useEffect(() => releaseSlot, [])
+
   function commitPendingSrc(): void {
-    if (!pendingSrc) return
-    setCurrentSrc(pendingSrc)
+    setCurrentSrc((previous) => (pendingSrc ? pendingSrc : previous))
     setPendingSrc(null)
+    releaseSlot()
+  }
+
+  function abandonPendingSrc(): void {
+    setPendingSrc(null)
+    releaseSlot()
   }
 
   return (
     <span className={frameClassName}>
-      <img
-        className="nv-preview-image"
-        src={currentSrc}
-        alt=""
-        draggable={draggable}
-        loading="eager"
-        decoding="async"
-        fetchPriority="low"
-      />
+      {currentSrc ? (
+        <img
+          className="nv-preview-image"
+          src={currentSrc}
+          alt=""
+          draggable={draggable}
+          loading="eager"
+          decoding="async"
+          fetchPriority="low"
+        />
+      ) : null}
       {pendingSrc ? (
         <img
           className="nv-preview-image is-pending"
@@ -1609,7 +1647,7 @@ function StablePreviewImage({
           decoding="async"
           fetchPriority="low"
           onLoad={commitPendingSrc}
-          onError={() => setPendingSrc(null)}
+          onError={abandonPendingSrc}
         />
       ) : null}
     </span>

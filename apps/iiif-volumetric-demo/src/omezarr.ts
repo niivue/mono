@@ -605,6 +605,10 @@ function applyExplodeToLoadedVolume(): void {
   const vol = nv.volumes[0]
   if (vol) {
     vol.chunkExplode = currentChunkExplode()
+    // Keep the focus box tracking the (newly) exploded block position.
+    if (v && els.subvolume.value === 'multilod' && vol.chunkPlan) {
+      setMultiLodFocusBox(v, vol.chunkPlan)
+    }
   }
   if (v) renderHud(v, Number(els.level.value))
   nv.drawScene()
@@ -738,6 +742,8 @@ async function reload(): Promise<void> {
     await reloadMultiLod(v, myEpoch)
     return
   }
+  // Other modes have no multi-LOD focus region — clear any box from a prior mode.
+  nv.focusBox = null
   const explodedGrid = shouldUseExplodedGrid(shape, bbox)
   const streaming = isStreamingMode() || explodedGrid
   const loadingSubvolume = Boolean(bbox)
@@ -946,6 +952,7 @@ async function reloadMultiLod(
     }
     nv.sliceType = 4
     if (cam) restoreView(cam)
+    if (volume.chunkPlan) setMultiLodFocusBox(v, volume.chunkPlan)
     loadedLevelShape = (volume.dimsRAS?.slice(1, 4) as Shape3) ?? null
     loadedBbox = null
     showCanvas()
@@ -1275,6 +1282,78 @@ function createMultiLodVolume(
   // first visible voxel under the cursor (see ensureCoarsePickData).
   vol.pickSampler = makeCoarsePickSampler(v)
   return vol
+}
+
+// Outline the focused block as a box in the 3D render view: the single brick
+// that contains the focus point. Bricks are non-overlapping, so exactly one
+// contains it (the finest one there); boxing it makes the outline match that
+// block's size and grid alignment.
+function setMultiLodFocusBox(v: VolumeApiEntry, plan: ChunkPlan): void {
+  if (!nv) return
+  const finest = (v.levels ?? []).slice().sort((a, b) => a.level - b.level)[0]
+  if (!finest) return
+  const cs = plan.volumeDims as Shape3 // common (finest) grid
+  const sp = finest.spacing
+  const extentsMin: Shape3 = [-0.5 * sp[0], -0.5 * sp[1], -0.5 * sp[2]]
+  const extentsMax: Shape3 = [
+    (cs[0] - 0.5) * sp[0],
+    (cs[1] - 0.5) * sp[1],
+    (cs[2] - 0.5) * sp[2],
+  ]
+  const center: Shape3 = lastFocusFrac
+    ? [
+        lastFocusFrac[0] * cs[0],
+        lastFocusFrac[1] * cs[1],
+        lastFocusFrac[2] * cs[2],
+      ]
+    : [cs[0] / 2, cs[1] / 2, cs[2] / 2]
+  const block = plan.chunks.find((c) => {
+    for (let a = 0; a < 3; a++) {
+      if (
+        center[a] < c.voxelOrigin[a] ||
+        center[a] >= c.voxelOrigin[a] + c.voxelDims[a]
+      ) {
+        return false
+      }
+    }
+    return true
+  })
+  if (!block) {
+    nv.focusBox = null
+    return
+  }
+  // When the blocks are exploded, the focused brick is displaced by its own
+  // explode offset; shift the box by the same mm so it tracks the block. Mirrors
+  // chunkExplodeOffsetFrac: ((centreFrac - 0.5)(scale - 1)) per axis.
+  const explode = currentChunkExplode()
+  const shiftMM: Shape3 = [0, 0, 0]
+  if (explode?.enabled) {
+    for (let a = 0; a < 3; a++) {
+      const scale = Math.max(1, explode.scale?.[a] ?? 1)
+      if (scale <= 1) continue
+      const centreFrac = (block.voxelOrigin[a] + block.voxelDims[a] / 2) / cs[a]
+      const offsetFrac = (centreFrac - 0.5) * (scale - 1)
+      shiftMM[a] = offsetFrac * (extentsMax[a] - extentsMin[a])
+    }
+  }
+  const toMM = (voxel: number, axis: number): number =>
+    extentsMin[axis] +
+    (voxel / cs[axis]) * (extentsMax[axis] - extentsMin[axis]) +
+    shiftMM[axis]
+  nv.focusBox = {
+    min: [
+      toMM(block.voxelOrigin[0], 0),
+      toMM(block.voxelOrigin[1], 1),
+      toMM(block.voxelOrigin[2], 2),
+    ],
+    max: [
+      toMM(block.voxelOrigin[0] + block.voxelDims[0], 0),
+      toMM(block.voxelOrigin[1] + block.voxelDims[1], 1),
+      toMM(block.voxelOrigin[2] + block.voxelDims[2], 2),
+    ],
+    color: [1, 0.6, 0.1, 1],
+    thickness: 2,
+  }
 }
 
 // A scalar view over raw.bin bytes for the given dtype (little-endian, matching

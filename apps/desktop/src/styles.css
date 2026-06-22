@@ -1793,15 +1793,14 @@ button {
   display: grid;
   place-items: center;
   width: 100%;
-  height: 10px;
-  min-height: 10px;
+  height: 12px;
+  min-height: 12px;
   border: 0;
   border-top: 1px solid var(--line);
   background: #10110d;
   color: var(--faint);
   cursor: row-resize;
   touch-action: none;
-  transform: rotate(90deg);
 }
 
 .nv-hsplitter:hover,

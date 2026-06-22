@@ -21,6 +21,7 @@ import {
   Eye,
   FileJson,
   FolderOpen,
+  GripHorizontal,
   GripVertical,
   History,
   X,
@@ -940,10 +941,10 @@ export function App(): JSX.Element {
             aria-label="Resize terminal"
             className="nv-hsplitter"
             onPointerDown={(event) => beginVerticalDrag(event, updateTerminalHeight)}
-            title="Resize terminal"
+            title="Drag to resize the terminal"
             type="button"
           >
-            <GripVertical size={16} />
+            <GripHorizontal size={16} />
           </button>
           <TerminalPanel datasetRoot={datasetRoot} onStatus={setStatus} />
         </section>
@@ -2126,15 +2127,13 @@ function beginVerticalDrag(
   event.preventDefault()
   const handle = event.currentTarget
   const pointerId = event.pointerId
-  // Footer is a fixed 34px row; the dock fills the gap between the pointer and it.
-  const footerHeight = 34
-
-  function update(clientY: number): void {
-    onChange(window.innerHeight - footerHeight - clientY)
-  }
+  // Track the drag relative to where it started so the dock doesn't jump to the
+  // pointer on grab. Dragging up (smaller clientY) grows the dock.
+  const startY = event.clientY
+  const startHeight = handle.parentElement?.getBoundingClientRect().height ?? 0
 
   function onMove(moveEvent: PointerEvent): void {
-    update(moveEvent.clientY)
+    onChange(startHeight + (startY - moveEvent.clientY))
   }
 
   function onUp(): void {
@@ -2146,7 +2145,6 @@ function beginVerticalDrag(
     }
   }
 
-  update(event.clientY)
   handle.setPointerCapture(pointerId)
   handle.addEventListener('pointermove', onMove)
   handle.addEventListener('pointerup', onUp)

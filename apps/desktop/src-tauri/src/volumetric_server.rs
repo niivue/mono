@@ -1595,23 +1595,63 @@ fn read_nifti_header(path: &FsPath) -> Option<NiftiHeader> {
     parse_nifti_header(&header)
 }
 
-fn read_nifti_file(path: &FsPath) -> Option<(NiftiHeader, Vec<u8>)> {
-    let bytes = if path
-        .file_name()
+/// Voxel-count ceiling for a source volume before it is fully decompressed into
+/// memory. A pathologically large file would otherwise OOM the server (the read
+/// alone, plus the f32 working buffers in pyramid/render). Generous enough for
+/// real brain data (~800^3); overridable via NEUROVUE_MAX_SOURCE_VOXELS.
+const DEFAULT_MAX_SOURCE_VOXELS: usize = 512 * 1024 * 1024;
+
+fn max_source_voxels() -> usize {
+    std::env::var("NEUROVUE_MAX_SOURCE_VOXELS")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|&voxels| voxels > 0)
+        .unwrap_or(DEFAULT_MAX_SOURCE_VOXELS)
+}
+
+fn is_gzipped_nifti(path: &FsPath) -> bool {
+    path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| name.ends_with(".gz"))
-    {
-        let file = File::open(path).ok()?;
-        let mut decoder = GzDecoder::new(file);
+}
+
+/// Read just the 348-byte header without decompressing the whole volume.
+fn peek_nifti_header(path: &FsPath) -> Option<NiftiHeader> {
+    let mut header_bytes = [0u8; 348];
+    if is_gzipped_nifti(path) {
+        GzDecoder::new(File::open(path).ok()?)
+            .read_exact(&mut header_bytes)
+            .ok()?;
+    } else {
+        File::open(path).ok()?.read_exact(&mut header_bytes).ok()?;
+    }
+    parse_nifti_header(&header_bytes)
+}
+
+fn read_nifti_file(path: &FsPath) -> Option<(NiftiHeader, Vec<u8>)> {
+    // Peek the header and enforce the voxel ceiling before the (potentially
+    // huge) full read, so an oversized volume bails instead of OOMing.
+    let header = peek_nifti_header(path)?;
+    let voxels = usize::from(header.shape[0])
+        .checked_mul(usize::from(header.shape[1]))?
+        .checked_mul(usize::from(header.shape[2]))?;
+    if voxels > max_source_voxels() {
+        return None;
+    }
+
+    let bytes = if is_gzipped_nifti(path) {
         let mut bytes = Vec::new();
-        decoder.read_to_end(&mut bytes).ok()?;
+        GzDecoder::new(File::open(path).ok()?)
+            .read_to_end(&mut bytes)
+            .ok()?;
         bytes
     } else {
         fs::read(path).ok()?
     };
 
-    let header_bytes: [u8; 348] = bytes.get(..348)?.try_into().ok()?;
-    let header = parse_nifti_header(&header_bytes)?;
+    if bytes.len() < 348 {
+        return None;
+    }
     Some((header, bytes))
 }
 

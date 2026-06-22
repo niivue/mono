@@ -1409,6 +1409,27 @@ button {
   text-transform: uppercase;
 }
 
+.nv-zoom-card {
+  display: block;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nv-zoom-card-title {
+  margin-right: auto;
+  font-weight: 600;
+}
+
+.nv-zoom-card-hint {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .nv-clip-flip {
   color: var(--muted);
   font-size: 12px;

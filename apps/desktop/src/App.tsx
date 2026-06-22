@@ -267,9 +267,9 @@ export function App(): JSX.Element {
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
   const [isFileListCollapsed, setIsFileListCollapsed] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
-  const [activeClipPlaneId, setActiveClipPlaneId] = useState(
-    () => defaultClipPlanes()[0]?.id ?? 'anterior'
-  )
+  // Empty until a clip plane is selected — the wheel starts bound to zoom, so no
+  // plane should read as the wheel's target on first load.
+  const [activeClipPlaneId, setActiveClipPlaneId] = useState('')
   const [renderWheelMode, setRenderWheelMode] = useState<RenderWheelMode>('zoom')
   const [isOpeningDataset, setIsOpeningDataset] = useState(false)
   const [recentDatasets, setRecentDatasets] = useState<string[]>(() => loadRecentDatasets())
@@ -507,6 +507,13 @@ export function App(): JSX.Element {
     setRenderWheelMode('clip-plane')
   }
 
+  function changeRenderWheelMode(mode: RenderWheelMode): void {
+    setRenderWheelMode(mode)
+    // Drop the active clip-plane focus when leaving clip-plane mode so the user
+    // knows they must reselect a plane before the wheel will move it again.
+    if (mode === 'zoom') setActiveClipPlaneId('')
+  }
+
   function updateClipPlane(plane: ClipPlane): void {
     bindActiveClipPlane(plane.id)
     setClipPlanes((planes) =>
@@ -660,15 +667,19 @@ export function App(): JSX.Element {
           </label>
 
           <button
+            aria-label="Reset clip planes"
             className="nv-icon-button"
             title="Reset clip planes"
+            type="button"
             onClick={() => setClipPlanes(defaultClipPlanes())}
           >
             <RotateCcw size={16} />
           </button>
           <button
+            aria-label="Save correction patch"
             className="nv-icon-button"
             title="Save correction patch"
+            type="button"
             onClick={() => void savePatch(serverUrl, selected, clipPlanes, backend)}
           >
             <Save size={16} />
@@ -821,28 +832,38 @@ export function App(): JSX.Element {
                 <section className="nv-control-section">
                   <div className="nv-panel-heading">
                     <span>
+                      <ZoomIn size={15} />
+                      Zoom
+                    </span>
+                  </div>
+
+                  <button
+                    aria-pressed={renderWheelMode === 'zoom'}
+                    className={`nv-clip-card nv-zoom-card ${renderWheelMode === 'zoom' ? 'is-active' : ''}`}
+                    onClick={() => changeRenderWheelMode('zoom')}
+                    type="button"
+                  >
+                    <span className="nv-clip-card-header">
+                      <span className="nv-zoom-card-title">Zoom render</span>
+                      {renderWheelMode === 'zoom' ? <span className="nv-clip-active-badge">wheel</span> : null}
+                    </span>
+                    <span className="nv-zoom-card-hint">Scroll the render to zoom in and out.</span>
+                  </button>
+                </section>
+
+                <section className="nv-control-section">
+                  <div className="nv-panel-heading">
+                    <span>
                       <SlidersHorizontal size={15} />
                       Clip Planes
                     </span>
                     <em>{clipPlanes.find((plane) => plane.id === activeClipPlaneId)?.label ?? 'none'}</em>
                   </div>
 
-                  <label className="nv-select nv-wheel-mode-select">
-                    <span>Wheel</span>
-                    <select
-                      value={renderWheelMode}
-                      onChange={(event) => setRenderWheelMode(event.target.value as RenderWheelMode)}
-                    >
-                      <option value="zoom">Zoom render</option>
-                      <option value="clip-plane">Move active clip plane</option>
-                    </select>
-                    <ChevronDown size={14} />
-                  </label>
-
                   <div className="nv-clip-list">
                     {clipPlanes.map((plane) => (
                       <ClipPlaneEditor
-                        active={plane.id === activeClipPlaneId}
+                        active={renderWheelMode === 'clip-plane' && plane.id === activeClipPlaneId}
                         key={plane.id}
                         plane={plane}
                         onActivate={() => bindActiveClipPlane(plane.id)}
@@ -2005,7 +2026,7 @@ function Slider({
         type="range"
         value={value}
       />
-      <code>{value.toFixed(step < 1 ? 2 : 0)}</code>
+      <code>{Number.isFinite(value) ? value.toFixed(step < 1 ? 2 : 0) : '–'}</code>
     </label>
   )
 }

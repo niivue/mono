@@ -352,11 +352,15 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
     let my_gen = handle.warm_generation.fetch_add(1, Ordering::SeqCst) + 1;
     spawn_coarse_warm(
         warm_volumes,
-        warm_root,
+        warm_root.clone(),
         handle.pyramid_locks.clone(),
         handle.warm_generation.clone(),
         my_gen,
     );
+
+    // Prune old dataset caches in the background, keeping the one we just opened.
+    let keep_segment = dataset_segment(warm_root.as_deref());
+    std::thread::spawn(move || sweep_dataset_cache(&keep_segment));
 
     Ok(volume_count)
 }
@@ -1951,6 +1955,80 @@ fn downsampled_nifti_cache_path(
 /// cleared as a unit) while still living outside the dataset and out of git.
 fn dataset_cache_dir(dataset_root: Option<&FsPath>) -> PathBuf {
     cache_root().join("datasets").join(dataset_segment(dataset_root))
+}
+
+/// Total on-disk cache budget across all dataset segments. Past this, the
+/// oldest dataset caches are pruned. Overridable via NEUROVUE_CACHE_BUDGET_BYTES.
+const DEFAULT_CACHE_BUDGET_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+
+fn cache_budget_bytes() -> u64 {
+    std::env::var("NEUROVUE_CACHE_BUDGET_BYTES")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|&bytes| bytes > 0)
+        .unwrap_or(DEFAULT_CACHE_BUDGET_BYTES)
+}
+
+fn dir_size_bytes(path: &FsPath) -> u64 {
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    let mut total = 0;
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        total += if meta.is_dir() {
+            dir_size_bytes(&entry.path())
+        } else {
+            meta.len()
+        };
+    }
+    total
+}
+
+/// Best-effort prune of cached dataset directories once the total exceeds the
+/// budget, removing oldest-modified first. The active dataset (`keep_segment`)
+/// is never removed.
+fn sweep_dataset_cache(keep_segment: &str) {
+    let datasets_dir = cache_root().join("datasets");
+    let Ok(entries) = fs::read_dir(&datasets_dir) else {
+        return;
+    };
+
+    let mut segments: Vec<(PathBuf, u64, std::time::SystemTime)> = Vec::new();
+    let mut total: u64 = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let size = dir_size_bytes(&path);
+        let modified = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .unwrap_or(UNIX_EPOCH);
+        total += size;
+        segments.push((path, size, modified));
+    }
+
+    let budget = cache_budget_bytes();
+    if total <= budget {
+        return;
+    }
+
+    segments.sort_by_key(|(_, _, modified)| *modified); // oldest first
+    for (path, size, _) in segments {
+        if total <= budget {
+            break;
+        }
+        if path.file_name().and_then(|name| name.to_str()) == Some(keep_segment) {
+            continue;
+        }
+        if fs::remove_dir_all(&path).is_ok() {
+            total = total.saturating_sub(size);
+        }
+    }
 }
 
 fn dataset_segment(dataset_root: Option<&FsPath>) -> String {

@@ -75,6 +75,11 @@ const PREVIEW_IMAGE_VERSION = 5
 // Abandon a preview load that never fires load/error, so it can't hold a queue
 // slot forever and stall all other preview loading.
 const PREVIEW_LOAD_TIMEOUT_MS = 15000
+// Prefer WebGPU when the platform exposes it, falling back to WebGL2 otherwise.
+function preferredBackend(): Backend {
+  return typeof navigator !== 'undefined' && 'gpu' in navigator ? 'webgpu' : 'webgl2'
+}
+
 const RECENT_DATASETS_KEY = 'neurovue.recentDatasets.v1'
 const MAX_RECENT_DATASETS = 10
 const TERMINAL_OPEN_KEY = 'neurovue.terminalOpen.v1'
@@ -260,7 +265,7 @@ export function App(): JSX.Element {
   const [cacheRoot, setCacheRoot] = useState('')
   const [manifest, setManifest] = useState<DesktopManifest | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [backend, setBackend] = useState<Backend>('webgl2')
+  const backend = useMemo<Backend>(preferredBackend, [])
   const [colormap, setColormap] = useState('gray')
   const [clipPlanes, setClipPlanes] = useState(defaultClipPlanes)
   const [status, setStatus] = useState('Starting NeuroVue.')
@@ -680,34 +685,6 @@ export function App(): JSX.Element {
             ) : null}
           </div>
 
-          <div className="nv-segmented" aria-label="Backend">
-            <button
-              className={backend === 'webgl2' ? 'is-active' : ''}
-              onClick={() => setBackend('webgl2')}
-              type="button"
-            >
-              WebGL2
-            </button>
-            <button
-              className={backend === 'webgpu' ? 'is-active' : ''}
-              onClick={() => setBackend('webgpu')}
-              type="button"
-            >
-              WebGPU
-            </button>
-          </div>
-
-          <label className="nv-select">
-            <span>Map</span>
-            <select value={colormap} onChange={(event) => setColormap(event.target.value)}>
-              <option value="gray">Gray</option>
-              <option value="viridis">Viridis</option>
-              <option value="magma">Magma</option>
-              <option value="actc">ACTC</option>
-            </select>
-            <ChevronDown size={14} />
-          </label>
-
           <button
             aria-label="Reset clip planes"
             className="nv-icon-button"
@@ -959,12 +936,35 @@ export function App(): JSX.Element {
                 <MetadataPanel item={selected} metadata={metadata} status={metadataStatus} />
               </>
             ) : (
-              <NiimathOperationsPanel
-                item={selected}
-                metadata={metadata}
-                onDerivedVolume={refreshDesktopManifest}
-                onStatus={setStatus}
-              />
+              <>
+                <section className="nv-control-section">
+                  <div className="nv-panel-heading">
+                    <span>
+                      <Eye size={15} />
+                      Colormap
+                    </span>
+                  </div>
+                  {/* Per-volume display setting parked here for now; will move to a
+                      per-layer control later. */}
+                  <label className="nv-select">
+                    <span>Map</span>
+                    <select value={colormap} onChange={(event) => setColormap(event.target.value)}>
+                      <option value="gray">Gray</option>
+                      <option value="viridis">Viridis</option>
+                      <option value="magma">Magma</option>
+                      <option value="actc">ACTC</option>
+                    </select>
+                    <ChevronDown size={14} />
+                  </label>
+                </section>
+
+                <NiimathOperationsPanel
+                  item={selected}
+                  metadata={metadata}
+                  onDerivedVolume={refreshDesktopManifest}
+                  onStatus={setStatus}
+                />
+              </>
             )}
           </div>
         </aside>

@@ -147,13 +147,6 @@ button {
   gap: 9px;
 }
 
-.nv-segmented {
-  display: inline-grid;
-  grid-auto-flow: column;
-  border: 1px solid var(--line);
-  background: #10110d;
-}
-
 .nv-tool-button {
   display: inline-flex;
   align-items: center;
@@ -182,35 +175,15 @@ button {
   opacity: 0.42;
 }
 
-.nv-segmented button,
-.nv-icon-button {
-  min-height: 32px;
-  border: 0;
-  background: #12130f;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.nv-segmented button {
-  min-width: 74px;
-  padding: 0 12px;
-  border-right: 1px solid var(--line);
-}
-
-.nv-segmented button:last-child {
-  border-right: 0;
-}
-
-.nv-segmented button.is-active {
-  background: #252112;
-  color: var(--amber);
-}
-
 .nv-icon-button {
   display: grid;
   place-items: center;
   width: 34px;
+  min-height: 32px;
   border: 1px solid var(--line);
+  background: #12130f;
+  color: var(--muted);
+  cursor: pointer;
 }
 
 .nv-icon-button:hover,
@@ -1773,11 +1746,6 @@ button {
 
   .nv-toolbar {
     gap: 6px;
-  }
-
-  .nv-segmented button {
-    min-width: 62px;
-    padding: 0 8px;
   }
 
   .nv-select {

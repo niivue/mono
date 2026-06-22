@@ -28,6 +28,8 @@ import {
   Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   RotateCcw,
   Save,
   SlidersHorizontal,
@@ -267,6 +269,7 @@ export function App(): JSX.Element {
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
   const [isFileListCollapsed, setIsFileListCollapsed] = useState(false)
+  const [isControlsCollapsed, setIsControlsCollapsed] = useState(false)
   const [isRenderMaximized, setIsRenderMaximized] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
   // Empty until a clip plane is selected — the wheel starts bound to zoom, so no
@@ -706,7 +709,11 @@ export function App(): JSX.Element {
         </div>
       </header>
 
-      <section className={`nv-workbench ${isFileListCollapsed ? 'is-file-list-collapsed' : ''}`}>
+      <section
+        className={`nv-workbench ${isFileListCollapsed ? 'is-file-list-collapsed' : ''} ${
+          isControlsCollapsed ? 'is-controls-collapsed' : ''
+        }`}
+      >
         <aside className={`nv-sidebar ${isFileListCollapsed ? 'is-collapsed' : ''}`}>
           <div className="nv-panel-heading">
             <span>
@@ -831,7 +838,24 @@ export function App(): JSX.Element {
           </section>
         </section>
 
-        <aside className="nv-controls">
+        <aside
+          className={`nv-controls ${isControlsCollapsed ? 'is-collapsed' : ''} ${
+            isRenderMaximized ? 'is-floating' : ''
+          }`}
+        >
+          <div className="nv-controls-toolbar">
+            <button
+              aria-expanded={!isControlsCollapsed}
+              aria-label={isControlsCollapsed ? 'Expand controls panel' : 'Collapse controls panel'}
+              className="nv-sidebar-toggle"
+              onClick={() => setIsControlsCollapsed((collapsed) => !collapsed)}
+              title={isControlsCollapsed ? 'Expand controls' : 'Collapse controls'}
+              type="button"
+            >
+              {isControlsCollapsed ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
+            </button>
+          </div>
+
           <div className="nv-inspector-tools" aria-label="Desktop controls">
             <DesktopZoomControls
               zoom={desktopZoom}

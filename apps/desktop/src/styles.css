@@ -341,6 +341,10 @@ button {
   --file-list-width: 52px;
 }
 
+.nv-workbench.is-controls-collapsed {
+  --controls-width: 52px;
+}
+
 .nv-sidebar,
 .nv-controls {
   min-width: 0;
@@ -374,6 +378,40 @@ button {
 
 .nv-controls > * {
   flex: 0 0 auto;
+}
+
+.nv-controls-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 44px;
+}
+
+.nv-controls.is-collapsed {
+  align-items: center;
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+/* Collapsed: keep only the toggle toolbar; content stays mounted (state intact). */
+.nv-controls.is-collapsed > *:not(.nv-controls-toolbar) {
+  display: none;
+}
+
+.nv-controls.is-collapsed .nv-controls-toolbar {
+  justify-content: center;
+}
+
+/* When the render is maximized, float the controls over it so clip/zoom stay
+   reachable. The maximized pane reserves --controls-width on its right so the
+   two never overlap (and the pane's own minimize button stays visible). */
+.nv-controls.is-floating {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--controls-width);
+  z-index: 61;
 }
 
 .nv-panel-heading {
@@ -728,7 +766,10 @@ button {
 
 .nv-niivue-pane.is-maximized {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: var(--controls-width);
   z-index: 60;
   background: var(--panel);
 }

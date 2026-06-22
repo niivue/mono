@@ -22,7 +22,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 use tokio::runtime::Builder;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 #[derive(Clone)]
 pub struct ServerHandle {
@@ -247,7 +247,7 @@ pub fn spawn_default() -> ServerHandle {
                     "/session/correction.patch.json",
                     get(read_patch).post(write_patch),
                 )
-                .layer(CorsLayer::permissive())
+                .layer(app_cors_layer())
                 .with_state(state);
 
             if let Err(error) = axum::serve(listener, app).await {
@@ -315,6 +315,40 @@ fn read_bids_dataset_info(root: &FsPath) -> Option<BidsDatasetInfo> {
 
 pub fn cache_root() -> PathBuf {
     std::env::temp_dir().join("neurovue")
+}
+
+/// Origins allowed to read from the local server: the app's own webview (the
+/// vite dev URL in development, the tauri:// scheme in a packaged build). This
+/// replaces the previous permissive CORS so an arbitrary web page the user
+/// visits can't fetch their local volume data. `<img>` previews still display
+/// cross-origin (image display isn't CORS-gated); only fetch-based reads are
+/// restricted. Extra origins can be added via NEUROVUE_ALLOWED_ORIGINS (comma
+/// separated).
+fn app_cors_layer() -> CorsLayer {
+    let mut origins = vec![
+        "http://127.0.0.1:5175".to_string(),
+        "http://localhost:5175".to_string(),
+        "tauri://localhost".to_string(),
+        "https://tauri.localhost".to_string(),
+    ];
+    if let Ok(extra) = std::env::var("NEUROVUE_ALLOWED_ORIGINS") {
+        origins.extend(
+            extra
+                .split(',')
+                .map(str::trim)
+                .filter(|origin| !origin.is_empty())
+                .map(str::to_string),
+        );
+    }
+    let allowed = origins
+        .iter()
+        .filter_map(|origin| HeaderValue::from_str(origin).ok())
+        .collect::<Vec<_>>();
+
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(allowed))
+        .allow_methods(Any)
+        .allow_headers(Any)
 }
 
 pub fn working_derivatives_dir() -> PathBuf {

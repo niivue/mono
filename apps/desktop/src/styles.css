@@ -726,6 +726,20 @@ button {
   box-shadow: inset 0 0 0 1px rgba(115, 198, 155, 0.35);
 }
 
+.nv-niivue-pane.is-maximized {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--panel);
+}
+
+.nv-render-maximize {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+}
+
 .nv-inspector-tools {
   display: flex;
   align-items: center;
@@ -991,7 +1005,8 @@ button {
 }
 
 .nv-niivue-title {
-  right: 14px;
+  /* Leave room at the right for the full-screen toggle button. */
+  right: 50px;
 }
 
 .nv-osd-tile {

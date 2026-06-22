@@ -25,6 +25,7 @@ import {
   History,
   X,
   Maximize2,
+  Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
   RotateCcw,
@@ -266,6 +267,7 @@ export function App(): JSX.Element {
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
   const [isFileListCollapsed, setIsFileListCollapsed] = useState(false)
+  const [isRenderMaximized, setIsRenderMaximized] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
   // Empty until a clip plane is selected — the wheel starts bound to zoom, so no
   // plane should read as the wheel's target on first load.
@@ -513,6 +515,15 @@ export function App(): JSX.Element {
     // knows they must reselect a plane before the wheel will move it again.
     if (mode === 'zoom') setActiveClipPlaneId('')
   }
+
+  useEffect(() => {
+    if (!isRenderMaximized) return
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') setIsRenderMaximized(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isRenderMaximized])
 
   function updateClipPlane(plane: ClipPlane): void {
     bindActiveClipPlane(plane.id)
@@ -784,7 +795,7 @@ export function App(): JSX.Element {
           </button>
 
           <section
-            className={`nv-niivue-pane ${mouseContext === 'niivue' ? 'is-context-active' : ''}`}
+            className={`nv-niivue-pane ${mouseContext === 'niivue' ? 'is-context-active' : ''} ${isRenderMaximized ? 'is-maximized' : ''}`}
             aria-label="NiiVue render window"
             onPointerEnter={() => setMouseContext('niivue')}
             onPointerLeave={() => setMouseContext(null)}
@@ -798,6 +809,16 @@ export function App(): JSX.Element {
                   : backend.toUpperCase()}
               </em>
             </div>
+            <button
+              aria-label={isRenderMaximized ? 'Exit full screen' : 'View NiiVue full screen'}
+              aria-pressed={isRenderMaximized}
+              className="nv-pane-icon-button nv-render-maximize"
+              onClick={() => setIsRenderMaximized((value) => !value)}
+              title={isRenderMaximized ? 'Exit full screen (Esc)' : 'Full screen'}
+              type="button"
+            >
+              {isRenderMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
             <NiivueStage
               activeClipPlaneId={activeClipPlaneId}
               backend={backend}

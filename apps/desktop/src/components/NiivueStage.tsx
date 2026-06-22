@@ -323,14 +323,21 @@ export function NiivueStage({
 
   function handleWheelCapture(event: ReactWheelEvent<HTMLDivElement>): void {
     clearSnapSelection()
+    const nv = nvRef.current
+    if (!nv) return
+
     if (renderWheelMode === 'clip-plane') {
-      const nv = nvRef.current
-      if (nv) applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
+      const activeIndex = applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
+      if (activeIndex < 0) {
+        // No enabled clip plane to move — swallow the wheel so it can't fall
+        // through to NiiVue's zoom while the control reads "move clip plane".
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      // Otherwise let NiiVue receive the wheel and move the active clip plane.
       return
     }
 
-    const nv = nvRef.current
-    if (!nv) return
     event.preventDefault()
     event.stopPropagation()
     zoomRenderWithWheel(nv, event.deltaY)
@@ -567,7 +574,7 @@ function applyActiveClipPlane(
   nv: NiiVueLike,
   clipPlanes: ClipPlane[],
   activeClipPlaneId: string
-): void {
+): number {
   const activeIndex = clipPlanes
     .filter((plane) => plane.enabled)
     .findIndex((plane) => plane.id === activeClipPlaneId)
@@ -575,6 +582,8 @@ function applyActiveClipPlane(
   if (activeIndex >= 0) {
     nv.activeClipPlaneIndex = activeIndex
   }
+
+  return activeIndex
 }
 
 function zoomRenderWithWheel(nv: NiiVueLike, deltaY: number): void {

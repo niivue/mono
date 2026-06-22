@@ -509,13 +509,6 @@ export function App(): JSX.Element {
     setRenderWheelMode('clip-plane')
   }
 
-  function changeRenderWheelMode(mode: RenderWheelMode): void {
-    setRenderWheelMode(mode)
-    // Drop the active clip-plane focus when leaving clip-plane mode so the user
-    // knows they must reselect a plane before the wheel will move it again.
-    if (mode === 'zoom') setActiveClipPlaneId('')
-  }
-
   useEffect(() => {
     if (!isRenderMaximized) return
     function onKeyDown(event: KeyboardEvent): void {
@@ -524,6 +517,12 @@ export function App(): JSX.Element {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isRenderMaximized])
+
+  function changeClipPlaneDepth(planeId: string, depth: number): void {
+    setClipPlanes((planes) =>
+      planes.map((plane) => (plane.id === planeId ? { ...plane, depth } : plane))
+    )
+  }
 
   function updateClipPlane(plane: ClipPlane): void {
     bindActiveClipPlane(plane.id)
@@ -826,6 +825,7 @@ export function App(): JSX.Element {
               colormap={colormap}
               isActive={mouseContext === 'niivue'}
               item={selected}
+              onClipPlaneDepthChange={changeClipPlaneDepth}
               renderWheelMode={renderWheelMode}
             />
           </section>
@@ -847,9 +847,6 @@ export function App(): JSX.Element {
           <div className="nv-sidepanel-content">
             {sidePanelTab === 'inspect' ? (
               <>
-                <SelectionPanel item={selected} metadataStatus={metadataStatus} />
-                <MetadataPanel item={selected} metadata={metadata} status={metadataStatus} />
-
                 <section className="nv-control-section">
                   <div className="nv-panel-heading">
                     <span>
@@ -861,7 +858,7 @@ export function App(): JSX.Element {
                   <button
                     aria-pressed={renderWheelMode === 'zoom'}
                     className={`nv-clip-card nv-zoom-card ${renderWheelMode === 'zoom' ? 'is-active' : ''}`}
-                    onClick={() => changeRenderWheelMode('zoom')}
+                    onClick={() => setRenderWheelMode('zoom')}
                     type="button"
                   >
                     <span className="nv-clip-card-header">
@@ -878,7 +875,11 @@ export function App(): JSX.Element {
                       <SlidersHorizontal size={15} />
                       Clip Planes
                     </span>
-                    <em>{clipPlanes.find((plane) => plane.id === activeClipPlaneId)?.label ?? 'none'}</em>
+                    <em>
+                      {renderWheelMode === 'clip-plane'
+                        ? clipPlanes.find((plane) => plane.id === activeClipPlaneId)?.label ?? 'none'
+                        : 'none'}
+                    </em>
                   </div>
 
                   <div className="nv-clip-list">
@@ -893,6 +894,9 @@ export function App(): JSX.Element {
                     ))}
                   </div>
                 </section>
+
+                <SelectionPanel item={selected} metadataStatus={metadataStatus} />
+                <MetadataPanel item={selected} metadata={metadata} status={metadataStatus} />
               </>
             ) : (
               <NiimathOperationsPanel
@@ -1978,7 +1982,7 @@ function ClipPlaneEditor({
         <span>Flip</span>
       </label>
 
-      <Slider label="Depth" max={1} min={0} step={0.01} value={plane.depth} onChange={(depth) => onChange({ ...plane, depth })} />
+      <Slider label="Depth" max={1} min={-1} step={0.01} value={plane.depth} onChange={(depth) => onChange({ ...plane, depth })} />
       <Slider label="Azimuth" max={360} min={-360} step={1} value={plane.azimuth} onChange={(azimuth) => onChange({ ...plane, azimuth })} />
       <Slider label="Elevation" max={180} min={-180} step={1} value={plane.elevation} onChange={(elevation) => onChange({ ...plane, elevation })} />
     </section>

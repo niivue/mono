@@ -10,6 +10,7 @@ interface NiivueStageProps {
   clipPlanes: ClipPlane[]
   isActive: boolean
   renderWheelMode: 'zoom' | 'clip-plane'
+  onClipPlaneDepthChange: (planeId: string, depth: number) => void
 }
 
 interface NiiVueLike {
@@ -54,6 +55,7 @@ interface RenderViewSnap {
 type RenderSnapId = 'coronal' | 'sagittal' | 'axial'
 type NiiVueConstructor = new (options?: Record<string, unknown>) => NiiVueLike
 
+const CLIP_DEPTH_WHEEL_STEP = 0.0015
 const NIVUE_SLICE_TYPE_RENDER = 4
 const NIVUE_SHOW_RENDER_ALWAYS = 1
 const CORONAL_SNAP: RenderViewSnap = {
@@ -145,7 +147,8 @@ export function NiivueStage({
   colormap,
   clipPlanes,
   isActive,
-  renderWheelMode
+  renderWheelMode,
+  onClipPlaneDepthChange
 }: NiivueStageProps): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -327,14 +330,18 @@ export function NiivueStage({
     if (!nv) return
 
     if (renderWheelMode === 'clip-plane') {
+      // Always handle the wheel ourselves: drive the active plane's depth
+      // through React state (the same value the depth slider owns) rather than
+      // letting NiiVue mutate hidden internal state. That keeps React the single
+      // source of truth, so re-applying clipPlanes never resets another plane.
+      event.preventDefault()
+      event.stopPropagation()
       const activeIndex = applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
-      if (activeIndex < 0) {
-        // No enabled clip plane to move — swallow the wheel so it can't fall
-        // through to NiiVue's zoom while the control reads "move clip plane".
-        event.preventDefault()
-        event.stopPropagation()
-      }
-      // Otherwise let NiiVue receive the wheel and move the active clip plane.
+      if (activeIndex < 0) return
+      const active = clipPlanes.find((plane) => plane.id === activeClipPlaneId)
+      if (!active) return
+      const depth = clamp(active.depth + event.deltaY * CLIP_DEPTH_WHEEL_STEP, -1, 1)
+      if (depth !== active.depth) onClipPlaneDepthChange(activeClipPlaneId, depth)
       return
     }
 

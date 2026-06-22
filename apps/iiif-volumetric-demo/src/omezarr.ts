@@ -94,6 +94,7 @@ const els = {
   volume: el<HTMLSelectElement>('volume'),
   level: el<HTMLSelectElement>('level'),
   subvolume: el<HTMLSelectElement>('subvolume'),
+  view: el<HTMLSelectElement>('view'),
   explodedToggle: el<HTMLInputElement>('explodedToggle'),
   explodeEx: el<HTMLInputElement>('explodeEx'),
   explodeEy: el<HTMLInputElement>('explodeEy'),
@@ -219,6 +220,15 @@ async function main(): Promise<void> {
     applySubvolumeSelection(currentVolume())
     renderExplodePlan(currentVolume())
     void reload()
+  })
+  els.view.addEventListener('change', () => {
+    if (!nv) return
+    nv.sliceType = currentSliceType()
+    syncCameraSliders() // render zoom and 2D zoom are different scales
+    // Multi-resolution focus depends on the view (render = crosshair box;
+    // multiplanar = captured 2D region), so rebuild the plan.
+    if (els.subvolume.value === 'multilod') void reload()
+    else nv.drawScene()
   })
   els.explodedToggle.addEventListener('change', () => {
     syncExplodeLabels()
@@ -485,6 +495,15 @@ function currentVolume(): VolumeApiEntry | null {
 
 function isStreamingMode(): boolean {
   return els.subvolume.value === 'stream'
+}
+
+// niivue SLICE_TYPE from the View selector (4 = render, 3 = multiplanar).
+function currentSliceType(): number {
+  return Number(els.view.value) || 4
+}
+
+function isMultiplanarView(): boolean {
+  return currentSliceType() === 3
 }
 
 function currentChunkExplode(): VolumeChunkExplode | undefined {
@@ -819,7 +838,7 @@ async function reload(): Promise<void> {
     if (vol) {
       vol.chunkExplode = currentChunkExplode()
     }
-    nv.sliceType = 4
+    nv.sliceType = currentSliceType()
     loadedLevelShape = shape
     loadedBbox = bbox
     showCanvas()
@@ -890,7 +909,7 @@ async function reloadStreamingLevel(
       reloading = false
       return
     }
-    nv.sliceType = 4
+    nv.sliceType = currentSliceType()
     loadedLevelShape = shape
     loadedBbox = null
     showCanvas()
@@ -950,9 +969,14 @@ async function reloadMultiLod(
       reloading = false
       return
     }
-    nv.sliceType = 4
+    nv.sliceType = currentSliceType()
     if (cam) restoreView(cam)
-    if (volume.chunkPlan) setMultiLodFocusBox(v, volume.chunkPlan)
+    // The focus box is a 3D render-view indicator; multiplanar shows the slices.
+    if (!isMultiplanarView() && volume.chunkPlan) {
+      setMultiLodFocusBox(v, volume.chunkPlan)
+    } else {
+      nv.focusBox = null
+    }
     loadedLevelShape = (volume.dimsRAS?.slice(1, 4) as Shape3) ?? null
     loadedBbox = null
     showCanvas()
@@ -974,6 +998,7 @@ interface ViewState {
   elevation: number
   scale: number
   crosshair: [number, number, number]
+  pan2D: [number, number, number, number]
 }
 
 type CameraView = {
@@ -981,17 +1006,20 @@ type CameraView = {
   elevation: number
   scaleMultiplier: number
   crosshairPos: ArrayLike<number>
+  pan2Dxyzmm: ArrayLike<number>
 }
 
 function captureView(): ViewState | null {
   if (!nv) return null
   const n = nv as unknown as CameraView
   const c = n.crosshairPos
+  const p = n.pan2Dxyzmm
   return {
     azimuth: n.azimuth,
     elevation: n.elevation,
     scale: n.scaleMultiplier,
     crosshair: [c[0] ?? 0.5, c[1] ?? 0.5, c[2] ?? 0.5],
+    pan2D: [p?.[0] ?? 0, p?.[1] ?? 0, p?.[2] ?? 0, p?.[3] ?? 1],
   }
 }
 
@@ -1002,6 +1030,8 @@ function restoreView(s: ViewState): void {
   n.elevation = s.elevation
   n.scaleMultiplier = s.scale
   n.crosshairPos = s.crosshair
+  // Preserve the 2D zoom/pan so a refocus rebuild doesn't reset the slices.
+  n.pan2Dxyzmm = s.pan2D
 }
 
 // Re-stream the multi-LOD octree centred on the new crosshair after the user
@@ -1259,7 +1289,17 @@ function buildMultiLodPlan(
           lastFocusFrac[2] * commonShape[2],
         ]
       : [commonShape[0] / 2, commonShape[1] / 2, commonShape[2] / 2])
-  const radius = MULTILOD_CELL_EDGE * 1.5
+  // Render view focuses a tight region around the look-at point. Multiplanar
+  // focuses what the slices capture: centred on the crosshair, with a radius
+  // that shrinks as the 2D zoom grows — at zoom 1 it spans the whole volume
+  // (budget coarsens to the finest uniform LOD), zoomed in it refines that
+  // region.
+  let radius = MULTILOD_CELL_EDGE * 1.5
+  if (isMultiplanarView()) {
+    const zoom = Math.max(1, (nv?.pan2Dxyzmm as unknown as number[])?.[3] ?? 1)
+    const diagonal = Math.hypot(commonShape[0], commonShape[1], commonShape[2])
+    radius = diagonal / zoom
+  }
   return chunkVolumeMultiLOD(levelDims, { center, radius }, readMaxTexDim(), {
     cellEdge: MULTILOD_CELL_EDGE,
     haloSize: MULTILOD_HALO,
@@ -1781,7 +1821,20 @@ function applyZoomFromSlider(): void {
   if (!nv) return
   const v = Number(els.zoom.value)
   if (!Number.isFinite(v) || v <= 0) return
-  ;(nv as unknown as { scaleMultiplier: number }).scaleMultiplier = v
+  if (isMultiplanarView()) {
+    // 2D slices zoom via pan2Dxyzmm[3]; scaleMultiplier only affects 3D render.
+    const p = nv.pan2Dxyzmm as unknown as number[]
+    nv.pan2Dxyzmm = [p?.[0] ?? 0, p?.[1] ?? 0, p?.[2] ?? 0, v] as unknown as [
+      number,
+      number,
+      number,
+      number,
+    ]
+    // The captured 2D region drives the multi-LOD focus radius — rebuild on settle.
+    if (els.subvolume.value === 'multilod') scheduleMultiLodRefocus()
+  } else {
+    ;(nv as unknown as { scaleMultiplier: number }).scaleMultiplier = v
+  }
   scheduleAutoLod()
 }
 
@@ -1912,6 +1965,7 @@ function scheduleAutoLod(): void {
   if (!nv) return
   if (parseBbox(els.bbox.value)) return // Don't override an explicit subvolume
   if (isStreamingMode()) return
+  if (els.subvolume.value === 'multilod') return // multi-LOD drives its own focus
   if (lodTimer) clearTimeout(lodTimer)
   lodTimer = setTimeout(evaluateAutoLod, 160)
 }
@@ -1948,6 +2002,12 @@ function readViewerScale(viewer: NiiVue): number {
   const rec = viewer as unknown as {
     scaleMultiplier?: number
     scene?: { pan2Dxyzmm?: number[] }
+  }
+  // Multiplanar zoom lives in the 2D pan vector; render zoom in scaleMultiplier.
+  if (isMultiplanarView()) {
+    const z2d = rec.scene?.pan2Dxyzmm?.[3]
+    if (typeof z2d === 'number' && z2d > 0) return z2d
+    return 1
   }
   if (typeof rec.scaleMultiplier === 'number' && rec.scaleMultiplier > 0) {
     return rec.scaleMultiplier

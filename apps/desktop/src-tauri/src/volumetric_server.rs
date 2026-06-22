@@ -100,6 +100,17 @@ struct AppState {
     preview_cache: Arc<Mutex<PreviewCache>>,
     pyramid_locks: PyramidLocks,
     patch: Arc<Mutex<Option<Value>>>,
+    /// Caps concurrent slice renders so a burst of cold tiles can't each
+    /// decode a full volume into memory at once.
+    render_semaphore: Arc<tokio::sync::Semaphore>,
+}
+
+/// How many slice renders may run concurrently. Each holds a full decoded
+/// volume in memory, so keep this well below the worker-thread count.
+fn render_permits() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| (n.get() / 2).clamp(2, 4))
+        .unwrap_or(2)
 }
 
 #[derive(Clone, Serialize)]
@@ -189,6 +200,7 @@ pub fn spawn_default() -> ServerHandle {
         preview_cache: preview_cache.clone(),
         pyramid_locks: pyramid_locks.clone(),
         patch: Arc::new(Mutex::new(None)),
+        render_semaphore: Arc::new(tokio::sync::Semaphore::new(render_permits())),
     };
 
     // Warm the coarsest pyramid level for the startup sample in the background.
@@ -792,6 +804,21 @@ async fn image_tile(
             headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/bmp"));
             return Ok((headers, bytes).into_response());
         }
+    }
+
+    // Cap concurrent renders so a burst of cold tiles can't each hold a full
+    // decoded volume in memory at once. The semaphore is never closed, so a
+    // failed acquire is unreachable; proceed without a permit if it ever errors.
+    let _render_permit = state.render_semaphore.acquire().await.ok();
+    // Another request may have rendered this exact tile while we waited.
+    if let Some(cached) = state
+        .preview_cache
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(&cache_key).cloned())
+    {
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/bmp"));
+        return Ok((headers, cached).into_response());
     }
 
     if let Some(bmp) = render_slice_bmp(

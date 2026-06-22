@@ -2456,17 +2456,22 @@ function normalizeDesktopLayout(
   const sourceRows = layoutRows(sources.length, columns)
   const derivedRows = layoutRows(derivatives.length, columns)
   const pitch = tileSize + gap
-  // Just enough headroom for the (fixed-size) section label chip — keeping this
-  // small lets the first row of tiles sit near the top of the grid instead of
-  // being pushed to the bottom when a dataset has only a row or two.
-  const sectionLabelSpace = Math.round(tileSize / 2)
+  const sourceHeight = layoutGridHeight(sourceRows, tileSize, gap)
+  const derivedHeight = layoutGridHeight(derivedRows, tileSize, gap)
+  // Headroom for the fixed-size section-label chip. Make it proportional to the
+  // tile stack: once the grid is scaled to fit, the chip's rendered height stays
+  // roughly constant across row counts, so small datasets keep their tiles near
+  // the top while large (scaled-down) grids still leave room for the label
+  // instead of letting it cover the first row.
+  const sectionLabelSpace = Math.max(
+    Math.round(tileSize * 0.25),
+    Math.round(Math.max(sourceHeight, derivedHeight) * 0.1)
+  )
   const sectionGap = Math.max(Math.round(tileSize / 2), gap)
   const sourceTop = sectionLabelSpace
-  const sourceHeight = layoutGridHeight(sourceRows, tileSize, gap)
   const derivedTop = derivatives.length > 0
     ? sourceTop + sourceHeight + sectionGap + sectionLabelSpace
     : 0
-  const derivedHeight = layoutGridHeight(derivedRows, tileSize, gap)
   const nextBounds = new Map<string, WorldRect>()
 
   function placeGroup(group: DesktopItem[], top: number): void {

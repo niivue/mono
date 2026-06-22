@@ -1,3 +1,6 @@
+// The integrated terminal spawns a PTY/shell, which only exists on desktop;
+// iOS/Android forbid subprocesses, so the whole module is desktop-only.
+#[cfg(desktop)]
 mod terminal;
 mod volumetric_server;
 
@@ -502,7 +505,7 @@ fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Resu
 pub fn run() {
     let server = volumetric_server::spawn_default();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .menu(neurovue_menu)
         .on_menu_event(|app, event| {
@@ -510,7 +513,11 @@ pub fn run() {
                 let _ = app.emit("neurovue-open-directory", ());
             }
         })
-        .manage(NeuroVueState { server })
+        .manage(NeuroVueState { server });
+
+    // Terminal state + commands are desktop-only (see `mod terminal`).
+    #[cfg(desktop)]
+    let builder = builder
         .manage(terminal::TerminalState::default())
         .invoke_handler(tauri::generate_handler![
             neurovue_server_info,
@@ -522,7 +529,15 @@ pub fn run() {
             terminal::terminal_kill,
             terminal::discover_python_interpreters,
             terminal::inspect_python_interpreter
-        ])
+        ]);
+    #[cfg(not(desktop))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        neurovue_server_info,
+        open_dataset_path,
+        run_niimath_task
+    ]);
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running NeuroVue");
 }

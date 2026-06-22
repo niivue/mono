@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   type Dispatch,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
@@ -1416,16 +1417,54 @@ function DatasetDesktop({
     return () => window.cancelAnimationFrame(frame)
   }, [layoutItems.length, stageSize.height, stageSize.width, worldSize, zoom])
 
+  function handleStageKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    const stage = stageRef.current
+    if (!stage) return
+    const panStep = 80
+    switch (event.key) {
+      case 'ArrowLeft':
+        stage.scrollLeft -= panStep
+        break
+      case 'ArrowRight':
+        stage.scrollLeft += panStep
+        break
+      case 'ArrowUp':
+        stage.scrollTop -= panStep
+        break
+      case 'ArrowDown':
+        stage.scrollTop += panStep
+        break
+      case '+':
+      case '=':
+        onZoom(zoomBy(zoomRef.current, 1.25))
+        break
+      case '-':
+      case '_':
+        onZoom(zoomBy(zoomRef.current, 0.8))
+        break
+      case '0':
+        onZoom(1)
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+  }
+
   return (
     <div className={`nv-osd-stage ${isOverview ? 'is-overview' : ''}`}>
       <div
+        aria-label="Dataset grid. Arrow keys pan; plus and minus zoom; 0 fits."
         className={`nv-osd-scrollport ${isPanning ? 'is-panning' : ''}`}
         onClickCapture={(event) => suppressDesktopClickAfterDrag(event, suppressClickRef)}
+        onKeyDown={handleStageKeyDown}
         onPointerDown={(event) =>
           beginDesktopPan(event, dragRef, suppressClickRef, setIsPanning)
         }
         onScroll={() => updateDesktopViewport(stageRef.current, setViewport)}
         ref={stageRef}
+        role="group"
+        tabIndex={0}
       >
         <StageResizeObserver stageRef={stageRef} onResize={setStageSize} />
         <div className="nv-osd-world" style={worldSize}>

@@ -971,6 +971,11 @@ button {
   user-select: none;
 }
 
+.nv-osd-scrollport:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: -2px;
+}
+
 .nv-osd-title {
   top: 10px;
   left: 12px;

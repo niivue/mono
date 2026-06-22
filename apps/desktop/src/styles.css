@@ -1094,6 +1094,26 @@ button {
   pointer-events: none;
 }
 
+.nv-preview-spinner {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.nv-preview-spinner svg {
+  animation: nv-preview-spin 0.9s linear infinite;
+}
+
+@keyframes nv-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .nv-osd-tile.is-selected {
   border-color: var(--amber);
   box-shadow:

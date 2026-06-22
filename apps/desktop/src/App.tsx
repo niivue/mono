@@ -24,6 +24,7 @@ import {
   GripHorizontal,
   GripVertical,
   History,
+  LoaderCircle,
   X,
   Maximize2,
   Minimize2,
@@ -1658,6 +1659,7 @@ function StablePreviewImage({
   // volume — see acquirePreviewSlot.
   const [currentSrc, setCurrentSrc] = useState<string | null>(null)
   const [pendingSrc, setPendingSrc] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const releaseRef = useRef<(() => void) | null>(null)
 
   function releaseSlot(): void {
@@ -1669,12 +1671,14 @@ function StablePreviewImage({
     if (src === currentSrc) {
       releaseSlot()
       setPendingSrc(null)
+      setLoading(false)
       return
     }
 
     // Drop the slot held by any now-stale pending load before queueing the new
     // one; replacing the <img> src cancels the in-flight request anyway.
     releaseSlot()
+    setLoading(true)
 
     let cancelled = false
     void acquirePreviewSlot().then((release) => {
@@ -1697,16 +1701,23 @@ function StablePreviewImage({
   function commitPendingSrc(): void {
     setCurrentSrc((previous) => (pendingSrc ? pendingSrc : previous))
     setPendingSrc(null)
+    setLoading(false)
     releaseSlot()
   }
 
   function abandonPendingSrc(): void {
     setPendingSrc(null)
+    setLoading(false)
     releaseSlot()
   }
 
   return (
     <span className={frameClassName}>
+      {loading && !currentSrc ? (
+        <span className="nv-preview-spinner" aria-label="Generating preview" role="status">
+          <LoaderCircle size={18} />
+        </span>
+      ) : null}
       {currentSrc ? (
         <img
           className="nv-preview-image"

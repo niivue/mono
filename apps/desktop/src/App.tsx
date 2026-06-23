@@ -67,11 +67,11 @@ import {
   volumeFacetCounts,
   volumeFacetValue,
   volumeImageTypeLabel,
-  volumeRoleLabel,
-  volumeSearchText
+  volumeRoleLabel
 } from './domain/volumeFacets'
 import { recentDatasetLabel, useRecentDatasets } from './hooks/useRecentDatasets'
 import { useTerminalDock } from './hooks/useTerminalDock'
+import { useVolumeFilters } from './hooks/useVolumeFilters'
 import neurovueIconUrl from '../src-tauri/icons/neurovue-icon.svg?url'
 
 const MIN_SPLIT = 34
@@ -176,12 +176,6 @@ export function App(): JSX.Element {
   const [status, setStatus] = useState('Starting NeuroVue.')
   const [metadataStatus, setMetadataStatus] = useState('No metadata loaded.')
   const [metadata, setMetadata] = useState<VolumeMetadata | null>(null)
-  const [query, setQuery] = useState('')
-  const [selectedRoles, setSelectedRoles] = useState<Set<string>>(() => new Set())
-  const [selectedImageTypes, setSelectedImageTypes] = useState<Set<string>>(() => new Set())
-  const [selectedFormats, setSelectedFormats] = useState<Set<string>>(() => new Set())
-  const [selectedDtypes, setSelectedDtypes] = useState<Set<string>>(() => new Set())
-  const [activeFilterItemId, setActiveFilterItemId] = useState<string | null>(null)
   const [splitPercent, setSplitPercent] = useState(52)
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
@@ -286,17 +280,22 @@ export function App(): JSX.Element {
   const items = manifest?.items ?? []
   const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null
   const activeClipPlane = clipPlanes.find((plane) => plane.id === activeClipPlaneId) ?? clipPlanes[0]
-  const filteredItems = useMemo(() => {
-    const normalized = query.trim().toLowerCase()
-    return items.filter((item) => {
-      if (selectedRoles.size > 0 && !selectedRoles.has(volumeRoleLabel(item))) return false
-      if (selectedImageTypes.size > 0 && !selectedImageTypes.has(volumeImageTypeLabel(item))) return false
-      if (selectedFormats.size > 0 && !selectedFormats.has(volumeFacetValue(item.format))) return false
-      if (selectedDtypes.size > 0 && !selectedDtypes.has(volumeFacetValue(item.dtype))) return false
-      if (!normalized) return true
-      return volumeSearchText(item).includes(normalized)
-    })
-  }, [items, query, selectedDtypes, selectedFormats, selectedImageTypes, selectedRoles])
+  const {
+    query,
+    selectedRoles,
+    selectedImageTypes,
+    selectedFormats,
+    selectedDtypes,
+    activeFilterItemId,
+    filteredItems,
+    setQuery,
+    setActiveFilterItemId,
+    toggleRole,
+    toggleImageType,
+    toggleFormat,
+    toggleDtype,
+    clearFilters
+  } = useVolumeFilters(items)
 
   useEffect(() => {
     let cancelled = false
@@ -355,11 +354,7 @@ export function App(): JSX.Element {
     setBidsName(result.bidsName ?? '')
     setBidsDatasetDoi(result.bidsDatasetDoi ?? '')
     setCacheRoot(result.cacheRoot)
-    setQuery('')
-    setSelectedRoles(new Set())
-    setSelectedImageTypes(new Set())
-    setSelectedFormats(new Set())
-    setSelectedDtypes(new Set())
+    clearFilters()
     setActiveFilterItemId(null)
     setStatus(`Loading ${result.datasetRoot}.`)
 
@@ -655,19 +650,13 @@ export function App(): JSX.Element {
               selectedImageTypes={selectedImageTypes}
               selectedRoles={selectedRoles}
               onActiveItem={setActiveFilterItemId}
-              onClearFilters={() => {
-                setQuery('')
-                setSelectedRoles(new Set())
-                setSelectedImageTypes(new Set())
-                setSelectedFormats(new Set())
-                setSelectedDtypes(new Set())
-              }}
+              onClearFilters={clearFilters}
               onQueryChange={setQuery}
               onSelect={(item) => setSelectedId(item.id)}
-              onToggleDtype={(value) => toggleFilterSet(setSelectedDtypes, value)}
-              onToggleFormat={(value) => toggleFilterSet(setSelectedFormats, value)}
-              onToggleImageType={(value) => toggleFilterSet(setSelectedImageTypes, value)}
-              onToggleRole={(value) => toggleFilterSet(setSelectedRoles, value)}
+              onToggleDtype={toggleDtype}
+              onToggleFormat={toggleFormat}
+              onToggleImageType={toggleImageType}
+              onToggleRole={toggleRole}
             />
           ) : null}
         </aside>
@@ -1456,21 +1445,6 @@ function desktopTileClassName(
   ]
     .filter(Boolean)
     .join(' ')
-}
-
-function toggleFilterSet(
-  setter: Dispatch<SetStateAction<Set<string>>>,
-  value: string
-): void {
-  setter((current) => {
-    const next = new Set(current)
-    if (next.has(value)) {
-      next.delete(value)
-    } else {
-      next.add(value)
-    }
-    return next
-  })
 }
 
 function desktopManifestSignature(manifest: DesktopManifest): string {

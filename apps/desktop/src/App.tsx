@@ -62,6 +62,7 @@ import {
 } from './domain/desktop'
 import { runNiimathTask, type NiimathOperation, type NiimathTaskResult } from './domain/niimath'
 import { acquirePreviewSlot } from './domain/previewLoadQueue'
+import { recentDatasetLabel, useRecentDatasets } from './hooks/useRecentDatasets'
 import neurovueIconUrl from '../src-tauri/icons/neurovue-icon.svg?url'
 
 const MIN_SPLIT = 34
@@ -80,8 +81,6 @@ function preferredBackend(): Backend {
   return typeof navigator !== 'undefined' && 'gpu' in navigator ? 'webgpu' : 'webgl2'
 }
 
-const RECENT_DATASETS_KEY = 'neurovue.recentDatasets.v1'
-const MAX_RECENT_DATASETS = 10
 const TERMINAL_OPEN_KEY = 'neurovue.terminalOpen.v1'
 const TERMINAL_HEIGHT_KEY = 'neurovue.terminalHeight.v1'
 const MIN_TERMINAL_HEIGHT = 120
@@ -183,34 +182,6 @@ interface MinimapViewport {
   height: number
 }
 
-function loadRecentDatasets(): string[] {
-  try {
-    const raw = window.localStorage.getItem(RECENT_DATASETS_KEY)
-    if (!raw) return []
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
-  } catch {
-    return []
-  }
-}
-
-function persistRecentDatasets(entries: string[]): string[] {
-  try {
-    window.localStorage.setItem(RECENT_DATASETS_KEY, JSON.stringify(entries))
-  } catch {
-    // localStorage may be disabled — recents stay in-memory for this session.
-  }
-  return entries
-}
-
-function promoteRecentDataset(entries: string[], path: string): string[] {
-  const trimmed = path.trim()
-  if (!trimmed) return entries
-  const filtered = entries.filter((entry) => entry !== trimmed)
-  return [trimmed, ...filtered].slice(0, MAX_RECENT_DATASETS)
-}
-
 function loadTerminalOpen(): boolean {
   try {
     return window.localStorage.getItem(TERMINAL_OPEN_KEY) === '1'
@@ -245,12 +216,6 @@ function persistTerminalHeight(height: number): void {
   } catch {
     // localStorage may be disabled.
   }
-}
-
-function recentDatasetLabel(path: string): string {
-  const stripped = path.replace(/\/+$/, '')
-  const segments = stripped.split('/').filter(Boolean)
-  return segments[segments.length - 1] ?? path
 }
 
 export function App(): JSX.Element {
@@ -289,7 +254,7 @@ export function App(): JSX.Element {
   const [activeClipPlaneId, setActiveClipPlaneId] = useState('')
   const [renderWheelMode, setRenderWheelMode] = useState<RenderWheelMode>('zoom')
   const [isOpeningDataset, setIsOpeningDataset] = useState(false)
-  const [recentDatasets, setRecentDatasets] = useState<string[]>(() => loadRecentDatasets())
+  const { recentDatasets, promoteRecent, removeRecent } = useRecentDatasets()
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
   const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(() => loadTerminalOpen())
@@ -477,7 +442,7 @@ export function App(): JSX.Element {
     setManifest(nextManifest)
     setSelectedId(nextManifest.items[0]?.id ?? null)
     setStatus(`${nextManifest.itemCount} volume item(s) loaded from ${result.datasetRoot}.`)
-    setRecentDatasets((previous) => persistRecentDatasets(promoteRecentDataset(previous, result.datasetRoot)))
+    promoteRecent(result.datasetRoot)
   }
 
   async function openLocalDataset(): Promise<void> {
@@ -519,9 +484,6 @@ export function App(): JSX.Element {
     }
   }
 
-  function removeRecentDataset(path: string): void {
-    setRecentDatasets((previous) => persistRecentDatasets(previous.filter((entry) => entry !== path)))
-  }
 
   function bindActiveClipPlane(planeId: string): void {
     setActiveClipPlaneId(planeId)
@@ -676,7 +638,7 @@ export function App(): JSX.Element {
                         </button>
                         <button
                           className="nv-recent-remove"
-                          onClick={() => removeRecentDataset(path)}
+                          onClick={() => removeRecent(path)}
                           title="Remove from recents"
                           type="button"
                           aria-label={`Remove ${path} from recents`}

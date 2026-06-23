@@ -55,7 +55,7 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
   native dims/tiling that don't match the downsampled bytes served. Either honor
   `region` (crop) or advertise full/max-only and reject region requests. Only
   matters if external IIIF clients consume the endpoints.
-- [ ] **[P3] (S) Strict CSP (production).** `tauri.conf.json` has `csp: null`. Set a
+- [x] **[P3] (S) Strict CSP (production).** `tauri.conf.json` has `csp: null`. Set a
   strict policy and verify against a **production build** (dev CSP would break
   vite HMR). Pair with confirming dataset-derived strings are escaped in the UI.
 - [x] **[P3] (S) Remaining lock-poison sites.** `patch` and `pyramid_locks` still

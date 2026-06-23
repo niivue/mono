@@ -52,6 +52,7 @@ import type {
   DatasetOpenResult,
   DesktopItem,
   DesktopManifest,
+  JsonValue,
   VolumeMetadata,
   WarmProgress,
   WorldRect
@@ -60,6 +61,7 @@ import {
   defaultClipPlanes,
   fetchDesktopManifest,
   fetchDesktopManifestVersion,
+  fetchVolumeMetadata,
   openOverlayVolume,
   openDatasetByPath,
   openDatasetDirectory,
@@ -345,8 +347,8 @@ export function App(): JSX.Element {
     setLocationReadout(null)
   }, [renderLayers])
 
-  async function refreshDesktopManifest(selectId?: string): Promise<void> {
-    if (!serverUrl) return
+  async function refreshDesktopManifestData(selectId?: string): Promise<DesktopManifest | null> {
+    if (!serverUrl) return null
     const nextManifest = await fetchDesktopManifest(serverUrl)
     manifestVersionRef.current = await fetchDesktopManifestVersion(serverUrl).catch(() => null)
     setManifest(nextManifest)
@@ -354,6 +356,11 @@ export function App(): JSX.Element {
       setSelectedId(selectId)
     }
     setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
+    return nextManifest
+  }
+
+  async function refreshDesktopManifest(selectId?: string): Promise<void> {
+    await refreshDesktopManifestData(selectId)
   }
 
   async function applyDatasetOpenResult(result: DatasetOpenResult): Promise<void> {
@@ -453,13 +460,26 @@ export function App(): JSX.Element {
         return
       }
 
-      await refreshDesktopManifest()
-      setOverlayIds((current) => {
-        const next = new Set(current)
-        next.add(result.id)
-        return next
-      })
-      setStatus(`Overlay ${result.label} added to every volume.`)
+      const nextManifest = await refreshDesktopManifestData()
+      const overlayItem = nextManifest?.items.find((item) => item.id === result.id) ?? null
+      const isAtlas = overlayItem ? await volumeHasAtlasLabelSidecar(overlayItem) : false
+      if (isAtlas) {
+        setAtlasId(result.id)
+        setOverlayIds((current) => {
+          if (!current.has(result.id)) return current
+          const next = new Set(current)
+          next.delete(result.id)
+          return next
+        })
+        setStatus(`Atlas ${result.label} added with label sidecar.`)
+      } else {
+        setOverlayIds((current) => {
+          const next = new Set(current)
+          next.add(result.id)
+          return next
+        })
+        setStatus(`Overlay ${result.label} added to every volume.`)
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
@@ -2489,6 +2509,45 @@ function previewLevelForSize(size: number, item?: DesktopItem): number {
   const availableLevels = item?.levels?.map((level) => level.level) ?? [0]
   const maxLevel = Math.max(0, ...availableLevels)
   return Math.min(requestedLevel, maxLevel)
+}
+
+async function volumeHasAtlasLabelSidecar(item: DesktopItem): Promise<boolean> {
+  try {
+    const metadata = await fetchVolumeMetadata(item)
+    return metadataHasAtlasLabelMap(metadata)
+  } catch {
+    return false
+  }
+}
+
+function metadataHasAtlasLabelMap(metadata: VolumeMetadata): boolean {
+  if (isAtlasLabelMap(metadata as unknown as JsonValue)) return true
+  return (metadata.sidecars ?? []).some((sidecar) => isAtlasLabelMap(sidecar.metadata))
+}
+
+function isAtlasLabelMap(value: JsonValue): boolean {
+  if (!isJsonObject(value)) return false
+  return (
+    numericList(value.R) !== null &&
+    numericList(value.G) !== null &&
+    numericList(value.B) !== null &&
+    stringList(value.labels)?.some((label) => label.trim().length > 0) === true
+  )
+}
+
+function numericList(value: JsonValue | undefined): number[] | null {
+  if (!Array.isArray(value)) return null
+  const numbers = value.map((entry) => typeof entry === 'number' ? entry : Number(entry))
+  return numbers.length > 0 && numbers.every(Number.isFinite) ? numbers : null
+}
+
+function stringList(value: JsonValue | undefined): string[] | null {
+  if (!Array.isArray(value)) return null
+  return value.map((entry) => typeof entry === 'string' ? entry : String(entry))
+}
+
+function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function volumeMetadataJson(metadata: VolumeMetadata): unknown | null {

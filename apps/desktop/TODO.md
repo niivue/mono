@@ -84,6 +84,8 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 - [x] **[P2] (S) Global overlay import.** Pick an external NIfTI overlay,
   register it with the local volume server, and keep it active across selected
   base volumes.
+- [x] **[P2] (S) Auto-detect imported atlas sidecars.** When a loaded overlay has
+  a same-folder label JSON sidecar, select it as the atlas layer automatically.
 - [ ] **[P2] (M) Per-layer colormap.** Colormap is currently a per-volume control
   parked in the Operations tab; make it a per-layer setting when overlays exist.
 - [x] **[P3] (S) niimath mask path picker.** Replace the free-text mask path input

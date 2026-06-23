@@ -64,10 +64,16 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 
 ## Frontend refactor
 
-- [ ] **[P1] (L) Decompose `App.tsx`** (~big monolith, ~30 `useState`). Extract
-  `useDatasetManifest`, `useRecentDatasets`, a filter reducer (5 Set states reset
-  together), and a clip-plane context shared with `NiivueStage`; memoize `selected`
-  so it stops defeating child memoization. Do it incrementally, one hook per commit.
+- [ ] **[P1] (M) Decompose `App.tsx` (in progress).** Done: `useRecentDatasets`,
+  `useTerminalDock`, `useVolumeFilters` (+ `domain/volumeFacets`), `useClipPlanes`.
+  Remaining:
+  - [ ] `useDatasetManifest` — manifest/selectedId/status + the load & poll
+    effects + `applyDatasetOpenResult`/`refreshDesktopManifest` (the tangled one,
+    intertwined with serverUrl/BIDS/recents).
+  - [ ] Memoize `selected` so it stops defeating child memoization.
+  - [ ] Consider extracting large sub-components (`DatasetDesktop`,
+    `VolumeFilterPanel`, `NiimathOperationsPanel`) into their own files — that's
+    what keeps `App.tsx` large now, and it's lower-risk than hook extraction.
 
 ## UX / product
 

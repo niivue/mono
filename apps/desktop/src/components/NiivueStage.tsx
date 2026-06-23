@@ -30,6 +30,7 @@ interface NiiVueLike {
   loadVolumes(volumes: NiiVueVolumeOptions[]): Promise<unknown>
   setColormapLabel?(volumeIndex: number, cmap: ColorMap | null): Promise<void>
   setVolume?(volumeIndex: number, options: { colormap?: string; opacity?: number }): Promise<unknown>
+  moveCrosshairInVox?(di: number, dj: number, dk: number): void
   addEventListener?(
     type: 'locationChange',
     listener: (event: CustomEvent<NiiVueLocation>) => void,
@@ -84,6 +85,7 @@ interface RenderViewSnap {
 
 type RenderSnapId = 'coronal' | 'sagittal' | 'axial'
 type NiiVueConstructor = new (options?: Record<string, unknown>) => NiiVueLike
+type VoxelStep = readonly [di: number, dj: number, dk: number]
 
 const CLIP_DEPTH_WHEEL_STEP = 0.0015
 const NIVUE_SLICE_TYPE_RENDER = 4
@@ -249,6 +251,7 @@ export function NiivueStage({
           backgroundColor: [0.02, 0.024, 0.018, 1],
           clipPlaneColor: [0.95, 0.2, 0.12, 0.7],
           isResizeCanvas: true,
+          isLegendVisible: false,
           show3Dcrosshair: false,
           showRender: NIVUE_SHOW_RENDER_ALWAYS,
           sliceType: NIVUE_SLICE_TYPE_RENDER,
@@ -369,16 +372,31 @@ export function NiivueStage({
 
     function onKeyDown(event: KeyboardEvent): void {
       if (isEditableTarget(event.target)) return
+
+      const crosshairStep = crosshairStepForEvent(event)
+      if (crosshairStep) {
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        const nv = nvRef.current
+        if (nv?.moveCrosshairInVox) {
+          nv.moveCrosshairInVox(...crosshairStep)
+          setSnapId(null)
+        }
+        return
+      }
+
       const snap = blenderSnapForEvent(event)
       if (!snap) return
 
       event.preventDefault()
       event.stopPropagation()
+      event.stopImmediatePropagation()
       snapRenderView(snap)
     }
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
   }, [isActive, primaryItem])
 
   function snapRenderView(snap: RenderViewSnap): void {
@@ -482,6 +500,23 @@ function blenderSnapForEvent(event: KeyboardEvent): RenderViewSnap | null {
   if (!snap) return null
 
   return event.ctrlKey ? snap.reverse : snap.normal
+}
+
+function crosshairStepForEvent(event: KeyboardEvent): VoxelStep | null {
+  if (event.altKey || event.metaKey || event.shiftKey) return null
+
+  const key = event.key.toLowerCase()
+  if (event.ctrlKey) {
+    if (key === 'u') return [0, 0, 1]
+    if (key === 'd') return [0, 0, -1]
+    return null
+  }
+
+  if (key === 'h') return [-1, 0, 0]
+  if (key === 'l') return [1, 0, 0]
+  if (key === 'j') return [0, -1, 0]
+  if (key === 'k') return [0, 1, 0]
+  return null
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

@@ -63,6 +63,7 @@ import {
 import { runNiimathTask, type NiimathOperation, type NiimathTaskResult } from './domain/niimath'
 import { acquirePreviewSlot } from './domain/previewLoadQueue'
 import { recentDatasetLabel, useRecentDatasets } from './hooks/useRecentDatasets'
+import { useTerminalDock } from './hooks/useTerminalDock'
 import neurovueIconUrl from '../src-tauri/icons/neurovue-icon.svg?url'
 
 const MIN_SPLIT = 34
@@ -81,11 +82,6 @@ function preferredBackend(): Backend {
   return typeof navigator !== 'undefined' && 'gpu' in navigator ? 'webgpu' : 'webgl2'
 }
 
-const TERMINAL_OPEN_KEY = 'neurovue.terminalOpen.v1'
-const TERMINAL_HEIGHT_KEY = 'neurovue.terminalHeight.v1'
-const MIN_TERMINAL_HEIGHT = 120
-const MAX_TERMINAL_HEIGHT = 800
-const DEFAULT_TERMINAL_HEIGHT = 280
 const NIIMATH_OPERATIONS: Array<{
   id: NiimathOperation
   label: string
@@ -182,42 +178,6 @@ interface MinimapViewport {
   height: number
 }
 
-function loadTerminalOpen(): boolean {
-  try {
-    return window.localStorage.getItem(TERMINAL_OPEN_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function loadTerminalHeight(): number {
-  try {
-    const raw = Number(window.localStorage.getItem(TERMINAL_HEIGHT_KEY))
-    if (Number.isFinite(raw) && raw > 0) {
-      return clamp(raw, MIN_TERMINAL_HEIGHT, MAX_TERMINAL_HEIGHT)
-    }
-  } catch {
-    // fall through to default
-  }
-  return DEFAULT_TERMINAL_HEIGHT
-}
-
-function persistTerminalOpen(open: boolean): void {
-  try {
-    window.localStorage.setItem(TERMINAL_OPEN_KEY, open ? '1' : '0')
-  } catch {
-    // localStorage may be disabled — state stays in-memory for this session.
-  }
-}
-
-function persistTerminalHeight(height: number): void {
-  try {
-    window.localStorage.setItem(TERMINAL_HEIGHT_KEY, String(Math.round(height)))
-  } catch {
-    // localStorage may be disabled.
-  }
-}
-
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const manifestRef = useRef<DesktopManifest | null>(null)
@@ -257,22 +217,7 @@ export function App(): JSX.Element {
   const { recentDatasets, promoteRecent, removeRecent } = useRecentDatasets()
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
-  const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(() => loadTerminalOpen())
-  const [terminalHeight, setTerminalHeight] = useState<number>(() => loadTerminalHeight())
-
-  function toggleTerminal(): void {
-    setIsTerminalOpen((open) => {
-      const next = !open
-      persistTerminalOpen(next)
-      return next
-    })
-  }
-
-  function updateTerminalHeight(height: number): void {
-    const clamped = clamp(height, MIN_TERMINAL_HEIGHT, MAX_TERMINAL_HEIGHT)
-    setTerminalHeight(clamped)
-    persistTerminalHeight(clamped)
-  }
+  const { isTerminalOpen, terminalHeight, toggleTerminal, setTerminalHeight } = useTerminalDock()
 
   useEffect(() => {
     manifestRef.current = manifest
@@ -949,7 +894,7 @@ export function App(): JSX.Element {
           <button
             aria-label="Resize terminal"
             className="nv-hsplitter"
-            onPointerDown={(event) => beginVerticalDrag(event, updateTerminalHeight)}
+            onPointerDown={(event) => beginVerticalDrag(event, setTerminalHeight)}
             title="Drag to resize the terminal"
             type="button"
           >

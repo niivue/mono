@@ -101,6 +101,14 @@ button {
   white-space: nowrap;
 }
 
+.nv-status .nv-warm-status {
+  color: var(--amber);
+}
+
+.nv-warm-status .lucide-loader-circle {
+  animation: nv-preview-spin 0.9s linear infinite;
+}
+
 .nv-brand {
   display: flex;
   align-items: center;
@@ -1570,6 +1578,22 @@ button {
 .nv-field select:focus,
 .nv-text-input:focus {
   border-color: var(--green);
+}
+
+.nv-path-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nv-path-picker .nv-text-input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nv-path-picker-button {
+  min-height: 30px;
 }
 
 .nv-operation-help {

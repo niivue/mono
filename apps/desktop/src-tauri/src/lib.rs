@@ -26,6 +26,7 @@ struct NeuroVueServerInfo {
     bids_name: Option<String>,
     bids_version: Option<String>,
     bids_dataset_doi: Option<String>,
+    warm_progress: volumetric_server::WarmProgressSnapshot,
 }
 
 pub(crate) struct NeuroVueState {
@@ -43,6 +44,22 @@ struct DatasetOpenResult {
     bids_name: Option<String>,
     bids_version: Option<String>,
     bids_dataset_doi: Option<String>,
+    warm_progress: volumetric_server::WarmProgressSnapshot,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeCapabilities {
+    terminal_available: bool,
+    native_niimath_available: bool,
+}
+
+#[tauri::command]
+fn neurovue_runtime_capabilities() -> RuntimeCapabilities {
+    RuntimeCapabilities {
+        terminal_available: cfg!(desktop),
+        native_niimath_available: cfg!(desktop),
+    }
 }
 
 #[tauri::command]
@@ -58,6 +75,7 @@ fn neurovue_server_info(state: tauri::State<'_, NeuroVueState>) -> NeuroVueServe
         bids_name: bids.as_ref().and_then(|info| info.name.clone()),
         bids_version: bids.as_ref().and_then(|info| info.bids_version.clone()),
         bids_dataset_doi: bids.as_ref().and_then(|info| info.dataset_doi.clone()),
+        warm_progress: volumetric_server::warm_progress(&state.server),
     }
 }
 
@@ -92,6 +110,7 @@ fn open_dataset_at_path(
         bids_name: bids.as_ref().and_then(|info| info.name.clone()),
         bids_version: bids.as_ref().and_then(|info| info.bids_version.clone()),
         bids_dataset_doi: bids.as_ref().and_then(|info| info.dataset_doi.clone()),
+        warm_progress: volumetric_server::warm_progress(server),
     })
 }
 
@@ -129,8 +148,10 @@ pub fn run() {
     let builder = builder
         .manage(terminal::TerminalState::default())
         .invoke_handler(tauri::generate_handler![
+            neurovue_runtime_capabilities,
             neurovue_server_info,
             open_dataset_path,
+            niimath::validate_niimath_mask_path,
             niimath::run_niimath_task,
             terminal::terminal_start,
             terminal::terminal_write,
@@ -141,6 +162,7 @@ pub fn run() {
         ]);
     #[cfg(not(desktop))]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        neurovue_runtime_capabilities,
         neurovue_server_info,
         open_dataset_path
     ]);

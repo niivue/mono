@@ -18,6 +18,7 @@ import {
   ChevronDown,
   CircleDot,
   Calculator,
+  CheckCircle2,
   Database,
   Eye,
   FileJson,
@@ -36,11 +37,11 @@ import {
   Save,
   SlidersHorizontal,
   SquareTerminal,
-  Play,
   ZoomIn,
   ZoomOut
 } from 'lucide-react'
 import { NiivueStage } from './components/NiivueStage'
+import { NiimathOperationsPanel } from './components/NiimathOperationsPanel'
 import { TerminalPanel } from './components/TerminalPanel'
 import type {
   Backend,
@@ -49,17 +50,19 @@ import type {
   DesktopItem,
   DesktopManifest,
   VolumeMetadata,
+  WarmProgress,
   WorldRect
 } from './domain/desktop'
 import {
   defaultClipPlanes,
   fetchDesktopManifest,
+  fetchDesktopManifestVersion,
   openDatasetByPath,
   openDatasetDirectory,
+  resolveRuntimeCapabilities,
   resolveServerInfo,
   resolveServerUrl
 } from './domain/desktop'
-import { runNiimathTask, type NiimathOperation, type NiimathTaskResult } from './domain/niimath'
 import { acquirePreviewSlot } from './domain/previewLoadQueue'
 import {
   isDerivedItem,
@@ -86,54 +89,13 @@ const PREVIEW_IMAGE_VERSION = 5
 // Abandon a preview load that never fires load/error, so it can't hold a queue
 // slot forever and stall all other preview loading.
 const PREVIEW_LOAD_TIMEOUT_MS = 15000
+const PREVIEW_RETAIN_ROOT_MARGIN = '1200px'
+const EMPTY_DESKTOP_ITEMS: DesktopItem[] = []
 // Prefer WebGPU when the platform exposes it, falling back to WebGL2 otherwise.
 function preferredBackend(): Backend {
   return typeof navigator !== 'undefined' && 'gpu' in navigator ? 'webgpu' : 'webgl2'
 }
 
-const NIIMATH_OPERATIONS: Array<{
-  id: NiimathOperation
-  label: string
-  needsOperand: boolean
-  needsMask: boolean
-  help: string
-}> = [
-  {
-    id: 'smooth',
-    label: 'Smooth',
-    needsOperand: true,
-    needsMask: false,
-    help: 'Apply Gaussian smoothing to a temporary output volume.'
-  },
-  {
-    id: 'threshold',
-    label: 'Threshold',
-    needsOperand: true,
-    needsMask: false,
-    help: 'Keep values above the lower threshold.'
-  },
-  {
-    id: 'upperThreshold',
-    label: 'Upper Threshold',
-    needsOperand: true,
-    needsMask: false,
-    help: 'Keep values below the upper threshold.'
-  },
-  {
-    id: 'binarize',
-    label: 'Binarize',
-    needsOperand: false,
-    needsMask: false,
-    help: 'Convert non-zero voxels to a binary mask.'
-  },
-  {
-    id: 'mask',
-    label: 'Apply Mask',
-    needsOperand: false,
-    needsMask: true,
-    help: 'Apply another NIfTI volume as a mask.'
-  }
-]
 const FLIPPED_CLIP_ORIENTATIONS: Record<string, Pick<ClipPlane, 'azimuth' | 'elevation'>> = {
   anterior: { azimuth: 0, elevation: 0 },
   inferior: { azimuth: 0, elevation: 90 },
@@ -161,6 +123,7 @@ interface MinimapViewport {
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const manifestRef = useRef<DesktopManifest | null>(null)
+  const manifestVersionRef = useRef<string | null>(null)
   const selectedIdRef = useRef<string | null>(null)
   const isOpeningDatasetRef = useRef(false)
   const [serverUrl, setServerUrl] = useState('')
@@ -168,6 +131,7 @@ export function App(): JSX.Element {
   const [bidsName, setBidsName] = useState('')
   const [bidsDatasetDoi, setBidsDatasetDoi] = useState('')
   const [cacheRoot, setCacheRoot] = useState('')
+  const [warmProgress, setWarmProgress] = useState<WarmProgress | null>(null)
   const [manifest, setManifest] = useState<DesktopManifest | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
@@ -192,10 +156,12 @@ export function App(): JSX.Element {
   const [isRenderMaximized, setIsRenderMaximized] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
   const [isOpeningDataset, setIsOpeningDataset] = useState(false)
+  const [isTerminalAvailable, setIsTerminalAvailable] = useState(false)
   const { recentDatasets, promoteRecent, removeRecent } = useRecentDatasets()
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
   const { isTerminalOpen, terminalHeight, toggleTerminal, setTerminalHeight } = useTerminalDock()
+  const isTerminalDockOpen = isTerminalAvailable && isTerminalOpen
 
   useEffect(() => {
     manifestRef.current = manifest
@@ -218,6 +184,16 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     let cancelled = false
+    void resolveRuntimeCapabilities().then((capabilities) => {
+      if (!cancelled) setIsTerminalAvailable(capabilities.terminalAvailable)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
 
     async function load(): Promise<void> {
       try {
@@ -229,8 +205,11 @@ export function App(): JSX.Element {
         setBidsName(serverInfo?.bidsName ?? '')
         setBidsDatasetDoi(serverInfo?.bidsDatasetDoi ?? '')
         setCacheRoot(serverInfo?.cacheRoot ?? '')
+        setWarmProgress(serverInfo?.warmProgress ?? null)
         const nextManifest = await fetchDesktopManifest(resolved)
+        const nextVersion = await fetchDesktopManifestVersion(resolved).catch(() => null)
         if (cancelled) return
+        manifestVersionRef.current = nextVersion
         setManifest(nextManifest)
         setSelectedId(nextManifest.items[0]?.id ?? null)
         setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
@@ -281,8 +260,11 @@ export function App(): JSX.Element {
     }
   }, [isRecentMenuOpen])
 
-  const items = manifest?.items ?? []
-  const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null
+  const items = useMemo(() => manifest?.items ?? EMPTY_DESKTOP_ITEMS, [manifest])
+  const selected = useMemo(
+    () => items.find((item) => item.id === selectedId) ?? items[0] ?? null,
+    [items, selectedId]
+  )
   const {
     query,
     selectedRoles,
@@ -304,6 +286,7 @@ export function App(): JSX.Element {
   async function refreshDesktopManifest(selectId?: string): Promise<void> {
     if (!serverUrl) return
     const nextManifest = await fetchDesktopManifest(serverUrl)
+    manifestVersionRef.current = await fetchDesktopManifestVersion(serverUrl).catch(() => null)
     setManifest(nextManifest)
     if (selectId && nextManifest.items.some((item) => item.id === selectId)) {
       setSelectedId(selectId)
@@ -319,11 +302,13 @@ export function App(): JSX.Element {
     setBidsName(result.bidsName ?? '')
     setBidsDatasetDoi(result.bidsDatasetDoi ?? '')
     setCacheRoot(result.cacheRoot)
+    setWarmProgress(result.warmProgress ?? null)
     clearFilters()
     setActiveFilterItemId(null)
     setStatus(`Loading ${result.datasetRoot}.`)
 
     const nextManifest = await fetchDesktopManifest(result.url)
+    manifestVersionRef.current = await fetchDesktopManifestVersion(result.url).catch(() => null)
     setManifest(nextManifest)
     setSelectedId(nextManifest.items[0]?.id ?? null)
     setStatus(`${nextManifest.itemCount} volume item(s) loaded from ${result.datasetRoot}.`)
@@ -390,16 +375,16 @@ export function App(): JSX.Element {
       if (cancelled || inFlight) return
       inFlight = true
       try {
-        const nextManifest = await fetchDesktopManifest(serverUrl)
+        const nextVersion = await fetchDesktopManifestVersion(serverUrl)
         if (cancelled) return
-        const currentManifest = manifestRef.current
-        if (
-          currentManifest &&
-          desktopManifestSignature(currentManifest) === desktopManifestSignature(nextManifest)
-        ) {
+        if (manifestRef.current && manifestVersionRef.current === nextVersion) {
           return
         }
 
+        const nextManifest = await fetchDesktopManifest(serverUrl)
+        if (cancelled) return
+
+        manifestVersionRef.current = nextVersion
         setManifest(nextManifest)
         const currentSelectedId = selectedIdRef.current
         if (!currentSelectedId || !nextManifest.items.some((item) => item.id === currentSelectedId)) {
@@ -415,6 +400,7 @@ export function App(): JSX.Element {
           setBidsName(serverInfo.bidsName ?? '')
           setBidsDatasetDoi(serverInfo.bidsDatasetDoi ?? '')
           setCacheRoot(serverInfo.cacheRoot ?? '')
+          setWarmProgress(serverInfo.warmProgress ?? null)
         } catch {
           // Server unreachable; keep current state and retry on the next tick.
         }
@@ -440,9 +426,38 @@ export function App(): JSX.Element {
     }
   }, [serverUrl])
 
+  useEffect(() => {
+    if (!serverUrl) return
+    let cancelled = false
+    let inFlight = false
+
+    async function refreshWarmProgress(): Promise<void> {
+      if (cancelled || inFlight) return
+      inFlight = true
+      try {
+        const serverInfo = await resolveServerInfo()
+        if (!cancelled) setWarmProgress(serverInfo?.warmProgress ?? null)
+      } finally {
+        inFlight = false
+      }
+    }
+
+    void refreshWarmProgress()
+    const interval = window.setInterval(() => {
+      void refreshWarmProgress()
+    }, 1000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [serverUrl])
+
+  const warmStatus = warmProgressLabel(warmProgress, datasetRoot)
+
   return (
     <main
-      className={`nv-app ${isTerminalOpen ? 'has-terminal' : ''}`}
+      className={`nv-app ${isTerminalDockOpen ? 'has-terminal' : ''}`}
       style={{ '--terminal-height': `${terminalHeight}px` } as CSSProperties}
     >
       <header className="nv-topbar">
@@ -547,15 +562,17 @@ export function App(): JSX.Element {
           >
             <Save size={16} />
           </button>
-          <button
-            aria-pressed={isTerminalOpen}
-            className={`nv-icon-button ${isTerminalOpen ? 'is-active' : ''}`}
-            title={isTerminalOpen ? 'Hide Python terminal' : 'Show Python terminal'}
-            onClick={toggleTerminal}
-            type="button"
-          >
-            <SquareTerminal size={16} />
-          </button>
+          {isTerminalAvailable ? (
+            <button
+              aria-pressed={isTerminalOpen}
+              className={`nv-icon-button ${isTerminalOpen ? 'is-active' : ''}`}
+              title={isTerminalOpen ? 'Hide Python terminal' : 'Show Python terminal'}
+              onClick={toggleTerminal}
+              type="button"
+            >
+              <SquareTerminal size={16} />
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -805,7 +822,7 @@ export function App(): JSX.Element {
         </aside>
       </section>
 
-      {isTerminalOpen ? (
+      {isTerminalDockOpen ? (
         <section className="nv-terminal-dock" aria-label="Python terminal">
           <button
             aria-label="Resize terminal"
@@ -825,6 +842,12 @@ export function App(): JSX.Element {
           <CircleDot size={12} />
           {status}
         </span>
+        {warmStatus ? (
+          <span className="nv-warm-status">
+            {warmProgress?.active ? <LoaderCircle size={12} /> : <CheckCircle2 size={12} />}
+            {warmStatus}
+          </span>
+        ) : null}
         <span>{mouseContextLabel(mouseContext)}</span>
       </footer>
     </main>
@@ -1394,15 +1417,6 @@ function desktopTileClassName(
     .join(' ')
 }
 
-function desktopManifestSignature(manifest: DesktopManifest): string {
-  return [
-    manifest.itemCount,
-    manifest.world.width,
-    manifest.world.height,
-    ...manifest.items.map((item) => `${item.id}:${item.role ?? 'source'}:${item.derivedFrom ?? ''}`)
-  ].join('|')
-}
-
 function StageResizeObserver({
   stageRef,
   onResize
@@ -1453,7 +1467,7 @@ function StablePreviewImage({
   const [currentSrc, setCurrentSrc] = useState<string | null>(null)
   const [pendingSrc, setPendingSrc] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [visible, setVisible] = useState(false)
+  const [nearViewport, setNearViewport] = useState(false)
   const frameRef = useRef<HTMLSpanElement>(null)
   const releaseRef = useRef<(() => void) | null>(null)
 
@@ -1462,31 +1476,36 @@ function StablePreviewImage({
     releaseRef.current = null
   }
 
-  // Only load a preview once its tile is at (or near) the viewport, so a large
-  // list/grid doesn't fetch and decode every thumbnail up front. Once loaded it
-  // stays loaded — this kills the startup storm without reload churn on scroll.
+  // Load previews near the viewport and unload them again once they are far
+  // offscreen. The generous margin prevents scroll churn while bounding live
+  // <img> count on very large datasets.
   useEffect(() => {
     const frame = frameRef.current
     if (!frame) return
     if (typeof IntersectionObserver === 'undefined') {
-      setVisible(true)
+      setNearViewport(true)
       return
     }
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setVisible(true)
-          observer.disconnect()
-        }
+        setNearViewport(entries.some((entry) => entry.isIntersecting))
       },
-      { rootMargin: '320px' }
+      { rootMargin: PREVIEW_RETAIN_ROOT_MARGIN }
     )
     observer.observe(frame)
     return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
-    if (!visible || src === currentSrc) {
+    if (!nearViewport) {
+      releaseSlot()
+      setCurrentSrc(null)
+      setPendingSrc(null)
+      setLoading(false)
+      return
+    }
+
+    if (src === currentSrc) {
       releaseSlot()
       setPendingSrc(null)
       setLoading(false)
@@ -1511,7 +1530,7 @@ function StablePreviewImage({
     return () => {
       cancelled = true
     }
-  }, [visible, currentSrc, src])
+  }, [nearViewport, currentSrc, src])
 
   // Release the slot if we unmount mid-load so it can never leak.
   useEffect(() => releaseSlot, [])
@@ -1677,130 +1696,6 @@ function MetadataPanel({
       ) : (
         <p>Select a volume to inspect sidecar metadata.</p>
       )}
-    </section>
-  )
-}
-
-function NiimathOperationsPanel({
-  item,
-  metadata,
-  onDerivedVolume,
-  onStatus
-}: {
-  item: DesktopItem | null
-  metadata: VolumeMetadata | null
-  onDerivedVolume: (volumeId: string) => Promise<void>
-  onStatus: (status: string) => void
-}): JSX.Element {
-  const [operation, setOperation] = useState<NiimathOperation>('smooth')
-  const [operand, setOperand] = useState('2')
-  const [maskPath, setMaskPath] = useState('')
-  const [isRunning, setIsRunning] = useState(false)
-  const [taskStatus, setTaskStatus] = useState('Ready.')
-  const [result, setResult] = useState<NiimathTaskResult | null>(null)
-  const selectedOperation = NIIMATH_OPERATIONS.find((candidate) => candidate.id === operation) ?? NIIMATH_OPERATIONS[0]
-  const sourcePath = typeof metadata?.sourcePath === 'string' ? metadata.sourcePath : ''
-  const parsedOperand = Number(operand)
-  const hasOperand = !selectedOperation.needsOperand || Number.isFinite(parsedOperand)
-  const hasMask = !selectedOperation.needsMask || maskPath.trim().length > 0
-  const canRun = Boolean(item && sourcePath && hasOperand && hasMask && !isRunning)
-
-  async function runTask(): Promise<void> {
-    if (!item || !sourcePath || !canRun) return
-
-    setIsRunning(true)
-    setResult(null)
-    setTaskStatus(`Running ${selectedOperation.label.toLowerCase()}.`)
-    onStatus(`Running niimath ${selectedOperation.label.toLowerCase()} on ${item.label}.`)
-
-    try {
-      const nextResult = await runNiimathTask({
-        sourcePath,
-        operation,
-        operand: selectedOperation.needsOperand ? parsedOperand : undefined,
-        maskPath: selectedOperation.needsMask ? maskPath.trim() : undefined
-      })
-      setResult(nextResult)
-      setTaskStatus('Done.')
-      onStatus(`niimath wrote ${nextResult.outputPath}.`)
-      await onDerivedVolume(nextResult.volumeId)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setTaskStatus(message)
-      onStatus(message)
-    } finally {
-      setIsRunning(false)
-    }
-  }
-
-  return (
-    <section className="nv-control-section nv-operation-panel">
-      <div className="nv-panel-heading">
-        <span>
-          <Calculator size={15} />
-          Operations
-        </span>
-        <em>niimath</em>
-      </div>
-
-      <div className="nv-operation-grid">
-        <label className="nv-field">
-          <span>Task</span>
-          <select value={operation} onChange={(event) => setOperation(event.target.value as NiimathOperation)}>
-            {NIIMATH_OPERATIONS.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {candidate.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {selectedOperation.needsOperand ? (
-          <label className="nv-field">
-            <span>Value</span>
-            <input
-              className="nv-text-input"
-              inputMode="decimal"
-              onChange={(event) => setOperand(event.target.value)}
-              type="number"
-              value={operand}
-            />
-          </label>
-        ) : null}
-
-        {selectedOperation.needsMask ? (
-          <label className="nv-field nv-field-wide">
-            <span>Mask Path</span>
-            <input
-              className="nv-text-input"
-              onChange={(event) => setMaskPath(event.target.value)}
-              placeholder="/path/to/mask.nii.gz"
-              type="text"
-              value={maskPath}
-            />
-          </label>
-        ) : null}
-      </div>
-
-      <p className="nv-operation-help">{selectedOperation.help}</p>
-
-      <button
-        className="nv-primary-action"
-        disabled={!canRun}
-        onClick={() => void runTask()}
-        type="button"
-      >
-        <Play size={14} />
-        <span>{isRunning ? 'Running' : 'Run'}</span>
-      </button>
-
-      <div className="nv-task-status">
-        <strong>{sourcePath ? item?.label : 'No source volume'}</strong>
-        <span>{sourcePath ? taskStatus : 'Select a local NIfTI volume.'}</span>
-        {result ? (
-          <code title={result.outputPath}>{result.outputPath}</code>
-        ) : null}
-      </div>
     </section>
   )
 }
@@ -2404,6 +2299,14 @@ function mouseContextLabel(context: MouseContext): string {
   if (context === 'desktop') return 'Mouse: desktop grid controls'
   if (context === 'niivue') return 'Mouse: NiiVue controls'
   return 'Mouse: no pane'
+}
+
+function warmProgressLabel(progress: WarmProgress | null, datasetRoot: string): string | null {
+  if (!progress || progress.total <= 0) return null
+  const datasetLabel = datasetRoot ? `${recentDatasetLabel(datasetRoot)}: ` : ''
+  if (!progress.active) return `${datasetLabel}Pyramid cache ready ${progress.completed}/${progress.total}`
+  const percent = Math.round((progress.completed / progress.total) * 100)
+  return `${datasetLabel}Warming pyramid ${progress.completed}/${progress.total} (${percent}%)`
 }
 
 async function savePatch(

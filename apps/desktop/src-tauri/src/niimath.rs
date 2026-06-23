@@ -47,6 +47,11 @@ pub(crate) struct NiimathTaskResult {
 }
 
 #[tauri::command]
+pub(crate) fn validate_niimath_mask_path(path: String) -> Result<String, String> {
+    validate_nifti_path("maskPath", &path).map(|path| path.display().to_string())
+}
+
+#[tauri::command]
 pub(crate) async fn run_niimath_task(
     state: tauri::State<'_, NeuroVueState>,
     request: NiimathTaskRequest,

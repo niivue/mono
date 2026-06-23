@@ -32,8 +32,10 @@ pub struct ServerHandle {
     volumes: VolumeStore,
     dataset_root: Arc<Mutex<Option<PathBuf>>>,
     preview_cache: Arc<Mutex<PreviewCache>>,
+    decoded_level_cache: Arc<Mutex<DecodedLevelCache>>,
     pyramid_locks: PyramidLocks,
     warm_generation: Arc<AtomicU64>,
+    warm_progress: Arc<Mutex<WarmProgress>>,
 }
 
 type VolumeStore = Arc<Mutex<Vec<VolumeEntry>>>;
@@ -92,12 +94,107 @@ impl PreviewCache {
     }
 }
 
+/// Total byte budget for cached decoded pyramid-level voxel data. This stores
+/// decompressed coarse levels only, never full source volumes by default.
+const DEFAULT_DECODED_LEVEL_CACHE_BYTES: usize = 512 * 1024 * 1024;
+
+#[derive(Clone)]
+struct DecodedNifti {
+    header: NiftiHeader,
+    data: Vec<u8>,
+}
+
+#[derive(Default)]
+struct DecodedLevelCache {
+    entries: HashMap<String, Arc<DecodedNifti>>,
+    order: VecDeque<String>,
+    total_bytes: usize,
+}
+
+impl DecodedLevelCache {
+    fn get(&self, key: &str) -> Option<Arc<DecodedNifti>> {
+        self.entries.get(key).cloned()
+    }
+
+    fn insert(&mut self, key: String, decoded: Arc<DecodedNifti>) {
+        if let Some(previous) = self.entries.remove(&key) {
+            self.total_bytes = self.total_bytes.saturating_sub(previous.data.len());
+            if let Some(pos) = self.order.iter().position(|existing| existing == &key) {
+                self.order.remove(pos);
+            }
+        }
+
+        let entry_bytes = decoded.data.len();
+        if entry_bytes > decoded_level_cache_budget_bytes() {
+            return;
+        }
+
+        self.total_bytes += entry_bytes;
+        self.order.push_back(key.clone());
+        self.entries.insert(key, decoded);
+        self.evict_to_budget();
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.order.clear();
+        self.total_bytes = 0;
+    }
+
+    fn evict_to_budget(&mut self) {
+        let budget = decoded_level_cache_budget_bytes();
+        while self.total_bytes > budget {
+            let Some(evicted) = self.order.pop_front() else {
+                break;
+            };
+            if let Some(removed) = self.entries.remove(&evicted) {
+                self.total_bytes = self.total_bytes.saturating_sub(removed.data.len());
+            }
+        }
+    }
+}
+
+fn decoded_level_cache_budget_bytes() -> usize {
+    std::env::var("NEUROVUE_DECODED_LEVEL_CACHE_BYTES")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|&bytes| bytes > 0)
+        .unwrap_or(DEFAULT_DECODED_LEVEL_CACHE_BYTES)
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WarmProgressSnapshot {
+    pub active: bool,
+    pub completed: usize,
+    pub total: usize,
+}
+
+#[derive(Default)]
+struct WarmProgress {
+    generation: u64,
+    active: bool,
+    completed: usize,
+    total: usize,
+}
+
+impl WarmProgress {
+    fn snapshot(&self) -> WarmProgressSnapshot {
+        WarmProgressSnapshot {
+            active: self.active,
+            completed: self.completed,
+            total: self.total,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct AppState {
     base_url: String,
     volumes: VolumeStore,
     dataset_root: Arc<Mutex<Option<PathBuf>>>,
     preview_cache: Arc<Mutex<PreviewCache>>,
+    decoded_level_cache: Arc<Mutex<DecodedLevelCache>>,
     pyramid_locks: PyramidLocks,
     patch: Arc<Mutex<Option<Value>>>,
     /// Caps concurrent slice renders so a burst of cold tiles can't each
@@ -124,12 +221,14 @@ struct VolumeEntry {
     spacing: [f32; 3],
     dtype: String,
     source_path: Option<PathBuf>,
+    #[serde(skip)]
+    cache_signature: Option<String>,
     sidecar_paths: Vec<PathBuf>,
     derived_from: Option<String>,
     derivation: Option<VolumeDerivation>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 enum VolumeRole {
     Source,
@@ -191,25 +290,29 @@ pub fn spawn_default() -> ServerHandle {
     let volumes = Arc::new(Mutex::new(discovery.volumes));
     let dataset_root = Arc::new(Mutex::new(discovery.root));
     let preview_cache = Arc::new(Mutex::new(PreviewCache::default()));
+    let decoded_level_cache = Arc::new(Mutex::new(DecodedLevelCache::default()));
     let pyramid_locks: PyramidLocks = Arc::new(Mutex::new(HashMap::new()));
     let warm_generation = Arc::new(AtomicU64::new(0));
+    let warm_progress = Arc::new(Mutex::new(WarmProgress::default()));
     let state = AppState {
         base_url: base_url.clone(),
         volumes: volumes.clone(),
         dataset_root: dataset_root.clone(),
         preview_cache: preview_cache.clone(),
+        decoded_level_cache: decoded_level_cache.clone(),
         pyramid_locks: pyramid_locks.clone(),
         patch: Arc::new(Mutex::new(None)),
         render_semaphore: Arc::new(tokio::sync::Semaphore::new(render_permits())),
     };
 
-    // Warm the coarsest pyramid level for the startup sample in the background.
+    // Warm pyramid levels for the startup sample in the background.
     let my_gen = warm_generation.load(Ordering::SeqCst);
-    spawn_coarse_warm(
+    spawn_pyramid_warm(
         warm_volumes,
         warm_root,
         pyramid_locks.clone(),
         warm_generation.clone(),
+        warm_progress.clone(),
         my_gen,
     );
 
@@ -227,6 +330,7 @@ pub fn spawn_default() -> ServerHandle {
                 .route("/api", get(api_info))
                 .route("/iiif/desktop", get(desktops))
                 .route("/iiif/desktop/:desktop_id/manifest", get(desktop_manifest))
+                .route("/iiif/desktop/:desktop_id/version", get(desktop_version))
                 .route("/volumes/:vol_id/metadata", get(volume_metadata))
                 .route("/volumes/:vol_id/raw", get(raw_volume))
                 .route("/volumes/:vol_id/raw.nii", get(raw_volume))
@@ -263,8 +367,10 @@ pub fn spawn_default() -> ServerHandle {
         volumes,
         dataset_root,
         preview_cache,
+        decoded_level_cache,
         pyramid_locks,
         warm_generation,
+        warm_progress,
     }
 }
 
@@ -273,7 +379,9 @@ pub fn spawn_default() -> ServerHandle {
 /// them stays consistent — and degrading to "every volume vanished" on poison is
 /// far worse than carrying on.
 fn lock_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 pub fn dataset_root(handle: &ServerHandle) -> Option<PathBuf> {
@@ -389,14 +497,16 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
     *lock_recover(&handle.volumes) = volumes;
     *lock_recover(&handle.dataset_root) = Some(root);
     lock_recover(&handle.preview_cache).clear();
+    lock_recover(&handle.decoded_level_cache).clear();
 
     // Cancel any in-flight warming for the previous dataset, then warm the new one.
     let my_gen = handle.warm_generation.fetch_add(1, Ordering::SeqCst) + 1;
-    spawn_coarse_warm(
+    spawn_pyramid_warm(
         warm_volumes,
         warm_root.clone(),
         handle.pyramid_locks.clone(),
         handle.warm_generation.clone(),
+        handle.warm_progress.clone(),
         my_gen,
     );
 
@@ -413,6 +523,10 @@ pub fn volume_count(handle: &ServerHandle) -> usize {
         .lock()
         .map(|volumes| volumes.len())
         .unwrap_or(handle.volume_count)
+}
+
+pub fn warm_progress(handle: &ServerHandle) -> WarmProgressSnapshot {
+    lock_recover(&handle.warm_progress).snapshot()
 }
 
 pub fn register_derived_volume(
@@ -457,6 +571,7 @@ pub fn register_derived_volume(
         .and_then(|id| volumes.iter().find(|volume| volume.id == id))
         .map(|volume| volume.label.clone())
         .unwrap_or_else(|| "Derived volume".to_string());
+    let cache_signature = source_cache_signature(&unique_id, &output_path, &header);
 
     volumes.push(VolumeEntry {
         id: unique_id.clone(),
@@ -467,6 +582,7 @@ pub fn register_derived_volume(
         spacing: header.spacing,
         dtype: header.dtype,
         source_path: Some(output_path.clone()),
+        cache_signature,
         sidecar_paths: find_json_sidecars(&output_path, output_parent),
         derived_from: source_id,
         derivation: Some(VolumeDerivation {
@@ -652,6 +768,56 @@ async fn desktop_manifest(
     }))
 }
 
+async fn desktop_version(
+    Path(desktop_id): Path<String>,
+    State(state): State<AppState>,
+) -> Response {
+    let version = desktop_version_string(&state);
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    if let Ok(value) = HeaderValue::from_str(&format!("\"{version}\"")) {
+        headers.insert(header::ETAG, value);
+    }
+
+    (
+        headers,
+        Json(json!({
+            "id": format!("{}/iiif/desktop/{}/version", state.base_url, desktop_id),
+            "version": version
+        })),
+    )
+        .into_response()
+}
+
+fn desktop_version_string(state: &AppState) -> String {
+    let volumes = lock_recover(&state.volumes);
+    let dataset_root = lock_recover(&state.dataset_root);
+    let mut hasher = DefaultHasher::new();
+
+    state.base_url.hash(&mut hasher);
+    dataset_root.hash(&mut hasher);
+    volumes.len().hash(&mut hasher);
+    for volume in volumes.iter() {
+        volume.id.hash(&mut hasher);
+        volume.label.hash(&mut hasher);
+        volume.role.hash(&mut hasher);
+        volume.format.hash(&mut hasher);
+        volume.shape.hash(&mut hasher);
+        for spacing in volume.spacing {
+            spacing.to_bits().hash(&mut hasher);
+        }
+        volume.dtype.hash(&mut hasher);
+        volume.source_path.hash(&mut hasher);
+        volume.cache_signature.hash(&mut hasher);
+        volume.derived_from.hash(&mut hasher);
+    }
+
+    format!("{:016x}", hasher.finish())
+}
+
 async fn volume_metadata(
     Path(vol_id): Path<String>,
     State(state): State<AppState>,
@@ -714,8 +880,13 @@ async fn raw_level_volume(
     let path = if level == 0 {
         volume.source_path.clone().ok_or(StatusCode::NOT_FOUND)?
     } else {
-        ensure_downsampled_nifti(&volume, level, &state.pyramid_locks, dataset_root.as_deref())
-            .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?
+        ensure_downsampled_nifti(
+            &volume,
+            level,
+            &state.pyramid_locks,
+            dataset_root.as_deref(),
+        )
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?
     };
     let body = tokio::fs::read(&path)
         .await
@@ -835,6 +1006,7 @@ async fn image_tile(
         &path.size,
         query.level,
         &state.pyramid_locks,
+        &state.decoded_level_cache,
         dataset_root.as_deref(),
     ) {
         lock_recover(&state.preview_cache).insert(cache_key, bmp.clone());
@@ -854,11 +1026,8 @@ async fn image_tile(
 }
 
 async fn read_patch(State(state): State<AppState>) -> Json<Value> {
-    let patch = state
-        .patch
-        .lock()
-        .ok()
-        .and_then(|value| value.clone())
+    let patch = lock_recover(&state.patch)
+        .clone()
         .unwrap_or_else(|| json!({ "status": "empty" }));
     Json(patch)
 }
@@ -867,10 +1036,7 @@ async fn write_patch(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
-    let mut patch = state
-        .patch
-        .lock()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut patch = lock_recover(&state.patch);
     *patch = Some(payload.clone());
     // Best-effort persistence under NeuroFlow: never fail the HTTP response.
     let persisted_path = persist_correction_patch(&payload);
@@ -1030,9 +1196,7 @@ fn iso8601_utc_now() -> String {
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
     let year = if month <= 2 { y + 1 } else { y };
 
-    format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z"
-    )
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
 }
 
 const DEFAULT_MAX_VOLUMES: usize = 512;
@@ -1045,6 +1209,7 @@ struct VolumeDiscovery {
     volumes: Vec<VolumeEntry>,
 }
 
+#[derive(Clone)]
 struct NiftiHeader {
     shape: [u16; 3],
     spacing: [f32; 3],
@@ -1173,9 +1338,11 @@ fn working_derivative_entry(
         .and_then(|id| volumes.iter().find(|volume| volume.id == id))
         .map(|volume| volume.label.clone())
         .unwrap_or_else(|| "Restored derivative".to_string());
+    let unique_id = unique_volume_id(volumes, &format!("derived__{output_id}"));
+    let cache_signature = source_cache_signature(&unique_id, &output_path, &header);
 
     Some(VolumeEntry {
-        id: unique_volume_id(volumes, &format!("derived__{output_id}")),
+        id: unique_id,
         label: format!("{source_label} / {operation}"),
         role: VolumeRole::Derived,
         format: "nifti".to_string(),
@@ -1183,6 +1350,7 @@ fn working_derivative_entry(
         spacing: header.spacing,
         dtype: header.dtype,
         source_path: Some(output_path.clone()),
+        cache_signature,
         sidecar_paths: find_json_sidecars(&output_path, output_parent),
         derived_from: source_id,
         derivation: Some(VolumeDerivation {
@@ -1305,6 +1473,7 @@ fn collect_nifti_paths(root: &FsPath, paths: &mut Vec<PathBuf>, max_volumes: usi
 fn volume_entry(path: &FsPath, root: &FsPath) -> Option<VolumeEntry> {
     let header = read_nifti_header(path)?;
     let id = volume_id(path, root);
+    let cache_signature = source_cache_signature(&id, path, &header);
     let label = path
         .strip_prefix(root)
         .ok()
@@ -1322,6 +1491,7 @@ fn volume_entry(path: &FsPath, root: &FsPath) -> Option<VolumeEntry> {
         spacing: header.spacing,
         dtype: header.dtype,
         source_path: Some(path.to_path_buf()),
+        cache_signature,
         sidecar_paths: find_json_sidecars(path, root),
         derived_from: None,
         derivation: None,
@@ -1344,6 +1514,9 @@ fn fallback_mni152_volume() -> Option<VolumeEntry> {
             scl_slope: 1.0,
             scl_inter: 0.0,
         });
+    let cache_signature = source_path
+        .as_deref()
+        .and_then(|path| source_cache_signature("mni152", path, &header));
 
     Some(VolumeEntry {
         id: "mni152".to_string(),
@@ -1358,6 +1531,7 @@ fn fallback_mni152_volume() -> Option<VolumeEntry> {
             .map(|path| find_json_sidecars(path, path.parent().unwrap_or_else(|| FsPath::new(""))))
             .unwrap_or_default(),
         source_path,
+        cache_signature,
         derived_from: None,
         derivation: None,
     })
@@ -1822,13 +1996,11 @@ fn requested_size_bound(size: &str) -> Option<usize> {
 
 /// Resolve (creating on first use) the per-volume build lock for a source
 /// signature, so same-volume builds serialize while different volumes run free.
-fn pyramid_lock_for(locks: &PyramidLocks, signature: &str) -> Option<Arc<Mutex<()>>> {
-    let mut map = locks.lock().ok()?;
-    Some(
-        map.entry(signature.to_string())
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone(),
-    )
+fn pyramid_lock_for(locks: &PyramidLocks, signature: &str) -> Arc<Mutex<()>> {
+    let mut map = lock_recover(locks);
+    map.entry(signature.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
 }
 
 fn ensure_downsampled_nifti(
@@ -1860,8 +2032,8 @@ fn build_pyramid_levels(
     dataset_root: Option<&FsPath>,
 ) -> Option<()> {
     let signature = source_signature(volume)?;
-    let lock = pyramid_lock_for(locks, &signature)?;
-    let _guard = lock.lock().ok()?;
+    let lock = pyramid_lock_for(locks, &signature);
+    let _guard = lock_recover(&lock);
 
     // Recompute pending under the lock so concurrent builders don't duplicate work.
     let pending: Vec<u8> = targets
@@ -1900,8 +2072,7 @@ fn build_pyramid_levels(
         let output_x = usize::from(shape[0]);
         let output_y = usize::from(shape[1]);
         let output_z = usize::from(shape[2]);
-        let mut voxels =
-            Vec::with_capacity(output_x.checked_mul(output_y)?.checked_mul(output_z)?);
+        let mut voxels = Vec::with_capacity(output_x.checked_mul(output_y)?.checked_mul(output_z)?);
 
         for z in 0..output_z {
             let source_z = (z * factor).min(dim_z.saturating_sub(1));
@@ -1933,38 +2104,102 @@ fn build_pyramid_levels(
     Some(())
 }
 
-/// Background-build the coarsest pyramid level for each source volume so the
-/// first paint is instant everywhere. Cancels as soon as a newer dataset opens
-/// (generation changed) and skips volumes whose coarse level is already cached.
-fn spawn_coarse_warm(
+/// Background-build missing pyramid levels for each source volume. Cancels as
+/// soon as a newer dataset opens (generation changed) and reports volume-level
+/// progress while a bounded worker pool warms different volumes in parallel.
+fn spawn_pyramid_warm(
     volumes: Vec<VolumeEntry>,
     dataset_root: Option<PathBuf>,
     locks: PyramidLocks,
     generation: Arc<AtomicU64>,
+    progress: Arc<Mutex<WarmProgress>>,
     my_gen: u64,
 ) {
-    std::thread::spawn(move || {
-        let dataset_root = dataset_root.as_deref();
-        for volume in volumes {
+    let mut completed = 0;
+    let queue = volumes
+        .into_iter()
+        .filter(|volume| volume.source_path.is_some())
+        .filter_map(|volume| {
+            if warm_pyramid_targets(&volume, dataset_root.as_deref()).is_empty() {
+                completed += 1;
+                None
+            } else {
+                Some(volume)
+            }
+        })
+        .collect::<Vec<_>>();
+    let total = completed + queue.len();
+    {
+        let mut next = lock_recover(&progress);
+        next.generation = my_gen;
+        next.active = !queue.is_empty();
+        next.completed = completed;
+        next.total = total;
+    }
+    if queue.is_empty() {
+        return;
+    }
+
+    let queue = Arc::new(Mutex::new(VecDeque::from(queue)));
+    let dataset_root = Arc::new(dataset_root);
+    let worker_count = warm_worker_count().min(total).max(1);
+
+    for _ in 0..worker_count {
+        let queue = queue.clone();
+        let dataset_root = dataset_root.clone();
+        let locks = locks.clone();
+        let generation = generation.clone();
+        let progress = progress.clone();
+        std::thread::spawn(move || loop {
             if generation.load(Ordering::SeqCst) != my_gen {
                 return;
             }
-            if volume.source_path.is_none() {
-                continue;
+
+            let Some(volume) = lock_recover(&queue).pop_front() else {
+                return;
+            };
+            let root = dataset_root.as_ref().as_deref();
+            let targets = warm_pyramid_targets(&volume, root);
+            if !targets.is_empty() {
+                let _ = build_pyramid_levels(&volume, &targets, &locks, root);
             }
-            let max_level = max_pyramid_level(volume.shape);
-            if max_level == 0 {
-                continue;
-            }
-            if downsampled_nifti_cache_path(&volume, max_level, dataset_root)
-                .map(|path| path.is_file())
+            mark_warm_volume_finished(&progress, &generation, my_gen);
+        });
+    }
+}
+
+fn warm_worker_count() -> usize {
+    std::thread::available_parallelism()
+        .map(|threads| (threads.get() / 2).clamp(1, 4))
+        .unwrap_or(1)
+}
+
+fn warm_pyramid_targets(volume: &VolumeEntry, dataset_root: Option<&FsPath>) -> Vec<u8> {
+    (1..=max_pyramid_level(volume.shape))
+        .filter(|&level| {
+            downsampled_nifti_cache_path(volume, level, dataset_root)
+                .map(|path| !path.is_file())
                 .unwrap_or(false)
-            {
-                continue;
-            }
-            let _ = build_pyramid_levels(&volume, &[max_level], &locks, dataset_root);
-        }
-    });
+        })
+        .collect()
+}
+
+fn mark_warm_volume_finished(
+    progress: &Arc<Mutex<WarmProgress>>,
+    generation: &AtomicU64,
+    my_gen: u64,
+) {
+    if generation.load(Ordering::SeqCst) != my_gen {
+        return;
+    }
+    let mut progress = lock_recover(progress);
+    if progress.generation != my_gen {
+        return;
+    }
+    progress.completed = progress.completed.saturating_add(1).min(progress.total);
+    if progress.completed >= progress.total {
+        progress.active = false;
+    }
 }
 
 fn downsampled_nifti_cache_path(
@@ -1985,7 +2220,9 @@ fn downsampled_nifti_cache_path(
 /// keeps each dataset's image caches grouped together (so they can be located or
 /// cleared as a unit) while still living outside the dataset and out of git.
 fn dataset_cache_dir(dataset_root: Option<&FsPath>) -> PathBuf {
-    cache_root().join("datasets").join(dataset_segment(dataset_root))
+    cache_root()
+        .join("datasets")
+        .join(dataset_segment(dataset_root))
 }
 
 /// Total on-disk cache budget across all dataset segments. Past this, the
@@ -2077,7 +2314,71 @@ fn dataset_segment(dataset_root: Option<&FsPath>) -> String {
     }
 }
 
+fn source_cache_signature(id: &str, source_path: &FsPath, header: &NiftiHeader) -> Option<String> {
+    let metadata = fs::metadata(source_path).ok()?;
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let content_hash = file_content_hash(source_path)?;
+    Some(format!(
+        "{}-{}-{}-{:016x}-{}-{:016x}",
+        sanitize_cache_component(id),
+        metadata.len(),
+        modified,
+        content_hash,
+        nifti_header_signature(header),
+        stable_path_hash(source_path)
+    ))
+}
+
+fn file_content_hash(path: &FsPath) -> Option<u64> {
+    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut file = File::open(path).ok()?;
+    let mut hash = FNV_OFFSET_BASIS;
+    let mut buffer = [0_u8; 64 * 1024];
+
+    loop {
+        let read = file.read(&mut buffer).ok()?;
+        if read == 0 {
+            break;
+        }
+        for byte in &buffer[..read] {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+
+    Some(hash)
+}
+
+fn nifti_header_signature(header: &NiftiHeader) -> String {
+    format!(
+        "{}x{}x{}-{:08x}-{:08x}-{:08x}-{}-{}-{}-{}-{:08x}-{:08x}",
+        header.shape[0],
+        header.shape[1],
+        header.shape[2],
+        header.spacing[0].to_bits(),
+        header.spacing[1].to_bits(),
+        header.spacing[2].to_bits(),
+        if header.little_endian { "le" } else { "be" },
+        header.datatype_code,
+        header.bitpix,
+        header.vox_offset,
+        header.scl_slope.to_bits(),
+        header.scl_inter.to_bits()
+    )
+}
+
 fn source_signature(volume: &VolumeEntry) -> Option<String> {
+    if let Some(signature) = &volume.cache_signature {
+        return Some(signature.clone());
+    }
+
     let source_path = volume.source_path.as_ref()?;
     let metadata = fs::metadata(source_path).ok()?;
     let modified = metadata
@@ -2087,10 +2388,15 @@ fn source_signature(volume: &VolumeEntry) -> Option<String> {
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
     Some(format!(
-        "{}-{}-{}-{:016x}",
+        "{}-{}-{}-{:016x}-{}x{}x{}-{}-{:016x}",
         sanitize_cache_component(&volume.id),
         metadata.len(),
         modified,
+        file_content_hash(source_path)?,
+        volume.shape[0],
+        volume.shape[1],
+        volume.shape[2],
+        sanitize_cache_component(&volume.dtype),
         stable_path_hash(source_path)
     ))
 }
@@ -2237,6 +2543,7 @@ fn render_slice_bmp(
     size: &str,
     requested_level: Option<u8>,
     pyramid_locks: &PyramidLocks,
+    decoded_level_cache: &Arc<Mutex<DecodedLevelCache>>,
     dataset_root: Option<&FsPath>,
 ) -> Option<Vec<u8>> {
     let level = clamp_pyramid_level(
@@ -2249,8 +2556,9 @@ fn render_slice_bmp(
     } else {
         ensure_downsampled_nifti(volume, level, pyramid_locks, dataset_root)?
     };
-    let (header, bytes) = read_nifti_file(&path)?;
-    let data = bytes.get(header.vox_offset..)?;
+    let decoded = read_render_level(volume, level, &path, decoded_level_cache)?;
+    let header = &decoded.header;
+    let data = decoded.data.as_slice();
     let dim_x = usize::from(header.shape[0]);
     let dim_y = usize::from(header.shape[1]);
     let dim_z = usize::from(header.shape[2]);
@@ -2296,7 +2604,7 @@ fn render_slice_bmp(
                 }
                 _ => return None,
             };
-            values.push(sample_nifti_value(data, &header, voxel_index)?);
+            values.push(sample_nifti_value(data, header, voxel_index)?);
         }
     }
 
@@ -2320,6 +2628,33 @@ fn render_slice_bmp(
         )
     }?;
     Some(gray_bmp(output_width, output_height, &resized))
+}
+
+fn read_render_level(
+    volume: &VolumeEntry,
+    level: u8,
+    path: &FsPath,
+    decoded_level_cache: &Arc<Mutex<DecodedLevelCache>>,
+) -> Option<Arc<DecodedNifti>> {
+    if level == 0 {
+        return decode_nifti_voxels(path);
+    }
+
+    let cache_key = format!("{}:level-{level}", source_signature(volume)?);
+
+    if let Some(decoded) = lock_recover(decoded_level_cache).get(&cache_key) {
+        return Some(decoded);
+    }
+
+    let decoded = decode_nifti_voxels(path)?;
+    lock_recover(decoded_level_cache).insert(cache_key, decoded.clone());
+    Some(decoded)
+}
+
+fn decode_nifti_voxels(path: &FsPath) -> Option<Arc<DecodedNifti>> {
+    let (header, bytes) = read_nifti_file(path)?;
+    let data = bytes.get(header.vox_offset..)?.to_vec();
+    Some(Arc::new(DecodedNifti { header, data }))
 }
 
 fn voxel_linear_index(x: usize, y: usize, z: usize, dim_x: usize, dim_y: usize) -> Option<usize> {

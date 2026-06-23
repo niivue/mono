@@ -22,7 +22,7 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 - [ ] **[P2] (M) niimath via WASM on mobile/web.** Native sidecar is desktop-only
   (`src-tauri/src/niimath.rs`). Wire the niimath WASM build behind
   `src/domain/niimath.ts` so the Operations feature works cross-platform.
-- [ ] **[P2] (S) Hide the terminal UI on mobile.** Its commands aren't registered
+- [x] **[P2] (S) Hide the terminal UI on mobile.** Its commands aren't registered
   there (terminal is `#[cfg(desktop)]`); add a runtime platform check to hide the
   toggle/dock.
 - [ ] **[P2] (M) Responsive layout + touch.** iPhone layout (small screen), touch
@@ -33,21 +33,21 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 
 ## Performance & scale
 
-- [ ] **[P2] (M) Unload far-offscreen previews.** Current viewport-gated loading
+- [x] **[P2] (M) Unload far-offscreen previews.** Current viewport-gated loading
   is load-once (`StablePreviewImage`); to hard-bound live `<img>`/memory on huge
   datasets, unload when scrolled far away (re-loads from cache on return).
-- [ ] **[P2] (M) Decoded coarse-level cache (server).** Cold preview renders
+- [x] **[P2] (M) Decoded coarse-level cache (server).** Cold preview renders
   re-decode the full source NIfTI per slice; cache the decoded coarse level by
   signature so repeated slices reuse it (`volumetric_server.rs::render_slice_bmp`).
-- [ ] **[P2] (M) Broaden + parallelize pyramid warming + show progress.** Warmer
+- [x] **[P2] (M) Broaden + parallelize pyramid warming + show progress.** Warmer
   is single-threaded and only warms the coarsest level; warming is invisible to
   the user. Parallelize across cores, warm mid levels, add a warming indicator.
-- [ ] **[P3] (S) Manifest refresh via ETag / version endpoint** instead of polling
+- [x] **[P3] (S) Manifest refresh via ETag / version endpoint** instead of polling
   the full manifest and diffing a stringified signature (`App.tsx`).
 
 ## Backend correctness / hardening
 
-- [ ] **[P2] (S) Strengthen cache signature.** Pyramid/preview keys use
+- [x] **[P2] (S) Strengthen cache signature.** Pyramid/preview keys use
   `len + mtime` only, so in-place edits (same size/mtime) can serve stale data.
   Add a content hash and decode-affecting header fields
   (`volumetric_server.rs::source_signature`).
@@ -58,28 +58,29 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 - [ ] **[P3] (S) Strict CSP (production).** `tauri.conf.json` has `csp: null`. Set a
   strict policy and verify against a **production build** (dev CSP would break
   vite HMR). Pair with confirming dataset-derived strings are escaped in the UI.
-- [ ] **[P3] (S) Remaining lock-poison sites.** `patch` and `pyramid_locks` still
+- [x] **[P3] (S) Remaining lock-poison sites.** `patch` and `pyramid_locks` still
   use `.lock().ok()` (they degrade gracefully). Convert to `lock_recover` for
   consistency if desired.
 
 ## Frontend refactor
 
 - [ ] **[P1] (M) Decompose `App.tsx` (in progress).** Done: `useRecentDatasets`,
-  `useTerminalDock`, `useVolumeFilters` (+ `domain/volumeFacets`), `useClipPlanes`.
+  `useTerminalDock`, `useVolumeFilters` (+ `domain/volumeFacets`), `useClipPlanes`,
+  `NiimathOperationsPanel`.
   Remaining:
   - [ ] `useDatasetManifest` — manifest/selectedId/status + the load & poll
     effects + `applyDatasetOpenResult`/`refreshDesktopManifest` (the tangled one,
     intertwined with serverUrl/BIDS/recents).
-  - [ ] Memoize `selected` so it stops defeating child memoization.
+  - [x] Memoize `selected` so it stops defeating child memoization.
   - [ ] Consider extracting large sub-components (`DatasetDesktop`,
-    `VolumeFilterPanel`, `NiimathOperationsPanel`) into their own files — that's
-    what keeps `App.tsx` large now, and it's lower-risk than hook extraction.
+    `VolumeFilterPanel`) into their own files — that's what keeps `App.tsx` large
+    now, and it's lower-risk than hook extraction.
 
 ## UX / product
 
 - [ ] **[P2] (M) Per-layer colormap.** Colormap is currently a per-volume control
   parked in the Operations tab; make it a per-layer setting when overlays exist.
-- [ ] **[P3] (S) niimath mask path picker.** Replace the free-text mask path input
+- [x] **[P3] (S) niimath mask path picker.** Replace the free-text mask path input
   with the file dialog + existence validation (`NiimathOperationsPanel`).
 - [ ] **[P3] (S) Tune layout constants** if needed (section-label headroom,
   preview tiers) on real datasets.

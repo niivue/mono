@@ -68,7 +68,7 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
   `useTerminalDock`, `useVolumeFilters` (+ `domain/volumeFacets`), `useClipPlanes`,
   `NiimathOperationsPanel`.
   Remaining:
-  - [ ] `useDatasetManifest` — manifest/selectedId/status + the load & poll
+  - [x] `useDatasetManifest` — manifest/selectedId/status + the load & poll
     effects + `applyDatasetOpenResult`/`refreshDesktopManifest` (the tangled one,
     intertwined with serverUrl/BIDS/recents).
   - [x] Memoize `selected` so it stops defeating child memoization.

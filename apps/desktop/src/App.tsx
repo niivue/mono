@@ -13,7 +13,6 @@ import {
   useState
 } from 'react'
 import { flushSync } from 'react-dom'
-import { listen } from '@tauri-apps/api/event'
 import type { NiiVueLocation } from '@niivue/niivue'
 import {
   ChevronDown,
@@ -49,7 +48,6 @@ import { TerminalPanel } from './components/TerminalPanel'
 import type {
   Backend,
   ClipPlane,
-  DatasetOpenResult,
   DesktopItem,
   DesktopManifest,
   JsonValue,
@@ -59,15 +57,9 @@ import type {
 } from './domain/desktop'
 import {
   defaultClipPlanes,
-  fetchDesktopManifest,
-  fetchDesktopManifestVersion,
   fetchVolumeMetadata,
   openOverlayVolume,
-  openDatasetByPath,
-  openDatasetDirectory,
-  resolveRuntimeCapabilities,
-  resolveServerInfo,
-  resolveServerUrl
+  resolveRuntimeCapabilities
 } from './domain/desktop'
 import { acquirePreviewSlot } from './domain/previewLoadQueue'
 import {
@@ -78,6 +70,7 @@ import {
   volumeRoleLabel
 } from './domain/volumeFacets'
 import { useClipPlanes } from './hooks/useClipPlanes'
+import { useDatasetManifest } from './hooks/useDatasetManifest'
 import { recentDatasetLabel, useRecentDatasets } from './hooks/useRecentDatasets'
 import { useTerminalDock } from './hooks/useTerminalDock'
 import { useVolumeFilters } from './hooks/useVolumeFilters'
@@ -96,7 +89,6 @@ const PREVIEW_IMAGE_VERSION = 5
 // slot forever and stall all other preview loading.
 const PREVIEW_LOAD_TIMEOUT_MS = 15000
 const PREVIEW_RETAIN_ROOT_MARGIN = '1200px'
-const EMPTY_DESKTOP_ITEMS: DesktopItem[] = []
 const DEFAULT_BASE_COLORMAP = 'gray'
 const DEFAULT_ATLAS_COLORMAP = 'actc'
 const DEFAULT_OVERLAY_COLORMAPS = ['magma', 'viridis', 'actc'] as const
@@ -137,19 +129,28 @@ interface MinimapViewport {
 
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
-  const manifestRef = useRef<DesktopManifest | null>(null)
-  const manifestVersionRef = useRef<string | null>(null)
-  const selectedIdRef = useRef<string | null>(null)
-  const isOpeningDatasetRef = useRef(false)
-  const [serverUrl, setServerUrl] = useState('')
-  const [datasetRoot, setDatasetRoot] = useState('')
-  const [bidsName, setBidsName] = useState('')
-  const [bidsDatasetDoi, setBidsDatasetDoi] = useState('')
-  const [cacheRoot, setCacheRoot] = useState('')
-  const [warmProgress, setWarmProgress] = useState<WarmProgress | null>(null)
-  const [manifest, setManifest] = useState<DesktopManifest | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
+  const { recentDatasets, promoteRecent, removeRecent } = useRecentDatasets()
+  const {
+    bidsDatasetDoi,
+    bidsName,
+    cacheRoot,
+    datasetRevision,
+    datasetRoot,
+    isOpeningDataset,
+    items,
+    manifest,
+    openLocalDataset,
+    openRecentDataset,
+    refreshDesktopManifest,
+    refreshDesktopManifestData,
+    selected,
+    serverUrl,
+    setSelectedId,
+    setStatus,
+    status,
+    warmProgress
+  } = useDatasetManifest({ promoteRecent })
   const [layerColormaps, setLayerColormaps] = useState<Record<string, string>>({})
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
   const [atlasId, setAtlasId] = useState<string | null>(null)
@@ -166,7 +167,6 @@ export function App(): JSX.Element {
     changeClipPlaneDepth,
     resetClipPlanes
   } = useClipPlanes()
-  const [status, setStatus] = useState('Starting NeuroVue.')
   const [splitPercent, setSplitPercent] = useState(52)
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
@@ -174,22 +174,12 @@ export function App(): JSX.Element {
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(false)
   const [isRenderMaximized, setIsRenderMaximized] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
-  const [isOpeningDataset, setIsOpeningDataset] = useState(false)
   const [isOpeningOverlay, setIsOpeningOverlay] = useState(false)
   const [isTerminalAvailable, setIsTerminalAvailable] = useState(false)
-  const { recentDatasets, promoteRecent, removeRecent } = useRecentDatasets()
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
   const { isTerminalOpen, terminalHeight, toggleTerminal, setTerminalHeight } = useTerminalDock()
   const isTerminalDockOpen = isTerminalAvailable && isTerminalOpen
-
-  useEffect(() => {
-    manifestRef.current = manifest
-  }, [manifest])
-
-  useEffect(() => {
-    selectedIdRef.current = selectedId
-  }, [selectedId])
 
   useEffect(() => {
     let favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
@@ -213,54 +203,6 @@ export function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    let cancelled = false
-
-    async function load(): Promise<void> {
-      try {
-        const serverInfo = await resolveServerInfo()
-        const resolved = serverInfo?.url ?? await resolveServerUrl()
-        if (cancelled) return
-        setServerUrl(resolved)
-        setDatasetRoot(serverInfo?.datasetRoot ?? '')
-        setBidsName(serverInfo?.bidsName ?? '')
-        setBidsDatasetDoi(serverInfo?.bidsDatasetDoi ?? '')
-        setCacheRoot(serverInfo?.cacheRoot ?? '')
-        setWarmProgress(serverInfo?.warmProgress ?? null)
-        const nextManifest = await fetchDesktopManifest(resolved)
-        const nextVersion = await fetchDesktopManifestVersion(resolved).catch(() => null)
-        if (cancelled) return
-        manifestVersionRef.current = nextVersion
-        setManifest(nextManifest)
-        setSelectedId(nextManifest.items[0]?.id ?? null)
-        setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
-      } catch (error) {
-        setStatus(error instanceof Error ? error.message : String(error))
-      }
-    }
-
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null
-
-    void listen('neurovue-open-directory', () => {
-      void openLocalDataset()
-    }).then((nextUnlisten) => {
-      unlisten = nextUnlisten
-    }).catch(() => {
-      unlisten = null
-    })
-
-    return () => {
-      unlisten?.()
-    }
-  }, [])
-
-  useEffect(() => {
     if (!isRecentMenuOpen) return
 
     function handleMouseDown(event: MouseEvent): void {
@@ -280,11 +222,6 @@ export function App(): JSX.Element {
     }
   }, [isRecentMenuOpen])
 
-  const items = useMemo(() => manifest?.items ?? EMPTY_DESKTOP_ITEMS, [manifest])
-  const selected = useMemo(
-    () => items.find((item) => item.id === selectedId) ?? items[0] ?? null,
-    [items, selectedId]
-  )
   const {
     query,
     selectedRoles,
@@ -301,6 +238,14 @@ export function App(): JSX.Element {
     toggleDtype,
     clearFilters
   } = useVolumeFilters(items)
+
+  useEffect(() => {
+    clearFilters()
+    setActiveFilterItemId(null)
+    // Reset dataset-scoped filters when the backing dataset changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datasetRevision])
+
   const { metadata, metadataStatus } = useVolumeMetadata(selected)
   const renderLayers = useMemo<NiivueRenderLayer[]>(() => {
     if (!selected) return []
@@ -388,82 +333,6 @@ export function App(): JSX.Element {
     setLocationReadout(null)
   }, [renderLayers])
 
-  async function refreshDesktopManifestData(selectId?: string): Promise<DesktopManifest | null> {
-    if (!serverUrl) return null
-    const nextManifest = await fetchDesktopManifest(serverUrl)
-    manifestVersionRef.current = await fetchDesktopManifestVersion(serverUrl).catch(() => null)
-    setManifest(nextManifest)
-    if (selectId && nextManifest.items.some((item) => item.id === selectId)) {
-      setSelectedId(selectId)
-    }
-    setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
-    return nextManifest
-  }
-
-  async function refreshDesktopManifest(selectId?: string): Promise<void> {
-    await refreshDesktopManifestData(selectId)
-  }
-
-  async function applyDatasetOpenResult(result: DatasetOpenResult): Promise<void> {
-    setManifest(null)
-    setSelectedId(null)
-    setServerUrl(result.url)
-    setDatasetRoot(result.datasetRoot)
-    setBidsName(result.bidsName ?? '')
-    setBidsDatasetDoi(result.bidsDatasetDoi ?? '')
-    setCacheRoot(result.cacheRoot)
-    setWarmProgress(result.warmProgress ?? null)
-    clearFilters()
-    setActiveFilterItemId(null)
-    setStatus(`Loading ${result.datasetRoot}.`)
-
-    const nextManifest = await fetchDesktopManifest(result.url)
-    manifestVersionRef.current = await fetchDesktopManifestVersion(result.url).catch(() => null)
-    setManifest(nextManifest)
-    setSelectedId(nextManifest.items[0]?.id ?? null)
-    setStatus(`${nextManifest.itemCount} volume item(s) loaded from ${result.datasetRoot}.`)
-    promoteRecent(result.datasetRoot)
-  }
-
-  async function openLocalDataset(): Promise<void> {
-    if (isOpeningDatasetRef.current) return
-
-    isOpeningDatasetRef.current = true
-    setIsOpeningDataset(true)
-    setStatus('Choosing dataset directory.')
-    try {
-      const result = await openDatasetDirectory()
-      if (!result) {
-        setStatus('Open directory cancelled.')
-        return
-      }
-      await applyDatasetOpenResult(result)
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
-    } finally {
-      isOpeningDatasetRef.current = false
-      setIsOpeningDataset(false)
-    }
-  }
-
-  async function openRecentDataset(path: string): Promise<void> {
-    if (isOpeningDatasetRef.current) return
-
-    isOpeningDatasetRef.current = true
-    setIsOpeningDataset(true)
-    setIsRecentMenuOpen(false)
-    setStatus(`Opening ${path}.`)
-    try {
-      const result = await openDatasetByPath(path)
-      await applyDatasetOpenResult(result)
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
-    } finally {
-      isOpeningDatasetRef.current = false
-      setIsOpeningDataset(false)
-    }
-  }
-
   function toggleOverlayLayer(itemId: string): void {
     setOverlayIds((current) => {
       const next = new Set(current)
@@ -540,95 +409,6 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isRenderMaximized])
 
-  useEffect(() => {
-    if (!serverUrl) return
-    let cancelled = false
-    let inFlight = false
-
-    async function refreshChangedManifest(): Promise<void> {
-      // One refresh at a time: a slow response must not race a newer one and
-      // overwrite it with stale data.
-      if (cancelled || inFlight) return
-      inFlight = true
-      try {
-        const nextVersion = await fetchDesktopManifestVersion(serverUrl)
-        if (cancelled) return
-        if (manifestRef.current && manifestVersionRef.current === nextVersion) {
-          return
-        }
-
-        const nextManifest = await fetchDesktopManifest(serverUrl)
-        if (cancelled) return
-
-        manifestVersionRef.current = nextVersion
-        setManifest(nextManifest)
-        const currentSelectedId = selectedIdRef.current
-        if (!currentSelectedId || !nextManifest.items.some((item) => item.id === currentSelectedId)) {
-          setSelectedId(nextManifest.items[0]?.id ?? null)
-        }
-        setStatus(`${nextManifest.itemCount} volume item(s) loaded.`)
-      } catch {
-        try {
-          const serverInfo = await resolveServerInfo()
-          if (cancelled || !serverInfo || serverInfo.url === serverUrl) return
-          setServerUrl(serverInfo.url)
-          setDatasetRoot(serverInfo.datasetRoot ?? '')
-          setBidsName(serverInfo.bidsName ?? '')
-          setBidsDatasetDoi(serverInfo.bidsDatasetDoi ?? '')
-          setCacheRoot(serverInfo.cacheRoot ?? '')
-          setWarmProgress(serverInfo.warmProgress ?? null)
-        } catch {
-          // Server unreachable; keep current state and retry on the next tick.
-        }
-      } finally {
-        inFlight = false
-      }
-    }
-
-    void refreshChangedManifest()
-    const interval = window.setInterval(() => {
-      // Back off while the window is hidden; the focus listener catches up.
-      if (!document.hidden) void refreshChangedManifest()
-    }, 5000)
-    const onFocus = (): void => {
-      void refreshChangedManifest()
-    }
-    window.addEventListener('focus', onFocus)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
-      window.removeEventListener('focus', onFocus)
-    }
-  }, [serverUrl])
-
-  useEffect(() => {
-    if (!serverUrl) return
-    let cancelled = false
-    let inFlight = false
-
-    async function refreshWarmProgress(): Promise<void> {
-      if (cancelled || inFlight) return
-      inFlight = true
-      try {
-        const serverInfo = await resolveServerInfo()
-        if (!cancelled) setWarmProgress(serverInfo?.warmProgress ?? null)
-      } finally {
-        inFlight = false
-      }
-    }
-
-    void refreshWarmProgress()
-    const interval = window.setInterval(() => {
-      void refreshWarmProgress()
-    }, 1000)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
-    }
-  }, [serverUrl])
-
   const warmStatus = warmProgressLabel(warmProgress, datasetRoot)
   const locationStatus = useMemo(() => locationStatusLabel(locationReadout), [locationReadout])
 
@@ -687,7 +467,10 @@ export function App(): JSX.Element {
                       <div key={path} className="nv-recent-row">
                         <button
                           className="nv-recent-item"
-                          onClick={() => void openRecentDataset(path)}
+                          onClick={() => {
+                            setIsRecentMenuOpen(false)
+                            void openRecentDataset(path)
+                          }}
                           title={path}
                           type="button"
                           role="menuitem"

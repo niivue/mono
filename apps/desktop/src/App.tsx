@@ -54,7 +54,6 @@ import type {
 import {
   defaultClipPlanes,
   fetchDesktopManifest,
-  fetchVolumeMetadata,
   openDatasetByPath,
   openDatasetDirectory,
   resolveServerInfo,
@@ -73,6 +72,7 @@ import { useClipPlanes } from './hooks/useClipPlanes'
 import { recentDatasetLabel, useRecentDatasets } from './hooks/useRecentDatasets'
 import { useTerminalDock } from './hooks/useTerminalDock'
 import { useVolumeFilters } from './hooks/useVolumeFilters'
+import { useVolumeMetadata } from './hooks/useVolumeMetadata'
 import neurovueIconUrl from '../src-tauri/icons/neurovue-icon.svg?url'
 
 const MIN_SPLIT = 34
@@ -184,8 +184,6 @@ export function App(): JSX.Element {
     resetClipPlanes
   } = useClipPlanes()
   const [status, setStatus] = useState('Starting NeuroVue.')
-  const [metadataStatus, setMetadataStatus] = useState('No metadata loaded.')
-  const [metadata, setMetadata] = useState<VolumeMetadata | null>(null)
   const [splitPercent, setSplitPercent] = useState(52)
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
@@ -301,43 +299,7 @@ export function App(): JSX.Element {
     toggleDtype,
     clearFilters
   } = useVolumeFilters(items)
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadMetadata(item: DesktopItem): Promise<void> {
-      setMetadata(null)
-      setMetadataStatus('Loading metadata.')
-      try {
-        const nextMetadata = await fetchVolumeMetadata(item)
-        if (cancelled) return
-        const sidecarCount = nextMetadata.sidecars?.length ?? 0
-        setMetadata(nextMetadata)
-        setMetadataStatus(
-          sidecarCount > 0
-            ? `${sidecarCount} JSON sidecar${sidecarCount === 1 ? '' : 's'} loaded.`
-            : 'No JSON sidecars discovered.'
-        )
-      } catch (error) {
-        if (cancelled) return
-        setMetadata(null)
-        setMetadataStatus(error instanceof Error ? error.message : String(error))
-      }
-    }
-
-    if (!selected) {
-      setMetadata(null)
-      setMetadataStatus('No volume selected.')
-      return () => {
-        cancelled = true
-      }
-    }
-
-    void loadMetadata(selected)
-    return () => {
-      cancelled = true
-    }
-  }, [selected?.id, selected?.metadata])
+  const { metadata, metadataStatus } = useVolumeMetadata(selected)
 
   async function refreshDesktopManifest(selectId?: string): Promise<void> {
     if (!serverUrl) return
@@ -352,8 +314,6 @@ export function App(): JSX.Element {
   async function applyDatasetOpenResult(result: DatasetOpenResult): Promise<void> {
     setManifest(null)
     setSelectedId(null)
-    setMetadata(null)
-    setMetadataStatus('No metadata loaded.')
     setServerUrl(result.url)
     setDatasetRoot(result.datasetRoot)
     setBidsName(result.bidsName ?? '')

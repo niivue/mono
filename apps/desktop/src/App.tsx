@@ -14,17 +14,20 @@ import {
 } from 'react'
 import { flushSync } from 'react-dom'
 import { listen } from '@tauri-apps/api/event'
+import type { NiiVueLocation } from '@niivue/niivue'
 import {
   ChevronDown,
   CircleDot,
   Calculator,
   CheckCircle2,
+  Crosshair,
   Database,
   Eye,
   FileJson,
   FolderOpen,
   GripHorizontal,
   GripVertical,
+  Layers,
   LoaderCircle,
   X,
   Maximize2,
@@ -40,7 +43,7 @@ import {
   ZoomIn,
   ZoomOut
 } from 'lucide-react'
-import { NiivueStage } from './components/NiivueStage'
+import { NiivueStage, type NiivueRenderLayer } from './components/NiivueStage'
 import { NiimathOperationsPanel } from './components/NiimathOperationsPanel'
 import { TerminalPanel } from './components/TerminalPanel'
 import type {
@@ -136,6 +139,9 @@ export function App(): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
   const [colormap, setColormap] = useState('gray')
+  const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
+  const [atlasId, setAtlasId] = useState<string | null>(null)
+  const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(null)
   const {
     clipPlanes,
     activeClipPlaneId,
@@ -282,6 +288,60 @@ export function App(): JSX.Element {
     clearFilters
   } = useVolumeFilters(items)
   const { metadata, metadataStatus } = useVolumeMetadata(selected)
+  const renderLayers = useMemo<NiivueRenderLayer[]>(() => {
+    if (!selected) return []
+
+    const layers: NiivueRenderLayer[] = [
+      {
+        item: selected,
+        kind: 'base',
+        isAtlas: atlasId === selected.id,
+        opacity: 1
+      }
+    ]
+
+    for (const item of items) {
+      if (!overlayIds.has(item.id) || item.id === selected.id || item.id === atlasId) continue
+      layers.push({
+        item,
+        kind: 'overlay',
+        opacity: 0.48
+      })
+    }
+
+    const atlasItem = atlasId ? items.find((item) => item.id === atlasId) ?? null : null
+    if (atlasItem && atlasItem.id !== selected.id) {
+      layers.push({
+        item: atlasItem,
+        kind: 'overlay',
+        isAtlas: true,
+        opacity: 0.34
+      })
+    }
+
+    return layers
+  }, [atlasId, items, overlayIds, selected])
+
+  useEffect(() => {
+    const validIds = new Set(items.map((item) => item.id))
+    setOverlayIds((current) => {
+      let changed = false
+      const next = new Set<string>()
+      for (const id of current) {
+        if (validIds.has(id) && id !== selected?.id && id !== atlasId) {
+          next.add(id)
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+    setAtlasId((current) => (current && validIds.has(current) ? current : null))
+  }, [atlasId, items, selected?.id])
+
+  useEffect(() => {
+    setLocationReadout(null)
+  }, [renderLayers])
 
   async function refreshDesktopManifest(selectId?: string): Promise<void> {
     if (!serverUrl) return
@@ -352,6 +412,31 @@ export function App(): JSX.Element {
       isOpeningDatasetRef.current = false
       setIsOpeningDataset(false)
     }
+  }
+
+  function toggleOverlayLayer(itemId: string): void {
+    setOverlayIds((current) => {
+      const next = new Set(current)
+      if (next.has(itemId)) {
+        next.delete(itemId)
+      } else {
+        next.add(itemId)
+      }
+      return next
+    })
+  }
+
+  function changeAtlasLayer(itemId: string): void {
+    const nextAtlasId = itemId || null
+    setAtlasId(nextAtlasId)
+    if (!nextAtlasId) return
+
+    setOverlayIds((current) => {
+      if (!current.has(nextAtlasId)) return current
+      const next = new Set(current)
+      next.delete(nextAtlasId)
+      return next
+    })
   }
 
 
@@ -454,6 +539,7 @@ export function App(): JSX.Element {
   }, [serverUrl])
 
   const warmStatus = warmProgressLabel(warmProgress, datasetRoot)
+  const locationStatus = useMemo(() => locationStatusLabel(locationReadout), [locationReadout])
 
   return (
     <main
@@ -693,7 +779,9 @@ export function App(): JSX.Element {
               colormap={colormap}
               isActive={mouseContext === 'niivue'}
               item={selected}
+              layers={renderLayers}
               onClipPlaneDepthChange={changeClipPlaneDepth}
+              onLocationChange={setLocationReadout}
               renderWheelMode={renderWheelMode}
             />
           </section>
@@ -780,6 +868,15 @@ export function App(): JSX.Element {
                   </div>
                 </section>
 
+                <LayerPanel
+                  atlasId={atlasId}
+                  items={items}
+                  overlayIds={overlayIds}
+                  selected={selected}
+                  onAtlasChange={changeAtlasLayer}
+                  onOverlayToggle={toggleOverlayLayer}
+                />
+
                 <SelectionPanel item={selected} metadataStatus={metadataStatus} />
                 <MetadataPanel item={selected} metadata={metadata} status={metadataStatus} />
               </>
@@ -846,6 +943,12 @@ export function App(): JSX.Element {
           <span className="nv-warm-status">
             {warmProgress?.active ? <LoaderCircle size={12} /> : <CheckCircle2 size={12} />}
             {warmStatus}
+          </span>
+        ) : null}
+        {locationStatus ? (
+          <span className="nv-location-status" title={locationReadout?.string}>
+            <Crosshair size={12} />
+            {locationStatus}
           </span>
         ) : null}
         <span>{mouseContextLabel(mouseContext)}</span>
@@ -928,6 +1031,86 @@ function DesktopZoomControls({
         <Maximize2 size={15} />
       </button>
     </>
+  )
+}
+
+function LayerPanel({
+  atlasId,
+  items,
+  overlayIds,
+  selected,
+  onAtlasChange,
+  onOverlayToggle
+}: {
+  atlasId: string | null
+  items: DesktopItem[]
+  overlayIds: Set<string>
+  selected: DesktopItem | null
+  onAtlasChange: (itemId: string) => void
+  onOverlayToggle: (itemId: string) => void
+}): JSX.Element {
+  const overlayCandidates = useMemo(
+    () => items.filter((item) => item.id !== selected?.id && item.id !== atlasId),
+    [atlasId, items, selected?.id]
+  )
+  const atlasCandidates = useMemo(
+    () => items.slice().sort(compareAtlasCandidates),
+    [items]
+  )
+  const extras = overlayIds.size + (atlasId && atlasId !== selected?.id ? 1 : 0)
+
+  return (
+    <section className="nv-control-section nv-layer-panel">
+      <div className="nv-panel-heading">
+        <span>
+          <Layers size={15} />
+          Layers
+        </span>
+        <em>{selected ? `${extras} extra` : 'none'}</em>
+      </div>
+
+      <label className="nv-select nv-layer-select">
+        <span>Atlas</span>
+        <select
+          aria-label="Atlas layer"
+          disabled={!selected || atlasCandidates.length === 0}
+          value={atlasId ?? ''}
+          onChange={(event) => onAtlasChange(event.target.value)}
+        >
+          <option value="">None</option>
+          {atlasCandidates.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown size={14} />
+      </label>
+
+      <div className="nv-layer-list-header">
+        <span>Overlays</span>
+        <em>{overlayIds.size}</em>
+      </div>
+      <div className="nv-layer-list">
+        {overlayCandidates.map((item) => (
+          <label className="nv-layer-option" key={item.id} title={item.label}>
+            <input
+              checked={overlayIds.has(item.id)}
+              disabled={!selected}
+              onChange={() => onOverlayToggle(item.id)}
+              type="checkbox"
+            />
+            <span>
+              <strong>{item.label}</strong>
+              <small>{layerOptionMeta(item)}</small>
+            </span>
+          </label>
+        ))}
+        {overlayCandidates.length === 0 ? (
+          <div className="nv-filter-empty">No overlay candidates.</div>
+        ) : null}
+      </div>
+    </section>
   )
 }
 
@@ -2301,12 +2484,58 @@ function mouseContextLabel(context: MouseContext): string {
   return 'Mouse: no pane'
 }
 
+function locationStatusLabel(location: NiiVueLocation | null): string | null {
+  if (!location) return null
+  const mm = location.mm.map(formatCoordinate).join(', ')
+  const vox = location.vox.map(formatVoxelIndex).join(', ')
+  const region = locationRegion(location)
+  return region ? `XYZ ${mm} mm / IJK ${vox} / Region ${region}` : `XYZ ${mm} mm / IJK ${vox}`
+}
+
+function locationRegion(location: NiiVueLocation): string | null {
+  const labelled = location.values.find((value) => isRegionLabel(value.label)) ??
+    location.values.find((value) => value.label && value.label.trim().length > 0)
+  return labelled?.label?.trim() || null
+}
+
+function isRegionLabel(label: string | undefined): boolean {
+  if (!label) return false
+  const normalized = label.trim().toLowerCase()
+  return normalized.length > 0 && normalized !== 'air' && normalized !== 'background'
+}
+
+function formatCoordinate(value: number): string {
+  if (!Number.isFinite(value)) return '0'
+  return Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(1)
+}
+
+function formatVoxelIndex(value: number): string {
+  if (!Number.isFinite(value)) return '0'
+  return String(Math.round(value))
+}
+
 function warmProgressLabel(progress: WarmProgress | null, datasetRoot: string): string | null {
   if (!progress || progress.total <= 0) return null
   const datasetLabel = datasetRoot ? `${recentDatasetLabel(datasetRoot)}: ` : ''
   if (!progress.active) return `${datasetLabel}Pyramid cache ready ${progress.completed}/${progress.total}`
   const percent = Math.round((progress.completed / progress.total) * 100)
   return `${datasetLabel}Warming pyramid ${progress.completed}/${progress.total} (${percent}%)`
+}
+
+function compareAtlasCandidates(left: DesktopItem, right: DesktopItem): number {
+  return atlasCandidateScore(right) - atlasCandidateScore(left) || left.label.localeCompare(right.label)
+}
+
+function atlasCandidateScore(item: DesktopItem): number {
+  const text = `${item.id} ${item.label}`
+  if (/(^|[_\-\s.])(atlas|aal|bigbrain|parc|parcel|parcellation|labels?|dseg|aseg|seg|annotation)([_\-\s.]|$)/i.test(text)) {
+    return 2
+  }
+  return 0
+}
+
+function layerOptionMeta(item: DesktopItem): string {
+  return `${volumeImageTypeLabel(item)} / ${item.shape.join(' x ')} / ${item.dtype}`
 }
 
 async function savePatch(

@@ -78,6 +78,9 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 
 ## UX / product
 
+- [x] **[P2] (M) Overlay + atlas footer readout.** Add overlay layer loading,
+  mark an optional atlas/parcellation layer, and surface NiiVue crosshair
+  location/region labels in the footer from `locationChange`.
 - [ ] **[P2] (M) Per-layer colormap.** Colormap is currently a per-volume control
   parked in the Operations tab; make it a per-layer setting when overlays exist.
 - [x] **[P3] (S) niimath mask path picker.** Replace the free-text mask path input

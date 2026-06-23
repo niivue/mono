@@ -87,8 +87,18 @@ button {
   border-bottom: 0;
   color: var(--muted);
   font-size: 12px;
+  gap: 14px;
+  justify-content: flex-start;
   padding: 0 14px;
   box-shadow: none;
+}
+
+.nv-status > span:first-child {
+  flex: 1 1 28%;
+}
+
+.nv-status > span:last-child {
+  margin-left: auto;
 }
 
 .nv-status span {
@@ -103,6 +113,11 @@ button {
 
 .nv-status .nv-warm-status {
   color: var(--amber);
+}
+
+.nv-status .nv-location-status {
+  flex: 1 2 42%;
+  color: var(--green);
 }
 
 .nv-warm-status .lucide-loader-circle {
@@ -1513,6 +1528,79 @@ button {
   margin-top: 8px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.nv-layer-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.nv-layer-select {
+  width: 100%;
+}
+
+.nv-layer-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nv-layer-list-header em {
+  color: var(--green);
+  font-style: normal;
+}
+
+.nv-layer-list {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.nv-layer-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(146, 160, 102, 0.22);
+  background: rgba(16, 17, 13, 0.72);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 7px 8px;
+}
+
+.nv-layer-option input {
+  accent-color: var(--green);
+}
+
+.nv-layer-option span,
+.nv-layer-option strong,
+.nv-layer-option small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-layer-option strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nv-layer-option small {
+  margin-top: 3px;
+  color: var(--faint);
+  font-size: 11px;
 }
 
 .nv-clip-flip {

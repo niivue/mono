@@ -710,6 +710,20 @@ async function ensureNiivue(): Promise<void> {
     const vox = detail?.vox
     if (Array.isArray(vox) && vox.length >= 3) {
       rememberFocusFromVoxel([vox[0] ?? 0, vox[1] ?? 0, vox[2] ?? 0])
+      // Multiplanar: re-centre the (zoomed) view on the clicked point so the
+      // crosshair stays centred as the user navigates.
+      if (isMultiplanarView() && nv) {
+        const z = (nv.pan2Dxyzmm as unknown as number[])?.[3] ?? 1
+        if (z > 1) applyMultiplanarZoom(z)
+      }
+      // Snap the focus box to the block now under the crosshair immediately (the
+      // finest-level rebuild follows on settle). Draws on the render tile, incl.
+      // the render quadrant of a multiplanar layout.
+      if (els.subvolume.value === 'multilod') {
+        const plan = nv?.volumes[0]?.chunkPlan
+        const cur = currentVolume()
+        if (plan && cur) setMultiLodFocusBox(cur, plan)
+      }
       // In multi-resolution mode, move the finest bricks to the new look-at
       // point once the crosshair settles.
       scheduleMultiLodRefocus()
@@ -971,12 +985,10 @@ async function reloadMultiLod(
     }
     nv.sliceType = currentSliceType()
     if (cam) restoreView(cam)
-    // The focus box is a 3D render-view indicator; multiplanar shows the slices.
-    if (!isMultiplanarView() && volume.chunkPlan) {
-      setMultiLodFocusBox(v, volume.chunkPlan)
-    } else {
-      nv.focusBox = null
-    }
+    // Outline the crosshair's block; it draws on the 3D render tile (the render
+    // quadrant of a multiplanar layout, or the full render view).
+    if (volume.chunkPlan) setMultiLodFocusBox(v, volume.chunkPlan)
+    else nv.focusBox = null
     loadedLevelShape = (volume.dimsRAS?.slice(1, 4) as Shape3) ?? null
     loadedBbox = null
     showCanvas()
@@ -1817,19 +1829,42 @@ function markCustomSubvolume(label: string): void {
 // so the user can keep zooming even while a right-click clip-plane drag is
 // in progress. The setter triggers drawScene; we also kick auto-LOD so the
 // pyramid level catches up.
+// 2D pan (mm) that centres the multiplanar view on the crosshair. niivue zooms
+// around volumeCentre - pan, so pan = volumeCentre - crosshair =
+// (extentsMax-extentsMin)*(0.5 - crosshairFrac). Zero at zoom 1 (whole volume).
+function multiplanarPanForCrosshair(): [number, number, number] {
+  if (!nv) return [0, 0, 0]
+  const vol = nv.volumes[0]
+  const frac = nv.crosshairPos as unknown as number[]
+  const lo = vol?.extentsMin
+  const hi = vol?.extentsMax
+  if (!lo || !hi || !frac) return [0, 0, 0]
+  return [
+    (hi[0] - lo[0]) * (0.5 - (frac[0] ?? 0.5)),
+    (hi[1] - lo[1]) * (0.5 - (frac[1] ?? 0.5)),
+    (hi[2] - lo[2]) * (0.5 - (frac[2] ?? 0.5)),
+  ]
+}
+
+// Set the 2D zoom while keeping the crosshair at the centre of the view.
+function applyMultiplanarZoom(zoom: number): void {
+  if (!nv) return
+  const pan = zoom > 1 ? multiplanarPanForCrosshair() : [0, 0, 0]
+  nv.pan2Dxyzmm = [pan[0], pan[1], pan[2], zoom] as unknown as [
+    number,
+    number,
+    number,
+    number,
+  ]
+}
+
 function applyZoomFromSlider(): void {
   if (!nv) return
   const v = Number(els.zoom.value)
   if (!Number.isFinite(v) || v <= 0) return
   if (isMultiplanarView()) {
-    // 2D slices zoom via pan2Dxyzmm[3]; scaleMultiplier only affects 3D render.
-    const p = nv.pan2Dxyzmm as unknown as number[]
-    nv.pan2Dxyzmm = [p?.[0] ?? 0, p?.[1] ?? 0, p?.[2] ?? 0, v] as unknown as [
-      number,
-      number,
-      number,
-      number,
-    ]
+    // 2D slices zoom via pan2Dxyzmm; scaleMultiplier only affects 3D render.
+    applyMultiplanarZoom(v)
     // The captured 2D region drives the multi-LOD focus radius — rebuild on settle.
     if (els.subvolume.value === 'multilod') scheduleMultiLodRefocus()
   } else {
@@ -1999,21 +2034,21 @@ function evaluateAutoLod(): void {
 // 3D scalar first (sliceType=4 = render mode, which the demo uses) and
 // fall back to the 2D pan zoom scalar for multiplanar.
 function readViewerScale(viewer: NiiVue): number {
+  // Read the public controller getters (not viewer.scene, which isn't exposed).
   const rec = viewer as unknown as {
     scaleMultiplier?: number
-    scene?: { pan2Dxyzmm?: number[] }
+    pan2Dxyzmm?: ArrayLike<number>
   }
   // Multiplanar zoom lives in the 2D pan vector; render zoom in scaleMultiplier.
   if (isMultiplanarView()) {
-    const z2d = rec.scene?.pan2Dxyzmm?.[3]
+    const z2d = rec.pan2Dxyzmm?.[3]
     if (typeof z2d === 'number' && z2d > 0) return z2d
     return 1
   }
   if (typeof rec.scaleMultiplier === 'number' && rec.scaleMultiplier > 0) {
     return rec.scaleMultiplier
   }
-  const pan = rec.scene?.pan2Dxyzmm
-  const z = pan?.[3]
+  const z = rec.pan2Dxyzmm?.[3]
   if (typeof z === 'number' && z > 0) return z
   return 1
 }

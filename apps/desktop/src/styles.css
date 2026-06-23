@@ -1565,6 +1565,22 @@ button {
   opacity: 0.5;
 }
 
+.nv-layer-visibility {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-layer-visibility input {
+  accent-color: var(--green);
+}
+
+.nv-layer-visibility.is-disabled {
+  opacity: 0.45;
+}
+
 .nv-layer-list-header {
   display: flex;
   align-items: center;

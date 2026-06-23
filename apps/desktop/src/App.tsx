@@ -144,6 +144,7 @@ export function App(): JSX.Element {
   const [colormap, setColormap] = useState('gray')
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
   const [atlasId, setAtlasId] = useState<string | null>(null)
+  const [isAtlasVisible, setIsAtlasVisible] = useState(true)
   const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(null)
   const {
     clipPlanes,
@@ -300,7 +301,7 @@ export function App(): JSX.Element {
         item: selected,
         kind: 'base',
         isAtlas: atlasId === selected.id,
-        opacity: 1
+        opacity: atlasId === selected.id && !isAtlasVisible ? 0 : 1
       }
     ]
 
@@ -319,12 +320,12 @@ export function App(): JSX.Element {
         item: atlasItem,
         kind: 'overlay',
         isAtlas: true,
-        opacity: 0.34
+        opacity: isAtlasVisible ? 0.34 : 0
       })
     }
 
     return layers
-  }, [atlasId, items, overlayIds, selected])
+  }, [atlasId, isAtlasVisible, items, overlayIds, selected])
 
   useEffect(() => {
     const validIds = new Set(items.map((item) => item.id))
@@ -439,6 +440,7 @@ export function App(): JSX.Element {
     const nextAtlasId = itemId || null
     setAtlasId(nextAtlasId)
     if (!nextAtlasId) return
+    setIsAtlasVisible(true)
 
     setOverlayIds((current) => {
       if (!current.has(nextAtlasId)) return current
@@ -465,6 +467,7 @@ export function App(): JSX.Element {
       const isAtlas = overlayItem ? await volumeHasAtlasLabelSidecar(overlayItem) : false
       if (isAtlas) {
         setAtlasId(result.id)
+        setIsAtlasVisible(true)
         setOverlayIds((current) => {
           if (!current.has(result.id)) return current
           const next = new Set(current)
@@ -918,11 +921,13 @@ export function App(): JSX.Element {
 
                 <LayerPanel
                   atlasId={atlasId}
+                  isAtlasVisible={isAtlasVisible}
                   isOpeningOverlay={isOpeningOverlay}
                   items={items}
                   overlayIds={overlayIds}
                   selected={selected}
                   onAtlasChange={changeAtlasLayer}
+                  onAtlasVisibilityChange={setIsAtlasVisible}
                   onLoadOverlay={loadOverlayVolume}
                   onOverlayToggle={toggleOverlayLayer}
                 />
@@ -1086,20 +1091,24 @@ function DesktopZoomControls({
 
 function LayerPanel({
   atlasId,
+  isAtlasVisible,
   isOpeningOverlay,
   items,
   overlayIds,
   selected,
   onAtlasChange,
+  onAtlasVisibilityChange,
   onLoadOverlay,
   onOverlayToggle
 }: {
   atlasId: string | null
+  isAtlasVisible: boolean
   isOpeningOverlay: boolean
   items: DesktopItem[]
   overlayIds: Set<string>
   selected: DesktopItem | null
   onAtlasChange: (itemId: string) => void
+  onAtlasVisibilityChange: (visible: boolean) => void
   onLoadOverlay: () => void
   onOverlayToggle: (itemId: string) => void
 }): JSX.Element {
@@ -1149,6 +1158,16 @@ function LayerPanel({
           ))}
         </select>
         <ChevronDown size={14} />
+      </label>
+
+      <label className={`nv-layer-visibility ${atlasId ? '' : 'is-disabled'}`}>
+        <input
+          checked={isAtlasVisible}
+          disabled={!atlasId}
+          onChange={(event) => onAtlasVisibilityChange(event.target.checked)}
+          type="checkbox"
+        />
+        <span>Show atlas</span>
       </label>
 
       <div className="nv-layer-list-header">

@@ -86,6 +86,8 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
   base volumes.
 - [x] **[P2] (S) Auto-detect imported atlas sidecars.** When a loaded overlay has
   a same-folder label JSON sidecar, select it as the atlas layer automatically.
+- [x] **[P2] (S) Atlas visibility toggle.** Let users hide the atlas layer while
+  keeping it loaded for crosshair region lookup.
 - [ ] **[P2] (M) Per-layer colormap.** Colormap is currently a per-volume control
   parked in the Operations tab; make it a per-layer setting when overlays exist.
 - [x] **[P3] (S) niimath mask path picker.** Replace the free-text mask path input

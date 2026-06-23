@@ -191,6 +191,7 @@ export function NiivueStage({
   const [status, setStatus] = useState('Waiting for a dataset selection.')
   const [snapId, setSnapId] = useState<RenderSnapId | null>(null)
   const primaryItem = layers[0]?.item ?? item
+  const layerLoadKey = layers.map(layerLoadSignature).join('|')
 
   // Fetch the coarse volume the instant it is selected — at high priority, in
   // parallel with NiiVue init, and ahead of the low-priority 2D preview tiles.
@@ -300,19 +301,23 @@ export function NiivueStage({
     }
     // colormap is intentionally omitted: a colormap change is applied in place by
     // the effect below rather than tearing down and reloading the whole volume.
-  }, [backend, layers, primaryItem, onLocationChange])
+  }, [backend, layerLoadKey, primaryItem, onLocationChange])
 
-  // Apply colormap changes in place. Recreating the NiiVue instance (as the
-  // attach effect does) just to recolor would re-import the module, re-attach
-  // the canvas, and refetch every LOD — far too heavy for a dropdown change.
+  // Apply display changes in place. Recreating the NiiVue instance (as the
+  // attach effect does) just to recolor or hide an atlas would re-import the
+  // module, re-attach the canvas, and refetch every LOD — far too heavy for a
+  // dropdown or checkbox change.
   useEffect(() => {
     const nv = nvRef.current
     if (!nv?.setVolume) return
-    const layer = layers[0]
-    if (!layer) return
-    void nv.setVolume(0, { colormap: colormapForLayer(layer, 0, colormap) }).catch(() => {
+    void Promise.all(layers.map((layer, index) => (
+      nv.setVolume?.(index, {
+        colormap: colormapForLayer(layer, index, colormap),
+        opacity: layer.opacity
+      }) ?? Promise.resolve()
+    ))).catch(() => {
       // No volume loaded yet (or backend lacks setVolume); the attach effect
-      // already loads with the current colormap, so this is safe to ignore.
+      // already loads with current display options, so this is safe to ignore.
     })
   }, [colormap, layers])
 
@@ -695,6 +700,11 @@ function colormapForLayer(layer: NiivueRenderLayer, layerIndex: number, baseColo
   if (layer.isAtlas) return 'actc'
   if (layer.kind === 'base') return baseColormap
   return OVERLAY_COLORMAPS[(layerIndex - 1) % OVERLAY_COLORMAPS.length]
+}
+
+function layerLoadSignature(layer: NiivueRenderLayer): string {
+  const levels = layer.item.levels.map((level) => `${level.level}:${level.raw ?? ''}`).join(',')
+  return `${layer.kind}:${layer.isAtlas ? 'atlas' : 'volume'}:${layer.item.id}:${layer.item.metadata}:${levels}`
 }
 
 function layerStackLabel(layers: NiivueRenderLayer[]): string {

@@ -261,6 +261,14 @@ struct ImagePath {
     quality_format: String,
 }
 
+#[derive(Clone, Copy)]
+struct ImageRegion {
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+}
+
 #[derive(Deserialize)]
 struct ImageQuery {
     level: Option<u8>,
@@ -945,6 +953,11 @@ async fn image_tile(
     if path.slice >= max_slice {
         return Err(StatusCode::RANGE_NOT_SATISFIABLE);
     }
+    if path.rotation != "0" {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let region = parse_image_region(&path.region, usize::from(width), usize::from(height))
+        .ok_or(StatusCode::BAD_REQUEST)?;
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -1003,6 +1016,7 @@ async fn image_tile(
         &volume,
         &path.axis,
         path.slice,
+        region,
         &path.size,
         query.level,
         &state.pyramid_locks,
@@ -1202,7 +1216,7 @@ fn iso8601_utc_now() -> String {
 const DEFAULT_MAX_VOLUMES: usize = 512;
 const MAX_PYRAMID_LEVEL: u8 = 3;
 const PYRAMID_CACHE_NAME: &str = "nifti-pyramid-v3";
-const PREVIEW_DISK_CACHE_NAME: &str = "preview-cache-v1";
+const PREVIEW_DISK_CACHE_NAME: &str = "preview-cache-v2";
 
 struct VolumeDiscovery {
     root: Option<PathBuf>,
@@ -2536,10 +2550,80 @@ fn write_f32_header(header: &mut [u8; 348], offset: usize, value: f32) {
     header[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
+fn parse_image_region(region: &str, image_width: usize, image_height: usize) -> Option<ImageRegion> {
+    if image_width == 0 || image_height == 0 {
+        return None;
+    }
+    if region == "full" {
+        return Some(ImageRegion {
+            x: 0,
+            y: 0,
+            width: image_width,
+            height: image_height,
+        });
+    }
+
+    let mut parts = region.split(',');
+    let x = parts.next()?.parse::<usize>().ok()?;
+    let y = parts.next()?.parse::<usize>().ok()?;
+    let width = parts.next()?.parse::<usize>().ok()?;
+    let height = parts.next()?.parse::<usize>().ok()?;
+    if parts.next().is_some() || width == 0 || height == 0 {
+        return None;
+    }
+
+    let end_x = x.checked_add(width)?;
+    let end_y = y.checked_add(height)?;
+    if x >= image_width || y >= image_height || end_x > image_width || end_y > image_height {
+        return None;
+    }
+
+    Some(ImageRegion {
+        x,
+        y,
+        width,
+        height,
+    })
+}
+
+fn level_image_region(
+    region: ImageRegion,
+    factor: usize,
+    level_width: usize,
+    level_height: usize,
+) -> Option<ImageRegion> {
+    let factor = factor.max(1);
+    let x = region.x / factor;
+    let y = region.y / factor;
+    let end_x = region
+        .x
+        .checked_add(region.width)?
+        .div_ceil(factor)
+        .min(level_width);
+    let end_y = region
+        .y
+        .checked_add(region.height)?
+        .div_ceil(factor)
+        .min(level_height);
+    let width = end_x.checked_sub(x)?;
+    let height = end_y.checked_sub(y)?;
+    if width == 0 || height == 0 || x >= level_width || y >= level_height {
+        return None;
+    }
+
+    Some(ImageRegion {
+        x,
+        y,
+        width,
+        height,
+    })
+}
+
 fn render_slice_bmp(
     volume: &VolumeEntry,
     axis: &str,
     slice: u16,
+    region: ImageRegion,
     size: &str,
     requested_level: Option<u8>,
     pyramid_locks: &PyramidLocks,
@@ -2573,6 +2657,7 @@ fn render_slice_bmp(
         "sagittal" => (dim_y, dim_z),
         _ => return None,
     };
+    let region = level_image_region(region, factor, native_width, native_height)?;
     let slice_index = usize::from(slice).checked_div(factor)?;
     let voxel_count = dim_x.checked_mul(dim_y)?.checked_mul(dim_z)?;
     let required_bytes = voxel_count.checked_mul(bytes_per_voxel)?;
@@ -2580,26 +2665,28 @@ fn render_slice_bmp(
         return None;
     }
 
-    let mut values = Vec::with_capacity(native_width.checked_mul(native_height)?);
-    for row in 0..native_height {
-        for col in 0..native_width {
+    let mut values = Vec::with_capacity(region.width.checked_mul(region.height)?);
+    for row in 0..region.height {
+        let image_row = region.y.checked_add(row)?;
+        for col in 0..region.width {
+            let image_col = region.x.checked_add(col)?;
             let voxel_index = match axis {
                 "axial" => {
-                    let x = col;
-                    let y = native_height - 1 - row;
+                    let x = image_col;
+                    let y = native_height - 1 - image_row;
                     let z = slice_index.min(dim_z.saturating_sub(1));
                     voxel_linear_index(x, y, z, dim_x, dim_y)?
                 }
                 "coronal" => {
-                    let x = col;
+                    let x = image_col;
                     let y = slice_index.min(dim_y.saturating_sub(1));
-                    let z = native_height - 1 - row;
+                    let z = native_height - 1 - image_row;
                     voxel_linear_index(x, y, z, dim_x, dim_y)?
                 }
                 "sagittal" => {
                     let x = slice_index.min(dim_x.saturating_sub(1));
-                    let y = col;
-                    let z = native_height - 1 - row;
+                    let y = image_col;
+                    let z = native_height - 1 - image_row;
                     voxel_linear_index(x, y, z, dim_x, dim_y)?
                 }
                 _ => return None,
@@ -2609,20 +2696,20 @@ fn render_slice_bmp(
     }
 
     let gray = scale_slice_to_gray(&values);
-    let (output_width, output_height) = requested_image_size(size, native_width, native_height);
+    let (output_width, output_height) = requested_image_size(size, region.width, region.height);
     let resized = if should_letterbox_preview(size) {
         resize_gray_letterboxed(
             &gray,
-            native_width,
-            native_height,
+            region.width,
+            region.height,
             output_width,
             output_height,
         )
     } else {
         resize_gray_nearest(
             &gray,
-            native_width,
-            native_height,
+            region.width,
+            region.height,
             output_width,
             output_height,
         )

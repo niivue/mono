@@ -51,7 +51,7 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
   `len + mtime` only, so in-place edits (same size/mtime) can serve stale data.
   Add a content hash and decode-affecting header fields
   (`volumetric_server.rs::source_signature`).
-- [ ] **[P2] (M) IIIF correctness.** `region` is ignored and `info.json` advertises
+- [x] **[P2] (M) IIIF correctness.** `region` is ignored and `info.json` advertises
   native dims/tiling that don't match the downsampled bytes served. Either honor
   `region` (crop) or advertise full/max-only and reject region requests. Only
   matters if external IIIF clients consume the endpoints.

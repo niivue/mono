@@ -1600,15 +1600,16 @@ button {
 .nv-layer-list {
   display: grid;
   gap: 6px;
-  max-height: 180px;
+  max-height: 240px;
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
 }
 
+.nv-layer-card,
 .nv-layer-option {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(112px, 42%);
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -1619,13 +1620,29 @@ button {
   padding: 7px 8px;
 }
 
-.nv-layer-option input {
+.nv-layer-option.is-active {
+  border-color: rgba(115, 198, 155, 0.38);
+}
+
+.nv-layer-option-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: inherit;
+}
+
+.nv-layer-option-toggle input {
   accent-color: var(--green);
 }
 
-.nv-layer-option span,
-.nv-layer-option strong,
-.nv-layer-option small {
+.nv-layer-copy,
+.nv-layer-copy strong,
+.nv-layer-copy small,
+.nv-layer-option-toggle span,
+.nv-layer-option-toggle strong,
+.nv-layer-option-toggle small {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -1633,16 +1650,33 @@ button {
   white-space: nowrap;
 }
 
+.nv-layer-copy strong,
 .nv-layer-option strong {
   color: var(--ink);
   font-size: 12px;
   font-weight: 600;
 }
 
+.nv-layer-copy small,
 .nv-layer-option small {
   margin-top: 3px;
   color: var(--faint);
   font-size: 11px;
+}
+
+.nv-layer-colormap-select {
+  grid-template-columns: auto minmax(58px, 1fr) auto;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.nv-layer-colormap-select.is-disabled {
+  opacity: 0.48;
+}
+
+.nv-layer-colormap-select select:disabled {
+  color: var(--faint);
 }
 
 .nv-clip-flip {

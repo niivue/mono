@@ -8,7 +8,6 @@ interface NiivueStageProps {
   layers: NiivueRenderLayer[]
   activeClipPlaneId: string
   backend: Backend
-  colormap: string
   clipPlanes: ClipPlane[]
   isActive: boolean
   renderWheelMode: 'zoom' | 'clip-plane'
@@ -20,6 +19,7 @@ export interface NiivueRenderLayer {
   item: DesktopItem
   kind: 'base' | 'overlay'
   isAtlas?: boolean
+  colormap: string
   opacity: number
 }
 
@@ -115,7 +115,6 @@ const AXIAL_SNAP: RenderViewSnap = {
   shortcut: '7 / Numpad 7'
 }
 const RENDER_VIEW_SNAPS = [CORONAL_SNAP, SAGITTAL_SNAP, AXIAL_SNAP]
-const OVERLAY_COLORMAPS = ['magma', 'viridis', 'actc'] as const
 const atlasColorMapCache = new Map<string, Promise<ColorMap | null>>()
 const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; reverse: RenderViewSnap }> = {
   Digit1: {
@@ -179,7 +178,6 @@ export function NiivueStage({
   layers,
   activeClipPlaneId,
   backend,
-  colormap,
   clipPlanes,
   isActive,
   renderWheelMode,
@@ -273,7 +271,6 @@ export function NiivueStage({
         await loadRenderVolumeLods({
           layers,
           nv,
-          colormap,
           clipPlanes,
           canvas: attachedCanvas,
           stage,
@@ -302,8 +299,8 @@ export function NiivueStage({
       }
       onLocationChange?.(null)
     }
-    // colormap is intentionally omitted: a colormap change is applied in place by
-    // the effect below rather than tearing down and reloading the whole volume.
+    // Layer display fields are applied in place below instead of tearing down
+    // and reloading the whole volume.
   }, [backend, layerLoadKey, primaryItem, onLocationChange])
 
   // Apply display changes in place. Recreating the NiiVue instance (as the
@@ -315,14 +312,14 @@ export function NiivueStage({
     if (!nv?.setVolume) return
     void Promise.all(layers.map((layer, index) => (
       nv.setVolume?.(index, {
-        colormap: colormapForLayer(layer, index, colormap),
+        colormap: layer.colormap,
         opacity: layer.opacity
       }) ?? Promise.resolve()
     ))).catch(() => {
       // No volume loaded yet (or backend lacks setVolume); the attach effect
       // already loads with current display options, so this is safe to ignore.
     })
-  }, [colormap, layers])
+  }, [layers])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -528,7 +525,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
 async function loadRenderVolumeLods({
   layers,
   nv,
-  colormap,
   clipPlanes,
   canvas,
   stage,
@@ -538,7 +534,6 @@ async function loadRenderVolumeLods({
 }: {
   layers: NiivueRenderLayer[]
   nv: NiiVueLike
-  colormap: string
   clipPlanes: ClipPlane[]
   canvas: HTMLCanvasElement
   stage: HTMLDivElement | null
@@ -583,7 +578,7 @@ async function loadRenderVolumeLods({
       return {
         url: source,
         name: `${layer.item.label} L${layerLevel.level}`,
-        colormap: colormapForLayer(layer, layerIndex, colormap),
+        colormap: layer.colormap,
         opacity: layer.opacity,
         isColorbarVisible: layerIndex === 0
       }
@@ -729,12 +724,6 @@ function stringJsonArray(value: JsonValue | undefined): string[] | null {
 
 function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function colormapForLayer(layer: NiivueRenderLayer, layerIndex: number, baseColormap: string): string {
-  if (layer.isAtlas) return 'actc'
-  if (layer.kind === 'base') return baseColormap
-  return OVERLAY_COLORMAPS[(layerIndex - 1) % OVERLAY_COLORMAPS.length]
 }
 
 function layerLoadSignature(layer: NiivueRenderLayer): string {

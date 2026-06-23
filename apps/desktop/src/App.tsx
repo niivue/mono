@@ -97,6 +97,15 @@ const PREVIEW_IMAGE_VERSION = 5
 const PREVIEW_LOAD_TIMEOUT_MS = 15000
 const PREVIEW_RETAIN_ROOT_MARGIN = '1200px'
 const EMPTY_DESKTOP_ITEMS: DesktopItem[] = []
+const DEFAULT_BASE_COLORMAP = 'gray'
+const DEFAULT_ATLAS_COLORMAP = 'actc'
+const DEFAULT_OVERLAY_COLORMAPS = ['magma', 'viridis', 'actc'] as const
+const COLORMAP_OPTIONS = [
+  { value: 'gray', label: 'Gray' },
+  { value: 'viridis', label: 'Viridis' },
+  { value: 'magma', label: 'Magma' },
+  { value: 'actc', label: 'ACTC' }
+] as const
 // Prefer WebGPU when the platform exposes it, falling back to WebGL2 otherwise.
 function preferredBackend(): Backend {
   return typeof navigator !== 'undefined' && 'gpu' in navigator ? 'webgpu' : 'webgl2'
@@ -141,7 +150,7 @@ export function App(): JSX.Element {
   const [manifest, setManifest] = useState<DesktopManifest | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
-  const [colormap, setColormap] = useState('gray')
+  const [layerColormaps, setLayerColormaps] = useState<Record<string, string>>({})
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
   const [atlasId, setAtlasId] = useState<string | null>(null)
   const [isAtlasVisible, setIsAtlasVisible] = useState(true)
@@ -301,17 +310,25 @@ export function App(): JSX.Element {
         item: selected,
         kind: 'base',
         isAtlas: atlasId === selected.id,
+        colormap: layerColormapForItem(
+          selected,
+          layerColormaps,
+          atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
+        ),
         opacity: atlasId === selected.id && !isAtlasVisible ? 0 : 1
       }
     ]
 
+    let overlayIndex = 0
     for (const item of items) {
       if (!overlayIds.has(item.id) || item.id === selected.id || item.id === atlasId) continue
       layers.push({
         item,
         kind: 'overlay',
+        colormap: layerColormapForItem(item, layerColormaps, overlayColormapForIndex(overlayIndex)),
         opacity: 0.48
       })
+      overlayIndex += 1
     }
 
     const atlasItem = atlasId ? items.find((item) => item.id === atlasId) ?? null : null
@@ -320,12 +337,13 @@ export function App(): JSX.Element {
         item: atlasItem,
         kind: 'overlay',
         isAtlas: true,
+        colormap: layerColormapForItem(atlasItem, layerColormaps, DEFAULT_ATLAS_COLORMAP),
         opacity: isAtlasVisible ? 0.34 : 0
       })
     }
 
     return layers
-  }, [atlasId, isAtlasVisible, items, overlayIds, selected])
+  }, [atlasId, isAtlasVisible, items, layerColormaps, overlayIds, selected])
 
   useEffect(() => {
     const validIds = new Set(items.map((item) => item.id))
@@ -342,7 +360,29 @@ export function App(): JSX.Element {
       return changed ? next : current
     })
     setAtlasId((current) => (current && validIds.has(current) ? current : null))
+    setLayerColormaps((current) => {
+      let changed = false
+      const next: Record<string, string> = {}
+      for (const [id, colormap] of Object.entries(current)) {
+        if (validIds.has(id)) {
+          next[id] = colormap
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
   }, [atlasId, items, selected?.id])
+
+  function changeLayerColormap(itemId: string, nextColormap: string): void {
+    setLayerColormaps((current) => {
+      if (current[itemId] === nextColormap) return current
+      return {
+        ...current,
+        [itemId]: nextColormap
+      }
+    })
+  }
 
   useEffect(() => {
     setLocationReadout(null)
@@ -827,7 +867,6 @@ export function App(): JSX.Element {
               activeClipPlaneId={activeClipPlaneId}
               backend={backend}
               clipPlanes={clipPlanes}
-              colormap={colormap}
               isActive={mouseContext === 'niivue'}
               item={selected}
               layers={renderLayers}
@@ -924,10 +963,12 @@ export function App(): JSX.Element {
                   isAtlasVisible={isAtlasVisible}
                   isOpeningOverlay={isOpeningOverlay}
                   items={items}
+                  layerColormaps={layerColormaps}
                   overlayIds={overlayIds}
                   selected={selected}
                   onAtlasChange={changeAtlasLayer}
                   onAtlasVisibilityChange={setIsAtlasVisible}
+                  onLayerColormapChange={changeLayerColormap}
                   onLoadOverlay={loadOverlayVolume}
                   onOverlayToggle={toggleOverlayLayer}
                 />
@@ -937,31 +978,6 @@ export function App(): JSX.Element {
               </>
             ) : (
               <>
-                <section className="nv-control-section">
-                  <div className="nv-panel-heading">
-                    <span>
-                      <Eye size={15} />
-                      Colormap
-                    </span>
-                  </div>
-                  {/* Per-volume display setting parked here for now; will move to a
-                      per-layer control later. */}
-                  <label className="nv-select">
-                    <span>Map</span>
-                    <select
-                      aria-label="Colormap"
-                      value={colormap}
-                      onChange={(event) => setColormap(event.target.value)}
-                    >
-                      <option value="gray">Gray</option>
-                      <option value="viridis">Viridis</option>
-                      <option value="magma">Magma</option>
-                      <option value="actc">ACTC</option>
-                    </select>
-                    <ChevronDown size={14} />
-                  </label>
-                </section>
-
                 <NiimathOperationsPanel
                   item={selected}
                   metadata={metadata}
@@ -1094,10 +1110,12 @@ function LayerPanel({
   isAtlasVisible,
   isOpeningOverlay,
   items,
+  layerColormaps,
   overlayIds,
   selected,
   onAtlasChange,
   onAtlasVisibilityChange,
+  onLayerColormapChange,
   onLoadOverlay,
   onOverlayToggle
 }: {
@@ -1105,10 +1123,12 @@ function LayerPanel({
   isAtlasVisible: boolean
   isOpeningOverlay: boolean
   items: DesktopItem[]
+  layerColormaps: Record<string, string>
   overlayIds: Set<string>
   selected: DesktopItem | null
   onAtlasChange: (itemId: string) => void
   onAtlasVisibilityChange: (visible: boolean) => void
+  onLayerColormapChange: (itemId: string, colormap: string) => void
   onLoadOverlay: () => void
   onOverlayToggle: (itemId: string) => void
 }): JSX.Element {
@@ -1120,6 +1140,14 @@ function LayerPanel({
     () => items.slice().sort(compareAtlasCandidates),
     [items]
   )
+  const activeOverlayIndexById = useMemo(() => {
+    const indexById = new Map<string, number>()
+    for (const item of items) {
+      if (!overlayIds.has(item.id) || item.id === selected?.id || item.id === atlasId) continue
+      indexById.set(item.id, indexById.size)
+    }
+    return indexById
+  }, [atlasId, items, overlayIds, selected?.id])
   const extras = overlayIds.size + (atlasId && atlasId !== selected?.id ? 1 : 0)
 
   return (
@@ -1141,6 +1169,25 @@ function LayerPanel({
         <FolderOpen size={14} />
         <span>{isOpeningOverlay ? 'Loading overlay' : 'Load overlay'}</span>
       </button>
+
+      {selected ? (
+        <div className="nv-layer-card">
+          <div className="nv-layer-copy">
+            <strong>{selected.label}</strong>
+            <small>{atlasId === selected.id ? 'Base atlas' : 'Base volume'}</small>
+          </div>
+          <LayerColormapSelect
+            ariaLabel={`Colormap for ${selected.label}`}
+            itemId={selected.id}
+            value={layerColormapForItem(
+              selected,
+              layerColormaps,
+              atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
+            )}
+            onChange={onLayerColormapChange}
+          />
+        </div>
+      ) : null}
 
       <label className="nv-select nv-layer-select">
         <span>Atlas</span>
@@ -1175,25 +1222,75 @@ function LayerPanel({
         <em>{overlayIds.size}</em>
       </div>
       <div className="nv-layer-list">
-        {overlayCandidates.map((item) => (
-          <label className="nv-layer-option" key={item.id} title={item.label}>
-            <input
-              checked={overlayIds.has(item.id)}
-              disabled={!selected}
-              onChange={() => onOverlayToggle(item.id)}
-              type="checkbox"
-            />
-            <span>
-              <strong>{item.label}</strong>
-              <small>{layerOptionMeta(item)}</small>
-            </span>
-          </label>
-        ))}
+        {overlayCandidates.map((item) => {
+          const isActive = overlayIds.has(item.id)
+          const activeIndex = activeOverlayIndexById.get(item.id) ?? 0
+          return (
+            <div className={`nv-layer-option ${isActive ? 'is-active' : ''}`} key={item.id} title={item.label}>
+              <label className="nv-layer-option-toggle">
+                <input
+                  checked={isActive}
+                  disabled={!selected}
+                  onChange={() => onOverlayToggle(item.id)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>{item.label}</strong>
+                  <small>{layerOptionMeta(item)}</small>
+                </span>
+              </label>
+              <LayerColormapSelect
+                ariaLabel={`Colormap for ${item.label}`}
+                disabled={!selected || !isActive}
+                itemId={item.id}
+                value={layerColormapForItem(
+                  item,
+                  layerColormaps,
+                  overlayColormapForIndex(activeIndex)
+                )}
+                onChange={onLayerColormapChange}
+              />
+            </div>
+          )
+        })}
         {overlayCandidates.length === 0 ? (
           <div className="nv-filter-empty">No overlay candidates.</div>
         ) : null}
       </div>
     </section>
+  )
+}
+
+function LayerColormapSelect({
+  ariaLabel,
+  disabled = false,
+  itemId,
+  value,
+  onChange
+}: {
+  ariaLabel: string
+  disabled?: boolean
+  itemId: string
+  value: string
+  onChange: (itemId: string, colormap: string) => void
+}): JSX.Element {
+  return (
+    <label className={`nv-select nv-layer-colormap-select ${disabled ? 'is-disabled' : ''}`}>
+      <span>Map</span>
+      <select
+        aria-label={ariaLabel}
+        disabled={disabled}
+        value={value}
+        onChange={(event) => onChange(itemId, event.target.value)}
+      >
+        {COLORMAP_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown size={14} />
+    </label>
   )
 }
 
@@ -2646,6 +2743,18 @@ function warmProgressLabel(progress: WarmProgress | null, datasetRoot: string): 
 
 function compareAtlasCandidates(left: DesktopItem, right: DesktopItem): number {
   return atlasCandidateScore(right) - atlasCandidateScore(left) || left.label.localeCompare(right.label)
+}
+
+function layerColormapForItem(
+  item: DesktopItem,
+  layerColormaps: Record<string, string>,
+  fallback: string
+): string {
+  return layerColormaps[item.id] ?? fallback
+}
+
+function overlayColormapForIndex(index: number): string {
+  return DEFAULT_OVERLAY_COLORMAPS[index % DEFAULT_OVERLAY_COLORMAPS.length]
 }
 
 function atlasCandidateScore(item: DesktopItem): number {

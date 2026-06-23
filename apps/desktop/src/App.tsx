@@ -69,6 +69,7 @@ import {
   volumeImageTypeLabel,
   volumeRoleLabel
 } from './domain/volumeFacets'
+import { useClipPlanes } from './hooks/useClipPlanes'
 import { recentDatasetLabel, useRecentDatasets } from './hooks/useRecentDatasets'
 import { useTerminalDock } from './hooks/useTerminalDock'
 import { useVolumeFilters } from './hooks/useVolumeFilters'
@@ -140,7 +141,6 @@ const FLIPPED_CLIP_ORIENTATIONS: Record<string, Pick<ClipPlane, 'azimuth' | 'ele
 }
 type MouseContext = 'desktop' | 'niivue' | null
 type SidePanelTab = 'inspect' | 'operations'
-type RenderWheelMode = 'zoom' | 'clip-plane'
 
 interface DesktopDragState {
   pointerId: number
@@ -172,7 +172,17 @@ export function App(): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
   const [colormap, setColormap] = useState('gray')
-  const [clipPlanes, setClipPlanes] = useState(defaultClipPlanes)
+  const {
+    clipPlanes,
+    activeClipPlaneId,
+    renderWheelMode,
+    activeClipPlane,
+    setRenderWheelMode,
+    bindActiveClipPlane,
+    updateClipPlane,
+    changeClipPlaneDepth,
+    resetClipPlanes
+  } = useClipPlanes()
   const [status, setStatus] = useState('Starting NeuroVue.')
   const [metadataStatus, setMetadataStatus] = useState('No metadata loaded.')
   const [metadata, setMetadata] = useState<VolumeMetadata | null>(null)
@@ -183,10 +193,6 @@ export function App(): JSX.Element {
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(false)
   const [isRenderMaximized, setIsRenderMaximized] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
-  // Empty until a clip plane is selected — the wheel starts bound to zoom, so no
-  // plane should read as the wheel's target on first load.
-  const [activeClipPlaneId, setActiveClipPlaneId] = useState('')
-  const [renderWheelMode, setRenderWheelMode] = useState<RenderWheelMode>('zoom')
   const [isOpeningDataset, setIsOpeningDataset] = useState(false)
   const { recentDatasets, promoteRecent, removeRecent } = useRecentDatasets()
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
@@ -279,7 +285,6 @@ export function App(): JSX.Element {
 
   const items = manifest?.items ?? []
   const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null
-  const activeClipPlane = clipPlanes.find((plane) => plane.id === activeClipPlaneId) ?? clipPlanes[0]
   const {
     query,
     selectedRoles,
@@ -405,11 +410,6 @@ export function App(): JSX.Element {
   }
 
 
-  function bindActiveClipPlane(planeId: string): void {
-    setActiveClipPlaneId(planeId)
-    setRenderWheelMode('clip-plane')
-  }
-
   useEffect(() => {
     if (!isRenderMaximized) return
     function onKeyDown(event: KeyboardEvent): void {
@@ -418,19 +418,6 @@ export function App(): JSX.Element {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isRenderMaximized])
-
-  function changeClipPlaneDepth(planeId: string, depth: number): void {
-    setClipPlanes((planes) =>
-      planes.map((plane) => (plane.id === planeId ? { ...plane, depth } : plane))
-    )
-  }
-
-  function updateClipPlane(plane: ClipPlane): void {
-    bindActiveClipPlane(plane.id)
-    setClipPlanes((planes) =>
-      planes.map((candidate) => candidate.id === plane.id ? plane : candidate)
-    )
-  }
 
   useEffect(() => {
     if (!serverUrl) return
@@ -580,7 +567,7 @@ export function App(): JSX.Element {
             className="nv-icon-button"
             title="Reset clip planes"
             type="button"
-            onClick={() => setClipPlanes(defaultClipPlanes())}
+            onClick={resetClipPlanes}
           >
             <RotateCcw size={16} />
           </button>

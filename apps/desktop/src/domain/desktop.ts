@@ -25,7 +25,7 @@ export interface DesktopItem {
   id: string
   type: string
   label: string
-  role?: 'source' | 'derived'
+  role?: 'source' | 'overlay' | 'derived'
   index: number
   bounds: WorldRect
   format: string
@@ -65,7 +65,7 @@ export interface JsonSidecar {
 export interface VolumeMetadata {
   id: string
   label?: string
-  role?: 'source' | 'derived'
+  role?: 'source' | 'overlay' | 'derived'
   format?: string
   shape?: [number, number, number]
   spacing?: [number, number, number]
@@ -133,6 +133,13 @@ export interface DatasetOpenResult {
   bidsName?: string | null
   bidsVersion?: string | null
   bidsDatasetDoi?: string | null
+  warmProgress?: WarmProgress
+}
+
+export interface OverlayAddResult {
+  id: string
+  label: string
+  volumeCount: number
   warmProgress?: WarmProgress
 }
 
@@ -222,12 +229,32 @@ export async function openDatasetDirectory(): Promise<DatasetOpenResult | null> 
   return openDatasetByPath(selected)
 }
 
+export async function openOverlayVolume(): Promise<OverlayAddResult | null> {
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    title: 'Open NeuroVue overlay volume',
+    filters: [
+      {
+        name: 'NIfTI volumes',
+        extensions: ['nii', 'gz']
+      }
+    ]
+  })
+  if (!selected || Array.isArray(selected)) return null
+  return addOverlayVolumeByPath(selected)
+}
+
 export async function openDatasetByPath(path: string): Promise<DatasetOpenResult> {
   const result = await invoke<DatasetOpenResult>('open_dataset_path', { path })
   return {
     ...result,
     url: trimTrailingSlash(result.url)
   }
+}
+
+export async function addOverlayVolumeByPath(path: string): Promise<OverlayAddResult> {
+  return invoke<OverlayAddResult>('add_overlay_volume_path', { path })
 }
 
 export function defaultClipPlanes(): ClipPlane[] {

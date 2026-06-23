@@ -81,6 +81,9 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 - [x] **[P2] (M) Overlay + atlas footer readout.** Add overlay layer loading,
   mark an optional atlas/parcellation layer, and surface NiiVue crosshair
   location/region labels in the footer from `locationChange`.
+- [x] **[P2] (S) Global overlay import.** Pick an external NIfTI overlay,
+  register it with the local volume server, and keep it active across selected
+  base volumes.
 - [ ] **[P2] (M) Per-layer colormap.** Colormap is currently a per-volume control
   parked in the Operations tab; make it a per-layer setting when overlays exist.
 - [x] **[P3] (S) niimath mask path picker.** Replace the free-text mask path input

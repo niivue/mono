@@ -170,6 +170,12 @@ pub struct WarmProgressSnapshot {
     pub total: usize,
 }
 
+#[derive(Clone)]
+pub struct RegisteredVolume {
+    pub id: String,
+    pub label: String,
+}
+
 #[derive(Default)]
 struct WarmProgress {
     generation: u64,
@@ -232,6 +238,7 @@ struct VolumeEntry {
 #[serde(rename_all = "camelCase")]
 enum VolumeRole {
     Source,
+    Overlay,
     Derived,
 }
 
@@ -601,6 +608,93 @@ pub fn register_derived_volume(
     });
 
     Ok(unique_id)
+}
+
+pub fn register_overlay_volume(
+    handle: &ServerHandle,
+    overlay_path: &std::path::Path,
+) -> Result<RegisteredVolume, String> {
+    let overlay_path = fs::canonicalize(overlay_path).map_err(|error| {
+        format!(
+            "register_overlay_volume: {}: {error}",
+            overlay_path.display()
+        )
+    })?;
+    if !overlay_path.is_file() || !is_nifti_path(&overlay_path) {
+        return Err(format!(
+            "register_overlay_volume: not a NIfTI file: {}",
+            overlay_path.display()
+        ));
+    }
+    let header = read_nifti_header(&overlay_path).ok_or_else(|| {
+        format!(
+            "register_overlay_volume: unreadable NIfTI {}",
+            overlay_path.display()
+        )
+    })?;
+    let dataset_root = dataset_root(handle);
+    let mut volumes = lock_recover(&handle.volumes);
+
+    if let Some(existing) = volumes.iter().find(|volume| {
+        volume
+            .source_path
+            .as_deref()
+            .is_some_and(|path| same_canonical_path(path, &overlay_path))
+    }) {
+        return Ok(RegisteredVolume {
+            id: existing.id.clone(),
+            label: existing.label.clone(),
+        });
+    }
+
+    if volumes.len() >= max_volume_count() {
+        return Err(format!(
+            "register_overlay_volume: volume limit {} reached",
+            max_volume_count()
+        ));
+    }
+
+    let overlay_root = dataset_root
+        .as_deref()
+        .filter(|root| overlay_path.starts_with(root))
+        .or_else(|| overlay_path.parent())
+        .unwrap_or_else(|| FsPath::new(""));
+    let overlay_id = volume_id(&overlay_path, overlay_root);
+    let unique_id = unique_volume_id(&volumes, &format!("overlay__{overlay_id}"));
+    let label = overlay_volume_label(&overlay_path, overlay_root, &unique_id);
+    let cache_signature = source_cache_signature(&unique_id, &overlay_path, &header);
+    let entry = VolumeEntry {
+        id: unique_id.clone(),
+        label: label.clone(),
+        role: VolumeRole::Overlay,
+        format: "nifti".to_string(),
+        shape: header.shape,
+        spacing: header.spacing,
+        dtype: header.dtype,
+        source_path: Some(overlay_path.clone()),
+        cache_signature,
+        sidecar_paths: find_json_sidecars(&overlay_path, overlay_root),
+        derived_from: None,
+        derivation: None,
+    };
+
+    volumes.push(entry.clone());
+    drop(volumes);
+
+    let my_gen = handle.warm_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    spawn_pyramid_warm(
+        vec![entry],
+        dataset_root,
+        handle.pyramid_locks.clone(),
+        handle.warm_generation.clone(),
+        handle.warm_progress.clone(),
+        my_gen,
+    );
+
+    Ok(RegisteredVolume {
+        id: unique_id,
+        label,
+    })
 }
 
 async fn api_info(State(state): State<AppState>) -> Json<Value> {
@@ -1510,6 +1604,16 @@ fn volume_entry(path: &FsPath, root: &FsPath) -> Option<VolumeEntry> {
         derived_from: None,
         derivation: None,
     })
+}
+
+fn overlay_volume_label(path: &FsPath, root: &FsPath, fallback_id: &str) -> String {
+    let label = path
+        .strip_prefix(root)
+        .ok()
+        .and_then(|relative| relative.to_str())
+        .or_else(|| path.file_name().and_then(|name| name.to_str()))
+        .unwrap_or(fallback_id);
+    format!("Overlay / {label}")
 }
 
 fn fallback_mni152_volume() -> Option<VolumeEntry> {

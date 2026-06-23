@@ -60,6 +60,7 @@ import {
   defaultClipPlanes,
   fetchDesktopManifest,
   fetchDesktopManifestVersion,
+  openOverlayVolume,
   openDatasetByPath,
   openDatasetDirectory,
   resolveRuntimeCapabilities,
@@ -162,6 +163,7 @@ export function App(): JSX.Element {
   const [isRenderMaximized, setIsRenderMaximized] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
   const [isOpeningDataset, setIsOpeningDataset] = useState(false)
+  const [isOpeningOverlay, setIsOpeningOverlay] = useState(false)
   const [isTerminalAvailable, setIsTerminalAvailable] = useState(false)
   const { recentDatasets, promoteRecent, removeRecent } = useRecentDatasets()
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
@@ -437,6 +439,32 @@ export function App(): JSX.Element {
       next.delete(nextAtlasId)
       return next
     })
+  }
+
+  async function loadOverlayVolume(): Promise<void> {
+    if (isOpeningOverlay) return
+
+    setIsOpeningOverlay(true)
+    setStatus('Choosing overlay volume.')
+    try {
+      const result = await openOverlayVolume()
+      if (!result) {
+        setStatus('Overlay load cancelled.')
+        return
+      }
+
+      await refreshDesktopManifest()
+      setOverlayIds((current) => {
+        const next = new Set(current)
+        next.add(result.id)
+        return next
+      })
+      setStatus(`Overlay ${result.label} added to every volume.`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsOpeningOverlay(false)
+    }
   }
 
 
@@ -870,10 +898,12 @@ export function App(): JSX.Element {
 
                 <LayerPanel
                   atlasId={atlasId}
+                  isOpeningOverlay={isOpeningOverlay}
                   items={items}
                   overlayIds={overlayIds}
                   selected={selected}
                   onAtlasChange={changeAtlasLayer}
+                  onLoadOverlay={loadOverlayVolume}
                   onOverlayToggle={toggleOverlayLayer}
                 />
 
@@ -1036,17 +1066,21 @@ function DesktopZoomControls({
 
 function LayerPanel({
   atlasId,
+  isOpeningOverlay,
   items,
   overlayIds,
   selected,
   onAtlasChange,
+  onLoadOverlay,
   onOverlayToggle
 }: {
   atlasId: string | null
+  isOpeningOverlay: boolean
   items: DesktopItem[]
   overlayIds: Set<string>
   selected: DesktopItem | null
   onAtlasChange: (itemId: string) => void
+  onLoadOverlay: () => void
   onOverlayToggle: (itemId: string) => void
 }): JSX.Element {
   const overlayCandidates = useMemo(
@@ -1068,6 +1102,16 @@ function LayerPanel({
         </span>
         <em>{selected ? `${extras} extra` : 'none'}</em>
       </div>
+
+      <button
+        className="nv-layer-load-button"
+        disabled={isOpeningOverlay}
+        onClick={onLoadOverlay}
+        type="button"
+      >
+        <FolderOpen size={14} />
+        <span>{isOpeningOverlay ? 'Loading overlay' : 'Load overlay'}</span>
+      </button>
 
       <label className="nv-select nv-layer-select">
         <span>Atlas</span>

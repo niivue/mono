@@ -1539,6 +1539,32 @@ button {
   width: 100%;
 }
 
+.nv-layer-load-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 30px;
+  border: 1px solid rgba(115, 198, 155, 0.34);
+  background: rgba(15, 25, 18, 0.78);
+  color: var(--green);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nv-layer-load-button:hover:not(:disabled),
+.nv-layer-load-button:focus-visible {
+  border-color: var(--green);
+  background: rgba(24, 42, 30, 0.82);
+  outline: none;
+}
+
+.nv-layer-load-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .nv-layer-list-header {
   display: flex;
   align-items: center;

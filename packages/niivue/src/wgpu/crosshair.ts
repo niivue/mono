@@ -1,8 +1,10 @@
 import type NVModel from '@/NVModel'
 import {
+  applyCrosshairOffset,
   BYTES_PER_VERTEX,
   buildVertexData,
   calculateCrosshairSegments,
+  crosshairExplodeOffset,
   getCylinderIndices,
   packColor,
   shouldCullCylinder,
@@ -94,9 +96,15 @@ export class CrosshairRenderer extends NVRenderer {
       ui.crosshairGap,
     )
 
+    // When the active volume is a chunked/exploded plan, shift the crosshair onto
+    // the displaced block it sits in so the marker tracks the explosion.
+    const off = crosshairExplodeOffset(model.volumes[0], scene.crosshairPos)
+
     // Update each cylinder's vertex buffer
     for (let i = 0; i < 6; i++) {
-      const [start, end] = segments[i]
+      const seg = segments[i]
+      const start = applyCrosshairOffset(seg[0], off)
+      const end = applyCrosshairOffset(seg[1], off)
       const vertexData = buildVertexData(start, end, radius, colorPacked)
       this.device.queue.writeBuffer(
         this.cylinders[i].vertexBuffer,

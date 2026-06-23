@@ -341,3 +341,51 @@ export function chunkExplodedMatRAS(
   out[15] += ox * matRAS[12] + oy * matRAS[13] + oz * matRAS[14]
   return out
 }
+
+/**
+ * World-mm translation of the exploded block that contains the voxel at volume
+ * fraction `frac` ([0,1] per axis), or [0,0,0] when explode is off / the point is
+ * outside the volume / no block contains it. Used to shift an overlay (e.g. the
+ * 3D crosshair) onto its displaced block. Scans chunks, so it works for
+ * non-uniform (multi-LOD) plans — not just the uniform grid that
+ * `gridIndex`/`stride` assume. The translation matches `chunkExplodedMatRAS`.
+ */
+export function explodeOffsetMMAtFrac(
+  plan: ChunkPlan,
+  explode: ChunkExplodeOptions | null | undefined,
+  matRAS: ArrayLike<number>,
+  frac: ArrayLike<number>,
+): Vec3f {
+  if (!chunkExplodeEnabled(explode)) return [0, 0, 0]
+  const [vx, vy, vz] = plan.volumeDims
+  const voxel = [
+    Math.floor((frac[0] ?? 0.5) * vx),
+    Math.floor((frac[1] ?? 0.5) * vy),
+    Math.floor((frac[2] ?? 0.5) * vz),
+  ]
+  let chunkIndex = -1
+  for (let i = 0; i < plan.chunks.length; i++) {
+    const c = plan.chunks[i]
+    if (
+      voxel[0] >= c.voxelOrigin[0] &&
+      voxel[0] < c.voxelOrigin[0] + c.voxelDims[0] &&
+      voxel[1] >= c.voxelOrigin[1] &&
+      voxel[1] < c.voxelOrigin[1] + c.voxelDims[1] &&
+      voxel[2] >= c.voxelOrigin[2] &&
+      voxel[2] < c.voxelOrigin[2] + c.voxelDims[2]
+    ) {
+      chunkIndex = i
+      break
+    }
+  }
+  if (chunkIndex < 0) return [0, 0, 0]
+  const off = chunkExplodeOffsetFrac(plan, chunkIndex, explode)
+  const ox = off[0] * vx
+  const oy = off[1] * vy
+  const oz = off[2] * vz
+  return [
+    ox * matRAS[0] + oy * matRAS[1] + oz * matRAS[2],
+    ox * matRAS[4] + oy * matRAS[5] + oz * matRAS[6],
+    ox * matRAS[8] + oy * matRAS[9] + oz * matRAS[10],
+  ]
+}

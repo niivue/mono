@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   chunkExplodedMatRAS,
   chunkExplodeOffsetFrac,
+  explodeOffsetMMAtFrac,
   pickExplodedVoxel,
 } from './ChunkExplode'
 import { chunkVolume } from './chunking'
@@ -175,5 +176,45 @@ describe('pickExplodedVoxel', () => {
       [-1, 0, 0],
     )
     expect(hit?.chunkIndex).toBe(3)
+  })
+})
+
+describe('explodeOffsetMMAtFrac', () => {
+  // 4 chunks along x ([0,2),[2,4),[4,6),[6,8)); identity matRAS so mm == voxel.
+  // Scale 2 shifts each block's origin: chunk0 -> -3, chunk3 -> +3.
+  const plan = () => chunkVolume([8, 1, 1], 2, [0, 0, 0])
+  const explode = {
+    enabled: true,
+    scale: [2, 2, 2] as [number, number, number],
+  }
+
+  test('returns the containing block offset (low-x block)', () => {
+    const off = explodeOffsetMMAtFrac(plan(), explode, IDENTITY_RAS, [0, 0, 0])
+    expect(off[0]).toBeCloseTo(-3)
+    expect(off[1]).toBeCloseTo(0)
+    expect(off[2]).toBeCloseTo(0)
+  })
+
+  test('returns the containing block offset (high-x block)', () => {
+    // frac 0.9 -> voxel 7 -> chunk 3.
+    const off = explodeOffsetMMAtFrac(
+      plan(),
+      explode,
+      IDENTITY_RAS,
+      [0.9, 0, 0],
+    )
+    expect(off[0]).toBeCloseTo(3)
+  })
+
+  test('is zero when explode is disabled', () => {
+    expect(
+      explodeOffsetMMAtFrac(plan(), undefined, IDENTITY_RAS, [0, 0, 0]),
+    ).toEqual([0, 0, 0])
+  })
+
+  test('is zero outside the volume', () => {
+    expect(
+      explodeOffsetMMAtFrac(plan(), explode, IDENTITY_RAS, [1.5, 0, 0]),
+    ).toEqual([0, 0, 0])
   })
 })

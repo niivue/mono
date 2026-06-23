@@ -427,6 +427,40 @@ export function chunkAtVoxel(
   return plan.chunks[idx] ?? null
 }
 
+/**
+ * Stable identity of a chunk's fetched content + placement: two chunks with the
+ * same key cover the same source-level region and draw into the same world
+ * sub-cube, so a resident GPU texture for one can be reused for the other.
+ */
+function chunkContentKey(d: VolumeChunkDesc): string {
+  return (
+    `${d.sourceLevel ?? 0}|${d.voxelOrigin.join(',')}|${d.voxelDims.join(',')}` +
+    `|${d.texOrigin.join(',')}|${d.texDims.join(',')}`
+  )
+}
+
+/**
+ * Map each chunk of `oldPlan` to the index of the content-identical chunk in
+ * `newPlan` (by `chunkContentKey`), for chunks that exist in both. Used to carry
+ * resident GPU textures across an in-place plan swap (multi-LOD refocus): bricks
+ * unchanged between the two plans keep their texture; the rest are streamed.
+ */
+export function matchChunksByContent(
+  oldPlan: ChunkPlan,
+  newPlan: ChunkPlan,
+): Map<number, number> {
+  const newByKey = new Map<string, number>()
+  for (let i = 0; i < newPlan.chunks.length; i++) {
+    newByKey.set(chunkContentKey(newPlan.chunks[i]), i)
+  }
+  const oldToNew = new Map<number, number>()
+  for (let i = 0; i < oldPlan.chunks.length; i++) {
+    const ni = newByKey.get(chunkContentKey(oldPlan.chunks[i]))
+    if (ni !== undefined) oldToNew.set(i, ni)
+  }
+  return oldToNew
+}
+
 /** A focused region of interest, in COMMON (finest, level-0) voxel coordinates. */
 export interface MultiLodFocus {
   /** Focus centre in common-grid voxels. */
@@ -450,6 +484,12 @@ export interface MultiLodOptions {
   haloSize?: Vec3i
   /** Coarsest level to use. Default `levelDims.length - 1`. */
   maxLevel?: number
+  /**
+   * Finest level to use (a max-detail cap): no brick renders finer than this,
+   * even at the focus. Default 0 (the finest level). The common reference grid
+   * stays level 0, so geometry is unchanged — only the texture detail is capped.
+   */
+  minLevel?: number
   /**
    * GPU byte budget for the resident brick set (rgba + gradient = 8 B/voxel over
    * each brick's padded texture). When the assignment exceeds it, a global level
@@ -489,17 +529,28 @@ export function chunkVolumeMultiLOD(
     options.maxLevel ?? levelDims.length - 1,
     levelDims.length - 1,
   )
+  const minLevel = Math.min(
+    Math.max(0, Math.floor(options.minLevel ?? 0)),
+    maxLevel,
+  )
   const cellEdge = Math.max(8, Math.floor(options.cellEdge ?? 128))
   const halo = options.haloSize ?? [1, 1, 1]
   const radius = Math.max(1e-3, focus.radius)
 
-  // Level desired for a region at common-voxel distance `d` from the focus,
-  // floored at `levelFloor` (raised by the budget pass to coarsen globally).
-  // Inside the focus radius -> finest; each doubling of distance beyond -> +1.
-  const levelForDistance = (d: number, levelFloor: number): number => {
+  // Level desired for a region at common-voxel distance `d` from the focus.
+  // Inside the focus radius -> finest allowed (`minLevel`); beyond it, the level
+  // rises with distance. `coarsen` (>= 1, raised by the budget pass) compresses
+  // the falloff so the SURROUNDINGS coarsen faster while the focus itself stays
+  // finest — so a tight budget never coarsens the focused block.
+  const levelForDistance = (
+    d: number,
+    coarsen: number,
+    floor: number,
+  ): number => {
     const beyond = Math.max(0, d - radius)
-    const shell = beyond <= 0 ? 0 : Math.ceil(Math.log2(1 + beyond / radius))
-    return Math.max(levelFloor, Math.min(maxLevel, shell))
+    const shell =
+      beyond <= 0 ? 0 : Math.ceil(Math.log2(1 + (beyond * coarsen) / radius))
+    return Math.max(minLevel, floor, Math.min(maxLevel, shell))
   }
 
   // Nearest common-voxel distance from the focus centre to an axis-aligned box.
@@ -556,15 +607,16 @@ export function chunkVolumeMultiLOD(
   // Recursive octree: a node at `level` covers a common-grid box. If a finer
   // level is desired for its region (and it is divisible), split into octants
   // and recurse one level finer; otherwise emit it as a brick.
-  const build = (levelFloor: number): VolumeChunkDesc[] => {
+  const build = (coarsen: number, floor: number): VolumeChunkDesc[] => {
     const chunks: VolumeChunkDesc[] = []
     const subdivide = (originC: Vec3i, sizeC: Vec3i, level: number): void => {
       const desired = levelForDistance(
         distanceToBox(originC, sizeC),
-        levelFloor,
+        coarsen,
+        floor,
       )
       const divisible = sizeC[0] > 1 || sizeC[1] > 1 || sizeC[2] > 1
-      if (level <= desired || level <= levelFloor || !divisible) {
+      if (level <= desired || level <= floor || !divisible) {
         emitBrick(originC, sizeC, level, chunks)
         return
       }
@@ -614,19 +666,29 @@ export function chunkVolumeMultiLOD(
     return chunks
   }
 
-  // Budget pass: coarsen globally (raise the level floor) until the resident
-  // brick bytes fit. rgba colour + gradient = 8 B per padded texture voxel.
-  let levelFloor = 0
-  let chunks = build(levelFloor)
+  // Budget pass (rgba colour + gradient = 8 B per padded texture voxel):
+  // 1) coarsen the SURROUNDINGS faster (raise `coarsen`) — the focus keeps its
+  //    finest level; this fits the budget in the common case.
+  // 2) only if that still can't fit (e.g. a focus exactly on octree boundaries,
+  //    where many cells "touch" the focus and stay finest) fall back to raising
+  //    the level floor so the resident set never blows the budget.
+  let coarsen = 1
+  let floor = minLevel
+  let chunks = build(coarsen, floor)
   if (options.budgetBytes && options.budgetBytes > 0) {
+    const budget = options.budgetBytes
     const bytesOf = (cs: VolumeChunkDesc[]): number =>
       cs.reduce(
         (sum, c) => sum + c.texDims[0] * c.texDims[1] * c.texDims[2] * 8,
         0,
       )
-    while (bytesOf(chunks) > options.budgetBytes && levelFloor < maxLevel) {
-      levelFloor++
-      chunks = build(levelFloor)
+    for (let i = 0; i < 16 && bytesOf(chunks) > budget; i++) {
+      coarsen *= 1.6
+      chunks = build(coarsen, floor)
+    }
+    while (bytesOf(chunks) > budget && floor < maxLevel) {
+      floor++
+      chunks = build(coarsen, floor)
     }
   }
 

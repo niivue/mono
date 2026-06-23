@@ -28,6 +28,7 @@ import {
 import {
   type ChunkPlan,
   chunkVolume,
+  matchChunksByContent,
   needsChunking,
   type Vec3i,
 } from '@/volume/chunking'
@@ -775,35 +776,74 @@ export class VolumeRenderer extends NVRenderer {
     }
     if (existing) this._destroyTexEntry(existing)
     const uploader = await createChunkUploaderGPU(device, vol, plan)
-    // Per-chunk bind groups, indexed by chunk index. Hoisted above the manager
-    // so the onEvict hook can null the slot of an evicted chunk — a re-admitted
+    // The entry holds the live uploader + per-chunk bind groups so an in-place
+    // plan swap (swapChunkedVolumePlan) can replace them; the manager hooks read
+    // them off `entry` (not a creation-time closure) so they always act on the
+    // current plan. onEvict nulls the slot of an evicted chunk — a re-admitted
     // chunk gets a fresh texture, so its old bind group would dangle.
-    const bindGroups: (GPUBindGroup | null)[] = plan.chunks.map(() => null)
-    const manager = new ChunkResidencyManager<VolumeChunkGPU>(
+    const entry: ChunkedTexEntry = {
+      kind: 'chunked',
+      volume: vol,
+      manager: undefined as unknown as ChunkResidencyManager<VolumeChunkGPU>,
+      uploader,
+      plan,
+      bindGroups: plan.chunks.map(() => null),
+    }
+    entry.manager = new ChunkResidencyManager<VolumeChunkGPU>(
       plan.chunks.length,
       budgetBytes,
       {
         bytesOf: chunkResidentBytes,
         destroy: (c) => destroyVolumeChunksGPU([c]),
         onEvict: (ci) => {
-          bindGroups[ci] = null
+          entry.bindGroups[ci] = null
           onResidencyChange?.(ci)
         },
-        prefetch: (ci) => uploader.prefetchChunk(ci),
+        prefetch: (ci) => entry.uploader.prefetchChunk(ci),
         onAdmit: onResidencyChange,
       },
     )
-    manager.admit(0, await uploader.uploadChunk(0))
-    const entry: ChunkedTexEntry = {
-      kind: 'chunked',
-      volume: vol,
-      manager,
-      uploader,
-      plan,
-      bindGroups,
-    }
+    entry.manager.admit(0, await entry.uploader.uploadChunk(0))
     if (cacheKey) this._texCache.set(cacheKey, entry)
     return entry
+  }
+
+  /**
+   * Swap a chunked volume's plan in place (multi-LOD refocus): re-key the
+   * resident GPU chunks to the new plan by content (`matchChunksByContent`) so
+   * unchanged bricks keep their texture and fade, and only changed/new bricks
+   * stream — instead of rebuilding the whole entry via a reload. No-op when the
+   * volume has no chunked entry yet (first load still goes through updateVolume).
+   */
+  async swapChunkedVolumePlan(
+    device: GPUDevice,
+    vol: NVImage,
+    newPlan: ChunkPlan,
+  ): Promise<void> {
+    const cacheKey = vol.url || vol.name
+    const entry = cacheKey ? this._texCache.get(cacheKey) : undefined
+    if (!entry || entry.kind !== 'chunked') return
+    if (newPlan.chunks.length > MAX_CHUNKS_PER_TILE) {
+      throw new Error(
+        `multi-LOD plan tiles into ${newPlan.chunks.length} chunks, ` +
+          `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
+      )
+    }
+    const oldToNew = matchChunksByContent(entry.plan, newPlan)
+    // Rebind the uploader to the new plan; dispose the old orient resources.
+    const newUploader = await createChunkUploaderGPU(device, vol, newPlan)
+    entry.uploader.dispose()
+    entry.uploader = newUploader
+    entry.manager.remap(oldToNew, newPlan.chunks.length)
+    entry.plan = newPlan
+    entry.bindGroups = newPlan.chunks.map(() => null)
+    entry.volume = vol
+    vol.chunkPlan = newPlan
+    // Keep at least one chunk resident for the first post-swap frame; the pump
+    // streams the rest from the next working set.
+    if (entry.manager.residentCount === 0) {
+      entry.manager.admit(0, await entry.uploader.uploadChunk(0))
+    }
   }
 
   /**

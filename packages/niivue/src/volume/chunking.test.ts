@@ -8,6 +8,7 @@ import {
   chunkVolumeGrid,
   chunkVolumeMultiLOD,
   identityChunkSampleTransform,
+  matchChunksByContent,
   needsChunking,
   type Vec3i,
 } from './chunking'
@@ -651,6 +652,19 @@ describe('chunkVolumeMultiLOD', () => {
     expect(sum).toBe(512 * 512 * 512)
   })
 
+  test('minLevel caps the finest level even at the focus', () => {
+    const plan = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+      minLevel: 1,
+    })
+    // No brick is finer than level 1, including at the focus centre.
+    for (const c of plan.chunks) {
+      expect(c.sourceLevel ?? 0).toBeGreaterThanOrEqual(1)
+    }
+    // Geometry (common grid) is still level 0.
+    expect(plan.volumeDims).toEqual([512, 512, 512])
+  })
+
   test('a single-level pyramid yields one uniform level', () => {
     const plan = chunkVolumeMultiLOD([[256, 256, 256]], centerFocus, 2048, {
       cellEdge: 128,
@@ -660,5 +674,52 @@ describe('chunkVolumeMultiLOD', () => {
     }
     const sum = plan.chunks.reduce((s, c) => s + brickVolume(c), 0)
     expect(sum).toBe(256 * 256 * 256)
+  })
+})
+
+describe('matchChunksByContent', () => {
+  const pyramid: Vec3i[] = [
+    [512, 512, 512],
+    [256, 256, 256],
+    [128, 128, 128],
+    [64, 64, 64],
+  ]
+
+  test('matches identical bricks and skips changed ones', () => {
+    const a = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [128, 256, 256], radius: 96 },
+      2048,
+      { cellEdge: 64 },
+    )
+    const b = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [384, 256, 256], radius: 96 },
+      2048,
+      { cellEdge: 64 },
+    )
+    const map = matchChunksByContent(a, b)
+    // Some bricks are shared (far from both foci) -> non-empty, and every match
+    // points at a content-identical brick.
+    expect(map.size).toBeGreaterThan(0)
+    for (const [oi, ni] of map) {
+      expect(a.chunks[oi].sourceLevel).toBe(b.chunks[ni].sourceLevel)
+      expect(a.chunks[oi].voxelOrigin).toEqual(b.chunks[ni].voxelOrigin)
+      expect(a.chunks[oi].texOrigin).toEqual(b.chunks[ni].texOrigin)
+    }
+    // The focus shifted, so it is not a full 1:1 identity map.
+    expect(map.size).toBeLessThan(a.chunks.length)
+  })
+
+  test('an identical plan maps every brick to itself', () => {
+    const a = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [256, 256, 256], radius: 96 },
+      2048,
+      { cellEdge: 64 },
+    )
+    const map = matchChunksByContent(a, a)
+    expect(map.size).toBe(a.chunks.length)
+    for (const [oi, ni] of map) expect(oi).toBe(ni)
   })
 })

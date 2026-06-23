@@ -62,7 +62,7 @@ interface ResidentChunk<TChunk> {
 
 export class ChunkResidencyManager<TChunk> {
   /** Total chunks in the volume's plan, resident or not. */
-  readonly chunkCount: number
+  private _chunkCount: number
   private readonly _hooks: ChunkResidencyHooks<TChunk>
   private readonly _resident: Map<number, ResidentChunk<TChunk>> = new Map()
   private readonly _uploadQueue: number[] = []
@@ -76,9 +76,40 @@ export class ChunkResidencyManager<TChunk> {
     budgetBytes: number,
     hooks: ChunkResidencyHooks<TChunk>,
   ) {
-    this.chunkCount = chunkCount
+    this._chunkCount = chunkCount
     this._budgetBytes = budgetBytes
     this._hooks = hooks
+  }
+
+  /** Total chunks in the volume's plan, resident or not. */
+  get chunkCount(): number {
+    return this._chunkCount
+  }
+
+  /**
+   * Adopt a new plan in place. `oldToNew` maps an old chunk index to the new
+   * index of the content-identical chunk (see `matchChunksByContent`): those
+   * resident chunks are re-keyed, keeping their GPU handle, byte total, and
+   * fade-in stamp (so unchanged bricks don't re-stream or re-fade). Resident
+   * chunks absent from the map are evicted (destroyed). The pending-upload
+   * queue is cleared — the next frame's working set re-requests what it needs.
+   */
+  remap(oldToNew: ReadonlyMap<number, number>, newChunkCount: number): void {
+    const next = new Map<number, ResidentChunk<TChunk>>()
+    for (const [oldIndex, r] of this._resident) {
+      const newIndex = oldToNew.get(oldIndex)
+      if (newIndex === undefined || next.has(newIndex)) {
+        this._hooks.destroy(r.chunk)
+        this._residentBytes -= r.bytes
+      } else {
+        next.set(newIndex, r)
+      }
+    }
+    this._resident.clear()
+    for (const [k, v] of next) this._resident.set(k, v)
+    this._uploadQueue.length = 0
+    this._inFlightUploads.clear()
+    this._chunkCount = newChunkCount
   }
 
   /** Advance the LRU clock. Call once per frame before consuming chunks. */

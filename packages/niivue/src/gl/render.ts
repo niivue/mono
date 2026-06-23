@@ -30,6 +30,7 @@ import {
 import {
   type ChunkPlan,
   chunkVolume,
+  matchChunksByContent,
   needsChunking,
   type Vec3i,
 } from '@/volume/chunking'
@@ -626,26 +627,60 @@ export class VolumeRenderer extends NVRenderer {
       return existing
     }
     if (existing) this._destroyTexEntry(gl, existing)
-    const uploader = createChunkUploaderGL(gl, vol, plan)
-    const manager = new ChunkResidencyManager<VolumeChunkGL>(
+    // The entry holds the live uploader so an in-place plan swap can replace it;
+    // the prefetch hook reads it off `entry` (not a creation closure) so it
+    // always targets the current plan.
+    const entry: ChunkedTexEntry = {
+      kind: 'chunked',
+      volume: vol,
+      manager: undefined as unknown as ChunkResidencyManager<VolumeChunkGL>,
+      uploader: createChunkUploaderGL(gl, vol, plan),
+      plan,
+    }
+    entry.manager = new ChunkResidencyManager<VolumeChunkGL>(
       plan.chunks.length,
       budgetBytes,
       {
         bytesOf: chunkResidentBytes,
         destroy: (c) => destroyVolumeChunksGL(gl, [c]),
-        prefetch: (ci) => uploader.prefetchChunk(ci),
+        prefetch: (ci) => entry.uploader.prefetchChunk(ci),
       },
     )
-    manager.admit(0, await uploader.uploadChunk(0))
-    const entry: ChunkedTexEntry = {
-      kind: 'chunked',
-      volume: vol,
-      manager,
-      uploader,
-      plan,
-    }
+    entry.manager.admit(0, await entry.uploader.uploadChunk(0))
     if (cacheKey) this._texCache.set(cacheKey, entry)
     return entry
+  }
+
+  /**
+   * Swap a chunked volume's plan in place (multi-LOD refocus): re-key resident
+   * GPU chunks to the new plan by content so unchanged bricks keep their
+   * textures and only changed/new bricks stream. Mirrors the WebGPU backend.
+   */
+  async swapChunkedVolumePlan(
+    gl: WebGL2RenderingContext,
+    vol: NVImage,
+    newPlan: ChunkPlan,
+  ): Promise<void> {
+    const cacheKey = vol.url || vol.name
+    const entry = cacheKey ? this._texCache.get(cacheKey) : undefined
+    if (!entry || entry.kind !== 'chunked') return
+    if (newPlan.chunks.length > MAX_CHUNKS_PER_TILE) {
+      throw new Error(
+        `multi-LOD plan tiles into ${newPlan.chunks.length} chunks, ` +
+          `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
+      )
+    }
+    const oldToNew = matchChunksByContent(entry.plan, newPlan)
+    const newUploader = createChunkUploaderGL(gl, vol, newPlan)
+    entry.uploader.dispose()
+    entry.uploader = newUploader
+    entry.manager.remap(oldToNew, newPlan.chunks.length)
+    entry.plan = newPlan
+    entry.volume = vol
+    vol.chunkPlan = newPlan
+    if (entry.manager.residentCount === 0) {
+      entry.manager.admit(0, await entry.uploader.uploadChunk(0))
+    }
   }
 
   /**

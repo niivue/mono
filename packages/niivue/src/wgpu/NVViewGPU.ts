@@ -535,6 +535,12 @@ export default class NVView {
     await this.volumeRenderer.setCoarseFloor(device, coarseVol)
   }
 
+  async swapChunkedVolumePlan(vol: NVImage, plan: ChunkPlan): Promise<void> {
+    const device = this.device
+    if (!device) return
+    await this.volumeRenderer.swapChunkedVolumePlan(device, vol, plan)
+  }
+
   async updateAffineOverlays(): Promise<boolean> {
     const device = this.device
     if (!device) return false
@@ -997,6 +1003,19 @@ export default class NVView {
             buildLine,
           ),
         )
+      }
+      // Debug: outline every LOD brick (colored per level) on render tiles.
+      if (md._lodBoxes && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
+        for (const lodBox of md._lodBoxes) {
+          crossLinesList.push(
+            ...NVSliceLayout.buildFocusBoxLines(
+              lodBox,
+              mvpMatrix as mat4,
+              ltwh,
+              buildLine,
+            ),
+          )
+        }
       }
       // each tile is drawn to a unique screen region
       pass.setViewport(ltwh[0], ltwh[1], ltwh[2], ltwh[3], 0.0, 1.0)

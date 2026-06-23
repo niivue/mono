@@ -405,3 +405,51 @@ describe('ChunkResidencyManager fadeFraction (streaming cross-fade)', () => {
     expect(m.fadeFraction(0, performance.now() - 1000, 260)).toBe(0)
   })
 })
+
+describe('ChunkResidencyManager remap (in-place plan swap)', () => {
+  test('re-keys matched chunks and evicts unmatched', () => {
+    const m = manager(3)
+    const a = fakeChunk('a', 100)
+    const b = fakeChunk('b', 100)
+    const c = fakeChunk('c', 100)
+    m.admit(0, a)
+    m.admit(1, b)
+    m.admit(2, c)
+    // New plan: old 0 -> new 2, old 2 -> new 0; old 1 has no match (evicted).
+    m.remap(
+      new Map([
+        [0, 2],
+        [2, 0],
+      ]),
+      4,
+    )
+    expect(m.chunkCount).toBe(4)
+    expect(m.getChunk(2)).toBe(a)
+    expect(m.getChunk(0)).toBe(c)
+    expect(m.getChunk(1)).toBeNull()
+    expect(b.destroyed).toBe(true) // unmatched -> destroyed
+    expect(a.destroyed).toBe(false) // re-keyed -> kept
+    expect(m.residentCount).toBe(2)
+    expect(m.residentBytes).toBe(200)
+  })
+
+  test('preserves the fade stamp of re-keyed chunks', () => {
+    const m = manager(2)
+    const a = fakeChunk('a', 1)
+    m.admit(0, a)
+    const settled = m.fadeFraction(0, performance.now() + 10_000, 260)
+    expect(settled).toBe(1)
+    m.remap(new Map([[0, 1]]), 2)
+    // Same chunk, same admittedAt -> still fully faded (no re-stream flicker).
+    expect(m.fadeFraction(1, performance.now() + 10_000, 260)).toBe(1)
+  })
+
+  test('clears the pending-upload queue', () => {
+    const m = manager(3)
+    m.beginFrame()
+    m.requestUpload(1) // queue a non-resident chunk
+    expect(m.pendingUploadCount).toBe(1)
+    m.remap(new Map(), 1)
+    expect(m.pendingUploadCount).toBe(0)
+  })
+})

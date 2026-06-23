@@ -131,6 +131,7 @@ type ViewBackend = {
   updateBindGroups: () => Promise<void>
   updateAffineOverlays?: () => Promise<boolean>
   setCoarseFloor?: (coarseVol: NVImage | null) => Promise<void>
+  swapChunkedVolumePlan?: (vol: NVImage, plan: ChunkPlan) => Promise<void>
   hitTest: (x: number, y: number) => ViewHitTest | null
   depthPick: (x: number, y: number) => Promise<[number, number, number] | null>
   loadThumbnail: (url: string) => Promise<void>
@@ -483,6 +484,15 @@ export default class NiiVueGPU extends EventTarget {
   }
   set focusBox(box: FocusBox | null) {
     this.model._focusBox = box
+    this.drawScene()
+  }
+
+  /** Set of world-space boxes drawn on 3D render tiles (e.g. per-brick LOD). */
+  get lodBoxes(): FocusBox[] | null {
+    return this.model._lodBoxes
+  }
+  set lodBoxes(boxes: FocusBox[] | null) {
+    this.model._lodBoxes = boxes
     this.drawScene()
   }
 
@@ -2924,6 +2934,23 @@ export default class NiiVueGPU extends EventTarget {
    */
   async setBaseCoarseFloor(coarseVol: NVImage | null): Promise<void> {
     await this.view?.setCoarseFloor?.(coarseVol)
+    this.drawScene()
+  }
+
+  /**
+   * Swap a loaded chunked/streamed volume's tiling plan in place (e.g. a
+   * multi-LOD refocus). Unchanged bricks keep their resident GPU textures; only
+   * changed/new bricks stream. Far cheaper than reloading the volume, and it
+   * doesn't reset the camera/crosshair. The volume must already be loaded with a
+   * `chunkSource`; otherwise this is a no-op.
+   */
+  async swapVolumeChunkPlan(volumeId: string, plan: ChunkPlan): Promise<void> {
+    const vol = this.model.volumes.find(
+      (v) => v.id === volumeId || v.name === volumeId,
+    )
+    if (!vol) return
+    vol.chunkPlan = plan
+    await this.view?.swapChunkedVolumePlan?.(vol, plan)
     this.drawScene()
   }
 

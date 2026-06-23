@@ -78,6 +78,12 @@ export default class NVModel {
   _dragOverlay: DragOverlay | null = null
   /** Transient world-space box outlined on 3D render tiles (e.g. focus region) */
   _focusBox: FocusBox | null = null
+  /**
+   * Transient world-space boxes outlined on 3D render tiles, drawn like
+   * `_focusBox` but as a set — e.g. one per multi-resolution brick, colored by
+   * LOD level, to visualize a heterogeneous chunk plan. Controller-owned.
+   */
+  _lodBoxes: FocusBox[] | null = null
   /** Transient annotation preview for live rendering during brush strokes */
   _annotationPreview: VectorAnnotation | null = null
   /** Transient eraser preview: overrides persisted annotations during erase drag */

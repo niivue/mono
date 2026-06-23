@@ -407,6 +407,12 @@ export default class NVGlview {
     this.volumeRenderer.setCoarseFloor(gl, coarseVol)
   }
 
+  async swapChunkedVolumePlan(vol: NVImage, plan: ChunkPlan): Promise<void> {
+    const gl = this.gl
+    if (!gl) return
+    await this.volumeRenderer.swapChunkedVolumePlan(gl, vol, plan)
+  }
+
   async updateAffineOverlays(): Promise<boolean> {
     const gl = this.gl
     if (!gl) return false
@@ -675,6 +681,19 @@ export default class NVGlview {
             buildLine,
           ),
         )
+      }
+      // Debug: outline every LOD brick (colored per level) on render tiles.
+      if (md._lodBoxes && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
+        for (const lodBox of md._lodBoxes) {
+          crossLinesList.push(
+            ...NVSliceLayout.buildFocusBoxLines(
+              lodBox,
+              mvpMatrix as mat4,
+              ltwh,
+              buildLine,
+            ),
+          )
+        }
       }
       gl.viewport(
         bx + ltwh[0],

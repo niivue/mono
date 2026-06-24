@@ -114,6 +114,12 @@ interface ChunkUniforms {
   dataOriginTexFrac: Vec3f
   /** Data extent in the chunk's local texture (excludes halo on both sides). */
   dataSizeTexFrac: Vec3f
+  /**
+   * This brick's source-level full-volume dims, driving the ray-step density so
+   * coarse multi-LOD bricks step at their own resolution. Equals
+   * volumeTexDimsFull for single-level plans.
+   */
+  rayStepTexVox: Vec3f
 }
 
 /** Single-texture volume: fits within max3D on all axes. */
@@ -155,7 +161,12 @@ function chunkUniformsFor(plan: ChunkPlan, chunkIndex: number): ChunkUniforms {
   const desc = plan.chunks[chunkIndex]
   const [vx, vy, vz] = plan.volumeDims
   const [tx, ty, tz] = desc.texDims
+  // Ray-step density comes from this brick's source level (full-volume dims);
+  // for single-level plans levelDims is absent so it falls back to volumeDims.
+  const rayStep = plan.levelDims?.[desc.sourceLevel ?? 0] ?? plan.volumeDims
   return {
+    // World placement uses the COMMON grid (voxelOrigin/voxelDims are common-grid
+    // for multi-LOD bricks; identical to the level grid for single-level plans).
     volumeTexDimsFull: [vx, vy, vz],
     chunkSubOrigin: [
       desc.voxelOrigin[0] / vx,
@@ -167,16 +178,18 @@ function chunkUniformsFor(plan: ChunkPlan, chunkIndex: number): ChunkUniforms {
       desc.voxelDims[1] / vy,
       desc.voxelDims[2] / vz,
     ],
+    // Texture-space remap uses the brick's OWN level grid (texDims + level halo).
     dataOriginTexFrac: [
       desc.haloLow[0] / tx,
       desc.haloLow[1] / ty,
       desc.haloLow[2] / tz,
     ],
     dataSizeTexFrac: [
-      desc.voxelDims[0] / tx,
-      desc.voxelDims[1] / ty,
-      desc.voxelDims[2] / tz,
+      (tx - desc.haloLow[0] - desc.haloHigh[0]) / tx,
+      (ty - desc.haloLow[1] - desc.haloHigh[1]) / ty,
+      (tz - desc.haloLow[2] - desc.haloHigh[2]) / tz,
     ],
+    rayStepTexVox: [rayStep[0], rayStep[1], rayStep[2]],
   }
 }
 
@@ -1932,6 +1945,7 @@ export class VolumeRenderer extends NVRenderer {
         chunkSubSize: [1, 1, 1],
         dataOriginTexFrac: [0, 0, 0],
         dataSizeTexFrac: [1, 1, 1],
+        rayStepTexVox: this._activeDims,
       })
       gl.drawElements(gl.TRIANGLE_STRIP, indexCount, gl.UNSIGNED_SHORT, 0)
     }
@@ -1957,6 +1971,8 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform3fv(shader.uniforms.dataOriginTexFrac, u.dataOriginTexFrac)
     if (shader.uniforms.dataSizeTexFrac)
       gl.uniform3fv(shader.uniforms.dataSizeTexFrac, u.dataSizeTexFrac)
+    if (shader.uniforms.rayStepTexVox)
+      gl.uniform3fv(shader.uniforms.rayStepTexVox, u.rayStepTexVox)
   }
 
   /**
@@ -2054,6 +2070,9 @@ export class VolumeRenderer extends NVRenderer {
         chunkSubSize: cu.chunkSubSize,
         dataOriginTexFrac: cu.chunkSubOrigin,
         dataSizeTexFrac: cu.chunkSubSize,
+        // Coarse floor backdrop samples a single shared low-res texture by world
+        // position; keep stepRatio == 1 (common density) so it renders unchanged.
+        rayStepTexVox: cu.volumeTexDimsFull,
       })
       if (shader.uniforms.fadeAlpha)
         gl.uniform1f(shader.uniforms.fadeAlpha, 1.0)
@@ -2321,6 +2340,7 @@ export class VolumeRenderer extends NVRenderer {
       chunkSubSize: [1, 1, 1],
       dataOriginTexFrac: [0, 0, 0],
       dataSizeTexFrac: [1, 1, 1],
+      rayStepTexVox: this._activeDims,
     })
 
     // Draw

@@ -23,9 +23,15 @@ type ChunkOffsetFor = (chunkIndex: number) => Vec3f
  * by blending those segment colors, so chunks must be drawn farthest first in
  * the same ray-direction convention used by `calculateRayDirection`.
  *
- * Use each chunk's far AABB corner in scaled object space, not its center, so
- * edge chunks with nonuniform sizes sort according to the farthest possible
- * segment endpoint.
+ * Ordered with a SEPARATING-AXIS comparator: two non-overlapping AABBs that can
+ * occlude each other (overlap in screen projection) are always separated along
+ * some coordinate axis, and the box on the near side of the most view-aligned
+ * separating axis is in front. This is correct for the MIXED brick sizes of a
+ * multi-LOD plan; a single scalar key (far corner / centre) mis-orders a large
+ * coarse brick against small fine ones at oblique view angles, which — because
+ * the chunk draws use depthFunc ALWAYS and rely entirely on this order for
+ * premultiplied-alpha compositing — shows up as washed-out, see-through bricks
+ * at LOD seams. For equal-size grids it reproduces the previous order.
  */
 export function chunksBackToFront(
   plan: ChunkPlan,
@@ -41,27 +47,61 @@ export function chunksBackToFront(
   }
 
   const [vx, vy, vz] = plan.volumeDims
-  const sx = finiteScaleComponent(volScale, 0)
-  const sy = finiteScaleComponent(volScale, 1)
-  const sz = finiteScaleComponent(volScale, 2)
-  const depth = plan.chunks.map((c, i) => {
-    const offset = chunkOffsetFor?.(i)
-    const x =
-      rx >= 0 ? (c.voxelOrigin[0] + c.voxelDims[0]) / vx : c.voxelOrigin[0] / vx
-    const y =
-      ry >= 0 ? (c.voxelOrigin[1] + c.voxelDims[1]) / vy : c.voxelOrigin[1] / vy
-    const z =
-      rz >= 0 ? (c.voxelOrigin[2] + c.voxelDims[2]) / vz : c.voxelOrigin[2] / vz
-    return (
-      (x + (offset?.[0] ?? 0)) * sx * rx +
-      (y + (offset?.[1] ?? 0)) * sy * ry +
-      (z + (offset?.[2] ?? 0)) * sz * rz
-    )
-  })
-
-  return plan.chunks
-    .map((_, i) => i)
-    .sort((a, b) => depth[b] - depth[a] || a - b)
+  // Effective view-depth direction in the boxes' normalized object space (the
+  // axis scale folds in here so a box's separation structure stays axis-aligned).
+  const d: Vec3f = [
+    finiteScaleComponent(volScale, 0) * rx,
+    finiteScaleComponent(volScale, 1) * ry,
+    finiteScaleComponent(volScale, 2) * rz,
+  ]
+  // Each chunk's AABB in normalized [0,1] object space (+ explode offset).
+  const lo: Vec3f[] = []
+  const hi: Vec3f[] = []
+  for (let i = 0; i < plan.chunks.length; i++) {
+    const c = plan.chunks[i]
+    const o = chunkOffsetFor?.(i)
+    const ox = o?.[0] ?? 0
+    const oy = o?.[1] ?? 0
+    const oz = o?.[2] ?? 0
+    lo.push([
+      c.voxelOrigin[0] / vx + ox,
+      c.voxelOrigin[1] / vy + oy,
+      c.voxelOrigin[2] / vz + oz,
+    ])
+    hi.push([
+      (c.voxelOrigin[0] + c.voxelDims[0]) / vx + ox,
+      (c.voxelOrigin[1] + c.voxelDims[1]) / vy + oy,
+      (c.voxelOrigin[2] + c.voxelDims[2]) / vz + oz,
+    ])
+  }
+  const EPS = 1e-9
+  // Far AABB corner projected on d — the fallback key when two boxes are not
+  // separated along a view-aligned axis (they overlap in projection and so do
+  // not occlude one another; any consistent order is fine).
+  const farKey = (i: number): number =>
+    (d[0] >= 0 ? hi[i][0] : lo[i][0]) * d[0] +
+    (d[1] >= 0 ? hi[i][1] : lo[i][1]) * d[1] +
+    (d[2] >= 0 ? hi[i][2] : lo[i][2]) * d[2]
+  const compare = (a: number, b: number): number => {
+    let axis = -1
+    let weight = -1
+    for (let k = 0; k < 3; k++) {
+      const separated = hi[a][k] <= lo[b][k] + EPS || hi[b][k] <= lo[a][k] + EPS
+      const w = Math.abs(d[k])
+      if (separated && w > weight) {
+        weight = w
+        axis = k
+      }
+    }
+    if (axis >= 0 && weight > EPS) {
+      const aLower = hi[a][axis] <= lo[b][axis] + EPS
+      // The box on the +axis side is farther when d[axis] > 0.
+      const aFarther = aLower ? d[axis] < 0 : d[axis] > 0
+      return aFarther ? -1 : 1 // farther chunk drawn first (back)
+    }
+    return farKey(b) - farKey(a) || a - b
+  }
+  return plan.chunks.map((_, i) => i).sort(compare)
 }
 
 function finiteRayComponent(rayDir: ArrayLike<number>, axis: number): number {

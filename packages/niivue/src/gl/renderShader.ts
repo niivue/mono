@@ -15,6 +15,9 @@ uniform float overlayLayerMode;
 // over the coarse floor instead of popping. 1.0 for every non-fading draw.
 uniform float fadeAlpha;
 uniform float earlyTermination;
+// Per-brick source-level voxel dims for the ray-step density (multi-LOD). Equals
+// volumeTexDimsFull for single-level/non-chunked draws.
+uniform vec3 rayStepTexVox;
 uniform vec4 clipPlaneColor;
 uniform vec4 paqdUniforms;
 uniform sampler2D matcap;
@@ -242,11 +245,21 @@ void main() {
     discard;
   }
   vec3 dir = dirVec / len;
-  vec3 texVox = volumeTexDimsFull;
+  // Step size is per-voxel of this brick's source level (rayStepTexVox); equals
+  // volumeTexDimsFull for non-chunked/single-level draws, coarser for multi-LOD
+  // bricks so each steps at its own resolution.
+  vec3 texVox = rayStepTexVox;
   float lenVox = length(dirVec * texVox);
   if (lenVox < 0.5) {
     discard;
   }
+  // Opacity (step-size) correction: a coarse multi-LOD brick takes fewer samples
+  // along the ray, so without this it accumulates less alpha and renders dimmer —
+  // a brightness seam at LOD boundaries. Scale per-sample alpha up to the finest
+  // (common) sampling density. stepRatio == 1 for single-level/non-chunked draws
+  // (volumeTexDimsFull == rayStepTexVox), leaving them identical.
+  float fineLenVox = length(dirVec * volumeTexDimsFull);
+  float stepRatio = max(1.0, fineLenVox / max(lenVox, 1e-6));
   // Save original ray for overlay passes (overlay ignores clip planes)
   vec3 origStart = start;
   float origLen = len;
@@ -367,7 +380,8 @@ void main() {
           vec3 mc_rgb = texture(matcap, uv).rgb * (1.0 + (lightingAmount / 3.0));
           vec3 blendedRGB = mix(vec3(1.0), mc_rgb, lightingAmount);
           vec3 finalRGB = blendedRGB * colorSample.rgb;
-          vec4 premultiplied = vec4(finalRGB * colorSample.a, colorSample.a);
+          float correctedA = 1.0 - pow(1.0 - colorSample.a, stepRatio);
+          vec4 premultiplied = vec4(finalRGB * correctedA, correctedA);
           colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
           if (colAcc.a > localEarlyTermination) { break; }
         }

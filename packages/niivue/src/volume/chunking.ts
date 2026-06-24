@@ -505,6 +505,12 @@ export interface MultiLodOptions {
    * larger widens the finest core. Default 1. The budget pass only lowers it.
    */
   detail?: number
+  /**
+   * Maximum number of bricks. The budget pass coarsens (shrinks `detail`, then
+   * raises the level floor) until the plan fits, so the renderer's per-tile chunk
+   * limit is never exceeded. Omit/0 for no cap.
+   */
+  maxBricks?: number
 }
 
 /**
@@ -765,26 +771,35 @@ export function chunkVolumeMultiLOD(
     return balance(chunks, floor)
   }
 
-  // Budget pass (rgba colour + gradient = 8 B per padded texture voxel):
+  // Budget pass — fit BOTH the GPU byte budget (rgba + gradient = 8 B per padded
+  // texture voxel) and an optional brick-count cap (the renderer rejects plans
+  // over its per-tile chunk limit, and the resident set must not be evicted):
   // 1) shrink `detail` — cells must be closer to the focus (relative to their
   //    size) to refine, so the whole field coarsens while staying 2:1 balanced.
-  // 2) only if that still cannot fit, raise the level floor as a hard cap so the
-  //    resident set never blows the budget (the balance may degrade here).
+  // 2) only if that still cannot fit, raise the level floor as a hard cap (the
+  //    balance may degrade here).
+  const budget =
+    options.budgetBytes && options.budgetBytes > 0 ? options.budgetBytes : 0
+  const maxBricks =
+    options.maxBricks && options.maxBricks > 0
+      ? options.maxBricks
+      : Number.POSITIVE_INFINITY
+  const bytesOf = (cs: VolumeChunkDesc[]): number =>
+    cs.reduce(
+      (sum, c) => sum + c.texDims[0] * c.texDims[1] * c.texDims[2] * 8,
+      0,
+    )
+  const overBudget = (cs: VolumeChunkDesc[]): boolean =>
+    (budget > 0 && bytesOf(cs) > budget) || cs.length > maxBricks
   let detail = BASE_DETAIL
   let floor = minLevel
   let chunks = build(detail, floor)
-  if (options.budgetBytes && options.budgetBytes > 0) {
-    const budget = options.budgetBytes
-    const bytesOf = (cs: VolumeChunkDesc[]): number =>
-      cs.reduce(
-        (sum, c) => sum + c.texDims[0] * c.texDims[1] * c.texDims[2] * 8,
-        0,
-      )
-    for (let i = 0; i < 16 && bytesOf(chunks) > budget; i++) {
+  if (budget > 0 || maxBricks !== Number.POSITIVE_INFINITY) {
+    for (let i = 0; i < 16 && overBudget(chunks); i++) {
       detail /= 1.6
       chunks = build(detail, floor)
     }
-    while (bytesOf(chunks) > budget && floor < maxLevel) {
+    while (overBudget(chunks) && floor < maxLevel) {
       floor++
       chunks = build(detail, floor)
     }

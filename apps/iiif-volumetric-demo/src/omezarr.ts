@@ -174,6 +174,10 @@ const MULTILOD_CELL_EDGE = 128
 // GPU memory is tight; the focus then coarsens gracefully).
 const MULTILOD_DEFAULT_BUDGET_BYTES = 2 * 1024 * 1024 * 1024
 const MULTILOD_HALO: Shape3 = [1, 1, 1]
+// Cap below niivue's per-tile chunk limit (MAX_CHUNKS_PER_TILE = 256). The plan's
+// budget pass coarsens until it fits, so a focus that would otherwise generate
+// too many bricks degrades gracefully instead of being rejected by the renderer.
+const MULTILOD_MAX_BRICKS = 240
 const DEFAULT_OME_ZARR_ID = 'pawpawsaurus.ome.zarr'
 
 const initialParams = new URLSearchParams(window.location.search)
@@ -714,6 +718,12 @@ async function ensureNiivue(): Promise<void> {
     is3DCrosshairVisible: true,
     isDragDropEnabled: false,
     maxTextureDimension3D: STREAMING_CHUNK_EDGE,
+    // Keep the GPU residency budget in step with the multi-LOD PLAN budget: the
+    // octree is built to fit `multiLodBudgetBytes()`, so the resident set must be
+    // allowed to hold that same amount (both measure texDims*8). Otherwise the
+    // residency manager (default 1.5 GB) evicts the bricks the plan included and
+    // blocks stop rendering. A little headroom covers transient streaming.
+    maxChunkResidencyBytes: Math.round(multiLodBudgetBytes() * 1.1),
     meshXRay: 0,
   })
   nv.opts.isDragDropEnabled = false
@@ -1415,6 +1425,7 @@ function buildMultiLodPlan(
     haloSize: MULTILOD_HALO,
     budgetBytes: multiLodBudgetBytes(),
     minLevel,
+    maxBricks: MULTILOD_MAX_BRICKS,
   })
   if (initialParams.get('lodboxes') === '1') {
     const counts = new Map<number, number>()

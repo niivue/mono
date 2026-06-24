@@ -58,6 +58,7 @@ button {
 .nv-app {
   display: grid;
   grid-template-rows: 64px minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
   overflow: hidden;
@@ -87,8 +88,18 @@ button {
   border-bottom: 0;
   color: var(--muted);
   font-size: 12px;
+  gap: 14px;
+  justify-content: flex-start;
   padding: 0 14px;
   box-shadow: none;
+}
+
+.nv-status > span:first-child {
+  flex: 1 1 28%;
+}
+
+.nv-status > span:last-child {
+  margin-left: auto;
 }
 
 .nv-status span {
@@ -99,6 +110,27 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nv-status .nv-warm-status {
+  color: var(--amber);
+}
+
+.nv-status .nv-location-status {
+  flex: 1 2 42%;
+  color: var(--green);
+}
+
+.nv-warm-status .lucide-loader-circle {
+  animation: nv-preview-spin 0.9s linear infinite;
+}
+
+.nv-status .nv-disclaimer {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--amber);
+  font-weight: 600;
 }
 
 .nv-brand {
@@ -1507,6 +1539,155 @@ button {
   font-size: 12px;
 }
 
+.nv-layer-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.nv-layer-select {
+  width: 100%;
+}
+
+.nv-layer-load-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 30px;
+  border: 1px solid rgba(115, 198, 155, 0.34);
+  background: rgba(15, 25, 18, 0.78);
+  color: var(--green);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nv-layer-load-button:hover:not(:disabled),
+.nv-layer-load-button:focus-visible {
+  border-color: var(--green);
+  background: rgba(24, 42, 30, 0.82);
+  outline: none;
+}
+
+.nv-layer-load-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.nv-layer-visibility {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nv-layer-visibility input {
+  accent-color: var(--green);
+}
+
+.nv-layer-visibility.is-disabled {
+  opacity: 0.45;
+}
+
+.nv-layer-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nv-layer-list-header em {
+  color: var(--green);
+  font-style: normal;
+}
+
+.nv-layer-list {
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.nv-layer-card,
+.nv-layer-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(112px, 42%);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(146, 160, 102, 0.22);
+  background: rgba(16, 17, 13, 0.72);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 7px 8px;
+}
+
+.nv-layer-option.is-active {
+  border-color: rgba(115, 198, 155, 0.38);
+}
+
+.nv-layer-option-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: inherit;
+}
+
+.nv-layer-option-toggle input {
+  accent-color: var(--green);
+}
+
+.nv-layer-copy,
+.nv-layer-copy strong,
+.nv-layer-copy small,
+.nv-layer-option-toggle span,
+.nv-layer-option-toggle strong,
+.nv-layer-option-toggle small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-layer-copy strong,
+.nv-layer-option strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nv-layer-copy small,
+.nv-layer-option small {
+  margin-top: 3px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.nv-layer-colormap-select {
+  grid-template-columns: auto minmax(58px, 1fr) auto;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.nv-layer-colormap-select.is-disabled {
+  opacity: 0.48;
+}
+
+.nv-layer-colormap-select select:disabled {
+  color: var(--faint);
+}
+
 .nv-clip-flip {
   color: var(--muted);
   font-size: 12px;
@@ -1540,6 +1721,7 @@ button {
 .nv-operation-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(72px, 0.45fr);
+  align-items: start;
   gap: 8px;
 }
 
@@ -1553,6 +1735,12 @@ button {
 
 .nv-field-wide {
   grid-column: 1 / -1;
+}
+
+.nv-field-hint {
+  color: var(--green);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .nv-field select,
@@ -1570,6 +1758,22 @@ button {
 .nv-field select:focus,
 .nv-text-input:focus {
   border-color: var(--green);
+}
+
+.nv-path-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nv-path-picker .nv-text-input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nv-path-picker-button {
+  min-height: 30px;
 }
 
 .nv-operation-help {
@@ -1632,6 +1836,44 @@ button {
 
 .nv-task-status code {
   color: var(--amber);
+}
+
+.nv-command-field {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.nv-command-field > span:first-child {
+  font-size: 11px;
+}
+
+.nv-command-input {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+.nv-command-stderr {
+  font-size: 11px;
+}
+
+.nv-command-stderr summary {
+  cursor: pointer;
+  color: var(--amber);
+}
+
+.nv-command-stderr pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  max-height: 160px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel, rgba(0, 0, 0, 0.3));
+  color: var(--ink);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .nv-readout {

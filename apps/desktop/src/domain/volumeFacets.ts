@@ -34,6 +34,7 @@ export function isDerivedItem(item: DesktopItem): boolean {
 }
 
 export function volumeRoleLabel(item: DesktopItem): string {
+  if (item.role === 'overlay') return 'Overlay'
   return isDerivedItem(item) ? 'Derived' : 'Source'
 }
 

@@ -25,7 +25,7 @@ export interface DesktopItem {
   id: string
   type: string
   label: string
-  role?: 'source' | 'derived'
+  role?: 'source' | 'overlay' | 'derived'
   index: number
   bounds: WorldRect
   format: string
@@ -65,7 +65,7 @@ export interface JsonSidecar {
 export interface VolumeMetadata {
   id: string
   label?: string
-  role?: 'source' | 'derived'
+  role?: 'source' | 'overlay' | 'derived'
   format?: string
   shape?: [number, number, number]
   spacing?: [number, number, number]
@@ -101,6 +101,17 @@ export interface DesktopManifest {
   items: DesktopItem[]
 }
 
+export interface DesktopManifestVersion {
+  id: string
+  version: string
+}
+
+export interface WarmProgress {
+  active: boolean
+  completed: number
+  total: number
+}
+
 export interface ServerInfo {
   url: string
   port: number
@@ -110,6 +121,7 @@ export interface ServerInfo {
   bidsName?: string | null
   bidsVersion?: string | null
   bidsDatasetDoi?: string | null
+  warmProgress?: WarmProgress
 }
 
 export interface DatasetOpenResult {
@@ -121,6 +133,19 @@ export interface DatasetOpenResult {
   bidsName?: string | null
   bidsVersion?: string | null
   bidsDatasetDoi?: string | null
+  warmProgress?: WarmProgress
+}
+
+export interface OverlayAddResult {
+  id: string
+  label: string
+  volumeCount: number
+  warmProgress?: WarmProgress
+}
+
+export interface RuntimeCapabilities {
+  terminalAvailable: boolean
+  nativeNiimathAvailable: boolean
 }
 
 export interface ClipPlane {
@@ -133,6 +158,18 @@ export interface ClipPlane {
 }
 
 const BROWSER_REFERENCE_SERVER = 'http://127.0.0.1:8087'
+const BROWSER_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
+  terminalAvailable: false,
+  nativeNiimathAvailable: false
+}
+
+export async function resolveRuntimeCapabilities(): Promise<RuntimeCapabilities> {
+  try {
+    return await invoke<RuntimeCapabilities>('neurovue_runtime_capabilities')
+  } catch {
+    return BROWSER_RUNTIME_CAPABILITIES
+  }
+}
 
 export async function resolveServerInfo(): Promise<ServerInfo | null> {
   try {
@@ -161,6 +198,15 @@ export async function fetchDesktopManifest(serverUrl: string): Promise<DesktopMa
   return response.json() as Promise<DesktopManifest>
 }
 
+export async function fetchDesktopManifestVersion(serverUrl: string): Promise<string> {
+  const response = await fetch(`${trimTrailingSlash(serverUrl)}/iiif/desktop/neuro/version`)
+  if (!response.ok) {
+    throw new Error(`Desktop manifest version request failed with HTTP ${response.status}.`)
+  }
+  const payload = await response.json() as DesktopManifestVersion
+  return payload.version
+}
+
 export async function fetchVolumeMetadata(item: DesktopItem): Promise<VolumeMetadata> {
   const response = await fetch(item.metadata)
   if (!response.ok) {
@@ -183,12 +229,32 @@ export async function openDatasetDirectory(): Promise<DatasetOpenResult | null> 
   return openDatasetByPath(selected)
 }
 
+export async function openOverlayVolume(): Promise<OverlayAddResult | null> {
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    title: 'Open NeuroVue overlay volume',
+    filters: [
+      {
+        name: 'NIfTI volumes',
+        extensions: ['nii', 'gz']
+      }
+    ]
+  })
+  if (!selected || Array.isArray(selected)) return null
+  return addOverlayVolumeByPath(selected)
+}
+
 export async function openDatasetByPath(path: string): Promise<DatasetOpenResult> {
   const result = await invoke<DatasetOpenResult>('open_dataset_path', { path })
   return {
     ...result,
     url: trimTrailingSlash(result.url)
   }
+}
+
+export async function addOverlayVolumeByPath(path: string): Promise<OverlayAddResult> {
+  return invoke<OverlayAddResult>('add_overlay_volume_path', { path })
 }
 
 export function defaultClipPlanes(): ClipPlane[] {

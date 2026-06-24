@@ -26,6 +26,7 @@ struct NeuroVueServerInfo {
     bids_name: Option<String>,
     bids_version: Option<String>,
     bids_dataset_doi: Option<String>,
+    warm_progress: volumetric_server::WarmProgressSnapshot,
 }
 
 pub(crate) struct NeuroVueState {
@@ -43,6 +44,31 @@ struct DatasetOpenResult {
     bids_name: Option<String>,
     bids_version: Option<String>,
     bids_dataset_doi: Option<String>,
+    warm_progress: volumetric_server::WarmProgressSnapshot,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OverlayAddResult {
+    id: String,
+    label: String,
+    volume_count: usize,
+    warm_progress: volumetric_server::WarmProgressSnapshot,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeCapabilities {
+    terminal_available: bool,
+    native_niimath_available: bool,
+}
+
+#[tauri::command]
+fn neurovue_runtime_capabilities() -> RuntimeCapabilities {
+    RuntimeCapabilities {
+        terminal_available: cfg!(desktop),
+        native_niimath_available: cfg!(desktop),
+    }
 }
 
 #[tauri::command]
@@ -58,6 +84,7 @@ fn neurovue_server_info(state: tauri::State<'_, NeuroVueState>) -> NeuroVueServe
         bids_name: bids.as_ref().and_then(|info| info.name.clone()),
         bids_version: bids.as_ref().and_then(|info| info.bids_version.clone()),
         bids_dataset_doi: bids.as_ref().and_then(|info| info.dataset_doi.clone()),
+        warm_progress: volumetric_server::warm_progress(&state.server),
     }
 }
 
@@ -70,6 +97,25 @@ async fn open_dataset_path(
     tauri::async_runtime::spawn_blocking(move || open_dataset_at_path(&server, Path::new(&path)))
         .await
         .map_err(|error| format!("open_dataset_path: join error: {error}"))?
+}
+
+#[tauri::command]
+async fn add_overlay_volume_path(
+    state: tauri::State<'_, NeuroVueState>,
+    path: String,
+) -> Result<OverlayAddResult, String> {
+    let server = state.server.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let registered = volumetric_server::register_overlay_volume(&server, Path::new(&path))?;
+        Ok(OverlayAddResult {
+            id: registered.id,
+            label: registered.label,
+            volume_count: volumetric_server::volume_count(&server),
+            warm_progress: volumetric_server::warm_progress(&server),
+        })
+    })
+    .await
+    .map_err(|error| format!("add_overlay_volume_path: join error: {error}"))?
 }
 
 fn open_dataset_at_path(
@@ -92,6 +138,7 @@ fn open_dataset_at_path(
         bids_name: bids.as_ref().and_then(|info| info.name.clone()),
         bids_version: bids.as_ref().and_then(|info| info.bids_version.clone()),
         bids_dataset_doi: bids.as_ref().and_then(|info| info.dataset_doi.clone()),
+        warm_progress: volumetric_server::warm_progress(server),
     })
 }
 
@@ -129,8 +176,11 @@ pub fn run() {
     let builder = builder
         .manage(terminal::TerminalState::default())
         .invoke_handler(tauri::generate_handler![
+            neurovue_runtime_capabilities,
             neurovue_server_info,
             open_dataset_path,
+            add_overlay_volume_path,
+            niimath::validate_niimath_mask_path,
             niimath::run_niimath_task,
             terminal::terminal_start,
             terminal::terminal_write,
@@ -141,8 +191,10 @@ pub fn run() {
         ]);
     #[cfg(not(desktop))]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        neurovue_runtime_capabilities,
         neurovue_server_info,
-        open_dataset_path
+        open_dataset_path,
+        add_overlay_volume_path
     ]);
 
     builder

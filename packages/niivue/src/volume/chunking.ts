@@ -497,6 +497,14 @@ export interface MultiLodOptions {
    * Omit/0 to skip budgeting.
    */
   budgetBytes?: number
+  /**
+   * Scale-relative detail factor controlling LOD falloff. A cell refines while
+   * its distance-beyond-`radius` is below `detail · cellSize`, so the level
+   * changes by ~1 per cell step. Values >= ~1 keep the octree 2:1 balanced
+   * (face-adjacent bricks differ by at most one level => smooth LOD transitions);
+   * larger widens the finest core. Default 1. The budget pass only lowers it.
+   */
+  detail?: number
 }
 
 /**
@@ -536,22 +544,21 @@ export function chunkVolumeMultiLOD(
   const cellEdge = Math.max(8, Math.floor(options.cellEdge ?? 128))
   const halo = options.haloSize ?? [1, 1, 1]
   const radius = Math.max(1e-3, focus.radius)
+  // Scale-relative detail factor. A cell refines while `beyond < BASE_DETAIL *
+  // cellSize`; >= ~1 keeps the octree 2:1 balanced (one level change per cell).
+  // Larger = wider finest core (more bricks); the budget pass only shrinks it.
+  const BASE_DETAIL = options.detail ?? 1
 
-  // Level desired for a region at common-voxel distance `d` from the focus.
-  // Inside the focus radius -> finest allowed (`minLevel`); beyond it, the level
-  // rises with distance. `coarsen` (>= 1, raised by the budget pass) compresses
-  // the falloff so the SURROUNDINGS coarsen faster while the focus itself stays
-  // finest — so a tight budget never coarsens the focused block.
-  const levelForDistance = (
-    d: number,
-    coarsen: number,
-    floor: number,
-  ): number => {
-    const beyond = Math.max(0, d - radius)
-    const shell =
-      beyond <= 0 ? 0 : Math.ceil(Math.log2(1 + (beyond * coarsen) / radius))
-    return Math.max(minLevel, floor, Math.min(maxLevel, shell))
-  }
+  // Refinement is SCALE-RELATIVE: a cell is subdivided while its nearest distance
+  // to the focus is small RELATIVE TO ITS OWN SIZE (`detail` * cell extent).
+  // Because the threshold scales with the cell, the level changes by ~1 per cell
+  // step, so face-adjacent bricks differ by at most one level — a 2:1 balanced
+  // octree with smooth LOD transitions (no fine-next-to-very-coarse walls). The
+  // `radius` adds an absolute finest core regardless of `detail`. `detail` is
+  // lowered by the budget pass (cells must be closer to refine -> coarser overall)
+  // before the level floor is raised as a last resort.
+  const cellExtent = (sizeC: Vec3i): number =>
+    Math.max(sizeC[0], sizeC[1], sizeC[2])
 
   // Nearest common-voxel distance from the focus centre to an axis-aligned box.
   const distanceToBox = (originC: Vec3i, sizeC: Vec3i): number => {
@@ -604,19 +611,111 @@ export function chunkVolumeMultiLOD(
     })
   }
 
+  // Two bricks share a 2D FACE: their common-grid boxes are adjacent on exactly
+  // one axis (touching planes) and overlap on the other two.
+  const faceAdjacent = (a: VolumeChunkDesc, b: VolumeChunkDesc): boolean => {
+    let adjacent = 0
+    let overlapping = 0
+    for (let k = 0; k < 3; k++) {
+      const a0 = a.voxelOrigin[k]
+      const a1 = a0 + a.voxelDims[k]
+      const b0 = b.voxelOrigin[k]
+      const b1 = b0 + b.voxelDims[k]
+      if (a1 <= b0 || b1 <= a0) {
+        if (a1 === b0 || b1 === a0) adjacent++
+        else return false // a gap on this axis -> not touching
+      } else {
+        overlapping++
+      }
+    }
+    return adjacent === 1 && overlapping === 2
+  }
+
+  // Split a brick's common-grid box into octants (same ceil-halving as the
+  // octree) and emit each one finer level into `out`.
+  const splitBrick = (d: VolumeChunkDesc, out: VolumeChunkDesc[]): void => {
+    const newLevel = Math.max(0, (d.sourceLevel ?? 0) - 1)
+    for (let oz = 0; oz < 2; oz++) {
+      for (let oy = 0; oy < 2; oy++) {
+        for (let ox = 0; ox < 2; ox++) {
+          const off = [ox, oy, oz]
+          const childOrigin: Vec3i = [0, 0, 0]
+          const childSize: Vec3i = [0, 0, 0]
+          let empty = false
+          for (let a = 0; a < 3; a++) {
+            const half = Math.ceil(d.voxelDims[a] / 2)
+            const start = off[a] === 0 ? 0 : half
+            const extent = Math.min(half, d.voxelDims[a] - start)
+            if (extent <= 0) {
+              empty = true
+              break
+            }
+            childOrigin[a] = d.voxelOrigin[a] + start
+            childSize[a] = extent
+          }
+          if (!empty) emitBrick(childOrigin, childSize, newLevel, out)
+        }
+      }
+    }
+  }
+
+  // Enforce a 2:1 BALANCED octree: repeatedly split any brick that has a
+  // face-neighbour more than one level finer, so face-adjacent bricks differ by
+  // at most one level (smooth LOD transitions, no fine-next-to-very-coarse
+  // walls). Scale-relative refinement gets close but does not constrain siblings
+  // of unequal size, so this post-pass is what makes the bound hard. `floor`
+  // caps how fine we may split (budget fallback).
+  const balance = (
+    descs: VolumeChunkDesc[],
+    floor: number,
+  ): VolumeChunkDesc[] => {
+    let list = descs
+    for (let iter = 0; iter < 32; iter++) {
+      let changed = false
+      const out: VolumeChunkDesc[] = []
+      for (let i = 0; i < list.length; i++) {
+        const d = list[i]
+        const level = d.sourceLevel ?? 0
+        const divisible =
+          d.voxelDims[0] > 1 || d.voxelDims[1] > 1 || d.voxelDims[2] > 1
+        if (level <= minLevel || level <= floor || !divisible) {
+          out.push(d)
+          continue
+        }
+        let finestNeighbor = Number.POSITIVE_INFINITY
+        for (let j = 0; j < list.length; j++) {
+          if (j !== i && faceAdjacent(d, list[j])) {
+            finestNeighbor = Math.min(finestNeighbor, list[j].sourceLevel ?? 0)
+          }
+        }
+        if (finestNeighbor < level - 1) {
+          splitBrick(d, out)
+          changed = true
+        } else {
+          out.push(d)
+        }
+      }
+      list = out
+      if (!changed) break
+    }
+    return list
+  }
+
   // Recursive octree: a node at `level` covers a common-grid box. If a finer
   // level is desired for its region (and it is divisible), split into octants
   // and recurse one level finer; otherwise emit it as a brick.
-  const build = (coarsen: number, floor: number): VolumeChunkDesc[] => {
+  const build = (detail: number, floor: number): VolumeChunkDesc[] => {
     const chunks: VolumeChunkDesc[] = []
     const subdivide = (originC: Vec3i, sizeC: Vec3i, level: number): void => {
-      const desired = levelForDistance(
-        distanceToBox(originC, sizeC),
-        coarsen,
-        floor,
-      )
       const divisible = sizeC[0] > 1 || sizeC[1] > 1 || sizeC[2] > 1
-      if (level <= desired || level <= floor || !divisible) {
+      if (level <= minLevel || level <= floor || !divisible) {
+        emitBrick(originC, sizeC, level, chunks)
+        return
+      }
+      // Refine while the cell is close to the focus relative to its own size, or
+      // within the absolute finest-core radius. Scale-relative => 2:1 balanced.
+      const beyond = Math.max(0, distanceToBox(originC, sizeC) - radius)
+      if (beyond >= detail * cellExtent(sizeC)) {
         emitBrick(originC, sizeC, level, chunks)
         return
       }
@@ -663,18 +762,17 @@ export function chunkVolumeMultiLOD(
         }
       }
     }
-    return chunks
+    return balance(chunks, floor)
   }
 
   // Budget pass (rgba colour + gradient = 8 B per padded texture voxel):
-  // 1) coarsen the SURROUNDINGS faster (raise `coarsen`) — the focus keeps its
-  //    finest level; this fits the budget in the common case.
-  // 2) only if that still can't fit (e.g. a focus exactly on octree boundaries,
-  //    where many cells "touch" the focus and stay finest) fall back to raising
-  //    the level floor so the resident set never blows the budget.
-  let coarsen = 1
+  // 1) shrink `detail` — cells must be closer to the focus (relative to their
+  //    size) to refine, so the whole field coarsens while staying 2:1 balanced.
+  // 2) only if that still cannot fit, raise the level floor as a hard cap so the
+  //    resident set never blows the budget (the balance may degrade here).
+  let detail = BASE_DETAIL
   let floor = minLevel
-  let chunks = build(coarsen, floor)
+  let chunks = build(detail, floor)
   if (options.budgetBytes && options.budgetBytes > 0) {
     const budget = options.budgetBytes
     const bytesOf = (cs: VolumeChunkDesc[]): number =>
@@ -683,12 +781,12 @@ export function chunkVolumeMultiLOD(
         0,
       )
     for (let i = 0; i < 16 && bytesOf(chunks) > budget; i++) {
-      coarsen *= 1.6
-      chunks = build(coarsen, floor)
+      detail /= 1.6
+      chunks = build(detail, floor)
     }
     while (bytesOf(chunks) > budget && floor < maxLevel) {
       floor++
-      chunks = build(coarsen, floor)
+      chunks = build(detail, floor)
     }
   }
 

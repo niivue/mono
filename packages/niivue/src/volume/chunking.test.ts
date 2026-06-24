@@ -11,6 +11,7 @@ import {
   matchChunksByContent,
   needsChunking,
   type Vec3i,
+  type VolumeChunkDesc,
 } from './chunking'
 
 function eq(a: Vec3i, b: Vec3i): boolean {
@@ -591,7 +592,10 @@ describe('chunkVolumeMultiLOD', () => {
   })
 
   test('brick source level rises with distance from the focus', () => {
-    const plan = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+    // Tight focus so the scale-relative falloff is exercised across the volume
+    // (a large radius would refine the whole small volume to the finest level).
+    const tightFocus = { center: [256, 256, 256] as Vec3i, radius: 8 }
+    const plan = chunkVolumeMultiLOD(pyramid, tightFocus, 2048, {
       cellEdge: 64,
     })
     const levelAt = (p: Vec3i): number => {
@@ -613,6 +617,45 @@ describe('chunkVolumeMultiLOD', () => {
     expect(levelAt([256, 256, 256])).toBe(0)
     // A far corner: coarser than the centre.
     expect(levelAt([8, 8, 8])).toBeGreaterThan(levelAt([256, 256, 256]))
+  })
+
+  test('octree is 2:1 balanced (face-adjacent bricks differ by <= 1 level)', () => {
+    const plan = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [256, 256, 256] as Vec3i, radius: 8 },
+      2048,
+      { cellEdge: 64 },
+    )
+    const faceAdjacent = (a: VolumeChunkDesc, b: VolumeChunkDesc): boolean => {
+      let adjacent = 0
+      let overlapping = 0
+      for (let k = 0; k < 3; k++) {
+        const a0 = a.voxelOrigin[k]
+        const a1 = a0 + a.voxelDims[k]
+        const b0 = b.voxelOrigin[k]
+        const b1 = b0 + b.voxelDims[k]
+        if (a1 <= b0 || b1 <= a0) {
+          if (a1 === b0 || b1 === a0) adjacent++
+          else return false
+        } else {
+          overlapping++
+        }
+      }
+      return adjacent === 1 && overlapping === 2
+    }
+    let maxDiff = 0
+    for (let i = 0; i < plan.chunks.length; i++) {
+      for (let j = i + 1; j < plan.chunks.length; j++) {
+        if (faceAdjacent(plan.chunks[i], plan.chunks[j])) {
+          const d = Math.abs(
+            (plan.chunks[i].sourceLevel ?? 0) -
+              (plan.chunks[j].sourceLevel ?? 0),
+          )
+          maxDiff = Math.max(maxDiff, d)
+        }
+      }
+    }
+    expect(maxDiff).toBeLessThanOrEqual(1)
   })
 
   test('every brick texture fits the device limit', () => {

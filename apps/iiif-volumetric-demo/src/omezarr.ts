@@ -167,8 +167,12 @@ const EXPLODED_GRID_LONG_AXIS_BLOCKS = 4
 // finest near the focus, coarser further out, covering the whole volume.
 const MULTILOD_CELL_EDGE = 128
 // Headroom so the finest (L0) bricks at the focus actually fit; otherwise the
-// budget pass raises the floor and the focus coarsens. ?budgetGB overrides.
-const MULTILOD_DEFAULT_BUDGET_BYTES = 1024 * 1024 * 1024
+// budget pass raises the floor and the focus coarsens. The 2:1-balanced octree
+// fills the L0->coarse transition with graded shells, which costs more bricks
+// than an unbalanced plan, so a large pyramid (e.g. the pig heart) needs ~2 GB
+// to keep an L0 focus AND smooth transitions. ?budgetGB overrides (lower it if
+// GPU memory is tight; the focus then coarsens gracefully).
+const MULTILOD_DEFAULT_BUDGET_BYTES = 2 * 1024 * 1024 * 1024
 const MULTILOD_HALO: Shape3 = [1, 1, 1]
 const DEFAULT_OME_ZARR_ID = 'pawpawsaurus.ome.zarr'
 
@@ -1793,7 +1797,10 @@ async function fetchRawChunk(
   // own pyramid level. With ?lodboxes=1, log a running tally per level so the
   // console shows e.g. "L0 x8, L1 x15, ..." matching the plan breakdown.
   if (initialParams.get('lodboxes') === '1') {
-    const t = (multiLodFetchTally[level] ??= { count: 0, bytes: 0 })
+    if (!multiLodFetchTally[level]) {
+      multiLodFetchTally[level] = { count: 0, bytes: 0 }
+    }
+    const t = multiLodFetchTally[level]
     t.count++
     t.bytes += buf.byteLength
     // eslint-disable-next-line no-console

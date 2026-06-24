@@ -132,14 +132,20 @@ depend on laterality, intensity, or thresholds until the blockers land.
   with-render layout), per-pane orientation letters, and a slice-position
   readout. Done: per-layer voxel intensity now shows in the footer readout
   (`locationIntensity` in `App.tsx`).
-- [ ] **[P1] (M) Window/level + visible intensity ranges + diverging colormap.**
-  No W/L control or presets (clinician: can't reveal an acute infarct or subtle
-  subdural); colorbars/ranges are globally suppressed (`NiivueStage.tsx:253`) so
-  color carries no quantitative meaning for stat maps; only 4 sequential
-  colormaps offered with no diverging option (`App.tsx:75-81`). Add draggable W/L
-  + numeric min/max, clinical presets (CT brain/subdural/bone/stroke, MR auto),
-  visible per-layer ranges/colorbars, and a perceptual diverging map auto-
-  selected for signed data.
+  **Fold in here:** the interactive window/level (cal_min/cal_max) control.
+  It was built and wired end-to-end, but cal_min/cal_max have no visible
+  effect on the 3D raycast, so it was removed pending this 2D view where
+  W/L is the primary interaction and is verifiable. Re-introduce per-pane
+  W/L drag + numeric min/max (and CT presets if/when CT data is loaded —
+  current sample data is T1w MRI only).
+- [~] **[P1] (M) Window/level + visible intensity ranges + diverging colormap.**
+  Done: intensity colorbar enabled and kept clear of the status overlay; a
+  "Warm/Cool (diverging)" colormap (NiiVue warm + colormapNegative cool) for
+  signed/stat overlays (`9b96232`). Deferred: the interactive window/level
+  control — see the multiplanar item above (no visible effect in 3D-only
+  render). Still open: clinical W/L presets and auto-selecting the diverging
+  map for signed data (needs the volume's value range surfaced —
+  see the affine/range item below).
 
 ### High-trust cheap wins — data already plumbed, just surface it
 

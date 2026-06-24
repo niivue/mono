@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type { NiiVueLocation } from '@niivue/niivue'
 import {
+  AlertTriangle,
   ChevronDown,
   CircleDot,
   Calculator,
@@ -771,6 +772,10 @@ export function App(): JSX.Element {
           </span>
         ) : null}
         <span>{mouseContextLabel(mouseContext)}</span>
+        <span className="nv-disclaimer" role="note">
+          <AlertTriangle size={12} />
+          Research/preview tool — not a certified diagnostic device. Do not use for clinical diagnosis.
+        </span>
       </footer>
     </main>
   )

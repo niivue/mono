@@ -124,6 +124,13 @@ button {
   animation: nv-preview-spin 0.9s linear infinite;
 }
 
+.nv-status .nv-disclaimer {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--amber);
+  font-weight: 600;
+}
+
 .nv-brand {
   display: flex;
   align-items: center;

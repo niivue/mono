@@ -100,6 +100,108 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 - [ ] **[P3] (S) Tune layout constants** if needed (section-label headroom,
   preview tiers) on real datasets.
 
+## Scientific / clinical viewer review
+
+From a two-person expert review (neuroscience researcher + neurological
+clinician) of the viewer UI/UX, 2026-06-24. Both reviewers independently
+converged on the top three blockers. The viewer is currently a 3D surface-render
+*previewer* with strong dataset browsing — it is **not** safe for judgments that
+depend on laterality, intensity, or thresholds until the blockers land.
+
+### Blockers — must ship before the viewer is used for analysis/reading
+
+- [ ] **[P1] (S) Non-diagnostic disclaimer.** No statement anywhere that this is
+  a research/preview tool. Add a persistent, non-dismissable line: "Research/
+  preview tool — not a certified diagnostic device. Do not use for clinical
+  diagnosis." Cheap, do first.
+- [ ] **[P1] (M) Orientation labels (L/R/A/P/S/I).** The #1 retraction risk and a
+  wrong-side patient-safety trap — a user cannot tell a left-flipped volume from
+  a correct one. The render has no laterality marker (`NiivueStage.tsx:253`
+  legend off, `:446-451` no canvas annotation) and the mm readout prints signed
+  XYZ but never as anatomical letters (`App.tsx:1421-1424`). Enable NiiVue's
+  orientation cube / corner L-R-A-P-S-I text, convert mm sign to letters in the
+  readout (e.g. `R 32 / A 18 / S 5 mm`), and state the convention
+  (neurological/radiological) from sform/qform explicitly.
+- [ ] **[P1] (L) 2D multiplanar slices + voxel-intensity readout.** The stage is
+  hard-pinned to 3D render mode (`NiivueStage.tsx:254-255`); the axial/coronal/
+  sagittal buttons only rotate the camera. There is no slice view, no slice
+  scroll, no through-plane navigation, and the readout never shows the voxel
+  value — even though `App.tsx:1428` already iterates `location.values` just to
+  grab a label. Add a multiplanar mode (NiiVue 2×2 with-render layout), per-pane
+  orientation letters, a slice-position readout, and per-layer intensity in the
+  footer.
+- [ ] **[P1] (M) Window/level + visible intensity ranges + diverging colormap.**
+  No W/L control or presets (clinician: can't reveal an acute infarct or subtle
+  subdural); colorbars/ranges are globally suppressed (`NiivueStage.tsx:253`) so
+  color carries no quantitative meaning for stat maps; only 4 sequential
+  colormaps offered with no diverging option (`App.tsx:75-81`). Add draggable W/L
+  + numeric min/max, clinical presets (CT brain/subdural/bone/stroke, MR auto),
+  visible per-layer ranges/colorbars, and a perceptual diverging map auto-
+  selected for signed data.
+
+### High-trust cheap wins — data already plumbed, just surface it
+
+- [ ] **[P2] (S) Surface the niimath command + stderr.** The Rust side already
+  captures full `argv`/`stdout`/`stderr` (`src-tauri/src/niimath.rs:230-262`) and
+  ships it to the client (`domain/niimath.ts:18-20`), but the panel renders only
+  the output path (`NiimathOperationsPanel.tsx:209-211`). Show
+  `result.argv.join(' ')` in a copyable block plus a collapsible stderr panel.
+- [ ] **[P2] (S) Fix smoothing units.** `-s` takes **sigma in mm**
+  (`src-tauri/src/niimath.rs:79-80`) but the field is unlabeled with a default of
+  `2` (`NiimathOperationsPanel.tsx:23,67`) — a user typing "8" expecting 8 mm
+  FWHM gets ~19 mm. Label "Sigma (mm)" with a live "= X mm FWHM" readout; state
+  threshold units (intensity vs percentile) too.
+
+### Reproducibility & data-trust (researcher)
+
+- [ ] **[P2] (M) Save/share full view state.** `savePatch` saves only enabled
+  clip planes + backend (`App.tsx:1485-1512`) — not overlays, colormaps, ranges,
+  or camera. Serialize full view state and support reload so a researcher can
+  save/share "this exact view." ("Save correction patch" is also an obscure label
+  for a save-view action.)
+- [ ] **[P2] (S) Persistent, copyable RAS coordinate widget.** `show3Dcrosshair`
+  is off (`NiivueStage.tsx:254`) and the only spatial readout is the transient
+  status bar. Add a copyable coordinate field with go-to.
+- [ ] **[P2] (M) Surface affine / qform / sform.** Metadata panels show shape/
+  spacing (`App.tsx:1059-1080`, `VolumeFilterPanel.tsx:204-232`) but never the
+  affine, qform/sform codes, or orientation string. Add them, plus `mm` units on
+  spacing. Document NaN/Inf and overlay-zero handling (0 ≠ "no data" in stat
+  maps).
+- [ ] **[P2] (S) Tie atlas region readout to a named atlas.** `locationRegion`
+  grabs the first non-air label across *all* layers (`App.tsx:1427-1437`), so it
+  can report a region from the wrong volume and can't say which atlas. Bind the
+  lookup to the named atlas layer and show the atlas name.
+
+### Clinical reading ergonomics & safety (clinician)
+
+- [ ] **[P2] (M) Geometry/subject mismatch guard.** Overlays from different
+  volumes blend at fixed opacity (`App.tsx:240,251`) with no check they share
+  affine/shape/subject — a silent study mix-up vector. Warn when an overlay's
+  affine/shape doesn't match the base; show subject/session/modality in a fixed
+  banner.
+- [ ] **[P2] (S) Per-layer opacity sliders.** Overlay opacity is hardcoded at
+  0.48 (`App.tsx:240`); blending is a core stats-viewing knob. Expose per-layer
+  sliders (the layer panel already has per-layer colormap selects, `App.tsx:990`).
+- [ ] **[P2] (S) Scroll pages slices.** Once multiplanar exists, mouse-wheel
+  should page through slices (clinician muscle memory); it is currently bound only
+  to zoom/clip-depth (`NiivueStage.tsx:413-437`).
+- [ ] **[P3] (M) Measurement tools.** No length/angle/ROI or Hounsfield readout.
+  Add basic distance + voxel-value-under-crosshair.
+- [ ] **[P3] (S) Keep base volume grayscale-only.** Letting the base anatomical
+  volume be set to viridis/magma (`App.tsx:77-81`) invites pseudocolor
+  misreading; restrict colormaps to overlays/stat maps.
+- [ ] **[P3] (S) Dark-reading dropdown hygiene.** OS-native `<select>`/`<option>`
+  popups flash bright white in a dark reading room; style them dark or use a
+  custom menu.
+
+### Discoverability (both reviewers)
+
+- [ ] **[P2] (S) Keyboard help overlay + standard nav.** Crosshair nudges are
+  vim-style `H/L/J/K` + `Ctrl+U/D` (`NiivueStage.tsx:502-516`) and view snaps use
+  Blender numpad `1/3/7` (`:119-174`) — invisible and colliding with FSLeyes/
+  FreeView muscle memory. Add a `?` cheatsheet and standard arrow/PageUp-Down
+  navigation.
+
 ## Housekeeping
 
 - [ ] Prune merged remote feature branches on origin

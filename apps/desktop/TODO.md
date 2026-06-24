@@ -64,15 +64,16 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 
 ## Frontend refactor
 
-- [ ] **[P1] (M) Decompose `App.tsx` (in progress).** Done: `useRecentDatasets`,
+- [x] **[P1] (M) Decompose `App.tsx`.** Done: `useRecentDatasets`,
   `useTerminalDock`, `useVolumeFilters` (+ `domain/volumeFacets`), `useClipPlanes`,
-  `NiimathOperationsPanel`.
-  Remaining:
+  `NiimathOperationsPanel`, `DatasetDesktop`, `VolumeFilterPanel`,
+  `useDatasetManifest`.
+  Completed:
   - [x] `useDatasetManifest` — manifest/selectedId/status + the load & poll
     effects + `applyDatasetOpenResult`/`refreshDesktopManifest` (the tangled one,
     intertwined with serverUrl/BIDS/recents).
   - [x] Memoize `selected` so it stops defeating child memoization.
-  - [ ] Consider extracting large sub-components (`DatasetDesktop`,
+  - [x] Consider extracting large sub-components (`DatasetDesktop`,
     `VolumeFilterPanel`) into their own files — that's what keeps `App.tsx` large
     now, and it's lower-risk than hook extraction.
 

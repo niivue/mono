@@ -13,6 +13,7 @@ const NIIMATH_OPERATIONS: Array<{
   label: string
   needsOperand: boolean
   needsMask: boolean
+  operandLabel: string
   help: string
 }> = [
   {
@@ -20,27 +21,31 @@ const NIIMATH_OPERATIONS: Array<{
     label: 'Smooth',
     needsOperand: true,
     needsMask: false,
-    help: 'Apply Gaussian smoothing to a temporary output volume.'
+    operandLabel: 'Sigma (mm)',
+    help: 'Gaussian smoothing (niimath -s). Value is the kernel sigma in mm; FWHM = 2.355 × sigma.'
   },
   {
     id: 'threshold',
     label: 'Threshold',
     needsOperand: true,
     needsMask: false,
-    help: 'Keep values above the lower threshold.'
+    operandLabel: 'Lower threshold (intensity)',
+    help: 'Keep voxels at or above the lower intensity threshold (in image intensity units).'
   },
   {
     id: 'upperThreshold',
     label: 'Upper Threshold',
     needsOperand: true,
     needsMask: false,
-    help: 'Keep values below the upper threshold.'
+    operandLabel: 'Upper threshold (intensity)',
+    help: 'Keep voxels at or below the upper intensity threshold (in image intensity units).'
   },
   {
     id: 'binarize',
     label: 'Binarize',
     needsOperand: false,
     needsMask: false,
+    operandLabel: 'Value',
     help: 'Convert non-zero voxels to a binary mask.'
   },
   {
@@ -48,6 +53,7 @@ const NIIMATH_OPERATIONS: Array<{
     label: 'Apply Mask',
     needsOperand: false,
     needsMask: true,
+    operandLabel: 'Value',
     help: 'Apply another NIfTI volume as a mask.'
   }
 ]
@@ -152,7 +158,7 @@ export function NiimathOperationsPanel({
 
         {selectedOperation.needsOperand ? (
           <label className="nv-field">
-            <span>Value</span>
+            <span>{selectedOperation.operandLabel}</span>
             <input
               className="nv-text-input"
               inputMode="decimal"
@@ -160,6 +166,9 @@ export function NiimathOperationsPanel({
               type="number"
               value={operand}
             />
+            {operation === 'smooth' && Number.isFinite(parsedOperand) ? (
+              <small className="nv-field-hint">= {(parsedOperand * 2.355).toFixed(2)} mm FWHM</small>
+            ) : null}
           </label>
         ) : null}
 

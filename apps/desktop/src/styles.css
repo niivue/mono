@@ -1734,6 +1734,12 @@ button {
   grid-column: 1 / -1;
 }
 
+.nv-field-hint {
+  color: var(--green);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .nv-field select,
 .nv-text-input {
   width: 100%;

@@ -58,6 +58,7 @@ button {
 .nv-app {
   display: grid;
   grid-template-rows: 64px minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
   overflow: hidden;
@@ -125,7 +126,8 @@ button {
 }
 
 .nv-status .nv-disclaimer {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
   color: var(--amber);
   font-weight: 600;

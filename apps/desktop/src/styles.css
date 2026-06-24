@@ -1721,6 +1721,7 @@ button {
 .nv-operation-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(72px, 0.45fr);
+  align-items: start;
   gap: 8px;
 }
 

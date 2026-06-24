@@ -78,8 +78,17 @@ const COLORMAP_OPTIONS = [
   { value: 'gray', label: 'Gray' },
   { value: 'viridis', label: 'Viridis' },
   { value: 'magma', label: 'Magma' },
-  { value: 'actc', label: 'ACTC' }
+  { value: 'actc', label: 'ACTC' },
+  { value: 'warm_cool', label: 'Warm/Cool (diverging)' }
 ] as const
+
+// A colormap selection of 'warm_cool' is the NiiVue idiom for signed/stat data:
+// a warm map for positive intensities paired with a cool map for negatives, so
+// the rendering diverges around zero. Everything else is a single sequential map.
+function resolveColormap(name: string): { colormap: string; colormapNegative?: string } {
+  if (name === 'warm_cool') return { colormap: 'warm', colormapNegative: 'cool' }
+  return { colormap: name }
+}
 // Prefer WebGPU when the platform exposes it, falling back to WebGL2 otherwise.
 function preferredBackend(): Backend {
   return typeof navigator !== 'undefined' && 'gpu' in navigator ? 'webgpu' : 'webgl2'
@@ -221,10 +230,12 @@ export function App(): JSX.Element {
         item: selected,
         kind: 'base',
         isAtlas: atlasId === selected.id,
-        colormap: layerColormapForItem(
-          selected,
-          layerColormaps,
-          atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
+        ...resolveColormap(
+          layerColormapForItem(
+            selected,
+            layerColormaps,
+            atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
+          )
         ),
         opacity: atlasId === selected.id && !isAtlasVisible ? 0 : 1
       }
@@ -236,7 +247,7 @@ export function App(): JSX.Element {
       layers.push({
         item,
         kind: 'overlay',
-        colormap: layerColormapForItem(item, layerColormaps, overlayColormapForIndex(overlayIndex)),
+        ...resolveColormap(layerColormapForItem(item, layerColormaps, overlayColormapForIndex(overlayIndex))),
         opacity: 0.48
       })
       overlayIndex += 1

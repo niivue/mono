@@ -20,6 +20,7 @@ export interface NiivueRenderLayer {
   kind: 'base' | 'overlay'
   isAtlas?: boolean
   colormap: string
+  colormapNegative?: string
   opacity: number
 }
 
@@ -29,7 +30,14 @@ interface NiiVueLike {
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(volumes: NiiVueVolumeOptions[]): Promise<unknown>
   setColormapLabel?(volumeIndex: number, cmap: ColorMap | null): Promise<void>
-  setVolume?(volumeIndex: number, options: { colormap?: string; opacity?: number }): Promise<unknown>
+  setVolume?(
+    volumeIndex: number,
+    options: {
+      colormap?: string
+      colormapNegative?: string
+      opacity?: number
+    }
+  ): Promise<unknown>
   moveCrosshairInVox?(di: number, dj: number, dk: number): void
   addEventListener?(
     type: 'locationChange',
@@ -65,6 +73,7 @@ interface NiiVueVolumeOptions {
   url: string | File
   name: string
   colormap?: string
+  colormapNegative?: string
   opacity?: number
   isColorbarVisible?: boolean
 }
@@ -249,6 +258,7 @@ export function NiivueStage({
           backgroundColor: [0.02, 0.024, 0.018, 1],
           clipPlaneColor: [0.95, 0.2, 0.12, 0.7],
           isResizeCanvas: true,
+          isColorbarVisible: true,
           isLegendVisible: false,
           isOrientCubeVisible: true,
           show3Dcrosshair: false,
@@ -314,6 +324,7 @@ export function NiivueStage({
     void Promise.all(layers.map((layer, index) => (
       nv.setVolume?.(index, {
         colormap: layer.colormap,
+        colormapNegative: layer.colormapNegative ?? '',
         opacity: layer.opacity
       }) ?? Promise.resolve()
     ))).catch(() => {
@@ -580,6 +591,7 @@ async function loadRenderVolumeLods({
         url: source,
         name: `${layer.item.label} L${layerLevel.level}`,
         colormap: layer.colormap,
+        colormapNegative: layer.colormapNegative ?? '',
         opacity: layer.opacity,
         isColorbarVisible: layerIndex === 0
       }

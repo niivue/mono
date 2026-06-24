@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Calculator, FileSearch, Play } from 'lucide-react'
+import { Calculator, Copy, FileSearch, Play } from 'lucide-react'
 import type { DesktopItem, VolumeMetadata } from '../domain/desktop'
 import {
   pickNiimathMaskPath,
@@ -216,7 +216,37 @@ export function NiimathOperationsPanel({
         <strong>{sourcePath ? item?.label : 'No source volume'}</strong>
         <span>{sourcePath ? taskStatus : 'Select a local NIfTI volume.'}</span>
         {result ? (
-          <code title={result.outputPath}>{result.outputPath}</code>
+          <>
+            <code title={result.outputPath}>{result.outputPath}</code>
+            <label className="nv-command-field">
+              <span>Command</span>
+              <span className="nv-path-picker">
+                <input
+                  aria-label="niimath command"
+                  className="nv-text-input nv-command-input"
+                  readOnly
+                  title={result.argv.join(' ')}
+                  type="text"
+                  value={result.argv.join(' ')}
+                />
+                <button
+                  aria-label="Copy command"
+                  className="nv-icon-button nv-path-picker-button"
+                  onClick={() => void navigator.clipboard?.writeText(result.argv.join(' '))}
+                  title="Copy command"
+                  type="button"
+                >
+                  <Copy size={15} />
+                </button>
+              </span>
+            </label>
+            {result.stderr.trim().length > 0 ? (
+              <details className="nv-command-stderr">
+                <summary>niimath warnings (stderr)</summary>
+                <pre>{result.stderr.trim()}</pre>
+              </details>
+            ) : null}
+          </>
         ) : null}
       </div>
     </section>

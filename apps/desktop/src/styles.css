@@ -1835,6 +1835,44 @@ button {
   color: var(--amber);
 }
 
+.nv-command-field {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.nv-command-field > span:first-child {
+  font-size: 11px;
+}
+
+.nv-command-input {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+.nv-command-stderr {
+  font-size: 11px;
+}
+
+.nv-command-stderr summary {
+  cursor: pointer;
+  color: var(--amber);
+}
+
+.nv-command-stderr pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  max-height: 160px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel, rgba(0, 0, 0, 0.3));
+  color: var(--ink);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .nv-readout {
   color: var(--muted);
 }

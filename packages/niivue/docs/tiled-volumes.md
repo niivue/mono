@@ -162,6 +162,83 @@ These are not in scope for the first cut. The first cut uploads all
 chunks for the active volume, which is fine up to a few-GB GPU
 resident size.
 
+## Multi-resolution (per-brick LOD)
+
+`chunkVolumeMultiLOD` (in `volume/chunking.ts`) extends the uniform tiling above
+into a Neuroglancer-style **per-brick level-of-detail** plan: a region near a
+focus point renders at the finest pyramid level, and bricks coarsen with distance.
+One `ChunkPlan` holds bricks of mixed pyramid levels; they still tile the volume
+exactly once, so there is no inter-level alpha compositing problem.
+
+### Coordinate-frame split
+
+Each `VolumeChunkDesc` in a multi-LOD plan carries `sourceLevel` and stores **two**
+coordinate frames (see the `sourceLevel` doc comment on `VolumeChunkDesc`):
+
+- **Common (finest, level-0) grid** — `voxelOrigin` / `voxelDims`. Drives **world
+  placement**: `voxelOrigin/voxelDims ÷ plan.volumeDims` give the brick's sub-cube
+  of the `[0,1]` world cube. All geometry, visibility, `matRAS`, and seam alignment
+  use this frame, so it is identical for every brick regardless of level.
+- **The brick's own level grid** — `texOrigin` / `texDims` / `haloLow` / `haloHigh`.
+  Drives the **fetch bbox**, the uploaded texture size, and the in-texture halo
+  remap (`dataOriginTexFrac` / `dataSizeTexFrac = (texDims − halos)/texDims`).
+
+`plan.levelDims[ℓ]` holds each level's full-volume dims (`levelDims[0] === volumeDims`).
+
+### Balanced octree + budget
+
+Refinement is **scale-relative**: a cell subdivides while its nearest distance to
+the focus (beyond `radius`) is below `detail × cellSize`. Because the threshold
+scales with the cell, the level changes by ~1 per cell step. An explicit **2:1
+balance** post-pass then splits any brick that has a face-neighbour more than one
+level finer, guaranteeing face-adjacent bricks differ by at most one level (smooth
+LOD transitions, no fine-next-to-very-coarse walls). The budget pass first shrinks
+`detail` (coarsens while staying balanced), then raises a global level `floor`, and
+finally respects `maxBricks` so a plan never exceeds the renderer's
+`MAX_CHUNKS_PER_TILE` cap. Budget is estimated as `Σ texDims·8` (rgba + gradient).
+
+### Per-brick ray step + opacity correction
+
+The one shader change vs. the single-level path is a per-brick `rayStepTexVox`
+uniform = the brick's source-level dims, used **only** for the ray-march step
+density (`render.wgsl` / `renderShader.ts`); `volumeTexDimsFull` stays the common
+grid everywhere else (vertex placement, depth, gradient). A coarse brick takes
+fewer samples, so a **step-size opacity correction** `1 − pow(1 − a, stepRatio)`
+(with `stepRatio = fineLenVox / lenVox`) scales per-sample alpha up to the finest
+density, keeping brightness resolution-independent. Both backends.
+
+### Mixed-size draw order
+
+Chunk cubes draw with `depthFunc ALWAYS`, so correct premultiplied-alpha
+compositing depends entirely on `chunksBackToFront`. A single far-corner scalar key
+is correct only for equal-size boxes under axis-aligned views; mixed-size LOD bricks
+at oblique angles need the **separating-axis comparator**: two non-overlapping AABBs
+that can occlude one another are separated along some axis, and the near-side box
+along the most view-aligned separating axis is in front. (It reproduces the old
+order for equal-size grids.)
+
+### Residency must match the plan budget
+
+The plan budget (how many bricks the octree makes) and the `ChunkResidencyManager`
+budget (what stays GPU-resident) both measure `texDims·8` and **must agree** —
+otherwise the manager evicts bricks the plan included and blocks stop rendering.
+A consumer sets `maxChunkResidencyBytes` to the same value it passes as the plan's
+`budgetBytes`.
+
+### Focus indicators
+
+`NVModel._focusBox` (`nv.focusBox`) outlines a world-space AABB on 3D render tiles
+via `buildFocusBoxLines`; `NVModel._lodBoxes` (`nv.lodBoxes`) draws a set of them,
+e.g. one per brick coloured by level for debugging. Both backends loop-draw them.
+
+### Known limitation
+
+Same-level brick boundaries are seamless (halo). Adjacent **different-level**
+boundaries still show a one-level brightness/blockiness step (and matcap lighting
+can catch the coarse blocky surfaces as highlights) — inherent to multi-resolution
+compositing of a non-dyadic pyramid. The real fix is cross-LOD blending (sample the
+brick's level and the next coarser, fade across a boundary band); deferred.
+
 ## Open design questions
 
 1. **Universal chunked path vs. opt-in.** Treating every volume as a

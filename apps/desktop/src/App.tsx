@@ -1423,14 +1423,29 @@ function mouseContextLabel(context: MouseContext): string {
 
 function locationStatusLabel(location: NiiVueLocation | null): string | null {
   if (!location) return null
-  const mm = location.mm.map(formatCoordinate).join(', ')
+  const mm = formatAnatomicalCoordinates(location.mm)
   const vox = location.vox.map(formatVoxelIndex).join(', ')
   const region = locationRegion(location)
   const intensity = locationIntensity(location)
-  const parts = [`XYZ ${mm} mm`, `IJK ${vox}`]
+  const parts = [`${mm} mm`, `IJK ${vox}`]
   if (intensity) parts.push(`Val ${intensity}`)
   if (region) parts.push(`Region ${region}`)
   return parts.join(' / ')
+}
+
+// NiiVue reports crosshair mm in RAS+ world space: +X=Right, +Y=Anterior,
+// +Z=Superior. Render the sign as anatomical letters so laterality is never
+// ambiguous (the unsigned XYZ readout could not distinguish left from right).
+function formatAnatomicalCoordinates(mm: number[]): string {
+  const axes: Array<[string, string]> = [['R', 'L'], ['A', 'P'], ['S', 'I']]
+  return mm
+    .slice(0, 3)
+    .map((value, index) => {
+      const [positive, negative] = axes[index]
+      const letter = (Number.isFinite(value) ? value : 0) >= 0 ? positive : negative
+      return `${letter} ${formatCoordinate(Math.abs(value))}`
+    })
+    .join(' / ')
 }
 
 function locationIntensity(location: NiiVueLocation): string | null {

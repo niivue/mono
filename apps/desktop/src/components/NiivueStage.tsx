@@ -250,6 +250,7 @@ export function NiivueStage({
           clipPlaneColor: [0.95, 0.2, 0.12, 0.7],
           isResizeCanvas: true,
           isLegendVisible: false,
+          isOrientCubeVisible: true,
           show3Dcrosshair: false,
           showRender: NIVUE_SHOW_RENDER_ALWAYS,
           sliceType: NIVUE_SLICE_TYPE_RENDER,

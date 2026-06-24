@@ -110,11 +110,11 @@ depend on laterality, intensity, or thresholds until the blockers land.
 
 ### Blockers — must ship before the viewer is used for analysis/reading
 
-- [ ] **[P1] (S) Non-diagnostic disclaimer.** No statement anywhere that this is
+- [x] **[P1] (S) Non-diagnostic disclaimer.** No statement anywhere that this is
   a research/preview tool. Add a persistent, non-dismissable line: "Research/
   preview tool — not a certified diagnostic device. Do not use for clinical
   diagnosis." Cheap, do first.
-- [ ] **[P1] (M) Orientation labels (L/R/A/P/S/I).** The #1 retraction risk and a
+- [x] **[P1] (M) Orientation labels (L/R/A/P/S/I).** The #1 retraction risk and a
   wrong-side patient-safety trap — a user cannot tell a left-flipped volume from
   a correct one. The render has no laterality marker (`NiivueStage.tsx:253`
   legend off, `:446-451` no canvas annotation) and the mm readout prints signed
@@ -122,14 +122,16 @@ depend on laterality, intensity, or thresholds until the blockers land.
   orientation cube / corner L-R-A-P-S-I text, convert mm sign to letters in the
   readout (e.g. `R 32 / A 18 / S 5 mm`), and state the convention
   (neurological/radiological) from sform/qform explicitly.
+  Done: `isOrientCubeVisible` enabled + anatomical-letter readout (RAS+).
+  Remaining: per-pane 2D orientation letters (rolls in with multiplanar
+  below) and an explicit on-screen convention statement.
 - [ ] **[P1] (L) 2D multiplanar slices + voxel-intensity readout.** The stage is
   hard-pinned to 3D render mode (`NiivueStage.tsx:254-255`); the axial/coronal/
   sagittal buttons only rotate the camera. There is no slice view, no slice
-  scroll, no through-plane navigation, and the readout never shows the voxel
-  value — even though `App.tsx:1428` already iterates `location.values` just to
-  grab a label. Add a multiplanar mode (NiiVue 2×2 with-render layout), per-pane
-  orientation letters, a slice-position readout, and per-layer intensity in the
-  footer.
+  scroll, no through-plane navigation. Add a multiplanar mode (NiiVue 2×2
+  with-render layout), per-pane orientation letters, and a slice-position
+  readout. Done: per-layer voxel intensity now shows in the footer readout
+  (`locationIntensity` in `App.tsx`).
 - [ ] **[P1] (M) Window/level + visible intensity ranges + diverging colormap.**
   No W/L control or presets (clinician: can't reveal an acute infarct or subtle
   subdural); colorbars/ranges are globally suppressed (`NiivueStage.tsx:253`) so
@@ -141,12 +143,12 @@ depend on laterality, intensity, or thresholds until the blockers land.
 
 ### High-trust cheap wins — data already plumbed, just surface it
 
-- [ ] **[P2] (S) Surface the niimath command + stderr.** The Rust side already
+- [x] **[P2] (S) Surface the niimath command + stderr.** The Rust side already
   captures full `argv`/`stdout`/`stderr` (`src-tauri/src/niimath.rs:230-262`) and
   ships it to the client (`domain/niimath.ts:18-20`), but the panel renders only
   the output path (`NiimathOperationsPanel.tsx:209-211`). Show
   `result.argv.join(' ')` in a copyable block plus a collapsible stderr panel.
-- [ ] **[P2] (S) Fix smoothing units.** `-s` takes **sigma in mm**
+- [x] **[P2] (S) Fix smoothing units.** `-s` takes **sigma in mm**
   (`src-tauri/src/niimath.rs:79-80`) but the field is unlabeled with a default of
   `2` (`NiimathOperationsPanel.tsx:23,67`) — a user typing "8" expecting 8 mm
   FWHM gets ~19 mm. Label "Sigma (mm)" with a live "= X mm FWHM" readout; state

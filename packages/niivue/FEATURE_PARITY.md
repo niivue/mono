@@ -519,7 +519,7 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 | Per-brick multi-LOD plan | ✅ | `chunkVolumeMultiLOD`: heterogeneous `ChunkPlan` with per-brick `sourceLevel`; common-grid (placement) vs level-grid (texture) coordinate split |
 | 2:1 balanced octree | ✅ | Scale-relative refinement (`detail`) + explicit balance post-pass: face-adjacent bricks differ by ≤1 level. Budget pass shrinks `detail`, then raises a floor, then respects `maxBricks` (< `MAX_CHUNKS_PER_TILE`) |
 | Per-brick ray step + opacity correction | ✅ | `rayStepTexVox` uniform + `1 − pow(1−a, stepRatio)`; coarse bricks step at their own density without rendering dimmer. Both backends (`render.wgsl` / `renderShader.ts`) |
-| Mixed-size back-to-front order | ✅ | `chunksBackToFront` separating-axis comparator — correct compositing for mixed brick sizes at oblique angles (`depthFunc ALWAYS` relies on it) |
+| Mixed-size back-to-front order | ✅ | `chunksBackToFront` BSP clean-plane recursive sort — exact compositing order for mixed brick sizes at any angle (`depthFunc ALWAYS` relies on it); a pairwise comparator left rare mis-ordered opaque bricks as stray bright blocks |
 | In-place plan swap (refocus) | ✅ | `swapChunkedVolumePlan` + residency `remap`: unchanged bricks keep their GPU textures; only changed bricks re-fetch |
 | Focus box / per-brick LOD boxes | ✅ | `nv.focusBox` (single AABB) and `nv.lodBoxes` (set, e.g. coloured per level) drawn on 3D render tiles, both backends |
 | Cross-LOD blending (geomorph) | ⛔ Deferred | Different-level boundaries show a one-level brightness/blockiness step; smooth fade between a brick's level and the next coarser is the real fix (needs a 2nd texture bound per brick, both shaders) |

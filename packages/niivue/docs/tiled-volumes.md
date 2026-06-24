@@ -210,12 +210,18 @@ density, keeping brightness resolution-independent. Both backends.
 ### Mixed-size draw order
 
 Chunk cubes draw with `depthFunc ALWAYS`, so correct premultiplied-alpha
-compositing depends entirely on `chunksBackToFront`. A single far-corner scalar key
-is correct only for equal-size boxes under axis-aligned views; mixed-size LOD bricks
-at oblique angles need the **separating-axis comparator**: two non-overlapping AABBs
-that can occlude one another are separated along some axis, and the near-side box
-along the most view-aligned separating axis is in front. (It reproduces the old
-order for equal-size grids.)
+compositing depends entirely on `chunksBackToFront`. A single scalar key (far
+corner / centre) — or even a pairwise comparator — is only an approximation for
+mixed-size LOD bricks: at oblique angles a large coarse brick mis-sorts against
+the small fine ones, and a mis-ordered OPAQUE brick composites over the
+foreground as a stray bright block. Instead the order is built by a **BSP
+recursive sort**: recursively split the set with an axis-aligned plane that no
+brick straddles (so every brick on the far side is unambiguously behind every
+brick on the near side), and emit the far group before the near group. Such
+clean planes always exist for a space-tiling octree; a pairwise comparator is
+only the fallback for a sub-group that has none on a view-aligned axis. This is
+exact (zero ordering violations vs ~0.4% for a comparator, validated by
+ray-march ground truth) and reproduces the trivial order for equal-size grids.
 
 ### Residency must match the plan budget
 

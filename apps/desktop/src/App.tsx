@@ -1426,7 +1426,29 @@ function locationStatusLabel(location: NiiVueLocation | null): string | null {
   const mm = location.mm.map(formatCoordinate).join(', ')
   const vox = location.vox.map(formatVoxelIndex).join(', ')
   const region = locationRegion(location)
-  return region ? `XYZ ${mm} mm / IJK ${vox} / Region ${region}` : `XYZ ${mm} mm / IJK ${vox}`
+  const intensity = locationIntensity(location)
+  const parts = [`XYZ ${mm} mm`, `IJK ${vox}`]
+  if (intensity) parts.push(`Val ${intensity}`)
+  if (region) parts.push(`Region ${region}`)
+  return parts.join(' / ')
+}
+
+function locationIntensity(location: NiiVueLocation): string | null {
+  if (location.values.length === 0) return null
+  const single = location.values.length === 1
+  const parts = location.values.map((value) => {
+    const intensity = formatIntensity(value.value)
+    return single ? intensity : `${value.name || value.id} ${intensity}`
+  })
+  return parts.join(', ')
+}
+
+function formatIntensity(value: number): string {
+  if (!Number.isFinite(value)) return 'n/a'
+  if (value === 0) return '0'
+  const magnitude = Math.abs(value)
+  if (magnitude >= 1000 || magnitude < 0.001) return value.toExponential(2)
+  return value.toFixed(magnitude >= 100 ? 1 : 3)
 }
 
 function locationRegion(location: NiiVueLocation): string | null {

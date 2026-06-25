@@ -32,7 +32,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMeshLayers from '@/mesh/layers'
 import * as NVMesh from '@/mesh/NVMesh'
 import type { WriteOptions } from '@/mesh/writers'
-import { DRAG_MODE, NUM_CLIP_PLANE } from '@/NVConstants'
+import { DRAG_MODE, NUM_CLIP_PLANE, SLICE_TYPE } from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
 import type {
   GraphRangeChangeDetail,
@@ -521,6 +521,44 @@ export default class NiiVueGPU extends EventTarget {
     this.model.scene.renderPan = v
     this.emit('change', { property: 'renderPan', value: v })
     this.drawScene()
+  }
+
+  /**
+   * Project a world-mm point to the 3D render tile's NDC ([-1,1], y up), using
+   * the MVP the renderer cached on its last draw (so it reflects the current
+   * camera, zoom, and renderPan exactly). Returns null if no render tile has been
+   * drawn yet or the point is at/behind the camera.
+   */
+  mm2renderNDC(mm: [number, number, number]): [number, number] | null {
+    const tile = this.view?.screenSlices?.find(
+      (t) => t.axCorSag === SLICE_TYPE.RENDER && t.mvpMatrix,
+    )
+    const mvp = tile?.mvpMatrix
+    if (!mvp) return null
+    const clip = vec4.transformMat4(
+      vec4.create(),
+      vec4.fromValues(mm[0], mm[1], mm[2], 1),
+      mvp,
+    )
+    const w = clip[3]
+    if (!(Math.abs(w) > 1e-6)) return null
+    return [clip[0] / w, clip[1] / w]
+  }
+
+  /**
+   * Pan the 3D render so a given world-mm point sits at the centre of the render
+   * tile, by adjusting `renderPan` (a clip-space translation; no change to the
+   * camera, rotation, or zoom). Useful to keep a zoomed/focused region framed.
+   * Returns false (no-op) if the render tile hasn't been drawn yet. Because the
+   * cached MVP already includes the current renderPan, this converges in one
+   * call: newPan = currentPan - ndc(point).
+   */
+  centerRenderOnMM(mm: [number, number, number]): boolean {
+    const ndc = this.mm2renderNDC(mm)
+    if (!ndc) return false
+    const cur = this.model.scene.renderPan
+    this.renderPan = [cur[0] - ndc[0], cur[1] - ndc[1]] as vec2
+    return true
   }
 
   get gamma(): number {

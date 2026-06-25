@@ -2195,6 +2195,30 @@ function multiplanarPanForCrosshair(): [number, number, number] {
   ]
 }
 
+// Crosshair position in world mm (scene fraction -> mm via the volume extents).
+function crosshairMM(): [number, number, number] | null {
+  if (!nv) return null
+  const vol = nv.volumes[0]
+  const frac = nv.crosshairPos as unknown as number[]
+  const lo = vol?.extentsMin
+  const hi = vol?.extentsMax
+  if (!lo || !hi || !frac) return null
+  return [
+    lo[0] + (frac[0] ?? 0.5) * (hi[0] - lo[0]),
+    lo[1] + (frac[1] ?? 0.5) * (hi[1] - lo[1]),
+    lo[2] + (frac[2] ?? 0.5) * (hi[2] - lo[2]),
+  ]
+}
+
+// Re-centre the 3D render on the crosshair (the focus). Deferred one frame so it
+// reads the render MVP from the draw that applied the latest zoom/rotation.
+function centerRenderOnCrosshair(): void {
+  if (!nv || !isMultiplanarView()) return
+  const mm = crosshairMM()
+  if (!mm) return
+  requestAnimationFrame(() => nv?.centerRenderOnMM(mm))
+}
+
 // Set the 2D zoom while keeping the crosshair at the centre of the view, and
 // frame the clipped 3D render to match. The 2D slices zoom via pan2Dxyzmm; the
 // 3D render quadrant zooms via scaleMultiplier. Coupling them so the render zoom
@@ -2210,9 +2234,13 @@ function applyMultiplanarZoom(zoom: number): void {
     number,
   ]
   // At 2D zoom z the visible box is ~1/z of the volume, so a 3D camera zoom of z
-  // frames it. (Zoom is around the volume centre; an off-centre crosshair drifts
-  // the box slightly — exact centring would need a per-rotation render pan.)
+  // frames it.
   ;(nv as unknown as { scaleMultiplier: number }).scaleMultiplier = zoom
+  // Rebase the render origin on the crosshair so an off-centre focus stays framed
+  // (the camera zooms about the volume centre; renderPan slides it back on). At
+  // zoom 1 the whole volume is shown, so clear any pan.
+  if (zoom > 1) centerRenderOnCrosshair()
+  else nv.renderPan = [0, 0] as unknown as typeof nv.renderPan
 }
 
 function applyZoomFromSlider(): void {

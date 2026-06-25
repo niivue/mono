@@ -992,6 +992,15 @@ export default class NVView {
           )
         }
       }
+      // Cache the 3D render tile's MVP so the controller can project mm points to
+      // render NDC (e.g. centerRenderOnMM). The 2D/global3d branches above cache
+      // their own; the plain render tile keeps the line-896 (3D) matrix.
+      if (
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
+        tile.space !== 'global3d'
+      ) {
+        tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
+      }
       // Outline the focus box on 3D render tiles (project its 8 corners through
       // this tile's MVP; drawn with the crosshair/overlay lines below).
       if (md._focusBox && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {

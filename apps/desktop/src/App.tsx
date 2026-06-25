@@ -38,7 +38,12 @@ import {
   ZoomOut
 } from 'lucide-react'
 import { DatasetDesktop, MAX_DESKTOP_ZOOM, MIN_DESKTOP_ZOOM, zoomBy } from './components/DatasetDesktop'
-import { NiivueStage, type NiivueRenderLayer } from './components/NiivueStage'
+import {
+  NiivueStage,
+  DEFAULT_VIEW_MODE,
+  type NiivueRenderLayer,
+  type ViewModeId
+} from './components/NiivueStage'
 import { NiimathOperationsPanel } from './components/NiimathOperationsPanel'
 import { TerminalPanel } from './components/TerminalPanel'
 import { VolumeFilterPanel } from './components/VolumeFilterPanel'
@@ -128,6 +133,7 @@ export function App(): JSX.Element {
   } = useDatasetManifest({ promoteRecent })
   const [layerColormaps, setLayerColormaps] = useState<Record<string, string>>({})
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
+  const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
   const [atlasId, setAtlasId] = useState<string | null>(null)
   const [isAtlasVisible, setIsAtlasVisible] = useState(true)
   const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(null)
@@ -608,9 +614,11 @@ export function App(): JSX.Element {
               <span>NiiVue Window</span>
               <strong>{selected?.label ?? 'No selection'}</strong>
               <em>
-                {renderWheelMode === 'clip-plane'
-                  ? `wheel ${activeClipPlane?.label ?? 'clip'}`
-                  : backend.toUpperCase()}
+                {viewMode !== 'render'
+                  ? viewModeLabel(viewMode)
+                  : renderWheelMode === 'clip-plane'
+                    ? `wheel ${activeClipPlane?.label ?? 'clip'}`
+                    : backend.toUpperCase()}
               </em>
             </div>
             <button
@@ -632,7 +640,9 @@ export function App(): JSX.Element {
               layers={renderLayers}
               onClipPlaneDepthChange={changeClipPlaneDepth}
               onLocationChange={setLocationReadout}
+              onViewModeChange={setViewMode}
               renderWheelMode={renderWheelMode}
+              viewMode={viewMode}
             />
           </section>
         </section>
@@ -670,53 +680,64 @@ export function App(): JSX.Element {
           <div className="nv-sidepanel-content">
             {sidePanelTab === 'inspect' ? (
               <>
-                <section className="nv-control-section">
-                  <div className="nv-panel-heading">
-                    <span>
-                      <ZoomIn size={15} />
-                      Zoom
-                    </span>
-                  </div>
+                {viewMode === 'render' ? (
+                  <>
+                    <section className="nv-control-section">
+                      <div className="nv-panel-heading">
+                        <span>
+                          <ZoomIn size={15} />
+                          Zoom
+                        </span>
+                      </div>
 
-                  <button
-                    aria-pressed={renderWheelMode === 'zoom'}
-                    className={`nv-clip-card nv-zoom-card ${renderWheelMode === 'zoom' ? 'is-active' : ''}`}
-                    onClick={() => setRenderWheelMode('zoom')}
-                    type="button"
-                  >
-                    <span className="nv-clip-card-header">
-                      <span className="nv-zoom-card-title">Zoom render</span>
-                      {renderWheelMode === 'zoom' ? <span className="nv-clip-active-badge">wheel</span> : null}
-                    </span>
-                    <span className="nv-zoom-card-hint">Scroll the render to zoom in and out.</span>
-                  </button>
-                </section>
+                      <button
+                        aria-pressed={renderWheelMode === 'zoom'}
+                        className={`nv-clip-card nv-zoom-card ${renderWheelMode === 'zoom' ? 'is-active' : ''}`}
+                        onClick={() => setRenderWheelMode('zoom')}
+                        type="button"
+                      >
+                        <span className="nv-clip-card-header">
+                          <span className="nv-zoom-card-title">Zoom render</span>
+                          {renderWheelMode === 'zoom' ? <span className="nv-clip-active-badge">wheel</span> : null}
+                        </span>
+                        <span className="nv-zoom-card-hint">Scroll the render to zoom in and out.</span>
+                      </button>
+                    </section>
 
-                <section className="nv-control-section">
-                  <div className="nv-panel-heading">
-                    <span>
-                      <SlidersHorizontal size={15} />
-                      Clip Planes
-                    </span>
-                    <em>
-                      {renderWheelMode === 'clip-plane'
-                        ? clipPlanes.find((plane) => plane.id === activeClipPlaneId)?.label ?? 'none'
-                        : 'none'}
-                    </em>
-                  </div>
+                    <section className="nv-control-section">
+                      <div className="nv-panel-heading">
+                        <span>
+                          <SlidersHorizontal size={15} />
+                          Clip Planes
+                        </span>
+                        <em>
+                          {renderWheelMode === 'clip-plane'
+                            ? clipPlanes.find((plane) => plane.id === activeClipPlaneId)?.label ?? 'none'
+                            : 'none'}
+                        </em>
+                      </div>
 
-                  <div className="nv-clip-list">
-                    {clipPlanes.map((plane) => (
-                      <ClipPlaneEditor
-                        active={renderWheelMode === 'clip-plane' && plane.id === activeClipPlaneId}
-                        key={plane.id}
-                        plane={plane}
-                        onActivate={() => bindActiveClipPlane(plane.id)}
-                        onChange={updateClipPlane}
-                      />
-                    ))}
-                  </div>
-                </section>
+                      <div className="nv-clip-list">
+                        {clipPlanes.map((plane) => (
+                          <ClipPlaneEditor
+                            active={renderWheelMode === 'clip-plane' && plane.id === activeClipPlaneId}
+                            key={plane.id}
+                            plane={plane}
+                            onActivate={() => bindActiveClipPlane(plane.id)}
+                            onChange={updateClipPlane}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  </>
+                ) : (
+                  <section className="nv-control-section">
+                    <p className="nv-mode-note">
+                      Zoom and clip planes apply to the 3D render. In 2D modes, scroll to page through
+                      slices and click to move the crosshair. Switch to <strong>3D</strong> for render controls.
+                    </p>
+                  </section>
+                )}
 
                 <LayerPanel
                   atlasId={atlasId}
@@ -1428,6 +1449,21 @@ function formatJsonForDisplay(value: unknown): string {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+function viewModeLabel(mode: ViewModeId): string {
+  switch (mode) {
+    case 'axial':
+      return 'Axial'
+    case 'coronal':
+      return 'Coronal'
+    case 'sagittal':
+      return 'Sagittal'
+    case 'multiplanar':
+      return 'Multiplanar'
+    default:
+      return '3D render'
+  }
 }
 
 function mouseContextLabel(context: MouseContext): string {

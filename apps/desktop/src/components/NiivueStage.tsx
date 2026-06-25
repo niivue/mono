@@ -11,8 +11,10 @@ interface NiivueStageProps {
   clipPlanes: ClipPlane[]
   isActive: boolean
   renderWheelMode: 'zoom' | 'clip-plane'
+  viewMode: ViewModeId
   onClipPlaneDepthChange: (planeId: string, depth: number) => void
   onLocationChange?: (location: NiiVueLocation | null) => void
+  onViewModeChange: (mode: ViewModeId) => void
 }
 
 export interface NiivueRenderLayer {
@@ -104,7 +106,7 @@ const NIVUE_SLICE_TYPE_RENDER = 4
 const NIVUE_SHOW_RENDER_ALWAYS = 1
 
 // NiiVue SLICE_TYPE values for each selectable view mode.
-type ViewModeId = 'axial' | 'coronal' | 'sagittal' | 'multiplanar' | 'render'
+export type ViewModeId = 'axial' | 'coronal' | 'sagittal' | 'multiplanar' | 'render'
 const VIEW_MODES: Array<{ id: ViewModeId; label: string; shortLabel: string; sliceType: number }> = [
   { id: 'axial', label: 'Axial slice', shortLabel: 'Ax', sliceType: 0 },
   { id: 'coronal', label: 'Coronal slice', shortLabel: 'Cor', sliceType: 1 },
@@ -112,7 +114,7 @@ const VIEW_MODES: Array<{ id: ViewModeId; label: string; shortLabel: string; sli
   { id: 'multiplanar', label: 'Multiplanar', shortLabel: 'MPR', sliceType: 3 },
   { id: 'render', label: '3D render', shortLabel: '3D', sliceType: NIVUE_SLICE_TYPE_RENDER }
 ]
-const DEFAULT_VIEW_MODE: ViewModeId = 'render'
+export const DEFAULT_VIEW_MODE: ViewModeId = 'render'
 const CORONAL_SNAP: RenderViewSnap = {
   id: 'coronal',
   label: 'Coronal',
@@ -203,8 +205,10 @@ export function NiivueStage({
   clipPlanes,
   isActive,
   renderWheelMode,
+  viewMode,
   onClipPlaneDepthChange,
-  onLocationChange
+  onLocationChange,
+  onViewModeChange
 }: NiivueStageProps): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -212,7 +216,6 @@ export function NiivueStage({
   const prefetchRef = useRef<VolumePrefetch | null>(null)
   const [status, setStatus] = useState('Waiting for a dataset selection.')
   const [snapId, setSnapId] = useState<RenderSnapId | null>(null)
-  const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
   const primaryItem = layers[0]?.item ?? item
   const isRenderMode = viewMode === 'render'
   const currentViewLabel = (VIEW_MODES.find((mode) => mode.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]).label
@@ -454,7 +457,7 @@ export function NiivueStage({
   }
 
   function changeViewMode(next: ViewModeId): void {
-    setViewMode(next)
+    onViewModeChange(next)
     clearSnapSelection()
   }
 

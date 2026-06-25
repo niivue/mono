@@ -1539,6 +1539,17 @@ button {
   font-size: 12px;
 }
 
+.nv-mode-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nv-mode-note strong {
+  color: var(--ink);
+}
+
 .nv-layer-panel {
   display: grid;
   gap: 10px;

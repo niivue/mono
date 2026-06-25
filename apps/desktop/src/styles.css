@@ -1448,7 +1448,7 @@ button {
 .nv-render-status {
   position: absolute;
   left: 14px;
-  bottom: 14px;
+  top: 14px;
   max-width: min(520px, calc(100% - 28px));
   overflow: hidden;
   border: 1px solid rgba(215, 166, 66, 0.32);

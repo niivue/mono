@@ -147,6 +147,50 @@ depend on laterality, intensity, or thresholds until the blockers land.
   map for signed data (needs the volume's value range surfaced —
   see the affine/range item below).
 
+### Per-layer controls redesign (design locked 2026-06-25)
+
+From a three-person design team (neuroimaging-tools survey, interaction design,
+codebase architecture). All three independently converged on the same design.
+**Do this after the multiplanar branch merges** (its bolted-on Min/Max strip is
+the thing this replaces).
+
+**Design:** one unified **Layers list** with **expandable rows** (FSLeyes
+completeness, OHIF space-efficiency). One row per layer (base/overlay/atlas);
+the selected row expands inline (accordion), one open at a time. Rejected:
+all-controls-per-row (overflows 300px touch panel), detached detail panel
+(splits a layer's identity), popovers (hover-hostile). The base-volume card and
+the atlas selector merge into the list as rows; the standalone WindowControl
+moves into the base/overlay row's expansion.
+
+**Role asymmetry:** base = colormap + intensity window, no opacity/threshold;
+overlay = full kit; atlas = visibility + opacity + outline/labels toggles, no
+colormap/window (discrete label map).
+
+**State:** collapse `layerColormaps` + `layerWindows` into one
+`Record<id, LayerSettings>` (`colormap?/opacity?/hidden?/window?/threshold?`);
+keep `overlayIds`/`atlasId` for membership. Deletes the three hardcoded opacity
+literals (`App.tsx` overlay 0.48 / atlas 0.34) and unifies atlas show/hide with
+overlay visibility via one `hidden` flag.
+
+**Guardrails (codebase-specific):** new settings must never enter
+`layerLoadSignature` (else every slider drag reloads the LOD pyramid — route via
+the in-place `setVolume` effect); preserve base→overlay→atlas order (in-place
+effect maps list index → NiiVue volume index positionally); gate window/threshold
+off for atlas rows (it uses `setColormapLabel`).
+
+Phases (threshold deferred per decision):
+- [ ] **[P2] (S) A — Consolidate state** → `layerSettings` map + handlers + single prune branch.
+- [ ] **[P2] (S) B — Per-layer opacity** (field + slider); delete hardcoded opacity literals.
+- [ ] **[P2] (S) C — Unify visibility** into a `hidden` flag (atlas + overlays).
+- [ ] **[P2] (M) D — Unified `LayerRow` list** with expandable detail; fold in colormap + opacity + WindowControl. Numeric-first window (Min/Max + Auto), opacity slider+readout, diverging colormap stays a colormap option.
+- [ ] **[P3] (M–L) E — Threshold** (deferred). Keep visually distinct from the
+  window. Decide the sink: true masking (alpha / niimath pre-op) vs honest
+  contrast-floor (cal_min) — do not conflate with min/max.
+
+Touch/iPad: ≥44px targets, no hover-only reveals, full-width inputs with explicit
+min-width (the zero-width-grid collapse bug recurs otherwise), one row open at a
+time to stay thumb-scrollable.
+
 ### High-trust cheap wins — data already plumbed, just surface it
 
 - [x] **[P2] (S) Surface the niimath command + stderr.** The Rust side already

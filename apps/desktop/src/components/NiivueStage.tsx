@@ -39,6 +39,9 @@ interface NiiVueLike {
     }
   ): Promise<unknown>
   moveCrosshairInVox?(di: number, dj: number, dk: number): void
+  // Slice layout: SLICE_TYPE.{AXIAL:0, CORONAL:1, SAGITTAL:2, MULTIPLANAR:3, RENDER:4}.
+  sliceType?: number
+  isOrientationTextVisible?: boolean
   addEventListener?(
     type: 'locationChange',
     listener: (event: CustomEvent<NiiVueLocation>) => void,
@@ -99,6 +102,17 @@ type VoxelStep = readonly [di: number, dj: number, dk: number]
 const CLIP_DEPTH_WHEEL_STEP = 0.0015
 const NIVUE_SLICE_TYPE_RENDER = 4
 const NIVUE_SHOW_RENDER_ALWAYS = 1
+
+// NiiVue SLICE_TYPE values for each selectable view mode.
+type ViewModeId = 'axial' | 'coronal' | 'sagittal' | 'multiplanar' | 'render'
+const VIEW_MODES: Array<{ id: ViewModeId; label: string; shortLabel: string; sliceType: number }> = [
+  { id: 'axial', label: 'Axial slice', shortLabel: 'Ax', sliceType: 0 },
+  { id: 'coronal', label: 'Coronal slice', shortLabel: 'Cor', sliceType: 1 },
+  { id: 'sagittal', label: 'Sagittal slice', shortLabel: 'Sag', sliceType: 2 },
+  { id: 'multiplanar', label: 'Multiplanar', shortLabel: 'MPR', sliceType: 3 },
+  { id: 'render', label: '3D render', shortLabel: '3D', sliceType: NIVUE_SLICE_TYPE_RENDER }
+]
+const DEFAULT_VIEW_MODE: ViewModeId = 'render'
 const CORONAL_SNAP: RenderViewSnap = {
   id: 'coronal',
   label: 'Coronal',
@@ -123,7 +137,6 @@ const AXIAL_SNAP: RenderViewSnap = {
   elevation: 90,
   shortcut: '7 / Numpad 7'
 }
-const RENDER_VIEW_SNAPS = [CORONAL_SNAP, SAGITTAL_SNAP, AXIAL_SNAP]
 const atlasColorMapCache = new Map<string, Promise<ColorMap | null>>()
 const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; reverse: RenderViewSnap }> = {
   Digit1: {
@@ -199,7 +212,10 @@ export function NiivueStage({
   const prefetchRef = useRef<VolumePrefetch | null>(null)
   const [status, setStatus] = useState('Waiting for a dataset selection.')
   const [snapId, setSnapId] = useState<RenderSnapId | null>(null)
+  const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
   const primaryItem = layers[0]?.item ?? item
+  const isRenderMode = viewMode === 'render'
+  const currentViewLabel = (VIEW_MODES.find((mode) => mode.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]).label
   const layerLoadKey = layers.map(layerLoadSignature).join('|')
 
   // Fetch the coarse volume the instant it is selected — at high priority, in
@@ -261,9 +277,10 @@ export function NiivueStage({
           isColorbarVisible: true,
           isLegendVisible: false,
           isOrientCubeVisible: true,
+          isOrientationTextVisible: viewMode !== 'render',
           show3Dcrosshair: false,
           showRender: NIVUE_SHOW_RENDER_ALWAYS,
-          sliceType: NIVUE_SLICE_TYPE_RENDER,
+          sliceType: (VIEW_MODES.find((mode) => mode.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]).sliceType,
           loadingText: ''
         })
         localNv = nv
@@ -333,6 +350,18 @@ export function NiivueStage({
     })
   }, [layers])
 
+  // Apply the selected view mode (2D slice plane, multiplanar, or 3D render) to
+  // the live instance. NiiVue exposes sliceType as a setter, so this never
+  // recreates the instance. Orientation letters are only meaningful on 2D panes.
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv) return
+    const mode = VIEW_MODES.find((candidate) => candidate.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]
+    nv.sliceType = mode.sliceType
+    nv.isOrientationTextVisible = viewMode !== 'render'
+    nv.drawScene()
+  }, [viewMode, primaryItem])
+
   useEffect(() => {
     const stage = stageRef.current
     const canvas = canvasRef.current
@@ -395,6 +424,8 @@ export function NiivueStage({
         return
       }
 
+      // Camera-angle snaps only make sense for the 3D render.
+      if (!isRenderMode) return
       const snap = blenderSnapForEvent(event)
       if (!snap) return
 
@@ -406,7 +437,7 @@ export function NiivueStage({
 
     window.addEventListener('keydown', onKeyDown, { capture: true })
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
-  }, [isActive, primaryItem])
+  }, [isActive, primaryItem, isRenderMode])
 
   function snapRenderView(snap: RenderViewSnap): void {
     const nv = nvRef.current
@@ -422,10 +453,19 @@ export function NiivueStage({
     if (snapId) setSnapId(null)
   }
 
+  function changeViewMode(next: ViewModeId): void {
+    setViewMode(next)
+    clearSnapSelection()
+  }
+
   function handleWheelCapture(event: ReactWheelEvent<HTMLDivElement>): void {
     clearSnapSelection()
     const nv = nvRef.current
     if (!nv) return
+
+    // In 2D slice / multiplanar modes let NiiVue handle the wheel natively
+    // (it pages through slices). Zoom and clip-plane depth are 3D-only.
+    if (!isRenderMode) return
 
     if (renderWheelMode === 'clip-plane') {
       // Always handle the wheel ourselves: drive the active plane's depth
@@ -459,21 +499,25 @@ export function NiivueStage({
         key={backend}
         ref={canvasRef}
         role="img"
-        aria-label={primaryItem ? `3D render of ${primaryItem.label}` : 'NiiVue 3D render — no volume selected'}
+        aria-label={
+          primaryItem
+            ? `${currentViewLabel} of ${primaryItem.label}`
+            : 'NiiVue viewer — no volume selected'
+        }
       />
-      <div className="nv-render-snap-controls" aria-label="Snap render view">
-        {RENDER_VIEW_SNAPS.map((snap) => (
+      <div className="nv-render-snap-controls" role="group" aria-label="View mode">
+        {VIEW_MODES.map((mode) => (
           <button
-            aria-label={`Snap to ${snap.label} view`}
-            aria-pressed={snapId === snap.id}
-            className={snapId === snap.id ? 'is-active' : ''}
+            aria-label={`Show ${mode.label}`}
+            aria-pressed={viewMode === mode.id}
+            className={viewMode === mode.id ? 'is-active' : ''}
             disabled={!primaryItem}
-            key={snap.id}
-            onClick={() => snapRenderView(snap)}
-            title={`Snap to ${snap.label} (${snap.shortcut})`}
+            key={mode.id}
+            onClick={() => changeViewMode(mode.id)}
+            title={`Show ${mode.label}`}
             type="button"
           >
-            {snap.shortLabel}
+            {mode.shortLabel}
           </button>
         ))}
       </div>

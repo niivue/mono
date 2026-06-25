@@ -1400,7 +1400,11 @@ function buildMultiLodPlan(
   if (isMultiplanarView()) {
     const zoom = Math.max(1, (nv?.pan2Dxyzmm as unknown as number[])?.[3] ?? 1)
     const diagonal = Math.hypot(commonShape[0], commonShape[1], commonShape[2])
-    radius = diagonal / zoom
+    // Half-diagonal of the visible box (extent commonShape/zoom): the smallest
+    // radius whose finest-LOD ball still circumscribes the whole visible box, so
+    // ONLY the box is forced finest. A larger radius spreads the fine region past
+    // the box, blows the budget, and the box coarsens (big bricks -> loose clip).
+    radius = diagonal / (2 * zoom)
   }
   // The Level dropdown caps the finest level the octree may use (max detail);
   // 0 = full detail. The common grid stays level 0, so geometry is unchanged.
@@ -1427,6 +1431,32 @@ function buildMultiLodPlan(
     minLevel,
     maxBricks: MULTILOD_MAX_BRICKS,
   })
+  // Multiplanar render coordination: clip the 3D render to the world box the
+  // zoomed 2D slices actually show (WYSIWYG). The 2D view shows volumeExtent/zoom
+  // centred on the crosshair, so keep only bricks intersecting that box and the
+  // render shows exactly the slice region. At zoom 1 the slices span the whole
+  // volume, so nothing is clipped. (Brick-granular: edge bricks render whole.)
+  const mpZoom = isMultiplanarView()
+    ? Math.max(1, (nv?.pan2Dxyzmm as unknown as number[])?.[3] ?? 1)
+    : 1
+  if (mpZoom > 1.001) {
+    const f = lastFocusFrac ?? [0.5, 0.5, 0.5]
+    const boxMin: Shape3 = [0, 0, 0]
+    const boxMax: Shape3 = [0, 0, 0]
+    for (let a = 0; a < 3; a++) {
+      const c = f[a] * commonShape[a]
+      const half = commonShape[a] / (2 * mpZoom)
+      boxMin[a] = c - half
+      boxMax[a] = c + half
+    }
+    plan.chunks = plan.chunks.filter((ch) => {
+      for (let a = 0; a < 3; a++) {
+        if (ch.voxelOrigin[a] + ch.voxelDims[a] <= boxMin[a]) return false
+        if (ch.voxelOrigin[a] >= boxMax[a]) return false
+      }
+      return true
+    })
+  }
   if (initialParams.get('lodboxes') === '1') {
     const counts = new Map<number, number>()
     for (const c of plan.chunks) {
@@ -2165,7 +2195,11 @@ function multiplanarPanForCrosshair(): [number, number, number] {
   ]
 }
 
-// Set the 2D zoom while keeping the crosshair at the centre of the view.
+// Set the 2D zoom while keeping the crosshair at the centre of the view, and
+// frame the clipped 3D render to match. The 2D slices zoom via pan2Dxyzmm; the
+// 3D render quadrant zooms via scaleMultiplier. Coupling them so the render zoom
+// tracks the 2D zoom makes the clipped box USE the render space (instead of
+// shrinking into empty space as you zoom in) and keeps zoom in/out consistent.
 function applyMultiplanarZoom(zoom: number): void {
   if (!nv) return
   const pan = zoom > 1 ? multiplanarPanForCrosshair() : [0, 0, 0]
@@ -2175,6 +2209,10 @@ function applyMultiplanarZoom(zoom: number): void {
     number,
     number,
   ]
+  // At 2D zoom z the visible box is ~1/z of the volume, so a 3D camera zoom of z
+  // frames it. (Zoom is around the volume centre; an off-centre crosshair drifts
+  // the box slightly — exact centring would need a per-rotation render pan.)
+  ;(nv as unknown as { scaleMultiplier: number }).scaleMultiplier = zoom
 }
 
 function applyZoomFromSlider(): void {
@@ -2182,7 +2220,7 @@ function applyZoomFromSlider(): void {
   const v = Number(els.zoom.value)
   if (!Number.isFinite(v) || v <= 0) return
   if (isMultiplanarView()) {
-    // 2D slices zoom via pan2Dxyzmm; scaleMultiplier only affects 3D render.
+    // Zooms the 2D slices AND frames the clipped 3D render (both inside).
     applyMultiplanarZoom(v)
     // The captured 2D region drives the multi-LOD focus radius — rebuild on settle.
     if (els.subvolume.value === 'multilod') scheduleMultiLodRefocus()

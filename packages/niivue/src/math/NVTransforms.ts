@@ -279,13 +279,22 @@ export function calculateMvpMatrix(
   const normalMatrix = mat4.create()
   const projectionMatrix = mat4.create()
   const whratio = ltwh[2] / ltwh[3]
-  const scale = (0.8 * furthestFromPivot) / volScaleMultiplier
+  // True orthographic zoom: ONLY the frustum extent (left/right/top/bottom)
+  // shrinks with the zoom, magnifying the image. The camera distance and the
+  // near/far depth range stay tied to the UNZOOMED extent (`baseScale`), so the
+  // camera never moves into the volume and the cube is never clipped in depth as
+  // you zoom in. (Previously near/far/camera all scaled with `scale`, so a zoom
+  // beyond ~1.4x pulled the orthographic camera inside the cube and the near
+  // plane cut the front faces — holes in the render.) At volScaleMultiplier == 1
+  // every value equals the old formula, so the default view is unchanged.
+  const baseScale = 0.8 * furthestFromPivot
+  const scale = baseScale / volScaleMultiplier
   const left = whratio < 1 ? -scale : -scale * whratio
   const right = whratio < 1 ? scale : scale * whratio
   const bottom = whratio < 1 ? -scale / whratio : -scale
   const top = whratio < 1 ? scale / whratio : scale
-  const near = scale * 0.01
-  const far = scale * 8.0
+  const near = baseScale * 0.01
+  const far = baseScale * 8.0
   mat4.orthoZO(projectionMatrix, left, right, bottom, top, near, far)
   if (renderPan && (renderPan[0] !== 0 || renderPan[1] !== 0)) {
     // Pre-multiply by a clip-space translation so the projected image slides
@@ -294,7 +303,7 @@ export function calculateMvpMatrix(
     mat4.fromTranslation(panMat, [renderPan[0] ?? 0, renderPan[1] ?? 0, 0])
     mat4.multiply(projectionMatrix, panMat, projectionMatrix)
   }
-  const translateVec3 = vec3.fromValues(0, 0, -scale * 1.8)
+  const translateVec3 = vec3.fromValues(0, 0, -baseScale * 1.8)
   mat4.translate(modelMatrix, modelMatrix, translateVec3)
   mat4.rotateX(modelMatrix, modelMatrix, deg2rad(elevation - 90))
   mat4.rotateZ(modelMatrix, modelMatrix, deg2rad(azimuth))

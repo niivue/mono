@@ -1073,8 +1073,61 @@ export function buildFocusBoxLines(
   for (const [a, b] of FOCUS_BOX_EDGES) {
     const p0 = screen[a]
     const p1 = screen[b]
-    if (p0 && p1)
-      lines.push(lineFn(p0[0], p0[1], p1[0], p1[1], thickness, box.color))
+    if (!p0 || !p1) continue
+    // The line renderer draws full-canvas (not scissored to the tile), so a box
+    // whose projected corners fall outside the render tile would bleed its edges
+    // across the neighbouring slice tiles (visible once the render is zoomed so
+    // the box extends past the tile). Clip each edge to the tile rect first.
+    const seg = clipSegmentToRect(
+      p0[0],
+      p0[1],
+      p1[0],
+      p1[1],
+      ltwh[0],
+      ltwh[1],
+      ltwh[0] + ltwh[2],
+      ltwh[1] + ltwh[3],
+    )
+    if (seg)
+      lines.push(lineFn(seg[0], seg[1], seg[2], seg[3], thickness, box.color))
   }
   return lines
+}
+
+/**
+ * Liang-Barsky clip of segment (x0,y0)-(x1,y1) to the axis-aligned rect
+ * [xmin,ymin]-[xmax,ymax]. Returns the clipped endpoints, or null if the segment
+ * is entirely outside the rect.
+ */
+function clipSegmentToRect(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  xmin: number,
+  ymin: number,
+  xmax: number,
+  ymax: number,
+): [number, number, number, number] | null {
+  const dx = x1 - x0
+  const dy = y1 - y0
+  let t0 = 0
+  let t1 = 1
+  const p = [-dx, dx, -dy, dy]
+  const q = [x0 - xmin, xmax - x0, y0 - ymin, ymax - y0]
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return null // parallel and outside this edge
+    } else {
+      const r = q[i] / p[i]
+      if (p[i] < 0) {
+        if (r > t1) return null
+        if (r > t0) t0 = r
+      } else {
+        if (r < t0) return null
+        if (r < t1) t1 = r
+      }
+    }
+  }
+  return [x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy]
 }

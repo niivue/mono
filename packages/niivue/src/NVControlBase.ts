@@ -897,6 +897,21 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Per-axis crosshair colors as `[xColor, yColor, zColor]` (each RGBA, 0..1).
+   * Set to 3 colors to tint each crosshair segment by the world axis it extends
+   * along (X = left-right, Y = anterior-posterior, Z = superior-inferior).
+   * Set to `[]` to fall back to the single {@link crosshairColor} for all axes.
+   */
+  get crosshairColorPerAxis(): number[][] {
+    return this.model.ui.crosshairColorPerAxis
+  }
+  set crosshairColorPerAxis(v: number[][]) {
+    this.model.ui.crosshairColorPerAxis = v
+    this.emit('change', { property: 'crosshairColorPerAxis', value: v })
+    this.drawScene()
+  }
+
   get crosshairGap(): number {
     return this.model.ui.crosshairGap
   }

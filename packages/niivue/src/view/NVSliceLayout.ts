@@ -8,6 +8,7 @@ import type {
   NVGlobalCamera,
   ViewHitTest,
 } from '@/NVTypes'
+import { getAxisColor } from '@/view/crosshairColor'
 import type { BuildLineFn, LineData } from './NVLine'
 
 // ---------- Types ----------
@@ -944,6 +945,7 @@ export function buildCrossLines(
   thickness: number,
   color: number[],
   lineFn: BuildLineFn,
+  perAxisColors?: number[][],
 ): LineData[] {
   if (
     !tile.crossLines ||
@@ -992,23 +994,25 @@ export function buildCrossLines(
     if (dim === depthDim || mmValues.length === 0) continue
     for (const mm of mmValues) {
       if (dim === vDim) {
-        // Horizontal line: span full U extent at this V position
+        // Horizontal line: span full U extent at this V position (extends along uDim)
         const [x1, y1] = project(
           ...makePoint(extentsMin[uDim], mm, depthCenter),
         )
         const [x2, y2] = project(
           ...makePoint(extentsMax[uDim], mm, depthCenter),
         )
-        lines.push(lineFn(x1, y1, x2, y2, thickness, color))
+        const lineColor = getAxisColor(uDim, color, perAxisColors)
+        lines.push(lineFn(x1, y1, x2, y2, thickness, lineColor))
       } else if (dim === uDim) {
-        // Vertical line: span full V extent at this U position
+        // Vertical line: span full V extent at this U position (extends along vDim)
         const [x1, y1] = project(
           ...makePoint(mm, extentsMin[vDim], depthCenter),
         )
         const [x2, y2] = project(
           ...makePoint(mm, extentsMax[vDim], depthCenter),
         )
-        lines.push(lineFn(x1, y1, x2, y2, thickness, color))
+        const lineColor = getAxisColor(vDim, color, perAxisColors)
+        lines.push(lineFn(x1, y1, x2, y2, thickness, lineColor))
       }
     }
   }

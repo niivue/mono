@@ -1008,6 +1008,7 @@ export default class NVView {
               Math.max(1, md.ui.crosshairWidth),
               md.ui.crosshairColor,
               buildLine,
+              md.ui.crosshairColorPerAxis,
             ),
           )
         }

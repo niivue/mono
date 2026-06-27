@@ -616,6 +616,14 @@ export type UIConfig = {
   thumbnailUrl: string
   placeholderText: string
   crosshairColor: number[]
+  /**
+   * Optional per-axis crosshair colors as `[xColor, yColor, zColor]`, each an
+   * RGBA array. When this holds 3 valid colors, each crosshair segment is tinted
+   * by the world axis it extends along (0 = X / left-right, 1 = Y /
+   * anterior-posterior, 2 = Z / superior-inferior). When empty (the default),
+   * every segment falls back to `crosshairColor`.
+   */
+  crosshairColorPerAxis: number[][]
   crosshairGap: number
   crosshairWidth: number
   fontColor: number[]
@@ -864,6 +872,7 @@ export type NiiVueOptions = {
   thumbnailUrl?: string
   placeholderText?: string
   crosshairColor?: number[]
+  crosshairColorPerAxis?: number[][]
   crosshairGap?: number
   crosshairWidth?: number
   fontColor?: number[]

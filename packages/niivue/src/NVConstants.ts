@@ -139,6 +139,7 @@ export const UI_DEFAULTS: UIConfig = {
   thumbnailUrl: '',
   placeholderText: 'No image loaded',
   crosshairColor: [1.0, 0, 0, 1.0],
+  crosshairColorPerAxis: [],
   crosshairGap: 10,
   crosshairWidth: 1,
   fontColor: [0.5, 0.5, 0.5, 1],

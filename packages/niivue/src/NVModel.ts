@@ -207,6 +207,9 @@ export default class NVModel {
       ...(options.crosshairColor !== undefined && {
         crosshairColor: options.crosshairColor,
       }),
+      ...(options.crosshairColorPerAxis !== undefined && {
+        crosshairColorPerAxis: options.crosshairColorPerAxis,
+      }),
       ...(options.crosshairGap !== undefined && {
         crosshairGap: options.crosshairGap,
       }),

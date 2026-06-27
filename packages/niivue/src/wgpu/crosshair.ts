@@ -1,4 +1,5 @@
 import type NVModel from '@/NVModel'
+import { getAxisColor } from '@/view/crosshairColor'
 import {
   applyCrosshairOffset,
   BYTES_PER_VERTEX,
@@ -88,7 +89,6 @@ export class CrosshairRenderer extends NVRenderer {
 
     const { extentsMin, extentsMax, scene, ui } = model
     const radius = ui.crosshairWidth
-    const colorPacked = packColor(ui.crosshairColor)
     const segments = calculateCrosshairSegments(
       extentsMin,
       extentsMax,
@@ -100,8 +100,16 @@ export class CrosshairRenderer extends NVRenderer {
     // the displaced block it sits in so the marker tracks the explosion.
     const off = crosshairExplodeOffset(model.volumes[0], scene.crosshairPos)
 
-    // Update each cylinder's vertex buffer
+    // Update each cylinder's vertex buffer. Cylinders are ordered
+    // X-, X+, Y-, Y+, Z-, Z+, so axis = floor(i / 2).
     for (let i = 0; i < 6; i++) {
+      const colorPacked = packColor(
+        getAxisColor(
+          Math.floor(i / 2),
+          ui.crosshairColor,
+          ui.crosshairColorPerAxis,
+        ),
+      )
       const seg = segments[i]
       const start = applyCrosshairOffset(seg[0], off)
       const end = applyCrosshairOffset(seg[1], off)

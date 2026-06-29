@@ -2210,12 +2210,36 @@ function crosshairMM(): [number, number, number] | null {
   ]
 }
 
-// Re-centre the 3D render on the crosshair (the focus). Deferred one frame so it
-// reads the render MVP from the draw that applied the latest zoom/rotation.
+// Render-centring mode, chosen via ?center=:
+//   'pivot' (default) - orbit/zoom the render ABOUT the crosshair (renderPivotMM).
+//           Stays centred through rotation AND zoom; changes the rotation centre.
+//   'pan'   - slide renderPan so the crosshair sits at the render centre. Pins
+//           the crosshair on zoom/move; drifts under rotation.
+//   'off'   - no centring (render stays on the volume centre).
+function renderCenterMode(): 'pan' | 'pivot' | 'off' {
+  const m = initialParams.get('center')
+  if (m === 'pan' || m === 'off') return m
+  return 'pivot'
+}
+
+// Re-centre the 3D render on the crosshair (the focus). Deferred one frame so the
+// 'pan' mode reads the render MVP from the draw that applied the latest
+// zoom/rotation. 'pivot' mode just points the render pivot at the crosshair.
 function centerRenderOnCrosshair(): void {
   if (!nv || !isMultiplanarView()) return
+  const mode = renderCenterMode()
   const mm = crosshairMM()
-  if (!mm) return
+  if (mode === 'pivot') {
+    nv.renderPan = [0, 0] as unknown as typeof nv.renderPan
+    nv.renderPivotMM = (mm ?? null) as unknown as typeof nv.renderPivotMM
+    return
+  }
+  // 'pan' (and 'off' clears below): ensure no leftover pivot override.
+  nv.renderPivotMM = null as unknown as typeof nv.renderPivotMM
+  if (mode === 'off' || !mm) {
+    nv.renderPan = [0, 0] as unknown as typeof nv.renderPan
+    return
+  }
   requestAnimationFrame(() => nv?.centerRenderOnMM(mm))
 }
 
@@ -2237,10 +2261,14 @@ function applyMultiplanarZoom(zoom: number): void {
   // frames it.
   ;(nv as unknown as { scaleMultiplier: number }).scaleMultiplier = zoom
   // Rebase the render origin on the crosshair so an off-centre focus stays framed
-  // (the camera zooms about the volume centre; renderPan slides it back on). At
-  // zoom 1 the whole volume is shown, so clear any pan.
-  if (zoom > 1) centerRenderOnCrosshair()
-  else nv.renderPan = [0, 0] as unknown as typeof nv.renderPan
+  // (see centerRenderOnCrosshair for the pan/pivot modes). At zoom 1 the whole
+  // volume is shown, so clear both the pan and the pivot override.
+  if (zoom > 1) {
+    centerRenderOnCrosshair()
+  } else {
+    nv.renderPan = [0, 0] as unknown as typeof nv.renderPan
+    nv.renderPivotMM = null as unknown as typeof nv.renderPivotMM
+  }
 }
 
 function applyZoomFromSlider(): void {

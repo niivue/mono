@@ -251,7 +251,7 @@ function draw3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): void {
     ltwh,
     md.scene.azimuth,
     md.scene.elevation,
-    md.pivot3D,
+    md._renderPivotMM ?? md.pivot3D,
     md.furthestFromPivot,
     md.scene.scaleMultiplier,
     vol.obliqueRAS as mat4 | undefined,

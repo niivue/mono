@@ -84,6 +84,13 @@ export default class NVModel {
    * LOD level, to visualize a heterogeneous chunk plan. Controller-owned.
    */
   _lodBoxes: FocusBox[] | null = null
+  /**
+   * Transient world-mm override for the 3D render's rotation/zoom pivot. When
+   * set, the render orbits and zooms about this point (which projects to the
+   * render centre) instead of the volume centre — e.g. to keep the crosshair
+   * framed. Null = default (volume centre, `pivot3D`). Not serialized.
+   */
+  _renderPivotMM: vec3 | null = null
   /** Transient annotation preview for live rendering during brush strokes */
   _annotationPreview: VectorAnnotation | null = null
   /** Transient eraser preview: overrides persisted annotations during erase drag */

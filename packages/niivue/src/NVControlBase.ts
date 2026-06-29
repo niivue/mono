@@ -524,6 +524,19 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   /**
+   * World-mm pivot the 3D render orbits/zooms about. Null = volume centre. Set
+   * to the crosshair to keep a focused point framed through rotation and zoom
+   * (an alternative to the renderPan-offset centring).
+   */
+  get renderPivotMM(): vec3 | null {
+    return this.model._renderPivotMM
+  }
+  set renderPivotMM(v: vec3 | null) {
+    this.model._renderPivotMM = v
+    this.drawScene()
+  }
+
+  /**
    * Project a world-mm point to the 3D render tile's NDC ([-1,1], y up), using
    * the MVP the renderer cached on its last draw (so it reflects the current
    * camera, zoom, and renderPan exactly). Returns null if no render tile has been
@@ -2400,12 +2413,14 @@ export default class NiiVueGPU extends EventTarget {
 
   /**
    * Update display properties of a loaded volume.
-   * Accepts any subset of volume display options (colormap, opacity, cal_min, etc.)
-   * and triggers a single GPU update.
+   * Accepts any subset of volume display options (colormap, opacity, calMin, etc.)
+   * and triggers a single GPU update. Note the display-window fields are the
+   * camelCase calMin/calMax (matching VolumeUpdate / ImageFromUrlOptions); the
+   * snake_case cal_min/cal_max are NIfTI header fields and are ignored here.
    *
    * @example
    * await nv1.setVolume(0, { colormap: 'hot', opacity: 0.8 })
-   * await nv1.setVolume(1, { cal_min: 10, cal_max: 200, cal_minNeg: -200, cal_maxNeg: -10 })
+   * await nv1.setVolume(1, { calMin: 10, calMax: 200, calMinNeg: -200, calMaxNeg: -10 })
    */
   async setVolume(volumeIndex: number, options: VolumeUpdate): Promise<void> {
     const volumes = this.model.getVolumes()

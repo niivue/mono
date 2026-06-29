@@ -30,6 +30,22 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
   hover-only / wheel-only controls.
 - [ ] **[P3] (M) Set up the `tauri ios` project/build** and validate on simulator/
   device once the above land.
+- [ ] **[P3] (M) AirDrop / share-sheet dataset hand-off (Apple-only, one-shot).**
+  Transport for the assign→work→resync flow (see "Assign → work-offline → resync"
+  under Reproducibility), not live sync. Apps can't initiate AirDrop directly —
+  present the OS share sheet (`NSSharingServicePicker` macOS,
+  `UIActivityViewController` iOS) with AirDrop as one option, and register
+  NeuroVue as a handler
+  for the dataset/bundle file type so received bundles open via the same
+  pick/open-dataset seam. Needs a native plugin per platform; keep it as one
+  transport option, not the primary mechanism (no Windows/Android/web).
+  - **Prior art for the native-iOS shim:** the chronicle cache app
+    (`~/Developer/personalized-newspaper`) already ships working Tauri-v2 Swift
+    plugins that expose native iOS APIs to JS via `Invoke` —
+    `src-tauri/plugins/tauri-plugin-tts/ios/Sources/TtsPlugin.swift` and
+    `tauri-plugin-bgrefresh/ios/Sources/BgRefreshPlugin.swift`, with
+    `src-tauri/ios/` bridging header and `ios-run.sh` for build/deploy. Use it as
+    the template for a share-sheet plugin (and other iOS-native features).
 
 ## Performance & scale
 
@@ -223,6 +239,39 @@ time to stay thumb-scrollable.
   grabs the first non-air label across *all* layers (`App.tsx:1427-1437`), so it
   can report a region from the wrong volume and can't say which atlas. Bind the
   lookup to the named atlas layer and show the atlas name.
+- [ ] **[P2] (M) Content-hash data integrity + local edit changelog
+  (foundational, single-user).** Stands alone — no collaboration required, and
+  the viewer must be rock-solid on this before anything multi-user is built. Hash
+  every dataset/derived artifact, verify on load, and surface a clear warning when
+  the bytes don't match what an edit/view was made against (stale, modified, or
+  corrupt data). Keep an append-only local changelog of edits — each entry: author,
+  ts, parent entry hash, payload content hash, action — by generalizing the
+  per-session `provenance.jsonl` (`volumetric_server.rs:1245-1280`, currently
+  NeuroFlow-gated and only logging `correction.save`) into a dataset-level log.
+  Append-only + hash chain = tamper-evident provenance and a replayable history.
+  - **Upgrade the hash for integrity use.** `file_content_hash`
+    (`volumetric_server.rs:2455`) is a non-cryptographic `u64` (`DefaultHasher`) —
+    fine for cache-busting, **not** for tamper-evidence. Use a cryptographic hash
+    (SHA-256 / BLAKE3) as the integrity + changelog identity; keep `id` as the
+    dataset's single notion of identity so there aren't two.
+- [ ] **[P3] (L) Assign → work-offline → resync (multi-user, additive).** Built
+  *on top of* the integrity/changelog backbone above; explicitly not load-bearing
+  — the single-user viewer ships and stays correct without it. Not live
+  collaboration: a coordinator hands out parts of a dataset (whole volumes or
+  slice ranges), each user works independently on their own device, then results
+  sync back.
+  - **Assignment manifest.** A unit of work = {dataset id, volume id(s) or slice
+    range, assignee, base content hash}. Generate per-assignee bundles (data
+    subset + manifest) so they can open and work offline.
+  - **Resync/merge.** Bring an assignee's patches back, verify their base hash
+    against the current dataset, append their entries to the changelog, and flag
+    conflicts (two assignees touching the same unit) instead of silently
+    last-write-wins. Extend the current single `correction.patch.json` /
+    `savePatch` model (`App.tsx:1485-1512`, `/session/correction.patch.json`) to
+    be per-assignment and mergeable; pairs with "Save/share full view state".
+  - **Transport-agnostic.** The bundle hand-off is just file in / file out — see
+    the AirDrop/share item under Mobile and the data-transport seam — so the same
+    flow works over AirDrop, a shared folder, or a server round-trip.
 
 ### Clinical reading ergonomics & safety (clinician)
 

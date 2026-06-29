@@ -107,6 +107,15 @@ const FLIPPED_CLIP_ORIENTATIONS: Record<string, Pick<ClipPlane, 'azimuth' | 'ele
 type MouseContext = 'desktop' | 'niivue' | null
 type SidePanelTab = 'inspect' | 'operations'
 
+// Per-layer display settings, keyed by item id. An absent entry (or absent
+// field) means "use the default": NiiVue's robust auto range for `window`, the
+// role-based fallback for `colormap`. Opacity/hidden/threshold land in later
+// phases of the layer-controls redesign.
+interface LayerSettings {
+  colormap?: string
+  window?: { min: number; max: number }
+}
+
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
@@ -131,10 +140,7 @@ export function App(): JSX.Element {
     status,
     warmProgress
   } = useDatasetManifest({ promoteRecent })
-  const [layerColormaps, setLayerColormaps] = useState<Record<string, string>>({})
-  // Per-layer intensity window (NIfTI cal_min/cal_max). Absent entry = NiiVue's
-  // robust auto range.
-  const [layerWindows, setLayerWindows] = useState<Record<string, { min: number; max: number }>>({})
+  const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({})
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
   const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
   const [atlasId, setAtlasId] = useState<string | null>(null)
@@ -242,11 +248,11 @@ export function App(): JSX.Element {
         ...resolveColormap(
           layerColormapForItem(
             selected,
-            layerColormaps,
+            layerSettings,
             atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
           )
         ),
-        ...windowForItem(selected.id, layerWindows),
+        ...windowForItem(selected.id, layerSettings),
         opacity: atlasId === selected.id && !isAtlasVisible ? 0 : 1
       }
     ]
@@ -257,8 +263,8 @@ export function App(): JSX.Element {
       layers.push({
         item,
         kind: 'overlay',
-        ...resolveColormap(layerColormapForItem(item, layerColormaps, overlayColormapForIndex(overlayIndex))),
-        ...windowForItem(item.id, layerWindows),
+        ...resolveColormap(layerColormapForItem(item, layerSettings, overlayColormapForIndex(overlayIndex))),
+        ...windowForItem(item.id, layerSettings),
         opacity: 0.48
       })
       overlayIndex += 1
@@ -270,13 +276,13 @@ export function App(): JSX.Element {
         item: atlasItem,
         kind: 'overlay',
         isAtlas: true,
-        colormap: layerColormapForItem(atlasItem, layerColormaps, DEFAULT_ATLAS_COLORMAP),
+        colormap: layerColormapForItem(atlasItem, layerSettings, DEFAULT_ATLAS_COLORMAP),
         opacity: isAtlasVisible ? 0.34 : 0
       })
     }
 
     return layers
-  }, [atlasId, isAtlasVisible, items, layerColormaps, layerWindows, overlayIds, selected])
+  }, [atlasId, isAtlasVisible, items, layerSettings, overlayIds, selected])
 
   useEffect(() => {
     const validIds = new Set(items.map((item) => item.id))
@@ -293,24 +299,12 @@ export function App(): JSX.Element {
       return changed ? next : current
     })
     setAtlasId((current) => (current && validIds.has(current) ? current : null))
-    setLayerColormaps((current) => {
+    setLayerSettings((current) => {
       let changed = false
-      const next: Record<string, string> = {}
-      for (const [id, colormap] of Object.entries(current)) {
+      const next: Record<string, LayerSettings> = {}
+      for (const [id, settings] of Object.entries(current)) {
         if (validIds.has(id)) {
-          next[id] = colormap
-        } else {
-          changed = true
-        }
-      }
-      return changed ? next : current
-    })
-    setLayerWindows((current) => {
-      let changed = false
-      const next: Record<string, { min: number; max: number }> = {}
-      for (const [id, window] of Object.entries(current)) {
-        if (validIds.has(id)) {
-          next[id] = window
+          next[id] = settings
         } else {
           changed = true
         }
@@ -320,28 +314,33 @@ export function App(): JSX.Element {
   }, [atlasId, items, selected?.id])
 
   function changeLayerColormap(itemId: string, nextColormap: string): void {
-    setLayerColormaps((current) => {
-      if (current[itemId] === nextColormap) return current
-      return {
-        ...current,
-        [itemId]: nextColormap
-      }
+    setLayerSettings((current) => {
+      if (current[itemId]?.colormap === nextColormap) return current
+      return { ...current, [itemId]: { ...current[itemId], colormap: nextColormap } }
     })
   }
 
   function changeLayerWindow(itemId: string, min: number, max: number): void {
-    setLayerWindows((current) => {
-      const existing = current[itemId]
+    setLayerSettings((current) => {
+      const existing = current[itemId]?.window
       if (existing && existing.min === min && existing.max === max) return current
-      return { ...current, [itemId]: { min, max } }
+      return { ...current, [itemId]: { ...current[itemId], window: { min, max } } }
     })
   }
 
   function resetLayerWindow(itemId: string): void {
-    setLayerWindows((current) => {
-      if (!(itemId in current)) return current
+    setLayerSettings((current) => {
+      const existing = current[itemId]
+      if (!existing || existing.window === undefined) return current
+      const { window: _removed, ...rest } = existing
       const next = { ...current }
-      delete next[itemId]
+      // Drop the whole entry once no other settings remain, so the map stays
+      // a clean "only non-default layers" record.
+      if (Object.keys(rest).length === 0) {
+        delete next[itemId]
+      } else {
+        next[itemId] = rest
+      }
       return next
     })
   }
@@ -778,10 +777,9 @@ export function App(): JSX.Element {
                   isAtlasVisible={isAtlasVisible}
                   isOpeningOverlay={isOpeningOverlay}
                   items={items}
-                  layerColormaps={layerColormaps}
+                  layerSettings={layerSettings}
                   overlayIds={overlayIds}
                   selected={selected}
-                  layerWindows={layerWindows}
                   onAtlasChange={changeAtlasLayer}
                   onAtlasVisibilityChange={setIsAtlasVisible}
                   onLayerColormapChange={changeLayerColormap}
@@ -936,8 +934,7 @@ function LayerPanel({
   isAtlasVisible,
   isOpeningOverlay,
   items,
-  layerColormaps,
-  layerWindows,
+  layerSettings,
   overlayIds,
   selected,
   onAtlasChange,
@@ -952,8 +949,7 @@ function LayerPanel({
   isAtlasVisible: boolean
   isOpeningOverlay: boolean
   items: DesktopItem[]
-  layerColormaps: Record<string, string>
-  layerWindows: Record<string, { min: number; max: number }>
+  layerSettings: Record<string, LayerSettings>
   overlayIds: Set<string>
   selected: DesktopItem | null
   onAtlasChange: (itemId: string) => void
@@ -1014,7 +1010,7 @@ function LayerPanel({
               itemId={selected.id}
               value={layerColormapForItem(
                 selected,
-                layerColormaps,
+                layerSettings,
                 atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
               )}
               onChange={onLayerColormapChange}
@@ -1024,7 +1020,7 @@ function LayerPanel({
             <WindowControl
               itemId={selected.id}
               label={selected.label}
-              window={layerWindows[selected.id]}
+              window={layerSettings[selected.id]?.window}
               onChange={onLayerWindowChange}
               onReset={onLayerWindowReset}
             />
@@ -1088,7 +1084,7 @@ function LayerPanel({
                 itemId={item.id}
                 value={layerColormapForItem(
                   item,
-                  layerColormaps,
+                  layerSettings,
                   overlayColormapForIndex(activeIndex)
                 )}
                 onChange={onLayerColormapChange}
@@ -1689,10 +1685,10 @@ function compareAtlasCandidates(left: DesktopItem, right: DesktopItem): number {
 
 function layerColormapForItem(
   item: DesktopItem,
-  layerColormaps: Record<string, string>,
+  layerSettings: Record<string, LayerSettings>,
   fallback: string
 ): string {
-  return layerColormaps[item.id] ?? fallback
+  return layerSettings[item.id]?.colormap ?? fallback
 }
 
 function overlayColormapForIndex(index: number): string {
@@ -1701,9 +1697,9 @@ function overlayColormapForIndex(index: number): string {
 
 function windowForItem(
   itemId: string,
-  windows: Record<string, { min: number; max: number }>
+  layerSettings: Record<string, LayerSettings>
 ): { calMin: number; calMax: number } | Record<string, never> {
-  const window = windows[itemId]
+  const window = layerSettings[itemId]?.window
   if (!window || !Number.isFinite(window.min) || !Number.isFinite(window.max) || window.min >= window.max) {
     return {}
   }

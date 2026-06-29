@@ -24,10 +24,18 @@ export interface NiivueRenderLayer {
   colormap: string
   colormapNegative?: string
   opacity: number
+  // Intensity window (NIfTI cal_min/cal_max). Undefined leaves NiiVue's robust
+  // auto range. Most visible in 2D slice modes.
+  calMin?: number
+  calMax?: number
 }
 
 interface NiiVueLike {
   canvas?: HTMLCanvasElement
+  // Loaded volumes, in the same order as the render layers. robustMin/robustMax
+  // are NiiVue's auto window (2nd/98th percentile), used to restore the auto
+  // range when a layer's explicit intensity window is cleared.
+  volumes?: Array<{ robustMin?: number; robustMax?: number }>
   activeClipPlaneIndex?: number
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(volumes: NiiVueVolumeOptions[]): Promise<unknown>
@@ -38,6 +46,10 @@ interface NiiVueLike {
       colormap?: string
       colormapNegative?: string
       opacity?: number
+      // NiiVue's display window is calMin/calMax (camelCase). The snake_case
+      // cal_min/cal_max are the NIfTI header fields and are ignored here.
+      calMin?: number
+      calMax?: number
     }
   ): Promise<unknown>
   moveCrosshairInVox?(di: number, dj: number, dk: number): void
@@ -81,6 +93,8 @@ interface NiiVueVolumeOptions {
   colormapNegative?: string
   opacity?: number
   isColorbarVisible?: boolean
+  calMin?: number
+  calMax?: number
 }
 
 interface VolumePrefetch {
@@ -345,12 +359,24 @@ export function NiivueStage({
       nv.setVolume?.(index, {
         colormap: layer.colormap,
         colormapNegative: layer.colormapNegative ?? '',
-        opacity: layer.opacity
+        opacity: layer.opacity,
+        // An explicit window wins; otherwise restore NiiVue's robust auto range
+        // so clearing the window (the "Auto" button) actually reverts the
+        // render — setVolume merges, so omitting calMin would leave a stale one.
+        ...windowOptionForLayer(layer, nv.volumes?.[index])
       }) ?? Promise.resolve()
-    ))).catch(() => {
-      // No volume loaded yet (or backend lacks setVolume); the attach effect
-      // already loads with current display options, so this is safe to ignore.
-    })
+    )))
+      .then(() => {
+        // setVolume updates the GPU volume texture but does not repaint the
+        // canvas, so display-only changes (intensity window, colormap) would
+        // otherwise not appear until the next pointer event. Force a redraw
+        // once all layers have applied.
+        nv.drawScene()
+      })
+      .catch(() => {
+        // No volume loaded yet (or backend lacks setVolume); the attach effect
+        // already loads with current display options, so this is safe to ignore.
+      })
   }, [layers])
 
   // Apply the selected view mode (2D slice plane, multiplanar, or 3D render) to
@@ -549,6 +575,27 @@ async function loadNiiVue(backend: Backend): Promise<NiiVueConstructor> {
   }
 }
 
+// Intensity-window options for a setVolume call. An explicit per-layer window
+// takes precedence; with none set we restore NiiVue's robust auto range (from
+// the loaded volume) so clearing the window reverts the render. Returns no keys
+// only when the robust range isn't available yet (volume still loading).
+function windowOptionForLayer(
+  layer: NiivueRenderLayer,
+  volume: { robustMin?: number; robustMax?: number } | undefined
+): { calMin?: number; calMax?: number } {
+  if (layer.calMin !== undefined && layer.calMax !== undefined) {
+    return { calMin: layer.calMin, calMax: layer.calMax }
+  }
+  if (
+    volume &&
+    Number.isFinite(volume.robustMin) &&
+    Number.isFinite(volume.robustMax)
+  ) {
+    return { calMin: volume.robustMin, calMax: volume.robustMax }
+  }
+  return {}
+}
+
 function blenderSnapForEvent(event: KeyboardEvent): RenderViewSnap | null {
   if (event.altKey || event.metaKey || event.shiftKey) return null
 
@@ -640,7 +687,9 @@ async function loadRenderVolumeLods({
         colormap: layer.colormap,
         colormapNegative: layer.colormapNegative ?? '',
         opacity: layer.opacity,
-        isColorbarVisible: layerIndex === 0
+        isColorbarVisible: layerIndex === 0,
+        ...(layer.calMin !== undefined ? { calMin: layer.calMin } : {}),
+        ...(layer.calMax !== undefined ? { calMax: layer.calMax } : {})
       }
     }))
     if (isCancelled()) return

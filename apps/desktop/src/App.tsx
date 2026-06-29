@@ -132,6 +132,9 @@ export function App(): JSX.Element {
     warmProgress
   } = useDatasetManifest({ promoteRecent })
   const [layerColormaps, setLayerColormaps] = useState<Record<string, string>>({})
+  // Per-layer intensity window (NIfTI cal_min/cal_max). Absent entry = NiiVue's
+  // robust auto range.
+  const [layerWindows, setLayerWindows] = useState<Record<string, { min: number; max: number }>>({})
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
   const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
   const [atlasId, setAtlasId] = useState<string | null>(null)
@@ -243,6 +246,7 @@ export function App(): JSX.Element {
             atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
           )
         ),
+        ...windowForItem(selected.id, layerWindows),
         opacity: atlasId === selected.id && !isAtlasVisible ? 0 : 1
       }
     ]
@@ -254,6 +258,7 @@ export function App(): JSX.Element {
         item,
         kind: 'overlay',
         ...resolveColormap(layerColormapForItem(item, layerColormaps, overlayColormapForIndex(overlayIndex))),
+        ...windowForItem(item.id, layerWindows),
         opacity: 0.48
       })
       overlayIndex += 1
@@ -271,7 +276,7 @@ export function App(): JSX.Element {
     }
 
     return layers
-  }, [atlasId, isAtlasVisible, items, layerColormaps, overlayIds, selected])
+  }, [atlasId, isAtlasVisible, items, layerColormaps, layerWindows, overlayIds, selected])
 
   useEffect(() => {
     const validIds = new Set(items.map((item) => item.id))
@@ -300,6 +305,18 @@ export function App(): JSX.Element {
       }
       return changed ? next : current
     })
+    setLayerWindows((current) => {
+      let changed = false
+      const next: Record<string, { min: number; max: number }> = {}
+      for (const [id, window] of Object.entries(current)) {
+        if (validIds.has(id)) {
+          next[id] = window
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
   }, [atlasId, items, selected?.id])
 
   function changeLayerColormap(itemId: string, nextColormap: string): void {
@@ -309,6 +326,23 @@ export function App(): JSX.Element {
         ...current,
         [itemId]: nextColormap
       }
+    })
+  }
+
+  function changeLayerWindow(itemId: string, min: number, max: number): void {
+    setLayerWindows((current) => {
+      const existing = current[itemId]
+      if (existing && existing.min === min && existing.max === max) return current
+      return { ...current, [itemId]: { min, max } }
+    })
+  }
+
+  function resetLayerWindow(itemId: string): void {
+    setLayerWindows((current) => {
+      if (!(itemId in current)) return current
+      const next = { ...current }
+      delete next[itemId]
+      return next
     })
   }
 
@@ -747,9 +781,12 @@ export function App(): JSX.Element {
                   layerColormaps={layerColormaps}
                   overlayIds={overlayIds}
                   selected={selected}
+                  layerWindows={layerWindows}
                   onAtlasChange={changeAtlasLayer}
                   onAtlasVisibilityChange={setIsAtlasVisible}
                   onLayerColormapChange={changeLayerColormap}
+                  onLayerWindowChange={changeLayerWindow}
+                  onLayerWindowReset={resetLayerWindow}
                   onLoadOverlay={loadOverlayVolume}
                   onOverlayToggle={toggleOverlayLayer}
                 />
@@ -900,11 +937,14 @@ function LayerPanel({
   isOpeningOverlay,
   items,
   layerColormaps,
+  layerWindows,
   overlayIds,
   selected,
   onAtlasChange,
   onAtlasVisibilityChange,
   onLayerColormapChange,
+  onLayerWindowChange,
+  onLayerWindowReset,
   onLoadOverlay,
   onOverlayToggle
 }: {
@@ -913,11 +953,14 @@ function LayerPanel({
   isOpeningOverlay: boolean
   items: DesktopItem[]
   layerColormaps: Record<string, string>
+  layerWindows: Record<string, { min: number; max: number }>
   overlayIds: Set<string>
   selected: DesktopItem | null
   onAtlasChange: (itemId: string) => void
   onAtlasVisibilityChange: (visible: boolean) => void
   onLayerColormapChange: (itemId: string, colormap: string) => void
+  onLayerWindowChange: (itemId: string, min: number, max: number) => void
+  onLayerWindowReset: (itemId: string) => void
   onLoadOverlay: () => void
   onOverlayToggle: (itemId: string) => void
 }): JSX.Element {
@@ -960,22 +1003,33 @@ function LayerPanel({
       </button>
 
       {selected ? (
-        <div className="nv-layer-card">
-          <div className="nv-layer-copy">
-            <strong>{selected.label}</strong>
-            <small>{atlasId === selected.id ? 'Base atlas' : 'Base volume'}</small>
+        <>
+          <div className="nv-layer-card">
+            <div className="nv-layer-copy">
+              <strong>{selected.label}</strong>
+              <small>{atlasId === selected.id ? 'Base atlas' : 'Base volume'}</small>
+            </div>
+            <LayerColormapSelect
+              ariaLabel={`Colormap for ${selected.label}`}
+              itemId={selected.id}
+              value={layerColormapForItem(
+                selected,
+                layerColormaps,
+                atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
+              )}
+              onChange={onLayerColormapChange}
+            />
           </div>
-          <LayerColormapSelect
-            ariaLabel={`Colormap for ${selected.label}`}
-            itemId={selected.id}
-            value={layerColormapForItem(
-              selected,
-              layerColormaps,
-              atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
-            )}
-            onChange={onLayerColormapChange}
-          />
-        </div>
+          {atlasId !== selected.id ? (
+            <WindowControl
+              itemId={selected.id}
+              label={selected.label}
+              window={layerWindows[selected.id]}
+              onChange={onLayerWindowChange}
+              onReset={onLayerWindowReset}
+            />
+          ) : null}
+        </>
       ) : null}
 
       <label className="nv-select nv-layer-select">
@@ -1080,6 +1134,88 @@ function LayerColormapSelect({
       </select>
       <ChevronDown size={14} />
     </label>
+  )
+}
+
+// Per-layer intensity window (NIfTI cal_min/cal_max). Empty inputs mean NiiVue's
+// robust auto range; typed values clamp the displayed contrast (most visible in
+// 2D slice modes).
+function WindowControl({
+  itemId,
+  label,
+  window,
+  onChange,
+  onReset
+}: {
+  itemId: string
+  label: string
+  window: { min: number; max: number } | undefined
+  onChange: (itemId: string, min: number, max: number) => void
+  onReset: (itemId: string) => void
+}): JSX.Element {
+  const [minText, setMinText] = useState(window ? String(window.min) : '')
+  const [maxText, setMaxText] = useState(window ? String(window.max) : '')
+
+  useEffect(() => {
+    setMinText(window ? String(window.min) : '')
+    setMaxText(window ? String(window.max) : '')
+  }, [window?.min, window?.max])
+
+  // Commit whenever either field changes, reading both current values from
+  // state (no stale closure across the two inputs).
+  useEffect(() => {
+    if (!minText.trim() || !maxText.trim()) return
+    const min = Number(minText)
+    const max = Number(maxText)
+    if (Number.isFinite(min) && Number.isFinite(max) && min < max) {
+      onChange(itemId, min, max)
+    }
+    // onChange/itemId are stable for a given layer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minText, maxText])
+
+  return (
+    <div className="nv-window-control">
+      <div className="nv-window-heading">
+        <span>Intensity window</span>
+        <em>{window ? `${window.min} – ${window.max}` : 'auto'}</em>
+      </div>
+      <div className="nv-window-row">
+        <label className="nv-field">
+          <span>Min</span>
+          <input
+            aria-label={`Window minimum for ${label}`}
+            className="nv-text-input"
+            inputMode="decimal"
+            onChange={(event) => setMinText(event.target.value)}
+            placeholder="auto"
+            type="number"
+            value={minText}
+          />
+        </label>
+        <label className="nv-field">
+          <span>Max</span>
+          <input
+            aria-label={`Window maximum for ${label}`}
+            className="nv-text-input"
+            inputMode="decimal"
+            onChange={(event) => setMaxText(event.target.value)}
+            placeholder="auto"
+            type="number"
+            value={maxText}
+          />
+        </label>
+        <button
+          className="nv-window-reset"
+          disabled={!window}
+          onClick={() => onReset(itemId)}
+          title="Reset to auto range"
+          type="button"
+        >
+          Auto
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -1561,6 +1697,17 @@ function layerColormapForItem(
 
 function overlayColormapForIndex(index: number): string {
   return DEFAULT_OVERLAY_COLORMAPS[index % DEFAULT_OVERLAY_COLORMAPS.length]
+}
+
+function windowForItem(
+  itemId: string,
+  windows: Record<string, { min: number; max: number }>
+): { calMin: number; calMax: number } | Record<string, never> {
+  const window = windows[itemId]
+  if (!window || !Number.isFinite(window.min) || !Number.isFinite(window.max) || window.min >= window.max) {
+    return {}
+  }
+  return { calMin: window.min, calMax: window.max }
 }
 
 function atlasCandidateScore(item: DesktopItem): number {

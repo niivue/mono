@@ -1644,6 +1644,58 @@ button {
   border-color: rgba(115, 198, 155, 0.38);
 }
 
+.nv-window-control {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 2px 8px 0;
+}
+
+.nv-window-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.nv-window-heading em {
+  color: var(--muted);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.nv-window-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nv-window-row .nv-text-input {
+  padding: 4px 6px;
+  font-size: 11px;
+  height: 28px;
+}
+
+.nv-window-reset {
+  height: 28px;
+  border: 1px solid rgba(146, 160, 102, 0.3);
+  border-radius: 6px;
+  background: rgba(16, 17, 13, 0.72);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 11px;
+  cursor: pointer;
+}
+
+.nv-window-reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .nv-layer-option-toggle {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

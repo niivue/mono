@@ -44,6 +44,7 @@ import NiiVue, {
   chunkVolumeGrid,
   chunkVolumeMultiLOD,
   type NVImage,
+  SHOW_RENDER,
   type VolumeChunkExplode,
   type VolumeChunkSource,
 } from '@niivue/niivue'
@@ -717,6 +718,13 @@ async function ensureNiivue(): Promise<void> {
     isColorbarVisible: true,
     is3DCrosshairVisible: true,
     isDragDropEnabled: false,
+    // Always keep the 3D render quadrant in multiplanar view. niivue's default
+    // (SHOW_RENDER.AUTO) drops the render tile on a wide canvas because the
+    // render-less row layout out-zooms the row-with-render one — which hides the
+    // whole multiplanar->render WYSIWYG coordination on a typical landscape
+    // monitor. ALWAYS keeps render in every layout candidate (niivue still picks
+    // the best row/column/grid for the aspect). Inert in the render-only view.
+    showRender: SHOW_RENDER.ALWAYS,
     maxTextureDimension3D: STREAMING_CHUNK_EDGE,
     // Keep the GPU residency budget in step with the multi-LOD PLAN budget: the
     // octree is built to fit `multiLodBudgetBytes()`, so the resident set must be

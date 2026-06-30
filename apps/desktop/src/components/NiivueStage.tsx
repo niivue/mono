@@ -14,6 +14,10 @@ interface NiivueStageProps {
   viewMode: ViewModeId
   onClipPlaneDepthChange: (planeId: string, depth: number) => void
   onLocationChange?: (location: NiiVueLocation | null) => void
+  // Reports the intensity window NiiVue actually applied per layer (keyed by
+  // item id), including auto-seeded defaults — so the UI can show the effective
+  // threshold/range instead of a bare "auto".
+  onResolvedWindows?: (windows: Record<string, { min: number; max: number }>) => void
   onViewModeChange: (mode: ViewModeId) => void
 }
 
@@ -223,6 +227,7 @@ export function NiivueStage({
   viewMode,
   onClipPlaneDepthChange,
   onLocationChange,
+  onResolvedWindows,
   onViewModeChange
 }: NiivueStageProps): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -363,17 +368,22 @@ export function NiivueStage({
   useEffect(() => {
     const nv = nvRef.current
     if (!nv?.setVolume) return
-    void Promise.all(layers.map((layer, index) => (
-      nv.setVolume?.(index, {
+    const resolved: Record<string, { min: number; max: number }> = {}
+    void Promise.all(layers.map((layer, index) => {
+      // An explicit window wins; otherwise restore NiiVue's robust auto range
+      // so clearing the window (the "Auto" button) actually reverts the
+      // render — setVolume merges, so omitting calMin would leave a stale one.
+      const windowOption = windowOptionForLayer(layer, nv.volumes?.[index])
+      if (windowOption.calMin !== undefined && windowOption.calMax !== undefined) {
+        resolved[layer.item.id] = { min: windowOption.calMin, max: windowOption.calMax }
+      }
+      return nv.setVolume?.(index, {
         colormap: layer.colormap,
         colormapNegative: layer.colormapNegative ?? '',
         opacity: layer.opacity,
-        // An explicit window wins; otherwise restore NiiVue's robust auto range
-        // so clearing the window (the "Auto" button) actually reverts the
-        // render — setVolume merges, so omitting calMin would leave a stale one.
-        ...windowOptionForLayer(layer, nv.volumes?.[index])
+        ...windowOption
       }) ?? Promise.resolve()
-    )))
+    }))
       .then(() => {
         // setVolume updates the GPU volume texture but does not repaint the
         // canvas, so display-only changes (intensity window, colormap) would
@@ -385,8 +395,9 @@ export function NiivueStage({
         // No volume loaded yet (or backend lacks setVolume); the attach effect
         // already loads with current display options, so this is safe to ignore.
       })
+    onResolvedWindows?.(resolved)
     // loadedVersion: re-apply once post-load stats exist (threshold defaults).
-  }, [layers, loadedVersion])
+  }, [layers, loadedVersion, onResolvedWindows])
 
   // Apply the selected view mode (2D slice plane, multiplanar, or 3D render) to
   // the live instance. NiiVue exposes sliceType as a setter, so this never

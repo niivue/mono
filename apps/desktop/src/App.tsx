@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -152,6 +153,25 @@ export function App(): JSX.Element {
     warmProgress
   } = useDatasetManifest({ promoteRecent })
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({})
+  // Effective intensity window NiiVue applied per layer (incl. auto-seeded
+  // thresholds), reported back from NiivueStage so the UI can show the real
+  // cutoff instead of a bare "auto".
+  const [resolvedWindows, setResolvedWindows] = useState<Record<string, { min: number; max: number }>>({})
+  const handleResolvedWindows = useCallback(
+    (next: Record<string, { min: number; max: number }>) => {
+      setResolvedWindows((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        const unchanged =
+          prevKeys.length === nextKeys.length &&
+          nextKeys.every(
+            (id) => prev[id] && prev[id].min === next[id].min && prev[id].max === next[id].max
+          )
+        return unchanged ? prev : next
+      })
+    },
+    []
+  )
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
   const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
   const [atlasId, setAtlasId] = useState<string | null>(null)
@@ -700,6 +720,7 @@ export function App(): JSX.Element {
               layers={renderLayers}
               onClipPlaneDepthChange={changeClipPlaneDepth}
               onLocationChange={setLocationReadout}
+              onResolvedWindows={handleResolvedWindows}
               onViewModeChange={setViewMode}
               renderWheelMode={renderWheelMode}
               viewMode={viewMode}
@@ -804,6 +825,7 @@ export function App(): JSX.Element {
                   isOpeningOverlay={isOpeningOverlay}
                   items={items}
                   layerSettings={layerSettings}
+                  resolvedWindows={resolvedWindows}
                   overlayIds={overlayIds}
                   selected={selected}
                   onAtlasChange={changeAtlasLayer}
@@ -961,6 +983,7 @@ function LayerPanel({
   isOpeningOverlay,
   items,
   layerSettings,
+  resolvedWindows,
   overlayIds,
   selected,
   onAtlasChange,
@@ -976,6 +999,7 @@ function LayerPanel({
   isOpeningOverlay: boolean
   items: DesktopItem[]
   layerSettings: Record<string, LayerSettings>
+  resolvedWindows: Record<string, { min: number; max: number }>
   overlayIds: Set<string>
   selected: DesktopItem | null
   onAtlasChange: (itemId: string) => void
@@ -1102,6 +1126,7 @@ function LayerPanel({
                         itemId={item.id}
                         label={item.label}
                         window={settings?.window}
+                        resolved={resolvedWindows[item.id]}
                         variant={role === 'overlay' ? 'threshold' : 'window'}
                         onChange={onLayerWindowChange}
                         onReset={onLayerWindowReset}
@@ -1294,6 +1319,7 @@ function WindowControl({
   itemId,
   label,
   window,
+  resolved,
   variant = 'window',
   onChange,
   onReset
@@ -1301,6 +1327,10 @@ function WindowControl({
   itemId: string
   label: string
   window: { min: number; max: number } | undefined
+  // The effective window NiiVue applied when none is set explicitly (its robust
+  // auto range, or an overlay's auto-threshold). Shown so "auto" isn't a black
+  // box — e.g. a stat overlay reveals the threshold it's hiding signal below.
+  resolved?: { min: number; max: number }
   variant?: 'window' | 'threshold'
   onChange: (itemId: string, min: number, max: number) => void
   onReset: (itemId: string) => void
@@ -1308,6 +1338,15 @@ function WindowControl({
   const isThreshold = variant === 'threshold'
   const heading = isThreshold ? 'Threshold' : 'Intensity window'
   const minLabel = isThreshold ? 'Threshold' : 'Min'
+  const fmt = (value: number): string =>
+    Number.isFinite(value) ? String(Number(value.toFixed(2))) : '–'
+  const readout = window
+    ? `${fmt(window.min)} – ${fmt(window.max)}`
+    : resolved
+      ? `auto · ${fmt(resolved.min)} – ${fmt(resolved.max)}`
+      : 'auto'
+  const minPlaceholder = resolved ? fmt(resolved.min) : 'auto'
+  const maxPlaceholder = resolved ? fmt(resolved.max) : 'auto'
   const [minText, setMinText] = useState(window ? String(window.min) : '')
   const [maxText, setMaxText] = useState(window ? String(window.max) : '')
 
@@ -1333,7 +1372,7 @@ function WindowControl({
     <div className="nv-window-control">
       <div className="nv-window-heading">
         <span>{heading}</span>
-        <em>{window ? `${window.min} – ${window.max}` : 'auto'}</em>
+        <em className={window ? '' : 'is-auto'}>{readout}</em>
       </div>
       <div className="nv-window-row">
         <label className="nv-field">
@@ -1343,7 +1382,7 @@ function WindowControl({
             className="nv-text-input"
             inputMode="decimal"
             onChange={(event) => setMinText(event.target.value)}
-            placeholder="auto"
+            placeholder={minPlaceholder}
             type="number"
             value={minText}
           />
@@ -1355,7 +1394,7 @@ function WindowControl({
             className="nv-text-input"
             inputMode="decimal"
             onChange={(event) => setMaxText(event.target.value)}
-            placeholder="auto"
+            placeholder={maxPlaceholder}
             type="number"
             value={maxText}
           />

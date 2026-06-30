@@ -225,14 +225,15 @@ Fresh researcher + clinician pass after the layer redesign / threshold / guard /
 wheel-paging work. Several findings are regressions-of-trust in the *new*
 features — a control that can quietly mislead is worse than no control.
 
-- [ ] **[P1] (S) Stat-overlay threshold can hide signal silently — surface the
+- [~] **[P1] (S) Stat-overlay threshold can hide signal silently — surface the
   cutoff.** The auto-threshold seeds `calMin = robustMax` (98th pct → only top
-  ~2% of voxels shown) and the Threshold field reads **"auto"**, not the actual
-  value. An overlay can look empty on a slice when sub-threshold-but-real signal
-  exists, with nothing flagging that the map is aggressively thresholded. Show
-  the *effective* threshold/max numbers (resolve "auto" to the seeded values),
-  soften the default, and add a one-click "show all / threshold off". Our own
-  Phase E debt.
+  ~2% of voxels shown), so an overlay can look empty when sub-threshold signal
+  exists. **Done:** the window/Threshold readout + input placeholders now show
+  the *effective* values (e.g. `auto · 367 – 1258`) instead of a bare "auto" —
+  NiiVue reports the applied window per layer (`onResolvedWindows`), App holds
+  `resolvedWindows`, `WindowControl` renders it dimmed. **Remaining:** soften the
+  default (robustMax = top 2% is steep), and a one-click "show all / threshold
+  off" (needs the volume's global min plumbed alongside).
 - [ ] **[P1] (M) Mismatch guard is subject-only — don't let "no warning" read as
   "match".** Warns on different BIDS `sub-`, but non-BIDS data (e.g. spm152 +
   spmMotor) never warns and same-subject different-space (native T1 + MNI stat)

@@ -1845,6 +1845,12 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* Auto-resolved (not user-set) range — dimmer so it reads as a default, while
+   still showing the effective threshold/range rather than an opaque "auto". */
+.nv-window-heading em.is-auto {
+  color: var(--faint);
+}
+
 .nv-window-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;

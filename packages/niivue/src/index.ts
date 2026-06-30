@@ -97,6 +97,12 @@ export type {
   VolumeChunkSourceRequest,
   VolumeUpdate,
 } from './NVTypes'
+export type { DziDescriptor } from './slide/dziSource'
+export {
+  buildDziManifest,
+  DziSource,
+  parseDziDescriptor,
+} from './slide/dziSource'
 export type {
   NVSlideColor,
   NVSlideLevelChoice,

@@ -300,6 +300,8 @@ export async function recreateView(
   if (ctrl.model.drawingVolume) {
     ctrl.refreshDrawing()
   }
+  // 10b. Re-push the slide plane (and its annotation) to the new view
+  ctrl.restoreSlidePlaneView()
   // 11. Resize and render
   ctrl.view.resize()
   ctrl.drawScene()

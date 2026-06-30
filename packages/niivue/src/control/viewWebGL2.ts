@@ -85,6 +85,7 @@ export async function recreateView(ctrl: NiiVueGPU): Promise<void> {
   setupDragAndDrop(ctrl)
   setupResizeHandler(ctrl)
   await ctrl.view.updateBindGroups()
+  ctrl.restoreSlidePlaneView()
   ctrl.view.resize()
   ctrl.drawScene()
 }

@@ -2526,6 +2526,10 @@ export default class NiiVueGPU extends EventTarget {
       for (const tile of coarsest.tiles) slide.requestTile(coarsest, tile)
     }
     this._slidePlane = state
+    // A fresh plane registration drops any prior slide drawing (it was sized
+    // and positioned for the old plane); the caller re-runs createSlideDrawing.
+    this._slideDrawing = null
+    this._slideLastRasterPt = null
     if (this.view) this.view.slidePlane = state
     // Redraw as tiles stream in.
     if (this._slidePlaneSlide && this._slidePlaneOnChange) {
@@ -2552,8 +2556,18 @@ export default class NiiVueGPU extends EventTarget {
     this._slidePlaneOnChange = null
     this._slidePlane = null
     this._slideDrawing = null
+    this._slideLastRasterPt = null
     if (this.view) this.view.slidePlane = null
     this.drawScene()
+  }
+
+  /**
+   * Re-push the registered slide plane (and its annotation) to a freshly
+   * (re)created view — called from the view-lifecycle recreate paths so a
+   * backend switch / reinitialize doesn't drop the slide. Internal.
+   */
+  restoreSlidePlaneView(): void {
+    if (this.view) this.view.slidePlane = this._slidePlane
   }
 
   /**
@@ -2634,7 +2648,7 @@ export default class NiiVueGPU extends EventTarget {
     const penSize = this.model.draw.penSize
     const overwrite = this.model.draw.isFillOverwriting
     if (begin) {
-      dr.beginStroke(overwrite)
+      dr.beginStroke()
       dr.point(rx, ry, penValue, penSize, overwrite)
       this._slideLastRasterPt = [rx, ry]
     } else if (this._slideLastRasterPt) {

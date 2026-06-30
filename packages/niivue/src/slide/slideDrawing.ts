@@ -1,19 +1,22 @@
-import { addUndoBitmap } from '@/drawing/drawingManager'
 import {
   drawLine,
   drawPoint,
   floodFillSection,
   PEN_SLICE_TYPE,
 } from '@/drawing/penTool'
+import { encodeRLE } from '@/drawing/rle'
 import { drawUndo } from '@/drawing/undo'
 
 // A drawing surface in *slide* space: a 2D label raster covering the whole slide
 // extent. It is intentionally a thin holder over the existing voxel-drawing
 // primitives — by presenting the raster as a single axial slice of a
 // `[W, H, 1]` volume, drawPoint/drawLine/floodFillSection and the RLE undo
-// stack all apply unchanged, so every drawing function stays compatible. The
-// annotation lives in slide pixels (not the base volume), so it stays glued to
-// the slide as the plane pans / zooms / changes LOD.
+// stack (encodeRLE snapshot + drawUndo) all apply unchanged, so every drawing
+// function stays compatible. (Snapshots are taken directly via the RLE codec
+// rather than drawingManager.addUndoBitmap, to avoid coupling slide drawing to
+// the volume NVImage; the codec and drawUndo are the same as the volume path.)
+// The annotation lives in slide pixels (not the base volume), so it stays glued
+// to the slide as the plane pans / zooms / changes LOD.
 
 const MAX_UNDO = 10
 
@@ -38,18 +41,12 @@ export class SlideDrawing {
     return [3, this.width, this.height, 1]
   }
 
-  /** Snapshot the raster before a stroke (mirrors the volume draw path). */
-  beginStroke(overwrite: boolean): void {
-    const r = addUndoBitmap({
-      drawBitmap: this.img,
-      drawUndoBitmaps: this._undoBitmaps,
-      currentDrawUndoBitmap: this._undoIndex,
-      maxDrawUndoBitmaps: MAX_UNDO,
-      drawFillOverwrites: overwrite,
-    })
-    this._undoBitmaps = r.drawUndoBitmaps
-    this._undoIndex = r.currentDrawUndoBitmap
-    if (r.drawBitmap) this.img = r.drawBitmap
+  /** Snapshot the raster before a stroke into the RLE undo ring buffer. */
+  beginStroke(): void {
+    let idx = this._undoIndex + 1
+    if (idx >= MAX_UNDO) idx = 0
+    this._undoBitmaps[idx] = encodeRLE(this.img)
+    this._undoIndex = idx
   }
 
   /** Paint a brush dot at slide-raster pixel (x, y). */

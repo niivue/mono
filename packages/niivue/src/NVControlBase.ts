@@ -24,7 +24,7 @@ import {
   transformBitmap,
   validateDrawingDimensions,
 } from '@/drawing/drawingManager'
-import { decodeRLE } from '@/drawing/rle'
+import { decodeRLE, encodeRLE } from '@/drawing/rle'
 import { drawUndo } from '@/drawing/undo'
 import { NVExtensionContext } from '@/extension/context'
 import { type LogLevel, log } from '@/logger'
@@ -68,7 +68,7 @@ import type {
   ViewHitTest,
   VolumeUpdate,
 } from '@/NVTypes'
-import type { NVSlide } from '@/slide/NVSlide'
+import { NVSlide } from '@/slide/NVSlide'
 import { SlideDrawing } from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
@@ -2588,18 +2588,31 @@ export default class NiiVueGPU extends EventTarget {
     const sh = sp.slide.manifest.height
     const cap = opts?.maxRaster ?? 4096
     const scale = Math.min(1, cap / Math.max(1, sw, sh))
-    this._slideDrawing = new SlideDrawing(
-      Math.max(1, Math.round(sw * scale)),
-      Math.max(1, Math.round(sh * scale)),
+    this._attachSlideDrawing(
+      new SlideDrawing(
+        Math.max(1, Math.round(sw * scale)),
+        Math.max(1, Math.round(sh * scale)),
+      ),
     )
+  }
+
+  // Wire a SlideDrawing into the active plane: build its annotation overlay
+  // (one quad over the slide extent) and refresh. Shared by createSlideDrawing
+  // and document restore.
+  private _attachSlideDrawing(drawing: SlideDrawing): void {
+    const sp = this._slidePlane
+    if (!sp) return
+    this._slideDrawing = drawing
     this._slideLastRasterPt = null
     sp.annotation = {
-      corners: slideExtentCorners(sp.pixelToWorld, sw, sh),
-      rgba: new Uint8Array(
-        this._slideDrawing.width * this._slideDrawing.height * 4,
+      corners: slideExtentCorners(
+        sp.pixelToWorld,
+        sp.slide.manifest.width,
+        sp.slide.manifest.height,
       ),
-      width: this._slideDrawing.width,
-      height: this._slideDrawing.height,
+      rgba: new Uint8Array(drawing.width * drawing.height * 4),
+      width: drawing.width,
+      height: drawing.height,
       version: 0,
     }
     this._refreshSlideAnnotation()
@@ -3545,7 +3558,55 @@ export default class NiiVueGPU extends EventTarget {
 
   /** Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array). */
   serializeDocument(): Uint8Array {
-    return NVDocument.serialize(this.model)
+    return NVDocument.serialize(this.model, this._slidePlaneToDoc())
+  }
+
+  // Capture the registered slide plane + its slide-space drawing for the
+  // document (manifest reference + transform + RLE annotation). Tile bytes are
+  // not embedded — they refetch from the manifest on load.
+  private _slidePlaneToDoc(): NVDocument.NVDocumentSlidePlane | undefined {
+    const sp = this._slidePlane
+    if (!sp) return undefined
+    const dr = this._slideDrawing
+    return {
+      manifest: sp.slide.manifest,
+      manifestUrl: sp.slide.manifestUrl || undefined,
+      pixelToWorld: [...sp.pixelToWorld],
+      levelIndex: sp.levelIndex,
+      drawingRLE: dr ? encodeRLE(dr.img) : undefined,
+      drawingWidth: dr?.width,
+      drawingHeight: dr?.height,
+    }
+  }
+
+  // Rebuild the slide plane (and its drawing) from a document. Reconstructs the
+  // NVSlide from its manifest (tiles refetch via byte ranges); custom sources
+  // need their decoders re-registered by the app for tiles to load.
+  private async _restoreSlidePlaneFromDoc(
+    sp: NVDocument.NVDocumentSlidePlane,
+  ): Promise<void> {
+    const slide = sp.manifestUrl
+      ? await NVSlide.fromManifestUrl(sp.manifestUrl)
+      : new NVSlide(sp.manifest)
+    this.setSlidePlane(slide, {
+      pixelToWorld: sp.pixelToWorld,
+      levelIndex: sp.levelIndex,
+    })
+    if (sp.drawingRLE && sp.drawingWidth && sp.drawingHeight) {
+      const drawing = new SlideDrawing(sp.drawingWidth, sp.drawingHeight)
+      const decoded = decodeRLE(
+        sp.drawingRLE,
+        sp.drawingWidth * sp.drawingHeight,
+      )
+      if (decoded.length === drawing.img.length) {
+        drawing.img.set(decoded)
+      } else {
+        log.warn(
+          `loadDocument: slide drawing length ${decoded.length} != ${drawing.img.length}`,
+        )
+      }
+      this._attachSlideDrawing(drawing)
+    }
   }
 
   saveDocument(filename = 'scene.nvd'): void {
@@ -3563,6 +3624,7 @@ export default class NiiVueGPU extends EventTarget {
 
     // Clear existing data (releases GPU resources)
     this.closeDrawing()
+    this.clearSlidePlane()
     await this.removeAllVolumes()
     await this.removeAllMeshes()
 
@@ -3605,6 +3667,17 @@ export default class NiiVueGPU extends EventTarget {
         this.model.draw.isEnabled = true
         this._drawLut = null
         this.refreshDrawing()
+      }
+    }
+
+    // Restore a registered slide plane + its slide-space drawing (v8+).
+    if (doc.slidePlane) {
+      try {
+        await this._restoreSlidePlaneFromDoc(doc.slidePlane)
+      } catch (err) {
+        log.warn(
+          `loadDocument: failed to restore slide plane: ${err instanceof Error ? err.message : err}`,
+        )
       }
     }
     this.emit('documentLoaded')

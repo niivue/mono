@@ -24,10 +24,11 @@ import type {
   VectorAnnotation,
   VolumeRenderConfig,
 } from '@/NVTypes'
+import type { NVSlideManifest } from '@/slide/NVSlide'
 import * as NVVolume from '@/volume/NVVolume'
 import { computeVolumeLabelCentroids } from '@/volume/utils'
 
-const DOCUMENT_VERSION = 7
+const DOCUMENT_VERSION = 8
 
 /**
  * Embedded volume data for self-contained documents.
@@ -147,6 +148,28 @@ export type NVDocumentMesh = {
   layers?: NVDocumentMeshLayer[]
 }
 
+/**
+ * A registered NVSlide plane plus its slide-space drawing. The slide is stored
+ * by manifest (data URLs + byte-range tile graph) so tiles refetch on load;
+ * the annotation raster is RLE-compressed like the volume drawing. Tile bytes
+ * are NOT embedded (a pyramid is far too large) — reconstruction refetches them,
+ * so the manifest's data URLs must still be reachable. Custom tile sources
+ * (DZI/TIFF/codec adapters) reconstruct geometry + drawing but need the app to
+ * have re-registered their decoders for tiles to load.
+ */
+export type NVDocumentSlidePlane = {
+  manifest: NVSlideManifest
+  manifestUrl?: string
+  /** Column-major 4x4 slide base-pixel -> world mm. */
+  pixelToWorld: number[]
+  /** Pinned level (camera LOD off) or undefined for automatic LOD. */
+  levelIndex?: number
+  /** RLE-compressed slide-space drawing raster (label indices). */
+  drawingRLE?: Uint8Array
+  drawingWidth?: number
+  drawingHeight?: number
+}
+
 export type NVDocumentData = {
   version: number
   created: string
@@ -176,6 +199,8 @@ export type NVDocumentData = {
   meshes: NVDocumentMesh[]
   annotations?: VectorAnnotation[]
   annotationConfig?: AnnotationConfig
+  /** Registered slide plane + its slide-space drawing (v8+). */
+  slidePlane?: NVDocumentSlidePlane
 }
 
 /**
@@ -228,7 +253,10 @@ function extractHeaderData(hdr: NIFTI1 | NIFTI2): NIFTI1 | NIFTI2 {
   }
 }
 
-export function serialize(model: NVModel): Uint8Array {
+export function serialize(
+  model: NVModel,
+  slidePlane?: NVDocumentSlidePlane,
+): Uint8Array {
   // Extract volumes with embedded data
   const volumes: NVDocumentVolume[] = model.volumes.map((v) => {
     const vol: NVDocumentVolume = {
@@ -433,6 +461,7 @@ export function serialize(model: NVModel): Uint8Array {
     meshes,
     annotations: model.annotations.length > 0 ? model.annotations : undefined,
     annotationConfig: { ...model.annotation },
+    slidePlane,
   }
 
   return encode(doc)

@@ -57,12 +57,15 @@ export function encodeRLE(data: Uint8Array): Uint8Array {
 }
 
 export function decodeRLE(rle: Uint8Array, decodedlen: number): Uint8Array {
-  const r = new Uint8Array(rle.buffer)
-  const rI = new Int8Array(r.buffer)
+  // Honour the view's byteOffset/byteLength: when `rle` is a subarray of a
+  // larger buffer (e.g. a byte string decoded by CBOR inside a bigger object),
+  // `rle.buffer` is the whole backing buffer, so reading from offset 0 would
+  // grab the wrong bytes. Build the signed view over the same window.
+  const rI = new Int8Array(rle.buffer, rle.byteOffset, rle.byteLength)
   let rp = 0
   const d = new Uint8Array(decodedlen)
   let dp = 0
-  while (rp < r.length) {
+  while (rp < rI.length) {
     const hdr = rI[rp]
     rp++
     if (hdr < 0) {

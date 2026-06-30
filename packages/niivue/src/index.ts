@@ -131,6 +131,8 @@ export { ManifestRangeSource, NVSlide } from './slide/NVSlide'
 export { SlideDrawing } from './slide/slideDrawing'
 export type { SlidePlaneTile } from './slide/slidePlane'
 export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
+export type { SlideVectorKind, SlideVectorShape } from './slide/slideVector'
+export { SlideVectorLayer } from './slide/slideVector'
 export { buildDrawingLut, drawingBitmapToRGBA } from './view/NVDrawingTexture'
 export type {
   ChunkPlan,

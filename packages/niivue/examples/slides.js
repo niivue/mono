@@ -18,6 +18,7 @@ import {
   SlideDrawing,
   SlideRenderer,
   SlideRendererGPU,
+  SlideVectorLayer,
 } from '../src/index.ts'
 import { decodeJp2 } from './openjpeg-decoder.js'
 import { createTiffSource } from './tiff-source.js'
@@ -80,6 +81,7 @@ const els = {
   penValue: el('penValue'),
   drawUndo: el('drawUndo'),
   drawClear: el('drawClear'),
+  exportSvg: el('exportSvg'),
   hud: el('hud'),
   rangeLog: el('rangeLog'),
   fallback: el('fallback'),
@@ -102,6 +104,9 @@ let overlayDirty = false
 let rasterCanvas = null
 let rasterCtx = null
 let rasterImageData = null
+// Vector annotation layer (slide-pixel coords) + in-progress freehand polygon.
+let vector = null
+let vecPoints = null
 let penValue = 1
 let drawTool = 'pen' // pen | eraser | bucket | filled | wand
 let wandTolerance = 40
@@ -218,6 +223,8 @@ function ensureDrawing() {
   const rw = Math.max(1, Math.round(sw * scale))
   const rh = Math.max(1, Math.round(sh * scale))
   drawing = new SlideDrawing(rw, rh)
+  vector = new SlideVectorLayer()
+  vecPoints = null
   lastRasterPt = null
   rasterCanvas = document.createElement('canvas')
   rasterCanvas.width = rw
@@ -308,6 +315,28 @@ function drawOverlay(screen) {
   } else {
     octx.drawImage(rasterCanvas, dx, dy, dW, dH)
   }
+  // Vector annotations (slide-space polygons) stroked over the raster.
+  const strokePath = (pts, color, closed) => {
+    if (!pts || pts.length < 2) return
+    octx.beginPath()
+    for (let i = 0; i < pts.length; i++) {
+      const [cx, cy] = slideToCss(pts[i][0], pts[i][1], screen)
+      if (i === 0) octx.moveTo(cx * dpr, cy * dpr)
+      else octx.lineTo(cx * dpr, cy * dpr)
+    }
+    if (closed) octx.closePath()
+    octx.lineWidth = Math.max(1, 2 * dpr)
+    octx.lineJoin = 'round'
+    octx.lineCap = 'round'
+    octx.strokeStyle = color
+    octx.stroke()
+  }
+  if (vector) {
+    for (const s of vector.shapes) {
+      strokePath(s.points, s.color, s.kind === 'polygon')
+    }
+  }
+  if (vecPoints) strokePath(vecPoints, penColorCss(), false) // in-progress
 }
 
 // Convert a pointer event to a slide-drawing raster pixel, or null if off-slide.
@@ -329,6 +358,31 @@ function eventToRaster(event) {
 
 function penSizeForRaster() {
   return Math.max(2, Math.round(drawing.width / 300))
+}
+
+// Pointer event -> slide base-pixel coords (resolution-independent; for vectors).
+function eventToSlide(event) {
+  if (!slide) return null
+  const rect = els.canvas.getBoundingClientRect()
+  return slide.screenToSlide(
+    event.clientX - rect.left,
+    event.clientY - rect.top,
+    screenForCanvas(),
+  )
+}
+
+// CSS hex for the current pen label, from the "_draw" LUT (matches the raster).
+function penColorCss() {
+  if (!drawLut) {
+    const cm = lookupColorMap('_draw')
+    if (cm) drawLut = buildDrawingLut(cm)
+  }
+  const lut = drawLut?.lut
+  const min = drawLut?.min ?? 0
+  const i = (penValue - min) * 4
+  if (!lut || i < 0 || i + 2 >= lut.length) return '#e62d37'
+  const hex = (n) => n.toString(16).padStart(2, '0')
+  return `#${hex(lut[i])}${hex(lut[i + 1])}${hex(lut[i + 2])}`
 }
 
 // Build an RGBA colour reference for the magic wand at the drawing-raster
@@ -476,8 +530,16 @@ els.canvas.addEventListener('pointerdown', (event) => {
   els.canvas.setPointerCapture(event.pointerId)
   // Draw mode paints the slide instead of panning.
   if (drawMode && drawing) {
+    // Vector tool draws a freehand polygon in slide coords (not the raster).
+    if (drawTool === 'vector') {
+      const sp = eventToSlide(event)
+      vecPoints = sp ? [[sp.x, sp.y]] : []
+      drawStroke = { pointerId: event.pointerId, tool: 'vector' }
+      requestRender()
+      return
+    }
     const pt = eventToRaster(event)
-    drawing.beginStroke() // snapshot for undo (all tools)
+    drawing.beginStroke() // snapshot for undo (all raster tools)
     drawStroke = { pointerId: event.pointerId, tool: drawTool, points: [] }
     if (drawTool === 'bucket') {
       if (pt) {
@@ -519,6 +581,14 @@ els.canvas.addEventListener('pointerdown', (event) => {
 els.canvas.addEventListener('pointermove', (event) => {
   if (drawStroke && drawStroke.pointerId === event.pointerId) {
     if (drawStroke.tool === 'bucket' || drawStroke.tool === 'wand') return // single click
+    if (drawStroke.tool === 'vector') {
+      const sp = eventToSlide(event)
+      if (sp && vecPoints) {
+        vecPoints.push([sp.x, sp.y])
+        requestRender()
+      }
+      return
+    }
     const pt = eventToRaster(event)
     if (pt) {
       const pv = drawStroke.tool === 'eraser' ? 0 : penValue
@@ -559,6 +629,12 @@ els.canvas.addEventListener('pointerup', (event) => {
       overlayDirty = true
       requestRender()
     }
+    // Vector: commit the freehand polygon to the vector layer.
+    if (drawStroke.tool === 'vector' && vecPoints) {
+      vector?.addPolygon(vecPoints, penColorCss())
+      vecPoints = null
+      requestRender()
+    }
     drawStroke = null
     lastRasterPt = null
   }
@@ -588,17 +664,32 @@ els.penValue.addEventListener('change', () => {
   penValue = Number(els.penValue.value) || 1
 })
 els.drawUndo.addEventListener('click', () => {
+  // Vector tool undoes the last polygon; other tools undo the raster.
+  if (drawTool === 'vector') {
+    if (vector?.removeLast()) requestRender()
+    return
+  }
   if (drawing?.undo()) {
     overlayDirty = true
     requestRender()
   }
 })
 els.drawClear.addEventListener('click', () => {
-  if (drawing) {
-    drawing.clear()
-    overlayDirty = true
-    requestRender()
-  }
+  drawing?.clear()
+  vector?.clear()
+  overlayDirty = true
+  requestRender()
+})
+els.exportSvg.addEventListener('click', () => {
+  if (!slide || !vector || vector.shapes.length === 0) return
+  const svg = vector.toSVG(slide.manifest.width, slide.manifest.height)
+  const blob = new Blob([svg], { type: 'image/svg+xml' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${slide.manifest.name || 'slide'}-annotations.svg`
+  a.click()
+  URL.revokeObjectURL(url)
 })
 
 els.canvas.addEventListener(

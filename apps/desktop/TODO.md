@@ -197,8 +197,13 @@ off for atlas rows (it uses `setColormapLabel`).
 Phases (threshold deferred per decision):
 - [x] **[P2] (S) A — Consolidate state** → `layerSettings` map + handlers + single prune branch.
 - [x] **[P2] (S) B — Per-layer opacity** (field + slider); delete hardcoded opacity literals.
-- [ ] **[P2] (S) C — Unify visibility** into a `hidden` flag (atlas + overlays).
-- [ ] **[P2] (M) D — Unified `LayerRow` list** with expandable detail; fold in colormap + opacity + WindowControl. Numeric-first window (Min/Max + Auto), opacity slider+readout, diverging colormap stays a colormap option.
+- [x] **[P2] (S) C — Unify visibility** into a `hidden` flag. Done: `hidden` on
+  `LayerSettings` + `renderOpacityForItem` (effective opacity = `hidden ? 0 :
+  opacity`); atlas migrated off the standalone `isAtlasVisible` state, so hide/show
+  preserves the layer's opacity. Overlays share the plumbing; their per-row
+  visibility toggle lands with the unified row in D (current overlay on/off is
+  still membership via `overlayIds`).
+- [ ] **[P2] (M) D — Unified `LayerRow` list** with expandable detail; fold in colormap + opacity + WindowControl + per-row visibility (`hidden`) toggle for every layer. Numeric-first window (Min/Max + Auto), opacity slider+readout, diverging colormap stays a colormap option.
 - [ ] **[P3] (M–L) E — Threshold** (deferred). Keep visually distinct from the
   window. Decide the sink: true masking (alpha / niimath pre-op) vs honest
   contrast-floor (cal_min) — do not conflate with min/max.

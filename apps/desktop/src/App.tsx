@@ -117,6 +117,9 @@ type SidePanelTab = 'inspect' | 'operations'
 interface LayerSettings {
   colormap?: string
   opacity?: number
+  // Visibility override. `hidden` renders the layer at opacity 0 without
+  // touching `opacity`, so toggling it back on restores the stored value.
+  hidden?: boolean
   window?: { min: number; max: number }
 }
 
@@ -148,7 +151,6 @@ export function App(): JSX.Element {
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
   const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
   const [atlasId, setAtlasId] = useState<string | null>(null)
-  const [isAtlasVisible, setIsAtlasVisible] = useState(true)
   const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(null)
   const {
     clipPlanes,
@@ -257,7 +259,7 @@ export function App(): JSX.Element {
           )
         ),
         ...windowForItem(selected.id, layerSettings),
-        opacity: atlasId === selected.id && !isAtlasVisible ? 0 : 1
+        opacity: atlasId === selected.id && layerSettings[selected.id]?.hidden ? 0 : 1
       }
     ]
 
@@ -269,7 +271,7 @@ export function App(): JSX.Element {
         kind: 'overlay',
         ...resolveColormap(layerColormapForItem(item, layerSettings, overlayColormapForIndex(overlayIndex))),
         ...windowForItem(item.id, layerSettings),
-        opacity: opacityForItem(item.id, layerSettings, DEFAULT_OVERLAY_OPACITY)
+        opacity: renderOpacityForItem(item.id, layerSettings, DEFAULT_OVERLAY_OPACITY)
       })
       overlayIndex += 1
     }
@@ -281,12 +283,12 @@ export function App(): JSX.Element {
         kind: 'overlay',
         isAtlas: true,
         colormap: layerColormapForItem(atlasItem, layerSettings, DEFAULT_ATLAS_COLORMAP),
-        opacity: isAtlasVisible ? opacityForItem(atlasItem.id, layerSettings, DEFAULT_ATLAS_OPACITY) : 0
+        opacity: renderOpacityForItem(atlasItem.id, layerSettings, DEFAULT_ATLAS_OPACITY)
       })
     }
 
     return layers
-  }, [atlasId, isAtlasVisible, items, layerSettings, overlayIds, selected])
+  }, [atlasId, items, layerSettings, overlayIds, selected])
 
   useEffect(() => {
     const validIds = new Set(items.map((item) => item.id))
@@ -352,8 +354,17 @@ export function App(): JSX.Element {
   function changeLayerOpacity(itemId: string, opacity: number): void {
     const clamped = Math.min(1, Math.max(0, opacity))
     setLayerSettings((current) => {
-      if (current[itemId]?.opacity === clamped) return current
-      return { ...current, [itemId]: { ...current[itemId], opacity: clamped } }
+      const existing = current[itemId]
+      if (existing?.opacity === clamped && !existing?.hidden) return current
+      // Adjusting opacity implies the layer should be visible, so clear hidden.
+      return { ...current, [itemId]: { ...existing, opacity: clamped, hidden: false } }
+    })
+  }
+
+  function setLayerHidden(itemId: string, hidden: boolean): void {
+    setLayerSettings((current) => {
+      if (!!current[itemId]?.hidden === hidden) return current
+      return { ...current, [itemId]: { ...current[itemId], hidden } }
     })
   }
 
@@ -377,7 +388,7 @@ export function App(): JSX.Element {
     const nextAtlasId = itemId || null
     setAtlasId(nextAtlasId)
     if (!nextAtlasId) return
-    setIsAtlasVisible(true)
+    setLayerHidden(nextAtlasId, false)
 
     setOverlayIds((current) => {
       if (!current.has(nextAtlasId)) return current
@@ -404,7 +415,7 @@ export function App(): JSX.Element {
       const isAtlas = overlayItem ? await volumeHasAtlasLabelSidecar(overlayItem) : false
       if (isAtlas) {
         setAtlasId(result.id)
-        setIsAtlasVisible(true)
+        setLayerHidden(result.id, false)
         setOverlayIds((current) => {
           if (!current.has(result.id)) return current
           const next = new Set(current)
@@ -786,15 +797,14 @@ export function App(): JSX.Element {
 
                 <LayerPanel
                   atlasId={atlasId}
-                  isAtlasVisible={isAtlasVisible}
                   isOpeningOverlay={isOpeningOverlay}
                   items={items}
                   layerSettings={layerSettings}
                   overlayIds={overlayIds}
                   selected={selected}
                   onAtlasChange={changeAtlasLayer}
-                  onAtlasVisibilityChange={setIsAtlasVisible}
                   onLayerColormapChange={changeLayerColormap}
+                  onLayerHiddenChange={setLayerHidden}
                   onLayerOpacityChange={changeLayerOpacity}
                   onLayerWindowChange={changeLayerWindow}
                   onLayerWindowReset={resetLayerWindow}
@@ -944,15 +954,14 @@ function DesktopZoomControls({
 
 function LayerPanel({
   atlasId,
-  isAtlasVisible,
   isOpeningOverlay,
   items,
   layerSettings,
   overlayIds,
   selected,
   onAtlasChange,
-  onAtlasVisibilityChange,
   onLayerColormapChange,
+  onLayerHiddenChange,
   onLayerOpacityChange,
   onLayerWindowChange,
   onLayerWindowReset,
@@ -960,15 +969,14 @@ function LayerPanel({
   onOverlayToggle
 }: {
   atlasId: string | null
-  isAtlasVisible: boolean
   isOpeningOverlay: boolean
   items: DesktopItem[]
   layerSettings: Record<string, LayerSettings>
   overlayIds: Set<string>
   selected: DesktopItem | null
   onAtlasChange: (itemId: string) => void
-  onAtlasVisibilityChange: (visible: boolean) => void
   onLayerColormapChange: (itemId: string, colormap: string) => void
+  onLayerHiddenChange: (itemId: string, hidden: boolean) => void
   onLayerOpacityChange: (itemId: string, opacity: number) => void
   onLayerWindowChange: (itemId: string, min: number, max: number) => void
   onLayerWindowReset: (itemId: string) => void
@@ -1063,9 +1071,11 @@ function LayerPanel({
 
       <label className={`nv-layer-visibility ${atlasId ? '' : 'is-disabled'}`}>
         <input
-          checked={isAtlasVisible}
+          checked={atlasId ? !layerSettings[atlasId]?.hidden : false}
           disabled={!atlasId}
-          onChange={(event) => onAtlasVisibilityChange(event.target.checked)}
+          onChange={(event) => {
+            if (atlasId) onLayerHiddenChange(atlasId, !event.target.checked)
+          }}
           type="checkbox"
         />
         <span>Show atlas</span>
@@ -1733,6 +1743,8 @@ function overlayColormapForIndex(index: number): string {
   return DEFAULT_OVERLAY_COLORMAPS[index % DEFAULT_OVERLAY_COLORMAPS.length]
 }
 
+// The layer's stored opacity (or role default) — what the slider edits, and
+// what a hidden layer reverts to when shown again.
 function opacityForItem(
   itemId: string,
   layerSettings: Record<string, LayerSettings>,
@@ -1740,6 +1752,16 @@ function opacityForItem(
 ): number {
   const opacity = layerSettings[itemId]?.opacity
   return typeof opacity === 'number' && Number.isFinite(opacity) ? opacity : fallback
+}
+
+// The opacity actually sent to NiiVue: 0 when hidden, otherwise the stored value.
+function renderOpacityForItem(
+  itemId: string,
+  layerSettings: Record<string, LayerSettings>,
+  fallback: number
+): number {
+  if (layerSettings[itemId]?.hidden) return 0
+  return opacityForItem(itemId, layerSettings, fallback)
 }
 
 function windowForItem(

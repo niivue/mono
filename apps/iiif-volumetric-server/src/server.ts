@@ -222,24 +222,29 @@ async function main(): Promise<void> {
   mountDesktopRoutes(app, registry)
   mountVolumeRoutes(app, registry)
 
-  app.post(
-    '/dev/save-screenshot',
-    express.raw({ type: 'image/png', limit: '20mb' }),
-    async (req: Request, res: Response) => {
-      try {
-        const { default: fsPromises } = await import('node:fs/promises')
-        const dir = path.resolve(__dirname, '..', 'fixtures', 'screenshots')
-        await fsPromises.mkdir(dir, { recursive: true })
-        const name = `screenshot-${Date.now()}.png`
-        const full = path.join(dir, name)
-        await fsPromises.writeFile(full, req.body as Buffer)
-        res.json({ path: full, bytes: (req.body as Buffer).length })
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        res.status(500).json({ error: message })
-      }
-    },
-  )
+  // Dev-only unauthenticated disk-write endpoint (screenshot capture). It is an
+  // open write-to-disk primitive, so never expose it in production — mount only
+  // outside NODE_ENV=production.
+  if (process.env.NODE_ENV !== 'production') {
+    app.post(
+      '/dev/save-screenshot',
+      express.raw({ type: 'image/png', limit: '20mb' }),
+      async (req: Request, res: Response) => {
+        try {
+          const { default: fsPromises } = await import('node:fs/promises')
+          const dir = path.resolve(__dirname, '..', 'fixtures', 'screenshots')
+          await fsPromises.mkdir(dir, { recursive: true })
+          const name = `screenshot-${Date.now()}.png`
+          const full = path.join(dir, name)
+          await fsPromises.writeFile(full, req.body as Buffer)
+          res.json({ path: full, bytes: (req.body as Buffer).length })
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          res.status(500).json({ error: message })
+        }
+      },
+    )
+  }
 
   const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     console.error(err)

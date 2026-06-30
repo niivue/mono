@@ -93,6 +93,22 @@ const SUPPORTED_DTYPES = new Set<string>([
   'float64',
 ])
 
+const DTYPE_BYTES: Record<string, number> = {
+  uint8: 1,
+  int8: 1,
+  uint16: 2,
+  int16: 2,
+  uint32: 4,
+  int32: 4,
+  float32: 4,
+  float64: 8,
+}
+
+// Largest level loadLevel will materialise whole; bigger levels must be read via
+// loadSubvolume (s0 of a multi-GB EM/CT store must not be loaded into RAM in one
+// request). Mirrors the DICOM-WSI adapter's MAX_WHOLE_LEVEL_BYTES.
+const MAX_WHOLE_LEVEL_BYTES = 768 * 1024 * 1024
+
 export const omezarrAdapter: VolumeAdapter = {
   format: 'ome-zarr',
 
@@ -146,6 +162,15 @@ async function loadLevelInternal(
   levelIdx: number,
 ): Promise<VolumeHandle> {
   const { target, arr } = await openLevelArray(dirPath, levelIdx)
+  const elemBytes = DTYPE_BYTES[arr.dtype] ?? 1
+  const bytes = target.shape.reduce((a, b) => a * b, 1) * elemBytes
+  if (bytes > MAX_WHOLE_LEVEL_BYTES) {
+    throw new Error(
+      `Level ${levelIdx} (${target.shape.join('x')}, ${Math.round(
+        bytes / 1024 / 1024,
+      )} MB) exceeds the whole-level cap; read it via subvolume.`,
+    )
+  }
   // For arrays with leading non-spatial axes (t, c), index the first
   // element of each so we always read the same spatial volume. NGFF
   // requires spatial axes to be the trailing dims.

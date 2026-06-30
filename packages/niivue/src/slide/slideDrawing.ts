@@ -1,7 +1,7 @@
 import {
   drawLine,
+  drawPenFilled,
   drawPoint,
-  floodFillSection,
   PEN_SLICE_TYPE,
 } from '@/drawing/penTool'
 import { encodeRLE } from '@/drawing/rle'
@@ -10,9 +10,9 @@ import { drawUndo } from '@/drawing/undo'
 // A drawing surface in *slide* space: a 2D label raster covering the whole slide
 // extent. It is intentionally a thin holder over the existing voxel-drawing
 // primitives — by presenting the raster as a single axial slice of a
-// `[W, H, 1]` volume, drawPoint/drawLine/floodFillSection and the RLE undo
+// `[W, H, 1]` volume, drawPoint/drawLine/drawPenFilled and the RLE undo
 // stack (encodeRLE snapshot + drawUndo) all apply unchanged, so every drawing
-// function stays compatible. (Snapshots are taken directly via the RLE codec
+// function stays compatible. Bucket fill is a seeded flood over the raster. (Snapshots are taken directly via the RLE codec
 // rather than drawingManager.addUndoBitmap, to avoid coupling slide drawing to
 // the volume NVImage; the codec and drawUndo are the same as the volume path.)
 // The annotation lives in slide pixels (not the base volume), so it stays glued
@@ -94,15 +94,72 @@ export class SlideDrawing {
     this.version++
   }
 
-  /** Flood-fill the connected region inside the raster (whole-slice section). */
-  floodFill(): void {
-    floodFillSection({
-      img2D: this.img,
-      dims2D: [this.width, this.height],
-      minPt: [0, 0],
-      maxPt: [this.width - 1, this.height - 1],
-    })
+  /**
+   * Bucket fill: flood the connected region of pixels sharing the seed's value
+   * (4-connected) with `penValue`. Drawn strokes of a different value bound the
+   * fill. With `overwrite` false, only fills into empty (0) regions.
+   */
+  bucketFill(x: number, y: number, penValue: number, overwrite: boolean): void {
+    const w = this.width
+    const h = this.height
+    const px = Math.round(x)
+    const py = Math.round(y)
+    if (px < 0 || py < 0 || px >= w || py >= h) return
+    const img = this.img
+    const seed = py * w + px
+    const target = img[seed]
+    if (target === penValue) return
+    if (!overwrite && penValue !== 0 && target !== 0) return
+    const stack = [seed]
+    img[seed] = penValue
+    while (stack.length > 0) {
+      const idx = stack.pop() as number
+      const ix = idx % w
+      if (ix > 0 && img[idx - 1] === target) {
+        img[idx - 1] = penValue
+        stack.push(idx - 1)
+      }
+      if (ix < w - 1 && img[idx + 1] === target) {
+        img[idx + 1] = penValue
+        stack.push(idx + 1)
+      }
+      if (idx - w >= 0 && img[idx - w] === target) {
+        img[idx - w] = penValue
+        stack.push(idx - w)
+      }
+      if (idx + w < img.length && img[idx + w] === target) {
+        img[idx + w] = penValue
+        stack.push(idx + w)
+      }
+    }
     this.version++
+  }
+
+  /**
+   * Filled pen: close the freehand outline `points` (slide-raster pixels) and
+   * fill the enclosed region with `penValue` (reuses drawPenFilled). Returns
+   * false if the outline is too short to enclose an area.
+   */
+  fillPen(
+    points: ReadonlyArray<readonly [number, number]>,
+    penValue: number,
+    overwrite: boolean,
+  ): boolean {
+    if (points.length < 2) return false
+    const r = drawPenFilled({
+      penFillPts: points.map(([x, y]) => [x, y, 0]),
+      penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      drawBitmap: this.img,
+      dims: this.dims(),
+      penValue,
+      fillOverwrites: overwrite,
+      currentUndoBitmap:
+        this._undoIndex >= 0 ? this._undoBitmaps[this._undoIndex] : null,
+    })
+    if (!r.success) return false
+    this.img = r.drawBitmap
+    this.version++
+    return true
   }
 
   /** Undo the most recent stroke. Returns false when the stack is empty. */

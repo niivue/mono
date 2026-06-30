@@ -75,6 +75,7 @@ const els = {
   canvas: el('tileCanvas'),
   overlay: el('drawOverlay'),
   drawBtn: el('drawBtn'),
+  drawTool: el('drawTool'),
   penValue: el('penValue'),
   drawUndo: el('drawUndo'),
   drawClear: el('drawClear'),
@@ -101,6 +102,7 @@ let rasterCanvas = null
 let rasterCtx = null
 let rasterImageData = null
 let penValue = 1
+let drawTool = 'pen' // pen | eraser | bucket | filled
 // The shared "_draw" label colormap, so annotation colors match the 3D demo and
 // each pen value paints a distinct label color. Resolved lazily (Vite glob).
 let drawLut = null
@@ -445,10 +447,21 @@ els.canvas.addEventListener('pointerdown', (event) => {
   // Draw mode paints the slide instead of panning.
   if (drawMode && drawing) {
     const pt = eventToRaster(event)
-    drawStroke = { pointerId: event.pointerId }
+    drawing.beginStroke() // snapshot for undo (all tools)
+    drawStroke = { pointerId: event.pointerId, tool: drawTool, points: [] }
+    if (drawTool === 'bucket') {
+      if (pt) {
+        drawing.bucketFill(pt[0], pt[1], penValue, true)
+        overlayDirty = true
+        requestRender()
+      }
+      return
+    }
+    // pen / eraser / filled: paint the first dab (filled also accrues points).
+    const pv = drawTool === 'eraser' ? 0 : penValue
     if (pt) {
-      drawing.beginStroke()
-      drawing.point(pt[0], pt[1], penValue, penSizeForRaster(), true)
+      drawing.point(pt[0], pt[1], pv, penSizeForRaster(), true)
+      drawStroke.points.push(pt)
       lastRasterPt = pt
       overlayDirty = true
       requestRender()
@@ -464,21 +477,25 @@ els.canvas.addEventListener('pointerdown', (event) => {
 
 els.canvas.addEventListener('pointermove', (event) => {
   if (drawStroke && drawStroke.pointerId === event.pointerId) {
+    if (drawStroke.tool === 'bucket') return // single click, no drag
     const pt = eventToRaster(event)
     if (pt) {
+      const pv = drawStroke.tool === 'eraser' ? 0 : penValue
       if (lastRasterPt) {
         drawing.line(
           lastRasterPt[0],
           lastRasterPt[1],
           pt[0],
           pt[1],
-          penValue,
+          pv,
           penSizeForRaster(),
           true,
         )
       } else {
-        drawing.point(pt[0], pt[1], penValue, penSizeForRaster(), true)
+        drawing.point(pt[0], pt[1], pv, penSizeForRaster(), true)
       }
+      // Filled pen also records the outline to fill on release.
+      if (drawStroke.tool === 'filled') drawStroke.points.push(pt)
       lastRasterPt = pt
       overlayDirty = true
       requestRender()
@@ -495,6 +512,12 @@ els.canvas.addEventListener('pointermove', (event) => {
 
 els.canvas.addEventListener('pointerup', (event) => {
   if (drawStroke?.pointerId === event.pointerId) {
+    // Filled pen: close the recorded outline and fill its interior on release.
+    if (drawStroke.tool === 'filled' && drawStroke.points.length >= 2) {
+      drawing.fillPen(drawStroke.points, penValue, true)
+      overlayDirty = true
+      requestRender()
+    }
     drawStroke = null
     lastRasterPt = null
   }
@@ -513,6 +536,9 @@ els.drawBtn.addEventListener('click', () => {
   drawMode = !drawMode
   els.drawBtn.textContent = `Draw: ${drawMode ? 'on' : 'off'}`
   els.canvas.style.cursor = drawMode ? 'crosshair' : 'grab'
+})
+els.drawTool.addEventListener('change', () => {
+  drawTool = els.drawTool.value
 })
 els.penValue.addEventListener('change', () => {
   penValue = Number(els.penValue.value) || 1

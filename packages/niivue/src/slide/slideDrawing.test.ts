@@ -64,4 +64,46 @@ describe('SlideDrawing', () => {
     expect(countNonZero(d)).toBe(0)
     expect(d.version).toBe(v + 1)
   })
+
+  test('bucketFill floods the whole empty raster from a seed', () => {
+    const d = new SlideDrawing(8, 4)
+    d.bucketFill(2, 1, 5, true)
+    expect(countNonZero(d)).toBe(32)
+    expect(at(d, 0, 0)).toBe(5)
+    expect(at(d, 7, 3)).toBe(5)
+  })
+
+  test('bucketFill is bounded by a drawn divider', () => {
+    const d = new SlideDrawing(8, 4)
+    // Vertical divider at x=4 (label 9) splits the raster.
+    for (let y = 0; y < 4; y++) d.point(4, y, 9, 1, true)
+    d.bucketFill(0, 0, 5, true) // seed in the left region
+    expect(at(d, 0, 0)).toBe(5)
+    expect(at(d, 3, 2)).toBe(5) // left region filled
+    expect(at(d, 4, 2)).toBe(9) // divider preserved
+    expect(at(d, 5, 2)).toBe(0) // right region untouched
+  })
+
+  test('fillPen fills the interior of a closed outline', () => {
+    const d = new SlideDrawing(16, 16)
+    // Outline a box; drawPenFilled closes it and fills the inside.
+    const ok = d.fillPen(
+      [
+        [3, 3],
+        [12, 3],
+        [12, 12],
+        [3, 12],
+      ],
+      4,
+      true,
+    )
+    expect(ok).toBe(true)
+    expect(at(d, 7, 7)).toBe(4) // interior filled
+    expect(at(d, 0, 0)).toBe(0) // outside untouched
+  })
+
+  test('fillPen needs at least two points', () => {
+    const d = new SlideDrawing(8, 8)
+    expect(d.fillPen([[1, 1]], 4, true)).toBe(false)
+  })
 })

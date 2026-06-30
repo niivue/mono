@@ -132,7 +132,12 @@ function parseArgs(): Map<string, string> {
 
 function supportReason(p: Preset): string | null {
   if (p.codec === 'jpeg2000') {
-    return 'JPEG 2000 tiles cannot be decoded in-browser (no createImageBitmap JPEG 2000 support).'
+    return (
+      'JPEG 2000 needs an OpenJPEG WASM decoder registered via ' +
+      "NVSlide.registerTileDecoder('image/jp2', ...). The manifest is tagged " +
+      'image/jp2, but the demo does not wire a decoder yet, so tiles would fail ' +
+      'to decode. (createImageBitmap has no native JPEG 2000 support.)'
+    )
   }
   if (p.tiling !== 'TILED_FULL') {
     return `${p.tiling} frame ordering is not yet supported by the manifest builder (only TILED_FULL).`

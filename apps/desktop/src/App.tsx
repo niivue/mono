@@ -17,6 +17,7 @@ import {
   Crosshair,
   Database,
   Eye,
+  EyeOff,
   FileJson,
   FolderOpen,
   GripHorizontal,
@@ -30,6 +31,7 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   RotateCcw,
   Save,
   SlidersHorizontal,
@@ -259,7 +261,7 @@ export function App(): JSX.Element {
           )
         ),
         ...windowForItem(selected.id, layerSettings),
-        opacity: atlasId === selected.id && layerSettings[selected.id]?.hidden ? 0 : 1
+        opacity: renderOpacityForItem(selected.id, layerSettings, 1)
       }
     ]
 
@@ -983,23 +985,35 @@ function LayerPanel({
   onLoadOverlay: () => void
   onOverlayToggle: (itemId: string) => void
 }): JSX.Element {
-  const overlayCandidates = useMemo(
-    () => items.filter((item) => item.id !== selected?.id && item.id !== atlasId),
-    [atlasId, items, selected?.id]
-  )
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const atlasCandidates = useMemo(
     () => items.slice().sort(compareAtlasCandidates),
     [items]
   )
-  const activeOverlayIndexById = useMemo(() => {
-    const indexById = new Map<string, number>()
-    for (const item of items) {
-      if (!overlayIds.has(item.id) || item.id === selected?.id || item.id === atlasId) continue
-      indexById.set(item.id, indexById.size)
-    }
-    return indexById
-  }, [atlasId, items, overlayIds, selected?.id])
-  const extras = overlayIds.size + (atlasId && atlasId !== selected?.id ? 1 : 0)
+  // Active overlay items in render order, excluding the base and atlas.
+  const overlayItems = useMemo(
+    () => items.filter((item) => overlayIds.has(item.id) && item.id !== selected?.id && item.id !== atlasId),
+    [atlasId, items, overlayIds, selected?.id]
+  )
+  // Volumes not yet used by any layer — the "add overlay" pool.
+  const addCandidates = useMemo(
+    () => items.filter((item) => item.id !== selected?.id && item.id !== atlasId && !overlayIds.has(item.id)),
+    [atlasId, items, overlayIds, selected?.id]
+  )
+  // The unified layer list, in NiiVue render order: base -> overlays -> atlas.
+  const rows = useMemo(() => {
+    const out: Array<{ item: DesktopItem; role: 'base' | 'overlay' | 'atlas' }> = []
+    if (selected) out.push({ item: selected, role: 'base' })
+    for (const item of overlayItems) out.push({ item, role: 'overlay' })
+    const atlasItem = atlasId && atlasId !== selected?.id ? items.find((item) => item.id === atlasId) : null
+    if (atlasItem) out.push({ item: atlasItem, role: 'atlas' })
+    return out
+  }, [atlasId, items, overlayItems, selected])
+  const extras = overlayItems.length + (atlasId && atlasId !== selected?.id ? 1 : 0)
+  // Exactly one row open at a time; default to the base when nothing (valid) is
+  // explicitly expanded so the base controls are visible on load.
+  const rowIds = rows.map((row) => row.item.id)
+  const expanded = expandedId && rowIds.includes(expandedId) ? expandedId : selected?.id ?? null
 
   return (
     <section className="nv-control-section nv-layer-panel">
@@ -1011,44 +1025,76 @@ function LayerPanel({
         <em>{selected ? `${extras} extra` : 'none'}</em>
       </div>
 
-      <button
-        className="nv-layer-load-button"
-        disabled={isOpeningOverlay}
-        onClick={onLoadOverlay}
-        type="button"
-      >
-        <FolderOpen size={14} />
-        <span>{isOpeningOverlay ? 'Loading overlay' : 'Load overlay'}</span>
-      </button>
-
       {selected ? (
-        <>
-          <div className="nv-layer-card">
-            <div className="nv-layer-copy">
-              <strong>{selected.label}</strong>
-              <small>{atlasId === selected.id ? 'Base atlas' : 'Base volume'}</small>
-            </div>
-            <LayerColormapSelect
-              ariaLabel={`Colormap for ${selected.label}`}
-              itemId={selected.id}
-              value={layerColormapForItem(
-                selected,
-                layerSettings,
-                atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
-              )}
-              onChange={onLayerColormapChange}
-            />
-          </div>
-          {atlasId !== selected.id ? (
-            <WindowControl
-              itemId={selected.id}
-              label={selected.label}
-              window={layerSettings[selected.id]?.window}
-              onChange={onLayerWindowChange}
-              onReset={onLayerWindowReset}
-            />
-          ) : null}
-        </>
+        <div className="nv-layer-rows">
+          {rows.map(({ item, role }) => {
+            const settings = layerSettings[item.id]
+            const isBaseAtlas = role === 'base' && atlasId === selected.id
+            const overlayIndex = role === 'overlay' ? overlayItems.findIndex((o) => o.id === item.id) : 0
+            const colormapValue = layerColormapForItem(
+              item,
+              layerSettings,
+              role === 'overlay'
+                ? overlayColormapForIndex(overlayIndex)
+                : isBaseAtlas
+                  ? DEFAULT_ATLAS_COLORMAP
+                  : DEFAULT_BASE_COLORMAP
+            )
+            return (
+              <LayerRow
+                key={item.id}
+                role={role}
+                label={item.label}
+                meta={layerOptionMeta(item)}
+                hidden={!!settings?.hidden}
+                expanded={expanded === item.id}
+                removable={role !== 'base'}
+                onToggleExpand={() => setExpandedId((current) => (current === item.id ? null : item.id))}
+                onHiddenChange={(hidden) => onLayerHiddenChange(item.id, hidden)}
+                onRemove={role === 'atlas' ? () => onAtlasChange('') : () => onOverlayToggle(item.id)}
+              >
+                {role === 'atlas' ? (
+                  <Slider
+                    label="Opacity"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={opacityForItem(item.id, layerSettings, DEFAULT_ATLAS_OPACITY)}
+                    onChange={(value) => onLayerOpacityChange(item.id, value)}
+                  />
+                ) : (
+                  <>
+                    <LayerColormapSelect
+                      ariaLabel={`Colormap for ${item.label}`}
+                      itemId={item.id}
+                      value={colormapValue}
+                      onChange={onLayerColormapChange}
+                    />
+                    {role === 'overlay' ? (
+                      <Slider
+                        label="Opacity"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={opacityForItem(item.id, layerSettings, DEFAULT_OVERLAY_OPACITY)}
+                        onChange={(value) => onLayerOpacityChange(item.id, value)}
+                      />
+                    ) : null}
+                    {!isBaseAtlas ? (
+                      <WindowControl
+                        itemId={item.id}
+                        label={item.label}
+                        window={settings?.window}
+                        onChange={onLayerWindowChange}
+                        onReset={onLayerWindowReset}
+                      />
+                    ) : null}
+                  </>
+                )}
+              </LayerRow>
+            )
+          })}
+        </div>
       ) : null}
 
       <label className="nv-select nv-layer-select">
@@ -1069,82 +1115,112 @@ function LayerPanel({
         <ChevronDown size={14} />
       </label>
 
-      <label className={`nv-layer-visibility ${atlasId ? '' : 'is-disabled'}`}>
-        <input
-          checked={atlasId ? !layerSettings[atlasId]?.hidden : false}
-          disabled={!atlasId}
-          onChange={(event) => {
-            if (atlasId) onLayerHiddenChange(atlasId, !event.target.checked)
-          }}
-          type="checkbox"
-        />
-        <span>Show atlas</span>
-      </label>
-
-      {atlasId ? (
-        <Slider
-          label="Atlas opacity"
-          min={0}
-          max={1}
-          step={0.05}
-          value={opacityForItem(atlasId, layerSettings, DEFAULT_ATLAS_OPACITY)}
-          onChange={(value) => onLayerOpacityChange(atlasId, value)}
-        />
-      ) : null}
+      <button
+        className="nv-layer-load-button"
+        disabled={isOpeningOverlay}
+        onClick={onLoadOverlay}
+        type="button"
+      >
+        <FolderOpen size={14} />
+        <span>{isOpeningOverlay ? 'Loading overlay' : 'Load overlay'}</span>
+      </button>
 
       <div className="nv-layer-list-header">
-        <span>Overlays</span>
-        <em>{overlayIds.size}</em>
+        <span>Add overlay</span>
+        <em>{addCandidates.length}</em>
       </div>
       <div className="nv-layer-list">
-        {overlayCandidates.map((item) => {
-          const isActive = overlayIds.has(item.id)
-          const activeIndex = activeOverlayIndexById.get(item.id) ?? 0
-          return (
-            <div className={`nv-layer-option ${isActive ? 'is-active' : ''}`} key={item.id} title={item.label}>
-              <label className="nv-layer-option-toggle">
-                <input
-                  checked={isActive}
-                  disabled={!selected}
-                  onChange={() => onOverlayToggle(item.id)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>{item.label}</strong>
-                  <small>{layerOptionMeta(item)}</small>
-                </span>
-              </label>
-              <LayerColormapSelect
-                ariaLabel={`Colormap for ${item.label}`}
-                disabled={!selected || !isActive}
-                itemId={item.id}
-                value={layerColormapForItem(
-                  item,
-                  layerSettings,
-                  overlayColormapForIndex(activeIndex)
-                )}
-                onChange={onLayerColormapChange}
-              />
-              {isActive ? (
-                <div className="nv-layer-option-opacity">
-                  <Slider
-                    label="Opacity"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={opacityForItem(item.id, layerSettings, DEFAULT_OVERLAY_OPACITY)}
-                    onChange={(value) => onLayerOpacityChange(item.id, value)}
-                  />
-                </div>
-              ) : null}
-            </div>
-          )
-        })}
-        {overlayCandidates.length === 0 ? (
+        {addCandidates.map((item) => (
+          <button
+            className="nv-layer-add-option"
+            disabled={!selected}
+            key={item.id}
+            onClick={() => onOverlayToggle(item.id)}
+            title={item.label}
+            type="button"
+          >
+            <Plus size={13} />
+            <span>
+              <strong>{item.label}</strong>
+              <small>{layerOptionMeta(item)}</small>
+            </span>
+          </button>
+        ))}
+        {addCandidates.length === 0 ? (
           <div className="nv-filter-empty">No overlay candidates.</div>
         ) : null}
       </div>
     </section>
+  )
+}
+
+// One expandable row in the unified Layers list. The header carries the
+// visibility toggle, label/role, expand caret, and (for non-base layers) a
+// remove button; the role-specific controls live in the expanded body.
+function LayerRow({
+  role,
+  label,
+  meta,
+  hidden,
+  expanded,
+  removable,
+  onToggleExpand,
+  onHiddenChange,
+  onRemove,
+  children
+}: {
+  role: 'base' | 'overlay' | 'atlas'
+  label: string
+  meta: string
+  hidden: boolean
+  expanded: boolean
+  removable: boolean
+  onToggleExpand: () => void
+  onHiddenChange: (hidden: boolean) => void
+  onRemove: () => void
+  children: JSX.Element
+}): JSX.Element {
+  const roleLabel = role === 'base' ? 'Base' : role === 'atlas' ? 'Atlas' : 'Overlay'
+  return (
+    <div className={`nv-layer-row is-${role}${expanded ? ' is-expanded' : ''}${hidden ? ' is-hidden' : ''}`}>
+      <div className="nv-layer-row-head">
+        <button
+          aria-label={hidden ? `Show ${label}` : `Hide ${label}`}
+          aria-pressed={!hidden}
+          className="nv-layer-row-vis"
+          onClick={() => onHiddenChange(!hidden)}
+          type="button"
+        >
+          {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+        </button>
+        <button
+          aria-expanded={expanded}
+          className="nv-layer-row-main"
+          onClick={onToggleExpand}
+          type="button"
+        >
+          <span className="nv-layer-row-title">
+            <strong>{label}</strong>
+            <small>
+              <span className="nv-layer-role">{roleLabel}</span>
+              {meta ? ` · ${meta}` : ''}
+            </small>
+          </span>
+          <ChevronDown className="nv-layer-row-caret" size={15} />
+        </button>
+        {removable ? (
+          <button
+            aria-label={`Remove ${label}`}
+            className="nv-layer-row-remove"
+            onClick={onRemove}
+            type="button"
+          >
+            <X size={14} />
+          </button>
+        ) : null}
+      </div>
+      {expanded ? <div className="nv-layer-row-body">{children}</div> : null}
+    </div>
   )
 }
 

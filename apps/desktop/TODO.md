@@ -203,7 +203,7 @@ Phases (threshold deferred per decision):
   preserves the layer's opacity. Overlays share the plumbing; their per-row
   visibility toggle lands with the unified row in D (current overlay on/off is
   still membership via `overlayIds`).
-- [ ] **[P2] (M) D — Unified `LayerRow` list** with expandable detail; fold in colormap + opacity + WindowControl + per-row visibility (`hidden`) toggle for every layer. Numeric-first window (Min/Max + Auto), opacity slider+readout, diverging colormap stays a colormap option.
+- [x] **[P2] (M) D — Unified `LayerRow` list** with expandable detail; fold in colormap + opacity + WindowControl + per-row visibility (`hidden`) toggle for every layer. Numeric-first window (Min/Max + Auto), opacity slider+readout, diverging colormap stays a colormap option. Done: one accordion list (base→overlay→atlas order), one row open at a time, role asymmetry (base = colormap+window, overlay = full kit, atlas = opacity only), per-row eye toggle + remove (X), and a compact "Add overlay" pool replacing the 157-row checklist. Atlas `outline/labels` toggles still TODO (NiiVue `setColormapLabel` exists but no UI). Old `.nv-layer-card/.nv-layer-option*` CSS now dead — prune in a cleanup pass.
 - [ ] **[P3] (M–L) E — Threshold** (deferred). Keep visually distinct from the
   window. Decide the sink: true masking (alpha / niimath pre-op) vs honest
   contrast-floor (cal_min) — do not conflate with min/max.

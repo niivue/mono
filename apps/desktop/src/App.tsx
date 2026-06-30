@@ -79,6 +79,9 @@ const MAX_SPLIT = 68
 const DEFAULT_BASE_COLORMAP = 'gray'
 const DEFAULT_ATLAS_COLORMAP = 'actc'
 const DEFAULT_OVERLAY_COLORMAPS = ['magma', 'viridis', 'actc'] as const
+// Default layer opacities (used when a layer has no explicit opacity setting).
+const DEFAULT_OVERLAY_OPACITY = 0.48
+const DEFAULT_ATLAS_OPACITY = 0.34
 const COLORMAP_OPTIONS = [
   { value: 'gray', label: 'Gray' },
   { value: 'viridis', label: 'Viridis' },
@@ -113,6 +116,7 @@ type SidePanelTab = 'inspect' | 'operations'
 // phases of the layer-controls redesign.
 interface LayerSettings {
   colormap?: string
+  opacity?: number
   window?: { min: number; max: number }
 }
 
@@ -265,7 +269,7 @@ export function App(): JSX.Element {
         kind: 'overlay',
         ...resolveColormap(layerColormapForItem(item, layerSettings, overlayColormapForIndex(overlayIndex))),
         ...windowForItem(item.id, layerSettings),
-        opacity: 0.48
+        opacity: opacityForItem(item.id, layerSettings, DEFAULT_OVERLAY_OPACITY)
       })
       overlayIndex += 1
     }
@@ -277,7 +281,7 @@ export function App(): JSX.Element {
         kind: 'overlay',
         isAtlas: true,
         colormap: layerColormapForItem(atlasItem, layerSettings, DEFAULT_ATLAS_COLORMAP),
-        opacity: isAtlasVisible ? 0.34 : 0
+        opacity: isAtlasVisible ? opacityForItem(atlasItem.id, layerSettings, DEFAULT_ATLAS_OPACITY) : 0
       })
     }
 
@@ -342,6 +346,14 @@ export function App(): JSX.Element {
         next[itemId] = rest
       }
       return next
+    })
+  }
+
+  function changeLayerOpacity(itemId: string, opacity: number): void {
+    const clamped = Math.min(1, Math.max(0, opacity))
+    setLayerSettings((current) => {
+      if (current[itemId]?.opacity === clamped) return current
+      return { ...current, [itemId]: { ...current[itemId], opacity: clamped } }
     })
   }
 
@@ -783,6 +795,7 @@ export function App(): JSX.Element {
                   onAtlasChange={changeAtlasLayer}
                   onAtlasVisibilityChange={setIsAtlasVisible}
                   onLayerColormapChange={changeLayerColormap}
+                  onLayerOpacityChange={changeLayerOpacity}
                   onLayerWindowChange={changeLayerWindow}
                   onLayerWindowReset={resetLayerWindow}
                   onLoadOverlay={loadOverlayVolume}
@@ -940,6 +953,7 @@ function LayerPanel({
   onAtlasChange,
   onAtlasVisibilityChange,
   onLayerColormapChange,
+  onLayerOpacityChange,
   onLayerWindowChange,
   onLayerWindowReset,
   onLoadOverlay,
@@ -955,6 +969,7 @@ function LayerPanel({
   onAtlasChange: (itemId: string) => void
   onAtlasVisibilityChange: (visible: boolean) => void
   onLayerColormapChange: (itemId: string, colormap: string) => void
+  onLayerOpacityChange: (itemId: string, opacity: number) => void
   onLayerWindowChange: (itemId: string, min: number, max: number) => void
   onLayerWindowReset: (itemId: string) => void
   onLoadOverlay: () => void
@@ -1056,6 +1071,17 @@ function LayerPanel({
         <span>Show atlas</span>
       </label>
 
+      {atlasId ? (
+        <Slider
+          label="Atlas opacity"
+          min={0}
+          max={1}
+          step={0.05}
+          value={opacityForItem(atlasId, layerSettings, DEFAULT_ATLAS_OPACITY)}
+          onChange={(value) => onLayerOpacityChange(atlasId, value)}
+        />
+      ) : null}
+
       <div className="nv-layer-list-header">
         <span>Overlays</span>
         <em>{overlayIds.size}</em>
@@ -1089,6 +1115,18 @@ function LayerPanel({
                 )}
                 onChange={onLayerColormapChange}
               />
+              {isActive ? (
+                <div className="nv-layer-option-opacity">
+                  <Slider
+                    label="Opacity"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={opacityForItem(item.id, layerSettings, DEFAULT_OVERLAY_OPACITY)}
+                    onChange={(value) => onLayerOpacityChange(item.id, value)}
+                  />
+                </div>
+              ) : null}
             </div>
           )
         })}
@@ -1693,6 +1731,15 @@ function layerColormapForItem(
 
 function overlayColormapForIndex(index: number): string {
   return DEFAULT_OVERLAY_COLORMAPS[index % DEFAULT_OVERLAY_COLORMAPS.length]
+}
+
+function opacityForItem(
+  itemId: string,
+  layerSettings: Record<string, LayerSettings>,
+  fallback: number
+): number {
+  const opacity = layerSettings[itemId]?.opacity
+  return typeof opacity === 'number' && Number.isFinite(opacity) ? opacity : fallback
 }
 
 function windowForItem(

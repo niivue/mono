@@ -196,7 +196,7 @@ off for atlas rows (it uses `setColormapLabel`).
 
 Phases (threshold deferred per decision):
 - [x] **[P2] (S) A — Consolidate state** → `layerSettings` map + handlers + single prune branch.
-- [ ] **[P2] (S) B — Per-layer opacity** (field + slider); delete hardcoded opacity literals.
+- [x] **[P2] (S) B — Per-layer opacity** (field + slider); delete hardcoded opacity literals.
 - [ ] **[P2] (S) C — Unify visibility** into a `hidden` flag (atlas + overlays).
 - [ ] **[P2] (M) D — Unified `LayerRow` list** with expandable detail; fold in colormap + opacity + WindowControl. Numeric-first window (Min/Max + Auto), opacity slider+readout, diverging colormap stays a colormap option.
 - [ ] **[P3] (M–L) E — Threshold** (deferred). Keep visually distinct from the

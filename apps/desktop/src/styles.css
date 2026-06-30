@@ -1644,6 +1644,17 @@ button {
   border-color: rgba(115, 198, 155, 0.38);
 }
 
+/* Opacity slider sits as a full-width sub-row under the overlay's
+   toggle + colormap grid. */
+.nv-layer-option-opacity {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.nv-layer-option-opacity .nv-slider {
+  margin-top: 2px;
+}
+
 .nv-window-control {
   display: grid;
   gap: 7px;

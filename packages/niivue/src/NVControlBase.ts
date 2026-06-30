@@ -69,7 +69,9 @@ import type {
   VolumeUpdate,
 } from '@/NVTypes'
 import type { NVSlide } from '@/slide/NVSlide'
+import { SlideDrawing } from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
+import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
 import type { GraphLayout } from '@/view/NVGraph'
@@ -217,6 +219,8 @@ export default class NiiVueGPU extends EventTarget {
   private _slidePlane: SlidePlaneState | null = null
   private _slidePlaneSlide: NVSlide | null = null
   private _slidePlaneOnChange: (() => void) | null = null
+  private _slideDrawing: SlideDrawing | null = null
+  private _slideLastRasterPt: [number, number] | null = null
   resizeObserver: ResizeObserver | null
   _eventListeners: Record<string, EventHandler | null>
   private _updating = false
@@ -2547,7 +2551,143 @@ export default class NiiVueGPU extends EventTarget {
     this._slidePlaneSlide = null
     this._slidePlaneOnChange = null
     this._slidePlane = null
+    this._slideDrawing = null
     if (this.view) this.view.slidePlane = null
+    this.drawScene()
+  }
+
+  /**
+   * Create a drawing surface in *slide* space for the registered slide plane.
+   * The annotation is a label raster covering the whole slide (sized to the
+   * slide aspect, long edge capped at `maxRaster`, default 4096) and is painted
+   * with the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,
+   * drawLine and the RLE undo stack), so it stays in slide coordinates and is
+   * compatible with the volume drawing functions. Requires {@link setSlidePlane}.
+   */
+  createSlideDrawing(opts?: { maxRaster?: number }): void {
+    const sp = this._slidePlane
+    if (!sp) {
+      log.warn('createSlideDrawing: no slide plane registered')
+      return
+    }
+    const sw = sp.slide.manifest.width
+    const sh = sp.slide.manifest.height
+    const cap = opts?.maxRaster ?? 4096
+    const scale = Math.min(1, cap / Math.max(1, sw, sh))
+    this._slideDrawing = new SlideDrawing(
+      Math.max(1, Math.round(sw * scale)),
+      Math.max(1, Math.round(sh * scale)),
+    )
+    this._slideLastRasterPt = null
+    sp.annotation = {
+      corners: slideExtentCorners(sp.pixelToWorld, sw, sh),
+      rgba: new Uint8Array(
+        this._slideDrawing.width * this._slideDrawing.height * 4,
+      ),
+      width: this._slideDrawing.width,
+      height: this._slideDrawing.height,
+      version: 0,
+    }
+    this._refreshSlideAnnotation()
+  }
+
+  /** Map a canvas CSS pixel to slide base-pixel coords, or null off-plane. */
+  slidePlanePick(cssX: number, cssY: number): { x: number; y: number } | null {
+    if (!this._slidePlane) return null
+    // forceDevicePixelRatio is -1 ("auto") unless explicitly pinned.
+    const forced = this.view?.forceDevicePixelRatio ?? -1
+    const dpr =
+      forced > 0
+        ? forced
+        : typeof window !== 'undefined'
+          ? window.devicePixelRatio || 1
+          : 1
+    return pickSlidePixel(this._slidePlane, cssX * dpr, cssY * dpr)
+  }
+
+  // Map slide base-pixel -> annotation raster pixel.
+  private _slideToRaster(p: { x: number; y: number }): [number, number] | null {
+    const sp = this._slidePlane
+    const dr = this._slideDrawing
+    if (!sp || !dr) return null
+    return [
+      (p.x / sp.slide.manifest.width) * dr.width,
+      (p.y / sp.slide.manifest.height) * dr.height,
+    ]
+  }
+
+  /**
+   * Paint on the slide at a canvas CSS pixel. `begin` snapshots for undo and
+   * starts a new stroke; subsequent calls draw a continuous line. Returns false
+   * if the point misses the slide. Uses the model's pen value/size, so eraser
+   * (penValue 0) and labels work as in the volume drawing path.
+   */
+  slideDrawAt(cssX: number, cssY: number, begin: boolean): boolean {
+    const dr = this._slideDrawing
+    if (!dr) return false
+    const hit = this.slidePlanePick(cssX, cssY)
+    if (!hit) return false
+    const raster = this._slideToRaster(hit)
+    if (!raster) return false
+    const [rx, ry] = [Math.round(raster[0]), Math.round(raster[1])]
+    const penValue = this.model.draw.penValue
+    const penSize = this.model.draw.penSize
+    const overwrite = this.model.draw.isFillOverwriting
+    if (begin) {
+      dr.beginStroke(overwrite)
+      dr.point(rx, ry, penValue, penSize, overwrite)
+      this._slideLastRasterPt = [rx, ry]
+    } else if (this._slideLastRasterPt) {
+      const [px, py] = this._slideLastRasterPt
+      dr.line(px, py, rx, ry, penValue, penSize, overwrite)
+      this._slideLastRasterPt = [rx, ry]
+    } else {
+      dr.point(rx, ry, penValue, penSize, overwrite)
+      this._slideLastRasterPt = [rx, ry]
+    }
+    this._refreshSlideAnnotation()
+    this.emit('drawingChanged', { action: 'stroke' })
+    return true
+  }
+
+  /** End the current slide stroke (so the next begins fresh). */
+  slideDrawEnd(): void {
+    this._slideLastRasterPt = null
+  }
+
+  /** Undo the last slide stroke. */
+  slideDrawUndo(): void {
+    if (this._slideDrawing?.undo()) this._refreshSlideAnnotation()
+  }
+
+  /** Clear all slide annotation pixels. */
+  clearSlideDrawing(): void {
+    if (!this._slideDrawing) return
+    this._slideDrawing.clear()
+    this._refreshSlideAnnotation()
+  }
+
+  // Rebuild the annotation RGBA from the slide raster (reusing the draw LUT) and
+  // bump its version so the renderer re-uploads, then redraw.
+  private _refreshSlideAnnotation(): void {
+    const sp = this._slidePlane
+    const dr = this._slideDrawing
+    if (!sp?.annotation || !dr) return
+    if (!this._drawLut) {
+      const cm = NVCmaps.lookupColorMap(this.model.draw.colormap)
+      if (!cm) {
+        log.warn(`Drawing colormap "${this.model.draw.colormap}" not found`)
+        return
+      }
+      this._drawLut = buildDrawingLut(cm)
+    }
+    sp.annotation.rgba = drawingBitmapToRGBA(
+      dr.img,
+      this._drawLut.lut,
+      this._drawLut.min ?? 0,
+      this.model.draw.opacity,
+    )
+    sp.annotation.version++
     this.drawScene()
   }
 

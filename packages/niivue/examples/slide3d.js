@@ -62,6 +62,10 @@ async function main() {
     ext,
   )
   nv.setSlidePlane(slide, { pixelToWorld: transform })
+  // Slide-space drawing: a label raster painted with the standard pen tools.
+  nv.createSlideDrawing()
+  nv.model.draw.penValue = 1
+  nv.model.draw.penSize = 16
   // Cut the brain at the same axial plane so the registered slide is revealed
   // inside the volume; a transparent clip cap lets the slide be the cut face.
   nv.clipPlaneColor = [0, 0, 0, 0]
@@ -71,10 +75,69 @@ async function main() {
   nv.azimuth = 120
   nv.elevation = 35
 
+  // Draw mode (key "d"): intercept pointer events in the capture phase so they
+  // paint the slide instead of orbiting; "u" undoes, "c" clears.
+  let drawMode = false
+  let drawing = false
+  const css = (e) => {
+    const r = canvas.getBoundingClientRect()
+    return [e.clientX - r.left, e.clientY - r.top]
+  }
+  canvas.addEventListener(
+    'pointerdown',
+    (e) => {
+      if (!drawMode) return
+      e.stopImmediatePropagation()
+      e.preventDefault()
+      drawing = true
+      nv.slideDrawAt(...css(e), true)
+    },
+    true,
+  )
+  canvas.addEventListener(
+    'pointermove',
+    (e) => {
+      if (!drawMode || !drawing) return
+      e.stopImmediatePropagation()
+      e.preventDefault()
+      nv.slideDrawAt(...css(e), false)
+    },
+    true,
+  )
+  window.addEventListener(
+    'pointerup',
+    () => {
+      if (!drawMode) return
+      drawing = false
+      nv.slideDrawEnd()
+    },
+    true,
+  )
+  window.addEventListener('keydown', (e) => {
+    const k = (e.key || '').toLowerCase()
+    if (k === 'd') drawMode = !drawMode
+    else if (k === 'u') nv.slideDrawUndo()
+    else if (k === 'c') nv.clearSlideDrawing()
+    else return
+    updateHud()
+  })
+  const drawBtn = document.getElementById('drawBtn')
+  drawBtn?.addEventListener('click', () => {
+    drawMode = !drawMode
+    drawBtn.textContent = `Draw: ${drawMode ? 'on' : 'off'}`
+    updateHud()
+  })
+  document
+    .getElementById('undoBtn')
+    ?.addEventListener('click', () => nv.slideDrawUndo())
+  document
+    .getElementById('clearBtn')
+    ?.addEventListener('click', () => nv.clearSlideDrawing())
+
   const updateHud = () => {
     const label = backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
     const s = slide.stats
-    hud.textContent = `${slide.manifest.name}\nMNI152 + slide plane · ${label}\ntiles ${s.completed}/${s.requested} · ${(s.wireBytes / 1024).toFixed(0)} KB`
+    hud.textContent = `${slide.manifest.name}\nMNI152 + slide plane · ${label}\ntiles ${s.completed}/${s.requested} · ${(s.wireBytes / 1024).toFixed(0)} KB\ndraw mode ${drawMode ? 'ON' : 'off'} (d toggle · u undo · c clear)`
   }
   slide.addEventListener('change', updateHud)
   updateHud()

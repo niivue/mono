@@ -69,12 +69,103 @@ export function slidePlaneTiles(
  * pulls each tile's bitmap from `slide`'s cache by `key`, so streaming stays in
  * NVSlide. `tilesByLevel` caches the (stable) plane-tile array per level.
  */
+/** An annotation drawn on the slide plane: an RGBA raster (slide space) shown as
+ * a single quad spanning the whole slide extent, over the tiles. */
+export interface SlidePlaneAnnotation {
+  /** World-mm quad over the full slide extent: TL, TR, BL, BR. */
+  corners: [Vec3, Vec3, Vec3, Vec3]
+  rgba: Uint8Array
+  width: number
+  height: number
+  /** Bumped when `rgba` changes so the renderer re-uploads its texture. */
+  version: number
+}
+
+/** Camera state captured during the last render, used for screen->slide picking. */
+export interface SlidePlanePickFrame {
+  mvp: Float32Array
+  /** Render-tile rect within the canvas (device px): left, top, width, height. */
+  ltwh: [number, number, number, number]
+  /** Sub-canvas bounds offset (device px); 0 for a full-canvas instance. */
+  bx: number
+  by: number
+}
+
 export interface SlidePlaneState {
   slide: NVSlide
   pixelToWorld: number[]
   /** Pinned level (camera LOD off) or undefined for automatic camera-distance LOD. */
   levelIndex?: number
   tilesByLevel: Map<number, SlidePlaneTile[]>
+  annotation?: SlidePlaneAnnotation | null
+  pickFrame?: SlidePlanePickFrame | null
+}
+
+/** World-mm quad (TL, TR, BL, BR) spanning the whole slide extent. */
+export function slideExtentCorners(
+  pixelToWorld: readonly number[],
+  width: number,
+  height: number,
+): [Vec3, Vec3, Vec3, Vec3] {
+  return [
+    apply(pixelToWorld, 0, 0),
+    apply(pixelToWorld, width, 0),
+    apply(pixelToWorld, 0, height),
+    apply(pixelToWorld, width, height),
+  ]
+}
+
+// Project a world-mm point to canvas device pixels (top-left origin) using the
+// render-tile MVP + viewport rect. Mirrors the gl.viewport mapping both backends
+// use: NDC (y up) -> tile-local px -> canvas px.
+function projectToCanvas(
+  frame: SlidePlanePickFrame,
+  p: Vec3,
+): [number, number] {
+  const m = frame.mvp
+  const cx = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]
+  const cy = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]
+  const cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15]
+  const iw = cw !== 0 ? 1 / cw : 0
+  const ndcX = cx * iw
+  const ndcY = cy * iw
+  const [lx, ty, w, h] = frame.ltwh
+  const px = frame.bx + lx + (ndcX * 0.5 + 0.5) * w
+  // NDC y is up; canvas y is down, so flip within the tile.
+  const py = frame.by + ty + (0.5 - ndcY * 0.5) * h
+  return [px, py]
+}
+
+/**
+ * Map a canvas device pixel to slide base-pixel (u, v), or null if the ray
+ * misses the slide. The 3D render is orthographic and the plane affine in slide
+ * coords, so slide->canvas is a 2D affine — invert it from three projected
+ * reference points. Requires a `pickFrame` captured during render.
+ */
+export function pickSlidePixel(
+  state: SlidePlaneState,
+  canvasX: number,
+  canvasY: number,
+): { x: number; y: number } | null {
+  const frame = state.pickFrame
+  if (!frame) return null
+  const w = state.slide.manifest.width
+  const h = state.slide.manifest.height
+  const o = projectToCanvas(frame, apply(state.pixelToWorld, 0, 0))
+  const pu = projectToCanvas(frame, apply(state.pixelToWorld, w, 0))
+  const pv = projectToCanvas(frame, apply(state.pixelToWorld, 0, h))
+  const e1x = pu[0] - o[0]
+  const e1y = pu[1] - o[1]
+  const e2x = pv[0] - o[0]
+  const e2y = pv[1] - o[1]
+  const det = e1x * e2y - e2x * e1y
+  if (Math.abs(det) < 1e-9) return null
+  const rx = canvasX - o[0]
+  const ry = canvasY - o[1]
+  const a = (rx * e2y - e2x * ry) / det
+  const b = (e1x * ry - rx * e1y) / det
+  if (a < 0 || a > 1 || b < 0 || b > 1) return null
+  return { x: a * w, y: b * h }
 }
 
 // Project a world-mm point through a column-major mvp (world mm -> clip) to

@@ -1,5 +1,5 @@
 import type { NVSlide } from '@/slide/NVSlide'
-import type { SlidePlaneTile } from '@/slide/slidePlane'
+import type { SlidePlaneAnnotation, SlidePlaneTile } from '@/slide/slidePlane'
 import { NVRenderer } from '@/view/NVRenderer'
 import { Shader } from './shader'
 
@@ -36,6 +36,9 @@ export class SlidePlaneRenderer extends NVRenderer {
   private _vbo: WebGLBuffer | null = null
   // One texture per resident tile, keyed by NVSlide tile key.
   private _textures = new Map<string, WebGLTexture>()
+  // Annotation overlay (slide-space drawing) texture + uploaded version.
+  private _annTex: WebGLTexture | null = null
+  private _annVersion = -1
 
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
@@ -143,11 +146,88 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl.depthMask(true)
   }
 
+  /** Draw the slide-space annotation raster as one quad over the whole slide. */
+  drawAnnotation(
+    gl: WebGL2RenderingContext,
+    mvpMatrix: Float32Array,
+    ann: SlidePlaneAnnotation,
+    opacity = 1,
+  ): void {
+    if (!this.isReady || !this._shader || !this._vao || !this._vbo) return
+    if (!this._annTex) this._annTex = gl.createTexture()
+    if (!this._annTex) return
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, this._annTex)
+    if (this._annVersion !== ann.version) {
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        ann.width,
+        ann.height,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        ann.rgba,
+      )
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      this._annVersion = ann.version
+    }
+    this._shader.use(gl)
+    if (this._shader.uniforms.mvpMtx) {
+      gl.uniformMatrix4fv(this._shader.uniforms.mvpMtx, false, mvpMatrix)
+    }
+    if (this._shader.uniforms.opacity) {
+      gl.uniform1f(this._shader.uniforms.opacity, opacity)
+    }
+    if (this._shader.uniforms.tileTex)
+      gl.uniform1i(this._shader.uniforms.tileTex, 0)
+    gl.enable(gl.DEPTH_TEST)
+    gl.depthMask(false)
+    gl.disable(gl.CULL_FACE)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    const [tl, tr, bl, br] = ann.corners
+    const v = new Float32Array([
+      tl[0],
+      tl[1],
+      tl[2],
+      0,
+      0,
+      tr[0],
+      tr[1],
+      tr[2],
+      1,
+      0,
+      bl[0],
+      bl[1],
+      bl[2],
+      0,
+      1,
+      br[0],
+      br[1],
+      br[2],
+      1,
+      1,
+    ])
+    gl.bindVertexArray(this._vao)
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._vbo)
+    gl.bufferData(gl.ARRAY_BUFFER, v, gl.DYNAMIC_DRAW)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    gl.bindVertexArray(null)
+    gl.depthMask(true)
+  }
+
   destroy(): void {
     const gl = this._gl
     if (!gl) return
     for (const tex of this._textures.values()) gl.deleteTexture(tex)
     this._textures.clear()
+    if (this._annTex) gl.deleteTexture(this._annTex)
     if (this._vao) gl.deleteVertexArray(this._vao)
     if (this._vbo) gl.deleteBuffer(this._vbo)
     if (this._shader?.program) gl.deleteProgram(this._shader.program)
@@ -155,6 +235,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     this._shader = null
     this._vao = null
     this._vbo = null
+    this._annTex = null
     this._gl = null
   }
 }

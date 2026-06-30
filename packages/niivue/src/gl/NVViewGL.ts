@@ -344,13 +344,19 @@ export default class NVGlview {
         // bindCachedVolume. Without this, all tiles would share volumes[0]'s
         // texture and visibly "jump" as the model's first volume changes.
         for (const vol of vols) {
-          await this.volumeRenderer.updateVolume(
-            gl,
-            vol,
-            this.model.volume.matcap,
-            vols,
-            true,
-          )
+          try {
+            await this.volumeRenderer.updateVolume(
+              gl,
+              vol,
+              this.model.volume.matcap,
+              vols,
+              true,
+            )
+          } catch (e) {
+            log.warn(
+              `updateVolume failed for ${vol.name}: ${(e as Error).message}`,
+            )
+          }
         }
         const keepKeys = new Set<string>()
         for (const vol of vols) {
@@ -359,12 +365,18 @@ export default class NVGlview {
         }
         this.volumeRenderer.pruneVolumeCache(keepKeys)
       } else {
-        await this.volumeRenderer.updateVolume(
-          gl,
-          vols[0],
-          this.model.volume.matcap,
-          vols,
-        )
+        try {
+          await this.volumeRenderer.updateVolume(
+            gl,
+            vols[0],
+            this.model.volume.matcap,
+            vols,
+          )
+        } catch (e) {
+          log.warn(
+            `updateVolume failed for ${vols[0].name}: ${(e as Error).message}`,
+          )
+        }
       }
     }
 

@@ -204,6 +204,9 @@ async function loadBase(id: string): Promise<void> {
   await applyOrientation()
   nv.drawScene()
   renderHud()
+  // Clear the "loading…" status now that the winning load has placed the patch
+  // (it was never reset, so it lingered after every load).
+  els.mag.textContent = ''
 }
 
 async function main(): Promise<void> {

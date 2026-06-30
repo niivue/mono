@@ -17,6 +17,15 @@ const SYNTHETIC_MANIFEST_PATH = 'tile-range-poc/tiles.json'
 // offset, which NVSlide fetches over HTTP Range and decodes in-browser. Only
 // present after running the fetch script (the fixture is gitignored).
 const DICOM_WSI_PATH = 'dicom-wsi/cptac-brca/manifest.json'
+// Manifest path per source-dropdown value. OpenSlide DICOM-WSI archives are
+// fetched + manifest-built by scripts/fetch-openslide-dicom.ts (gitignored);
+// only the JPEG TILED_FULL ones are loadable in-browser (see that script).
+const MANIFEST_PATHS = {
+  synthetic: SYNTHETIC_MANIFEST_PATH,
+  'dicom-wsi': DICOM_WSI_PATH,
+  'openslide-3dhistech-1': 'dicom-wsi/3dhistech-1/manifest.json',
+  'openslide-hamamatsu-2': 'dicom-wsi/hamamatsu-2/manifest.json',
+}
 const MAX_CACHE_BYTES = 96 * 1024 * 1024
 const TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75
 const RANGE_LOG_LENGTH = 24
@@ -54,8 +63,7 @@ function backendFromUrl() {
 function manifestUrl() {
   const base = import.meta.env.BASE_URL || '/'
   const normalized = base.endsWith('/') ? base : `${base}/`
-  const path =
-    els.source.value === 'dicom-wsi' ? DICOM_WSI_PATH : SYNTHETIC_MANIFEST_PATH
+  const path = MANIFEST_PATHS[els.source.value] ?? SYNTHETIC_MANIFEST_PATH
   return new URL(`${normalized}${path}`, window.location.href).toString()
 }
 
@@ -325,8 +333,10 @@ async function loadSlide() {
     requestRender()
   } catch (err) {
     console.error(err)
-    const hint =
-      els.source.value === 'dicom-wsi'
+    const src = els.source.value
+    const hint = src.startsWith('openslide-')
+      ? ` Did you run scripts/fetch-openslide-dicom.ts --slide=${src.replace('openslide-', '')}?`
+      : src === 'dicom-wsi'
         ? ' Did you run scripts/fetch-dicom-wsi.ts?'
         : ''
     showFallback((err instanceof Error ? err.message : String(err)) + hint)

@@ -451,7 +451,7 @@ function levelManifest(
   }
 }
 
-async function buildManifest(
+export async function buildManifest(
   id: string,
   filesDir: string,
 ): Promise<Record<string, unknown>> {
@@ -562,7 +562,11 @@ async function main(): Promise<void> {
   )
 }
 
-main().catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : err)
-  process.exit(1)
-})
+// Only run the IDC download when invoked directly; importing this module (e.g.
+// fetch-openslide-dicom.ts reusing buildManifest) must not trigger a download.
+if (import.meta.main) {
+  main().catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : err)
+    process.exit(1)
+  })
+}

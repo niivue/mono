@@ -1368,6 +1368,21 @@ export default class NVView {
           tiles,
           this.slidePlane.slide,
         )
+        if (this.slidePlane.annotation) {
+          this.slidePlaneRenderer.drawAnnotation(
+            device,
+            pass,
+            mvpMatrix as Float32Array,
+            this.slidePlane.annotation,
+          )
+        }
+        // Capture this frame's camera for screen->slide picking (drawing).
+        this.slidePlane.pickFrame = {
+          mvp: new Float32Array(mvpMatrix as Float32Array),
+          ltwh: [ltwh[0], ltwh[1], ltwh[2], ltwh[3]],
+          bx: this._boundsOffsetX,
+          by: this._boundsOffsetY,
+        }
       }
       // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders and global3d)
       if (

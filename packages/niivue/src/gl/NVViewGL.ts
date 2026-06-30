@@ -760,6 +760,17 @@ export default class NVGlview {
               : 0
           const chunked = this.volumeRenderer.getActiveChunkedSlice()
           if (chunked) {
+            // A whole-volume (non-chunked) overlay cannot be sampled correctly in
+            // the chunked path: the slice shader applies the per-chunk transform
+            // to BOTH base and overlay, so a whole-volume overlay would mis-map to
+            // chunk-local coords. Only composite a CHUNKED overlay here; otherwise
+            // skip the overlay (numVolumes = 1), matching the WebGPU backend (which
+            // passes no overlay). Correctly compositing a whole-volume overlay over
+            // a chunked base in 2D needs a separate overlay sample transform in the
+            // slice shader (deferred).
+            const chunkedNumVolumes = chunked.overlayChunks
+              ? numSliceVolumes
+              : 1
             // Coarse LOD floor: draw the whole-volume coarse texture first as a
             // full-coverage quad, so regions whose fine chunk has not streamed
             // yet show coarse detail instead of blank. Fine chunk quads below
@@ -781,7 +792,7 @@ export default class NVGlview {
                 mvpMatrix as Float32Array,
                 tile.axCorSag,
                 sliceFrac,
-                numSliceVolumes,
+                chunkedNumVolumes,
                 md.volume.isNearestInterpolation,
                 1,
                 this.volumeRenderer.paqdTexture,
@@ -825,7 +836,7 @@ export default class NVGlview {
                 mvpMatrix as Float32Array,
                 tile.axCorSag,
                 sliceFrac,
-                numSliceVolumes,
+                chunkedNumVolumes,
                 md.volume.isNearestInterpolation,
                 1,
                 chunked.paqdChunks

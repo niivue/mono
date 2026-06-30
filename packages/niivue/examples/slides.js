@@ -527,7 +527,10 @@ function zoomCentered(factor) {
 }
 
 els.canvas.addEventListener('pointerdown', (event) => {
-  els.canvas.setPointerCapture(event.pointerId)
+  // NB: do NOT setPointerCapture here. Capturing on every press makes the next
+  // click elsewhere (e.g. a header link) get swallowed clearing the capture
+  // ("link needs several clicks"). Capture is taken on the first move instead
+  // (a real drag) and released on pointerup.
   // Draw mode paints the slide instead of panning.
   if (drawMode && drawing) {
     // Vector tool draws a freehand polygon in slide coords (not the raster).
@@ -621,7 +624,10 @@ els.canvas.addEventListener('pointermove', (event) => {
   slide.panByScreenDelta(dx, dy, screenForCanvas())
 })
 
-els.canvas.addEventListener('pointerup', (event) => {
+// On window (not the canvas) so a release outside the canvas still ends the
+// drag/stroke — we no longer setPointerCapture (capture swallows the next click
+// on header links). Pan/draw track via canvas pointermove while over the slide.
+window.addEventListener('pointerup', (event) => {
   if (drawStroke?.pointerId === event.pointerId) {
     // Filled pen: close the recorded outline and fill its interior on release.
     if (drawStroke.tool === 'filled' && drawStroke.points.length >= 2) {
@@ -641,7 +647,7 @@ els.canvas.addEventListener('pointerup', (event) => {
   if (drag?.pointerId === event.pointerId) drag = null
 })
 
-els.canvas.addEventListener('pointercancel', (event) => {
+window.addEventListener('pointercancel', (event) => {
   if (drawStroke?.pointerId === event.pointerId) {
     drawStroke = null
     lastRasterPt = null

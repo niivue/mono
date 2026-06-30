@@ -52,6 +52,15 @@ render clip-**BOX** (an AABB the ray-march trims `sampleRange` to) in both shade
 (overshoots ~1 brick). Alternative: 6 axis-aligned clip planes (`MAX_CLIP_PLANES =
 6`, AND-combined in `clipSampleRange`) — but conflicts with the clip-plane drag UI.
 
+Cutaway-clip iteration budget (latent, both backends): in `clipMode == 2`
+(cutaway) the fine ray-march loop in `rayMarchPass` (`gl/renderShader.ts` ~L98,
+`wgpu/render.wgsl` ~L73) steps through the cut-out interval `[clipLo, clipHi]` at
+fine resolution via `clipPassSkip` + `continue`, so a large hole can exhaust the
+2048-iteration cap inside the skipped region and truncate valid geometry behind
+the cut. Fix = advance `samplePos` directly past `clipHi` on entering the hole
+instead of stepping through it (solid mode already breaks at `clipHi`). ~2 lines
+each backend, parity-preserving.
+
 ## Client-only / NVSlide feature backlog
 
 Context: feature-gap scan against local Neuroglancer (`ac71c2a`) and Napari

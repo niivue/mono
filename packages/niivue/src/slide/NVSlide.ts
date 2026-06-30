@@ -86,6 +86,9 @@ export interface NVSlideOptions {
   placeholderColor?: NVSlideColor
   gridColor?: NVSlideColor
   spatialTransform?: NVSlideSpatialTransform
+  /** Pluggable tile source. Defaults to a byte-range manifest source; DZI / TIFF
+   * adapters supply their own. See {@link SlideTileSource}. */
+  source?: SlideTileSource
 }
 
 export interface NVSlideScreen {
@@ -240,6 +243,129 @@ class NVSlideTileCache {
   }
 }
 
+/**
+ * Telemetry + URL hooks a {@link SlideTileSource} uses. NVSlide implements this
+ * so a source can resolve relative URLs and record wire bytes / range-request
+ * status into the slide's stats + recent-request log without owning them.
+ */
+export interface SlideSourceHost {
+  resolveUrl(url: string): string
+  addWireBytes(bytes: number): void
+  rangeHit(): void
+  rangeFallback(): void
+  pushRangeEvent(event: NVSlideRangeEvent): void
+  updateRangeEvent(label: string, status: NVSlideRangeStatus): void
+}
+
+/**
+ * A pluggable slide source: owns the pyramid manifest and fetches the ENCODED
+ * bytes for one tile. NVSlide owns decoding (per `level.codec`), caching, stats
+ * and the viewport; a source varies by FORMAT. {@link ManifestRangeSource} (the
+ * default) addresses tiles as byte ranges in a per-level file (dicom-wsi-range-v1
+ * and the synthetic pyramid); DZI (per-tile URLs) and TIFF (IFD tile offsets) are
+ * future sources implementing this same contract.
+ */
+export interface SlideTileSource {
+  readonly manifest: NVSlideManifest
+  /** Adopted by an NVSlide before any fetch; wires up telemetry + URL resolution. */
+  bind(host: SlideSourceHost): void
+  /** Fetch the encoded bytes for one tile (NVSlide decodes per level.codec). */
+  fetchTileBytes(
+    level: NVSlideLevelManifest,
+    tile: NVSlideTileManifest,
+    label: string,
+  ): Promise<Uint8Array>
+}
+
+/**
+ * Default source: a byte-range manifest (dicom-wsi-range-v1 / synthetic pyramid).
+ * Each tile is one or more byte fragments addressed into a per-level file (or the
+ * manifest `dataUrl`), fetched with an HTTP Range request (206) and a full-file
+ * fallback for servers without range support.
+ */
+export class ManifestRangeSource implements SlideTileSource {
+  readonly manifest: NVSlideManifest
+  private host: SlideSourceHost | null = null
+
+  constructor(manifest: NVSlideManifest) {
+    this.manifest = manifest
+  }
+
+  bind(host: SlideSourceHost): void {
+    this.host = host
+  }
+
+  private requireHost(): SlideSourceHost {
+    if (!this.host) {
+      throw new Error('ManifestRangeSource is not bound to an NVSlide host')
+    }
+    return this.host
+  }
+
+  private tileSourceUrl(level: NVSlideLevelManifest): string {
+    const host = this.requireHost()
+    if (level.fileUrl) return host.resolveUrl(level.fileUrl)
+    if (this.manifest.dataUrl) return host.resolveUrl(this.manifest.dataUrl)
+    throw new Error(`No byte source for slide L${level.index}`)
+  }
+
+  private tileFragments(tile: NVSlideTileManifest): NVSlideTileFragment[] {
+    if (typeof tile.offset === 'number' && typeof tile.length === 'number') {
+      return [{ offset: tile.offset, length: tile.length }]
+    }
+    if (tile.fragments && tile.fragments.length > 0) return tile.fragments
+    throw new Error(`Tile ${tile.x}/${tile.y} has no byte ranges`)
+  }
+
+  private async fetchFragment(
+    sourceUrl: string,
+    fragment: NVSlideTileFragment,
+    label: string,
+  ): Promise<Uint8Array> {
+    const host = this.requireHost()
+    const start = fragment.offset
+    const end = fragment.offset + fragment.length - 1
+    const rangeLabel = `${label} ${start}-${end}`
+    host.pushRangeEvent({ label: rangeLabel, status: 'pending' })
+    const response = await fetch(sourceUrl, {
+      headers: { Range: `bytes=${start}-${end}` },
+    })
+    if (!response.ok && response.status !== 206) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const wireBytes = new Uint8Array(await response.arrayBuffer())
+    host.addWireBytes(wireBytes.byteLength)
+    if (response.status === 206) {
+      host.rangeHit()
+      host.updateRangeEvent(rangeLabel, 'hit')
+      if (wireBytes.byteLength !== fragment.length) {
+        throw new Error(
+          `Expected ${fragment.length} bytes, received ${wireBytes.byteLength}`,
+        )
+      }
+      return wireBytes
+    }
+    host.rangeFallback()
+    host.updateRangeEvent(rangeLabel, 'fallback')
+    return wireBytes.slice(start, end + 1)
+  }
+
+  async fetchTileBytes(
+    level: NVSlideLevelManifest,
+    tile: NVSlideTileManifest,
+    label: string,
+  ): Promise<Uint8Array> {
+    const sourceUrl = this.tileSourceUrl(level)
+    const fragments = this.tileFragments(tile)
+    const parts = await Promise.all(
+      fragments.map((fragment) =>
+        this.fetchFragment(sourceUrl, fragment, label),
+      ),
+    )
+    return parts.length === 1 ? (parts[0] as Uint8Array) : concatBytes(parts)
+  }
+}
+
 export class NVSlide extends EventTarget {
   readonly id: string
   readonly name: string
@@ -260,6 +386,7 @@ export class NVSlide extends EventTarget {
   private readonly _rangeLogLength = DEFAULT_RANGE_LOG_LENGTH
   private readonly _cache: NVSlideTileCache
   private readonly _pending = new Set<string>()
+  private readonly _source: SlideTileSource
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
@@ -288,6 +415,29 @@ export class NVSlide extends EventTarget {
     this._cache = new NVSlideTileCache(
       options.maxCacheBytes ?? DEFAULT_CACHE_BYTES,
     )
+    this._source = options.source ?? new ManifestRangeSource(manifest)
+    this._source.bind({
+      resolveUrl: (url) => this.resolveUrl(url),
+      addWireBytes: (n) => {
+        this.stats.wireBytes += n
+      },
+      rangeHit: () => {
+        this.stats.rangeHits++
+      },
+      rangeFallback: () => {
+        this.stats.fullFileFallbacks++
+      },
+      pushRangeEvent: (event) => this.pushRangeEvent(event),
+      updateRangeEvent: (label, status) => this.updateRangeEvent(label, status),
+    })
+  }
+
+  /** Build a slide from any tile source (DICOM-WSI/DZI/TIFF adapter). */
+  static fromSource(
+    source: SlideTileSource,
+    options: NVSlideOptions = {},
+  ): NVSlide {
+    return new NVSlide(source.manifest, { ...options, source })
   }
 
   static async fromManifestUrl(
@@ -575,12 +725,6 @@ export class NVSlide extends EventTarget {
     return `L${level.index}/${tile.x}/${tile.y}`
   }
 
-  private tileSourceUrl(level: NVSlideLevelManifest): string {
-    if (level.fileUrl) return this.resolveUrl(level.fileUrl)
-    if (this.manifest.dataUrl) return this.resolveUrl(this.manifest.dataUrl)
-    throw new Error(`No byte source for slide ${this.id} L${level.index}`)
-  }
-
   private resolveUrl(url: string): string {
     const base =
       this.manifestUrl ||
@@ -588,60 +732,6 @@ export class NVSlide extends EventTarget {
         ? window.location.href
         : 'http://localhost/')
     return new URL(url, base).toString()
-  }
-
-  private tileFragments(tile: NVSlideTileManifest): NVSlideTileFragment[] {
-    if (typeof tile.offset === 'number' && typeof tile.length === 'number') {
-      return [{ offset: tile.offset, length: tile.length }]
-    }
-    if (tile.fragments && tile.fragments.length > 0) return tile.fragments
-    throw new Error(`Tile ${tile.x}/${tile.y} has no byte ranges`)
-  }
-
-  private async fetchTileFragment(
-    sourceUrl: string,
-    fragment: NVSlideTileFragment,
-    label: string,
-  ): Promise<Uint8Array> {
-    const start = fragment.offset
-    const end = fragment.offset + fragment.length - 1
-    const rangeLabel = `${label} ${start}-${end}`
-    this.pushRangeEvent({ label: rangeLabel, status: 'pending' })
-    const response = await fetch(sourceUrl, {
-      headers: { Range: `bytes=${start}-${end}` },
-    })
-    if (!response.ok && response.status !== 206) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    const wireBytes = new Uint8Array(await response.arrayBuffer())
-    this.stats.wireBytes += wireBytes.byteLength
-    if (response.status === 206) {
-      this.stats.rangeHits++
-      this.updateRangeEvent(rangeLabel, 'hit')
-      if (wireBytes.byteLength !== fragment.length) {
-        throw new Error(
-          `Expected ${fragment.length} bytes, received ${wireBytes.byteLength}`,
-        )
-      }
-      return wireBytes
-    }
-    this.stats.fullFileFallbacks++
-    this.updateRangeEvent(rangeLabel, 'fallback')
-    return wireBytes.slice(start, end + 1)
-  }
-
-  private async fetchTileBytes(
-    sourceUrl: string,
-    tile: NVSlideTileManifest,
-    label: string,
-  ): Promise<Uint8Array> {
-    const fragments = this.tileFragments(tile)
-    const parts = await Promise.all(
-      fragments.map((fragment) =>
-        this.fetchTileFragment(sourceUrl, fragment, label),
-      ),
-    )
-    return parts.length === 1 ? (parts[0] as Uint8Array) : concatBytes(parts)
   }
 
   private async decodeTileBitmap(
@@ -677,11 +767,7 @@ export class NVSlide extends EventTarget {
     this._emitChange()
 
     try {
-      const tileBytes = await this.fetchTileBytes(
-        this.tileSourceUrl(level),
-        tile,
-        label,
-      )
+      const tileBytes = await this._source.fetchTileBytes(level, tile, label)
       this.stats.decodedBytes += tileBytes.byteLength
       const bitmap = await this.decodeTileBitmap(level, tile, tileBytes)
       this._cache.set(key, { bitmap, bytes: tileBytes.byteLength })

@@ -310,17 +310,19 @@ export function chunksCrossingSlice(
   sliceFrac: number,
 ): number[] {
   const a = sliceAxis
-  // Convert the [0,1] slice fraction to a voxel coordinate, then to a chunk
-  // layer the same way chunkAtVoxel does, so picking stays consistent.
+  // Convert the [0,1] slice fraction to a voxel coordinate, then keep only the
+  // bricks whose DATA extent (halo excluded) spans it along the slice axis. This
+  // works for both grid plans (a brick's extent === its layer) AND multi-LOD
+  // plans, whose degenerate gridDims=[1,1,1]/gridIndex=[0,0,0] made the old
+  // layer-based test return every brick (no depth culling -> heavy over-stream).
   const voxel = sliceFrac * plan.volumeDims[a]
   const clamped = Math.max(0, Math.min(plan.volumeDims[a] - 1e-3, voxel))
-  const layer = Math.min(
-    plan.gridDims[a] - 1,
-    Math.floor(clamped / plan.stride[a]),
-  )
   const out: number[] = []
   for (let i = 0; i < plan.chunks.length; i++) {
-    if (plan.chunks[i].gridIndex[a] === layer) out.push(i)
+    const c = plan.chunks[i]
+    const lo = c.voxelOrigin[a]
+    const hi = lo + c.voxelDims[a]
+    if (clamped >= lo && clamped < hi) out.push(i)
   }
   return out
 }

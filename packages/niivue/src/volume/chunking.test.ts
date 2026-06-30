@@ -414,6 +414,38 @@ describe('chunksCrossingSlice', () => {
       expect(i).toBeLessThan(plan.chunks.length)
     }
   })
+
+  test('multi-LOD: culls by voxel extent, not the degenerate grid index', () => {
+    const pyr: Vec3i[] = [
+      [512, 512, 512],
+      [256, 256, 256],
+      [128, 128, 128],
+      [64, 64, 64],
+    ]
+    const plan = chunkVolumeMultiLOD(
+      pyr,
+      { center: [256, 256, 256] as Vec3i, radius: 16 },
+      2048,
+      { cellEdge: 32 },
+    )
+    const axis = 2
+    // A slice away from the focus depth, so coarse bricks confined to the other
+    // half are excluded (the old grid-index test returned every brick).
+    const frac = 0.2
+    const voxel = frac * plan.volumeDims[axis]
+    const expected = plan.chunks
+      .map((c, i) => [c, i] as const)
+      .filter(
+        ([c]) =>
+          voxel >= c.voxelOrigin[axis] &&
+          voxel < c.voxelOrigin[axis] + c.voxelDims[axis],
+      )
+      .map(([, i]) => i)
+    expect(chunksCrossingSlice(plan, axis, frac)).toEqual(expected)
+    // Culling actually removes bricks (the degenerate path returned all of them).
+    expect(expected.length).toBeGreaterThan(0)
+    expect(expected.length).toBeLessThan(plan.chunks.length)
+  })
 })
 
 describe('chunkSampleTransform', () => {

@@ -52,6 +52,13 @@ packages/niivue/public/omezarr/*.ome.zarr/
 packages/niivue/public/dicom-wsi/
 packages/niivue/public/svs/
 
+# Synthetic POC fixtures for the range.html / slides.html streaming demos.
+# Deterministically generated on demand by scripts/generate-range-poc-fixture.ts
+# and scripts/generate-tile-range-poc-fixture.ts (run by `gen-fixtures`, which
+# the dev/build:examples/deploy scripts invoke). Never committed.
+packages/niivue/public/range-poc/
+packages/niivue/public/tile-range-poc/
+
 # Large generated POC / fixture data for the iiif-volumetric demo (OME-Zarr
 # chunks, tile range probes). Multi-GB, regenerated locally — never committed.
 apps/iiif-volumetric-demo/public/range-poc/

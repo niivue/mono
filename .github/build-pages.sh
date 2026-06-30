@@ -43,6 +43,7 @@ echo "==> Building niivue examples"
 rm -rf packages/niivue/dist
 (cd packages/niivue \
   && bun run codegen:assets \
+  && bun run gen-fixtures \
   && VITE_BASE="$BASE_PATH" bunx --bun vite build --config vite.config.examples.ts --mode production)
 
 # 4. Assemble site

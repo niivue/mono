@@ -717,6 +717,17 @@ export class NVSlide extends EventTarget {
     return visible
   }
 
+  /**
+   * Begin loading one tile (no-op if already cached or in flight). For renderers
+   * whose working set is driven by something other than the 2D viewport — e.g.
+   * the 3D slide-plane render, where visibility comes from world geometry.
+   */
+  requestTile(level: NVSlideLevelManifest, tile: NVSlideTileManifest): void {
+    const key = this.tileKey(level, tile)
+    if (this._cache.has(key) || this._pending.has(key)) return
+    void this.loadTile(level, tile)
+  }
+
   cachedTileBitmap(key: string): ImageBitmap | null {
     const entry = this._cache.get(key)
     if (!entry) return null

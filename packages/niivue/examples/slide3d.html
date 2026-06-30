@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NiiVue Slide in 3D (MNI152 space)</title>
+    <link rel="stylesheet" href="./niivue.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #07100d;
+        color: #e6f2ee;
+        font: 13px/1.4 ui-monospace, monospace;
+      }
+      #wrap {
+        position: fixed;
+        inset: 0;
+      }
+      #gl {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      #hud {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.55);
+        padding: 8px 10px;
+        border-radius: 6px;
+        white-space: pre;
+        pointer-events: none;
+      }
+      #help {
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="wrap"><canvas id="gl"></canvas></div>
+    <div id="hud">loading…</div>
+    <div id="help">drag to orbit · wheel to zoom · slide rendered as a plane in MNI152 mm space</div>
+    <script type="module" src="./slide3d.js"></script>
+  </body>
+</html>

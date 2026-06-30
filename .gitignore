@@ -47,3 +47,4 @@ packages/niivue/public/omezarr/*.ome.zarr/
 # DICOM-WSI fixtures for the slides.html tile viewer. Hundreds of MB per series,
 # downloaded + manifest-generated on demand by scripts/fetch-dicom-wsi.ts.
 packages/niivue/public/dicom-wsi/
+packages/niivue/public/svs/

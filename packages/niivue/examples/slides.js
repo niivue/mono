@@ -16,12 +16,19 @@ import {
   SlideRendererGPU,
 } from '../src/index.ts'
 import { decodeJp2 } from './openjpeg-decoder.js'
+import { createTiffSource } from './tiff-source.js'
 
 // DZI sources construct via NVSlide.fromSource(DziSource.fromUrl(...)) rather
 // than a manifest URL. This OpenSeadragon example (overlap 2) is CORS-enabled.
 const DZI_URLS = {
   'dzi-highsmith':
     'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi',
+}
+
+// TIFF/SVS sources build a geotiff-backed SlideTileSource. The OpenSlide server
+// has no CORS, so the .svs must be served same-origin (public/svs/, gitignored).
+const TIFF_URLS = {
+  'tiff-cmu1': 'svs/CMU-1-Small-Region.svs',
 }
 
 // NVSlide core ships no JPEG 2000 codec; register an OpenJPEG WASM decoder so
@@ -78,11 +85,16 @@ function backendFromUrl() {
   return raw === 'webgpu' ? 'webgpu' : 'webgl2'
 }
 
-function manifestUrl() {
+function resolveDemoUrl(path) {
   const base = import.meta.env.BASE_URL || '/'
   const normalized = base.endsWith('/') ? base : `${base}/`
-  const path = MANIFEST_PATHS[els.source.value] ?? SYNTHETIC_MANIFEST_PATH
   return new URL(`${normalized}${path}`, window.location.href).toString()
+}
+
+function manifestUrl() {
+  return resolveDemoUrl(
+    MANIFEST_PATHS[els.source.value] ?? SYNTHETIC_MANIFEST_PATH,
+  )
 }
 
 function html(value) {
@@ -346,9 +358,18 @@ async function loadSlide() {
       showTileGrid: els.showGrid.checked,
     }
     const dziUrl = DZI_URLS[els.source.value]
-    const next = dziUrl
-      ? NVSlide.fromSource(await DziSource.fromUrl(dziUrl), opts)
-      : await NVSlide.fromManifestUrl(manifestUrl(), opts)
+    const tiffUrl = TIFF_URLS[els.source.value]
+    let next
+    if (dziUrl) {
+      next = NVSlide.fromSource(await DziSource.fromUrl(dziUrl), opts)
+    } else if (tiffUrl) {
+      next = NVSlide.fromSource(
+        await createTiffSource(resolveDemoUrl(tiffUrl)),
+        opts,
+      )
+    } else {
+      next = await NVSlide.fromManifestUrl(manifestUrl(), opts)
+    }
     next.addEventListener('change', requestRender)
     slide = next
     populateLevels(slide.manifest)

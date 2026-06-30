@@ -501,9 +501,18 @@ export function NiivueStage({
     const nv = nvRef.current
     if (!nv) return
 
-    // In 2D slice / multiplanar modes let NiiVue handle the wheel natively
-    // (it pages through slices). Zoom and clip-plane depth are 3D-only.
-    if (!isRenderMode) return
+    // 2D single-plane modes: page through slices on wheel (clinician muscle
+    // memory). NiiVue's native wheel doesn't page here, so drive the crosshair's
+    // through-plane voxel ourselves. Multiplanar falls through to native.
+    if (!isRenderMode) {
+      const step = sliceWheelStep(viewMode, event.deltaY)
+      if (step && nv.moveCrosshairInVox) {
+        event.preventDefault()
+        event.stopPropagation()
+        nv.moveCrosshairInVox(...step)
+      }
+      return
+    }
 
     if (renderWheelMode === 'clip-plane') {
       // Always handle the wheel ourselves: drive the active plane's depth
@@ -645,6 +654,26 @@ function crosshairStepForEvent(event: KeyboardEvent): VoxelStep | null {
   if (key === 'j') return [0, -1, 0]
   if (key === 'k') return [0, 1, 0]
   return null
+}
+
+// Mouse-wheel slice paging for the single-plane 2D modes. The displayed slice
+// follows the crosshair's through-plane voxel, so stepping that axis pages by
+// one slice. Scroll down advances the through-plane voxel (wheel-down = next);
+// which anatomical direction that is depends on the volume's orientation.
+// Multiplanar/render return null (the wheel keeps its zoom / native behaviour).
+function sliceWheelStep(viewMode: ViewModeId, deltaY: number): VoxelStep | null {
+  if (deltaY === 0) return null
+  const direction = deltaY > 0 ? 1 : -1
+  switch (viewMode) {
+    case 'axial':
+      return [0, 0, direction]
+    case 'coronal':
+      return [0, direction, 0]
+    case 'sagittal':
+      return [direction, 0, 0]
+    default:
+      return null
+  }
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

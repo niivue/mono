@@ -300,9 +300,13 @@ time to stay thumb-scrollable.
 - [ ] **[P2] (S) Per-layer opacity sliders.** Overlay opacity is hardcoded at
   0.48 (`App.tsx:240`); blending is a core stats-viewing knob. Expose per-layer
   sliders (the layer panel already has per-layer colormap selects, `App.tsx:990`).
-- [ ] **[P2] (S) Scroll pages slices.** Once multiplanar exists, mouse-wheel
-  should page through slices (clinician muscle memory); it is currently bound only
-  to zoom/clip-depth (`NiivueStage.tsx:413-437`).
+- [x] **[P2] (S) Scroll pages slices.** Mouse-wheel now pages through slices in
+  the single-plane 2D modes (axial/coronal/sagittal) by driving the crosshair's
+  through-plane voxel (`sliceWheelStep` + `handleWheelCapture`); scroll-down
+  advances. Zoom/clip-depth stay 3D-only. Two follow-ups: multiplanar paging is
+  still native (needs per-pane hit-testing to know which plane the cursor is
+  over), and paging steps in voxel space so the anatomical direction varies with
+  volume orientation — page in mm for a consistent up=superior feel.
 - [ ] **[P3] (M) Measurement tools.** No length/angle/ROI or Hounsfield readout.
   Add basic distance + voxel-value-under-crosshair.
 - [ ] **[P3] (S) Keep base volume grayscale-only.** Letting the base anatomical

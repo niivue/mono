@@ -127,6 +127,8 @@ export type {
   SlideTileSource,
 } from './slide/NVSlide'
 export { ManifestRangeSource, NVSlide } from './slide/NVSlide'
+export type { SlidePlaneTile } from './slide/slidePlane'
+export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
 export type {
   ChunkPlan,
   Vec3f,

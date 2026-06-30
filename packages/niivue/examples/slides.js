@@ -12,6 +12,7 @@
 import {
   DziSource,
   NVSlide,
+  SlideDrawing,
   SlideRenderer,
   SlideRendererGPU,
 } from '../src/index.ts'
@@ -69,6 +70,10 @@ const els = {
   fit: el('fit'),
   showGrid: el('showGrid'),
   canvas: el('tileCanvas'),
+  overlay: el('drawOverlay'),
+  drawBtn: el('drawBtn'),
+  drawUndo: el('drawUndo'),
+  drawClear: el('drawClear'),
   hud: el('hud'),
   rangeLog: el('rangeLog'),
   fallback: el('fallback'),
@@ -79,6 +84,18 @@ let slide = null
 let animationFrame = 0
 let hasFit = false
 let drag = null
+// Slide-space drawing: a SlideDrawing raster (painted with the shared pen tools,
+// in slide pixels) shown via a stacked Canvas2D overlay mapped through NVSlide's
+// screen<->slide transform, so the annotation stays registered under pan/zoom.
+const DRAW_RASTER_CAP = 1536
+let drawing = null
+let drawMode = false
+let drawStroke = null // { pointerId } while a stroke is in progress
+let lastRasterPt = null
+let overlayDirty = false
+let rasterCanvas = null
+let rasterCtx = null
+let rasterImageData = null
 
 function backendFromUrl() {
   const raw = new URLSearchParams(window.location.search).get('backend')
@@ -171,8 +188,118 @@ function render() {
   }
   if (slide) slide.clampViewport(screen)
   drawView(screen)
+  drawOverlay(screen)
   updateHud(screen)
   updateRangeLog()
+}
+
+// Build (or rebuild) the slide-space drawing raster for the active slide.
+function ensureDrawing() {
+  if (!slide) {
+    drawing = null
+    return
+  }
+  const sw = slide.manifest.width
+  const sh = slide.manifest.height
+  const scale = Math.min(1, DRAW_RASTER_CAP / Math.max(1, sw, sh))
+  const rw = Math.max(1, Math.round(sw * scale))
+  const rh = Math.max(1, Math.round(sh * scale))
+  drawing = new SlideDrawing(rw, rh)
+  lastRasterPt = null
+  rasterCanvas = document.createElement('canvas')
+  rasterCanvas.width = rw
+  rasterCanvas.height = rh
+  rasterCtx = rasterCanvas.getContext('2d')
+  rasterImageData = rasterCtx.createImageData(rw, rh)
+  overlayDirty = true
+}
+
+// Repaint the offscreen raster from the label bitmap (nonzero -> red).
+function rebuildRaster() {
+  if (!drawing || !rasterCtx || !rasterImageData) return
+  const img = drawing.img
+  const data = rasterImageData.data
+  for (let i = 0; i < img.length; i++) {
+    const o = i * 4
+    if (img[i]) {
+      data[o] = 235
+      data[o + 1] = 45
+      data[o + 2] = 55
+      data[o + 3] = 210
+    } else {
+      data[o + 3] = 0
+    }
+  }
+  rasterCtx.putImageData(rasterImageData, 0, 0)
+}
+
+// Inverse of NVSlide.screenToSlide: slide base pixel -> canvas CSS coords.
+function slideToCss(sx, sy, screen) {
+  const vp = slide.viewport
+  const sc = vp.scale
+  const leftSlide = vp.centerX - screen.widthCss / (2 * sc)
+  const xCss = (sx - leftSlide) * sc
+  const yCss = slide.isYAxisUp()
+    ? screen.heightCss / 2 - (sy - vp.centerY) * sc
+    : (sy - (vp.centerY - screen.heightCss / (2 * sc))) * sc
+  return [xCss, yCss]
+}
+
+// Draw the annotation raster over the tiles, mapped to the current viewport.
+function drawOverlay(screen) {
+  const ov = els.overlay
+  if (ov.width !== els.canvas.width || ov.height !== els.canvas.height) {
+    ov.width = els.canvas.width
+    ov.height = els.canvas.height
+  }
+  const octx = ov.getContext('2d')
+  octx.clearRect(0, 0, ov.width, ov.height)
+  if (!slide || !drawing) return
+  if (overlayDirty) {
+    rebuildRaster()
+    overlayDirty = false
+  }
+  const dpr = screen.devicePixelRatio ?? 1
+  const sw = slide.manifest.width
+  const sh = slide.manifest.height
+  const [x0, y0] = slideToCss(0, 0, screen)
+  const [x1, y1] = slideToCss(sw, sh, screen)
+  const dx = Math.min(x0, x1) * dpr
+  const dy = Math.min(y0, y1) * dpr
+  const dW = Math.abs(x1 - x0) * dpr
+  const dH = Math.abs(y1 - y0) * dpr
+  octx.imageSmoothingEnabled = false
+  if (y0 > y1) {
+    // yAxis up: slide row 0 is at the bottom — flip vertically.
+    octx.save()
+    octx.translate(0, dy + dH)
+    octx.scale(1, -1)
+    octx.drawImage(rasterCanvas, dx, 0, dW, dH)
+    octx.restore()
+  } else {
+    octx.drawImage(rasterCanvas, dx, dy, dW, dH)
+  }
+}
+
+// Convert a pointer event to a slide-drawing raster pixel, or null if off-slide.
+function eventToRaster(event) {
+  if (!slide || !drawing) return null
+  const rect = els.canvas.getBoundingClientRect()
+  const sp = slide.screenToSlide(
+    event.clientX - rect.left,
+    event.clientY - rect.top,
+    screenForCanvas(),
+  )
+  const rx = Math.round((sp.x / slide.manifest.width) * drawing.width)
+  const ry = Math.round((sp.y / slide.manifest.height) * drawing.height)
+  if (rx < 0 || ry < 0 || rx >= drawing.width || ry >= drawing.height) {
+    return null
+  }
+  return [rx, ry]
+}
+
+function penSizeForRaster() {
+  return Math.max(2, Math.round(drawing.width / 300))
 }
 
 function updateHud(screen) {
@@ -290,6 +417,19 @@ function zoomCentered(factor) {
 
 els.canvas.addEventListener('pointerdown', (event) => {
   els.canvas.setPointerCapture(event.pointerId)
+  // Draw mode paints the slide instead of panning.
+  if (drawMode && drawing) {
+    const pt = eventToRaster(event)
+    drawStroke = { pointerId: event.pointerId }
+    if (pt) {
+      drawing.beginStroke()
+      drawing.point(pt[0], pt[1], 1, penSizeForRaster(), true)
+      lastRasterPt = pt
+      overlayDirty = true
+      requestRender()
+    }
+    return
+  }
   drag = {
     pointerId: event.pointerId,
     lastX: event.clientX,
@@ -298,6 +438,28 @@ els.canvas.addEventListener('pointerdown', (event) => {
 })
 
 els.canvas.addEventListener('pointermove', (event) => {
+  if (drawStroke && drawStroke.pointerId === event.pointerId) {
+    const pt = eventToRaster(event)
+    if (pt) {
+      if (lastRasterPt) {
+        drawing.line(
+          lastRasterPt[0],
+          lastRasterPt[1],
+          pt[0],
+          pt[1],
+          1,
+          penSizeForRaster(),
+          true,
+        )
+      } else {
+        drawing.point(pt[0], pt[1], 1, penSizeForRaster(), true)
+      }
+      lastRasterPt = pt
+      overlayDirty = true
+      requestRender()
+    }
+    return
+  }
   if (!drag || drag.pointerId !== event.pointerId || !slide) return
   const dx = event.clientX - drag.lastX
   const dy = event.clientY - drag.lastY
@@ -307,11 +469,38 @@ els.canvas.addEventListener('pointermove', (event) => {
 })
 
 els.canvas.addEventListener('pointerup', (event) => {
+  if (drawStroke?.pointerId === event.pointerId) {
+    drawStroke = null
+    lastRasterPt = null
+  }
   if (drag?.pointerId === event.pointerId) drag = null
 })
 
 els.canvas.addEventListener('pointercancel', (event) => {
+  if (drawStroke?.pointerId === event.pointerId) {
+    drawStroke = null
+    lastRasterPt = null
+  }
   if (drag?.pointerId === event.pointerId) drag = null
+})
+
+els.drawBtn.addEventListener('click', () => {
+  drawMode = !drawMode
+  els.drawBtn.textContent = `Draw: ${drawMode ? 'on' : 'off'}`
+  els.canvas.style.cursor = drawMode ? 'crosshair' : 'grab'
+})
+els.drawUndo.addEventListener('click', () => {
+  if (drawing?.undo()) {
+    overlayDirty = true
+    requestRender()
+  }
+})
+els.drawClear.addEventListener('click', () => {
+  if (drawing) {
+    drawing.clear()
+    overlayDirty = true
+    requestRender()
+  }
 })
 
 els.canvas.addEventListener(
@@ -372,6 +561,7 @@ async function loadSlide() {
     }
     next.addEventListener('change', requestRender)
     slide = next
+    ensureDrawing()
     populateLevels(slide.manifest)
     requestRender()
   } catch (err) {

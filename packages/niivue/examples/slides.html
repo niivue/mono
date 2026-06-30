@@ -225,6 +225,9 @@
         <input id="showGrid" type="checkbox" checked />
         grid
       </label>
+      <button id="drawBtn" type="button" title="Draw on the slide (slide-space annotation)">Draw: off</button>
+      <button id="drawUndo" type="button" title="Undo last stroke">Undo</button>
+      <button id="drawClear" type="button" title="Clear annotation">Clear</button>
       <div class="links">
         <a href="./index.html">Examples</a>
         <a href="?backend=webgpu">WebGPU</a>
@@ -233,6 +236,10 @@
     </header>
     <main>
       <canvas id="tileCanvas" tabindex="0"></canvas>
+      <canvas
+        id="drawOverlay"
+        style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;"
+      ></canvas>
       <div id="hud" class="hud" aria-live="polite"></div>
       <div id="rangeLog" class="range-log" aria-hidden="true"></div>
       <div id="fallback" class="fallback" aria-hidden="true"></div>

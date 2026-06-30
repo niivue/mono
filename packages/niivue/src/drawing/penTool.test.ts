@@ -87,6 +87,52 @@ describe('drawPoint', () => {
     expect(bitmap[voxelIndex(5, 5, 4, 10, 10)]).toBe(0)
   })
 
+  test('penSize5_isCircle_skipsCorners', () => {
+    const dims = [3, 10, 10, 10]
+    const bitmap = new Uint8Array(1000)
+    
+    drawPoint({
+      x: 5,
+      y: 5,
+      z: 5,
+      penValue: 1,
+      drawBitmap: bitmap,
+      dims,
+      penSize: 5, // radius = 2.5
+      penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      isCircle: true,
+    })
+
+    // Center is set
+    expect(bitmap[voxelIndex(5, 5, 5, 10, 10)]).toBe(1)
+    
+    // (i=2, j=0) -> 2*2 + 0 = 4 <= 6.25, should be set
+    expect(bitmap[voxelIndex(7, 5, 5, 10, 10)]).toBe(1)
+    
+    // (i=2, j=2) -> 2*2 + 2*2 = 8 > 6.25, should be skipped (corner of 5x5 square)
+    expect(bitmap[voxelIndex(7, 7, 5, 10, 10)]).toBe(0)
+  })
+
+  test('penSize5_square_fillsCorners', () => {
+    const dims = [3, 10, 10, 10]
+    const bitmap = new Uint8Array(1000)
+    
+    drawPoint({
+      x: 5,
+      y: 5,
+      z: 5,
+      penValue: 1,
+      drawBitmap: bitmap,
+      dims,
+      penSize: 5, // radius = 2.5
+      penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      isCircle: false,
+    })
+
+    // Corner of 5x5 square (i=2, j=2) should be set when not a circle
+    expect(bitmap[voxelIndex(7, 7, 5, 10, 10)]).toBe(1)
+  })
+
   test('penOverwritesFalse_doesNotOverwriteExisting', () => {
     const dims = [3, 10, 10, 10]
     const bitmap = new Uint8Array(1000)

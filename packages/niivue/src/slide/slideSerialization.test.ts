@@ -44,6 +44,18 @@ describe('slide plane document round-trip (CBOR + RLE)', () => {
       drawingRLE: encodeRLE(img),
       drawingWidth: 8,
       drawingHeight: 4,
+      vectorShapes: [
+        {
+          kind: 'polygon',
+          points: [
+            [10, 20],
+            [300, 20],
+            [300, 240],
+          ],
+          color: '#e62d37',
+          strokeWidth: 6,
+        },
+      ],
     }
 
     const round = decode(encode(docSlide))
@@ -62,5 +74,14 @@ describe('slide plane document round-trip (CBOR + RLE)', () => {
       round.drawingWidth * round.drawingHeight,
     )
     expect(Array.from(decoded)).toEqual(Array.from(img))
+    // Vector annotations survive (kind, points, color).
+    expect(round.vectorShapes).toHaveLength(1)
+    expect(round.vectorShapes[0].kind).toBe('polygon')
+    expect(round.vectorShapes[0].color).toBe('#e62d37')
+    expect(round.vectorShapes[0].points).toEqual([
+      [10, 20],
+      [300, 20],
+      [300, 240],
+    ])
   })
 })

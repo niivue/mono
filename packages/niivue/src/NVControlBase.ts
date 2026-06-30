@@ -72,6 +72,7 @@ import { NVSlide } from '@/slide/NVSlide'
 import { SlideDrawing } from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
 import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
+import { SlideVectorLayer } from '@/slide/slideVector'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
 import type { GraphLayout } from '@/view/NVGraph'
@@ -220,6 +221,7 @@ export default class NiiVueGPU extends EventTarget {
   private _slidePlaneSlide: NVSlide | null = null
   private _slidePlaneOnChange: (() => void) | null = null
   private _slideDrawing: SlideDrawing | null = null
+  private _slideVector: SlideVectorLayer | null = null
   private _slideLastRasterPt: [number, number] | null = null
   resizeObserver: ResizeObserver | null
   _eventListeners: Record<string, EventHandler | null>
@@ -2530,6 +2532,7 @@ export default class NiiVueGPU extends EventTarget {
     // and positioned for the old plane); the caller re-runs createSlideDrawing.
     this._slideDrawing = null
     this._slideLastRasterPt = null
+    this._slideVector = new SlideVectorLayer()
     if (this.view) this.view.slidePlane = state
     // Redraw as tiles stream in.
     if (this._slidePlaneSlide && this._slidePlaneOnChange) {
@@ -2556,6 +2559,7 @@ export default class NiiVueGPU extends EventTarget {
     this._slidePlaneOnChange = null
     this._slidePlane = null
     this._slideDrawing = null
+    this._slideVector = null
     this._slideLastRasterPt = null
     if (this.view) this.view.slidePlane = null
     this.drawScene()
@@ -2694,8 +2698,19 @@ export default class NiiVueGPU extends EventTarget {
     this._refreshSlideAnnotation()
   }
 
-  // Rebuild the annotation RGBA from the slide raster (reusing the draw LUT) and
-  // bump its version so the renderer re-uploads, then redraw.
+  /** Vector annotation layer for the registered slide plane (slide-pixel coords). */
+  get slideVector(): SlideVectorLayer | null {
+    return this._slideVector
+  }
+
+  /** Rebuild the slide annotation overlay (raster + vector) and redraw. Call
+   * after mutating `slideVector`. */
+  refreshSlideAnnotation(): void {
+    this._refreshSlideAnnotation()
+  }
+
+  // Rebuild the annotation RGBA from the slide raster (via the draw LUT), then
+  // composite the vector polygons on top, bump its version, and redraw.
   private _refreshSlideAnnotation(): void {
     const sp = this._slidePlane
     const dr = this._slideDrawing
@@ -2708,14 +2723,57 @@ export default class NiiVueGPU extends EventTarget {
       }
       this._drawLut = buildDrawingLut(cm)
     }
-    sp.annotation.rgba = drawingBitmapToRGBA(
+    const rgba = drawingBitmapToRGBA(
       dr.img,
       this._drawLut.lut,
       this._drawLut.min ?? 0,
       this.model.draw.opacity,
     )
+    sp.annotation.rgba = this._compositeSlideVectors(rgba, dr.width, dr.height)
     sp.annotation.version++
     this.drawScene()
+  }
+
+  // Stroke the vector polygons (slide-pixel coords) over the label RGBA at raster
+  // resolution, so both raster and vector annotations share the one plane overlay.
+  private _compositeSlideVectors(
+    rgba: Uint8Array,
+    w: number,
+    h: number,
+  ): Uint8Array {
+    const sp = this._slidePlane
+    const vec = this._slideVector
+    if (
+      !sp ||
+      !vec ||
+      vec.shapes.length === 0 ||
+      typeof OffscreenCanvas === 'undefined'
+    ) {
+      return rgba
+    }
+    const oc = new OffscreenCanvas(w, h)
+    const ctx = oc.getContext('2d')
+    if (!ctx) return rgba
+    const sw = sp.slide.manifest.width || 1
+    const sh = sp.slide.manifest.height || 1
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), 0, 0)
+    for (const s of vec.shapes) {
+      if (s.points.length < 2) continue
+      ctx.beginPath()
+      s.points.forEach(([x, y], i) => {
+        const rx = (x / sw) * w
+        const ry = (y / sh) * h
+        if (i === 0) ctx.moveTo(rx, ry)
+        else ctx.lineTo(rx, ry)
+      })
+      if (s.kind === 'polygon') ctx.closePath()
+      ctx.lineWidth = Math.max(1, (s.strokeWidth / sw) * w)
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      ctx.strokeStyle = s.color
+      ctx.stroke()
+    }
+    return new Uint8Array(ctx.getImageData(0, 0, w, h).data)
   }
 
   drawScene(needsSync = true): void {
@@ -3576,6 +3634,15 @@ export default class NiiVueGPU extends EventTarget {
       drawingRLE: dr ? encodeRLE(dr.img) : undefined,
       drawingWidth: dr?.width,
       drawingHeight: dr?.height,
+      vectorShapes:
+        this._slideVector && this._slideVector.shapes.length > 0
+          ? this._slideVector.shapes.map((s) => ({
+              kind: s.kind,
+              points: s.points.map(([x, y]) => [x, y] as [number, number]),
+              color: s.color,
+              strokeWidth: s.strokeWidth,
+            }))
+          : undefined,
     }
   }
 
@@ -3606,6 +3673,11 @@ export default class NiiVueGPU extends EventTarget {
         )
       }
       this._attachSlideDrawing(drawing)
+    }
+    // Restore vector annotations (setSlidePlane created a fresh, empty layer).
+    if (sp.vectorShapes && sp.vectorShapes.length > 0 && this._slideVector) {
+      for (const s of sp.vectorShapes) this._slideVector.add({ ...s })
+      this._refreshSlideAnnotation()
     }
   }
 

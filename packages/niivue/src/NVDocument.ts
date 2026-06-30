@@ -25,6 +25,7 @@ import type {
   VolumeRenderConfig,
 } from '@/NVTypes'
 import type { NVSlideManifest } from '@/slide/NVSlide'
+import type { SlideVectorShape } from '@/slide/slideVector'
 import * as NVVolume from '@/volume/NVVolume'
 import { computeVolumeLabelCentroids } from '@/volume/utils'
 
@@ -168,6 +169,8 @@ export type NVDocumentSlidePlane = {
   drawingRLE?: Uint8Array
   drawingWidth?: number
   drawingHeight?: number
+  /** Vector annotations in slide base-pixel coordinates (v8+). */
+  vectorShapes?: SlideVectorShape[]
 }
 
 export type NVDocumentData = {

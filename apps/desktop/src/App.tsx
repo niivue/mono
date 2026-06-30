@@ -45,6 +45,7 @@ import {
   NiivueStage,
   DEFAULT_VIEW_MODE,
   type NiivueRenderLayer,
+  type ResolvedWindow,
   type ViewModeId
 } from './components/NiivueStage'
 import { NiimathOperationsPanel } from './components/NiimathOperationsPanel'
@@ -162,9 +163,9 @@ export function App(): JSX.Element {
   // Effective intensity window NiiVue applied per layer (incl. auto-seeded
   // thresholds), reported back from NiivueStage so the UI can show the real
   // cutoff instead of a bare "auto".
-  const [resolvedWindows, setResolvedWindows] = useState<Record<string, { min: number; max: number }>>({})
+  const [resolvedWindows, setResolvedWindows] = useState<Record<string, ResolvedWindow>>({})
   const handleResolvedWindows = useCallback(
-    (next: Record<string, { min: number; max: number }>) => {
+    (next: Record<string, ResolvedWindow>) => {
       setResolvedWindows((prev) => {
         const prevKeys = Object.keys(prev)
         const nextKeys = Object.keys(next)
@@ -1015,7 +1016,7 @@ function LayerPanel({
   items: DesktopItem[]
   layerSettings: Record<string, LayerSettings>
   layerExtents: Record<string, LayerExtent>
-  resolvedWindows: Record<string, { min: number; max: number }>
+  resolvedWindows: Record<string, ResolvedWindow>
   overlayIds: Set<string>
   selected: DesktopItem | null
   onAtlasChange: (itemId: string) => void
@@ -1346,7 +1347,8 @@ function WindowControl({
   // The effective window NiiVue applied when none is set explicitly (its robust
   // auto range, or an overlay's auto-threshold). Shown so "auto" isn't a black
   // box — e.g. a stat overlay reveals the threshold it's hiding signal below.
-  resolved?: { min: number; max: number }
+  // robustMin/robustMax (when present) are the "show all" / threshold-off target.
+  resolved?: ResolvedWindow
   variant?: 'window' | 'threshold'
   onChange: (itemId: string, min: number, max: number) => void
   onReset: (itemId: string) => void
@@ -1425,6 +1427,21 @@ function WindowControl({
           Auto
         </button>
       </div>
+      {isThreshold &&
+      resolved &&
+      Number.isFinite(resolved.robustMin) &&
+      Number.isFinite(resolved.robustMax) ? (
+        <button
+          className="nv-window-showall"
+          onClick={() =>
+            onChange(itemId, resolved.robustMin as number, resolved.robustMax as number)
+          }
+          title="Display the full robust range with no threshold"
+          type="button"
+        >
+          Show all (no threshold)
+        </button>
+      ) : null}
     </div>
   )
 }

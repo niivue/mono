@@ -3,6 +3,15 @@ import type { ColorMap, NiiVueLocation } from '@niivue/niivue'
 import type { Backend, ClipPlane, DesktopItem, JsonValue, VolumeMetadata } from '../domain/desktop'
 import { fetchVolumeMetadata, rawVolumeUrl } from '../domain/desktop'
 
+// The window NiiVue actually applied for a layer, plus the volume's robust
+// range (the "no threshold" target for a show-all reset).
+export interface ResolvedWindow {
+  min: number
+  max: number
+  robustMin?: number
+  robustMax?: number
+}
+
 interface NiivueStageProps {
   item: DesktopItem | null
   layers: NiivueRenderLayer[]
@@ -17,7 +26,7 @@ interface NiivueStageProps {
   // Reports the intensity window NiiVue actually applied per layer (keyed by
   // item id), including auto-seeded defaults — so the UI can show the effective
   // threshold/range instead of a bare "auto".
-  onResolvedWindows?: (windows: Record<string, { min: number; max: number }>) => void
+  onResolvedWindows?: (windows: Record<string, ResolvedWindow>) => void
   // Reports each loaded layer's world-space (mm) bounding box, keyed by item id,
   // so the UI can warn when an overlay doesn't share the base's space.
   onLayerExtents?: (extents: Record<string, { min: number[]; max: number[] }>) => void
@@ -378,14 +387,21 @@ export function NiivueStage({
   useEffect(() => {
     const nv = nvRef.current
     if (!nv?.setVolume) return
-    const resolved: Record<string, { min: number; max: number }> = {}
+    const resolved: Record<string, ResolvedWindow> = {}
     void Promise.all(layers.map((layer, index) => {
       // An explicit window wins; otherwise restore NiiVue's robust auto range
       // so clearing the window (the "Auto" button) actually reverts the
       // render — setVolume merges, so omitting calMin would leave a stale one.
-      const windowOption = windowOptionForLayer(layer, nv.volumes?.[index])
+      const volume = nv.volumes?.[index]
+      const windowOption = windowOptionForLayer(layer, volume)
       if (windowOption.calMin !== undefined && windowOption.calMax !== undefined) {
-        resolved[layer.item.id] = { min: windowOption.calMin, max: windowOption.calMax }
+        resolved[layer.item.id] = {
+          min: windowOption.calMin,
+          max: windowOption.calMax,
+          // The robust range is the "no threshold" target for the show-all reset.
+          robustMin: Number.isFinite(volume?.robustMin) ? volume?.robustMin : undefined,
+          robustMax: Number.isFinite(volume?.robustMax) ? volume?.robustMax : undefined
+        }
       }
       return nv.setVolume?.(index, {
         colormap: layer.colormap,
@@ -635,33 +651,30 @@ async function loadNiiVue(backend: Backend): Promise<NiiVueConstructor> {
 // Intensity-window / threshold options for a setVolume call. An explicit
 // per-layer window (Min/Max for a base, Threshold/Max for an overlay) always
 // wins. With none set:
-//   - statistical overlays default to a threshold (calMin = robust max) so the
-//     near-zero background is transparent instead of washing the colormap over
-//     the whole volume; the colormap then spans threshold -> true peak.
+//   - statistical overlays default to a threshold at HALF the robust max, with
+//     contrast saturating at the robust max. Half the 98th-percentile sits above
+//     the near-zero noise (so the background stays transparent — no colour wash)
+//     but is gentle enough to show moderate activation, not just the top ~2%.
 //   - base/atlas layers restore NiiVue's robust auto range, so clearing the
 //     window reverts the render.
 // Returns no keys when the volume's stats aren't available yet (still loading).
 function windowOptionForLayer(
   layer: NiivueRenderLayer,
-  volume: { robustMin?: number; robustMax?: number; globalMax?: number } | undefined
+  volume: { robustMin?: number; robustMax?: number } | undefined
 ): { calMin?: number; calMax?: number } {
   if (layer.calMin !== undefined && layer.calMax !== undefined) {
     return { calMin: layer.calMin, calMax: layer.calMax }
   }
   if (!volume) return {}
-  const { robustMin, robustMax, globalMax } = volume
+  const { robustMin, robustMax } = volume
   if (
     layer.kind === 'overlay' &&
     !layer.isAtlas &&
     Number.isFinite(robustMax) &&
     (robustMax as number) > 0
   ) {
-    const threshold = robustMax as number
-    const max =
-      Number.isFinite(globalMax) && (globalMax as number) > threshold
-        ? (globalMax as number)
-        : threshold * 2
-    return { calMin: threshold, calMax: max }
+    const max = robustMax as number
+    return { calMin: max * 0.5, calMax: max }
   }
   if (Number.isFinite(robustMin) && Number.isFinite(robustMax)) {
     return { calMin: robustMin, calMax: robustMax }

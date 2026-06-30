@@ -225,15 +225,15 @@ Fresh researcher + clinician pass after the layer redesign / threshold / guard /
 wheel-paging work. Several findings are regressions-of-trust in the *new*
 features — a control that can quietly mislead is worse than no control.
 
-- [~] **[P1] (S) Stat-overlay threshold can hide signal silently — surface the
-  cutoff.** The auto-threshold seeds `calMin = robustMax` (98th pct → only top
-  ~2% of voxels shown), so an overlay can look empty when sub-threshold signal
-  exists. **Done:** the window/Threshold readout + input placeholders now show
-  the *effective* values (e.g. `auto · 367 – 1258`) instead of a bare "auto" —
-  NiiVue reports the applied window per layer (`onResolvedWindows`), App holds
-  `resolvedWindows`, `WindowControl` renders it dimmed. **Remaining:** soften the
-  default (robustMax = top 2% is steep), and a one-click "show all / threshold
-  off" (needs the volume's global min plumbed alongside).
+- [x] **[P1] (S) Stat-overlay threshold can hide signal silently — surface the
+  cutoff.** Done, three parts: (1) the window/Threshold readout + placeholders
+  show the *effective* values instead of a bare "auto" (`onResolvedWindows` →
+  `resolvedWindows` → `WindowControl`, dimmed); (2) softened the default from
+  `robustMax` (top ~2%) to **half** the robust max with contrast saturating at
+  robustMax, so moderate activation shows, not just the strongest; (3) a "Show
+  all (no threshold)" button on overlay rows resets to the full robust range
+  (`resolved.robustMin/Max`). Verified live: default reads `auto · 183.67 –
+  367.34`; Show-all → `0 – 367.34`.
 - [x] **[P1] (M) Mismatch guard is subject-only — don't let "no warning" read as
   "match".** Done: added a **world-space** check alongside the subject check.
   NiivueStage reports each layer's world bounding box (`onLayerExtents`, post-load

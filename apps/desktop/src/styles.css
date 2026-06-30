@@ -1881,6 +1881,25 @@ button {
   cursor: default;
 }
 
+/* "Show all (no threshold)" — a quiet full-width escape hatch under a stat
+   overlay's threshold, so a reader can reveal sub-threshold signal in one tap. */
+.nv-window-showall {
+  margin-top: 6px;
+  width: 100%;
+  border: 1px dashed rgba(146, 160, 102, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 11px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.nv-window-showall:hover,
+.nv-window-showall:focus-visible {
+  color: var(--ink);
+  border-color: rgba(115, 198, 155, 0.4);
+}
+
 .nv-layer-colormap-select {
   grid-template-columns: auto minmax(58px, 1fr) auto;
   height: 28px;

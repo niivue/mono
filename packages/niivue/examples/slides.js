@@ -53,7 +53,8 @@ const MANIFEST_PATHS = {
   synthetic: SYNTHETIC_MANIFEST_PATH,
   'dicom-wsi': DICOM_WSI_PATH,
   'openslide-3dhistech-1': 'dicom-wsi/3dhistech-1/manifest.json',
-  'openslide-hamamatsu-2': 'dicom-wsi/hamamatsu-2/manifest.json',
+  // hamamatsu-2 omitted: dicom-parser raises a buffer overrun building its
+  // manifest (see scripts/fetch-openslide-dicom.ts), so it never loads.
   'openslide-jp2k-33003-1': 'dicom-wsi/jp2k-33003-1/manifest.json',
 }
 const MAX_CACHE_BYTES = 96 * 1024 * 1024

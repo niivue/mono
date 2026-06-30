@@ -46,6 +46,8 @@ interface Preset {
   tiling: Tiling
   approxMB: number
   note: string
+  /** Set when an archive is known-unloadable for a reason other than tiling. */
+  unsupported?: string
 }
 
 // Compatibility from DICOM/index.yaml. NVSlide decodes tiles in-browser via
@@ -66,7 +68,13 @@ const PRESETS: Preset[] = [
     codec: 'jpeg',
     tiling: 'TILED_FULL',
     approxMB: 191,
-    note: 'Hamamatsu brightfield, TILED_FULL',
+    note: 'Hamamatsu brightfield, TILED_FULL but dicom-parser buffer overrun',
+    // The instances ARE TILED_FULL JPEG, but dicom-parser throws
+    // "buffer overrun" parsing them (before the pixel data), so the byte-range
+    // manifest cannot be built. Needs a parser workaround/alternative, not a
+    // tiling change. See docs/slide-plane-review-todos.md.
+    unsupported:
+      'dicom-parser raises a buffer overrun on these instances (pixel data is never reached).',
   },
   {
     key: 'leica-4',
@@ -134,6 +142,7 @@ function supportReason(p: Preset): string | null {
   // JPEG 2000 is loadable: the manifest is tagged image/jp2 and the slides demo
   // registers an OpenJPEG WASM decoder (examples/openjpeg-decoder.js). Only
   // TILED_SPARSE is still unsupported (the builder assumes TILED_FULL ordering).
+  if (p.unsupported) return p.unsupported
   if (p.tiling !== 'TILED_FULL') {
     return `${p.tiling} frame ordering is not yet supported by the manifest builder (only TILED_FULL).`
   }
@@ -285,11 +294,18 @@ async function main(): Promise<void> {
   try {
     manifest = await buildManifest(preset.key, filesDir)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    // dicom-parser throws a {exception, dataSet} object (not an Error) on a
+    // malformed element, so surface its `.exception`/message rather than
+    // "[object Object]".
+    const msg =
+      err instanceof Error
+        ? err.message
+        : ((err as { exception?: string })?.exception ?? String(err))
     throw new Error(
       `manifest build failed: ${msg}\n` +
-        '(A "not a TILED_FULL instance" error means this archive uses an ' +
-        'unsupported frame organization.)',
+        '(A "not a TILED_FULL instance" error means an unsupported frame ' +
+        'organization; a "buffer overrun" means dicom-parser cannot parse this ' +
+        "archive's encoding — e.g. Hamamatsu-2 — and the pixel data is never reached.)",
     )
   }
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest)}\n`)

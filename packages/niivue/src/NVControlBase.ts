@@ -68,6 +68,9 @@ import type {
   ViewHitTest,
   VolumeUpdate,
 } from '@/NVTypes'
+import type { NVSlide } from '@/slide/NVSlide'
+import type { SlidePlaneState } from '@/slide/slidePlane'
+import { slidePlaneTiles } from '@/slide/slidePlane'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
 import type { GraphLayout } from '@/view/NVGraph'
@@ -114,6 +117,7 @@ type ViewBackend = {
   legendLayout: LegendLayout | null
   graphLayout: GraphLayout | null
   getAvailableShaders: () => string[]
+  slidePlane: SlidePlaneState | null
   refreshDrawing: (
     rgba: Uint8Array,
     dims: number[],
@@ -211,6 +215,9 @@ export default class NiiVueGPU extends EventTarget {
   activeButton?: number
   model: NVModel
   view: ViewBackend | null = null
+  private _slidePlane: SlidePlaneState | null = null
+  private _slidePlaneSlide: NVSlide | null = null
+  private _slidePlaneOnChange: (() => void) | null = null
   resizeObserver: ResizeObserver | null
   _eventListeners: Record<string, EventHandler | null>
   private _updating = false
@@ -2486,6 +2493,59 @@ export default class NiiVueGPU extends EventTarget {
       }
     })
     this.view.screenSlices = tiles
+  }
+
+  /**
+   * Register an NVSlide to render as a textured plane in the 3D render view,
+   * laid into the loaded volume's world (mm) space. `pixelToWorld` maps slide
+   * base pixels -> world mm (build one with `axialPlaneTransform` for an
+   * axis-aligned plane). The slide level (default a mid level for an overview)
+   * is tiled with `slidePlaneTiles`, prefetched, and streamed via NVSlide's
+   * cache — the view redraws as tiles arrive. Call `clearSlidePlane()` to remove.
+   */
+  setSlidePlane(
+    slide: NVSlide,
+    opts: { pixelToWorld: readonly number[]; levelIndex?: number },
+  ): void {
+    const levels = slide.manifest.levels
+    if (levels.length === 0) return
+    const idx = opts.levelIndex ?? Math.min(1, levels.length - 1)
+    const level = levels[idx] ?? levels[levels.length - 1]
+    if (!level) return
+    const tw = level.tileWidth ?? slide.manifest.tileSize ?? 256
+    const th = level.tileHeight ?? slide.manifest.tileSize ?? 256
+    const tiles = slidePlaneTiles(level, tw, th, opts.pixelToWorld)
+    // Prefetch every tile on the plane; NVSlide dedupes already-resident keys.
+    for (const tile of level.tiles) slide.requestTile(level, tile)
+    const state: SlidePlaneState = { slide, level, tiles }
+    this._slidePlane = state
+    if (this.view) this.view.slidePlane = state
+    // Redraw as tiles stream in.
+    if (this._slidePlaneSlide && this._slidePlaneOnChange) {
+      this._slidePlaneSlide.removeEventListener(
+        'change',
+        this._slidePlaneOnChange,
+      )
+    }
+    this._slidePlaneSlide = slide
+    this._slidePlaneOnChange = (): void => this.drawScene()
+    slide.addEventListener('change', this._slidePlaneOnChange)
+    this.drawScene()
+  }
+
+  /** Remove a slide plane registered with {@link setSlidePlane}. */
+  clearSlidePlane(): void {
+    if (this._slidePlaneSlide && this._slidePlaneOnChange) {
+      this._slidePlaneSlide.removeEventListener(
+        'change',
+        this._slidePlaneOnChange,
+      )
+    }
+    this._slidePlaneSlide = null
+    this._slidePlaneOnChange = null
+    this._slidePlane = null
+    if (this.view) this.view.slidePlane = null
+    this.drawScene()
   }
 
   drawScene(needsSync = true): void {

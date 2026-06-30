@@ -39,12 +39,18 @@
         left: 10px;
         opacity: 0.7;
       }
+      #help a {
+        color: #7fd9cd;
+      }
     </style>
   </head>
   <body>
     <div id="wrap"><canvas id="gl"></canvas></div>
     <div id="hud">loading…</div>
-    <div id="help">drag to orbit · wheel to zoom · slide rendered as a plane in MNI152 mm space</div>
+    <div id="help">
+      drag to orbit · wheel to zoom · slide registered as a plane in MNI152 space ·
+      <a href="?backend=webgl2">WebGL2</a> / <a href="?backend=webgpu">WebGPU</a>
+    </div>
     <script type="module" src="./slide3d.js"></script>
   </body>
 </html>

@@ -14,6 +14,7 @@ import type {
   ViewHitTest,
   WebGLMeshGPU,
 } from '@/NVTypes'
+import type { SlidePlaneState } from '@/slide/slidePlane'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
@@ -45,6 +46,7 @@ import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
 import { SliceRenderer } from './slice'
+import { SlidePlaneRenderer } from './slidePlaneRender'
 import { ThumbnailRenderer } from './thumbnail'
 
 type MeshGpuWithShader = WebGLMeshGPU & { shaderType?: string }
@@ -77,6 +79,9 @@ export default class NVGlview {
   colorbarRenderer: ColorbarRenderer
   thumbnailRenderer: ThumbnailRenderer
   sliceRenderer: SliceRenderer
+  slidePlaneRenderer: SlidePlaneRenderer
+  /** Optional WSI slide registered into volume mm space, drawn in the 3D render tile. */
+  slidePlane: SlidePlaneState | null = null
   meshResources: Map<NVMesh, MeshGpuWithShader>
   orientCubeGpu: WebGLMeshGPU | null
   // Bounds: pixel rect for sub-canvas rendering
@@ -146,6 +151,7 @@ export default class NVGlview {
     this.colorbarRenderer = new ColorbarRenderer()
     this.thumbnailRenderer = new ThumbnailRenderer()
     this.sliceRenderer = new SliceRenderer()
+    this.slidePlaneRenderer = new SlidePlaneRenderer()
     this.meshResources = new Map()
     this.orientCubeGpu = null
   }
@@ -228,6 +234,7 @@ export default class NVGlview {
     await this.fontRenderer.init(gl, this.options.font)
     mesh.init(gl)
     this.sliceRenderer.init(gl)
+    this.slidePlaneRenderer.init(gl)
     // Enable required extensions
 
     // Enable depth testing with standard convention
@@ -975,6 +982,21 @@ export default class NVGlview {
           0.5,
         )
         this.polygon3DRenderer.endPasses(gl)
+      }
+      // Layer 2b-slide: WSI slide plane registered into volume mm space
+      // (RENDER tiles only). Uses the tile MVP (world mm -> clip) so the slide
+      // composites with the volume in its own space; tiles stream via NVSlide.
+      if (
+        tile.space !== 'global3d' &&
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
+        this.slidePlane &&
+        this.slidePlaneRenderer.isReady
+      ) {
+        this.slidePlaneRenderer.draw(
+          gl,
+          mvpMatrix as Float32Array,
+          this.slidePlane,
+        )
       }
       // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders)
       if (

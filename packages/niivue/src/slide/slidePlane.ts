@@ -1,4 +1,4 @@
-import type { NVSlideLevelManifest } from './NVSlide'
+import type { NVSlide, NVSlideLevelManifest } from './NVSlide'
 
 // Geometry for rendering an NVSlide as a flat plane in a volume's 3D world space.
 // Each slide tile is mapped from base (level-0) pixel coordinates to world mm via
@@ -60,6 +60,18 @@ export function slidePlaneTiles(
     })
   }
   return out
+}
+
+/**
+ * A slide registered into a volume's 3D world space, ready for the renderer to
+ * draw as a textured plane. `tiles` are the world-mm quads (from
+ * `slidePlaneTiles`); the renderer pulls each tile's bitmap from `slide`'s cache
+ * (`cachedTileBitmap`) by its `key`, so streaming and level selection stay in NVSlide.
+ */
+export interface SlidePlaneState {
+  slide: NVSlide
+  level: NVSlideLevelManifest
+  tiles: SlidePlaneTile[]
 }
 
 export interface AxialPlaneOptions {

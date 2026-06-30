@@ -14,6 +14,7 @@ import type {
   ViewHitTest,
   WebGPUMeshGPU,
 } from '@/NVTypes'
+import type { SlidePlaneState } from '@/slide/slidePlane'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
@@ -46,6 +47,7 @@ import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
 import { SliceRenderer } from './slice'
+import { SlidePlaneRendererGPU } from './slidePlaneRender'
 import { ThumbnailRenderer } from './thumbnail'
 import * as wgpu from './wgpu'
 
@@ -138,6 +140,9 @@ export default class NVView {
   meshResources: Map<NVMesh, MeshGpuWithShader>
   orientCubeGpu: WebGPUMeshGPU | null
   thumbnailRenderer: ThumbnailRenderer
+  slidePlaneRenderer: SlidePlaneRendererGPU
+  /** Optional WSI slide registered into volume mm space, drawn in the 3D render tile. */
+  slidePlane: SlidePlaneState | null = null
   // Bounds: pixel rect for sub-canvas rendering
   private _boundsWidth = 0
   private _boundsHeight = 0
@@ -221,6 +226,7 @@ export default class NVView {
     this.meshResources = new Map()
     this.orientCubeGpu = null
     this.thumbnailRenderer = new ThumbnailRenderer()
+    this.slidePlaneRenderer = new SlidePlaneRendererGPU()
   }
 
   async init(): Promise<void> {
@@ -1339,6 +1345,22 @@ export default class NVView {
           0.5,
         )
       }
+      // Layer 2b-slide: WSI slide plane registered into volume mm space
+      // (RENDER tiles only). Uses the tile MVP (world mm -> clip); tiles stream
+      // via NVSlide and composite with the volume in its own space.
+      if (
+        tile.space !== 'global3d' &&
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
+        this.slidePlane &&
+        this.slidePlaneRenderer.isReady
+      ) {
+        this.slidePlaneRenderer.draw(
+          device,
+          pass,
+          mvpMatrix as Float32Array,
+          this.slidePlane,
+        )
+      }
       // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders and global3d)
       if (
         tile.space !== 'global3d' &&
@@ -1949,6 +1971,11 @@ export default class NVView {
       msaaCount,
     )
     await this.sliceRenderer.init(
+      this.device,
+      this.preferredCanvasFormat,
+      msaaCount,
+    )
+    this.slidePlaneRenderer.init(
       this.device,
       this.preferredCanvasFormat,
       msaaCount,

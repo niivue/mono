@@ -162,6 +162,70 @@ export class SlideDrawing {
     return true
   }
 
+  /**
+   * Magic wand: from a seed pixel, select the connected region whose colour in
+   * `ref` (an RGBA image at the raster's own width*height) is within `tolerance`
+   * (Euclidean RGB distance) of the seed's colour, and paint it `penValue`.
+   * `ref` is the slide's pixels sampled at raster resolution (the caller builds
+   * it from the decoded tiles). Returns the number of pixels filled.
+   */
+  magicWand(
+    ref: Uint8ClampedArray | Uint8Array,
+    x: number,
+    y: number,
+    tolerance: number,
+    penValue: number,
+    overwrite: boolean,
+  ): number {
+    const w = this.width
+    const h = this.height
+    const px = Math.round(x)
+    const py = Math.round(y)
+    if (px < 0 || py < 0 || px >= w || py >= h) return 0
+    if (ref.length < w * h * 4) return 0
+    const img = this.img
+    const seed = py * w + px
+    const sr = ref[seed * 4]
+    const sg = ref[seed * 4 + 1]
+    const sb = ref[seed * 4 + 2]
+    const tol2 = tolerance * tolerance
+    const visited = new Uint8Array(w * h)
+    const stack = [seed]
+    visited[seed] = 1
+    let count = 0
+    while (stack.length > 0) {
+      const idx = stack.pop() as number
+      const o = idx * 4
+      const dr = ref[o] - sr
+      const dg = ref[o + 1] - sg
+      const db = ref[o + 2] - sb
+      if (dr * dr + dg * dg + db * db > tol2) continue // colour mismatch: stop
+      if (overwrite || img[idx] === 0) {
+        img[idx] = penValue
+        count++
+      }
+      const ix = idx % w
+      if (ix > 0 && !visited[idx - 1]) {
+        visited[idx - 1] = 1
+        stack.push(idx - 1)
+      }
+      if (ix < w - 1 && !visited[idx + 1]) {
+        visited[idx + 1] = 1
+        stack.push(idx + 1)
+      }
+      if (idx - w >= 0 && !visited[idx - w]) {
+        visited[idx - w] = 1
+        stack.push(idx - w)
+      }
+      if (idx + w < img.length && !visited[idx + w]) {
+        visited[idx + w] = 1
+        stack.push(idx + w)
+      }
+    }
+    if (count > 0) this.version++
+    return count
+  }
+
   /** Undo the most recent stroke. Returns false when the stack is empty. */
   undo(): boolean {
     const r = drawUndo({

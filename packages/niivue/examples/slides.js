@@ -76,6 +76,7 @@ const els = {
   overlay: el('drawOverlay'),
   drawBtn: el('drawBtn'),
   drawTool: el('drawTool'),
+  wandTol: el('wandTol'),
   penValue: el('penValue'),
   drawUndo: el('drawUndo'),
   drawClear: el('drawClear'),
@@ -102,7 +103,8 @@ let rasterCanvas = null
 let rasterCtx = null
 let rasterImageData = null
 let penValue = 1
-let drawTool = 'pen' // pen | eraser | bucket | filled
+let drawTool = 'pen' // pen | eraser | bucket | filled | wand
+let wandTolerance = 40
 // The shared "_draw" label colormap, so annotation colors match the 3D demo and
 // each pen value paints a distinct label color. Resolved lazily (Vite glob).
 let drawLut = null
@@ -329,6 +331,34 @@ function penSizeForRaster() {
   return Math.max(2, Math.round(drawing.width / 300))
 }
 
+// Build an RGBA colour reference for the magic wand at the drawing-raster
+// resolution by compositing the cached tiles of the most detailed pyramid level
+// that fits the raster. Rebuilt per use so tiles that stream in are picked up;
+// returns whatever is cached (partial = some black, improves on a later click).
+function buildWandReference() {
+  if (!slide || !drawing) return null
+  const levels = slide.manifest.levels
+  let level = levels[levels.length - 1]
+  for (const lv of levels) {
+    if (lv.width <= drawing.width && lv.width > level.width) level = lv
+  }
+  const tw = level.tileWidth ?? slide.manifest.tileSize ?? 256
+  const th = level.tileHeight ?? slide.manifest.tileSize ?? 256
+  const sx = drawing.width / level.width
+  const sy = drawing.height / level.height
+  const c = document.createElement('canvas')
+  c.width = drawing.width
+  c.height = drawing.height
+  const cx = c.getContext('2d')
+  for (const t of level.tiles) {
+    slide.requestTile(level, t) // prime for a sharper re-click
+    const bmp = slide.cachedTileBitmap(`L${level.index}/${t.x}/${t.y}`)
+    if (!bmp) continue
+    cx.drawImage(bmp, t.x * tw * sx, t.y * th * sy, t.width * sx, t.height * sy)
+  }
+  return cx.getImageData(0, 0, c.width, c.height).data
+}
+
 function updateHud(screen) {
   if (!slide) {
     els.hud.innerHTML = '<div class="title">Loading tile manifest</div>'
@@ -457,6 +487,17 @@ els.canvas.addEventListener('pointerdown', (event) => {
       }
       return
     }
+    if (drawTool === 'wand') {
+      if (pt) {
+        const ref = buildWandReference()
+        if (ref) {
+          drawing.magicWand(ref, pt[0], pt[1], wandTolerance, penValue, true)
+          overlayDirty = true
+          requestRender()
+        }
+      }
+      return
+    }
     // pen / eraser / filled: paint the first dab (filled also accrues points).
     const pv = drawTool === 'eraser' ? 0 : penValue
     if (pt) {
@@ -477,7 +518,7 @@ els.canvas.addEventListener('pointerdown', (event) => {
 
 els.canvas.addEventListener('pointermove', (event) => {
   if (drawStroke && drawStroke.pointerId === event.pointerId) {
-    if (drawStroke.tool === 'bucket') return // single click, no drag
+    if (drawStroke.tool === 'bucket' || drawStroke.tool === 'wand') return // single click
     const pt = eventToRaster(event)
     if (pt) {
       const pv = drawStroke.tool === 'eraser' ? 0 : penValue
@@ -539,6 +580,9 @@ els.drawBtn.addEventListener('click', () => {
 })
 els.drawTool.addEventListener('change', () => {
   drawTool = els.drawTool.value
+})
+els.wandTol.addEventListener('change', () => {
+  wandTolerance = Number(els.wandTol.value) || 40
 })
 els.penValue.addEventListener('change', () => {
   penValue = Number(els.penValue.value) || 1

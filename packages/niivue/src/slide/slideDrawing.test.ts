@@ -106,4 +106,36 @@ describe('SlideDrawing', () => {
     const d = new SlideDrawing(8, 8)
     expect(d.fillPen([[1, 1]], 4, true)).toBe(false)
   })
+
+  test('magicWand selects the connected same-color region within tolerance', () => {
+    // 4x2 reference: left half black, right half white.
+    const w = 4
+    const h = 2
+    const ref = new Uint8ClampedArray(w * h * 4)
+    for (let i = 0; i < w * h; i++) {
+      const x = i % w
+      const v = x < 2 ? 0 : 255
+      ref[i * 4] = v
+      ref[i * 4 + 1] = v
+      ref[i * 4 + 2] = v
+      ref[i * 4 + 3] = 255
+    }
+    const d = new SlideDrawing(w, h)
+    const filled = d.magicWand(ref, 0, 0, 30, 7, true) // seed in the black half
+    expect(filled).toBe(4) // both black pixels in each row = 2x2
+    expect(at(d, 0, 0)).toBe(7)
+    expect(at(d, 1, 1)).toBe(7)
+    expect(at(d, 2, 0)).toBe(0) // white half not selected
+    expect(at(d, 3, 1)).toBe(0)
+  })
+
+  test('magicWand tolerance can bridge similar colors', () => {
+    const w = 2
+    const h = 1
+    const ref = new Uint8ClampedArray([10, 10, 10, 255, 25, 25, 25, 255])
+    const tight = new SlideDrawing(w, h)
+    expect(tight.magicWand(ref, 0, 0, 5, 3, true)).toBe(1) // only the seed
+    const loose = new SlideDrawing(w, h)
+    expect(loose.magicWand(ref, 0, 0, 50, 3, true)).toBe(2) // both bridge
+  })
 })

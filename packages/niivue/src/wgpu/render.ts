@@ -1245,8 +1245,19 @@ export class VolumeRenderer extends NVRenderer {
           const indices = entry.manager.takePendingUploads(1)
           if (indices.length === 0) continue
           const i = indices[0]
+          // Capture the uploader + plan generation BEFORE the await: a refocus
+          // can run swapChunkedVolumePlan -> remap() during the upload, which
+          // bumps the generation and re-keys the plan. Admitting the stale
+          // result would put the old brick's texture at a new-plan index.
+          const uploader = entry.uploader
+          const gen = entry.manager.generation
           try {
-            entry.manager.admit(i, await entry.uploader.uploadChunk(i))
+            const chunk = await uploader.uploadChunk(i)
+            if (entry.manager.generation === gen) {
+              entry.manager.admit(i, chunk)
+            } else {
+              entry.manager.discardUpload(i, chunk)
+            }
           } catch (err) {
             entry.manager.failUpload(i)
             throw err

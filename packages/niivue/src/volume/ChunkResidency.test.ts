@@ -453,3 +453,43 @@ describe('ChunkResidencyManager remap (in-place plan swap)', () => {
     expect(m.pendingUploadCount).toBe(0)
   })
 })
+
+// A backend upload pump runs `admit(i, await uploader.uploadChunk(i))`. A refocus
+// can run swapChunkedVolumePlan -> remap() during that await, re-keying the plan.
+// The pump must not admit the stale result at the old index; the generation
+// counter + bounds-check + discardUpload are how that is prevented.
+describe('ChunkResidencyManager stale-upload guard (plan swap race)', () => {
+  test('generation increments on every remap', () => {
+    const m = manager(3)
+    const g0 = m.generation
+    m.remap(new Map(), 2)
+    m.remap(new Map(), 4)
+    expect(m.generation).toBe(g0 + 2)
+  })
+
+  test('admit of an out-of-range index destroys the chunk, leaves state intact', () => {
+    const m = manager(2)
+    m.admit(0, fakeChunk('a', 100))
+    // A stale in-flight result whose old index is now beyond the (shrunk) plan
+    // must be dropped, not admitted into the keyspace.
+    const stale = fakeChunk('stale', 999)
+    m.admit(5, stale)
+    expect(stale.destroyed).toBe(true)
+    expect(m.isResident(5)).toBe(false)
+    expect(m.residentCount).toBe(1)
+    expect(m.residentBytes).toBe(100)
+  })
+
+  test('discardUpload destroys a stale result without admitting it', () => {
+    const m = manager(3)
+    const gen = m.generation
+    m.remap(new Map(), 3) // plan changed under an in-flight upload
+    expect(m.generation).not.toBe(gen)
+    const stale = fakeChunk('stale', 100)
+    m.discardUpload(1, stale)
+    expect(stale.destroyed).toBe(true)
+    expect(m.isResident(1)).toBe(false)
+    expect(m.residentBytes).toBe(0)
+    expect(m.inFlightUploadCount).toBe(0)
+  })
+})

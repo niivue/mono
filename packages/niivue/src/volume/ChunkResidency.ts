@@ -70,6 +70,7 @@ export class ChunkResidencyManager<TChunk> {
   private _residentBytes = 0
   private _budgetBytes: number
   private _frame = 0
+  private _generation = 0
 
   constructor(
     chunkCount: number,
@@ -110,6 +111,21 @@ export class ChunkResidencyManager<TChunk> {
     this._uploadQueue.length = 0
     this._inFlightUploads.clear()
     this._chunkCount = newChunkCount
+    // Invalidate any in-flight upload captured against the old plan: a result
+    // returned after this point would `admit` at a re-keyed (or out-of-range)
+    // index. The pump captures `generation` before its await and discards a
+    // result whose generation no longer matches (see `discardUpload`).
+    this._generation++
+  }
+
+  /**
+   * Monotonic plan-generation counter, bumped on every `remap`. A backend upload
+   * pump captures this before an async `uploadChunk` and, on completion, must
+   * discard the result (via `discardUpload`) rather than `admit` it if the value
+   * has changed — otherwise a stale brick lands at a re-keyed index.
+   */
+  get generation(): number {
+    return this._generation
   }
 
   /** Advance the LRU clock. Call once per frame before consuming chunks. */
@@ -129,6 +145,15 @@ export class ChunkResidencyManager<TChunk> {
    * resident set now exceeds `budgetBytes` (see `_evictToFit`).
    */
   admit(chunkIndex: number, chunk: TChunk): void {
+    // Defend the keyspace against a stale upload (a result captured against an
+    // older plan whose index is now out of range). Destroy it rather than
+    // corrupt `_resident` / `_residentBytes`. In-plan stale results are caught
+    // earlier by the pump's generation check (`discardUpload`).
+    if (chunkIndex < 0 || chunkIndex >= this._chunkCount) {
+      this._hooks.destroy(chunk)
+      this._inFlightUploads.delete(chunkIndex)
+      return
+    }
     const prev = this._resident.get(chunkIndex)
     if (prev) {
       this._hooks.destroy(prev.chunk)
@@ -278,6 +303,16 @@ export class ChunkResidencyManager<TChunk> {
    * A later working-set request may enqueue the chunk again.
    */
   failUpload(chunkIndex: number): void {
+    this._inFlightUploads.delete(chunkIndex)
+  }
+
+  /**
+   * Drop an upload result that completed after a `remap` changed the plan
+   * (generation mismatch): destroy its GPU handle and clear the in-flight mark.
+   * The next frame's working set re-requests whatever the new plan needs.
+   */
+  discardUpload(chunkIndex: number, chunk: TChunk): void {
+    this._hooks.destroy(chunk)
     this._inFlightUploads.delete(chunkIndex)
   }
 

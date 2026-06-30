@@ -31,7 +31,7 @@ import {
   isIdentityPermutation,
   isRGBAChunkDatatype,
 } from '@/volume/orientChunked'
-import { ensureOrientPipeline } from './orient'
+import { createModTexture, ensureOrientPipeline } from './orient'
 import * as wgpu from './wgpu'
 
 export interface VolumeChunkGPU {
@@ -79,7 +79,7 @@ function writeIdentityOrientUniforms(
   uniformBuffer: GPUBuffer,
   nvimage: NVImage,
 ): void {
-  const ab = new ArrayBuffer(7 * 16)
+  const ab = new ArrayBuffer(12 * 16)
   const dv = new DataView(ab)
   for (let i = 0; i < 16; i++) dv.setFloat32(i * 4, IDENTITY_MAT4[i], true)
   const u = buildOrientUniforms(nvimage, 0)
@@ -95,6 +95,11 @@ function writeIdentityOrientUniforms(
   dv.setFloat32(100, u.isLabel, true)
   dv.setFloat32(104, u.labelMin, true)
   dv.setFloat32(108, u.labelWidth, true)
+  // modMtx (offset 112, 4 vec4s) + mode flag (offset 176): modulation is
+  // disabled for chunks — identity matrix + mode 0.
+  for (let i = 0; i < 16; i++)
+    dv.setFloat32(112 + i * 4, IDENTITY_MAT4[i], true)
+  dv.setFloat32(176, 0, true)
   device.queue.writeBuffer(uniformBuffer, 0, ab)
 }
 
@@ -215,6 +220,10 @@ interface OrientMachinery {
   negativeColormapTexture: GPUTexture
   hasNegativeColormap: boolean
   sampler: GPUSampler
+  // Placeholder for the orient pass's modulation binding (binding 6). Chunks
+  // are never modulated, but main's orient bind group layout requires the
+  // entry, so bind a 1x1x1 r32float placeholder.
+  modPlaceholder: GPUTexture
 }
 
 async function buildOrientMachinery(
@@ -225,7 +234,9 @@ async function buildOrientMachinery(
   const { format, pipelineType } = getTextureFormat(dt)
   const cached = ensureOrientPipeline(device, pipelineType)
   const uniformBuffer = device.createBuffer({
-    size: 7 * 16,
+    // 12*16 to match main's orient uniform struct (grown for modulation:
+    // modMtx at offset 112 + mode flag at 176). Chunks disable modulation.
+    size: 12 * 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
   writeIdentityOrientUniforms(device, uniformBuffer, nvimage)
@@ -235,6 +246,7 @@ async function buildOrientMachinery(
     hasNegativeColormap,
     sampler,
   } = await createColormapResources(device, nvimage)
+  const modPlaceholder = createModTexture(device, null)
   return {
     format,
     cached,
@@ -243,6 +255,7 @@ async function buildOrientMachinery(
     negativeColormapTexture,
     hasNegativeColormap,
     sampler,
+    modPlaceholder,
   }
 }
 
@@ -445,6 +458,7 @@ export async function createChunkUploaderGPU(
           { binding: 3, resource: rgbaTexture.createView() },
           { binding: 4, resource: om.sampler },
           { binding: 5, resource: om.negativeColormapTexture.createView() },
+          { binding: 6, resource: om.modPlaceholder.createView() },
         ],
       })
       const encoder = device.createCommandEncoder()
@@ -479,6 +493,7 @@ export async function createChunkUploaderGPU(
     orient.uniformBuffer.destroy()
     orient.colormapTexture.destroy()
     if (orient.hasNegativeColormap) orient.negativeColormapTexture.destroy()
+    orient.modPlaceholder.destroy()
   }
 
   return { uploadChunk, prefetchChunk, dispose }

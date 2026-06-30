@@ -50,6 +50,9 @@ const els = {
 let nv: NiiVue | null = null
 let bases: VolumeApiEntry[] = []
 let currentId = ''
+// Bumped on each loadBase so a superseded load (rapid base switching) bails after
+// its awaits instead of appending a stale patch over the newer base.
+let loadToken = 0
 // The base's mm box (read after it loads) and the patch's isotropic voxel size.
 let centerMM: Shape3 = [0, 0, 0]
 let patchVoxMM = 1
@@ -150,6 +153,7 @@ async function applyOrientation(): Promise<void> {
 
 async function loadBase(id: string): Promise<void> {
   if (!nv) return
+  const myToken = ++loadToken
   currentId = id
   els.mag.textContent = 'loading base + placing patch…'
   try {
@@ -165,6 +169,9 @@ async function loadBase(id: string): Promise<void> {
     )
     return
   }
+  // A newer loadBase superseded this one while the base streamed; bail so we
+  // don't append this call's patch over the newer base.
+  if (myToken !== loadToken) return
   // Base mm box → centre + a patch sized to ~55% of the smallest extent.
   const v0 = nv.volumes[0] as unknown as {
     extentsMin: number[]
@@ -190,11 +197,16 @@ async function loadBase(id: string): Promise<void> {
     isTransparentBelowCalMin: true,
     img: makePatchData(),
   })
+  if (myToken !== loadToken) return
   await nv.addVolume(patch)
+  if (myToken !== loadToken) return
   nv.sliceType = Number(els.layout.value)
   await applyOrientation()
   nv.drawScene()
   renderHud()
+  // Clear the "loading…" status now that the winning load has placed the patch
+  // (it was never reset, so it lingered after every load).
+  els.mag.textContent = ''
 }
 
 async function main(): Promise<void> {

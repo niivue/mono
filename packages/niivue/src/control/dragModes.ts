@@ -72,6 +72,9 @@ export function calculateNewRange(
   const step = vol.img2RASstep
   const slope = vol.hdr.scl_slope
   const inter = vol.hdr.scl_inter
+  // For 4D volumes, scope the search to the currently-displayed frame so
+  // contrast reflects the visible volume, not always frame 0.
+  const frameOffset = (vol.frame4D ?? 0) * vol.nVox3D
 
   let lo = Number.MAX_VALUE
   let hi = -Number.MAX_VALUE
@@ -80,7 +83,7 @@ export function calculateNewRange(
     for (let y = yMin; y <= yMax; y++) {
       const yzi = zi + start[1] + y * step[1]
       for (let x = xMin; x <= xMax; x++) {
-        const idx = yzi + start[0] + x * step[0]
+        const idx = frameOffset + yzi + start[0] + x * step[0]
         if (idx >= 0 && idx < imgData.length) {
           const raw = imgData[idx]
           if (raw < lo) lo = raw

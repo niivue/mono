@@ -32,9 +32,13 @@ import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMeshLayers from '@/mesh/layers'
 import * as NVMesh from '@/mesh/NVMesh'
 import type { WriteOptions } from '@/mesh/writers'
-import { DRAG_MODE, NUM_CLIP_PLANE } from '@/NVConstants'
+import { DRAG_MODE, NUM_CLIP_PLANE, SLICE_TYPE } from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
-import type { NVEventListener, NVEventMap } from '@/NVEvents'
+import type {
+  GraphRangeChangeDetail,
+  NVEventListener,
+  NVEventMap,
+} from '@/NVEvents'
 import * as NVLoader from '@/NVLoader'
 import NVModel from '@/NVModel'
 import type {
@@ -47,6 +51,7 @@ import type {
   CanvasViewport,
   ColorMap,
   CustomLayoutTile,
+  FocusBox,
   ImageFromUrlOptions,
   LUT,
   MeshFromUrlOptions,
@@ -61,13 +66,22 @@ import type {
   NVInstance,
   NVMeshLayer,
   NVMesh as NVMeshType,
+  NVSignalDisplay,
+  NVSignal as NVSignalType,
   NVTractOptions,
   SaveVolumeOptions,
+  SignalAnnotation,
+  SignalSidecar,
   SyncOpts,
   VectorAnnotation,
   ViewHitTest,
   VolumeUpdate,
 } from '@/NVTypes'
+import { niftiBufferIsSignal } from '@/signal/detect'
+import type { SignalFromUrlOptions } from '@/signal/NVSignal'
+import * as NVSignal from '@/signal/NVSignal'
+import { defaultSignalDisplay } from '@/signal/processing'
+import { fetchSidecar } from '@/signal/sidecar'
 import { NVSlide } from '@/slide/NVSlide'
 import { SlideDrawing } from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
@@ -75,7 +89,13 @@ import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
 import { SlideVectorLayer } from '@/slide/slideVector'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
-import type { GraphLayout } from '@/view/NVGraph'
+import {
+  type GraphData,
+  type GraphLayout,
+  signalFracAtXValue,
+  signalValuesAt,
+  signalXValueAtFrac,
+} from '@/view/NVGraph'
 import type { LegendLayout } from '@/view/NVLegend'
 import {
   arePerfMarksEnabled,
@@ -87,7 +107,10 @@ import type { SliceTile } from '@/view/NVSliceLayout'
 import { validateCustomLayout } from '@/view/NVSliceLayout'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
 import type { ChunkPlan } from '@/volume/chunking'
-import { computeModulationData } from '@/volume/modulation'
+import {
+  computeModulationData,
+  computeModulationWeights,
+} from '@/volume/modulation'
 import * as NVVolume from '@/volume/NVVolume'
 import * as NVTensorProcessing from '@/volume/TensorProcessing'
 import type {
@@ -103,6 +126,7 @@ import {
   computeVolumeLabelCentroids,
   reorientDrawingToNative,
   toTypedViewOrU8,
+  volumeTR,
 } from '@/volume/utils'
 
 type ViewBackend = {
@@ -112,6 +136,7 @@ type ViewBackend = {
   updateBindGroups: () => Promise<void>
   updateAffineOverlays?: () => Promise<boolean>
   setCoarseFloor?: (coarseVol: NVImage | null) => Promise<void>
+  swapChunkedVolumePlan?: (vol: NVImage, plan: ChunkPlan) => Promise<void>
   hitTest: (x: number, y: number) => ViewHitTest | null
   depthPick: (x: number, y: number) => Promise<[number, number, number] | null>
   loadThumbnail: (url: string) => Promise<void>
@@ -212,6 +237,15 @@ class NiiVuePerf {
   }
 }
 
+/** Value-equality for an optional [low, high] range (null = autoscale). */
+function sameRange(
+  a: [number, number] | null | undefined,
+  b: [number, number] | null | undefined,
+): boolean {
+  if (!a || !b) return !a && !b
+  return a[0] === b[0] && a[1] === b[1]
+}
+
 export default class NiiVueGPU extends EventTarget {
   activeClipPlaneIndex: number
   currentClipPlaneIndex: number
@@ -236,6 +270,10 @@ export default class NiiVueGPU extends EventTarget {
   private _slideFillPts: Array<[number, number]> = []
   private _slideVecPts: Array<[number, number]> = []
   resizeObserver: ResizeObserver | null
+  _dprMediaQuery: {
+    mql: MediaQueryList
+    handler: (event: MediaQueryListEvent) => void
+  } | null = null
   _eventListeners: Record<string, EventHandler | null>
   private _updating = false
   private _pendingUpdate = false
@@ -460,6 +498,28 @@ export default class NiiVueGPU extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Transient world-space box outlined as 12 edges on the 3D render view (e.g. a
+   * focused subvolume). `min`/`max` are in the scene's world-mm space. Set null
+   * to clear. Not serialized.
+   */
+  get focusBox(): FocusBox | null {
+    return this.model._focusBox
+  }
+  set focusBox(box: FocusBox | null) {
+    this.model._focusBox = box
+    this.drawScene()
+  }
+
+  /** Set of world-space boxes drawn on 3D render tiles (e.g. per-brick LOD). */
+  get lodBoxes(): FocusBox[] | null {
+    return this.model._lodBoxes
+  }
+  set lodBoxes(boxes: FocusBox[] | null) {
+    this.model._lodBoxes = boxes
+    this.drawScene()
+  }
+
   get pan2Dxyzmm(): vec4 {
     return this.model.scene.pan2Dxyzmm
   }
@@ -485,6 +545,57 @@ export default class NiiVueGPU extends EventTarget {
     this.model.scene.renderPan = v
     this.emit('change', { property: 'renderPan', value: v })
     this.drawScene()
+  }
+
+  /**
+   * World-mm pivot the 3D render orbits/zooms about. Null = volume centre. Set
+   * to the crosshair to keep a focused point framed through rotation and zoom
+   * (an alternative to the renderPan-offset centring).
+   */
+  get renderPivotMM(): vec3 | null {
+    return this.model._renderPivotMM
+  }
+  set renderPivotMM(v: vec3 | null) {
+    this.model._renderPivotMM = v
+    this.drawScene()
+  }
+
+  /**
+   * Project a world-mm point to the 3D render tile's NDC ([-1,1], y up), using
+   * the MVP the renderer cached on its last draw (so it reflects the current
+   * camera, zoom, and renderPan exactly). Returns null if no render tile has been
+   * drawn yet or the point is at/behind the camera.
+   */
+  mm2renderNDC(mm: [number, number, number]): [number, number] | null {
+    const tile = this.view?.screenSlices?.find(
+      (t) => t.axCorSag === SLICE_TYPE.RENDER && t.mvpMatrix,
+    )
+    const mvp = tile?.mvpMatrix
+    if (!mvp) return null
+    const clip = vec4.transformMat4(
+      vec4.create(),
+      vec4.fromValues(mm[0], mm[1], mm[2], 1),
+      mvp,
+    )
+    const w = clip[3]
+    if (!(Math.abs(w) > 1e-6)) return null
+    return [clip[0] / w, clip[1] / w]
+  }
+
+  /**
+   * Pan the 3D render so a given world-mm point sits at the centre of the render
+   * tile, by adjusting `renderPan` (a clip-space translation; no change to the
+   * camera, rotation, or zoom). Useful to keep a zoomed/focused region framed.
+   * Returns false (no-op) if the render tile hasn't been drawn yet. Because the
+   * cached MVP already includes the current renderPan, this converges in one
+   * call: newPan = currentPan - ndc(point).
+   */
+  centerRenderOnMM(mm: [number, number, number]): boolean {
+    const ndc = this.mm2renderNDC(mm)
+    if (!ndc) return false
+    const cur = this.model.scene.renderPan
+    this.renderPan = [cur[0] - ndc[0], cur[1] - ndc[1]] as vec2
+    return true
   }
 
   get gamma(): number {
@@ -892,6 +1003,53 @@ export default class NiiVueGPU extends EventTarget {
   set graphNormalizeValues(v: boolean) {
     this.model.ui.graph.normalizeValues = v
     this.emit('change', { property: 'graphNormalizeValues', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * Volume+physio association graph: whether the crosshair BOLD/volume
+   * time-course is shown as a series (default true). Set false to plot only the
+   * attached physio traces (a "show fMRI trace" toggle).
+   */
+  get graphShowVolumeTimecourse(): boolean {
+    return this.model.ui.graph.showVolumeTimecourse !== false
+  }
+  set graphShowVolumeTimecourse(v: boolean) {
+    this.model.ui.graph.showVolumeTimecourse = v
+    this.emit('change', { property: 'graphShowVolumeTimecourse', value: v })
+    this.drawScene()
+    // The set of visible series changed, so the windowed readout may now report a
+    // hidden trace until the next crosshair/frame event — refresh it immediately.
+    this.refreshSignalLocation()
+  }
+
+  /**
+   * Graph data-line thickness multiplier (relative to the DPI-scaled default,
+   * 1). <1 thins lines so dense/overlapping traces separate; grid lines unchanged.
+   */
+  get graphLineWidth(): number {
+    return this.model.ui.graph.lineWidth ?? 1
+  }
+  set graphLineWidth(v: number) {
+    // Clamp to a finite, sane range so NaN/Infinity/negatives can't reach the
+    // line buffer as an infinite/NaN thickness.
+    const clamped = Number.isFinite(v) ? Math.max(0, Math.min(8, v)) : 1
+    this.model.ui.graph.lineWidth = clamped
+    this.emit('change', { property: 'graphLineWidth', value: clamped })
+    this.drawScene()
+  }
+
+  /**
+   * Opacity (0..1) of the multi-series graph data lines (default 1). Below 1,
+   * overlapping traces are translucent so intersections are visible.
+   */
+  get graphLineAlpha(): number {
+    return this.model.ui.graph.lineAlpha ?? 1
+  }
+  set graphLineAlpha(v: number) {
+    const clamped = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1
+    this.model.ui.graph.lineAlpha = clamped
+    this.emit('change', { property: 'graphLineAlpha', value: clamped })
     this.drawScene()
   }
 
@@ -1434,14 +1592,38 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   /**
-   * Set a modulation image for a target volume.
-   * The modulator's intensity scales the target volume's brightness and opacity.
+   * Set a modulation image for a target volume. The modulator's intensity
+   * (windowed by its own calMin/calMax) scales the target volume's brightness
+   * (RGB) or opacity (alpha) per voxel.
+   *
+   * Works for both pre-baked RGB/RGBA volumes (V1 tensors) and plain
+   * colormapped SCALAR overlays — for scalar overlays the weight is sampled in
+   * the colormap GPU prepass through the modulator's overlay transform matrix,
+   * so the modulator may live on any co-registered grid.
+   *
+   * NOTE: `modulateAlpha` differs by target type. For SCALAR overlays it selects
+   * RGB (0) vs alpha (non-zero) modulation. For RGB/RGBA (V1 tensor) volumes,
+   * only RGB is ever scaled — alpha is preserved to keep V1 sign-polarity bits
+   * intact — so a non-zero `modulateAlpha` does NOT produce alpha modulation
+   * there (it only sets the exponent for the unused alpha path). Background-volume
+   * alpha modulation additionally needs `volumeIsAlphaClipDark` to show as
+   * transparency.
    * @param targetId - ID of the volume to modulate
    * @param modulatorId - ID of the volume providing modulation (empty string to clear)
+   * @param modulateAlpha - scalar overlays: 0 modulates RGB, non-zero modulates
+   *   ALPHA with exponent `max(1, |modulateAlpha|)` (matching the original
+   *   NiiVue). RGB/RGBA volumes always modulate RGB only.
+   *
+   * Re-invalidation: the scalar weight is cached by the modulator's buffer
+   * identity + window, so it does NOT detect an IN-PLACE edit of the modulator's
+   * voxel data (same buffer). After mutating a modulator in place (e.g. a
+   * drawing/segmentation used as a modulator), call this method again (same
+   * target + modulator) to force a recompute.
    */
   async setModulationImage(
     targetId: string,
     modulatorId: string,
+    modulateAlpha = 0,
   ): Promise<void> {
     const target = this.volumes.find((v) => v.id === targetId)
     if (!target) {
@@ -1449,7 +1631,10 @@ export default class NiiVueGPU extends EventTarget {
       return
     }
     target.modulationImage = modulatorId || undefined
+    target.modulateAlpha = modulateAlpha
     target._modulationData = null
+    target._modulationWeight = null
+    target._modulationWeightKey = undefined
     target.isDirty = true
     await this.updateGLVolume()
   }
@@ -1485,6 +1670,7 @@ export default class NiiVueGPU extends EventTarget {
   /** Compute modulation data for all volumes that have modulationImage set. */
   private _computeModulationData(): void {
     computeModulationData(this.volumes)
+    computeModulationWeights(this.volumes)
   }
 
   get backend(): BackendType | undefined {
@@ -1627,6 +1813,10 @@ export default class NiiVueGPU extends EventTarget {
     }
     this.model.volumes = loaded
     this.model._setupPivot3D()
+    // The volume set changed: drop the associated-graph memo so a same-named 4D
+    // reload doesn't reuse the previous volume's sampled BOLD time-course (the
+    // cache key is id-based). removeAllVolumes does this; the atomic swap must too.
+    this.model.invalidateGraphCache()
     for (const vol of loaded) {
       this.emit('volumeLoaded', { volume: vol })
     }
@@ -1667,41 +1857,452 @@ export default class NiiVueGPU extends EventTarget {
     return this
   }
 
+  get signals(): NVSignalType[] {
+    return this.model.signals
+  }
+
+  /** Add a pre-built signal or load one from a URL/File. */
+  async addSignal(signal: SignalFromUrlOptions | NVSignalType): Promise<this> {
+    const sig = 'raw' in signal ? signal : await NVSignal.loadSignal(signal)
+    this.model.addSignal(sig)
+    this.emit('signalLoaded', { signal: sig })
+    this.drawScene()
+    return this
+  }
+
+  /** Load one or more signals (physio TSV or NIfTI/NIfTI-MRS). */
+  async loadSignals(
+    signals: SignalFromUrlOptions | SignalFromUrlOptions[],
+  ): Promise<this> {
+    if (!Array.isArray(signals)) signals = [signals]
+    const loaded = await Promise.all(signals.map((s) => NVSignal.loadSignal(s)))
+    for (const sig of loaded) {
+      this.model.addSignal(sig)
+      this.emit('signalLoaded', { signal: sig })
+    }
+    // A fresh signal set starts at the full x-extent (drop any prior zoom/pan).
+    this.model.signalViewWindow = null
+    this.drawScene()
+    return this
+  }
+
+  /**
+   * Add a spectroscopy signal whose spectrum is read live from the crosshair
+   * voxel of a complex MRSI volume (loaded on the volume path; carries
+   * `complexFID` + `mrsMeta`). The graph re-derives the voxel's spectrum on
+   * every crosshair move — the core enabler for MRSI navigation. FSL-MRS
+   * `halveFirstPoint` is on by default; pass `display` to override or to set a
+   * ppm window/component. Throws if `volumeId` is not a loaded MRSI volume.
+   */
+  addMrsiSignal(
+    volumeId: string,
+    opts: {
+      name?: string
+      display?: Partial<NVSignalDisplay>
+      annotations?: SignalAnnotation[]
+    } = {},
+  ): this {
+    const vol = this.model.volumes.find((v) => v.id === volumeId)
+    if (!vol?.complexFID || !vol.mrsMeta) {
+      throw new Error(
+        `addMrsiSignal: "${volumeId}" is not a loaded complex MRSI volume`,
+      )
+    }
+    const m = vol.mrsMeta
+    const name = opts.name ?? `${vol.name} spectrum`
+    const sig: NVSignalType = {
+      id: name,
+      name,
+      kind: 'spectroscopy',
+      // Placeholder FID; the live spectrum is extracted per crosshair voxel.
+      raw: {
+        kind: 'spectroscopy',
+        fid: new Float32Array(m.nPoints * 2),
+        nPoints: m.nPoints,
+        nTransients: 1,
+        dwell: m.dwell,
+        spectrometerFreq: m.spectrometerFreq,
+        nucleus: m.nucleus,
+      },
+      display: {
+        ...defaultSignalDisplay(),
+        average: false,
+        halveFirstPoint: true,
+        ...(opts.display ?? {}),
+      },
+      attachedToId: volumeId,
+      followsCrosshair: true,
+      // Copy so later caller mutation cannot change render state.
+      annotations: opts.annotations?.map(NVSignal.cloneAnnotation) ?? [],
+    }
+    this.model.addSignal(sig)
+    this.emit('signalLoaded', { signal: sig })
+    this.drawScene()
+    return this
+  }
+
+  removeSignal(index: number): this {
+    const removed = this.model.removeSignal(index)
+    if (removed) {
+      this.emit('signalRemoved', { signal: removed, index })
+      this.drawScene()
+    }
+    return this
+  }
+
+  removeAllSignals(): this {
+    for (let i = this.model.signals.length - 1; i >= 0; i--) {
+      const removed = this.model.removeSignal(i)
+      if (removed) this.emit('signalRemoved', { signal: removed, index: i })
+    }
+    this.drawScene()
+    return this
+  }
+
+  /** Emit a `signalLocationChange` readout for the given graph data + x value. */
+  private emitSignalLocation(data: GraphData, xValue: number): void {
+    const values = signalValuesAt(data, xValue)
+    const xLabel = data.xAxis?.label ?? ''
+    const fmt = (n: number) =>
+      Number.isFinite(n)
+        ? Number.isInteger(n)
+          ? String(n)
+          : n.toPrecision(4)
+        : 'n/a'
+    const parts = values.map((v) => `${v.label}=${fmt(v.value)}`)
+    const string = `${xLabel} ${fmt(xValue)}  ${parts.join('  ')}`
+    this.emit('signalLocationChange', { xValue, xLabel, values, string })
+  }
+
+  /**
+   * Set the signal graph cursor from a plot-relative x fraction (0 = left edge,
+   * 1 = right edge). Draws a faint marker line and emits `signalLocationChange`
+   * with the values of every series at that location (for a status-bar readout).
+   * In an associated volume+physio view it also scrubs the 4D volume to the
+   * nearest frame.
+   */
+  setSignalCursorFraction(xFrac: number): this {
+    // Use the dispatched graph data so the readout matches what is drawn
+    // (signal-only or associated volume+physio time view).
+    const data = this.model.collectGraphData()
+    if (!data?.series) return this
+    return this.setSignalCursorValue(signalXValueAtFrac(data, xFrac))
+  }
+
+  /**
+   * Set the signal cursor to a data-space x value (the marker). Keeps the marker
+   * visible: if it lies outside the current zoom window, the window pans to it
+   * (explicit zoom / pan buttons may hide the marker; a wheel-step follows it).
+   */
+  private setSignalCursorValue(xValue: number): this {
+    this.model.signalCursorX = xValue
+    if (this.model.panViewWindowTo(xValue)) this.emitGraphRange()
+    const vol = this.model.getAssociatedVolume()
+    if (vol?.id) {
+      const tr = volumeTR(vol)
+      const nFrames = vol.nFrame4D ?? 1
+      const frame = Math.max(0, Math.min(nFrames - 1, Math.round(xValue / tr)))
+      // setFrame4D pans + redraws + emits the readout at the new frame marker.
+      // Only fall through to emit here when the frame is unchanged (setFrame4D
+      // early-returns without emitting), so the event fires exactly once.
+      if (frame !== (vol.frame4D ?? 0)) {
+        // Fire-and-forget (this method is sync); route a GPU-upload rejection so
+        // it isn't an unhandled promise rejection.
+        this.setFrame4D(vol.id, frame).catch((e) =>
+          log.error('setFrame4D failed', e),
+        )
+        return this
+      }
+    }
+    const data = this.model.collectGraphData() // reflects any pan
+    if (data?.series) this.emitSignalLocation(data, xValue)
+    this.drawScene()
+    return this
+  }
+
+  /**
+   * After the marker moves on its own (e.g. the wheel stepped the 4D frame), pan
+   * the zoom window so the marker stays visible. No-op at full extent or when it
+   * is already in view.
+   */
+  ensureGraphCursorVisible(): void {
+    const data = this.model.collectGraphData()
+    const cx = data?.cursorX
+    if (cx === null || cx === undefined) return
+    if (this.model.panViewWindowTo(cx)) {
+      this.drawScene()
+      this.emitGraphRange()
+    }
+  }
+
+  /**
+   * Step the signal cursor along the x-axis by one wheel tick (fraction of the
+   * visible window). Fallback scroll gesture for a signal graph with no spatial
+   * volume to scrub (when a 4D volume is present, the wheel steps frames
+   * instead). Starts from the window centre if no cursor has been set. When the
+   * step crosses the visible window edge, the window pans to follow the marker.
+   */
+  stepSignalCursor(direction: number): this {
+    const data = this.model.collectGraphData()
+    if (!data?.series) return this
+    const cur =
+      this.model.signalCursorX !== null
+        ? signalFracAtXValue(data, this.model.signalCursorX)
+        : 0.5
+    // Unclamped fraction: the value may extrapolate beyond the visible window;
+    // it is then clamped to the full extent and the window pans to follow.
+    let xValue = signalXValueAtFrac(data, cur + 0.02 * (direction > 0 ? 1 : -1))
+    const full = data.fullXDomain
+    if (full) xValue = Math.max(full[0], Math.min(full[1], xValue))
+    return this.setSignalCursorValue(xValue)
+  }
+
+  /**
+   * Zoom the signal graph's x-axis view window: `factor` > 1 zooms in, < 1 zooms
+   * out, centred on the graph cursor when one is set (else the window centre).
+   * Zooming out past the full extent restores the full view. No-op unless a
+   * (dense) signal graph is shown.
+   */
+  graphZoom(factor = 2): this {
+    this.model.graphZoom(factor)
+    this.drawScene()
+    this.emitGraphRange()
+    return this
+  }
+
+  /**
+   * Pan the signal graph's x-axis view window by `frac` of its width (negative
+   * pans toward earlier x / left). No-op when the full extent is shown.
+   */
+  graphPan(frac: number): this {
+    this.model.graphPan(frac)
+    this.drawScene()
+    this.emitGraphRange()
+    return this
+  }
+
+  /**
+   * Reset the signal graph's zoom/pan to the full x-extent (clears the view
+   * window). The one-click way back from a deep zoom; also bound to a
+   * double-click on the graph. No-op when the full extent is already shown.
+   */
+  graphResetView(): this {
+    if (this.model.signalViewWindow !== null) {
+      this.model.signalViewWindow = null
+      this.drawScene()
+      this.emitGraphRange()
+    }
+    return this
+  }
+
+  /**
+   * Set the signal graph's visible x-range to an explicit data-unit range
+   * (order-insensitive), clamped to the full extent; `null` restores the full
+   * view. For a host driving the range reactively (e.g. ppm sliders that mirror
+   * the in-graph zoom via the `graphRangeChange` event). Pairs with
+   * `graphAutoResetView = false` so the window is host-owned.
+   */
+  setGraphRange(range: [number, number] | null): this {
+    this.model.setGraphRange(range)
+    this.drawScene()
+    this.emitGraphRange()
+    return this
+  }
+
+  /**
+   * Whether an explicit-range display change (ppm window / ppm<->Hz / ppm ref)
+   * resets the transient pan/zoom window so the new range is shown in full
+   * (default true — see the `graphRangeChange` event for the reactive
+   * alternative). Set false when a host owns the range via `setGraphRange`.
+   */
+  get graphAutoResetView(): boolean {
+    return this.model.ui.graph.autoResetView !== false
+  }
+  set graphAutoResetView(v: boolean) {
+    this.model.ui.graph.autoResetView = v
+    this.emit('change', { property: 'graphAutoResetView', value: v })
+  }
+
+  /**
+   * The signal graph's current visible x-range (the synchronous counterpart to
+   * the `graphRangeChange` event): `{ min, max, full, axisLabel, isWindowed }`,
+   * or null when no signal graph is shown. Use `full` to drive a "reset to full
+   * extent" control (e.g. jump range sliders to the data limits).
+   */
+  getGraphRange(): GraphRangeChangeDetail | null {
+    const data = this.model.collectGraphData()
+    const full = data?.fullXDomain
+    if (!data?.series || !full) return null
+    return {
+      min: data.xAxis?.min ?? full[0],
+      max: data.xAxis?.max ?? full[1],
+      full,
+      axisLabel: data.xAxis?.label ?? '',
+      isWindowed: this.model.signalViewWindow !== null,
+    }
+  }
+
+  /**
+   * Emit `graphRangeChange` with the signal graph's current visible x-range, so
+   * a host UI (range sliders) can track the in-graph pan/zoom. No-op when no
+   * signal graph is shown.
+   */
+  private emitGraphRange(): void {
+    const r = this.getGraphRange()
+    if (r) this.emit('graphRangeChange', r)
+  }
+
+  /**
+   * Re-emit the signal readout at the current marker (the associated volume's
+   * frame time, else the last clicked cursor). Called on crosshair/frame changes
+   * so the status bar reflects the current voxel value without a graph click.
+   */
+  refreshSignalLocation(): void {
+    // Only signals (or an association) produce a readout; skip the work — and a
+    // wasteful collectGraphData rebuild — when no signal is loaded.
+    if (this.model.signals.length === 0) return
+    const data = this.model.collectGraphData()
+    if (!data?.series) {
+      // Signals are loaded but every trace is hidden (no graph): clear the stale
+      // readout rather than leaving the last hidden-trace value in the footer.
+      this.emit('signalLocationChange', {
+        xValue: Number.NaN,
+        xLabel: '',
+        values: [],
+        string: '',
+      })
+      return
+    }
+    const vol = this.model.getAssociatedVolume()
+    let xValue: number
+    if (vol) {
+      xValue = (vol.frame4D ?? 0) * volumeTR(vol)
+    } else if (this.model.signalCursorX !== null) {
+      xValue = this.model.signalCursorX
+    } else {
+      return
+    }
+    this.emitSignalLocation(data, xValue)
+  }
+
+  /** Update a loaded signal's display state (drives the on-demand transform). */
+  setSignal(
+    index: number,
+    opts: {
+      display?: Partial<NVSignalDisplay>
+      attachToId?: string
+      annotations?: SignalAnnotation[]
+    },
+  ): this {
+    const sig = this.model.signals[index]
+    if (!sig) return this
+    let domainMoved = false
+    if (opts.display) {
+      const prev = sig.display
+      const next = { ...prev, ...opts.display }
+      // The pan/zoom view window is a sub-range of the current x-domain. If this
+      // display change MOVES the domain (an explicit ppm window, a ppm<->Hz
+      // switch, or a ppm reference shift), a leftover window is stale and would
+      // be clamped against the new domain — making explicit-range controls (e.g.
+      // the svs.html ppm sliders) look dead. Reset it so the explicit range is
+      // shown in full and zoom/pan restart from there. Compared by value so
+      // re-applying the same display (e.g. nudging an unrelated slider) keeps the
+      // current zoom.
+      domainMoved =
+        !sameRange(prev.ppmRange, next.ppmRange) ||
+        prev.useHz !== next.useHz ||
+        prev.ppmRef !== next.ppmRef
+      if (domainMoved && this.model.ui.graph.autoResetView !== false) {
+        this.model.signalViewWindow = null
+      }
+      sig.display = next
+    }
+    if (opts.attachToId !== undefined) sig.attachedToId = opts.attachToId
+    // Copy so later caller mutation cannot silently change render state.
+    if (opts.annotations !== undefined)
+      sig.annotations = opts.annotations.map(NVSignal.cloneAnnotation)
+    this.drawScene()
+    // A display change may have shown/hidden a trace; refresh the readout so the
+    // footer doesn't keep reporting a now-hidden series.
+    if (opts.display) this.refreshSignalLocation()
+    // A domain-moving change (explicit range / ppm<->Hz / ref) shifts the visible
+    // range — notify reactive hosts (e.g. range sliders).
+    if (domainMoved) this.emitGraphRange()
+    return this
+  }
+
   async addImage(
     pathOrFile: string | File,
     options: Record<string, unknown> = {},
   ): Promise<void> {
-    const ext = NVLoader.getFileExt(
-      typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.name,
-    )
-    const meshExts = NVMesh.meshExtensions()
-    if (meshExts.includes(ext)) {
-      await this.addMesh({ url: pathOrFile, ...options } as MeshFromUrlOptions)
-    } else {
-      await this.addVolume({
-        url: pathOrFile,
-        ...options,
-      } as ImageFromUrlOptions)
-    }
+    await this._dispatchImage(pathOrFile, options, false)
   }
 
   async loadImage(
     pathOrFile: string | File,
     options: Record<string, unknown> = {},
   ): Promise<void> {
+    await this._dispatchImage(pathOrFile, options, true)
+  }
+
+  /**
+   * Route a file/URL to the signal, mesh, or volume loader.
+   *
+   * - Signal-only extensions (e.g. TSV) and `asSignal: true` go to signals.
+   * - Mesh extensions go to meshes.
+   * - NIfTI is ambiguous: unless `asSignal: false`, its header dims are sniffed
+   *   (signal only when it has no spatial extent: dim1-3 == 1, dim4 > 1). MRS
+   *   sidecar/header fields do NOT affect routing. See {@link niftiBufferIsSignal}.
+   * - Everything else is a volume.
+   *
+   * `replace` selects load-semantics (replace existing volumes/meshes) vs
+   * add-semantics; signals always append.
+   */
+  private async _dispatchImage(
+    pathOrFile: string | File,
+    options: Record<string, unknown>,
+    replace: boolean,
+  ): Promise<void> {
     const ext = NVLoader.getFileExt(
       typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.name,
     )
+    const asSignal = options.asSignal as boolean | undefined
+    const sidecar = (options.sidecar as SignalSidecar | undefined) ?? null
+    const { asSignal: _as, sidecar: _sc, ...rest } = options
+
     const meshExts = NVMesh.meshExtensions()
-    if (meshExts.includes(ext)) {
-      await this.loadMeshes([
-        { url: pathOrFile, ...options } as MeshFromUrlOptions,
-      ])
-    } else {
-      await this.loadVolumes([
-        { url: pathOrFile, ...options } as ImageFromUrlOptions,
-      ])
+    const signalExts = NVSignal.signalExtensions()
+    const volumeExts = NVVolume.volumeExtensions()
+    const signalOnly = signalExts.filter(
+      (e) => !volumeExts.includes(e) && !meshExts.includes(e),
+    )
+
+    if (asSignal === true || signalOnly.includes(ext)) {
+      await this.loadSignals([{ url: pathOrFile, sidecar }])
+      return
     }
+    if (meshExts.includes(ext)) {
+      const opts = { url: pathOrFile, ...rest } as MeshFromUrlOptions
+      await (replace ? this.loadMeshes([opts]) : this.addMesh(opts))
+      return
+    }
+    if ((ext === 'NII' || ext === 'NII.GZ') && asSignal !== false) {
+      // Sniff the header: only NON-SPATIAL NIfTI (dim1-3==1, dim4>1) is a
+      // signal. Spatial spectroscopy (MRSI/CSI) stays on the volume path even
+      // when it carries MRS fields, since the 1-D signal model cannot represent
+      // its spatial dimensions.
+      const buffer = await NVLoader.fetchFile(pathOrFile)
+      if (niftiBufferIsSignal(buffer)) {
+        let meta = sidecar
+        if (!meta && typeof pathOrFile === 'string') {
+          meta = await fetchSidecar(pathOrFile)
+        }
+        await this.loadSignals([{ url: pathOrFile, sidecar: meta }])
+        return
+      }
+    }
+    const volOpts = { url: pathOrFile, ...rest } as ImageFromUrlOptions
+    await (replace ? this.loadVolumes([volOpts]) : this.addVolume(volOpts))
   }
 
   async removeMesh(meshIndex: number): Promise<void> {
@@ -1840,12 +2441,14 @@ export default class NiiVueGPU extends EventTarget {
 
   /**
    * Update display properties of a loaded volume.
-   * Accepts any subset of volume display options (colormap, opacity, cal_min, etc.)
-   * and triggers a single GPU update.
+   * Accepts any subset of volume display options (colormap, opacity, calMin, etc.)
+   * and triggers a single GPU update. Note the display-window fields are the
+   * camelCase calMin/calMax (matching VolumeUpdate / ImageFromUrlOptions); the
+   * snake_case cal_min/cal_max are NIfTI header fields and are ignored here.
    *
    * @example
    * await nv1.setVolume(0, { colormap: 'hot', opacity: 0.8 })
-   * await nv1.setVolume(1, { cal_min: 10, cal_max: 200, cal_minNeg: -200, cal_maxNeg: -10 })
+   * await nv1.setVolume(1, { calMin: 10, calMax: 200, calMinNeg: -200, calMaxNeg: -10 })
    */
   async setVolume(volumeIndex: number, options: VolumeUpdate): Promise<void> {
     const volumes = this.model.getVolumes()
@@ -2187,11 +2790,23 @@ export default class NiiVueGPU extends EventTarget {
       return
     }
     const maxFrame = (vol.nFrame4D ?? 1) - 1
-    const clamped = Math.max(0, Math.min(frame, maxFrame))
+    // frame4D is a frame INDEX: round to an integer and clamp. Guard NaN/Infinity
+    // from a public caller (Math.min(NaN, max) is NaN, and NaN === frame4D is
+    // false, so an unguarded NaN would be assigned + uploaded); a fractional
+    // value like 1.5 is rounded rather than driving a fractional frame.
+    const clamped = Number.isFinite(frame)
+      ? Math.max(0, Math.min(Math.round(frame), maxFrame))
+      : (vol.frame4D ?? 0)
     if (clamped === vol.frame4D) return
     vol.frame4D = clamped
     this.emit('frameChange', { volume: vol, frame: clamped })
     await this.updateGLVolume()
+    // A frame change moves the signal-graph marker (frame*TR); pan the window to
+    // keep it visible FIRST, so the readout that createOnLocationChange emits is
+    // sampled against the new (in-window) marker, not the old window's edge.
+    // No-op without a windowed signal graph; covers Back/Forward, wheel, and
+    // programmatic frame changes alike.
+    this.ensureGraphCursorVisible()
     this.createOnLocationChange()
   }
 
@@ -2322,6 +2937,9 @@ export default class NiiVueGPU extends EventTarget {
   createOnLocationChange(axCorSag = NaN): void {
     const msg = buildLocationMessage(this, axCorSag)
     if (msg) this.emit('locationChange', msg)
+    // Refresh the signal readout so the status bar reflects the new voxel value
+    // when the crosshair moves or the 4D frame changes (no-op without signals).
+    this.refreshSignalLocation()
   }
 
   /**
@@ -2397,6 +3015,23 @@ export default class NiiVueGPU extends EventTarget {
    */
   async setBaseCoarseFloor(coarseVol: NVImage | null): Promise<void> {
     await this.view?.setCoarseFloor?.(coarseVol)
+    this.drawScene()
+  }
+
+  /**
+   * Swap a loaded chunked/streamed volume's tiling plan in place (e.g. a
+   * multi-LOD refocus). Unchanged bricks keep their resident GPU textures; only
+   * changed/new bricks stream. Far cheaper than reloading the volume, and it
+   * doesn't reset the camera/crosshair. The volume must already be loaded with a
+   * `chunkSource`; otherwise this is a no-op.
+   */
+  async swapVolumeChunkPlan(volumeId: string, plan: ChunkPlan): Promise<void> {
+    const vol = this.model.volumes.find(
+      (v) => v.id === volumeId || v.name === volumeId,
+    )
+    if (!vol) return
+    vol.chunkPlan = plan
+    await this.view?.swapChunkedVolumePlan?.(vol, plan)
     this.drawScene()
   }
 
@@ -3605,6 +4240,13 @@ export default class NiiVueGPU extends EventTarget {
       this.resizeObserver.disconnect()
       this.resizeObserver = null
     }
+    if (this._dprMediaQuery) {
+      this._dprMediaQuery.mql.removeEventListener(
+        'change',
+        this._dprMediaQuery.handler,
+      )
+      this._dprMediaQuery = null
+    }
     if (this.view) this.view.destroy()
     this._viewLifecycle.unregister?.(this)
   }
@@ -3840,14 +4482,17 @@ export default class NiiVueGPU extends EventTarget {
       if (this.view) await this.view.loadThumbnail(this.model.ui.thumbnailUrl)
     }
 
-    // Reconstruct volumes and meshes from document entries (parallel)
-    const volumePromises = doc.volumes.map((v) =>
-      NVDocument.reconstructVolume(this.model, v),
+    // Reconstruct volumes SEQUENTIALLY so document order is preserved —
+    // addVolume pushes when its async prepare resolves, so a parallel map would
+    // let a fast-loading volume land in the wrong slot (volume order defines
+    // background vs overlays, and modulator/drawing links depend on it).
+    for (const v of doc.volumes) {
+      await NVDocument.reconstructVolume(this.model, v)
+    }
+    // Meshes have no background/overlay ordering role; load them in parallel.
+    await Promise.all(
+      doc.meshes.map((m) => NVDocument.reconstructMesh(this.model, m)),
     )
-    const meshPromises = doc.meshes.map((m) =>
-      NVDocument.reconstructMesh(this.model, m),
-    )
-    await Promise.all([...volumePromises, ...meshPromises])
 
     // Update GPU resources and render
     await this.updateGLVolume()

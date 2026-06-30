@@ -1,0 +1,121 @@
+import * as NVLoader from '@/NVLoader'
+import type {
+  NVSignal,
+  NVSignalDisplay,
+  NVSignalRaw,
+  SignalAnnotation,
+  SignalSidecar,
+} from '@/NVTypes'
+import { defaultSignalDisplay } from './processing'
+import { fetchSidecar } from './sidecar'
+
+/**
+ * Deep-copy a signal annotation, including its color tuple, so a caller cannot
+ * mutate live render state after passing annotations to loadSignals/setSignal.
+ */
+export function cloneAnnotation(a: SignalAnnotation): SignalAnnotation {
+  return {
+    ...a,
+    color: a.color
+      ? [a.color[0], a.color[1], a.color[2], a.color[3]]
+      : undefined,
+  }
+}
+
+type SignalReader = {
+  extensions?: string[]
+  read: (
+    buffer: ArrayBuffer,
+    name?: string,
+    sidecar?: SignalSidecar | null,
+  ) => Promise<NVSignalRaw>
+}
+
+const modules = import.meta.glob<SignalReader>(
+  ['./readers/*.ts', '!./readers/*.test.ts'],
+  { eager: true },
+)
+const readerByExt = NVLoader.buildExtensionMap(modules)
+
+export function signalExtensions(): string[] {
+  return Array.from(readerByExt.keys()).sort()
+}
+
+/**
+ * Fetch and parse a signal file into raw data. When `sidecar` is omitted and
+ * the input is a URL, the sibling `.json` is fetched automatically; for File
+ * inputs the caller supplies the paired sidecar (drag-drop pairing happens at
+ * the controller layer).
+ */
+export async function loadSignalRaw(
+  input: string | File,
+  sidecar?: SignalSidecar | null,
+): Promise<NVSignalRaw> {
+  const ext = NVLoader.getFileExt(input)
+  const reader = readerByExt.get(ext)
+  if (!reader || typeof reader.read !== 'function') {
+    throw new Error(`No signal reader available for extension "${ext}"`)
+  }
+  const buffer = await NVLoader.fetchFile(input)
+  let meta = sidecar ?? null
+  if (!meta && typeof input === 'string') {
+    meta = await fetchSidecar(input)
+  }
+  return reader.read(buffer, NVLoader.getName(input), meta)
+}
+
+/** Options for loading a signal from a URL or File. */
+export type SignalFromUrlOptions = {
+  url: string | File
+  name?: string
+  /** force signal-vs-volume routing for ambiguous NIfTI (used by the loader) */
+  asSignal?: boolean
+  /** pre-resolved sidecar (drag-drop pairing); else fetched for URLs */
+  sidecar?: SignalSidecar | null
+  /** initial display overrides */
+  display?: Partial<NVSignalDisplay>
+  /** id of a volume/mesh to associate with */
+  attachToId?: string
+  /** text labels anchored to positions in the graph's data space */
+  annotations?: SignalAnnotation[]
+}
+
+/** Wrap raw signal data into a displayable NVSignal instance. */
+export function createSignal(
+  raw: NVSignalRaw,
+  opts: {
+    name: string
+    url?: string
+    display?: Partial<NVSignalDisplay>
+    attachToId?: string
+    annotations?: SignalAnnotation[]
+  },
+): NVSignal {
+  return {
+    id: opts.name,
+    name: opts.name,
+    url: opts.url,
+    kind: raw.kind,
+    raw,
+    display: { ...defaultSignalDisplay(), ...(opts.display ?? {}) },
+    attachedToId: opts.attachToId,
+    // Deep-copy so later caller mutation cannot silently change render state.
+    annotations: opts.annotations?.map(cloneAnnotation),
+  }
+}
+
+/** Fetch, parse, and wrap a signal file into an NVSignal. */
+export async function loadSignal(
+  opts: SignalFromUrlOptions,
+): Promise<NVSignal> {
+  const raw = await loadSignalRaw(opts.url, opts.sidecar)
+  const name = opts.name ?? NVLoader.getName(opts.url)
+  const url = typeof opts.url === 'string' ? opts.url : undefined
+  return createSignal(raw, {
+    name,
+    url,
+    display: opts.display,
+    attachToId: opts.attachToId,
+    annotations: opts.annotations,
+  })
+}

@@ -14,8 +14,8 @@ const input = Object.fromEntries(
   htmlFiles.map((f) => [f.replace('.html', ''), resolve(examplesDir, f)]),
 )
 
-// When VITE_BASE is set (e.g. /mono/) rewrite absolute /volumes/ and /meshes/
-// paths inside bundled JS so they resolve correctly on GitHub Pages.
+// When VITE_BASE is set (e.g. /mono/) rewrite absolute /volumes/, /meshes/ and
+// /signals/ paths inside bundled JS so they resolve correctly on GitHub Pages.
 const ghBase = process.env.VITE_BASE ?? ''
 
 function ghPagesRewritePlugin(): Plugin | null {
@@ -25,7 +25,7 @@ function ghPagesRewritePlugin(): Plugin | null {
     enforce: 'post',
     renderChunk(code) {
       let out = code
-      for (const dir of ['volumes', 'meshes']) {
+      for (const dir of ['volumes', 'meshes', 'signals']) {
         out = out
           .replaceAll(`"/${dir}/`, `"${ghBase}${dir}/`)
           .replaceAll(`'/${dir}/`, `'${ghBase}${dir}/`)

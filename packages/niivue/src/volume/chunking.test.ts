@@ -6,9 +6,12 @@ import {
   chunksCrossingSlice,
   chunkVolume,
   chunkVolumeGrid,
+  chunkVolumeMultiLOD,
   identityChunkSampleTransform,
+  matchChunksByContent,
   needsChunking,
   type Vec3i,
+  type VolumeChunkDesc,
 } from './chunking'
 
 function eq(a: Vec3i, b: Vec3i): boolean {
@@ -411,6 +414,38 @@ describe('chunksCrossingSlice', () => {
       expect(i).toBeLessThan(plan.chunks.length)
     }
   })
+
+  test('multi-LOD: culls by voxel extent, not the degenerate grid index', () => {
+    const pyr: Vec3i[] = [
+      [512, 512, 512],
+      [256, 256, 256],
+      [128, 128, 128],
+      [64, 64, 64],
+    ]
+    const plan = chunkVolumeMultiLOD(
+      pyr,
+      { center: [256, 256, 256] as Vec3i, radius: 16 },
+      2048,
+      { cellEdge: 32 },
+    )
+    const axis = 2
+    // A slice away from the focus depth, so coarse bricks confined to the other
+    // half are excluded (the old grid-index test returned every brick).
+    const frac = 0.2
+    const voxel = frac * plan.volumeDims[axis]
+    const expected = plan.chunks
+      .map((c, i) => [c, i] as const)
+      .filter(
+        ([c]) =>
+          voxel >= c.voxelOrigin[axis] &&
+          voxel < c.voxelOrigin[axis] + c.voxelDims[axis],
+      )
+      .map(([, i]) => i)
+    expect(chunksCrossingSlice(plan, axis, frac)).toEqual(expected)
+    // Culling actually removes bricks (the degenerate path returned all of them).
+    expect(expected.length).toBeGreaterThan(0)
+    expect(expected.length).toBeLessThan(plan.chunks.length)
+  })
 })
 
 describe('chunkSampleTransform', () => {
@@ -539,5 +574,247 @@ describe('identityChunkSampleTransform', () => {
     const a = chunkSampleTransform(plan, 0)
     const b = identityChunkSampleTransform([100, 200, 300])
     expect(a).toEqual(b)
+  })
+})
+
+describe('chunkVolumeMultiLOD', () => {
+  // A 4-level power-of-two pyramid: finest 512^3 down to 64^3.
+  const pyramid: Vec3i[] = [
+    [512, 512, 512],
+    [256, 256, 256],
+    [128, 128, 128],
+    [64, 64, 64],
+  ]
+  const centerFocus = { center: [256, 256, 256] as Vec3i, radius: 96 }
+
+  const brickVolume = (d: { voxelDims: Vec3i }): number =>
+    d.voxelDims[0] * d.voxelDims[1] * d.voxelDims[2]
+
+  test('tiles the whole common grid with no gaps or overlaps', () => {
+    const plan = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+    })
+    // World placement is in the common (finest) grid.
+    expect(plan.volumeDims).toEqual([512, 512, 512])
+    // Sum of brick world volumes equals the whole volume (necessary for an
+    // exact, gap-free, non-overlapping tiling).
+    const total = 512 * 512 * 512
+    const sum = plan.chunks.reduce((s, c) => s + brickVolume(c), 0)
+    expect(sum).toBe(total)
+    // Every sampled voxel lies in exactly one brick (sufficient with the sum).
+    const contains = (c: (typeof plan.chunks)[number], p: Vec3i): boolean =>
+      p[0] >= c.voxelOrigin[0] &&
+      p[0] < c.voxelOrigin[0] + c.voxelDims[0] &&
+      p[1] >= c.voxelOrigin[1] &&
+      p[1] < c.voxelOrigin[1] + c.voxelDims[1] &&
+      p[2] >= c.voxelOrigin[2] &&
+      p[2] < c.voxelOrigin[2] + c.voxelDims[2]
+    const samples: Vec3i[] = [
+      [0, 0, 0],
+      [256, 256, 256],
+      [511, 511, 511],
+      [100, 400, 50],
+      [255, 256, 257],
+      [383, 0, 480],
+    ]
+    for (const p of samples) {
+      const hits = plan.chunks.filter((c) => contains(c, p)).length
+      expect(hits).toBe(1)
+    }
+  })
+
+  test('brick source level rises with distance from the focus', () => {
+    // Tight focus so the scale-relative falloff is exercised across the volume
+    // (a large radius would refine the whole small volume to the finest level).
+    const tightFocus = { center: [256, 256, 256] as Vec3i, radius: 8 }
+    const plan = chunkVolumeMultiLOD(pyramid, tightFocus, 2048, {
+      cellEdge: 64,
+    })
+    const levelAt = (p: Vec3i): number => {
+      for (const c of plan.chunks) {
+        if (
+          p[0] >= c.voxelOrigin[0] &&
+          p[0] < c.voxelOrigin[0] + c.voxelDims[0] &&
+          p[1] >= c.voxelOrigin[1] &&
+          p[1] < c.voxelOrigin[1] + c.voxelDims[1] &&
+          p[2] >= c.voxelOrigin[2] &&
+          p[2] < c.voxelOrigin[2] + c.voxelDims[2]
+        ) {
+          return c.sourceLevel ?? 0
+        }
+      }
+      throw new Error('uncovered point')
+    }
+    // At the focus centre: finest level.
+    expect(levelAt([256, 256, 256])).toBe(0)
+    // A far corner: coarser than the centre.
+    expect(levelAt([8, 8, 8])).toBeGreaterThan(levelAt([256, 256, 256]))
+  })
+
+  test('octree is 2:1 balanced (face-adjacent bricks differ by <= 1 level)', () => {
+    const plan = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [256, 256, 256] as Vec3i, radius: 8 },
+      2048,
+      { cellEdge: 64 },
+    )
+    const faceAdjacent = (a: VolumeChunkDesc, b: VolumeChunkDesc): boolean => {
+      let adjacent = 0
+      let overlapping = 0
+      for (let k = 0; k < 3; k++) {
+        const a0 = a.voxelOrigin[k]
+        const a1 = a0 + a.voxelDims[k]
+        const b0 = b.voxelOrigin[k]
+        const b1 = b0 + b.voxelDims[k]
+        if (a1 <= b0 || b1 <= a0) {
+          if (a1 === b0 || b1 === a0) adjacent++
+          else return false
+        } else {
+          overlapping++
+        }
+      }
+      return adjacent === 1 && overlapping === 2
+    }
+    let maxDiff = 0
+    for (let i = 0; i < plan.chunks.length; i++) {
+      for (let j = i + 1; j < plan.chunks.length; j++) {
+        if (faceAdjacent(plan.chunks[i], plan.chunks[j])) {
+          const d = Math.abs(
+            (plan.chunks[i].sourceLevel ?? 0) -
+              (plan.chunks[j].sourceLevel ?? 0),
+          )
+          maxDiff = Math.max(maxDiff, d)
+        }
+      }
+    }
+    expect(maxDiff).toBeLessThanOrEqual(1)
+  })
+
+  test('every brick texture fits the device limit', () => {
+    const deviceLimit = 256
+    const plan = chunkVolumeMultiLOD(pyramid, centerFocus, deviceLimit, {
+      cellEdge: 128,
+    })
+    for (const c of plan.chunks) {
+      expect(c.texDims[0]).toBeLessThanOrEqual(deviceLimit)
+      expect(c.texDims[1]).toBeLessThanOrEqual(deviceLimit)
+      expect(c.texDims[2]).toBeLessThanOrEqual(deviceLimit)
+      expect(c.sourceLevel).toBeGreaterThanOrEqual(0)
+      expect(c.sourceLevel).toBeLessThanOrEqual(3)
+    }
+    // levelDims is carried for per-brick ray-step density.
+    expect(plan.levelDims?.[0]).toEqual([512, 512, 512])
+    expect(plan.levelDims?.length).toBe(4)
+  })
+
+  test('byte budget coarsens the assignment until it fits', () => {
+    const bytesOf = (plan: ChunkPlan): number =>
+      plan.chunks.reduce(
+        (s, c) => s + c.texDims[0] * c.texDims[1] * c.texDims[2] * 8,
+        0,
+      )
+    const unbudgeted = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+    })
+    const budget = Math.floor(bytesOf(unbudgeted) / 2)
+    const budgeted = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+      budgetBytes: budget,
+    })
+    expect(bytesOf(budgeted)).toBeLessThanOrEqual(budget)
+    // Coarsening never drops coverage.
+    const sum = budgeted.chunks.reduce((s, c) => s + brickVolume(c), 0)
+    expect(sum).toBe(512 * 512 * 512)
+  })
+
+  test('minLevel caps the finest level even at the focus', () => {
+    const plan = chunkVolumeMultiLOD(pyramid, centerFocus, 2048, {
+      cellEdge: 64,
+      minLevel: 1,
+    })
+    // No brick is finer than level 1, including at the focus centre.
+    for (const c of plan.chunks) {
+      expect(c.sourceLevel ?? 0).toBeGreaterThanOrEqual(1)
+    }
+    // Geometry (common grid) is still level 0.
+    expect(plan.volumeDims).toEqual([512, 512, 512])
+  })
+
+  test('a single-level pyramid yields one uniform level', () => {
+    const plan = chunkVolumeMultiLOD([[256, 256, 256]], centerFocus, 2048, {
+      cellEdge: 128,
+    })
+    for (const c of plan.chunks) {
+      expect(c.sourceLevel).toBe(0)
+    }
+    const sum = plan.chunks.reduce((s, c) => s + brickVolume(c), 0)
+    expect(sum).toBe(256 * 256 * 256)
+  })
+
+  test('maxBricks coarsens the root grid until the cap is met', () => {
+    // A small cellEdge tiles this pyramid into a 4x4x4 = 64-box root grid. The
+    // detail/floor passes refine toward the focus but never coarsen the ROOT
+    // grid, so honoring a small maxBricks requires growing the root cell. A tight
+    // focus keeps refinement (and thus the test) cheap.
+    const tightFocus = { center: [256, 256, 256] as Vec3i, radius: 8 }
+    const uncapped = chunkVolumeMultiLOD(pyramid, tightFocus, 2048, {
+      cellEdge: 16,
+    })
+    expect(uncapped.chunks.length).toBeGreaterThan(8)
+    const capped = chunkVolumeMultiLOD(pyramid, tightFocus, 2048, {
+      cellEdge: 16,
+      maxBricks: 8,
+    })
+    expect(capped.chunks.length).toBeLessThanOrEqual(8)
+    // Coarsening the root never drops coverage.
+    const sum = capped.chunks.reduce((s, c) => s + brickVolume(c), 0)
+    expect(sum).toBe(512 * 512 * 512)
+  })
+})
+
+describe('matchChunksByContent', () => {
+  const pyramid: Vec3i[] = [
+    [512, 512, 512],
+    [256, 256, 256],
+    [128, 128, 128],
+    [64, 64, 64],
+  ]
+
+  test('matches identical bricks and skips changed ones', () => {
+    const a = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [128, 256, 256], radius: 96 },
+      2048,
+      { cellEdge: 64 },
+    )
+    const b = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [384, 256, 256], radius: 96 },
+      2048,
+      { cellEdge: 64 },
+    )
+    const map = matchChunksByContent(a, b)
+    // Some bricks are shared (far from both foci) -> non-empty, and every match
+    // points at a content-identical brick.
+    expect(map.size).toBeGreaterThan(0)
+    for (const [oi, ni] of map) {
+      expect(a.chunks[oi].sourceLevel).toBe(b.chunks[ni].sourceLevel)
+      expect(a.chunks[oi].voxelOrigin).toEqual(b.chunks[ni].voxelOrigin)
+      expect(a.chunks[oi].texOrigin).toEqual(b.chunks[ni].texOrigin)
+    }
+    // The focus shifted, so it is not a full 1:1 identity map.
+    expect(map.size).toBeLessThan(a.chunks.length)
+  })
+
+  test('an identical plan maps every brick to itself', () => {
+    const a = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [256, 256, 256], radius: 96 },
+      2048,
+      { cellEdge: 64 },
+    )
+    const map = matchChunksByContent(a, a)
+    expect(map.size).toBe(a.chunks.length)
+    for (const [oi, ni] of map) expect(oi).toBe(ni)
   })
 })

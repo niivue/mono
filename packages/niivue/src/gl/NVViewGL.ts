@@ -30,6 +30,7 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
   chunkSampleTransform,
@@ -368,11 +369,19 @@ export default class NVGlview {
         // bindCachedVolume. Without this, all tiles would share volumes[0]'s
         // texture and visibly "jump" as the model's first volume changes.
         for (const vol of vols) {
-          await this.volumeRenderer.updateVolume(
-            gl,
-            vol,
-            this.model.volume.matcap,
-          )
+          try {
+            await this.volumeRenderer.updateVolume(
+              gl,
+              vol,
+              this.model.volume.matcap,
+              vols,
+              true,
+            )
+          } catch (e) {
+            log.warn(
+              `updateVolume failed for ${vol.name}: ${(e as Error).message}`,
+            )
+          }
         }
         const keepKeys = new Set<string>()
         for (const vol of vols) {
@@ -381,11 +390,18 @@ export default class NVGlview {
         }
         this.volumeRenderer.pruneVolumeCache(keepKeys)
       } else {
-        await this.volumeRenderer.updateVolume(
-          gl,
-          vols[0],
-          this.model.volume.matcap,
-        )
+        try {
+          await this.volumeRenderer.updateVolume(
+            gl,
+            vols[0],
+            this.model.volume.matcap,
+            vols,
+          )
+        } catch (e) {
+          log.warn(
+            `updateVolume failed for ${vols[0].name}: ${(e as Error).message}`,
+          )
+        }
       }
     }
 
@@ -428,12 +444,21 @@ export default class NVGlview {
     this.volumeRenderer.setCoarseFloor(gl, coarseVol)
   }
 
+  async swapChunkedVolumePlan(vol: NVImage, plan: ChunkPlan): Promise<void> {
+    const gl = this.gl
+    if (!gl) return
+    await this.volumeRenderer.swapChunkedVolumePlan(gl, vol, plan)
+  }
+
   async updateAffineOverlays(): Promise<boolean> {
     const gl = this.gl
     if (!gl) return false
     const vols = this.model.getVolumes()
     if (vols.length !== 2) return false
     if (this.model.volume.isBackgroundMasking) return false
+    // A modulated background's prepass bakes the modulator matrix; the fast path
+    // only rebuilds the overlay prepass, so it would leave that matrix stale.
+    if (vols[0].modulationImage) return false
     const overlay = vols[1]
     if ((overlay.opacity ?? 1) <= 0) return false
     return this.volumeRenderer.updateAffineOverlay(gl, vols[0], overlay)
@@ -518,35 +543,56 @@ export default class NVGlview {
         ? NVLegend.legendTotalWidth(legendEntries, canvasWidth, canvasHeight)
         : 0
     const graphData = md.collectGraphData()
-    const graphWidth = graphData
+    const baseGraphWidth = graphData
       ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
       : 0
-    // When `options.instances` is set, the controller has already populated
-    // `this.screenSlices` via `updateTilesFromInstances` — skip the slice-layout pass.
-    if (!this.options.instances) {
-      const screenSlices = NVSliceLayout.screenSlicesLayout({
-        canvasWH: [
-          canvasWidth - legendWidth - graphWidth,
-          canvasHeight - cbHeight,
-        ],
-        sliceType: md.layout.sliceType,
-        tileMargin: md.layout.margin,
-        extentsMin: md.extentsMin,
-        extentsMax: md.extentsMax,
-        isRadiologicalConvention: md.layout.isRadiological,
-        multiplanarLayout: md.layout.multiplanarType,
-        multiplanarShowRender: md.layout.showRender,
-        sliceMosaicString: md.layout.mosaicString,
-        heroImageFraction: md.layout.heroFraction,
-        heroSliceType: md.layout.heroSliceType,
-        isMultiplanarEqualSize: md.layout.isEqualSize,
-        isCrossLines: md.ui.isCrossLinesVisible,
-        isCenterMosaic: md.layout.isMosaicCentered,
-        customLayout: md.layout.customLayout,
-      })
+    let graphWidth: number
+    let screenSlices: NVSliceLayout.SliceTile[]
+    if (this.options.instances) {
+      // Multi-instance mode (global3d): the controller has already populated
+      // `this.screenSlices` via `updateTilesFromInstances` — skip the
+      // slice-layout pass. The signal graph is not used in instance scenes.
+      screenSlices = this.screenSlices
+      graphWidth = baseGraphWidth
+    } else {
+      // No spatial view (a signal-only scene, OR the user chose
+      // SLICE_TYPE.NONE): skip all spatial tiles so no slices, crosshairs, or
+      // orientation labels render; the signal graph fills the instance area on
+      // its own. Otherwise lay out the slices and let the graph reclaim any
+      // horizontal slack.
+      const spatialHidden = md.isSpatialViewHidden()
+      const fit = spatialHidden
+        ? {
+            screenSlices: [] as NVSliceLayout.SliceTile[],
+            graphWidth: baseGraphWidth,
+          }
+        : NVSliceLayout.fitSlicesAndGraph(
+            {
+              canvasWH: [
+                canvasWidth - legendWidth - baseGraphWidth,
+                canvasHeight - cbHeight,
+              ],
+              sliceType: md.layout.sliceType,
+              tileMargin: md.layout.margin,
+              extentsMin: md.extentsMin,
+              extentsMax: md.extentsMax,
+              isRadiologicalConvention: md.layout.isRadiological,
+              multiplanarLayout: md.layout.multiplanarType,
+              multiplanarShowRender: md.layout.showRender,
+              sliceMosaicString: md.layout.mosaicString,
+              heroImageFraction: md.layout.heroFraction,
+              heroSliceType: md.layout.heroSliceType,
+              isMultiplanarEqualSize: md.layout.isEqualSize,
+              isCrossLines: md.ui.isCrossLinesVisible,
+              isCenterMosaic: md.layout.isMosaicCentered,
+              customLayout: md.layout.customLayout,
+            },
+            baseGraphWidth,
+          )
+      graphWidth = fit.graphWidth
+      screenSlices = fit.screenSlices
       this.screenSlices = screenSlices
     }
-    const screenSlices = this.screenSlices
     // Update crosshair geometry based on current model state
     if (this.crosshairRenderer.isReady) {
       this.crosshairRenderer.update(md)
@@ -569,7 +615,7 @@ export default class NVGlview {
         ltwh,
         md.scene.azimuth,
         md.scene.elevation,
-        md.pivot3D,
+        md._renderPivotMM ?? md.pivot3D,
         md.furthestFromPivot,
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
@@ -664,6 +710,40 @@ export default class NVGlview {
           )
         }
       }
+      // Cache the 3D render tile's MVP so the controller can project mm points to
+      // render NDC (e.g. centerRenderOnMM). The 2D/global3d branches above cache
+      // their own; the plain render tile keeps the 3D matrix.
+      if (
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
+        tile.space !== 'global3d'
+      ) {
+        tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
+      }
+      // Outline the focus box on 3D render tiles (project its 8 corners through
+      // this tile's MVP; drawn with the crosshair/overlay lines below).
+      if (md._focusBox && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
+        crossLinesList.push(
+          ...NVSliceLayout.buildFocusBoxLines(
+            md._focusBox,
+            mvpMatrix as mat4,
+            ltwh,
+            buildLine,
+          ),
+        )
+      }
+      // Debug: outline every LOD brick (colored per level) on render tiles.
+      if (md._lodBoxes && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
+        for (const lodBox of md._lodBoxes) {
+          crossLinesList.push(
+            ...NVSliceLayout.buildFocusBoxLines(
+              lodBox,
+              mvpMatrix as mat4,
+              ltwh,
+              buildLine,
+            ),
+          )
+        }
+      }
       gl.viewport(
         bx + ltwh[0],
         fullCanvasH - by - ltwh[1] - ltwh[3],
@@ -708,6 +788,17 @@ export default class NVGlview {
               : 0
           const chunked = this.volumeRenderer.getActiveChunkedSlice()
           if (chunked) {
+            // A whole-volume (non-chunked) overlay cannot be sampled correctly in
+            // the chunked path: the slice shader applies the per-chunk transform
+            // to BOTH base and overlay, so a whole-volume overlay would mis-map to
+            // chunk-local coords. Only composite a CHUNKED overlay here; otherwise
+            // skip the overlay (numVolumes = 1), matching the WebGPU backend (which
+            // passes no overlay). Correctly compositing a whole-volume overlay over
+            // a chunked base in 2D needs a separate overlay sample transform in the
+            // slice shader (deferred).
+            const chunkedNumVolumes = chunked.overlayChunks
+              ? numSliceVolumes
+              : 1
             // Coarse LOD floor: draw the whole-volume coarse texture first as a
             // full-coverage quad, so regions whose fine chunk has not streamed
             // yet show coarse detail instead of blank. Fine chunk quads below
@@ -729,7 +820,7 @@ export default class NVGlview {
                 mvpMatrix as Float32Array,
                 tile.axCorSag,
                 sliceFrac,
-                numSliceVolumes,
+                chunkedNumVolumes,
                 md.volume.isNearestInterpolation,
                 1,
                 this.volumeRenderer.paqdTexture,
@@ -773,7 +864,7 @@ export default class NVGlview {
                 mvpMatrix as Float32Array,
                 tile.axCorSag,
                 sliceFrac,
-                numSliceVolumes,
+                chunkedNumVolumes,
                 md.volume.isNearestInterpolation,
                 1,
                 chunked.paqdChunks
@@ -935,8 +1026,9 @@ export default class NVGlview {
       // Layer 2b-xray: Mesh X-ray pass (depth disabled, reduced opacity)
       const xrayAlpha = md.mesh.xRay
       if (xrayAlpha > 0) {
-        // Re-draw crosshairs with xray (skip on all mosaic tiles)
+        // Re-draw crosshairs with xray (skip on all mosaic tiles and global3d)
         if (
+          tile.space !== 'global3d' &&
           md.ui.is3DCrosshairVisible &&
           !isMosaicTile &&
           this.crosshairRenderer.isReady
@@ -1020,8 +1112,9 @@ export default class NVGlview {
           by,
         }
       }
-      // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders)
+      // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders and global3d)
       if (
+        tile.space !== 'global3d' &&
         tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
         tile.renderOrientation === undefined &&
         md.ui.isOrientCubeVisible &&
@@ -1143,7 +1236,10 @@ export default class NVGlview {
     // Layer 4: Lines — used by graph
     let graphLines: ReturnType<typeof buildLine>[] = []
     // Layer 5: Font/text
-    const hasContent = this.model.getMeshes().length > 0 || volumes.length > 0
+    const hasContent =
+      this.model.getMeshes().length > 0 ||
+      volumes.length > 0 ||
+      this.model.signals.length > 0
     const headerStr = resolveHeaderLabel(
       this.model.ui.placeholderText,
       hasContent,
@@ -1208,6 +1304,7 @@ export default class NVGlview {
           canvasHeight,
           cbHeight,
           graphDpr,
+          graphWidth,
         )
         if (this.graphLayout) {
           const graphElements = NVGraph.buildGraphElements(
@@ -1616,7 +1713,7 @@ export default class NVGlview {
         ltwh,
         md.scene.azimuth,
         md.scene.elevation,
-        md.pivot3D,
+        md._renderPivotMM ?? md.pivot3D,
         md.furthestFromPivot,
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
@@ -1643,6 +1740,89 @@ export default class NVGlview {
       )
       mvpMatrix = result[0] as mat4
       rayDir = result[3] as Float32Array
+    }
+    // Chunked / multi-LOD volumes have no single whole-volume texture, so the
+    // GPU depth-pass cannot sample them. Fall back to a CPU ray/AABB pick against
+    // the volume's mm bounding box and return the near-surface entry under the
+    // cursor — enough to move the crosshair (and thus the multi-LOD focus) in a
+    // 3D render. Mirrors the WebGPU backend.
+    if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
+      const vol = md.volumes[0]
+      if (vol?.extentsMin && vol?.extentsMax) {
+        const near = NVTransforms.unprojectScreen(
+          hit.normalizedX,
+          hit.normalizedY,
+          0,
+          mvpMatrix,
+        )
+        const far = NVTransforms.unprojectScreen(
+          hit.normalizedX,
+          hit.normalizedY,
+          1,
+          mvpMatrix,
+        )
+        // Exploded view: blocks are displaced, so the un-exploded bounding box no
+        // longer matches what's on screen. Pick against each block's exploded
+        // AABB (first window-visible voxel in the hit block) and map the recovered
+        // un-exploded voxel back to mm for the crosshair.
+        if (
+          vol.chunkPlan &&
+          vol.matRAS &&
+          chunkExplodeEnabled(vol.chunkExplode)
+        ) {
+          const matRAS = vol.matRAS
+          const base = vol.pickSampler
+          const sample = base
+            ? (vx: number, vy: number, vz: number): number => {
+                const mm = NVTransforms.vox2mm(
+                  null,
+                  [vx, vy, vz],
+                  matRAS as mat4,
+                )
+                return base(mm[0], mm[1], mm[2])
+              }
+            : undefined
+          const picked = pickExplodedVoxel(
+            vol.chunkPlan,
+            matRAS,
+            vol.chunkExplode,
+            [near[0], near[1], near[2]],
+            [far[0] - near[0], far[1] - near[1], far[2] - near[2]],
+            {
+              sample,
+              threshold: 0,
+              clipPlanes: md.clipPlanes,
+              isCutaway: md.scene.isClipPlaneCutaway,
+            },
+          )
+          if (picked) {
+            const mm = NVTransforms.vox2mm(null, picked.voxel, matRAS as mat4)
+            return [mm[0], mm[1], mm[2]]
+          }
+          return null
+        }
+        // With a CPU sampler (app-supplied coarse data), march to the first
+        // window-visible voxel; otherwise land on the bounding-box / clip surface.
+        const hitMM = vol.pickSampler
+          ? NVTransforms.rayMarchFirstVisibleMM(
+              near,
+              far,
+              vol.extentsMin,
+              vol.extentsMax,
+              vol.pickSampler,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+          : NVTransforms.rayBoxEntryMM(
+              near,
+              far,
+              vol.extentsMin,
+              vol.extentsMax,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+        if (hitMM) return hitMM
+      }
     }
     // Depth-pick via scissor + readPixels (works for all tile types)
     // Offset by bounds origin for shared-canvas support

@@ -86,6 +86,11 @@ export const SLICE_TYPE = Object.freeze({
   SAGITTAL: 2,
   MULTIPLANAR: 3,
   RENDER: 4,
+  // No spatial view: skip the slice/render pass entirely and hand the whole
+  // canvas to the signal graph (or leave it blank if no graph is shown). Lets a
+  // signal+volume scene (e.g. a 4D BOLD time-course) use all screen real-estate
+  // for the plot without unloading the volume. See NVModel.isSpatialViewHidden().
+  NONE: 5,
 } as const)
 
 /** Maps AXIAL→2, CORONAL→1, SAGITTAL→0 (the RAS dimension perpendicular to the slice). */
@@ -143,7 +148,14 @@ export const UI_DEFAULTS: UIConfig = {
   measureLineColor: [1, 0, 0, 1],
   measureTextColor: [1, 0, 0, 1],
   rulerWidth: 2,
-  graph: { normalizeValues: false, isRangeCalMinMax: false },
+  graph: {
+    normalizeValues: false,
+    isRangeCalMinMax: false,
+    showVolumeTimecourse: true,
+    lineWidth: 1,
+    lineAlpha: 1,
+    autoResetView: true,
+  },
 }
 
 export const VOLUME_DEFAULTS: VolumeRenderConfig = {

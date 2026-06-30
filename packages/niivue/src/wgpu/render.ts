@@ -29,9 +29,11 @@ import {
 import {
   type ChunkPlan,
   chunkVolume,
+  matchChunksByContent,
   needsChunking,
   type Vec3i,
 } from '@/volume/chunking'
+import { buildModulationParams } from '@/volume/modulation'
 import { chunkOverlayMatrix, extractChunkBytes } from '@/volume/orientChunked'
 import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
 import * as orient from './orient'
@@ -120,7 +122,7 @@ type Vec3f = [number, number, number]
  * texture (including halo). Non-chunked draws use identity pass-through values.
  */
 interface ChunkUniforms {
-  /** Full volume RAS dims (used for ray step size and frac2ndc). */
+  /** Full volume RAS dims in the COMMON grid (vertex placement + frac2ndc). */
   volumeTexDimsFull: Vec3f
   /** Chunk's sub-cube origin in the full-volume [0,1] cube. */
   chunkSubOrigin: Vec3f
@@ -130,6 +132,14 @@ interface ChunkUniforms {
   dataOriginTexFrac: Vec3f
   /** Data extent in the chunk's local texture (excludes halo on both sides). */
   dataSizeTexFrac: Vec3f
+  /**
+   * Full-volume voxel dims at THIS brick's source pyramid level, used solely for
+   * the ray-march step density (one step ≈ one source-level voxel across the
+   * full cube). Equals `volumeTexDimsFull` for single-level/non-chunked draws;
+   * coarser for multi-LOD bricks so they step (and sample) at their own
+   * resolution instead of being oversampled at the finest density.
+   */
+  rayStepTexVox: Vec3f
 }
 
 /** Single-texture volume: fits within maxTextureDimension3D on all axes. */
@@ -155,12 +165,14 @@ interface ChunkedTexEntry {
 
 type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 
-// 480 bytes = 120 floats:
+// 496 bytes = 124 floats:
 //   16 mvp + 16 norm + 16 matRAS + 4 volScale + 4 rayDir + 4 (gradient/numVol/cutaway/pad)
 //   + 4 clipPlaneColor + 24 clipPlanes + 4 paqd + 1 earlyTermination + 7 _pad0 (vec3 align)
 //   + 4 volumeTexDimsFull + 4 chunkSubOrigin + 4 chunkSubSize
-//   + 4 dataOriginTexFrac + 4 dataSizeTexFrac
-const renderParamsSize = 480
+//   + 4 dataOriginTexFrac + 4 dataSizeTexFrac + 4 rayStepTexVox
+// Still rounds up to the same 512-byte alignedRenderSize (UNIFORM_ALIGNMENT 256),
+// so every *_PARAMS_BASE offset below is unchanged by the added vec4.
+const renderParamsSize = 496
 export const alignedRenderSize =
   Math.ceil(renderParamsSize / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
 // Byte offset of the base chunk-params region (after the per-tile non-chunked
@@ -200,7 +212,12 @@ function chunkUniformsFor(plan: ChunkPlan, chunkIndex: number): ChunkUniforms {
   const desc = plan.chunks[chunkIndex]
   const [vx, vy, vz] = plan.volumeDims
   const [tx, ty, tz] = desc.texDims
+  // Ray-step density comes from this brick's source level (full-volume dims);
+  // for single-level plans levelDims is absent so it falls back to volumeDims.
+  const rayStep = plan.levelDims?.[desc.sourceLevel ?? 0] ?? plan.volumeDims
   return {
+    // World placement uses the COMMON grid (voxelOrigin/voxelDims are common-grid
+    // for multi-LOD bricks; identical to the level grid for single-level plans).
     volumeTexDimsFull: [vx, vy, vz],
     chunkSubOrigin: [
       desc.voxelOrigin[0] / vx,
@@ -212,16 +229,18 @@ function chunkUniformsFor(plan: ChunkPlan, chunkIndex: number): ChunkUniforms {
       desc.voxelDims[1] / vy,
       desc.voxelDims[2] / vz,
     ],
+    // Texture-space remap uses the brick's OWN level grid (texDims + level halo).
     dataOriginTexFrac: [
       desc.haloLow[0] / tx,
       desc.haloLow[1] / ty,
       desc.haloLow[2] / tz,
     ],
     dataSizeTexFrac: [
-      desc.voxelDims[0] / tx,
-      desc.voxelDims[1] / ty,
-      desc.voxelDims[2] / tz,
+      (tx - desc.haloLow[0] - desc.haloHigh[0]) / tx,
+      (ty - desc.haloLow[1] - desc.haloHigh[1]) / ty,
+      (tz - desc.haloLow[2] - desc.haloHigh[2]) / tz,
     ],
+    rayStepTexVox: [rayStep[0], rayStep[1], rayStep[2]],
   }
 }
 
@@ -349,6 +368,7 @@ export class VolumeRenderer extends NVRenderer {
     draw: GPUTexture | null
     lut: GPUTexture | null
   } = { matcap: null, overlay: null, paqd: null, draw: null, lut: null }
+  private volumeOrientCache: orient.OrientTextureCache | null = null
 
   constructor() {
     super()
@@ -612,6 +632,8 @@ export class VolumeRenderer extends NVRenderer {
     device: GPUDevice,
     vol: NVImage,
     matcap: string = '',
+    allVolumes: NVImage[] = [vol],
+    perVolumeCache = false,
   ): Promise<void> {
     if (!this.isReady) return
 
@@ -646,31 +668,77 @@ export class VolumeRenderer extends NVRenderer {
       return
     }
 
-    let entry = cacheKey ? this._texCache.get(cacheKey) : undefined
-    if (entry && entry.kind !== 'single') {
-      this._destroyTexEntry(entry)
-      entry = undefined
-    }
-    if (!entry) {
-      const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
-      const volumeTexture = await orient.volume2Texture(
-        device,
-        vol,
-        vol,
-        mtx as Float32Array,
-        0,
-      )
-      const volumeGradientTexture = await wgpu.volume2TextureGradientRGBA(
-        device,
-        volumeTexture,
-      )
-      entry = { kind: 'single', volumeTexture, volumeGradientTexture }
-      if (cacheKey) this._texCache.set(cacheKey, entry)
-    }
+    const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
+    const modParams = buildModulationParams(vol, vol, allVolumes)
     this._activeChunked = null
-    this.volumeTexture = entry.volumeTexture
-    this.volumeGradientTexture = entry.volumeGradientTexture
-    this._activeVolKey = cacheKey || null
+
+    if (perVolumeCache) {
+      // Multi-instance / global3d: cache each volume's texture by key so the
+      // render loop can switch the active texture per tile via
+      // bindCachedVolume. (volumeOrientCache is a single slot and cannot serve
+      // per-tile volume switching.)
+      let entry = cacheKey ? this._texCache.get(cacheKey) : undefined
+      if (entry && entry.kind !== 'single') {
+        this._destroyTexEntry(entry)
+        entry = undefined
+      }
+      if (!entry) {
+        const volumeTexture = await orient.volume2Texture(
+          device,
+          vol,
+          vol,
+          mtx as Float32Array,
+          0,
+          undefined,
+          modParams,
+        )
+        const volumeGradientTexture = await wgpu.volume2TextureGradientRGBA(
+          device,
+          volumeTexture,
+        )
+        entry = { kind: 'single', volumeTexture, volumeGradientTexture }
+        if (cacheKey) this._texCache.set(cacheKey, entry)
+      }
+      this.volumeTexture = entry.volumeTexture
+      this.volumeGradientTexture = entry.volumeGradientTexture
+      this._activeVolKey = cacheKey || null
+    } else {
+      // Normal single-volume path: orient-texture cache + modulation. Scalar
+      // volumes go through the orient-texture cache so cal_min/max/colormap
+      // tweaks only re-run the cheap orient compute pass.
+      if (this.volumeGradientTexture) this.volumeGradientTexture.destroy()
+      if (isRgbaDatatype(vol.hdr.datatypeCode)) {
+        // RGB/RGBA volumes bypass the orient pass (direct upload, no cache)
+        this.clearVolume()
+        this.volumeTexture = await orient.volume2Texture(
+          device,
+          vol,
+          vol,
+          mtx as Float32Array,
+          0,
+          undefined,
+          modParams,
+        )
+      } else {
+        this.destroyNonCachedVolumeTexture()
+        this.volumeOrientCache = await orient.prepareOrientTextureCache(
+          device,
+          vol,
+          vol,
+          mtx as Float32Array,
+          0,
+          this.volumeOrientCache,
+          modParams,
+        )
+        orient.dispatchOrient(device, this.volumeOrientCache)
+        this.volumeTexture = this.volumeOrientCache.outputTexture
+      }
+      this.volumeGradientTexture = await wgpu.volume2TextureGradientRGBA(
+        device,
+        this.volumeTexture,
+      )
+      this._activeVolKey = null
+    }
 
     await this._ensureMatcap(device, matcap)
   }
@@ -731,35 +799,74 @@ export class VolumeRenderer extends NVRenderer {
     }
     if (existing) this._destroyTexEntry(existing)
     const uploader = await createChunkUploaderGPU(device, vol, plan)
-    // Per-chunk bind groups, indexed by chunk index. Hoisted above the manager
-    // so the onEvict hook can null the slot of an evicted chunk — a re-admitted
+    // The entry holds the live uploader + per-chunk bind groups so an in-place
+    // plan swap (swapChunkedVolumePlan) can replace them; the manager hooks read
+    // them off `entry` (not a creation-time closure) so they always act on the
+    // current plan. onEvict nulls the slot of an evicted chunk — a re-admitted
     // chunk gets a fresh texture, so its old bind group would dangle.
-    const bindGroups: (GPUBindGroup | null)[] = plan.chunks.map(() => null)
-    const manager = new ChunkResidencyManager<VolumeChunkGPU>(
+    const entry: ChunkedTexEntry = {
+      kind: 'chunked',
+      volume: vol,
+      manager: undefined as unknown as ChunkResidencyManager<VolumeChunkGPU>,
+      uploader,
+      plan,
+      bindGroups: plan.chunks.map(() => null),
+    }
+    entry.manager = new ChunkResidencyManager<VolumeChunkGPU>(
       plan.chunks.length,
       budgetBytes,
       {
         bytesOf: chunkResidentBytes,
         destroy: (c) => destroyVolumeChunksGPU([c]),
         onEvict: (ci) => {
-          bindGroups[ci] = null
+          entry.bindGroups[ci] = null
           onResidencyChange?.(ci)
         },
-        prefetch: (ci) => uploader.prefetchChunk(ci),
+        prefetch: (ci) => entry.uploader.prefetchChunk(ci),
         onAdmit: onResidencyChange,
       },
     )
-    manager.admit(0, await uploader.uploadChunk(0))
-    const entry: ChunkedTexEntry = {
-      kind: 'chunked',
-      volume: vol,
-      manager,
-      uploader,
-      plan,
-      bindGroups,
-    }
+    entry.manager.admit(0, await entry.uploader.uploadChunk(0))
     if (cacheKey) this._texCache.set(cacheKey, entry)
     return entry
+  }
+
+  /**
+   * Swap a chunked volume's plan in place (multi-LOD refocus): re-key the
+   * resident GPU chunks to the new plan by content (`matchChunksByContent`) so
+   * unchanged bricks keep their texture and fade, and only changed/new bricks
+   * stream — instead of rebuilding the whole entry via a reload. No-op when the
+   * volume has no chunked entry yet (first load still goes through updateVolume).
+   */
+  async swapChunkedVolumePlan(
+    device: GPUDevice,
+    vol: NVImage,
+    newPlan: ChunkPlan,
+  ): Promise<void> {
+    const cacheKey = vol.url || vol.name
+    const entry = cacheKey ? this._texCache.get(cacheKey) : undefined
+    if (!entry || entry.kind !== 'chunked') return
+    if (newPlan.chunks.length > MAX_CHUNKS_PER_TILE) {
+      throw new Error(
+        `multi-LOD plan tiles into ${newPlan.chunks.length} chunks, ` +
+          `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
+      )
+    }
+    const oldToNew = matchChunksByContent(entry.plan, newPlan)
+    // Rebind the uploader to the new plan; dispose the old orient resources.
+    const newUploader = await createChunkUploaderGPU(device, vol, newPlan)
+    entry.uploader.dispose()
+    entry.uploader = newUploader
+    entry.manager.remap(oldToNew, newPlan.chunks.length)
+    entry.plan = newPlan
+    entry.bindGroups = newPlan.chunks.map(() => null)
+    entry.volume = vol
+    vol.chunkPlan = newPlan
+    // Keep at least one chunk resident for the first post-swap frame; the pump
+    // streams the rest from the next working set.
+    if (entry.manager.residentCount === 0) {
+      entry.manager.admit(0, await entry.uploader.uploadChunk(0))
+    }
   }
 
   /**
@@ -1174,8 +1281,19 @@ export class VolumeRenderer extends NVRenderer {
           const indices = entry.manager.takePendingUploads(1)
           if (indices.length === 0) continue
           const i = indices[0]
+          // Capture the uploader + plan generation BEFORE the await: a refocus
+          // can run swapChunkedVolumePlan -> remap() during the upload, which
+          // bumps the generation and re-keys the plan. Admitting the stale
+          // result would put the old brick's texture at a new-plan index.
+          const uploader = entry.uploader
+          const gen = entry.manager.generation
           try {
-            entry.manager.admit(i, await entry.uploader.uploadChunk(i))
+            const chunk = await uploader.uploadChunk(i)
+            if (entry.manager.generation === gen) {
+              entry.manager.admit(i, chunk)
+            } else {
+              entry.manager.discardUpload(i, chunk)
+            }
           } catch (err) {
             // Isolate a single chunk's failure: mark it failed and keep pumping.
             // failUpload clears the in-flight marker so a later working-set pass
@@ -1384,6 +1502,7 @@ export class VolumeRenderer extends NVRenderer {
         mtx as Float32Array,
         vol.opacity ?? 1,
         this.overlayOrientCache,
+        buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
       )
       orient.dispatchOrient(device, this.overlayOrientCache)
       this.overlayTexture = this.overlayOrientCache.outputTexture
@@ -1401,6 +1520,8 @@ export class VolumeRenderer extends NVRenderer {
             baseVol,
             mtx as Float32Array,
             vol.opacity ?? 1,
+            undefined,
+            buildModulationParams(vol, baseVol, [baseVol, ...overlayVols]),
           ),
         )
       }
@@ -1435,10 +1556,27 @@ export class VolumeRenderer extends NVRenderer {
       mtx as Float32Array,
       overlayVol.opacity ?? 1,
       this.overlayOrientCache,
+      buildModulationParams(overlayVol, baseVol, [baseVol, overlayVol]),
     )
     orient.dispatchOrient(device, this.overlayOrientCache)
     this.overlayTexture = this.overlayOrientCache.outputTexture
     return true
+  }
+
+  private destroyNonCachedVolumeTexture(): void {
+    if (
+      this.volumeTexture &&
+      this.volumeTexture !== this.volumeOrientCache?.outputTexture
+    ) {
+      this.volumeTexture.destroy()
+    }
+    this.volumeTexture = null
+  }
+
+  clearVolume(): void {
+    this.destroyNonCachedVolumeTexture()
+    orient.destroyOrientTextureCache(this.volumeOrientCache)
+    this.volumeOrientCache = null
   }
 
   private destroyNonCachedOverlayTexture(): void {
@@ -2052,6 +2190,11 @@ export class VolumeRenderer extends NVRenderer {
         chunkSubSize: [1, 1, 1],
         dataOriginTexFrac: [0, 0, 0],
         dataSizeTexFrac: [1, 1, 1],
+        rayStepTexVox: [
+          this.volumeTexture.width,
+          this.volumeTexture.height,
+          this.volumeTexture.depthOrArrayLayers,
+        ],
       },
     )
 
@@ -2350,6 +2493,9 @@ export class VolumeRenderer extends NVRenderer {
           chunkSubSize: cu.chunkSubSize,
           dataOriginTexFrac: cu.chunkSubOrigin,
           dataSizeTexFrac: cu.chunkSubSize,
+          // Floor cube samples the coarse whole-volume texture; keep its step at
+          // the fine (common) density exactly as before this field existed.
+          rayStepTexVox: cu.volumeTexDimsFull,
         },
         0,
       )
@@ -2513,6 +2659,8 @@ export class VolumeRenderer extends NVRenderer {
         1,
         ...chunkUniforms.dataSizeTexFrac,
         1,
+        ...chunkUniforms.rayStepTexVox,
+        1,
       ]),
     )
   }
@@ -2584,6 +2732,15 @@ export class VolumeRenderer extends NVRenderer {
     return this._activeChunked !== null || this.volumeTexture !== null
   }
 
+  /**
+   * True when the active base volume is chunked (tiled / multi-LOD). Such a
+   * volume has no single whole-volume texture, so the GPU depth-pick pass cannot
+   * sample it; callers fall back to a CPU bounding-box ray pick.
+   */
+  get hasChunkedVolume(): boolean {
+    return this._activeChunked !== null
+  }
+
   hasOverlay(): boolean {
     return this.overlayTexture !== null
   }
@@ -2599,6 +2756,13 @@ export class VolumeRenderer extends NVRenderer {
     // volumeTexture/volumeGradientTexture, which alias an entry).
     for (const entry of this._texCache.values()) {
       this._destroyTexEntry(entry)
+    }
+    // Release the non-chunked orient-texture cache + standalone gradient
+    // (normal single-volume path).
+    this.clearVolume()
+    if (this.volumeGradientTexture) {
+      this.volumeGradientTexture.destroy()
+      this.volumeGradientTexture = null
     }
     this._texCache.clear()
     this._bindGroupCache.clear()

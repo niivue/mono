@@ -48,6 +48,10 @@ struct Params {
     chunkSubSize: vec4f,
     dataOriginTexFrac: vec4f,
     dataSizeTexFrac: vec4f,
+    // Full-volume voxel dims at this brick's source pyramid level, used only for
+    // the ray-march step density so a coarse multi-LOD brick steps at its own
+    // resolution. Equals volumeTexDimsFull for single-level/non-chunked draws.
+    rayStepTexVox: vec4f,
 }
 
 // Remap a sample position from full-volume [0,1] cube space to the local chunk

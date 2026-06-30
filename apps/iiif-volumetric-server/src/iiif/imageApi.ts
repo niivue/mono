@@ -151,6 +151,24 @@ interface Rect {
   h: number
 }
 
+// The IIIF `size` (and a region's w,h) come straight from the URL, so an
+// unbounded value would make resizeNearest allocate gigabytes (a single
+// `/30000,30000/` request is ~3.6 GB). Cap each output dimension; 8192 keeps one
+// request's RGBA buffer under ~256 MB.
+const MAX_OUTPUT_DIM = 8192
+
+function validateOutputDims(w: number, h: number): void {
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1) {
+    throw badRequest(`Invalid size: ${w}x${h}`)
+  }
+  if (w > MAX_OUTPUT_DIM || h > MAX_OUTPUT_DIM) {
+    throw badRequest(
+      `Requested size ${Math.round(w)}x${Math.round(h)} exceeds the ` +
+        `${MAX_OUTPUT_DIM}px limit`,
+    )
+  }
+}
+
 function parseRegion(region: string | undefined, w: number, h: number): Rect {
   if (!region || region === 'full') {
     return { x: 0, y: 0, w, h }
@@ -172,10 +190,16 @@ function parseRegion(region: string | undefined, w: number, h: number): Rect {
     }
   }
   const parts = region.split(',').map((n) => Number(n))
-  if (parts.length !== 4 || parts.some(Number.isNaN)) {
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
     throw badRequest(`Invalid region: ${region}`)
   }
   const [x, y, rw, rh] = parts as [number, number, number, number]
+  // Reject negative origins / non-positive extents: a negative x/y makes
+  // cropRgba compute a negative source offset (TypedArray.subarray then reads
+  // from the wrong end) instead of failing cleanly.
+  if (x < 0 || y < 0 || rw <= 0 || rh <= 0) {
+    throw badRequest(`Invalid region: ${region}`)
+  }
   return { x, y, w: rw, h: rh }
 }
 
@@ -235,6 +259,7 @@ function applySize(
   } else {
     return resizeNearest(slice, naturalW, naturalH)
   }
+  validateOutputDims(targetW, targetH)
   return resizeNearest(slice, targetW, targetH)
 }
 

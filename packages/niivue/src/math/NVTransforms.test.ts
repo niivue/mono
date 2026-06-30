@@ -13,6 +13,8 @@ import {
   mm2frac,
   mm2vox,
   multiplyAffine,
+  rayBoxEntryMM,
+  rayMarchFirstVisibleMM,
   slicePlaneEquation,
   unprojectScreen,
   vox2mm,
@@ -554,5 +556,111 @@ describe('unprojectScreen', () => {
     expect(Number.isFinite(result[0])).toBe(true)
     expect(Number.isFinite(result[1])).toBe(true)
     expect(Number.isFinite(result[2])).toBe(true)
+  })
+})
+
+describe('rayBoxEntryMM', () => {
+  const lo = [0, 0, 0]
+  const hi = [10, 10, 10]
+
+  test('returns the entry face for a ray crossing the box', () => {
+    // Ray along +x from x=-5 enters the box at x=0.
+    const entry = rayBoxEntryMM([-5, 5, 5], [15, 5, 5], lo, hi)
+    expect(entry).not.toBeNull()
+    expect(entry?.[0]).toBeCloseTo(0)
+    expect(entry?.[1]).toBeCloseTo(5)
+    expect(entry?.[2]).toBeCloseTo(5)
+  })
+
+  test('returns null when the ray misses the box', () => {
+    expect(rayBoxEntryMM([-5, 50, 5], [15, 50, 5], lo, hi)).toBeNull()
+  })
+
+  test('clamps to the near point when the origin is inside the box', () => {
+    const entry = rayBoxEntryMM([5, 5, 5], [5, 5, 15], lo, hi)
+    expect(entry).not.toBeNull()
+    expect(entry?.[2]).toBeCloseTo(5) // tmin clamped to 0 -> the near point
+  })
+
+  test('is order-independent in lo/hi', () => {
+    const entry = rayBoxEntryMM([-5, 5, 5], [15, 5, 5], hi, lo)
+    expect(entry?.[0]).toBeCloseTo(0)
+  })
+
+  test('advances the entry to a solid clip-plane cut surface', () => {
+    // Plane [1,0,0,0]: kept side fx >= 0.5 -> mm x >= 5. The +x ray should enter
+    // at the clip surface (x=5), not the clipped-away box face (x=0).
+    const entry = rayBoxEntryMM([-5, 5, 5], [15, 5, 5], lo, hi, [1, 0, 0, 0])
+    expect(entry?.[0]).toBeCloseTo(5)
+  })
+
+  test('ignores the no-clip sentinel and returns the box face', () => {
+    const entry = rayBoxEntryMM([-5, 5, 5], [15, 5, 5], lo, hi, [1, 0, 0, 2])
+    expect(entry?.[0]).toBeCloseTo(0)
+  })
+
+  test('returns null when a clip plane removes the whole ray', () => {
+    // Plane [1,0,0,0.6]: kept side fx >= 1.1, impossible inside the [0,1] cube,
+    // so the entire in-box segment is clipped away.
+    expect(
+      rayBoxEntryMM([-5, 5, 5], [15, 5, 5], lo, hi, [1, 0, 0, 0.6]),
+    ).toBeNull()
+  })
+
+  test('skips clip refinement in cutaway mode', () => {
+    const entry = rayBoxEntryMM(
+      [-5, 5, 5],
+      [15, 5, 5],
+      lo,
+      hi,
+      [1, 0, 0, 0],
+      true,
+    )
+    expect(entry?.[0]).toBeCloseTo(0) // box face, clip ignored
+  })
+})
+
+describe('rayMarchFirstVisibleMM', () => {
+  const lo = [0, 0, 0]
+  const hi = [10, 10, 10]
+
+  test('lands on the first visible voxel, skipping empty front space', () => {
+    // Only x >= 6 is "visible"; a +x ray should skip the empty front (x<6).
+    const sampler = (x: number) => (x >= 6 ? 1 : 0)
+    const hit = rayMarchFirstVisibleMM([-5, 5, 5], [15, 5, 5], lo, hi, sampler)
+    expect(hit).not.toBeNull()
+    // first sample at/after x=6 (within one march step of 10mm/512)
+    expect(hit?.[0]).toBeGreaterThanOrEqual(6)
+    expect(hit?.[0]).toBeLessThan(6.1)
+  })
+
+  test('returns null when nothing along the ray is visible', () => {
+    const hit = rayMarchFirstVisibleMM([-5, 5, 5], [15, 5, 5], lo, hi, () => 0)
+    expect(hit).toBeNull()
+  })
+
+  test('respects a solid clip plane (no visible voxel on the kept side)', () => {
+    // Visible only for x<3, but the clip keeps x>=5 -> no visible voxel kept.
+    const sampler = (x: number) => (x < 3 ? 1 : 0)
+    const hit = rayMarchFirstVisibleMM(
+      [-5, 5, 5],
+      [15, 5, 5],
+      lo,
+      hi,
+      sampler,
+      [1, 0, 0, 0],
+    )
+    expect(hit).toBeNull()
+  })
+
+  test('returns null when the ray misses the box', () => {
+    const hit = rayMarchFirstVisibleMM(
+      [-5, 50, 5],
+      [15, 50, 5],
+      lo,
+      hi,
+      () => 1,
+    )
+    expect(hit).toBeNull()
   })
 })

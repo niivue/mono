@@ -8,6 +8,13 @@ const apiTarget = process.env.IIIF_SERVER_URL ?? 'http://localhost:8080'
 export default defineConfig({
   base: ghBase || '/',
   plugins: [devImagesPlugin()],
+  // Do NOT pre-bundle the local workspace build of niivue. Vite's optimizeDeps
+  // caches a pre-bundled copy at dev-server start and does not invalidate it when
+  // the package's dist/ is rebuilt, so editing niivue source + `nx build niivue`
+  // would silently keep serving the OLD bundle until the cache is cleared. With
+  // it excluded, Vite serves the current dist ESM directly and a page reload
+  // picks up a fresh `nx build niivue`.
+  optimizeDeps: { exclude: ['@niivue/niivue'] },
   server: {
     port: 8087,
     proxy: {

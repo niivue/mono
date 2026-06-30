@@ -2,9 +2,35 @@ import * as NVCmaps from '@/cmap/NVCmaps'
 import type { NVImage } from '@/NVTypes'
 import { buildOrientUniforms, prepareRGBAData } from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
+import { IDENTITY_MTX, type ModulationTextureParams } from '@/volume/modulation'
 import { chunkOverlayMatrix } from '@/volume/orientChunked'
 import orientWGSL from './orient.wgsl?raw'
 import * as wgpu from './wgpu'
+
+// Uniform buffer: 12 vec4 = matrix(4) + params/negParams/flags(3) + modMtx(4) + modFlags(1)
+const ORIENT_UNIFORM_SIZE = 12 * 16
+
+/** Create an r32float 3D modulation-weight texture, or a 1x1x1 placeholder. */
+export function createModTexture(
+  device: GPUDevice,
+  mod: ModulationTextureParams | null,
+): GPUTexture {
+  const dims = mod ? mod.dims : [1, 1, 1]
+  const tex = device.createTexture({
+    size: dims as [number, number, number],
+    format: 'r32float',
+    dimension: '3d',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
+  const data = mod ? mod.weight : new Float32Array([1])
+  device.queue.writeTexture(
+    { texture: tex },
+    data as Float32Array<ArrayBuffer>,
+    { bytesPerRow: dims[0] * 4, rowsPerImage: dims[1] },
+    dims as [number, number, number],
+  )
+  return tex
+}
 
 type PipelineCacheEntry = {
   pipeline: GPUComputePipeline
@@ -69,6 +95,11 @@ export function ensureOrientPipeline(
         visibility: GPUShaderStage.COMPUTE,
         texture: { viewDimension: '2d' },
       },
+      {
+        binding: 6,
+        visibility: GPUShaderStage.COMPUTE,
+        texture: { sampleType: 'unfilterable-float', viewDimension: '3d' },
+      },
     ],
   })
   const pipeline = device.createComputePipeline({
@@ -95,6 +126,8 @@ export type OrientTextureCache = {
   imageBuffer: ArrayBufferLike
   pipelineType: string
   hasNegativeColormap: boolean
+  modTexture: GPUTexture
+  modKey: string
 }
 
 function rgba2Texture(device: GPUDevice, nvimage: NVImage): GPUTexture {
@@ -169,9 +202,9 @@ function writeOrientUniforms(
   nvimage: NVImage,
   mtx: Float32Array,
   overlayOpacity: number,
+  mod: ModulationTextureParams | null = null,
 ): void {
-  const uniformBufferSize = 7 * 16
-  const ab = new ArrayBuffer(uniformBufferSize)
+  const ab = new ArrayBuffer(ORIENT_UNIFORM_SIZE)
   const dv = new DataView(ab)
   for (let i = 0; i < 16; i++) dv.setFloat32(i * 4, mtx[i], true)
   const u = buildOrientUniforms(nvimage, overlayOpacity)
@@ -187,6 +220,10 @@ function writeOrientUniforms(
   dv.setFloat32(100, u.isLabel, true)
   dv.setFloat32(104, u.labelMin, true)
   dv.setFloat32(108, u.labelWidth, true)
+  // modMtx (offset 112, 4 vec4s) + modFlags (offset 176)
+  const modMtx = mod ? mod.mtx : IDENTITY_MTX
+  for (let i = 0; i < 16; i++) dv.setFloat32(112 + i * 4, modMtx[i], true)
+  dv.setFloat32(176, mod ? mod.mode : 0, true)
   device.queue.writeBuffer(uniformBuffer, 0, ab)
 }
 
@@ -199,6 +236,7 @@ export function destroyOrientTextureCache(
   cache.uniformBuffer.destroy()
   cache.colormapTexture.destroy()
   if (cache.hasNegativeColormap) cache.negativeColormapTexture.destroy()
+  cache.modTexture.destroy()
 }
 
 export async function prepareOrientTextureCache(
@@ -208,6 +246,7 @@ export async function prepareOrientTextureCache(
   mtx: Float32Array,
   overlayOpacity = 1,
   existingCache: OrientTextureCache | null = null,
+  mod: ModulationTextureParams | null = null,
 ): Promise<OrientTextureCache> {
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS)
     throw new Error('overlay2Texture: missing dimsRAS')
@@ -222,6 +261,7 @@ export async function prepareOrientTextureCache(
   const frame4D = nvimage.frame4D ?? 0
   const u = buildOrientUniforms(nvimage, overlayOpacity)
   const colormapKey = orientColormapKey(nvimage, u.isLabel > 0)
+  const modKey = mod ? mod.key : ''
   const canReuse =
     existingCache &&
     existingCache.datatypeCode === nvimage.hdr.datatypeCode &&
@@ -230,7 +270,8 @@ export async function prepareOrientTextureCache(
     existingCache.imageBuffer === nvimage.img.buffer &&
     dimensionsMatch(existingCache.dimsIn, dimsIn) &&
     dimensionsMatch(existingCache.dimsOut, dimsOut) &&
-    existingCache.colormapKey === colormapKey
+    existingCache.colormapKey === colormapKey &&
+    existingCache.modKey === modKey
   if (canReuse) {
     writeOrientUniforms(
       device,
@@ -238,6 +279,7 @@ export async function prepareOrientTextureCache(
       nvimage,
       mtx,
       overlayOpacity,
+      mod,
     )
     return existingCache
   }
@@ -271,10 +313,11 @@ export async function prepareOrientTextureCache(
     dimsIn,
   )
   const uniformBuffer = device.createBuffer({
-    size: 7 * 16,
+    size: ORIENT_UNIFORM_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
-  writeOrientUniforms(device, uniformBuffer, nvimage, mtx, overlayOpacity)
+  writeOrientUniforms(device, uniformBuffer, nvimage, mtx, overlayOpacity, mod)
+  const modTexture = createModTexture(device, mod)
   const outputTexture = device.createTexture({
     size: dimsOut,
     format: 'rgba8unorm',
@@ -333,6 +376,7 @@ export async function prepareOrientTextureCache(
       { binding: 3, resource: outputTexture.createView() },
       { binding: 4, resource: sampler },
       { binding: 5, resource: negativeColormapTexture.createView() },
+      { binding: 6, resource: modTexture.createView() },
     ],
   })
   return {
@@ -351,6 +395,8 @@ export async function prepareOrientTextureCache(
     imageBuffer: nvimage.img.buffer,
     pipelineType,
     hasNegativeColormap,
+    modTexture,
+    modKey,
   }
 }
 
@@ -386,6 +432,7 @@ export async function volume2Texture(
   mtx: Float32Array,
   overlayOpacity = 1,
   outDimsOverride?: readonly number[],
+  mod: ModulationTextureParams | null = null,
 ): Promise<GPUTexture> {
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS) {
     throw new Error('overlay2Texture: missing dimsRAS')
@@ -464,34 +511,14 @@ export async function volume2Texture(
     },
     dimsIn,
   )
-  // 2) Prepare uniform buffer (7 vec4s = 112 bytes)
-  const uniformBufferSize = 7 * 16
+  // 2) Prepare uniform buffer (shared layout with the cached orient path).
   const uniformBuffer = device.createBuffer({
-    size: uniformBufferSize,
+    size: ORIENT_UNIFORM_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
-  const ab = new ArrayBuffer(uniformBufferSize)
-  const dv = new DataView(ab)
-  // Matrix rows (4 vec4s, 64 bytes)
-  for (let i = 0; i < 16; i++) {
-    dv.setFloat32(i * 4, mtx[i], true)
-  }
-  // params + negParams + flags (3 vec4s = 48 bytes at offset 64)
-  const u = buildOrientUniforms(nvimage, overlayOpacity)
-  const isLabelVol = u.isLabel > 0
-  dv.setFloat32(64, u.slope, true)
-  dv.setFloat32(68, u.intercept, true)
-  dv.setFloat32(72, u.calMin, true)
-  dv.setFloat32(76, u.calMax, true)
-  dv.setFloat32(80, u.mnNeg, true)
-  dv.setFloat32(84, u.mxNeg, true)
-  dv.setFloat32(88, u.isAlphaThreshold, true)
-  dv.setFloat32(92, u.isColorbarFromZero, true)
-  dv.setFloat32(96, u.overlayOpacity, true)
-  dv.setFloat32(100, u.isLabel, true)
-  dv.setFloat32(104, u.labelMin, true)
-  dv.setFloat32(108, u.labelWidth, true)
-  device.queue.writeBuffer(uniformBuffer, 0, ab)
+  writeOrientUniforms(device, uniformBuffer, nvimage, mtx, overlayOpacity, mod)
+  const isLabelVol = buildOrientUniforms(nvimage, overlayOpacity).isLabel > 0
+  const modTexture = createModTexture(device, mod)
   // 3) Create RGBA storage texture sized dimsOut
   const rgbaTexture = device.createTexture({
     size: dimsOut,
@@ -557,6 +584,7 @@ export async function volume2Texture(
       { binding: 3, resource: rgbaTexture.createView() },
       { binding: 4, resource: sampler },
       { binding: 5, resource: negColormapTex.createView() },
+      { binding: 6, resource: modTexture.createView() },
     ],
   })
   // 6) Dispatch compute with dimsOut
@@ -574,6 +602,7 @@ export async function volume2Texture(
   await device.queue.onSubmittedWorkDone()
   // Cleanup intermediate resources (keep rgbaTexture for caller)
   scalarTexture.destroy()
+  modTexture.destroy()
   colormapTex.destroy()
   if (hasNegColormap) {
     negColormapTex.destroy()

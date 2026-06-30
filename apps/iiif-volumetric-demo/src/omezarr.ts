@@ -40,8 +40,11 @@
 // server-side pyramid + subvolume plumbing, not viewer features.
 
 import NiiVue, {
+  type ChunkPlan,
   chunkVolumeGrid,
+  chunkVolumeMultiLOD,
   type NVImage,
+  SHOW_RENDER,
   type VolumeChunkExplode,
   type VolumeChunkSource,
 } from '@niivue/niivue'
@@ -92,6 +95,7 @@ const els = {
   volume: el<HTMLSelectElement>('volume'),
   level: el<HTMLSelectElement>('level'),
   subvolume: el<HTMLSelectElement>('subvolume'),
+  view: el<HTMLSelectElement>('view'),
   explodedToggle: el<HTMLInputElement>('explodedToggle'),
   explodeEx: el<HTMLInputElement>('explodeEx'),
   explodeEy: el<HTMLInputElement>('explodeEy'),
@@ -106,6 +110,9 @@ const els = {
   zoom: el<HTMLInputElement>('zoom'),
   panX: el<HTMLInputElement>('panX'),
   panY: el<HTMLInputElement>('panY'),
+  crossX: el<HTMLInputElement>('crossX'),
+  crossY: el<HTMLInputElement>('crossY'),
+  crossZ: el<HTMLInputElement>('crossZ'),
   canvas: el<HTMLCanvasElement>('nv-canvas'),
   hud: el<HTMLDivElement>('hud'),
   fallback: el<HTMLDivElement>('fallback'),
@@ -157,6 +164,21 @@ const STREAMING_CHUNK_EDGE = 256
 const STREAMING_CHUNK_HALO: Shape3 = [3, 3, 3]
 const STREAMING_CHUNK_LIMIT = 256
 const EXPLODED_GRID_LONG_AXIS_BLOCKS = 4
+// Multi-resolution (Neuroglancer-style) rendering: a focused octree of bricks
+// finest near the focus, coarser further out, covering the whole volume.
+const MULTILOD_CELL_EDGE = 128
+// Headroom so the finest (L0) bricks at the focus actually fit; otherwise the
+// budget pass raises the floor and the focus coarsens. The 2:1-balanced octree
+// fills the L0->coarse transition with graded shells, which costs more bricks
+// than an unbalanced plan, so a large pyramid (e.g. the pig heart) needs ~2 GB
+// to keep an L0 focus AND smooth transitions. ?budgetGB overrides (lower it if
+// GPU memory is tight; the focus then coarsens gracefully).
+const MULTILOD_DEFAULT_BUDGET_BYTES = 2 * 1024 * 1024 * 1024
+const MULTILOD_HALO: Shape3 = [1, 1, 1]
+// Cap below niivue's per-tile chunk limit (MAX_CHUNKS_PER_TILE = 256). The plan's
+// budget pass coarsens until it fits, so a focus that would otherwise generate
+// too many bricks degrades gracefully instead of being rejected by the renderer.
+const MULTILOD_MAX_BRICKS = 240
 const DEFAULT_OME_ZARR_ID = 'pawpawsaurus.ome.zarr'
 
 const initialParams = new URLSearchParams(window.location.search)
@@ -209,9 +231,21 @@ async function main(): Promise<void> {
     void reload()
   })
   els.subvolume.addEventListener('change', () => {
+    // Entering multi-resolution: the Level dropdown becomes the finest-detail
+    // cap; start at full detail.
+    if (els.subvolume.value === 'multilod') els.level.value = '0'
     applySubvolumeSelection(currentVolume())
     renderExplodePlan(currentVolume())
     void reload()
+  })
+  els.view.addEventListener('change', () => {
+    if (!nv) return
+    nv.sliceType = currentSliceType()
+    syncCameraSliders() // render zoom and 2D zoom are different scales
+    // Multi-resolution focus depends on the view (render = crosshair box;
+    // multiplanar = captured 2D region), so rebuild the plan.
+    if (els.subvolume.value === 'multilod') void reload()
+    else nv.drawScene()
   })
   els.explodedToggle.addEventListener('change', () => {
     syncExplodeLabels()
@@ -258,6 +292,9 @@ async function main(): Promise<void> {
   els.panY.addEventListener('input', () => {
     applyPanFromSliders()
   })
+  els.crossX.addEventListener('input', applyCrosshairFromSliders)
+  els.crossY.addEventListener('input', applyCrosshairFromSliders)
+  els.crossZ.addEventListener('input', applyCrosshairFromSliders)
   await ensureNiivue()
   maxTexDim = readMaxTexDim()
   const initial = readInitialVolumeId()
@@ -384,6 +421,9 @@ async function selectVolume(id: string): Promise<void> {
   lastSubvolumeLabel = null
   populateLevelSelect(found)
   populateSubvolumeSelect(found)
+  // In multi-resolution mode the Level dropdown caps the finest detail; default
+  // to full detail (0) rather than the single-level lazy-load coarsest default.
+  if (els.subvolume.value === 'multilod') els.level.value = '0'
   applySubvolumeSelection(found)
   renderExplodePlan(found)
   await reload()
@@ -424,6 +464,10 @@ function populateSubvolumeSelect(v: VolumeApiEntry | null): void {
   const shape = currentLevelShape(v) ?? v.shape
   const needsSubvolume = levelNeedsSubvolume(shape, v.dtype)
   const canStream = canStreamWholeLevel(shape)
+  const hasPyramid = (v.levels?.length ?? 0) > 1
+  if (hasPyramid) {
+    addSubvolumeOption('multilod', 'multi-resolution (focus + coarse surround)')
+  }
   if (canStream) {
     addSubvolumeOption(
       'stream',
@@ -452,11 +496,13 @@ function populateSubvolumeSelect(v: VolumeApiEntry | null): void {
     addSubvolumeOption(`tile:${i}`, gridSubvolumeLabel(shape, i, size, pct))
   }
 
-  els.subvolume.value = needsSubvolume
-    ? canStream
-      ? 'stream'
-      : 'focus'
-    : 'full'
+  els.subvolume.value = hasPyramid
+    ? 'multilod'
+    : needsSubvolume
+      ? canStream
+        ? 'stream'
+        : 'focus'
+      : 'full'
 }
 
 function addSubvolumeOption(value: string, text: string): void {
@@ -472,6 +518,15 @@ function currentVolume(): VolumeApiEntry | null {
 
 function isStreamingMode(): boolean {
   return els.subvolume.value === 'stream'
+}
+
+// niivue SLICE_TYPE from the View selector (4 = render, 3 = multiplanar).
+function currentSliceType(): number {
+  return Number(els.view.value) || 4
+}
+
+function isMultiplanarView(): boolean {
+  return currentSliceType() === 3
 }
 
 function currentChunkExplode(): VolumeChunkExplode | undefined {
@@ -592,6 +647,10 @@ function applyExplodeToLoadedVolume(): void {
   const vol = nv.volumes[0]
   if (vol) {
     vol.chunkExplode = currentChunkExplode()
+    // Keep the focus box tracking the (newly) exploded block position.
+    if (v && els.subvolume.value === 'multilod' && vol.chunkPlan) {
+      setMultiLodFocusBox(v, vol.chunkPlan)
+    }
   }
   if (v) renderHud(v, Number(els.level.value))
   nv.drawScene()
@@ -657,9 +716,22 @@ async function ensureNiivue(): Promise<void> {
     backend: BACKEND,
     backgroundColor: [0, 0, 0, 1],
     isColorbarVisible: true,
-    is3DCrosshairVisible: false,
+    is3DCrosshairVisible: true,
     isDragDropEnabled: false,
+    // Always keep the 3D render quadrant in multiplanar view. niivue's default
+    // (SHOW_RENDER.AUTO) drops the render tile on a wide canvas because the
+    // render-less row layout out-zooms the row-with-render one — which hides the
+    // whole multiplanar->render WYSIWYG coordination on a typical landscape
+    // monitor. ALWAYS keeps render in every layout candidate (niivue still picks
+    // the best row/column/grid for the aspect). Inert in the render-only view.
+    showRender: SHOW_RENDER.ALWAYS,
     maxTextureDimension3D: STREAMING_CHUNK_EDGE,
+    // Keep the GPU residency budget in step with the multi-LOD PLAN budget: the
+    // octree is built to fit `multiLodBudgetBytes()`, so the resident set must be
+    // allowed to hold that same amount (both measure texDims*8). Otherwise the
+    // residency manager (default 1.5 GB) evicts the bricks the plan included and
+    // blocks stop rendering. A little headroom covers transient streaming.
+    maxChunkResidencyBytes: Math.round(multiLodBudgetBytes() * 1.1),
     meshXRay: 0,
   })
   nv.opts.isDragDropEnabled = false
@@ -674,6 +746,24 @@ async function ensureNiivue(): Promise<void> {
     const vox = detail?.vox
     if (Array.isArray(vox) && vox.length >= 3) {
       rememberFocusFromVoxel([vox[0] ?? 0, vox[1] ?? 0, vox[2] ?? 0])
+      syncCrosshairSliders()
+      // Multiplanar: re-centre the (zoomed) view on the clicked point so the
+      // crosshair stays centred as the user navigates.
+      if (isMultiplanarView() && nv) {
+        const z = (nv.pan2Dxyzmm as unknown as number[])?.[3] ?? 1
+        if (z > 1) applyMultiplanarZoom(z)
+      }
+      // Snap the focus box to the block now under the crosshair immediately (the
+      // finest-level rebuild follows on settle). Draws on the render tile, incl.
+      // the render quadrant of a multiplanar layout.
+      if (els.subvolume.value === 'multilod') {
+        const plan = nv?.volumes[0]?.chunkPlan
+        const cur = currentVolume()
+        if (plan && cur) setMultiLodFocusBox(cur, plan)
+      }
+      // In multi-resolution mode, move the finest bricks to the new look-at
+      // point once the crosshair settles.
+      scheduleMultiLodRefocus()
     }
   })
 
@@ -715,6 +805,15 @@ async function reload(): Promise<void> {
   const level = Number(els.level.value)
   const bbox = parseBbox(els.bbox.value)
   const shape = currentLevelShape(v) ?? v.shape
+  // Multi-resolution mode owns its own octree of bricks; the explode toggle
+  // spreads THOSE bricks (not a single-level grid), so it must be handled here
+  // before the legacy exploded-grid / stream path.
+  if (els.subvolume.value === 'multilod') {
+    await reloadMultiLod(v, myEpoch)
+    return
+  }
+  // Other modes have no multi-LOD focus region — clear any box from a prior mode.
+  nv.focusBox = null
   const explodedGrid = shouldUseExplodedGrid(shape, bbox)
   const streaming = isStreamingMode() || explodedGrid
   const loadingSubvolume = Boolean(bbox)
@@ -790,7 +889,7 @@ async function reload(): Promise<void> {
     if (vol) {
       vol.chunkExplode = currentChunkExplode()
     }
-    nv.sliceType = 4
+    nv.sliceType = currentSliceType()
     loadedLevelShape = shape
     loadedBbox = bbox
     showCanvas()
@@ -849,6 +948,11 @@ async function reloadStreamingLevel(
     reloading = false
     return
   }
+  await ensureStreamingWindow(v)
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
+    return
+  }
   const volume = createStreamingVolume(v, level, shape)
   try {
     await nv.loadVolumes([volume])
@@ -856,7 +960,7 @@ async function reloadStreamingLevel(
       reloading = false
       return
     }
-    nv.sliceType = 4
+    nv.sliceType = currentSliceType()
     loadedLevelShape = shape
     loadedBbox = null
     showCanvas()
@@ -873,10 +977,162 @@ async function reloadStreamingLevel(
   syncCameraSliders()
 }
 
+// Multi-resolution render: stream a single heterogeneous octree of bricks that
+// covers the whole volume — finest at the focus, coarser outward.
+async function reloadMultiLod(
+  v: VolumeApiEntry,
+  myEpoch: number,
+  preserveView = false,
+): Promise<void> {
+  if (!nv) return
+  reloading = true
+  lastStats = null
+  setBusy('streaming multi-resolution bricks…')
+  await yieldPaint()
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
+    return
+  }
+  // Resident coarse level powers both the auto-window and the surface-pick march.
+  await ensureCoarsePickData(v)
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
+    return
+  }
+  await ensureStreamingWindow(v)
+  if (myEpoch !== reloadEpoch) {
+    reloading = false
+    return
+  }
+  const volume = createMultiLodVolume(v)
+  if (!volume) {
+    showFallback('multi-resolution mode needs a multiscale pyramid')
+    reloading = false
+    if (myEpoch === reloadEpoch) setBusy(null)
+    return
+  }
+  // Refocus reloads should not snap the camera or crosshair back to centre —
+  // capture them before loadVolumes (which resets the view) and restore after.
+  const cam = preserveView ? captureView() : null
+  try {
+    await nv.loadVolumes([volume])
+    if (myEpoch !== reloadEpoch) {
+      reloading = false
+      return
+    }
+    nv.sliceType = currentSliceType()
+    if (cam) restoreView(cam)
+    // Outline the crosshair's block; it draws on the 3D render tile (the render
+    // quadrant of a multiplanar layout, or the full render view).
+    if (volume.chunkPlan) setMultiLodFocusBox(v, volume.chunkPlan)
+    else nv.focusBox = null
+    loadedLevelShape = (volume.dimsRAS?.slice(1, 4) as Shape3) ?? null
+    loadedBbox = null
+    showCanvas()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    showFallback(`niivue failed to stream multi-resolution: ${msg}`)
+    reloading = false
+    if (myEpoch === reloadEpoch) setBusy(null)
+    return
+  }
+  renderHud(v, 0)
+  reloading = false
+  setBusy(null)
+  syncCameraSliders()
+}
+
+interface ViewState {
+  azimuth: number
+  elevation: number
+  scale: number
+  crosshair: [number, number, number]
+  pan2D: [number, number, number, number]
+}
+
+type CameraView = {
+  azimuth: number
+  elevation: number
+  scaleMultiplier: number
+  crosshairPos: ArrayLike<number>
+  pan2Dxyzmm: ArrayLike<number>
+}
+
+function captureView(): ViewState | null {
+  if (!nv) return null
+  const n = nv as unknown as CameraView
+  const c = n.crosshairPos
+  const p = n.pan2Dxyzmm
+  return {
+    azimuth: n.azimuth,
+    elevation: n.elevation,
+    scale: n.scaleMultiplier,
+    crosshair: [c[0] ?? 0.5, c[1] ?? 0.5, c[2] ?? 0.5],
+    pan2D: [p?.[0] ?? 0, p?.[1] ?? 0, p?.[2] ?? 0, p?.[3] ?? 1],
+  }
+}
+
+function restoreView(s: ViewState): void {
+  if (!nv) return
+  const n = nv as unknown as CameraView
+  n.azimuth = s.azimuth
+  n.elevation = s.elevation
+  n.scaleMultiplier = s.scale
+  n.crosshairPos = s.crosshair
+  // Preserve the 2D zoom/pan so a refocus rebuild doesn't reset the slices.
+  n.pan2Dxyzmm = s.pan2D
+}
+
+// Re-stream the multi-LOD octree centred on the new crosshair after the user
+// stops moving it, so the finest bricks follow the look-at point. Debounced
+// (one rebuild per gesture) and view-preserving (camera/crosshair are kept).
+let refocusTimer: ReturnType<typeof setTimeout> | null = null
+let refocusing = false
+function scheduleMultiLodRefocus(): void {
+  if (els.subvolume.value !== 'multilod') return
+  if (refocusTimer !== null) clearTimeout(refocusTimer)
+  refocusTimer = setTimeout(() => {
+    refocusTimer = null
+    void refocusMultiLodInPlace()
+  }, 300)
+}
+
+// Re-stream the multi-LOD octree for the new focus by swapping the loaded
+// volume's plan IN PLACE — unchanged bricks keep their GPU textures, only
+// changed/new bricks stream. No volume reload, so the camera/crosshair/zoom are
+// untouched. Falls back to a full load if no multi-LOD volume is resident yet.
+async function refocusMultiLodInPlace(): Promise<void> {
+  if (!nv || reloading || refocusing || els.subvolume.value !== 'multilod') {
+    return
+  }
+  const v = currentVolume()
+  if (!v) return
+  const vol = nv.volumes[0]
+  const volId = vol?.id ?? vol?.name
+  // The in-place plan swap is opt-in (?swap=1) while its texture-transfer is
+  // under investigation; the default path is a full reload (correct but slower).
+  const useSwap = initialParams.get('swap') === '1'
+  if (!useSwap || !vol?.chunkPlan || !vol.chunkSource || !volId) {
+    reloadEpoch += 1
+    await reloadMultiLod(v, reloadEpoch, true)
+    return
+  }
+  const plan = buildMultiLodPlan(v)
+  if (!plan) return
+  refocusing = true
+  try {
+    await nv.swapVolumeChunkPlan(volId, plan)
+    setMultiLodFocusBox(v, plan)
+  } finally {
+    refocusing = false
+  }
+}
+
 function createStreamingVolume(
   v: VolumeApiEntry,
   level: number,
   shape: [number, number, number],
+  planOverride?: ChunkPlan,
 ): NVImage {
   const lvl = v.levels?.find((l) => l.level === level)
   const spacing = lvl?.spacing ?? v.spacing
@@ -886,12 +1142,16 @@ function createStreamingVolume(
   const calMax = win?.max ?? dtype.displayMax
   const dims = [3, shape[0], shape[1], shape[2], 1, 1, 1, 1]
   const pixDims = [1, spacing[0], spacing[1], spacing[2], 1, 1, 1, 1]
-  const chunkPlan = shouldUseExplodedGrid(shape, null)
-    ? createExplodedGridPlan(shape)
-    : undefined
-  const planKey = chunkPlan
-    ? `grid-${chunkPlan.gridDims.join('x')}`
-    : `edge-${STREAMING_CHUNK_EDGE}`
+  const chunkPlan =
+    planOverride ??
+    (shouldUseExplodedGrid(shape, null)
+      ? createExplodedGridPlan(shape)
+      : undefined)
+  const planKey = planOverride
+    ? `multilod-${planOverride.chunks.length}`
+    : chunkPlan
+      ? `grid-${chunkPlan.gridDims.join('x')}`
+      : `edge-${STREAMING_CHUNK_EDGE}`
   const affine = [
     [spacing[0], 0, 0, 0],
     [0, spacing[1], 0, 0],
@@ -943,12 +1203,24 @@ function createStreamingVolume(
   const identity = new Float32Array([
     1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
   ])
-  const chunkCache = new Map<number, Promise<Uint8Array>>()
+  // Cache fetches by CONTENT (level + bbox), not chunkIndex, so they survive an
+  // in-place plan swap (multi-LOD refocus) where indices change but the brick's
+  // fetched region does not.
+  const chunkCache = new Map<string, Promise<Uint8Array>>()
   const chunkSource: VolumeChunkSource = (request) => {
-    const cached = chunkCache.get(request.chunkIndex)
+    // Multi-LOD bricks each carry their own pyramid level; single-level plans
+    // leave sourceLevel undefined and fall back to this volume's level.
+    const brickLevel = request.desc.sourceLevel ?? level
+    const key = `${brickLevel}|${request.desc.texOrigin.join(',')}|${request.desc.texDims.join(',')}`
+    const cached = chunkCache.get(key)
     if (cached) return cached
-    const next = fetchRawChunk(v.id, level, request.desc, request.bytesPerVoxel)
-    chunkCache.set(request.chunkIndex, next)
+    const next = fetchRawChunk(
+      v.id,
+      brickLevel,
+      request.desc,
+      request.bytesPerVoxel,
+    )
+    chunkCache.set(key, next)
     return next
   }
   const name = `${v.id} L${level} streamed`
@@ -1066,6 +1338,477 @@ function createStreamingVolume(
   } as NVImage
 }
 
+// GPU byte budget for the resident multi-LOD brick set; ?budgetGB overrides.
+function multiLodBudgetBytes(): number {
+  const gb = Number(initialParams.get('budgetGB'))
+  if (Number.isFinite(gb) && gb > 0) return Math.round(gb * 1024 * 1024 * 1024)
+  return MULTILOD_DEFAULT_BUDGET_BYTES
+}
+
+// Focus centre in common (finest) voxels, biased OFF exact octree cell
+// boundaries. A finest-LOD ball that straddles a coarse cell boundary forces
+// BOTH neighbouring cells to subdivide to the finest level, multiplying the
+// finest-brick count until the budget pass collapses the whole volume to a
+// coarse uniform LOD (the crosshair block shows L2 instead of L0). The exact
+// volume centre [0.5,0.5,0.5] -- which niivue snaps the crosshair to on load --
+// and any crosshair that lands near a level-1 split (e.g. x=dim/2) hit this.
+// The bias must EXCEED the focus radius so the whole ball sits on one side of
+// the nearest boundary; it is sub-cell (~0.3 brick) so the focused region is
+// still effectively where the user is looking, and clamped to stay in-volume.
+// Used by BOTH the plan and the focus-box outline so they stay aligned.
+function multiLodFocusCenter(cs: Shape3, override?: Shape3): Shape3 {
+  const base: Shape3 = override ?? [
+    (lastFocusFrac?.[0] ?? 0.5) * cs[0],
+    (lastFocusFrac?.[1] ?? 0.5) * cs[1],
+    (lastFocusFrac?.[2] ?? 0.5) * cs[2],
+  ]
+  const bias: Shape3 = [
+    MULTILOD_CELL_EDGE * 0.31,
+    MULTILOD_CELL_EDGE * 0.17,
+    MULTILOD_CELL_EDGE * 0.23,
+  ]
+  return [
+    Math.min(cs[0] - bias[0], base[0] + bias[0]),
+    Math.min(cs[1] - bias[1], base[1] + bias[1]),
+    Math.min(cs[2] - bias[2], base[2] + bias[2]),
+  ]
+}
+
+// Build the heterogeneous multi-LOD chunk plan for a volume's pyramid. The
+// finest available level is the common reference grid; bricks within `radius`
+// (finest voxels) of `focusCenter` render at the finest level, coarsening
+// outward. `focusCenter` defaults to the volume centre (Stage 1); later stages
+// drive it from the crosshair / visible slice extents.
+function buildMultiLodPlan(
+  v: VolumeApiEntry,
+  focusCenter?: Shape3,
+): ChunkPlan | null {
+  const levels = (v.levels ?? []).slice().sort((a, b) => a.level - b.level)
+  if (levels.length === 0) return null
+  const levelDims = levels.map((l) => l.shape)
+  const commonShape = levelDims[0]
+  // Focus on the crosshair / look-at point (cached as a [0,1] fraction of the
+  // common grid by locationChange) so the finest bricks sit where the user is
+  // looking; fall back to the volume centre before the first interaction. Biased
+  // off exact octree boundaries (see multiLodFocusCenter).
+  const center: Shape3 = multiLodFocusCenter(commonShape, focusCenter)
+  // Render view focuses a tight region around the look-at point. Multiplanar
+  // focuses what the slices capture: centred on the crosshair, with a radius
+  // that shrinks as the 2D zoom grows — at zoom 1 it spans the whole volume
+  // (budget coarsens to the finest uniform LOD), zoomed in it refines that
+  // region.
+  // Keep the render-view L0 region modest so it fits the budget (else the floor
+  // rises and the focus is no longer finest). The radius is a COMMON-voxel ball
+  // around the look-at point: every brick it touches is forced finest. Because
+  // distance is measured to the nearest brick face, even a sub-cell radius pulls
+  // the 2x2x2 of bricks straddling the point to L0 -- a 0.75*cellEdge radius
+  // instead grabbed a 4x4x4 = 64-brick core (~1.1 GB) that blew the whole budget
+  // and forced the floor up to L2, so nothing was actually finest. Keep it small.
+  let radius = MULTILOD_CELL_EDGE * 0.1
+  if (isMultiplanarView()) {
+    const zoom = Math.max(1, (nv?.pan2Dxyzmm as unknown as number[])?.[3] ?? 1)
+    const diagonal = Math.hypot(commonShape[0], commonShape[1], commonShape[2])
+    // Half-diagonal of the visible box (extent commonShape/zoom): the smallest
+    // radius whose finest-LOD ball still circumscribes the whole visible box, so
+    // ONLY the box is forced finest. A larger radius spreads the fine region past
+    // the box, blows the budget, and the box coarsens (big bricks -> loose clip).
+    radius = diagonal / (2 * zoom)
+  }
+  // The Level dropdown caps the finest level the octree may use (max detail);
+  // 0 = full detail. The common grid stays level 0, so geometry is unchanged.
+  const minLevel = Math.min(
+    Math.max(0, Number(els.level.value) || 0),
+    levels.length - 1,
+  )
+  // The niivue instance caps 3D textures at STREAMING_CHUNK_EDGE (the value we
+  // pass as maxTextureDimension3D), which is smaller than the raw GPU limit
+  // readMaxTexDim() reports. Plan to the value niivue will actually honor so no
+  // brick is sized larger than it can upload.
+  const deviceLimit = Math.min(readMaxTexDim(), STREAMING_CHUNK_EDGE)
+  lastMultiLodInfo = {
+    radius,
+    minLevel,
+    budgetGB: multiLodBudgetBytes() / (1024 * 1024 * 1024),
+    deviceLimit,
+    multiplanar: isMultiplanarView(),
+  }
+  const plan = chunkVolumeMultiLOD(levelDims, { center, radius }, deviceLimit, {
+    cellEdge: MULTILOD_CELL_EDGE,
+    haloSize: MULTILOD_HALO,
+    budgetBytes: multiLodBudgetBytes(),
+    minLevel,
+    maxBricks: MULTILOD_MAX_BRICKS,
+  })
+  // Multiplanar render coordination: clip the 3D render to the world box the
+  // zoomed 2D slices actually show (WYSIWYG). The 2D view shows volumeExtent/zoom
+  // centred on the crosshair, so keep only bricks intersecting that box and the
+  // render shows exactly the slice region. At zoom 1 the slices span the whole
+  // volume, so nothing is clipped. (Brick-granular: edge bricks render whole.)
+  const mpZoom = isMultiplanarView()
+    ? Math.max(1, (nv?.pan2Dxyzmm as unknown as number[])?.[3] ?? 1)
+    : 1
+  if (mpZoom > 1.001) {
+    const f = lastFocusFrac ?? [0.5, 0.5, 0.5]
+    const boxMin: Shape3 = [0, 0, 0]
+    const boxMax: Shape3 = [0, 0, 0]
+    for (let a = 0; a < 3; a++) {
+      const c = f[a] * commonShape[a]
+      const half = commonShape[a] / (2 * mpZoom)
+      boxMin[a] = c - half
+      boxMax[a] = c + half
+    }
+    plan.chunks = plan.chunks.filter((ch) => {
+      for (let a = 0; a < 3; a++) {
+        if (ch.voxelOrigin[a] + ch.voxelDims[a] <= boxMin[a]) return false
+        if (ch.voxelOrigin[a] >= boxMax[a]) return false
+      }
+      return true
+    })
+  }
+  if (initialParams.get('lodboxes') === '1') {
+    const counts = new Map<number, number>()
+    for (const c of plan.chunks) {
+      const l = c.sourceLevel ?? 0
+      counts.set(l, (counts.get(l) ?? 0) + 1)
+    }
+    // eslint-disable-next-line no-console
+    console.log('[multiLOD] inputs', {
+      levelDims,
+      center: center.map((n) => Math.round(n)),
+      radius,
+      deviceLimit,
+      cellEdge: MULTILOD_CELL_EDGE,
+      halo: MULTILOD_HALO,
+      budgetBytes: multiLodBudgetBytes(),
+      minLevel,
+      bricks: plan.chunks.length,
+      breakdown: [...counts.entries()].sort((a, b) => a[0] - b[0]),
+    })
+  }
+  return plan
+}
+
+// Diagnostics from the most recent multi-LOD plan build, surfaced in the HUD so
+// the live parameters (which control whether L0 can appear) are visible.
+let lastMultiLodInfo: {
+  radius: number
+  minLevel: number
+  budgetGB: number
+  deviceLimit: number
+  multiplanar: boolean
+} | null = null
+
+// Create a streaming NVImage whose chunk plan is the multi-LOD octree. Geometry
+// is built from the finest (common) grid; each brick fetches from its own level
+// via desc.sourceLevel in createStreamingVolume's chunkSource.
+function createMultiLodVolume(
+  v: VolumeApiEntry,
+  focusCenter?: Shape3,
+): NVImage | null {
+  const plan = buildMultiLodPlan(v, focusCenter)
+  if (!plan) return null
+  const commonShape = plan.volumeDims as Shape3
+  const vol = createStreamingVolume(v, 0, commonShape, plan)
+  // Window-aware surface pick: depth-pick marches this coarse sampler to the
+  // first visible voxel under the cursor (see ensureCoarsePickData).
+  vol.pickSampler = makeCoarsePickSampler(v)
+  return vol
+}
+
+// Outline the focused block as a box in the 3D render view: the single brick
+// that contains the focus point. Bricks are non-overlapping, so exactly one
+// contains it (the finest one there); boxing it makes the outline match that
+// block's size and grid alignment.
+function setMultiLodFocusBox(v: VolumeApiEntry, plan: ChunkPlan): void {
+  if (!nv) return
+  const finest = (v.levels ?? []).slice().sort((a, b) => a.level - b.level)[0]
+  if (!finest) return
+  const cs = plan.volumeDims as Shape3 // common (finest) grid
+  const sp = finest.spacing
+  const extentsMin: Shape3 = [-0.5 * sp[0], -0.5 * sp[1], -0.5 * sp[2]]
+  const extentsMax: Shape3 = [
+    (cs[0] - 0.5) * sp[0],
+    (cs[1] - 0.5) * sp[1],
+    (cs[2] - 0.5) * sp[2],
+  ]
+  const center: Shape3 = multiLodFocusCenter(cs)
+  const block = plan.chunks.find((c) => {
+    for (let a = 0; a < 3; a++) {
+      if (
+        center[a] < c.voxelOrigin[a] ||
+        center[a] >= c.voxelOrigin[a] + c.voxelDims[a]
+      ) {
+        return false
+      }
+    }
+    return true
+  })
+  if (!block) {
+    nv.focusBox = null
+    return
+  }
+  // When the blocks are exploded, the focused brick is displaced by its own
+  // explode offset; shift the box by the same mm so it tracks the block. Mirrors
+  // chunkExplodeOffsetFrac: ((centreFrac - 0.5)(scale - 1)) per axis.
+  const explode = currentChunkExplode()
+  const shiftMM: Shape3 = [0, 0, 0]
+  if (explode?.enabled) {
+    for (let a = 0; a < 3; a++) {
+      const scale = Math.max(1, explode.scale?.[a] ?? 1)
+      if (scale <= 1) continue
+      const centreFrac = (block.voxelOrigin[a] + block.voxelDims[a] / 2) / cs[a]
+      const offsetFrac = (centreFrac - 0.5) * (scale - 1)
+      shiftMM[a] = offsetFrac * (extentsMax[a] - extentsMin[a])
+    }
+  }
+  const toMM = (voxel: number, axis: number): number =>
+    extentsMin[axis] +
+    (voxel / cs[axis]) * (extentsMax[axis] - extentsMin[axis]) +
+    shiftMM[axis]
+  nv.focusBox = {
+    min: [
+      toMM(block.voxelOrigin[0], 0),
+      toMM(block.voxelOrigin[1], 1),
+      toMM(block.voxelOrigin[2], 2),
+    ],
+    max: [
+      toMM(block.voxelOrigin[0] + block.voxelDims[0], 0),
+      toMM(block.voxelOrigin[1] + block.voxelDims[1], 1),
+      toMM(block.voxelOrigin[2] + block.voxelDims[2], 2),
+    ],
+    color: [1, 0.6, 0.1, 1],
+    thickness: 2,
+  }
+  setMultiLodDebugBoxes(v, plan)
+}
+
+// Distinct outline color per LOD level (finest = hot red, coarsest = cool blue),
+// so the debug grid reads as a heat map of detail.
+const LOD_LEVEL_COLORS: number[][] = [
+  [1, 0.15, 0.15, 1], // L0 red
+  [1, 0.6, 0.1, 1], // L1 orange
+  [1, 1, 0.2, 1], // L2 yellow
+  [0.3, 1, 0.3, 1], // L3 green
+  [0.3, 0.7, 1, 1], // L4 blue
+  [0.7, 0.4, 1, 1], // L5 violet
+]
+
+// Debug overlay (`?lodboxes=1`): outline EVERY brick, colored by its LOD level,
+// so the heterogeneous plan is visible directly -- finest bricks are small and
+// red near the focus, coarse bricks large and blue at the edges. The box sizes
+// alone reveal the octree even before color. Off by default; clears otherwise.
+function setMultiLodDebugBoxes(v: VolumeApiEntry, plan: ChunkPlan): void {
+  if (!nv) return
+  if (initialParams.get('lodboxes') !== '1') {
+    nv.lodBoxes = null
+    return
+  }
+  const finest = (v.levels ?? []).slice().sort((a, b) => a.level - b.level)[0]
+  if (!finest) return
+  const cs = plan.volumeDims as Shape3
+  const sp = finest.spacing
+  const extentsMin: Shape3 = [-0.5 * sp[0], -0.5 * sp[1], -0.5 * sp[2]]
+  const extentsMax: Shape3 = [
+    (cs[0] - 0.5) * sp[0],
+    (cs[1] - 0.5) * sp[1],
+    (cs[2] - 0.5) * sp[2],
+  ]
+  const explode = currentChunkExplode()
+  const toMM = (voxel: number, axis: number, shift: number): number =>
+    extentsMin[axis] +
+    (voxel / cs[axis]) * (extentsMax[axis] - extentsMin[axis]) +
+    shift
+  const boxes = plan.chunks.map((c) => {
+    const level = c.sourceLevel ?? 0
+    const shiftMM: Shape3 = [0, 0, 0]
+    if (explode?.enabled) {
+      for (let a = 0; a < 3; a++) {
+        const scale = Math.max(1, explode.scale?.[a] ?? 1)
+        if (scale <= 1) continue
+        const centreFrac = (c.voxelOrigin[a] + c.voxelDims[a] / 2) / cs[a]
+        shiftMM[a] =
+          (centreFrac - 0.5) * (scale - 1) * (extentsMax[a] - extentsMin[a])
+      }
+    }
+    const color = LOD_LEVEL_COLORS[Math.min(level, LOD_LEVEL_COLORS.length - 1)]
+    return {
+      min: [
+        toMM(c.voxelOrigin[0], 0, shiftMM[0]),
+        toMM(c.voxelOrigin[1], 1, shiftMM[1]),
+        toMM(c.voxelOrigin[2], 2, shiftMM[2]),
+      ] as [number, number, number],
+      max: [
+        toMM(c.voxelOrigin[0] + c.voxelDims[0], 0, shiftMM[0]),
+        toMM(c.voxelOrigin[1] + c.voxelDims[1], 1, shiftMM[1]),
+        toMM(c.voxelOrigin[2] + c.voxelDims[2], 2, shiftMM[2]),
+      ] as [number, number, number],
+      color,
+      thickness: level === 0 ? 2 : 1,
+    }
+  })
+  nv.lodBoxes = boxes
+}
+
+// A scalar view over raw.bin bytes for the given dtype (little-endian, matching
+// the typed arrays on x86/ARM). Colour (rgb24) has no meaningful scalar window.
+function streamScalarView(
+  buf: ArrayBuffer,
+  dtype: string,
+): ArrayLike<number> | null {
+  switch (dtype) {
+    case 'uint8':
+      return new Uint8Array(buf)
+    case 'int8':
+      return new Int8Array(buf)
+    case 'uint16':
+      return new Uint16Array(buf)
+    case 'int16':
+      return new Int16Array(buf)
+    case 'uint32':
+      return new Uint32Array(buf)
+    case 'int32':
+      return new Int32Array(buf)
+    case 'float32':
+      return new Float32Array(buf)
+    case 'rgb24':
+      return null
+    default:
+      return new Uint16Array(buf)
+  }
+}
+
+// The coarsest pyramid level, resident in memory. Reused for the auto-window
+// percentiles AND the depth-pick surface march (first window-visible voxel).
+let coarsePick: {
+  id: string
+  data: ArrayLike<number>
+  shape: Shape3
+  extentsMin: Shape3
+  extentsMax: Shape3
+} | null = null
+
+// Fetch + cache the coarsest level for `v` (once per volume). The mm box uses
+// the FINEST grid (the multi-LOD volume's geometry), since the coarse level
+// covers the same physical extent.
+async function ensureCoarsePickData(v: VolumeApiEntry): Promise<void> {
+  if (coarsePick?.id === v.id) return
+  const levels = (v.levels ?? []).slice().sort((a, b) => a.level - b.level)
+  if (levels.length === 0) return
+  const finest = levels[0]
+  const coarse = levels[levels.length - 1]
+  const [sx, sy, sz] = coarse.shape
+  const url = `${baseUrl}/volumes/${encodeURIComponent(v.id)}/raw.bin?level=${coarse.level}&bbox=0,0,0,${sx},${sy},${sz}`
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return
+    const data = streamScalarView(await res.arrayBuffer(), v.dtype)
+    if (!data || data.length === 0) return
+    const fsp = finest.spacing
+    const fsh = finest.shape
+    coarsePick = {
+      id: v.id,
+      data,
+      shape: coarse.shape,
+      extentsMin: [-0.5 * fsp[0], -0.5 * fsp[1], -0.5 * fsp[2]],
+      extentsMax: [
+        (fsh[0] - 0.5) * fsp[0],
+        (fsh[1] - 0.5) * fsp[1],
+        (fsh[2] - 0.5) * fsp[2],
+      ],
+    }
+  } catch {
+    // leave coarsePick as-is; pick falls back to the bounding-box surface
+  }
+}
+
+// A window-aware value lookup in world mm over the resident coarse level, used
+// by the depth-pick surface march. Returns the voxel value when visible (>=
+// calMin), else 0 (transparent). Reads the current window each call so it tracks
+// window edits.
+function makeCoarsePickSampler(
+  v: VolumeApiEntry,
+): ((x: number, y: number, z: number) => number) | undefined {
+  const cp = coarsePick
+  if (!cp || cp.id !== v.id) return undefined
+  const { data, shape, extentsMin, extentsMax } = cp
+  const [cs0, cs1, cs2] = shape
+  const sx = extentsMax[0] - extentsMin[0] || 1
+  const sy = extentsMax[1] - extentsMin[1] || 1
+  const sz = extentsMax[2] - extentsMin[2] || 1
+  const fallbackMin = niftiDatatype(v.dtype).displayMin
+  return (x, y, z) => {
+    const fx = (x - extentsMin[0]) / sx
+    const fy = (y - extentsMin[1]) / sy
+    const fz = (z - extentsMin[2]) / sz
+    if (fx < 0 || fx >= 1 || fy < 0 || fy >= 1 || fz < 0 || fz >= 1) return 0
+    const vx = Math.min(cs0 - 1, Math.floor(fx * cs0))
+    const vy = Math.min(cs1 - 1, Math.floor(fy * cs1))
+    const vz = Math.min(cs2 - 1, Math.floor(fz * cs2))
+    const value = data[vx + vy * cs0 + vz * cs0 * cs1]
+    const calMin = parseWindow(els.window.value)?.min ?? fallbackMin
+    return value >= calMin && value > 0 ? value : 0
+  }
+}
+
+// Data-driven display window for a streamed volume: the full image is never in
+// memory, so sample the (tiny) resident coarsest level and take robust
+// percentiles. p80 as the low end pushes the bulk background/matrix below
+// calMin (transparent), p99.5 as the high end avoids a few bright outliers
+// blowing out the contrast — revealing the dense interior structure.
+async function computeStreamingWindow(
+  v: VolumeApiEntry,
+): Promise<{ min: number; max: number } | null> {
+  await ensureCoarsePickData(v)
+  if (coarsePick?.id !== v.id) return null
+  const view = coarsePick.data
+  if (view.length === 0) return null
+  // Subsample to cap the sort cost on large coarse levels.
+  const stride = Math.max(1, Math.floor(view.length / 200_000))
+  const samples: number[] = []
+  for (let i = 0; i < view.length; i += stride) {
+    const x = view[i]
+    if (Number.isFinite(x)) samples.push(x)
+  }
+  if (samples.length === 0) return null
+  samples.sort((a, b) => a - b)
+  const pct = (p: number): number =>
+    samples[Math.min(samples.length - 1, Math.floor(p * (samples.length - 1)))]
+  // calMax: high percentile so a few hot outliers don't compress the ramp.
+  const max = Math.round(pct(0.995))
+  // calMin: anchor to the background MODE, not a fixed low percentile. A fixed
+  // percentile breaks on background-dominated volumes -- e.g. the pig heart is
+  // ~80% voxels at value 0, so p80 lands exactly ON the background, leaving it
+  // opaque and filling the bounding box (a solid gray block). Finding the
+  // dominant low value (the peak of a coarse histogram over the lower half) and
+  // lifting calMin a little above it makes the background transparent whether it
+  // sits at 0 (pig heart) or ~13000 (pawpaw).
+  const lo = samples[0]
+  const hi = samples[samples.length - 1]
+  const span = hi - lo || 1
+  const bins = 256
+  const hist = new Array(bins).fill(0)
+  for (const x of samples) {
+    const b = Math.min(bins - 1, Math.floor(((x - lo) / span) * bins))
+    hist[b]++
+  }
+  let peak = 0
+  for (let b = 1; b < bins / 2; b++) if (hist[b] > hist[peak]) peak = b
+  const mode = lo + ((peak + 0.5) / bins) * span
+  const min = Math.round(mode + 0.1 * (max - mode))
+  if (!(max > min)) return null
+  return { min, max }
+}
+
+// Set a data-driven window for a streamed volume the first time it is shown,
+// unless the user has typed one. Shared by the multi-LOD and legacy stream paths.
+async function ensureStreamingWindow(v: VolumeApiEntry): Promise<void> {
+  if (els.window.value || autoWindowed.has(v.id)) return
+  const w = await computeStreamingWindow(v)
+  if (!w) return
+  autoWindowed.add(v.id)
+  els.window.value = `${w.min},${w.max}`
+}
+
 async function fetchRawChunk(
   id: string,
   level: number,
@@ -1099,7 +1842,36 @@ async function fetchRawChunk(
     fetchMs: (lastStats?.fetchMs ?? 0) + (performance.now() - t0),
     decodeMs: 0,
   }
+  // Verification aid (no visual change): confirm each brick really fetches its
+  // own pyramid level. With ?lodboxes=1, log a running tally per level so the
+  // console shows e.g. "L0 x8, L1 x15, ..." matching the plan breakdown.
+  if (initialParams.get('lodboxes') === '1') {
+    if (!multiLodFetchTally[level]) {
+      multiLodFetchTally[level] = { count: 0, bytes: 0 }
+    }
+    const t = multiLodFetchTally[level]
+    t.count++
+    t.bytes += buf.byteLength
+    // eslint-disable-next-line no-console
+    console.debug(
+      `[multiLOD fetch] L${level} #${t.count} bbox=${bbox.join(',')} ` +
+        `${(buf.byteLength / 1024).toFixed(0)}KB | tally ${multiLodFetchTallyString()}`,
+    )
+  }
   return new Uint8Array(buf)
+}
+
+// Per-level fetch tally for the ?lodboxes=1 verification log.
+const multiLodFetchTally: Record<number, { count: number; bytes: number }> = {}
+function multiLodFetchTallyString(): string {
+  return Object.keys(multiLodFetchTally)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((l) => {
+      const t = multiLodFetchTally[l]
+      return `L${l}:${t.count}(${(t.bytes / 1024 / 1024).toFixed(1)}MB)`
+    })
+    .join(' ')
 }
 
 function niftiDatatype(dtype: string): {
@@ -1239,6 +2011,41 @@ function bboxSize(bbox: Bbox6): Shape3 {
   return [bbox[3] - bbox[0], bbox[4] - bbox[1], bbox[5] - bbox[2]]
 }
 
+// HUD line for multi-resolution mode: brick count, per-level breakdown, and the
+// source level of the block under the focus (so you can see whether the focus is
+// actually finest, or the budget has coarsened it).
+function multiLodHudRow(): string {
+  const plan = nv?.volumes[0]?.chunkPlan
+  if (!plan || els.subvolume.value !== 'multilod') return ''
+  const counts = new Map<number, number>()
+  for (const c of plan.chunks) {
+    const l = c.sourceLevel ?? 0
+    counts.set(l, (counts.get(l) ?? 0) + 1)
+  }
+  const breakdown = [...counts.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([l, n]) => `L${l}:${n}`)
+    .join(' ')
+  const cs = plan.volumeDims
+  const f = lastFocusFrac ?? [0.5, 0.5, 0.5]
+  const center = [f[0] * cs[0], f[1] * cs[1], f[2] * cs[2]]
+  const block = plan.chunks.find(
+    (c) =>
+      center[0] >= c.voxelOrigin[0] &&
+      center[0] < c.voxelOrigin[0] + c.voxelDims[0] &&
+      center[1] >= c.voxelOrigin[1] &&
+      center[1] < c.voxelOrigin[1] + c.voxelDims[1] &&
+      center[2] >= c.voxelOrigin[2] &&
+      center[2] < c.voxelOrigin[2] + c.voxelDims[2],
+  )
+  const focusLevel = block ? `L${block.sourceLevel ?? 0}` : '—'
+  const info = lastMultiLodInfo
+  const params = info
+    ? ` · minL${info.minLevel} r${info.radius.toFixed(0)} ${info.budgetGB.toFixed(2)}GB dl${info.deviceLimit}${info.multiplanar ? ' MPR' : ''}`
+    : ''
+  return `<div class="row"><span class="key">multi-LOD</span><span>${plan.chunks.length} bricks · ${breakdown} · focus ${focusLevel}${params}</span></div>`
+}
+
 function buildGridSubvolumeBbox(
   shape: [number, number, number],
   tile: number,
@@ -1314,6 +2121,38 @@ function rememberFocusFromVoxel(vox: [number, number, number]): void {
   ]
 }
 
+// Cross X/Y/Z sliders move the crosshair (and therefore the multi-LOD focus)
+// directly in volume space, bypassing the ray-pick. Depth-picking can only land
+// on a voxel the clip plane exposes; these sliders let the user drive the focus
+// anywhere inside the volume regardless of the clip plane, which is the only way
+// to reach occluded interior on a solid volume like the pig heart.
+function applyCrosshairFromSliders(): void {
+  if (!nv || els.subvolume.value !== 'multilod') return
+  const frac: [number, number, number] = [
+    clamp01(Number(els.crossX.value)),
+    clamp01(Number(els.crossY.value)),
+    clamp01(Number(els.crossZ.value)),
+  ]
+  lastFocusFrac = frac
+  // crosshairPos is the scene fraction; for the axis-aligned single volume this
+  // demo loads it coincides with the volume fraction. Setting it both moves the
+  // 3D crosshair marker and auto-triggers a redraw.
+  nv.crosshairPos = frac
+  const plan = nv.volumes[0]?.chunkPlan
+  const v = currentVolume()
+  if (plan && v) setMultiLodFocusBox(v, plan)
+  scheduleMultiLodRefocus()
+}
+
+// Reflect the current focus back into the sliders (e.g. after a double-click
+// depth-pick) so they stay in sync as a navigation readout.
+function syncCrosshairSliders(): void {
+  if (!lastFocusFrac) return
+  els.crossX.value = String(lastFocusFrac[0])
+  els.crossY.value = String(lastFocusFrac[1])
+  els.crossZ.value = String(lastFocusFrac[2])
+}
+
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0.5
   return Math.max(0, Math.min(1, value))
@@ -1347,11 +2186,111 @@ function markCustomSubvolume(label: string): void {
 // so the user can keep zooming even while a right-click clip-plane drag is
 // in progress. The setter triggers drawScene; we also kick auto-LOD so the
 // pyramid level catches up.
+// 2D pan (mm) that centres the multiplanar view on the crosshair. niivue zooms
+// around volumeCentre - pan, so pan = volumeCentre - crosshair =
+// (extentsMax-extentsMin)*(0.5 - crosshairFrac). Zero at zoom 1 (whole volume).
+function multiplanarPanForCrosshair(): [number, number, number] {
+  if (!nv) return [0, 0, 0]
+  const vol = nv.volumes[0]
+  const frac = nv.crosshairPos as unknown as number[]
+  const lo = vol?.extentsMin
+  const hi = vol?.extentsMax
+  if (!lo || !hi || !frac) return [0, 0, 0]
+  return [
+    (hi[0] - lo[0]) * (0.5 - (frac[0] ?? 0.5)),
+    (hi[1] - lo[1]) * (0.5 - (frac[1] ?? 0.5)),
+    (hi[2] - lo[2]) * (0.5 - (frac[2] ?? 0.5)),
+  ]
+}
+
+// Crosshair position in world mm (scene fraction -> mm via the volume extents).
+function crosshairMM(): [number, number, number] | null {
+  if (!nv) return null
+  const vol = nv.volumes[0]
+  const frac = nv.crosshairPos as unknown as number[]
+  const lo = vol?.extentsMin
+  const hi = vol?.extentsMax
+  if (!lo || !hi || !frac) return null
+  return [
+    lo[0] + (frac[0] ?? 0.5) * (hi[0] - lo[0]),
+    lo[1] + (frac[1] ?? 0.5) * (hi[1] - lo[1]),
+    lo[2] + (frac[2] ?? 0.5) * (hi[2] - lo[2]),
+  ]
+}
+
+// Render-centring mode, chosen via ?center=:
+//   'pivot' (default) - orbit/zoom the render ABOUT the crosshair (renderPivotMM).
+//           Stays centred through rotation AND zoom; changes the rotation centre.
+//   'pan'   - slide renderPan so the crosshair sits at the render centre. Pins
+//           the crosshair on zoom/move; drifts under rotation.
+//   'off'   - no centring (render stays on the volume centre).
+function renderCenterMode(): 'pan' | 'pivot' | 'off' {
+  const m = initialParams.get('center')
+  if (m === 'pan' || m === 'off') return m
+  return 'pivot'
+}
+
+// Re-centre the 3D render on the crosshair (the focus). Deferred one frame so the
+// 'pan' mode reads the render MVP from the draw that applied the latest
+// zoom/rotation. 'pivot' mode just points the render pivot at the crosshair.
+function centerRenderOnCrosshair(): void {
+  if (!nv || !isMultiplanarView()) return
+  const mode = renderCenterMode()
+  const mm = crosshairMM()
+  if (mode === 'pivot') {
+    nv.renderPan = [0, 0] as unknown as typeof nv.renderPan
+    nv.renderPivotMM = (mm ?? null) as unknown as typeof nv.renderPivotMM
+    return
+  }
+  // 'pan' (and 'off' clears below): ensure no leftover pivot override.
+  nv.renderPivotMM = null as unknown as typeof nv.renderPivotMM
+  if (mode === 'off' || !mm) {
+    nv.renderPan = [0, 0] as unknown as typeof nv.renderPan
+    return
+  }
+  requestAnimationFrame(() => nv?.centerRenderOnMM(mm))
+}
+
+// Set the 2D zoom while keeping the crosshair at the centre of the view, and
+// frame the clipped 3D render to match. The 2D slices zoom via pan2Dxyzmm; the
+// 3D render quadrant zooms via scaleMultiplier. Coupling them so the render zoom
+// tracks the 2D zoom makes the clipped box USE the render space (instead of
+// shrinking into empty space as you zoom in) and keeps zoom in/out consistent.
+function applyMultiplanarZoom(zoom: number): void {
+  if (!nv) return
+  const pan = zoom > 1 ? multiplanarPanForCrosshair() : [0, 0, 0]
+  nv.pan2Dxyzmm = [pan[0], pan[1], pan[2], zoom] as unknown as [
+    number,
+    number,
+    number,
+    number,
+  ]
+  // At 2D zoom z the visible box is ~1/z of the volume, so a 3D camera zoom of z
+  // frames it.
+  ;(nv as unknown as { scaleMultiplier: number }).scaleMultiplier = zoom
+  // Rebase the render origin on the crosshair so an off-centre focus stays framed
+  // (see centerRenderOnCrosshair for the pan/pivot modes). At zoom 1 the whole
+  // volume is shown, so clear both the pan and the pivot override.
+  if (zoom > 1) {
+    centerRenderOnCrosshair()
+  } else {
+    nv.renderPan = [0, 0] as unknown as typeof nv.renderPan
+    nv.renderPivotMM = null as unknown as typeof nv.renderPivotMM
+  }
+}
+
 function applyZoomFromSlider(): void {
   if (!nv) return
   const v = Number(els.zoom.value)
   if (!Number.isFinite(v) || v <= 0) return
-  ;(nv as unknown as { scaleMultiplier: number }).scaleMultiplier = v
+  if (isMultiplanarView()) {
+    // Zooms the 2D slices AND frames the clipped 3D render (both inside).
+    applyMultiplanarZoom(v)
+    // The captured 2D region drives the multi-LOD focus radius — rebuild on settle.
+    if (els.subvolume.value === 'multilod') scheduleMultiLodRefocus()
+  } else {
+    ;(nv as unknown as { scaleMultiplier: number }).scaleMultiplier = v
+  }
   scheduleAutoLod()
 }
 
@@ -1482,6 +2421,7 @@ function scheduleAutoLod(): void {
   if (!nv) return
   if (parseBbox(els.bbox.value)) return // Don't override an explicit subvolume
   if (isStreamingMode()) return
+  if (els.subvolume.value === 'multilod') return // multi-LOD drives its own focus
   if (lodTimer) clearTimeout(lodTimer)
   lodTimer = setTimeout(evaluateAutoLod, 160)
 }
@@ -1515,15 +2455,21 @@ function evaluateAutoLod(): void {
 // 3D scalar first (sliceType=4 = render mode, which the demo uses) and
 // fall back to the 2D pan zoom scalar for multiplanar.
 function readViewerScale(viewer: NiiVue): number {
+  // Read the public controller getters (not viewer.scene, which isn't exposed).
   const rec = viewer as unknown as {
     scaleMultiplier?: number
-    scene?: { pan2Dxyzmm?: number[] }
+    pan2Dxyzmm?: ArrayLike<number>
+  }
+  // Multiplanar zoom lives in the 2D pan vector; render zoom in scaleMultiplier.
+  if (isMultiplanarView()) {
+    const z2d = rec.pan2Dxyzmm?.[3]
+    if (typeof z2d === 'number' && z2d > 0) return z2d
+    return 1
   }
   if (typeof rec.scaleMultiplier === 'number' && rec.scaleMultiplier > 0) {
     return rec.scaleMultiplier
   }
-  const pan = rec.scene?.pan2Dxyzmm
-  const z = pan?.[3]
+  const z = rec.pan2Dxyzmm?.[3]
   if (typeof z === 'number' && z > 0) return z
   return 1
 }
@@ -1626,6 +2572,7 @@ function renderHud(v: VolumeApiEntry, level: number): void {
     ${subvolumeRow}
     ${explodeRow}
     ${lodRow}
+    ${multiLodHudRow()}
     <div class="row"><span class="key">shape</span><span>${shownShape.join('×')} (${voxels.toLocaleString()} vox)</span></div>
     <div class="row"><span class="key">spacing (mm)</span><span>${formatSpacing(spacing)}</span></div>
     <div class="row"><span class="key">fetched</span><span>${fetchedText}</span></div>

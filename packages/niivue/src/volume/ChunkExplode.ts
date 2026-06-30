@@ -43,17 +43,35 @@ export function chunkExplodeOffsetFrac(
   const desc = plan.chunks[chunkIndex]
   if (!desc) return ZERO_OFFSET
   const scale = chunkExplodeScale(explode)
+  // Spread each brick radially from the volume centre by its own centre's
+  // fractional offset from 0.5. For a uniform grid this is identical to the
+  // legacy gridIndex formula ((i-(n-1)/2)(s-1)/n), but it depends only on the
+  // brick's world centre — so it also separates a heterogeneous multi-LOD
+  // octree, whose bricks share a degenerate gridIndex/gridDims.
+  const [vx, vy, vz] = plan.volumeDims
   return [
-    explodeAxisOffset(desc.gridIndex[0], plan.gridDims[0], scale[0]),
-    explodeAxisOffset(desc.gridIndex[1], plan.gridDims[1], scale[1]),
-    explodeAxisOffset(desc.gridIndex[2], plan.gridDims[2], scale[2]),
+    explodeAxisOffset(
+      desc.voxelOrigin[0] + desc.voxelDims[0] / 2,
+      vx,
+      scale[0],
+    ),
+    explodeAxisOffset(
+      desc.voxelOrigin[1] + desc.voxelDims[1] / 2,
+      vy,
+      scale[1],
+    ),
+    explodeAxisOffset(
+      desc.voxelOrigin[2] + desc.voxelDims[2] / 2,
+      vz,
+      scale[2],
+    ),
   ]
 }
 
-function explodeAxisOffset(index: number, gridDim: number, scale: number) {
-  if (gridDim <= 1 || scale <= 1) return 0
-  const center = (gridDim - 1) / 2
-  return ((index - center) * (scale - 1)) / gridDim
+function explodeAxisOffset(center: number, volumeDim: number, scale: number) {
+  if (volumeDim <= 0 || scale <= 1) return 0
+  const centreFrac = center / volumeDim
+  return (centreFrac - 0.5) * (scale - 1)
 }
 
 // Column-major gl-matrix mat4 that maps voxel -> mm exactly like
@@ -322,4 +340,52 @@ export function chunkExplodedMatRAS(
   out[11] += ox * matRAS[8] + oy * matRAS[9] + oz * matRAS[10]
   out[15] += ox * matRAS[12] + oy * matRAS[13] + oz * matRAS[14]
   return out
+}
+
+/**
+ * World-mm translation of the exploded block that contains the voxel at volume
+ * fraction `frac` ([0,1] per axis), or [0,0,0] when explode is off / the point is
+ * outside the volume / no block contains it. Used to shift an overlay (e.g. the
+ * 3D crosshair) onto its displaced block. Scans chunks, so it works for
+ * non-uniform (multi-LOD) plans — not just the uniform grid that
+ * `gridIndex`/`stride` assume. The translation matches `chunkExplodedMatRAS`.
+ */
+export function explodeOffsetMMAtFrac(
+  plan: ChunkPlan,
+  explode: ChunkExplodeOptions | null | undefined,
+  matRAS: ArrayLike<number>,
+  frac: ArrayLike<number>,
+): Vec3f {
+  if (!chunkExplodeEnabled(explode)) return [0, 0, 0]
+  const [vx, vy, vz] = plan.volumeDims
+  const voxel = [
+    Math.floor((frac[0] ?? 0.5) * vx),
+    Math.floor((frac[1] ?? 0.5) * vy),
+    Math.floor((frac[2] ?? 0.5) * vz),
+  ]
+  let chunkIndex = -1
+  for (let i = 0; i < plan.chunks.length; i++) {
+    const c = plan.chunks[i]
+    if (
+      voxel[0] >= c.voxelOrigin[0] &&
+      voxel[0] < c.voxelOrigin[0] + c.voxelDims[0] &&
+      voxel[1] >= c.voxelOrigin[1] &&
+      voxel[1] < c.voxelOrigin[1] + c.voxelDims[1] &&
+      voxel[2] >= c.voxelOrigin[2] &&
+      voxel[2] < c.voxelOrigin[2] + c.voxelDims[2]
+    ) {
+      chunkIndex = i
+      break
+    }
+  }
+  if (chunkIndex < 0) return [0, 0, 0]
+  const off = chunkExplodeOffsetFrac(plan, chunkIndex, explode)
+  const ox = off[0] * vx
+  const oy = off[1] * vy
+  const oz = off[2] * vz
+  return [
+    ox * matRAS[0] + oy * matRAS[1] + oz * matRAS[2],
+    ox * matRAS[4] + oy * matRAS[5] + oz * matRAS[6],
+    ox * matRAS[8] + oy * matRAS[9] + oz * matRAS[10],
+  ]
 }

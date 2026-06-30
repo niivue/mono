@@ -7,7 +7,7 @@ import {
   orderByViewCenter,
   unionChunkSets,
 } from './ChunkVisibility'
-import { chunkVolume } from './chunking'
+import { type ChunkPlan, chunkVolume, type Vec3i } from './chunking'
 
 /** Column-major 4x4 identity. */
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -156,6 +156,34 @@ describe('chunksBackToFront', () => {
     const plan = fourChunkPlan()
     expect(chunksBackToFront(plan, [0, 0, 0])).toEqual([0, 1, 2, 3])
     expect(chunksBackToFront(plan, [Number.NaN, 0, 0])).toEqual([0, 1, 2, 3])
+  })
+
+  test('orders mixed-size (multi-LOD) bricks by occlusion, not far corner', () => {
+    // Two non-overlapping bricks of very different shape, separated in y. For a
+    // diagonal +x+y ray their FAR corners tie (both project to 5), so the old
+    // far-corner scalar sort fell back to index order [0,1] — wrong, because the
+    // high-y brick (1) is farther and must be drawn first. The separating-axis
+    // comparator orders along y and gets [1,0].
+    const desc = (origin: Vec3i, dims: Vec3i): ChunkPlan['chunks'][number] => ({
+      voxelOrigin: origin,
+      voxelDims: dims,
+      haloLow: [0, 0, 0],
+      haloHigh: [0, 0, 0],
+      texDims: dims,
+      texOrigin: origin,
+      gridIndex: [0, 0, 0],
+    })
+    const plan: ChunkPlan = {
+      gridDims: [1, 1, 1],
+      stride: [4, 4, 2],
+      chunks: [desc([0, 0, 0], [4, 1, 2]), desc([0, 1, 0], [1, 3, 2])],
+      volumeDims: [4, 4, 2],
+      deviceLimit: 256,
+      haloSize: [0, 0, 0],
+    }
+    expect(chunksBackToFront(plan, [1, 1, 0])).toEqual([1, 0])
+    // Reversed ray: brick 0 (low y) is now farther and drawn first.
+    expect(chunksBackToFront(plan, [-1, -1, 0])).toEqual([0, 1])
   })
 })
 

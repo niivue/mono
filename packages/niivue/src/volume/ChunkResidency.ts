@@ -62,7 +62,7 @@ interface ResidentChunk<TChunk> {
 
 export class ChunkResidencyManager<TChunk> {
   /** Total chunks in the volume's plan, resident or not. */
-  readonly chunkCount: number
+  private _chunkCount: number
   private readonly _hooks: ChunkResidencyHooks<TChunk>
   private readonly _resident: Map<number, ResidentChunk<TChunk>> = new Map()
   private readonly _uploadQueue: number[] = []
@@ -70,15 +70,62 @@ export class ChunkResidencyManager<TChunk> {
   private _residentBytes = 0
   private _budgetBytes: number
   private _frame = 0
+  private _generation = 0
 
   constructor(
     chunkCount: number,
     budgetBytes: number,
     hooks: ChunkResidencyHooks<TChunk>,
   ) {
-    this.chunkCount = chunkCount
+    this._chunkCount = chunkCount
     this._budgetBytes = budgetBytes
     this._hooks = hooks
+  }
+
+  /** Total chunks in the volume's plan, resident or not. */
+  get chunkCount(): number {
+    return this._chunkCount
+  }
+
+  /**
+   * Adopt a new plan in place. `oldToNew` maps an old chunk index to the new
+   * index of the content-identical chunk (see `matchChunksByContent`): those
+   * resident chunks are re-keyed, keeping their GPU handle, byte total, and
+   * fade-in stamp (so unchanged bricks don't re-stream or re-fade). Resident
+   * chunks absent from the map are evicted (destroyed). The pending-upload
+   * queue is cleared — the next frame's working set re-requests what it needs.
+   */
+  remap(oldToNew: ReadonlyMap<number, number>, newChunkCount: number): void {
+    const next = new Map<number, ResidentChunk<TChunk>>()
+    for (const [oldIndex, r] of this._resident) {
+      const newIndex = oldToNew.get(oldIndex)
+      if (newIndex === undefined || next.has(newIndex)) {
+        this._hooks.destroy(r.chunk)
+        this._residentBytes -= r.bytes
+      } else {
+        next.set(newIndex, r)
+      }
+    }
+    this._resident.clear()
+    for (const [k, v] of next) this._resident.set(k, v)
+    this._uploadQueue.length = 0
+    this._inFlightUploads.clear()
+    this._chunkCount = newChunkCount
+    // Invalidate any in-flight upload captured against the old plan: a result
+    // returned after this point would `admit` at a re-keyed (or out-of-range)
+    // index. The pump captures `generation` before its await and discards a
+    // result whose generation no longer matches (see `discardUpload`).
+    this._generation++
+  }
+
+  /**
+   * Monotonic plan-generation counter, bumped on every `remap`. A backend upload
+   * pump captures this before an async `uploadChunk` and, on completion, must
+   * discard the result (via `discardUpload`) rather than `admit` it if the value
+   * has changed — otherwise a stale brick lands at a re-keyed index.
+   */
+  get generation(): number {
+    return this._generation
   }
 
   /** Advance the LRU clock. Call once per frame before consuming chunks. */
@@ -98,6 +145,15 @@ export class ChunkResidencyManager<TChunk> {
    * resident set now exceeds `budgetBytes` (see `_evictToFit`).
    */
   admit(chunkIndex: number, chunk: TChunk): void {
+    // Defend the keyspace against a stale upload (a result captured against an
+    // older plan whose index is now out of range). Destroy it rather than
+    // corrupt `_resident` / `_residentBytes`. In-plan stale results are caught
+    // earlier by the pump's generation check (`discardUpload`).
+    if (chunkIndex < 0 || chunkIndex >= this._chunkCount) {
+      this._hooks.destroy(chunk)
+      this._inFlightUploads.delete(chunkIndex)
+      return
+    }
     const prev = this._resident.get(chunkIndex)
     if (prev) {
       this._hooks.destroy(prev.chunk)
@@ -247,6 +303,16 @@ export class ChunkResidencyManager<TChunk> {
    * A later working-set request may enqueue the chunk again.
    */
   failUpload(chunkIndex: number): void {
+    this._inFlightUploads.delete(chunkIndex)
+  }
+
+  /**
+   * Drop an upload result that completed after a `remap` changed the plan
+   * (generation mismatch): destroy its GPU handle and clear the in-flight mark.
+   * The next frame's working set re-requests whatever the new plan needs.
+   */
+  discardUpload(chunkIndex: number, chunk: TChunk): void {
+    this._hooks.destroy(chunk)
     this._inFlightUploads.delete(chunkIndex)
   }
 

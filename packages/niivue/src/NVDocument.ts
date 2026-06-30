@@ -24,11 +24,23 @@ import type {
   VectorAnnotation,
   VolumeRenderConfig,
 } from '@/NVTypes'
+import {
+  reconstructSignal,
+  type SerializedSignal,
+  serializeSignal,
+} from '@/signal/persistence'
 import type { NVSlideManifest } from '@/slide/NVSlide'
 import type { SlideVectorShape } from '@/slide/slideVector'
 import * as NVVolume from '@/volume/NVVolume'
 import { computeVolumeLabelCentroids } from '@/volume/utils'
 
+// v8 added two independent optional, additive fields: the `signals` array
+// (NVSignal persistence, incl. each signal's optional `annotations`) and the
+// `slidePlane` object (registered NVSlide plane + its slide-space drawing).
+// Both are optional and round-trip as absent on readers/writers that lack them
+// (forward- and backward-compatible), so they share one version. Later additive
+// optional volume fields (e.g. `modulationImage`) likewise did NOT bump the
+// version. Bump only when adding a field that older code would misread.
 const DOCUMENT_VERSION = 8
 
 /**
@@ -54,6 +66,7 @@ export type NVDocumentVolume = {
   colormapType?: number
   isTransparentBelowCalMin?: boolean
   modulateAlpha?: number
+  modulationImage?: string
   isColorbarVisible?: boolean
   isLegendVisible?: boolean
   frame4D?: number
@@ -200,6 +213,7 @@ export type NVDocumentData = {
   drawingBitmapLength?: number
   volumes: NVDocumentVolume[]
   meshes: NVDocumentMesh[]
+  signals?: SerializedSignal[]
   annotations?: VectorAnnotation[]
   annotationConfig?: AnnotationConfig
   /** Registered slide plane + its slide-space drawing (v8+). */
@@ -275,6 +289,7 @@ export function serialize(
       colormapType: v.colormapType,
       isTransparentBelowCalMin: v.isTransparentBelowCalMin,
       modulateAlpha: v.modulateAlpha,
+      modulationImage: v.modulationImage,
       isColorbarVisible: v.isColorbarVisible,
       isLegendVisible: v.isLegendVisible,
       frame4D: v.frame4D,
@@ -419,6 +434,8 @@ export function serialize(
     return mesh
   })
 
+  const signals: SerializedSignal[] = model.signals.map(serializeSignal)
+
   const doc: NVDocumentData = {
     version: DOCUMENT_VERSION,
     created: new Date().toISOString(),
@@ -462,6 +479,7 @@ export function serialize(
       : undefined,
     volumes,
     meshes,
+    signals: signals.length > 0 ? signals : undefined,
     annotations: model.annotations.length > 0 ? model.annotations : undefined,
     annotationConfig: { ...model.annotation },
     slidePlane,
@@ -553,6 +571,16 @@ export function applyDocumentToModel(
     model.annotation = { ...NVConstants.ANNOTATION_DEFAULTS }
   }
 
+  // Restore signals (data is embedded, so no async fetch is needed). Route each
+  // through addSignal so unique-id handling and graph-cache invalidation run (a
+  // direct `model.signals = ...` would skip both, leaving a stale _assocCache for
+  // the new signal set). Reset the cursor AND the zoom/pan window so a window
+  // from the previous scene isn't clamped onto the restored graph.
+  model.signals = []
+  for (const sig of doc.signals ?? []) model.addSignal(reconstructSignal(sig))
+  model.signalCursorX = null
+  model.signalViewWindow = null
+
   // Drawing bitmap restoration is handled by the controller's loadDocument()
   // after volumes are reconstructed, since we need a background volume to
   // create the drawingVolume.
@@ -622,6 +650,11 @@ export async function reconstructVolume(
       if (v.isLegendVisible !== undefined)
         vol.isLegendVisible = v.isLegendVisible
       if (v.frame4D !== undefined) vol.frame4D = v.frame4D
+      // The modulator link is just a volume-id string; resolution is deferred
+      // to render time (find-by-id), so it is safe even if the modulator volume
+      // is restored later in this loop.
+      if (v.modulationImage !== undefined)
+        vol.modulationImage = v.modulationImage
       // Restore label colormap if present in document
       if (v.colormapLabel) {
         const lutData = v.colormapLabel.lut

@@ -219,6 +219,41 @@ Touch/iPad: ≥44px targets, no hover-only reveals, full-width inputs with expli
 min-width (the zero-width-grid collapse bug recurs otherwise), one row open at a
 time to stay thumb-scrollable.
 
+### Review pass 2026-06-30 (post-redesign viewer)
+
+Fresh researcher + clinician pass after the layer redesign / threshold / guard /
+wheel-paging work. Several findings are regressions-of-trust in the *new*
+features — a control that can quietly mislead is worse than no control.
+
+- [ ] **[P1] (S) Stat-overlay threshold can hide signal silently — surface the
+  cutoff.** The auto-threshold seeds `calMin = robustMax` (98th pct → only top
+  ~2% of voxels shown) and the Threshold field reads **"auto"**, not the actual
+  value. An overlay can look empty on a slice when sub-threshold-but-real signal
+  exists, with nothing flagging that the map is aggressively thresholded. Show
+  the *effective* threshold/max numbers (resolve "auto" to the seeded values),
+  soften the default, and add a one-click "show all / threshold off". Our own
+  Phase E debt.
+- [ ] **[P1] (M) Mismatch guard is subject-only — don't let "no warning" read as
+  "match".** Warns on different BIDS `sub-`, but non-BIDS data (e.g. spm152 +
+  spmMotor) never warns and same-subject different-space (native T1 + MNI stat)
+  never warns. Add the world-extent/affine space check (post-load readback via
+  `loadedVersion`) and/or make the guard's scope explicit so absence-of-warning
+  isn't false reassurance. Completes the geometry/subject guard.
+- [ ] **[P2] (S) Slice locator + consistent wheel direction.** Wheel paging has
+  no "slice N/total" or persistent through-plane position (only transient mm in
+  the status bar), and steps in voxel space so scroll direction flips by volume
+  orientation. Add a slice-position readout and page in mm for a consistent
+  up=superior feel (`sliceWheelStep`).
+- [ ] **[P2] (S) Add-overlay guard rail.** The pool blends any of 157 unrelated
+  dataset volumes onto the base with only the subject check as a rail — easy to
+  mis-add. Consider surfacing relationship (same subject/space) in the pool or a
+  confirm on a clearly-mismatched add.
+
+(Already tracked but **raised in priority** by this pass: Save/share full view
+state — now the only way to capture the new per-layer settings, whose defaults
+show "auto"; on-screen orientation convention; affine/qform/sform; persistent
+RAS+value widget.)
+
 ### High-trust cheap wins — data already plumbed, just surface it
 
 - [x] **[P2] (S) Surface the niimath command + stderr.** The Rust side already

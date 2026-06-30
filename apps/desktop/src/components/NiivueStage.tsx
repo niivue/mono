@@ -18,6 +18,9 @@ interface NiivueStageProps {
   // item id), including auto-seeded defaults — so the UI can show the effective
   // threshold/range instead of a bare "auto".
   onResolvedWindows?: (windows: Record<string, { min: number; max: number }>) => void
+  // Reports each loaded layer's world-space (mm) bounding box, keyed by item id,
+  // so the UI can warn when an overlay doesn't share the base's space.
+  onLayerExtents?: (extents: Record<string, { min: number[]; max: number[] }>) => void
   onViewModeChange: (mode: ViewModeId) => void
 }
 
@@ -37,10 +40,16 @@ export interface NiivueRenderLayer {
 interface NiiVueLike {
   canvas?: HTMLCanvasElement
   // Loaded volumes, in the same order as the render layers. robustMin/robustMax
-  // are NiiVue's auto window (2nd/98th percentile); globalMax is the true peak.
-  // Used to restore the auto range when a window is cleared, and to seed a
-  // default threshold for stat overlays.
-  volumes?: Array<{ robustMin?: number; robustMax?: number; globalMax?: number }>
+  // are NiiVue's auto window (2nd/98th percentile); globalMax is the true peak;
+  // extentsMin/Max are the volume's world-space (mm) bounding box, used to flag
+  // overlays that land in a different space than the base.
+  volumes?: Array<{
+    robustMin?: number
+    robustMax?: number
+    globalMax?: number
+    extentsMin?: ArrayLike<number>
+    extentsMax?: ArrayLike<number>
+  }>
   activeClipPlaneIndex?: number
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(volumes: NiiVueVolumeOptions[]): Promise<unknown>
@@ -228,6 +237,7 @@ export function NiivueStage({
   onClipPlaneDepthChange,
   onLocationChange,
   onResolvedWindows,
+  onLayerExtents,
   onViewModeChange
 }: NiivueStageProps): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -398,6 +408,24 @@ export function NiivueStage({
     onResolvedWindows?.(resolved)
     // loadedVersion: re-apply once post-load stats exist (threshold defaults).
   }, [layers, loadedVersion, onResolvedWindows])
+
+  // Report each layer's world-space bounding box once loaded, so the panel can
+  // flag overlays that don't share the base's space.
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv || !onLayerExtents) return
+    const extents: Record<string, { min: number[]; max: number[] }> = {}
+    layers.forEach((layer, index) => {
+      const volume = nv.volumes?.[index]
+      if (volume?.extentsMin && volume?.extentsMax) {
+        extents[layer.item.id] = {
+          min: Array.from(volume.extentsMin),
+          max: Array.from(volume.extentsMax)
+        }
+      }
+    })
+    onLayerExtents(extents)
+  }, [layers, loadedVersion, onLayerExtents])
 
   // Apply the selected view mode (2D slice plane, multiplanar, or 3D render) to
   // the live instance. NiiVue exposes sliceType as a setter, so this never

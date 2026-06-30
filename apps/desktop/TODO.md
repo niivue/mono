@@ -234,12 +234,17 @@ features — a control that can quietly mislead is worse than no control.
   `resolvedWindows`, `WindowControl` renders it dimmed. **Remaining:** soften the
   default (robustMax = top 2% is steep), and a one-click "show all / threshold
   off" (needs the volume's global min plumbed alongside).
-- [ ] **[P1] (M) Mismatch guard is subject-only — don't let "no warning" read as
-  "match".** Warns on different BIDS `sub-`, but non-BIDS data (e.g. spm152 +
-  spmMotor) never warns and same-subject different-space (native T1 + MNI stat)
-  never warns. Add the world-extent/affine space check (post-load readback via
-  `loadedVersion`) and/or make the guard's scope explicit so absence-of-warning
-  isn't false reassurance. Completes the geometry/subject guard.
+- [x] **[P1] (M) Mismatch guard is subject-only — don't let "no warning" read as
+  "match".** Done: added a **world-space** check alongside the subject check.
+  NiivueStage reports each layer's world bounding box (`onLayerExtents`, post-load
+  via `loadedVersion`); `layerSpaceWarning` flags an overlay whose box overlaps
+  the base's by < 50% (intersection-over-smaller — ~1.0 for co-registered volumes
+  at any resolution, → 0 for a different space). This catches the **non-BIDS** and
+  **same-subject-different-space** cases the subject check misses; `layerWarning`
+  combines them (subject first). Verified live: cactus base + ds000001 overlay →
+  "0% world overlap" warning (subject check is silent there). Threshold 0.5 is
+  tunable; co-registered no-false-positive is logically sound (nested boxes) but
+  wasn't re-tested with a coregistered pair this session.
 - [ ] **[P2] (S) Slice locator + consistent wheel direction.** Wheel paging has
   no "slice N/total" or persistent through-plane position (only transient mm in
   the status bar), and steps in voxel space so scroll direction flips by volume

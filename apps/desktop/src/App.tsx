@@ -119,6 +119,12 @@ type SidePanelTab = 'inspect' | 'operations'
 // field) means "use the default": NiiVue's robust auto range for `window`, the
 // role-based fallback for `colormap`. Opacity/hidden/threshold land in later
 // phases of the layer-controls redesign.
+// A layer's world-space (mm) axis-aligned bounding box, as reported by NiiVue.
+interface LayerExtent {
+  min: number[]
+  max: number[]
+}
+
 interface LayerSettings {
   colormap?: string
   opacity?: number
@@ -172,6 +178,12 @@ export function App(): JSX.Element {
     },
     []
   )
+  // Per-layer world-space bounding boxes, reported from NiivueStage after load,
+  // used to flag overlays that land in a different space than the base.
+  const [layerExtents, setLayerExtents] = useState<Record<string, LayerExtent>>({})
+  const handleLayerExtents = useCallback((next: Record<string, LayerExtent>) => {
+    setLayerExtents((prev) => (extentsEqual(prev, next) ? prev : next))
+  }, [])
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
   const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
   const [atlasId, setAtlasId] = useState<string | null>(null)
@@ -719,6 +731,7 @@ export function App(): JSX.Element {
               item={selected}
               layers={renderLayers}
               onClipPlaneDepthChange={changeClipPlaneDepth}
+              onLayerExtents={handleLayerExtents}
               onLocationChange={setLocationReadout}
               onResolvedWindows={handleResolvedWindows}
               onViewModeChange={setViewMode}
@@ -825,6 +838,7 @@ export function App(): JSX.Element {
                   isOpeningOverlay={isOpeningOverlay}
                   items={items}
                   layerSettings={layerSettings}
+                  layerExtents={layerExtents}
                   resolvedWindows={resolvedWindows}
                   overlayIds={overlayIds}
                   selected={selected}
@@ -983,6 +997,7 @@ function LayerPanel({
   isOpeningOverlay,
   items,
   layerSettings,
+  layerExtents,
   resolvedWindows,
   overlayIds,
   selected,
@@ -999,6 +1014,7 @@ function LayerPanel({
   isOpeningOverlay: boolean
   items: DesktopItem[]
   layerSettings: Record<string, LayerSettings>
+  layerExtents: Record<string, LayerExtent>
   resolvedWindows: Record<string, { min: number; max: number }>
   overlayIds: Set<string>
   selected: DesktopItem | null
@@ -1040,8 +1056,8 @@ function LayerPanel({
   // explicitly expanded so the base controls are visible on load.
   const rowIds = rows.map((row) => row.item.id)
   const expanded = expandedId && rowIds.includes(expandedId) ? expandedId : selected?.id ?? null
-  const subjectMismatches = rows
-    .map((row) => layerSubjectWarning(selected, row.item))
+  const mismatches = rows
+    .map((row) => layerWarning(selected, row.item, layerExtents))
     .filter((warning): warning is string => warning !== null)
 
   return (
@@ -1054,13 +1070,13 @@ function LayerPanel({
         <em>{selected ? `${extras} extra` : 'none'}</em>
       </div>
 
-      {subjectMismatches.length > 0 ? (
+      {mismatches.length > 0 ? (
         <div className="nv-layer-banner" role="alert">
           <AlertTriangle size={14} />
           <span>
-            {subjectMismatches.length === 1
-              ? subjectMismatches[0]
-              : `${subjectMismatches.length} layers are a different subject than the base — verify this is the same study.`}
+            {mismatches.length === 1
+              ? mismatches[0]
+              : `${mismatches.length} layers may not match the base — verify subject and alignment.`}
           </span>
         </div>
       ) : null}
@@ -1086,7 +1102,7 @@ function LayerPanel({
                 role={role}
                 label={item.label}
                 meta={layerOptionMeta(item)}
-                warning={layerSubjectWarning(selected, item)}
+                warning={layerWarning(selected, item, layerExtents)}
                 hidden={!!settings?.hidden}
                 expanded={expanded === item.id}
                 removable={role !== 'base'}
@@ -1955,6 +1971,72 @@ function layerSubjectWarning(base: DesktopItem | null, item: DesktopItem): strin
     return `Different subject (${here}) than the base (${there}) — verify this is the same study.`
   }
   return null
+}
+
+function extentsEqual(
+  a: Record<string, LayerExtent>,
+  b: Record<string, LayerExtent>
+): boolean {
+  const aKeys = Object.keys(a)
+  if (aKeys.length !== Object.keys(b).length) return false
+  return aKeys.every((id) => {
+    const ea = a[id]
+    const eb = b[id]
+    return (
+      !!eb &&
+      ea.min.length === eb.min.length &&
+      ea.min.every((value, i) => value === eb.min[i]) &&
+      ea.max.length === eb.max.length &&
+      ea.max.every((value, i) => value === eb.max[i])
+    )
+  })
+}
+
+function boxVolume(box: LayerExtent): number {
+  let volume = 1
+  for (let i = 0; i < 3; i += 1) volume *= Math.max(0, box.max[i] - box.min[i])
+  return volume
+}
+
+// Fraction of the smaller box that lies inside the larger one. ~1 for
+// co-registered volumes even at different resolution/FOV; → 0 for volumes in a
+// different space (e.g. subject-native overlay on an MNI base). Below this we
+// flag a possible space mismatch — caught even when subjects aren't BIDS-known.
+const SPACE_OVERLAP_MIN = 0.5
+
+function layerSpaceWarning(
+  base: LayerExtent | undefined,
+  item: LayerExtent | undefined
+): string | null {
+  if (!base || !item || base.min.length < 3 || item.min.length < 3) return null
+  let intersection = 1
+  for (let i = 0; i < 3; i += 1) {
+    const low = Math.max(base.min[i], item.min[i])
+    const high = Math.min(base.max[i], item.max[i])
+    intersection *= Math.max(0, high - low)
+  }
+  const smaller = Math.min(boxVolume(base), boxVolume(item))
+  if (smaller <= 0) return null
+  const overlap = intersection / smaller
+  if (overlap < SPACE_OVERLAP_MIN) {
+    return `Different space than the base (${Math.round(overlap * 100)}% world overlap) — the overlay may be mislocated.`
+  }
+  return null
+}
+
+// The mismatch warning for a non-base layer vs the base, if any: a known
+// different BIDS subject, else a different world space. Subject takes
+// precedence (more specific); space catches the non-BIDS / same-subject cases.
+function layerWarning(
+  base: DesktopItem | null,
+  item: DesktopItem,
+  layerExtents: Record<string, LayerExtent>
+): string | null {
+  if (!base || item.id === base.id) return null
+  return (
+    layerSubjectWarning(base, item) ??
+    layerSpaceWarning(layerExtents[base.id], layerExtents[item.id])
+  )
 }
 
 async function savePatch(

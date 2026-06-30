@@ -718,6 +718,26 @@ describe('chunkVolumeMultiLOD', () => {
     const sum = plan.chunks.reduce((s, c) => s + brickVolume(c), 0)
     expect(sum).toBe(256 * 256 * 256)
   })
+
+  test('maxBricks coarsens the root grid until the cap is met', () => {
+    // A small cellEdge tiles this pyramid into a 4x4x4 = 64-box root grid. The
+    // detail/floor passes refine toward the focus but never coarsen the ROOT
+    // grid, so honoring a small maxBricks requires growing the root cell. A tight
+    // focus keeps refinement (and thus the test) cheap.
+    const tightFocus = { center: [256, 256, 256] as Vec3i, radius: 8 }
+    const uncapped = chunkVolumeMultiLOD(pyramid, tightFocus, 2048, {
+      cellEdge: 16,
+    })
+    expect(uncapped.chunks.length).toBeGreaterThan(8)
+    const capped = chunkVolumeMultiLOD(pyramid, tightFocus, 2048, {
+      cellEdge: 16,
+      maxBricks: 8,
+    })
+    expect(capped.chunks.length).toBeLessThanOrEqual(8)
+    // Coarsening the root never drops coverage.
+    const sum = capped.chunks.reduce((s, c) => s + brickVolume(c), 0)
+    expect(sum).toBe(512 * 512 * 512)
+  })
 })
 
 describe('matchChunksByContent', () => {

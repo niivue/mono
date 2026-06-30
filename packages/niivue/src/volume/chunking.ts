@@ -710,7 +710,11 @@ export function chunkVolumeMultiLOD(
   // Recursive octree: a node at `level` covers a common-grid box. If a finer
   // level is desired for its region (and it is divisible), split into octants
   // and recurse one level finer; otherwise emit it as a brick.
-  const build = (detail: number, floor: number): VolumeChunkDesc[] => {
+  const build = (
+    detail: number,
+    floor: number,
+    rootScale = 1,
+  ): VolumeChunkDesc[] => {
     const chunks: VolumeChunkDesc[] = []
     const subdivide = (originC: Vec3i, sizeC: Vec3i, level: number): void => {
       const divisible = sizeC[0] > 1 || sizeC[1] > 1 || sizeC[2] > 1
@@ -753,7 +757,7 @@ export function chunkVolumeMultiLOD(
     const rootSpan: Vec3i = [0, 0, 0]
     for (let a = 0; a < 3; a++) {
       const scale = commonDims[a] / levelDims[maxLevel][a] // common voxels / level voxel
-      rootSpan[a] = Math.max(1, Math.round(cellEdge * scale))
+      rootSpan[a] = Math.max(1, Math.round(cellEdge * rootScale * scale))
     }
     for (let z = 0; z < commonDims[2]; z += rootSpan[2]) {
       for (let y = 0; y < commonDims[1]; y += rootSpan[1]) {
@@ -802,6 +806,24 @@ export function chunkVolumeMultiLOD(
     while (overBudget(chunks) && floor < maxLevel) {
       floor++
       chunks = build(detail, floor)
+    }
+    // The detail/floor passes refine toward the focus but never coarsen the ROOT
+    // grid, so a small `cellEdge` on a large volume can leave the root box count
+    // above `maxBricks` even at floor === maxLevel. Grow the root cell (fewer,
+    // larger bricks) until the cap is met — bounded so a root brick never exceeds
+    // the device texture limit. If the cap is still unreachable at the limit, the
+    // volume genuinely cannot fit `maxBricks` device-sized bricks (rare).
+    if (chunks.length > maxBricks) {
+      const maxHalo = Math.max(halo[0], halo[1], halo[2])
+      const maxRootScale = Math.max(
+        1,
+        Math.floor((deviceLimit - 2 * maxHalo) / cellEdge),
+      )
+      let rootScale = 1
+      while (chunks.length > maxBricks && rootScale < maxRootScale) {
+        rootScale = Math.min(maxRootScale, rootScale * 2)
+        chunks = build(detail, maxLevel, rootScale)
+      }
     }
   }
 

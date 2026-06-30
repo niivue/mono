@@ -317,6 +317,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
             penSize: ctrl.model.draw.penSize,
             penAxCorSag: ctrl._drawPenAxCorSag,
             penOverwrites: ctrl.model.draw.isFillOverwriting,
+            isCircle: ctrl.isCircle,
           })
           ctrl.refreshDrawing()
           ctrl.setCrosshairPos(mm)
@@ -483,6 +484,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
             penSize: ctrl.model.draw.penSize,
             penAxCorSag: ctrl._drawPenAxCorSag,
             penOverwrites: ctrl.model.draw.isFillOverwriting,
+            isCircle: ctrl.isCircle,
           })
         }
         if (ctrl.drawPenFilled && ctrl._drawPenFillPts.length > 2) {
@@ -784,6 +786,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               penSize: ctrl.model.draw.penSize,
               penAxCorSag: ctrl._drawPenAxCorSag,
               penOverwrites: ctrl.model.draw.isFillOverwriting,
+              isCircle: ctrl.isCircle,
             })
             ctrl._drawPenLocation = newPt
             ctrl._drawPenFillPts.push(newPt.slice())

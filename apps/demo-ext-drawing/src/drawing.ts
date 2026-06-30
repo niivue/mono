@@ -26,6 +26,7 @@ const sliceTypeSelect = $<HTMLSelectElement>('sliceType')
 const useWebGPUCb = $<HTMLInputElement>('useWebGPU')
 const enableDrawBtn = $<HTMLButtonElement>('enableDrawBtn')
 const penColorSelect = $<HTMLSelectElement>('penColor')
+const penShapeSelect = $<HTMLSelectElement>('penShape')
 const penSizeInput = $<HTMLInputElement>('penSize')
 const penFilledCb = $<HTMLInputElement>('penFilled')
 const undoBtn = $<HTMLButtonElement>('undoBtn')
@@ -97,6 +98,10 @@ enableDrawBtn.onclick = () => {
 
 penColorSelect.onchange = () => {
   nv.drawPenValue = parseInt(penColorSelect.value, 10)
+}
+
+penShapeSelect.onchange = () => {
+  nv.isCircle = (penShapeSelect.value === '0')
 }
 
 penSizeInput.oninput = () => {

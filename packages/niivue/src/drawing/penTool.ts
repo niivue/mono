@@ -17,6 +17,7 @@ export interface DrawPointParams {
   penSize: number
   penAxCorSag: number
   penOverwrites?: boolean
+  isCircle?: boolean
 }
 
 export interface DrawLineParams {
@@ -28,6 +29,7 @@ export interface DrawLineParams {
   penSize: number
   penAxCorSag: number
   penOverwrites?: boolean
+  isCircle?: boolean
 }
 
 export interface FloodFillSectionParams {
@@ -77,6 +79,7 @@ export function drawPoint(params: DrawPointParams): void {
     penSize,
     penAxCorSag,
     penOverwrites,
+    isCircle = false,
   } = params
   const skip = penOverwrites === false && penValue !== 0
 
@@ -98,9 +101,13 @@ export function drawPoint(params: DrawPointParams): void {
     const isAx = penAxCorSag === PEN_SLICE_TYPE.AXIAL
     const isCor = penAxCorSag === PEN_SLICE_TYPE.CORONAL
     const isSag = penAxCorSag === PEN_SLICE_TYPE.SAGITTAL
+    const radius = penSize / 2
 
     for (let i = -halfPenSize; i <= halfPenSize; i++) {
       for (let j = -halfPenSize; j <= halfPenSize; j++) {
+
+        if (isCircle && i * i + j * j >= radius * radius) continue
+
         let nx: number, ny: number, nz: number
 
         if (isAx) {
@@ -138,6 +145,7 @@ export function drawLine(params: DrawLineParams): void {
     penSize,
     penAxCorSag,
     penOverwrites,
+    isCircle = false,
   } = params
 
   const dx = Math.abs(ptA[0] - ptB[0])
@@ -166,6 +174,7 @@ export function drawLine(params: DrawLineParams): void {
     penSize,
     penAxCorSag,
     penOverwrites,
+    isCircle,
   }
 
   if (dx >= dy && dx >= dz) {

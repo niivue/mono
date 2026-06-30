@@ -234,6 +234,7 @@ export default class NiiVueGPU extends EventTarget {
   _drawingDirty = false
   drawPenAutoClose = false
   drawPenFilled = false
+  isCircle = false
   // Undo state (controller-owned — not persisted in documents)
   drawUndoBitmaps: Uint8Array[] = []
   currentDrawUndoBitmap = -1

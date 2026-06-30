@@ -913,6 +913,7 @@ export default class NVView {
           tileVol.extentsMin,
           tileVol.extentsMax,
           tileVol.obliqueRAS,
+          true, // WebGPU: [0,1] NDC depth (perspectiveZO)
         )
         mvpMatrix = mvp3d[0]
         normalMatrix = mvp3d[2]

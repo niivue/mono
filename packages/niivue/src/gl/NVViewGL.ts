@@ -975,8 +975,9 @@ export default class NVGlview {
       // Layer 2b-xray: Mesh X-ray pass (depth disabled, reduced opacity)
       const xrayAlpha = md.mesh.xRay
       if (xrayAlpha > 0) {
-        // Re-draw crosshairs with xray (skip on all mosaic tiles)
+        // Re-draw crosshairs with xray (skip on all mosaic tiles and global3d)
         if (
+          tile.space !== 'global3d' &&
           md.ui.is3DCrosshairVisible &&
           !isMosaicTile &&
           this.crosshairRenderer.isReady
@@ -1024,8 +1025,9 @@ export default class NVGlview {
         )
         this.polygon3DRenderer.endPasses(gl)
       }
-      // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders)
+      // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders and global3d)
       if (
+        tile.space !== 'global3d' &&
         tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
         tile.renderOrientation === undefined &&
         md.ui.isOrientCubeVisible &&

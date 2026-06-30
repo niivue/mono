@@ -414,7 +414,7 @@ export default class NVModel {
    * physio arrays, and its key is id-based (ids are derived from name/URL, so a
    * same-URL reload would otherwise reuse stale data).
    */
-  private invalidateGraphCache(): void {
+  invalidateGraphCache(): void {
     this._assocCache = null
   }
 

@@ -1789,6 +1789,10 @@ export default class NiiVueGPU extends EventTarget {
     }
     this.model.volumes = loaded
     this.model._setupPivot3D()
+    // The volume set changed: drop the associated-graph memo so a same-named 4D
+    // reload doesn't reuse the previous volume's sampled BOLD time-course (the
+    // cache key is id-based). removeAllVolumes does this; the atomic swap must too.
+    this.model.invalidateGraphCache()
     for (const vol of loaded) {
       this.emit('volumeLoaded', { volume: vol })
     }

@@ -325,13 +325,21 @@ export function calculateGlobalVolumeMvp(
   extentsMin: ArrayLike<number>,
   extentsMax: ArrayLike<number>,
   obliqueRAS?: mat4,
+  // WebGPU's NDC depth is [0,1] (orthoZO is used everywhere else for it); WebGL2
+  // is [-1,1]. Pass true on the WebGPU backend so the perspective depth range
+  // matches the device, otherwise the near portion clips at close cameras.
+  clipSpaceZeroToOne = false,
 ): [mat4, mat4, mat4, vec3] {
   const aspect = Math.max(0.01, ltwh[2] / Math.max(1, ltwh[3]))
   const fov = camera?.fov ?? 55
   const near = camera?.near ?? 0.1
   const far = camera?.far ?? 900
   const projectionMatrix = mat4.create()
-  mat4.perspective(projectionMatrix, deg2rad(fov), aspect, near, far)
+  if (clipSpaceZeroToOne) {
+    mat4.perspectiveZO(projectionMatrix, deg2rad(fov), aspect, near, far)
+  } else {
+    mat4.perspective(projectionMatrix, deg2rad(fov), aspect, near, far)
+  }
 
   const eye = vec3.fromValues(
     camera?.position?.[0] ?? 0,

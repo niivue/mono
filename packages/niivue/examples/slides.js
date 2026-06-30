@@ -10,6 +10,11 @@
 // bytes at a time over HTTP 206 range requests, so a multi-gigabyte slide never
 // has to be downloaded whole.
 import { NVSlide, SlideRenderer, SlideRendererGPU } from '../src/index.ts'
+import { decodeJp2 } from './openjpeg-decoder.js'
+
+// NVSlide core ships no JPEG 2000 codec; register an OpenJPEG WASM decoder so
+// image/jp2 tiles (OpenSlide DICOM JP2K archives) decode in-browser.
+NVSlide.registerTileDecoder('image/jp2', decodeJp2)
 
 const SYNTHETIC_MANIFEST_PATH = 'tile-range-poc/tiles.json'
 // DICOM-WSI series downloaded + manifest-built by scripts/fetch-dicom-wsi.ts.
@@ -25,6 +30,7 @@ const MANIFEST_PATHS = {
   'dicom-wsi': DICOM_WSI_PATH,
   'openslide-3dhistech-1': 'dicom-wsi/3dhistech-1/manifest.json',
   'openslide-hamamatsu-2': 'dicom-wsi/hamamatsu-2/manifest.json',
+  'openslide-jp2k-33003-1': 'dicom-wsi/jp2k-33003-1/manifest.json',
 }
 const MAX_CACHE_BYTES = 96 * 1024 * 1024
 const TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75

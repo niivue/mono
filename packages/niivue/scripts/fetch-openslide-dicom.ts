@@ -90,7 +90,7 @@ const PRESETS: Preset[] = [
     codec: 'jpeg2000',
     tiling: 'TILED_FULL',
     approxMB: 121,
-    note: 'JPEG 2000 ICT (browser cannot decode)',
+    note: 'JPEG 2000 ICT (decoded by the OpenJPEG WASM codec)',
   },
   {
     key: 'cmu-1-jp2k-ict',
@@ -98,7 +98,7 @@ const PRESETS: Preset[] = [
     codec: 'jpeg2000',
     tiling: 'TILED_FULL',
     approxMB: 729,
-    note: 'JPEG 2000 YBR_ICT (browser cannot decode)',
+    note: 'JPEG 2000 YBR_ICT (decoded by the OpenJPEG WASM codec)',
   },
   {
     key: 'cmu-1-jp2k-rct',
@@ -106,7 +106,7 @@ const PRESETS: Preset[] = [
     codec: 'jpeg2000',
     tiling: 'TILED_FULL',
     approxMB: 729,
-    note: 'JPEG 2000 YBR_RCT (browser cannot decode)',
+    note: 'JPEG 2000 YBR_RCT (decoded by the OpenJPEG WASM codec)',
   },
   {
     key: 'jp2k-33003-1',
@@ -114,7 +114,7 @@ const PRESETS: Preset[] = [
     codec: 'jpeg2000',
     tiling: 'TILED_FULL',
     approxMB: 62,
-    note: 'JPEG 2000 (browser cannot decode)',
+    note: 'JPEG 2000 (decoded by the OpenJPEG WASM codec)',
   },
 ]
 
@@ -131,14 +131,9 @@ function parseArgs(): Map<string, string> {
 }
 
 function supportReason(p: Preset): string | null {
-  if (p.codec === 'jpeg2000') {
-    return (
-      'JPEG 2000 needs an OpenJPEG WASM decoder registered via ' +
-      "NVSlide.registerTileDecoder('image/jp2', ...). The manifest is tagged " +
-      'image/jp2, but the demo does not wire a decoder yet, so tiles would fail ' +
-      'to decode. (createImageBitmap has no native JPEG 2000 support.)'
-    )
-  }
+  // JPEG 2000 is loadable: the manifest is tagged image/jp2 and the slides demo
+  // registers an OpenJPEG WASM decoder (examples/openjpeg-decoder.js). Only
+  // TILED_SPARSE is still unsupported (the builder assumes TILED_FULL ordering).
   if (p.tiling !== 'TILED_FULL') {
     return `${p.tiling} frame ordering is not yet supported by the manifest builder (only TILED_FULL).`
   }

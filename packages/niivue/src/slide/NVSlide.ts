@@ -1,4 +1,15 @@
-export type NVSlideTileCodec = 'raw-rgba' | 'image/jpeg'
+export type NVSlideTileCodec = 'raw-rgba' | 'image/jpeg' | 'image/jp2'
+
+/**
+ * Decodes one tile's encoded bytes into an ImageBitmap. The built-in registry
+ * handles `raw-rgba` and `image/jpeg`; `image/jp2` (JPEG 2000) has no browser
+ * decoder, so a consumer must register one (e.g. an OpenJPEG WASM build) via
+ * {@link NVSlide.registerTileDecoder} — keeping the heavy codec out of the core.
+ */
+export type SlideTileDecoder = (
+  bytes: Uint8Array,
+  ctx: { width: number; height: number },
+) => Promise<ImageBitmap>
 export type NVSlideYAxis = 'down' | 'up'
 export type NVSlideLevelChoice = 'auto' | number
 export type NVSlideColor = [number, number, number, number]
@@ -191,6 +202,29 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
   }
   return out
 }
+
+// Tile-codec registry. Built-ins cover the browser-native paths; additional
+// codecs (e.g. image/jp2 via an OpenJPEG WASM decoder) are registered by the
+// consumer with NVSlide.registerTileDecoder, so the core ships no heavy codec.
+const tileDecoders = new Map<string, SlideTileDecoder>([
+  [
+    'image/jpeg',
+    (bytes) =>
+      createImageBitmap(new Blob([copyUint8(bytes)], { type: 'image/jpeg' })),
+  ],
+  [
+    'raw-rgba',
+    (bytes, { width, height }) => {
+      const expected = width * height * 4
+      if (bytes.byteLength !== expected) {
+        throw new Error(
+          `Expected ${expected} RGBA bytes, received ${bytes.byteLength}`,
+        )
+      }
+      return createImageBitmap(new ImageData(copyClamped(bytes), width, height))
+    },
+  ],
+])
 
 class NVSlideTileCache {
   private readonly entries = new Map<string, TileBitmap>()
@@ -734,25 +768,35 @@ export class NVSlide extends EventTarget {
     return new URL(url, base).toString()
   }
 
+  /**
+   * Register a tile decoder for a codec (e.g. `image/jp2` via OpenJPEG WASM).
+   * Lets a consumer add codecs the browser can't decode natively without
+   * bundling them into the core. Overrides any existing decoder for that codec.
+   */
+  static registerTileDecoder(codec: string, decoder: SlideTileDecoder): void {
+    tileDecoders.set(codec, decoder)
+  }
+
+  /** The decoder registered for a codec, or undefined. */
+  static tileDecoder(codec: string): SlideTileDecoder | undefined {
+    return tileDecoders.get(codec)
+  }
+
   private async decodeTileBitmap(
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
     tileBytes: Uint8Array,
   ): Promise<ImageBitmap> {
     const codec = level.codec ?? 'raw-rgba'
-    if (codec === 'image/jpeg') {
-      const blob = new Blob([copyUint8(tileBytes)], { type: 'image/jpeg' })
-      return createImageBitmap(blob)
-    }
-    const expected = tile.width * tile.height * 4
-    if (tileBytes.byteLength !== expected) {
+    const decoder = tileDecoders.get(codec)
+    if (!decoder) {
       throw new Error(
-        `Expected ${expected} RGBA bytes, received ${tileBytes.byteLength}`,
+        `No decoder for tile codec "${codec}". ` +
+          'Register one with NVSlide.registerTileDecoder() ' +
+          '(e.g. an OpenJPEG WASM decoder for image/jp2).',
       )
     }
-    return createImageBitmap(
-      new ImageData(copyClamped(tileBytes), tile.width, tile.height),
-    )
+    return decoder(tileBytes, { width: tile.width, height: tile.height })
   }
 
   private async loadTile(

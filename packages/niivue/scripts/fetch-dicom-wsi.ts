@@ -224,6 +224,16 @@ function isEncapsulated(uid: string): boolean {
   return u.startsWith('1.2.840.10008.1.2.4') || u === '1.2.840.10008.1.2.5'
 }
 
+// NVSlide tile codec for a transfer syntax. JPEG 2000 (.90/.91) needs an
+// OpenJPEG decoder registered in the browser; everything else encapsulated here
+// is baseline/extended JPEG the browser decodes natively.
+function codecForTransferSyntax(uid: string): 'image/jpeg' | 'image/jp2' {
+  const u = uid.trim()
+  return u === '1.2.840.10008.1.2.4.90' || u === '1.2.840.10008.1.2.4.91'
+    ? 'image/jp2'
+    : 'image/jpeg'
+}
+
 function classifyImageType(imageType: string): WsiFlavor {
   const t = imageType.toUpperCase()
   if (t.includes('LABEL')) return 'label'
@@ -443,7 +453,7 @@ function levelManifest(
     fileName: parsed.meta.fileName,
     fileUrl: `files/${encodeURIComponent(parsed.meta.fileName)}`,
     fileSize: parsed.fileSize,
-    codec: 'image/jpeg',
+    codec: codecForTransferSyntax(parsed.transferSyntaxUid),
     transferSyntaxUid: parsed.transferSyntaxUid,
     photometric: level.photometric,
     spacingMM: level.spacingMM,

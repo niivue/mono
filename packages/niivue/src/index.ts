@@ -116,8 +116,11 @@ export type {
   NVSlideVisibleTile,
   NVSlideVisibleTiles,
   NVSlideYAxis,
+  SlideSourceHost,
+  SlideTileDecoder,
+  SlideTileSource,
 } from './slide/NVSlide'
-export { NVSlide } from './slide/NVSlide'
+export { ManifestRangeSource, NVSlide } from './slide/NVSlide'
 export type {
   ChunkPlan,
   Vec3f,

@@ -204,9 +204,16 @@ Phases (threshold deferred per decision):
   visibility toggle lands with the unified row in D (current overlay on/off is
   still membership via `overlayIds`).
 - [x] **[P2] (M) D — Unified `LayerRow` list** with expandable detail; fold in colormap + opacity + WindowControl + per-row visibility (`hidden`) toggle for every layer. Numeric-first window (Min/Max + Auto), opacity slider+readout, diverging colormap stays a colormap option. Done: one accordion list (base→overlay→atlas order), one row open at a time, role asymmetry (base = colormap+window, overlay = full kit, atlas = opacity only), per-row eye toggle + remove (X), and a compact "Add overlay" pool replacing the 157-row checklist. Atlas `outline/labels` toggles still TODO (NiiVue `setColormapLabel` exists but no UI).
-- [ ] **[P3] (M–L) E — Threshold** (deferred). Keep visually distinct from the
-  window. Decide the sink: true masking (alpha / niimath pre-op) vs honest
-  contrast-floor (cal_min) — do not conflate with min/max.
+- [x] **[P3] (M–L) E — Threshold** (display threshold via cal_min). Overlay rows
+  show a **Threshold + Max** control (distinct from the base's Min/Max window);
+  values below the threshold render transparent (NiiVue's transparent-below-
+  calMin). Stat overlays **auto-seed** their threshold from the loaded volume's
+  robust max (`windowOptionForLayer` in `NiivueStage.tsx`) so they render
+  thresholded instead of as a "purple block"; this needed a post-load re-apply
+  (`loadedVersion` bump) since per-volume stats aren't ready when the overlay is
+  first toggled on. True/destructive masking (niimath `-thr`) deferred as a
+  separate "Mask" op. Possible follow-up: tune the default (robust max = top ~2%
+  is conservative) and a threshold slider once the value range is surfaced.
 
 Touch/iPad: ≥44px targets, no hover-only reveals, full-width inputs with explicit
 min-width (the zero-width-grid collapse bug recurs otherwise), one row open at a

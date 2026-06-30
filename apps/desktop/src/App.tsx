@@ -1085,6 +1085,7 @@ function LayerPanel({
                         itemId={item.id}
                         label={item.label}
                         window={settings?.window}
+                        variant={role === 'overlay' ? 'threshold' : 'window'}
                         onChange={onLayerWindowChange}
                         onReset={onLayerWindowReset}
                       />
@@ -1257,22 +1258,30 @@ function LayerColormapSelect({
   )
 }
 
-// Per-layer intensity window (NIfTI cal_min/cal_max). Empty inputs mean NiiVue's
-// robust auto range; typed values clamp the displayed contrast (most visible in
-// 2D slice modes).
+// Per-layer intensity mapping (NIfTI cal_min/cal_max). Empty inputs mean
+// NiiVue's robust auto range. Two variants:
+//   - 'window' (base): Min/Max contrast range.
+//   - 'threshold' (stat overlay): Threshold/Max, where values below the
+//     threshold render transparent (NiiVue's transparent-below-calMin), so the
+//     min field is the statistical threshold, not a contrast floor.
 function WindowControl({
   itemId,
   label,
   window,
+  variant = 'window',
   onChange,
   onReset
 }: {
   itemId: string
   label: string
   window: { min: number; max: number } | undefined
+  variant?: 'window' | 'threshold'
   onChange: (itemId: string, min: number, max: number) => void
   onReset: (itemId: string) => void
 }): JSX.Element {
+  const isThreshold = variant === 'threshold'
+  const heading = isThreshold ? 'Threshold' : 'Intensity window'
+  const minLabel = isThreshold ? 'Threshold' : 'Min'
   const [minText, setMinText] = useState(window ? String(window.min) : '')
   const [maxText, setMaxText] = useState(window ? String(window.max) : '')
 
@@ -1297,14 +1306,14 @@ function WindowControl({
   return (
     <div className="nv-window-control">
       <div className="nv-window-heading">
-        <span>Intensity window</span>
+        <span>{heading}</span>
         <em>{window ? `${window.min} – ${window.max}` : 'auto'}</em>
       </div>
       <div className="nv-window-row">
         <label className="nv-field">
-          <span>Min</span>
+          <span>{minLabel}</span>
           <input
-            aria-label={`Window minimum for ${label}`}
+            aria-label={`${minLabel} for ${label}`}
             className="nv-text-input"
             inputMode="decimal"
             onChange={(event) => setMinText(event.target.value)}

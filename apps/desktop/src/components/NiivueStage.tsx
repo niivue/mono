@@ -33,9 +33,10 @@ export interface NiivueRenderLayer {
 interface NiiVueLike {
   canvas?: HTMLCanvasElement
   // Loaded volumes, in the same order as the render layers. robustMin/robustMax
-  // are NiiVue's auto window (2nd/98th percentile), used to restore the auto
-  // range when a layer's explicit intensity window is cleared.
-  volumes?: Array<{ robustMin?: number; robustMax?: number }>
+  // are NiiVue's auto window (2nd/98th percentile); globalMax is the true peak.
+  // Used to restore the auto range when a window is cleared, and to seed a
+  // default threshold for stat overlays.
+  volumes?: Array<{ robustMin?: number; robustMax?: number; globalMax?: number }>
   activeClipPlaneIndex?: number
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(volumes: NiiVueVolumeOptions[]): Promise<unknown>
@@ -230,6 +231,10 @@ export function NiivueStage({
   const prefetchRef = useRef<VolumePrefetch | null>(null)
   const [status, setStatus] = useState('Waiting for a dataset selection.')
   const [snapId, setSnapId] = useState<RenderSnapId | null>(null)
+  // Bumped after each volume load completes, so the in-place display effect
+  // re-runs once NiiVue has computed per-volume stats (robust range / peak) —
+  // needed to seed a stat overlay's default threshold from its data.
+  const [loadedVersion, setLoadedVersion] = useState(0)
   const primaryItem = layers[0]?.item ?? item
   const isRenderMode = viewMode === 'render'
   const currentViewLabel = (VIEW_MODES.find((mode) => mode.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]).label
@@ -324,6 +329,9 @@ export function NiivueStage({
           setStatus
         })
         applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
+        // Volumes (and their robust-range stats) are now loaded; re-run the
+        // in-place display effect so threshold/window defaults can read them.
+        if (!cancelled) setLoadedVersion((version) => version + 1)
       } catch (error) {
         if (!cancelled) {
           nvRef.current = null
@@ -377,7 +385,8 @@ export function NiivueStage({
         // No volume loaded yet (or backend lacks setVolume); the attach effect
         // already loads with current display options, so this is safe to ignore.
       })
-  }, [layers])
+    // loadedVersion: re-apply once post-load stats exist (threshold defaults).
+  }, [layers, loadedVersion])
 
   // Apply the selected view mode (2D slice plane, multiplanar, or 3D render) to
   // the live instance. NiiVue exposes sliceType as a setter, so this never
@@ -575,23 +584,39 @@ async function loadNiiVue(backend: Backend): Promise<NiiVueConstructor> {
   }
 }
 
-// Intensity-window options for a setVolume call. An explicit per-layer window
-// takes precedence; with none set we restore NiiVue's robust auto range (from
-// the loaded volume) so clearing the window reverts the render. Returns no keys
-// only when the robust range isn't available yet (volume still loading).
+// Intensity-window / threshold options for a setVolume call. An explicit
+// per-layer window (Min/Max for a base, Threshold/Max for an overlay) always
+// wins. With none set:
+//   - statistical overlays default to a threshold (calMin = robust max) so the
+//     near-zero background is transparent instead of washing the colormap over
+//     the whole volume; the colormap then spans threshold -> true peak.
+//   - base/atlas layers restore NiiVue's robust auto range, so clearing the
+//     window reverts the render.
+// Returns no keys when the volume's stats aren't available yet (still loading).
 function windowOptionForLayer(
   layer: NiivueRenderLayer,
-  volume: { robustMin?: number; robustMax?: number } | undefined
+  volume: { robustMin?: number; robustMax?: number; globalMax?: number } | undefined
 ): { calMin?: number; calMax?: number } {
   if (layer.calMin !== undefined && layer.calMax !== undefined) {
     return { calMin: layer.calMin, calMax: layer.calMax }
   }
+  if (!volume) return {}
+  const { robustMin, robustMax, globalMax } = volume
   if (
-    volume &&
-    Number.isFinite(volume.robustMin) &&
-    Number.isFinite(volume.robustMax)
+    layer.kind === 'overlay' &&
+    !layer.isAtlas &&
+    Number.isFinite(robustMax) &&
+    (robustMax as number) > 0
   ) {
-    return { calMin: volume.robustMin, calMax: volume.robustMax }
+    const threshold = robustMax as number
+    const max =
+      Number.isFinite(globalMax) && (globalMax as number) > threshold
+        ? (globalMax as number)
+        : threshold * 2
+    return { calMin: threshold, calMax: max }
+  }
+  if (Number.isFinite(robustMin) && Number.isFinite(robustMax)) {
+    return { calMin: robustMin, calMax: robustMax }
   }
   return {}
 }

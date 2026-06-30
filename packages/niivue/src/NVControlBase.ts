@@ -70,7 +70,6 @@ import type {
 } from '@/NVTypes'
 import type { NVSlide } from '@/slide/NVSlide'
 import type { SlidePlaneState } from '@/slide/slidePlane'
-import { slidePlaneTiles } from '@/slide/slidePlane'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
 import type { GraphLayout } from '@/view/NVGraph'
@@ -2499,9 +2498,10 @@ export default class NiiVueGPU extends EventTarget {
    * Register an NVSlide to render as a textured plane in the 3D render view,
    * laid into the loaded volume's world (mm) space. `pixelToWorld` maps slide
    * base pixels -> world mm (build one with `axialPlaneTransform` for an
-   * axis-aligned plane). The slide level (default a mid level for an overview)
-   * is tiled with `slidePlaneTiles`, prefetched, and streamed via NVSlide's
-   * cache — the view redraws as tiles arrive. Call `clearSlidePlane()` to remove.
+   * axis-aligned plane). By default the pyramid level is chosen per-frame from
+   * the camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you
+   * zoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's
+   * cache and the view redraws on its `change` event. Call `clearSlidePlane()`.
    */
   setSlidePlane(
     slide: NVSlide,
@@ -2509,15 +2509,18 @@ export default class NiiVueGPU extends EventTarget {
   ): void {
     const levels = slide.manifest.levels
     if (levels.length === 0) return
-    const idx = opts.levelIndex ?? Math.min(1, levels.length - 1)
-    const level = levels[idx] ?? levels[levels.length - 1]
-    if (!level) return
-    const tw = level.tileWidth ?? slide.manifest.tileSize ?? 256
-    const th = level.tileHeight ?? slide.manifest.tileSize ?? 256
-    const tiles = slidePlaneTiles(level, tw, th, opts.pixelToWorld)
-    // Prefetch every tile on the plane; NVSlide dedupes already-resident keys.
-    for (const tile of level.tiles) slide.requestTile(level, tile)
-    const state: SlidePlaneState = { slide, level, tiles }
+    const state: SlidePlaneState = {
+      slide,
+      pixelToWorld: [...opts.pixelToWorld],
+      levelIndex: opts.levelIndex,
+      tilesByLevel: new Map(),
+    }
+    // Prime the coarsest level so something shows on the first frame before the
+    // camera-driven level resolves; NVSlide dedupes already-resident keys.
+    const coarsest = levels[levels.length - 1]
+    if (coarsest) {
+      for (const tile of coarsest.tiles) slide.requestTile(coarsest, tile)
+    }
     this._slidePlane = state
     if (this.view) this.view.slidePlane = state
     // Redraw as tiles stream in.

@@ -1,4 +1,5 @@
-import type { SlidePlaneState } from '@/slide/slidePlane'
+import type { NVSlide } from '@/slide/NVSlide'
+import type { SlidePlaneTile } from '@/slide/slidePlane'
 import { NVRenderer } from '@/view/NVRenderer'
 import { Shader } from './shader'
 
@@ -79,7 +80,8 @@ export class SlidePlaneRenderer extends NVRenderer {
   draw(
     gl: WebGL2RenderingContext,
     mvpMatrix: Float32Array,
-    state: SlidePlaneState,
+    tiles: readonly SlidePlaneTile[],
+    slide: NVSlide,
     opacity = 1,
   ): void {
     if (!this.isReady || !this._shader || !this._vao || !this._vbo) return
@@ -104,8 +106,8 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vbo)
-    for (const tile of state.tiles) {
-      const bitmap = state.slide.cachedTileBitmap(tile.key)
+    for (const tile of tiles) {
+      const bitmap = slide.cachedTileBitmap(tile.key)
       if (!bitmap) continue
       const tex = this._textureFor(gl, tile.key, bitmap)
       if (!tex) continue

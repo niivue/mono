@@ -63,15 +63,130 @@ export function slidePlaneTiles(
 }
 
 /**
- * A slide registered into a volume's 3D world space, ready for the renderer to
- * draw as a textured plane. `tiles` are the world-mm quads (from
- * `slidePlaneTiles`); the renderer pulls each tile's bitmap from `slide`'s cache
- * (`cachedTileBitmap`) by its `key`, so streaming and level selection stay in NVSlide.
+ * A slide registered into a volume's 3D world space. `pixelToWorld` lays slide
+ * base pixels into world mm; the active pyramid level is chosen per-frame from
+ * the camera (`resolveSlidePlaneTiles`) unless `levelIndex` pins it. The renderer
+ * pulls each tile's bitmap from `slide`'s cache by `key`, so streaming stays in
+ * NVSlide. `tilesByLevel` caches the (stable) plane-tile array per level.
  */
 export interface SlidePlaneState {
   slide: NVSlide
-  level: NVSlideLevelManifest
-  tiles: SlidePlaneTile[]
+  pixelToWorld: number[]
+  /** Pinned level (camera LOD off) or undefined for automatic camera-distance LOD. */
+  levelIndex?: number
+  tilesByLevel: Map<number, SlidePlaneTile[]>
+}
+
+// Project a world-mm point through a column-major mvp (world mm -> clip) to
+// viewport pixels. Returns x,y in [0,w]x[0,h]; w-component sign tells front/back.
+function projectToScreen(
+  mvp: ArrayLike<number>,
+  p: Vec3,
+  w: number,
+  h: number,
+): [number, number, number] {
+  const cx = mvp[0] * p[0] + mvp[4] * p[1] + mvp[8] * p[2] + mvp[12]
+  const cy = mvp[1] * p[0] + mvp[5] * p[1] + mvp[9] * p[2] + mvp[13]
+  const cw = mvp[3] * p[0] + mvp[7] * p[1] + mvp[11] * p[2] + mvp[15]
+  const iw = cw !== 0 ? 1 / cw : 0
+  return [(cx * iw * 0.5 + 0.5) * w, (cy * iw * 0.5 + 0.5) * h, cw]
+}
+
+/**
+ * Pick the pyramid level whose pixels map closest to one screen pixel under the
+ * current camera (`mvp`, world mm -> clip; viewport `w`x`h`). Returns the pinned
+ * level when `state.levelIndex` is set. The 3D render uses an orthographic
+ * projection, so the slide's screen scale is uniform — a center sample is exact.
+ */
+export function selectSlidePlaneLevel(
+  state: SlidePlaneState,
+  mvp: ArrayLike<number>,
+  w: number,
+  h: number,
+): NVSlideLevelManifest {
+  const levels = state.slide.manifest.levels
+  const clampIdx = (i: number): NVSlideLevelManifest =>
+    levels[Math.min(levels.length - 1, Math.max(0, i))]
+  if (state.levelIndex !== undefined) return clampIdx(state.levelIndex)
+  // Screen pixels spanned by one base (level-0) slide pixel at the plane center.
+  const cx = state.slide.manifest.width / 2
+  const cy = state.slide.manifest.height / 2
+  const o = projectToScreen(mvp, apply(state.pixelToWorld, cx, cy), w, h)
+  const px = projectToScreen(mvp, apply(state.pixelToWorld, cx + 1, cy), w, h)
+  const py = projectToScreen(mvp, apply(state.pixelToWorld, cx, cy + 1), w, h)
+  const dx = Math.hypot(px[0] - o[0], px[1] - o[1])
+  const dy = Math.hypot(py[0] - o[0], py[1] - o[1])
+  const perBasePx = Math.max(dx, dy)
+  // A level pixel spans `downsample` base px, so `downsample * perBasePx` screen
+  // px. Aim for ~1: downsample ~ 1/perBasePx. Pick the closest in log space.
+  const want =
+    perBasePx > 1e-6 ? 1 / perBasePx : levels[levels.length - 1].downsample
+  let best = levels[0]
+  let bestErr = Number.POSITIVE_INFINITY
+  for (const lv of levels) {
+    const err = Math.abs(
+      Math.log2(lv.downsample) - Math.log2(Math.max(want, 1e-6)),
+    )
+    if (err < bestErr) {
+      bestErr = err
+      best = lv
+    }
+  }
+  return best
+}
+
+/**
+ * Resolve the slide-plane tiles to draw this frame: pick the camera-appropriate
+ * level, cull its tiles to the viewport, and request the visible ones from
+ * NVSlide (streaming). Returns the chosen level and the visible plane tiles.
+ */
+export function resolveSlidePlaneTiles(
+  state: SlidePlaneState,
+  mvp: ArrayLike<number>,
+  w: number,
+  h: number,
+): { level: NVSlideLevelManifest; tiles: SlidePlaneTile[] } {
+  const level = selectSlidePlaneLevel(state, mvp, w, h)
+  let all = state.tilesByLevel.get(level.index)
+  if (!all) {
+    const tw = level.tileWidth ?? state.slide.manifest.tileSize ?? 256
+    const th = level.tileHeight ?? state.slide.manifest.tileSize ?? 256
+    all = slidePlaneTiles(level, tw, th, state.pixelToWorld)
+    state.tilesByLevel.set(level.index, all)
+  }
+  // Cull to the viewport so a deep level only streams/draws on-screen tiles.
+  // `all[i]` is in `level.tiles[i]` order (slidePlaneTiles preserves it).
+  const margin = Math.max(w, h) * 0.1
+  const tiles: SlidePlaneTile[] = []
+  for (let i = 0; i < all.length; i++) {
+    const t = all[i]
+    let minX = Number.POSITIVE_INFINITY
+    let minY = Number.POSITIVE_INFINITY
+    let maxX = Number.NEGATIVE_INFINITY
+    let maxY = Number.NEGATIVE_INFINITY
+    let anyFront = false
+    for (const c of t.corners) {
+      const s = projectToScreen(mvp, c, w, h)
+      if (s[2] > 0) anyFront = true
+      minX = Math.min(minX, s[0])
+      maxX = Math.max(maxX, s[0])
+      minY = Math.min(minY, s[1])
+      maxY = Math.max(maxY, s[1])
+    }
+    if (
+      !anyFront ||
+      maxX < -margin ||
+      minX > w + margin ||
+      maxY < -margin ||
+      minY > h + margin
+    ) {
+      continue
+    }
+    const tm = level.tiles[i]
+    if (tm) state.slide.requestTile(level, tm)
+    tiles.push(t)
+  }
+  return { level, tiles }
 }
 
 export interface AxialPlaneOptions {

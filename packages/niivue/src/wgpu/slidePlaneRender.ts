@@ -1,4 +1,5 @@
-import type { SlidePlaneState } from '@/slide/slidePlane'
+import type { NVSlide } from '@/slide/NVSlide'
+import type { SlidePlaneTile } from '@/slide/slidePlane'
 import { NVRenderer } from '@/view/NVRenderer'
 
 // WebGPU mirror of gl/slidePlaneRender.ts. Draws an NVSlide as a textured plane
@@ -51,7 +52,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
   private _uniformGroup: GPUBindGroup | null = null
   private _vertexBuffer: GPUBuffer | null = null
   private _entries: PlaneVertexEntry[] = []
-  private _builtState: SlidePlaneState | null = null
+  private _builtTiles: readonly SlidePlaneTile[] | null = null
   private _textures = new Map<string, GPUTexture>()
   private _bindGroups = new Map<string, GPUBindGroup>()
   private readonly _scratch = new Float32Array(20) // mat4 (16) + opacity vec4 (4)
@@ -135,13 +136,16 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this.isReady = true
   }
 
-  // Build one vertex buffer holding every plane quad (4 verts each). Positions
-  // are fixed once the plane is registered; only textures stream in.
-  private _buildVertices(device: GPUDevice, state: SlidePlaneState): void {
-    const data = new Float32Array(state.tiles.length * 4 * 5)
+  // Build one vertex buffer holding every visible plane quad (4 verts each).
+  // Rebuilt whenever the tile set changes (e.g. a camera-LOD level switch).
+  private _buildVertices(
+    device: GPUDevice,
+    tiles: readonly SlidePlaneTile[],
+  ): void {
+    const data = new Float32Array(tiles.length * 4 * 5)
     this._entries = []
     let o = 0
-    state.tiles.forEach((tile, i) => {
+    tiles.forEach((tile, i) => {
       const [tl, tr, bl, br] = tile.corners
       // TRIANGLE_STRIP order TL, TR, BL, BR; UV origin top-left.
       data.set([tl[0], tl[1], tl[2], 0, 0], o)
@@ -157,7 +161,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     })
     device.queue.writeBuffer(this._vertexBuffer, 0, data)
-    this._builtState = state
+    this._builtTiles = tiles
   }
 
   private _textureFor(
@@ -193,7 +197,8 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     device: GPUDevice,
     pass: GPURenderPassEncoder,
     mvpMatrix: Float32Array,
-    state: SlidePlaneState,
+    tiles: readonly SlidePlaneTile[],
+    slide: NVSlide,
     opacity = 1,
   ): void {
     if (
@@ -203,10 +208,10 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       !this._uniformGroup
     )
       return
-    if (this._builtState !== state || !this._vertexBuffer) {
-      this._buildVertices(device, state)
+    if (this._builtTiles !== tiles || !this._vertexBuffer) {
+      this._buildVertices(device, tiles)
     }
-    if (!this._vertexBuffer) return
+    if (!this._vertexBuffer || this._entries.length === 0) return
     this._scratch.set(mvpMatrix, 0)
     this._scratch[16] = opacity
     device.queue.writeBuffer(this._uniformBuffer, 0, this._scratch)
@@ -214,7 +219,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     pass.setBindGroup(0, this._uniformGroup)
     pass.setVertexBuffer(0, this._vertexBuffer)
     for (const entry of this._entries) {
-      const bitmap = state.slide.cachedTileBitmap(entry.key)
+      const bitmap = slide.cachedTileBitmap(entry.key)
       if (!bitmap) continue
       const group = this._textureFor(device, entry.key, bitmap)
       if (!group) continue
@@ -236,7 +241,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this._uniformBGL = null
     this._textureBGL = null
     this._sampler = null
-    this._builtState = null
+    this._builtTiles = null
     this._entries = []
     this.isReady = false
   }

@@ -15,6 +15,7 @@ import type {
   WebGLMeshGPU,
 } from '@/NVTypes'
 import type { SlidePlaneState } from '@/slide/slidePlane'
+import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
@@ -992,10 +993,17 @@ export default class NVGlview {
         this.slidePlane &&
         this.slidePlaneRenderer.isReady
       ) {
+        const { tiles } = resolveSlidePlaneTiles(
+          this.slidePlane,
+          mvpMatrix as Float32Array,
+          ltwh[2],
+          ltwh[3],
+        )
         this.slidePlaneRenderer.draw(
           gl,
           mvpMatrix as Float32Array,
-          this.slidePlane,
+          tiles,
+          this.slidePlane.slide,
         )
       }
       // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders)

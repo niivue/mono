@@ -66,7 +66,9 @@ import {
 } from './domain/desktop'
 import {
   volumeImageTypeLabel,
-  volumeRoleLabel
+  volumeRoleLabel,
+  volumeSession,
+  volumeSubject
 } from './domain/volumeFacets'
 import { useClipPlanes } from './hooks/useClipPlanes'
 import { useDatasetManifest } from './hooks/useDatasetManifest'
@@ -1014,6 +1016,9 @@ function LayerPanel({
   // explicitly expanded so the base controls are visible on load.
   const rowIds = rows.map((row) => row.item.id)
   const expanded = expandedId && rowIds.includes(expandedId) ? expandedId : selected?.id ?? null
+  const subjectMismatches = rows
+    .map((row) => layerSubjectWarning(selected, row.item))
+    .filter((warning): warning is string => warning !== null)
 
   return (
     <section className="nv-control-section nv-layer-panel">
@@ -1024,6 +1029,17 @@ function LayerPanel({
         </span>
         <em>{selected ? `${extras} extra` : 'none'}</em>
       </div>
+
+      {subjectMismatches.length > 0 ? (
+        <div className="nv-layer-banner" role="alert">
+          <AlertTriangle size={14} />
+          <span>
+            {subjectMismatches.length === 1
+              ? subjectMismatches[0]
+              : `${subjectMismatches.length} layers are a different subject than the base — verify this is the same study.`}
+          </span>
+        </div>
+      ) : null}
 
       {selected ? (
         <div className="nv-layer-rows">
@@ -1046,6 +1062,7 @@ function LayerPanel({
                 role={role}
                 label={item.label}
                 meta={layerOptionMeta(item)}
+                warning={layerSubjectWarning(selected, item)}
                 hidden={!!settings?.hidden}
                 expanded={expanded === item.id}
                 removable={role !== 'base'}
@@ -1162,6 +1179,7 @@ function LayerRow({
   role,
   label,
   meta,
+  warning,
   hidden,
   expanded,
   removable,
@@ -1173,6 +1191,7 @@ function LayerRow({
   role: 'base' | 'overlay' | 'atlas'
   label: string
   meta: string
+  warning?: string | null
   hidden: boolean
   expanded: boolean
   removable: boolean
@@ -1183,7 +1202,9 @@ function LayerRow({
 }): JSX.Element {
   const roleLabel = role === 'base' ? 'Base' : role === 'atlas' ? 'Atlas' : 'Overlay'
   return (
-    <div className={`nv-layer-row is-${role}${expanded ? ' is-expanded' : ''}${hidden ? ' is-hidden' : ''}`}>
+    <div
+      className={`nv-layer-row is-${role}${expanded ? ' is-expanded' : ''}${hidden ? ' is-hidden' : ''}${warning ? ' is-warning' : ''}`}
+    >
       <div className="nv-layer-row-head">
         <button
           aria-label={hidden ? `Show ${label}` : `Hide ${label}`}
@@ -1207,6 +1228,11 @@ function LayerRow({
               {meta ? ` · ${meta}` : ''}
             </small>
           </span>
+          {warning ? (
+            <span aria-label={warning} className="nv-layer-row-warn" role="img" title={warning}>
+              <AlertTriangle size={15} />
+            </span>
+          ) : null}
           <ChevronDown className="nv-layer-row-caret" size={15} />
         </button>
         {removable ? (
@@ -1869,7 +1895,27 @@ function atlasCandidateScore(item: DesktopItem): number {
 }
 
 function layerOptionMeta(item: DesktopItem): string {
-  return `${volumeImageTypeLabel(item)} / ${item.shape.join(' x ')} / ${item.dtype}`
+  const base = `${volumeImageTypeLabel(item)} / ${item.shape.join(' x ')} / ${item.dtype}`
+  const subject = volumeSubject(item)
+  return subject ? `${subject} · ${base}` : base
+}
+
+// A layer is "suspect" against the base when both carry a BIDS subject and the
+// subjects differ — the silent study-mix-up case. Returns a reason for the
+// warning, or null. Geometry (shape/spacing) is shown but not warned on: legit
+// co-registered overlays routinely have a different grid than the base.
+function layerSubjectWarning(base: DesktopItem | null, item: DesktopItem): string | null {
+  if (!base || item.id === base.id) return null
+  const baseSubject = volumeSubject(base)
+  const itemSubject = volumeSubject(item)
+  if (baseSubject && itemSubject && baseSubject !== itemSubject) {
+    const baseSession = volumeSession(base)
+    const itemSession = volumeSession(item)
+    const here = [itemSubject, itemSession].filter(Boolean).join(' ')
+    const there = [baseSubject, baseSession].filter(Boolean).join(' ')
+    return `Different subject (${here}) than the base (${there}) — verify this is the same study.`
+  }
+  return null
 }
 
 async function savePatch(

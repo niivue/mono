@@ -287,11 +287,16 @@ time to stay thumb-scrollable.
 
 ### Clinical reading ergonomics & safety (clinician)
 
-- [ ] **[P2] (M) Geometry/subject mismatch guard.** Overlays from different
-  volumes blend at fixed opacity (`App.tsx:240,251`) with no check they share
-  affine/shape/subject — a silent study mix-up vector. Warn when an overlay's
-  affine/shape doesn't match the base; show subject/session/modality in a fixed
-  banner.
+- [x] **[P2] (M) Geometry/subject mismatch guard.** Done: each layer row shows
+  its BIDS `sub-/ses-` + modality + shape (`volumeSubject`/`volumeSession` in
+  `volumeFacets.ts`, surfaced via `layerOptionMeta`), and an overlay/atlas whose
+  subject differs from the base gets a per-row ⚠ + a panel warning banner
+  (`layerSubjectWarning`). Subject mismatch is the reliable study-mix-up signal;
+  geometry (shape/spacing) is shown but **not** warned on — co-registered stat
+  overlays legitimately have a different grid, so warning there is constant
+  noise. Follow-up: a true **space** check (native vs MNI, same subject) needs
+  the post-load world extents/affine from NiiVue (`extentsMin/Max`) — wire it
+  through the `loadedVersion` readback added in Phase E.
 - [ ] **[P2] (S) Per-layer opacity sliders.** Overlay opacity is hardcoded at
   0.48 (`App.tsx:240`); blending is a core stats-viewing knob. Expose per-layer
   sliders (the layer panel already has per-layer colormap selects, `App.tsx:990`).

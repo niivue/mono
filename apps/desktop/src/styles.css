@@ -1610,6 +1610,33 @@ button {
   padding-right: 2px;
 }
 
+/* Subject-mismatch warning: banner + per-row marker. */
+.nv-layer-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid rgba(215, 166, 66, 0.5);
+  border-radius: 4px;
+  background: rgba(215, 166, 66, 0.1);
+  color: var(--amber);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.nv-layer-banner > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.nv-layer-row.is-warning {
+  border-left-color: var(--amber);
+}
+.nv-layer-row-warn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--amber);
+}
+
 /* ---- Unified layer list (expandable rows) ---- */
 .nv-layer-rows {
   display: grid;

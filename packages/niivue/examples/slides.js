@@ -10,7 +10,10 @@
 // bytes at a time over HTTP 206 range requests, so a multi-gigabyte slide never
 // has to be downloaded whole.
 import {
+  buildDrawingLut,
   DziSource,
+  drawingBitmapToRGBA,
+  lookupColorMap,
   NVSlide,
   SlideDrawing,
   SlideRenderer,
@@ -72,6 +75,7 @@ const els = {
   canvas: el('tileCanvas'),
   overlay: el('drawOverlay'),
   drawBtn: el('drawBtn'),
+  penValue: el('penValue'),
   drawUndo: el('drawUndo'),
   drawClear: el('drawClear'),
   hud: el('hud'),
@@ -96,6 +100,11 @@ let overlayDirty = false
 let rasterCanvas = null
 let rasterCtx = null
 let rasterImageData = null
+let penValue = 1
+// The shared "_draw" label colormap, so annotation colors match the 3D demo and
+// each pen value paints a distinct label color. Resolved lazily (Vite glob).
+let drawLut = null
+const DRAW_OPACITY = 0.85
 
 function backendFromUrl() {
   const raw = new URLSearchParams(window.location.search).get('backend')
@@ -214,20 +223,36 @@ function ensureDrawing() {
   overlayDirty = true
 }
 
-// Repaint the offscreen raster from the label bitmap (nonzero -> red).
+// Repaint the offscreen raster from the label bitmap via the "_draw" LUT, so
+// each pen value shows its label color (same palette as the 3D slide demo).
 function rebuildRaster() {
   if (!drawing || !rasterCtx || !rasterImageData) return
-  const img = drawing.img
+  if (!drawLut) {
+    const cm = lookupColorMap('_draw')
+    if (cm) drawLut = buildDrawingLut(cm)
+  }
   const data = rasterImageData.data
-  for (let i = 0; i < img.length; i++) {
-    const o = i * 4
-    if (img[i]) {
-      data[o] = 235
-      data[o + 1] = 45
-      data[o + 2] = 55
-      data[o + 3] = 210
-    } else {
-      data[o + 3] = 0
+  if (drawLut) {
+    const rgba = drawingBitmapToRGBA(
+      drawing.img,
+      drawLut.lut,
+      drawLut.min ?? 0,
+      DRAW_OPACITY,
+    )
+    data.set(rgba)
+  } else {
+    // Fallback if the colormap isn't available: single color.
+    const img = drawing.img
+    for (let i = 0; i < img.length; i++) {
+      const o = i * 4
+      if (img[i]) {
+        data[o] = 235
+        data[o + 1] = 45
+        data[o + 2] = 55
+        data[o + 3] = 210
+      } else {
+        data[o + 3] = 0
+      }
     }
   }
   rasterCtx.putImageData(rasterImageData, 0, 0)
@@ -423,7 +448,7 @@ els.canvas.addEventListener('pointerdown', (event) => {
     drawStroke = { pointerId: event.pointerId }
     if (pt) {
       drawing.beginStroke()
-      drawing.point(pt[0], pt[1], 1, penSizeForRaster(), true)
+      drawing.point(pt[0], pt[1], penValue, penSizeForRaster(), true)
       lastRasterPt = pt
       overlayDirty = true
       requestRender()
@@ -447,12 +472,12 @@ els.canvas.addEventListener('pointermove', (event) => {
           lastRasterPt[1],
           pt[0],
           pt[1],
-          1,
+          penValue,
           penSizeForRaster(),
           true,
         )
       } else {
-        drawing.point(pt[0], pt[1], 1, penSizeForRaster(), true)
+        drawing.point(pt[0], pt[1], penValue, penSizeForRaster(), true)
       }
       lastRasterPt = pt
       overlayDirty = true
@@ -488,6 +513,9 @@ els.drawBtn.addEventListener('click', () => {
   drawMode = !drawMode
   els.drawBtn.textContent = `Draw: ${drawMode ? 'on' : 'off'}`
   els.canvas.style.cursor = drawMode ? 'crosshair' : 'grab'
+})
+els.penValue.addEventListener('change', () => {
+  penValue = Number(els.penValue.value) || 1
 })
 els.drawUndo.addEventListener('click', () => {
   if (drawing?.undo()) {

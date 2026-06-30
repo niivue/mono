@@ -4,12 +4,13 @@
  * @packageDocumentation
  */
 
+// biome-ignore-all lint/performance/noBarrelFile: package entry point
+export { lookupColorMap } from './cmap/NVCmaps'
 // Viewport controller (OpenSeadragon-style smooth pan/zoom on the shared canvas).
 // Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
 // Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
 export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
 // Extension API
-// biome-ignore lint/performance/noBarrelFile: package entry point
 export { NVExtensionContext } from './extension/context'
 export type {
   BackgroundVolumeAccess,
@@ -130,6 +131,7 @@ export { ManifestRangeSource, NVSlide } from './slide/NVSlide'
 export { SlideDrawing } from './slide/slideDrawing'
 export type { SlidePlaneTile } from './slide/slidePlane'
 export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
+export { buildDrawingLut, drawingBitmapToRGBA } from './view/NVDrawingTexture'
 export type {
   ChunkPlan,
   Vec3f,

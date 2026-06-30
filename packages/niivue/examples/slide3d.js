@@ -130,9 +130,28 @@ async function main() {
   document
     .getElementById('undoBtn')
     ?.addEventListener('click', () => nv.slideDrawUndo())
-  document
-    .getElementById('clearBtn')
-    ?.addEventListener('click', () => nv.clearSlideDrawing())
+  document.getElementById('clearBtn')?.addEventListener('click', () => {
+    nv.clearSlideDrawing()
+    nv.slideVector?.clear()
+    nv.refreshSlideAnnotation()
+  })
+  document.getElementById('toolSel')?.addEventListener('change', (e) => {
+    nv.slideTool = e.target.value
+  })
+  document.getElementById('labelSel')?.addEventListener('change', (e) => {
+    nv.model.draw.penValue = Number(e.target.value) || 1
+  })
+  document.getElementById('svgBtn')?.addEventListener('click', () => {
+    const layer = nv.slideVector
+    if (!layer || layer.shapes.length === 0) return
+    const svg = layer.toSVG(slide.manifest.width, slide.manifest.height)
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${slide.manifest.name || 'slide'}-annotations.svg`
+    a.click()
+    URL.revokeObjectURL(url)
+  })
 
   const updateHud = () => {
     const label = backend === 'webgpu' ? 'WebGPU' : 'WebGL2'

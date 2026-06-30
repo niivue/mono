@@ -46,10 +46,27 @@
   </head>
   <body>
     <div id="wrap"><canvas id="gl"></canvas></div>
-    <div id="toolbar" style="position: fixed; top: 10px; right: 10px; display: flex; gap: 6px;">
+    <div id="toolbar" style="position: fixed; top: 10px; right: 10px; display: flex; gap: 6px; align-items: center;">
       <button id="drawBtn" type="button">Draw: off</button>
+      <select id="toolSel" title="Drawing mode">
+        <option value="pen">Pen</option>
+        <option value="eraser">Eraser</option>
+        <option value="bucket">Fill</option>
+        <option value="filled">Filled pen</option>
+        <option value="wand">Magic wand</option>
+        <option value="vector">Vector (SVG)</option>
+      </select>
+      <select id="labelSel" title="Pen label">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+      </select>
       <button id="undoBtn" type="button">Undo</button>
       <button id="clearBtn" type="button">Clear</button>
+      <button id="svgBtn" type="button" title="Export vector annotations as SVG">SVG</button>
     </div>
     <div id="hud">loading…</div>
     <div id="help">

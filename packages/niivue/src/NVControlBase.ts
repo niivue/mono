@@ -140,6 +140,14 @@ type ViewBackend = {
 
 export type { NiiVueOptions }
 export type DistributionBackend = 'both' | 'webgpu' | 'webgl2'
+/** Slide drawing tools (see `slideTool`). */
+export type SlideDrawTool =
+  | 'pen'
+  | 'eraser'
+  | 'bucket'
+  | 'filled'
+  | 'wand'
+  | 'vector'
 
 type InfrastructureOpts = {
   backend?: BackendType
@@ -223,6 +231,10 @@ export default class NiiVueGPU extends EventTarget {
   private _slideDrawing: SlideDrawing | null = null
   private _slideVector: SlideVectorLayer | null = null
   private _slideLastRasterPt: [number, number] | null = null
+  private _slideTool: SlideDrawTool = 'pen'
+  private _slideWandTolerance = 40
+  private _slideFillPts: Array<[number, number]> = []
+  private _slideVecPts: Array<[number, number]> = []
   resizeObserver: ResizeObserver | null
   _eventListeners: Record<string, EventHandler | null>
   private _updating = false
@@ -2647,33 +2659,78 @@ export default class NiiVueGPU extends EventTarget {
     ]
   }
 
+  /** Active slide drawing tool. */
+  get slideTool(): SlideDrawTool {
+    return this._slideTool
+  }
+  set slideTool(tool: SlideDrawTool) {
+    this._slideTool = tool
+  }
+
+  /** Magic-wand color tolerance (Euclidean RGB distance). */
+  get slideWandTolerance(): number {
+    return this._slideWandTolerance
+  }
+  set slideWandTolerance(v: number) {
+    this._slideWandTolerance = Math.max(1, v)
+  }
+
   /**
-   * Paint on the slide at a canvas CSS pixel. `begin` snapshots for undo and
-   * starts a new stroke; subsequent calls draw a continuous line. Returns false
-   * if the point misses the slide. Uses the model's pen value/size, so eraser
-   * (penValue 0) and labels work as in the volume drawing path.
+   * Draw on the slide at a canvas CSS pixel with the active {@link slideTool}.
+   * `begin` starts a stroke (pen/eraser/filled), a single action (bucket/wand),
+   * or a new polygon (vector); subsequent calls extend it. Call slideDrawEnd on
+   * pointer-up. Returns false if the point misses the slide. Uses the model's
+   * pen value/size (eraser = penValue 0).
    */
   slideDrawAt(cssX: number, cssY: number, begin: boolean): boolean {
     const dr = this._slideDrawing
     if (!dr) return false
+    const tool = this._slideTool
     const hit = this.slidePlanePick(cssX, cssY)
     if (!hit) return false
+    // Vector annotations are stored in slide coords (resolution-independent).
+    if (tool === 'vector') {
+      if (begin) this._slideVecPts = []
+      this._slideVecPts.push([hit.x, hit.y])
+      return true
+    }
     const raster = this._slideToRaster(hit)
     if (!raster) return false
-    const [rx, ry] = [Math.round(raster[0]), Math.round(raster[1])]
+    const rx = Math.round(raster[0])
+    const ry = Math.round(raster[1])
     const penValue = this.model.draw.penValue
     const penSize = this.model.draw.penSize
     const overwrite = this.model.draw.isFillOverwriting
-    if (begin) {
-      dr.beginStroke()
-      dr.point(rx, ry, penValue, penSize, overwrite)
-      this._slideLastRasterPt = [rx, ry]
-    } else if (this._slideLastRasterPt) {
-      const [px, py] = this._slideLastRasterPt
-      dr.line(px, py, rx, ry, penValue, penSize, overwrite)
-      this._slideLastRasterPt = [rx, ry]
+    if (begin) dr.beginStroke() // snapshot for undo (all raster tools)
+    if (tool === 'bucket') {
+      if (begin) dr.bucketFill(rx, ry, penValue, overwrite)
+    } else if (tool === 'wand') {
+      if (begin) {
+        const ref = this._buildSlideWandReference()
+        if (ref)
+          dr.magicWand(
+            ref,
+            rx,
+            ry,
+            this._slideWandTolerance,
+            penValue,
+            overwrite,
+          )
+      }
     } else {
-      dr.point(rx, ry, penValue, penSize, overwrite)
+      // pen / eraser / filled
+      const pv = tool === 'eraser' ? 0 : penValue
+      if (begin) {
+        dr.point(rx, ry, pv, penSize, overwrite)
+        if (tool === 'filled') this._slideFillPts = [[rx, ry]]
+      } else if (this._slideLastRasterPt) {
+        const [px, py] = this._slideLastRasterPt
+        dr.line(px, py, rx, ry, pv, penSize, overwrite)
+        if (tool === 'filled') this._slideFillPts.push([rx, ry])
+      } else {
+        dr.point(rx, ry, pv, penSize, overwrite)
+        if (tool === 'filled') this._slideFillPts.push([rx, ry])
+      }
       this._slideLastRasterPt = [rx, ry]
     }
     this._refreshSlideAnnotation()
@@ -2681,14 +2738,87 @@ export default class NiiVueGPU extends EventTarget {
     return true
   }
 
-  /** End the current slide stroke (so the next begins fresh). */
+  /** End the current slide stroke; commits filled-pen / vector polygons. */
   slideDrawEnd(): void {
+    const dr = this._slideDrawing
+    if (dr && this._slideTool === 'filled' && this._slideFillPts.length >= 2) {
+      dr.fillPen(
+        this._slideFillPts,
+        this.model.draw.penValue,
+        this.model.draw.isFillOverwriting,
+      )
+      this._refreshSlideAnnotation()
+      this.emit('drawingChanged', { action: 'stroke' })
+    }
+    if (
+      this._slideTool === 'vector' &&
+      this._slideVecPts.length >= 3 &&
+      this._slideVector
+    ) {
+      this._slideVector.addPolygon(this._slideVecPts, this._slideVectorColor())
+      this._refreshSlideAnnotation()
+    }
     this._slideLastRasterPt = null
+    this._slideFillPts = []
+    this._slideVecPts = []
   }
 
-  /** Undo the last slide stroke. */
+  /** Undo the last slide action (vector tool removes the last polygon). */
   slideDrawUndo(): void {
+    if (this._slideTool === 'vector') {
+      if (this._slideVector?.removeLast()) this._refreshSlideAnnotation()
+      return
+    }
     if (this._slideDrawing?.undo()) this._refreshSlideAnnotation()
+  }
+
+  // CSS hex for the current pen label from the "_draw" LUT (vector stroke color).
+  private _slideVectorColor(): string {
+    if (!this._drawLut) {
+      const cm = NVCmaps.lookupColorMap(this.model.draw.colormap)
+      if (cm) this._drawLut = buildDrawingLut(cm)
+    }
+    const lut = this._drawLut?.lut
+    const min = this._drawLut?.min ?? 0
+    const i = (this.model.draw.penValue - min) * 4
+    if (!lut || i < 0 || i + 2 >= lut.length) return '#e62d37'
+    const hex = (n: number): string => n.toString(16).padStart(2, '0')
+    return `#${hex(lut[i])}${hex(lut[i + 1])}${hex(lut[i + 2])}`
+  }
+
+  // Composite the slide's most-detailed level that fits the raster into an RGBA
+  // color reference (raster resolution) for the magic wand. Whatever is cached
+  // is used; tiles are requested so a later wand click is sharper.
+  private _buildSlideWandReference(): Uint8ClampedArray | null {
+    const sp = this._slidePlane
+    const dr = this._slideDrawing
+    if (!sp || !dr || typeof OffscreenCanvas === 'undefined') return null
+    const levels = sp.slide.manifest.levels
+    let level = levels[levels.length - 1]
+    for (const lv of levels) {
+      if (lv.width <= dr.width && lv.width > level.width) level = lv
+    }
+    if (!level) return null
+    const tw = level.tileWidth ?? sp.slide.manifest.tileSize ?? 256
+    const th = level.tileHeight ?? sp.slide.manifest.tileSize ?? 256
+    const sx = dr.width / level.width
+    const sy = dr.height / level.height
+    const oc = new OffscreenCanvas(dr.width, dr.height)
+    const ctx = oc.getContext('2d')
+    if (!ctx) return null
+    for (const t of level.tiles) {
+      sp.slide.requestTile(level, t)
+      const bmp = sp.slide.cachedTileBitmap(`L${level.index}/${t.x}/${t.y}`)
+      if (bmp)
+        ctx.drawImage(
+          bmp,
+          t.x * tw * sx,
+          t.y * th * sy,
+          t.width * sx,
+          t.height * sy,
+        )
+    }
+    return ctx.getImageData(0, 0, dr.width, dr.height).data
   }
 
   /** Clear all slide annotation pixels. */

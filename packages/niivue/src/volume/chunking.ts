@@ -549,8 +549,16 @@ export function chunkVolumeMultiLOD(
     Math.max(0, Math.floor(options.minLevel ?? 0)),
     maxLevel,
   )
-  const cellEdge = Math.max(8, Math.floor(options.cellEdge ?? 128))
   const halo = options.haloSize ?? [1, 1, 1]
+  const maxHalo = Math.max(halo[0], halo[1], halo[2])
+  // A brick's texture is data + 2*halo voxels and must fit the device limit, so
+  // a cell holds at most (deviceLimit - 2*halo) source voxels. Clamp cellEdge to
+  // that ceiling: a larger value would let emitBrick clamp texDims while the data
+  // extent stayed larger (squashed/clipped sampling).
+  const cellEdge = Math.min(
+    Math.max(8, Math.floor(options.cellEdge ?? 128)),
+    Math.max(1, deviceLimit - 2 * maxHalo),
+  )
   const radius = Math.max(1e-3, focus.radius)
   // Scale-relative detail factor. A cell refines while `beyond < BASE_DETAIL *
   // cellSize`; >= ~1 keeps the octree 2:1 balanced (one level change per cell).
@@ -816,7 +824,6 @@ export function chunkVolumeMultiLOD(
     // the device texture limit. If the cap is still unreachable at the limit, the
     // volume genuinely cannot fit `maxBricks` device-sized bricks (rare).
     if (chunks.length > maxBricks) {
-      const maxHalo = Math.max(halo[0], halo[1], halo[2])
       const maxRootScale = Math.max(
         1,
         Math.floor((deviceLimit - 2 * maxHalo) / cellEdge),

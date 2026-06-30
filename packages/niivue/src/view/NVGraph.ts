@@ -397,7 +397,12 @@ function drawDecimatedSeries(
   let prevX = 0
   let prevY = 0
   for (let col = 0; col < cols; col++) {
-    if (maxY[col] < minY[col]) continue
+    // Empty column = a NaN run (or window edge). Break the line so the gap is
+    // not bridged by a connector, matching the non-decimated path's behaviour.
+    if (maxY[col] < minY[col]) {
+      havePrev = false
+      continue
+    }
     const x = pL + col
     if (havePrev) {
       out.push(buildLine(prevX, prevY, x, minY[col], lineThick, color))

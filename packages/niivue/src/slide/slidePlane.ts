@@ -32,21 +32,33 @@ function apply(m: readonly number[], px: number, py: number): Vec3 {
 /**
  * Map every tile of `level` to a world-space quad via `pixelToWorld` (column-major
  * 4x4, slide base pixels -> world mm). Mirrors NVSlide.visibleTiles' base-pixel
- * math (tile.x * tileWidth * downsample), so a tile's plane position lines up with
- * its 2D position. The renderer draws each quad with the tile's cached bitmap.
+ * math, so a tile's plane position lines up with its 2D position. When the base
+ * slide dims are given, level<->base uses each level's ACTUAL per-axis scale
+ * (base / level dims) rather than the nominal `downsample`; this keeps levels
+ * whose dims are not an exact `base / 2^L` (rounding) covering exactly [0, base],
+ * so registered drawings don't drift when zoom crosses a LOD boundary. Falls back
+ * to `downsample` when base dims are omitted.
  */
 export function slidePlaneTiles(
   level: NVSlideLevelManifest,
   tileWidth: number,
   tileHeight: number,
   pixelToWorld: readonly number[],
+  baseWidth?: number,
+  baseHeight?: number,
 ): SlidePlaneTile[] {
+  const dsX =
+    baseWidth && level.width > 0 ? baseWidth / level.width : level.downsample
+  const dsY =
+    baseHeight && level.height > 0
+      ? baseHeight / level.height
+      : level.downsample
   const out: SlidePlaneTile[] = []
   for (const tile of level.tiles) {
-    const baseX = tile.x * tileWidth * level.downsample
-    const baseY = tile.y * tileHeight * level.downsample
-    const baseW = tile.width * level.downsample
-    const baseH = tile.height * level.downsample
+    const baseX = tile.x * tileWidth * dsX
+    const baseY = tile.y * tileHeight * dsY
+    const baseW = tile.width * dsX
+    const baseH = tile.height * dsY
     out.push({
       key: `L${level.index}/${tile.x}/${tile.y}`,
       col: tile.x,
@@ -242,7 +254,14 @@ export function resolveSlidePlaneTiles(
   if (!all) {
     const tw = level.tileWidth ?? state.slide.manifest.tileSize ?? 256
     const th = level.tileHeight ?? state.slide.manifest.tileSize ?? 256
-    all = slidePlaneTiles(level, tw, th, state.pixelToWorld)
+    all = slidePlaneTiles(
+      level,
+      tw,
+      th,
+      state.pixelToWorld,
+      state.slide.manifest.width,
+      state.slide.manifest.height,
+    )
     state.tilesByLevel.set(level.index, all)
   }
   // Cull to the viewport so a deep level only streams/draws on-screen tiles.

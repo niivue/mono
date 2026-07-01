@@ -655,10 +655,23 @@ export class NVSlide extends EventTarget {
       this.viewport.centerX + screen.widthCss / (2 * this.viewport.scale)
     const viewBottom =
       this.viewport.centerY + screen.heightCss / (2 * this.viewport.scale)
-    const levelLeft = Math.floor(viewLeft / level.downsample)
-    const levelTop = Math.floor(viewTop / level.downsample)
-    const levelRight = Math.ceil(viewRight / level.downsample)
-    const levelBottom = Math.ceil(viewBottom / level.downsample)
+    // Map level pixels <-> base pixels by each level's ACTUAL per-axis scale
+    // (base / level dims), not the nominal `downsample`. When a pyramid level's
+    // dimensions are not an exact `base / 2^L` (rounding), `level.width *
+    // downsample != base width`, so a downsample-based mapping places the level's
+    // tiles over a slightly different base extent than the true [0, base] the
+    // drawing overlay (screenToSlide/slideToCss) uses — and the offset changes at
+    // each LOD boundary, so annotations appear to jump when zooming across a
+    // level. Using the exact scale makes every level cover exactly [0, base], so
+    // tiles register with each other and with slide-space drawings across zoom.
+    const dsX =
+      level.width > 0 ? this.manifest.width / level.width : level.downsample
+    const dsY =
+      level.height > 0 ? this.manifest.height / level.height : level.downsample
+    const levelLeft = Math.floor(viewLeft / dsX)
+    const levelTop = Math.floor(viewTop / dsY)
+    const levelRight = Math.ceil(viewRight / dsX)
+    const levelBottom = Math.ceil(viewBottom / dsY)
     const tileWidth = this.levelTileWidth(level)
     const tileHeight = this.levelTileHeight(level)
     const firstX = clamp(
@@ -684,10 +697,10 @@ export class NVSlide extends EventTarget {
       for (let x = firstX; x <= lastX; x++) {
         const tile = this.tileAt(level, x, y)
         if (!tile) continue
-        const baseX = tile.x * tileWidth * level.downsample
-        const baseY = tile.y * tileHeight * level.downsample
-        const baseWidth = tile.width * level.downsample
-        const baseHeight = tile.height * level.downsample
+        const baseX = tile.x * tileWidth * dsX
+        const baseY = tile.y * tileHeight * dsY
+        const baseWidth = tile.width * dsX
+        const baseHeight = tile.height * dsY
         const screenY = this.isYAxisUp()
           ? (viewBottom - (baseY + baseHeight)) * screenScale
           : (baseY - viewTop) * screenScale

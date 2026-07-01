@@ -392,6 +392,7 @@ export default class NiiVueGPU extends EventTarget {
       contextmenu: null,
       pointerdown: null,
       pointerup: null,
+      pointercancel: null,
       pointermove: null,
       wheel: null,
       keydown: null,

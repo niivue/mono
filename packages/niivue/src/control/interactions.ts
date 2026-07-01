@@ -846,6 +846,22 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       /* already released */
     }
   }
+  // A pointer can be cancelled (touch interrupted, palm rejection, browser
+  // gesture) WITHOUT a pointerup. Reset the drag state so an interrupted drag
+  // does not leave isDragging stuck true — which would keep the chunked-volume
+  // streaming pump paused (it is gated on !isDragging) and stall streaming.
+  ctrl._eventListeners.pointercancel = (e: Event) => {
+    if (ctrl._activeDragMode !== DRAG_MODE.none) {
+      DragModes.handleDragRelease(ctrl)
+    }
+    ctrl.isDragging = false
+    ctrl.activeTileHit = null
+    try {
+      ctrl.canvas?.releasePointerCapture((e as PointerEvent).pointerId)
+    } catch {
+      /* already released */
+    }
+  }
   ctrl._eventListeners.pointermove = (e: Event) => {
     const evt = e as PointerEvent
     setNextActionTag(ctrl.isDragging ? 'drag' : 'pointermove')
@@ -1417,6 +1433,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   ctrl.canvas?.addEventListener('contextmenu', ctrl._eventListeners.contextmenu)
   ctrl.canvas?.addEventListener('pointerdown', ctrl._eventListeners.pointerdown)
   ctrl.canvas?.addEventListener('pointerup', ctrl._eventListeners.pointerup)
+  ctrl.canvas?.addEventListener(
+    'pointercancel',
+    ctrl._eventListeners.pointercancel,
+  )
   ctrl.canvas?.addEventListener('pointermove', ctrl._eventListeners.pointermove)
   ctrl.canvas?.addEventListener(
     'pointerleave',
@@ -1446,6 +1466,12 @@ export function removeInteractionListeners(ctrl: NiiVueGPU): void {
     ctrl.canvas?.removeEventListener(
       'pointerup',
       ctrl._eventListeners.pointerup,
+    )
+  }
+  if (ctrl._eventListeners.pointercancel) {
+    ctrl.canvas?.removeEventListener(
+      'pointercancel',
+      ctrl._eventListeners.pointercancel,
     )
   }
   if (ctrl._eventListeners.pointermove) {

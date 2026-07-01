@@ -330,6 +330,7 @@ const els = {
   zoom: el('zoom'),
   zoomVal: el('zoomVal'),
   explode: el('explode'),
+  explodeVal: el('explodeVal'),
   blocks: el('blocks'),
   reload: el('reload'),
   canvas: el('nv-canvas'),
@@ -1029,6 +1030,18 @@ function bytesFromZarrView(view) {
   return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
 }
 
+// Current uniform explode scale from the slider (1 = no gap between bricks).
+function explodeScale() {
+  return Math.max(1, Number(els.explode.value) || 1)
+}
+
+// chunkExplode options for the current slider value. The scale is applied
+// uniformly to x, y and z so bricks spread apart evenly.
+function explodeOptions() {
+  const s = explodeScale()
+  return s > 1.001 ? { enabled: true, scale: [s, s, s] } : { enabled: false }
+}
+
 function createStreamingVolume(source) {
   const win = parseWindow(source.defaultWindow)
   const chunkSource =
@@ -1042,7 +1055,7 @@ function createStreamingVolume(source) {
       `?source=${source.kind}` +
       `&cm=${encodeURIComponent(els.colormap.value)}` +
       `&w=${win.min}-${win.max}` +
-      `&explode=${els.explode.checked ? '1' : '0'}`,
+      `&explode=${explodeScale().toFixed(2)}`,
     shape: source.shape,
     spacing: source.spacing,
     datatypeCode: source.datatypeCode,
@@ -1053,9 +1066,7 @@ function createStreamingVolume(source) {
     chunkSource,
   })
   vol.chunkPlan = chunkPlan ?? undefined
-  vol.chunkExplode = els.explode.checked
-    ? { enabled: true, scale: [1.28, 1.28, 1.28] }
-    : { enabled: false }
+  vol.chunkExplode = explodeOptions()
   return vol
 }
 
@@ -1108,16 +1119,21 @@ function boxesIntersect(aMin, aMax, bMin, bMax) {
 
 // One outline box per streamed chunk, in mm. When zoomed in, restrict to the
 // chunks intersecting the focus ROI so the outlines mark only the region under
-// inspection instead of covering the whole 3D render.
-function computeBlockBoxes(source, plan, zoom) {
+// inspection instead of covering the whole 3D render. When exploded, each box is
+// shifted by the same per-brick offset the renderer applies (matching
+// ChunkExplode.chunkExplodeOffsetFrac) so the outlines track the exploded bricks.
+function computeBlockBoxes(source, plan, zoom, explode) {
   if (!source || !plan) return []
   const { min, max } = volumeExtents(source)
   const cs = source.shape
   const roi = zoom > 1.01 ? focusRoi(source, zoom) : null
+  const es = explode > 1.001 ? explode : 1
   const toMM = (voxel, axis) =>
     min[axis] + (voxel / cs[axis]) * (max[axis] - min[axis])
   const boxes = []
   for (const c of plan.chunks) {
+    // Unshifted (true volume-space) box drives the focus-ROI membership so
+    // restriction stays stable regardless of the explode spacing.
     const bMin = [
       toMM(c.voxelOrigin[0], 0),
       toMM(c.voxelOrigin[1], 1),
@@ -1129,6 +1145,15 @@ function computeBlockBoxes(source, plan, zoom) {
       toMM(c.voxelOrigin[2] + c.voxelDims[2], 2),
     ]
     if (roi && !boxesIntersect(bMin, bMax, roi.min, roi.max)) continue
+    // Explode shift: offsetFrac = (centreFrac - 0.5) * (scale - 1) per axis.
+    if (es > 1) {
+      for (let a = 0; a < 3; a++) {
+        const centreFrac = (c.voxelOrigin[a] + c.voxelDims[a] / 2) / cs[a]
+        const shift = (centreFrac - 0.5) * (es - 1) * (max[a] - min[a])
+        bMin[a] += shift
+        bMax[a] += shift
+      }
+    }
     const level = c.sourceLevel ?? 0
     boxes.push({
       min: bMin,
@@ -1161,7 +1186,7 @@ function applyBlocks() {
   const zoom = Number(els.zoom.value) || 1
   nv.lodBoxes =
     show && activeSource && chunkPlan
-      ? computeBlockBoxes(activeSource, chunkPlan, zoom)
+      ? computeBlockBoxes(activeSource, chunkPlan, zoom, explodeScale())
       : null
   nv.focusBox =
     show && activeSource && zoom > 1.01
@@ -1173,6 +1198,17 @@ function applyBlocks() {
       : null
   els.chunkStrip.style.display = show ? 'grid' : 'none'
   nv.drawScene()
+}
+
+// Live-update the explode spacing without re-streaming: the renderer reads
+// vol.chunkExplode every frame, so mutate the resident volume and redraw. Also
+// refresh the block outlines so they track the newly spaced bricks.
+function applyExplode() {
+  if (!nv) return
+  els.explodeVal.textContent = `${explodeScale().toFixed(2)}x`
+  const vol = nv.volumes?.[0]
+  if (vol) vol.chunkExplode = explodeOptions()
+  applyBlocks()
 }
 
 function renderChunkStrip() {
@@ -1357,9 +1393,9 @@ async function main() {
   els.window.addEventListener('change', () => {
     void reloadVolume()
   })
-  els.explode.addEventListener('change', () => {
-    void reloadVolume()
-  })
+  // Explode is a render-time per-brick offset, not a data change, so update it
+  // live on the resident volume instead of re-streaming.
+  els.explode.addEventListener('input', applyExplode)
   els.zoom.addEventListener('input', applyZoom)
   els.blocks.addEventListener('change', applyBlocks)
   els.reload.addEventListener('click', () => {

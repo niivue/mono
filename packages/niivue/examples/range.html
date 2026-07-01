@@ -308,10 +308,9 @@
           title="Zoom the 2D views and restrict the 3D block outlines to the focused region" />
       </span>
       <span class="control">
-        <label for="explode">
-          <input id="explode" type="checkbox" />
-          explode
-        </label>
+        <label for="explode">explode <span id="explodeVal">1.00x</span></label>
+        <input id="explode" type="range" min="1" max="3" step="0.05" value="1"
+          title="Uniformly spread the chunk bricks apart in x, y and z (1.00x = no gap)" />
       </span>
       <span class="control">
         <label for="blocks">

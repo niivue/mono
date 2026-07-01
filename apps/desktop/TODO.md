@@ -159,19 +159,17 @@ depend on laterality, intensity, or thresholds until the blockers land.
   Done: `isOrientCubeVisible` enabled + anatomical-letter readout (RAS+).
   Remaining: per-pane 2D orientation letters (rolls in with multiplanar
   below) and an explicit on-screen convention statement.
-- [ ] **[P1] (L) 2D multiplanar slices + voxel-intensity readout.** The stage is
-  hard-pinned to 3D render mode (`NiivueStage.tsx:254-255`); the axial/coronal/
-  sagittal buttons only rotate the camera. There is no slice view, no slice
-  scroll, no through-plane navigation. Add a multiplanar mode (NiiVue 2×2
-  with-render layout), per-pane orientation letters, and a slice-position
-  readout. Done: per-layer voxel intensity now shows in the footer readout
-  (`locationIntensity` in `App.tsx`).
-  **Fold in here:** the interactive window/level (cal_min/cal_max) control.
-  It was built and wired end-to-end, but cal_min/cal_max have no visible
-  effect on the 3D raycast, so it was removed pending this 2D view where
-  W/L is the primary interaction and is verifiable. Re-introduce per-pane
-  W/L drag + numeric min/max (and CT presets if/when CT data is loaded —
-  current sample data is T1w MRI only).
+- [~] **[P1] (L) 2D multiplanar slices + voxel-intensity readout.** Mostly done on
+  the `viewer-multiplanar` branch (merged): axial/coronal/sagittal slice modes +
+  a multiplanar layout (`VIEW_MODES` / `sliceType`), mouse-wheel through-plane
+  paging (`sliceWheelStep`), a slice-position readout in the window header
+  (`slicePositionLabel`, e.g. `Axial · I 168 mm`), per-layer voxel intensity in
+  the footer (`locationIntensity`), and the interactive **intensity window /
+  threshold** control re-introduced per layer (numeric Min/Max, now verifiable in
+  2D). Remaining: **per-pane 2D orientation letters** (NiiVue draws them per
+  slice, but confirm/expose consistently) and W/L **drag** on a pane (numeric
+  min/max is done; drag is not). CT presets deferred until CT data is loaded
+  (sample data is T1w MRI only).
 - [~] **[P1] (M) Window/level + visible intensity ranges + diverging colormap.**
   Done: intensity colorbar enabled and kept clear of the status overlay; a
   "Warm/Cool (diverging)" colormap (NiiVue warm + colormapNegative cool) for
@@ -272,10 +270,14 @@ features — a control that can quietly mislead is worse than no control.
   (page in mm / orientation-aware for a consistent up=superior feel) — lower
   priority now that the mm position is visible. Note: header position populates
   after the first crosshair move (NiiVue doesn't emit an initial location).
-- [ ] **[P2] (S) Add-overlay guard rail.** The pool blends any of 157 unrelated
-  dataset volumes onto the base with only the subject check as a rail — easy to
-  mis-add. Consider surfacing relationship (same subject/space) in the pool or a
-  confirm on a clearly-mismatched add.
+- [x] **[P2] (S) Add-overlay guard rail.** Done: the "Add overlay" pool now
+  surfaces the subject relationship *before* adding — a candidate whose BIDS
+  subject differs from the base gets an amber ⚠ and an explanatory tooltip
+  (`layerSubjectWarning(selected, item)` per row, `.nv-layer-add-warn` /
+  `.is-warning`). Chose an inline cue over a confirm dialog (no modal). Only the
+  subject check runs here (the world-space check needs post-load extents the
+  pool volumes don't have yet); candidates without a BIDS subject still show no
+  rail, same limitation as the per-row guard.
 
 (Already tracked but **raised in priority** by this pass: Save/share full view
 state — now the only way to capture the new per-layer settings, whose defaults
@@ -360,9 +362,9 @@ RAS+value widget.)
   noise. Follow-up: a true **space** check (native vs MNI, same subject) needs
   the post-load world extents/affine from NiiVue (`extentsMin/Max`) — wire it
   through the `loadedVersion` readback added in Phase E.
-- [ ] **[P2] (S) Per-layer opacity sliders.** Overlay opacity is hardcoded at
-  0.48 (`App.tsx:240`); blending is a core stats-viewing knob. Expose per-layer
-  sliders (the layer panel already has per-layer colormap selects, `App.tsx:990`).
+- [x] **[P2] (S) Per-layer opacity sliders.** Done in the layer-controls redesign
+  Phase B: each overlay/atlas row has an opacity slider + readout backed by
+  `layerSettings[id].opacity`; the hardcoded 0.48/0.34 literals are gone.
 - [x] **[P2] (S) Scroll pages slices.** Mouse-wheel now pages through slices in
   the single-plane 2D modes (axial/coronal/sagittal) by driving the crosshair's
   through-plane voxel (`sliceWheelStep` + `handleWheelCapture`); scroll-down

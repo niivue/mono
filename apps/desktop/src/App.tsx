@@ -1210,22 +1210,32 @@ function LayerPanel({
         <em>{addCandidates.length}</em>
       </div>
       <div className="nv-layer-list">
-        {addCandidates.map((item) => (
-          <button
-            className="nv-layer-add-option"
-            disabled={!selected}
-            key={item.id}
-            onClick={() => onOverlayToggle(item.id)}
-            title={item.label}
-            type="button"
-          >
-            <Plus size={13} />
-            <span>
-              <strong>{item.label}</strong>
-              <small>{layerOptionMeta(item)}</small>
-            </span>
-          </button>
-        ))}
+        {addCandidates.map((item) => {
+          // Only the subject check is available before the volume loads (the
+          // world-space check needs post-load extents), so surface a
+          // different-subject candidate right in the pool — the mismatch is
+          // cheapest to catch before it's blended onto the base.
+          const warn = layerSubjectWarning(selected, item)
+          return (
+            <button
+              className={`nv-layer-add-option${warn ? ' is-warning' : ''}`}
+              disabled={!selected}
+              key={item.id}
+              onClick={() => onOverlayToggle(item.id)}
+              title={warn ? `${item.label} — ${warn}` : item.label}
+              type="button"
+            >
+              <Plus size={13} />
+              <span>
+                <strong>{item.label}</strong>
+                <small>{layerOptionMeta(item)}</small>
+              </span>
+              {warn ? (
+                <AlertTriangle aria-label="Different subject than base" className="nv-layer-add-warn" size={13} />
+              ) : null}
+            </button>
+          )
+        })}
         {addCandidates.length === 0 ? (
           <div className="nv-filter-empty">No overlay candidates.</div>
         ) : null}

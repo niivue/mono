@@ -1161,13 +1161,16 @@ function applyZoom() {
   applyBlocks()
 }
 
-// Show or hide the per-chunk outline boxes in the 3D render.
+// Show or hide the block visualizations: the per-chunk outline boxes in the 3D
+// render and the loaded-chunks indicator strip (which sits over a corner tile).
 function applyBlocks() {
   if (!nv) return
+  const show = els.blocks.checked
   nv.lodBoxes =
-    els.blocks.checked && activeSource && chunkPlan
+    show && activeSource && chunkPlan
       ? computeBlockBoxes(activeSource, chunkPlan, Number(els.zoom.value) || 1)
       : null
+  els.chunkStrip.style.display = show ? 'grid' : 'none'
   nv.drawScene()
 }
 

@@ -1174,7 +1174,14 @@ function applyZoom() {
   const zoom = Number(els.zoom.value) || 1
   els.zoomVal.textContent = `${zoom.toFixed(1)}x`
   nv.pan2Dxyzmm = [0, 0, 0, zoom] // 2D multiplanar: zoom about the centre
-  nv.scaleMultiplier = zoom // 3D render: scale the camera by the same factor
+  // Zoom the 3D render camera ONLY in multiplanar, where the render quadrant
+  // mirrors what the zoomed 2D slices show (WYSIWYG) — that focus frustum-culls
+  // chunk requests to the visible region. In the dedicated render view, keep the
+  // camera framing the whole volume (scale 1) so every block stays in-frustum and
+  // streams in; otherwise switching to render after a multiplanar zoom leaves the
+  // out-of-focus blocks unrequested (only the central slab loads).
+  const inRenderView = Number(els.layout.value) === SLICE_TYPE.RENDER
+  nv.scaleMultiplier = inRenderView ? 1 : zoom
   applyBlocks()
 }
 
@@ -1340,7 +1347,10 @@ function startHudPolling() {
 function applyLayout() {
   if (!nv) return
   nv.sliceType = Number(els.layout.value)
-  nv.drawScene()
+  // The render-camera zoom is layout-dependent (see applyZoom): switching to or
+  // from the render view must update scaleMultiplier and re-frame so the newly
+  // in-frustum blocks are requested (applyZoom -> applyBlocks -> drawScene).
+  applyZoom()
   renderHud()
 }
 

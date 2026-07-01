@@ -1440,25 +1440,32 @@ export default class NVGlview {
     // last clause keeps the self-driven loop alive across frames where a pump
     // uploads nothing because its chunks are still being fetched — otherwise
     // streaming stalls until an unrelated redraw (e.g. a drag) re-kicks it.
-    const fading = this.volumeRenderer.fadeActive
-    this.volumeRenderer
-      .pumpChunkUploads()
-      .then((changed) => {
-        const stream = this.volumeRenderer.chunkStreamStats()
-        const busy = stream.pending > 0 || stream.inFlight > 0
-        if (changed || fading || busy) {
-          requestAnimationFrame(() => this.render())
-        }
-      })
-      .catch((err) => {
-        log.error('chunk upload pump failed', err)
-        // Keep the self-driven loop alive: an unexpected pump rejection must not
-        // permanently freeze streaming while chunks are still outstanding.
-        const stream = this.volumeRenderer.chunkStreamStats()
-        if (stream.pending > 0 || stream.inFlight > 0) {
-          requestAnimationFrame(() => this.render())
-        }
-      })
+    // Pause the chunk upload pump during an active drag: its per-chunk decode +
+    // orient + gradient work would jank the rotation/pan. Resident chunks keep
+    // drawing (requestChunksInFrustum still stamps them, so the LRU won't evict
+    // them), and the pump resumes on release (pointerup -> drawScene), draining
+    // the queued working set then. Standard "stream on interaction-end".
+    if (!md._isDragging) {
+      const fading = this.volumeRenderer.fadeActive
+      this.volumeRenderer
+        .pumpChunkUploads()
+        .then((changed) => {
+          const stream = this.volumeRenderer.chunkStreamStats()
+          const busy = stream.pending > 0 || stream.inFlight > 0
+          if (changed || fading || busy) {
+            requestAnimationFrame(() => this.render())
+          }
+        })
+        .catch((err) => {
+          log.error('chunk upload pump failed', err)
+          // Keep the self-driven loop alive: an unexpected pump rejection must
+          // not permanently freeze streaming while chunks are still outstanding.
+          const stream = this.volumeRenderer.chunkStreamStats()
+          if (stream.pending > 0 || stream.inFlight > 0) {
+            requestAnimationFrame(() => this.render())
+          }
+        })
+    }
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */

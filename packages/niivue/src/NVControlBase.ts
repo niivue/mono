@@ -251,7 +251,24 @@ export default class NiiVueGPU extends EventTarget {
   currentClipPlaneIndex: number
   canvas: HTMLCanvasElement | null = null
   opts: InfrastructureOpts
-  isDragging: boolean
+  private _isDraggingFlag = false
+  /**
+   * True during an active pointer drag. Mirrored to `model._isDragging` so the
+   * view can pause expensive per-frame work (e.g. the chunked-volume upload
+   * pump) during interaction and keep rotation/pan smooth.
+   */
+  get isDragging(): boolean {
+    return this._isDraggingFlag
+  }
+  set isDragging(value: boolean) {
+    const was = this._isDraggingFlag
+    this._isDraggingFlag = value
+    this.model._isDragging = value
+    // Resuming from a drag: the chunk upload pump was paused while dragging, and
+    // pointerup does not itself redraw, so kick a render to resume streaming and
+    // drain the working set queued during the drag.
+    if (was && !value) this.drawScene()
+  }
   lastPointerX: number
   lastPointerY: number
   framePending: boolean
@@ -363,8 +380,9 @@ export default class NiiVueGPU extends EventTarget {
       maxTextureDimension3D: options.maxTextureDimension3D,
       maxChunkResidencyBytes: options.maxChunkResidencyBytes,
     }
-    // Public properties (controller-level)
-    this.isDragging = false
+    // Public properties (controller-level). isDragging defaults false via its
+    // backing field; setting it here would run its model-mirroring setter before
+    // this.model exists, so it is intentionally omitted.
     this.lastPointerX = 0
     this.lastPointerY = 0
     this.framePending = false

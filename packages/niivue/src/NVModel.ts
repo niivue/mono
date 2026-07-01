@@ -76,6 +76,13 @@ export default class NVModel {
   // --- Transient state ---
   /** Transient drag overlay for view rendering (controller-owned, not serialized) */
   _dragOverlay: DragOverlay | null = null
+  /**
+   * True during an active pointer drag (rotate/pan/etc.), mirrored from the
+   * controller's `isDragging`. Lets the view pause expensive per-frame work
+   * (chunked-volume upload pump) during interaction so rotation stays smooth.
+   * Controller-owned, not serialized.
+   */
+  _isDragging = false
   /** Transient world-space box outlined on 3D render tiles (e.g. focus region) */
   _focusBox: FocusBox | null = null
   /**

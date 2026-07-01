@@ -380,9 +380,14 @@ RAS+value widget.)
   volume orientation — page in mm for a consistent up=superior feel.
 - [ ] **[P3] (M) Measurement tools.** No length/angle/ROI or Hounsfield readout.
   Add basic distance + voxel-value-under-crosshair.
-- [ ] **[P3] (S) Keep base volume grayscale-only.** Letting the base anatomical
-  volume be set to viridis/magma (`App.tsx:77-81`) invites pseudocolor
-  misreading; restrict colormaps to overlays/stat maps.
+- [x] **[P3] (S) Keep base volume grayscale-only.** Done: the anatomical base's
+  colormap dropdown is restricted to grayscale-family maps (`BASE_COLORMAP_OPTIONS`
+  = Gray, Bone); overlays/stat maps keep the full set. Also clamps the *render*
+  and the select value via `baseColormap()` so a pseudocolor setting leaked from
+  a volume's prior overlay/atlas role can't paint the base (parallels the base
+  opacity-leak fix). Base-as-atlas keeps its label colormap. Verified live: base
+  dropdown = Gray/Bone, overlay = all 5, Bone applies to the base render, and a
+  viridis overlay promoted to base renders gray (dropdown shows gray, not blank).
 - [ ] **[P3] (S) Dark-reading dropdown hygiene.** OS-native `<select>`/`<option>`
   popups flash bright white in a dark reading room; style them dark or use a
   custom menu.

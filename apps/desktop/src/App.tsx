@@ -95,6 +95,13 @@ const COLORMAP_OPTIONS = [
   { value: 'actc', label: 'ACTC' },
   { value: 'warm_cool', label: 'Warm/Cool (diverging)' }
 ] as const
+// The anatomical base is restricted to grayscale-family maps: pseudocolor
+// (viridis/magma/actc) on a structural volume invites intensity misreading.
+// Stat/label overlays keep the full COLORMAP_OPTIONS set.
+const BASE_COLORMAP_OPTIONS = [
+  { value: 'gray', label: 'Gray' },
+  { value: 'bone', label: 'Bone' }
+] as const
 
 // A colormap selection of 'warm_cool' is the NiiVue idiom for signed/stat data:
 // a warm map for positive intensities paired with a cool map for negatives, so
@@ -294,11 +301,9 @@ export function App(): JSX.Element {
         kind: 'base',
         isAtlas: atlasId === selected.id,
         ...resolveColormap(
-          layerColormapForItem(
-            selected,
-            layerSettings,
-            atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
-          )
+          atlasId === selected.id
+            ? layerColormapForItem(selected, layerSettings, DEFAULT_ATLAS_COLORMAP)
+            : baseColormap(layerColormapForItem(selected, layerSettings, DEFAULT_BASE_COLORMAP))
         ),
         ...windowForItem(selected.id, layerSettings),
         // The base is always fully opaque (its row has no opacity slider); only
@@ -1117,7 +1122,7 @@ function LayerPanel({
             const settings = layerSettings[item.id]
             const isBaseAtlas = role === 'base' && atlasId === selected.id
             const overlayIndex = role === 'overlay' ? overlayItems.findIndex((o) => o.id === item.id) : 0
-            const colormapValue = layerColormapForItem(
+            const rawColormap = layerColormapForItem(
               item,
               layerSettings,
               role === 'overlay'
@@ -1126,6 +1131,8 @@ function LayerPanel({
                   ? DEFAULT_ATLAS_COLORMAP
                   : DEFAULT_BASE_COLORMAP
             )
+            // Keep the base's select in sync with what actually renders (grayscale).
+            const colormapValue = role === 'base' && !isBaseAtlas ? baseColormap(rawColormap) : rawColormap
             return (
               <LayerRow
                 key={item.id}
@@ -1155,6 +1162,7 @@ function LayerPanel({
                       ariaLabel={`Colormap for ${item.label}`}
                       itemId={item.id}
                       value={colormapValue}
+                      options={role === 'base' && !isBaseAtlas ? BASE_COLORMAP_OPTIONS : COLORMAP_OPTIONS}
                       onChange={onLayerColormapChange}
                     />
                     {role === 'overlay' ? (
@@ -1337,12 +1345,14 @@ function LayerColormapSelect({
   disabled = false,
   itemId,
   value,
+  options = COLORMAP_OPTIONS,
   onChange
 }: {
   ariaLabel: string
   disabled?: boolean
   itemId: string
   value: string
+  options?: ReadonlyArray<{ value: string; label: string }>
   onChange: (itemId: string, colormap: string) => void
 }): JSX.Element {
   return (
@@ -1354,7 +1364,7 @@ function LayerColormapSelect({
         value={value}
         onChange={(event) => onChange(itemId, event.target.value)}
       >
-        {COLORMAP_OPTIONS.map((option) => (
+        {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
@@ -2004,6 +2014,14 @@ function layerColormapForItem(
   fallback: string
 ): string {
   return layerSettings[item.id]?.colormap ?? fallback
+}
+
+// Clamp the anatomical base to a grayscale-family map. A volume promoted from
+// overlay to base can carry a leaked pseudocolor setting; the base has no way to
+// display or change one (its dropdown is restricted), so force it grayscale.
+const BASE_COLORMAP_VALUES = new Set<string>(BASE_COLORMAP_OPTIONS.map((option) => option.value))
+function baseColormap(value: string): string {
+  return BASE_COLORMAP_VALUES.has(value) ? value : DEFAULT_BASE_COLORMAP
 }
 
 function overlayColormapForIndex(index: number): string {

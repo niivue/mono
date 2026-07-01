@@ -105,6 +105,28 @@ Every controller-level feature must work identically on both `wgpu/NVViewGPU.ts`
 - When the controller threads a new piece of per-tile state, both view tile loops must consume it (see `tile.space === 'global3d'` for the reference shape: per-volume texture cache + per-tile MVP + skip layers that don't apply).
 - Demos that exercise a feature should be backend-agnostic — typically a `?backend=webgl2|webgpu` URL switch — so manual verification is symmetric.
 
+**Backend init fallback (both distribution):** `control/viewBoth.ts` `attachToCanvas`
+tries the configured backend, then — when WebGPU was requested — falls back to WebGL2
+if `init()` throws (e.g. `requestAdapter()` returns null because the browser's graphics
+acceleration is off; note `navigator.gpu` can exist yet yield no adapter, so the
+pre-init `enforceBackendAvailability` check isn't enough). The failed attempt may lock
+the canvas's context type, so the fallback swaps in a fresh canvas via
+`replaceCanvasElement` (now `oldCanvas.cloneNode(false)`, preserving width/height/
+data-*/aria/tabindex; external listeners on the original canvas are NOT preserved).
+The fallback is declined for a SHARED canvas (`canvasInstances` size > 1) — replacing
+it would desync sibling controllers — surfacing the overlay instead. Only `init()` is
+fallback-eligible; post-init failures (thumbnail, etc.) rethrow. On all-backends-fail,
+`attachToCanvas` `unregister`s the controller and restores the originally requested
+backend (so a later retry starts fresh), then `control/canvasMessage.ts`
+(`showCanvasMessage` / `GRAPHICS_UNAVAILABLE_MESSAGE`) overlays a centered DOM message
+with concrete fixes (enable hardware acceleration; or Chrome's
+`#enable-unsafe-swiftshader`) and the error rethrows. The single-backend distributions
+(`viewWebGPU.ts`/`viewWebGL2.ts`) have no fallback but show the same overlay on
+failure. A DOM overlay is used (not canvas 2D) because a failed WebGPU/WebGL2
+`getContext` can lock the canvas context type. The controller's `destroy()` clears
+any overlay. (These `control/` lifecycle paths are DOM-dependent and browser-verified, not
+unit-tested under the Bun harness.)
+
 ### Key source files
 
 | File | Role |
@@ -321,6 +343,163 @@ Shared utilities: `NVLoader.buildExtensionMap()` (extension→module maps), `NVG
 
 Same pattern for: mesh readers (`mesh/readers/`), volume readers (`volume/readers/`), tract readers (`mesh/tracts/readers/`), connectome readers (`mesh/connectome/readers/`), layer readers (`mesh/layers/readers/`), volume transforms (`volume/transforms/`).
 
+### Partial 4D loading (`limitFrames4D`)
+
+A 4D NIfTI whose full extent exceeds V8's ~2 GiB single-`ArrayBuffer` cap (e.g. a
+344x344x127x45 float32 PET ≈ 2.5 GiB) can NOT be held in one buffer — decompressing
+it throws `RangeError: Array buffer allocation failed`. `limitFrames4D` is therefore
+not just a speed-up but the only way to open such a file. When it is finite,
+`NVVolume.loadVolume` takes a fast path for a **gzip NIfTI-1**: `loadPartialNiftiGz`
+pipes the fetch body through the browser-native `DecompressionStream` and inflates
+ONLY the header + the first N frames, stopping early. The common belief that
+`DecompressionStream` "must read the whole file" is only true for
+`DecompressionStream` + `Response.arrayBuffer()` (which drains the stream); pulling
+the decompressed output incrementally and `cancel()`-ing once enough bytes are in
+hand stops both the inflate AND the upstream download — so no fflate dependency is
+needed (nifti-reader-js's own `decompressHeaderAsync` uses the same technique). The
+ORIGINAL header is preserved (its dims still describe the full extent), so
+`nii2volume` truncates the supplied img cleanly and still reports `nFrame4D` "N of
+`nTotalFrame4D`". Graceful `null` fallback to the normal full load on any miss:
+NIfTI-2/byte-swapped, all frames requested (a one-shot whole-file read is faster
+than slicing for a complete read), or any decode error. `getFileExt` strips `.gz`
+(nii.gz → `NII`), so the gz is detected by the `.gz` filename suffix.
+`codecs/NVGzStream.readFirstBytes` does the early-stop read; it takes an
+already-decompressed stream (the caller wraps it with `pipeThrough(new
+DecompressionStream('gzip'))`), so it is pure stream logic with no
+`DecompressionStream` dependency and is unit-tested under the Bun harness (which has
+no `DecompressionStream`).
+
+**Shared core + two byte sources.** `loadPartialNifti1(readPrefix, limitFrames4D)`
+holds all the header-parse / frame-budget / cap / slice logic; the two entry points
+differ only in how they fetch the first N bytes:
+- `loadPartialNiftiGz` — gzip: a fresh `DecompressionStream` per `readPrefix` (gunzip
+  is forward-only, so each prefix re-inflates from the start).
+- `loadPartialNiftiFile` — an UNCOMPRESSED `.nii` from a **local `File`**: `Blob.slice`
+  reads only the prefix, so a >2 GiB file is never read as one ArrayBuffer (Chrome
+  rejects that with `NotReadableError`, not `RangeError`). File-only — a remote
+  uncompressed URL would need HTTP range requests; uncompressed multi-GB volumes are
+  virtually always local (remote callers should gzip or use a `.nii.gz`).
+
+**Auto-cap (no `limitFrames4D`, and the "load deferred frames" path).** A user who
+does NOT set `limitFrames4D`, or who clicks the graph to load deferred frames
+(`loadDeferred4DVolumes`, which re-fetches with no limit), must still not blow the
+2 GiB cap. `loadVolume` wraps the full load in try/catch: on a `RangeError` (gz
+decompress overflow) OR a `NotReadableError` (Chrome refusing to read a >2 GiB
+uncompressed `File` as one ArrayBuffer) it retries the matching partial loader with
+`Infinity`, which loads **as many whole frames as fit** under `MAX_VOLUME_BYTES`
+(~1.77 GiB, safely below the cap). When the
+cap — not the caller — reduces the count, it emits an **always-visible**
+`console.warn` (the only justified bypass of the level-gated `log.*`, since silent
+data loss must be surfaced regardless of `logLevel`). `loadPartialNiftiGz` accepts
+`Infinity` ("as many as fit"); the cap math is `maxFramesUnderCap`.
+
+**Frame count follows the data, not the request.** `nii2volume` clamps `nFrame4D`
+to `min(floor(limit)-or-total, framesInImg, nTotalFrame4D)` where `framesInImg` is
+the shared `volume/utils.framesInImage(img.byteLength, nVox3D, bpv)` helper (also
+used by `loadDeferred4DVolumes`) — so when a capped load supplies fewer frames than
+the header advertises, `nFrame4D` reflects the data actually present
+(`nTotalFrame4D` keeps the header total). The request is floored so a fractional
+`limitFrames4D` can never leak a non-integer `nFrame4D` (which would mis-align the
+truncation byte count and the 4D graph / `setFrame4D`). This is essential: without
+the clamp the graph plots `nTotalFrame4D` points and reads past the loaded data,
+drawing garbage for the unloaded frames. The volume correctly enters the
+partial/deferred state (`nFrame4D < nTotalFrame4D` → graph shows the loaded frames +
+a deferred indicator). `loadDeferred4DVolumes` re-fetches RAW bytes and rebuilds the
+volume through `nii2volume` (NOT by hand-coercing through the stored header) so any
+datatype/intent conversion is REAPPLIED — a DT_FLOAT64 4D volume is converted to
+Float32 on first load, and reloading raw f64 bytes through the converted header would
+corrupt it. It copies only reconstruction-derived fields (img/hdr/nVox3D/frame
+counts/intensity stats) and preserves display state (colormap/opacity/`frame4D`). A
+dropped `File` has no URL to re-fetch, so `prepareVolume` stashes the original `File`
+as runtime-only `_sourceFile` (never serialized — NVDocument allowlists fields) and
+the reload re-opens that. A per-volume in-flight guard (`_deferredReloads`) drops
+duplicate clicks. When the reload makes **no progress** (the remaining frames still
+don't fit under the cap — e.g. a 2.5 GiB drop stuck at 35/40), it collapses
+`nTotalFrame4D` to the loaded count so the graph stops offering a deferred action the
+user can't satisfy. The deferred graph click (`interactions.ts`) is fire-and-forget
+with a `.catch` (and the reload rolls CPU state back if `updateGLVolume` throws).
+
+**Partial loading assumes time frames.** `loadPartialNifti1` treats `dim4*dim5*dim6`
+as time frames. RGB-vector (`intent_code` 2003, dim4=3) and MRSI (dim4=spectral) are
+NOT time series, so `loadPartialNifti1` now DECLINES an RGB-vector volume (intent-code
+gate → full load, which converts to RGBA8). MRSI is not yet gated (detection needs MRS
+header fields, not a single intent code) — but it's tiny in practice and unreachable
+via the deferred path (RGB/MRSI conversions set `nTotalFrame4D=1`, so the deferred gate
+returns before any re-read).
+
+**View `isBusy` is try/finally-guarded.** `NVViewGPU.updateBindGroups` /
+`NVViewGL._updateBindings` set `isBusy = true` and reset it in a `finally`, so an early
+return (no device / no mesh layout) or a thrown upload `await` can't leave the flag
+stuck — the render loop skips while busy, so a stuck flag would freeze drawing. The
+deferred reload also re-checks `_destroyed` + that the volume is still mounted after its
+async re-fetch, so a reload finishing after `destroy()`/`removeAllVolumes`/document
+replacement discards its result instead of mutating a detached volume / uploading to a
+torn-down view.
+
+**Save/restore of a partial `File` volume.** `_sourceFile` is runtime-only, so a
+restored document can't re-open a dropped File. `NVDocument.serialize` therefore
+collapses the *saved* header's frame dims (`dims[4]=nFrame4D`, `dims[5..6]=1`) when a
+volume is partial AND non-reloadable (`_sourceFile` present) — the document embeds
+only the loaded frames, so the restored volume correctly presents as complete-at-N
+with no deferred affordance. This is gated strictly on `_sourceFile`, so a partial
+volume from a real URL (e.g. `mpld_asl` with `limitFrames4D`) keeps its full dims and
+still deferred-reloads on restore. (A full NVD round-trip isn't Bun-testable —
+`nii2volume` pulls `import.meta.glob` — so this is browser-verified.)
+
+**Known limitations / follow-ups** (from the 2026-06-16 audit; not yet addressed —
+all are edge cases or pre-existing, the common paths are verified working):
+- **Peak memory on a capped load is now ~1x `imageBytes`** (was ~2x). The image is
+  read straight into ONE pre-sized buffer via `codecs/NVGzStream.readWindow` (gzip:
+  stream the window `[vox_offset, vox_offset+imageBytes)`, skipping the header, into
+  the output and dropping each chunk) or `Blob.slice` (uncompressed `File`). No
+  whole-prefix concat and no header-drop `slice` — the two big synchronous multi-GB
+  copies are gone (measured ~550 ms faster + ~1.9 GiB less transient on a 2.5 GiB
+  PET). `nii2volume` also skips its truncation slice when `img.byteLength ===
+  keepBytes` (always true for the partial path now). The per-`ArrayBuffer` 2 GiB
+  limit is never exceeded. NOTE: a ~1 s main-thread freeze remains on a multi-GB
+  capped load, but it is the **GPU texture upload** (scales linearly with image
+  size: ~190/510/990 ms for 5/15/31 frames), NOT the decompression — addressing it
+  needs chunked/frame-by-frame texture upload with yields in the view layer
+  (separate from the load path).
+- **`loadImage()` still full-reads for the signal sniff (partially mitigated).**
+  `_dispatchImage` sniffs signal-vs-volume by reading the whole file. Now: it skips
+  the sniff entirely when `limitFrames4D` is set (explicit volume intent), and it
+  catches a `NotReadableError`/`RangeError` from the whole-read (a >2 GiB file is
+  never a 1-D signal) and falls through to the partial volume path. Remaining
+  follow-up: for a *readable* large `.nii.gz` with no `limitFrames4D`, the sniff
+  still fully decompresses before the volume loader streams frames — a header-only
+  classification (`Blob.slice` / `decompressHeaderAsync`) would remove that.
+- **No automated test exercises the real gzip/`DecompressionStream` partial path**
+  (the Bun harness lacks `DecompressionStream`). `readFirstBytes`' pure stream logic
+  IS unit-tested; the end-to-end path is browser-verified manually against
+  `mpld_asl` (5/25) and a synthetic >2 GiB file (auto-cap 35/40).
+- **`DecompressionStream` is feature-detected** (`HAS_DECOMPRESSION_STREAM`):
+  `gunzipStream` returns null gracefully if it's missing (no `ReferenceError`), the gz
+  partial path then declines, and an oversize gz load emits a specific always-visible
+  `console.warn` (browser requirement) instead of an opaque `RangeError`.
+- **Partial 5D/6D `File` save/restore flattens to 4D** (intentional). The serialize
+  collapse sets `dims[4]=nFrame4D`, `dims[5..6]=1`: only the first `nFrame4D` frames
+  were loaded (not a clean multiple of the higher axes), so a flat 4D count is the
+  only faithful representation of what the document contains. 4D time series (the
+  common case) are unaffected.
+- **Deferred reload is now atomic on GPU-upload failure.** `loadDeferred4DVolumes`
+  snapshots the replaced CPU fields (`img`/frame counts/intensity stats) and rolls
+  them back if `updateGLVolume()` throws, so the model never ends up ahead of the GPU.
+- **`loadPartialNiftiGz` fetches the URL up to 3x** (header, optional header-extension
+  re-read, image window), relying on `cache:'force-cache'` for byte-identical
+  responses. The image read no longer concatenates a whole prefix (it streams via
+  `readWindow` into the pre-sized buffer), but it is still a separate fetch from the
+  header read. A single forward-only stream — keep one reader alive, read to the
+  header, then continue the SAME stream to `bytesToLoad` — would drop the extra
+  fetches and the `force-cache` dependency. Deferred (assessed 2026-06-16): the
+  stateful cross-read reader/cancel discipline lands on the Bun-untestable path, so
+  it warrants its own focused PR + manual large-volume pass.
+- **GPU texture upload of a multi-GB capped image blocks the main thread** (~1 s on a
+  31-frame 1.9 GiB load; scales with size). The load/decompress path now yields
+  (streamed `readWindow`), so the remaining freeze is in the view layer's texture
+  upload. A frame-by-frame / chunked upload with `await` yields between batches would
+  fix it; not yet done (touches `wgpu/`/`gl/` upload paths, browser-only).
+
 **Detached-header formats:** AFNI (`.HEAD` + `.BRIK.gz`), NIfTI (`.hdr` + `.img`), NRRD (`.nhdr` + `.*`). The `urlImageData` property provides the image data URL alongside the header URL.
 
 ### V1 RGB vector volumes
@@ -429,6 +608,20 @@ CPU-composited scalar overlays on meshes. `perVertexColors` (nullable `Uint32Arr
 Fragment shaders in `gl/meshShader.ts` (GLSL) and `wgpu/mesh.wgsl` (WGSL): phong, flat, matte, toon, outline, rim, silhouette, crevice, vertexColor, crosscut. Selected per-mesh via `shaderType`. Vertex layout: interleaved `BYTES_PER_VERTEX` bytes (pos `float32x3` + normal `float32x3` + color `unorm8x4`), defined in `view/NVCrosshair.ts`.
 
 **Crosscut shader** (`shaderType: 'crosscut'`): Renders crosshair-aligned ribbons using `fwidth()`-based screen-space line width. Unique render state: **no depth test, no face culling**. `crosscutMM` uniform computed by `view/NVCrosscut.ts`.
+
+**Per-mesh slice shader split** (`sliceShaderType`, default `''`): selects the mesh
+shader for 2D slice tiles independently of the 3D render view. Empty string means
+"inherit `shaderType`" (slices yoked to the render shader); a non-empty name (e.g.
+`'crosscut'`) draws a different shader on slices — e.g. crosscut ribbons on slices
+while the render panel stays phong (see `examples/freesurfer.crosscut.html`). Both
+backends pick the shader per tile via an `isSlice` flag from `tile.axCorSag`
+(true for AXIAL/CORONAL/SAGITTAL, false for the RENDER tile), in both the main and
+x-ray mesh passes. `setMesh` validates it (empty = inherit; only a non-empty value
+is checked against `getAvailableShaders()`), the view layer falls back to
+`shaderType` on an unknown name, and it is serialized in NVDocument alongside
+`shaderType`. The mesh shaders pin attribute locations (`layout(location=0/1/2)` in
+`gl/meshShader.ts`) so the single per-mesh VAO is safe to draw with any mesh
+program (slice override, x-ray, depth pick) by construction.
 
 **Mesh clipping on 2D slices** (`mesh.thicknessOn2D`, default `Infinity`): Constrains near/far clip planes to show only mesh geometry within `±thicknessOn2D` mm of the slice plane. Uses `clipSpaceZeroToOne` parameter on `calculateMvpMatrix2D()`: `orthoZO` for WebGPU ([0,1] NDC), `ortho` for WebGL2 ([-1,1] NDC). `sliceTypeDim()` in `NVConstants.ts` maps AXIAL→2, CORONAL→1, SAGITTAL→0.
 
@@ -738,11 +931,10 @@ Signal-graph audit invariants (keep these true):
   read. The host sets the window from a range control via `setGraphRange([lo,hi] |
   null)` (clamped to the full extent; null = full). The intended reactive recipe
   (illustrated by the `Reactive` checkbox in `examples/svs.html` and
-  `apps/demo-ext-mrs`): turn OFF `graphAutoResetView`, drive the window with
+  `examples/mrsi.html`): turn OFF `graphAutoResetView`, drive the window with
   `setGraphRange` instead of `ppmRange`, and update the slider positions from
   `graphRangeChange` (setting an `<input>` `.value` does not fire `input`, so no
-  feedback loop). nv-ext-mrs's `setPpmWindow` flows through `setSignal`, so its
-  demo gets the default reset for free and adds the reactive toggle on top.
+  feedback loop). `MrsScene.setPpmWindow` flows through `setSignal`, so the MRSI demo gets the default reset for free and adds the reactive toggle on top.
 - **Style setters clamp.** `graphLineWidth` to finite `[0,8]`, `graphLineAlpha` to
   `[0,1]` (no NaN/Infinity into the line buffer). All three new graph settings
   (`graphShowVolumeTimecourse`/`graphLineWidth`/`graphLineAlpha`) also have flat
@@ -916,8 +1108,10 @@ re-derives the spectrum **fresh every collect** (not memoized — one 1024-pt FF
 per frame is cheap and keeps the cursor live without the display-keyed plot
 cache going stale). Moving the crosshair triggers `drawScene` -> render ->
 `collectGraphData`, so the spectrum tracks the crosshair like the fsleyes MRS
-plugin. The status-bar readout still requires a graph-cursor click (no
-associated 4-D volume), but the plotted spectrum updates on every move.
+plugin. `refreshSignalLocation()` re-emits `signalLocationChange` on every
+crosshair/frame change (not just a graph-cursor click), so a host can show the
+ppm/spectrum readout live; `examples/mrsi.html` combines it with `locationChange`
+to display world-space mm location + voxel/map values alongside the ppm/spectrum.
 
 FSL-MRS spectral transforms live in `signal/processing.ts`: `halveFirstPoint`,
 `apodize` (exp line-broadening), `phaseCorrection` (0th deg / 1st ms), the
@@ -926,11 +1120,11 @@ FSL-MRS spectral transforms live in `signal/processing.ts`: `halveFirstPoint`,
 flags (`halveFirstPoint`/`apodizeHz`/`phase0`/`phase1Ms`) default off/0 so the
 `svs.html` baseline is unchanged; parity-tested against fsleyes in
 `processing.test.ts`. The FSL-MRS workflow + range->map tool + scene controller
-are packaged as `@niivue/nv-ext-mrs` (demo `apps/demo-ext-mrs`, `mrsi.html`);
+are provided by the core `MrsScene` controller (demo `examples/mrsi.html`);
 `context.mrs` (`MrsVolumeAccess`, first MRSI volume) / `context.mrsById(id)`
 (multi-MRSI safe) expose the complex buffer read-only.
 Fit-results overlays are deferred (no results dataset). Ported from
-fsleyes-plugin-mrs (BSD-3) — provenance in that package's `PORTING.md`.
+fsleyes-plugin-mrs (BSD-3) — provenance in `PORTING.md`.
 
 Audit-hardened invariants (keep these true):
 - **Detection is metadata-gated.** `isMrsiVolume` requires complex + spatial +
@@ -938,6 +1132,11 @@ Audit-hardened invariants (keep these true):
   4-D volume (e.g. complex fMRI) is NOT silently rewritten into a scalar map.
 - **Truncation-safe.** `prepareMrsiVolume` clamps `nPoints*nTransients` to the
   bytes present and `integratePpmBandMap` guards reads with `?? 0` (no NaN map).
+- **Crosshair spectrum vs map transients.** `extractVoxelFid` transposes the native
+  point-major MRSI buffer to SVS transient-major (`2*(t*nPoints+p)`) and emits all
+  transients; `crosshairSpectroscopyPlot` passes the real `nTransients` so
+  `deriveSeries` averages identically to `integratePpmBandMap` — keep these two
+  reductions in sync or the spectrum and a generated map disagree for `nTransients>1`.
 - **Not `isImaginary`.** The derived scalar overlay must NOT set
   `volume.isImaginary` (it's a real map; the complex data is in `complexFID`) —
   otherwise `control/locationTracking` appends a bogus imaginary readout.
@@ -947,7 +1146,7 @@ Audit-hardened invariants (keep these true):
 - **NVD limitation:** `complexFID`/`mrsMeta` are NOT serialized to NVD (only the
   derived scalar `img`); a reloaded crosshair spectrum is unavailable until the
   MRSI volume is re-added. Persisting the ~18 MiB buffer is deferred by design.
-- **Mask is modulated, not baked.** `nv-ext-mrs` `setMaskEnabled` calls
+- **Mask is modulated, not baked.** `MrsScene.setMaskEnabled` calls
   `setModulationImage(mrsiId, maskId, 1)` (alpha) — the mask is loaded as a
   hidden volume (`opacity 0`, `calMin/calMax 0..1`) and consumed as the
   modulator; the core scalar-overlay modulation path (see Volume modulation
@@ -969,6 +1168,19 @@ Audit-hardened invariants (keep these true):
   exposes no single-volume removal to extensions (only `removeAllVolumes`); the
   demo always reloads with anatomy (`loadVolumes` -> `removeAllVolumes` clears
   them). Exposing per-volume removal to extensions is a tracked follow-up.
+
+Deferred MRSI follow-ups (from the `mrsi-core` audit round, see
+`audit_response.md`): (1) `MrsScene.load()` is non-transactional — a throw after a
+volume is added orphans it (same root cause as the per-volume-removal gap above);
+(2) `setMaskEnabled`/`makeMap` fan `setModulationImage` over `[mrsiId, ...mapIds]`
+with `Promise.all`, so a mid-fan rejection can leave some overlays modulated while
+`maskEnabled` rolls back (fix: sequential apply with inverse-rollback);
+(3) `integratePpmBandMap` runs a synchronous per-voxel FFT — fine for the demo
+grid, but move map generation to a Web Worker before MRSI scales to clinical CSI
+sizes. Provenance/licensing is settled: `package.json` ships
+`LICENSE.fsleyes-plugin-mrs` + `PORTING.md`, and the root `LICENSE` acknowledges
+the BSD-3 upstream. The MRS API is exported from all three entry subpaths
+(`index.ts`, `index.webgpu.ts`, `index.webgl2.ts`).
 
 ## Colormap conventions
 

@@ -561,11 +561,16 @@ export function graphTotalWidth(
   if (!data) return 0
   if (isSignalMode(data)) {
     if (signalPointCount(data) < 2) return 0
-    if (data.fullCanvas) {
-      return Math.max(GRAPH_MIN_WIDTH, Math.min(GRAPH_MAX_WIDTH, canvasWidth))
-    }
   } else if (data.lines.length === 0 || data.lines[0].length < 2) {
     return 0
+  }
+  // SLICE_TYPE.NONE (or a signal-only scene) hides the spatial view and hands the
+  // whole canvas to the plot — for BOTH the multi-series signal graph and the plain
+  // 4D-volume time-course graph (which previously stayed a side strip on NONE). Use
+  // the full backing width (NOT capped to GRAPH_MAX_WIDTH, which would leave a blank
+  // strip on a >4096-px backing canvas, e.g. 4K/5K or high-DPR).
+  if (data.fullCanvas) {
+    return Math.max(GRAPH_MIN_WIDTH, canvasWidth)
   }
   const raw = Math.round(canvasWidth * GRAPH_WIDTH_RATIO)
   return Math.max(GRAPH_MIN_WIDTH, Math.min(GRAPH_MAX_WIDTH, raw))

@@ -4,6 +4,11 @@ import type NiiVueGPU from '@/NVControlBase'
 import type { BackendType, CanvasViewport, NVBounds } from '@/NVTypes'
 import NVViewGPU from '@/wgpu/NVViewGPU'
 import {
+  clearCanvasMessage,
+  GRAPHICS_UNAVAILABLE_MESSAGE,
+  showCanvasMessage,
+} from './canvasMessage'
+import {
   initInteraction,
   removeInteractionListeners,
   setupDragAndDrop,
@@ -137,39 +142,87 @@ export async function attachToCanvas(
     ctrl.opts.isAntiAlias = isAntiAlias
   }
   ctrl.canvas = canvas
-  // Register in canvas instance registry for shared canvas coordination
-  let instances = canvasInstances.get(canvas)
-  if (!instances) {
-    instances = new Set()
-    canvasInstances.set(canvas, instances)
-  }
-  instances.add(ctrl)
-  if (ctrl.opts.backend === 'webgl2') {
-    ctrl.view = new NVViewGL(canvas, ctrl.model, ctrl.opts)
-  } else {
-    ctrl.view = new NVViewGPU(canvas, ctrl.model, ctrl.opts)
-  }
-  try {
-    await ctrl.view.init() // Single async entry point
-    // Load thumbnail before first render so it appears on the initial frame
-    if (ctrl.opts.thumbnail) {
-      ctrl.model.ui.isThumbnailVisible = true
-      ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
-      await ctrl.view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
+  clearCanvasMessage(canvas)
+  registerCanvasInstance(ctrl, canvas)
+
+  // Attempt the configured backend, then (when WebGPU was requested) fall back to
+  // WebGL2. The 'both' distribution bundles both views, so a WebGPU init failure —
+  // e.g. requestAdapter() returning null when the browser's graphics acceleration is
+  // disabled — degrades to WebGL2 instead of leaving a dead, blank canvas. Only the
+  // `init()` call is fallback-eligible; post-init failures (thumbnail, etc.) rethrow.
+  const requestedBackend = ctrl.opts.backend
+  const order: ('webgpu' | 'webgl2')[] =
+    ctrl.opts.backend === 'webgl2' ? ['webgl2'] : ['webgpu', 'webgl2']
+  let lastError: unknown
+  for (let i = 0; i < order.length; i++) {
+    const backend = order[i]
+    ctrl.opts.backend = backend
+    if (i > 0) {
+      // The fallback must swap in a fresh canvas (the failed attempt may have locked
+      // the context type). Replacing a SHARED canvas would desync sibling controllers
+      // (their view + listeners stay on the old canvas), so decline the fallback in
+      // that case and let the overlay surface instead.
+      if ((canvasInstances.get(canvas)?.size ?? 0) > 1) {
+        log.warn('Cannot fall back to webgl2 on a shared canvas; aborting')
+        break
+      }
+      replaceCanvasElement(ctrl)
+      canvas = ctrl.canvas as HTMLCanvasElement
+      registerCanvasInstance(ctrl, canvas)
+      log.warn(
+        `${order[i - 1]} backend unavailable; falling back to ${backend}`,
+      )
     }
-    if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
-    if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
-    setupResizeHandler(ctrl)
-    ctrl.view.resize()
-    ctrl.emit('viewAttached', {
-      canvas,
-      backend: (ctrl.opts.backend ?? 'webgpu') as 'webgpu' | 'webgl2',
-    })
-    return ctrl
-  } catch (error) {
-    log.error('Failed to initialize view:', error)
-    throw error
+    ctrl.view =
+      backend === 'webgl2'
+        ? new NVViewGL(canvas, ctrl.model, ctrl.opts)
+        : new NVViewGPU(canvas, ctrl.model, ctrl.opts)
+    try {
+      await ctrl.view.init() // Single async entry point
+      break
+    } catch (error) {
+      lastError = error
+      log.error(`Failed to initialize ${backend} view:`, error)
+      try {
+        ctrl.view?.destroy()
+      } catch {
+        // a view that failed mid-init may not destroy cleanly; ignore
+      }
+      ctrl.view = null
+    }
   }
+
+  const view = ctrl.view
+  if (!view) {
+    // Every available backend failed. Don't leave the controller registered, and
+    // restore the originally requested backend so a later retry starts fresh.
+    unregister(ctrl)
+    ctrl.opts.backend = requestedBackend
+    // Show centered guidance, then rethrow so callers still observe the failure.
+    showCanvasMessage(
+      ctrl.canvas as HTMLCanvasElement,
+      GRAPHICS_UNAVAILABLE_MESSAGE,
+    )
+    throw (
+      lastError ?? new Error('NiiVue: failed to initialize a graphics backend')
+    )
+  }
+
+  // Load thumbnail before first render so it appears on the initial frame
+  if (ctrl.opts.thumbnail) {
+    ctrl.model.ui.isThumbnailVisible = true
+    ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
+    await view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
+  }
+  if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
+  if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
+  setupResizeHandler(ctrl)
+  view.resize()
+  ctrl.emit('viewAttached', {
+    canvas: ctrl.canvas as HTMLCanvasElement,
+    backend: (ctrl.opts.backend ?? 'webgpu') as 'webgpu' | 'webgl2',
+  })
+  return ctrl
 }
 
 /** Add a controller to the canvas instance registry. Used by single-backend
@@ -221,10 +274,11 @@ function replaceCanvasElement(ctrl: NiiVueGPU): void {
   if (freshCanvasBackend.get(oldCanvas) === ctrl.opts.backend) return
   const parent = oldCanvas.parentNode
   if (!parent) return
-  const newCanvas = document.createElement('canvas')
-  newCanvas.id = oldCanvas.id
-  newCanvas.className = oldCanvas.className
-  newCanvas.style.cssText = oldCanvas.style.cssText
+  // cloneNode(false) copies ALL attributes (id, class, style, width/height, data-*,
+  // aria-*, tabindex, ...) but NOT event listeners or the (locked) rendering context
+  // — which is exactly what we need: a clean canvas with the caller's element
+  // contract preserved. NOTE: external listeners on the original canvas are lost.
+  const newCanvas = oldCanvas.cloneNode(false) as HTMLCanvasElement
   parent.replaceChild(newCanvas, oldCanvas)
   freshCanvasBackend.set(newCanvas, ctrl.opts.backend ?? 'webgpu')
   // Update this controller

@@ -90,6 +90,34 @@ describe('signal-mode layout', () => {
     const data = signalData([{ label: 'a', x: null, y: [1] }])
     expect(graphTotalWidth(data, W, H)).toBe(0)
   })
+})
+
+describe('volume-mode fullCanvas (SLICE_TYPE.NONE hands the canvas to the plot)', () => {
+  function volumeData(extra: Partial<GraphData> = {}): GraphData {
+    return {
+      lines: [[1, 2, 3, 2, 1]],
+      selectedColumn: 0,
+      calMin: 0,
+      calMax: 0,
+      nTotalFrame4D: 5,
+      graphConfig: CFG,
+      ...extra,
+    }
+  }
+  test('side strip by default', () => {
+    const w = graphTotalWidth(volumeData(), W, H)
+    expect(w).toBeGreaterThan(0)
+    expect(w).toBeLessThan(W) // narrow strip beside the slices
+  })
+  test('fills the canvas when fullCanvas (the regressed case)', () => {
+    expect(graphTotalWidth(volumeData({ fullCanvas: true }), W, H)).toBe(W)
+  })
+  test('fills a >4096-px backing canvas (not capped to GRAPH_MAX_WIDTH)', () => {
+    // 4K/5K or high-DPR backing widths must not leave a blank strip on NONE.
+    expect(graphTotalWidth(volumeData({ fullCanvas: true }), 5120, H)).toBe(
+      5120,
+    )
+  })
 
   test('computeLayoutFlagsSignalMode', () => {
     const data = signalData([{ label: 'a', x: null, y: [1, 2, 3, 4] }])

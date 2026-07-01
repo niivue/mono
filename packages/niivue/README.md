@@ -17,8 +17,8 @@ bun run dev          # Hot-reload dev server
 bun run build        # Library build to ./dist (published npm package)
 bun run deploy       # Production examples-site build to ./dist (GitHub Pages)
 bun run demo         # Build examples site and serve locally
-bun run lint         # ESLint check
-bun run lint:fix     # ESLint auto-fix
+bun run lint         # Biome check
+bun run lint:fix     # Biome auto-fix
 bun run typecheck    # TypeScript type checking (tsc --noEmit)
 ```
 
@@ -143,6 +143,17 @@ selector pairing the spectrum with the participant's T2w and an outline-shaded
 `examples/physio.bold.html` (a task-fMRI run with per-trace fMRI/respiratory/
 cardiac toggles, on-graph pan/zoom, and a volume+physio association graph) for
 interactive demos.
+
+#### Spatial spectroscopic imaging (MRSI/CSI)
+
+A complex 4-D NIfTI-MRS volume (dim1-3 = space, dim4 = FID) stays on the volume
+path and is driven by the core `MrsScene` controller: it loads an anatomy
+reference plus the MRSI grid, shows the crosshair-voxel spectrum (which tracks
+the crosshair like the FSLeyes MRS plugin), and generates ppm-band metabolite
+maps. See `examples/mrsi.html`. The spectral transforms and the `MrsScene`
+controller are ported from
+[fsleyes-plugin-mrs](https://git.fmrib.ox.ac.uk/fsl/fsleyes/fsleyes-plugin-mrs)
+(BSD-3-Clause); see `PORTING.md` for the function-by-function provenance map.
 
 ### Change slice type and colormap
 

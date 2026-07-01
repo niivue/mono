@@ -783,8 +783,11 @@ export default class NVModel {
       {
         kind: 'spectroscopy',
         fid,
+        // extractVoxelFid now returns all transients (SVS layout); pass the real
+        // count so deriveSeries averages them, matching integratePpmBandMap so the
+        // crosshair spectrum agrees with generated metabolite maps.
         nPoints: m.nPoints,
-        nTransients: 1,
+        nTransients: m.nTransients,
         dwell: m.dwell,
         spectrometerFreq: m.spectrometerFreq,
         nucleus: m.nucleus,
@@ -1087,6 +1090,10 @@ export default class NVModel {
       calMax: vol.calMax,
       nTotalFrame4D: vol.nTotalFrame4D ?? nFrames,
       graphConfig: this.ui.graph,
+      // SLICE_TYPE.NONE hides the spatial view -> the volume time-course plot fills
+      // the whole canvas (matches the signal/associated graph builders, which set
+      // this too). Without it, the plain 4D-volume graph stays a side strip on NONE.
+      fullCanvas: this.isSpatialViewHidden(),
     }
   }
 
@@ -1364,15 +1371,39 @@ export default class NVModel {
     if (!url) {
       throw new Error('prepareVolume requires a url or an NVImage object')
     }
+    // Normalize the frame limit ONCE so the loader and the converter agree: a
+    // finite limit floors to an integer >= 1 (a fractional or 0/negative limit is
+    // otherwise handled differently by the gzip fast path vs nii2volume); anything
+    // unset/non-finite means "no limit" (load all that fit).
+    const frameLimit =
+      limitFrames4D == null || !Number.isFinite(limitFrames4D)
+        ? Infinity
+        : Math.max(1, Math.floor(limitFrames4D))
     const urlString = typeof url === 'string' ? url : url.name
     const name = overrides.name ?? urlString
     const base = await loadVolumePrepared(
       url,
       urlImageData ?? null,
-      limitFrames4D,
+      frameLimit,
       name,
     )
-    return { ...base, url: urlString, ...NVModel.volumeDefaults, ...overrides }
+    return {
+      ...base,
+      url: urlString,
+      ...NVModel.volumeDefaults,
+      ...overrides,
+      // A dropped File has no URL to re-fetch; keep it so a deferred 4D reload can
+      // re-open it. Runtime-only (the NVDocument serializer allowlists fields).
+      ...(url instanceof File ? { _sourceFile: url } : {}),
+      // Detached-header formats (AFNI .HEAD+.BRIK, NRRD .nhdr+.raw, MRtrix
+      // detached .mif, MetaImage detached .mha) need the paired image bytes
+      // on every (re-)load; without it the readers throw "pairedImgData not
+      // set". prepareVolume destructures urlImageData out of opts, so without
+      // this stash a deferred 4D reload would re-issue loadVolume with only
+      // the header URL/File. Runtime-only, same allowlist contract as
+      // _sourceFile above.
+      ...(urlImageData != null ? { _urlImageData: urlImageData } : {}),
+    }
   }
 
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<void> {

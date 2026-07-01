@@ -1539,6 +1539,17 @@ button {
   font-size: 12px;
 }
 
+.nv-mode-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nv-mode-note strong {
+  color: var(--ink);
+}
+
 .nv-layer-panel {
   display: grid;
   gap: 10px;
@@ -1574,22 +1585,6 @@ button {
   opacity: 0.5;
 }
 
-.nv-layer-visibility {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.nv-layer-visibility input {
-  accent-color: var(--green);
-}
-
-.nv-layer-visibility.is-disabled {
-  opacity: 0.45;
-}
-
 .nv-layer-list-header {
   display: flex;
   align-items: center;
@@ -1615,62 +1610,294 @@ button {
   padding-right: 2px;
 }
 
-.nv-layer-card,
-.nv-layer-option {
+/* Subject-mismatch warning: banner + per-row marker. */
+.nv-layer-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid rgba(215, 166, 66, 0.5);
+  border-radius: 4px;
+  background: rgba(215, 166, 66, 0.1);
+  color: var(--amber);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.nv-layer-banner > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.nv-layer-row.is-warning {
+  border-left-color: var(--amber);
+}
+.nv-layer-row-warn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--amber);
+}
+
+/* ---- Unified layer list (expandable rows) ---- */
+.nv-layer-rows {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(112px, 42%);
-  align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  border: 1px solid rgba(146, 160, 102, 0.22);
+}
+
+.nv-layer-row {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 4px;
   background: rgba(16, 17, 13, 0.72);
+  overflow: hidden;
+}
+
+.nv-layer-row.is-base {
+  border-left-color: var(--faint);
+}
+.nv-layer-row.is-overlay {
+  border-left-color: var(--green);
+}
+.nv-layer-row.is-atlas {
+  border-left-color: var(--amber);
+}
+.nv-layer-row.is-expanded {
+  border-color: rgba(115, 198, 155, 0.45);
+}
+.nv-layer-row.is-expanded.is-base {
+  border-left-color: var(--faint);
+}
+.nv-layer-row.is-expanded.is-atlas {
+  border-left-color: var(--amber);
+}
+
+.nv-layer-row-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 0 4px 0 2px;
+}
+
+.nv-layer-row-vis,
+.nv-layer-row-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-height: 40px;
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
   color: var(--muted);
-  font-size: 12px;
-  padding: 7px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.nv-layer-row-vis:hover,
+.nv-layer-row-remove:hover,
+.nv-layer-row-vis:focus-visible,
+.nv-layer-row-remove:focus-visible {
+  color: var(--ink);
+  background: rgba(146, 160, 102, 0.12);
+}
+.nv-layer-row-remove:hover {
+  color: var(--danger);
+}
+.nv-layer-row.is-hidden .nv-layer-row-vis {
+  color: var(--faint);
 }
 
-.nv-layer-option.is-active {
-  border-color: rgba(115, 198, 155, 0.38);
-}
-
-.nv-layer-option-toggle {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+.nv-layer-row-main {
+  display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 auto;
   min-width: 0;
-  color: inherit;
-}
-
-.nv-layer-option-toggle input {
-  accent-color: var(--green);
-}
-
-.nv-layer-copy,
-.nv-layer-copy strong,
-.nv-layer-copy small,
-.nv-layer-option-toggle span,
-.nv-layer-option-toggle strong,
-.nv-layer-option-toggle small {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.nv-layer-copy strong,
-.nv-layer-option strong {
+  min-height: 40px;
+  border: none;
+  background: transparent;
   color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  padding: 0 2px;
+}
+
+.nv-layer-row-title {
+  display: grid;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.nv-layer-row-title strong {
   font-size: 12px;
   font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nv-layer-row-title small {
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nv-layer-role {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.nv-layer-row.is-hidden .nv-layer-row-title strong {
+  color: var(--muted);
 }
 
-.nv-layer-copy small,
-.nv-layer-option small {
-  margin-top: 3px;
+.nv-layer-row-caret {
+  flex: 0 0 auto;
+  color: var(--faint);
+  transition: transform 0.15s ease;
+}
+.nv-layer-row.is-expanded .nv-layer-row-caret {
+  transform: rotate(180deg);
+  color: var(--green);
+}
+
+.nv-layer-row-body {
+  display: grid;
+  gap: 8px;
+  padding: 2px 8px 9px;
+}
+.nv-layer-row-body .nv-slider,
+.nv-layer-row-body .nv-window-control {
+  margin-top: 0;
+  padding: 0;
+}
+
+/* Click-to-add rows in the "Add overlay" pool. */
+.nv-layer-add-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.nv-layer-add-option:hover:not(:disabled),
+.nv-layer-add-option:focus-visible {
+  border-color: rgba(115, 198, 155, 0.3);
+  background: rgba(146, 160, 102, 0.08);
+  color: var(--ink);
+}
+.nv-layer-add-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.nv-layer-add-option > svg {
+  flex: 0 0 auto;
+  color: var(--green);
+}
+.nv-layer-add-option span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.nv-layer-add-option strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nv-layer-add-option small {
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nv-window-control {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 2px 8px 0;
+}
+
+.nv-window-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   color: var(--faint);
   font-size: 11px;
+}
+
+.nv-window-heading em {
+  color: var(--muted);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Auto-resolved (not user-set) range — dimmer so it reads as a default, while
+   still showing the effective threshold/range rather than an opaque "auto". */
+.nv-window-heading em.is-auto {
+  color: var(--faint);
+}
+
+.nv-window-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nv-window-row .nv-text-input {
+  padding: 4px 6px;
+  font-size: 11px;
+  height: 28px;
+}
+
+.nv-window-reset {
+  height: 28px;
+  border: 1px solid rgba(146, 160, 102, 0.3);
+  border-radius: 6px;
+  background: rgba(16, 17, 13, 0.72);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 11px;
+  cursor: pointer;
+}
+
+.nv-window-reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* "Show all (no threshold)" — a quiet full-width escape hatch under a stat
+   overlay's threshold, so a reader can reveal sub-threshold signal in one tap. */
+.nv-window-showall {
+  margin-top: 6px;
+  width: 100%;
+  border: 1px dashed rgba(146, 160, 102, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 11px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.nv-window-showall:hover,
+.nv-window-showall:focus-visible {
+  color: var(--ink);
+  border-color: rgba(115, 198, 155, 0.4);
 }
 
 .nv-layer-colormap-select {

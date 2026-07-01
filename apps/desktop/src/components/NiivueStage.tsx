@@ -3,6 +3,15 @@ import type { ColorMap, NiiVueLocation } from '@niivue/niivue'
 import type { Backend, ClipPlane, DesktopItem, JsonValue, VolumeMetadata } from '../domain/desktop'
 import { fetchVolumeMetadata, rawVolumeUrl } from '../domain/desktop'
 
+// The window NiiVue actually applied for a layer, plus the volume's robust
+// range (the "no threshold" target for a show-all reset).
+export interface ResolvedWindow {
+  min: number
+  max: number
+  robustMin?: number
+  robustMax?: number
+}
+
 interface NiivueStageProps {
   item: DesktopItem | null
   layers: NiivueRenderLayer[]
@@ -11,8 +20,17 @@ interface NiivueStageProps {
   clipPlanes: ClipPlane[]
   isActive: boolean
   renderWheelMode: 'zoom' | 'clip-plane'
+  viewMode: ViewModeId
   onClipPlaneDepthChange: (planeId: string, depth: number) => void
   onLocationChange?: (location: NiiVueLocation | null) => void
+  // Reports the intensity window NiiVue actually applied per layer (keyed by
+  // item id), including auto-seeded defaults — so the UI can show the effective
+  // threshold/range instead of a bare "auto".
+  onResolvedWindows?: (windows: Record<string, ResolvedWindow>) => void
+  // Reports each loaded layer's world-space (mm) bounding box, keyed by item id,
+  // so the UI can warn when an overlay doesn't share the base's space.
+  onLayerExtents?: (extents: Record<string, { min: number[]; max: number[] }>) => void
+  onViewModeChange: (mode: ViewModeId) => void
 }
 
 export interface NiivueRenderLayer {
@@ -22,10 +40,25 @@ export interface NiivueRenderLayer {
   colormap: string
   colormapNegative?: string
   opacity: number
+  // Intensity window (NIfTI cal_min/cal_max). Undefined leaves NiiVue's robust
+  // auto range. Most visible in 2D slice modes.
+  calMin?: number
+  calMax?: number
 }
 
 interface NiiVueLike {
   canvas?: HTMLCanvasElement
+  // Loaded volumes, in the same order as the render layers. robustMin/robustMax
+  // are NiiVue's auto window (2nd/98th percentile); globalMax is the true peak;
+  // extentsMin/Max are the volume's world-space (mm) bounding box, used to flag
+  // overlays that land in a different space than the base.
+  volumes?: Array<{
+    robustMin?: number
+    robustMax?: number
+    globalMax?: number
+    extentsMin?: ArrayLike<number>
+    extentsMax?: ArrayLike<number>
+  }>
   activeClipPlaneIndex?: number
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(volumes: NiiVueVolumeOptions[]): Promise<unknown>
@@ -36,9 +69,16 @@ interface NiiVueLike {
       colormap?: string
       colormapNegative?: string
       opacity?: number
+      // NiiVue's display window is calMin/calMax (camelCase). The snake_case
+      // cal_min/cal_max are the NIfTI header fields and are ignored here.
+      calMin?: number
+      calMax?: number
     }
   ): Promise<unknown>
   moveCrosshairInVox?(di: number, dj: number, dk: number): void
+  // Slice layout: SLICE_TYPE.{AXIAL:0, CORONAL:1, SAGITTAL:2, MULTIPLANAR:3, RENDER:4}.
+  sliceType?: number
+  isOrientationTextVisible?: boolean
   addEventListener?(
     type: 'locationChange',
     listener: (event: CustomEvent<NiiVueLocation>) => void,
@@ -76,6 +116,8 @@ interface NiiVueVolumeOptions {
   colormapNegative?: string
   opacity?: number
   isColorbarVisible?: boolean
+  calMin?: number
+  calMax?: number
 }
 
 interface VolumePrefetch {
@@ -99,6 +141,17 @@ type VoxelStep = readonly [di: number, dj: number, dk: number]
 const CLIP_DEPTH_WHEEL_STEP = 0.0015
 const NIVUE_SLICE_TYPE_RENDER = 4
 const NIVUE_SHOW_RENDER_ALWAYS = 1
+
+// NiiVue SLICE_TYPE values for each selectable view mode.
+export type ViewModeId = 'axial' | 'coronal' | 'sagittal' | 'multiplanar' | 'render'
+const VIEW_MODES: Array<{ id: ViewModeId; label: string; shortLabel: string; sliceType: number }> = [
+  { id: 'axial', label: 'Axial slice', shortLabel: 'Ax', sliceType: 0 },
+  { id: 'coronal', label: 'Coronal slice', shortLabel: 'Cor', sliceType: 1 },
+  { id: 'sagittal', label: 'Sagittal slice', shortLabel: 'Sag', sliceType: 2 },
+  { id: 'multiplanar', label: 'Multiplanar', shortLabel: 'MPR', sliceType: 3 },
+  { id: 'render', label: '3D render', shortLabel: '3D', sliceType: NIVUE_SLICE_TYPE_RENDER }
+]
+export const DEFAULT_VIEW_MODE: ViewModeId = 'render'
 const CORONAL_SNAP: RenderViewSnap = {
   id: 'coronal',
   label: 'Coronal',
@@ -123,7 +176,6 @@ const AXIAL_SNAP: RenderViewSnap = {
   elevation: 90,
   shortcut: '7 / Numpad 7'
 }
-const RENDER_VIEW_SNAPS = [CORONAL_SNAP, SAGITTAL_SNAP, AXIAL_SNAP]
 const atlasColorMapCache = new Map<string, Promise<ColorMap | null>>()
 const BLENDER_RENDER_VIEW_SNAPS: Record<string, { normal: RenderViewSnap; reverse: RenderViewSnap }> = {
   Digit1: {
@@ -190,8 +242,12 @@ export function NiivueStage({
   clipPlanes,
   isActive,
   renderWheelMode,
+  viewMode,
   onClipPlaneDepthChange,
-  onLocationChange
+  onLocationChange,
+  onResolvedWindows,
+  onLayerExtents,
+  onViewModeChange
 }: NiivueStageProps): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -199,7 +255,13 @@ export function NiivueStage({
   const prefetchRef = useRef<VolumePrefetch | null>(null)
   const [status, setStatus] = useState('Waiting for a dataset selection.')
   const [snapId, setSnapId] = useState<RenderSnapId | null>(null)
+  // Bumped after each volume load completes, so the in-place display effect
+  // re-runs once NiiVue has computed per-volume stats (robust range / peak) —
+  // needed to seed a stat overlay's default threshold from its data.
+  const [loadedVersion, setLoadedVersion] = useState(0)
   const primaryItem = layers[0]?.item ?? item
+  const isRenderMode = viewMode === 'render'
+  const currentViewLabel = (VIEW_MODES.find((mode) => mode.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]).label
   const layerLoadKey = layers.map(layerLoadSignature).join('|')
 
   // Fetch the coarse volume the instant it is selected — at high priority, in
@@ -261,9 +323,10 @@ export function NiivueStage({
           isColorbarVisible: true,
           isLegendVisible: false,
           isOrientCubeVisible: true,
+          isOrientationTextVisible: viewMode !== 'render',
           show3Dcrosshair: false,
           showRender: NIVUE_SHOW_RENDER_ALWAYS,
-          sliceType: NIVUE_SLICE_TYPE_RENDER,
+          sliceType: (VIEW_MODES.find((mode) => mode.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]).sliceType,
           loadingText: ''
         })
         localNv = nv
@@ -290,6 +353,9 @@ export function NiivueStage({
           setStatus
         })
         applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
+        // Volumes (and their robust-range stats) are now loaded; re-run the
+        // in-place display effect so threshold/window defaults can read them.
+        if (!cancelled) setLoadedVersion((version) => version + 1)
       } catch (error) {
         if (!cancelled) {
           nvRef.current = null
@@ -321,17 +387,76 @@ export function NiivueStage({
   useEffect(() => {
     const nv = nvRef.current
     if (!nv?.setVolume) return
-    void Promise.all(layers.map((layer, index) => (
-      nv.setVolume?.(index, {
+    const resolved: Record<string, ResolvedWindow> = {}
+    void Promise.all(layers.map((layer, index) => {
+      // An explicit window wins; otherwise restore NiiVue's robust auto range
+      // so clearing the window (the "Auto" button) actually reverts the
+      // render — setVolume merges, so omitting calMin would leave a stale one.
+      const volume = nv.volumes?.[index]
+      const windowOption = windowOptionForLayer(layer, volume)
+      if (windowOption.calMin !== undefined && windowOption.calMax !== undefined) {
+        resolved[layer.item.id] = {
+          min: windowOption.calMin,
+          max: windowOption.calMax,
+          // The robust range is the "no threshold" target for the show-all reset.
+          robustMin: Number.isFinite(volume?.robustMin) ? volume?.robustMin : undefined,
+          robustMax: Number.isFinite(volume?.robustMax) ? volume?.robustMax : undefined
+        }
+      }
+      return nv.setVolume?.(index, {
         colormap: layer.colormap,
         colormapNegative: layer.colormapNegative ?? '',
-        opacity: layer.opacity
+        opacity: layer.opacity,
+        ...windowOption
       }) ?? Promise.resolve()
-    ))).catch(() => {
-      // No volume loaded yet (or backend lacks setVolume); the attach effect
-      // already loads with current display options, so this is safe to ignore.
+    }))
+      .then(() => {
+        // setVolume updates the GPU volume texture but does not repaint the
+        // canvas, so display-only changes (intensity window, colormap) would
+        // otherwise not appear until the next pointer event. Force a redraw
+        // once all layers have applied.
+        nv.drawScene()
+      })
+      .catch(() => {
+        // No volume loaded yet (or backend lacks setVolume); the attach effect
+        // already loads with current display options, so this is safe to ignore.
+      })
+    onResolvedWindows?.(resolved)
+    // loadedVersion: re-apply once post-load stats exist (threshold defaults).
+  }, [layers, loadedVersion, onResolvedWindows])
+
+  // Report each layer's world-space bounding box once loaded, so the panel can
+  // flag overlays that don't share the base's space.
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv || !onLayerExtents) return
+    const extents: Record<string, { min: number[]; max: number[] }> = {}
+    layers.forEach((layer, index) => {
+      const volume = nv.volumes?.[index]
+      if (volume?.extentsMin && volume?.extentsMax) {
+        extents[layer.item.id] = {
+          min: Array.from(volume.extentsMin),
+          max: Array.from(volume.extentsMax)
+        }
+      }
     })
-  }, [layers])
+    onLayerExtents(extents)
+  }, [layers, loadedVersion, onLayerExtents])
+
+  // Apply the selected view mode (2D slice plane, multiplanar, or 3D render) to
+  // the live instance. NiiVue exposes sliceType as a setter, so this never
+  // recreates the instance. Orientation letters are only meaningful on 2D panes.
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv) return
+    const mode = VIEW_MODES.find((candidate) => candidate.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]
+    nv.sliceType = mode.sliceType
+    nv.isOrientationTextVisible = viewMode !== 'render'
+    nv.drawScene()
+    // loadedVersion: the attach effect builds the instance with a stale
+    // sliceType if the view mode was changed mid-load (nvRef was still null when
+    // this effect first ran), so re-apply once the instance/volumes exist.
+  }, [viewMode, primaryItem, loadedVersion])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -395,6 +520,8 @@ export function NiivueStage({
         return
       }
 
+      // Camera-angle snaps only make sense for the 3D render.
+      if (!isRenderMode) return
       const snap = blenderSnapForEvent(event)
       if (!snap) return
 
@@ -406,7 +533,7 @@ export function NiivueStage({
 
     window.addEventListener('keydown', onKeyDown, { capture: true })
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
-  }, [isActive, primaryItem])
+  }, [isActive, primaryItem, isRenderMode])
 
   function snapRenderView(snap: RenderViewSnap): void {
     const nv = nvRef.current
@@ -422,10 +549,28 @@ export function NiivueStage({
     if (snapId) setSnapId(null)
   }
 
+  function changeViewMode(next: ViewModeId): void {
+    onViewModeChange(next)
+    clearSnapSelection()
+  }
+
   function handleWheelCapture(event: ReactWheelEvent<HTMLDivElement>): void {
     clearSnapSelection()
     const nv = nvRef.current
     if (!nv) return
+
+    // 2D single-plane modes: page through slices on wheel (clinician muscle
+    // memory). NiiVue's native wheel doesn't page here, so drive the crosshair's
+    // through-plane voxel ourselves. Multiplanar falls through to native.
+    if (!isRenderMode) {
+      const step = sliceWheelStep(viewMode, event.deltaY)
+      if (step && nv.moveCrosshairInVox) {
+        event.preventDefault()
+        event.stopPropagation()
+        nv.moveCrosshairInVox(...step)
+      }
+      return
+    }
 
     if (renderWheelMode === 'clip-plane') {
       // Always handle the wheel ourselves: drive the active plane's depth
@@ -459,21 +604,25 @@ export function NiivueStage({
         key={backend}
         ref={canvasRef}
         role="img"
-        aria-label={primaryItem ? `3D render of ${primaryItem.label}` : 'NiiVue 3D render — no volume selected'}
+        aria-label={
+          primaryItem
+            ? `${currentViewLabel} of ${primaryItem.label}`
+            : 'NiiVue viewer — no volume selected'
+        }
       />
-      <div className="nv-render-snap-controls" aria-label="Snap render view">
-        {RENDER_VIEW_SNAPS.map((snap) => (
+      <div className="nv-render-snap-controls" role="group" aria-label="View mode">
+        {VIEW_MODES.map((mode) => (
           <button
-            aria-label={`Snap to ${snap.label} view`}
-            aria-pressed={snapId === snap.id}
-            className={snapId === snap.id ? 'is-active' : ''}
+            aria-label={`Show ${mode.label}`}
+            aria-pressed={viewMode === mode.id}
+            className={viewMode === mode.id ? 'is-active' : ''}
             disabled={!primaryItem}
-            key={snap.id}
-            onClick={() => snapRenderView(snap)}
-            title={`Snap to ${snap.label} (${snap.shortcut})`}
+            key={mode.id}
+            onClick={() => changeViewMode(mode.id)}
+            title={`Show ${mode.label}`}
             type="button"
           >
-            {snap.shortLabel}
+            {mode.shortLabel}
           </button>
         ))}
       </div>
@@ -502,6 +651,43 @@ async function loadNiiVue(backend: Backend): Promise<NiiVueConstructor> {
   }
 }
 
+// Intensity-window / threshold options for a setVolume call. An explicit
+// per-layer window (Min/Max for a base, Threshold/Max for an overlay) always
+// wins. With none set:
+//   - statistical overlays default to a threshold at HALF the robust max, with
+//     contrast saturating at the robust max. Half the 98th-percentile sits above
+//     the near-zero noise (so the background stays transparent — no colour wash)
+//     but is gentle enough to show moderate activation, not just the top ~2%.
+//   - base layers restore NiiVue's robust auto range, so clearing the window
+//     reverts the render.
+//   - atlas/label layers get no window at all: they render through a discrete
+//     label colormap, and clamping to a robust intensity range would drop the
+//     label indices outside 2nd–98th percentile (parcels vanish / miscolor).
+// Returns no keys when the volume's stats aren't available yet (still loading).
+function windowOptionForLayer(
+  layer: NiivueRenderLayer,
+  volume: { robustMin?: number; robustMax?: number } | undefined
+): { calMin?: number; calMax?: number } {
+  if (layer.calMin !== undefined && layer.calMax !== undefined) {
+    return { calMin: layer.calMin, calMax: layer.calMax }
+  }
+  if (!volume || layer.isAtlas) return {}
+  const { robustMin, robustMax } = volume
+  if (
+    layer.kind === 'overlay' &&
+    !layer.isAtlas &&
+    Number.isFinite(robustMax) &&
+    (robustMax as number) > 0
+  ) {
+    const max = robustMax as number
+    return { calMin: max * 0.5, calMax: max }
+  }
+  if (Number.isFinite(robustMin) && Number.isFinite(robustMax)) {
+    return { calMin: robustMin, calMax: robustMax }
+  }
+  return {}
+}
+
 function blenderSnapForEvent(event: KeyboardEvent): RenderViewSnap | null {
   if (event.altKey || event.metaKey || event.shiftKey) return null
 
@@ -526,6 +712,26 @@ function crosshairStepForEvent(event: KeyboardEvent): VoxelStep | null {
   if (key === 'j') return [0, -1, 0]
   if (key === 'k') return [0, 1, 0]
   return null
+}
+
+// Mouse-wheel slice paging for the single-plane 2D modes. The displayed slice
+// follows the crosshair's through-plane voxel, so stepping that axis pages by
+// one slice. Scroll down advances the through-plane voxel (wheel-down = next);
+// which anatomical direction that is depends on the volume's orientation.
+// Multiplanar/render return null (the wheel keeps its zoom / native behaviour).
+function sliceWheelStep(viewMode: ViewModeId, deltaY: number): VoxelStep | null {
+  if (deltaY === 0) return null
+  const direction = deltaY > 0 ? 1 : -1
+  switch (viewMode) {
+    case 'axial':
+      return [0, 0, direction]
+    case 'coronal':
+      return [0, direction, 0]
+    case 'sagittal':
+      return [direction, 0, 0]
+    default:
+      return null
+  }
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -593,7 +799,9 @@ async function loadRenderVolumeLods({
         colormap: layer.colormap,
         colormapNegative: layer.colormapNegative ?? '',
         opacity: layer.opacity,
-        isColorbarVisible: layerIndex === 0
+        isColorbarVisible: layerIndex === 0,
+        ...(layer.calMin !== undefined ? { calMin: layer.calMin } : {}),
+        ...(layer.calMax !== undefined ? { calMax: layer.calMax } : {})
       }
     }))
     if (isCancelled()) return

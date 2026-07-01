@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -17,6 +18,7 @@ import {
   Crosshair,
   Database,
   Eye,
+  EyeOff,
   FileJson,
   FolderOpen,
   GripHorizontal,
@@ -30,6 +32,7 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   RotateCcw,
   Save,
   SlidersHorizontal,
@@ -38,7 +41,13 @@ import {
   ZoomOut
 } from 'lucide-react'
 import { DatasetDesktop, MAX_DESKTOP_ZOOM, MIN_DESKTOP_ZOOM, zoomBy } from './components/DatasetDesktop'
-import { NiivueStage, type NiivueRenderLayer } from './components/NiivueStage'
+import {
+  NiivueStage,
+  DEFAULT_VIEW_MODE,
+  type NiivueRenderLayer,
+  type ResolvedWindow,
+  type ViewModeId
+} from './components/NiivueStage'
 import { NiimathOperationsPanel } from './components/NiimathOperationsPanel'
 import { TerminalPanel } from './components/TerminalPanel'
 import { VolumeFilterPanel } from './components/VolumeFilterPanel'
@@ -59,7 +68,9 @@ import {
 } from './domain/desktop'
 import {
   volumeImageTypeLabel,
-  volumeRoleLabel
+  volumeRoleLabel,
+  volumeSession,
+  volumeSubject
 } from './domain/volumeFacets'
 import { useClipPlanes } from './hooks/useClipPlanes'
 import { useDatasetManifest } from './hooks/useDatasetManifest'
@@ -74,6 +85,9 @@ const MAX_SPLIT = 68
 const DEFAULT_BASE_COLORMAP = 'gray'
 const DEFAULT_ATLAS_COLORMAP = 'actc'
 const DEFAULT_OVERLAY_COLORMAPS = ['magma', 'viridis', 'actc'] as const
+// Default layer opacities (used when a layer has no explicit opacity setting).
+const DEFAULT_OVERLAY_OPACITY = 0.48
+const DEFAULT_ATLAS_OPACITY = 0.34
 const COLORMAP_OPTIONS = [
   { value: 'gray', label: 'Gray' },
   { value: 'viridis', label: 'Viridis' },
@@ -102,6 +116,25 @@ const FLIPPED_CLIP_ORIENTATIONS: Record<string, Pick<ClipPlane, 'azimuth' | 'ele
 type MouseContext = 'desktop' | 'niivue' | null
 type SidePanelTab = 'inspect' | 'operations'
 
+// Per-layer display settings, keyed by item id. An absent entry (or absent
+// field) means "use the default": NiiVue's robust auto range for `window`, the
+// role-based fallback for `colormap`. Opacity/hidden/threshold land in later
+// phases of the layer-controls redesign.
+// A layer's world-space (mm) axis-aligned bounding box, as reported by NiiVue.
+interface LayerExtent {
+  min: number[]
+  max: number[]
+}
+
+interface LayerSettings {
+  colormap?: string
+  opacity?: number
+  // Visibility override. `hidden` renders the layer at opacity 0 without
+  // touching `opacity`, so toggling it back on restores the stored value.
+  hidden?: boolean
+  window?: { min: number; max: number }
+}
+
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
@@ -126,10 +159,40 @@ export function App(): JSX.Element {
     status,
     warmProgress
   } = useDatasetManifest({ promoteRecent })
-  const [layerColormaps, setLayerColormaps] = useState<Record<string, string>>({})
+  const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({})
+  // Effective intensity window NiiVue applied per layer (incl. auto-seeded
+  // thresholds), reported back from NiivueStage so the UI can show the real
+  // cutoff instead of a bare "auto".
+  const [resolvedWindows, setResolvedWindows] = useState<Record<string, ResolvedWindow>>({})
+  const handleResolvedWindows = useCallback(
+    (next: Record<string, ResolvedWindow>) => {
+      setResolvedWindows((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        const unchanged =
+          prevKeys.length === nextKeys.length &&
+          nextKeys.every(
+            (id) =>
+              prev[id] &&
+              prev[id].min === next[id].min &&
+              prev[id].max === next[id].max &&
+              prev[id].robustMin === next[id].robustMin &&
+              prev[id].robustMax === next[id].robustMax
+          )
+        return unchanged ? prev : next
+      })
+    },
+    []
+  )
+  // Per-layer world-space bounding boxes, reported from NiivueStage after load,
+  // used to flag overlays that land in a different space than the base.
+  const [layerExtents, setLayerExtents] = useState<Record<string, LayerExtent>>({})
+  const handleLayerExtents = useCallback((next: Record<string, LayerExtent>) => {
+    setLayerExtents((prev) => (extentsEqual(prev, next) ? prev : next))
+  }, [])
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
+  const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
   const [atlasId, setAtlasId] = useState<string | null>(null)
-  const [isAtlasVisible, setIsAtlasVisible] = useState(true)
   const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(null)
   const {
     clipPlanes,
@@ -233,11 +296,15 @@ export function App(): JSX.Element {
         ...resolveColormap(
           layerColormapForItem(
             selected,
-            layerColormaps,
+            layerSettings,
             atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
           )
         ),
-        opacity: atlasId === selected.id && !isAtlasVisible ? 0 : 1
+        ...windowForItem(selected.id, layerSettings),
+        // The base is always fully opaque (its row has no opacity slider); only
+        // its `hidden` flag applies. Reading a stored opacity here would leak a
+        // value left over from when this volume was an overlay/atlas.
+        opacity: layerSettings[selected.id]?.hidden ? 0 : 1
       }
     ]
 
@@ -247,8 +314,9 @@ export function App(): JSX.Element {
       layers.push({
         item,
         kind: 'overlay',
-        ...resolveColormap(layerColormapForItem(item, layerColormaps, overlayColormapForIndex(overlayIndex))),
-        opacity: 0.48
+        ...resolveColormap(layerColormapForItem(item, layerSettings, overlayColormapForIndex(overlayIndex))),
+        ...windowForItem(item.id, layerSettings),
+        opacity: renderOpacityForItem(item.id, layerSettings, DEFAULT_OVERLAY_OPACITY)
       })
       overlayIndex += 1
     }
@@ -259,13 +327,13 @@ export function App(): JSX.Element {
         item: atlasItem,
         kind: 'overlay',
         isAtlas: true,
-        colormap: layerColormapForItem(atlasItem, layerColormaps, DEFAULT_ATLAS_COLORMAP),
-        opacity: isAtlasVisible ? 0.34 : 0
+        colormap: layerColormapForItem(atlasItem, layerSettings, DEFAULT_ATLAS_COLORMAP),
+        opacity: renderOpacityForItem(atlasItem.id, layerSettings, DEFAULT_ATLAS_OPACITY)
       })
     }
 
     return layers
-  }, [atlasId, isAtlasVisible, items, layerColormaps, overlayIds, selected])
+  }, [atlasId, items, layerSettings, overlayIds, selected])
 
   useEffect(() => {
     const validIds = new Set(items.map((item) => item.id))
@@ -282,12 +350,12 @@ export function App(): JSX.Element {
       return changed ? next : current
     })
     setAtlasId((current) => (current && validIds.has(current) ? current : null))
-    setLayerColormaps((current) => {
+    setLayerSettings((current) => {
       let changed = false
-      const next: Record<string, string> = {}
-      for (const [id, colormap] of Object.entries(current)) {
+      const next: Record<string, LayerSettings> = {}
+      for (const [id, settings] of Object.entries(current)) {
         if (validIds.has(id)) {
-          next[id] = colormap
+          next[id] = settings
         } else {
           changed = true
         }
@@ -297,12 +365,51 @@ export function App(): JSX.Element {
   }, [atlasId, items, selected?.id])
 
   function changeLayerColormap(itemId: string, nextColormap: string): void {
-    setLayerColormaps((current) => {
-      if (current[itemId] === nextColormap) return current
-      return {
-        ...current,
-        [itemId]: nextColormap
+    setLayerSettings((current) => {
+      if (current[itemId]?.colormap === nextColormap) return current
+      return { ...current, [itemId]: { ...current[itemId], colormap: nextColormap } }
+    })
+  }
+
+  function changeLayerWindow(itemId: string, min: number, max: number): void {
+    setLayerSettings((current) => {
+      const existing = current[itemId]?.window
+      if (existing && existing.min === min && existing.max === max) return current
+      return { ...current, [itemId]: { ...current[itemId], window: { min, max } } }
+    })
+  }
+
+  function resetLayerWindow(itemId: string): void {
+    setLayerSettings((current) => {
+      const existing = current[itemId]
+      if (!existing || existing.window === undefined) return current
+      const { window: _removed, ...rest } = existing
+      const next = { ...current }
+      // Drop the whole entry once no other settings remain, so the map stays
+      // a clean "only non-default layers" record.
+      if (Object.keys(rest).length === 0) {
+        delete next[itemId]
+      } else {
+        next[itemId] = rest
       }
+      return next
+    })
+  }
+
+  function changeLayerOpacity(itemId: string, opacity: number): void {
+    const clamped = Math.min(1, Math.max(0, opacity))
+    setLayerSettings((current) => {
+      const existing = current[itemId]
+      if (existing?.opacity === clamped && !existing?.hidden) return current
+      // Adjusting opacity implies the layer should be visible, so clear hidden.
+      return { ...current, [itemId]: { ...existing, opacity: clamped, hidden: false } }
+    })
+  }
+
+  function setLayerHidden(itemId: string, hidden: boolean): void {
+    setLayerSettings((current) => {
+      if (!!current[itemId]?.hidden === hidden) return current
+      return { ...current, [itemId]: { ...current[itemId], hidden } }
     })
   }
 
@@ -326,7 +433,7 @@ export function App(): JSX.Element {
     const nextAtlasId = itemId || null
     setAtlasId(nextAtlasId)
     if (!nextAtlasId) return
-    setIsAtlasVisible(true)
+    setLayerHidden(nextAtlasId, false)
 
     setOverlayIds((current) => {
       if (!current.has(nextAtlasId)) return current
@@ -353,7 +460,7 @@ export function App(): JSX.Element {
       const isAtlas = overlayItem ? await volumeHasAtlasLabelSidecar(overlayItem) : false
       if (isAtlas) {
         setAtlasId(result.id)
-        setIsAtlasVisible(true)
+        setLayerHidden(result.id, false)
         setOverlayIds((current) => {
           if (!current.has(result.id)) return current
           const next = new Set(current)
@@ -388,6 +495,10 @@ export function App(): JSX.Element {
 
   const warmStatus = warmProgressLabel(warmProgress, datasetRoot)
   const locationStatus = useMemo(() => locationStatusLabel(locationReadout), [locationReadout])
+  const slicePosition = useMemo(
+    () => slicePositionLabel(locationReadout, viewMode),
+    [locationReadout, viewMode]
+  )
 
   return (
     <main
@@ -608,9 +719,11 @@ export function App(): JSX.Element {
               <span>NiiVue Window</span>
               <strong>{selected?.label ?? 'No selection'}</strong>
               <em>
-                {renderWheelMode === 'clip-plane'
-                  ? `wheel ${activeClipPlane?.label ?? 'clip'}`
-                  : backend.toUpperCase()}
+                {viewMode !== 'render'
+                  ? `${viewModeLabel(viewMode)}${slicePosition ? ` · ${slicePosition}` : ''}`
+                  : renderWheelMode === 'clip-plane'
+                    ? `wheel ${activeClipPlane?.label ?? 'clip'}`
+                    : backend.toUpperCase()}
               </em>
             </div>
             <button
@@ -631,8 +744,12 @@ export function App(): JSX.Element {
               item={selected}
               layers={renderLayers}
               onClipPlaneDepthChange={changeClipPlaneDepth}
+              onLayerExtents={handleLayerExtents}
               onLocationChange={setLocationReadout}
+              onResolvedWindows={handleResolvedWindows}
+              onViewModeChange={setViewMode}
               renderWheelMode={renderWheelMode}
+              viewMode={viewMode}
             />
           </section>
         </section>
@@ -670,65 +787,80 @@ export function App(): JSX.Element {
           <div className="nv-sidepanel-content">
             {sidePanelTab === 'inspect' ? (
               <>
-                <section className="nv-control-section">
-                  <div className="nv-panel-heading">
-                    <span>
-                      <ZoomIn size={15} />
-                      Zoom
-                    </span>
-                  </div>
+                {viewMode === 'render' ? (
+                  <>
+                    <section className="nv-control-section">
+                      <div className="nv-panel-heading">
+                        <span>
+                          <ZoomIn size={15} />
+                          Zoom
+                        </span>
+                      </div>
 
-                  <button
-                    aria-pressed={renderWheelMode === 'zoom'}
-                    className={`nv-clip-card nv-zoom-card ${renderWheelMode === 'zoom' ? 'is-active' : ''}`}
-                    onClick={() => setRenderWheelMode('zoom')}
-                    type="button"
-                  >
-                    <span className="nv-clip-card-header">
-                      <span className="nv-zoom-card-title">Zoom render</span>
-                      {renderWheelMode === 'zoom' ? <span className="nv-clip-active-badge">wheel</span> : null}
-                    </span>
-                    <span className="nv-zoom-card-hint">Scroll the render to zoom in and out.</span>
-                  </button>
-                </section>
+                      <button
+                        aria-pressed={renderWheelMode === 'zoom'}
+                        className={`nv-clip-card nv-zoom-card ${renderWheelMode === 'zoom' ? 'is-active' : ''}`}
+                        onClick={() => setRenderWheelMode('zoom')}
+                        type="button"
+                      >
+                        <span className="nv-clip-card-header">
+                          <span className="nv-zoom-card-title">Zoom render</span>
+                          {renderWheelMode === 'zoom' ? <span className="nv-clip-active-badge">wheel</span> : null}
+                        </span>
+                        <span className="nv-zoom-card-hint">Scroll the render to zoom in and out.</span>
+                      </button>
+                    </section>
 
-                <section className="nv-control-section">
-                  <div className="nv-panel-heading">
-                    <span>
-                      <SlidersHorizontal size={15} />
-                      Clip Planes
-                    </span>
-                    <em>
-                      {renderWheelMode === 'clip-plane'
-                        ? clipPlanes.find((plane) => plane.id === activeClipPlaneId)?.label ?? 'none'
-                        : 'none'}
-                    </em>
-                  </div>
+                    <section className="nv-control-section">
+                      <div className="nv-panel-heading">
+                        <span>
+                          <SlidersHorizontal size={15} />
+                          Clip Planes
+                        </span>
+                        <em>
+                          {renderWheelMode === 'clip-plane'
+                            ? clipPlanes.find((plane) => plane.id === activeClipPlaneId)?.label ?? 'none'
+                            : 'none'}
+                        </em>
+                      </div>
 
-                  <div className="nv-clip-list">
-                    {clipPlanes.map((plane) => (
-                      <ClipPlaneEditor
-                        active={renderWheelMode === 'clip-plane' && plane.id === activeClipPlaneId}
-                        key={plane.id}
-                        plane={plane}
-                        onActivate={() => bindActiveClipPlane(plane.id)}
-                        onChange={updateClipPlane}
-                      />
-                    ))}
-                  </div>
-                </section>
+                      <div className="nv-clip-list">
+                        {clipPlanes.map((plane) => (
+                          <ClipPlaneEditor
+                            active={renderWheelMode === 'clip-plane' && plane.id === activeClipPlaneId}
+                            key={plane.id}
+                            plane={plane}
+                            onActivate={() => bindActiveClipPlane(plane.id)}
+                            onChange={updateClipPlane}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  </>
+                ) : (
+                  <section className="nv-control-section">
+                    <p className="nv-mode-note">
+                      Zoom and clip planes apply to the 3D render. In 2D modes, scroll to page through
+                      slices and click to move the crosshair. Switch to <strong>3D</strong> for render controls.
+                    </p>
+                  </section>
+                )}
 
                 <LayerPanel
                   atlasId={atlasId}
-                  isAtlasVisible={isAtlasVisible}
                   isOpeningOverlay={isOpeningOverlay}
                   items={items}
-                  layerColormaps={layerColormaps}
+                  layerSettings={layerSettings}
+                  layerExtents={layerExtents}
+                  resolvedWindows={resolvedWindows}
                   overlayIds={overlayIds}
                   selected={selected}
                   onAtlasChange={changeAtlasLayer}
-                  onAtlasVisibilityChange={setIsAtlasVisible}
                   onLayerColormapChange={changeLayerColormap}
+                  onLayerHiddenChange={setLayerHidden}
+                  onLayerOpacityChange={changeLayerOpacity}
+                  onLayerWindowChange={changeLayerWindow}
+                  onLayerWindowReset={resetLayerWindow}
                   onLoadOverlay={loadOverlayVolume}
                   onOverlayToggle={toggleOverlayLayer}
                 />
@@ -875,48 +1007,79 @@ function DesktopZoomControls({
 
 function LayerPanel({
   atlasId,
-  isAtlasVisible,
   isOpeningOverlay,
   items,
-  layerColormaps,
+  layerSettings,
+  layerExtents,
+  resolvedWindows,
   overlayIds,
   selected,
   onAtlasChange,
-  onAtlasVisibilityChange,
   onLayerColormapChange,
+  onLayerHiddenChange,
+  onLayerOpacityChange,
+  onLayerWindowChange,
+  onLayerWindowReset,
   onLoadOverlay,
   onOverlayToggle
 }: {
   atlasId: string | null
-  isAtlasVisible: boolean
   isOpeningOverlay: boolean
   items: DesktopItem[]
-  layerColormaps: Record<string, string>
+  layerSettings: Record<string, LayerSettings>
+  layerExtents: Record<string, LayerExtent>
+  resolvedWindows: Record<string, ResolvedWindow>
   overlayIds: Set<string>
   selected: DesktopItem | null
   onAtlasChange: (itemId: string) => void
-  onAtlasVisibilityChange: (visible: boolean) => void
   onLayerColormapChange: (itemId: string, colormap: string) => void
+  onLayerHiddenChange: (itemId: string, hidden: boolean) => void
+  onLayerOpacityChange: (itemId: string, opacity: number) => void
+  onLayerWindowChange: (itemId: string, min: number, max: number) => void
+  onLayerWindowReset: (itemId: string) => void
   onLoadOverlay: () => void
   onOverlayToggle: (itemId: string) => void
 }): JSX.Element {
-  const overlayCandidates = useMemo(
-    () => items.filter((item) => item.id !== selected?.id && item.id !== atlasId),
-    [atlasId, items, selected?.id]
-  )
+  const [expandedId, setExpandedId] = useState<string | null | undefined>(undefined)
   const atlasCandidates = useMemo(
     () => items.slice().sort(compareAtlasCandidates),
     [items]
   )
-  const activeOverlayIndexById = useMemo(() => {
-    const indexById = new Map<string, number>()
-    for (const item of items) {
-      if (!overlayIds.has(item.id) || item.id === selected?.id || item.id === atlasId) continue
-      indexById.set(item.id, indexById.size)
-    }
-    return indexById
-  }, [atlasId, items, overlayIds, selected?.id])
-  const extras = overlayIds.size + (atlasId && atlasId !== selected?.id ? 1 : 0)
+  // Active overlay items in render order, excluding the base and atlas.
+  const overlayItems = useMemo(
+    () => items.filter((item) => overlayIds.has(item.id) && item.id !== selected?.id && item.id !== atlasId),
+    [atlasId, items, overlayIds, selected?.id]
+  )
+  // Volumes not yet used by any layer — the "add overlay" pool.
+  const addCandidates = useMemo(
+    () => items.filter((item) => item.id !== selected?.id && item.id !== atlasId && !overlayIds.has(item.id)),
+    [atlasId, items, overlayIds, selected?.id]
+  )
+  // The unified layer list, in NiiVue render order: base -> overlays -> atlas.
+  const rows = useMemo(() => {
+    const out: Array<{ item: DesktopItem; role: 'base' | 'overlay' | 'atlas' }> = []
+    if (selected) out.push({ item: selected, role: 'base' })
+    for (const item of overlayItems) out.push({ item, role: 'overlay' })
+    const atlasItem = atlasId && atlasId !== selected?.id ? items.find((item) => item.id === atlasId) : null
+    if (atlasItem) out.push({ item: atlasItem, role: 'atlas' })
+    return out
+  }, [atlasId, items, overlayItems, selected])
+  // Every row except the base is an "extra" layer; derive it from `rows` so the
+  // atlas-membership rule lives in exactly one place (see rows above).
+  const extras = rows.length - (selected ? 1 : 0)
+  // Exactly one row open at a time. `undefined` means the user hasn't chosen, so
+  // default to the base (its controls show on load); `null` means they collapsed
+  // the open row and nothing should be expanded.
+  const rowIds = rows.map((row) => row.item.id)
+  const expanded =
+    expandedId === undefined
+      ? selected?.id ?? null
+      : expandedId && rowIds.includes(expandedId)
+        ? expandedId
+        : null
+  const mismatches = rows
+    .map((row) => layerWarning(selected, row.item, layerExtents))
+    .filter((warning): warning is string => warning !== null)
 
   return (
     <section className="nv-control-section nv-layer-panel">
@@ -928,32 +1091,89 @@ function LayerPanel({
         <em>{selected ? `${extras} extra` : 'none'}</em>
       </div>
 
-      <button
-        className="nv-layer-load-button"
-        disabled={isOpeningOverlay}
-        onClick={onLoadOverlay}
-        type="button"
-      >
-        <FolderOpen size={14} />
-        <span>{isOpeningOverlay ? 'Loading overlay' : 'Load overlay'}</span>
-      </button>
+      {mismatches.length > 0 ? (
+        <div className="nv-layer-banner" role="alert">
+          <AlertTriangle size={14} />
+          <span>
+            {mismatches.length === 1
+              ? mismatches[0]
+              : `${mismatches.length} layers may not match the base — verify subject and alignment.`}
+          </span>
+        </div>
+      ) : null}
 
       {selected ? (
-        <div className="nv-layer-card">
-          <div className="nv-layer-copy">
-            <strong>{selected.label}</strong>
-            <small>{atlasId === selected.id ? 'Base atlas' : 'Base volume'}</small>
-          </div>
-          <LayerColormapSelect
-            ariaLabel={`Colormap for ${selected.label}`}
-            itemId={selected.id}
-            value={layerColormapForItem(
-              selected,
-              layerColormaps,
-              atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
-            )}
-            onChange={onLayerColormapChange}
-          />
+        <div className="nv-layer-rows">
+          {rows.map(({ item, role }) => {
+            const settings = layerSettings[item.id]
+            const isBaseAtlas = role === 'base' && atlasId === selected.id
+            const overlayIndex = role === 'overlay' ? overlayItems.findIndex((o) => o.id === item.id) : 0
+            const colormapValue = layerColormapForItem(
+              item,
+              layerSettings,
+              role === 'overlay'
+                ? overlayColormapForIndex(overlayIndex)
+                : isBaseAtlas
+                  ? DEFAULT_ATLAS_COLORMAP
+                  : DEFAULT_BASE_COLORMAP
+            )
+            return (
+              <LayerRow
+                key={item.id}
+                role={role}
+                label={item.label}
+                meta={layerOptionMeta(item)}
+                warning={layerWarning(selected, item, layerExtents)}
+                hidden={!!settings?.hidden}
+                expanded={expanded === item.id}
+                removable={role !== 'base'}
+                onToggleExpand={() => setExpandedId(expanded === item.id ? null : item.id)}
+                onHiddenChange={(hidden) => onLayerHiddenChange(item.id, hidden)}
+                onRemove={role === 'atlas' ? () => onAtlasChange('') : () => onOverlayToggle(item.id)}
+              >
+                {role === 'atlas' ? (
+                  <Slider
+                    label="Opacity"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={opacityForItem(item.id, layerSettings, DEFAULT_ATLAS_OPACITY)}
+                    onChange={(value) => onLayerOpacityChange(item.id, value)}
+                  />
+                ) : (
+                  <>
+                    <LayerColormapSelect
+                      ariaLabel={`Colormap for ${item.label}`}
+                      itemId={item.id}
+                      value={colormapValue}
+                      onChange={onLayerColormapChange}
+                    />
+                    {role === 'overlay' ? (
+                      <Slider
+                        label="Opacity"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={opacityForItem(item.id, layerSettings, DEFAULT_OVERLAY_OPACITY)}
+                        onChange={(value) => onLayerOpacityChange(item.id, value)}
+                      />
+                    ) : null}
+                    {!isBaseAtlas ? (
+                      <WindowControl
+                        itemId={item.id}
+                        label={item.label}
+                        window={settings?.window}
+                        resolved={resolvedWindows[item.id]}
+                        variant={role === 'overlay' ? 'threshold' : 'window'}
+                        onChange={onLayerWindowChange}
+                        onReset={onLayerWindowReset}
+                      />
+                    ) : null}
+                  </>
+                )}
+              </LayerRow>
+            )
+          })}
         </div>
       ) : null}
 
@@ -975,57 +1195,121 @@ function LayerPanel({
         <ChevronDown size={14} />
       </label>
 
-      <label className={`nv-layer-visibility ${atlasId ? '' : 'is-disabled'}`}>
-        <input
-          checked={isAtlasVisible}
-          disabled={!atlasId}
-          onChange={(event) => onAtlasVisibilityChange(event.target.checked)}
-          type="checkbox"
-        />
-        <span>Show atlas</span>
-      </label>
+      <button
+        className="nv-layer-load-button"
+        disabled={isOpeningOverlay}
+        onClick={onLoadOverlay}
+        type="button"
+      >
+        <FolderOpen size={14} />
+        <span>{isOpeningOverlay ? 'Loading overlay' : 'Load overlay'}</span>
+      </button>
 
       <div className="nv-layer-list-header">
-        <span>Overlays</span>
-        <em>{overlayIds.size}</em>
+        <span>Add overlay</span>
+        <em>{addCandidates.length}</em>
       </div>
       <div className="nv-layer-list">
-        {overlayCandidates.map((item) => {
-          const isActive = overlayIds.has(item.id)
-          const activeIndex = activeOverlayIndexById.get(item.id) ?? 0
-          return (
-            <div className={`nv-layer-option ${isActive ? 'is-active' : ''}`} key={item.id} title={item.label}>
-              <label className="nv-layer-option-toggle">
-                <input
-                  checked={isActive}
-                  disabled={!selected}
-                  onChange={() => onOverlayToggle(item.id)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>{item.label}</strong>
-                  <small>{layerOptionMeta(item)}</small>
-                </span>
-              </label>
-              <LayerColormapSelect
-                ariaLabel={`Colormap for ${item.label}`}
-                disabled={!selected || !isActive}
-                itemId={item.id}
-                value={layerColormapForItem(
-                  item,
-                  layerColormaps,
-                  overlayColormapForIndex(activeIndex)
-                )}
-                onChange={onLayerColormapChange}
-              />
-            </div>
-          )
-        })}
-        {overlayCandidates.length === 0 ? (
+        {addCandidates.map((item) => (
+          <button
+            className="nv-layer-add-option"
+            disabled={!selected}
+            key={item.id}
+            onClick={() => onOverlayToggle(item.id)}
+            title={item.label}
+            type="button"
+          >
+            <Plus size={13} />
+            <span>
+              <strong>{item.label}</strong>
+              <small>{layerOptionMeta(item)}</small>
+            </span>
+          </button>
+        ))}
+        {addCandidates.length === 0 ? (
           <div className="nv-filter-empty">No overlay candidates.</div>
         ) : null}
       </div>
     </section>
+  )
+}
+
+// One expandable row in the unified Layers list. The header carries the
+// visibility toggle, label/role, expand caret, and (for non-base layers) a
+// remove button; the role-specific controls live in the expanded body.
+function LayerRow({
+  role,
+  label,
+  meta,
+  warning,
+  hidden,
+  expanded,
+  removable,
+  onToggleExpand,
+  onHiddenChange,
+  onRemove,
+  children
+}: {
+  role: 'base' | 'overlay' | 'atlas'
+  label: string
+  meta: string
+  warning?: string | null
+  hidden: boolean
+  expanded: boolean
+  removable: boolean
+  onToggleExpand: () => void
+  onHiddenChange: (hidden: boolean) => void
+  onRemove: () => void
+  children: JSX.Element
+}): JSX.Element {
+  const roleLabel = role === 'base' ? 'Base' : role === 'atlas' ? 'Atlas' : 'Overlay'
+  return (
+    <div
+      className={`nv-layer-row is-${role}${expanded ? ' is-expanded' : ''}${hidden ? ' is-hidden' : ''}${warning ? ' is-warning' : ''}`}
+    >
+      <div className="nv-layer-row-head">
+        <button
+          aria-label={hidden ? `Show ${label}` : `Hide ${label}`}
+          aria-pressed={!hidden}
+          className="nv-layer-row-vis"
+          onClick={() => onHiddenChange(!hidden)}
+          type="button"
+        >
+          {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+        </button>
+        <button
+          aria-expanded={expanded}
+          className="nv-layer-row-main"
+          onClick={onToggleExpand}
+          type="button"
+        >
+          <span className="nv-layer-row-title">
+            <strong>{label}</strong>
+            <small>
+              <span className="nv-layer-role">{roleLabel}</span>
+              {meta ? ` · ${meta}` : ''}
+            </small>
+          </span>
+          {warning ? (
+            <span aria-label={warning} className="nv-layer-row-warn" role="img" title={warning}>
+              <AlertTriangle size={15} />
+            </span>
+          ) : null}
+          <ChevronDown className="nv-layer-row-caret" size={15} />
+        </button>
+        {removable ? (
+          <button
+            aria-label={`Remove ${label}`}
+            className="nv-layer-row-remove"
+            onClick={onRemove}
+            type="button"
+          >
+            <X size={14} />
+          </button>
+        ) : null}
+      </div>
+      {expanded ? <div className="nv-layer-row-body">{children}</div> : null}
+    </div>
   )
 }
 
@@ -1059,6 +1343,135 @@ function LayerColormapSelect({
       </select>
       <ChevronDown size={14} />
     </label>
+  )
+}
+
+// Per-layer intensity mapping (NIfTI cal_min/cal_max). Empty inputs mean
+// NiiVue's robust auto range. Two variants:
+//   - 'window' (base): Min/Max contrast range.
+//   - 'threshold' (stat overlay): Threshold/Max, where values below the
+//     threshold render transparent (NiiVue's transparent-below-calMin), so the
+//     min field is the statistical threshold, not a contrast floor.
+function WindowControl({
+  itemId,
+  label,
+  window,
+  resolved,
+  variant = 'window',
+  onChange,
+  onReset
+}: {
+  itemId: string
+  label: string
+  window: { min: number; max: number } | undefined
+  // The effective window NiiVue applied when none is set explicitly (its robust
+  // auto range, or an overlay's auto-threshold). Shown so "auto" isn't a black
+  // box — e.g. a stat overlay reveals the threshold it's hiding signal below.
+  // robustMin/robustMax (when present) are the "show all" / threshold-off target.
+  resolved?: ResolvedWindow
+  variant?: 'window' | 'threshold'
+  onChange: (itemId: string, min: number, max: number) => void
+  onReset: (itemId: string) => void
+}): JSX.Element {
+  const isThreshold = variant === 'threshold'
+  const heading = isThreshold ? 'Threshold' : 'Intensity window'
+  const minLabel = isThreshold ? 'Threshold' : 'Min'
+  const fmt = (value: number): string =>
+    Number.isFinite(value) ? String(Number(value.toFixed(2))) : '–'
+  const readout = window
+    ? `${fmt(window.min)} – ${fmt(window.max)}`
+    : resolved
+      ? `auto · ${fmt(resolved.min)} – ${fmt(resolved.max)}`
+      : 'auto'
+  const minPlaceholder = resolved ? fmt(resolved.min) : 'auto'
+  const maxPlaceholder = resolved ? fmt(resolved.max) : 'auto'
+  const [minText, setMinText] = useState(window ? String(window.min) : '')
+  const [maxText, setMaxText] = useState(window ? String(window.max) : '')
+
+  useEffect(() => {
+    setMinText(window ? String(window.min) : '')
+    setMaxText(window ? String(window.max) : '')
+  }, [window?.min, window?.max])
+
+  // Commit whenever either field changes, reading both current values from
+  // state (no stale closure across the two inputs). For the threshold variant a
+  // blank Max means "up to the auto top", so fall back to the resolved max
+  // rather than discarding the input — setting just a threshold is the common
+  // case and must not look like a broken control.
+  const resolvedMax = resolved?.max
+  useEffect(() => {
+    if (!minText.trim()) return
+    const min = Number(minText)
+    if (!Number.isFinite(min)) return
+    const max = maxText.trim()
+      ? Number(maxText)
+      : isThreshold && Number.isFinite(resolvedMax)
+        ? (resolvedMax as number)
+        : NaN
+    if (Number.isFinite(max) && min < max) {
+      onChange(itemId, min, max)
+    }
+    // onChange/itemId are stable for a given layer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minText, maxText, resolvedMax, isThreshold])
+
+  return (
+    <div className="nv-window-control">
+      <div className="nv-window-heading">
+        <span>{heading}</span>
+        <em className={window ? '' : 'is-auto'}>{readout}</em>
+      </div>
+      <div className="nv-window-row">
+        <label className="nv-field">
+          <span>{minLabel}</span>
+          <input
+            aria-label={`${minLabel} for ${label}`}
+            className="nv-text-input"
+            inputMode="decimal"
+            onChange={(event) => setMinText(event.target.value)}
+            placeholder={minPlaceholder}
+            type="number"
+            value={minText}
+          />
+        </label>
+        <label className="nv-field">
+          <span>Max</span>
+          <input
+            aria-label={`Window maximum for ${label}`}
+            className="nv-text-input"
+            inputMode="decimal"
+            onChange={(event) => setMaxText(event.target.value)}
+            placeholder={maxPlaceholder}
+            type="number"
+            value={maxText}
+          />
+        </label>
+        <button
+          className="nv-window-reset"
+          disabled={!window}
+          onClick={() => onReset(itemId)}
+          title="Reset to auto range"
+          type="button"
+        >
+          Auto
+        </button>
+      </div>
+      {isThreshold &&
+      resolved &&
+      Number.isFinite(resolved.robustMin) &&
+      Number.isFinite(resolved.robustMax) ? (
+        <button
+          className="nv-window-showall"
+          onClick={() =>
+            onChange(itemId, resolved.robustMin as number, resolved.robustMax as number)
+          }
+          title="Display the full robust range with no threshold"
+          type="button"
+        >
+          Show all (no threshold)
+        </button>
+      ) : null}
+    </div>
   )
 }
 
@@ -1430,10 +1843,44 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
+function viewModeLabel(mode: ViewModeId): string {
+  switch (mode) {
+    case 'axial':
+      return 'Axial'
+    case 'coronal':
+      return 'Coronal'
+    case 'sagittal':
+      return 'Sagittal'
+    case 'multiplanar':
+      return 'Multiplanar'
+    default:
+      return '3D render'
+  }
+}
+
 function mouseContextLabel(context: MouseContext): string {
   if (context === 'desktop') return 'Mouse: desktop grid controls'
   if (context === 'niivue') return 'Mouse: NiiVue controls'
   return 'Mouse: no pane'
+}
+
+// Through-plane position of the current slice, as an anatomical mm coordinate
+// (RAS+, so it's correct regardless of the volume's raw voxel orientation).
+// Only meaningful for the single-plane 2D modes; multiplanar/render return null.
+const SLICE_THROUGH_PLANE: Record<string, { index: number; positive: string; negative: string }> = {
+  axial: { index: 2, positive: 'S', negative: 'I' },
+  coronal: { index: 1, positive: 'A', negative: 'P' },
+  sagittal: { index: 0, positive: 'R', negative: 'L' }
+}
+
+function slicePositionLabel(location: NiiVueLocation | null, viewMode: ViewModeId): string | null {
+  if (!location) return null
+  const axis = SLICE_THROUGH_PLANE[viewMode]
+  if (!axis) return null
+  const value = location.mm[axis.index]
+  if (!Number.isFinite(value)) return null
+  const letter = value >= 0 ? axis.positive : axis.negative
+  return `${letter} ${formatCoordinate(Math.abs(value))} mm`
 }
 
 function locationStatusLabel(location: NiiVueLocation | null): string | null {
@@ -1517,14 +1964,46 @@ function compareAtlasCandidates(left: DesktopItem, right: DesktopItem): number {
 
 function layerColormapForItem(
   item: DesktopItem,
-  layerColormaps: Record<string, string>,
+  layerSettings: Record<string, LayerSettings>,
   fallback: string
 ): string {
-  return layerColormaps[item.id] ?? fallback
+  return layerSettings[item.id]?.colormap ?? fallback
 }
 
 function overlayColormapForIndex(index: number): string {
   return DEFAULT_OVERLAY_COLORMAPS[index % DEFAULT_OVERLAY_COLORMAPS.length]
+}
+
+// The layer's stored opacity (or role default) — what the slider edits, and
+// what a hidden layer reverts to when shown again.
+function opacityForItem(
+  itemId: string,
+  layerSettings: Record<string, LayerSettings>,
+  fallback: number
+): number {
+  const opacity = layerSettings[itemId]?.opacity
+  return typeof opacity === 'number' && Number.isFinite(opacity) ? opacity : fallback
+}
+
+// The opacity actually sent to NiiVue: 0 when hidden, otherwise the stored value.
+function renderOpacityForItem(
+  itemId: string,
+  layerSettings: Record<string, LayerSettings>,
+  fallback: number
+): number {
+  if (layerSettings[itemId]?.hidden) return 0
+  return opacityForItem(itemId, layerSettings, fallback)
+}
+
+function windowForItem(
+  itemId: string,
+  layerSettings: Record<string, LayerSettings>
+): { calMin: number; calMax: number } | Record<string, never> {
+  const window = layerSettings[itemId]?.window
+  if (!window || !Number.isFinite(window.min) || !Number.isFinite(window.max) || window.min >= window.max) {
+    return {}
+  }
+  return { calMin: window.min, calMax: window.max }
 }
 
 function atlasCandidateScore(item: DesktopItem): number {
@@ -1536,7 +2015,93 @@ function atlasCandidateScore(item: DesktopItem): number {
 }
 
 function layerOptionMeta(item: DesktopItem): string {
-  return `${volumeImageTypeLabel(item)} / ${item.shape.join(' x ')} / ${item.dtype}`
+  const base = `${volumeImageTypeLabel(item)} / ${item.shape.join(' x ')} / ${item.dtype}`
+  const subject = volumeSubject(item)
+  return subject ? `${subject} · ${base}` : base
+}
+
+// A layer is "suspect" against the base when both carry a BIDS subject and the
+// subjects differ — the silent study-mix-up case. Returns a reason for the
+// warning, or null. Geometry (shape/spacing) is shown but not warned on: legit
+// co-registered overlays routinely have a different grid than the base.
+function layerSubjectWarning(base: DesktopItem | null, item: DesktopItem): string | null {
+  if (!base || item.id === base.id) return null
+  const baseSubject = volumeSubject(base)
+  const itemSubject = volumeSubject(item)
+  if (baseSubject && itemSubject && baseSubject !== itemSubject) {
+    const baseSession = volumeSession(base)
+    const itemSession = volumeSession(item)
+    const here = [itemSubject, itemSession].filter(Boolean).join(' ')
+    const there = [baseSubject, baseSession].filter(Boolean).join(' ')
+    return `Different subject (${here}) than the base (${there}) — verify this is the same study.`
+  }
+  return null
+}
+
+function extentsEqual(
+  a: Record<string, LayerExtent>,
+  b: Record<string, LayerExtent>
+): boolean {
+  const aKeys = Object.keys(a)
+  if (aKeys.length !== Object.keys(b).length) return false
+  return aKeys.every((id) => {
+    const ea = a[id]
+    const eb = b[id]
+    return (
+      !!eb &&
+      ea.min.length === eb.min.length &&
+      ea.min.every((value, i) => value === eb.min[i]) &&
+      ea.max.length === eb.max.length &&
+      ea.max.every((value, i) => value === eb.max[i])
+    )
+  })
+}
+
+function boxVolume(box: LayerExtent): number {
+  let volume = 1
+  for (let i = 0; i < 3; i += 1) volume *= Math.max(0, box.max[i] - box.min[i])
+  return volume
+}
+
+// Fraction of the smaller box that lies inside the larger one. ~1 for
+// co-registered volumes even at different resolution/FOV; → 0 for volumes in a
+// different space (e.g. subject-native overlay on an MNI base). Below this we
+// flag a possible space mismatch — caught even when subjects aren't BIDS-known.
+const SPACE_OVERLAP_MIN = 0.5
+
+function layerSpaceWarning(
+  base: LayerExtent | undefined,
+  item: LayerExtent | undefined
+): string | null {
+  if (!base || !item || base.min.length < 3 || item.min.length < 3) return null
+  let intersection = 1
+  for (let i = 0; i < 3; i += 1) {
+    const low = Math.max(base.min[i], item.min[i])
+    const high = Math.min(base.max[i], item.max[i])
+    intersection *= Math.max(0, high - low)
+  }
+  const smaller = Math.min(boxVolume(base), boxVolume(item))
+  if (smaller <= 0) return null
+  const overlap = intersection / smaller
+  if (overlap < SPACE_OVERLAP_MIN) {
+    return `Different space than the base (${Math.round(overlap * 100)}% world overlap) — the overlay may be mislocated.`
+  }
+  return null
+}
+
+// The mismatch warning for a non-base layer vs the base, if any: a known
+// different BIDS subject, else a different world space. Subject takes
+// precedence (more specific); space catches the non-BIDS / same-subject cases.
+function layerWarning(
+  base: DesktopItem | null,
+  item: DesktopItem,
+  layerExtents: Record<string, LayerExtent>
+): string | null {
+  if (!base || item.id === base.id) return null
+  return (
+    layerSubjectWarning(base, item) ??
+    layerSpaceWarning(layerExtents[base.id], layerExtents[item.id])
+  )
 }
 
 async function savePatch(

@@ -27,9 +27,35 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
   toggle/dock.
 - [ ] **[P2] (M) Responsive layout + touch.** iPhone layout (small screen), touch
   equivalents for wheel-zoom (pinch) and any hover-reveal affordances. No
-  hover-only / wheel-only controls.
+  hover-only / wheel-only controls. Concrete regressions found in the
+  2026-07-01 code review (both desktop-only today):
+  - **Slice paging is wheel-only** (`NiivueStage.tsx` `sliceWheelStep` /
+    `handleWheelCapture` → `moveCrosshairInVox`). No touch/pointer path, so 2D
+    slice navigation is unreachable on iPad/iPhone. Add a drag/swipe (or
+    on-screen slice slider) equivalent.
+  - **3D camera snap is keyboard-only.** The redesign replaced the on-screen
+    render-snap buttons with the 2D/3D view-mode buttons, so `snapRenderView`
+    (Coronal/Sagittal/Axial camera angles) is now reachable only via the
+    numpad/Blender digit shortcuts — gone on touch. Re-expose a snap affordance
+    for the 3D render pane.
 - [ ] **[P3] (M) Set up the `tauri ios` project/build** and validate on simulator/
   device once the above land.
+- [ ] **[P3] (M) AirDrop / share-sheet dataset hand-off (Apple-only, one-shot).**
+  Transport for the assign→work→resync flow (see "Assign → work-offline → resync"
+  under Reproducibility), not live sync. Apps can't initiate AirDrop directly —
+  present the OS share sheet (`NSSharingServicePicker` macOS,
+  `UIActivityViewController` iOS) with AirDrop as one option, and register
+  NeuroVue as a handler
+  for the dataset/bundle file type so received bundles open via the same
+  pick/open-dataset seam. Needs a native plugin per platform; keep it as one
+  transport option, not the primary mechanism (no Windows/Android/web).
+  - **Prior art for the native-iOS shim:** the chronicle cache app
+    (`~/Developer/personalized-newspaper`) already ships working Tauri-v2 Swift
+    plugins that expose native iOS APIs to JS via `Invoke` —
+    `src-tauri/plugins/tauri-plugin-tts/ios/Sources/TtsPlugin.swift` and
+    `tauri-plugin-bgrefresh/ios/Sources/BgRefreshPlugin.swift`, with
+    `src-tauri/ios/` bridging header and `ios-run.sh` for build/deploy. Use it as
+    the template for a share-sheet plugin (and other iOS-native features).
 
 ## Performance & scale
 
@@ -44,6 +70,14 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
   the user. Parallelize across cores, warm mid levels, add a warming indicator.
 - [x] **[P3] (S) Manifest refresh via ETag / version endpoint** instead of polling
   the full manifest and diffing a stringified signature (`App.tsx`).
+- [ ] **[P3] (S) Scope setVolume re-application to the changed layer.** The
+  display-option effect (`NiivueStage.tsx` ~L426, deps `[layers, loadedVersion,
+  onResolvedWindows]`) re-runs `setVolume` for *every* layer and forces a full
+  `drawScene()` whenever the `layers` array identity changes — so dragging one
+  overlay's opacity slider repaints the whole scene and re-applies all layers per
+  frame. Diff against the prior applied options and only `setVolume` the layer(s)
+  that actually changed. (Found in the 2026-07-01 review; PLAUSIBLE/efficiency,
+  no correctness impact.)
 
 ## Backend correctness / hardening
 
@@ -147,6 +181,107 @@ depend on laterality, intensity, or thresholds until the blockers land.
   map for signed data (needs the volume's value range surfaced —
   see the affine/range item below).
 
+### Per-layer controls redesign (design locked 2026-06-25)
+
+From a three-person design team (neuroimaging-tools survey, interaction design,
+codebase architecture). All three independently converged on the same design.
+**Do this after the multiplanar branch merges** (its bolted-on Min/Max strip is
+the thing this replaces).
+
+**Design:** one unified **Layers list** with **expandable rows** (FSLeyes
+completeness, OHIF space-efficiency). One row per layer (base/overlay/atlas);
+the selected row expands inline (accordion), one open at a time. Rejected:
+all-controls-per-row (overflows 300px touch panel), detached detail panel
+(splits a layer's identity), popovers (hover-hostile). The base-volume card and
+the atlas selector merge into the list as rows; the standalone WindowControl
+moves into the base/overlay row's expansion.
+
+**Role asymmetry:** base = colormap + intensity window, no opacity/threshold;
+overlay = full kit; atlas = visibility + opacity + outline/labels toggles, no
+colormap/window (discrete label map).
+
+**State:** collapse `layerColormaps` + `layerWindows` into one
+`Record<id, LayerSettings>` (`colormap?/opacity?/hidden?/window?/threshold?`);
+keep `overlayIds`/`atlasId` for membership. Deletes the three hardcoded opacity
+literals (`App.tsx` overlay 0.48 / atlas 0.34) and unifies atlas show/hide with
+overlay visibility via one `hidden` flag.
+
+**Guardrails (codebase-specific):** new settings must never enter
+`layerLoadSignature` (else every slider drag reloads the LOD pyramid — route via
+the in-place `setVolume` effect); preserve base→overlay→atlas order (in-place
+effect maps list index → NiiVue volume index positionally); gate window/threshold
+off for atlas rows (it uses `setColormapLabel`).
+
+Phases (threshold deferred per decision):
+- [x] **[P2] (S) A — Consolidate state** → `layerSettings` map + handlers + single prune branch.
+- [x] **[P2] (S) B — Per-layer opacity** (field + slider); delete hardcoded opacity literals.
+- [x] **[P2] (S) C — Unify visibility** into a `hidden` flag. Done: `hidden` on
+  `LayerSettings` + `renderOpacityForItem` (effective opacity = `hidden ? 0 :
+  opacity`); atlas migrated off the standalone `isAtlasVisible` state, so hide/show
+  preserves the layer's opacity. Overlays share the plumbing; their per-row
+  visibility toggle lands with the unified row in D (current overlay on/off is
+  still membership via `overlayIds`).
+- [x] **[P2] (M) D — Unified `LayerRow` list** with expandable detail; fold in colormap + opacity + WindowControl + per-row visibility (`hidden`) toggle for every layer. Numeric-first window (Min/Max + Auto), opacity slider+readout, diverging colormap stays a colormap option. Done: one accordion list (base→overlay→atlas order), one row open at a time, role asymmetry (base = colormap+window, overlay = full kit, atlas = opacity only), per-row eye toggle + remove (X), and a compact "Add overlay" pool replacing the 157-row checklist. Atlas `outline/labels` toggles still TODO (NiiVue `setColormapLabel` exists but no UI).
+- [x] **[P3] (M–L) E — Threshold** (display threshold via cal_min). Overlay rows
+  show a **Threshold + Max** control (distinct from the base's Min/Max window);
+  values below the threshold render transparent (NiiVue's transparent-below-
+  calMin). Stat overlays **auto-seed** their threshold from the loaded volume's
+  robust max (`windowOptionForLayer` in `NiivueStage.tsx`) so they render
+  thresholded instead of as a "purple block"; this needed a post-load re-apply
+  (`loadedVersion` bump) since per-volume stats aren't ready when the overlay is
+  first toggled on. True/destructive masking (niimath `-thr`) deferred as a
+  separate "Mask" op. Possible follow-up: tune the default (robust max = top ~2%
+  is conservative) and a threshold slider once the value range is surfaced.
+
+Touch/iPad: ≥44px targets, no hover-only reveals, full-width inputs with explicit
+min-width (the zero-width-grid collapse bug recurs otherwise), one row open at a
+time to stay thumb-scrollable.
+
+### Review pass 2026-06-30 (post-redesign viewer)
+
+Fresh researcher + clinician pass after the layer redesign / threshold / guard /
+wheel-paging work. Several findings are regressions-of-trust in the *new*
+features — a control that can quietly mislead is worse than no control.
+
+- [x] **[P1] (S) Stat-overlay threshold can hide signal silently — surface the
+  cutoff.** Done, three parts: (1) the window/Threshold readout + placeholders
+  show the *effective* values instead of a bare "auto" (`onResolvedWindows` →
+  `resolvedWindows` → `WindowControl`, dimmed); (2) softened the default from
+  `robustMax` (top ~2%) to **half** the robust max with contrast saturating at
+  robustMax, so moderate activation shows, not just the strongest; (3) a "Show
+  all (no threshold)" button on overlay rows resets to the full robust range
+  (`resolved.robustMin/Max`). Verified live: default reads `auto · 183.67 –
+  367.34`; Show-all → `0 – 367.34`.
+- [x] **[P1] (M) Mismatch guard is subject-only — don't let "no warning" read as
+  "match".** Done: added a **world-space** check alongside the subject check.
+  NiivueStage reports each layer's world bounding box (`onLayerExtents`, post-load
+  via `loadedVersion`); `layerSpaceWarning` flags an overlay whose box overlaps
+  the base's by < 50% (intersection-over-smaller — ~1.0 for co-registered volumes
+  at any resolution, → 0 for a different space). This catches the **non-BIDS** and
+  **same-subject-different-space** cases the subject check misses; `layerWarning`
+  combines them (subject first). Verified live: cactus base + ds000001 overlay →
+  "0% world overlap" warning (subject check is silent there). Threshold 0.5 is
+  tunable; co-registered no-false-positive is logically sound (nested boxes) but
+  wasn't re-tested with a coregistered pair this session.
+- [~] **[P2] (S) Slice locator + consistent wheel direction.** Done: the NiiVue
+  window header now shows the current slice's **through-plane position** as an
+  anatomical mm coordinate (`slicePositionLabel`, e.g. `Axial · I 168 mm`) — RAS+
+  so it's correct regardless of voxel orientation, and it updates as you page
+  (`moveCrosshairInVox` fires `locationChange`). Remaining: `sliceWheelStep` still
+  steps in voxel space, so scroll *direction* can flip by volume orientation
+  (page in mm / orientation-aware for a consistent up=superior feel) — lower
+  priority now that the mm position is visible. Note: header position populates
+  after the first crosshair move (NiiVue doesn't emit an initial location).
+- [ ] **[P2] (S) Add-overlay guard rail.** The pool blends any of 157 unrelated
+  dataset volumes onto the base with only the subject check as a rail — easy to
+  mis-add. Consider surfacing relationship (same subject/space) in the pool or a
+  confirm on a clearly-mismatched add.
+
+(Already tracked but **raised in priority** by this pass: Save/share full view
+state — now the only way to capture the new per-layer settings, whose defaults
+show "auto"; on-screen orientation convention; affine/qform/sform; persistent
+RAS+value widget.)
+
 ### High-trust cheap wins — data already plumbed, just surface it
 
 - [x] **[P2] (S) Surface the niimath command + stderr.** The Rust side already
@@ -179,20 +314,62 @@ depend on laterality, intensity, or thresholds until the blockers land.
   grabs the first non-air label across *all* layers (`App.tsx:1427-1437`), so it
   can report a region from the wrong volume and can't say which atlas. Bind the
   lookup to the named atlas layer and show the atlas name.
+- [ ] **[P2] (M) Content-hash data integrity + local edit changelog
+  (foundational, single-user).** Stands alone — no collaboration required, and
+  the viewer must be rock-solid on this before anything multi-user is built. Hash
+  every dataset/derived artifact, verify on load, and surface a clear warning when
+  the bytes don't match what an edit/view was made against (stale, modified, or
+  corrupt data). Keep an append-only local changelog of edits — each entry: author,
+  ts, parent entry hash, payload content hash, action — by generalizing the
+  per-session `provenance.jsonl` (`volumetric_server.rs:1245-1280`, currently
+  NeuroFlow-gated and only logging `correction.save`) into a dataset-level log.
+  Append-only + hash chain = tamper-evident provenance and a replayable history.
+  - **Upgrade the hash for integrity use.** `file_content_hash`
+    (`volumetric_server.rs:2455`) is a non-cryptographic `u64` (`DefaultHasher`) —
+    fine for cache-busting, **not** for tamper-evidence. Use a cryptographic hash
+    (SHA-256 / BLAKE3) as the integrity + changelog identity; keep `id` as the
+    dataset's single notion of identity so there aren't two.
+- [ ] **[P3] (L) Assign → work-offline → resync (multi-user, additive).** Built
+  *on top of* the integrity/changelog backbone above; explicitly not load-bearing
+  — the single-user viewer ships and stays correct without it. Not live
+  collaboration: a coordinator hands out parts of a dataset (whole volumes or
+  slice ranges), each user works independently on their own device, then results
+  sync back.
+  - **Assignment manifest.** A unit of work = {dataset id, volume id(s) or slice
+    range, assignee, base content hash}. Generate per-assignee bundles (data
+    subset + manifest) so they can open and work offline.
+  - **Resync/merge.** Bring an assignee's patches back, verify their base hash
+    against the current dataset, append their entries to the changelog, and flag
+    conflicts (two assignees touching the same unit) instead of silently
+    last-write-wins. Extend the current single `correction.patch.json` /
+    `savePatch` model (`App.tsx:1485-1512`, `/session/correction.patch.json`) to
+    be per-assignment and mergeable; pairs with "Save/share full view state".
+  - **Transport-agnostic.** The bundle hand-off is just file in / file out — see
+    the AirDrop/share item under Mobile and the data-transport seam — so the same
+    flow works over AirDrop, a shared folder, or a server round-trip.
 
 ### Clinical reading ergonomics & safety (clinician)
 
-- [ ] **[P2] (M) Geometry/subject mismatch guard.** Overlays from different
-  volumes blend at fixed opacity (`App.tsx:240,251`) with no check they share
-  affine/shape/subject — a silent study mix-up vector. Warn when an overlay's
-  affine/shape doesn't match the base; show subject/session/modality in a fixed
-  banner.
+- [x] **[P2] (M) Geometry/subject mismatch guard.** Done: each layer row shows
+  its BIDS `sub-/ses-` + modality + shape (`volumeSubject`/`volumeSession` in
+  `volumeFacets.ts`, surfaced via `layerOptionMeta`), and an overlay/atlas whose
+  subject differs from the base gets a per-row ⚠ + a panel warning banner
+  (`layerSubjectWarning`). Subject mismatch is the reliable study-mix-up signal;
+  geometry (shape/spacing) is shown but **not** warned on — co-registered stat
+  overlays legitimately have a different grid, so warning there is constant
+  noise. Follow-up: a true **space** check (native vs MNI, same subject) needs
+  the post-load world extents/affine from NiiVue (`extentsMin/Max`) — wire it
+  through the `loadedVersion` readback added in Phase E.
 - [ ] **[P2] (S) Per-layer opacity sliders.** Overlay opacity is hardcoded at
   0.48 (`App.tsx:240`); blending is a core stats-viewing knob. Expose per-layer
   sliders (the layer panel already has per-layer colormap selects, `App.tsx:990`).
-- [ ] **[P2] (S) Scroll pages slices.** Once multiplanar exists, mouse-wheel
-  should page through slices (clinician muscle memory); it is currently bound only
-  to zoom/clip-depth (`NiivueStage.tsx:413-437`).
+- [x] **[P2] (S) Scroll pages slices.** Mouse-wheel now pages through slices in
+  the single-plane 2D modes (axial/coronal/sagittal) by driving the crosshair's
+  through-plane voxel (`sliceWheelStep` + `handleWheelCapture`); scroll-down
+  advances. Zoom/clip-depth stay 3D-only. Two follow-ups: multiplanar paging is
+  still native (needs per-pane hit-testing to know which plane the cursor is
+  over), and paging steps in voxel space so the anatomical direction varies with
+  volume orientation — page in mm for a consistent up=superior feel.
 - [ ] **[P3] (M) Measurement tools.** No length/angle/ROI or Hounsfield readout.
   Add basic distance + voxel-value-under-crosshair.
 - [ ] **[P3] (S) Keep base volume grayscale-only.** Letting the base anatomical

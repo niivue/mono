@@ -113,28 +113,48 @@ async function main() {
     },
     true,
   )
-  window.addEventListener('keydown', (e) => {
-    const k = (e.key || '').toLowerCase()
-    if (k === 'd') drawMode = !drawMode
-    else if (k === 'u') nv.slideDrawUndo()
-    else if (k === 'c') nv.clearSlideDrawing()
-    else return
-    updateHud()
-  })
   const drawBtn = document.getElementById('drawBtn')
-  drawBtn?.addEventListener('click', () => {
-    drawMode = !drawMode
-    drawBtn.textContent = `Draw: ${drawMode ? 'on' : 'off'}`
+  const setDrawMode = (on) => {
+    drawMode = on
+    if (drawBtn) drawBtn.textContent = `Draw: ${drawMode ? 'on' : 'off'}`
     updateHud()
-  })
-  document
-    .getElementById('undoBtn')
-    ?.addEventListener('click', () => nv.slideDrawUndo())
-  document.getElementById('clearBtn')?.addEventListener('click', () => {
+  }
+  // Clear both the raster drawing and the vector annotations (same as the Clear
+  // button), so the "c" key and the button behave identically.
+  const clearAnnotations = () => {
     nv.clearSlideDrawing()
     nv.slideVector?.clear()
     nv.refreshSlideAnnotation()
-  })
+    updateHud()
+  }
+  // Keydown in the CAPTURE phase so we can stop NiiVue's own window keydown
+  // handler (bubble phase) from also firing. This matters most for "c": NiiVue
+  // maps C to "cycle clip plane", which would rotate the clip off the axial cut
+  // and hide the registered slide. Only handled keys stop propagation; others
+  // (NiiVue's A/H/L/J/K/V, etc.) pass through. Skip when a form control is
+  // focused, matching NiiVue, so the tool/label selects don't trigger draw.
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      const tag = document.activeElement?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      const k = (e.key || '').toLowerCase()
+      if (k === 'd') setDrawMode(!drawMode)
+      else if (k === 'u') nv.slideDrawUndo()
+      else if (k === 'c') clearAnnotations()
+      else return
+      e.stopImmediatePropagation()
+      e.preventDefault()
+    },
+    true,
+  )
+  drawBtn?.addEventListener('click', () => setDrawMode(!drawMode))
+  document
+    .getElementById('undoBtn')
+    ?.addEventListener('click', () => nv.slideDrawUndo())
+  document
+    .getElementById('clearBtn')
+    ?.addEventListener('click', clearAnnotations)
   document.getElementById('toolSel')?.addEventListener('change', (e) => {
     nv.slideTool = e.target.value
   })

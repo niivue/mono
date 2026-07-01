@@ -1073,8 +1073,18 @@ export class VolumeRenderer extends NVRenderer {
   beginChunkFrame(): void {
     this._frameNow = performance.now()
     this._fadeActive = false
+    this._refreshUnlitChunksForLighting()
     for (const entry of this._texCache.values()) {
       if (entry.kind === 'chunked') entry.manager.beginFrame()
+    }
+  }
+
+  private _refreshUnlitChunksForLighting(): void {
+    if (this.gradientAmount <= 0 || !this._uploadedUnlit) return
+    this._uploadedUnlit = false
+    for (const entry of this._texCache.values()) {
+      if (entry.kind !== 'chunked') continue
+      entry.manager.remap(new Map(), entry.plan.chunks.length)
     }
   }
 
@@ -1104,18 +1114,6 @@ export class VolumeRenderer extends NVRenderer {
     let uploaded = 0
     const start = performance.now()
     try {
-      // Lighting was enabled after chunks streamed unlit (no real gradients):
-      // re-stream them so they gain gradients. Evict all resident chunks + clear
-      // the pending queue (remap with an empty map); the next frames re-request
-      // and re-upload with gradientAmount > 0. Rare (illumination toggle); no
-      // effect on the common fixed-lighting case.
-      if (this.gradientAmount > 0 && this._uploadedUnlit) {
-        this._uploadedUnlit = false
-        for (const entry of this._texCache.values()) {
-          if (entry.kind !== 'chunked') continue
-          entry.manager.remap(new Map(), entry.plan.chunks.length)
-        }
-      }
       // Kick off source fetches for the upcoming working set so they run in
       // parallel ahead of the serial upload below. prefetchChunk is idempotent
       // and self-bounded, so topping up the window every pump keeps it full as

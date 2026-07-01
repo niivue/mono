@@ -487,6 +487,10 @@ export function App(): JSX.Element {
 
   const warmStatus = warmProgressLabel(warmProgress, datasetRoot)
   const locationStatus = useMemo(() => locationStatusLabel(locationReadout), [locationReadout])
+  const slicePosition = useMemo(
+    () => slicePositionLabel(locationReadout, viewMode),
+    [locationReadout, viewMode]
+  )
 
   return (
     <main
@@ -708,7 +712,7 @@ export function App(): JSX.Element {
               <strong>{selected?.label ?? 'No selection'}</strong>
               <em>
                 {viewMode !== 'render'
-                  ? viewModeLabel(viewMode)
+                  ? `${viewModeLabel(viewMode)}${slicePosition ? ` · ${slicePosition}` : ''}`
                   : renderWheelMode === 'clip-plane'
                     ? `wheel ${activeClipPlane?.label ?? 'clip'}`
                     : backend.toUpperCase()}
@@ -1833,6 +1837,25 @@ function mouseContextLabel(context: MouseContext): string {
   if (context === 'desktop') return 'Mouse: desktop grid controls'
   if (context === 'niivue') return 'Mouse: NiiVue controls'
   return 'Mouse: no pane'
+}
+
+// Through-plane position of the current slice, as an anatomical mm coordinate
+// (RAS+, so it's correct regardless of the volume's raw voxel orientation).
+// Only meaningful for the single-plane 2D modes; multiplanar/render return null.
+const SLICE_THROUGH_PLANE: Record<string, { index: number; positive: string; negative: string }> = {
+  axial: { index: 2, positive: 'S', negative: 'I' },
+  coronal: { index: 1, positive: 'A', negative: 'P' },
+  sagittal: { index: 0, positive: 'R', negative: 'L' }
+}
+
+function slicePositionLabel(location: NiiVueLocation | null, viewMode: ViewModeId): string | null {
+  if (!location) return null
+  const axis = SLICE_THROUGH_PLANE[viewMode]
+  if (!axis) return null
+  const value = location.mm[axis.index]
+  if (!Number.isFinite(value)) return null
+  const letter = value >= 0 ? axis.positive : axis.negative
+  return `${letter} ${formatCoordinate(Math.abs(value))} mm`
 }
 
 function locationStatusLabel(location: NiiVueLocation | null): string | null {

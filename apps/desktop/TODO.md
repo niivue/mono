@@ -245,11 +245,15 @@ features — a control that can quietly mislead is worse than no control.
   "0% world overlap" warning (subject check is silent there). Threshold 0.5 is
   tunable; co-registered no-false-positive is logically sound (nested boxes) but
   wasn't re-tested with a coregistered pair this session.
-- [ ] **[P2] (S) Slice locator + consistent wheel direction.** Wheel paging has
-  no "slice N/total" or persistent through-plane position (only transient mm in
-  the status bar), and steps in voxel space so scroll direction flips by volume
-  orientation. Add a slice-position readout and page in mm for a consistent
-  up=superior feel (`sliceWheelStep`).
+- [~] **[P2] (S) Slice locator + consistent wheel direction.** Done: the NiiVue
+  window header now shows the current slice's **through-plane position** as an
+  anatomical mm coordinate (`slicePositionLabel`, e.g. `Axial · I 168 mm`) — RAS+
+  so it's correct regardless of voxel orientation, and it updates as you page
+  (`moveCrosshairInVox` fires `locationChange`). Remaining: `sliceWheelStep` still
+  steps in voxel space, so scroll *direction* can flip by volume orientation
+  (page in mm / orientation-aware for a consistent up=superior feel) — lower
+  priority now that the mm position is visible. Note: header position populates
+  after the first crosshair move (NiiVue doesn't emit an initial location).
 - [ ] **[P2] (S) Add-overlay guard rail.** The pool blends any of 157 unrelated
   dataset volumes onto the base with only the subject check as a rail — easy to
   mis-add. Consider surfacing relationship (same subject/space) in the pool or a

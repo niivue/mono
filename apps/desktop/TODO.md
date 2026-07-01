@@ -312,10 +312,16 @@ RAS+value widget.)
   affine, qform/sform codes, or orientation string. Add them, plus `mm` units on
   spacing. Document NaN/Inf and overlay-zero handling (0 ≠ "no data" in stat
   maps).
-- [ ] **[P2] (S) Tie atlas region readout to a named atlas.** `locationRegion`
-  grabs the first non-air label across *all* layers (`App.tsx:1427-1437`), so it
-  can report a region from the wrong volume and can't say which atlas. Bind the
-  lookup to the named atlas layer and show the atlas name.
+- [x] **[P2] (S) Tie atlas region readout to a named atlas.** Done:
+  `locationRegion(location, atlasName)` now binds to the atlas layer — it matches
+  the location value whose `name` (minus the ` L<level>` LOD suffix,
+  `volumeBaseName`) equals the atlas's display name, instead of grabbing the
+  first labelled value across all layers. The readout is prefixed with the atlas
+  (`aal: Precentral_L`), and no region shows when no atlas is bound. Verified
+  live via a synthetic `locationChange`: a stray labelled value is suppressed
+  when unbound (old code would have shown it) and coords/intensity are intact;
+  the positive atlas-name path is logic-verified (no atlas fixture in the
+  browser-dev server).
 - [ ] **[P2] (M) Content-hash data integrity + local edit changelog
   (foundational, single-user).** Stands alone — no collaboration required, and
   the viewer must be rock-solid on this before anything multi-user is built. Hash

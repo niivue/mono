@@ -494,7 +494,16 @@ export function App(): JSX.Element {
   }, [isRenderMaximized])
 
   const warmStatus = warmProgressLabel(warmProgress, datasetRoot)
-  const locationStatus = useMemo(() => locationStatusLabel(locationReadout), [locationReadout])
+  // The atlas layer's display name, used to bind the region readout to the named
+  // atlas (only atlas/label volumes carry per-voxel region labels).
+  const atlasName = useMemo(
+    () => (atlasId ? items.find((item) => item.id === atlasId)?.label ?? null : null),
+    [atlasId, items]
+  )
+  const locationStatus = useMemo(
+    () => locationStatusLabel(locationReadout, atlasName),
+    [locationReadout, atlasName]
+  )
   const slicePosition = useMemo(
     () => slicePositionLabel(locationReadout, viewMode),
     [locationReadout, viewMode]
@@ -1893,15 +1902,15 @@ function slicePositionLabel(location: NiiVueLocation | null, viewMode: ViewModeI
   return `${letter} ${formatCoordinate(Math.abs(value))} mm`
 }
 
-function locationStatusLabel(location: NiiVueLocation | null): string | null {
+function locationStatusLabel(location: NiiVueLocation | null, atlasName: string | null): string | null {
   if (!location) return null
   const mm = formatAnatomicalCoordinates(location.mm)
   const vox = location.vox.map(formatVoxelIndex).join(', ')
-  const region = locationRegion(location)
+  const region = locationRegion(location, atlasName)
   const intensity = locationIntensity(location)
   const parts = [`${mm} mm`, `IJK ${vox}`]
   if (intensity) parts.push(`Val ${intensity}`)
-  if (region) parts.push(`Region ${region}`)
+  if (region) parts.push(`${region.atlas}: ${region.region}`)
   return parts.join(' / ')
 }
 
@@ -1938,10 +1947,27 @@ function formatIntensity(value: number): string {
   return value.toFixed(magnitude >= 100 ? 1 : 3)
 }
 
-function locationRegion(location: NiiVueLocation): string | null {
-  const labelled = location.values.find((value) => isRegionLabel(value.label)) ??
-    location.values.find((value) => value.label && value.label.trim().length > 0)
-  return labelled?.label?.trim() || null
+// Region readout bound to the *named* atlas layer. NiiVue sets `label` only on
+// volumes with a colormapLabel (i.e. atlases), and each value's `name` is the
+// layer's "<item.label> L<level>", so match the atlas by its display name rather
+// than grabbing the first labelled value across all layers (which couldn't say
+// which atlas a region came from, and could report the wrong volume).
+function locationRegion(
+  location: NiiVueLocation,
+  atlasName: string | null
+): { region: string; atlas: string } | null {
+  if (!atlasName) return null
+  const value = location.values.find(
+    (candidate) => volumeBaseName(candidate.name) === atlasName && isRegionLabel(candidate.label)
+  )
+  const region = value?.label?.trim()
+  return region ? { region, atlas: atlasName } : null
+}
+
+// Strip the " L<level>" LOD suffix the stage appends to each NiiVue volume name
+// (`${item.label} L${level}`) to recover the layer's display label.
+function volumeBaseName(name: string): string {
+  return name.replace(/ L\d+$/, '')
 }
 
 function isRegionLabel(label: string | undefined): boolean {

@@ -47,6 +47,8 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
     <tr><td><a href="apps/demo-ext-niimath"><code>demo-ext-niimath</code></a></td><td>Browser-only demo running niimath as WASM via <a href="https://www.npmjs.com/package/@niivue/niimath"><code>@niivue/niimath</code></a></td></tr>
     <tr><td><a href="apps/demo-ext-mrs"><code>demo-ext-mrs</code></a></td><td>MRSI demo (<code>mrsi.html</code>): T1 + MRSI grid + crosshair-voxel spectrum + metabolite maps</td></tr>
     <tr><td><a href="apps/demo-nv-web-component"><code>demo-nv-web-component</code></a></td><td>Demo app for the Web Components package</td></tr>
+    <tr><td><a href="apps/iiif-volumetric-server"><code>iiif-volumetric-server</code></a></td><td>IIIF Image API + Presentation API server for volumetric NIfTI and OME-Zarr fixtures</td></tr>
+    <tr><td><a href="apps/iiif-volumetric-demo"><code>iiif-volumetric-demo</code></a></td><td>Browser demos for the IIIF volumetric server, including slices, volume sheets, fly-through, desktop, and OME-Zarr views</td></tr>
     <tr><td><a href="apps/medgfx"><code>medgfx</code></a></td><td>Native macOS/iOS SwiftUI app embedding NiiVue in a WebView</td></tr>
   </tbody>
 </table>

@@ -1,4 +1,4 @@
-import { mat4, vec3, vec4 } from 'gl-matrix'
+import { mat4, vec2, vec3, vec4 } from 'gl-matrix'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMesh from '@/mesh/NVMesh'
@@ -11,6 +11,7 @@ import type {
   CompletedMeasurement,
   DragOverlay,
   DrawConfig,
+  FocusBox,
   ImageFromUrlOptions,
   InteractionConfig,
   LayoutConfig,
@@ -29,7 +30,7 @@ import { deriveSeries, type SignalPlot } from '@/signal/processing'
 import type { GraphData } from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { resolveNegativeRange } from '@/view/NVUILayout'
-import * as NVVolume from '@/volume/NVVolume'
+import { loadVolumePrepared } from '@/volume/loadBridge'
 import { extractVoxelFid, getVoxelValue, volumeTR } from '@/volume/utils'
 
 export default class NVModel {
@@ -75,6 +76,21 @@ export default class NVModel {
   // --- Transient state ---
   /** Transient drag overlay for view rendering (controller-owned, not serialized) */
   _dragOverlay: DragOverlay | null = null
+  /** Transient world-space box outlined on 3D render tiles (e.g. focus region) */
+  _focusBox: FocusBox | null = null
+  /**
+   * Transient world-space boxes outlined on 3D render tiles, drawn like
+   * `_focusBox` but as a set — e.g. one per multi-resolution brick, colored by
+   * LOD level, to visualize a heterogeneous chunk plan. Controller-owned.
+   */
+  _lodBoxes: FocusBox[] | null = null
+  /**
+   * Transient world-mm override for the 3D render's rotation/zoom pivot. When
+   * set, the render orbits and zooms about this point (which projects to the
+   * render centre) instead of the volume centre — e.g. to keep the crosshair
+   * framed. Null = default (volume centre, `pivot3D`). Not serialized.
+   */
+  _renderPivotMM: vec3 | null = null
   /** Transient annotation preview for live rendering during brush strokes */
   _annotationPreview: VectorAnnotation | null = null
   /** Transient eraser preview: overrides persisted annotations during erase drag */
@@ -104,10 +120,14 @@ export default class NVModel {
         ? vec4.fromValues(...options.pan2Dxyzmm)
         : vec4.fromValues(0, 0, 0, 1),
       scaleMultiplier: options.scaleMultiplier ?? 1.0,
+      renderPan: options.renderPan
+        ? vec2.fromValues(...options.renderPan)
+        : vec2.fromValues(0, 0),
       gamma: options.gamma ?? 1.0,
       backgroundColor: options.backgroundColor ?? [0, 0, 0, 1],
       clipPlaneColor: options.clipPlaneColor ?? [0.7, 0, 0.7, 0.4],
       isClipPlaneCutaway: options.isClipPlaneCutaway ?? false,
+      clipPlaneOverlay: options.clipPlaneOverlay ?? false,
     }
     // Layout — flat options mapped to layout group
     this.layout = {
@@ -269,6 +289,9 @@ export default class NVModel {
       ...(options.volumePaqdUniforms !== undefined && {
         paqdUniforms: options.volumePaqdUniforms,
       }),
+      ...(options.volumeTransmittanceCutoff !== undefined && {
+        transmittanceCutoff: options.volumeTransmittanceCutoff,
+      }),
     }
     // Mesh — flat options mapped to mesh group
     this.mesh = {
@@ -391,7 +414,7 @@ export default class NVModel {
    * physio arrays, and its key is id-based (ids are derived from name/URL, so a
    * same-URL reload would otherwise reuse stale data).
    */
-  private invalidateGraphCache(): void {
+  invalidateGraphCache(): void {
     this._assocCache = null
   }
 
@@ -1341,10 +1364,14 @@ export default class NVModel {
     if (!url) {
       throw new Error('prepareVolume requires a url or an NVImage object')
     }
-    const nii = await NVVolume.loadVolume(url, urlImageData ?? null)
     const urlString = typeof url === 'string' ? url : url.name
     const name = overrides.name ?? urlString
-    const base = NVVolume.nii2volume(nii.hdr, nii.img, name, limitFrames4D)
+    const base = await loadVolumePrepared(
+      url,
+      urlImageData ?? null,
+      limitFrames4D,
+      name,
+    )
     return { ...base, url: urlString, ...NVModel.volumeDefaults, ...overrides }
   }
 

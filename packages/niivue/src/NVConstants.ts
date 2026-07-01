@@ -168,6 +168,7 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   isV1SliceShader: false,
   matcap: '',
   paqdUniforms: [0.01, 0.5, 0.25, 0.4] as [number, number, number, number],
+  transmittanceCutoff: 0.95,
 }
 
 export const MESH_DEFAULTS: MeshRenderConfig = {

@@ -96,6 +96,15 @@ NiiVueGPU (controller) - src/NVControl.ts
 
 **Model-View separation:** Model is GPU-agnostic (only data). Views receive model read-only. Controller owns mutations. GPU resources are view-owned. This enables backend switching without data loss.
 
+### Backend feature parity (hard rule)
+
+Every controller-level feature must work identically on both `wgpu/NVViewGPU.ts` and `gl/NVViewGL.ts`. New features land on both backends in the same change — landing one side first is not acceptable. When porting an existing GL feature to WebGPU (or vice versa) the implementations should mirror each other in structure so that future cross-backend changes stay easy to diff.
+
+- Do not add WebGL2-only or WebGPU-only `opts.*`, methods, or `setX()` calls.
+- Do not gate a feature behind `opts.backend === '...'` with a warn-and-noop. If a backend genuinely cannot support a feature (rare), document it in `FEATURE_PARITY.md` with the reason.
+- When the controller threads a new piece of per-tile state, both view tile loops must consume it (see `tile.space === 'global3d'` for the reference shape: per-volume texture cache + per-tile MVP + skip layers that don't apply).
+- Demos that exercise a feature should be backend-agnostic — typically a `?backend=webgl2|webgpu` URL switch — so manual verification is symmetric.
+
 ### Key source files
 
 | File | Role |
@@ -296,6 +305,10 @@ All overlay volumes are resliced to match the background volume's grid, so `tex2
 ### 2D slice picking
 
 Each `SliceTile` caches `mvpMatrix`, `planeNormal`, and `planePoint` during render. `screenSlicePick` uses these for fast ray-plane intersection. For mosaic tiles with `sliceMM`, uses `getSliceTexFracAtMM()` instead of crosshair. Depth picking (double-click on 3D tiles) reads back depth buffer and unprojects to mm-space.
+
+### 2D pan/zoom (`pan2Dxyzmm`) — external dependency
+
+`scene.pan2Dxyzmm` is `[panX_mm, panY_mm, panZ_mm, zoom]`. `calculateMvpMatrix2D` applies it so the **visible width = volumeWidthMM / zoom** centered at **volumeCentreMM − pan**. An external consumer — the DICOM-WSI / OpenSeadragon viewer (`apps/iiif-volumetric-demo`) — *inverts* this convention to drive deep-zoom navigation of whole slides, and works around the fact that the built-in wheel zoom (`control/interactions.ts`, `isPanZoomMode` branch) anchors on `crosshairPos`, which drifts the view for a volume whose mm origin isn't its centre. **Before changing the 2D pan/zoom math or the wheel-zoom anchoring, read the integration contract in `docs/dicom-wsi.md` §7** — those formulas are pinned to this behavior.
 
 ## Format extensibility
 

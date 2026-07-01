@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { mat4 } from 'gl-matrix'
-import type { AffineMatrix, NVImage } from '@/NVTypes'
+import { mat4, vec3 } from 'gl-matrix'
+import type { AffineMatrix, NVGlobalCamera, NVImage } from '@/NVTypes'
 import {
   arrayToMat4,
+  calculateGlobalVolumeMvp,
   cart2sphDeg,
   copyAffine,
   createAffineTransformMatrix,
@@ -12,6 +13,8 @@ import {
   mm2frac,
   mm2vox,
   multiplyAffine,
+  rayBoxEntryMM,
+  rayMarchFirstVisibleMM,
   slicePlaneEquation,
   unprojectScreen,
   vox2mm,
@@ -330,6 +333,212 @@ describe('slicePlaneEquation', () => {
 })
 
 // ---------------------------------------------------------------------------
+// calculateGlobalVolumeMvp — backend-agnostic helper used by both wgpu and gl
+// renderers for tile.space === 'global3d'. Tests pin the shared math so both
+// backends stay aligned.
+// ---------------------------------------------------------------------------
+describe('calculateGlobalVolumeMvp', () => {
+  const tile = [0, 0, 800, 600]
+  const camera: NVGlobalCamera = {
+    position: [0, 0, 32],
+    yaw: 0,
+    pitch: 0,
+    fov: 55,
+    near: 0.1,
+    far: 900,
+  }
+  const extentsMin = [-10, -10, -10]
+  const extentsMax = [10, 10, 10]
+
+  test('isDeterministic_sameInputProducesSameMvp', () => {
+    const [a] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [5, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    const [b] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [5, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    for (let i = 0; i < 16; i++) approx(a[i], b[i])
+  })
+
+  test('returnsAllFourMatricesAndRay', () => {
+    const result = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    expect(result).toHaveLength(4)
+    const [mvp, model, normal, rayDir] = result
+    expect(mvp.length).toBe(16)
+    expect(model.length).toBe(16)
+    expect(normal.length).toBe(16)
+    expect(rayDir.length).toBe(3)
+    // ray direction is a unit vector
+    const len = Math.sqrt(
+      rayDir[0] * rayDir[0] + rayDir[1] * rayDir[1] + rayDir[2] * rayDir[2],
+    )
+    approx(len, 1, 1e-3)
+  })
+
+  test('positionTranslatesVolumeCenter', () => {
+    // Project the world center (0,0,0) through each model matrix — moving the
+    // tile position must shift the projected center between calls.
+    const [mvpA] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    const [mvpB] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [50, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    const origin = vec3.fromValues(0, 0, 0)
+    const pA = vec3.create()
+    const pB = vec3.create()
+    vec3.transformMat4(pA, origin, mvpA)
+    vec3.transformMat4(pB, origin, mvpB)
+    // x-axis positions in clip space must differ once the tile is offset
+    expect(Math.abs(pA[0] - pB[0])).toBeGreaterThan(1e-4)
+  })
+
+  test('sharedCamera_twoTilesProduceDistinctMvpsForDistinctPositions', () => {
+    // Parity contract: same camera shared across tiles, different positions
+    // must yield different MVPs. This is how global3d puts every volume in one
+    // world space — both backends call this helper per-tile.
+    const [mvpLeft] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [-25, 0, 0],
+      1,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )
+    const [mvpRight] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [25, 0, 0],
+      1,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )
+    let diff = 0
+    for (let i = 0; i < 16; i++) diff += Math.abs(mvpLeft[i] - mvpRight[i])
+    expect(diff).toBeGreaterThan(1e-3)
+  })
+
+  test('cameraUndefined_fallsBackToDefaults', () => {
+    // Function must accept undefined camera and emit a finite MVP using its
+    // documented defaults (eye z=32, yaw=0, pitch=0, fov=55, near=0.1, far=900).
+    const [mvp] = calculateGlobalVolumeMvp(
+      tile,
+      undefined,
+      [0, 0, 0],
+      1,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )
+    for (let i = 0; i < 16; i++) expect(Number.isFinite(mvp[i])).toBe(true)
+  })
+
+  test('scalarScale_equivalentToUniformVec3Scale', () => {
+    const [mvpScalar] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      2,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )
+    const [mvpVec3] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      [2, 2, 2],
+      undefined,
+      extentsMin,
+      extentsMax,
+    )
+    for (let i = 0; i < 16; i++) approx(mvpScalar[i], mvpVec3[i])
+  })
+
+  test('orientationRotates_changesNormalMatrix', () => {
+    const [, , normalA] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      1,
+      [0, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    const [, , normalB] = calculateGlobalVolumeMvp(
+      tile,
+      camera,
+      [0, 0, 0],
+      1,
+      [0, Math.PI / 4, 0],
+      extentsMin,
+      extentsMax,
+    )
+    let diff = 0
+    for (let i = 0; i < 16; i++) diff += Math.abs(normalA[i] - normalB[i])
+    expect(diff).toBeGreaterThan(1e-3)
+  })
+
+  test('aspectRatio_changesProjectionForNonSquareTile', () => {
+    const square = calculateGlobalVolumeMvp(
+      [0, 0, 600, 600],
+      camera,
+      [0, 0, 0],
+      1,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )[0]
+    const wide = calculateGlobalVolumeMvp(
+      [0, 0, 1200, 600],
+      camera,
+      [0, 0, 0],
+      1,
+      undefined,
+      extentsMin,
+      extentsMax,
+    )[0]
+    // First column of the perspective matrix scales by 1/aspect, so the [0,0]
+    // entry must differ for different tile aspect ratios.
+    expect(Math.abs(square[0] - wide[0])).toBeGreaterThan(1e-3)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // unprojectScreen
 // ---------------------------------------------------------------------------
 describe('unprojectScreen', () => {
@@ -347,5 +556,111 @@ describe('unprojectScreen', () => {
     expect(Number.isFinite(result[0])).toBe(true)
     expect(Number.isFinite(result[1])).toBe(true)
     expect(Number.isFinite(result[2])).toBe(true)
+  })
+})
+
+describe('rayBoxEntryMM', () => {
+  const lo = [0, 0, 0]
+  const hi = [10, 10, 10]
+
+  test('returns the entry face for a ray crossing the box', () => {
+    // Ray along +x from x=-5 enters the box at x=0.
+    const entry = rayBoxEntryMM([-5, 5, 5], [15, 5, 5], lo, hi)
+    expect(entry).not.toBeNull()
+    expect(entry?.[0]).toBeCloseTo(0)
+    expect(entry?.[1]).toBeCloseTo(5)
+    expect(entry?.[2]).toBeCloseTo(5)
+  })
+
+  test('returns null when the ray misses the box', () => {
+    expect(rayBoxEntryMM([-5, 50, 5], [15, 50, 5], lo, hi)).toBeNull()
+  })
+
+  test('clamps to the near point when the origin is inside the box', () => {
+    const entry = rayBoxEntryMM([5, 5, 5], [5, 5, 15], lo, hi)
+    expect(entry).not.toBeNull()
+    expect(entry?.[2]).toBeCloseTo(5) // tmin clamped to 0 -> the near point
+  })
+
+  test('is order-independent in lo/hi', () => {
+    const entry = rayBoxEntryMM([-5, 5, 5], [15, 5, 5], hi, lo)
+    expect(entry?.[0]).toBeCloseTo(0)
+  })
+
+  test('advances the entry to a solid clip-plane cut surface', () => {
+    // Plane [1,0,0,0]: kept side fx >= 0.5 -> mm x >= 5. The +x ray should enter
+    // at the clip surface (x=5), not the clipped-away box face (x=0).
+    const entry = rayBoxEntryMM([-5, 5, 5], [15, 5, 5], lo, hi, [1, 0, 0, 0])
+    expect(entry?.[0]).toBeCloseTo(5)
+  })
+
+  test('ignores the no-clip sentinel and returns the box face', () => {
+    const entry = rayBoxEntryMM([-5, 5, 5], [15, 5, 5], lo, hi, [1, 0, 0, 2])
+    expect(entry?.[0]).toBeCloseTo(0)
+  })
+
+  test('returns null when a clip plane removes the whole ray', () => {
+    // Plane [1,0,0,0.6]: kept side fx >= 1.1, impossible inside the [0,1] cube,
+    // so the entire in-box segment is clipped away.
+    expect(
+      rayBoxEntryMM([-5, 5, 5], [15, 5, 5], lo, hi, [1, 0, 0, 0.6]),
+    ).toBeNull()
+  })
+
+  test('skips clip refinement in cutaway mode', () => {
+    const entry = rayBoxEntryMM(
+      [-5, 5, 5],
+      [15, 5, 5],
+      lo,
+      hi,
+      [1, 0, 0, 0],
+      true,
+    )
+    expect(entry?.[0]).toBeCloseTo(0) // box face, clip ignored
+  })
+})
+
+describe('rayMarchFirstVisibleMM', () => {
+  const lo = [0, 0, 0]
+  const hi = [10, 10, 10]
+
+  test('lands on the first visible voxel, skipping empty front space', () => {
+    // Only x >= 6 is "visible"; a +x ray should skip the empty front (x<6).
+    const sampler = (x: number) => (x >= 6 ? 1 : 0)
+    const hit = rayMarchFirstVisibleMM([-5, 5, 5], [15, 5, 5], lo, hi, sampler)
+    expect(hit).not.toBeNull()
+    // first sample at/after x=6 (within one march step of 10mm/512)
+    expect(hit?.[0]).toBeGreaterThanOrEqual(6)
+    expect(hit?.[0]).toBeLessThan(6.1)
+  })
+
+  test('returns null when nothing along the ray is visible', () => {
+    const hit = rayMarchFirstVisibleMM([-5, 5, 5], [15, 5, 5], lo, hi, () => 0)
+    expect(hit).toBeNull()
+  })
+
+  test('respects a solid clip plane (no visible voxel on the kept side)', () => {
+    // Visible only for x<3, but the clip keeps x>=5 -> no visible voxel kept.
+    const sampler = (x: number) => (x < 3 ? 1 : 0)
+    const hit = rayMarchFirstVisibleMM(
+      [-5, 5, 5],
+      [15, 5, 5],
+      lo,
+      hi,
+      sampler,
+      [1, 0, 0, 0],
+    )
+    expect(hit).toBeNull()
+  })
+
+  test('returns null when the ray misses the box', () => {
+    const hit = rayMarchFirstVisibleMM(
+      [-5, 50, 5],
+      [15, 50, 5],
+      lo,
+      hi,
+      () => 1,
+    )
+    expect(hit).toBeNull()
   })
 })

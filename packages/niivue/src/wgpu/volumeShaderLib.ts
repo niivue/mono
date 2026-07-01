@@ -13,10 +13,82 @@ struct Params {
     gradientAmount: f32,
     numVolumes: f32,
     isClipCutaway: f32,
-    numPaqd: f32,
+    // 1.0 when this draw is an independent hi-res overlay chunk cube (skip the
+    // clip-surface/AO/matcap base treatment, composite as a translucent layer);
+    // 0.0 for normal base/non-chunked draws. (Formerly the unused numPaqd.)
+    overlayLayerMode: f32,
     clipPlaneColor: vec4f,
     clipPlanes: array<vec4f, 6>,
     paqdUniforms: vec4f,
+    earlyTermination: f32,
+    // 1.0 to clip the overlay/PAQD/drawing passes with the base (else they ignore
+    // the clip plane). Sits in what was implicit padding before _pad0 (WGSL aligns
+    // the following vec3f to 16 bytes), so the struct size and all later vec4f
+    // offsets are unchanged.
+    clipPlaneOverlay: f32,
+    // Cross-fade weight in [0,1] for a streaming chunk: the final premultiplied
+    // color is multiplied by this so a freshly-resident fine chunk dissolves in
+    // over the coarse floor instead of popping. 1.0 for every non-fading draw.
+    // Lives in what was _pad0's first lane, so struct size/offsets are unchanged.
+    fadeAlpha: f32,
+    _pad0: vec2f,
+    // Tiled-volume fields. Pass-through values for non-chunked volumes:
+    //   volumeTexDimsFull = textureDimensions(volume, 0)
+    //   chunkSubOrigin    = (0,0,0)
+    //   chunkSubSize      = (1,1,1)
+    //   dataOriginTexFrac = (0,0,0)
+    //   dataSizeTexFrac   = (1,1,1)
+    // The vertex shader scales the unit cube into the chunk texture footprint
+    // (data plus halo) so separately-rasterized chunk cubes overlap by their
+    // halo. The fragment shader then clips ray marching back to the chunk's
+    // owned data sub-cube and remaps samples into [dataOrigin, dataOrigin+dataSize],
+    // letting trilinear sampling pull from halo voxels without double-counting them.
+    volumeTexDimsFull: vec4f,
+    chunkSubOrigin: vec4f,
+    chunkSubSize: vec4f,
+    dataOriginTexFrac: vec4f,
+    dataSizeTexFrac: vec4f,
+    // Full-volume voxel dims at this brick's source pyramid level, used only for
+    // the ray-march step density so a coarse multi-LOD brick steps at its own
+    // resolution. Equals volumeTexDimsFull for single-level/non-chunked draws.
+    rayStepTexVox: vec4f,
+}
+
+// Remap a sample position from full-volume [0,1] cube space to the local chunk
+// texture's [dataOrigin, dataOrigin+dataSize] region (preserves trilinear halo
+// access at chunk seams). Identity for non-chunked volumes.
+fn chunkTexCoord(samplePos: vec3f) -> vec3f {
+    let chunkLocal = (samplePos - params.chunkSubOrigin.xyz) / params.chunkSubSize.xyz;
+    return params.dataOriginTexFrac.xyz + chunkLocal * params.dataSizeTexFrac.xyz;
+}
+
+fn rayAxisRange(start: f32, dir: f32, boxMin: f32, boxMax: f32) -> vec2f {
+    if (abs(dir) < 1e-8) {
+        if (start < boxMin || start > boxMax) {
+            return vec2f(1e20, -1e20);
+        }
+        return vec2f(-1e20, 1e20);
+    }
+    let t0 = (boxMin - start) / dir;
+    let t1 = (boxMax - start) / dir;
+    return vec2f(min(t0, t1), max(t0, t1));
+}
+
+fn rayBoxRange(startObj: vec3f, dir: vec3f, boxMin: vec3f, boxMax: vec3f) -> vec2f {
+    let rx = rayAxisRange(startObj.x, dir.x, boxMin.x, boxMax.x);
+    let ry = rayAxisRange(startObj.y, dir.y, boxMin.y, boxMax.y);
+    let rz = rayAxisRange(startObj.z, dir.z, boxMin.z, boxMax.z);
+    return vec2f(max(rx.x, max(ry.x, rz.x)), min(rx.y, min(ry.y, rz.y)));
+}
+
+fn chunkDrawOrigin() -> vec3f {
+    let dataSize = max(params.dataSizeTexFrac.xyz, vec3f(1e-8));
+    return params.chunkSubOrigin.xyz - params.chunkSubSize.xyz * (params.dataOriginTexFrac.xyz / dataSize);
+}
+
+fn chunkDrawSize() -> vec3f {
+    let dataSize = max(params.dataSizeTexFrac.xyz, vec3f(1e-8));
+    return params.chunkSubSize.xyz / dataSize;
 }
 
 struct VertexInput {
@@ -66,19 +138,21 @@ var paqdLut: texture_2d<f32>;
 @vertex
 fn vertex_main(vert: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    var pos = vert.position;
-    let texVox = vec3<f32>(textureDimensions(volume, 0));
-    let voxelSpacePos = (pos * texVox) - 0.5;
+    // Place this draw's cube into the chunk texture footprint in the full
+    // volume's [0,1] cube. For non-chunked draws, drawOrigin=0 and drawSize=1.
+    let subPos = chunkDrawOrigin() + vert.position * chunkDrawSize();
+    let texVox = params.volumeTexDimsFull.xyz;
+    let voxelSpacePos = (subPos * texVox) - 0.5;
     let vPos = (vec4<f32>(voxelSpacePos, 1.0) * params.matRAS).xyz;
     var gl_pos = vec4<f32>(params.mvpMtx * vec4<f32>(vPos, 1.0));
     out.position = gl_pos;
-    out.vColor = vert.position;
+    out.vColor = subPos;
     return out;
 }
 
 fn frac2ndc(frac: vec3f) -> f32 {
     var pos: vec4f = vec4f(frac, 1.0);
-    let dim: vec4f = vec4f(vec3f(textureDimensions(volume, 0)), 1.0);
+    let dim: vec4f = vec4f(params.volumeTexDimsFull.xyz, 1.0);
     pos = pos * dim;
     let shim: vec4f = vec4f(-0.5, -0.5, -0.5, 0.0);
     pos += shim;
@@ -94,13 +168,46 @@ fn frac2ndc(frac: vec3f) -> f32 {
 fn GetBackPosition(startTex: vec3f) -> vec3f {
     let volScale = params.volScale.xyz;
     let rayDir = params.rayDir.xyz;
+    // Clip ray to the chunk's sub-cube in object space, not the full cube.
+    // For non-chunked: subMin=0, subMax=volScale (identical to original).
+    let subMin = params.chunkSubOrigin.xyz * volScale;
+    let subMax = (params.chunkSubOrigin.xyz + params.chunkSubSize.xyz) * volScale;
     let startObj = startTex * volScale;
-    let invR = 1.0 / rayDir;
-    let tbot = invR * (-startObj);
-    let ttop = invR * (volScale - startObj);
-    let tmax = max(ttop, tbot);
-    let t = min(tmax.x, min(tmax.y, tmax.z));
+    let range = rayBoxRange(startObj, rayDir, subMin, subMax);
+    let t = max(range.y, max(range.x, 0.0));
     return (startObj + (rayDir * t)) / volScale;
+}
+
+fn GetFrontPosition(startTex: vec3f) -> vec3f {
+    let volScale = params.volScale.xyz;
+    let rayDir = params.rayDir.xyz;
+    let subMin = params.chunkSubOrigin.xyz * volScale;
+    let subMax = (params.chunkSubOrigin.xyz + params.chunkSubSize.xyz) * volScale;
+    let startObj = startTex * volScale;
+    let t = max(rayBoxRange(startObj, rayDir, subMin, subMax).x, 0.0);
+    return (startObj + (rayDir * t)) / volScale;
+}
+
+fn GetFullFrontPosition(startTex: vec3f) -> vec3f {
+    let volScale = params.volScale.xyz;
+    let rayDir = params.rayDir.xyz;
+    let startObj = startTex * volScale;
+    let t = rayBoxRange(startObj, -rayDir, vec3f(0.0), volScale).y;
+    return (startObj - (rayDir * t)) / volScale;
+}
+
+fn raySamplePhase(startTex: vec3f, stepSize: f32) -> f32 {
+    let fullFront = GetFullFrontPosition(startTex);
+    let traveled = length(startTex - fullFront);
+    let grid = traveled / max(stepSize, 1e-8);
+    // Continue the full-volume centered sample lattice through each chunk.
+    // If a global sample lands exactly on a chunk boundary, use the next
+    // sample in the nearer chunk so the boundary is not double-counted.
+    var phase = floor(grid + 0.5) + 0.5 - grid;
+    if (phase <= 0.001) {
+        phase = 1.0;
+    }
+    return clamp(phase, 0.001, 1.0);
 }
 
 // see if clip plane trims ray sampling range sampleStartEnd.x..y

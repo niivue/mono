@@ -144,6 +144,8 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Show all orientation markers | ❌ | |
 | Tile margin/padding | ✅ | `tileMargin` |
 | HiDPI/retina support | ✅ | Built-in |
+| Multi-instance scenes (`opts.instances`, `setInstances`) | ✅ | Per-tile `volumeId` / `bounds` / `viewport`. Supported on both WebGL2 and WebGPU backends. |
+| Shared-camera 3D space (`tile.space === 'global3d'`, `globalCamera`, `setGlobalCamera`) | ✅ | One camera spans every tile so adjacent volumes line up in world space. Supported on both backends; WebGPU uses a per-volume texture cache to keep multi-volume draws cheap. |
 
 ## 11. Navigation & Crosshair
 
@@ -498,6 +500,29 @@ algorithms from fsleyes-plugin-mrs (BSD-3) — see that package's `PORTING.md`.
 | Demo (`mrsi.html`) | ✅ | T1 + MRSI grid + mask, crosshair->spectrum, component/apodize/phase/ppm controls, make-map |
 | Fit-results overlay | ⛔ Deferred | fit/baseline/residual spectra + concentration/QC maps (`tools.py`); blocked on a `fsl_mrsi` results directory |
 | Interactive Ctrl/Shift-drag phasing | ⛔ Deferred | demo uses sliders |
+
+---
+
+## 36. Tiled volumes + multi-resolution (LOD)
+
+Render volumes larger than the GPU's `maxTextureDimension3D` by tiling them into
+chunks, and render multi-GB pyramids (OME-Zarr) with per-brick level-of-detail
+focused on a point. Chunk math is shared (`volume/chunking.ts`,
+`volume/ChunkVisibility.ts`, `volume/ChunkResidency.ts`); GPU resources are
+per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
+(`omezarr.html`).
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Chunked single-level volume | ✅ | `chunkVolume`/`chunkVolumeGrid`: tile to fit the device limit, 1-voxel halo for seam-free trilinear. 3D ray-march + 2D slice, both backends |
+| Chunk streaming + LRU residency | ✅ | `ChunkResidencyManager` (index-keyed, byte-budgeted, frustum/slice working set); per-frame upload pump; coarse-floor cross-fade so the view never blanks |
+| Per-brick multi-LOD plan | ✅ | `chunkVolumeMultiLOD`: heterogeneous `ChunkPlan` with per-brick `sourceLevel`; common-grid (placement) vs level-grid (texture) coordinate split |
+| 2:1 balanced octree | ✅ | Scale-relative refinement (`detail`) + explicit balance post-pass: face-adjacent bricks differ by ≤1 level. Budget pass shrinks `detail`, then raises a floor, then respects `maxBricks` (< `MAX_CHUNKS_PER_TILE`) |
+| Per-brick ray step + opacity correction | ✅ | `rayStepTexVox` uniform + `1 − pow(1−a, stepRatio)`; coarse bricks step at their own density without rendering dimmer. Both backends (`render.wgsl` / `renderShader.ts`) |
+| Mixed-size back-to-front order | ✅ | `chunksBackToFront` BSP clean-plane recursive sort — exact compositing order for mixed brick sizes at any angle (`depthFunc ALWAYS` relies on it); a pairwise comparator left rare mis-ordered opaque bricks as stray bright blocks |
+| In-place plan swap (refocus) | ✅ | `swapChunkedVolumePlan` + residency `remap`: unchanged bricks keep their GPU textures; only changed bricks re-fetch |
+| Focus box / per-brick LOD boxes | ✅ | `nv.focusBox` (single AABB) and `nv.lodBoxes` (set, e.g. coloured per level) drawn on 3D render tiles, both backends |
+| Cross-LOD blending (geomorph) | ⛔ Deferred | Different-level boundaries show a one-level brightness/blockiness step; smooth fade between a brick's level and the next coarser is the real fix (needs a 2nd texture bound per brick, both shaders) |
 
 ---
 

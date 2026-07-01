@@ -44,6 +44,10 @@ const modules = import.meta.glob<VolumeReader>(
   },
 )
 const readerByExt = NVLoader.buildExtensionMap(modules)
+export const builtinReaderExts = new Set(readerByExt.keys())
+export function hasReader(ext: string): boolean {
+  return readerByExt.has(ext)
+}
 
 export function volumeExtensions(): string[] {
   return Array.from(readerByExt.keys()).sort()

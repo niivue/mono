@@ -36,10 +36,13 @@ function f32ToBytes(arr: Float32Array): Uint8Array {
   return new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength)
 }
 
-/** Copy raw bytes into a fresh, aligned Float32Array. */
+/** Copy raw bytes into a fresh, aligned Float32Array. Truncates to a whole
+ * number of float32s so a corrupt/foreign document whose byte length isn't a
+ * multiple of 4 yields a short array instead of throwing. */
 function bytesToF32(u8: Uint8Array): Float32Array {
-  const copy = new Uint8Array(u8.byteLength)
-  copy.set(u8)
+  const usable = u8.byteLength - (u8.byteLength % 4)
+  const copy = new Uint8Array(usable)
+  copy.set(u8.subarray(0, usable))
   return new Float32Array(copy.buffer)
 }
 

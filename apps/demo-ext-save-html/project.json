@@ -4,7 +4,7 @@
   "tags": ["type:app", "lang:typescript"],
   "targets": {
     "dev": {
-      "command": "bunx --bun vite --open /index.html",
+      "command": "bun run prebuild:standalone && bunx --bun vite --open /index.html",
       "options": { "cwd": "{projectRoot}" }
     },
     "build": {

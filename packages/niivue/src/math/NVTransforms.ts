@@ -1,6 +1,11 @@
 import { mat3, mat4, vec3, vec4 } from 'gl-matrix'
 import { log } from '@/logger'
-import type { AffineMatrix, AffineTransform, NVImage } from '@/NVTypes'
+import type {
+  AffineMatrix,
+  AffineTransform,
+  NVGlobalCamera,
+  NVImage,
+} from '@/NVTypes'
 
 export function vox2mm(_unused: unknown, XYZ: number[], mtx: mat4): vec3 {
   const sform = mat4.clone(mtx)
@@ -267,21 +272,38 @@ export function calculateMvpMatrix(
   furthestFromPivot: number,
   volScaleMultiplier: number,
   obliqueRAS?: mat4,
+  renderPan?: ArrayLike<number>,
 ) {
   const mvpMatrix = mat4.create()
   const modelMatrix = mat4.create()
   const normalMatrix = mat4.create()
   const projectionMatrix = mat4.create()
   const whratio = ltwh[2] / ltwh[3]
-  const scale = (0.8 * furthestFromPivot) / volScaleMultiplier
+  // True orthographic zoom: ONLY the frustum extent (left/right/top/bottom)
+  // shrinks with the zoom, magnifying the image. The camera distance and the
+  // near/far depth range stay tied to the UNZOOMED extent (`baseScale`), so the
+  // camera never moves into the volume and the cube is never clipped in depth as
+  // you zoom in. (Previously near/far/camera all scaled with `scale`, so a zoom
+  // beyond ~1.4x pulled the orthographic camera inside the cube and the near
+  // plane cut the front faces — holes in the render.) At volScaleMultiplier == 1
+  // every value equals the old formula, so the default view is unchanged.
+  const baseScale = 0.8 * furthestFromPivot
+  const scale = baseScale / volScaleMultiplier
   const left = whratio < 1 ? -scale : -scale * whratio
   const right = whratio < 1 ? scale : scale * whratio
   const bottom = whratio < 1 ? -scale / whratio : -scale
   const top = whratio < 1 ? scale / whratio : scale
-  const near = scale * 0.01
-  const far = scale * 8.0
+  const near = baseScale * 0.01
+  const far = baseScale * 8.0
   mat4.orthoZO(projectionMatrix, left, right, bottom, top, near, far)
-  const translateVec3 = vec3.fromValues(0, 0, -scale * 1.8)
+  if (renderPan && (renderPan[0] !== 0 || renderPan[1] !== 0)) {
+    // Pre-multiply by a clip-space translation so the projected image slides
+    // by (panX, panY) in NDC, independent of model rotation.
+    const panMat = mat4.create()
+    mat4.fromTranslation(panMat, [renderPan[0] ?? 0, renderPan[1] ?? 0, 0])
+    mat4.multiply(projectionMatrix, panMat, projectionMatrix)
+  }
+  const translateVec3 = vec3.fromValues(0, 0, -baseScale * 1.8)
   mat4.translate(modelMatrix, modelMatrix, translateVec3)
   mat4.rotateX(modelMatrix, modelMatrix, deg2rad(elevation - 90))
   mat4.rotateZ(modelMatrix, modelMatrix, deg2rad(azimuth))
@@ -289,6 +311,94 @@ export function calculateMvpMatrix(
   const iModelMatrix = mat4.create()
   mat4.invert(iModelMatrix, modelMatrix)
   mat4.transpose(normalMatrix, iModelMatrix)
+  mat4.multiply(mvpMatrix, projectionMatrix, modelMatrix)
+  const rayDir = calculateRayDirection(modelMatrix, obliqueRAS)
+  return [mvpMatrix, modelMatrix, normalMatrix, rayDir]
+}
+
+export function calculateGlobalVolumeMvp(
+  ltwh: number[],
+  camera: NVGlobalCamera | undefined,
+  position: ArrayLike<number>,
+  scale: number | ArrayLike<number> | undefined,
+  orientation: ArrayLike<number> | undefined,
+  extentsMin: ArrayLike<number>,
+  extentsMax: ArrayLike<number>,
+  obliqueRAS?: mat4,
+  // WebGPU's NDC depth is [0,1] (orthoZO is used everywhere else for it); WebGL2
+  // is [-1,1]. Pass true on the WebGPU backend so the perspective depth range
+  // matches the device, otherwise the near portion clips at close cameras.
+  clipSpaceZeroToOne = false,
+): [mat4, mat4, mat4, vec3] {
+  const aspect = Math.max(0.01, ltwh[2] / Math.max(1, ltwh[3]))
+  const fov = camera?.fov ?? 55
+  const near = camera?.near ?? 0.1
+  const far = camera?.far ?? 900
+  const projectionMatrix = mat4.create()
+  if (clipSpaceZeroToOne) {
+    mat4.perspectiveZO(projectionMatrix, deg2rad(fov), aspect, near, far)
+  } else {
+    mat4.perspective(projectionMatrix, deg2rad(fov), aspect, near, far)
+  }
+
+  const eye = vec3.fromValues(
+    camera?.position?.[0] ?? 0,
+    camera?.position?.[1] ?? 0,
+    camera?.position?.[2] ?? 32,
+  )
+  const yaw = camera?.yaw ?? 0
+  const pitch = camera?.pitch ?? 0
+  const cp = Math.cos(pitch)
+  const forward = vec3.fromValues(
+    Math.sin(yaw) * cp,
+    Math.sin(pitch),
+    -Math.cos(yaw) * cp,
+  )
+  const target = vec3.create()
+  vec3.add(target, eye, forward)
+  const viewMatrix = mat4.create()
+  mat4.lookAt(viewMatrix, eye, target, vec3.fromValues(0, 1, 0))
+
+  const center = vec3.fromValues(
+    (extentsMin[0] + extentsMax[0]) / 2,
+    (extentsMin[1] + extentsMax[1]) / 2,
+    (extentsMin[2] + extentsMax[2]) / 2,
+  )
+  const diameter = Math.max(
+    Math.abs(extentsMax[0] - extentsMin[0]),
+    Math.abs(extentsMax[1] - extentsMin[1]),
+    Math.abs(extentsMax[2] - extentsMin[2]),
+    1,
+  )
+  const sx = typeof scale === 'number' ? scale : (scale?.[0] ?? 1)
+  const sy = typeof scale === 'number' ? scale : (scale?.[1] ?? sx)
+  const sz = typeof scale === 'number' ? scale : (scale?.[2] ?? sx)
+
+  const modelWorld = mat4.create()
+  mat4.translate(modelWorld, modelWorld, [
+    position[0] ?? 0,
+    position[1] ?? 0,
+    position[2] ?? 0,
+  ])
+  if (orientation) {
+    mat4.rotateX(modelWorld, modelWorld, orientation[0] ?? 0)
+    mat4.rotateY(modelWorld, modelWorld, orientation[1] ?? 0)
+    mat4.rotateZ(modelWorld, modelWorld, orientation[2] ?? 0)
+  }
+  mat4.scale(modelWorld, modelWorld, [
+    sx / diameter,
+    sy / diameter,
+    sz / diameter,
+  ])
+  mat4.translate(modelWorld, modelWorld, [-center[0], -center[1], -center[2]])
+
+  const modelMatrix = mat4.create()
+  mat4.multiply(modelMatrix, viewMatrix, modelWorld)
+  const normalMatrix = mat4.create()
+  const iModelMatrix = mat4.create()
+  mat4.invert(iModelMatrix, modelMatrix)
+  mat4.transpose(normalMatrix, iModelMatrix)
+  const mvpMatrix = mat4.create()
   mat4.multiply(mvpMatrix, projectionMatrix, modelMatrix)
   const rayDir = calculateRayDirection(modelMatrix, obliqueRAS)
   return [mvpMatrix, modelMatrix, normalMatrix, rayDir]
@@ -323,6 +433,159 @@ export function unprojectScreen(
     worldPos[1] / worldPos[3],
     worldPos[2] / worldPos[3],
   )
+}
+
+/**
+ * Entry point (mm) where the segment `near`→`far` first crosses the axis-aligned
+ * mm box `[lo, hi]` while staying on the kept side of any active clip planes, or
+ * null if it misses. `near`/`far` are typically two `unprojectScreen` points
+ * (depth 0 and 1) bounding the view ray. Used to pick a chunked/multi-LOD
+ * volume's near *visible* surface for the crosshair when the GPU depth-pick
+ * cannot sample its (non-single) texture.
+ *
+ * `clipPlanes` is the flat scene clip-plane array ([nx,ny,nz,a] per plane, in the
+ * volume's [0,1] cube where the kept side is `dot(n, f-0.5) - a >= 0`; the
+ * sentinel `|a| > 1` means "no clip"). When a solid clip plane has carved away
+ * the near box face, the entry advances to the clip surface (the visible cut)
+ * instead of the clipped-away box face. Cutaway mode carves an interior slab
+ * rather than a half-space, so clip refinement is skipped there (box entry).
+ */
+interface ClippedRaySegment {
+  o: number[]
+  d: number[]
+  tmin: number
+  tmax: number
+}
+
+/**
+ * Intersect the segment `near`→`far` with the axis-aligned mm box `[lo, hi]`,
+ * then trim to the kept side of each solid clip plane. Returns the surviving
+ * `[tmin, tmax]` sub-segment (and the ray origin/direction), or null if nothing
+ * survives. Shared by `rayBoxEntryMM` and `rayMarchFirstVisibleMM`.
+ */
+function clipRaySegment(
+  near: ArrayLike<number>,
+  far: ArrayLike<number>,
+  lo: ArrayLike<number>,
+  hi: ArrayLike<number>,
+  clipPlanes?: ArrayLike<number>,
+  isCutaway?: boolean,
+): ClippedRaySegment | null {
+  const o = [near[0], near[1], near[2]]
+  const d = [far[0] - near[0], far[1] - near[1], far[2] - near[2]]
+  let tmin = 0
+  let tmax = 1
+  for (let i = 0; i < 3; i++) {
+    const loI = Math.min(lo[i], hi[i])
+    const hiI = Math.max(lo[i], hi[i])
+    if (Math.abs(d[i]) < 1e-9) {
+      if (o[i] < loI || o[i] > hiI) return null
+    } else {
+      let t1 = (loI - o[i]) / d[i]
+      let t2 = (hiI - o[i]) / d[i]
+      if (t1 > t2) {
+        const tmp = t1
+        t1 = t2
+        t2 = tmp
+      }
+      tmin = Math.max(tmin, t1)
+      tmax = Math.min(tmax, t2)
+      if (tmin > tmax) return null
+    }
+  }
+  // Trim the in-box segment to the kept side of each solid clip plane. The plane
+  // value g(t) = dot(n, f(t)-0.5) - a is affine in t (f = (mm-lo)/(hi-lo)), so a
+  // single crossing splits kept (g>=0) from removed (g<0).
+  if (clipPlanes && !isCutaway) {
+    const cx = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]
+    const sz = [hi[0] - lo[0] || 1, hi[1] - lo[1] || 1, hi[2] - lo[2] || 1]
+    const planeCount = Math.floor(clipPlanes.length / 4)
+    for (let p = 0; p < planeCount; p++) {
+      const nx = clipPlanes[p * 4 + 0]
+      const ny = clipPlanes[p * 4 + 1]
+      const nz = clipPlanes[p * 4 + 2]
+      const a = clipPlanes[p * 4 + 3]
+      if (a > 1 || a < -1) continue // sentinel: no clip
+      if (nx * nx + ny * ny + nz * nz < 1e-12) continue // degenerate normal
+      const n = [nx, ny, nz]
+      let g0 = -a
+      let gd = 0
+      for (let i = 0; i < 3; i++) {
+        g0 += (n[i] * (o[i] - cx[i])) / sz[i]
+        gd += (n[i] * d[i]) / sz[i]
+      }
+      if (Math.abs(gd) < 1e-12) {
+        if (g0 < 0) return null // ray wholly on the removed side
+      } else if (gd > 0) {
+        tmin = Math.max(tmin, -g0 / gd) // kept for t >= crossing
+      } else {
+        tmax = Math.min(tmax, -g0 / gd) // kept for t <= crossing
+      }
+      if (tmin > tmax) return null
+    }
+  }
+  return { o, d, tmin, tmax }
+}
+
+/**
+ * Entry point (mm) where the segment `near`→`far` first crosses the axis-aligned
+ * mm box `[lo, hi]` while staying on the kept side of any active clip planes, or
+ * null if it misses. `near`/`far` are typically two `unprojectScreen` points
+ * (depth 0 and 1) bounding the view ray. Used to pick a chunked/multi-LOD
+ * volume's near *visible* surface for the crosshair when the GPU depth-pick
+ * cannot sample its (non-single) texture.
+ *
+ * `clipPlanes` is the flat scene clip-plane array ([nx,ny,nz,a] per plane, in the
+ * volume's [0,1] cube where the kept side is `dot(n, f-0.5) - a >= 0`; the
+ * sentinel `|a| > 1` means "no clip"). When a solid clip plane has carved away
+ * the near box face, the entry advances to the clip surface (the visible cut)
+ * instead of the clipped-away box face. Cutaway mode carves an interior slab
+ * rather than a half-space, so clip refinement is skipped there (box entry).
+ */
+export function rayBoxEntryMM(
+  near: ArrayLike<number>,
+  far: ArrayLike<number>,
+  lo: ArrayLike<number>,
+  hi: ArrayLike<number>,
+  clipPlanes?: ArrayLike<number>,
+  isCutaway?: boolean,
+): [number, number, number] | null {
+  const seg = clipRaySegment(near, far, lo, hi, clipPlanes, isCutaway)
+  if (!seg) return null
+  const { o, d, tmin } = seg
+  return [o[0] + d[0] * tmin, o[1] + d[1] * tmin, o[2] + d[2] * tmin]
+}
+
+/**
+ * March the kept (in-box, un-clipped) part of the view ray and return the mm of
+ * the first sample whose `sampler(x,y,z)` is positive — the first *visible*
+ * voxel given the current window (the app's sampler returns 0 for transparent /
+ * below-threshold values). Returns null if the ray misses or no visible voxel is
+ * crossed. `steps` bounds the march cost (the segment is short — one volume
+ * crossing). See `rayBoxEntryMM` for the clip-plane convention.
+ */
+export function rayMarchFirstVisibleMM(
+  near: ArrayLike<number>,
+  far: ArrayLike<number>,
+  lo: ArrayLike<number>,
+  hi: ArrayLike<number>,
+  sampler: (x: number, y: number, z: number) => number,
+  clipPlanes?: ArrayLike<number>,
+  isCutaway?: boolean,
+  steps = 512,
+): [number, number, number] | null {
+  const seg = clipRaySegment(near, far, lo, hi, clipPlanes, isCutaway)
+  if (!seg) return null
+  const { o, d, tmin, tmax } = seg
+  const n = Math.max(1, Math.floor(steps))
+  for (let s = 0; s <= n; s++) {
+    const t = tmin + ((tmax - tmin) * s) / n
+    const x = o[0] + d[0] * t
+    const y = o[1] + d[1] * t
+    const z = o[2] + d[2] * t
+    if (sampler(x, y, z) > 0) return [x, y, z]
+  }
+  return null
 }
 
 /**

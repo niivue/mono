@@ -4,20 +4,34 @@ uniform int axCorSag;
 uniform mat4 mvpMtx;
 uniform mat4 frac2mm;
 uniform float slice;
+uniform vec3 chunkSubOrigin;
+uniform vec3 chunkSubSize;
 out vec3 texPos;
 
 void main(void) {
-  // Construct texture position based on slice orientation
-  // pos.xy are in 0-1 range, slice determines depth along the slice axis
-  texPos = vec3(pos.x, pos.y, slice);
+  // pos.xy are in 0-1 range; map them into this chunk's in-plane data
+  // sub-region of the full-volume [0,1] cube. The depth axis stays at
+  // 'slice'. Non-chunked volumes pass chunkSubOrigin 0 / chunkSubSize 1,
+  // reducing this to the identity mapping.
   if (axCorSag > 1) {
-    // Sagittal: slice is X axis
-    texPos = vec3(slice, pos.x, pos.y);
+    // Sagittal: depth = X, in-plane = (Y, Z)
+    texPos = vec3(
+      slice,
+      chunkSubOrigin.y + pos.x * chunkSubSize.y,
+      chunkSubOrigin.z + pos.y * chunkSubSize.z);
   } else if (axCorSag > 0) {
-    // Coronal: slice is Y axis
-    texPos = vec3(pos.x, slice, pos.y);
+    // Coronal: depth = Y, in-plane = (X, Z)
+    texPos = vec3(
+      chunkSubOrigin.x + pos.x * chunkSubSize.x,
+      slice,
+      chunkSubOrigin.z + pos.y * chunkSubSize.z);
+  } else {
+    // Axial: depth = Z, in-plane = (X, Y)
+    texPos = vec3(
+      chunkSubOrigin.x + pos.x * chunkSubSize.x,
+      chunkSubOrigin.y + pos.y * chunkSubSize.y,
+      slice);
   }
-  // Axial: slice is Z axis (default)
 
   // Transform from fractional to mm space, then apply MVP
   vec4 mm = frac2mm * vec4(texPos, 1.0);
@@ -45,6 +59,17 @@ uniform highp sampler2D paqdLut;
 uniform int axCorSag;
 uniform int isV1SliceShader;
 uniform float overlayOutlineWidth;
+// Chunked-volume sampling transform. Identity for non-chunked volumes
+// (chunkSubOrigin 0, chunkSubSize 1, chunkDataOrigin 0, chunkDataSize 1).
+uniform vec3 chunkSubOrigin;
+uniform vec3 chunkSubSize;
+uniform vec3 chunkDataOrigin;
+uniform vec3 chunkDataSize;
+// Full volume voxel dims — texture-size-independent (the bound volume
+// texture may be a single chunk smaller than the whole volume).
+uniform vec3 volumeTexDimsFull;
+// Streaming cross-fade weight [0,1]; 1 = fully present (floor / settled chunk).
+uniform float fadeAlpha;
 
 in vec3 texPos;
 out vec4 color;
@@ -64,8 +89,12 @@ float paqdEaseAlpha(float alpha, vec4 pu) {
 }
 
 void main() {
+  // Map the full-volume texPos into this chunk's local texture (skips the
+  // halo). Identity for non-chunked volumes.
+  vec3 volPos =
+    (texPos - chunkSubOrigin) / chunkSubSize * chunkDataSize + chunkDataOrigin;
   // Sample background volume
-  vec4 background = texture(volume, texPos);
+  vec4 background = texture(volume, volPos);
   color = vec4(background.rgb, opacity);
 
   // Handle alpha clipping for dark values (FSLeyes style)
@@ -79,7 +108,7 @@ void main() {
   // Overlay blending (only when overlay volumes are loaded)
   if (numVolumes > 1.0) {
     {
-      vec4 ocolor = texture(overlay, texPos);
+      vec4 ocolor = texture(overlay, volPos);
       ocolor.a *= overlayOpacity;
       // V1 fiber line visualization: render colored line along fiber direction within each voxel
       if ((isV1SliceShader != 0) && (ocolor.a > 0.0)) {
@@ -88,7 +117,7 @@ void main() {
         xyzFlip = (xyzFlip * 2.0) - 1.0;
         vec3 v1 = ocolor.rgb;
         v1 = normalize(v1 * xyzFlip);
-        vec3 vxl = fract(texPos * vec3(textureSize(volume, 0))) - 0.5;
+        vec3 vxl = fract(texPos * volumeTexDimsFull) - 0.5;
         vxl.x = -vxl.x;
         float t = dot(vxl, v1);
         vec3 P = t * v1;
@@ -108,12 +137,12 @@ void main() {
       // Overlay outline: draw black border at threshold boundary
       if (overlayOutlineWidth > 0.0) {
         vec3 vx = overlayOutlineWidth / vec3(textureSize(overlay, 0));
-        vec3 vxR = vec3(texPos.x+vx.x, texPos.y, texPos.z);
-        vec3 vxL = vec3(texPos.x-vx.x, texPos.y, texPos.z);
-        vec3 vxA = vec3(texPos.x, texPos.y+vx.y, texPos.z);
-        vec3 vxP = vec3(texPos.x, texPos.y-vx.y, texPos.z);
-        vec3 vxS = vec3(texPos.x, texPos.y, texPos.z+vx.z);
-        vec3 vxI = vec3(texPos.x, texPos.y, texPos.z-vx.z);
+        vec3 vxR = vec3(volPos.x+vx.x, volPos.y, volPos.z);
+        vec3 vxL = vec3(volPos.x-vx.x, volPos.y, volPos.z);
+        vec3 vxA = vec3(volPos.x, volPos.y+vx.y, volPos.z);
+        vec3 vxP = vec3(volPos.x, volPos.y-vx.y, volPos.z);
+        vec3 vxS = vec3(volPos.x, volPos.y, volPos.z+vx.z);
+        vec3 vxI = vec3(volPos.x, volPos.y, volPos.z-vx.z);
         if (ocolor.a < 1.0) {
           // Sub-threshold voxel: check if any in-plane neighbor is supra-threshold
           float na = 0.0;
@@ -121,9 +150,9 @@ void main() {
           if (axCorSag != 1) { na = max(na, texture(overlay, vxA).a); na = max(na, texture(overlay, vxP).a); }
           if (axCorSag != 0) { na = max(na, texture(overlay, vxS).a); na = max(na, texture(overlay, vxI).a); }
           // In-plane diagonal corners
-          if (axCorSag == 0) { na = max(na, texture(overlay, vec3(texPos.x+vx.x, texPos.y+vx.y, texPos.z)).a); na = max(na, texture(overlay, vec3(texPos.x-vx.x, texPos.y+vx.y, texPos.z)).a); na = max(na, texture(overlay, vec3(texPos.x+vx.x, texPos.y-vx.y, texPos.z)).a); na = max(na, texture(overlay, vec3(texPos.x-vx.x, texPos.y-vx.y, texPos.z)).a); }
-          if (axCorSag == 1) { na = max(na, texture(overlay, vec3(texPos.x+vx.x, texPos.y, texPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x-vx.x, texPos.y, texPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x+vx.x, texPos.y, texPos.z-vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x-vx.x, texPos.y, texPos.z-vx.z)).a); }
-          if (axCorSag == 2) { na = max(na, texture(overlay, vec3(texPos.x, texPos.y+vx.y, texPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x, texPos.y-vx.y, texPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x, texPos.y+vx.y, texPos.z-vx.z)).a); na = max(na, texture(overlay, vec3(texPos.x, texPos.y-vx.y, texPos.z-vx.z)).a); }
+          if (axCorSag == 0) { na = max(na, texture(overlay, vec3(volPos.x+vx.x, volPos.y+vx.y, volPos.z)).a); na = max(na, texture(overlay, vec3(volPos.x-vx.x, volPos.y+vx.y, volPos.z)).a); na = max(na, texture(overlay, vec3(volPos.x+vx.x, volPos.y-vx.y, volPos.z)).a); na = max(na, texture(overlay, vec3(volPos.x-vx.x, volPos.y-vx.y, volPos.z)).a); }
+          if (axCorSag == 1) { na = max(na, texture(overlay, vec3(volPos.x+vx.x, volPos.y, volPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x-vx.x, volPos.y, volPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x+vx.x, volPos.y, volPos.z-vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x-vx.x, volPos.y, volPos.z-vx.z)).a); }
+          if (axCorSag == 2) { na = max(na, texture(overlay, vec3(volPos.x, volPos.y+vx.y, volPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x, volPos.y-vx.y, volPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x, volPos.y+vx.y, volPos.z-vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x, volPos.y-vx.y, volPos.z-vx.z)).a); }
           if (na >= 1.0) { ocolor = vec4(0.0, 0.0, 0.0, 1.0); }
         } else {
           // Supra-threshold voxel: check if any in-plane neighbor is sub-threshold
@@ -148,11 +177,13 @@ void main() {
   if (numPaqd > 0.0) {
     ivec3 pDims = textureSize(paqd, 0);
     if (pDims.x > 2) {
-      // Nearest: label indices (R,G) — interpolating discrete indices is meaningless
-      ivec3 pCoord = clamp(ivec3(texPos * vec3(pDims)), ivec3(0), pDims - 1);
+      // Nearest: label indices (R,G) — interpolating discrete indices is meaningless.
+      // Sampled through volPos so a chunked PAQD layer reads its per-chunk
+      // texture (volPos is the identity transform for non-chunked volumes).
+      ivec3 pCoord = clamp(ivec3(volPos * vec3(pDims)), ivec3(0), pDims - 1);
       vec4 raw = texelFetch(paqd, pCoord, 0);
       // Linear: probabilities (B,A) — smooth distance-field-like alpha
-      vec4 smoothProb = texture(paqd, texPos);
+      vec4 smoothProb = texture(paqd, volPos);
       float prob1 = smoothProb.b;
       float prob2 = smoothProb.a;
       float total = prob1 + prob2;
@@ -179,19 +210,21 @@ void main() {
     discard;
   }
 
-  // Drawing overlay (nearest-neighbor via texelFetch) — always runs
+  // Drawing overlay (nearest-neighbor via texelFetch) — always runs.
+  // Sampled through volPos so a chunked drawing layer reads its per-chunk
+  // texture (volPos is the identity transform for non-chunked volumes).
   ivec3 drawDims = textureSize(drawing, 0);
-  ivec3 drawCoord = clamp(ivec3(texPos * vec3(drawDims)), ivec3(0), drawDims - 1);
+  ivec3 drawCoord = clamp(ivec3(volPos * vec3(drawDims)), ivec3(0), drawDims - 1);
   vec4 drawColor = texelFetch(drawing, drawCoord, 0);
   if (drawColor.a > 0.0) {
     float da = drawColor.a;
     if (drawRimOpacity >= 0.0) {
-      vec3 offsetX = dFdx(texPos);
-      vec3 offsetY = dFdy(texPos);
-      vec3 L = texture(drawing, texPos - offsetX).rgb;
-      vec3 R = texture(drawing, texPos + offsetX).rgb;
-      vec3 T = texture(drawing, texPos - offsetY).rgb;
-      vec3 B = texture(drawing, texPos + offsetY).rgb;
+      vec3 offsetX = dFdx(volPos);
+      vec3 offsetY = dFdy(volPos);
+      vec3 L = texture(drawing, volPos - offsetX).rgb;
+      vec3 R = texture(drawing, volPos + offsetX).rgb;
+      vec3 T = texture(drawing, volPos - offsetY).rgb;
+      vec3 B = texture(drawing, volPos + offsetY).rgb;
       vec3 drawV = drawColor.rgb;
       if (any(notEqual(L, drawV)) || any(notEqual(R, drawV)) ||
           any(notEqual(T, drawV)) || any(notEqual(B, drawV)))
@@ -200,5 +233,9 @@ void main() {
     color.rgb = mix(color.rgb, drawColor.rgb, da);
     color.a = max(color.a, drawColor.a);
   }
+  // Cross-fade a streaming fine chunk in over the coarse floor: scale only the
+  // alpha (straight-alpha blend), so the floor behind shows through until the
+  // chunk has fully faded in. 1.0 = no-op (floor draws + settled chunks).
+  color.a *= fadeAlpha;
 }
 `

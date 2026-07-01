@@ -18,14 +18,18 @@ vec4 packDepth(float d) {
 }
 
 void main() {
-  vec3 start = vColor;
-  vec3 backPosition = GetBackPosition(start);
+  vec3 rayStart = vColor;
+  vec3 start = GetFrontPosition(rayStart);
+  vec3 backPosition = GetBackPosition(rayStart);
   vec3 dirVec = backPosition - start;
   float len = length(dirVec);
+  if (!(len > 0.0) || len > 3.0) {
+    discard;
+  }
   vec3 dir = dirVec / len;
-  vec3 texVox = vec3(textureSize(volume, 0));
+  vec3 texVox = volumeTexDimsFull;
   float lenVox = length(dirVec * texVox);
-  if (lenVox < 0.5 || len > 3.0) {
+  if (lenVox < 0.5) {
     discard;
   }
   // Save original ray for overlay passes (overlay ignores clip planes)
@@ -51,8 +55,9 @@ void main() {
       skipBackground = true;
     }
   }
-  // Shared values
-  float ran = fract(sin(gl_FragCoord.x * 12.9898 + gl_FragCoord.y * 78.233) * 43758.5453);
+  // Match the visual renderer's full-volume ray-sample phase.
+  float origRan = raySamplePhase(origStart, stepSize);
+  float ran = origRan;
   float stepSizeFast = stepSize * 1.9;
   vec4 deltaDirFast = vec4(dir * stepSizeFast, stepSizeFast);
   // --- Background depth pick ---
@@ -63,6 +68,7 @@ void main() {
       start += dir * sampleRange.x;
       len = sampleRange.y - sampleRange.x;
     }
+    ran = raySamplePhase(start, stepSize);
     vec4 samplePos = vec4(start + dir * (stepSize * ran), stepSize * ran);
     vec4 samplePosStart = samplePos;
     // Fast pass
@@ -72,7 +78,7 @@ void main() {
         samplePos += deltaDirFast;
         continue;
       }
-      float alpha = texture(volume, samplePos.xyz).a;
+      float alpha = texture(volume, chunkTexCoord(samplePos.xyz)).a;
       if (alpha >= 0.01) { break; }
       samplePos += deltaDirFast;
     }
@@ -92,7 +98,7 @@ void main() {
           samplePos += deltaDir;
           continue;
         }
-        float alpha = texture(volume, samplePos.xyz).a;
+        float alpha = texture(volume, chunkTexCoord(samplePos.xyz)).a;
         if (alpha >= 0.01) {
           bgDepth = frac2ndc(samplePos.xyz);
           bgHit = true;
@@ -111,7 +117,7 @@ void main() {
   float overDepth = 1.0;
   bool overHit = false;
   if (numVolumes > 1.0) {
-    vec4 overSamplePos = vec4(origStart + dir * (stepSize * ran), stepSize * ran);
+    vec4 overSamplePos = vec4(origStart + dir * (stepSize * origRan), stepSize * origRan);
     vec4 overSamplePosStart = overSamplePos;
     // Overlay fast pass
     for (int oj = 0; oj < 1024; oj++) {

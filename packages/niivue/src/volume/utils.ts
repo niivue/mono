@@ -680,12 +680,22 @@ export function extractVoxelFid(
     start[0] + ix * step[0] + start[1] + iy * step[1] + start[2] + iz * step[2]
   const nPoints = meta.nPoints
   const nVox = volume.nVox3D
+  const nTransients = Math.max(1, meta.nTransients ?? 1)
   const out = new Float32Array(nPoints * 2)
+  // Average the FID over all transients/coils, mirroring the total-signal map
+  // (`integratePpmBandMap`): otherwise the crosshair spectrum (transient 0 only)
+  // and the displayed map would be computed from different data. `?? 0` guards a
+  // truncated buffer; divide only when there is more than one transient.
   for (let p = 0; p < nPoints; p++) {
-    const ci = 2 * (native + p * nVox)
-    if (ci + 1 >= fid.length) break
-    out[2 * p] = fid[ci]
-    out[2 * p + 1] = fid[ci + 1]
+    let re = 0
+    let im = 0
+    for (let t = 0; t < nTransients; t++) {
+      const ci = 2 * (native + p * nVox + t * nVox * nPoints)
+      re += fid[ci] ?? 0
+      im += fid[ci + 1] ?? 0
+    }
+    out[2 * p] = nTransients > 1 ? re / nTransients : re
+    out[2 * p + 1] = nTransients > 1 ? im / nTransients : im
   }
   return out
 }

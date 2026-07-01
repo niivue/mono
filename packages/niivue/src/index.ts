@@ -7,6 +7,10 @@
 // Label colormap LUT builder for extensions producing label/atlas volumes
 // biome-ignore lint/performance/noBarrelFile: package public API entry point
 export { makeLabelLut } from './cmap/NVCmaps'
+// Viewport controller (OpenSeadragon-style smooth pan/zoom on the shared canvas).
+// Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
+// Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
+export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
 // Extension API
 export { NVExtensionContext } from './extension/context'
 export type {
@@ -65,6 +69,7 @@ export type {
   AffineMatrix,
   AffineTransform,
   BackendType,
+  CanvasViewport,
   ColorMap,
   CustomLayoutTile,
   DragReleaseInfo,
@@ -78,9 +83,12 @@ export type {
   NiiVueLocation,
   NiiVueLocationValue,
   NiiVueOptions,
+  NVBounds,
   NVConnectomeOptions,
   NVFontData,
+  NVGlobalCamera,
   NVImage,
+  NVInstance,
   NVMesh,
   NVMeshLayer,
   NVSignal,
@@ -97,6 +105,9 @@ export type {
   SyncOpts,
   TypedVoxelArray,
   ViewHitTest,
+  VolumeChunkExplode,
+  VolumeChunkSource,
+  VolumeChunkSourceRequest,
   VolumeUpdate,
 } from './NVTypes'
 // Signal load options
@@ -114,6 +125,15 @@ export {
   phaseCorrection,
   ppmRefForNucleus,
 } from './signal/processing'
+export type {
+  ChunkPlan,
+  MultiLodFocus,
+  MultiLodOptions,
+  Vec3f,
+  Vec3i,
+  VolumeChunkDesc,
+} from './volume/chunking'
+export { chunkVolumeGrid, chunkVolumeMultiLOD } from './volume/chunking'
 // MRSI (spatial spectroscopic imaging) volume helpers
 export { buildDerivedScalarVolume, isMrsiVolume } from './volume/mrsi'
 // Volume construction/serialization for extensions building derived volumes

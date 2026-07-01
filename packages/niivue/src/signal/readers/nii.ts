@@ -92,8 +92,9 @@ export async function read(
   const nSamples = dims[4] > 1 ? dims[4] : 1
   const nCols = dimProduct(dims, 5, 7)
   const flat = toTypedViewOrU8(img, hdr.datatypeCode)
-  const slope = hdr.scl_slope !== 0 ? hdr.scl_slope : 1
-  const inter = hdr.scl_inter
+  const slope =
+    Number.isFinite(hdr.scl_slope) && hdr.scl_slope !== 0 ? hdr.scl_slope : 1
+  const inter = Number.isFinite(hdr.scl_inter) ? hdr.scl_inter : 0
   const columns: Float32Array[] = []
   for (let c = 0; c < nCols; c++) {
     const col = new Float32Array(nSamples)

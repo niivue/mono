@@ -66,6 +66,49 @@ export function clampToDimension(value: number, max: number): number {
   return Math.min(Math.max(value, 0), max - 1)
 }
 
+export interface DrawSphereParams {
+  x: number
+  y: number
+  z: number
+  radius: number
+  penValue: number
+  drawBitmap: Uint8Array
+  dims: number[] // NIfTI-style [ndim, dimX, dimY, dimZ]
+  penOverwrites: boolean
+}
+
+/**
+ * Paint a solid voxel ball of `radius` centred at (x,y,z). Unlike `drawPoint`
+ * (a disk on a 2D slice plane), this is a true 3D brush — used when drawing
+ * directly on a 3D render (e.g. exploded blocks), where there is no slice plane.
+ * radius 0 paints a single voxel. Honors `penOverwrites` (skip non-zero voxels
+ * when false and not erasing).
+ */
+export function drawSphere(params: DrawSphereParams): void {
+  const dx = params.dims[1]
+  const dy = params.dims[2]
+  const dz = params.dims[3]
+  const r = Math.max(0, Math.floor(params.radius))
+  const skip = params.penOverwrites === false && params.penValue !== 0
+  const r2 = r * r
+  for (let kz = -r; kz <= r; kz++) {
+    for (let ky = -r; ky <= r; ky++) {
+      for (let kx = -r; kx <= r; kx++) {
+        if (kx * kx + ky * ky + kz * kz > r2) continue
+        const vx = params.x + kx
+        const vy = params.y + ky
+        const vz = params.z + kz
+        if (vx < 0 || vy < 0 || vz < 0 || vx >= dx || vy >= dy || vz >= dz) {
+          continue
+        }
+        const idx = voxelIndex(vx, vy, vz, dx, dy)
+        if (skip && params.drawBitmap[idx] !== 0) continue
+        params.drawBitmap[idx] = params.penValue
+      }
+    }
+  }
+}
+
 export function drawPoint(params: DrawPointParams): void {
   const {
     x: inputX,

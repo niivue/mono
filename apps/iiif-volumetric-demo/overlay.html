@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Overlay on a large volume — niivue</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; height: 100%; background: #0b0c0e; color: #e8eaed; font: 13px/1.5 system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; }
+      header { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid #1f2227; flex: none; }
+      header strong { font-weight: 600; }
+      .links { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+      .links a { color: #9aa0a6; text-decoration: none; }
+      .controls { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-bottom: 1px solid #1f2227; flex: none; flex-wrap: wrap; }
+      .controls label { color: #9aa0a6; }
+      select, button { background: #16181c; color: #e8eaed; border: 1px solid #2a2d31; border-radius: 4px; padding: 3px 8px; font: inherit; }
+      button { cursor: pointer; }
+      button:hover { border-color: #3a3d41; }
+      input[type="range"] { accent-color: #f28b82; vertical-align: middle; }
+      main { position: relative; flex: 1; min-height: 0; background: #000; }
+      canvas { width: 100%; height: 100%; display: block; }
+      .hud { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); padding: 6px 9px; border-radius: 5px; font-size: 11px; white-space: pre; pointer-events: none; max-width: 52ch; }
+      .hint { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.55); padding: 5px 9px; border-radius: 5px; font-size: 11px; color: #9aa0a6; }
+      .fallback { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; color: #f28b82; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Overlay on a large volume</strong>
+      <span class="links" data-nav-links></span>
+    </header>
+    <div class="controls">
+      <label for="volume">background</label>
+      <select id="volume"></select>
+      <label for="layout">layout</label>
+      <select id="layout">
+        <option value="3">multiplanar</option>
+        <option value="4">3D render</option>
+      </select>
+      <label for="cmap">overlay map</label>
+      <select id="cmap">
+        <option value="warm">warm</option>
+        <option value="hot">hot</option>
+        <option value="cool">cool</option>
+        <option value="winter">winter</option>
+      </select>
+      <label title="Opacity of the warm overlay (densest cores, z > 1.5)">warm <input type="range" id="opacityWarm" min="0" max="1" step="0.05" value="0.85" /></label>
+      <label title="Opacity of the cool overlay (surrounding structure, z between 0.3 and 1.5)">cool <input type="range" id="opacityCool" min="0" max="1" step="0.05" value="0.6" /></label>
+      <label>zoom <input type="range" id="zoom" min="0.5" max="8" step="0.1" value="1" /></label>
+      <label><input type="checkbox" id="overlayOn" checked /> overlay</label>
+      <label title="Stream the overlay as a base-aligned chunked layer combined per block (strategy A) instead of reslicing a coarse overlay whole onto the base grid"><input type="checkbox" id="streamHiRes" /> stream overlay</label>
+      <label title="Combine two colored layers (warm densest cores + cool surrounding structure) into one RGBA streamed overlay (requires stream overlay)"><input type="checkbox" id="rgbaCombine" /> RGBA combine</label>
+      <label title="Clip the overlay together with the base volume in the 3D render (right-drag a 3D tile to set the clip plane). Off: overlays show through the clipped base."><input type="checkbox" id="clipOverlay" /> clip overlay</label>
+      <span id="mag" style="color:#9aa0a6"></span>
+    </div>
+    <main>
+      <canvas id="nv-canvas"></canvas>
+      <div class="hud" id="hud">loading…</div>
+      <div class="hint">the volume's own intensities become a z-score statistical overlay (hot where denser than average). default: a coarse overlay resliced whole onto each background brick. "stream overlay" (3D render): the overlay streams as a base-aligned chunked layer, combined per block and ray-marched by the base block (strategy A)</div>
+      <div class="fallback" id="fallback"></div>
+    </main>
+    <script type="module" src="/src/overlay.ts"></script>
+  </body>
+</html>

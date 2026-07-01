@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Oriented microscopy overlay — niivue</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; height: 100%; background: #0b0c0e; color: #e8eaed; font: 13px/1.5 system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; }
+      header { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid #1f2227; flex: none; }
+      header strong { font-weight: 600; }
+      .links { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+      .links a { color: #9aa0a6; text-decoration: none; }
+      .controls { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-bottom: 1px solid #1f2227; flex: none; flex-wrap: wrap; }
+      .controls label { color: #9aa0a6; }
+      select, button { background: #16181c; color: #e8eaed; border: 1px solid #2a2d31; border-radius: 4px; padding: 3px 8px; font: inherit; }
+      button { cursor: pointer; }
+      button:hover { border-color: #3a3d41; }
+      input[type="range"] { accent-color: #8ab4f8; vertical-align: middle; }
+      main { position: relative; flex: 1; min-height: 0; background: #000; }
+      canvas { width: 100%; height: 100%; display: block; }
+      .hud { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); padding: 6px 9px; border-radius: 5px; font-size: 11px; white-space: pre; pointer-events: none; max-width: 56ch; }
+      .hint { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.55); padding: 5px 9px; border-radius: 5px; font-size: 11px; color: #9aa0a6; }
+      .fallback { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; color: #f28b82; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Oriented microscopy overlay</strong>
+      <span class="links" data-nav-links></span>
+    </header>
+    <div class="controls">
+      <label for="base">base volume</label>
+      <select id="base"></select>
+      <label for="layout">layout</label>
+      <select id="layout">
+        <option value="4">3D render</option>
+        <option value="3">multiplanar</option>
+      </select>
+      <label>yaw <input type="range" id="yaw" min="0" max="360" step="2" value="35" /></label>
+      <label>pitch <input type="range" id="pitch" min="-90" max="90" step="2" value="20" /></label>
+      <label>opacity <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.85" /></label>
+      <button id="reset" type="button">reset orientation</button>
+      <span id="mag" style="color:#9aa0a6"></span>
+    </div>
+    <main>
+      <canvas id="nv-canvas"></canvas>
+      <div class="hud" id="hud">loading…</div>
+      <div class="hint">a hi-res microscopy patch is placed inside the base with an oblique affine · yaw/pitch re-orient it in place via setVolumeAffine — niivue reslices it onto the base grid</div>
+      <div class="fallback" id="fallback"></div>
+    </main>
+    <script type="module" src="/src/microscopy.ts"></script>
+  </body>
+</html>

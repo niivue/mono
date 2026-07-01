@@ -19,6 +19,10 @@
       "types": "./dist/index.webgl2.d.ts",
       "import": "./dist/niivuegpu.webgl2.js"
     },
+    "./viewport": {
+      "types": "./dist/control/NVCanvasViewportController.d.ts",
+      "import": "./dist/viewport.js"
+    },
     "./assets/fonts": {
       "types": "./dist/assets/fonts/index.d.ts",
       "import": "./dist/assets/fonts/index.js"

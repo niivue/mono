@@ -1,10 +1,13 @@
+import type { mat4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
 import * as DragModes from '@/control/dragModes'
+import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { addUndoBitmap, getDrawingBitmap } from '@/drawing/drawingManager'
 import {
   drawLine,
   drawPenFilled,
   drawPoint,
+  drawSphere,
   isSamePoint,
 } from '@/drawing/penTool'
 import { computeSlicePointerEvent } from '@/extension/context'
@@ -25,6 +28,9 @@ import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
 import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
+import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
+import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
+import { getImageDataRAS } from '@/volume/utils'
 
 function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -53,7 +59,9 @@ function clientToCanvasPixel(
   return [x, y]
 }
 
-/** Convert client coords to bounds-local pixel coords. Returns null if outside bounds. */
+/** Convert client coords to bounds-local pixel coords. Returns null if outside bounds.
+ *  Uses the post-viewport pixel rect so hit testing tracks the same transform
+ *  the renderer applies — otherwise pan/zoom would route events to the wrong tile. */
 function clientToBoundsPixel(
   ctrl: NiiVueGPU,
   clientX: number,
@@ -70,15 +78,18 @@ function clientToBoundsPixel(
   ) {
     return [canvasX, canvasY]
   }
-  const cw = ctrl.canvas?.width ?? 0
-  const ch = ctrl.canvas?.height ?? 0
-  const left = bounds[0][0] * cw
-  const top = (1 - bounds[1][1]) * ch
-  const width = (bounds[1][0] - bounds[0][0]) * cw
-  const height = (bounds[1][1] - bounds[0][1]) * ch
-  const boundsX = canvasX - left
-  const boundsY = canvasY - top
-  if (boundsX < 0 || boundsX >= width || boundsY < 0 || boundsY >= height)
+  const canvas = ctrl.canvas
+  if (!canvas) return null
+  const rect = computeBoundsPixelRect(canvas, bounds)
+  if (rect.isOffscreen) return null
+  const boundsX = canvasX - rect.left
+  const boundsY = canvasY - rect.top
+  if (
+    boundsX < 0 ||
+    boundsX >= rect.width ||
+    boundsY < 0 ||
+    boundsY >= rect.height
+  )
     return null
   return [boundsX, boundsY]
 }
@@ -223,6 +234,119 @@ function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
   }
 }
 
+// Paint the exploded block under the cursor on the 3D render tile. Builds the
+// render tile's MVP exactly as depthPick does, unprojects the click to a world
+// ray (in vox2mm mm-space), CPU-ray-casts the exploded chunk AABBs to find the
+// block + voxel, then paints a 3D ball there. Refreshes via the incremental
+// drawing flush so only the touched chunk re-uploads.
+function draw3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): void {
+  const hit = ctrl.activeTileHit
+  const plan = vol.chunkPlan
+  if (!hit || !plan) return
+  const tile = ctrl.view?.screenSlices[hit.tileIndex]
+  const ltwh = tile?.leftTopWidthHeight
+  if (!ltwh) return
+  const md = ctrl.model
+  const mvp = NVTransforms.calculateMvpMatrix(
+    ltwh,
+    md.scene.azimuth,
+    md.scene.elevation,
+    md._renderPivotMM ?? md.pivot3D,
+    md.furthestFromPivot,
+    md.scene.scaleMultiplier,
+    vol.obliqueRAS as mat4 | undefined,
+    md.scene.renderPan,
+  )[0] as mat4
+  const near = NVTransforms.unprojectScreen(
+    hit.normalizedX,
+    hit.normalizedY,
+    0,
+    mvp,
+  )
+  const far = NVTransforms.unprojectScreen(
+    hit.normalizedX,
+    hit.normalizedY,
+    1,
+    mvp,
+  )
+  let dx = far[0] - near[0]
+  let dy = far[1] - near[1]
+  let dz = far[2] - near[2]
+  const len = Math.hypot(dx, dy, dz) || 1
+  dx /= len
+  dy /= len
+  dz /= len
+  // Only blocks the clip plane leaves visible are pickable, so a right-click
+  // can't land on a block hidden behind the cutaway. The shader clips each block
+  // by its un-exploded data position, which is exactly what chunksNotClippedOut
+  // computes (no explode offset).
+  const allIdx = plan.chunks.map((_, i) => i)
+  const clipPlanes = ctrl.model.clipPlanes
+  const isCutaway = ctrl.model.scene.isClipPlaneCutaway
+  const visible = new Set(
+    chunksNotClippedOut(plan, allIdx, clipPlanes, isCutaway),
+  )
+  // March the volume's data so the paint lands on the visible tissue surface
+  // (first voxel above the transparency threshold), not the block's empty
+  // bounding-box face, and skips the clipped-away portion of a straddling block.
+  const data = getImageDataRAS(vol)
+  const dimX = (vol.dimsRAS as number[])[1]
+  const dimXY = dimX * (vol.dimsRAS as number[])[2]
+  const sample = data
+    ? (x: number, y: number, z: number): number =>
+        data[x + y * dimX + z * dimXY]
+    : undefined
+  // The window cal_min/cal_max are in display units; convert to the raw scale
+  // getImageDataRAS returns. The first faintly-non-zero voxel is near-transparent
+  // ("cloud"), so threshold a short way up the window so the paint lands on the
+  // first clearly-visible voxel instead.
+  const sclSlope = vol.hdr?.scl_slope || 1
+  const sclInter = vol.hdr?.scl_inter || 0
+  const winLo = (vol.calMin - sclInter) / sclSlope
+  const winHi = (vol.calMax - sclInter) / sclSlope
+  const threshold = winLo + 0.15 * (winHi - winLo)
+  const picked = pickExplodedVoxel(
+    plan,
+    vol.matRAS as Float32Array,
+    vol.chunkExplode,
+    [near[0], near[1], near[2]],
+    [dx, dy, dz],
+    { allowed: visible, clipPlanes, isCutaway, sample, threshold },
+  )
+  if (!picked || !ctrl.model.drawingVolume) return
+  const drawingVol = ctrl.model.drawingVolume as NVImage
+  // Undo snapshot before the stroke (matches the 2D draw path).
+  const undoResult = addUndoBitmap({
+    drawBitmap: getDrawingBitmap(drawingVol),
+    drawUndoBitmaps: ctrl.drawUndoBitmaps,
+    currentDrawUndoBitmap: ctrl.currentDrawUndoBitmap,
+    maxDrawUndoBitmaps: ctrl.maxDrawUndoBitmaps,
+    drawFillOverwrites: ctrl.model.draw.isFillOverwriting,
+  })
+  ctrl.drawUndoBitmaps = undoResult.drawUndoBitmaps
+  ctrl.currentDrawUndoBitmap = undoResult.currentDrawUndoBitmap
+  if (undoResult.drawBitmap) drawingVol.img = undoResult.drawBitmap
+  const radius = Math.max(0, Math.floor(ctrl.model.draw.penSize / 2))
+  drawSphere({
+    x: picked.voxel[0],
+    y: picked.voxel[1],
+    z: picked.voxel[2],
+    radius,
+    penValue: ctrl.model.draw.penValue,
+    drawBitmap: getDrawingBitmap(drawingVol),
+    dims: vol.dimsRAS as number[],
+    penOverwrites: ctrl.model.draw.isFillOverwriting,
+  })
+  ctrl.markDrawDirty(
+    picked.voxel[0],
+    picked.voxel[1],
+    picked.voxel[2],
+    ctrl.model.draw.penSize,
+  )
+  ctrl.refreshDrawing()
+  ctrl.emit('drawingChanged', { action: 'stroke' })
+}
+
 export function initInteraction(ctrl: NiiVueGPU): void {
   // Prevent browser default touch gestures so pointer events fire instead
   if (ctrl.canvas) ctrl.canvas.style.touchAction = 'none'
@@ -267,6 +391,27 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (graphHit) return
 
     ctrl.activeTileHit = ctrl.view?.hitTest(px, py) ?? null
+    // 3D drawing on exploded blocks: a RIGHT-click on the render tile paints the
+    // block the pick ray hits, leaving left-drag free to rotate the camera.
+    // Depth-pick can't see the explode (it ray-marches the un-exploded single
+    // texture), so we CPU-ray-cast the exploded chunk AABBs. Only intercept when
+    // the active volume is actually exploded, so right-drag still adjusts the
+    // clip plane otherwise.
+    {
+      const drawVol = ctrl.model.getVolumes()[0]
+      if (
+        ctrl.model.draw.isEnabled &&
+        ctrl.model.drawingVolume &&
+        ctrl.activeTileHit?.isRender &&
+        evt.button === 2 &&
+        drawVol?.matRAS &&
+        drawVol.chunkPlan &&
+        chunkExplodeEnabled(drawVol.chunkExplode)
+      ) {
+        draw3DOnExplodedBlock(ctrl, drawVol)
+        return
+      }
+    }
     // Drawing intercept: if drawing enabled and click is on a 2D slice
     if (
       ctrl.model.draw.isEnabled &&
@@ -318,6 +463,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
             penAxCorSag: ctrl._drawPenAxCorSag,
             penOverwrites: ctrl.model.draw.isFillOverwriting,
           })
+          ctrl.markDrawDirty(pt[0], pt[1], pt[2], ctrl.model.draw.penSize)
           ctrl.refreshDrawing()
           ctrl.setCrosshairPos(mm)
         }
@@ -500,6 +646,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
           if (fillResult.success) {
             ;(ctrl.model.drawingVolume as NVImage).img = fillResult.drawBitmap
           }
+        }
+        const penSize = ctrl.model.draw.penSize
+        for (const p of ctrl._drawPenFillPts) {
+          ctrl.markDrawDirty(p[0], p[1], p[2], penSize)
         }
         ctrl.refreshDrawing()
       }
@@ -785,6 +935,14 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               penAxCorSag: ctrl._drawPenAxCorSag,
               penOverwrites: ctrl.model.draw.isFillOverwriting,
             })
+            const penSize = ctrl.model.draw.penSize
+            ctrl.markDrawDirty(
+              ctrl._drawPenLocation[0],
+              ctrl._drawPenLocation[1],
+              ctrl._drawPenLocation[2],
+              penSize,
+            )
+            ctrl.markDrawDirty(newPt[0], newPt[1], newPt[2], penSize)
             ctrl._drawPenLocation = newPt
             ctrl._drawPenFillPts.push(newPt.slice())
             ctrl.refreshDrawing()

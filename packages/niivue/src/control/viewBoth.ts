@@ -1,7 +1,7 @@
 import NVViewGL from '@/gl/NVViewGL'
 import { log } from '@/logger'
 import type NiiVueGPU from '@/NVControlBase'
-import type { BackendType } from '@/NVTypes'
+import type { BackendType, CanvasViewport, NVBounds } from '@/NVTypes'
 import NVViewGPU from '@/wgpu/NVViewGPU'
 import {
   initInteraction,
@@ -15,6 +15,101 @@ const canvasInstances = new WeakMap<HTMLCanvasElement, Set<NiiVueGPU>>()
 /** Tracks which backend a freshly-created canvas was made for, to prevent double-replacement
  *  within a batch while still allowing replacement on a future different-backend switch */
 const freshCanvasBackend = new WeakMap<HTMLCanvasElement, BackendType>()
+
+/** Identity viewport: no pan, no zoom — reproduces pre-viewport behavior */
+const IDENTITY_VIEWPORT: Readonly<CanvasViewport> = Object.freeze({
+  pan: [0, 0] as [number, number],
+  zoom: 1,
+})
+
+/** Per-canvas virtual camera: pans/zooms all sibling instances together */
+const canvasViewports = new WeakMap<HTMLCanvasElement, CanvasViewport>()
+
+/** Read the canvas viewport, or the identity transform if none is set */
+export function getCanvasViewport(
+  canvas: HTMLCanvasElement | null | undefined,
+): CanvasViewport {
+  if (!canvas) return { pan: [0, 0], zoom: 1 }
+  const v = canvasViewports.get(canvas)
+  if (!v) return { pan: [0, 0], zoom: 1 }
+  return { pan: [v.pan[0], v.pan[1]], zoom: v.zoom }
+}
+
+/** True when the viewport is the identity transform (fast path skip) */
+export function isIdentityViewport(v: CanvasViewport): boolean {
+  return v.pan[0] === 0 && v.pan[1] === 0 && v.zoom === 1
+}
+
+/** Set the canvas viewport. Returns true if value changed. */
+export function setCanvasViewport(
+  canvas: HTMLCanvasElement | null | undefined,
+  viewport: CanvasViewport,
+): boolean {
+  if (!canvas) return false
+  const cur = canvasViewports.get(canvas)
+  const px = viewport.pan[0]
+  const py = viewport.pan[1]
+  const z = viewport.zoom
+  if (cur && cur.pan[0] === px && cur.pan[1] === py && cur.zoom === z)
+    return false
+  if (isIdentityViewport({ pan: [px, py], zoom: z })) {
+    canvasViewports.delete(canvas)
+  } else {
+    canvasViewports.set(canvas, { pan: [px, py], zoom: z })
+  }
+  return true
+}
+
+/** Iterate all controllers sharing a canvas (for fanning out viewport changes) */
+export function getCanvasInstances(
+  canvas: HTMLCanvasElement | null | undefined,
+): Set<NiiVueGPU> | null {
+  if (!canvas) return null
+  return canvasInstances.get(canvas) ?? null
+}
+
+/** Bounds-pixel rect after viewport transform. Mirrors the math in NVViewGPU/NVViewGL `_computeBoundsPixels`. */
+export type BoundsPixelRect = {
+  left: number
+  top: number
+  width: number
+  height: number
+  isOffscreen: boolean
+}
+
+/** Project normalized world bounds through the canvas viewport into pixel space. */
+export function computeBoundsPixelRect(
+  canvas: HTMLCanvasElement,
+  bounds: NVBounds | null | undefined,
+): BoundsPixelRect {
+  const cw = canvas.width
+  const ch = canvas.height
+  const vp = getCanvasViewport(canvas)
+  const worldX1 = bounds ? bounds[0][0] : 0
+  const worldY1 = bounds ? bounds[0][1] : 0
+  const worldX2 = bounds ? bounds[1][0] : 1
+  const worldY2 = bounds ? bounds[1][1] : 1
+  const z = vp.zoom
+  const px = vp.pan[0]
+  const py = vp.pan[1]
+  const sx1 = (worldX1 - 0.5) * z + 0.5 + px
+  const sx2 = (worldX2 - 0.5) * z + 0.5 + px
+  const sy1 = (worldY1 - 0.5) * z + 0.5 + py
+  const sy2 = (worldY2 - 0.5) * z + 0.5 + py
+  const left = Math.round(sx1 * cw)
+  const right = Math.round(sx2 * cw)
+  const top = Math.round((1 - sy2) * ch)
+  const bottom = Math.round((1 - sy1) * ch)
+  return {
+    left,
+    top,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top),
+    isOffscreen: right <= 0 || left >= cw || bottom <= 0 || top >= ch,
+  }
+}
+
+export { IDENTITY_VIEWPORT }
 
 export async function attachTo(
   ctrl: NiiVueGPU,
@@ -62,8 +157,8 @@ export async function attachToCanvas(
       ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
       await ctrl.view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
     }
-    initInteraction(ctrl)
-    setupDragAndDrop(ctrl)
+    if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
+    if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
     setupResizeHandler(ctrl)
     ctrl.view.resize()
     ctrl.emit('viewAttached', {
@@ -77,6 +172,21 @@ export async function attachToCanvas(
   }
 }
 
+/** Add a controller to the canvas instance registry. Used by single-backend
+ *  lifecycle modules (`viewWebGL2`, `viewWebGPU`) so that `setViewport` fan-out
+ *  via `getCanvasInstances` reaches every sibling sharing the canvas. */
+export function registerCanvasInstance(
+  ctrl: NiiVueGPU,
+  canvas: HTMLCanvasElement,
+): void {
+  let instances = canvasInstances.get(canvas)
+  if (!instances) {
+    instances = new Set()
+    canvasInstances.set(canvas, instances)
+  }
+  instances.add(ctrl)
+}
+
 /** Remove a controller from the canvas instance registry (called on destroy) */
 export function unregister(ctrl: NiiVueGPU): void {
   if (!ctrl.canvas) return
@@ -85,6 +195,7 @@ export function unregister(ctrl: NiiVueGPU): void {
     instances.delete(ctrl)
     if (instances.size === 0) {
       canvasInstances.delete(ctrl.canvas)
+      canvasViewports.delete(ctrl.canvas)
     }
   }
 }
@@ -130,6 +241,12 @@ function replaceCanvasElement(ctrl: NiiVueGPU): void {
     canvasInstances.delete(oldCanvas)
     canvasInstances.set(newCanvas, siblings)
   }
+  // Carry the canvas viewport to the new canvas so backend swaps preserve pan/zoom
+  const oldViewport = canvasViewports.get(oldCanvas)
+  if (oldViewport) {
+    canvasViewports.delete(oldCanvas)
+    canvasViewports.set(newCanvas, oldViewport)
+  }
 }
 
 export async function recreateView(
@@ -174,8 +291,8 @@ export async function recreateView(
     await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
   }
   // 8. Reinstall event handlers on new canvas
-  initInteraction(ctrl)
-  setupDragAndDrop(ctrl)
+  if (ctrl.opts.isInteractionEnabled !== false) initInteraction(ctrl)
+  if (ctrl.opts.isInteractionEnabled !== false) setupDragAndDrop(ctrl)
   setupResizeHandler(ctrl)
   // 9. Rebuild GPU resources
   await ctrl.view.updateBindGroups()

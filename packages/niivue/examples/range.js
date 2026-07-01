@@ -1202,26 +1202,19 @@ function applyBlocks() {
   nv.drawScene()
 }
 
-// True once every chunk in the plan has been fetched + decoded. We gate on the
-// demo's own completion count (not the core's GPU in-flight/pending, which drains
-// while our async OME-Zarr decode is still the bottleneck): exploding mid-decode
-// makes the exploded render request every brick each frame and janks hard.
-function streamSettled() {
-  const total = chunkPlan?.chunks.length ?? 0
-  return total > 0 && stats.completed.size >= total
-}
-
-// Reconcile the resident volume's explode with the slider, gated on load-settle:
-// while streaming, keep it un-exploded (scale 1); once settled, apply the
-// slider's scale. The renderer reads vol.chunkExplode every frame, so this is a
-// live update (no re-stream). Called on slider input and every HUD-poll frame,
-// so a deferred explode engages the moment the stream settles. No-op when already
-// in the target state, so per-frame calls are cheap.
+// Reconcile the resident volume's explode with the slider. The renderer reads
+// vol.chunkExplode every frame, so this is a live update (no re-stream). Applied
+// while streaming too: the exploded render requests every brick each frame, which
+// used to flood the load, but skipping the per-chunk gradient pass when unlit
+// (see the core gradient gate) removed that cost, so bricks can stream in already
+// exploded. Called on slider input and every HUD-poll frame (so it re-applies
+// after a reload resets appliedExplodeScale); a no-op when already in the target
+// state, so per-frame calls are cheap.
 function syncExplode() {
   if (!nv) return
   const vol = nv.volumes?.[0]
   if (!vol) return
-  const desired = streamSettled() ? explodeScale() : 1
+  const desired = explodeScale()
   if (desired === appliedExplodeScale) return
   appliedExplodeScale = desired
   vol.chunkExplode =

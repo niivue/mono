@@ -1239,6 +1239,12 @@ function applyExplode() {
   syncExplode()
 }
 
+// Built strip cells, reused across updates. Recreating every cell each poll (and
+// formerly every render frame) forced a DOM reflow that janked rotation; instead
+// build once when the chunk layout changes, then just toggle the 'hit' class.
+let stripSpans = []
+let stripKey = ''
+
 function renderChunkStrip() {
   const source = activeSource
   if (!source) return
@@ -1246,14 +1252,20 @@ function renderChunkStrip() {
   const gridDims = plan?.gridDims ?? source.chunkGrid
   const chunkCount = plan?.chunks.length ?? source.chunkCount
   const columns = Math.min(16, Math.max(4, gridDims[0] * gridDims[1]))
-  els.chunkStrip.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`
-  const nodes = []
-  for (let i = 0; i < chunkCount; i++) {
-    const span = document.createElement('span')
-    if (stats.completed.has(i)) span.className = 'hit'
-    nodes.push(span)
+  const key = `${chunkCount}:${columns}`
+  if (key !== stripKey) {
+    els.chunkStrip.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`
+    stripSpans = Array.from({ length: chunkCount }, () =>
+      document.createElement('span'),
+    )
+    els.chunkStrip.replaceChildren(...stripSpans)
+    stripKey = key
   }
-  els.chunkStrip.replaceChildren(...nodes)
+  for (let i = 0; i < stripSpans.length; i++) {
+    const hit = stats.completed.has(i)
+    const cls = hit ? 'hit' : ''
+    if (stripSpans[i].className !== cls) stripSpans[i].className = cls
+  }
 }
 
 function httpSummary() {
@@ -1321,13 +1333,15 @@ function chunkShapeFromPlan(plan) {
 }
 
 function startHudPolling() {
-  if (pollHandle !== 0) cancelAnimationFrame(pollHandle)
-  const tick = () => {
+  if (pollHandle !== 0) clearInterval(pollHandle)
+  // Throttled off the render frame (~8 Hz): the stats panel and chunk strip only
+  // need a periodic refresh, and rebuilding the HUD every animation frame forced
+  // a reflow that competed with the WebGL render and janked rotation. syncExplode
+  // still engages a deferred explode within ~120 ms of the stream settling.
+  pollHandle = setInterval(() => {
     renderHud()
-    syncExplode() // engage a deferred explode as soon as the stream settles
-    pollHandle = requestAnimationFrame(tick)
-  }
-  pollHandle = requestAnimationFrame(tick)
+    syncExplode()
+  }, 120)
 }
 
 function applyLayout() {

@@ -26,6 +26,13 @@ const NO_FLOOR = !new URLSearchParams(location.search).has('floor')
 // floor build) is discarded instead of stomping a newer scene.
 let reloadToken = 0
 
+// The explode scale currently applied to the resident volume. Explode is gated
+// on load-settle (see syncExplode): while chunks are still streaming the volume
+// stays un-exploded (1), because the exploded "keep every brick resident" render
+// path floods the load pipeline and janks the main thread. Reset to 1 on each
+// (re)load; the slider's value is applied once in-flight/pending reach zero.
+let appliedExplodeScale = 1
+
 // GPU residency budget for the resident chunk set (scalar + RGBA + gradient
 // textures). niivue caps the per-frame working set to the chunks that fit this
 // budget (maxChunksForBudget), so resident VRAM is hard-bounded to roughly this
@@ -1035,13 +1042,6 @@ function explodeScale() {
   return Math.max(1, Number(els.explode.value) || 1)
 }
 
-// chunkExplode options for the current slider value. The scale is applied
-// uniformly to x, y and z so bricks spread apart evenly.
-function explodeOptions() {
-  const s = explodeScale()
-  return s > 1.001 ? { enabled: true, scale: [s, s, s] } : { enabled: false }
-}
-
 function createStreamingVolume(source) {
   const win = parseWindow(source.defaultWindow)
   const chunkSource =
@@ -1066,7 +1066,9 @@ function createStreamingVolume(source) {
     chunkSource,
   })
   vol.chunkPlan = chunkPlan ?? undefined
-  vol.chunkExplode = explodeOptions()
+  // Start un-exploded; syncExplode applies the slider's explode once the stream
+  // settles (exploding mid-stream janks the main thread).
+  vol.chunkExplode = { enabled: false }
   return vol
 }
 
@@ -1186,7 +1188,7 @@ function applyBlocks() {
   const zoom = Number(els.zoom.value) || 1
   nv.lodBoxes =
     show && activeSource && chunkPlan
-      ? computeBlockBoxes(activeSource, chunkPlan, zoom, explodeScale())
+      ? computeBlockBoxes(activeSource, chunkPlan, zoom, appliedExplodeScale)
       : null
   nv.focusBox =
     show && activeSource && zoom > 1.01
@@ -1200,15 +1202,41 @@ function applyBlocks() {
   nv.drawScene()
 }
 
-// Live-update the explode spacing without re-streaming: the renderer reads
-// vol.chunkExplode every frame, so mutate the resident volume and redraw. Also
-// refresh the block outlines so they track the newly spaced bricks.
+// True once every chunk in the plan has been fetched + decoded. We gate on the
+// demo's own completion count (not the core's GPU in-flight/pending, which drains
+// while our async OME-Zarr decode is still the bottleneck): exploding mid-decode
+// makes the exploded render request every brick each frame and janks hard.
+function streamSettled() {
+  const total = chunkPlan?.chunks.length ?? 0
+  return total > 0 && stats.completed.size >= total
+}
+
+// Reconcile the resident volume's explode with the slider, gated on load-settle:
+// while streaming, keep it un-exploded (scale 1); once settled, apply the
+// slider's scale. The renderer reads vol.chunkExplode every frame, so this is a
+// live update (no re-stream). Called on slider input and every HUD-poll frame,
+// so a deferred explode engages the moment the stream settles. No-op when already
+// in the target state, so per-frame calls are cheap.
+function syncExplode() {
+  if (!nv) return
+  const vol = nv.volumes?.[0]
+  if (!vol) return
+  const desired = streamSettled() ? explodeScale() : 1
+  if (desired === appliedExplodeScale) return
+  appliedExplodeScale = desired
+  vol.chunkExplode =
+    desired > 1.001
+      ? { enabled: true, scale: [desired, desired, desired] }
+      : { enabled: false }
+  applyBlocks()
+}
+
+// Slider handler: reflect the target value in the label immediately and try to
+// apply it (only takes effect once the stream has settled).
 function applyExplode() {
   if (!nv) return
   els.explodeVal.textContent = `${explodeScale().toFixed(2)}x`
-  const vol = nv.volumes?.[0]
-  if (vol) vol.chunkExplode = explodeOptions()
-  applyBlocks()
+  syncExplode()
 }
 
 function renderChunkStrip() {
@@ -1296,6 +1324,7 @@ function startHudPolling() {
   if (pollHandle !== 0) cancelAnimationFrame(pollHandle)
   const tick = () => {
     renderHud()
+    syncExplode() // engage a deferred explode as soon as the stream settles
     pollHandle = requestAnimationFrame(tick)
   }
   pollHandle = requestAnimationFrame(tick)
@@ -1318,6 +1347,9 @@ async function reloadVolume(options = {}) {
   const token = ++reloadToken
   hideFallback()
   stats = freshStats()
+  // The fresh volume starts un-exploded; syncExplode re-applies the slider's
+  // explode once this load settles.
+  appliedExplodeScale = 1
   try {
     if (options.reloadSource || !activeSource) {
       activeSource = null

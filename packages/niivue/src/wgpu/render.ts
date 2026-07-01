@@ -315,6 +315,13 @@ export class VolumeRenderer extends NVRenderer {
   // bindCachedVolume to switch the active volume/gradient texture per tile
   // when rendering multi-instance global3d scenes.
   private _texCache: Map<string, TexCacheEntry> = new Map()
+  // Current volume gradient/illumination amount, set by the view each frame
+  // BEFORE chunk work (request/pump). Chunk uploaders read this to skip the
+  // gradient compute pass when the volume is unlit (== 0). Mirrors the GL backend.
+  gradientAmount = 0
+  // True once any chunk was uploaded without a real gradient (unlit). If lighting
+  // is later enabled, those chunks are re-streamed so they gain gradients.
+  private _uploadedUnlit = false
   // Per-volume cached bind groups so multi-volume tile loops can swap
   // textures without rebuilding the bind group every frame. Keyed by the
   // same cacheKey as _texCache. Invalidated whenever any non-volume
@@ -798,7 +805,12 @@ export class VolumeRenderer extends NVRenderer {
       return existing
     }
     if (existing) this._destroyTexEntry(existing)
-    const uploader = await createChunkUploaderGPU(device, vol, plan)
+    const uploader = await createChunkUploaderGPU(
+      device,
+      vol,
+      plan,
+      () => this.gradientAmount > 0,
+    )
     // The entry holds the live uploader + per-chunk bind groups so an in-place
     // plan swap (swapChunkedVolumePlan) can replace them; the manager hooks read
     // them off `entry` (not a creation-time closure) so they always act on the
@@ -826,7 +838,9 @@ export class VolumeRenderer extends NVRenderer {
         onAdmit: onResidencyChange,
       },
     )
-    entry.manager.admit(0, await entry.uploader.uploadChunk(0))
+    const chunk0 = await entry.uploader.uploadChunk(0)
+    if (!chunk0.hasGradient) this._uploadedUnlit = true
+    entry.manager.admit(0, chunk0)
     if (cacheKey) this._texCache.set(cacheKey, entry)
     return entry
   }
@@ -854,7 +868,12 @@ export class VolumeRenderer extends NVRenderer {
     }
     const oldToNew = matchChunksByContent(entry.plan, newPlan)
     // Rebind the uploader to the new plan; dispose the old orient resources.
-    const newUploader = await createChunkUploaderGPU(device, vol, newPlan)
+    const newUploader = await createChunkUploaderGPU(
+      device,
+      vol,
+      newPlan,
+      () => this.gradientAmount > 0,
+    )
     entry.uploader.dispose()
     entry.uploader = newUploader
     entry.manager.remap(oldToNew, newPlan.chunks.length)
@@ -865,7 +884,9 @@ export class VolumeRenderer extends NVRenderer {
     // Keep at least one chunk resident for the first post-swap frame; the pump
     // streams the rest from the next working set.
     if (entry.manager.residentCount === 0) {
-      entry.manager.admit(0, await entry.uploader.uploadChunk(0))
+      const chunk0 = await entry.uploader.uploadChunk(0)
+      if (!chunk0.hasGradient) this._uploadedUnlit = true
+      entry.manager.admit(0, chunk0)
     }
   }
 
@@ -1251,6 +1272,18 @@ export class VolumeRenderer extends NVRenderer {
     let uploaded = 0
     const start = performance.now()
     try {
+      // Lighting was enabled after chunks streamed unlit (no real gradients):
+      // re-stream them so they gain gradients. Evict all resident chunks + clear
+      // the pending queue (remap with an empty map); the next frames re-request
+      // and re-upload with gradientAmount > 0. Rare (illumination toggle); no
+      // effect on the common fixed-lighting case. Mirrors the GL backend.
+      if (this.gradientAmount > 0 && this._uploadedUnlit) {
+        this._uploadedUnlit = false
+        for (const entry of this._texCache.values()) {
+          if (entry.kind !== 'chunked') continue
+          entry.manager.remap(new Map(), entry.plan.chunks.length)
+        }
+      }
       // Kick off source fetches for the upcoming working set so they run in
       // parallel ahead of the serial upload below. prefetchChunk is idempotent
       // and self-bounded, so topping up the window every pump keeps it full as
@@ -1290,6 +1323,7 @@ export class VolumeRenderer extends NVRenderer {
           try {
             const chunk = await uploader.uploadChunk(i)
             if (entry.manager.generation === gen) {
+              if (!chunk.hasGradient) this._uploadedUnlit = true
               entry.manager.admit(i, chunk)
             } else {
               entry.manager.discardUpload(i, chunk)

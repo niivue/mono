@@ -739,6 +739,10 @@ export default class NVView {
     // Off-screen after viewport transform: skip render pass entirely. Sibling instances
     // still copy their own textures to the canvas in their own render() calls.
     if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
+    // Publish the current lighting to the volume renderer BEFORE any chunk work
+    // (entry creation, request, pump) so chunk uploaders can skip the gradient
+    // pass when unlit. Matches the gradientAmount passed to the volume draw.
+    this.volumeRenderer.gradientAmount = md.volume.illumination
     markCpuStart()
     // Phase 3d: advance the chunk-residency LRU clock before the tile loop
     // requests this frame's working set, so eviction protects visible chunks.

@@ -479,6 +479,10 @@ export default class NVGlview {
       requestAnimationFrame(() => this.render())
       return
     }
+    // Publish the current lighting to the volume renderer BEFORE any chunk work
+    // (entry creation, request, pump) so chunk uploaders can skip the gradient
+    // pass when unlit. Matches the gradientAmount passed to the volume draw.
+    this.volumeRenderer.gradientAmount = md.volume.illumination
     // Off-screen after viewport transform: skip the entire render pass — scissor would
     // clip everything and the work is wasted. preserveDrawingBuffer keeps prior pixels.
     if (this._isSubCanvasBounds && this._isBoundsOffscreen) return

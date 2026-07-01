@@ -258,6 +258,13 @@ export class VolumeRenderer extends NVRenderer {
   // bindCachedVolume to switch the active volume/gradient texture per tile
   // when rendering multi-instance global3d scenes.
   private _texCache: Map<string, TexCacheEntry>
+  // Current volume gradient/illumination amount, set by the view each frame
+  // BEFORE chunk work (request/pump). Chunk uploaders read this to skip the
+  // (expensive, per-slice) gradient pass when the volume is unlit (== 0).
+  gradientAmount = 0
+  // True once any chunk was uploaded without a real gradient (unlit). If lighting
+  // is later enabled, those chunks are re-streamed so they gain gradients.
+  private _uploadedUnlit = false
   // Set when the active volume is chunked; null for single-texture volumes.
   // draw() branches on this to run the multi-chunk loop.
   private _activeChunked: ChunkedTexEntry | null = null
@@ -653,7 +660,12 @@ export class VolumeRenderer extends NVRenderer {
       kind: 'chunked',
       volume: vol,
       manager: undefined as unknown as ChunkResidencyManager<VolumeChunkGL>,
-      uploader: createChunkUploaderGL(gl, vol, plan),
+      uploader: createChunkUploaderGL(
+        gl,
+        vol,
+        plan,
+        () => this.gradientAmount > 0,
+      ),
       plan,
     }
     entry.manager = new ChunkResidencyManager<VolumeChunkGL>(
@@ -665,7 +677,9 @@ export class VolumeRenderer extends NVRenderer {
         prefetch: (ci) => entry.uploader.prefetchChunk(ci),
       },
     )
-    entry.manager.admit(0, await entry.uploader.uploadChunk(0))
+    const chunk0 = await entry.uploader.uploadChunk(0)
+    if (!chunk0.hasGradient) this._uploadedUnlit = true
+    entry.manager.admit(0, chunk0)
     if (cacheKey) this._texCache.set(cacheKey, entry)
     return entry
   }
@@ -690,7 +704,12 @@ export class VolumeRenderer extends NVRenderer {
       )
     }
     const oldToNew = matchChunksByContent(entry.plan, newPlan)
-    const newUploader = createChunkUploaderGL(gl, vol, newPlan)
+    const newUploader = createChunkUploaderGL(
+      gl,
+      vol,
+      newPlan,
+      () => this.gradientAmount > 0,
+    )
     entry.uploader.dispose()
     entry.uploader = newUploader
     entry.manager.remap(oldToNew, newPlan.chunks.length)
@@ -698,7 +717,9 @@ export class VolumeRenderer extends NVRenderer {
     entry.volume = vol
     vol.chunkPlan = newPlan
     if (entry.manager.residentCount === 0) {
-      entry.manager.admit(0, await entry.uploader.uploadChunk(0))
+      const chunk0 = await entry.uploader.uploadChunk(0)
+      if (!chunk0.hasGradient) this._uploadedUnlit = true
+      entry.manager.admit(0, chunk0)
     }
   }
 
@@ -1083,6 +1104,18 @@ export class VolumeRenderer extends NVRenderer {
     let uploaded = 0
     const start = performance.now()
     try {
+      // Lighting was enabled after chunks streamed unlit (no real gradients):
+      // re-stream them so they gain gradients. Evict all resident chunks + clear
+      // the pending queue (remap with an empty map); the next frames re-request
+      // and re-upload with gradientAmount > 0. Rare (illumination toggle); no
+      // effect on the common fixed-lighting case.
+      if (this.gradientAmount > 0 && this._uploadedUnlit) {
+        this._uploadedUnlit = false
+        for (const entry of this._texCache.values()) {
+          if (entry.kind !== 'chunked') continue
+          entry.manager.remap(new Map(), entry.plan.chunks.length)
+        }
+      }
       // Kick off source fetches for the upcoming working set so they run in
       // parallel ahead of the serial upload below. prefetchChunk is idempotent
       // and self-bounded, so topping up the window every pump keeps it full as
@@ -1120,6 +1153,7 @@ export class VolumeRenderer extends NVRenderer {
           try {
             const chunk = await uploader.uploadChunk(i)
             if (entry.manager.generation === gen) {
+              if (!chunk.hasGradient) this._uploadedUnlit = true
               entry.manager.admit(i, chunk)
             } else {
               entry.manager.discardUpload(i, chunk)

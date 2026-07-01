@@ -1274,6 +1274,12 @@ function applyLayout() {
 
 async function reloadVolume(options = {}) {
   if (!nv) return
+  // Capture a load token BEFORE any await. Every UI control fires reloadVolume
+  // unawaited, so rapid source/level/window/colormap/explode changes run
+  // concurrently; a stale load must bail after each await instead of stomping
+  // the newer scene (otherwise activeSource/chunkPlan and the displayed volume
+  // can end up describing whichever load happens to finish last).
+  const token = ++reloadToken
   hideFallback()
   stats = freshStats()
   try {
@@ -1281,6 +1287,7 @@ async function reloadVolume(options = {}) {
       activeSource = null
       chunkPlan = null
       const source = await loadActiveSource()
+      if (token !== reloadToken) return
       activeSource = source
       chunkPlan = createChunkPlan(source)
       // Reflect the level that actually loaded (may differ if the requested
@@ -1296,6 +1303,7 @@ async function reloadVolume(options = {}) {
       throw new Error('No active source selected')
     }
     await nv.loadVolumes([createStreamingVolume(activeSource)])
+    if (token !== reloadToken) return
     applyLayout()
     // loadVolumes resets the camera/zoom and drops any prior boxes; reapply the
     // current zoom, focus ROI, and block outlines for the freshly loaded plan.
@@ -1303,16 +1311,17 @@ async function reloadVolume(options = {}) {
     // Give the 3D render a coarse whole-volume floor so regions whose fine
     // chunks have not streamed in (or do not fit the residency budget on a huge
     // level) still show coarse detail instead of rendering blank. Built after
-    // the volume is shown, tagged to this load so a superseded reload's late
-    // floor cannot stomp a newer scene, and skippable via ?nofloor for A/B.
-    const loadToken = ++reloadToken
+    // the volume is shown; a superseded reload's late floor cannot stomp a newer
+    // scene. Skippable via ?nofloor for A/B.
     if (activeSource.kind === 'omezarr' && !NO_FLOOR) {
       const floor = await buildCoarseFloorVolume(activeSource)
-      if (loadToken === reloadToken) await nv.setBaseCoarseFloor(floor)
+      if (token !== reloadToken) return
+      await nv.setBaseCoarseFloor(floor)
     } else {
       await nv.setBaseCoarseFloor(null)
     }
   } catch (err) {
+    if (token !== reloadToken) return
     showFallback(err instanceof Error ? err.message : String(err))
   }
 }

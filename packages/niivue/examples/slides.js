@@ -731,11 +731,24 @@ els.source.addEventListener('change', () => {
 })
 window.addEventListener('resize', requestRender)
 
+// Bumped on each load so a slower source (e.g. TIFF) that started earlier cannot
+// resolve after a newer selection and desync the visible slide from the dropdown.
+let loadSeq = 0
+
 async function loadSlide() {
+  const seq = ++loadSeq
   els.fallback.setAttribute('aria-hidden', 'true')
   els.fallback.textContent = ''
+  // Tear down the outgoing slide before loading the next: drop its render
+  // listener, dispose its bitmap cache + in-flight fetches, and clear the
+  // renderer's per-tile texture cache so the new source cannot inherit stale
+  // tiles keyed by the same L/x/y (ghost tiles).
+  const prev = slide
   slide = null
   hasFit = false
+  prev?.removeEventListener('change', requestRender)
+  prev?.dispose?.()
+  view?.renderer?.clearTextures?.()
   try {
     const opts = {
       maxCacheBytes: MAX_CACHE_BYTES,
@@ -755,12 +768,18 @@ async function loadSlide() {
     } else {
       next = await NVSlide.fromManifestUrl(manifestUrl(), opts)
     }
+    if (seq !== loadSeq) {
+      // A newer selection superseded this load; discard it.
+      next.dispose?.()
+      return
+    }
     next.addEventListener('change', requestRender)
     slide = next
     ensureDrawing()
     populateLevels(slide.manifest)
     requestRender()
   } catch (err) {
+    if (seq !== loadSeq) return
     console.error(err)
     const src = els.source.value
     const hint = src.startsWith('openslide-')

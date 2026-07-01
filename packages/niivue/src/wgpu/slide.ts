@@ -275,6 +275,17 @@ export class SlideRendererGPU {
     this._device.queue.submit([encoder.finish()])
   }
 
+  // Drop every cached tile texture without tearing down the renderer. Mirrors
+  // SlideRenderer.clearTextures (GL): tile textures are keyed by tile key, a
+  // namespace shared across slides, so a consumer swapping the slide must clear
+  // first to avoid inheriting the previous slide's tiles (ghost tiles).
+  clearTextures(): void {
+    for (const entry of this._textures.values()) {
+      entry.texture.destroy()
+    }
+    this._textures.clear()
+  }
+
   destroy(): void {
     for (const entry of this._textures.values()) {
       entry.texture.destroy()

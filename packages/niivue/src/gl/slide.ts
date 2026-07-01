@@ -153,6 +153,22 @@ export class SlideRenderer extends NVRenderer {
     gl.enable(gl.DEPTH_TEST)
   }
 
+  // Drop every cached tile texture without tearing down the renderer. Tile
+  // textures are keyed by tile key (`L{i}/{x}/{y}`), a namespace shared by every
+  // slide, and `textureForBitmap` reuses a cached texture whenever key + size
+  // match without re-uploading — so a consumer that swaps the slide behind this
+  // renderer must call this first, or the new slide inherits the old slide's
+  // tiles (ghost tiles).
+  clearTextures(): void {
+    const gl = this._gl
+    if (gl) {
+      for (const entry of this._textures.values()) {
+        gl.deleteTexture(entry.texture)
+      }
+    }
+    this._textures.clear()
+  }
+
   destroy(): void {
     const gl = this._gl
     if (gl) {

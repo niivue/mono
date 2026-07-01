@@ -1822,6 +1822,15 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.nv-layer-add-option.is-warning {
+  border-color: rgba(215, 166, 66, 0.3);
+}
+/* Overrides the green `> svg` (the Plus) for the trailing subject-mismatch
+   cue; margin-left:auto parks it at the row's right edge. */
+.nv-layer-add-option > svg.nv-layer-add-warn {
+  color: var(--amber);
+  margin-left: auto;
+}
 
 .nv-window-control {
   display: grid;

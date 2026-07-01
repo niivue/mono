@@ -95,6 +95,13 @@ const COLORMAP_OPTIONS = [
   { value: 'actc', label: 'ACTC' },
   { value: 'warm_cool', label: 'Warm/Cool (diverging)' }
 ] as const
+// The anatomical base is restricted to grayscale-family maps: pseudocolor
+// (viridis/magma/actc) on a structural volume invites intensity misreading.
+// Stat/label overlays keep the full COLORMAP_OPTIONS set.
+const BASE_COLORMAP_OPTIONS = [
+  { value: 'gray', label: 'Gray' },
+  { value: 'bone', label: 'Bone' }
+] as const
 
 // A colormap selection of 'warm_cool' is the NiiVue idiom for signed/stat data:
 // a warm map for positive intensities paired with a cool map for negatives, so
@@ -294,11 +301,9 @@ export function App(): JSX.Element {
         kind: 'base',
         isAtlas: atlasId === selected.id,
         ...resolveColormap(
-          layerColormapForItem(
-            selected,
-            layerSettings,
-            atlasId === selected.id ? DEFAULT_ATLAS_COLORMAP : DEFAULT_BASE_COLORMAP
-          )
+          atlasId === selected.id
+            ? layerColormapForItem(selected, layerSettings, DEFAULT_ATLAS_COLORMAP)
+            : baseColormap(layerColormapForItem(selected, layerSettings, DEFAULT_BASE_COLORMAP))
         ),
         ...windowForItem(selected.id, layerSettings),
         // The base is always fully opaque (its row has no opacity slider); only
@@ -494,7 +499,16 @@ export function App(): JSX.Element {
   }, [isRenderMaximized])
 
   const warmStatus = warmProgressLabel(warmProgress, datasetRoot)
-  const locationStatus = useMemo(() => locationStatusLabel(locationReadout), [locationReadout])
+  // The atlas layer's display name, used to bind the region readout to the named
+  // atlas (only atlas/label volumes carry per-voxel region labels).
+  const atlasName = useMemo(
+    () => (atlasId ? items.find((item) => item.id === atlasId)?.label ?? null : null),
+    [atlasId, items]
+  )
+  const locationStatus = useMemo(
+    () => locationStatusLabel(locationReadout, atlasName),
+    [locationReadout, atlasName]
+  )
   const slicePosition = useMemo(
     () => slicePositionLabel(locationReadout, viewMode),
     [locationReadout, viewMode]
@@ -1108,7 +1122,7 @@ function LayerPanel({
             const settings = layerSettings[item.id]
             const isBaseAtlas = role === 'base' && atlasId === selected.id
             const overlayIndex = role === 'overlay' ? overlayItems.findIndex((o) => o.id === item.id) : 0
-            const colormapValue = layerColormapForItem(
+            const rawColormap = layerColormapForItem(
               item,
               layerSettings,
               role === 'overlay'
@@ -1117,6 +1131,8 @@ function LayerPanel({
                   ? DEFAULT_ATLAS_COLORMAP
                   : DEFAULT_BASE_COLORMAP
             )
+            // Keep the base's select in sync with what actually renders (grayscale).
+            const colormapValue = role === 'base' && !isBaseAtlas ? baseColormap(rawColormap) : rawColormap
             return (
               <LayerRow
                 key={item.id}
@@ -1146,6 +1162,7 @@ function LayerPanel({
                       ariaLabel={`Colormap for ${item.label}`}
                       itemId={item.id}
                       value={colormapValue}
+                      options={role === 'base' && !isBaseAtlas ? BASE_COLORMAP_OPTIONS : COLORMAP_OPTIONS}
                       onChange={onLayerColormapChange}
                     />
                     {role === 'overlay' ? (
@@ -1210,22 +1227,32 @@ function LayerPanel({
         <em>{addCandidates.length}</em>
       </div>
       <div className="nv-layer-list">
-        {addCandidates.map((item) => (
-          <button
-            className="nv-layer-add-option"
-            disabled={!selected}
-            key={item.id}
-            onClick={() => onOverlayToggle(item.id)}
-            title={item.label}
-            type="button"
-          >
-            <Plus size={13} />
-            <span>
-              <strong>{item.label}</strong>
-              <small>{layerOptionMeta(item)}</small>
-            </span>
-          </button>
-        ))}
+        {addCandidates.map((item) => {
+          // Only the subject check is available before the volume loads (the
+          // world-space check needs post-load extents), so surface a
+          // different-subject candidate right in the pool — the mismatch is
+          // cheapest to catch before it's blended onto the base.
+          const warn = layerSubjectWarning(selected, item)
+          return (
+            <button
+              className={`nv-layer-add-option${warn ? ' is-warning' : ''}`}
+              disabled={!selected}
+              key={item.id}
+              onClick={() => onOverlayToggle(item.id)}
+              title={warn ? `${item.label} — ${warn}` : item.label}
+              type="button"
+            >
+              <Plus size={13} />
+              <span>
+                <strong>{item.label}</strong>
+                <small>{layerOptionMeta(item)}</small>
+              </span>
+              {warn ? (
+                <AlertTriangle aria-label="Different subject than base" className="nv-layer-add-warn" size={13} />
+              ) : null}
+            </button>
+          )
+        })}
         {addCandidates.length === 0 ? (
           <div className="nv-filter-empty">No overlay candidates.</div>
         ) : null}
@@ -1318,12 +1345,14 @@ function LayerColormapSelect({
   disabled = false,
   itemId,
   value,
+  options = COLORMAP_OPTIONS,
   onChange
 }: {
   ariaLabel: string
   disabled?: boolean
   itemId: string
   value: string
+  options?: ReadonlyArray<{ value: string; label: string }>
   onChange: (itemId: string, colormap: string) => void
 }): JSX.Element {
   return (
@@ -1335,7 +1364,7 @@ function LayerColormapSelect({
         value={value}
         onChange={(event) => onChange(itemId, event.target.value)}
       >
-        {COLORMAP_OPTIONS.map((option) => (
+        {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
@@ -1883,15 +1912,15 @@ function slicePositionLabel(location: NiiVueLocation | null, viewMode: ViewModeI
   return `${letter} ${formatCoordinate(Math.abs(value))} mm`
 }
 
-function locationStatusLabel(location: NiiVueLocation | null): string | null {
+function locationStatusLabel(location: NiiVueLocation | null, atlasName: string | null): string | null {
   if (!location) return null
   const mm = formatAnatomicalCoordinates(location.mm)
   const vox = location.vox.map(formatVoxelIndex).join(', ')
-  const region = locationRegion(location)
+  const region = locationRegion(location, atlasName)
   const intensity = locationIntensity(location)
   const parts = [`${mm} mm`, `IJK ${vox}`]
   if (intensity) parts.push(`Val ${intensity}`)
-  if (region) parts.push(`Region ${region}`)
+  if (region) parts.push(`${region.atlas}: ${region.region}`)
   return parts.join(' / ')
 }
 
@@ -1928,10 +1957,27 @@ function formatIntensity(value: number): string {
   return value.toFixed(magnitude >= 100 ? 1 : 3)
 }
 
-function locationRegion(location: NiiVueLocation): string | null {
-  const labelled = location.values.find((value) => isRegionLabel(value.label)) ??
-    location.values.find((value) => value.label && value.label.trim().length > 0)
-  return labelled?.label?.trim() || null
+// Region readout bound to the *named* atlas layer. NiiVue sets `label` only on
+// volumes with a colormapLabel (i.e. atlases), and each value's `name` is the
+// layer's "<item.label> L<level>", so match the atlas by its display name rather
+// than grabbing the first labelled value across all layers (which couldn't say
+// which atlas a region came from, and could report the wrong volume).
+function locationRegion(
+  location: NiiVueLocation,
+  atlasName: string | null
+): { region: string; atlas: string } | null {
+  if (!atlasName) return null
+  const value = location.values.find(
+    (candidate) => volumeBaseName(candidate.name) === atlasName && isRegionLabel(candidate.label)
+  )
+  const region = value?.label?.trim()
+  return region ? { region, atlas: atlasName } : null
+}
+
+// Strip the " L<level>" LOD suffix the stage appends to each NiiVue volume name
+// (`${item.label} L${level}`) to recover the layer's display label.
+function volumeBaseName(name: string): string {
+  return name.replace(/ L\d+$/, '')
 }
 
 function isRegionLabel(label: string | undefined): boolean {
@@ -1968,6 +2014,14 @@ function layerColormapForItem(
   fallback: string
 ): string {
   return layerSettings[item.id]?.colormap ?? fallback
+}
+
+// Clamp the anatomical base to a grayscale-family map. A volume promoted from
+// overlay to base can carry a leaked pseudocolor setting; the base has no way to
+// display or change one (its dropdown is restricted), so force it grayscale.
+const BASE_COLORMAP_VALUES = new Set<string>(BASE_COLORMAP_OPTIONS.map((option) => option.value))
+function baseColormap(value: string): string {
+  return BASE_COLORMAP_VALUES.has(value) ? value : DEFAULT_BASE_COLORMAP
 }
 
 function overlayColormapForIndex(index: number): string {

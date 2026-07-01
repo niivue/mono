@@ -159,19 +159,17 @@ depend on laterality, intensity, or thresholds until the blockers land.
   Done: `isOrientCubeVisible` enabled + anatomical-letter readout (RAS+).
   Remaining: per-pane 2D orientation letters (rolls in with multiplanar
   below) and an explicit on-screen convention statement.
-- [ ] **[P1] (L) 2D multiplanar slices + voxel-intensity readout.** The stage is
-  hard-pinned to 3D render mode (`NiivueStage.tsx:254-255`); the axial/coronal/
-  sagittal buttons only rotate the camera. There is no slice view, no slice
-  scroll, no through-plane navigation. Add a multiplanar mode (NiiVue 2×2
-  with-render layout), per-pane orientation letters, and a slice-position
-  readout. Done: per-layer voxel intensity now shows in the footer readout
-  (`locationIntensity` in `App.tsx`).
-  **Fold in here:** the interactive window/level (cal_min/cal_max) control.
-  It was built and wired end-to-end, but cal_min/cal_max have no visible
-  effect on the 3D raycast, so it was removed pending this 2D view where
-  W/L is the primary interaction and is verifiable. Re-introduce per-pane
-  W/L drag + numeric min/max (and CT presets if/when CT data is loaded —
-  current sample data is T1w MRI only).
+- [~] **[P1] (L) 2D multiplanar slices + voxel-intensity readout.** Mostly done on
+  the `viewer-multiplanar` branch (merged): axial/coronal/sagittal slice modes +
+  a multiplanar layout (`VIEW_MODES` / `sliceType`), mouse-wheel through-plane
+  paging (`sliceWheelStep`), a slice-position readout in the window header
+  (`slicePositionLabel`, e.g. `Axial · I 168 mm`), per-layer voxel intensity in
+  the footer (`locationIntensity`), and the interactive **intensity window /
+  threshold** control re-introduced per layer (numeric Min/Max, now verifiable in
+  2D). Remaining: **per-pane 2D orientation letters** (NiiVue draws them per
+  slice, but confirm/expose consistently) and W/L **drag** on a pane (numeric
+  min/max is done; drag is not). CT presets deferred until CT data is loaded
+  (sample data is T1w MRI only).
 - [~] **[P1] (M) Window/level + visible intensity ranges + diverging colormap.**
   Done: intensity colorbar enabled and kept clear of the status overlay; a
   "Warm/Cool (diverging)" colormap (NiiVue warm + colormapNegative cool) for
@@ -272,10 +270,14 @@ features — a control that can quietly mislead is worse than no control.
   (page in mm / orientation-aware for a consistent up=superior feel) — lower
   priority now that the mm position is visible. Note: header position populates
   after the first crosshair move (NiiVue doesn't emit an initial location).
-- [ ] **[P2] (S) Add-overlay guard rail.** The pool blends any of 157 unrelated
-  dataset volumes onto the base with only the subject check as a rail — easy to
-  mis-add. Consider surfacing relationship (same subject/space) in the pool or a
-  confirm on a clearly-mismatched add.
+- [x] **[P2] (S) Add-overlay guard rail.** Done: the "Add overlay" pool now
+  surfaces the subject relationship *before* adding — a candidate whose BIDS
+  subject differs from the base gets an amber ⚠ and an explanatory tooltip
+  (`layerSubjectWarning(selected, item)` per row, `.nv-layer-add-warn` /
+  `.is-warning`). Chose an inline cue over a confirm dialog (no modal). Only the
+  subject check runs here (the world-space check needs post-load extents the
+  pool volumes don't have yet); candidates without a BIDS subject still show no
+  rail, same limitation as the per-row guard.
 
 (Already tracked but **raised in priority** by this pass: Save/share full view
 state — now the only way to capture the new per-layer settings, whose defaults
@@ -310,10 +312,16 @@ RAS+value widget.)
   affine, qform/sform codes, or orientation string. Add them, plus `mm` units on
   spacing. Document NaN/Inf and overlay-zero handling (0 ≠ "no data" in stat
   maps).
-- [ ] **[P2] (S) Tie atlas region readout to a named atlas.** `locationRegion`
-  grabs the first non-air label across *all* layers (`App.tsx:1427-1437`), so it
-  can report a region from the wrong volume and can't say which atlas. Bind the
-  lookup to the named atlas layer and show the atlas name.
+- [x] **[P2] (S) Tie atlas region readout to a named atlas.** Done:
+  `locationRegion(location, atlasName)` now binds to the atlas layer — it matches
+  the location value whose `name` (minus the ` L<level>` LOD suffix,
+  `volumeBaseName`) equals the atlas's display name, instead of grabbing the
+  first labelled value across all layers. The readout is prefixed with the atlas
+  (`aal: Precentral_L`), and no region shows when no atlas is bound. Verified
+  live via a synthetic `locationChange`: a stray labelled value is suppressed
+  when unbound (old code would have shown it) and coords/intensity are intact;
+  the positive atlas-name path is logic-verified (no atlas fixture in the
+  browser-dev server).
 - [ ] **[P2] (M) Content-hash data integrity + local edit changelog
   (foundational, single-user).** Stands alone — no collaboration required, and
   the viewer must be rock-solid on this before anything multi-user is built. Hash
@@ -360,9 +368,9 @@ RAS+value widget.)
   noise. Follow-up: a true **space** check (native vs MNI, same subject) needs
   the post-load world extents/affine from NiiVue (`extentsMin/Max`) — wire it
   through the `loadedVersion` readback added in Phase E.
-- [ ] **[P2] (S) Per-layer opacity sliders.** Overlay opacity is hardcoded at
-  0.48 (`App.tsx:240`); blending is a core stats-viewing knob. Expose per-layer
-  sliders (the layer panel already has per-layer colormap selects, `App.tsx:990`).
+- [x] **[P2] (S) Per-layer opacity sliders.** Done in the layer-controls redesign
+  Phase B: each overlay/atlas row has an opacity slider + readout backed by
+  `layerSettings[id].opacity`; the hardcoded 0.48/0.34 literals are gone.
 - [x] **[P2] (S) Scroll pages slices.** Mouse-wheel now pages through slices in
   the single-plane 2D modes (axial/coronal/sagittal) by driving the crosshair's
   through-plane voxel (`sliceWheelStep` + `handleWheelCapture`); scroll-down
@@ -372,9 +380,14 @@ RAS+value widget.)
   volume orientation — page in mm for a consistent up=superior feel.
 - [ ] **[P3] (M) Measurement tools.** No length/angle/ROI or Hounsfield readout.
   Add basic distance + voxel-value-under-crosshair.
-- [ ] **[P3] (S) Keep base volume grayscale-only.** Letting the base anatomical
-  volume be set to viridis/magma (`App.tsx:77-81`) invites pseudocolor
-  misreading; restrict colormaps to overlays/stat maps.
+- [x] **[P3] (S) Keep base volume grayscale-only.** Done: the anatomical base's
+  colormap dropdown is restricted to grayscale-family maps (`BASE_COLORMAP_OPTIONS`
+  = Gray, Bone); overlays/stat maps keep the full set. Also clamps the *render*
+  and the select value via `baseColormap()` so a pseudocolor setting leaked from
+  a volume's prior overlay/atlas role can't paint the base (parallels the base
+  opacity-leak fix). Base-as-atlas keeps its label colormap. Verified live: base
+  dropdown = Gray/Bone, overlay = all 5, Bone applies to the base render, and a
+  viridis overlay promoted to base renders gray (dropdown shows gray, not blank).
 - [ ] **[P3] (S) Dark-reading dropdown hygiene.** OS-native `<select>`/`<option>`
   popups flash bright white in a dark reading room; style them dark or use a
   custom menu.

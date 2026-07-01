@@ -172,7 +172,12 @@ export function App(): JSX.Element {
         const unchanged =
           prevKeys.length === nextKeys.length &&
           nextKeys.every(
-            (id) => prev[id] && prev[id].min === next[id].min && prev[id].max === next[id].max
+            (id) =>
+              prev[id] &&
+              prev[id].min === next[id].min &&
+              prev[id].max === next[id].max &&
+              prev[id].robustMin === next[id].robustMin &&
+              prev[id].robustMax === next[id].robustMax
           )
         return unchanged ? prev : next
       })
@@ -296,7 +301,10 @@ export function App(): JSX.Element {
           )
         ),
         ...windowForItem(selected.id, layerSettings),
-        opacity: renderOpacityForItem(selected.id, layerSettings, 1)
+        // The base is always fully opaque (its row has no opacity slider); only
+        // its `hidden` flag applies. Reading a stored opacity here would leak a
+        // value left over from when this volume was an overlay/atlas.
+        opacity: layerSettings[selected.id]?.hidden ? 0 : 1
       }
     ]
 
@@ -1032,7 +1040,7 @@ function LayerPanel({
   onLoadOverlay: () => void
   onOverlayToggle: (itemId: string) => void
 }): JSX.Element {
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null | undefined>(undefined)
   const atlasCandidates = useMemo(
     () => items.slice().sort(compareAtlasCandidates),
     [items]
@@ -1056,11 +1064,19 @@ function LayerPanel({
     if (atlasItem) out.push({ item: atlasItem, role: 'atlas' })
     return out
   }, [atlasId, items, overlayItems, selected])
-  const extras = overlayItems.length + (atlasId && atlasId !== selected?.id ? 1 : 0)
-  // Exactly one row open at a time; default to the base when nothing (valid) is
-  // explicitly expanded so the base controls are visible on load.
+  // Every row except the base is an "extra" layer; derive it from `rows` so the
+  // atlas-membership rule lives in exactly one place (see rows above).
+  const extras = rows.length - (selected ? 1 : 0)
+  // Exactly one row open at a time. `undefined` means the user hasn't chosen, so
+  // default to the base (its controls show on load); `null` means they collapsed
+  // the open row and nothing should be expanded.
   const rowIds = rows.map((row) => row.item.id)
-  const expanded = expandedId && rowIds.includes(expandedId) ? expandedId : selected?.id ?? null
+  const expanded =
+    expandedId === undefined
+      ? selected?.id ?? null
+      : expandedId && rowIds.includes(expandedId)
+        ? expandedId
+        : null
   const mismatches = rows
     .map((row) => layerWarning(selected, row.item, layerExtents))
     .filter((warning): warning is string => warning !== null)
@@ -1111,7 +1127,7 @@ function LayerPanel({
                 hidden={!!settings?.hidden}
                 expanded={expanded === item.id}
                 removable={role !== 'base'}
-                onToggleExpand={() => setExpandedId((current) => (current === item.id ? null : item.id))}
+                onToggleExpand={() => setExpandedId(expanded === item.id ? null : item.id)}
                 onHiddenChange={(hidden) => onLayerHiddenChange(item.id, hidden)}
                 onRemove={role === 'atlas' ? () => onAtlasChange('') : () => onOverlayToggle(item.id)}
               >
@@ -1378,17 +1394,26 @@ function WindowControl({
   }, [window?.min, window?.max])
 
   // Commit whenever either field changes, reading both current values from
-  // state (no stale closure across the two inputs).
+  // state (no stale closure across the two inputs). For the threshold variant a
+  // blank Max means "up to the auto top", so fall back to the resolved max
+  // rather than discarding the input — setting just a threshold is the common
+  // case and must not look like a broken control.
+  const resolvedMax = resolved?.max
   useEffect(() => {
-    if (!minText.trim() || !maxText.trim()) return
+    if (!minText.trim()) return
     const min = Number(minText)
-    const max = Number(maxText)
-    if (Number.isFinite(min) && Number.isFinite(max) && min < max) {
+    if (!Number.isFinite(min)) return
+    const max = maxText.trim()
+      ? Number(maxText)
+      : isThreshold && Number.isFinite(resolvedMax)
+        ? (resolvedMax as number)
+        : NaN
+    if (Number.isFinite(max) && min < max) {
       onChange(itemId, min, max)
     }
     // onChange/itemId are stable for a given layer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [minText, maxText])
+  }, [minText, maxText, resolvedMax, isThreshold])
 
   return (
     <div className="nv-window-control">

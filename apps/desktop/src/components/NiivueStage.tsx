@@ -453,7 +453,10 @@ export function NiivueStage({
     nv.sliceType = mode.sliceType
     nv.isOrientationTextVisible = viewMode !== 'render'
     nv.drawScene()
-  }, [viewMode, primaryItem])
+    // loadedVersion: the attach effect builds the instance with a stale
+    // sliceType if the view mode was changed mid-load (nvRef was still null when
+    // this effect first ran), so re-apply once the instance/volumes exist.
+  }, [viewMode, primaryItem, loadedVersion])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -655,8 +658,11 @@ async function loadNiiVue(backend: Backend): Promise<NiiVueConstructor> {
 //     contrast saturating at the robust max. Half the 98th-percentile sits above
 //     the near-zero noise (so the background stays transparent — no colour wash)
 //     but is gentle enough to show moderate activation, not just the top ~2%.
-//   - base/atlas layers restore NiiVue's robust auto range, so clearing the
-//     window reverts the render.
+//   - base layers restore NiiVue's robust auto range, so clearing the window
+//     reverts the render.
+//   - atlas/label layers get no window at all: they render through a discrete
+//     label colormap, and clamping to a robust intensity range would drop the
+//     label indices outside 2nd–98th percentile (parcels vanish / miscolor).
 // Returns no keys when the volume's stats aren't available yet (still loading).
 function windowOptionForLayer(
   layer: NiivueRenderLayer,
@@ -665,7 +671,7 @@ function windowOptionForLayer(
   if (layer.calMin !== undefined && layer.calMax !== undefined) {
     return { calMin: layer.calMin, calMax: layer.calMax }
   }
-  if (!volume) return {}
+  if (!volume || layer.isAtlas) return {}
   const { robustMin, robustMax } = volume
   if (
     layer.kind === 'overlay' &&

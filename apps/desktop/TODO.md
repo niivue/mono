@@ -27,7 +27,17 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
   toggle/dock.
 - [ ] **[P2] (M) Responsive layout + touch.** iPhone layout (small screen), touch
   equivalents for wheel-zoom (pinch) and any hover-reveal affordances. No
-  hover-only / wheel-only controls.
+  hover-only / wheel-only controls. Concrete regressions found in the
+  2026-07-01 code review (both desktop-only today):
+  - **Slice paging is wheel-only** (`NiivueStage.tsx` `sliceWheelStep` /
+    `handleWheelCapture` → `moveCrosshairInVox`). No touch/pointer path, so 2D
+    slice navigation is unreachable on iPad/iPhone. Add a drag/swipe (or
+    on-screen slice slider) equivalent.
+  - **3D camera snap is keyboard-only.** The redesign replaced the on-screen
+    render-snap buttons with the 2D/3D view-mode buttons, so `snapRenderView`
+    (Coronal/Sagittal/Axial camera angles) is now reachable only via the
+    numpad/Blender digit shortcuts — gone on touch. Re-expose a snap affordance
+    for the 3D render pane.
 - [ ] **[P3] (M) Set up the `tauri ios` project/build** and validate on simulator/
   device once the above land.
 - [ ] **[P3] (M) AirDrop / share-sheet dataset hand-off (Apple-only, one-shot).**
@@ -60,6 +70,14 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
   the user. Parallelize across cores, warm mid levels, add a warming indicator.
 - [x] **[P3] (S) Manifest refresh via ETag / version endpoint** instead of polling
   the full manifest and diffing a stringified signature (`App.tsx`).
+- [ ] **[P3] (S) Scope setVolume re-application to the changed layer.** The
+  display-option effect (`NiivueStage.tsx` ~L426, deps `[layers, loadedVersion,
+  onResolvedWindows]`) re-runs `setVolume` for *every* layer and forces a full
+  `drawScene()` whenever the `layers` array identity changes — so dragging one
+  overlay's opacity slider repaints the whole scene and re-applies all layers per
+  frame. Diff against the prior applied options and only `setVolume` the layer(s)
+  that actually changed. (Found in the 2026-07-01 review; PLAUSIBLE/efficiency,
+  no correctness impact.)
 
 ## Backend correctness / hardening
 

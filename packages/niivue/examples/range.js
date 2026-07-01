@@ -1148,27 +1148,28 @@ function applyZoom() {
   els.zoomVal.textContent = `${zoom.toFixed(1)}x`
   nv.pan2Dxyzmm = [0, 0, 0, zoom] // 2D multiplanar: zoom about the centre
   nv.scaleMultiplier = zoom // 3D render: scale the camera by the same factor
-  if (activeSource) {
-    nv.focusBox =
-      zoom > 1.01
-        ? {
-            ...focusRoi(activeSource, zoom),
-            color: [1, 0.6, 0.1, 1],
-            thickness: 2,
-          }
-        : null
-  }
   applyBlocks()
 }
 
-// Show or hide the block visualizations: the per-chunk outline boxes in the 3D
-// render and the loaded-chunks indicator strip (which sits over a corner tile).
+// Show or hide every block visualization together, gated on the "blocks" toggle:
+// the per-chunk outline boxes, the zoom focus-region box, and the loaded-chunks
+// indicator strip (which sits over a corner tile). All are cleared when the
+// toggle is off so nothing overlays the render.
 function applyBlocks() {
   if (!nv) return
   const show = els.blocks.checked
+  const zoom = Number(els.zoom.value) || 1
   nv.lodBoxes =
     show && activeSource && chunkPlan
-      ? computeBlockBoxes(activeSource, chunkPlan, Number(els.zoom.value) || 1)
+      ? computeBlockBoxes(activeSource, chunkPlan, zoom)
+      : null
+  nv.focusBox =
+    show && activeSource && zoom > 1.01
+      ? {
+          ...focusRoi(activeSource, zoom),
+          color: [1, 0.6, 0.1, 1],
+          thickness: 2,
+        }
       : null
   els.chunkStrip.style.display = show ? 'grid' : 'none'
   nv.drawScene()

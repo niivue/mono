@@ -303,9 +303,20 @@
         <input id="window" type="text" value="24,210" />
       </span>
       <span class="control">
+        <label for="zoom">Zoom <span id="zoomVal">1.0x</span></label>
+        <input id="zoom" type="range" min="1" max="8" step="0.1" value="1"
+          title="Zoom the 2D views and restrict the 3D block outlines to the focused region" />
+      </span>
+      <span class="control">
         <label for="explode">
           <input id="explode" type="checkbox" />
           explode
+        </label>
+      </span>
+      <span class="control">
+        <label for="blocks">
+          <input id="blocks" type="checkbox" checked />
+          blocks
         </label>
       </span>
       <button id="reload" type="button">reload</button>

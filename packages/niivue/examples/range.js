@@ -327,7 +327,10 @@ const els = {
   layout: el('layout'),
   colormap: el('colormap'),
   window: el('window'),
+  zoom: el('zoom'),
+  zoomVal: el('zoomVal'),
   explode: el('explode'),
+  blocks: el('blocks'),
   reload: el('reload'),
   canvas: el('nv-canvas'),
   hud: el('hud'),
@@ -1056,6 +1059,118 @@ function createStreamingVolume(source) {
   return vol
 }
 
+// --- zoom + 3D block-outline overlay -----------------------------------------
+
+// Outline color per source LOD level (finest = hot, coarser = cool). range.html
+// streams a single level, so most blocks share a color; sourceLevel is honored
+// when a plan carries it.
+const BLOCK_LEVEL_COLORS = [
+  [1, 0.2, 0.2, 1],
+  [1, 0.6, 0.1, 1],
+  [1, 1, 0.25, 1],
+  [0.35, 1, 0.35, 1],
+  [0.35, 0.7, 1, 1],
+]
+
+// mm extents of the active volume. Matches buildLogicalVolume: voxel centres sit
+// at (i + 0.5) * spacing, so the box spans [-0.5, dim - 0.5] * spacing per axis.
+function volumeExtents(source) {
+  const [sx, sy, sz] = source.spacing
+  const [nx, ny, nz] = source.shape
+  return {
+    min: [-0.5 * sx, -0.5 * sy, -0.5 * sz],
+    max: [(nx - 0.5) * sx, (ny - 0.5) * sy, (nz - 0.5) * sz],
+  }
+}
+
+// The focused sub-box at the current zoom: the central 1/zoom fraction of the
+// volume on each axis (the region the zoomed-in 2D views frame). At zoom 1 this
+// is the whole volume, so nothing is restricted.
+function focusRoi(source, zoom) {
+  const { min, max } = volumeExtents(source)
+  const roiMin = [0, 0, 0]
+  const roiMax = [0, 0, 0]
+  for (let a = 0; a < 3; a++) {
+    const centre = (min[a] + max[a]) / 2
+    const half = (max[a] - min[a]) / 2 / Math.max(1, zoom)
+    roiMin[a] = centre - half
+    roiMax[a] = centre + half
+  }
+  return { min: roiMin, max: roiMax }
+}
+
+function boxesIntersect(aMin, aMax, bMin, bMax) {
+  for (let a = 0; a < 3; a++) {
+    if (aMax[a] < bMin[a] || aMin[a] > bMax[a]) return false
+  }
+  return true
+}
+
+// One outline box per streamed chunk, in mm. When zoomed in, restrict to the
+// chunks intersecting the focus ROI so the outlines mark only the region under
+// inspection instead of covering the whole 3D render.
+function computeBlockBoxes(source, plan, zoom) {
+  if (!source || !plan) return []
+  const { min, max } = volumeExtents(source)
+  const cs = source.shape
+  const roi = zoom > 1.01 ? focusRoi(source, zoom) : null
+  const toMM = (voxel, axis) =>
+    min[axis] + (voxel / cs[axis]) * (max[axis] - min[axis])
+  const boxes = []
+  for (const c of plan.chunks) {
+    const bMin = [
+      toMM(c.voxelOrigin[0], 0),
+      toMM(c.voxelOrigin[1], 1),
+      toMM(c.voxelOrigin[2], 2),
+    ]
+    const bMax = [
+      toMM(c.voxelOrigin[0] + c.voxelDims[0], 0),
+      toMM(c.voxelOrigin[1] + c.voxelDims[1], 1),
+      toMM(c.voxelOrigin[2] + c.voxelDims[2], 2),
+    ]
+    if (roi && !boxesIntersect(bMin, bMax, roi.min, roi.max)) continue
+    const level = c.sourceLevel ?? 0
+    boxes.push({
+      min: bMin,
+      max: bMax,
+      color: BLOCK_LEVEL_COLORS[Math.min(level, BLOCK_LEVEL_COLORS.length - 1)],
+      thickness: level === 0 ? 2 : 1,
+    })
+  }
+  return boxes
+}
+
+// Push the current zoom to the 2D pan/zoom and the 3D render scale, mark the
+// focus ROI in 3D, then refresh the (optionally restricted) block outlines.
+function applyZoom() {
+  if (!nv) return
+  const zoom = Number(els.zoom.value) || 1
+  els.zoomVal.textContent = `${zoom.toFixed(1)}x`
+  nv.pan2Dxyzmm = [0, 0, 0, zoom] // 2D multiplanar: zoom about the centre
+  nv.scaleMultiplier = zoom // 3D render: scale the camera by the same factor
+  if (activeSource) {
+    nv.focusBox =
+      zoom > 1.01
+        ? {
+            ...focusRoi(activeSource, zoom),
+            color: [1, 0.6, 0.1, 1],
+            thickness: 2,
+          }
+        : null
+  }
+  applyBlocks()
+}
+
+// Show or hide the per-chunk outline boxes in the 3D render.
+function applyBlocks() {
+  if (!nv) return
+  nv.lodBoxes =
+    els.blocks.checked && activeSource && chunkPlan
+      ? computeBlockBoxes(activeSource, chunkPlan, Number(els.zoom.value) || 1)
+      : null
+  nv.drawScene()
+}
+
 function renderChunkStrip() {
   const source = activeSource
   if (!source) return
@@ -1178,6 +1293,9 @@ async function reloadVolume(options = {}) {
     }
     await nv.loadVolumes([createStreamingVolume(activeSource)])
     applyLayout()
+    // loadVolumes resets the camera/zoom and drops any prior boxes; reapply the
+    // current zoom, focus ROI, and block outlines for the freshly loaded plan.
+    applyZoom()
     // Give the 3D render a coarse whole-volume floor so regions whose fine
     // chunks have not streamed in (or do not fit the residency budget on a huge
     // level) still show coarse detail instead of rendering blank. Built after
@@ -1229,6 +1347,8 @@ async function main() {
   els.explode.addEventListener('change', () => {
     void reloadVolume()
   })
+  els.zoom.addEventListener('input', applyZoom)
+  els.blocks.addEventListener('change', applyBlocks)
   els.reload.addEventListener('click', () => {
     void reloadVolume({ reloadSource: true })
   })

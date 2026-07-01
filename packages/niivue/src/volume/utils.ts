@@ -59,6 +59,27 @@ export function framesInImage(
   return Math.max(1, Math.floor(byteLength / perFrame))
 }
 
+/**
+ * Reconcile the requested partial-4D frame cap with reality: the number of
+ * frames requested (`limitFrames4D`), the frames actually present in the loaded
+ * buffer (`framesInImg`), and the header's declared total (`nTotalFrame4D`).
+ *
+ * A finite request is floored to an integer >= 1 (a fractional or <1 limit must
+ * not leak a non-integer / zero frame count, which would mis-align the truncation
+ * byte math and the 4D graph / setFrame4D indexing); a non-finite request means
+ * "no cap". The result never exceeds the frames on hand or the header total.
+ */
+export function resolveFrame4DCount(
+  limitFrames4D: number,
+  framesInImg: number,
+  nTotalFrame4D: number,
+): number {
+  const requested = Number.isFinite(limitFrames4D)
+    ? Math.max(1, Math.floor(limitFrames4D))
+    : nTotalFrame4D
+  return Math.min(requested, framesInImg, nTotalFrame4D)
+}
+
 // ============================================================================
 // Data Type Utilities
 // ============================================================================

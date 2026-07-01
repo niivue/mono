@@ -17,6 +17,7 @@ import {
   calMinMax,
   ensureValidNonZero,
   framesInImage,
+  resolveFrame4DCount,
   toTypedViewOrU8,
 } from './utils'
 
@@ -548,13 +549,12 @@ export function nii2volume(
     nVox3D,
     hdr.numBitsPerVoxel / 8,
   )
-  // Apply limitFrames4D: truncate img data if fewer frames requested. Floor the
-  // request — a fractional limit (e.g. 1.5) must not leak a non-integer nFrame4D,
-  // which would mis-align the truncation byte count and the 4D graph/setFrame4D.
-  const nFrame4D = Math.min(
-    Number.isFinite(limitFrames4D)
-      ? Math.max(1, Math.floor(limitFrames4D))
-      : nTotalFrame4D,
+  // Apply limitFrames4D: truncate img data if fewer frames requested. The helper
+  // floors the request and clamps to both the frames on hand and the header total
+  // (a fractional limit like 1.5 must not leak a non-integer nFrame4D, which would
+  // mis-align the truncation byte count and the 4D graph/setFrame4D).
+  const nFrame4D = resolveFrame4DCount(
+    limitFrames4D,
     framesInImg,
     nTotalFrame4D,
   )

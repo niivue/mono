@@ -304,9 +304,15 @@ RAS+value widget.)
   or camera. Serialize full view state and support reload so a researcher can
   save/share "this exact view." ("Save correction patch" is also an obscure label
   for a save-view action.)
-- [ ] **[P2] (S) Persistent, copyable RAS coordinate widget.** `show3Dcrosshair`
-  is off (`NiivueStage.tsx:254`) and the only spatial readout is the transient
-  status bar. Add a copyable coordinate field with go-to.
+- [x] **[P2] (S) Persistent, copyable RAS coordinate widget.** Done: a
+  **Crosshair** section in the Inspect panel (`CrosshairPanel`) that persists the
+  last crosshair position as an anatomical RAS+ readout (`R/A/S` letters),
+  copies it as a signed `x, y, z` mm triplet (clipboard), and offers **go-to** —
+  three R+/A+/S+ mm fields (synced to the current crosshair) + Go that drives
+  `nv.setCrosshairPos` via a one-shot `crosshairTarget` prop on NiivueStage.
+  Verified live: readout/copy/go-to all work; go-to round-trips an interior
+  coordinate exactly and snaps an out-of-range one to the nearest voxel. (The
+  transient status-bar readout stays; `show3Dcrosshair` left off.)
 - [ ] **[P2] (M) Surface affine / qform / sform.** Metadata panels show shape/
   spacing (`App.tsx:1059-1080`, `VolumeFilterPanel.tsx:204-232`) but never the
   affine, qform/sform codes, or orientation string. Add them, plus `mm` units on

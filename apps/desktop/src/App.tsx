@@ -15,6 +15,7 @@ import {
   CircleDot,
   Calculator,
   CheckCircle2,
+  Copy,
   Crosshair,
   Database,
   Eye,
@@ -201,6 +202,12 @@ export function App(): JSX.Element {
   const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
   const [atlasId, setAtlasId] = useState<string | null>(null)
   const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(null)
+  // One-shot crosshair "go-to" request handed to NiivueStage; a fresh object per
+  // request re-fires the move even for a repeated coordinate.
+  const [crosshairTarget, setCrosshairTarget] = useState<{ mm: [number, number, number] } | null>(null)
+  const goToCoordinate = useCallback((x: number, y: number, z: number) => {
+    setCrosshairTarget({ mm: [x, y, z] })
+  }, [])
   const {
     clipPlanes,
     activeClipPlaneId,
@@ -754,6 +761,7 @@ export function App(): JSX.Element {
               activeClipPlaneId={activeClipPlaneId}
               backend={backend}
               clipPlanes={clipPlanes}
+              crosshairTarget={crosshairTarget}
               isActive={mouseContext === 'niivue'}
               item={selected}
               layers={renderLayers}
@@ -880,6 +888,7 @@ export function App(): JSX.Element {
                 />
 
                 <SelectionPanel item={selected} metadataStatus={metadataStatus} />
+                <CrosshairPanel location={locationReadout} onGoTo={goToCoordinate} />
                 <MetadataPanel item={selected} metadata={metadata} status={metadataStatus} />
               </>
             ) : (
@@ -1543,6 +1552,107 @@ function SelectionPanel({
       ) : (
         <p>No volume selected.</p>
       )}
+    </section>
+  )
+}
+
+// Persistent, copyable crosshair coordinate (RAS+ world mm) with go-to. The
+// status-bar readout is transient; this keeps the last crosshair position
+// visible, lets it be copied for notes/scripts, and lets a typed coordinate
+// drive the crosshair (NiiVue reports/consumes mm in RAS+: +X=Right, +Y=Anterior,
+// +Z=Superior).
+function CrosshairPanel({
+  location,
+  onGoTo
+}: {
+  location: NiiVueLocation | null
+  onGoTo: (x: number, y: number, z: number) => void
+}): JSX.Element {
+  const mm = location?.mm
+  const hasLocation = Boolean(mm) && mm!.slice(0, 3).every((value) => Number.isFinite(value))
+  const anatomical = hasLocation ? formatAnatomicalCoordinates(mm!) : null
+  const rasTriplet = hasLocation ? mm!.slice(0, 3).map((value) => Number(value.toFixed(2))).join(', ') : null
+
+  // Go-to fields track the current crosshair (tweak-and-go); they follow the
+  // crosshair when it moves via click/paging.
+  const [x, setX] = useState('')
+  const [y, setY] = useState('')
+  const [z, setZ] = useState('')
+  useEffect(() => {
+    if (!hasLocation) return
+    setX(String(Number(mm![0].toFixed(2))))
+    setY(String(Number(mm![1].toFixed(2))))
+    setZ(String(Number(mm![2].toFixed(2))))
+  }, [mm?.[0], mm?.[1], mm?.[2]])
+
+  const [copied, setCopied] = useState(false)
+  function handleCopy(): void {
+    if (!rasTriplet || !navigator.clipboard) return
+    navigator.clipboard
+      .writeText(rasTriplet)
+      .then(() => {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => undefined)
+  }
+
+  const parsed: [number, number, number] | null = (() => {
+    if (![x, y, z].every((value) => value.trim().length > 0)) return null
+    const values = [x, y, z].map((value) => Number(value))
+    return values.every(Number.isFinite) ? [values[0], values[1], values[2]] : null
+  })()
+
+  function handleGo(): void {
+    if (parsed) onGoTo(parsed[0], parsed[1], parsed[2])
+  }
+
+  return (
+    <section className="nv-readout nv-crosshair-panel">
+      <h2>
+        <Crosshair size={15} />
+        Crosshair
+      </h2>
+      <div className="nv-crosshair-readout">
+        <span className={hasLocation ? '' : 'is-empty'}>{anatomical ?? 'Click or page to place the crosshair'}</span>
+        <button
+          type="button"
+          className="nv-crosshair-copy"
+          disabled={!rasTriplet}
+          onClick={handleCopy}
+          title="Copy as RAS+ mm (x, y, z)"
+          aria-label="Copy coordinate as RAS millimetres"
+        >
+          {copied ? <CheckCircle2 size={13} /> : <Copy size={13} />}
+        </button>
+      </div>
+      <div className="nv-crosshair-goto">
+        {(['R+', 'A+', 'S+'] as const).map((axisLabel, index) => (
+          <label className="nv-field" key={axisLabel}>
+            <span>{axisLabel}</span>
+            <input
+              aria-label={`${axisLabel} millimetres`}
+              className="nv-text-input"
+              inputMode="decimal"
+              onChange={(event) => [setX, setY, setZ][index](event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') handleGo()
+              }}
+              type="number"
+              value={[x, y, z][index]}
+            />
+          </label>
+        ))}
+        <button
+          type="button"
+          className="nv-crosshair-go"
+          disabled={!parsed}
+          onClick={handleGo}
+          title="Move the crosshair to this RAS+ coordinate"
+        >
+          Go
+        </button>
+      </div>
     </section>
   )
 }

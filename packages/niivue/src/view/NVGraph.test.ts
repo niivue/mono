@@ -206,7 +206,7 @@ describe('signal-mode rendering', () => {
   })
 })
 
-describe('missing-data rug (NaN gaps)', () => {
+describe('missing-data rug (NaN markers)', () => {
   // Rug ticks are short VERTICAL lane segments whose bottom sits AT the plot
   // bottom (lane 0) or above it (stacked lanes) — never below. That cleanly
   // separates them from full-height grid verticals (too tall) and from x-axis
@@ -221,8 +221,14 @@ describe('missing-data rug (NaN gaps)', () => {
     )
   }
 
+  function traceLines(lines: LineCall[], pT: number, pH: number): LineCall[] {
+    const ticks = new Set(rugTicks(lines, pT, pH))
+    const maxThick = Math.max(...lines.map((l) => l.thick))
+    return lines.filter((l) => l.thick === maxThick && !ticks.has(l))
+  }
+
   test('drawsATickPerMissingSample', () => {
-    // gaps at x=1 and x=3 -> two rug ticks
+    // missing samples at x=1 and x=3 -> two rug ticks
     const data = signalData([
       { label: 'a', x: [0, 1, 2, 3, 4], y: [1, NaN, 3, NaN, 5] },
     ])
@@ -232,6 +238,44 @@ describe('missing-data rug (NaN gaps)', () => {
     const { lines, buildText, buildLine } = makeStubs()
     buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
     expect(rugTicks(lines, pT, pH).length).toBe(2)
+  })
+
+  test('sampledTraceInterpolatesAcrossMissingSample', () => {
+    const data = signalData([{ label: 'a', x: [0, 1, 2], y: [1, NaN, 3] }])
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const [, pT, , pH] = layout.plotLTWH
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    const ticks = rugTicks(lines, pT, pH)
+    expect(ticks.length).toBe(1)
+    const traces = traceLines(lines, pT, pH)
+    expect(traces.length).toBe(1)
+    expect(Math.min(traces[0].x0, traces[0].x1)).toBeLessThan(ticks[0].x0)
+    expect(Math.max(traces[0].x0, traces[0].x1)).toBeGreaterThan(ticks[0].x0)
+  })
+
+  test('decimatedTraceInterpolatesAcrossMissingRun', () => {
+    const n = 5000
+    const missLo = 2200
+    const missHi = 2600
+    const y = new Float32Array(n).fill(1)
+    for (let i = missLo; i <= missHi; i++) y[i] = Number.NaN
+    const data = signalData([{ label: 'a', x: null, y }])
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const [pL, pT, pW, pH] = layout.plotLTWH
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    expect(rugTicks(lines, pT, pH).length).toBeGreaterThan(0)
+    const missingMidX = pL + ((missLo + missHi) / 2 / (n - 1)) * pW
+    expect(
+      traceLines(lines, pT, pH).some(
+        (l) =>
+          Math.min(l.x0, l.x1) < missingMidX &&
+          Math.max(l.x0, l.x1) > missingMidX,
+      ),
+    ).toBe(true)
   })
 
   test('coincidentGapsStackIntoSeparateLanes', () => {
@@ -548,6 +592,10 @@ describe('signal-mode performance bounds', () => {
     return lines.filter((l) => l.thick === maxThick)
   }
 
+  function nonDegenerate(lines: LineCall[]): LineCall[] {
+    return lines.filter((l) => Math.hypot(l.x1 - l.x0, l.y1 - l.y0) > 1e-6)
+  }
+
   test('denseSeriesDecimatedToPlotWidth', () => {
     const n = 5000
     const y = new Float32Array(n)
@@ -563,6 +611,19 @@ describe('signal-mode performance bounds', () => {
     // never ~5000 segments
     expect(segs.length).toBeLessThanOrEqual(2 * (Math.ceil(pW) + 1))
     expect(segs.length).toBeLessThan(n)
+  })
+
+  test('decimatedFlatSeriesSkipsDegenerateTraceSegments', () => {
+    const n = 5000
+    const y = new Float32Array(n).fill(1)
+    const data = signalData([{ label: 'flat', x: null, y }])
+    const layout = computeGraphLayout(data, W, H, 0, 1)
+    if (!layout) throw new Error('no layout')
+    const { lines, buildText, buildLine } = makeStubs()
+    buildGraphElements(data, layout, buildText, buildLine, [0, 0, 0])
+    const segs = dataLines(lines)
+    expect(segs.length).toBeGreaterThan(0)
+    expect(nonDegenerate(segs).length).toBe(segs.length)
   })
 
   test('legendCappedWithMoreRow', () => {

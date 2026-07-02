@@ -21,6 +21,10 @@ interface NiivueStageProps {
   isActive: boolean
   renderWheelMode: 'zoom' | 'clip-plane'
   viewMode: ViewModeId
+  // A one-shot request to move the crosshair to an absolute RAS+ mm position.
+  // A fresh object identity re-triggers the move (so going to the same
+  // coordinate twice still fires).
+  crosshairTarget?: { mm: [number, number, number] } | null
   onClipPlaneDepthChange: (planeId: string, depth: number) => void
   onLocationChange?: (location: NiiVueLocation | null) => void
   // Reports the intensity window NiiVue actually applied per layer (keyed by
@@ -76,6 +80,9 @@ interface NiiVueLike {
     }
   ): Promise<unknown>
   moveCrosshairInVox?(di: number, dj: number, dk: number): void
+  // Move the crosshair to an absolute RAS+ world position (mm). Fires
+  // locationChange, so the readout updates like a click.
+  setCrosshairPos?(pos: [number, number, number]): void
   // Slice layout: SLICE_TYPE.{AXIAL:0, CORONAL:1, SAGITTAL:2, MULTIPLANAR:3, RENDER:4}.
   sliceType?: number
   isOrientationTextVisible?: boolean
@@ -243,6 +250,7 @@ export function NiivueStage({
   isActive,
   renderWheelMode,
   viewMode,
+  crosshairTarget,
   onClipPlaneDepthChange,
   onLocationChange,
   onResolvedWindows,
@@ -457,6 +465,15 @@ export function NiivueStage({
     // sliceType if the view mode was changed mid-load (nvRef was still null when
     // this effect first ran), so re-apply once the instance/volumes exist.
   }, [viewMode, primaryItem, loadedVersion])
+
+  // Go-to: move the crosshair to a requested RAS+ mm position. A fresh
+  // crosshairTarget object identity (one per request) re-fires this.
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv || !crosshairTarget || !nv.setCrosshairPos) return
+    nv.setCrosshairPos(crosshairTarget.mm)
+    nv.drawScene()
+  }, [crosshairTarget])
 
   useEffect(() => {
     const stage = stageRef.current

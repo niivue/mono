@@ -154,6 +154,8 @@ nv1.drawOpacity = 0.6
 nv1.drawIsFillOverwriting = overwriteCheck.checked
 nv1.drawClickToSegmentTolerance = parseInt(wandTol.value, 10) / 100
 nv1.drawClickToSegmentIs2D = wand2dCheck.checked
+// Show vector annotations in the 3D render; they track their exploded block.
+nv1.annotationIsVisibleIn3D = true
 applyPen()
 nv1.drawPenSize = parseInt(penSize.value, 10)
 applyExplode()

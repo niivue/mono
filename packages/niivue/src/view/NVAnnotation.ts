@@ -16,6 +16,10 @@ import type {
 } from '@/NVTypes'
 import type { BuildTextFn, GlyphBatch } from '@/view/NVFont'
 import { projectMMToCanvas } from '@/view/sliceUtils'
+import {
+  chunkExplodeEnabled,
+  explodeOffsetMMAtFrac,
+} from '@/volume/ChunkExplode'
 import type { BuildLineFn, LineData } from './NVLine'
 import type { SliceTile } from './NVSliceLayout'
 
@@ -207,6 +211,23 @@ export function buildAnnotation3DRenderData(
   const frac2mm = model.tex2mm
   const mm2tex = model.mm2tex
 
+  // When the background volume is a chunked, exploded plan, shift each vertex by
+  // the explode offset of the block that contains it (its un-exploded position),
+  // so the vector geometry tracks its block as the volume explodes — the same
+  // per-block offset the volume shader and the 3D crosshair use.
+  const bgVol = model.volumes[0]
+  const explodePlan =
+    bgVol?.chunkPlan &&
+    bgVol.matRAS &&
+    mm2tex &&
+    chunkExplodeEnabled(bgVol.chunkExplode)
+      ? {
+          plan: bgVol.chunkPlan,
+          explode: bgVol.chunkExplode,
+          matRAS: bgVol.matRAS,
+        }
+      : null
+
   const allVerts: number[] = []
   const allIndices: number[] = []
   let vertexOffset = 0
@@ -246,6 +267,22 @@ export function buildAnnotation3DRenderData(
           planeNormal && planePoint
             ? slice2DToMMOnPlane(pt, ann.sliceType, planeNormal, planePoint)
             : slice2DToMM(pt, ann.slicePosition, ann.sliceType)
+        if (explodePlan && mm2tex) {
+          // mm -> volume texture fraction -> per-block explode offset (mm).
+          _anchorSrc[0] = mm[0]
+          _anchorSrc[1] = mm[1]
+          _anchorSrc[2] = mm[2]
+          vec4.transformMat4(_anchorTmp, _anchorSrc, mm2tex)
+          const off = explodeOffsetMMAtFrac(
+            explodePlan.plan,
+            explodePlan.explode,
+            explodePlan.matRAS,
+            [_anchorTmp[0], _anchorTmp[1], _anchorTmp[2]],
+          )
+          mm[0] += off[0]
+          mm[1] += off[1]
+          mm[2] += off[2]
+        }
         allVerts.push(mm[0], mm[1], mm[2], fr, fg, fb, fa)
       }
       for (let i = 0; i < indices.length; i++) {

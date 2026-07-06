@@ -191,6 +191,7 @@ export function App(): JSX.Element {
     items,
     manifest,
     openLocalDataset,
+    openLocalVolumeFile,
     openRecentDataset,
     refreshDesktopManifest,
     refreshDesktopManifestData,
@@ -781,6 +782,19 @@ export function App(): JSX.Element {
               <div className="nv-recent-menu" role="menu">
                 <button
                   className="nv-recent-item nv-recent-open"
+                  disabled={isOpeningDataset}
+                  onClick={() => {
+                    setIsRecentMenuOpen(false)
+                    void openLocalVolumeFile()
+                  }}
+                  type="button"
+                  role="menuitem"
+                >
+                  <FileJson size={14} />
+                  <span className="nv-recent-item-name">Open NIfTI file…</span>
+                </button>
+                <button
+                  className="nv-recent-item nv-recent-open nv-desktop-only"
                   disabled={isOpeningDataset}
                   onClick={() => {
                     setIsRecentMenuOpen(false)

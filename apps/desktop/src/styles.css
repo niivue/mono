@@ -2464,9 +2464,27 @@ button {
     padding-right: 10px;
     padding-left: 10px;
   }
+  /* NB: don't set overflow-x here — it forces overflow-y to auto too (CSS
+     spec), which clips the Datasets dropdown that hangs below the toolbar.
+     The brand text + tool-button labels are hidden above, so the icons fit. */
   .nv-toolbar {
     gap: 4px;
-    overflow-x: auto;
+  }
+
+  /* Drop the menu as a full-width sheet under the topbar — anchoring it to the
+     toolbar button ran its left edge off a narrow phone. */
+  .nv-recent-menu {
+    position: fixed;
+    top: 66px;
+    right: 10px;
+    left: 10px;
+    min-width: 0;
+    max-width: none;
+    max-height: 60vh;
+  }
+
+  .nv-desktop-only {
+    display: none;
   }
 }
 

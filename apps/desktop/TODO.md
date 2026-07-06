@@ -64,9 +64,18 @@ still the separate dataset-acquisition item below.
   suspend when the app backgrounds, so re-bind/re-check the server on foreground
   (or lazily on next request). Keep desktop on the HTTP server. Downgraded from L
   to M and from "rewrite" to "verify + lifecycle hardening."
-- [ ] **[P1] (M) Dataset acquisition on mobile.** iOS sandbox needs document-
-  picker URLs / security-scoped bookmarks, not arbitrary `canonicalize()` paths.
-  Abstract "pick/open dataset".
+- [~] **[P1] (M) Dataset acquisition on mobile — file picker works (2026-07-06).**
+  "Open NIfTI file…" (Datasets menu) fires the iOS document picker and opens the
+  picked file as a single-volume dataset. Two fixes made it work: (1)
+  `open_dataset_root` now accepts a single `.nii/.nii.gz` file (parent = dataset
+  root), and (2) `normalize_local_path` in `lib.rs` strips the `file://` scheme +
+  percent-decodes the URL the picker returns (Tauri copies the picked file into
+  the app Inbox, so **no** security-scoped access issue — the earlier worry). The
+  directory picker is hidden on mobile (`nv-desktop-only`) — iOS has no real
+  folder-open. Verified on the simulator: picked a T1 → rendered. Remaining:
+  **security-scoped bookmarks** for *persistent* re-open across launches (the
+  Inbox copy is per-pick/ephemeral), and picking a whole BIDS dataset (vs. one
+  file) if wanted.
 - [ ] **[P2] (M) niimath via WASM on mobile/web.** Native sidecar is desktop-only
   (`src-tauri/src/niimath.rs`). Wire the niimath WASM build behind
   `src/domain/niimath.ts` so the Operations feature works cross-platform.

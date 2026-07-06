@@ -482,12 +482,22 @@ pub fn working_derivatives_dir() -> PathBuf {
 pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Result<usize, String> {
     let root = fs::canonicalize(root)
         .map_err(|error| format!("open_dataset_root: {}: {error}", root.display()))?;
-    if !root.is_dir() {
+    // Accept either a dataset directory or a single NIfTI file (the iOS document
+    // picker hands back one file). A file opens as a single-volume dataset rooted
+    // at its parent directory.
+    let is_file_source = root.is_file() && is_nifti_path(&root);
+    if !root.is_dir() && !is_file_source {
         return Err(format!(
-            "open_dataset_root: not a directory: {}",
+            "open_dataset_root: not a directory or NIfTI file: {}",
             root.display()
         ));
     }
+    // Directory for cache keys / sidecar sweep / derivatives — a file's parent.
+    let dataset_root = if is_file_source {
+        root.parent().map(|parent| parent.to_path_buf()).unwrap_or_else(|| root.clone())
+    } else {
+        root.clone()
+    };
 
     let mut volumes = discover_volumes_in_root(&root, max_volume_count());
     if volumes.is_empty() {
@@ -505,13 +515,13 @@ pub fn open_dataset_root(handle: &ServerHandle, root: &std::path::Path) -> Resul
             root.display()
         ));
     }
-    append_working_derivatives(&mut volumes, Some(&root));
+    append_working_derivatives(&mut volumes, Some(&dataset_root));
     let volume_count = volumes.len();
     let warm_volumes = volumes.clone();
-    let warm_root = Some(root.clone());
+    let warm_root = Some(dataset_root.clone());
 
     *lock_recover(&handle.volumes) = volumes;
-    *lock_recover(&handle.dataset_root) = Some(root);
+    *lock_recover(&handle.dataset_root) = Some(dataset_root);
     lock_recover(&handle.preview_cache).clear();
     lock_recover(&handle.decoded_level_cache).clear();
 

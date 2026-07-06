@@ -107,10 +107,39 @@ async fn open_dataset_path(
     state: tauri::State<'_, NeuroVueState>,
     path: String,
 ) -> Result<DatasetOpenResult, String> {
+    let path = normalize_local_path(&path);
     let server = state.server.clone();
     tauri::async_runtime::spawn_blocking(move || open_dataset_at_path(&server, Path::new(&path)))
         .await
         .map_err(|error| format!("open_dataset_path: join error: {error}"))?
+}
+
+/// The iOS document picker hands back a `file://` URL (Tauri copies the picked
+/// file into the app's Inbox first), so convert it to a plain, percent-decoded
+/// filesystem path. Desktop paths have no scheme, so this is a no-op there.
+fn normalize_local_path(raw: &str) -> String {
+    let without_scheme = raw.strip_prefix("file://").unwrap_or(raw);
+    percent_decode(without_scheme)
+}
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[tauri::command]
@@ -118,6 +147,7 @@ async fn add_overlay_volume_path(
     state: tauri::State<'_, NeuroVueState>,
     path: String,
 ) -> Result<OverlayAddResult, String> {
+    let path = normalize_local_path(&path);
     let server = state.server.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let registered = volumetric_server::register_overlay_volume(&server, Path::new(&path))?;

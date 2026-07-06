@@ -8,6 +8,7 @@ import {
   drawPenFilled,
   drawPoint,
   drawSphere,
+  floodFill3D,
   isSamePoint,
 } from '@/drawing/penTool'
 import { computeSlicePointerEvent } from '@/extension/context'
@@ -234,18 +235,73 @@ function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
   }
 }
 
+// Paint a 3D ball of `radius` at every voxel on the segment from `a` to `b`, so
+// a fast drag leaves a continuous tube instead of disconnected stamps. Steps at
+// ~1 voxel spacing along the longest axis; a single point (a===b) paints once.
+function drawSphereSegment(
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  radius: number,
+  penValue: number,
+  drawBitmap: Uint8Array,
+  dims: number[],
+  penOverwrites: boolean,
+): void {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  const dz = b[2] - a[2]
+  const steps = Math.max(
+    1,
+    Math.round(Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz))),
+  )
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps
+    drawSphere({
+      x: Math.round(a[0] + dx * t),
+      y: Math.round(a[1] + dy * t),
+      z: Math.round(a[2] + dz * t),
+      radius,
+      penValue,
+      drawBitmap,
+      dims,
+      penOverwrites,
+    })
+  }
+}
+
 // Paint the exploded block under the cursor on the 3D render tile. Builds the
 // render tile's MVP exactly as depthPick does, unprojects the click to a world
 // ray (in vox2mm mm-space), CPU-ray-casts the exploded chunk AABBs to find the
-// block + voxel, then paints a 3D ball there. Refreshes via the incremental
-// drawing flush so only the touched chunk re-uploads.
-function draw3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): void {
+// block + voxel, then paints a 3D ball there. On a drag continuation it connects
+// the new voxel to the previous one (drawSphereSegment) so pen strokes and the
+// eraser leave no gaps. `isStrokeStart` gates the undo snapshot so a whole drag
+// is one undo step. Refreshes via the incremental drawing flush so only the
+// touched chunk re-uploads. Returns the painted voxel (null if the ray missed).
+interface ExplodedDrawPick {
+  voxel: [number, number, number]
+  drawingVol: NVImage
+  // Predicate over RAS voxel coords: true for visible tissue (source intensity
+  // above the transparency threshold). Reused by the 3D flood fill to bound the
+  // region. When the volume has no readable data it is always-true (paint/fill
+  // anywhere in bounds).
+  keep: (x: number, y: number, z: number) => boolean
+}
+
+// Shared pick for 3D drawing on exploded blocks: builds the render tile's MVP
+// (as depthPick does), unprojects the cursor to a world ray in vox2mm mm-space,
+// CPU-ray-casts the exploded chunk AABBs restricted to the clip-visible set, and
+// returns the entered voxel plus a visible-tissue predicate. Null if the ray
+// misses every block or there is no drawing volume.
+function pickExplodedDraw(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+): ExplodedDrawPick | null {
   const hit = ctrl.activeTileHit
   const plan = vol.chunkPlan
-  if (!hit || !plan) return
+  if (!hit || !plan || !ctrl.model.drawingVolume) return null
   const tile = ctrl.view?.screenSlices[hit.tileIndex]
   const ltwh = tile?.leftTopWidthHeight
-  if (!ltwh) return
+  if (!ltwh) return null
   const md = ctrl.model
   const mvp = NVTransforms.calculateMvpMatrix(
     ltwh,
@@ -313,9 +369,19 @@ function draw3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): void {
     [dx, dy, dz],
     { allowed: visible, clipPlanes, isCutaway, sample, threshold },
   )
-  if (!picked || !ctrl.model.drawingVolume) return
-  const drawingVol = ctrl.model.drawingVolume as NVImage
-  // Undo snapshot before the stroke (matches the 2D draw path).
+  if (!picked) return null
+  const keep = sample
+    ? (x: number, y: number, z: number): boolean => sample(x, y, z) > threshold
+    : (): boolean => true
+  return {
+    voxel: picked.voxel,
+    drawingVol: ctrl.model.drawingVolume as NVImage,
+    keep,
+  }
+}
+
+// Snapshot the drawing bitmap for undo once per stroke (matches the 2D path).
+function snapshot3DUndo(ctrl: NiiVueGPU, drawingVol: NVImage): void {
   const undoResult = addUndoBitmap({
     drawBitmap: getDrawingBitmap(drawingVol),
     drawUndoBitmaps: ctrl.drawUndoBitmaps,
@@ -326,25 +392,78 @@ function draw3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): void {
   ctrl.drawUndoBitmaps = undoResult.drawUndoBitmaps
   ctrl.currentDrawUndoBitmap = undoResult.currentDrawUndoBitmap
   if (undoResult.drawBitmap) drawingVol.img = undoResult.drawBitmap
+}
+
+// Paint the exploded block under the cursor on the 3D render tile with a 3D
+// ball. On a drag continuation it connects the new voxel to the previous one
+// (drawSphereSegment) so pen strokes and the eraser leave no gaps.
+// `isStrokeStart` gates the undo snapshot so a whole drag is one undo step.
+// Refreshes via the incremental drawing flush; returns the painted voxel (null
+// if the ray missed).
+function draw3DOnExplodedBlock(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+  isStrokeStart: boolean,
+): [number, number, number] | null {
+  const pick = pickExplodedDraw(ctrl, vol)
+  if (!pick) return null
+  const { voxel, drawingVol } = pick
+  if (isStrokeStart) snapshot3DUndo(ctrl, drawingVol)
   const radius = Math.max(0, Math.floor(ctrl.model.draw.penSize / 2))
-  drawSphere({
-    x: picked.voxel[0],
-    y: picked.voxel[1],
-    z: picked.voxel[2],
+  // Continue from the previous voxel on a drag so the stroke is a connected
+  // tube; a fresh stamp (or a stroke start) paints just the picked voxel.
+  const from =
+    !isStrokeStart && ctrl._draw3DLastVoxel ? ctrl._draw3DLastVoxel : voxel
+  drawSphereSegment(
+    from,
+    voxel,
     radius,
-    penValue: ctrl.model.draw.penValue,
-    drawBitmap: getDrawingBitmap(drawingVol),
-    dims: vol.dimsRAS as number[],
-    penOverwrites: ctrl.model.draw.isFillOverwriting,
-  })
-  ctrl.markDrawDirty(
-    picked.voxel[0],
-    picked.voxel[1],
-    picked.voxel[2],
-    ctrl.model.draw.penSize,
+    ctrl.model.draw.penValue,
+    getDrawingBitmap(drawingVol),
+    vol.dimsRAS as number[],
+    ctrl.model.draw.isFillOverwriting,
   )
+  // Mark both segment endpoints so the incremental flush covers the tube.
+  ctrl.markDrawDirty(from[0], from[1], from[2], ctrl.model.draw.penSize)
+  ctrl.markDrawDirty(voxel[0], voxel[1], voxel[2], ctrl.model.draw.penSize)
   ctrl.refreshDrawing()
   ctrl.emit('drawingChanged', { action: 'stroke' })
+  return voxel
+}
+
+// 3D flood fill on an exploded block (fill mode): a right-click seeds a 3D
+// region-grow at the picked voxel, filling the connected visible-tissue blob
+// (6-connected, bounded by the same threshold the pick uses) with the pen value.
+// One undo step; refreshes only the touched region. Returns true if it ran.
+function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
+  const pick = pickExplodedDraw(ctrl, vol)
+  if (!pick) return false
+  const { voxel, drawingVol, keep } = pick
+  snapshot3DUndo(ctrl, drawingVol)
+  const dims = vol.dimsRAS as number[]
+  // Cap the fill so a click on a huge connected structure can't run unbounded;
+  // an eraser fill (penValue 0) is uncapped-in-spirit but still bounded by the
+  // visited set. 4M voxels is generous for a single anatomical blob.
+  const maxVoxels = Math.min(dims[1] * dims[2] * dims[3], 4_000_000)
+  const result = floodFill3D({
+    seed: voxel,
+    drawBitmap: getDrawingBitmap(drawingVol),
+    dims,
+    penValue: ctrl.model.draw.penValue,
+    keep,
+    fillOverwrites: ctrl.model.draw.isFillOverwriting,
+    maxVoxels,
+  })
+  if (result.hitCap) {
+    log.warn(`3D flood fill stopped at the ${maxVoxels}-voxel cap`)
+  }
+  if (result.filled === 0) return true
+  // Mark the fill's AABB corners so the incremental flush covers the region.
+  ctrl.markDrawDirty(result.min[0], result.min[1], result.min[2], 1)
+  ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
+  ctrl.refreshDrawing()
+  ctrl.emit('drawingChanged', { action: 'stroke' })
+  return true
 }
 
 export function initInteraction(ctrl: NiiVueGPU): void {
@@ -408,7 +527,22 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         drawVol.chunkPlan &&
         chunkExplodeEnabled(drawVol.chunkExplode)
       ) {
-        draw3DOnExplodedBlock(ctrl, drawVol)
+        // Fill mode: a single right-click floods the connected tissue blob at
+        // the picked voxel (3D region-grow) — no drag stroke.
+        if (ctrl.drawPenFilled) {
+          floodFill3DOnExplodedBlock(ctrl, drawVol)
+          return
+        }
+        const painted = draw3DOnExplodedBlock(ctrl, drawVol, true)
+        // Begin a continuous 3D stroke: capture the pointer and mark the drag as
+        // a 3D-draw so pointermove paints instead of rotating the clip plane.
+        ctrl._draw3DActive = true
+        ctrl._draw3DLastVoxel = painted
+        ctrl.isDragging = true
+        ctrl.activeButton = evt.button
+        ctrl.lastPointerX = evt.clientX
+        ctrl.lastPointerY = evt.clientY
+        ctrl.canvas?.setPointerCapture(evt.pointerId)
         return
       }
     }
@@ -824,6 +958,9 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
       DragModes.handleDragRelease(ctrl)
     }
+    // End a 3D exploded-block stroke.
+    ctrl._draw3DActive = false
+    ctrl._draw3DLastVoxel = null
     ctrl.isDragging = false
     ctrl.activeTileHit = null
     const evt = e as PointerEvent
@@ -854,6 +991,8 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
       DragModes.handleDragRelease(ctrl)
     }
+    ctrl._draw3DActive = false
+    ctrl._draw3DLastVoxel = null
     ctrl.isDragging = false
     ctrl.activeTileHit = null
     try {
@@ -913,6 +1052,23 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (deltaX === 0 && deltaY === 0) return
     ctrl.lastPointerX = evt.clientX
     ctrl.lastPointerY = evt.clientY
+    // 3D drawing drag on exploded blocks: re-hit-test at the current pointer and
+    // paint (pen or eraser) the block the ray now hits, connecting to the last
+    // painted voxel. Runs before the render-tile clip-plane branch so a 3D-draw
+    // drag paints instead of rotating the clip plane.
+    if (ctrl._draw3DActive && ctrl.model.draw.isEnabled) {
+      const drawVol = ctrl.model.getVolumes()[0]
+      const moveHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+      if (moveHit && drawVol) {
+        const tileHit = ctrl.view?.hitTest(moveHit[0], moveHit[1]) ?? null
+        if (tileHit?.isRender) {
+          ctrl.activeTileHit = tileHit
+          const painted = draw3DOnExplodedBlock(ctrl, drawVol, false)
+          if (painted) ctrl._draw3DLastVoxel = painted
+        }
+      }
+      return
+    }
     // Drawing drag: paint along stroke
     if (
       ctrl.model.draw.isEnabled &&

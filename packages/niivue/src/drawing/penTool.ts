@@ -109,6 +109,93 @@ export function drawSphere(params: DrawSphereParams): void {
   }
 }
 
+export interface FloodFill3DParams {
+  seed: readonly [number, number, number]
+  drawBitmap: Uint8Array
+  dims: number[] // NIfTI-style [ndim, dimX, dimY, dimZ]
+  penValue: number
+  // Returns true for a voxel that belongs to the region being filled (e.g. its
+  // source intensity is above the visible-tissue threshold). The seed must pass
+  // it too or nothing is filled.
+  keep: (x: number, y: number, z: number) => boolean
+  // When false, do not repaint already-nonzero draw voxels (unless erasing).
+  fillOverwrites: boolean
+  // Safety cap so a fill over a huge connected region can't run unbounded.
+  maxVoxels?: number
+}
+
+export interface FloodFill3DResult {
+  filled: number
+  min: [number, number, number]
+  max: [number, number, number]
+  hitCap: boolean
+}
+
+/**
+ * 3D region-grow flood fill for drawing on exploded blocks (no slice plane).
+ * Seeded at `seed`, grows over 6-connected voxels for which `keep` is true and
+ * paints them `penValue`. Honors `fillOverwrites` (skip already-painted voxels
+ * when false and not erasing) and stops at `maxVoxels`. Returns the painted-voxel
+ * count and inclusive AABB (for the incremental drawing flush); `filled` is 0 and
+ * the AABB collapses to the seed when the seed itself fails `keep`.
+ */
+export function floodFill3D(params: FloodFill3DParams): FloodFill3DResult {
+  const { seed, drawBitmap, dims, penValue, keep, fillOverwrites } = params
+  const dx = dims[1]
+  const dy = dims[2]
+  const dz = dims[3]
+  const cap = params.maxVoxels ?? dx * dy * dz
+  const sx = Math.round(seed[0])
+  const sy = Math.round(seed[1])
+  const sz = Math.round(seed[2])
+  const min: [number, number, number] = [sx, sy, sz]
+  const max: [number, number, number] = [sx, sy, sz]
+  const inBounds = (x: number, y: number, z: number): boolean =>
+    x >= 0 && y >= 0 && z >= 0 && x < dx && y < dy && z < dz
+  if (!inBounds(sx, sy, sz) || !keep(sx, sy, sz)) {
+    return { filled: 0, min, max, hitCap: false }
+  }
+  const skipOverwrite = fillOverwrites === false && penValue !== 0
+  // Visited marks prevent re-enqueuing; separate from the draw bitmap so an
+  // eraser fill (penValue 0) still terminates.
+  const visited = new Uint8Array(dx * dy * dz)
+  const stack: number[] = [sx, sy, sz]
+  let filled = 0
+  let hitCap = false
+  while (stack.length > 0) {
+    const z = stack.pop() as number
+    const y = stack.pop() as number
+    const x = stack.pop() as number
+    const flat = voxelIndex(x, y, z, dx, dy)
+    if (visited[flat]) continue
+    visited[flat] = 1
+    if (!keep(x, y, z)) continue
+    if (!(skipOverwrite && drawBitmap[flat] !== 0)) {
+      // Check the cap before painting so exhausting the region exactly at the
+      // cap is a clean finish, not a spurious early stop.
+      if (filled >= cap) {
+        hitCap = true
+        break
+      }
+      drawBitmap[flat] = penValue
+      filled++
+      if (x < min[0]) min[0] = x
+      if (y < min[1]) min[1] = y
+      if (z < min[2]) min[2] = z
+      if (x > max[0]) max[0] = x
+      if (y > max[1]) max[1] = y
+      if (z > max[2]) max[2] = z
+    }
+    if (x + 1 < dx) stack.push(x + 1, y, z)
+    if (x - 1 >= 0) stack.push(x - 1, y, z)
+    if (y + 1 < dy) stack.push(x, y + 1, z)
+    if (y - 1 >= 0) stack.push(x, y - 1, z)
+    if (z + 1 < dz) stack.push(x, y, z + 1)
+    if (z - 1 >= 0) stack.push(x, y, z - 1)
+  }
+  return { filled, min, max, hitCap }
+}
+
 export function drawPoint(params: DrawPointParams): void {
   const {
     x: inputX,

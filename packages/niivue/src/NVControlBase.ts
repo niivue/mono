@@ -302,6 +302,10 @@ export default class NiiVueGPU extends EventTarget {
   _drawPenLocation: number[] = [NaN, NaN, NaN]
   _drawPenAxCorSag = -1
   _drawPenFillPts: number[][] = []
+  // 3D drawing on exploded blocks: active during a right-button stroke on the
+  // render tile, with the last painted voxel so drag motion connects (no gaps).
+  _draw3DActive = false
+  _draw3DLastVoxel: [number, number, number] | null = null
   _drawLut: LUT | null = null
   _drawingDirty = false
   // Inclusive voxel AABB of pen strokes since the last drawing flush. When set

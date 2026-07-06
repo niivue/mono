@@ -4,6 +4,7 @@ import {
   drawLine,
   drawPoint,
   drawSphere,
+  floodFill3D,
   floodFillSection,
   getSliceIndices,
   isPenLocationValid,
@@ -87,6 +88,111 @@ describe('drawSphere', () => {
     })
     expect(bmp[idx(2, 2, 2)]).toBe(9) // preserved
     expect(bmp[idx(1, 2, 2)]).toBe(3) // empty neighbour painted
+  })
+})
+
+// ---------------------------------------------------------------------------
+// floodFill3D
+// ---------------------------------------------------------------------------
+describe('floodFill3D', () => {
+  const dims = [3, 5, 5, 5] // [ndim, dx, dy, dz]
+  const idx = (x: number, y: number, z: number) => voxelIndex(x, y, z, 5, 5)
+
+  test('fills the whole volume when keep is always true', () => {
+    const bmp = new Uint8Array(125)
+    const res = floodFill3D({
+      seed: [2, 2, 2],
+      drawBitmap: bmp,
+      dims,
+      penValue: 4,
+      keep: () => true,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(125)
+    expect(res.hitCap).toBe(false)
+    expect(res.min).toEqual([0, 0, 0])
+    expect(res.max).toEqual([4, 4, 4])
+    expect(bmp.every((v) => v === 4)).toBe(true)
+  })
+
+  test('grows only the 6-connected region that passes keep', () => {
+    const bmp = new Uint8Array(125)
+    // Region: the x=0 plane is "tissue"; a lone voxel at x=4 is isolated.
+    const keep = (x: number, _y: number, _z: number) => x === 0 || x === 4
+    const res = floodFill3D({
+      seed: [0, 0, 0],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      keep,
+      fillOverwrites: true,
+    })
+    // Only the connected x=0 plane (25 voxels) is filled; the x=4 island is not
+    // reachable across the x=1..3 gap.
+    expect(res.filled).toBe(25)
+    expect(bmp[idx(0, 3, 4)]).toBe(1)
+    expect(bmp[idx(4, 0, 0)]).toBe(0)
+    expect(res.min).toEqual([0, 0, 0])
+    expect(res.max).toEqual([0, 4, 4])
+  })
+
+  test('returns filled 0 when the seed fails keep', () => {
+    const bmp = new Uint8Array(125)
+    const res = floodFill3D({
+      seed: [2, 2, 2],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      keep: () => false,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(0)
+    expect(bmp.every((v) => v === 0)).toBe(true)
+  })
+
+  test('honors maxVoxels cap and reports hitCap', () => {
+    const bmp = new Uint8Array(125)
+    const res = floodFill3D({
+      seed: [2, 2, 2],
+      drawBitmap: bmp,
+      dims,
+      penValue: 2,
+      keep: () => true,
+      fillOverwrites: true,
+      maxVoxels: 10,
+    })
+    expect(res.filled).toBe(10)
+    expect(res.hitCap).toBe(true)
+  })
+
+  test('fillOverwrites=false preserves existing nonzero draw voxels', () => {
+    const bmp = new Uint8Array(125)
+    bmp[idx(2, 2, 2)] = 9
+    const res = floodFill3D({
+      seed: [0, 0, 0],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      keep: () => true,
+      fillOverwrites: false,
+    })
+    // Every voxel except the preserved one gets painted.
+    expect(bmp[idx(2, 2, 2)]).toBe(9)
+    expect(res.filled).toBe(124)
+  })
+
+  test('eraser fill (penValue 0) clears a connected painted region', () => {
+    const bmp = new Uint8Array(125).fill(5)
+    const res = floodFill3D({
+      seed: [2, 2, 2],
+      drawBitmap: bmp,
+      dims,
+      penValue: 0,
+      keep: () => true,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(125)
+    expect(bmp.every((v) => v === 0)).toBe(true)
   })
 })
 

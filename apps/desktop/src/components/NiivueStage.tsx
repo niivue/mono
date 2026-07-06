@@ -267,6 +267,9 @@ export function NiivueStage({
   // re-runs once NiiVue has computed per-volume stats (robust range / peak) —
   // needed to seed a stat overlay's default threshold from its data.
   const [loadedVersion, setLoadedVersion] = useState(0)
+  // Current crosshair location (mirrored from NiiVue) — drives the touch slice
+  // slider so it stays in sync with clicks/paging from any source.
+  const [location, setLocation] = useState<NiiVueLocation | null>(null)
   const primaryItem = layers[0]?.item ?? item
   const isRenderMode = viewMode === 'render'
   const currentViewLabel = (VIEW_MODES.find((mode) => mode.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]).label
@@ -341,9 +344,11 @@ export function NiivueStage({
         nvRef.current = nv
         await nv.attachToCanvas(canvas)
         if (cancelled) return
-        if (onLocationChange && nv.addEventListener) {
+        if (nv.addEventListener) {
           locationListener = (event) => {
-            if (!cancelled) onLocationChange(event.detail)
+            if (cancelled) return
+            setLocation(event.detail)
+            onLocationChange?.(event.detail)
           }
           nv.addEventListener('locationChange', locationListener)
         }
@@ -610,6 +615,28 @@ export function NiivueStage({
     zoomRenderWithWheel(nv, event.deltaY)
   }
 
+  // Touch slice paging: a slider that pages the through-plane voxel in the
+  // single-plane 2D modes. NiiVue's native touch moves the crosshair in-plane
+  // and pinch-zooms, but has no through-plane paging (that was wheel-only), so
+  // on a phone this slider is the only way to change slice.
+  const sliceAxis = SLICE_AXIS_INDEX[viewMode]
+  const sliceDim = sliceAxis !== undefined && primaryItem ? primaryItem.shape[sliceAxis] ?? 0 : 0
+  const sliceMax = Math.max(0, sliceDim - 1)
+  const currentVox = sliceAxis !== undefined ? location?.vox?.[sliceAxis] : undefined
+  const sliceValue =
+    typeof currentVox === 'number' ? clamp(Math.round(currentVox), 0, sliceMax) : Math.floor(sliceMax / 2)
+  const showSliceSlider = sliceAxis !== undefined && !!primaryItem && sliceMax > 0
+
+  function pageToSlice(target: number): void {
+    const nv = nvRef.current
+    if (sliceAxis === undefined || !nv?.moveCrosshairInVox) return
+    const delta = clamp(Math.round(target), 0, sliceMax) - sliceValue
+    if (delta === 0) return
+    const step: [number, number, number] = [0, 0, 0]
+    step[sliceAxis] = delta
+    nv.moveCrosshairInVox(...step)
+  }
+
   return (
     <div
       className="nv-render-stage"
@@ -643,6 +670,22 @@ export function NiivueStage({
           </button>
         ))}
       </div>
+      {showSliceSlider ? (
+        <div className="nv-slice-slider" role="group" aria-label="Slice position">
+          <input
+            aria-label={`${currentViewLabel} slice`}
+            max={sliceMax}
+            min={0}
+            step={1}
+            type="range"
+            value={sliceValue}
+            onChange={(event) => pageToSlice(Number(event.target.value))}
+          />
+          <span className="nv-slice-slider-value">
+            {sliceValue + 1} / {sliceMax + 1}
+          </span>
+        </div>
+      ) : null}
       <div className="nv-render-status" role="status" aria-live="polite">{status}</div>
     </div>
   )
@@ -749,6 +792,14 @@ function sliceWheelStep(viewMode: ViewModeId, deltaY: number): VoxelStep | null 
     default:
       return null
   }
+}
+
+// Through-plane voxel axis (index into `vox`/`shape`) for each single-plane 2D
+// mode — the axis the slice slider pages along.
+const SLICE_AXIS_INDEX: Partial<Record<ViewModeId, number>> = {
+  axial: 2,
+  coronal: 1,
+  sagittal: 0
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

@@ -1408,6 +1408,41 @@ button {
   touch-action: none;
 }
 
+/* Slice paging slider (2D single-plane modes) — the touch path for through-plane
+   navigation, overlaid at the bottom of the viewer. */
+.nv-slice-slider {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(560px, 82%);
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(12, 13, 10, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.nv-slice-slider input[type='range'] {
+  flex: 1;
+  height: 28px;
+  accent-color: var(--amber);
+  cursor: pointer;
+  touch-action: pan-x;
+}
+
+.nv-slice-slider-value {
+  min-width: 56px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  text-align: right;
+}
+
 .nv-render-snap-controls {
   position: absolute;
   top: 56px;

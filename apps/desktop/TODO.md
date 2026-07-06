@@ -73,28 +73,31 @@ still the separate dataset-acquisition item below.
 - [x] **[P2] (S) Hide the terminal UI on mobile.** Its commands aren't registered
   there (terminal is `#[cfg(desktop)]`); add a runtime platform check to hide the
   toggle/dock.
-- [ ] **[P2] (M) Responsive layout + touch.** iPhone layout (small screen), touch
-  equivalents for wheel-zoom (pinch) and any hover-reveal affordances. No
-  hover-only / wheel-only controls. Concrete regressions found in the
-  2026-07-01 code review (both desktop-only today):
-  - **Slice paging is wheel-only** (`NiivueStage.tsx` `sliceWheelStep` /
-    `handleWheelCapture` → `moveCrosshairInVox`). No touch/pointer path, so 2D
-    slice navigation is unreachable on iPad/iPhone. Add a drag/swipe (or
-    on-screen slice slider) equivalent.
-  - **3D camera snap is keyboard-only.** The redesign replaced the on-screen
-    render-snap buttons with the 2D/3D view-mode buttons, so `snapRenderView`
-    (Coronal/Sagittal/Axial camera angles) is now reachable only via the
-    numpad/Blender digit shortcuts — gone on touch. Re-expose a snap affordance
-    for the 3D render pane.
+- [~] **[P2] (M) Responsive layout + touch.** Layout done (see the phone-layout
+  note at the top of this section). Touch progress:
+  - [x] **Slice paging** now has a touch path: a **slice slider** overlaid at the
+    bottom of the viewer in the single-plane 2D modes (`NiivueStage.tsx`
+    `.nv-slice-slider`). It reads the current through-plane voxel from NiiVue's
+    `location.vox[axis]` (stays in sync with clicks/paging) and pages via
+    `moveCrosshairInVox`; the wheel path stays for desktop. Renders correctly on
+    the sim (e.g. `108 / 215`); **drag interaction not yet confirmed by touch**
+    (couldn't tap headlessly — no `idb`/`simctl tap`; verify on device).
+  - [ ] **Pinch-zoom** is expected to work via NiiVue's native canvas touch
+    (`touch-action: none` on the canvas hands all touch to NiiVue) — **verify on
+    device**; add an explicit path only if it doesn't.
+  - [ ] **3D camera snap** (numpad `1/3/7` for Coronal/Sagittal/Axial camera
+    angles) is still keyboard-only. The on-screen Ax/Cor/Sag/MPR/3D buttons cover
+    view switching; a dedicated in-render camera-snap affordance is deferred
+    (niche vs. the 2D flow that matters on a phone).
 - [x] **[P3] (M) Set up the `tauri ios` project/build** — done 2026-07-06,
   validated on the iPhone 17 **simulator** (see the status note at the top of this
   section). Device validation (needs a signing team) still pending.
-- [ ] **[P1] (M) Responsive / touch layout is now the top iOS blocker.** On the
-  phone the desktop 3-column layout overflows: panels are cut off and the NiiVue
-  render pane is pushed off-screen right. The app *works* but isn't *usable* on a
-  phone yet — this (plus the touch items below) is what stands between "runs" and
-  "shippable." iPad (~desktop width) is likely far closer already. See the
-  responsive-layout item below for the concrete touch regressions.
+- [x] **[P1] (M) Phone layout + touch slice paging — DONE 2026-07-06.** The
+  desktop 3-column layout now collapses to a full-screen viewer with drawers (see
+  the phone-layout note above), and 2D slice paging has a touch slider. Remaining
+  touch polish (pinch verify, 3D camera snap) is tracked under "Responsive layout
+  + touch" above. The document picker (open your own datasets) is the next real
+  gap for a shippable phone app.
 - [~] **[P3] (M) AirDrop / share-sheet dataset hand-off (Apple-only, one-shot).**
   **macOS send landed (2026-07-06):** `export_bundle` writes a portable
   `.nvbundle` (manifest + hashed data), and the **Share2** button

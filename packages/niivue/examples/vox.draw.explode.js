@@ -52,15 +52,24 @@ function applyPen() {
   }
   nv1.drawIsEnabled = true
   nv1.drawPenValue = val
+  // Magic wand (click-to-segment) takes priority over fill when both are on.
+  const wand = wandCheck.checked
+  nv1.drawIsClickToSegment = wand
   // Fill mode: on 2D a closed loop is flood-filled; on an exploded block a
   // right-click floods the connected tissue blob (3D region-grow).
-  const fill = fillCheck.checked
+  const fill = fillCheck.checked && !wand
   nv1.drawPenFilled = fill
   nv1.drawPenAutoClose = fill
 }
 
 penValue.onchange = applyPen
 fillCheck.onchange = applyPen
+wandCheck.onchange = applyPen
+
+wandTol.oninput = function () {
+  // Slider is percent of the display window; the API takes a 0..1 fraction.
+  nv1.drawClickToSegmentTolerance = parseInt(this.value, 10) / 100
+}
 
 penSize.oninput = function () {
   nv1.drawPenSize = parseInt(this.value, 10)
@@ -74,6 +83,17 @@ overwriteCheck.onchange = function () {
 
 undoBtn.onclick = () => nv1.drawUndo()
 saveBtn.onclick = () => nv1.saveDrawing('drawing.nii.gz')
+svgBtn.onclick = () => {
+  // Export the drawing on the current crosshair slice (axial for multiplanar).
+  const svg = nv1.drawingToSVG()
+  if (!svg) return
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'drawing-slice.svg'
+  a.click()
+  URL.revokeObjectURL(url)
+}
 clearBtn.onclick = () => {
   // Reset to an empty drawing (keeps the same dims / view).
   nv1.createEmptyDrawing()
@@ -107,6 +127,7 @@ await ensureTiled()
 nv1.createEmptyDrawing()
 nv1.drawOpacity = 0.6
 nv1.drawIsFillOverwriting = overwriteCheck.checked
+nv1.drawClickToSegmentTolerance = parseInt(wandTol.value, 10) / 100
 applyPen()
 nv1.drawPenSize = parseInt(penSize.value, 10)
 applyExplode()

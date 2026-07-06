@@ -9,6 +9,7 @@ import {
   getSliceIndices,
   isPenLocationValid,
   isSamePoint,
+  magicWand3D,
   PEN_SLICE_TYPE,
   voxelIndex,
 } from './penTool'
@@ -193,6 +194,89 @@ describe('floodFill3D', () => {
     })
     expect(res.filled).toBe(125)
     expect(bmp.every((v) => v === 0)).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// magicWand3D
+// ---------------------------------------------------------------------------
+describe('magicWand3D', () => {
+  const dims = [3, 5, 5, 5] // [ndim, dx, dy, dz]
+  const idx = (x: number, y: number, z: number) => voxelIndex(x, y, z, 5, 5)
+
+  // Source volume: a 3x3x3 bright cube (value 100) in one corner, rest 0.
+  const makeSample = () => {
+    const src = new Float32Array(125)
+    for (let z = 0; z < 3; z++)
+      for (let y = 0; y < 3; y++)
+        for (let x = 0; x < 3; x++) src[idx(x, y, z)] = 100
+    return (x: number, y: number, z: number) => src[idx(x, y, z)]
+  }
+
+  test('grows the intensity-similar connected region within tolerance', () => {
+    const bmp = new Uint8Array(125)
+    const res = magicWand3D({
+      seed: [1, 1, 1],
+      drawBitmap: bmp,
+      dims,
+      penValue: 3,
+      sample: makeSample(),
+      tolerance: 5,
+      fillOverwrites: true,
+    })
+    // The whole 27-voxel bright cube is filled; nothing outside it.
+    expect(res.filled).toBe(27)
+    expect(bmp[idx(0, 0, 0)]).toBe(3)
+    expect(bmp[idx(2, 2, 2)]).toBe(3)
+    expect(bmp[idx(3, 0, 0)]).toBe(0) // value 0, outside the band
+    expect(res.min).toEqual([0, 0, 0])
+    expect(res.max).toEqual([2, 2, 2])
+  })
+
+  test('tolerance 0 requires an exact intensity match', () => {
+    const sample = makeSample()
+    const bmp = new Uint8Array(125)
+    // Seed on a background voxel: fills the connected background (125 - 27 cube).
+    const res = magicWand3D({
+      seed: [4, 4, 4],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      sample,
+      tolerance: 0,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(98) // 125 total - 27 bright cube
+    expect(bmp[idx(1, 1, 1)]).toBe(0) // cube untouched
+  })
+
+  test('out-of-bounds seed fills nothing', () => {
+    const bmp = new Uint8Array(125)
+    const res = magicWand3D({
+      seed: [9, 9, 9],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      sample: makeSample(),
+      tolerance: 10,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(0)
+    expect(bmp.every((v) => v === 0)).toBe(true)
+  })
+
+  test('a wide tolerance floods everything reachable', () => {
+    const bmp = new Uint8Array(125)
+    const res = magicWand3D({
+      seed: [1, 1, 1],
+      drawBitmap: bmp,
+      dims,
+      penValue: 2,
+      sample: makeSample(),
+      tolerance: 1000,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(125)
   })
 })
 

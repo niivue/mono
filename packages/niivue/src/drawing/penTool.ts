@@ -196,6 +196,51 @@ export function floodFill3D(params: FloodFill3DParams): FloodFill3DResult {
   return { filled, min, max, hitCap }
 }
 
+export interface MagicWand3DParams {
+  seed: readonly [number, number, number]
+  drawBitmap: Uint8Array
+  dims: number[] // NIfTI-style [ndim, dimX, dimY, dimZ]
+  penValue: number
+  // Source intensity lookup (RAS voxel order), e.g. from getImageDataRAS.
+  sample: (x: number, y: number, z: number) => number
+  // Absolute intensity distance from the seed voxel's value; a voxel joins the
+  // region when |sample(v) - sample(seed)| <= tolerance.
+  tolerance: number
+  fillOverwrites: boolean
+  maxVoxels?: number
+}
+
+/**
+ * Click-to-segment ("magic wand") for voxel volumes. Grows a 6-connected region
+ * out from `seed` over voxels whose source intensity is within `tolerance` of the
+ * seed voxel's value, painting them `penValue` in the drawing bitmap. Thin wrapper
+ * over {@link floodFill3D} — the connectivity, overwrite, cap, and AABB semantics
+ * are identical; only the membership test differs (seed-relative intensity band vs
+ * a fixed threshold). Returns `filled: 0` when the seed is out of bounds.
+ */
+export function magicWand3D(params: MagicWand3DParams): FloodFill3DResult {
+  const dx = params.dims[1]
+  const dy = params.dims[2]
+  const dz = params.dims[3]
+  const sx = Math.round(params.seed[0])
+  const sy = Math.round(params.seed[1])
+  const sz = Math.round(params.seed[2])
+  if (sx < 0 || sy < 0 || sz < 0 || sx >= dx || sy >= dy || sz >= dz) {
+    return { filled: 0, min: [sx, sy, sz], max: [sx, sy, sz], hitCap: false }
+  }
+  const seedValue = params.sample(sx, sy, sz)
+  const tol = Math.max(0, params.tolerance)
+  return floodFill3D({
+    seed: [sx, sy, sz],
+    drawBitmap: params.drawBitmap,
+    dims: params.dims,
+    penValue: params.penValue,
+    fillOverwrites: params.fillOverwrites,
+    maxVoxels: params.maxVoxels,
+    keep: (x, y, z) => Math.abs(params.sample(x, y, z) - seedValue) <= tol,
+  })
+}
+
 export function drawPoint(params: DrawPointParams): void {
   const {
     x: inputX,

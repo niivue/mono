@@ -638,6 +638,12 @@ export type DrawConfig = {
   opacity: number
   rimOpacity: number
   colormap: string
+  // Click-to-segment ("magic wand"): when on, a draw click grows a 3D region of
+  // intensity-similar voxels from the seed instead of painting a pen stroke.
+  isClickToSegment: boolean
+  // Magic-wand intensity tolerance as a fraction (0..1) of the active volume's
+  // display window (calMax - calMin); converted to raw sample units at use.
+  clickToSegmentTolerance: number
 }
 
 /** Interaction config: drag modes, mouse behavior */

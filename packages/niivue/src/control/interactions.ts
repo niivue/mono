@@ -10,6 +10,7 @@ import {
   drawSphere,
   floodFill3D,
   isSamePoint,
+  magicWand3D,
 } from '@/drawing/penTool'
 import { computeSlicePointerEvent } from '@/extension/context'
 import { log } from '@/logger'
@@ -386,7 +387,7 @@ function pickExplodedDraw(
 }
 
 // Snapshot the drawing bitmap for undo once per stroke (matches the 2D path).
-function snapshot3DUndo(ctrl: NiiVueGPU, drawingVol: NVImage): void {
+function snapshotDrawUndo(ctrl: NiiVueGPU, drawingVol: NVImage): void {
   const undoResult = addUndoBitmap({
     drawBitmap: getDrawingBitmap(drawingVol),
     drawUndoBitmaps: ctrl.drawUndoBitmaps,
@@ -413,7 +414,7 @@ function draw3DOnExplodedBlock(
   const pick = pickExplodedDraw(ctrl, vol)
   if (!pick) return null
   const { voxel, chunkIndex, drawingVol } = pick
-  if (isStrokeStart) snapshot3DUndo(ctrl, drawingVol)
+  if (isStrokeStart) snapshotDrawUndo(ctrl, drawingVol)
   const radius = Math.max(0, Math.floor(ctrl.model.draw.penSize / 2))
   // Continue from the previous voxel only when this pick is in the SAME block as
   // the last one — connecting across a block gap would streak a line between two
@@ -453,7 +454,7 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
   const pick = pickExplodedDraw(ctrl, vol)
   if (!pick) return false
   const { voxel, drawingVol, keep } = pick
-  snapshot3DUndo(ctrl, drawingVol)
+  snapshotDrawUndo(ctrl, drawingVol)
   const dims = vol.dimsRAS as number[]
   // Cap the fill so a click on a huge connected structure can't run unbounded;
   // an eraser fill (penValue 0) is uncapped-in-spirit but still bounded by the
@@ -478,6 +479,66 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
   ctrl.refreshDrawing()
   ctrl.emit('drawingChanged', { action: 'stroke' })
   return true
+}
+
+// Click-to-segment ("magic wand") at a seed voxel (RAS ijk) on `vol`: grow a 3D
+// region of voxels whose source intensity is within the configured tolerance of
+// the seed's value and paint them the pen value. Shared by the 2D-slice click and
+// the 3D exploded-block right-click. The tolerance is a fraction of the display
+// window, converted to the raw sample scale. One undo step; refreshes only the
+// touched region. Returns true if it ran (there was data + a drawing volume).
+function magicWandFill(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+  seed: [number, number, number],
+): boolean {
+  const drawingVol = ctrl.model.drawingVolume as NVImage | null
+  if (!drawingVol) return false
+  const data = getImageDataRAS(vol)
+  if (!data) return false
+  const dims = vol.dimsRAS as number[]
+  const dimX = dims[1]
+  const dimXY = dimX * dims[2]
+  const sample = (x: number, y: number, z: number): number =>
+    data[x + y * dimX + z * dimXY]
+  // Tolerance: a fraction of the display window, in the raw sample scale that
+  // getImageDataRAS returns (so it tracks the current windowing).
+  const sclSlope = vol.hdr?.scl_slope || 1
+  const sclInter = vol.hdr?.scl_inter || 0
+  const winLo = (vol.calMin - sclInter) / sclSlope
+  const winHi = (vol.calMax - sclInter) / sclSlope
+  const tolerance =
+    ctrl.model.draw.clickToSegmentTolerance * Math.abs(winHi - winLo)
+  snapshotDrawUndo(ctrl, drawingVol)
+  const maxVoxels = Math.min(dims[1] * dims[2] * dims[3], 4_000_000)
+  const result = magicWand3D({
+    seed,
+    drawBitmap: getDrawingBitmap(drawingVol),
+    dims,
+    penValue: ctrl.model.draw.penValue,
+    sample,
+    tolerance,
+    fillOverwrites: ctrl.model.draw.isFillOverwriting,
+    maxVoxels,
+  })
+  if (result.hitCap) {
+    log.warn(`Magic wand stopped at the ${maxVoxels}-voxel cap`)
+  }
+  if (result.filled === 0) return true
+  ctrl.markDrawDirty(result.min[0], result.min[1], result.min[2], 1)
+  ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
+  ctrl.refreshDrawing()
+  ctrl.emit('drawingChanged', { action: 'stroke' })
+  return true
+}
+
+// Magic wand seeded by a 3D exploded-block right-click: pick the block voxel the
+// ray hits, then grow the intensity-similar region from it. Returns true if a
+// block was hit.
+function magicWand3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
+  const pick = pickExplodedDraw(ctrl, vol)
+  if (!pick) return false
+  return magicWandFill(ctrl, vol, pick.voxel)
 }
 
 export function initInteraction(ctrl: NiiVueGPU): void {
@@ -541,6 +602,12 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         drawVol.chunkPlan &&
         chunkExplodeEnabled(drawVol.chunkExplode)
       ) {
+        // Magic wand: a single right-click grows the intensity-similar region
+        // from the picked voxel (no drag stroke). Checked before fill mode.
+        if (ctrl.model.draw.isClickToSegment) {
+          magicWand3DOnExplodedBlock(ctrl, drawVol)
+          return
+        }
         // Fill mode: a single right-click floods the connected tissue blob at
         // the picked voxel (3D region-grow) — no drag stroke.
         if (ctrl.drawPenFilled) {
@@ -578,6 +645,18 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       if (mm) {
         const vol = ctrl.model.getVolumes()[0]
         if (vol) {
+          // Magic wand: a single click on the slice grows the intensity-similar
+          // 3D region from the picked voxel (no stroke). Checked before the pen.
+          if (ctrl.model.draw.isClickToSegment) {
+            const wandVox = NVTransforms.mm2vox(vol, mm)
+            magicWandFill(ctrl, vol, [
+              Math.round(wandVox[0]),
+              Math.round(wandVox[1]),
+              Math.round(wandVox[2]),
+            ])
+            ctrl.setCrosshairPos(mm)
+            return
+          }
           // Save undo state before first stroke
           const undoResult = addUndoBitmap({
             drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),

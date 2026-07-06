@@ -24,6 +24,7 @@ import {
   transformBitmap,
   validateDrawingDimensions,
 } from '@/drawing/drawingManager'
+import { drawingSliceToSVG } from '@/drawing/drawingSvg'
 import { decodeRLE, encodeRLE } from '@/drawing/rle'
 import { drawUndo } from '@/drawing/undo'
 import { NVExtensionContext } from '@/extension/context'
@@ -32,7 +33,12 @@ import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMeshLayers from '@/mesh/layers'
 import * as NVMesh from '@/mesh/NVMesh'
 import type { WriteOptions } from '@/mesh/writers'
-import { DRAG_MODE, NUM_CLIP_PLANE, SLICE_TYPE } from '@/NVConstants'
+import {
+  DRAG_MODE,
+  NUM_CLIP_PLANE,
+  SLICE_TYPE,
+  sliceTypeDim,
+} from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
 import type {
   GraphRangeChangeDetail,
@@ -1239,6 +1245,26 @@ export default class NiiVueGPU extends EventTarget {
   set drawIsFillOverwriting(v: boolean) {
     this.model.draw.isFillOverwriting = v
     this.emit('change', { property: 'drawIsFillOverwriting', value: v })
+  }
+
+  get drawIsClickToSegment(): boolean {
+    return this.model.draw.isClickToSegment
+  }
+  set drawIsClickToSegment(v: boolean) {
+    this.model.draw.isClickToSegment = v
+    this.emit('change', { property: 'drawIsClickToSegment', value: v })
+  }
+
+  get drawClickToSegmentTolerance(): number {
+    return this.model.draw.clickToSegmentTolerance
+  }
+  set drawClickToSegmentTolerance(v: number) {
+    const val = Math.max(0, Math.min(1, v))
+    this.model.draw.clickToSegmentTolerance = val
+    this.emit('change', {
+      property: 'drawClickToSegmentTolerance',
+      value: val,
+    })
   }
 
   get drawOpacity(): number {
@@ -3435,18 +3461,62 @@ export default class NiiVueGPU extends EventTarget {
     if (this._slideDrawing?.undo()) this._refreshSlideAnnotation()
   }
 
-  // CSS hex for the current pen label from the "_draw" LUT (vector stroke color).
-  private _slideVectorColor(): string {
+  // CSS hex for a drawing label from the active "_draw" LUT, or null when the
+  // label is 0 / out of range / fully transparent (so callers can skip it).
+  private _drawLabelColor(label: number): string | null {
+    if (label === 0) return null
     if (!this._drawLut) {
       const cm = NVCmaps.lookupColorMap(this.model.draw.colormap)
       if (cm) this._drawLut = buildDrawingLut(cm)
     }
     const lut = this._drawLut?.lut
     const min = this._drawLut?.min ?? 0
-    const i = (this.model.draw.penValue - min) * 4
-    if (!lut || i < 0 || i + 2 >= lut.length) return '#e62d37'
+    const i = (label - min) * 4
+    if (!lut || i < 0 || i + 3 >= lut.length) return null
+    if (lut[i + 3] === 0) return null // transparent label
     const hex = (n: number): string => n.toString(16).padStart(2, '0')
     return `#${hex(lut[i])}${hex(lut[i + 1])}${hex(lut[i + 2])}`
+  }
+
+  // CSS hex for the current pen label (vector stroke color); falls back to red.
+  private _slideVectorColor(): string {
+    return this._drawLabelColor(this.model.draw.penValue) ?? '#e62d37'
+  }
+
+  /**
+   * Serialize one slice of the voxel drawing to a standalone SVG string
+   * (run-length `<rect>`s per label color, sized in voxels). `sliceType` selects
+   * the plane (AXIAL/CORONAL/SAGITTAL); it defaults to the current single-slice
+   * view, or AXIAL for render/multiplanar/none. `sliceIndex` defaults to the
+   * crosshair voxel on that axis. Returns null when no drawing is open.
+   */
+  drawingToSVG(sliceType?: number, sliceIndex?: number): string | null {
+    if (!this.model.drawingVolume) return null
+    const bgVol = this.model.getVolumes()[0]
+    const dims = bgVol?.dimsRAS
+    if (!dims) return null
+    const type = sliceType ?? this.model.layout.sliceType
+    // Depth axis: sliceTypeDim gives 2/1/0 for AXIAL/CORONAL/SAGITTAL; anything
+    // else (render, multiplanar, none) has no single plane, so default to axial.
+    const sliceAxis =
+      type === SLICE_TYPE.AXIAL ||
+      type === SLICE_TYPE.CORONAL ||
+      type === SLICE_TYPE.SAGITTAL
+        ? sliceTypeDim(type)
+        : 2
+    let index = sliceIndex
+    if (index === undefined) {
+      const mm = this.model.scene2mm(this.model.scene.crosshairPos)
+      const vox = NVTransforms.mm2vox(bgVol, mm)
+      index = Math.round(vox[sliceAxis])
+    }
+    return drawingSliceToSVG({
+      bitmap: getDrawingBitmap(this.model.drawingVolume),
+      dims: dims as number[],
+      sliceAxis,
+      sliceIndex: index,
+      colorForLabel: (label) => this._drawLabelColor(label),
+    })
   }
 
   // Composite the slide's most-detailed level that fits the raster into an RGBA

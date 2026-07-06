@@ -184,6 +184,8 @@ export const DRAW_DEFAULTS: DrawConfig = {
   opacity: 0.8,
   rimOpacity: -1,
   colormap: '_draw',
+  isClickToSegment: false,
+  clickToSegmentTolerance: 0.05,
 }
 
 export const INTERACTION_DEFAULTS: InteractionConfig = {

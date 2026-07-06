@@ -197,6 +197,8 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `interpolateMaskSlices()` | ✅ | `@niivue/nv-ext-drawing` package |
 | Click-to-segment (magic wand) | ✅ | `@niivue/nv-ext-drawing` exports `magicWand`, `magicWandFromBitmap`, and `MagicWandShared` |
 | Draw rim opacity | ✅ | `drawRimOpacity` |
+| 2D slice drawing methods (pen point, drag stroke, filled polygon, eraser) | ✅ | Left-drag on any slice; `drawPenFilled` flood-fills a closed loop |
+| 3D drawing on exploded blocks (render tile) | ✅ | New in the rewrite (old NiiVue drew on 2D slices only): right-button pen/eraser stroke and 3D flood fill directly on exploded chunked blocks, on both backends. Demo `vox.draw.explode.html` |
 
 ## 15. Image Processing
 

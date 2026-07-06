@@ -195,7 +195,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `drawingBinaryDilationWithSeed()` | ❌ | |
 | `findDrawingBoundarySlices()` | ✅ | `@niivue/nv-ext-drawing` package |
 | `interpolateMaskSlices()` | ✅ | `@niivue/nv-ext-drawing` package |
-| Click-to-segment (magic wand) | ✅ | Built into the core drawing (`drawIsClickToSegment` + `drawClickToSegmentTolerance`): a 2D-slice click or a 3D exploded-block right-click grows a 3D region of intensity-similar voxels (`magicWand3D`). Also available worker-side via `@niivue/nv-ext-drawing` (`magicWand`, `magicWandFromBitmap`, `MagicWandShared`) |
+| Click-to-segment (magic wand) | ✅ | Built into the core drawing (`drawIsClickToSegment` + `drawClickToSegmentTolerance`): a 2D-slice click or a 3D exploded-block right-click grows a region of intensity-similar voxels (`magicWand3D`). Grows the whole connected 3D structure by default; `drawClickToSegmentIs2D` confines a slice click to its plane (the block right-click is always 3D). Also available worker-side via `@niivue/nv-ext-drawing` (`magicWand`, `magicWandFromBitmap`, `MagicWandShared`) |
 | Draw rim opacity | ✅ | `drawRimOpacity` |
 | 2D slice drawing methods (pen point, drag stroke, filled polygon, eraser) | ✅ | Left-drag on any slice; `drawPenFilled` flood-fills a closed loop |
 | 3D drawing on exploded blocks (render tile) | ✅ | New in the rewrite (old NiiVue drew on 2D slices only): right-button pen/eraser stroke, 3D flood fill, and magic-wand click-to-segment directly on exploded chunked blocks, on both backends. Demo `vox.draw.explode.html` |

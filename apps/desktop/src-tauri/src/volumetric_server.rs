@@ -1798,6 +1798,13 @@ fn discovery_roots() -> Vec<PathBuf> {
         home.join("Dev/niivue-demo-images/mni152.nii.gz"),
     ]);
 
+    // Bundled default volume (set by lib.rs from the app's resource dir). Appended
+    // last so a real dev dataset/volume above still wins on desktop; on iOS — where
+    // the dev paths don't exist — this is the only one that resolves.
+    if let Some(value) = std::env::var_os("NEUROVUE_DEFAULT_VOLUME") {
+        roots.push(PathBuf::from(value));
+    }
+
     roots
 }
 

@@ -35,19 +35,20 @@ renders a black canvas there (AGENTS.md flagged this); WebGL2 renders correctly.
 (b) Phones default to the **axial 2D slice** instead of the 3D render (clearer on
 a small screen).
 
-**KNOWN ISSUE — no default dataset on iOS (diagnosed, not yet fixed).** The app
-shows "No image loaded" on iOS because `fallback_mni152_volume()`
-(`volumetric_server.rs:1896`) searches **hardcoded dev-machine paths**
-(`~/Dev/mono/...`, `~/Dev/niivue/...`) that don't exist in the iOS sandbox
-(`home_dir()` is the app container). It registers a *phantom* volume (metadata
-from a hardcoded header) with `source_path: None`, so the raw endpoints 404/500
-(verified via curl against the sim's `127.0.0.1` server) and NiiVue gets nothing.
-**The viewer itself works on iOS** — this is purely a missing-data problem.
-Fix options: **bundle a small `mni152.nii.gz` (4.1 MB) as a Tauri resource** and
-resolve it via `app.path()` (requires spawning the server inside `.setup()` so
-the AppHandle/resource dir is available — currently `spawn_default()` runs before
-the builder), and/or land the iOS **document picker** (the dataset-acquisition
-item below). Pairs with that item.
+**Default dataset on iOS — FIXED (2026-07-06); the brain renders on iPhone.**
+Root cause was `fallback_mni152_volume()` (`volumetric_server.rs`) searching
+hardcoded dev-machine paths (`~/Dev/mono/...`, `~/Dev/niivue/...`) absent from the
+iOS sandbox, registering a phantom volume with `source_path: None` (raw endpoints
+404/500). Fix: **bundle `mni152.nii.gz` (4.1 MB) as a Tauri resource**
+(`src-tauri/resources/`, added to `bundle.resources`); `lib.rs` now spawns the
+server inside `.setup()`, resolves the resource via
+`app.path().resolve("resources/mni152.nii.gz", Resource)`, and sets
+`NEUROVUE_DEFAULT_VOLUME`, which `discovery_roots()` appends **last** (so desktop
+still prefers a real dev dataset). Verified on the simulator: launches → renders
+an axial MNI152 slice with A/L orientation labels. Note: on iOS the resource lands
+at `.app/assets/resources/mni152.nii.gz` and `BaseDirectory::Resource` resolves it
+correctly. A user-facing **document picker** for opening *arbitrary* datasets is
+still the separate dataset-acquisition item below.
 
 - [ ] **[P3] (M) Device build + signing.** Validate on a physical iPhone (needs a
   development team for code signing); the socket-lifecycle check for the transport

@@ -9,6 +9,7 @@ mod volumetric_server;
 
 use serde::Serialize;
 use std::path::Path;
+use tauri::Manager;
 // The app menu bar is a desktop-only concept; iOS/Android have no `tauri::menu`.
 #[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem, Submenu};
@@ -256,9 +257,28 @@ fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Resu
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let server = volumetric_server::spawn_default();
-
-    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            // Point dataset discovery at the bundled MNI152 so machines without
+            // the dev checkouts — notably iOS, whose sandbox has no `~/Dev` — still
+            // open with a working default volume. Set before the server spawns so
+            // `discovery_roots()` picks it up. Resolving here (not at module load)
+            // is why the server spawns in `setup`: it needs the AppHandle's
+            // resource dir.
+            if let Ok(path) = app
+                .path()
+                .resolve("resources/mni152.nii.gz", tauri::path::BaseDirectory::Resource)
+            {
+                if path.is_file() {
+                    std::env::set_var("NEUROVUE_DEFAULT_VOLUME", path);
+                }
+            }
+            app.manage(NeuroVueState {
+                server: volumetric_server::spawn_default(),
+            });
+            Ok(())
+        });
 
     // The menu bar (and its "Open Directory" item) is desktop-only; on mobile
     // the frontend opens datasets through an on-screen control instead.
@@ -268,8 +288,6 @@ pub fn run() {
             let _ = app.emit("neurovue-open-directory", ());
         }
     });
-
-    let builder = builder.manage(NeuroVueState { server });
 
     // niimath (sidecar) and terminal (PTY) commands are desktop-only; mobile
     // registers only the portable commands.

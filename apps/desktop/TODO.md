@@ -14,16 +14,44 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 
 **iOS build works — app runs on the simulator (2026-07-06).** `tauri ios init`
 scaffolded `src-tauri/gen/apple`; the Rust lib cross-compiles for
-`aarch64-apple-ios-sim` and the app **launches on the iPhone 17 simulator with
-the default MNI152 volume loading, WebGL rendering the brain, previews, and
-metadata all working**. Enablement needed (all committed): (1) `"tauri": "tauri"`
-npm script — the generated Xcode "Build Rust Code" phase calls `npm run -- tauri
-ios xcode-script`; (2) `tauri.ios.conf.json` clearing `bundle.externalBin` (no
-iOS niimath sidecar); (3) `#[cfg(desktop)]`-gate the menu bar in `lib.rs`
-(`tauri::menu` doesn't exist on iOS); (4) `NSAllowsLocalNetworking` in the iOS
-`Info.plist`. Not yet done: device build (signing), touch/responsive layout,
-dataset picker, iOS AirDrop. One benign warning: `UIScene lifecycle will soon be
-required` (Tauri template).
+`aarch64-apple-ios-sim` and the app **launches on the iPhone 17 simulator**, the
+local axum server is reachable, and the viewer initializes. Enablement (all
+committed): (1) `"tauri": "tauri"` npm script — the generated Xcode "Build Rust
+Code" phase calls `npm run -- tauri ios xcode-script`; (2) `tauri.ios.conf.json`
+clearing `bundle.externalBin` (no iOS niimath sidecar); (3) `#[cfg(desktop)]`-gate
+the menu bar in `lib.rs` (`tauri::menu` doesn't exist on iOS); (4)
+`NSAllowsLocalNetworking` in the iOS `Info.plist`.
+
+**Phone layout done (2026-07-06).** A `@media (max-width: 700px)` block +
+`isPhoneViewport()` collapse the 3-column workbench to a full-screen NiiVue
+viewer with the dataset/inspector panels as slide-in drawers (toggled by
+mobile-only topbar buttons + a tap-to-close scrim); the OSD desktop browser is
+hidden on phones; the topbar compacts. iPad (≥700px) keeps the desktop layout.
+Verified on the simulator.
+
+**Two iOS render fixes (2026-07-06):** (a) `preferredBackend()` now forces
+**WebGL2 on iOS** — iOS WebKit exposes `navigator.gpu` but NiiVue's WebGPU path
+renders a black canvas there (AGENTS.md flagged this); WebGL2 renders correctly.
+(b) Phones default to the **axial 2D slice** instead of the 3D render (clearer on
+a small screen).
+
+**KNOWN ISSUE — no default dataset on iOS (diagnosed, not yet fixed).** The app
+shows "No image loaded" on iOS because `fallback_mni152_volume()`
+(`volumetric_server.rs:1896`) searches **hardcoded dev-machine paths**
+(`~/Dev/mono/...`, `~/Dev/niivue/...`) that don't exist in the iOS sandbox
+(`home_dir()` is the app container). It registers a *phantom* volume (metadata
+from a hardcoded header) with `source_path: None`, so the raw endpoints 404/500
+(verified via curl against the sim's `127.0.0.1` server) and NiiVue gets nothing.
+**The viewer itself works on iOS** — this is purely a missing-data problem.
+Fix options: **bundle a small `mni152.nii.gz` (4.1 MB) as a Tauri resource** and
+resolve it via `app.path()` (requires spawning the server inside `.setup()` so
+the AppHandle/resource dir is available — currently `spawn_default()` runs before
+the builder), and/or land the iOS **document picker** (the dataset-acquisition
+item below). Pairs with that item.
+
+- [ ] **[P3] (M) Device build + signing.** Validate on a physical iPhone (needs a
+  development team for code signing); the socket-lifecycle check for the transport
+  item wants a real device.
 
 - [~] **[P1] (~~L~~ → M) Data transport for mobile — LARGELY A NON-ISSUE on iOS.**
   The theoretical blocker didn't materialize: the local axum HTTP server on

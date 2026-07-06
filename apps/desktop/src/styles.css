@@ -2341,6 +2341,100 @@ button {
   }
 }
 
+/* Mobile-only affordances (drawer toggles + backdrop): hidden on desktop. */
+.nv-mobile-only {
+  display: none;
+}
+
+.nv-mobile-scrim {
+  display: none;
+}
+
+/* Phone layout: collapse the 3-column workbench to a full-screen NiiVue viewer
+   with the dataset + controls panels as slide-in drawers. iPad keeps desktop. */
+@media (max-width: 700px) {
+  .nv-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .nv-workbench.is-file-list-collapsed,
+  .nv-workbench.is-controls-collapsed {
+    --file-list-width: 0;
+    --controls-width: 0;
+  }
+
+  .nv-sidebar,
+  .nv-controls {
+    position: fixed;
+    top: 64px;
+    bottom: 0;
+    width: min(86vw, 340px);
+    z-index: 50;
+    overflow-y: auto;
+    transition: transform 0.22s ease;
+    box-shadow: 0 12px 40px var(--shadow);
+  }
+
+  .nv-sidebar {
+    left: 0;
+    transform: translateX(-100%);
+  }
+  .nv-workbench:not(.is-file-list-collapsed) .nv-sidebar {
+    transform: translateX(0);
+  }
+
+  .nv-controls {
+    right: 0;
+    border-right: 0;
+    border-left: 1px solid var(--line);
+    transform: translateX(100%);
+  }
+  .nv-workbench:not(.is-controls-collapsed) .nv-controls {
+    transform: translateX(0);
+  }
+
+  /* Middle workspace shows only the viewer; the OSD desktop browser + splitter
+     are desktop metaphors — on a phone the dataset drawer handles selection. */
+  .nv-split-workspace {
+    grid-template-columns: 1fr;
+  }
+  .nv-dataset-pane,
+  .nv-splitter {
+    display: none;
+  }
+
+  .nv-mobile-only {
+    display: inline-flex;
+  }
+
+  .nv-mobile-scrim {
+    display: block;
+    position: fixed;
+    inset: 64px 0 0 0;
+    z-index: 40;
+    border: 0;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  /* Compact the topbar so the essential controls fit one row. */
+  .nv-brand > div:not(.nv-mark) {
+    display: none;
+  }
+  .nv-tool-button span {
+    display: none;
+  }
+  .nv-topbar {
+    gap: 8px;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+  .nv-toolbar {
+    gap: 4px;
+    overflow-x: auto;
+  }
+}
+
 /* Integrated Python terminal dock */
 .nv-terminal-dock {
   position: relative;

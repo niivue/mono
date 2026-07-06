@@ -304,8 +304,13 @@ export default class NiiVueGPU extends EventTarget {
   _drawPenFillPts: number[][] = []
   // 3D drawing on exploded blocks: active during a right-button stroke on the
   // render tile, with the last painted voxel so drag motion connects (no gaps).
+  // The last painted chunk gates that connection: successive picks are only
+  // joined when they land in the SAME block, so a drag that crosses to another
+  // block (whose voxels are far away in data space) starts a fresh stamp instead
+  // of streaking a line through the volume.
   _draw3DActive = false
   _draw3DLastVoxel: [number, number, number] | null = null
+  _draw3DLastChunk: number | null = null
   _drawLut: LUT | null = null
   _drawingDirty = false
   // Inclusive voxel AABB of pen strokes since the last drawing flush. When set

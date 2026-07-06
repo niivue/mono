@@ -279,6 +279,10 @@ function drawSphereSegment(
 // touched chunk re-uploads. Returns the painted voxel (null if the ray missed).
 interface ExplodedDrawPick {
   voxel: [number, number, number]
+  // Index of the exploded block the ray hit. Successive stroke picks only
+  // connect when this matches, so a drag that crosses a block gap doesn't streak
+  // a line between two data-space-distant voxels.
+  chunkIndex: number
   drawingVol: NVImage
   // Predicate over RAS voxel coords: true for visible tissue (source intensity
   // above the transparency threshold). Reused by the 3D flood fill to bound the
@@ -375,6 +379,7 @@ function pickExplodedDraw(
     : (): boolean => true
   return {
     voxel: picked.voxel,
+    chunkIndex: picked.chunkIndex,
     drawingVol: ctrl.model.drawingVolume as NVImage,
     keep,
   }
@@ -407,13 +412,21 @@ function draw3DOnExplodedBlock(
 ): [number, number, number] | null {
   const pick = pickExplodedDraw(ctrl, vol)
   if (!pick) return null
-  const { voxel, drawingVol } = pick
+  const { voxel, chunkIndex, drawingVol } = pick
   if (isStrokeStart) snapshot3DUndo(ctrl, drawingVol)
   const radius = Math.max(0, Math.floor(ctrl.model.draw.penSize / 2))
-  // Continue from the previous voxel on a drag so the stroke is a connected
-  // tube; a fresh stamp (or a stroke start) paints just the picked voxel.
-  const from =
-    !isStrokeStart && ctrl._draw3DLastVoxel ? ctrl._draw3DLastVoxel : voxel
+  // Continue from the previous voxel only when this pick is in the SAME block as
+  // the last one — connecting across a block gap would streak a line between two
+  // voxels that are adjacent on screen but far apart in data space. A fresh
+  // stamp (stroke start, or a jump to another block) paints just the picked
+  // voxel.
+  const sameBlock =
+    !isStrokeStart &&
+    ctrl._draw3DLastVoxel !== null &&
+    ctrl._draw3DLastChunk === chunkIndex
+  const from = sameBlock
+    ? (ctrl._draw3DLastVoxel as [number, number, number])
+    : voxel
   drawSphereSegment(
     from,
     voxel,
@@ -428,6 +441,7 @@ function draw3DOnExplodedBlock(
   ctrl.markDrawDirty(voxel[0], voxel[1], voxel[2], ctrl.model.draw.penSize)
   ctrl.refreshDrawing()
   ctrl.emit('drawingChanged', { action: 'stroke' })
+  ctrl._draw3DLastChunk = chunkIndex
   return voxel
 }
 
@@ -961,6 +975,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     // End a 3D exploded-block stroke.
     ctrl._draw3DActive = false
     ctrl._draw3DLastVoxel = null
+    ctrl._draw3DLastChunk = null
     ctrl.isDragging = false
     ctrl.activeTileHit = null
     const evt = e as PointerEvent
@@ -993,6 +1008,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     }
     ctrl._draw3DActive = false
     ctrl._draw3DLastVoxel = null
+    ctrl._draw3DLastChunk = null
     ctrl.isDragging = false
     ctrl.activeTileHit = null
     try {

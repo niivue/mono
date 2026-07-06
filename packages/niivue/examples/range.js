@@ -26,6 +26,17 @@ const NO_FLOOR = !new URLSearchParams(location.search).has('floor')
 // floor build) is discarded instead of stomping a newer scene.
 let reloadToken = 0
 
+// Monotonic id stamped on every loaded source (`source.serial`). In-flight
+// fetches from a superseded source resolve after we have reset `stats` and moved
+// on, so they must NOT mutate the live counters (which would inflate the new
+// source's numbers and light up the wrong chunk-strip cells). Every stats write
+// is gated on `isLiveSerial(serial)`: the fetch's originating source must still
+// be the active one. A same-source reload (window/colormap) keeps the serial, so
+// its stragglers correctly update the current stats; a source switch changes it,
+// so the old source's stragglers no-op.
+let sourceSerial = 0
+const isLiveSerial = (serial) => activeSource?.serial === serial
+
 // The explode scale currently applied to the resident volume. Explode is gated
 // on load-settle (see syncExplode): while chunks are still streaming the volume
 // stays un-exploded (1), because the exploded "keep every brick resident" render
@@ -275,15 +286,17 @@ const MANIFEST_URL = assetUrl('range-poc/synthetic-volume.json')
 // --- byte cache for zarrita -------------------------------------------------
 
 class ByteLruCache {
-  constructor(maxBytes) {
+  constructor(maxBytes, serial) {
     this.maxBytes = maxBytes
     this.entries = new Map()
     this.totalBytes = 0
+    // Source serial this cache belongs to; its stats writes no-op once superseded.
+    this.serial = serial
   }
 
   has(key) {
     const hit = this.entries.has(key)
-    if (hit) stats.cacheHits++
+    if (hit && isLiveSerial(this.serial)) stats.cacheHits++
     return hit
   }
 
@@ -305,7 +318,7 @@ class ByteLruCache {
     this.entries.set(key, { value, bytes })
     this.totalBytes += bytes
     this.evict()
-    stats.cacheBytes = this.totalBytes
+    if (isLiveSerial(this.serial)) stats.cacheBytes = this.totalBytes
   }
 
   evict() {
@@ -532,48 +545,52 @@ async function fetchManifest() {
   return fetchJson(MANIFEST_URL)
 }
 
-async function fetchByteRange(url, start, length) {
+// `serial` is the originating source's serial; stats writes are gated on it so a
+// superseded source's in-flight range fetch cannot mutate the live counters.
+async function fetchByteRange(serial, url, start, length) {
   const end = start + length - 1
   const res = await fetch(url, {
     headers: { Range: `bytes=${start}-${end}` },
   })
   if (!res.ok) {
-    stats.failures++
+    if (isLiveSerial(serial)) stats.failures++
     throw new Error(`GET ${url} range ${start}-${end} -> ${res.status}`)
   }
 
   const bytes = new Uint8Array(await res.arrayBuffer())
-  stats.wireBytes += bytes.byteLength
+  const live = isLiveSerial(serial)
+  if (live) stats.wireBytes += bytes.byteLength
 
   if (res.status === 206) {
-    stats.rangeHits++
+    if (live) stats.rangeHits++
     if (bytes.byteLength !== length) {
-      stats.failures++
+      if (live) stats.failures++
       throw new Error(
         `range ${start}-${end} returned ${bytes.byteLength}B, expected ${length}B`,
       )
     }
-    recordRequest(`206 ${start}-${end}`)
+    recordRequest(serial, `206 ${start}-${end}`)
     return bytes
   }
 
-  stats.fullFileFallbacks++
+  if (live) stats.fullFileFallbacks++
   if (bytes.byteLength < end + 1) {
-    stats.failures++
+    if (live) stats.failures++
     throw new Error(
       `full response had ${bytes.byteLength}B, cannot slice ${start}-${end}`,
     )
   }
-  recordRequest(`200 ${start}-${end}`)
+  recordRequest(serial, `200 ${start}-${end}`)
   return bytes.slice(start, end + 1)
 }
 
-function recordRequest(label) {
+function recordRequest(serial, label) {
+  if (!isLiveSerial(serial)) return
   stats.lastRequests.unshift(label)
   if (stats.lastRequests.length > 5) stats.lastRequests.pop()
 }
 
-function createTrackedZarrFetch() {
+function createTrackedZarrFetch(serial) {
   return async (request) => {
     const response = await fetch(request)
     const method = request.method || 'GET'
@@ -581,6 +598,10 @@ function createTrackedZarrFetch() {
     const pathname = url.pathname
     const range = request.headers.get('Range')
     const contentLength = Number(response.headers.get('Content-Length') ?? 0)
+
+    // Discard tracking from a superseded source's in-flight zarr fetches so they
+    // don't inflate the current source's HUD counters.
+    if (!isLiveSerial(serial)) return response
 
     if (
       method !== 'HEAD' &&
@@ -603,6 +624,7 @@ function createTrackedZarrFetch() {
     }
 
     recordRequest(
+      serial,
       `${response.status}${range ? ` ${range.replace(/^bytes=/, '')}` : ''} ${shortZarrPath(pathname)}`,
     )
     renderHud()
@@ -666,16 +688,16 @@ async function loadSyntheticSource() {
   }
 }
 
-async function loadOmezarrSource(storeDef, requestedLevel) {
+async function loadOmezarrSource(storeDef, requestedLevel, serial) {
   const storeUrl = assetUrl(`omezarr/${storeDef.id}`)
   const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
   const multiscale = multiscalesFromRoot(rootMeta)[0]
 
   const baseStore = new zarr.FetchStore(storeUrl, {
-    fetch: createTrackedZarrFetch(),
+    fetch: createTrackedZarrFetch(serial),
   })
   const store = zarr.withByteCaching(baseStore, {
-    cache: new ByteLruCache(ZARR_BYTE_CACHE_BYTES),
+    cache: new ByteLruCache(ZARR_BYTE_CACHE_BYTES, serial),
   })
 
   // Try the requested level first, then fall back to the store's configured
@@ -790,10 +812,15 @@ async function buildCoarseFloorVolume(source) {
 }
 
 async function loadActiveSource() {
+  // Stamp this load with a fresh serial so its fetches/cache can tell whether
+  // they are still the active source when they resolve (see isLiveSerial).
+  const serial = ++sourceSerial
   const store = currentStore()
-  return store
-    ? loadOmezarrSource(store, selectedLevel())
-    : loadSyntheticSource()
+  const source = store
+    ? await loadOmezarrSource(store, selectedLevel(), serial)
+    : await loadSyntheticSource()
+  source.serial = serial
+  return source
 }
 
 function createChunkPlan(source) {
@@ -855,16 +882,21 @@ function createRangeChunkSource(source) {
       )
     }
 
-    stats.requested.add(request.chunkIndex)
+    if (isLiveSerial(source.serial)) stats.requested.add(request.chunkIndex)
     const start = request.chunkIndex * source.chunkBytes
-    const next = fetchByteRange(source.dataUrl, start, source.chunkBytes).then(
-      (bytes) => {
+    const next = fetchByteRange(
+      source.serial,
+      source.dataUrl,
+      start,
+      source.chunkBytes,
+    ).then((bytes) => {
+      if (isLiveSerial(source.serial)) {
         stats.completed.add(request.chunkIndex)
         stats.decodedBytes += bytes.byteLength
         renderHud()
-        return bytes
-      },
-    )
+      }
+      return bytes
+    })
     // Only dedup concurrent in-flight requests; drop the entry once settled so
     // resolved chunk buffers are not retained. niivue manages residency and
     // re-requests an evicted chunk through this source when it is visible again,
@@ -931,19 +963,21 @@ function createOmezarrChunkSource(source) {
     const cached = cache.get(request.chunkIndex)
     if (cached) return cached
 
-    stats.requested.add(request.chunkIndex)
+    if (isLiveSerial(source.serial)) stats.requested.add(request.chunkIndex)
     const next = acquire()
       .then(() => withRetry(() => fetchOmezarrChunk(source, request)))
       .then((bytes) => {
         release()
-        stats.completed.add(request.chunkIndex)
-        stats.decodedBytes += bytes.byteLength
-        renderHud()
+        if (isLiveSerial(source.serial)) {
+          stats.completed.add(request.chunkIndex)
+          stats.decodedBytes += bytes.byteLength
+          renderHud()
+        }
         return bytes
       })
       .catch((err) => {
         release()
-        stats.failures++
+        if (isLiveSerial(source.serial)) stats.failures++
         // Surface the real reason instead of only bumping a counter, so a
         // streaming failure is diagnosable (e.g. a bad range, decode, or shape
         // mismatch) rather than a silent red number in the HUD.
@@ -951,7 +985,7 @@ function createOmezarrChunkSource(source) {
           `chunk ${request.chunkIndex} failed:`,
           err instanceof Error ? err.message : err,
         )
-        recordRequest(`ERR ${request.chunkIndex}`)
+        recordRequest(source.serial, `ERR ${request.chunkIndex}`)
         renderHud()
         throw err
       })

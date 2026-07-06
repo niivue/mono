@@ -210,6 +210,15 @@ function render() {
   drawOverlay(screen)
   updateHud(screen)
   updateRangeLog()
+  updateExportEnabled()
+}
+
+// The SVG export only has content when the VECTOR tool has drawn shapes (a raster
+// pen drawing is not exportable as SVG). Disable the button otherwise so clicking
+// it isn't a silent no-op that looks broken mid-demo. Cheap to re-evaluate per
+// frame; the state tracks add/undo/clear/source-switch without extra wiring.
+function updateExportEnabled() {
+  els.exportSvg.disabled = !slide || !vector || vector.shapes.length === 0
 }
 
 // Build (or rebuild) the slide-space drawing raster for the active slide.
@@ -735,6 +744,23 @@ window.addEventListener('resize', requestRender)
 // resolve after a newer selection and desync the visible slide from the dropdown.
 let loadSeq = 0
 
+// Turn a load failure into an actionable hint. Most demo sources need a
+// gitignored fixture fetched by a script, or an external host to be reachable;
+// without this a missing SVS or an offline DZI shows only a raw fetch error.
+function hintForSource(src) {
+  if (src.startsWith('openslide-')) {
+    return ` Did you run scripts/fetch-openslide-dicom.ts --slide=${src.replace('openslide-', '')}?`
+  }
+  if (src === 'dicom-wsi') return ' Did you run scripts/fetch-dicom-wsi.ts?'
+  if (src === 'tiff-cmu1') {
+    return ` Serve ${TIFF_URLS[src]} same-origin under public/ (the .svs is gitignored; the OpenSlide host has no CORS).`
+  }
+  if (src === 'dzi-highsmith') {
+    return ` Fetched from ${new URL(DZI_URLS[src]).host}; check your network/CORS (this external DZI must be online).`
+  }
+  return ''
+}
+
 async function loadSlide() {
   const seq = ++loadSeq
   els.fallback.setAttribute('aria-hidden', 'true')
@@ -781,13 +807,10 @@ async function loadSlide() {
   } catch (err) {
     if (seq !== loadSeq) return
     console.error(err)
-    const src = els.source.value
-    const hint = src.startsWith('openslide-')
-      ? ` Did you run scripts/fetch-openslide-dicom.ts --slide=${src.replace('openslide-', '')}?`
-      : src === 'dicom-wsi'
-        ? ' Did you run scripts/fetch-dicom-wsi.ts?'
-        : ''
-    showFallback((err instanceof Error ? err.message : String(err)) + hint)
+    showFallback(
+      (err instanceof Error ? err.message : String(err)) +
+        hintForSource(els.source.value),
+    )
   }
 }
 

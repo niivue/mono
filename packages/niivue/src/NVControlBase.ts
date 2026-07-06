@@ -1,4 +1,5 @@
 import { type vec2, type vec3, vec4 } from 'gl-matrix'
+import { annotationsToSVG } from '@/annotation/annotationSvg'
 import { getControlPoints } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
@@ -1499,6 +1500,29 @@ export default class NiiVueGPU extends EventTarget {
     this._annotationUndoStack.clear()
     this.emit('annotationChanged', { action: 'clear' })
     this.drawScene()
+  }
+
+  /**
+   * Serialize the vector annotations to a standalone SVG string (`<path>` per
+   * polygon, in slice-plane mm coordinates). `sliceType` defaults to the current
+   * single-slice view, or AXIAL for render/multiplanar/none. When `slicePosition`
+   * is given only annotations on that slice are exported; omit it (the default)
+   * to export every annotation on the plane. Returns null when there are none.
+   */
+  annotationsToSVG(sliceType?: number, slicePosition?: number): string | null {
+    if (this.model.annotations.length === 0) return null
+    const type = sliceType ?? this.model.layout.sliceType
+    const plane =
+      type === SLICE_TYPE.AXIAL ||
+      type === SLICE_TYPE.CORONAL ||
+      type === SLICE_TYPE.SAGITTAL
+        ? type
+        : SLICE_TYPE.AXIAL
+    return annotationsToSVG({
+      annotations: this.model.annotations,
+      sliceType: plane,
+      slicePosition: slicePosition,
+    })
   }
 
   annotationUndo(): void {

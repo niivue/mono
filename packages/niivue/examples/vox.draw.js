@@ -18,6 +18,18 @@ function ensureDrawing() {
 
 penValue.onchange = function () {
   const val = parseInt(this.value, 10)
+  // Vector (SVG) mode: draw freehand vector polygons (annotation layer) instead
+  // of painting the raster, and enable the SVG export. Mirrors the slide demos'
+  // "Vector (SVG)" tool.
+  const vector = val === 10
+  nv1.annotationIsEnabled = vector
+  svgBtn.disabled = !vector
+  if (vector) {
+    nv1.drawIsEnabled = false // let the annotation layer handle the click
+    nv1.annotationTool = 'freehand'
+    nv1.annotationBrushRadius = 1 // <=1 => closed-polygon mode
+    return
+  }
   if (val < 0) {
     // "Off" selected — disable pen but keep drawing visible
     nv1.drawIsEnabled = false
@@ -36,6 +48,20 @@ penValue.onchange = function () {
     nv1.drawPenAutoClose = false
     nv1.drawPenFilled = false
   }
+}
+
+svgBtn.onclick = () => {
+  const svg = nv1.annotationsToSVG()
+  if (!svg) {
+    alert('Draw a vector shape first (Pen -> Vector (SVG)).')
+    return
+  }
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'annotations.svg'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 penSize.oninput = function () {

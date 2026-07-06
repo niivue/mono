@@ -41,6 +41,14 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 - [ ] **[P3] (M) Set up the `tauri ios` project/build** and validate on simulator/
   device once the above land.
 - [ ] **[P3] (M) AirDrop / share-sheet dataset hand-off (Apple-only, one-shot).**
+  **Payload now exists (2026-07-06):** `export_bundle` writes a portable
+  `.nvbundle` (manifest + hashed data) — this is the thing to share. Remaining
+  for this item is purely the *transport* + *receive* side (below) and, for a
+  clean one-item AirDrop, zipping the bundle dir into a single file (or
+  registering `.nvbundle` as a macOS package UTI). The contained macOS-first
+  path is `NSSharingService(named: .sendViaAirDrop).perform(withItems:)` from a
+  Rust AppKit command (`objc2-app-kit`, already in the tree) — no Swift plugin
+  needed for macOS; iOS still needs the `UIActivityViewController` plugin.
   Transport for the assign→work→resync flow (see "Assign → work-offline → resync"
   under Reproducibility), not live sync. Apps can't initiate AirDrop directly —
   present the OS share sheet (`NSSharingServicePicker` macOS,
@@ -95,6 +103,15 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 - [x] **[P3] (S) Remaining lock-poison sites.** `patch` and `pyramid_locks` still
   use `.lock().ok()` (they degrade gracefully). Convert to `lock_recover` for
   consistency if desired.
+- [ ] **[P2] (S) Bound the NIfTI file read to the declared voxel extent.**
+  `read_nifti_file` (`volumetric_server.rs:1959-1978`) validates voxel count
+  against `max_source_voxels()` then `read_to_end()`s the whole file — a header
+  declaring shape at the limit but with gigabytes appended (or a gzip bomb)
+  allocates/decompresses all of it, bypassing the voxel-count cap → OOM/DoS.
+  Cap the read at `vox_offset + prod(shape) * bytes_per_voxel` (and bound the
+  gzip inflate) instead of reading to EOF. (Found in the 2026-07-06 review; the
+  rest of the backend audit came back clean — checked_mul everywhere, guarded
+  indexing, cache budgets, no path traversal.)
 
 ## Frontend refactor
 
@@ -133,6 +150,29 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
   with the file dialog + existence validation (`NiimathOperationsPanel`).
 - [ ] **[P3] (S) Tune layout constants** if needed (section-label headroom,
   preview tiers) on real datasets.
+- [ ] **[P2] (S–M) Explode control (3D render).** Surface niivue's chunk-explode
+  in the 3D render controls — spreads the volume's streamed/chunk blocks apart so
+  you can see between them. Works on **single-chunk-loaded** volumes too (not just
+  streamed ones). **Blocked on the niivue PR (#64, `poc-client-only-range-requests`)
+  landing on niivue `main`** so the API is stable — see [[niivue-dep-wiring]] (the
+  code is already in our symlinked dist, but keep to a merged main).
+  Recipe (from niivue `examples/range.js` `syncExplode()` — a live per-frame
+  update, no re-stream):
+  ```js
+  vol.chunkPlan = chunkPlan                                  // volume needs a plan
+  vol.chunkExplode = { enabled: true, scale: [1.5, 1.5, 1.5] } // VolumeChunkExplode
+  nv.drawScene()
+  ```
+  - **First: verify** `nv.volumes[0].chunkPlan` exists on a plain neurovue-loaded
+    volume. If the render path auto-assigns a (single-chunk) plan, no extra work;
+    if not, build one on load via `chunkVolume(dims, deviceLimit)` /
+    `chunkVolumeGrid(dims, gridDims, deviceLimit)` and assign `vol.chunkPlan`.
+  - **UI:** an "Explode" checkbox + spacing slider (→ `chunkExplode.scale`) in the
+    3D render section (with the clip-plane controls); set `chunkExplode` on the
+    rendered volume(s) + `drawScene()`. `chunkExplode` is **per-entry**, so it can
+    explode the base without exploding an overlay.
+  - Plumb through NiivueStage like the existing declarative render props (not a
+    fiber-walk); it's 3D-render-only, so hide it in 2D modes.
 
 ## Scientific / clinical viewer review
 
@@ -299,11 +339,25 @@ RAS+value widget.)
 
 ### Reproducibility & data-trust (researcher)
 
-- [ ] **[P2] (M) Save/share full view state.** `savePatch` saves only enabled
-  clip planes + backend (`App.tsx:1485-1512`) — not overlays, colormaps, ranges,
-  or camera. Serialize full view state and support reload so a researcher can
-  save/share "this exact view." ("Save correction patch" is also an obscure label
-  for a save-view action.)
+- [~] **[P2] (M) Save/share full view state.** The **export** half landed with
+  the bundle foundation (2026-07-06): the new `.nvbundle` (Package button →
+  `exportDatasetBundle` → `export_dataset_bundle` command →
+  `volumetric_server::export_bundle`) serializes the full view into
+  `manifest.json` alongside the copied volumes. The `view` blob is deliberately
+  **shaped to mirror niivue's `NVDocumentData`** (`buildBundleViewState` in
+  `domain/bundle.ts`): a `volumes[]` array in base→overlay→atlas order with
+  per-volume `role`/`colormap`/`opacity`/`calMin`/`calMax`/`hidden`, plus a
+  `scene` with `crosshairPos` + enabled `clipPlanes`, `viewMode`, `backend`.
+  **This is intentionally NOT yet a real NVDocument** — mono's `serialize()`
+  always embeds volume bytes and lacks the old-niivue sparse/linked path
+  (`json(embedImages=false)` + `fetchLinkedData`), now tracked in
+  **mono `packages/niivue/FEATURE_PARITY.md` §5**. When that lands, this maps to
+  a *linked* NVDocument (volumes reference the bundle's `data/` files) via a
+  near-mechanical rename. **Remaining: reload/import** — read a bundle back and
+  reapply the view (ideally via `loadDocument()` once linked docs exist); plus a
+  lighter "save view only" (no data copy) if wanted. `savePatch` (the old obscure
+  "Save correction patch") still only writes clip planes + backend and is
+  superseded for view-sharing.
 - [x] **[P2] (S) Persistent, copyable RAS coordinate widget.** Done: a
   **Crosshair** section in the Inspect panel (`CrosshairPanel`) that persists the
   last crosshair position as an anatomical RAS+ readout (`R/A/S` letters),
@@ -342,6 +396,11 @@ RAS+value widget.)
     (`volumetric_server.rs:2455`) is a non-cryptographic `u64` (`DefaultHasher`) —
     fine for cache-busting, **not** for tamper-evidence. Use a cryptographic hash
     (SHA-256 / BLAKE3) as the integrity + changelog identity; keep `id` as the
+    - **Started 2026-07-06:** bundle export already computes streaming **SHA-256**
+      per data file (`sha256_file` in `volumetric_server.rs`, recorded as
+      `sha256` in each bundle manifest entry). Reuse that helper for the
+      dataset-level integrity hash + verify-on-load; the remaining work is the
+      cache-identity swap and the append-only changelog.
     dataset's single notion of identity so there aren't two.
 - [ ] **[P3] (L) Assign → work-offline → resync (multi-user, additive).** Built
   *on top of* the integrity/changelog backbone above; explicitly not load-bearing
@@ -405,6 +464,73 @@ RAS+value widget.)
   Blender numpad `1/3/7` (`:119-174`) — invisible and colliding with FSLeyes/
   FreeView muscle memory. Add a `?` cheatsheet and standard arrow/PageUp-Down
   navigation.
+
+## Review pass 2026-07-06 (bullet-proof / intuitive / easy to use)
+
+Fresh robustness + ease-of-use sweep (frontend error paths, backend hardening,
+first-run/UX friction). Backend came back nearly clean — see the read-bound item
+under "Backend correctness / hardening". These are the frontend/UX findings.
+
+### Robustness — don't let failures go silent or hang
+
+- [ ] **[P1] (S) Timeouts + abort on every server fetch.** Manifest, version,
+  metadata, volume-file, and savePatch fetches have no timeout or `AbortSignal`
+  (`domain/desktop.ts:193-215`, `NiivueStage.tsx:862-876`, `App.tsx:2281-2298`).
+  If the local server stalls, the UI hangs on a spinner with no recovery. Wrap
+  fetches in a shared `fetchWithTimeout` (AbortController) and surface a
+  retryable error. Keep it transport-agnostic for the mobile IPC seam.
+- [ ] **[P2] (S) Inverted intensity window is silently discarded.** `WindowControl`
+  only calls `onChange` when `min < max` (`App.tsx:1449`); typing `min ≥ max`
+  looks accepted but is dropped with no cue. Show an inline invalid state (and
+  the same input has no live validation — `App.tsx:1468-1486`).
+- [ ] **[P2] (S) Don't cache failed atlas-colormap fetches forever.**
+  `atlasColorMapCache` (`NiivueStage.tsx:898-904`) caches rejected promises with
+  no TTL, so one transient failure permanently kills atlas labels for all
+  volumes until reload. Cache successes only; let failures retry.
+- [ ] **[P2] (S) Distinguish "metadata failed" from "not loaded yet."**
+  `useVolumeMetadata` (`useVolumeMetadata.ts:30-31`) collapses errors into a
+  bare status, so a failed fetch reads identically to "n/a / loading." Add a
+  distinct error state (with retry).
+- [ ] **[P3] (S) Go-to crosshair: show when a coordinate is out of bounds.**
+  The go-to fields validate finite but not bounds (`App.tsx:1602-1607`); NiiVue
+  snaps out-of-range input to the nearest voxel with no feedback, so the user
+  thinks they jumped somewhere they didn't. Clamp explicitly and flag the snap.
+- [ ] **[P3] (S) Overlay-load ordering race.** `loadOverlayVolume`
+  (`App.tsx:470-490`) can register an overlay before `serverUrl`/manifest are
+  ready, so it silently lands without its correct layer settings. Gate the add
+  on a refreshed manifest (or reconcile settings on the next refresh).
+
+### First-run & feedback — the blank-canvas / "did it work?" gaps
+
+- [ ] **[P1] (S) First-run empty state needs a real call to action.** With no
+  dataset, the canvas is blank with only a small "Waiting for a dataset
+  selection" line (`NiivueStage.tsx:314`, `.nv-render-status`), and that text
+  overlaps the stage-title at the same `top:14px/left:14px`
+  (`styles.css:1448-1461` vs `875-891`). Add a prominent centered "Open dataset"
+  affordance (+ sample-data hint) and fix the overlap.
+- [ ] **[P2] (S) Explain *why* controls are disabled.** The niimath Run button
+  (`NiimathOperationsPanel.tsx:207`, and it's very faint at `opacity:0.42`) and
+  the Axial/Coronal/Sagittal view-mode buttons (`NiivueStage.tsx:636,639`) go
+  disabled with no `title` telling the user what's missing. Add explain-disabled
+  tooltips; bump the disabled contrast.
+- [ ] **[P2] (S) Remove-layer has no confirm or undo.** The overlay/atlas row X
+  (`App.tsx:1157`) deletes the layer + its settings immediately. Add an
+  undo (toast) or a lightweight confirm — accidental removal means re-adding and
+  re-tuning the layer.
+- [ ] **[P2] (S) niimath operand units + run feedback.** Threshold / upper-
+  threshold operands give no unit or range hint (`NiimathOperationsPanel.tsx:160-167`,
+  unlike Smooth's live FWHM readout); "Run"→"Running" has no spinner
+  (`:212`); and the output path/status truncate with no way to expand or copy
+  (`:220`, `styles.css:2126-2133`). Also tell the user *where* to select a
+  volume — the panel says "Select a local NIfTI volume" but selection lives in
+  the Inspect tab (`:216-217`).
+- [ ] **[P3] (S) "No matching volumes" needs an inline Clear-filters button.**
+  The filtered empty state (`DatasetDesktop.tsx:242`, `VolumeFilterPanel.tsx:149`)
+  strands the user with no adjacent way to reset the filters.
+- [ ] **[P3] (S) Consistent async feedback.** Overlay load (`App.tsx:1231`) and
+  the copy-coordinate confirm (`App.tsx:1595,1626`, a 1.5s custom icon) use
+  ad-hoc, easy-to-miss cues. Standardize on a small toast/spinner pattern so
+  "is it working?" is answered consistently across panels.
 
 ## Housekeeping
 

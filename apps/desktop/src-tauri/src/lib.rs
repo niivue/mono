@@ -58,6 +58,14 @@ struct OverlayAddResult {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ExportBundleResult {
+    bundle_path: String,
+    volume_count: usize,
+    total_bytes: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct RuntimeCapabilities {
     terminal_available: bool,
     native_niimath_available: bool,
@@ -116,6 +124,33 @@ async fn add_overlay_volume_path(
     })
     .await
     .map_err(|error| format!("add_overlay_volume_path: join error: {error}"))?
+}
+
+#[tauri::command]
+async fn export_dataset_bundle(
+    state: tauri::State<'_, NeuroVueState>,
+    dest_path: String,
+    volume_ids: Vec<String>,
+    view: serde_json::Value,
+    created_at: String,
+) -> Result<ExportBundleResult, String> {
+    let server = state.server.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = volumetric_server::export_bundle(
+            &server,
+            Path::new(&dest_path),
+            &volume_ids,
+            &view,
+            &created_at,
+        )?;
+        Ok(ExportBundleResult {
+            bundle_path: result.bundle_path,
+            volume_count: result.volume_count,
+            total_bytes: result.total_bytes,
+        })
+    })
+    .await
+    .map_err(|error| format!("export_dataset_bundle: join error: {error}"))?
 }
 
 fn open_dataset_at_path(
@@ -180,6 +215,7 @@ pub fn run() {
             neurovue_server_info,
             open_dataset_path,
             add_overlay_volume_path,
+            export_dataset_bundle,
             niimath::validate_niimath_mask_path,
             niimath::run_niimath_task,
             terminal::terminal_start,
@@ -194,7 +230,8 @@ pub fn run() {
         neurovue_runtime_capabilities,
         neurovue_server_info,
         open_dataset_path,
-        add_overlay_volume_path
+        add_overlay_volume_path,
+        export_dataset_bundle
     ]);
 
     builder

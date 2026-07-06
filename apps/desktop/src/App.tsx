@@ -31,6 +31,7 @@ import {
   Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
+  Package,
   PanelRightClose,
   PanelRightOpen,
   Plus,
@@ -67,6 +68,7 @@ import {
   openOverlayVolume,
   resolveRuntimeCapabilities
 } from './domain/desktop'
+import { buildBundleViewState, exportDatasetBundle, formatBundleBytes } from './domain/bundle'
 import {
   volumeImageTypeLabel,
   volumeRoleLabel,
@@ -227,6 +229,7 @@ export function App(): JSX.Element {
   const [isRenderMaximized, setIsRenderMaximized] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
   const [isOpeningOverlay, setIsOpeningOverlay] = useState(false)
+  const [isExportingBundle, setIsExportingBundle] = useState(false)
   const [isTerminalAvailable, setIsTerminalAvailable] = useState(false)
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
@@ -495,6 +498,55 @@ export function App(): JSX.Element {
     }
   }
 
+  async function handleExportBundle(): Promise<void> {
+    if (isExportingBundle) return
+    if (!selected) {
+      setStatus('Select a volume before exporting a bundle.')
+      return
+    }
+
+    // Compose the view (base → overlays → atlas order; the importer replays it
+    // in that order). The bundle's copied volumes derive from the same ordered
+    // list, so files and view stay in lockstep.
+    const crosshairMm = locationReadout?.mm
+    const view = buildBundleViewState({
+      baseId: selected.id,
+      overlayIds: Array.from(overlayIds),
+      atlasId,
+      layerSettings,
+      viewMode,
+      backend,
+      clipPlanes,
+      crosshairPos:
+        Array.isArray(crosshairMm) && crosshairMm.length >= 3
+          ? [crosshairMm[0], crosshairMm[1], crosshairMm[2]]
+          : null
+    })
+    const volumeIds = view.volumes.map((volume) => volume.id)
+
+    setIsExportingBundle(true)
+    setStatus(`Exporting bundle (${volumeIds.length} volume${volumeIds.length === 1 ? '' : 's'})…`)
+    try {
+      const result = await exportDatasetBundle({
+        defaultName: selected.label ?? 'neurovue-bundle',
+        volumeIds,
+        view
+      })
+      if (!result) {
+        setStatus('Bundle export cancelled.')
+        return
+      }
+      setStatus(
+        `Exported ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
+          `(${formatBundleBytes(result.totalBytes)}) to ${result.bundlePath}.`
+      )
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsExportingBundle(false)
+    }
+  }
+
 
   useEffect(() => {
     if (!isRenderMaximized) return
@@ -630,6 +682,24 @@ export function App(): JSX.Element {
             }}
           >
             <Save size={16} />
+          </button>
+          <button
+            aria-label="Export bundle"
+            className="nv-icon-button"
+            title={
+              selected
+                ? 'Export dataset bundle (volumes + this view) — the shareable/AirDrop payload'
+                : 'Select a volume to export a bundle'
+            }
+            type="button"
+            disabled={!selected || isExportingBundle}
+            onClick={handleExportBundle}
+          >
+            {isExportingBundle ? (
+              <LoaderCircle className="nv-spin" size={16} />
+            ) : (
+              <Package size={16} />
+            )}
           </button>
           {isTerminalAvailable ? (
             <button

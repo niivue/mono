@@ -7,6 +7,7 @@ use axum::{
 };
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use serde_json::{json, Value};
 use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet, VecDeque},
@@ -695,6 +696,208 @@ pub fn register_overlay_volume(
         id: unique_id,
         label,
     })
+}
+
+/// Result of writing a portable `.nvbundle` to disk.
+pub struct BundleExportResult {
+    pub bundle_path: String,
+    pub volume_count: usize,
+    pub total_bytes: u64,
+}
+
+/// Export the given volumes (and their JSON sidecars) into a self-describing
+/// bundle directory at `dest`: `<dest>/manifest.json` + `<dest>/data/*`. Each
+/// data file gets a cryptographic (SHA-256) content hash recorded in the
+/// manifest so a later import can verify integrity. `view` is an opaque
+/// view-state blob supplied by the frontend (layers, colormaps, windows, clip
+/// planes, …) and is round-tripped verbatim. `created_at` is an ISO-8601
+/// timestamp from the caller (kept out of Rust to avoid a time-format dep, and
+/// to match the existing `savePatch` convention).
+///
+/// The bundle format is intentionally container-agnostic (a plain directory
+/// today); zipping it into a single AirDrop-friendly file is a thin wrapper the
+/// share transport can add later. Whole-volume export only for now — the
+/// per-volume manifest entry has room for a future `sliceRange` field.
+pub fn export_bundle(
+    handle: &ServerHandle,
+    dest: &FsPath,
+    volume_ids: &[String],
+    view: &Value,
+    created_at: &str,
+) -> Result<BundleExportResult, String> {
+    if volume_ids.is_empty() {
+        return Err("export_bundle: no volumes selected for export".to_string());
+    }
+
+    // Resolve every requested id up front (preserving request order) so we fail
+    // before touching the filesystem if any is unknown or lacks a source file.
+    let selected: Vec<VolumeEntry> = {
+        let volumes = lock_recover(&handle.volumes);
+        let mut out = Vec::with_capacity(volume_ids.len());
+        for id in volume_ids {
+            let entry = volumes
+                .iter()
+                .find(|volume| &volume.id == id)
+                .ok_or_else(|| format!("export_bundle: unknown volume {id}"))?;
+            if entry.source_path.is_none() {
+                return Err(format!("export_bundle: volume {id} has no source file"));
+            }
+            out.push(entry.clone());
+        }
+        out
+    };
+
+    // Guard the destination: replace a prior NeuroVue bundle, but never clobber
+    // a non-bundle directory the user may have picked by mistake.
+    if dest.is_dir() {
+        if dest.join("manifest.json").is_file() {
+            fs::remove_dir_all(dest)
+                .map_err(|error| format!("export_bundle: replace {}: {error}", dest.display()))?;
+        } else if dir_is_non_empty(dest) {
+            return Err(format!(
+                "export_bundle: {} exists and is not a NeuroVue bundle",
+                dest.display()
+            ));
+        }
+    } else if dest.is_file() {
+        fs::remove_file(dest)
+            .map_err(|error| format!("export_bundle: overwrite {}: {error}", dest.display()))?;
+    }
+
+    let data_dir = dest.join("data");
+    fs::create_dir_all(&data_dir)
+        .map_err(|error| format!("export_bundle: create {}: {error}", data_dir.display()))?;
+
+    let mut used_names: HashSet<String> = HashSet::new();
+    let mut total_bytes: u64 = 0;
+    let mut manifest_volumes: Vec<Value> = Vec::with_capacity(selected.len());
+
+    for entry in &selected {
+        let source = entry
+            .source_path
+            .as_ref()
+            .expect("source_path presence checked above");
+        let (rel, bytes, sha) = copy_into_bundle(source, &data_dir, &mut used_names, "volume.nii")?;
+        total_bytes += bytes;
+
+        let mut sidecars: Vec<Value> = Vec::new();
+        for sidecar in &entry.sidecar_paths {
+            let (sc_rel, sc_bytes, sc_sha) =
+                copy_into_bundle(sidecar, &data_dir, &mut used_names, "sidecar.json")?;
+            total_bytes += sc_bytes;
+            sidecars.push(json!({
+                "name": file_name_or(sidecar, "sidecar.json"),
+                "data": sc_rel,
+                "sha256": sc_sha,
+                "bytes": sc_bytes,
+            }));
+        }
+
+        manifest_volumes.push(json!({
+            "id": entry.id,
+            "role": entry.role,
+            "label": entry.label,
+            "data": rel,
+            "sha256": sha,
+            "bytes": bytes,
+            "shape": entry.shape,
+            "spacing": entry.spacing,
+            "dtype": entry.dtype,
+            "derivedFrom": entry.derived_from,
+            "derivation": entry.derivation,
+            "sidecars": sidecars,
+        }));
+    }
+
+    let bids = bids_dataset_info(handle);
+    let manifest = json!({
+        "nvbundle": "1",
+        "kind": "dataset-subset",
+        "createdAt": created_at,
+        "tool": { "name": "NeuroVue", "version": env!("CARGO_PKG_VERSION") },
+        "source": {
+            "datasetName": bids.as_ref().and_then(|info| info.name.clone()),
+            "datasetDoi": bids.as_ref().and_then(|info| info.dataset_doi.clone()),
+            "datasetRoot": dataset_root(handle).map(|path| path.display().to_string()),
+        },
+        "volumes": manifest_volumes,
+        "view": view,
+    });
+
+    let manifest_path = dest.join("manifest.json");
+    let manifest_text = serde_json::to_string_pretty(&manifest)
+        .map_err(|error| format!("export_bundle: serialize manifest: {error}"))?;
+    fs::write(&manifest_path, manifest_text)
+        .map_err(|error| format!("export_bundle: write {}: {error}", manifest_path.display()))?;
+
+    Ok(BundleExportResult {
+        bundle_path: dest.display().to_string(),
+        volume_count: selected.len(),
+        total_bytes,
+    })
+}
+
+/// Copy `source` into `data_dir` under a bundle-unique file name, returning the
+/// bundle-relative path (`data/<name>`), the byte count, and the SHA-256 hash.
+fn copy_into_bundle(
+    source: &FsPath,
+    data_dir: &FsPath,
+    used_names: &mut HashSet<String>,
+    fallback: &str,
+) -> Result<(String, u64, String), String> {
+    let name = unique_bundle_name(source, used_names, fallback);
+    let out = data_dir.join(&name);
+    let bytes = fs::copy(source, &out)
+        .map_err(|error| format!("export_bundle: copy {}: {error}", source.display()))?;
+    let sha = sha256_file(&out)
+        .map_err(|error| format!("export_bundle: hash {}: {error}", out.display()))?;
+    Ok((format!("data/{name}"), bytes, sha))
+}
+
+/// Stream a file through SHA-256 without holding it in memory (volumes are big).
+fn sha256_file(path: &FsPath) -> std::io::Result<String> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 1 << 16];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Pick a file name for the bundle's `data/` dir that hasn't been used yet,
+/// disambiguating collisions (e.g. two `sub-01_T1w.json` sidecars) with a
+/// numeric prefix so nothing silently overwrites.
+fn unique_bundle_name(source: &FsPath, used: &mut HashSet<String>, fallback: &str) -> String {
+    let base = file_name_or(source, fallback);
+    if used.insert(base.clone()) {
+        return base;
+    }
+    let mut counter = 1usize;
+    loop {
+        let candidate = format!("{counter}-{base}");
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+fn file_name_or(path: &FsPath, fallback: &str) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn dir_is_non_empty(dir: &FsPath) -> bool {
+    fs::read_dir(dir)
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false)
 }
 
 async fn api_info(State(state): State<AppState>) -> Json<Value> {

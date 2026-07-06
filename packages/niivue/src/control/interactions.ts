@@ -284,7 +284,9 @@ interface ExplodedDrawPick {
   // connect when this matches, so a drag that crosses a block gap doesn't streak
   // a line between two data-space-distant voxels.
   chunkIndex: number
-  drawingVol: NVImage
+  // The active drawing volume, or null when none is open (vector-annotation
+  // callers don't need one; raster callers bail when it's null).
+  drawingVol: NVImage | null
   // Predicate over RAS voxel coords: true for visible tissue (source intensity
   // above the transparency threshold). Reused by the 3D flood fill to bound the
   // region. When the volume has no readable data it is always-true (paint/fill
@@ -303,7 +305,7 @@ function pickExplodedDraw(
 ): ExplodedDrawPick | null {
   const hit = ctrl.activeTileHit
   const plan = vol.chunkPlan
-  if (!hit || !plan || !ctrl.model.drawingVolume) return null
+  if (!hit || !plan) return null
   const tile = ctrl.view?.screenSlices[hit.tileIndex]
   const ltwh = tile?.leftTopWidthHeight
   if (!ltwh) return null
@@ -381,7 +383,7 @@ function pickExplodedDraw(
   return {
     voxel: picked.voxel,
     chunkIndex: picked.chunkIndex,
-    drawingVol: ctrl.model.drawingVolume as NVImage,
+    drawingVol: (ctrl.model.drawingVolume as NVImage | null) ?? null,
     keep,
   }
 }
@@ -414,6 +416,7 @@ function draw3DOnExplodedBlock(
   const pick = pickExplodedDraw(ctrl, vol)
   if (!pick) return null
   const { voxel, chunkIndex, drawingVol } = pick
+  if (!drawingVol) return null
   if (isStrokeStart) snapshotDrawUndo(ctrl, drawingVol)
   const radius = Math.max(0, Math.floor(ctrl.model.draw.penSize / 2))
   // Continue from the previous voxel only when this pick is in the SAME block as
@@ -454,6 +457,7 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
   const pick = pickExplodedDraw(ctrl, vol)
   if (!pick) return false
   const { voxel, drawingVol, keep } = pick
+  if (!drawingVol) return false
   snapshotDrawUndo(ctrl, drawingVol)
   const dims = vol.dimsRAS as number[]
   // Cap the fill so a click on a huge connected structure can't run unbounded;
@@ -548,6 +552,82 @@ function magicWand3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
   return magicWandFill(ctrl, vol, pick.voxel)
 }
 
+// Pick the visible block point under the cursor on the 3D render and return its
+// un-exploded mm position, for freehand vector drawing directly on the blocks.
+function pickBlockMM(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+): [number, number, number] | null {
+  const pick = pickExplodedDraw(ctrl, vol)
+  if (!pick) return null
+  const mm = NVTransforms.vox2mm(null, pick.voxel, vol.matRAS as mat4)
+  return [mm[0], mm[1], mm[2]]
+}
+
+// Commit a freehand 3D vector stroke (mm points picked off the blocks) as a
+// slice annotation. The annotation model is planar, so fit the best axis-aligned
+// plane — the axis with the smallest spread is the depth — project the points
+// onto it, and create the annotation. It renders explode-aware (tracks its
+// block) and exports via annotationsToSVG. Points are un-exploded mm, so the
+// stored annotation sits at the block's true position.
+function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
+  const pts = ctrl._annotation3DMMPath
+  ctrl._annotation3DActive = false
+  ctrl._annotation3DMMPath = []
+  if (pts.length < 3) return
+  const min: [number, number, number] = [
+    Number.POSITIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+  ]
+  const max: [number, number, number] = [
+    Number.NEGATIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ]
+  for (const p of pts) {
+    for (let a = 0; a < 3; a++) {
+      if (p[a] < min[a]) min[a] = p[a]
+      if (p[a] > max[a]) max[a] = p[a]
+    }
+  }
+  const ext = [max[0] - min[0], max[1] - min[1], max[2] - min[2]]
+  let depthAxis = 0
+  if (ext[1] < ext[depthAxis]) depthAxis = 1
+  if (ext[2] < ext[depthAxis]) depthAxis = 2
+  // sliceType is the depth axis inverse: z(2)->AXIAL(0), y(1)->CORONAL(1),
+  // x(0)->SAGITTAL(2).
+  const sliceType = 2 - depthAxis
+  const slicePosition = (min[depthAxis] + max[depthAxis]) / 2
+  const outer = pts.map((p) =>
+    Annotation.mmToSlice2D([p[0], p[1], p[2]], sliceType),
+  )
+  const anchorMM: [number, number, number] = [
+    (min[0] + max[0]) / 2,
+    (min[1] + max[1]) / 2,
+    (min[2] + max[2]) / 2,
+  ]
+  anchorMM[depthAxis] = slicePosition
+  const cfg = ctrl.model.annotation
+  ctrl._annotationUndoStack.push(ctrl.model.annotations)
+  const newAnn = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    sliceType,
+    slicePosition,
+    [{ outer, holes: [] }],
+    cfg.style,
+    anchorMM,
+  )
+  ctrl.model.annotations = Annotation.mergeAnnotations(
+    ctrl.model.annotations,
+    newAnn,
+  )
+  ctrl.emit('annotationAdded', { annotation: newAnn })
+  ctrl.emit('annotationChanged', { action: 'draw' })
+  ctrl.drawScene()
+}
+
 export function initInteraction(ctrl: NiiVueGPU): void {
   // Prevent browser default touch gestures so pointer events fire instead
   if (ctrl.canvas) ctrl.canvas.style.touchAction = 'none'
@@ -592,6 +672,32 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (graphHit) return
 
     ctrl.activeTileHit = ctrl.view?.hitTest(px, py) ?? null
+    // Freehand vector (SVG) drawing directly on the exploded blocks: a RIGHT-drag
+    // in vector (annotation) mode picks block points along the drag and, on
+    // release, commits them as a slice annotation. Checked before the raster and
+    // clip-plane paths so right-drag draws the vector shape.
+    {
+      const annVol = ctrl.model.getVolumes()[0]
+      if (
+        ctrl.model.annotation.isEnabled &&
+        !ctrl.model.annotation.isErasing &&
+        ctrl.activeTileHit?.isRender &&
+        evt.button === 2 &&
+        annVol?.matRAS &&
+        annVol.chunkPlan &&
+        chunkExplodeEnabled(annVol.chunkExplode)
+      ) {
+        const mm = pickBlockMM(ctrl, annVol)
+        ctrl._annotation3DActive = true
+        ctrl._annotation3DMMPath = mm ? [mm] : []
+        ctrl.isDragging = true
+        ctrl.activeButton = evt.button
+        ctrl.lastPointerX = evt.clientX
+        ctrl.lastPointerY = evt.clientY
+        ctrl.canvas?.setPointerCapture(evt.pointerId)
+        return
+      }
+    }
     // 3D drawing on exploded blocks: a RIGHT-click on the render tile paints the
     // block the pick ray hits, leaving left-drag free to rotate the camera.
     // Depth-pick can't see the explode (it ray-marches the un-exploded single
@@ -1068,6 +1174,8 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
       DragModes.handleDragRelease(ctrl)
     }
+    // Commit a freehand vector stroke drawn on the 3D blocks (clears its state).
+    if (ctrl._annotation3DActive) finish3DAnnotationStroke(ctrl)
     // End a 3D exploded-block stroke.
     ctrl._draw3DActive = false
     ctrl._draw3DLastVoxel = null
@@ -1102,6 +1210,8 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
       DragModes.handleDragRelease(ctrl)
     }
+    ctrl._annotation3DActive = false
+    ctrl._annotation3DMMPath = []
     ctrl._draw3DActive = false
     ctrl._draw3DLastVoxel = null
     ctrl._draw3DLastChunk = null
@@ -1164,6 +1274,22 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (deltaX === 0 && deltaY === 0) return
     ctrl.lastPointerX = evt.clientX
     ctrl.lastPointerY = evt.clientY
+    // 3D vector drag on exploded blocks: re-hit-test and accumulate the picked
+    // block point (mm) into the freehand path. Runs before the clip-plane branch
+    // so a vector drag draws instead of rotating the clip plane.
+    if (ctrl._annotation3DActive) {
+      const annVol = ctrl.model.getVolumes()[0]
+      const moveHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+      if (moveHit && annVol) {
+        const tileHit = ctrl.view?.hitTest(moveHit[0], moveHit[1]) ?? null
+        if (tileHit?.isRender) {
+          ctrl.activeTileHit = tileHit
+          const mm = pickBlockMM(ctrl, annVol)
+          if (mm) ctrl._annotation3DMMPath.push(mm)
+        }
+      }
+      return
+    }
     // 3D drawing drag on exploded blocks: re-hit-test at the current pointer and
     // paint (pen or eraser) the block the ray now hits, connecting to the last
     // painted voxel. Runs before the render-tile clip-plane branch so a 3D-draw

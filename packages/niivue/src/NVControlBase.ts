@@ -347,6 +347,12 @@ export default class NiiVueGPU extends EventTarget {
   _annotationSliceType = 0
   _annotationSlicePosition = 0
   _annotationAnchorMM: [number, number, number] = [0, 0, 0]
+  // Freehand vector drawing directly on the 3D exploded blocks: active during a
+  // right-button stroke on the render tile, accumulating picked block points in
+  // mm (un-exploded). On pointer-up they are fit to an axis-aligned plane and
+  // committed as a slice annotation.
+  _annotation3DActive = false
+  _annotation3DMMPath: [number, number, number][] = []
   _annotationShapeStart: AnnotationPoint | null = null
   _resizingControlPoint = -1
   _resizeOriginalShape: {
@@ -1505,19 +1511,22 @@ export default class NiiVueGPU extends EventTarget {
   /**
    * Serialize the vector annotations to a standalone SVG string (`<path>` per
    * polygon, in slice-plane mm coordinates). `sliceType` defaults to the current
-   * single-slice view, or AXIAL for render/multiplanar/none. When `slicePosition`
-   * is given only annotations on that slice are exported; omit it (the default)
-   * to export every annotation on the plane. Returns null when there are none.
+   * single-slice view; in render/multiplanar/none (no single plane) it falls back
+   * to the plane of the first annotation, so shapes drawn directly on the 3D
+   * blocks still export. When `slicePosition` is given only annotations on that
+   * slice are exported; omit it (the default) to export every annotation on the
+   * plane. Returns null when there are none.
    */
   annotationsToSVG(sliceType?: number, slicePosition?: number): string | null {
     if (this.model.annotations.length === 0) return null
     const type = sliceType ?? this.model.layout.sliceType
-    const plane =
+    const isSlicePlane =
       type === SLICE_TYPE.AXIAL ||
       type === SLICE_TYPE.CORONAL ||
       type === SLICE_TYPE.SAGITTAL
-        ? type
-        : SLICE_TYPE.AXIAL
+    const plane = isSlicePlane
+      ? type
+      : (this.model.annotations[0]?.sliceType ?? SLICE_TYPE.AXIAL)
     return annotationsToSVG({
       annotations: this.model.annotations,
       sliceType: plane,

@@ -89,17 +89,6 @@ overwriteCheck.onchange = function () {
 
 undoBtn.onclick = () => nv1.drawUndo()
 saveBtn.onclick = () => nv1.saveDrawing('drawing.nii.gz')
-svgBtn.onclick = () => {
-  // Export the drawing on the current crosshair slice (axial for multiplanar).
-  const svg = nv1.drawingToSVG()
-  if (!svg) return
-  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'drawing-slice.svg'
-  a.click()
-  URL.revokeObjectURL(url)
-}
 clearBtn.onclick = () => {
   // Reset to an empty drawing (keeps the same dims / view).
   nv1.createEmptyDrawing()

@@ -318,6 +318,10 @@ export default class NiiVueGPU extends EventTarget {
   _draw3DActive = false
   _draw3DLastVoxel: [number, number, number] | null = null
   _draw3DLastChunk: number | null = null
+  // True from a 3D stroke's pointer-down until its first successful paint, so the
+  // undo snapshot is taken when tissue is first hit — not skipped when the stroke
+  // starts on a ray-miss (press off-block, then drag on).
+  _draw3DNeedsUndo = false
   _drawLut: LUT | null = null
   _drawingDirty = false
   // Inclusive voxel AABB of pen strokes since the last drawing flush. When set
@@ -3505,7 +3509,10 @@ export default class NiiVueGPU extends EventTarget {
   // CSS hex for a drawing label from the active "_draw" LUT, or null when the
   // label is 0 / out of range / fully transparent (so callers can skip it).
   private _drawLabelColor(label: number): string | null {
-    if (label === 0) return null
+    // Guard against 0 and a non-finite label (e.g. an out-of-range bitmap read):
+    // the LUT-index bound checks are all false for NaN, so `lut[NaN]` would be
+    // undefined and `.toString(16)` would throw.
+    if (!Number.isFinite(label) || label === 0) return null
     if (!this._drawLut) {
       const cm = NVCmaps.lookupColorMap(this.model.draw.colormap)
       if (cm) this._drawLut = buildDrawingLut(cm)

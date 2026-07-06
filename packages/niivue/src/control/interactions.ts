@@ -417,7 +417,12 @@ function draw3DOnExplodedBlock(
   if (!pick) return null
   const { voxel, chunkIndex, drawingVol } = pick
   if (!drawingVol) return null
-  if (isStrokeStart) snapshotDrawUndo(ctrl, drawingVol)
+  // Snapshot for undo on the first successful paint of the stroke (set at
+  // pointer-down), so a stroke that starts on a ray-miss still gets a baseline.
+  if (ctrl._draw3DNeedsUndo) {
+    snapshotDrawUndo(ctrl, drawingVol)
+    ctrl._draw3DNeedsUndo = false
+  }
   const radius = Math.max(0, Math.floor(ctrl.model.draw.penSize / 2))
   // Continue from the previous voxel only when this pick is in the SAME block as
   // the last one — connecting across a block gap would streak a line between two
@@ -460,9 +465,10 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
   if (!drawingVol) return false
   snapshotDrawUndo(ctrl, drawingVol)
   const dims = vol.dimsRAS as number[]
-  // Cap the fill so a click on a huge connected structure can't run unbounded;
-  // an eraser fill (penValue 0) is uncapped-in-spirit but still bounded by the
-  // visited set. 4M voxels is generous for a single anatomical blob.
+  // Cap the fill so a click on a huge connected structure can't run unbounded.
+  // The cap applies to erase (penValue 0) too; on a volume with more than 4M
+  // voxels a large erase flood stops at the cap and warns. 4M is generous for a
+  // single anatomical blob.
   const maxVoxels = Math.min(dims[1] * dims[2] * dims[3], 4_000_000)
   const result = floodFill3D({
     seed: voxel,
@@ -592,6 +598,9 @@ function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
     }
   }
   const ext = [max[0] - min[0], max[1] - min[1], max[2] - min[2]]
+  // Skip a degenerate stroke (all picks on the same voxel -> zero extent), which
+  // would commit an invisible zero-area annotation and an undo entry.
+  if (ext[0] <= 1e-6 && ext[1] <= 1e-6 && ext[2] <= 1e-6) return
   let depthAxis = 0
   if (ext[1] < ext[depthAxis]) depthAxis = 1
   if (ext[2] < ext[depthAxis]) depthAxis = 2
@@ -727,6 +736,9 @@ export function initInteraction(ctrl: NiiVueGPU): void {
           floodFill3DOnExplodedBlock(ctrl, drawVol)
           return
         }
+        // Take the undo snapshot on the first painted voxel of this stroke (in
+        // draw3DOnExplodedBlock), so starting on a ray-miss doesn't skip it.
+        ctrl._draw3DNeedsUndo = true
         const painted = draw3DOnExplodedBlock(ctrl, drawVol, true)
         // Begin a continuous 3D stroke: capture the pointer and mark the drag as
         // a 3D-draw so pointermove paints instead of rotating the clip plane.
@@ -1178,6 +1190,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (ctrl._annotation3DActive) finish3DAnnotationStroke(ctrl)
     // End a 3D exploded-block stroke.
     ctrl._draw3DActive = false
+    ctrl._draw3DNeedsUndo = false
     ctrl._draw3DLastVoxel = null
     ctrl._draw3DLastChunk = null
     ctrl.isDragging = false
@@ -1213,6 +1226,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     ctrl._annotation3DActive = false
     ctrl._annotation3DMMPath = []
     ctrl._draw3DActive = false
+    ctrl._draw3DNeedsUndo = false
     ctrl._draw3DLastVoxel = null
     ctrl._draw3DLastChunk = null
     ctrl.isDragging = false

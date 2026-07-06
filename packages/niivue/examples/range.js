@@ -35,7 +35,10 @@ let reloadToken = 0
 // its stragglers correctly update the current stats; a source switch changes it,
 // so the old source's stragglers no-op.
 let sourceSerial = 0
-const isLiveSerial = (serial) => activeSource?.serial === serial
+// Compare against the newest stamped serial (not activeSource, which is briefly
+// null while a source-switch load is in flight — otherwise the array-open
+// metadata fetches of the load that's currently newest would be dropped).
+const isLiveSerial = (serial) => serial === sourceSerial
 
 // The explode scale currently applied to the resident volume. Explode is gated
 // on load-settle (see syncExplode): while chunks are still streaming the volume

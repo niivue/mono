@@ -106,7 +106,7 @@ clipCheck.onchange = function () {
   // button stays free to draw on the blocks (in a raster pen/wand/fill mode
   // right-drag paints; it only adjusts the clip plane when no draw mode is on).
   // depth 2 = no clip; depth 0 = a cut through the middle.
-  nv1.isClipPlaneCutaway = true
+  nv1.isClipPlaneCutaway = this.checked
   nv1.setClipPlane(this.checked ? [0, 0, 0] : [2, 0, 0])
 }
 

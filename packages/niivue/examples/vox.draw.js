@@ -73,7 +73,9 @@ opacitySlider.oninput = function () {
 }
 
 undoBtn.onclick = () => {
-  nv1.drawUndo()
+  // In Vector (SVG) mode, undo the vector annotation; otherwise the raster stroke.
+  if (penValue.value === '10') nv1.annotationUndo()
+  else nv1.drawUndo()
 }
 
 saveBtn.onclick = () => {

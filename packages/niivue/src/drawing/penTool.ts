@@ -160,6 +160,16 @@ export function floodFill3D(params: FloodFill3DParams): FloodFill3DResult {
   // eraser fill (penValue 0) still terminates.
   const visited = new Uint8Array(dx * dy * dz)
   const stack: number[] = [sx, sy, sz]
+  // Mark visited on PUSH (not on pop), so each voxel is enqueued at most once and
+  // the stack stays bounded by the region size instead of ~6x it.
+  visited[voxelIndex(sx, sy, sz, dx, dy)] = 1
+  const pushIfNew = (nx: number, ny: number, nz: number): void => {
+    const nf = voxelIndex(nx, ny, nz, dx, dy)
+    if (!visited[nf]) {
+      visited[nf] = 1
+      stack.push(nx, ny, nz)
+    }
+  }
   let filled = 0
   let hitCap = false
   while (stack.length > 0) {
@@ -167,8 +177,6 @@ export function floodFill3D(params: FloodFill3DParams): FloodFill3DResult {
     const y = stack.pop() as number
     const x = stack.pop() as number
     const flat = voxelIndex(x, y, z, dx, dy)
-    if (visited[flat]) continue
-    visited[flat] = 1
     if (!keep(x, y, z)) continue
     if (!(skipOverwrite && drawBitmap[flat] !== 0)) {
       // Check the cap before painting so exhausting the region exactly at the
@@ -186,12 +194,12 @@ export function floodFill3D(params: FloodFill3DParams): FloodFill3DResult {
       if (y > max[1]) max[1] = y
       if (z > max[2]) max[2] = z
     }
-    if (x + 1 < dx) stack.push(x + 1, y, z)
-    if (x - 1 >= 0) stack.push(x - 1, y, z)
-    if (y + 1 < dy) stack.push(x, y + 1, z)
-    if (y - 1 >= 0) stack.push(x, y - 1, z)
-    if (z + 1 < dz) stack.push(x, y, z + 1)
-    if (z - 1 >= 0) stack.push(x, y, z - 1)
+    if (x + 1 < dx) pushIfNew(x + 1, y, z)
+    if (x - 1 >= 0) pushIfNew(x - 1, y, z)
+    if (y + 1 < dy) pushIfNew(x, y + 1, z)
+    if (y - 1 >= 0) pushIfNew(x, y - 1, z)
+    if (z + 1 < dz) pushIfNew(x, y, z + 1)
+    if (z - 1 >= 0) pushIfNew(x, y, z - 1)
   }
   return { filled, min, max, hitCap }
 }

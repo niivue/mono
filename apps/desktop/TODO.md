@@ -12,10 +12,29 @@ Size: _(S)_ contained · _(M)_ medium · _(L)_ large / own session.
 The codebase is already Tauri-v2 mobile-capable; these are the remaining blockers
 to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 
-- [ ] **[P1] (L) Data transport for mobile.** The local axum HTTP server on
-  `127.0.0.1` won't port cleanly (ATS blocks cleartext http, sockets suspend on
-  lifecycle). Abstract data access behind a transport seam and add a custom
-  protocol / IPC implementation for mobile. Keep desktop on the HTTP server.
+**iOS build works — app runs on the simulator (2026-07-06).** `tauri ios init`
+scaffolded `src-tauri/gen/apple`; the Rust lib cross-compiles for
+`aarch64-apple-ios-sim` and the app **launches on the iPhone 17 simulator with
+the default MNI152 volume loading, WebGL rendering the brain, previews, and
+metadata all working**. Enablement needed (all committed): (1) `"tauri": "tauri"`
+npm script — the generated Xcode "Build Rust Code" phase calls `npm run -- tauri
+ios xcode-script`; (2) `tauri.ios.conf.json` clearing `bundle.externalBin` (no
+iOS niimath sidecar); (3) `#[cfg(desktop)]`-gate the menu bar in `lib.rs`
+(`tauri::menu` doesn't exist on iOS); (4) `NSAllowsLocalNetworking` in the iOS
+`Info.plist`. Not yet done: device build (signing), touch/responsive layout,
+dataset picker, iOS AirDrop. One benign warning: `UIScene lifecycle will soon be
+required` (Tauri template).
+
+- [~] **[P1] (~~L~~ → M) Data transport for mobile — LARGELY A NON-ISSUE on iOS.**
+  The theoretical blocker didn't materialize: the local axum HTTP server on
+  `127.0.0.1` **works in the iOS simulator** once `NSAllowsLocalNetworking` is set
+  (done) — the WKWebView reaches it and data loads. So the full transport-seam /
+  custom-protocol rewrite is **not** required for a working foreground app.
+  Remaining, much smaller: (a) confirm the same on a **physical device** (sim ≠
+  device for local sockets); (b) handle **background lifecycle** — the socket may
+  suspend when the app backgrounds, so re-bind/re-check the server on foreground
+  (or lazily on next request). Keep desktop on the HTTP server. Downgraded from L
+  to M and from "rewrite" to "verify + lifecycle hardening."
 - [ ] **[P1] (M) Dataset acquisition on mobile.** iOS sandbox needs document-
   picker URLs / security-scoped bookmarks, not arbitrary `canonicalize()` paths.
   Abstract "pick/open dataset".
@@ -38,8 +57,15 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
     (Coronal/Sagittal/Axial camera angles) is now reachable only via the
     numpad/Blender digit shortcuts — gone on touch. Re-expose a snap affordance
     for the 3D render pane.
-- [ ] **[P3] (M) Set up the `tauri ios` project/build** and validate on simulator/
-  device once the above land.
+- [x] **[P3] (M) Set up the `tauri ios` project/build** — done 2026-07-06,
+  validated on the iPhone 17 **simulator** (see the status note at the top of this
+  section). Device validation (needs a signing team) still pending.
+- [ ] **[P1] (M) Responsive / touch layout is now the top iOS blocker.** On the
+  phone the desktop 3-column layout overflows: panels are cut off and the NiiVue
+  render pane is pushed off-screen right. The app *works* but isn't *usable* on a
+  phone yet — this (plus the touch items below) is what stands between "runs" and
+  "shippable." iPad (~desktop width) is likely far closer already. See the
+  responsive-layout item below for the concrete touch regressions.
 - [~] **[P3] (M) AirDrop / share-sheet dataset hand-off (Apple-only, one-shot).**
   **macOS send landed (2026-07-06):** `export_bundle` writes a portable
   `.nvbundle` (manifest + hashed data), and the **Share2** button

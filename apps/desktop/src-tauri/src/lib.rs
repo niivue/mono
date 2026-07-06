@@ -9,11 +9,13 @@ mod volumetric_server;
 
 use serde::Serialize;
 use std::path::Path;
-use tauri::{
-    menu::{Menu, MenuItem, Submenu},
-    Emitter,
-};
+// The app menu bar is a desktop-only concept; iOS/Android have no `tauri::menu`.
+#[cfg(desktop)]
+use tauri::menu::{Menu, MenuItem, Submenu};
+#[cfg(desktop)]
+use tauri::Emitter;
 
+#[cfg(desktop)]
 const OPEN_DIRECTORY_MENU_ID: &str = "neurovue-open-directory";
 
 #[derive(Clone, Serialize)]
@@ -237,6 +239,7 @@ fn open_dataset_at_path(
     })
 }
 
+#[cfg(desktop)]
 fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::default(handle)?;
     let open_directory = MenuItem::with_id(
@@ -255,15 +258,18 @@ fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Resu
 pub fn run() {
     let server = volumetric_server::spawn_default();
 
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .menu(neurovue_menu)
-        .on_menu_event(|app, event| {
-            if event.id().as_ref() == OPEN_DIRECTORY_MENU_ID {
-                let _ = app.emit("neurovue-open-directory", ());
-            }
-        })
-        .manage(NeuroVueState { server });
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+
+    // The menu bar (and its "Open Directory" item) is desktop-only; on mobile
+    // the frontend opens datasets through an on-screen control instead.
+    #[cfg(desktop)]
+    let builder = builder.menu(neurovue_menu).on_menu_event(|app, event| {
+        if event.id().as_ref() == OPEN_DIRECTORY_MENU_ID {
+            let _ = app.emit("neurovue-open-directory", ());
+        }
+    });
+
+    let builder = builder.manage(NeuroVueState { server });
 
     // niimath (sidecar) and terminal (PTY) commands are desktop-only; mobile
     // registers only the portable commands.

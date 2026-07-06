@@ -60,6 +60,9 @@
       <label for="overwriteCheck">Overwrite</label>
       <input type="checkbox" id="overwriteCheck" checked />
       &nbsp;
+      <label for="clipCheck" title="Show a clip plane cutaway (its own control, so right-drag stays free to draw)">Clip</label>
+      <input type="checkbox" id="clipCheck" />
+      &nbsp;
       <button type="button" id="undoBtn">Undo</button>
       <button type="button" id="saveBtn">Save</button>
       <button type="button" id="svgBtn" disabled title="Export vector annotations as SVG (Vector mode)">SVG</button>
@@ -77,7 +80,8 @@
       <b>3D exploded blocks:</b> right-drag to paint a tube; with <b>Fill</b> right-click floods the blob; with <b>Wand</b> right-click grows the region.
       &nbsp;|&nbsp;
       <b>Pen -> Vector (SVG):</b> draw freehand vector polygons on a 2D slice, then <b>SVG</b> to export them.
-      Right-drag with Explode <b>off</b> rotates the clip plane.
+      &nbsp;|&nbsp;
+      <b>Clip</b> toggles a cutaway from its own control, so right-drag keeps drawing on the visible blocks. (With no raster draw mode active, right-drag rotates the clip plane.)
     </div>
     <main id="canvas-container">
       <canvas id="gl1"></canvas>

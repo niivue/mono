@@ -101,6 +101,15 @@ overwriteCheck.onchange = function () {
   nv1.drawIsFillOverwriting = this.checked
 }
 
+clipCheck.onchange = function () {
+  // Show/hide a clip-plane cutaway from its OWN control, so the right mouse
+  // button stays free to draw on the blocks (in a raster pen/wand/fill mode
+  // right-drag paints; it only adjusts the clip plane when no draw mode is on).
+  // depth 2 = no clip; depth 0 = a cut through the middle.
+  nv1.isClipPlaneCutaway = true
+  nv1.setClipPlane(this.checked ? [0, 0, 0] : [2, 0, 0])
+}
+
 const isVectorMode = () => penValue.value === '10'
 undoBtn.onclick = () => (isVectorMode() ? nv1.annotationUndo() : nv1.drawUndo())
 saveBtn.onclick = () => nv1.saveDrawing('drawing.nii.gz')

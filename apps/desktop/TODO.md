@@ -82,9 +82,11 @@ still the separate dataset-acquisition item below.
     `moveCrosshairInVox`; the wheel path stays for desktop. Renders correctly on
     the sim (e.g. `108 / 215`); **drag interaction not yet confirmed by touch**
     (couldn't tap headlessly — no `idb`/`simctl tap`; verify on device).
-  - [ ] **Pinch-zoom** is expected to work via NiiVue's native canvas touch
-    (`touch-action: none` on the canvas hands all touch to NiiVue) — **verify on
-    device**; add an explicit path only if it doesn't.
+  - [x] **Pinch-zoom (3D render)** — done. Render zoom is app-owned
+    (`scaleMultiplier`, was wheel-only), so a two-finger pinch handler
+    (`handlePinch*` in `NiivueStage.tsx`, capture-phase) drives the same zoom;
+    single-finger still rotates. Verified on the simulator (⌥-drag pinch). 2D
+    pinch is left to NiiVue's native zoom (not yet confirmed on device).
   - [ ] **3D camera snap** (numpad `1/3/7` for Coronal/Sagittal/Axial camera
     angles) is still keyboard-only. The on-screen Ax/Cor/Sag/MPR/3D buttons cover
     view switching; a dedicated in-render camera-snap affordance is deferred

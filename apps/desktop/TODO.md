@@ -353,8 +353,25 @@ RAS+value widget.)
   (`json(embedImages=false)` + `fetchLinkedData`), now tracked in
   **mono `packages/niivue/FEATURE_PARITY.md` §5**. When that lands, this maps to
   a *linked* NVDocument (volumes reference the bundle's `data/` files) via a
-  near-mechanical rename. **Remaining: reload/import** — read a bundle back and
-  reapply the view (ideally via `loadDocument()` once linked docs exist); plus a
+  near-mechanical rename. **Import/reload also landed (2026-07-06, interim):**
+  the PackageOpen button → `pickBundle`/`readBundle` → `read_bundle_manifest`
+  command → `volumetric_server::read_bundle` reads + SHA-256-verifies the
+  manifest (surfacing a `⚠ N file(s) failed the integrity check` warning), opens
+  the bundle's `data/` dir as the working dataset, remaps each recorded volume id
+  to its freshly-registered id (`bundleVolumeId` mirrors Rust `volume_id`), and
+  **replays the view** into app state (base/overlays/atlas membership + order,
+  per-layer colormap/opacity/window/hidden, viewMode). Verified live: a saved
+  view round-trips (volumes + layer settings restore). **Two gaps in the interim
+  replay, deliberately deferred to the `loadDocument()` port** (both are
+  `scene`-level in a real NVDocument, so niivue restores them for free — not worth
+  patching the hand-rolled replay):
+  - **Crosshair position** not restored — `setCrosshairTarget` fires a one-shot
+    go-to before the volume finishes warming, so it's consumed with no volume.
+  - **Clip planes** not restored — `applyClipPlanes` sets state but the planes
+    don't take effect on load (our-side, not niivue-blocked; a quick fix if we
+    want it before the port).
+  Also interim-wart: import promotes the bundle's `…/data` subdir into recent
+  datasets (should promote the `.nvbundle` path). Remaining beyond that: a
   lighter "save view only" (no data copy) if wanted. `savePatch` (the old obscure
   "Save correction patch") still only writes clip planes + backend and is
   superseded for view-sharing.

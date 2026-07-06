@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { save } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
 
 import type { Backend, ClipPlane } from './desktop'
 
@@ -168,4 +168,69 @@ export function formatBundleBytes(bytes: number): string {
 function sanitizeBundleName(name: string): string {
   const cleaned = name.trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '')
   return cleaned || 'neurovue-bundle'
+}
+
+// ── Import / reload ────────────────────────────────────────────────────────
+
+export type BundleVerifyStatus = 'ok' | 'mismatch' | 'missing' | 'unreadable' | 'invalid'
+
+export interface BundleVerifyEntry {
+  data: string
+  expected: string
+  actual: string | null
+  status: BundleVerifyStatus
+}
+
+/** One volume as recorded in a bundle manifest (see Rust `export_bundle`). */
+export interface BundleManifestVolume {
+  id: string
+  role: string
+  label?: string
+  data: string
+  sha256?: string
+}
+
+export interface BundleManifest {
+  nvbundle?: string
+  source?: { datasetName?: string | null; datasetDoi?: string | null; datasetRoot?: string | null }
+  volumes: BundleManifestVolume[]
+  view?: BundleViewState
+}
+
+export interface BundleReadResult {
+  manifest: BundleManifest
+  bundlePath: string
+  dataDir: string
+  verification: BundleVerifyEntry[]
+  allVerified: boolean
+}
+
+/** Prompt for a `.nvbundle` directory to open. Returns null if cancelled. */
+export async function pickBundle(): Promise<string | null> {
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: 'Open NeuroVue bundle (.nvbundle)'
+  })
+  return typeof selected === 'string' ? selected : null
+}
+
+/** Read + hash-verify a bundle's manifest (no volumes loaded yet). */
+export async function readBundle(path: string): Promise<BundleReadResult> {
+  return invoke<BundleReadResult>('read_bundle_manifest', { path })
+}
+
+/**
+ * The server volume id a bundle data file gets once its `data/` dir is opened
+ * as a dataset. Mirrors Rust `volume_id()`: the filename stem (relative to the
+ * `data/` root, which is flat) minus the `.nii` / `.nii.gz` extension.
+ */
+export function bundleVolumeId(dataRelPath: string): string {
+  const base = dataRelPath.split('/').pop() ?? dataRelPath
+  return base.replace(/\.nii\.gz$/i, '').replace(/\.nii$/i, '')
+}
+
+/** Count the files in a verification list that failed the integrity check. */
+export function bundleVerifyFailures(verification: BundleVerifyEntry[]): BundleVerifyEntry[] {
+  return verification.filter((entry) => entry.status !== 'ok')
 }

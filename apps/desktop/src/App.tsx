@@ -32,6 +32,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Package,
+  PackageOpen,
   PanelRightClose,
   PanelRightOpen,
   Plus,
@@ -68,7 +69,15 @@ import {
   openOverlayVolume,
   resolveRuntimeCapabilities
 } from './domain/desktop'
-import { buildBundleViewState, exportDatasetBundle, formatBundleBytes } from './domain/bundle'
+import {
+  buildBundleViewState,
+  bundleVerifyFailures,
+  bundleVolumeId,
+  exportDatasetBundle,
+  formatBundleBytes,
+  pickBundle,
+  readBundle
+} from './domain/bundle'
 import {
   volumeImageTypeLabel,
   volumeRoleLabel,
@@ -219,7 +228,8 @@ export function App(): JSX.Element {
     bindActiveClipPlane,
     updateClipPlane,
     changeClipPlaneDepth,
-    resetClipPlanes
+    resetClipPlanes,
+    applyClipPlanes
   } = useClipPlanes()
   const [splitPercent, setSplitPercent] = useState(52)
   const [desktopZoom, setDesktopZoom] = useState(1)
@@ -230,6 +240,7 @@ export function App(): JSX.Element {
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
   const [isOpeningOverlay, setIsOpeningOverlay] = useState(false)
   const [isExportingBundle, setIsExportingBundle] = useState(false)
+  const [isImportingBundle, setIsImportingBundle] = useState(false)
   const [isTerminalAvailable, setIsTerminalAvailable] = useState(false)
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
@@ -547,6 +558,88 @@ export function App(): JSX.Element {
     }
   }
 
+  async function handleImportBundle(): Promise<void> {
+    if (isImportingBundle || isOpeningDataset) return
+
+    setIsImportingBundle(true)
+    setStatus('Choosing bundle to open.')
+    try {
+      const path = await pickBundle()
+      if (!path) {
+        setStatus('Bundle open cancelled.')
+        return
+      }
+
+      const bundle = await readBundle(path)
+      if (bundle.manifest?.nvbundle == null) {
+        setStatus('Not a NeuroVue bundle (no manifest.json).')
+        return
+      }
+
+      // Load the bundle's copied volumes as the working dataset (the data/ dir
+      // opens like any dataset; each volume's new id is its filename stem).
+      await openRecentDataset(bundle.dataDir)
+      const nextManifest = await refreshDesktopManifestData()
+      const loadedIds = new Set((nextManifest?.items ?? []).map((item) => item.id))
+      if (loadedIds.size === 0) {
+        // openRecentDataset already surfaced the failure via setStatus.
+        return
+      }
+
+      // Map each recorded (original-dataset) id → its freshly-registered id.
+      const remap = new Map<string, string>()
+      for (const volume of bundle.manifest.volumes) {
+        remap.set(volume.id, bundleVolumeId(volume.data))
+      }
+
+      const view = bundle.manifest.view
+      if (view) {
+        const nextSettings: Record<string, LayerSettings> = {}
+        const nextOverlays = new Set<string>()
+        let nextAtlas: string | null = null
+        let nextBase: string | null = null
+
+        for (const docVolume of view.volumes) {
+          const newId = remap.get(docVolume.id) ?? docVolume.id
+          if (!loadedIds.has(newId)) continue
+
+          const settings: LayerSettings = {}
+          if (docVolume.colormap !== undefined) settings.colormap = docVolume.colormap
+          if (docVolume.opacity !== undefined) settings.opacity = docVolume.opacity
+          if (docVolume.hidden !== undefined) settings.hidden = docVolume.hidden
+          if (docVolume.calMin !== undefined && docVolume.calMax !== undefined) {
+            settings.window = { min: docVolume.calMin, max: docVolume.calMax }
+          }
+          if (Object.keys(settings).length > 0) nextSettings[newId] = settings
+
+          if (docVolume.role === 'base') nextBase = newId
+          else if (docVolume.role === 'overlay') nextOverlays.add(newId)
+          else if (docVolume.role === 'atlas') nextAtlas = newId
+        }
+
+        setLayerSettings(nextSettings)
+        setOverlayIds(nextOverlays)
+        setAtlasId(nextAtlas)
+        if (view.viewMode) setViewMode(view.viewMode as ViewModeId)
+        applyClipPlanes(view.scene?.clipPlanes ?? [])
+        if (nextBase) setSelectedId(nextBase)
+        const crosshair = view.scene?.crosshairPos
+        if (Array.isArray(crosshair) && crosshair.length >= 3) {
+          setCrosshairTarget({ mm: [crosshair[0], crosshair[1], crosshair[2]] })
+        }
+      }
+
+      const failures = bundleVerifyFailures(bundle.verification)
+      const integrity =
+        failures.length > 0 ? ` ⚠ ${failures.length} file(s) failed the integrity check` : ''
+      setStatus(`Imported ${bundle.manifest.volumes.length} volume(s) from bundle.${integrity}`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsImportingBundle(false)
+    }
+  }
+
 
   useEffect(() => {
     if (!isRenderMaximized) return
@@ -699,6 +792,20 @@ export function App(): JSX.Element {
               <LoaderCircle className="nv-spin" size={16} />
             ) : (
               <Package size={16} />
+            )}
+          </button>
+          <button
+            aria-label="Open bundle"
+            className="nv-icon-button"
+            title="Open a NeuroVue bundle (.nvbundle) — loads its volumes and restores the saved view"
+            type="button"
+            disabled={isImportingBundle || isOpeningDataset}
+            onClick={handleImportBundle}
+          >
+            {isImportingBundle ? (
+              <LoaderCircle className="nv-spin" size={16} />
+            ) : (
+              <PackageOpen size={16} />
             )}
           </button>
           {isTerminalAvailable ? (

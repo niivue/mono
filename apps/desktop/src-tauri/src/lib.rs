@@ -153,6 +153,15 @@ async fn export_dataset_bundle(
     .map_err(|error| format!("export_dataset_bundle: join error: {error}"))?
 }
 
+#[tauri::command]
+async fn read_bundle_manifest(path: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        volumetric_server::read_bundle(Path::new(&path))
+    })
+    .await
+    .map_err(|error| format!("read_bundle_manifest: join error: {error}"))?
+}
+
 fn open_dataset_at_path(
     server: &volumetric_server::ServerHandle,
     root: &Path,
@@ -216,6 +225,7 @@ pub fn run() {
             open_dataset_path,
             add_overlay_volume_path,
             export_dataset_bundle,
+            read_bundle_manifest,
             niimath::validate_niimath_mask_path,
             niimath::run_niimath_task,
             terminal::terminal_start,
@@ -231,7 +241,8 @@ pub fn run() {
         neurovue_server_info,
         open_dataset_path,
         add_overlay_volume_path,
-        export_dataset_bundle
+        export_dataset_bundle,
+        read_bundle_manifest
     ]);
 
     builder

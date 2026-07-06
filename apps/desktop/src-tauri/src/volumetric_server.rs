@@ -900,6 +900,80 @@ fn dir_is_non_empty(dir: &FsPath) -> bool {
         .unwrap_or(false)
 }
 
+/// Read a bundle's `manifest.json` and verify every declared data file against
+/// its recorded SHA-256. Pure read — no server state changes; the frontend
+/// loads the volumes separately via the normal open-dataset seam (the bundle's
+/// `data/` dir). Returns the parsed manifest plus a per-file verification list
+/// so the UI can warn on stale/modified/corrupt payloads before trusting them.
+pub fn read_bundle(path: &FsPath) -> Result<Value, String> {
+    let root = fs::canonicalize(path)
+        .map_err(|error| format!("read_bundle: {}: {error}", path.display()))?;
+    let manifest_path = root.join("manifest.json");
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("read_bundle: read {}: {error}", manifest_path.display()))?;
+    let manifest: Value = serde_json::from_str(&text)
+        .map_err(|error| format!("read_bundle: parse {}: {error}", manifest_path.display()))?;
+
+    let mut verification: Vec<Value> = Vec::new();
+    let mut all_verified = true;
+    if let Some(volumes) = manifest.get("volumes").and_then(Value::as_array) {
+        for volume in volumes {
+            verify_bundle_entry(&root, volume, &mut verification, &mut all_verified);
+            if let Some(sidecars) = volume.get("sidecars").and_then(Value::as_array) {
+                for sidecar in sidecars {
+                    verify_bundle_entry(&root, sidecar, &mut verification, &mut all_verified);
+                }
+            }
+        }
+    }
+
+    Ok(json!({
+        "manifest": manifest,
+        "bundlePath": root.display().to_string(),
+        "dataDir": root.join("data").display().to_string(),
+        "verification": verification,
+        "allVerified": all_verified,
+    }))
+}
+
+/// Hash-check one manifest entry (`{ data, sha256 }`) and push a result record.
+/// Rejects any `data` path that escapes the bundle root (absolute or `..`).
+fn verify_bundle_entry(root: &FsPath, entry: &Value, out: &mut Vec<Value>, all_verified: &mut bool) {
+    let Some(rel) = entry.get("data").and_then(Value::as_str) else {
+        return;
+    };
+    let expected = entry.get("sha256").and_then(Value::as_str).unwrap_or("");
+
+    let rel_path = FsPath::new(rel);
+    let escapes = rel_path.is_absolute()
+        || rel_path
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir));
+    let (status, actual) = if escapes {
+        ("invalid", None)
+    } else {
+        let file = root.join(rel_path);
+        if !file.is_file() {
+            ("missing", None)
+        } else {
+            match sha256_file(&file) {
+                Ok(hash) if hash == expected => ("ok", Some(hash)),
+                Ok(hash) => ("mismatch", Some(hash)),
+                Err(_) => ("unreadable", None),
+            }
+        }
+    };
+    if status != "ok" {
+        *all_verified = false;
+    }
+    out.push(json!({
+        "data": rel,
+        "expected": expected,
+        "actual": actual,
+        "status": status,
+    }));
+}
+
 async fn api_info(State(state): State<AppState>) -> Json<Value> {
     let volumes = lock_recover(&state.volumes).clone();
     Json(json!({

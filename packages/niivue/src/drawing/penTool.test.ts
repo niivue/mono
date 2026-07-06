@@ -278,6 +278,27 @@ describe('magicWand3D', () => {
     })
     expect(res.filled).toBe(125)
   })
+
+  test('restrictToSlice confines the grow to one plane (2D)', () => {
+    const bmp = new Uint8Array(125)
+    // Wide tolerance would fill the whole volume in 3D; pinning z=2 keeps it to
+    // that axial slice (5x5 = 25 voxels).
+    const res = magicWand3D({
+      seed: [2, 2, 2],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      sample: () => 50, // uniform, so only the plane restriction bounds it
+      tolerance: 1000,
+      fillOverwrites: true,
+      restrictToSlice: { axis: 2, index: 2 },
+    })
+    expect(res.filled).toBe(25)
+    expect(res.min).toEqual([0, 0, 2])
+    expect(res.max).toEqual([4, 4, 2])
+    // A voxel on a different z is untouched.
+    expect(bmp[idx(2, 2, 3)]).toBe(0)
+  })
 })
 
 // ---------------------------------------------------------------------------

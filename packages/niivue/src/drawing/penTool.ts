@@ -208,6 +208,10 @@ export interface MagicWand3DParams {
   tolerance: number
   fillOverwrites: boolean
   maxVoxels?: number
+  // When set, confine the region to a single slice: the given axis (0=x, 1=y,
+  // 2=z) is pinned to `index`, so the flood cannot leave that plane and the grow
+  // is 2D-connected. Omit for a full 3D grow (the default).
+  restrictToSlice?: { axis: number; index: number }
 }
 
 /**
@@ -216,7 +220,9 @@ export interface MagicWand3DParams {
  * seed voxel's value, painting them `penValue` in the drawing bitmap. Thin wrapper
  * over {@link floodFill3D} — the connectivity, overwrite, cap, and AABB semantics
  * are identical; only the membership test differs (seed-relative intensity band vs
- * a fixed threshold). Returns `filled: 0` when the seed is out of bounds.
+ * a fixed threshold). With `restrictToSlice` the grow is confined to one plane
+ * (2D); otherwise it grows through the whole connected structure (3D). Returns
+ * `filled: 0` when the seed is out of bounds.
  */
 export function magicWand3D(params: MagicWand3DParams): FloodFill3DResult {
   const dx = params.dims[1]
@@ -230,6 +236,13 @@ export function magicWand3D(params: MagicWand3DParams): FloodFill3DResult {
   }
   const seedValue = params.sample(sx, sy, sz)
   const tol = Math.max(0, params.tolerance)
+  const slice = params.restrictToSlice
+  // A pinned plane rejects any off-plane voxel; since the flood is 6-connected,
+  // rejecting the two depth-axis neighbors keeps the whole grow on one slice.
+  const onPlane = slice
+    ? (x: number, y: number, z: number): boolean =>
+        [x, y, z][slice.axis] === slice.index
+    : (): boolean => true
   return floodFill3D({
     seed: [sx, sy, sz],
     drawBitmap: params.drawBitmap,
@@ -237,7 +250,8 @@ export function magicWand3D(params: MagicWand3DParams): FloodFill3DResult {
     penValue: params.penValue,
     fillOverwrites: params.fillOverwrites,
     maxVoxels: params.maxVoxels,
-    keep: (x, y, z) => Math.abs(params.sample(x, y, z) - seedValue) <= tol,
+    keep: (x, y, z) =>
+      onPlane(x, y, z) && Math.abs(params.sample(x, y, z) - seedValue) <= tol,
   })
 }
 

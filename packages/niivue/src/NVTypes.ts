@@ -644,6 +644,10 @@ export type DrawConfig = {
   // Magic-wand intensity tolerance as a fraction (0..1) of the active volume's
   // display window (calMax - calMin); converted to raw sample units at use.
   clickToSegmentTolerance: number
+  // When true, a magic-wand click on a 2D slice grows only within that slice
+  // plane (2D-connected) instead of the whole connected 3D structure. The 3D
+  // exploded-block right-click is always a full 3D grow (it has no slice plane).
+  clickToSegmentIs2D: boolean
 }
 
 /** Interaction config: drag modes, mouse behavior */

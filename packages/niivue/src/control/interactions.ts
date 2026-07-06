@@ -491,6 +491,9 @@ function magicWandFill(
   ctrl: NiiVueGPU,
   vol: NVImage,
   seed: [number, number, number],
+  // When given, confine the grow to this slice axis at the seed's index (2D
+  // mode). The 3D exploded-block entry point omits it (always a full 3D grow).
+  restrictAxis?: number,
 ): boolean {
   const drawingVol = ctrl.model.drawingVolume as NVImage | null
   if (!drawingVol) return false
@@ -520,6 +523,10 @@ function magicWandFill(
     tolerance,
     fillOverwrites: ctrl.model.draw.isFillOverwriting,
     maxVoxels,
+    restrictToSlice:
+      restrictAxis === undefined
+        ? undefined
+        : { axis: restrictAxis, index: seed[restrictAxis] },
   })
   if (result.hitCap) {
     log.warn(`Magic wand stopped at the ${maxVoxels}-voxel cap`)
@@ -646,14 +653,24 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         const vol = ctrl.model.getVolumes()[0]
         if (vol) {
           // Magic wand: a single click on the slice grows the intensity-similar
-          // 3D region from the picked voxel (no stroke). Checked before the pen.
+          // region from the picked voxel (no stroke). Checked before the pen. In
+          // 2D mode the grow is confined to the clicked slice plane; otherwise it
+          // grows through the whole connected 3D structure.
           if (ctrl.model.draw.isClickToSegment) {
             const wandVox = NVTransforms.mm2vox(vol, mm)
-            magicWandFill(ctrl, vol, [
-              Math.round(wandVox[0]),
-              Math.round(wandVox[1]),
-              Math.round(wandVox[2]),
-            ])
+            const restrictAxis = ctrl.model.draw.clickToSegmentIs2D
+              ? sliceTypeDim(ctrl.activeTileHit.sliceType)
+              : undefined
+            magicWandFill(
+              ctrl,
+              vol,
+              [
+                Math.round(wandVox[0]),
+                Math.round(wandVox[1]),
+                Math.round(wandVox[2]),
+              ],
+              restrictAxis,
+            )
             ctrl.setCrosshairPos(mm)
             return
           }

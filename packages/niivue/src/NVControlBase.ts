@@ -1267,6 +1267,14 @@ export default class NiiVueGPU extends EventTarget {
     })
   }
 
+  get drawClickToSegmentIs2D(): boolean {
+    return this.model.draw.clickToSegmentIs2D
+  }
+  set drawClickToSegmentIs2D(v: boolean) {
+    this.model.draw.clickToSegmentIs2D = v
+    this.emit('change', { property: 'drawClickToSegmentIs2D', value: v })
+  }
+
   get drawOpacity(): number {
     return this.model.draw.opacity
   }

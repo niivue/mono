@@ -66,6 +66,12 @@ penValue.onchange = applyPen
 fillCheck.onchange = applyPen
 wandCheck.onchange = applyPen
 
+wand2dCheck.onchange = function () {
+  // 2D on: a wand click grows only within the clicked slice; off: whole 3D
+  // structure (the default). Ignored by the 3D exploded-block right-click.
+  nv1.drawClickToSegmentIs2D = this.checked
+}
+
 wandTol.oninput = function () {
   // Slider is percent of the display window; the API takes a 0..1 fraction.
   nv1.drawClickToSegmentTolerance = parseInt(this.value, 10) / 100
@@ -128,6 +134,7 @@ nv1.createEmptyDrawing()
 nv1.drawOpacity = 0.6
 nv1.drawIsFillOverwriting = overwriteCheck.checked
 nv1.drawClickToSegmentTolerance = parseInt(wandTol.value, 10) / 100
+nv1.drawClickToSegmentIs2D = wand2dCheck.checked
 applyPen()
 nv1.drawPenSize = parseInt(penSize.value, 10)
 applyExplode()

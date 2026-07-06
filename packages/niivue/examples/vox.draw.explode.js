@@ -2,7 +2,7 @@ import NiiVue, { chunkVolumeGrid } from '../src/index.ts'
 
 // A dedicated drawing demo that exercises feature parity across:
 //   - 2D slices and the 3D render (exploded blocks)
-//   - pen / eraser / flood-fill
+//   - pen / eraser / flood-fill / magic wand / vector (SVG) annotations
 //   - WebGL2 and WebGPU
 //
 // The background volume fits in one texture, so we FORCE a 3x3x3 tiling
@@ -45,6 +45,20 @@ function applyExplode() {
 
 function applyPen() {
   const val = parseInt(penValue.value, 10)
+  // Vector (SVG) mode: draw freehand vector polygons (annotation layer) on the
+  // 2D slices instead of the raster, and enable SVG export. The raster pen, wand,
+  // and fill are off in this mode. Mirrors the slide demos' "Vector (SVG)" tool.
+  const vector = val === 10
+  nv1.annotationIsEnabled = vector
+  svgBtn.disabled = !vector
+  if (vector) {
+    nv1.drawIsEnabled = false // let the annotation layer handle the click
+    nv1.drawIsClickToSegment = false
+    nv1.drawPenFilled = false
+    nv1.annotationTool = 'freehand'
+    nv1.annotationBrushRadius = 1 // <=1 => closed-polygon mode
+    return
+  }
   if (val < 0) {
     // "Off" — keep the drawing visible but stop the pen.
     nv1.drawIsEnabled = false
@@ -87,11 +101,27 @@ overwriteCheck.onchange = function () {
   nv1.drawIsFillOverwriting = this.checked
 }
 
-undoBtn.onclick = () => nv1.drawUndo()
+const isVectorMode = () => penValue.value === '10'
+undoBtn.onclick = () => (isVectorMode() ? nv1.annotationUndo() : nv1.drawUndo())
 saveBtn.onclick = () => nv1.saveDrawing('drawing.nii.gz')
+svgBtn.onclick = () => {
+  // Export the vector annotations on the current slice as SVG (Vector mode).
+  const svg = nv1.annotationsToSVG()
+  if (!svg) {
+    alert('Draw a vector shape first (Pen -> Vector (SVG)).')
+    return
+  }
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'annotations.svg'
+  a.click()
+  URL.revokeObjectURL(url)
+}
 clearBtn.onclick = () => {
-  // Reset to an empty drawing (keeps the same dims / view).
+  // Reset to an empty raster drawing and wipe any vector annotations.
   nv1.createEmptyDrawing()
+  nv1.clearAnnotations()
   nv1.drawScene()
 }
 

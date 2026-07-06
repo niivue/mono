@@ -40,15 +40,23 @@ to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
     for the 3D render pane.
 - [ ] **[P3] (M) Set up the `tauri ios` project/build** and validate on simulator/
   device once the above land.
-- [ ] **[P3] (M) AirDrop / share-sheet dataset hand-off (Apple-only, one-shot).**
-  **Payload now exists (2026-07-06):** `export_bundle` writes a portable
-  `.nvbundle` (manifest + hashed data) — this is the thing to share. Remaining
-  for this item is purely the *transport* + *receive* side (below) and, for a
-  clean one-item AirDrop, zipping the bundle dir into a single file (or
-  registering `.nvbundle` as a macOS package UTI). The contained macOS-first
-  path is `NSSharingService(named: .sendViaAirDrop).perform(withItems:)` from a
-  Rust AppKit command (`objc2-app-kit`, already in the tree) — no Swift plugin
-  needed for macOS; iOS still needs the `UIActivityViewController` plugin.
+- [~] **[P3] (M) AirDrop / share-sheet dataset hand-off (Apple-only, one-shot).**
+  **macOS send landed (2026-07-06):** `export_bundle` writes a portable
+  `.nvbundle` (manifest + hashed data), and the **Share2** button
+  (`shareViewViaAirDrop` → `share_view_via_airdrop` command) stages the current
+  view to `cache_root/shares/<name>.nvbundle` and hands it to
+  `NSSharingService(.sendViaAirDrop).performWithItems` on the main thread via
+  `share.rs` (`objc2`/`objc2-app-kit`, macOS-only dep; gated in the UI by the new
+  `airdropAvailable` runtime capability). No Swift plugin, no iOS project.
+  Verified live: sent a bundle to an iPhone; cancel is clean. **Remaining:**
+  - **iOS send** — the `UIActivityViewController` equivalent (needs a Swift
+    plugin + the `tauri ios` project).
+  - **Receive side** — register NeuroVue as a handler for the `.nvbundle` type so
+    an AirDropped bundle opens straight into the existing import seam
+    (`read_bundle` + open) instead of landing in Downloads for a manual open.
+  - **Single-item AirDrop polish** — the bundle is a *directory*; AirDrop sends
+    it fine (verified), but zipping to one file or registering `.nvbundle` as a
+    macOS package UTI would make it read as a single item.
   Transport for the assign→work→resync flow (see "Assign → work-offline → resync"
   under Reproducibility), not live sync. Apps can't initiate AirDrop directly —
   present the OS share sheet (`NSSharingServicePicker` macOS,

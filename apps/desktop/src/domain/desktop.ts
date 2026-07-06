@@ -146,6 +146,7 @@ export interface OverlayAddResult {
 export interface RuntimeCapabilities {
   terminalAvailable: boolean
   nativeNiimathAvailable: boolean
+  airdropAvailable: boolean
 }
 
 export interface ClipPlane {
@@ -160,7 +161,8 @@ export interface ClipPlane {
 const BROWSER_REFERENCE_SERVER = 'http://127.0.0.1:8087'
 const BROWSER_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
   terminalAvailable: false,
-  nativeNiimathAvailable: false
+  nativeNiimathAvailable: false,
+  airdropAvailable: false
 }
 
 export async function resolveRuntimeCapabilities(): Promise<RuntimeCapabilities> {

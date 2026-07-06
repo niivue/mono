@@ -156,6 +156,24 @@ export async function exportDatasetBundle(params: {
   })
 }
 
+/**
+ * Export the current view to a staged bundle and hand it to the macOS AirDrop
+ * sheet (no save dialog — the bundle is staged under the app cache). macOS only;
+ * gate the UI on `RuntimeCapabilities.airdropAvailable`.
+ */
+export async function shareViewViaAirDrop(params: {
+  name: string
+  volumeIds: string[]
+  view: BundleViewState
+}): Promise<ExportBundleResult> {
+  return invoke<ExportBundleResult>('share_view_via_airdrop', {
+    volumeIds: params.volumeIds,
+    view: params.view,
+    createdAt: new Date().toISOString(),
+    name: params.name
+  })
+}
+
 /** Human-readable byte size for status messages ("1.4 GB", "820 MB"). */
 export function formatBundleBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'

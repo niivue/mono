@@ -34,6 +34,7 @@ import {
   Package,
   PackageOpen,
   PanelRightClose,
+  Share2,
   PanelRightOpen,
   Plus,
   RotateCcw,
@@ -76,7 +77,9 @@ import {
   exportDatasetBundle,
   formatBundleBytes,
   pickBundle,
-  readBundle
+  readBundle,
+  shareViewViaAirDrop,
+  type BundleViewState
 } from './domain/bundle'
 import {
   volumeImageTypeLabel,
@@ -242,6 +245,8 @@ export function App(): JSX.Element {
   const [isExportingBundle, setIsExportingBundle] = useState(false)
   const [isImportingBundle, setIsImportingBundle] = useState(false)
   const [isTerminalAvailable, setIsTerminalAvailable] = useState(false)
+  const [isAirdropAvailable, setIsAirdropAvailable] = useState(false)
+  const [isSharingBundle, setIsSharingBundle] = useState(false)
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
   const { isTerminalOpen, terminalHeight, toggleTerminal, setTerminalHeight } = useTerminalDock()
@@ -261,7 +266,9 @@ export function App(): JSX.Element {
   useEffect(() => {
     let cancelled = false
     void resolveRuntimeCapabilities().then((capabilities) => {
-      if (!cancelled) setIsTerminalAvailable(capabilities.terminalAvailable)
+      if (cancelled) return
+      setIsTerminalAvailable(capabilities.terminalAvailable)
+      setIsAirdropAvailable(capabilities.airdropAvailable)
     })
     return () => {
       cancelled = true
@@ -509,19 +516,13 @@ export function App(): JSX.Element {
     }
   }
 
-  async function handleExportBundle(): Promise<void> {
-    if (isExportingBundle) return
-    if (!selected) {
-      setStatus('Select a volume before exporting a bundle.')
-      return
-    }
-
-    // Compose the view (base → overlays → atlas order; the importer replays it
-    // in that order). The bundle's copied volumes derive from the same ordered
-    // list, so files and view stay in lockstep.
+  // Compose the current view + its ordered volume ids for export/share. Order
+  // is base → overlays → atlas; the copied volumes derive from the same list so
+  // files and view stay in lockstep, and the importer replays it in that order.
+  function composeCurrentBundle(base: DesktopItem): { volumeIds: string[]; view: BundleViewState } {
     const crosshairMm = locationReadout?.mm
     const view = buildBundleViewState({
-      baseId: selected.id,
+      baseId: base.id,
       overlayIds: Array.from(overlayIds),
       atlasId,
       layerSettings,
@@ -533,7 +534,17 @@ export function App(): JSX.Element {
           ? [crosshairMm[0], crosshairMm[1], crosshairMm[2]]
           : null
     })
-    const volumeIds = view.volumes.map((volume) => volume.id)
+    return { volumeIds: view.volumes.map((volume) => volume.id), view }
+  }
+
+  async function handleExportBundle(): Promise<void> {
+    if (isExportingBundle) return
+    if (!selected) {
+      setStatus('Select a volume before exporting a bundle.')
+      return
+    }
+
+    const { volumeIds, view } = composeCurrentBundle(selected)
 
     setIsExportingBundle(true)
     setStatus(`Exporting bundle (${volumeIds.length} volume${volumeIds.length === 1 ? '' : 's'})…`)
@@ -555,6 +566,34 @@ export function App(): JSX.Element {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
       setIsExportingBundle(false)
+    }
+  }
+
+  async function handleShareBundle(): Promise<void> {
+    if (isSharingBundle) return
+    if (!selected) {
+      setStatus('Select a volume before sharing a bundle.')
+      return
+    }
+
+    const { volumeIds, view } = composeCurrentBundle(selected)
+
+    setIsSharingBundle(true)
+    setStatus('Preparing bundle for AirDrop…')
+    try {
+      const result = await shareViewViaAirDrop({
+        name: selected.label ?? 'neurovue-bundle',
+        volumeIds,
+        view
+      })
+      setStatus(
+        `AirDrop sheet opened for ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
+          `(${formatBundleBytes(result.totalBytes)}).`
+      )
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsSharingBundle(false)
     }
   }
 
@@ -808,6 +847,26 @@ export function App(): JSX.Element {
               <PackageOpen size={16} />
             )}
           </button>
+          {isAirdropAvailable ? (
+            <button
+              aria-label="Share via AirDrop"
+              className="nv-icon-button"
+              title={
+                selected
+                  ? 'Share this view as a bundle via AirDrop'
+                  : 'Select a volume to share via AirDrop'
+              }
+              type="button"
+              disabled={!selected || isSharingBundle}
+              onClick={handleShareBundle}
+            >
+              {isSharingBundle ? (
+                <LoaderCircle className="nv-spin" size={16} />
+              ) : (
+                <Share2 size={16} />
+              )}
+            </button>
+          ) : null}
           {isTerminalAvailable ? (
             <button
               aria-pressed={isTerminalOpen}

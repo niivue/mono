@@ -4,6 +4,7 @@
 mod niimath;
 #[cfg(desktop)]
 mod terminal;
+mod share;
 mod volumetric_server;
 
 use serde::Serialize;
@@ -69,6 +70,7 @@ struct ExportBundleResult {
 struct RuntimeCapabilities {
     terminal_available: bool,
     native_niimath_available: bool,
+    airdrop_available: bool,
 }
 
 #[tauri::command]
@@ -76,6 +78,7 @@ fn neurovue_runtime_capabilities() -> RuntimeCapabilities {
     RuntimeCapabilities {
         terminal_available: cfg!(desktop),
         native_niimath_available: cfg!(desktop),
+        airdrop_available: cfg!(target_os = "macos"),
     }
 }
 
@@ -154,6 +157,54 @@ async fn export_dataset_bundle(
 }
 
 #[tauri::command]
+async fn share_view_via_airdrop(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, NeuroVueState>,
+    volume_ids: Vec<String>,
+    view: serde_json::Value,
+    created_at: String,
+    name: String,
+) -> Result<ExportBundleResult, String> {
+    let server = state.server.clone();
+    // Export the bundle to a cache location off the main thread; the user picks
+    // no destination for a share (unlike Save), so we stage it under the app
+    // cache and hand the finished bundle to AirDrop.
+    let (result, dest) = tauri::async_runtime::spawn_blocking(move || {
+        let dest = volumetric_server::cache_root()
+            .join("shares")
+            .join(format!("{}.nvbundle", sanitize_share_name(&name)));
+        let result =
+            volumetric_server::export_bundle(&server, &dest, &volume_ids, &view, &created_at)?;
+        Ok::<_, String>((result, dest))
+    })
+    .await
+    .map_err(|error| format!("share_view_via_airdrop: join error: {error}"))??;
+
+    share::share_via_airdrop(&app, vec![dest.display().to_string()])?;
+
+    Ok(ExportBundleResult {
+        bundle_path: result.bundle_path,
+        volume_count: result.volume_count,
+        total_bytes: result.total_bytes,
+    })
+}
+
+/// Keep a share bundle's directory name to a safe single path segment.
+fn sanitize_share_name(name: &str) -> String {
+    let cleaned: String = name
+        .trim()
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
+        .collect();
+    let trimmed = cleaned.trim_matches('-');
+    if trimmed.is_empty() {
+        "neurovue-bundle".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+#[tauri::command]
 async fn read_bundle_manifest(path: String) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         volumetric_server::read_bundle(Path::new(&path))
@@ -226,6 +277,7 @@ pub fn run() {
             add_overlay_volume_path,
             export_dataset_bundle,
             read_bundle_manifest,
+            share_view_via_airdrop,
             niimath::validate_niimath_mask_path,
             niimath::run_niimath_task,
             terminal::terminal_start,

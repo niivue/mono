@@ -26,3 +26,9 @@ tower-http = { version = "0.6", features = ["cors"] }
 # spawning subprocesses, so its dependency is excluded from mobile builds.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 portable-pty = "0.8"
+
+# AirDrop share sheet (src/share.rs) uses AppKit's NSSharingService — macOS only.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray"] }
+objc2-app-kit = { version = "0.3", features = ["NSSharingService"] }

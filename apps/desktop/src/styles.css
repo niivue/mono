@@ -1142,6 +1142,10 @@ button {
   }
 }
 
+.nv-spin {
+  animation: nv-preview-spin 0.9s linear infinite;
+}
+
 .nv-osd-tile.is-selected {
   border-color: var(--amber);
   box-shadow:

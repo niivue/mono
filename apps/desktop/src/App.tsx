@@ -31,7 +31,10 @@ import {
   Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
+  Package,
+  PackageOpen,
   PanelRightClose,
+  Share2,
   PanelRightOpen,
   Plus,
   RotateCcw,
@@ -67,6 +70,17 @@ import {
   openOverlayVolume,
   resolveRuntimeCapabilities
 } from './domain/desktop'
+import {
+  buildBundleViewState,
+  bundleVerifyFailures,
+  bundleVolumeId,
+  exportDatasetBundle,
+  formatBundleBytes,
+  pickBundle,
+  readBundle,
+  shareViewViaAirDrop,
+  type BundleViewState
+} from './domain/bundle'
 import {
   volumeImageTypeLabel,
   volumeRoleLabel,
@@ -217,7 +231,8 @@ export function App(): JSX.Element {
     bindActiveClipPlane,
     updateClipPlane,
     changeClipPlaneDepth,
-    resetClipPlanes
+    resetClipPlanes,
+    applyClipPlanes
   } = useClipPlanes()
   const [splitPercent, setSplitPercent] = useState(52)
   const [desktopZoom, setDesktopZoom] = useState(1)
@@ -227,7 +242,11 @@ export function App(): JSX.Element {
   const [isRenderMaximized, setIsRenderMaximized] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
   const [isOpeningOverlay, setIsOpeningOverlay] = useState(false)
+  const [isExportingBundle, setIsExportingBundle] = useState(false)
+  const [isImportingBundle, setIsImportingBundle] = useState(false)
   const [isTerminalAvailable, setIsTerminalAvailable] = useState(false)
+  const [isAirdropAvailable, setIsAirdropAvailable] = useState(false)
+  const [isSharingBundle, setIsSharingBundle] = useState(false)
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false)
   const recentMenuRef = useRef<HTMLDivElement | null>(null)
   const { isTerminalOpen, terminalHeight, toggleTerminal, setTerminalHeight } = useTerminalDock()
@@ -247,7 +266,9 @@ export function App(): JSX.Element {
   useEffect(() => {
     let cancelled = false
     void resolveRuntimeCapabilities().then((capabilities) => {
-      if (!cancelled) setIsTerminalAvailable(capabilities.terminalAvailable)
+      if (cancelled) return
+      setIsTerminalAvailable(capabilities.terminalAvailable)
+      setIsAirdropAvailable(capabilities.airdropAvailable)
     })
     return () => {
       cancelled = true
@@ -495,6 +516,169 @@ export function App(): JSX.Element {
     }
   }
 
+  // Compose the current view + its ordered volume ids for export/share. Order
+  // is base → overlays → atlas; the copied volumes derive from the same list so
+  // files and view stay in lockstep, and the importer replays it in that order.
+  function composeCurrentBundle(base: DesktopItem): { volumeIds: string[]; view: BundleViewState } {
+    const crosshairMm = locationReadout?.mm
+    const view = buildBundleViewState({
+      baseId: base.id,
+      overlayIds: Array.from(overlayIds),
+      atlasId,
+      layerSettings,
+      viewMode,
+      backend,
+      clipPlanes,
+      crosshairPos:
+        Array.isArray(crosshairMm) && crosshairMm.length >= 3
+          ? [crosshairMm[0], crosshairMm[1], crosshairMm[2]]
+          : null
+    })
+    return { volumeIds: view.volumes.map((volume) => volume.id), view }
+  }
+
+  async function handleExportBundle(): Promise<void> {
+    if (isExportingBundle) return
+    if (!selected) {
+      setStatus('Select a volume before exporting a bundle.')
+      return
+    }
+
+    const { volumeIds, view } = composeCurrentBundle(selected)
+
+    setIsExportingBundle(true)
+    setStatus(`Exporting bundle (${volumeIds.length} volume${volumeIds.length === 1 ? '' : 's'})…`)
+    try {
+      const result = await exportDatasetBundle({
+        defaultName: selected.label ?? 'neurovue-bundle',
+        volumeIds,
+        view
+      })
+      if (!result) {
+        setStatus('Bundle export cancelled.')
+        return
+      }
+      setStatus(
+        `Exported ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
+          `(${formatBundleBytes(result.totalBytes)}) to ${result.bundlePath}.`
+      )
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsExportingBundle(false)
+    }
+  }
+
+  async function handleShareBundle(): Promise<void> {
+    if (isSharingBundle) return
+    if (!selected) {
+      setStatus('Select a volume before sharing a bundle.')
+      return
+    }
+
+    const { volumeIds, view } = composeCurrentBundle(selected)
+
+    setIsSharingBundle(true)
+    setStatus('Preparing bundle for AirDrop…')
+    try {
+      const result = await shareViewViaAirDrop({
+        name: selected.label ?? 'neurovue-bundle',
+        volumeIds,
+        view
+      })
+      setStatus(
+        `AirDrop sheet opened for ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
+          `(${formatBundleBytes(result.totalBytes)}).`
+      )
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsSharingBundle(false)
+    }
+  }
+
+  async function handleImportBundle(): Promise<void> {
+    if (isImportingBundle || isOpeningDataset) return
+
+    setIsImportingBundle(true)
+    setStatus('Choosing bundle to open.')
+    try {
+      const path = await pickBundle()
+      if (!path) {
+        setStatus('Bundle open cancelled.')
+        return
+      }
+
+      const bundle = await readBundle(path)
+      if (bundle.manifest?.nvbundle == null) {
+        setStatus('Not a NeuroVue bundle (no manifest.json).')
+        return
+      }
+
+      // Load the bundle's copied volumes as the working dataset (the data/ dir
+      // opens like any dataset; each volume's new id is its filename stem).
+      await openRecentDataset(bundle.dataDir)
+      const nextManifest = await refreshDesktopManifestData()
+      const loadedIds = new Set((nextManifest?.items ?? []).map((item) => item.id))
+      if (loadedIds.size === 0) {
+        // openRecentDataset already surfaced the failure via setStatus.
+        return
+      }
+
+      // Map each recorded (original-dataset) id → its freshly-registered id.
+      const remap = new Map<string, string>()
+      for (const volume of bundle.manifest.volumes) {
+        remap.set(volume.id, bundleVolumeId(volume.data))
+      }
+
+      const view = bundle.manifest.view
+      if (view) {
+        const nextSettings: Record<string, LayerSettings> = {}
+        const nextOverlays = new Set<string>()
+        let nextAtlas: string | null = null
+        let nextBase: string | null = null
+
+        for (const docVolume of view.volumes) {
+          const newId = remap.get(docVolume.id) ?? docVolume.id
+          if (!loadedIds.has(newId)) continue
+
+          const settings: LayerSettings = {}
+          if (docVolume.colormap !== undefined) settings.colormap = docVolume.colormap
+          if (docVolume.opacity !== undefined) settings.opacity = docVolume.opacity
+          if (docVolume.hidden !== undefined) settings.hidden = docVolume.hidden
+          if (docVolume.calMin !== undefined && docVolume.calMax !== undefined) {
+            settings.window = { min: docVolume.calMin, max: docVolume.calMax }
+          }
+          if (Object.keys(settings).length > 0) nextSettings[newId] = settings
+
+          if (docVolume.role === 'base') nextBase = newId
+          else if (docVolume.role === 'overlay') nextOverlays.add(newId)
+          else if (docVolume.role === 'atlas') nextAtlas = newId
+        }
+
+        setLayerSettings(nextSettings)
+        setOverlayIds(nextOverlays)
+        setAtlasId(nextAtlas)
+        if (view.viewMode) setViewMode(view.viewMode as ViewModeId)
+        applyClipPlanes(view.scene?.clipPlanes ?? [])
+        if (nextBase) setSelectedId(nextBase)
+        const crosshair = view.scene?.crosshairPos
+        if (Array.isArray(crosshair) && crosshair.length >= 3) {
+          setCrosshairTarget({ mm: [crosshair[0], crosshair[1], crosshair[2]] })
+        }
+      }
+
+      const failures = bundleVerifyFailures(bundle.verification)
+      const integrity =
+        failures.length > 0 ? ` ⚠ ${failures.length} file(s) failed the integrity check` : ''
+      setStatus(`Imported ${bundle.manifest.volumes.length} volume(s) from bundle.${integrity}`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsImportingBundle(false)
+    }
+  }
+
 
   useEffect(() => {
     if (!isRenderMaximized) return
@@ -631,6 +815,58 @@ export function App(): JSX.Element {
           >
             <Save size={16} />
           </button>
+          <button
+            aria-label="Export bundle"
+            className="nv-icon-button"
+            title={
+              selected
+                ? 'Export dataset bundle (volumes + this view) — the shareable/AirDrop payload'
+                : 'Select a volume to export a bundle'
+            }
+            type="button"
+            disabled={!selected || isExportingBundle}
+            onClick={handleExportBundle}
+          >
+            {isExportingBundle ? (
+              <LoaderCircle className="nv-spin" size={16} />
+            ) : (
+              <Package size={16} />
+            )}
+          </button>
+          <button
+            aria-label="Open bundle"
+            className="nv-icon-button"
+            title="Open a NeuroVue bundle (.nvbundle) — loads its volumes and restores the saved view"
+            type="button"
+            disabled={isImportingBundle || isOpeningDataset}
+            onClick={handleImportBundle}
+          >
+            {isImportingBundle ? (
+              <LoaderCircle className="nv-spin" size={16} />
+            ) : (
+              <PackageOpen size={16} />
+            )}
+          </button>
+          {isAirdropAvailable ? (
+            <button
+              aria-label="Share via AirDrop"
+              className="nv-icon-button"
+              title={
+                selected
+                  ? 'Share this view as a bundle via AirDrop'
+                  : 'Select a volume to share via AirDrop'
+              }
+              type="button"
+              disabled={!selected || isSharingBundle}
+              onClick={handleShareBundle}
+            >
+              {isSharingBundle ? (
+                <LoaderCircle className="nv-spin" size={16} />
+              ) : (
+                <Share2 size={16} />
+              )}
+            </button>
+          ) : null}
           {isTerminalAvailable ? (
             <button
               aria-pressed={isTerminalOpen}

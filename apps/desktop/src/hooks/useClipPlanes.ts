@@ -18,6 +18,12 @@ export interface ClipPlanesState {
   changeClipPlaneDepth: (planeId: string, depth: number) => void
   /** Restore the default clip planes. */
   resetClipPlanes: () => void
+  /**
+   * Replace clip planes from an imported view. The bundle stores only the
+   * enabled planes, so merge them onto the defaults by id — planes absent from
+   * the import fall back to their (disabled) default.
+   */
+  applyClipPlanes: (planes: ClipPlane[]) => void
 }
 
 /** Owns clip-plane state shared by the controls panel and the NiiVue stage. */
@@ -52,6 +58,11 @@ export function useClipPlanes(): ClipPlanesState {
     setClipPlanes(defaultClipPlanes())
   }
 
+  function applyClipPlanes(planes: ClipPlane[]): void {
+    const byId = new Map(planes.map((plane) => [plane.id, plane]))
+    setClipPlanes(defaultClipPlanes().map((base) => byId.get(base.id) ?? base))
+  }
+
   return {
     clipPlanes,
     activeClipPlaneId,
@@ -61,6 +72,7 @@ export function useClipPlanes(): ClipPlanesState {
     bindActiveClipPlane,
     updateClipPlane,
     changeClipPlaneDepth,
-    resetClipPlanes
+    resetClipPlanes,
+    applyClipPlanes
   }
 }

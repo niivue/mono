@@ -202,7 +202,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | 2D slice drawing methods (pen point, drag stroke, filled polygon, eraser) | ✅ | Left-drag on any slice; `drawPenFilled` flood-fills a closed loop |
 | 3D drawing on exploded blocks (render tile) | ✅ | New in the rewrite (old NiiVue drew on 2D slices only): right-button pen/eraser stroke, 3D flood fill, and magic-wand click-to-segment directly on exploded chunked blocks, on both backends. Demo `vox.draw.explode.html` |
 | Export drawing slice as SVG | ✅ | `drawingToSVG(sliceType?, sliceIndex?)` traces the current slice's painted voxels into run-length `<rect>`s per label color (sized in voxels). Mirrors the slide vector layer's `toSVG` for volume drawings |
-| Vector annotation drawing + SVG export | ✅ | The core annotation layer draws freehand vector polygons on slices (`annotationTool`, `annotationIsEnabled`); `annotationsToSVG(sliceType?, slicePosition?)` serializes them to `<path>`s in slice mm coordinates. The `vox.draw` demo exposes this as a "Vector (SVG)" pen mode |
+| Vector annotation drawing + SVG export | ✅ | The core annotation layer draws freehand vector polygons on slices (`annotationTool`, `annotationIsEnabled`); `annotationsToSVG(sliceType?, slicePosition?)` serializes them to `<path>`s in slice mm coordinates. Shapes can also be drawn **directly on the 3D exploded blocks** (right-drag on the render picks block points, fit to the best plane) and render explode-aware. The `vox.draw` / `vox.draw.explode` demos expose this as a "Vector (SVG)" pen mode |
 
 ## 15. Image Processing
 

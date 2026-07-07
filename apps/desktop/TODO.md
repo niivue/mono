@@ -652,18 +652,15 @@ discarded — e.g. the pinch handler *does* `delete(pointerId)` on pointerup/can
 so there's no stale-pointer leak; `bundleVolumeId` agrees with Rust `volume_id`
 because bundle filenames are pre-uniquified).
 
-- [ ] **[P2] (S) Bound zip extraction on import (zip-bomb → disk fill).**
-  `extract_bundle_zip` (`volumetric_server.rs:1026`) `std::io::copy`s each entry
-  to disk with no size cap. `enclosed_name` already blocks path traversal, but a
-  crafted bundle could inflate to gigabytes and fill the temp dir. Cap total
-  extracted bytes (and/or per-entry) and abort past a sane ceiling. Pairs with
-  the NIfTI-read bound already tracked under Backend hardening.
-- [ ] **[P3] (S) Share fails entirely if any one volume lacks a source file.**
-  `handleShareBundle` (`App.tsx`) shares `items.map(id)` — *all* volumes — and
-  `export_bundle` (`volumetric_server.rs:814`) returns `Err` if any volume has
-  `source_path: None`, so one sourceless/phantom volume aborts the whole
-  dataset share. Skip sourceless volumes (with a note) instead of all-or-nothing
-  — filter on the frontend or make `export_bundle` skip+report.
+- [x] **[P2] (S) Bound zip extraction on import (zip-bomb → disk fill).** Fixed
+  2026-07-07: `extract_bundle_zip` now extracts through `copy_within_budget` with
+  a cap of 50× the archive size (256 MB floor) — far above any real Stored bundle,
+  far below a bomb's inflation — aborting past it. (`enclosed_name` already blocks
+  traversal.)
+- [x] **[P3] (S) Share no longer fails if one volume lacks a source file.** Fixed
+  2026-07-07: `export_bundle` skips volumes with `source_path: None` (a phantom
+  default) and only errors if *none* are exportable, so one sourceless volume
+  doesn't abort a whole-dataset share.
 - [x] **[P3] (S) Slice slider treats `NaN` as a valid index.** Fixed 2026-07-07:
   `NiivueStage.tsx` now gates on `Number.isFinite(currentVox)` (was
   `typeof === 'number'`, true for `NaN`), so a non-finite `location.vox[axis]`

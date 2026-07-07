@@ -65,6 +65,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `saveScene()` | ❌ | |
 | `saveHTML()` / `generateHTML()` | ✅ | `@niivue/nv-ext-save-html` extension package |
 | `json()` — serialize state | ✅ | `serializeDocument()` returns CBOR-encoded `Uint8Array` |
+| Sparse SETTINGS (omit defaults, inherit current on load) | ✅ (new) | v9: `serialize()` omits any setting equal to its default; `applyDocumentToModel` leaves an omitted setting at the loading instance's current value. Dev control via `nv.settingsSavePolicy` (`neverSave`/`alwaysSave`, group or `'group.key'`) + per-call `policy`. Enables e.g. persisting the user's last crosshair by never saving `scene.crosshairPos`. `documentSettings.ts` (`sparsifyGroup`). Not old-NiiVue parity — a mono addition. |
 | Sparse / dataless document (`json(embedImages=false)`) | ❌ | Old NiiVue `NVDocument.json(embedImages, embedDrawing)` / `download(..., { embedImages: false })` could serialize a document **without** embedding image blobs — keeping only `imageOptionsArray` with each volume's `url`. Mono's `serialize()` **always embeds** volume bytes (`// Always embed volume data for self-contained documents`), so there's no way to emit a small doc that references external/linked volumes. Blocks apps (e.g. NeuroVue's `.nvbundle`) from saving a scene that links to dataset files instead of duplicating them. |
 | `fetchLinkedData()` — hydrate linked volumes on load | ❌ | Old NiiVue refetched any missing image data from each `imageOptionsArray[i].url` and populated `encodedImageBlobs`, so a sparse/linked document could rehydrate on open. Mono's load path prefers embedded `data` and only falls back to a volume's `url` when `data` is absent, but there is no explicit linked-fetch pass. Pairs with the sparse-serialize row above — both are needed for a reference/linked document round-trip. |
 
@@ -477,7 +478,7 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Events | ✅ | `signalLoaded`, `signalRemoved`, `signalLocationChange` |
 | Graph rendering (`NVGraph` signal mode) | ✅ | Multi-color series, legend (capped), reversible/windowed x-axis, full-canvas when signal-only, dense-series decimation, derived-plot cache; on-graph pan/zoom buttons with wheel/frame follow (`graphZoom`/`graphPan`), relative line width/opacity (`graphLineWidth`/`graphLineAlpha`), and a missing-data rug for NaN gaps |
 | Annotations (`SignalAnnotation`) | ✅ | Data-space text labels (`{text,x,y,color?}`) that pan/zoom with the window and hide when out of range; `y` of `±Infinity` pins to plot bottom/top; set via load options or `setSignal`, persisted in NVD. Render on the signal graph only (not the volume+physio association view) |
-| Persistence (NVD) | ✅ | Document version 8 (`signal/persistence.ts`) |
+| Persistence (NVD) | ✅ | Document version 9 (`signal/persistence.ts`) |
 | Demos | ✅ | `examples/svs.html`, `examples/physio.html`, `examples/physio.bold.html` |
 | Volume + physio association | ✅ | `collectAssociatedTimeGraphData`: BOLD time-course + attached physio on a shared Time(s) axis at native rates, clamped to the imaging window, normalized, with a current-frame marker (`attachToId`); per-trace show/hide — BOLD via `graphShowVolumeTimecourse`, physio via `setSignal` `selectedColumns` |
 

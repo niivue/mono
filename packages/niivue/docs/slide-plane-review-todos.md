@@ -414,20 +414,22 @@ Most are demo-level UX; a couple touch core defaults.
 
 ## Also parked (outside the drawing work)
 
-- [ ] **(M-L) Sparse NVDocument settings: fall back to CURRENT options, not
-  defaults.** Requested 2026-07-07. When a loaded `.nvd` omits a setting (a
-  "sparse" document), the missing values currently resolve to the built-in
-  DEFAULTS. Add a way for a dev to declare that specified settings should instead
-  be read from the **current live niivue options** on the instance when the
-  document doesn't specify them. Shape TBD — e.g. a load option listing which
-  option keys (or groups: scene/layout/ui/volume/mesh/draw/annotation/interaction)
-  are "inherit from current" vs "reset to default", applied per-key during
-  `loadDocument`/`applyScene` where a value is absent. NOTE: sparse/partial
-  settings serialization may not be fully implemented yet (cf. the FEATURE_PARITY
-  "sparse / dataless document" rows — mono currently always embeds and the
-  restore path is default-or-embedded), so this likely pairs with defining what
-  "a document omits setting X" means on the serialize side first. Backlog only;
-  not scheduled.
+- [x] **(M-L) Sparse NVDocument settings: fall back to CURRENT options, not
+  defaults.** DONE 2026-07-07 (commit `29f943e8`). Implemented on the SAVE side
+  (per the user's steer "only save what is not default"): `serialize` now omits
+  any setting equal to its default, and the loader (`applyDocumentToModel`) leaves
+  an omitted setting at the instance's **current live value** instead of resetting
+  it. Dev control via `nv.settingsSavePolicy` (`neverSave` / `alwaysSave` lists of
+  group names or `'group.key'` paths) + a per-call `policy` arg on
+  `saveDocument`/`serializeDocument`. Use case works: `neverSave:
+  ['scene.crosshairPos']` -> every doc omits the crosshair -> loads leave it where
+  the user last put it. Pure logic unit-tested (`documentSettings.test.ts`); full
+  round-trip browser-verified (NVDocument's graph uses `import.meta.glob`, not
+  Bun-loadable). NVD version 8 -> 9. Follow-ups (not done): annotationConfig is
+  still saved in full (excluded from the sparse treatment to avoid touching the
+  annotation-array restore path); a `settingsSource` 'reset-to-default' load
+  option (three-way document/current/default) was descoped in favor of the
+  save-side omit-defaults model.
 - Slide-plane review items (renderer cache lifecycle, memory budget, `.nvd`
   restore contract, magic-wand reference bounding) — see the top of this doc;
   all "acceptable for now".

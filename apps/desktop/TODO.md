@@ -476,16 +476,28 @@ RAS+value widget.)
   when unbound (old code would have shown it) and coords/intensity are intact;
   the positive atlas-name path is logic-verified (no atlas fixture in the
   browser-dev server).
+**Provenance direction (decided 2026-07-07): align with the accepted stack —
+W3C PROV → NIDM → BIDS-prov (BEP028) / BIDS-Derivatives `GeneratedBy`, and
+DataLad's content-addressed `run`/`rerun` model — instead of a proprietary
+schema. The `.nvbundle` carries standards-shaped metadata (SHA-256 identity,
+PROV-JSON activities, BIDS `GeneratedBy`) so it interoperates without depending
+on git-annex (which can't run on iOS). Full design + manifest sketch:
+`docs/provenance.md`. The two items below are the implementation.**
+
 - [ ] **[P2] (M) Content-hash data integrity + local edit changelog
   (foundational, single-user).** Stands alone — no collaboration required, and
   the viewer must be rock-solid on this before anything multi-user is built. Hash
   every dataset/derived artifact, verify on load, and surface a clear warning when
   the bytes don't match what an edit/view was made against (stale, modified, or
-  corrupt data). Keep an append-only local changelog of edits — each entry: author,
-  ts, parent entry hash, payload content hash, action — by generalizing the
-  per-session `provenance.jsonl` (`volumetric_server.rs:1245-1280`, currently
-  NeuroFlow-gated and only logging `correction.save`) into a dataset-level log.
-  Append-only + hash chain = tamper-evident provenance and a replayable history.
+  corrupt data). Keep an append-only, **hash-chained** changelog where each entry
+  is a **PROV activity** (agent, ts, parent-entry hash, payload hash, argv) — by
+  generalizing the per-session `provenance.jsonl` (`persist_correction_patch`,
+  currently NeuroFlow-gated and only logging `correction.save`) into a
+  dataset-level log. Append-only + hash chain = tamper-evident provenance and a
+  replayable history (the guarantee git gives DataLad, without git). Each derived
+  volume also gets a BIDS-Derivatives `generatedBy` record (see
+  `docs/provenance.md`); wire it from the existing
+  `VolumeDerivation { operation, source_path, output_path }`.
   - **Upgrade the hash for integrity use.** `file_content_hash`
     (`volumetric_server.rs:2455`) is a non-cryptographic `u64` (`DefaultHasher`) —
     fine for cache-busting, **not** for tamper-evidence. Use a cryptographic hash
@@ -514,6 +526,11 @@ RAS+value widget.)
   - **Transport-agnostic.** The bundle hand-off is just file in / file out — see
     the AirDrop/share item under Mobile and the data-transport seam — so the same
     flow works over AirDrop, a shared folder, or a server round-trip.
+  - **This is `datalad run` on a subset + `push` back**, expressed in our bundle.
+    Shape the assignment manifest + resync per `docs/provenance.md` (unit of work,
+    PROV activity append, conflict flagging). Consider an optional **desktop-only
+    DataLad import/export adapter** so labs already on DataLad can hand off to
+    NeuroVue and back — kept out of the mobile path.
 
 ### Clinical reading ergonomics & safety (clinician)
 

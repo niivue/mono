@@ -692,6 +692,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         !ctrl.model.annotation.isErasing &&
         ctrl.activeTileHit?.isRender &&
         evt.button === 2 &&
+        // Alt+right-drag rotates the clip plane instead of drawing, so both are
+        // usable without leaving the draw mode (Shift is reserved for the context
+        // menu). Plain right-drag draws.
+        !evt.altKey &&
         annVol?.matRAS &&
         annVol.chunkPlan &&
         chunkExplodeEnabled(annVol.chunkExplode)
@@ -720,6 +724,8 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         ctrl.model.drawingVolume &&
         ctrl.activeTileHit?.isRender &&
         evt.button === 2 &&
+        // Alt+right-drag rotates the clip plane instead of painting (see above).
+        !evt.altKey &&
         drawVol?.matRAS &&
         drawVol.chunkPlan &&
         chunkExplodeEnabled(drawVol.chunkExplode)

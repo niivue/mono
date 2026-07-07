@@ -81,7 +81,7 @@ fn neurovue_runtime_capabilities() -> RuntimeCapabilities {
     RuntimeCapabilities {
         terminal_available: cfg!(desktop),
         native_niimath_available: cfg!(desktop),
-        airdrop_available: cfg!(target_os = "macos"),
+        airdrop_available: cfg!(target_os = "macos") || cfg!(target_os = "ios"),
     }
 }
 
@@ -199,15 +199,32 @@ async fn share_view_via_airdrop(
     name: String,
 ) -> Result<ExportBundleResult, String> {
     let server = state.server.clone();
-    // Export the bundle to a cache location off the main thread; the user picks
-    // no destination for a share (unlike Save), so we stage it under the app
-    // cache and hand the finished bundle to AirDrop.
+    // Stage the bundle under the app cache off the main thread (a share picks no
+    // destination, unlike Save). Reuse an already-staged bundle whose inputs are
+    // unchanged so re-sharing the same dataset is instant instead of re-zipping.
     let (result, dest) = tauri::async_runtime::spawn_blocking(move || {
-        let dest = volumetric_server::cache_root()
-            .join("shares")
-            .join(format!("{}.nvbundle", sanitize_share_name(&name)));
+        let shares_dir = volumetric_server::cache_root().join("shares");
+        let name = sanitize_share_name(&name);
+        let dest = shares_dir.join(format!("{name}.nvbundle"));
+        let sig_path = shares_dir.join(format!("{name}.nvbundle.sig"));
+        let key = volumetric_server::share_cache_key(&server, &volume_ids);
+
+        if dest.is_file() && std::fs::read_to_string(&sig_path).is_ok_and(|sig| sig == key) {
+            let total_bytes = std::fs::metadata(&dest).map(|meta| meta.len()).unwrap_or(0);
+            return Ok::<_, String>((
+                volumetric_server::BundleExportResult {
+                    bundle_path: dest.display().to_string(),
+                    volume_count: volume_ids.len(),
+                    total_bytes,
+                },
+                dest,
+            ));
+        }
+
+        volumetric_server::prune_share_cache(&shares_dir, 4);
         let result =
             volumetric_server::export_bundle(&server, &dest, &volume_ids, &view, &created_at)?;
+        let _ = std::fs::write(&sig_path, &key); // export_bundle created shares_dir
         Ok::<_, String>((result, dest))
     })
     .await
@@ -239,6 +256,7 @@ fn sanitize_share_name(name: &str) -> String {
 
 #[tauri::command]
 async fn read_bundle_manifest(path: String) -> Result<serde_json::Value, String> {
+    let path = normalize_local_path(&path);
     tauri::async_runtime::spawn_blocking(move || {
         volumetric_server::read_bundle(Path::new(&path))
     })
@@ -348,7 +366,8 @@ pub fn run() {
         open_dataset_path,
         add_overlay_volume_path,
         export_dataset_bundle,
-        read_bundle_manifest
+        read_bundle_manifest,
+        share_view_via_airdrop
     ]);
 
     builder

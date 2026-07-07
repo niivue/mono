@@ -612,23 +612,28 @@ export function App(): JSX.Element {
 
   async function handleShareBundle(): Promise<void> {
     if (isSharingBundle) return
-    if (!selected) {
-      setStatus('Select a volume before sharing a bundle.')
+    if (!selected || items.length === 0) {
+      setStatus('Open a dataset before sharing.')
       return
     }
 
-    const { volumeIds, view } = composeCurrentBundle(selected)
+    // Share the *whole* dataset — every volume — so the recipient can browse and
+    // pick any of them. The current view is still embedded, so it opens to a
+    // sensible default; the rest show up in the recipient's dataset list.
+    const { view } = composeCurrentBundle(selected)
+    const volumeIds = items.map((item) => item.id)
+    const shareName = bidsName || datasetRoot?.split('/').pop() || selected.label || 'neurovue-dataset'
 
     setIsSharingBundle(true)
-    setStatus('Preparing bundle for AirDrop…')
+    setStatus(`Preparing dataset for AirDrop (${volumeIds.length} volume${volumeIds.length === 1 ? '' : 's'})…`)
     try {
       const result = await shareViewViaAirDrop({
-        name: selected.label ?? 'neurovue-bundle',
+        name: shareName,
         volumeIds,
         view
       })
       setStatus(
-        `AirDrop sheet opened for ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
+        `AirDrop sheet opened — ${result.volumeCount} volume${result.volumeCount === 1 ? '' : 's'} ` +
           `(${formatBundleBytes(result.totalBytes)}).`
       )
     } catch (error) {
@@ -916,12 +921,12 @@ export function App(): JSX.Element {
           </button>
           {isAirdropAvailable ? (
             <button
-              aria-label="Share via AirDrop"
+              aria-label="Share dataset via AirDrop"
               className="nv-icon-button"
               title={
                 selected
-                  ? 'Share this view as a bundle via AirDrop'
-                  : 'Select a volume to share via AirDrop'
+                  ? 'AirDrop the whole dataset — recipient can browse and pick any volume'
+                  : 'Open a dataset to share via AirDrop'
               }
               type="button"
               disabled={!selected || isSharingBundle}

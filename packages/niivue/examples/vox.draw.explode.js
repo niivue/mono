@@ -46,6 +46,15 @@ function applyExplode() {
 // Label index -> RGB for the Vector annotation style (mirrors the _draw LUT:
 // 1=red, 2=green, 3=blue).
 const COLOR_RGB = { 1: [1, 0, 0], 2: [0, 1, 0], 3: [0, 0, 1] }
+const COLOR_CSS = { 1: '#ff0000', 2: '#00ff00', 3: '#0000ff' }
+
+// Reflect the active Color in a swatch, dimmed when Color doesn't apply (Eraser/
+// Off, which disable the Color select).
+function updateColorSwatch() {
+  colorSwatch.style.background =
+    COLOR_CSS[parseInt(colorSel.value, 10)] ?? '#ff0000'
+  colorSwatch.style.opacity = colorSel.disabled ? '0.3' : '1'
+}
 
 // Per-tool 2D-slice and 3D-block gestures, for the contextual hint line.
 const TOOL_ACTIONS = {
@@ -116,6 +125,7 @@ function applyTool() {
   wandTol.disabled = tool !== 'wand'
   wand2dCheck.disabled = tool !== 'wand'
   svgBtn.disabled = !vector
+  updateColorSwatch()
 
   // Raster draw modes are mutually exclusive here.
   nv1.drawIsClickToSegment = tool === 'wand'
@@ -158,6 +168,7 @@ wand2dCheck.onchange = function () {
 wandTol.oninput = function () {
   // Slider is percent of the display window; the API takes a 0..1 fraction.
   nv1.drawClickToSegmentTolerance = parseInt(this.value, 10) / 100
+  tolVal.textContent = `${this.value}%`
 }
 
 penSize.oninput = function () {
@@ -189,7 +200,7 @@ svgBtn.onclick = () => {
   // Export the vector annotations on the current slice as SVG (Vector mode).
   const svg = nv1.annotationsToSVG()
   if (!svg) {
-    alert('Draw a vector shape first (Pen -> Vector (SVG)).')
+    alert('Draw a vector shape first (Tool -> Vector (SVG)).')
     return
   }
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))

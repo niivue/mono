@@ -387,13 +387,14 @@ Most are demo-level UX; a couple touch core defaults.
   "turn on Explode to draw on the 3D blocks."
 - [x] **(quick win) Discoverability.** `title` tooltips on every control
   (`570c6625`) + a contextual, tool/view/explode-aware hint bar that acts as the
-  active-tool indicator (`b42531b3`). Remaining nice-to-have: a cursor that
-  reflects the tool (deferred — needs canvas cursor styling).
-- [~] **3D render is easy to miss** in the default multiplanar view (small
-  quadrant). Mitigated by the hint (tells the user to draw on blocks + turn on
-  Explode) and the View selector (a dedicated "Render" entry). A hero/render-
-  forward default layout is a further tweak, deferred because it complicates the
-  View dropdown's `sliceType` control.
+  active-tool indicator (`b42531b3`) + a tool-reflecting canvas cursor (crosshair
+  for Pen/Eraser/Vector, cell for Fill/Wand, default for Off; commit `81718831`).
+- [x] **3D render is easy to miss** — DONE 2026-07-07 (commit `81718831`): a new
+  default "Hero (3D + slices)" View puts the exploded blocks in a large hero tile
+  (heroFraction 0.6, heroSliceType RENDER) with an A/C/S slice strip beside them,
+  so the headline surface is front-and-center while 2D slices stay usable. Other
+  View entries set heroFraction 0 (hero off); the hero render tile is a live
+  render tile (orbits on left-drag; same isRender hit-test powers block-drawing).
 
 ## Low
 

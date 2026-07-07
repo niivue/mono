@@ -1,4 +1,5 @@
 import { decode, encode } from 'cbor-x'
+import { selectUrlMeshLayers } from '@/documentMeshLayers'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import { encodeRLE } from '@/drawing/rle'
 import { log } from '@/logger'
@@ -836,7 +837,11 @@ export async function reconstructMesh(
       const mesh = NVMesh.createMesh(positions, indices, colors, meshOpts)
       await model.addMesh(mesh)
     } else if (m.url) {
-      // Load from URL (layers loaded via MeshFromUrlOptions)
+      // Load from URL. Forward URL-referenced scalar overlay layers so they are
+      // fetched and applied — previously they were dropped, leaving surfaces
+      // without their overlays. See selectUrlMeshLayers for why URL-less layers
+      // are skipped on this path.
+      const layers = selectUrlMeshLayers(m.layers)
       await model.addMesh({
         url: m.url,
         name: m.name,
@@ -846,6 +851,7 @@ export async function reconstructMesh(
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
         isLegendVisible: m.isLegendVisible,
+        layers,
       })
     }
   } catch (err) {

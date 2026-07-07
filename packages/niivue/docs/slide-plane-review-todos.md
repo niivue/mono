@@ -404,10 +404,12 @@ Most are demo-level UX; a couple touch core defaults.
 - [x] Color swatch reflecting the active color (dimmed when it doesn't apply) —
   commit `995a0fee`. (A tool-reflecting cursor is still deferred; see Medium.)
 - [x] "Overwrite" semantics — tooltip added (`570c6625`).
-- [ ] **Core-default question (OPEN — needs confirmation):** the *core*
-  `DRAW_DEFAULTS.clickToSegmentIs2D` is now `true` (done since the feature is
-  unreleased). Confirm 2D is the desired library default for API consumers, not
-  just the demo default.
+- [x] **Core-default question — CONFIRMED 2026-07-07:** the core
+  `DRAW_DEFAULTS.clickToSegmentIs2D` stays `true` (2D). Rationale (per the user):
+  the **3D drawing/segmentation features are the most experimental**, so the safe,
+  Photoshop-like 2D behavior is the library default and the 3D grow is opt-in.
+  Use this as the guiding principle for other draw/annotation defaults too:
+  **2D = stable default; 3D-on-exploded-blocks = experimental, opt-in.**
 
 ## Also parked (outside the drawing work)
 

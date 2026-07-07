@@ -27,8 +27,24 @@ tower-http = { version = "0.6", features = ["cors"] }
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 portable-pty = "0.8"
 
-# AirDrop share sheet (src/share.rs) uses AppKit's NSSharingService — macOS only.
-[target.'cfg(target_os = "macos")'.dependencies]
+# Native share sheet (src/share.rs) — Apple platforms. macOS uses AppKit's
+# NSSharingService; iOS uses UIKit's UIActivityViewController.
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", features = ["NSSharingService"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-ui-kit = { version = "0.3", features = [
+  "block2",
+  "UIActivityViewController",
+  "UIActivity",
+  "UIApplication",
+  "UIResponder",
+  "UIWindow",
+  "UIViewController",
+  "UIView",
+  "UIPopoverPresentationController",
+] }

@@ -81,7 +81,7 @@ fn neurovue_runtime_capabilities() -> RuntimeCapabilities {
     RuntimeCapabilities {
         terminal_available: cfg!(desktop),
         native_niimath_available: cfg!(desktop),
-        airdrop_available: cfg!(target_os = "macos"),
+        airdrop_available: cfg!(target_os = "macos") || cfg!(target_os = "ios"),
     }
 }
 
@@ -348,7 +348,8 @@ pub fn run() {
         open_dataset_path,
         add_overlay_volume_path,
         export_dataset_bundle,
-        read_bundle_manifest
+        read_bundle_manifest,
+        share_view_via_airdrop
     ]);
 
     builder

@@ -801,8 +801,9 @@ pub fn export_bundle(
         return Err("export_bundle: no volumes selected for export".to_string());
     }
 
-    // Resolve every requested id up front (preserving request order) so we fail
-    // before touching the filesystem if any is unknown or lacks a source file.
+    // Resolve requested ids up front (preserving request order). An unknown id is
+    // a real error; a volume with no source file (e.g. a phantom default) is just
+    // skipped, so one unexportable volume doesn't abort a whole-dataset share.
     let selected: Vec<VolumeEntry> = {
         let volumes = lock_recover(&handle.volumes);
         let mut out = Vec::with_capacity(volume_ids.len());
@@ -811,13 +812,15 @@ pub fn export_bundle(
                 .iter()
                 .find(|volume| &volume.id == id)
                 .ok_or_else(|| format!("export_bundle: unknown volume {id}"))?;
-            if entry.source_path.is_none() {
-                return Err(format!("export_bundle: volume {id} has no source file"));
+            if entry.source_path.is_some() {
+                out.push(entry.clone());
             }
-            out.push(entry.clone());
         }
         out
     };
+    if selected.is_empty() {
+        return Err("export_bundle: none of the selected volumes have a source file".to_string());
+    }
 
     // The bundle is a single zip file. Replace anything already at `dest` — a
     // stale file, or a legacy directory bundle from an older build.
@@ -989,6 +992,33 @@ fn file_name_or(path: &FsPath, fallback: &str) -> String {
         .to_string()
 }
 
+/// Copy `reader` into `writer`, decrementing `budget` by the bytes written and
+/// aborting if it would exceed — the extraction cap that stops a zip bomb from
+/// filling the disk.
+fn copy_within_budget<R: Read, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    budget: &mut u64,
+) -> std::io::Result<()> {
+    let mut buffer = [0u8; 1 << 16];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        let read = read as u64;
+        if read > *budget {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "bundle exceeds the extraction size limit (possible zip bomb)",
+            ));
+        }
+        *budget -= read;
+        writer.write_all(&buffer[..read as usize])?;
+    }
+    Ok(())
+}
+
 /// Extract a single-file `.nvbundle` (zip) into a fresh cache directory,
 /// returning the extraction root (which holds `manifest.json` + `data/`).
 /// `enclosed_name` drops any entry that would escape the directory (path
@@ -1004,6 +1034,12 @@ fn extract_bundle_zip(zip_path: &FsPath) -> Result<PathBuf, String> {
     let _ = fs::remove_dir_all(&out_root);
     fs::create_dir_all(&out_root)
         .map_err(|error| format!("read_bundle: create {}: {error}", out_root.display()))?;
+
+    // Zip-bomb guard: our bundles are Stored (extracted ≈ archive size), so cap
+    // total extraction at 50× the archive (with a floor) — comfortably above any
+    // real bundle, far below a bomb's 1000×+ inflation.
+    let archive_size = fs::metadata(zip_path).map(|meta| meta.len()).unwrap_or(0);
+    let mut budget: u64 = archive_size.saturating_mul(50).max(256 * 1024 * 1024);
 
     for index in 0..archive.len() {
         let mut entry = archive
@@ -1023,7 +1059,7 @@ fn extract_bundle_zip(zip_path: &FsPath) -> Result<PathBuf, String> {
         }
         let mut out_file = File::create(&out_path)
             .map_err(|error| format!("read_bundle: write {}: {error}", out_path.display()))?;
-        std::io::copy(&mut entry, &mut out_file)
+        copy_within_budget(&mut entry, &mut out_file, &mut budget)
             .map_err(|error| format!("read_bundle: extract {}: {error}", out_path.display()))?;
     }
     Ok(out_root)

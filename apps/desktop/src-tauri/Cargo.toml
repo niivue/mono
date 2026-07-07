@@ -17,6 +17,9 @@ flate2 = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+# Single-file `.nvbundle` (a zip). default-features off + deflate keeps it pure
+# Rust (no bzip2/zstd C deps) so it cross-compiles to iOS.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2.7.1"
 tokio = { version = "1", features = ["fs", "macros", "net", "rt-multi-thread", "sync"] }

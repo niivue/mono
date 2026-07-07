@@ -13,7 +13,7 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet, VecDeque},
     fs::{self, File},
     hash::{Hash, Hasher},
-    io::Read,
+    io::{Read, Write},
     net::TcpListener,
     path::{Path as FsPath, PathBuf},
     sync::{
@@ -24,6 +24,8 @@ use std::{
 };
 use tokio::runtime::Builder;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 #[derive(Clone)]
 pub struct ServerHandle {
@@ -715,19 +717,79 @@ pub struct BundleExportResult {
     pub total_bytes: u64,
 }
 
+/// A cheap (stat-based, no file reads) signature of a share bundle's **data**:
+/// the volume set and each source file's identity (path + size + mtime). Used to
+/// skip re-staging when the data is unchanged, so re-sharing the same dataset
+/// reuses the already-zipped file even after the user has clicked around.
+///
+/// The view (crosshair, colormaps, …) is deliberately excluded — it changes on
+/// every interaction and would defeat the cache, and for a dataset hand-off the
+/// embedded view is only a default the recipient can change. So a cached bundle
+/// may carry a slightly stale view; the data (the expensive part) is exact.
+pub fn share_cache_key(handle: &ServerHandle, volume_ids: &[String]) -> String {
+    let volumes = lock_recover(&handle.volumes);
+    let mut hasher = DefaultHasher::new();
+    for id in volume_ids {
+        id.hash(&mut hasher);
+        if let Some(source) = volumes
+            .iter()
+            .find(|volume| &volume.id == id)
+            .and_then(|volume| volume.source_path.as_ref())
+        {
+            source.hash(&mut hasher);
+            if let Ok(meta) = fs::metadata(source) {
+                meta.len().hash(&mut hasher);
+                if let Ok(modified) = meta.modified() {
+                    if let Ok(dur) = modified.duration_since(UNIX_EPOCH) {
+                        dur.as_nanos().hash(&mut hasher);
+                    }
+                }
+            }
+        }
+    }
+    format!("{:016x}", hasher.finish())
+}
+
+/// Keep the staged-share cache bounded: retain the newest `keep` bundles (and
+/// their `.sig` sidecars), delete the rest. The dir lives under the OS temp dir
+/// (auto-purged), so this just avoids unbounded growth within a long session.
+pub fn prune_share_cache(dir: &FsPath, keep: usize) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut bundles: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "nvbundle"))
+        .filter_map(|path| {
+            fs::metadata(&path)
+                .and_then(|meta| meta.modified())
+                .ok()
+                .map(|modified| (modified, path))
+        })
+        .collect();
+    if bundles.len() <= keep {
+        return;
+    }
+    bundles.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+    for (_, path) in bundles.into_iter().skip(keep) {
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("nvbundle.sig"));
+    }
+}
+
 /// Export the given volumes (and their JSON sidecars) into a self-describing
-/// bundle directory at `dest`: `<dest>/manifest.json` + `<dest>/data/*`. Each
-/// data file gets a cryptographic (SHA-256) content hash recorded in the
-/// manifest so a later import can verify integrity. `view` is an opaque
+/// single-file `.nvbundle` (a zip) at `dest`, containing `manifest.json` +
+/// `data/*`. Each data file gets a cryptographic (SHA-256) content hash recorded
+/// in the manifest so a later import can verify integrity. `view` is an opaque
 /// view-state blob supplied by the frontend (layers, colormaps, windows, clip
 /// planes, …) and is round-tripped verbatim. `created_at` is an ISO-8601
 /// timestamp from the caller (kept out of Rust to avoid a time-format dep, and
 /// to match the existing `savePatch` convention).
 ///
-/// The bundle format is intentionally container-agnostic (a plain directory
-/// today); zipping it into a single AirDrop-friendly file is a thin wrapper the
-/// share transport can add later. Whole-volume export only for now — the
-/// per-volume manifest entry has room for a future `sliceRange` field.
+/// A single file (vs. a directory) is what makes the bundle AirDrop/share-sheet
+/// friendly on iOS and pickable by a file picker. Whole-volume export only for
+/// now — the per-volume manifest entry has room for a future `sliceRange` field.
 pub fn export_bundle(
     handle: &ServerHandle,
     dest: &FsPath,
@@ -757,26 +819,28 @@ pub fn export_bundle(
         out
     };
 
-    // Guard the destination: replace a prior NeuroVue bundle, but never clobber
-    // a non-bundle directory the user may have picked by mistake.
+    // The bundle is a single zip file. Replace anything already at `dest` — a
+    // stale file, or a legacy directory bundle from an older build.
     if dest.is_dir() {
-        if dest.join("manifest.json").is_file() {
-            fs::remove_dir_all(dest)
-                .map_err(|error| format!("export_bundle: replace {}: {error}", dest.display()))?;
-        } else if dir_is_non_empty(dest) {
-            return Err(format!(
-                "export_bundle: {} exists and is not a NeuroVue bundle",
-                dest.display()
-            ));
-        }
-    } else if dest.is_file() {
+        fs::remove_dir_all(dest)
+            .map_err(|error| format!("export_bundle: replace {}: {error}", dest.display()))?;
+    } else if dest.exists() {
         fs::remove_file(dest)
             .map_err(|error| format!("export_bundle: overwrite {}: {error}", dest.display()))?;
     }
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("export_bundle: create {}: {error}", parent.display()))?;
+    }
 
-    let data_dir = dest.join("data");
-    fs::create_dir_all(&data_dir)
-        .map_err(|error| format!("export_bundle: create {}: {error}", data_dir.display()))?;
+    let zip_file = File::create(dest)
+        .map_err(|error| format!("export_bundle: create {}: {error}", dest.display()))?;
+    let mut zip = ZipWriter::new(zip_file);
+    // Stored (no deflate): NIfTI volumes are already gzip-compressed, so deflating
+    // again just burns CPU. `large_file` enables zip64 for volumes over 4 GB.
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(true);
 
     let mut used_names: HashSet<String> = HashSet::new();
     let mut total_bytes: u64 = 0;
@@ -787,13 +851,13 @@ pub fn export_bundle(
             .source_path
             .as_ref()
             .expect("source_path presence checked above");
-        let (rel, bytes, sha) = copy_into_bundle(source, &data_dir, &mut used_names, "volume.nii")?;
+        let (rel, bytes, sha) = add_source_to_zip(&mut zip, source, options, &mut used_names, "volume.nii")?;
         total_bytes += bytes;
 
         let mut sidecars: Vec<Value> = Vec::new();
         for sidecar in &entry.sidecar_paths {
             let (sc_rel, sc_bytes, sc_sha) =
-                copy_into_bundle(sidecar, &data_dir, &mut used_names, "sidecar.json")?;
+                add_source_to_zip(&mut zip, sidecar, options, &mut used_names, "sidecar.json")?;
             total_bytes += sc_bytes;
             sidecars.push(json!({
                 "name": file_name_or(sidecar, "sidecar.json"),
@@ -834,11 +898,14 @@ pub fn export_bundle(
         "view": view,
     });
 
-    let manifest_path = dest.join("manifest.json");
     let manifest_text = serde_json::to_string_pretty(&manifest)
         .map_err(|error| format!("export_bundle: serialize manifest: {error}"))?;
-    fs::write(&manifest_path, manifest_text)
-        .map_err(|error| format!("export_bundle: write {}: {error}", manifest_path.display()))?;
+    zip.start_file("manifest.json", options)
+        .map_err(|error| format!("export_bundle: zip manifest.json: {error}"))?;
+    zip.write_all(manifest_text.as_bytes())
+        .map_err(|error| format!("export_bundle: write manifest.json: {error}"))?;
+    zip.finish()
+        .map_err(|error| format!("export_bundle: finalize {}: {error}", dest.display()))?;
 
     Ok(BundleExportResult {
         bundle_path: dest.display().to_string(),
@@ -847,21 +914,39 @@ pub fn export_bundle(
     })
 }
 
-/// Copy `source` into `data_dir` under a bundle-unique file name, returning the
-/// bundle-relative path (`data/<name>`), the byte count, and the SHA-256 hash.
-fn copy_into_bundle(
+/// Stream `source` into the bundle zip under a unique `data/<name>` entry,
+/// hashing as it goes. Returns the entry path, byte count, and SHA-256 — so the
+/// file is read exactly once for both the archive and its integrity hash.
+fn add_source_to_zip(
+    zip: &mut ZipWriter<File>,
     source: &FsPath,
-    data_dir: &FsPath,
+    options: SimpleFileOptions,
     used_names: &mut HashSet<String>,
     fallback: &str,
 ) -> Result<(String, u64, String), String> {
     let name = unique_bundle_name(source, used_names, fallback);
-    let out = data_dir.join(&name);
-    let bytes = fs::copy(source, &out)
-        .map_err(|error| format!("export_bundle: copy {}: {error}", source.display()))?;
-    let sha = sha256_file(&out)
-        .map_err(|error| format!("export_bundle: hash {}: {error}", out.display()))?;
-    Ok((format!("data/{name}"), bytes, sha))
+    let entry = format!("data/{name}");
+    zip.start_file(&entry, options)
+        .map_err(|error| format!("export_bundle: zip {entry}: {error}"))?;
+
+    let mut file = File::open(source)
+        .map_err(|error| format!("export_bundle: open {}: {error}", source.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 1 << 16];
+    let mut total: u64 = 0;
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("export_bundle: read {}: {error}", source.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+        zip.write_all(&buffer[..read])
+            .map_err(|error| format!("export_bundle: write {entry}: {error}"))?;
+        total += read as u64;
+    }
+    Ok((entry, total, format!("{:x}", hasher.finalize())))
 }
 
 /// Stream a file through SHA-256 without holding it in memory (volumes are big).
@@ -904,10 +989,44 @@ fn file_name_or(path: &FsPath, fallback: &str) -> String {
         .to_string()
 }
 
-fn dir_is_non_empty(dir: &FsPath) -> bool {
-    fs::read_dir(dir)
-        .map(|mut entries| entries.next().is_some())
-        .unwrap_or(false)
+/// Extract a single-file `.nvbundle` (zip) into a fresh cache directory,
+/// returning the extraction root (which holds `manifest.json` + `data/`).
+/// `enclosed_name` drops any entry that would escape the directory (path
+/// traversal), so a hostile archive can't write outside the cache.
+fn extract_bundle_zip(zip_path: &FsPath) -> Result<PathBuf, String> {
+    let file = File::open(zip_path)
+        .map_err(|error| format!("read_bundle: open {}: {error}", zip_path.display()))?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|error| format!("read_bundle: {} is not a valid bundle: {error}", zip_path.display()))?;
+
+    let stem = zip_path.file_stem().and_then(|name| name.to_str()).unwrap_or("bundle");
+    let out_root = cache_root().join("imports").join(stem);
+    let _ = fs::remove_dir_all(&out_root);
+    fs::create_dir_all(&out_root)
+        .map_err(|error| format!("read_bundle: create {}: {error}", out_root.display()))?;
+
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| format!("read_bundle: read entry {index}: {error}"))?;
+        let Some(rel) = entry.enclosed_name() else {
+            continue;
+        };
+        let out_path = out_root.join(&rel);
+        if entry.is_dir() {
+            let _ = fs::create_dir_all(&out_path);
+            continue;
+        }
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("read_bundle: create {}: {error}", parent.display()))?;
+        }
+        let mut out_file = File::create(&out_path)
+            .map_err(|error| format!("read_bundle: write {}: {error}", out_path.display()))?;
+        std::io::copy(&mut entry, &mut out_file)
+            .map_err(|error| format!("read_bundle: extract {}: {error}", out_path.display()))?;
+    }
+    Ok(out_root)
 }
 
 /// Read a bundle's `manifest.json` and verify every declared data file against
@@ -916,8 +1035,16 @@ fn dir_is_non_empty(dir: &FsPath) -> bool {
 /// `data/` dir). Returns the parsed manifest plus a per-file verification list
 /// so the UI can warn on stale/modified/corrupt payloads before trusting them.
 pub fn read_bundle(path: &FsPath) -> Result<Value, String> {
-    let root = fs::canonicalize(path)
+    let canonical = fs::canonicalize(path)
         .map_err(|error| format!("read_bundle: {}: {error}", path.display()))?;
+    // A single-file `.nvbundle` is a zip: extract it to a cache dir and read from
+    // there (so the frontend loads the volumes via the normal open-dataset seam).
+    // A legacy directory bundle is read in place.
+    let root = if canonical.is_file() {
+        extract_bundle_zip(&canonical)?
+    } else {
+        canonical
+    };
     let manifest_path = root.join("manifest.json");
     let text = fs::read_to_string(&manifest_path)
         .map_err(|error| format!("read_bundle: read {}: {error}", manifest_path.display()))?;

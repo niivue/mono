@@ -223,12 +223,13 @@ export interface BundleReadResult {
   allVerified: boolean
 }
 
-/** Prompt for a `.nvbundle` directory to open. Returns null if cancelled. */
+/** Prompt for a `.nvbundle` file to open. Returns null if cancelled. */
 export async function pickBundle(): Promise<string | null> {
   const selected = await open({
-    directory: true,
+    directory: false,
     multiple: false,
-    title: 'Open NeuroVue bundle (.nvbundle)'
+    title: 'Open NeuroVue bundle',
+    filters: [{ name: 'NeuroVue bundle', extensions: ['nvbundle'] }]
   })
   return typeof selected === 'string' ? selected : null
 }

@@ -367,12 +367,13 @@ Most are demo-level UX; a couple touch core defaults.
   2D-slice wand click grows a bounded in-slice region; block right-click stays 3D
   by design. Verified: a click now fills a local patch, not the whole ribbon.
   Later polish (open): lower default tol / hover preview.
-- [ ] **(M) Ambiguous tool model — controls silently conflict.** Tools are split
-  across the Pen dropdown (Erase/colors/Vector/Off) plus separate Fill/Wand/2D
-  checkboxes. Fill+Wand → wand wins but Fill stays checked+ignored; selecting
-  Vector ignores Fill/Wand/2D while they stay live. No feedback about what's
-  overridden. FIX: consolidate to one **Tool selector** with contextual options
-  (demo-level; core API is fine). Bigger change — discuss before doing.
+- [x] **(M) Ambiguous tool model — controls silently conflict.** DONE 2026-07-07
+  (commit `2711a2fa`): consolidated `vox.draw.explode` to a single **Tool**
+  selector (Pen/Eraser/Fill/Magic wand/Vector/Off) + separate **Color**, with each
+  tool enabling only its relevant options (Color off for Eraser/Off, Size for
+  Pen/Eraser, Tol+2D for Wand, SVG for Vector). One mode active at a time; no
+  silent conflicts. Verified all six tools. (Note: `vox.draw` uses a different,
+  already-single-selector model and wasn't touched.)
 
 ## Medium
 

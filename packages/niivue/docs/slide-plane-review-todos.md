@@ -430,6 +430,17 @@ Most are demo-level UX; a couple touch core defaults.
   annotation-array restore path); a `settingsSource` 'reset-to-default' load
   option (three-way document/current/default) was descoped in favor of the
   save-side omit-defaults model.
+- [x] **Linked NVD documents (reference volumes by URL, don't embed).** DONE
+  2026-07-07 (commit `56f2a21f`). `saveDocument`/`serializeDocument` take
+  `{ linkData: true }`: a volume with a fetchable URL is serialized without its
+  bytes and the loader refetches it (`reconstructVolume` already had the URL-
+  fallback branch). Volumes with no linkable URL still embed (+warn) so the doc
+  round-trips. serialize's 3rd arg is now `SerializeOptions` (`{ settings,
+  linkData }`). Verified: linked mni152 doc ~1 KB vs ~11 MB, reload refetches.
+  Follow-up (not done): **meshes still always embed** — the mesh URL-restore path
+  doesn't reapply overlay layers / tract/connectome options, so linking a mesh
+  would silently drop that state; needs `reconstructMesh`'s `else if (m.url)`
+  branch extended to reapply layers + tract/connectome options first.
 - Slide-plane review items (renderer cache lifecycle, memory budget, `.nvd`
   restore contract, magic-wand reference bounding) — see the top of this doc;
   all "acceptable for now".

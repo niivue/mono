@@ -150,7 +150,18 @@ function handleLocationChange(data) {
   document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
 
-const nv1 = new NiiVue({ backgroundColor: [0.1, 0.1, 0.12, 1] })
+// Optional `?backend=webgl2` (or webgpu) to pick the initial backend; the select
+// mirrors it and can still switch at runtime.
+const initialBackend =
+  new URLSearchParams(window.location.search).get('backend') === 'webgl2'
+    ? 'webgl2'
+    : 'webgpu'
+backend.value = initialBackend
+
+const nv1 = new NiiVue({
+  backgroundColor: [0.1, 0.1, 0.12, 1],
+  backend: initialBackend,
+})
 nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 await nv1.attachToCanvas(gl1)
 nv1.sliceType = parseInt(view.value, 10)

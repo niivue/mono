@@ -437,6 +437,11 @@ Most are demo-level UX; a couple touch core defaults.
   fallback branch). Volumes with no linkable URL still embed (+warn) so the doc
   round-trips. serialize's 3rd arg is now `SerializeOptions` (`{ settings,
   linkData }`). Verified: linked mni152 doc ~1 KB vs ~11 MB, reload refetches.
+  Tests (`documentLinkData.test.ts`): pure link decision (`isLinkableUrl`/
+  `shouldLinkVolume`) + a CBOR wire-contract round-trip (linked vol has url + no
+  `data`) using real niivue test-image URLs, plus an opt-in network test
+  (`RUN_NETWORK_TESTS=1`) that fetches the live test image. Full fetch->reload
+  round-trip stays browser-verified (needs NiiVue's import.meta.glob graph + GPU).
   Follow-up (not done): **meshes still always embed** — the mesh URL-restore path
   doesn't reapply overlay layers / tract/connectome options, so linking a mesh
   would silently drop that state; needs `reconstructMesh`'s `else if (m.url)`

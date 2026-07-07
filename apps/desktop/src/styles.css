@@ -62,6 +62,10 @@ button {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  /* Keep the UI clear of the notch / home indicator (viewport-fit=cover lets
+     the webview fill the whole screen). Zero on desktop, so no effect there. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .nv-app.has-terminal {
@@ -1441,6 +1445,60 @@ button {
   font-variant-numeric: tabular-nums;
   color: var(--faint);
   text-align: right;
+}
+
+/* Clip-plane control (3D render): plane chips + a depth slider, the touch path
+   for moving clip planes (was wheel-only). Overlaid like the slice slider. */
+.nv-clip-slider {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(520px, 88%);
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(12, 13, 10, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.nv-clip-slider-chips {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.nv-clip-slider-chips button {
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.nv-clip-slider-chips button.is-active {
+  border-color: var(--amber);
+  background: rgba(215, 166, 66, 0.18);
+  color: var(--amber);
+}
+
+.nv-clip-slider input[type='range'] {
+  flex: 1;
+  height: 28px;
+  accent-color: var(--amber);
+  cursor: pointer;
+  touch-action: pan-x;
+}
+
+.nv-clip-slider input[type='range']:disabled {
+  opacity: 0.4;
 }
 
 .nv-render-snap-controls {

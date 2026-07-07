@@ -302,6 +302,20 @@ export function App(): JSX.Element {
     }
   }, [])
 
+  // `matchMedia` can be unsettled when the useState initializers above run on a
+  // cold WKWebView boot, so the phone defaults sometimes miss (app comes up in
+  // the 3D render with panels open instead of a collapsed axial view). Re-apply
+  // them once after mount, when the viewport is established. Runs a single time
+  // (app mounts once); a no-op on desktop and when the initial guess was right.
+  useEffect(() => {
+    if (isPhoneViewport()) {
+      setViewMode('axial')
+      setIsFileListCollapsed(true)
+      setIsControlsCollapsed(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     if (!isRecentMenuOpen) return
 
@@ -1082,6 +1096,7 @@ export function App(): JSX.Element {
               item={selected}
               layers={renderLayers}
               onClipPlaneDepthChange={changeClipPlaneDepth}
+              onClipPlaneActivate={bindActiveClipPlane}
               onLayerExtents={handleLayerExtents}
               onLocationChange={setLocationReadout}
               onResolvedWindows={handleResolvedWindows}

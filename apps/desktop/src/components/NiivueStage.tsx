@@ -32,6 +32,8 @@ interface NiivueStageProps {
   // coordinate twice still fires).
   crosshairTarget?: { mm: [number, number, number] } | null
   onClipPlaneDepthChange: (planeId: string, depth: number) => void
+  // Make a clip plane the active (on-screen depth-slider / wheel) target.
+  onClipPlaneActivate?: (planeId: string) => void
   onLocationChange?: (location: NiiVueLocation | null) => void
   // Reports the intensity window NiiVue actually applied per layer (keyed by
   // item id), including auto-seeded defaults — so the UI can show the effective
@@ -258,6 +260,7 @@ export function NiivueStage({
   viewMode,
   crosshairTarget,
   onClipPlaneDepthChange,
+  onClipPlaneActivate,
   onLocationChange,
   onResolvedWindows,
   onLayerExtents,
@@ -681,6 +684,15 @@ export function NiivueStage({
     nv.moveCrosshairInVox(...step)
   }
 
+  // On-screen clip-plane control (3D render): chips pick the active plane and a
+  // depth slider moves it — the touch path for what was a wheel-only control.
+  const enabledClipPlanes = clipPlanes.filter((plane) => plane.enabled)
+  const clipIsActive = renderWheelMode === 'clip-plane'
+  const activeClip = clipIsActive
+    ? enabledClipPlanes.find((plane) => plane.id === activeClipPlaneId) ?? null
+    : null
+  const showClipControl = isRenderMode && enabledClipPlanes.length > 0
+
   return (
     <div
       className="nv-render-stage"
@@ -732,6 +744,36 @@ export function NiivueStage({
           <span className="nv-slice-slider-value">
             {sliceValue + 1} / {sliceMax + 1}
           </span>
+        </div>
+      ) : null}
+      {showClipControl ? (
+        <div className="nv-clip-slider" role="group" aria-label="Clip plane">
+          <div className="nv-clip-slider-chips">
+            {enabledClipPlanes.map((plane) => (
+              <button
+                aria-pressed={clipIsActive && plane.id === activeClipPlaneId}
+                className={clipIsActive && plane.id === activeClipPlaneId ? 'is-active' : ''}
+                key={plane.id}
+                onClick={() => onClipPlaneActivate?.(plane.id)}
+                title={`Move the ${plane.label} clip plane`}
+                type="button"
+              >
+                {plane.label}
+              </button>
+            ))}
+          </div>
+          <input
+            aria-label="Clip plane depth"
+            disabled={!activeClip}
+            max={1}
+            min={-1}
+            step={0.02}
+            type="range"
+            value={activeClip?.depth ?? 0}
+            onChange={(event) =>
+              activeClip && onClipPlaneDepthChange(activeClip.id, Number(event.target.value))
+            }
+          />
         </div>
       ) : null}
       <div className="nv-render-status" role="status" aria-live="polite">{status}</div>

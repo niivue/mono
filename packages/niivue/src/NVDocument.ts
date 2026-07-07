@@ -282,6 +282,31 @@ function extractHeaderData(hdr: NIFTI1 | NIFTI2): NIFTI1 | NIFTI2 {
   }
 }
 
+/** Options for {@link serialize}. */
+export interface SerializeOptions {
+  /**
+   * Which settings the document includes (sparse). Omitted -> omit any setting
+   * equal to its default. See {@link SettingsSavePolicy}.
+   */
+  settings?: SettingsSavePolicy
+  /**
+   * Link (rather than embed) volume data. When true, a volume that has a
+   * fetchable URL is serialized WITHOUT its bytes and the loader refetches from
+   * the URL — a small, "linked" document. Volumes with no linkable URL
+   * (drag-dropped files, `blob:`/`data:` URLs) still embed their data so the
+   * document always round-trips. Default false (self-contained). NOTE: meshes
+   * are always embedded (their URL-restore path does not yet reapply overlay
+   * layers / tract options).
+   */
+  linkData?: boolean
+}
+
+// A URL the loader can refetch on open (so its data need not be embedded). A
+// bare/relative path is assumed reachable; ephemeral blob:/data: URLs are not.
+function isLinkableUrl(url: string | undefined): boolean {
+  return !!url && !url.startsWith('blob:') && !url.startsWith('data:')
+}
+
 // Defaults for the SERIALIZED subset of scene fields (a sparse document omits
 // any that match). Derived from NVConstants.SCENE_DEFAULTS so they can't drift.
 const SCENE_DOC_DEFAULTS = {
@@ -299,8 +324,10 @@ const SCENE_DOC_DEFAULTS = {
 export function serialize(
   model: NVModel,
   slidePlane?: NVDocumentSlidePlane,
-  policy?: SettingsSavePolicy,
+  options?: SerializeOptions,
 ): Uint8Array {
+  const policy = options?.settings
+  const linkData = options?.linkData ?? false
   // Extract volumes with embedded data
   const volumes: NVDocumentVolume[] = model.volumes.map((v) => {
     const vol: NVDocumentVolume = {
@@ -336,14 +363,23 @@ export function serialize(
       }
     }
 
-    // Always embed volume data for self-contained documents
+    // Embed volume data for a self-contained document, UNLESS linkData is set
+    // and this volume has a fetchable URL (then the loader refetches it). A
+    // linked volume with no usable URL still embeds so the document round-trips.
     if (v.hdr && v.img) {
-      const imgData = typedArrayToBytes(v.img)
-
-      vol.data = {
-        hdr: extractHeaderData(v.hdr),
-        img: imgData,
-        datatypeCode: v.hdr.datatypeCode,
+      if (linkData && isLinkableUrl(v.url)) {
+        // linked: bytes omitted, loader fetches from v.url
+      } else {
+        if (linkData) {
+          log.warn(
+            `serialize: volume "${v.name ?? v.url ?? '(unnamed)'}" has no linkable URL; embedding its data`,
+          )
+        }
+        vol.data = {
+          hdr: extractHeaderData(v.hdr),
+          img: typedArrayToBytes(v.img),
+          datatypeCode: v.hdr.datatypeCode,
+        }
       }
     }
 
@@ -363,6 +399,10 @@ export function serialize(
       kind: m.kind,
     }
 
+    // Meshes are always embedded, even under linkData: the mesh URL-restore path
+    // does not yet reapply scalar-overlay layers or tract/connectome options, so
+    // linking a mesh would silently drop that state. linkData covers volumes
+    // (whose URL-restore is complete); mesh linking is a tracked follow-up.
     // Always embed mesh data for self-contained documents
     if (m.positions && m.indices && m.colors) {
       mesh.data = {

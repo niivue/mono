@@ -41,6 +41,8 @@ export {
   SLICE_TYPE,
 } from './NVConstants'
 export { default, default as NiiVueGPU } from './NVControl'
+// Document save options (settings policy + linkData)
+export type { SerializeOptions } from './NVDocument'
 // Event types
 export type {
   AzimuthElevationChangeDetail,

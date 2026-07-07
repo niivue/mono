@@ -4553,15 +4553,16 @@ export default class NiiVueGPU extends EventTarget {
 
   /**
    * Return the current scene serialized as an NVD document (CBOR-encoded
-   * Uint8Array). Pass `policy` to override the instance `settingsSavePolicy` for
-   * this call.
+   * Uint8Array). `options.settings` overrides the instance `settingsSavePolicy`
+   * for this call; `options.linkData` saves a small "linked" document that
+   * references volumes by URL instead of embedding their bytes (the loader
+   * refetches them).
    */
-  serializeDocument(policy?: SettingsSavePolicy): Uint8Array {
-    return NVDocument.serialize(
-      this.model,
-      this._slidePlaneToDoc(),
-      policy ?? this._settingsSavePolicy,
-    )
+  serializeDocument(options?: NVDocument.SerializeOptions): Uint8Array {
+    return NVDocument.serialize(this.model, this._slidePlaneToDoc(), {
+      settings: options?.settings ?? this._settingsSavePolicy,
+      linkData: options?.linkData,
+    })
   }
 
   // Capture the registered slide plane + its slide-space drawing for the
@@ -4626,8 +4627,11 @@ export default class NiiVueGPU extends EventTarget {
     }
   }
 
-  saveDocument(filename = 'scene.nvd', policy?: SettingsSavePolicy): void {
-    const data = this.serializeDocument(policy)
+  saveDocument(
+    filename = 'scene.nvd',
+    options?: NVDocument.SerializeOptions,
+  ): void {
+    const data = this.serializeDocument(options)
     NVDocument.triggerDownload(data, filename)
   }
 

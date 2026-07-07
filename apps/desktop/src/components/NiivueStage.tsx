@@ -671,7 +671,9 @@ export function NiivueStage({
   const sliceMax = Math.max(0, sliceDim - 1)
   const currentVox = sliceAxis !== undefined ? location?.vox?.[sliceAxis] : undefined
   const sliceValue =
-    typeof currentVox === 'number' ? clamp(Math.round(currentVox), 0, sliceMax) : Math.floor(sliceMax / 2)
+    // Number.isFinite (not typeof === 'number', which is true for NaN) — a
+    // non-finite vox from a degenerate volume would otherwise become value={NaN}.
+    Number.isFinite(currentVox) ? clamp(Math.round(currentVox as number), 0, sliceMax) : Math.floor(sliceMax / 2)
   const showSliceSlider = sliceAxis !== undefined && !!primaryItem && sliceMax > 0
 
   function pageToSlice(target: number): void {

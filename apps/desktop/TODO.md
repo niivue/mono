@@ -643,6 +643,44 @@ under "Backend correctness / hardening". These are the frontend/UX findings.
   ad-hoc, easy-to-miss cues. Standardize on a small toast/spinner pattern so
   "is it working?" is answered consistently across panels.
 
+## Review pass 2026-07-07 (bundle / share / iOS correctness)
+
+Correctness sweep of the code that landed this session (zip `.nvbundle`, iOS
+share sheet, share caching, import/export, touch). Two parallel review agents;
+these are the findings that survived verification against the code (several were
+discarded — e.g. the pinch handler *does* `delete(pointerId)` on pointerup/cancel
+so there's no stale-pointer leak; `bundleVolumeId` agrees with Rust `volume_id`
+because bundle filenames are pre-uniquified).
+
+- [ ] **[P2] (S) Bound zip extraction on import (zip-bomb → disk fill).**
+  `extract_bundle_zip` (`volumetric_server.rs:1026`) `std::io::copy`s each entry
+  to disk with no size cap. `enclosed_name` already blocks path traversal, but a
+  crafted bundle could inflate to gigabytes and fill the temp dir. Cap total
+  extracted bytes (and/or per-entry) and abort past a sane ceiling. Pairs with
+  the NIfTI-read bound already tracked under Backend hardening.
+- [ ] **[P3] (S) Share fails entirely if any one volume lacks a source file.**
+  `handleShareBundle` (`App.tsx`) shares `items.map(id)` — *all* volumes — and
+  `export_bundle` (`volumetric_server.rs:814`) returns `Err` if any volume has
+  `source_path: None`, so one sourceless/phantom volume aborts the whole
+  dataset share. Skip sourceless volumes (with a note) instead of all-or-nothing
+  — filter on the frontend or make `export_bundle` skip+report.
+- [x] **[P3] (S) Slice slider treats `NaN` as a valid index.** Fixed 2026-07-07:
+  `NiivueStage.tsx` now gates on `Number.isFinite(currentVox)` (was
+  `typeof === 'number'`, true for `NaN`), so a non-finite `location.vox[axis]`
+  falls back to the middle slice instead of `value={NaN}`.
+- [ ] **[P3] (S) Atomic staged-bundle write + concurrent-share safety.**
+  `share_view_via_airdrop` (`lib.rs`) writes the zip then a `.sig` in place; two
+  concurrent shares of the same dataset would both `File::create` the same path
+  and interleave. The `isSharingBundle` UI guard makes this hard to hit today,
+  but export to a temp path + atomic rename (and write the `.sig` only after the
+  rename) would make the cache-completeness guarantee robust regardless of the
+  caller. Low likelihood, cheap hardening.
+- [ ] **[P3] (S) Harden `percent_decode` for malformed/double-encoded URLs.**
+  `percent_decode` (`lib.rs`) leaves malformed `%ZZ` as-is and single-decodes, so
+  a double-encoded path (`%252F`) survives as an encoded separator. iOS returns
+  Inbox-sandboxed paths so impact is low, but reject/normalize suspicious
+  sequences for defense in depth. (Extraction is already traversal-guarded.)
+
 ## Housekeeping
 
 - [ ] Prune merged remote feature branches on origin

@@ -6,3 +6,9 @@ coverage
 # Benchmark runs are local artifacts; commit only when documenting a regression/fix.
 benchmarks/runs/*.json
 examples/entry-sizes.json
+
+# Playwright e2e artifacts
+test-results
+playwright-report
+blob-report
+playwright/.cache

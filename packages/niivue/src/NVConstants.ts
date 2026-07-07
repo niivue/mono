@@ -186,7 +186,7 @@ export const DRAW_DEFAULTS: DrawConfig = {
   colormap: '_draw',
   isClickToSegment: false,
   clickToSegmentTolerance: 0.05,
-  clickToSegmentIs2D: false,
+  clickToSegmentIs2D: true,
 }
 
 export const INTERACTION_DEFAULTS: InteractionConfig = {

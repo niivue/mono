@@ -20,7 +20,7 @@
   <body>
     <header>
       <label for="view">View</label>
-      <select id="view">
+      <select id="view" title="Which slices / 3D render to show. Draw on the blocks in the Render (or A+C+S+R) view.">
         <option value="0">Axial</option>
         <option value="1">Coronal</option>
         <option value="2">Sagittal</option>
@@ -29,7 +29,7 @@
       </select>
       &nbsp;
       <label for="penValue">Pen</label>
-      <select id="penValue">
+      <select id="penValue" title="Drawing tool: Erase / a color pen, Vector (SVG) freehand annotations, or Off. Fill and Wand modify the pen; they don't apply to Vector.">
         <option value="0">Erase</option>
         <option value="1" selected>Red</option>
         <option value="2">Green</option>
@@ -38,38 +38,38 @@
         <option value="-1">Off</option>
       </select>
       &nbsp;
-      <label for="fillCheck">Fill</label>
-      <input type="checkbox" id="fillCheck" />
+      <label for="fillCheck" title="Fill mode: a closed 2D loop floods its interior; a 3D block right-click floods the connected blob. Ignored when Wand or Vector is on.">Fill</label>
+      <input type="checkbox" id="fillCheck" title="Fill mode: a closed 2D loop floods its interior; a 3D block right-click floods the connected blob. Ignored when Wand or Vector is on." />
       &nbsp;
-      <label for="wandCheck">Wand</label>
-      <input type="checkbox" id="wandCheck" />
+      <label for="wandCheck" title="Magic wand: a click grows an intensity-similar region from the seed voxel.">Wand</label>
+      <input type="checkbox" id="wandCheck" title="Magic wand: a click grows an intensity-similar region from the seed voxel." />
       &nbsp;
-      <label for="wand2dCheck" title="Grow only within the clicked 2D slice (off = whole 3D structure)">2D</label>
-      <input type="checkbox" id="wand2dCheck" />
+      <label for="wand2dCheck" title="Confine the wand to the clicked 2D slice (default). Off = grow the whole connected 3D structure. A 3D block right-click is always 3D.">2D</label>
+      <input type="checkbox" id="wand2dCheck" checked title="Confine the wand to the clicked 2D slice (default). Off = grow the whole connected 3D structure. A 3D block right-click is always 3D." />
       &nbsp;
-      <label for="wandTol">Tol</label>
-      <input type="range" min="0" value="5" max="50" class="slider" id="wandTol" title="Magic-wand tolerance (% of window)" />
+      <label for="wandTol" title="Magic-wand tolerance (% of the display window). Higher = larger region.">Tol</label>
+      <input type="range" min="0" value="5" max="50" class="slider" id="wandTol" title="Magic-wand tolerance (% of the display window). Higher = larger region." />
       &nbsp;
-      <label for="penSize">Size</label>
-      <input type="range" min="1" value="3" max="10" class="slider" id="penSize" />
+      <label for="penSize" title="Pen brush size in voxels.">Size</label>
+      <input type="range" min="1" value="3" max="10" class="slider" id="penSize" title="Pen brush size in voxels." />
       &nbsp;
-      <label for="explode">Explode</label>
-      <input type="range" min="100" value="160" max="260" class="slider" id="explode" />
+      <label for="explode" title="Separate the volume into exploded blocks (a render-time offset). 3D drawing on blocks needs this on.">Explode</label>
+      <input type="range" min="100" value="160" max="260" class="slider" id="explode" title="Separate the volume into exploded blocks (a render-time offset). 3D drawing on blocks needs this on." />
       <span id="explodeVal">1.60x</span>
       &nbsp;
-      <label for="overwriteCheck">Overwrite</label>
-      <input type="checkbox" id="overwriteCheck" checked />
+      <label for="overwriteCheck" title="Overwrite existing labels when drawing. Off = only paint empty voxels (the eraser always works).">Overwrite</label>
+      <input type="checkbox" id="overwriteCheck" checked title="Overwrite existing labels when drawing. Off = only paint empty voxels (the eraser always works)." />
       &nbsp;
-      <label for="clipCheck" title="Show a clip plane cutaway (its own control, so right-drag stays free to draw)">Clip</label>
-      <input type="checkbox" id="clipCheck" />
+      <label for="clipCheck" title="Show a clip-plane cutaway from its own control, so right-drag stays free to draw. Alt+right-drag rotates the clip plane.">Clip</label>
+      <input type="checkbox" id="clipCheck" title="Show a clip-plane cutaway from its own control, so right-drag stays free to draw. Alt+right-drag rotates the clip plane." />
       &nbsp;
-      <button type="button" id="undoBtn">Undo</button>
-      <button type="button" id="saveBtn">Save</button>
-      <button type="button" id="svgBtn" disabled title="Export vector annotations as SVG (Vector mode)">SVG</button>
-      <button type="button" id="clearBtn">Clear</button>
+      <button type="button" id="undoBtn" title="Undo the last stroke (or the last vector shape in Vector mode).">Undo</button>
+      <button type="button" id="saveBtn" title="Save the drawing as a NIfTI file.">Save</button>
+      <button type="button" id="svgBtn" disabled title="Export the vector annotations as SVG (Vector mode only).">SVG</button>
+      <button type="button" id="clearBtn" title="Clear the raster drawing and all vector annotations.">Clear</button>
       &nbsp;
-      <label for="backend">Backend</label>
-      <select id="backend">
+      <label for="backend" title="Rendering backend (WebGPU or WebGL2).">Backend</label>
+      <select id="backend" title="Rendering backend (WebGPU or WebGL2).">
         <option value="webgpu" selected>WebGPU</option>
         <option value="webgl2">WebGL2</option>
       </select>

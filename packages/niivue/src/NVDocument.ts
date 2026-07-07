@@ -1,4 +1,5 @@
 import { decode, encode } from 'cbor-x'
+import { type SettingsSavePolicy, sparsifyGroup } from '@/documentSettings'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import { encodeRLE } from '@/drawing/rle'
 import { log } from '@/logger'
@@ -41,7 +42,14 @@ import { computeVolumeLabelCentroids } from '@/volume/utils'
 // (forward- and backward-compatible), so they share one version. Later additive
 // optional volume fields (e.g. `modulationImage`) likewise did NOT bump the
 // version. Bump only when adding a field that older code would misread.
-const DOCUMENT_VERSION = 8
+//
+// v9 made the settings groups (scene/layout/ui/volume/mesh/draw/interaction)
+// SPARSE: a document omits any setting equal to its default, and the loader
+// leaves an omitted setting at the instance's current value instead of resetting
+// it. A v8 loader would read an omitted scene field as `undefined`, so the
+// version is bumped: an old reader rejects a v9 doc rather than corrupting state.
+// v8 documents (all fields present) still load unchanged.
+const DOCUMENT_VERSION = 9
 
 /**
  * Embedded volume data for self-contained documents.
@@ -189,23 +197,27 @@ export type NVDocumentSlidePlane = {
 export type NVDocumentData = {
   version: number
   created: string
+  // Settings groups are SPARSE: a document omits any setting that equals its
+  // default (v9+), so every field is optional. An omitted setting is left at the
+  // loading instance's current value (see applyDocumentToModel). Older (v8-)
+  // documents embed every field, so they load unchanged.
   scene: {
-    azimuth: number
-    elevation: number
-    scaleMultiplier: number
-    gamma: number
-    crosshairPos: [number, number, number]
-    pan2Dxyzmm: [number, number, number, number]
-    backgroundColor: [number, number, number, number]
-    clipPlaneColor: number[]
-    isClipPlaneCutaway: boolean
+    azimuth?: number
+    elevation?: number
+    scaleMultiplier?: number
+    gamma?: number
+    crosshairPos?: [number, number, number]
+    pan2Dxyzmm?: [number, number, number, number]
+    backgroundColor?: [number, number, number, number]
+    clipPlaneColor?: number[]
+    isClipPlaneCutaway?: boolean
   }
-  layout: LayoutConfig
-  ui: UIConfig
-  volume: VolumeRenderConfig
-  mesh: MeshRenderConfig
-  draw: DrawConfig
-  interaction: InteractionConfig
+  layout: Partial<LayoutConfig>
+  ui: Partial<UIConfig>
+  volume: Partial<VolumeRenderConfig>
+  mesh: Partial<MeshRenderConfig>
+  draw: Partial<DrawConfig>
+  interaction: Partial<InteractionConfig>
   clipPlanes: number[]
   /** RLE-compressed drawing bitmap (if a drawing was active) */
   drawingBitmapRLE?: Uint8Array
@@ -270,9 +282,24 @@ function extractHeaderData(hdr: NIFTI1 | NIFTI2): NIFTI1 | NIFTI2 {
   }
 }
 
+// Defaults for the SERIALIZED subset of scene fields (a sparse document omits
+// any that match). Derived from NVConstants.SCENE_DEFAULTS so they can't drift.
+const SCENE_DOC_DEFAULTS = {
+  azimuth: NVConstants.SCENE_DEFAULTS.azimuth,
+  elevation: NVConstants.SCENE_DEFAULTS.elevation,
+  scaleMultiplier: NVConstants.SCENE_DEFAULTS.scaleMultiplier,
+  gamma: NVConstants.SCENE_DEFAULTS.gamma,
+  crosshairPos: NVConstants.SCENE_DEFAULTS.crosshairPos,
+  pan2Dxyzmm: NVConstants.SCENE_DEFAULTS.pan2Dxyzmm,
+  backgroundColor: NVConstants.SCENE_DEFAULTS.backgroundColor,
+  clipPlaneColor: NVConstants.SCENE_DEFAULTS.clipPlaneColor,
+  isClipPlaneCutaway: NVConstants.SCENE_DEFAULTS.isClipPlaneCutaway,
+}
+
 export function serialize(
   model: NVModel,
   slidePlane?: NVDocumentSlidePlane,
+  policy?: SettingsSavePolicy,
 ): Uint8Array {
   // Extract volumes with embedded data
   const volumes: NVDocumentVolume[] = model.volumes.map((v) => {
@@ -439,37 +466,60 @@ export function serialize(
   const doc: NVDocumentData = {
     version: DOCUMENT_VERSION,
     created: new Date().toISOString(),
-    scene: {
-      azimuth: model.scene.azimuth,
-      elevation: model.scene.elevation,
-      scaleMultiplier: model.scene.scaleMultiplier,
-      gamma: model.scene.gamma,
-      crosshairPos: [
-        model.scene.crosshairPos[0],
-        model.scene.crosshairPos[1],
-        model.scene.crosshairPos[2],
-      ],
-      pan2Dxyzmm: [
-        model.scene.pan2Dxyzmm[0],
-        model.scene.pan2Dxyzmm[1],
-        model.scene.pan2Dxyzmm[2],
-        model.scene.pan2Dxyzmm[3],
-      ],
-      backgroundColor: [...model.scene.backgroundColor] as [
-        number,
-        number,
-        number,
-        number,
-      ],
-      clipPlaneColor: [...model.scene.clipPlaneColor],
-      isClipPlaneCutaway: model.scene.isClipPlaneCutaway,
-    },
-    layout: { ...model.layout },
-    ui: { ...model.ui },
-    volume: { ...model.volume },
-    mesh: { ...model.mesh },
-    draw: { ...model.draw },
-    interaction: { ...model.interaction },
+    // Settings groups are sparse: each `sparsifyGroup` drops any setting equal to
+    // its default (honoring the caller's neverSave/alwaysSave policy). Omitted
+    // settings are left at the loading instance's current value.
+    scene: sparsifyGroup(
+      'scene',
+      {
+        azimuth: model.scene.azimuth,
+        elevation: model.scene.elevation,
+        scaleMultiplier: model.scene.scaleMultiplier,
+        gamma: model.scene.gamma,
+        crosshairPos: [
+          model.scene.crosshairPos[0],
+          model.scene.crosshairPos[1],
+          model.scene.crosshairPos[2],
+        ] as [number, number, number],
+        pan2Dxyzmm: [
+          model.scene.pan2Dxyzmm[0],
+          model.scene.pan2Dxyzmm[1],
+          model.scene.pan2Dxyzmm[2],
+          model.scene.pan2Dxyzmm[3],
+        ] as [number, number, number, number],
+        backgroundColor: [...model.scene.backgroundColor] as [
+          number,
+          number,
+          number,
+          number,
+        ],
+        clipPlaneColor: [...model.scene.clipPlaneColor],
+        isClipPlaneCutaway: model.scene.isClipPlaneCutaway,
+      },
+      SCENE_DOC_DEFAULTS,
+      policy,
+    ),
+    layout: sparsifyGroup(
+      'layout',
+      model.layout,
+      NVConstants.LAYOUT_DEFAULTS,
+      policy,
+    ),
+    ui: sparsifyGroup('ui', model.ui, NVConstants.UI_DEFAULTS, policy),
+    volume: sparsifyGroup(
+      'volume',
+      model.volume,
+      NVConstants.VOLUME_DEFAULTS,
+      policy,
+    ),
+    mesh: sparsifyGroup('mesh', model.mesh, NVConstants.MESH_DEFAULTS, policy),
+    draw: sparsifyGroup('draw', model.draw, NVConstants.DRAW_DEFAULTS, policy),
+    interaction: sparsifyGroup(
+      'interaction',
+      model.interaction,
+      NVConstants.INTERACTION_DEFAULTS,
+      policy,
+    ),
     clipPlanes: [...model.clipPlanes],
     drawingBitmapRLE: model.drawingVolume
       ? encodeRLE(getDrawingBitmap(model.drawingVolume))
@@ -524,28 +574,42 @@ export function applyDocumentToModel(
   model: NVModel,
   doc: NVDocumentData,
 ): void {
-  // Apply scene state
-  model.scene.azimuth = doc.scene.azimuth
-  model.scene.elevation = doc.scene.elevation
-  model.scene.scaleMultiplier = doc.scene.scaleMultiplier
-  model.scene.gamma = doc.scene.gamma
-  model.scene.crosshairPos[0] = doc.scene.crosshairPos[0]
-  model.scene.crosshairPos[1] = doc.scene.crosshairPos[1]
-  model.scene.crosshairPos[2] = doc.scene.crosshairPos[2]
-  model.scene.pan2Dxyzmm[0] = doc.scene.pan2Dxyzmm[0]
-  model.scene.pan2Dxyzmm[1] = doc.scene.pan2Dxyzmm[1]
-  model.scene.pan2Dxyzmm[2] = doc.scene.pan2Dxyzmm[2]
-  model.scene.pan2Dxyzmm[3] = doc.scene.pan2Dxyzmm[3]
-  model.scene.backgroundColor = [...doc.scene.backgroundColor] as [
-    number,
-    number,
-    number,
-    number,
-  ]
-  model.scene.clipPlaneColor = [...doc.scene.clipPlaneColor]
-  model.scene.isClipPlaneCutaway = doc.scene.isClipPlaneCutaway
+  // Apply scene state. Sparse (v9+) documents omit any field left at its default;
+  // an omitted field keeps the loading instance's current value (Object.assign
+  // does the same for the config groups below, which drop default-valued keys).
+  const s = doc.scene
+  if (s.azimuth !== undefined) model.scene.azimuth = s.azimuth
+  if (s.elevation !== undefined) model.scene.elevation = s.elevation
+  if (s.scaleMultiplier !== undefined) {
+    model.scene.scaleMultiplier = s.scaleMultiplier
+  }
+  if (s.gamma !== undefined) model.scene.gamma = s.gamma
+  if (s.crosshairPos) {
+    model.scene.crosshairPos[0] = s.crosshairPos[0]
+    model.scene.crosshairPos[1] = s.crosshairPos[1]
+    model.scene.crosshairPos[2] = s.crosshairPos[2]
+  }
+  if (s.pan2Dxyzmm) {
+    model.scene.pan2Dxyzmm[0] = s.pan2Dxyzmm[0]
+    model.scene.pan2Dxyzmm[1] = s.pan2Dxyzmm[1]
+    model.scene.pan2Dxyzmm[2] = s.pan2Dxyzmm[2]
+    model.scene.pan2Dxyzmm[3] = s.pan2Dxyzmm[3]
+  }
+  if (s.backgroundColor) {
+    model.scene.backgroundColor = [...s.backgroundColor] as [
+      number,
+      number,
+      number,
+      number,
+    ]
+  }
+  if (s.clipPlaneColor) model.scene.clipPlaneColor = [...s.clipPlaneColor]
+  if (s.isClipPlaneCutaway !== undefined) {
+    model.scene.isClipPlaneCutaway = s.isClipPlaneCutaway
+  }
 
-  // Apply config groups
+  // Apply config groups (Object.assign leaves a group's omitted keys untouched,
+  // so an omitted setting keeps the instance's current value).
   Object.assign(model.layout, doc.layout)
   Object.assign(model.ui, doc.ui)
   Object.assign(model.volume, doc.volume)

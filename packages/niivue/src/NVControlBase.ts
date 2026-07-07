@@ -17,6 +17,7 @@ import type {
   ReinitializeOptions,
   ViewLifecycle,
 } from '@/control/viewLifecycle'
+import type { SettingsSavePolicy } from '@/documentSettings'
 import {
   calculateLoadDrawingTransform,
   clearAllUndoBitmaps,
@@ -283,6 +284,9 @@ export default class NiiVueGPU extends EventTarget {
   activeButton?: number
   model: NVModel
   view: ViewBackend | null = null
+  // Which settings saved documents include (transient; not serialized). Default
+  // {} = omit any setting equal to its default. See `settingsSavePolicy`.
+  private _settingsSavePolicy: SettingsSavePolicy = {}
   private _slidePlane: SlidePlaneState | null = null
   private _slidePlaneSlide: NVSlide | null = null
   private _slidePlaneOnChange: (() => void) | null = null
@@ -4532,9 +4536,32 @@ export default class NiiVueGPU extends EventTarget {
     return { cmap, defaultName }
   }
 
-  /** Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array). */
-  serializeDocument(): Uint8Array {
-    return NVDocument.serialize(this.model, this._slidePlaneToDoc())
+  /**
+   * Which settings saved documents include. Default `{}` omits any setting equal
+   * to its default (documents are sparse). Set `neverSave` to omit settings even
+   * when non-default (e.g. `['scene.crosshairPos']` to persist the user's last
+   * crosshair across scenes) and `alwaysSave` to keep settings even at their
+   * default. Applies to every `saveDocument`/`serializeDocument` unless a per-call
+   * policy is passed. Transient — not part of the document.
+   */
+  get settingsSavePolicy(): SettingsSavePolicy {
+    return this._settingsSavePolicy
+  }
+  set settingsSavePolicy(v: SettingsSavePolicy) {
+    this._settingsSavePolicy = v ?? {}
+  }
+
+  /**
+   * Return the current scene serialized as an NVD document (CBOR-encoded
+   * Uint8Array). Pass `policy` to override the instance `settingsSavePolicy` for
+   * this call.
+   */
+  serializeDocument(policy?: SettingsSavePolicy): Uint8Array {
+    return NVDocument.serialize(
+      this.model,
+      this._slidePlaneToDoc(),
+      policy ?? this._settingsSavePolicy,
+    )
   }
 
   // Capture the registered slide plane + its slide-space drawing for the
@@ -4599,8 +4626,8 @@ export default class NiiVueGPU extends EventTarget {
     }
   }
 
-  saveDocument(filename = 'scene.nvd'): void {
-    const data = this.serializeDocument()
+  saveDocument(filename = 'scene.nvd', policy?: SettingsSavePolicy): void {
+    const data = this.serializeDocument(policy)
     NVDocument.triggerDownload(data, filename)
   }
 

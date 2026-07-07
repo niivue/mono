@@ -117,24 +117,21 @@ export default class NVModel {
 
   constructor(options: NiiVueOptions = {}) {
     // Scene — flat options mapped to scene group
+    const sd = NVConstants.SCENE_DEFAULTS
     this.scene = {
-      azimuth: options.azimuth ?? 110,
-      elevation: options.elevation ?? 10,
-      crosshairPos: options.crosshairPos
-        ? vec3.fromValues(...options.crosshairPos)
-        : vec3.fromValues(0.5, 0.5, 0.5),
-      pan2Dxyzmm: options.pan2Dxyzmm
-        ? vec4.fromValues(...options.pan2Dxyzmm)
-        : vec4.fromValues(0, 0, 0, 1),
-      scaleMultiplier: options.scaleMultiplier ?? 1.0,
-      renderPan: options.renderPan
-        ? vec2.fromValues(...options.renderPan)
-        : vec2.fromValues(0, 0),
-      gamma: options.gamma ?? 1.0,
-      backgroundColor: options.backgroundColor ?? [0, 0, 0, 1],
-      clipPlaneColor: options.clipPlaneColor ?? [0.7, 0, 0.7, 0.4],
-      isClipPlaneCutaway: options.isClipPlaneCutaway ?? false,
-      clipPlaneOverlay: options.clipPlaneOverlay ?? false,
+      azimuth: options.azimuth ?? sd.azimuth,
+      elevation: options.elevation ?? sd.elevation,
+      crosshairPos: vec3.fromValues(
+        ...(options.crosshairPos ?? sd.crosshairPos),
+      ),
+      pan2Dxyzmm: vec4.fromValues(...(options.pan2Dxyzmm ?? sd.pan2Dxyzmm)),
+      scaleMultiplier: options.scaleMultiplier ?? sd.scaleMultiplier,
+      renderPan: vec2.fromValues(...(options.renderPan ?? sd.renderPan)),
+      gamma: options.gamma ?? sd.gamma,
+      backgroundColor: options.backgroundColor ?? [...sd.backgroundColor],
+      clipPlaneColor: options.clipPlaneColor ?? [...sd.clipPlaneColor],
+      isClipPlaneCutaway: options.isClipPlaneCutaway ?? sd.isClipPlaneCutaway,
+      clipPlaneOverlay: options.clipPlaneOverlay ?? sd.clipPlaneOverlay,
     }
     // Layout — flat options mapped to layout group
     this.layout = {

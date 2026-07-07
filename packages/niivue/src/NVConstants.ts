@@ -110,6 +110,23 @@ import type {
   VolumeRenderConfig,
 } from '@/NVTypes'
 
+// Default scene values. The scene group is built with gl-matrix vec types in
+// NVModel, so this holds the plain-value defaults (used both to construct the
+// model and to decide which scene settings a sparse document omits).
+export const SCENE_DEFAULTS = {
+  azimuth: 110,
+  elevation: 10,
+  crosshairPos: [0.5, 0.5, 0.5] as [number, number, number],
+  pan2Dxyzmm: [0, 0, 0, 1] as [number, number, number, number],
+  scaleMultiplier: 1.0,
+  renderPan: [0, 0] as [number, number],
+  gamma: 1.0,
+  backgroundColor: [0, 0, 0, 1] as [number, number, number, number],
+  clipPlaneColor: [0.7, 0, 0.7, 0.4] as [number, number, number, number],
+  isClipPlaneCutaway: false,
+  clipPlaneOverlay: false,
+}
+
 export const LAYOUT_DEFAULTS: LayoutConfig = {
   sliceType: SLICE_TYPE.MULTIPLANAR,
   mosaicString: '',

@@ -377,18 +377,23 @@ Most are demo-level UX; a couple touch core defaults.
 
 ## Medium
 
-- [ ] **2D draws with left-drag, 3D with right-drag.** A user learns left-drag on
-  slices, then left-drag on 3D orbits the camera (no draw). Inherent (left must
-  orbit 3D) but a real inconsistency; low discoverability.
-- [ ] **3D drawing silently requires Explode ON.** With explode off, right-drag on
-  the render rotates the clip plane instead of drawing; a user won't know they
-  must explode to draw in 3D.
-- [~] **(quick win) Discoverability.** Added `title` tooltips to every
-  `vox.draw.explode` control (commit `570c6625`). Still open: cursor cues, an
-  active-tool indicator, and de-densifying the help line.
-- [ ] **3D render is easy to miss** in the default multiplanar view (small
-  quadrant); the headline "draw on blocks" surface isn't front-and-center.
-  Consider a hero/render-forward default layout.
+- [x] **2D draws with left-drag, 3D with right-drag.** ADDRESSED 2026-07-07
+  (commit `b42531b3`): the contextual hint line now spells out the gesture per
+  view — "2D slice: left-drag …; 3D block: right-drag a block …" — so the split
+  is explicit. (The interaction itself is inherent: left must orbit the 3D
+  camera.)
+- [x] **3D drawing silently requires Explode ON.** ADDRESSED 2026-07-07
+  (commit `b42531b3`): with explode off, the hint's 3D clause becomes a warning
+  "turn on Explode to draw on the 3D blocks."
+- [x] **(quick win) Discoverability.** `title` tooltips on every control
+  (`570c6625`) + a contextual, tool/view/explode-aware hint bar that acts as the
+  active-tool indicator (`b42531b3`). Remaining nice-to-have: a cursor that
+  reflects the tool (deferred — needs canvas cursor styling).
+- [~] **3D render is easy to miss** in the default multiplanar view (small
+  quadrant). Mitigated by the hint (tells the user to draw on blocks + turn on
+  Explode) and the View selector (a dedicated "Render" entry). A hero/render-
+  forward default layout is a further tweak, deferred because it complicates the
+  View dropdown's `sliceType` control.
 
 ## Low
 

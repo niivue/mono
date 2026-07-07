@@ -28,21 +28,22 @@
         <option value="3" selected>A+C+S+R</option>
       </select>
       &nbsp;
-      <label for="penValue">Pen</label>
-      <select id="penValue" title="Drawing tool: Erase / a color pen, Vector (SVG) freehand annotations, or Off. Fill and Wand modify the pen; they don't apply to Vector.">
-        <option value="0">Erase</option>
+      <label for="toolSel">Tool</label>
+      <select id="toolSel" title="One drawing tool at a time. Pen/Eraser paint voxels; Fill floods; Magic wand grows an intensity-similar region; Vector (SVG) draws freehand polygons; Off stops drawing.">
+        <option value="pen" selected>Pen</option>
+        <option value="eraser">Eraser</option>
+        <option value="fill">Fill</option>
+        <option value="wand">Magic wand</option>
+        <option value="vector">Vector (SVG)</option>
+        <option value="off">Off</option>
+      </select>
+      &nbsp;
+      <label for="colorSel">Color</label>
+      <select id="colorSel" title="Label color for Pen / Fill / Magic wand / Vector. Disabled for Eraser and Off.">
         <option value="1" selected>Red</option>
         <option value="2">Green</option>
         <option value="3">Blue</option>
-        <option value="10">Vector (SVG)</option>
-        <option value="-1">Off</option>
       </select>
-      &nbsp;
-      <label for="fillCheck" title="Fill mode: a closed 2D loop floods its interior; a 3D block right-click floods the connected blob. Ignored when Wand or Vector is on.">Fill</label>
-      <input type="checkbox" id="fillCheck" title="Fill mode: a closed 2D loop floods its interior; a 3D block right-click floods the connected blob. Ignored when Wand or Vector is on." />
-      &nbsp;
-      <label for="wandCheck" title="Magic wand: a click grows an intensity-similar region from the seed voxel.">Wand</label>
-      <input type="checkbox" id="wandCheck" title="Magic wand: a click grows an intensity-similar region from the seed voxel." />
       &nbsp;
       <label for="wand2dCheck" title="Confine the wand to the clicked 2D slice (default). Off = grow the whole connected 3D structure. A 3D block right-click is always 3D.">2D</label>
       <input type="checkbox" id="wand2dCheck" checked title="Confine the wand to the clicked 2D slice (default). Off = grow the whole connected 3D structure. A 3D block right-click is always 3D." />
@@ -75,13 +76,11 @@
       </select>
     </header>
     <div id="help">
-      <b>2D slices:</b> left-drag to paint, or with <b>Fill</b> draw a closed loop to flood, or with <b>Wand</b> click to grow an intensity-similar region (<b>2D</b> confines it to the slice; off grows the whole 3D structure).
+      Pick a <b>Tool</b>. <b>2D slices:</b> left-drag (Pen/Eraser paint, Fill floods a closed loop, Vector draws a polygon) or click (Magic wand grows an intensity-similar region; <b>2D</b> confines it to the slice).
       &nbsp;|&nbsp;
-      <b>3D exploded blocks:</b> right-drag to paint a tube; with <b>Fill</b> right-click floods the blob; with <b>Wand</b> right-click grows the region.
+      <b>3D exploded blocks:</b> right-drag (Pen/Eraser/Vector) or right-click (Fill floods the blob, Wand grows the region) directly on a block. <b>Explode</b> must be on.
       &nbsp;|&nbsp;
-      <b>Pen -> Vector (SVG):</b> draw freehand vector polygons on a 2D slice, or <b>right-drag directly on a 3D block</b>, then <b>SVG</b> to export them.
-      &nbsp;|&nbsp;
-      <b>Clip</b> toggles a cutaway from its own control, so right-drag keeps drawing on the visible blocks. <b>Alt+right-drag</b> rotates the clip plane without leaving the draw mode.
+      <b>SVG</b> exports vector annotations. <b>Clip</b> shows a cutaway from its own control (right-drag keeps drawing); <b>Alt+right-drag</b> rotates the clip plane.
     </div>
     <main id="canvas-container">
       <canvas id="gl1"></canvas>

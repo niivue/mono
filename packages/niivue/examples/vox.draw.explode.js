@@ -43,42 +43,53 @@ function applyExplode() {
   nv1.drawScene()
 }
 
-function applyPen() {
-  const val = parseInt(penValue.value, 10)
-  // Vector (SVG) mode: draw freehand vector polygons (annotation layer) on the
-  // 2D slices instead of the raster, and enable SVG export. The raster pen, wand,
-  // and fill are off in this mode. Mirrors the slide demos' "Vector (SVG)" tool.
-  const vector = val === 10
-  nv1.annotationIsEnabled = vector
+// Label index -> RGB for the Vector annotation style (mirrors the _draw LUT:
+// 1=red, 2=green, 3=blue).
+const COLOR_RGB = { 1: [1, 0, 0], 2: [0, 1, 0], 3: [0, 0, 1] }
+
+// One tool active at a time (no conflicting checkboxes). Each tool sets the full
+// draw/annotation state and enables only its relevant options (Color/Size/2D/Tol/
+// SVG), so an irrelevant control can't be silently ignored.
+function applyTool() {
+  const tool = toolSel.value // pen | eraser | fill | wand | vector | off
+  const colorVal = parseInt(colorSel.value, 10)
+  const vector = tool === 'vector'
+
+  // Contextual control availability.
+  colorSel.disabled = tool === 'eraser' || tool === 'off'
+  penSize.disabled = !(tool === 'pen' || tool === 'eraser')
+  wandTol.disabled = tool !== 'wand'
+  wand2dCheck.disabled = tool !== 'wand'
   svgBtn.disabled = !vector
+
+  // Raster draw modes are mutually exclusive here.
+  nv1.drawIsClickToSegment = tool === 'wand'
+  nv1.drawPenFilled = tool === 'fill'
+  nv1.drawPenAutoClose = tool === 'fill'
+  nv1.annotationIsEnabled = vector
+
   if (vector) {
-    nv1.drawIsEnabled = false // let the annotation layer handle the click
-    nv1.drawIsClickToSegment = false
-    nv1.drawPenFilled = false
+    nv1.drawIsEnabled = false // the annotation layer handles the stroke
     nv1.annotationTool = 'freehand'
     nv1.annotationBrushRadius = 1 // <=1 => closed-polygon mode
+    const [r, g, b] = COLOR_RGB[colorVal] ?? COLOR_RGB[1]
+    nv1.annotationStyle = {
+      fillColor: [r, g, b, 0.3],
+      strokeColor: [r, g, b, 1],
+      strokeWidth: 2,
+    }
     return
   }
-  if (val < 0) {
-    // "Off" — keep the drawing visible but stop the pen.
-    nv1.drawIsEnabled = false
+  if (tool === 'off') {
+    nv1.drawIsEnabled = false // keep the drawing visible but stop editing
     return
   }
   nv1.drawIsEnabled = true
-  nv1.drawPenValue = val
-  // Magic wand (click-to-segment) takes priority over fill when both are on.
-  const wand = wandCheck.checked
-  nv1.drawIsClickToSegment = wand
-  // Fill mode: on 2D a closed loop is flood-filled; on an exploded block a
-  // right-click floods the connected tissue blob (3D region-grow).
-  const fill = fillCheck.checked && !wand
-  nv1.drawPenFilled = fill
-  nv1.drawPenAutoClose = fill
+  nv1.drawPenValue = tool === 'eraser' ? 0 : colorVal
 }
 
-penValue.onchange = applyPen
-fillCheck.onchange = applyPen
-wandCheck.onchange = applyPen
+toolSel.onchange = applyTool
+colorSel.onchange = applyTool
 
 wand2dCheck.onchange = function () {
   // 2D on: a wand click grows only within the clicked slice; off: whole 3D
@@ -110,7 +121,7 @@ clipCheck.onchange = function () {
   nv1.setClipPlane(this.checked ? [0, 0, 0] : [2, 0, 0])
 }
 
-const isVectorMode = () => penValue.value === '10'
+const isVectorMode = () => toolSel.value === 'vector'
 undoBtn.onclick = () => (isVectorMode() ? nv1.annotationUndo() : nv1.drawUndo())
 saveBtn.onclick = () => nv1.saveDrawing('drawing.nii.gz')
 svgBtn.onclick = () => {
@@ -176,6 +187,6 @@ nv1.drawClickToSegmentTolerance = parseInt(wandTol.value, 10) / 100
 nv1.drawClickToSegmentIs2D = wand2dCheck.checked
 // Show vector annotations in the 3D render; they track their exploded block.
 nv1.annotationIsVisibleIn3D = true
-applyPen()
+applyTool()
 nv1.drawPenSize = parseInt(penSize.value, 10)
 applyExplode()

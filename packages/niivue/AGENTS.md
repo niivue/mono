@@ -50,6 +50,26 @@ bunx nx test niivue      # From monorepo root, via Nx
 
 Coverage is enabled by default via `bunfig.toml` (reporters: `text` + `lcov`, output at `coverage/`). The `coverage/` directory is gitignored. No coverage thresholds are configured.
 
+### End-to-end tests (Playwright)
+
+Browser-based e2e tests live in `e2e/*.spec.ts` and run in real headless Chromium
+against the Vite dev server. They exist because some code can't be reached by the
+Bun unit runner: NiiVue's module graph uses Vite's `import.meta.glob` (so the full
+`NVDocument`/controller can't be imported under Bun) and rendering / document
+round-trips need a GPU context. Use these for anything needing a real instance.
+
+```bash
+bun run test:e2e         # playwright test (config: playwright.config.ts)
+bunx nx e2e niivue       # via Nx
+```
+
+`playwright.config.ts` starts a no-`--open` dev server (`bun run e2e:serve`) and
+reuses an already-running one locally (`reuseExistingServer` off in CI). These are
+kept OUT of the hermetic unit `test` target and the PR gate (they need a browser).
+Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
+(`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen
+canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
+
 ### What's tested
 
 - **Drawing tools** (`src/drawing/`) — RLE codec, pen/line/flood-fill, undo stack
@@ -63,7 +83,7 @@ Coverage is enabled by default via `bunfig.toml` (reporters: `text` + `lcov`, ou
 
 ### What's NOT yet covered by unit tests
 
-The following modules require a browser or GPU context and are not covered by the Bun unit test suite. Rendering tests using Playwright are planned.
+The following modules require a browser or GPU context and are not covered by the Bun unit test suite. A Playwright e2e suite (`e2e/`, see above) now covers document save/reload round-trips end-to-end; broader rendering/visual coverage is still to come.
 
 - `gl/`, `wgpu/` — GPU shader/rendering code
 - `NVControl*.ts`, `NVLoader.ts` — DOM/canvas/fetch dependencies
@@ -80,7 +100,7 @@ The following modules require a browser or GPU context and are not covered by th
 - Follow AAA pattern (Arrange, Act, Assert) with one behavior per test
 - Test the public contract, not private internals
 
-Rendering changes must be verified manually via the interactive demos (`bun run dev` or `bun run demo`) until Playwright coverage lands.
+Rendering changes are still verified manually via the interactive demos (`bun run dev` or `bun run demo`); add an `e2e/*.spec.ts` when the behavior can be asserted through the public API in a real instance (see End-to-end tests above).
 
 ## Architecture (MVC)
 

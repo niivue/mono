@@ -81,6 +81,15 @@ const TOOL_LABEL = {
   vector: 'Vector (SVG)',
   off: 'Off',
 }
+// Canvas cursor per tool, so the pointer reflects the active tool.
+const TOOL_CURSOR = {
+  pen: 'crosshair',
+  eraser: 'crosshair',
+  fill: 'cell',
+  wand: 'cell',
+  vector: 'crosshair',
+  off: 'default',
+}
 
 // Contextual "what to do now" line: reflects the active tool, the current view
 // (does it show 2D slices / the 3D render?), and whether Explode is on (needed to
@@ -88,7 +97,8 @@ const TOOL_LABEL = {
 // hidden Explode requirement without making the user parse the static help.
 function updateHint() {
   const tool = toolSel.value
-  const viewVal = parseInt(view.value, 10)
+  // "hero" shows both the 3D render (hero tile) and the A/C/S slice strip.
+  const viewVal = view.value === 'hero' ? 3 : parseInt(view.value, 10)
   const has2D = viewVal <= 3 // axial/coronal/sagittal/multiplanar show slices
   const hasRender = viewVal === 3 || viewVal === 4 // A+C+S+R or Render
   const explodeOn = parseInt(explode.value, 10) / 100 > 1.001
@@ -126,6 +136,7 @@ function applyTool() {
   wand2dCheck.disabled = tool !== 'wand'
   svgBtn.disabled = !vector
   updateColorSwatch()
+  gl1.style.cursor = TOOL_CURSOR[tool] ?? 'default'
 
   // Raster draw modes are mutually exclusive here.
   nv1.drawIsClickToSegment = tool === 'wand'
@@ -217,10 +228,21 @@ clearBtn.onclick = () => {
   nv1.drawScene()
 }
 
-view.onchange = () => {
-  nv1.sliceType = parseInt(view.value, 10)
+function applyView() {
+  // "hero" = a render-forward hero layout: the 3D exploded blocks fill a large
+  // left tile with an A/C/S slice strip beside them (draw on blocks + slices at
+  // once). Any other value is a plain sliceType with hero off.
+  if (view.value === 'hero') {
+    nv1.heroFraction = 0.6
+    nv1.heroSliceType = 4 // SLICE_TYPE.RENDER
+    nv1.sliceType = 3 // MULTIPLANAR — hero renders over the multiplanar strip
+  } else {
+    nv1.heroFraction = 0
+    nv1.sliceType = parseInt(view.value, 10)
+  }
   updateHint()
 }
+view.onchange = applyView
 
 backend.onchange = async () => {
   await nv1.reinitializeView({ backend: backend.value })
@@ -248,7 +270,7 @@ const nv1 = new NiiVue({
 })
 nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 await nv1.attachToCanvas(gl1)
-nv1.sliceType = parseInt(view.value, 10)
+applyView()
 await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
 await ensureTiled()
 

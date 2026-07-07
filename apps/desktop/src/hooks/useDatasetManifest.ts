@@ -11,6 +11,7 @@ import {
   fetchDesktopManifestVersion,
   openDatasetByPath,
   openDatasetDirectory,
+  openVolumeFile,
   resolveServerInfo,
   resolveServerUrl
 } from '../domain/desktop'
@@ -32,6 +33,7 @@ export interface DatasetManifestState {
   status: string
   warmProgress: WarmProgress | null
   openLocalDataset: () => Promise<void>
+  openLocalVolumeFile: () => Promise<void>
   openRecentDataset: (path: string) => Promise<void>
   refreshDesktopManifest: (selectId?: string) => Promise<void>
   refreshDesktopManifestData: (selectId?: string) => Promise<DesktopManifest | null>
@@ -160,6 +162,27 @@ export function useDatasetManifest({
       const result = await openDatasetDirectory()
       if (!result) {
         setStatus('Open directory cancelled.')
+        return
+      }
+      await applyDatasetOpenResult(result)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      isOpeningDatasetRef.current = false
+      setIsOpeningDataset(false)
+    }
+  }, [applyDatasetOpenResult])
+
+  const openLocalVolumeFile = useCallback(async (): Promise<void> => {
+    if (isOpeningDatasetRef.current) return
+
+    isOpeningDatasetRef.current = true
+    setIsOpeningDataset(true)
+    setStatus('Choosing a NIfTI file.')
+    try {
+      const result = await openVolumeFile()
+      if (!result) {
+        setStatus('Open file cancelled.')
         return
       }
       await applyDatasetOpenResult(result)
@@ -306,6 +329,7 @@ export function useDatasetManifest({
     status,
     warmProgress,
     openLocalDataset,
+    openLocalVolumeFile,
     openRecentDataset,
     refreshDesktopManifest,
     refreshDesktopManifestData,

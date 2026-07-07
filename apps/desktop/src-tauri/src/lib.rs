@@ -9,11 +9,14 @@ mod volumetric_server;
 
 use serde::Serialize;
 use std::path::Path;
-use tauri::{
-    menu::{Menu, MenuItem, Submenu},
-    Emitter,
-};
+use tauri::Manager;
+// The app menu bar is a desktop-only concept; iOS/Android have no `tauri::menu`.
+#[cfg(desktop)]
+use tauri::menu::{Menu, MenuItem, Submenu};
+#[cfg(desktop)]
+use tauri::Emitter;
 
+#[cfg(desktop)]
 const OPEN_DIRECTORY_MENU_ID: &str = "neurovue-open-directory";
 
 #[derive(Clone, Serialize)]
@@ -104,10 +107,39 @@ async fn open_dataset_path(
     state: tauri::State<'_, NeuroVueState>,
     path: String,
 ) -> Result<DatasetOpenResult, String> {
+    let path = normalize_local_path(&path);
     let server = state.server.clone();
     tauri::async_runtime::spawn_blocking(move || open_dataset_at_path(&server, Path::new(&path)))
         .await
         .map_err(|error| format!("open_dataset_path: join error: {error}"))?
+}
+
+/// The iOS document picker hands back a `file://` URL (Tauri copies the picked
+/// file into the app's Inbox first), so convert it to a plain, percent-decoded
+/// filesystem path. Desktop paths have no scheme, so this is a no-op there.
+fn normalize_local_path(raw: &str) -> String {
+    let without_scheme = raw.strip_prefix("file://").unwrap_or(raw);
+    percent_decode(without_scheme)
+}
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[tauri::command]
@@ -115,6 +147,7 @@ async fn add_overlay_volume_path(
     state: tauri::State<'_, NeuroVueState>,
     path: String,
 ) -> Result<OverlayAddResult, String> {
+    let path = normalize_local_path(&path);
     let server = state.server.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let registered = volumetric_server::register_overlay_volume(&server, Path::new(&path))?;
@@ -237,6 +270,7 @@ fn open_dataset_at_path(
     })
 }
 
+#[cfg(desktop)]
 fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::default(handle)?;
     let open_directory = MenuItem::with_id(
@@ -253,17 +287,37 @@ fn neurovue_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Resu
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let server = volumetric_server::spawn_default();
-
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .menu(neurovue_menu)
-        .on_menu_event(|app, event| {
-            if event.id().as_ref() == OPEN_DIRECTORY_MENU_ID {
-                let _ = app.emit("neurovue-open-directory", ());
+        .setup(|app| {
+            // Point dataset discovery at the bundled MNI152 so machines without
+            // the dev checkouts — notably iOS, whose sandbox has no `~/Dev` — still
+            // open with a working default volume. Set before the server spawns so
+            // `discovery_roots()` picks it up. Resolving here (not at module load)
+            // is why the server spawns in `setup`: it needs the AppHandle's
+            // resource dir.
+            if let Ok(path) = app
+                .path()
+                .resolve("resources/mni152.nii.gz", tauri::path::BaseDirectory::Resource)
+            {
+                if path.is_file() {
+                    std::env::set_var("NEUROVUE_DEFAULT_VOLUME", path);
+                }
             }
-        })
-        .manage(NeuroVueState { server });
+            app.manage(NeuroVueState {
+                server: volumetric_server::spawn_default(),
+            });
+            Ok(())
+        });
+
+    // The menu bar (and its "Open Directory" item) is desktop-only; on mobile
+    // the frontend opens datasets through an on-screen control instead.
+    #[cfg(desktop)]
+    let builder = builder.menu(neurovue_menu).on_menu_event(|app, event| {
+        if event.id().as_ref() == OPEN_DIRECTORY_MENU_ID {
+            let _ = app.emit("neurovue-open-directory", ());
+        }
+    });
 
     // niimath (sidecar) and terminal (PTY) commands are desktop-only; mobile
     // registers only the portable commands.

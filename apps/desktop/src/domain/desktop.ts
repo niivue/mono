@@ -231,6 +231,25 @@ export async function openDatasetDirectory(): Promise<DatasetOpenResult | null> 
   return openDatasetByPath(selected)
 }
 
+export async function openVolumeFile(): Promise<DatasetOpenResult | null> {
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    title: 'Open NIfTI volume',
+    filters: [
+      {
+        name: 'NIfTI volumes',
+        extensions: ['nii', 'gz']
+      }
+    ]
+  })
+  if (!selected || Array.isArray(selected)) return null
+  // A single file opens as a single-volume dataset (open_dataset_root accepts a
+  // NIfTI file). This is the mobile-friendly path — iOS has no folder concept in
+  // the document picker the way desktop dataset folders assume.
+  return openDatasetByPath(selected)
+}
+
 export async function openOverlayVolume(): Promise<OverlayAddResult | null> {
   const selected = await open({
     directory: false,

@@ -62,6 +62,10 @@ button {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  /* Keep the UI clear of the notch / home indicator (viewport-fit=cover lets
+     the webview fill the whole screen). Zero on desktop, so no effect there. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .nv-app.has-terminal {
@@ -1408,6 +1412,95 @@ button {
   touch-action: none;
 }
 
+/* Slice paging slider (2D single-plane modes) — the touch path for through-plane
+   navigation, overlaid at the bottom of the viewer. */
+.nv-slice-slider {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(560px, 82%);
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(12, 13, 10, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.nv-slice-slider input[type='range'] {
+  flex: 1;
+  height: 28px;
+  accent-color: var(--amber);
+  cursor: pointer;
+  touch-action: pan-x;
+}
+
+.nv-slice-slider-value {
+  min-width: 56px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  text-align: right;
+}
+
+/* Clip-plane control (3D render): plane chips + a depth slider, the touch path
+   for moving clip planes (was wheel-only). Overlaid like the slice slider. */
+.nv-clip-slider {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(520px, 88%);
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(12, 13, 10, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.nv-clip-slider-chips {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.nv-clip-slider-chips button {
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.nv-clip-slider-chips button.is-active {
+  border-color: var(--amber);
+  background: rgba(215, 166, 66, 0.18);
+  color: var(--amber);
+}
+
+.nv-clip-slider input[type='range'] {
+  flex: 1;
+  height: 28px;
+  accent-color: var(--amber);
+  cursor: pointer;
+  touch-action: pan-x;
+}
+
+.nv-clip-slider input[type='range']:disabled {
+  opacity: 0.4;
+}
+
 .nv-render-snap-controls {
   position: absolute;
   top: 56px;
@@ -2338,6 +2431,118 @@ button {
 
   .nv-panel-heading {
     font-size: 11px;
+  }
+}
+
+/* Mobile-only affordances (drawer toggles + backdrop): hidden on desktop. */
+.nv-mobile-only {
+  display: none;
+}
+
+.nv-mobile-scrim {
+  display: none;
+}
+
+/* Phone layout: collapse the 3-column workbench to a full-screen NiiVue viewer
+   with the dataset + controls panels as slide-in drawers. iPad keeps desktop. */
+@media (max-width: 700px) {
+  .nv-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .nv-workbench.is-file-list-collapsed,
+  .nv-workbench.is-controls-collapsed {
+    --file-list-width: 0;
+    --controls-width: 0;
+  }
+
+  .nv-sidebar,
+  .nv-controls {
+    position: fixed;
+    top: 64px;
+    bottom: 0;
+    width: min(86vw, 340px);
+    z-index: 50;
+    overflow-y: auto;
+    transition: transform 0.22s ease;
+    box-shadow: 0 12px 40px var(--shadow);
+  }
+
+  .nv-sidebar {
+    left: 0;
+    transform: translateX(-100%);
+  }
+  .nv-workbench:not(.is-file-list-collapsed) .nv-sidebar {
+    transform: translateX(0);
+  }
+
+  .nv-controls {
+    right: 0;
+    border-right: 0;
+    border-left: 1px solid var(--line);
+    transform: translateX(100%);
+  }
+  .nv-workbench:not(.is-controls-collapsed) .nv-controls {
+    transform: translateX(0);
+  }
+
+  /* Middle workspace shows only the viewer; the OSD desktop browser + splitter
+     are desktop metaphors — on a phone the dataset drawer handles selection. */
+  .nv-split-workspace {
+    grid-template-columns: 1fr;
+  }
+  .nv-dataset-pane,
+  .nv-splitter {
+    display: none;
+  }
+
+  .nv-mobile-only {
+    display: inline-flex;
+  }
+
+  .nv-mobile-scrim {
+    display: block;
+    position: fixed;
+    inset: 64px 0 0 0;
+    z-index: 40;
+    border: 0;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  /* Compact the topbar so the essential controls fit one row. */
+  .nv-brand > div:not(.nv-mark) {
+    display: none;
+  }
+  .nv-tool-button span {
+    display: none;
+  }
+  .nv-topbar {
+    gap: 8px;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+  /* NB: don't set overflow-x here — it forces overflow-y to auto too (CSS
+     spec), which clips the Datasets dropdown that hangs below the toolbar.
+     The brand text + tool-button labels are hidden above, so the icons fit. */
+  .nv-toolbar {
+    gap: 4px;
+  }
+
+  /* Drop the menu as a full-width sheet under the topbar — anchoring it to the
+     toolbar button ran its left edge off a narrow phone. */
+  .nv-recent-menu {
+    position: fixed;
+    top: 66px;
+    right: 10px;
+    left: 10px;
+    min-width: 0;
+    max-width: none;
+    max-height: 60vh;
+  }
+
+  .nv-desktop-only {
+    display: none;
   }
 }
 

@@ -12,34 +12,103 @@ Size: _(S)_ contained · _(M)_ medium · _(L)_ large / own session.
 The codebase is already Tauri-v2 mobile-capable; these are the remaining blockers
 to an actual iOS/iPadOS build. See `AGENTS.md` for the guardrails.
 
-- [ ] **[P1] (L) Data transport for mobile.** The local axum HTTP server on
-  `127.0.0.1` won't port cleanly (ATS blocks cleartext http, sockets suspend on
-  lifecycle). Abstract data access behind a transport seam and add a custom
-  protocol / IPC implementation for mobile. Keep desktop on the HTTP server.
-- [ ] **[P1] (M) Dataset acquisition on mobile.** iOS sandbox needs document-
-  picker URLs / security-scoped bookmarks, not arbitrary `canonicalize()` paths.
-  Abstract "pick/open dataset".
+**iOS build works — app runs on the simulator (2026-07-06).** `tauri ios init`
+scaffolded `src-tauri/gen/apple`; the Rust lib cross-compiles for
+`aarch64-apple-ios-sim` and the app **launches on the iPhone 17 simulator**, the
+local axum server is reachable, and the viewer initializes. Enablement (all
+committed): (1) `"tauri": "tauri"` npm script — the generated Xcode "Build Rust
+Code" phase calls `npm run -- tauri ios xcode-script`; (2) `tauri.ios.conf.json`
+clearing `bundle.externalBin` (no iOS niimath sidecar); (3) `#[cfg(desktop)]`-gate
+the menu bar in `lib.rs` (`tauri::menu` doesn't exist on iOS); (4)
+`NSAllowsLocalNetworking` in the iOS `Info.plist`.
+
+**Phone layout done (2026-07-06).** A `@media (max-width: 700px)` block +
+`isPhoneViewport()` collapse the 3-column workbench to a full-screen NiiVue
+viewer with the dataset/inspector panels as slide-in drawers (toggled by
+mobile-only topbar buttons + a tap-to-close scrim); the OSD desktop browser is
+hidden on phones; the topbar compacts. iPad (≥700px) keeps the desktop layout.
+Verified on the simulator.
+
+**Two iOS render fixes (2026-07-06):** (a) `preferredBackend()` now forces
+**WebGL2 on iOS** — iOS WebKit exposes `navigator.gpu` but NiiVue's WebGPU path
+renders a black canvas there (AGENTS.md flagged this); WebGL2 renders correctly.
+(b) Phones default to the **axial 2D slice** instead of the 3D render (clearer on
+a small screen).
+
+**Default dataset on iOS — FIXED (2026-07-06); the brain renders on iPhone.**
+Root cause was `fallback_mni152_volume()` (`volumetric_server.rs`) searching
+hardcoded dev-machine paths (`~/Dev/mono/...`, `~/Dev/niivue/...`) absent from the
+iOS sandbox, registering a phantom volume with `source_path: None` (raw endpoints
+404/500). Fix: **bundle `mni152.nii.gz` (4.1 MB) as a Tauri resource**
+(`src-tauri/resources/`, added to `bundle.resources`); `lib.rs` now spawns the
+server inside `.setup()`, resolves the resource via
+`app.path().resolve("resources/mni152.nii.gz", Resource)`, and sets
+`NEUROVUE_DEFAULT_VOLUME`, which `discovery_roots()` appends **last** (so desktop
+still prefers a real dev dataset). Verified on the simulator: launches → renders
+an axial MNI152 slice with A/L orientation labels. Note: on iOS the resource lands
+at `.app/assets/resources/mni152.nii.gz` and `BaseDirectory::Resource` resolves it
+correctly. A user-facing **document picker** for opening *arbitrary* datasets is
+still the separate dataset-acquisition item below.
+
+- [ ] **[P3] (M) Device build + signing.** Validate on a physical iPhone (needs a
+  development team for code signing); the socket-lifecycle check for the transport
+  item wants a real device.
+
+- [~] **[P1] (~~L~~ → M) Data transport for mobile — LARGELY A NON-ISSUE on iOS.**
+  The theoretical blocker didn't materialize: the local axum HTTP server on
+  `127.0.0.1` **works in the iOS simulator** once `NSAllowsLocalNetworking` is set
+  (done) — the WKWebView reaches it and data loads. So the full transport-seam /
+  custom-protocol rewrite is **not** required for a working foreground app.
+  Remaining, much smaller: (a) confirm the same on a **physical device** (sim ≠
+  device for local sockets); (b) handle **background lifecycle** — the socket may
+  suspend when the app backgrounds, so re-bind/re-check the server on foreground
+  (or lazily on next request). Keep desktop on the HTTP server. Downgraded from L
+  to M and from "rewrite" to "verify + lifecycle hardening."
+- [~] **[P1] (M) Dataset acquisition on mobile — file picker works (2026-07-06).**
+  "Open NIfTI file…" (Datasets menu) fires the iOS document picker and opens the
+  picked file as a single-volume dataset. Two fixes made it work: (1)
+  `open_dataset_root` now accepts a single `.nii/.nii.gz` file (parent = dataset
+  root), and (2) `normalize_local_path` in `lib.rs` strips the `file://` scheme +
+  percent-decodes the URL the picker returns (Tauri copies the picked file into
+  the app Inbox, so **no** security-scoped access issue — the earlier worry). The
+  directory picker is hidden on mobile (`nv-desktop-only`) — iOS has no real
+  folder-open. Verified on the simulator: picked a T1 → rendered. Remaining:
+  **security-scoped bookmarks** for *persistent* re-open across launches (the
+  Inbox copy is per-pick/ephemeral), and picking a whole BIDS dataset (vs. one
+  file) if wanted.
 - [ ] **[P2] (M) niimath via WASM on mobile/web.** Native sidecar is desktop-only
   (`src-tauri/src/niimath.rs`). Wire the niimath WASM build behind
   `src/domain/niimath.ts` so the Operations feature works cross-platform.
 - [x] **[P2] (S) Hide the terminal UI on mobile.** Its commands aren't registered
   there (terminal is `#[cfg(desktop)]`); add a runtime platform check to hide the
   toggle/dock.
-- [ ] **[P2] (M) Responsive layout + touch.** iPhone layout (small screen), touch
-  equivalents for wheel-zoom (pinch) and any hover-reveal affordances. No
-  hover-only / wheel-only controls. Concrete regressions found in the
-  2026-07-01 code review (both desktop-only today):
-  - **Slice paging is wheel-only** (`NiivueStage.tsx` `sliceWheelStep` /
-    `handleWheelCapture` → `moveCrosshairInVox`). No touch/pointer path, so 2D
-    slice navigation is unreachable on iPad/iPhone. Add a drag/swipe (or
-    on-screen slice slider) equivalent.
-  - **3D camera snap is keyboard-only.** The redesign replaced the on-screen
-    render-snap buttons with the 2D/3D view-mode buttons, so `snapRenderView`
-    (Coronal/Sagittal/Axial camera angles) is now reachable only via the
-    numpad/Blender digit shortcuts — gone on touch. Re-expose a snap affordance
-    for the 3D render pane.
-- [ ] **[P3] (M) Set up the `tauri ios` project/build** and validate on simulator/
-  device once the above land.
+- [~] **[P2] (M) Responsive layout + touch.** Layout done (see the phone-layout
+  note at the top of this section). Touch progress:
+  - [x] **Slice paging** now has a touch path: a **slice slider** overlaid at the
+    bottom of the viewer in the single-plane 2D modes (`NiivueStage.tsx`
+    `.nv-slice-slider`). It reads the current through-plane voxel from NiiVue's
+    `location.vox[axis]` (stays in sync with clicks/paging) and pages via
+    `moveCrosshairInVox`; the wheel path stays for desktop. Renders correctly on
+    the sim (e.g. `108 / 215`); **drag interaction not yet confirmed by touch**
+    (couldn't tap headlessly — no `idb`/`simctl tap`; verify on device).
+  - [x] **Pinch-zoom (3D render)** — done. Render zoom is app-owned
+    (`scaleMultiplier`, was wheel-only), so a two-finger pinch handler
+    (`handlePinch*` in `NiivueStage.tsx`, capture-phase) drives the same zoom;
+    single-finger still rotates. Verified on the simulator (⌥-drag pinch). 2D
+    pinch is left to NiiVue's native zoom (not yet confirmed on device).
+  - [ ] **3D camera snap** (numpad `1/3/7` for Coronal/Sagittal/Axial camera
+    angles) is still keyboard-only. The on-screen Ax/Cor/Sag/MPR/3D buttons cover
+    view switching; a dedicated in-render camera-snap affordance is deferred
+    (niche vs. the 2D flow that matters on a phone).
+- [x] **[P3] (M) Set up the `tauri ios` project/build** — done 2026-07-06,
+  validated on the iPhone 17 **simulator** (see the status note at the top of this
+  section). Device validation (needs a signing team) still pending.
+- [x] **[P1] (M) Phone layout + touch slice paging — DONE 2026-07-06.** The
+  desktop 3-column layout now collapses to a full-screen viewer with drawers (see
+  the phone-layout note above), and 2D slice paging has a touch slider. Remaining
+  touch polish (pinch verify, 3D camera snap) is tracked under "Responsive layout
+  + touch" above. The document picker (open your own datasets) is the next real
+  gap for a shippable phone app.
 - [~] **[P3] (M) AirDrop / share-sheet dataset hand-off (Apple-only, one-shot).**
   **macOS send landed (2026-07-06):** `export_bundle` writes a portable
   `.nvbundle` (manifest + hashed data), and the **Share2** button

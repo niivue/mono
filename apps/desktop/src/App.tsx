@@ -127,7 +127,20 @@ function resolveColormap(name: string): { colormap: string; colormapNegative?: s
 }
 // Prefer WebGPU when the platform exposes it, falling back to WebGL2 otherwise.
 function preferredBackend(): Backend {
-  return typeof navigator !== 'undefined' && 'gpu' in navigator ? 'webgpu' : 'webgl2'
+  if (typeof navigator === 'undefined') return 'webgl2'
+  // iOS WebKit exposes `navigator.gpu`, but NiiVue's WebGPU path renders
+  // unreliably in the iOS WKWebView (black canvas). WebGL2 is the guaranteed
+  // baseline on iOS — see AGENTS.md — so force it there regardless of gpu.
+  if (isAppleMobile()) return 'webgl2'
+  return 'gpu' in navigator ? 'webgpu' : 'webgl2'
+}
+
+function isAppleMobile(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  if (/iPad|iPhone|iPod/.test(ua)) return true
+  // iPadOS 13+ presents a desktop (Macintosh) UA; disambiguate via touch.
+  return ua.includes('Macintosh') && navigator.maxTouchPoints > 1
 }
 
 const FLIPPED_CLIP_ORIENTATIONS: Record<string, Pick<ClipPlane, 'azimuth' | 'elevation'>> = {
@@ -157,6 +170,13 @@ interface LayerSettings {
   window?: { min: number; max: number }
 }
 
+// Phone-width viewport: the workbench collapses to a single full-screen viewer
+// with the dataset/inspector panels as slide-in drawers (see the `max-width:
+// 700px` block in styles.css). iPad (~desktop width) keeps the 3-column layout.
+function isPhoneViewport(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches
+}
+
 export function App(): JSX.Element {
   const splitRef = useRef<HTMLElement | null>(null)
   const backend = useMemo<Backend>(preferredBackend, [])
@@ -171,6 +191,7 @@ export function App(): JSX.Element {
     items,
     manifest,
     openLocalDataset,
+    openLocalVolumeFile,
     openRecentDataset,
     refreshDesktopManifest,
     refreshDesktopManifestData,
@@ -213,7 +234,11 @@ export function App(): JSX.Element {
     setLayerExtents((prev) => (extentsEqual(prev, next) ? prev : next))
   }, [])
   const [overlayIds, setOverlayIds] = useState<Set<string>>(() => new Set())
-  const [viewMode, setViewMode] = useState<ViewModeId>(DEFAULT_VIEW_MODE)
+  // Phones land on a 2D axial slice (clearer on a small screen than the 3D
+  // render); desktop/iPad keep the 3D render default.
+  const [viewMode, setViewMode] = useState<ViewModeId>(() =>
+    isPhoneViewport() ? 'axial' : DEFAULT_VIEW_MODE
+  )
   const [atlasId, setAtlasId] = useState<string | null>(null)
   const [locationReadout, setLocationReadout] = useState<NiiVueLocation | null>(null)
   // One-shot crosshair "go-to" request handed to NiivueStage; a fresh object per
@@ -237,8 +262,10 @@ export function App(): JSX.Element {
   const [splitPercent, setSplitPercent] = useState(52)
   const [desktopZoom, setDesktopZoom] = useState(1)
   const [mouseContext, setMouseContext] = useState<MouseContext>(null)
-  const [isFileListCollapsed, setIsFileListCollapsed] = useState(false)
-  const [isControlsCollapsed, setIsControlsCollapsed] = useState(false)
+  // On a phone both side panels start collapsed (off-screen drawers) so the
+  // viewer is the landing surface; on desktop/iPad they start open.
+  const [isFileListCollapsed, setIsFileListCollapsed] = useState(isPhoneViewport)
+  const [isControlsCollapsed, setIsControlsCollapsed] = useState(isPhoneViewport)
   const [isRenderMaximized, setIsRenderMaximized] = useState(false)
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>('inspect')
   const [isOpeningOverlay, setIsOpeningOverlay] = useState(false)
@@ -273,6 +300,20 @@ export function App(): JSX.Element {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  // `matchMedia` can be unsettled when the useState initializers above run on a
+  // cold WKWebView boot, so the phone defaults sometimes miss (app comes up in
+  // the 3D render with panels open instead of a collapsed axial view). Re-apply
+  // them once after mount, when the viewport is established. Runs a single time
+  // (app mounts once); a no-op on desktop and when the initial guess was right.
+  useEffect(() => {
+    if (isPhoneViewport()) {
+      setViewMode('axial')
+      setIsFileListCollapsed(true)
+      setIsControlsCollapsed(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -724,6 +765,19 @@ export function App(): JSX.Element {
         </div>
 
         <div className="nv-toolbar" aria-label="Viewer controls">
+          <button
+            aria-label={isFileListCollapsed ? 'Open dataset panel' : 'Close dataset panel'}
+            aria-expanded={!isFileListCollapsed}
+            className={`nv-icon-button nv-mobile-only ${!isFileListCollapsed ? 'is-active' : ''}`}
+            onClick={() => {
+              setIsFileListCollapsed((collapsed) => !collapsed)
+              setIsControlsCollapsed(true)
+            }}
+            title="Dataset panel"
+            type="button"
+          >
+            <Database size={16} />
+          </button>
           <div className="nv-open-group" ref={recentMenuRef}>
             <button
               className="nv-tool-button"
@@ -742,6 +796,19 @@ export function App(): JSX.Element {
               <div className="nv-recent-menu" role="menu">
                 <button
                   className="nv-recent-item nv-recent-open"
+                  disabled={isOpeningDataset}
+                  onClick={() => {
+                    setIsRecentMenuOpen(false)
+                    void openLocalVolumeFile()
+                  }}
+                  type="button"
+                  role="menuitem"
+                >
+                  <FileJson size={14} />
+                  <span className="nv-recent-item-name">Open NIfTI file…</span>
+                </button>
+                <button
+                  className="nv-recent-item nv-recent-open nv-desktop-only"
                   disabled={isOpeningDataset}
                   onClick={() => {
                     setIsRecentMenuOpen(false)
@@ -878,8 +945,35 @@ export function App(): JSX.Element {
               <SquareTerminal size={16} />
             </button>
           ) : null}
+          <button
+            aria-label={isControlsCollapsed ? 'Open controls panel' : 'Close controls panel'}
+            aria-expanded={!isControlsCollapsed}
+            className={`nv-icon-button nv-mobile-only ${!isControlsCollapsed ? 'is-active' : ''}`}
+            onClick={() => {
+              setIsControlsCollapsed((collapsed) => !collapsed)
+              setIsFileListCollapsed(true)
+            }}
+            title="Controls panel"
+            type="button"
+          >
+            <SlidersHorizontal size={16} />
+          </button>
         </div>
       </header>
+
+      {/* Tap-to-close backdrop for the mobile drawers (CSS hides it on desktop). */}
+      {!isFileListCollapsed || !isControlsCollapsed ? (
+        <button
+          aria-label="Close panel"
+          className="nv-mobile-scrim"
+          tabIndex={-1}
+          type="button"
+          onClick={() => {
+            setIsFileListCollapsed(true)
+            setIsControlsCollapsed(true)
+          }}
+        />
+      ) : null}
 
       <section
         className={`nv-workbench ${isFileListCollapsed ? 'is-file-list-collapsed' : ''} ${
@@ -1002,6 +1096,7 @@ export function App(): JSX.Element {
               item={selected}
               layers={renderLayers}
               onClipPlaneDepthChange={changeClipPlaneDepth}
+              onClipPlaneActivate={bindActiveClipPlane}
               onLayerExtents={handleLayerExtents}
               onLocationChange={setLocationReadout}
               onResolvedWindows={handleResolvedWindows}

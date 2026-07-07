@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type WheelEvent as ReactWheelEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent
+} from 'react'
 import type { ColorMap, NiiVueLocation } from '@niivue/niivue'
 import type { Backend, ClipPlane, DesktopItem, JsonValue, VolumeMetadata } from '../domain/desktop'
 import { fetchVolumeMetadata, rawVolumeUrl } from '../domain/desktop'
@@ -26,6 +32,8 @@ interface NiivueStageProps {
   // coordinate twice still fires).
   crosshairTarget?: { mm: [number, number, number] } | null
   onClipPlaneDepthChange: (planeId: string, depth: number) => void
+  // Make a clip plane the active (on-screen depth-slider / wheel) target.
+  onClipPlaneActivate?: (planeId: string) => void
   onLocationChange?: (location: NiiVueLocation | null) => void
   // Reports the intensity window NiiVue actually applied per layer (keyed by
   // item id), including auto-seeded defaults — so the UI can show the effective
@@ -252,6 +260,7 @@ export function NiivueStage({
   viewMode,
   crosshairTarget,
   onClipPlaneDepthChange,
+  onClipPlaneActivate,
   onLocationChange,
   onResolvedWindows,
   onLayerExtents,
@@ -261,12 +270,18 @@ export function NiivueStage({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const nvRef = useRef<NiiVueLike | null>(null)
   const prefetchRef = useRef<VolumePrefetch | null>(null)
+  // Two-finger pinch tracking for render-view zoom (see handlePinch*).
+  const pinchPointers = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const pinchDistance = useRef<number | null>(null)
   const [status, setStatus] = useState('Waiting for a dataset selection.')
   const [snapId, setSnapId] = useState<RenderSnapId | null>(null)
   // Bumped after each volume load completes, so the in-place display effect
   // re-runs once NiiVue has computed per-volume stats (robust range / peak) —
   // needed to seed a stat overlay's default threshold from its data.
   const [loadedVersion, setLoadedVersion] = useState(0)
+  // Current crosshair location (mirrored from NiiVue) — drives the touch slice
+  // slider so it stays in sync with clicks/paging from any source.
+  const [location, setLocation] = useState<NiiVueLocation | null>(null)
   const primaryItem = layers[0]?.item ?? item
   const isRenderMode = viewMode === 'render'
   const currentViewLabel = (VIEW_MODES.find((mode) => mode.id === viewMode) ?? VIEW_MODES[VIEW_MODES.length - 1]).label
@@ -341,9 +356,11 @@ export function NiivueStage({
         nvRef.current = nv
         await nv.attachToCanvas(canvas)
         if (cancelled) return
-        if (onLocationChange && nv.addEventListener) {
+        if (nv.addEventListener) {
           locationListener = (event) => {
-            if (!cancelled) onLocationChange(event.detail)
+            if (cancelled) return
+            setLocation(event.detail)
+            onLocationChange?.(event.detail)
           }
           nv.addEventListener('locationChange', locationListener)
         }
@@ -610,10 +627,80 @@ export function NiivueStage({
     zoomRenderWithWheel(nv, event.deltaY)
   }
 
+  // Pinch-to-zoom for the 3D render view. NiiVue rotates on single-touch drag
+  // but the render *zoom* is app-owned (scaleMultiplier, wheel-only), so drive it
+  // from a two-finger pinch. Capture-phase so we intercept before NiiVue's canvas
+  // listeners once a pinch is under way. 2D pinch is left to NiiVue's native zoom.
+  function pinchSpan(): number | null {
+    const points = [...pinchPointers.current.values()]
+    if (points.length < 2) return null
+    return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+  }
+
+  function handlePinchDown(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.pointerType !== 'touch') return
+    pinchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (pinchPointers.current.size === 2) pinchDistance.current = pinchSpan()
+  }
+
+  function handlePinchMove(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.pointerType !== 'touch' || !pinchPointers.current.has(event.pointerId)) return
+    pinchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (pinchPointers.current.size !== 2 || !isRenderMode) return
+    const span = pinchSpan()
+    const previous = pinchDistance.current
+    if (!span || !previous) return
+    event.stopPropagation()
+    const nv = nvRef.current
+    if (nv) zoomRenderByFactor(nv, span / previous)
+    pinchDistance.current = span
+  }
+
+  function handlePinchUp(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.pointerType !== 'touch') return
+    pinchPointers.current.delete(event.pointerId)
+    if (pinchPointers.current.size < 2) pinchDistance.current = null
+  }
+
+  // Touch slice paging: a slider that pages the through-plane voxel in the
+  // single-plane 2D modes. NiiVue's native touch moves the crosshair in-plane
+  // and pinch-zooms, but has no through-plane paging (that was wheel-only), so
+  // on a phone this slider is the only way to change slice.
+  const sliceAxis = SLICE_AXIS_INDEX[viewMode]
+  const sliceDim = sliceAxis !== undefined && primaryItem ? primaryItem.shape[sliceAxis] ?? 0 : 0
+  const sliceMax = Math.max(0, sliceDim - 1)
+  const currentVox = sliceAxis !== undefined ? location?.vox?.[sliceAxis] : undefined
+  const sliceValue =
+    typeof currentVox === 'number' ? clamp(Math.round(currentVox), 0, sliceMax) : Math.floor(sliceMax / 2)
+  const showSliceSlider = sliceAxis !== undefined && !!primaryItem && sliceMax > 0
+
+  function pageToSlice(target: number): void {
+    const nv = nvRef.current
+    if (sliceAxis === undefined || !nv?.moveCrosshairInVox) return
+    const delta = clamp(Math.round(target), 0, sliceMax) - sliceValue
+    if (delta === 0) return
+    const step: [number, number, number] = [0, 0, 0]
+    step[sliceAxis] = delta
+    nv.moveCrosshairInVox(...step)
+  }
+
+  // On-screen clip-plane control (3D render): chips pick the active plane and a
+  // depth slider moves it — the touch path for what was a wheel-only control.
+  const enabledClipPlanes = clipPlanes.filter((plane) => plane.enabled)
+  const clipIsActive = renderWheelMode === 'clip-plane'
+  const activeClip = clipIsActive
+    ? enabledClipPlanes.find((plane) => plane.id === activeClipPlaneId) ?? null
+    : null
+  const showClipControl = isRenderMode && enabledClipPlanes.length > 0
+
   return (
     <div
       className="nv-render-stage"
       onPointerDown={clearSnapSelection}
+      onPointerDownCapture={handlePinchDown}
+      onPointerMoveCapture={handlePinchMove}
+      onPointerUpCapture={handlePinchUp}
+      onPointerCancelCapture={handlePinchUp}
       onWheelCapture={handleWheelCapture}
       ref={stageRef}
     >
@@ -643,6 +730,52 @@ export function NiivueStage({
           </button>
         ))}
       </div>
+      {showSliceSlider ? (
+        <div className="nv-slice-slider" role="group" aria-label="Slice position">
+          <input
+            aria-label={`${currentViewLabel} slice`}
+            max={sliceMax}
+            min={0}
+            step={1}
+            type="range"
+            value={sliceValue}
+            onChange={(event) => pageToSlice(Number(event.target.value))}
+          />
+          <span className="nv-slice-slider-value">
+            {sliceValue + 1} / {sliceMax + 1}
+          </span>
+        </div>
+      ) : null}
+      {showClipControl ? (
+        <div className="nv-clip-slider" role="group" aria-label="Clip plane">
+          <div className="nv-clip-slider-chips">
+            {enabledClipPlanes.map((plane) => (
+              <button
+                aria-pressed={clipIsActive && plane.id === activeClipPlaneId}
+                className={clipIsActive && plane.id === activeClipPlaneId ? 'is-active' : ''}
+                key={plane.id}
+                onClick={() => onClipPlaneActivate?.(plane.id)}
+                title={`Move the ${plane.label} clip plane`}
+                type="button"
+              >
+                {plane.label}
+              </button>
+            ))}
+          </div>
+          <input
+            aria-label="Clip plane depth"
+            disabled={!activeClip}
+            max={1}
+            min={-1}
+            step={0.02}
+            type="range"
+            value={activeClip?.depth ?? 0}
+            onChange={(event) =>
+              activeClip && onClipPlaneDepthChange(activeClip.id, Number(event.target.value))
+            }
+          />
+        </div>
+      ) : null}
       <div className="nv-render-status" role="status" aria-live="polite">{status}</div>
     </div>
   )
@@ -749,6 +882,14 @@ function sliceWheelStep(viewMode: ViewModeId, deltaY: number): VoxelStep | null 
     default:
       return null
   }
+}
+
+// Through-plane voxel axis (index into `vox`/`shape`) for each single-plane 2D
+// mode — the axis the slice slider pages along.
+const SLICE_AXIS_INDEX: Partial<Record<ViewModeId, number>> = {
+  axial: 2,
+  coronal: 1,
+  sagittal: 0
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -1050,6 +1191,17 @@ function zoomRenderWithWheel(nv: NiiVueLike, deltaY: number): void {
     ? scene.scaleMultiplier
     : 1
   scene.scaleMultiplier = clamp(current + deltaY * 0.001, 0.5, 2)
+  nv.drawScene()
+}
+
+// Multiply the render zoom by `factor` (from a pinch ratio), same clamp/target
+// as the wheel path so touch and wheel converge on one zoom control.
+function zoomRenderByFactor(nv: NiiVueLike, factor: number): void {
+  const scene = nv.model?.scene
+  if (!scene || !Number.isFinite(factor) || factor <= 0) return
+
+  const current = typeof scene.scaleMultiplier === 'number' ? scene.scaleMultiplier : 1
+  scene.scaleMultiplier = clamp(current * factor, 0.5, 2)
   nv.drawScene()
 }
 

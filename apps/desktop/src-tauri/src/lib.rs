@@ -203,9 +203,12 @@ async fn share_view_via_airdrop(
     // no destination for a share (unlike Save), so we stage it under the app
     // cache and hand the finished bundle to AirDrop.
     let (result, dest) = tauri::async_runtime::spawn_blocking(move || {
-        let dest = volumetric_server::cache_root()
-            .join("shares")
-            .join(format!("{}.nvbundle", sanitize_share_name(&name)));
+        let shares_dir = volumetric_server::cache_root().join("shares");
+        // Prune previously-staged share bundles so the cache doesn't accumulate
+        // one per share; export recreates the dir. (The dir is under the OS temp
+        // dir, which is auto-purged anyway — this just keeps it tidy in-session.)
+        let _ = std::fs::remove_dir_all(&shares_dir);
+        let dest = shares_dir.join(format!("{}.nvbundle", sanitize_share_name(&name)));
         let result =
             volumetric_server::export_bundle(&server, &dest, &volume_ids, &view, &created_at)?;
         Ok::<_, String>((result, dest))

@@ -14,6 +14,15 @@
         opacity: 0.85;
       }
       #help b { font-weight: 600; }
+      /* Contextual "what to do now" line: reflects the active tool + view. */
+      #hint {
+        font: 13px/1.4 system-ui, sans-serif;
+        padding: 5px 8px;
+        background: #16324a;
+        color: #d6ecff;
+      }
+      #hint b { font-weight: 700; color: #ffffff; }
+      #hint .warn { color: #ffd479; }
       header label { white-space: nowrap; }
     </style>
   </head>
@@ -75,6 +84,7 @@
         <option value="webgl2">WebGL2</option>
       </select>
     </header>
+    <div id="hint"></div>
     <div id="help">
       Pick a <b>Tool</b>. <b>2D slices:</b> left-drag (Pen/Eraser paint, Fill floods a closed loop, Vector draws a polygon) or click (Magic wand grows an intensity-similar region; <b>2D</b> confines it to the slice).
       &nbsp;|&nbsp;

@@ -47,6 +47,61 @@ function applyExplode() {
 // 1=red, 2=green, 3=blue).
 const COLOR_RGB = { 1: [1, 0, 0], 2: [0, 1, 0], 3: [0, 0, 1] }
 
+// Per-tool 2D-slice and 3D-block gestures, for the contextual hint line.
+const TOOL_ACTIONS = {
+  pen: { d2: 'left-drag to paint', d3: 'right-drag a block to paint' },
+  eraser: { d2: 'left-drag to erase', d3: 'right-drag a block to erase' },
+  fill: {
+    d2: 'left-drag a closed loop to flood',
+    d3: 'right-click a block to flood the blob',
+  },
+  wand: {
+    d2: 'left-click to grow a region',
+    d3: 'right-click a block to grow the region',
+  },
+  vector: {
+    d2: 'left-drag to draw a polygon',
+    d3: 'right-drag a block to draw a polygon',
+  },
+}
+const TOOL_LABEL = {
+  pen: 'Pen',
+  eraser: 'Eraser',
+  fill: 'Fill',
+  wand: 'Magic wand',
+  vector: 'Vector (SVG)',
+  off: 'Off',
+}
+
+// Contextual "what to do now" line: reflects the active tool, the current view
+// (does it show 2D slices / the 3D render?), and whether Explode is on (needed to
+// draw on blocks). Addresses the left-drag(2D)/right-drag(3D) split and the
+// hidden Explode requirement without making the user parse the static help.
+function updateHint() {
+  const tool = toolSel.value
+  const viewVal = parseInt(view.value, 10)
+  const has2D = viewVal <= 3 // axial/coronal/sagittal/multiplanar show slices
+  const hasRender = viewVal === 3 || viewVal === 4 // A+C+S+R or Render
+  const explodeOn = parseInt(explode.value, 10) / 100 > 1.001
+  if (tool === 'off') {
+    hint.innerHTML = 'Drawing is <b>off</b> — pick a Tool to start.'
+    return
+  }
+  const a = TOOL_ACTIONS[tool]
+  const parts = []
+  if (has2D) parts.push(`2D slice: ${a.d2}`)
+  if (hasRender) {
+    parts.push(
+      explodeOn
+        ? `3D block: ${a.d3}`
+        : '<span class="warn">turn on Explode to draw on the 3D blocks</span>',
+    )
+  }
+  let msg = `<b>${TOOL_LABEL[tool]}</b> — ${parts.join('; ')}.`
+  if (tool === 'vector') msg += ' <b>SVG</b> exports the shapes.'
+  hint.innerHTML = msg
+}
+
 // One tool active at a time (no conflicting checkboxes). Each tool sets the full
 // draw/annotation state and enables only its relevant options (Color/Size/2D/Tol/
 // SVG), so an irrelevant control can't be silently ignored.
@@ -88,7 +143,10 @@ function applyTool() {
   nv1.drawPenValue = tool === 'eraser' ? 0 : colorVal
 }
 
-toolSel.onchange = applyTool
+toolSel.onchange = () => {
+  applyTool()
+  updateHint()
+}
 colorSel.onchange = applyTool
 
 wand2dCheck.onchange = function () {
@@ -106,7 +164,10 @@ penSize.oninput = function () {
   nv1.drawPenSize = parseInt(this.value, 10)
 }
 
-explode.oninput = applyExplode
+explode.oninput = () => {
+  applyExplode()
+  updateHint()
+}
 
 overwriteCheck.onchange = function () {
   nv1.drawIsFillOverwriting = this.checked
@@ -147,6 +208,7 @@ clearBtn.onclick = () => {
 
 view.onchange = () => {
   nv1.sliceType = parseInt(view.value, 10)
+  updateHint()
 }
 
 backend.onchange = async () => {
@@ -190,3 +252,4 @@ nv1.annotationIsVisibleIn3D = true
 applyTool()
 nv1.drawPenSize = parseInt(penSize.value, 10)
 applyExplode()
+updateHint()

@@ -1,4 +1,5 @@
 import { decode, encode } from 'cbor-x'
+import { shouldLinkVolume } from '@/documentLinkData'
 import { type SettingsSavePolicy, sparsifyGroup } from '@/documentSettings'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import { encodeRLE } from '@/drawing/rle'
@@ -301,12 +302,6 @@ export interface SerializeOptions {
   linkData?: boolean
 }
 
-// A URL the loader can refetch on open (so its data need not be embedded). A
-// bare/relative path is assumed reachable; ephemeral blob:/data: URLs are not.
-function isLinkableUrl(url: string | undefined): boolean {
-  return !!url && !url.startsWith('blob:') && !url.startsWith('data:')
-}
-
 // Defaults for the SERIALIZED subset of scene fields (a sparse document omits
 // any that match). Derived from NVConstants.SCENE_DEFAULTS so they can't drift.
 const SCENE_DOC_DEFAULTS = {
@@ -367,7 +362,7 @@ export function serialize(
     // and this volume has a fetchable URL (then the loader refetches it). A
     // linked volume with no usable URL still embeds so the document round-trips.
     if (v.hdr && v.img) {
-      if (linkData && isLinkableUrl(v.url)) {
+      if (shouldLinkVolume(v.url, linkData)) {
         // linked: bytes omitted, loader fetches from v.url
       } else {
         if (linkData) {

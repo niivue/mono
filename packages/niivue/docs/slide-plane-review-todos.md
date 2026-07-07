@@ -397,14 +397,17 @@ Most are demo-level UX; a couple touch core defaults.
 
 ## Low
 
-- [ ] Single right-click in Vector mode on a block does nothing (needs a 3+ point
-  drag) → feels unresponsive; add a status hint.
-- [ ] Wand "Tol" units (% of window) only in a tooltip (add a visible unit / value).
-- [ ] No swatch/cursor reflecting the active color/tool.
-- [ ] "Overwrite" semantics are subtle (tooltip added).
-- [ ] **Core-default question:** should the *core* `clickToSegmentIs2D` default to
-  2D (done now, since the feature is unreleased) — confirm this is the desired
-  library default, not just the demo default.
+- [x] Single right-click in Vector mode does nothing → covered by the contextual
+  hint wording ("drag to draw a polygon"), which implies a drag not a click
+  (commit `b42531b3`).
+- [x] Wand "Tol" units → live "%" readout next to the slider (commit `995a0fee`).
+- [x] Color swatch reflecting the active color (dimmed when it doesn't apply) —
+  commit `995a0fee`. (A tool-reflecting cursor is still deferred; see Medium.)
+- [x] "Overwrite" semantics — tooltip added (`570c6625`).
+- [ ] **Core-default question (OPEN — needs confirmation):** the *core*
+  `DRAW_DEFAULTS.clickToSegmentIs2D` is now `true` (done since the feature is
+  unreleased). Confirm 2D is the desired library default for API consumers, not
+  just the demo default.
 
 ## Also parked (outside the drawing work)
 

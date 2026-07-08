@@ -8,12 +8,14 @@
  * Protocol (NVWorker bridge):
  *   Request:  { _wbId, url, urlImageData?, limitFrames4D?, name? }
  *             url may be a string or a structured-cloneable File.
- *   Success:  { _wbId, volume: NVImage }   (volume.img.buffer transferred)
+ *   Success:  { _wbId, volume }   (volume.img.buffer transferred; volume.hdr is a
+ *             data-only snapshot — see hdrTransfer — that loadBridge rehydrates)
  *   Error:    { _wbId, _wbError: string }
  */
 
 import * as NVLoader from '@/NVLoader'
 import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
+import { hdrToTransferable } from '@/volume/hdrTransfer'
 import { nii2volume } from '@/volume/NVVolume'
 
 const post = (
@@ -67,7 +69,11 @@ self.onmessage = async (e: MessageEvent<LoadRequest>) => {
     if (volume.img && 'buffer' in volume.img) {
       transfer.push(volume.img.buffer as ArrayBuffer)
     }
-    post({ _wbId: id, volume }, transfer)
+    // `volume.hdr` is a NIFTI1/NIFTI2 instance whose methods are own properties,
+    // which structured clone rejects. Post a data-only snapshot; loadBridge
+    // rebuilds a real instance from it.
+    const wire = { ...volume, hdr: hdrToTransferable(volume.hdr) }
+    post({ _wbId: id, volume: wire }, transfer)
   } catch (err) {
     post({
       _wbId: id,

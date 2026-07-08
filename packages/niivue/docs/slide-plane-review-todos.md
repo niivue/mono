@@ -348,10 +348,14 @@ block pen, Alt+right-drag rotates without painting, vector draw, SVG export, und
 on WebGL2 and WebGPU; `slide3d` vector SVG export (stroke colour survives
 `safeCssColor`); `vox.draw`, `vox.tiled`, `slides`, `vox.basic`.
 
-Note: WebGPU chunk streaming for `vox.draw.explode` takes ~35 s on this machine
-(the volume-load worker fails `postMessage` and falls back to a main-thread decode
-that blocks JS). Reproduced identically on the pre-session baseline via a worktree
-— NOT a regression, but it makes the demo look broken for the first half-minute.
+Note (RESOLVED): `vox.draw.explode` looked broken for tens of seconds on WebGPU.
+The volume-load worker was failing `postMessage` on every load and falling back to
+a main-thread decode that blocks JS. Reproduced on the pre-session baseline, so it
+was never a regression from this work — it had simply never worked. Root cause and
+fix in `volume/hdrTransfer.ts`: nifti-reader-js declares NIFTI1/NIFTI2 methods as
+class FIELDS, so they are own properties and structured clone rejects the header.
+`loadVolumes()` on mni152 went 313-317 ms / 147-155 ms longest main-thread stall,
+to 165-179 ms / 13-18 ms. The remaining WebGPU wait is chunk texture upload.
 
 ### The five P1 items
 

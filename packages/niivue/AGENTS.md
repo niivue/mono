@@ -262,6 +262,19 @@ nv1.addEventListener('clipPlaneChange', (e) => { ... }) // clip plane adjusted
 
 See `docs/events.md` for the full event catalog and detail types.
 
+**Emission order — the event's referenced item is present in the collection at emit time.**
+Add / update / reorder events fire *after* the model mutation, so the item is
+present (or updated) when the event fires: `addVolume`→`volumeLoaded`,
+`setVolume`→`volumeUpdated`, `moveVolume*`→`volumeOrderChanged`, and the mesh
+equivalents. Removal events fire *before* the mutation, so the item being removed
+is still present: `removeVolume` / `removeMesh` / `removeAllVolumes` /
+`removeAllMeshes` → `volumeRemoved` / `meshRemoved`. New methods should follow
+this so a listener can always reach the referenced item — via the collection or
+the event `detail` — at emit time. Corollary: do **not** switch removal to
+emit-after; a consumer that rebuilds a list by re-reading the collection must
+read *after* the mutation instead (e.g. on the next render, or a microtask), the
+same way it must for the bulk-removal methods.
+
 ### Per-item options (unified load + update)
 
 ```js

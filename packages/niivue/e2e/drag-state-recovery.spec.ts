@@ -102,7 +102,7 @@ test('pointer capture is released even when the reset itself renders and throws'
   const r = await page.evaluate(`(async () => {
     ${setupMidStroke}
 
-    // `+'`resetDragState`'+` ends by clearing isDragging, whose setter calls drawScene().
+    // resetDragState ends by clearing isDragging, whose setter calls drawScene().
     // If the renderer throws there, capture must already have been released.
     nv.drawScene = () => { throw new Error('simulated render failure') }
     try { ev('pointerup', 160, 160, 0) } catch { /* listener errors don't propagate */ }

@@ -84,20 +84,29 @@ export function fillGroup<T extends Record<string, unknown>>(
   return out
 }
 
+/** True for the indexed sequences settings actually hold: plain arrays and typed
+ * arrays (gl-matrix vecs are Float32Array). Deliberately NOT a duck-typed
+ * `typeof x.length === 'number'` check — that would treat any plain object with a
+ * numeric `length` key as a sequence and compare it by index, ignoring its other
+ * keys. `DataView` is excluded: it is an ArrayBuffer view with no `length`. */
+function isIndexedSequence(v: object): v is ArrayLike<unknown> {
+  return Array.isArray(v) || (ArrayBuffer.isView(v) && !(v instanceof DataView))
+}
+
 /** Deep value equality for settings: primitives, array-likes (incl. typed
  * arrays / gl-matrix vecs), and plain nested objects (e.g. `ui.graph`). */
 export function settingEquals(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (a == null || b == null) return false
   if (typeof a !== 'object' || typeof b !== 'object') return false
-  const aLen = (a as { length?: unknown }).length
-  const bLen = (b as { length?: unknown }).length
-  if (typeof aLen === 'number' && typeof bLen === 'number') {
-    if (aLen !== bLen) return false
-    const aa = a as ArrayLike<unknown>
-    const ba = b as ArrayLike<unknown>
-    for (let i = 0; i < aLen; i++) {
-      if (!settingEquals(aa[i], ba[i])) return false
+  const aSeq = isIndexedSequence(a)
+  const bSeq = isIndexedSequence(b)
+  // A sequence never equals a plain object, whatever their keys look like.
+  if (aSeq !== bSeq) return false
+  if (aSeq && bSeq) {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) {
+      if (!settingEquals(a[i], b[i])) return false
     }
     return true
   }

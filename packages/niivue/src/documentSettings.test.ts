@@ -27,6 +27,15 @@ describe('settingEquals', () => {
     expect(settingEquals({ a: 1 }, { a: 1, b: 2 })).toBe(false)
     expect(settingEquals({ a: 1 }, { a: 2 })).toBe(false)
   })
+
+  test('a plain object with a numeric `length` key is compared by key, not index', () => {
+    // Duck-typing on `length` would compare these two by index — every index is
+    // undefined on both, so they would wrongly compare equal despite `a` differing.
+    expect(settingEquals({ length: 2, a: 1 }, { length: 2, a: 2 })).toBe(false)
+    expect(settingEquals({ length: 2, a: 1 }, { length: 2, a: 1 })).toBe(true)
+    // A real sequence is never equal to an object that merely looks like one.
+    expect(settingEquals([1, 2], { length: 2, 0: 1, 1: 2 })).toBe(false)
+  })
 })
 
 describe('sparsifyGroup', () => {

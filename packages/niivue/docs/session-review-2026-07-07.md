@@ -14,8 +14,8 @@ session but exposed/relevant · **[Plausible]** logic holds, not runtime-reprodu
 |---|---|---|
 | NVD sparse settings | **Resolved** (#1, #2 done in `9d6bcb48`) | — |
 | NVD linked data | **Solid** (#3 invariant documented, `f1b27530`) | — |
-| Drawing-on-blocks core | **Solid** (#4, #5 fixed `f1b27530`) | Optional: #6, #9 |
-| Demos (vox.draw.explode etc.) | **Solid** | Optional insurance only (#9) |
+| Drawing-on-blocks core | **Solid** (#4, #5 fixed `f1b27530`; #6, #9 fixed 2026-07-08) | — |
+| Demos (vox.draw.explode etc.) | **Solid** (#9 insurance applied 2026-07-08) | — |
 | e2e harness | Works locally; **not CI-wired** | Add browser-install + `git lfs pull` before any CI use (#7); fix timeout (#8) |
 
 The demo logic and the drawing core came out clean on the things that would have
@@ -163,7 +163,18 @@ with `overwrite=false`) still leaves a phantom undo entry that reverts nothing.
 The raster pen path already does this right (defers via `_draw3DNeedsUndo`).
 **Fix:** snapshot only after confirming `filled > 0` (or pre-check the seed).
 
-## 6. [Confirmed] `pointercancel` drops an in-progress 3D **vector** stroke
+## 6. [RESOLVED — 2026-07-08] `pointercancel` drops an in-progress 3D **vector** stroke
+
+**Resolution:** commit on cancel. `pointercancel` now mirrors `pointerup` — commit the
+stroke inside a `try`, then release capture and `resetDragState` in the `finally`. The
+raster pen already survives a cancel (it paints incrementally), and
+`finish3DAnnotationStroke`'s degeneracy guards discard an accidental tap or palm-reject,
+so committing loses nothing and keeps the two input paths consistent. Pinned by
+`e2e/annotation-3d-stroke.spec.ts`. Original below.
+
+---
+
+
 
 **`interactions.ts:1232` vs `:1195`.** A vector annotation is committed only in
 `finish3DAnnotationStroke` (pointerup). `pointercancel` just clears the accumulator
@@ -251,8 +262,48 @@ flake not a hard fail. **Fix:** `test.setTimeout(60_000)` on the sparse test, or
 - ~~#3 linkData invariant~~ — **DONE** `f1b27530` (documented).
 - ~~#4 per-move reorder~~ — **DONE** `f1b27530` (per-stroke sample cache).
 - ~~#5 phantom undo~~ — **DONE** `f1b27530`.
+- ~~#6 pointercancel drops a 3D vector stroke~~ — **DONE** (2026-07-08). Resolved in
+  favour of **commit on cancel**: a raster stroke paints incrementally and so already
+  survives a cancel, and the degeneracy guards discard a palm-reject, so committing is
+  both the consistent and the lossless choice. `pointercancel` now mirrors `pointerup`'s
+  try/finally (commit, then release capture, then `resetDragState`).
+- ~~#8 e2e timeout asymmetry~~ — **DONE** (sparse test at 60 s).
+- ~~#9 crosshair fraction space~~ — **DONE** `529a2b84` (texture fraction, not scene).
+- ~~#9 `finish3DAnnotationStroke` 1-D guard~~ — **DONE** (2026-07-08). The two LARGEST
+  extents must exceed epsilon, so a collinear stroke is discarded like a single-voxel
+  one; the old all-three-tiny test let a 1-D line commit a zero-area polygon + undo step.
+- ~~#9 `settingEquals` array-like~~ — **DONE** (2026-07-08). Gated on
+  `Array.isArray || ArrayBuffer.isView` (minus `DataView`) instead of duck-typing
+  `length`, and a sequence never compares equal to a plain object.
+- ~~#9 `vox.draw.explode.js` backend switch~~ — **DONE** (2026-07-08). Replays
+  `applyView()`/`applyTool()` after `ensureTiled()`.
 
-**All Confirmed findings resolved.** Remaining are optional/low: #6 (pointercancel
-drops an in-progress 3D *vector* stroke — mouse-rare), #8 (e2e sparse-test timeout
-— partly done, now 60 s), #9 polish, and #7 (wire browser-install + `git lfs pull`
-only when the e2e suite enters CI). None block pushing.
+**Open, deliberately:**
+- **#7 e2e CI wiring** — unchanged and still correct as a *when-we-wire-CI* item:
+  add `playwright install --with-deps chromium` + `git lfs pull` to the job. The
+  new `annotation-3d-stroke.spec.ts` deliberately loads **no volume**, so it is the
+  one spec that is already LFS-independent.
+- **#9 `--strictPort` on `e2e:serve`** — **won't fix; it is the correct setting.**
+  Playwright waits on a fixed `BASE_URL` (port 5273). Without `--strictPort`, Vite
+  would silently bind 5274 and Playwright would poll the dead 5273 until the 120 s
+  webServer timeout, reporting a confusing timeout instead of the real cause. With
+  it, Vite fails immediately with "Port 5273 is already in use". The common
+  already-running-dev-server case is handled by `reuseExistingServer: !CI`.
+- **#9 linkData test double-encodes the 11 MB embed** — won't fix. The whole e2e
+  suite runs in ~5 s; asserting the real ratio is more meaningful than a magic
+  ceiling.
+
+### Regression coverage added (2026-07-08)
+
+`e2e/annotation-3d-stroke.spec.ts` — three specs, each mutation-verified (reverting
+its fix makes exactly that spec fail):
+1. `pointercancel` commits an in-progress 3D vector stroke (#6).
+2. `pointerup` commits an in-progress 3D vector stroke. **This path had no coverage
+   at all** — it was found by mutation testing (deleting the pointerup commit broke
+   no test), not by the review. The two commit paths can no longer silently diverge.
+3. A collinear stroke is discarded rather than committed as a zero-area shape (#9).
+
+`src/documentSettings.test.ts` gains a case pinning that a plain object with a
+numeric `length` key is compared by key, not by index.
+
+**All Confirmed findings are now resolved.** Nothing here blocks pushing.

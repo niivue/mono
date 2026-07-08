@@ -597,6 +597,26 @@ function pickBlockMM(
   return [mm[0], mm[1], mm[2]]
 }
 
+// Clear every piece of transient per-drag state. Idempotent, throws nothing, and
+// must stay that way: it runs in the pointerup `finally` so a throwing stroke
+// finalize cannot strand `isDragging` true (which pauses the chunked-volume
+// streaming pump, gated on `!isDragging`). Also used by pointercancel.
+function resetDragState(ctrl: NiiVueGPU): void {
+  ctrl._annotation3DActive = false
+  ctrl._annotation3DMMPath = []
+  ctrl._annotationBrushPath = []
+  ctrl._frozenLoopPoints = null
+  ctrl.model._annotationPreview = null
+  ctrl.model._annotationErasePreview = null
+  ctrl._draw3DActive = false
+  ctrl._draw3DNeedsUndo = false
+  ctrl._draw3DLastVoxel = null
+  ctrl._draw3DLastChunk = null
+  ctrl._draw3DSampleCache = null
+  ctrl.isDragging = false
+  ctrl.activeTileHit = null
+}
+
 // Commit a freehand 3D vector stroke (mm points picked off the blocks) as a
 // slice annotation. The annotation model is planar, so fit the best axis-aligned
 // plane — the axis with the smallest spread is the depth — project the points
@@ -1006,230 +1026,231 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   }
   ctrl._eventListeners.pointerup = (e: Event) => {
     setNextActionTag('pointerup')
-    // Finalize drawing stroke on mouse-up
-    if (
-      ctrl.model.draw.isEnabled &&
-      ctrl._drawPenFillPts.length > 0 &&
-      ctrl.model.drawingVolume
-    ) {
-      const vol = ctrl.model.getVolumes()[0]
-      if (vol?.dimsRAS) {
-        if (ctrl.drawPenAutoClose && ctrl._drawPenFillPts.length > 2) {
-          drawLine({
-            ptA: ctrl._drawPenLocation,
-            ptB: ctrl._drawPenFillPts[0],
-            penValue: ctrl.model.draw.penValue,
-            drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
-            dims: vol.dimsRAS,
-            penSize: ctrl.model.draw.penSize,
-            penAxCorSag: ctrl._drawPenAxCorSag,
-            penOverwrites: ctrl.model.draw.isFillOverwriting,
-          })
-        }
-        if (ctrl.drawPenFilled && ctrl._drawPenFillPts.length > 2) {
-          const currentUndo =
-            ctrl.drawUndoBitmaps[ctrl.currentDrawUndoBitmap] ?? null
-          const fillResult = drawPenFilled({
-            penFillPts: ctrl._drawPenFillPts,
-            penAxCorSag: ctrl._drawPenAxCorSag,
-            drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
-            dims: vol.dimsRAS,
-            penValue: ctrl.model.draw.penValue,
-            fillOverwrites: ctrl.model.draw.isFillOverwriting,
-            currentUndoBitmap: currentUndo,
-          })
-          if (fillResult.success) {
-            ;(ctrl.model.drawingVolume as NVImage).img = fillResult.drawBitmap
+    const evt = e as PointerEvent
+    // Stroke finalize (below) can throw. Cleanup lives in the `finally` so an
+    // interrupted finalize cannot strand `isDragging`/pointer capture; the
+    // pointerUp emits run after, and are intentionally skipped on a throw.
+    try {
+      // Finalize drawing stroke on mouse-up
+      if (
+        ctrl.model.draw.isEnabled &&
+        ctrl._drawPenFillPts.length > 0 &&
+        ctrl.model.drawingVolume
+      ) {
+        const vol = ctrl.model.getVolumes()[0]
+        if (vol?.dimsRAS) {
+          if (ctrl.drawPenAutoClose && ctrl._drawPenFillPts.length > 2) {
+            drawLine({
+              ptA: ctrl._drawPenLocation,
+              ptB: ctrl._drawPenFillPts[0],
+              penValue: ctrl.model.draw.penValue,
+              drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
+              dims: vol.dimsRAS,
+              penSize: ctrl.model.draw.penSize,
+              penAxCorSag: ctrl._drawPenAxCorSag,
+              penOverwrites: ctrl.model.draw.isFillOverwriting,
+            })
           }
-        }
-        const penSize = ctrl.model.draw.penSize
-        for (const p of ctrl._drawPenFillPts) {
-          ctrl.markDrawDirty(p[0], p[1], p[2], penSize)
-        }
-        ctrl.refreshDrawing()
-      }
-      ctrl._drawPenLocation = [NaN, NaN, NaN]
-      ctrl._drawPenAxCorSag = -1
-      ctrl._drawPenFillPts = []
-      ctrl.emit('drawingChanged', { action: 'stroke' })
-    }
-    // Finalize resize on mouse-up
-    if (ctrl.model.annotation.isEnabled && ctrl._resizingControlPoint >= 0) {
-      const sel = ctrl.model._annotationSelection
-      if (sel) {
-        const ann = ctrl._resizingAnnotation
-        if (ann?.shape) {
-          const cfg = ctrl.model.annotation
-          const shapeWidth = ann.shape.width ?? cfg.style.strokeWidth
-          const polygons = Annotation.generateShape(
-            ann.shape.type,
-            ann.shape.start,
-            ann.shape.end,
-            shapeWidth,
-          )
-          if (polygons.length > 0) {
-            ann.polygons = polygons
-            sel.controlPoints = Annotation.getControlPoints(ann.shape)
-          }
-          if (Annotation.isMeasureTool(ann.shape.type)) {
-            const vol = ctrl.model.getVolumes()[0]
-            if (vol)
-              ann.stats =
-                Annotation.computeAnnotationStats(ann, vol) ?? undefined
-          }
-          ctrl.emit('annotationChanged', { action: 'resize' })
-        }
-      }
-      ctrl._resizingControlPoint = -1
-      ctrl._resizeOriginalShape = null
-      ctrl._resizingAnnotation = null
-      ctrl.model._annotationPreview = null
-      ctrl.drawScene()
-    }
-    // Finalize shape creation on mouse-up
-    if (ctrl.model.annotation.isEnabled && ctrl._annotationShapeStart) {
-      const evt2 = e as PointerEvent
-      const shapeHit = clientToBoundsPixel(ctrl, evt2.clientX, evt2.clientY)
-      if (shapeHit && ctrl.activeTileHit && !ctrl.activeTileHit.isRender) {
-        const mm = NVSliceLayout.screenSlicePick(
-          ctrl.view?.screenSlices ?? [],
-          ctrl.model,
-          shapeHit[0],
-          shapeHit[1],
-          ctrl.activeTileHit,
-        )
-        if (mm) {
-          let pt2d = Annotation.mmToSlice2D(
-            mm as [number, number, number],
-            ctrl._annotationSliceType,
-          )
-          const cfg = ctrl.model.annotation
-          if (Annotation.isCircleTool(cfg.tool)) {
-            pt2d = Annotation.constrainCircleEnd(
-              ctrl._annotationShapeStart,
-              pt2d,
-            )
-          }
-          const polygons = Annotation.generateShape(
-            cfg.tool,
-            ctrl._annotationShapeStart,
-            pt2d,
-            cfg.style.strokeWidth,
-          )
-          if (polygons.length > 0) {
-            ctrl._annotationUndoStack.push(ctrl.model.annotations)
-            const newAnn = Annotation.createAnnotation(
-              cfg.activeLabel,
-              cfg.activeGroup,
-              ctrl._annotationSliceType,
-              ctrl._annotationSlicePosition,
-              polygons,
-              cfg.style,
-              ctrl._annotationAnchorMM,
-            )
-            const shapeData: typeof newAnn.shape = {
-              type: cfg.tool,
-              start: ctrl._annotationShapeStart,
-              end: pt2d,
+          if (ctrl.drawPenFilled && ctrl._drawPenFillPts.length > 2) {
+            const currentUndo =
+              ctrl.drawUndoBitmaps[ctrl.currentDrawUndoBitmap] ?? null
+            const fillResult = drawPenFilled({
+              penFillPts: ctrl._drawPenFillPts,
+              penAxCorSag: ctrl._drawPenAxCorSag,
+              drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
+              dims: vol.dimsRAS,
+              penValue: ctrl.model.draw.penValue,
+              fillOverwrites: ctrl.model.draw.isFillOverwriting,
+              currentUndoBitmap: currentUndo,
+            })
+            if (fillResult.success) {
+              ;(ctrl.model.drawingVolume as NVImage).img = fillResult.drawBitmap
             }
-            if (
-              cfg.tool === 'line' ||
-              cfg.tool === 'arrow' ||
-              cfg.tool === 'measureLine'
-            ) {
-              shapeData.width = cfg.style.strokeWidth
+          }
+          const penSize = ctrl.model.draw.penSize
+          for (const p of ctrl._drawPenFillPts) {
+            ctrl.markDrawDirty(p[0], p[1], p[2], penSize)
+          }
+          ctrl.refreshDrawing()
+        }
+        ctrl._drawPenLocation = [NaN, NaN, NaN]
+        ctrl._drawPenAxCorSag = -1
+        ctrl._drawPenFillPts = []
+        ctrl.emit('drawingChanged', { action: 'stroke' })
+      }
+      // Finalize resize on mouse-up
+      if (ctrl.model.annotation.isEnabled && ctrl._resizingControlPoint >= 0) {
+        const sel = ctrl.model._annotationSelection
+        if (sel) {
+          const ann = ctrl._resizingAnnotation
+          if (ann?.shape) {
+            const cfg = ctrl.model.annotation
+            const shapeWidth = ann.shape.width ?? cfg.style.strokeWidth
+            const polygons = Annotation.generateShape(
+              ann.shape.type,
+              ann.shape.start,
+              ann.shape.end,
+              shapeWidth,
+            )
+            if (polygons.length > 0) {
+              ann.polygons = polygons
+              sel.controlPoints = Annotation.getControlPoints(ann.shape)
             }
-            newAnn.shape = shapeData
-            if (Annotation.isMeasureTool(cfg.tool)) {
+            if (Annotation.isMeasureTool(ann.shape.type)) {
               const vol = ctrl.model.getVolumes()[0]
               if (vol)
-                newAnn.stats =
-                  Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
+                ann.stats =
+                  Annotation.computeAnnotationStats(ann, vol) ?? undefined
             }
-            ctrl.model.annotations = Annotation.mergeAnnotations(
-              ctrl.model.annotations,
-              newAnn,
-            )
-            ctrl.emit('annotationAdded', { annotation: newAnn })
-            ctrl.emit('annotationChanged', { action: 'draw' })
+            ctrl.emit('annotationChanged', { action: 'resize' })
           }
         }
-      }
-      ctrl._annotationShapeStart = null
-      ctrl.model._annotationPreview = null
-      ctrl.drawScene()
-    }
-    // Finalize annotation stroke on mouse-up (freehand/eraser)
-    if (
-      ctrl.model.annotation.isEnabled &&
-      ctrl._annotationBrushPath.length > 0
-    ) {
-      if (ctrl._annotationBrushPath.length > 1) {
-        // Save undo snapshot before modifying annotations
-        ctrl._annotationUndoStack.push(ctrl.model.annotations)
-        const cfg = ctrl.model.annotation
-        if (cfg.isErasing) {
-          // Commit the erase preview (already computed during pointermove)
-          if (ctrl.model._annotationErasePreview) {
-            ctrl.model.annotations = ctrl.model._annotationErasePreview
-          }
-          ctrl.emit('annotationChanged', { action: 'erase' })
-        } else {
-          const usePolygonMode = cfg.brushRadius <= 1
-          let polygons: PolygonWithHoles[] = []
-          if (usePolygonMode) {
-            // Polygon mode: use frozen loop or auto-close path
-            const pts = ctrl._frozenLoopPoints ?? ctrl._annotationBrushPath
-            if (pts.length >= 3) {
-              polygons = [{ outer: pts, holes: [] }]
-            }
-          } else {
-            // Brush mode: inflate path
-            polygons = Annotation.clipperInflatePath(
-              ctrl._annotationBrushPath,
-              cfg.brushRadius,
-            )
-          }
-          if (polygons.length > 0) {
-            const newAnn = Annotation.createAnnotation(
-              cfg.activeLabel,
-              cfg.activeGroup,
-              ctrl._annotationSliceType,
-              ctrl._annotationSlicePosition,
-              polygons,
-              cfg.style,
-              ctrl._annotationAnchorMM,
-            )
-            ctrl.model.annotations = Annotation.mergeAnnotations(
-              ctrl.model.annotations,
-              newAnn,
-            )
-            ctrl.emit('annotationAdded', { annotation: newAnn })
-            ctrl.emit('annotationChanged', { action: 'draw' })
-          }
-        }
+        ctrl._resizingControlPoint = -1
+        ctrl._resizeOriginalShape = null
+        ctrl._resizingAnnotation = null
+        ctrl.model._annotationPreview = null
         ctrl.drawScene()
       }
-      ctrl._annotationBrushPath = []
-      ctrl._frozenLoopPoints = null
-      ctrl.model._annotationPreview = null
-      ctrl.model._annotationErasePreview = null
+      // Finalize shape creation on mouse-up
+      if (ctrl.model.annotation.isEnabled && ctrl._annotationShapeStart) {
+        const evt2 = e as PointerEvent
+        const shapeHit = clientToBoundsPixel(ctrl, evt2.clientX, evt2.clientY)
+        if (shapeHit && ctrl.activeTileHit && !ctrl.activeTileHit.isRender) {
+          const mm = NVSliceLayout.screenSlicePick(
+            ctrl.view?.screenSlices ?? [],
+            ctrl.model,
+            shapeHit[0],
+            shapeHit[1],
+            ctrl.activeTileHit,
+          )
+          if (mm) {
+            let pt2d = Annotation.mmToSlice2D(
+              mm as [number, number, number],
+              ctrl._annotationSliceType,
+            )
+            const cfg = ctrl.model.annotation
+            if (Annotation.isCircleTool(cfg.tool)) {
+              pt2d = Annotation.constrainCircleEnd(
+                ctrl._annotationShapeStart,
+                pt2d,
+              )
+            }
+            const polygons = Annotation.generateShape(
+              cfg.tool,
+              ctrl._annotationShapeStart,
+              pt2d,
+              cfg.style.strokeWidth,
+            )
+            if (polygons.length > 0) {
+              ctrl._annotationUndoStack.push(ctrl.model.annotations)
+              const newAnn = Annotation.createAnnotation(
+                cfg.activeLabel,
+                cfg.activeGroup,
+                ctrl._annotationSliceType,
+                ctrl._annotationSlicePosition,
+                polygons,
+                cfg.style,
+                ctrl._annotationAnchorMM,
+              )
+              const shapeData: typeof newAnn.shape = {
+                type: cfg.tool,
+                start: ctrl._annotationShapeStart,
+                end: pt2d,
+              }
+              if (
+                cfg.tool === 'line' ||
+                cfg.tool === 'arrow' ||
+                cfg.tool === 'measureLine'
+              ) {
+                shapeData.width = cfg.style.strokeWidth
+              }
+              newAnn.shape = shapeData
+              if (Annotation.isMeasureTool(cfg.tool)) {
+                const vol = ctrl.model.getVolumes()[0]
+                if (vol)
+                  newAnn.stats =
+                    Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
+              }
+              ctrl.model.annotations = Annotation.mergeAnnotations(
+                ctrl.model.annotations,
+                newAnn,
+              )
+              ctrl.emit('annotationAdded', { annotation: newAnn })
+              ctrl.emit('annotationChanged', { action: 'draw' })
+            }
+          }
+        }
+        ctrl._annotationShapeStart = null
+        ctrl.model._annotationPreview = null
+        ctrl.drawScene()
+      }
+      // Finalize annotation stroke on mouse-up (freehand/eraser)
+      if (
+        ctrl.model.annotation.isEnabled &&
+        ctrl._annotationBrushPath.length > 0
+      ) {
+        if (ctrl._annotationBrushPath.length > 1) {
+          // Save undo snapshot before modifying annotations
+          ctrl._annotationUndoStack.push(ctrl.model.annotations)
+          const cfg = ctrl.model.annotation
+          if (cfg.isErasing) {
+            // Commit the erase preview (already computed during pointermove)
+            if (ctrl.model._annotationErasePreview) {
+              ctrl.model.annotations = ctrl.model._annotationErasePreview
+            }
+            ctrl.emit('annotationChanged', { action: 'erase' })
+          } else {
+            const usePolygonMode = cfg.brushRadius <= 1
+            let polygons: PolygonWithHoles[] = []
+            if (usePolygonMode) {
+              // Polygon mode: use frozen loop or auto-close path
+              const pts = ctrl._frozenLoopPoints ?? ctrl._annotationBrushPath
+              if (pts.length >= 3) {
+                polygons = [{ outer: pts, holes: [] }]
+              }
+            } else {
+              // Brush mode: inflate path
+              polygons = Annotation.clipperInflatePath(
+                ctrl._annotationBrushPath,
+                cfg.brushRadius,
+              )
+            }
+            if (polygons.length > 0) {
+              const newAnn = Annotation.createAnnotation(
+                cfg.activeLabel,
+                cfg.activeGroup,
+                ctrl._annotationSliceType,
+                ctrl._annotationSlicePosition,
+                polygons,
+                cfg.style,
+                ctrl._annotationAnchorMM,
+              )
+              ctrl.model.annotations = Annotation.mergeAnnotations(
+                ctrl.model.annotations,
+                newAnn,
+              )
+              ctrl.emit('annotationAdded', { annotation: newAnn })
+              ctrl.emit('annotationChanged', { action: 'draw' })
+            }
+          }
+          ctrl.drawScene()
+        }
+      }
+      // Handle drag mode release for 2D slices
+      if (ctrl._activeDragMode !== DRAG_MODE.none) {
+        DragModes.handleDragRelease(ctrl)
+      }
+      // Commit a freehand vector stroke drawn on the 3D blocks (clears its state).
+      if (ctrl._annotation3DActive) finish3DAnnotationStroke(ctrl)
+    } finally {
+      // End a 3D exploded-block stroke + every other transient drag field.
+      resetDragState(ctrl)
+      try {
+        ctrl.canvas?.releasePointerCapture(evt.pointerId)
+      } catch {
+        /* already released */
+      }
     }
-    // Handle drag mode release for 2D slices
-    if (ctrl._activeDragMode !== DRAG_MODE.none) {
-      DragModes.handleDragRelease(ctrl)
-    }
-    // Commit a freehand vector stroke drawn on the 3D blocks (clears its state).
-    if (ctrl._annotation3DActive) finish3DAnnotationStroke(ctrl)
-    // End a 3D exploded-block stroke.
-    ctrl._draw3DActive = false
-    ctrl._draw3DNeedsUndo = false
-    ctrl._draw3DLastVoxel = null
-    ctrl._draw3DLastChunk = null
-    ctrl._draw3DSampleCache = null
-    ctrl.isDragging = false
-    ctrl.activeTileHit = null
-    const evt = e as PointerEvent
     // Emit high-level slice pointer event for extensions
     const sliceEvt = computeSlicePointerEvent(ctrl, evt)
     if (sliceEvt) {
@@ -1243,11 +1264,6 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       y: evt.offsetY,
       button: evt.button,
     })
-    try {
-      ctrl.canvas?.releasePointerCapture(evt.pointerId)
-    } catch {
-      /* already released */
-    }
   }
   // A pointer can be cancelled (touch interrupted, palm rejection, browser
   // gesture) WITHOUT a pointerup. Reset the drag state so an interrupted drag
@@ -1257,15 +1273,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
       DragModes.handleDragRelease(ctrl)
     }
-    ctrl._annotation3DActive = false
-    ctrl._annotation3DMMPath = []
-    ctrl._draw3DActive = false
-    ctrl._draw3DNeedsUndo = false
-    ctrl._draw3DLastVoxel = null
-    ctrl._draw3DLastChunk = null
-    ctrl._draw3DSampleCache = null
-    ctrl.isDragging = false
-    ctrl.activeTileHit = null
+    resetDragState(ctrl)
     try {
       ctrl.canvas?.releasePointerCapture((e as PointerEvent).pointerId)
     } catch {

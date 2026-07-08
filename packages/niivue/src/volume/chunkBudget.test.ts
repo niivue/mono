@@ -4,7 +4,6 @@ import {
   chunkIndicesForResidentBudget,
   estimateChunkedBytes,
   formatBytes,
-  maxChunksForBudget,
   residentBytesForChunkDesc,
 } from './chunkBudget'
 import type { ChunkPlan, Vec3i, VolumeChunkDesc } from './chunking'
@@ -95,35 +94,6 @@ describe('formatBytes', () => {
   })
 })
 
-describe('maxChunksForBudget', () => {
-  test('returns the full chunk count when the whole set fits', () => {
-    const plan = chunkVolume([512, 512, 256], 256) // multi-chunk plan
-    const total = estimateChunkedBytes(plan, 2).totalBytes
-    expect(maxChunksForBudget(plan, 2, total)).toBe(plan.chunks.length)
-    expect(maxChunksForBudget(plan, 2, total * 2)).toBe(plan.chunks.length)
-  })
-
-  test('caps to the chunks that fit when the set exceeds the budget', () => {
-    const plan = chunkVolume([512, 512, 256], 256)
-    const total = estimateChunkedBytes(plan, 2).totalBytes
-    const avg = total / plan.chunks.length
-    // Budget for ~3 chunks should cap at 3 (and below the full count).
-    const cap = maxChunksForBudget(plan, 2, avg * 3)
-    expect(cap).toBe(3)
-    expect(cap).toBeLessThan(plan.chunks.length)
-  })
-
-  test('always allows at least one chunk under a tiny budget', () => {
-    const plan = chunkVolume([512, 512, 256], 256)
-    expect(maxChunksForBudget(plan, 2, 1)).toBe(1)
-    expect(maxChunksForBudget(plan, 2, 0)).toBe(1)
-  })
-
-  test('returns 0 for an empty plan', () => {
-    expect(maxChunksForBudget({ chunks: [] } as never, 2, 1000)).toBe(0)
-  })
-})
-
 describe('resident chunk budget helpers', () => {
   test('computes persistent RGBA plus gradient bytes from texture dims', () => {
     expect(residentBytesForChunkDesc(testChunk([10, 20, 30]))).toBe(
@@ -154,5 +124,47 @@ describe('resident chunk budget helpers', () => {
     const plan = testPlan([testChunk([10, 10, 10])])
 
     expect(chunkIndicesForResidentBudget(plan, [5, 6], 1000)).toEqual([])
+  })
+
+  test('returns an empty working set for an empty order', () => {
+    const plan = testPlan([testChunk([4, 4, 4])])
+    expect(chunkIndicesForResidentBudget(plan, [], 1_000_000)).toEqual([])
+  })
+
+  test('admits the whole ordered set when it fits the budget', () => {
+    const plan = testPlan([
+      testChunk([4, 4, 4]),
+      testChunk([4, 4, 4]),
+      testChunk([4, 4, 4]),
+    ])
+    const total = 3 * 4 * 4 * 4 * 8
+    expect(chunkIndicesForResidentBudget(plan, [0, 1, 2], total)).toEqual([
+      0, 1, 2,
+    ])
+    expect(chunkIndicesForResidentBudget(plan, [0, 1, 2], total * 2)).toEqual([
+      0, 1, 2,
+    ])
+  })
+
+  test('never exceeds the budget the residency manager accounts against', () => {
+    // The cap and ChunkResidencyManager.bytesOf must agree, or a working set can
+    // ask the manager to keep more than it may hold — its same-frame guard then
+    // refuses to evict. Uneven bricks are exactly where a plan-average cap failed.
+    const chunks = [
+      testChunk([10, 10, 10]), // 8000 B
+      testChunk([9, 9, 9]), //    5832 B
+      testChunk([2, 2, 2]), //      64 B
+      testChunk([2, 2, 2]), //      64 B
+    ]
+    const plan = testPlan(chunks)
+    const budget = 8200
+    const picked = chunkIndicesForResidentBudget(plan, [0, 1, 2, 3], budget)
+    const bytes = picked.reduce(
+      (sum, i) => sum + residentBytesForChunkDesc(chunks[i]),
+      0,
+    )
+    expect(bytes).toBeLessThanOrEqual(budget)
+    // Centre-first: the head of the order is never traded away for the tail.
+    expect(picked[0]).toBe(0)
   })
 })

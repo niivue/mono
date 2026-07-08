@@ -88,11 +88,27 @@ export function residentBytesForChunkDesc(chunk: VolumeChunkDesc): number {
 }
 
 /**
- * Select the ordered working-set prefix/subset whose persistent resident bytes
- * fit `budgetBytes`. This uses actual chunk texture sizes instead of a plan
- * average so uneven edge bricks or multi-LOD bricks cannot over-request chunks
- * the same-frame eviction guard must keep. Always returns the first valid chunk
- * under a tiny budget so streaming can still make progress.
+ * Select the chunks from `orderedChunkIndices` (view-central first) whose
+ * persistent resident bytes fit `budgetBytes`.
+ *
+ * Costs come from each chunk's ACTUAL texture size, not the plan average. The
+ * average hides variance: with uneven edge bricks or multi-LOD bricks the
+ * view-central head of the order can each be larger than average, so an
+ * average-based cap can hand the residency manager a working set that exceeds
+ * the budget — and its same-frame guard refuses to evict chunks the current
+ * frame touched. `residentBytesForChunkDesc` matches each backend's `bytesOf`
+ * hook exactly, so this cap and the manager's eviction accounting agree.
+ *
+ * This is a BEST-FIT scan, not a strict prefix: a chunk that does not fit is
+ * skipped and a later, smaller one may still be admitted. Because the input is
+ * ordered centre-outward, the budget only runs low near the tail, so the skipped
+ * chunks are always among the farthest considered — the centre is never traded
+ * away for the periphery. The trade-off is that a chunk sitting right at the
+ * budget edge can flip in and out as the view moves; eviction is LRU with a
+ * same-frame guard, so that churn is bounded.
+ *
+ * Always returns the first valid chunk even under a tiny budget, so streaming
+ * can make progress rather than stalling on an unaffordable brick.
  */
 export function chunkIndicesForResidentBudget(
   plan: ChunkPlan,
@@ -112,28 +128,6 @@ export function chunkIndicesForResidentBudget(
     if (bytes >= budget) break
   }
   return selected
-}
-
-/**
- * Largest number of chunks whose combined GPU footprint stays within
- * `budgetBytes`, using the plan's average per-chunk cost. Used to cap the
- * per-frame working set so a level whose full chunk set exceeds the budget
- * streams only its most view-central chunks (the rest are covered by the coarse
- * floor) instead of admitting the whole set and exhausting GPU memory. Always
- * at least 1 so a single chunk can stream even under a tiny budget. Returns the
- * plan's chunk count when the whole set fits (no cap needed).
- */
-export function maxChunksForBudget(
-  plan: ChunkPlan,
-  sourceBytesPerVoxel: number,
-  budgetBytes: number,
-): number {
-  const count = plan.chunks.length
-  if (count === 0) return 0
-  const total = estimateChunkedBytes(plan, sourceBytesPerVoxel).totalBytes
-  if (total <= budgetBytes) return count
-  const avgPerChunk = total / count
-  return Math.max(1, Math.min(count, Math.floor(budgetBytes / avgPerChunk)))
 }
 
 export function formatBytes(n: number): string {

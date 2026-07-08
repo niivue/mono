@@ -47,15 +47,15 @@ const isLiveSerial = (serial) => serial === sourceSerial
 // (re)load; the slider's value is applied once in-flight/pending reach zero.
 let appliedExplodeScale = 1
 
-// GPU residency budget for the resident chunk set (scalar + RGBA + gradient
-// textures). niivue caps the per-frame working set to the chunks that fit this
-// budget (maxChunksForBudget), so resident VRAM is hard-bounded to roughly this
-// value. For a whole-volume 3D render the view-centred working set never moves
-// off the centre as you rotate, so a too-small budget leaves you stuck on one
-// section of the volume. 8 GB lets the bundled scivis levels that fit a desktop
-// GPU resolve fully (e.g. all of pawpawsaurus L0 ~8 GB). Levels far larger than
-// this (e.g. pig_heart L0 ~119 GB) still cannot render whole — they are
-// region-of-interest only.
+// GPU residency budget for the resident chunk set (RGBA + gradient textures;
+// scalar upload textures are transient). niivue caps the per-frame working set
+// to the chunks that fit this budget, so resident VRAM is hard-bounded to
+// roughly this value. For a whole-volume 3D render the view-centred working set
+// never moves off the centre as you rotate, so a too-small budget leaves you
+// stuck on one section of the volume. 8 GB lets the bundled scivis levels that
+// fit a desktop GPU resolve fully (e.g. all of pawpawsaurus L0 ~8 GB). Levels
+// far larger than this (e.g. pig_heart L0 ~119 GB) still cannot render whole —
+// they are region-of-interest only.
 const DEFAULT_RESIDENCY_BYTES = 8192 * 1024 * 1024
 const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
 

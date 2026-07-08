@@ -22,9 +22,9 @@ import {
 } from '@/volume/ChunkVisibility'
 import {
   bytesPerSourceVoxel,
+  chunkIndicesForResidentBudget,
   estimateChunkedBytes,
   formatBytes,
-  maxChunksForBudget,
 } from '@/volume/chunkBudget'
 import {
   type ChunkPlan,
@@ -49,11 +49,12 @@ import * as wgpu from './wgpu'
 
 /**
  * Default GPU memory budget, in bytes, for a chunked volume's resident chunk
- * set (scalar + RGBA + gradient across resident chunks). Picked to fit
- * comfortably below a typical 4 GiB discrete-GPU budget while leaving headroom
- * for overlays, fonts, and other resident textures. Overridable per instance
- * via the `maxChunkResidencyBytes` option — the ChunkResidencyManager evicts
- * least-recently-visible chunks to keep the resident set within budget.
+ * set (RGBA + gradient across resident chunks; scalar upload textures are
+ * transient). Picked to fit comfortably below a typical 4 GiB discrete-GPU
+ * budget while leaving headroom for overlays, fonts, and other resident
+ * textures. Overridable per instance via the `maxChunkResidencyBytes` option —
+ * the ChunkResidencyManager evicts least-recently-visible chunks to keep the
+ * resident set within budget.
  */
 const DEFAULT_CHUNK_RESIDENCY_BYTES = 1_500_000_000
 
@@ -1149,12 +1150,12 @@ export class VolumeRenderer extends NVRenderer {
     // set and exhausts GPU memory (lost device). Streaming only the most
     // view-central chunks that fit keeps memory bounded — the coarse floor
     // covers the rest.
-    const cap = maxChunksForBudget(
+    const capped = chunkIndicesForResidentBudget(
       entry.plan,
-      bytesPerSourceVoxel(entry.volume.hdr.datatypeCode),
+      ordered,
       entry.manager.budgetBytes,
     )
-    for (const ci of ordered.slice(0, cap)) {
+    for (const ci of capped) {
       entry.manager.requestUpload(ci)
       for (const m of mirrors) m.requestUpload(ci)
     }
@@ -1221,12 +1222,12 @@ export class VolumeRenderer extends NVRenderer {
     // Stream the centre of the view first, then spiral outward, capped to what
     // the residency budget can hold (see _requestChunksInFrustum).
     const ordered = orderByViewCenter(entry.plan, visible, mvp, matRAS, offset)
-    const cap = maxChunksForBudget(
+    const capped = chunkIndicesForResidentBudget(
       entry.plan,
-      bytesPerSourceVoxel(entry.volume.hdr.datatypeCode),
+      ordered,
       entry.manager.budgetBytes,
     )
-    for (const ci of ordered.slice(0, cap)) {
+    for (const ci of capped) {
       entry.manager.requestUpload(ci)
       for (const m of mirrors) m.requestUpload(ci)
     }

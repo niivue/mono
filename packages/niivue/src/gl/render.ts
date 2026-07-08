@@ -24,9 +24,9 @@ import {
 } from '@/volume/ChunkVisibility'
 import {
   bytesPerSourceVoxel,
+  chunkIndicesForResidentBudget,
   estimateChunkedBytes,
   formatBytes,
-  maxChunksForBudget,
 } from '@/volume/chunkBudget'
 import {
   type ChunkPlan,
@@ -980,13 +980,12 @@ export class VolumeRenderer extends NVRenderer {
     // set and exhausts GPU memory (white context loss). Streaming only the most
     // view-central chunks that fit keeps memory bounded — the coarse floor
     // covers the rest.
-    const budget = bytesPerSourceVoxel(entry.volume.hdr.datatypeCode)
-    const cap = maxChunksForBudget(
+    const capped = chunkIndicesForResidentBudget(
       entry.plan,
-      budget,
+      ordered,
       entry.manager.budgetBytes,
     )
-    for (const ci of ordered.slice(0, cap)) {
+    for (const ci of capped) {
       entry.manager.requestUpload(ci)
       for (const m of mirrors) m.requestUpload(ci)
     }
@@ -1053,12 +1052,12 @@ export class VolumeRenderer extends NVRenderer {
     // Stream the centre of the view first, then spiral outward, capped to what
     // the residency budget can hold (see _requestChunksInFrustum).
     const ordered = orderByViewCenter(entry.plan, visible, mvp, matRAS, offset)
-    const cap = maxChunksForBudget(
+    const capped = chunkIndicesForResidentBudget(
       entry.plan,
-      bytesPerSourceVoxel(entry.volume.hdr.datatypeCode),
+      ordered,
       entry.manager.budgetBytes,
     )
-    for (const ci of ordered.slice(0, cap)) {
+    for (const ci of capped) {
       entry.manager.requestUpload(ci)
       for (const m of mirrors) m.requestUpload(ci)
     }

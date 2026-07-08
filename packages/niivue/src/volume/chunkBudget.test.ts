@@ -1,11 +1,37 @@
 import { describe, expect, test } from 'bun:test'
 import {
   bytesPerSourceVoxel,
+  chunkIndicesForResidentBudget,
   estimateChunkedBytes,
   formatBytes,
   maxChunksForBudget,
+  residentBytesForChunkDesc,
 } from './chunkBudget'
+import type { ChunkPlan, Vec3i, VolumeChunkDesc } from './chunking'
 import { chunkVolume } from './chunking'
+
+function testChunk(texDims: Vec3i): VolumeChunkDesc {
+  return {
+    voxelOrigin: [0, 0, 0],
+    voxelDims: texDims,
+    haloLow: [0, 0, 0],
+    haloHigh: [0, 0, 0],
+    texDims,
+    texOrigin: [0, 0, 0],
+    gridIndex: [0, 0, 0],
+  }
+}
+
+function testPlan(chunks: VolumeChunkDesc[]): ChunkPlan {
+  return {
+    gridDims: [chunks.length, 1, 1],
+    stride: [1, 1, 1],
+    chunks,
+    volumeDims: [chunks.length, 1, 1],
+    deviceLimit: 100,
+    haloSize: [0, 0, 0],
+  }
+}
 
 describe('bytesPerSourceVoxel', () => {
   test('returns correct bpv for known NIfTI datatypes', () => {
@@ -95,5 +121,38 @@ describe('maxChunksForBudget', () => {
 
   test('returns 0 for an empty plan', () => {
     expect(maxChunksForBudget({ chunks: [] } as never, 2, 1000)).toBe(0)
+  })
+})
+
+describe('resident chunk budget helpers', () => {
+  test('computes persistent RGBA plus gradient bytes from texture dims', () => {
+    expect(residentBytesForChunkDesc(testChunk([10, 20, 30]))).toBe(
+      10 * 20 * 30 * 8,
+    )
+  })
+
+  test('selects ordered chunks by actual resident bytes', () => {
+    const plan = testPlan([
+      testChunk([10, 10, 10]),
+      testChunk([8, 8, 8]),
+      testChunk([1, 1, 1]),
+      testChunk([1, 1, 1]),
+    ])
+
+    expect(chunkIndicesForResidentBudget(plan, [0, 1, 2, 3], 8016)).toEqual([
+      0, 2, 3,
+    ])
+  })
+
+  test('always returns the first valid chunk under a tiny budget', () => {
+    const plan = testPlan([testChunk([10, 10, 10]), testChunk([1, 1, 1])])
+
+    expect(chunkIndicesForResidentBudget(plan, [99, 1, 0], 1)).toEqual([1])
+  })
+
+  test('returns an empty working set when no ordered indices are valid', () => {
+    const plan = testPlan([testChunk([10, 10, 10])])
+
+    expect(chunkIndicesForResidentBudget(plan, [5, 6], 1000)).toEqual([])
   })
 })

@@ -55,8 +55,10 @@ export interface SaveHTMLOptions {
 async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
   const stream = new CompressionStream('gzip')
   const writer = stream.writable.getWriter()
-  writer.write(data)
-  writer.close()
+  const chunk = new Uint8Array(data.byteLength)
+  chunk.set(data)
+  await writer.write(chunk)
+  await writer.close()
   return new Uint8Array(await new Response(stream.readable).arrayBuffer())
 }
 

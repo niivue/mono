@@ -86,13 +86,43 @@ function firstModelBody(body: {
   return body as unknown as Record<string, unknown>
 }
 
-function listenAnywhere(server: http.Server): Promise<number> {
-  return new Promise<number>((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
-      const addr = server.address() as AddressInfo
-      resolve(addr.port)
-    })
+interface ListenError extends Error {
+  code?: string
+}
+
+function listenOnce(server: http.Server, port: number): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = (): void => {
+      server.off('error', onError)
+      server.off('listening', onListening)
+    }
+    const onError = (error: Error): void => {
+      cleanup()
+      reject(error)
+    }
+    const onListening = (): void => {
+      cleanup()
+      resolve()
+    }
+    server.once('error', onError)
+    server.once('listening', onListening)
+    server.listen(port, '127.0.0.1')
   })
+}
+
+async function listenAnywhere(server: http.Server): Promise<number> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const port = 40_000 + Math.floor(Math.random() * 20_000)
+    try {
+      await listenOnce(server, port)
+      const addr = server.address() as AddressInfo
+      return addr.port
+    } catch (error) {
+      if ((error as ListenError).code === 'EADDRINUSE') continue
+      throw error
+    }
+  }
+  throw new Error('Could not find an available local test port')
 }
 
 function closeServer(server: http.Server): Promise<void> {

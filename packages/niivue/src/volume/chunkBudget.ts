@@ -15,7 +15,7 @@
  * proceed or fail fast with a clear error.
  */
 
-import type { ChunkPlan } from './chunking'
+import type { ChunkPlan, VolumeChunkDesc } from './chunking'
 
 export interface ChunkBudget {
   /** Bytes for the scalar (source-format) textures, across all chunks. */
@@ -79,6 +79,39 @@ export function estimateChunkedBytes(
     totalBytes: scalarBytes + rgbaBytes + gradientBytes,
     chunkCount: plan.chunks.length,
   }
+}
+
+/** Persistent GPU bytes for one resident chunk after the orient pass. */
+export function residentBytesForChunkDesc(chunk: VolumeChunkDesc): number {
+  const [tx, ty, tz] = chunk.texDims
+  return tx * ty * tz * 8
+}
+
+/**
+ * Select the ordered working-set prefix/subset whose persistent resident bytes
+ * fit `budgetBytes`. This uses actual chunk texture sizes instead of a plan
+ * average so uneven edge bricks or multi-LOD bricks cannot over-request chunks
+ * the same-frame eviction guard must keep. Always returns the first valid chunk
+ * under a tiny budget so streaming can still make progress.
+ */
+export function chunkIndicesForResidentBudget(
+  plan: ChunkPlan,
+  orderedChunkIndices: readonly number[],
+  budgetBytes: number,
+): number[] {
+  const selected: number[] = []
+  const budget = Math.max(0, budgetBytes)
+  let bytes = 0
+  for (const chunkIndex of orderedChunkIndices) {
+    const chunk = plan.chunks[chunkIndex]
+    if (!chunk) continue
+    const nextBytes = residentBytesForChunkDesc(chunk)
+    if (selected.length > 0 && bytes + nextBytes > budget) continue
+    selected.push(chunkIndex)
+    bytes += nextBytes
+    if (bytes >= budget) break
+  }
+  return selected
 }
 
 /**

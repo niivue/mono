@@ -305,9 +305,19 @@ export interface SerializeOptions {
    * fetchable URL is serialized WITHOUT its bytes and the loader refetches from
    * the URL — a small, "linked" document. Volumes with no linkable URL
    * (drag-dropped files, `blob:`/`data:` URLs) still embed their data so the
-   * document always round-trips. Default false (self-contained). NOTE: meshes
-   * are always embedded (their URL-restore path does not yet reapply overlay
-   * layers / tract options).
+   * document always round-trips. Default false (self-contained).
+   *
+   * INVARIANT — a linked volume assumes the URL's content is immutable and still
+   * matches the in-memory voxels. Linking keys off "has a fetchable URL," NOT off
+   * "the bytes are unchanged," so if the volume was mutated in place after load
+   * (`applyVolumeTransform`, `loadImgV1`, ...) OR the server content at the URL
+   * changed, a linked save silently drops the edited/original bytes and reload
+   * fetches whatever the URL now serves. Do not link a volume you have edited in
+   * place — embed it (the default) instead. (Display state and the drawing bitmap
+   * are serialized separately and survive; only the raw voxels can diverge.)
+   *
+   * NOTE: meshes are always embedded (their URL-restore path does not yet reapply
+   * overlay layers / tract options).
    */
   linkData?: boolean
 }

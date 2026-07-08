@@ -2,6 +2,12 @@
 // (self-contained) or link by URL (the loader refetches on open). See
 // NVDocument.serialize (`SerializeOptions.linkData`) and reconstructVolume (the
 // `else if (v.url)` refetch branch).
+//
+// INVARIANT: linking assumes the URL's content is immutable and matches the
+// in-memory voxels — the decision keys off "has a fetchable URL," not off "the
+// bytes are unchanged." A volume edited in place after load must NOT be linked
+// (reload would refetch the original). See `SerializeOptions.linkData` for the
+// full contract.
 
 /**
  * A URL the loader can refetch on open, so the volume's bytes need not be

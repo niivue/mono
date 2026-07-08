@@ -329,6 +329,10 @@ export default class NiiVueGPU extends EventTarget {
   // undo snapshot is taken when tissue is first hit — not skipped when the stroke
   // starts on a ray-miss (press off-block, then drag on).
   _draw3DNeedsUndo = false
+  // RAS-ordered sample array of the picked volume, cached for the duration of a
+  // 3D draw/vector stroke so pickExplodedDraw doesn't re-reorder the whole volume
+  // on every pointermove. Keyed by volume identity; cleared on pointerup/cancel.
+  _draw3DSampleCache: { vol: NVImage; data: Float32Array } | null = null
   _drawLut: LUT | null = null
   _drawingDirty = false
   // Inclusive voxel AABB of pen strokes since the last drawing flush. When set

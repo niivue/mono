@@ -294,6 +294,18 @@ interface ExplodedDrawPick {
   keep: (x: number, y: number, z: number) => boolean
 }
 
+// getImageDataRAS reorders the whole volume when its native storage isn't already
+// a Float32Array in RAS order. During a 3D draw/vector stroke it would run on
+// every pointermove, so cache the result for the stroke (keyed by volume
+// identity); the cache is cleared on pointerup/pointercancel.
+function strokeSample(ctrl: NiiVueGPU, vol: NVImage): Float32Array | null {
+  const cache = ctrl._draw3DSampleCache
+  if (cache && cache.vol === vol) return cache.data
+  const data = getImageDataRAS(vol)
+  ctrl._draw3DSampleCache = data ? { vol, data } : null
+  return data
+}
+
 // Shared pick for 3D drawing on exploded blocks: builds the render tile's MVP
 // (as depthPick does), unprojects the cursor to a world ray in vox2mm mm-space,
 // CPU-ray-casts the exploded chunk AABBs restricted to the clip-visible set, and
@@ -352,7 +364,7 @@ function pickExplodedDraw(
   // March the volume's data so the paint lands on the visible tissue surface
   // (first voxel above the transparency threshold), not the block's empty
   // bounding-box face, and skips the clipped-away portion of a straddling block.
-  const data = getImageDataRAS(vol)
+  const data = strokeSample(ctrl, vol)
   const dimX = (vol.dimsRAS as number[])[1]
   const dimXY = dimX * (vol.dimsRAS as number[])[2]
   const sample = data
@@ -463,6 +475,8 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
   if (!pick) return false
   const { voxel, drawingVol, keep } = pick
   if (!drawingVol) return false
+  const prevUndoBitmaps = ctrl.drawUndoBitmaps
+  const prevUndoIndex = ctrl.currentDrawUndoBitmap
   snapshotDrawUndo(ctrl, drawingVol)
   const dims = vol.dimsRAS as number[]
   // Cap the fill so a click on a huge connected structure can't run unbounded.
@@ -482,7 +496,13 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
   if (result.hitCap) {
     log.warn(`3D flood fill stopped at the ${maxVoxels}-voxel cap`)
   }
-  if (result.filled === 0) return true
+  if (result.filled === 0) {
+    // Nothing changed — drop the no-op undo snapshot (addUndoBitmap returns fresh
+    // arrays, so restoring the prior pointers discards it).
+    ctrl.drawUndoBitmaps = prevUndoBitmaps
+    ctrl.currentDrawUndoBitmap = prevUndoIndex
+    return true
+  }
   // Mark the fill's AABB corners so the incremental flush covers the region.
   ctrl.markDrawDirty(result.min[0], result.min[1], result.min[2], 1)
   ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
@@ -507,7 +527,7 @@ function magicWandFill(
 ): boolean {
   const drawingVol = ctrl.model.drawingVolume as NVImage | null
   if (!drawingVol) return false
-  const data = getImageDataRAS(vol)
+  const data = strokeSample(ctrl, vol)
   if (!data) return false
   const dims = vol.dimsRAS as number[]
   const dimX = dims[1]
@@ -522,6 +542,8 @@ function magicWandFill(
   const winHi = (vol.calMax - sclInter) / sclSlope
   const tolerance =
     ctrl.model.draw.clickToSegmentTolerance * Math.abs(winHi - winLo)
+  const prevUndoBitmaps = ctrl.drawUndoBitmaps
+  const prevUndoIndex = ctrl.currentDrawUndoBitmap
   snapshotDrawUndo(ctrl, drawingVol)
   const maxVoxels = Math.min(dims[1] * dims[2] * dims[3], 4_000_000)
   const result = magicWand3D({
@@ -541,7 +563,12 @@ function magicWandFill(
   if (result.hitCap) {
     log.warn(`Magic wand stopped at the ${maxVoxels}-voxel cap`)
   }
-  if (result.filled === 0) return true
+  if (result.filled === 0) {
+    // Nothing changed — drop the no-op undo snapshot.
+    ctrl.drawUndoBitmaps = prevUndoBitmaps
+    ctrl.currentDrawUndoBitmap = prevUndoIndex
+    return true
+  }
   ctrl.markDrawDirty(result.min[0], result.min[1], result.min[2], 1)
   ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
   ctrl.refreshDrawing()
@@ -1199,6 +1226,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     ctrl._draw3DNeedsUndo = false
     ctrl._draw3DLastVoxel = null
     ctrl._draw3DLastChunk = null
+    ctrl._draw3DSampleCache = null
     ctrl.isDragging = false
     ctrl.activeTileHit = null
     const evt = e as PointerEvent
@@ -1235,6 +1263,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     ctrl._draw3DNeedsUndo = false
     ctrl._draw3DLastVoxel = null
     ctrl._draw3DLastChunk = null
+    ctrl._draw3DSampleCache = null
     ctrl.isDragging = false
     ctrl.activeTileHit = null
     try {

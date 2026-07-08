@@ -13,8 +13,8 @@ session but exposed/relevant · **[Plausible]** logic holds, not runtime-reprodu
 | Area | State | Gate to "rock solid" |
 |---|---|---|
 | NVD sparse settings | **Resolved** (#1, #2 done in `9d6bcb48`) | — |
-| NVD linked data | Solid, one caveat | Document/guard the "URL == memory" invariant (#3) |
-| Drawing-on-blocks core | Solid | Worth fixing before ship: per-move reorder (#4); minor: #5, #6 |
+| NVD linked data | **Solid** (#3 invariant documented, `f1b27530`) | — |
+| Drawing-on-blocks core | **Solid** (#4, #5 fixed `f1b27530`) | Optional: #6, #9 |
 | Demos (vox.draw.explode etc.) | **Solid** | Optional insurance only (#9) |
 | e2e harness | Works locally; **not CI-wired** | Add browser-install + `git lfs pull` before any CI use (#7); fix timeout (#8) |
 
@@ -98,7 +98,17 @@ policy)` + `Object.assign(model.annotation, doc.annotationConfig)` on load (matc
 the others), **or** explicitly document annotation as non-sparse and reject/warn on
 policy entries naming it. Either way, remove the silent no-op.
 
-## 3. [Confirmed] `linkData` assumes the URL's bytes still match memory
+## 3. [RESOLVED — `f1b27530`] `linkData` assumes the URL's bytes still match memory
+
+**Resolution:** documented the invariant on `SerializeOptions.linkData` (+ the
+`documentLinkData` module): a linked volume assumes the URL content is immutable
+and matches memory; a volume edited in place must not be linked. (A dirty-flag
+guard was considered but deferred — no existing in-place-edit marker, and a
+partial one would give false safety; the doc covers all cases.) Original below.
+
+---
+
+
 
 **`NVDocument.ts:365` + reconstruct `:728`.** Linking drops voxel bytes for *any*
 URL-backed volume. If the in-memory volume was mutated in place after load
@@ -112,7 +122,16 @@ assume the URL content is immutable and matches memory"), and ideally warn when
 linking a volume that has had a transform applied (or gate on a "pristine since
 load" flag). Low likelihood in the current demos, real for app integrators.
 
-## 4. [Confirmed] Per-pointermove full-volume reorder during 3D draw/vector
+## 4. [RESOLVED — `f1b27530`] Per-pointermove full-volume reorder during 3D draw/vector
+
+**Resolution:** `strokeSample` caches the RAS sample array for the stroke (keyed
+by volume identity; `_draw3DSampleCache`, cleared on pointerup/pointercancel);
+`pickExplodedDraw`/`magicWandFill` use it, so a drag no longer re-reorders the
+volume per pointermove. Original below.
+
+---
+
+
 
 **`interactions.ts:355` (`pickExplodedDraw` → `getImageDataRAS`), reached per
 `pointermove` from `draw3DOnExplodedBlock`/`pickBlockMM`.** For any volume whose
@@ -127,7 +146,15 @@ voxels re-copied per event → drag jank + GC pressure exactly where it hurts mo
 pointerup/cancel. The 2D wand click path (`:510`) is fine (one call per click).
 Worth doing before ship given the branch's purpose.
 
-## 5. [Confirmed] Fill/wand push a no-op undo step
+## 5. [RESOLVED — `f1b27530`] Fill/wand push a no-op undo step
+
+**Resolution:** fill and wand now save the undo pointers before snapshotting and
+restore them when `result.filled === 0`, discarding the no-op step; a real fill
+keeps its snapshot. Original below.
+
+---
+
+
 
 **`interactions.ts:466`/`485` (fill) and `:525`/`544` (wand).** Both call
 `snapshotDrawUndo` *before* the `if (result.filled === 0) return true` early-out,
@@ -218,12 +245,14 @@ flake not a hard fail. **Fix:** `test.setTimeout(60_000)` on the sparse test, or
 - **Gate hygiene:** e2e specs excluded from the Bun unit runner and `tsc`; biome
   lints them and they pass; artifacts gitignored.
 
-## Suggested order before pushing
-1. ~~Decide #1 (load semantics)~~ — **DONE** (`9d6bcb48`): fill policy, defaults by default.
-2. ~~Fix #2 (annotationConfig)~~ — **DONE** (`9d6bcb48`). #3 (linkData invariant doc/warn) still open.
-3. Fix #4 (cache RAS array per stroke) and #5 (defer fill/wand snapshot); decide #6.
-4. Wire #7 + #8 whenever the e2e suite goes into CI (#8 partly done: sparse test now 60 s).
-5. #9 items are optional polish.
+## Status
+- ~~#1 load semantics~~ — **DONE** `9d6bcb48` (fill policy, defaults by default).
+- ~~#2 annotationConfig~~ — **DONE** `9d6bcb48`.
+- ~~#3 linkData invariant~~ — **DONE** `f1b27530` (documented).
+- ~~#4 per-move reorder~~ — **DONE** `f1b27530` (per-stroke sample cache).
+- ~~#5 phantom undo~~ — **DONE** `f1b27530`.
 
-**Remaining before "rock solid":** #3 (linkData invariant), #4 (per-move reorder),
-#5 (phantom undo); #6/#9 are minor; #7 only matters when e2e enters CI.
+**All Confirmed findings resolved.** Remaining are optional/low: #6 (pointercancel
+drops an in-progress 3D *vector* stroke — mouse-rare), #8 (e2e sparse-test timeout
+— partly done, now 60 s), #9 polish, and #7 (wire browser-install + `git lfs pull`
+only when the e2e suite enters CI). None block pushing.

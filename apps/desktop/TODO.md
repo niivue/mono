@@ -7,6 +7,49 @@ in the git history.
 Priority: **[P1]** soon / high value · **[P2]** worthwhile · **[P3]** nice-to-have.
 Size: _(S)_ contained · _(M)_ medium · _(L)_ large / own session.
 
+## Roadmap 2026-07-07 — see `docs/roadmap.md`
+
+Three planning passes (solidify / provenance / per-device+iPad). Full narrative +
+sequencing in `docs/roadmap.md`; provenance detail in `docs/provenance.md`. The
+**new, high-leverage** items surfaced (existing items are elsewhere in this file):
+
+- [ ] **[P1] (M) Layer-role → NiiVue volume-index map.** `layers.map((l,i)=>
+  setVolume(i,…))` (`NiivueStage.tsx:416,459,1067`) couples array position to
+  NiiVue's volume index (setVolume/setColormapLabel/clip/atlas) **and** the
+  export/import role→position assignment. A reorder or mid-op mutation silently
+  renders the wrong volume. Introduce `LayerRole {Base,Overlay,Atlas}` + an
+  id→volumeIndex table as the single source of truth. Top architectural fragility.
+- [ ] **[P1] (M) Replace the single 700px breakpoint with a 3-tier `ResizeObserver`
+  model** (`compact`/`medium`/`expanded`), tier from the app-root element width
+  (not `matchMedia` read once at mount — also the cold-boot race + Split-View/
+  rotation desync root cause), plus an independent `inputClass` from
+  `(pointer: coarse)`. Makes iPad usable (portrait = phone-grown, landscape =
+  desktop) and touch-correct at any width. See `docs/roadmap.md` §3.
+- [ ] **[P1] (M) Resolve the OSD-vs-drawer duplication.** Two volume browsers
+  (`VolumeFilterPanel` list + `DatasetDesktop` OSD grid) compete for the middle;
+  phone just deletes the OSD. Make the drawer the primary index and the OSD an
+  on-demand gallery/lightbox toggle, not a permanent half-workspace.
+- [ ] **[P2] (M) Provenance Phase 1a — manifest v2 `generatedBy`.** Smallest first
+  increment: emit per-volume BIDS `generatedBy` from the existing
+  `VolumeDerivation`, bump `nvbundle`→`"2"`, add JS types. Then the PROV-JSON block
+  and SHA-256 verify-on-load (lazy+cached). Full phased plan in `docs/provenance.md`
+  / `docs/roadmap.md` §2.
+- [ ] **[P2] (S) Consolidate volume registration** (`register_derived_volume` vs
+  `register_overlay_volume`, ~70 dup lines → shared `register_volume_entry`); and
+  **one `LayerSettings`→volume converter** shared by `buildBundleViewState` +
+  `renderLayers` (a new field is silently dropped from bundles today).
+- [ ] **[P2] (S) Config block + mobile-tunable memory budgets.** Group the
+  scattered cache/preview/thread/zip/opacity constants with rationale, and make
+  the memory caches (`volumetric_server.rs:52,102`) env-overridable (AGENTS
+  mobile-memory constraint has no path today).
+- [ ] **[P2] (M) Perf: diff-apply layer settings.** The in-place effect calls
+  `setVolume` for every layer + full `drawScene` on any `layerSettings` change, so
+  an opacity drag repaints the whole 3D scene. Diff and touch only changed layers.
+- [ ] **[P3] (M) Touch/Pencil on iPad.** Give the OSD grid a pinch/two-finger-pan
+  path (`DatasetDesktop.tsx:136` is wheel-only → violates the touch rule on iPad
+  landscape); wire Apple Pencil (`pointerType==='pen'` + pressure) to the deferred
+  measurement tools + precise crosshair / W-L drag.
+
 ## Mobile (iPhone / iPad)
 
 The codebase is already Tauri-v2 mobile-capable; these are the remaining blockers
@@ -499,8 +542,9 @@ on git-annex (which can't run on iOS). Full design + manifest sketch:
   `docs/provenance.md`); wire it from the existing
   `VolumeDerivation { operation, source_path, output_path }`.
   - **Upgrade the hash for integrity use.** `file_content_hash`
-    (`volumetric_server.rs:2455`) is a non-cryptographic `u64` (`DefaultHasher`) —
-    fine for cache-busting, **not** for tamper-evidence. Use a cryptographic hash
+    (`volumetric_server.rs:2912`) is a non-cryptographic `u64` (**FNV-1a**;
+    `DefaultHasher` is used separately for cache/share keys) — fine for
+    cache-busting, **not** for tamper-evidence. Use a cryptographic hash
     (SHA-256 / BLAKE3) as the integrity + changelog identity; keep `id` as the
     - **Started 2026-07-06:** bundle export already computes streaming **SHA-256**
       per data file (`sha256_file` in `volumetric_server.rs`, recorded as

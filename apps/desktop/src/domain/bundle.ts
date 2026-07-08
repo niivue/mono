@@ -223,13 +223,20 @@ export interface BundleReadResult {
   allVerified: boolean
 }
 
+const BUNDLE_EXTENSION = 'nvbundle'
+
+/** Whether `path` names a bundle, so it opens via import rather than as a dir. */
+export function isBundlePath(path: string): boolean {
+  return path.toLowerCase().endsWith(`.${BUNDLE_EXTENSION}`)
+}
+
 /** Prompt for a `.nvbundle` file to open. Returns null if cancelled. */
 export async function pickBundle(): Promise<string | null> {
   const selected = await open({
     directory: false,
     multiple: false,
     title: 'Open NeuroVue bundle',
-    filters: [{ name: 'NeuroVue bundle', extensions: ['nvbundle'] }]
+    filters: [{ name: 'NeuroVue bundle', extensions: [BUNDLE_EXTENSION] }]
   })
   return typeof selected === 'string' ? selected : null
 }

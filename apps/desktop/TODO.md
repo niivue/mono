@@ -490,8 +490,18 @@ RAS+value widget.)
   - **Clip planes** not restored — `applyClipPlanes` sets state but the planes
     don't take effect on load (our-side, not niivue-blocked; a quick fix if we
     want it before the port).
-  Also interim-wart: import promotes the bundle's `…/data` subdir into recent
-  datasets (should promote the `.nvbundle` path). Remaining beyond that: a
+  **Recents fixed (2026-07-08):** import used to promote the bundle's extracted
+  `…/data` subdir into recent datasets. That path lives under `cache_root()` (the
+  OS temp dir) and is `remove_dir_all`'d on every re-import, so the entry was both
+  ephemeral and — since `recentDatasetLabel` takes the last path segment — shown
+  as a bare `data` for *every* bundle. Recents now records the `.nvbundle` itself
+  (`openRecentDataset(dataDir, { promoteAs: path })`), and clicking a `.nvbundle`
+  recent routes through `importBundleFromPath` so it is re-verified and its view
+  replayed, rather than opened as a plain directory. Pre-fix entries already in
+  `localStorage` are pruned once the server reports its `cacheRoot`
+  (`pruneExtractedBundleDirs`) — matched against the real `<cacheRoot>/imports/
+  <stem>/data` shape rather than a temp-path heuristic, so a user's own
+  `…/neurovue/imports/x/data` directory survives. Remaining: a
   lighter "save view only" (no data copy) if wanted. `savePatch` (the old obscure
   "Save correction patch") still only writes clip planes + backend and is
   superseded for view-sharing.

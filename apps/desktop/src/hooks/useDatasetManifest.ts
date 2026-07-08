@@ -34,7 +34,7 @@ export interface DatasetManifestState {
   warmProgress: WarmProgress | null
   openLocalDataset: () => Promise<void>
   openLocalVolumeFile: () => Promise<void>
-  openRecentDataset: (path: string) => Promise<void>
+  openRecentDataset: (path: string, options?: { promoteAs?: string }) => Promise<void>
   refreshDesktopManifest: (selectId?: string) => Promise<void>
   refreshDesktopManifestData: (selectId?: string) => Promise<DesktopManifest | null>
   setSelectedId: (id: string | null) => void
@@ -132,7 +132,13 @@ export function useDatasetManifest({
     await refreshDesktopManifestData(selectId)
   }, [refreshDesktopManifestData])
 
-  const applyDatasetOpenResult = useCallback(async (result: DatasetOpenResult): Promise<void> => {
+  // `promoteAs` overrides which path lands in recents. A bundle import opens the
+  // bundle's extracted `data/` dir, but that lives under the OS temp dir and is
+  // re-extracted on every import — so recents must remember the `.nvbundle`.
+  const applyDatasetOpenResult = useCallback(async (
+    result: DatasetOpenResult,
+    promoteAs?: string
+  ): Promise<void> => {
     setManifest(null)
     setSelectedId(null)
     setServerUrl(result.url)
@@ -149,7 +155,7 @@ export function useDatasetManifest({
     setManifest(nextManifest)
     setSelectedId(nextManifest.items[0]?.id ?? null)
     setStatus(`${nextManifest.itemCount} volume item(s) loaded from ${result.datasetRoot}.`)
-    promoteRecentRef.current(result.datasetRoot)
+    promoteRecentRef.current(promoteAs ?? result.datasetRoot)
   }, [])
 
   const openLocalDataset = useCallback(async (): Promise<void> => {
@@ -194,15 +200,18 @@ export function useDatasetManifest({
     }
   }, [applyDatasetOpenResult])
 
-  const openRecentDataset = useCallback(async (path: string): Promise<void> => {
+  const openRecentDataset = useCallback(async (
+    path: string,
+    options?: { promoteAs?: string }
+  ): Promise<void> => {
     if (isOpeningDatasetRef.current) return
 
     isOpeningDatasetRef.current = true
     setIsOpeningDataset(true)
-    setStatus(`Opening ${path}.`)
+    setStatus(`Opening ${options?.promoteAs ?? path}.`)
     try {
       const result = await openDatasetByPath(path)
-      await applyDatasetOpenResult(result)
+      await applyDatasetOpenResult(result, options?.promoteAs)
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {

@@ -4,7 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NiiVue Slide in 3D (MNI152 space)</title>
-    <link rel="stylesheet" href="./niivue.css" />
+    <!-- Intentionally NOT loading /niivue.css — its global rules
+         (`body { position: absolute }`, `div { display: table-row }`,
+         `canvas { position: absolute; width: 100%; height: 100% }`)
+         escape every container and break block layouts on this page.
+         This page linked "./niivue.css", which resolved under /examples/ and had
+         always 404'd, so it has never actually been styled by it. -->
     <style>
       html,
       body {

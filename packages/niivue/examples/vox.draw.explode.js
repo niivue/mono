@@ -142,10 +142,12 @@ function applyTool() {
   nv1.drawIsClickToSegment = tool === 'wand'
   nv1.drawPenFilled = tool === 'fill'
   nv1.drawPenAutoClose = tool === 'fill'
+  // Leave the outgoing mode before entering the new one: raster drawing takes
+  // precedence over vector annotation while both are on.
+  if (vector) nv1.drawIsEnabled = false // the annotation layer handles the stroke
   nv1.annotationIsEnabled = vector
 
   if (vector) {
-    nv1.drawIsEnabled = false // the annotation layer handles the stroke
     nv1.annotationTool = 'freehand'
     nv1.annotationBrushRadius = 1 // <=1 => closed-polygon mode
     const [r, g, b] = COLOR_RGB[colorVal] ?? COLOR_RGB[1]

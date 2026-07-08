@@ -1237,6 +1237,13 @@ export default class NiiVueGPU extends EventTarget {
   get drawIsEnabled(): boolean {
     return this.model.draw.isEnabled
   }
+  /**
+   * Enable the raster drawing tools (pen/eraser/fill/magic wand). Mutually
+   * exclusive with {@link annotationIsEnabled} in practice: with both on, raster
+   * drawing intercepts the pointer and vector annotation editing is inert (the
+   * first such interaction warns). Turn one off before turning the other on.
+   * `false` stops editing but keeps the drawing visible; see `closeDrawing()`.
+   */
   set drawIsEnabled(v: boolean) {
     this.model.draw.isEnabled = v
     this.emit('drawingEnabled', { isEnabled: v })
@@ -1412,6 +1419,13 @@ export default class NiiVueGPU extends EventTarget {
   get annotationIsEnabled(): boolean {
     return this.model.annotation.isEnabled
   }
+  /**
+   * Enable vector annotation editing. Mutually exclusive with
+   * {@link drawIsEnabled} in practice: with both on, raster drawing intercepts
+   * the pointer and vector annotation editing is inert (the first such
+   * interaction warns). Turn one off before turning the other on. Does not
+   * affect whether annotations *render* — they always do.
+   */
   set annotationIsEnabled(v: boolean) {
     this.model.annotation.isEnabled = v
     this.emit('change', { property: 'annotationIsEnabled', value: v })

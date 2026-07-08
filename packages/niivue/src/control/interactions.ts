@@ -597,6 +597,29 @@ function pickBlockMM(
   return [mm[0], mm[1], mm[2]]
 }
 
+// The raster/vector edit-mode priority rule, in one place: when `draw` is enabled
+// AND has a bitmap to paint into, it intercepts the pointer and vector annotation
+// editing is inert. This keeps 2D slices and 3D exploded blocks resolving the
+// conflict the same way (the 2D raster intercept already preceded the annotation
+// one, while the 3D vector intercept preceded the raster one).
+function rasterDrawWins(ctrl: NiiVueGPU): boolean {
+  return ctrl.model.draw.isEnabled && !!ctrl.model.drawingVolume
+}
+
+// Enabling both edit modes is a caller error. Warn on the first interaction that
+// is actually ambiguous rather than from the `isEnabled` setters — a caller
+// legitimately passes through a both-on state while switching tools, so setter-
+// time validation of this two-field invariant would cry wolf.
+const warnedBothEditModes = new WeakSet<NiiVueGPU>()
+function warnIfBothEditModes(ctrl: NiiVueGPU): void {
+  if (!ctrl.model.annotation.isEnabled || !rasterDrawWins(ctrl)) return
+  if (warnedBothEditModes.has(ctrl)) return
+  warnedBothEditModes.add(ctrl)
+  log.warn(
+    'drawIsEnabled and annotationIsEnabled are both on: raster drawing takes precedence, so vector annotation editing will not fire. Disable one.',
+  )
+}
+
 // Clear every piece of transient per-drag state. Idempotent, throws nothing, and
 // must stay that way: it runs in the pointerup `finally` so a throwing stroke
 // finalize cannot strand `isDragging` true (which pauses the chunked-volume
@@ -627,6 +650,10 @@ function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
   const pts = ctrl._annotation3DMMPath
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
+  // Annotation mode turned off (or raster took over) mid-drag: discard the
+  // partial stroke rather than committing a shape the user can no longer see
+  // themselves drawing.
+  if (!ctrl.model.annotation.isEnabled) return
   if (pts.length < 3) return
   const min: [number, number, number] = [
     Number.POSITIVE_INFINITY,
@@ -712,6 +739,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     const boundsHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
     if (!boundsHit) return // outside this instance's bounds
     const [px, py] = boundsHit
+    warnIfBothEditModes(ctrl)
 
     // Check for legend click first
     const legendEntry = legendHitTest(px, py, ctrl.view?.legendLayout ?? null)
@@ -730,12 +758,18 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     ctrl.activeTileHit = ctrl.view?.hitTest(px, py) ?? null
     // Freehand vector (SVG) drawing directly on the exploded blocks: a RIGHT-drag
     // in vector (annotation) mode picks block points along the drag and, on
-    // release, commits them as a slice annotation. Checked before the raster and
-    // clip-plane paths so right-drag draws the vector shape.
+    // release, commits them as a slice annotation. Checked before the clip-plane
+    // path so right-drag draws the vector shape.
     {
       const annVol = ctrl.model.getVolumes()[0]
       if (
         ctrl.model.annotation.isEnabled &&
+        // Raster drawing takes precedence when it can actually draw. This is the
+        // one priority rule, and it matches the 2D slice path (whose raster
+        // intercept precedes the annotation one). Enabling both edit modes at
+        // once is a caller error, warned about by the `drawIsEnabled` /
+        // `annotationIsEnabled` setters.
+        !rasterDrawWins(ctrl) &&
         !ctrl.model.annotation.isErasing &&
         ctrl.activeTileHit?.isRender &&
         evt.button === 2 &&
@@ -1333,8 +1367,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     ctrl.lastPointerY = evt.clientY
     // 3D vector drag on exploded blocks: re-hit-test and accumulate the picked
     // block point (mm) into the freehand path. Runs before the clip-plane branch
-    // so a vector drag draws instead of rotating the clip plane.
-    if (ctrl._annotation3DActive) {
+    // so a vector drag draws instead of rotating the clip plane. Gated on the
+    // live mode (mirroring the raster drag branch below) so disabling annotation
+    // mid-drag stops extending the path.
+    if (ctrl._annotation3DActive && ctrl.model.annotation.isEnabled) {
       const annVol = ctrl.model.getVolumes()[0]
       const moveHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
       if (moveHit && annVol) {

@@ -689,9 +689,12 @@ function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
     }
   }
   const ext = [max[0] - min[0], max[1] - min[1], max[2] - min[2]]
-  // Skip a degenerate stroke (all picks on the same voxel -> zero extent), which
-  // would commit an invisible zero-area annotation and an undo entry.
-  if (ext[0] <= 1e-6 && ext[1] <= 1e-6 && ext[2] <= 1e-6) return
+  // A polygon needs area, so the two LARGEST extents must both be non-degenerate.
+  // This rejects both a single-voxel stroke (all three tiny) and a 1-D line along
+  // one axis (two tiny), each of which would commit an invisible zero-area
+  // annotation and an undo entry.
+  const spans = [...ext].sort((a, b) => b - a)
+  if (spans[1] <= 1e-6) return
   let depthAxis = 0
   if (ext[1] < ext[depthAxis]) depthAxis = 1
   if (ext[2] < ext[depthAxis]) depthAxis = 2
@@ -1325,13 +1328,22 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
       DragModes.handleDragRelease(ctrl)
     }
-    // Release capture before resetDragState, which renders (see pointerup).
     try {
-      ctrl.canvas?.releasePointerCapture((e as PointerEvent).pointerId)
-    } catch {
-      /* already released */
+      // Commit the stroke, as pointerup does. A raster stroke paints incrementally
+      // so its voxels already survive a cancel; a vector stroke only exists in the
+      // accumulator, and dropping it here would silently lose a finished polygon
+      // whenever touch/pen input ends in pointercancel instead of pointerup. The
+      // degenerate guards in finish3DAnnotationStroke discard a palm-reject.
+      if (ctrl._annotation3DActive) finish3DAnnotationStroke(ctrl)
+    } finally {
+      // Release capture before resetDragState, which renders (see pointerup).
+      try {
+        ctrl.canvas?.releasePointerCapture((e as PointerEvent).pointerId)
+      } catch {
+        /* already released */
+      }
+      resetDragState(ctrl)
     }
-    resetDragState(ctrl)
   }
   ctrl._eventListeners.pointermove = (e: Event) => {
     const evt = e as PointerEvent

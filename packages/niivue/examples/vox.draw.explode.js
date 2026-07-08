@@ -249,8 +249,13 @@ view.onchange = applyView
 backend.onchange = async () => {
   await nv1.reinitializeView({ backend: backend.value })
   // The rebuilt view must re-tile from the persisted chunkPlan, then re-apply
-  // the current explode offset.
+  // the current explode offset. applyView/applyTool re-push the selected layout
+  // and tool onto the new view: today they survive because that state lives in
+  // the model, but replaying them keeps the switch correct if any of it ever
+  // becomes view-owned.
   await ensureTiled()
+  applyView()
+  applyTool()
   applyExplode()
 }
 

@@ -49,6 +49,7 @@
     "preview": "vite preview",
     "e2e:serve": "bun run codegen:assets && bunx --bun vite --port 5273 --strictPort",
     "test:e2e": "playwright test",
+    "convert:legacy": "bun run scripts/convert-legacy-nvd.ts",
     "lint": "bunx biome check src",
     "lint:fix": "bunx biome check src --fix",
     "typecheck": "tsc --noEmit",

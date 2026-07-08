@@ -62,8 +62,9 @@ import { computeVolumeLabelCentroids } from '@/volume/utils'
 // scene; 'current': keep the loading instance's value). A v8 loader would read an
 // omitted scene field as `undefined`, so the version is bumped: an old reader
 // rejects a v9 doc rather than corrupting state. v8 docs (all fields present) load
-// unchanged.
-const DOCUMENT_VERSION = 9
+// unchanged. The numeric value lives in NVConstants (pure, importable by the
+// legacy converter without pulling this Vite module graph).
+const DOCUMENT_VERSION = NVConstants.NVD_DOCUMENT_VERSION
 
 /**
  * Embedded volume data for self-contained documents.

@@ -110,6 +110,11 @@ import type {
   VolumeRenderConfig,
 } from '@/NVTypes'
 
+// NVD document format version. Lives here (pure, importable everywhere) so the
+// legacy converter can stamp it without importing NVDocument's Vite module graph.
+// See NVDocument for the version history / migration notes.
+export const NVD_DOCUMENT_VERSION = 9
+
 // Default scene values. The scene group is built with gl-matrix vec types in
 // NVModel, so this holds the plain-value defaults (used both to construct the
 // model and to decide which scene settings a sparse document omits).

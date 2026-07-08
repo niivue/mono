@@ -414,22 +414,20 @@ Most are demo-level UX; a couple touch core defaults.
 
 ## Also parked (outside the drawing work)
 
-- [x] **(M-L) Sparse NVDocument settings: fall back to CURRENT options, not
-  defaults.** DONE 2026-07-07 (commit `29f943e8`). Implemented on the SAVE side
-  (per the user's steer "only save what is not default"): `serialize` now omits
-  any setting equal to its default, and the loader (`applyDocumentToModel`) leaves
-  an omitted setting at the instance's **current live value** instead of resetting
-  it. Dev control via `nv.settingsSavePolicy` (`neverSave` / `alwaysSave` lists of
-  group names or `'group.key'` paths) + a per-call `policy` arg on
-  `saveDocument`/`serializeDocument`. Use case works: `neverSave:
-  ['scene.crosshairPos']` -> every doc omits the crosshair -> loads leave it where
-  the user last put it. Pure logic unit-tested (`documentSettings.test.ts`); full
-  round-trip browser-verified (NVDocument's graph uses `import.meta.glob`, not
-  Bun-loadable). NVD version 8 -> 9. Follow-ups (not done): annotationConfig is
-  still saved in full (excluded from the sparse treatment to avoid touching the
-  annotation-array restore path); a `settingsSource` 'reset-to-default' load
-  option (three-way document/current/default) was descoped in favor of the
-  save-side omit-defaults model.
+- [x] **(M-L) Sparse NVDocument settings.** DONE 2026-07-07/08 (`29f943e8` +
+  `9d6bcb48`). SAVE side: `serialize` omits any setting equal to its default (all
+  8 groups incl. annotation); control via `nv.settingsSavePolicy`
+  (`neverSave`/`alwaysSave`). LOAD side (revised per user 2026-07-08 — "what's in
+  the NVD overrides everything; a sparse NVD is filled by defaults or current;
+  default is defaults"): a specified setting always wins; an omitted setting is
+  filled per a **fill policy** — DEFAULT resets to the built-in default (so a
+  document is a complete scene), `'current'` keeps the instance value. Control via
+  `nv.settingsFillPolicy` + per-call `loadDocument(src, { fill })`, by group or
+  `'group.key'`. Crosshair persistence = `{ 'scene.crosshairPos': 'current' }`.
+  `documentSettings.ts` (`sparsifyGroup`/`fillGroup`); unit-tested + e2e-verified.
+  NVD v8 -> 9. The earlier "keep current by default" behavior was corrected to
+  "defaults by default" (resolves the review's headline finding), and
+  annotationConfig is now sparse+filled like the other groups.
 - [x] **Linked NVD documents (reference volumes by URL, don't embed).** DONE
   2026-07-07 (commit `56f2a21f`). `saveDocument`/`serializeDocument` take
   `{ linkData: true }`: a volume with a fetchable URL is serialized without its

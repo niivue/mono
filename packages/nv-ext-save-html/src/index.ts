@@ -20,6 +20,7 @@
  */
 
 import type NiiVueGPU from '@niivue/niivue'
+import { gzipCompress } from './gzip'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -47,32 +48,8 @@ export interface SaveHTMLOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Compression helpers (Web Streams API — available in all modern browsers)
-// ---------------------------------------------------------------------------
-
-/**
- * Gzip-compress a Uint8Array.
- *
- * Start consuming `readable` BEFORE awaiting the write/close. A CompressionStream
- * is a TransformStream whose readable side applies backpressure once its queue
- * fills; if nothing is reading, `writer.write()` / `writer.close()` never settle
- * and this hangs forever. In Chromium that happens for inputs as small as ~1 MB —
- * i.e. every real document — so the read must already be in flight.
- *
- * `chunk` is a copy: a view backed by a SharedArrayBuffer (see the extension
- * context's `acquireSharedBuffer`) cannot be enqueued directly.
- */
-async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new CompressionStream('gzip')
-  const chunk = new Uint8Array(data.byteLength)
-  chunk.set(data)
-  const compressed = new Response(stream.readable).arrayBuffer()
-  const writer = stream.writable.getWriter()
-  await writer.write(chunk)
-  await writer.close()
-  return new Uint8Array(await compressed)
-}
+// Compression helpers live in ./gzip so they are reachable by the Bun test
+// runner — this module imports @niivue/niivue, whose graph uses import.meta.glob.
 
 // ---------------------------------------------------------------------------
 // Encoding / escaping helpers

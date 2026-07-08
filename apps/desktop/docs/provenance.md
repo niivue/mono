@@ -29,7 +29,7 @@ import/export adapter for real DataLad datasets can come later.
 SHA-256 content hash — already computed per data file in the bundle
 (`sha256_file` in `volumetric_server.rs`). This is the same identity git-annex
 uses, so bundle files are addressable/interoperable. It replaces the
-non-cryptographic `file_content_hash` (`DefaultHasher`) for integrity use; keep
+non-cryptographic `file_content_hash` (FNV-1a) for integrity use; keep
 `id` as the single dataset-facing identity.
 
 ## `.nvbundle` manifest, provenance-aware
@@ -138,7 +138,7 @@ transport-agnostic bundle (file-in / file-out → AirDrop, shared folder, or ser
 
 | Concept                    | Today                                   | Target                                              |
 |----------------------------|-----------------------------------------|-----------------------------------------------------|
-| File identity              | `sha256_file` (bundle) / `DefaultHasher` (cache) | SHA-256 everywhere for integrity; keep `id` as identity |
+| File identity              | `sha256_file` (bundle) / FNV-1a `file_content_hash` (cache) | SHA-256 everywhere for integrity; keep `id` as identity |
 | Derivation record          | `VolumeDerivation { operation, source_path, output_path }` | per-volume `generatedBy` (BIDS) + PROV activity |
 | Op provenance              | `provenance.jsonl` `correction.save` (NeuroFlow-only) | dataset-level hash-chained PROV log, always on |
 | Transport                  | `.nvbundle` (export/import)             | same, with the provenance block above               |

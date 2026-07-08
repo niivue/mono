@@ -4575,16 +4575,17 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   /**
-   * Return the current scene serialized as an NVD document (CBOR-encoded
-   * Uint8Array). `options.settings` overrides the instance `settingsSavePolicy`
-   * for this call; `options.linkData` saves a small "linked" document that
-   * references volumes by URL instead of embedding their bytes (the loader
-   * refetches them).
+   * Return the current scene serialized as an NVD document (Uint8Array).
+   * `options.settings` overrides the instance `settingsSavePolicy`;
+   * `options.linkData` saves a small "linked" document that references volumes by
+   * URL instead of embedding their bytes; `options.format` is `'cbor'` (default,
+   * binary) or `'json'` (portable text). `loadDocument` accepts either encoding.
    */
   serializeDocument(options?: NVDocument.SerializeOptions): Uint8Array {
     return NVDocument.serialize(this.model, this._slidePlaneToDoc(), {
       settings: options?.settings ?? this._settingsSavePolicy,
       linkData: options?.linkData,
+      format: options?.format,
     })
   }
 
@@ -4654,7 +4655,12 @@ export default class NiiVueGPU extends EventTarget {
     filename = 'scene.nvd',
     options?: NVDocument.SerializeOptions,
   ): void {
-    const data = this.serializeDocument(options)
+    // Default the encoding from the filename (`.json` -> JSON, else CBOR) unless
+    // the caller specified `options.format`.
+    const format =
+      options?.format ??
+      (filename.toLowerCase().endsWith('.json') ? 'json' : 'cbor')
+    const data = this.serializeDocument({ ...options, format })
     NVDocument.triggerDownload(data, filename)
   }
 

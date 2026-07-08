@@ -104,3 +104,62 @@ test('sparse settings: fill policy — default resets omitted, current keeps, sp
   expect(r.keptCrosshair).toEqual([0.7, 0.8, 0.9]) // omitted + fill:current -> kept
   expect(r.overriddenCrosshair).toEqual([0.1, 0.2, 0.3]) // specified -> wins under fill:current
 })
+
+test('json format: saves portable JSON that loadDocument reads back (linked + embedded)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000) // embedded JSON base64-encodes the full volume
+
+  const r = await page.evaluate(async () => {
+    const { default: NiiVue } = await import('/src/index.ts')
+    const mkCanvas = () => {
+      const c = document.createElement('canvas')
+      c.width = 64
+      c.height = 64
+      c.style.cssText = 'position:fixed;left:-9999px'
+      document.body.appendChild(c)
+      return c
+    }
+
+    const nv = new NiiVue({ backend: 'webgl2', azimuth: 175 })
+    await nv.attachToCanvas(mkCanvas())
+    await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+
+    // JSON + linked: small, human-readable text.
+    const jsonLinked = nv.serializeDocument({ format: 'json', linkData: true })
+    const text = new TextDecoder().decode(jsonLinked)
+    let parseable = true
+    try {
+      JSON.parse(text)
+    } catch {
+      parseable = false
+    }
+
+    // loadDocument sniffs JSON vs CBOR — a .json linked doc rehydrates by URL.
+    const nvLinked = new NiiVue({ backend: 'webgl2' })
+    await nvLinked.attachToCanvas(mkCanvas())
+    await nvLinked.loadDocument(new File([jsonLinked], 'scene.json'))
+
+    // Embedded JSON round-trips the voxels through base64.
+    const jsonEmbedded = nv.serializeDocument({ format: 'json' })
+    const nvEmbedded = new NiiVue({ backend: 'webgl2' })
+    await nvEmbedded.attachToCanvas(mkCanvas())
+    await nvEmbedded.loadDocument(new File([jsonEmbedded], 'embed.json'))
+
+    return {
+      startsWithBrace: text.trimStart().startsWith('{'),
+      parseable,
+      linkedAzimuth: nvLinked.azimuth,
+      linkedUrl: nvLinked.volumes[0]?.url,
+      linkedVoxels: nvLinked.volumes[0]?.img?.length ?? 0,
+      embeddedVoxels: nvEmbedded.volumes[0]?.img?.length ?? 0,
+    }
+  })
+
+  expect(r.startsWithBrace).toBe(true) // human-readable JSON, not binary
+  expect(r.parseable).toBe(true)
+  expect(r.linkedAzimuth).toBe(175) // scene restored from JSON
+  expect(r.linkedUrl).toBe('/volumes/mni152.nii.gz')
+  expect(r.linkedVoxels).toBeGreaterThan(1_000_000) // linked -> refetched
+  expect(r.embeddedVoxels).toBeGreaterThan(1_000_000) // embedded JSON -> base64 voxels
+})

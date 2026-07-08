@@ -1,4 +1,9 @@
 import { decode, encode } from 'cbor-x'
+import {
+  decodeDocumentJSON,
+  encodeDocumentJSON,
+  looksLikeJSON,
+} from '@/documentJson'
 import { shouldLinkVolume } from '@/documentLinkData'
 import {
   fillGroup,
@@ -320,6 +325,13 @@ export interface SerializeOptions {
    * overlay layers / tract options).
    */
   linkData?: boolean
+  /**
+   * Encoding of the returned bytes: `'cbor'` (default) is the compact binary
+   * `.nvd`; `'json'` is a human-readable/portable JSON document (typed arrays
+   * base64-tagged). Both round-trip the same structure; `deserialize` accepts
+   * either. `saveDocument` picks `'json'` automatically for a `.json` filename.
+   */
+  format?: 'cbor' | 'json'
 }
 
 // Defaults for the SERIALIZED subset of scene fields (a sparse document omits
@@ -595,11 +607,17 @@ export function serialize(
     slidePlane,
   }
 
+  if (options?.format === 'json') {
+    return new TextEncoder().encode(encodeDocumentJSON(doc))
+  }
   return encode(doc)
 }
 
 export function deserialize(data: Uint8Array): NVDocumentData {
-  const doc = decode(data) as NVDocumentData
+  // Accept either encoding: JSON (first non-whitespace byte `{`) or CBOR.
+  const doc = looksLikeJSON(data)
+    ? (decodeDocumentJSON(new TextDecoder().decode(data)) as NVDocumentData)
+    : (decode(data) as NVDocumentData)
 
   // Version check
   if (typeof doc.version !== 'number') {

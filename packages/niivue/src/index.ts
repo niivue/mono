@@ -11,8 +11,13 @@ export { lookupColorMap, makeLabelLut } from './cmap/NVCmaps'
 // Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
 // Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
 export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
-// Sparse-document settings policy (which settings saveDocument includes)
-export type { SettingsSavePolicy } from './documentSettings'
+// Sparse-document settings policies: which settings saveDocument includes, and
+// how loadDocument fills settings a sparse document omits
+export type {
+  SettingsFill,
+  SettingsFillPolicy,
+  SettingsSavePolicy,
+} from './documentSettings'
 // Extension API
 export { NVExtensionContext } from './extension/context'
 export type {

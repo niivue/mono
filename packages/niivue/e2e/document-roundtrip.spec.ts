@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test'
 // End-to-end coverage for the two NVDocument save/reload behaviors that can only
 // be exercised in a real browser (NiiVue's Vite module graph + a GPU context):
 //   - linkData: reference volumes by URL instead of embedding their bytes.
-//   - sparse settings: omit defaults; leave omitted settings at the current value.
+//   - sparse settings: omit defaults; fill omitted settings per the fill policy
+//     (default resets to defaults, 'current' keeps the instance value).
 // The page just provides the dev-server origin so `import('/src/index.ts')` and
 // `/volumes/...` resolve; the work happens inside page.evaluate.
 
@@ -54,41 +55,52 @@ test('linkData: a linked document omits volume bytes and refetches from the URL'
   expect(r.reloadedVoxels).toBeGreaterThan(1_000_000)
 })
 
-test('sparse settings: neverSave keeps the loading instance value; specified settings win', async ({
+test('sparse settings: fill policy — default resets omitted, current keeps, specified always wins', async ({
   page,
 }) => {
+  test.setTimeout(60_000) // shares the one-time Vite module-graph transform
+
   const r = await page.evaluate(async () => {
     const { default: NiiVue } = await import('/src/index.ts')
 
-    // Source: azimuth changed (saved); crosshair left at default (omitted). Also
-    // never-save the crosshair explicitly (it is default here, but this asserts
-    // the policy path too).
+    // Source: azimuth 200 (non-default -> saved); crosshair at default -> omitted.
     const src = new NiiVue({ azimuth: 200 })
-    src.settingsSavePolicy = { neverSave: ['scene.crosshairPos'] }
-    const sparseBytes = src.serializeDocument()
+    const bytes = src.serializeDocument()
 
-    // Target has its own crosshair; loading adopts the doc's azimuth but keeps
-    // the crosshair the document did not specify.
-    const target = new NiiVue({ azimuth: 50 })
-    target.crosshairPos = [0.7, 0.8, 0.9]
-    await target.loadDocument(new File([sparseBytes], 'sparse.nvd'))
+    // (a) DEFAULT fill: the omitted crosshair RESETS to default; azimuth adopted.
+    const tDefault = new NiiVue({ azimuth: 50 })
+    tDefault.crosshairPos = [0.7, 0.8, 0.9]
+    await tDefault.loadDocument(new File([bytes], 'a.nvd'))
 
-    // A document that DOES specify a setting overrides the current value.
+    // (b) fill 'current' for the crosshair: omitted crosshair KEPT; azimuth adopted.
+    const tKeep = new NiiVue({ azimuth: 50 })
+    tKeep.crosshairPos = [0.7, 0.8, 0.9]
+    await tKeep.loadDocument(new File([bytes], 'b.nvd'), {
+      fill: { 'scene.crosshairPos': 'current' },
+    })
+
+    // (c) a document that SPECIFIES the crosshair overrides — even under fill:current.
     const full = new NiiVue({})
     full.crosshairPos = [0.1, 0.2, 0.3]
     const fullBytes = full.serializeDocument()
-    const target2 = new NiiVue({})
-    target2.crosshairPos = [0.9, 0.9, 0.9]
-    await target2.loadDocument(new File([fullBytes], 'full.nvd'))
+    const tOverride = new NiiVue({})
+    tOverride.crosshairPos = [0.9, 0.9, 0.9]
+    await tOverride.loadDocument(new File([fullBytes], 'c.nvd'), {
+      fill: 'current',
+    })
 
     return {
-      adoptedAzimuth: target.azimuth,
-      keptCrosshair: [...target.crosshairPos],
-      overriddenCrosshair: [...target2.crosshairPos],
+      defaultAzimuth: tDefault.azimuth,
+      defaultCrosshair: [...tDefault.crosshairPos],
+      keptAzimuth: tKeep.azimuth,
+      keptCrosshair: [...tKeep.crosshairPos],
+      overriddenCrosshair: [...tOverride.crosshairPos],
     }
   })
 
-  expect(r.adoptedAzimuth).toBe(200)
-  expect(r.keptCrosshair).toEqual([0.7, 0.8, 0.9])
-  expect(r.overriddenCrosshair).toEqual([0.1, 0.2, 0.3])
+  expect(r.defaultAzimuth).toBe(200) // specified -> wins
+  expect(r.defaultCrosshair).toEqual([0.5, 0.5, 0.5]) // omitted -> reset to default
+  expect(r.keptAzimuth).toBe(200)
+  expect(r.keptCrosshair).toEqual([0.7, 0.8, 0.9]) // omitted + fill:current -> kept
+  expect(r.overriddenCrosshair).toEqual([0.1, 0.2, 0.3]) // specified -> wins under fill:current
 })

@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { settingEquals, sparsifyGroup } from './documentSettings'
+import {
+  fillGroup,
+  fillModeFor,
+  settingEquals,
+  sparsifyGroup,
+} from './documentSettings'
 
 describe('settingEquals', () => {
   test('primitives', () => {
@@ -106,5 +111,96 @@ describe('sparsifyGroup', () => {
       alwaysSave: ['scene'],
     })
     expect(out).toEqual(current)
+  })
+})
+
+describe('fillModeFor', () => {
+  test('undefined policy => default', () => {
+    expect(fillModeFor('scene', 'azimuth', undefined)).toBe('default')
+  })
+
+  test('a single string applies to every setting', () => {
+    expect(fillModeFor('scene', 'azimuth', 'current')).toBe('current')
+    expect(fillModeFor('ui', 'crosshairWidth', 'current')).toBe('current')
+  })
+
+  test('dotted key beats group entry beats default', () => {
+    const p = { scene: 'current' as const, 'scene.azimuth': 'default' as const }
+    expect(fillModeFor('scene', 'azimuth', p)).toBe('default') // dotted wins
+    expect(fillModeFor('scene', 'elevation', p)).toBe('current') // group
+    expect(fillModeFor('ui', 'crosshairWidth', p)).toBe('default') // unlisted
+  })
+})
+
+describe('fillGroup', () => {
+  const defaults = {
+    azimuth: 110,
+    elevation: 10,
+    crosshairPos: [0.5, 0.5, 0.5],
+  }
+  const current = { azimuth: 200, elevation: 20, crosshairPos: [0.1, 0.2, 0.3] }
+
+  test('a value the document specifies always wins', () => {
+    const out = fillGroup(
+      'scene',
+      current,
+      defaults,
+      { azimuth: 300 },
+      'current',
+    )
+    expect(out.azimuth).toBe(300)
+  })
+
+  test('omitted settings reset to default by default', () => {
+    const out = fillGroup(
+      'scene',
+      current,
+      defaults,
+      { azimuth: 300 },
+      undefined,
+    )
+    expect(out).toEqual({
+      azimuth: 300,
+      elevation: 10,
+      crosshairPos: [0.5, 0.5, 0.5],
+    })
+  })
+
+  test("'current' keeps the instance value for omitted settings", () => {
+    const out = fillGroup(
+      'scene',
+      current,
+      defaults,
+      { azimuth: 300 },
+      'current',
+    )
+    expect(out).toEqual({
+      azimuth: 300,
+      elevation: 20,
+      crosshairPos: [0.1, 0.2, 0.3],
+    })
+  })
+
+  test('per-key policy: keep one, reset the rest', () => {
+    const out = fillGroup('scene', current, defaults, undefined, {
+      'scene.crosshairPos': 'current',
+    })
+    expect(out).toEqual({
+      azimuth: 110,
+      elevation: 10,
+      crosshairPos: [0.1, 0.2, 0.3],
+    })
+  })
+
+  test('default-filled arrays are cloned, not aliased to the constant', () => {
+    const out = fillGroup('scene', current, defaults, undefined, undefined)
+    expect(out.crosshairPos).toEqual([0.5, 0.5, 0.5])
+    expect(out.crosshairPos).not.toBe(defaults.crosshairPos)
+  })
+
+  test('an absent doc group with default fill yields full defaults', () => {
+    expect(fillGroup('scene', current, defaults, undefined, undefined)).toEqual(
+      defaults,
+    )
   })
 })

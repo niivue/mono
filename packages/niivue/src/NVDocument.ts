@@ -1,6 +1,12 @@
 import { decode, encode } from 'cbor-x'
 import { shouldLinkVolume } from '@/documentLinkData'
-import { type SettingsSavePolicy, sparsifyGroup } from '@/documentSettings'
+import {
+  fillGroup,
+  fillModeFor,
+  type SettingsFillPolicy,
+  type SettingsSavePolicy,
+  sparsifyGroup,
+} from '@/documentSettings'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import { encodeRLE } from '@/drawing/rle'
 import { log } from '@/logger'
@@ -44,12 +50,14 @@ import { computeVolumeLabelCentroids } from '@/volume/utils'
 // optional volume fields (e.g. `modulationImage`) likewise did NOT bump the
 // version. Bump only when adding a field that older code would misread.
 //
-// v9 made the settings groups (scene/layout/ui/volume/mesh/draw/interaction)
-// SPARSE: a document omits any setting equal to its default, and the loader
-// leaves an omitted setting at the instance's current value instead of resetting
-// it. A v8 loader would read an omitted scene field as `undefined`, so the
-// version is bumped: an old reader rejects a v9 doc rather than corrupting state.
-// v8 documents (all fields present) still load unchanged.
+// v9 made the settings groups (scene/layout/ui/volume/mesh/draw/interaction/
+// annotation) SPARSE: a document omits any setting equal to its default. On load
+// a specified setting always wins; an OMITTED setting is filled per the caller's
+// fill policy (default: reset to its built-in default, so a document is a complete
+// scene; 'current': keep the loading instance's value). A v8 loader would read an
+// omitted scene field as `undefined`, so the version is bumped: an old reader
+// rejects a v9 doc rather than corrupting state. v8 docs (all fields present) load
+// unchanged.
 const DOCUMENT_VERSION = 9
 
 /**
@@ -199,9 +207,11 @@ export type NVDocumentData = {
   version: number
   created: string
   // Settings groups are SPARSE: a document omits any setting that equals its
-  // default (v9+), so every field is optional. An omitted setting is left at the
-  // loading instance's current value (see applyDocumentToModel). Older (v8-)
-  // documents embed every field, so they load unchanged.
+  // default (v9+), so every field is optional. On load a specified setting wins;
+  // an omitted setting is filled per the caller's fill policy (default: reset to
+  // its built-in default; 'current': keep the instance's value). See
+  // applyDocumentToModel. Older (v8-) documents embed every field, so they load
+  // unchanged.
   scene: {
     azimuth?: number
     elevation?: number
@@ -228,7 +238,7 @@ export type NVDocumentData = {
   meshes: NVDocumentMesh[]
   signals?: SerializedSignal[]
   annotations?: VectorAnnotation[]
-  annotationConfig?: AnnotationConfig
+  annotationConfig?: Partial<AnnotationConfig>
   /** Registered slide plane + its slide-space drawing (v8+). */
   slidePlane?: NVDocumentSlidePlane
 }
@@ -566,7 +576,12 @@ export function serialize(
     meshes,
     signals: signals.length > 0 ? signals : undefined,
     annotations: model.annotations.length > 0 ? model.annotations : undefined,
-    annotationConfig: { ...model.annotation },
+    annotationConfig: sparsifyGroup(
+      'annotation',
+      model.annotation,
+      NVConstants.ANNOTATION_DEFAULTS,
+      policy,
+    ),
     slidePlane,
   }
 
@@ -608,50 +623,124 @@ export function deserialize(data: Uint8Array): NVDocumentData {
 export function applyDocumentToModel(
   model: NVModel,
   doc: NVDocumentData,
+  fill?: SettingsFillPolicy,
 ): void {
   // Apply scene state. Sparse (v9+) documents omit any field left at its default;
-  // an omitted field keeps the loading instance's current value (Object.assign
-  // does the same for the config groups below, which drop default-valued keys).
+  // a field the document OMITS is filled per `fill` (default: reset to its
+  // built-in default; 'current': leave the loading instance's value). A field the
+  // document specifies always wins.
+  const sd = NVConstants.SCENE_DEFAULTS
   const s = doc.scene
-  if (s.azimuth !== undefined) model.scene.azimuth = s.azimuth
-  if (s.elevation !== undefined) model.scene.elevation = s.elevation
-  if (s.scaleMultiplier !== undefined) {
-    model.scene.scaleMultiplier = s.scaleMultiplier
+  // scalars
+  const scalar = <V>(key: string, docVal: V | undefined, def: V, cur: V): V =>
+    docVal !== undefined
+      ? docVal
+      : fillModeFor('scene', key, fill) === 'current'
+        ? cur
+        : def
+  model.scene.azimuth = scalar(
+    'azimuth',
+    s.azimuth,
+    sd.azimuth,
+    model.scene.azimuth,
+  )
+  model.scene.elevation = scalar(
+    'elevation',
+    s.elevation,
+    sd.elevation,
+    model.scene.elevation,
+  )
+  model.scene.scaleMultiplier = scalar(
+    'scaleMultiplier',
+    s.scaleMultiplier,
+    sd.scaleMultiplier,
+    model.scene.scaleMultiplier,
+  )
+  model.scene.gamma = scalar('gamma', s.gamma, sd.gamma, model.scene.gamma)
+  model.scene.isClipPlaneCutaway = scalar(
+    'isClipPlaneCutaway',
+    s.isClipPlaneCutaway,
+    sd.isClipPlaneCutaway,
+    model.scene.isClipPlaneCutaway,
+  )
+  // vecs (mutate in place): omit + 'current' => leave; else write doc/default
+  const fillVec = (
+    key: string,
+    docVal: readonly number[] | undefined,
+    def: readonly number[],
+    target: { length: number; [i: number]: number },
+  ): void => {
+    const src =
+      docVal ?? (fillModeFor('scene', key, fill) === 'current' ? null : def)
+    if (!src) return
+    for (let i = 0; i < target.length; i++) target[i] = src[i]
   }
-  if (s.gamma !== undefined) model.scene.gamma = s.gamma
-  if (s.crosshairPos) {
-    model.scene.crosshairPos[0] = s.crosshairPos[0]
-    model.scene.crosshairPos[1] = s.crosshairPos[1]
-    model.scene.crosshairPos[2] = s.crosshairPos[2]
-  }
-  if (s.pan2Dxyzmm) {
-    model.scene.pan2Dxyzmm[0] = s.pan2Dxyzmm[0]
-    model.scene.pan2Dxyzmm[1] = s.pan2Dxyzmm[1]
-    model.scene.pan2Dxyzmm[2] = s.pan2Dxyzmm[2]
-    model.scene.pan2Dxyzmm[3] = s.pan2Dxyzmm[3]
-  }
-  if (s.backgroundColor) {
-    model.scene.backgroundColor = [...s.backgroundColor] as [
-      number,
-      number,
-      number,
-      number,
-    ]
-  }
-  if (s.clipPlaneColor) model.scene.clipPlaneColor = [...s.clipPlaneColor]
-  if (s.isClipPlaneCutaway !== undefined) {
-    model.scene.isClipPlaneCutaway = s.isClipPlaneCutaway
-  }
+  fillVec(
+    'crosshairPos',
+    s.crosshairPos,
+    sd.crosshairPos,
+    model.scene.crosshairPos,
+  )
+  fillVec('pan2Dxyzmm', s.pan2Dxyzmm, sd.pan2Dxyzmm, model.scene.pan2Dxyzmm)
+  // plain arrays (reassign a copy; never alias SCENE_DEFAULTS)
+  const fillArr = (
+    key: string,
+    docVal: readonly number[] | undefined,
+    def: readonly number[],
+    cur: number[],
+  ): number[] =>
+    docVal
+      ? [...docVal]
+      : fillModeFor('scene', key, fill) === 'current'
+        ? cur
+        : [...def]
+  model.scene.backgroundColor = fillArr(
+    'backgroundColor',
+    s.backgroundColor,
+    sd.backgroundColor,
+    model.scene.backgroundColor,
+  ) as [number, number, number, number]
+  model.scene.clipPlaneColor = fillArr(
+    'clipPlaneColor',
+    s.clipPlaneColor,
+    sd.clipPlaneColor,
+    model.scene.clipPlaneColor,
+  )
 
-  // Apply config groups (Object.assign leaves a group's omitted keys untouched,
-  // so an omitted setting keeps the instance's current value).
-  Object.assign(model.layout, doc.layout)
-  Object.assign(model.ui, doc.ui)
-  Object.assign(model.volume, doc.volume)
-  Object.assign(model.mesh, doc.mesh)
-  Object.assign(model.draw, doc.draw)
-  Object.assign(model.interaction, doc.interaction)
-  // annotation config restored separately below, after annotations array
+  // Config groups: fillGroup resolves every key (doc wins; omitted -> default or
+  // current per `fill`), so a document is a complete scene by default.
+  const C = NVConstants
+  Object.assign(
+    model.layout,
+    fillGroup('layout', model.layout, C.LAYOUT_DEFAULTS, doc.layout, fill),
+  )
+  Object.assign(
+    model.ui,
+    fillGroup('ui', model.ui, C.UI_DEFAULTS, doc.ui, fill),
+  )
+  Object.assign(
+    model.volume,
+    fillGroup('volume', model.volume, C.VOLUME_DEFAULTS, doc.volume, fill),
+  )
+  Object.assign(
+    model.mesh,
+    fillGroup('mesh', model.mesh, C.MESH_DEFAULTS, doc.mesh, fill),
+  )
+  Object.assign(
+    model.draw,
+    fillGroup('draw', model.draw, C.DRAW_DEFAULTS, doc.draw, fill),
+  )
+  Object.assign(
+    model.interaction,
+    fillGroup(
+      'interaction',
+      model.interaction,
+      C.INTERACTION_DEFAULTS,
+      doc.interaction,
+      fill,
+    ),
+  )
+  // annotation config resolved the same way, after the annotations array below
 
   // Apply clip planes
   for (
@@ -664,11 +753,18 @@ export function applyDocumentToModel(
 
   // Restore annotations (v7+); clear if not present to avoid stale state
   model.annotations = doc.annotations ?? []
-  if (doc.annotationConfig) {
-    model.annotation = { ...doc.annotationConfig } as AnnotationConfig
-  } else {
-    model.annotation = { ...NVConstants.ANNOTATION_DEFAULTS }
-  }
+  // annotation config resolves like the other groups (doc wins; omitted ->
+  // default or current per `fill`).
+  Object.assign(
+    model.annotation,
+    fillGroup(
+      'annotation',
+      model.annotation,
+      NVConstants.ANNOTATION_DEFAULTS,
+      doc.annotationConfig,
+      fill,
+    ),
+  )
 
   // Restore signals (data is embedded, so no async fetch is needed). Route each
   // through addSignal so unique-id handling and graph-cache invalidation run (a

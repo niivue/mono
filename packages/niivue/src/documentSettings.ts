@@ -23,6 +23,67 @@ export interface SettingsSavePolicy {
   alwaysSave?: string[]
 }
 
+/** How a setting the document OMITS is filled on load: reset to its built-in
+ * `'default'`, or left at the loading instance's `'current'` value. A value the
+ * document specifies always wins over both. */
+export type SettingsFill = 'default' | 'current'
+
+/**
+ * Load-time fill policy. A single mode applies to every omitted setting; a map
+ * targets specific groups (`'scene'`) or dotted keys (`'scene.crosshairPos'`),
+ * with unlisted settings using `'default'`. Undefined => everything `'default'`.
+ * Example: `{ 'scene.crosshairPos': 'current' }` keeps the user's crosshair while
+ * resetting every other omitted setting.
+ */
+export type SettingsFillPolicy =
+  | SettingsFill
+  | Partial<Record<string, SettingsFill>>
+
+/** Resolve the fill mode for one `group.key` under a policy (default `'default'`;
+ * a dotted key beats a group entry). */
+export function fillModeFor(
+  group: string,
+  key: string,
+  policy: SettingsFillPolicy | undefined,
+): SettingsFill {
+  if (policy === undefined) return 'default'
+  if (typeof policy === 'string') return policy
+  return policy[`${group}.${key}`] ?? policy[group] ?? 'default'
+}
+
+// Shallow copy an array/object default so the model never aliases a *_DEFAULTS
+// constant (mutating model.ui.graph would otherwise corrupt the constant).
+function cloneDefault<V>(v: V): V {
+  if (Array.isArray(v)) return [...v] as V
+  if (v && typeof v === 'object') return { ...v } as V
+  return v
+}
+
+/**
+ * Resolve every schema key of a settings group on load: a value the document
+ * specifies wins; an omitted key is reset to its default (`'default'`) or left at
+ * the current value (`'current'`) per `policy`. Returns a full object (all keys
+ * present), suitable for `Object.assign(model.group, fillGroup(...))`.
+ */
+export function fillGroup<T extends Record<string, unknown>>(
+  group: string,
+  current: T,
+  defaults: T,
+  docGroup: Partial<T> | undefined,
+  policy: SettingsFillPolicy | undefined,
+): T {
+  const out = { ...current }
+  for (const key of Object.keys(defaults) as (keyof T & string)[]) {
+    if (docGroup && docGroup[key] !== undefined) {
+      out[key] = docGroup[key] as T[typeof key]
+    } else if (fillModeFor(group, key, policy) === 'default') {
+      out[key] = cloneDefault(defaults[key])
+    }
+    // 'current' => leave out[key] at the current value (already copied above)
+  }
+  return out
+}
+
 /** Deep value equality for settings: primitives, array-likes (incl. typed
  * arrays / gl-matrix vecs), and plain nested objects (e.g. `ui.graph`). */
 export function settingEquals(a: unknown, b: unknown): boolean {

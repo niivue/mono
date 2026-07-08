@@ -17,7 +17,7 @@ import type {
   ReinitializeOptions,
   ViewLifecycle,
 } from '@/control/viewLifecycle'
-import type { SettingsSavePolicy } from '@/documentSettings'
+import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   calculateLoadDrawingTransform,
   clearAllUndoBitmaps,
@@ -287,6 +287,9 @@ export default class NiiVueGPU extends EventTarget {
   // Which settings saved documents include (transient; not serialized). Default
   // {} = omit any setting equal to its default. See `settingsSavePolicy`.
   private _settingsSavePolicy: SettingsSavePolicy = {}
+  // How a loaded document's OMITTED settings are filled (transient). Default
+  // undefined = reset each to its built-in default. See `settingsFillPolicy`.
+  private _settingsFillPolicy: SettingsFillPolicy | undefined
   private _slidePlane: SlidePlaneState | null = null
   private _slidePlaneSlide: NVSlide | null = null
   private _slidePlaneOnChange: (() => void) | null = null
@@ -4552,6 +4555,22 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   /**
+   * How a loaded document's OMITTED settings are filled. Default (undefined)
+   * resets each omitted setting to its built-in default, so a document is a
+   * complete scene. Pass `'current'` to keep the instance's live value for all
+   * omitted settings, or a map targeting groups / `'group.key'` paths (e.g.
+   * `{ 'scene.crosshairPos': 'current' }` persists the user's crosshair across
+   * scenes while resetting everything else). A setting the document specifies
+   * always wins. A per-call `fill` on `loadDocument` overrides this. Transient.
+   */
+  get settingsFillPolicy(): SettingsFillPolicy | undefined {
+    return this._settingsFillPolicy
+  }
+  set settingsFillPolicy(v: SettingsFillPolicy | undefined) {
+    this._settingsFillPolicy = v
+  }
+
+  /**
    * Return the current scene serialized as an NVD document (CBOR-encoded
    * Uint8Array). `options.settings` overrides the instance `settingsSavePolicy`
    * for this call; `options.linkData` saves a small "linked" document that
@@ -4635,7 +4654,10 @@ export default class NiiVueGPU extends EventTarget {
     NVDocument.triggerDownload(data, filename)
   }
 
-  async loadDocument(source: string | File): Promise<void> {
+  async loadDocument(
+    source: string | File,
+    options?: { fill?: SettingsFillPolicy },
+  ): Promise<void> {
     // Fetch the document file
     const buffer = await NVLoader.fetchFile(source)
     const data = new Uint8Array(buffer)
@@ -4649,8 +4671,13 @@ export default class NiiVueGPU extends EventTarget {
     await this.removeAllVolumes()
     await this.removeAllMeshes()
 
-    // Apply non-data state (scene, config, display settings)
-    NVDocument.applyDocumentToModel(this.model, doc)
+    // Apply non-data state (scene, config, display settings). Settings the
+    // document omits are filled per the fill policy (default: reset to defaults).
+    NVDocument.applyDocumentToModel(
+      this.model,
+      doc,
+      options?.fill ?? this._settingsFillPolicy,
+    )
 
     // Restore thumbnail if present in document
     if (this.model.ui.thumbnailUrl) {

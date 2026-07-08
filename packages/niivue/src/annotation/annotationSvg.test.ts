@@ -175,7 +175,7 @@ describe('annotationsToSVG', () => {
     expect(svg).toContain('data-slice-plane="AXIAL"')
   })
 
-  test('non-finite geometry never serializes as NaN', () => {
+  test('non-finite vertices are dropped, not moved to the origin', () => {
     const svg = annotationsToSVG({
       annotations: [
         makeAnn({
@@ -183,8 +183,8 @@ describe('annotationsToSVG', () => {
             {
               outer: [
                 { x: 0, y: 0 },
-                { x: Number.NaN, y: 10 },
-                { x: 10, y: Number.POSITIVE_INFINITY },
+                { x: 10, y: 0 },
+                { x: Number.NaN, y: 5 },
                 { x: 10, y: 10 },
               ],
               holes: [],
@@ -198,6 +198,32 @@ describe('annotationsToSVG', () => {
     expect(svg).not.toContain('NaN')
     expect(svg).not.toContain('Infinity')
     expect(svg).toContain('<path')
+    // The bad vertex must not become a real point at the panel origin — that
+    // would silently self-intersect the ring and change what evenodd fills.
+    const d = svg.match(/d="([^"]+)"/)?.[1] ?? ''
+    expect((d.match(/[ML] /g) ?? []).length).toBe(3) // 4 vertices, 1 dropped
+  })
+
+  test('a ring of only non-finite vertices emits no path', () => {
+    const svg = annotationsToSVG({
+      annotations: [
+        makeAnn({
+          polygons: [
+            {
+              outer: [
+                { x: Number.NaN, y: Number.NaN },
+                { x: Number.NaN, y: Number.NaN },
+              ],
+              holes: [],
+            },
+          ],
+        }),
+      ],
+      pad: 0,
+    })
+    // No finite geometry at all -> the valid empty SVG, not a degenerate path.
+    expect(svg).toContain('viewBox="0 0 1 1"')
+    expect(svg.match(/<path /g)).toBeNull()
   })
 
   test('a malformed color never serializes as NaN', () => {
@@ -216,6 +242,64 @@ describe('annotationsToSVG', () => {
     expect(svg).not.toContain('NaN')
     // Malformed channels clamp to 0; a malformed alpha renders opaque, not invisible.
     expect(svg).toContain('fill="rgba(0,0,0,1)"')
-    expect(svg).toContain('stroke-width="0"')
+    // A malformed stroke width falls back to SVG's initial value, not 0 (invisible).
+    expect(svg).toContain('stroke-width="1"')
+  })
+
+  test('a negative pad is clamped, never emitting a negative viewBox', () => {
+    const svg = annotationsToSVG({
+      annotations: [makeAnn()],
+      sliceType: SLICE_TYPE.AXIAL,
+      pad: -5,
+    })
+    // Negative width/viewBox width is invalid per spec: nothing would render.
+    expect(svg).toContain('viewBox="0 0 10 10"')
+    expect(svg).toContain('width="10"')
+    expect(svg).not.toMatch(/(?:width|height)="-/)
+    expect(svg).not.toContain('translate(-')
+  })
+
+  test('slicePosition without a sliceType is ignored, not applied across planes', () => {
+    // A depth is measured along the plane's own axis (z axial, y coronal,
+    // x sagittal), so 30 does not mean the same place on two different planes.
+    const svg = annotationsToSVG({
+      annotations: [
+        makeAnn({ id: 'ax', sliceType: SLICE_TYPE.AXIAL, slicePosition: 30 }),
+        makeAnn({
+          id: 'sa',
+          sliceType: SLICE_TYPE.SAGITTAL,
+          slicePosition: 30,
+        }),
+        makeAnn({ id: 'co', sliceType: SLICE_TYPE.CORONAL, slicePosition: 99 }),
+      ],
+      slicePosition: 30,
+      pad: 0,
+    })
+    // All three export: the depth filter is ignored rather than silently mixing
+    // an axial z=30 with a sagittal x=30.
+    expect(svg.match(/<path /g)?.length).toBe(3)
+  })
+
+  test('slicePosition is honored when a sliceType is given', () => {
+    const svg = annotationsToSVG({
+      annotations: [
+        makeAnn({ id: 'near', slicePosition: 10 }),
+        makeAnn({ id: 'far', slicePosition: 40 }),
+      ],
+      sliceType: SLICE_TYPE.AXIAL,
+      slicePosition: 10,
+      tolerance: 1,
+    })
+    expect(svg.match(/<path /g)?.length).toBe(1)
+  })
+
+  test('each panel records the mm origin its local coords were shifted from', () => {
+    const svg = annotationsToSVG({
+      annotations: [makeAnn()],
+      sliceType: SLICE_TYPE.AXIAL,
+      pad: 0,
+    })
+    // bbox 0..10; mmX = xLocal + minX, mmY = maxY - yLocal.
+    expect(svg).toContain('data-origin-mm="0 10"')
   })
 })

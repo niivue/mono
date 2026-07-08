@@ -3,6 +3,7 @@
 // graph, which uses Vite's `import.meta.glob` and cannot be imported by Bun.
 
 import { type mat4, vec3, vec4 } from 'gl-matrix'
+import type NVModel from '@/NVModel'
 import type { NVImage } from '@/NVTypes'
 import { explodeOffsetMMAtFrac } from '@/volume/ChunkExplode'
 
@@ -40,6 +41,23 @@ export function crosshairExplodeOffset(
     )
   }
   return [0, 0, 0]
+}
+
+/**
+ * `crosshairExplodeOffset` for the scene's active volume. Bails before converting
+ * the crosshair to mm when there is no exploded chunk plan — the common case, and
+ * this runs on every crosshair update in both backends.
+ */
+export function crosshairExplodeOffsetForModel(
+  model: NVModel,
+): [number, number, number] {
+  const volume = model.volumes[0]
+  if (!volume?.chunkPlan || !volume?.chunkExplode) return [0, 0, 0]
+  return crosshairExplodeOffset(
+    volume,
+    model.scene2mm(model.scene.crosshairPos),
+    model.mm2tex,
+  )
 }
 
 /** Translate an mm point by an offset (returns the input unchanged when zero). */

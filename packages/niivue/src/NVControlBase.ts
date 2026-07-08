@@ -1539,13 +1539,20 @@ export default class NiiVueGPU extends EventTarget {
 
   /**
    * Serialize the vector annotations to a standalone SVG string (`<path>` per
-   * polygon, in slice-plane mm coordinates). `sliceType` defaults to the current
+   * polygon, one `<g>` panel per slice plane). `sliceType` defaults to the current
    * single-slice view; in render/multiplanar/none (no single plane on screen)
-   * every plane is exported, each in its own `<g>` panel laid out left-to-right,
-   * so shapes drawn directly on the 3D blocks all export rather than only those
-   * sharing the first annotation's plane. When `slicePosition` is given only
-   * annotations on that slice are exported; omit it (the default) to export every
-   * annotation on the plane. Returns null when there are none.
+   * every plane is exported, each panel laid out left-to-right, so shapes drawn
+   * directly on the 3D blocks all export rather than only those sharing the first
+   * annotation's plane.
+   *
+   * Path coordinates are panel-local at mm scale; each `<g>` carries
+   * `data-origin-mm="minX maxY"` to convert back (`mmX = xLocal + minX`,
+   * `mmY = maxY - yLocal`).
+   *
+   * `slicePosition` restricts the export to one slice and requires a single plane
+   * — a depth is measured along that plane's own axis, so it cannot select across
+   * planes. Passing it with no single plane (and no explicit `sliceType`) warns
+   * and is ignored. Returns null when there are no annotations.
    */
   annotationsToSVG(sliceType?: number, slicePosition?: number): string | null {
     if (this.model.annotations.length === 0) return null

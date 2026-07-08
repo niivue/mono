@@ -6,22 +6,18 @@
 
 /**
  * Serialize a coordinate/length for SVG: rounded to 2dp, with any non-finite
- * value (NaN, Infinity) collapsed to `0`. An `NaN` in a path `d` or a `viewBox`
- * makes the whole document unrenderable in most viewers.
+ * value (NaN, Infinity) replaced by `fallback` (default `0`). An `NaN` in a path
+ * `d` or a `viewBox` makes the whole document unrenderable in most viewers.
+ *
+ * Callers must not rely on this to sanitize GEOMETRY: substituting `0` for a bad
+ * vertex silently moves it to the origin, which distorts the shape rather than
+ * dropping it. Filter non-finite points out first, and use this as the last line
+ * of defence. `fallback` exists for lengths where `0` is itself wrong (a
+ * `stroke-width` of 0 is invisible; SVG's initial value is 1).
  */
-export function svgNumber(n: number): string {
-  if (!Number.isFinite(n)) return '0'
-  return (Math.round(n * 100) / 100).toString()
-}
-
-/** Escape the five XML entities so a value cannot break out of an attribute. */
-export function escapeXmlAttr(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
+export function svgNumber(n: number, fallback = 0): string {
+  const v = Number.isFinite(n) ? n : fallback
+  return (Math.round(v * 100) / 100).toString()
 }
 
 // A conservative allowlist of the CSS color forms we emit or expect. Anything

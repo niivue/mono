@@ -1,15 +1,19 @@
 // Serialize voxel vector annotations to a standalone SVG. This is the volume
 // analog of SlideVectorLayer.toSVG: annotation polygons live in slice-plane mm
 // coordinates (two of the three axes, per sliceType), so we emit one `<path>`
-// per polygon (outer ring + holes via fill-rule="evenodd") in mm space, sized to
-// the annotations' bounding box. y is flipped so the export reads the same way
-// up as the on-screen slice (SVG y grows downward, mm y grows upward).
+// per polygon (outer ring + holes via fill-rule="evenodd"). y is flipped so the
+// export reads the same way up as the on-screen slice (SVG y grows downward, mm
+// y grows upward).
 //
 // A plane's two in-plane axes differ per sliceType (axial x/y, coronal x/z,
 // sagittal y/z), so shapes on different planes cannot share one coordinate
-// frame. Each plane becomes its own `<g>` panel, laid out left-to-right, with
-// coordinates local to that panel's bounding box.
+// frame. Each plane becomes its own `<g>` panel, laid out left-to-right.
+//
+// Path coordinates are PANEL-LOCAL (mm scale, origin at the panel's bounding-box
+// corner), not absolute mm. Each `<g>` carries `data-origin-mm="minX maxY"` so a
+// consumer can recover mm: `mmX = xLocal + minX`, `mmY = maxY - yLocal`.
 
+import { log } from '@/logger'
 import { svgNumber } from '@/NVSvg'
 import type { VectorAnnotation } from '@/NVTypes'
 
@@ -20,9 +24,13 @@ export interface AnnotationsToSVGParams {
   sliceType?: number
   // When given, restrict to annotations whose slicePosition is within
   // `tolerance` mm of this depth. Omit to export every annotation on the plane.
+  // REQUIRES `sliceType`: a slicePosition is a depth along that plane's own axis
+  // (z for axial, y for coronal, x for sagittal), so it is meaningless applied
+  // across planes. Passing it without `sliceType` warns and is ignored.
   slicePosition?: number
   tolerance?: number
-  // Padding (mm) added around each panel's bounding box.
+  // Padding (mm) added around each panel's bounding box. Negative is clamped to 0
+  // (it would invert the panel and emit a negative viewBox width).
   pad?: number
 }
 
@@ -88,13 +96,24 @@ function boundsOf(annotations: readonly VectorAnnotation[]): {
  */
 export function annotationsToSVG(params: AnnotationsToSVGParams): string {
   const { annotations, sliceType, slicePosition, tolerance = 0.5 } = params
-  const pad = params.pad ?? 2
+  const rawPad = params.pad ?? 2
+  const pad = Number.isFinite(rawPad) ? Math.max(0, rawPad) : 0
+
+  // A depth only means something within one plane (z for axial, y for coronal,
+  // x for sagittal), so an all-planes export cannot honor it.
+  let depth = slicePosition
+  if (depth !== undefined && sliceType === undefined) {
+    log.warn(
+      'annotationsToSVG: slicePosition ignored without a sliceType — a slice depth is measured along its own plane axis, so it cannot select across planes.',
+    )
+    depth = undefined
+  }
+
   const selected = annotations.filter(
     (a) =>
       (sliceType === undefined || a.sliceType === sliceType) &&
       a.polygons.length > 0 &&
-      (slicePosition === undefined ||
-        Math.abs(a.slicePosition - slicePosition) <= tolerance),
+      (depth === undefined || Math.abs(a.slicePosition - depth) <= tolerance),
   )
 
   // One panel per slice plane, in ascending plane order.
@@ -135,8 +154,14 @@ export function annotationsToSVG(params: AnnotationsToSVGParams): string {
     const ly = (y: number): number => panel.maxY - y
 
     const ringPath = (ring: { x: number; y: number }[]): string => {
-      if (ring.length === 0) return ''
-      const pts = ring
+      // Drop non-finite vertices rather than letting svgNumber map them to 0 —
+      // that would move them to the panel's origin and silently distort the shape
+      // (a self-intersecting ring changes what fill-rule="evenodd" fills).
+      const finite = ring.filter(
+        (p) => Number.isFinite(p.x) && Number.isFinite(p.y),
+      )
+      if (finite.length === 0) return ''
+      const pts = finite
         .map(
           (p, i) =>
             `${i === 0 ? 'M' : 'L'} ${svgNumber(lx(p.x))} ${svgNumber(ly(p.y))}`,
@@ -149,7 +174,9 @@ export function annotationsToSVG(params: AnnotationsToSVGParams): string {
     for (const ann of panel.annotations) {
       const fill = rgba(ann.style.fillColor)
       const stroke = rgba(ann.style.strokeColor)
-      const sw = svgNumber(ann.style.strokeWidth)
+      // A non-finite stroke width falls back to SVG's initial value (1), not 0 —
+      // a 0-width stroke is invisible, which reads as "the export is broken".
+      const sw = svgNumber(ann.style.strokeWidth, 1)
       for (const poly of ann.polygons) {
         const d = [poly.outer, ...poly.holes]
           .map(ringPath)
@@ -162,8 +189,12 @@ export function annotationsToSVG(params: AnnotationsToSVGParams): string {
       }
     }
     const name = PLANE_NAMES[panel.sliceType] ?? 'UNKNOWN'
+    // Panel coordinates are local, so record the mm origin they were shifted from:
+    // mmX = xLocal + originX, mmY = originY - yLocal. Without this the export is
+    // not invertible back to mm.
+    const originMM = `${svgNumber(panel.minX)} ${svgNumber(panel.maxY)}`
     groups.push(
-      `  <g data-slice-type="${svgNumber(panel.sliceType)}" data-slice-plane="${name}" transform="translate(${svgNumber(dx)} 0)">\n${paths.join('\n')}\n  </g>`,
+      `  <g data-slice-type="${svgNumber(panel.sliceType)}" data-slice-plane="${name}" data-origin-mm="${originMM}" transform="translate(${svgNumber(dx)} 0)">\n${paths.join('\n')}\n  </g>`,
     )
     dx += panel.maxX - panel.minX + gap
   }

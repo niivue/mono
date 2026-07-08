@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { escapeXmlAttr, safeCssColor, svgNumber } from './NVSvg'
+import { safeCssColor, svgNumber } from './NVSvg'
 
 describe('svgNumber', () => {
   test('rounds to two decimals', () => {
@@ -10,25 +10,18 @@ describe('svgNumber', () => {
     expect(svgNumber(-0.001)).toBe('0')
   })
 
+  test('uses the fallback for non-finite values when given', () => {
+    // stroke-width 0 is invisible; SVG's initial value is 1.
+    expect(svgNumber(Number.NaN, 1)).toBe('1')
+    expect(svgNumber(Number.POSITIVE_INFINITY, 1)).toBe('1')
+    expect(svgNumber(2.5, 1)).toBe('2.5')
+  })
+
   test('collapses non-finite values to 0', () => {
     // An NaN in a path `d` or viewBox makes the document unrenderable.
     expect(svgNumber(Number.NaN)).toBe('0')
     expect(svgNumber(Number.POSITIVE_INFINITY)).toBe('0')
     expect(svgNumber(Number.NEGATIVE_INFINITY)).toBe('0')
-  })
-})
-
-describe('escapeXmlAttr', () => {
-  test('escapes the five XML entities', () => {
-    expect(escapeXmlAttr(`<&">'`)).toBe('&lt;&amp;&quot;&gt;&apos;')
-  })
-
-  test('escapes & first so entities are not double-encoded wrongly', () => {
-    expect(escapeXmlAttr('a & <b>')).toBe('a &amp; &lt;b&gt;')
-  })
-
-  test('leaves ordinary text untouched', () => {
-    expect(escapeXmlAttr('plain text 123')).toBe('plain text 123')
   })
 })
 

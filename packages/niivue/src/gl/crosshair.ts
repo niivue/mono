@@ -2,7 +2,7 @@ import type NVModel from '@/NVModel'
 import type { NVMesh, WebGLMeshGPU } from '@/NVTypes'
 import {
   applyCrosshairOffset,
-  crosshairExplodeOffset,
+  crosshairExplodeOffsetForModel,
 } from '@/view/crosshairExplode'
 import {
   BYTES_PER_VERTEX,
@@ -106,11 +106,7 @@ export class CrosshairRenderer extends NVRenderer {
     // When the active volume is a chunked/exploded plan, shift the crosshair onto
     // the displaced block it sits in so the marker tracks the explosion. The
     // block lookup is in volume texture fraction, so convert via mm.
-    const off = crosshairExplodeOffset(
-      model.volumes[0],
-      model.scene2mm(scene.crosshairPos),
-      model.mm2tex,
-    )
+    const off = crosshairExplodeOffsetForModel(model)
 
     // Update each cylinder's vertex buffer
     for (let i = 0; i < 6; i++) {

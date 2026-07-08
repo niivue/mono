@@ -620,24 +620,41 @@ function warnIfBothEditModes(ctrl: NiiVueGPU): void {
   )
 }
 
-// Clear every piece of transient per-drag state. Idempotent, throws nothing, and
-// must stay that way: it runs in the pointerup `finally` so a throwing stroke
-// finalize cannot strand `isDragging` true (which pauses the chunked-volume
-// streaming pump, gated on `!isDragging`). Also used by pointercancel.
+// Clear every piece of transient per-drag state. Runs in the pointerup `finally`
+// so a throwing stroke finalize cannot strand `isDragging` true (which pauses the
+// chunked-volume streaming pump, gated on `!isDragging`) or leave a half-finished
+// stroke behind. Also used by pointercancel.
+//
+// Every statement here is a plain field write EXCEPT the last: the `isDragging`
+// setter calls `drawScene()` on the true->false edge. It is deliberately last so
+// that a throw from the renderer cannot skip any of the resets above it, and the
+// pointerup `finally` releases pointer capture BEFORE calling this.
 function resetDragState(ctrl: NiiVueGPU): void {
+  // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
   ctrl._annotationBrushPath = []
   ctrl._frozenLoopPoints = null
+  ctrl._annotationShapeStart = null
+  ctrl._resizingControlPoint = -1
+  ctrl._resizingAnnotation = null
+  ctrl._resizeOriginalShape = null
   ctrl.model._annotationPreview = null
   ctrl.model._annotationErasePreview = null
+  // Raster (draw) stroke state. The 2D pen accumulates `_drawPenFillPts` during
+  // the drag and consumes them in the pointerup finalize; if that finalize throws
+  // they must not survive, or the NEXT pointerup re-commits the abandoned stroke.
+  ctrl._drawPenLocation = [NaN, NaN, NaN]
+  ctrl._drawPenAxCorSag = -1
+  ctrl._drawPenFillPts = []
   ctrl._draw3DActive = false
   ctrl._draw3DNeedsUndo = false
   ctrl._draw3DLastVoxel = null
   ctrl._draw3DLastChunk = null
   ctrl._draw3DSampleCache = null
-  ctrl.isDragging = false
   ctrl.activeTileHit = null
+  // Last: this setter renders (resumes the chunk-streaming pump).
+  ctrl.isDragging = false
 }
 
 // Commit a freehand 3D vector stroke (mm points picked off the blocks) as a
@@ -767,8 +784,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         // Raster drawing takes precedence when it can actually draw. This is the
         // one priority rule, and it matches the 2D slice path (whose raster
         // intercept precedes the annotation one). Enabling both edit modes at
-        // once is a caller error, warned about by the `drawIsEnabled` /
-        // `annotationIsEnabled` setters.
+        // once is a caller error; `warnIfBothEditModes` (pointerdown) says so.
         !rasterDrawWins(ctrl) &&
         !ctrl.model.annotation.isErasing &&
         ctrl.activeTileHit?.isRender &&
@@ -1147,8 +1163,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       }
       // Finalize shape creation on mouse-up
       if (ctrl.model.annotation.isEnabled && ctrl._annotationShapeStart) {
-        const evt2 = e as PointerEvent
-        const shapeHit = clientToBoundsPixel(ctrl, evt2.clientX, evt2.clientY)
+        const shapeHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
         if (shapeHit && ctrl.activeTileHit && !ctrl.activeTileHit.isRender) {
           const mm = NVSliceLayout.screenSlicePick(
             ctrl.view?.screenSlices ?? [],
@@ -1277,13 +1292,16 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       // Commit a freehand vector stroke drawn on the 3D blocks (clears its state).
       if (ctrl._annotation3DActive) finish3DAnnotationStroke(ctrl)
     } finally {
-      // End a 3D exploded-block stroke + every other transient drag field.
-      resetDragState(ctrl)
+      // Release capture FIRST: `resetDragState` ends by clearing `isDragging`,
+      // whose setter renders, and a throw from the renderer must not strand the
+      // pointer captured on the canvas (every later pointer event would retarget).
       try {
         ctrl.canvas?.releasePointerCapture(evt.pointerId)
       } catch {
         /* already released */
       }
+      // End a 3D exploded-block stroke + every other transient drag field.
+      resetDragState(ctrl)
     }
     // Emit high-level slice pointer event for extensions
     const sliceEvt = computeSlicePointerEvent(ctrl, evt)
@@ -1307,12 +1325,13 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
       DragModes.handleDragRelease(ctrl)
     }
-    resetDragState(ctrl)
+    // Release capture before resetDragState, which renders (see pointerup).
     try {
       ctrl.canvas?.releasePointerCapture((e as PointerEvent).pointerId)
     } catch {
       /* already released */
     }
+    resetDragState(ctrl)
   }
   ctrl._eventListeners.pointermove = (e: Event) => {
     const evt = e as PointerEvent

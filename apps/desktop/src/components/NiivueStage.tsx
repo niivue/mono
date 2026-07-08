@@ -270,6 +270,13 @@ export function NiivueStage({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const nvRef = useRef<NiiVueLike | null>(null)
   const prefetchRef = useRef<VolumePrefetch | null>(null)
+  // The layer item ids in the order NiiVue loaded them, so a layer maps to its
+  // volume by identity, not by current array position. `loadRenderVolumeLods`
+  // loads the whole stack in `layers` order via one atomic `loadVolumes`, so at
+  // load time `nv.volumes[i]` is `layers[i]`; this ref preserves that mapping so
+  // display-only re-applies (which run on a possibly-reordered `layers`) still
+  // target the correct volume. `volumeIndexOfLayer` is the single lookup.
+  const loadedLayerIdsRef = useRef<string[]>([])
   // Two-finger pinch tracking for render-view zoom (see handlePinch*).
   const pinchPointers = useRef<Map<number, { x: number; y: number }>>(new Map())
   const pinchDistance = useRef<number | null>(null)
@@ -378,6 +385,9 @@ export function NiivueStage({
           setStatus
         })
         applyActiveClipPlane(nv, clipPlanes, activeClipPlaneId)
+        // Record the loaded volume order (== this stack's layer order) so the
+        // display re-apply below maps each layer to its volume by identity.
+        loadedLayerIdsRef.current = layers.map((layer) => layer.item.id)
         // Volumes (and their robust-range stats) are now loaded; re-run the
         // in-place display effect so threshold/window defaults can read them.
         if (!cancelled) setLoadedVersion((version) => version + 1)
@@ -398,6 +408,7 @@ export function NiivueStage({
         }
         localNv.destroy?.()
         nvRef.current = null
+        loadedLayerIdsRef.current = []
       }
       onLocationChange?.(null)
     }
@@ -413,7 +424,10 @@ export function NiivueStage({
     const nv = nvRef.current
     if (!nv?.setVolume) return
     const resolved: Record<string, ResolvedWindow> = {}
-    void Promise.all(layers.map((layer, index) => {
+    void Promise.all(layers.map((layer) => {
+      // Map the layer to its NiiVue volume by identity, not array position.
+      const index = loadedLayerIdsRef.current.indexOf(layer.item.id)
+      if (index < 0) return Promise.resolve() // not loaded yet (a reload is pending)
       // An explicit window wins; otherwise restore NiiVue's robust auto range
       // so clearing the window (the "Auto" button) actually reverts the
       // render — setVolume merges, so omitting calMin would leave a stale one.
@@ -456,7 +470,9 @@ export function NiivueStage({
     const nv = nvRef.current
     if (!nv || !onLayerExtents) return
     const extents: Record<string, { min: number[]; max: number[] }> = {}
-    layers.forEach((layer, index) => {
+    layers.forEach((layer) => {
+      const index = loadedLayerIdsRef.current.indexOf(layer.item.id)
+      if (index < 0) return
       const volume = nv.volumes?.[index]
       if (volume?.extentsMin && volume?.extentsMax) {
         extents[layer.item.id] = {
@@ -1059,6 +1075,11 @@ function extractAtlasColorMap(metadata: VolumeMetadata): ColorMap | null {
   return null
 }
 
+// `atlasMaps` is built by `resolveAtlasColorMaps(layers)` in layer order and
+// applied here immediately after `nv.loadVolumes(volumes)` (also layer order),
+// so the array index IS the freshly-loaded volume index — safe by construction,
+// unlike the display re-applies which run later against a possibly-reordered
+// `layers` and therefore go through `loadedLayerIdsRef`.
 async function applyAtlasLabelMaps(
   nv: NiiVueLike,
   atlasMaps: Array<ColorMap | null>

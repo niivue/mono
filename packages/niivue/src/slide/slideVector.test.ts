@@ -72,4 +72,36 @@ describe('SlideVectorLayer', () => {
     expect(svg).toContain('stroke-width="4"')
     expect(svg.startsWith('<svg')).toBe(true)
   })
+
+  test('a hostile color cannot break out of the stroke attribute', () => {
+    const layer = new SlideVectorLayer()
+    layer.addPolygon(
+      [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+      ],
+      '#fff" onload="alert(1)',
+      4,
+    )
+    const svg = layer.toSVG(100, 100)
+    expect(svg).not.toContain('onload')
+    expect(svg).toContain('stroke="none"')
+  })
+
+  test('non-finite geometry never serializes as NaN', () => {
+    const layer = new SlideVectorLayer()
+    layer.addPolygon(
+      [
+        [0, 0],
+        [Number.NaN, 10],
+        [10, Number.POSITIVE_INFINITY],
+      ],
+      'red',
+      Number.NaN,
+    )
+    const svg = layer.toSVG(100, 100)
+    expect(svg).not.toContain('NaN')
+    expect(svg).not.toContain('Infinity')
+  })
 })

@@ -1526,11 +1526,12 @@ export default class NiiVueGPU extends EventTarget {
   /**
    * Serialize the vector annotations to a standalone SVG string (`<path>` per
    * polygon, in slice-plane mm coordinates). `sliceType` defaults to the current
-   * single-slice view; in render/multiplanar/none (no single plane) it falls back
-   * to the plane of the first annotation, so shapes drawn directly on the 3D
-   * blocks still export. When `slicePosition` is given only annotations on that
-   * slice are exported; omit it (the default) to export every annotation on the
-   * plane. Returns null when there are none.
+   * single-slice view; in render/multiplanar/none (no single plane on screen)
+   * every plane is exported, each in its own `<g>` panel laid out left-to-right,
+   * so shapes drawn directly on the 3D blocks all export rather than only those
+   * sharing the first annotation's plane. When `slicePosition` is given only
+   * annotations on that slice are exported; omit it (the default) to export every
+   * annotation on the plane. Returns null when there are none.
    */
   annotationsToSVG(sliceType?: number, slicePosition?: number): string | null {
     if (this.model.annotations.length === 0) return null
@@ -1539,12 +1540,10 @@ export default class NiiVueGPU extends EventTarget {
       type === SLICE_TYPE.AXIAL ||
       type === SLICE_TYPE.CORONAL ||
       type === SLICE_TYPE.SAGITTAL
-    const plane = isSlicePlane
-      ? type
-      : (this.model.annotations[0]?.sliceType ?? SLICE_TYPE.AXIAL)
     return annotationsToSVG({
       annotations: this.model.annotations,
-      sliceType: plane,
+      // undefined => every plane present
+      sliceType: isSlicePlane ? type : undefined,
       slicePosition: slicePosition,
     })
   }

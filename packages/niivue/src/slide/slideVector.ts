@@ -5,6 +5,8 @@
 // viewBox is the slide's pixel extent, so the annotation lines up with the slide
 // in any viewer.
 
+import { safeCssColor, svgNumber } from '@/NVSvg'
+
 export type SlideVectorKind = 'polygon' | 'polyline'
 
 export interface SlideVectorShape {
@@ -63,16 +65,19 @@ export class SlideVectorLayer {
    * (`width` x `height`), so the paths register with the slide in any viewer.
    */
   toSVG(width: number, height: number): string {
-    const round = (n: number): string => (Math.round(n * 100) / 100).toString()
     const body = this.shapes
       .map((s) => {
         const pts = s.points
-          .map(([x, y]) => `${round(x)},${round(y)}`)
+          .map(([x, y]) => `${svgNumber(x)},${svgNumber(y)}`)
           .join(' ')
         const tag = s.kind === 'polygon' ? 'polygon' : 'polyline'
-        return `  <${tag} points="${pts}" fill="none" stroke="${s.color}" stroke-width="${round(s.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round" />`
+        // `color` is caller-supplied (public API / loaded document), so it is
+        // validated rather than interpolated raw — otherwise a value like
+        // `#fff" onload="…` would break out of the attribute.
+        const stroke = safeCssColor(s.color)
+        return `  <${tag} points="${pts}" fill="none" stroke="${stroke}" stroke-width="${svgNumber(s.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round" />`
       })
       .join('\n')
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${round(width)} ${round(height)}" width="${round(width)}" height="${round(height)}">\n${body}\n</svg>\n`
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgNumber(width)} ${svgNumber(height)}" width="${svgNumber(width)}" height="${svgNumber(height)}">\n${body}\n</svg>\n`
   }
 }

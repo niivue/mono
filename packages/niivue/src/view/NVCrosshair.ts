@@ -2,8 +2,6 @@ import { vec3 } from 'gl-matrix'
 import * as NVMeshUtils from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
 import * as NVConstants from '@/NVConstants'
-import type { NVImage } from '@/NVTypes'
-import { explodeOffsetMMAtFrac } from '@/volume/ChunkExplode'
 
 export const CYLINDER_SIDES = 20
 export const CYLINDER_ENDCAPS = true
@@ -31,33 +29,6 @@ export function getCylinderIndices(): Uint32Array {
 export function packColor(rgba: number[]): number {
   const [r, g, b, a] = rgba.map((v) => Math.round(v * 255))
   return (a << 24) | (b << 16) | (g << 8) | r
-}
-
-/**
- * World-mm shift to apply to the 3D crosshair so it tracks an exploded block.
- * Returns [0,0,0] unless `volume` is a chunked, exploded plan; then it is the
- * explode offset of the block containing the crosshair. `crosshairFrac` is the
- * scene-fraction crosshair position.
- */
-export function crosshairExplodeOffset(
-  volume: NVImage | undefined,
-  crosshairFrac: ArrayLike<number>,
-): [number, number, number] {
-  if (volume?.chunkPlan && volume?.chunkExplode && volume?.matRAS) {
-    return explodeOffsetMMAtFrac(
-      volume.chunkPlan,
-      volume.chunkExplode,
-      volume.matRAS,
-      crosshairFrac,
-    )
-  }
-  return [0, 0, 0]
-}
-
-/** Translate an mm point by an offset (returns the input unchanged when zero). */
-export function applyCrosshairOffset(p: vec3, off: ArrayLike<number>): vec3 {
-  if (off[0] === 0 && off[1] === 0 && off[2] === 0) return p
-  return vec3.fromValues(p[0] + off[0], p[1] + off[1], p[2] + off[2])
 }
 
 export function buildVertexData(

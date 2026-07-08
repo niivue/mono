@@ -312,6 +312,49 @@ we just built), then work down.
 **All five done 2026-07-08** (commits `e707b728`, `0c71711c`, `b3ebd681`,
 `529a2b84`). Full gate green after each; codespell clean.
 
+### Second review pass (2026-07-08, commit `6c90a2e2`)
+
+A follow-up review of the P1 work found five real defects in it. Two are traps
+worth remembering:
+
+1. **The pointerup `finally` was not exception-safe.** `resetDragState` ends with
+   `isDragging = false`, and that SETTER CALLS `drawScene()` — so the "cleanup"
+   helper renders, and could throw before `releasePointerCapture` ran, stranding
+   exactly what the `finally` existed to protect. Capture is released first now,
+   and the rendering statement is last in the helper.
+2. **A throwing finalize REPLAYED the stroke.** `_drawPenFillPts` and friends are
+   cleared at the END of their branch (after the call that can throw) and were
+   absent from `resetDragState`, so the next bare pointerup re-committed a stroke
+   the user never drew. Same latent bug on pointercancel; both fixed.
+3. `svgNumber` mapping a non-finite vertex to `0` MOVED it to the panel origin,
+   quietly self-intersecting the ring — worse than the old `NaN`, which at least
+   failed loudly. `ringPath` drops non-finite vertices now; a bad `stroke-width`
+   falls back to 1, not 0 (invisible).
+4. `slicePosition` silently applied ACROSS planes once `sliceType` became optional
+   (a depth means z/y/x depending on the plane). It requires a plane now, and warns.
+5. Panel-local coords made the export non-invertible; each `<g>` now carries
+   `data-origin-mm`. Negative `pad` is clamped. Dead `escapeXmlAttr` removed.
+
+Regression tests for 1 and 2 live in `e2e/drag-state-recovery.spec.ts`, each
+confirmed to FAIL against the pre-fix code. `e2e/annotation-interaction.spec.ts`
+pins draw/select/resize (the selection must SURVIVE pointerup while the drag state
+must not) plus the raster-over-vector priority and its warning.
+
+**Verification:** 690 unit + 14 e2e green; typecheck / lint / build / boundaries /
+codespell clean. All 55 demo pages smoke-loaded with zero console errors (the sole
+exception, `vox.min.webgpu.html`, correctly refuses to run when the harness removes
+`navigator.gpu`). Hand-exercised in a real browser: `vox.draw.explode` (2D pen, 3D
+block pen, Alt+right-drag rotates without painting, vector draw, SVG export, undo)
+on WebGL2 and WebGPU; `slide3d` vector SVG export (stroke colour survives
+`safeCssColor`); `vox.draw`, `vox.tiled`, `slides`, `vox.basic`.
+
+Note: WebGPU chunk streaming for `vox.draw.explode` takes ~35 s on this machine
+(the volume-load worker fails `postMessage` and falls back to a main-thread decode
+that blocks JS). Reproduced identically on the pre-session baseline via a worktree
+— NOT a regression, but it makes the demo look broken for the first half-minute.
+
+### The five P1 items
+
 3. [x] **(S) Wrap stroke finalize in try/finally.** DONE (`e707b728`). The
    pointerup finalize work is wrapped; the state reset + `releasePointerCapture`
    moved into the `finally`. Extracted `resetDragState()`, shared with

@@ -15,8 +15,9 @@ Nothing remaining is blocking.
   demo option removed); all verification targets pass.
 - **Acceptable for now (deferred):** renderer tile-texture cache eviction/reset;
   unified memory budget; adapter-backed (.nvd) restore warning; vector-only
-  restore overlay; bounding the magic-wand reference; formal undo/clear contract;
-  SVG field escaping. Reasons noted inline per item.
+  restore overlay; bounding the magic-wand reference; formal undo/clear contract.
+  Reasons noted inline per item. (SVG field escaping was on this list; it was
+  resolved 2026-07-08 — see the SVG export section.)
 
 ## CI blockers
 
@@ -105,13 +106,15 @@ Nothing remaining is blocking.
 
 ## SVG export
 
-- [ ] Escape or validate SVG vector annotation fields before export. `color` and
-  other shape data can come from public API or loaded documents, so SVG output
-  should avoid malformed or unsafe attributes.
-  **Acceptable for now:** in every current path `color` is a controlled `#rrggbb`
-  hex (from the `_draw` LUT) and points are numbers, and the SVG is a downloaded
-  file (not inlined into the DOM), so there is no live injection surface. Cheap,
-  worthwhile hardening for arbitrary public-API/loaded-document input.
+- [x] Escape or validate SVG vector annotation fields before export. DONE
+  2026-07-08 (`0c71711c`): `SlideVectorLayer.toSVG` was interpolating `shape.color`
+  raw, so a hostile value broke out of `stroke="…"`. Colors now go through
+  `safeCssColor` (allowlist, falls back to `none`) and all numbers through
+  `svgNumber` (NaN/Infinity -> `0`). Shared helpers in `src/NVSvg.ts`.
+  (Superseded rationale: this was triaged "acceptable for now" on the grounds that
+  every in-repo path passes a controlled `#rrggbb` and the SVG is downloaded rather
+  than inlined into the DOM. Still true — but `color` is public API, so it is now
+  validated at the boundary instead of trusted.)
 
 ## Verification targets
 
@@ -197,8 +200,8 @@ Follow-ups from this decision:
   drawing-bitmap slice into run-length `<rect>`s per label; implemented + unit
   tested, but the demo button was removed to avoid confusion with the vector SVG.
   Re-enable in a dedicated demo (or behind a toggle) if wanted.
-- [ ] **SVG field escaping** (shared with the slide SVG item above): colors/points
-  are controlled today, but arbitrary public-API/loaded input should be escaped.
+- [x] **SVG field escaping** (shared with the slide SVG item above) — DONE
+  2026-07-08 (`0c71711c`); see the SVG export section above.
 
 ## Clip-plane / interaction
 
@@ -306,28 +309,48 @@ we just built), then work down.
 
 ## P1 — robustness / correctness the review flagged
 
-3. [ ] **(S) Wrap stroke finalize in try/finally.** `finish3DAnnotationStroke`
-   (and the pre-existing 2D annotation finalize blocks) run before the
-   `isDragging = false` reset with no guard; a throw strands `isDragging` and
-   stalls chunk streaming (gated on `!isDragging`). Wrap so cleanup always runs.
-4. [ ] **(S-M) Reconcile the 3D crosshair fraction space.** `NVCrosshair.ts`
-   passes `scene.crosshairPos` (scene fraction) to `explodeOffsetMMAtFrac`, while
-   the annotation path (correctly) passes texture fraction; they differ with
-   extra meshes / multiple volumes / origin-flip. Convert the crosshair to
-   texture fraction (via `mm2tex`) or document why scene fraction is intended.
-5. [ ] **(S-M) `annotationsToSVG`: export all planes, not just the first.** In
-   render/multiplanar it falls back to `annotations[0].sliceType`, so shapes on
-   mixed planes only partly export. Emit a `<g>` per slice plane (or group by
-   plane) so every shape lands in one SVG. Add a test.
-6. [ ] **(S) SVG field escaping.** `annotationsToSVG` / `SlideVectorLayer.toSVG`
-   assume controlled color/points; escape/validate for arbitrary public-API or
-   loaded-document input. Cheap hardening (shared with the slide-SVG TODO above).
-7. [ ] **(S) Enforce (or intentionally define) vector-vs-raster exclusivity.**
-   If an app enables both `drawIsEnabled` and `annotationIsEnabled`, a 3D
-   right-drag draws vector and the pen/wand/fill never fire. Either make one
-   setter clear the other, or document the priority. Also add the missing
-   `annotation.isEnabled` mid-drag guard to the vector drag branch (mirror the
-   raster branch's `draw.isEnabled` check).
+**All five done 2026-07-08** (commits `e707b728`, `0c71711c`, `b3ebd681`,
+`529a2b84`). Full gate green after each; codespell clean.
+
+3. [x] **(S) Wrap stroke finalize in try/finally.** DONE (`e707b728`). The
+   pointerup finalize work is wrapped; the state reset + `releasePointerCapture`
+   moved into the `finally`. Extracted `resetDragState()`, shared with
+   pointercancel and now a superset — a cancelled drag also clears the 2D
+   annotation preview / brush path (previously stranded). The pointerUp emits run
+   after the `finally` and are intentionally skipped on a throw.
+4. [x] **(S-M) Reconcile the 3D crosshair fraction space.** DONE (`529a2b84`).
+   `crosshairExplodeOffset` now takes world mm + `mm2tex` and converts to texture
+   fraction, exactly as the annotation path does, so the two agree by
+   construction. Both backends updated. The math moved to a new pure module
+   `view/crosshairExplode.ts` (NVCrosshair pulls in the mesh `import.meta.glob`
+   graph, so it is unreachable from the Bun runner); unit-tested, including a case
+   proving scene fraction picks the *opposite* block.
+5. [x] **(S-M) `annotationsToSVG`: export all planes, not just the first.** DONE
+   (`0c71711c`). `sliceType` is optional; omitting it emits one
+   `<g data-slice-plane=…>` panel per plane, laid out left-to-right in
+   panel-local coordinates (a plane's two in-plane axes differ per sliceType, so
+   panels cannot share a frame). The controller omits it when no single slice
+   plane is on screen, and still restricts to it when one is. Tested.
+6. [x] **(S) SVG field escaping.** DONE (`0c71711c`). The real hole was
+   `SlideVectorLayer.toSVG` interpolating `shape.color` (a raw string) into
+   `stroke="…"` — `#fff" onload="…` broke out. Colors are validated against a
+   CSS-color allowlist (`safeCssColor`, falls back to `none`). All numbers go
+   through `svgNumber`, which collapses NaN/Infinity to `0` (a non-finite number
+   in a path `d`/`viewBox` makes the document unrenderable). `annotationsToSVG`
+   was already injection-safe via numeric coercion but could emit `NaN`. Shared
+   helpers in `src/NVSvg.ts`, unit-tested with the escape payloads.
+7. [x] **(S) Enforce (or intentionally define) vector-vs-raster exclusivity.**
+   DONE (`b3ebd681`). Chose "define the priority" over mutating state in a setter.
+   One rule (`rasterDrawWins()`): raster drawing takes precedence when it can
+   actually draw (`draw.isEnabled` + a `drawingVolume` exists). That matches the
+   pre-existing 2D behavior, so only the 3D render-tile case changes. The first
+   genuinely ambiguous pointerdown warns, once per instance — the warning is at
+   the interception point, NOT in the setters, because a caller legitimately
+   passes through a both-on state while switching tools (the `vox.draw.explode`
+   selector did; it now leaves the outgoing mode first). Both missing vector
+   guards added: the mid-drag branch checks the live `annotation.isEnabled`, and
+   `finish3DAnnotationStroke` discards (not commits) a stroke whose mode was
+   turned off mid-drag.
 
 ## P2 — UX / feature polish
 
@@ -453,7 +476,8 @@ Most are demo-level UX; a couple touch core defaults.
 
 ## Suggested first move tomorrow
 
-Do P0.1 (WebGL2 check) to warm up + confirm parity, then P0.2 (clip-plane
-modifier) since it's the last piece of the "draw on blocks with a clip plane"
-request. Then sweep P1 (all small, all robustness). Re-run the full gate after
-each batch; commit locally per the review hold.
+SUPERSEDED — P0 and P1 are both complete (2026-07-07 / 2026-07-08). Next up is
+**P2** (UX / feature polish): item 8 (on-top render option for 3D annotations) is
+the only one with real design content; 9 and 10 are small. P3 item 11 (non-planar
+3D annotation type) still needs scoping + a go/no-go from the user before any
+code. Everything remains local/unpushed per the review hold.

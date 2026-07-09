@@ -269,9 +269,13 @@ flake not a hard fail. **Fix:** `test.setTimeout(60_000)` on the sparse test, or
   try/finally (commit, then release capture, then `resetDragState`).
 - ~~#8 e2e timeout asymmetry~~ — **DONE** (sparse test at 60 s).
 - ~~#9 crosshair fraction space~~ — **DONE** `529a2b84` (texture fraction, not scene).
-- ~~#9 `finish3DAnnotationStroke` 1-D guard~~ — **DONE** (2026-07-08). The two LARGEST
-  extents must exceed epsilon, so a collinear stroke is discarded like a single-voxel
-  one; the old all-three-tiny test let a 1-D line commit a zero-area polygon + undo step.
+- ~~#9 `finish3DAnnotationStroke` 1-D guard~~ — **DONE** (2026-07-08; hardened
+  2026-07-09). Now tests the actual **shoelace area** of the projected polygon and
+  bails when it is ~0, so a single point OR any collinear set — axis-aligned or
+  **diagonal** — is discarded. The first pass used a bounding-box extent test; a
+  pre-push review noted a diagonal collinear line has two non-zero extents and would
+  slip through, so it was replaced with the area test (the accurate "a polygon needs
+  area" check). Pinned by the diagonal case in `annotation-3d-stroke.spec.ts`.
 - ~~#9 `settingEquals` array-like~~ — **DONE** (2026-07-08). Gated on
   `Array.isArray || ArrayBuffer.isView` (minus `DataView`) instead of duck-typing
   `length`, and a sequence never compares equal to a plain object.

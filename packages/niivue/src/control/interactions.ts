@@ -689,12 +689,6 @@ function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
     }
   }
   const ext = [max[0] - min[0], max[1] - min[1], max[2] - min[2]]
-  // A polygon needs area, so the two LARGEST extents must both be non-degenerate.
-  // This rejects both a single-voxel stroke (all three tiny) and a 1-D line along
-  // one axis (two tiny), each of which would commit an invisible zero-area
-  // annotation and an undo entry.
-  const spans = [...ext].sort((a, b) => b - a)
-  if (spans[1] <= 1e-6) return
   let depthAxis = 0
   if (ext[1] < ext[depthAxis]) depthAxis = 1
   if (ext[2] < ext[depthAxis]) depthAxis = 2
@@ -705,6 +699,18 @@ function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
   const outer = pts.map((p) =>
     Annotation.mmToSlice2D([p[0], p[1], p[2]], sliceType),
   )
+  // A polygon needs area. Reject a degenerate stroke — one point, or any set of
+  // collinear points (an axis-aligned OR diagonal line) — that would otherwise
+  // commit an invisible zero-area annotation and an undo entry. Test the actual
+  // area of the projected polygon (shoelace) rather than its bounding box, which
+  // a diagonal line would pass with two non-zero extents. eps is in mm^2.
+  let twiceArea = 0
+  for (let i = 0; i < outer.length; i++) {
+    const a = outer[i]
+    const b = outer[(i + 1) % outer.length]
+    twiceArea += a.x * b.y - b.x * a.y
+  }
+  if (Math.abs(twiceArea) / 2 <= 1e-6) return
   const anchorMM: [number, number, number] = [
     (min[0] + max[0]) / 2,
     (min[1] + max[1]) / 2,

@@ -109,24 +109,35 @@ test('a collinear 3D stroke is discarded rather than committed as a zero-area sh
 
   const r = await page.evaluate(`(async () => {
     ${setup}
-    // Every point on one line: one large extent, two zero. Only the all-three-tiny
-    // case used to be rejected, so this committed an invisible polygon plus an
-    // undo entry.
+    // Axis-aligned line: one large bounding-box extent, two zero.
     beginStroke([[0, 0, 0], [5, 0, 0], [10, 0, 0]])
     cancel()
-    const afterLine = nv.annotations.length
+    const afterAxisLine = nv.annotations.length
 
-    // A single repeated point (all three extents tiny) is rejected as before.
+    // DIAGONAL line in the axial (z=const) plane: TWO large bounding-box extents,
+    // yet zero area. A bounding-box guard passes this; the shoelace area test
+    // rejects it. This is the case that motivated the area test.
+    beginStroke([[0, 0, 0], [5, 5, 0], [10, 10, 0]])
+    cancel()
+    const afterDiagLine = nv.annotations.length
+
+    // A single repeated point (all extents zero) is rejected too.
     beginStroke([[3, 3, 3], [3, 3, 3], [3, 3, 3]])
     cancel()
 
     // undo() returns null on an empty stack without mutating it.
     const noUndoStep = nv._annotationUndoStack.undo(nv.annotations) === null
-    return { afterLine, afterPoint: nv.annotations.length, noUndoStep }
+    return {
+      afterAxisLine,
+      afterDiagLine,
+      afterPoint: nv.annotations.length,
+      noUndoStep,
+    }
   })()`)
 
-  expect(r.afterLine).toBe(0)
+  expect(r.afterAxisLine).toBe(0)
+  expect(r.afterDiagLine).toBe(0)
   expect(r.afterPoint).toBe(0)
-  // Neither degenerate stroke pushed an undo step.
+  // No degenerate stroke pushed an undo step.
   expect(r.noUndoStep).toBe(true)
 })

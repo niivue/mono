@@ -31,10 +31,12 @@ import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import {
+  type ClipDrawPlane,
   chunkExplodeEnabled,
   clipPlaneToMMAxisPlane,
   type ExplodedBlockFace,
   explodedChunkAABB,
+  isMatRASAxisAligned,
   pickClipPlaneBlockFace,
   pickExplodedBlockFace,
   pickExplodedVoxel,
@@ -621,13 +623,13 @@ function pickBlockFace(
   const plan = vol.chunkPlan
   const ray = explodedPickRay(ctrl, vol)
   if (!plan || !ray) return null
-  // If a clip plane is active, draw on the CLIP-PLANE cut. The block is the one
+  // If any clip plane is active, draw on the CLIP-PLANE cut. The block is the one
   // whose cut surface the ray actually hits (pickClipPlaneBlockFace), NOT the tissue
   // pick — in cutaway mode the tissue pick ignores the clip and would land on a
   // removed front block. Only when the ray misses every cut do we fall back to the
   // block's box face below.
-  const clip = clipDrawPlaneMM(ctrl)
-  if (clip) {
+  const clipPlanes = clipDrawPlanesMM(ctrl)
+  if (clipPlanes.length > 0) {
     const visible = new Set(
       chunksNotClippedOut(
         plan,
@@ -642,8 +644,7 @@ function pickBlockFace(
       vol.chunkExplode,
       ray.origin,
       ray.dir,
-      clip.axis,
-      clip.planeMM,
+      clipPlanes,
       { allowed: visible },
     )
     if (clipFace) return clipFace
@@ -665,13 +666,22 @@ function pickBlockFace(
   )
 }
 
-// If a clip plane is active and axis-aligned in mm, the mm plane to draw an SVG on
-// (from the model's clip planes + tex2mm). null when no clip is active or the plane
-// is oblique (the axis-aligned annotation model can't hold an oblique plane yet).
-function clipDrawPlaneMM(
-  ctrl: NiiVueGPU,
-): { axis: 0 | 1 | 2; planeMM: number } | null {
-  return clipPlaneToMMAxisPlane(ctrl.model.clipPlanes, ctrl.model.tex2mm)
+// The mm drawing planes for every ACTIVE axis-aligned clip plane (there are
+// NUM_CLIP_PLANE slots; the interaction stack cycles which is active, and more than
+// one can be on). pickClipPlaneBlockFace picks the nearest cut the ray hits across
+// them. Empty when no clip is active or every active plane is oblique (the
+// axis-aligned annotation model can't hold an oblique plane yet).
+function clipDrawPlanesMM(ctrl: NiiVueGPU): ClipDrawPlane[] {
+  const cps = ctrl.model.clipPlanes
+  const tex2mm = ctrl.model.tex2mm
+  if (!cps || !tex2mm) return []
+  const out: ClipDrawPlane[] = []
+  const count = Math.min(NVConstants.NUM_CLIP_PLANE, Math.floor(cps.length / 4))
+  for (let i = 0; i < count; i++) {
+    const plane = clipPlaneToMMAxisPlane(cps.slice(i * 4, i * 4 + 4), tex2mm)
+    if (plane) out.push(plane)
+  }
+  return out
 }
 
 // Outline the block a vector stroke is drawing on, as a hint. Reuses the FocusBox
@@ -904,7 +914,13 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         !evt.altKey &&
         annVol?.matRAS &&
         annVol.chunkPlan &&
-        chunkExplodeEnabled(annVol.chunkExplode)
+        chunkExplodeEnabled(annVol.chunkExplode) &&
+        // The block-face math builds axis-aligned mm planes from a block's mm AABB,
+        // which only matches the visible face for an axis-aligned volume. On an
+        // oblique/sheared volume the face would be wrong, so don't intercept —
+        // right-drag falls through to clip-plane rotation. (Arbitrary-plane
+        // annotations are a tracked follow-up.)
+        isMatRASAxisAligned(annVol.matRAS as Float32Array)
       ) {
         const face = pickBlockFace(ctrl, annVol)
         ctrl._annotation3DActive = true

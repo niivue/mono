@@ -657,31 +657,37 @@ export function blockFaceOnPlaneMM(
   }
 }
 
-// Convert an active, axis-aligned clip plane to an mm drawing plane (face-normal mm
-// axis + un-exploded depth), for drawing an SVG on the clip cut. Only the FIRST clip
-// plane (`clipPlanes[0..3]`) is used as the drawing plane; with multiple active
-// planes the SVG lands on plane 0's cut (acceptable for the single-plane demo).
-// `clipPlanes` is the model's `[nx,ny,nz,a, ...]` in [0,1]^3 object space (kept side
-// dot(n,p-0.5) >= a);
-// `tex2mm` maps object frac -> mm (column-major mat4). Returns null when: no clip /
-// the plane is parked outside the volume (|a| > 0.5*L1(n), e.g. depth 2 = "no clip") /
-// the normal is not object-axis-aligned / it does not map to a single mm axis (an
-// oblique mm plane, which the axis-aligned annotation model can't represent).
+// Convert an axis-aligned clip plane (one `[nx,ny,nz,a]` tuple, read from the start
+// of `clipPlanes`) to an mm drawing plane (face-normal mm axis + un-exploded depth),
+// for drawing an SVG on the clip cut. `clipPlanes` is in [0,1]^3 object space (kept
+// side dot(n,p-0.5) >= a); `tex2mm` maps object frac -> mm (column-major mat4).
+// Returns null when: no clip / the plane is parked outside the volume (after
+// normalizing the normal, |a| > 0.5*L1(n), e.g. depth 2 = "no clip") / the normal is
+// not object-axis-aligned (one component ~+-1 after normalizing, the rest ~0) / it
+// does not map to a single mm axis (an oblique mm plane the axis-aligned annotation
+// model can't represent). `clipDrawPlanesMM` calls this per plane index.
 export function clipPlaneToMMAxisPlane(
   clipPlanes: ArrayLike<number> | null | undefined,
   tex2mm: ArrayLike<number> | null | undefined,
 ): { axis: 0 | 1 | 2; planeMM: number } | null {
   if (!clipPlanes || clipPlanes.length < 4 || !tex2mm) return null
-  const n = [clipPlanes[0], clipPlanes[1], clipPlanes[2]]
-  const a = clipPlanes[3]
+  // Normalize the normal so `a` and the axis test are scale-invariant — a direct
+  // model write / document restore can carry an un-normalized normal (public setters
+  // normalize via sph2cartDeg). Plane dot(n,p-0.5)=a scales to dot(n/|n|, .)=a/|n|.
+  const len = Math.hypot(clipPlanes[0], clipPlanes[1], clipPlanes[2])
+  if (len < 1e-6) return null
+  const n = [clipPlanes[0] / len, clipPlanes[1] / len, clipPlanes[2] / len]
+  const a = clipPlanes[3] / len
   const l1 = Math.abs(n[0]) + Math.abs(n[1]) + Math.abs(n[2])
-  if (l1 < 1e-6) return null
   if (Math.abs(a) > 0.5 * l1 + 1e-6) return null
+  // Object-axis-aligned: exactly one component ~+-1, the other two ~0.
   let objAxis = -1
   for (let k = 0; k < 3; k++) {
     if (Math.abs(Math.abs(n[k]) - 1) < 1e-3) objAxis = k
   }
   if (objAxis < 0) return null
+  const offAxis = [0, 1, 2].every((k) => k === objAxis || Math.abs(n[k]) < 1e-3)
+  if (!offAxis) return null
   const M = tex2mm
   // Apply the column-major tex2mm mat4 to a point (w=1) or direction (w=0).
   const xf = (
@@ -713,31 +719,62 @@ export function clipPlaneToMMAxisPlane(
   return { axis: mmAxis as 0 | 1 | 2, planeMM: mmPt[mmAxis] }
 }
 
+// True when matRAS maps voxel axes to mm axes as a generalized permutation (each
+// voxel axis' mm direction is dominated by a single, distinct mm axis) — i.e. no
+// rotation or shear. The block-face drawing builds an mm axis-aligned plane from a
+// block's mm AABB, which only matches the visible block face when this holds; on an
+// oblique/sheared volume the AABB is a loose box and the committed SVG would land on
+// the wrong plane, so callers gate the feature on this.
+export function isMatRASAxisAligned(matRAS: ArrayLike<number>): boolean {
+  const seen = new Set<number>()
+  for (let j = 0; j < 3; j++) {
+    // mm direction of voxel axis j = column j of the row-major linear part.
+    const col = [matRAS[j], matRAS[4 + j], matRAS[8 + j]]
+    let dom = 0
+    for (let k = 1; k < 3; k++) {
+      if (Math.abs(col[k]) > Math.abs(col[dom])) dom = k
+    }
+    const mag = Math.abs(col[dom])
+    if (mag < 1e-6) return false
+    for (let k = 0; k < 3; k++) {
+      if (k !== dom && Math.abs(col[k]) > 1e-3 * mag) return false
+    }
+    seen.add(dom)
+  }
+  return seen.size === 3
+}
+
+// An axis-aligned clip plane as an mm drawing plane (face-normal axis + un-exploded
+// depth), as produced by clipPlaneToMMAxisPlane.
+export interface ClipDrawPlane {
+  axis: 0 | 1 | 2
+  planeMM: number
+}
+
 // Pick the block whose CLIP-PLANE cut surface the ray hits first, and return its
-// clip-plane face. The clip cuts every block at the same UN-EXPLODED depth
-// (planeMM on `axis`), so each block's visible cut sits at planeMM + its explode
-// offset; we intersect the ray with each block's exploded cut plane and keep the
-// nearest whose hit lands within that block's rectangle. This does NOT rely on the
-// tissue pick (which ignores the cutaway and would land on a removed front block).
-// Returns null when the ray hits no block's cut. `allowed` restricts to visible
-// blocks.
+// clip-plane face. Considers EVERY given plane (there can be several active clip
+// planes, on different axes) and keeps the NEAREST cut the ray actually enters — so
+// the SVG lands on whichever cut the user is looking at. The clip cuts every block
+// at the same UN-EXPLODED depth (planeMM on its axis), so each block's visible cut
+// sits at planeMM + the block's explode offset; we intersect the ray with each
+// block's exploded cut plane and keep the nearest whose hit lands within that
+// block's rectangle. This does NOT rely on the tissue pick (which ignores the
+// cutaway and would land on a removed front block). Returns null when the ray hits
+// no cut. `allowed` restricts to visible blocks.
 export function pickClipPlaneBlockFace(
   plan: ChunkPlan,
   matRAS: ArrayLike<number>,
   explode: ChunkExplodeOptions | null | undefined,
   rayOrigin: readonly [number, number, number],
   rayDir: readonly [number, number, number],
-  axis: 0 | 1 | 2,
-  planeMM: number,
+  planes: ReadonlyArray<ClipDrawPlane>,
   opts: { allowed?: ReadonlySet<number> } = {},
 ): ExplodedBlockFace | null {
-  if (!chunkExplodeEnabled(explode)) return null
-  const dAxis = rayDir[axis]
-  if (Math.abs(dAxis) < 1e-9) return null
-  const a = (axis + 1) % 3
-  const b = (axis + 2) % 3
+  if (!chunkExplodeEnabled(explode) || planes.length === 0) return null
   let bestT = Number.POSITIVE_INFINITY
   let bestCi = -1
+  let bestAxis: 0 | 1 | 2 = 0
+  let bestPlaneMM = 0
   // The ray/cut hit on the winning block, in UN-EXPLODED in-plane mm — so the
   // stroke's first point is where the user clicked, not the block-face centre.
   let bestHit: [number, number] | undefined
@@ -746,22 +783,32 @@ export function pickClipPlaneBlockFace(
     const geom = explodedBlockGeom(plan, matRAS, explode, ci)
     if (!geom) continue
     const { lo, hi, off } = geom
-    // The clip must actually cut this block (planeMM inside its un-exploded range).
-    const loAxU = lo[axis] - off[axis]
-    const hiAxU = hi[axis] - off[axis]
-    if (planeMM < Math.min(loAxU, hiAxU) || planeMM > Math.max(loAxU, hiAxU)) {
-      continue
+    for (const { axis, planeMM } of planes) {
+      const dAxis = rayDir[axis]
+      if (Math.abs(dAxis) < 1e-9) continue
+      const a = (axis + 1) % 3
+      const b = (axis + 2) % 3
+      // The clip must actually cut this block (planeMM in its un-exploded range).
+      const loAxU = lo[axis] - off[axis]
+      const hiAxU = hi[axis] - off[axis]
+      if (
+        planeMM < Math.min(loAxU, hiAxU) ||
+        planeMM > Math.max(loAxU, hiAxU)
+      ) {
+        continue
+      }
+      // This block's cut surface in exploded mm, and where the ray crosses it.
+      const t = (planeMM + off[axis] - rayOrigin[axis]) / dAxis
+      if (t <= 0 || t >= bestT) continue
+      const ha = rayOrigin[a] + t * rayDir[a]
+      const hb = rayOrigin[b] + t * rayDir[b]
+      if (ha < lo[a] || ha > hi[a] || hb < lo[b] || hb > hi[b]) continue
+      bestT = t
+      bestCi = ci
+      bestAxis = axis
+      bestPlaneMM = planeMM
+      bestHit = [ha - off[a], hb - off[b]]
     }
-    // This block's cut surface in exploded mm, and where the ray crosses it.
-    const clipExploded = planeMM + off[axis]
-    const t = (clipExploded - rayOrigin[axis]) / dAxis
-    if (t <= 0 || t >= bestT) continue
-    const ha = rayOrigin[a] + t * rayDir[a]
-    const hb = rayOrigin[b] + t * rayDir[b]
-    if (ha < lo[a] || ha > hi[a] || hb < lo[b] || hb > hi[b]) continue
-    bestT = t
-    bestCi = ci
-    bestHit = [ha - off[a], hb - off[b]]
   }
   if (bestCi < 0) return null
   return blockFaceOnPlaneMM(
@@ -769,8 +816,8 @@ export function pickClipPlaneBlockFace(
     matRAS,
     explode,
     bestCi,
-    axis,
-    planeMM,
+    bestAxis,
+    bestPlaneMM,
     bestHit,
   )
 }

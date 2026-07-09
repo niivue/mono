@@ -6,6 +6,7 @@ import {
   clipPlaneToMMAxisPlane,
   explodedChunkAABB,
   explodeOffsetMMAtFrac,
+  isMatRASAxisAligned,
   pickClipPlaneBlockFace,
   pickExplodedBlockFace,
   pickExplodedVoxel,
@@ -305,9 +306,50 @@ describe('clipPlaneToMMAxisPlane', () => {
     expect(clipPlaneToMMAxisPlane([0, 1, 0, 0], oblique)).toBeNull()
   })
 
+  test('rejects an UN-normalized oblique normal like [1,1,0]', () => {
+    // |n[0]| and |n[1]| are both 1 pre-normalization; only checking "any component
+    // ~+-1" would wrongly accept it. After normalizing it is (0.707, 0.707, 0) and
+    // no axis dominates, so it must be rejected.
+    expect(clipPlaneToMMAxisPlane([1, 1, 0, 0], FRAC2MM_SCALE2)).toBeNull()
+  })
+
+  test('accepts an un-normalized axis-aligned normal like [2,0,0]', () => {
+    // Scaled but still axis-aligned: normalizes to (1,0,0), depth scales too.
+    const r = clipPlaneToMMAxisPlane([2, 0, 0, 0], FRAC2MM_SCALE2)
+    expect(r?.axis).toBe(0)
+    expect(r?.planeMM).toBeCloseTo(-9)
+  })
+
   test('returns null on missing inputs', () => {
     expect(clipPlaneToMMAxisPlane(null, FRAC2MM_SCALE2)).toBeNull()
     expect(clipPlaneToMMAxisPlane([0, 1, 0, 0], null)).toBeNull()
+  })
+})
+
+describe('isMatRASAxisAligned', () => {
+  test('true for a permutation/scale/flip matRAS', () => {
+    // identity, an anisotropic scale + translation, and an axis flip.
+    expect(isMatRASAxisAligned(IDENTITY_RAS)).toBe(true)
+    expect(
+      isMatRASAxisAligned([2, 0, 0, 5, 0, -3, 0, 0, 0, 0, 1.5, -2, 0, 0, 0, 1]),
+    ).toBe(true)
+    // A permutation (voxel x->mm y, y->mm z, z->mm x).
+    expect(
+      isMatRASAxisAligned([0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1]),
+    ).toBe(true)
+  })
+
+  test('false for a rotated / sheared matRAS', () => {
+    const c = Math.cos(0.4)
+    const s = Math.sin(0.4)
+    // Rotation about z by 0.4 rad — orthogonal but NOT axis-aligned.
+    expect(
+      isMatRASAxisAligned([c, -s, 0, 0, s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
+    ).toBe(false)
+    // Shear.
+    expect(
+      isMatRASAxisAligned([1, 0.5, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
+    ).toBe(false)
   })
 })
 
@@ -371,8 +413,7 @@ describe('pickClipPlaneBlockFace', () => {
         explode,
         s.origin,
         s.dir,
-        1,
-        s.planeMM,
+        [{ axis: 1, planeMM: s.planeMM }],
       )
       if (!face) throw new Error(`no clip face for block ${ci}`)
       expect(face.chunkIndex).toBe(ci)
@@ -430,8 +471,7 @@ describe('pickClipPlaneBlockFace', () => {
         explode,
         [ox, box.max[1] + 50, oz],
         [0, -1, 0],
-        1,
-        planeMM,
+        [{ axis: 1, planeMM }],
       )
       if (!face) throw new Error(`no clip face for ${ci}`)
       const [a, b] = face.inPlaneAxes // for axis 1 -> [2, 0] (z, x)
@@ -442,6 +482,32 @@ describe('pickClipPlaneBlockFace', () => {
       // And it is NOT the block-face centre (the offset moved it off centre).
       const centreZ = (box.min[a] + box.max[a]) / 2 - face.explodeOffsetMM[a]
       expect(Math.abs(face.entryMM[a] - centreZ)).toBeGreaterThan(1)
+      return
+    }
+    throw new Error('no cut block found')
+  })
+
+  test('uses the active plane when an earlier plane is parallel to the ray', () => {
+    // Two planes: axis 0 (the -y ray is parallel to it, so it can never be hit) and
+    // axis 1 (the ray crosses it). Must fall through to plane 1, not give up on
+    // plane 0 — mirrors "plane 0 parked / not usable, plane 1 active".
+    for (let ci = 0; ci < 27; ci++) {
+      const s = setup(ci)
+      if (!s) continue
+      const face = pickClipPlaneBlockFace(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        s.origin,
+        s.dir,
+        [
+          { axis: 0, planeMM: 15 },
+          { axis: 1, planeMM: s.planeMM },
+        ],
+      )
+      if (!face) throw new Error(`no clip face for ${ci}`)
+      expect(face.axis).toBe(1)
+      expect(face.chunkIndex).toBe(ci)
       return
     }
     throw new Error('no cut block found')
@@ -462,8 +528,7 @@ describe('pickClipPlaneBlockFace', () => {
           box.max[2] + 200,
         ],
         [0, 0, -1],
-        1,
-        15,
+        [{ axis: 1, planeMM: 15 }],
       ),
     ).toBeNull()
   })
@@ -477,8 +542,7 @@ describe('pickClipPlaneBlockFace', () => {
         explode,
         [10000, 500, 10000],
         [0, -1, 0],
-        1,
-        15,
+        [{ axis: 1, planeMM: 15 }],
       ),
     ).toBeNull()
   })

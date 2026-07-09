@@ -70,7 +70,7 @@ const TOOL_ACTIONS = {
   },
   vector: {
     d2: 'left-drag to draw a polygon',
-    d3: 'right-drag a block to draw a polygon',
+    d3: 'right-drag on a block face to draw an axis-aligned polygon',
   },
 }
 const TOOL_LABEL = {

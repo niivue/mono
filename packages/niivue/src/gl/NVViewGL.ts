@@ -748,6 +748,20 @@ export default class NVGlview {
           )
         }
       }
+      // Outline the block a 3D vector stroke is drawing on (pick hint).
+      if (
+        md._pickedBlockBox &&
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER
+      ) {
+        crossLinesList.push(
+          ...NVSliceLayout.buildFocusBoxLines(
+            md._pickedBlockBox,
+            mvpMatrix as mat4,
+            ltwh,
+            buildLine,
+          ),
+        )
+      }
       gl.viewport(
         bx + ltwh[0],
         fullCanvasH - by - ltwh[1] - ltwh[3],

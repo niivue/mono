@@ -94,6 +94,23 @@ Nothing remaining is blocking.
   (`slideDrawUndo` is tool-aware; slide3d's Clear wipes both raster + vector). The
   remaining work is documenting it as a public contract, not a bug fix.
 
+- [ ] Expand 3D vector (SVG) drawing on exploded blocks. **v1 (2026-07-09) is
+  deliberately restricted to the FACE of the picked block:** a right-drag locks
+  onto the front (ray-entry) face of the first block hit — an axis-aligned mm plane
+  (`pickExplodedBlockFace` in `volume/ChunkExplode.ts`, stored as
+  `_annotation3DFace`). Every later point is the cursor ray projected onto that one
+  plane and clamped to the block's face rectangle (`rayBlockFacePointMM`), so the
+  committed SVG is a flat axis-aligned polygon on that block face — not a freehand
+  path following the tissue surface across blocks/depth (the confusing behaviour
+  flagged in manual review). Follow-ups to expand:
+  - **Adjust the drawing face to the clip plane.** The face is currently the box
+    ENTRY face; when a clip plane cuts the block the visible surface is the cut, not
+    the box face. Let the clip plane (or a control) choose which face/plane the SVG
+    is drawn on.
+  - A live in-drag preview (today the polygon only appears on pointer-up).
+  - Strokes that span multiple blocks; oblique (non-axis-aligned) block faces (the
+    mm AABB face assumes an axis-aligned volume).
+
 ## OpenSlide fixtures
 
 - [x] Hamamatsu-2 does not load. **Handled (won't-fix now, documented).** Its instances are JPEG **TILED_FULL** (not a

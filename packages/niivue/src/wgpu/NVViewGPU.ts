@@ -1043,6 +1043,20 @@ export default class NVView {
           )
         }
       }
+      // Outline the block a 3D vector stroke is drawing on (pick hint).
+      if (
+        md._pickedBlockBox &&
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER
+      ) {
+        crossLinesList.push(
+          ...NVSliceLayout.buildFocusBoxLines(
+            md._pickedBlockBox,
+            mvpMatrix as mat4,
+            ltwh,
+            buildLine,
+          ),
+        )
+      }
       // each tile is drawn to a unique screen region
       pass.setViewport(ltwh[0], ltwh[1], ltwh[2], ltwh[3], 0.0, 1.0)
       if (this.volumeRenderer.hasVolume() && volumes.length > 0) {

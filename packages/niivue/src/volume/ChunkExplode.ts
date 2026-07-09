@@ -319,6 +319,255 @@ function clampInt(val: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, Math.round(val)))
 }
 
+/**
+ * The front (ray-entry) face of an exploded block, as an axis-aligned plane.
+ *
+ * All mm fields are in UN-EXPLODED (data) mm — the space annotations are stored
+ * and re-exploded from at render time (buildAnnotation3DRenderData adds the block's
+ * explode offset back per vertex). The block is found in EXPLODED space (that is
+ * where the ray and the visible geometry live); `explodeOffsetMM` is that block's
+ * constant mm shift, kept so `rayBlockFacePointMM` can move the ray into the same
+ * un-exploded space.
+ */
+export interface ExplodedBlockFace {
+  chunkIndex: number
+  // Face-normal axis (0=x, 1=y, 2=z in mm/RAS) and the plane's constant coordinate.
+  axis: 0 | 1 | 2
+  planeMM: number
+  // The two in-plane axes (in `(axis+1)%3, (axis+2)%3` order) and the block's mm
+  // extent on them, so a stroke can be clamped to the face rectangle.
+  inPlaneAxes: [number, number]
+  loMM: [number, number]
+  hiMM: [number, number]
+  // The ray/face intersection (already on the face, within the rectangle).
+  entryMM: [number, number, number]
+  // The block's constant explode shift (exploded mm - un-exploded mm).
+  explodeOffsetMM: [number, number, number]
+}
+
+// Pick the nearest visible exploded block a ray enters and return its FRONT FACE
+// as an axis-aligned plane (the box-entry face — no tissue marching). Vector
+// drawing projects the whole stroke onto this one plane so the polygon lies flat
+// on the block face, instead of following the tissue surface at varying depth.
+// The block is chosen in EXPLODED space (where the blocks are separated), then the
+// face is returned in UN-EXPLODED mm (see ExplodedBlockFace) so the committed
+// annotation, which is re-exploded per block at render, lands back on this face.
+// `allowed` drops fully-clipped blocks; the clip-plane CUT of the face itself is
+// intentionally ignored for now (adjusting the drawing face to the clip plane is a
+// tracked follow-up), so an axis-aligned volume gets an axis-aligned face plane.
+export function pickExplodedBlockFace(
+  plan: ChunkPlan,
+  matRAS: ArrayLike<number>,
+  explode: ChunkExplodeOptions | null | undefined,
+  rayOrigin: readonly [number, number, number],
+  rayDir: readonly [number, number, number],
+  opts: { allowed?: ReadonlySet<number> } = {},
+): ExplodedBlockFace | null {
+  if (!chunkExplodeEnabled(explode)) return null
+  // Un-exploded voxel->mm origin, for the per-block explode offset below. The
+  // explode is a pure per-chunk translation, so the offset is constant per block.
+  const unexplodedOrigin = applyMat(voxToMMMatrix(matRAS), 0, 0, 0)
+  let bestT = Number.POSITIVE_INFINITY
+  let best: ExplodedBlockFace | null = null
+
+  for (let ci = 0; ci < plan.chunks.length; ci++) {
+    if (opts.allowed && !opts.allowed.has(ci)) continue
+    const desc = plan.chunks[ci]
+    const ox = desc.voxelOrigin[0]
+    const oy = desc.voxelOrigin[1]
+    const oz = desc.voxelOrigin[2]
+    const ex = ox + desc.voxelDims[0]
+    const ey = oy + desc.voxelDims[1]
+    const ez = oz + desc.voxelDims[2]
+    const vox2mm = voxToMMMatrix(
+      chunkExplodedMatRAS(plan, ci, matRAS as Float32Array, explode),
+    )
+    const lo: [number, number, number] = [Infinity, Infinity, Infinity]
+    const hi: [number, number, number] = [-Infinity, -Infinity, -Infinity]
+    for (let c = 0; c < 8; c++) {
+      const p = applyMat(
+        vox2mm,
+        c & 1 ? ex : ox,
+        c & 2 ? ey : oy,
+        c & 4 ? ez : oz,
+      )
+      for (let k = 0; k < 3; k++) {
+        lo[k] = Math.min(lo[k], p[k])
+        hi[k] = Math.max(hi[k], p[k])
+      }
+    }
+    const range = rayAABBRange(rayOrigin, rayDir, lo, hi)
+    if (!range || range.tEntry >= bestT) continue
+    const entry: [number, number, number] = [
+      rayOrigin[0] + range.tEntry * rayDir[0],
+      rayOrigin[1] + range.tEntry * rayDir[1],
+      rayOrigin[2] + range.tEntry * rayDir[2],
+    ]
+    // Entry face = the axis whose near slab-plane is the max (i.e. == tEntry).
+    let axis = 0
+    let bestNear = Number.NEGATIVE_INFINITY
+    for (let k = 0; k < 3; k++) {
+      if (Math.abs(rayDir[k]) < 1e-12) continue
+      const t1 = (lo[k] - rayOrigin[k]) / rayDir[k]
+      const t2 = (hi[k] - rayOrigin[k]) / rayDir[k]
+      const near = Math.min(t1, t2)
+      if (near > bestNear) {
+        bestNear = near
+        axis = k
+      }
+    }
+    const a = (axis + 1) % 3
+    const b = (axis + 2) % 3
+    // This block's exploded origin minus the un-exploded origin = its constant
+    // explode shift. Subtract it so the face is reported in un-exploded mm.
+    const explodedOrigin = applyMat(vox2mm, 0, 0, 0)
+    const off: [number, number, number] = [
+      explodedOrigin[0] - unexplodedOrigin[0],
+      explodedOrigin[1] - unexplodedOrigin[1],
+      explodedOrigin[2] - unexplodedOrigin[2],
+    ]
+    // Inset the drawable face INSIDE the block's data region by ~1.5 voxels on
+    // every side. The render re-explodes each annotation vertex by looking up its
+    // containing chunk with floor(texFrac * dims) (explodeOffsetMMAtFrac); a point
+    // sitting exactly on the block's outer boundary floors into a NEIGHBOURING
+    // chunk and gets that chunk's offset, scattering the vertex off the block. The
+    // inset keeps every clamped point strictly inside this block's voxels so the
+    // lookup resolves here. mm-per-voxel per axis (axis-aligned assumption).
+    const INSET_VOX = 1.5
+    const mmPerVox = [
+      (hi[0] - lo[0]) / Math.max(1, desc.voxelDims[0]),
+      (hi[1] - lo[1]) / Math.max(1, desc.voxelDims[1]),
+      (hi[2] - lo[2]) / Math.max(1, desc.voxelDims[2]),
+    ]
+    // Un-exploded axis bounds + inset plane toward the block centre, clamped so a
+    // thin block never pushes the plane past its own centre.
+    const loAxU = lo[axis] - off[axis]
+    const hiAxU = hi[axis] - off[axis]
+    const centreAxU = (loAxU + hiAxU) / 2
+    const axisNudge = Math.min(
+      INSET_VOX * mmPerVox[axis],
+      Math.abs(hiAxU - loAxU) / 2,
+    )
+    let planeMM = entry[axis] - off[axis]
+    planeMM += Math.sign(centreAxU - planeMM) * axisNudge
+    // Un-exploded in-plane rectangle, inset on both sides (guard tiny blocks).
+    const insetRange = (
+      loV: number,
+      hiV: number,
+      m: number,
+    ): [number, number] => {
+      let l = loV + m
+      let h = hiV - m
+      if (l > h) {
+        const mid = (loV + hiV) / 2
+        l = mid
+        h = mid
+      }
+      return [l, h]
+    }
+    const [loA, hiA] = insetRange(
+      lo[a] - off[a],
+      hi[a] - off[a],
+      INSET_VOX * mmPerVox[a],
+    )
+    const [loB, hiB] = insetRange(
+      lo[b] - off[b],
+      hi[b] - off[b],
+      INSET_VOX * mmPerVox[b],
+    )
+    // Clamp the ray-entry point into the inset rectangle for the first stroke point.
+    const entryA = Math.max(loA, Math.min(hiA, entry[a] - off[a]))
+    const entryB = Math.max(loB, Math.min(hiB, entry[b] - off[b]))
+    const entryMM: [number, number, number] = [0, 0, 0]
+    entryMM[axis] = planeMM
+    entryMM[a] = entryA
+    entryMM[b] = entryB
+    bestT = range.tEntry
+    best = {
+      chunkIndex: ci,
+      axis: axis as 0 | 1 | 2,
+      planeMM,
+      inPlaneAxes: [a, b],
+      loMM: [loA, loB],
+      hiMM: [hiA, hiB],
+      entryMM,
+      explodeOffsetMM: off,
+    }
+  }
+  return best
+}
+
+// The exploded mm axis-aligned bounding box (min/max, world mm) of one block —
+// the same box pickExplodedBlockFace ray-tests. Used to outline the picked block
+// on the 3D render (a FocusBox). Returns null if explode is off or the chunk is
+// out of range.
+export function explodedChunkAABB(
+  plan: ChunkPlan,
+  matRAS: ArrayLike<number>,
+  explode: ChunkExplodeOptions | null | undefined,
+  chunkIndex: number,
+): { min: [number, number, number]; max: [number, number, number] } | null {
+  if (!chunkExplodeEnabled(explode)) return null
+  const desc = plan.chunks[chunkIndex]
+  if (!desc) return null
+  const vox2mm = voxToMMMatrix(
+    chunkExplodedMatRAS(plan, chunkIndex, matRAS as Float32Array, explode),
+  )
+  const ox = desc.voxelOrigin[0]
+  const oy = desc.voxelOrigin[1]
+  const oz = desc.voxelOrigin[2]
+  const ex = ox + desc.voxelDims[0]
+  const ey = oy + desc.voxelDims[1]
+  const ez = oz + desc.voxelDims[2]
+  const min: [number, number, number] = [Infinity, Infinity, Infinity]
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity]
+  for (let c = 0; c < 8; c++) {
+    const p = applyMat(
+      vox2mm,
+      c & 1 ? ex : ox,
+      c & 2 ? ey : oy,
+      c & 4 ? ez : oz,
+    )
+    for (let k = 0; k < 3; k++) {
+      min[k] = Math.min(min[k], p[k])
+      max[k] = Math.max(max[k], p[k])
+    }
+  }
+  return { min, max }
+}
+
+/**
+ * Intersect a ray with a block face and return the mm point, clamped to the face
+ * rectangle so it stays ON the block. The ray is in EXPLODED space (unprojected
+ * from the exploded render); the face is un-exploded, so the ray origin is shifted
+ * by the block's explode offset before intersecting, and the result is un-exploded
+ * mm (ready to store as an annotation vertex). Returns null when the ray is
+ * parallel to the face or the crossing is behind the origin.
+ */
+export function rayBlockFacePointMM(
+  face: ExplodedBlockFace,
+  rayOrigin: readonly [number, number, number],
+  rayDir: readonly [number, number, number],
+): [number, number, number] | null {
+  const dAxis = rayDir[face.axis]
+  if (Math.abs(dAxis) < 1e-9) return null
+  const [a, b] = face.inPlaneAxes
+  // Move the ray into un-exploded space (the face's space): exploded = unexploded
+  // + offset, so subtract the offset from the origin (direction is unchanged).
+  const oAxis = rayOrigin[face.axis] - face.explodeOffsetMM[face.axis]
+  const oa = rayOrigin[a] - face.explodeOffsetMM[a]
+  const ob = rayOrigin[b] - face.explodeOffsetMM[b]
+  const t = (face.planeMM - oAxis) / dAxis
+  if (t <= 0) return null
+  const pa = Math.max(face.loMM[0], Math.min(face.hiMM[0], oa + t * rayDir[a]))
+  const pb = Math.max(face.loMM[1], Math.min(face.hiMM[1], ob + t * rayDir[b]))
+  const out: [number, number, number] = [0, 0, 0]
+  out[face.axis] = face.planeMM
+  out[a] = pa
+  out[b] = pb
+  return out
+}
+
 export function chunkExplodedMatRAS(
   plan: ChunkPlan,
   chunkIndex: number,

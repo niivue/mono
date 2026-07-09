@@ -2,8 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import {
   chunkExplodedMatRAS,
   chunkExplodeOffsetFrac,
+  explodedChunkAABB,
   explodeOffsetMMAtFrac,
+  pickExplodedBlockFace,
   pickExplodedVoxel,
+  rayBlockFacePointMM,
 } from './ChunkExplode'
 import { chunkVolume } from './chunking'
 
@@ -176,6 +179,160 @@ describe('pickExplodedVoxel', () => {
       [-1, 0, 0],
     )
     expect(hit?.chunkIndex).toBe(3)
+  })
+})
+
+describe('pickExplodedBlockFace', () => {
+  // Realistic fixture: a 3x3x3 grid of 10^3-voxel blocks, exploded. (The tiny
+  // 2x1x1 fixture used elsewhere is too thin to exercise the face inset.)
+  const V = 30
+  const plan = () => chunkVolume([V, V, V], 10, [0, 0, 0])
+  const explode = {
+    enabled: true,
+    scale: [2, 2, 2] as [number, number, number],
+  }
+  // Build a -z ray through a given block's exploded centre, so it enters that
+  // block's front face. Restrict the pick to `ci` so we test that block's face.
+  const rayIntoBlock = (
+    ci: number,
+  ): { origin: [number, number, number]; dir: [number, number, number] } => {
+    const box = explodedChunkAABB(plan(), IDENTITY_RAS, explode, ci)
+    if (!box) throw new Error(`no aabb for ${ci}`)
+    return {
+      origin: [
+        (box.min[0] + box.max[0]) / 2,
+        (box.min[1] + box.max[1]) / 2,
+        box.max[2] + 200,
+      ],
+      dir: [0, 0, -1],
+    }
+  }
+
+  test('a face point re-explodes back INSIDE its block (the SVG stays on the block)', () => {
+    // The bug: the render re-explodes each annotation vertex by looking up its
+    // chunk with floor(texFrac * dims) (explodeOffsetMMAtFrac). A point on the
+    // block's OUTER boundary floors into a neighbour and gets the wrong offset, so
+    // the polygon scattered off the block. The face is inset inside the block's
+    // voxels; verify entryMM re-explodes into THIS block's exploded AABB.
+    for (const ci of [0, 4, 13, 22, 26]) {
+      const box = explodedChunkAABB(plan(), IDENTITY_RAS, explode, ci)
+      if (!box) throw new Error('aabb')
+      const { origin, dir } = rayIntoBlock(ci)
+      const face = pickExplodedBlockFace(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        origin,
+        dir,
+        {
+          allowed: new Set([ci]),
+        },
+      )
+      if (!face) throw new Error(`no face for ${ci}`)
+      expect(face.chunkIndex).toBe(ci)
+      expect(face.loMM[0]).toBeLessThanOrEqual(face.hiMM[0])
+      expect(face.loMM[1]).toBeLessThanOrEqual(face.hiMM[1])
+      // IDENTITY_RAS: mm == voxel, so the render's texture fraction is mm / dims.
+      const frac = [
+        face.entryMM[0] / V,
+        face.entryMM[1] / V,
+        face.entryMM[2] / V,
+      ]
+      const off = explodeOffsetMMAtFrac(plan(), explode, IDENTITY_RAS, frac)
+      // Offset the render looks up for the vertex must equal the face's offset...
+      expect(off[0]).toBeCloseTo(face.explodeOffsetMM[0])
+      expect(off[1]).toBeCloseTo(face.explodeOffsetMM[1])
+      expect(off[2]).toBeCloseTo(face.explodeOffsetMM[2])
+      // ...and re-exploding the vertex lands inside this block's exploded box.
+      for (let k = 0; k < 3; k++) {
+        expect(face.entryMM[k] + off[k]).toBeGreaterThanOrEqual(
+          box.min[k] - 1e-6,
+        )
+        expect(face.entryMM[k] + off[k]).toBeLessThanOrEqual(box.max[k] + 1e-6)
+      }
+    }
+  })
+
+  test('respects the allowed set and returns null on a miss', () => {
+    const { origin, dir } = rayIntoBlock(13)
+    // The ray only crosses block 13; excluding it makes the pick miss.
+    expect(
+      pickExplodedBlockFace(plan(), IDENTITY_RAS, explode, origin, dir, {
+        allowed: new Set([0]),
+      }),
+    ).toBeNull()
+    // A ray far outside the volume hits nothing.
+    expect(
+      pickExplodedBlockFace(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        [1000, 1000, 1000],
+        [0, 0, -1],
+      ),
+    ).toBeNull()
+  })
+})
+
+describe('explodedChunkAABB', () => {
+  const plan = () => chunkVolume([8, 1, 1], 2, [0, 0, 0])
+  const explode = {
+    enabled: true,
+    scale: [2, 2, 2] as [number, number, number],
+  }
+
+  test('returns the exploded mm box for a block (chunk 2 -> x[5,7])', () => {
+    const box = explodedChunkAABB(plan(), IDENTITY_RAS, explode, 2)
+    expect(box?.min[0]).toBeCloseTo(5)
+    expect(box?.max[0]).toBeCloseTo(7)
+    expect(box?.min[1]).toBeCloseTo(0)
+    expect(box?.max[1]).toBeCloseTo(1)
+  })
+
+  test('returns null when explode is off or the chunk is out of range', () => {
+    expect(explodedChunkAABB(plan(), IDENTITY_RAS, undefined, 2)).toBeNull()
+    expect(explodedChunkAABB(plan(), IDENTITY_RAS, explode, 99)).toBeNull()
+  })
+})
+
+describe('rayBlockFacePointMM', () => {
+  // The un-exploded z = 1 face with rect x[4,6], y[0,1] and a +1 x explode offset
+  // (as pickExplodedBlockFace returns for chunk 2). The ray is in EXPLODED space,
+  // so its x is shifted by -1 before intersecting, and the result is un-exploded.
+  const face = {
+    chunkIndex: 2,
+    axis: 2 as const,
+    planeMM: 1,
+    inPlaneAxes: [0, 1] as [number, number],
+    loMM: [4, 0] as [number, number],
+    hiMM: [6, 1] as [number, number],
+    entryMM: [5, 0.5, 1] as [number, number, number],
+    explodeOffsetMM: [1, 0, 0] as [number, number, number],
+  }
+
+  test('projects an exploded-space ray onto the face and returns un-exploded mm', () => {
+    // Exploded ray x = 6.5 -> un-exploded x = 5.5, inside the rect.
+    const mm = rayBlockFacePointMM(face, [6.5, 0.9, 5], [0, 0, -1])
+    expect(mm?.[0]).toBeCloseTo(5.5)
+    expect(mm?.[1]).toBeCloseTo(0.9)
+    expect(mm?.[2]).toBeCloseTo(1)
+  })
+
+  test('clamps the point to the block face rectangle', () => {
+    // Exploded x = 9 -> un-exploded x = 8 (past hiMM 6); y = 2 (past hiMM 1).
+    const mm = rayBlockFacePointMM(face, [9, 2, 5], [0, 0, -1])
+    expect(mm?.[0]).toBeCloseTo(6) // clamped to hiMM x
+    expect(mm?.[1]).toBeCloseTo(1) // clamped to hiMM y
+    expect(mm?.[2]).toBeCloseTo(1)
+  })
+
+  test('returns null when the ray is parallel to the face', () => {
+    expect(rayBlockFacePointMM(face, [6, 0.5, 5], [1, 0, 0])).toBeNull()
+  })
+
+  test('returns null when the crossing is behind the ray origin', () => {
+    // Origin already past the plane (z = -5), looking further -z: t < 0.
+    expect(rayBlockFacePointMM(face, [6, 0.5, -5], [0, 0, -1])).toBeNull()
   })
 })
 

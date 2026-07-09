@@ -30,7 +30,14 @@ import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
 import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
-import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
+import {
+  chunkExplodeEnabled,
+  type ExplodedBlockFace,
+  explodedChunkAABB,
+  pickExplodedBlockFace,
+  pickExplodedVoxel,
+  rayBlockFacePointMM,
+} from '@/volume/ChunkExplode'
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
 import { getImageDataRAS } from '@/volume/utils'
 
@@ -306,18 +313,16 @@ function strokeSample(ctrl: NiiVueGPU, vol: NVImage): Float32Array | null {
   return data
 }
 
-// Shared pick for 3D drawing on exploded blocks: builds the render tile's MVP
-// (as depthPick does), unprojects the cursor to a world ray in vox2mm mm-space,
-// CPU-ray-casts the exploded chunk AABBs restricted to the clip-visible set, and
-// returns the entered voxel plus a visible-tissue predicate. Null if the ray
-// misses every block or there is no drawing volume.
-function pickExplodedDraw(
+// Unproject the cursor over the active render tile to a world ray (origin + unit
+// dir) in the volume's vox2mm mm-space — the shared front end of every 3D
+// exploded-block pick (draw, wand, vector face). Null if there is no render-tile
+// hit for this volume.
+function explodedPickRay(
   ctrl: NiiVueGPU,
   vol: NVImage,
-): ExplodedDrawPick | null {
+): { origin: [number, number, number]; dir: [number, number, number] } | null {
   const hit = ctrl.activeTileHit
-  const plan = vol.chunkPlan
-  if (!hit || !plan) return null
+  if (!hit || !vol.chunkPlan) return null
   const tile = ctrl.view?.screenSlices[hit.tileIndex]
   const ltwh = tile?.leftTopWidthHeight
   if (!ltwh) return null
@@ -351,6 +356,22 @@ function pickExplodedDraw(
   dx /= len
   dy /= len
   dz /= len
+  return { origin: [near[0], near[1], near[2]], dir: [dx, dy, dz] }
+}
+
+// Shared pick for 3D drawing on exploded blocks: unprojects the cursor to a world
+// ray (explodedPickRay), CPU-ray-casts the exploded chunk AABBs restricted to the
+// clip-visible set, and returns the entered voxel plus a visible-tissue predicate.
+// Null if the ray misses every block or there is no drawing volume.
+function pickExplodedDraw(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+): ExplodedDrawPick | null {
+  const plan = vol.chunkPlan
+  const ray = explodedPickRay(ctrl, vol)
+  if (!plan || !ray) return null
+  const near = ray.origin
+  const [dx, dy, dz] = ray.dir
   // Only blocks the clip plane leaves visible are pickable, so a right-click
   // can't land on a block hidden behind the cutaway. The shader clips each block
   // by its un-exploded data position, which is exactly what chunksNotClippedOut
@@ -585,16 +606,55 @@ function magicWand3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
   return magicWandFill(ctrl, vol, pick.voxel)
 }
 
-// Pick the visible block point under the cursor on the 3D render and return its
-// un-exploded mm position, for freehand vector drawing directly on the blocks.
-function pickBlockMM(
+// Pick the front FACE of the visible block under the cursor on the 3D render, as
+// an axis-aligned mm plane, for vector drawing directly on the blocks. A stroke
+// locks onto the face returned here and projects every later point onto it, so the
+// SVG is a flat axis-aligned polygon on one block face (not a path following the
+// tissue surface across blocks/depth). Adjusting the face to the clip plane is a
+// tracked follow-up.
+function pickBlockFace(
   ctrl: NiiVueGPU,
   vol: NVImage,
-): [number, number, number] | null {
-  const pick = pickExplodedDraw(ctrl, vol)
-  if (!pick) return null
-  const mm = NVTransforms.vox2mm(null, pick.voxel, vol.matRAS as mat4)
-  return [mm[0], mm[1], mm[2]]
+): ExplodedBlockFace | null {
+  const plan = vol.chunkPlan
+  const ray = explodedPickRay(ctrl, vol)
+  if (!plan || !ray) return null
+  // Which block? Use the same TISSUE-AWARE pick as the pen (pickExplodedDraw marches
+  // into the data and lands on the first visible voxel). Picking by nearest bounding
+  // box instead would choose whichever block's box the ray enters first — in the
+  // exploded view that is often a nearer block's empty halo/air margin, so the SVG
+  // landed on the wrong block. Once we know the correct block, take its entry face.
+  const hit = pickExplodedDraw(ctrl, vol)
+  if (!hit) return null
+  return pickExplodedBlockFace(
+    plan,
+    vol.matRAS as Float32Array,
+    vol.chunkExplode,
+    ray.origin,
+    ray.dir,
+    { allowed: new Set([hit.chunkIndex]) },
+  )
+}
+
+// Outline the block a vector stroke is drawing on, as a hint. Reuses the FocusBox
+// render (both backends) with the block's exploded mm AABB.
+const PICKED_BLOCK_COLOR = [1, 1, 0, 1]
+function setPickedBlockHighlight(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+  chunkIndex: number,
+): void {
+  const plan = vol.chunkPlan
+  if (!plan) return
+  const aabb = explodedChunkAABB(
+    plan,
+    vol.matRAS as Float32Array,
+    vol.chunkExplode,
+    chunkIndex,
+  )
+  ctrl.model._pickedBlockBox = aabb
+    ? { min: aabb.min, max: aabb.max, color: PICKED_BLOCK_COLOR, thickness: 2 }
+    : null
 }
 
 // The raster/vector edit-mode priority rule, in one place: when `draw` is enabled
@@ -633,6 +693,8 @@ function resetDragState(ctrl: NiiVueGPU): void {
   // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
+  ctrl._annotation3DFace = null
+  ctrl.model._pickedBlockBox = null
   ctrl._annotationBrushPath = []
   ctrl._frozenLoopPoints = null
   ctrl._annotationShapeStart = null
@@ -806,9 +868,15 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         annVol.chunkPlan &&
         chunkExplodeEnabled(annVol.chunkExplode)
       ) {
-        const mm = pickBlockMM(ctrl, annVol)
+        const face = pickBlockFace(ctrl, annVol)
         ctrl._annotation3DActive = true
-        ctrl._annotation3DMMPath = mm ? [mm] : []
+        // Lock the stroke to the picked block's front face (an axis-aligned mm
+        // plane). null if the first pick missed a block; pointermove establishes
+        // it on the first successful pick. Every later point is projected onto
+        // this one plane, so the SVG stays flat on that block face.
+        ctrl._annotation3DFace = face
+        ctrl._annotation3DMMPath = face ? [face.entryMM] : []
+        if (face) setPickedBlockHighlight(ctrl, annVol, face.chunkIndex)
         ctrl.isDragging = true
         ctrl.activeButton = evt.button
         ctrl.lastPointerX = evt.clientX
@@ -1414,8 +1482,24 @@ export function initInteraction(ctrl: NiiVueGPU): void {
         const tileHit = ctrl.view?.hitTest(moveHit[0], moveHit[1]) ?? null
         if (tileHit?.isRender) {
           ctrl.activeTileHit = tileHit
-          const mm = pickBlockMM(ctrl, annVol)
-          if (mm) ctrl._annotation3DMMPath.push(mm)
+          if (!ctrl._annotation3DFace) {
+            // pointer-down missed a block; establish the face on the first hit.
+            const face = pickBlockFace(ctrl, annVol)
+            if (face) {
+              ctrl._annotation3DFace = face
+              ctrl._annotation3DMMPath.push(face.entryMM)
+              setPickedBlockHighlight(ctrl, annVol, face.chunkIndex)
+            }
+          } else {
+            // Project the cursor ray onto the locked face plane (clamped to the
+            // block's face rectangle), so the whole stroke stays flat on that one
+            // block face regardless of where the cursor wanders.
+            const ray = explodedPickRay(ctrl, annVol)
+            const mm = ray
+              ? rayBlockFacePointMM(ctrl._annotation3DFace, ray.origin, ray.dir)
+              : null
+            if (mm) ctrl._annotation3DMMPath.push(mm)
+          }
         }
       }
       return

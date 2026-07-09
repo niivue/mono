@@ -92,6 +92,12 @@ export default class NVModel {
    */
   _lodBoxes: FocusBox[] | null = null
   /**
+   * Transient world-space outline of the exploded block a 3D vector stroke is
+   * drawing on — a hint so the user can see which block was picked. Drawn like
+   * `_focusBox`; set while a vector stroke is active, cleared on stroke end.
+   */
+  _pickedBlockBox: FocusBox | null = null
+  /**
    * Transient world-mm override for the 3D render's rotation/zoom pivot. When
    * set, the render orbits and zooms about this point (which projects to the
    * render centre) instead of the volume centre — e.g. to keep the crosshair

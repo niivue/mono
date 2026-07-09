@@ -113,6 +113,7 @@ import {
 } from '@/view/NVPerfMarks'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import { validateCustomLayout } from '@/view/NVSliceLayout'
+import type { ExplodedBlockFace } from '@/volume/ChunkExplode'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
 import type { ChunkPlan } from '@/volume/chunking'
 import {
@@ -368,6 +369,10 @@ export default class NiiVueGPU extends EventTarget {
   // committed as a slice annotation.
   _annotation3DActive = false
   _annotation3DMMPath: [number, number, number][] = []
+  // The front face of the picked block, as an axis-aligned mm plane. The whole
+  // stroke is projected onto this one plane, so the committed SVG is a flat
+  // axis-aligned polygon on the block face. null until the first successful pick.
+  _annotation3DFace: ExplodedBlockFace | null = null
   _annotationShapeStart: AnnotationPoint | null = null
   _resizingControlPoint = -1
   _resizeOriginalShape: {

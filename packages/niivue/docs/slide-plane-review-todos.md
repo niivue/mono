@@ -103,10 +103,20 @@ Nothing remaining is blocking.
   committed SVG is a flat axis-aligned polygon on that block face — not a freehand
   path following the tissue surface across blocks/depth (the confusing behaviour
   flagged in manual review). Follow-ups to expand:
-  - **Adjust the drawing face to the clip plane.** The face is currently the box
-    ENTRY face; when a clip plane cuts the block the visible surface is the cut, not
-    the box face. Let the clip plane (or a control) choose which face/plane the SVG
-    is drawn on.
+  - **Adjust the drawing face to the clip plane.** DONE for AXIS-ALIGNED clips
+    (2026-07-09): when a clip plane is active and axis-aligned in mm, a vector stroke
+    on a block the clip cuts draws on the CLIP-PLANE cut instead of the box face
+    (`clipDrawPlaneMM` in `control/interactions.ts` -> `blockFaceOnPlaneMM` in
+    `volume/ChunkExplode.ts`). Still TODO: OBLIQUE clip planes — the axis-aligned
+    annotation model (sliceType A/C/S) can't represent an arbitrary plane, so an
+    oblique clip falls back to the box face. Needs an oblique/arbitrary-plane
+    annotation (explicit normal + 2D basis) across the model, both renderers, 2D
+    projection, and persistence. Two more known limits of the axis-aligned clip draw
+    (both LOW): only the FIRST clip plane is used as the drawing plane (multi-plane
+    clips draw on plane 0's cut), and in CUTAWAY mode the slab exposes two cut faces
+    but the draw always targets the base plane, so from a view looking at the slab's
+    far face the SVG lands on the near-face plane. Fine for the single half-space clip
+    the demo uses.
   - A live in-drag preview (today the polygon only appears on pointer-up).
   - Strokes that span multiple blocks; oblique (non-axis-aligned) block faces (the
     mm AABB face assumes an axis-aligned volume).

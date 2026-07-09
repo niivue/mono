@@ -32,8 +32,10 @@ import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import {
   chunkExplodeEnabled,
+  clipPlaneToMMAxisPlane,
   type ExplodedBlockFace,
   explodedChunkAABB,
+  pickClipPlaneBlockFace,
   pickExplodedBlockFace,
   pickExplodedVoxel,
   rayBlockFacePointMM,
@@ -619,11 +621,38 @@ function pickBlockFace(
   const plan = vol.chunkPlan
   const ray = explodedPickRay(ctrl, vol)
   if (!plan || !ray) return null
-  // Which block? Use the same TISSUE-AWARE pick as the pen (pickExplodedDraw marches
-  // into the data and lands on the first visible voxel). Picking by nearest bounding
-  // box instead would choose whichever block's box the ray enters first — in the
-  // exploded view that is often a nearer block's empty halo/air margin, so the SVG
-  // landed on the wrong block. Once we know the correct block, take its entry face.
+  // If a clip plane is active, draw on the CLIP-PLANE cut. The block is the one
+  // whose cut surface the ray actually hits (pickClipPlaneBlockFace), NOT the tissue
+  // pick — in cutaway mode the tissue pick ignores the clip and would land on a
+  // removed front block. Only when the ray misses every cut do we fall back to the
+  // block's box face below.
+  const clip = clipDrawPlaneMM(ctrl)
+  if (clip) {
+    const visible = new Set(
+      chunksNotClippedOut(
+        plan,
+        plan.chunks.map((_, i) => i),
+        ctrl.model.clipPlanes,
+        ctrl.model.scene.isClipPlaneCutaway,
+      ),
+    )
+    const clipFace = pickClipPlaneBlockFace(
+      plan,
+      vol.matRAS as Float32Array,
+      vol.chunkExplode,
+      ray.origin,
+      ray.dir,
+      clip.axis,
+      clip.planeMM,
+      { allowed: visible },
+    )
+    if (clipFace) return clipFace
+  }
+  // No clip cut hit: pick the block by the same TISSUE-AWARE pick as the pen
+  // (pickExplodedDraw marches into the data and lands on the first visible voxel).
+  // Picking by nearest bounding box instead would choose whichever block's box the
+  // ray enters first — in the exploded view that is often a nearer block's empty
+  // halo/air margin, so the SVG landed on the wrong block. Take that block's face.
   const hit = pickExplodedDraw(ctrl, vol)
   if (!hit) return null
   return pickExplodedBlockFace(
@@ -634,6 +663,15 @@ function pickBlockFace(
     ray.dir,
     { allowed: new Set([hit.chunkIndex]) },
   )
+}
+
+// If a clip plane is active and axis-aligned in mm, the mm plane to draw an SVG on
+// (from the model's clip planes + tex2mm). null when no clip is active or the plane
+// is oblique (the axis-aligned annotation model can't hold an oblique plane yet).
+function clipDrawPlaneMM(
+  ctrl: NiiVueGPU,
+): { axis: 0 | 1 | 2; planeMM: number } | null {
+  return clipPlaneToMMAxisPlane(ctrl.model.clipPlanes, ctrl.model.tex2mm)
 }
 
 // Outline the block a vector stroke is drawing on, as a hint. Reuses the FocusBox

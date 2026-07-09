@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  blockFaceOnPlaneMM,
   chunkExplodedMatRAS,
   chunkExplodeOffsetFrac,
+  clipPlaneToMMAxisPlane,
   explodedChunkAABB,
   explodeOffsetMMAtFrac,
+  pickClipPlaneBlockFace,
   pickExplodedBlockFace,
   pickExplodedVoxel,
   rayBlockFacePointMM,
@@ -11,6 +14,9 @@ import {
 import { chunkVolume } from './chunking'
 
 const IDENTITY_RAS = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+// A frac->mm map (column-major mat4): scale each axis by 2 and translate by -10, so
+// object frac 0.5 on an axis -> mm 0 * ... (i.e. mm = 2*frac - 10 per axis).
+const FRAC2MM_SCALE2 = [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, -10, -10, -10, 1]
 
 describe('ChunkExplode', () => {
   test('keeps compact chunks at scale 1', () => {
@@ -270,6 +276,277 @@ describe('pickExplodedBlockFace', () => {
         [1000, 1000, 1000],
         [0, 0, -1],
       ),
+    ).toBeNull()
+  })
+})
+
+describe('clipPlaneToMMAxisPlane', () => {
+  test('converts an axis-aligned clip plane to an mm axis + depth', () => {
+    // Demo clip: object normal (0,1,0), a = 0 (cut through the centre). tex2mm maps
+    // frac -> mm as mm = 2*frac - 10, so frac y = 0.5 -> mm y = -9, mm axis 1.
+    const r = clipPlaneToMMAxisPlane([0, 1, 0, 0], FRAC2MM_SCALE2)
+    expect(r?.axis).toBe(1)
+    expect(r?.planeMM).toBeCloseTo(-9)
+  })
+
+  test('rejects a parked clip (outside the volume)', () => {
+    // depth 2 -> a = -2; |a| > 0.5 * L1(n) so the plane never meets the cube.
+    expect(clipPlaneToMMAxisPlane([0, 1, 0, -2], FRAC2MM_SCALE2)).toBeNull()
+  })
+
+  test('rejects an oblique object normal', () => {
+    const s = Math.SQRT1_2
+    expect(clipPlaneToMMAxisPlane([s, s, 0, 0], FRAC2MM_SCALE2)).toBeNull()
+  })
+
+  test('rejects a normal that maps to an oblique mm direction', () => {
+    // tex2mm column 1 (object y) = (1,1,0): object y -> a diagonal mm direction.
+    const oblique = [2, 0, 0, 0, 1, 1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1]
+    expect(clipPlaneToMMAxisPlane([0, 1, 0, 0], oblique)).toBeNull()
+  })
+
+  test('returns null on missing inputs', () => {
+    expect(clipPlaneToMMAxisPlane(null, FRAC2MM_SCALE2)).toBeNull()
+    expect(clipPlaneToMMAxisPlane([0, 1, 0, 0], null)).toBeNull()
+  })
+})
+
+describe('pickClipPlaneBlockFace', () => {
+  const V = 30
+  const plan = () => chunkVolume([V, V, V], 10, [0, 0, 0])
+  const explode = {
+    enabled: true,
+    scale: [2, 2, 2] as [number, number, number],
+  }
+  // A -y ray that crosses the clip cut (axis 1) of the block whose exploded cut
+  // rectangle sits under (cx, cz). The clip cuts through un-exploded y = 15.
+  const setup = (
+    ci: number,
+  ): {
+    origin: [number, number, number]
+    dir: [number, number, number]
+    planeMM: number
+  } | null => {
+    const box = explodedChunkAABB(plan(), IDENTITY_RAS, explode, ci)
+    if (!box) return null
+    const probe = pickExplodedBlockFace(
+      plan(),
+      IDENTITY_RAS,
+      explode,
+      [
+        (box.min[0] + box.max[0]) / 2,
+        (box.min[1] + box.max[1]) / 2,
+        box.max[2] + 200,
+      ],
+      [0, 0, -1],
+      { allowed: new Set([ci]) },
+    )
+    if (!probe) return null
+    const planeMM = 15
+    const loY = box.min[1] - probe.explodeOffsetMM[1]
+    const hiY = box.max[1] - probe.explodeOffsetMM[1]
+    if (planeMM < Math.min(loY, hiY) || planeMM > Math.max(loY, hiY))
+      return null
+    // -y ray from above, passing down through this block's exploded cut rectangle.
+    return {
+      origin: [
+        (box.min[0] + box.max[0]) / 2,
+        box.max[1] + 50,
+        (box.min[2] + box.max[2]) / 2,
+      ],
+      dir: [0, -1, 0],
+      planeMM,
+    }
+  }
+
+  test('picks the block whose clip cut the ray hits and returns its clip-plane face', () => {
+    // Find a block the y=15 clip actually cuts, then fire a -y ray through its cut.
+    let tested = 0
+    for (let ci = 0; ci < 27; ci++) {
+      const s = setup(ci)
+      if (!s) continue
+      const face = pickClipPlaneBlockFace(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        s.origin,
+        s.dir,
+        1,
+        s.planeMM,
+      )
+      if (!face) throw new Error(`no clip face for block ${ci}`)
+      expect(face.chunkIndex).toBe(ci)
+      expect(face.axis).toBe(1)
+      expect(face.planeMM).toBeCloseTo(s.planeMM)
+      // The face point re-explodes onto this block's cut (IDENTITY: frac = mm/dims).
+      const box = explodedChunkAABB(plan(), IDENTITY_RAS, explode, ci)
+      if (!box) throw new Error('aabb')
+      const frac = [
+        face.entryMM[0] / V,
+        face.entryMM[1] / V,
+        face.entryMM[2] / V,
+      ]
+      const off = explodeOffsetMMAtFrac(plan(), explode, IDENTITY_RAS, frac)
+      for (let k = 0; k < 3; k++) {
+        expect(face.entryMM[k] + off[k]).toBeGreaterThanOrEqual(
+          box.min[k] - 1e-6,
+        )
+        expect(face.entryMM[k] + off[k]).toBeLessThanOrEqual(box.max[k] + 1e-6)
+      }
+      tested++
+    }
+    expect(tested).toBeGreaterThan(0)
+  })
+
+  test('starts the stroke at the ray hit, not the block-face centre', () => {
+    // A -y ray OFFSET from the block centre in the in-plane axes. entryMM must be
+    // that hit (re-exploded back to the ray's in-plane origin), not the centre —
+    // otherwise every clip-plane polygon spikes from the centre to the stroke.
+    for (let ci = 0; ci < 27; ci++) {
+      const box = explodedChunkAABB(plan(), IDENTITY_RAS, explode, ci)
+      if (!box) continue
+      const probe = pickExplodedBlockFace(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        [
+          (box.min[0] + box.max[0]) / 2,
+          (box.min[1] + box.max[1]) / 2,
+          box.max[2] + 200,
+        ],
+        [0, 0, -1],
+        { allowed: new Set([ci]) },
+      )
+      if (!probe) continue
+      const planeMM = 15
+      const loY = box.min[1] - probe.explodeOffsetMM[1]
+      const hiY = box.max[1] - probe.explodeOffsetMM[1]
+      if (planeMM < Math.min(loY, hiY) || planeMM > Math.max(loY, hiY)) continue
+      const ox = (box.min[0] + box.max[0]) / 2 + 2 // offset x
+      const oz = (box.min[2] + box.max[2]) / 2 - 2 // offset z
+      const face = pickClipPlaneBlockFace(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        [ox, box.max[1] + 50, oz],
+        [0, -1, 0],
+        1,
+        planeMM,
+      )
+      if (!face) throw new Error(`no clip face for ${ci}`)
+      const [a, b] = face.inPlaneAxes // for axis 1 -> [2, 0] (z, x)
+      // A vertical (-y) ray has constant in-plane origin, so re-exploding entryMM
+      // in-plane must return the ray's (oz on z, ox on x).
+      expect(face.entryMM[a] + face.explodeOffsetMM[a]).toBeCloseTo(oz)
+      expect(face.entryMM[b] + face.explodeOffsetMM[b]).toBeCloseTo(ox)
+      // And it is NOT the block-face centre (the offset moved it off centre).
+      const centreZ = (box.min[a] + box.max[a]) / 2 - face.explodeOffsetMM[a]
+      expect(Math.abs(face.entryMM[a] - centreZ)).toBeGreaterThan(1)
+      return
+    }
+    throw new Error('no cut block found')
+  })
+
+  test('returns null when the ray is parallel to the clip plane', () => {
+    // Center-block-ish ray straight down -z is parallel to a y-normal plane.
+    const box = explodedChunkAABB(plan(), IDENTITY_RAS, explode, 13)
+    if (!box) throw new Error('aabb')
+    expect(
+      pickClipPlaneBlockFace(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        [
+          (box.min[0] + box.max[0]) / 2,
+          (box.min[1] + box.max[1]) / 2,
+          box.max[2] + 200,
+        ],
+        [0, 0, -1],
+        1,
+        15,
+      ),
+    ).toBeNull()
+  })
+
+  test('returns null when the ray misses every block cut', () => {
+    // A -y ray far off to the side hits no block's cut rectangle.
+    expect(
+      pickClipPlaneBlockFace(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        [10000, 500, 10000],
+        [0, -1, 0],
+        1,
+        15,
+      ),
+    ).toBeNull()
+  })
+})
+
+describe('blockFaceOnPlaneMM', () => {
+  const V = 30
+  const plan = () => chunkVolume([V, V, V], 10, [0, 0, 0])
+  const explode = {
+    enabled: true,
+    scale: [2, 2, 2] as [number, number, number],
+  }
+
+  test('draws on a given plane through the block, and the point re-explodes inside it', () => {
+    // Simulates drawing on the clip plane: a plane cutting a block on the y axis
+    // through its (un-exploded) middle. The face must sit on that plane and its
+    // point must re-explode into this block (not scatter).
+    for (const ci of [0, 13, 26]) {
+      const box = explodedChunkAABB(plan(), IDENTITY_RAS, explode, ci)
+      if (!box) throw new Error('aabb')
+      // Block's explode offset (from the box-entry face) -> un-exploded centre y.
+      const probe = pickExplodedBlockFace(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        [
+          (box.min[0] + box.max[0]) / 2,
+          (box.min[1] + box.max[1]) / 2,
+          box.max[2] + 200,
+        ],
+        [0, 0, -1],
+        { allowed: new Set([ci]) },
+      )
+      if (!probe) throw new Error('probe')
+      const planeMM = (box.min[1] + box.max[1]) / 2 - probe.explodeOffsetMM[1]
+      const face = blockFaceOnPlaneMM(
+        plan(),
+        IDENTITY_RAS,
+        explode,
+        ci,
+        1,
+        planeMM,
+      )
+      if (!face) throw new Error('face')
+      expect(face.axis).toBe(1)
+      expect(face.planeMM).toBeCloseTo(planeMM)
+      // IDENTITY_RAS: tex frac = mm / dims; re-explode entryMM into the block box.
+      const frac = [
+        face.entryMM[0] / V,
+        face.entryMM[1] / V,
+        face.entryMM[2] / V,
+      ]
+      const off = explodeOffsetMMAtFrac(plan(), explode, IDENTITY_RAS, frac)
+      for (let k = 0; k < 3; k++) {
+        expect(face.entryMM[k] + off[k]).toBeGreaterThanOrEqual(
+          box.min[k] - 1e-6,
+        )
+        expect(face.entryMM[k] + off[k]).toBeLessThanOrEqual(box.max[k] + 1e-6)
+      }
+    }
+  })
+
+  test('returns null when the plane misses the block', () => {
+    const box = explodedChunkAABB(plan(), IDENTITY_RAS, explode, 0)
+    if (!box) throw new Error('aabb')
+    // A y far outside block 0's data range.
+    expect(
+      blockFaceOnPlaneMM(plan(), IDENTITY_RAS, explode, 0, 1, box.max[1] + 500),
     ).toBeNull()
   })
 })

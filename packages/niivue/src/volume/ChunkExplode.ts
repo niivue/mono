@@ -319,6 +319,77 @@ function clampInt(val: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, Math.round(val)))
 }
 
+// Inset an [lo,hi] mm interval by `m` on both sides; if that inverts (block thinner
+// than 2m), collapse to the midpoint. Keeps a drawable face strictly inside the
+// block's data voxels (see the boundary note in pickExplodedBlockFace).
+function insetRange(loV: number, hiV: number, m: number): [number, number] {
+  let l = loV + m
+  let h = hiV - m
+  if (l > h) {
+    const mid = (loV + hiV) / 2
+    l = mid
+    h = mid
+  }
+  return [l, h]
+}
+
+// Per-axis exploded AABB + constant explode offset + mm-per-voxel for one block —
+// the geometry shared by the block-face builders. Null if explode is off / chunk
+// out of range.
+function explodedBlockGeom(
+  plan: ChunkPlan,
+  matRAS: ArrayLike<number>,
+  explode: ChunkExplodeOptions | null | undefined,
+  chunkIndex: number,
+): {
+  lo: [number, number, number]
+  hi: [number, number, number]
+  off: [number, number, number]
+  mmPerVox: [number, number, number]
+} | null {
+  if (!chunkExplodeEnabled(explode)) return null
+  const desc = plan.chunks[chunkIndex]
+  if (!desc) return null
+  const vox2mm = voxToMMMatrix(
+    chunkExplodedMatRAS(plan, chunkIndex, matRAS as Float32Array, explode),
+  )
+  const ox = desc.voxelOrigin[0]
+  const oy = desc.voxelOrigin[1]
+  const oz = desc.voxelOrigin[2]
+  const ex = ox + desc.voxelDims[0]
+  const ey = oy + desc.voxelDims[1]
+  const ez = oz + desc.voxelDims[2]
+  const lo: [number, number, number] = [Infinity, Infinity, Infinity]
+  const hi: [number, number, number] = [-Infinity, -Infinity, -Infinity]
+  for (let c = 0; c < 8; c++) {
+    const p = applyMat(
+      vox2mm,
+      c & 1 ? ex : ox,
+      c & 2 ? ey : oy,
+      c & 4 ? ez : oz,
+    )
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k], p[k])
+      hi[k] = Math.max(hi[k], p[k])
+    }
+  }
+  const unexplodedOrigin = applyMat(voxToMMMatrix(matRAS), 0, 0, 0)
+  const explodedOrigin = applyMat(vox2mm, 0, 0, 0)
+  const off: [number, number, number] = [
+    explodedOrigin[0] - unexplodedOrigin[0],
+    explodedOrigin[1] - unexplodedOrigin[1],
+    explodedOrigin[2] - unexplodedOrigin[2],
+  ]
+  const mmPerVox: [number, number, number] = [
+    (hi[0] - lo[0]) / Math.max(1, desc.voxelDims[0]),
+    (hi[1] - lo[1]) / Math.max(1, desc.voxelDims[1]),
+    (hi[2] - lo[2]) / Math.max(1, desc.voxelDims[2]),
+  ]
+  return { lo, hi, off, mmPerVox }
+}
+
+const INSET_VOX = 1.5
+
 /**
  * The front (ray-entry) face of an exploded block, as an axis-aligned plane.
  *
@@ -433,7 +504,6 @@ export function pickExplodedBlockFace(
     // chunk and gets that chunk's offset, scattering the vertex off the block. The
     // inset keeps every clamped point strictly inside this block's voxels so the
     // lookup resolves here. mm-per-voxel per axis (axis-aligned assumption).
-    const INSET_VOX = 1.5
     const mmPerVox = [
       (hi[0] - lo[0]) / Math.max(1, desc.voxelDims[0]),
       (hi[1] - lo[1]) / Math.max(1, desc.voxelDims[1]),
@@ -451,20 +521,6 @@ export function pickExplodedBlockFace(
     let planeMM = entry[axis] - off[axis]
     planeMM += Math.sign(centreAxU - planeMM) * axisNudge
     // Un-exploded in-plane rectangle, inset on both sides (guard tiny blocks).
-    const insetRange = (
-      loV: number,
-      hiV: number,
-      m: number,
-    ): [number, number] => {
-      let l = loV + m
-      let h = hiV - m
-      if (l > h) {
-        const mid = (loV + hiV) / 2
-        l = mid
-        h = mid
-      }
-      return [l, h]
-    }
     const [loA, hiA] = insetRange(
       lo[a] - off[a],
       hi[a] - off[a],
@@ -534,6 +590,189 @@ export function explodedChunkAABB(
     }
   }
   return { min, max }
+}
+
+// Build a block face on a GIVEN axis-aligned plane (`axis` + un-exploded
+// `planeMM`) rather than the block's box-entry face — used to draw an SVG on the
+// CLIP PLANE cut instead of the block's front face. Returns null if the plane does
+// not pass through the block on that axis. The rectangle is the block's in-plane
+// extent, inset like pickExplodedBlockFace so re-explode stays on this block.
+// `hitInPlane` (un-exploded mm on the two in-plane axes, in `[(axis+1)%3,
+// (axis+2)%3]` order) is the stroke's first point; omit it to start at the face
+// centre. Passing the real ray/cut hit avoids a spurious spike from the centre.
+export function blockFaceOnPlaneMM(
+  plan: ChunkPlan,
+  matRAS: ArrayLike<number>,
+  explode: ChunkExplodeOptions | null | undefined,
+  chunkIndex: number,
+  axis: 0 | 1 | 2,
+  planeMM: number,
+  hitInPlane?: readonly [number, number],
+): ExplodedBlockFace | null {
+  const geom = explodedBlockGeom(plan, matRAS, explode, chunkIndex)
+  if (!geom) return null
+  const { lo, hi, off, mmPerVox } = geom
+  const loAxU = lo[axis] - off[axis]
+  const hiAxU = hi[axis] - off[axis]
+  // The plane must cut through this block's data on `axis`.
+  if (planeMM < Math.min(loAxU, hiAxU) || planeMM > Math.max(loAxU, hiAxU)) {
+    return null
+  }
+  // Keep the plane a little off the block's own boundary on that axis, too.
+  const m = Math.min(INSET_VOX * mmPerVox[axis], Math.abs(hiAxU - loAxU) / 2)
+  const clampedPlane = Math.max(
+    Math.min(loAxU, hiAxU) + m,
+    Math.min(Math.max(loAxU, hiAxU) - m, planeMM),
+  )
+  const a = ((axis + 1) % 3) as 0 | 1 | 2
+  const b = ((axis + 2) % 3) as 0 | 1 | 2
+  const [loA, hiA] = insetRange(
+    lo[a] - off[a],
+    hi[a] - off[a],
+    INSET_VOX * mmPerVox[a],
+  )
+  const [loB, hiB] = insetRange(
+    lo[b] - off[b],
+    hi[b] - off[b],
+    INSET_VOX * mmPerVox[b],
+  )
+  const entryMM: [number, number, number] = [0, 0, 0]
+  entryMM[axis] = clampedPlane
+  // Start at the real hit (clamped into the inset rect) if given, else the centre.
+  entryMM[a] = hitInPlane
+    ? Math.max(loA, Math.min(hiA, hitInPlane[0]))
+    : (loA + hiA) / 2
+  entryMM[b] = hitInPlane
+    ? Math.max(loB, Math.min(hiB, hitInPlane[1]))
+    : (loB + hiB) / 2
+  return {
+    chunkIndex,
+    axis,
+    planeMM: clampedPlane,
+    inPlaneAxes: [a, b],
+    loMM: [loA, loB],
+    hiMM: [hiA, hiB],
+    entryMM,
+    explodeOffsetMM: off,
+  }
+}
+
+// Convert an active, axis-aligned clip plane to an mm drawing plane (face-normal mm
+// axis + un-exploded depth), for drawing an SVG on the clip cut. Only the FIRST clip
+// plane (`clipPlanes[0..3]`) is used as the drawing plane; with multiple active
+// planes the SVG lands on plane 0's cut (acceptable for the single-plane demo).
+// `clipPlanes` is the model's `[nx,ny,nz,a, ...]` in [0,1]^3 object space (kept side
+// dot(n,p-0.5) >= a);
+// `tex2mm` maps object frac -> mm (column-major mat4). Returns null when: no clip /
+// the plane is parked outside the volume (|a| > 0.5*L1(n), e.g. depth 2 = "no clip") /
+// the normal is not object-axis-aligned / it does not map to a single mm axis (an
+// oblique mm plane, which the axis-aligned annotation model can't represent).
+export function clipPlaneToMMAxisPlane(
+  clipPlanes: ArrayLike<number> | null | undefined,
+  tex2mm: ArrayLike<number> | null | undefined,
+): { axis: 0 | 1 | 2; planeMM: number } | null {
+  if (!clipPlanes || clipPlanes.length < 4 || !tex2mm) return null
+  const n = [clipPlanes[0], clipPlanes[1], clipPlanes[2]]
+  const a = clipPlanes[3]
+  const l1 = Math.abs(n[0]) + Math.abs(n[1]) + Math.abs(n[2])
+  if (l1 < 1e-6) return null
+  if (Math.abs(a) > 0.5 * l1 + 1e-6) return null
+  let objAxis = -1
+  for (let k = 0; k < 3; k++) {
+    if (Math.abs(Math.abs(n[k]) - 1) < 1e-3) objAxis = k
+  }
+  if (objAxis < 0) return null
+  const M = tex2mm
+  // Apply the column-major tex2mm mat4 to a point (w=1) or direction (w=0).
+  const xf = (
+    x: number,
+    y: number,
+    z: number,
+    w: number,
+  ): [number, number, number] => [
+    M[0] * x + M[4] * y + M[8] * z + M[12] * w,
+    M[1] * x + M[5] * y + M[9] * z + M[13] * w,
+    M[2] * x + M[6] * y + M[10] * z + M[14] * w,
+  ]
+  const pf: [number, number, number] = [0.5, 0.5, 0.5]
+  pf[objAxis] = 0.5 + a / n[objAxis]
+  const mmPt = xf(pf[0], pf[1], pf[2], 1)
+  const e: [number, number, number] = [0, 0, 0]
+  e[objAxis] = 1
+  const dir = xf(e[0], e[1], e[2], 0)
+  let mmAxis = 0
+  for (let k = 1; k < 3; k++) {
+    if (Math.abs(dir[k]) > Math.abs(dir[mmAxis])) mmAxis = k
+  }
+  const dom = Math.abs(dir[mmAxis])
+  if (dom < 1e-6) return null
+  const aligned = [0, 1, 2].every(
+    (k) => k === mmAxis || Math.abs(dir[k]) < 1e-3 * dom,
+  )
+  if (!aligned) return null
+  return { axis: mmAxis as 0 | 1 | 2, planeMM: mmPt[mmAxis] }
+}
+
+// Pick the block whose CLIP-PLANE cut surface the ray hits first, and return its
+// clip-plane face. The clip cuts every block at the same UN-EXPLODED depth
+// (planeMM on `axis`), so each block's visible cut sits at planeMM + its explode
+// offset; we intersect the ray with each block's exploded cut plane and keep the
+// nearest whose hit lands within that block's rectangle. This does NOT rely on the
+// tissue pick (which ignores the cutaway and would land on a removed front block).
+// Returns null when the ray hits no block's cut. `allowed` restricts to visible
+// blocks.
+export function pickClipPlaneBlockFace(
+  plan: ChunkPlan,
+  matRAS: ArrayLike<number>,
+  explode: ChunkExplodeOptions | null | undefined,
+  rayOrigin: readonly [number, number, number],
+  rayDir: readonly [number, number, number],
+  axis: 0 | 1 | 2,
+  planeMM: number,
+  opts: { allowed?: ReadonlySet<number> } = {},
+): ExplodedBlockFace | null {
+  if (!chunkExplodeEnabled(explode)) return null
+  const dAxis = rayDir[axis]
+  if (Math.abs(dAxis) < 1e-9) return null
+  const a = (axis + 1) % 3
+  const b = (axis + 2) % 3
+  let bestT = Number.POSITIVE_INFINITY
+  let bestCi = -1
+  // The ray/cut hit on the winning block, in UN-EXPLODED in-plane mm — so the
+  // stroke's first point is where the user clicked, not the block-face centre.
+  let bestHit: [number, number] | undefined
+  for (let ci = 0; ci < plan.chunks.length; ci++) {
+    if (opts.allowed && !opts.allowed.has(ci)) continue
+    const geom = explodedBlockGeom(plan, matRAS, explode, ci)
+    if (!geom) continue
+    const { lo, hi, off } = geom
+    // The clip must actually cut this block (planeMM inside its un-exploded range).
+    const loAxU = lo[axis] - off[axis]
+    const hiAxU = hi[axis] - off[axis]
+    if (planeMM < Math.min(loAxU, hiAxU) || planeMM > Math.max(loAxU, hiAxU)) {
+      continue
+    }
+    // This block's cut surface in exploded mm, and where the ray crosses it.
+    const clipExploded = planeMM + off[axis]
+    const t = (clipExploded - rayOrigin[axis]) / dAxis
+    if (t <= 0 || t >= bestT) continue
+    const ha = rayOrigin[a] + t * rayDir[a]
+    const hb = rayOrigin[b] + t * rayDir[b]
+    if (ha < lo[a] || ha > hi[a] || hb < lo[b] || hb > hi[b]) continue
+    bestT = t
+    bestCi = ci
+    bestHit = [ha - off[a], hb - off[b]]
+  }
+  if (bestCi < 0) return null
+  return blockFaceOnPlaneMM(
+    plan,
+    matRAS,
+    explode,
+    bestCi,
+    axis,
+    planeMM,
+    bestHit,
+  )
 }
 
 /**

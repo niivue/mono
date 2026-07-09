@@ -7,6 +7,8 @@ import {
   createNiftiArray,
   createNiftiHeader,
   ensureValidNonZero,
+  extractVoxelFid,
+  framesInImage,
   getBitsPerVoxel,
   getTypedArrayConstructor,
   getVoxelValue,
@@ -461,5 +463,86 @@ describe('toTypedViewOrU8', () => {
   test('alreadyTypedArray_returnsAsIs', () => {
     const arr = new Uint8Array([7, 8, 9])
     expect(toTypedViewOrU8(arr, NiiDataType.DT_UINT8)).toBe(arr)
+  })
+})
+
+describe('framesInImage', () => {
+  const nVox3D = 4 * 4 * 4 // 64
+  const bpv = 4 // float32
+
+  test('exact_multiple_returnsFrameCount', () => {
+    expect(framesInImage(64 * 4 * 5, nVox3D, bpv)).toBe(5)
+  })
+
+  test('capped_buffer_reportsFewerThanHeader', () => {
+    // Buffer holds only 3 whole frames even if the header advertised more.
+    expect(framesInImage(64 * 4 * 3, nVox3D, bpv)).toBe(3)
+  })
+
+  test('partial_trailing_frame_floored', () => {
+    expect(framesInImage(64 * 4 * 3 + 10, nVox3D, bpv)).toBe(3)
+  })
+
+  test('never_below_one', () => {
+    expect(framesInImage(0, nVox3D, bpv)).toBe(1)
+    expect(framesInImage(10, nVox3D, bpv)).toBe(1)
+  })
+
+  test('degenerate_frame_size_returnsOne', () => {
+    expect(framesInImage(1000, 0, bpv)).toBe(1)
+  })
+})
+
+describe('extractVoxelFid', () => {
+  // A 2x1x1 MRSI grid, nPoints=2, nTransients=2. The native complex buffer is
+  // point-major within transient blocks: index 2*(v + p*nVox + t*nVox*nPoints).
+  // We encode re = v*100 + p*10 + t and im = re + 0.5 so each sample is unique.
+  const nVox = 2
+  const nPoints = 2
+  const nTransients = 2
+  const fid = new Float32Array(nVox * nPoints * nTransients * 2)
+  for (let v = 0; v < nVox; v++) {
+    for (let t = 0; t < nTransients; t++) {
+      for (let p = 0; p < nPoints; p++) {
+        const ci = 2 * (v + p * nVox + t * nVox * nPoints)
+        const re = v * 100 + p * 10 + t
+        fid[ci] = re
+        fid[ci + 1] = re + 0.5
+      }
+    }
+  }
+  const vol = {
+    complexFID: fid,
+    mrsMeta: { nPoints, nTransients },
+    nVox3D: nVox,
+    dimsRAS: [3, nVox, 1, 1],
+    // Identity native order: native = ix + iy*nVox + iz*nVox (start 0, step x=1).
+    img2RASstart: [0, 0, 0],
+    img2RASstep: [1, nVox, nVox],
+  } as unknown as NVImage
+
+  test('returns all transients in transient-major (SVS) layout', () => {
+    const out = extractVoxelFid(vol, 1, 0, 0) // voxel v=1
+    expect(out).not.toBeNull()
+    // Length covers every transient, not just the first.
+    expect(out?.length).toBe(nPoints * nTransients * 2)
+    // SVS layout: out[2*(t*nPoints+p)] = re(v=1,p,t) = 100 + p*10 + t.
+    for (let t = 0; t < nTransients; t++) {
+      for (let p = 0; p < nPoints; p++) {
+        const k = 2 * (t * nPoints + p)
+        const re = 100 + p * 10 + t
+        expect(out?.[k]).toBeCloseTo(re, 5)
+        expect(out?.[k + 1]).toBeCloseTo(re + 0.5, 5)
+      }
+    }
+  })
+
+  test('single-transient volume reduces to one transient block', () => {
+    const single = { ...vol, mrsMeta: { nPoints, nTransients: 1 } } as NVImage
+    const out = extractVoxelFid(single, 1, 0, 0)
+    expect(out?.length).toBe(nPoints * 2)
+    // t=0 only: re(v=1,p,0) = 100 + p*10.
+    expect(out?.[0]).toBeCloseTo(100, 5)
+    expect(out?.[2]).toBeCloseTo(110, 5)
   })
 })

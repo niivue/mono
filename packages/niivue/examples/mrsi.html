@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
     <title>NiiVue — MRSI (MR Spectroscopic Imaging)</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="src/style.css" />
+    <link rel="stylesheet" href="/niivue.css" />
   </head>
   <body>
     <header>
@@ -29,11 +29,11 @@
       <label for="p1">Phase1 (ms) <span id="p1Val">0</span></label>
       <input type="range" id="p1" min="-5" max="5" step="0.1" value="0" />
       &nbsp;
-      <label for="ppmLow">ppm low <span id="ppmLowVal">0.2</span></label>
-      <input type="range" id="ppmLow" min="-2" max="10" step="0.1" value="0.2" />
+      <label for="ppmLow">ppm low <span id="ppmLowVal">1.2</span></label>
+      <input type="range" id="ppmLow" min="0" max="8" step="0.1" value="1.2" />
       &nbsp;
-      <label for="ppmHigh">ppm high <span id="ppmHighVal">4.2</span></label>
-      <input type="range" id="ppmHigh" min="-2" max="10" step="0.1" value="4.2" />
+      <label for="ppmHigh">ppm high <span id="ppmHighVal">3.3</span></label>
+      <input type="range" id="ppmHigh" min="0" max="8" step="0.1" value="3.3" />
       &nbsp;
       <button type="button" id="fullRangeBtn">Full range</button>
       &nbsp;
@@ -89,6 +89,6 @@
       <canvas id="gl1"></canvas>
     </main>
     <footer id="location">NiiVue::MRSI&nbsp;</footer>
-    <script type="module" src="src/main.ts"></script>
+    <script type="module" src="mrsi.js"></script>
   </body>
 </html>

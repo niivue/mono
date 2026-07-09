@@ -37,6 +37,18 @@ export { SlideRenderer } from './gl/slide'
 export type { LogLevel } from './logger'
 // Mesh writer types
 export type { WriteOptions } from './mesh/writers'
+// MRSI scene controller (FSLeyes MRS plugin workflow): anatomy + MRSI grid +
+// crosshair spectrum + metabolite maps, built on the core spectroscopy APIs.
+export {
+  defaultSpectrumDisplay,
+  type MakeMapOptions,
+  type MetaboliteMapOptions,
+  MrsScene,
+  type MrsSceneOptions,
+  makeMetaboliteMap,
+  PROTON_PEAK_ANNOTATIONS,
+  paddedPpmRange,
+} from './mrs/MrsScene'
 // Enums
 export {
   DRAG_MODE,
@@ -125,7 +137,8 @@ export type {
 } from './NVTypes'
 // Signal load options
 export type { SignalFromUrlOptions } from './signal/NVSignal'
-// MRS / spectroscopy processing (for nv-ext-mrs and other spectroscopy extensions)
+// MRS / spectroscopy processing (used by the MrsScene controller above and by
+// other spectroscopy extensions)
 export {
   apodize,
   deriveSpectroscopySeries,

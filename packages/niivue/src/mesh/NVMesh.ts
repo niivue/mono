@@ -149,6 +149,7 @@ export function createMesh(
   const defaults = {
     kind,
     shaderType: 'phong',
+    sliceShaderType: '',
     opacity: 1.0,
     color: [1, 1, 1, 1] as [number, number, number, number],
     isColorbarVisible: false,
@@ -376,6 +377,7 @@ async function buildTractMesh(
     tractOptions,
     opacity: mesh.opacity ?? 1.0,
     shaderType: mesh.shaderType ?? 'phong',
+    sliceShaderType: mesh.sliceShaderType ?? '',
     color: mesh.color ?? [1, 1, 1, 1],
     isColorbarVisible: mesh.isColorbarVisible ?? hasScalarColor,
     url: urlString,
@@ -426,6 +428,7 @@ async function loadConnectome(
     connectomeOptions,
     opacity: mesh.opacity ?? 1.0,
     shaderType: mesh.shaderType ?? 'phong',
+    sliceShaderType: mesh.sliceShaderType ?? '',
     color: mesh.color ?? [1, 1, 1, 1],
     isColorbarVisible: mesh.isColorbarVisible ?? true,
     isLegendVisible: mesh.isLegendVisible ?? false,

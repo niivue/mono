@@ -9,12 +9,25 @@ export type {
   BackgroundVolumeAccess,
   DrawingAccess,
   DrawingDims,
+  MrsVolumeAccess,
   NVExtensionEventMap,
   SharedBufferHandle,
   SlicePointerEvent,
 } from './extension/types'
 export type { LogLevel } from './logger'
 export type { WriteOptions } from './mesh/writers'
+// MRSI scene controller (FSLeyes MRS plugin workflow): anatomy + MRSI grid +
+// crosshair spectrum + metabolite maps, built on the core spectroscopy APIs.
+export {
+  defaultSpectrumDisplay,
+  type MakeMapOptions,
+  type MetaboliteMapOptions,
+  MrsScene,
+  type MrsSceneOptions,
+  makeMetaboliteMap,
+  PROTON_PEAK_ANNOTATIONS,
+  paddedPpmRange,
+} from './mrs/MrsScene'
 export { DRAG_MODE } from './NVConstants'
 export { default, default as NiiVueGPU } from './NVControlWebGPU'
 export type {
@@ -29,6 +42,7 @@ export type {
   MeshFromUrlOptions,
   MeshLayerFromUrlOptions,
   MeshUpdate,
+  MrsVolumeMeta,
   NiiVueLocation,
   NiiVueLocationValue,
   NiiVueOptions,
@@ -58,6 +72,20 @@ export type {
   VolumeUpdate,
 } from './NVTypes'
 export type { SignalFromUrlOptions } from './signal/NVSignal'
+// MRS / spectroscopy processing (used by the MrsScene controller above and by
+// other spectroscopy extensions)
+export {
+  apodize,
+  deriveSpectroscopySeries,
+  GYRO_MAG_RATIO,
+  halveFirstPoint,
+  integratePpmBandMap,
+  PPM_RANGE,
+  PPM_SHIFT,
+  type PpmBandOptions,
+  phaseCorrection,
+  ppmRefForNucleus,
+} from './signal/processing'
 export type {
   ChunkPlan,
   Vec3f,
@@ -65,5 +93,7 @@ export type {
   VolumeChunkDesc,
 } from './volume/chunking'
 export { chunkVolumeGrid } from './volume/chunking'
+// MRSI (spatial spectroscopic imaging) volume helpers
+export { buildDerivedScalarVolume, isMrsiVolume } from './volume/mrsi'
 export type { TransformInfo, TransformOptions } from './volume/transforms'
-export { getImageDataRAS } from './volume/utils'
+export { extractVoxelFid, getImageDataRAS } from './volume/utils'

@@ -1,24 +1,21 @@
 /**
- * @niivue/nv-ext-mrs
+ * MR spectroscopic imaging (MRSI / CSI) scene controller.
  *
- * MR spectroscopic imaging (MRSI / CSI) visualization for NiiVue, faithfully
- * reproducing the FSLeyes MRS plugin workflow: overlay a low-resolution MRSI
- * grid on a high-resolution anatomy, move the crosshair to inspect a voxel's
- * spectrum, and integrate a ppm band across all voxels into a metabolite map.
+ * Wires an MRSI dataset into a NiiVue instance, reproducing the FSLeyes MRS
+ * plugin workflow: overlay a low-resolution MRSI grid on a high-resolution
+ * anatomy, move the crosshair to inspect a voxel's spectrum, and integrate a
+ * ppm band across all voxels into a metabolite map.
  *
  * The spectral math (halve-first-point, exponential apodization, 0/1-order
  * phase, nucleus constants, ppm referencing, ppm-band integration) lives in
- * NiiVue core (`@niivue/niivue`, `signal/processing.ts`), ported verbatim from
- * fsleyes-plugin-mrs. This package wires that core capability to a scene and
- * adds the range-to-map tool plus FSL-MRS display defaults.
- *
- * See PORTING.md for the function-by-function provenance map and
- * LICENSE.fsleyes-plugin-mrs for the upstream BSD-3 license.
+ * `signal/processing.ts`, ported verbatim from fsleyes-plugin-mrs. This module
+ * wires that capability to a scene and adds the range-to-map tool plus FSL-MRS
+ * display defaults. See `LICENSE.fsleyes-plugin-mrs` for the upstream BSD-3
+ * license.
  *
  * Usage:
  * ```ts
- * import NiiVue from '@niivue/niivue'
- * import { MrsScene } from '@niivue/nv-ext-mrs'
+ * import NiiVue, { MrsScene } from '@niivue/niivue'
  *
  * const nv = new NiiVue()
  * await nv.attachTo('gl1')
@@ -34,23 +31,12 @@
  * ```
  */
 
-import NiiVue, {
-  GYRO_MAG_RATIO,
-  getImageDataRAS,
-  integratePpmBandMap,
-  type MrsVolumeAccess,
-  type NVExtensionContext,
-  type NVImage,
-  type NVSignalDisplay,
-  PPM_RANGE,
-  PPM_SHIFT,
-  type SignalAnnotation,
-} from '@niivue/niivue'
-
-export type { MrsVolumeAccess }
-// Re-export the core spectral constants/helpers so consumers have a single
-// import surface for MRS work.
-export { GYRO_MAG_RATIO, integratePpmBandMap, PPM_RANGE, PPM_SHIFT }
+import type { NVExtensionContext } from '@/extension/context'
+import type { MrsVolumeAccess } from '@/extension/types'
+import type NiiVue from '@/NVControlBase'
+import type { NVImage, NVSignalDisplay, SignalAnnotation } from '@/NVTypes'
+import { integratePpmBandMap, PPM_RANGE } from '@/signal/processing'
+import { getImageDataRAS } from '@/volume/utils'
 
 /**
  * Default 1H metabolite peak labels (ppm), pinned to the bottom of the plot

@@ -53,7 +53,10 @@ import { SlidePlaneRendererGPU } from './slidePlaneRender'
 import { ThumbnailRenderer } from './thumbnail'
 import * as wgpu from './wgpu'
 
-type MeshGpuWithShader = WebGPUMeshGPU & { shaderType?: string }
+type MeshGpuWithShader = WebGPUMeshGPU & {
+  shaderType?: string
+  sliceShaderType?: string
+}
 
 /** Shared GPU context per canvas for multi-instance bounds support */
 type SharedGPUContext = {
@@ -581,146 +584,162 @@ export default class NVView {
   }
 
   async updateBindGroups(): Promise<void> {
+    // try/finally so an early return (no device / no mesh layout) or a thrown
+    // await never leaves isBusy stuck true — the render loop skips while busy, so a
+    // stuck flag would permanently freeze drawing (e.g. after a failed deferred
+    // reload or backend recreate).
     this.isBusy = true
-    const buffs = this.buffers
-    const device = this.device
-    if (!device) return
-    const vols = this.model.getVolumes()
+    try {
+      const buffs = this.buffers
+      const device = this.device
+      if (!device) return
+      const vols = this.model.getVolumes()
 
-    await this.colorbarRenderer.buildColorbars(
-      device,
-      this.model.collectColorbars(),
-      this.model.scene.backgroundColor,
-    )
-    if (vols.length > 0) {
-      if (this.options.instances) {
-        // Multi-instance mode (global3d): upload every volume's GPU texture
-        // so the render loop can switch the active texture per tile via
-        // bindCachedVolume. Without this, all tiles would share volumes[0]'s
-        // texture and visibly "jump" as the model's first volume changes.
-        for (const vol of vols) {
+      await this.colorbarRenderer.buildColorbars(
+        device,
+        this.model.collectColorbars(),
+        this.model.scene.backgroundColor,
+      )
+      if (vols.length > 0) {
+        if (this.options.instances) {
+          // Multi-instance mode (global3d): upload every volume's GPU texture
+          // so the render loop can switch the active texture per tile via
+          // bindCachedVolume. Without this, all tiles would share volumes[0]'s
+          // texture and visibly "jump" as the model's first volume changes.
+          for (const vol of vols) {
+            try {
+              await this.volumeRenderer.updateVolume(
+                device,
+                vol,
+                this.model.volume.matcap,
+                vols,
+                true,
+              )
+            } catch (e) {
+              log.warn(
+                `updateVolume failed for ${vol.name}: ${(e as Error).message}`,
+              )
+            }
+          }
+          const keepKeys = new Set<string>()
+          for (const vol of vols) {
+            const key = vol.url || vol.name
+            if (key) keepKeys.add(key)
+          }
+          this.volumeRenderer.pruneVolumeCache(keepKeys)
+        } else {
           try {
             await this.volumeRenderer.updateVolume(
               device,
-              vol,
+              vols[0],
               this.model.volume.matcap,
               vols,
-              true,
             )
           } catch (e) {
             log.warn(
-              `updateVolume failed for ${vol.name}: ${(e as Error).message}`,
+              `updateVolume failed for ${vols[0].name}: ${(e as Error).message}`,
             )
           }
         }
-        const keepKeys = new Set<string>()
-        for (const vol of vols) {
-          const key = vol.url || vol.name
-          if (key) keepKeys.add(key)
-        }
-        this.volumeRenderer.pruneVolumeCache(keepKeys)
-      } else {
-        try {
-          await this.volumeRenderer.updateVolume(
-            device,
-            vols[0],
-            this.model.volume.matcap,
-            vols,
-          )
-        } catch (e) {
-          log.warn(
-            `updateVolume failed for ${vols[0].name}: ${(e as Error).message}`,
-          )
-        }
       }
-    }
-    if (vols.length > 1 && !this.options.instances) {
-      await this.volumeRenderer.updateOverlays(
-        device,
-        vols[0],
-        vols.slice(1),
-        this.model.volume.paqdUniforms,
-      )
-      if (
-        this.model.volume.isBackgroundMasking &&
-        this.volumeRenderer.overlayTexture &&
-        this.volumeRenderer.volumeTexture
-      ) {
-        this.volumeRenderer.overlayTexture = await maskOverlayByBackground(
+      if (vols.length > 1 && !this.options.instances) {
+        await this.volumeRenderer.updateOverlays(
+          device,
+          vols[0],
+          vols.slice(1),
+          this.model.volume.paqdUniforms,
+        )
+        if (
+          this.model.volume.isBackgroundMasking &&
+          this.volumeRenderer.overlayTexture &&
+          this.volumeRenderer.volumeTexture
+        ) {
+          this.volumeRenderer.overlayTexture = await maskOverlayByBackground(
+            device,
+            this.volumeRenderer.volumeTexture,
+            this.volumeRenderer.overlayTexture,
+          )
+        }
+      } else {
+        this.volumeRenderer.clearOverlay()
+      }
+      this.volumeRenderer.updateBindGroup(device)
+      if (this.volumeRenderer.volumeTexture) {
+        this.sliceRenderer.updateBindGroup(
           device,
           this.volumeRenderer.volumeTexture,
           this.volumeRenderer.overlayTexture,
+          this.volumeRenderer.paqdTexture,
+          this.volumeRenderer.paqdLutTexture,
         )
       }
-    } else {
-      this.volumeRenderer.clearOverlay()
-    }
-    this.volumeRenderer.updateBindGroup(device)
-    if (this.volumeRenderer.volumeTexture) {
-      this.sliceRenderer.updateBindGroup(
+      this.lineBindGroup = this.lineRenderer.createBindGroup(
         device,
-        this.volumeRenderer.volumeTexture,
-        this.volumeRenderer.overlayTexture,
-        this.volumeRenderer.paqdTexture,
-        this.volumeRenderer.paqdLutTexture,
+        this.buffers.lineStorage,
       )
-    }
-    this.lineBindGroup = this.lineRenderer.createBindGroup(
-      device,
-      this.buffers.lineStorage,
-    )
-    if (this.fontRenderer.isReady && this.sampler) {
-      this.fontBindGroup = this.fontRenderer.createBindGroup(
-        device,
-        buffs.glyphStorage,
-        this.sampler,
-      )
-    }
-    const meshes = this.model.getMeshes() as NVMesh[]
-    const availableShaders = this.getAvailableShaders()
-    if (!this.meshBindGroupLayout) return
-    this._destroyMeshResources()
-    for (const m of meshes) {
-      let shaderType = m.shaderType || 'phong'
-      if (!availableShaders.includes(shaderType)) {
-        log.warn(
-          `Shader '${shaderType}' not available in WebGPU, falling back to 'phong'`,
+      if (this.fontRenderer.isReady && this.sampler) {
+        this.fontBindGroup = this.fontRenderer.createBindGroup(
+          device,
+          buffs.glyphStorage,
+          this.sampler,
         )
-        shaderType = 'phong'
       }
-      const gpuData = mesh.uploadMeshGPU(device, m, { shaderType })
-      const mGpu: MeshGpuWithShader = {
-        vertexBuffer: gpuData.vertexBuffer,
-        indexBuffer: gpuData.indexBuffer,
-        uniformBuffer: gpuData.uniformBuffer,
-        indexCount: gpuData.indexCount,
-        bindGroup: null,
-        alignedMeshSize: mesh.alignedMeshSize,
-        shaderType,
-      }
-      this.meshResources.set(m, mGpu)
-      if (!mGpu) {
-        continue
-      }
-      if (!mGpu.uniformBuffer) {
-        continue
-      }
-      if (!mGpu?.bindGroup) {
-        mGpu.bindGroup = device.createBindGroup({
-          layout: this.meshBindGroupLayout,
-          entries: [
-            {
-              binding: 0,
-              resource: {
-                buffer: mGpu.uniformBuffer,
-                size: mesh.MESH_UNIFORM_SIZE,
+      const meshes = this.model.getMeshes() as NVMesh[]
+      const availableShaders = this.getAvailableShaders()
+      if (!this.meshBindGroupLayout) return
+      this._destroyMeshResources()
+      for (const m of meshes) {
+        let shaderType = m.shaderType || 'phong'
+        if (!availableShaders.includes(shaderType)) {
+          log.warn(
+            `Shader '${shaderType}' not available in WebGPU, falling back to 'phong'`,
+          )
+          shaderType = 'phong'
+        }
+        // '' = inherit shaderType on slices; an invalid name also falls back to ''.
+        let sliceShaderType = m.sliceShaderType || ''
+        if (sliceShaderType && !availableShaders.includes(sliceShaderType)) {
+          log.warn(
+            `Slice shader '${sliceShaderType}' not available in WebGPU, falling back to '${shaderType}'`,
+          )
+          sliceShaderType = ''
+        }
+        const gpuData = mesh.uploadMeshGPU(device, m, { shaderType })
+        const mGpu: MeshGpuWithShader = {
+          vertexBuffer: gpuData.vertexBuffer,
+          indexBuffer: gpuData.indexBuffer,
+          uniformBuffer: gpuData.uniformBuffer,
+          indexCount: gpuData.indexCount,
+          bindGroup: null,
+          alignedMeshSize: mesh.alignedMeshSize,
+          shaderType,
+          sliceShaderType,
+        }
+        this.meshResources.set(m, mGpu)
+        if (!mGpu) {
+          continue
+        }
+        if (!mGpu.uniformBuffer) {
+          continue
+        }
+        if (!mGpu?.bindGroup) {
+          mGpu.bindGroup = device.createBindGroup({
+            layout: this.meshBindGroupLayout,
+            entries: [
+              {
+                binding: 0,
+                resource: {
+                  buffer: mGpu.uniformBuffer,
+                  size: mesh.MESH_UNIFORM_SIZE,
+                },
               },
-            },
-          ],
-        })
+            ],
+          })
+        }
       }
+    } finally {
+      this.isBusy = false
     }
-    this.isBusy = false
   }
 
   render(): void {
@@ -1343,7 +1362,9 @@ export default class NVView {
           // s[37-39] = 0 (pad, zero-initialized at allocation, never written non-zero)
           s.set(ccMM as ArrayLike<number>, 40)
           device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
-          const shaderType = mGpu.shaderType || m.shaderType || 'phong'
+          const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+          const shaderType =
+            (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
           const pipeline = this.meshPipelines[shaderType]
           if (pipeline) {
             pass.setPipeline(pipeline)
@@ -1399,7 +1420,9 @@ export default class NVView {
             s[36] = (m.opacity ?? 1.0) * xrayAlpha
             s.set(ccMM as ArrayLike<number>, 40)
             device.queue.writeBuffer(mGpu.uniformBuffer, dynamicOffset, s)
-            const shaderType = mGpu.shaderType || m.shaderType || 'phong'
+            const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+            const shaderType =
+              (isSlice && mGpu.sliceShaderType) || mGpu.shaderType || 'phong'
             const xPipeline = this.meshXRayPipelines[shaderType]
             if (xPipeline) {
               pass.setPipeline(xPipeline)

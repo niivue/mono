@@ -166,6 +166,7 @@ export type NVDocumentMesh = {
   name?: string
   opacity?: number
   shaderType?: string
+  sliceShaderType?: string
   color?: [number, number, number, number]
   isColorbarVisible?: boolean
   isLegendVisible?: boolean
@@ -403,9 +404,35 @@ export function serialize(
             `serialize: volume "${v.name ?? v.url ?? '(unnamed)'}" has no linkable URL; embedding its data`,
           )
         }
+        const imgData = typedArrayToBytes(v.img)
+        const hdrData = extractHeaderData(v.hdr)
+        // A partial 4D volume loaded from a local File cannot be deferred-reloaded
+        // after restore: `_sourceFile` is runtime-only (not serialized) and `url` is
+        // just the bare filename. Collapse the saved header's frame count to the
+        // frames actually embedded, so the restored volume presents as complete and
+        // the graph offers no dead deferred action. URL-sourced self-contained-NII
+        // partials have no `_sourceFile`, keep their full dims, and still reload
+        // correctly on restore. Detached-header formats (AFNI .HEAD+.BRIK, NRRD
+        // .nhdr+.raw, MRtrix detached .mif, MetaImage detached .mha) also can't be
+        // deferred-reloaded after restore: `_urlImageData` is runtime-only (same
+        // allowlist contract as `_sourceFile`), so a saved partial would offer a
+        // dead deferred action — collapse it too.
+        const partial = (v.nFrame4D ?? 1) < (v.nTotalFrame4D ?? 1)
+        if (partial && (v._sourceFile != null || v._urlImageData != null)) {
+          // Represent the loaded prefix as a flat 4D sequence of `nFrame4D` frames.
+          // For a rare partial 5D/6D File volume this intentionally flattens the
+          // higher axes — only the first nFrame4D frames were loaded (not a clean
+          // multiple of dims[5]/dims[6]), so a flat 4D count is the only faithful
+          // representation of what the document actually contains.
+          const n = v.nFrame4D ?? 1
+          hdrData.dims[0] = n > 1 ? 4 : 3
+          hdrData.dims[4] = n
+          hdrData.dims[5] = 1
+          hdrData.dims[6] = 1
+        }
         vol.data = {
-          hdr: extractHeaderData(v.hdr),
-          img: typedArrayToBytes(v.img),
+          hdr: hdrData,
+          img: imgData,
           datatypeCode: v.hdr.datatypeCode,
         }
       }
@@ -421,6 +448,7 @@ export function serialize(
       name: m.name,
       opacity: m.opacity,
       shaderType: m.shaderType,
+      sliceShaderType: m.sliceShaderType,
       color: m.color,
       isColorbarVisible: m.isColorbarVisible,
       isLegendVisible: m.isLegendVisible,
@@ -994,6 +1022,7 @@ export async function reconstructMesh(
         name: m.name,
         opacity: m.opacity,
         shaderType: m.shaderType,
+        sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
         isLegendVisible: m.isLegendVisible,
@@ -1073,6 +1102,7 @@ export async function reconstructMesh(
         name: m.name,
         opacity: m.opacity,
         shaderType: m.shaderType,
+        sliceShaderType: m.sliceShaderType,
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
         isLegendVisible: m.isLegendVisible,

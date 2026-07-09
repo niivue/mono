@@ -1,41 +1,40 @@
-/**
- * NiiVue MRSI (MR spectroscopic imaging) demo.
- *
- * Reproduces the FSLeyes MRS plugin workflow with @niivue/nv-ext-mrs:
- *   - T1 anatomy (background) + the complex MRSI grid (overlay shown as a
- *     derived total-signal map, masked to valid voxels)
- *   - move the ortho crosshair -> the spectrum at that voxel updates live
- *   - component / apodization / phase / ppm-window controls
- *   - "Make map": integrate the current ppm band across all voxels -> overlay
- *
- * The spectral math runs inside NiiVue core (ported from fsleyes-plugin-mrs);
- * this page only drives the MrsScene controller and the graph.
- */
+import NiiVue, { MrsScene, SLICE_TYPE } from '../src/index.ts'
 
-import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
-import { MrsScene } from '@niivue/nv-ext-mrs'
-
-// Data lives alongside the other signal fixtures in @niivue/dev-images
-// (images/signals/), served at /signals/. Use full literal `/signals/...` URLs
-// (not a `${base}/file` concatenation) so the GitHub Pages build's URL-rewrite
-// plugin can prefix them with the shared images base (e.g. /mono/signals/...).
-const footer = document.getElementById('location') as HTMLElement
-
-function fail(msg: string, err?: unknown): void {
-  // textContent (not innerHTML): messages may include data-derived strings.
-  footer.textContent = `  ${msg}${err ? `: ${(err as Error)?.message ?? err}` : ''}`
-  if (err) console.error(msg, err)
-}
+// Reproduces the FSLeyes MRS plugin
+//  https://pages.fmrib.ox.ac.uk/wclarke/fsleyes-plugin-mrs/
 
 const nv = new NiiVue({
   backgroundColor: [0.1, 0.1, 0.1, 1],
   isGraphVisible: true,
 })
-await nv.attachToCanvas(document.getElementById('gl1') as HTMLCanvasElement)
+await nv.attachToCanvas(gl1)
 nv.sliceType = SLICE_TYPE.AXIAL
 
-const scene = new MrsScene(nv)
+// id="location" shadows window.location, so this one element is looked up.
+const footer = document.getElementById('location')
 
+function fail(msg, err) {
+  // textContent (not innerHTML): messages may include data-derived strings.
+  footer.textContent = `  ${msg}${err ? `: ${err?.message ?? err}` : ''}`
+  if (err) console.error(msg, err)
+}
+
+let locationStr = ''
+let spectrumStr = ''
+function showStatus() {
+  const gap = locationStr && spectrumStr ? '   ' : ''
+  footer.textContent = `  ${locationStr}${gap}${spectrumStr}`
+}
+nv.addEventListener('locationChange', (e) => {
+  locationStr = e.detail.string
+  showStatus()
+})
+nv.addEventListener('signalLocationChange', (e) => {
+  spectrumStr = e.detail.string
+  showStatus()
+})
+
+const scene = new MrsScene(nv)
 try {
   await scene.load({
     anatomyUrl: '/signals/mrsi_T1.nii.gz',
@@ -44,44 +43,14 @@ try {
     mrsiColormap: 'warm',
     mrsiOpacity: 0.7,
   })
-  footer.textContent =
-    '  Move the crosshair over the MRSI grid to inspect a voxel spectrum.'
+  nv.setCrosshairPos([-2, -2, 43])
 } catch (err) {
   fail('Could not load MRSI scene', err)
 }
 
 // --- Controls ---------------------------------------------------------------
 
-const $ = <T extends HTMLElement>(id: string) =>
-  document.getElementById(id) as T
-const modeSelect = $<HTMLSelectElement>('modeSelect')
-const apod = $<HTMLInputElement>('apod')
-const apodVal = $<HTMLSpanElement>('apodVal')
-const p0 = $<HTMLInputElement>('p0')
-const p0Val = $<HTMLSpanElement>('p0Val')
-const p1 = $<HTMLInputElement>('p1')
-const p1Val = $<HTMLSpanElement>('p1Val')
-const ppmLow = $<HTMLInputElement>('ppmLow')
-const ppmLowVal = $<HTMLSpanElement>('ppmLowVal')
-const ppmHigh = $<HTMLInputElement>('ppmHigh')
-const ppmHighVal = $<HTMLSpanElement>('ppmHighVal')
-const fullRangeBtn = $<HTMLButtonElement>('fullRangeBtn')
-const reactiveCheck = $<HTMLInputElement>('reactiveCheck')
-const makeMapBtn = $<HTMLButtonElement>('makeMapBtn')
-const threshold = $<HTMLInputElement>('threshold')
-const thresholdVal = $<HTMLSpanElement>('thresholdVal')
-const mapOpacity = $<HTMLInputElement>('mapOpacity')
-const mapOpacityVal = $<HTMLSpanElement>('mapOpacityVal')
-const mapMode = $<HTMLSelectElement>('mapMode')
-const cmapSelect = $<HTMLSelectElement>('cmapSelect')
-const colorbarCheck = $<HTMLInputElement>('colorbarCheck')
-const maskCheck = $<HTMLInputElement>('maskCheck')
-const snapCheck = $<HTMLInputElement>('snapCheck')
-const viewSelect = $<HTMLSelectElement>('viewSelect')
-const colorBtn = $<HTMLInputElement>('colorBtn')
-const webgpuCheck = $<HTMLInputElement>('webgpuCheck')
-
-function ppmWindow(): [number, number] | null {
+function ppmWindow() {
   const lo = parseFloat(ppmLow.value)
   const hi = parseFloat(ppmHigh.value)
   return lo < hi ? [lo, hi] : null
@@ -94,7 +63,7 @@ function ppmWindow(): [number, number] | null {
 // graphRangeChange event. makeMap reads the slider values directly in both modes.
 const isReactive = () => reactiveCheck.checked
 
-function syncPpm(): void {
+function syncPpm() {
   ppmLowVal.textContent = parseFloat(ppmLow.value).toFixed(1)
   ppmHighVal.textContent = parseFloat(ppmHigh.value).toFixed(1)
   const w = ppmWindow()
@@ -106,10 +75,8 @@ function syncPpm(): void {
 // .value programmatically does not fire 'input', so there is no feedback loop.
 nv.addEventListener('graphRangeChange', (e) => {
   if (!isReactive()) return
-  const lo = Math.min(e.detail.min, e.detail.max)
-  const hi = Math.max(e.detail.min, e.detail.max)
-  ppmLow.value = lo.toFixed(1)
-  ppmHigh.value = hi.toFixed(1)
+  ppmLow.value = Math.min(e.detail.min, e.detail.max).toFixed(1)
+  ppmHigh.value = Math.max(e.detail.min, e.detail.max).toFixed(1)
   ppmLowVal.textContent = parseFloat(ppmLow.value).toFixed(1)
   ppmHighVal.textContent = parseFloat(ppmHigh.value).toFixed(1)
 })
@@ -130,17 +97,14 @@ reactiveCheck.onchange = () => {
   }
 }
 
-modeSelect.onchange = () =>
-  scene.setComponent(
-    modeSelect.value as 'real' | 'imag' | 'magnitude' | 'phase',
-  )
+modeSelect.onchange = () => scene.setComponent(modeSelect.value)
 
 apod.oninput = () => {
   apodVal.textContent = apod.value
   scene.setApodization(parseFloat(apod.value))
 }
 
-function syncPhase(): void {
+function syncPhase() {
   p0Val.textContent = p0.value
   p1Val.textContent = parseFloat(p1.value).toFixed(1)
   scene.setPhase(parseFloat(p0.value), parseFloat(p1.value))
@@ -168,7 +132,7 @@ fullRangeBtn.onclick = () => {
 }
 
 // Track the most recently added map so the opacity slider targets it.
-let lastMapId: string | null = null
+let lastMapId = null
 makeMapBtn.onclick = async () => {
   const w = ppmWindow()
   if (!w) {
@@ -178,7 +142,7 @@ makeMapBtn.onclick = async () => {
   makeMapBtn.disabled = true
   try {
     const map = await scene.makeMap(w, {
-      mode: mapMode.value as 'magnitude' | 'real',
+      mode: mapMode.value,
       apodizeHz: parseFloat(apod.value),
       phase0: parseFloat(p0.value),
       phase1Ms: parseFloat(p1.value),
@@ -208,12 +172,15 @@ mapOpacity.oninput = () => {
 // Configure the threshold slider to the MRSI overlay's total-signal range.
 const cal = scene.mrsiCal
 if (cal) {
-  const max = Math.max(1, cal.globalMax)
+  const max = Math.max(1, cal.calMax)
   threshold.min = '0'
-  threshold.max = max.toFixed(2)
+  threshold.max = max.toFixed()
   threshold.step = (max / 200).toPrecision(2)
-  threshold.value = String(cal.calMin)
-  thresholdVal.textContent = cal.calMin.toFixed(1)
+  // Default threshold: midpoint of the overlay's cal range, rounded to integer.
+  const mid = Math.round((cal.calMin + cal.calMax) / 2)
+  threshold.value = String(mid)
+  thresholdVal.textContent = mid.toFixed(1)
+  scene.setThreshold(mid)
 }
 threshold.oninput = () => {
   const t = parseFloat(threshold.value)
@@ -238,15 +205,15 @@ viewSelect.onchange = () => {
   nv.sliceType = parseInt(viewSelect.value, 10)
 }
 
-colorBtn.addEventListener('input', (event) => {
-  const hex = (event.target as HTMLInputElement).value
+colorBtn.oninput = () => {
+  const hex = colorBtn.value
   nv.backgroundColor = [
     parseInt(hex.slice(1, 3), 16) / 255,
     parseInt(hex.slice(3, 5), 16) / 255,
     parseInt(hex.slice(5, 7), 16) / 255,
     1.0,
   ]
-})
+}
 
 webgpuCheck.onclick = () => {
   const want = webgpuCheck.checked
@@ -267,7 +234,6 @@ webgpuCheck.onclick = () => {
     })
 }
 
-nv.addEventListener('signalLocationChange', (e) => {
-  const detail = (e as CustomEvent<{ string: string }>).detail
-  footer.textContent = `  ${detail.string}`
-})
+// Apply the initial ppm window (sliders default to 1.2-3.3 ppm) to the loaded
+// graph so it opens on the metabolite band rather than the full spectrum.
+syncPpm()

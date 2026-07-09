@@ -3,9 +3,13 @@ precision highp float;
 uniform mat4 mvpMtx;
 uniform mat4 normMtx;
 uniform float opacity;
-in vec3 position;
-in vec3 normal;
-in vec4 color;
+// Pin attribute locations so every mesh program shares the same layout. A mesh
+// VAO is built once (createMeshGpu) and may be drawn with a different program
+// (sliceShaderType on 2D tiles, the x-ray pass, depth picking), so the locations
+// must match across all mesh shaders by construction, not by linker coincidence.
+layout(location = 0) in vec3 position;
+layout(location = 1) in vec3 normal;
+layout(location = 2) in vec4 color;
 out vec4 vClr;
 out vec3 vN;
 out vec3 vPos;
@@ -25,9 +29,9 @@ precision highp float;
 uniform mat4 mvpMtx;
 uniform mat4 normMtx;
 uniform float opacity;
-in vec3 position;
-in vec3 normal;
-in vec4 color;
+layout(location = 0) in vec3 position;
+layout(location = 1) in vec3 normal;
+layout(location = 2) in vec4 color;
 flat out vec4 vClr;
 flat out vec3 vN;
 out vec3 vPos;

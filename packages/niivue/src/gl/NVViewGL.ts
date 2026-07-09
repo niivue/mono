@@ -51,7 +51,10 @@ import { SliceRenderer } from './slice'
 import { SlidePlaneRenderer } from './slidePlaneRender'
 import { ThumbnailRenderer } from './thumbnail'
 
-type MeshGpuWithShader = WebGLMeshGPU & { shaderType?: string }
+type MeshGpuWithShader = WebGLMeshGPU & {
+  shaderType?: string
+  sliceShaderType?: string
+}
 
 export default class NVGlview {
   canvas: HTMLCanvasElement
@@ -350,92 +353,96 @@ export default class NVGlview {
   }
 
   async _updateBindings(): Promise<void> {
+    // try/finally so an early return or a thrown await never leaves isBusy stuck
+    // true — the render loop skips while busy, so a stuck flag freezes drawing.
     this.isBusy = true
-    const gl = this.gl
-    if (!gl) {
-      this.isBusy = false
-      return
-    }
-    const vols = this.model.getVolumes()
-    this.colorbarRenderer.buildColorbars(
-      gl,
-      this.model.collectColorbars(),
-      this.model.scene.backgroundColor,
-    )
-    if (vols.length > 0) {
-      if (this.options.instances) {
-        // Multi-instance mode (global3d): upload every volume's GPU texture
-        // so the render loop can switch the active texture per tile via
-        // bindCachedVolume. Without this, all tiles would share volumes[0]'s
-        // texture and visibly "jump" as the model's first volume changes.
-        for (const vol of vols) {
+    try {
+      const gl = this.gl
+      if (!gl) {
+        return
+      }
+      const vols = this.model.getVolumes()
+      this.colorbarRenderer.buildColorbars(
+        gl,
+        this.model.collectColorbars(),
+        this.model.scene.backgroundColor,
+      )
+      if (vols.length > 0) {
+        if (this.options.instances) {
+          // Multi-instance mode (global3d): upload every volume's GPU texture
+          // so the render loop can switch the active texture per tile via
+          // bindCachedVolume. Without this, all tiles would share volumes[0]'s
+          // texture and visibly "jump" as the model's first volume changes.
+          for (const vol of vols) {
+            try {
+              await this.volumeRenderer.updateVolume(
+                gl,
+                vol,
+                this.model.volume.matcap,
+                vols,
+                true,
+              )
+            } catch (e) {
+              log.warn(
+                `updateVolume failed for ${vol.name}: ${(e as Error).message}`,
+              )
+            }
+          }
+          const keepKeys = new Set<string>()
+          for (const vol of vols) {
+            const key = vol.url || vol.name
+            if (key) keepKeys.add(key)
+          }
+          this.volumeRenderer.pruneVolumeCache(keepKeys)
+        } else {
           try {
             await this.volumeRenderer.updateVolume(
               gl,
-              vol,
+              vols[0],
               this.model.volume.matcap,
               vols,
-              true,
             )
           } catch (e) {
             log.warn(
-              `updateVolume failed for ${vol.name}: ${(e as Error).message}`,
+              `updateVolume failed for ${vols[0].name}: ${(e as Error).message}`,
             )
           }
         }
-        const keepKeys = new Set<string>()
-        for (const vol of vols) {
-          const key = vol.url || vol.name
-          if (key) keepKeys.add(key)
-        }
-        this.volumeRenderer.pruneVolumeCache(keepKeys)
-      } else {
-        try {
-          await this.volumeRenderer.updateVolume(
-            gl,
-            vols[0],
-            this.model.volume.matcap,
-            vols,
-          )
-        } catch (e) {
-          log.warn(
-            `updateVolume failed for ${vols[0].name}: ${(e as Error).message}`,
-          )
-        }
       }
-    }
 
-    // Handle overlays (all volumes after the first)
-    if (vols.length > 1 && !this.options.instances) {
-      await this.volumeRenderer.updateOverlays(
-        gl,
-        vols[0],
-        vols.slice(1),
-        this.model.volume.paqdUniforms,
-      )
-      if (
-        this.model.volume.isBackgroundMasking &&
-        this.volumeRenderer.overlayTexture &&
-        this.volumeRenderer.volumeTexture &&
-        vols[0].dimsRAS
-      ) {
-        const dims = [
-          vols[0].dimsRAS[1],
-          vols[0].dimsRAS[2],
-          vols[0].dimsRAS[3],
-        ]
-        maskOverlayByBackground(
+      // Handle overlays (all volumes after the first)
+      if (vols.length > 1 && !this.options.instances) {
+        await this.volumeRenderer.updateOverlays(
           gl,
-          this.volumeRenderer.volumeTexture,
-          this.volumeRenderer.overlayTexture,
-          dims,
+          vols[0],
+          vols.slice(1),
+          this.model.volume.paqdUniforms,
         )
+        if (
+          this.model.volume.isBackgroundMasking &&
+          this.volumeRenderer.overlayTexture &&
+          this.volumeRenderer.volumeTexture &&
+          vols[0].dimsRAS
+        ) {
+          const dims = [
+            vols[0].dimsRAS[1],
+            vols[0].dimsRAS[2],
+            vols[0].dimsRAS[3],
+          ]
+          maskOverlayByBackground(
+            gl,
+            this.volumeRenderer.volumeTexture,
+            this.volumeRenderer.overlayTexture,
+            dims,
+          )
+        }
+      } else {
+        this.volumeRenderer.clearOverlay(gl)
       }
-    } else {
-      this.volumeRenderer.clearOverlay(gl)
+      this._rebuildMeshResources()
+    } finally {
+      this.isBusy = false
     }
-    this._rebuildMeshResources()
-    this.isBusy = false
   }
 
   async setCoarseFloor(coarseVol: NVImage | null): Promise<void> {
@@ -1025,10 +1032,15 @@ export default class NVGlview {
         )
       }
       if (meshes.length > 0) {
+        const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
         for (const m of meshes) {
           const mGpu = this._getMeshGpu(m)
           if (!mGpu) continue
           const opacity = m.opacity ?? 1.0
+          const shaderType =
+            isSlice && mGpu.sliceShaderType
+              ? mGpu.sliceShaderType
+              : mGpu.shaderType
           mesh.drawWithGpu(
             gl,
             m,
@@ -1036,7 +1048,7 @@ export default class NVGlview {
             meshMvp as Float32Array,
             meshNorm as Float32Array,
             opacity,
-            mGpu.shaderType,
+            shaderType,
             ccMM,
           )
         }
@@ -1061,10 +1073,15 @@ export default class NVGlview {
         }
         // Re-draw meshes with xray
         if (meshes.length > 0) {
+          const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
           for (const m of meshes) {
             const mGpu = this._getMeshGpu(m)
             if (!mGpu) continue
             const opacity = (m.opacity ?? 1.0) * xrayAlpha
+            const shaderType =
+              isSlice && mGpu.sliceShaderType
+                ? mGpu.sliceShaderType
+                : mGpu.shaderType
             mesh.drawXRay(
               gl,
               m,
@@ -1072,7 +1089,7 @@ export default class NVGlview {
               meshMvp as Float32Array,
               meshNorm as Float32Array,
               opacity,
-              mGpu.shaderType,
+              shaderType,
               ccMM,
             )
           }
@@ -1633,7 +1650,15 @@ export default class NVGlview {
         )
         shaderType = 'phong'
       }
-      const gpu = mesh.uploadMeshGPU(gl, m, { shaderType })
+      // '' = inherit shaderType on slices; an invalid name also falls back to ''.
+      let sliceShaderType = m.sliceShaderType || ''
+      if (sliceShaderType && !availableShaders.includes(sliceShaderType)) {
+        log.warn(
+          `Slice shader '${sliceShaderType}' not available in WebGL2, falling back to '${shaderType}'`,
+        )
+        sliceShaderType = ''
+      }
+      const gpu = mesh.uploadMeshGPU(gl, m, { shaderType, sliceShaderType })
       this.meshResources.set(m, gpu)
     }
   }

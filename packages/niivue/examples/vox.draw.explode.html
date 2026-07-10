@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Drawing on exploded blocks (2D + 3D)</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      #help {
+        font: 12px/1.5 system-ui, sans-serif;
+        padding: 4px 8px;
+        opacity: 0.85;
+      }
+      #help b { font-weight: 600; }
+      /* Contextual "what to do now" line: reflects the active tool + view. */
+      #hint {
+        font: 13px/1.4 system-ui, sans-serif;
+        padding: 5px 8px;
+        background: #16324a;
+        color: #d6ecff;
+      }
+      #hint b { font-weight: 700; color: #ffffff; }
+      #hint .warn { color: #ffd479; }
+      header label { white-space: nowrap; }
+      /* Swatch of the active pen/fill/wand/vector color. */
+      #colorSwatch {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 1px solid #999;
+        border-radius: 2px;
+        vertical-align: middle;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <label for="view">View</label>
+      <select id="view" title="Which slices / 3D render to show. Hero puts the 3D exploded blocks front-and-center with an A/C/S slice strip beside them.">
+        <option value="hero" selected>Hero (3D + slices)</option>
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3">A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="toolSel">Tool</label>
+      <select id="toolSel" title="One drawing tool at a time. Pen/Eraser paint voxels; Fill floods; Magic wand grows an intensity-similar region; Vector (SVG) draws freehand polygons; Off stops drawing.">
+        <option value="pen" selected>Pen</option>
+        <option value="eraser">Eraser</option>
+        <option value="fill">Fill</option>
+        <option value="wand">Magic wand</option>
+        <option value="vector">Vector (SVG)</option>
+        <option value="off">Off</option>
+      </select>
+      &nbsp;
+      <label for="colorSel">Color</label>
+      <select id="colorSel" title="Label color for Pen / Fill / Magic wand / Vector. Disabled for Eraser and Off.">
+        <option value="1" selected>Red</option>
+        <option value="2">Green</option>
+        <option value="3">Blue</option>
+      </select>
+      <span id="colorSwatch" title="Active color"></span>
+      &nbsp;
+      <label for="wand2dCheck" title="Confine the wand to the clicked 2D slice (default). Off = grow the whole connected 3D structure. A 3D block right-click is always 3D.">2D</label>
+      <input type="checkbox" id="wand2dCheck" checked title="Confine the wand to the clicked 2D slice (default). Off = grow the whole connected 3D structure. A 3D block right-click is always 3D." />
+      &nbsp;
+      <label for="wandTol" title="Magic-wand tolerance (% of the display window). Higher = larger region. Enabled only for the Magic wand tool.">Wand tolerance</label>
+      <input type="range" min="0" value="5" max="50" class="slider" id="wandTol" title="Magic-wand tolerance (% of the display window). Higher = larger region." />
+      <span id="tolVal">5%</span>
+      &nbsp;
+      <label for="penSize" title="Pen brush size in voxels.">Size</label>
+      <input type="range" min="1" value="3" max="10" class="slider" id="penSize" title="Pen brush size in voxels." />
+      &nbsp;
+      <label for="explode" title="Separate the volume into exploded blocks (a render-time offset). 3D drawing on blocks needs this on.">Explode</label>
+      <input type="range" min="100" value="160" max="260" class="slider" id="explode" title="Separate the volume into exploded blocks (a render-time offset). 3D drawing on blocks needs this on." />
+      <span id="explodeVal">1.60x</span>
+      &nbsp;
+      <label for="overwriteCheck" title="Overwrite existing labels when drawing. Off = only paint empty voxels (the eraser always works).">Overwrite</label>
+      <input type="checkbox" id="overwriteCheck" checked title="Overwrite existing labels when drawing. Off = only paint empty voxels (the eraser always works)." />
+      &nbsp;
+      <label for="clipCheck" title="Show a clip-plane cutaway from its own control, so right-drag stays free to draw. Alt+right-drag rotates the clip plane.">Clip</label>
+      <input type="checkbox" id="clipCheck" title="Show a clip-plane cutaway from its own control, so right-drag stays free to draw. Alt+right-drag rotates the clip plane." />
+      &nbsp;
+      <button type="button" id="undoBtn" title="Undo the last stroke (or the last vector shape in Vector mode).">Undo</button>
+      <button type="button" id="saveBtn" title="Save the drawing as a NIfTI file.">Save</button>
+      <button type="button" id="svgBtn" disabled title="Export the vector annotations as SVG (Vector mode only).">SVG</button>
+      <button type="button" id="clearBtn" title="Clear the raster drawing and all vector annotations.">Clear</button>
+      &nbsp;
+      <label for="backend" title="Rendering backend (WebGPU or WebGL2).">Backend</label>
+      <select id="backend" title="Rendering backend (WebGPU or WebGL2).">
+        <option value="webgpu" selected>WebGPU</option>
+        <option value="webgl2">WebGL2</option>
+      </select>
+    </header>
+    <div id="hint"></div>
+    <div id="help">
+      Pick a <b>Tool</b>. <b>2D slices:</b> left-drag (Pen/Eraser paint, Fill floods a closed loop, Vector draws a polygon) or click (Magic wand grows an intensity-similar region; <b>2D</b> confines it to the slice).
+      &nbsp;|&nbsp;
+      <b>3D exploded blocks:</b> right-drag (Pen/Eraser/Vector) or right-click (Fill floods the blob, Wand grows the region) directly on a block. <b>Explode</b> must be on.
+      &nbsp;|&nbsp;
+      <b>SVG</b> exports vector annotations. <b>Clip</b> shows a cutaway from its own control (right-drag keeps drawing); <b>Alt+right-drag</b> rotates the clip plane.
+    </div>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue::Drawing on exploded blocks&nbsp;</footer>
+    <script type="module" src="vox.draw.explode.js"></script>
+  </body>
+</html>

@@ -32,8 +32,50 @@ export interface VolumeChunkGL {
   volumeTexture: WebGLTexture
   /** RGBA8 gradient texture for this chunk; sized desc.texDims. */
   volumeGradientTexture: WebGLTexture
+  /**
+   * True if `volumeGradientTexture` holds a real computed gradient; false if it
+   * is an empty placeholder (the ~per-slice gradient pass was skipped because the
+   * volume was unlit at upload). The renderer re-uploads such chunks if lighting
+   * is later enabled. Either way it is a real, per-chunk texture that
+   * destroyVolumeChunksGL frees normally.
+   */
+  hasGradient: boolean
   /** Reference to the chunk descriptor (texOrigin/texDims/halos/gridIndex). */
   desc: VolumeChunkDesc
+}
+
+// Allocate an empty (zero) RGBA8 gradient texture sized to `dims`, with the same
+// sampling params the gradient sampler uses. Used in place of the expensive
+// gradient pass when the volume is unlit (gradientAmount == 0): the shader
+// multiplies gradient lighting by gradientAmount, so a zero gradient has no
+// visible effect while keeping the bind/destroy/byte-budget path unchanged.
+function emptyGradientTexture(
+  gl: WebGL2RenderingContext,
+  dims: readonly [number, number, number],
+): WebGLTexture {
+  const tex = gl.createTexture()
+  if (!tex)
+    throw new Error('orientChunkedGL: failed to allocate gradient texture')
+  gl.bindTexture(gl.TEXTURE_3D, tex)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+  gl.texImage3D(
+    gl.TEXTURE_3D,
+    0,
+    gl.RGBA8,
+    dims[0],
+    dims[1],
+    dims[2],
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    null,
+  )
+  gl.bindTexture(gl.TEXTURE_3D, null)
+  return tex
 }
 
 /**
@@ -92,6 +134,11 @@ export function createChunkUploaderGL(
   gl: WebGL2RenderingContext,
   nvimage: NVImage,
   plan: ChunkPlan,
+  // Whether to compute a real gradient for each chunk. Read per upload so the
+  // decision tracks the current lighting; the renderer re-streams the volume when
+  // this crosses false->true (see VolumeRendererGL). Defaults to always-on so
+  // existing callers keep prior behavior.
+  wantsGradient: () => boolean = () => true,
 ): ChunkUploaderGL {
   if (!nvimage.dimsRAS) {
     throw new Error('orientChunkedGL: missing dimsRAS')
@@ -224,12 +271,18 @@ export function createChunkUploaderGL(
     const volumeTexture = isRGBA
       ? rgba2TextureChunk(gl, chunkRGBA(chunkBytes, dt), desc.texDims)
       : orientChunkToTexture(gl, chunkBytes, dt, desc.texDims, nvimage)
-    const volumeGradientTexture = gradient.volume2TextureGradientRGBA(
-      gl,
-      volumeTexture,
-      [desc.texDims[0], desc.texDims[1], desc.texDims[2]],
-    )
-    return { volumeTexture, volumeGradientTexture, desc }
+    const dims: [number, number, number] = [
+      desc.texDims[0],
+      desc.texDims[1],
+      desc.texDims[2],
+    ]
+    // Skip the (expensive, ~per-slice) gradient pass when the volume is unlit;
+    // an empty gradient keeps the bind/destroy/budget path identical.
+    const hasGradient = wantsGradient()
+    const volumeGradientTexture = hasGradient
+      ? gradient.volume2TextureGradientRGBA(gl, volumeTexture, dims)
+      : emptyGradientTexture(gl, dims)
+    return { volumeTexture, volumeGradientTexture, desc, hasGradient }
   }
 
   return { uploadChunk, prefetchChunk, dispose: () => fetchCache.clear() }

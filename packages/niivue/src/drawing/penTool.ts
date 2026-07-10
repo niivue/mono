@@ -109,6 +109,160 @@ export function drawSphere(params: DrawSphereParams): void {
   }
 }
 
+export interface FloodFill3DParams {
+  seed: readonly [number, number, number]
+  drawBitmap: Uint8Array
+  dims: number[] // NIfTI-style [ndim, dimX, dimY, dimZ]
+  penValue: number
+  // Returns true for a voxel that belongs to the region being filled (e.g. its
+  // source intensity is above the visible-tissue threshold). The seed must pass
+  // it too or nothing is filled.
+  keep: (x: number, y: number, z: number) => boolean
+  // When false, do not repaint already-nonzero draw voxels (unless erasing).
+  fillOverwrites: boolean
+  // Safety cap so a fill over a huge connected region can't run unbounded.
+  maxVoxels?: number
+}
+
+export interface FloodFill3DResult {
+  filled: number
+  min: [number, number, number]
+  max: [number, number, number]
+  hitCap: boolean
+}
+
+/**
+ * 3D region-grow flood fill for drawing on exploded blocks (no slice plane).
+ * Seeded at `seed`, grows over 6-connected voxels for which `keep` is true and
+ * paints them `penValue`. Honors `fillOverwrites` (skip already-painted voxels
+ * when false and not erasing) and stops at `maxVoxels`. Returns the painted-voxel
+ * count and inclusive AABB (for the incremental drawing flush); `filled` is 0 and
+ * the AABB collapses to the seed when the seed itself fails `keep`.
+ */
+export function floodFill3D(params: FloodFill3DParams): FloodFill3DResult {
+  const { seed, drawBitmap, dims, penValue, keep, fillOverwrites } = params
+  const dx = dims[1]
+  const dy = dims[2]
+  const dz = dims[3]
+  const cap = params.maxVoxels ?? dx * dy * dz
+  const sx = Math.round(seed[0])
+  const sy = Math.round(seed[1])
+  const sz = Math.round(seed[2])
+  const min: [number, number, number] = [sx, sy, sz]
+  const max: [number, number, number] = [sx, sy, sz]
+  const inBounds = (x: number, y: number, z: number): boolean =>
+    x >= 0 && y >= 0 && z >= 0 && x < dx && y < dy && z < dz
+  if (!inBounds(sx, sy, sz) || !keep(sx, sy, sz)) {
+    return { filled: 0, min, max, hitCap: false }
+  }
+  const skipOverwrite = fillOverwrites === false && penValue !== 0
+  // Visited marks prevent re-enqueuing; separate from the draw bitmap so an
+  // eraser fill (penValue 0) still terminates.
+  const visited = new Uint8Array(dx * dy * dz)
+  const stack: number[] = [sx, sy, sz]
+  // Mark visited on PUSH (not on pop), so each voxel is enqueued at most once and
+  // the stack stays bounded by the region size instead of ~6x it.
+  visited[voxelIndex(sx, sy, sz, dx, dy)] = 1
+  const pushIfNew = (nx: number, ny: number, nz: number): void => {
+    const nf = voxelIndex(nx, ny, nz, dx, dy)
+    if (!visited[nf]) {
+      visited[nf] = 1
+      stack.push(nx, ny, nz)
+    }
+  }
+  let filled = 0
+  let hitCap = false
+  while (stack.length > 0) {
+    const z = stack.pop() as number
+    const y = stack.pop() as number
+    const x = stack.pop() as number
+    const flat = voxelIndex(x, y, z, dx, dy)
+    if (!keep(x, y, z)) continue
+    if (!(skipOverwrite && drawBitmap[flat] !== 0)) {
+      // Check the cap before painting so exhausting the region exactly at the
+      // cap is a clean finish, not a spurious early stop.
+      if (filled >= cap) {
+        hitCap = true
+        break
+      }
+      drawBitmap[flat] = penValue
+      filled++
+      if (x < min[0]) min[0] = x
+      if (y < min[1]) min[1] = y
+      if (z < min[2]) min[2] = z
+      if (x > max[0]) max[0] = x
+      if (y > max[1]) max[1] = y
+      if (z > max[2]) max[2] = z
+    }
+    if (x + 1 < dx) pushIfNew(x + 1, y, z)
+    if (x - 1 >= 0) pushIfNew(x - 1, y, z)
+    if (y + 1 < dy) pushIfNew(x, y + 1, z)
+    if (y - 1 >= 0) pushIfNew(x, y - 1, z)
+    if (z + 1 < dz) pushIfNew(x, y, z + 1)
+    if (z - 1 >= 0) pushIfNew(x, y, z - 1)
+  }
+  return { filled, min, max, hitCap }
+}
+
+export interface MagicWand3DParams {
+  seed: readonly [number, number, number]
+  drawBitmap: Uint8Array
+  dims: number[] // NIfTI-style [ndim, dimX, dimY, dimZ]
+  penValue: number
+  // Source intensity lookup (RAS voxel order), e.g. from getImageDataRAS.
+  sample: (x: number, y: number, z: number) => number
+  // Absolute intensity distance from the seed voxel's value; a voxel joins the
+  // region when |sample(v) - sample(seed)| <= tolerance.
+  tolerance: number
+  fillOverwrites: boolean
+  maxVoxels?: number
+  // When set, confine the region to a single slice: the given axis (0=x, 1=y,
+  // 2=z) is pinned to `index`, so the flood cannot leave that plane and the grow
+  // is 2D-connected. Omit for a full 3D grow (the default).
+  restrictToSlice?: { axis: number; index: number }
+}
+
+/**
+ * Click-to-segment ("magic wand") for voxel volumes. Grows a 6-connected region
+ * out from `seed` over voxels whose source intensity is within `tolerance` of the
+ * seed voxel's value, painting them `penValue` in the drawing bitmap. Thin wrapper
+ * over {@link floodFill3D} — the connectivity, overwrite, cap, and AABB semantics
+ * are identical; only the membership test differs (seed-relative intensity band vs
+ * a fixed threshold). With `restrictToSlice` the grow is confined to one plane
+ * (2D); otherwise it grows through the whole connected structure (3D). Returns
+ * `filled: 0` when the seed is out of bounds.
+ */
+export function magicWand3D(params: MagicWand3DParams): FloodFill3DResult {
+  const dx = params.dims[1]
+  const dy = params.dims[2]
+  const dz = params.dims[3]
+  const sx = Math.round(params.seed[0])
+  const sy = Math.round(params.seed[1])
+  const sz = Math.round(params.seed[2])
+  if (sx < 0 || sy < 0 || sz < 0 || sx >= dx || sy >= dy || sz >= dz) {
+    return { filled: 0, min: [sx, sy, sz], max: [sx, sy, sz], hitCap: false }
+  }
+  const seedValue = params.sample(sx, sy, sz)
+  const tol = Math.max(0, params.tolerance)
+  const slice = params.restrictToSlice
+  // A pinned plane rejects any off-plane voxel; since the flood is 6-connected,
+  // rejecting the two depth-axis neighbors keeps the whole grow on one slice.
+  const onPlane = slice
+    ? (x: number, y: number, z: number): boolean =>
+        [x, y, z][slice.axis] === slice.index
+    : (): boolean => true
+  return floodFill3D({
+    seed: [sx, sy, sz],
+    drawBitmap: params.drawBitmap,
+    dims: params.dims,
+    penValue: params.penValue,
+    fillOverwrites: params.fillOverwrites,
+    maxVoxels: params.maxVoxels,
+    keep: (x, y, z) =>
+      onPlane(x, y, z) && Math.abs(params.sample(x, y, z) - seedValue) <= tol,
+  })
+}
+
 export function drawPoint(params: DrawPointParams): void {
   const {
     x: inputX,

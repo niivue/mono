@@ -14,6 +14,8 @@ import type {
   ViewHitTest,
   WebGLMeshGPU,
 } from '@/NVTypes'
+import type { SlidePlaneState } from '@/slide/slidePlane'
+import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
@@ -46,6 +48,7 @@ import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
 import { SliceRenderer } from './slice'
+import { SlidePlaneRenderer } from './slidePlaneRender'
 import { ThumbnailRenderer } from './thumbnail'
 
 type MeshGpuWithShader = WebGLMeshGPU & {
@@ -60,6 +63,8 @@ export default class NVGlview {
   isAntiAlias: boolean
   forceDevicePixelRatio: number
   gl: WebGL2RenderingContext | null
+  /** Set when the WebGL2 context is lost (e.g. GPU OOM); halts the render loop. */
+  private _contextLost = false
   max2D: number
   max3D: number
   fontTexture: WebGLTexture | null
@@ -79,6 +84,9 @@ export default class NVGlview {
   colorbarRenderer: ColorbarRenderer
   thumbnailRenderer: ThumbnailRenderer
   sliceRenderer: SliceRenderer
+  slidePlaneRenderer: SlidePlaneRenderer
+  /** Optional WSI slide registered into volume mm space, drawn in the 3D render tile. */
+  slidePlane: SlidePlaneState | null = null
   meshResources: Map<NVMesh, MeshGpuWithShader>
   orientCubeGpu: WebGLMeshGPU | null
   // Bounds: pixel rect for sub-canvas rendering
@@ -148,6 +156,7 @@ export default class NVGlview {
     this.colorbarRenderer = new ColorbarRenderer()
     this.thumbnailRenderer = new ThumbnailRenderer()
     this.sliceRenderer = new SliceRenderer()
+    this.slidePlaneRenderer = new SlidePlaneRenderer()
     this.meshResources = new Map()
     this.orientCubeGpu = null
   }
@@ -197,6 +206,21 @@ export default class NVGlview {
     const gl = this.gl
     this.max2D = result.max2D
     this.max3D = result.max3D
+    // Surface a lost WebGL context (commonly GPU VRAM exhaustion — e.g. too many
+    // large streamed chunks resident at once) instead of a silently white
+    // canvas, and stop driving the render loop once lost.
+    this.canvas.addEventListener(
+      'webglcontextlost',
+      (event) => {
+        event.preventDefault()
+        this._contextLost = true
+        log.error(
+          'WebGL2 context lost — likely GPU out of memory. Reduce ' +
+            'maxChunkResidencyBytes or use a coarser level.',
+        )
+      },
+      { once: true },
+    )
     let renderer = ''
     let vendor = ''
     const rendererInfo = gl.getExtension('WEBGL_debug_renderer_info')
@@ -215,6 +239,7 @@ export default class NVGlview {
     await this.fontRenderer.init(gl, this.options.font)
     mesh.init(gl)
     this.sliceRenderer.init(gl)
+    this.slidePlaneRenderer.init(gl)
     // Enable required extensions
 
     // Enable depth testing with standard convention
@@ -454,10 +479,17 @@ export default class NVGlview {
     const gl = this.gl
     const md = this.model
     if (!gl) return
+    // A lost context (GPU OOM) cannot be drawn to; bail so we don't spin the
+    // streaming loop against a dead context.
+    if (this._contextLost || gl.isContextLost()) return
     if (this.isBusy) {
       requestAnimationFrame(() => this.render())
       return
     }
+    // Publish the current lighting to the volume renderer BEFORE any chunk work
+    // (entry creation, request, pump) so chunk uploaders can skip the gradient
+    // pass when unlit. Matches the gradientAmount passed to the volume draw.
+    this.volumeRenderer.gradientAmount = md.volume.illumination
     // Off-screen after viewport transform: skip the entire render pass — scissor would
     // clip everything and the work is wasted. preserveDrawingBuffer keeps prior pixels.
     if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
@@ -722,6 +754,20 @@ export default class NVGlview {
             ),
           )
         }
+      }
+      // Outline the block a 3D vector stroke is drawing on (pick hint).
+      if (
+        md._pickedBlockBox &&
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER
+      ) {
+        crossLinesList.push(
+          ...NVSliceLayout.buildFocusBoxLines(
+            md._pickedBlockBox,
+            mvpMatrix as mat4,
+            ltwh,
+            buildLine,
+          ),
+        )
       }
       gl.viewport(
         bx + ltwh[0],
@@ -1065,6 +1111,42 @@ export default class NVGlview {
         )
         this.polygon3DRenderer.endPasses(gl)
       }
+      // Layer 2b-slide: WSI slide plane registered into volume mm space
+      // (RENDER tiles only). Uses the tile MVP (world mm -> clip) so the slide
+      // composites with the volume in its own space; tiles stream via NVSlide.
+      if (
+        tile.space !== 'global3d' &&
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
+        this.slidePlane &&
+        this.slidePlaneRenderer.isReady
+      ) {
+        const { tiles } = resolveSlidePlaneTiles(
+          this.slidePlane,
+          mvpMatrix as Float32Array,
+          ltwh[2],
+          ltwh[3],
+        )
+        this.slidePlaneRenderer.draw(
+          gl,
+          mvpMatrix as Float32Array,
+          tiles,
+          this.slidePlane.slide,
+        )
+        if (this.slidePlane.annotation) {
+          this.slidePlaneRenderer.drawAnnotation(
+            gl,
+            mvpMatrix as Float32Array,
+            this.slidePlane.annotation,
+          )
+        }
+        // Capture this frame's camera for screen->slide picking (drawing).
+        this.slidePlane.pickFrame = {
+          mvp: new Float32Array(mvpMatrix as Float32Array),
+          ltwh: [ltwh[0], ltwh[1], ltwh[2], ltwh[3]],
+          bx,
+          by,
+        }
+      }
       // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders and global3d)
       if (
         tile.space !== 'global3d' &&
@@ -1388,14 +1470,37 @@ export default class NVGlview {
     markEnd()
     // Stream in any not-yet-resident chunks of oversized volumes, then
     // schedule a follow-up frame so the freshly-uploaded data appears.
-    // Re-render also if a streaming cross-fade is still animating.
-    const fading = this.volumeRenderer.fadeActive
-    this.volumeRenderer
-      .pumpChunkUploads()
-      .then((changed) => {
-        if (changed || fading) requestAnimationFrame(() => this.render())
-      })
-      .catch((err) => log.error('chunk upload pump failed', err))
+    // Re-render if a chunk was admitted, a cross-fade is still animating, or
+    // streaming work is still outstanding (chunks queued or mid-fetch). The
+    // last clause keeps the self-driven loop alive across frames where a pump
+    // uploads nothing because its chunks are still being fetched — otherwise
+    // streaming stalls until an unrelated redraw (e.g. a drag) re-kicks it.
+    // Pause the chunk upload pump during an active drag: its per-chunk decode +
+    // orient + gradient work would jank the rotation/pan. Resident chunks keep
+    // drawing (requestChunksInFrustum still stamps them, so the LRU won't evict
+    // them), and the pump resumes on release (pointerup -> drawScene), draining
+    // the queued working set then. Standard "stream on interaction-end".
+    if (!md._isDragging) {
+      const fading = this.volumeRenderer.fadeActive
+      this.volumeRenderer
+        .pumpChunkUploads()
+        .then((changed) => {
+          const stream = this.volumeRenderer.chunkStreamStats()
+          const busy = stream.pending > 0 || stream.inFlight > 0
+          if (changed || fading || busy) {
+            requestAnimationFrame(() => this.render())
+          }
+        })
+        .catch((err) => {
+          log.error('chunk upload pump failed', err)
+          // Keep the self-driven loop alive: an unexpected pump rejection must
+          // not permanently freeze streaming while chunks are still outstanding.
+          const stream = this.volumeRenderer.chunkStreamStats()
+          if (stream.pending > 0 || stream.inFlight > 0) {
+            requestAnimationFrame(() => this.render())
+          }
+        })
+    }
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */

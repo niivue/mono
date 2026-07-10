@@ -66,7 +66,12 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `saveDocument()` | ✅ | |
 | `saveScene()` | ❌ | |
 | `saveHTML()` / `generateHTML()` | ✅ | `@niivue/nv-ext-save-html` extension package |
-| `json()` — serialize state | ✅ | `serializeDocument()` returns CBOR-encoded `Uint8Array` |
+| `json()` — serialize state | ✅ | `serializeDocument()` returns a `Uint8Array` (CBOR by default) |
+| JSON document (export + import) | ✅ (new) | `serializeDocument({ format: 'json' })` / `saveDocument('x.json')` writes a human-readable/portable JSON NVD (typed arrays base64-tagged); `loadDocument` sniffs JSON vs CBOR and reads either. Same document structure as the CBOR `.nvd`. `documentJson.ts`. |
+| Import classic-NiiVue (legacy) JSON `.nvd` | ✅ via converter | Offline converter (`bun run convert:legacy <in> <out.nvd\|.json>`, `documentLegacy.ts`): maps the classic `opts`/`sceneData`/`imageOptionsArray`/`meshesString` to our format, LINKING volumes/meshes by their URL (embedded base64 blobs are not decoded — the URLs must be reachable). Not a runtime loader; a one-shot translation to a new-format document. |
+| Sparse SETTINGS (omit defaults; fill on load) | ✅ (new) | v9: `serialize()` omits any setting equal to its default (all 8 config groups). On load a specified setting always wins; an omitted setting is filled per a **fill policy** — DEFAULT resets it to its built-in default (a document is a complete scene), `'current'` keeps the instance value. Save control: `nv.settingsSavePolicy` (`neverSave`/`alwaysSave`); load control: `nv.settingsFillPolicy` / `loadDocument(src, { fill })` (group or `'group.key'`). Crosshair persistence = `{ 'scene.crosshairPos': 'current' }`. `documentSettings.ts` (`sparsifyGroup`/`fillGroup`). A mono addition. |
+| Sparse / dataless document (link volumes by URL) | ✅ VOLUMES / ❌ meshes | `serializeDocument({ linkData: true })` (or `saveDocument(name, { linkData: true })`) emits a document that references each volume by `url` instead of embedding its bytes; a volume with no linkable URL (drag-drop, `blob:`/`data:`) still embeds so it always round-trips. `SerializeOptions.linkData` in `NVDocument`. Verified: a linked mni152 doc is ~1 KB vs ~11 MB embedded. **Meshes still always embed** — the mesh URL-restore path doesn't yet reapply overlay layers / tract options (tracked follow-up). |
+| Hydrate linked volumes on load | ✅ | `reconstructVolume`'s `else if (v.url)` branch fetches from the URL when embedded `data` is absent (pre-existing), so a linked document rehydrates on open — verified end-to-end with `linkData` saves. |
 
 ## 6. Volume Management
 
@@ -197,8 +202,12 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `drawingBinaryDilationWithSeed()` | ❌ | |
 | `findDrawingBoundarySlices()` | ✅ | `@niivue/nv-ext-drawing` package |
 | `interpolateMaskSlices()` | ✅ | `@niivue/nv-ext-drawing` package |
-| Click-to-segment (magic wand) | ✅ | `@niivue/nv-ext-drawing` exports `magicWand`, `magicWandFromBitmap`, and `MagicWandShared` |
+| Click-to-segment (magic wand) | ✅ | Built into the core drawing (`drawIsClickToSegment` + `drawClickToSegmentTolerance`): a 2D-slice click or a 3D exploded-block right-click grows a region of intensity-similar voxels (`magicWand3D`). Grows the whole connected 3D structure by default; `drawClickToSegmentIs2D` confines a slice click to its plane (the block right-click is always 3D). Also available worker-side via `@niivue/nv-ext-drawing` (`magicWand`, `magicWandFromBitmap`, `MagicWandShared`) |
 | Draw rim opacity | ✅ | `drawRimOpacity` |
+| 2D slice drawing methods (pen point, drag stroke, filled polygon, eraser) | ✅ | Left-drag on any slice; `drawPenFilled` flood-fills a closed loop |
+| 3D drawing on exploded blocks (render tile) | ✅ | New in the rewrite (old NiiVue drew on 2D slices only): right-button pen/eraser stroke, 3D flood fill, and magic-wand click-to-segment directly on exploded chunked blocks, on both backends. Demo `vox.draw.explode.html` |
+| Export drawing slice as SVG | ✅ | `drawingToSVG(sliceType?, sliceIndex?)` traces the current slice's painted voxels into run-length `<rect>`s per label color (sized in voxels). Mirrors the slide vector layer's `toSVG` for volume drawings |
+| Vector annotation drawing + SVG export | ✅ | The core annotation layer draws freehand vector polygons on slices (`annotationTool`, `annotationIsEnabled`); `annotationsToSVG(sliceType?, slicePosition?)` serializes them to `<path>`s in slice mm coordinates. Shapes can also be drawn **directly on the 3D exploded blocks** (right-drag on the render picks block points, fit to the best plane) and render explode-aware. The `vox.draw` / `vox.draw.explode` demos expose this as a "Vector (SVG)" pen mode |
 
 ## 15. Image Processing
 
@@ -475,7 +484,7 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Events | ✅ | `signalLoaded`, `signalRemoved`, `signalLocationChange` |
 | Graph rendering (`NVGraph` signal mode) | ✅ | Multi-color series, legend (capped), reversible/windowed x-axis, full-canvas when signal-only, dense-series decimation, derived-plot cache; on-graph pan/zoom buttons with wheel/frame follow (`graphZoom`/`graphPan`), relative line width/opacity (`graphLineWidth`/`graphLineAlpha`), and a missing-data rug for NaN gaps |
 | Annotations (`SignalAnnotation`) | ✅ | Data-space text labels (`{text,x,y,color?}`) that pan/zoom with the window and hide when out of range; `y` of `±Infinity` pins to plot bottom/top; set via load options or `setSignal`, persisted in NVD. Render on the signal graph only (not the volume+physio association view) |
-| Persistence (NVD) | ✅ | Document version 8 (`signal/persistence.ts`) |
+| Persistence (NVD) | ✅ | Document version 9 (`signal/persistence.ts`) |
 | Demos | ✅ | `examples/svs.html`, `examples/physio.html`, `examples/physio.bold.html` |
 | Volume + physio association | ✅ | `collectAssociatedTimeGraphData`: BOLD time-course + attached physio on a shared Time(s) axis at native rates, clamped to the imaging window, normalized, with a current-frame marker (`attachToId`); per-trace show/hide — BOLD via `graphShowVolumeTimecourse`, physio via `setSignal` `selectedColumns` |
 

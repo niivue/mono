@@ -77,9 +77,25 @@ WebGL2 and WebGPU where rendering is involved.
 - [ ] Add a Neuroglancer-style chunk/tile scheduler with explicit request states:
   pending, downloading, decoded/system memory, GPU resident, failed, and evicted.
   Include stale-request cancellation via `AbortController`.
+- [ ] Add server-provided occupancy metadata for sparse chunks/tiles, especially
+  for the IIIF volumetric server path. Manifest entries should expose per-block
+  `cal_min`/`cal_max` or equivalent value/alpha bounds, plus an explicit
+  `empty` flag when the server can prove the block has no visible samples. The
+  client scheduler can then skip fetch/decode/orient/gradient/GPU upload for
+  known-empty blocks while treating missing metadata conservatively as
+  "unknown, request normally."
 - [ ] Add priority and prefetch policy:
   visible working set first, view-centre first, optional neighborhood prefetch,
   and lower priority for off-screen or stale levels.
+- [ ] Reduce render quality while interacting ("fast draw while dragging") in
+  niivue core, keyed off the existing `isDragging` signal: use a coarser
+  ray-march step (or a lower render resolution) during rotate/pan and restore
+  full quality on release. Volume rendering of many resident bricks — especially
+  the exploded chunk view — is heavy per frame, so continuous redraw during
+  rotation janks, and there is currently no quality knob to lighten it (ray-step
+  density is tied to voxel size; the step loop is a fixed cap). Must land on both
+  WebGL2 and WebGPU (parity). Motivated by dropping the range demo's explode
+  slider: explode-on rotation was slow with no demo-side lever.
 - [ ] Unify and expose existing memory budgets across the client-only runtime:
   volume GPU residency already has byte budgets + LRU eviction, and `NVSlide`
   already has a bounded `ImageBitmap` cache. Fill remaining gaps for decoded CPU
@@ -87,6 +103,16 @@ WebGL2 and WebGPU where rendering is involved.
 - [ ] Make client-only viewer state serializable:
   dataset URL/manifest, selected level, backend, layout/render mode, camera,
   contrast/window, colormap, slide/volume opacity, and spatial transforms.
+- [ ] Make NVD document save/restore support sparse settings. On save, let
+  developers choose which settings groups or fields to serialize (for example
+  scene, config, display, layer styling, camera, layout, client-only source
+  state), so applications can create focused NVD documents instead of always
+  snapshotting the full viewer. On restore, merge partial state with the current
+  viewer settings: when an `.nvd` omits a scene/config/display/layer setting,
+  keep the current setting (or current default) instead of resetting it. Treat
+  explicit document values as authoritative, and reserve explicit `null`/empty
+  fields for schema-defined "clear this" behavior. Add regression coverage for
+  older and intentionally partial NVD documents.
 
 ### Data format compatibility
 
@@ -111,6 +137,15 @@ WebGL2 and WebGPU where rendering is involved.
   rendered standalone or registered onto a base image/volume.
 - [ ] Add client-only annotations that can live in slide pixels and/or mapped
   world space: points, polylines, polygons, labels, and measurement overlays.
+- [ ] Formalize how `NVSlide` drawings and SVG/vector annotations are stored.
+  Keep the raster label drawing, structured vector shapes, and exported SVG as
+  distinct concepts: raster drawings live in slide pixel space and round-trip
+  through NVD as compressed label masks; vectors live as structured slide-space
+  geometry/styles and round-trip through NVD without requiring a raster drawing;
+  SVG is an import/export representation, not the only source of truth. Cover
+  schema/versioning, vector-only restore, SVG field validation/escaping, and
+  consistent clear/undo semantics for raster-only, vector-only, and combined
+  slide annotations.
 
 ### Rendering and UX parity
 

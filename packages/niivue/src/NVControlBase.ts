@@ -1,4 +1,5 @@
 import { type vec2, type vec3, vec4 } from 'gl-matrix'
+import { annotationsToSVG } from '@/annotation/annotationSvg'
 import { getControlPoints } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
@@ -17,6 +18,7 @@ import type {
   ReinitializeOptions,
   ViewLifecycle,
 } from '@/control/viewLifecycle'
+import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   calculateLoadDrawingTransform,
   clearAllUndoBitmaps,
@@ -25,7 +27,8 @@ import {
   transformBitmap,
   validateDrawingDimensions,
 } from '@/drawing/drawingManager'
-import { decodeRLE } from '@/drawing/rle'
+import { drawingSliceToSVG } from '@/drawing/drawingSvg'
+import { decodeRLE, encodeRLE } from '@/drawing/rle'
 import { drawUndo } from '@/drawing/undo'
 import { NVExtensionContext } from '@/extension/context'
 import { type LogLevel, log } from '@/logger'
@@ -33,7 +36,12 @@ import * as NVTransforms from '@/math/NVTransforms'
 import * as NVMeshLayers from '@/mesh/layers'
 import * as NVMesh from '@/mesh/NVMesh'
 import type { WriteOptions } from '@/mesh/writers'
-import { DRAG_MODE, NUM_CLIP_PLANE, SLICE_TYPE } from '@/NVConstants'
+import {
+  DRAG_MODE,
+  NUM_CLIP_PLANE,
+  SLICE_TYPE,
+  sliceTypeDim,
+} from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
 import type {
   GraphRangeChangeDetail,
@@ -83,6 +91,11 @@ import type { SignalFromUrlOptions } from '@/signal/NVSignal'
 import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
 import { fetchSidecar } from '@/signal/sidecar'
+import { NVSlide } from '@/slide/NVSlide'
+import { SlideDrawing } from '@/slide/slideDrawing'
+import type { SlidePlaneState } from '@/slide/slidePlane'
+import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
+import { SlideVectorLayer } from '@/slide/slideVector'
 import { buildDrawingLut, drawingBitmapToRGBA } from '@/view/NVDrawingTexture'
 import { getFontMetrics } from '@/view/NVFont'
 import {
@@ -101,6 +114,7 @@ import {
 } from '@/view/NVPerfMarks'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import { validateCustomLayout } from '@/view/NVSliceLayout'
+import type { ExplodedBlockFace } from '@/volume/ChunkExplode'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
 import type { ChunkPlan } from '@/volume/chunking'
 import {
@@ -138,6 +152,7 @@ type ViewBackend = {
   legendLayout: LegendLayout | null
   graphLayout: GraphLayout | null
   getAvailableShaders: () => string[]
+  slidePlane: SlidePlaneState | null
   refreshDrawing: (
     rgba: Uint8Array,
     dims: number[],
@@ -158,6 +173,14 @@ type ViewBackend = {
 
 export type { NiiVueOptions }
 export type DistributionBackend = 'both' | 'webgpu' | 'webgl2'
+/** Slide drawing tools (see `slideTool`). */
+export type SlideDrawTool =
+  | 'pen'
+  | 'eraser'
+  | 'bucket'
+  | 'filled'
+  | 'wand'
+  | 'vector'
 
 type InfrastructureOpts = {
   backend?: BackendType
@@ -236,7 +259,24 @@ export default class NiiVueGPU extends EventTarget {
   currentClipPlaneIndex: number
   canvas: HTMLCanvasElement | null = null
   opts: InfrastructureOpts
-  isDragging: boolean
+  private _isDraggingFlag = false
+  /**
+   * True during an active pointer drag. Mirrored to `model._isDragging` so the
+   * view can pause expensive per-frame work (e.g. the chunked-volume upload
+   * pump) during interaction and keep rotation/pan smooth.
+   */
+  get isDragging(): boolean {
+    return this._isDraggingFlag
+  }
+  set isDragging(value: boolean) {
+    const was = this._isDraggingFlag
+    this._isDraggingFlag = value
+    this.model._isDragging = value
+    // Resuming from a drag: the chunk upload pump was paused while dragging, and
+    // pointerup does not itself redraw, so kick a render to resume streaming and
+    // drain the working set queued during the drag.
+    if (was && !value) this.drawScene()
+  }
   lastPointerX: number
   lastPointerY: number
   framePending: boolean
@@ -244,6 +284,22 @@ export default class NiiVueGPU extends EventTarget {
   activeButton?: number
   model: NVModel
   view: ViewBackend | null = null
+  // Which settings saved documents include (transient; not serialized). Default
+  // {} = omit any setting equal to its default. See `settingsSavePolicy`.
+  private _settingsSavePolicy: SettingsSavePolicy = {}
+  // How a loaded document's OMITTED settings are filled (transient). Default
+  // undefined = reset each to its built-in default. See `settingsFillPolicy`.
+  private _settingsFillPolicy: SettingsFillPolicy | undefined
+  private _slidePlane: SlidePlaneState | null = null
+  private _slidePlaneSlide: NVSlide | null = null
+  private _slidePlaneOnChange: (() => void) | null = null
+  private _slideDrawing: SlideDrawing | null = null
+  private _slideVector: SlideVectorLayer | null = null
+  private _slideLastRasterPt: [number, number] | null = null
+  private _slideTool: SlideDrawTool = 'pen'
+  private _slideWandTolerance = 40
+  private _slideFillPts: Array<[number, number]> = []
+  private _slideVecPts: Array<[number, number]> = []
   resizeObserver: ResizeObserver | null
   _dprMediaQuery: {
     mql: MediaQueryList
@@ -266,6 +322,23 @@ export default class NiiVueGPU extends EventTarget {
   _drawPenLocation: number[] = [NaN, NaN, NaN]
   _drawPenAxCorSag = -1
   _drawPenFillPts: number[][] = []
+  // 3D drawing on exploded blocks: active during a right-button stroke on the
+  // render tile, with the last painted voxel so drag motion connects (no gaps).
+  // The last painted chunk gates that connection: successive picks are only
+  // joined when they land in the SAME block, so a drag that crosses to another
+  // block (whose voxels are far away in data space) starts a fresh stamp instead
+  // of streaking a line through the volume.
+  _draw3DActive = false
+  _draw3DLastVoxel: [number, number, number] | null = null
+  _draw3DLastChunk: number | null = null
+  // True from a 3D stroke's pointer-down until its first successful paint, so the
+  // undo snapshot is taken when tissue is first hit — not skipped when the stroke
+  // starts on a ray-miss (press off-block, then drag on).
+  _draw3DNeedsUndo = false
+  // RAS-ordered sample array of the picked volume, cached for the duration of a
+  // 3D draw/vector stroke so pickExplodedDraw doesn't re-reorder the whole volume
+  // on every pointermove. Keyed by volume identity; cleared on pointerup/cancel.
+  _draw3DSampleCache: { vol: NVImage; data: Float32Array } | null = null
   _drawLut: LUT | null = null
   _drawingDirty = false
   // Inclusive voxel AABB of pen strokes since the last drawing flush. When set
@@ -295,6 +368,16 @@ export default class NiiVueGPU extends EventTarget {
   _annotationSliceType = 0
   _annotationSlicePosition = 0
   _annotationAnchorMM: [number, number, number] = [0, 0, 0]
+  // Freehand vector drawing directly on the 3D exploded blocks: active during a
+  // right-button stroke on the render tile, accumulating picked block points in
+  // mm (un-exploded). On pointer-up they are fit to an axis-aligned plane and
+  // committed as a slice annotation.
+  _annotation3DActive = false
+  _annotation3DMMPath: [number, number, number][] = []
+  // The front face of the picked block, as an axis-aligned mm plane. The whole
+  // stroke is projected onto this one plane, so the committed SVG is a flat
+  // axis-aligned polygon on the block face. null until the first successful pick.
+  _annotation3DFace: ExplodedBlockFace | null = null
   _annotationShapeStart: AnnotationPoint | null = null
   _resizingControlPoint = -1
   _resizeOriginalShape: {
@@ -344,8 +427,9 @@ export default class NiiVueGPU extends EventTarget {
       maxTextureDimension3D: options.maxTextureDimension3D,
       maxChunkResidencyBytes: options.maxChunkResidencyBytes,
     }
-    // Public properties (controller-level)
-    this.isDragging = false
+    // Public properties (controller-level). isDragging defaults false via its
+    // backing field; setting it here would run its model-mirroring setter before
+    // this.model exists, so it is intentionally omitted.
     this.lastPointerX = 0
     this.lastPointerY = 0
     this.framePending = false
@@ -355,6 +439,7 @@ export default class NiiVueGPU extends EventTarget {
       contextmenu: null,
       pointerdown: null,
       pointerup: null,
+      pointercancel: null,
       pointermove: null,
       wheel: null,
       keydown: null,
@@ -1162,6 +1247,13 @@ export default class NiiVueGPU extends EventTarget {
   get drawIsEnabled(): boolean {
     return this.model.draw.isEnabled
   }
+  /**
+   * Enable the raster drawing tools (pen/eraser/fill/magic wand). Mutually
+   * exclusive with {@link annotationIsEnabled} in practice: with both on, raster
+   * drawing intercepts the pointer and vector annotation editing is inert (the
+   * first such interaction warns). Turn one off before turning the other on.
+   * `false` stops editing but keeps the drawing visible; see `closeDrawing()`.
+   */
   set drawIsEnabled(v: boolean) {
     this.model.draw.isEnabled = v
     this.emit('drawingEnabled', { isEnabled: v })
@@ -1192,6 +1284,34 @@ export default class NiiVueGPU extends EventTarget {
   set drawIsFillOverwriting(v: boolean) {
     this.model.draw.isFillOverwriting = v
     this.emit('change', { property: 'drawIsFillOverwriting', value: v })
+  }
+
+  get drawIsClickToSegment(): boolean {
+    return this.model.draw.isClickToSegment
+  }
+  set drawIsClickToSegment(v: boolean) {
+    this.model.draw.isClickToSegment = v
+    this.emit('change', { property: 'drawIsClickToSegment', value: v })
+  }
+
+  get drawClickToSegmentTolerance(): number {
+    return this.model.draw.clickToSegmentTolerance
+  }
+  set drawClickToSegmentTolerance(v: number) {
+    const val = Math.max(0, Math.min(1, v))
+    this.model.draw.clickToSegmentTolerance = val
+    this.emit('change', {
+      property: 'drawClickToSegmentTolerance',
+      value: val,
+    })
+  }
+
+  get drawClickToSegmentIs2D(): boolean {
+    return this.model.draw.clickToSegmentIs2D
+  }
+  set drawClickToSegmentIs2D(v: boolean) {
+    this.model.draw.clickToSegmentIs2D = v
+    this.emit('change', { property: 'drawClickToSegmentIs2D', value: v })
   }
 
   get drawOpacity(): number {
@@ -1309,6 +1429,13 @@ export default class NiiVueGPU extends EventTarget {
   get annotationIsEnabled(): boolean {
     return this.model.annotation.isEnabled
   }
+  /**
+   * Enable vector annotation editing. Mutually exclusive with
+   * {@link drawIsEnabled} in practice: with both on, raster drawing intercepts
+   * the pointer and vector annotation editing is inert (the first such
+   * interaction warns). Turn one off before turning the other on. Does not
+   * affect whether annotations *render* — they always do.
+   */
   set annotationIsEnabled(v: boolean) {
     this.model.annotation.isEnabled = v
     this.emit('change', { property: 'annotationIsEnabled', value: v })
@@ -1418,6 +1545,38 @@ export default class NiiVueGPU extends EventTarget {
     this._annotationUndoStack.clear()
     this.emit('annotationChanged', { action: 'clear' })
     this.drawScene()
+  }
+
+  /**
+   * Serialize the vector annotations to a standalone SVG string (`<path>` per
+   * polygon, one `<g>` panel per slice plane). `sliceType` defaults to the current
+   * single-slice view; in render/multiplanar/none (no single plane on screen)
+   * every plane is exported, each panel laid out left-to-right, so shapes drawn
+   * directly on the 3D blocks all export rather than only those sharing the first
+   * annotation's plane.
+   *
+   * Path coordinates are panel-local at mm scale; each `<g>` carries
+   * `data-origin-mm="minX maxY"` to convert back (`mmX = xLocal + minX`,
+   * `mmY = maxY - yLocal`).
+   *
+   * `slicePosition` restricts the export to one slice and requires a single plane
+   * — a depth is measured along that plane's own axis, so it cannot select across
+   * planes. Passing it with no single plane (and no explicit `sliceType`) warns
+   * and is ignored. Returns null when there are no annotations.
+   */
+  annotationsToSVG(sliceType?: number, slicePosition?: number): string | null {
+    if (this.model.annotations.length === 0) return null
+    const type = sliceType ?? this.model.layout.sliceType
+    const isSlicePlane =
+      type === SLICE_TYPE.AXIAL ||
+      type === SLICE_TYPE.CORONAL ||
+      type === SLICE_TYPE.SAGITTAL
+    return annotationsToSVG({
+      annotations: this.model.annotations,
+      // undefined => every plane present
+      sliceType: isSlicePlane ? type : undefined,
+      slicePosition: slicePosition,
+    })
   }
 
   annotationUndo(): void {
@@ -3239,6 +3398,447 @@ export default class NiiVueGPU extends EventTarget {
     this.view.screenSlices = tiles
   }
 
+  /**
+   * Register an NVSlide to render as a textured plane in the 3D render view,
+   * laid into the loaded volume's world (mm) space. `pixelToWorld` maps slide
+   * base pixels -> world mm (build one with `axialPlaneTransform` for an
+   * axis-aligned plane). By default the pyramid level is chosen per-frame from
+   * the camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you
+   * zoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's
+   * cache and the view redraws on its `change` event. Call `clearSlidePlane()`.
+   */
+  setSlidePlane(
+    slide: NVSlide,
+    opts: { pixelToWorld: readonly number[]; levelIndex?: number },
+  ): void {
+    const levels = slide.manifest.levels
+    if (levels.length === 0) return
+    const state: SlidePlaneState = {
+      slide,
+      pixelToWorld: [...opts.pixelToWorld],
+      levelIndex: opts.levelIndex,
+      tilesByLevel: new Map(),
+    }
+    // Prime the coarsest level so something shows on the first frame before the
+    // camera-driven level resolves; NVSlide dedupes already-resident keys.
+    const coarsest = levels[levels.length - 1]
+    if (coarsest) {
+      for (const tile of coarsest.tiles) slide.requestTile(coarsest, tile)
+    }
+    this._slidePlane = state
+    // A fresh plane registration drops any prior slide drawing (it was sized
+    // and positioned for the old plane); the caller re-runs createSlideDrawing.
+    this._slideDrawing = null
+    this._slideLastRasterPt = null
+    this._slideVector = new SlideVectorLayer()
+    if (this.view) this.view.slidePlane = state
+    // Redraw as tiles stream in.
+    if (this._slidePlaneSlide && this._slidePlaneOnChange) {
+      this._slidePlaneSlide.removeEventListener(
+        'change',
+        this._slidePlaneOnChange,
+      )
+    }
+    this._slidePlaneSlide = slide
+    this._slidePlaneOnChange = (): void => this.drawScene()
+    slide.addEventListener('change', this._slidePlaneOnChange)
+    this.drawScene()
+  }
+
+  /** Remove a slide plane registered with {@link setSlidePlane}. */
+  clearSlidePlane(): void {
+    if (this._slidePlaneSlide && this._slidePlaneOnChange) {
+      this._slidePlaneSlide.removeEventListener(
+        'change',
+        this._slidePlaneOnChange,
+      )
+    }
+    this._slidePlaneSlide = null
+    this._slidePlaneOnChange = null
+    this._slidePlane = null
+    this._slideDrawing = null
+    this._slideVector = null
+    this._slideLastRasterPt = null
+    if (this.view) this.view.slidePlane = null
+    this.drawScene()
+  }
+
+  /**
+   * Re-push the registered slide plane (and its annotation) to a freshly
+   * (re)created view — called from the view-lifecycle recreate paths so a
+   * backend switch / reinitialize doesn't drop the slide. Internal.
+   */
+  restoreSlidePlaneView(): void {
+    if (this.view) this.view.slidePlane = this._slidePlane
+  }
+
+  /**
+   * Create a drawing surface in *slide* space for the registered slide plane.
+   * The annotation is a label raster covering the whole slide (sized to the
+   * slide aspect, long edge capped at `maxRaster`, default 4096) and is painted
+   * with the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,
+   * drawLine and the RLE undo stack), so it stays in slide coordinates and is
+   * compatible with the volume drawing functions. Requires {@link setSlidePlane}.
+   */
+  createSlideDrawing(opts?: { maxRaster?: number }): void {
+    const sp = this._slidePlane
+    if (!sp) {
+      log.warn('createSlideDrawing: no slide plane registered')
+      return
+    }
+    const sw = sp.slide.manifest.width
+    const sh = sp.slide.manifest.height
+    const cap = opts?.maxRaster ?? 4096
+    const scale = Math.min(1, cap / Math.max(1, sw, sh))
+    this._attachSlideDrawing(
+      new SlideDrawing(
+        Math.max(1, Math.round(sw * scale)),
+        Math.max(1, Math.round(sh * scale)),
+      ),
+    )
+  }
+
+  // Wire a SlideDrawing into the active plane: build its annotation overlay
+  // (one quad over the slide extent) and refresh. Shared by createSlideDrawing
+  // and document restore.
+  private _attachSlideDrawing(drawing: SlideDrawing): void {
+    const sp = this._slidePlane
+    if (!sp) return
+    this._slideDrawing = drawing
+    this._slideLastRasterPt = null
+    sp.annotation = {
+      corners: slideExtentCorners(
+        sp.pixelToWorld,
+        sp.slide.manifest.width,
+        sp.slide.manifest.height,
+      ),
+      rgba: new Uint8Array(drawing.width * drawing.height * 4),
+      width: drawing.width,
+      height: drawing.height,
+      version: 0,
+    }
+    this._refreshSlideAnnotation()
+  }
+
+  /** Map a canvas CSS pixel to slide base-pixel coords, or null off-plane. */
+  slidePlanePick(cssX: number, cssY: number): { x: number; y: number } | null {
+    if (!this._slidePlane) return null
+    // forceDevicePixelRatio is -1 ("auto") unless explicitly pinned.
+    const forced = this.view?.forceDevicePixelRatio ?? -1
+    const dpr =
+      forced > 0
+        ? forced
+        : typeof window !== 'undefined'
+          ? window.devicePixelRatio || 1
+          : 1
+    return pickSlidePixel(this._slidePlane, cssX * dpr, cssY * dpr)
+  }
+
+  // Map slide base-pixel -> annotation raster pixel.
+  private _slideToRaster(p: { x: number; y: number }): [number, number] | null {
+    const sp = this._slidePlane
+    const dr = this._slideDrawing
+    if (!sp || !dr) return null
+    return [
+      (p.x / sp.slide.manifest.width) * dr.width,
+      (p.y / sp.slide.manifest.height) * dr.height,
+    ]
+  }
+
+  /** Active slide drawing tool. */
+  get slideTool(): SlideDrawTool {
+    return this._slideTool
+  }
+  set slideTool(tool: SlideDrawTool) {
+    this._slideTool = tool
+  }
+
+  /** Magic-wand color tolerance (Euclidean RGB distance). */
+  get slideWandTolerance(): number {
+    return this._slideWandTolerance
+  }
+  set slideWandTolerance(v: number) {
+    this._slideWandTolerance = Math.max(1, v)
+  }
+
+  /**
+   * Draw on the slide at a canvas CSS pixel with the active {@link slideTool}.
+   * `begin` starts a stroke (pen/eraser/filled), a single action (bucket/wand),
+   * or a new polygon (vector); subsequent calls extend it. Call slideDrawEnd on
+   * pointer-up. Returns false if the point misses the slide. Uses the model's
+   * pen value/size (eraser = penValue 0).
+   */
+  slideDrawAt(cssX: number, cssY: number, begin: boolean): boolean {
+    const dr = this._slideDrawing
+    if (!dr) return false
+    const tool = this._slideTool
+    const hit = this.slidePlanePick(cssX, cssY)
+    if (!hit) return false
+    // Vector annotations are stored in slide coords (resolution-independent).
+    if (tool === 'vector') {
+      if (begin) this._slideVecPts = []
+      this._slideVecPts.push([hit.x, hit.y])
+      return true
+    }
+    const raster = this._slideToRaster(hit)
+    if (!raster) return false
+    const rx = Math.round(raster[0])
+    const ry = Math.round(raster[1])
+    const penValue = this.model.draw.penValue
+    const penSize = this.model.draw.penSize
+    const overwrite = this.model.draw.isFillOverwriting
+    if (begin) dr.beginStroke() // snapshot for undo (all raster tools)
+    if (tool === 'bucket') {
+      if (begin) dr.bucketFill(rx, ry, penValue, overwrite)
+    } else if (tool === 'wand') {
+      if (begin) {
+        const ref = this._buildSlideWandReference()
+        if (ref)
+          dr.magicWand(
+            ref,
+            rx,
+            ry,
+            this._slideWandTolerance,
+            penValue,
+            overwrite,
+          )
+      }
+    } else {
+      // pen / eraser / filled
+      const pv = tool === 'eraser' ? 0 : penValue
+      if (begin) {
+        dr.point(rx, ry, pv, penSize, overwrite)
+        if (tool === 'filled') this._slideFillPts = [[rx, ry]]
+      } else if (this._slideLastRasterPt) {
+        const [px, py] = this._slideLastRasterPt
+        dr.line(px, py, rx, ry, pv, penSize, overwrite)
+        if (tool === 'filled') this._slideFillPts.push([rx, ry])
+      } else {
+        dr.point(rx, ry, pv, penSize, overwrite)
+        if (tool === 'filled') this._slideFillPts.push([rx, ry])
+      }
+      this._slideLastRasterPt = [rx, ry]
+    }
+    this._refreshSlideAnnotation()
+    this.emit('drawingChanged', { action: 'stroke' })
+    return true
+  }
+
+  /** End the current slide stroke; commits filled-pen / vector polygons. */
+  slideDrawEnd(): void {
+    const dr = this._slideDrawing
+    if (dr && this._slideTool === 'filled' && this._slideFillPts.length >= 2) {
+      dr.fillPen(
+        this._slideFillPts,
+        this.model.draw.penValue,
+        this.model.draw.isFillOverwriting,
+      )
+      this._refreshSlideAnnotation()
+      this.emit('drawingChanged', { action: 'stroke' })
+    }
+    if (
+      this._slideTool === 'vector' &&
+      this._slideVecPts.length >= 3 &&
+      this._slideVector
+    ) {
+      this._slideVector.addPolygon(this._slideVecPts, this._slideVectorColor())
+      this._refreshSlideAnnotation()
+    }
+    this._slideLastRasterPt = null
+    this._slideFillPts = []
+    this._slideVecPts = []
+  }
+
+  /** Undo the last slide action (vector tool removes the last polygon). */
+  slideDrawUndo(): void {
+    if (this._slideTool === 'vector') {
+      if (this._slideVector?.removeLast()) this._refreshSlideAnnotation()
+      return
+    }
+    if (this._slideDrawing?.undo()) this._refreshSlideAnnotation()
+  }
+
+  // CSS hex for a drawing label from the active "_draw" LUT, or null when the
+  // label is 0 / out of range / fully transparent (so callers can skip it).
+  private _drawLabelColor(label: number): string | null {
+    // Guard against 0 and a non-finite label (e.g. an out-of-range bitmap read):
+    // the LUT-index bound checks are all false for NaN, so `lut[NaN]` would be
+    // undefined and `.toString(16)` would throw.
+    if (!Number.isFinite(label) || label === 0) return null
+    if (!this._drawLut) {
+      const cm = NVCmaps.lookupColorMap(this.model.draw.colormap)
+      if (cm) this._drawLut = buildDrawingLut(cm)
+    }
+    const lut = this._drawLut?.lut
+    const min = this._drawLut?.min ?? 0
+    const i = (label - min) * 4
+    if (!lut || i < 0 || i + 3 >= lut.length) return null
+    if (lut[i + 3] === 0) return null // transparent label
+    const hex = (n: number): string => n.toString(16).padStart(2, '0')
+    return `#${hex(lut[i])}${hex(lut[i + 1])}${hex(lut[i + 2])}`
+  }
+
+  // CSS hex for the current pen label (vector stroke color); falls back to red.
+  private _slideVectorColor(): string {
+    return this._drawLabelColor(this.model.draw.penValue) ?? '#e62d37'
+  }
+
+  /**
+   * Serialize one slice of the voxel drawing to a standalone SVG string
+   * (run-length `<rect>`s per label color, sized in voxels). `sliceType` selects
+   * the plane (AXIAL/CORONAL/SAGITTAL); it defaults to the current single-slice
+   * view, or AXIAL for render/multiplanar/none. `sliceIndex` defaults to the
+   * crosshair voxel on that axis. Returns null when no drawing is open.
+   */
+  drawingToSVG(sliceType?: number, sliceIndex?: number): string | null {
+    if (!this.model.drawingVolume) return null
+    const bgVol = this.model.getVolumes()[0]
+    const dims = bgVol?.dimsRAS
+    if (!dims) return null
+    const type = sliceType ?? this.model.layout.sliceType
+    // Depth axis: sliceTypeDim gives 2/1/0 for AXIAL/CORONAL/SAGITTAL; anything
+    // else (render, multiplanar, none) has no single plane, so default to axial.
+    const sliceAxis =
+      type === SLICE_TYPE.AXIAL ||
+      type === SLICE_TYPE.CORONAL ||
+      type === SLICE_TYPE.SAGITTAL
+        ? sliceTypeDim(type)
+        : 2
+    let index = sliceIndex
+    if (index === undefined) {
+      const mm = this.model.scene2mm(this.model.scene.crosshairPos)
+      const vox = NVTransforms.mm2vox(bgVol, mm)
+      index = Math.round(vox[sliceAxis])
+    }
+    return drawingSliceToSVG({
+      bitmap: getDrawingBitmap(this.model.drawingVolume),
+      dims: dims as number[],
+      sliceAxis,
+      sliceIndex: index,
+      colorForLabel: (label) => this._drawLabelColor(label),
+    })
+  }
+
+  // Composite the slide's most-detailed level that fits the raster into an RGBA
+  // color reference (raster resolution) for the magic wand. Whatever is cached
+  // is used; tiles are requested so a later wand click is sharper.
+  private _buildSlideWandReference(): Uint8ClampedArray | null {
+    const sp = this._slidePlane
+    const dr = this._slideDrawing
+    if (!sp || !dr || typeof OffscreenCanvas === 'undefined') return null
+    const levels = sp.slide.manifest.levels
+    let level = levels[levels.length - 1]
+    for (const lv of levels) {
+      if (lv.width <= dr.width && lv.width > level.width) level = lv
+    }
+    if (!level) return null
+    const tw = level.tileWidth ?? sp.slide.manifest.tileSize ?? 256
+    const th = level.tileHeight ?? sp.slide.manifest.tileSize ?? 256
+    const sx = dr.width / level.width
+    const sy = dr.height / level.height
+    const oc = new OffscreenCanvas(dr.width, dr.height)
+    const ctx = oc.getContext('2d')
+    if (!ctx) return null
+    for (const t of level.tiles) {
+      sp.slide.requestTile(level, t)
+      const bmp = sp.slide.cachedTileBitmap(`L${level.index}/${t.x}/${t.y}`)
+      if (bmp)
+        ctx.drawImage(
+          bmp,
+          t.x * tw * sx,
+          t.y * th * sy,
+          t.width * sx,
+          t.height * sy,
+        )
+    }
+    return ctx.getImageData(0, 0, dr.width, dr.height).data
+  }
+
+  /** Clear all slide annotation pixels. */
+  clearSlideDrawing(): void {
+    if (!this._slideDrawing) return
+    this._slideDrawing.clear()
+    this._refreshSlideAnnotation()
+  }
+
+  /** Vector annotation layer for the registered slide plane (slide-pixel coords). */
+  get slideVector(): SlideVectorLayer | null {
+    return this._slideVector
+  }
+
+  /** Rebuild the slide annotation overlay (raster + vector) and redraw. Call
+   * after mutating `slideVector`. */
+  refreshSlideAnnotation(): void {
+    this._refreshSlideAnnotation()
+  }
+
+  // Rebuild the annotation RGBA from the slide raster (via the draw LUT), then
+  // composite the vector polygons on top, bump its version, and redraw.
+  private _refreshSlideAnnotation(): void {
+    const sp = this._slidePlane
+    const dr = this._slideDrawing
+    if (!sp?.annotation || !dr) return
+    if (!this._drawLut) {
+      const cm = NVCmaps.lookupColorMap(this.model.draw.colormap)
+      if (!cm) {
+        log.warn(`Drawing colormap "${this.model.draw.colormap}" not found`)
+        return
+      }
+      this._drawLut = buildDrawingLut(cm)
+    }
+    const rgba = drawingBitmapToRGBA(
+      dr.img,
+      this._drawLut.lut,
+      this._drawLut.min ?? 0,
+      this.model.draw.opacity,
+    )
+    sp.annotation.rgba = this._compositeSlideVectors(rgba, dr.width, dr.height)
+    sp.annotation.version++
+    this.drawScene()
+  }
+
+  // Stroke the vector polygons (slide-pixel coords) over the label RGBA at raster
+  // resolution, so both raster and vector annotations share the one plane overlay.
+  private _compositeSlideVectors(
+    rgba: Uint8Array,
+    w: number,
+    h: number,
+  ): Uint8Array {
+    const sp = this._slidePlane
+    const vec = this._slideVector
+    if (
+      !sp ||
+      !vec ||
+      vec.shapes.length === 0 ||
+      typeof OffscreenCanvas === 'undefined'
+    ) {
+      return rgba
+    }
+    const oc = new OffscreenCanvas(w, h)
+    const ctx = oc.getContext('2d')
+    if (!ctx) return rgba
+    const sw = sp.slide.manifest.width || 1
+    const sh = sp.slide.manifest.height || 1
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), 0, 0)
+    for (const s of vec.shapes) {
+      if (s.points.length < 2) continue
+      ctx.beginPath()
+      s.points.forEach(([x, y], i) => {
+        const rx = (x / sw) * w
+        const ry = (y / sh) * h
+        if (i === 0) ctx.moveTo(rx, ry)
+        else ctx.lineTo(rx, ry)
+      })
+      if (s.kind === 'polygon') ctx.closePath()
+      ctx.lineWidth = Math.max(1, (s.strokeWidth / sw) * w)
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      ctx.strokeStyle = s.color
+      ctx.stroke()
+    }
+    return new Uint8Array(ctx.getImageData(0, 0, w, h).data)
+  }
+
   drawScene(needsSync = true): void {
     if (needsSync) this._syncDirty = true
     if (!this.framePending) {
@@ -4087,17 +4687,131 @@ export default class NiiVueGPU extends EventTarget {
     return { cmap, defaultName }
   }
 
-  /** Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array). */
-  serializeDocument(): Uint8Array {
-    return NVDocument.serialize(this.model)
+  /**
+   * Which settings saved documents include. Default `{}` omits any setting equal
+   * to its default (documents are sparse). Set `neverSave` to omit settings even
+   * when non-default (e.g. `['scene.crosshairPos']` to persist the user's last
+   * crosshair across scenes) and `alwaysSave` to keep settings even at their
+   * default. Applies to every `saveDocument`/`serializeDocument` unless a per-call
+   * policy is passed. Transient — not part of the document.
+   */
+  get settingsSavePolicy(): SettingsSavePolicy {
+    return this._settingsSavePolicy
+  }
+  set settingsSavePolicy(v: SettingsSavePolicy) {
+    this._settingsSavePolicy = v ?? {}
   }
 
-  saveDocument(filename = 'scene.nvd'): void {
-    const data = this.serializeDocument()
+  /**
+   * How a loaded document's OMITTED settings are filled. Default (undefined)
+   * resets each omitted setting to its built-in default, so a document is a
+   * complete scene. Pass `'current'` to keep the instance's live value for all
+   * omitted settings, or a map targeting groups / `'group.key'` paths (e.g.
+   * `{ 'scene.crosshairPos': 'current' }` persists the user's crosshair across
+   * scenes while resetting everything else). A setting the document specifies
+   * always wins. A per-call `fill` on `loadDocument` overrides this. Transient.
+   */
+  get settingsFillPolicy(): SettingsFillPolicy | undefined {
+    return this._settingsFillPolicy
+  }
+  set settingsFillPolicy(v: SettingsFillPolicy | undefined) {
+    this._settingsFillPolicy = v
+  }
+
+  /**
+   * Return the current scene serialized as an NVD document (Uint8Array).
+   * `options.settings` overrides the instance `settingsSavePolicy`;
+   * `options.linkData` saves a small "linked" document that references volumes by
+   * URL instead of embedding their bytes; `options.format` is `'cbor'` (default,
+   * binary) or `'json'` (portable text). `loadDocument` accepts either encoding.
+   */
+  serializeDocument(options?: NVDocument.SerializeOptions): Uint8Array {
+    return NVDocument.serialize(this.model, this._slidePlaneToDoc(), {
+      settings: options?.settings ?? this._settingsSavePolicy,
+      linkData: options?.linkData,
+      format: options?.format,
+    })
+  }
+
+  // Capture the registered slide plane + its slide-space drawing for the
+  // document (manifest reference + transform + RLE annotation). Tile bytes are
+  // not embedded — they refetch from the manifest on load.
+  private _slidePlaneToDoc(): NVDocument.NVDocumentSlidePlane | undefined {
+    const sp = this._slidePlane
+    if (!sp) return undefined
+    const dr = this._slideDrawing
+    return {
+      manifest: sp.slide.manifest,
+      manifestUrl: sp.slide.manifestUrl || undefined,
+      pixelToWorld: [...sp.pixelToWorld],
+      levelIndex: sp.levelIndex,
+      drawingRLE: dr ? encodeRLE(dr.img) : undefined,
+      drawingWidth: dr?.width,
+      drawingHeight: dr?.height,
+      vectorShapes:
+        this._slideVector && this._slideVector.shapes.length > 0
+          ? this._slideVector.shapes.map((s) => ({
+              kind: s.kind,
+              points: s.points.map(([x, y]) => [x, y] as [number, number]),
+              color: s.color,
+              strokeWidth: s.strokeWidth,
+            }))
+          : undefined,
+    }
+  }
+
+  // Rebuild the slide plane (and its drawing) from a document. Reconstructs the
+  // NVSlide from its manifest (tiles refetch via byte ranges); custom sources
+  // need their decoders re-registered by the app for tiles to load.
+  private async _restoreSlidePlaneFromDoc(
+    sp: NVDocument.NVDocumentSlidePlane,
+  ): Promise<void> {
+    const slide = sp.manifestUrl
+      ? await NVSlide.fromManifestUrl(sp.manifestUrl)
+      : new NVSlide(sp.manifest)
+    this.setSlidePlane(slide, {
+      pixelToWorld: sp.pixelToWorld,
+      levelIndex: sp.levelIndex,
+    })
+    if (sp.drawingRLE && sp.drawingWidth && sp.drawingHeight) {
+      const drawing = new SlideDrawing(sp.drawingWidth, sp.drawingHeight)
+      const decoded = decodeRLE(
+        sp.drawingRLE,
+        sp.drawingWidth * sp.drawingHeight,
+      )
+      if (decoded.length === drawing.img.length) {
+        drawing.img.set(decoded)
+      } else {
+        log.warn(
+          `loadDocument: slide drawing length ${decoded.length} != ${drawing.img.length}`,
+        )
+      }
+      this._attachSlideDrawing(drawing)
+    }
+    // Restore vector annotations (setSlidePlane created a fresh, empty layer).
+    if (sp.vectorShapes && sp.vectorShapes.length > 0 && this._slideVector) {
+      for (const s of sp.vectorShapes) this._slideVector.add({ ...s })
+      this._refreshSlideAnnotation()
+    }
+  }
+
+  saveDocument(
+    filename = 'scene.nvd',
+    options?: NVDocument.SerializeOptions,
+  ): void {
+    // Default the encoding from the filename (`.json` -> JSON, else CBOR) unless
+    // the caller specified `options.format`.
+    const format =
+      options?.format ??
+      (filename.toLowerCase().endsWith('.json') ? 'json' : 'cbor')
+    const data = this.serializeDocument({ ...options, format })
     NVDocument.triggerDownload(data, filename)
   }
 
-  async loadDocument(source: string | File): Promise<void> {
+  async loadDocument(
+    source: string | File,
+    options?: { fill?: SettingsFillPolicy },
+  ): Promise<void> {
     // Fetch the document file
     const buffer = await NVLoader.fetchFile(source)
     const data = new Uint8Array(buffer)
@@ -4107,11 +4821,17 @@ export default class NiiVueGPU extends EventTarget {
 
     // Clear existing data (releases GPU resources)
     this.closeDrawing()
+    this.clearSlidePlane()
     await this.removeAllVolumes()
     await this.removeAllMeshes()
 
-    // Apply non-data state (scene, config, display settings)
-    NVDocument.applyDocumentToModel(this.model, doc)
+    // Apply non-data state (scene, config, display settings). Settings the
+    // document omits are filled per the fill policy (default: reset to defaults).
+    NVDocument.applyDocumentToModel(
+      this.model,
+      doc,
+      options?.fill ?? this._settingsFillPolicy,
+    )
 
     // Restore thumbnail if present in document
     if (this.model.ui.thumbnailUrl) {
@@ -4152,6 +4872,17 @@ export default class NiiVueGPU extends EventTarget {
         this.model.draw.isEnabled = true
         this._drawLut = null
         this.refreshDrawing()
+      }
+    }
+
+    // Restore a registered slide plane + its slide-space drawing (v8+).
+    if (doc.slidePlane) {
+      try {
+        await this._restoreSlidePlaneFromDoc(doc.slidePlane)
+      } catch (err) {
+        log.warn(
+          `loadDocument: failed to restore slide plane: ${err instanceof Error ? err.message : err}`,
+        )
       }
     }
     this.emit('documentLoaded')

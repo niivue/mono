@@ -47,6 +47,15 @@
         "{projectRoot}/scripts/smoke-test-packed.ts",
         "{projectRoot}/package.json"
       ]
+    },
+    "e2e": {
+      "command": "bun run test:e2e",
+      "options": { "cwd": "{projectRoot}" },
+      "inputs": [
+        "{projectRoot}/e2e/**/*",
+        "{projectRoot}/playwright.config.ts",
+        "typescript"
+      ]
     }
   }
 }

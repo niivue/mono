@@ -1,5 +1,5 @@
 import type { NiiVueOptions } from '@niivue/niivue'
-import NiiVueGPU, { SLICE_TYPE } from '@niivue/niivue'
+import NiiVueGPU, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
@@ -27,12 +27,46 @@ type Status =
   | { kind: 'note'; message: string }
   | { kind: 'error'; message: string }
 
+// OHIF's toolbar tools operate on cornerstone viewports; our NiiVue viewport isn't in
+// a cornerstone tool group. Instead we mirror OHIF's active primary mouse tool onto
+// NiiVue's left-drag behaviour, so picking Window/Level, Pan, etc. in the toolbar
+// controls the NiiVue viewport too.
+interface ToolGroupServiceLike {
+  getActivePrimaryMouseButtonTool?: (toolGroupId: string) => string | undefined
+  subscribe?: (event: string, cb: () => void) => { unsubscribe?: () => void }
+  EVENTS?: Record<string, string>
+}
+
+// OHIF exposes its services on the viewport props in some builds and only on
+// `window.services` in others (e.g. the current 3.x app), so read from either.
+function ohifServices(
+  servicesManager: OhifServicesManager | undefined,
+): Record<string, unknown> | undefined {
+  if (servicesManager?.services) return servicesManager.services
+  const g = globalThis as unknown as { services?: Record<string, unknown> }
+  return g.services
+}
+
+/** Map an OHIF primary tool name to a NiiVue left-drag mode. */
+function ohifToolToDragMode(tool: string | undefined): number {
+  switch (tool) {
+    case 'WindowLevel':
+      return DRAG_MODE.contrast
+    case 'Pan':
+      return DRAG_MODE.pan
+    default:
+      // Crosshairs / StackScroll / Zoom / anything else: crosshair navigation
+      // (NiiVue changes slices with the scroll wheel regardless).
+      return DRAG_MODE.crosshair
+  }
+}
+
 // Pull a DICOMweb Authorization header out of OHIF's auth service, if present, so
 // instance retrieval works against secured data sources.
 function authHeaders(
   servicesManager: OhifServicesManager | undefined,
 ): Record<string, string> {
-  const svc = servicesManager?.services?.userAuthenticationService as
+  const svc = ohifServices(servicesManager)?.userAuthenticationService as
     | { getAuthorizationHeader?: () => { Authorization?: string } | undefined }
     | undefined
   const header = svc?.getAuthorizationHeader?.()
@@ -193,6 +227,27 @@ export function NiivueViewport(props: OhifViewportProps) {
       abort.abort()
     }
   }, [displaySets, ready, servicesManager])
+
+  // Mirror OHIF's active primary tool onto NiiVue's left-drag mode (Window/Level,
+  // Pan, ...), so the OHIF toolbar drives this viewport too. NiiVue already applies a
+  // robust 2-98% window on load, so no default-window wiring is needed here.
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv || !ready) return
+    const svc = ohifServices(servicesManager)?.toolGroupService as
+      | ToolGroupServiceLike
+      | undefined
+    if (!svc?.getActivePrimaryMouseButtonTool) return
+
+    const apply = () => {
+      const tool = svc.getActivePrimaryMouseButtonTool?.('default')
+      nv.primaryDragMode = ohifToolToDragMode(tool)
+    }
+    apply()
+    const event = svc.EVENTS?.PRIMARY_TOOL_ACTIVATED
+    const sub = event ? svc.subscribe?.(event, apply) : undefined
+    return () => sub?.unsubscribe?.()
+  }, [ready, servicesManager])
 
   const overlay = status.kind === 'idle' ? null : status.message
   return (

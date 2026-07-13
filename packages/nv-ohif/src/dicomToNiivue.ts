@@ -80,6 +80,19 @@ export async function convertDisplaySetToNifti(
   const dcm2niix = new Dcm2niix()
   try {
     await dcm2niix.init()
+    // The Dcm2niix wrapper rejects with only the worker's error message (often
+    // empty for an Emscripten exit-unwind in a Worker). Log the full detail the
+    // worker also posts so failures are diagnosable.
+    dcm2niix.worker?.addEventListener('message', (e: MessageEvent) => {
+      const data = e.data as { type?: string; message?: string; error?: string }
+      if (data?.type === 'error') {
+        console.error(
+          '[nv-ohif] dcm2niix worker error',
+          data.message,
+          data.error,
+        )
+      }
+    })
     const result = await dcm2niix.input(files).run()
     const nifti = result
       .filter((f) => /\.nii(\.gz)?$/i.test(f.name))

@@ -5,9 +5,16 @@ A [NiiVue](https://github.com/niivue/niivue) viewport extension for the
 bringing 3D volume rendering, mesh/surface overlays, multiplanar with colormapped
 overlays, and voxel drawing / vector annotation to your OHIF app.
 
-> **Status: early / Phase 1.** Renders **NIfTI (volume-URL) display sets** today.
+> **Status: Phase 1 (proven).** Renders **NIfTI (volume-URL) display sets** today.
 > DICOM support — building a NiiVue volume from OHIF's already-loaded cornerstone
 > series — is the next phase. See `PLAN.md`.
+
+## Try the proof demo
+
+`bun run dev` starts a small OHIF-shaped harness (`demo/`) that drives the real
+extension — it pulls the viewport via `getViewportModule()` and renders it with a mock
+OHIF display set pointing at a public NIfTI, so you can see NiiVue rendering a volume
+without a full OHIF app.
 
 ## Install
 

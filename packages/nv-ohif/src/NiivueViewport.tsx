@@ -9,6 +9,10 @@ import type { OhifViewportProps } from './ohif-types'
 // 3D render etc.
 const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   backgroundColor: [0, 0, 0, 1],
+  // WebGL2 is the robust default for an embedded viewport (broad support; avoids
+  // WebGPU device churn when OHIF mounts/unmounts viewports). Revisit once WebGPU
+  // multi-instance handling is proven in-app.
+  backend: 'webgl2',
 }
 
 /**
@@ -25,6 +29,7 @@ export function NiivueViewport(props: OhifViewportProps) {
   const { displaySets, viewportId } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nvRef = useRef<NiiVueGPU | null>(null)
+  const [ready, setReady] = useState(false)
   const [unsupported, setUnsupported] = useState(false)
 
   // Create / tear down the NiiVue instance with the canvas.
@@ -32,6 +37,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     const container = containerRef.current
     if (!container) return
 
+    let disposed = false
     const canvas = document.createElement('canvas')
     canvas.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%'
@@ -39,14 +45,20 @@ export function NiivueViewport(props: OhifViewportProps) {
 
     const nv = new NiiVueGPU(DEFAULT_OPTIONS)
     nvRef.current = nv
+    // Only mark ready once attach resolves — loading before that races the GPU
+    // context (and StrictMode double-mounts), which left the volume unloaded.
     nv.attachToCanvas(canvas).then(() => {
+      if (disposed) return
       nv.sliceType = SLICE_TYPE.MULTIPLANAR
+      setReady(true)
     })
 
     const ro = new ResizeObserver(() => nv.resize())
     ro.observe(container)
 
     return () => {
+      disposed = true
+      setReady(false)
       ro.disconnect()
       nv.destroy()
       canvas.width = 0
@@ -56,10 +68,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
   }, [])
 
-  // Load the display set(s) hung in this viewport whenever they change.
+  // Load the display set(s) hung in this viewport, once attached / on change.
   useEffect(() => {
     const nv = nvRef.current
-    if (!nv) return
+    if (!nv || !ready) return
     const specs = displaySets
       .map((ds) => displaySetToNiivue(ds))
       .filter((s): s is NonNullable<typeof s> => s !== null)
@@ -75,7 +87,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.loadVolumes(specs).catch(() => {
       setUnsupported(true)
     })
-  }, [displaySets])
+  }, [displaySets, ready])
 
   return (
     <div

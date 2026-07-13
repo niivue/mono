@@ -1,6 +1,19 @@
 # `@niivue/nv-ohif` — NiiVue viewport extension for OHIF
 
-Design + delivery plan. Status: **planning** (no code yet). Branch: `ohif-viewer-integration`.
+Design + delivery plan. Branch: `ohif-viewer-integration`.
+
+**Status: Phase 1 PROVEN.** The extension + React-18 viewport + NIfTI data bridge
+render a volume end-to-end. A proof harness (`demo/`, `bun run dev`) drives the real
+extension the way OHIF would — `getViewportModule()` -> `NiivueViewport` fed a mock
+OHIF `displaySets` prop pointing at a public NIfTI — and NiiVue renders it multiplanar
+(verified in-browser with MNI152). Not yet wired into a full OHIF app; that + DICOM
+(Phase 2) are next.
+
+Lessons from the proof: (1) vite needed `resolve.dedupe: ['react','react-dom']` or
+hooks threw "Invalid hook call" (two React copies); (2) load must wait for
+`attachToCanvas` to resolve (a `ready` gate) or it races the GPU context; (3) default
+to the **WebGL2** backend — WebGPU threw a `createBindGroup` error under the demo's
+mount/unmount churn. All three are baked in.
 
 ## Goal
 

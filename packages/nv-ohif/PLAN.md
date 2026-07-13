@@ -2,12 +2,38 @@
 
 Design + delivery plan. Branch: `ohif-viewer-integration`.
 
-**Status: Phase 1 PROVEN.** The extension + React-18 viewport + NIfTI data bridge
-render a volume end-to-end. A proof harness (`demo/`, `bun run dev`) drives the real
-extension the way OHIF would — `getViewportModule()` -> `NiivueViewport` fed a mock
-OHIF `displaySets` prop pointing at a public NIfTI — and NiiVue renders it multiplanar
-(verified in-browser with MNI152). Not yet wired into a full OHIF app; that + DICOM
-(Phase 2) are next.
+**Status: Phase 1 PROVEN — in a real OHIF app.** The extension + React-18 viewport +
+NIfTI data bridge render a volume end-to-end. Two independent proofs:
+1. A proof harness (`demo/`, `bun run dev`) drives the real extension the way OHIF
+   would — `getViewportModule()` -> `NiivueViewport` fed a mock OHIF `displaySets`
+   prop pointing at a public NIfTI — and NiiVue renders it multiplanar (verified
+   in-browser with MNI152).
+2. A **full local OHIF Viewer app** (OHIF `master`/3.13-beta, pnpm 11, rsbuild dev
+   on :3000) with `@niivue/nv-ohif` registered in `pluginConfig.json` and mode-basic's
+   primary viewport routed to `@niivue/nv-ohif.viewportModule.niivue`. Loading a DICOM
+   study at `/basic?StudyInstanceUIDs=...` mounts **our** NiiVue viewport (NiiVue's
+   multiplanar chrome + crosshairs render; cornerstone is no longer the active
+   viewport) and correctly shows the Phase-1 "DICOM support is coming" placeholder for
+   a DICOM series (no NIfTI URL to load yet). No console errors. This confirms the
+   extension/mode/SOPClassHandler plumbing works against a real OHIF build.
+
+DICOM rendering in-app (Phase 2) is next — the app has no NIfTI display set to hang,
+so the actual volume-render path is proven by the harness (proof 1), not proof 2.
+
+**Real-app packaging gotcha (cost real time — do NOT repeat):** do NOT `ln -s` the
+local monorepo `@niivue/niivue` into the OHIF app's `node_modules`. rspack follows the
+symlink into *this* monorepo's `node_modules` and bundles a **duplicate** of shared
+deps, which broke OHIF's own floating-ui with `TypeError: platform.detectOverflow is
+not a function` (Route error boundary -> viewport never mounts, cornerstone shown
+instead). Fix / correct consumption model: install **packed tarballs**
+(`npm pack` niivue + nv-ohif, `pnpm add file:<unpacked-dir>`), so each resolves as a
+self-contained package from the OHIF app's own tree — no cross-monorepo dep leakage.
+Rewrite nv-ohif's `@niivue/niivue: workspace:*` peer to the concrete packed version
+first. This is exactly the published-npm path consumers will use.
+
+**Mode routing gotcha for testing:** OHIF's bundled default `/viewer` route is
+**mode-longitudinal** (cornerstone), NOT mode-basic. mode-basic's `routeName` is
+`basic`, so route the test viewport there and load `/basic?StudyInstanceUIDs=...`.
 
 Lessons from the proof: (1) vite needed `resolve.dedupe: ['react','react-dom']` or
 hooks threw "Invalid hook call" (two React copies); (2) load must wait for

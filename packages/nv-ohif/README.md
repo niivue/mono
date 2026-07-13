@@ -5,9 +5,16 @@ A [NiiVue](https://github.com/niivue/niivue) viewport extension for the
 bringing 3D volume rendering, mesh/surface overlays, multiplanar with colormapped
 overlays, and voxel drawing / vector annotation to your OHIF app.
 
-> **Status: Phase 1 (proven).** Renders **NIfTI (volume-URL) display sets** today.
-> DICOM support — building a NiiVue volume from OHIF's already-loaded cornerstone
-> series — is the next phase. See `PLAN.md`.
+> **Status: Phase 1 (proven, incl. in a real OHIF app).** Renders **NIfTI
+> (volume-URL) display sets** today; verified mounting inside a full local OHIF Viewer
+> (registered via `pluginConfig.json` + a mode). DICOM support — building a NiiVue
+> volume from OHIF's already-loaded cornerstone series — is the next phase. See
+> `PLAN.md`.
+
+> **Consuming the local build (dev):** install **packed tarballs**, do not symlink.
+> Symlinking the monorepo package into an OHIF app makes its bundler follow the link
+> and bundle a duplicate of shared deps (breaks OHIF's floating-ui). Use
+> `npm pack` + `pnpm add file:<dir>` so each resolves self-contained from the app tree.
 
 ## Try the proof demo
 

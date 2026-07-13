@@ -182,8 +182,19 @@ Confirmed by capturing the worker's `printErr` in-app. Key facts that localize i
 
 This is a dcm2niix-WASM-vs-modern-bundler issue (Emscripten exception handling in a Web
 Worker under webpack/Vite-8), not nv-ohif. It belongs with the dcm2niix maintainer
-alongside the worker-exit fix. Until resolved, the DICOM render works under a Vite-5-class
-bundler; the NIfTI path (Phase 1) is unaffected.
+alongside the worker-exit fix.
+
+**DICOM RENDERS IN THE REAL OHIF APP (uncompressed path, 2026-07-13).** Since CharLS is
+the only broken path, an UNCOMPRESSED DICOM study skips it. Loaded an uncompressed CT
+(NECK/AXA, 100 slices, Explicit VR LE) in the OHIF app: reconstruct P10 -> dcm2niix ->
+NIfTI -> **NiiVue renders it multiplanar + 3D in OHIF**, no errors. Volume verified
+faithful: 512x512x100, INT16, spacing 0.9375x0.9375x3.06mm, RescaleIntercept -1000 (HU).
+So the whole pipeline works end-to-end in OHIF (webpack) for uncompressed DICOM; only
+compressed (CharLS/JPEG-LS) is blocked pending the dcm2niix bundler fix.
+
+Follow-up polish: our viewport does not set a window/level (NiiVue's cal_min/max came up
+undefined, so CT renders unwindowed/noisy). Add a sensible default window after load (or
+bridge OHIF's W/L). Manually setting cal_min=-160/cal_max=240 confirmed a proper CT view.
 
 Note: nv-ohif's OWN Vite-8 demo (`?dicom`) also hits this. The `niivue-dcm2niix` demo
 runs Vite 5 and works. Reconstructed files are byte-valid (magic `DICM`, correct size).

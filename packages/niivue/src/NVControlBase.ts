@@ -2564,19 +2564,26 @@ export default class NiiVueGPU extends EventTarget {
    * continuous colormap interpolation, and locationChange events include label names.
    *
    * @param volumeIndex - Index of the volume to apply the label colormap to
-   * @param cmap - ColorMap definition with R,G,B arrays and optional labels/I arrays,
-   *               or null to remove the label colormap
+   * @param cmap - ColorMap definition with R,G,B arrays and optional labels/I arrays;
+   *               a built-in colormap name (e.g. 'freesurfer', resolved via
+   *               lookupColorMap); or null to remove the label colormap
    */
   async setColormapLabel(
     volumeIndex: number,
-    cmap: ColorMap | null,
+    cmap: ColorMap | string | null,
   ): Promise<void> {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     if (cmap === null) {
       volumes[volumeIndex].colormapLabel = null
     } else {
-      volumes[volumeIndex].colormapLabel = NVCmaps.makeLabelLut(cmap)
+      // Accept a built-in colormap name (resolved via lookupColorMap, symmetric
+      // with setVolume({colormap: name})) or a ColorMap object directly.
+      const cm = typeof cmap === 'string' ? NVCmaps.lookupColorMap(cmap) : cmap
+      if (!cm) {
+        throw new Error(`setColormapLabel: unknown colormap '${cmap}'`)
+      }
+      volumes[volumeIndex].colormapLabel = NVCmaps.makeLabelLut(cm)
       volumes[volumeIndex].colormapLabel.centroids =
         computeVolumeLabelCentroids(volumes[volumeIndex])
     }

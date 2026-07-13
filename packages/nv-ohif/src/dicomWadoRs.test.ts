@@ -90,6 +90,16 @@ describe('parseMultipartRelated', () => {
     expect(Array.from(parts[1] ?? [])).toEqual(Array.from(b))
   })
 
+  it('recovers the boundary from the body when the Content-Type omits it', () => {
+    // Browsers commonly expose the response Content-Type as bare
+    // `multipart/related` with the boundary stripped.
+    const a = new Uint8Array([0x44, 0x49, 0x43, 0x4d, 0x00, 0xff])
+    const body = buildMultipart('BOUNDARY', [a])
+    const parts = parseMultipartRelated(body, 'multipart/related')
+    expect(parts.length).toBe(1)
+    expect(Array.from(parts[0] ?? [])).toEqual(Array.from(a))
+  })
+
   it('falls back to the whole body when not multipart', () => {
     const raw = new Uint8Array([9, 8, 7])
     const parts = parseMultipartRelated(raw, 'application/dicom')

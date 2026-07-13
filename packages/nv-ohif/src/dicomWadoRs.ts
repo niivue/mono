@@ -34,6 +34,21 @@ export function multipartBoundary(contentType: string): string | null {
   return b ? b.trim() : null
 }
 
+/**
+ * Recover the boundary from a multipart body's opening delimiter line
+ * (`--<boundary>\r\n`). The browser `fetch` API commonly exposes the response
+ * Content-Type as bare `multipart/related` with the `boundary` parameter
+ * stripped, so we fall back to reading it off the body.
+ */
+export function boundaryFromBody(bytes: Uint8Array): string | null {
+  if (bytes[0] !== 0x2d || bytes[1] !== 0x2d) return null // must start with "--"
+  let end = 2
+  const limit = Math.min(bytes.length, 256)
+  while (end < limit && bytes[end] !== 0x0d && bytes[end] !== 0x0a) end++
+  if (end <= 2) return null
+  return new TextDecoder('latin1').decode(bytes.subarray(2, end))
+}
+
 function indexOfSubarray(
   haystack: Uint8Array,
   needle: Uint8Array,
@@ -59,7 +74,10 @@ export function parseMultipartRelated(
   contentType: string,
 ): Uint8Array[] {
   const bytes = body instanceof Uint8Array ? body : new Uint8Array(body)
-  const boundary = multipartBoundary(contentType)
+  // The browser often strips the boundary from the Content-Type; recover it from
+  // the body's opening delimiter line. Without this, a boundary-less multipart
+  // response would be returned whole (headers included), corrupting the pixels.
+  const boundary = multipartBoundary(contentType) ?? boundaryFromBody(bytes)
   if (!boundary) {
     return bytes.length > 0 ? [bytes] : []
   }

@@ -165,10 +165,28 @@ session scratchpad as `dcm2niix-worker-exit-fix.patch`; upstream fix belongs in
 `@niivue/dcm2niix` (a published release then flows to every consumer, incl. this
 extension unchanged).
 
-Note: nv-ohif's OWN Vite-8 demo (`?dicom`) still fails to load the dcm2niix worker even
-with the patch — a Vite-8-specific worker/WASM bundling quirk (the `niivue-dcm2niix`
-demo runs Vite 5 and works). That's demo infra, not our code or the real OHIF (webpack)
-target; the reconstructed files are byte-valid (magic `DICM`, correct size).
+**SECOND, DEEPER BLOCKER (dcm2niix WASM x modern bundlers).** With the exit fix applied,
+the DICOM path was tested in the REAL OHIF app (webpack/rspack). dcm2niix's WASM inits,
+finds the files, prints its banner + "Image Decompression is new", then **aborts inside
+CharLS JPEG-LS decompression** by throwing a bare pointer (an escaping C++ exception).
+Confirmed by capturing the worker's `printErr` in-app. Key facts that localize it:
+- Not our code / not the files: the SAME reconstructed bytes decode fine under Node
+  (bun, 295 slices) and under **Vite 5** (the `niivue-dcm2niix` demo), and native
+  dcm2niix parses the P10s.
+- Not memory: 8 slices aborts identically to 295.
+- Not WASM corruption: OHIF serves `.wasm` as `asset/resource` (byte-identical) and it
+  runs far enough to enumerate all files before the decode step.
+- Not Babel: OHIF dev excludes node_modules from transpilation.
+- Pattern: works under Node + Vite 5; aborts under webpack/rspack AND Vite 8. So newer
+  bundlers break the Emscripten C++ exception path in the CharLS (`.jpeg`) build.
+
+This is a dcm2niix-WASM-vs-modern-bundler issue (Emscripten exception handling in a Web
+Worker under webpack/Vite-8), not nv-ohif. It belongs with the dcm2niix maintainer
+alongside the worker-exit fix. Until resolved, the DICOM render works under a Vite-5-class
+bundler; the NIfTI path (Phase 1) is unaffected.
+
+Note: nv-ohif's OWN Vite-8 demo (`?dicom`) also hits this. The `niivue-dcm2niix` demo
+runs Vite 5 and works. Reconstructed files are byte-valid (magic `DICM`, correct size).
 
 ### Phase 2 (implemented) — `dcm2niix` via WADO-RS / reconstruction
 `dicomToNiivue.ts` fetches each instance's **original DICOM P10** from the DICOMweb

@@ -165,6 +165,22 @@ session scratchpad as `dcm2niix-worker-exit-fix.patch`; upstream fix belongs in
 `@niivue/dcm2niix` (a published release then flows to every consumer, incl. this
 extension unchanged).
 
+**CORRECTION (2026-07-13): the "CharLS abort under webpack" was OUR bug, not dcm2niix.**
+The apparent CharLS/JPEG-LS abort and the scrambled uncompressed render had one root
+cause: `parseMultipartRelated` returned the whole multipart buffer (headers included) as
+pixel data whenever the browser exposed the frame response Content-Type as bare
+`multipart/related` with the boundary stripped (which browsers commonly do). That
+prepended ~127 header bytes and byte-shifted every 16-bit voxel; for JPEG-LS it also
+corrupted the JLS codestream so CharLS threw. Fixed by recovering the boundary from the
+body's opening `--<boundary>` line (commit `3dce44f4`). **After the fix, BOTH uncompressed
+AND JPEG-LS DICOM reconstruct and render pixel-faithfully in the real OHIF app
+(webpack).** So webpack/rspack bundle the dcm2niix worker + WASM fine; there is no
+bundler issue. The dcm2niix worker-exit fix is still required and correct (verified
+independently). The CharLS follow-up note to Chris should NOT be sent.
+
+---
+(Superseded investigation below, kept for history.)
+
 **SECOND, DEEPER BLOCKER (dcm2niix WASM x modern bundlers).** With the exit fix applied,
 the DICOM path was tested in the REAL OHIF app (webpack/rspack). dcm2niix's WASM inits,
 finds the files, prints its banner + "Image Decompression is new", then **aborts inside

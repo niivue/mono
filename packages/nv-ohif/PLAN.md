@@ -150,16 +150,25 @@ Reconstruction gotchas found + fixed (all in `reconstructP10.ts`, all tested):
 5. dcmjs splits frames into 20 KB fragments; dcm2niix only decodes single-fragment
    frames -> `fragmentMultiframe: false`.
 
-**Remaining in-app blocker (in the dependency, not our code):** the `@niivue/dcm2niix`
-Web **Worker** reports failure for ANY conversion in-browser (30 or 295 slices alike),
-throwing an empty-message `ExitStatus` from `worker.onmessage`. Root cause: Emscripten's
-`exit()` RETURNS the code under Node (so the bun proof passes) but THROWS `ExitStatus`
+**In-app blocker ROOT-CAUSED + FIX PROVEN (in the dependency, not our code).** The
+`@niivue/dcm2niix` Web **Worker** failed for every in-browser conversion. Root cause:
+Emscripten's `exit()` RETURNS the code under Node (so the bun proof passes) but THROWS
 in a Web Worker; `worker.jpeg.js` does `const exitCode = mod.callMain(args)` and lets
-that throw hit its catch, so it never reads `/output`. Fix belongs in `@niivue/dcm2niix`'s
-worker (wrap `callMain`, use `e.status`, then read `/output`) — a ~5-line dependency
-change. Our bridge is correct and will render as soon as the worker tolerates the
-Worker-context exit. (Verified our reconstructed P10 is valid: native dcm2niix + the
-WASM in bun both parse and convert it.)
+that throw hit its catch, so it never reads `/output`. **Fix** (source is
+`rordenlab/dcm2niix/js/src/worker.jpeg.js` + `worker.js`): wrap `callMain` in
+try/catch, use `err.status` on a thrown ExitStatus, then read `/output`. **Proven**:
+with the patched worker, our reconstructed JPEG-LS files convert in the real browser
+worker — 12-slice CTA -> a valid `vol.nii` (6,291,808 B = 512x512x12x2 + 352). Verified
+by driving the actual `niivue-dcm2niix` demo (`~/Dev/niivue-dcm2niix`) with our
+reconstructed files (staged in `public/recon/` + `test-recon.html`). Patch saved to the
+session scratchpad as `dcm2niix-worker-exit-fix.patch`; upstream fix belongs in
+`@niivue/dcm2niix` (a published release then flows to every consumer, incl. this
+extension unchanged).
+
+Note: nv-ohif's OWN Vite-8 demo (`?dicom`) still fails to load the dcm2niix worker even
+with the patch — a Vite-8-specific worker/WASM bundling quirk (the `niivue-dcm2niix`
+demo runs Vite 5 and works). That's demo infra, not our code or the real OHIF (webpack)
+target; the reconstructed files are byte-valid (magic `DICM`, correct size).
 
 ### Phase 2 (implemented) — `dcm2niix` via WADO-RS / reconstruction
 `dicomToNiivue.ts` fetches each instance's **original DICOM P10** from the DICOMweb

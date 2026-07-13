@@ -1,0 +1,39 @@
+{
+  "name": "@niivue/nv-ohif",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "description": "NiiVue viewport extension for the OHIF Viewer (render series with NiiVue: 3D volume rendering, meshes, overlays, multiplanar, drawing).",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build:lib": "NODE_ENV=production bun build ./src/index.ts --outdir=dist --target=browser --format=esm --external react --external react-dom --external @niivue/niivue",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build:package": "bun run build:lib && bun run build:types",
+    "test": "bun test"
+  },
+  "comment:peers": "The host OHIF app (>= 3.12, React 18) provides @ohif/core, @ohif/extension-default and react-dom. They are intentionally NOT peerDependencies here: bun would install the whole OHIF tree (pinned to react-dom 18) into this monorepo, colliding with @niivue/nvreact (React 19). This package builds against local OHIF typings (src/ohif-types.ts) and externalizes react. The react peer allows 18 or 19 so bun reuses the monorepo's React 19 for dev; the component's simple hook usage is compatible with both, and the OHIF host supplies React 18 at runtime.",
+  "peerDependencies": {
+    "@niivue/niivue": "workspace:*",
+    "react": "^18.3.1 || ^19"
+  },
+  "devDependencies": {
+    "@niivue/niivue": "workspace:*",
+    "@types/bun": "latest",
+    "@types/react": "^19",
+    "typescript": "^5.9.3"
+  }
+}

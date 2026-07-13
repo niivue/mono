@@ -131,6 +131,62 @@ the "good experience": one load, NiiVue renders it.
 - Risk: getting the affine / axis orientation exactly right (DICOM LPS ↔ NIfTI RAS,
   row/column/slice direction cosines). Needs careful tests against known series.
 
+### Phase 2 status — reconstruction bridge DONE + proven end-to-end (2026-07-13)
+
+The DICOM->NIfTI path is implemented and **proven correct end-to-end at full scale**
+with the real `@niivue/dcm2niix` WASM (the `.jpeg` build has CharLS/OpenJPEG). Running
+the raw Emscripten module in bun on the OHIF demo's CTA series: reconstruct 295
+JPEG-LS instances -> encapsulated P10s -> dcm2niix -> `Convert 295 DICOM (512x512x295)`,
+exit 0, valid NIfTI. 25 unit tests cover the pure logic incl. a dcmjs P10 round-trip.
+
+Reconstruction gotchas found + fixed (all in `reconstructP10.ts`, all tested):
+1. dcmjs strict VR length on non-conformant multi-value CS -> `allowInvalidVRLength`.
+2. Elements without a `Value` (InlineBinary/BulkDataURI), incl. nested in sequences,
+   crash dcmjs' binary writer -> recursive `sanitizeDataset` drops them.
+3. Elements missing `vr` (e.g. AvailableTransferSyntaxUID) -> dcmjs treats as UN and
+   throws -> drop them.
+4. The demo server serves **JPEG-LS** frames (static store, no transcode); declare the
+   real transfer syntax + write PixelData **encapsulated** (OB) not native.
+5. dcmjs splits frames into 20 KB fragments; dcm2niix only decodes single-fragment
+   frames -> `fragmentMultiframe: false`.
+
+**Remaining in-app blocker (in the dependency, not our code):** the `@niivue/dcm2niix`
+Web **Worker** reports failure for ANY conversion in-browser (30 or 295 slices alike),
+throwing an empty-message `ExitStatus` from `worker.onmessage`. Root cause: Emscripten's
+`exit()` RETURNS the code under Node (so the bun proof passes) but THROWS `ExitStatus`
+in a Web Worker; `worker.jpeg.js` does `const exitCode = mod.callMain(args)` and lets
+that throw hit its catch, so it never reads `/output`. Fix belongs in `@niivue/dcm2niix`'s
+worker (wrap `callMain`, use `e.status`, then read `/output`) — a ~5-line dependency
+change. Our bridge is correct and will render as soon as the worker tolerates the
+Worker-context exit. (Verified our reconstructed P10 is valid: native dcm2niix + the
+WASM in bun both parse and convert it.)
+
+### Phase 2 (implemented) — `dcm2niix` via WADO-RS / reconstruction
+`dicomToNiivue.ts` fetches each instance's **original DICOM P10** from the DICOMweb
+data source (WADO-RS retrieve-instance, `Accept: multipart/related;
+type="application/dicom"`), then converts with `@niivue/dcm2niix` (WASM). dcm2niix
+owns the DICOM→NIfTI orientation/affine, so we don't hand-roll LPS→RAS. Pure parts
+(`dicomWadoRs.ts` URL derivation + multipart parsing) and the router
+(`classifyDisplaySet.ts`) are unit-tested. The viewport routes CT/MR to this path,
+SM (whole-slide) toward NVSlide, NIfTI-URL to the direct path.
+
+**Live-app finding (2026-07-13):** this path needs a DICOMweb server that supports
+**RetrieveInstance** (full P10). The OHIF public demo data source is a **static
+S3/CloudFront store**: it serves `/metadata` (200) and `/frames/N` (200) but returns
+**403** for `/instances/{sop}` (no server to assemble a P10). So dcm2niix works
+against real PACS (Orthanc, dcm4chee, Google Healthcare) but NOT static demo servers.
+Two ways to also cover static servers (both universal, no RetrieveInstance needed):
+- **P10 reconstruction** — fetch `/metadata` (dicom+json) + `/frames` bulkdata and
+  assemble a DICOM P10 in-browser (e.g. with `dcmjs`, which OHIF bundles), then feed
+  dcm2niix. Keeps dcm2niix; moderate work.
+- **cornerstone in-memory volume bridge** — build the NIfTI directly from
+  cornerstone's already-decoded volume (`createNiftiArray` + a hand-built LPS→RAS
+  affine). Universal + no re-fetch (best UX), but we own the affine (needs tests).
+
+**Webpack consumer note:** dcm2niix's Emscripten glue references Node builtins
+(`module`/`url`/`fs`/`path`) inside dead `ENVIRONMENT_IS_NODE` branches; a webpack
+host must set `resolve.fallback: { module:false, url:false, fs:false, path:false }`.
+
 ### Phase 3 — `dcm2niix` fallback (self-contained)
 For series cornerstone hasn't volume-loaded, fetch instances via `dataSource` and
 convert DICOM→NIfTI in-browser with `@niivue/dcm2niix` (already a NiiVue plugin).

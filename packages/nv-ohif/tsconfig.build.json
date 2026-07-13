@@ -9,5 +9,5 @@
     "moduleResolution": "bundler",
     "jsx": "react-jsx"
   },
-  "include": ["src/index.ts"]
+  "include": ["src/index.ts", "src/dcm2niix.d.ts", "src/dcmjs.d.ts"]
 }

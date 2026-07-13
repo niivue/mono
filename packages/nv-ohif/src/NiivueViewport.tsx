@@ -1,8 +1,14 @@
 import type { NiiVueOptions } from '@niivue/niivue'
 import NiiVueGPU, { SLICE_TYPE } from '@niivue/niivue'
 import { useEffect, useRef, useState } from 'react'
+import { classifyDisplaySet } from './classifyDisplaySet'
+import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
-import type { OhifViewportProps } from './ohif-types'
+import type {
+  OhifDisplaySet,
+  OhifServicesManager,
+  OhifViewportProps,
+} from './ohif-types'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
 // so an OHIF user sees the three orthogonal planes; the toolbar (later) can switch to
@@ -15,22 +21,41 @@ const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   backend: 'webgl2',
 }
 
+type Status =
+  | { kind: 'idle' }
+  | { kind: 'loading'; message: string }
+  | { kind: 'note'; message: string }
+  | { kind: 'error'; message: string }
+
+// Pull a DICOMweb Authorization header out of OHIF's auth service, if present, so
+// instance retrieval works against secured data sources.
+function authHeaders(
+  servicesManager: OhifServicesManager | undefined,
+): Record<string, string> {
+  const svc = servicesManager?.services?.userAuthenticationService as
+    | { getAuthorizationHeader?: () => { Authorization?: string } | undefined }
+    | undefined
+  const header = svc?.getAuthorizationHeader?.()
+  return header?.Authorization ? { Authorization: header.Authorization } : {}
+}
+
 /**
- * The NiiVue viewport React component OHIF hangs a display set in.
- *
- * Phase 1: renders NIfTI/volume-URL display sets by loading the URL directly. A
- * display set we can't yet load (DICOM) shows a placeholder — Phase 2 will build an
- * NVImage from OHIF's in-memory cornerstone volume instead.
+ * The NiiVue viewport React component OHIF hangs a display set in. It routes each
+ * display set to the right NiiVue load path (see {@link classifyDisplaySet}):
+ *   - a NIfTI/volume URL loads directly,
+ *   - a volumetric DICOM series is fetched + converted with dcm2niix, then loaded,
+ *   - whole-slide (SM) series are destined for NVSlide (not yet wired),
+ *   - anything else shows an explanatory note.
  *
  * NiiVue's core is framework-agnostic, so this owns a plain <canvas> + a `NiiVueGPU`
  * instance directly (React 18) rather than depending on `@niivue/nvreact` (React 19).
  */
 export function NiivueViewport(props: OhifViewportProps) {
-  const { displaySets, viewportId } = props
+  const { displaySets, viewportId, servicesManager } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nvRef = useRef<NiiVueGPU | null>(null)
   const [ready, setReady] = useState(false)
-  const [unsupported, setUnsupported] = useState(false)
+  const [status, setStatus] = useState<Status>({ kind: 'idle' })
 
   // Create / tear down the NiiVue instance with the canvas.
   useEffect(() => {
@@ -72,30 +97,111 @@ export function NiivueViewport(props: OhifViewportProps) {
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !ready) return
-    const specs = displaySets
-      .map((ds) => displaySetToNiivue(ds))
-      .filter((s): s is NonNullable<typeof s> => s !== null)
-
-    // No loadable (Phase-1) display set -> show the placeholder. If OHIF hung a
-    // display set at all, treat a total miss as "needs the DICOM bridge".
-    if (specs.length === 0) {
-      setUnsupported(displaySets.length > 0)
+    // If OHIF hung nothing, stay idle.
+    if (displaySets.length === 0) {
+      setStatus({ kind: 'idle' })
       return
     }
-    setUnsupported(false)
-    // First spec is the base volume; any others load as overlays.
-    nv.loadVolumes(specs).catch(() => {
-      setUnsupported(true)
-    })
-  }, [displaySets, ready])
 
+    let cancelled = false
+    const abort = new AbortController()
+
+    // Phase-1 fast path: any display set that is already a NiiVue volume URL.
+    const directSpecs = displaySets
+      .map((ds) => displaySetToNiivue(ds))
+      .filter((s): s is NonNullable<typeof s> => s !== null)
+    if (directSpecs.length > 0) {
+      setStatus({ kind: 'idle' })
+      nv.loadVolumes(directSpecs).catch(() => {
+        if (!cancelled)
+          setStatus({ kind: 'error', message: 'Failed to load volume.' })
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+
+    // Otherwise route the first display set by kind.
+    const ds: OhifDisplaySet | undefined = displaySets[0]
+    if (!ds) {
+      setStatus({ kind: 'idle' })
+      return
+    }
+    const kind = classifyDisplaySet(ds)
+
+    if (kind === 'wsi') {
+      // Whole-slide imaging is destined for NVSlide (tiled LOD); the DICOM-WSI
+      // tile-source adapter is not wired yet.
+      setStatus({
+        kind: 'note',
+        message:
+          'Whole-slide (SM) series will render with NiiVue NVSlide (tiled) — that data path is coming.',
+      })
+      return
+    }
+
+    if (kind === 'unsupported') {
+      setStatus({
+        kind: 'note',
+        message: "This series isn't something NiiVue can load yet.",
+      })
+      return
+    }
+
+    // kind === 'dicom-volume': fetch original DICOM P10 + convert with dcm2niix.
+    setStatus({ kind: 'loading', message: 'Fetching DICOM series...' })
+    convertDisplaySetToNifti(ds, {
+      headers: authHeaders(servicesManager),
+      signal: abort.signal,
+      onProgress: (phase, loaded, total) => {
+        if (cancelled) return
+        setStatus({
+          kind: 'loading',
+          message:
+            phase === 'fetching'
+              ? `Fetching DICOM series... ${loaded}/${total}`
+              : 'Converting DICOM to NIfTI (dcm2niix)...',
+        })
+      },
+    })
+      .then((niftiFile) => {
+        if (cancelled) return
+        if (!niftiFile) {
+          setStatus({
+            kind: 'error',
+            message: 'DICOM conversion produced no volume.',
+          })
+          return
+        }
+        setStatus({ kind: 'idle' })
+        // Use the converted file's own name (ends in .nii/.nii.gz) so NiiVue sniffs
+        // the format correctly; a display name without that extension would not.
+        return nv.loadVolumes([{ url: niftiFile, name: niftiFile.name }])
+      })
+      .catch((err) => {
+        if (cancelled || abort.signal.aborted) return
+        console.error('[nv-ohif] DICOM load failed', err)
+        const message = err instanceof Error ? err.message : String(err)
+        setStatus({
+          kind: 'error',
+          message: `DICOM load failed: ${message || 'unknown error'}`,
+        })
+      })
+
+    return () => {
+      cancelled = true
+      abort.abort()
+    }
+  }, [displaySets, ready, servicesManager])
+
+  const overlay = status.kind === 'idle' ? null : status.message
   return (
     <div
       data-viewport-id={viewportId}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
-      {unsupported ? (
+      {overlay ? (
         <div
           style={{
             position: 'absolute',
@@ -103,15 +209,14 @@ export function NiivueViewport(props: OhifViewportProps) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#9aa',
+            color: status.kind === 'error' ? '#e88' : '#9aa',
             font: '14px sans-serif',
             textAlign: 'center',
             padding: '1rem',
             pointerEvents: 'none',
           }}
         >
-          This series isn't a NiiVue volume URL yet. DICOM support (building an
-          NiiVue volume from OHIF's loaded series) is coming.
+          {overlay}
         </div>
       ) : null}
     </div>

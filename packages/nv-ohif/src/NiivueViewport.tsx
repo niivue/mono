@@ -152,8 +152,11 @@ export function NiivueViewport(props: OhifViewportProps) {
     const servicesManager = servicesManagerRef.current
     if (!nv || !ready) return
     // Keep the registry's view of the base display sets current, so overlay
-    // commands know what is already loaded (see commands.ts).
+    // commands know what is already loaded and W/L-preset buttons can gate on
+    // the base modality (see commands.ts). Refresh the toolbar so those
+    // modality-gated buttons re-evaluate now that the modality is known.
     updateNiivueViewport(viewportId, { displaySets })
+    refreshToolbar(servicesManager, viewportId)
     // If OHIF hung nothing, stay idle.
     if (displaySets.length === 0) {
       setStatus({ kind: 'idle' })

@@ -257,7 +257,8 @@ the differentiators:
 - **Overlays** (load the study's next series as a colormapped overlay). **DONE**
   (segmentation-specific overlays + colormap/opacity UI still to come.)
 - **Mesh / surface** overlay on the volume.
-- Colormap + window/level (bridge OHIF's W/L to `calMin`/`calMax`).
+- Window/level: OHIF's modality presets (+ robust auto) -> `calMin`/`calMax`. **DONE**
+  (bidirectional sync + colormap picker still to come.)
 - Sync: crosshair / camera sync with other OHIF viewports where it makes sense.
 - Respect OHIF's active tool, measurement, and layout where feasible.
   (Primary-tool mirroring onto NiiVue left-drag: DONE for Window/Level + Pan.)
@@ -280,19 +281,31 @@ The extension now exposes the full OHIF module set for toolbar integration:
   auto-registered at default scope via `getCustomizationModule` -> entry named
   `default`. `getToolbarModule` registers `evaluate.niivue` /
   `evaluate.niivue.sliceType` / `evaluate.niivue.clipPlane` /
-  `evaluate.niivue.overlay` evaluators (disable on non-NiiVue viewports;
-  `isActive` tracks `nv.sliceType`, the current clip preset, and whether overlays
-  are loaded, so the dropdown icons / toggle follow state).
+  `evaluate.niivue.overlay` / `evaluate.niivue.windowLevelPreset` evaluators
+  (disable on non-NiiVue viewports; `isActive` tracks `nv.sliceType`, the current
+  clip preset, and whether overlays are loaded; the W/L-preset evaluator disables
+  presets whose modality does not match the base series).
+- **Window/level bridge**: `niivueSetWindowLevel` ({window, level} -> calMin/calMax
+  via setVolume(0)), `niivueSetWindowLevelPreset` (resolves OHIF's
+  `cornerstone.windowLevelPresets` by the base modality — id then index, OHIF's own
+  order — with a built-in fallback table; zero-width PT/SUV presets map to 0..level),
+  and `niivueAutoWindowLevel` (recalculateCalMinMax(0), robust 2-98%). Toolbar
+  `NiivueWindowLevel` dropdown: Auto + 5 CT presets + 3 PT presets, each preset
+  modality-gated.
 - `niivueRegistry.ts` — viewportId -> **entry** map (nv instance + base
   displaySets + overlayUIDs + clip preset + a status sink). The viewport
   registers on attach and keeps displaySets/status current; commands/evaluators
   resolve the active viewport's entry through it (fallback: the sole registered
   entry). Overlay progress surfaces through the viewport's status overlay.
 
-Verified live (UPENN-GBM, 2026-07-14): clip presets slice the 3D render (the
-purple clip face shows), the overlay toggle loads the 900-instance PERFUSION
-series as a warm overlay visible across all planes and removes it on re-toggle,
-active state tracks correctly. 46 unit tests pass.
+Verified live: clip presets slice the 3D render (purple clip face); overlay toggle
+loads the 900-instance PERFUSION series as a warm overlay across all planes and
+removes it on re-toggle (UPENN-GBM). W/L: on the MR study only Auto is enabled and
+CT/PT presets gray out; on a CT neck study Auto + the 5 CT presets enable (PT stays
+disabled) and "Bone" re-windows the volume to a crisp bone window (2026-07-14). A
+gotcha: the W/L-preset buttons evaluate before the load effect knows the base
+modality, so the load effect now calls `refreshToolbar` after setting displaySets.
+56 unit tests pass.
 
 Mode wiring (done in the local app's mode-basic; consumers do the same):
 ```js

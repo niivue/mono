@@ -8,6 +8,7 @@ import {
   NIIVUE_SLICE_TYPES,
   OVERLAY_COLORMAP,
   OVERLAY_OPACITY,
+  resolveWindowLevel,
 } from './commands'
 import {
   getNiivueEntryForViewport,
@@ -22,6 +23,9 @@ function stubNiivue() {
   const volumes: unknown[] = []
   const added: Record<string, unknown>[] = []
   const clipPlanes: number[][] = []
+  const volumeUpdates: Array<{ index: number; opts: Record<string, unknown> }> =
+    []
+  const recalculated: number[] = []
   return {
     sliceType: SLICE_TYPE.MULTIPLANAR as number,
     azimuth: 42,
@@ -33,12 +37,20 @@ function stubNiivue() {
     volumes,
     added,
     clipPlanes,
+    volumeUpdates,
+    recalculated,
     setClipPlane(dae: number[]) {
       clipPlanes.push(dae)
     },
     async addVolume(spec: Record<string, unknown>) {
       added.push(spec)
       volumes.push(spec)
+    },
+    async setVolume(index: number, opts: Record<string, unknown>) {
+      volumeUpdates.push({ index, opts })
+    },
+    async recalculateCalMinMax(index: number) {
+      recalculated.push(index)
     },
     async updateGLVolume() {},
     model: {
@@ -52,11 +64,18 @@ function stubNiivue() {
 function services(
   activeViewportId: string,
   displaySets: Record<string, unknown>[] = [],
+  windowLevelPresets?: Record<string, unknown>,
 ) {
   return {
     services: {
       viewportGridService: { getActiveViewportId: () => activeViewportId },
       displaySetService: { getActiveDisplaySets: () => displaySets },
+      customizationService: {
+        getCustomization: (id: string) =>
+          id === 'cornerstone.windowLevelPresets'
+            ? windowLevelPresets
+            : undefined,
+      },
     },
   }
 }
@@ -194,6 +213,113 @@ describe('findOverlayCandidate', () => {
   it('returns undefined when nothing else is loadable', () => {
     const entry = { displaySets: [base], overlayUIDs: [] }
     expect(findOverlayCandidate(entry, [base])).toBeUndefined()
+  })
+})
+
+describe('resolveWindowLevel', () => {
+  const presets = {
+    CT: [
+      { id: 'ct-soft-tissue', window: '400', level: '40' },
+      { id: 'ct-bone', window: '2500', level: '480' },
+    ],
+    PT: [{ id: 'pt-suv-5', window: '0', level: '5' }],
+  }
+  it('maps width/center to [calMin, calMax] by id', () => {
+    expect(resolveWindowLevel(presets, 'CT', 'ct-soft-tissue', 0)).toEqual([
+      -160, 240,
+    ])
+  })
+  it('falls back to index when the id is absent', () => {
+    expect(resolveWindowLevel(presets, 'CT', undefined, 1)).toEqual([
+      -770, 1730,
+    ])
+  })
+  it('treats a zero-width preset as a 0..level clamp', () => {
+    expect(resolveWindowLevel(presets, 'PT', 'pt-suv-5', 0)).toEqual([0, 5])
+  })
+  it('returns undefined for an unknown modality or preset', () => {
+    expect(resolveWindowLevel(presets, 'MR', undefined, 0)).toBeUndefined()
+    expect(resolveWindowLevel(presets, 'CT', 'nope', 99)).toBeUndefined()
+  })
+})
+
+describe('niivueSetWindowLevel', () => {
+  it('applies calMin/calMax from width + center', () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ name: 'base' })
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    definitions.niivueSetWindowLevel({ window: 80, level: 40 })
+    expect(nv.volumeUpdates).toEqual([
+      { index: 0, opts: { calMin: 0, calMax: 80 } },
+    ])
+  })
+
+  it('ignores missing values and empty volumes', () => {
+    const nv = stubNiivue()
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    definitions.niivueSetWindowLevel({ window: 80 })
+    nv.volumes.push({ name: 'base' })
+    definitions.niivueSetWindowLevel()
+    expect(nv.volumeUpdates).toEqual([])
+  })
+})
+
+describe('niivueSetWindowLevelPreset', () => {
+  it("applies OHIF's preset resolved for the base modality", () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ name: 'base' })
+    register('vp-1', nv)
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-1', Modality: 'CT' }],
+    })
+    const sm = services('vp-1', [], {
+      CT: [{ id: 'ct-brain', window: '80', level: '40' }],
+    })
+    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
+    definitions.niivueSetWindowLevelPreset({
+      presetId: 'ct-brain',
+      presetIndex: 0,
+    })
+    expect(nv.volumeUpdates).toEqual([
+      { index: 0, opts: { calMin: 0, calMax: 80 } },
+    ])
+  })
+
+  it('does nothing when the base modality has no matching preset', () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ name: 'base' })
+    register('vp-1', nv)
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-1', Modality: 'MR' }],
+    })
+    const sm = services('vp-1', [], {
+      CT: [{ id: 'ct-brain', window: '80', level: '40' }],
+    })
+    const { definitions } = getNiivueCommandsModule({ servicesManager: sm })
+    definitions.niivueSetWindowLevelPreset({
+      presetId: 'ct-brain',
+      presetIndex: 0,
+    })
+    expect(nv.volumeUpdates).toEqual([])
+  })
+})
+
+describe('niivueAutoWindowLevel', () => {
+  it('recomputes the robust window on the base volume', () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ name: 'base' })
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    definitions.niivueAutoWindowLevel()
+    expect(nv.recalculated).toEqual([0])
   })
 })
 

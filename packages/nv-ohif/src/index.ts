@@ -29,6 +29,7 @@ import {
   NIIVUE_TOOLBAR_BUTTONS,
   NIIVUE_TOOLBAR_SECTIONS,
   NIIVUE_VIEWS_SECTION,
+  NIIVUE_WL_SECTION,
   niivueToolbarCustomization,
 } from './toolbar'
 
@@ -78,6 +79,7 @@ export {
   NIIVUE_TOOLBAR_SECTIONS,
   NIIVUE_VIEWPORT_NAME,
   NIIVUE_VIEWS_SECTION,
+  NIIVUE_WL_SECTION,
   NiivueViewport,
   niivueToolbarCustomization,
 }

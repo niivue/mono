@@ -1,4 +1,4 @@
-import { NIIVUE_SLICE_TYPES } from './commands'
+import { baseModality, NIIVUE_SLICE_TYPES } from './commands'
 import {
   getNiivueEntryForViewport,
   getNiivueForViewport,
@@ -8,12 +8,14 @@ import type { OhifToolbarButton, OhifToolbarModuleEntry } from './ohif-types'
 // Toolbar button + section ids (referenced from a mode's toolbar sections).
 export const NIIVUE_VIEWS_SECTION = 'NiivueViews'
 export const NIIVUE_CLIP_SECTION = 'NiivueClip'
+export const NIIVUE_WL_SECTION = 'NiivueWindowLevel'
 export const NIIVUE_RESET_BUTTON = 'NiivueReset'
 export const NIIVUE_OVERLAY_BUTTON = 'NiivueOverlay'
 
 const SLICE_TYPE_EVALUATOR = 'evaluate.niivue.sliceType'
 const CLIP_PLANE_EVALUATOR = 'evaluate.niivue.clipPlane'
 const OVERLAY_EVALUATOR = 'evaluate.niivue.overlay'
+const WL_PRESET_EVALUATOR = 'evaluate.niivue.windowLevelPreset'
 const NIIVUE_EVALUATOR = 'evaluate.niivue'
 
 function sliceTypeButton(
@@ -60,12 +62,37 @@ function clipPlaneButton(
   }
 }
 
+// A window/level preset button. `modality` gates it (the base series must
+// match); `presetId` / `presetIndex` resolve against OHIF's presets.
+function wlPresetButton(
+  id: string,
+  modality: string,
+  presetId: string,
+  presetIndex: number,
+  label: string,
+): OhifToolbarButton {
+  return {
+    id,
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'tool-window-level',
+      label,
+      tooltip: `${label} window (${modality}, NiiVue)`,
+      commands: {
+        commandName: 'niivueSetWindowLevelPreset',
+        commandOptions: { modality, presetId, presetIndex },
+      },
+      evaluate: WL_PRESET_EVALUATOR,
+    },
+  }
+}
+
 /**
  * Toolbar button definitions: a "Views" dropdown (axial / coronal / sagittal /
- * multiplanar / 3D render), a clip-plane dropdown, an overlay toggle, and a
- * reset-view button, all running the commands in commands.ts. Registered with
- * the toolbar service via the `niivue.toolbarButtons` customization (see
- * below) or directly.
+ * multiplanar / 3D render), a clip-plane dropdown, a window/level dropdown
+ * (auto + OHIF's modality presets), an overlay toggle, and a reset-view button,
+ * all running the commands in commands.ts. Registered with the toolbar service
+ * via the `niivue.toolbarButtons` customization (see below) or directly.
  */
 export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
   {
@@ -126,6 +153,30 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
     'Clip Inferior',
   ),
   {
+    id: NIIVUE_WL_SECTION,
+    uiType: 'ohif.toolButtonList',
+    props: { buttonSection: true },
+  },
+  {
+    id: 'NiivueWLAuto',
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'tool-window-level',
+      label: 'Auto Window',
+      tooltip: 'Auto window/level (robust 2-98%, NiiVue)',
+      commands: 'niivueAutoWindowLevel',
+      evaluate: NIIVUE_EVALUATOR,
+    },
+  },
+  wlPresetButton('NiivueWLCtSoft', 'CT', 'ct-soft-tissue', 0, 'Soft Tissue'),
+  wlPresetButton('NiivueWLCtLung', 'CT', 'ct-lung', 1, 'Lung'),
+  wlPresetButton('NiivueWLCtLiver', 'CT', 'ct-liver', 2, 'Liver'),
+  wlPresetButton('NiivueWLCtBone', 'CT', 'ct-bone', 3, 'Bone'),
+  wlPresetButton('NiivueWLCtBrain', 'CT', 'ct-brain', 4, 'Brain'),
+  wlPresetButton('NiivueWLPtDefault', 'PT', 'pt-default', 0, 'PET Default'),
+  wlPresetButton('NiivueWLPtSuv5', 'PT', 'pt-suv-5', 1, 'SUV 5'),
+  wlPresetButton('NiivueWLPtSuv10', 'PT', 'pt-suv-10', 2, 'SUV 10'),
+  {
     id: NIIVUE_OVERLAY_BUTTON,
     uiType: 'ohif.toolButton',
     props: {
@@ -168,6 +219,17 @@ export const NIIVUE_TOOLBAR_SECTIONS: Record<string, string[]> = {
     'NiivueClipPosterior',
     'NiivueClipSuperior',
     'NiivueClipInferior',
+  ],
+  [NIIVUE_WL_SECTION]: [
+    'NiivueWLAuto',
+    'NiivueWLCtSoft',
+    'NiivueWLCtLung',
+    'NiivueWLCtLiver',
+    'NiivueWLCtBone',
+    'NiivueWLCtBrain',
+    'NiivueWLPtDefault',
+    'NiivueWLPtSuv5',
+    'NiivueWLPtSuv10',
   ],
 }
 
@@ -248,6 +310,22 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
         const entry = getNiivueEntryForViewport(viewportId)
         if (!entry) return DISABLED
         return { disabled: false, isActive: entry.overlayUIDs.length > 0 }
+      },
+    },
+    {
+      name: WL_PRESET_EVALUATOR,
+      evaluate: ({ viewportId, button }) => {
+        const entry = getNiivueEntryForViewport(viewportId)
+        if (!entry) return DISABLED
+        // Gray out presets whose modality does not match the base series.
+        const modality = buttonCommandOption(button, 'modality')
+        if (modality !== undefined && modality !== baseModality(entry)) {
+          return {
+            disabled: true,
+            disabledText: `Applies to ${modality} series`,
+          }
+        }
+        return { disabled: false }
       },
     },
   ]

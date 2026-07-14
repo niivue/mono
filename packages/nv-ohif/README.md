@@ -55,16 +55,18 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 - Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag.
 - Ships **toolbar buttons + commands**: a views dropdown (axial / coronal /
   sagittal / multiplanar / 3D render), a **clip-plane** dropdown (off / anterior /
-  posterior / left / right / superior / inferior), an **overlay** toggle (load the
-  study's next series as a colormapped overlay), and a reset-view button — all with
-  active/disabled state tracked per viewport.
+  posterior / left / right / superior / inferior), a **window/level** dropdown
+  (auto robust window + OHIF's modality presets, applied as NiiVue calMin/calMax),
+  an **overlay** toggle (load the study's next series as a colormapped overlay),
+  and a reset-view button — all with active/disabled state tracked per viewport.
 
 ## Toolbar buttons
 
 The extension registers the commands (`niivueSetSliceType`, `niivueResetView`,
-`niivueSetClipPlane`, `niivueToggleOverlay`), the toolbar evaluators, and a
-customization pack with the button definitions. A mode pulls them in by reference
-and places them in its primary bar:
+`niivueSetClipPlane`, `niivueToggleOverlay`, `niivueSetWindowLevel`,
+`niivueSetWindowLevelPreset`, `niivueAutoWindowLevel`), the toolbar evaluators,
+and a customization pack with the button definitions. A mode pulls them in by
+reference and places them in its primary bar:
 
 ```js
 // in a mode
@@ -78,7 +80,7 @@ toolbarSections: [
   // restate your primary bar with the NiiVue buttons added (sections
   // shallow-merge per key, later wins)
   { primary: [/* ...your button ids, */ 'NiivueViews', 'NiivueClip',
-              'NiivueOverlay', 'NiivueReset'] },
+              'NiivueWindowLevel', 'NiivueOverlay', 'NiivueReset'] },
 ],
 ```
 

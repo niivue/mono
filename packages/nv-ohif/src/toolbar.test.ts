@@ -5,6 +5,7 @@ import {
   getNiivueEntryForViewport,
   registerNiivue,
   unregisterNiivue,
+  updateNiivueViewport,
 } from './niivueRegistry'
 import {
   getNiivueToolbarModule,
@@ -12,6 +13,7 @@ import {
   NIIVUE_TOOLBAR_BUTTONS,
   NIIVUE_TOOLBAR_SECTIONS,
   NIIVUE_VIEWS_SECTION,
+  NIIVUE_WL_SECTION,
   niivueToolbarCustomization,
 } from './toolbar'
 
@@ -26,7 +28,11 @@ function evaluator(name: string) {
 describe('toolbar definitions', () => {
   it('every section member is a defined button', () => {
     const ids = new Set(NIIVUE_TOOLBAR_BUTTONS.map((b) => b.id))
-    for (const section of [NIIVUE_VIEWS_SECTION, NIIVUE_CLIP_SECTION]) {
+    for (const section of [
+      NIIVUE_VIEWS_SECTION,
+      NIIVUE_CLIP_SECTION,
+      NIIVUE_WL_SECTION,
+    ]) {
       const members = NIIVUE_TOOLBAR_SECTIONS[section] ?? []
       expect(members.length).toBeGreaterThan(0)
       for (const member of members) {
@@ -127,5 +133,25 @@ describe('toolbar evaluators', () => {
     entry.overlayUIDs = ['ds-2']
     expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
     expect(evaluate({ viewportId: 'vp-none' })?.isActive).toBe(true) // sole fallback
+  })
+
+  it('gate W/L presets by the base series modality', () => {
+    registerNiivue('vp-1', {} as unknown as NiiVueGPU)
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-1', Modality: 'CT' }],
+    })
+    const evaluate = evaluator('evaluate.niivue.windowLevelPreset')
+    const ctButton = NIIVUE_TOOLBAR_BUTTONS.find(
+      (b) => b.id === 'NiivueWLCtBrain',
+    )
+    const ptButton = NIIVUE_TOOLBAR_BUTTONS.find(
+      (b) => b.id === 'NiivueWLPtSuv5',
+    )
+    expect(evaluate({ viewportId: 'vp-1', button: ctButton })?.disabled).toBe(
+      false,
+    )
+    expect(evaluate({ viewportId: 'vp-1', button: ptButton })?.disabled).toBe(
+      true,
+    )
   })
 })

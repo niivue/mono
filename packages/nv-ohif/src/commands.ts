@@ -39,6 +39,40 @@ export const NIIVUE_CLIP_PLANES: Record<string, [number, number, number]> = {
 export const OVERLAY_COLORMAP = 'warm'
 export const OVERLAY_OPACITY = 0.5
 
+// A DICOM window/level preset (width + center), the shape OHIF's
+// `cornerstone.windowLevelPresets` customization stores per modality. `window`
+// and `level` are strings there (from the preset UI); we coerce with Number().
+export interface WindowLevelPreset {
+  id?: string
+  description?: string
+  window: string | number
+  level: string | number
+}
+
+// Fallback presets matching OHIF's shipped `defaultWindowLevelPresets`, used
+// only when the host app does not expose the customization (e.g. a bare mode).
+// The live values come from OHIF via the customization service (see
+// resolveWindowLevelPreset), so a consumer's overrides flow through.
+export const FALLBACK_WL_PRESETS: Record<string, WindowLevelPreset[]> = {
+  CT: [
+    {
+      id: 'ct-soft-tissue',
+      description: 'Soft tissue',
+      window: 400,
+      level: 40,
+    },
+    { id: 'ct-lung', description: 'Lung', window: 1500, level: -600 },
+    { id: 'ct-liver', description: 'Liver', window: 150, level: 90 },
+    { id: 'ct-bone', description: 'Bone', window: 2500, level: 480 },
+    { id: 'ct-brain', description: 'Brain', window: 80, level: 40 },
+  ],
+  PT: [
+    { id: 'pt-default', description: 'Default', window: 5, level: 2.5 },
+    { id: 'pt-suv-5', description: 'SUV 5', window: 0, level: 5 },
+    { id: 'pt-suv-10', description: 'SUV 10', window: 0, level: 10 },
+  ],
+}
+
 // Matches NiiVue's SCENE_DEFAULTS (NVConstants.ts), which the public API does
 // not export — restated here.
 const VIEW_DEFAULTS = {
@@ -78,6 +112,56 @@ export function findOverlayCandidate(
 function flashStatus(entry: NiivueViewportEntry, message: string): void {
   entry.setStatus?.(message)
   setTimeout(() => entry.setStatus?.(null), 4000)
+}
+
+// The base series' modality (what OHIF's presets are keyed by).
+export function baseModality(
+  entry: Pick<NiivueViewportEntry, 'displaySets'>,
+): string | undefined {
+  const modality = entry.displaySets[0]?.Modality
+  return typeof modality === 'string' ? modality : undefined
+}
+
+interface CustomizationServiceLike {
+  getCustomization?: (id: string) => unknown
+}
+
+/** OHIF's window/level presets (customization first, built-in fallback). */
+export function windowLevelPresets(
+  servicesManager: OhifExtensionParams['servicesManager'],
+): Record<string, WindowLevelPreset[]> {
+  const svc = ohifServices(servicesManager)?.customizationService as
+    | CustomizationServiceLike
+    | undefined
+  const custom = svc?.getCustomization?.('cornerstone.windowLevelPresets')
+  if (custom && typeof custom === 'object') {
+    return custom as Record<string, WindowLevelPreset[]>
+  }
+  return FALLBACK_WL_PRESETS
+}
+
+/**
+ * Resolve a preset for the base modality, by id then index (OHIF's own
+ * fallback order). Returns the [calMin, calMax] window it maps to.
+ */
+export function resolveWindowLevel(
+  presets: Record<string, WindowLevelPreset[]>,
+  modality: string | undefined,
+  presetId: string | undefined,
+  presetIndex: number | undefined,
+): [number, number] | undefined {
+  const list = modality ? presets[modality] : undefined
+  if (!list || list.length === 0) return undefined
+  const preset =
+    (presetId ? list.find((p) => p.id === presetId) : undefined) ??
+    (presetIndex !== undefined ? list[presetIndex] : undefined)
+  if (!preset) return undefined
+  const width = Number(preset.window)
+  const center = Number(preset.level)
+  if (!Number.isFinite(width) || !Number.isFinite(center)) return undefined
+  // A zero-width preset (PT/SUV) is a level-only clamp: show 0..level.
+  if (width === 0) return [0, center]
+  return [center - width / 2, center + width / 2]
 }
 
 /**
@@ -199,6 +283,63 @@ export function getNiivueCommandsModule({
         refreshToolbar(servicesManager, viewportId)
       }
     },
+
+    /**
+     * Apply a window/level (width + center) to the base volume as NiiVue
+     * calMin/calMax. Bridges OHIF's W/L model onto NiiVue's calibration range.
+     */
+    niivueSetWindowLevel: ({
+      window,
+      level,
+    }: {
+      window?: number
+      level?: number
+    } = {}) => {
+      const nv = getActiveNiivue(servicesManager)
+      if (!nv || nv.volumes.length === 0) return
+      if (
+        window === undefined ||
+        level === undefined ||
+        !Number.isFinite(window) ||
+        !Number.isFinite(level)
+      )
+        return
+      // A zero-width window (PT/SUV) is a level-only clamp: show 0..level.
+      const [calMin, calMax] =
+        window === 0 ? [0, level] : [level - window / 2, level + window / 2]
+      nv.setVolume(0, { calMin, calMax })
+    },
+
+    /**
+     * Apply one of OHIF's modality window/level presets (resolved from the
+     * `cornerstone.windowLevelPresets` customization, keyed by the base series'
+     * modality) to the base volume.
+     */
+    niivueSetWindowLevelPreset: ({
+      presetId,
+      presetIndex,
+    }: {
+      presetId?: string
+      presetIndex?: number
+    } = {}) => {
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry || entry.nv.volumes.length === 0) return
+      const range = resolveWindowLevel(
+        windowLevelPresets(servicesManager),
+        baseModality(entry),
+        presetId,
+        presetIndex,
+      )
+      if (!range) return
+      entry.nv.setVolume(0, { calMin: range[0], calMax: range[1] })
+    },
+
+    /** Recompute the base volume's robust (2-98%) auto window. */
+    niivueAutoWindowLevel: () => {
+      const nv = getActiveNiivue(servicesManager)
+      if (!nv || nv.volumes.length === 0) return
+      nv.recalculateCalMinMax(0)
+    },
   }
 
   return {
@@ -208,6 +349,9 @@ export function getNiivueCommandsModule({
       niivueResetView: actions.niivueResetView,
       niivueSetClipPlane: actions.niivueSetClipPlane,
       niivueToggleOverlay: actions.niivueToggleOverlay,
+      niivueSetWindowLevel: actions.niivueSetWindowLevel,
+      niivueSetWindowLevelPreset: actions.niivueSetWindowLevelPreset,
+      niivueAutoWindowLevel: actions.niivueAutoWindowLevel,
     },
     defaultContext: 'NIIVUE',
   }

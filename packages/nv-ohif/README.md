@@ -5,11 +5,15 @@ A [NiiVue](https://github.com/niivue/niivue) viewport extension for the
 bringing 3D volume rendering, mesh/surface overlays, multiplanar with colormapped
 overlays, and voxel drawing / vector annotation to your OHIF app.
 
-> **Status: Phase 1 (proven, incl. in a real OHIF app).** Renders **NIfTI
-> (volume-URL) display sets** today; verified mounting inside a full local OHIF Viewer
-> (registered via `pluginConfig.json` + a mode). DICOM support — building a NiiVue
-> volume from OHIF's already-loaded cornerstone series — is the next phase. See
-> `PLAN.md`.
+> **Status: proven in a real OHIF app.** Renders **NIfTI (volume-URL) display sets**
+> and **DICOM series** (fetched + converted to NIfTI with `@niivue/dcm2niix`), with a
+> toolbar surfacing NiiVue's views / clip plane / overlay / window-level. Verified
+> mounting inside a full local OHIF Viewer (registered via `pluginConfig.json` + a
+> mode). See `PLAN.md`.
+>
+> **DICOM has an unshipped-dependency caveat — read [DICOM support](#dicom-support)
+> before relying on it.** The NIfTI path works with published deps today; DICOM
+> needs a `@niivue/dcm2niix` release that is not published yet.
 
 > **Consuming the local build (dev):** install **packed tarballs**, do not symlink.
 > Symlinking the monorepo package into an OHIF app makes its bundler follow the link
@@ -50,8 +54,9 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 - Registers a **React 18 viewport** that owns a `<canvas>` + a NiiVue instance.
 - Loads a display set whose URL is a NiiVue-readable volume (`.nii/.nii.gz`, `.nrrd`,
   `.mgz`, `.mha`, `.mif`, …) via `nv.loadVolumes(...)`, opening in multiplanar.
-- A non-volume-URL (DICOM) display set shows a placeholder until the DICOM bridge
-  lands.
+- Loads a **DICOM** series by fetching it and converting to NIfTI with
+  `@niivue/dcm2niix` (see [DICOM support](#dicom-support) for the dependency caveat);
+  a whole-slide (SM) series shows a placeholder (NVSlide path not wired yet).
 - Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag,
   and reflects a manual NiiVue window/level drag back to OHIF (`setWindowLevel`).
 - Ships **toolbar buttons + commands**: a views dropdown (axial / coronal /
@@ -85,13 +90,42 @@ toolbarSections: [
 ],
 ```
 
+## DICOM support
+
+DICOM series are rendered by fetching the instances and converting them to NIfTI
+in-browser with `@niivue/dcm2niix` (a WASM build of dcm2niix). This is verified
+working end-to-end in a real OHIF app for both uncompressed and JPEG-LS studies.
+
+> **Dependency caveat (as of this writing): the required `@niivue/dcm2niix` fix is
+> not published yet.** dcm2niix's Web Worker aborts every in-browser conversion on
+> the published versions: Emscripten's `exit()` *throws* inside a Web Worker (it
+> returns the code under Node), and the worker does `const exitCode =
+> mod.callMain(args)` and lets that throw hit its catch, so it never reads
+> `/output`. The fix wraps `callMain` in try/catch and reads `err.status`. It has
+> been confirmed for upstream (`rordenlab/dcm2niix` `js/src/worker*.js`) but is
+> **not in any published `@niivue/dcm2niix`** — neither `1.2.0` (current latest) nor
+> the `1.3.0-dev.0` prerelease contains it (both still have the bare `callMain`).
+>
+> Consequences:
+> - **NIfTI display sets work with published deps today.** DICOM does **not** until
+>   a fixed `@niivue/dcm2niix` is published.
+> - This package pins `@niivue/dcm2niix` at `^1.2.0` as a placeholder. **When the
+>   fixed release ships, bump the pin to `>=<that version>`** (search this repo for
+>   `DCM2NIIX_PIN` — the marker is on the dependency in `package.json`).
+> - In the monorepo dev rig, DICOM works because a locally-built patched dcm2niix is
+>   installed by hand; that is not what `npm`-install consumers get.
+
 ## Compatibility
 
-- **OHIF**: `^3.12` (developed against 3.12.6).
+- **OHIF**: `^3.12` (developed against 3.12.6; also exercised against OHIF
+  `master`/3.13-beta in the dev rig).
 - **React**: `^18.3.1` (OHIF is on React 18 — this does not use `@niivue/nvreact`,
   which targets React 19).
+- **`@niivue/dcm2niix`**: required for DICOM only — see [DICOM support](#dicom-support).
 
 ## Roadmap
 
-See `PLAN.md`. Next: DICOM via cornerstone-volume reuse (no re-fetch), then a toolbar
-surfacing NiiVue's 3D render / overlays / drawing, then a `dcm2niix` fallback.
+See `PLAN.md`. Landed: NIfTI + DICOM rendering, and a toolbar for views / clip plane /
+overlay / window-level (both directions). Next: a colormap picker, segmentation
+overlays, mesh/surface overlay, and **NVSlide for 2D / whole-slide (SM)** series (see
+the `## TODO — NVSlide for 2D` section in `PLAN.md`).

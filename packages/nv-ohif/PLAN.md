@@ -131,6 +131,23 @@ the "good experience": one load, NiiVue renders it.
 - Risk: getting the affine / axis orientation exactly right (DICOM LPS ↔ NIfTI RAS,
   row/column/slice direction cosines). Needs careful tests against known series.
 
+### DICOM shippability — BLOCKED on an unpublished dcm2niix release (2026-07-14)
+
+`DCM2NIIX_PIN` — **DICOM does not work for `npm`-install consumers yet.** The path
+needs the dcm2niix Web-Worker exit fix (wrap `callMain` in try/catch, read
+`err.status`; see the Phase-2 finding below). That fix is in **no published**
+`@niivue/dcm2niix`: latest is `1.2.0` and there is a `1.3.0-dev.0` prerelease, and
+**both still have the bare `const exitCode = mod.callMain(args)`** (verified by
+fetching both tarballs). The monorepo dev rig only works because a locally-built
+patched `1.3.0` is hand-installed into the OHIF app's `.niivue-pkgs`.
+
+Maintainer (Chris) has confirmed he will land the suggested changes upstream.
+**Action when a fixed release publishes:** bump `packages/nv-ohif/package.json`
+`@niivue/dcm2niix` from `^1.2.0` to `>=<fixed version>` (marker `DCM2NIIX_PIN` is on
+that dep + in the README `## DICOM support`), then re-verify the clean-consumer
+`npm pack` path. Until then, NIfTI is the consumer-supported path; DICOM is
+dev-rig-only.
+
 ### Phase 2 status — reconstruction bridge DONE + proven end-to-end (2026-07-13)
 
 The DICOM->NIfTI path is implemented and **proven correct end-to-end at full scale**

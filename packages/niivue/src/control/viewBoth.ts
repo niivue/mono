@@ -1,6 +1,6 @@
 import NVViewGL from '@/gl/NVViewGL'
 import { log } from '@/logger'
-import type NiiVueGPU from '@/NVControlBase'
+import type NiiVue from '@/NVControlBase'
 import type { BackendType, CanvasViewport, NVBounds } from '@/NVTypes'
 import NVViewGPU from '@/wgpu/NVViewGPU'
 import {
@@ -16,7 +16,7 @@ import {
 } from './interactions'
 
 /** Registry of controllers sharing each canvas, for coordinating canvas replacement */
-const canvasInstances = new WeakMap<HTMLCanvasElement, Set<NiiVueGPU>>()
+const canvasInstances = new WeakMap<HTMLCanvasElement, Set<NiiVue>>()
 /** Tracks which backend a freshly-created canvas was made for, to prevent double-replacement
  *  within a batch while still allowing replacement on a future different-backend switch */
 const freshCanvasBackend = new WeakMap<HTMLCanvasElement, BackendType>()
@@ -68,7 +68,7 @@ export function setCanvasViewport(
 /** Iterate all controllers sharing a canvas (for fanning out viewport changes) */
 export function getCanvasInstances(
   canvas: HTMLCanvasElement | null | undefined,
-): Set<NiiVueGPU> | null {
+): Set<NiiVue> | null {
   if (!canvas) return null
   return canvasInstances.get(canvas) ?? null
 }
@@ -117,10 +117,10 @@ export function computeBoundsPixelRect(
 export { IDENTITY_VIEWPORT }
 
 export async function attachTo(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   id: string,
   isAntiAlias: boolean | null = null,
-): Promise<NiiVueGPU> {
+): Promise<NiiVue> {
   await attachToCanvas(
     ctrl,
     document.getElementById(id) as HTMLCanvasElement,
@@ -131,10 +131,10 @@ export async function attachTo(
 }
 
 export async function attachToCanvas(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   canvas: HTMLCanvasElement,
   isAntiAlias: boolean | null = null,
-): Promise<NiiVueGPU> {
+): Promise<NiiVue> {
   if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
     throw new Error('NiiVue requires a valid HTMLCanvasElement')
   }
@@ -229,7 +229,7 @@ export async function attachToCanvas(
  *  lifecycle modules (`viewWebGL2`, `viewWebGPU`) so that `setViewport` fan-out
  *  via `getCanvasInstances` reaches every sibling sharing the canvas. */
 export function registerCanvasInstance(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   canvas: HTMLCanvasElement,
 ): void {
   let instances = canvasInstances.get(canvas)
@@ -241,7 +241,7 @@ export function registerCanvasInstance(
 }
 
 /** Remove a controller from the canvas instance registry (called on destroy) */
-export function unregister(ctrl: NiiVueGPU): void {
+export function unregister(ctrl: NiiVue): void {
   if (!ctrl.canvas) return
   const instances = canvasInstances.get(ctrl.canvas)
   if (instances) {
@@ -254,7 +254,7 @@ export function unregister(ctrl: NiiVueGPU): void {
 }
 
 /** Check if this controller is in sub-canvas bounds mode (sharing a canvas) */
-function isSharedCanvas(ctrl: NiiVueGPU): boolean {
+function isSharedCanvas(ctrl: NiiVue): boolean {
   const bounds = ctrl.opts.bounds
   return (
     !!bounds &&
@@ -268,7 +268,7 @@ function isSharedCanvas(ctrl: NiiVueGPU): boolean {
 }
 
 /** Replace the canvas DOM element and update all registered siblings' references */
-function replaceCanvasElement(ctrl: NiiVueGPU): void {
+function replaceCanvasElement(ctrl: NiiVue): void {
   const oldCanvas = ctrl.canvas as HTMLCanvasElement
   // If canvas was freshly created by a sibling for the same backend, skip (no context conflict)
   if (freshCanvasBackend.get(oldCanvas) === ctrl.opts.backend) return
@@ -304,7 +304,7 @@ function replaceCanvasElement(ctrl: NiiVueGPU): void {
 }
 
 export async function recreateView(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   backendChanged = false,
 ): Promise<void> {
   // 1. Destroy current view
@@ -367,7 +367,7 @@ export async function recreateView(
 }
 
 export async function reinitializeView(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   options: {
     backend?: BackendType
     isAntiAlias?: boolean

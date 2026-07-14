@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in the NiiVueGPU package (`@niivue/niivue`).
+Guidance for AI coding agents working in the NiiVue package (`@niivue/niivue`).
 
 ## Project overview
 
-NiiVueGPU is a WebGPU-based neuroimaging visualization library (volumes + meshes) with a WebGL2 fallback. Written in TypeScript, MVC architecture with dual rendering backends.
+NiiVue is a WebGPU-based neuroimaging visualization library (volumes + meshes) with a WebGL2 fallback. Written in TypeScript, MVC architecture with dual rendering backends.
 
 ## Build commands
 
@@ -105,14 +105,14 @@ Rendering changes are still verified manually via the interactive demos (`bun ru
 ## Architecture (MVC)
 
 ```
-NiiVueGPU (controller) - src/NVControl.ts
+NiiVue (controller) - src/NVControl.ts
 ├── control/           - src/control/ (event handling, view lifecycle)
 ├── NVModel (data)     - src/NVModel.ts
 └── NVViewGPU (WebGPU) - src/wgpu/NVViewGPU.ts
     or NVViewGL (WebGL2) - src/gl/NVViewGL.ts
 ```
 
-**Data flow:** User interactions → NiiVueGPU → model updates + `drawScene()` → `requestAnimationFrame` → view.render()
+**Data flow:** User interactions → NiiVue → model updates + `drawScene()` → `requestAnimationFrame` → view.render()
 
 **Model-View separation:** Model is GPU-agnostic (only data). Views receive model read-only. Controller owns mutations. GPU resources are view-owned. This enables backend switching without data loss.
 
@@ -272,7 +272,7 @@ Use **methods** for:
 
 ### Events (EventTarget API)
 
-NiiVueGPU extends `EventTarget`. Use `addEventListener`/`removeEventListener` for all notifications:
+NiiVue extends `EventTarget`. Use `addEventListener`/`removeEventListener` for all notifications:
 
 ```js
 nv1.addEventListener('locationChange', (e) => { ... })  // crosshair moved

@@ -49,15 +49,15 @@ interface NiivuegpuDeps {
   mounted: boolean
 }
 
-const NIIVUEGPU_DIST = resolveNiivuegpuDist()
-const NIIVUEGPU_DEPS = resolveNiivuegpuDeps(NIIVUEGPU_DIST)
+const NIIVUE_DIST = resolveNiivuegpuDist()
+const NIIVUE_DEPS = resolveNiivuegpuDeps(NIIVUE_DIST)
 
 function resolveNiivuegpuDist(): string | null {
   const candidates = [
-    process.env.NIIVUEGPU_DIST,
-    path.resolve(__dirname, '..', 'niivuegpu', 'dist'),
-    path.resolve(__dirname, '..', '..', 'niivuegpu', 'dist'),
-    path.resolve(process.env.HOME || '', 'Dev', 'niivuegpu', 'dist'),
+    process.env.NIIVUE_DIST,
+    path.resolve(__dirname, '..', 'niivue', 'dist'),
+    path.resolve(__dirname, '..', '..', 'niivue', 'dist'),
+    path.resolve(process.env.HOME || '', 'Dev', 'niivue', 'dist'),
   ].filter((p): p is string => Boolean(p))
   for (const c of candidates) {
     try {
@@ -79,7 +79,7 @@ function resolveNiivuegpuDeps(distDir: string | null): NiivuegpuDeps {
     'clipper2-ts',
   ]
   const nodeModules =
-    process.env.NIIVUEGPU_NODE_MODULES ||
+    process.env.NIIVUE_NODE_MODULES ||
     (distDir ? path.resolve(distDir, '..', 'node_modules') : null)
   const packages: NiivuegpuPackage[] = packageNames.map((name) => {
     const root = nodeModules ? path.join(nodeModules, name) : null
@@ -144,11 +144,11 @@ async function main(): Promise<void> {
     )
   }
 
-  if (NIIVUEGPU_DIST) {
-    console.log(`Mounting niivuegpu dist from ${NIIVUEGPU_DIST}`)
+  if (NIIVUE_DIST) {
+    console.log(`Mounting niivue dist from ${NIIVUE_DIST}`)
     app.use(
-      '/vendor/niivuegpu',
-      express.static(NIIVUEGPU_DIST, {
+      '/vendor/niivue',
+      express.static(NIIVUE_DIST, {
         setHeaders: (res, filePath) => {
           if (filePath.endsWith('.js')) {
             res.set('Content-Type', 'text/javascript')
@@ -159,19 +159,19 @@ async function main(): Promise<void> {
         },
       }),
     )
-    app.locals.niivuegpuMounted = true
+    app.locals.niivueMounted = true
   } else {
     console.warn(
-      'niivuegpu dist not found. Set NIIVUEGPU_DIST or place a built dist/ next to the server. The 3D viewer page will show a setup message until it is available.',
+      'niivue dist not found. Set NIIVUE_DIST or place a built dist/ next to the server. The 3D viewer page will show a setup message until it is available.',
     )
-    app.locals.niivuegpuMounted = false
+    app.locals.niivueMounted = false
   }
 
-  if (NIIVUEGPU_DEPS.nodeModules) {
-    for (const pkg of NIIVUEGPU_DEPS.packages) {
+  if (NIIVUE_DEPS.nodeModules) {
+    for (const pkg of NIIVUE_DEPS.packages) {
       if (!pkg.mounted || !pkg.root) continue
       app.use(
-        `/vendor/niivuegpu-deps/${pkg.name}`,
+        `/vendor/niivue-deps/${pkg.name}`,
         express.static(pkg.root, {
           setHeaders: (res, filePath) => {
             if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
@@ -181,17 +181,17 @@ async function main(): Promise<void> {
         }),
       )
     }
-    if (NIIVUEGPU_DEPS.mounted) {
+    if (NIIVUE_DEPS.mounted) {
       console.log(
-        `Mounting niivuegpu browser deps from ${NIIVUEGPU_DEPS.nodeModules}`,
+        `Mounting niivue browser deps from ${NIIVUE_DEPS.nodeModules}`,
       )
     } else {
-      const missing = NIIVUEGPU_DEPS.packages
+      const missing = NIIVUE_DEPS.packages
         .filter((pkg) => !pkg.mounted)
         .map((pkg) => pkg.name)
         .join(', ')
       console.warn(
-        `niivuegpu browser deps incomplete under ${NIIVUEGPU_DEPS.nodeModules}: ${missing}`,
+        `niivue browser deps incomplete under ${NIIVUE_DEPS.nodeModules}: ${missing}`,
       )
     }
   }
@@ -205,12 +205,12 @@ async function main(): Promise<void> {
         presentationApi:
           'https://preview.iiif.io/api/prezi-4/presentation/4.0/ (alpha, includes draft 3D)',
       },
-      niivuegpu: {
-        mounted: app.locals.niivuegpuMounted,
-        dist: NIIVUEGPU_DIST,
-        depsMounted: NIIVUEGPU_DEPS.mounted,
-        nodeModules: NIIVUEGPU_DEPS.nodeModules,
-        deps: NIIVUEGPU_DEPS.packages.map((pkg) => ({
+      niivue: {
+        mounted: app.locals.niivueMounted,
+        dist: NIIVUE_DIST,
+        depsMounted: NIIVUE_DEPS.mounted,
+        nodeModules: NIIVUE_DEPS.nodeModules,
+        deps: NIIVUE_DEPS.packages.map((pkg) => ({
           name: pkg.name,
           mounted: pkg.mounted,
           path: pkg.root,

@@ -181,7 +181,7 @@ export function buildManifest({ baseUrl, entry }: ManifestBuildArgs): unknown {
       {
         id: viewerUrl,
         type: 'Text',
-        label: { en: ['3D viewer (niivuegpu)'] },
+        label: { en: ['3D viewer (niivue)'] },
         format: 'text/html',
       },
     ],
@@ -384,7 +384,7 @@ function buildScene(args: {
         id: viewerUrl,
         type: 'Text',
         format: 'text/html',
-        label: { en: ['3D viewer (niivuegpu)'] },
+        label: { en: ['3D viewer (niivue)'] },
       },
     ],
   }
@@ -491,7 +491,7 @@ export function buildExplodedManifest(args: ExplodedManifestArgs): unknown {
       id: viewerUrl,
       type: 'Text',
       format: 'text/html',
-      label: { en: ['3D viewer (niivuegpu)'] },
+      label: { en: ['3D viewer (niivue)'] },
     },
   ]
   if (wantsComposite) {
@@ -530,7 +530,7 @@ export function buildExplodedManifest(args: ExplodedManifestArgs): unknown {
       id: viewerUrl,
       type: 'Text',
       format: 'text/html',
-      label: { en: ['3D viewer (niivuegpu)'] },
+      label: { en: ['3D viewer (niivue)'] },
     },
   ]
   if (wantsComposite) {

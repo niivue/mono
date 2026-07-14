@@ -3,7 +3,7 @@
 Design + delivery plan. Branch: `ohif-viewer-integration`.
 
 **Status: Phase 1 PROVEN — in a real OHIF app.** The extension + React-18 viewport +
-NIfTI data bridge render a volume end-to-end. Two independent proofs:
+NIfTI data bridge render a volume end-to-end. Independent proofs:
 1. A proof harness (`demo/`, `bun run dev`) drives the real extension the way OHIF
    would — `getViewportModule()` -> `NiivueViewport` fed a mock OHIF `displaySets`
    prop pointing at a public NIfTI — and NiiVue renders it multiplanar (verified
@@ -17,8 +17,21 @@ NIfTI data bridge render a volume end-to-end. Two independent proofs:
    a DICOM series (no NIfTI URL to load yet). No console errors. This confirms the
    extension/mode/SOPClassHandler plumbing works against a real OHIF build.
 
-DICOM rendering in-app (Phase 2) is next — the app has no NIfTI display set to hang,
-so the actual volume-render path is proven by the harness (proof 1), not proof 2.
+3. **NIfTI rendered in the full OHIF app (2026-07-14).** The OHIF public demo data
+   source has no NIfTI display set, so we fed one the way a data source would:
+   `window.services.displaySetService.addDisplaySets({ url: '<public .nii.gz>', … })`
+   then `viewportGridService.setDisplaySetsForViewport({ viewportId, displaySetInstanceUIDs })`.
+   OHIF mounted **our** NiiVue viewport and rendered MNI152 multiplanar + 3D, toolbar
+   working over it. This is the real routing path end-to-end (display-set -> viewport
+   component -> `displaySetToNiivue` -> `loadVolumes`); only the display set's *origin*
+   is injected vs fetched, which is exactly what a data source does internally.
+   **Routing gotcha:** the injected display set's `SOPClassHandlerId` MUST be one listed
+   in a mode viewport's `displaySetsToDisplay`, or OHIF can't pick a viewport component
+   and renders nothing (black, no canvas). mode-basic maps the default stack handler
+   (`@ohif/extension-default.sopClassHandlerModule.stack`) to the niivue viewport, so use
+   that id. (A consumer shipping NIfTI needs a data source / SOPClassHandler that emits
+   such a display set — OHIF core here has zero NIfTI support: no nifti extension, data
+   source, cornerstone loader, or URL param.)
 
 **Real-app packaging gotcha (cost real time — do NOT repeat):** do NOT `ln -s` the
 local monorepo `@niivue/niivue` into the OHIF app's `node_modules`. rspack follows the

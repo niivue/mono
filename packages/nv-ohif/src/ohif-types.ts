@@ -60,17 +60,77 @@ export interface OhifSopClassHandlerEntry {
   ) => ReadonlyArray<OhifDisplaySet>
 }
 
+// The parameter object OHIF passes to every extension module getter.
+export interface OhifExtensionParams {
+  servicesManager?: OhifServicesManager
+  extensionManager?: OhifExtensionManager
+  commandsManager?: OhifCommandsManager
+}
+
+// A toolbar button definition (the slice of @ohif/core's Button type we emit).
+// `commands` is a command name, or `{ commandName, commandOptions }`, or a list
+// of those; `evaluate` names a registered toolbar evaluator.
+export interface OhifToolbarButtonCommand {
+  commandName: string
+  commandOptions?: Record<string, unknown>
+}
+export interface OhifToolbarButton {
+  id: string
+  uiType: string
+  props: {
+    icon?: string
+    label?: string
+    tooltip?: string
+    buttonSection?: boolean
+    commands?: string | OhifToolbarButtonCommand | OhifToolbarButtonCommand[]
+    evaluate?: string | Record<string, unknown>
+    [key: string]: unknown
+  }
+}
+
+// What a toolbar evaluator returns to shape button state; undefined leaves the
+// button untouched.
+export interface OhifToolbarEvaluation {
+  disabled?: boolean
+  disabledText?: string
+  isActive?: boolean
+  className?: string
+}
+export interface OhifToolbarModuleEntry {
+  name: string
+  evaluate?: (state: {
+    viewportId?: string
+    button?: OhifToolbarButton
+    [key: string]: unknown
+  }) => OhifToolbarEvaluation | undefined
+}
+
+// What getCommandsModule returns: named command functions plus the context
+// they register under.
+export interface OhifCommandsModule {
+  actions: Record<string, (...args: never[]) => unknown>
+  definitions: Record<string, (...args: never[]) => unknown>
+  defaultContext?: string
+}
+
+// A customization module entry; the entry named 'default' is auto-merged at
+// default scope when the extension registers.
+export interface OhifCustomizationModuleEntry {
+  name: string
+  value: Record<string, unknown>
+}
+
 // The extension object OHIF registers.
 export interface OhifExtension {
   id: string
   version?: string
-  getViewportModule: (context: {
-    servicesManager?: OhifServicesManager
-    extensionManager?: OhifExtensionManager
-    commandsManager?: OhifCommandsManager
-  }) => OhifViewportModuleEntry[]
-  getSopClassHandlerModule?: (context: {
-    servicesManager?: OhifServicesManager
-    extensionManager?: OhifExtensionManager
-  }) => OhifSopClassHandlerEntry[]
+  getViewportModule: (context: OhifExtensionParams) => OhifViewportModuleEntry[]
+  getSopClassHandlerModule?: (
+    context: OhifExtensionParams,
+  ) => OhifSopClassHandlerEntry[]
+  getCommandsModule?: (context: OhifExtensionParams) => OhifCommandsModule
+  getToolbarModule?: (context: OhifExtensionParams) => OhifToolbarModuleEntry[]
+  getCustomizationModule?: (
+    context: OhifExtensionParams,
+  ) => OhifCustomizationModuleEntry[]
 }

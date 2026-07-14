@@ -1,3 +1,4 @@
+import { getNiivueCommandsModule, NIIVUE_SLICE_TYPES } from './commands'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import {
   getNiivueViewportModule,
@@ -8,6 +9,7 @@ import type {
   OhifDisplaySet,
   OhifExtension,
   OhifSopClassHandlerEntry,
+  OhifToolbarButton,
   OhifViewportModuleEntry,
   OhifViewportProps,
 } from './ohif-types'
@@ -15,6 +17,14 @@ import {
   getNiivueSopClassHandlerModule,
   NIIVUE_SOP_CLASS_HANDLER_NAME,
 } from './sopClassHandler'
+import {
+  getNiivueToolbarModule,
+  NIIVUE_RESET_BUTTON,
+  NIIVUE_TOOLBAR_BUTTONS,
+  NIIVUE_TOOLBAR_SECTIONS,
+  NIIVUE_VIEWS_SECTION,
+  niivueToolbarCustomization,
+} from './toolbar'
 
 export const NIIVUE_OHIF_EXTENSION_ID = '@niivue/nv-ohif'
 
@@ -26,6 +36,13 @@ const niivueOhifExtension: OhifExtension = {
   version: '0.0.0',
   getViewportModule: () => getNiivueViewportModule(),
   getSopClassHandlerModule: () => getNiivueSopClassHandlerModule(),
+  getCommandsModule: (params) => getNiivueCommandsModule(params),
+  getToolbarModule: () => getNiivueToolbarModule(),
+  // Auto-registered at default scope; modes pull the packs in by reference
+  // ('niivue.toolbarButtons' / 'niivue.toolbarSections').
+  getCustomizationModule: () => [
+    { name: 'default', value: niivueToolbarCustomization },
+  ],
 }
 
 export default niivueOhifExtension
@@ -34,15 +51,24 @@ export type {
   OhifDisplaySet,
   OhifExtension,
   OhifSopClassHandlerEntry,
+  OhifToolbarButton,
   OhifViewportModuleEntry,
   OhifViewportProps,
 }
 // Public named API (for consumers that want the parts directly).
 export {
   displaySetToNiivue,
+  getNiivueCommandsModule,
   getNiivueSopClassHandlerModule,
+  getNiivueToolbarModule,
   getNiivueViewportModule,
+  NIIVUE_RESET_BUTTON,
+  NIIVUE_SLICE_TYPES,
   NIIVUE_SOP_CLASS_HANDLER_NAME,
+  NIIVUE_TOOLBAR_BUTTONS,
+  NIIVUE_TOOLBAR_SECTIONS,
   NIIVUE_VIEWPORT_NAME,
+  NIIVUE_VIEWS_SECTION,
   NiivueViewport,
+  niivueToolbarCustomization,
 }

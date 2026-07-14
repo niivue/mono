@@ -250,13 +250,59 @@ Heavier (re-fetch + convert); a fallback, not the default.
 
 Wire OHIF toolbar buttons/commands to NiiVue features so an OHIF user actually gets
 the differentiators:
-- Slice type: axial / coronal / sagittal / **multiplanar** / **3D render**.
+- Slice type: axial / coronal / sagittal / **multiplanar** / **3D render**. **DONE**
+- Reset view (camera / pan / zoom / crosshair). **DONE**
 - **3D volume rendering** with clip plane + the exploded-block / drawing work.
 - **Overlays** (load a second series/segmentation as a colormapped overlay).
 - **Mesh / surface** overlay on the volume.
 - Colormap + window/level (bridge OHIF's W/L to `calMin`/`calMax`).
 - Sync: crosshair / camera sync with other OHIF viewports where it makes sense.
 - Respect OHIF's active tool, measurement, and layout where feasible.
+  (Primary-tool mirroring onto NiiVue left-drag: DONE for Window/Level + Pan.)
+
+### Toolbar/commands status (2026-07-14) — LANDED + verified in the real app
+
+The extension now exposes the full OHIF module set for toolbar integration:
+- `commands.ts` — `getCommandsModule` (context `NIIVUE`): `niivueSetSliceType`
+  (`{ sliceType: 'axial'|'coronal'|'sagittal'|'multiplanar'|'render' }`) and
+  `niivueResetView` (restores NiiVue `SCENE_DEFAULTS`: azimuth/elevation, zoom,
+  2D + render pan, crosshair).
+- `toolbar.ts` — button defs (a `NiivueViews` `ohif.toolButtonList` dropdown +
+  `NiivueReset`), the `NiivueViews` section membership, and a customization pack
+  (`niivue.toolbarButtons` / `niivue.toolbarSections`) auto-registered at default
+  scope via `getCustomizationModule` -> entry named `default`.
+  `getToolbarModule` registers `evaluate.niivue` / `evaluate.niivue.sliceType`
+  evaluators (disable on non-NiiVue viewports; `isActive` tracks `nv.sliceType`,
+  so the dropdown icon follows the current view).
+- `niivueRegistry.ts` — viewportId -> NiiVue instance map. The viewport registers
+  on attach; commands/evaluators resolve the active viewport's instance through
+  it (fallback: the sole registered instance).
+
+Mode wiring (done in the local app's mode-basic; consumers do the same):
+```js
+toolbarButtons:  [{ $reference: 'cornerstone.toolbarButtons' },
+                  { $reference: 'niivue.toolbarButtons' }],
+toolbarSections: [{ $reference: 'cornerstone.toolbarSections' },
+                  { $reference: 'niivue.toolbarSections' },
+                  { primary: [/* cornerstone ids..., */ 'NiivueViews', 'NiivueReset'] }],
+```
+(The literal `primary` restates the full list — section objects shallow-merge per
+key, later wins.)
+
+Two gotchas found live (both fixed in `NiivueViewport.tsx`):
+1. **Toolbar evaluates before the async attach registers the instance**, leaving
+   the buttons disabled. Fix: call `toolbarService.refreshToolbarState({ viewportId })`
+   after register/unregister.
+2. **OHIF re-renders the viewport with fresh `displaySets`/`servicesManager`
+   object identities on toolbar interactions.** Keying effects on those
+   identities re-ran the load effect and re-fetched the entire series (observed:
+   a full 3720-instance DTI refetch on a toolbar click). Fix: effects key on a
+   `displaySetsKey` (joined display-set UIDs) and read the latest props from
+   refs; the create effect keys on `viewportId` only.
+
+Verified in the browser (UPENN-GBM DTI, 3720 instances): dropdown switches all
+five views, active state follows, reset restores the default camera after a
+rotate, no re-fetch on toolbar interaction, no console errors from nv-ohif.
 
 ## Testing / verification
 

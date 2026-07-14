@@ -52,6 +52,31 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
   `.mgz`, `.mha`, `.mif`, …) via `nv.loadVolumes(...)`, opening in multiplanar.
 - A non-volume-URL (DICOM) display set shows a placeholder until the DICOM bridge
   lands.
+- Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag.
+- Ships **toolbar buttons + commands**: a views dropdown (axial / coronal /
+  sagittal / multiplanar / 3D render) and a reset-view button, with active/disabled
+  state tracked per viewport.
+
+## Toolbar buttons
+
+The extension registers the commands (`niivueSetSliceType`, `niivueResetView`),
+the toolbar evaluators, and a customization pack with the button definitions.
+A mode pulls them in by reference and places them in its primary bar:
+
+```js
+// in a mode
+toolbarButtons: [
+  { $reference: 'cornerstone.toolbarButtons' },
+  { $reference: 'niivue.toolbarButtons' },
+],
+toolbarSections: [
+  { $reference: 'cornerstone.toolbarSections' },
+  { $reference: 'niivue.toolbarSections' },
+  // restate your primary bar with the NiiVue buttons added (sections
+  // shallow-merge per key, later wins)
+  { primary: [/* ...your button ids, */ 'NiivueViews', 'NiivueReset'] },
+],
+```
 
 ## Compatibility
 

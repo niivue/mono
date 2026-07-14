@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
+import {
+  ohifServices,
+  registerNiivue,
+  unregisterNiivue,
+} from './niivueRegistry'
 import type {
   OhifDisplaySet,
   OhifServicesManager,
@@ -37,16 +42,6 @@ interface ToolGroupServiceLike {
   EVENTS?: Record<string, string>
 }
 
-// OHIF exposes its services on the viewport props in some builds and only on
-// `window.services` in others (e.g. the current 3.x app), so read from either.
-function ohifServices(
-  servicesManager: OhifServicesManager | undefined,
-): Record<string, unknown> | undefined {
-  if (servicesManager?.services) return servicesManager.services
-  const g = globalThis as unknown as { services?: Record<string, unknown> }
-  return g.services
-}
-
 /** Map an OHIF primary tool name to a NiiVue left-drag mode. */
 function ohifToolToDragMode(tool: string | undefined): number {
   switch (tool) {
@@ -59,6 +54,18 @@ function ohifToolToDragMode(tool: string | undefined): number {
       // (NiiVue changes slices with the scroll wheel regardless).
       return DRAG_MODE.crosshair
   }
+}
+
+// Toolbar buttons are evaluated before our instance attaches (registration is
+// async), so nudge OHIF to re-evaluate whenever registration changes.
+function refreshToolbar(
+  servicesManager: OhifServicesManager | undefined,
+  viewportId: string,
+): void {
+  const svc = ohifServices(servicesManager)?.toolbarService as
+    | { refreshToolbarState?: (props: Record<string, unknown>) => void }
+    | undefined
+  svc?.refreshToolbarState?.({ viewportId })
 }
 
 // Pull a DICOMweb Authorization header out of OHIF's auth service, if present, so
@@ -91,6 +98,19 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
 
+  // OHIF can re-render with fresh displaySets/servicesManager object
+  // identities on unrelated state changes (e.g. toolbar interactions). Effects
+  // must NOT key on those identities — a spurious re-run of the create effect
+  // would tear down the GPU context, and of the load effect refetch the whole
+  // series — so they read the latest props from refs and key on stable values.
+  const displaySetsRef = useRef(displaySets)
+  displaySetsRef.current = displaySets
+  const servicesManagerRef = useRef(servicesManager)
+  servicesManagerRef.current = servicesManager
+  const displaySetsKey = displaySets
+    .map((ds) => String(ds.displaySetInstanceUID ?? ds.SeriesInstanceUID ?? ''))
+    .join('|')
+
   // Create / tear down the NiiVue instance with the canvas.
   useEffect(() => {
     const container = containerRef.current
@@ -109,6 +129,9 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       nv.sliceType = SLICE_TYPE.MULTIPLANAR
+      // Expose the instance to OHIF commands / toolbar evaluators (commands.ts).
+      registerNiivue(viewportId, nv)
+      refreshToolbar(servicesManagerRef.current, viewportId)
       setReady(true)
     })
 
@@ -118,6 +141,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     return () => {
       disposed = true
       setReady(false)
+      unregisterNiivue(viewportId)
+      refreshToolbar(servicesManagerRef.current, viewportId)
       ro.disconnect()
       nv.destroy()
       canvas.width = 0
@@ -125,11 +150,15 @@ export function NiivueViewport(props: OhifViewportProps) {
       canvas.remove()
       nvRef.current = null
     }
-  }, [])
+  }, [viewportId])
 
   // Load the display set(s) hung in this viewport, once attached / on change.
+  // Keyed on displaySetsKey (not the array identity) by design — see above.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on displaySetsKey by design
   useEffect(() => {
     const nv = nvRef.current
+    const displaySets = displaySetsRef.current
+    const servicesManager = servicesManagerRef.current
     if (!nv || !ready) return
     // If OHIF hung nothing, stay idle.
     if (displaySets.length === 0) {
@@ -226,7 +255,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       cancelled = true
       abort.abort()
     }
-  }, [displaySets, ready, servicesManager])
+  }, [displaySetsKey, ready])
 
   // Mirror OHIF's active primary tool onto NiiVue's left-drag mode (Window/Level,
   // Pan, ...), so the OHIF toolbar drives this viewport too. NiiVue already applies a

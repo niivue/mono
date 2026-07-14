@@ -1,4 +1,8 @@
-import { getNiivueCommandsModule, NIIVUE_SLICE_TYPES } from './commands'
+import {
+  getNiivueCommandsModule,
+  NIIVUE_CLIP_PLANES,
+  NIIVUE_SLICE_TYPES,
+} from './commands'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import {
   getNiivueViewportModule,
@@ -19,6 +23,8 @@ import {
 } from './sopClassHandler'
 import {
   getNiivueToolbarModule,
+  NIIVUE_CLIP_SECTION,
+  NIIVUE_OVERLAY_BUTTON,
   NIIVUE_RESET_BUTTON,
   NIIVUE_TOOLBAR_BUTTONS,
   NIIVUE_TOOLBAR_SECTIONS,
@@ -62,6 +68,9 @@ export {
   getNiivueSopClassHandlerModule,
   getNiivueToolbarModule,
   getNiivueViewportModule,
+  NIIVUE_CLIP_PLANES,
+  NIIVUE_CLIP_SECTION,
+  NIIVUE_OVERLAY_BUTTON,
   NIIVUE_RESET_BUTTON,
   NIIVUE_SLICE_TYPES,
   NIIVUE_SOP_CLASS_HANDLER_NAME,

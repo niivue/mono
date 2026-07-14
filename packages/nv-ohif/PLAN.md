@@ -252,8 +252,10 @@ Wire OHIF toolbar buttons/commands to NiiVue features so an OHIF user actually g
 the differentiators:
 - Slice type: axial / coronal / sagittal / **multiplanar** / **3D render**. **DONE**
 - Reset view (camera / pan / zoom / crosshair). **DONE**
-- **3D volume rendering** with clip plane + the exploded-block / drawing work.
-- **Overlays** (load a second series/segmentation as a colormapped overlay).
+- **3D volume rendering** clip plane (off + 6 anatomical presets). **DONE**
+  (exploded-block / drawing still to come.)
+- **Overlays** (load the study's next series as a colormapped overlay). **DONE**
+  (segmentation-specific overlays + colormap/opacity UI still to come.)
 - **Mesh / surface** overlay on the volume.
 - Colormap + window/level (bridge OHIF's W/L to `calMin`/`calMax`).
 - Sync: crosshair / camera sync with other OHIF viewports where it makes sense.
@@ -264,19 +266,33 @@ the differentiators:
 
 The extension now exposes the full OHIF module set for toolbar integration:
 - `commands.ts` — `getCommandsModule` (context `NIIVUE`): `niivueSetSliceType`
-  (`{ sliceType: 'axial'|'coronal'|'sagittal'|'multiplanar'|'render' }`) and
+  (`{ sliceType: 'axial'|'coronal'|'sagittal'|'multiplanar'|'render' }`),
   `niivueResetView` (restores NiiVue `SCENE_DEFAULTS`: azimuth/elevation, zoom,
-  2D + render pan, crosshair).
-- `toolbar.ts` — button defs (a `NiivueViews` `ohif.toolButtonList` dropdown +
-  `NiivueReset`), the `NiivueViews` section membership, and a customization pack
-  (`niivue.toolbarButtons` / `niivue.toolbarSections`) auto-registered at default
-  scope via `getCustomizationModule` -> entry named `default`.
-  `getToolbarModule` registers `evaluate.niivue` / `evaluate.niivue.sliceType`
-  evaluators (disable on non-NiiVue viewports; `isActive` tracks `nv.sliceType`,
-  so the dropdown icon follows the current view).
-- `niivueRegistry.ts` — viewportId -> NiiVue instance map. The viewport registers
-  on attach; commands/evaluators resolve the active viewport's instance through
-  it (fallback: the sole registered instance).
+  2D + render pan, crosshair), `niivueSetClipPlane`
+  (`{ plane: 'none'|'anterior'|'posterior'|'left'|'right'|'superior'|'inferior' }`
+  -> `nv.setClipPlane([depth,azimuth,elevation])`; 'none' = depth 2 = disabled),
+  and `niivueToggleOverlay` (loads the study's next loadable series — via the same
+  direct-URL / dcm2niix path as the base — as a warm-colormapped 0.5-opacity
+  overlay through `nv.addVolume`, or removes overlays if any are loaded).
+- `toolbar.ts` — button defs (a `NiivueViews` dropdown, a `NiivueClip` dropdown,
+  a `NiivueOverlay` toggle, and `NiivueReset`), section membership, and a
+  customization pack (`niivue.toolbarButtons` / `niivue.toolbarSections`)
+  auto-registered at default scope via `getCustomizationModule` -> entry named
+  `default`. `getToolbarModule` registers `evaluate.niivue` /
+  `evaluate.niivue.sliceType` / `evaluate.niivue.clipPlane` /
+  `evaluate.niivue.overlay` evaluators (disable on non-NiiVue viewports;
+  `isActive` tracks `nv.sliceType`, the current clip preset, and whether overlays
+  are loaded, so the dropdown icons / toggle follow state).
+- `niivueRegistry.ts` — viewportId -> **entry** map (nv instance + base
+  displaySets + overlayUIDs + clip preset + a status sink). The viewport
+  registers on attach and keeps displaySets/status current; commands/evaluators
+  resolve the active viewport's entry through it (fallback: the sole registered
+  entry). Overlay progress surfaces through the viewport's status overlay.
+
+Verified live (UPENN-GBM, 2026-07-14): clip presets slice the 3D render (the
+purple clip face shows), the overlay toggle loads the 900-instance PERFUSION
+series as a warm overlay visible across all planes and removes it on re-toggle,
+active state tracks correctly. 46 unit tests pass.
 
 Mode wiring (done in the local app's mode-basic; consumers do the same):
 ```js

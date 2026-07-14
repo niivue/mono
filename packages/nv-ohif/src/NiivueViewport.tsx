@@ -5,15 +5,14 @@ import { classifyDisplaySet } from './classifyDisplaySet'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import {
+  authHeaders,
   ohifServices,
+  refreshToolbar,
   registerNiivue,
   unregisterNiivue,
+  updateNiivueViewport,
 } from './niivueRegistry'
-import type {
-  OhifDisplaySet,
-  OhifServicesManager,
-  OhifViewportProps,
-} from './ohif-types'
+import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
 // so an OHIF user sees the three orthogonal planes; the toolbar (later) can switch to
@@ -54,30 +53,6 @@ function ohifToolToDragMode(tool: string | undefined): number {
       // (NiiVue changes slices with the scroll wheel regardless).
       return DRAG_MODE.crosshair
   }
-}
-
-// Toolbar buttons are evaluated before our instance attaches (registration is
-// async), so nudge OHIF to re-evaluate whenever registration changes.
-function refreshToolbar(
-  servicesManager: OhifServicesManager | undefined,
-  viewportId: string,
-): void {
-  const svc = ohifServices(servicesManager)?.toolbarService as
-    | { refreshToolbarState?: (props: Record<string, unknown>) => void }
-    | undefined
-  svc?.refreshToolbarState?.({ viewportId })
-}
-
-// Pull a DICOMweb Authorization header out of OHIF's auth service, if present, so
-// instance retrieval works against secured data sources.
-function authHeaders(
-  servicesManager: OhifServicesManager | undefined,
-): Record<string, string> {
-  const svc = ohifServices(servicesManager)?.userAuthenticationService as
-    | { getAuthorizationHeader?: () => { Authorization?: string } | undefined }
-    | undefined
-  const header = svc?.getAuthorizationHeader?.()
-  return header?.Authorization ? { Authorization: header.Authorization } : {}
 }
 
 /**
@@ -129,8 +104,24 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       nv.sliceType = SLICE_TYPE.MULTIPLANAR
-      // Expose the instance to OHIF commands / toolbar evaluators (commands.ts).
+      // Expose the instance to OHIF commands / toolbar evaluators (commands.ts),
+      // with a status sink so async commands (overlay load) surface progress.
       registerNiivue(viewportId, nv)
+      updateNiivueViewport(viewportId, {
+        setStatus: (message) =>
+          setStatus(
+            message === null
+              ? { kind: 'idle' }
+              : {
+                  kind: /failed/i.test(message)
+                    ? 'error'
+                    : /\.\.\./.test(message)
+                      ? 'loading'
+                      : 'note',
+                  message,
+                },
+          ),
+      })
       refreshToolbar(servicesManagerRef.current, viewportId)
       setReady(true)
     })
@@ -160,6 +151,9 @@ export function NiivueViewport(props: OhifViewportProps) {
     const displaySets = displaySetsRef.current
     const servicesManager = servicesManagerRef.current
     if (!nv || !ready) return
+    // Keep the registry's view of the base display sets current, so overlay
+    // commands know what is already loaded (see commands.ts).
+    updateNiivueViewport(viewportId, { displaySets })
     // If OHIF hung nothing, stay idle.
     if (displaySets.length === 0) {
       setStatus({ kind: 'idle' })

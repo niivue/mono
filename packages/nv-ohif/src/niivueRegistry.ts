@@ -1,22 +1,56 @@
 import type NiiVueGPU from '@niivue/niivue'
-import type { OhifServicesManager } from './ohif-types'
+import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
 
-// Live NiiVue instances by OHIF viewportId. The viewport registers itself on
-// attach and unregisters on teardown; OHIF commands / toolbar evaluators (which
-// live outside React) resolve the instance they should act on through this map.
-const instances = new Map<string, NiiVueGPU>()
+/**
+ * Per-viewport state shared between the React viewport and the OHIF
+ * commands / toolbar evaluators (which live outside React). The viewport
+ * registers on attach and keeps `displaySets` / `setStatus` current; commands
+ * mutate the overlay/clip state they own.
+ */
+export interface NiivueViewportEntry {
+  viewportId: string
+  nv: NiiVueGPU
+  /** Display sets currently hung in the viewport (the base load). */
+  displaySets: ReadonlyArray<OhifDisplaySet>
+  /** displaySetInstanceUIDs loaded as overlays (niivueToggleOverlay). */
+  overlayUIDs: string[]
+  /** Guard against concurrent overlay loads. */
+  overlayLoading: boolean
+  /** Current clip plane preset name ('none' when off). See commands.ts. */
+  clipPlane: string
+  /** Viewport-provided sink so commands can surface progress text (null = clear). */
+  setStatus?: (message: string | null) => void
+}
+
+const instances = new Map<string, NiivueViewportEntry>()
 
 export function registerNiivue(viewportId: string, nv: NiiVueGPU): void {
-  instances.set(viewportId, nv)
+  instances.set(viewportId, {
+    viewportId,
+    nv,
+    displaySets: [],
+    overlayUIDs: [],
+    overlayLoading: false,
+    clipPlane: 'none',
+  })
 }
 
 export function unregisterNiivue(viewportId: string): void {
   instances.delete(viewportId)
 }
 
-export function getNiivue(
+/** Merge viewport-owned fields into an entry (no-op when not registered). */
+export function updateNiivueViewport(
+  viewportId: string,
+  patch: Partial<Pick<NiivueViewportEntry, 'displaySets' | 'setStatus'>>,
+): void {
+  const entry = instances.get(viewportId)
+  if (entry) Object.assign(entry, patch)
+}
+
+export function getNiivueEntry(
   viewportId: string | undefined,
-): NiiVueGPU | undefined {
+): NiivueViewportEntry | undefined {
   return viewportId === undefined ? undefined : instances.get(viewportId)
 }
 
@@ -35,27 +69,66 @@ interface ViewportGridServiceLike {
 }
 
 /**
- * The instance for a viewport id, falling back to the sole registered instance
+ * The entry for a viewport id, falling back to the sole registered entry
  * (covers layouts where a non-NiiVue viewport holds focus next to a single
  * NiiVue viewport).
  */
+export function getNiivueEntryForViewport(
+  viewportId: string | undefined,
+): NiivueViewportEntry | undefined {
+  const exact = getNiivueEntry(viewportId)
+  if (exact) return exact
+  if (instances.size === 1) {
+    for (const entry of instances.values()) return entry
+  }
+  return undefined
+}
+
+/** The instance for a viewport id (same fallback as the entry lookup). */
 export function getNiivueForViewport(
   viewportId: string | undefined,
 ): NiiVueGPU | undefined {
-  const exact = getNiivue(viewportId)
-  if (exact) return exact
-  if (instances.size === 1) {
-    for (const nv of instances.values()) return nv
-  }
-  return undefined
+  return getNiivueEntryForViewport(viewportId)?.nv
+}
+
+/** The entry a toolbar command should act on: the active viewport's. */
+export function getActiveNiivueEntry(
+  servicesManager: OhifServicesManager | undefined,
+): NiivueViewportEntry | undefined {
+  const grid = ohifServices(servicesManager)?.viewportGridService as
+    | ViewportGridServiceLike
+    | undefined
+  return getNiivueEntryForViewport(grid?.getActiveViewportId?.())
 }
 
 /** The NiiVue instance a toolbar command should act on: the active viewport's. */
 export function getActiveNiivue(
   servicesManager: OhifServicesManager | undefined,
 ): NiiVueGPU | undefined {
-  const grid = ohifServices(servicesManager)?.viewportGridService as
-    | ViewportGridServiceLike
+  return getActiveNiivueEntry(servicesManager)?.nv
+}
+
+// Toolbar buttons are evaluated before our async attach registers the instance
+// and hold state (overlay on/off, clip preset) that commands change after the
+// evaluation, so nudge OHIF to re-evaluate on those transitions.
+export function refreshToolbar(
+  servicesManager: OhifServicesManager | undefined,
+  viewportId: string,
+): void {
+  const svc = ohifServices(servicesManager)?.toolbarService as
+    | { refreshToolbarState?: (props: Record<string, unknown>) => void }
     | undefined
-  return getNiivueForViewport(grid?.getActiveViewportId?.())
+  svc?.refreshToolbarState?.({ viewportId })
+}
+
+// Pull a DICOMweb Authorization header out of OHIF's auth service, if present,
+// so instance retrieval works against secured data sources.
+export function authHeaders(
+  servicesManager: OhifServicesManager | undefined,
+): Record<string, string> {
+  const svc = ohifServices(servicesManager)?.userAuthenticationService as
+    | { getAuthorizationHeader?: () => { Authorization?: string } | undefined }
+    | undefined
+  const header = svc?.getAuthorizationHeader?.()
+  return header?.Authorization ? { Authorization: header.Authorization } : {}
 }

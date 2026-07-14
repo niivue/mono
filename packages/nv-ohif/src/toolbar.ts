@@ -1,12 +1,19 @@
 import { NIIVUE_SLICE_TYPES } from './commands'
-import { getNiivueForViewport } from './niivueRegistry'
+import {
+  getNiivueEntryForViewport,
+  getNiivueForViewport,
+} from './niivueRegistry'
 import type { OhifToolbarButton, OhifToolbarModuleEntry } from './ohif-types'
 
 // Toolbar button + section ids (referenced from a mode's toolbar sections).
 export const NIIVUE_VIEWS_SECTION = 'NiivueViews'
+export const NIIVUE_CLIP_SECTION = 'NiivueClip'
 export const NIIVUE_RESET_BUTTON = 'NiivueReset'
+export const NIIVUE_OVERLAY_BUTTON = 'NiivueOverlay'
 
 const SLICE_TYPE_EVALUATOR = 'evaluate.niivue.sliceType'
+const CLIP_PLANE_EVALUATOR = 'evaluate.niivue.clipPlane'
+const OVERLAY_EVALUATOR = 'evaluate.niivue.overlay'
 const NIIVUE_EVALUATOR = 'evaluate.niivue'
 
 function sliceTypeButton(
@@ -31,11 +38,34 @@ function sliceTypeButton(
   }
 }
 
+function clipPlaneButton(
+  id: string,
+  plane: string,
+  icon: string,
+  label: string,
+): OhifToolbarButton {
+  return {
+    id,
+    uiType: 'ohif.toolButton',
+    props: {
+      icon,
+      label,
+      tooltip: `${label} (NiiVue clip plane)`,
+      commands: {
+        commandName: 'niivueSetClipPlane',
+        commandOptions: { plane },
+      },
+      evaluate: CLIP_PLANE_EVALUATOR,
+    },
+  }
+}
+
 /**
  * Toolbar button definitions: a "Views" dropdown (axial / coronal / sagittal /
- * multiplanar / 3D render) plus a reset-view button, all running the commands
- * in commands.ts. Registered with the toolbar service via the
- * `niivue.toolbarButtons` customization (see below) or directly.
+ * multiplanar / 3D render), a clip-plane dropdown, an overlay toggle, and a
+ * reset-view button, all running the commands in commands.ts. Registered with
+ * the toolbar service via the `niivue.toolbarButtons` customization (see
+ * below) or directly.
  */
 export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
   {
@@ -59,6 +89,55 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
   ),
   sliceTypeButton('NiivueRender', 'render', 'tool-3d-rotate', '3D Render'),
   {
+    id: NIIVUE_CLIP_SECTION,
+    uiType: 'ohif.toolButtonList',
+    props: { buttonSection: true },
+  },
+  clipPlaneButton('NiivueClipNone', 'none', 'icon-clear', 'No Clip'),
+  clipPlaneButton(
+    'NiivueClipRight',
+    'right',
+    'OrientationSwitchS',
+    'Clip Right',
+  ),
+  clipPlaneButton('NiivueClipLeft', 'left', 'OrientationSwitchS', 'Clip Left'),
+  clipPlaneButton(
+    'NiivueClipAnterior',
+    'anterior',
+    'OrientationSwitchC',
+    'Clip Anterior',
+  ),
+  clipPlaneButton(
+    'NiivueClipPosterior',
+    'posterior',
+    'OrientationSwitchC',
+    'Clip Posterior',
+  ),
+  clipPlaneButton(
+    'NiivueClipSuperior',
+    'superior',
+    'OrientationSwitchA',
+    'Clip Superior',
+  ),
+  clipPlaneButton(
+    'NiivueClipInferior',
+    'inferior',
+    'OrientationSwitchA',
+    'Clip Inferior',
+  ),
+  {
+    id: NIIVUE_OVERLAY_BUTTON,
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'toggle-dicom-overlay',
+      label: 'Overlay',
+      tooltip:
+        'Toggle a colormapped overlay of the next series in this study (NiiVue)',
+      commands: 'niivueToggleOverlay',
+      evaluate: OVERLAY_EVALUATOR,
+    },
+  },
+  {
     id: NIIVUE_RESET_BUTTON,
     uiType: 'ohif.toolButton',
     props: {
@@ -71,8 +150,8 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
   },
 ]
 
-// Section membership for the views dropdown. A mode merges this into its
-// toolbar sections and adds 'NiivueViews' / 'NiivueReset' to its primary bar.
+// Section membership for the dropdowns. A mode merges this into its toolbar
+// sections and adds the section/button ids to its primary bar.
 export const NIIVUE_TOOLBAR_SECTIONS: Record<string, string[]> = {
   [NIIVUE_VIEWS_SECTION]: [
     'NiivueMultiplanar',
@@ -81,6 +160,15 @@ export const NIIVUE_TOOLBAR_SECTIONS: Record<string, string[]> = {
     'NiivueSagittal',
     'NiivueRender',
   ],
+  [NIIVUE_CLIP_SECTION]: [
+    'NiivueClipNone',
+    'NiivueClipRight',
+    'NiivueClipLeft',
+    'NiivueClipAnterior',
+    'NiivueClipPosterior',
+    'NiivueClipSuperior',
+    'NiivueClipInferior',
+  ],
 }
 
 /**
@@ -88,25 +176,26 @@ export const NIIVUE_TOOLBAR_SECTIONS: Record<string, string[]> = {
  * customizationModule). A mode composes it by reference:
  *   toolbarButtons:  [..., { $reference: 'niivue.toolbarButtons' }]
  *   toolbarSections: [..., { $reference: 'niivue.toolbarSections' },
- *                     { primary: [...ids, 'NiivueViews', 'NiivueReset'] }]
+ *                     { primary: [...ids, 'NiivueViews', 'NiivueClip',
+ *                                 'NiivueOverlay', 'NiivueReset'] }]
  */
 export const niivueToolbarCustomization = {
   'niivue.toolbarButtons': NIIVUE_TOOLBAR_BUTTONS,
   'niivue.toolbarSections': NIIVUE_TOOLBAR_SECTIONS,
 }
 
-// The sliceType a button def would set, read back out of its commandOptions.
-function buttonSliceType(
+// A named command option a button def would send, read back out of its props.
+function buttonCommandOption(
   button: OhifToolbarButton | undefined,
-): number | undefined {
+  option: string,
+): string | undefined {
   const commands = button?.props?.commands
   const options =
     commands && typeof commands === 'object' && !Array.isArray(commands)
-      ? (commands.commandOptions as { sliceType?: string } | undefined)
+      ? commands.commandOptions
       : undefined
-  return options?.sliceType !== undefined
-    ? NIIVUE_SLICE_TYPES[options.sliceType]
-    : undefined
+  const value = options?.[option]
+  return typeof value === 'string' ? value : undefined
 }
 
 const DISABLED = {
@@ -130,11 +219,35 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
       evaluate: ({ viewportId, button }) => {
         const nv = getNiivueForViewport(viewportId)
         if (!nv) return DISABLED
-        const target = buttonSliceType(button)
+        const name = buttonCommandOption(button, 'sliceType')
+        const target = name === undefined ? undefined : NIIVUE_SLICE_TYPES[name]
         return {
           disabled: false,
           isActive: target !== undefined && nv.sliceType === target,
         }
+      },
+    },
+    {
+      name: CLIP_PLANE_EVALUATOR,
+      evaluate: ({ viewportId, button }) => {
+        const entry = getNiivueEntryForViewport(viewportId)
+        if (!entry) return DISABLED
+        const plane = buttonCommandOption(button, 'plane')
+        return {
+          disabled: false,
+          isActive:
+            plane !== undefined &&
+            plane !== 'none' &&
+            entry.clipPlane === plane,
+        }
+      },
+    },
+    {
+      name: OVERLAY_EVALUATOR,
+      evaluate: ({ viewportId }) => {
+        const entry = getNiivueEntryForViewport(viewportId)
+        if (!entry) return DISABLED
+        return { disabled: false, isActive: entry.overlayUIDs.length > 0 }
       },
     },
   ]

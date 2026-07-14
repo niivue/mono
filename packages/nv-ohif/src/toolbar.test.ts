@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type NiiVueGPU from '@niivue/niivue'
 import { SLICE_TYPE } from '@niivue/niivue'
-import { registerNiivue, unregisterNiivue } from './niivueRegistry'
+import {
+  getNiivueEntryForViewport,
+  registerNiivue,
+  unregisterNiivue,
+} from './niivueRegistry'
 import {
   getNiivueToolbarModule,
+  NIIVUE_CLIP_SECTION,
   NIIVUE_TOOLBAR_BUTTONS,
   NIIVUE_TOOLBAR_SECTIONS,
   NIIVUE_VIEWS_SECTION,
@@ -19,12 +24,14 @@ function evaluator(name: string) {
 }
 
 describe('toolbar definitions', () => {
-  it('the views section lists exactly the slice-type buttons defined', () => {
+  it('every section member is a defined button', () => {
     const ids = new Set(NIIVUE_TOOLBAR_BUTTONS.map((b) => b.id))
-    const members = NIIVUE_TOOLBAR_SECTIONS[NIIVUE_VIEWS_SECTION] ?? []
-    expect(members.length).toBeGreaterThan(0)
-    for (const member of members) {
-      expect(ids.has(member)).toBe(true)
+    for (const section of [NIIVUE_VIEWS_SECTION, NIIVUE_CLIP_SECTION]) {
+      const members = NIIVUE_TOOLBAR_SECTIONS[section] ?? []
+      expect(members.length).toBeGreaterThan(0)
+      for (const member of members) {
+        expect(ids.has(member)).toBe(true)
+      }
     }
   })
 
@@ -86,5 +93,39 @@ describe('toolbar evaluators', () => {
     expect(evaluator('evaluate.niivue')({ viewportId: 'vp-1' })?.disabled).toBe(
       false,
     )
+  })
+
+  it('mark the clip preset matching the entry state active (never "none")', () => {
+    registerNiivue('vp-1', {} as unknown as NiiVueGPU)
+    const entry = getNiivueEntryForViewport('vp-1')
+    if (!entry) throw new Error('entry missing')
+    const evaluate = evaluator('evaluate.niivue.clipPlane')
+    const rightButton = NIIVUE_TOOLBAR_BUTTONS.find(
+      (b) => b.id === 'NiivueClipRight',
+    )
+    const noneButton = NIIVUE_TOOLBAR_BUTTONS.find(
+      (b) => b.id === 'NiivueClipNone',
+    )
+    expect(evaluate({ viewportId: 'vp-1', button: noneButton })?.isActive).toBe(
+      false,
+    )
+    entry.clipPlane = 'right'
+    expect(
+      evaluate({ viewportId: 'vp-1', button: rightButton })?.isActive,
+    ).toBe(true)
+    expect(evaluate({ viewportId: 'vp-1', button: noneButton })?.isActive).toBe(
+      false,
+    )
+  })
+
+  it('mark the overlay button active while overlays are loaded', () => {
+    registerNiivue('vp-1', {} as unknown as NiiVueGPU)
+    const entry = getNiivueEntryForViewport('vp-1')
+    if (!entry) throw new Error('entry missing')
+    const evaluate = evaluator('evaluate.niivue.overlay')
+    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
+    entry.overlayUIDs = ['ds-2']
+    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
+    expect(evaluate({ viewportId: 'vp-none' })?.isActive).toBe(true) // sole fallback
   })
 })

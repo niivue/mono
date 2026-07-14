@@ -185,6 +185,26 @@ that dep + in the README `## DICOM support`), then re-verify the clean-consumer
 `npm pack` path. Until then, NIfTI is the consumer-supported path; DICOM is
 dev-rig-only.
 
+**Interim: use a local patched dcm2niix (decided 2026-07-14).** DICOM stays working
+in the dev rig / demos on a locally-built patched copy until the upstream release:
+- **Patch source of truth:** `~/Dev/dcm2niix-src`, branch `fix/worker-exit-status`,
+  commit `4150f31` ("fix(js): read output when callMain unwinds via exit() in a Web
+  Worker"). The change is pure JS glue (`js/src/worker*.js`) — the WASM is unchanged,
+  so no WASM rebuild is needed; the patched package = the published files with the
+  fixed `worker.jpeg.js`/`worker.js`.
+- **Built patched package:** `~/Dev/ohif-viewers/.niivue-pkgs/dcm2niix` (`1.3.0`, has
+  the fix — `let exitCode = 0;` + `err.status` recovery). Durable (survives npm
+  installs); the OHIF dev app depends on it via
+  `@niivue/dcm2niix: file:../../.niivue-pkgs/dcm2niix` in `platform/app/package.json`.
+- **Scope:** dev-rig override only. `packages/nv-ohif/package.json` intentionally keeps
+  the published range `^1.2.0` (with `DCM2NIIX_PIN`) — a `file:` dep must never be
+  published. The monorepo's own build/tests never load dcm2niix (it is externalized
+  and stubbed in tests), so the local copy matters only where DICOM actually runs.
+- **Monitoring:** a twice-daily cloud routine (`0 13,21 * * *` UTC ≈ 09:00/17:00 ET,
+  id `trig_01SpgkDT1MxP8VasinX5bQdi`, https://claude.ai/code/routines/trig_01SpgkDT1MxP8VasinX5bQdi)
+  checks npm for a published `@niivue/dcm2niix` containing the fix and reports the pin
+  bump when it lands.
+
 ### Phase 2 status — reconstruction bridge DONE + proven end-to-end (2026-07-13)
 
 The DICOM->NIfTI path is implemented and **proven correct end-to-end at full scale**

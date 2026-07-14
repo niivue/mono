@@ -103,6 +103,43 @@ typings** (`src/ohif-types.ts`) and externalize `react`. The only deps are
 monorepo's React 19 for dev; the OHIF host supplies React 18 at runtime). The OHIF /
 react-dom requirement is documented in `README.md`, not enforced via peers.
 
+### Consumer packaging — verified end-to-end (2026-07-14)
+
+Verified the real `npm pack` -> clean-install consumer path (not the dev rig's
+hand-copied `.niivue-pkgs`). Findings:
+
+1. **Publish with a workspace-aware packer (bun/pnpm), NOT `npm pack`/`npm publish`.**
+   `npm pack` leaves `@niivue/niivue: "workspace:*"` verbatim in the published
+   `package.json` -> a consumer's install errors (`Unsupported URL Type "workspace:"`).
+   `bun pm pack` rewrites it to the concrete workspace version (`1.0.0-rc.10`). The Nx
+   Release / publish flow MUST do this rewrite; confirm it does before publishing.
+2. **The niivue peer resolves, but only under the `next` tag.** Published
+   `@niivue/niivue`: `latest` = `0.69.0`, `next` = `1.0.0-rc.10`. bun rewrites the peer
+   to the exact `1.0.0-rc.10` (published as `next`), so `npm install @niivue/nv-ohif`
+   auto-installs niivue rc.10 — but a consumer who separately installs
+   `@niivue/niivue@latest` gets 0.69.0 and mismatches. Document "use niivue >=1.0.0-rc.10
+   (@next)"; consider emitting a range (`^1.0.0-rc.10`) rather than an exact pin at
+   release.
+3. **Clean install is self-contained and correct.** `npm install <bun-packed tgz>` in an
+   empty project resolved: nv-ohif 0.0.0 + auto-installed peers niivue 1.0.0-rc.10 &
+   react 19.2.7, dep dcmjs 0.49.4, and `@niivue/dcm2niix` **1.2.0**. react is
+   externalized (not bundled). Tarball is dist-only (index.js + types + README), 18
+   files, no monorepo/src leakage.
+4. **API-compatible with the published niivue.** The packed nv-ohif imports only three
+   niivue symbols — `NiiVueGPU` (default), `DRAG_MODE`, `SLICE_TYPE` — and published
+   rc.10's `index.d.ts` exports all three (`export { DRAG_MODE, …, SLICE_TYPE }`,
+   `export { default, default as NiiVueGPU }`). No monorepo-newer-API gap.
+5. **DICOM confirmed broken for consumers** (as documented above): the resolved
+   `@niivue/dcm2niix@1.2.0` worker still has the bare `const exitCode = mod.callMain(args)`
+   (no exit fix), so browser conversion aborts. NIfTI is the consumer-supported path
+   until the dcm2niix `DCM2NIIX_PIN` bump.
+
+Not re-run live: a full in-OHIF render via published deps. It would add no new signal —
+the OHIF demo data source is all DICOM (no NIfTI display set to exercise the working
+path), DICOM fails on the known-broken dcm2niix, and rendering with rc.10-equivalent
+niivue is already proven (NIfTI via the `demo/` harness, DICOM in the app). Finding #4
+closes the only open compatibility question statically.
+
 ### React 18, not `nv-react`
 
 `nv-react` pins React 19; OHIF is on React 18. NiiVue's core is framework-agnostic

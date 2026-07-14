@@ -2,6 +2,7 @@ import type { NiiVueOptions } from '@niivue/niivue'
 import NiiVueGPU, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
+import { readBaseWindowLevel, syncNiivueWindowLevelToOhif } from './commands'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import {
@@ -67,7 +68,7 @@ function ohifToolToDragMode(tool: string | undefined): number {
  * instance directly (React 18) rather than depending on `@niivue/nvreact` (React 19).
  */
 export function NiivueViewport(props: OhifViewportProps) {
-  const { displaySets, viewportId, servicesManager } = props
+  const { displaySets, viewportId, servicesManager, commandsManager } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nvRef = useRef<NiiVueGPU | null>(null)
   const [ready, setReady] = useState(false)
@@ -82,6 +83,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   displaySetsRef.current = displaySets
   const servicesManagerRef = useRef(servicesManager)
   servicesManagerRef.current = servicesManager
+  const commandsManagerRef = useRef(commandsManager)
+  commandsManagerRef.current = commandsManager
   const displaySetsKey = displaySets
     .map((ds) => String(ds.displaySetInstanceUID ?? ds.SeriesInstanceUID ?? ''))
     .join('|')
@@ -129,11 +132,34 @@ export function NiivueViewport(props: OhifViewportProps) {
     const ro = new ResizeObserver(() => nv.resize())
     ro.observe(container)
 
+    // Reverse W/L bridge: a manual contrast drag changes the base volume's
+    // window but NiiVue emits no intensity event, so read it on pointer release
+    // and reflect any change back to OHIF (commands.ts). A transient readout
+    // confirms the new window/level; unchanged releases (navigation) are silent.
+    const onPointerUp = () => {
+      const wl = syncNiivueWindowLevelToOhif(
+        viewportId,
+        commandsManagerRef.current,
+      )
+      if (!wl) return
+      const message = `W: ${Math.round(wl.window)}  L: ${Math.round(wl.level)}`
+      setStatus({ kind: 'note', message })
+      window.setTimeout(
+        () =>
+          setStatus((s) =>
+            s.kind === 'note' && s.message === message ? { kind: 'idle' } : s,
+          ),
+        2000,
+      )
+    }
+    canvas.addEventListener('pointerup', onPointerUp)
+
     return () => {
       disposed = true
       setReady(false)
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
+      canvas.removeEventListener('pointerup', onPointerUp)
       ro.disconnect()
       nv.destroy()
       canvas.width = 0
@@ -166,13 +192,20 @@ export function NiivueViewport(props: OhifViewportProps) {
     let cancelled = false
     const abort = new AbortController()
 
+    // Record the base volume's initial window/level as the reverse-bridge
+    // baseline, so the first manual contrast drag is detected as a change.
+    const seedWindowLevel = () => {
+      if (cancelled) return
+      updateNiivueViewport(viewportId, { windowLevel: readBaseWindowLevel(nv) })
+    }
+
     // Phase-1 fast path: any display set that is already a NiiVue volume URL.
     const directSpecs = displaySets
       .map((ds) => displaySetToNiivue(ds))
       .filter((s): s is NonNullable<typeof s> => s !== null)
     if (directSpecs.length > 0) {
       setStatus({ kind: 'idle' })
-      nv.loadVolumes(directSpecs).catch(() => {
+      nv.loadVolumes(directSpecs).then(seedWindowLevel, () => {
         if (!cancelled)
           setStatus({ kind: 'error', message: 'Failed to load volume.' })
       })
@@ -236,7 +269,9 @@ export function NiivueViewport(props: OhifViewportProps) {
         setStatus({ kind: 'idle' })
         // Use the converted file's own name (ends in .nii/.nii.gz) so NiiVue sniffs
         // the format correctly; a display name without that extension would not.
-        return nv.loadVolumes([{ url: niftiFile, name: niftiFile.name }])
+        return nv
+          .loadVolumes([{ url: niftiFile, name: niftiFile.name }])
+          .then(seedWindowLevel)
       })
       .catch((err) => {
         if (cancelled || abort.signal.aborted) return

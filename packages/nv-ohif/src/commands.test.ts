@@ -8,7 +8,9 @@ import {
   NIIVUE_SLICE_TYPES,
   OVERLAY_COLORMAP,
   OVERLAY_OPACITY,
+  readBaseWindowLevel,
   resolveWindowLevel,
+  syncNiivueWindowLevelToOhif,
 } from './commands'
 import {
   getNiivueEntryForViewport,
@@ -307,6 +309,65 @@ describe('niivueSetWindowLevelPreset', () => {
       presetIndex: 0,
     })
     expect(nv.volumeUpdates).toEqual([])
+  })
+})
+
+describe('readBaseWindowLevel', () => {
+  it('derives width + center from the base volume calMin/calMax', () => {
+    expect(
+      readBaseWindowLevel({ volumes: [{ calMin: -160, calMax: 240 }] }),
+    ).toEqual({
+      window: 400,
+      level: 40,
+    })
+  })
+  it('returns undefined without a base volume or finite range', () => {
+    expect(readBaseWindowLevel({ volumes: [] })).toBeUndefined()
+    expect(
+      readBaseWindowLevel({ volumes: [{ calMin: Number.NaN, calMax: 1 }] }),
+    ).toBeUndefined()
+  })
+})
+
+describe('syncNiivueWindowLevelToOhif', () => {
+  it('seeds the baseline silently, then pushes changes to OHIF', () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ calMin: 0, calMax: 100 }) // W 100 / L 50
+    register('vp-1', nv)
+    const ran: Array<{ name: string; opts?: Record<string, unknown> }> = []
+    const cm = {
+      runCommand: (name: string, opts?: Record<string, unknown>) => {
+        ran.push({ name, opts })
+      },
+    }
+    // First call with no prior baseline: seeds, no push, no readout.
+    expect(syncNiivueWindowLevelToOhif('vp-1', cm)).toBeUndefined()
+    expect(ran).toEqual([])
+    expect(getNiivueEntryForViewport('vp-1')?.windowLevel).toEqual({
+      window: 100,
+      level: 50,
+    })
+
+    // A contrast drag changed the window: reflect + push.
+    nv.volumes[0] = { calMin: 200, calMax: 600 } // W 400 / L 400
+    const wl = syncNiivueWindowLevelToOhif('vp-1', cm)
+    expect(wl).toEqual({ window: 400, level: 400 })
+    expect(ran).toEqual([
+      { name: 'setWindowLevel', opts: { windowWidth: 400, windowCenter: 400 } },
+    ])
+
+    // Unchanged release: no push, no readout.
+    expect(syncNiivueWindowLevelToOhif('vp-1', cm)).toBeUndefined()
+    expect(ran).toHaveLength(1)
+  })
+
+  it('does not throw when OHIF has no commands manager', () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ calMin: 0, calMax: 10 })
+    register('vp-1', nv)
+    syncNiivueWindowLevelToOhif('vp-1', undefined) // seed
+    nv.volumes[0] = { calMin: 0, calMax: 40 }
+    expect(() => syncNiivueWindowLevelToOhif('vp-1', undefined)).not.toThrow()
   })
 })
 

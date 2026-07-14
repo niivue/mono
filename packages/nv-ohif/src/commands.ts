@@ -6,7 +6,9 @@ import {
   authHeaders,
   getActiveNiivue,
   getActiveNiivueEntry,
+  getNiivueEntry,
   type NiivueViewportEntry,
+  ohifCommandsManager,
   ohifServices,
   refreshToolbar,
 } from './niivueRegistry'
@@ -164,6 +166,86 @@ export function resolveWindowLevel(
   return [center - width / 2, center + width / 2]
 }
 
+// Minimal shape of the NiiVue instance's base volume the W/L reader needs.
+interface NiivueLike {
+  volumes: ReadonlyArray<{ calMin?: number; calMax?: number }>
+}
+
+/** Read the base volume's window/level ({ window: width, level: center }). */
+export function readBaseWindowLevel(
+  nv: NiivueLike,
+): { window: number; level: number } | undefined {
+  const vol = nv.volumes[0]
+  if (!vol) return undefined
+  const { calMin, calMax } = vol
+  if (
+    calMin === undefined ||
+    calMax === undefined ||
+    !Number.isFinite(calMin) ||
+    !Number.isFinite(calMax)
+  )
+    return undefined
+  return { window: calMax - calMin, level: (calMin + calMax) / 2 }
+}
+
+/** Record a calMin/calMax pair as the entry's window/level (width + center). */
+function recordWindowLevel(
+  entry: NiivueViewportEntry | undefined,
+  calMin: number,
+  calMax: number,
+): void {
+  if (entry)
+    entry.windowLevel = {
+      window: calMax - calMin,
+      level: (calMin + calMax) / 2,
+    }
+}
+
+// Two window/level pairs are the same if within this fraction of the width — a
+// contrast drag moves them well beyond this, crosshair navigation not at all.
+function sameWindowLevel(
+  a: { window: number; level: number },
+  b: { window: number; level: number },
+): boolean {
+  const eps = Math.max(1e-3, Math.abs(a.window) * 1e-3)
+  return (
+    Math.abs(a.window - b.window) < eps && Math.abs(a.level - b.level) < eps
+  )
+}
+
+/**
+ * Reverse W/L bridge: after a manual contrast drag, reflect the base volume's
+ * new window/level onto OHIF (so a sibling cornerstone viewport on the same
+ * series stays in sync) and record it on the entry. Returns the new
+ * window/level when it changed (for a viewport readout), else undefined.
+ */
+export function syncNiivueWindowLevelToOhif(
+  viewportId: string,
+  commandsManager: OhifExtensionParams['commandsManager'],
+): { window: number; level: number } | undefined {
+  const entry = getNiivueEntry(viewportId)
+  if (!entry) return undefined
+  const wl = readBaseWindowLevel(entry.nv)
+  if (!wl) return undefined
+  // First observation just seeds the baseline (no readout / no push).
+  if (entry.windowLevel && sameWindowLevel(entry.windowLevel, wl))
+    return undefined
+  const seeded = entry.windowLevel !== undefined
+  entry.windowLevel = wl
+  if (!seeded) return undefined
+  // Best-effort push to OHIF; setWindowLevel bails safely on a non-cornerstone
+  // (our NiiVue) viewport, and syncs a cornerstone sibling when present.
+  try {
+    ohifCommandsManager(commandsManager)?.runCommand?.('setWindowLevel', {
+      windowWidth: wl.window,
+      windowCenter: wl.level,
+    })
+  } catch (err) {
+    console.warn('[nv-ohif] setWindowLevel sync failed', err)
+  }
+  return wl
+}
+
 /**
  * getCommandsModule: OHIF commands operating on the active NiiVue viewport.
  * Toolbar buttons (see toolbar.ts) reference these by name; they are also
@@ -308,6 +390,7 @@ export function getNiivueCommandsModule({
       const [calMin, calMax] =
         window === 0 ? [0, level] : [level - window / 2, level + window / 2]
       nv.setVolume(0, { calMin, calMax })
+      recordWindowLevel(getActiveNiivueEntry(servicesManager), calMin, calMax)
     },
 
     /**
@@ -332,13 +415,17 @@ export function getNiivueCommandsModule({
       )
       if (!range) return
       entry.nv.setVolume(0, { calMin: range[0], calMax: range[1] })
+      recordWindowLevel(entry, range[0], range[1])
     },
 
     /** Recompute the base volume's robust (2-98%) auto window. */
     niivueAutoWindowLevel: () => {
-      const nv = getActiveNiivue(servicesManager)
-      if (!nv || nv.volumes.length === 0) return
-      nv.recalculateCalMinMax(0)
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry || entry.nv.volumes.length === 0) return
+      entry.nv.recalculateCalMinMax(0).then(() => {
+        const wl = readBaseWindowLevel(entry.nv)
+        if (wl) entry.windowLevel = wl
+      })
     },
   }
 

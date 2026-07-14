@@ -52,7 +52,8 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
   `.mgz`, `.mha`, `.mif`, …) via `nv.loadVolumes(...)`, opening in multiplanar.
 - A non-volume-URL (DICOM) display set shows a placeholder until the DICOM bridge
   lands.
-- Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag.
+- Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag,
+  and reflects a manual NiiVue window/level drag back to OHIF (`setWindowLevel`).
 - Ships **toolbar buttons + commands**: a views dropdown (axial / coronal /
   sagittal / multiplanar / 3D render), a **clip-plane** dropdown (off / anterior /
   posterior / left / right / superior / inferior), a **window/level** dropdown

@@ -18,6 +18,13 @@ export interface NiivueViewportEntry {
   overlayLoading: boolean
   /** Current clip plane preset name ('none' when off). See commands.ts. */
   clipPlane: string
+  /**
+   * Last known base-volume window/level ({ window: width, level: center }).
+   * Tracks both directions: forward commands set it; the viewport's
+   * pointer-release observer updates it from a manual contrast drag and pushes
+   * the change to OHIF (see commands.ts syncNiivueWindowLevelToOhif).
+   */
+  windowLevel?: { window: number; level: number }
   /** Viewport-provided sink so commands can surface progress text (null = clear). */
   setStatus?: (message: string | null) => void
 }
@@ -42,7 +49,9 @@ export function unregisterNiivue(viewportId: string): void {
 /** Merge viewport-owned fields into an entry (no-op when not registered). */
 export function updateNiivueViewport(
   viewportId: string,
-  patch: Partial<Pick<NiivueViewportEntry, 'displaySets' | 'setStatus'>>,
+  patch: Partial<
+    Pick<NiivueViewportEntry, 'displaySets' | 'setStatus' | 'windowLevel'>
+  >,
 ): void {
   const entry = instances.get(viewportId)
   if (entry) Object.assign(entry, patch)
@@ -119,6 +128,20 @@ export function refreshToolbar(
     | { refreshToolbarState?: (props: Record<string, unknown>) => void }
     | undefined
   svc?.refreshToolbarState?.({ viewportId })
+}
+
+interface CommandsManagerLike {
+  runCommand?: (name: string, options?: Record<string, unknown>) => unknown
+}
+
+// OHIF's commandsManager is passed as a viewport prop in some builds and only on
+// `window.commandsManager` in others (set by cornerstone's init), so read either.
+export function ohifCommandsManager(
+  commandsManager: CommandsManagerLike | undefined,
+): CommandsManagerLike | undefined {
+  if (commandsManager?.runCommand) return commandsManager
+  const g = globalThis as unknown as { commandsManager?: CommandsManagerLike }
+  return g.commandsManager
 }
 
 // Pull a DICOMweb Authorization header out of OHIF's auth service, if present,

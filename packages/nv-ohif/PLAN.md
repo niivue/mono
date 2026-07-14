@@ -257,8 +257,9 @@ the differentiators:
 - **Overlays** (load the study's next series as a colormapped overlay). **DONE**
   (segmentation-specific overlays + colormap/opacity UI still to come.)
 - **Mesh / surface** overlay on the volume.
-- Window/level: OHIF's modality presets (+ robust auto) -> `calMin`/`calMax`. **DONE**
-  (bidirectional sync + colormap picker still to come.)
+- Window/level: OHIF's modality presets (+ robust auto) -> `calMin`/`calMax`, and
+  the reverse (NiiVue contrast drag -> OHIF `setWindowLevel`). **DONE**
+  (colormap picker still to come.)
 - Sync: crosshair / camera sync with other OHIF viewports where it makes sense.
 - Respect OHIF's active tool, measurement, and layout where feasible.
   (Primary-tool mirroring onto NiiVue left-drag: DONE for Window/Level + Pan.)
@@ -292,11 +293,21 @@ The extension now exposes the full OHIF module set for toolbar integration:
   and `niivueAutoWindowLevel` (recalculateCalMinMax(0), robust 2-98%). Toolbar
   `NiivueWindowLevel` dropdown: Auto + 5 CT presets + 3 PT presets, each preset
   modality-gated.
+- **Reverse W/L bridge**: NiiVue emits no intensity event (parity doc confirms), so
+  the viewport reads the base volume's calMin/calMax on canvas `pointerup`
+  (`syncNiivueWindowLevelToOhif`); a change vs the entry's last window/level (seeded
+  from the initial load, updated by the forward commands) is reflected to OHIF via
+  `commandsManager.runCommand('setWindowLevel', { windowWidth, windowCenter })`
+  (best-effort; OHIF's command bails on our non-cornerstone viewport and syncs a
+  cornerstone sibling when present) and shown as a transient "W: .. L: .." readout.
+  Unchanged releases (crosshair navigation) are silent.
 - `niivueRegistry.ts` — viewportId -> **entry** map (nv instance + base
-  displaySets + overlayUIDs + clip preset + a status sink). The viewport
-  registers on attach and keeps displaySets/status current; commands/evaluators
-  resolve the active viewport's entry through it (fallback: the sole registered
-  entry). Overlay progress surfaces through the viewport's status overlay.
+  displaySets + overlayUIDs + clip preset + windowLevel + a status sink). The
+  viewport registers on attach and keeps displaySets/status current;
+  commands/evaluators resolve the active viewport's entry through it (fallback: the
+  sole registered entry). Overlay progress surfaces through the viewport's status
+  overlay. `ohifCommandsManager()` reads the commandsManager from the prop or
+  `window.commandsManager`.
 
 Verified live: clip presets slice the 3D render (purple clip face); overlay toggle
 loads the 900-instance PERFUSION series as a warm overlay across all planes and
@@ -341,6 +352,38 @@ rotate, no re-fetch on toolbar interaction, no console errors from nv-ohif.
   the repo convention that rendering is verified in a real app, not unit tests.
 - Add the extension to a local OHIF dev build (`pluginConfig.json`) and drive it in
   the browser; screenshot the NiiVue viewport rendering a known series.
+
+## TODO — NVSlide for 2D / whole-slide file types (NOT yet supported)
+
+Status: **not implemented.** `classifyDisplaySet` already routes DICOM whole-slide
+microscopy (`Modality: 'SM'`) to the `'wsi'` kind, and `NiivueViewport` shows a
+placeholder note for it ("will render with NiiVue NVSlide (tiled) — that data path
+is coming"). Nothing actually renders 2D/WSI yet.
+
+What "support 2D file types via NVSlide" needs:
+- **A DICOM-WSI tile source.** NVSlide expects a tiled, multi-resolution (LOD)
+  source; OHIF hands us a DICOM SM display set (a pyramid of frames addressed by
+  WADO-RS `/frames/{n}` per level). Write an adapter that exposes OHIF's SM display
+  set (per-level tile grid + frame URLs, read from the instance metadata) as an
+  NVSlide tile source, fetching tiles on demand (auth headers via the same
+  `authHeaders(servicesManager)` path). Reuse the NVSlide WSI demo's tile-source
+  shape (see the `poc-client-only-range-requests` branch / NVSlide plan).
+- **Plain 2D images too** (non-DICOM: PNG/JPEG/TIFF display sets, and single-frame
+  DICOM that is really a 2D picture). Decide: a NIfTI-style single-slice load into
+  the existing volume path vs. an NVSlide 2D path. Small 2D can likely go straight
+  through `loadVolumes` as a 1-slice volume; large/tiled 2D needs NVSlide.
+- **Viewport routing.** `NiivueViewport` currently hard-stops on `kind === 'wsi'`
+  with the placeholder; replace that branch with the NVSlide mount + tile-source
+  wiring. Keep the volume path untouched.
+- **SOPClassHandler.** Claim the VL Whole Slide Microscopy Image SOP class (and any
+  2D SOP classes we want to own) so OHIF routes those series to this viewport.
+- **Toolbar.** The slice-type / clip / overlay / W-L dropdowns are volume-centric;
+  gate or adapt them for a 2D/WSI viewport (e.g. pan/zoom + a level selector).
+- **Verify** against a real DICOM-WSI study (the study list has SM studies, e.g.
+  "Histopathology" C3L-00088) and a plain 2D image.
+
+Cross-refs: NVSlide plan + the WSI demo already prove NVSlide tiled rendering with
+both backends; this task is the OHIF-display-set -> NVSlide-tile-source bridge.
 
 ## Open items / decisions still to make
 

@@ -213,36 +213,95 @@ function sameWindowLevel(
   )
 }
 
+interface ViewportGridStateLike {
+  getState?: () => {
+    viewports?:
+      | Map<string, { displaySetInstanceUIDs?: string[] }>
+      | Record<string, { displaySetInstanceUIDs?: string[] }>
+  }
+}
+
+/** [viewportId, displaySetInstanceUIDs] pairs from OHIF's viewport grid state. */
+function viewportEntries(
+  servicesManager: OhifExtensionParams['servicesManager'],
+): Array<[string, string[]]> {
+  const grid = ohifServices(servicesManager)?.viewportGridService as
+    | ViewportGridStateLike
+    | undefined
+  const viewports = grid?.getState?.().viewports
+  if (!viewports) return []
+  const raw =
+    viewports instanceof Map
+      ? [...viewports.entries()]
+      : Object.entries(viewports)
+  return raw.map(([id, vp]) => [id, vp?.displaySetInstanceUIDs ?? []])
+}
+
 /**
- * Reverse W/L bridge: after a manual contrast drag, reflect the base volume's
- * new window/level onto OHIF (so a sibling cornerstone viewport on the same
- * series stays in sync) and record it on the entry. Returns the new
+ * Reflect a window/level onto every OTHER OHIF viewport showing the same series
+ * (e.g. a cornerstone sibling in a multi-viewport layout). Each is targeted by
+ * id via `setViewportWindowLevel`, which no-ops on a viewport cornerstone does
+ * not own (our NiiVue viewports, stale ids). Do NOT use the `setWindowLevel`
+ * command here: it targets the *active* viewport (ours) and throws on our
+ * non-cornerstone element.
+ */
+function syncWindowLevelToSiblings(
+  entry: NiivueViewportEntry,
+  viewportId: string,
+  wl: { window: number; level: number },
+  servicesManager: OhifExtensionParams['servicesManager'],
+  commandsManager: OhifExtensionParams['commandsManager'],
+): void {
+  const baseUIDs = new Set(
+    entry.displaySets
+      .map((ds) => ds.displaySetInstanceUID)
+      .filter((u): u is string => typeof u === 'string'),
+  )
+  if (baseUIDs.size === 0) return
+  const cm = ohifCommandsManager(commandsManager)
+  if (!cm) return
+  for (const [id, uids] of viewportEntries(servicesManager)) {
+    if (id === viewportId || !uids.some((u) => baseUIDs.has(u))) continue
+    try {
+      cm.runCommand?.('setViewportWindowLevel', {
+        viewportId: id,
+        windowWidth: wl.window,
+        windowCenter: wl.level,
+      })
+    } catch (err) {
+      console.warn('[nv-ohif] setViewportWindowLevel sync failed', err)
+    }
+  }
+}
+
+/**
+ * Reverse W/L bridge: after a manual contrast drag, record the base volume's new
+ * window/level on the entry and reflect it onto any other OHIF viewport showing
+ * the same series (see {@link syncWindowLevelToSiblings}). Returns the new
  * window/level when it changed (for a viewport readout), else undefined.
  */
 export function syncNiivueWindowLevelToOhif(
   viewportId: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
   commandsManager: OhifExtensionParams['commandsManager'],
 ): { window: number; level: number } | undefined {
   const entry = getNiivueEntry(viewportId)
   if (!entry) return undefined
   const wl = readBaseWindowLevel(entry.nv)
   if (!wl) return undefined
-  // First observation just seeds the baseline (no readout / no push).
+  // First observation just seeds the baseline (no readout / no sync).
   if (entry.windowLevel && sameWindowLevel(entry.windowLevel, wl))
     return undefined
   const seeded = entry.windowLevel !== undefined
   entry.windowLevel = wl
   if (!seeded) return undefined
-  // Best-effort push to OHIF; setWindowLevel bails safely on a non-cornerstone
-  // (our NiiVue) viewport, and syncs a cornerstone sibling when present.
-  try {
-    ohifCommandsManager(commandsManager)?.runCommand?.('setWindowLevel', {
-      windowWidth: wl.window,
-      windowCenter: wl.level,
-    })
-  } catch (err) {
-    console.warn('[nv-ohif] setWindowLevel sync failed', err)
-  }
+  syncWindowLevelToSiblings(
+    entry,
+    viewportId,
+    wl,
+    servicesManager,
+    commandsManager,
+  )
   return wl
 }
 

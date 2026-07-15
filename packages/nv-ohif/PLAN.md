@@ -383,11 +383,16 @@ The extension now exposes the full OHIF module set for toolbar integration:
 - **Reverse W/L bridge**: NiiVue emits no intensity event (parity doc confirms), so
   the viewport reads the base volume's calMin/calMax on canvas `pointerup`
   (`syncNiivueWindowLevelToOhif`); a change vs the entry's last window/level (seeded
-  from the initial load, updated by the forward commands) is reflected to OHIF via
-  `commandsManager.runCommand('setWindowLevel', { windowWidth, windowCenter })`
-  (best-effort; OHIF's command bails on our non-cornerstone viewport and syncs a
-  cornerstone sibling when present) and shown as a transient "W: .. L: .." readout.
-  Unchanged releases (crosshair navigation) are silent.
+  from the initial load, updated by the forward commands) is recorded on the entry,
+  shown as a transient "W: .. L: .." readout, and reflected onto any OTHER OHIF
+  viewport showing the same series (a cornerstone sibling in a multi-viewport
+  layout). Each sibling is targeted by id via
+  `commandsManager.runCommand('setViewportWindowLevel', { viewportId, windowWidth,
+  windowCenter })`, which no-ops on a viewport cornerstone does not own. NOTE: do
+  NOT use the `setWindowLevel` command for this — it targets the *active* viewport
+  (ours) and throws on our non-cornerstone element (an earlier version did, and
+  logged a caught warning on every drag). Unchanged releases (crosshair navigation)
+  are silent.
 - `niivueRegistry.ts` — viewportId -> **entry** map (nv instance + base
   displaySets + overlayUIDs + clip preset + windowLevel + a status sink). The
   viewport registers on attach and keeps displaySets/status current;

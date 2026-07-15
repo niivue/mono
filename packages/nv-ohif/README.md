@@ -58,7 +58,8 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
   `@niivue/dcm2niix` (see [DICOM support](#dicom-support) for the dependency caveat);
   a whole-slide (SM) series shows a placeholder (NVSlide path not wired yet).
 - Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag,
-  and reflects a manual NiiVue window/level drag back to OHIF (`setWindowLevel`).
+  and reflects a manual NiiVue window/level drag onto any sibling OHIF viewport
+  showing the same series (`setViewportWindowLevel`).
 - Ships **toolbar buttons + commands**: a views dropdown (axial / coronal /
   sagittal / multiplanar / 3D render), a **clip-plane** dropdown (off / anterior /
   posterior / left / right / superior / inferior), a **window/level** dropdown

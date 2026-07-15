@@ -330,44 +330,80 @@ describe('readBaseWindowLevel', () => {
 })
 
 describe('syncNiivueWindowLevelToOhif', () => {
-  it('seeds the baseline silently, then pushes changes to OHIF', () => {
+  // A services manager whose viewport grid lists our viewport, a same-series
+  // sibling, and a different-series viewport.
+  function gridServices() {
+    return {
+      services: {
+        viewportGridService: {
+          getState: () => ({
+            viewports: new Map([
+              ['vp-1', { displaySetInstanceUIDs: ['ds-1'] }], // ours
+              ['cs-sibling', { displaySetInstanceUIDs: ['ds-1'] }], // same series
+              ['cs-other', { displaySetInstanceUIDs: ['ds-9'] }], // different
+            ]),
+          }),
+        },
+      },
+    }
+  }
+
+  it('seeds the baseline silently, then syncs only same-series siblings', () => {
     const nv = stubNiivue()
     nv.volumes.push({ calMin: 0, calMax: 100 }) // W 100 / L 50
     register('vp-1', nv)
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-1' }],
+    })
     const ran: Array<{ name: string; opts?: Record<string, unknown> }> = []
     const cm = {
       runCommand: (name: string, opts?: Record<string, unknown>) => {
         ran.push({ name, opts })
       },
     }
-    // First call with no prior baseline: seeds, no push, no readout.
-    expect(syncNiivueWindowLevelToOhif('vp-1', cm)).toBeUndefined()
+    const sm = gridServices()
+
+    // First call with no prior baseline: seeds, no sync, no readout.
+    expect(syncNiivueWindowLevelToOhif('vp-1', sm, cm)).toBeUndefined()
     expect(ran).toEqual([])
     expect(getNiivueEntryForViewport('vp-1')?.windowLevel).toEqual({
       window: 100,
       level: 50,
     })
 
-    // A contrast drag changed the window: reflect + push.
+    // A contrast drag changed the window: sync the same-series sibling only
+    // (never our own viewport, never the different-series one).
     nv.volumes[0] = { calMin: 200, calMax: 600 } // W 400 / L 400
-    const wl = syncNiivueWindowLevelToOhif('vp-1', cm)
+    const wl = syncNiivueWindowLevelToOhif('vp-1', sm, cm)
     expect(wl).toEqual({ window: 400, level: 400 })
     expect(ran).toEqual([
-      { name: 'setWindowLevel', opts: { windowWidth: 400, windowCenter: 400 } },
+      {
+        name: 'setViewportWindowLevel',
+        opts: {
+          viewportId: 'cs-sibling',
+          windowWidth: 400,
+          windowCenter: 400,
+        },
+      },
     ])
 
-    // Unchanged release: no push, no readout.
-    expect(syncNiivueWindowLevelToOhif('vp-1', cm)).toBeUndefined()
+    // Unchanged release: no sync, no readout.
+    expect(syncNiivueWindowLevelToOhif('vp-1', sm, cm)).toBeUndefined()
     expect(ran).toHaveLength(1)
   })
 
-  it('does not throw when OHIF has no commands manager', () => {
+  it('does not throw without services or a commands manager', () => {
     const nv = stubNiivue()
     nv.volumes.push({ calMin: 0, calMax: 10 })
     register('vp-1', nv)
-    syncNiivueWindowLevelToOhif('vp-1', undefined) // seed
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ displaySetInstanceUID: 'ds-1' }],
+    })
+    syncNiivueWindowLevelToOhif('vp-1', undefined, undefined) // seed
     nv.volumes[0] = { calMin: 0, calMax: 40 }
-    expect(() => syncNiivueWindowLevelToOhif('vp-1', undefined)).not.toThrow()
+    expect(() =>
+      syncNiivueWindowLevelToOhif('vp-1', undefined, undefined),
+    ).not.toThrow()
   })
 })
 

@@ -139,6 +139,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     const onPointerUp = () => {
       const wl = syncNiivueWindowLevelToOhif(
         viewportId,
+        servicesManagerRef.current,
         commandsManagerRef.current,
       )
       if (!wl) return

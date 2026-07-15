@@ -481,6 +481,71 @@ What "support 2D file types via NVSlide" needs:
 Cross-refs: NVSlide plan + the WSI demo already prove NVSlide tiled rendering with
 both backends; this task is the OHIF-display-set -> NVSlide-tile-source bridge.
 
+### Design / scoping (2026-07-15) — grounded in the NVSlide API
+
+NVSlide API surfaced (packages/niivue/src/slide/):
+- **`SlideTileSource`** is the pluggable seam: `{ readonly manifest: NVSlideManifest;
+  bind(host); fetchTileBytes(level, tile, label): Promise<Uint8Array> }`. NVSlide owns
+  decoding (per `level.codec`), the LOD tile cache, telemetry, and the viewport; a
+  source only supplies the pyramid manifest + encoded tile bytes.
+- **`NVSlideManifest`**: `{ format?, width, height, tileSize?, levels: NVSlideLevelManifest[] }`.
+  **`NVSlideLevelManifest`**: `{ downsample, columns, rows, codec?, dims }` where
+  `codec ∈ 'raw-rgba' | 'image/jpeg' | 'image/jp2'`.
+- **Construct**: `NVSlide.fromSource(source, options)` (or `fromManifestUrl`).
+- **Two render paths (important):**
+  1. **Standalone 2D** (what a WSI display set needs): NVSlide + a dedicated
+     `SlideRenderer` (WebGL2) / `SlideRendererGPU` (WebGPU) driving the canvas, with
+     NVSlide's own pan/zoom viewport. This is the `examples/slides.js` path and does
+     NOT use the volume `Niivue` controller.
+  2. **Slide-on-a-volume-plane**: `nv.setSlidePlane(slide, { pixelToWorld })` renders
+     the slide into a volume's world (mm). This is `examples/slide3d.js`; not what a
+     standalone WSI needs.
+- **Codecs**: JPEG WSI -> `image/jpeg` decodes natively in-browser. JPEG-2000 WSI ->
+  `image/jp2` needs `NVSlide.registerTileDecoder('image/jp2', decodeJp2)` with an
+  OpenJPEG WASM decoder (heavy) -> defer; v1 handles JPEG-transfer-syntax WSI only.
+- **The existing DICOM-WSI demo is OFFLINE-PREBUILT**: `scripts/fetch-dicom-wsi.ts`
+  downloads a series and repackages it into a `dicom-wsi-range-v1` byte-range manifest
+  (`ManifestRangeSource`). That does NOT apply to OHIF (live DICOMweb) — we need a NEW
+  live source that fetches tiles on demand.
+
+**Plan (v1 = DICOM-WSI, JPEG, standalone):**
+1. **`DicomWsiTileSource implements SlideTileSource`** (new file). `manifest` built from
+   the OHIF SM display set metadata (one pyramid level per WSI instance / per
+   TotalPixelMatrix level: `columns/rows` = ceil(TotalPixelMatrixColumns/Rows / tile
+   Columns/Rows), `tileSize` = tile Columns/Rows, `codec` from the transfer syntax).
+   `fetchTileBytes(level, tile)` -> frame number = row-major index of (tile.col,
+   tile.row) within the level, fetched via WADO-RS `/frames/{n}` (reuse
+   `dicomWadoRs.ts` multipart parsing + `authHeaders(servicesManager)`), returning the
+   encoded frame bytes. On-demand, no pre-download.
+2. **Viewport routing**: replace the `kind === 'wsi'` placeholder in `NiivueViewport`
+   with a standalone-slide mount — instantiate `SlideRenderer` on the canvas +
+   `NVSlide.fromSource(new DicomWsiTileSource(ds, ...))`. Keep the volume path
+   (`Niivue` controller) untouched; a WSI viewport is a *different* render object on
+   the same `<canvas>`.
+3. **Registry/toolbar**: a WSI viewport has no `Niivue` volume controller, so
+   `getActiveNiivue` returns nothing and the volume toolbar (views/clip/W-L/colormap/
+   colorbar/smoothing/overlay) correctly disables. Add a small slide toolbar later
+   (reset-zoom, level indicator) if wanted; v1 relies on NVSlide's built-in pan/zoom.
+4. **SOPClassHandler**: claim the VL Whole Slide Microscopy Image SOP class so OHIF
+   routes SM series here (or keep using the mode's stack/wsi routing).
+
+**Open items / risks to resolve during impl:**
+- Exact OHIF SM display-set shape (per-level instances vs a single multi-frame
+  instance; where TotalPixelMatrixColumns/Rows, tile Columns/Rows, NumberOfFrames,
+  and frame ordering live). Map against a real SM study.
+- Whether the OHIF demo's static S3 data source serves WSI `/frames` (it serves
+  `/frames` for volume DICOM, so likely yes — and WSI needs only `/frames`, not
+  `/instances`, so it should work where the volume-reconstruction path did).
+- The `<canvas>` lifecycle: NiivueViewport currently assumes one `Niivue` per canvas;
+  the WSI branch swaps in a `SlideRenderer` instead — make create/teardown handle both.
+- JP2 transfer-syntax WSI (defer; needs the OpenJPEG decoder).
+- Test data: a DICOM-WSI SM study the demo source actually serves (study list has
+  "Histopathology" C3L-00088 / TCGA-02-0006 / NCT... SM studies — confirm one loads).
+
+**Plain 2D (PNG/JPEG/single-frame):** separate, smaller follow-up — a small
+single-frame image can load through the existing volume path (`loadVolumes` as a
+1-slice volume); only large/tiled 2D needs the NVSlide path above. Not part of v1.
+
 ## Open items / decisions still to make
 
 - Which OHIF version to target first (pin to a recent `3.x`; confirm the exact

@@ -348,7 +348,8 @@ the differentiators:
   the reverse (NiiVue contrast drag -> same-series siblings via
   `setViewportWindowLevel`). **DONE**
 - Colormap: a base-volume colormap dropdown (gray / hot / bone / cool / warm /
-  viridis / plasma / inferno / turbo / jet) + a colorbar (legend) toggle. **DONE**
+  viridis / plasma / inferno / turbo / jet), a colorbar (legend) toggle, and a
+  smoothing toggle (nearest-neighbor vs linear interpolation). **DONE**
   (per-overlay colormap + opacity UI still to come.)
 - Sync: crosshair / camera sync with other OHIF viewports where it makes sense.
 - Respect OHIF's active tool, measurement, and layout where feasible.

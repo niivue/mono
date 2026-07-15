@@ -13,6 +13,7 @@ export const NIIVUE_COLORMAP_SECTION = 'NiivueColormap'
 export const NIIVUE_RESET_BUTTON = 'NiivueReset'
 export const NIIVUE_OVERLAY_BUTTON = 'NiivueOverlay'
 export const NIIVUE_COLORBAR_BUTTON = 'NiivueColorbar'
+export const NIIVUE_INTERPOLATION_BUTTON = 'NiivueInterpolation'
 
 const SLICE_TYPE_EVALUATOR = 'evaluate.niivue.sliceType'
 const CLIP_PLANE_EVALUATOR = 'evaluate.niivue.clipPlane'
@@ -20,6 +21,7 @@ const OVERLAY_EVALUATOR = 'evaluate.niivue.overlay'
 const WL_PRESET_EVALUATOR = 'evaluate.niivue.windowLevelPreset'
 const COLORMAP_EVALUATOR = 'evaluate.niivue.colormap'
 const COLORBAR_EVALUATOR = 'evaluate.niivue.colorbar'
+const INTERPOLATION_EVALUATOR = 'evaluate.niivue.interpolation'
 const NIIVUE_EVALUATOR = 'evaluate.niivue'
 
 // Capitalized id suffix for a colormap name ('viridis' -> 'Viridis').
@@ -221,6 +223,17 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
     },
   },
   {
+    id: NIIVUE_INTERPOLATION_BUTTON,
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'icon-tool-interpolation',
+      label: 'Smoothing',
+      tooltip: 'Toggle nearest-neighbor vs smooth interpolation (NiiVue)',
+      commands: 'niivueToggleInterpolation',
+      evaluate: INTERPOLATION_EVALUATOR,
+    },
+  },
+  {
     id: NIIVUE_OVERLAY_BUTTON,
     uiType: 'ohif.toolButton',
     props: {
@@ -397,6 +410,18 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
         const nv = getNiivueForViewport(viewportId)
         if (!nv) return DISABLED
         return { disabled: false, isActive: nv.isColorbarVisible === true }
+      },
+    },
+    {
+      name: INTERPOLATION_EVALUATOR,
+      evaluate: ({ viewportId }) => {
+        const nv = getNiivueForViewport(viewportId)
+        if (!nv) return DISABLED
+        // Active = nearest-neighbor (crisp voxels); off = smooth (default).
+        return {
+          disabled: false,
+          isActive: nv.volumeIsNearestInterpolation === true,
+        }
       },
     },
   ]

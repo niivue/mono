@@ -180,4 +180,13 @@ describe('toolbar evaluators', () => {
     nv.isColorbarVisible = true
     expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
   })
+
+  it('mark the interpolation toggle active in nearest-neighbor mode', () => {
+    const nv = { volumes: [], volumeIsNearestInterpolation: false }
+    registerNiivue('vp-1', nv as unknown as NiiVue)
+    const evaluate = evaluator('evaluate.niivue.interpolation')
+    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
+    nv.volumeIsNearestInterpolation = true
+    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
+  })
 })

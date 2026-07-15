@@ -448,6 +448,20 @@ describe('niivueToggleColorbar', () => {
   })
 })
 
+describe('niivueToggleInterpolation', () => {
+  it('flips nearest-neighbor interpolation on the active viewport', () => {
+    const nv = { ...stubNiivue(), volumeIsNearestInterpolation: false }
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    definitions.niivueToggleInterpolation()
+    expect(nv.volumeIsNearestInterpolation).toBe(true)
+    definitions.niivueToggleInterpolation()
+    expect(nv.volumeIsNearestInterpolation).toBe(false)
+  })
+})
+
 describe('niivueAutoWindowLevel', () => {
   it('recomputes the robust window on the base volume', () => {
     const nv = stubNiivue()

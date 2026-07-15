@@ -517,6 +517,15 @@ export function getNiivueCommandsModule({
       entry.nv.isColorbarVisible = !entry.nv.isColorbarVisible
       refreshToolbar(servicesManager, entry.viewportId)
     },
+
+    /** Toggle nearest-neighbor vs smooth (linear) volume interpolation. */
+    niivueToggleInterpolation: () => {
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry) return
+      entry.nv.volumeIsNearestInterpolation =
+        !entry.nv.volumeIsNearestInterpolation
+      refreshToolbar(servicesManager, entry.viewportId)
+    },
   }
 
   return {
@@ -531,6 +540,7 @@ export function getNiivueCommandsModule({
       niivueAutoWindowLevel: actions.niivueAutoWindowLevel,
       niivueSetColormap: actions.niivueSetColormap,
       niivueToggleColorbar: actions.niivueToggleColorbar,
+      niivueToggleInterpolation: actions.niivueToggleInterpolation,
     },
     defaultContext: 'NIIVUE',
   }

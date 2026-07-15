@@ -529,18 +529,37 @@ NVSlide API surfaced (packages/niivue/src/slide/):
 4. **SOPClassHandler**: claim the VL Whole Slide Microscopy Image SOP class so OHIF
    routes SM series here (or keep using the mode's stack/wsi routing).
 
-**Open items / risks to resolve during impl:**
-- Exact OHIF SM display-set shape (per-level instances vs a single multi-frame
-  instance; where TotalPixelMatrixColumns/Rows, tile Columns/Rows, NumberOfFrames,
-  and frame ordering live). Map against a real SM study.
-- Whether the OHIF demo's static S3 data source serves WSI `/frames` (it serves
-  `/frames` for volume DICOM, so likely yes — and WSI needs only `/frames`, not
-  `/instances`, so it should work where the volume-reconstruction path did).
+**De-risking probe — RESOLVED (2026-07-15).** Inspected a real SM study in the OHIF app
+(C3L-00088, StudyInstanceUIDs=2.25.141277760791347900862109212450152067508):
+- **SM display-set shape**: `Modality:'SM'`, handled by
+  `@ohif/extension-cornerstone.sopClassHandlerModule.DicomMicroscopySopClassHandler`.
+  `instances[]` is ONE entry PER PYRAMID LEVEL (6 here), each with
+  `TotalPixelMatrixColumns/Rows` (level pixel dims), `Columns/Rows` (tile size, 240x240
+  on the tiled levels), `NumberOfFrames` (= tileCols x tileRows, verified: finest level
+  35855x36162 -> ceil(35855/240)=150 x ceil(36162/240)=151 = 22650 frames; level 4
+  38x38=1444; level 5 10x10=100), `SamplesPerPixel:3`, `PhotometricInterpretation:'RGB'`.
+  `imageIds[]` is per-instance (one base `wadors:.../instances/{sop}/frames/1` per level);
+  a tile fetch swaps `/frames/1` -> `/frames/{N}`, N = row*tileCols + col + 1 (row-major).
+  NOTE: levels are NOT sorted, and 3 of the 6 are small single-tile overview/label/macro
+  images (666x716, 761x768, 1600x629 with NumberOfFrames=1) — the manifest builder must
+  keep the real pyramid (multi-tile VOLUME levels), sort by resolution, and derive
+  `downsample = finestWidth / levelWidth`. (Filter by DICOM `ImageType` VOLUME vs
+  LABEL/OVERVIEW/THUMBNAIL.)
+- **Transfer syntax = `1.2.840.10008.1.2.4.50` (JPEG Baseline)** -> codec `image/jpeg`,
+  native browser decode. Matches the JPEG-only v1 scope.
+- **The static CloudFront demo store SERVES WSI tiles on demand**: fetched `/frames/1`
+  and a mid-pyramid `/frames/11325` -> both HTTP 200, `multipart/related`, ~3-4 KB, JPEG
+  SOI (FF D8) at offset 116. WSI needs ONLY `/frames` (not `/instances`), so it works on
+  the static store where the volume-reconstruction path 403'd. Our `dicomWadoRs.ts`
+  multipart parsing (with the boundary-recovery fix) handles the frame body directly.
+
+So the manifest mapping and data path are fully determined; implementation is mechanical.
+
+**Remaining open items (impl details, low risk):**
 - The `<canvas>` lifecycle: NiivueViewport currently assumes one `Niivue` per canvas;
   the WSI branch swaps in a `SlideRenderer` instead — make create/teardown handle both.
-- JP2 transfer-syntax WSI (defer; needs the OpenJPEG decoder).
-- Test data: a DICOM-WSI SM study the demo source actually serves (study list has
-  "Histopathology" C3L-00088 / TCGA-02-0006 / NCT... SM studies — confirm one loads).
+- JP2 transfer-syntax WSI (defer; needs the OpenJPEG decoder). v1 is JPEG-only.
+- Exclude LABEL/OVERVIEW/THUMBNAIL instances from the pyramid (keep VOLUME levels).
 
 **Plain 2D (PNG/JPEG/single-frame):** separate, smaller follow-up — a small
 single-frame image can load through the existing volume path (`loadVolumes` as a

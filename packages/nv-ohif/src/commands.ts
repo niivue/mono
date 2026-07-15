@@ -509,6 +509,14 @@ export function getNiivueCommandsModule({
       if (!nv || nv.volumes.length === 0 || !colormap) return
       nv.setVolume(0, { colormap })
     },
+
+    /** Toggle the colormap legend (colorbar) on the viewport. */
+    niivueToggleColorbar: () => {
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry) return
+      entry.nv.isColorbarVisible = !entry.nv.isColorbarVisible
+      refreshToolbar(servicesManager, entry.viewportId)
+    },
   }
 
   return {
@@ -522,6 +530,7 @@ export function getNiivueCommandsModule({
       niivueSetWindowLevelPreset: actions.niivueSetWindowLevelPreset,
       niivueAutoWindowLevel: actions.niivueAutoWindowLevel,
       niivueSetColormap: actions.niivueSetColormap,
+      niivueToggleColorbar: actions.niivueToggleColorbar,
     },
     defaultContext: 'NIIVUE',
   }

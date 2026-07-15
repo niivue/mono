@@ -171,4 +171,13 @@ describe('toolbar evaluators', () => {
     )
     expect(evaluate({ viewportId: 'vp-1', button: hot })?.isActive).toBe(false)
   })
+
+  it('mark the colorbar toggle active when the colorbar is visible', () => {
+    const nv = { volumes: [], isColorbarVisible: false }
+    registerNiivue('vp-1', nv as unknown as NiiVue)
+    const evaluate = evaluator('evaluate.niivue.colorbar')
+    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
+    nv.isColorbarVisible = true
+    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
+  })
 })

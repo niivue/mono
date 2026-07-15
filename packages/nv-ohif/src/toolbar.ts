@@ -12,12 +12,14 @@ export const NIIVUE_WL_SECTION = 'NiivueWindowLevel'
 export const NIIVUE_COLORMAP_SECTION = 'NiivueColormap'
 export const NIIVUE_RESET_BUTTON = 'NiivueReset'
 export const NIIVUE_OVERLAY_BUTTON = 'NiivueOverlay'
+export const NIIVUE_COLORBAR_BUTTON = 'NiivueColorbar'
 
 const SLICE_TYPE_EVALUATOR = 'evaluate.niivue.sliceType'
 const CLIP_PLANE_EVALUATOR = 'evaluate.niivue.clipPlane'
 const OVERLAY_EVALUATOR = 'evaluate.niivue.overlay'
 const WL_PRESET_EVALUATOR = 'evaluate.niivue.windowLevelPreset'
 const COLORMAP_EVALUATOR = 'evaluate.niivue.colormap'
+const COLORBAR_EVALUATOR = 'evaluate.niivue.colorbar'
 const NIIVUE_EVALUATOR = 'evaluate.niivue'
 
 // Capitalized id suffix for a colormap name ('viridis' -> 'Viridis').
@@ -208,6 +210,17 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
   },
   ...NIIVUE_COLORMAPS.map((c) => colormapButton(c.name, c.label)),
   {
+    id: NIIVUE_COLORBAR_BUTTON,
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'icon-color-lut',
+      label: 'Colorbar',
+      tooltip: 'Toggle the colormap legend (NiiVue)',
+      commands: 'niivueToggleColorbar',
+      evaluate: COLORBAR_EVALUATOR,
+    },
+  },
+  {
     id: NIIVUE_OVERLAY_BUTTON,
     uiType: 'ohif.toolButton',
     props: {
@@ -376,6 +389,14 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
             typeof current === 'string' &&
             current.toLowerCase() === name.toLowerCase(),
         }
+      },
+    },
+    {
+      name: COLORBAR_EVALUATOR,
+      evaluate: ({ viewportId }) => {
+        const nv = getNiivueForViewport(viewportId)
+        if (!nv) return DISABLED
+        return { disabled: false, isActive: nv.isColorbarVisible === true }
       },
     },
   ]

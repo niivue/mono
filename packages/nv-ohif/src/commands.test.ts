@@ -434,6 +434,20 @@ describe('niivueSetColormap', () => {
   })
 })
 
+describe('niivueToggleColorbar', () => {
+  it('flips the colorbar visibility on the active viewport', () => {
+    const nv = { ...stubNiivue(), isColorbarVisible: false }
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    definitions.niivueToggleColorbar()
+    expect(nv.isColorbarVisible).toBe(true)
+    definitions.niivueToggleColorbar()
+    expect(nv.isColorbarVisible).toBe(false)
+  })
+})
+
 describe('niivueAutoWindowLevel', () => {
   it('recomputes the robust window on the base volume', () => {
     const nv = stubNiivue()

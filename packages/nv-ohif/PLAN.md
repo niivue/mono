@@ -345,8 +345,11 @@ the differentiators:
   (segmentation-specific overlays + colormap/opacity UI still to come.)
 - **Mesh / surface** overlay on the volume.
 - Window/level: OHIF's modality presets (+ robust auto) -> `calMin`/`calMax`, and
-  the reverse (NiiVue contrast drag -> OHIF `setWindowLevel`). **DONE**
-  (colormap picker still to come.)
+  the reverse (NiiVue contrast drag -> same-series siblings via
+  `setViewportWindowLevel`). **DONE**
+- Colormap: a base-volume colormap dropdown (gray / hot / bone / cool / warm /
+  viridis / plasma / inferno / turbo / jet). **DONE**
+  (per-overlay colormap + opacity UI still to come.)
 - Sync: crosshair / camera sync with other OHIF viewports where it makes sense.
 - Respect OHIF's active tool, measurement, and layout where feasible.
   (Primary-tool mirroring onto NiiVue left-drag: DONE for Window/Level + Pan.)

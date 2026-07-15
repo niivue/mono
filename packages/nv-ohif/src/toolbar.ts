@@ -1,4 +1,4 @@
-import { baseModality, NIIVUE_SLICE_TYPES } from './commands'
+import { baseModality, NIIVUE_COLORMAPS, NIIVUE_SLICE_TYPES } from './commands'
 import {
   getNiivueEntryForViewport,
   getNiivueForViewport,
@@ -9,6 +9,7 @@ import type { OhifToolbarButton, OhifToolbarModuleEntry } from './ohif-types'
 export const NIIVUE_VIEWS_SECTION = 'NiivueViews'
 export const NIIVUE_CLIP_SECTION = 'NiivueClip'
 export const NIIVUE_WL_SECTION = 'NiivueWindowLevel'
+export const NIIVUE_COLORMAP_SECTION = 'NiivueColormap'
 export const NIIVUE_RESET_BUTTON = 'NiivueReset'
 export const NIIVUE_OVERLAY_BUTTON = 'NiivueOverlay'
 
@@ -16,7 +17,14 @@ const SLICE_TYPE_EVALUATOR = 'evaluate.niivue.sliceType'
 const CLIP_PLANE_EVALUATOR = 'evaluate.niivue.clipPlane'
 const OVERLAY_EVALUATOR = 'evaluate.niivue.overlay'
 const WL_PRESET_EVALUATOR = 'evaluate.niivue.windowLevelPreset'
+const COLORMAP_EVALUATOR = 'evaluate.niivue.colormap'
 const NIIVUE_EVALUATOR = 'evaluate.niivue'
+
+// Capitalized id suffix for a colormap name ('viridis' -> 'Viridis').
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+const colormapButtonId = (name: string) => `NiivueCmap${capitalize(name)}`
 
 function sliceTypeButton(
   id: string,
@@ -83,6 +91,23 @@ function wlPresetButton(
         commandOptions: { modality, presetId, presetIndex },
       },
       evaluate: WL_PRESET_EVALUATOR,
+    },
+  }
+}
+
+function colormapButton(name: string, label: string): OhifToolbarButton {
+  return {
+    id: colormapButtonId(name),
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'icon-color-lut',
+      label,
+      tooltip: `${label} colormap (NiiVue)`,
+      commands: {
+        commandName: 'niivueSetColormap',
+        commandOptions: { colormap: name },
+      },
+      evaluate: COLORMAP_EVALUATOR,
     },
   }
 }
@@ -177,6 +202,12 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
   wlPresetButton('NiivueWLPtSuv5', 'PT', 'pt-suv-5', 1, 'SUV 5'),
   wlPresetButton('NiivueWLPtSuv10', 'PT', 'pt-suv-10', 2, 'SUV 10'),
   {
+    id: NIIVUE_COLORMAP_SECTION,
+    uiType: 'ohif.toolButtonList',
+    props: { buttonSection: true },
+  },
+  ...NIIVUE_COLORMAPS.map((c) => colormapButton(c.name, c.label)),
+  {
     id: NIIVUE_OVERLAY_BUTTON,
     uiType: 'ohif.toolButton',
     props: {
@@ -231,6 +262,9 @@ export const NIIVUE_TOOLBAR_SECTIONS: Record<string, string[]> = {
     'NiivueWLPtSuv5',
     'NiivueWLPtSuv10',
   ],
+  [NIIVUE_COLORMAP_SECTION]: NIIVUE_COLORMAPS.map((c) =>
+    colormapButtonId(c.name),
+  ),
 }
 
 /**
@@ -326,6 +360,22 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
           }
         }
         return { disabled: false }
+      },
+    },
+    {
+      name: COLORMAP_EVALUATOR,
+      evaluate: ({ viewportId, button }) => {
+        const nv = getNiivueForViewport(viewportId)
+        if (!nv) return DISABLED
+        const name = buttonCommandOption(button, 'colormap')
+        const current = nv.volumes[0]?.colormap
+        return {
+          disabled: false,
+          isActive:
+            name !== undefined &&
+            typeof current === 'string' &&
+            current.toLowerCase() === name.toLowerCase(),
+        }
       },
     },
   ]

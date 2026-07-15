@@ -10,6 +10,7 @@ import {
 import {
   getNiivueToolbarModule,
   NIIVUE_CLIP_SECTION,
+  NIIVUE_COLORMAP_SECTION,
   NIIVUE_TOOLBAR_BUTTONS,
   NIIVUE_TOOLBAR_SECTIONS,
   NIIVUE_VIEWS_SECTION,
@@ -32,6 +33,7 @@ describe('toolbar definitions', () => {
       NIIVUE_VIEWS_SECTION,
       NIIVUE_CLIP_SECTION,
       NIIVUE_WL_SECTION,
+      NIIVUE_COLORMAP_SECTION,
     ]) {
       const members = NIIVUE_TOOLBAR_SECTIONS[section] ?? []
       expect(members.length).toBeGreaterThan(0)
@@ -153,5 +155,20 @@ describe('toolbar evaluators', () => {
     expect(evaluate({ viewportId: 'vp-1', button: ptButton })?.disabled).toBe(
       true,
     )
+  })
+
+  it("mark the colormap matching the base volume's colormap active", () => {
+    const nv = { volumes: [{ colormap: 'Viridis' }] }
+    registerNiivue('vp-1', nv as unknown as NiiVue)
+    const evaluate = evaluator('evaluate.niivue.colormap')
+    const viridis = NIIVUE_TOOLBAR_BUTTONS.find(
+      (b) => b.id === 'NiivueCmapViridis',
+    )
+    const hot = NIIVUE_TOOLBAR_BUTTONS.find((b) => b.id === 'NiivueCmapHot')
+    // Case-insensitive: the volume stores 'Viridis', the button carries 'viridis'.
+    expect(evaluate({ viewportId: 'vp-1', button: viridis })?.isActive).toBe(
+      true,
+    )
+    expect(evaluate({ viewportId: 'vp-1', button: hot })?.isActive).toBe(false)
   })
 })

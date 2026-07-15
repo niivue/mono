@@ -41,6 +41,22 @@ export const NIIVUE_CLIP_PLANES: Record<string, [number, number, number]> = {
 export const OVERLAY_COLORMAP = 'warm'
 export const OVERLAY_OPACITY = 0.5
 
+// Base-volume colormaps offered in the toolbar dropdown (name -> label). Names
+// are lowercase; NiiVue canonicalizes casing internally. All are registered
+// NiiVue LUTs. 'gray' is the default a grayscale medical volume loads with.
+export const NIIVUE_COLORMAPS: Array<{ name: string; label: string }> = [
+  { name: 'gray', label: 'Gray' },
+  { name: 'hot', label: 'Hot' },
+  { name: 'bone', label: 'Bone' },
+  { name: 'cool', label: 'Cool' },
+  { name: 'warm', label: 'Warm' },
+  { name: 'viridis', label: 'Viridis' },
+  { name: 'plasma', label: 'Plasma' },
+  { name: 'inferno', label: 'Inferno' },
+  { name: 'turbo', label: 'Turbo' },
+  { name: 'jet', label: 'Jet' },
+]
+
 // A DICOM window/level preset (width + center), the shape OHIF's
 // `cornerstone.windowLevelPresets` customization stores per modality. `window`
 // and `level` are strings there (from the preset UI); we coerce with Number().
@@ -486,6 +502,13 @@ export function getNiivueCommandsModule({
         if (wl) entry.windowLevel = wl
       })
     },
+
+    /** Set the base volume's colormap (e.g. gray / hot / viridis). */
+    niivueSetColormap: ({ colormap }: { colormap?: string } = {}) => {
+      const nv = getActiveNiivue(servicesManager)
+      if (!nv || nv.volumes.length === 0 || !colormap) return
+      nv.setVolume(0, { colormap })
+    },
   }
 
   return {
@@ -498,6 +521,7 @@ export function getNiivueCommandsModule({
       niivueSetWindowLevel: actions.niivueSetWindowLevel,
       niivueSetWindowLevelPreset: actions.niivueSetWindowLevelPreset,
       niivueAutoWindowLevel: actions.niivueAutoWindowLevel,
+      niivueSetColormap: actions.niivueSetColormap,
     },
     defaultContext: 'NIIVUE',
   }

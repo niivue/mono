@@ -407,6 +407,33 @@ describe('syncNiivueWindowLevelToOhif', () => {
   })
 })
 
+describe('niivueSetColormap', () => {
+  it('sets the base volume colormap via setVolume(0)', () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ name: 'base' })
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    definitions.niivueSetColormap({ colormap: 'viridis' })
+    expect(nv.volumeUpdates).toEqual([
+      { index: 0, opts: { colormap: 'viridis' } },
+    ])
+  })
+
+  it('ignores a missing colormap or empty volumes', () => {
+    const nv = stubNiivue()
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    definitions.niivueSetColormap({ colormap: 'hot' }) // no volume yet
+    nv.volumes.push({ name: 'base' })
+    definitions.niivueSetColormap() // no colormap
+    expect(nv.volumeUpdates).toEqual([])
+  })
+})
+
 describe('niivueAutoWindowLevel', () => {
   it('recomputes the robust window on the base volume', () => {
     const nv = stubNiivue()

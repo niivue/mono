@@ -1,6 +1,7 @@
 import {
   getNiivueCommandsModule,
   NIIVUE_CLIP_PLANES,
+  NIIVUE_COLORMAPS,
   NIIVUE_SLICE_TYPES,
 } from './commands'
 import { displaySetToNiivue } from './displaySetToNiivue'
@@ -24,6 +25,7 @@ import {
 import {
   getNiivueToolbarModule,
   NIIVUE_CLIP_SECTION,
+  NIIVUE_COLORMAP_SECTION,
   NIIVUE_OVERLAY_BUTTON,
   NIIVUE_RESET_BUTTON,
   NIIVUE_TOOLBAR_BUTTONS,
@@ -71,6 +73,8 @@ export {
   getNiivueViewportModule,
   NIIVUE_CLIP_PLANES,
   NIIVUE_CLIP_SECTION,
+  NIIVUE_COLORMAP_SECTION,
+  NIIVUE_COLORMAPS,
   NIIVUE_OVERLAY_BUTTON,
   NIIVUE_RESET_BUTTON,
   NIIVUE_SLICE_TYPES,

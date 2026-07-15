@@ -18,6 +18,9 @@ export interface OhifDisplaySet {
   // DICOM display sets carry per-instance metadata; a NIfTI-JSON source may put a
   // URL on the instance. Typed loosely — probed in displaySetToNiivue.
   instances?: ReadonlyArray<Record<string, unknown>>
+  // WADO-RS imageIds, one per instance (aligned with `instances`). For a DICOM-WSI
+  // (SM) display set each is a per-level frame base (`wadors:.../frames/1`).
+  imageIds?: ReadonlyArray<string>
   [key: string]: unknown
 }
 

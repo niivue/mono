@@ -1,5 +1,5 @@
 import type { NiiVueOptions } from '@niivue/niivue'
-import NiiVue, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
+import NiiVue, { DRAG_MODE, NVSlide, SLICE_TYPE } from '@niivue/niivue'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import { readBaseWindowLevel, syncNiivueWindowLevelToOhif } from './commands'
@@ -14,6 +14,8 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
+import { mountWsiSlideView } from './wsiSlideView'
+import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
 // so an OHIF user sees the three orthogonal planes; the toolbar (later) can switch to
@@ -224,14 +226,54 @@ export function NiivueViewport(props: OhifViewportProps) {
     const kind = classifyDisplaySet(ds)
 
     if (kind === 'wsi') {
-      // Whole-slide imaging is destined for NVSlide (tiled LOD); the DICOM-WSI
-      // tile-source adapter is not wired yet.
-      setStatus({
-        kind: 'note',
-        message:
-          'Whole-slide (SM) series will render with NiiVue NVSlide (tiled) — that data path is coming.',
-      })
-      return
+      // Whole-slide imaging renders with NVSlide (tiled deep-zoom) on its own
+      // WebGL2 canvas, independent of NiiVue's volume renderer. The NiiVue canvas
+      // stays blank underneath; the slide canvas is overlaid and torn down here.
+      const built = buildWsiManifest(ds)
+      if (!built) {
+        setStatus({
+          kind: 'note',
+          message:
+            'This slide has no tiled (VOLUME) pyramid levels to display.',
+        })
+        return
+      }
+      if (!built.allJpeg) {
+        setStatus({
+          kind: 'note',
+          message:
+            'This slide is JPEG 2000, which the viewer cannot decode yet (JPEG slides are supported).',
+        })
+        return
+      }
+      const container = containerRef.current
+      if (!container) return
+      const slideCanvas = document.createElement('canvas')
+      slideCanvas.style.cssText =
+        'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none'
+      container.appendChild(slideCanvas)
+      const source = new DicomWsiTileSource(built, authHeaders(servicesManager))
+      const slide = NVSlide.fromSource(source)
+      let view: ReturnType<typeof mountWsiSlideView> | null = null
+      try {
+        view = mountWsiSlideView(slideCanvas, slide)
+        setStatus({ kind: 'idle' })
+      } catch (err) {
+        slideCanvas.remove()
+        console.error('[nv-ohif] WSI view failed', err)
+        setStatus({
+          kind: 'error',
+          message: 'Failed to start the whole-slide viewer.',
+        })
+        return
+      }
+      return () => {
+        cancelled = true
+        view?.dispose()
+        slideCanvas.width = 0
+        slideCanvas.height = 0
+        slideCanvas.remove()
+      }
     }
 
     if (kind === 'unsupported') {

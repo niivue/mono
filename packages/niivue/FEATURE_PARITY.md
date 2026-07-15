@@ -10,7 +10,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 - ❌ = Missing
 - ⚠️ = Partial
 
-*Updated: 2026-05-01*
+*Updated: 2026-06-18*
 
 ---
 
@@ -20,6 +20,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | Constructor with options | ✅ | `new NiiVueGPU(options)` |
 | `attachTo(id)` / `attachToCanvas(canvas)` | ✅ | |
+| WebGPU→WebGL2 init fallback + graphics-unavailable overlay | ✅ | `control/viewBoth.ts` retries WebGL2 when WebGPU `init()` throws (e.g. no GPU adapter); on all-backends-fail `control/canvasMessage.ts` overlays a DOM message with fixes (hardware accel / `#enable-unsafe-swiftshader`). Declined for a shared canvas |
 | `cleanup()` | ✅ | Via `removeInteractionListeners` + resource cleanup |
 | `setDefaults()` | ❌ | No explicit reset-to-defaults method |
 
@@ -33,6 +34,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `loadFromUrl/File/ArrayBuffer` generic loaders | ✅ | Via `useLoader` plugin system |
 | DICOM loading | ✅ | Provided by `@niivue/nv-ext-dcm2niix` extension (browser-side dcm2niix/WASM conversion) |
 | `loadDeferred4DVolumes()` | ✅ | |
+| Partial 4D load (`limitFrames4D` option) | ✅ | Reads only header + first N frames: a gzip NIfTI-1 via `DecompressionStream` (no fflate), or an uncompressed `.nii` `File` via `Blob.slice`; the only way to open a 4D volume larger than V8's ~2 GiB `ArrayBuffer` cap. Auto-caps to as-many-frames-as-fit on `RangeError`/`NotReadableError` even without the option |
 | `getZarrVolume()` / Zarr format | ❌ | No Zarr reader |
 | `NVImage` static loaders (`loadFromUrl/File/Base64`) | ❌ | NVImage is a type, not a class with static methods |
 
@@ -64,7 +66,12 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `saveDocument()` | ✅ | |
 | `saveScene()` | ❌ | |
 | `saveHTML()` / `generateHTML()` | ✅ | `@niivue/nv-ext-save-html` extension package |
-| `json()` — serialize state | ✅ | `serializeDocument()` returns CBOR-encoded `Uint8Array` |
+| `json()` — serialize state | ✅ | `serializeDocument()` returns a `Uint8Array` (CBOR by default) |
+| JSON document (export + import) | ✅ (new) | `serializeDocument({ format: 'json' })` / `saveDocument('x.json')` writes a human-readable/portable JSON NVD (typed arrays base64-tagged); `loadDocument` sniffs JSON vs CBOR and reads either. Same document structure as the CBOR `.nvd`. `documentJson.ts`. |
+| Import classic-NiiVue (legacy) JSON `.nvd` | ✅ via converter | Offline converter (`bun run convert:legacy <in> <out.nvd\|.json>`, `documentLegacy.ts`): maps the classic `opts`/`sceneData`/`imageOptionsArray`/`meshesString` to our format, LINKING volumes/meshes by their URL (embedded base64 blobs are not decoded — the URLs must be reachable). Not a runtime loader; a one-shot translation to a new-format document. |
+| Sparse SETTINGS (omit defaults; fill on load) | ✅ (new) | v9: `serialize()` omits any setting equal to its default (all 8 config groups). On load a specified setting always wins; an omitted setting is filled per a **fill policy** — DEFAULT resets it to its built-in default (a document is a complete scene), `'current'` keeps the instance value. Save control: `nv.settingsSavePolicy` (`neverSave`/`alwaysSave`); load control: `nv.settingsFillPolicy` / `loadDocument(src, { fill })` (group or `'group.key'`). Crosshair persistence = `{ 'scene.crosshairPos': 'current' }`. `documentSettings.ts` (`sparsifyGroup`/`fillGroup`). A mono addition. |
+| Sparse / dataless document (link volumes by URL) | ✅ VOLUMES / ❌ meshes | `serializeDocument({ linkData: true })` (or `saveDocument(name, { linkData: true })`) emits a document that references each volume by `url` instead of embedding its bytes; a volume with no linkable URL (drag-drop, `blob:`/`data:`) still embeds so it always round-trips. `SerializeOptions.linkData` in `NVDocument`. Verified: a linked mni152 doc is ~1 KB vs ~11 MB embedded. **Meshes still always embed** — the mesh URL-restore path doesn't yet reapply overlay layers / tract options (tracked follow-up). |
+| Hydrate linked volumes on load | ✅ | `reconstructVolume`'s `else if (v.url)` branch fetches from the URL when embedded `data` is absent (pre-existing), so a linked document rehydrates on open — verified end-to-end with `linkData` saves. |
 
 ## 6. Volume Management
 
@@ -144,6 +151,8 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Show all orientation markers | ❌ | |
 | Tile margin/padding | ✅ | `tileMargin` |
 | HiDPI/retina support | ✅ | Built-in |
+| Multi-instance scenes (`opts.instances`, `setInstances`) | ✅ | Per-tile `volumeId` / `bounds` / `viewport`. Supported on both WebGL2 and WebGPU backends. |
+| Shared-camera 3D space (`tile.space === 'global3d'`, `globalCamera`, `setGlobalCamera`) | ✅ | One camera spans every tile so adjacent volumes line up in world space. Supported on both backends; WebGPU uses a per-volume texture cache to keep multi-volume draws cheap. |
 
 ## 11. Navigation & Crosshair
 
@@ -193,8 +202,12 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `drawingBinaryDilationWithSeed()` | ❌ | |
 | `findDrawingBoundarySlices()` | ✅ | `@niivue/nv-ext-drawing` package |
 | `interpolateMaskSlices()` | ✅ | `@niivue/nv-ext-drawing` package |
-| Click-to-segment (magic wand) | ✅ | `@niivue/nv-ext-drawing` exports `magicWand`, `magicWandFromBitmap`, and `MagicWandShared` |
+| Click-to-segment (magic wand) | ✅ | Built into the core drawing (`drawIsClickToSegment` + `drawClickToSegmentTolerance`): a 2D-slice click or a 3D exploded-block right-click grows a region of intensity-similar voxels (`magicWand3D`). Grows the whole connected 3D structure by default; `drawClickToSegmentIs2D` confines a slice click to its plane (the block right-click is always 3D). Also available worker-side via `@niivue/nv-ext-drawing` (`magicWand`, `magicWandFromBitmap`, `MagicWandShared`) |
 | Draw rim opacity | ✅ | `drawRimOpacity` |
+| 2D slice drawing methods (pen point, drag stroke, filled polygon, eraser) | ✅ | Left-drag on any slice; `drawPenFilled` flood-fills a closed loop |
+| 3D drawing on exploded blocks (render tile) | ✅ | New in the rewrite (old NiiVue drew on 2D slices only): right-button pen/eraser stroke, 3D flood fill, and magic-wand click-to-segment directly on exploded chunked blocks, on both backends. Demo `vox.draw.explode.html` |
+| Export drawing slice as SVG | ✅ | `drawingToSVG(sliceType?, sliceIndex?)` traces the current slice's painted voxels into run-length `<rect>`s per label color (sized in voxels). Mirrors the slide vector layer's `toSVG` for volume drawings |
+| Vector annotation drawing + SVG export | ✅ | The core annotation layer draws freehand vector polygons on slices (`annotationTool`, `annotationIsEnabled`); `annotationsToSVG(sliceType?, slicePosition?)` serializes them to `<path>`s in slice mm coordinates. Shapes can also be drawn **directly on the 3D exploded blocks** (right-drag on the render picks block points, fit to the best plane) and render explode-aware. The `vox.draw` / `vox.draw.explode` demos expose this as a "Vector (SVG)" pen mode |
 
 ## 15. Image Processing
 
@@ -242,6 +255,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | `setFrame4D(vol, frame)` | ✅ | |
 | Graph display for 4D | ✅ | `isGraphVisible`, `graphNormalizeValues`, `graphIsRangeCalMinMax` |
+| Large/partial 4D volumes (>2 GiB) | ✅ | `limitFrames4D` + auto-cap under V8's ~2 GiB ArrayBuffer limit; streaming gz / `Blob.slice` partial read; deferred-frame reload via `loadDeferred4DVolumes`. See §2 |
 
 ## 20. Synchronization
 
@@ -289,6 +303,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `setCustomMeshShader()` / `setCustomMeshShaderFromUrl()` | ❌ | |
 | `setMeshShader()` | ❌ | |
 | `meshShaderNames()` | ❌ | |
+| Built-in mesh shaders + per-mesh selection | ✅ | phong/flat/matte/toon/outline/rim/silhouette/crevice/vertexColor/crosscut, chosen per-mesh via `shaderType`; `sliceShaderType` (default `''` = inherit) selects a different shader for 2D slice tiles than the 3D render view |
 | Built-in volume render shaders | ✅ | `volumeAlphaShader` |
 
 ## 24. Gestures / Input Configuration
@@ -469,7 +484,7 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 | Events | ✅ | `signalLoaded`, `signalRemoved`, `signalLocationChange` |
 | Graph rendering (`NVGraph` signal mode) | ✅ | Multi-color series, legend (capped), reversible/windowed x-axis, full-canvas when signal-only, dense-series decimation, derived-plot cache; on-graph pan/zoom buttons with wheel/frame follow (`graphZoom`/`graphPan`), relative line width/opacity (`graphLineWidth`/`graphLineAlpha`), and a missing-data rug for NaN gaps |
 | Annotations (`SignalAnnotation`) | ✅ | Data-space text labels (`{text,x,y,color?}`) that pan/zoom with the window and hide when out of range; `y` of `±Infinity` pins to plot bottom/top; set via load options or `setSignal`, persisted in NVD. Render on the signal graph only (not the volume+physio association view) |
-| Persistence (NVD) | ✅ | Document version 8 (`signal/persistence.ts`) |
+| Persistence (NVD) | ✅ | Document version 9 (`signal/persistence.ts`) |
 | Demos | ✅ | `examples/svs.html`, `examples/physio.html`, `examples/physio.bold.html` |
 | Volume + physio association | ✅ | `collectAssociatedTimeGraphData`: BOLD time-course + attached physio on a shared Time(s) axis at native rates, clamped to the imaging window, normalized, with a current-frame marker (`attachToId`); per-trace show/hide — BOLD via `graphShowVolumeTimecourse`, physio via `setSignal` `selectedColumns` |
 
@@ -480,9 +495,9 @@ line plots. Source in `src/signal/`; architecture documented in `AGENTS.md`.
 Spatial spectroscopic imaging (MRSI/CSI): a complex 4-D NIfTI where dim1-3 are
 space and dim4 is the FID. Core enablers live in `src/volume/mrsi.ts`,
 `src/signal/processing.ts`, and `src/signal/mrs.ts`; the FSL-MRS workflow
-(navigation, manipulation, range-to-map) is packaged as
-`@niivue/nv-ext-mrs` with a demo at `apps/demo-ext-mrs` (`mrsi.html`). Ports
-algorithms from fsleyes-plugin-mrs (BSD-3) — see that package's `PORTING.md`.
+(navigation, manipulation, range-to-map) is provided by the core `MrsScene` controller (`src/mrs/MrsScene.ts`) with a demo
+at `examples/mrsi.html`. Ports algorithms from fsleyes-plugin-mrs (BSD-3) — see
+`PORTING.md`.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -490,14 +505,37 @@ algorithms from fsleyes-plugin-mrs (BSD-3) — see that package's `PORTING.md`.
 | Shared complex/ecode-44 decode | ✅ | `signal/mrs.ts` (`isComplexDatatype`/`decodeComplexFID`/`mrsFromHeaderExtensions`) used by both signal (SVS) and volume (MRSI) paths |
 | Crosshair-voxel spectrum | ✅ | `addMrsiSignal(volumeId)` + `NVSignal.followsCrosshair`: the graph extracts the crosshair voxel's FID (`extractVoxelFid`) and re-derives the spectrum on every crosshair move. When the FID can't be resolved (volume removed / off-grid / NVD reload without the buffer) the signal is dropped from the graph rather than drawing a fake flat placeholder |
 | NVD persistence of MRSI | ⚠ partial | `followsCrosshair` signals serialize, but the volume's `complexFID` is NOT written to NVD (only the derived scalar `img`). On reload the crosshair spectrum is unavailable (graph drops it, no fake line) until the MRSI volume is re-added. Persisting the 18 MiB complex buffer is deferred by design |
-| Sampled-voxel marker | ✅ | nv-ext-mrs `enableVoxelSnap`: crosshair snaps to the MRSI voxel-grid centre (`context.mrs.voxelCenterMm`) within the slab, marking the coarse cell being read; free over the surrounding anatomy |
+| Sampled-voxel marker | ✅ | `MrsScene.enableVoxelSnap`: crosshair snaps to the MRSI voxel-grid centre (`context.mrs.voxelCenterMm`) within the slab, marking the coarse cell being read; free over the surrounding anatomy |
 | FSL-MRS spectral transforms | ✅ | `halveFirstPoint`, `apodize` (exp line-broadening), `phaseCorrection` (0/1-order); off by default so the `svs.html` baseline is unchanged; parity-tested vs fsleyes |
 | Nucleus constants | ✅ | `GYRO_MAG_RATIO`, `PPM_SHIFT`, `PPM_RANGE` ported verbatim |
-| ppm-band metabolite map | ✅ | `integratePpmBandMap` + `makeMetaboliteMap` (nv-ext-mrs): integrate `|spectrum|`/`real` over a ppm band across all voxels -> `SpecSum_{lo}_{hi}` overlay |
+| ppm-band metabolite map | ✅ | `integratePpmBandMap` + `makeMetaboliteMap` / `MrsScene.makeMap` (core): integrate `|spectrum|`/`real` over a ppm band across all voxels -> `SpecSum_{lo}_{hi}` overlay |
 | Extension context exposure | ✅ | `context.mrs` (`MrsVolumeAccess`): read-only complex buffer + metadata + `makeScalarOverlay` |
 | Demo (`mrsi.html`) | ✅ | T1 + MRSI grid + mask, crosshair->spectrum, component/apodize/phase/ppm controls, make-map |
 | Fit-results overlay | ⛔ Deferred | fit/baseline/residual spectra + concentration/QC maps (`tools.py`); blocked on a `fsl_mrsi` results directory |
 | Interactive Ctrl/Shift-drag phasing | ⛔ Deferred | demo uses sliders |
+
+---
+
+## 36. Tiled volumes + multi-resolution (LOD)
+
+Render volumes larger than the GPU's `maxTextureDimension3D` by tiling them into
+chunks, and render multi-GB pyramids (OME-Zarr) with per-brick level-of-detail
+focused on a point. Chunk math is shared (`volume/chunking.ts`,
+`volume/ChunkVisibility.ts`, `volume/ChunkResidency.ts`); GPU resources are
+per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
+(`omezarr.html`).
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Chunked single-level volume | ✅ | `chunkVolume`/`chunkVolumeGrid`: tile to fit the device limit, 1-voxel halo for seam-free trilinear. 3D ray-march + 2D slice, both backends |
+| Chunk streaming + LRU residency | ✅ | `ChunkResidencyManager` (index-keyed, byte-budgeted, frustum/slice working set); per-frame upload pump; coarse-floor cross-fade so the view never blanks |
+| Per-brick multi-LOD plan | ✅ | `chunkVolumeMultiLOD`: heterogeneous `ChunkPlan` with per-brick `sourceLevel`; common-grid (placement) vs level-grid (texture) coordinate split |
+| 2:1 balanced octree | ✅ | Scale-relative refinement (`detail`) + explicit balance post-pass: face-adjacent bricks differ by ≤1 level. Budget pass shrinks `detail`, then raises a floor, then respects `maxBricks` (< `MAX_CHUNKS_PER_TILE`) |
+| Per-brick ray step + opacity correction | ✅ | `rayStepTexVox` uniform + `1 − pow(1−a, stepRatio)`; coarse bricks step at their own density without rendering dimmer. Both backends (`render.wgsl` / `renderShader.ts`) |
+| Mixed-size back-to-front order | ✅ | `chunksBackToFront` BSP clean-plane recursive sort — exact compositing order for mixed brick sizes at any angle (`depthFunc ALWAYS` relies on it); a pairwise comparator left rare mis-ordered opaque bricks as stray bright blocks |
+| In-place plan swap (refocus) | ✅ | `swapChunkedVolumePlan` + residency `remap`: unchanged bricks keep their GPU textures; only changed bricks re-fetch |
+| Focus box / per-brick LOD boxes | ✅ | `nv.focusBox` (single AABB) and `nv.lodBoxes` (set, e.g. coloured per level) drawn on 3D render tiles, both backends |
+| Cross-LOD blending (geomorph) | ⛔ Deferred | Different-level boundaries show a one-level brightness/blockiness step; smooth fade between a brick's level and the next coarser is the real fix (needs a 2nd texture bound per brick, both shaders) |
 
 ---
 

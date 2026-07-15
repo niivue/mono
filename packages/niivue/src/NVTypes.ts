@@ -1,6 +1,7 @@
-import type { mat4, vec3, vec4 } from 'gl-matrix'
+import type { mat4, vec2, vec3, vec4 } from 'gl-matrix'
 import type { LogLevel } from '@/logger'
 import type { FontMetrics } from '@/view/NVFont'
+import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 
 export type TypedVoxelArray =
   | Float32Array
@@ -21,6 +22,29 @@ export type TypedNumberArray =
   | Int32Array
   | Int16Array
   | Int8Array
+
+export interface VolumeChunkSourceRequest {
+  chunkIndex: number
+  desc: VolumeChunkDesc
+  plan: ChunkPlan
+  datatypeCode: number
+  bytesPerVoxel: number
+}
+
+export type VolumeChunkSource = (
+  request: VolumeChunkSourceRequest,
+) =>
+  | ArrayBuffer
+  | Uint8Array
+  | TypedVoxelArray
+  | Promise<ArrayBuffer | Uint8Array | TypedVoxelArray>
+
+export interface VolumeChunkExplode {
+  /** Enable draw-time spacing between streamed chunk cubes. */
+  enabled?: boolean
+  /** Per-axis spacing multiplier. 1 is compact, 1.5 leaves half-cell gaps. */
+  scale?: [number, number, number]
+}
 
 export type NIFTIHeader = {
   littleEndian: boolean
@@ -172,6 +196,32 @@ export type NVImage = {
   modulationImage?: string
   /** @internal Pre-computed modulation data in RAS order (Float32Array of [0,1] values) */
   _modulationData?: Float32Array | null
+  /** Tiling plan for volumes whose dims exceed maxTextureDimension3D. Absent ⇒ legacy single-texture path. */
+  chunkPlan?: ChunkPlan
+  /** Optional source-backed chunk loader for volumes whose full voxel array is not resident in browser memory. */
+  chunkSource?: VolumeChunkSource
+  /** Optional draw-time spacing for chunked 3D rendering. Sampling remains in original voxel coordinates. */
+  chunkExplode?: VolumeChunkExplode
+  /**
+   * Optional CPU value lookup in world mm, used by the 3D depth-pick to find the
+   * first visible voxel along the view ray for a chunked/streamed volume (which
+   * has no single GPU texture to sample). Return the window-visible value at the
+   * point (0 / non-positive = transparent, skip). Supplied by the app from a
+   * resident coarse representation; absent ⇒ depth-pick falls back to the
+   * bounding-box surface.
+   */
+  pickSampler?: (x: number, y: number, z: number) => number
+  /**
+   * Marks this volume as an independently-streamed hi-res overlay layer that
+   * composites over a chunked base volume. The value is the cache-key of the
+   * base volume it sits on. When set, the renderer streams this volume in its
+   * own ChunkResidencyManager working set and draws it as translucent chunk
+   * cubes over the base, instead of reslicing it onto the base grid. Absent ⇒
+   * legacy overlay path (resliced to the base grid).
+   */
+  chunkOverlayOf?: string
+  /** Layer opacity for an independently-streamed chunked overlay ([0,1], default 1). */
+  chunkOverlayOpacity?: number
   /**
    * @internal Pre-computed modulation weight in the MODULATOR's native voxel
    * order (Float32Array of [0,1] values, already windowed by the modulator's
@@ -184,6 +234,23 @@ export type NVImage = {
   _modulationWeight?: Float32Array | null
   /** @internal Cache key for {@link _modulationWeight} (modulator id/buffer/window/exponent). */
   _modulationWeightKey?: string
+  /**
+   * @internal Original dropped/loaded `File` for this volume, kept so a deferred
+   * 4D re-read (`loadDeferred4DVolumes`) can re-open it — a `File` has no URL to
+   * re-fetch. Runtime-only: the serializer (NVDocument) uses an explicit field
+   * allowlist, so this is never written to a saved document.
+   */
+  _sourceFile?: File
+  /**
+   * @internal Original `urlImageData` paired payload for detached-header
+   * formats (AFNI `.HEAD`+`.BRIK`, NRRD `.nhdr`+`.raw`, MRtrix detached `.mif`,
+   * MetaImage detached `.mha`). Kept so a deferred 4D re-read can pass it back
+   * into `NVVolume.loadVolume(url, pairedImgData)` — without it the readers
+   * throw "pairedImgData not set" / "detached header requires paired image
+   * data". Runtime-only: the NVDocument serializer's allowlist excludes it,
+   * matching {@link _sourceFile}.
+   */
+  _urlImageData?: string | File
   [key: string]: unknown
 }
 
@@ -432,6 +499,8 @@ export type NVMesh = {
   // --- Display properties (shared across all species) ---
   opacity: number
   shaderType: string
+  /** Shader for 2D slice views; '' (default) inherits `shaderType` (yoked). */
+  sliceShaderType: string
   /** RGBA color 0-1 range (default: [1,1,1,1]) */
   color: [number, number, number, number]
   /** Whether to show colorbar (default: true) */
@@ -496,10 +565,17 @@ export type SceneConfig = {
   crosshairPos: vec3
   pan2Dxyzmm: vec4
   scaleMultiplier: number
+  // Clip-space translation applied after projection in 3D render mode
+  // (sliceType === RENDER). Each component is in NDC units, so renderPan = [0.5, 0.5]
+  // shifts the volume half the viewport right and up. Ignored in 2D / mosaic.
+  renderPan: vec2
   gamma: number
   backgroundColor: [number, number, number, number]
   clipPlaneColor: number[]
   isClipPlaneCutaway: boolean
+  /** Clip the overlay/PAQD/drawing layers along with the base volume in the 3D
+   * render. Default false: overlays ignore the clip plane (show through). */
+  clipPlaneOverlay: boolean
 }
 
 /** Layout config: slice type, mosaic, multiplanar, hero, tiling */
@@ -563,6 +639,7 @@ export type VolumeRenderConfig = {
   isV1SliceShader: boolean
   matcap: string
   paqdUniforms: [number, number, number, number]
+  transmittanceCutoff: number
 }
 
 /** Mesh rendering config: global settings for mesh display */
@@ -580,6 +657,16 @@ export type DrawConfig = {
   opacity: number
   rimOpacity: number
   colormap: string
+  // Click-to-segment ("magic wand"): when on, a draw click grows a 3D region of
+  // intensity-similar voxels from the seed instead of painting a pen stroke.
+  isClickToSegment: boolean
+  // Magic-wand intensity tolerance as a fraction (0..1) of the active volume's
+  // display window (calMax - calMin); converted to raw sample units at use.
+  clickToSegmentTolerance: number
+  // When true, a magic-wand click on a 2D slice grows only within that slice
+  // plane (2D-connected) instead of the whole connected 3D structure. The 3D
+  // exploded-block right-click is always a full 3D grow (it has no slice plane).
+  clickToSegmentIs2D: boolean
 }
 
 /** Interaction config: drag modes, mouse behavior */
@@ -603,6 +690,7 @@ export type SyncOpts = {
   sliceType?: boolean
   calMin?: boolean
   calMax?: boolean
+  viewport?: boolean
 }
 
 export type BackendType = 'webgpu' | 'webgl2'
@@ -618,6 +706,44 @@ export type ViewHitTest = {
 /** Normalized bounds [[x1,y1],[x2,y2]] where y=0 is bottom, y=1 is top */
 export type NVBounds = [[number, number], [number, number]]
 
+/**
+ * Canvas-level virtual camera applied to all instances sharing a canvas.
+ * Each instance's `bounds` define its position in *world space*; the viewport
+ * pans (in normalized canvas units, GL convention y-up) and zooms (scalar
+ * around the canvas centre) the world before bounds are projected to pixels.
+ * Identity `{pan: [0, 0], zoom: 1}` reproduces the pre-viewport behavior.
+ */
+export type CanvasViewport = {
+  pan: [number, number]
+  zoom: number
+}
+
+export type NVGlobalCamera = {
+  position: [number, number, number]
+  yaw?: number
+  pitch?: number
+  fov?: number
+  near?: number
+  far?: number
+}
+
+export type NVInstance = {
+  id: string
+  /** Screen-space canvas bounds for classic OSD-style tiled instances. */
+  bounds?: NVBounds
+  /** Set to `global3d` to draw this volume in one shared 3D scene. */
+  space?: 'canvas' | 'global3d'
+  /** Global scene position used when `space` is `global3d`. */
+  position?: [number, number, number]
+  /** Global scene scale in world units, or xyz scale. */
+  scale?: number | [number, number, number]
+  /** Global scene Euler rotation in radians: [x, y, z]. */
+  orientation?: [number, number, number]
+  viewport?: CanvasViewport
+  rotation?: [number, number, number, number]
+  volumeId?: string
+}
+
 export type NVViewOptions = {
   isAntiAlias?: boolean
   devicePixelRatio?: number
@@ -627,6 +753,7 @@ export type NVViewOptions = {
   showBoundsBorder?: boolean
   boundsBorderColor?: [number, number, number, number]
   boundsBorderThickness?: number
+  maxTextureDimension3D?: number
   [key: string]: unknown
 }
 
@@ -673,6 +800,8 @@ export type GraphConfig = {
  */
 export type NiiVueOptions = {
   // Infrastructure (set once at construction)
+  instances?: NVInstance[]
+  globalCamera?: NVGlobalCamera
   backend?: BackendType
   isAntiAlias?: boolean
   devicePixelRatio?: number
@@ -683,8 +812,26 @@ export type NiiVueOptions = {
   font?: NVFontData
   matcaps?: Record<string, string>
   isDragDropEnabled?: boolean
+  isInteractionEnabled?: boolean
   logLevel?: LogLevel
   thumbnail?: string
+  /**
+   * Debug/testing override: caps the effective `maxTextureDimension3D` used to
+   * decide when a volume must be tiled into chunks. GPUs rarely report a limit
+   * low enough to exercise the tiled-volume path on ordinary data; setting a
+   * small value here (e.g. 256) forces normally-sized volumes to chunk. Does
+   * not raise the limit beyond what the device actually supports.
+   */
+  maxTextureDimension3D?: number
+  /**
+   * GPU memory budget, in bytes, for a chunked (tiled) volume's resident chunk
+   * set (scalar + RGBA + gradient across resident chunks). When a chunked
+   * volume's chunks exceed this budget, the least-recently-visible chunks are
+   * evicted and stream back in on demand as the view changes. Unset leaves a
+   * conservative default that fits comfortably below typical discrete-GPU
+   * memory.
+   */
+  maxChunkResidencyBytes?: number
 
   // Scene
   azimuth?: number
@@ -692,10 +839,12 @@ export type NiiVueOptions = {
   crosshairPos?: [number, number, number]
   pan2Dxyzmm?: [number, number, number, number]
   scaleMultiplier?: number
+  renderPan?: [number, number]
   gamma?: number
   backgroundColor?: [number, number, number, number]
   clipPlaneColor?: number[]
   isClipPlaneCutaway?: boolean
+  clipPlaneOverlay?: boolean
 
   // Layout
   sliceType?: number
@@ -751,6 +900,7 @@ export type NiiVueOptions = {
   volumeIsV1SliceShader?: boolean
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
+  volumeTransmittanceCutoff?: number
 
   // Mesh (prefixed)
   meshXRay?: number
@@ -825,6 +975,18 @@ export type CompletedMeasurement = {
   slicePosition: number
 }
 
+/**
+ * Transient world-space axis-aligned bounding box drawn as 12 edges on the 3D
+ * render tile(s) — e.g. to outline a focused subvolume. `min`/`max` are in the
+ * same world-mm space as the scene extents. Controller-owned, not serialized.
+ */
+export type FocusBox = {
+  min: [number, number, number]
+  max: [number, number, number]
+  color: number[]
+  thickness: number
+}
+
 export type CompletedAngle = {
   firstLine: {
     startMM: [number, number, number]
@@ -867,7 +1029,19 @@ export type ImageFromUrlOptions = {
   colormapType?: number
   /** Whether values below calMin are transparent (true) or clamped to min color (false). Only affects MIN_TO_MAX. Default: true. */
   isTransparentBelowCalMin?: boolean
-  /** Maximum number of 4D frames to load (default: Infinity = load all). Remaining frames can be loaded later via loadDeferred4DVolumes(). */
+  /**
+   * Maximum number of 4D frames to load (default: Infinity = load all). The
+   * optimized partial path reads only the header + first N frames; it covers a
+   * gzip NIfTI-1 (any source) and an uncompressed NIfTI-1 from a local `File`
+   * (other formats fall back to a full load). It is also the only way to open a
+   * 4D volume larger than the browser's ~2 GiB ArrayBuffer cap — such a volume
+   * auto-caps to as-many-frames-as-fit even without this option. Remaining frames
+   * can be loaded later via `loadDeferred4DVolumes()` (not yet supported for a
+   * dropped local `File` whose remaining frames exceed the cap). Note: the generic
+   * `loadImage()` still sniffs signal-vs-volume by reading the whole file unless
+   * `limitFrames4D` (or `asSignal: false`) makes the volume intent explicit; pass
+   * volumes through `loadVolumes([{ url, limitFrames4D }])` to skip the sniff.
+   */
   limitFrames4D?: number
   /** Volume opacity 0-1 (default: 1) */
   opacity?: number
@@ -935,8 +1109,13 @@ export type MeshFromUrlOptions = {
   isColorbarVisible?: boolean
   /** Whether to show legend (default: false) */
   isLegendVisible?: boolean
-  /** Shader type (default: 'phong') */
+  /** Shader type (default: 'phong'). Used for the 3D render view and, unless
+   * `sliceShaderType` is set, for 2D slice views too. */
   shaderType?: string
+  /** Shader type for 2D slice views. Default '' yokes slices to `shaderType`;
+   * set it to use a different shader on slices (e.g. 'crosscut') than in the
+   * 3D render view. */
+  sliceShaderType?: string
   /** Whether mesh is visible (default: true) */
   visible?: boolean
   /** Scalar overlay layers to load onto this mesh */

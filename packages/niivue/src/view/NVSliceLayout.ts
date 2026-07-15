@@ -2,7 +2,12 @@ import { type mat4, vec3, vec4 } from 'gl-matrix'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
-import type { CustomLayoutTile, ViewHitTest } from '@/NVTypes'
+import type {
+  CustomLayoutTile,
+  FocusBox,
+  NVGlobalCamera,
+  ViewHitTest,
+} from '@/NVTypes'
 import type { BuildLineFn, LineData } from './NVLine'
 
 // ---------- Types ----------
@@ -23,6 +28,23 @@ export type SliceTile = {
   mvpMatrix?: mat4
   planeNormal?: vec3
   planePoint?: vec3
+  // --- Multi-instance fields (used when controller is in `instances` mode) ---
+  /** Per-instance 2D pan override (canvas-space normalized) */
+  pan?: [number, number]
+  /** Per-instance 2D zoom override */
+  zoom?: number
+  /** Per-instance volume identifier (selects which loaded volume this tile renders) */
+  volumeId?: string
+  /** When set to `'global3d'`, this tile renders into a shared 3D scene */
+  space?: 'canvas' | 'global3d'
+  /** Global-space position in world units (used when `space === 'global3d'`) */
+  position?: [number, number, number]
+  /** Global-space scale (uniform scalar or per-axis vec3) */
+  scale?: number | [number, number, number]
+  /** Global-space Euler rotation in radians [x, y, z] */
+  orientation?: [number, number, number]
+  /** Shared 3D camera (passed through from controller) */
+  globalCamera?: NVGlobalCamera
 }
 
 export type SliceLayoutConfig = {
@@ -991,4 +1013,121 @@ export function buildCrossLines(
     }
   }
   return lines
+}
+
+// ---------- Focus box ----------
+
+// 12 edges of an axis-aligned box, as index pairs into the 8 corners below.
+const FOCUS_BOX_EDGES: [number, number][] = [
+  [0, 1],
+  [1, 3],
+  [3, 2],
+  [2, 0], // min-z face
+  [4, 5],
+  [5, 7],
+  [7, 6],
+  [6, 4], // max-z face
+  [0, 4],
+  [1, 5],
+  [2, 6],
+  [3, 7], // verticals
+]
+
+/**
+ * Build the 12 screen-space edges of a world-mm axis-aligned `box` for a 3D
+ * render tile, projecting its 8 corners through the tile's (perspective) MVP.
+ * Edges with a corner at/behind the camera (clip w <= 0) are dropped. `ltwh` is
+ * the tile's pixel rect; `lineFn` is the backend's `buildLine`.
+ */
+export function buildFocusBoxLines(
+  box: FocusBox,
+  mvpMatrix: mat4,
+  ltwh: number[],
+  lineFn: BuildLineFn,
+): LineData[] {
+  const { min, max } = box
+  const corners: [number, number, number][] = [
+    [min[0], min[1], min[2]],
+    [max[0], min[1], min[2]],
+    [min[0], max[1], min[2]],
+    [max[0], max[1], min[2]],
+    [min[0], min[1], max[2]],
+    [max[0], min[1], max[2]],
+    [min[0], max[1], max[2]],
+    [max[0], max[1], max[2]],
+  ]
+  // Perspective-correct projection (unlike the orthographic slice path): divide
+  // by clip w. Null for corners at/behind the camera.
+  const screen = corners.map((c): [number, number] | null => {
+    const clip = vec4.create()
+    vec4.transformMat4(clip, vec4.fromValues(c[0], c[1], c[2], 1), mvpMatrix)
+    const w = clip[3]
+    if (w <= 1e-6) return null
+    return [
+      ltwh[0] + (clip[0] / w + 1) * 0.5 * ltwh[2],
+      ltwh[1] + (1 - clip[1] / w) * 0.5 * ltwh[3],
+    ]
+  })
+  const thickness = Math.max(1, box.thickness)
+  const lines: LineData[] = []
+  for (const [a, b] of FOCUS_BOX_EDGES) {
+    const p0 = screen[a]
+    const p1 = screen[b]
+    if (!p0 || !p1) continue
+    // The line renderer draws full-canvas (not scissored to the tile), so a box
+    // whose projected corners fall outside the render tile would bleed its edges
+    // across the neighbouring slice tiles (visible once the render is zoomed so
+    // the box extends past the tile). Clip each edge to the tile rect first.
+    const seg = clipSegmentToRect(
+      p0[0],
+      p0[1],
+      p1[0],
+      p1[1],
+      ltwh[0],
+      ltwh[1],
+      ltwh[0] + ltwh[2],
+      ltwh[1] + ltwh[3],
+    )
+    if (seg)
+      lines.push(lineFn(seg[0], seg[1], seg[2], seg[3], thickness, box.color))
+  }
+  return lines
+}
+
+/**
+ * Liang-Barsky clip of segment (x0,y0)-(x1,y1) to the axis-aligned rect
+ * [xmin,ymin]-[xmax,ymax]. Returns the clipped endpoints, or null if the segment
+ * is entirely outside the rect.
+ */
+function clipSegmentToRect(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  xmin: number,
+  ymin: number,
+  xmax: number,
+  ymax: number,
+): [number, number, number, number] | null {
+  const dx = x1 - x0
+  const dy = y1 - y0
+  let t0 = 0
+  let t1 = 1
+  const p = [-dx, dx, -dy, dy]
+  const q = [x0 - xmin, xmax - x0, y0 - ymin, ymax - y0]
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return null // parallel and outside this edge
+    } else {
+      const r = q[i] / p[i]
+      if (p[i] < 0) {
+        if (r > t1) return null
+        if (r > t0) t0 = r
+      } else {
+        if (r < t0) return null
+        if (r < t1) t1 = r
+      }
+    }
+  }
+  return [x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy]
 }

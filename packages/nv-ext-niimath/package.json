@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-niimath",
-  "version": "1.0.0-rc.5",
+  "version": "1.0.0-rc.6",
   "type": "module",
   "description": "Browser-side niimath pipeline runner for NiiVue, wrapping the @niivue/niimath WebAssembly build",
   "main": "./dist/nv-ext-niimath.js",

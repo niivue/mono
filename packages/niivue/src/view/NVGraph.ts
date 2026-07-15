@@ -389,10 +389,8 @@ function drawDecimatedSeries(
     if (sy < minY[col]) minY[col] = sy
     if (sy > maxY[col]) maxY[col] = sy
   }
-  // Connect columns into a continuous line: from the previous column up to this
-  // column's min, then a vertical bar across its [min,max] range. This keeps
-  // smooth signals (low per-column range) continuous instead of collapsing to
-  // disconnected dots, while still showing the full envelope of dense regions.
+  // Connect populated columns into a continuous envelope. Empty columns are
+  // skipped, so missing samples are interpolated and marked only by the rug.
   let havePrev = false
   let prevX = 0
   let prevY = 0
@@ -402,7 +400,9 @@ function drawDecimatedSeries(
     if (havePrev) {
       out.push(buildLine(prevX, prevY, x, minY[col], lineThick, color))
     }
-    out.push(buildLine(x, minY[col], x, maxY[col], lineThick, color))
+    if (maxY[col] > minY[col]) {
+      out.push(buildLine(x, minY[col], x, maxY[col], lineThick, color))
+    }
     havePrev = true
     prevX = x
     prevY = maxY[col]
@@ -411,10 +411,10 @@ function drawDecimatedSeries(
 
 /**
  * Mark samples that have no plottable value (BIDS `n/a` -> NaN) as short ticks
- * along the bottom axis (a "rug"). The trace itself is left gapped (missing data
- * is not interpolated); this surfaces WHERE it is missing — which is otherwise
- * invisible for a dense, decimated series. Decimation-safe: at most one tick per
- * pixel column, so a long run of gaps collapses to a bounded number of ticks.
+ * along the bottom axis (a "rug"). The trace interpolates across interior
+ * missing samples; the ticks mark all missing sample locations. Decimation-safe:
+ * at most one tick per pixel column, so a long run of gaps collapses to a
+ * bounded number of ticks.
  *
  * Each series gets its own horizontal lane (by `laneIndex`), stacked upward from
  * the bottom axis, so when two series miss the same sample their ticks sit
@@ -556,11 +556,16 @@ export function graphTotalWidth(
   if (!data) return 0
   if (isSignalMode(data)) {
     if (signalPointCount(data) < 2) return 0
-    if (data.fullCanvas) {
-      return Math.max(GRAPH_MIN_WIDTH, Math.min(GRAPH_MAX_WIDTH, canvasWidth))
-    }
   } else if (data.lines.length === 0 || data.lines[0].length < 2) {
     return 0
+  }
+  // SLICE_TYPE.NONE (or a signal-only scene) hides the spatial view and hands the
+  // whole canvas to the plot — for BOTH the multi-series signal graph and the plain
+  // 4D-volume time-course graph (which previously stayed a side strip on NONE). Use
+  // the full backing width (NOT capped to GRAPH_MAX_WIDTH, which would leave a blank
+  // strip on a >4096-px backing canvas, e.g. 4K/5K or high-DPR).
+  if (data.fullCanvas) {
+    return Math.max(GRAPH_MIN_WIDTH, canvasWidth)
   }
   const raw = Math.round(canvasWidth * GRAPH_WIDTH_RATIO)
   return Math.max(GRAPH_MIN_WIDTH, Math.min(GRAPH_MAX_WIDTH, raw))
@@ -885,10 +890,8 @@ function buildSignalGraphElements(
     labels.push(tb)
   }
 
-  // 5) Data lines, clipped to the x-window and plot area. Dense series (more
-  // samples than ~2 per horizontal pixel) are decimated to a per-pixel-column
-  // min/max envelope so the line buffer stays bounded by the plot width
-  // regardless of sample count.
+  // 5) Data lines, clipped to the x-window and plot area. Dense visible windows
+  // are decimated to keep the line buffer bounded by the plot width.
   const decimateThreshold = Math.max(2, Math.ceil(pW * 2))
   for (let j = 0; j < series.length; j++) {
     const s = series[j]
@@ -899,7 +902,26 @@ function buildSignalGraphElements(
       lineAlpha < 1
         ? [base[0], base[1], base[2], (base[3] ?? 1) * lineAlpha]
         : base
-    if (s.y.length > decimateThreshold) {
+    let visibleSamples = 0
+    if (s.x) {
+      for (
+        let i = 0;
+        i < s.y.length && visibleSamples <= decimateThreshold;
+        i++
+      ) {
+        const xv = s.x[i]
+        if (xv >= xMin && xv <= xMax && Number.isFinite(s.y[i])) {
+          visibleSamples++
+        }
+      }
+    } else {
+      const i0 = Math.max(0, Math.ceil(xMin))
+      const i1 = Math.min(s.y.length - 1, Math.floor(xMax))
+      for (let i = i0; i <= i1 && visibleSamples <= decimateThreshold; i++) {
+        if (Number.isFinite(s.y[i])) visibleSamples++
+      }
+    }
+    if (visibleSamples > decimateThreshold) {
       drawDecimatedSeries(
         s,
         xMin,
@@ -918,21 +940,19 @@ function buildSignalGraphElements(
       )
       continue
     }
-    // Connect consecutive finite samples, CLIPPING each segment to the x-window
-    // in data space. This draws the segment from an out-of-window neighbour up to
-    // the plot edge (e.g. a sparse volume time-course whose first/last in-window
-    // sample would otherwise float disconnected from the left/right edge). NaN
-    // (missing) samples break the line so gaps are preserved.
+    // Connect finite samples, CLIPPING each segment to the x-window in data
+    // space. This draws the segment from an out-of-window neighbour up to the
+    // plot edge (e.g. a sparse volume time-course whose first/last in-window
+    // sample would otherwise float disconnected from the left/right edge). NaNs
+    // are skipped, so interior missing samples are interpolated; the bottom rug
+    // marks all missing samples.
     let prevX = 0
     let prevY = 0
     let havePrev = false
     for (let i = 0; i < s.y.length; i++) {
       const xv = seriesX(s, i)
       const yv = s.y[i]
-      if (!Number.isFinite(yv)) {
-        havePrev = false
-        continue
-      }
+      if (!Number.isFinite(yv)) continue
       if (havePrev) {
         const seg = clipSegmentX(prevX, prevY, xv, yv, xMin, xMax)
         if (seg) {
@@ -955,9 +975,10 @@ function buildSignalGraphElements(
   }
 
   // 5a) Missing-data rug: short ticks at the bottom axis marking samples with no
-  // value (BIDS `n/a`). Gaps are left in the trace (not interpolated); this is
-  // the only on-graph cue for missing data in a dense, decimated series. Each
-  // series gets its own stacked lane so coincident gaps don't overwrite.
+  // value (BIDS `n/a`). The trace interpolates across interior missing samples,
+  // and the rug is the explicit on-graph cue for all missing locations. Each
+  // series gets its own stacked lane so coincident missing samples don't
+  // overwrite.
   const rugLaneH = Math.max(2, Math.round(fontSize * 0.35))
   // Keep the stacked lanes inside a reserved band at the bottom (~20% of plot
   // height); with many series carrying gaps, excess lanes share the top lane

@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OME-Zarr Pyramid Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b0d10;
+        color: #e8eaed;
+        overflow: hidden;
+      }
+      header {
+        padding: 8px 16px;
+        border-bottom: 1px solid #222;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px 14px;
+      }
+      header h1 {
+        font-size: 0.95rem;
+        margin: 0;
+        font-weight: 500;
+      }
+      header .links {
+        margin-left: auto;
+      }
+      header .links a {
+        color: #8ab4f8;
+        margin-left: 12px;
+        text-decoration: none;
+        font-size: 0.85rem;
+      }
+      header .control {
+        font-size: 0.8rem;
+        color: #9aa0a6;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      header select,
+      header input[type='text'] {
+        background: #1a1d20;
+        border: 1px solid #2a2d31;
+        color: #e8eaed;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+      }
+      header input[type='text'] {
+        width: 110px;
+      }
+      header input[type='range'] {
+        width: 96px;
+        vertical-align: middle;
+      }
+      header #bbox {
+        width: 180px;
+        font-family: ui-monospace, monospace;
+      }
+      header button {
+        background: #1a1d20;
+        border: 1px solid #2a2d31;
+        color: #c8cacd;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        cursor: pointer;
+      }
+      header button:hover {
+        background: #2a2d31;
+        color: #e8eaed;
+      }
+      main {
+        position: relative;
+        height: calc(100vh - 49px);
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        outline: none;
+      }
+      .hud {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        background: rgba(0, 0, 0, 0.6);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-family: ui-monospace, monospace;
+        font-size: 0.72rem;
+        color: #c8cacd;
+        line-height: 1.55;
+        max-width: 360px;
+        pointer-events: none;
+      }
+      .hud strong {
+        color: #e8eaed;
+        font-weight: 600;
+      }
+      .hud .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .hud .key {
+        color: #8a8c8f;
+      }
+      .levels {
+        margin-top: 6px;
+        border-top: 1px solid #2a2d31;
+        padding-top: 6px;
+      }
+      .levels .lv {
+        display: grid;
+        grid-template-columns: 2.4rem 1fr auto;
+        gap: 8px;
+        font-size: 0.7rem;
+      }
+      .levels .lv.active {
+        color: #8ab4f8;
+      }
+      .fallback {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: #1a1d20;
+        color: #c8cacd;
+        font-size: 0.9rem;
+        text-align: center;
+      }
+      .fallback[hidden] {
+        display: none;
+      }
+      .empty {
+        font-style: italic;
+        color: #8a8c8f;
+      }
+      .busy {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        background: rgba(0, 0, 0, 0.72);
+        padding: 6px 12px;
+        border-radius: 5px;
+        font-size: 0.72rem;
+        color: #8ab4f8;
+        pointer-events: none;
+        font-family: ui-monospace, monospace;
+      }
+      .busy[hidden] {
+        display: none;
+      }
+      .hint {
+        position: absolute;
+        bottom: 12px;
+        left: 12px;
+        background: rgba(0, 0, 0, 0.55);
+        padding: 6px 10px;
+        border-radius: 5px;
+        font-size: 0.7rem;
+        color: #9aa0a6;
+        pointer-events: none;
+        font-family: ui-monospace, monospace;
+      }
+      header label input[type='checkbox'] {
+        vertical-align: middle;
+        margin-right: 4px;
+      }
+      .plan {
+        font-family: ui-monospace, monospace;
+        color: #8a8c8f;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>OME-Zarr Pyramid Demo</h1>
+      <span class="control">
+        <label for="volume">Volume</label>
+        <select id="volume"></select>
+      </span>
+      <span class="control">
+        <label for="level">Level</label>
+        <select id="level"></select>
+      </span>
+      <span class="control">
+        <label for="subvolume">Subvol</label>
+        <select id="subvolume"></select>
+      </span>
+      <span class="control">
+        <label for="view">View</label>
+        <select id="view">
+          <option value="4" selected>render</option>
+          <option value="3">multiplanar</option>
+        </select>
+      </span>
+      <span
+        class="control"
+        title="Separate streamed chunk cubes while sampling the original voxel coordinates"
+      >
+        <label for="explodedToggle">
+          <input type="checkbox" id="explodedToggle" />
+          explode
+        </label>
+      </span>
+      <span class="control">
+        <label for="explodeEx">ex <span id="valEx">1.5</span></label>
+        <input
+          type="range"
+          id="explodeEx"
+          min="1"
+          max="5"
+          step="0.1"
+          value="1.5"
+        />
+      </span>
+      <span class="control">
+        <label for="explodeEy">ey <span id="valEy">1.5</span></label>
+        <input
+          type="range"
+          id="explodeEy"
+          min="1"
+          max="5"
+          step="0.1"
+          value="1.5"
+        />
+      </span>
+      <span class="control">
+        <label for="explodeEz">ez <span id="valEz">1.5</span></label>
+        <input
+          type="range"
+          id="explodeEz"
+          min="1"
+          max="5"
+          step="0.1"
+          value="1.5"
+        />
+      </span>
+      <span class="control plan" id="explodePlan"></span>
+      <span class="control">
+        <label for="colormap">Colormap</label>
+        <select id="colormap">
+          <option value="gray" selected>gray</option>
+          <option value="viridis">viridis</option>
+          <option value="hot">hot</option>
+          <option value="plasma">plasma</option>
+          <option value="bone">bone</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="window">Window</label>
+        <input
+          type="text"
+          id="window"
+          placeholder="min,max"
+          title="e.g. 80,200"
+        />
+      </span>
+      <span class="control">
+        <label for="bbox">Bbox</label>
+        <input
+          type="text"
+          id="bbox"
+          placeholder="x0,y0,z0,x1,y1,z1"
+          title="Subvolume read — leave blank for full level"
+        />
+        <button id="bboxRandom" type="button" title="Pick a random 128 cube">
+          random
+        </button>
+        <button id="bboxClear" type="button" title="Clear bbox">clear</button>
+      </span>
+      <span class="control" title="Zoom independently of mouse wheel — works even while a right-click clip-plane drag is in progress">
+        <label for="zoom">Zoom</label>
+        <input
+          type="range"
+          id="zoom"
+          min="0.5"
+          max="8"
+          step="0.05"
+          value="1"
+        />
+      </span>
+      <span class="control" title="Pan horizontally in screen space. Works even while a right-click clip-plane drag is in progress.">
+        <label for="panX">Pan X</label>
+        <input
+          type="range"
+          id="panX"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+      </span>
+      <span class="control" title="Pan vertically in screen space. Works even while a right-click clip-plane drag is in progress.">
+        <label for="panY">Pan Y</label>
+        <input
+          type="range"
+          id="panY"
+          min="-1"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+      </span>
+      <span class="control" title="Move the crosshair along X without ray-picking. Refocuses the multi-LOD here, independent of the clip plane.">
+        <label for="crossX">Cross X</label>
+        <input type="range" id="crossX" min="0" max="1" step="0.005" value="0.5" />
+      </span>
+      <span class="control" title="Move the crosshair along Y without ray-picking. Refocuses the multi-LOD here, independent of the clip plane.">
+        <label for="crossY">Cross Y</label>
+        <input type="range" id="crossY" min="0" max="1" step="0.005" value="0.5" />
+      </span>
+      <span class="control" title="Move the crosshair along Z without ray-picking. Refocuses the multi-LOD here, independent of the clip plane.">
+        <label for="crossZ">Cross Z</label>
+        <input type="range" id="crossZ" min="0" max="1" step="0.005" value="0.5" />
+      </span>
+      <span class="control" title="Switch pyramid level automatically based on viewer zoom">
+        <label for="autoLod">
+          <input type="checkbox" id="autoLod" checked />
+          auto-LOD
+        </label>
+      </span>
+      <div class="links" data-nav-links></div>
+    </header>
+    <main>
+      <canvas id="nv-canvas" aria-label="OME-Zarr volume render"></canvas>
+      <div class="hud" id="hud">Loading...</div>
+      <div class="busy" id="busy" hidden></div>
+      <div class="hint">
+        Scroll or Zoom slider (auto-LOD swaps level) · Left-drag to orbit ·
+        Pan X/Y to translate · stream L0 whole level or choose a subvolume
+      </div>
+      <div class="fallback" id="fallback" hidden></div>
+    </main>
+    <script type="module" src="/src/omezarr.ts"></script>
+  </body>
+</html>

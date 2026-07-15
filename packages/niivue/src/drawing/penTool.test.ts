@@ -3,13 +3,303 @@ import {
   clampToDimension,
   drawLine,
   drawPoint,
+  drawSphere,
+  floodFill3D,
   floodFillSection,
   getSliceIndices,
   isPenLocationValid,
   isSamePoint,
+  magicWand3D,
   PEN_SLICE_TYPE,
   voxelIndex,
 } from './penTool'
+
+describe('drawSphere', () => {
+  const dims = [3, 5, 5, 5] // [ndim, dx, dy, dz]
+  const idx = (x: number, y: number, z: number) => voxelIndex(x, y, z, 5, 5)
+
+  test('radius 0 paints a single voxel', () => {
+    const bmp = new Uint8Array(125)
+    drawSphere({
+      x: 2,
+      y: 2,
+      z: 2,
+      radius: 0,
+      penValue: 7,
+      drawBitmap: bmp,
+      dims,
+      penOverwrites: true,
+    })
+    expect(bmp[idx(2, 2, 2)]).toBe(7)
+    expect(bmp.reduce((a, b) => a + (b ? 1 : 0), 0)).toBe(1)
+  })
+
+  test('radius 1 paints a 6-neighbour ball (centre + face neighbours)', () => {
+    const bmp = new Uint8Array(125)
+    drawSphere({
+      x: 2,
+      y: 2,
+      z: 2,
+      radius: 1,
+      penValue: 3,
+      drawBitmap: bmp,
+      dims,
+      penOverwrites: true,
+    })
+    // centre + 6 axis neighbours are within radius 1; corners (dist² = 2,3) are not
+    expect(bmp[idx(2, 2, 2)]).toBe(3)
+    expect(bmp[idx(1, 2, 2)]).toBe(3)
+    expect(bmp[idx(3, 2, 2)]).toBe(3)
+    expect(bmp[idx(2, 1, 2)]).toBe(3)
+    expect(bmp[idx(2, 2, 3)]).toBe(3)
+    expect(bmp[idx(1, 1, 2)]).toBe(0) // diagonal excluded
+    expect(bmp.reduce((a, b) => a + (b ? 1 : 0), 0)).toBe(7)
+  })
+
+  test('clips at the volume boundary', () => {
+    const bmp = new Uint8Array(125)
+    drawSphere({
+      x: 0,
+      y: 0,
+      z: 0,
+      radius: 1,
+      penValue: 1,
+      drawBitmap: bmp,
+      dims,
+      penOverwrites: true,
+    })
+    // only the in-bounds half of the ball is painted; no out-of-range writes
+    expect(bmp[idx(0, 0, 0)]).toBe(1)
+    expect(bmp[idx(1, 0, 0)]).toBe(1)
+    expect(bmp.reduce((a, b) => a + (b ? 1 : 0), 0)).toBe(4)
+  })
+
+  test('penOverwrites=false skips non-zero voxels', () => {
+    const bmp = new Uint8Array(125)
+    bmp[idx(2, 2, 2)] = 9
+    drawSphere({
+      x: 2,
+      y: 2,
+      z: 2,
+      radius: 1,
+      penValue: 3,
+      drawBitmap: bmp,
+      dims,
+      penOverwrites: false,
+    })
+    expect(bmp[idx(2, 2, 2)]).toBe(9) // preserved
+    expect(bmp[idx(1, 2, 2)]).toBe(3) // empty neighbour painted
+  })
+})
+
+// ---------------------------------------------------------------------------
+// floodFill3D
+// ---------------------------------------------------------------------------
+describe('floodFill3D', () => {
+  const dims = [3, 5, 5, 5] // [ndim, dx, dy, dz]
+  const idx = (x: number, y: number, z: number) => voxelIndex(x, y, z, 5, 5)
+
+  test('fills the whole volume when keep is always true', () => {
+    const bmp = new Uint8Array(125)
+    const res = floodFill3D({
+      seed: [2, 2, 2],
+      drawBitmap: bmp,
+      dims,
+      penValue: 4,
+      keep: () => true,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(125)
+    expect(res.hitCap).toBe(false)
+    expect(res.min).toEqual([0, 0, 0])
+    expect(res.max).toEqual([4, 4, 4])
+    expect(bmp.every((v) => v === 4)).toBe(true)
+  })
+
+  test('grows only the 6-connected region that passes keep', () => {
+    const bmp = new Uint8Array(125)
+    // Region: the x=0 plane is "tissue"; a lone voxel at x=4 is isolated.
+    const keep = (x: number, _y: number, _z: number) => x === 0 || x === 4
+    const res = floodFill3D({
+      seed: [0, 0, 0],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      keep,
+      fillOverwrites: true,
+    })
+    // Only the connected x=0 plane (25 voxels) is filled; the x=4 island is not
+    // reachable across the x=1..3 gap.
+    expect(res.filled).toBe(25)
+    expect(bmp[idx(0, 3, 4)]).toBe(1)
+    expect(bmp[idx(4, 0, 0)]).toBe(0)
+    expect(res.min).toEqual([0, 0, 0])
+    expect(res.max).toEqual([0, 4, 4])
+  })
+
+  test('returns filled 0 when the seed fails keep', () => {
+    const bmp = new Uint8Array(125)
+    const res = floodFill3D({
+      seed: [2, 2, 2],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      keep: () => false,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(0)
+    expect(bmp.every((v) => v === 0)).toBe(true)
+  })
+
+  test('honors maxVoxels cap and reports hitCap', () => {
+    const bmp = new Uint8Array(125)
+    const res = floodFill3D({
+      seed: [2, 2, 2],
+      drawBitmap: bmp,
+      dims,
+      penValue: 2,
+      keep: () => true,
+      fillOverwrites: true,
+      maxVoxels: 10,
+    })
+    expect(res.filled).toBe(10)
+    expect(res.hitCap).toBe(true)
+  })
+
+  test('fillOverwrites=false preserves existing nonzero draw voxels', () => {
+    const bmp = new Uint8Array(125)
+    bmp[idx(2, 2, 2)] = 9
+    const res = floodFill3D({
+      seed: [0, 0, 0],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      keep: () => true,
+      fillOverwrites: false,
+    })
+    // Every voxel except the preserved one gets painted.
+    expect(bmp[idx(2, 2, 2)]).toBe(9)
+    expect(res.filled).toBe(124)
+  })
+
+  test('eraser fill (penValue 0) clears a connected painted region', () => {
+    const bmp = new Uint8Array(125).fill(5)
+    const res = floodFill3D({
+      seed: [2, 2, 2],
+      drawBitmap: bmp,
+      dims,
+      penValue: 0,
+      keep: () => true,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(125)
+    expect(bmp.every((v) => v === 0)).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// magicWand3D
+// ---------------------------------------------------------------------------
+describe('magicWand3D', () => {
+  const dims = [3, 5, 5, 5] // [ndim, dx, dy, dz]
+  const idx = (x: number, y: number, z: number) => voxelIndex(x, y, z, 5, 5)
+
+  // Source volume: a 3x3x3 bright cube (value 100) in one corner, rest 0.
+  const makeSample = () => {
+    const src = new Float32Array(125)
+    for (let z = 0; z < 3; z++)
+      for (let y = 0; y < 3; y++)
+        for (let x = 0; x < 3; x++) src[idx(x, y, z)] = 100
+    return (x: number, y: number, z: number) => src[idx(x, y, z)]
+  }
+
+  test('grows the intensity-similar connected region within tolerance', () => {
+    const bmp = new Uint8Array(125)
+    const res = magicWand3D({
+      seed: [1, 1, 1],
+      drawBitmap: bmp,
+      dims,
+      penValue: 3,
+      sample: makeSample(),
+      tolerance: 5,
+      fillOverwrites: true,
+    })
+    // The whole 27-voxel bright cube is filled; nothing outside it.
+    expect(res.filled).toBe(27)
+    expect(bmp[idx(0, 0, 0)]).toBe(3)
+    expect(bmp[idx(2, 2, 2)]).toBe(3)
+    expect(bmp[idx(3, 0, 0)]).toBe(0) // value 0, outside the band
+    expect(res.min).toEqual([0, 0, 0])
+    expect(res.max).toEqual([2, 2, 2])
+  })
+
+  test('tolerance 0 requires an exact intensity match', () => {
+    const sample = makeSample()
+    const bmp = new Uint8Array(125)
+    // Seed on a background voxel: fills the connected background (125 - 27 cube).
+    const res = magicWand3D({
+      seed: [4, 4, 4],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      sample,
+      tolerance: 0,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(98) // 125 total - 27 bright cube
+    expect(bmp[idx(1, 1, 1)]).toBe(0) // cube untouched
+  })
+
+  test('out-of-bounds seed fills nothing', () => {
+    const bmp = new Uint8Array(125)
+    const res = magicWand3D({
+      seed: [9, 9, 9],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      sample: makeSample(),
+      tolerance: 10,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(0)
+    expect(bmp.every((v) => v === 0)).toBe(true)
+  })
+
+  test('a wide tolerance floods everything reachable', () => {
+    const bmp = new Uint8Array(125)
+    const res = magicWand3D({
+      seed: [1, 1, 1],
+      drawBitmap: bmp,
+      dims,
+      penValue: 2,
+      sample: makeSample(),
+      tolerance: 1000,
+      fillOverwrites: true,
+    })
+    expect(res.filled).toBe(125)
+  })
+
+  test('restrictToSlice confines the grow to one plane (2D)', () => {
+    const bmp = new Uint8Array(125)
+    // Wide tolerance would fill the whole volume in 3D; pinning z=2 keeps it to
+    // that axial slice (5x5 = 25 voxels).
+    const res = magicWand3D({
+      seed: [2, 2, 2],
+      drawBitmap: bmp,
+      dims,
+      penValue: 1,
+      sample: () => 50, // uniform, so only the plane restriction bounds it
+      tolerance: 1000,
+      fillOverwrites: true,
+      restrictToSlice: { axis: 2, index: 2 },
+    })
+    expect(res.filled).toBe(25)
+    expect(res.min).toEqual([0, 0, 2])
+    expect(res.max).toEqual([4, 4, 2])
+    // A voxel on a different z is untouched.
+    expect(bmp[idx(2, 2, 3)]).toBe(0)
+  })
+})
 
 // ---------------------------------------------------------------------------
 // voxelIndex

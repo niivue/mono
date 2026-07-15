@@ -185,10 +185,13 @@ export function uploadMeshGPU(
   gl: WebGL2RenderingContext,
   meshData: NVMesh,
   options: Record<string, unknown> = {},
-): WebGLMeshGPU & { shaderType?: string } {
-  const { shaderType = 'phong' } = options as { shaderType?: string }
+): WebGLMeshGPU & { shaderType?: string; sliceShaderType?: string } {
+  const { shaderType = 'phong', sliceShaderType = '' } = options as {
+    shaderType?: string
+    sliceShaderType?: string
+  }
   const gpu = createMeshGpu(gl, meshData, shaderType)
-  return { ...gpu, shaderType }
+  return { ...gpu, shaderType, sliceShaderType }
 }
 
 export function useShader(

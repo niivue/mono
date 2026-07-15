@@ -3,11 +3,17 @@ import type NiiVueGPU from '@/NVControlBase'
 import type { BackendType } from '@/NVTypes'
 import NVViewGPU from '@/wgpu/NVViewGPU'
 import {
+  clearCanvasMessage,
+  GRAPHICS_UNAVAILABLE_MESSAGE,
+  showCanvasMessage,
+} from './canvasMessage'
+import {
   initInteraction,
   removeInteractionListeners,
   setupDragAndDrop,
   setupResizeHandler,
 } from './interactions'
+import { registerCanvasInstance } from './viewBoth'
 
 export async function attachTo(
   ctrl: NiiVueGPU,
@@ -40,6 +46,8 @@ export async function attachToCanvas(
     )
   }
   ctrl.canvas = canvas
+  clearCanvasMessage(canvas)
+  registerCanvasInstance(ctrl, canvas)
   ctrl.view = new NVViewGPU(canvas, ctrl.model, ctrl.opts)
   try {
     await ctrl.view.init()
@@ -55,6 +63,16 @@ export async function attachToCanvas(
     return ctrl
   } catch (error) {
     log.error('Failed to initialize view:', error)
+    // Tear down the partially-initialized view so a retry starts clean (no leaked
+    // GPU/context resources, no stale ctrl.view).
+    try {
+      ctrl.view?.destroy()
+    } catch {
+      // a view that failed mid-init may not destroy cleanly; ignore
+    }
+    ctrl.view = null
+    // WebGPU-only distribution: no WebGL2 fallback, so surface guidance on-canvas.
+    showCanvasMessage(canvas, GRAPHICS_UNAVAILABLE_MESSAGE)
     throw error
   }
 }
@@ -68,10 +86,10 @@ export async function recreateView(ctrl: NiiVueGPU): Promise<void> {
   }
   const oldCanvas = ctrl.canvas as HTMLCanvasElement
   const parent = oldCanvas.parentNode
-  const newCanvas = document.createElement('canvas')
-  newCanvas.id = oldCanvas.id
-  newCanvas.className = oldCanvas.className
-  newCanvas.style.cssText = oldCanvas.style.cssText
+  // cloneNode(false) preserves all attributes (width/height/data-*/aria/tabindex),
+  // unlike copying only id/class/style; it carries no rendering context, so the
+  // clone can getContext a fresh backend. (External listeners are not preserved.)
+  const newCanvas = oldCanvas.cloneNode(false) as HTMLCanvasElement
   parent?.replaceChild(newCanvas, oldCanvas)
   ctrl.canvas = newCanvas
   ctrl.view = new NVViewGPU(ctrl.canvas, ctrl.model, ctrl.opts)
@@ -83,6 +101,7 @@ export async function recreateView(ctrl: NiiVueGPU): Promise<void> {
   setupDragAndDrop(ctrl)
   setupResizeHandler(ctrl)
   await ctrl.view.updateBindGroups()
+  ctrl.restoreSlidePlaneView()
   ctrl.view.resize()
   ctrl.drawScene()
 }

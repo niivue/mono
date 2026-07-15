@@ -110,6 +110,28 @@ import type {
   VolumeRenderConfig,
 } from '@/NVTypes'
 
+// NVD document format version. Lives here (pure, importable everywhere) so the
+// legacy converter can stamp it without importing NVDocument's Vite module graph.
+// See NVDocument for the version history / migration notes.
+export const NVD_DOCUMENT_VERSION = 9
+
+// Default scene values. The scene group is built with gl-matrix vec types in
+// NVModel, so this holds the plain-value defaults (used both to construct the
+// model and to decide which scene settings a sparse document omits).
+export const SCENE_DEFAULTS = {
+  azimuth: 110,
+  elevation: 10,
+  crosshairPos: [0.5, 0.5, 0.5] as [number, number, number],
+  pan2Dxyzmm: [0, 0, 0, 1] as [number, number, number, number],
+  scaleMultiplier: 1.0,
+  renderPan: [0, 0] as [number, number],
+  gamma: 1.0,
+  backgroundColor: [0, 0, 0, 1] as [number, number, number, number],
+  clipPlaneColor: [0.7, 0, 0.7, 0.4] as [number, number, number, number],
+  isClipPlaneCutaway: false,
+  clipPlaneOverlay: false,
+}
+
 export const LAYOUT_DEFAULTS: LayoutConfig = {
   sliceType: SLICE_TYPE.MULTIPLANAR,
   mosaicString: '',
@@ -168,6 +190,7 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   isV1SliceShader: false,
   matcap: '',
   paqdUniforms: [0.01, 0.5, 0.25, 0.4] as [number, number, number, number],
+  transmittanceCutoff: 0.95,
 }
 
 export const MESH_DEFAULTS: MeshRenderConfig = {
@@ -183,6 +206,9 @@ export const DRAW_DEFAULTS: DrawConfig = {
   opacity: 0.8,
   rimOpacity: -1,
   colormap: '_draw',
+  isClickToSegment: false,
+  clickToSegmentTolerance: 0.05,
+  clickToSegmentIs2D: true,
 }
 
 export const INTERACTION_DEFAULTS: InteractionConfig = {

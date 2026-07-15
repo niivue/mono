@@ -20,6 +20,7 @@
  */
 
 import type NiiVueGPU from '@niivue/niivue'
+import { gzipCompress } from './gzip'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -47,18 +48,8 @@ export interface SaveHTMLOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Compression helpers (Web Streams API — available in all modern browsers)
-// ---------------------------------------------------------------------------
-
-/** Gzip-compress a Uint8Array. */
-async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new CompressionStream('gzip')
-  const writer = stream.writable.getWriter()
-  writer.write(data)
-  writer.close()
-  return new Uint8Array(await new Response(stream.readable).arrayBuffer())
-}
+// Compression helpers live in ./gzip so they are reachable by the Bun test
+// runner — this module imports @niivue/niivue, whose graph uses import.meta.glob.
 
 // ---------------------------------------------------------------------------
 // Encoding / escaping helpers

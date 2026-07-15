@@ -1,4 +1,5 @@
 import { mat4 } from 'gl-matrix'
+import { getCanvasViewport } from '@/control/viewBoth'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { deg2rad } from '@/math/NVTransforms'
@@ -7,11 +8,14 @@ import * as NVShapes from '@/mesh/NVShapes'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
 import type {
+  NVImage,
   NVMesh,
   NVViewOptions,
   ViewHitTest,
   WebGLMeshGPU,
 } from '@/NVTypes'
+import type { SlidePlaneState } from '@/slide/slidePlane'
+import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
@@ -26,6 +30,13 @@ import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
+import {
+  type ChunkPlan,
+  chunkSampleTransform,
+  chunksCrossingSlice,
+  identityChunkSampleTransform,
+} from '@/volume/chunking'
 import { GLBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
@@ -37,9 +48,13 @@ import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
 import { SliceRenderer } from './slice'
+import { SlidePlaneRenderer } from './slidePlaneRender'
 import { ThumbnailRenderer } from './thumbnail'
 
-type MeshGpuWithShader = WebGLMeshGPU & { shaderType?: string }
+type MeshGpuWithShader = WebGLMeshGPU & {
+  shaderType?: string
+  sliceShaderType?: string
+}
 
 export default class NVGlview {
   canvas: HTMLCanvasElement
@@ -48,6 +63,8 @@ export default class NVGlview {
   isAntiAlias: boolean
   forceDevicePixelRatio: number
   gl: WebGL2RenderingContext | null
+  /** Set when the WebGL2 context is lost (e.g. GPU OOM); halts the render loop. */
+  private _contextLost = false
   max2D: number
   max3D: number
   fontTexture: WebGLTexture | null
@@ -67,6 +84,9 @@ export default class NVGlview {
   colorbarRenderer: ColorbarRenderer
   thumbnailRenderer: ThumbnailRenderer
   sliceRenderer: SliceRenderer
+  slidePlaneRenderer: SlidePlaneRenderer
+  /** Optional WSI slide registered into volume mm space, drawn in the 3D render tile. */
+  slidePlane: SlidePlaneState | null = null
   meshResources: Map<NVMesh, MeshGpuWithShader>
   orientCubeGpu: WebGLMeshGPU | null
   // Bounds: pixel rect for sub-canvas rendering
@@ -75,6 +95,8 @@ export default class NVGlview {
   private _boundsOffsetX = 0
   private _boundsOffsetY = 0
   private _isSubCanvasBounds = false
+  /** True when the bounds rect (after viewport pan/zoom) is entirely off-canvas */
+  _isBoundsOffscreen = false
   // Narrow public getters for bench.ts to read current render-area size
   // without making the backing fields public or mutable.
   get boundsWidth(): number {
@@ -134,6 +156,7 @@ export default class NVGlview {
     this.colorbarRenderer = new ColorbarRenderer()
     this.thumbnailRenderer = new ThumbnailRenderer()
     this.sliceRenderer = new SliceRenderer()
+    this.slidePlaneRenderer = new SlidePlaneRenderer()
     this.meshResources = new Map()
     this.orientCubeGpu = null
   }
@@ -183,6 +206,21 @@ export default class NVGlview {
     const gl = this.gl
     this.max2D = result.max2D
     this.max3D = result.max3D
+    // Surface a lost WebGL context (commonly GPU VRAM exhaustion — e.g. too many
+    // large streamed chunks resident at once) instead of a silently white
+    // canvas, and stop driving the render loop once lost.
+    this.canvas.addEventListener(
+      'webglcontextlost',
+      (event) => {
+        event.preventDefault()
+        this._contextLost = true
+        log.error(
+          'WebGL2 context lost — likely GPU out of memory. Reduce ' +
+            'maxChunkResidencyBytes or use a coarser level.',
+        )
+      },
+      { once: true },
+    )
     let renderer = ''
     let vendor = ''
     const rendererInfo = gl.getExtension('WEBGL_debug_renderer_info')
@@ -201,6 +239,7 @@ export default class NVGlview {
     await this.fontRenderer.init(gl, this.options.font)
     mesh.init(gl)
     this.sliceRenderer.init(gl)
+    this.slidePlaneRenderer.init(gl)
     // Enable required extensions
 
     // Enable depth testing with standard convention
@@ -220,8 +259,23 @@ export default class NVGlview {
   async _createResources(): Promise<void> {
     const gl = this.gl
     if (!gl) return
-    // Initialize volume renderer
-    await this.volumeRenderer.init(gl, this.max3D)
+    // Initialize volume renderer. A `maxTextureDimension3D` option, when set,
+    // caps the chunking threshold below the GPU limit so the tiled-volume
+    // path can be exercised on normally-sized volumes.
+    const override = this.options.maxTextureDimension3D
+    const chunkLimit =
+      typeof override === 'number' && override > 0
+        ? Math.min(this.max3D, override)
+        : this.max3D
+    // `maxChunkResidencyBytes`, when set, overrides the GPU memory budget for a
+    // chunked volume's resident chunk set; the manager evicts least-recently-
+    // visible chunks to stay within it. Unset leaves the renderer default.
+    const residencyOverride = this.options.maxChunkResidencyBytes
+    const chunkResidencyBytes =
+      typeof residencyOverride === 'number' && residencyOverride > 0
+        ? residencyOverride
+        : undefined
+    await this.volumeRenderer.init(gl, chunkLimit, chunkResidencyBytes)
     // Initialize crosshair renderer with pre-allocated buffers
     const attrs = mesh.getAttributeLocations(gl, 'phong')
     this.crosshairRenderer.init(
@@ -299,58 +353,108 @@ export default class NVGlview {
   }
 
   async _updateBindings(): Promise<void> {
+    // try/finally so an early return or a thrown await never leaves isBusy stuck
+    // true — the render loop skips while busy, so a stuck flag freezes drawing.
     this.isBusy = true
-    const gl = this.gl
-    if (!gl) {
-      this.isBusy = false
-      return
-    }
-    const vols = this.model.getVolumes()
-    this.colorbarRenderer.buildColorbars(
-      gl,
-      this.model.collectColorbars(),
-      this.model.scene.backgroundColor,
-    )
-    if (vols.length > 0) {
-      await this.volumeRenderer.updateVolume(
-        gl,
-        vols[0],
-        this.model.volume.matcap,
-        vols,
-      )
-    }
-
-    // Handle overlays (all volumes after the first)
-    if (vols.length > 1) {
-      await this.volumeRenderer.updateOverlays(
-        gl,
-        vols[0],
-        vols.slice(1),
-        this.model.volume.paqdUniforms,
-      )
-      if (
-        this.model.volume.isBackgroundMasking &&
-        this.volumeRenderer.overlayTexture &&
-        this.volumeRenderer.volumeTexture &&
-        vols[0].dimsRAS
-      ) {
-        const dims = [
-          vols[0].dimsRAS[1],
-          vols[0].dimsRAS[2],
-          vols[0].dimsRAS[3],
-        ]
-        maskOverlayByBackground(
-          gl,
-          this.volumeRenderer.volumeTexture,
-          this.volumeRenderer.overlayTexture,
-          dims,
-        )
+    try {
+      const gl = this.gl
+      if (!gl) {
+        return
       }
-    } else {
-      this.volumeRenderer.clearOverlay(gl)
+      const vols = this.model.getVolumes()
+      this.colorbarRenderer.buildColorbars(
+        gl,
+        this.model.collectColorbars(),
+        this.model.scene.backgroundColor,
+      )
+      if (vols.length > 0) {
+        if (this.options.instances) {
+          // Multi-instance mode (global3d): upload every volume's GPU texture
+          // so the render loop can switch the active texture per tile via
+          // bindCachedVolume. Without this, all tiles would share volumes[0]'s
+          // texture and visibly "jump" as the model's first volume changes.
+          for (const vol of vols) {
+            try {
+              await this.volumeRenderer.updateVolume(
+                gl,
+                vol,
+                this.model.volume.matcap,
+                vols,
+                true,
+              )
+            } catch (e) {
+              log.warn(
+                `updateVolume failed for ${vol.name}: ${(e as Error).message}`,
+              )
+            }
+          }
+          const keepKeys = new Set<string>()
+          for (const vol of vols) {
+            const key = vol.url || vol.name
+            if (key) keepKeys.add(key)
+          }
+          this.volumeRenderer.pruneVolumeCache(keepKeys)
+        } else {
+          try {
+            await this.volumeRenderer.updateVolume(
+              gl,
+              vols[0],
+              this.model.volume.matcap,
+              vols,
+            )
+          } catch (e) {
+            log.warn(
+              `updateVolume failed for ${vols[0].name}: ${(e as Error).message}`,
+            )
+          }
+        }
+      }
+
+      // Handle overlays (all volumes after the first)
+      if (vols.length > 1 && !this.options.instances) {
+        await this.volumeRenderer.updateOverlays(
+          gl,
+          vols[0],
+          vols.slice(1),
+          this.model.volume.paqdUniforms,
+        )
+        if (
+          this.model.volume.isBackgroundMasking &&
+          this.volumeRenderer.overlayTexture &&
+          this.volumeRenderer.volumeTexture &&
+          vols[0].dimsRAS
+        ) {
+          const dims = [
+            vols[0].dimsRAS[1],
+            vols[0].dimsRAS[2],
+            vols[0].dimsRAS[3],
+          ]
+          maskOverlayByBackground(
+            gl,
+            this.volumeRenderer.volumeTexture,
+            this.volumeRenderer.overlayTexture,
+            dims,
+          )
+        }
+      } else {
+        this.volumeRenderer.clearOverlay(gl)
+      }
+      this._rebuildMeshResources()
+    } finally {
+      this.isBusy = false
     }
-    this._rebuildMeshResources()
-    this.isBusy = false
+  }
+
+  async setCoarseFloor(coarseVol: NVImage | null): Promise<void> {
+    const gl = this.gl
+    if (!gl) return
+    this.volumeRenderer.setCoarseFloor(gl, coarseVol)
+  }
+
+  async swapChunkedVolumePlan(vol: NVImage, plan: ChunkPlan): Promise<void> {
+    const gl = this.gl
+    if (!gl) return
+    await this.volumeRenderer.swapChunkedVolumePlan(gl, vol, plan)
   }
 
   async updateAffineOverlays(): Promise<boolean> {
@@ -375,11 +479,24 @@ export default class NVGlview {
     const gl = this.gl
     const md = this.model
     if (!gl) return
+    // A lost context (GPU OOM) cannot be drawn to; bail so we don't spin the
+    // streaming loop against a dead context.
+    if (this._contextLost || gl.isContextLost()) return
     if (this.isBusy) {
       requestAnimationFrame(() => this.render())
       return
     }
+    // Publish the current lighting to the volume renderer BEFORE any chunk work
+    // (entry creation, request, pump) so chunk uploaders can skip the gradient
+    // pass when unlit. Matches the gradientAmount passed to the volume draw.
+    this.volumeRenderer.gradientAmount = md.volume.illumination
+    // Off-screen after viewport transform: skip the entire render pass — scissor would
+    // clip everything and the work is wasted. preserveDrawingBuffer keeps prior pixels.
+    if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
     markCpuStart()
+    // Phase 3d: advance the chunk-residency LRU clock before the tile loop
+    // requests this frame's working set, so eviction protects visible chunks.
+    this.volumeRenderer.beginChunkFrame()
     // Bounds pixel rect (sub-canvas or full canvas)
     const bx = this._boundsOffsetX
     const by = this._boundsOffsetY
@@ -440,42 +557,53 @@ export default class NVGlview {
     const baseGraphWidth = graphData
       ? NVGraph.graphTotalWidth(graphData, canvasWidth, canvasHeight)
       : 0
-    // No spatial view (a signal-only scene, OR the user chose SLICE_TYPE.NONE):
-    // skip all spatial tiles so no slices, crosshairs, or orientation labels
-    // render; the signal graph fills the instance area on its own. Otherwise lay
-    // out the slices and let the graph reclaim any horizontal slack.
-    const spatialHidden = md.isSpatialViewHidden()
-    const fit = spatialHidden
-      ? {
-          screenSlices: [] as NVSliceLayout.SliceTile[],
-          graphWidth: baseGraphWidth,
-        }
-      : NVSliceLayout.fitSlicesAndGraph(
-          {
-            canvasWH: [
-              canvasWidth - legendWidth - baseGraphWidth,
-              canvasHeight - cbHeight,
-            ],
-            sliceType: md.layout.sliceType,
-            tileMargin: md.layout.margin,
-            extentsMin: md.extentsMin,
-            extentsMax: md.extentsMax,
-            isRadiologicalConvention: md.layout.isRadiological,
-            multiplanarLayout: md.layout.multiplanarType,
-            multiplanarShowRender: md.layout.showRender,
-            sliceMosaicString: md.layout.mosaicString,
-            heroImageFraction: md.layout.heroFraction,
-            heroSliceType: md.layout.heroSliceType,
-            isMultiplanarEqualSize: md.layout.isEqualSize,
-            isCrossLines: md.ui.isCrossLinesVisible,
-            isCenterMosaic: md.layout.isMosaicCentered,
-            customLayout: md.layout.customLayout,
-          },
-          baseGraphWidth,
-        )
-    const graphWidth = fit.graphWidth
-    const screenSlices = fit.screenSlices
-    this.screenSlices = screenSlices
+    let graphWidth: number
+    let screenSlices: NVSliceLayout.SliceTile[]
+    if (this.options.instances) {
+      // Multi-instance mode (global3d): the controller has already populated
+      // `this.screenSlices` via `updateTilesFromInstances` — skip the
+      // slice-layout pass. The signal graph is not used in instance scenes.
+      screenSlices = this.screenSlices
+      graphWidth = baseGraphWidth
+    } else {
+      // No spatial view (a signal-only scene, OR the user chose
+      // SLICE_TYPE.NONE): skip all spatial tiles so no slices, crosshairs, or
+      // orientation labels render; the signal graph fills the instance area on
+      // its own. Otherwise lay out the slices and let the graph reclaim any
+      // horizontal slack.
+      const spatialHidden = md.isSpatialViewHidden()
+      const fit = spatialHidden
+        ? {
+            screenSlices: [] as NVSliceLayout.SliceTile[],
+            graphWidth: baseGraphWidth,
+          }
+        : NVSliceLayout.fitSlicesAndGraph(
+            {
+              canvasWH: [
+                canvasWidth - legendWidth - baseGraphWidth,
+                canvasHeight - cbHeight,
+              ],
+              sliceType: md.layout.sliceType,
+              tileMargin: md.layout.margin,
+              extentsMin: md.extentsMin,
+              extentsMax: md.extentsMax,
+              isRadiologicalConvention: md.layout.isRadiological,
+              multiplanarLayout: md.layout.multiplanarType,
+              multiplanarShowRender: md.layout.showRender,
+              sliceMosaicString: md.layout.mosaicString,
+              heroImageFraction: md.layout.heroFraction,
+              heroSliceType: md.layout.heroSliceType,
+              isMultiplanarEqualSize: md.layout.isEqualSize,
+              isCrossLines: md.ui.isCrossLinesVisible,
+              isCenterMosaic: md.layout.isMosaicCentered,
+              customLayout: md.layout.customLayout,
+            },
+            baseGraphWidth,
+          )
+      graphWidth = fit.graphWidth
+      screenSlices = fit.screenSlices
+      this.screenSlices = screenSlices
+    }
     // Update crosshair geometry based on current model state
     if (this.crosshairRenderer.isReady) {
       this.crosshairRenderer.update(md)
@@ -489,20 +617,42 @@ export default class NVGlview {
       const tile = screenSlices[i]
       if (!tile) continue
       const ltwh = tile.leftTopWidthHeight as number[]
+      const tileVol =
+        volumes.find(
+          (v) => v.name === tile.volumeId || v.url === tile.volumeId,
+        ) ?? volumes[0]
       // Calculate MVP matrix
       let [mvpMatrix, , normalMatrix, rayDir] = NVTransforms.calculateMvpMatrix(
         ltwh,
         md.scene.azimuth,
         md.scene.elevation,
-        md.pivot3D,
+        md._renderPivotMM ?? md.pivot3D,
         md.furthestFromPivot,
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
+        md.scene.renderPan,
       )
+      if (tile.space === 'global3d' && tileVol) {
+        ;[mvpMatrix, , normalMatrix, rayDir] =
+          NVTransforms.calculateGlobalVolumeMvp(
+            ltwh,
+            tile.globalCamera,
+            tile.position ?? [0, 0, 0],
+            tile.scale ?? 1,
+            tile.orientation,
+            tileVol.extentsMin,
+            tileVol.extentsMax,
+            tileVol.obliqueRAS,
+          )
+        tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
+      }
       if (tile.axCorSag === undefined) {
         continue
       }
-      if (tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER) {
+      if (
+        tile.space !== 'global3d' &&
+        tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
+      ) {
         const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
         const pan = NVSliceLayout.slicePanUV(md.scene.pan2Dxyzmm, tile.axCorSag)
         ;[mvpMatrix, , normalMatrix, rayDir] =
@@ -571,6 +721,54 @@ export default class NVGlview {
           )
         }
       }
+      // Cache the 3D render tile's MVP so the controller can project mm points to
+      // render NDC (e.g. centerRenderOnMM). The 2D/global3d branches above cache
+      // their own; the plain render tile keeps the 3D matrix.
+      if (
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
+        tile.space !== 'global3d'
+      ) {
+        tile.mvpMatrix = mat4.clone(mvpMatrix as mat4)
+      }
+      // Outline the focus box on 3D render tiles (project its 8 corners through
+      // this tile's MVP; drawn with the crosshair/overlay lines below).
+      if (md._focusBox && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
+        crossLinesList.push(
+          ...NVSliceLayout.buildFocusBoxLines(
+            md._focusBox,
+            mvpMatrix as mat4,
+            ltwh,
+            buildLine,
+          ),
+        )
+      }
+      // Debug: outline every LOD brick (colored per level) on render tiles.
+      if (md._lodBoxes && tile.axCorSag === NVConstants.SLICE_TYPE.RENDER) {
+        for (const lodBox of md._lodBoxes) {
+          crossLinesList.push(
+            ...NVSliceLayout.buildFocusBoxLines(
+              lodBox,
+              mvpMatrix as mat4,
+              ltwh,
+              buildLine,
+            ),
+          )
+        }
+      }
+      // Outline the block a 3D vector stroke is drawing on (pick hint).
+      if (
+        md._pickedBlockBox &&
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER
+      ) {
+        crossLinesList.push(
+          ...NVSliceLayout.buildFocusBoxLines(
+            md._pickedBlockBox,
+            mvpMatrix as mat4,
+            ltwh,
+            buildLine,
+          ),
+        )
+      }
       gl.viewport(
         bx + ltwh[0],
         fullCanvasH - by - ltwh[1] - ltwh[3],
@@ -579,8 +777,18 @@ export default class NVGlview {
       )
       // Layer 1: Volume rendering
       if (this.volumeRenderer.hasVolume() && volumes.length > 0) {
-        const vol = volumes[0]
+        // For global3d tiles, render the per-tile resolved volume (tileVol)
+        // rather than always volumes[0]. This requires rebinding the active
+        // GPU texture from the per-volume cache populated in _updateBindings.
+        const vol = tile.space === 'global3d' && tileVol ? tileVol : volumes[0]
         if (!vol) continue
+        if (tile.space === 'global3d') {
+          this.volumeRenderer.bindCachedVolume(vol.url || vol.name)
+        } else if (volumes[0]) {
+          this.volumeRenderer.bindCachedVolume(
+            volumes[0].url || volumes[0].name,
+          )
+        }
         const matRAS = vol.matRAS
         if (!matRAS || !vol.volScale) {
           continue
@@ -591,31 +799,143 @@ export default class NVGlview {
             tile.sliceMM !== undefined
               ? md.getSliceTexFracAtMM(sliceDim, tile.sliceMM)
               : md.getSliceTexFrac(sliceDim)
-          this.sliceRenderer.draw(
-            gl,
-            this.volumeRenderer.volumeTexture as WebGLTexture,
-            this.volumeRenderer.overlayTexture,
-            vol,
-            {
-              overlayAlphaShader: md.volume.alphaShader,
-              overlayOutlineWidth: md.volume.outlineWidth,
-              isAlphaClipDark: md.volume.isAlphaClipDark,
-              drawRimOpacity: md.draw.rimOpacity,
-              isV1SliceShader: md.volume.isV1SliceShader,
-            },
-            mvpMatrix as Float32Array,
-            tile.axCorSag,
-            sliceFrac,
-            Math.min(volumes.length, 2),
-            md.volume.isNearestInterpolation,
-            1,
-            this.volumeRenderer.paqdTexture,
-            this.volumeRenderer.paqdLutTexture,
-            this.volumeRenderer.paqdTexture ? 1 : 0,
-            md.volume.paqdUniforms,
-            md.volume.isV1SliceShader,
-          )
+          const sliceMd = {
+            overlayAlphaShader: md.volume.alphaShader,
+            overlayOutlineWidth: md.volume.outlineWidth,
+            isAlphaClipDark: md.volume.isAlphaClipDark,
+            drawRimOpacity: md.draw.rimOpacity,
+            isV1SliceShader: md.volume.isV1SliceShader,
+          }
+          const numSliceVolumes = Math.min(volumes.length, 2)
+          const numSlicePaqd =
+            this.volumeRenderer.paqdTexture || this.volumeRenderer.paqdChunks
+              ? 1
+              : 0
+          const chunked = this.volumeRenderer.getActiveChunkedSlice()
+          if (chunked) {
+            // A whole-volume (non-chunked) overlay cannot be sampled correctly in
+            // the chunked path: the slice shader applies the per-chunk transform
+            // to BOTH base and overlay, so a whole-volume overlay would mis-map to
+            // chunk-local coords. Only composite a CHUNKED overlay here; otherwise
+            // skip the overlay (numVolumes = 1), matching the WebGPU backend (which
+            // passes no overlay). Correctly compositing a whole-volume overlay over
+            // a chunked base in 2D needs a separate overlay sample transform in the
+            // slice shader (deferred).
+            const chunkedNumVolumes = chunked.overlayChunks
+              ? numSliceVolumes
+              : 1
+            // Coarse LOD floor: draw the whole-volume coarse texture first as a
+            // full-coverage quad, so regions whose fine chunk has not streamed
+            // yet show coarse detail instead of blank. Fine chunk quads below
+            // draw over it (2D alpha-over, disjoint), sharpening as they arrive.
+            const floorTex = this.volumeRenderer.coarseFloorTexture
+            if (floorTex) {
+              const baseDims: [number, number, number] = vol.dimsRAS
+                ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
+                : [1, 1, 1]
+              // The floor spans the whole base (a coarse level of it), so it is
+              // sampled with the identity transform at the slice's texture frac.
+              const floorTransform = identityChunkSampleTransform(baseDims)
+              this.sliceRenderer.draw(
+                gl,
+                floorTex,
+                this.volumeRenderer.overlayTexture,
+                vol,
+                sliceMd,
+                mvpMatrix as Float32Array,
+                tile.axCorSag,
+                sliceFrac,
+                chunkedNumVolumes,
+                md.volume.isNearestInterpolation,
+                1,
+                this.volumeRenderer.paqdTexture,
+                this.volumeRenderer.paqdLutTexture,
+                0,
+                md.volume.paqdUniforms,
+                md.volume.isV1SliceShader,
+                floorTransform,
+                -1,
+                true, // floor backdrop: do not write depth
+              )
+            }
+            // Oversized volume: draw one in-plane-restricted quad per chunk
+            // the slice crosses. Quads are spatially disjoint, so draw order
+            // does not matter.
+            const crossing = chunksCrossingSlice(
+              chunked.plan,
+              sliceDim,
+              sliceFrac,
+            )
+            // This slice's working set drives streamed upload — but cull the
+            // crossing chunks to the tile's viewport so a depth-1 (whole-slide)
+            // volume streams only on-screen tiles, not every chunk on the plane.
+            this.volumeRenderer.requestVisibleChunksInView(
+              crossing,
+              mvpMatrix as Float32Array,
+              matRAS as Float32Array,
+            )
+            for (const ci of crossing) {
+              const chunkTex = chunked.chunkTextures[ci]
+              // Not yet streamed in — skip; the pump fills it in shortly.
+              if (!chunkTex) continue
+              this.sliceRenderer.draw(
+                gl,
+                chunkTex,
+                chunked.overlayChunks
+                  ? chunked.overlayChunks[ci]
+                  : this.volumeRenderer.overlayTexture,
+                vol,
+                sliceMd,
+                mvpMatrix as Float32Array,
+                tile.axCorSag,
+                sliceFrac,
+                chunkedNumVolumes,
+                md.volume.isNearestInterpolation,
+                1,
+                chunked.paqdChunks
+                  ? chunked.paqdChunks[ci]
+                  : this.volumeRenderer.paqdTexture,
+                this.volumeRenderer.paqdLutTexture,
+                numSlicePaqd,
+                md.volume.paqdUniforms,
+                md.volume.isV1SliceShader,
+                chunkSampleTransform(chunked.plan, ci),
+                ci,
+                false,
+                // Dissolve a freshly-resident fine chunk in over the floor.
+                this.volumeRenderer.activeChunkedSliceFade(ci),
+              )
+            }
+          } else {
+            this.sliceRenderer.draw(
+              gl,
+              this.volumeRenderer.volumeTexture as WebGLTexture,
+              this.volumeRenderer.overlayTexture,
+              vol,
+              sliceMd,
+              mvpMatrix as Float32Array,
+              tile.axCorSag,
+              sliceFrac,
+              numSliceVolumes,
+              md.volume.isNearestInterpolation,
+              1,
+              this.volumeRenderer.paqdTexture,
+              this.volumeRenderer.paqdLutTexture,
+              numSlicePaqd,
+              md.volume.paqdUniforms,
+              md.volume.isV1SliceShader,
+            )
+          }
         } else {
+          // Phase 3c: frustum-cull this 3D render tile to drive streamed
+          // upload — no-op unless the active volume is chunked.
+          this.volumeRenderer.requestChunksInFrustum(
+            mvpMatrix as Float32Array,
+            matRAS as Float32Array,
+            md.clipPlanes,
+            md.scene.isClipPlaneCutaway,
+          )
+          this.volumeRenderer.clipPlaneOverlay = md.scene.clipPlaneOverlay
           this.volumeRenderer.draw(
             gl,
             mvpMatrix as Float32Array,
@@ -629,13 +949,43 @@ export default class NVGlview {
             md.clipPlanes,
             md.scene.isClipPlaneCutaway,
             md.volume.paqdUniforms,
+            md.volume.transmittanceCutoff,
           )
+          // Independent hi-res chunked overlay: stream its own working set and
+          // draw it as translucent cubes over the base, in the same pass. Uses
+          // the overlay volume's own matRAS/volScale (co-registered grid) with
+          // the shared camera. No-op when no chunked overlay is active.
+          const ovVol = this.volumeRenderer.getOverlayChunkedVolume()
+          if (ovVol?.matRAS && ovVol.volScale) {
+            this.volumeRenderer.requestOverlayChunksInFrustum(
+              mvpMatrix as Float32Array,
+              ovVol.matRAS as Float32Array,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+            this.volumeRenderer.drawOverlayChunked(
+              gl,
+              mvpMatrix as Float32Array,
+              normalMatrix as Float32Array,
+              ovVol.matRAS as Float32Array,
+              ovVol.volScale,
+              rayDir as Float32Array,
+              md.volume.illumination,
+              Math.min(volumes.length, 2),
+              md.scene.clipPlaneColor,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+              md.volume.paqdUniforms,
+              md.volume.transmittanceCutoff,
+            )
+          }
         }
       }
       // Layer 2a: Crosshairs (skip on all mosaic tiles)
       const isMosaicTile =
         tile.renderOrientation !== undefined || tile.sliceMM !== undefined
       if (
+        tile.space !== 'global3d' &&
         md.ui.is3DCrosshairVisible &&
         !isMosaicTile &&
         this.crosshairRenderer.isReady
@@ -648,9 +998,10 @@ export default class NVGlview {
         )
       }
       // Layer 2b: Meshes
-      const meshes = (md.getMeshes() as NVMesh[]).filter(
-        (m) => (m.opacity ?? 1.0) > 0.0,
-      )
+      const meshes =
+        tile.space === 'global3d'
+          ? []
+          : (md.getMeshes() as NVMesh[]).filter((m) => (m.opacity ?? 1.0) > 0.0)
       const ccMM = crosscutMM(md, tile.axCorSag)
       // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
       let meshMvp = mvpMatrix
@@ -681,10 +1032,15 @@ export default class NVGlview {
         )
       }
       if (meshes.length > 0) {
+        const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
         for (const m of meshes) {
           const mGpu = this._getMeshGpu(m)
           if (!mGpu) continue
           const opacity = m.opacity ?? 1.0
+          const shaderType =
+            isSlice && mGpu.sliceShaderType
+              ? mGpu.sliceShaderType
+              : mGpu.shaderType
           mesh.drawWithGpu(
             gl,
             m,
@@ -692,7 +1048,7 @@ export default class NVGlview {
             meshMvp as Float32Array,
             meshNorm as Float32Array,
             opacity,
-            mGpu.shaderType,
+            shaderType,
             ccMM,
           )
         }
@@ -700,8 +1056,9 @@ export default class NVGlview {
       // Layer 2b-xray: Mesh X-ray pass (depth disabled, reduced opacity)
       const xrayAlpha = md.mesh.xRay
       if (xrayAlpha > 0) {
-        // Re-draw crosshairs with xray (skip on all mosaic tiles)
+        // Re-draw crosshairs with xray (skip on all mosaic tiles and global3d)
         if (
+          tile.space !== 'global3d' &&
           md.ui.is3DCrosshairVisible &&
           !isMosaicTile &&
           this.crosshairRenderer.isReady
@@ -716,10 +1073,15 @@ export default class NVGlview {
         }
         // Re-draw meshes with xray
         if (meshes.length > 0) {
+          const isSlice = tile.axCorSag !== NVConstants.SLICE_TYPE.RENDER
           for (const m of meshes) {
             const mGpu = this._getMeshGpu(m)
             if (!mGpu) continue
             const opacity = (m.opacity ?? 1.0) * xrayAlpha
+            const shaderType =
+              isSlice && mGpu.sliceShaderType
+                ? mGpu.sliceShaderType
+                : mGpu.shaderType
             mesh.drawXRay(
               gl,
               m,
@@ -727,7 +1089,7 @@ export default class NVGlview {
               meshMvp as Float32Array,
               meshNorm as Float32Array,
               opacity,
-              mGpu.shaderType,
+              shaderType,
               ccMM,
             )
           }
@@ -735,6 +1097,7 @@ export default class NVGlview {
       }
       // Layer 2b-ann: 3D annotations (RENDER tiles only)
       if (
+        tile.space !== 'global3d' &&
         tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
         ann3DData &&
         this.polygon3DRenderer.isReady
@@ -748,8 +1111,45 @@ export default class NVGlview {
         )
         this.polygon3DRenderer.endPasses(gl)
       }
-      // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders)
+      // Layer 2b-slide: WSI slide plane registered into volume mm space
+      // (RENDER tiles only). Uses the tile MVP (world mm -> clip) so the slide
+      // composites with the volume in its own space; tiles stream via NVSlide.
       if (
+        tile.space !== 'global3d' &&
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
+        this.slidePlane &&
+        this.slidePlaneRenderer.isReady
+      ) {
+        const { tiles } = resolveSlidePlaneTiles(
+          this.slidePlane,
+          mvpMatrix as Float32Array,
+          ltwh[2],
+          ltwh[3],
+        )
+        this.slidePlaneRenderer.draw(
+          gl,
+          mvpMatrix as Float32Array,
+          tiles,
+          this.slidePlane.slide,
+        )
+        if (this.slidePlane.annotation) {
+          this.slidePlaneRenderer.drawAnnotation(
+            gl,
+            mvpMatrix as Float32Array,
+            this.slidePlane.annotation,
+          )
+        }
+        // Capture this frame's camera for screen->slide picking (drawing).
+        this.slidePlane.pickFrame = {
+          mvp: new Float32Array(mvpMatrix as Float32Array),
+          ltwh: [ltwh[0], ltwh[1], ltwh[2], ltwh[3]],
+          bx,
+          by,
+        }
+      }
+      // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders and global3d)
+      if (
+        tile.space !== 'global3d' &&
         tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
         tile.renderOrientation === undefined &&
         md.ui.isOrientCubeVisible &&
@@ -1068,6 +1468,39 @@ export default class NVGlview {
     }
     markSubmitStart()
     markEnd()
+    // Stream in any not-yet-resident chunks of oversized volumes, then
+    // schedule a follow-up frame so the freshly-uploaded data appears.
+    // Re-render if a chunk was admitted, a cross-fade is still animating, or
+    // streaming work is still outstanding (chunks queued or mid-fetch). The
+    // last clause keeps the self-driven loop alive across frames where a pump
+    // uploads nothing because its chunks are still being fetched — otherwise
+    // streaming stalls until an unrelated redraw (e.g. a drag) re-kicks it.
+    // Pause the chunk upload pump during an active drag: its per-chunk decode +
+    // orient + gradient work would jank the rotation/pan. Resident chunks keep
+    // drawing (requestChunksInFrustum still stamps them, so the LRU won't evict
+    // them), and the pump resumes on release (pointerup -> drawScene), draining
+    // the queued working set then. Standard "stream on interaction-end".
+    if (!md._isDragging) {
+      const fading = this.volumeRenderer.fadeActive
+      this.volumeRenderer
+        .pumpChunkUploads()
+        .then((changed) => {
+          const stream = this.volumeRenderer.chunkStreamStats()
+          const busy = stream.pending > 0 || stream.inFlight > 0
+          if (changed || fading || busy) {
+            requestAnimationFrame(() => this.render())
+          }
+        })
+        .catch((err) => {
+          log.error('chunk upload pump failed', err)
+          // Keep the self-driven loop alive: an unexpected pump rejection must
+          // not permanently freeze streaming while chunks are still outstanding.
+          const stream = this.volumeRenderer.chunkStreamStats()
+          if (stream.pending > 0 || stream.inFlight > 0) {
+            requestAnimationFrame(() => this.render())
+          }
+        })
+    }
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */
@@ -1098,8 +1531,10 @@ export default class NVGlview {
       dpr = this.forceDevicePixelRatio
     }
     const rect = this.canvas.getBoundingClientRect()
-    this.canvas.width = Math.max(1, Math.floor(rect.width * dpr))
-    this.canvas.height = Math.max(1, Math.floor(rect.height * dpr))
+    const targetW = Math.max(1, Math.floor(rect.width * dpr))
+    const targetH = Math.max(1, Math.floor(rect.height * dpr))
+    if (this.canvas.width !== targetW) this.canvas.width = targetW
+    if (this.canvas.height !== targetH) this.canvas.height = targetH
     // Compute bounds pixel rect
     this._computeBoundsPixels()
     const bw = this._boundsWidth
@@ -1123,31 +1558,49 @@ export default class NVGlview {
     const bounds = this.options.bounds
     const cw = this.canvas.width
     const ch = this.canvas.height
+    const vp = getCanvasViewport(this.canvas)
+    const isIdentity = vp.pan[0] === 0 && vp.pan[1] === 0 && vp.zoom === 1
     if (
-      !bounds ||
-      (bounds[0][0] === 0 &&
-        bounds[0][1] === 0 &&
-        bounds[1][0] === 1 &&
-        bounds[1][1] === 1)
+      isIdentity &&
+      (!bounds ||
+        (bounds[0][0] === 0 &&
+          bounds[0][1] === 0 &&
+          bounds[1][0] === 1 &&
+          bounds[1][1] === 1))
     ) {
       this._boundsOffsetX = 0
       this._boundsOffsetY = 0
       this._boundsWidth = cw
       this._boundsHeight = ch
       this._isSubCanvasBounds = false
+      this._isBoundsOffscreen = false
       return
     }
+    const worldX1 = bounds ? bounds[0][0] : 0
+    const worldY1 = bounds ? bounds[0][1] : 0
+    const worldX2 = bounds ? bounds[1][0] : 1
+    const worldY2 = bounds ? bounds[1][1] : 1
+    // Apply viewport: world -> screen-normalized (zoom around centre, then translate by pan)
+    const z = vp.zoom
+    const px = vp.pan[0]
+    const py = vp.pan[1]
+    const sx1 = (worldX1 - 0.5) * z + 0.5 + px
+    const sx2 = (worldX2 - 0.5) * z + 0.5 + px
+    const sy1 = (worldY1 - 0.5) * z + 0.5 + py
+    const sy2 = (worldY2 - 0.5) * z + 0.5 + py
     // Round pixel edges, then derive size by subtraction to prevent
     // offset + size > canvas (which breaks copyTextureToTexture on odd dimensions)
-    const left = Math.round(bounds[0][0] * cw)
-    const right = Math.round(bounds[1][0] * cw)
-    const top = Math.round((1 - bounds[1][1]) * ch)
-    const bottom = Math.round((1 - bounds[0][1]) * ch)
+    const left = Math.round(sx1 * cw)
+    const right = Math.round(sx2 * cw)
+    const top = Math.round((1 - sy2) * ch)
+    const bottom = Math.round((1 - sy1) * ch)
     this._boundsOffsetX = left
     this._boundsOffsetY = top
     this._boundsWidth = Math.max(1, right - left)
     this._boundsHeight = Math.max(1, bottom - top)
     this._isSubCanvasBounds = true
+    this._isBoundsOffscreen =
+      right <= 0 || left >= cw || bottom <= 0 || top >= ch
   }
 
   getAvailableShaders(): string[] {
@@ -1155,6 +1608,19 @@ export default class NVGlview {
     return Object.keys(this.meshPipelines).filter(
       (s) => !s.startsWith('vertexColor'),
     )
+  }
+
+  chunkStreamStats(): {
+    resident: number
+    pending: number
+    inFlight: number
+    total: number
+  } {
+    return this.volumeRenderer.chunkStreamStats()
+  }
+
+  rebakeChunkedOverlays(): void {
+    this.volumeRenderer.rebakeChunkedOverlays()
   }
 
   _getMeshGpu(m: NVMesh): MeshGpuWithShader | null {
@@ -1184,7 +1650,15 @@ export default class NVGlview {
         )
         shaderType = 'phong'
       }
-      const gpu = mesh.uploadMeshGPU(gl, m, { shaderType })
+      // '' = inherit shaderType on slices; an invalid name also falls back to ''.
+      let sliceShaderType = m.sliceShaderType || ''
+      if (sliceShaderType && !availableShaders.includes(sliceShaderType)) {
+        log.warn(
+          `Slice shader '${sliceShaderType}' not available in WebGL2, falling back to '${shaderType}'`,
+        )
+        sliceShaderType = ''
+      }
+      const gpu = mesh.uploadMeshGPU(gl, m, { shaderType, sliceShaderType })
       this.meshResources.set(m, gpu)
     }
   }
@@ -1210,10 +1684,27 @@ export default class NVGlview {
     return null
   }
 
-  refreshDrawing(rgba: Uint8Array, dims: number[]): void {
+  refreshDrawing(
+    rgba: Uint8Array,
+    dims: number[],
+    plan?: ChunkPlan,
+    dirtyChunks?: readonly number[],
+  ): void {
     if (!this.gl) return
-    this.sliceRenderer.updateDrawingTexture(this.gl, rgba, dims)
-    this.volumeRenderer.updateDrawingTexture(this.gl, rgba, dims)
+    this.sliceRenderer.updateDrawingTexture(
+      this.gl,
+      rgba,
+      dims,
+      plan,
+      dirtyChunks,
+    )
+    this.volumeRenderer.updateDrawingTexture(
+      this.gl,
+      rgba,
+      dims,
+      plan,
+      dirtyChunks,
+    )
   }
 
   clearDrawing(): void {
@@ -1272,10 +1763,11 @@ export default class NVGlview {
         ltwh,
         md.scene.azimuth,
         md.scene.elevation,
-        md.pivot3D,
+        md._renderPivotMM ?? md.pivot3D,
         md.furthestFromPivot,
         md.scene.scaleMultiplier,
         md.volumes[0]?.obliqueRAS,
+        md.scene.renderPan,
       )
       mvpMatrix = result[0] as mat4
       rayDir = result[3] as Float32Array
@@ -1298,6 +1790,89 @@ export default class NVGlview {
       )
       mvpMatrix = result[0] as mat4
       rayDir = result[3] as Float32Array
+    }
+    // Chunked / multi-LOD volumes have no single whole-volume texture, so the
+    // GPU depth-pass cannot sample them. Fall back to a CPU ray/AABB pick against
+    // the volume's mm bounding box and return the near-surface entry under the
+    // cursor — enough to move the crosshair (and thus the multi-LOD focus) in a
+    // 3D render. Mirrors the WebGPU backend.
+    if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
+      const vol = md.volumes[0]
+      if (vol?.extentsMin && vol?.extentsMax) {
+        const near = NVTransforms.unprojectScreen(
+          hit.normalizedX,
+          hit.normalizedY,
+          0,
+          mvpMatrix,
+        )
+        const far = NVTransforms.unprojectScreen(
+          hit.normalizedX,
+          hit.normalizedY,
+          1,
+          mvpMatrix,
+        )
+        // Exploded view: blocks are displaced, so the un-exploded bounding box no
+        // longer matches what's on screen. Pick against each block's exploded
+        // AABB (first window-visible voxel in the hit block) and map the recovered
+        // un-exploded voxel back to mm for the crosshair.
+        if (
+          vol.chunkPlan &&
+          vol.matRAS &&
+          chunkExplodeEnabled(vol.chunkExplode)
+        ) {
+          const matRAS = vol.matRAS
+          const base = vol.pickSampler
+          const sample = base
+            ? (vx: number, vy: number, vz: number): number => {
+                const mm = NVTransforms.vox2mm(
+                  null,
+                  [vx, vy, vz],
+                  matRAS as mat4,
+                )
+                return base(mm[0], mm[1], mm[2])
+              }
+            : undefined
+          const picked = pickExplodedVoxel(
+            vol.chunkPlan,
+            matRAS,
+            vol.chunkExplode,
+            [near[0], near[1], near[2]],
+            [far[0] - near[0], far[1] - near[1], far[2] - near[2]],
+            {
+              sample,
+              threshold: 0,
+              clipPlanes: md.clipPlanes,
+              isCutaway: md.scene.isClipPlaneCutaway,
+            },
+          )
+          if (picked) {
+            const mm = NVTransforms.vox2mm(null, picked.voxel, matRAS as mat4)
+            return [mm[0], mm[1], mm[2]]
+          }
+          return null
+        }
+        // With a CPU sampler (app-supplied coarse data), march to the first
+        // window-visible voxel; otherwise land on the bounding-box / clip surface.
+        const hitMM = vol.pickSampler
+          ? NVTransforms.rayMarchFirstVisibleMM(
+              near,
+              far,
+              vol.extentsMin,
+              vol.extentsMax,
+              vol.pickSampler,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+          : NVTransforms.rayBoxEntryMM(
+              near,
+              far,
+              vol.extentsMin,
+              vol.extentsMax,
+              md.clipPlanes,
+              md.scene.isClipPlaneCutaway,
+            )
+        if (hitMM) return hitMM
+      }
     }
     // Depth-pick via scissor + readPixels (works for all tile types)
     // Offset by bounds origin for shared-canvas support

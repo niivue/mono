@@ -42,6 +42,44 @@ export function volumeTR(vol: NVImage): number {
   return px * temporalUnitScale(vol.hdr.xyzt_units)
 }
 
+/**
+ * Whole 4D frames actually present in an image buffer of `byteLength` bytes,
+ * given a 3D frame of `nVox3D` voxels at `bytesPerVoxel` each. Used to clamp
+ * `nFrame4D` to the data after a >2 GiB volume was capped to as many frames as
+ * fit (the supplied buffer then holds fewer frames than the header advertises).
+ * Always at least 1.
+ */
+export function framesInImage(
+  byteLength: number,
+  nVox3D: number,
+  bytesPerVoxel: number,
+): number {
+  const perFrame = nVox3D * bytesPerVoxel
+  if (!(perFrame > 0)) return 1
+  return Math.max(1, Math.floor(byteLength / perFrame))
+}
+
+/**
+ * Reconcile the requested partial-4D frame cap with reality: the number of
+ * frames requested (`limitFrames4D`), the frames actually present in the loaded
+ * buffer (`framesInImg`), and the header's declared total (`nTotalFrame4D`).
+ *
+ * A finite request is floored to an integer >= 1 (a fractional or <1 limit must
+ * not leak a non-integer / zero frame count, which would mis-align the truncation
+ * byte math and the 4D graph / setFrame4D indexing); a non-finite request means
+ * "no cap". The result never exceeds the frames on hand or the header total.
+ */
+export function resolveFrame4DCount(
+  limitFrames4D: number,
+  framesInImg: number,
+  nTotalFrame4D: number,
+): number {
+  const requested = Number.isFinite(limitFrames4D)
+    ? Math.max(1, Math.floor(limitFrames4D))
+    : nTotalFrame4D
+  return Math.min(requested, framesInImg, nTotalFrame4D)
+}
+
 // ============================================================================
 // Data Type Utilities
 // ============================================================================
@@ -636,12 +674,19 @@ export function getVoxelValue(
 
 /**
  * Extract the complex FID at a RAS voxel of a spatial spectroscopic image
- * (MRSI), as an interleaved `[re0, im0, ...]` Float32Array of length
- * `2 * mrsMeta.nPoints`, or null when the volume carries no FID / the voxel is
- * out of bounds. The retained `complexFID` is in native order, so the same
- * `img2RASstart`/`img2RASstep` mapping used by {@link getVoxelValue} converts
- * the RAS voxel to its native spatial index; the spectral point `p` of voxel
- * `v` lives at complex index `v + p*nVox3D` (NIfTI frame-major layout).
+ * (MRSI) as an interleaved `[re, im, ...]` Float32Array, or null when the volume
+ * carries no FID / the voxel is out of bounds. The output holds ALL transients in
+ * the SVS / `deriveSpectroscopySeries` layout — length
+ * `2 * mrsMeta.nPoints * mrsMeta.nTransients`, transient-major so sample `(t, p)`
+ * is at index `2 * (t*nPoints + p)` — so the caller can average transients the
+ * same way `integratePpmBandMap` does.
+ *
+ * The retained `complexFID` is in native order (point-major within transient
+ * blocks): the same `img2RASstart`/`img2RASstep` mapping used by
+ * {@link getVoxelValue} converts the RAS voxel to its native spatial index `v`,
+ * and sample `(t, p)` of voxel `v` lives at complex index
+ * `v + p*nVox3D + t*nVox3D*nPoints`. extractVoxelFid transposes that native
+ * layout into the transient-major output above.
  */
 export function extractVoxelFid(
   volume: NVImage,
@@ -679,13 +724,25 @@ export function extractVoxelFid(
   const native =
     start[0] + ix * step[0] + start[1] + iy * step[1] + start[2] + iz * step[2]
   const nPoints = meta.nPoints
+  const nTransients = meta.nTransients
   const nVox = volume.nVox3D
-  const out = new Float32Array(nPoints * 2)
-  for (let p = 0; p < nPoints; p++) {
-    const ci = 2 * (native + p * nVox)
-    if (ci + 1 >= fid.length) break
-    out[2 * p] = fid[ci]
-    out[2 * p + 1] = fid[ci + 1]
+  // Emit ALL transients in the SVS / deriveSpectroscopySeries layout
+  // (transient-major: 2*(t*nPoints+p)), read from the native MRSI complex buffer
+  // (point-major within transient blocks: 2*(native + p*nVox + t*nVox*nPoints)).
+  // Including every transient lets the caller average them the same way
+  // integratePpmBandMap does, so the crosshair spectrum agrees with generated
+  // metabolite maps. (nTransients === 1 reduces to the previous single-transient
+  // behavior.)
+  const out = new Float32Array(nPoints * nTransients * 2)
+  for (let t = 0; t < nTransients; t++) {
+    const tBase = t * nVox * nPoints
+    for (let p = 0; p < nPoints; p++) {
+      const ci = 2 * (native + p * nVox + tBase)
+      if (ci + 1 >= fid.length) break
+      const k = 2 * (t * nPoints + p)
+      out[k] = fid[ci]
+      out[k + 1] = fid[ci + 1]
+    }
   }
   return out
 }

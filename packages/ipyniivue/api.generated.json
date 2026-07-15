@@ -1,5 +1,5 @@
 {
-  "niivueVersion": "1.0.0-rc.3",
+  "niivueVersion": "1.0.0-rc.9",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVueGPU",
   "properties": [
@@ -45,7 +45,7 @@
       },
       "hasGetter": true,
       "hasSetter": true,
-      "doc": null
+      "doc": "Enable vector annotation editing. Mutually exclusive with\n{@link drawIsEnabled} in practice: with both on, raster drawing intercepts\nthe pointer and vector annotation editing is inert (the first such\ninteraction warns). Turn one off before turning the other on. Does not\naffect whether annotations *render* — they always do."
     },
     {
       "jsName": "annotationIsErasing",
@@ -134,6 +134,17 @@
       "doc": null
     },
     {
+      "jsName": "clipPlaneOverlay",
+      "pyName": "clip_plane_overlay",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "crosshairColor",
       "pyName": "crosshair_color",
       "tsType": "number[]",
@@ -197,11 +208,44 @@
       "doc": null
     },
     {
+      "jsName": "drawClickToSegmentIs2D",
+      "pyName": "draw_click_to_segment_is_2d",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "drawClickToSegmentTolerance",
+      "pyName": "draw_click_to_segment_tolerance",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "drawColormap",
       "pyName": "draw_colormap",
       "tsType": "string",
       "pyTraitlet": {
         "kind": "Unicode"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "drawIsClickToSegment",
+      "pyName": "draw_is_click_to_segment",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
       },
       "hasGetter": true,
       "hasSetter": true,
@@ -216,7 +260,7 @@
       },
       "hasGetter": true,
       "hasSetter": true,
-      "doc": null
+      "doc": "Enable the raster drawing tools (pen/eraser/fill/magic wand). Mutually\nexclusive with {@link annotationIsEnabled} in practice: with both on, raster\ndrawing intercepts the pointer and vector annotation editing is inert (the\nfirst such interaction warns). Turn one off before turning the other on.\n`false` stops editing but keeps the drawing visible; see `closeDrawing()`."
     },
     {
       "jsName": "drawIsFillOverwriting",
@@ -344,6 +388,17 @@
       "doc": null
     },
     {
+      "jsName": "graphAutoResetView",
+      "pyName": "graph_auto_reset_view",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "graphIsRangeCalMinMax",
       "pyName": "graph_is_range_cal_min_max",
       "tsType": "boolean",
@@ -355,8 +410,41 @@
       "doc": null
     },
     {
+      "jsName": "graphLineAlpha",
+      "pyName": "graph_line_alpha",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "graphLineWidth",
+      "pyName": "graph_line_width",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "graphNormalizeValues",
       "pyName": "graph_normalize_values",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "graphShowVolumeTimecourse",
+      "pyName": "graph_show_volume_timecourse",
       "tsType": "boolean",
       "pyTraitlet": {
         "kind": "Bool"
@@ -434,6 +522,17 @@
     {
       "jsName": "isDragDropEnabled",
       "pyName": "is_drag_drop_enabled",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isDragging",
+      "pyName": "is_dragging",
       "tsType": "boolean",
       "pyTraitlet": {
         "kind": "Bool"
@@ -697,6 +796,36 @@
       "doc": null
     },
     {
+      "jsName": "renderPan",
+      "pyName": "render_pan",
+      "tsType": "vec2",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": 2
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "renderPivotMM",
+      "pyName": "render_pivot_mm",
+      "tsType": "vec3 | null",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": 3
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "rulerWidth",
       "pyName": "ruler_width",
       "tsType": "number",
@@ -758,6 +887,36 @@
     {
       "jsName": "sliceType",
       "pyName": "slice_type",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "slideTool",
+      "pyName": "slide_tool",
+      "tsType": "SlideDrawTool",
+      "pyTraitlet": {
+        "kind": "Enum",
+        "values": [
+          "pen",
+          "eraser",
+          "bucket",
+          "filled",
+          "wand",
+          "vector"
+        ]
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "slideWandTolerance",
+      "pyName": "slide_wand_tolerance",
       "tsType": "number",
       "pyTraitlet": {
         "kind": "Float"
@@ -886,6 +1045,17 @@
           "kind": "Float"
         },
         "length": 4
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeTransmittanceCutoff",
+      "pyName": "volume_transmittance_cutoff",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
       },
       "hasGetter": true,
       "hasSetter": true,
@@ -1179,6 +1349,46 @@
       "returnsDoc": null
     },
     {
+      "jsName": "addMrsiSignal",
+      "pyName": "add_mrsi_signal",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeId",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "opts",
+          "tsType": "{ name?: string | undefined; display?: Partial<NVSignalDisplay> | undefined; annotations?: SignalAnnotation[] | undefined; }",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "this",
+      "doc": "Add a spectroscopy signal whose spectrum is read live from the crosshair\nvoxel of a complex MRSI volume (loaded on the volume path; carries\n`complexFID` + `mrsMeta`). The graph re-derives the voxel's spectrum on\nevery crosshair move — the core enabler for MRSI navigation. FSL-MRS\n`halveFirstPoint` is on by default; pass `display` to override or to set a\nppm window/component. Throws if `volumeId` is not a loaded MRSI volume.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "addSignal",
+      "pyName": "add_signal",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "signal",
+          "tsType": "NVSignal | SignalFromUrlOptions",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<this>",
+      "doc": "Add a pre-built signal or load one from a URL/File.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "addVolume",
       "pyName": "add_volume",
       "isAsync": true,
@@ -1203,6 +1413,29 @@
       "params": [],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "annotationsToSVG",
+      "pyName": "annotations_to_svg",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "sliceType",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        },
+        {
+          "name": "slicePosition",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "string | null",
+      "doc": "Serialize the vector annotations to a standalone SVG string (`<path>` per\npolygon, one `<g>` panel per slice plane). `sliceType` defaults to the current\nsingle-slice view; in render/multiplanar/none (no single plane on screen)\nevery plane is exported, each panel laid out left-to-right, so shapes drawn\ndirectly on the 3D blocks all export rather than only those sharing the first\nannotation's plane.\n\nPath coordinates are panel-local at mm scale; each `<g>` carries\n`data-origin-mm=\"minX maxY\"` to convert back (`mmX = xLocal + minX`,\n`mmY = maxY - yLocal`).\n\n`slicePosition` restricts the export to one slice and requires a single plane\n— a depth is measured along that plane's own axis, so it cannot select across\nplanes. Passing it with no single plane (and no explicit `sliceType`) warns\nand is ignored. Returns null when there are no annotations.",
       "returnsDoc": null
     },
     {
@@ -1285,6 +1518,33 @@
       "returnsDoc": null
     },
     {
+      "jsName": "centerRenderOnMM",
+      "pyName": "center_render_on_mm",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "mm",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "boolean",
+      "doc": "Pan the 3D render so a given world-mm point sits at the centre of the render\ntile, by adjusting `renderPan` (a clip-space translation; no change to the\ncamera, rotation, or zoom). Useful to keep a zoomed/focused region framed.\nReturns false (no-op) if the render tile hasn't been drawn yet. Because the\ncached MVP already includes the current renderPan, this converges in one\ncall: newPan = currentPan - ndc(point).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "chunkStreamStats",
+      "pyName": "chunk_stream_stats",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "{ resident: number; pending: number; inFlight: number; total: number; } | null",
+      "doc": "Streaming stats across all chunked volumes (base + independent overlay) on\nthe active backend: `{ resident, pending, inFlight, total }` brick counts.\nReturns null before a view is attached. Useful for HUD / debug overlays:\n`resident < total` with `pending > 0` for many frames indicates the working\nset exceeds the residency budget (thrashing).",
+      "returnsDoc": null
+    },
+    {
       "jsName": "clearAnnotations",
       "pyName": "clear_annotations",
       "isAsync": false,
@@ -1312,6 +1572,26 @@
       "params": [],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "clearSlideDrawing",
+      "pyName": "clear_slide_drawing",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Clear all slide annotation pixels.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "clearSlidePlane",
+      "pyName": "clear_slide_plane",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Remove a slide plane registered with {@link setSlidePlane}.",
       "returnsDoc": null
     },
     {
@@ -1352,6 +1632,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "createSlideDrawing",
+      "pyName": "create_slide_drawing",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "opts",
+          "tsType": "{ maxRaster?: number | undefined; } | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Create a drawing surface in *slide* space for the registered slide plane.\nThe annotation is a label raster covering the whole slide (sized to the\nslide aspect, long edge capped at `maxRaster`, default 4096) and is painted\nwith the existing pen tools (slideDrawAt / slideDrawUndo reuse drawPoint,\ndrawLine and the RLE undo stack), so it stays in slide coordinates and is\ncompatible with the volume drawing functions. Requires {@link setSlidePlane}.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "destroy",
       "pyName": "destroy",
       "isAsync": false,
@@ -1359,6 +1656,29 @@
       "params": [],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "drawingToSVG",
+      "pyName": "drawing_to_svg",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "sliceType",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        },
+        {
+          "name": "sliceIndex",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "string | null",
+      "doc": "Serialize one slice of the voxel drawing to a standalone SVG string\n(run-length `<rect>`s per label color, sized in voxels). `sliceType` selects\nthe plane (AXIAL/CORONAL/SAGITTAL); it defaults to the current single-slice\nview, or AXIAL for render/multiplanar/none. `sliceIndex` defaults to the\ncrosshair voxel on that axis. Returns null when no drawing is open.",
       "returnsDoc": null
     },
     {
@@ -1396,6 +1716,16 @@
       "params": [],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "ensureGraphCursorVisible",
+      "pyName": "ensure_graph_cursor_visible",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "After the marker moves on its own (e.g. the wheel stepped the 4D frame), pan\nthe zoom window so the marker stays visible. No-op at full extent or when it\nis already in view.",
       "returnsDoc": null
     },
     {
@@ -1453,6 +1783,16 @@
       "returnsDoc": "Current frame index (0-based), or 0 if volume not found"
     },
     {
+      "jsName": "getGraphRange",
+      "pyName": "get_graph_range",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "GraphRangeChangeDetail | null",
+      "doc": "The signal graph's current visible x-range (the synchronous counterpart to\nthe `graphRangeChange` event): `{ min, max, full, axisLabel, isWindowed }`,\nor null when no signal graph is shown. Use `full` to drive a \"reset to full\nextent\" control (e.g. jump range sliders to the data limits).",
+      "returnsDoc": null
+    },
+    {
       "jsName": "getMeshShader",
       "pyName": "get_mesh_shader",
       "isAsync": false,
@@ -1487,6 +1827,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "getViewport",
+      "pyName": "get_viewport",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "CanvasViewport",
+      "doc": "Read the canvas-level viewport (virtual camera) shared with sibling instances.\nThe viewport applies a pan + zoom over the entire canvas before each instance's\n`bounds` are projected to pixels. Identity is `{pan: [0, 0], zoom: 1}`.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "getVolumeAffine",
       "pyName": "get_volume_affine",
       "isAsync": false,
@@ -1518,6 +1868,50 @@
       ],
       "returns": "TransformInfo | undefined",
       "doc": "Get metadata for a specific volume transform (options, description, resultDefaults).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "graphPan",
+      "pyName": "graph_pan",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "frac",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "this",
+      "doc": "Pan the signal graph's x-axis view window by `frac` of its width (negative\npans toward earlier x / left). No-op when the full extent is shown.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "graphResetView",
+      "pyName": "graph_reset_view",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "this",
+      "doc": "Reset the signal graph's zoom/pan to the full x-extent (clears the view\nwindow). The one-click way back from a deep zoom; also bound to a\ndouble-click on the graph. No-op when the full extent is already shown.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "graphZoom",
+      "pyName": "graph_zoom",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "factor",
+          "tsType": "number",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "this",
+      "doc": "Zoom the signal graph's x-axis view window: `factor` > 1 zooms in, < 1 zooms\nout, centred on the graph cursor when one is set (else the window centre).\nZooming out past the full extent restores the full view. No-op unless a\n(dense) signal graph is shown.",
       "returnsDoc": null
     },
     {
@@ -1581,6 +1975,12 @@
           "name": "source",
           "tsType": "string | File",
           "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "{ fill?: SettingsFillPolicy | undefined; } | undefined",
+          "optional": true,
           "doc": null
         }
       ],
@@ -1698,6 +2098,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "loadSignals",
+      "pyName": "load_signals",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "signals",
+          "tsType": "SignalFromUrlOptions | SignalFromUrlOptions[]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<this>",
+      "doc": "Load one or more signals (physio TSV or NIfTI/NIfTI-MRS).",
+      "returnsDoc": null
+    },
+    {
       "jsName": "loadVolumes",
       "pyName": "load_volumes",
       "isAsync": true,
@@ -1705,13 +2122,65 @@
       "params": [
         {
           "name": "volumes",
-          "tsType": "ImageFromUrlOptions | ImageFromUrlOptions[]",
+          "tsType": "NVImage | ImageFromUrlOptions | (NVImage | ImageFromUrlOptions)[]",
           "optional": false,
           "doc": null
         }
       ],
       "returns": "Promise<this>",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "markDrawDirty",
+      "pyName": "mark_draw_dirty",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "x",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "y",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "z",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "radius",
+          "tsType": "number",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Expand the pending pen-stroke dirty box by a voxel and its pen radius, so\nthe next drawing flush re-uploads only the chunks that region touches. Call\nthis right before `refreshDrawing()` at each pen-stroke site; whole-bitmap\nchanges (undo, clear, recolour) skip it and fall back to a full upload.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "mm2renderNDC",
+      "pyName": "mm2render_ndc",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "mm",
+          "tsType": "[number, number, number]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "[number, number] | null",
+      "doc": "Project a world-mm point to the 3D render tile's NDC ([-1,1], y up), using\nthe MVP the renderer cached on its last draw (so it reflects the current\ncamera, zoom, and renderPan exactly). Returns null if no render tile has been\ndrawn yet or the point is at/behind the camera.",
       "returnsDoc": null
     },
     {
@@ -1812,6 +2281,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "rebakeChunkedOverlays",
+      "pyName": "rebake_chunked_overlays",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Re-bake the streamed/chunked overlays in place: drop their resident bricks so\nthe next frame re-requests and re-bakes only the blocks in the current view\nfrustum, leaving the base volume resident. Use after changing a streamed\noverlay's `opacity` (or any `chunkSource` whose output changed) to apply it\nwithout the cost of a full `loadVolumes` reload. No-op before a view attaches.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "recalculateCalMinMax",
       "pyName": "recalculate_cal_min_max",
       "isAsync": true,
@@ -1845,6 +2324,26 @@
       "returnsDoc": null
     },
     {
+      "jsName": "refreshSignalLocation",
+      "pyName": "refresh_signal_location",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Re-emit the signal readout at the current marker (the associated volume's\nframe time, else the last clicked cursor). Called on crosshair/frame changes\nso the status bar reflects the current voxel value without a graph click.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "refreshSlideAnnotation",
+      "pyName": "refresh_slide_annotation",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Rebuild the slide annotation overlay (raster + vector) and redraw. Call\nafter mutating `slideVector`.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "reinitializeView",
       "pyName": "reinitialize_view",
       "isAsync": true,
@@ -1868,6 +2367,16 @@
       "returnsValue": false,
       "params": [],
       "returns": "Promise<void>",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "removeAllSignals",
+      "pyName": "remove_all_signals",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "this",
       "doc": null,
       "returnsDoc": null
     },
@@ -1939,6 +2448,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "removeSignal",
+      "pyName": "remove_signal",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "index",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "this",
+      "doc": null,
+      "returnsDoc": null
+    },
+    {
       "jsName": "resetVolumeAffine",
       "pyName": "reset_volume_affine",
       "isAsync": true,
@@ -1963,6 +2489,16 @@
       "params": [],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "restoreSlidePlaneView",
+      "pyName": "restore_slide_plane_view",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Re-push the registered slide plane (and its annotation) to a freshly\n(re)created view — called from the view-lifecycle recreate paths so a\nbackend switch / reinitialize doesn't drop the slide. Internal.",
       "returnsDoc": null
     },
     {
@@ -1997,6 +2533,12 @@
         {
           "name": "filename",
           "tsType": "string",
+          "optional": true,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "SerializeOptions | undefined",
           "optional": true,
           "doc": null
         }
@@ -2090,9 +2632,33 @@
       "pyName": "serialize_document",
       "isAsync": false,
       "returnsValue": true,
-      "params": [],
+      "params": [
+        {
+          "name": "options",
+          "tsType": "SerializeOptions | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
       "returns": "Uint8Array",
-      "doc": "Return the current scene serialized as an NVD document (CBOR-encoded Uint8Array).",
+      "doc": "Return the current scene serialized as an NVD document (Uint8Array).\n`options.settings` overrides the instance `settingsSavePolicy`;\n`options.linkData` saves a small \"linked\" document that references volumes by\nURL instead of embedding their bytes; `options.format` is `'cbor'` (default,\nbinary) or `'json'` (portable text). `loadDocument` accepts either encoding.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setBaseCoarseFloor",
+      "pyName": "set_base_coarse_floor",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "coarseVol",
+          "tsType": "NVImage | null",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Set (or clear, with null) a coarse whole-volume \"floor\" for the streamed\nbase. On 2D slices the floor renders behind the resident fine chunks, so a\ndeep-zoom slice shows coarse detail immediately and never blanks while\nfiner chunks stream in — a smooth level-of-detail transition. `coarseVol`\nis a small in-memory pyramid level (its own colormap/window); niivue stays\nlevel-of-detail-agnostic and the app supplies it. No-op before a view\nattaches or on a backend that has not implemented it.",
       "returnsDoc": null
     },
     {
@@ -2342,6 +2908,57 @@
       "returnsDoc": null
     },
     {
+      "jsName": "setGlobalCamera",
+      "pyName": "set_global_camera",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "camera",
+          "tsType": "NVGlobalCamera",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Update the shared 3D camera used by `space === 'global3d'` instances.\nSupported on both WebGL2 and WebGPU backends.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setGraphRange",
+      "pyName": "set_graph_range",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "range",
+          "tsType": "[number, number] | null",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "this",
+      "doc": "Set the signal graph's visible x-range to an explicit data-unit range\n(order-insensitive), clamped to the full extent; `null` restores the full\nview. For a host driving the range reactively (e.g. ppm sliders that mirror\nthe in-graph zoom via the `graphRangeChange` event). Pairs with\n`graphAutoResetView = false` so the window is host-owned.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setInstances",
+      "pyName": "set_instances",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "instances",
+          "tsType": "NVInstance[]",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Replace the multi-instance descriptor list (canvas tiling + optional global3d\nvolumes). Triggers a tile rebuild and redraw. Supported on both WebGL2 and\nWebGPU backends.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "setMesh",
       "pyName": "set_mesh",
       "isAsync": true,
@@ -2439,10 +3056,79 @@
           "tsType": "string",
           "optional": false,
           "doc": "ID of the volume providing modulation (empty string to clear)"
+        },
+        {
+          "name": "modulateAlpha",
+          "tsType": "number",
+          "optional": true,
+          "doc": "scalar overlays: 0 modulates RGB, non-zero modulates\nALPHA with exponent `max(1, |modulateAlpha|)` (matching the original\nNiiVue). RGB/RGBA volumes always modulate RGB only.\n\nRe-invalidation: the scalar weight is cached by the modulator's buffer\nidentity + window, so it does NOT detect an IN-PLACE edit of the modulator's\nvoxel data (same buffer). After mutating a modulator in place (e.g. a\ndrawing/segmentation used as a modulator), call this method again (same\ntarget + modulator) to force a recompute."
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Set a modulation image for a target volume.\nThe modulator's intensity scales the target volume's brightness and opacity.",
+      "doc": "Set a modulation image for a target volume. The modulator's intensity\n(windowed by its own calMin/calMax) scales the target volume's brightness\n(RGB) or opacity (alpha) per voxel.\n\nWorks for both pre-baked RGB/RGBA volumes (V1 tensors) and plain\ncolormapped SCALAR overlays — for scalar overlays the weight is sampled in\nthe colormap GPU prepass through the modulator's overlay transform matrix,\nso the modulator may live on any co-registered grid.\n\nNOTE: `modulateAlpha` differs by target type. For SCALAR overlays it selects\nRGB (0) vs alpha (non-zero) modulation. For RGB/RGBA (V1 tensor) volumes,\nonly RGB is ever scaled — alpha is preserved to keep V1 sign-polarity bits\nintact — so a non-zero `modulateAlpha` does NOT produce alpha modulation\nthere (it only sets the exponent for the unused alpha path). Background-volume\nalpha modulation additionally needs `volumeIsAlphaClipDark` to show as\ntransparency.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setSignal",
+      "pyName": "set_signal",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "index",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "opts",
+          "tsType": "{ display?: Partial<NVSignalDisplay> | undefined; attachToId?: string | undefined; annotations?: SignalAnnotation[] | undefined; }",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "this",
+      "doc": "Update a loaded signal's display state (drives the on-demand transform).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setSignalCursorFraction",
+      "pyName": "set_signal_cursor_fraction",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "xFrac",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "this",
+      "doc": "Set the signal graph cursor from a plot-relative x fraction (0 = left edge,\n1 = right edge). Draws a faint marker line and emits `signalLocationChange`\nwith the values of every series at that location (for a status-bar readout).\nIn an associated volume+physio view it also scrubs the 4D volume to the\nnearest frame.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setSlidePlane",
+      "pyName": "set_slide_plane",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "slide",
+          "tsType": "NVSlide",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "opts",
+          "tsType": "{ pixelToWorld: readonly number[]; levelIndex?: number | undefined; }",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Register an NVSlide to render as a textured plane in the 3D render view,\nlaid into the loaded volume's world (mm) space. `pixelToWorld` maps slide\nbase pixels -> world mm (build one with `axialPlaneTransform` for an\naxis-aligned plane). By default the pyramid level is chosen per-frame from\nthe camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you\nzoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's\ncache and the view redraws on its `change` event. Call `clearSlidePlane()`.",
       "returnsDoc": null
     },
     {
@@ -2469,6 +3155,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "setViewport",
+      "pyName": "set_viewport",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "viewport",
+          "tsType": "CanvasViewport",
+          "optional": false,
+          "doc": "`{ pan: [x, y], zoom }`. Default identity keeps existing behavior."
+        }
+      ],
+      "returns": "void",
+      "doc": "Update the canvas-level viewport (virtual camera). All controllers sharing this\ncanvas resize and redraw together. `pan` is in normalized canvas units (GL convention,\ny up); `zoom` is a positive scalar around the canvas centre.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "setVolume",
       "pyName": "set_volume",
       "isAsync": true,
@@ -2488,7 +3191,7 @@
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Update display properties of a loaded volume.\nAccepts any subset of volume display options (colormap, opacity, cal_min, etc.)\nand triggers a single GPU update.",
+      "doc": "Update display properties of a loaded volume.\nAccepts any subset of volume display options (colormap, opacity, calMin, etc.)\nand triggers a single GPU update. Note the display-window fields are the\ncamelCase calMin/calMax (matching VolumeUpdate / ImageFromUrlOptions); the\nsnake_case cal_min/cal_max are NIfTI header fields and are ignored here.",
       "returnsDoc": null
     },
     {
@@ -2512,6 +3215,118 @@
       ],
       "returns": "Promise<void>",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "slideDrawAt",
+      "pyName": "slide_draw_at",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "cssX",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "cssY",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "begin",
+          "tsType": "boolean",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "boolean",
+      "doc": "Draw on the slide at a canvas CSS pixel with the active {@link slideTool}.\n`begin` starts a stroke (pen/eraser/filled), a single action (bucket/wand),\nor a new polygon (vector); subsequent calls extend it. Call slideDrawEnd on\npointer-up. Returns false if the point misses the slide. Uses the model's\npen value/size (eraser = penValue 0).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "slideDrawEnd",
+      "pyName": "slide_draw_end",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "End the current slide stroke; commits filled-pen / vector polygons.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "slideDrawUndo",
+      "pyName": "slide_draw_undo",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Undo the last slide action (vector tool removes the last polygon).",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "slidePlanePick",
+      "pyName": "slide_plane_pick",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "cssX",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "cssY",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "{ x: number; y: number; } | null",
+      "doc": "Map a canvas CSS pixel to slide base-pixel coords, or null off-plane.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "stepSignalCursor",
+      "pyName": "step_signal_cursor",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "direction",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "this",
+      "doc": "Step the signal cursor along the x-axis by one wheel tick (fraction of the\nvisible window). Fallback scroll gesture for a signal graph with no spatial\nvolume to scrub (when a 4D volume is present, the wheel steps frames\ninstead). Starts from the window centre if no cursor has been set. When the\nstep crosses the visible window edge, the window pans to follow the marker.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "swapVolumeChunkPlan",
+      "pyName": "swap_volume_chunk_plan",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeId",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "plan",
+          "tsType": "ChunkPlan",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Swap a loaded chunked/streamed volume's tiling plan in place (e.g. a\nmulti-LOD refocus). Unchanged bricks keep their resident GPU textures; only\nchanged/new bricks stream. Far cheaper than reloading the volume, and it\ndoesn't reset the camera/crosshair. The volume must already be loaded with a\n`chunkSource`; otherwise this is a no-op.",
       "returnsDoc": null
     },
     {
@@ -2628,6 +3443,12 @@
       "doc": null
     },
     {
+      "jsName": "graphRangeChange",
+      "pyName": "graph_range_change",
+      "detailType": "GraphRangeChangeDetail",
+      "doc": null
+    },
+    {
       "jsName": "locationChange",
       "pyName": "location_change",
       "detailType": "NiiVueLocation",
@@ -2664,9 +3485,33 @@
       "doc": null
     },
     {
+      "jsName": "perfFrame",
+      "pyName": "perf_frame",
+      "detailType": "FrameReport",
+      "doc": null
+    },
+    {
       "jsName": "pointerUp",
       "pyName": "pointer_up",
       "detailType": "PointerUpDetail",
+      "doc": null
+    },
+    {
+      "jsName": "signalLoaded",
+      "pyName": "signal_loaded",
+      "detailType": "SignalLoadedDetail",
+      "doc": null
+    },
+    {
+      "jsName": "signalLocationChange",
+      "pyName": "signal_location_change",
+      "detailType": "SignalLocationDetail",
+      "doc": null
+    },
+    {
+      "jsName": "signalRemoved",
+      "pyName": "signal_removed",
+      "detailType": "SignalRemovedDetail",
       "doc": null
     },
     {
@@ -2735,9 +3580,44 @@
         "reason": "non-serializable nominal type: NVImage"
       },
       {
+        "jsName": "focusBox",
+        "tsType": "FocusBox",
+        "reason": "non-serializable nominal type: FocusBox"
+      },
+      {
+        "jsName": "lodBoxes",
+        "tsType": "FocusBox",
+        "reason": "non-serializable nominal type: FocusBox"
+      },
+      {
         "jsName": "meshes",
         "tsType": "NVMesh",
         "reason": "non-serializable nominal type: NVMesh"
+      },
+      {
+        "jsName": "perf",
+        "tsType": "NiiVuePerf",
+        "reason": "non-serializable nominal type: NiiVuePerf"
+      },
+      {
+        "jsName": "settingsFillPolicy",
+        "tsType": "SettingsFillPolicy | undefined",
+        "reason": "unsupported union: SettingsFillPolicy | undefined"
+      },
+      {
+        "jsName": "settingsSavePolicy",
+        "tsType": "SettingsSavePolicy",
+        "reason": "non-serializable nominal type: SettingsSavePolicy"
+      },
+      {
+        "jsName": "signals",
+        "tsType": "NVSignal",
+        "reason": "non-serializable nominal type: NVSignal"
+      },
+      {
+        "jsName": "slideVector",
+        "tsType": "SlideVectorLayer",
+        "reason": "non-serializable nominal type: SlideVectorLayer"
       },
       {
         "jsName": "volumes",

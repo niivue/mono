@@ -1,11 +1,16 @@
+import type { mat4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
 import * as DragModes from '@/control/dragModes'
+import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { addUndoBitmap, getDrawingBitmap } from '@/drawing/drawingManager'
 import {
   drawLine,
   drawPenFilled,
   drawPoint,
+  drawSphere,
+  floodFill3D,
   isSamePoint,
+  magicWand3D,
 } from '@/drawing/penTool'
 import { computeSlicePointerEvent } from '@/extension/context'
 import { log } from '@/logger'
@@ -25,6 +30,20 @@ import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
 import type { LegendEntry, LegendLayout } from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
+import {
+  type ClipDrawPlane,
+  chunkExplodeEnabled,
+  clipPlaneToMMAxisPlane,
+  type ExplodedBlockFace,
+  explodedChunkAABB,
+  isMatRASAxisAligned,
+  pickClipPlaneBlockFace,
+  pickExplodedBlockFace,
+  pickExplodedVoxel,
+  rayBlockFacePointMM,
+} from '@/volume/ChunkExplode'
+import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
+import { getImageDataRAS } from '@/volume/utils'
 
 function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -53,7 +72,9 @@ function clientToCanvasPixel(
   return [x, y]
 }
 
-/** Convert client coords to bounds-local pixel coords. Returns null if outside bounds. */
+/** Convert client coords to bounds-local pixel coords. Returns null if outside bounds.
+ *  Uses the post-viewport pixel rect so hit testing tracks the same transform
+ *  the renderer applies — otherwise pan/zoom would route events to the wrong tile. */
 function clientToBoundsPixel(
   ctrl: NiiVueGPU,
   clientX: number,
@@ -70,15 +91,18 @@ function clientToBoundsPixel(
   ) {
     return [canvasX, canvasY]
   }
-  const cw = ctrl.canvas?.width ?? 0
-  const ch = ctrl.canvas?.height ?? 0
-  const left = bounds[0][0] * cw
-  const top = (1 - bounds[1][1]) * ch
-  const width = (bounds[1][0] - bounds[0][0]) * cw
-  const height = (bounds[1][1] - bounds[0][1]) * ch
-  const boundsX = canvasX - left
-  const boundsY = canvasY - top
-  if (boundsX < 0 || boundsX >= width || boundsY < 0 || boundsY >= height)
+  const canvas = ctrl.canvas
+  if (!canvas) return null
+  const rect = computeBoundsPixelRect(canvas, bounds)
+  if (rect.isOffscreen) return null
+  const boundsX = canvasX - rect.left
+  const boundsY = canvasY - rect.top
+  if (
+    boundsX < 0 ||
+    boundsX >= rect.width ||
+    boundsY < 0 ||
+    boundsY >= rect.height
+  )
     return null
   return [boundsX, boundsY]
 }
@@ -90,7 +114,12 @@ function handleGraphHitTest(ctrl: NiiVueGPU, x: number, y: number): boolean {
   if (hit.type === 'deferred') {
     const vol = ctrl.volumes[0]
     if (vol?.id) {
-      ctrl.loadDeferred4DVolumes(vol.id)
+      // Fire-and-forget from a pointer handler: catch so a failed reload (bad
+      // URL, network error, allocation failure) can't become an unhandled
+      // rejection. loadDeferred4DVolumes leaves the loaded frames intact on error.
+      ctrl.loadDeferred4DVolumes(vol.id).catch((err) => {
+        log.error('Failed to load deferred 4D frames:', err)
+      })
     }
     return true
   }
@@ -223,6 +252,606 @@ function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
   }
 }
 
+// Paint a 3D ball of `radius` at every voxel on the segment from `a` to `b`, so
+// a fast drag leaves a continuous tube instead of disconnected stamps. Steps at
+// ~1 voxel spacing along the longest axis; a single point (a===b) paints once.
+function drawSphereSegment(
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  radius: number,
+  penValue: number,
+  drawBitmap: Uint8Array,
+  dims: number[],
+  penOverwrites: boolean,
+): void {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  const dz = b[2] - a[2]
+  const steps = Math.max(
+    1,
+    Math.round(Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz))),
+  )
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps
+    drawSphere({
+      x: Math.round(a[0] + dx * t),
+      y: Math.round(a[1] + dy * t),
+      z: Math.round(a[2] + dz * t),
+      radius,
+      penValue,
+      drawBitmap,
+      dims,
+      penOverwrites,
+    })
+  }
+}
+
+// Paint the exploded block under the cursor on the 3D render tile. Builds the
+// render tile's MVP exactly as depthPick does, unprojects the click to a world
+// ray (in vox2mm mm-space), CPU-ray-casts the exploded chunk AABBs to find the
+// block + voxel, then paints a 3D ball there. On a drag continuation it connects
+// the new voxel to the previous one (drawSphereSegment) so pen strokes and the
+// eraser leave no gaps. `isStrokeStart` gates the undo snapshot so a whole drag
+// is one undo step. Refreshes via the incremental drawing flush so only the
+// touched chunk re-uploads. Returns the painted voxel (null if the ray missed).
+interface ExplodedDrawPick {
+  voxel: [number, number, number]
+  // Index of the exploded block the ray hit. Successive stroke picks only
+  // connect when this matches, so a drag that crosses a block gap doesn't streak
+  // a line between two data-space-distant voxels.
+  chunkIndex: number
+  // The active drawing volume, or null when none is open (vector-annotation
+  // callers don't need one; raster callers bail when it's null).
+  drawingVol: NVImage | null
+  // Predicate over RAS voxel coords: true for visible tissue (source intensity
+  // above the transparency threshold). Reused by the 3D flood fill to bound the
+  // region. When the volume has no readable data it is always-true (paint/fill
+  // anywhere in bounds).
+  keep: (x: number, y: number, z: number) => boolean
+}
+
+// getImageDataRAS reorders the whole volume when its native storage isn't already
+// a Float32Array in RAS order. During a 3D draw/vector stroke it would run on
+// every pointermove, so cache the result for the stroke (keyed by volume
+// identity); the cache is cleared on pointerup/pointercancel.
+function strokeSample(ctrl: NiiVueGPU, vol: NVImage): Float32Array | null {
+  const cache = ctrl._draw3DSampleCache
+  if (cache && cache.vol === vol) return cache.data
+  const data = getImageDataRAS(vol)
+  ctrl._draw3DSampleCache = data ? { vol, data } : null
+  return data
+}
+
+// Unproject the cursor over the active render tile to a world ray (origin + unit
+// dir) in the volume's vox2mm mm-space — the shared front end of every 3D
+// exploded-block pick (draw, wand, vector face). Null if there is no render-tile
+// hit for this volume.
+function explodedPickRay(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+): { origin: [number, number, number]; dir: [number, number, number] } | null {
+  const hit = ctrl.activeTileHit
+  if (!hit || !vol.chunkPlan) return null
+  const tile = ctrl.view?.screenSlices[hit.tileIndex]
+  const ltwh = tile?.leftTopWidthHeight
+  if (!ltwh) return null
+  const md = ctrl.model
+  const mvp = NVTransforms.calculateMvpMatrix(
+    ltwh,
+    md.scene.azimuth,
+    md.scene.elevation,
+    md._renderPivotMM ?? md.pivot3D,
+    md.furthestFromPivot,
+    md.scene.scaleMultiplier,
+    vol.obliqueRAS as mat4 | undefined,
+    md.scene.renderPan,
+  )[0] as mat4
+  const near = NVTransforms.unprojectScreen(
+    hit.normalizedX,
+    hit.normalizedY,
+    0,
+    mvp,
+  )
+  const far = NVTransforms.unprojectScreen(
+    hit.normalizedX,
+    hit.normalizedY,
+    1,
+    mvp,
+  )
+  let dx = far[0] - near[0]
+  let dy = far[1] - near[1]
+  let dz = far[2] - near[2]
+  const len = Math.hypot(dx, dy, dz) || 1
+  dx /= len
+  dy /= len
+  dz /= len
+  return { origin: [near[0], near[1], near[2]], dir: [dx, dy, dz] }
+}
+
+// Shared pick for 3D drawing on exploded blocks: unprojects the cursor to a world
+// ray (explodedPickRay), CPU-ray-casts the exploded chunk AABBs restricted to the
+// clip-visible set, and returns the entered voxel plus a visible-tissue predicate.
+// Null if the ray misses every block or there is no drawing volume.
+function pickExplodedDraw(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+): ExplodedDrawPick | null {
+  const plan = vol.chunkPlan
+  const ray = explodedPickRay(ctrl, vol)
+  if (!plan || !ray) return null
+  const near = ray.origin
+  const [dx, dy, dz] = ray.dir
+  // Only blocks the clip plane leaves visible are pickable, so a right-click
+  // can't land on a block hidden behind the cutaway. The shader clips each block
+  // by its un-exploded data position, which is exactly what chunksNotClippedOut
+  // computes (no explode offset).
+  const allIdx = plan.chunks.map((_, i) => i)
+  const clipPlanes = ctrl.model.clipPlanes
+  const isCutaway = ctrl.model.scene.isClipPlaneCutaway
+  const visible = new Set(
+    chunksNotClippedOut(plan, allIdx, clipPlanes, isCutaway),
+  )
+  // March the volume's data so the paint lands on the visible tissue surface
+  // (first voxel above the transparency threshold), not the block's empty
+  // bounding-box face, and skips the clipped-away portion of a straddling block.
+  const data = strokeSample(ctrl, vol)
+  const dimX = (vol.dimsRAS as number[])[1]
+  const dimXY = dimX * (vol.dimsRAS as number[])[2]
+  const sample = data
+    ? (x: number, y: number, z: number): number =>
+        data[x + y * dimX + z * dimXY]
+    : undefined
+  // The window cal_min/cal_max are in display units; convert to the raw scale
+  // getImageDataRAS returns. The first faintly-non-zero voxel is near-transparent
+  // ("cloud"), so threshold a short way up the window so the paint lands on the
+  // first clearly-visible voxel instead.
+  const sclSlope = vol.hdr?.scl_slope || 1
+  const sclInter = vol.hdr?.scl_inter || 0
+  const winLo = (vol.calMin - sclInter) / sclSlope
+  const winHi = (vol.calMax - sclInter) / sclSlope
+  const threshold = winLo + 0.15 * (winHi - winLo)
+  const picked = pickExplodedVoxel(
+    plan,
+    vol.matRAS as Float32Array,
+    vol.chunkExplode,
+    [near[0], near[1], near[2]],
+    [dx, dy, dz],
+    { allowed: visible, clipPlanes, isCutaway, sample, threshold },
+  )
+  if (!picked) return null
+  const keep = sample
+    ? (x: number, y: number, z: number): boolean => sample(x, y, z) > threshold
+    : (): boolean => true
+  return {
+    voxel: picked.voxel,
+    chunkIndex: picked.chunkIndex,
+    drawingVol: (ctrl.model.drawingVolume as NVImage | null) ?? null,
+    keep,
+  }
+}
+
+// Snapshot the drawing bitmap for undo once per stroke (matches the 2D path).
+function snapshotDrawUndo(ctrl: NiiVueGPU, drawingVol: NVImage): void {
+  const undoResult = addUndoBitmap({
+    drawBitmap: getDrawingBitmap(drawingVol),
+    drawUndoBitmaps: ctrl.drawUndoBitmaps,
+    currentDrawUndoBitmap: ctrl.currentDrawUndoBitmap,
+    maxDrawUndoBitmaps: ctrl.maxDrawUndoBitmaps,
+    drawFillOverwrites: ctrl.model.draw.isFillOverwriting,
+  })
+  ctrl.drawUndoBitmaps = undoResult.drawUndoBitmaps
+  ctrl.currentDrawUndoBitmap = undoResult.currentDrawUndoBitmap
+  if (undoResult.drawBitmap) drawingVol.img = undoResult.drawBitmap
+}
+
+// Paint the exploded block under the cursor on the 3D render tile with a 3D
+// ball. On a drag continuation it connects the new voxel to the previous one
+// (drawSphereSegment) so pen strokes and the eraser leave no gaps.
+// `isStrokeStart` gates the undo snapshot so a whole drag is one undo step.
+// Refreshes via the incremental drawing flush; returns the painted voxel (null
+// if the ray missed).
+function draw3DOnExplodedBlock(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+  isStrokeStart: boolean,
+): [number, number, number] | null {
+  const pick = pickExplodedDraw(ctrl, vol)
+  if (!pick) return null
+  const { voxel, chunkIndex, drawingVol } = pick
+  if (!drawingVol) return null
+  // Snapshot for undo on the first successful paint of the stroke (set at
+  // pointer-down), so a stroke that starts on a ray-miss still gets a baseline.
+  if (ctrl._draw3DNeedsUndo) {
+    snapshotDrawUndo(ctrl, drawingVol)
+    ctrl._draw3DNeedsUndo = false
+  }
+  const radius = Math.max(0, Math.floor(ctrl.model.draw.penSize / 2))
+  // Continue from the previous voxel only when this pick is in the SAME block as
+  // the last one — connecting across a block gap would streak a line between two
+  // voxels that are adjacent on screen but far apart in data space. A fresh
+  // stamp (stroke start, or a jump to another block) paints just the picked
+  // voxel.
+  const sameBlock =
+    !isStrokeStart &&
+    ctrl._draw3DLastVoxel !== null &&
+    ctrl._draw3DLastChunk === chunkIndex
+  const from = sameBlock
+    ? (ctrl._draw3DLastVoxel as [number, number, number])
+    : voxel
+  drawSphereSegment(
+    from,
+    voxel,
+    radius,
+    ctrl.model.draw.penValue,
+    getDrawingBitmap(drawingVol),
+    vol.dimsRAS as number[],
+    ctrl.model.draw.isFillOverwriting,
+  )
+  // Mark both segment endpoints so the incremental flush covers the tube.
+  ctrl.markDrawDirty(from[0], from[1], from[2], ctrl.model.draw.penSize)
+  ctrl.markDrawDirty(voxel[0], voxel[1], voxel[2], ctrl.model.draw.penSize)
+  ctrl.refreshDrawing()
+  ctrl.emit('drawingChanged', { action: 'stroke' })
+  ctrl._draw3DLastChunk = chunkIndex
+  return voxel
+}
+
+// 3D flood fill on an exploded block (fill mode): a right-click seeds a 3D
+// region-grow at the picked voxel, filling the connected visible-tissue blob
+// (6-connected, bounded by the same threshold the pick uses) with the pen value.
+// One undo step; refreshes only the touched region. Returns true if it ran.
+function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
+  const pick = pickExplodedDraw(ctrl, vol)
+  if (!pick) return false
+  const { voxel, drawingVol, keep } = pick
+  if (!drawingVol) return false
+  const prevUndoBitmaps = ctrl.drawUndoBitmaps
+  const prevUndoIndex = ctrl.currentDrawUndoBitmap
+  snapshotDrawUndo(ctrl, drawingVol)
+  const dims = vol.dimsRAS as number[]
+  // Cap the fill so a click on a huge connected structure can't run unbounded.
+  // The cap applies to erase (penValue 0) too; on a volume with more than 4M
+  // voxels a large erase flood stops at the cap and warns. 4M is generous for a
+  // single anatomical blob.
+  const maxVoxels = Math.min(dims[1] * dims[2] * dims[3], 4_000_000)
+  const result = floodFill3D({
+    seed: voxel,
+    drawBitmap: getDrawingBitmap(drawingVol),
+    dims,
+    penValue: ctrl.model.draw.penValue,
+    keep,
+    fillOverwrites: ctrl.model.draw.isFillOverwriting,
+    maxVoxels,
+  })
+  if (result.hitCap) {
+    log.warn(`3D flood fill stopped at the ${maxVoxels}-voxel cap`)
+  }
+  if (result.filled === 0) {
+    // Nothing changed — drop the no-op undo snapshot (addUndoBitmap returns fresh
+    // arrays, so restoring the prior pointers discards it).
+    ctrl.drawUndoBitmaps = prevUndoBitmaps
+    ctrl.currentDrawUndoBitmap = prevUndoIndex
+    return true
+  }
+  // Mark the fill's AABB corners so the incremental flush covers the region.
+  ctrl.markDrawDirty(result.min[0], result.min[1], result.min[2], 1)
+  ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
+  ctrl.refreshDrawing()
+  ctrl.emit('drawingChanged', { action: 'stroke' })
+  return true
+}
+
+// Click-to-segment ("magic wand") at a seed voxel (RAS ijk) on `vol`: grow a 3D
+// region of voxels whose source intensity is within the configured tolerance of
+// the seed's value and paint them the pen value. Shared by the 2D-slice click and
+// the 3D exploded-block right-click. The tolerance is a fraction of the display
+// window, converted to the raw sample scale. One undo step; refreshes only the
+// touched region. Returns true if it ran (there was data + a drawing volume).
+function magicWandFill(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+  seed: [number, number, number],
+  // When given, confine the grow to this slice axis at the seed's index (2D
+  // mode). The 3D exploded-block entry point omits it (always a full 3D grow).
+  restrictAxis?: number,
+): boolean {
+  const drawingVol = ctrl.model.drawingVolume as NVImage | null
+  if (!drawingVol) return false
+  const data = strokeSample(ctrl, vol)
+  if (!data) return false
+  const dims = vol.dimsRAS as number[]
+  const dimX = dims[1]
+  const dimXY = dimX * dims[2]
+  const sample = (x: number, y: number, z: number): number =>
+    data[x + y * dimX + z * dimXY]
+  // Tolerance: a fraction of the display window, in the raw sample scale that
+  // getImageDataRAS returns (so it tracks the current windowing).
+  const sclSlope = vol.hdr?.scl_slope || 1
+  const sclInter = vol.hdr?.scl_inter || 0
+  const winLo = (vol.calMin - sclInter) / sclSlope
+  const winHi = (vol.calMax - sclInter) / sclSlope
+  const tolerance =
+    ctrl.model.draw.clickToSegmentTolerance * Math.abs(winHi - winLo)
+  const prevUndoBitmaps = ctrl.drawUndoBitmaps
+  const prevUndoIndex = ctrl.currentDrawUndoBitmap
+  snapshotDrawUndo(ctrl, drawingVol)
+  const maxVoxels = Math.min(dims[1] * dims[2] * dims[3], 4_000_000)
+  const result = magicWand3D({
+    seed,
+    drawBitmap: getDrawingBitmap(drawingVol),
+    dims,
+    penValue: ctrl.model.draw.penValue,
+    sample,
+    tolerance,
+    fillOverwrites: ctrl.model.draw.isFillOverwriting,
+    maxVoxels,
+    restrictToSlice:
+      restrictAxis === undefined
+        ? undefined
+        : { axis: restrictAxis, index: seed[restrictAxis] },
+  })
+  if (result.hitCap) {
+    log.warn(`Magic wand stopped at the ${maxVoxels}-voxel cap`)
+  }
+  if (result.filled === 0) {
+    // Nothing changed — drop the no-op undo snapshot.
+    ctrl.drawUndoBitmaps = prevUndoBitmaps
+    ctrl.currentDrawUndoBitmap = prevUndoIndex
+    return true
+  }
+  ctrl.markDrawDirty(result.min[0], result.min[1], result.min[2], 1)
+  ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
+  ctrl.refreshDrawing()
+  ctrl.emit('drawingChanged', { action: 'stroke' })
+  return true
+}
+
+// Magic wand seeded by a 3D exploded-block right-click: pick the block voxel the
+// ray hits, then grow the intensity-similar region from it. Returns true if a
+// block was hit.
+function magicWand3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
+  const pick = pickExplodedDraw(ctrl, vol)
+  if (!pick) return false
+  return magicWandFill(ctrl, vol, pick.voxel)
+}
+
+// Pick the front FACE of the visible block under the cursor on the 3D render, as
+// an axis-aligned mm plane, for vector drawing directly on the blocks. A stroke
+// locks onto the face returned here and projects every later point onto it, so the
+// SVG is a flat axis-aligned polygon on one block face (not a path following the
+// tissue surface across blocks/depth). Adjusting the face to the clip plane is a
+// tracked follow-up.
+function pickBlockFace(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+): ExplodedBlockFace | null {
+  const plan = vol.chunkPlan
+  const ray = explodedPickRay(ctrl, vol)
+  if (!plan || !ray) return null
+  // If any clip plane is active, draw on the CLIP-PLANE cut. The block is the one
+  // whose cut surface the ray actually hits (pickClipPlaneBlockFace), NOT the tissue
+  // pick — in cutaway mode the tissue pick ignores the clip and would land on a
+  // removed front block. Only when the ray misses every cut do we fall back to the
+  // block's box face below.
+  const clipPlanes = clipDrawPlanesMM(ctrl)
+  if (clipPlanes.length > 0) {
+    const visible = new Set(
+      chunksNotClippedOut(
+        plan,
+        plan.chunks.map((_, i) => i),
+        ctrl.model.clipPlanes,
+        ctrl.model.scene.isClipPlaneCutaway,
+      ),
+    )
+    const clipFace = pickClipPlaneBlockFace(
+      plan,
+      vol.matRAS as Float32Array,
+      vol.chunkExplode,
+      ray.origin,
+      ray.dir,
+      clipPlanes,
+      { allowed: visible },
+    )
+    if (clipFace) return clipFace
+  }
+  // No clip cut hit: pick the block by the same TISSUE-AWARE pick as the pen
+  // (pickExplodedDraw marches into the data and lands on the first visible voxel).
+  // Picking by nearest bounding box instead would choose whichever block's box the
+  // ray enters first — in the exploded view that is often a nearer block's empty
+  // halo/air margin, so the SVG landed on the wrong block. Take that block's face.
+  const hit = pickExplodedDraw(ctrl, vol)
+  if (!hit) return null
+  return pickExplodedBlockFace(
+    plan,
+    vol.matRAS as Float32Array,
+    vol.chunkExplode,
+    ray.origin,
+    ray.dir,
+    { allowed: new Set([hit.chunkIndex]) },
+  )
+}
+
+// The mm drawing planes for every ACTIVE axis-aligned clip plane (there are
+// NUM_CLIP_PLANE slots; the interaction stack cycles which is active, and more than
+// one can be on). pickClipPlaneBlockFace picks the nearest cut the ray hits across
+// them. Empty when no clip is active or every active plane is oblique (the
+// axis-aligned annotation model can't hold an oblique plane yet).
+function clipDrawPlanesMM(ctrl: NiiVueGPU): ClipDrawPlane[] {
+  const cps = ctrl.model.clipPlanes
+  const tex2mm = ctrl.model.tex2mm
+  if (!cps || !tex2mm) return []
+  const out: ClipDrawPlane[] = []
+  const count = Math.min(NVConstants.NUM_CLIP_PLANE, Math.floor(cps.length / 4))
+  for (let i = 0; i < count; i++) {
+    const plane = clipPlaneToMMAxisPlane(cps.slice(i * 4, i * 4 + 4), tex2mm)
+    if (plane) out.push(plane)
+  }
+  return out
+}
+
+// Outline the block a vector stroke is drawing on, as a hint. Reuses the FocusBox
+// render (both backends) with the block's exploded mm AABB.
+const PICKED_BLOCK_COLOR = [1, 1, 0, 1]
+function setPickedBlockHighlight(
+  ctrl: NiiVueGPU,
+  vol: NVImage,
+  chunkIndex: number,
+): void {
+  const plan = vol.chunkPlan
+  if (!plan) return
+  const aabb = explodedChunkAABB(
+    plan,
+    vol.matRAS as Float32Array,
+    vol.chunkExplode,
+    chunkIndex,
+  )
+  ctrl.model._pickedBlockBox = aabb
+    ? { min: aabb.min, max: aabb.max, color: PICKED_BLOCK_COLOR, thickness: 2 }
+    : null
+}
+
+// The raster/vector edit-mode priority rule, in one place: when `draw` is enabled
+// AND has a bitmap to paint into, it intercepts the pointer and vector annotation
+// editing is inert. This keeps 2D slices and 3D exploded blocks resolving the
+// conflict the same way (the 2D raster intercept already preceded the annotation
+// one, while the 3D vector intercept preceded the raster one).
+function rasterDrawWins(ctrl: NiiVueGPU): boolean {
+  return ctrl.model.draw.isEnabled && !!ctrl.model.drawingVolume
+}
+
+// Enabling both edit modes is a caller error. Warn on the first interaction that
+// is actually ambiguous rather than from the `isEnabled` setters — a caller
+// legitimately passes through a both-on state while switching tools, so setter-
+// time validation of this two-field invariant would cry wolf.
+const warnedBothEditModes = new WeakSet<NiiVueGPU>()
+function warnIfBothEditModes(ctrl: NiiVueGPU): void {
+  if (!ctrl.model.annotation.isEnabled || !rasterDrawWins(ctrl)) return
+  if (warnedBothEditModes.has(ctrl)) return
+  warnedBothEditModes.add(ctrl)
+  log.warn(
+    'drawIsEnabled and annotationIsEnabled are both on: raster drawing takes precedence, so vector annotation editing will not fire. Disable one.',
+  )
+}
+
+// Clear every piece of transient per-drag state. Runs in the pointerup `finally`
+// so a throwing stroke finalize cannot strand `isDragging` true (which pauses the
+// chunked-volume streaming pump, gated on `!isDragging`) or leave a half-finished
+// stroke behind. Also used by pointercancel.
+//
+// Every statement here is a plain field write EXCEPT the last: the `isDragging`
+// setter calls `drawScene()` on the true->false edge. It is deliberately last so
+// that a throw from the renderer cannot skip any of the resets above it, and the
+// pointerup `finally` releases pointer capture BEFORE calling this.
+function resetDragState(ctrl: NiiVueGPU): void {
+  // Vector (annotation) stroke state.
+  ctrl._annotation3DActive = false
+  ctrl._annotation3DMMPath = []
+  ctrl._annotation3DFace = null
+  ctrl.model._pickedBlockBox = null
+  ctrl._annotationBrushPath = []
+  ctrl._frozenLoopPoints = null
+  ctrl._annotationShapeStart = null
+  ctrl._resizingControlPoint = -1
+  ctrl._resizingAnnotation = null
+  ctrl._resizeOriginalShape = null
+  ctrl.model._annotationPreview = null
+  ctrl.model._annotationErasePreview = null
+  // Raster (draw) stroke state. The 2D pen accumulates `_drawPenFillPts` during
+  // the drag and consumes them in the pointerup finalize; if that finalize throws
+  // they must not survive, or the NEXT pointerup re-commits the abandoned stroke.
+  ctrl._drawPenLocation = [NaN, NaN, NaN]
+  ctrl._drawPenAxCorSag = -1
+  ctrl._drawPenFillPts = []
+  ctrl._draw3DActive = false
+  ctrl._draw3DNeedsUndo = false
+  ctrl._draw3DLastVoxel = null
+  ctrl._draw3DLastChunk = null
+  ctrl._draw3DSampleCache = null
+  ctrl.activeTileHit = null
+  // Last: this setter renders (resumes the chunk-streaming pump).
+  ctrl.isDragging = false
+}
+
+// Commit a freehand 3D vector stroke (mm points picked off the blocks) as a
+// slice annotation. The annotation model is planar, so fit the best axis-aligned
+// plane — the axis with the smallest spread is the depth — project the points
+// onto it, and create the annotation. It renders explode-aware (tracks its
+// block) and exports via annotationsToSVG. Points are un-exploded mm, so the
+// stored annotation sits at the block's true position.
+function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
+  const pts = ctrl._annotation3DMMPath
+  ctrl._annotation3DActive = false
+  ctrl._annotation3DMMPath = []
+  // Annotation mode turned off (or raster took over) mid-drag: discard the
+  // partial stroke rather than committing a shape the user can no longer see
+  // themselves drawing.
+  if (!ctrl.model.annotation.isEnabled) return
+  if (pts.length < 3) return
+  const min: [number, number, number] = [
+    Number.POSITIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+  ]
+  const max: [number, number, number] = [
+    Number.NEGATIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ]
+  for (const p of pts) {
+    for (let a = 0; a < 3; a++) {
+      if (p[a] < min[a]) min[a] = p[a]
+      if (p[a] > max[a]) max[a] = p[a]
+    }
+  }
+  const ext = [max[0] - min[0], max[1] - min[1], max[2] - min[2]]
+  let depthAxis = 0
+  if (ext[1] < ext[depthAxis]) depthAxis = 1
+  if (ext[2] < ext[depthAxis]) depthAxis = 2
+  // sliceType is the depth axis inverse: z(2)->AXIAL(0), y(1)->CORONAL(1),
+  // x(0)->SAGITTAL(2).
+  const sliceType = 2 - depthAxis
+  const slicePosition = (min[depthAxis] + max[depthAxis]) / 2
+  const outer = pts.map((p) =>
+    Annotation.mmToSlice2D([p[0], p[1], p[2]], sliceType),
+  )
+  // A polygon needs area. Reject a degenerate stroke — one point, or any set of
+  // collinear points (an axis-aligned OR diagonal line) — that would otherwise
+  // commit an invisible zero-area annotation and an undo entry. Test the actual
+  // area of the projected polygon (shoelace) rather than its bounding box, which
+  // a diagonal line would pass with two non-zero extents. eps is in mm^2.
+  let twiceArea = 0
+  for (let i = 0; i < outer.length; i++) {
+    const a = outer[i]
+    const b = outer[(i + 1) % outer.length]
+    twiceArea += a.x * b.y - b.x * a.y
+  }
+  if (Math.abs(twiceArea) / 2 <= 1e-6) return
+  const anchorMM: [number, number, number] = [
+    (min[0] + max[0]) / 2,
+    (min[1] + max[1]) / 2,
+    (min[2] + max[2]) / 2,
+  ]
+  anchorMM[depthAxis] = slicePosition
+  const cfg = ctrl.model.annotation
+  ctrl._annotationUndoStack.push(ctrl.model.annotations)
+  const newAnn = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    sliceType,
+    slicePosition,
+    [{ outer, holes: [] }],
+    cfg.style,
+    anchorMM,
+  )
+  ctrl.model.annotations = Annotation.mergeAnnotations(
+    ctrl.model.annotations,
+    newAnn,
+  )
+  ctrl.emit('annotationAdded', { annotation: newAnn })
+  ctrl.emit('annotationChanged', { action: 'draw' })
+  ctrl.drawScene()
+}
+
 export function initInteraction(ctrl: NiiVueGPU): void {
   // Prevent browser default touch gestures so pointer events fire instead
   if (ctrl.canvas) ctrl.canvas.style.touchAction = 'none'
@@ -251,6 +880,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     const boundsHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
     if (!boundsHit) return // outside this instance's bounds
     const [px, py] = boundsHit
+    warnIfBothEditModes(ctrl)
 
     // Check for legend click first
     const legendEntry = legendHitTest(px, py, ctrl.view?.legendLayout ?? null)
@@ -267,6 +897,100 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (graphHit) return
 
     ctrl.activeTileHit = ctrl.view?.hitTest(px, py) ?? null
+    // Freehand vector (SVG) drawing directly on the exploded blocks: a RIGHT-drag
+    // in vector (annotation) mode picks block points along the drag and, on
+    // release, commits them as a slice annotation. Checked before the clip-plane
+    // path so right-drag draws the vector shape.
+    {
+      const annVol = ctrl.model.getVolumes()[0]
+      if (
+        ctrl.model.annotation.isEnabled &&
+        // Raster drawing takes precedence when it can actually draw. This is the
+        // one priority rule, and it matches the 2D slice path (whose raster
+        // intercept precedes the annotation one). Enabling both edit modes at
+        // once is a caller error; `warnIfBothEditModes` (pointerdown) says so.
+        !rasterDrawWins(ctrl) &&
+        !ctrl.model.annotation.isErasing &&
+        ctrl.activeTileHit?.isRender &&
+        evt.button === 2 &&
+        // Alt+right-drag rotates the clip plane instead of drawing, so both are
+        // usable without leaving the draw mode (Shift is reserved for the context
+        // menu). Plain right-drag draws.
+        !evt.altKey &&
+        annVol?.matRAS &&
+        annVol.chunkPlan &&
+        chunkExplodeEnabled(annVol.chunkExplode) &&
+        // The block-face math builds axis-aligned mm planes from a block's mm AABB,
+        // which only matches the visible face for an axis-aligned volume. On an
+        // oblique/sheared volume the face would be wrong, so don't intercept —
+        // right-drag falls through to clip-plane rotation. (Arbitrary-plane
+        // annotations are a tracked follow-up.)
+        isMatRASAxisAligned(annVol.matRAS as Float32Array)
+      ) {
+        const face = pickBlockFace(ctrl, annVol)
+        ctrl._annotation3DActive = true
+        // Lock the stroke to the picked block's front face (an axis-aligned mm
+        // plane). null if the first pick missed a block; pointermove establishes
+        // it on the first successful pick. Every later point is projected onto
+        // this one plane, so the SVG stays flat on that block face.
+        ctrl._annotation3DFace = face
+        ctrl._annotation3DMMPath = face ? [face.entryMM] : []
+        if (face) setPickedBlockHighlight(ctrl, annVol, face.chunkIndex)
+        ctrl.isDragging = true
+        ctrl.activeButton = evt.button
+        ctrl.lastPointerX = evt.clientX
+        ctrl.lastPointerY = evt.clientY
+        ctrl.canvas?.setPointerCapture(evt.pointerId)
+        return
+      }
+    }
+    // 3D drawing on exploded blocks: a RIGHT-click on the render tile paints the
+    // block the pick ray hits, leaving left-drag free to rotate the camera.
+    // Depth-pick can't see the explode (it ray-marches the un-exploded single
+    // texture), so we CPU-ray-cast the exploded chunk AABBs. Only intercept when
+    // the active volume is actually exploded, so right-drag still adjusts the
+    // clip plane otherwise.
+    {
+      const drawVol = ctrl.model.getVolumes()[0]
+      if (
+        ctrl.model.draw.isEnabled &&
+        ctrl.model.drawingVolume &&
+        ctrl.activeTileHit?.isRender &&
+        evt.button === 2 &&
+        // Alt+right-drag rotates the clip plane instead of painting (see above).
+        !evt.altKey &&
+        drawVol?.matRAS &&
+        drawVol.chunkPlan &&
+        chunkExplodeEnabled(drawVol.chunkExplode)
+      ) {
+        // Magic wand: a single right-click grows the intensity-similar region
+        // from the picked voxel (no drag stroke). Checked before fill mode.
+        if (ctrl.model.draw.isClickToSegment) {
+          magicWand3DOnExplodedBlock(ctrl, drawVol)
+          return
+        }
+        // Fill mode: a single right-click floods the connected tissue blob at
+        // the picked voxel (3D region-grow) — no drag stroke.
+        if (ctrl.drawPenFilled) {
+          floodFill3DOnExplodedBlock(ctrl, drawVol)
+          return
+        }
+        // Take the undo snapshot on the first painted voxel of this stroke (in
+        // draw3DOnExplodedBlock), so starting on a ray-miss doesn't skip it.
+        ctrl._draw3DNeedsUndo = true
+        const painted = draw3DOnExplodedBlock(ctrl, drawVol, true)
+        // Begin a continuous 3D stroke: capture the pointer and mark the drag as
+        // a 3D-draw so pointermove paints instead of rotating the clip plane.
+        ctrl._draw3DActive = true
+        ctrl._draw3DLastVoxel = painted
+        ctrl.isDragging = true
+        ctrl.activeButton = evt.button
+        ctrl.lastPointerX = evt.clientX
+        ctrl.lastPointerY = evt.clientY
+        ctrl.canvas?.setPointerCapture(evt.pointerId)
+        return
+      }
+    }
     // Drawing intercept: if drawing enabled and click is on a 2D slice
     if (
       ctrl.model.draw.isEnabled &&
@@ -285,6 +1009,28 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       if (mm) {
         const vol = ctrl.model.getVolumes()[0]
         if (vol) {
+          // Magic wand: a single click on the slice grows the intensity-similar
+          // region from the picked voxel (no stroke). Checked before the pen. In
+          // 2D mode the grow is confined to the clicked slice plane; otherwise it
+          // grows through the whole connected 3D structure.
+          if (ctrl.model.draw.isClickToSegment) {
+            const wandVox = NVTransforms.mm2vox(vol, mm)
+            const restrictAxis = ctrl.model.draw.clickToSegmentIs2D
+              ? sliceTypeDim(ctrl.activeTileHit.sliceType)
+              : undefined
+            magicWandFill(
+              ctrl,
+              vol,
+              [
+                Math.round(wandVox[0]),
+                Math.round(wandVox[1]),
+                Math.round(wandVox[2]),
+              ],
+              restrictAxis,
+            )
+            ctrl.setCrosshairPos(mm)
+            return
+          }
           // Save undo state before first stroke
           const undoResult = addUndoBitmap({
             drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
@@ -319,6 +1065,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
             penOverwrites: ctrl.model.draw.isFillOverwriting,
             isCircle: ctrl.isCircle,
           })
+          ctrl.markDrawDirty(pt[0], pt[1], pt[2], ctrl.model.draw.penSize)
           ctrl.refreshDrawing()
           ctrl.setCrosshairPos(mm)
         }
@@ -466,6 +1213,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   }
   ctrl._eventListeners.pointerup = (e: Event) => {
     setNextActionTag('pointerup')
+<<<<<<< HEAD
     // Finalize drawing stroke on mouse-up
     if (
       ctrl.model.draw.isEnabled &&
@@ -501,184 +1249,235 @@ export function initInteraction(ctrl: NiiVueGPU): void {
           })
           if (fillResult.success) {
             ;(ctrl.model.drawingVolume as NVImage).img = fillResult.drawBitmap
+=======
+    const evt = e as PointerEvent
+    // Stroke finalize (below) can throw. Cleanup lives in the `finally` so an
+    // interrupted finalize cannot strand `isDragging`/pointer capture; the
+    // pointerUp emits run after, and are intentionally skipped on a throw.
+    try {
+      // Finalize drawing stroke on mouse-up
+      if (
+        ctrl.model.draw.isEnabled &&
+        ctrl._drawPenFillPts.length > 0 &&
+        ctrl.model.drawingVolume
+      ) {
+        const vol = ctrl.model.getVolumes()[0]
+        if (vol?.dimsRAS) {
+          if (ctrl.drawPenAutoClose && ctrl._drawPenFillPts.length > 2) {
+            drawLine({
+              ptA: ctrl._drawPenLocation,
+              ptB: ctrl._drawPenFillPts[0],
+              penValue: ctrl.model.draw.penValue,
+              drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
+              dims: vol.dimsRAS,
+              penSize: ctrl.model.draw.penSize,
+              penAxCorSag: ctrl._drawPenAxCorSag,
+              penOverwrites: ctrl.model.draw.isFillOverwriting,
+            })
+>>>>>>> upstream/main
           }
-        }
-        ctrl.refreshDrawing()
-      }
-      ctrl._drawPenLocation = [NaN, NaN, NaN]
-      ctrl._drawPenAxCorSag = -1
-      ctrl._drawPenFillPts = []
-      ctrl.emit('drawingChanged', { action: 'stroke' })
-    }
-    // Finalize resize on mouse-up
-    if (ctrl.model.annotation.isEnabled && ctrl._resizingControlPoint >= 0) {
-      const sel = ctrl.model._annotationSelection
-      if (sel) {
-        const ann = ctrl._resizingAnnotation
-        if (ann?.shape) {
-          const cfg = ctrl.model.annotation
-          const shapeWidth = ann.shape.width ?? cfg.style.strokeWidth
-          const polygons = Annotation.generateShape(
-            ann.shape.type,
-            ann.shape.start,
-            ann.shape.end,
-            shapeWidth,
-          )
-          if (polygons.length > 0) {
-            ann.polygons = polygons
-            sel.controlPoints = Annotation.getControlPoints(ann.shape)
-          }
-          if (Annotation.isMeasureTool(ann.shape.type)) {
-            const vol = ctrl.model.getVolumes()[0]
-            if (vol)
-              ann.stats =
-                Annotation.computeAnnotationStats(ann, vol) ?? undefined
-          }
-          ctrl.emit('annotationChanged', { action: 'resize' })
-        }
-      }
-      ctrl._resizingControlPoint = -1
-      ctrl._resizeOriginalShape = null
-      ctrl._resizingAnnotation = null
-      ctrl.model._annotationPreview = null
-      ctrl.drawScene()
-    }
-    // Finalize shape creation on mouse-up
-    if (ctrl.model.annotation.isEnabled && ctrl._annotationShapeStart) {
-      const evt2 = e as PointerEvent
-      const shapeHit = clientToBoundsPixel(ctrl, evt2.clientX, evt2.clientY)
-      if (shapeHit && ctrl.activeTileHit && !ctrl.activeTileHit.isRender) {
-        const mm = NVSliceLayout.screenSlicePick(
-          ctrl.view?.screenSlices ?? [],
-          ctrl.model,
-          shapeHit[0],
-          shapeHit[1],
-          ctrl.activeTileHit,
-        )
-        if (mm) {
-          let pt2d = Annotation.mmToSlice2D(
-            mm as [number, number, number],
-            ctrl._annotationSliceType,
-          )
-          const cfg = ctrl.model.annotation
-          if (Annotation.isCircleTool(cfg.tool)) {
-            pt2d = Annotation.constrainCircleEnd(
-              ctrl._annotationShapeStart,
-              pt2d,
-            )
-          }
-          const polygons = Annotation.generateShape(
-            cfg.tool,
-            ctrl._annotationShapeStart,
-            pt2d,
-            cfg.style.strokeWidth,
-          )
-          if (polygons.length > 0) {
-            ctrl._annotationUndoStack.push(ctrl.model.annotations)
-            const newAnn = Annotation.createAnnotation(
-              cfg.activeLabel,
-              cfg.activeGroup,
-              ctrl._annotationSliceType,
-              ctrl._annotationSlicePosition,
-              polygons,
-              cfg.style,
-              ctrl._annotationAnchorMM,
-            )
-            const shapeData: typeof newAnn.shape = {
-              type: cfg.tool,
-              start: ctrl._annotationShapeStart,
-              end: pt2d,
+          if (ctrl.drawPenFilled && ctrl._drawPenFillPts.length > 2) {
+            const currentUndo =
+              ctrl.drawUndoBitmaps[ctrl.currentDrawUndoBitmap] ?? null
+            const fillResult = drawPenFilled({
+              penFillPts: ctrl._drawPenFillPts,
+              penAxCorSag: ctrl._drawPenAxCorSag,
+              drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
+              dims: vol.dimsRAS,
+              penValue: ctrl.model.draw.penValue,
+              fillOverwrites: ctrl.model.draw.isFillOverwriting,
+              currentUndoBitmap: currentUndo,
+            })
+            if (fillResult.success) {
+              ;(ctrl.model.drawingVolume as NVImage).img = fillResult.drawBitmap
             }
-            if (
-              cfg.tool === 'line' ||
-              cfg.tool === 'arrow' ||
-              cfg.tool === 'measureLine'
-            ) {
-              shapeData.width = cfg.style.strokeWidth
+          }
+          const penSize = ctrl.model.draw.penSize
+          for (const p of ctrl._drawPenFillPts) {
+            ctrl.markDrawDirty(p[0], p[1], p[2], penSize)
+          }
+          ctrl.refreshDrawing()
+        }
+        ctrl._drawPenLocation = [NaN, NaN, NaN]
+        ctrl._drawPenAxCorSag = -1
+        ctrl._drawPenFillPts = []
+        ctrl.emit('drawingChanged', { action: 'stroke' })
+      }
+      // Finalize resize on mouse-up
+      if (ctrl.model.annotation.isEnabled && ctrl._resizingControlPoint >= 0) {
+        const sel = ctrl.model._annotationSelection
+        if (sel) {
+          const ann = ctrl._resizingAnnotation
+          if (ann?.shape) {
+            const cfg = ctrl.model.annotation
+            const shapeWidth = ann.shape.width ?? cfg.style.strokeWidth
+            const polygons = Annotation.generateShape(
+              ann.shape.type,
+              ann.shape.start,
+              ann.shape.end,
+              shapeWidth,
+            )
+            if (polygons.length > 0) {
+              ann.polygons = polygons
+              sel.controlPoints = Annotation.getControlPoints(ann.shape)
             }
-            newAnn.shape = shapeData
-            if (Annotation.isMeasureTool(cfg.tool)) {
+            if (Annotation.isMeasureTool(ann.shape.type)) {
               const vol = ctrl.model.getVolumes()[0]
               if (vol)
-                newAnn.stats =
-                  Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
+                ann.stats =
+                  Annotation.computeAnnotationStats(ann, vol) ?? undefined
             }
-            ctrl.model.annotations = Annotation.mergeAnnotations(
-              ctrl.model.annotations,
-              newAnn,
-            )
-            ctrl.emit('annotationAdded', { annotation: newAnn })
-            ctrl.emit('annotationChanged', { action: 'draw' })
+            ctrl.emit('annotationChanged', { action: 'resize' })
           }
         }
-      }
-      ctrl._annotationShapeStart = null
-      ctrl.model._annotationPreview = null
-      ctrl.drawScene()
-    }
-    // Finalize annotation stroke on mouse-up (freehand/eraser)
-    if (
-      ctrl.model.annotation.isEnabled &&
-      ctrl._annotationBrushPath.length > 0
-    ) {
-      if (ctrl._annotationBrushPath.length > 1) {
-        // Save undo snapshot before modifying annotations
-        ctrl._annotationUndoStack.push(ctrl.model.annotations)
-        const cfg = ctrl.model.annotation
-        if (cfg.isErasing) {
-          // Commit the erase preview (already computed during pointermove)
-          if (ctrl.model._annotationErasePreview) {
-            ctrl.model.annotations = ctrl.model._annotationErasePreview
-          }
-          ctrl.emit('annotationChanged', { action: 'erase' })
-        } else {
-          const usePolygonMode = cfg.brushRadius <= 1
-          let polygons: PolygonWithHoles[] = []
-          if (usePolygonMode) {
-            // Polygon mode: use frozen loop or auto-close path
-            const pts = ctrl._frozenLoopPoints ?? ctrl._annotationBrushPath
-            if (pts.length >= 3) {
-              polygons = [{ outer: pts, holes: [] }]
-            }
-          } else {
-            // Brush mode: inflate path
-            polygons = Annotation.clipperInflatePath(
-              ctrl._annotationBrushPath,
-              cfg.brushRadius,
-            )
-          }
-          if (polygons.length > 0) {
-            const newAnn = Annotation.createAnnotation(
-              cfg.activeLabel,
-              cfg.activeGroup,
-              ctrl._annotationSliceType,
-              ctrl._annotationSlicePosition,
-              polygons,
-              cfg.style,
-              ctrl._annotationAnchorMM,
-            )
-            ctrl.model.annotations = Annotation.mergeAnnotations(
-              ctrl.model.annotations,
-              newAnn,
-            )
-            ctrl.emit('annotationAdded', { annotation: newAnn })
-            ctrl.emit('annotationChanged', { action: 'draw' })
-          }
-        }
+        ctrl._resizingControlPoint = -1
+        ctrl._resizeOriginalShape = null
+        ctrl._resizingAnnotation = null
+        ctrl.model._annotationPreview = null
         ctrl.drawScene()
       }
-      ctrl._annotationBrushPath = []
-      ctrl._frozenLoopPoints = null
-      ctrl.model._annotationPreview = null
-      ctrl.model._annotationErasePreview = null
+      // Finalize shape creation on mouse-up
+      if (ctrl.model.annotation.isEnabled && ctrl._annotationShapeStart) {
+        const shapeHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+        if (shapeHit && ctrl.activeTileHit && !ctrl.activeTileHit.isRender) {
+          const mm = NVSliceLayout.screenSlicePick(
+            ctrl.view?.screenSlices ?? [],
+            ctrl.model,
+            shapeHit[0],
+            shapeHit[1],
+            ctrl.activeTileHit,
+          )
+          if (mm) {
+            let pt2d = Annotation.mmToSlice2D(
+              mm as [number, number, number],
+              ctrl._annotationSliceType,
+            )
+            const cfg = ctrl.model.annotation
+            if (Annotation.isCircleTool(cfg.tool)) {
+              pt2d = Annotation.constrainCircleEnd(
+                ctrl._annotationShapeStart,
+                pt2d,
+              )
+            }
+            const polygons = Annotation.generateShape(
+              cfg.tool,
+              ctrl._annotationShapeStart,
+              pt2d,
+              cfg.style.strokeWidth,
+            )
+            if (polygons.length > 0) {
+              ctrl._annotationUndoStack.push(ctrl.model.annotations)
+              const newAnn = Annotation.createAnnotation(
+                cfg.activeLabel,
+                cfg.activeGroup,
+                ctrl._annotationSliceType,
+                ctrl._annotationSlicePosition,
+                polygons,
+                cfg.style,
+                ctrl._annotationAnchorMM,
+              )
+              const shapeData: typeof newAnn.shape = {
+                type: cfg.tool,
+                start: ctrl._annotationShapeStart,
+                end: pt2d,
+              }
+              if (
+                cfg.tool === 'line' ||
+                cfg.tool === 'arrow' ||
+                cfg.tool === 'measureLine'
+              ) {
+                shapeData.width = cfg.style.strokeWidth
+              }
+              newAnn.shape = shapeData
+              if (Annotation.isMeasureTool(cfg.tool)) {
+                const vol = ctrl.model.getVolumes()[0]
+                if (vol)
+                  newAnn.stats =
+                    Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
+              }
+              ctrl.model.annotations = Annotation.mergeAnnotations(
+                ctrl.model.annotations,
+                newAnn,
+              )
+              ctrl.emit('annotationAdded', { annotation: newAnn })
+              ctrl.emit('annotationChanged', { action: 'draw' })
+            }
+          }
+        }
+        ctrl._annotationShapeStart = null
+        ctrl.model._annotationPreview = null
+        ctrl.drawScene()
+      }
+      // Finalize annotation stroke on mouse-up (freehand/eraser)
+      if (
+        ctrl.model.annotation.isEnabled &&
+        ctrl._annotationBrushPath.length > 0
+      ) {
+        if (ctrl._annotationBrushPath.length > 1) {
+          // Save undo snapshot before modifying annotations
+          ctrl._annotationUndoStack.push(ctrl.model.annotations)
+          const cfg = ctrl.model.annotation
+          if (cfg.isErasing) {
+            // Commit the erase preview (already computed during pointermove)
+            if (ctrl.model._annotationErasePreview) {
+              ctrl.model.annotations = ctrl.model._annotationErasePreview
+            }
+            ctrl.emit('annotationChanged', { action: 'erase' })
+          } else {
+            const usePolygonMode = cfg.brushRadius <= 1
+            let polygons: PolygonWithHoles[] = []
+            if (usePolygonMode) {
+              // Polygon mode: use frozen loop or auto-close path
+              const pts = ctrl._frozenLoopPoints ?? ctrl._annotationBrushPath
+              if (pts.length >= 3) {
+                polygons = [{ outer: pts, holes: [] }]
+              }
+            } else {
+              // Brush mode: inflate path
+              polygons = Annotation.clipperInflatePath(
+                ctrl._annotationBrushPath,
+                cfg.brushRadius,
+              )
+            }
+            if (polygons.length > 0) {
+              const newAnn = Annotation.createAnnotation(
+                cfg.activeLabel,
+                cfg.activeGroup,
+                ctrl._annotationSliceType,
+                ctrl._annotationSlicePosition,
+                polygons,
+                cfg.style,
+                ctrl._annotationAnchorMM,
+              )
+              ctrl.model.annotations = Annotation.mergeAnnotations(
+                ctrl.model.annotations,
+                newAnn,
+              )
+              ctrl.emit('annotationAdded', { annotation: newAnn })
+              ctrl.emit('annotationChanged', { action: 'draw' })
+            }
+          }
+          ctrl.drawScene()
+        }
+      }
+      // Handle drag mode release for 2D slices
+      if (ctrl._activeDragMode !== DRAG_MODE.none) {
+        DragModes.handleDragRelease(ctrl)
+      }
+      // Commit a freehand vector stroke drawn on the 3D blocks (clears its state).
+      if (ctrl._annotation3DActive) finish3DAnnotationStroke(ctrl)
+    } finally {
+      // Release capture FIRST: `resetDragState` ends by clearing `isDragging`,
+      // whose setter renders, and a throw from the renderer must not strand the
+      // pointer captured on the canvas (every later pointer event would retarget).
+      try {
+        ctrl.canvas?.releasePointerCapture(evt.pointerId)
+      } catch {
+        /* already released */
+      }
+      // End a 3D exploded-block stroke + every other transient drag field.
+      resetDragState(ctrl)
     }
-    // Handle drag mode release for 2D slices
-    if (ctrl._activeDragMode !== DRAG_MODE.none) {
-      DragModes.handleDragRelease(ctrl)
-    }
-    ctrl.isDragging = false
-    ctrl.activeTileHit = null
-    const evt = e as PointerEvent
     // Emit high-level slice pointer event for extensions
     const sliceEvt = computeSlicePointerEvent(ctrl, evt)
     if (sliceEvt) {
@@ -692,10 +1491,30 @@ export function initInteraction(ctrl: NiiVueGPU): void {
       y: evt.offsetY,
       button: evt.button,
     })
+  }
+  // A pointer can be cancelled (touch interrupted, palm rejection, browser
+  // gesture) WITHOUT a pointerup. Reset the drag state so an interrupted drag
+  // does not leave isDragging stuck true — which would keep the chunked-volume
+  // streaming pump paused (it is gated on !isDragging) and stall streaming.
+  ctrl._eventListeners.pointercancel = (e: Event) => {
+    if (ctrl._activeDragMode !== DRAG_MODE.none) {
+      DragModes.handleDragRelease(ctrl)
+    }
     try {
-      ctrl.canvas?.releasePointerCapture(evt.pointerId)
-    } catch {
-      /* already released */
+      // Commit the stroke, as pointerup does. A raster stroke paints incrementally
+      // so its voxels already survive a cancel; a vector stroke only exists in the
+      // accumulator, and dropping it here would silently lose a finished polygon
+      // whenever touch/pen input ends in pointercancel instead of pointerup. The
+      // degenerate guards in finish3DAnnotationStroke discard a palm-reject.
+      if (ctrl._annotation3DActive) finish3DAnnotationStroke(ctrl)
+    } finally {
+      // Release capture before resetDragState, which renders (see pointerup).
+      try {
+        ctrl.canvas?.releasePointerCapture((e as PointerEvent).pointerId)
+      } catch {
+        /* already released */
+      }
+      resetDragState(ctrl)
     }
   }
   ctrl._eventListeners.pointermove = (e: Event) => {
@@ -749,6 +1568,57 @@ export function initInteraction(ctrl: NiiVueGPU): void {
     if (deltaX === 0 && deltaY === 0) return
     ctrl.lastPointerX = evt.clientX
     ctrl.lastPointerY = evt.clientY
+    // 3D vector drag on exploded blocks: re-hit-test and accumulate the picked
+    // block point (mm) into the freehand path. Runs before the clip-plane branch
+    // so a vector drag draws instead of rotating the clip plane. Gated on the
+    // live mode (mirroring the raster drag branch below) so disabling annotation
+    // mid-drag stops extending the path.
+    if (ctrl._annotation3DActive && ctrl.model.annotation.isEnabled) {
+      const annVol = ctrl.model.getVolumes()[0]
+      const moveHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+      if (moveHit && annVol) {
+        const tileHit = ctrl.view?.hitTest(moveHit[0], moveHit[1]) ?? null
+        if (tileHit?.isRender) {
+          ctrl.activeTileHit = tileHit
+          if (!ctrl._annotation3DFace) {
+            // pointer-down missed a block; establish the face on the first hit.
+            const face = pickBlockFace(ctrl, annVol)
+            if (face) {
+              ctrl._annotation3DFace = face
+              ctrl._annotation3DMMPath.push(face.entryMM)
+              setPickedBlockHighlight(ctrl, annVol, face.chunkIndex)
+            }
+          } else {
+            // Project the cursor ray onto the locked face plane (clamped to the
+            // block's face rectangle), so the whole stroke stays flat on that one
+            // block face regardless of where the cursor wanders.
+            const ray = explodedPickRay(ctrl, annVol)
+            const mm = ray
+              ? rayBlockFacePointMM(ctrl._annotation3DFace, ray.origin, ray.dir)
+              : null
+            if (mm) ctrl._annotation3DMMPath.push(mm)
+          }
+        }
+      }
+      return
+    }
+    // 3D drawing drag on exploded blocks: re-hit-test at the current pointer and
+    // paint (pen or eraser) the block the ray now hits, connecting to the last
+    // painted voxel. Runs before the render-tile clip-plane branch so a 3D-draw
+    // drag paints instead of rotating the clip plane.
+    if (ctrl._draw3DActive && ctrl.model.draw.isEnabled) {
+      const drawVol = ctrl.model.getVolumes()[0]
+      const moveHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+      if (moveHit && drawVol) {
+        const tileHit = ctrl.view?.hitTest(moveHit[0], moveHit[1]) ?? null
+        if (tileHit?.isRender) {
+          ctrl.activeTileHit = tileHit
+          const painted = draw3DOnExplodedBlock(ctrl, drawVol, false)
+          if (painted) ctrl._draw3DLastVoxel = painted
+        }
+      }
+      return
+    }
     // Drawing drag: paint along stroke
     if (
       ctrl.model.draw.isEnabled &&
@@ -788,6 +1658,14 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               penOverwrites: ctrl.model.draw.isFillOverwriting,
               isCircle: ctrl.isCircle,
             })
+            const penSize = ctrl.model.draw.penSize
+            ctrl.markDrawDirty(
+              ctrl._drawPenLocation[0],
+              ctrl._drawPenLocation[1],
+              ctrl._drawPenLocation[2],
+              penSize,
+            )
+            ctrl.markDrawDirty(newPt[0], newPt[1], newPt[2], penSize)
             ctrl._drawPenLocation = newPt
             ctrl._drawPenFillPts.push(newPt.slice())
             ctrl.refreshDrawing()
@@ -1262,6 +2140,10 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   ctrl.canvas?.addEventListener('contextmenu', ctrl._eventListeners.contextmenu)
   ctrl.canvas?.addEventListener('pointerdown', ctrl._eventListeners.pointerdown)
   ctrl.canvas?.addEventListener('pointerup', ctrl._eventListeners.pointerup)
+  ctrl.canvas?.addEventListener(
+    'pointercancel',
+    ctrl._eventListeners.pointercancel,
+  )
   ctrl.canvas?.addEventListener('pointermove', ctrl._eventListeners.pointermove)
   ctrl.canvas?.addEventListener(
     'pointerleave',
@@ -1291,6 +2173,12 @@ export function removeInteractionListeners(ctrl: NiiVueGPU): void {
     ctrl.canvas?.removeEventListener(
       'pointerup',
       ctrl._eventListeners.pointerup,
+    )
+  }
+  if (ctrl._eventListeners.pointercancel) {
+    ctrl.canvas?.removeEventListener(
+      'pointercancel',
+      ctrl._eventListeners.pointercancel,
     )
   }
   if (ctrl._eventListeners.pointermove) {

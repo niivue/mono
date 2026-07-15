@@ -21,7 +21,6 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
     <tr><td><a href="packages/nv-ext-save-html"><code>@niivue/nv-ext-save-html</code></a></td><td>Export a NiiVue scene as a self-contained HTML file</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-save-html"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-save-html/next" alt="npm"></a></td></tr>
     <tr><td><a href="packages/nv-ext-dcm2niix"><code>@niivue/nv-ext-dcm2niix</code></a></td><td>DICOM-to-NIfTI conversion in the browser via the dcm2niix WASM build</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-dcm2niix"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-dcm2niix/next" alt="npm"></a></td></tr>
     <tr><td><a href="packages/nv-ext-niimath"><code>@niivue/nv-ext-niimath</code></a></td><td>niimath pipelines in the browser via the niimath WASM build</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-niimath"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-niimath/next" alt="npm"></a></td></tr>
-    <tr><td><a href="packages/nv-ext-mrs"><code>@niivue/nv-ext-mrs</code></a></td><td>MR spectroscopic imaging (MRSI) visualization — crosshair-voxel spectra and metabolite maps (ports fsleyes-plugin-mrs)</td><td><a href="https://www.npmjs.com/package/@niivue/nv-ext-mrs"><img src="https://img.shields.io/npm/v/@niivue/nv-ext-mrs/next" alt="npm"></a></td></tr>
     <tr><td><a href="packages/niivue-web-bridge"><code>@niivue/web-bridge</code></a></td><td>Typed two-way JSON-envelope bridge between a NiiVue web view and a native (WKWebView) host</td><td>—</td></tr>
     <tr><td><a href="packages/niivue-swift"><code>NiiVueKit</code></a></td><td>Swift package (<code>BridgeCore</code> + <code>NiiVueKit</code>) pairing with <code>@niivue/web-bridge</code> to embed NiiVue in SwiftUI apps via <code>WKWebView</code></td><td>—</td></tr>
     <tr><td><a href="packages/dev-images"><code>@niivue/dev-images</code></a></td><td>Shared test volumes, meshes, and tractography files (Git LFS)</td><td>—</td></tr>
@@ -45,8 +44,9 @@ Monorepo for the [NiiVue](https://github.com/niivue) ecosystem — browser-based
     <tr><td><a href="apps/demo-ext-dcm2niix"><code>demo-ext-dcm2niix</code></a></td><td>Demo app for the dcm2niix DICOM-to-NIfTI extension</td></tr>
     <tr><td><a href="apps/demo-ext-fullstack"><code>demo-ext-fullstack</code></a></td><td>Fullstack demo wiring NiiVue to a Bun server that runs the <code>niimath</code> native binary</td></tr>
     <tr><td><a href="apps/demo-ext-niimath"><code>demo-ext-niimath</code></a></td><td>Browser-only demo running niimath as WASM via <a href="https://www.npmjs.com/package/@niivue/niimath"><code>@niivue/niimath</code></a></td></tr>
-    <tr><td><a href="apps/demo-ext-mrs"><code>demo-ext-mrs</code></a></td><td>MRSI demo (<code>mrsi.html</code>): T1 + MRSI grid + crosshair-voxel spectrum + metabolite maps</td></tr>
     <tr><td><a href="apps/demo-nv-web-component"><code>demo-nv-web-component</code></a></td><td>Demo app for the Web Components package</td></tr>
+    <tr><td><a href="apps/iiif-volumetric-server"><code>iiif-volumetric-server</code></a></td><td>IIIF Image API + Presentation API server for volumetric NIfTI and OME-Zarr fixtures</td></tr>
+    <tr><td><a href="apps/iiif-volumetric-demo"><code>iiif-volumetric-demo</code></a></td><td>Browser demos for the IIIF volumetric server, including slices, volume sheets, fly-through, desktop, and OME-Zarr views</td></tr>
     <tr><td><a href="apps/medgfx"><code>medgfx</code></a></td><td>Native macOS/iOS SwiftUI app embedding NiiVue in a WebView</td></tr>
   </tbody>
 </table>

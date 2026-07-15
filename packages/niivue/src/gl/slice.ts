@@ -1,5 +1,12 @@
 import type { NVImage } from '@/NVTypes'
 import { NVRenderer } from '@/view/NVRenderer'
+import {
+  type ChunkPlan,
+  type ChunkSampleTransform,
+  identityChunkSampleTransform,
+  type Vec3i,
+} from '@/volume/chunking'
+import { extractChunkBytes } from '@/volume/orientChunked'
 import { Shader } from './shader'
 import { sliceFragShader, sliceVertShader } from './sliceShader'
 
@@ -18,6 +25,9 @@ export class SliceRenderer extends NVRenderer {
   private _vertexBuffer: WebGLBuffer | null = null
   private _placeholderOverlay: WebGLTexture | null = null
   private _drawingTexture: WebGLTexture | null = null
+  // Per-chunk drawing textures, parallel to the active chunked volume's
+  // plan.chunks. Non-null only when the drawing layer is chunked.
+  private _drawingChunks: WebGLTexture[] | null = null
   private _placeholderDrawing: WebGLTexture | null = null
   private _placeholderPaqd: WebGLTexture | null = null
   private _placeholderLut2D: WebGLTexture | null = null
@@ -177,6 +187,14 @@ export class SliceRenderer extends NVRenderer {
     numPaqd = 0,
     paqdUniforms: readonly number[] = [0, 0, 0, 0],
     isV1SliceShader = false,
+    chunkTransform?: ChunkSampleTransform,
+    chunkIndex = -1,
+    // Coarse floor backdrop: covers the whole slice, so it must not write depth
+    // or the coplanar fine chunks drawn after would be depth-occluded.
+    noDepthWrite = false,
+    // Streaming cross-fade weight in [0,1]: the fine chunk's alpha is scaled by
+    // this so it dissolves in over the coarse floor. 1 = floor / settled chunk.
+    fadeAlpha = 1,
   ): void {
     if (
       !this.isReady ||
@@ -186,6 +204,16 @@ export class SliceRenderer extends NVRenderer {
       !vol.frac2mm
     )
       return
+
+    // Chunked volumes pass a per-chunk transform; non-chunked volumes use the
+    // identity transform sized to the volume's full RAS dims.
+    const ct =
+      chunkTransform ??
+      identityChunkSampleTransform(
+        vol.dimsRAS
+          ? [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
+          : [1, 1, 1],
+      )
 
     this._shader.use(gl)
 
@@ -205,12 +233,16 @@ export class SliceRenderer extends NVRenderer {
     gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, filter)
     gl.uniform1i(this._shader.uniforms.overlay, 1)
 
-    // Bind drawing texture to unit 2 (nearest-neighbor)
+    // Bind drawing texture to unit 2 (nearest-neighbor). For chunked volumes
+    // the per-chunk drawing texture matching this chunk is bound; the slice
+    // shader samples it through volPos (the same chunk transform as the
+    // background), so chunk-local coords line up.
+    const drawTex =
+      chunkIndex >= 0 && this._drawingChunks
+        ? this._drawingChunks[chunkIndex]
+        : this._drawingTexture
     gl.activeTexture(gl.TEXTURE2)
-    gl.bindTexture(
-      gl.TEXTURE_3D,
-      this._drawingTexture || this._placeholderDrawing,
-    )
+    gl.bindTexture(gl.TEXTURE_3D, drawTex || this._placeholderDrawing)
     gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
     gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
     if (this._shader.uniforms.drawing)
@@ -279,6 +311,20 @@ export class SliceRenderer extends NVRenderer {
         md.overlayOutlineWidth ?? 0,
       )
 
+    // Chunked-volume sampling transform (identity for non-chunked volumes)
+    if (this._shader.uniforms.chunkSubOrigin)
+      gl.uniform3fv(this._shader.uniforms.chunkSubOrigin, ct.subOrigin)
+    if (this._shader.uniforms.chunkSubSize)
+      gl.uniform3fv(this._shader.uniforms.chunkSubSize, ct.subSize)
+    if (this._shader.uniforms.chunkDataOrigin)
+      gl.uniform3fv(this._shader.uniforms.chunkDataOrigin, ct.dataOrigin)
+    if (this._shader.uniforms.chunkDataSize)
+      gl.uniform3fv(this._shader.uniforms.chunkDataSize, ct.dataSize)
+    if (this._shader.uniforms.volumeTexDimsFull)
+      gl.uniform3fv(this._shader.uniforms.volumeTexDimsFull, ct.volumeDims)
+    if (this._shader.uniforms.fadeAlpha)
+      gl.uniform1f(this._shader.uniforms.fadeAlpha, fadeAlpha)
+
     // Transform matrices
     if (this._shader.uniforms.frac2mm)
       gl.uniformMatrix4fv(this._shader.uniforms.frac2mm, false, vol.frac2mm)
@@ -290,7 +336,8 @@ export class SliceRenderer extends NVRenderer {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
     // Enable depth writing so slices correctly interact with meshes in 2D views
-    gl.depthMask(true)
+    // (but a coarse floor backdrop must not write depth — see noDepthWrite).
+    gl.depthMask(!noDepthWrite)
 
     // Disable face culling for the quad
     gl.disable(gl.CULL_FACE)
@@ -308,8 +355,17 @@ export class SliceRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     rgba: Uint8Array,
     dims: number[],
+    plan?: ChunkPlan,
+    dirtyChunks?: readonly number[],
   ): void {
     if (!this.isReady) return
+    if (plan) {
+      this._updateDrawingChunks(gl, rgba, dims, plan, dirtyChunks)
+      return
+    }
+    // Non-chunked path: switching back from a chunked volume frees the
+    // per-chunk drawing textures so only one representation is live.
+    this._destroyDrawingChunks(gl)
     if (this._drawingTexture) {
       gl.bindTexture(gl.TEXTURE_3D, this._drawingTexture)
       gl.texSubImage3D(
@@ -327,28 +383,114 @@ export class SliceRenderer extends NVRenderer {
       )
       gl.bindTexture(gl.TEXTURE_3D, null)
     } else {
-      this._drawingTexture = gl.createTexture()
-      if (!this._drawingTexture) return
-      gl.bindTexture(gl.TEXTURE_3D, this._drawingTexture)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-      gl.texImage3D(
-        gl.TEXTURE_3D,
-        0,
-        gl.RGBA8,
+      this._drawingTexture = this._createDrawingTexture(
+        gl,
+        rgba,
         dims[0],
         dims[1],
         dims[2],
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        rgba,
       )
-      gl.bindTexture(gl.TEXTURE_3D, null)
     }
+  }
+
+  /**
+   * Build (or refresh) one RGBA8 drawing texture per chunk. The drawing layer
+   * shares the background volume's ChunkPlan, so chunk indices and texDims
+   * line up with the volume chunks the slice loop iterates.
+   */
+  private _updateDrawingChunks(
+    gl: WebGL2RenderingContext,
+    rgba: Uint8Array,
+    dims: number[],
+    plan: ChunkPlan,
+    dirtyChunks?: readonly number[],
+  ): void {
+    if (this._drawingTexture) {
+      gl.deleteTexture(this._drawingTexture)
+      this._drawingTexture = null
+    }
+    const volumeDims: Vec3i = [dims[0], dims[1], dims[2]]
+    const reuse =
+      this._drawingChunks !== null &&
+      this._drawingChunks.length === plan.chunks.length
+    if (!reuse) this._destroyDrawingChunks(gl)
+    const chunks: WebGLTexture[] = reuse ? (this._drawingChunks ?? []) : []
+    // Reusing textures: re-upload only the chunks a pen stroke dirtied.
+    const indices =
+      reuse && dirtyChunks
+        ? dirtyChunks
+        : Array.from({ length: plan.chunks.length }, (_, i) => i)
+    for (const i of indices) {
+      const desc = plan.chunks[i]
+      const bytes = extractChunkBytes(
+        rgba,
+        volumeDims,
+        4,
+        desc.texOrigin,
+        desc.texDims,
+      )
+      const [tx, ty, tz] = desc.texDims
+      if (reuse) {
+        gl.bindTexture(gl.TEXTURE_3D, chunks[i])
+        gl.texSubImage3D(
+          gl.TEXTURE_3D,
+          0,
+          0,
+          0,
+          0,
+          tx,
+          ty,
+          tz,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          bytes,
+        )
+        gl.bindTexture(gl.TEXTURE_3D, null)
+      } else {
+        const tex = this._createDrawingTexture(gl, bytes, tx, ty, tz)
+        if (tex) chunks.push(tex)
+      }
+    }
+    this._drawingChunks = chunks
+  }
+
+  /** Create an RGBA8 3D drawing texture (NEAREST filter, clamp-to-edge). */
+  private _createDrawingTexture(
+    gl: WebGL2RenderingContext,
+    rgba: Uint8Array,
+    width: number,
+    height: number,
+    depth: number,
+  ): WebGLTexture | null {
+    const tex = gl.createTexture()
+    if (!tex) return null
+    gl.bindTexture(gl.TEXTURE_3D, tex)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+    gl.texImage3D(
+      gl.TEXTURE_3D,
+      0,
+      gl.RGBA8,
+      width,
+      height,
+      depth,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      rgba,
+    )
+    gl.bindTexture(gl.TEXTURE_3D, null)
+    return tex
+  }
+
+  /** Release all per-chunk drawing textures from a previous build. */
+  private _destroyDrawingChunks(gl: WebGL2RenderingContext): void {
+    if (!this._drawingChunks) return
+    for (const tex of this._drawingChunks) gl.deleteTexture(tex)
+    this._drawingChunks = null
   }
 
   destroyDrawing(): void {
@@ -358,6 +500,7 @@ export class SliceRenderer extends NVRenderer {
       gl.deleteTexture(this._drawingTexture)
       this._drawingTexture = null
     }
+    this._destroyDrawingChunks(gl)
   }
 
   destroy(): void {
@@ -370,6 +513,7 @@ export class SliceRenderer extends NVRenderer {
     if (this._placeholderPaqd) gl.deleteTexture(this._placeholderPaqd)
     if (this._placeholderLut2D) gl.deleteTexture(this._placeholderLut2D)
     if (this._drawingTexture) gl.deleteTexture(this._drawingTexture)
+    this._destroyDrawingChunks(gl)
     if (this._shader?.program) gl.deleteProgram(this._shader.program)
 
     this._vao = null

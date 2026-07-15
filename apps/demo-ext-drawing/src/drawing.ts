@@ -14,6 +14,8 @@ import {
   type SliceType,
 } from '@niivue/nv-ext-drawing'
 
+import { PEN_SHAPE } from '@niivue/niivue'
+
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id)
   if (!el) throw new Error(`Element #${id} not found`)
@@ -101,7 +103,7 @@ penColorSelect.onchange = () => {
 }
 
 penShapeSelect.onchange = () => {
-  nv.isCircle = (penShapeSelect.value === '0')
+  nv.drawPenShape = parseInt(penShapeSelect.value, 10) as PEN_SHAPE
 }
 
 penSizeInput.oninput = () => {

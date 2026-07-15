@@ -399,7 +399,7 @@ function pickExplodedDraw(
   const dimXY = dimX * (vol.dimsRAS as number[])[2]
   const sample = data
     ? (x: number, y: number, z: number): number =>
-      data[x + y * dimX + z * dimXY]
+        data[x + y * dimX + z * dimXY]
     : undefined
   // The window cal_min/cal_max are in display units; convert to the raw scale
   // getImageDataRAS returns. The first faintly-non-zero voxel is near-transparent
@@ -1061,9 +1061,9 @@ export function initInteraction(ctrl: NiiVueGPU): void {
             drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
             dims: vol.dimsRAS as number[],
             penSize: ctrl.model.draw.penSize,
+            penShape: ctrl.model.draw.penShape,
             penAxCorSag: ctrl._drawPenAxCorSag,
             penOverwrites: ctrl.model.draw.isFillOverwriting,
-            isCircle: ctrl.isCircle,
           })
           ctrl.markDrawDirty(pt[0], pt[1], pt[2], ctrl.model.draw.penSize)
           ctrl.refreshDrawing()
@@ -1145,11 +1145,11 @@ export function initInteraction(ctrl: NiiVueGPU): void {
             const onSlice =
               anchor && selTile?.planeNormal && selTile?.planePoint
                 ? Annotation.isOnSlice(
-                  anchor,
-                  selTile.planeNormal,
-                  selTile.planePoint,
-                  selTolerance,
-                )
+                    anchor,
+                    selTile.planeNormal,
+                    selTile.planePoint,
+                    selTolerance,
+                  )
                 : Math.abs(ann.slicePosition - slicePosition) <= selTolerance
             if (!onSlice) continue
             if (Annotation.hitTestAnnotationPolygon(pt2d, ann) !== -1) {
@@ -1231,6 +1231,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               ptA: ctrl._drawPenLocation,
               ptB: ctrl._drawPenFillPts[0],
               penValue: ctrl.model.draw.penValue,
+              penShape: ctrl.model.draw.penShape,
               drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
               dims: vol.dimsRAS,
               penSize: ctrl.model.draw.penSize,
@@ -1251,7 +1252,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               currentUndoBitmap: currentUndo,
             })
             if (fillResult.success) {
-              ; (ctrl.model.drawingVolume as NVImage).img = fillResult.drawBitmap
+              ;(ctrl.model.drawingVolume as NVImage).img = fillResult.drawBitmap
             }
           }
           const penSize = ctrl.model.draw.penSize
@@ -1613,12 +1614,12 @@ export function initInteraction(ctrl: NiiVueGPU): void {
               ptA: ctrl._drawPenLocation,
               ptB: newPt,
               penValue: ctrl.model.draw.penValue,
+              penShape: ctrl.model.draw.penShape,
               drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
               dims: vol.dimsRAS,
               penSize: ctrl.model.draw.penSize,
               penAxCorSag: ctrl._drawPenAxCorSag,
               penOverwrites: ctrl.model.draw.isFillOverwriting,
-              isCircle: ctrl.isCircle,
             })
             const penSize = ctrl.model.draw.penSize
             ctrl.markDrawDirty(
@@ -1805,14 +1806,14 @@ export function initInteraction(ctrl: NiiVueGPU): void {
                   const onSlice =
                     anchor && eraseTile?.planeNormal && eraseTile?.planePoint
                       ? Annotation.isOnSlice(
-                        anchor,
-                        eraseTile.planeNormal,
-                        eraseTile.planePoint,
-                        eraseTolerance,
-                      )
+                          anchor,
+                          eraseTile.planeNormal,
+                          eraseTile.planePoint,
+                          eraseTolerance,
+                        )
                       : Math.abs(
-                        ann.slicePosition - ctrl._annotationSlicePosition,
-                      ) <= eraseTolerance
+                          ann.slicePosition - ctrl._annotationSlicePosition,
+                        ) <= eraseTolerance
                   if (ann.sliceType !== ctrl._annotationSliceType || !onSlice) {
                     erasePreview.push(ann)
                     continue

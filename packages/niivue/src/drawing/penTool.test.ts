@@ -13,6 +13,7 @@ import {
   PEN_SLICE_TYPE,
   voxelIndex,
 } from './penTool'
+import { PEN_SHAPE } from '@/NVConstants'
 
 describe('drawSphere', () => {
   const dims = [3, 5, 5, 5] // [ndim, dx, dy, dz]
@@ -348,6 +349,7 @@ describe('drawPoint', () => {
       dims,
       penSize: 1,
       penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      penShape: PEN_SHAPE.rectangle,
     })
     const idx = voxelIndex(5, 3, 2, 10, 10)
     expect(bitmap[idx]).toBe(7)
@@ -365,6 +367,7 @@ describe('drawPoint', () => {
       dims,
       penSize: 3,
       penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      penShape: PEN_SHAPE.rectangle,
     })
     // Center should be set
     expect(bitmap[voxelIndex(5, 5, 5, 10, 10)]).toBe(1)
@@ -380,7 +383,7 @@ describe('drawPoint', () => {
   test('penSize5_isCircle_skipsCorners', () => {
     const dims = [3, 10, 10, 10]
     const bitmap = new Uint8Array(1000)
-    
+
     drawPoint({
       x: 5,
       y: 5,
@@ -390,15 +393,15 @@ describe('drawPoint', () => {
       dims,
       penSize: 5, // radius = 2.5
       penAxCorSag: PEN_SLICE_TYPE.AXIAL,
-      isCircle: true,
+      penShape: PEN_SHAPE.rectangle,
     })
 
     // Center is set
     expect(bitmap[voxelIndex(5, 5, 5, 10, 10)]).toBe(1)
-    
+
     // (i=2, j=0) -> 2*2 + 0 = 4 <= 6.25, should be set
     expect(bitmap[voxelIndex(7, 5, 5, 10, 10)]).toBe(1)
-    
+
     // (i=2, j=2) -> 2*2 + 2*2 = 8 > 6.25, should be skipped (corner of 5x5 square)
     expect(bitmap[voxelIndex(7, 7, 5, 10, 10)]).toBe(0)
   })
@@ -406,7 +409,7 @@ describe('drawPoint', () => {
   test('penSize5_square_fillsCorners', () => {
     const dims = [3, 10, 10, 10]
     const bitmap = new Uint8Array(1000)
-    
+
     drawPoint({
       x: 5,
       y: 5,
@@ -416,7 +419,7 @@ describe('drawPoint', () => {
       dims,
       penSize: 5, // radius = 2.5
       penAxCorSag: PEN_SLICE_TYPE.AXIAL,
-      isCircle: false,
+      penShape: PEN_SHAPE.rectangle,
     })
 
     // Corner of 5x5 square (i=2, j=2) should be set when not a circle
@@ -437,6 +440,7 @@ describe('drawPoint', () => {
       dims,
       penSize: 1,
       penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      penShape: PEN_SHAPE.rectangle,
       penOverwrites: false,
     })
     expect(bitmap[idx]).toBe(3) // unchanged
@@ -457,6 +461,7 @@ describe('drawPoint', () => {
       dims,
       penSize: 1,
       penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      penShape: PEN_SHAPE.rectangle,
       penOverwrites: false,
     })
     expect(bitmap[idx]).toBe(0)
@@ -478,6 +483,7 @@ describe('drawLine', () => {
       dims,
       penSize: 1,
       penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      penShape: PEN_SHAPE.rectangle,
     })
     // All voxels along x from 1 to 9 should be set (drawLine doesn't draw ptA itself)
     for (let x = 1; x <= 9; x++) {
@@ -496,6 +502,7 @@ describe('drawLine', () => {
       dims,
       penSize: 1,
       penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      penShape: PEN_SHAPE.rectangle,
     })
     // End point should be set
     expect(bitmap[voxelIndex(5, 5, 5, 10, 10)]).toBe(2)
@@ -518,6 +525,7 @@ describe('drawLine', () => {
       dims,
       penSize: 1,
       penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      penShape: PEN_SHAPE.rectangle,
     })
     // No voxels should be set (Bresenham has zero distance)
     let setCount = 0

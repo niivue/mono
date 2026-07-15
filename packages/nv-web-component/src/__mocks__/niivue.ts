@@ -31,6 +31,7 @@ export const SHOW_RENDER = {
 export interface MockNiiVueGPU {
   attachToCanvas: ReturnType<typeof mock>
   addVolume: ReturnType<typeof mock>
+  removeVolume: ReturnType<typeof mock>
   broadcastTo: ReturnType<typeof mock>
   setVolume: ReturnType<typeof mock>
   resize: ReturnType<typeof mock>
@@ -65,6 +66,7 @@ export function createMockNiiVueGPU(): MockNiiVueGPU {
       () => attachToCanvasResults.shift() ?? Promise.resolve(),
     ),
     addVolume: null as unknown as ReturnType<typeof mock>,
+    removeVolume: null as unknown as ReturnType<typeof mock>,
     broadcastTo: mock(() => {}),
     setVolume: mock(() => Promise.resolve()),
     resize: mock(() => {}),
@@ -100,6 +102,13 @@ export function createMockNiiVueGPU(): MockNiiVueGPU {
     const vol = { url: opts.url, name: opts.url }
     instance.volumes.push(vol)
     return Promise.resolve(vol)
+  })
+
+  instance.removeVolume = mock((volIdx: number) => {
+    if (volIdx >= 0 && volIdx < instance.volumes.length) {
+      instance.volumes.splice(volIdx, 1)
+    }
+    return Promise.resolve()
   })
 
   return instance

@@ -7,7 +7,7 @@ All events are fully typed via `NVEventMap`. TypeScript will infer the correct `
 ## Quick Start
 
 ```js
-import NiiVue from 'niivuegpu'
+import NiiVue from '@niivue/niivue'
 
 const nv = new NiiVue({ backgroundColor: [0, 0, 0, 1] })
 await nv.attachToCanvas(document.getElementById('gl'))
@@ -35,7 +35,7 @@ nv.removeEventListener('volumeLoaded', handler)
 Event listeners are fully typed. The detail type is inferred from the event name:
 
 ```ts
-import NiiVue from 'niivuegpu'
+import NiiVue from '@niivue/niivue'
 
 const nv = new NiiVue()
 
@@ -420,5 +420,5 @@ import type {
   AnnotationRemovedDetail,
   AnnotationChangedDetail,
   ColormapAddedDetail,
-} from 'niivuegpu'
+} from '@niivue/niivue'
 ```

@@ -33,9 +33,9 @@ bunx nx lint niivue
 
 **Before committing**, run `bun run lint:fix && bun run typecheck` (or `bunx nx lint niivue && bunx nx typecheck niivue`).
 
-`bun run dev` uses a Vite plugin (`vite.config.dev.js`) to redirect `import '../dist/niivuegpu.mjs'` to source for HMR, so the same HTML/JS files work in dev and production.
+`bun run dev` uses a Vite plugin (`vite.config.dev.js`) to redirect `import '../dist/niivue.js'` to source for HMR, so the same HTML/JS files work in dev and production.
 
-Library packaging: `bun run build` emits `dist/niivuegpu.js` (both backends), `dist/niivuegpu.webgpu.js` (WebGPU-only), and `dist/niivuegpu.webgl2.js` (WebGL2-only), exported as `niivuegpu`, `niivuegpu/webgpu`, and `niivuegpu/webgl2`.
+Library packaging: `bun run build` emits `dist/niivue.js` (both backends), `dist/niivue.webgpu.js` (WebGPU-only), and `dist/niivue.webgl2.js` (WebGL2-only), exported as `@niivue/niivue`, `@niivue/niivue/webgpu`, and `@niivue/niivue/webgl2`.
 
 ## Testing
 
@@ -1363,7 +1363,7 @@ From package root (`src/index.ts`): `NVExtensionContext`, `computeSlicePointerEv
 
 ## Demo conventions
 
-Demos import `import NiiVue from '../dist/niivuegpu.mjs'` — Vite dev plugin redirects to source. Simple demos inline in HTML; complex ones use separate `.js` files. Assets relative to `demos/` (e.g., `../meshes/brain.mz3` from `features/`).
+Demos import `import NiiVue from '../dist/niivue.js'` — Vite dev plugin redirects to source. Simple demos inline in HTML; complex ones use separate `.js` files. Assets relative to `demos/` (e.g., `../meshes/brain.mz3` from `features/`).
 
 ## Dependencies
 

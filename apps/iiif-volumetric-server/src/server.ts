@@ -37,22 +37,22 @@ const FIXTURES_DIR =
   process.env.FIXTURES_DIR || path.resolve(__dirname, '..', 'fixtures')
 const OMEZARR_FIXTURES_DIR = path.join(FIXTURES_DIR, 'omezarr')
 
-interface NiivuegpuPackage {
+interface NiivuePackage {
   name: string
   root: string | null
   mounted: boolean
 }
 
-interface NiivuegpuDeps {
+interface NiivueDeps {
   nodeModules: string | null
-  packages: NiivuegpuPackage[]
+  packages: NiivuePackage[]
   mounted: boolean
 }
 
-const NIIVUE_DIST = resolveNiivuegpuDist()
-const NIIVUE_DEPS = resolveNiivuegpuDeps(NIIVUE_DIST)
+const NIIVUE_DIST = resolveNiivueDist()
+const NIIVUE_DEPS = resolveNiivueDeps(NIIVUE_DIST)
 
-function resolveNiivuegpuDist(): string | null {
+function resolveNiivueDist(): string | null {
   const candidates = [
     process.env.NIIVUE_DIST,
     path.resolve(__dirname, '..', 'niivue', 'dist'),
@@ -69,7 +69,7 @@ function resolveNiivuegpuDist(): string | null {
   return null
 }
 
-function resolveNiivuegpuDeps(distDir: string | null): NiivuegpuDeps {
+function resolveNiivueDeps(distDir: string | null): NiivueDeps {
   const packageNames = [
     'gl-matrix',
     'cbor-x',
@@ -81,7 +81,7 @@ function resolveNiivuegpuDeps(distDir: string | null): NiivuegpuDeps {
   const nodeModules =
     process.env.NIIVUE_NODE_MODULES ||
     (distDir ? path.resolve(distDir, '..', 'node_modules') : null)
-  const packages: NiivuegpuPackage[] = packageNames.map((name) => {
+  const packages: NiivuePackage[] = packageNames.map((name) => {
     const root = nodeModules ? path.join(nodeModules, name) : null
     let mounted = false
     if (root) {

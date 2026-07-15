@@ -372,10 +372,7 @@ function explodedPickRay(
 // ray (explodedPickRay), CPU-ray-casts the exploded chunk AABBs restricted to the
 // clip-visible set, and returns the entered voxel plus a visible-tissue predicate.
 // Null if the ray misses every block or there is no drawing volume.
-function pickExplodedDraw(
-  ctrl: NiiVue,
-  vol: NVImage,
-): ExplodedDrawPick | null {
+function pickExplodedDraw(ctrl: NiiVue, vol: NVImage): ExplodedDrawPick | null {
   const plan = vol.chunkPlan
   const ray = explodedPickRay(ctrl, vol)
   if (!plan || !ray) return null
@@ -621,10 +618,7 @@ function magicWand3DOnExplodedBlock(ctrl: NiiVue, vol: NVImage): boolean {
 // SVG is a flat axis-aligned polygon on one block face (not a path following the
 // tissue surface across blocks/depth). Adjusting the face to the clip plane is a
 // tracked follow-up.
-function pickBlockFace(
-  ctrl: NiiVue,
-  vol: NVImage,
-): ExplodedBlockFace | null {
+function pickBlockFace(ctrl: NiiVue, vol: NVImage): ExplodedBlockFace | null {
   const plan = vol.chunkPlan
   const ray = explodedPickRay(ctrl, vol)
   if (!plan || !ray) return null

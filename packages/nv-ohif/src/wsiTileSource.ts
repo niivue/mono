@@ -54,7 +54,11 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
   const imageIds = ds.imageIds ?? []
   const levels: WsiLevel[] = []
   instances.forEach((inst, i) => {
-    const imageId = imageIds[i]
+    // Prefer the per-instance imageId (populated by OHIF's data source) over the
+    // display set's `imageIds` snapshot: a SOP-class handler may run before the
+    // data source assigns imageIds, leaving that snapshot empty.
+    const instImageId = (inst as { imageId?: unknown }).imageId
+    const imageId = typeof instImageId === 'string' ? instImageId : imageIds[i]
     const matrixColumns = num(inst.TotalPixelMatrixColumns)
     const matrixRows = num(inst.TotalPixelMatrixRows)
     const tileColumns = num(inst.Columns)

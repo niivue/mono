@@ -74,6 +74,28 @@ describe('wsiVolumeLevels', () => {
     ])
   })
 
+  it('reads the per-instance imageId when the display set snapshot is empty', () => {
+    // Simulates the SOP-class handler running before imageIds were assigned:
+    // ds.imageIds is empty, but each instance carries its own imageId.
+    const ds: OhifDisplaySet = {
+      instances: [
+        {
+          imageId: 'wadors:https://h/instances/fine/frames/1',
+          ImageType: 'DERIVED\\PRIMARY\\VOLUME\\NONE',
+          TotalPixelMatrixColumns: 2000,
+          TotalPixelMatrixRows: 1000,
+          Columns: 512,
+          Rows: 512,
+          TransferSyntaxUID: JPEG,
+        },
+      ],
+      imageIds: [],
+    }
+    const levels = wsiVolumeLevels(ds)
+    expect(levels).toHaveLength(1)
+    expect(levels[0]?.frameBaseUrl).toBe('https://h/instances/fine/frames')
+  })
+
   it('falls back to a tiled-matrix test when ImageType is absent', () => {
     const ds: OhifDisplaySet = {
       instances: [

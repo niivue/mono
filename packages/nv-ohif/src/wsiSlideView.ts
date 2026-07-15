@@ -25,8 +25,11 @@ export function mountWsiSlideView(
   renderer.init(gl)
 
   let disposed = false
-  let rafHandle = 0
-  let fitted = false
+  // Keep the whole slide fit-to-view until the user takes over with a pan/zoom.
+  // Re-fitting on every render until the first interaction is robust to the
+  // canvas not yet having a real size on the very first render (clientWidth 0),
+  // which would otherwise leave the slide zoomed into a corner.
+  let userInteracted = false
 
   const screenOf = (): NVSlideScreen => ({
     widthCss: canvas.clientWidth || 1,
@@ -46,27 +49,31 @@ export function mountWsiSlideView(
     if (disposed) return
     const screen = screenOf()
     syncCanvasSize(screen)
-    // Fit once, the first time the canvas has real dimensions.
-    if (!fitted && screen.widthCss > 1 && screen.heightCss > 1) {
+    if (!userInteracted && screen.widthCss > 1 && screen.heightCss > 1) {
       slide.fitToScreen(screen)
-      fitted = true
     }
     slide.clampViewport(screen)
-    // draw() self-requests the visible tiles; missing tiles fetch+decode async
-    // and fire 'change' when ready, which schedules the next frame.
     renderer.draw(gl, [slide], screen)
   }
 
-  const scheduleRender = (): void => {
-    if (rafHandle !== 0 || disposed) return
-    rafHandle = requestAnimationFrame(() => {
-      rafHandle = 0
-      render()
-    })
+  // Event-driven rendering rather than a continuous RAF loop: the slide is static
+  // between interactions and tile arrivals, so there is nothing to animate. A
+  // single coalesced render is scheduled per burst of events. requestAnimationFrame
+  // gives a vsync-aligned redraw while the tab is visible; a setTimeout runs in
+  // parallel as a safety net because RAF is paused in a hidden/backgrounded tab
+  // (the `scheduled` flag makes whichever fires second a no-op).
+  let scheduled = false
+  const flush = (): void => {
+    if (!scheduled || disposed) return
+    scheduled = false
+    render()
   }
-
-  const onChange = (): void => scheduleRender()
-  slide.addEventListener('change', onChange)
+  const scheduleRender = (): void => {
+    if (scheduled || disposed) return
+    scheduled = true
+    requestAnimationFrame(flush)
+    setTimeout(flush, 100)
+  }
 
   // Pointer pan.
   let dragging = false
@@ -74,6 +81,7 @@ export function mountWsiSlideView(
   let lastY = 0
   const onPointerDown = (e: PointerEvent): void => {
     dragging = true
+    userInteracted = true
     lastX = e.clientX
     lastY = e.clientY
     canvas.setPointerCapture?.(e.pointerId)
@@ -93,6 +101,7 @@ export function mountWsiSlideView(
   // Wheel zoom, anchored at the cursor.
   const onWheel = (e: WheelEvent): void => {
     e.preventDefault()
+    userInteracted = true
     const rect = canvas.getBoundingClientRect()
     const factor = Math.exp(-e.deltaY * 0.001)
     slide.zoomBy(
@@ -110,6 +119,9 @@ export function mountWsiSlideView(
   canvas.addEventListener('pointercancel', onPointerUp)
   canvas.addEventListener('wheel', onWheel, { passive: false })
 
+  // Redraw as tiles stream in and as the viewport is resized.
+  const onChange = (): void => scheduleRender()
+  slide.addEventListener('change', onChange)
   const resizeObserver = new ResizeObserver(() => scheduleRender())
   resizeObserver.observe(canvas)
 
@@ -119,7 +131,6 @@ export function mountWsiSlideView(
     dispose(): void {
       if (disposed) return
       disposed = true
-      if (rafHandle !== 0) cancelAnimationFrame(rafHandle)
       resizeObserver.disconnect()
       slide.removeEventListener('change', onChange)
       canvas.removeEventListener('pointerdown', onPointerDown)

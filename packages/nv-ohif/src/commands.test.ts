@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import type NiiVueGPU from '@niivue/niivue'
+import type NiiVue from '@niivue/niivue'
 import { SLICE_TYPE } from '@niivue/niivue'
 import {
   findOverlayCandidate,
@@ -84,7 +84,7 @@ function services(
 
 const registered: string[] = []
 function register(viewportId: string, nv: ReturnType<typeof stubNiivue>) {
-  registerNiivue(viewportId, nv as unknown as NiiVueGPU)
+  registerNiivue(viewportId, nv as unknown as NiiVue)
   registered.push(viewportId)
 }
 
@@ -108,14 +108,14 @@ describe('niivueRegistry', () => {
   it('resolves the exact viewport, and falls back to a sole instance', () => {
     const a = stubNiivue()
     register('vp-a', a)
-    expect(getNiivueForViewport('vp-a')).toBe(a as unknown as NiiVueGPU)
+    expect(getNiivueForViewport('vp-a')).toBe(a as unknown as NiiVue)
     // A non-NiiVue viewport id still resolves while only one instance exists.
-    expect(getNiivueForViewport('vp-other')).toBe(a as unknown as NiiVueGPU)
+    expect(getNiivueForViewport('vp-other')).toBe(a as unknown as NiiVue)
 
     const b = stubNiivue()
     register('vp-b', b)
     // With two instances the fallback is ambiguous: exact matches only.
-    expect(getNiivueForViewport('vp-b')).toBe(b as unknown as NiiVueGPU)
+    expect(getNiivueForViewport('vp-b')).toBe(b as unknown as NiiVue)
     expect(getNiivueForViewport('vp-other')).toBeUndefined()
   })
 })

@@ -1,4 +1,4 @@
-import type NiiVueGPU from '@niivue/niivue'
+import type NiiVue from '@niivue/niivue'
 import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
 
 /**
@@ -9,7 +9,7 @@ import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
  */
 export interface NiivueViewportEntry {
   viewportId: string
-  nv: NiiVueGPU
+  nv: NiiVue
   /** Display sets currently hung in the viewport (the base load). */
   displaySets: ReadonlyArray<OhifDisplaySet>
   /** displaySetInstanceUIDs loaded as overlays (niivueToggleOverlay). */
@@ -31,7 +31,7 @@ export interface NiivueViewportEntry {
 
 const instances = new Map<string, NiivueViewportEntry>()
 
-export function registerNiivue(viewportId: string, nv: NiiVueGPU): void {
+export function registerNiivue(viewportId: string, nv: NiiVue): void {
   instances.set(viewportId, {
     viewportId,
     nv,
@@ -96,7 +96,7 @@ export function getNiivueEntryForViewport(
 /** The instance for a viewport id (same fallback as the entry lookup). */
 export function getNiivueForViewport(
   viewportId: string | undefined,
-): NiiVueGPU | undefined {
+): NiiVue | undefined {
   return getNiivueEntryForViewport(viewportId)?.nv
 }
 
@@ -113,7 +113,7 @@ export function getActiveNiivueEntry(
 /** The NiiVue instance a toolbar command should act on: the active viewport's. */
 export function getActiveNiivue(
   servicesManager: OhifServicesManager | undefined,
-): NiiVueGPU | undefined {
+): NiiVue | undefined {
   return getActiveNiivueEntry(servicesManager)?.nv
 }
 

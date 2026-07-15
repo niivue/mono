@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import type NiiVueGPU from '@niivue/niivue'
+import type NiiVue from '@niivue/niivue'
 import { SLICE_TYPE } from '@niivue/niivue'
 import {
   getNiivueEntryForViewport,
@@ -78,7 +78,7 @@ describe('toolbar evaluators', () => {
 
   it('mark the button matching the current slice type active', () => {
     const nv = { sliceType: SLICE_TYPE.RENDER as number }
-    registerNiivue('vp-1', nv as unknown as NiiVueGPU)
+    registerNiivue('vp-1', nv as unknown as NiiVue)
     const evaluate = evaluator('evaluate.niivue.sliceType')
     const renderButton = NIIVUE_TOOLBAR_BUTTONS.find(
       (b) => b.id === 'NiivueRender',
@@ -95,14 +95,14 @@ describe('toolbar evaluators', () => {
   })
 
   it('enable the reset button on a NiiVue viewport', () => {
-    registerNiivue('vp-1', {} as unknown as NiiVueGPU)
+    registerNiivue('vp-1', {} as unknown as NiiVue)
     expect(evaluator('evaluate.niivue')({ viewportId: 'vp-1' })?.disabled).toBe(
       false,
     )
   })
 
   it('mark the clip preset matching the entry state active (never "none")', () => {
-    registerNiivue('vp-1', {} as unknown as NiiVueGPU)
+    registerNiivue('vp-1', {} as unknown as NiiVue)
     const entry = getNiivueEntryForViewport('vp-1')
     if (!entry) throw new Error('entry missing')
     const evaluate = evaluator('evaluate.niivue.clipPlane')
@@ -125,7 +125,7 @@ describe('toolbar evaluators', () => {
   })
 
   it('mark the overlay button active while overlays are loaded', () => {
-    registerNiivue('vp-1', {} as unknown as NiiVueGPU)
+    registerNiivue('vp-1', {} as unknown as NiiVue)
     const entry = getNiivueEntryForViewport('vp-1')
     if (!entry) throw new Error('entry missing')
     const evaluate = evaluator('evaluate.niivue.overlay')
@@ -136,7 +136,7 @@ describe('toolbar evaluators', () => {
   })
 
   it('gate W/L presets by the base series modality', () => {
-    registerNiivue('vp-1', {} as unknown as NiiVueGPU)
+    registerNiivue('vp-1', {} as unknown as NiiVue)
     updateNiivueViewport('vp-1', {
       displaySets: [{ displaySetInstanceUID: 'ds-1', Modality: 'CT' }],
     })

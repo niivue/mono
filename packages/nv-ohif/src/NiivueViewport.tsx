@@ -1,5 +1,5 @@
 import type { NiiVueOptions } from '@niivue/niivue'
-import NiiVueGPU, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
+import NiiVue, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import { readBaseWindowLevel, syncNiivueWindowLevelToOhif } from './commands'
@@ -64,13 +64,13 @@ function ohifToolToDragMode(tool: string | undefined): number {
  *   - whole-slide (SM) series are destined for NVSlide (not yet wired),
  *   - anything else shows an explanatory note.
  *
- * NiiVue's core is framework-agnostic, so this owns a plain <canvas> + a `NiiVueGPU`
+ * NiiVue's core is framework-agnostic, so this owns a plain <canvas> + a `NiiVue`
  * instance directly (React 18) rather than depending on `@niivue/nvreact` (React 19).
  */
 export function NiivueViewport(props: OhifViewportProps) {
   const { displaySets, viewportId, servicesManager, commandsManager } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const nvRef = useRef<NiiVueGPU | null>(null)
+  const nvRef = useRef<NiiVue | null>(null)
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
 
@@ -100,7 +100,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       'position:absolute;top:0;left:0;width:100%;height:100%'
     container.appendChild(canvas)
 
-    const nv = new NiiVueGPU(DEFAULT_OPTIONS)
+    const nv = new NiiVue(DEFAULT_OPTIONS)
     nvRef.current = nv
     // Only mark ready once attach resolves — loading before that races the GPU
     // context (and StrictMode double-mounts), which left the volume unloaded.

@@ -10,6 +10,7 @@ import type { OhifDisplaySet, OhifViewportProps } from '../src/ohif-types'
 //   default          -> a NIfTI-URL display set (Phase 1)
 //   ?dicom (in URL)  -> a DICOMweb (JPEG-LS) series -> reconstruct P10 + dcm2niix
 //                       + NiiVue render (Phase 2). Uses the OHIF public demo series.
+//   ?slide (in URL)  -> a DICOM-WSI (SM) pyramid -> NVSlide deep-zoom view.
 //
 // Vite bundles the dcm2niix Web Worker + WASM correctly (unlike some webpack setups),
 // so ?dicom exercises the full reconstruction -> convert -> render path in-browser.
@@ -17,6 +18,8 @@ import type { OhifDisplaySet, OhifViewportProps } from '../src/ohif-types'
 const NIFTI_URL = 'https://niivue.github.io/niivue-demo-images/mni152.nii.gz'
 const SERIES_BASE =
   'https://d14fa38qiwhyfd.cloudfront.net/dicomweb/studies/2.16.840.1.114362.1.11972228.22789312658.616067305.306.2/series/2.16.840.1.114362.1.11972228.22789312658.616067305.306.3'
+const SLIDE_SERIES_BASE =
+  'https://d14fa38qiwhyfd.cloudfront.net/dicomweb/studies/2.25.141277760791347900862109212450152067508/series/1.3.6.1.4.1.5962.99.1.155905310.536264073.1640833445150.2.0'
 
 const entry = niivueExtension.getViewportModule({})[0]
 if (!entry) {
@@ -62,6 +65,50 @@ function Frame({
 }
 
 async function main() {
+  if (location.search.includes('slide')) {
+    const meta = (await fetch(`${SLIDE_SERIES_BASE}/metadata`, {
+      headers: { Accept: 'application/dicom+json' },
+    }).then((r) => r.json())) as Array<
+      Record<string, { Value?: Array<string | number> }>
+    >
+    const value = (
+      m: Record<string, { Value?: Array<string | number> }>,
+      tag: string,
+    ) => m[tag]?.Value?.[0]
+    const instances = meta.map((m) => {
+      const sop = value(m, '00080018')
+      return {
+        SOPInstanceUID: sop,
+        imageId:
+          typeof sop === 'string'
+            ? `wadors:${SLIDE_SERIES_BASE}/instances/${sop}/frames/1`
+            : undefined,
+        ImageType: value(m, '00080008'),
+        Rows: value(m, '00280010'),
+        Columns: value(m, '00280011'),
+        TotalPixelMatrixColumns: value(m, '00480006'),
+        TotalPixelMatrixRows: value(m, '00480007'),
+        TransferSyntaxUID: '1.2.840.10008.1.2.4.50',
+      }
+    })
+
+    root.render(
+      <Frame
+        title="DICOM whole-slide microscopy -> NVSlide deep zoom"
+        viewportId="slide"
+        displaySets={[
+          {
+            displaySetInstanceUID: 'c3l-00088-he-tumor',
+            SeriesDescription: 'C3L-00088 HE tumor',
+            Modality: 'SM',
+            instances,
+          },
+        ]}
+      />,
+    )
+    return
+  }
+
   if (!location.search.includes('dicom')) {
     root.render(
       <Frame

@@ -118,6 +118,27 @@ describe('NVSlide tile loading', () => {
     slide.dispose()
   })
 
+  it('drops queued tiles that leave the working set instead of fetching them', async () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const source = new CountingSource(makeManifest(30))
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 1 })
+    const level = slide.manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    // Queue all 30 (1 in flight, 29 queued) ...
+    for (const tile of level.tiles) slide.requestTile(level, tile)
+    // ... then the view moves on: only tile 0 remains visible. The screen is
+    // sized so exactly one tile is in view at the origin.
+    slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
+    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    await waitFor(() => slide.pendingCount === 0)
+    // Only the tile already in flight (tile 0, also the visible one) loads;
+    // the 29 stale queued tiles are dropped, not fetched.
+    expect(slide.stats.completed).toBe(1)
+    expect(source.peak).toBe(1)
+    expect(slide.stats.failures).toBe(0)
+    slide.dispose()
+  })
+
   it('drains the queue past failed tiles', async () => {
     NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
     const manifest = makeManifest(10)

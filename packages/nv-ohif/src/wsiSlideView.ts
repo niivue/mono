@@ -38,6 +38,8 @@ export function mountWsiSlideView(
   // canvas not yet having a real size on the very first render (clientWidth 0),
   // which would otherwise leave the slide zoomed into a corner.
   let userInteracted = false
+  let lastFitWidth = 0
+  let lastFitHeight = 0
 
   const screenOf = (): NVSlideScreen => ({
     widthCss: canvas.clientWidth || 1,
@@ -57,7 +59,14 @@ export function mountWsiSlideView(
     if (disposed) return
     const screen = screenOf()
     syncCanvasSize(screen)
-    if (!userInteracted && screen.widthCss > 1 && screen.heightCss > 1) {
+    if (
+      !userInteracted &&
+      screen.widthCss > 1 &&
+      screen.heightCss > 1 &&
+      (screen.widthCss !== lastFitWidth || screen.heightCss !== lastFitHeight)
+    ) {
+      lastFitWidth = screen.widthCss
+      lastFitHeight = screen.heightCss
       slide.fitToScreen(screen)
     }
     slide.clampViewport(screen)

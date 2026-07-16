@@ -439,6 +439,12 @@ export class NVSlide extends EventTarget {
     tile: NVSlideTileManifest
     key: string
   }> = []
+  // Tile keys the CURRENT view still wants. Rebuilt by every
+  // requestVisibleTiles call; requestTile adds to it. Queued loads whose key
+  // has left this set are dropped at dequeue time instead of fetched — without
+  // this, zooming/panning piles stale tiles into the queue and fresh visible
+  // tiles crawl behind the backlog.
+  private readonly _wanted = new Set<string>()
   private _warnedTileFlood = false
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
@@ -754,7 +760,9 @@ export class NVSlide extends EventTarget {
   requestVisibleTiles(screen: NVSlideScreen): NVSlideVisibleTiles {
     const visible = this.visibleTiles(screen)
     if (!this.visible || !visible.level) return visible
+    this._wanted.clear()
     for (const item of visible.tiles) {
+      this._wanted.add(item.key)
       if (this._cache.has(item.key) || this._pending.has(item.key)) continue
       this.loadTile(item.level, item.tile)
     }
@@ -768,6 +776,7 @@ export class NVSlide extends EventTarget {
    */
   requestTile(level: NVSlideLevelManifest, tile: NVSlideTileManifest): void {
     const key = this.tileKey(level, tile)
+    this._wanted.add(key)
     if (this._cache.has(key) || this._pending.has(key)) return
     this.loadTile(level, tile)
   }
@@ -788,6 +797,7 @@ export class NVSlide extends EventTarget {
   dispose(): void {
     this.clearCache()
     this._loadQueue.length = 0
+    this._wanted.clear()
     this._pending.clear()
   }
 
@@ -903,10 +913,14 @@ export class NVSlide extends EventTarget {
 
   private _drainLoadQueue(): void {
     while (this._activeLoads < this._maxConcurrentLoads) {
-      const next = this._loadQueue.shift()
+      // Newest-first (LIFO): the most recently requested tiles are the ones
+      // the current view is showing placeholders for.
+      const next = this._loadQueue.pop()
       if (!next) return
-      // Cached while queued (e.g. a re-set after clearCache): nothing to do.
-      if (this._cache.has(next.key)) {
+      // Dropped from the working set while queued (view moved on), or cached
+      // by a racing path: skip without fetching. Clearing `pending` lets the
+      // tile re-request if it scrolls back into view.
+      if (!this._wanted.has(next.key) || this._cache.has(next.key)) {
         this._pending.delete(next.key)
         continue
       }

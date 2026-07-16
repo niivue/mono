@@ -1,4 +1,5 @@
 import { decode, encode } from 'cbor-x'
+import { urlVolumeOptions } from '@/documentVolumeOptions'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import { encodeRLE } from '@/drawing/rle'
 import { log } from '@/logger'
@@ -619,22 +620,11 @@ export async function reconstructVolume(
       if (v.frame4D !== undefined) base.frame4D = v.frame4D
       await model.addVolume(base)
     } else if (v.url) {
-      // Load from URL
-      await model.addVolume({
-        url: v.url,
-        name: v.name,
-        colormap: v.colormap,
-        colormapNegative: v.colormapNegative,
-        opacity: v.opacity,
-        calMin: v.calMin,
-        calMax: v.calMax,
-        calMinNeg: v.calMinNeg,
-        calMaxNeg: v.calMaxNeg,
-        colormapType: v.colormapType,
-        isTransparentBelowCalMin: v.isTransparentBelowCalMin,
-        modulateAlpha: v.modulateAlpha,
-        isColorbarVisible: v.isColorbarVisible,
-      })
+      // Load from URL. Forward only the fields the document actually specifies
+      // (urlVolumeOptions drops undefined) so an omitted calMin/calMax doesn't
+      // clobber the window nii2volume computes at load, mirroring the guarded
+      // embedded branch above.
+      await model.addVolume(urlVolumeOptions(v))
     }
     // Apply post-load properties to the just-added volume
     const vol = model.volumes[model.volumes.length - 1]

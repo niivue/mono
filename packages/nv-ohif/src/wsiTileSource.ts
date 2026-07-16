@@ -105,13 +105,17 @@ function levelTiles(level: WsiLevel): {
   const tiles: NVSlideTileManifest[] = []
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < columns; col++) {
-      const x = col * level.tileColumns
-      const y = row * level.tileRows
+      // NVSlide expects `x`/`y` to be the COLUMN/ROW INDEX (it multiplies by the
+      // level's tile size internally); `width`/`height` are the tile's pixel
+      // extent, clipped at the matrix edge. The pixel offset is only used here to
+      // compute that clipped size.
+      const pixelX = col * level.tileColumns
+      const pixelY = row * level.tileRows
       tiles.push({
-        x,
-        y,
-        width: Math.min(level.tileColumns, level.matrixColumns - x),
-        height: Math.min(level.tileRows, level.matrixRows - y),
+        x: col,
+        y: row,
+        width: Math.min(level.tileColumns, level.matrixColumns - pixelX),
+        height: Math.min(level.tileRows, level.matrixRows - pixelY),
         frame: row * columns + col + 1,
       })
     }

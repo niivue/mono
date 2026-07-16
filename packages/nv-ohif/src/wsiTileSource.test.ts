@@ -175,26 +175,26 @@ describe('buildWsiManifest', () => {
     if (!fine) throw new Error('expected level 0')
     // Row 0: frames 1..4 at y=0; row 1: frames 5..8 at y=512.
     expect(fine.tiles.map((t) => t.frame)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
-    // Third tile of row 0: col 2 -> x=1024, full 512 wide.
+    // x/y are COLUMN/ROW INDICES (not pixel offsets). Third tile of row 0: col 2.
     expect(fine.tiles[2]).toMatchObject({
-      x: 1024,
+      x: 2,
       y: 0,
       width: 512,
       height: 512,
       frame: 3,
     })
-    // Last tile of row 0: col 3 -> x=1536, clipped to 2000-1536 = 464 wide.
+    // Last tile of row 0: col 3, clipped in width to 2000-1536 = 464.
     expect(fine.tiles[3]).toMatchObject({
-      x: 1536,
+      x: 3,
       y: 0,
       width: 464,
       height: 512,
       frame: 4,
     })
-    // Row 1 is clipped in height to 1000-512 = 488.
+    // Row 1, col 0: clipped in height to 1000-512 = 488.
     expect(fine.tiles[4]).toMatchObject({
       x: 0,
-      y: 512,
+      y: 1,
       width: 512,
       height: 488,
       frame: 5,

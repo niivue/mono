@@ -18,7 +18,15 @@ export function mountWsiSlideView(
   canvas: HTMLCanvasElement,
   slide: NVSlide,
 ): WsiSlideView {
-  const gl = canvas.getContext('webgl2', { alpha: false, antialias: false })
+  // preserveDrawingBuffer is required because this viewport renders on demand
+  // (on fit / tile-load / interaction) rather than every frame. Without it the
+  // browser clears the drawing buffer after each composite, so once rendering
+  // settles any later recomposite (focus/scroll/DPR change) shows a blank canvas.
+  const gl = canvas.getContext('webgl2', {
+    alpha: false,
+    antialias: false,
+    preserveDrawingBuffer: true,
+  })
   if (!gl) throw new Error('WebGL2 is required for the whole-slide viewer')
 
   const renderer = new SlideRenderer()

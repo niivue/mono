@@ -21,6 +21,12 @@ export interface OhifDisplaySet {
   // WADO-RS imageIds, one per instance (aligned with `instances`). For a DICOM-WSI
   // (SM) display set each is a per-level frame base (`wadors:.../frames/1`).
   imageIds?: ReadonlyArray<string>
+  // Optional callback OHIF's study browser calls to resolve a series preview
+  // thumbnail (object URL or null). A display set that supplies one bypasses the
+  // panel's default cornerstone-render fallback.
+  getThumbnailSrc?: (options?: {
+    signal?: AbortSignal
+  }) => Promise<string | null>
   [key: string]: unknown
 }
 

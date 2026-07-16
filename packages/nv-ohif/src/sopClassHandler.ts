@@ -1,4 +1,6 @@
+import { authHeaders } from './niivueRegistry'
 import type { OhifDisplaySet, OhifSopClassHandlerEntry } from './ohif-types'
+import { fetchWsiThumbnailObjectUrl } from './wsiThumbnail'
 
 export const NIIVUE_SOP_CLASS_HANDLER_NAME = 'niivue-wsi'
 // The fully-qualified module id a mode references in `sopClassHandlers` /
@@ -65,6 +67,15 @@ export function getNiivueSopClassHandlerModule(): OhifSopClassHandlerEntry[] {
           numInstances: instances.length,
           instances,
           imageIds,
+          // OHIF's study browser calls this to fill the series preview tile.
+          // Resolve auth lazily (services exist by panel-render time; the
+          // handler itself runs with no servicesManager). See wsiThumbnail.ts.
+          getThumbnailSrc: (options) =>
+            fetchWsiThumbnailObjectUrl(
+              instances,
+              authHeaders(undefined),
+              options?.signal,
+            ),
           label: description,
         }
         return [displaySet]

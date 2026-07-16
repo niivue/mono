@@ -43,7 +43,11 @@ rm -rf packages/niivue/dist
 (cd packages/niivue \
   && bun run codegen:assets \
   && bun run gen-fixtures \
-  && VITE_BASE="$BASE_PATH" bunx --bun vite build --config vite.config.examples.ts --mode production)
+  && VITE_BASE="$BASE_PATH" \
+    VITE_STREAMING_ASSET_BASE="https://raw.githubusercontent.com/niivue/niivue-demo-images-lfs/main/streaming/" \
+    VITE_STREAMING_MEDIA_BASE="https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/streaming/" \
+    VITE_OMEZARR_ASSET_BASE="https://ome-zarr-scivis.s3.amazonaws.com/v0.5/96x2/" \
+    bunx --bun vite build --config vite.config.examples.ts --mode production)
 
 # 4. Assemble site
 # GitHub Pages (actions/deploy-pages) maps the artifact root to BASE_PATH,

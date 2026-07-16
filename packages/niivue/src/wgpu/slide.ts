@@ -4,6 +4,10 @@ import type {
   NVSlideScreen,
   NVSlideScreenRect,
 } from '@/slide/NVSlide'
+import {
+  DEFAULT_TILE_TEXTURE_BYTES,
+  TileTextureCache,
+} from '@/slide/tileTextureCache'
 
 const shaderCode = /* wgsl */ `
 struct SlideUniforms {
@@ -101,7 +105,14 @@ export class SlideRendererGPU {
   private readonly _bindLayout: GPUBindGroupLayout
   private readonly _sampler: GPUSampler
   private _placeholderTexture: GPUTexture | null
-  private readonly _textures = new Map<string, SlideTexture>()
+  // Byte-budgeted: tile textures for scrolled-away regions are evicted each
+  // frame instead of accumulating for the life of the renderer. Eviction runs
+  // before beginFrame (see render), so a texture referenced by the frame just
+  // submitted is never destroyed while its commands are in flight.
+  private readonly _textures = new TileTextureCache<SlideTexture>(
+    DEFAULT_TILE_TEXTURE_BYTES,
+    (entry) => entry.texture.destroy(),
+  )
   private readonly _uniformPool: GPUBuffer[] = []
   private _uniformCursor = 0
 
@@ -216,6 +227,8 @@ export class SlideRendererGPU {
     if (this._canvas.height !== height) this._canvas.height = height
 
     this._uniformCursor = 0
+    this._textures.evictToBudget()
+    this._textures.beginFrame()
     const encoder = this._device.createCommandEncoder()
     const pass = encoder.beginRenderPass({
       colorAttachments: [
@@ -280,16 +293,10 @@ export class SlideRendererGPU {
   // namespace shared across slides, so a consumer swapping the slide must clear
   // first to avoid inheriting the previous slide's tiles (ghost tiles).
   clearTextures(): void {
-    for (const entry of this._textures.values()) {
-      entry.texture.destroy()
-    }
     this._textures.clear()
   }
 
   destroy(): void {
-    for (const entry of this._textures.values()) {
-      entry.texture.destroy()
-    }
     this._textures.clear()
     for (const buffer of this._uniformPool) {
       buffer.destroy()
@@ -328,7 +335,7 @@ export class SlideRendererGPU {
     ) {
       return existing
     }
-    if (existing) existing.texture.destroy()
+    if (existing) this._textures.delete(key)
     const texture = this._device.createTexture({
       size: [bitmap.width, bitmap.height],
       format: 'rgba8unorm',
@@ -347,7 +354,7 @@ export class SlideRendererGPU {
       width: bitmap.width,
       height: bitmap.height,
     }
-    this._textures.set(key, entry)
+    this._textures.set(key, entry, bitmap.width * bitmap.height * 4)
     return entry
   }
 

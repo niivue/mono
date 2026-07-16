@@ -72,6 +72,16 @@ export function frameEncoding(bytes: Uint8Array): 'jpeg' | 'png' | 'raw' {
   return 'raw'
 }
 
+// Hard ceiling on what a thumbnail fetch will download or decode. The preview
+// is a ~128px panel tile; a well-formed side image is a few MB at most. A store
+// that serves something enormous here (a mislabeled pyramid level, a raw
+// full-resolution frame) must degrade to the panel's default tile, never
+// allocate gigabytes in the renderer/GPU process.
+export const MAX_THUMBNAIL_FETCH_BYTES = 32 * 1024 * 1024
+// Largest raw frame we will paint to a full-size canvas before downscaling
+// (canvases can be GPU/IOSurface-backed, so this bounds a GPU allocation too).
+export const MAX_THUMBNAIL_DECODE_PIXELS = 16 * 1024 * 1024
+
 interface RawImageInfo {
   width: number
   height: number
@@ -92,6 +102,7 @@ export function rawImageInfo(
   const height = Number(inst.Rows)
   const channels = Number(inst.SamplesPerPixel)
   if (!Number.isFinite(width) || !Number.isFinite(height)) return null
+  if (width * height > MAX_THUMBNAIL_DECODE_PIXELS) return null
   if (channels !== 1 && channels !== 3) return null
   const photometric =
     typeof inst.PhotometricInterpretation === 'string'
@@ -152,6 +163,40 @@ function rawFrameToDataUrl(raw: Uint8Array, info: RawImageInfo): string | null {
   return small.toDataURL('image/jpeg', 0.85)
 }
 
+// Decode an encoded (JPEG/PNG) frame and re-export it capped at
+// MAX_THUMBNAIL_EDGE, so the panel never retains a full-resolution decode (a
+// blob-URL <img> keeps the full raster resident while displayed). Returns null
+// where the decode pipeline is unavailable (test runtime) or decoding fails —
+// the caller then falls back to a plain Blob URL.
+async function encodedFrameToThumbnailUrl(
+  frame: Uint8Array,
+  mime: string,
+): Promise<string | null> {
+  if (typeof document === 'undefined') return null
+  if (typeof createImageBitmap !== 'function') return null
+  let bitmap: ImageBitmap | null = null
+  try {
+    bitmap = await createImageBitmap(
+      new Blob([new Uint8Array(frame)], { type: mime }),
+    )
+    const scale = Math.min(
+      1,
+      MAX_THUMBNAIL_EDGE / Math.max(bitmap.width, bitmap.height),
+    )
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', 0.85)
+  } catch {
+    return null
+  } finally {
+    bitmap?.close()
+  }
+}
+
 /**
  * Fetch a WSI series' preview image and return an image URL for the study panel
  * (a Blob URL for an encoded frame, a data URL for a decoded raw frame), or null
@@ -177,17 +222,28 @@ export async function fetchWsiThumbnailObjectUrl(
       signal,
     })
     if (!response.ok) return null
+    // Refuse oversized payloads before (Content-Length) and after download —
+    // a preview must never buffer a runaway frame into memory.
+    const advertised = Number(response.headers.get('content-length'))
+    if (Number.isFinite(advertised) && advertised > MAX_THUMBNAIL_FETCH_BYTES) {
+      return null
+    }
     const contentType = response.headers.get('content-type') ?? ''
     const body = new Uint8Array(await response.arrayBuffer())
+    if (body.byteLength > MAX_THUMBNAIL_FETCH_BYTES) return null
     const frame = parseMultipartRelated(body, contentType)[0]
     if (!frame || frame.length === 0) return null
 
     const encoding = frameEncoding(frame)
     if (encoding !== 'raw') {
-      // Copy into a fresh ArrayBuffer-backed view so the bytes satisfy BlobPart
-      // (a `Uint8Array<ArrayBufferLike>` slice does not).
+      const mime = `image/${encoding}`
+      // Prefer a downscaled re-encode so the panel never holds a full-res
+      // decode; fall back to a Blob URL (copied into a fresh ArrayBuffer-backed
+      // view so the bytes satisfy BlobPart) when decoding isn't available.
+      const scaled = await encodedFrameToThumbnailUrl(frame, mime)
+      if (scaled) return scaled
       return URL.createObjectURL(
-        new Blob([new Uint8Array(frame)], { type: `image/${encoding}` }),
+        new Blob([new Uint8Array(frame)], { type: mime }),
       )
     }
     const info = rawImageInfo(inst, frame.length)

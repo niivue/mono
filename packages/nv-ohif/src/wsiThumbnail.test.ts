@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import {
   fetchWsiThumbnailObjectUrl,
   frameEncoding,
+  MAX_THUMBNAIL_FETCH_BYTES,
   pickThumbnailInstance,
   rawImageInfo,
 } from './wsiThumbnail'
@@ -148,6 +149,14 @@ describe('rawImageInfo', () => {
       rawImageInfo({ Rows: 4, Columns: 5, SamplesPerPixel: 4 }, 80),
     ).toBeNull()
   })
+
+  it('rejects a frame larger than the decode pixel cap', () => {
+    // 5000x5000 = 25M pixels > MAX_THUMBNAIL_DECODE_PIXELS (16M): a canvas
+    // this size must never be allocated for a panel preview, even when the
+    // byte length is self-consistent.
+    const huge = { Rows: 5000, Columns: 5000, SamplesPerPixel: 1 }
+    expect(rawImageInfo(huge, 5000 * 5000)).toBeNull()
+  })
 })
 
 describe('fetchWsiThumbnailObjectUrl', () => {
@@ -246,5 +255,42 @@ describe('fetchWsiThumbnailObjectUrl', () => {
       ]),
     ).toBeNull()
     expect(fetched).toBe(false)
+  })
+
+  it('rejects a response whose Content-Length exceeds the fetch cap without reading the body', async () => {
+    let bodyRead = false
+    globalThis.fetch = (() => {
+      const response = new Response(new Uint8Array(8), {
+        status: 200,
+        headers: {
+          'content-type': 'multipart/related; type="image/jpeg"; boundary=B',
+          'content-length': String(MAX_THUMBNAIL_FETCH_BYTES + 1),
+        },
+      })
+      const original = response.arrayBuffer.bind(response)
+      response.arrayBuffer = () => {
+        bodyRead = true
+        return original()
+      }
+      return Promise.resolve(response)
+    }) as unknown as typeof fetch
+    expect(await fetchWsiThumbnailObjectUrl(instances())).toBeNull()
+    expect(bodyRead).toBe(false)
+  })
+
+  it('rejects an oversized body even without a Content-Length header', async () => {
+    const oversized = new Uint8Array(MAX_THUMBNAIL_FETCH_BYTES + 1)
+    oversized[0] = 0xff
+    oversized[1] = 0xd8
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(oversized, {
+          status: 200,
+          headers: {
+            'content-type': 'multipart/related; type="image/jpeg"; boundary=B',
+          },
+        }),
+      )) as unknown as typeof fetch
+    expect(await fetchWsiThumbnailObjectUrl(instances())).toBeNull()
   })
 })

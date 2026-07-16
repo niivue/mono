@@ -166,6 +166,28 @@ describe('niivueResetView', () => {
     expect(nv.renderPan).toEqual([0, 0])
     expect(nv.crosshairPos).toEqual([0.5, 0.5, 0.5])
   })
+
+  it('resets the visible NVSlide view instead of the hidden volume view', () => {
+    const nv = stubNiivue()
+    register('vp-1', nv)
+    let resets = 0
+    updateNiivueViewport('vp-1', {
+      slideView: {
+        setTool() {},
+        resetView() {
+          resets++
+        },
+        async saveBitmap() {},
+        dispose() {},
+      },
+    })
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    definitions.niivueResetView()
+    expect(resets).toBe(1)
+    expect(nv.azimuth).toBe(42)
+  })
 })
 
 describe('niivueSetClipPlane', () => {

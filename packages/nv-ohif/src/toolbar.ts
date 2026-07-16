@@ -14,6 +14,7 @@ export const NIIVUE_RESET_BUTTON = 'NiivueReset'
 export const NIIVUE_OVERLAY_BUTTON = 'NiivueOverlay'
 export const NIIVUE_COLORBAR_BUTTON = 'NiivueColorbar'
 export const NIIVUE_INTERPOLATION_BUTTON = 'NiivueInterpolation'
+export const NIIVUE_CAPTURE_BUTTON = 'Capture'
 
 const SLICE_TYPE_EVALUATOR = 'evaluate.niivue.sliceType'
 const CLIP_PLANE_EVALUATOR = 'evaluate.niivue.clipPlane'
@@ -246,6 +247,19 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
     },
   },
   {
+    // Override OHIF's cornerstone-only Capture button when this customization
+    // pack is active; the command supports both volume and slide canvases.
+    id: NIIVUE_CAPTURE_BUTTON,
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'tool-capture',
+      label: 'Capture',
+      tooltip: 'Download the NiiVue viewport as PNG',
+      commands: 'niivueSaveBitmap',
+      evaluate: NIIVUE_EVALUATOR,
+    },
+  },
+  {
     id: NIIVUE_RESET_BUTTON,
     uiType: 'ohif.toolButton',
     props: {
@@ -325,6 +339,16 @@ const DISABLED = {
   disabledText: 'Available on NiiVue viewports',
 }
 
+const VOLUME_DISABLED = {
+  disabled: true,
+  disabledText: 'Available for NiiVue volume viewports',
+}
+
+function volumeDisabled(viewportId: string | undefined) {
+  const nv = getNiivueForViewport(viewportId)
+  return !nv || !Array.isArray(nv.volumes) || nv.volumes.length === 0
+}
+
 /**
  * getToolbarModule: evaluators the buttons above reference. OHIF calls these
  * against the active viewport to derive enabled/active state.
@@ -341,6 +365,7 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
       evaluate: ({ viewportId, button }) => {
         const nv = getNiivueForViewport(viewportId)
         if (!nv) return DISABLED
+        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
         const name = buttonCommandOption(button, 'sliceType')
         const target = name === undefined ? undefined : NIIVUE_SLICE_TYPES[name]
         return {
@@ -354,6 +379,7 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
       evaluate: ({ viewportId, button }) => {
         const entry = getNiivueEntryForViewport(viewportId)
         if (!entry) return DISABLED
+        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
         const plane = buttonCommandOption(button, 'plane')
         return {
           disabled: false,
@@ -369,6 +395,7 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
       evaluate: ({ viewportId }) => {
         const entry = getNiivueEntryForViewport(viewportId)
         if (!entry) return DISABLED
+        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
         return { disabled: false, isActive: entry.overlayUIDs.length > 0 }
       },
     },
@@ -377,6 +404,7 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
       evaluate: ({ viewportId, button }) => {
         const entry = getNiivueEntryForViewport(viewportId)
         if (!entry) return DISABLED
+        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
         // Gray out presets whose modality does not match the base series.
         const modality = buttonCommandOption(button, 'modality')
         if (modality !== undefined && modality !== baseModality(entry)) {
@@ -393,6 +421,7 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
       evaluate: ({ viewportId, button }) => {
         const nv = getNiivueForViewport(viewportId)
         if (!nv) return DISABLED
+        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
         const name = buttonCommandOption(button, 'colormap')
         const current = nv.volumes[0]?.colormap
         return {
@@ -409,6 +438,7 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
       evaluate: ({ viewportId }) => {
         const nv = getNiivueForViewport(viewportId)
         if (!nv) return DISABLED
+        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
         return { disabled: false, isActive: nv.isColorbarVisible === true }
       },
     },
@@ -417,6 +447,7 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
       evaluate: ({ viewportId }) => {
         const nv = getNiivueForViewport(viewportId)
         if (!nv) return DISABLED
+        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
         // Active = nearest-neighbor (crisp voxels); off = smooth (default).
         return {
           disabled: false,

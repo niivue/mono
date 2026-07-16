@@ -1,5 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
+import type { WsiSlideView } from './wsiSlideView'
 
 /**
  * Per-viewport state shared between the React viewport and the OHIF
@@ -25,6 +26,8 @@ export interface NiivueViewportEntry {
    * the change to OHIF (see commands.ts syncNiivueWindowLevelToOhif).
    */
   windowLevel?: { window: number; level: number }
+  /** Visible NVSlide view when this viewport is showing a whole-slide series. */
+  slideView?: WsiSlideView
   /** Viewport-provided sink so commands can surface progress text (null = clear). */
   setStatus?: (message: string | null) => void
 }
@@ -50,7 +53,10 @@ export function unregisterNiivue(viewportId: string): void {
 export function updateNiivueViewport(
   viewportId: string,
   patch: Partial<
-    Pick<NiivueViewportEntry, 'displaySets' | 'setStatus' | 'windowLevel'>
+    Pick<
+      NiivueViewportEntry,
+      'displaySets' | 'setStatus' | 'slideView' | 'windowLevel'
+    >
   >,
 ): void {
   const entry = instances.get(viewportId)

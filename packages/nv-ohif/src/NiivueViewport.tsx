@@ -1,5 +1,5 @@
 import type { NiiVueOptions } from '@niivue/niivue'
-import NiiVue, { DRAG_MODE, NVSlide, SLICE_TYPE } from '@niivue/niivue'
+import NiiVue, { NVSlide, SLICE_TYPE } from '@niivue/niivue'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import { readBaseWindowLevel, syncNiivueWindowLevelToOhif } from './commands'
@@ -14,6 +14,7 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
+import { ohifToolToDragMode } from './toolBridge'
 import { mountWsiSlideView } from './wsiSlideView'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 
@@ -44,20 +45,6 @@ interface ToolGroupServiceLike {
   EVENTS?: Record<string, string>
 }
 
-/** Map an OHIF primary tool name to a NiiVue left-drag mode. */
-function ohifToolToDragMode(tool: string | undefined): number {
-  switch (tool) {
-    case 'WindowLevel':
-      return DRAG_MODE.contrast
-    case 'Pan':
-      return DRAG_MODE.pan
-    default:
-      // Crosshairs / StackScroll / Zoom / anything else: crosshair navigation
-      // (NiiVue changes slices with the scroll wheel regardless).
-      return DRAG_MODE.crosshair
-  }
-}
-
 /**
  * The NiiVue viewport React component OHIF hangs a display set in. It routes each
  * display set to the right NiiVue load path (see {@link classifyDisplaySet}):
@@ -73,6 +60,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   const { displaySets, viewportId, servicesManager, commandsManager } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nvRef = useRef<NiiVue | null>(null)
+  const slideViewRef = useRef<ReturnType<typeof mountWsiSlideView> | null>(null)
+  const activeOhifToolRef = useRef<string | undefined>(undefined)
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
 
@@ -257,6 +246,10 @@ export function NiivueViewport(props: OhifViewportProps) {
       let view: ReturnType<typeof mountWsiSlideView> | null = null
       try {
         view = mountWsiSlideView(slideCanvas, slide)
+        slideViewRef.current = view
+        view.setTool(activeOhifToolRef.current)
+        updateNiivueViewport(viewportId, { slideView: view })
+        refreshToolbar(servicesManager, viewportId)
         setStatus({ kind: 'idle' })
       } catch (err) {
         slideCanvas.remove()
@@ -269,6 +262,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       }
       return () => {
         cancelled = true
+        updateNiivueViewport(viewportId, { slideView: undefined })
+        slideViewRef.current = null
         view?.dispose()
         slideCanvas.width = 0
         slideCanvas.height = 0
@@ -332,9 +327,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
   }, [displaySetsKey, ready])
 
-  // Mirror OHIF's active primary tool onto NiiVue's left-drag mode (Window/Level,
-  // Pan, ...), so the OHIF toolbar drives this viewport too. NiiVue already applies a
-  // robust 2-98% window on load, so no default-window wiring is needed here.
+  // Mirror OHIF's active primary tool onto NiiVue's matching left-drag mode, so
+  // windowing, pan, zoom, measurements, angles and ROI tools drive this viewport.
+  // NiiVue already applies a robust 2-98% window on load, so no default-window
+  // wiring is needed here.
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !ready) return
@@ -345,7 +341,9 @@ export function NiivueViewport(props: OhifViewportProps) {
 
     const apply = () => {
       const tool = svc.getActivePrimaryMouseButtonTool?.('default')
+      activeOhifToolRef.current = tool
       nv.primaryDragMode = ohifToolToDragMode(tool)
+      slideViewRef.current?.setTool(tool)
     }
     apply()
     const event = svc.EVENTS?.PRIMARY_TOOL_ACTIVATED

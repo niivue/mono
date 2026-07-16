@@ -2,6 +2,9 @@ import type { NVSlide, NVSlideScreen } from '@niivue/niivue'
 import { SlideRenderer } from '@niivue/niivue'
 
 export interface WsiSlideView {
+  setTool(tool: string | undefined): void
+  resetView(): void
+  saveBitmap(filename?: string): Promise<void>
   dispose(): void
 }
 
@@ -38,6 +41,7 @@ export function mountWsiSlideView(
   // canvas not yet having a real size on the very first render (clientWidth 0),
   // which would otherwise leave the slide zoomed into a corner.
   let userInteracted = false
+  let activeTool: string | undefined = 'Pan'
   let lastFitWidth = 0
   let lastFitHeight = 0
 
@@ -105,7 +109,17 @@ export function mountWsiSlideView(
   }
   const onPointerMove = (e: PointerEvent): void => {
     if (!dragging) return
-    slide.panByScreenDelta(e.clientX - lastX, e.clientY - lastY, screenOf())
+    if (activeTool === 'Zoom') {
+      const rect = canvas.getBoundingClientRect()
+      slide.zoomBy(
+        Math.exp(-(e.clientY - lastY) * 0.01),
+        e.clientX - rect.left,
+        e.clientY - rect.top,
+        screenOf(),
+      )
+    } else {
+      slide.panByScreenDelta(e.clientX - lastX, e.clientY - lastY, screenOf())
+    }
     lastX = e.clientX
     lastY = e.clientY
     scheduleRender()
@@ -145,6 +159,27 @@ export function mountWsiSlideView(
   scheduleRender()
 
   return {
+    setTool(tool: string | undefined): void {
+      activeTool = tool
+    },
+    resetView(): void {
+      userInteracted = false
+      lastFitWidth = 0
+      lastFitHeight = 0
+      scheduleRender()
+    },
+    async saveBitmap(filename = 'niivue-slide.png'): Promise<void> {
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, 'image/png'),
+      )
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 0)
+    },
     dispose(): void {
       if (disposed) return
       disposed = true

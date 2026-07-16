@@ -340,14 +340,30 @@ export function getNiivueCommandsModule({
 
     /** Reset camera, pan, zoom, and crosshair to their defaults. */
     niivueResetView: () => {
-      const nv = getActiveNiivue(servicesManager)
-      if (!nv) return
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry) return
+      if (entry.slideView) {
+        entry.slideView.resetView()
+        return
+      }
+      const { nv } = entry
       nv.azimuth = VIEW_DEFAULTS.azimuth
       nv.elevation = VIEW_DEFAULTS.elevation
       nv.scaleMultiplier = VIEW_DEFAULTS.scaleMultiplier
       nv.pan2Dxyzmm = [...VIEW_DEFAULTS.pan2Dxyzmm]
       nv.renderPan = [...VIEW_DEFAULTS.renderPan]
       nv.crosshairPos = [...VIEW_DEFAULTS.crosshairPos]
+    },
+
+    /** Download the visible NiiVue volume or NVSlide canvas as a PNG. */
+    niivueSaveBitmap: async () => {
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry) return
+      if (entry.slideView) {
+        await entry.slideView.saveBitmap()
+        return
+      }
+      await entry.nv.saveBitmap('niivue.png')
     },
 
     /** Set (or clear, plane: 'none') the 3D render clip plane. */
@@ -533,6 +549,7 @@ export function getNiivueCommandsModule({
     definitions: {
       niivueSetSliceType: actions.niivueSetSliceType,
       niivueResetView: actions.niivueResetView,
+      niivueSaveBitmap: actions.niivueSaveBitmap,
       niivueSetClipPlane: actions.niivueSetClipPlane,
       niivueToggleOverlay: actions.niivueToggleOverlay,
       niivueSetWindowLevel: actions.niivueSetWindowLevel,

@@ -10,7 +10,11 @@
 //   - omezarr:   full upstream OME-Zarr stores read with zarrita
 
 import * as zarr from 'zarrita'
-import NiiVue, { chunkVolumeGrid, SLICE_TYPE } from '../src/index.ts'
+import NiiVue, {
+  chunkVolumeGrid,
+  chunkVolumeMultiLOD,
+  SLICE_TYPE,
+} from '../src/index.ts'
 
 const backend =
   new URLSearchParams(location.search).get('backend') === 'webgpu'
@@ -99,6 +103,32 @@ const STREAMING_CHUNK_HALO = [3, 3, 3]
 // a coarser streaming grid so it stays within the renderer's per-tile chunk cap.
 const MAX_CHUNKS_PER_TILE = 1024
 const ZARR_BYTE_CACHE_BYTES = 512 * 1024 * 1024
+
+// --- multi-LOD (crosshair-focused mixed-resolution) -------------------------
+//
+// For an OME-Zarr store with a pyramid, we build a Neuroglancer-style octree
+// (core `chunkVolumeMultiLOD`) instead of streaming one uniform level: bricks
+// near the crosshair render at the finest level, coarsening outward, under a
+// brick/VRAM budget. This is what keeps a huge finest level (e.g. pig_heart L0
+// ~22 GB) renderable — only the focus region is ever finest, so the resident
+// set is bounded by construction. The finest PRESENT level is the common
+// reference grid; the Level control becomes a max-detail cap (`minLevel`).
+//
+// `?grid` opts back into the legacy single-level uniform grid for A/B.
+const USE_MULTILOD = !new URLSearchParams(location.search).has('grid')
+const MULTILOD_CELL_EDGE = 128
+const MULTILOD_HALO = [1, 1, 1]
+// Cap on brick count (< core MAX_CHUNKS_PER_TILE=256). The budget pass coarsens
+// until the plan fits.
+const MULTILOD_MAX_BRICKS = 240
+// GPU byte budget for the planned brick set (rgba + gradient = 8 B/voxel over
+// each brick's padded texture). Coarsens the octree until it fits, so resident
+// VRAM stays ~this regardless of the level the user picks. Kept below
+// DEFAULT_RESIDENCY_BYTES so every planned brick stays resident (no eviction).
+const MULTILOD_BUDGET_BYTES = 2048 * 1024 * 1024
+// Crosshair position as a [0,1] fraction of the common (finest) grid, driving
+// the octree focus. Defaults to the volume centre before the first interaction.
+let lastFocusFrac = [0.5, 0.5, 0.5]
 
 // --- logical-volume helpers (inlined from the demo glue) --------------------
 
@@ -526,8 +556,15 @@ async function refreshLevelControl() {
     ...levels.map((lvl) => new Option(`L${lvl}`, String(lvl))),
   )
   els.level.disabled = levels.length < 2
-  els.level.value = String(levels[0])
-  return levels[0]
+  // `levels` is coarsest-first. Single-level mode defaults to the coarsest
+  // (cheapest to load whole). Multi-LOD defaults to the FINEST as the max-detail
+  // cap ("allow full detail at the crosshair") — picking a coarser level caps how
+  // fine the octree may go anywhere.
+  const coarsest = levels[0]
+  const finest = levels[levels.length - 1]
+  const def = USE_MULTILOD ? finest : coarsest
+  els.level.value = String(def)
+  return def
 }
 
 function selectedLevel() {
@@ -713,58 +750,74 @@ async function loadOmezarrSource(storeDef, requestedLevel, serial) {
     cache: new ByteLruCache(ZARR_BYTE_CACHE_BYTES, serial),
   })
 
-  // Try the requested level first, then fall back to the store's configured
-  // levels coarsest-first, using the first whose array metadata resolves. This
-  // keeps a chosen level honored while staying robust to a store fetched at
-  // only its coarsest level (e.g. `fetch-omezarr.ts --levels`).
-  const order = [
-    ...(Number.isInteger(requestedLevel) ? [requestedLevel] : []),
-    ...storeDef.levels.filter((lvl) => lvl !== requestedLevel),
-  ]
-  let level = -1
-  let dataset = null
-  let array = null
-  for (const candidate of order) {
+  // Open a single pyramid level as a zarr v3 array (v2 probing 404s noisily on a
+  // static v3 store). Returns null if the level isn't present on disk.
+  const openLevel = async (candidate) => {
     const ds = multiscale?.datasets?.[candidate]
-    if (!ds) continue
+    if (!ds) return null
     try {
-      // Open as zarr v3 explicitly: zarr.open() probes v2 metadata (.zarray /
-      // .zattrs) first, which 404s noisily against a static OME-Zarr v3 store.
-      array = await zarr.open.v3(zarr.root(store).resolve(`/${ds.path}`), {
+      const arr = await zarr.open.v3(zarr.root(store).resolve(`/${ds.path}`), {
         kind: 'array',
       })
-      level = candidate
-      dataset = ds
-      break
+      const [sz, sy, sx] = trailingSpatial(arr.shape, 'shape')
+      return {
+        level: candidate,
+        dataset: ds,
+        array: arr,
+        shape: [sx, sy, sz],
+        spacing: scaleFromDataset(ds),
+      }
     } catch {
-      // Level not present on disk -- try the next one.
+      return null // level not present on disk
     }
   }
-  if (!dataset || !array) {
+
+  // Multi-LOD opens EVERY present level (the octree fetches each brick from its
+  // own level). Single-level ?grid mode opens just the requested-or-coarsest
+  // one. `opened` is sorted finest-first so opened[0] is the common reference
+  // grid (finest present level).
+  const candidates = USE_MULTILOD
+    ? [...storeDef.levels].sort((a, b) => a - b)
+    : [
+        ...(Number.isInteger(requestedLevel) ? [requestedLevel] : []),
+        ...storeDef.levels.filter((lvl) => lvl !== requestedLevel),
+      ]
+  const opened = []
+  for (const candidate of candidates) {
+    const lvl = await openLevel(candidate)
+    if (!lvl) continue
+    opened.push(lvl)
+    if (!USE_MULTILOD) break // single-level: first that resolves wins
+  }
+  if (opened.length === 0) {
     throw new Error(
       `No OME-Zarr level found for ${storeDef.id}. ` +
         `Did you run scripts/fetch-omezarr.ts --name=${els.source.value}?`,
     )
   }
+  opened.sort((a, b) => a.level - b.level) // finest-first
+  // Primary geometry = the finest present level (multi-LOD common grid, or the
+  // single opened level in ?grid mode).
+  const primary = opened[0]
+  const { level, dataset, array, shape, spacing } = primary
 
   const dtype = assertSupportedDtype(array.dtype)
   const dtypeInfo = niftiDatatype(dtype)
-  const [shapeZ, shapeY, shapeX] = trailingSpatial(array.shape, 'shape')
   const [chunkZ, chunkY, chunkX] = trailingSpatial(array.chunks, 'chunks')
-  const shape = [shapeX, shapeY, shapeZ]
   const chunkShape = [chunkX, chunkY, chunkZ]
   const chunkGrid = [
     Math.ceil(shape[0] / chunkShape[0]),
     Math.ceil(shape[1] / chunkShape[1]),
     Math.ceil(shape[2] / chunkShape[2]),
   ]
+  const multi = USE_MULTILOD && opened.length >= 1
 
   return {
     kind: 'omezarr',
-    id: `${storeDef.id}:level-${level}`,
-    name: `${storeDef.name} L${level}`,
+    id: multi ? `${storeDef.id}:multilod` : `${storeDef.id}:level-${level}`,
+    name: multi ? `${storeDef.name} multi-LOD` : `${storeDef.name} L${level}`,
     shape,
-    spacing: scaleFromDataset(dataset),
+    spacing,
     dtype,
     datatypeCode: dtypeInfo.code,
     numBitsPerVoxel: dtypeInfo.bits,
@@ -773,8 +826,14 @@ async function loadOmezarrSource(storeDef, requestedLevel, serial) {
     chunkShape,
     chunkCount: chunkGrid[0] * chunkGrid[1] * chunkGrid[2],
     sourceUrl: `${storeDef.id}/${dataset.path}`,
-    transportLabel: 'OME-Zarr chunk objects',
+    transportLabel: multi
+      ? 'OME-Zarr multi-LOD octree'
+      : 'OME-Zarr chunk objects',
     array,
+    // All present levels, finest-first: {level, array, shape, spacing, dataset}.
+    // The multi-LOD chunk source dispatches each brick to levels[sourceLevel].
+    levels: opened,
+    multi,
     level,
     levelPath: dataset.path,
     // Kept so a coarse whole-volume "floor" can be built from the coarsest
@@ -836,7 +895,53 @@ async function loadActiveSource() {
   return source
 }
 
+// Finest-LOD radius (in common-grid voxels) around the crosshair. In the 3D
+// render view, keep it tight so only a small core is finest (fine near the
+// crosshair, coarse away). In multiplanar it spans the visible slice box, which
+// shrinks as the 2D zoom grows.
+function multiLodRadius(commonShape) {
+  const inRender = Number(els.layout.value) === SLICE_TYPE.RENDER
+  if (inRender) return MULTILOD_CELL_EDGE * 0.1
+  const zoom = Math.max(1, Number(els.zoom.value) || 1)
+  return Math.hypot(commonShape[0], commonShape[1], commonShape[2]) / (2 * zoom)
+}
+
+// Build the crosshair-focused multi-LOD octree plan from the source's pyramid.
+// Bricks near `lastFocusFrac` render at the finest level, coarsening outward,
+// bounded by MULTILOD_BUDGET_BYTES / MULTILOD_MAX_BRICKS. The Level dropdown
+// caps the finest level used (minLevel), mapped from the picked pyramid level
+// number to its index in the finest-first `levels`.
+function buildMultiLodPlan(source) {
+  const levels = source.levels
+  const levelDims = levels.map((l) => l.shape)
+  const commonShape = levelDims[0]
+  const center = [
+    lastFocusFrac[0] * commonShape[0],
+    lastFocusFrac[1] * commonShape[1],
+    lastFocusFrac[2] * commonShape[2],
+  ]
+  const radius = multiLodRadius(commonShape)
+  const picked = selectedLevel()
+  let minLevel = levels.findIndex((l) => l.level === picked)
+  if (minLevel < 0) minLevel = 0
+  return chunkVolumeMultiLOD(
+    levelDims,
+    { center, radius },
+    STREAMING_CHUNK_EDGE,
+    {
+      cellEdge: MULTILOD_CELL_EDGE,
+      haloSize: MULTILOD_HALO,
+      budgetBytes: MULTILOD_BUDGET_BYTES,
+      minLevel,
+      maxBricks: MULTILOD_MAX_BRICKS,
+    },
+  )
+}
+
 function createChunkPlan(source) {
+  if (source.kind === 'omezarr' && source.multi) {
+    return buildMultiLodPlan(source)
+  }
   if (source.kind === 'omezarr' && source.chunkCount > MAX_CHUNKS_PER_TILE) {
     const grid = estimateStreamingGrid(source.shape)
     return chunkVolumeGrid(
@@ -1021,7 +1126,13 @@ function createOmezarrChunkSource(source) {
 async function fetchOmezarrChunk(source, request) {
   const [x0, y0, z0] = request.desc.texOrigin
   const [sx, sy, sz] = request.desc.texDims
-  const [shapeX, shapeY, shapeZ] = source.shape
+  // Multi-LOD: each brick carries the INDEX (finest-first) of the pyramid level
+  // it fetches from — texOrigin/texDims are already in THAT level's voxels (see
+  // chunkVolumeMultiLOD emitBrick). Single-level plans leave sourceLevel unset,
+  // so fall back to the primary (finest) level.
+  const lvl = source.levels?.[request.desc.sourceLevel ?? 0]
+  const array = lvl?.array ?? source.array
+  const [shapeX, shapeY, shapeZ] = lvl?.shape ?? source.shape
   // A streaming tile near a volume edge can extend past the array bounds; clamp
   // the read to the real extent, then zero-pad back up to the requested texDims
   // so the texture upload still gets a full [sx,sy,sz] brick (out-of-bounds =
@@ -1035,12 +1146,12 @@ async function fetchOmezarrChunk(source, request) {
   const rx = ex - x0
 
   const selection = []
-  for (let i = 0; i < source.array.shape.length - 3; i++) selection.push(0)
+  for (let i = 0; i < array.shape.length - 3; i++) selection.push(0)
   selection.push(zarr.slice(z0, ez))
   selection.push(zarr.slice(y0, ey))
   selection.push(zarr.slice(x0, ex))
 
-  const view = await zarr.get(source.array, selection)
+  const view = await zarr.get(array, selection)
   const region = bytesFromZarrView(view)
   const bpv = request.bytesPerVoxel
   const expectedBytes = sx * sy * sz * bpv
@@ -1214,6 +1325,46 @@ function computeBlockBoxes(source, plan, zoom, explode) {
   return boxes
 }
 
+// --- multi-LOD refocus (crosshair-follow) -----------------------------------
+
+let refocusTimer = 0
+
+// Rebuild the octree around the current focus/zoom and swap it in place. Bricks
+// that are unchanged keep their resident textures; only newly-fine bricks near
+// the crosshair stream in and coarsened far bricks are dropped. Far cheaper than
+// a reload and it doesn't reset the camera/crosshair.
+async function refocusMultiLod() {
+  if (!nv || !activeSource?.multi) return
+  const vol = nv.volumes?.[0]
+  if (!vol) return
+  const plan = buildMultiLodPlan(activeSource)
+  chunkPlan = plan
+  // The new plan re-indexes its bricks, so the per-chunk requested/completed
+  // sets (keyed by chunkIndex) from the old plan no longer correspond — reset
+  // them so the HUD counts reflect THIS plan. Byte/cache totals are cumulative
+  // and left alone.
+  stats.requested = new Set()
+  stats.completed = new Set()
+  try {
+    await nv.swapVolumeChunkPlan(vol.id, plan)
+  } catch (err) {
+    console.warn('multi-LOD refocus swap failed:', err)
+  }
+  applyBlocks()
+  renderHud()
+}
+
+// Debounced refocus: crosshair drags and zoom slides fire rapidly; coalesce them
+// so we rebuild/swap at most ~every 150 ms instead of per event.
+function scheduleRefocus() {
+  if (!nv || !activeSource?.multi) return
+  if (refocusTimer) clearTimeout(refocusTimer)
+  refocusTimer = setTimeout(() => {
+    refocusTimer = 0
+    void refocusMultiLod()
+  }, 150)
+}
+
 // Push the current zoom to the 2D pan/zoom and the 3D render scale, mark the
 // focus ROI in 3D, then refresh the (optionally restricted) block outlines.
 function applyZoom() {
@@ -1230,6 +1381,8 @@ function applyZoom() {
   const inRenderView = Number(els.layout.value) === SLICE_TYPE.RENDER
   nv.scaleMultiplier = inRenderView ? 1 : zoom
   applyBlocks()
+  // Zoom changes the multiplanar focus radius, so re-plan the octree.
+  scheduleRefocus()
 }
 
 // Show or hide every block visualization together, gated on the "blocks" toggle:
@@ -1418,13 +1571,22 @@ async function reloadVolume(options = {}) {
     if (options.reloadSource || !activeSource) {
       activeSource = null
       chunkPlan = null
+      // A new source starts focused on the volume centre; the crosshair drives
+      // it thereafter (locationChange -> scheduleRefocus).
+      lastFocusFrac = [0.5, 0.5, 0.5]
       const source = await loadActiveSource()
       if (token !== reloadToken) return
       activeSource = source
       chunkPlan = createChunkPlan(source)
-      // Reflect the level that actually loaded (may differ if the requested
-      // one wasn't present and the loader fell back).
-      if (source.kind === 'omezarr' && typeof source.level === 'number') {
+      // Single-level mode: reflect the level that actually loaded (may differ if
+      // the requested one wasn't present and the loader fell back). Multi-LOD
+      // leaves the dropdown alone — it's the user's max-detail cap, not the
+      // "loaded level".
+      if (
+        source.kind === 'omezarr' &&
+        !source.multi &&
+        typeof source.level === 'number'
+      ) {
         const value = String(source.level)
         if ([...els.level.options].some((o) => o.value === value)) {
           els.level.value = value
@@ -1479,8 +1641,12 @@ async function main() {
     void reloadVolume({ reloadSource: true })
   })
   els.level.addEventListener('change', () => {
-    // Keep the current window; the intensity range is the same across levels.
-    void reloadVolume({ reloadSource: true })
+    // Multi-LOD: the level is a max-detail cap; the pyramid is already open, so
+    // just re-plan the octree and swap it in place. Single-level: re-open the
+    // requested level. (Window is unchanged — the intensity range is the same
+    // across levels.)
+    if (activeSource?.multi) scheduleRefocus()
+    else void reloadVolume({ reloadSource: true })
   })
   els.layout.addEventListener('change', applyLayout)
   els.colormap.addEventListener('change', () => {
@@ -1498,8 +1664,55 @@ async function main() {
     void reloadVolume({ reloadSource: true })
   })
 
+  // Crosshair moves (2D-slice clicks, scroll, keyboard) drive the multi-LOD
+  // focus: the finest bricks follow the crosshair. crosshairPos is the scene
+  // fraction, which for these axis-aligned single volumes equals the volume
+  // fraction. Debounced so a drag coalesces into ~one refocus per 150 ms.
+  nv.addEventListener('locationChange', () => {
+    if (!activeSource?.multi) return
+    const cp = nv.crosshairPos
+    if (cp && cp.length >= 3) {
+      lastFocusFrac = [cp[0], cp[1], cp[2]]
+    }
+    scheduleRefocus()
+  })
+
   await reloadVolume({ reloadSource: true })
   startHudPolling()
+
+  // Debug hook (?debug): expose live state so the multi-LOD plan can be
+  // inspected without depending on the RAF-gated render (e.g. a per-level brick
+  // tally). Read-only getters; not shipped behavior.
+  if (new URLSearchParams(location.search).has('debug')) {
+    window.__r = {
+      get nv() {
+        return nv
+      },
+      get source() {
+        return activeSource
+      },
+      get plan() {
+        return chunkPlan
+      },
+      get focus() {
+        return lastFocusFrac
+      },
+      levelTally() {
+        const t = {}
+        for (const c of chunkPlan?.chunks ?? []) {
+          const l = c.sourceLevel ?? 0
+          t[l] = (t[l] ?? 0) + 1
+        }
+        return t
+      },
+      // Drive the focus exactly as the crosshair locationChange handler does
+      // (the programmatic crosshairPos setter doesn't emit locationChange).
+      driveFocus(frac) {
+        lastFocusFrac = frac
+        scheduleRefocus()
+      },
+    }
+  }
 }
 
 main().catch((err) => {

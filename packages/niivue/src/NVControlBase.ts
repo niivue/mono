@@ -115,12 +115,17 @@ import {
 import type { SliceTile } from '@/view/NVSliceLayout'
 import { validateCustomLayout } from '@/view/NVSliceLayout'
 import type { ExplodedBlockFace } from '@/volume/ChunkExplode'
+import type { ChunkedVolumeSource } from '@/volume/ChunkedVolumeSource'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
 import type { ChunkPlan } from '@/volume/chunking'
 import {
   computeModulationData,
   computeModulationWeights,
 } from '@/volume/modulation'
+import {
+  type ChunkedVolumeOptions,
+  NVChunkedVolume,
+} from '@/volume/NVChunkedVolume'
 import * as NVVolume from '@/volume/NVVolume'
 import * as NVTensorProcessing from '@/volume/TensorProcessing'
 import type {
@@ -3284,6 +3289,25 @@ export default class NiiVueGPU extends EventTarget {
     vol.chunkPlan = plan
     await this.view?.swapChunkedVolumePlan?.(vol, plan)
     this.drawScene()
+  }
+
+  /**
+   * Load a multi-resolution (pyramid) volume from a pluggable
+   * {@link ChunkedVolumeSource} and render it with crosshair-focused level of
+   * detail: the finest bricks stay around the crosshair while distant regions
+   * render coarser, all under a brick/VRAM budget, so a very large finest level
+   * (e.g. a 20+ GB whole-slide/OME-Zarr volume) is renderable without ever
+   * making it fully resident. Returns an {@link NVChunkedVolume} handle
+   * (`setFocus` / `setMaxDetail` / `setBudget` / `dispose`); with the default
+   * `focus: 'crosshair'` it follows the crosshair automatically.
+   */
+  async loadChunkedVolume(
+    source: ChunkedVolumeSource,
+    options?: ChunkedVolumeOptions,
+  ): Promise<NVChunkedVolume> {
+    const chunked = new NVChunkedVolume(this, source, options)
+    await chunked.init()
+    return chunked
   }
 
   /**

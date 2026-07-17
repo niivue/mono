@@ -187,6 +187,12 @@ export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
 export type { SlideVectorKind, SlideVectorShape } from './slide/slideVector'
 export { SlideVectorLayer } from './slide/slideVector'
 export { buildDrawingLut, drawingBitmapToRGBA } from './view/NVDrawingTexture'
+// Crosshair-focused multi-resolution (multi-LOD) streamed volumes
+export type {
+  ChunkedVolumeFetch,
+  ChunkedVolumeLevel,
+  ChunkedVolumeSource,
+} from './volume/ChunkedVolumeSource'
 export type {
   ChunkPlan,
   MultiLodFocus,
@@ -198,9 +204,17 @@ export type {
 export { chunkVolumeGrid, chunkVolumeMultiLOD } from './volume/chunking'
 // MRSI (spatial spectroscopic imaging) volume helpers
 export { buildDerivedScalarVolume, isMrsiVolume } from './volume/mrsi'
+export {
+  type ChunkedVolumeOptions,
+  NVChunkedVolume,
+} from './volume/NVChunkedVolume'
 // Volume construction/serialization for extensions building derived volumes
 // (e.g. wrapping segmentation labels into an overlay NVImage)
 export { nii2volume, writeVolume } from './volume/NVVolume'
+export {
+  createStreamingNVImage,
+  type StreamingVolumeSpec,
+} from './volume/streamingVolume'
 // Transform types
 export type {
   OptionField,

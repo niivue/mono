@@ -1202,6 +1202,25 @@ function applyZoom() {
   activeCv?.refocus()
 }
 
+// Reflect zoom changes from ANY source (slider drag, mouse wheel, programmatic
+// nv.scaleMultiplier / nv.pan2Dxyzmm) back into the slider + label WITHOUT
+// re-driving applyZoom (which would feed back). Reads the value applyZoom pushes
+// for the active layout: scaleMultiplier in the render view, pan2Dxyzmm[3] in
+// multiplanar. Setter-based changes emit 'change' (wired in main); the wheel
+// handler mutates the model directly with no event, so the HUD poll calls this too.
+function syncZoomControl() {
+  if (!nv) return
+  const inRender = Number(els.layout.value) === SLICE_TYPE.RENDER
+  const zoom = inRender ? nv.scaleMultiplier : nv.pan2Dxyzmm[3] || 1
+  const rounded = Math.round(zoom * 10) / 10
+  if (Number(els.zoom.value) === rounded) return
+  // Assigning input.value does NOT fire 'input'/'change', so no applyZoom loop.
+  els.zoom.value = String(rounded)
+  els.zoomVal.textContent = `${rounded.toFixed(1)}x`
+  // The focus radius (radius:'auto') tracks zoom, so re-plan (debounced).
+  activeCv?.refocus()
+}
+
 // Show or hide every block visualization together, gated on the "blocks" toggle:
 // the per-chunk outline boxes, the zoom focus-region box, and the loaded-chunks
 // indicator strip (which sits over a corner tile). All are cleared when the
@@ -1374,6 +1393,10 @@ function startHudPolling() {
         stats.completed = new Set()
       }
     }
+    // Mouse-wheel zoom mutates the model directly (no 'change' event), so
+    // reconcile the slider from the live zoom here; setter-based zoom is caught
+    // instantly by the 'change' listener in main.
+    syncZoomControl()
     renderHud()
     syncExplode()
   }, 120)
@@ -1513,6 +1536,15 @@ async function main() {
 
   // Crosshair-follow (finest bricks track the crosshair) is owned by the core
   // NVChunkedVolume — no demo-side locationChange wiring needed.
+
+  // Keep the zoom slider in sync with zoom from any source. The setter-based
+  // paths (the slider itself, programmatic nv.scaleMultiplier / nv.pan2Dxyzmm)
+  // emit 'change'; mouse-wheel zoom mutates the model directly (no event), so
+  // startHudPolling also reconciles via syncZoomControl.
+  nv.addEventListener('change', (e) => {
+    const prop = e.detail?.property
+    if (prop === 'scaleMultiplier' || prop === 'pan2Dxyzmm') syncZoomControl()
+  })
 
   await reloadVolume({ reloadSource: true })
   startHudPolling()

@@ -25,6 +25,9 @@
       <label for="checkCutaway">Cutaway</label>
       <input type="checkbox" id="checkCutaway">
       &nbsp;
+      <label for="xrayCheck">XRay</label>
+      <input type="checkbox" id="xrayCheck" checked/>
+      &nbsp;
       <label for="colorSelect">Clip color</label>
       <select id="colorSelect">
         <option>transparent</option>
@@ -40,6 +43,9 @@
 
       checkCutaway.onclick = function () {
         nv1.isClipPlaneCutaway = this.checked
+      }
+      xrayCheck.onclick = function () {
+        nv1.meshXRay = +this.checked * 0.1
       }
       colorSelect.onchange = function () {
         const index = this.selectedIndex
@@ -108,7 +114,7 @@
         }
         nv1.setClipPlanes(planes)
       }
-      const nv1 = new NiiVue()
+      const nv1 = new NiiVue({ meshXRay: 0.1 })
       await nv1.attachToCanvas(gl1)
       nv1.sliceType = 4
       await nv1.loadVolumes([{ url: "/volumes/mni152.nii.gz" }])

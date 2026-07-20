@@ -17,11 +17,15 @@ const backend =
     ? 'webgpu'
     : 'webgl2'
 
-// The coarse whole-volume floor is OFF by default: rendering a coarser pyramid
-// level behind the fine chunks shows blocky "previous-level" detail in regions
-// the fine chunks have not reached, which reads as an artifact. Pass ?floor to
-// opt back in (A/B: see coarse backdrop vs. fine-only with empty gaps).
-const NO_FLOOR = !new URLSearchParams(location.search).has('floor')
+// The coarse whole-volume floor is ON by default: a single coarse pyramid level
+// rendered behind the octree so regions whose fine bricks have not streamed yet
+// (or whose mean-downsampled coarse bricks fall below the transparency threshold)
+// show continuous low-res detail instead of blank/see-through gaps. Pass ?nofloor
+// to disable (A/B: fine-only vs. coarse backdrop). NOTE: any residual Z-periodic
+// "venetian" striping on some OME-Zarr stores (e.g. pig-heart) is a downsampling
+// artifact baked into that dataset's coarse pyramid levels, not the floor -- the
+// finest level renders clean.
+const NO_FLOOR = new URLSearchParams(location.search).has('nofloor')
 // Bumped each (re)load so a superseded load's late async work (e.g. the coarse
 // floor build) is discarded instead of stomping a newer scene.
 let reloadToken = 0
@@ -1476,8 +1480,9 @@ async function reloadVolume(options = {}) {
     // loadVolumes resets the camera/zoom and drops any prior boxes; reapply the
     // current zoom, focus ROI, and block outlines for the freshly loaded plan.
     applyZoom()
-    // The core octree already renders coarse away from the focus, so the coarse
-    // whole-volume floor is off by default; ?floor opts it back in for A/B.
+    // Back the octree with a coarse whole-volume floor (on by default) so not-yet-
+    // streamed or under-opaque coarse far-field regions show continuous coarse
+    // detail instead of blank/see-through gaps; ?nofloor disables it for A/B.
     if (activeSource.kind === 'omezarr' && !NO_FLOOR) {
       const floor = await buildCoarseFloorVolume(activeSource)
       if (token !== reloadToken) return

@@ -60,4 +60,25 @@ describe('createStreamingNVImage', () => {
     expect(vol.colormap).toBe('gray')
     expect(vol.opacity).toBe(1)
   })
+
+  test('two default-option volumes get distinct ids but the shared name', () => {
+    const spec = {
+      shape: [2, 2, 2] as [number, number, number],
+      spacing: [1, 1, 1] as [number, number, number],
+      datatypeCode: NiiDataType.DT_UINT8,
+      calMin: 0,
+      calMax: 255,
+    }
+    const a = createStreamingNVImage({ ...spec })
+    const b = createStreamingNVImage({ ...spec })
+    // Human-readable name stays shared; ids are unique so a plan-swap that
+    // resolves find-first by id-or-name routes to exactly one volume.
+    expect(a.name).toBe('streamed volume')
+    expect(b.name).toBe('streamed volume')
+    expect(a.id).not.toBe(b.id)
+    // A find-first lookup by id (mirroring host.swapVolumeChunkPlan) hits only b.
+    const vols = [a, b]
+    const found = vols.find((v) => v.id === b.id || v.name === b.id)
+    expect(found).toBe(b)
+  })
 })

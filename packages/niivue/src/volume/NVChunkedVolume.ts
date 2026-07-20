@@ -223,9 +223,15 @@ export function createSourceChunkLoader(
       )
       .finally(() => release())
     inflight.set(key, next)
-    next.finally(() => {
+    // Drop the in-flight entry on settle. Attach cleanup as BOTH handlers of a
+    // .then so the derived promise resolves even when `next` rejects (a brick
+    // that exhausts retries) — a bare `.finally` here would re-raise into an
+    // unobserved promise. Callers still receive the original `next` (and its
+    // rejection); this derived promise is intentionally not returned.
+    const cleanup = (): void => {
       if (inflight.get(key) === next) inflight.delete(key)
-    })
+    }
+    next.then(cleanup, cleanup)
     return next
   }
 }
@@ -253,6 +259,7 @@ export class NVChunkedVolume {
   private plan: ChunkPlan
   private disposed = false
   private refocusHandle: ReturnType<typeof setTimeout> | null = null
+  private swapChain: Promise<void> = Promise.resolve()
 
   constructor(
     host: NiiVueGPU,
@@ -304,9 +311,13 @@ export class NVChunkedVolume {
     })
   }
 
-  /** Load the streamed volume and (for crosshair focus) start following it. */
+  /**
+   * ADD the streamed volume to the scene (does NOT replace existing volumes)
+   * and — for crosshair focus — start following the crosshair. The caller owns
+   * removing a previously streamed volume before reloading.
+   */
   async init(): Promise<void> {
-    await this.host.loadVolumes([this.volume])
+    await this.host.addVolume(this.volume)
     if (this.followCrosshair) {
       this.host.addEventListener('locationChange', this.onLocationChange)
     }
@@ -418,14 +429,26 @@ export class NVChunkedVolume {
 
   private async doRefocus(): Promise<void> {
     if (this.disposed) return
-    this.plan = this.buildPlan()
-    this.volume.chunkPlan = this.plan
-    try {
-      await this.host.swapVolumeChunkPlan(this.id, this.plan)
-    } catch (err) {
-      log.warn('NVChunkedVolume: refocus swap failed', err)
-    }
-    this.applyRenderCentering()
+    // Build the plan for the CURRENT focus now, but commit it (this.plan /
+    // volume.chunkPlan) and apply the host swap inside a single serialized queue.
+    // Two concurrent refocuses could otherwise complete out of order and leave
+    // the GPU brick set on an older focus while the handle/HUD report the newer
+    // one; chaining guarantees swaps apply in call order, newest last.
+    const plan = this.buildPlan()
+    const applied = this.swapChain.then(async () => {
+      if (this.disposed) return
+      this.plan = plan
+      this.volume.chunkPlan = plan
+      try {
+        await this.host.swapVolumeChunkPlan(this.id, plan)
+      } catch (err) {
+        log.warn('NVChunkedVolume: refocus swap failed', err)
+      }
+      this.applyRenderCentering()
+    })
+    // Keep the shared chain resolved so a later throw cannot break the queue.
+    this.swapChain = applied.catch(() => {})
+    await applied
   }
 
   private applyRenderCentering(): void {

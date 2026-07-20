@@ -17,7 +17,11 @@ export interface StreamingVolumeSpec {
   calMax: number
   /** Display name (defaults to `id`, then `'streamed volume'`). */
   name?: string
-  /** Stable id (defaults to `name`). Use a distinct value per streamed volume. */
+  /**
+   * Stable id used to target plan swaps. Defaults to a fresh unique id so two
+   * volumes built without an explicit id never collide on the shared
+   * `'streamed volume'` name (host plan-swap lookup is id-or-name find-first).
+   */
   id?: string
   /** Optional source URL, purely informational. */
   url?: string
@@ -44,6 +48,10 @@ export interface StreamingVolumeSpec {
 export function createStreamingNVImage(spec: StreamingVolumeSpec): NVImage {
   const { shape, spacing, datatypeCode } = spec
   const name = spec.name ?? spec.id ?? 'streamed volume'
+  // Default to a unique id, not the shared human-readable name: the host's plan
+  // swap resolves a volume by id-or-name find-first, so two default-name volumes
+  // sharing the id 'streamed volume' would route one handle's swap onto the other.
+  const id = spec.id ?? crypto.randomUUID()
   // Axis-aligned RAS affine: diag(spacing) with the origin at voxel [0,0,0].
   const affine = [
     spacing[0],
@@ -75,7 +83,7 @@ export function createStreamingNVImage(spec: StreamingVolumeSpec): NVImage {
 
   const volume: NVImage = {
     name,
-    id: spec.id ?? name,
+    id,
     url: spec.url,
     hdr,
     originalAffine: hdr.affine.map((row) => [...row]),

@@ -1,15 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
-import type { VolumeChunkSourceRequest } from '@/NVTypes'
+import type NiiVueGPU from '@/NVControlBase'
+import type { NVImage, VolumeChunkSourceRequest } from '@/NVTypes'
 import type {
   ChunkedVolumeFetch,
   ChunkedVolumeSource,
 } from './ChunkedVolumeSource'
-import type { Vec3i, VolumeChunkDesc } from './chunking'
+import type { ChunkPlan, Vec3f, Vec3i, VolumeChunkDesc } from './chunking'
 import {
   createSourceChunkLoader,
   focusCenterBiased,
   mmToVolumeFraction,
+  NVChunkedVolume,
   planForFocus,
 } from './NVChunkedVolume'
 
@@ -249,5 +251,107 @@ describe('createSourceChunkLoader', () => {
     const out = await load(req(0, [0, 0, 0], [1, 1, 1]))
     expect(attempts).toBe(2)
     expect((out as Uint8Array).byteLength).toBe(8)
+  })
+
+  test('a permanently failing fetch rejects the caller with no unhandled rejection', async () => {
+    const unhandled: unknown[] = []
+    const onUnhandled = (err: unknown): void => {
+      unhandled.push(err)
+    }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const source: ChunkedVolumeSource = {
+        datatypeCode: 4,
+        levels: [{ level: 0, shape: [8, 8, 8], spacing: [1, 1, 1] }],
+        // Non-transient: withRetry throws on the first attempt (retryAttempts 1).
+        fetchChunk: async () => {
+          throw new Error('permanent 404')
+        },
+      }
+      const load = createSourceChunkLoader(source, {
+        maxConcurrentLoads: 2,
+        retryAttempts: 1,
+      })
+      await expect(load(req(0, [0, 0, 0], [1, 1, 1]))).rejects.toThrow(
+        'permanent 404',
+      )
+      // The internal cleanup promise settles on a microtask; give it a turn.
+      await new Promise((r) => setTimeout(r, 0))
+      expect(unhandled).toHaveLength(0)
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+})
+
+// --- manager: id uniqueness + serialized plan swaps ------------------------
+
+const mgrSource: ChunkedVolumeSource = {
+  datatypeCode: 4,
+  levels: [
+    { level: 0, shape: [256, 256, 256], spacing: [1, 1, 1] },
+    { level: 1, shape: [128, 128, 128], spacing: [2, 2, 2] },
+    { level: 2, shape: [64, 64, 64], spacing: [4, 4, 4] },
+  ],
+  fetchChunk: async () => new Uint8Array(),
+}
+
+/** Minimal host stub: only what the manager touches for a static-focus refocus. */
+function makeHost(
+  swap: (id: string, plan: ChunkPlan) => Promise<void>,
+): NiiVueGPU {
+  return {
+    swapVolumeChunkPlan: swap,
+  } as unknown as NiiVueGPU
+}
+
+interface Refocusable {
+  focusFrac: Vec3f
+  doRefocus(): Promise<void>
+}
+
+describe('NVChunkedVolume id + plan-swap routing', () => {
+  test('two default-option handles get distinct ids that route swaps correctly', () => {
+    const host = makeHost(async () => {})
+    const a = new NVChunkedVolume(host, mgrSource, { radius: 16 })
+    const b = new NVChunkedVolume(host, mgrSource, { radius: 16 })
+    expect(a.id).not.toBe(b.id)
+    // Mirror host.swapVolumeChunkPlan's find-first id-or-name lookup: b's id
+    // must not match a (whose name is the shared 'streamed volume').
+    const vols: NVImage[] = [a.volume, b.volume]
+    expect(vols.find((v) => v.id === b.id || v.name === b.id)).toBe(b.volume)
+    expect(vols.find((v) => v.id === a.id || v.name === a.id)).toBe(a.volume)
+  })
+})
+
+describe('NVChunkedVolume serialized refocus', () => {
+  test('a slow swap followed by a fast one leaves the newest plan applied', async () => {
+    const applied: ChunkPlan[] = []
+    let call = 0
+    // First swap resolves LATE, second resolves immediately. Recorded on
+    // RESOLUTION (when the GPU brick set actually updates), so an unserialized
+    // path would record newest-then-oldest and disagree with currentPlan.
+    const host = makeHost(
+      (_id, plan) =>
+        new Promise<void>((resolve) => {
+          const ms = call++ === 0 ? 30 : 0
+          setTimeout(() => {
+            applied.push(plan)
+            resolve()
+          }, ms)
+        }),
+    )
+    const mgr = new NVChunkedVolume(host, mgrSource, { radius: 16 })
+    const inner = mgr as unknown as Refocusable
+
+    inner.focusFrac = [0.2, 0.2, 0.2]
+    const p1 = inner.doRefocus()
+    inner.focusFrac = [0.8, 0.8, 0.8]
+    const p2 = inner.doRefocus()
+    await Promise.all([p1, p2])
+
+    expect(applied).toHaveLength(2)
+    // Newest plan applied last, and the handle/GPU agree.
+    expect(applied[applied.length - 1]).toBe(mgr.currentPlan)
   })
 })

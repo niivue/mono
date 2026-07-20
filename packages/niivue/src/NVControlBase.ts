@@ -3300,6 +3300,10 @@ export default class NiiVueGPU extends EventTarget {
    * making it fully resident. Returns an {@link NVChunkedVolume} handle
    * (`setFocus` / `setMaxDetail` / `setBudget` / `dispose`); with the default
    * `focus: 'crosshair'` it follows the crosshair automatically.
+   *
+   * ADDITIVE: the streamed volume is ADDED to the scene (via `addVolume`), not
+   * swapped for the current volumes. To reload/replace a streamed volume, the
+   * caller removes the previous one first.
    */
   async loadChunkedVolume(
     source: ChunkedVolumeSource,

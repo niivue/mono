@@ -98,6 +98,11 @@ const OMEZARR_STORES = {
   },
 }
 const STREAMING_CHUNK_EDGE = 256
+// Per-axis brick halo (in level voxels). 3D gradient/lighting samples one voxel
+// past each brick face; a 3-voxel halo keeps that reach inside resident data so
+// brick boundaries don't show grid-aligned gradient/lighting seams. Without it
+// loadChunkedVolume falls back to the core default [1,1,1] and the seams return.
+const STREAMING_CHUNK_HALO = [3, 3, 3]
 const ZARR_BYTE_CACHE_BYTES = 512 * 1024 * 1024
 
 // --- multi-LOD (crosshair-focused mixed-resolution) -------------------------
@@ -1196,10 +1201,15 @@ function applyZoom() {
   const zoom = Number(els.zoom.value) || 1
   els.zoomVal.textContent = `${zoom.toFixed(1)}x`
   nv.pan2Dxyzmm = [0, 0, 0, zoom] // 2D multiplanar: zoom about the centre
-  // Zoom the 3D render camera too (both layouts). The multi-LOD plan is already
-  // focus-bounded, so magnifying the render no longer risks leaving out-of-focus
-  // blocks unrequested — the finest bricks around the crosshair fill the view.
-  nv.scaleMultiplier = zoom
+  // Zoom the 3D render camera only where it is safe. The multi-LOD OME-Zarr plan
+  // (activeCv set) is focus-bounded, so magnifying the render keeps the finest
+  // bricks around the crosshair in view. The SYNTHETIC source (activeCv null)
+  // streams via the legacy frustum-culled single-level grid: magnifying the
+  // render camera pushes bricks out of the frustum so they are never requested
+  // and the volume renders mostly blank. Force scale 1 in the render view for
+  // that path; other layouts keep the zoom for both paths.
+  const inRender = Number(els.layout.value) === SLICE_TYPE.RENDER
+  nv.scaleMultiplier = inRender && !activeCv ? 1 : zoom
   applyBlocks()
   // Zoom/layout changes the focus radius (radius:'auto' reads nv zoom + sliceType),
   // so nudge the core handle to re-plan and swap.
@@ -1216,7 +1226,16 @@ function syncZoomControl() {
   if (!nv) return
   const inRender = Number(els.layout.value) === SLICE_TYPE.RENDER
   const zoom = inRender ? nv.scaleMultiplier : nv.pan2Dxyzmm[3] || 1
-  const rounded = Math.round(zoom * 10) / 10
+  // Live zoom (wheel/programmatic) can reach beyond the slider's [min,max]; clamp
+  // to the slider range (read from the element) before comparing/assigning, else
+  // an out-of-range value never equals els.zoom.value and every poll re-fires
+  // activeCv.refocus(), perpetually resetting the refocus debounce (octree freeze).
+  const sliderMin = Number(els.zoom.min)
+  const sliderMax = Number(els.zoom.max)
+  const rounded = Math.min(
+    sliderMax,
+    Math.max(sliderMin, Math.round(zoom * 10) / 10),
+  )
   if (Number(els.zoom.value) === rounded) return
   // Assigning input.value does NOT fire 'input'/'change', so no applyZoom loop.
   els.zoom.value = String(rounded)
@@ -1283,30 +1302,52 @@ function applyExplode() {
 // formerly every render frame) forced a DOM reflow that janked rotation; instead
 // build once when the chunk layout changes, then just toggle the 'hit' class.
 let stripSpans = []
+let stripCellKeys = []
 let stripKey = ''
+
+// One strip cell per viewer BRICK, keyed by the SAME value `stats.completed`
+// records so a cell lights when its brick completes. The synthetic legacy path
+// records integer chunk indices; the OME-Zarr multi-LOD path records
+// `level|texOrigin|texDims` content keys (matching the core chunk loader), so
+// derive the cell keys from the current plan's brick descriptors. Hard-capped at
+// 4096: for a thin-Z finest OME-Zarr level the native chunk count can be 100k+,
+// and spreading that many <span>s into replaceChildren blows the call stack.
+function chunkStripKeys(source, plan) {
+  const chunks = plan?.chunks ?? []
+  const capped = chunks.slice(0, 4096)
+  if (source.kind === 'omezarr') {
+    return capped.map(
+      (c) =>
+        `${c.sourceLevel ?? 0}|${c.texOrigin.join(',')}|${c.texDims.join(',')}`,
+    )
+  }
+  return capped.map((_c, i) => i)
+}
 
 function renderChunkStrip() {
   const source = activeSource
   if (!source) return
   const plan = chunkPlan
   const gridDims = plan?.gridDims ?? source.chunkGrid
-  // The strip visualizes viewer BRICKS. For OME-Zarr, source.chunkCount is the
-  // NATIVE zarr-chunk count (can be 100k+ for a thin-Z finest level), so fall
-  // back to the plan's brick count and hard-cap it — spreading 100k <span>s into
-  // replaceChildren blows the call stack.
-  const chunkCount = Math.min(plan?.chunks.length ?? 0, 4096)
+  const cellKeys = chunkStripKeys(source, plan)
   const columns = Math.min(16, Math.max(4, gridDims[0] * gridDims[1]))
-  const key = `${chunkCount}:${columns}`
-  if (key !== stripKey) {
+  // Rebuild only when the cell set changes. For OME-Zarr the plan swaps as the
+  // crosshair moves, so the brick keys (not just the count) can change; compare
+  // the key list, not just its length, so the strip tracks the live plan.
+  const key = `${cellKeys.length}:${columns}`
+  const changed =
+    key !== stripKey || cellKeys.some((k, i) => k !== stripCellKeys[i])
+  if (changed) {
     els.chunkStrip.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`
-    stripSpans = Array.from({ length: chunkCount }, () =>
+    stripSpans = Array.from({ length: cellKeys.length }, () =>
       document.createElement('span'),
     )
     els.chunkStrip.replaceChildren(...stripSpans)
+    stripCellKeys = cellKeys
     stripKey = key
   }
   for (let i = 0; i < stripSpans.length; i++) {
-    const hit = stats.completed.has(i)
+    const hit = stats.completed.has(stripCellKeys[i])
     const cls = hit ? 'hit' : ''
     if (stripSpans[i].className !== cls) stripSpans[i].className = cls
   }
@@ -1416,14 +1457,52 @@ function applyLayout() {
   renderHud()
 }
 
-async function reloadVolume(options = {}) {
-  if (!nv) return
-  // Capture a load token BEFORE any await. Every UI control fires reloadVolume
-  // unawaited, so rapid source/level/window/colormap/explode changes run
-  // concurrently; a stale load must bail after each await instead of stomping
-  // the newer scene (otherwise activeSource/chunkPlan and the displayed volume
-  // can end up describing whichever load happens to finish last).
+// Reloads are SERIALIZED through this single promise chain: each reload awaits
+// the previous one so their async scene mutations (add/remove the streamed
+// volume) never interleave. `nv.loadChunkedVolume` is ADDITIVE (it adds the
+// streamed NVImage rather than replacing the scene), so the demo owns removing
+// the volume it displaced — see runReload.
+let reloadChain = Promise.resolve()
+
+function reloadVolume(options = {}) {
+  if (!nv) return reloadChain
+  // Bump the token BEFORE queueing so an already-queued (not-yet-run) reload
+  // sees itself superseded and bails without mutating the scene. Every UI control
+  // fires reloadVolume unawaited; without both the chain AND the token, rapid
+  // source/level/window/colormap switching could leave the OLD source displayed
+  // with its handle disposed, or accumulate stale streamed volumes.
   const token = ++reloadToken
+  // A .catch keeps a single reload's failure from poisoning the chain for the
+  // reloads queued behind it (runReload already surfaces its own errors).
+  reloadChain = reloadChain
+    .then(() => runReload(token, options))
+    .catch((err) => console.error('reload failed:', err))
+  return reloadChain
+}
+
+// Remove specific streamed NVImages from the scene. loadChunkedVolume is additive
+// and there is no public single-volume controller removal, so drop them through
+// the model + one GL refresh. Walk high-to-low so earlier removals don't shift
+// the indices still pending.
+async function removeSceneVolumes(targets) {
+  if (!nv || targets.length === 0) return
+  const drop = new Set(targets)
+  const vols = nv.volumes
+  let removed = false
+  for (let i = vols.length - 1; i >= 0; i--) {
+    if (drop.has(vols[i])) {
+      nv.model.removeVolume(i)
+      removed = true
+    }
+  }
+  if (removed) await nv.updateGLVolume()
+}
+
+async function runReload(token, options) {
+  if (!nv) return
+  // Superseded while queued in the chain: a newer reload owns the scene, so do
+  // nothing (do not touch activeSource/activeCv/the volume list).
+  if (token !== reloadToken) return
   hideFallback()
   stats = freshStats()
   // The fresh volume starts un-exploded; syncExplode re-applies the slider's
@@ -1448,8 +1527,16 @@ async function reloadVolume(options = {}) {
       // It builds the streamed NVImage, the octree plan, the concurrency-bounded
       // per-level fetch dispatch, and follows the crosshair — all in core.
       const win = parseWindow(activeSource.defaultWindow)
+      // Stop crosshair-follow on the outgoing handle; its NVImage stays in the
+      // scene (captured as `stale`) until the new one is resident, so the render
+      // never blanks between reloads.
       activeCv?.dispose()
-      activeCv = await nv.loadChunkedVolume(
+      activeCv = null
+      const stale = nv.volumes.slice()
+      // The Level cap used for THIS load; re-read after the load to catch a
+      // dropdown change made while the load was in flight (see below).
+      const loadLevel = selectedLevelIndex(activeSource)
+      const cv = await nv.loadChunkedVolume(
         createZarrChunkedSource(activeSource),
         {
           id: activeSource.name,
@@ -1460,17 +1547,33 @@ async function reloadVolume(options = {}) {
           budgetBytes: MULTILOD_BUDGET_BYTES,
           maxBricks: MULTILOD_MAX_BRICKS,
           deviceLimit: STREAMING_CHUNK_EDGE,
-          minLevel: selectedLevelIndex(activeSource),
+          halo: STREAMING_CHUNK_HALO,
+          minLevel: loadLevel,
         },
       )
       if (token !== reloadToken) {
-        activeCv?.dispose()
-        activeCv = null
+        // Superseded mid-load: tear down the volume WE added so the scene never
+        // accumulates stale streamed volumes. `stale` is left for the newer
+        // reload (next in the chain) to reconcile.
+        cv.dispose()
+        await removeSceneVolumes([cv.volume])
         return
       }
+      activeCv = cv
+      // New streamed volume is resident; drop the one(s) it displaced.
+      await removeSceneVolumes(stale)
       chunkPlan = activeCv.currentPlan
+      // A Level change during the load could not reach the octree (the change
+      // handler no-ops while activeCv is null). Re-read the dropdown and apply
+      // the cap now so the octree can't diverge from what the control shows.
+      const nowLevel = selectedLevelIndex(activeSource)
+      if (nowLevel !== loadLevel) activeCv.setMaxDetail(nowLevel)
     } else {
       // Synthetic: single-shard streamed volume on the legacy grid path.
+      // loadVolumes REPLACES the scene, so it also clears any prior streamed
+      // volume (including an outgoing OME-Zarr one); dispose its handle first.
+      activeCv?.dispose()
+      activeCv = null
       chunkPlan = createChunkPlan(activeSource)
       await nv.loadVolumes([createStreamingVolume(activeSource)])
       if (token !== reloadToken) return

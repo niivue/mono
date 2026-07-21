@@ -26,8 +26,12 @@ export type UIKitBackendHandle =
       readonly colorFormat: GPUTextureFormat
       /** MSAA sample count of the open pass (1 = no multisampling). */
       readonly sampleCount: number
-      /** Depth-stencil attachment format of the open pass. */
-      readonly depthFormat: GPUTextureFormat
+      /**
+       * Depth-stencil attachment format of the open pass, or undefined when the
+       * pass has no depth attachment (e.g. the standalone slide viewer). An
+       * overlay pipeline must omit its depth-stencil state when this is undefined.
+       */
+      readonly depthFormat?: GPUTextureFormat
     }
 
 /** The drawable rectangle for this frame, in device pixels. */

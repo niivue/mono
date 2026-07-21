@@ -1,7 +1,7 @@
 import { mat4, vec3 } from 'gl-matrix'
 import { log } from '@/logger'
 import { SLICE_TYPE } from '@/NVConstants'
-import type NiiVueGPU from '@/NVControlBase'
+import type NiiVue from '@/NVControlBase'
 import type { NVImage, VolumeChunkSource } from '@/NVTypes'
 import type { ChunkedVolumeSource } from './ChunkedVolumeSource'
 import {
@@ -12,7 +12,7 @@ import {
 } from './chunking'
 import { createStreamingNVImage } from './streamingVolume'
 
-/** Options for {@link NiiVueGPU.loadChunkedVolume}. */
+/** Options for {@link NiiVue.loadChunkedVolume}. */
 export interface ChunkedVolumeOptions {
   /** Display window minimum (default 0). */
   calMin?: number
@@ -241,7 +241,7 @@ export function createSourceChunkLoader(
 
 /**
  * A crosshair-focused multi-resolution (multi-LOD) streamed volume. Built by
- * {@link NiiVueGPU.loadChunkedVolume}. Owns the octree plan, per-level fetch
+ * {@link NiiVue.loadChunkedVolume}. Owns the octree plan, per-level fetch
  * dispatch (bounded/retried/deduped), and — for `focus: 'crosshair'` — rebuilds
  * and swaps the plan in place as the crosshair moves, so the finest bricks track
  * where the user is looking while resident VRAM stays bounded by the budget.
@@ -249,7 +249,7 @@ export function createSourceChunkLoader(
 export class NVChunkedVolume {
   readonly volume: NVImage
 
-  private readonly host: NiiVueGPU
+  private readonly host: NiiVue
   private readonly source: ChunkedVolumeSource
   private readonly o: ResolvedOptions
   private readonly followCrosshair: boolean
@@ -263,7 +263,7 @@ export class NVChunkedVolume {
   private swapChain: Promise<void> = Promise.resolve()
 
   constructor(
-    host: NiiVueGPU,
+    host: NiiVue,
     source: ChunkedVolumeSource,
     options: ChunkedVolumeOptions = {},
   ) {
@@ -359,7 +359,7 @@ export class NVChunkedVolume {
   }
 
   /** Streaming residency counters (delegates to the controller). */
-  stats(): ReturnType<NiiVueGPU['chunkStreamStats']> {
+  stats(): ReturnType<NiiVue['chunkStreamStats']> {
     return this.host.chunkStreamStats()
   }
 
@@ -474,7 +474,7 @@ function clampLevel(levelIndex: number, source: ChunkedVolumeSource): number {
  * option), when set. `deviceLimit` defaults to this so planned bricks never
  * exceed what the renderer will upload.
  */
-function hostDeviceLimit(host: NiiVueGPU): number | undefined {
+function hostDeviceLimit(host: NiiVue): number | undefined {
   const limit = host.opts?.maxTextureDimension3D
   return typeof limit === 'number' && limit > 0 ? limit : undefined
 }

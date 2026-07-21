@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
-import type NiiVueGPU from '@/NVControlBase'
+import type NiiVue from '@/NVControlBase'
 import type { NVImage, VolumeChunkSourceRequest } from '@/NVTypes'
 import type {
   ChunkedVolumeFetch,
@@ -352,10 +352,10 @@ const mgrSource: ChunkedVolumeSource = {
 /** Minimal host stub: only what the manager touches for a static-focus refocus. */
 function makeHost(
   swap: (id: string, plan: ChunkPlan) => Promise<void>,
-): NiiVueGPU {
+): NiiVue {
   return {
     swapVolumeChunkPlan: swap,
-  } as unknown as NiiVueGPU
+  } as unknown as NiiVue
 }
 
 interface Refocusable {
@@ -378,11 +378,11 @@ describe('NVChunkedVolume id + plan-swap routing', () => {
 })
 
 describe('NVChunkedVolume deviceLimit default', () => {
-  const makeHostWithLimit = (maxTextureDimension3D: number): NiiVueGPU =>
+  const makeHostWithLimit = (maxTextureDimension3D: number): NiiVue =>
     ({
       opts: { maxTextureDimension3D },
       swapVolumeChunkPlan: async () => {},
-    }) as unknown as NiiVueGPU
+    }) as unknown as NiiVue
 
   test('defaults from the host maxTextureDimension3D option', () => {
     // Default cellEdge (128) would emit texDims up to 130 under the old

@@ -1,6 +1,11 @@
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { devImagesPlugin } from '@niivue/dev-images/vite-plugin'
 import { defineConfig } from 'vite'
 import dts from 'vite-plugin-dts'
+import { slideFixturesPlugin } from './vite-slide-fixtures'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 // On build: emit type declarations for the library. On serve (the demo dev
 // server): mount the shared dev-images plugin so the demos can load real volumes
@@ -15,7 +20,10 @@ export default defineConfig(({ command }) => ({
             tsconfigPath: './tsconfig.json',
           }),
         ]
-      : [devImagesPlugin()],
+      : [
+          devImagesPlugin(),
+          slideFixturesPlugin(resolve(here, '../niivue/public')),
+        ],
   build: {
     outDir: 'dist',
     emptyOutDir: true,

@@ -27,7 +27,8 @@
         <b>UIKit ruler / WSI viewer</b>
         <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide (3D)</a><a href="/slide-wsi.html">WSI</a></nav>
         <span>Drag to pan, wheel to zoom. Click two points to measure.</span>
-        <button id="fit">Fit</button>
+        <button id="fit" type="button">Fit</button>
+        <span>slide: <a href="?src=cptac">tissue</a> | <a href="?src=3dhistech">tissue-2</a> | <a href="?src=dzi">demo</a></span>
         <span><a href="?backend=webgl2">webgl2</a> | <a href="?backend=webgpu">webgpu</a></span>
         <span id="status">loading slide...</span>
       </header>
@@ -38,12 +39,18 @@
       import { DziSource, NVSlide, SlideRenderer, SlideRendererGPU } from '@niivue/niivue'
       import { loadDefaultFont, UIKitRulerOverlay } from './src/index.ts'
 
-      // A CORS-enabled Deep Zoom whole-slide. Swap this for your own DICOM-WSI /
-      // OME-Zarr manifest (NVSlide.fromManifestUrl) - if it carries PixelSpacing,
-      // the ruler reports millimetres; otherwise it reports base slide pixels.
+      // Real tissue via NiiVue's committed DICOM-WSI fixtures (served by the dev
+      // server with HTTP Range support), plus a CORS-enabled Deep Zoom fallback.
+      // A slide reports millimetres when it carries PixelSpacing, else base slide
+      // pixels (these fixtures have spacing [1,1], so they read in pixels).
       const DZI = 'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi'
+      const TISSUE = {
+        cptac: '/dicom-wsi/cptac-brca/manifest.json',
+        '3dhistech': '/dicom-wsi/3dhistech-1/manifest.json',
+      }
 
       const params = new URLSearchParams(location.search)
+      const src = params.get('src') || 'cptac'
       const wantGpu = params.get('backend') === 'webgpu' && 'gpu' in navigator
       const canvas = document.getElementById('gl')
       const status = document.getElementById('status')
@@ -110,7 +117,7 @@
       }
 
       const updateRuler = (screen) => {
-        let a = ruleA
+        const a = ruleA
         let b = ruleB
         if (a && !b && hoverCss) b = slide.screenToSlide(hoverCss[0], hoverCss[1], screen)
         if (!a || !b) { ruler.clear(); return }
@@ -139,9 +146,14 @@
       }
 
       // --- load + wire ----------------------------------------------------------
-      const slide = NVSlide.fromSource(await DziSource.fromUrl(DZI), {
-        maxCacheBytes: 96 * 1024 * 1024,
-      })
+      const opts = { maxCacheBytes: 96 * 1024 * 1024 }
+      // fromManifestUrl resolves relative tile paths against the manifest URL, so
+      // it needs an absolute URL (not a root-relative path).
+      const manifestUrl = new URL(TISSUE[src] ?? TISSUE.cptac, location.href).href
+      const slide =
+        src === 'dzi'
+          ? NVSlide.fromSource(await DziSource.fromUrl(DZI), opts)
+          : await NVSlide.fromManifestUrl(manifestUrl, opts)
       view = await createView()
       const font = await loadDefaultFont()
       const ruler = new UIKitRulerOverlay(font)

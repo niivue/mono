@@ -87,6 +87,12 @@ export {
   ppmRefForNucleus,
 } from './signal/processing'
 export type {
+  UIKitBackendHandle,
+  UIKitOverlayBounds,
+  UIKitOverlayFrame,
+  UIKitOverlayRenderer,
+} from './view/NVOverlayHook'
+export type {
   ChunkPlan,
   Vec3f,
   Vec3i,

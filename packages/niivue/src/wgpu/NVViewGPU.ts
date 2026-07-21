@@ -25,6 +25,7 @@ import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
 import * as NVMeasurement from '@/view/NVMeasurement'
+import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
@@ -159,6 +160,14 @@ export default class NVView {
   private _boundsColorTexture: GPUTexture | null = null
   private _depthTextureView: GPUTextureView | null = null
   private _msaaTextureView: GPUTextureView | null = null
+  /** Effective device pixel ratio from the last resize(); reported to overlays. */
+  private _dpr = 1
+  /**
+   * UIKit overlay hook, wired by the controller. Invoked at the end of every frame
+   * (after core's own line/text overlays, before pass.end()) so a privileged
+   * renderer can append draws to the same render pass. See view/NVOverlayHook.ts.
+   */
+  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
   // Reusable scratch buffer for mesh uniform writes — avoids per-call Float32Array allocation
   private _uniformScratch = new Float32Array(mesh.MESH_UNIFORM_SIZE / 4)
   // Narrow public getters for bench.ts to read current render-area size
@@ -1850,6 +1859,28 @@ export default class NVView {
         this.maxLines,
       )
     }
+    // UIKit overlay hook: last screen-space draw of the frame, appended to the
+    // still-open render pass before it ends.
+    if (this.overlayDraw) {
+      const stream = this.volumeRenderer.chunkStreamStats()
+      const settled =
+        !this.isBusy &&
+        !this.model._isDragging &&
+        !this.volumeRenderer.fadeActive &&
+        stream.pending === 0 &&
+        stream.inFlight === 0
+      this.overlayDraw({
+        handle: { backend: 'webgpu', device, pass },
+        bounds: {
+          x: this._boundsOffsetX,
+          y: this._boundsOffsetY,
+          width: canvasWidth,
+          height: canvasHeight,
+        },
+        dpr: this._dpr,
+        settled,
+      })
+    }
     pass.end()
     // Copy intermediate texture to canvas at bounds offset
     if (isSub) {
@@ -2204,6 +2235,7 @@ export default class NVView {
 
   /** Recompute bounds pixels, update textures, and resize renderers */
   private _resizeSelf(dpr: number): void {
+    this._dpr = dpr
     this._computeBoundsPixels()
     const bw = this._boundsWidth
     const bh = this._boundsHeight

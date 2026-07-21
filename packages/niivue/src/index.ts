@@ -187,6 +187,13 @@ export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
 export type { SlideVectorKind, SlideVectorShape } from './slide/slideVector'
 export { SlideVectorLayer } from './slide/slideVector'
 export { buildDrawingLut, drawingBitmapToRGBA } from './view/NVDrawingTexture'
+// UIKit overlay lifecycle hook — the seam @niivue/uikit widgets draw into
+export type {
+  UIKitBackendHandle,
+  UIKitOverlayBounds,
+  UIKitOverlayFrame,
+  UIKitOverlayRenderer,
+} from './view/NVOverlayHook'
 export type {
   ChunkPlan,
   MultiLodFocus,

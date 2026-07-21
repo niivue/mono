@@ -106,6 +106,10 @@ import {
   signalXValueAtFrac,
 } from '@/view/NVGraph'
 import type { LegendLayout } from '@/view/NVLegend'
+import type {
+  UIKitOverlayFrame,
+  UIKitOverlayRenderer,
+} from '@/view/NVOverlayHook'
 import {
   arePerfMarksEnabled,
   setNextActionTag,
@@ -169,6 +173,7 @@ type ViewBackend = {
     total: number
   }
   rebakeChunkedOverlays: () => void
+  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
 }
 
 export type { NiiVueOptions }
@@ -284,6 +289,8 @@ export default class NiiVue extends EventTarget {
   activeButton?: number
   model: NVModel
   view: ViewBackend | null = null
+  /** Privileged UIKit overlay renderers, drawn at the end of every frame. */
+  private _overlayRenderers: UIKitOverlayRenderer[] = []
   // Which settings saved documents include (transient; not serialized). Default
   // {} = omit any setting equal to its default. See `settingsSavePolicy`.
   private _settingsSavePolicy: SettingsSavePolicy = {}
@@ -3851,8 +3858,47 @@ export default class NiiVue extends EventTarget {
           this._flushDrawing()
         }
         this._sync()
-        if (this.view) this.view.render()
+        if (this.view) {
+          // Re-wire the UIKit overlay hook every controller-driven frame so it
+          // survives view recreation (backend switch, reinit). Self-driven frames
+          // (streaming/fade) keep the last-set value on the same view instance.
+          this.view.overlayDraw =
+            this._overlayRenderers.length > 0 ? this._dispatchOverlay : null
+          this.view.render()
+        }
       })
+    }
+  }
+
+  /**
+   * Register a privileged overlay renderer (e.g. a @niivue/uikit widget). It is
+   * called at the end of every frame, on whichever backend is live, to draw into
+   * the same frame in screen space. Returns an unsubscribe function; you may also
+   * call {@link unregisterOverlayRenderer}. See view/NVOverlayHook.ts.
+   */
+  registerOverlayRenderer(renderer: UIKitOverlayRenderer): () => void {
+    if (!this._overlayRenderers.includes(renderer)) {
+      this._overlayRenderers.push(renderer)
+    }
+    this.drawScene()
+    return () => this.unregisterOverlayRenderer(renderer)
+  }
+
+  /** Remove a previously registered overlay renderer. */
+  unregisterOverlayRenderer(renderer: UIKitOverlayRenderer): void {
+    const i = this._overlayRenderers.indexOf(renderer)
+    if (i < 0) return
+    this._overlayRenderers.splice(i, 1)
+    if (this._overlayRenderers.length === 0 && this.view) {
+      this.view.overlayDraw = null
+    }
+    this.drawScene()
+  }
+
+  /** Stable dispatcher fanned out to every registered overlay renderer. */
+  private _dispatchOverlay = (frame: UIKitOverlayFrame): void => {
+    for (const renderer of this._overlayRenderers) {
+      renderer.drawOverlay(frame)
     }
   }
 

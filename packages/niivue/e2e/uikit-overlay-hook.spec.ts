@@ -199,3 +199,50 @@ test('a UIKit rotated text overlay draws into the frame without throwing', async
   // The rotated MSDF glyphs actually rasterized visible pixels.
   expect(r.yellow).toBeGreaterThan(0)
 })
+
+test('a UIKit ruler draws its line, ticks and label without throwing', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    const { UIKitRulerOverlay, loadDefaultFont } = await import('/@fs/${uikitDist}')
+    const font = await loadDefaultFont()
+    // A slanted right-to-left ruler exercises the readability guard.
+    const overlay = new UIKitRulerOverlay(font, {
+      a: [260, 60], b: [40, 150], length: 12, units: 'mm', showTickNumbers: true,
+    })
+    let error = null
+    let drew = 0
+    let yellow = 0
+    let glError = 0
+    const orig = overlay.drawOverlay.bind(overlay)
+    nv.registerOverlayRenderer({
+      drawOverlay(frame) {
+        try {
+          orig(frame)
+          drew++
+          const gl = frame.handle.gl
+          glError = gl.getError()
+          const px = new Uint8Array(c.width * c.height * 4)
+          gl.readPixels(0, 0, c.width, c.height, gl.RGBA, gl.UNSIGNED_BYTE, px)
+          for (let i = 0; i < px.length; i += 4) {
+            if (px[i] > 128 && px[i + 1] > 128 && px[i + 2] < 128) yellow++
+          }
+        } catch (e) { error = String(e && e.message || e) }
+      },
+    })
+    nv.drawScene()
+    await nextFrame()
+    overlay.destroy()
+    return { drew, error, glError, yellow }
+  })()`)
+
+  expect(r.error).toBeNull()
+  expect(r.drew).toBeGreaterThan(0)
+  expect(r.glError).toBe(0)
+  // The ruler (arrowed line + ticks + rotated label) covers many yellow pixels -
+  // more than a bare label, confirming the line + text composite rendered.
+  expect(r.yellow).toBeGreaterThan(200)
+})

@@ -7,6 +7,9 @@
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'
 export { UIKitLineOverlay } from './lineOverlay'
+export type { RulerGeometry, RulerSpec, Vec2 } from './ruler'
+export { buildRuler } from './ruler'
+export { UIKitRulerOverlay } from './rulerOverlay'
 export { loadDefaultFont } from './text/defaultFont'
 export type {
   RawFontFile,

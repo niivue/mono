@@ -17,7 +17,7 @@ export function buildLine(
   endX: number,
   endY: number,
   thickness = 2,
-  color: number[] = [1, 1, 0, 1],
+  color: readonly number[] = [1, 1, 0, 1],
 ): LineData {
   const data = new Float32Array([
     startX,
@@ -66,7 +66,7 @@ function arrowBarbs(
   dirX: number,
   dirY: number,
   thickness: number,
-  color: number[],
+  color: readonly number[],
 ): LineData[] {
   const len = arrowLength(thickness)
   const bx = -dirX
@@ -100,7 +100,7 @@ export function buildTerminatedLine(
   endX: number,
   endY: number,
   thickness = 2,
-  color: number[] = [1, 1, 0, 1],
+  color: readonly number[] = [1, 1, 0, 1],
   terminators: LineTerminators = {},
 ): LineData[] {
   const { start = LineTerminator.NONE, end = LineTerminator.NONE } = terminators

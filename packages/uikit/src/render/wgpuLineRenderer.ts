@@ -24,9 +24,9 @@ export class WgpuLineRenderer {
     device: GPUDevice,
     colorFormat: GPUTextureFormat,
     sampleCount: number,
-    depthFormat: GPUTextureFormat,
+    depthFormat: GPUTextureFormat | undefined,
   ): void {
-    const key = `${colorFormat}|${sampleCount}|${depthFormat}`
+    const key = `${colorFormat}|${sampleCount}|${depthFormat ?? 'none'}`
     if (this.device === device && this.pipeline && this.key === key) return
     if (this.device && this.device !== device) this.destroy()
     this.device = device
@@ -72,11 +72,17 @@ export class WgpuLineRenderer {
           },
         ],
       },
-      depthStencil: {
-        depthWriteEnabled: false,
-        depthCompare: 'always',
-        format: depthFormat,
-      },
+      // Only declare depth-stencil when the target pass actually has a depth
+      // attachment (the main NiiVue view does; the slide viewer does not).
+      ...(depthFormat
+        ? {
+            depthStencil: {
+              depthWriteEnabled: false,
+              depthCompare: 'always' as const,
+              format: depthFormat,
+            },
+          }
+        : {}),
       primitive: { topology: 'triangle-strip' },
     })
     // Bind group depends on the storage buffer; force a rebuild.
@@ -108,7 +114,7 @@ export class WgpuLineRenderer {
     pass: GPURenderPassEncoder,
     colorFormat: GPUTextureFormat,
     sampleCount: number,
-    depthFormat: GPUTextureFormat,
+    depthFormat: GPUTextureFormat | undefined,
     lines: LineData[],
     width: number,
     height: number,

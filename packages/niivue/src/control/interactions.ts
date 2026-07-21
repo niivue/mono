@@ -17,7 +17,7 @@ import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
 import { DRAG_MODE, sliceTypeDim } from '@/NVConstants'
-import type NiiVueGPU from '@/NVControl'
+import type NiiVue from '@/NVControl'
 import type {
   NVImage,
   PolygonWithHoles,
@@ -45,7 +45,7 @@ import {
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
 import { getImageDataRAS } from '@/volume/utils'
 
-function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
+function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.isDragging = true
   ctrl.activeButton = evt.button
   ctrl.lastPointerX = evt.clientX
@@ -54,7 +54,7 @@ function startAnnotationDrag(ctrl: NiiVueGPU, evt: PointerEvent): void {
 }
 
 function clientToCanvasPixel(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   clientX: number,
   clientY: number,
 ): [number, number] {
@@ -76,7 +76,7 @@ function clientToCanvasPixel(
  *  Uses the post-viewport pixel rect so hit testing tracks the same transform
  *  the renderer applies — otherwise pan/zoom would route events to the wrong tile. */
 function clientToBoundsPixel(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   clientX: number,
   clientY: number,
 ): [number, number] | null {
@@ -107,7 +107,7 @@ function clientToBoundsPixel(
   return [boundsX, boundsY]
 }
 
-function handleGraphHitTest(ctrl: NiiVueGPU, x: number, y: number): boolean {
+function handleGraphHitTest(ctrl: NiiVue, x: number, y: number): boolean {
   const layout = ctrl.view?.graphLayout as GraphLayout | null
   const hit = graphHitTest(x, y, layout)
   if (!hit) return false
@@ -177,7 +177,7 @@ function legendHitTest(
   return null
 }
 
-function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
+function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
   setNextActionTag('keydown')
@@ -314,7 +314,7 @@ interface ExplodedDrawPick {
 // a Float32Array in RAS order. During a 3D draw/vector stroke it would run on
 // every pointermove, so cache the result for the stroke (keyed by volume
 // identity); the cache is cleared on pointerup/pointercancel.
-function strokeSample(ctrl: NiiVueGPU, vol: NVImage): Float32Array | null {
+function strokeSample(ctrl: NiiVue, vol: NVImage): Float32Array | null {
   const cache = ctrl._draw3DSampleCache
   if (cache && cache.vol === vol) return cache.data
   const data = getImageDataRAS(vol)
@@ -327,7 +327,7 @@ function strokeSample(ctrl: NiiVueGPU, vol: NVImage): Float32Array | null {
 // exploded-block pick (draw, wand, vector face). Null if there is no render-tile
 // hit for this volume.
 function explodedPickRay(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   vol: NVImage,
 ): { origin: [number, number, number]; dir: [number, number, number] } | null {
   const hit = ctrl.activeTileHit
@@ -372,10 +372,7 @@ function explodedPickRay(
 // ray (explodedPickRay), CPU-ray-casts the exploded chunk AABBs restricted to the
 // clip-visible set, and returns the entered voxel plus a visible-tissue predicate.
 // Null if the ray misses every block or there is no drawing volume.
-function pickExplodedDraw(
-  ctrl: NiiVueGPU,
-  vol: NVImage,
-): ExplodedDrawPick | null {
+function pickExplodedDraw(ctrl: NiiVue, vol: NVImage): ExplodedDrawPick | null {
   const plan = vol.chunkPlan
   const ray = explodedPickRay(ctrl, vol)
   if (!plan || !ray) return null
@@ -431,7 +428,7 @@ function pickExplodedDraw(
 }
 
 // Snapshot the drawing bitmap for undo once per stroke (matches the 2D path).
-function snapshotDrawUndo(ctrl: NiiVueGPU, drawingVol: NVImage): void {
+function snapshotDrawUndo(ctrl: NiiVue, drawingVol: NVImage): void {
   const undoResult = addUndoBitmap({
     drawBitmap: getDrawingBitmap(drawingVol),
     drawUndoBitmaps: ctrl.drawUndoBitmaps,
@@ -451,7 +448,7 @@ function snapshotDrawUndo(ctrl: NiiVueGPU, drawingVol: NVImage): void {
 // Refreshes via the incremental drawing flush; returns the painted voxel (null
 // if the ray missed).
 function draw3DOnExplodedBlock(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   vol: NVImage,
   isStrokeStart: boolean,
 ): [number, number, number] | null {
@@ -500,7 +497,7 @@ function draw3DOnExplodedBlock(
 // region-grow at the picked voxel, filling the connected visible-tissue blob
 // (6-connected, bounded by the same threshold the pick uses) with the pen value.
 // One undo step; refreshes only the touched region. Returns true if it ran.
-function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
+function floodFill3DOnExplodedBlock(ctrl: NiiVue, vol: NVImage): boolean {
   const pick = pickExplodedDraw(ctrl, vol)
   if (!pick) return false
   const { voxel, drawingVol, keep } = pick
@@ -548,7 +545,7 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
 // window, converted to the raw sample scale. One undo step; refreshes only the
 // touched region. Returns true if it ran (there was data + a drawing volume).
 function magicWandFill(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   vol: NVImage,
   seed: [number, number, number],
   // When given, confine the grow to this slice axis at the seed's index (2D
@@ -609,7 +606,7 @@ function magicWandFill(
 // Magic wand seeded by a 3D exploded-block right-click: pick the block voxel the
 // ray hits, then grow the intensity-similar region from it. Returns true if a
 // block was hit.
-function magicWand3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
+function magicWand3DOnExplodedBlock(ctrl: NiiVue, vol: NVImage): boolean {
   const pick = pickExplodedDraw(ctrl, vol)
   if (!pick) return false
   return magicWandFill(ctrl, vol, pick.voxel)
@@ -621,10 +618,7 @@ function magicWand3DOnExplodedBlock(ctrl: NiiVueGPU, vol: NVImage): boolean {
 // SVG is a flat axis-aligned polygon on one block face (not a path following the
 // tissue surface across blocks/depth). Adjusting the face to the clip plane is a
 // tracked follow-up.
-function pickBlockFace(
-  ctrl: NiiVueGPU,
-  vol: NVImage,
-): ExplodedBlockFace | null {
+function pickBlockFace(ctrl: NiiVue, vol: NVImage): ExplodedBlockFace | null {
   const plan = vol.chunkPlan
   const ray = explodedPickRay(ctrl, vol)
   if (!plan || !ray) return null
@@ -676,7 +670,7 @@ function pickBlockFace(
 // one can be on). pickClipPlaneBlockFace picks the nearest cut the ray hits across
 // them. Empty when no clip is active or every active plane is oblique (the
 // axis-aligned annotation model can't hold an oblique plane yet).
-function clipDrawPlanesMM(ctrl: NiiVueGPU): ClipDrawPlane[] {
+function clipDrawPlanesMM(ctrl: NiiVue): ClipDrawPlane[] {
   const cps = ctrl.model.clipPlanes
   const tex2mm = ctrl.model.tex2mm
   if (!cps || !tex2mm) return []
@@ -693,7 +687,7 @@ function clipDrawPlanesMM(ctrl: NiiVueGPU): ClipDrawPlane[] {
 // render (both backends) with the block's exploded mm AABB.
 const PICKED_BLOCK_COLOR = [1, 1, 0, 1]
 function setPickedBlockHighlight(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   vol: NVImage,
   chunkIndex: number,
 ): void {
@@ -715,7 +709,7 @@ function setPickedBlockHighlight(
 // editing is inert. This keeps 2D slices and 3D exploded blocks resolving the
 // conflict the same way (the 2D raster intercept already preceded the annotation
 // one, while the 3D vector intercept preceded the raster one).
-function rasterDrawWins(ctrl: NiiVueGPU): boolean {
+function rasterDrawWins(ctrl: NiiVue): boolean {
   return ctrl.model.draw.isEnabled && !!ctrl.model.drawingVolume
 }
 
@@ -723,8 +717,8 @@ function rasterDrawWins(ctrl: NiiVueGPU): boolean {
 // is actually ambiguous rather than from the `isEnabled` setters — a caller
 // legitimately passes through a both-on state while switching tools, so setter-
 // time validation of this two-field invariant would cry wolf.
-const warnedBothEditModes = new WeakSet<NiiVueGPU>()
-function warnIfBothEditModes(ctrl: NiiVueGPU): void {
+const warnedBothEditModes = new WeakSet<NiiVue>()
+function warnIfBothEditModes(ctrl: NiiVue): void {
   if (!ctrl.model.annotation.isEnabled || !rasterDrawWins(ctrl)) return
   if (warnedBothEditModes.has(ctrl)) return
   warnedBothEditModes.add(ctrl)
@@ -742,7 +736,7 @@ function warnIfBothEditModes(ctrl: NiiVueGPU): void {
 // setter calls `drawScene()` on the true->false edge. It is deliberately last so
 // that a throw from the renderer cannot skip any of the resets above it, and the
 // pointerup `finally` releases pointer capture BEFORE calling this.
-function resetDragState(ctrl: NiiVueGPU): void {
+function resetDragState(ctrl: NiiVue): void {
   // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
@@ -778,7 +772,7 @@ function resetDragState(ctrl: NiiVueGPU): void {
 // onto it, and create the annotation. It renders explode-aware (tracks its
 // block) and exports via annotationsToSVG. Points are un-exploded mm, so the
 // stored annotation sits at the block's true position.
-function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
+function finish3DAnnotationStroke(ctrl: NiiVue): void {
   const pts = ctrl._annotation3DMMPath
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
@@ -852,7 +846,7 @@ function finish3DAnnotationStroke(ctrl: NiiVueGPU): void {
   ctrl.drawScene()
 }
 
-export function initInteraction(ctrl: NiiVueGPU): void {
+export function initInteraction(ctrl: NiiVue): void {
   // Prevent browser default touch gestures so pointer events fire instead
   if (ctrl.canvas) ctrl.canvas.style.touchAction = 'none'
   // Store bound handlers for cleanup
@@ -2116,7 +2110,7 @@ export function initInteraction(ctrl: NiiVueGPU): void {
   ctrl.canvas?.addEventListener('dblclick', ctrl._eventListeners.dblclick)
 }
 
-export function removeInteractionListeners(ctrl: NiiVueGPU): void {
+export function removeInteractionListeners(ctrl: NiiVue): void {
   if (ctrl._eventListeners.contextmenu) {
     ctrl.canvas?.removeEventListener(
       'contextmenu',
@@ -2173,7 +2167,7 @@ export function removeInteractionListeners(ctrl: NiiVueGPU): void {
   }
 }
 
-export function setupDragAndDrop(ctrl: NiiVueGPU): void {
+export function setupDragAndDrop(ctrl: NiiVue): void {
   ctrl._eventListeners.dragover = (event: Event) => {
     const evt = event as DragEvent
     evt.preventDefault()
@@ -2226,7 +2220,7 @@ export function setupDragAndDrop(ctrl: NiiVueGPU): void {
   ctrl.canvas?.addEventListener('drop', ctrl._eventListeners.drop)
 }
 
-export function setupResizeHandler(ctrl: NiiVueGPU): void {
+export function setupResizeHandler(ctrl: NiiVue): void {
   if (ctrl.resizeObserver) {
     ctrl.resizeObserver.disconnect()
   }
@@ -2280,7 +2274,7 @@ export function setupResizeHandler(ctrl: NiiVueGPU): void {
 }
 
 export function hitTest(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   x: number,
   y: number,
 ): ViewHitTest | null {

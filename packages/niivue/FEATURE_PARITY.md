@@ -18,7 +18,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Constructor with options | ✅ | `new NiiVueGPU(options)` |
+| Constructor with options | ✅ | `new NiiVue(options)` |
 | `attachTo(id)` / `attachToCanvas(canvas)` | ✅ | |
 | WebGPU→WebGL2 init fallback + graphics-unavailable overlay | ✅ | `control/viewBoth.ts` retries WebGL2 when WebGPU `init()` throws (e.g. no GPU adapter); on all-backends-fail `control/canvasMessage.ts` overlays a DOM message with fixes (hardware accel / `#enable-unsafe-swiftshader`). Declined for a shared canvas |
 | `cleanup()` | ✅ | Via `removeInteractionListeners` + resource cleanup |

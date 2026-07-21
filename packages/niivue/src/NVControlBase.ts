@@ -115,12 +115,17 @@ import {
 import type { SliceTile } from '@/view/NVSliceLayout'
 import { validateCustomLayout } from '@/view/NVSliceLayout'
 import type { ExplodedBlockFace } from '@/volume/ChunkExplode'
+import type { ChunkedVolumeSource } from '@/volume/ChunkedVolumeSource'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
 import type { ChunkPlan } from '@/volume/chunking'
 import {
   computeModulationData,
   computeModulationWeights,
 } from '@/volume/modulation'
+import {
+  type ChunkedVolumeOptions,
+  NVChunkedVolume,
+} from '@/volume/NVChunkedVolume'
 import * as NVVolume from '@/volume/NVVolume'
 import * as NVTensorProcessing from '@/volume/TensorProcessing'
 import type {
@@ -216,7 +221,7 @@ type EventHandler = ((e: Event) => void) | ((e: Event) => Promise<void>)
 class NiiVuePerf {
   private _frameUnsub: (() => void) | null = null
 
-  constructor(private readonly _controller: NiiVueGPU) {}
+  constructor(private readonly _controller: NiiVue) {}
 
   get enabled(): boolean {
     return arePerfMarksEnabled()
@@ -254,7 +259,7 @@ function sameRange(
   return a[0] === b[0] && a[1] === b[1]
 }
 
-export default class NiiVueGPU extends EventTarget {
+export default class NiiVue extends EventTarget {
   activeClipPlaneIndex: number
   currentClipPlaneIndex: number
   canvas: HTMLCanvasElement | null = null
@@ -387,7 +392,7 @@ export default class NiiVueGPU extends EventTarget {
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
   // Sync/broadcast state
-  private _syncTargets: NiiVueGPU[] = []
+  private _syncTargets: NiiVue[] = []
   private _syncOpts: SyncOpts = {}
   private _syncDirty = false
   private _rafId: number | null = null
@@ -1617,13 +1622,13 @@ export default class NiiVueGPU extends EventTarget {
     }
     if (this.opts.backend === 'webgpu' && !navigator.gpu) {
       throw new Error(
-        'This niivuegpu WebGPU-only distribution requires browser WebGPU support.',
+        'This niivue WebGPU-only distribution requires browser WebGPU support.',
       )
     }
     if (this._distributionBackend === 'webgpu') {
       if (this.opts.backend === 'webgl2') {
         throw new Error(
-          "This niivuegpu distribution includes only WebGPU. Requested backend 'webgl2' is unavailable.",
+          "This niivue distribution includes only WebGPU. Requested backend 'webgl2' is unavailable.",
         )
       }
       this.opts.backend = 'webgpu'
@@ -1631,7 +1636,7 @@ export default class NiiVueGPU extends EventTarget {
     }
     if (this.opts.backend === 'webgpu') {
       throw new Error(
-        "This niivuegpu distribution includes only WebGL2. Requested backend 'webgpu' is unavailable.",
+        "This niivue distribution includes only WebGL2. Requested backend 'webgpu' is unavailable.",
       )
     }
     this.opts.backend = 'webgl2'
@@ -3287,6 +3292,29 @@ export default class NiiVueGPU extends EventTarget {
   }
 
   /**
+   * Load a multi-resolution (pyramid) volume from a pluggable
+   * {@link ChunkedVolumeSource} and render it with crosshair-focused level of
+   * detail: the finest bricks stay around the crosshair while distant regions
+   * render coarser, all under a brick/VRAM budget, so a very large finest level
+   * (e.g. a 20+ GB whole-slide/OME-Zarr volume) is renderable without ever
+   * making it fully resident. Returns an {@link NVChunkedVolume} handle
+   * (`setFocus` / `setMaxDetail` / `setBudget` / `dispose`); with the default
+   * `focus: 'crosshair'` it follows the crosshair automatically.
+   *
+   * ADDITIVE: the streamed volume is ADDED to the scene (via `addVolume`), not
+   * swapped for the current volumes. To reload/replace a streamed volume, the
+   * caller removes the previous one first.
+   */
+  async loadChunkedVolume(
+    source: ChunkedVolumeSource,
+    options?: ChunkedVolumeOptions,
+  ): Promise<NVChunkedVolume> {
+    const chunked = new NVChunkedVolume(this, source, options)
+    await chunked.init()
+    return chunked
+  }
+
+  /**
    * Update the canvas-level viewport (virtual camera). All controllers sharing this
    * canvas resize and redraw together. `pan` is in normalized canvas units (GL convention,
    * y up); `zoom` is a positive scalar around the canvas centre.
@@ -4187,7 +4215,7 @@ export default class NiiVueGPU extends EventTarget {
    * nv1.broadcastTo() // clear sync
    */
   broadcastTo(
-    targets?: NiiVueGPU | NiiVueGPU[],
+    targets?: NiiVue | NiiVue[],
     opts: SyncOpts = { '2d': true, '3d': true, clipPlane: true },
   ): void {
     if (!targets) {

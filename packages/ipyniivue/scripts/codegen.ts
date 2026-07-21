@@ -826,7 +826,7 @@ function emitPython(api: ApiDescriptor): string {
   lines.push(`class _GeneratedNiiVue(anywidget.AnyWidget):`)
   lines.push('    """Auto-generated reactive properties and command methods.')
   lines.push('')
-  lines.push(`    Mirrors NiiVueGPU @ niivue ${api.niivueVersion}.`)
+  lines.push(`    Mirrors NiiVue @ niivue ${api.niivueVersion}.`)
   lines.push('')
   lines.push('    Reactive properties are kept in sync with the JS view via')
   lines.push('    anywidget. Methods send command messages over the same')

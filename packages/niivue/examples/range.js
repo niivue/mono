@@ -828,7 +828,6 @@ function createRangeChunkSource(source) {
       if (isLiveSerial(source.serial)) {
         stats.completed.add(request.chunkIndex)
         stats.decodedBytes += bytes.byteLength
-        renderHud()
       }
       return bytes
     })
@@ -843,7 +842,9 @@ function createRangeChunkSource(source) {
         cache.delete(request.chunkIndex)
       }
     })
-    renderHud()
+    // Stats bookkeeping only: the throttled HUD poll (~8 Hz) refreshes the panel,
+    // matching the zarr path (createTrackedZarrFetch). A synchronous renderHud()
+    // per request/settle would re-introduce the per-fetch DOM reflow jank.
     return next
   }
 }
@@ -1094,11 +1095,17 @@ function applyZoom() {
 // octree (each zoom source owns exactly one refocus path; see applyZoom, the
 // 'change' listener, and the canvas wheel listener in main). Reads the value
 // applyZoom pushes for the active layout: scaleMultiplier in the render view,
-// pan2Dxyzmm[3] in multiplanar.
+// pan2Dxyzmm[3] in multiplanar -- EXCEPT the force-pinned synthetic render path.
 function syncZoomControl() {
   if (!nv) return
   const inRender = Number(els.layout.value) === SLICE_TYPE.RENDER
-  const zoom = inRender ? nv.scaleMultiplier : nv.pan2Dxyzmm[3] || 1
+  // applyZoom force-pins scaleMultiplier to 1 in the render view for the SYNTHETIC
+  // path (activeCv null); reading it there would keep snapping the slider back to
+  // 1.0x and fight the user's drag. pan2Dxyzmm[3] carries the real dragged zoom on
+  // that path (applyZoom still writes it), so read that instead. Only the multi-LOD
+  // OME-Zarr render (activeCv set) actually zooms the render camera, so
+  // scaleMultiplier is authoritative there; multiplanar always reads pan2Dxyzmm[3].
+  const zoom = inRender && activeCv ? nv.scaleMultiplier : nv.pan2Dxyzmm[3] || 1
   // Live zoom (wheel/programmatic) can reach beyond the slider's [min,max]; clamp
   // to the slider range (read from the element) before comparing/assigning, else
   // an out-of-range value never equals els.zoom.value and the label keeps churning.
@@ -1175,47 +1182,70 @@ let stripSpans = []
 let stripCellKeys = []
 let stripKey = ''
 
-// One strip cell per viewer BRICK, keyed by the SAME value `stats.completed`
-// records so a cell lights when its brick completes. The synthetic legacy path
-// records integer chunk indices; the OME-Zarr multi-LOD path records
-// `level|texOrigin|texDims` content keys (matching the core chunk loader), so
-// derive the cell keys from the current plan's brick descriptors. Hard-capped at
-// 4096: for a thin-Z finest OME-Zarr level the native chunk count can be 100k+,
-// and spreading that many <span>s into replaceChildren blows the call stack.
+// The key a viewer BRICK records into `stats.completed` (and its strip cell is
+// keyed by). The synthetic legacy path records integer chunk indices (positional);
+// the OME-Zarr multi-LOD path records `level|texOrigin|texDims` content keys,
+// matching the core chunk loader. Shared by the strip cells and the plan-swap
+// telemetry intersection so the two never diverge.
+function brickKey(source, chunk, index) {
+  if (source.kind === 'omezarr') {
+    return `${chunk.sourceLevel ?? 0}|${chunk.texOrigin.join(',')}|${chunk.texDims.join(',')}`
+  }
+  return index
+}
+
+// Intersection: a new Set of the members of `set` that are also in `keep`.
+function retainKeys(set, keep) {
+  const out = new Set()
+  for (const k of set) if (keep.has(k)) out.add(k)
+  return out
+}
+
+// One strip cell per viewer brick, keyed by brickKey so a cell lights when its
+// brick completes. Hard-capped at 4096: for a thin-Z finest OME-Zarr level the
+// native chunk count can be 100k+, and spreading that many <span>s into
+// replaceChildren blows the call stack.
 function chunkStripKeys(source, plan) {
   const chunks = plan?.chunks ?? []
   const capped = chunks.slice(0, 4096)
-  if (source.kind === 'omezarr') {
-    return capped.map(
-      (c) =>
-        `${c.sourceLevel ?? 0}|${c.texOrigin.join(',')}|${c.texDims.join(',')}`,
-    )
-  }
-  return capped.map((_c, i) => i)
+  return capped.map((c, i) => brickKey(source, c, i))
 }
+
+// Reference of the plan/source the strip cells were last built for. The plan
+// reference is stable between crosshair-driven swaps (the core hands back a NEW
+// plan object on a swap), so it is a cheap change signal: rebuild the key array and
+// re-diff the cell set only when it changes, not on every 120 ms poll.
+let lastStripPlan = null
+let lastStripSource = null
 
 function renderChunkStrip() {
   const source = activeSource
   if (!source) return
   const plan = chunkPlan
-  const gridDims = plan?.gridDims ?? source.chunkGrid
-  const cellKeys = chunkStripKeys(source, plan)
-  const columns = Math.min(16, Math.max(4, gridDims[0] * gridDims[1]))
-  // Rebuild only when the cell set changes. For OME-Zarr the plan swaps as the
-  // crosshair moves, so the brick keys (not just the count) can change; compare
-  // the key list, not just its length, so the strip tracks the live plan.
-  const key = `${cellKeys.length}:${columns}`
-  const changed =
-    key !== stripKey || cellKeys.some((k, i) => k !== stripCellKeys[i])
-  if (changed) {
-    els.chunkStrip.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`
-    stripSpans = Array.from({ length: cellKeys.length }, () =>
-      document.createElement('span'),
-    )
-    els.chunkStrip.replaceChildren(...stripSpans)
-    stripCellKeys = cellKeys
-    stripKey = key
+  if (plan !== lastStripPlan || source !== lastStripSource) {
+    lastStripPlan = plan
+    lastStripSource = source
+    const gridDims = plan?.gridDims ?? source.chunkGrid
+    const cellKeys = chunkStripKeys(source, plan)
+    const columns = Math.min(16, Math.max(4, gridDims[0] * gridDims[1]))
+    // Rebuild the DOM only when the cell set changes. For OME-Zarr the plan swaps
+    // as the crosshair moves, so the brick keys (not just the count) can change;
+    // compare the key list, not just its length, so the strip tracks the live plan.
+    const key = `${cellKeys.length}:${columns}`
+    const changed =
+      key !== stripKey || cellKeys.some((k, i) => k !== stripCellKeys[i])
+    if (changed) {
+      els.chunkStrip.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`
+      stripSpans = Array.from({ length: cellKeys.length }, () =>
+        document.createElement('span'),
+      )
+      els.chunkStrip.replaceChildren(...stripSpans)
+      stripCellKeys = cellKeys
+      stripKey = key
+    }
   }
+  // Runs every poll regardless of the memoized rebuild: bricks complete over time,
+  // so the per-cell hit class must keep tracking the growing `stats.completed`.
   for (let i = 0; i < stripSpans.length; i++) {
     const hit = stats.completed.has(stripCellKeys[i])
     const cls = hit ? 'hit' : ''
@@ -1298,14 +1328,24 @@ function startHudPolling() {
   // still engages a deferred explode within ~120 ms of the stream settling.
   pollHandle = setInterval(() => {
     // The core NVChunkedVolume swaps the plan as the crosshair moves; mirror the
-    // current plan so the HUD/block outlines track it. Reset the per-plan
-    // requested/completed region counts when the plan identity changes.
+    // current plan so the HUD/block outlines track it. swapVolumeChunkPlan reuses
+    // resident GPU textures for bricks shared with the new plan WITHOUT re-invoking
+    // fetchChunk, so those carried-over bricks never re-record into stats. Wiping
+    // the sets on a swap would therefore report every resident brick as missing
+    // after each crosshair refocus. Instead intersect the per-plan region counts
+    // with the new plan's brick keys: carried-over bricks stay requested/completed,
+    // bricks that left the plan drop, and genuinely new bricks re-fetch (recording
+    // themselves). A full source switch resets stats in runReload, so this governs
+    // only same-SOURCE refocus/reload.
     if (activeCv) {
       const p = activeCv.currentPlan
       if (p !== chunkPlan) {
+        const nextKeys = new Set(
+          p.chunks.map((c, i) => brickKey(activeSource, c, i)),
+        )
         chunkPlan = p
-        stats.requested = new Set()
-        stats.completed = new Set()
+        stats.requested = retainKeys(stats.requested, nextKeys)
+        stats.completed = retainKeys(stats.completed, nextKeys)
       }
     }
     // Reconcile the slider/label with the live zoom from any source (wheel moves
@@ -1410,7 +1450,12 @@ async function runReload(token, options) {
       const cv = await nv.loadChunkedVolume(
         createZarrChunkedSource(activeSource),
         {
-          id: activeSource.name,
+          // Unique per load: an additive reload adds the new streamed volume while
+          // the outgoing one is still resident, so a shared id/name would let
+          // swapVolumeChunkPlan route a refocus to the doomed volume. The reload
+          // token is monotonic, so `${name}#${token}` is unique; the human-readable
+          // `name` (what the HUD/labels show) stays activeSource.name.
+          id: `${activeSource.name}#${token}`,
           name: activeSource.name,
           calMin: win.min,
           calMax: win.max,

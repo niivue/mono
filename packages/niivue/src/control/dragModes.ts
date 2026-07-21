@@ -1,12 +1,12 @@
 import { vec3 } from 'gl-matrix'
 import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
-import type NiiVueGPU from '@/NVControlBase'
+import type NiiVue from '@/NVControlBase'
 import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 
 /** Return the DRAG_MODE for a given mouse button on 2D slice tiles. */
-export function getDragModeForButton(ctrl: NiiVueGPU, button: number): number {
+export function getDragModeForButton(ctrl: NiiVue, button: number): number {
   if (button === 0) return ctrl.model.interaction.primaryDragMode
   if (button === 2) return ctrl.model.interaction.secondaryDragMode
   return DRAG_MODE.none
@@ -18,7 +18,7 @@ export function getDragModeForButton(ctrl: NiiVueGPU, button: number): number {
  * Returns null if no variability or outside volume.
  */
 export function calculateNewRange(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   volIdx = 0,
 ): { calMin: number; calMax: number } | null {
   const model = ctrl.model
@@ -97,7 +97,7 @@ export function calculateNewRange(
 }
 
 /** Build DragReleaseInfo from current drag state. */
-export function buildDragReleaseInfo(ctrl: NiiVueGPU): DragReleaseInfo | null {
+export function buildDragReleaseInfo(ctrl: NiiVue): DragReleaseInfo | null {
   const startMM = screenSlicePickAt(
     ctrl,
     ctrl.dragStartXY[0],
@@ -134,7 +134,7 @@ export function buildDragReleaseInfo(ctrl: NiiVueGPU): DragReleaseInfo | null {
 }
 
 /** Update the model's drag overlay based on the current active drag mode. */
-export function updateDragOverlay(ctrl: NiiVueGPU): void {
+export function updateDragOverlay(ctrl: NiiVue): void {
   const mode = ctrl._activeDragMode
   const [sx, sy] = ctrl.dragStartXY
   const [ex, ey] = ctrl.dragEndXY
@@ -267,7 +267,7 @@ export function updateDragOverlay(ctrl: NiiVueGPU): void {
 }
 
 /** Handle drag release: perform mode-specific action and fire callback. */
-export function handleDragRelease(ctrl: NiiVueGPU): void {
+export function handleDragRelease(ctrl: NiiVue): void {
   const mode = ctrl._activeDragMode
 
   // Angle state machine
@@ -380,13 +380,13 @@ export function handleDragRelease(ctrl: NiiVueGPU): void {
 }
 
 /** Fire the dragRelease event. */
-function fireDragRelease(ctrl: NiiVueGPU): void {
+function fireDragRelease(ctrl: NiiVue): void {
   const info = buildDragReleaseInfo(ctrl)
   if (info) ctrl.emit('dragRelease', info)
 }
 
 /** Clear all drag state and overlay. */
-export function clearDragState(ctrl: NiiVueGPU): void {
+export function clearDragState(ctrl: NiiVue): void {
   ctrl._activeDragMode = DRAG_MODE.none
   ctrl._pan2DxyzmmAtDragStart = null
   ctrl.model._dragOverlay = null
@@ -394,7 +394,7 @@ export function clearDragState(ctrl: NiiVueGPU): void {
 }
 
 /** Pan 2D view based on drag delta in mm space. */
-export function dragForPanZoom(ctrl: NiiVueGPU): void {
+export function dragForPanZoom(ctrl: NiiVue): void {
   const saved = ctrl._pan2DxyzmmAtDragStart
   if (!saved) return
 
@@ -412,7 +412,7 @@ export function dragForPanZoom(ctrl: NiiVueGPU): void {
 }
 
 /** Zoom 2D view based on vertical drag delta. */
-export function dragForSlicer3D(ctrl: NiiVueGPU): void {
+export function dragForSlicer3D(ctrl: NiiVue): void {
   const saved = ctrl._pan2DxyzmmAtDragStart
   if (!saved) return
 
@@ -433,7 +433,7 @@ export function dragForSlicer3D(ctrl: NiiVueGPU): void {
 
 /** Windowing: horizontal drag adjusts range width, vertical adjusts center. */
 export function dragForWindowing(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   deltaX: number,
   deltaY: number,
 ): void {
@@ -462,7 +462,7 @@ export function dragForWindowing(
 
 /** Helper: pick mm coordinates at a canvas pixel position using cached slice tiles. */
 function screenSlicePickAt(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   px: number,
   py: number,
 ): [number, number, number] | null {
@@ -477,7 +477,7 @@ function screenSlicePickAt(
 }
 
 /** Get slice info for persisting a measurement/angle. */
-function getSliceInfo(ctrl: NiiVueGPU): {
+function getSliceInfo(ctrl: NiiVue): {
   sliceIndex: number
   sliceType: number
   slicePosition: number

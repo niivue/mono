@@ -155,7 +155,7 @@ Properties:
 - `volumes: ImageFromUrlOptions[]` - declarative volume list, diffed automatically.
 - `options: Partial<NiiVueOptions>` - NiiVue construction options.
 - `sliceType: number` / `slice-type` attribute - active slice type.
-- `nv: NiiVueGPU | null` - raw NiiVue instance after initialization.
+- `nv: NiiVue | null` - raw NiiVue instance after initialization.
 
 Methods:
 

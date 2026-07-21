@@ -28,7 +28,7 @@ export const SHOW_RENDER = {
   AUTO: 2,
 } as const
 
-export interface MockNiiVueGPU {
+export interface MockNiiVue {
   attachToCanvas: ReturnType<typeof mock>
   addVolume: ReturnType<typeof mock>
   broadcastTo: ReturnType<typeof mock>
@@ -55,11 +55,11 @@ export interface MockNiiVueGPU {
   _handlers: Map<string, Set<(evt: unknown) => void>>
 }
 
-/** Create a fresh MockNiiVueGPU instance with all methods stubbed */
-export function createMockNiiVueGPU(): MockNiiVueGPU {
+/** Create a fresh MockNiiVue instance with all methods stubbed */
+export function createMockNiiVue(): MockNiiVue {
   const handlers = new Map<string, Set<(evt: unknown) => void>>()
 
-  const instance: MockNiiVueGPU = {
+  const instance: MockNiiVue = {
     _handlers: handlers,
     attachToCanvas: mock(
       () => attachToCanvasResults.shift() ?? Promise.resolve(),
@@ -106,7 +106,7 @@ export function createMockNiiVueGPU(): MockNiiVueGPU {
 }
 
 /** Track all created instances so tests can inspect them */
-export const mockInstances: MockNiiVueGPU[] = []
+export const mockInstances: MockNiiVue[] = []
 export const attachToCanvasResults: Promise<void>[] = []
 
 /** Clear tracked instances between tests */
@@ -116,22 +116,22 @@ export function clearMockInstances(): void {
 }
 
 /**
- * The mock NiiVueGPU constructor (default export).
+ * The mock NiiVue constructor (default export).
  * Captures constructor options and returns a mock instance.
  * We push `this` (the actual instance) so tests can mutate it directly.
  */
-export class NiiVueGPU {
+export class NiiVue {
   [key: string]: unknown
 
   constructor(_opts?: unknown) {
-    const instance = createMockNiiVueGPU()
+    const instance = createMockNiiVue()
     Object.assign(this, instance)
-    mockInstances.push(this as unknown as MockNiiVueGPU)
+    mockInstances.push(this as unknown as MockNiiVue)
   }
 }
 
-// Default export to match `import NiiVueGPU from "@niivue/niivue"`
-export default NiiVueGPU
+// Default export to match `import NiiVue from "@niivue/niivue"`
+export default NiiVue
 
 // NVImage is just a type, export a placeholder for value-level usage
 export class NVImage {}
@@ -142,8 +142,8 @@ export class NVImage {}
  */
 export function registerNiivueMock(): void {
   mock.module('@niivue/niivue', () => ({
-    default: NiiVueGPU,
-    NiiVueGPU,
+    default: NiiVue,
+    NiiVue,
     NVImage,
     SLICE_TYPE,
     DRAG_MODE,

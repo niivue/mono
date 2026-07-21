@@ -1,6 +1,6 @@
 import NVViewGL from '@/gl/NVViewGL'
 import { log } from '@/logger'
-import type NiiVueGPU from '@/NVControlBase'
+import type NiiVue from '@/NVControlBase'
 import type { BackendType } from '@/NVTypes'
 import {
   clearCanvasMessage,
@@ -16,10 +16,10 @@ import {
 import { registerCanvasInstance } from './viewBoth'
 
 export async function attachTo(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   id: string,
   isAntiAlias: boolean | null = null,
-): Promise<NiiVueGPU> {
+): Promise<NiiVue> {
   await attachToCanvas(
     ctrl,
     document.getElementById(id) as HTMLCanvasElement,
@@ -30,10 +30,10 @@ export async function attachTo(
 }
 
 export async function attachToCanvas(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   canvas: HTMLCanvasElement,
   isAntiAlias: boolean | null = null,
-): Promise<NiiVueGPU> {
+): Promise<NiiVue> {
   if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
     throw new Error('NiiVue requires a valid HTMLCanvasElement')
   }
@@ -42,7 +42,7 @@ export async function attachToCanvas(
   }
   if (ctrl.opts.backend === 'webgpu') {
     throw new Error(
-      "This niivuegpu distribution includes only WebGL2. Requested backend 'webgpu' is unavailable.",
+      "This niivue distribution includes only WebGL2. Requested backend 'webgpu' is unavailable.",
     )
   }
   ctrl.canvas = canvas
@@ -75,7 +75,7 @@ export async function attachToCanvas(
   }
 }
 
-export async function recreateView(ctrl: NiiVueGPU): Promise<void> {
+export async function recreateView(ctrl: NiiVue): Promise<void> {
   ctrl.view?.destroy()
   ctrl.model.clearAllGPUResources()
   removeInteractionListeners(ctrl)
@@ -104,7 +104,7 @@ export async function recreateView(ctrl: NiiVueGPU): Promise<void> {
 }
 
 export async function reinitializeView(
-  ctrl: NiiVueGPU,
+  ctrl: NiiVue,
   options: {
     backend?: BackendType
     isAntiAlias?: boolean
@@ -120,7 +120,7 @@ export async function reinitializeView(
 
   if (newBackend !== 'webgl2') {
     log.warn(
-      "This niivuegpu distribution includes only WebGL2. Expected backend 'webgl2'.",
+      "This niivue distribution includes only WebGL2. Expected backend 'webgl2'.",
     )
     return false
   }

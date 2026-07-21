@@ -74,11 +74,11 @@ export default defineConfig({
     emptyOutDir: true,
     lib: {
       entry: {
-        niivuegpu: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
-        'niivuegpu.webgpu': fileURLToPath(
+        niivue: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
+        'niivue.webgpu': fileURLToPath(
           new URL('./src/index.webgpu.ts', import.meta.url),
         ),
-        'niivuegpu.webgl2': fileURLToPath(
+        'niivue.webgl2': fileURLToPath(
           new URL('./src/index.webgl2.ts', import.meta.url),
         ),
         viewport: fileURLToPath(

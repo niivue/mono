@@ -216,7 +216,7 @@ type EventHandler = ((e: Event) => void) | ((e: Event) => Promise<void>)
 class NiiVuePerf {
   private _frameUnsub: (() => void) | null = null
 
-  constructor(private readonly _controller: NiiVueGPU) {}
+  constructor(private readonly _controller: NiiVue) {}
 
   get enabled(): boolean {
     return arePerfMarksEnabled()
@@ -254,7 +254,7 @@ function sameRange(
   return a[0] === b[0] && a[1] === b[1]
 }
 
-export default class NiiVueGPU extends EventTarget {
+export default class NiiVue extends EventTarget {
   activeClipPlaneIndex: number
   currentClipPlaneIndex: number
   canvas: HTMLCanvasElement | null = null
@@ -387,7 +387,7 @@ export default class NiiVueGPU extends EventTarget {
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
   // Sync/broadcast state
-  private _syncTargets: NiiVueGPU[] = []
+  private _syncTargets: NiiVue[] = []
   private _syncOpts: SyncOpts = {}
   private _syncDirty = false
   private _rafId: number | null = null
@@ -1617,13 +1617,13 @@ export default class NiiVueGPU extends EventTarget {
     }
     if (this.opts.backend === 'webgpu' && !navigator.gpu) {
       throw new Error(
-        'This niivuegpu WebGPU-only distribution requires browser WebGPU support.',
+        'This niivue WebGPU-only distribution requires browser WebGPU support.',
       )
     }
     if (this._distributionBackend === 'webgpu') {
       if (this.opts.backend === 'webgl2') {
         throw new Error(
-          "This niivuegpu distribution includes only WebGPU. Requested backend 'webgl2' is unavailable.",
+          "This niivue distribution includes only WebGPU. Requested backend 'webgl2' is unavailable.",
         )
       }
       this.opts.backend = 'webgpu'
@@ -1631,7 +1631,7 @@ export default class NiiVueGPU extends EventTarget {
     }
     if (this.opts.backend === 'webgpu') {
       throw new Error(
-        "This niivuegpu distribution includes only WebGL2. Requested backend 'webgpu' is unavailable.",
+        "This niivue distribution includes only WebGL2. Requested backend 'webgpu' is unavailable.",
       )
     }
     this.opts.backend = 'webgl2'
@@ -4187,7 +4187,7 @@ export default class NiiVueGPU extends EventTarget {
    * nv1.broadcastTo() // clear sync
    */
   broadcastTo(
-    targets?: NiiVueGPU | NiiVueGPU[],
+    targets?: NiiVue | NiiVue[],
     opts: SyncOpts = { '2d': true, '3d': true, clipPlane: true },
   ): void {
     if (!targets) {

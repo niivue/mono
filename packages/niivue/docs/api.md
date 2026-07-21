@@ -1,4 +1,4 @@
-# NiiVueGPU API Style Guide
+# NiiVue API Style Guide
 
 ## Naming Conventions
 

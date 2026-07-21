@@ -67,7 +67,7 @@ NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
 class _GeneratedNiiVue(anywidget.AnyWidget):
     """Auto-generated reactive properties and command methods.
 
-    Mirrors NiiVueGPU @ niivue 1.0.0-rc.10.
+    Mirrors NiiVue @ niivue 1.0.0-rc.10.
 
     Reactive properties are kept in sync with the JS view via
     anywidget. Methods send command messages over the same

@@ -12,7 +12,7 @@
  */
 
 import * as NVTransforms from '@/math/NVTransforms'
-import type NiiVueGPU from '@/NVControlBase'
+import type NiiVue from '@/NVControlBase'
 import type { NVImage, TypedVoxelArray } from '@/NVTypes'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import { buildDerivedScalarVolume } from '@/volume/mrsi'
@@ -67,7 +67,7 @@ export class NVExtensionContext {
   /** Volume that _cachedImgRAS was computed from (identity check). */
   private _cachedImgRASVol: NVImage | null = null
 
-  constructor(private readonly nv: NiiVueGPU) {}
+  constructor(private readonly nv: NiiVue) {}
 
   // ── Data access ───────────────────────────────────────────
 
@@ -371,7 +371,7 @@ export class NVExtensionContext {
  * Returns null if the pointer is not over a 2D slice.
  */
 export function computeSlicePointerEvent(
-  nv: NiiVueGPU,
+  nv: NiiVue,
   evt: PointerEvent,
 ): SlicePointerEvent | null {
   if (!nv.canvas || !nv.view) return null

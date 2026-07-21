@@ -23,7 +23,7 @@ Source of truth: `packages/niivue/src/index.ts` (package exports),
 
 | Feature | Kind | Async | Signature / Notes | Bridge pattern |
 |---|---|---|---|---|
-| `new NiiVueGPU(options)` | Ctor | No | Flat `NiiVueOptions` — see §13 | Inject JS on page load |
+| `new NiiVue(options)` | Ctor | No | Flat `NiiVueOptions` — see §13 | Inject JS on page load |
 | `attachTo(elementId)` | Method | Yes | Binds to a canvas by DOM id | Call once after WKWebView loads the HTML |
 | `attachToCanvas(canvas, isAntiAlias?)` | Method | Yes | Binds to a `HTMLCanvasElement` | Alt. to `attachTo` |
 | `destroy()` | Method | No | Releases GPU resources + listeners | Call before tearing down view |
@@ -363,7 +363,7 @@ ship in `@niivue/nv-ext-drawing` and `@niivue/nv-ext-image-processing`.
 From the package root (`@niivue/niivue`):
 
 - **Enums/constants:** `DRAG_MODE`, `SLICE_TYPE`, `SHOW_RENDER`, `NiiDataType`.
-- **Default export:** `NiiVueGPU` (also named export).
+- **Default export:** `NiiVue` (also named export).
 - **Core types:** `NiiVueOptions`, `NiiVueLocation`, `NiiVueLocationValue`,
   `NVImage`, `NVMesh`, `NVMeshLayer`, `NVTractOptions`, `NVConnectomeOptions`,
   `NVFontData`, `ColorMap`, `CustomLayoutTile`, `BackendType`, `NIFTI1`,

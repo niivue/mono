@@ -1,5 +1,5 @@
 import type { NiiVueOptions, NVImage } from '@niivue/niivue'
-import NiiVueGPU, { SLICE_TYPE } from '@niivue/niivue'
+import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef } from 'react'
 import { defaultViewerOptions } from './nvscene-controller'
@@ -45,7 +45,7 @@ export const NvViewer = ({
   onError,
 }: NvViewerProps) => {
   const containerRef = useRef<HTMLDivElement>(null)
-  const nvRef = useRef<NiiVueGPU | null>(null)
+  const nvRef = useRef<NiiVue | null>(null)
   const loadedVolumesRef = useRef<Map<string, VolumeVisualProps>>(new Map())
 
   // Store latest callbacks in refs
@@ -56,7 +56,7 @@ export const NvViewer = ({
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
 
-  // Initialize NiiVueGPU instance
+  // Initialize NiiVue instance
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -75,7 +75,7 @@ export const NvViewer = ({
       ...options,
     }
 
-    const nv = new NiiVueGPU(mergedOptions)
+    const nv = new NiiVue(mergedOptions)
 
     nv.addEventListener('locationChange', (evt) => {
       onLocationChangeRef.current?.(evt.detail)

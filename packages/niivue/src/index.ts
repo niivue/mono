@@ -1,5 +1,5 @@
 /**
- * NiiVueGPU — WebGPU/WebGL2 medical image visualization library.
+ * NiiVue — WebGPU/WebGL2 medical image visualization library.
  *
  * @packageDocumentation
  */
@@ -57,7 +57,7 @@ export {
   SHOW_RENDER,
   SLICE_TYPE,
 } from './NVConstants'
-export { default, default as NiiVueGPU } from './NVControl'
+export { default, default as NiiVue } from './NVControl'
 // Document save options (settings policy + linkData)
 export type { SerializeOptions } from './NVDocument'
 // Event types

@@ -1,5 +1,5 @@
 /**
- * NiiVueGPU — WebGPU-only distribution.
+ * NiiVue — WebGPU-only distribution.
  */
 
 export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
@@ -29,7 +29,7 @@ export {
   paddedPpmRange,
 } from './mrs/MrsScene'
 export { DRAG_MODE } from './NVConstants'
-export { default, default as NiiVueGPU } from './NVControlWebGPU'
+export { default, default as NiiVue } from './NVControlWebGPU'
 export type {
   AffineMatrix,
   AffineTransform,

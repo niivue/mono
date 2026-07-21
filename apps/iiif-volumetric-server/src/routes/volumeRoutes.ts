@@ -1,4 +1,4 @@
-// Raw volume endpoints. niivuegpu (and any other NIfTI-aware client)
+// Raw volume endpoints. niivue (and any other NIfTI-aware client)
 // fetches the bytes from here.
 //
 //   GET /volumes/{id}/raw          → original NIfTI bytes (gzip if source was)

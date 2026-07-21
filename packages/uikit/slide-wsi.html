@@ -28,7 +28,7 @@
         <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide (3D)</a><a href="/slide-wsi.html">WSI</a></nav>
         <span>Drag to pan, wheel to zoom. Click two points to measure.</span>
         <button id="fit" type="button">Fit</button>
-        <span>slide: <a href="?src=cptac">tissue</a> | <a href="?src=3dhistech">tissue-2</a> | <a href="?src=dzi">demo</a></span>
+        <span>slide: <a href="?src=cptac">tissue</a> | <a href="?src=dzi">demo</a></span>
         <span><a href="?backend=webgl2">webgl2</a> | <a href="?backend=webgpu">webgpu</a></span>
         <span id="status">loading slide...</span>
       </header>
@@ -39,14 +39,14 @@
       import { DziSource, NVSlide, SlideRenderer, SlideRendererGPU } from '@niivue/niivue'
       import { loadDefaultFont, UIKitRulerOverlay } from './src/index.ts'
 
-      // Real tissue via NiiVue's committed DICOM-WSI fixtures (served by the dev
-      // server with HTTP Range support), plus a CORS-enabled Deep Zoom fallback.
-      // A slide reports millimetres when it carries PixelSpacing, else base slide
-      // pixels (these fixtures have spacing [1,1], so they read in pixels).
+      // Real tissue from NiiVue's test-images repo (hosted live on GitHub Pages,
+      // which serves HTTP Range + CORS), plus a CORS-enabled Deep Zoom fallback.
+      // The DICOM-WSI reports base slide pixels (its PixelSpacing is [1,1]); a
+      // slide that carried real spacing would read in millimetres instead.
+      const WSI_BASE = 'https://niivue.github.io/niivue-demo-images/wsi'
       const DZI = 'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi'
       const TISSUE = {
-        cptac: '/dicom-wsi/cptac-brca/manifest.json',
-        '3dhistech': '/dicom-wsi/3dhistech-1/manifest.json',
+        cptac: `${WSI_BASE}/cptac-brca/manifest.json`, // CPTAC breast-cancer H&E
       }
 
       const params = new URLSearchParams(location.search)

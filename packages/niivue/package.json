@@ -3,21 +3,21 @@
   "version": "1.0.0-rc.10",
   "type": "module",
   "description": "WebGPU/WebGL2 browser-based medical image visualization",
-  "main": "./dist/niivuegpu.js",
-  "module": "./dist/niivuegpu.js",
+  "main": "./dist/niivue.js",
+  "module": "./dist/niivue.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/niivuegpu.js"
+      "import": "./dist/niivue.js"
     },
     "./webgpu": {
       "types": "./dist/index.webgpu.d.ts",
-      "import": "./dist/niivuegpu.webgpu.js"
+      "import": "./dist/niivue.webgpu.js"
     },
     "./webgl2": {
       "types": "./dist/index.webgl2.d.ts",
-      "import": "./dist/niivuegpu.webgl2.js"
+      "import": "./dist/niivue.webgl2.js"
     },
     "./viewport": {
       "types": "./dist/control/NVCanvasViewportController.d.ts",

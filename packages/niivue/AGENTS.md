@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in the NiiVueGPU package (`@niivue/niivue`).
+Guidance for AI coding agents working in the NiiVue package (`@niivue/niivue`).
 
 ## Project overview
 
-NiiVueGPU is a WebGPU-based neuroimaging visualization library (volumes + meshes) with a WebGL2 fallback. Written in TypeScript, MVC architecture with dual rendering backends.
+NiiVue is a WebGPU-based neuroimaging visualization library (volumes + meshes) with a WebGL2 fallback. Written in TypeScript, MVC architecture with dual rendering backends.
 
 ## Build commands
 
@@ -33,9 +33,9 @@ bunx nx lint niivue
 
 **Before committing**, run `bun run lint:fix && bun run typecheck` (or `bunx nx lint niivue && bunx nx typecheck niivue`).
 
-`bun run dev` uses a Vite plugin (`vite.config.dev.js`) to redirect `import '../dist/niivuegpu.mjs'` to source for HMR, so the same HTML/JS files work in dev and production.
+`bun run dev` uses a Vite plugin (`vite.config.dev.js`) to redirect `import '../dist/niivue.js'` to source for HMR, so the same HTML/JS files work in dev and production.
 
-Library packaging: `bun run build` emits `dist/niivuegpu.js` (both backends), `dist/niivuegpu.webgpu.js` (WebGPU-only), and `dist/niivuegpu.webgl2.js` (WebGL2-only), exported as `niivuegpu`, `niivuegpu/webgpu`, and `niivuegpu/webgl2`.
+Library packaging: `bun run build` emits `dist/niivue.js` (both backends), `dist/niivue.webgpu.js` (WebGPU-only), and `dist/niivue.webgl2.js` (WebGL2-only), exported as `@niivue/niivue`, `@niivue/niivue/webgpu`, and `@niivue/niivue/webgl2`.
 
 ## Testing
 
@@ -105,14 +105,14 @@ Rendering changes are still verified manually via the interactive demos (`bun ru
 ## Architecture (MVC)
 
 ```
-NiiVueGPU (controller) - src/NVControl.ts
+NiiVue (controller) - src/NVControl.ts
 ├── control/           - src/control/ (event handling, view lifecycle)
 ├── NVModel (data)     - src/NVModel.ts
 └── NVViewGPU (WebGPU) - src/wgpu/NVViewGPU.ts
     or NVViewGL (WebGL2) - src/gl/NVViewGL.ts
 ```
 
-**Data flow:** User interactions → NiiVueGPU → model updates + `drawScene()` → `requestAnimationFrame` → view.render()
+**Data flow:** User interactions → NiiVue → model updates + `drawScene()` → `requestAnimationFrame` → view.render()
 
 **Model-View separation:** Model is GPU-agnostic (only data). Views receive model read-only. Controller owns mutations. GPU resources are view-owned. This enables backend switching without data loss.
 
@@ -272,7 +272,7 @@ Use **methods** for:
 
 ### Events (EventTarget API)
 
-NiiVueGPU extends `EventTarget`. Use `addEventListener`/`removeEventListener` for all notifications:
+NiiVue extends `EventTarget`. Use `addEventListener`/`removeEventListener` for all notifications:
 
 ```js
 nv1.addEventListener('locationChange', (e) => { ... })  // crosshair moved
@@ -1363,7 +1363,7 @@ From package root (`src/index.ts`): `NVExtensionContext`, `computeSlicePointerEv
 
 ## Demo conventions
 
-Demos import `import NiiVue from '../dist/niivuegpu.mjs'` — Vite dev plugin redirects to source. Simple demos inline in HTML; complex ones use separate `.js` files. Assets relative to `demos/` (e.g., `../meshes/brain.mz3` from `features/`).
+Demos import `import NiiVue from '../dist/niivue.js'` — Vite dev plugin redirects to source. Simple demos inline in HTML; complex ones use separate `.js` files. Assets relative to `demos/` (e.g., `../meshes/brain.mz3` from `features/`).
 
 ## Dependencies
 

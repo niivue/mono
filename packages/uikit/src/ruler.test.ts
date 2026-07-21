@@ -16,6 +16,18 @@ describe('buildRuler', () => {
     expect(g.text).toHaveLength(1)
     expect(g.text[0]?.str).toBe('4.0 mm')
     expect(g.text[0]?.align).toBe(0.5)
+    // Labels get a readability outline by default.
+    expect(g.text[0]?.outlineWidthPx).toBe(2)
+  })
+
+  it('honors an explicit textOutlineWidthPx (0 disables the outline)', () => {
+    const g = buildRuler({
+      a: [0, 0],
+      b: [100, 0],
+      length: 4,
+      textOutlineWidthPx: 0,
+    })
+    expect(g.text[0]?.outlineWidthPx).toBe(0)
   })
 
   it('omits ticks when showTicks is false', () => {

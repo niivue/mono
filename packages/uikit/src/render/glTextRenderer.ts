@@ -33,6 +33,8 @@ export class GlTextRenderer {
   private uCanvasSize: WebGLUniformLocation | null = null
   private uScreenPxRange: WebGLUniformLocation | null = null
   private uFontTexture: WebGLUniformLocation | null = null
+  private uOutlineColor: WebGLUniformLocation | null = null
+  private uOutlineWidthPx: WebGLUniformLocation | null = null
 
   private ensureProgram(gl: WebGL2RenderingContext): void {
     if (this.gl === gl && this.program) return
@@ -74,6 +76,8 @@ export class GlTextRenderer {
     this.uCanvasSize = gl.getUniformLocation(program, 'canvasSize')
     this.uScreenPxRange = gl.getUniformLocation(program, 'screenPxRange')
     this.uFontTexture = gl.getUniformLocation(program, 'fontTexture')
+    this.uOutlineColor = gl.getUniformLocation(program, 'outlineColor')
+    this.uOutlineWidthPx = gl.getUniformLocation(program, 'outlineWidthPx')
   }
 
   private ensureTexture(gl: WebGL2RenderingContext, image: ImageBitmap): void {
@@ -100,6 +104,8 @@ export class GlTextRenderer {
     screenPxRange: number,
     width: number,
     height: number,
+    outlineColor: readonly number[],
+    outlineWidthPx: number,
   ): void {
     if (count === 0) return
     this.ensureProgram(gl)
@@ -110,6 +116,16 @@ export class GlTextRenderer {
     gl.useProgram(this.program)
     if (this.uCanvasSize) gl.uniform2f(this.uCanvasSize, width, height)
     if (this.uScreenPxRange) gl.uniform1f(this.uScreenPxRange, screenPxRange)
+    if (this.uOutlineColor) {
+      gl.uniform4f(
+        this.uOutlineColor,
+        outlineColor[0] ?? 0,
+        outlineColor[1] ?? 0,
+        outlineColor[2] ?? 0,
+        outlineColor[3] ?? 0,
+      )
+    }
+    if (this.uOutlineWidthPx) gl.uniform1f(this.uOutlineWidthPx, outlineWidthPx)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
     if (this.uFontTexture) gl.uniform1i(this.uFontTexture, 0)
@@ -142,5 +158,7 @@ export class GlTextRenderer {
     this.uCanvasSize = null
     this.uScreenPxRange = null
     this.uFontTexture = null
+    this.uOutlineColor = null
+    this.uOutlineWidthPx = null
   }
 }

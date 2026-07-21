@@ -34,6 +34,12 @@ export interface RulerSpec {
   showTicks?: boolean
   /** Draw the number at every major tick. Default false. */
   showTickNumbers?: boolean
+  /**
+   * Outline width (px) for the label + tick text, for readability over busy
+   * backgrounds. Default 2. The outline color auto-contrasts the text color
+   * (black on light text, white on dark). Set 0 to disable.
+   */
+  textOutlineWidthPx?: number
 }
 
 export interface RulerGeometry {
@@ -64,6 +70,7 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
     tickLength = 6,
     showTicks = true,
     showTickNumbers = false,
+    textOutlineWidthPx = 2,
   } = spec
 
   const dx = b[0] - a[0]
@@ -122,6 +129,7 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
           align: 0.5,
           liftPx: liftSign * (half + sizePx * 0.4),
           color: textColor,
+          outlineWidthPx: textOutlineWidthPx,
         })
       }
     }
@@ -140,6 +148,7 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
     align: 0.5,
     liftPx: liftSign * (tickLength * 2 + sizePx),
     color: textColor,
+    outlineWidthPx: textOutlineWidthPx,
   })
 
   return { lines, text }

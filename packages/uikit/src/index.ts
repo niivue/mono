@@ -19,6 +19,11 @@ export type {
 } from './text/font'
 export { parseFont, screenPxRange } from './text/font'
 export type { RGBA, TextLayoutOptions } from './text/layout'
-export { layoutText, measureWidth, readableAngle } from './text/layout'
+export {
+  autoOutlineColor,
+  layoutText,
+  measureWidth,
+  readableAngle,
+} from './text/layout'
 export type { UIKitTextItem } from './textOverlay'
 export { UIKitTextOverlay } from './textOverlay'

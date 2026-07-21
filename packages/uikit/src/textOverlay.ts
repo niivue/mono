@@ -7,7 +7,11 @@ import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import { GlTextRenderer } from './render/glTextRenderer'
 import { WgpuTextRenderer } from './render/wgpuTextRenderer'
 import { screenPxRange, type UIKitFont } from './text/font'
-import { layoutText, type TextLayoutOptions } from './text/layout'
+import {
+  autoOutlineColor,
+  layoutText,
+  type TextLayoutOptions,
+} from './text/layout'
 
 /** One piece of text to draw: the string plus its layout pose. */
 export type UIKitTextItem = TextLayoutOptions & { str: string }
@@ -41,6 +45,12 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
       const { vertices, count } = layoutText(metrics, item.str, item)
       if (count === 0) continue
       const spr = screenPxRange(metrics, item.sizePx)
+      const outlineWidthPx = item.outlineWidthPx ?? 0
+      // Auto-pick a contrasting outline color from the fill when none is given.
+      const outlineColor =
+        outlineWidthPx > 0
+          ? (item.outlineColor ?? autoOutlineColor(item.color ?? [1, 1, 1, 1]))
+          : [0, 0, 0, 0]
       if (handle.backend === 'webgl2') {
         this.gl.draw(
           handle.gl,
@@ -50,6 +60,8 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
           spr,
           bounds.width,
           bounds.height,
+          outlineColor,
+          outlineWidthPx,
         )
       } else {
         this.wgpu.draw(
@@ -64,6 +76,8 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
           spr,
           bounds.width,
           bounds.height,
+          outlineColor,
+          outlineWidthPx,
         )
       }
     }

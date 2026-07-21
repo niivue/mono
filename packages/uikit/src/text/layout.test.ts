@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { UIKitFontMetrics } from './font'
 import {
+  autoOutlineColor,
   FLOATS_PER_VERTEX,
   layoutText,
   measureWidth,
@@ -40,6 +41,15 @@ describe('readableAngle', () => {
     expect(r.flipped).toBe(true)
     expect(r.angle).toBeCloseTo(2 * Math.PI)
     expect(readableAngle((3 * Math.PI) / 4).flipped).toBe(true)
+  })
+})
+
+describe('autoOutlineColor', () => {
+  it('returns black for light fills and white for dark fills', () => {
+    expect(autoOutlineColor([1, 1, 0, 1])).toEqual([0, 0, 0, 1]) // yellow -> black
+    expect(autoOutlineColor([1, 1, 1, 1])).toEqual([0, 0, 0, 1]) // white -> black
+    expect(autoOutlineColor([0, 0, 0, 1])).toEqual([1, 1, 1, 1]) // black -> white
+    expect(autoOutlineColor([0, 0, 0.6, 1])).toEqual([1, 1, 1, 1]) // dark blue -> white
   })
 })
 

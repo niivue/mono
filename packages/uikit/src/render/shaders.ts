@@ -130,6 +130,8 @@ export const GL_TEXT_FRAG = `#version 300 es
 precision highp float;
 uniform highp sampler2D fontTexture;
 uniform float screenPxRange;
+uniform vec4 outlineColor;
+uniform float outlineWidthPx;
 in vec2 vUv;
 in vec4 vColor;
 out vec4 fragColor;
@@ -141,9 +143,23 @@ float median(float r, float g, float b) {
 void main() {
   vec3 msd = texture(fontTexture, vUv).rgb;
   float sd = median(msd.r, msd.g, msd.b);
-  float opacity = clamp(screenPxRange * (sd - 0.5) + 0.5, 0.0, 1.0);
-  if (opacity <= 0.0) discard;
-  fragColor = vec4(vColor.rgb, vColor.a * opacity);
+  // Signed distance to the glyph edge in screen pixels (+ inside).
+  float d = screenPxRange * (sd - 0.5);
+  float fillA = clamp(d + 0.5, 0.0, 1.0);
+  if (outlineWidthPx <= 0.0) {
+    if (fillA <= 0.0) discard;
+    fragColor = vec4(vColor.rgb, fillA * vColor.a);
+    return;
+  }
+  // Expand the coverage by the outline width to get the outline+fill silhouette,
+  // then draw the fill over the outline. The band is clamped to the atlas SDF
+  // range (screenPxRange/2), beyond which the MSDF saturates and can't be offset.
+  float w = min(outlineWidthPx, screenPxRange * 0.5);
+  float outA = clamp(d + w + 0.5, 0.0, 1.0);
+  if (outA <= 0.0) discard;
+  vec3 rgb = mix(outlineColor.rgb, vColor.rgb, fillA);
+  float a = outA * mix(outlineColor.a, vColor.a, fillA);
+  fragColor = vec4(rgb, a);
 }
 `
 
@@ -151,7 +167,8 @@ export const WGSL_TEXT = `
 struct TextUniforms {
     canvasSize: vec2f,
     screenPxRange: f32,
-    _pad: f32,
+    outlineWidthPx: f32,
+    outlineColor: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> u: TextUniforms;
@@ -186,7 +203,17 @@ fn median(r: f32, g: f32, b: f32) -> f32 {
 fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     let msd = textureSample(fontTex, fontSampler, in.uv).rgb;
     let sd = median(msd.r, msd.g, msd.b);
-    let opacity = clamp(u.screenPxRange * (sd - 0.5) + 0.5, 0.0, 1.0);
-    return vec4f(in.color.rgb, in.color.a * opacity);
+    let d = u.screenPxRange * (sd - 0.5); // signed px distance (+ inside)
+    let fillA = clamp(d + 0.5, 0.0, 1.0);
+    if (u.outlineWidthPx <= 0.0) {
+        return vec4f(in.color.rgb, fillA * in.color.a);
+    }
+    // Expand coverage by the outline width (clamped to the atlas SDF range),
+    // then draw the fill over the outline.
+    let w = min(u.outlineWidthPx, u.screenPxRange * 0.5);
+    let outA = clamp(d + w + 0.5, 0.0, 1.0);
+    let rgb = mix(u.outlineColor.rgb, in.color.rgb, fillA);
+    let a = outA * mix(u.outlineColor.a, in.color.a, fillA);
+    return vec4f(rgb, a);
 }
 `

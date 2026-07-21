@@ -29,6 +29,27 @@ export interface TextLayoutOptions {
   align?: number
   /** Shift perpendicular to the text direction, in pixels (positive = above line). */
   liftPx?: number
+  /**
+   * Outline (halo) width in screen pixels; 0 (default) draws no outline. The
+   * effective width is bounded by the atlas SDF range, so a small value (1-2)
+   * reads best with the bundled MSDF atlas.
+   */
+  outlineWidthPx?: number
+  /**
+   * Outline color. Omit to auto-pick black or white for contrast against the
+   * fill color (see {@link autoOutlineColor}).
+   */
+  outlineColor?: RGBA
+}
+
+/**
+ * Pick a high-contrast outline color for a fill: black for light fills, white
+ * for dark ones, using perceptual (Rec. 601) luminance.
+ */
+export function autoOutlineColor(fill: RGBA): RGBA {
+  const [r, g, b] = fill
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b
+  return luminance > 0.5 ? [0, 0, 0, 1] : [1, 1, 1, 1]
 }
 
 /** Total advance width of `str` in pixels at `sizePx`. */

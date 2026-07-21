@@ -108,12 +108,20 @@
       let ruleB = null
       let hoverCss = null
 
+      // Physical distance when the slide carries pixel spacing (PixelSpacing /
+      // ImagedVolumeWidth): microns for sub-mm features, mm (with per-mm ticks)
+      // above that. Falls back to base slide pixels when no spacing is present.
       const measure = (a, b) => {
         const dpx = b.x - a.x
         const dpy = b.y - a.y
         const sp = spacing()
-        if (sp) return { length: Math.hypot(dpx * sp[0], dpy * sp[1]), units: 'mm' }
-        return { length: Math.hypot(dpx, dpy), units: 'px' }
+        if (!sp) {
+          return { length: Math.hypot(dpx, dpy), units: 'px', decimals: 0, ticks: false }
+        }
+        const mm = Math.hypot(dpx * sp[0], dpy * sp[1])
+        return mm < 1
+          ? { length: mm * 1000, units: 'um', decimals: 0, ticks: false }
+          : { length: mm, units: 'mm', decimals: 2, ticks: true }
       }
 
       const updateRuler = (screen) => {
@@ -122,14 +130,13 @@
         if (a && !b && hoverCss) b = slide.screenToSlide(hoverCss[0], hoverCss[1], screen)
         if (!a || !b) { ruler.clear(); return }
         const m = measure(a, b)
-        const mm = m.units === 'mm'
         ruler.setRuler({
           a: slideToDevice(a, screen), b: slideToDevice(b, screen),
-          length: m.length, units: m.units, decimals: mm ? 1 : 0,
-          sizePx: 24, thickness: 3, showTicks: mm, showTickNumbers: mm,
+          length: m.length, units: m.units, decimals: m.decimals,
+          sizePx: 24, thickness: 3, showTicks: m.ticks, showTickNumbers: m.ticks,
           lineColor: COLOR, textColor: COLOR,
         })
-        status.textContent = `${m.length.toFixed(mm ? 2 : 0)} ${m.units}` +
+        status.textContent = `${m.length.toFixed(m.decimals)} ${m.units}` +
           (ruleB ? ' (click to start over)' : ' (click to fix)')
       }
 

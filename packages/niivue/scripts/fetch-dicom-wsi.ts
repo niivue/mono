@@ -46,6 +46,8 @@ const TAG = {
   dimensionOrganizationType: 'x00209311',
   totalPixelMatrixColumns: 'x00480006', // level width
   totalPixelMatrixRows: 'x00480007', // level height
+  imagedVolumeWidth: 'x00480001', // physical width (mm), FL
+  imagedVolumeHeight: 'x00480002', // physical height (mm), FL
   transferSyntaxUid: 'x00020010',
   pixelData: 'x7fe00010',
 }
@@ -253,8 +255,19 @@ function readMeta(file: string, ds: dicomParser.DataSet): WsiMeta {
   const frames = ds.intString(TAG.numberOfFrames) ?? 1
   const org = (ds.string(TAG.dimensionOrganizationType) ?? '').toUpperCase()
   const encapsulated = isEncapsulated(ds.string(TAG.transferSyntaxUid) ?? '')
-  const sy = ds.floatString(TAG.pixelSpacing, 0) // row spacing (y)
-  const sx = ds.floatString(TAG.pixelSpacing, 1) // column spacing (x)
+  const psY = ds.floatString(TAG.pixelSpacing, 0) // row spacing (y)
+  const psX = ds.floatString(TAG.pixelSpacing, 1) // column spacing (x)
+  // WSI DICOM frequently leaves PixelSpacing (0028,0030) absent or a [1,1]
+  // placeholder; the true physical scale is in ImagedVolumeWidth/Height
+  // (0048,0001/0002, in mm) over the level's pixel matrix. Prefer a real
+  // PixelSpacing, else derive from the imaged-volume extent.
+  const hasPs =
+    Number.isFinite(psX) && Number.isFinite(psY) && !(psX === 1 && psY === 1)
+  const ivw = ds.float(TAG.imagedVolumeWidth)
+  const ivh = ds.float(TAG.imagedVolumeHeight)
+  const spacingMM: [number, number] = hasPs
+    ? [psX as number, psY as number]
+    : [ivw && width ? ivw / width : 1, ivh && height ? ivh / height : 1]
   return {
     file,
     fileName: path.basename(file),
@@ -267,10 +280,7 @@ function readMeta(file: string, ds: dicomParser.DataSet): WsiMeta {
     encapsulated,
     photometric: (ds.string(TAG.photometric) ?? '').toUpperCase(),
     flavor: classifyImageType(imageType),
-    spacingMM: [
-      Number.isFinite(sx) && sx ? (sx as number) : 1,
-      Number.isFinite(sy) && sy ? (sy as number) : 1,
-    ],
+    spacingMM,
   }
 }
 
@@ -493,6 +503,9 @@ export async function buildManifest(
     displayYAxis: 'up',
     dtype: 'uint8',
     channels: 'encoded-rgb',
+    // Physical size of one base (level-0) pixel in mm [x, y]; consumed by
+    // NVSlideManifest.pixelSpacingMM so a viewer can measure in real units.
+    pixelSpacingMM: levels[0]?.spacingMM,
     levels,
   }
 }

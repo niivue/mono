@@ -727,6 +727,24 @@ async function loadActiveSource() {
   return source
 }
 
+// Brick keys of the plan the core is CURRENTLY serving, memoized on plan identity
+// (the core hands back a NEW plan object on every crosshair swap, so an identity
+// check is a cheap change signal). Reuses brickKey so the key space matches the
+// poll's retainKeys intersection exactly. Returns null while no live plan exists
+// yet (initial load, before activeCv is assigned) so the caller falls back to
+// counting every live-serial brick rather than dropping the whole first load.
+let livePlanKeysPlan = null
+let livePlanKeys = new Set()
+function currentPlanKeys(source) {
+  const plan = activeCv?.currentPlan
+  if (!plan) return null
+  if (plan !== livePlanKeysPlan) {
+    livePlanKeysPlan = plan
+    livePlanKeys = new Set(plan.chunks.map((c, i) => brickKey(source, c, i)))
+  }
+  return livePlanKeys
+}
+
 // A ChunkedVolumeSource adapter over an opened OME-Zarr pyramid. Exposes the
 // finest-first levels and reads a voxel region of one level with zarrita; the
 // core `nv.loadChunkedVolume` owns plan-building, per-level dispatch,
@@ -742,7 +760,19 @@ function createZarrChunkedSource(source) {
     })),
     async fetchChunk({ levelIndex, texOrigin, texDims, bytesPerVoxel }) {
       const key = `${levelIndex}|${texOrigin.join(',')}|${texDims.join(',')}`
-      if (isLiveSerial(source.serial)) stats.requested.add(key)
+      // Count this brick in the HUD's requested/completed tallies only while its key
+      // is in the plan the core is CURRENTLY serving. After a same-source refocus the
+      // poll's retainKeys drops a brick that left the plan; a still-in-flight straggler
+      // for that brick must not re-insert its key here, or completed/requested could
+      // exceed the live plan's brick count (e.g. 'completed 49 / 48') until the next
+      // swap intersects it away. Re-evaluated per call, since the plan can swap during
+      // the fetch (null keys => no live plan yet, so count every live-serial brick).
+      const counts = () => {
+        if (!isLiveSerial(source.serial)) return false
+        const keys = currentPlanKeys(source)
+        return keys === null || keys.has(key)
+      }
+      if (counts()) stats.requested.add(key)
       try {
         const bytes = await readOmezarrRegion(
           source.levels[levelIndex],
@@ -750,10 +780,11 @@ function createZarrChunkedSource(source) {
           texDims,
           bytesPerVoxel,
         )
-        if (isLiveSerial(source.serial)) {
-          stats.completed.add(key)
-          stats.decodedBytes += bytes.byteLength
-        }
+        // decodedBytes tracks real transfer/decode work (like wireBytes), so it counts
+        // for any live-serial fetch even if the brick left the plan mid-flight; only
+        // the per-plan requested/completed tallies are gated on current membership.
+        if (isLiveSerial(source.serial)) stats.decodedBytes += bytes.byteLength
+        if (counts()) stats.completed.add(key)
         return bytes
       } catch (err) {
         // Surface the failure in the HUD/console (the signal we used to spot the
@@ -1105,6 +1136,8 @@ function syncZoomControl() {
   // that path (applyZoom still writes it), so read that instead. Only the multi-LOD
   // OME-Zarr render (activeCv set) actually zooms the render camera, so
   // scaleMultiplier is authoritative there; multiplanar always reads pan2Dxyzmm[3].
+  // Do NOT collapse this to always read scaleMultiplier: on the synthetic render path
+  // scaleMultiplier is pinned to 1, and reading it reintroduces the snap-to-1.0x bug.
   const zoom = inRender && activeCv ? nv.scaleMultiplier : nv.pan2Dxyzmm[3] || 1
   // Live zoom (wheel/programmatic) can reach beyond the slider's [min,max]; clamp
   // to the slider range (read from the element) before comparing/assigning, else

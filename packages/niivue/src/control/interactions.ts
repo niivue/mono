@@ -1,5 +1,10 @@
 import type { mat4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
+import {
+  emitOrientationChange,
+  emitPan2DChange,
+  emitScaleMultiplierChange,
+} from '@/control/cameraEvents'
 import * as DragModes from '@/control/dragModes'
 import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { addUndoBitmap, getDrawingBitmap } from '@/drawing/drawingManager'
@@ -224,22 +229,26 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
     if (key === 'H') {
       ctrl.model.scene.azimuth =
         (((ctrl.model.scene.azimuth - 1) % 360) + 360) % 360
+      emitOrientationChange(ctrl)
       ctrl.drawScene()
     } else if (key === 'L') {
       ctrl.model.scene.azimuth =
         (((ctrl.model.scene.azimuth + 1) % 360) + 360) % 360
+      emitOrientationChange(ctrl)
       ctrl.drawScene()
     } else if (key === 'K') {
       ctrl.model.scene.elevation = Math.max(
         -90,
         Math.min(90, ctrl.model.scene.elevation - 1),
       )
+      emitOrientationChange(ctrl)
       ctrl.drawScene()
     } else if (key === 'J') {
       ctrl.model.scene.elevation = Math.max(
         -90,
         Math.min(90, ctrl.model.scene.elevation + 1),
       )
+      emitOrientationChange(ctrl)
       ctrl.drawScene()
     }
   } else {
@@ -1951,6 +1960,7 @@ export function initInteraction(ctrl: NiiVue): void {
       -90,
       Math.min(90, ctrl.model.scene.elevation + deltaY * sensitivity),
     )
+    emitOrientationChange(ctrl)
     ctrl.drawScene()
   }
   ctrl._eventListeners.wheel = (e: Event) => {
@@ -1998,6 +2008,7 @@ export function initInteraction(ctrl: NiiVue): void {
         const zoomChange = ctrl.model.scene.pan2Dxyzmm[3] - zoom
         if (ctrl.model.interaction.isYoked3DTo2DZoom) {
           ctrl.model.scene.scaleMultiplier = zoom
+          emitScaleMultiplierChange(ctrl)
         }
         ctrl.model.scene.pan2Dxyzmm[3] = zoom
         // Adjust pan so zoom centers on the crosshair
@@ -2005,6 +2016,7 @@ export function initInteraction(ctrl: NiiVue): void {
         ctrl.model.scene.pan2Dxyzmm[0] += zoomChange * mm[0]
         ctrl.model.scene.pan2Dxyzmm[1] += zoomChange * mm[1]
         ctrl.model.scene.pan2Dxyzmm[2] += zoomChange * mm[2]
+        emitPan2DChange(ctrl)
         ctrl.drawScene()
         return
       }
@@ -2047,6 +2059,7 @@ export function initInteraction(ctrl: NiiVue): void {
       0.5,
       Math.min(2.0, ctrl.model.scene.scaleMultiplier),
     )
+    emitScaleMultiplierChange(ctrl)
     ctrl.drawScene()
   }
   ctrl._eventListeners.keydown = (e: Event) =>

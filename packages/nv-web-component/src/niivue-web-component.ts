@@ -258,8 +258,7 @@ export class NiivueViewerElement extends LitElement {
       if (!desiredUrls.has(url)) {
         const volIdx = volumeIndexByKey(nv.volumes, url)
         if (volIdx >= 0) {
-          nv.model.removeVolume(volIdx)
-          await nv.updateGLVolume()
+          await nv.removeVolume(volIdx)
         }
         this.loadedVolumes.delete(url)
       }

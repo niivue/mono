@@ -57,7 +57,7 @@ export type ClipPlaneChangeDetail = { clipPlane: number[] }
 export type SliceTypeChangeDetail = { sliceType: number }
 export type PenValueChangedDetail = { penValue: number }
 export type DrawingChangedDetail = {
-  action: 'stroke' | 'create' | 'close' | 'undo'
+  action: 'stroke' | 'create' | 'close' | 'undo' | 'load' | 'update'
 }
 export type DrawingEnabledDetail = { isEnabled: boolean }
 export type PropertyChangeDetail = { property: string; value: unknown }

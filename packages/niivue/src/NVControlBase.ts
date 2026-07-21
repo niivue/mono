@@ -561,6 +561,9 @@ export default class NiiVue extends EventTarget {
   set crosshairPos(v: vec3) {
     this.model.scene.crosshairPos = v
     this.emit('change', { property: 'crosshairPos', value: v })
+    // Mirror the interaction/setCrosshairPos paths so a programmatic crosshair
+    // move also yields a locationChange (with voxel/intensity readout).
+    this.createOnLocationChange()
     this.drawScene()
   }
 
@@ -2489,6 +2492,23 @@ export default class NiiVue extends EventTarget {
     await this.updateGLVolume()
   }
 
+  /**
+   * Remove a single volume by index, emitting `volumeRemoved`.
+   * @param volumeIndex - Index of the volume to remove
+   * @example
+   * await nv1.removeVolume(1) // remove the first overlay
+   */
+  async removeVolume(volumeIndex: number): Promise<void> {
+    const volumes = this.model.getVolumes()
+    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
+    const volume = volumes[volumeIndex]
+    // Emit before removal, matching removeAllVolumes/removeAllMeshes: at emit
+    // time the collection still contains the referenced item.
+    this.emit('volumeRemoved', { volume, index: volumeIndex })
+    this.model.removeVolume(volumeIndex)
+    await this.updateGLVolume()
+  }
+
   async removeAllMeshes(): Promise<void> {
     const meshes = this.model.getMeshes()
     for (let i = meshes.length - 1; i >= 0; i--) {
@@ -2581,6 +2601,13 @@ export default class NiiVue extends EventTarget {
         computeVolumeLabelCentroids(volumes[volumeIndex])
     }
     volumes[volumeIndex].isDirty = true
+    // Structural change (the label LUT is not a VolumeUpdate option); the volume
+    // reference lets listeners re-read colormapLabel.
+    this.emit('volumeUpdated', {
+      volumeIndex,
+      volume: volumes[volumeIndex],
+      changes: {},
+    })
     await this.updateGLVolume()
   }
 
@@ -2829,6 +2856,9 @@ export default class NiiVue extends EventTarget {
     }
     m.layers.push(newLayer)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    // Layer state is structural (not a MeshUpdate option diff); the mesh
+    // reference lets listeners re-read mesh.layers.
+    this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
     await this.updateGLVolume()
     return this
   }
@@ -2843,6 +2873,9 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return this
     m.layers.splice(layerIndex, 1)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    // Layer state is structural (not a MeshUpdate option diff); the mesh
+    // reference lets listeners re-read mesh.layers.
+    this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
     await this.updateGLVolume()
     return this
   }
@@ -2865,6 +2898,9 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(m.layers, layerIndex, 'Layer')) return
     Object.assign(m.layers[layerIndex], options)
     NVMeshLayers.compositeLayers(m.perVertexColors, m.color, m.layers, m.colors)
+    // Layer state is structural (not a MeshUpdate option diff); the mesh
+    // reference lets listeners re-read mesh.layers.
+    this.emit('meshUpdated', { meshIndex, mesh: m, changes: {} })
     await this.updateGLVolume()
   }
 
@@ -4512,6 +4548,7 @@ export default class NiiVue extends EventTarget {
       this.model.draw.isEnabled = true
       this._drawLut = null
       this.refreshDrawing()
+      this.emit('drawingChanged', { action: 'load' })
       return true
     } catch (err) {
       log.warn('loadDrawing failed:', err)

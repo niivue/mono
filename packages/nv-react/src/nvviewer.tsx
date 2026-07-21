@@ -133,8 +133,7 @@ export const NvViewer = ({
           (v: NVImage) => v.url === url || v.name === url,
         )
         if (volIdx >= 0) {
-          nv.model.removeVolume(volIdx)
-          nv.updateGLVolume()
+          nv.removeVolume(volIdx)
         }
         currentVolumes.delete(url)
       }

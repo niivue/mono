@@ -756,7 +756,7 @@ describe('NvSceneController', () => {
 
       await controller.removeVolume(0, 'test.nii')
       expect(cb).toHaveBeenCalledWith(0, 'test.nii')
-      expect(nv.model.removeVolume).toHaveBeenCalled()
+      expect(nv.removeVolume).toHaveBeenCalledWith(0)
     })
 
     test('removeVolume is a no-op when volume is not found', () => {

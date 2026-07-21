@@ -28,6 +28,7 @@
     "@niivue/niivue": "workspace:*"
   },
   "devDependencies": {
+    "@niivue/dev-images": "workspace:*",
     "@niivue/niivue": "workspace:*",
     "@types/bun": "^1.3.12",
     "@webgpu/types": "^0.1.69",

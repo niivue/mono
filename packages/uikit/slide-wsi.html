@@ -28,6 +28,7 @@
         <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide (3D)</a><a href="/slide-wsi.html">WSI</a></nav>
         <span>Drag to pan, wheel to zoom. Click two points to measure.</span>
         <button id="fit" type="button">Fit</button>
+        <label>font <input id="fontSize" type="range" min="12" max="72" value="24" style="vertical-align:middle" /></label>
         <span>slide: <a href="?src=cptac">tissue</a> | <a href="?src=dzi">demo</a></span>
         <span><a href="?backend=webgl2">webgl2</a> | <a href="?backend=webgpu">webgpu</a></span>
         <span id="status">loading slide...</span>
@@ -107,6 +108,7 @@
       let ruleA = null // {x,y} slide px
       let ruleB = null
       let hoverCss = null
+      let labelSizePx = 24 // ruler label height in px (font-size slider)
 
       // Physical distance when the slide carries pixel spacing (PixelSpacing /
       // ImagedVolumeWidth): microns for sub-mm features, mm (with per-mm ticks)
@@ -133,7 +135,7 @@
         ruler.setRuler({
           a: slideToDevice(a, screen), b: slideToDevice(b, screen),
           length: m.length, units: m.units, decimals: m.decimals,
-          sizePx: 24, thickness: 3, showTicks: m.ticks, showTickNumbers: m.ticks,
+          sizePx: labelSizePx, thickness: 3, showTicks: m.ticks, showTickNumbers: m.ticks,
           lineColor: COLOR, textColor: COLOR,
         })
         status.textContent = `${m.length.toFixed(m.decimals)} ${m.units}` +
@@ -213,6 +215,9 @@
       }, { passive: false })
       document.getElementById('fit').addEventListener('click', () => {
         slide.fitToScreen(screenForCanvas()); requestRender()
+      })
+      document.getElementById('fontSize').addEventListener('input', (ev) => {
+        labelSizePx = Number(ev.target.value); requestRender()
       })
     </script>
   </body>

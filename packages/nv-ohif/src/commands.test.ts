@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
-import { SLICE_TYPE } from '@niivue/niivue'
+import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import {
   findOverlayCandidate,
   getNiivueCommandsModule,
@@ -9,6 +9,7 @@ import {
   OVERLAY_COLORMAP,
   OVERLAY_OPACITY,
   readBaseWindowLevel,
+  reflectNiivueMeasurement,
   resolveWindowLevel,
   syncNiivueWindowLevelToOhif,
 } from './commands'
@@ -19,6 +20,7 @@ import {
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
+import type { OhifExtensionParams } from './ohif-types'
 
 // A stub with the scene properties and volume APIs the commands touch.
 function stubNiivue() {
@@ -30,6 +32,7 @@ function stubNiivue() {
   const recalculated: number[] = []
   return {
     sliceType: SLICE_TYPE.MULTIPLANAR as number,
+    primaryDragMode: DRAG_MODE.crosshair as number,
     azimuth: 42,
     elevation: -7,
     scaleMultiplier: 3,
@@ -117,6 +120,148 @@ describe('niivueRegistry', () => {
     // With two instances the fallback is ambiguous: exact matches only.
     expect(getNiivueForViewport('vp-b')).toBe(b as unknown as NiiVue)
     expect(getNiivueForViewport('vp-other')).toBeUndefined()
+  })
+})
+
+describe('niivueSetMeasurementMode', () => {
+  it("activates OHIF's Length tool so the tool bridge drives measurement mode", () => {
+    const nv = stubNiivue()
+    register('vp-1', nv)
+    const ran: Array<{ name: string; opts?: Record<string, unknown> }> = []
+    const commandsManager = {
+      runCommand: (name: string, opts?: Record<string, unknown>) => {
+        ran.push({ name, opts })
+      },
+    }
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+      commandsManager,
+    })
+    definitions.niivueSetMeasurementMode()
+    expect(ran).toEqual([
+      { name: 'setToolActiveToolbar', opts: { toolName: 'Length' } },
+    ])
+  })
+
+  it('falls back to NiiVue measurement mode when no commandsManager exists', () => {
+    const nv = stubNiivue()
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    definitions.niivueSetMeasurementMode()
+    expect(nv.primaryDragMode).toBe(DRAG_MODE.measurement)
+  })
+})
+
+// Stub MeasurementService + displaySetService that record what reflection adds.
+function measurementServices(
+  viewportId: string,
+  backing: Record<string, unknown>[],
+) {
+  const added: Array<{ data: Record<string, unknown> }> = []
+  const mappings: Array<{ annotationType: string }> = []
+  const servicesManager = {
+    services: {
+      viewportGridService: { getActiveViewportId: () => viewportId },
+      measurementService: {
+        createSource: (name: string, version: string) => ({ name, version }),
+        addMapping: (_source: unknown, annotationType: string) => {
+          mappings.push({ annotationType })
+        },
+        addRawMeasurement: (
+          _source: unknown,
+          _annotationType: string,
+          data: Record<string, unknown>,
+          toMeasurementSchema: (d: { measurement: unknown }) => unknown,
+        ) => {
+          added.push({
+            data: {
+              ...data,
+              schema: toMeasurementSchema(data as { measurement: unknown }),
+            },
+          })
+        },
+      },
+      displaySetService: {
+        getDisplaySetsForSeries: (uid: string) =>
+          backing.filter((d) => d.SeriesInstanceUID === uid),
+      },
+    },
+  } as unknown as OhifExtensionParams['servicesManager']
+  return { added, mappings, servicesManager }
+}
+
+describe('reflectNiivueMeasurement', () => {
+  it('adds an OHIF Length measurement (RAS->LPS, series ref, length text)', () => {
+    const nv = stubNiivue()
+    register('vp-1', nv)
+    const backing = [
+      {
+        SeriesInstanceUID: 'series-1',
+        StudyInstanceUID: 'study-1',
+        displaySetInstanceUID: 'ds-1',
+        instances: [{ FrameOfReferenceUID: 'for-1' }],
+      },
+    ]
+    updateNiivueViewport('vp-1', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-1', backing)
+    const ok = reflectNiivueMeasurement('vp-1', svc.servicesManager, {
+      startMM: [10, 20, 30],
+      endMM: [10, 20, 40],
+      distance: 10,
+    })
+    expect(ok).toBe(true)
+    expect(svc.added).toHaveLength(1)
+    const first = svc.added[0]
+    if (!first) throw new Error('no measurement added')
+    const data = first.data as Record<string, unknown>
+    // addRawMeasurement destructures data.annotation.data, so it must exist.
+    const annotation = data.annotation as { data?: unknown }
+    expect(annotation.data).toBeDefined()
+    const m = data.schema as {
+      toolName: string
+      referenceSeriesUID: string
+      referenceStudyUID: string
+      displaySetInstanceUID: string
+      FrameOfReferenceUID: string
+      displayText: { primary: string[] }
+      points: number[][]
+      data: { length: number; unit: string }
+    }
+    expect(m.toolName).toBe('Length')
+    expect(m.referenceSeriesUID).toBe('series-1')
+    expect(m.referenceStudyUID).toBe('study-1')
+    expect(m.displaySetInstanceUID).toBe('ds-1')
+    expect(m.FrameOfReferenceUID).toBe('for-1')
+    expect(m.displayText.primary[0]).toBe('10.0 mm')
+    expect(m.data).toEqual({ length: 10, unit: 'mm' })
+    // NIfTI RAS -> DICOM LPS negates x and y, keeps z.
+    expect(m.points[0]).toEqual([-10, -20, 30])
+    expect(m.points[1]).toEqual([-10, -20, 40])
+  })
+
+  it('returns false and adds nothing when no backing series has instances', () => {
+    const nv = stubNiivue()
+    register('vp-1', nv)
+    updateNiivueViewport('vp-1', {
+      displaySets: [{ SeriesInstanceUID: 's-empty' }] as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    // Backing series resolves but has no instances (e.g. a NIfTI-URL set).
+    const svc = measurementServices('vp-1', [{ SeriesInstanceUID: 's-empty' }])
+    const ok = reflectNiivueMeasurement('vp-1', svc.servicesManager, {
+      startMM: [0, 0, 0],
+      endMM: [1, 0, 0],
+      distance: 1,
+    })
+    expect(ok).toBe(false)
+    expect(svc.added).toHaveLength(0)
   })
 })
 

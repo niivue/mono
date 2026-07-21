@@ -1,4 +1,4 @@
-import { SLICE_TYPE } from '@niivue/niivue'
+import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
@@ -104,6 +104,7 @@ const VIEW_DEFAULTS = {
 
 interface DisplaySetServiceLike {
   getActiveDisplaySets?: () => OhifDisplaySet[]
+  getDisplaySetsForSeries?: (uid: string) => ReadonlyArray<OhifDisplaySet>
 }
 
 // The next display set in the study that NiiVue could load but is not already
@@ -296,6 +297,142 @@ function syncWindowLevelToSiblings(
  * the same series (see {@link syncWindowLevelToSiblings}). Returns the new
  * window/level when it changed (for a viewport readout), else undefined.
  */
+// --- ruler / length: reflect a NiiVue measurement into OHIF ------------------
+
+/** NiiVue's `measurementCompleted` detail: endpoints in world mm (RAS) + length. */
+export interface NiivueCompletedMeasurement {
+  startMM: [number, number, number]
+  endMM: [number, number, number]
+  distance: number
+}
+
+// OHIF's polyline value type (a 2-point Length). Literal, so we don't depend on
+// measurementService.VALUE_TYPES being present at runtime.
+const POLYLINE_VALUE_TYPE = 'value_type::polyline'
+
+interface MeasurementSourceLike {
+  uid?: string
+}
+interface MeasurementServiceLike {
+  createSource: (name: string, version: string) => MeasurementSourceLike
+  addMapping: (
+    source: MeasurementSourceLike,
+    annotationType: string,
+    matchingCriteria: Array<{ valueType: string; points: number }>,
+    toAnnotationSchema: (data: unknown) => unknown,
+    toMeasurementSchema: (data: { measurement: unknown }) => unknown,
+  ) => void
+  addRawMeasurement: (
+    source: MeasurementSourceLike,
+    annotationType: string,
+    data: unknown,
+    toMeasurementSchema: (data: { measurement: unknown }) => unknown,
+  ) => unknown
+}
+// One 'NiiVue' source + Length mapping per MeasurementService. createSource is
+// idempotent, but addMapping stacks, so register the mapping exactly once.
+const measurementSources = new WeakMap<object, MeasurementSourceLike>()
+function niivueMeasurementSource(
+  measurementService: MeasurementServiceLike,
+): MeasurementSourceLike {
+  const cached = measurementSources.get(measurementService as object)
+  if (cached) return cached
+  const source = measurementService.createSource('NiiVue', '1.0')
+  measurementService.addMapping(
+    source,
+    'Length',
+    [{ valueType: POLYLINE_VALUE_TYPE, points: 2 }],
+    () => ({}),
+    (data) => data.measurement,
+  )
+  measurementSources.set(measurementService as object, source)
+  return source
+}
+
+let niivueMeasurementCounter = 0
+
+/**
+ * Reflect a completed NiiVue ruler measurement into OHIF's MeasurementService so
+ * it shows in the measurement panel. NiiVue endpoints are world mm in NIfTI RAS;
+ * DICOM patient space is LPS, so negate x and y. The panel needs a
+ * `referenceSeriesUID` resolving to a loaded displaySet with instances, a
+ * `label`, and `displayText.primary` (the length string). Returns false (and adds
+ * nothing) when no backing DICOM series with instances exists — e.g. a NIfTI-URL
+ * display set — so the panel can never throw on an unresolvable reference.
+ */
+export function reflectNiivueMeasurement(
+  viewportId: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
+  measurement: NiivueCompletedMeasurement,
+): boolean {
+  const services = ohifServices(servicesManager)
+  const measurementService = services?.measurementService as
+    | MeasurementServiceLike
+    | undefined
+  const displaySetService = services?.displaySetService as
+    | DisplaySetServiceLike
+    | undefined
+  if (
+    !measurementService?.addRawMeasurement ||
+    !displaySetService?.getDisplaySetsForSeries
+  )
+    return false
+  const entry = getNiivueEntry(viewportId)
+  if (!entry) return false
+
+  // Resolve a backing DICOM series that OHIF can render a row for.
+  let backing: OhifDisplaySet | undefined
+  for (const ds of entry.displaySets) {
+    if (!ds.SeriesInstanceUID) continue
+    const resolved = displaySetService.getDisplaySetsForSeries(
+      ds.SeriesInstanceUID,
+    )
+    const withInstances = resolved?.find((r) => (r.instances?.length ?? 0) > 0)
+    if (withInstances) {
+      backing = withInstances
+      break
+    }
+  }
+  if (!backing?.SeriesInstanceUID) return false
+
+  const source = niivueMeasurementSource(measurementService)
+  const uid = `niivue-length-${++niivueMeasurementCounter}`
+  const toLps = (p: [number, number, number]): [number, number, number] => [
+    -p[0],
+    -p[1],
+    p[2],
+  ]
+  const lengthMm = measurement.distance
+  const forUID = backing.instances?.[0]?.FrameOfReferenceUID as
+    | string
+    | undefined
+  measurementService.addRawMeasurement(
+    source,
+    'Length',
+    {
+      uid,
+      // addRawMeasurement unconditionally destructures data.annotation.data.
+      annotation: { data: {} },
+      measurement: {
+        uid,
+        toolName: 'Length',
+        label: 'NiiVue length',
+        referenceSeriesUID: backing.SeriesInstanceUID,
+        referenceStudyUID: backing.StudyInstanceUID as string | undefined,
+        displaySetInstanceUID: backing.displaySetInstanceUID,
+        FrameOfReferenceUID: forUID,
+        points: [toLps(measurement.startMM), toLps(measurement.endMM)],
+        displayText: { primary: [`${lengthMm.toFixed(1)} mm`], secondary: [] },
+        data: { length: lengthMm, unit: 'mm' },
+        type: POLYLINE_VALUE_TYPE,
+        metadata: { toolName: 'Length', FrameOfReferenceUID: forUID },
+      },
+    },
+    (data) => data.measurement,
+  )
+  return true
+}
+
 export function syncNiivueWindowLevelToOhif(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
@@ -328,6 +465,7 @@ export function syncNiivueWindowLevelToOhif(
  */
 export function getNiivueCommandsModule({
   servicesManager,
+  commandsManager,
 }: OhifExtensionParams) {
   const actions = {
     /** Switch the view: axial / coronal / sagittal / multiplanar / render. */
@@ -336,6 +474,26 @@ export function getNiivueCommandsModule({
       const mapped = sliceType ? NIIVUE_SLICE_TYPES[sliceType] : undefined
       if (!nv || mapped === undefined) return
       nv.sliceType = mapped
+    },
+
+    /**
+     * Activate the ruler (length) tool. Routes through OHIF's `setToolActiveToolbar`
+     * so OHIF's active-tool state and NiiVue agree: the tool bridge in
+     * NiivueViewport maps the active `Length` tool onto NiiVue's measurement
+     * drag mode. Setting `nv.primaryDragMode` directly would be reset by that
+     * bridge the next time OHIF's active tool (e.g. WindowLevel) re-applies. On
+     * release a completed measurement is reflected into OHIF's measurement panel
+     * (see the measurementCompleted subscription in NiivueViewport). Falls back to
+     * setting NiiVue's drag mode directly when no commandsManager is available.
+     */
+    niivueSetMeasurementMode: () => {
+      const cmds = ohifCommandsManager(commandsManager)
+      if (cmds?.runCommand) {
+        cmds.runCommand('setToolActiveToolbar', { toolName: 'Length' })
+        return
+      }
+      const nv = getActiveNiivue(servicesManager)
+      if (nv) nv.primaryDragMode = DRAG_MODE.measurement
     },
 
     /** Reset camera, pan, zoom, and crosshair to their defaults. */
@@ -548,6 +706,7 @@ export function getNiivueCommandsModule({
     actions,
     definitions: {
       niivueSetSliceType: actions.niivueSetSliceType,
+      niivueSetMeasurementMode: actions.niivueSetMeasurementMode,
       niivueResetView: actions.niivueResetView,
       niivueSaveBitmap: actions.niivueSaveBitmap,
       niivueSetClipPlane: actions.niivueSetClipPlane,

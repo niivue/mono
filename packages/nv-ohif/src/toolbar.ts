@@ -1,3 +1,4 @@
+import { DRAG_MODE } from '@niivue/niivue'
 import { baseModality, NIIVUE_COLORMAPS, NIIVUE_SLICE_TYPES } from './commands'
 import {
   getNiivueEntryForViewport,
@@ -14,6 +15,7 @@ export const NIIVUE_RESET_BUTTON = 'NiivueReset'
 export const NIIVUE_OVERLAY_BUTTON = 'NiivueOverlay'
 export const NIIVUE_COLORBAR_BUTTON = 'NiivueColorbar'
 export const NIIVUE_INTERPOLATION_BUTTON = 'NiivueInterpolation'
+export const NIIVUE_RULER_BUTTON = 'NiivueRuler'
 export const NIIVUE_CAPTURE_BUTTON = 'Capture'
 
 const SLICE_TYPE_EVALUATOR = 'evaluate.niivue.sliceType'
@@ -23,6 +25,7 @@ const WL_PRESET_EVALUATOR = 'evaluate.niivue.windowLevelPreset'
 const COLORMAP_EVALUATOR = 'evaluate.niivue.colormap'
 const COLORBAR_EVALUATOR = 'evaluate.niivue.colorbar'
 const INTERPOLATION_EVALUATOR = 'evaluate.niivue.interpolation'
+const MEASUREMENT_EVALUATOR = 'evaluate.niivue.measurement'
 const NIIVUE_EVALUATOR = 'evaluate.niivue'
 
 // Capitalized id suffix for a colormap name ('viridis' -> 'Viridis').
@@ -232,6 +235,18 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
       tooltip: 'Toggle nearest-neighbor vs smooth interpolation (NiiVue)',
       commands: 'niivueToggleInterpolation',
       evaluate: INTERPOLATION_EVALUATOR,
+    },
+  },
+  {
+    id: NIIVUE_RULER_BUTTON,
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'tool-length',
+      label: 'Ruler',
+      tooltip:
+        'Ruler: drag to measure; length appears in Measurements (NiiVue)',
+      commands: 'niivueSetMeasurementMode',
+      evaluate: MEASUREMENT_EVALUATOR,
     },
   },
   {
@@ -452,6 +467,18 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
         return {
           disabled: false,
           isActive: nv.volumeIsNearestInterpolation === true,
+        }
+      },
+    },
+    {
+      name: MEASUREMENT_EVALUATOR,
+      evaluate: ({ viewportId }) => {
+        const nv = getNiivueForViewport(viewportId)
+        if (!nv) return DISABLED
+        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
+        return {
+          disabled: false,
+          isActive: nv.primaryDragMode === DRAG_MODE.measurement,
         }
       },
     },

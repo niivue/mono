@@ -2,7 +2,12 @@ import type { NiiVueOptions } from '@niivue/niivue'
 import NiiVue, { NVSlide, SLICE_TYPE } from '@niivue/niivue'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
-import { readBaseWindowLevel, syncNiivueWindowLevelToOhif } from './commands'
+import type { NiivueCompletedMeasurement } from './commands'
+import {
+  readBaseWindowLevel,
+  reflectNiivueMeasurement,
+  syncNiivueWindowLevelToOhif,
+} from './commands'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import {
@@ -146,12 +151,37 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
     canvas.addEventListener('pointerup', onPointerUp)
 
+    // Ruler bridge: when a NiiVue length measurement completes, reflect it into
+    // OHIF's measurement panel (commands.ts) and flash the length. Reflection is
+    // skipped for display sets with no backing DICOM series (returns false).
+    const onMeasurement = (e: Event) => {
+      const detail = (e as CustomEvent<NiivueCompletedMeasurement>).detail
+      if (!detail) return
+      const added = reflectNiivueMeasurement(
+        viewportId,
+        servicesManagerRef.current,
+        detail,
+      )
+      if (!added) return
+      const message = `Length: ${detail.distance.toFixed(1)} mm`
+      setStatus({ kind: 'note', message })
+      window.setTimeout(
+        () =>
+          setStatus((s) =>
+            s.kind === 'note' && s.message === message ? { kind: 'idle' } : s,
+          ),
+        2000,
+      )
+    }
+    nv.addEventListener('measurementCompleted', onMeasurement)
+
     return () => {
       disposed = true
       setReady(false)
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       canvas.removeEventListener('pointerup', onPointerUp)
+      nv.removeEventListener('measurementCompleted', onMeasurement)
       ro.disconnect()
       nv.destroy()
       canvas.width = 0

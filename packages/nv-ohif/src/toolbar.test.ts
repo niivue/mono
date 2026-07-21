@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
-import { SLICE_TYPE } from '@niivue/niivue'
+import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import {
   getNiivueEntryForViewport,
   registerNiivue,
@@ -94,6 +94,18 @@ describe('toolbar evaluators', () => {
     expect(
       evaluate({ viewportId: 'vp-1', button: axialButton })?.isActive,
     ).toBe(false)
+  })
+
+  it('mark the ruler active only in measurement drag mode', () => {
+    const nv = {
+      primaryDragMode: DRAG_MODE.measurement as number,
+      volumes: [{}],
+    }
+    registerNiivue('vp-1', nv as unknown as NiiVue)
+    const evaluate = evaluator('evaluate.niivue.measurement')
+    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
+    nv.primaryDragMode = DRAG_MODE.crosshair
+    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
   })
 
   it('enable the reset button on a NiiVue viewport', () => {

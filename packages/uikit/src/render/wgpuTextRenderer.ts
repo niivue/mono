@@ -33,8 +33,7 @@ export class WgpuTextRenderer {
     this.device = device
     this.key = key
     this.uniformBuffer ??= device.createBuffer({
-      // canvasSize(2) + screenPxRange + outlineWidthPx + outlineColor(4) floats.
-      size: 32,
+      size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
     this.sampler ??= device.createSampler({
@@ -157,8 +156,6 @@ export class WgpuTextRenderer {
     screenPxRange: number,
     width: number,
     height: number,
-    outlineColor: readonly number[],
-    outlineWidthPx: number,
   ): void {
     if (count === 0) return
     this.ensurePipeline(device, colorFormat, sampleCount, depthFormat)
@@ -168,16 +165,7 @@ export class WgpuTextRenderer {
     device.queue.writeBuffer(
       this.uniformBuffer as GPUBuffer,
       0,
-      new Float32Array([
-        width,
-        height,
-        screenPxRange,
-        outlineWidthPx,
-        outlineColor[0] ?? 0,
-        outlineColor[1] ?? 0,
-        outlineColor[2] ?? 0,
-        outlineColor[3] ?? 0,
-      ]),
+      new Float32Array([width, height, screenPxRange, 0]),
     )
     device.queue.writeBuffer(
       this.vertexBuffer,

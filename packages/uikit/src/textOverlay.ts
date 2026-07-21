@@ -6,15 +6,68 @@
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import { GlTextRenderer } from './render/glTextRenderer'
 import { WgpuTextRenderer } from './render/wgpuTextRenderer'
-import { screenPxRange, type UIKitFont } from './text/font'
+import {
+  screenPxRange,
+  type UIKitFont,
+  type UIKitFontMetrics,
+} from './text/font'
 import {
   autoOutlineColor,
+  FLOATS_PER_VERTEX,
   layoutText,
   type TextLayoutOptions,
 } from './text/layout'
 
 /** One piece of text to draw: the string plus its layout pose. */
 export type UIKitTextItem = TextLayoutOptions & { str: string }
+
+// Eight unit offsets for the halo outline. The bundled MSDF atlas has too small
+// a distance range for an in-shader SDF outline (it saturates to a filled rect),
+// so the outline is drawn as offset copies of the glyphs in the outline color
+// behind the fill - works at any size, both backends, in a single draw.
+const OUTLINE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [1, 1],
+  [1, -1],
+  [-1, 1],
+  [-1, -1],
+]
+
+/** Lay out one item's glyph run, baking an offset-halo outline in if requested. */
+function buildTextRun(
+  metrics: UIKitFontMetrics,
+  item: UIKitTextItem,
+): { vertices: Float32Array; count: number } {
+  const fill = layoutText(metrics, item.str, item)
+  const w = item.outlineWidthPx ?? 0
+  if (w <= 0) return fill
+  const outlineColor =
+    item.outlineColor ?? autoOutlineColor(item.color ?? [1, 1, 1, 1])
+  const parts: Float32Array[] = []
+  for (const [ox, oy] of OUTLINE_OFFSETS) {
+    parts.push(
+      layoutText(metrics, item.str, {
+        ...item,
+        x: item.x + ox * w,
+        y: item.y + oy * w,
+        color: outlineColor,
+      }).vertices,
+    )
+  }
+  parts.push(fill.vertices) // fill drawn last, on top of the halo
+  let total = 0
+  for (const p of parts) total += p.length
+  const vertices = new Float32Array(total)
+  let off = 0
+  for (const p of parts) {
+    vertices.set(p, off)
+    off += p.length
+  }
+  return { vertices, count: total / FLOATS_PER_VERTEX }
+}
 
 export class UIKitTextOverlay implements UIKitOverlayRenderer {
   private font: UIKitFont
@@ -42,15 +95,9 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
     const { handle, bounds } = frame
     const metrics = this.font.metrics
     for (const item of this.items) {
-      const { vertices, count } = layoutText(metrics, item.str, item)
+      const { vertices, count } = buildTextRun(metrics, item)
       if (count === 0) continue
       const spr = screenPxRange(metrics, item.sizePx)
-      const outlineWidthPx = item.outlineWidthPx ?? 0
-      // Auto-pick a contrasting outline color from the fill when none is given.
-      const outlineColor =
-        outlineWidthPx > 0
-          ? (item.outlineColor ?? autoOutlineColor(item.color ?? [1, 1, 1, 1]))
-          : [0, 0, 0, 0]
       if (handle.backend === 'webgl2') {
         this.gl.draw(
           handle.gl,
@@ -60,8 +107,6 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
           spr,
           bounds.width,
           bounds.height,
-          outlineColor,
-          outlineWidthPx,
         )
       } else {
         this.wgpu.draw(
@@ -76,8 +121,6 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
           spr,
           bounds.width,
           bounds.height,
-          outlineColor,
-          outlineWidthPx,
         )
       }
     }

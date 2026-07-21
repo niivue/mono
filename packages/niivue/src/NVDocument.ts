@@ -4,7 +4,7 @@ import {
   encodeDocumentJSON,
   looksLikeJSON,
 } from '@/documentJson'
-import { shouldLinkVolume } from '@/documentLinkData'
+import { isTransientStreamedVolume, shouldLinkVolume } from '@/documentLinkData'
 import {
   fillGroup,
   fillModeFor,
@@ -357,89 +357,98 @@ export function serialize(
 ): Uint8Array {
   const policy = options?.settings
   const linkData = options?.linkData ?? false
-  // Extract volumes with embedded data
-  const volumes: NVDocumentVolume[] = model.volumes.map((v) => {
-    const vol: NVDocumentVolume = {
-      url: v.url,
-      name: v.name,
-      colormap: v.colormap,
-      colormapNegative: v.colormapNegative,
-      opacity: v.opacity,
-      calMin: v.calMin,
-      calMax: v.calMax,
-      calMinNeg: v.calMinNeg,
-      calMaxNeg: v.calMaxNeg,
-      colormapType: v.colormapType,
-      isTransparentBelowCalMin: v.isTransparentBelowCalMin,
-      modulateAlpha: v.modulateAlpha,
-      modulationImage: v.modulationImage,
-      isColorbarVisible: v.isColorbarVisible,
-      isLegendVisible: v.isLegendVisible,
-      frame4D: v.frame4D,
-    }
-
-    // Serialize label colormap if present
-    if (v.colormapLabel) {
-      vol.colormapLabel = {
-        lut: new Uint8Array(
-          v.colormapLabel.lut.buffer,
-          v.colormapLabel.lut.byteOffset,
-          v.colormapLabel.lut.byteLength,
-        ),
-        min: v.colormapLabel.min ?? 0,
-        max: v.colormapLabel.max ?? 0,
-        labels: v.colormapLabel.labels,
+  // Extract volumes with embedded data. Skip streamed/chunked volumes whose
+  // voxels live only in a runtime chunkSource closure (img=null + chunkPlan/
+  // chunkSource): they have no bytes to embed and their `streamed://<id>` url is
+  // a renderer texture-cache key, not a fetchable resource, so serializing them
+  // would drive a broken fetch on reload. Dropping them keeps the remaining
+  // (restorable) volumes' relative order intact; the modulationImage link is by
+  // volume id and resolves by find-by-id at render time, so a reference to a
+  // dropped volume degrades to a no-op rather than corrupting the document.
+  const volumes: NVDocumentVolume[] = model.volumes
+    .filter((v) => !isTransientStreamedVolume(v))
+    .map((v) => {
+      const vol: NVDocumentVolume = {
+        url: v.url,
+        name: v.name,
+        colormap: v.colormap,
+        colormapNegative: v.colormapNegative,
+        opacity: v.opacity,
+        calMin: v.calMin,
+        calMax: v.calMax,
+        calMinNeg: v.calMinNeg,
+        calMaxNeg: v.calMaxNeg,
+        colormapType: v.colormapType,
+        isTransparentBelowCalMin: v.isTransparentBelowCalMin,
+        modulateAlpha: v.modulateAlpha,
+        modulationImage: v.modulationImage,
+        isColorbarVisible: v.isColorbarVisible,
+        isLegendVisible: v.isLegendVisible,
+        frame4D: v.frame4D,
       }
-    }
 
-    // Embed volume data for a self-contained document, UNLESS linkData is set
-    // and this volume has a fetchable URL (then the loader refetches it). A
-    // linked volume with no usable URL still embeds so the document round-trips.
-    if (v.hdr && v.img) {
-      if (shouldLinkVolume(v.url, linkData)) {
-        // linked: bytes omitted, loader fetches from v.url
-      } else {
-        if (linkData) {
-          log.warn(
-            `serialize: volume "${v.name ?? v.url ?? '(unnamed)'}" has no linkable URL; embedding its data`,
-          )
-        }
-        const imgData = typedArrayToBytes(v.img)
-        const hdrData = extractHeaderData(v.hdr)
-        // A partial 4D volume loaded from a local File cannot be deferred-reloaded
-        // after restore: `_sourceFile` is runtime-only (not serialized) and `url` is
-        // just the bare filename. Collapse the saved header's frame count to the
-        // frames actually embedded, so the restored volume presents as complete and
-        // the graph offers no dead deferred action. URL-sourced self-contained-NII
-        // partials have no `_sourceFile`, keep their full dims, and still reload
-        // correctly on restore. Detached-header formats (AFNI .HEAD+.BRIK, NRRD
-        // .nhdr+.raw, MRtrix detached .mif, MetaImage detached .mha) also can't be
-        // deferred-reloaded after restore: `_urlImageData` is runtime-only (same
-        // allowlist contract as `_sourceFile`), so a saved partial would offer a
-        // dead deferred action — collapse it too.
-        const partial = (v.nFrame4D ?? 1) < (v.nTotalFrame4D ?? 1)
-        if (partial && (v._sourceFile != null || v._urlImageData != null)) {
-          // Represent the loaded prefix as a flat 4D sequence of `nFrame4D` frames.
-          // For a rare partial 5D/6D File volume this intentionally flattens the
-          // higher axes — only the first nFrame4D frames were loaded (not a clean
-          // multiple of dims[5]/dims[6]), so a flat 4D count is the only faithful
-          // representation of what the document actually contains.
-          const n = v.nFrame4D ?? 1
-          hdrData.dims[0] = n > 1 ? 4 : 3
-          hdrData.dims[4] = n
-          hdrData.dims[5] = 1
-          hdrData.dims[6] = 1
-        }
-        vol.data = {
-          hdr: hdrData,
-          img: imgData,
-          datatypeCode: v.hdr.datatypeCode,
+      // Serialize label colormap if present
+      if (v.colormapLabel) {
+        vol.colormapLabel = {
+          lut: new Uint8Array(
+            v.colormapLabel.lut.buffer,
+            v.colormapLabel.lut.byteOffset,
+            v.colormapLabel.lut.byteLength,
+          ),
+          min: v.colormapLabel.min ?? 0,
+          max: v.colormapLabel.max ?? 0,
+          labels: v.colormapLabel.labels,
         }
       }
-    }
 
-    return vol
-  })
+      // Embed volume data for a self-contained document, UNLESS linkData is set
+      // and this volume has a fetchable URL (then the loader refetches it). A
+      // linked volume with no usable URL still embeds so the document round-trips.
+      if (v.hdr && v.img) {
+        if (shouldLinkVolume(v.url, linkData)) {
+          // linked: bytes omitted, loader fetches from v.url
+        } else {
+          if (linkData) {
+            log.warn(
+              `serialize: volume "${v.name ?? v.url ?? '(unnamed)'}" has no linkable URL; embedding its data`,
+            )
+          }
+          const imgData = typedArrayToBytes(v.img)
+          const hdrData = extractHeaderData(v.hdr)
+          // A partial 4D volume loaded from a local File cannot be deferred-reloaded
+          // after restore: `_sourceFile` is runtime-only (not serialized) and `url` is
+          // just the bare filename. Collapse the saved header's frame count to the
+          // frames actually embedded, so the restored volume presents as complete and
+          // the graph offers no dead deferred action. URL-sourced self-contained-NII
+          // partials have no `_sourceFile`, keep their full dims, and still reload
+          // correctly on restore. Detached-header formats (AFNI .HEAD+.BRIK, NRRD
+          // .nhdr+.raw, MRtrix detached .mif, MetaImage detached .mha) also can't be
+          // deferred-reloaded after restore: `_urlImageData` is runtime-only (same
+          // allowlist contract as `_sourceFile`), so a saved partial would offer a
+          // dead deferred action — collapse it too.
+          const partial = (v.nFrame4D ?? 1) < (v.nTotalFrame4D ?? 1)
+          if (partial && (v._sourceFile != null || v._urlImageData != null)) {
+            // Represent the loaded prefix as a flat 4D sequence of `nFrame4D` frames.
+            // For a rare partial 5D/6D File volume this intentionally flattens the
+            // higher axes — only the first nFrame4D frames were loaded (not a clean
+            // multiple of dims[5]/dims[6]), so a flat 4D count is the only faithful
+            // representation of what the document actually contains.
+            const n = v.nFrame4D ?? 1
+            hdrData.dims[0] = n > 1 ? 4 : 3
+            hdrData.dims[4] = n
+            hdrData.dims[5] = 1
+            hdrData.dims[6] = 1
+          }
+          vol.data = {
+            hdr: hdrData,
+            img: imgData,
+            datatypeCode: v.hdr.datatypeCode,
+          }
+        }
+      }
+
+      return vol
+    })
 
   // Extract meshes with embedded data
   const meshes: NVDocumentMesh[] = model.meshes.map((m) => {

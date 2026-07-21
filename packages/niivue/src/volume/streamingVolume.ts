@@ -23,7 +23,13 @@ export interface StreamingVolumeSpec {
    * `'streamed volume'` name (host plan-swap lookup is id-or-name find-first).
    */
   id?: string
-  /** Optional source URL, purely informational. */
+  /**
+   * Optional source URL. Both renderers key their per-volume chunk texture
+   * cache on `url || name`, so when omitted this defaults to a unique
+   * `streamed://<id>` (never fetched for a chunked volume — the URL is a cache
+   * key only, all bytes arrive via `chunkSource`) so two default-created
+   * streamed volumes never collide on the shared `'streamed volume'` name.
+   */
   url?: string
   /** Colormap name (default `'gray'`). */
   colormap?: string
@@ -31,6 +37,28 @@ export interface StreamingVolumeSpec {
   isTransparentBelowCalMin?: boolean
   /** Layer opacity `[0, 1]` (default `1`). */
   opacity?: number
+}
+
+// Monotonic session counter for the fallback id path. A counter alone is
+// collision-free within a session and needs no entropy source.
+let streamIdCounter = 0
+
+/**
+ * A process-unique id for a default-created streamed volume. Prefers
+ * `crypto.randomUUID()` but that is only defined in a secure context, so a plain
+ * http LAN page (where NiiVue is routinely served) would throw. Falls back to a
+ * monotonic module-level counter, which is collision-free within a session
+ * without relying on `Date.now()`/`Math.random()`.
+ */
+function nextStreamId(): string {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
+    return crypto.randomUUID()
+  }
+  streamIdCounter += 1
+  return `streamed-${streamIdCounter}`
 }
 
 /**
@@ -51,7 +79,12 @@ export function createStreamingNVImage(spec: StreamingVolumeSpec): NVImage {
   // Default to a unique id, not the shared human-readable name: the host's plan
   // swap resolves a volume by id-or-name find-first, so two default-name volumes
   // sharing the id 'streamed volume' would route one handle's swap onto the other.
-  const id = spec.id ?? crypto.randomUUID()
+  const id = spec.id ?? nextStreamId()
+  // The renderers key their chunk texture cache on `url || name`. `name` stays
+  // the shared human-readable 'streamed volume', so default the URL to a unique
+  // value derived from the (unique) id — otherwise two default streamed volumes
+  // collide on the name key and the second reuses the first's chunk manager.
+  const url = spec.url ?? `streamed://${id}`
   // Axis-aligned RAS affine: diag(spacing) with the origin at voxel [0,0,0].
   const affine = [
     spacing[0],
@@ -84,7 +117,7 @@ export function createStreamingNVImage(spec: StreamingVolumeSpec): NVImage {
   const volume: NVImage = {
     name,
     id,
-    url: spec.url,
+    url,
     hdr,
     originalAffine: hdr.affine.map((row) => [...row]),
     img: null,

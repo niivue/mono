@@ -306,6 +306,47 @@ describe('createSourceChunkLoader', () => {
     expect((out as Uint8Array).byteLength).toBe(8)
   })
 
+  test('clamps maxConcurrentLoads:0 so it still fetches (no deadlock)', async () => {
+    let calls = 0
+    const source: ChunkedVolumeSource = {
+      datatypeCode: 4,
+      levels: [{ level: 0, shape: [8, 8, 8], spacing: [1, 1, 1] }],
+      fetchChunk: async () => {
+        calls++
+        return new Uint8Array(8)
+      },
+    }
+    // A 0 concurrency cap would leave acquire() forever pending (no slot frees);
+    // the clamp to >= 1 must let the fetch through.
+    const load = createSourceChunkLoader(source, {
+      maxConcurrentLoads: 0,
+      retryAttempts: 1,
+    })
+    const out = await load(req(0, [0, 0, 0], [1, 1, 1]))
+    expect(calls).toBe(1)
+    expect((out as Uint8Array).byteLength).toBe(8)
+  })
+
+  test('retryAttempts:0 still fetches exactly once', async () => {
+    let calls = 0
+    const source: ChunkedVolumeSource = {
+      datatypeCode: 4,
+      levels: [{ level: 0, shape: [8, 8, 8], spacing: [1, 1, 1] }],
+      fetchChunk: async () => {
+        calls++
+        return new Uint8Array(8)
+      },
+    }
+    // 'No retries' must still make the initial fetch, not zero fetches.
+    const load = createSourceChunkLoader(source, {
+      maxConcurrentLoads: 4,
+      retryAttempts: 0,
+    })
+    const out = await load(req(0, [0, 0, 0], [1, 1, 1]))
+    expect(calls).toBe(1)
+    expect((out as Uint8Array).byteLength).toBe(8)
+  })
+
   test('a permanently failing fetch rejects the caller with no unhandled rejection', async () => {
     const unhandled: unknown[] = []
     const onUnhandled = (err: unknown): void => {

@@ -81,4 +81,59 @@ describe('createStreamingNVImage', () => {
     const found = vols.find((v) => v.id === b.id || v.name === b.id)
     expect(found).toBe(b)
   })
+
+  test('two default-option volumes get distinct texture-cache keys (url||name)', () => {
+    const spec = {
+      shape: [2, 2, 2] as [number, number, number],
+      spacing: [1, 1, 1] as [number, number, number],
+      datatypeCode: NiiDataType.DT_UINT8,
+      calMin: 0,
+      calMax: 255,
+    }
+    const a = createStreamingNVImage({ ...spec })
+    const b = createStreamingNVImage({ ...spec })
+    // Renderers key _texCache on `url || name`. The shared 'streamed volume'
+    // name must NOT be the key, or the second volume reuses the first's chunk
+    // manager/plan — so the default url is unique per (unique) id.
+    const keyOf = (v: typeof a): string => v.url || v.name
+    expect(keyOf(a)).not.toBe(keyOf(b))
+    expect(a.id).not.toBe(b.id)
+    // Ids remain non-null so the id-always-set contract holds.
+    expect(a.id).toBeDefined()
+    expect(b.id).toBeDefined()
+  })
+
+  test('generates a safe unique id when crypto.randomUUID is unavailable', () => {
+    // A plain-http LAN page has no secure context, so crypto.randomUUID is
+    // undefined and calling it would throw. Simulate that and assert default
+    // ids are still produced, unique, and non-empty (loadable).
+    const original = globalThis.crypto
+    Object.defineProperty(globalThis, 'crypto', {
+      value: {},
+      configurable: true,
+      writable: true,
+    })
+    try {
+      const spec = {
+        shape: [2, 2, 2] as [number, number, number],
+        spacing: [1, 1, 1] as [number, number, number],
+        datatypeCode: NiiDataType.DT_UINT8,
+        calMin: 0,
+        calMax: 255,
+      }
+      const a = createStreamingNVImage({ ...spec })
+      const b = createStreamingNVImage({ ...spec })
+      expect(typeof a.id).toBe('string')
+      expect(a.id).not.toBe('')
+      expect(a.id).not.toBe(b.id)
+      // The unique id still drives a distinct texture-cache key.
+      expect(a.url || a.name).not.toBe(b.url || b.name)
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        value: original,
+        configurable: true,
+        writable: true,
+      })
+    }
+  })
 })

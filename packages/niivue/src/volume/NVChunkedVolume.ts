@@ -181,11 +181,18 @@ export function createSourceChunkLoader(
   source: ChunkedVolumeSource,
   opts: { maxConcurrentLoads: number; retryAttempts: number },
 ): VolumeChunkSource {
+  // Clamp at the point the options are consumed. A 0 (or NaN/negative)
+  // concurrency cap would deadlock acquire() — no slot ever frees, so no fetch
+  // ever starts; it must be a positive integer. `totalAttempts` is the number of
+  // fetch tries withRetry makes, so a passed retryAttempts of 0 ('no retries')
+  // must still fetch once — clamp to >= 1.
+  const maxConcurrent = Math.max(1, Math.floor(opts.maxConcurrentLoads) || 1)
+  const totalAttempts = Math.max(1, Math.floor(opts.retryAttempts) || 1)
   const inflight = new Map<string, Promise<Uint8Array>>()
   let active = 0
   const waiters: Array<() => void> = []
   const acquire = (): Promise<void> => {
-    if (active < opts.maxConcurrentLoads) {
+    if (active < maxConcurrent) {
       active++
       return Promise.resolve()
     }
@@ -219,7 +226,7 @@ export function createSourceChunkLoader(
               texDims,
               bytesPerVoxel: request.bytesPerVoxel,
             }),
-          opts.retryAttempts,
+          totalAttempts,
         ),
       )
       .finally(() => release())
@@ -249,6 +256,7 @@ export function createSourceChunkLoader(
 export class NVChunkedVolume {
   readonly volume: NVImage
 
+  private readonly volumeId: string
   private readonly host: NiiVue
   private readonly source: ChunkedVolumeSource
   private readonly o: ResolvedOptions
@@ -305,6 +313,14 @@ export class NVChunkedVolume {
       name: options.name,
       id: options.id,
     })
+    // createStreamingNVImage always assigns a non-null id (explicit or generated);
+    // capture it so `get id()` needs no fallback. The guard makes that contract
+    // explicit without a non-null assertion.
+    const volumeId = this.volume.id
+    if (volumeId === undefined) {
+      throw new Error('createStreamingNVImage did not assign an id')
+    }
+    this.volumeId = volumeId
     this.volume.chunkPlan = this.plan
     this.volume.chunkSource = createSourceChunkLoader(source, {
       maxConcurrentLoads: options.maxConcurrentLoads ?? 6,
@@ -327,7 +343,7 @@ export class NVChunkedVolume {
 
   /** The volume's stable id (used to target plan swaps). */
   get id(): string {
-    return this.volume.id ?? this.volume.name
+    return this.volumeId
   }
 
   /** Current focus as a [0,1] fraction of the common grid. */
@@ -387,22 +403,20 @@ export class NVChunkedVolume {
   }
 
   private handleLocationChange(): void {
-    // Map the crosshair (world mm) to THIS volume's texture fraction. Correct
-    // even when the volume doesn't span the scene AABB or sits on a non-identity
-    // grid; falls back to the raw scene fraction if frac2mm is unavailable (it
-    // coincides with the volume fraction for a single axis-aligned volume).
+    // Map the crosshair (world mm) to THIS volume's texture fraction via the
+    // inverse frac2mm. Correct even when the volume doesn't span the scene AABB
+    // or sits on a non-identity grid. This mm -> texture-fraction conversion is
+    // the ONLY correct focus: `host.crosshairPos` is a SCENE fraction (within the
+    // scene AABB), a distinct [0,1] space that must not be assigned as a volume
+    // texture fraction. When frac2mm is missing or singular the conversion is
+    // unreachable (the scene fallback would need the very matrix that's absent),
+    // so leave the focus unchanged rather than apply wrong coordinates.
     const f2m = this.volume.frac2mm
-    if (f2m) {
-      const mm = this.host.getCrosshairPos()
-      const frac = mmToVolumeFraction(f2m, [mm[0], mm[1], mm[2]])
-      if (frac) {
-        this.focusFrac = frac
-        this.refocus()
-        return
-      }
-    }
-    const cp = this.host.crosshairPos
-    this.focusFrac = [cp[0], cp[1], cp[2]]
+    if (!f2m) return
+    const mm = this.host.getCrosshairPos()
+    const frac = mmToVolumeFraction(f2m, [mm[0], mm[1], mm[2]])
+    if (!frac) return
+    this.focusFrac = frac
     this.refocus()
   }
 

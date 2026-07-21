@@ -6,3 +6,4 @@
 // biome-ignore-all lint/performance/noBarrelFile: package entry point
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'
+export { UIKitLineOverlay } from './lineOverlay'

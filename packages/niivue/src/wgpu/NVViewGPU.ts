@@ -1870,7 +1870,14 @@ export default class NVView {
         stream.pending === 0 &&
         stream.inFlight === 0
       this.overlayDraw({
-        handle: { backend: 'webgpu', device, pass },
+        handle: {
+          backend: 'webgpu',
+          device,
+          pass,
+          colorFormat: this.preferredCanvasFormat,
+          sampleCount: this.isAntiAlias ? 4 : 1,
+          depthFormat: 'depth24plus',
+        },
         bounds: {
           x: this._boundsOffsetX,
           y: this._boundsOffsetY,

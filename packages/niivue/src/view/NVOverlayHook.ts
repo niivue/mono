@@ -22,6 +22,12 @@ export type UIKitBackendHandle =
       readonly backend: 'webgpu'
       readonly device: GPUDevice
       readonly pass: GPURenderPassEncoder
+      /** Color attachment format of the open pass — match it in your pipeline. */
+      readonly colorFormat: GPUTextureFormat
+      /** MSAA sample count of the open pass (1 = no multisampling). */
+      readonly sampleCount: number
+      /** Depth-stencil attachment format of the open pass. */
+      readonly depthFormat: GPUTextureFormat
     }
 
 /** The drawable rectangle for this frame, in device pixels. */

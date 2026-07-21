@@ -314,6 +314,7 @@
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "@types/bun": "^1.3.12",
+        "@webgpu/types": "^0.1.69",
         "typescript": "^5.9.3",
         "vite": "^8.0.9",
         "vite-plugin-dts": "^4.5.4",

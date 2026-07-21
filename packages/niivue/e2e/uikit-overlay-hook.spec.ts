@@ -116,20 +116,86 @@ test('a UIKit line overlay draws into the frame without throwing', async ({
     // Surface a draw-time throw (shader compile / gl error) instead of swallowing it.
     const orig = overlay.drawOverlay.bind(overlay)
     let drew = 0
+    let red = 0
+    let glError = 0
     nv.registerOverlayRenderer({
       drawOverlay(frame) {
-        try { orig(frame); drew++ } catch (e) { error = String(e && e.message || e) }
+        try {
+          orig(frame)
+          drew++
+          // Read pixels mid-frame (this instance has no preserveDrawingBuffer, so a
+          // later-tick read would come back cleared). The line is [1, 0.2, 0.2] on
+          // the default black bg -> count reddish pixels.
+          const gl = frame.handle.gl
+          glError = gl.getError()
+          const px = new Uint8Array(c.width * c.height * 4)
+          gl.readPixels(0, 0, c.width, c.height, gl.RGBA, gl.UNSIGNED_BYTE, px)
+          for (let i = 0; i < px.length; i += 4) {
+            if (px[i] > 128 && px[i + 1] < 128 && px[i + 2] < 128) red++
+          }
+        } catch (e) { error = String(e && e.message || e) }
       },
     })
     nv.drawScene()
     await nextFrame()
-    const glError = nv.view.gl.getError()
     overlay.destroy()
-    return { drew, error, glError }
+    return { drew, error, glError, red }
   })()`)
 
   expect(r.error).toBeNull()
   expect(r.drew).toBeGreaterThan(0)
   // 0 === gl.NO_ERROR: the UIKit draw left the context clean.
   expect(r.glError).toBe(0)
+  // The line actually rasterized visible pixels.
+  expect(r.red).toBeGreaterThan(0)
+})
+
+test('a UIKit rotated text overlay draws into the frame without throwing', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    const { UIKitTextOverlay, loadDefaultFont } = await import('/@fs/${uikitDist}')
+    const font = await loadDefaultFont()
+    const glyphCount = font.metrics.glyphs.size
+    const overlay = new UIKitTextOverlay(font, [
+      { str: '42.0 mm', x: 60, y: 100, sizePx: 22, rotation: -0.4, color: [1, 1, 0, 1] },
+    ])
+    let error = null
+    let drew = 0
+    let yellow = 0
+    let glError = 0
+    const orig = overlay.drawOverlay.bind(overlay)
+    nv.registerOverlayRenderer({
+      drawOverlay(frame) {
+        try {
+          orig(frame)
+          drew++
+          // Read mid-frame (no preserveDrawingBuffer). The label is [1, 1, 0] on
+          // the default black bg -> count yellowish pixels.
+          const gl = frame.handle.gl
+          glError = gl.getError()
+          const px = new Uint8Array(c.width * c.height * 4)
+          gl.readPixels(0, 0, c.width, c.height, gl.RGBA, gl.UNSIGNED_BYTE, px)
+          for (let i = 0; i < px.length; i += 4) {
+            if (px[i] > 128 && px[i + 1] > 128 && px[i + 2] < 128) yellow++
+          }
+        } catch (e) { error = String(e && e.message || e) }
+      },
+    })
+    nv.drawScene()
+    await nextFrame()
+    overlay.destroy()
+    return { drew, error, glError, glyphCount, yellow }
+  })()`)
+
+  // The bundled Ubuntu atlas parsed to a non-empty glyph table.
+  expect(r.glyphCount).toBeGreaterThan(0)
+  expect(r.error).toBeNull()
+  expect(r.drew).toBeGreaterThan(0)
+  expect(r.glError).toBe(0)
+  // The rotated MSDF glyphs actually rasterized visible pixels.
+  expect(r.yellow).toBeGreaterThan(0)
 })

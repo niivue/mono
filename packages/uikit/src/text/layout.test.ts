@@ -84,6 +84,34 @@ describe('layoutText', () => {
     ]).toEqual([1, 0, 0, 1])
   })
 
+  it('maps screen corners to the matching atlas corners (no flip)', () => {
+    // Asymmetric glyph so a U or V flip is detectable: plane 2 wide x 1 tall,
+    // atlas rect at uv (0.1, 0.2) size (0.3, 0.4).
+    const font = {
+      distanceRange: 2,
+      size: 50,
+      textureSize: [64, 64],
+      glyphs: new Map([
+        ['Z', { plane: [0, 0, 2, 1], uv: [0.1, 0.2, 0.3, 0.4], xadv: 2 }],
+      ]),
+    } as unknown as UIKitFontMetrics
+    const { vertices } = layoutText(font, 'Z', { x: 0, y: 0, sizePx: 10 })
+    let topLeft = { x: Infinity, y: Infinity, u: 0, v: 0 }
+    let bottomRight = { x: -Infinity, y: -Infinity, u: 0, v: 0 }
+    for (let i = 0; i < 6; i++) {
+      const p = vert(vertices, i)
+      // Top-left screen corner: smallest x, smallest y (screen y-down).
+      if (p.x <= topLeft.x && p.y <= topLeft.y) topLeft = p
+      if (p.x >= bottomRight.x && p.y >= bottomRight.y) bottomRight = p
+    }
+    // Top-left of the glyph on screen samples the top-left of the atlas rect.
+    expect(topLeft.u).toBeCloseTo(0.1)
+    expect(topLeft.v).toBeCloseTo(0.2)
+    // Bottom-right on screen samples the bottom-right of the atlas rect.
+    expect(bottomRight.u).toBeCloseTo(0.4)
+    expect(bottomRight.v).toBeCloseTo(0.6)
+  })
+
   it('rotation by pi/2 runs the baseline downward', () => {
     const { vertices } = layoutText(FONT, 'AA', {
       x: 0,

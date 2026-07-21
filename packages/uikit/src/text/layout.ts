@@ -119,7 +119,10 @@ export function layoutText(
       vertices[o] = penX + cos * ox - sin * oy
       vertices[o + 1] = penY + sin * ox + cos * oy
       vertices[o + 2] = ul + px * uw
-      vertices[o + 3] = ub + (1 - py) * uh
+      // py=0 is the top screen corner and maps to the glyph's top row in the
+      // atlas (uv v = ub), matching niivue core's font mapping. The atlas is
+      // top-origin in texture space, so top row = smaller v.
+      vertices[o + 3] = ub + py * uh
       vertices[o + 4] = cr
       vertices[o + 5] = cg
       vertices[o + 6] = cb

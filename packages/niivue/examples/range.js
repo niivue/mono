@@ -727,24 +727,6 @@ async function loadActiveSource() {
   return source
 }
 
-// Brick keys of the plan the core is CURRENTLY serving, memoized on plan identity
-// (the core hands back a NEW plan object on every crosshair swap, so an identity
-// check is a cheap change signal). Reuses brickKey so the key space matches the
-// poll's retainKeys intersection exactly. Returns null while no live plan exists
-// yet (initial load, before activeCv is assigned) so the caller falls back to
-// counting every live-serial brick rather than dropping the whole first load.
-let livePlanKeysPlan = null
-let livePlanKeys = new Set()
-function currentPlanKeys(source) {
-  const plan = activeCv?.currentPlan
-  if (!plan) return null
-  if (plan !== livePlanKeysPlan) {
-    livePlanKeysPlan = plan
-    livePlanKeys = new Set(plan.chunks.map((c, i) => brickKey(source, c, i)))
-  }
-  return livePlanKeys
-}
-
 // A ChunkedVolumeSource adapter over an opened OME-Zarr pyramid. Exposes the
 // finest-first levels and reads a voxel region of one level with zarrita; the
 // core `nv.loadChunkedVolume` owns plan-building, per-level dispatch,
@@ -760,19 +742,13 @@ function createZarrChunkedSource(source) {
     })),
     async fetchChunk({ levelIndex, texOrigin, texDims, bytesPerVoxel }) {
       const key = `${levelIndex}|${texOrigin.join(',')}|${texDims.join(',')}`
-      // Count this brick in the HUD's requested/completed tallies only while its key
-      // is in the plan the core is CURRENTLY serving. After a same-source refocus the
-      // poll's retainKeys drops a brick that left the plan; a still-in-flight straggler
-      // for that brick must not re-insert its key here, or completed/requested could
-      // exceed the live plan's brick count (e.g. 'completed 49 / 48') until the next
-      // swap intersects it away. Re-evaluated per call, since the plan can swap during
-      // the fetch (null keys => no live plan yet, so count every live-serial brick).
-      const counts = () => {
-        if (!isLiveSerial(source.serial)) return false
-        const keys = currentPlanKeys(source)
-        return keys === null || keys.has(key)
-      }
-      if (counts()) stats.requested.add(key)
+      // Record every live-serial fetch. The strip keys cells by brickKey and lights a
+      // cell when its brick is in `completed`; the set is NOT pruned on a plan swap, so
+      // a brick the core keeps resident across a crosshair refocus (reused without a
+      // re-fetch) stays lit. The numeric requested/completed HUD counts come from
+      // nv.chunkStreamStats() (authoritative residency), not the set size, so an
+      // out-of-plan key here can never inflate a displayed count.
+      if (isLiveSerial(source.serial)) stats.requested.add(key)
       try {
         const bytes = await readOmezarrRegion(
           source.levels[levelIndex],
@@ -780,11 +756,10 @@ function createZarrChunkedSource(source) {
           texDims,
           bytesPerVoxel,
         )
-        // decodedBytes tracks real transfer/decode work (like wireBytes), so it counts
-        // for any live-serial fetch even if the brick left the plan mid-flight; only
-        // the per-plan requested/completed tallies are gated on current membership.
-        if (isLiveSerial(source.serial)) stats.decodedBytes += bytes.byteLength
-        if (counts()) stats.completed.add(key)
+        if (isLiveSerial(source.serial)) {
+          stats.decodedBytes += bytes.byteLength
+          stats.completed.add(key)
+        }
         return bytes
       } catch (err) {
         // Surface the failure in the HUD/console (the signal we used to spot the
@@ -1227,13 +1202,6 @@ function brickKey(source, chunk, index) {
   return index
 }
 
-// Intersection: a new Set of the members of `set` that are also in `keep`.
-function retainKeys(set, keep) {
-  const out = new Set()
-  for (const k of set) if (keep.has(k)) out.add(k)
-  return out
-}
-
 // One strip cell per viewer brick, keyed by brickKey so a cell lights when its
 // brick completes. Hard-capped at 4096: for a thin-Z finest OME-Zarr level the
 // native chunk count can be 100k+, and spreading that many <span>s into
@@ -1317,6 +1285,20 @@ function renderHud() {
       ? `<div class="row"><span class="key">zarr chunks</span><span>${source.chunkGrid.join(' x ')} @ ${source.chunkShape.join(' x ')}</span></div>`
       : ''
   const stream = nv?.chunkStreamStats()
+  // Authoritative brick counts from the renderer's residency. The core keeps some
+  // bricks resident across a plan swap without re-fetching them, which the demo's
+  // own fetch tally cannot observe, so drive the numeric counts from chunkStreamStats.
+  // `completed` = bricks resident; `requested` = resident + in-flight + queued (all
+  // disjoint subsets of the plan, so completed <= requested <= total always holds and
+  // neither can exceed the plan or invert). chunkStreamStats reads null before a view
+  // attaches and all-zero for the sub-frame before the first streamed frame registers
+  // the chunk manager, so the denominator falls back to the plan count until total is
+  // populated (avoids a transient '0 / 0').
+  const streamTotal = stream && stream.total > 0 ? stream.total : chunkCount
+  const completedCount = stream ? stream.resident : stats.completed.size
+  const requestedCount = stream
+    ? stream.resident + stream.inFlight + stream.pending
+    : stats.requested.size
   const failures =
     stats.failures > 0
       ? `<span class="bad">${stats.failures}</span>`
@@ -1330,8 +1312,8 @@ function renderHud() {
     ${nativeRow}
     <div class="row"><span class="key">transport</span><span>${html(source.transportLabel)}</span></div>
     <div class="row"><span class="key">HTTP</span><span>${httpSummary()}</span></div>
-    <div class="row"><span class="key">requested</span><span>${stats.requested.size} / ${chunkCount}</span></div>
-    <div class="row"><span class="key">completed</span><span>${stats.completed.size} / ${chunkCount}</span></div>
+    <div class="row"><span class="key">requested</span><span>${requestedCount} / ${streamTotal}</span></div>
+    <div class="row"><span class="key">completed</span><span>${completedCount} / ${streamTotal}</span></div>
     <div class="row"><span class="key">wire</span><span>${formatBytes(stats.wireBytes)}</span></div>
     <div class="row"><span class="key">decoded</span><span>${formatBytes(stats.decodedBytes)}</span></div>
     <div class="row"><span class="key">cache</span><span>${stats.cacheHits} hits, ${formatBytes(stats.cacheBytes)}</span></div>
@@ -1361,25 +1343,16 @@ function startHudPolling() {
   // still engages a deferred explode within ~120 ms of the stream settling.
   pollHandle = setInterval(() => {
     // The core NVChunkedVolume swaps the plan as the crosshair moves; mirror the
-    // current plan so the HUD/block outlines track it. swapVolumeChunkPlan reuses
-    // resident GPU textures for bricks shared with the new plan WITHOUT re-invoking
-    // fetchChunk, so those carried-over bricks never re-record into stats. Wiping
-    // the sets on a swap would therefore report every resident brick as missing
-    // after each crosshair refocus. Instead intersect the per-plan region counts
-    // with the new plan's brick keys: carried-over bricks stay requested/completed,
-    // bricks that left the plan drop, and genuinely new bricks re-fetch (recording
-    // themselves). A full source switch resets stats in runReload, so this governs
-    // only same-SOURCE refocus/reload.
+    // current plan so the HUD/block outlines and chunk strip track it. The stats
+    // sets are NOT pruned on a swap: swapVolumeChunkPlan reuses resident GPU
+    // textures for carried-over bricks without re-invoking fetchChunk, so pruning
+    // would drop a still-resident brick that never re-records, leaving its strip
+    // cell dark. Accumulating (reset only on a source switch in runReload) keeps
+    // resident bricks lit; the numeric counts come from chunkStreamStats, so stale
+    // out-of-plan keys never inflate a displayed count.
     if (activeCv) {
       const p = activeCv.currentPlan
-      if (p !== chunkPlan) {
-        const nextKeys = new Set(
-          p.chunks.map((c, i) => brickKey(activeSource, c, i)),
-        )
-        chunkPlan = p
-        stats.requested = retainKeys(stats.requested, nextKeys)
-        stats.completed = retainKeys(stats.completed, nextKeys)
-      }
+      if (p !== chunkPlan) chunkPlan = p
     }
     // Reconcile the slider/label with the live zoom from any source (wheel moves
     // it with no 'change' event). syncZoomControl is UI-only and never nudges the

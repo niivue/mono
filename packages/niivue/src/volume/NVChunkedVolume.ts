@@ -52,8 +52,9 @@ export interface ChunkedVolumeOptions {
   /** Finest level index (max-detail cap; 0 = finest, default 0). */
   minLevel?: number
   /**
-   * Max brick texture edge the renderer will upload. MUST match the NiiVue
-   * `maxTextureDimension3D` option (default 256).
+   * Max brick texture edge the renderer will upload. Defaults to the host's
+   * configured `maxTextureDimension3D` option (256 when the host does not set
+   * one), so planned bricks never exceed the renderer's tile limit.
    */
   deviceLimit?: number
   /** Max concurrent source fetches (default 6; bounds the request flood). */
@@ -87,23 +88,23 @@ const DEFAULT_BUDGET_BYTES = 1_500_000_000
  * a boundary forces the bricks on BOTH sides to the finest level, which can blow
  * the budget and collapse the whole plan to a coarse floor; the small asymmetric
  * bias keeps the finest core inside one cell so the brick count stays stable.
+ * The centre always stays inside [0, common] per axis: on a thin axis whose
+ * extent is below the bias band (common < 2*bias) the clamp collapses to
+ * common/2, so the focus is never pushed outside the volume (which would
+ * inflate every brick's distance on that axis and starve the finest core).
  */
 export function focusCenterBiased(
   common: Vec3i,
   frac: Vec3f,
   cellEdge: number,
 ): Vec3f {
-  const base: Vec3f = [
-    frac[0] * common[0],
-    frac[1] * common[1],
-    frac[2] * common[2],
-  ]
   const bias: Vec3f = [cellEdge * 0.31, cellEdge * 0.17, cellEdge * 0.23]
-  return [
-    Math.min(common[0] - bias[0], base[0] + bias[0]),
-    Math.min(common[1] - bias[1], base[1] + bias[1]),
-    Math.min(common[2] - bias[2], base[2] + bias[2]),
-  ]
+  const axis = (i: number): number => {
+    const lo = Math.min(bias[i], common[i] / 2)
+    const hi = Math.max(common[i] - bias[i], common[i] / 2)
+    return Math.min(hi, Math.max(lo, frac[i] * common[i] + bias[i]))
+  }
+  return [axis(0), axis(1), axis(2)]
 }
 
 const clamp01 = (x: number): number => Math.min(1, Math.max(0, x))
@@ -278,7 +279,7 @@ export class NVChunkedVolume {
       halo: options.halo ?? [1, 1, 1],
       detail: options.detail ?? 1,
       minLevel: clampLevel(options.minLevel ?? 0, source),
-      deviceLimit: options.deviceLimit ?? 256,
+      deviceLimit: options.deviceLimit ?? hostDeviceLimit(host) ?? 256,
       renderCentering: options.renderCentering ?? 'none',
       debounceMs: options.debounceMs ?? 150,
     }
@@ -466,4 +467,14 @@ export class NVChunkedVolume {
 
 function clampLevel(levelIndex: number, source: ChunkedVolumeSource): number {
   return Math.min(Math.max(0, Math.floor(levelIndex)), source.levels.length - 1)
+}
+
+/**
+ * The host's configured 3D-texture cap (the `maxTextureDimension3D` NiiVue
+ * option), when set. `deviceLimit` defaults to this so planned bricks never
+ * exceed what the renderer will upload.
+ */
+function hostDeviceLimit(host: NiiVueGPU): number | undefined {
+  const limit = host.opts?.maxTextureDimension3D
+  return typeof limit === 'number' && limit > 0 ? limit : undefined
 }

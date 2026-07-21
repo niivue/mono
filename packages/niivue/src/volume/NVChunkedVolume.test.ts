@@ -61,6 +61,19 @@ describe('focusCenterBiased', () => {
     expect(c[1]).not.toBe(c[2])
     for (let a = 0; a < 3; a++) expect(c[a]).toBeLessThan(256)
   })
+
+  test('keeps a thin-axis centre inside the volume (extent below the bias band)', () => {
+    // Z extent 30 < 2 * bias[2] (~29.44 each side at cellEdge 128): unclamped,
+    // Math.min(common - bias, base + bias) goes NEGATIVE on that axis.
+    const common: Vec3i = [4096, 4096, 30]
+    const c = focusCenterBiased(common, [0.5, 0.5, 0.5], 128)
+    for (let a = 0; a < 3; a++) {
+      expect(c[a]).toBeGreaterThanOrEqual(0)
+      expect(c[a]).toBeLessThanOrEqual(common[a])
+    }
+    // Too thin for the bias band: the only stable centre is the middle.
+    expect(c[2]).toBeCloseTo(15, 6)
+  })
 })
 
 describe('mmToVolumeFraction', () => {
@@ -155,6 +168,46 @@ describe('planForFocus', () => {
     )
     expect(bytes).toBeLessThanOrEqual(512 * 1024 * 1024)
     expect(plan.chunks.length).toBeLessThanOrEqual(240)
+  })
+
+  test('thin-Z pyramid: finest bricks still cover the crosshair', () => {
+    // Z extent (24) is below the bias band at cellEdge 128 (~29.44); an
+    // unclamped focus centre lands OUTSIDE the volume (z = -5.44), inflating
+    // every brick's z distance so a small pinned radius with a tight LOD
+    // falloff leaves the crosshair region coarser than the finest level.
+    const thin: ChunkedVolumeSource = {
+      datatypeCode: 4,
+      levels: [
+        { level: 0, shape: [1024, 1024, 24], spacing: [1, 1, 1] },
+        { level: 1, shape: [512, 512, 12], spacing: [2, 2, 2] },
+        { level: 2, shape: [256, 256, 6], spacing: [4, 4, 4] },
+      ],
+      fetchChunk: async () => new Uint8Array(),
+    }
+    const common: Vec3i = [1024, 1024, 24]
+    const center = focusCenterBiased(common, [0.5, 0.5, 0.5], 128)
+    for (let a = 0; a < 3; a++) {
+      expect(center[a]).toBeGreaterThanOrEqual(0)
+      expect(center[a]).toBeLessThanOrEqual(common[a])
+    }
+    const plan = planForFocus(thin, [0.5, 0.5, 0.5], 4, {
+      ...opts,
+      cellEdge: 128,
+      detail: 0.05,
+      budgetBytes: 512 * 1024 * 1024,
+      maxBricks: 240,
+    })
+    const vox = [512, 512, 12] // crosshair position in common-grid voxels
+    const at = plan.chunks.filter((c) =>
+      [0, 1, 2].every(
+        (a) =>
+          vox[a] >= c.voxelOrigin[a] &&
+          vox[a] < c.voxelOrigin[a] + c.voxelDims[a],
+      ),
+    )
+    expect(at.length).toBeGreaterThan(0)
+    // The brick under the crosshair is at the finest level.
+    expect(Math.min(...at.map((c) => c.sourceLevel ?? 0))).toBe(0)
   })
 })
 
@@ -321,6 +374,51 @@ describe('NVChunkedVolume id + plan-swap routing', () => {
     const vols: NVImage[] = [a.volume, b.volume]
     expect(vols.find((v) => v.id === b.id || v.name === b.id)).toBe(b.volume)
     expect(vols.find((v) => v.id === a.id || v.name === a.id)).toBe(a.volume)
+  })
+})
+
+describe('NVChunkedVolume deviceLimit default', () => {
+  const makeHostWithLimit = (maxTextureDimension3D: number): NiiVueGPU =>
+    ({
+      opts: { maxTextureDimension3D },
+      swapVolumeChunkPlan: async () => {},
+    }) as unknown as NiiVueGPU
+
+  test('defaults from the host maxTextureDimension3D option', () => {
+    // Default cellEdge (128) would emit texDims up to 130 under the old
+    // hardcoded 256; the host's 64 cap must bound every brick edge.
+    const mgr = new NVChunkedVolume(makeHostWithLimit(64), mgrSource, {
+      radius: 16,
+    })
+    for (const c of mgr.currentPlan.chunks) {
+      for (let a = 0; a < 3; a++) expect(c.texDims[a]).toBeLessThanOrEqual(64)
+    }
+  })
+
+  test('an explicit deviceLimit option wins over the host value', () => {
+    const mgr = new NVChunkedVolume(makeHostWithLimit(64), mgrSource, {
+      radius: 16,
+      deviceLimit: 32,
+    })
+    for (const c of mgr.currentPlan.chunks) {
+      for (let a = 0; a < 3; a++) expect(c.texDims[a]).toBeLessThanOrEqual(32)
+    }
+  })
+
+  test('falls back to 256 when the host has no configured limit', () => {
+    const mgr = new NVChunkedVolume(
+      makeHost(async () => {}),
+      mgrSource,
+      {
+        radius: 16,
+      },
+    )
+    // Bricks larger than a small cap prove the fallback stayed at 256.
+    const maxEdge = Math.max(
+      ...mgr.currentPlan.chunks.map((c) => Math.max(...c.texDims)),
+    )
+    expect(maxEdge).toBeGreaterThan(64)
+    expect(maxEdge).toBeLessThanOrEqual(256)
   })
 })
 

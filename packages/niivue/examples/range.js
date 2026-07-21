@@ -10,7 +10,11 @@
 //   - omezarr:   full upstream OME-Zarr stores read with zarrita
 
 import * as zarr from 'zarrita'
-import NiiVue, { chunkVolumeGrid, SLICE_TYPE } from '../src/index.ts'
+import NiiVue, {
+  chunkVolumeGrid,
+  createStreamingNVImage,
+  SLICE_TYPE,
+} from '../src/index.ts'
 
 const backend =
   new URLSearchParams(location.search).get('backend') === 'webgpu'
@@ -97,7 +101,6 @@ const OMEZARR_STORES = {
     defaultWindow: { min: 40, max: 700 },
   },
 }
-const STREAMING_CHUNK_EDGE = 256
 // Per-axis brick halo (in level voxels). 3D gradient/lighting samples one voxel
 // past each brick face; a 3-voxel halo keeps that reach inside resident data so
 // brick boundaries don't show grid-aligned gradient/lighting seams. Without it
@@ -116,7 +119,7 @@ const ZARR_BYTE_CACHE_BYTES = 512 * 1024 * 1024
 // region is ever finest — with the fetch dispatch/concurrency/retry all in core.
 // The Level control becomes a max-detail cap (`minLevel`).
 //
-// Cap on brick count (< core MAX_CHUNKS_PER_TILE=256); the budget pass coarsens
+// Cap on brick count (< core MAX_CHUNKS_PER_TILE=1024); the budget pass coarsens
 // until the plan fits. Budget keeps resident VRAM ~this regardless of the level
 // the user picks (kept below DEFAULT_RESIDENCY_BYTES so no planned brick evicts).
 const MULTILOD_MAX_BRICKS = 240
@@ -142,159 +145,6 @@ function niftiDatatype(dtype) {
       return { code: 16, bits: 32, displayMin: 0, displayMax: 1 }
     default:
       return { code: 512, bits: 16, displayMin: 0, displayMax: 65535 }
-  }
-}
-
-// Build a depth-correct, axis-aligned NVImage from a level's shape + spacing.
-// The affine is diag(spacing) with the voxel grid placed at the origin, so two
-// volumes built this way that cover the same mm box (shape*spacing) register.
-function buildLogicalVolume(o) {
-  const { shape, spacing } = o
-  const dims = [3, shape[0], shape[1], shape[2], 1, 1, 1, 1]
-  const pixDims = [1, spacing[0], spacing[1], spacing[2], 1, 1, 1, 1]
-  const affine = [
-    [spacing[0], 0, 0, 0],
-    [0, spacing[1], 0, 0],
-    [0, 0, spacing[2], 0],
-    [0, 0, 0, 1],
-  ]
-  const dimsMM = [
-    shape[0] * spacing[0],
-    shape[1] * spacing[1],
-    shape[2] * spacing[2],
-  ]
-  const longest = Math.max(dimsMM[0], dimsMM[1], dimsMM[2])
-  const matRAS = new Float32Array([
-    spacing[0],
-    0,
-    0,
-    0,
-    0,
-    spacing[1],
-    0,
-    0,
-    0,
-    0,
-    spacing[2],
-    0,
-    0,
-    0,
-    0,
-    1,
-  ])
-  const frac2mm = new Float32Array([
-    dimsMM[0],
-    0,
-    0,
-    0,
-    0,
-    dimsMM[1],
-    0,
-    0,
-    0,
-    0,
-    dimsMM[2],
-    0,
-    -0.5 * spacing[0],
-    -0.5 * spacing[1],
-    -0.5 * spacing[2],
-    1,
-  ])
-  const identity = new Float32Array([
-    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-  ])
-  const minMM = [-0.5 * spacing[0], -0.5 * spacing[1], -0.5 * spacing[2]]
-  const maxMM = [
-    (shape[0] - 0.5) * spacing[0],
-    (shape[1] - 0.5) * spacing[1],
-    (shape[2] - 0.5) * spacing[2],
-  ]
-  return {
-    name: o.id,
-    id: o.id,
-    url: o.url,
-    img: o.img ?? null,
-    hdr: {
-      littleEndian: true,
-      dim_info: 0,
-      dims,
-      pixDims,
-      intent_p1: 0,
-      intent_p2: 0,
-      intent_p3: 0,
-      intent_code: 0,
-      datatypeCode: o.datatypeCode,
-      numBitsPerVoxel: o.numBitsPerVoxel,
-      slice_start: 0,
-      vox_offset: 352,
-      scl_slope: 1,
-      scl_inter: 0,
-      slice_end: 0,
-      slice_code: 0,
-      xyzt_units: 10,
-      cal_max: o.calMax,
-      cal_min: o.calMin,
-      slice_duration: 0,
-      toffset: 0,
-      description: 'logical streamed volume',
-      aux_file: '',
-      qform_code: 0,
-      sform_code: 1,
-      quatern_b: 0,
-      quatern_c: 0,
-      quatern_d: 0,
-      qoffset_x: 0,
-      qoffset_y: 0,
-      qoffset_z: 0,
-      affine,
-      intent_name: '',
-      magic: 'n+1',
-    },
-    originalAffine: affine.map((row) => [...row]),
-    dims: dims.slice(0, 4),
-    nVox3D: shape[0] * shape[1] * shape[2],
-    extentsMin: minMM,
-    extentsMax: maxMM,
-    calMin: o.calMin,
-    calMax: o.calMax,
-    robustMin: o.calMin,
-    robustMax: o.calMax,
-    globalMin: o.calMin,
-    globalMax: o.calMax,
-    pixDimsRAS: pixDims.slice(0, 4),
-    dimsRAS: dims.slice(0, 4),
-    permRAS: [1, 2, 3],
-    matRAS,
-    obliqueRAS: identity,
-    frac2mm,
-    frac2mmOrtho: frac2mm,
-    extentsMinOrtho: minMM,
-    extentsMaxOrtho: maxMM,
-    mm2ortho: identity,
-    img2RASstep: [1, shape[0], shape[0] * shape[1]],
-    img2RASstart: [0, 0, 0],
-    toRAS: identity,
-    toRASvox: identity,
-    mm000: minMM,
-    mm100: [maxMM[0], minMM[1], minMM[2]],
-    mm010: [minMM[0], maxMM[1], minMM[2]],
-    mm001: [minMM[0], minMM[1], maxMM[2]],
-    oblique_angle: 0,
-    maxShearDeg: 0,
-    volScale: [dimsMM[0] / longest, dimsMM[1] / longest, dimsMM[2] / longest],
-    frame4D: 0,
-    nFrame4D: 1,
-    nTotalFrame4D: 1,
-    colormap: o.colormap,
-    isTransparentBelowCalMin: o.isTransparentBelowCalMin ?? true,
-    opacity: o.opacity ?? 1,
-    modulateAlpha: 0,
-    isColorbarVisible: false,
-    isLegendVisible: false,
-    colormapLabel: null,
-    chunkSource: o.chunkSource,
-    chunkOverlayOf: o.chunkOverlayOf,
-    chunkOverlayOpacity: o.chunkOverlayOpacity,
   }
 }
 
@@ -831,31 +681,34 @@ async function loadOmezarrSource(storeDef, serial) {
 // immediately instead of rendering blank. Returns null if no coarser level than
 // the active one is available, or on any error (the floor is best-effort).
 async function buildCoarseFloorVolume(source) {
+  // Reuse the coarsest PRESENT level already opened by loadOmezarrSource
+  // (source.levels is finest-first, each carrying a resolved array + spacing),
+  // rather than re-opening from storeDef.levels. That both drops a redundant
+  // metadata fetch per reload AND avoids naming a configured-but-absent level (a
+  // partial fetch-omezarr.ts run): Math.max(...storeDef.levels) could point at a
+  // level that was never downloaded, whose open throws, gets swallowed here, and
+  // silently leaves the far-field blank even though a coarser PRESENT level
+  // exists. levels[last].level is the largest (coarsest) present index.
+  const coarse = source.levels[source.levels.length - 1]
+  if (!coarse || coarse.level <= source.level) return null // no coarser present level
   try {
-    const coarsest = Math.max(...source.storeDef.levels)
-    if (coarsest <= source.level) return null // active level is already coarsest
-    const ds = source.multiscale?.datasets?.[coarsest]
-    if (!ds) return null
-    const arr = await zarr.open.v3(
-      zarr.root(source.store).resolve(`/${ds.path}`),
-      { kind: 'array' },
-    )
-    const view = await zarr.get(arr, null) // whole (small) coarse level
+    const view = await zarr.get(coarse.array, null) // whole (small) coarse level
     const img = bytesFromZarrView(view)
-    const [sz, sy, sx] = trailingSpatial(arr.shape, 'coarse shape')
     const win = parseWindow(source.defaultWindow)
-    return buildLogicalVolume({
+    const floor = createStreamingNVImage({
       id: `${source.id}:floor`,
       url: `client-chunk://${source.id}/floor`,
-      shape: [sx, sy, sz],
-      spacing: scaleFromDataset(ds),
+      shape: coarse.shape,
+      spacing: coarse.spacing,
       datatypeCode: source.datatypeCode,
-      numBitsPerVoxel: source.numBitsPerVoxel,
       calMin: win.min,
       calMax: win.max,
       colormap: els.colormap.value,
-      img,
     })
+    // Unlike a streamed volume, the floor renders from CPU data: attach the
+    // decoded voxels to the img:null streaming skeleton (no chunkSource).
+    floor.img = img
+    return floor
   } catch (err) {
     console.warn('coarse floor unavailable:', err)
     return null
@@ -1074,8 +927,11 @@ function explodeScale() {
 // goes through the core nv.loadChunkedVolume path instead).
 function createStreamingVolume(source) {
   const win = parseWindow(source.defaultWindow)
-  const chunkSource = createRangeChunkSource(source)
-  const vol = buildLogicalVolume({
+  // Same skeleton the core nv.loadChunkedVolume path builds (createStreamingNVImage
+  // + chunkPlan + chunkSource); the synthetic path only differs in its single-level
+  // grid plan and Range-based chunkSource. numBitsPerVoxel is derived from
+  // datatypeCode by the core helper.
+  const vol = createStreamingNVImage({
     id: source.name,
     url:
       `client-chunk://${source.id}` +
@@ -1086,12 +942,11 @@ function createStreamingVolume(source) {
     shape: source.shape,
     spacing: source.spacing,
     datatypeCode: source.datatypeCode,
-    numBitsPerVoxel: source.numBitsPerVoxel,
     calMin: win.min,
     calMax: win.max,
     colormap: els.colormap.value,
-    chunkSource,
   })
+  vol.chunkSource = createRangeChunkSource(source)
   vol.chunkPlan = chunkPlan ?? undefined
   // Start un-exploded; syncExplode applies the slider's explode once the stream
   // settles (exploding mid-stream janks the main thread).
@@ -1112,8 +967,9 @@ const BLOCK_LEVEL_COLORS = [
   [0.35, 0.7, 1, 1],
 ]
 
-// mm extents of the active volume. Matches buildLogicalVolume: voxel centres sit
-// at (i + 0.5) * spacing, so the box spans [-0.5, dim - 0.5] * spacing per axis.
+// mm extents of the active volume. Matches the createStreamingNVImage grid: voxel
+// centres sit at (i + 0.5) * spacing, so the box spans [-0.5, dim - 0.5] * spacing
+// per axis.
 function volumeExtents(source) {
   const [sx, sy, sz] = source.spacing
   const [nx, ny, nz] = source.shape
@@ -1194,13 +1050,19 @@ function computeBlockBoxes(source, plan, zoom, explode) {
   return boxes
 }
 
+// One octree-nudge path per zoom SOURCE. applyZoom (slider) sets pan2Dxyzmm /
+// scaleMultiplier, whose controller setters synchronously emit 'change'; this flag
+// tells the 'change' listener that the nudge was already issued here so a slider
+// drag does not ALSO refocus through the change path. Set only around applyZoom's
+// synchronous setter writes.
+let zoomNudgeInApplyZoom = false
+
 // Push the current zoom to the 2D pan/zoom and the 3D render scale, mark the
 // focus ROI in 3D, then refresh the (optionally restricted) block outlines.
 function applyZoom() {
   if (!nv) return
   const zoom = Number(els.zoom.value) || 1
   els.zoomVal.textContent = `${zoom.toFixed(1)}x`
-  nv.pan2Dxyzmm = [0, 0, 0, zoom] // 2D multiplanar: zoom about the centre
   // Zoom the 3D render camera only where it is safe. The multi-LOD OME-Zarr plan
   // (activeCv set) is focus-bounded, so magnifying the render keeps the finest
   // bricks around the crosshair in view. The SYNTHETIC source (activeCv null)
@@ -1209,27 +1071,37 @@ function applyZoom() {
   // and the volume renders mostly blank. Force scale 1 in the render view for
   // that path; other layouts keep the zoom for both paths.
   const inRender = Number(els.layout.value) === SLICE_TYPE.RENDER
-  nv.scaleMultiplier = inRender && !activeCv ? 1 : zoom
+  // These setters emit 'change'; suppress the listener's refocus so the slider
+  // nudge routes only through this function's activeCv.refocus() below. The
+  // finally guarantees the flag clears even if a setter's draw throws, else the
+  // programmatic-zoom refocus path would be silently stuck off.
+  zoomNudgeInApplyZoom = true
+  try {
+    nv.pan2Dxyzmm = [0, 0, 0, zoom] // 2D multiplanar: zoom about the centre
+    nv.scaleMultiplier = inRender && !activeCv ? 1 : zoom
+  } finally {
+    zoomNudgeInApplyZoom = false
+  }
   applyBlocks()
   // Zoom/layout changes the focus radius (radius:'auto' reads nv zoom + sliceType),
   // so nudge the core handle to re-plan and swap.
   activeCv?.refocus()
 }
 
-// Reflect zoom changes from ANY source (slider drag, mouse wheel, programmatic
-// nv.scaleMultiplier / nv.pan2Dxyzmm) back into the slider + label WITHOUT
-// re-driving applyZoom (which would feed back). Reads the value applyZoom pushes
-// for the active layout: scaleMultiplier in the render view, pan2Dxyzmm[3] in
-// multiplanar. Setter-based changes emit 'change' (wired in main); the wheel
-// handler mutates the model directly with no event, so the HUD poll calls this too.
+// Purely UI: reflect zoom changes from ANY source (slider drag, mouse wheel,
+// programmatic nv.scaleMultiplier / nv.pan2Dxyzmm) back into the slider + label
+// WITHOUT re-driving applyZoom (which would feed back) and WITHOUT nudging the
+// octree (each zoom source owns exactly one refocus path; see applyZoom, the
+// 'change' listener, and the canvas wheel listener in main). Reads the value
+// applyZoom pushes for the active layout: scaleMultiplier in the render view,
+// pan2Dxyzmm[3] in multiplanar.
 function syncZoomControl() {
   if (!nv) return
   const inRender = Number(els.layout.value) === SLICE_TYPE.RENDER
   const zoom = inRender ? nv.scaleMultiplier : nv.pan2Dxyzmm[3] || 1
   // Live zoom (wheel/programmatic) can reach beyond the slider's [min,max]; clamp
   // to the slider range (read from the element) before comparing/assigning, else
-  // an out-of-range value never equals els.zoom.value and every poll re-fires
-  // activeCv.refocus(), perpetually resetting the refocus debounce (octree freeze).
+  // an out-of-range value never equals els.zoom.value and the label keeps churning.
   const sliderMin = Number(els.zoom.min)
   const sliderMax = Number(els.zoom.max)
   const rounded = Math.min(
@@ -1240,8 +1112,6 @@ function syncZoomControl() {
   // Assigning input.value does NOT fire 'input'/'change', so no applyZoom loop.
   els.zoom.value = String(rounded)
   els.zoomVal.textContent = `${rounded.toFixed(1)}x`
-  // The focus radius (radius:'auto') tracks zoom, so re-plan (debounced).
-  activeCv?.refocus()
 }
 
 // Show or hide every block visualization together, gated on the "blocks" toggle:
@@ -1438,9 +1308,10 @@ function startHudPolling() {
         stats.completed = new Set()
       }
     }
-    // Mouse-wheel zoom mutates the model directly (no 'change' event), so
-    // reconcile the slider from the live zoom here; setter-based zoom is caught
-    // instantly by the 'change' listener in main.
+    // Reconcile the slider/label with the live zoom from any source (wheel moves
+    // it with no 'change' event). syncZoomControl is UI-only and never nudges the
+    // octree, so the poll cannot perpetually re-fire refocus; the wheel's own
+    // replan is issued by the canvas wheel listener in main.
     syncZoomControl()
     renderHud()
     syncExplode()
@@ -1546,7 +1417,9 @@ async function runReload(token, options) {
           colormap: els.colormap.value,
           budgetBytes: MULTILOD_BUDGET_BYTES,
           maxBricks: MULTILOD_MAX_BRICKS,
-          deviceLimit: STREAMING_CHUNK_EDGE,
+          // deviceLimit is omitted: core now defaults it from the host's
+          // maxTextureDimension3D, which this demo sets to 256 (see the NiiVue
+          // construction) -- the same value the explicit option used to pass.
           halo: STREAMING_CHUNK_HALO,
           minLevel: loadLevel,
         },
@@ -1645,13 +1518,24 @@ async function main() {
   // Crosshair-follow (finest bricks track the crosshair) is owned by the core
   // NVChunkedVolume — no demo-side locationChange wiring needed.
 
-  // Keep the zoom slider in sync with zoom from any source. The setter-based
-  // paths (the slider itself, programmatic nv.scaleMultiplier / nv.pan2Dxyzmm)
-  // emit 'change'; mouse-wheel zoom mutates the model directly (no event), so
-  // startHudPolling also reconciles via syncZoomControl.
+  // PROGRAMMATIC zoom path: nv.scaleMultiplier / nv.pan2Dxyzmm setters emit
+  // 'change'. Sync the slider UI and nudge the octree to re-plan -- unless the
+  // change came from applyZoom (slider drag), which already issued its own single
+  // refocus and sets zoomNudgeInApplyZoom to suppress a duplicate here.
   nv.addEventListener('change', (e) => {
     const prop = e.detail?.property
-    if (prop === 'scaleMultiplier' || prop === 'pan2Dxyzmm') syncZoomControl()
+    if (prop !== 'scaleMultiplier' && prop !== 'pan2Dxyzmm') return
+    syncZoomControl()
+    if (!zoomNudgeInApplyZoom) activeCv?.refocus()
+  })
+
+  // WHEEL zoom path: the wheel handler mutates the zoom on the model directly, so
+  // it emits no 'change' event -- the poll only syncs the slider UI from it. Issue
+  // the octree re-plan here (event-driven, so no perpetual re-fire); core debounces
+  // refocus, and a wheel that only steps the crosshair re-plans an unchanged zoom
+  // (cheap no-op). The poll reconciles the slider/label afterward.
+  els.canvas.addEventListener('wheel', () => activeCv?.refocus(), {
+    passive: true,
   })
 
   await reloadVolume({ reloadSource: true })

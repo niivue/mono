@@ -100,11 +100,12 @@ export function mountWsiSlideView(
   let lastFitHeight = 0
 
   // Ruler: created once the bundled font resolves. Endpoints live in slide
-  // coordinates; `hoverCss` previews the second point before it is fixed.
+  // coordinates so the ruler tracks the tissue through pan/zoom. Placed by a
+  // click-drag (press = start, drag = extend, release = fix), matching the
+  // volume viewport.
   let ruler: UIKitRulerOverlay | null = null
   let ruleA: { x: number; y: number } | null = null
   let ruleB: { x: number; y: number } | null = null
-  let hoverCss: [number, number] | null = null
   const onMeasure = options.onMeasure
 
   const screenOf = (): NVSlideScreen => ({
@@ -125,7 +126,6 @@ export function mountWsiSlideView(
   const clearMeasurement = (): void => {
     ruleA = null
     ruleB = null
-    hoverCss = null
     ruler?.clear()
     onMeasure?.(null)
   }
@@ -133,10 +133,7 @@ export function mountWsiSlideView(
   const updateRuler = (screen: NVSlideScreen): void => {
     if (!ruler) return
     const a = ruleA
-    let b = ruleB
-    if (a && !b && hoverCss) {
-      b = slide.screenToSlide(hoverCss[0], hoverCss[1], screen)
-    }
+    const b = ruleB
     if (!a || !b) {
       ruler.clear()
       return
@@ -244,71 +241,72 @@ export function mountWsiSlideView(
     scheduleRender()
   }
 
-  // Pointer pan + measurement. A pointer gesture that barely moves is a click;
-  // in Length mode a click places a ruler point, otherwise it does nothing. A
-  // gesture that moves pans (Pan tool) or drag-zooms (Zoom tool), matching the
-  // volume viewport's tool semantics.
-  let dragging = false
+  // Pointer interaction, matching the volume viewport's tool semantics: with the
+  // Length tool, a click-drag draws the measurement (press = start, drag =
+  // extend, release = fix); with the Pan / Zoom tool, a drag pans / zooms. A
+  // slide point at the pointer's current position.
+  const slidePointAt = (e: PointerEvent): { x: number; y: number } => {
+    const [cx, cy] = cssPos(e)
+    return slide.screenToSlide(cx, cy, screenOf())
+  }
+  let dragging = false // panning / zooming (Pan or Zoom tool)
+  let measuring = false // drawing a ruler (Length tool)
   let lastX = 0
   let lastY = 0
-  let downX = 0
-  let downY = 0
-  let moved = 0
   const onPointerDown = (e: PointerEvent): void => {
+    canvas.setPointerCapture?.(e.pointerId)
+    if (activeTool === 'Length') {
+      // Start a fresh measurement at the press point.
+      measuring = true
+      const s = slidePointAt(e)
+      ruleA = { x: s.x, y: s.y }
+      ruleB = { x: s.x, y: s.y }
+      scheduleRender()
+      return
+    }
     dragging = true
     lastX = e.clientX
     lastY = e.clientY
-    downX = e.clientX
-    downY = e.clientY
-    moved = 0
-    canvas.setPointerCapture?.(e.pointerId)
   }
   const onPointerMove = (e: PointerEvent): void => {
-    if (dragging) {
-      const dx = e.clientX - lastX
-      const dy = e.clientY - lastY
-      moved += Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY)
-      lastX = e.clientX
-      lastY = e.clientY
-      // A tiny jitter shouldn't count as a pan (so a Length click still lands).
-      if (moved <= 4) return
-      userInteracted = true
-      if (activeTool === 'Zoom') {
-        const rect = canvas.getBoundingClientRect()
-        slide.zoomBy(
-          Math.exp(-dy * 0.01),
-          e.clientX - rect.left,
-          e.clientY - rect.top,
-          screenOf(),
-        )
-      } else {
-        slide.panByScreenDelta(dx, dy, screenOf())
-      }
+    if (measuring) {
+      // Extend the measurement to the current point.
+      ruleB = slidePointAt(e)
       scheduleRender()
-    } else if (activeTool === 'Length' && ruleA && !ruleB) {
-      // Live preview of the second endpoint as the pointer moves.
-      hoverCss = cssPos(e)
-      scheduleRender()
+      return
     }
+    if (!dragging) return
+    userInteracted = true
+    const dx = e.clientX - lastX
+    const dy = e.clientY - lastY
+    lastX = e.clientX
+    lastY = e.clientY
+    if (activeTool === 'Zoom') {
+      const rect = canvas.getBoundingClientRect()
+      slide.zoomBy(
+        Math.exp(-dy * 0.01),
+        e.clientX - rect.left,
+        e.clientY - rect.top,
+        screenOf(),
+      )
+    } else {
+      slide.panByScreenDelta(dx, dy, screenOf())
+    }
+    scheduleRender()
   }
   const onPointerUp = (e: PointerEvent): void => {
-    const wasDragging = dragging
-    dragging = false
     canvas.releasePointerCapture?.(e.pointerId)
-    if (!wasDragging) return
-    // A near-stationary gesture in Length mode places / advances the ruler.
-    if (moved <= 4 && activeTool === 'Length') {
-      const [cx, cy] = cssPos(e)
-      const s = slide.screenToSlide(cx, cy, screenOf())
-      if (!ruleA || ruleB) {
-        ruleA = s
-        ruleB = null
-        hoverCss = null
-      } else {
-        ruleB = s
+    if (measuring) {
+      measuring = false
+      ruleB = slidePointAt(e)
+      // A press with no drag isn't a measurement.
+      if (ruleA && ruleB && ruleA.x === ruleB.x && ruleA.y === ruleB.y) {
+        clearMeasurement()
       }
       scheduleRender()
+      return
     }
+    dragging = false
   }
 
   canvas.addEventListener('pointerdown', onPointerDown)
@@ -327,12 +325,9 @@ export function mountWsiSlideView(
 
   return {
     setTool(tool: string | undefined): void {
-      // Leaving Length mode clears an in-progress (unfixed) measurement so a
-      // dangling first point doesn't linger; a completed ruler is kept visible.
-      if (activeTool === 'Length' && tool !== 'Length' && ruleA && !ruleB) {
-        clearMeasurement()
-        scheduleRender()
-      }
+      // Abandon an in-progress drag when switching away from Length; a completed
+      // ruler stays visible.
+      if (tool !== 'Length') measuring = false
       activeTool = tool
     },
     resetView(): void {

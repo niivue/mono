@@ -1,5 +1,6 @@
 import type { mat4, vec2, vec3, vec4 } from 'gl-matrix'
 import type { LogLevel } from '@/logger'
+import type { PEN_SHAPE } from '@/NVConstants'
 import type { FontMetrics } from '@/view/NVFont'
 import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 
@@ -653,6 +654,7 @@ export type DrawConfig = {
   isEnabled: boolean
   penValue: number
   penSize: number
+  penShape: PEN_SHAPE
   isFillOverwriting: boolean
   opacity: number
   rimOpacity: number

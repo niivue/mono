@@ -54,6 +54,7 @@ export {
   DRAG_MODE,
   MULTIPLANAR_TYPE,
   NiiDataType,
+  PEN_SHAPE,
   SHOW_RENDER,
   SLICE_TYPE,
 } from './NVConstants'

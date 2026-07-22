@@ -157,6 +157,7 @@ export const UI_DEFAULTS: UIConfig = {
   isLegendVisible: true,
   isPositionInMM: false,
   isMeasureUnitsVisible: true,
+  isMeasurementDrawn: true,
   isThumbnailVisible: false,
   thumbnailUrl: '',
   placeholderText: 'No image loaded',

@@ -178,7 +178,8 @@ export function buildPersistedMeasurements(
       const [sx, sy] = projectMMToCanvas(m.startMM, mvp, ltwh)
       const [ex, ey] = projectMMToCanvas(m.endMM, mvp, ltwh)
 
-      // Expose the screen projection for an external overlay renderer.
+      // Expose the screen projection for an external overlay renderer (always,
+      // even when the built-in draw is off).
       model._persistedMeasurementScreenLines.push({
         sx,
         sy,
@@ -186,6 +187,9 @@ export function buildPersistedMeasurements(
         ey,
         distance: m.distance,
       })
+
+      // An external overlay is drawing the ruler instead of the built-in.
+      if (!ui.isMeasurementDrawn) continue
 
       // Graduated ruler: arrowed baseline + per-mm ticks (majors every fifth).
       for (const [x0, y0, x1, y1] of rulerSegments(

@@ -612,6 +612,14 @@ export type UIConfig = {
   isLegendVisible: boolean
   isPositionInMM: boolean
   isMeasureUnitsVisible: boolean
+  /**
+   * Draw the built-in measurement overlay (ruler line, ticks, distance label).
+   * Set false to let an external overlay renderer draw measurements instead (it
+   * still reads `measurementScreenLines`); the built-in geometry is computed but
+   * not drawn, so no line, label, or label background chip appears. Angles are
+   * unaffected. Default true.
+   */
+  isMeasurementDrawn: boolean
   isThumbnailVisible: boolean
   thumbnailUrl: string
   placeholderText: string

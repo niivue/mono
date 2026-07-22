@@ -954,6 +954,15 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  get isMeasurementDrawn(): boolean {
+    return this.model.ui.isMeasurementDrawn
+  }
+  set isMeasurementDrawn(v: boolean) {
+    this.model.ui.isMeasurementDrawn = v
+    this.emit('change', { property: 'isMeasurementDrawn', value: v })
+    this.drawScene()
+  }
+
   get isThumbnailVisible(): boolean {
     return this.model.ui.isThumbnailVisible
   }

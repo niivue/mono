@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@niivue/uikit - Ruler on the WSI viewer</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee;
+        font: 14px/1.4 system-ui, sans-serif; }
+      #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+      header { padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333;
+        display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+      header b { color: #ffd500; }
+      nav a { color: #9cf; margin-right: 10px; }
+      button { background: #333; color: #eee; border: 1px solid #555;
+        border-radius: 4px; padding: 3px 9px; cursor: pointer; }
+      #canvasHolder { flex: 1; position: relative; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%;
+        touch-action: none; }
+      a { color: #ffd500; }
+      #status { color: #ffd500; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <header>
+        <b>UIKit ruler / WSI viewer</b>
+        <nav><a href="/index.html">blank</a><a href="/volume.html">volume</a><a href="/slide.html">slide (3D)</a><a href="/slide-wsi.html">WSI</a></nav>
+        <span>Drag to pan, wheel to zoom. Click two points to measure.</span>
+        <button id="fit" type="button">Fit</button>
+        <label>font <input id="fontSize" type="range" min="12" max="72" value="24" style="vertical-align:middle" /></label>
+        <span>slide: <a href="?src=cptac">tissue</a> | <a href="?src=dzi">demo</a></span>
+        <span><a href="?backend=webgl2">webgl2</a> | <a href="?backend=webgpu">webgpu</a></span>
+        <span id="status">loading slide...</span>
+      </header>
+      <div id="canvasHolder"><canvas id="gl"></canvas></div>
+    </div>
+
+    <script type="module">
+      import { DziSource, NVSlide, SlideRenderer, SlideRendererGPU } from '@niivue/niivue'
+      import { loadDefaultFont, UIKitRulerOverlay } from './src/index.ts'
+
+      // Real tissue from NiiVue's test-images repo (hosted live on GitHub Pages,
+      // which serves HTTP Range + CORS), plus a CORS-enabled Deep Zoom fallback.
+      // The DICOM-WSI reports base slide pixels (its PixelSpacing is [1,1]); a
+      // slide that carried real spacing would read in millimetres instead.
+      const WSI_BASE = 'https://niivue.github.io/niivue-demo-images/wsi'
+      const DZI = 'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi'
+      const TISSUE = {
+        cptac: `${WSI_BASE}/cptac-brca/manifest.json`, // CPTAC breast-cancer H&E
+      }
+
+      const params = new URLSearchParams(location.search)
+      const src = params.get('src') || 'cptac'
+      const wantGpu = params.get('backend') === 'webgpu' && 'gpu' in navigator
+      const canvas = document.getElementById('gl')
+      const status = document.getElementById('status')
+      const COLOR = [1, 0.85, 0, 1]
+
+      // --- standalone slide viewer plumbing (mirrors examples/slides.js) --------
+      const screenForCanvas = () => {
+        const r = canvas.getBoundingClientRect()
+        return { widthCss: r.width, heightCss: r.height,
+          devicePixelRatio: window.devicePixelRatio || 1 }
+      }
+      // Inverse of slide.screenToSlide: slide base pixel -> canvas CSS.
+      const slideToCss = (sx, sy, screen) => {
+        const vp = slide.viewport
+        const sc = vp.scale
+        const leftSlide = vp.centerX - screen.widthCss / (2 * sc)
+        const xCss = (sx - leftSlide) * sc
+        const yCss = slide.isYAxisUp()
+          ? screen.heightCss / 2 - (sy - vp.centerY) * sc
+          : (sy - (vp.centerY - screen.heightCss / (2 * sc))) * sc
+        return [xCss, yCss]
+      }
+      const slideToDevice = (p, screen) => {
+        const [cx, cy] = slideToCss(p.x, p.y, screen)
+        const dpr = screen.devicePixelRatio ?? 1
+        return [cx * dpr, cy * dpr]
+      }
+
+      let view = null
+      const createView = async () => {
+        if (wantGpu) {
+          const renderer = await SlideRendererGPU.create(canvas)
+          if (renderer) return { kind: 'gpu', renderer }
+        }
+        const gl = canvas.getContext('webgl2', { alpha: false, antialias: false })
+        const renderer = new SlideRenderer()
+        renderer.init(gl)
+        return { kind: 'gl', gl, renderer }
+      }
+      const drawView = (screen) => {
+        if (view.kind === 'gpu') view.renderer.render([slide], screen)
+        else view.renderer.draw(view.gl, [slide], screen)
+      }
+
+      let frame = 0
+      const requestRender = () => {
+        if (frame) return
+        frame = requestAnimationFrame(() => { frame = 0; render() })
+      }
+
+      // --- measurement (endpoints stored in SLIDE coords so they track the ----
+      // tissue through pan/zoom) --------------------------------------------
+      const spacing = () => slide.manifest.pixelSpacingMM // [x,y] mm/px or undefined
+      let ruleA = null // {x,y} slide px
+      let ruleB = null
+      let hoverCss = null
+      let labelSizePx = 24 // ruler label height in px (font-size slider)
+
+      // Physical distance when the slide carries pixel spacing (PixelSpacing /
+      // ImagedVolumeWidth): microns for sub-mm features, mm (with per-mm ticks)
+      // above that. Falls back to base slide pixels when no spacing is present.
+      const measure = (a, b) => {
+        const dpx = b.x - a.x
+        const dpy = b.y - a.y
+        const sp = spacing()
+        if (!sp) {
+          return { length: Math.hypot(dpx, dpy), units: 'px', decimals: 0, ticks: false }
+        }
+        const mm = Math.hypot(dpx * sp[0], dpy * sp[1])
+        return mm < 1
+          ? { length: mm * 1000, units: 'um', decimals: 0, ticks: false }
+          : { length: mm, units: 'mm', decimals: 2, ticks: true }
+      }
+
+      const updateRuler = (screen) => {
+        const a = ruleA
+        let b = ruleB
+        if (a && !b && hoverCss) b = slide.screenToSlide(hoverCss[0], hoverCss[1], screen)
+        if (!a || !b) { ruler.clear(); return }
+        const m = measure(a, b)
+        ruler.setRuler({
+          a: slideToDevice(a, screen), b: slideToDevice(b, screen),
+          length: m.length, units: m.units, decimals: m.decimals,
+          sizePx: labelSizePx, thickness: 3, showTicks: m.ticks, showTickNumbers: m.ticks,
+          lineColor: COLOR, textColor: COLOR,
+        })
+        status.textContent = `${m.length.toFixed(m.decimals)} ${m.units}` +
+          (ruleB ? ' (click to start over)' : ' (click to fix)')
+      }
+
+      let hasFit = false
+      const render = () => {
+        const screen = screenForCanvas()
+        const dpr = screen.devicePixelRatio ?? 1
+        canvas.width = Math.max(1, Math.floor(screen.widthCss * dpr))
+        canvas.height = Math.max(1, Math.floor(screen.heightCss * dpr))
+        if (!hasFit) { slide.fitToScreen(screen); hasFit = true }
+        slide.clampViewport(screen)
+        updateRuler(screen) // set ruler geometry BEFORE the frame draws it
+        drawView(screen)
+      }
+
+      // --- load + wire ----------------------------------------------------------
+      const opts = { maxCacheBytes: 96 * 1024 * 1024 }
+      // fromManifestUrl resolves relative tile paths against the manifest URL, so
+      // it needs an absolute URL (not a root-relative path).
+      const manifestUrl = new URL(TISSUE[src] ?? TISSUE.cptac, location.href).href
+      const slide =
+        src === 'dzi'
+          ? NVSlide.fromSource(await DziSource.fromUrl(DZI), opts)
+          : await NVSlide.fromManifestUrl(manifestUrl, opts)
+      view = await createView()
+      const font = await loadDefaultFont()
+      const ruler = new UIKitRulerOverlay(font)
+      view.renderer.overlayDraw = (f) => ruler.drawOverlay(f)
+      slide.addEventListener('change', requestRender)
+      status.textContent = spacing()
+        ? 'click two points to measure (mm)...'
+        : 'click two points to measure (slide px)...'
+      requestRender()
+
+      // --- interaction ----------------------------------------------------------
+      const cssPos = (ev) => {
+        const r = canvas.getBoundingClientRect()
+        return [ev.clientX - r.left, ev.clientY - r.top]
+      }
+      let drag = null
+      canvas.addEventListener('pointerdown', (ev) => {
+        drag = { id: ev.pointerId, lastX: ev.clientX, lastY: ev.clientY,
+          downX: ev.clientX, downY: ev.clientY, moved: 0 }
+      })
+      canvas.addEventListener('pointermove', (ev) => {
+        if (drag && drag.id === ev.pointerId) {
+          const dx = ev.clientX - drag.lastX
+          const dy = ev.clientY - drag.lastY
+          drag.moved += Math.abs(dx) + Math.abs(dy)
+          drag.lastX = ev.clientX
+          drag.lastY = ev.clientY
+          if (drag.moved > 4) { slide.panByScreenDelta(dx, dy, screenForCanvas()); requestRender() }
+        } else if (ruleA && !ruleB) {
+          hoverCss = cssPos(ev)
+          requestRender()
+        }
+      })
+      window.addEventListener('pointerup', (ev) => {
+        if (!drag || drag.id !== ev.pointerId) return
+        const wasClick = drag.moved <= 4
+        drag = null
+        if (!wasClick) return // a pan, not a measurement click
+        const [cx, cy] = cssPos(ev)
+        const s = slide.screenToSlide(cx, cy, screenForCanvas())
+        if (!ruleA || ruleB) { ruleA = s; ruleB = null; hoverCss = null }
+        else ruleB = s
+        requestRender()
+      })
+      canvas.addEventListener('wheel', (ev) => {
+        ev.preventDefault()
+        const [cx, cy] = cssPos(ev)
+        slide.zoomBy(Math.exp(-ev.deltaY * 0.0013), cx, cy, screenForCanvas())
+        requestRender()
+      }, { passive: false })
+      document.getElementById('fit').addEventListener('click', () => {
+        slide.fitToScreen(screenForCanvas()); requestRender()
+      })
+      document.getElementById('fontSize').addEventListener('input', (ev) => {
+        labelSizePx = Number(ev.target.value); requestRender()
+      })
+    </script>
+  </body>
+</html>

@@ -1,13 +1,13 @@
-export type LineData = { data: Float32Array }
+// Line drawing for UIKit. Duplicated from niivue core (`view/NVLine.ts`) on
+// purpose: during the UIKit bake-in phase, UIKit carries its own rendering so
+// core stays untouched and unbroken. After UIKit is proven, core's overlays cut
+// over onto this and the duplicate in core is removed. See docs/ruler-port.md in
+// @niivue/niivue.
 
-export type BuildLineFn = (
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  thickness: number,
-  color: number[],
-) => LineData
+// A drawable line record: [sx, sy, ex, ey, thickness, 0, 0, 0, r, g, b, a] in
+// canvas-pixel coordinates. The extra zeros mirror the core layout so the UIKit
+// line renderer (added later) and the core one share a wire format.
+export type LineData = { data: Float32Array }
 
 export const FLOATS_PER_LINE = 12
 
@@ -17,7 +17,7 @@ export function buildLine(
   endX: number,
   endY: number,
   thickness = 2,
-  color: number[] = [1, 1, 0, 1],
+  color: readonly number[] = [1, 1, 0, 1],
 ): LineData {
   const data = new Float32Array([
     startX,
@@ -66,7 +66,7 @@ function arrowBarbs(
   dirX: number,
   dirY: number,
   thickness: number,
-  color: number[],
+  color: readonly number[],
 ): LineData[] {
   const len = arrowLength(thickness)
   const bx = -dirX
@@ -86,8 +86,8 @@ function arrowBarbs(
 /**
  * A line plus optional end/start terminators, returned as plain {@link LineData}
  * segments (the shaft first, then any terminator barbs). Terminators are composed
- * from short line segments, so the line renderer and shaders are unchanged and both
- * backends draw them identically. Mirrors the old uikit `drawLine({ terminator })`
+ * from short line segments, so a plain line renderer draws them unchanged and both
+ * backends render them identically. Mirrors the old uikit `drawLine({ terminator })`
  * in this data-emitting model.
  *
  * ARROW shortens the shaft by half a barb length at the terminated end so it does
@@ -100,7 +100,7 @@ export function buildTerminatedLine(
   endX: number,
   endY: number,
   thickness = 2,
-  color: number[] = [1, 1, 0, 1],
+  color: readonly number[] = [1, 1, 0, 1],
   terminators: LineTerminators = {},
 ): LineData[] {
   const { start = LineTerminator.NONE, end = LineTerminator.NONE } = terminators

@@ -59,6 +59,14 @@ export interface NVSlideManifest {
   dataUrl?: string
   order?: string
   levels: NVSlideLevelManifest[]
+  /**
+   * Physical size of one base (level-0) pixel in millimetres, as [x, y] (column,
+   * row). For DICOM-WSI this comes from PixelSpacing (0028,0030). Undefined when
+   * the source carries no physical scale; a measurement UI then falls back to
+   * pixels. `screenToSlide` returns base-pixel coordinates, so distance in mm =
+   * base-pixel distance x this spacing.
+   */
+  pixelSpacingMM?: readonly [number, number]
 }
 
 export interface NVSlideViewport {

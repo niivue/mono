@@ -9,6 +9,7 @@ import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
+import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { NVRenderer } from '@/view/NVRenderer'
 import { Shader } from './shader'
 import { slideFragShader, slideVertShader } from './slideShader'
@@ -31,6 +32,12 @@ export class SlideRenderer extends NVRenderer {
     DEFAULT_TILE_TEXTURE_BYTES,
     (entry) => this._gl?.deleteTexture(entry.texture),
   )
+  /**
+   * UIKit overlay hook: invoked at the end of every frame (after the slide tiles,
+   * before GL state is restored) so a widget can draw over the slide in screen
+   * space. Mirrors the NiiVue view hook. See view/NVOverlayHook.ts.
+   */
+  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
 
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
@@ -159,6 +166,17 @@ export class SlideRenderer extends NVRenderer {
           slide.showTileGrid,
         )
       }
+    }
+
+    // UIKit overlay hook: last screen-space draw of the frame, with blend on and
+    // depth/cull off (the widget sets and restores its own state as needed).
+    if (this.overlayDraw) {
+      this.overlayDraw({
+        handle: { backend: 'webgl2', gl },
+        bounds: { x: 0, y: 0, width, height },
+        dpr: screen.devicePixelRatio ?? 1,
+        settled: true,
+      })
     }
 
     gl.bindVertexArray(null)

@@ -93,6 +93,12 @@ export type {
   ChunkedVolumeSource,
 } from './volume/ChunkedVolumeSource'
 export type {
+  UIKitBackendHandle,
+  UIKitOverlayBounds,
+  UIKitOverlayFrame,
+  UIKitOverlayRenderer,
+} from './view/NVOverlayHook'
+export type {
   ChunkPlan,
   MultiLodFocus,
   MultiLodOptions,

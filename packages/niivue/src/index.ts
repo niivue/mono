@@ -193,6 +193,13 @@ export type {
   ChunkedVolumeLevel,
   ChunkedVolumeSource,
 } from './volume/ChunkedVolumeSource'
+// UIKit overlay lifecycle hook — the seam @niivue/uikit widgets draw into
+export type {
+  UIKitBackendHandle,
+  UIKitOverlayBounds,
+  UIKitOverlayFrame,
+  UIKitOverlayRenderer,
+} from './view/NVOverlayHook'
 export type {
   ChunkPlan,
   MultiLodFocus,

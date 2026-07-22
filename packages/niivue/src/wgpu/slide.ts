@@ -8,6 +8,7 @@ import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
+import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 
 const shaderCode = /* wgsl */ `
 struct SlideUniforms {
@@ -105,6 +106,7 @@ export class SlideRendererGPU {
   private readonly _bindLayout: GPUBindGroupLayout
   private readonly _sampler: GPUSampler
   private _placeholderTexture: GPUTexture | null
+  private readonly _format: GPUTextureFormat
   // Byte-budgeted: tile textures for scrolled-away regions are evicted each
   // frame instead of accumulating for the life of the renderer. Eviction runs
   // before beginFrame (see render), so a texture referenced by the frame just
@@ -115,6 +117,13 @@ export class SlideRendererGPU {
   )
   private readonly _uniformPool: GPUBuffer[] = []
   private _uniformCursor = 0
+  /**
+   * UIKit overlay hook: invoked at the end of every frame (appended to the open
+   * pass, before pass.end()) so a widget can draw over the slide. The slide pass
+   * has no depth attachment and no MSAA, so the frame's handle omits depthFormat
+   * and reports sampleCount 1. See view/NVOverlayHook.ts.
+   */
+  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -124,6 +133,7 @@ export class SlideRendererGPU {
     bindLayout: GPUBindGroupLayout,
     sampler: GPUSampler,
     placeholderTexture: GPUTexture,
+    format: GPUTextureFormat,
   ) {
     this._canvas = canvas
     this._device = device
@@ -132,6 +142,7 @@ export class SlideRendererGPU {
     this._bindLayout = bindLayout
     this._sampler = sampler
     this._placeholderTexture = placeholderTexture
+    this._format = format
   }
 
   static async create(
@@ -215,6 +226,7 @@ export class SlideRendererGPU {
       bindLayout,
       sampler,
       placeholderTexture,
+      format,
     )
   }
 
@@ -282,6 +294,23 @@ export class SlideRendererGPU {
           },
         )
       }
+    }
+
+    // UIKit overlay hook: append the widget's draws to the open pass. The slide
+    // pass has no depth attachment (depthFormat omitted) and no MSAA.
+    if (this.overlayDraw) {
+      this.overlayDraw({
+        handle: {
+          backend: 'webgpu',
+          device: this._device,
+          pass,
+          colorFormat: this._format,
+          sampleCount: 1,
+        },
+        bounds: { x: 0, y: 0, width, height },
+        dpr,
+        settled: true,
+      })
     }
 
     pass.end()

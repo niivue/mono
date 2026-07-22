@@ -166,10 +166,16 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
     }
   }
 
-  // Length + units label, centered on the midpoint and lifted off the line.
+  // Length + units label, centered on the midpoint and lifted off the line. When
+  // graduation numbers are drawn on the same side, lift the label clear of them
+  // (they sit at ~tickLength*2 + sizePx*0.9) so a midpoint number is never
+  // covered; otherwise keep it tight to the line.
   const label = units
     ? `${length.toFixed(decimals)} ${units}`
     : length.toFixed(decimals)
+  const labelLift = showTickNumbers
+    ? tickLength * 2 + sizePx * 1.5
+    : tickLength * 2 + sizePx
   text.push({
     str: label,
     x: (a[0] + b[0]) / 2,
@@ -177,7 +183,7 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
     sizePx,
     rotation: angle,
     align: 0.5,
-    liftPx: liftSign * (tickLength * 2 + sizePx),
+    liftPx: liftSign * labelLift,
     color: textColor,
     outlineWidthPx: textOutlineWidthPx,
   })

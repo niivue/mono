@@ -1,5 +1,6 @@
 import type { NiiVueOptions } from '@niivue/niivue'
 import NiiVue, { NVSlide, SLICE_TYPE } from '@niivue/niivue'
+import { loadDefaultFont } from '@niivue/uikit'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import type { NiivueCompletedMeasurement } from './commands'
@@ -20,6 +21,7 @@ import {
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToDragMode } from './toolBridge'
+import { VolumeRulerOverlay } from './volumeRulerOverlay'
 import { mountWsiSlideView } from './wsiSlideView'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 
@@ -91,6 +93,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     if (!container) return
 
     let disposed = false
+    // UIKit ruler overlay for volume measurements (registered after the font
+    // loads); torn down on unmount.
+    let rulerOverlay: VolumeRulerOverlay | null = null
+    let unregisterRuler: (() => void) | null = null
     const canvas = document.createElement('canvas')
     canvas.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%'
@@ -103,11 +109,24 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       nv.sliceType = SLICE_TYPE.MULTIPLANAR
-      // Match the volume measurement ruler to the whole-slide UIKit ruler: same
-      // yellow, a slightly thicker line so the graduations read clearly.
-      nv.measureLineColor = [1, 0.85, 0, 1]
-      nv.measureTextColor = [1, 0.85, 0, 1]
-      nv.rulerWidth = 3
+      // Draw volume measurements as @niivue/uikit rulers (arrowed, graduated,
+      // rotated tick numbers) to match the whole-slide ruler: hide NiiVue's
+      // built-in measurement line (transparent) and draw the UIKit ruler over it
+      // from nv.measurementScreenLines once the bundled font loads.
+      nv.measureLineColor = [0, 0, 0, 0]
+      nv.measureTextColor = [0, 0, 0, 0]
+      loadDefaultFont()
+        .then((font) => {
+          if (disposed) return
+          rulerOverlay = new VolumeRulerOverlay(
+            font,
+            () => nv.measurementScreenLines,
+          )
+          unregisterRuler = nv.registerOverlayRenderer(rulerOverlay)
+        })
+        .catch((err) =>
+          console.error('[nv-ohif] volume ruler font failed to load', err),
+        )
       // Expose the instance to OHIF commands / toolbar evaluators (commands.ts),
       // with a status sink so async commands (overlay load) surface progress.
       registerNiivue(viewportId, nv)
@@ -187,6 +206,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       refreshToolbar(servicesManagerRef.current, viewportId)
       canvas.removeEventListener('pointerup', onPointerUp)
       nv.removeEventListener('measurementCompleted', onMeasurement)
+      unregisterRuler?.()
+      rulerOverlay?.destroy()
       ro.disconnect()
       nv.destroy()
       canvas.width = 0

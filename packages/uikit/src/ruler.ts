@@ -1,11 +1,11 @@
-// The UIKit ruler widget: a measurement line between two screen points with arrow
-// terminators, perpendicular tick marks, and a rotated length+units label that
-// stays upright (readability guard). `buildRuler` is pure — it turns a ruler spec
-// into plain line + text draw data — so the geometry is unit-testable and the
+// The UIKit ruler widget: a measurement line between two screen points with long
+// perpendicular end caps, graduated tick marks, and a rotated length+units label
+// that stays upright (readability guard). `buildRuler` is pure — it turns a ruler
+// spec into plain line + text draw data — so the geometry is unit-testable and the
 // overlay (rulerOverlay.ts) just draws it. Ported from the old niivue/niivue uikit
-// `drawRuler`, simplified to a both-ends-arrowed baseline with centered ticks.
+// `drawRuler`.
 
-import { buildTerminatedLine, type LineData, LineTerminator } from './line'
+import { buildLine, type LineData } from './line'
 import { readableAngle } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
 
@@ -97,13 +97,9 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
   // negate the lift to keep the label on the same side of the line.
   const liftSign = flipped ? -1 : 1
 
-  // Measurement baseline with an arrowhead at each end.
-  lines.push(
-    ...buildTerminatedLine(a[0], a[1], b[0], b[1], thickness, lineColor, {
-      start: LineTerminator.ARROW,
-      end: LineTerminator.ARROW,
-    }),
-  )
+  // Measurement baseline. The perpendicular end caps (below) mark the extent, so
+  // the baseline is a plain line with no arrowheads.
+  lines.push(buildLine(a[0], a[1], b[0], b[1], thickness, lineColor))
 
   // Long perpendicular end caps crossing the exact start and end points, so the
   // measurement's extent is unambiguous (longer than a major tick).
@@ -111,14 +107,14 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
     const capLen = tickLength * 3
     for (const p of [a, b]) {
       lines.push(
-        buildTerminatedLine(
+        buildLine(
           p[0] - px * capLen,
           p[1] - py * capLen,
           p[0] + px * capLen,
           p[1] + py * capLen,
           thickness,
           lineColor,
-        )[0] as LineData,
+        ),
       )
     }
   }
@@ -141,14 +137,14 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
       const major = i % 5 === 0
       const half = major ? tickLength * 2 : tickLength
       lines.push(
-        buildTerminatedLine(
+        buildLine(
           cx - px * half,
           cy - py * half,
           cx + px * half,
           cy + py * half,
           1,
           lineColor,
-        )[0] as LineData,
+        ),
       )
       if (major && showTickNumbers) {
         const alongPx = t * len

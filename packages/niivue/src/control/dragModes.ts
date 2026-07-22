@@ -3,7 +3,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
 import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
-import { rulerSegments } from '@/view/NVMeasurement'
+import { rulerSegments, rulerTickLabels } from '@/view/NVMeasurement'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 
 /** Return the DRAG_MODE for a given mouse button on 2D slice tiles. */
@@ -187,6 +187,18 @@ export function updateDragOverlay(ctrl: NiiVue): void {
         endXY: [x1, y1],
         color: lineColor,
         thickness: lineWidth,
+      })
+    }
+    // Graduation numbers at each major tick, along the ruler edge.
+    for (const t of rulerTickLabels(sx, sy, ex, ey, dist)) {
+      overlay.text?.push({
+        str: t.str,
+        x: t.x,
+        y: t.y,
+        scale: 0.5,
+        color: textColor,
+        anchorX: 0.5,
+        anchorY: 0.5,
       })
     }
     // Distance text at line midpoint

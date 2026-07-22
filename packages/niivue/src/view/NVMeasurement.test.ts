@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { rulerSegments } from './NVMeasurement'
+import { rulerSegments, rulerTickLabels } from './NVMeasurement'
 
 // A both-ends arrowed baseline is 5 segments (shaft + 2 barbs per end).
 const BASELINE_SEGS = 5
@@ -37,5 +37,29 @@ describe('rulerSegments', () => {
     const ticks = segs.length - BASELINE_SEGS
     expect(ticks).toBeLessThanOrEqual(200)
     expect(ticks).toBeGreaterThan(0)
+  })
+})
+
+describe('rulerTickLabels', () => {
+  it('numbers every major (fifth) unit', () => {
+    const labels = rulerTickLabels(0, 0, 100, 0, 12)
+    // Majors at 5 and 10.
+    expect(labels.map((l) => l.str)).toEqual(['5', '10'])
+  })
+
+  it('is empty when there is no major tick', () => {
+    expect(rulerTickLabels(0, 0, 100, 0, 4)).toHaveLength(0)
+  })
+
+  it('is empty for a zero-length or unit-less ruler', () => {
+    expect(rulerTickLabels(0, 0, 0, 0, 50)).toHaveLength(0)
+    expect(rulerTickLabels(0, 0, 100, 0, 0)).toHaveLength(0)
+  })
+
+  it('offsets numbers to one side of the baseline (the edge)', () => {
+    // Horizontal line -> perpendicular is vertical, so labels share one y sign.
+    const labels = rulerTickLabels(0, 0, 100, 0, 12)
+    expect(labels.every((l) => l.y === labels[0].y)).toBe(true)
+    expect(labels[0].y).not.toBe(0)
   })
 })

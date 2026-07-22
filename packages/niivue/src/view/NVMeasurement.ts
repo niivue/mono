@@ -71,6 +71,46 @@ export function rulerSegments(
   return segs
 }
 
+/** A ruler graduation number and where to draw it (canvas pixels). */
+export type RulerTickLabel = { str: string; x: number; y: number }
+
+/**
+ * Graduation numbers for a ruler between two canvas points: the value at each
+ * major tick (every fifth unit), positioned just past the tick along the
+ * ruler's edge (offset on the same side for every number so they line up like a
+ * real ruler's scale). Mirrors @niivue/uikit's buildRuler tick numbers. Pure:
+ * the caller renders each label. Empty for a zero-length or unit-less ruler.
+ */
+export function rulerTickLabels(
+  sx: number,
+  sy: number,
+  ex: number,
+  ey: number,
+  units: number,
+  tickLength = 6,
+): RulerTickLabel[] {
+  const dx = ex - sx
+  const dy = ey - sy
+  const len = Math.hypot(dx, dy)
+  if (len === 0 || units <= 0) return []
+
+  // Same perpendicular the ticks use; numbers sit just beyond the major tick.
+  const px = -dy / len
+  const py = dx / len
+  const off = tickLength * 2 + tickLength
+  const marks = Math.floor(units)
+  const step = Math.max(1, Math.ceil(marks / MAX_RULER_TICKS))
+  const out: RulerTickLabel[] = []
+  for (let i = step; i <= marks; i += step) {
+    if (i % 5 !== 0) continue
+    const t = i / units
+    const cx = sx + t * dx
+    const cy = sy + t * dy
+    out.push({ str: `${i}`, x: cx + px * off, y: cy + py * off })
+  }
+  return out
+}
+
 /** Format distance with smart decimals. */
 function formatDistance(dist: number, showUnits: boolean): string {
   let decimals = 2
@@ -145,6 +185,12 @@ export function buildPersistedMeasurements(
         lineWidth,
       )) {
         lines.push(buildLine(x0, y0, x1, y1, lineWidth, lineColor))
+      }
+
+      // Graduation numbers at each major tick, along the ruler edge.
+      for (const t of rulerTickLabels(sx, sy, ex, ey, m.distance)) {
+        const b = buildText(t.str, t.x, t.y, 0.5, textColor, 0.5, 0.5)
+        if (b.count > 0) labels.push(b)
       }
 
       // Distance text

@@ -53,6 +53,22 @@ describe('buildRuler', () => {
     expect(g.text).toHaveLength(3)
   })
 
+  it('thins graduation numbers on a long ruler so they do not collide', () => {
+    // 100 units over 200 px with a big label size: numbering every fifth (20
+    // numbers) would overlap, so far fewer are emitted, each still a multiple of 5.
+    const g = buildRuler({
+      a: [0, 0],
+      b: [200, 0],
+      length: 100,
+      sizePx: 40,
+      showTickNumbers: true,
+    })
+    const numbers = g.text.filter((t) => t.str !== '100.0')
+    expect(numbers.length).toBeGreaterThan(0)
+    expect(numbers.length).toBeLessThan(20)
+    for (const n of numbers) expect(Number(n.str) % 5).toBe(0)
+  })
+
   it('caps the tick count for an enormous measurement', () => {
     const g = buildRuler({ a: [0, 0], b: [1000, 0], length: 5000 })
     const ticks = g.lines.length - 5 // minus the 5 baseline segments

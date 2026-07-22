@@ -103,6 +103,13 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
   if (showTicks && length > 0) {
     const marks = Math.floor(length)
     const step = Math.max(1, Math.ceil(marks / MAX_TICKS))
+    // Minimum along-ruler gap between graduation numbers so they never collide;
+    // a long ruler thus labels only every few majors (e.g. 20/40/60) instead of
+    // running every fifth value into an unreadable smear.
+    const numberScale = 0.5
+    const maxDigits = `${marks}`.length
+    const minLabelGapPx = sizePx * numberScale * (maxDigits * 0.7 + 0.6)
+    let lastLabelAlongPx = Number.NEGATIVE_INFINITY
     for (let i = step; i <= marks; i += step) {
       const t = i / length
       const cx = a[0] + t * dx
@@ -120,17 +127,21 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
         )[0] as LineData,
       )
       if (major && showTickNumbers) {
-        text.push({
-          str: `${i}`,
-          x: cx,
-          y: cy,
-          sizePx: sizePx * 0.5,
-          rotation: angle,
-          align: 0.5,
-          liftPx: liftSign * (half + sizePx * 0.4),
-          color: textColor,
-          outlineWidthPx: textOutlineWidthPx,
-        })
+        const alongPx = t * len
+        if (alongPx - lastLabelAlongPx >= minLabelGapPx) {
+          lastLabelAlongPx = alongPx
+          text.push({
+            str: `${i}`,
+            x: cx,
+            y: cy,
+            sizePx: sizePx * numberScale,
+            rotation: angle,
+            align: 0.5,
+            liftPx: liftSign * (half + sizePx * 0.4),
+            color: textColor,
+            outlineWidthPx: textOutlineWidthPx,
+          })
+        }
       }
     }
   }

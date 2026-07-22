@@ -20,7 +20,7 @@ export interface RulerSpec {
   length: number
   /** Unit suffix, e.g. 'mm'. */
   units?: string
-  /** Label text height in pixels. Default 22. */
+  /** Label text height in pixels. Default 36. */
   sizePx?: number
   /** Decimals in the length label. Default 1. */
   decimals?: number
@@ -62,7 +62,7 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
     b,
     length,
     units = '',
-    sizePx = 22,
+    sizePx = 36,
     decimals = 1,
     lineColor = YELLOW,
     textColor = YELLOW,

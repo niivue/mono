@@ -103,6 +103,11 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       nv.sliceType = SLICE_TYPE.MULTIPLANAR
+      // Match the volume measurement ruler to the whole-slide UIKit ruler: same
+      // yellow, a slightly thicker line so the graduations read clearly.
+      nv.measureLineColor = [1, 0.85, 0, 1]
+      nv.measureTextColor = [1, 0.85, 0, 1]
+      nv.rulerWidth = 3
       // Expose the instance to OHIF commands / toolbar evaluators (commands.ts),
       // with a status sink so async commands (overlay load) surface progress.
       registerNiivue(viewportId, nv)

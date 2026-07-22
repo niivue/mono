@@ -275,7 +275,14 @@ export function NiivueViewport(props: OhifViewportProps) {
       const slide = NVSlide.fromSource(source)
       let view: ReturnType<typeof mountWsiSlideView> | null = null
       try {
-        view = mountWsiSlideView(slideCanvas, slide)
+        view = mountWsiSlideView(slideCanvas, slide, {
+          // Reflect the live ruler length in the viewport status; clear it back
+          // to idle when the measurement is removed.
+          onMeasure: (text) => {
+            if (cancelled) return
+            setStatus(text ? { kind: 'note', message: text } : { kind: 'idle' })
+          },
+        })
         slideViewRef.current = view
         view.setTool(activeOhifToolRef.current)
         updateNiivueViewport(viewportId, { slideView: view })

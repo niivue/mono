@@ -619,6 +619,29 @@ export class NVSlide extends EventTarget {
     }
   }
 
+  /**
+   * Inverse of {@link screenToSlide}: map a slide base-pixel coordinate back to
+   * canvas CSS pixels. Used to anchor screen-space overlays (e.g. a UIKit ruler
+   * whose endpoints are stored in slide coordinates so they track the tissue
+   * through pan/zoom) to the live viewport.
+   */
+  slideToScreen(
+    sx: number,
+    sy: number,
+    screen: NVSlideScreen,
+  ): { xCss: number; yCss: number } {
+    const left =
+      this.viewport.centerX - screen.widthCss / (2 * this.viewport.scale)
+    const top =
+      this.viewport.centerY - screen.heightCss / (2 * this.viewport.scale)
+    const xCss = (sx - left) * this.viewport.scale
+    const yCss = this.isYAxisUp()
+      ? screen.heightCss / 2 -
+        (sy - this.viewport.centerY) * this.viewport.scale
+      : (sy - top) * this.viewport.scale
+    return { xCss, yCss }
+  }
+
   zoomBy(
     factor: number,
     anchorXCss: number,

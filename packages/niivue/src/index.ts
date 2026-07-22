@@ -187,12 +187,6 @@ export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
 export type { SlideVectorKind, SlideVectorShape } from './slide/slideVector'
 export { SlideVectorLayer } from './slide/slideVector'
 export { buildDrawingLut, drawingBitmapToRGBA } from './view/NVDrawingTexture'
-// Crosshair-focused multi-resolution (multi-LOD) streamed volumes
-export type {
-  ChunkedVolumeFetch,
-  ChunkedVolumeLevel,
-  ChunkedVolumeSource,
-} from './volume/ChunkedVolumeSource'
 // UIKit overlay lifecycle hook — the seam @niivue/uikit widgets draw into
 export type {
   UIKitBackendHandle,
@@ -200,6 +194,12 @@ export type {
   UIKitOverlayFrame,
   UIKitOverlayRenderer,
 } from './view/NVOverlayHook'
+// Crosshair-focused multi-resolution (multi-LOD) streamed volumes
+export type {
+  ChunkedVolumeFetch,
+  ChunkedVolumeLevel,
+  ChunkedVolumeSource,
+} from './volume/ChunkedVolumeSource'
 export type {
   ChunkPlan,
   MultiLodFocus,

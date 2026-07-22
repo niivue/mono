@@ -1,5 +1,15 @@
 import type { NVSlide, NVSlideScreen } from '@niivue/niivue'
 import { SlideRenderer } from '@niivue/niivue'
+import { loadDefaultFont, UIKitRulerOverlay } from '@niivue/uikit'
+
+export interface WsiSlideViewOptions {
+  /**
+   * Called when the measurement (ruler) changes: a formatted length string
+   * while measuring, or null when the ruler is cleared. Lets the host reflect
+   * the reading into its own status UI.
+   */
+  onMeasure?: (text: string | null) => void
+}
 
 export interface WsiSlideView {
   setTool(tool: string | undefined): void
@@ -8,11 +18,49 @@ export interface WsiSlideView {
   dispose(): void
 }
 
+// The ruler is measured in slide base pixels, then converted to physical units
+// when the slide carries pixel spacing: microns below 1 mm, millimetres (with
+// per-mm ticks) above. Falls back to base slide pixels when no spacing exists.
+const RULER_COLOR: readonly [number, number, number, number] = [1, 0.85, 0, 1]
+
+interface Measurement {
+  length: number
+  units: string
+  decimals: number
+  ticks: boolean
+}
+
+function measure(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  spacing: readonly [number, number] | undefined,
+): Measurement {
+  const dpx = b.x - a.x
+  const dpy = b.y - a.y
+  if (!spacing) {
+    return {
+      length: Math.hypot(dpx, dpy),
+      units: 'px',
+      decimals: 0,
+      ticks: false,
+    }
+  }
+  const mm = Math.hypot(dpx * spacing[0], dpy * spacing[1])
+  return mm < 1
+    ? { length: mm * 1000, units: 'um', decimals: 0, ticks: false }
+    : { length: mm, units: 'mm', decimals: 2, ticks: true }
+}
+
 /**
  * Mount a standalone NVSlide deep-zoom view on a canvas: WebGL2 + SlideRenderer,
  * an on-demand render loop (redraw only when tiles stream in or the user
  * interacts), and pointer pan / wheel zoom. This is independent of NiiVue's
  * volume renderer; the caller uses it for DICOM-WSI (SM) display sets.
+ *
+ * When the active tool is `Length`, clicks place a two-point ruler (a UIKit
+ * overlay drawn over the slide) that measures in real physical units recovered
+ * from the slide's DICOM pixel spacing. Endpoints are stored in slide
+ * coordinates so the ruler tracks the tissue through pan and zoom.
  *
  * Returns a handle whose `dispose()` tears down every listener, the RAF, and
  * the GL resources.
@@ -20,6 +68,7 @@ export interface WsiSlideView {
 export function mountWsiSlideView(
   canvas: HTMLCanvasElement,
   slide: NVSlide,
+  options: WsiSlideViewOptions = {},
 ): WsiSlideView {
   // preserveDrawingBuffer is required because this viewport renders on demand
   // (on fit / tile-load / interaction) rather than every frame. Without it the
@@ -45,11 +94,63 @@ export function mountWsiSlideView(
   let lastFitWidth = 0
   let lastFitHeight = 0
 
+  // Ruler: created once the bundled font resolves. Endpoints live in slide
+  // coordinates; `hoverCss` previews the second point before it is fixed.
+  let ruler: UIKitRulerOverlay | null = null
+  let ruleA: { x: number; y: number } | null = null
+  let ruleB: { x: number; y: number } | null = null
+  let hoverCss: [number, number] | null = null
+  const onMeasure = options.onMeasure
+
   const screenOf = (): NVSlideScreen => ({
     widthCss: canvas.clientWidth || 1,
     heightCss: canvas.clientHeight || 1,
     devicePixelRatio: window.devicePixelRatio || 1,
   })
+
+  const slideToDevice = (
+    p: { x: number; y: number },
+    screen: NVSlideScreen,
+  ): [number, number] => {
+    const { xCss, yCss } = slide.slideToScreen(p.x, p.y, screen)
+    const dpr = screen.devicePixelRatio ?? 1
+    return [xCss * dpr, yCss * dpr]
+  }
+
+  const clearMeasurement = (): void => {
+    ruleA = null
+    ruleB = null
+    hoverCss = null
+    ruler?.clear()
+    onMeasure?.(null)
+  }
+
+  const updateRuler = (screen: NVSlideScreen): void => {
+    if (!ruler) return
+    const a = ruleA
+    let b = ruleB
+    if (a && !b && hoverCss) {
+      b = slide.screenToSlide(hoverCss[0], hoverCss[1], screen)
+    }
+    if (!a || !b) {
+      ruler.clear()
+      return
+    }
+    const m = measure(a, b, slide.manifest.pixelSpacingMM)
+    ruler.setRuler({
+      a: slideToDevice(a, screen),
+      b: slideToDevice(b, screen),
+      length: m.length,
+      units: m.units,
+      decimals: m.decimals,
+      thickness: 3,
+      showTicks: m.ticks,
+      showTickNumbers: m.ticks,
+      lineColor: RULER_COLOR,
+      textColor: RULER_COLOR,
+    })
+    onMeasure?.(`${m.length.toFixed(m.decimals)} ${m.units}`)
+  }
 
   const syncCanvasSize = (screen: NVSlideScreen): void => {
     const dpr = screen.devicePixelRatio ?? 1
@@ -74,6 +175,9 @@ export function mountWsiSlideView(
       slide.fitToScreen(screen)
     }
     slide.clampViewport(screen)
+    // Set the ruler geometry BEFORE the frame draws it (the renderer invokes the
+    // overlay hook at the end of its own draw).
+    updateRuler(screen)
     renderer.draw(gl, [slide], screen)
   }
 
@@ -96,37 +200,22 @@ export function mountWsiSlideView(
     setTimeout(flush, 100)
   }
 
-  // Pointer pan.
-  let dragging = false
-  let lastX = 0
-  let lastY = 0
-  const onPointerDown = (e: PointerEvent): void => {
-    dragging = true
-    userInteracted = true
-    lastX = e.clientX
-    lastY = e.clientY
-    canvas.setPointerCapture?.(e.pointerId)
-  }
-  const onPointerMove = (e: PointerEvent): void => {
-    if (!dragging) return
-    if (activeTool === 'Zoom') {
-      const rect = canvas.getBoundingClientRect()
-      slide.zoomBy(
-        Math.exp(-(e.clientY - lastY) * 0.01),
-        e.clientX - rect.left,
-        e.clientY - rect.top,
-        screenOf(),
-      )
-    } else {
-      slide.panByScreenDelta(e.clientX - lastX, e.clientY - lastY, screenOf())
-    }
-    lastX = e.clientX
-    lastY = e.clientY
-    scheduleRender()
-  }
-  const onPointerUp = (e: PointerEvent): void => {
-    dragging = false
-    canvas.releasePointerCapture?.(e.pointerId)
+  // Load the bundled UIKit font, then attach the ruler overlay. Async: the
+  // viewer works immediately; the ruler simply cannot draw until the font is in.
+  loadDefaultFont()
+    .then((font) => {
+      if (disposed) return
+      ruler = new UIKitRulerOverlay(font)
+      renderer.overlayDraw = (frame) => ruler?.drawOverlay(frame)
+      scheduleRender()
+    })
+    .catch((err) => {
+      console.error('[nv-ohif] UIKit ruler font failed to load', err)
+    })
+
+  const cssPos = (e: PointerEvent): [number, number] => {
+    const rect = canvas.getBoundingClientRect()
+    return [e.clientX - rect.left, e.clientY - rect.top]
   }
 
   // Wheel zoom, anchored at the cursor.
@@ -142,6 +231,73 @@ export function mountWsiSlideView(
       screenOf(),
     )
     scheduleRender()
+  }
+
+  // Pointer pan + measurement. A pointer gesture that barely moves is a click;
+  // in Length mode a click places a ruler point, otherwise it does nothing. A
+  // gesture that moves pans (Pan tool) or drag-zooms (Zoom tool), matching the
+  // volume viewport's tool semantics.
+  let dragging = false
+  let lastX = 0
+  let lastY = 0
+  let downX = 0
+  let downY = 0
+  let moved = 0
+  const onPointerDown = (e: PointerEvent): void => {
+    dragging = true
+    lastX = e.clientX
+    lastY = e.clientY
+    downX = e.clientX
+    downY = e.clientY
+    moved = 0
+    canvas.setPointerCapture?.(e.pointerId)
+  }
+  const onPointerMove = (e: PointerEvent): void => {
+    if (dragging) {
+      const dx = e.clientX - lastX
+      const dy = e.clientY - lastY
+      moved += Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY)
+      lastX = e.clientX
+      lastY = e.clientY
+      // A tiny jitter shouldn't count as a pan (so a Length click still lands).
+      if (moved <= 4) return
+      userInteracted = true
+      if (activeTool === 'Zoom') {
+        const rect = canvas.getBoundingClientRect()
+        slide.zoomBy(
+          Math.exp(-dy * 0.01),
+          e.clientX - rect.left,
+          e.clientY - rect.top,
+          screenOf(),
+        )
+      } else {
+        slide.panByScreenDelta(dx, dy, screenOf())
+      }
+      scheduleRender()
+    } else if (activeTool === 'Length' && ruleA && !ruleB) {
+      // Live preview of the second endpoint as the pointer moves.
+      hoverCss = cssPos(e)
+      scheduleRender()
+    }
+  }
+  const onPointerUp = (e: PointerEvent): void => {
+    const wasDragging = dragging
+    dragging = false
+    canvas.releasePointerCapture?.(e.pointerId)
+    if (!wasDragging) return
+    // A near-stationary gesture in Length mode places / advances the ruler.
+    if (moved <= 4 && activeTool === 'Length') {
+      const [cx, cy] = cssPos(e)
+      const s = slide.screenToSlide(cx, cy, screenOf())
+      if (!ruleA || ruleB) {
+        ruleA = s
+        ruleB = null
+        hoverCss = null
+      } else {
+        ruleB = s
+      }
+      scheduleRender()
+    }
   }
 
   canvas.addEventListener('pointerdown', onPointerDown)
@@ -160,12 +316,19 @@ export function mountWsiSlideView(
 
   return {
     setTool(tool: string | undefined): void {
+      // Leaving Length mode clears an in-progress (unfixed) measurement so a
+      // dangling first point doesn't linger; a completed ruler is kept visible.
+      if (activeTool === 'Length' && tool !== 'Length' && ruleA && !ruleB) {
+        clearMeasurement()
+        scheduleRender()
+      }
       activeTool = tool
     },
     resetView(): void {
       userInteracted = false
       lastFitWidth = 0
       lastFitHeight = 0
+      clearMeasurement()
       scheduleRender()
     },
     async saveBitmap(filename = 'niivue-slide.png'): Promise<void> {
@@ -190,6 +353,7 @@ export function mountWsiSlideView(
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerUp)
       canvas.removeEventListener('wheel', onWheel)
+      ruler?.destroy()
       slide.dispose()
       renderer.destroy()
     },

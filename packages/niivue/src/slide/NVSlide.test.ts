@@ -159,3 +159,32 @@ describe('NVSlide tile loading', () => {
     slide.dispose()
   })
 })
+
+describe('NVSlide screen<->slide projection', () => {
+  const screen = { widthCss: 800, heightCss: 600, devicePixelRatio: 2 }
+
+  for (const displayYAxis of ['down', 'up'] as const) {
+    it(`slideToScreen is the inverse of screenToSlide (yAxis ${displayYAxis})`, () => {
+      const manifest = makeManifest(6)
+      manifest.displayYAxis = displayYAxis
+      const slide = NVSlide.fromSource(new CountingSource(manifest))
+      // A panned + zoomed viewport (not the fit default) to exercise all terms.
+      slide.viewport.centerX = 17.5
+      slide.viewport.centerY = 9.25
+      slide.viewport.scale = 3.5
+
+      for (const [xCss, yCss] of [
+        [0, 0],
+        [400, 300],
+        [799, 599],
+        [123.4, 456.7],
+      ]) {
+        const s = slide.screenToSlide(xCss, yCss, screen)
+        const back = slide.slideToScreen(s.x, s.y, screen)
+        expect(back.xCss).toBeCloseTo(xCss, 6)
+        expect(back.yCss).toBeCloseTo(yCss, 6)
+      }
+      slide.dispose()
+    })
+  }
+})

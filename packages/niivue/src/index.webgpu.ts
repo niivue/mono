@@ -86,18 +86,18 @@ export {
   phaseCorrection,
   ppmRefForNucleus,
 } from './signal/processing'
-// Crosshair-focused multi-resolution (multi-LOD) streamed volumes
-export type {
-  ChunkedVolumeFetch,
-  ChunkedVolumeLevel,
-  ChunkedVolumeSource,
-} from './volume/ChunkedVolumeSource'
 export type {
   UIKitBackendHandle,
   UIKitOverlayBounds,
   UIKitOverlayFrame,
   UIKitOverlayRenderer,
 } from './view/NVOverlayHook'
+// Crosshair-focused multi-resolution (multi-LOD) streamed volumes
+export type {
+  ChunkedVolumeFetch,
+  ChunkedVolumeLevel,
+  ChunkedVolumeSource,
+} from './volume/ChunkedVolumeSource'
 export type {
   ChunkPlan,
   MultiLodFocus,

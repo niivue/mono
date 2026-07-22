@@ -63,21 +63,12 @@
         return { widthCss: r.width, heightCss: r.height,
           devicePixelRatio: window.devicePixelRatio || 1 }
       }
-      // Inverse of slide.screenToSlide: slide base pixel -> canvas CSS.
-      const slideToCss = (sx, sy, screen) => {
-        const vp = slide.viewport
-        const sc = vp.scale
-        const leftSlide = vp.centerX - screen.widthCss / (2 * sc)
-        const xCss = (sx - leftSlide) * sc
-        const yCss = slide.isYAxisUp()
-          ? screen.heightCss / 2 - (sy - vp.centerY) * sc
-          : (sy - (vp.centerY - screen.heightCss / (2 * sc))) * sc
-        return [xCss, yCss]
-      }
+      // slide.slideToScreen is the inverse of slide.screenToSlide (slide base
+      // pixel -> canvas CSS); scale to device pixels for the overlay.
       const slideToDevice = (p, screen) => {
-        const [cx, cy] = slideToCss(p.x, p.y, screen)
+        const { xCss, yCss } = slide.slideToScreen(p.x, p.y, screen)
         const dpr = screen.devicePixelRatio ?? 1
-        return [cx * dpr, cy * dpr]
+        return [xCss * dpr, yCss * dpr]
       }
 
       let view = null

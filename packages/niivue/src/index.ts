@@ -99,6 +99,7 @@ export type {
   CustomLayoutTile,
   DragReleaseInfo,
   ImageFromUrlOptions,
+  MeasurementScreenLine,
   MeshFromUrlOptions,
   MeshLayerFromUrlOptions,
   MeshUpdate,

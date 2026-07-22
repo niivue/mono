@@ -63,6 +63,7 @@ import type {
   FocusBox,
   ImageFromUrlOptions,
   LUT,
+  MeasurementScreenLine,
   MeshFromUrlOptions,
   MeshLayerFromUrlOptions,
   MeshUpdate,
@@ -1064,6 +1065,22 @@ export default class NiiVue extends EventTarget {
     this.model.ui.measureTextColor = v
     this.emit('change', { property: 'measureTextColor', value: v })
     this.drawScene()
+  }
+
+  /**
+   * Every visible measurement projected to the current frame's canvas pixels
+   * (all persisted measurements plus an in-progress drag). Populated during
+   * render; read it from a registered overlay renderer (see
+   * {@link registerOverlayRenderer}) to draw measurements with an external
+   * renderer — e.g. a @niivue/uikit ruler with rotated tick numbers — instead of
+   * the built-in line. Hide the built-in draw by setting `measureLineColor` /
+   * `measureTextColor` alpha to 0.
+   */
+  get measurementScreenLines(): readonly MeasurementScreenLine[] {
+    const active = this.model._activeMeasurementScreenLine
+    return active
+      ? [...this.model._persistedMeasurementScreenLines, active]
+      : this.model._persistedMeasurementScreenLines
   }
 
   get rulerWidth(): number {

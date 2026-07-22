@@ -140,6 +140,9 @@ export function updateDragOverlay(ctrl: NiiVue): void {
   const [sx, sy] = ctrl.dragStartXY
   const [ex, ey] = ctrl.dragEndXY
   const ui = ctrl.model.ui
+  // Only the measurement branch (re)sets the active-measurement screen line, so
+  // clear it here for every other drag mode.
+  ctrl.model._activeMeasurementScreenLine = null
   const lineColor = ui.measureLineColor
   const lineWidth = ui.rulerWidth
   const textColor = ui.measureTextColor
@@ -171,6 +174,8 @@ export function updateDragOverlay(ctrl: NiiVue): void {
             vec3.fromValues(endMM[0], endMM[1], endMM[2]),
           )
         : 0
+    // Expose the in-progress measurement to an external overlay renderer.
+    ctrl.model._activeMeasurementScreenLine = { sx, sy, ex, ey, distance: dist }
     const overlay: DragOverlay = { lines: [], text: [] }
     // Graduated ruler: arrowed baseline + per-mm ticks (majors every fifth),
     // matching the persisted measurement and the whole-slide UIKit ruler.
@@ -391,6 +396,7 @@ export function clearDragState(ctrl: NiiVue): void {
   ctrl._activeDragMode = DRAG_MODE.none
   ctrl._pan2DxyzmmAtDragStart = null
   ctrl.model._dragOverlay = null
+  ctrl.model._activeMeasurementScreenLine = null
   ctrl.drawScene()
 }
 

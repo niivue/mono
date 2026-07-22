@@ -134,6 +134,9 @@ export function buildPersistedMeasurements(
 ): MeasurementResult | null {
   const measurements = model.completedMeasurements
   const angles = model.completedAngles
+  // Rebuilt every frame so an external overlay (UIKit ruler) can read the current
+  // screen projection of each persisted measurement.
+  model._persistedMeasurementScreenLines = []
   if (measurements.length === 0 && angles.length === 0) return null
 
   const ui = model.ui
@@ -174,6 +177,15 @@ export function buildPersistedMeasurements(
 
       const [sx, sy] = projectMMToCanvas(m.startMM, mvp, ltwh)
       const [ex, ey] = projectMMToCanvas(m.endMM, mvp, ltwh)
+
+      // Expose the screen projection for an external overlay renderer.
+      model._persistedMeasurementScreenLines.push({
+        sx,
+        sy,
+        ex,
+        ey,
+        distance: m.distance,
+      })
 
       // Graduated ruler: arrowed baseline + per-mm ticks (majors every fifth).
       for (const [x0, y0, x1, y1] of rulerSegments(

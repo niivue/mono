@@ -15,6 +15,7 @@ import type {
   ImageFromUrlOptions,
   InteractionConfig,
   LayoutConfig,
+  MeasurementScreenLine,
   MeshFromUrlOptions,
   MeshRenderConfig,
   NiiVueOptions,
@@ -120,6 +121,12 @@ export default class NVModel {
     | null = null
   completedMeasurements: CompletedMeasurement[] = []
   completedAngles: CompletedAngle[] = []
+  // Measurements projected to the current frame's canvas pixels, for an external
+  // overlay renderer (see NVControlBase.measurementScreenLines). Persisted lines
+  // are refilled each frame by the view; the active line tracks an in-progress
+  // measurement drag and is cleared on release.
+  _persistedMeasurementScreenLines: MeasurementScreenLine[] = []
+  _activeMeasurementScreenLine: MeasurementScreenLine | null = null
 
   constructor(options: NiiVueOptions = {}) {
     // Scene — flat options mapped to scene group

@@ -976,6 +976,20 @@ export type CompletedMeasurement = {
 }
 
 /**
+ * A measurement projected to the current frame's canvas pixels, exposed so an
+ * external overlay (e.g. a @niivue/uikit ruler drawn through the overlay hook)
+ * can render the measurement in screen space with its own renderer. Recomputed
+ * every frame; `distance` is in millimetres. See NVControlBase.measurementScreenLines.
+ */
+export type MeasurementScreenLine = {
+  sx: number
+  sy: number
+  ex: number
+  ey: number
+  distance: number
+}
+
+/**
  * Transient world-space axis-aligned bounding box drawn as 12 edges on the 3D
  * render tile(s) — e.g. to outline a focused subvolume. `min`/`max` are in the
  * same world-mm space as the scene extents. Controller-owned, not serialized.

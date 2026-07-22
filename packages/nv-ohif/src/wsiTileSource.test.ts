@@ -167,6 +167,60 @@ describe('buildWsiManifest', () => {
       `${BASE}/fine/frames`,
       `${BASE}/coarse/frames`,
     ])
+    // No spacing metadata on this display set -> ruler falls back to pixels.
+    expect(manifest.pixelSpacingMM).toBeUndefined()
+  })
+
+  // A single-VOLUME-level SM display set (2000x1000) whose finest instance
+  // carries the given extra metadata, for spacing derivation.
+  function oneLevelWith(extra: Record<string, unknown>): OhifDisplaySet {
+    return {
+      displaySetInstanceUID: 'ds-spacing',
+      Modality: 'SM',
+      instances: [
+        {
+          ImageType: 'DERIVED\\PRIMARY\\VOLUME\\NONE',
+          TotalPixelMatrixColumns: 2000,
+          TotalPixelMatrixRows: 1000,
+          Columns: 512,
+          Rows: 512,
+          TransferSyntaxUID: JPEG,
+          ...extra,
+        },
+      ],
+      imageIds: [frameId('fine')],
+    }
+  }
+
+  it('derives pixelSpacingMM from PixelMeasuresSequence (row/col swapped to x,y)', () => {
+    const built = buildWsiManifest(
+      oneLevelWith({
+        SharedFunctionalGroupsSequence: [
+          { PixelMeasuresSequence: [{ PixelSpacing: [0.002, 0.001] }] },
+        ],
+      }),
+    )
+    // DICOM PixelSpacing is [rowSpacing (dy), colSpacing (dx)] -> NVSlide [dx, dy].
+    expect(built?.manifest.pixelSpacingMM).toEqual([0.001, 0.002])
+  })
+
+  it('falls back to ImagedVolumeWidth/Height over the pixel matrix', () => {
+    const built = buildWsiManifest(
+      oneLevelWith({ ImagedVolumeWidth: 4, ImagedVolumeHeight: 1 }),
+    )
+    // 4 mm / 2000 cols = 0.002 (dx); 1 mm / 1000 rows = 0.001 (dy).
+    expect(built?.manifest.pixelSpacingMM).toEqual([0.002, 0.001])
+  })
+
+  it('accepts numeric-string PixelSpacing values', () => {
+    const built = buildWsiManifest(
+      oneLevelWith({
+        SharedFunctionalGroupsSequence: [
+          { PixelMeasuresSequence: [{ PixelSpacing: ['0.0005', '0.0005'] }] },
+        ],
+      }),
+    )
+    expect(built?.manifest.pixelSpacingMM).toEqual([0.0005, 0.0005])
   })
 
   it('maps tiles to row-major frame numbers and clips edge tiles', () => {

@@ -20,8 +20,62 @@ function num(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+// DICOM DS/IS values arrive as numbers or numeric strings depending on the data
+// source; coerce either to a finite number.
+function toNum(value: unknown): number | undefined {
+  if (typeof value === 'number')
+    return Number.isFinite(value) ? value : undefined
+  if (typeof value === 'string') {
+    const n = Number.parseFloat(value)
+    return Number.isFinite(n) ? n : undefined
+  }
+  return undefined
+}
+
 function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+// First element of a value that may be a bare scalar or a (nested) array.
+function first(value: unknown): unknown {
+  return Array.isArray(value) ? value[0] : value
+}
+
+/**
+ * Physical pixel spacing in millimetres as NVSlide expects it: `[x, y]` (column,
+ * then row), for the given tier's pixel matrix. Prefers the per-frame
+ * PixelSpacing carried in the (Shared/Per-frame) PixelMeasuresSequence, then a
+ * top-level PixelSpacing, then falls back to ImagedVolumeWidth/Height divided by
+ * the total pixel matrix. Returns undefined when no metric is present (the ruler
+ * then measures in base slide pixels).
+ *
+ * DICOM PixelSpacing is [rowSpacing (dy), columnSpacing (dx)]; NVSlide wants
+ * [dx, dy], so the pair is swapped. ImagedVolumeWidth is along columns (x) and
+ * ImagedVolumeHeight along rows (y).
+ */
+function deriveSpacingMM(
+  inst: Record<string, unknown>,
+  matrixColumns: number,
+  matrixRows: number,
+): readonly [number, number] | undefined {
+  const shared = first(inst.SharedFunctionalGroupsSequence) as
+    | Record<string, unknown>
+    | undefined
+  const measures = first(shared?.PixelMeasuresSequence) as
+    | Record<string, unknown>
+    | undefined
+  const pixelSpacing = measures?.PixelSpacing ?? inst.PixelSpacing
+  if (Array.isArray(pixelSpacing)) {
+    const dy = toNum(pixelSpacing[0])
+    const dx = toNum(pixelSpacing[1])
+    if (dx && dy && dx > 0 && dy > 0) return [dx, dy]
+  }
+  const volW = toNum(inst.ImagedVolumeWidth)
+  const volH = toNum(inst.ImagedVolumeHeight)
+  if (volW && volH && matrixColumns > 0 && matrixRows > 0) {
+    return [volW / matrixColumns, volH / matrixRows]
+  }
+  return undefined
 }
 
 // A whole-slide pyramid level read from one OHIF SM instance.
@@ -33,6 +87,8 @@ interface WsiLevel {
   /** Frame base URL (`.../instances/{sop}/frames`); a tile fetch appends `/{n}`. */
   frameBaseUrl: string
   isJpeg: boolean
+  /** Physical spacing `[dx, dy]` in mm for this tier, when the SM metadata carries it. */
+  spacingMM?: readonly [number, number]
 }
 
 // A DICOM-WSI instance is a real pyramid tier only when its ImageType flavor is
@@ -86,6 +142,7 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
       isJpeg: transferSyntax
         ? JPEG_TRANSFER_SYNTAXES.has(transferSyntax)
         : true,
+      spacingMM: deriveSpacingMM(inst, matrixColumns, matrixRows),
     })
   })
   // Highest resolution first (index 0 = level 0), as the manifest expects.
@@ -172,6 +229,9 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     tileSize: level0.tileColumns,
     dtype: 'uint8',
     channels: 'encoded-rgb',
+    // Physical spacing from the finest tier, so the ruler measures in real
+    // microns / millimetres; omitted (ruler falls back to pixels) when absent.
+    ...(level0.spacingMM ? { pixelSpacingMM: level0.spacingMM } : {}),
     levels,
   }
   return { manifest, levelBaseUrls, allJpeg }

@@ -8,10 +8,11 @@ describe('buildRuler', () => {
     expect(g.text).toHaveLength(0)
   })
 
-  it('emits an arrowed baseline (5 segments) plus ticks and one label', () => {
+  it('emits an arrowed baseline (5 segments) plus end caps, ticks and one label', () => {
     const g = buildRuler({ a: [0, 0], b: [100, 0], length: 4, units: 'mm' })
-    // Both-ends ARROW = shaft + 2 barbs per end = 5 segments, then 4 ticks.
-    expect(g.lines.length).toBe(5 + 4)
+    // Both-ends ARROW = shaft + 2 barbs per end = 5 segments, then 2 end caps,
+    // then 4 ticks.
+    expect(g.lines.length).toBe(5 + 2 + 4)
     // Exactly one label (no tick numbers by default), reading "4.0 mm".
     expect(g.text).toHaveLength(1)
     expect(g.text[0]?.str).toBe('4.0 mm')
@@ -36,6 +37,17 @@ describe('buildRuler', () => {
       b: [100, 0],
       length: 4,
       showTicks: false,
+    })
+    expect(g.lines.length).toBe(5 + 2) // baseline + two end caps
+  })
+
+  it('omits end caps when showEndCaps is false', () => {
+    const g = buildRuler({
+      a: [0, 0],
+      b: [100, 0],
+      length: 4,
+      showTicks: false,
+      showEndCaps: false,
     })
     expect(g.lines.length).toBe(5) // baseline only
   })
@@ -71,7 +83,7 @@ describe('buildRuler', () => {
 
   it('caps the tick count for an enormous measurement', () => {
     const g = buildRuler({ a: [0, 0], b: [1000, 0], length: 5000 })
-    const ticks = g.lines.length - 5 // minus the 5 baseline segments
+    const ticks = g.lines.length - 5 - 2 // minus baseline (5) and end caps (2)
     expect(ticks).toBeLessThanOrEqual(200)
     expect(ticks).toBeGreaterThan(0)
   })

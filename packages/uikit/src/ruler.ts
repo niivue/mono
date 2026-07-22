@@ -35,6 +35,11 @@ export interface RulerSpec {
   /** Draw the number at every major tick. Default false. */
   showTickNumbers?: boolean
   /**
+   * Draw long perpendicular end caps crossing the start and end points to mark
+   * the measurement's exact extent (longer than a major tick). Default true.
+   */
+  showEndCaps?: boolean
+  /**
    * Outline width (px) for the label + tick text, for readability over busy
    * backgrounds. Default 2. The outline color auto-contrasts the text color
    * (black on light text, white on dark). Set 0 to disable.
@@ -70,6 +75,7 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
     tickLength = 6,
     showTicks = true,
     showTickNumbers = false,
+    showEndCaps = true,
     textOutlineWidthPx = 2,
   } = spec
 
@@ -98,6 +104,24 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
       end: LineTerminator.ARROW,
     }),
   )
+
+  // Long perpendicular end caps crossing the exact start and end points, so the
+  // measurement's extent is unambiguous (longer than a major tick).
+  if (showEndCaps) {
+    const capLen = tickLength * 3
+    for (const p of [a, b]) {
+      lines.push(
+        buildTerminatedLine(
+          p[0] - px * capLen,
+          p[1] - py * capLen,
+          p[0] + px * capLen,
+          p[1] + py * capLen,
+          thickness,
+          lineColor,
+        )[0] as LineData,
+      )
+    }
+  }
 
   // Tick marks every unit, longer (and optionally numbered) every fifth.
   if (showTicks && length > 0) {

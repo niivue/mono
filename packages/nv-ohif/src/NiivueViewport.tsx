@@ -109,12 +109,15 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       nv.sliceType = SLICE_TYPE.MULTIPLANAR
-      // Draw volume measurements as @niivue/uikit rulers (arrowed, graduated,
-      // rotated tick numbers) to match the whole-slide ruler: hide NiiVue's
-      // built-in measurement line (transparent) and draw the UIKit ruler over it
-      // from nv.measurementScreenLines once the bundled font loads.
-      nv.measureLineColor = [0, 0, 0, 0]
-      nv.measureTextColor = [0, 0, 0, 0]
+      // Volume measurements: draw them as @niivue/uikit rulers (arrowed,
+      // graduated, rotated tick numbers) to match the whole-slide ruler. The
+      // built-in NiiVue ruler is the fallback (same yellow, so it still looks
+      // right if the font never loads); once the bundled UIKit font resolves we
+      // register the overlay and switch NiiVue's built-in draw OFF, so only the
+      // UIKit ruler shows and there is no leftover label background chip.
+      nv.measureLineColor = [1, 0.85, 0, 1]
+      nv.measureTextColor = [1, 0.85, 0, 1]
+      nv.rulerWidth = 3
       loadDefaultFont()
         .then((font) => {
           if (disposed) return
@@ -123,6 +126,7 @@ export function NiivueViewport(props: OhifViewportProps) {
             () => nv.measurementScreenLines,
           )
           unregisterRuler = nv.registerOverlayRenderer(rulerOverlay)
+          nv.isMeasurementDrawn = false
         })
         .catch((err) =>
           console.error('[nv-ohif] volume ruler font failed to load', err),

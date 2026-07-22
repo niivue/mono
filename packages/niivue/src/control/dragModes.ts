@@ -3,6 +3,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
 import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
+import { rulerSegments } from '@/view/NVMeasurement'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 
 /** Return the DRAG_MODE for a given mouse button on 2D slice tiles. */
@@ -160,48 +161,36 @@ export function updateDragOverlay(ctrl: NiiVue): void {
       rect: { ltwh: [x, y, w, h], color: ui.selectionBoxColor },
     }
   } else if (mode === DRAG_MODE.measurement) {
-    const overlay: DragOverlay = {
-      lines: [
-        {
-          startXY: [sx, sy],
-          endXY: [ex, ey],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-      ],
-      text: [],
-    }
-    // End caps: perpendicular segments at start and end
-    const capLen = 6
-    const dx = ex - sx
-    const dy = ey - sy
-    const len = Math.sqrt(dx * dx + dy * dy)
-    if (len > 0) {
-      const px = (-dy / len) * capLen
-      const py = (dx / len) * capLen
-      overlay.lines?.push(
-        {
-          startXY: [sx - px, sy - py],
-          endXY: [sx + px, sy + py],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-        {
-          startXY: [ex - px, ey - py],
-          endXY: [ex + px, ey + py],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-      )
-    }
-    // Distance text at line midpoint
+    // Distance in mm sets the tick spacing, so resolve it before the geometry.
     const startMM = screenSlicePickAt(ctrl, sx, sy)
     const endMM = screenSlicePickAt(ctrl, ex, ey)
+    const dist =
+      startMM && endMM
+        ? vec3.distance(
+            vec3.fromValues(startMM[0], startMM[1], startMM[2]),
+            vec3.fromValues(endMM[0], endMM[1], endMM[2]),
+          )
+        : 0
+    const overlay: DragOverlay = { lines: [], text: [] }
+    // Graduated ruler: arrowed baseline + per-mm ticks (majors every fifth),
+    // matching the persisted measurement and the whole-slide UIKit ruler.
+    for (const [x0, y0, x1, y1] of rulerSegments(
+      sx,
+      sy,
+      ex,
+      ey,
+      dist,
+      lineWidth,
+    )) {
+      overlay.lines?.push({
+        startXY: [x0, y0],
+        endXY: [x1, y1],
+        color: lineColor,
+        thickness: lineWidth,
+      })
+    }
+    // Distance text at line midpoint
     if (startMM && endMM) {
-      const dist = vec3.distance(
-        vec3.fromValues(startMM[0], startMM[1], startMM[2]),
-        vec3.fromValues(endMM[0], endMM[1], endMM[2]),
-      )
       let decimals = 2
       if (dist > 9) decimals = 1
       if (dist > 99) decimals = 0

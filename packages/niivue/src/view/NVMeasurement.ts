@@ -4,10 +4,72 @@ import type NVModel from '@/NVModel'
 import { computeTolerance } from '@/view/NVAnnotation'
 import { projectMMToCanvas } from '@/view/sliceUtils'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
-import type { BuildLineFn, LineData } from './NVLine'
+import {
+  type BuildLineFn,
+  buildTerminatedLine,
+  type LineData,
+  LineTerminator,
+} from './NVLine'
 import type { SliceTile } from './NVSliceLayout'
 
 export type MeasurementResult = { lines: LineData[]; labels: GlyphBatch[] }
+
+/** A ruler line segment in canvas pixels: [x0, y0, x1, y1]. */
+export type RulerSegment = readonly [number, number, number, number]
+
+// Cap the tick count so an enormous measurement can't emit thousands of lines
+// (matches @niivue/uikit's buildRuler).
+const MAX_RULER_TICKS = 200
+
+/**
+ * Screen-pixel line segments for a graduated ruler between two canvas points: an
+ * arrowed baseline plus perpendicular tick marks — one per unit of `units`,
+ * longer every fifth — matching @niivue/uikit's buildRuler (which draws the
+ * whole-slide ruler in the OHIF viewport) so the volume and slide measurements
+ * look identical. `units` is the physical length used for tick spacing (e.g.
+ * millimetres); <= 0 yields just the arrowed baseline. A zero-length ruler
+ * yields nothing. Pure geometry; the caller colours and renders the segments.
+ */
+export function rulerSegments(
+  sx: number,
+  sy: number,
+  ex: number,
+  ey: number,
+  units: number,
+  thickness = 2,
+  tickLength = 6,
+): RulerSegment[] {
+  const dx = ex - sx
+  const dy = ey - sy
+  const len = Math.hypot(dx, dy)
+  if (len === 0) return []
+
+  const segs: RulerSegment[] = []
+  // Arrowed baseline: reuse the tested terminator geometry (the shaft is inset so
+  // it stops at the barb base), taking each returned segment's endpoints.
+  for (const l of buildTerminatedLine(sx, sy, ex, ey, thickness, [0, 0, 0, 1], {
+    start: LineTerminator.ARROW,
+    end: LineTerminator.ARROW,
+  })) {
+    segs.push([l.data[0], l.data[1], l.data[2], l.data[3]])
+  }
+
+  if (units <= 0) return segs
+
+  // Unit perpendicular in screen space; ticks straddle the baseline along it.
+  const px = -dy / len
+  const py = dx / len
+  const marks = Math.floor(units)
+  const step = Math.max(1, Math.ceil(marks / MAX_RULER_TICKS))
+  for (let i = step; i <= marks; i += step) {
+    const t = i / units
+    const cx = sx + t * dx
+    const cy = sy + t * dy
+    const half = i % 5 === 0 ? tickLength * 2 : tickLength
+    segs.push([cx - px * half, cy - py * half, cx + px * half, cy + py * half])
+  }
+  return segs
+}
 
 /** Format distance with smart decimals. */
 function formatDistance(dist: number, showUnits: boolean): string {
@@ -73,21 +135,16 @@ export function buildPersistedMeasurements(
       const [sx, sy] = projectMMToCanvas(m.startMM, mvp, ltwh)
       const [ex, ey] = projectMMToCanvas(m.endMM, mvp, ltwh)
 
-      // Main line
-      lines.push(buildLine(sx, sy, ex, ey, lineWidth, lineColor))
-
-      // End caps
-      const dx = ex - sx
-      const dy = ey - sy
-      const len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 0) {
-        const capLen = 6
-        const px = (-dy / len) * capLen
-        const py = (dx / len) * capLen
-        lines.push(
-          buildLine(sx - px, sy - py, sx + px, sy + py, lineWidth, lineColor),
-          buildLine(ex - px, ey - py, ex + px, ey + py, lineWidth, lineColor),
-        )
+      // Graduated ruler: arrowed baseline + per-mm ticks (majors every fifth).
+      for (const [x0, y0, x1, y1] of rulerSegments(
+        sx,
+        sy,
+        ex,
+        ey,
+        m.distance,
+        lineWidth,
+      )) {
+        lines.push(buildLine(x0, y0, x1, y1, lineWidth, lineColor))
       }
 
       // Distance text

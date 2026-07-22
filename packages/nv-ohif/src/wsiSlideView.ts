@@ -22,6 +22,11 @@ export interface WsiSlideView {
 // when the slide carries pixel spacing: microns below 1 mm, millimetres (with
 // per-mm ticks) above. Falls back to base slide pixels when no spacing exists.
 const RULER_COLOR: readonly [number, number, number, number] = [1, 0.85, 0, 1]
+// Label / line / tick sizes in CSS pixels; multiplied by devicePixelRatio at
+// draw time because the overlay is drawn in device pixels.
+const RULER_LABEL_CSS_PX = 28
+const RULER_THICKNESS_CSS_PX = 2
+const RULER_TICK_CSS_PX = 6
 
 interface Measurement {
   length: number
@@ -137,13 +142,19 @@ export function mountWsiSlideView(
       return
     }
     const m = measure(a, b, slide.manifest.pixelSpacingMM)
+    // The overlay draws in DEVICE pixels (endpoints are scaled by dpr above), so
+    // the label/line sizes must scale by dpr too, otherwise a CSS-px value looks
+    // half-size on a 2x (retina) display.
+    const dpr = screen.devicePixelRatio ?? 1
     ruler.setRuler({
       a: slideToDevice(a, screen),
       b: slideToDevice(b, screen),
       length: m.length,
       units: m.units,
       decimals: m.decimals,
-      thickness: 3,
+      sizePx: RULER_LABEL_CSS_PX * dpr,
+      thickness: RULER_THICKNESS_CSS_PX * dpr,
+      tickLength: RULER_TICK_CSS_PX * dpr,
       showTicks: m.ticks,
       showTickNumbers: m.ticks,
       lineColor: RULER_COLOR,

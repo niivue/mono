@@ -275,14 +275,11 @@ export function NiivueViewport(props: OhifViewportProps) {
       const slide = NVSlide.fromSource(source)
       let view: ReturnType<typeof mountWsiSlideView> | null = null
       try {
-        view = mountWsiSlideView(slideCanvas, slide, {
-          // Reflect the live ruler length in the viewport status; clear it back
-          // to idle when the measurement is removed.
-          onMeasure: (text) => {
-            if (cancelled) return
-            setStatus(text ? { kind: 'note', message: text } : { kind: 'idle' })
-          },
-        })
+        // The ruler draws its length label on the slide itself, so we do NOT
+        // reflect it into the centered status overlay (that produced a floating
+        // duplicate of the reading). The onMeasure hook stays available for a
+        // future push into OHIF's MeasurementService.
+        view = mountWsiSlideView(slideCanvas, slide)
         slideViewRef.current = view
         view.setTool(activeOhifToolRef.current)
         updateNiivueViewport(viewportId, { slideView: view })

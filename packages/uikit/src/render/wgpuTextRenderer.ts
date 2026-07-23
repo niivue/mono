@@ -7,6 +7,17 @@ import { FLOATS_PER_VERTEX } from '../text/layout'
 import { WGSL_TEXT } from './shaders'
 
 const BYTES_PER_VERTEX = FLOATS_PER_VERTEX * 4
+// Dynamic uniform-buffer offsets must be a multiple of
+// minUniformBufferOffsetAlignment; 256 is its maximum guaranteed value, so one
+// 256-byte slot per text run is always valid.
+const UNIFORM_STRIDE = 256
+
+/** One already-laid-out glyph run to draw: its vertices, vertex count and AA range. */
+export type TextRun = {
+  vertices: Float32Array
+  count: number
+  screenPxRange: number
+}
 
 export class WgpuTextRenderer {
   private device: GPUDevice | null = null
@@ -19,6 +30,7 @@ export class WgpuTextRenderer {
   private textureImage: ImageBitmap | null = null
   private bindGroup: GPUBindGroup | null = null
   private capacityBytes = 0
+  private uniformCapacity = 0
   private key = ''
 
   private ensurePipeline(
@@ -32,10 +44,6 @@ export class WgpuTextRenderer {
     if (this.device && this.device !== device) this.destroy()
     this.device = device
     this.key = key
-    this.uniformBuffer ??= device.createBuffer({
-      size: 16,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    })
     this.sampler ??= device.createSampler({
       magFilter: 'linear',
       minFilter: 'linear',
@@ -45,7 +53,10 @@ export class WgpuTextRenderer {
         {
           binding: 0,
           visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-          buffer: { type: 'uniform' },
+          // One uniform slot per text run, addressed by a dynamic offset, so
+          // multiple runs drawn into the same deferred pass each read their own
+          // (width, height, screenPxRange) instead of collapsing to the last.
+          buffer: { type: 'uniform', hasDynamicOffset: true },
         },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
@@ -105,7 +116,7 @@ export class WgpuTextRenderer {
   }
 
   private ensureTexture(device: GPUDevice, image: ImageBitmap): void {
-    if (this.texture && this.textureImage === image && this.bindGroup) return
+    if (this.texture && this.textureImage === image) return
     this.texture?.destroy()
     this.texture = device.createTexture({
       size: [image.width, image.height],
@@ -121,16 +132,22 @@ export class WgpuTextRenderer {
       [image.width, image.height],
     )
     this.textureImage = image
-    if (this.bindLayout && this.uniformBuffer && this.sampler) {
-      this.bindGroup = device.createBindGroup({
-        layout: this.bindLayout,
-        entries: [
-          { binding: 0, resource: { buffer: this.uniformBuffer } },
-          { binding: 1, resource: this.texture.createView() },
-          { binding: 2, resource: this.sampler },
-        ],
-      })
-    }
+    this.bindGroup = null // texture changed -> rebuild bind group
+  }
+
+  private ensureUniformBuffer(device: GPUDevice, bytes: number): void {
+    if (this.uniformBuffer && this.uniformCapacity >= bytes) return
+    this.uniformCapacity = Math.max(
+      bytes,
+      this.uniformCapacity * 2,
+      UNIFORM_STRIDE,
+    )
+    this.uniformBuffer?.destroy()
+    this.uniformBuffer = device.createBuffer({
+      size: this.uniformCapacity,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    })
+    this.bindGroup = null // uniform buffer changed -> rebuild bind group
   }
 
   private ensureVertexBuffer(device: GPUDevice, bytes: number): void {
@@ -143,39 +160,92 @@ export class WgpuTextRenderer {
     })
   }
 
-  /** Append one already-laid-out glyph run to the open pass. */
-  draw(
+  private ensureBindGroup(device: GPUDevice): void {
+    if (this.bindGroup) return
+    if (
+      !this.bindLayout ||
+      !this.uniformBuffer ||
+      !this.texture ||
+      !this.sampler
+    )
+      return
+    this.bindGroup = device.createBindGroup({
+      layout: this.bindLayout,
+      entries: [
+        // One 16-byte uniform slot, selected per draw via a dynamic offset.
+        { binding: 0, resource: { buffer: this.uniformBuffer, size: 16 } },
+        { binding: 1, resource: this.texture.createView() },
+        { binding: 2, resource: this.sampler },
+      ],
+    })
+  }
+
+  /**
+   * Draw all already-laid-out glyph runs into the open pass. Every run's
+   * vertices are packed into one vertex buffer and its (width, height,
+   * screenPxRange) uniform into its own 256-byte slot, so each draw reads its
+   * own data — writing every run into a single shared buffer would collapse to
+   * the last run before the deferred pass executes.
+   */
+  drawAll(
     device: GPUDevice,
     pass: GPURenderPassEncoder,
     colorFormat: GPUTextureFormat,
     sampleCount: number,
     depthFormat: GPUTextureFormat | undefined,
     image: ImageBitmap,
-    vertices: Float32Array,
-    count: number,
-    screenPxRange: number,
+    runs: readonly TextRun[],
     width: number,
     height: number,
   ): void {
-    if (count === 0) return
+    const drawn = runs.filter((r) => r.count > 0)
+    if (drawn.length === 0) return
     this.ensurePipeline(device, colorFormat, sampleCount, depthFormat)
+    this.ensureUniformBuffer(device, drawn.length * UNIFORM_STRIDE)
     this.ensureTexture(device, image)
-    this.ensureVertexBuffer(device, vertices.byteLength)
-    if (!this.pipeline || !this.bindGroup || !this.vertexBuffer) return
-    device.queue.writeBuffer(
-      this.uniformBuffer as GPUBuffer,
-      0,
-      new Float32Array([width, height, screenPxRange, 0]),
+    let totalBytes = 0
+    for (const r of drawn) totalBytes += r.vertices.byteLength
+    this.ensureVertexBuffer(device, totalBytes)
+    this.ensureBindGroup(device)
+    if (
+      !this.pipeline ||
+      !this.bindGroup ||
+      !this.vertexBuffer ||
+      !this.uniformBuffer
     )
-    device.queue.writeBuffer(
-      this.vertexBuffer,
-      0,
-      vertices as Float32Array<ArrayBuffer>,
-    )
+      return
+
+    // Pack uniforms (one 256-byte slot each) and vertices (contiguous).
+    const uniforms = new Float32Array(drawn.length * (UNIFORM_STRIDE / 4))
+    const vertexOffsets: number[] = []
+    let vByte = 0
+    for (let i = 0; i < drawn.length; i++) {
+      const base = i * (UNIFORM_STRIDE / 4)
+      uniforms[base] = width
+      uniforms[base + 1] = height
+      uniforms[base + 2] = drawn[i].screenPxRange
+      uniforms[base + 3] = 0
+      vertexOffsets.push(vByte)
+      device.queue.writeBuffer(
+        this.vertexBuffer,
+        vByte,
+        drawn[i].vertices as Float32Array<ArrayBuffer>,
+      )
+      vByte += drawn[i].vertices.byteLength
+    }
+    device.queue.writeBuffer(this.uniformBuffer, 0, uniforms)
+
     pass.setPipeline(this.pipeline)
-    pass.setBindGroup(0, this.bindGroup)
-    pass.setVertexBuffer(0, this.vertexBuffer)
-    pass.draw(count)
+    for (let i = 0; i < drawn.length; i++) {
+      pass.setBindGroup(0, this.bindGroup, [i * UNIFORM_STRIDE])
+      pass.setVertexBuffer(
+        0,
+        this.vertexBuffer,
+        vertexOffsets[i],
+        drawn[i].vertices.byteLength,
+      )
+      pass.draw(drawn[i].count)
+    }
   }
 
   destroy(): void {
@@ -192,6 +262,7 @@ export class WgpuTextRenderer {
     this.textureImage = null
     this.bindGroup = null
     this.capacityBytes = 0
+    this.uniformCapacity = 0
     this.key = ''
   }
 }

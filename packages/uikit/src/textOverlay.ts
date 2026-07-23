@@ -5,7 +5,7 @@
 
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import { GlTextRenderer } from './render/glTextRenderer'
-import { WgpuTextRenderer } from './render/wgpuTextRenderer'
+import { type TextRun, WgpuTextRenderer } from './render/wgpuTextRenderer'
 import {
   screenPxRange,
   type UIKitFont,
@@ -94,35 +94,45 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
     if (this.items.length === 0) return
     const { handle, bounds } = frame
     const metrics = this.font.metrics
+    // Lay out every run first. WebGPU draws them together (one packed vertex
+    // buffer + a per-run uniform slot) so multiple runs in one deferred pass
+    // don't collapse to the last; WebGL2 draws each immediately.
+    const runs: TextRun[] = []
     for (const item of this.items) {
       const { vertices, count } = buildTextRun(metrics, item)
       if (count === 0) continue
-      const spr = screenPxRange(metrics, item.sizePx)
-      if (handle.backend === 'webgl2') {
+      runs.push({
+        vertices,
+        count,
+        screenPxRange: screenPxRange(metrics, item.sizePx),
+      })
+    }
+    if (runs.length === 0) return
+
+    if (handle.backend === 'webgl2') {
+      for (const r of runs) {
         this.gl.draw(
           handle.gl,
           this.font.image,
-          vertices,
-          count,
-          spr,
-          bounds.width,
-          bounds.height,
-        )
-      } else {
-        this.wgpu.draw(
-          handle.device,
-          handle.pass,
-          handle.colorFormat,
-          handle.sampleCount,
-          handle.depthFormat,
-          this.font.image,
-          vertices,
-          count,
-          spr,
+          r.vertices,
+          r.count,
+          r.screenPxRange,
           bounds.width,
           bounds.height,
         )
       }
+    } else {
+      this.wgpu.drawAll(
+        handle.device,
+        handle.pass,
+        handle.colorFormat,
+        handle.sampleCount,
+        handle.depthFormat,
+        this.font.image,
+        runs,
+        bounds.width,
+        bounds.height,
+      )
     }
   }
 

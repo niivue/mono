@@ -1290,6 +1290,11 @@ export default class NVGlview {
       'WebGL2',
       log.level === 'debug',
     )
+    // Refresh the exposed measurement screen projection every frame, even before
+    // the font renderer is ready, so an external overlay (UIKit ruler) keeps
+    // tracking pan/zoom/slice. buildPersistedMeasurements (below, font-gated)
+    // reads what this populates.
+    NVMeasurement.projectMeasurementScreenLines(this.model, screenSlices)
     if (this.fontRenderer.isReady) {
       if (headerStr !== '') {
         labels.push(

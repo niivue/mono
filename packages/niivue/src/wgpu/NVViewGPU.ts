@@ -1630,6 +1630,11 @@ export default class NVView {
     }
     // Layer 4: Lines (full-canvas) — used by graph
     let graphLines: ReturnType<typeof buildLine>[] = []
+    // Refresh the exposed measurement screen projection every frame, even before
+    // the font renderer is ready, so an external overlay (UIKit ruler) keeps
+    // tracking pan/zoom/slice. buildPersistedMeasurements (below, font-gated)
+    // reads what this populates.
+    NVMeasurement.projectMeasurementScreenLines(this.model, screenSlices)
     // Layer 5: Font (full-canvas)
     if (this.fontRenderer.isReady && this.fontBindGroup) {
       const hasContent =

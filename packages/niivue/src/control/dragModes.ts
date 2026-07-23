@@ -182,7 +182,7 @@ export function updateDragOverlay(ctrl: NiiVue): void {
       return
     }
     const overlay: DragOverlay = { lines: [], text: [] }
-    // Graduated ruler: arrowed baseline + per-mm ticks (majors every fifth),
+    // Graduated ruler: plain baseline + end caps + per-mm ticks (majors every fifth),
     // matching the persisted measurement and the whole-slide UIKit ruler.
     for (const [x0, y0, x1, y1] of rulerSegments(
       sx,

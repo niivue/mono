@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'bun:test'
 import { rulerSegments, rulerTickLabels } from './NVMeasurement'
 
-// A both-ends arrowed baseline is 5 segments (shaft + 2 barbs per end).
-const BASELINE_SEGS = 5
+// A plain baseline (1 segment) plus two long perpendicular end caps.
+const BASELINE_SEGS = 3
 
 describe('rulerSegments', () => {
   it('returns nothing for a zero-length ruler', () => {
     expect(rulerSegments(10, 10, 10, 10, 4)).toHaveLength(0)
   })
 
-  it('emits an arrowed baseline plus one tick per unit', () => {
+  it('emits a baseline + end caps plus one tick per unit', () => {
     const segs = rulerSegments(0, 0, 100, 0, 4)
-    // 5 baseline segments + 4 ticks (marks 1..4).
+    // 1 baseline + 2 end caps + 4 ticks (marks 1..4).
     expect(segs).toHaveLength(BASELINE_SEGS + 4)
   })
 
-  it('omits ticks when the unit length is zero (baseline only)', () => {
+  it('omits ticks when the unit length is zero (baseline + end caps only)', () => {
     expect(rulerSegments(0, 0, 100, 0, 0)).toHaveLength(BASELINE_SEGS)
   })
 
@@ -61,5 +61,14 @@ describe('rulerTickLabels', () => {
     const labels = rulerTickLabels(0, 0, 100, 0, 12)
     expect(labels.every((l) => l.y === labels[0].y)).toBe(true)
     expect(labels[0].y).not.toBe(0)
+  })
+
+  it('thins numbers on a long ruler so they do not collide', () => {
+    // 150 units over 200 px: every-fifth (30 numbers) would smear, so far fewer
+    // are emitted, each still a multiple of 5.
+    const labels = rulerTickLabels(0, 0, 200, 0, 150, 6, 12)
+    expect(labels.length).toBeGreaterThan(0)
+    expect(labels.length).toBeLessThan(30)
+    for (const l of labels) expect(Number(l.str) % 5).toBe(0)
   })
 })

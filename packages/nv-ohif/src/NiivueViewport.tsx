@@ -249,6 +249,11 @@ export function NiivueViewport(props: OhifViewportProps) {
     const seedWindowLevel = () => {
       if (cancelled) return
       updateNiivueViewport(viewportId, { windowLevel: readBaseWindowLevel(nv) })
+      // The volume-gated toolbar buttons (Views, Clip, W/L, ...) were evaluated
+      // at attach time when no volume was loaded yet, so they came up disabled.
+      // Now that the volume is in (esp. after the async dcm2niix conversion),
+      // re-evaluate the toolbar so they enable.
+      refreshToolbar(servicesManagerRef.current, viewportId)
     }
 
     // Phase-1 fast path: any display set that is already a NiiVue volume URL.

@@ -69,7 +69,6 @@ function arrowBarbs(
   color: readonly number[],
   barbLen: number,
 ): LineData[] {
-  const len = barbLen
   const bx = -dirX
   const by = -dirY
   const rotate = (x: number, y: number, a: number): [number, number] => [
@@ -79,8 +78,22 @@ function arrowBarbs(
   const [lx, ly] = rotate(bx, by, ARROW_HALF_ANGLE)
   const [rx, ry] = rotate(bx, by, -ARROW_HALF_ANGLE)
   return [
-    buildLine(tipX, tipY, tipX + lx * len, tipY + ly * len, thickness, color),
-    buildLine(tipX, tipY, tipX + rx * len, tipY + ry * len, thickness, color),
+    buildLine(
+      tipX,
+      tipY,
+      tipX + lx * barbLen,
+      tipY + ly * barbLen,
+      thickness,
+      color,
+    ),
+    buildLine(
+      tipX,
+      tipY,
+      tipX + rx * barbLen,
+      tipY + ry * barbLen,
+      thickness,
+      color,
+    ),
   ]
 }
 

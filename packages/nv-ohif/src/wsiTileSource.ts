@@ -60,16 +60,20 @@ function deriveSpacingMM(
 ): readonly [number, number] | undefined {
   // PixelSpacing from the PixelMeasuresSequence in either the Shared or the
   // Per-frame functional groups (a slide may carry it in only one), then a
-  // top-level PixelSpacing.
-  const measuresFrom = (group: unknown): Record<string, unknown> | undefined =>
-    first(
-      (first(group) as Record<string, unknown> | undefined)
-        ?.PixelMeasuresSequence,
-    ) as Record<string, unknown> | undefined
-  const measures =
-    measuresFrom(inst.SharedFunctionalGroupsSequence) ??
-    measuresFrom(inst.PerFrameFunctionalGroupsSequence)
-  const pixelSpacing = measures?.PixelSpacing ?? inst.PixelSpacing
+  // top-level PixelSpacing. Fall back at the PixelSpacing VALUE level, not the
+  // measures-object level: a Shared PixelMeasuresSequence that omits PixelSpacing
+  // (e.g. carries only SliceThickness) must not suppress the Per-frame value.
+  const spacingFrom = (group: unknown): unknown =>
+    (
+      first(
+        (first(group) as Record<string, unknown> | undefined)
+          ?.PixelMeasuresSequence,
+      ) as Record<string, unknown> | undefined
+    )?.PixelSpacing
+  const pixelSpacing =
+    spacingFrom(inst.SharedFunctionalGroupsSequence) ??
+    spacingFrom(inst.PerFrameFunctionalGroupsSequence) ??
+    inst.PixelSpacing
   if (Array.isArray(pixelSpacing)) {
     const dy = toNum(pixelSpacing[0])
     const dx = toNum(pixelSpacing[1])
@@ -91,6 +95,8 @@ interface WsiLevel {
   tileRows: number
   /** Frame base URL (`.../instances/{sop}/frames`); a tile fetch appends `/{n}`. */
   frameBaseUrl: string
+  /** Query string (with leading `?`) to re-append after the frame index, or ''. */
+  frameQuery: string
   isJpeg: boolean
   /** Physical spacing `[dx, dy]` in mm for this tier, when the SM metadata carries it. */
   spacingMM?: readonly [number, number]
@@ -133,14 +139,16 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
       !isVolumeLevel(inst)
     )
       return
-    // '.../instances/{sop}/frames/1' -> '.../instances/{sop}/frames'. Drop any
-    // query first so a trailing '/1?foo' still strips to '.../frames' (a query
-    // left in the base would corrupt the per-tile '.../frames/{n}' URL); auth is
-    // carried via request headers, not query tokens.
-    const frameBaseUrl = imageId
-      .replace(/^wadors:/, '')
-      .replace(/\?.*$/, '')
-      .replace(/\/\d+$/, '')
+    // '.../instances/{sop}/frames/1' -> base '.../instances/{sop}/frames' plus a
+    // separately-kept query. Split the query off first (a query left in the base
+    // would corrupt the per-tile '.../frames/{n}' URL) and re-append it after the
+    // frame index in fetchTileBytes, so a DICOMweb access_token query is preserved.
+    const noScheme = imageId.replace(/^wadors:/, '')
+    const qIdx = noScheme.indexOf('?')
+    const frameQuery = qIdx >= 0 ? noScheme.slice(qIdx) : ''
+    const frameBaseUrl = (
+      qIdx >= 0 ? noScheme.slice(0, qIdx) : noScheme
+    ).replace(/\/\d+$/, '')
     const transferSyntax =
       str(inst.TransferSyntaxUID) ?? str(inst.AvailableTransferSyntaxUID)
     levels.push({
@@ -149,6 +157,7 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
       tileColumns,
       tileRows,
       frameBaseUrl,
+      frameQuery,
       // Default to JPEG when the syntax is unknown (v1 targets JPEG WSI).
       isJpeg: transferSyntax
         ? JPEG_TRANSFER_SYNTAXES.has(transferSyntax)
@@ -195,6 +204,8 @@ export interface BuiltWsiManifest {
   manifest: NVSlideManifest
   /** Frame base URL by level.index (aligned with manifest.levels). */
   levelBaseUrls: string[]
+  /** Query string (with leading `?`, or '') by level.index, re-appended per tile. */
+  levelQueries: string[]
   /** True when every kept level is JPEG (v1-renderable). */
   allJpeg: boolean
 }
@@ -211,6 +222,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
 
   const levels: NVSlideLevelManifest[] = []
   const levelBaseUrls: string[] = []
+  const levelQueries: string[] = []
   let allJpeg = true
   volumeLevels.forEach((level, index) => {
     const { columns, rows, tiles } = levelTiles(level)
@@ -227,6 +239,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
       tiles,
     })
     levelBaseUrls[index] = level.frameBaseUrl
+    levelQueries[index] = level.frameQuery
     if (!level.isJpeg) allJpeg = false
   })
 
@@ -245,7 +258,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     ...(level0.spacingMM ? { pixelSpacingMM: level0.spacingMM } : {}),
     levels,
   }
-  return { manifest, levelBaseUrls, allJpeg }
+  return { manifest, levelBaseUrls, levelQueries, allJpeg }
 }
 
 /**
@@ -257,11 +270,13 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
 export class DicomWsiTileSource implements SlideTileSource {
   readonly manifest: NVSlideManifest
   private readonly levelBaseUrls: string[]
+  private readonly levelQueries: string[]
   private readonly headers: Record<string, string>
 
   constructor(built: BuiltWsiManifest, headers: Record<string, string> = {}) {
     this.manifest = built.manifest
     this.levelBaseUrls = built.levelBaseUrls
+    this.levelQueries = built.levelQueries
     this.headers = headers
   }
 
@@ -277,7 +292,9 @@ export class DicomWsiTileSource implements SlideTileSource {
     if (!base) throw new Error(`no frame URL for WSI level ${level.index}`)
     if (tile.frame === undefined)
       throw new Error('WSI tile has no frame number')
-    const response = await fetch(`${base}/${tile.frame}`, {
+    // Re-append any query (e.g. a DICOMweb access_token) after the frame index.
+    const query = this.levelQueries[level.index] ?? ''
+    const response = await fetch(`${base}/${tile.frame}${query}`, {
       headers: {
         Accept: 'multipart/related; type="image/jpeg"',
         ...this.headers,

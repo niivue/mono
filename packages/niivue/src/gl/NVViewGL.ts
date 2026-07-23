@@ -1392,6 +1392,7 @@ export default class NVGlview {
         (s, x, y, sc, c, ax, ay, bc) =>
           this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
         buildLine,
+        this.fontRenderer.fontPx * 0.5,
       )
       if (persistedResult) {
         labels.push(...persistedResult.labels)

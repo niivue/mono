@@ -97,7 +97,12 @@ export class GlLineRenderer {
     const data = this.scratch
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
-      if (line) data.set(line.data, i * FLOATS_PER_LINE)
+      const off = i * FLOATS_PER_LINE
+      // Zero a null/hole slot: the reused scratch may hold a prior frame's line
+      // there, and drawArraysInstanced still draws it. A zeroed instance is a
+      // degenerate, zero-thickness (invisible) line, matching a fresh alloc.
+      if (line) data.set(line.data, off)
+      else data.fill(0, off, off + FLOATS_PER_LINE)
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer)
     // Upload only the `need` used floats (scratch may be larger from a prior draw).

@@ -1630,10 +1630,13 @@ export default class NVView {
     }
     // Layer 4: Lines (full-canvas) — used by graph
     let graphLines: ReturnType<typeof buildLine>[] = []
-    // Refresh the exposed measurement screen projection every frame, even before
-    // the font renderer is ready, so an external overlay (UIKit ruler) keeps
-    // tracking pan/zoom/slice. buildPersistedMeasurements (below, font-gated)
-    // reads what this populates.
+    // Refresh the exposed measurement screen projection each rendered frame so an
+    // external overlay (UIKit ruler) keeps tracking pan/zoom/slice independently of
+    // whether the built-in measurement is drawn. NOTE: unlike the WebGL2 view,
+    // render() bails early on !fontRenderer.isReady (see the guard near the top), so
+    // on WebGPU this only runs once the font is ready. That is fine in practice:
+    // measurements are created by user interaction, which happens after the view is
+    // up and the (bundled) font has loaded.
     NVMeasurement.projectMeasurementScreenLines(this.model, screenSlices)
     // Layer 5: Font (full-canvas)
     if (this.fontRenderer.isReady && this.fontBindGroup) {
@@ -1743,6 +1746,7 @@ export default class NVView {
         (s, x, y, sc, c, ax, ay, bc) =>
           this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
         buildLine,
+        this.fontRenderer.fontPx * 0.5,
       )
       if (persistedResult) {
         labels.push(...persistedResult.labels)

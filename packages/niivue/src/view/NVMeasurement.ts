@@ -203,6 +203,10 @@ export function buildPersistedMeasurements(
   screenSlices: SliceTile[],
   buildText: BuildTextFn,
   buildLine: BuildLineFn,
+  // Canvas-pixel height of a graduation number (the view passes its rasterized
+  // font size x the 0.5 number scale) so the number-collision gap is sized right
+  // at any fontScale / DPI.
+  numberPx = 12,
 ): MeasurementResult | null {
   const measurements = model.completedMeasurements
   const angles = model.completedAngles
@@ -244,7 +248,7 @@ export function buildPersistedMeasurements(
       }
 
       // Graduation numbers at each major tick, along the ruler edge.
-      for (const t of rulerTickLabels(sx, sy, ex, ey, distance)) {
+      for (const t of rulerTickLabels(sx, sy, ex, ey, distance, 6, numberPx)) {
         const b = buildText(t.str, t.x, t.y, 0.5, textColor, 0.5, 0.5)
         if (b.count > 0) labels.push(b)
       }

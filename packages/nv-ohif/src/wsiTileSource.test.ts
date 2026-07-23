@@ -96,7 +96,7 @@ describe('wsiVolumeLevels', () => {
     expect(levels[0]?.frameBaseUrl).toBe('https://h/instances/fine/frames')
   })
 
-  it('strips a trailing query from the frame imageId', () => {
+  it('splits a trailing query off the frame imageId, preserving it', () => {
     const ds: OhifDisplaySet = {
       instances: [
         {
@@ -111,10 +111,11 @@ describe('wsiVolumeLevels', () => {
       ],
       imageIds: [],
     }
-    // Base must not keep '/1?token=abc' (which would corrupt '.../frames/{n}').
-    expect(wsiVolumeLevels(ds)[0]?.frameBaseUrl).toBe(
-      'https://h/instances/fine/frames',
-    )
+    const level = wsiVolumeLevels(ds)[0]
+    // Base must not keep '/1?token=abc' (which would corrupt '.../frames/{n}');
+    // the query is kept separately to re-append after the frame index.
+    expect(level?.frameBaseUrl).toBe('https://h/instances/fine/frames')
+    expect(level?.frameQuery).toBe('?token=abc')
   })
 
   it('falls back to a tiled-matrix test when ImageType is absent', () => {
@@ -228,6 +229,21 @@ describe('buildWsiManifest', () => {
   it('derives pixelSpacingMM from PerFrameFunctionalGroupsSequence', () => {
     const built = buildWsiManifest(
       oneLevelWith({
+        PerFrameFunctionalGroupsSequence: [
+          { PixelMeasuresSequence: [{ PixelSpacing: [0.002, 0.001] }] },
+        ],
+      }),
+    )
+    expect(built?.manifest.pixelSpacingMM).toEqual([0.001, 0.002])
+  })
+
+  it('falls back to the per-frame PixelSpacing when the shared group omits it', () => {
+    const built = buildWsiManifest(
+      oneLevelWith({
+        // Shared PixelMeasuresSequence carries only SliceThickness, no PixelSpacing.
+        SharedFunctionalGroupsSequence: [
+          { PixelMeasuresSequence: [{ SliceThickness: 0.5 }] },
+        ],
         PerFrameFunctionalGroupsSequence: [
           { PixelMeasuresSequence: [{ PixelSpacing: [0.002, 0.001] }] },
         ],

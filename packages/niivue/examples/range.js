@@ -5,9 +5,9 @@
 // requests on a single shard; the OME-Zarr source reads per-chunk objects via
 // zarrita). Add `?backend=webgpu` to the URL to use the WebGPU renderer.
 //
-// Two sources, both bundled as static fixtures in public/:
-//   - synthetic: a single shard (.bin) streamed one chunk at a time over Range
-//   - omezarr:   a static OME-Zarr store read with zarrita (only scale2 bundled)
+// Two static-hosted source types:
+//   - synthetic: a bundled shard streamed one chunk at a time over Range
+//   - omezarr:   full upstream OME-Zarr stores read with zarrita
 
 import * as zarr from 'zarrita'
 import NiiVue, { chunkVolumeGrid, SLICE_TYPE } from '../src/index.ts'
@@ -59,12 +59,11 @@ let appliedExplodeScale = 1
 const DEFAULT_RESIDENCY_BYTES = 8192 * 1024 * 1024
 const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
 
-// OME-Zarr stores discoverable under ${BASE_URL}omezarr/. `levels` lists the
-// scale indices that may be present on disk, coarsest-first; the loader picks
-// the first one whose array metadata actually resolves, so a store fetched at
-// only its coarsest level still renders. `stent` is bundled (scale2 only);
-// the others are downloaded on demand by scripts/fetch-omezarr.ts and are not
-// checked in (see .gitignore).
+// OME-Zarr stores resolve against VITE_OMEZARR_ASSET_BASE in production and
+// ${BASE_URL}omezarr/ during local development. `levels` lists the scale
+// indices that may be present, coarsest-first; the loader picks the first one
+// whose array metadata resolves. `stent` is bundled locally (scale2 only); the
+// others can be downloaded on demand with scripts/fetch-omezarr.ts.
 const OMEZARR_STORES = {
   stent: {
     id: 'stent.ome.zarr',
@@ -275,8 +274,7 @@ function buildLogicalVolume(o) {
 
 // --- asset URLs -------------------------------------------------------------
 
-function assetUrl(path) {
-  const base = import.meta.env.BASE_URL || '/'
+function resolveAssetUrl(path, base) {
   const normalizedBase = base.endsWith('/') ? base : `${base}/`
   return new URL(
     `${normalizedBase}${path.replace(/^\//, '')}`,
@@ -284,7 +282,19 @@ function assetUrl(path) {
   ).toString()
 }
 
-const MANIFEST_URL = assetUrl('range-poc/synthetic-volume.json')
+function demoAssetUrl(path) {
+  return resolveAssetUrl(path, import.meta.env.BASE_URL || '/')
+}
+
+function omezarrAssetUrl(path) {
+  const upstreamBase = import.meta.env.VITE_OMEZARR_ASSET_BASE
+  if (upstreamBase) return resolveAssetUrl(path, upstreamBase)
+  const streamingBase = import.meta.env.VITE_STREAMING_ASSET_BASE
+  if (streamingBase) return resolveAssetUrl(`omezarr/${path}`, streamingBase)
+  return demoAssetUrl(`omezarr/${path}`)
+}
+
+const MANIFEST_URL = demoAssetUrl('range-poc/synthetic-volume.json')
 
 // --- byte cache for zarrita -------------------------------------------------
 
@@ -475,7 +485,7 @@ function makeDraggable(node) {
 // actually resolves on disk, coarsest-first. Used to populate the Level
 // control so the user can only pick levels that have been fetched.
 async function presentLevels(storeDef) {
-  const storeUrl = assetUrl(`omezarr/${storeDef.id}`)
+  const storeUrl = omezarrAssetUrl(storeDef.id)
   const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
   const multiscale = multiscalesFromRoot(rootMeta)[0]
   const found = []
@@ -692,7 +702,7 @@ async function loadSyntheticSource() {
 }
 
 async function loadOmezarrSource(storeDef, requestedLevel, serial) {
-  const storeUrl = assetUrl(`omezarr/${storeDef.id}`)
+  const storeUrl = omezarrAssetUrl(storeDef.id)
   const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
   const multiscale = multiscalesFromRoot(rootMeta)[0]
 

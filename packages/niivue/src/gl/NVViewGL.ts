@@ -25,6 +25,7 @@ import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
 import * as NVMeasurement from '@/view/NVMeasurement'
+import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
@@ -97,6 +98,14 @@ export default class NVGlview {
   private _isSubCanvasBounds = false
   /** True when the bounds rect (after viewport pan/zoom) is entirely off-canvas */
   _isBoundsOffscreen = false
+  /** Effective device pixel ratio from the last resize(); reported to overlays. */
+  private _dpr = 1
+  /**
+   * UIKit overlay hook, wired by the controller. Invoked at the end of every frame
+   * (after core's own line/text overlays, before present) so a privileged renderer
+   * can draw into the same frame in screen space. See view/NVOverlayHook.ts.
+   */
+  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
   // Narrow public getters for bench.ts to read current render-area size
   // without making the backing fields public or mutable.
   get boundsWidth(): number {
@@ -1281,6 +1290,11 @@ export default class NVGlview {
       'WebGL2',
       log.level === 'debug',
     )
+    // Refresh the exposed measurement screen projection every frame, even before
+    // the font renderer is ready, so an external overlay (UIKit ruler) keeps
+    // tracking pan/zoom/slice. buildPersistedMeasurements (below, font-gated)
+    // reads what this populates.
+    NVMeasurement.projectMeasurementScreenLines(this.model, screenSlices)
     if (this.fontRenderer.isReady) {
       if (headerStr !== '') {
         labels.push(
@@ -1378,6 +1392,7 @@ export default class NVGlview {
         (s, x, y, sc, c, ax, ay, bc) =>
           this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
         buildLine,
+        this.fontRenderer.fontPx * 0.5,
       )
       if (persistedResult) {
         labels.push(...persistedResult.labels)
@@ -1462,6 +1477,28 @@ export default class NVGlview {
       if (allLines.length > this.maxLines) this.maxLines = allLines.length
       this.lineRenderer.draw(gl, null, null, null, allLines, this.maxLines)
     }
+    // UIKit overlay hook: last screen-space draw of the frame, before the scissor
+    // is dropped, with viewport/scissor still set to this view's bounds rect.
+    if (this.overlayDraw) {
+      const stream = this.volumeRenderer.chunkStreamStats()
+      const settled =
+        !this.isBusy &&
+        !md._isDragging &&
+        !this.volumeRenderer.fadeActive &&
+        stream.pending === 0 &&
+        stream.inFlight === 0
+      this.overlayDraw({
+        handle: { backend: 'webgl2', gl },
+        bounds: {
+          x: this._boundsOffsetX,
+          y: this._boundsOffsetY,
+          width: canvasWidth,
+          height: canvasHeight,
+        },
+        dpr: this._dpr,
+        settled,
+      })
+    }
     // Disable scissor test at end of render
     if (this._isSubCanvasBounds) {
       gl.disable(gl.SCISSOR_TEST)
@@ -1530,6 +1567,7 @@ export default class NVGlview {
     } else {
       dpr = this.forceDevicePixelRatio
     }
+    this._dpr = dpr
     const rect = this.canvas.getBoundingClientRect()
     const targetW = Math.max(1, Math.floor(rect.width * dpr))
     const targetH = Math.max(1, Math.floor(rect.height * dpr))

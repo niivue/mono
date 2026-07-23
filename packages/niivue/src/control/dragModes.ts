@@ -3,6 +3,7 @@ import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
 import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
+import { rulerSegments, rulerTickLabels } from '@/view/NVMeasurement'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 
 /** Return the DRAG_MODE for a given mouse button on 2D slice tiles. */
@@ -139,6 +140,9 @@ export function updateDragOverlay(ctrl: NiiVue): void {
   const [sx, sy] = ctrl.dragStartXY
   const [ex, ey] = ctrl.dragEndXY
   const ui = ctrl.model.ui
+  // Only the measurement branch (re)sets the active-measurement screen line, so
+  // clear it here for every other drag mode.
+  ctrl.model._activeMeasurementScreenLine = null
   const lineColor = ui.measureLineColor
   const lineWidth = ui.rulerWidth
   const textColor = ui.measureTextColor
@@ -160,48 +164,55 @@ export function updateDragOverlay(ctrl: NiiVue): void {
       rect: { ltwh: [x, y, w, h], color: ui.selectionBoxColor },
     }
   } else if (mode === DRAG_MODE.measurement) {
-    const overlay: DragOverlay = {
-      lines: [
-        {
-          startXY: [sx, sy],
-          endXY: [ex, ey],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-      ],
-      text: [],
-    }
-    // End caps: perpendicular segments at start and end
-    const capLen = 6
-    const dx = ex - sx
-    const dy = ey - sy
-    const len = Math.sqrt(dx * dx + dy * dy)
-    if (len > 0) {
-      const px = (-dy / len) * capLen
-      const py = (dx / len) * capLen
-      overlay.lines?.push(
-        {
-          startXY: [sx - px, sy - py],
-          endXY: [sx + px, sy + py],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-        {
-          startXY: [ex - px, ey - py],
-          endXY: [ex + px, ey + py],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-      )
-    }
-    // Distance text at line midpoint
+    // Distance in mm sets the tick spacing, so resolve it before the geometry.
     const startMM = screenSlicePickAt(ctrl, sx, sy)
     const endMM = screenSlicePickAt(ctrl, ex, ey)
+    const dist =
+      startMM && endMM
+        ? vec3.distance(
+            vec3.fromValues(startMM[0], startMM[1], startMM[2]),
+            vec3.fromValues(endMM[0], endMM[1], endMM[2]),
+          )
+        : 0
+    // Expose the in-progress measurement to an external overlay renderer.
+    ctrl.model._activeMeasurementScreenLine = { sx, sy, ex, ey, distance: dist }
+    // An external overlay draws the ruler instead of the built-in one.
+    if (!ui.isMeasurementDrawn) {
+      ctrl.model._dragOverlay = null
+      return
+    }
+    const overlay: DragOverlay = { lines: [], text: [] }
+    // Graduated ruler: plain baseline + end caps + per-mm ticks (majors every fifth),
+    // matching the persisted measurement and the whole-slide UIKit ruler.
+    for (const [x0, y0, x1, y1] of rulerSegments(
+      sx,
+      sy,
+      ex,
+      ey,
+      dist,
+      lineWidth,
+    )) {
+      overlay.lines?.push({
+        startXY: [x0, y0],
+        endXY: [x1, y1],
+        color: lineColor,
+        thickness: lineWidth,
+      })
+    }
+    // Graduation numbers at each major tick, along the ruler edge.
+    for (const t of rulerTickLabels(sx, sy, ex, ey, dist)) {
+      overlay.text?.push({
+        str: t.str,
+        x: t.x,
+        y: t.y,
+        scale: 0.5,
+        color: textColor,
+        anchorX: 0.5,
+        anchorY: 0.5,
+      })
+    }
+    // Distance text at line midpoint
     if (startMM && endMM) {
-      const dist = vec3.distance(
-        vec3.fromValues(startMM[0], startMM[1], startMM[2]),
-        vec3.fromValues(endMM[0], endMM[1], endMM[2]),
-      )
       let decimals = 2
       if (dist > 9) decimals = 1
       if (dist > 99) decimals = 0
@@ -390,6 +401,7 @@ export function clearDragState(ctrl: NiiVue): void {
   ctrl._activeDragMode = DRAG_MODE.none
   ctrl._pan2DxyzmmAtDragStart = null
   ctrl.model._dragOverlay = null
+  ctrl.model._activeMeasurementScreenLine = null
   ctrl.drawScene()
 }
 

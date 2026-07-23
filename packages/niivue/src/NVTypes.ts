@@ -612,6 +612,14 @@ export type UIConfig = {
   isLegendVisible: boolean
   isPositionInMM: boolean
   isMeasureUnitsVisible: boolean
+  /**
+   * Draw the built-in measurement overlay (ruler line, ticks, distance label).
+   * Set false to let an external overlay renderer draw measurements instead (it
+   * still reads `measurementScreenLines`); the built-in geometry is computed but
+   * not drawn, so no line, label, or label background chip appears. Angles are
+   * unaffected. Default true.
+   */
+  isMeasurementDrawn: boolean
   isThumbnailVisible: boolean
   thumbnailUrl: string
   placeholderText: string
@@ -973,6 +981,20 @@ export type CompletedMeasurement = {
   sliceIndex: number
   sliceType: number
   slicePosition: number
+}
+
+/**
+ * A measurement projected to the current frame's canvas pixels, exposed so an
+ * external overlay (e.g. a @niivue/uikit ruler drawn through the overlay hook)
+ * can render the measurement in screen space with its own renderer. Recomputed
+ * every frame; `distance` is in millimetres. See NVControlBase.measurementScreenLines.
+ */
+export type MeasurementScreenLine = {
+  sx: number
+  sy: number
+  ex: number
+  ey: number
+  distance: number
 }
 
 /**

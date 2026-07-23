@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "outDir": "dist/types",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx"
+  },
+  "include": ["src/index.ts", "src/dcm2niix.d.ts", "src/dcmjs.d.ts"]
+}

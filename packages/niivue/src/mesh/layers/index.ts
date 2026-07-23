@@ -388,10 +388,13 @@ export function compositeLayers(
         lg = lut[lutIdx * 4 + 1]
         lb = lut[lutIdx * 4 + 2]
         la = opacity
-        // Alpha modulation for translucent mode
+        // Alpha modulation for translucent mode. Must include scalar === 0:
+        // la is the layer opacity (the LUT's own alpha is not used here), so a
+        // zero scalar would otherwise paint the first colormap entry at full
+        // opacity instead of being transparent.
         if (
           ct === COLORMAP_TYPE.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN &&
-          scalar > 0 &&
+          scalar >= 0 &&
           scalar < calMin &&
           calMin > 0
         ) {

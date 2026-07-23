@@ -1949,6 +1949,29 @@
       "returnsDoc": null
     },
     {
+      "jsName": "loadChunkedVolume",
+      "pyName": "load_chunked_volume",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "source",
+          "tsType": "ChunkedVolumeSource",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "ChunkedVolumeOptions | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<NVChunkedVolume>",
+      "doc": "Load a multi-resolution (pyramid) volume from a pluggable\n{@link ChunkedVolumeSource} and render it with crosshair-focused level of\ndetail: the finest bricks stay around the crosshair while distant regions\nrender coarser, all under a brick/VRAM budget, so a very large finest level\n(e.g. a 20+ GB whole-slide/OME-Zarr volume) is renderable without ever\nmaking it fully resident. Returns an {@link NVChunkedVolume} handle\n(`setFocus` / `setMaxDetail` / `setBudget` / `dispose`); with the default\n`focus: 'crosshair'` it follows the crosshair automatically.\n\nADDITIVE: the streamed volume is ADDED to the scene (via `addVolume`), not\nswapped for the current volumes. To reload/replace a streamed volume, the\ncaller removes the previous one first.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "loadDeferred4DVolumes",
       "pyName": "load_deferred_4d_volumes",
       "isAsync": true,

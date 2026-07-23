@@ -10,18 +10,26 @@
 //   - omezarr:   full upstream OME-Zarr stores read with zarrita
 
 import * as zarr from 'zarrita'
-import NiiVue, { chunkVolumeGrid, SLICE_TYPE } from '../src/index.ts'
+import NiiVue, {
+  chunkVolumeGrid,
+  createStreamingNVImage,
+  SLICE_TYPE,
+} from '../src/index.ts'
 
 const backend =
   new URLSearchParams(location.search).get('backend') === 'webgpu'
     ? 'webgpu'
     : 'webgl2'
 
-// The coarse whole-volume floor is OFF by default: rendering a coarser pyramid
-// level behind the fine chunks shows blocky "previous-level" detail in regions
-// the fine chunks have not reached, which reads as an artifact. Pass ?floor to
-// opt back in (A/B: see coarse backdrop vs. fine-only with empty gaps).
-const NO_FLOOR = !new URLSearchParams(location.search).has('floor')
+// The coarse whole-volume floor is ON by default: a single coarse pyramid level
+// rendered behind the octree so regions whose fine bricks have not streamed yet
+// (or whose mean-downsampled coarse bricks fall below the transparency threshold)
+// show continuous low-res detail instead of blank/see-through gaps. Pass ?nofloor
+// to disable (A/B: fine-only vs. coarse backdrop). NOTE: any residual Z-periodic
+// "venetian" striping on some OME-Zarr stores (e.g. pig-heart) is a downsampling
+// artifact baked into that dataset's coarse pyramid levels, not the floor -- the
+// finest level renders clean.
+const NO_FLOOR = new URLSearchParams(location.search).has('nofloor')
 // Bumped each (re)load so a superseded load's late async work (e.g. the coarse
 // floor build) is discarded instead of stomping a newer scene.
 let reloadToken = 0
@@ -93,12 +101,33 @@ const OMEZARR_STORES = {
     defaultWindow: { min: 40, max: 700 },
   },
 }
-const STREAMING_CHUNK_EDGE = 256
+// Per-axis brick halo (in level voxels). 3D gradient/lighting samples one voxel
+// past each brick face; a 3-voxel halo keeps that reach inside resident data so
+// brick boundaries don't show grid-aligned gradient/lighting seams. Without it
+// loadChunkedVolume falls back to the core default [1,1,1] and the seams return.
 const STREAMING_CHUNK_HALO = [3, 3, 3]
-// Matches niivue core's MAX_CHUNKS_PER_TILE: above this a level is re-tiled into
-// a coarser streaming grid so it stays within the renderer's per-tile chunk cap.
-const MAX_CHUNKS_PER_TILE = 1024
 const ZARR_BYTE_CACHE_BYTES = 512 * 1024 * 1024
+
+// --- multi-LOD (crosshair-focused mixed-resolution) -------------------------
+//
+// For an OME-Zarr store with a pyramid we hand the pyramid to the core
+// `nv.loadChunkedVolume(source, options)` API (a `ChunkedVolumeSource` adapter,
+// see ZarrChunkedVolumeSource below), which builds a Neuroglancer-style octree:
+// bricks near the crosshair render at the finest level, coarsening outward,
+// under a brick/VRAM budget, and follow the crosshair automatically. This keeps
+// a huge finest level (e.g. pig_heart L0 ~22 GB) renderable — only the focus
+// region is ever finest — with the fetch dispatch/concurrency/retry all in core.
+// The Level control becomes a max-detail cap (`minLevel`).
+//
+// Cap on brick count (< core MAX_CHUNKS_PER_TILE=1024); the budget pass coarsens
+// until the plan fits. Budget keeps resident VRAM ~this regardless of the level
+// the user picks (kept below DEFAULT_RESIDENCY_BYTES so no planned brick evicts).
+const MULTILOD_MAX_BRICKS = 240
+const MULTILOD_BUDGET_BYTES = 2048 * 1024 * 1024
+// The core NVChunkedVolume handle for the active OME-Zarr source (null for
+// synthetic). Owns the focus-follow plan swaps; the demo drives its max-detail
+// cap from the Level control and nudges it to re-plan on zoom/layout changes.
+let activeCv = null
 
 // --- logical-volume helpers (inlined from the demo glue) --------------------
 
@@ -116,159 +145,6 @@ function niftiDatatype(dtype) {
       return { code: 16, bits: 32, displayMin: 0, displayMax: 1 }
     default:
       return { code: 512, bits: 16, displayMin: 0, displayMax: 65535 }
-  }
-}
-
-// Build a depth-correct, axis-aligned NVImage from a level's shape + spacing.
-// The affine is diag(spacing) with the voxel grid placed at the origin, so two
-// volumes built this way that cover the same mm box (shape*spacing) register.
-function buildLogicalVolume(o) {
-  const { shape, spacing } = o
-  const dims = [3, shape[0], shape[1], shape[2], 1, 1, 1, 1]
-  const pixDims = [1, spacing[0], spacing[1], spacing[2], 1, 1, 1, 1]
-  const affine = [
-    [spacing[0], 0, 0, 0],
-    [0, spacing[1], 0, 0],
-    [0, 0, spacing[2], 0],
-    [0, 0, 0, 1],
-  ]
-  const dimsMM = [
-    shape[0] * spacing[0],
-    shape[1] * spacing[1],
-    shape[2] * spacing[2],
-  ]
-  const longest = Math.max(dimsMM[0], dimsMM[1], dimsMM[2])
-  const matRAS = new Float32Array([
-    spacing[0],
-    0,
-    0,
-    0,
-    0,
-    spacing[1],
-    0,
-    0,
-    0,
-    0,
-    spacing[2],
-    0,
-    0,
-    0,
-    0,
-    1,
-  ])
-  const frac2mm = new Float32Array([
-    dimsMM[0],
-    0,
-    0,
-    0,
-    0,
-    dimsMM[1],
-    0,
-    0,
-    0,
-    0,
-    dimsMM[2],
-    0,
-    -0.5 * spacing[0],
-    -0.5 * spacing[1],
-    -0.5 * spacing[2],
-    1,
-  ])
-  const identity = new Float32Array([
-    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-  ])
-  const minMM = [-0.5 * spacing[0], -0.5 * spacing[1], -0.5 * spacing[2]]
-  const maxMM = [
-    (shape[0] - 0.5) * spacing[0],
-    (shape[1] - 0.5) * spacing[1],
-    (shape[2] - 0.5) * spacing[2],
-  ]
-  return {
-    name: o.id,
-    id: o.id,
-    url: o.url,
-    img: o.img ?? null,
-    hdr: {
-      littleEndian: true,
-      dim_info: 0,
-      dims,
-      pixDims,
-      intent_p1: 0,
-      intent_p2: 0,
-      intent_p3: 0,
-      intent_code: 0,
-      datatypeCode: o.datatypeCode,
-      numBitsPerVoxel: o.numBitsPerVoxel,
-      slice_start: 0,
-      vox_offset: 352,
-      scl_slope: 1,
-      scl_inter: 0,
-      slice_end: 0,
-      slice_code: 0,
-      xyzt_units: 10,
-      cal_max: o.calMax,
-      cal_min: o.calMin,
-      slice_duration: 0,
-      toffset: 0,
-      description: 'logical streamed volume',
-      aux_file: '',
-      qform_code: 0,
-      sform_code: 1,
-      quatern_b: 0,
-      quatern_c: 0,
-      quatern_d: 0,
-      qoffset_x: 0,
-      qoffset_y: 0,
-      qoffset_z: 0,
-      affine,
-      intent_name: '',
-      magic: 'n+1',
-    },
-    originalAffine: affine.map((row) => [...row]),
-    dims: dims.slice(0, 4),
-    nVox3D: shape[0] * shape[1] * shape[2],
-    extentsMin: minMM,
-    extentsMax: maxMM,
-    calMin: o.calMin,
-    calMax: o.calMax,
-    robustMin: o.calMin,
-    robustMax: o.calMax,
-    globalMin: o.calMin,
-    globalMax: o.calMax,
-    pixDimsRAS: pixDims.slice(0, 4),
-    dimsRAS: dims.slice(0, 4),
-    permRAS: [1, 2, 3],
-    matRAS,
-    obliqueRAS: identity,
-    frac2mm,
-    frac2mmOrtho: frac2mm,
-    extentsMinOrtho: minMM,
-    extentsMaxOrtho: maxMM,
-    mm2ortho: identity,
-    img2RASstep: [1, shape[0], shape[0] * shape[1]],
-    img2RASstart: [0, 0, 0],
-    toRAS: identity,
-    toRASvox: identity,
-    mm000: minMM,
-    mm100: [maxMM[0], minMM[1], minMM[2]],
-    mm010: [minMM[0], maxMM[1], minMM[2]],
-    mm001: [minMM[0], minMM[1], maxMM[2]],
-    oblique_angle: 0,
-    maxShearDeg: 0,
-    volScale: [dimsMM[0] / longest, dimsMM[1] / longest, dimsMM[2] / longest],
-    frame4D: 0,
-    nFrame4D: 1,
-    nTotalFrame4D: 1,
-    colormap: o.colormap,
-    isTransparentBelowCalMin: o.isTransparentBelowCalMin ?? true,
-    opacity: o.opacity ?? 1,
-    modulateAlpha: 0,
-    isColorbarVisible: false,
-    isLegendVisible: false,
-    colormapLabel: null,
-    chunkSource: o.chunkSource,
-    chunkOverlayOf: o.chunkOverlayOf,
-    chunkOverlayOpacity: o.chunkOverlayOpacity,
   }
 }
 
@@ -526,8 +402,12 @@ async function refreshLevelControl() {
     ...levels.map((lvl) => new Option(`L${lvl}`, String(lvl))),
   )
   els.level.disabled = levels.length < 2
-  els.level.value = String(levels[0])
-  return levels[0]
+  // `levels` is coarsest-first. The Level control is a multi-LOD max-detail cap,
+  // so default to the FINEST ("allow full detail at the crosshair") — picking a
+  // coarser level caps how fine the octree may go anywhere.
+  const finest = levels[levels.length - 1]
+  els.level.value = String(finest)
+  return finest
 }
 
 function selectedLevel() {
@@ -640,7 +520,8 @@ function createTrackedZarrFetch(serial) {
       serial,
       `${response.status}${range ? ` ${range.replace(/^bytes=/, '')}` : ''} ${shortZarrPath(pathname)}`,
     )
-    renderHud()
+    // A multi-LOD load fires thousands of native zarr fetches; the throttled HUD
+    // poll refreshes the panel, so don't rebuild it per fetch.
     return response
   }
 }
@@ -701,7 +582,7 @@ async function loadSyntheticSource() {
   }
 }
 
-async function loadOmezarrSource(storeDef, requestedLevel, serial) {
+async function loadOmezarrSource(storeDef, serial) {
   const storeUrl = omezarrAssetUrl(storeDef.id)
   const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
   const multiscale = multiscalesFromRoot(rootMeta)[0]
@@ -713,45 +594,49 @@ async function loadOmezarrSource(storeDef, requestedLevel, serial) {
     cache: new ByteLruCache(ZARR_BYTE_CACHE_BYTES, serial),
   })
 
-  // Try the requested level first, then fall back to the store's configured
-  // levels coarsest-first, using the first whose array metadata resolves. This
-  // keeps a chosen level honored while staying robust to a store fetched at
-  // only its coarsest level (e.g. `fetch-omezarr.ts --levels`).
-  const order = [
-    ...(Number.isInteger(requestedLevel) ? [requestedLevel] : []),
-    ...storeDef.levels.filter((lvl) => lvl !== requestedLevel),
-  ]
-  let level = -1
-  let dataset = null
-  let array = null
-  for (const candidate of order) {
+  // Open a single pyramid level as a zarr v3 array (v2 probing 404s noisily on a
+  // static v3 store). Returns null if the level isn't present on disk.
+  const openLevel = async (candidate) => {
     const ds = multiscale?.datasets?.[candidate]
-    if (!ds) continue
+    if (!ds) return null
     try {
-      // Open as zarr v3 explicitly: zarr.open() probes v2 metadata (.zarray /
-      // .zattrs) first, which 404s noisily against a static OME-Zarr v3 store.
-      array = await zarr.open.v3(zarr.root(store).resolve(`/${ds.path}`), {
+      const arr = await zarr.open.v3(zarr.root(store).resolve(`/${ds.path}`), {
         kind: 'array',
       })
-      level = candidate
-      dataset = ds
-      break
+      const [sz, sy, sx] = trailingSpatial(arr.shape, 'shape')
+      return {
+        level: candidate,
+        dataset: ds,
+        array: arr,
+        shape: [sx, sy, sz],
+        spacing: scaleFromDataset(ds),
+      }
     } catch {
-      // Level not present on disk -- try the next one.
+      return null // level not present on disk
     }
   }
-  if (!dataset || !array) {
+
+  // Open EVERY present level (the octree fetches each brick from its own level).
+  // `opened` is sorted finest-first so opened[0] is the common reference grid.
+  const opened = []
+  for (const candidate of [...storeDef.levels].sort((a, b) => a - b)) {
+    const lvl = await openLevel(candidate)
+    if (lvl) opened.push(lvl)
+  }
+  if (opened.length === 0) {
     throw new Error(
       `No OME-Zarr level found for ${storeDef.id}. ` +
         `Did you run scripts/fetch-omezarr.ts --name=${els.source.value}?`,
     )
   }
+  opened.sort((a, b) => a.level - b.level) // finest-first
+  // Primary geometry = the finest present level (the common grid).
+  const primary = opened[0]
+  const { level, dataset, array, shape, spacing } = primary
 
   const dtype = assertSupportedDtype(array.dtype)
   const dtypeInfo = niftiDatatype(dtype)
-  const [shapeZ, shapeY, shapeX] = trailingSpatial(array.shape, 'shape')
   const [chunkZ, chunkY, chunkX] = trailingSpatial(array.chunks, 'chunks')
-  const shape = [shapeX, shapeY, shapeZ]
   const chunkShape = [chunkX, chunkY, chunkZ]
   const chunkGrid = [
     Math.ceil(shape[0] / chunkShape[0]),
@@ -761,10 +646,10 @@ async function loadOmezarrSource(storeDef, requestedLevel, serial) {
 
   return {
     kind: 'omezarr',
-    id: `${storeDef.id}:level-${level}`,
-    name: `${storeDef.name} L${level}`,
+    id: `${storeDef.id}:multilod`,
+    name: `${storeDef.name} multi-LOD`,
     shape,
-    spacing: scaleFromDataset(dataset),
+    spacing,
     dtype,
     datatypeCode: dtypeInfo.code,
     numBitsPerVoxel: dtypeInfo.bits,
@@ -773,8 +658,11 @@ async function loadOmezarrSource(storeDef, requestedLevel, serial) {
     chunkShape,
     chunkCount: chunkGrid[0] * chunkGrid[1] * chunkGrid[2],
     sourceUrl: `${storeDef.id}/${dataset.path}`,
-    transportLabel: 'OME-Zarr chunk objects',
+    transportLabel: 'OME-Zarr multi-LOD octree',
     array,
+    // All present levels, finest-first: {level, array, shape, spacing, dataset}.
+    // The multi-LOD chunk source dispatches each brick to levels[sourceLevel].
+    levels: opened,
     level,
     levelPath: dataset.path,
     // Kept so a coarse whole-volume "floor" can be built from the coarsest
@@ -793,31 +681,34 @@ async function loadOmezarrSource(storeDef, requestedLevel, serial) {
 // immediately instead of rendering blank. Returns null if no coarser level than
 // the active one is available, or on any error (the floor is best-effort).
 async function buildCoarseFloorVolume(source) {
+  // Reuse the coarsest PRESENT level already opened by loadOmezarrSource
+  // (source.levels is finest-first, each carrying a resolved array + spacing),
+  // rather than re-opening from storeDef.levels. That both drops a redundant
+  // metadata fetch per reload AND avoids naming a configured-but-absent level (a
+  // partial fetch-omezarr.ts run): Math.max(...storeDef.levels) could point at a
+  // level that was never downloaded, whose open throws, gets swallowed here, and
+  // silently leaves the far-field blank even though a coarser PRESENT level
+  // exists. levels[last].level is the largest (coarsest) present index.
+  const coarse = source.levels[source.levels.length - 1]
+  if (!coarse || coarse.level <= source.level) return null // no coarser present level
   try {
-    const coarsest = Math.max(...source.storeDef.levels)
-    if (coarsest <= source.level) return null // active level is already coarsest
-    const ds = source.multiscale?.datasets?.[coarsest]
-    if (!ds) return null
-    const arr = await zarr.open.v3(
-      zarr.root(source.store).resolve(`/${ds.path}`),
-      { kind: 'array' },
-    )
-    const view = await zarr.get(arr, null) // whole (small) coarse level
+    const view = await zarr.get(coarse.array, null) // whole (small) coarse level
     const img = bytesFromZarrView(view)
-    const [sz, sy, sx] = trailingSpatial(arr.shape, 'coarse shape')
     const win = parseWindow(source.defaultWindow)
-    return buildLogicalVolume({
+    const floor = createStreamingNVImage({
       id: `${source.id}:floor`,
       url: `client-chunk://${source.id}/floor`,
-      shape: [sx, sy, sz],
-      spacing: scaleFromDataset(ds),
+      shape: coarse.shape,
+      spacing: coarse.spacing,
       datatypeCode: source.datatypeCode,
-      numBitsPerVoxel: source.numBitsPerVoxel,
       calMin: win.min,
       calMax: win.max,
       colormap: els.colormap.value,
-      img,
     })
+    // Unlike a streamed volume, the floor renders from CPU data: attach the
+    // decoded voxels to the img:null streaming skeleton (no chunkSource).
+    floor.img = img
+    return floor
   } catch (err) {
     console.warn('coarse floor unavailable:', err)
     return null
@@ -830,22 +721,76 @@ async function loadActiveSource() {
   const serial = ++sourceSerial
   const store = currentStore()
   const source = store
-    ? await loadOmezarrSource(store, selectedLevel(), serial)
+    ? await loadOmezarrSource(store, serial)
     : await loadSyntheticSource()
   source.serial = serial
   return source
 }
 
-function createChunkPlan(source) {
-  if (source.kind === 'omezarr' && source.chunkCount > MAX_CHUNKS_PER_TILE) {
-    const grid = estimateStreamingGrid(source.shape)
-    return chunkVolumeGrid(
-      source.shape,
-      grid,
-      STREAMING_CHUNK_EDGE,
-      STREAMING_CHUNK_HALO,
-    )
+// A ChunkedVolumeSource adapter over an opened OME-Zarr pyramid. Exposes the
+// finest-first levels and reads a voxel region of one level with zarrita; the
+// core `nv.loadChunkedVolume` owns plan-building, per-level dispatch,
+// concurrency, retry, dedup, and residency. This adapter only fetches bytes
+// (plus demo telemetry so the HUD counts requested/completed/decoded).
+function createZarrChunkedSource(source) {
+  return {
+    datatypeCode: source.datatypeCode,
+    levels: source.levels.map((l) => ({
+      level: l.level,
+      shape: l.shape,
+      spacing: l.spacing,
+    })),
+    async fetchChunk({ levelIndex, texOrigin, texDims, bytesPerVoxel }) {
+      const key = `${levelIndex}|${texOrigin.join(',')}|${texDims.join(',')}`
+      // Record every live-serial fetch. The strip keys cells by brickKey and lights a
+      // cell when its brick is in `completed`; the set is NOT pruned on a plan swap, so
+      // a brick the core keeps resident across a crosshair refocus (reused without a
+      // re-fetch) stays lit. The numeric requested/completed HUD counts come from
+      // nv.chunkStreamStats() (authoritative residency), not the set size, so an
+      // out-of-plan key here can never inflate a displayed count.
+      if (isLiveSerial(source.serial)) stats.requested.add(key)
+      try {
+        const bytes = await readOmezarrRegion(
+          source.levels[levelIndex],
+          texOrigin,
+          texDims,
+          bytesPerVoxel,
+        )
+        if (isLiveSerial(source.serial)) {
+          stats.decodedBytes += bytes.byteLength
+          stats.completed.add(key)
+        }
+        return bytes
+      } catch (err) {
+        // Surface the failure in the HUD/console (the signal we used to spot the
+        // L0 request flood) before rethrowing. Retry now lives in core, so this
+        // counts failed ATTEMPTS: a transient blip the core loader later retries
+        // successfully still ticks the counter — a growing number means trouble.
+        if (isLiveSerial(source.serial)) {
+          stats.failures++
+          recordRequest(source.serial, `ERR ${key}`)
+        }
+        console.error(
+          `OME-Zarr region ${key} failed:`,
+          err instanceof Error ? err.message : err,
+        )
+        throw err
+      }
+    },
   }
+}
+
+// The finest-first level index of the Level dropdown's picked pyramid level,
+// used as the multi-LOD max-detail cap (minLevel). 0 = finest allowed.
+function selectedLevelIndex(source) {
+  const picked = selectedLevel()
+  const idx = source.levels.findIndex((l) => l.level === picked)
+  return idx < 0 ? 0 : idx
+}
+
+// Single-level chunk plan for the SYNTHETIC single-shard source (OME-Zarr goes
+// through the core nv.loadChunkedVolume path). Its native grid fits one tile.
+function createChunkPlan(source) {
   const plan = chunkVolumeGrid(
     source.shape,
     source.chunkGrid,
@@ -858,23 +803,6 @@ function createChunkPlan(source) {
     )
   }
   return plan
-}
-
-function estimateStreamingGrid(shape) {
-  return [
-    Math.ceil(
-      shape[0] /
-        Math.max(1, STREAMING_CHUNK_EDGE - 2 * STREAMING_CHUNK_HALO[0]),
-    ),
-    Math.ceil(
-      shape[1] /
-        Math.max(1, STREAMING_CHUNK_EDGE - 2 * STREAMING_CHUNK_HALO[1]),
-    ),
-    Math.ceil(
-      shape[2] /
-        Math.max(1, STREAMING_CHUNK_EDGE - 2 * STREAMING_CHUNK_HALO[2]),
-    ),
-  ]
 }
 
 function createRangeChunkSource(source) {
@@ -906,7 +834,6 @@ function createRangeChunkSource(source) {
       if (isLiveSerial(source.serial)) {
         stats.completed.add(request.chunkIndex)
         stats.decodedBytes += bytes.byteLength
-        renderHud()
       }
       return bytes
     })
@@ -921,107 +848,22 @@ function createRangeChunkSource(source) {
         cache.delete(request.chunkIndex)
       }
     })
-    renderHud()
+    // Stats bookkeeping only: the throttled HUD poll (~8 Hz) refreshes the panel,
+    // matching the zarr path (createTrackedZarrFetch). A synchronous renderHud()
+    // per request/settle would re-introduce the per-fetch DOM reflow jank.
     return next
   }
 }
 
-// Max niivue chunks fetched from an OME-Zarr store at once. A single niivue
-// tile bbox can span dozens-to-hundreds of native zarr chunks (each its own
-// HTTP request — pig_heart scale0 has 4-deep Z chunks), and niivue streams
-// several tiles concurrently. Without a gate the browser fires thousands of
-// simultaneous fetches and the connection pool throws "Failed to fetch". This
-// bounds the in-flight niivue-chunk fetches; zarrita still parallelizes the
-// native-chunk requests within each one.
-const OMEZARR_MAX_CONCURRENT_CHUNKS = 6
-
-// Retry a transient network failure ("Failed to fetch" — a refused/dropped
-// connection under load, not a 404, which zarrita handles as fill value 0).
-async function withRetry(fn, attempts = 3) {
-  let lastErr
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn()
-    } catch (err) {
-      lastErr = err
-      const transient =
-        err instanceof TypeError ||
-        (err instanceof Error && /failed to fetch/i.test(err.message))
-      if (!transient || i === attempts - 1) throw err
-      await new Promise((r) => setTimeout(r, 80 * 2 ** i))
-    }
-  }
-  throw lastErr
-}
-
-function createOmezarrChunkSource(source) {
-  const cache = new Map()
-  let inFlight = 0
-  const waiters = []
-  const acquire = () => {
-    if (inFlight < OMEZARR_MAX_CONCURRENT_CHUNKS) {
-      inFlight++
-      return Promise.resolve()
-    }
-    return new Promise((resolve) => waiters.push(resolve)).then(() => {
-      inFlight++
-    })
-  }
-  const release = () => {
-    inFlight--
-    waiters.shift()?.()
-  }
-
-  return (request) => {
-    const cached = cache.get(request.chunkIndex)
-    if (cached) return cached
-
-    if (isLiveSerial(source.serial)) stats.requested.add(request.chunkIndex)
-    const next = acquire()
-      .then(() => withRetry(() => fetchOmezarrChunk(source, request)))
-      .then((bytes) => {
-        release()
-        if (isLiveSerial(source.serial)) {
-          stats.completed.add(request.chunkIndex)
-          stats.decodedBytes += bytes.byteLength
-          renderHud()
-        }
-        return bytes
-      })
-      .catch((err) => {
-        release()
-        if (isLiveSerial(source.serial)) stats.failures++
-        // Surface the real reason instead of only bumping a counter, so a
-        // streaming failure is diagnosable (e.g. a bad range, decode, or shape
-        // mismatch) rather than a silent red number in the HUD.
-        console.error(
-          `chunk ${request.chunkIndex} failed:`,
-          err instanceof Error ? err.message : err,
-        )
-        recordRequest(source.serial, `ERR ${request.chunkIndex}`)
-        renderHud()
-        throw err
-      })
-    // Only dedup concurrent in-flight requests; drop the entry once settled so
-    // resolved chunk buffers are not retained. niivue manages residency and
-    // re-requests an evicted chunk through this source when it is visible again,
-    // so caching every resolved buffer here would leak the whole volume (OOM on
-    // large levels like pig_heart L0).
-    cache.set(request.chunkIndex, next)
-    next.finally(() => {
-      if (cache.get(request.chunkIndex) === next) {
-        cache.delete(request.chunkIndex)
-      }
-    })
-    renderHud()
-    return next
-  }
-}
-
-async function fetchOmezarrChunk(source, request) {
-  const [x0, y0, z0] = request.desc.texOrigin
-  const [sx, sy, sz] = request.desc.texDims
-  const [shapeX, shapeY, shapeZ] = source.shape
+// Read one region of one pyramid level with zarrita, clamped + zero-padded to
+// exactly texDims (the ChunkedVolumeSource.fetchChunk contract). texOrigin/
+// texDims are in that level's own voxel grid. The core NVChunkedVolume wraps
+// this with concurrency/retry/dedup, so this is a plain read.
+async function readOmezarrRegion(level, texOrigin, texDims, bpv) {
+  const [x0, y0, z0] = texOrigin
+  const [sx, sy, sz] = texDims
+  const array = level.array
+  const [shapeX, shapeY, shapeZ] = level.shape
   // A streaming tile near a volume edge can extend past the array bounds; clamp
   // the read to the real extent, then zero-pad back up to the requested texDims
   // so the texture upload still gets a full [sx,sy,sz] brick (out-of-bounds =
@@ -1035,21 +877,20 @@ async function fetchOmezarrChunk(source, request) {
   const rx = ex - x0
 
   const selection = []
-  for (let i = 0; i < source.array.shape.length - 3; i++) selection.push(0)
+  for (let i = 0; i < array.shape.length - 3; i++) selection.push(0)
   selection.push(zarr.slice(z0, ez))
   selection.push(zarr.slice(y0, ey))
   selection.push(zarr.slice(x0, ex))
 
-  const view = await zarr.get(source.array, selection)
+  const view = await zarr.get(array, selection)
   const region = bytesFromZarrView(view)
-  const bpv = request.bytesPerVoxel
   const expectedBytes = sx * sy * sz * bpv
 
   // Fast path: the read already covers the full requested brick.
   if (rz === sz && ry === sy && rx === sx) {
     if (region.byteLength !== expectedBytes) {
       throw new Error(
-        `OME-Zarr chunk ${request.chunkIndex} returned ${region.byteLength}B, expected ${expectedBytes}B`,
+        `OME-Zarr region ${texOrigin.join(',')} returned ${region.byteLength}B, expected ${expectedBytes}B`,
       )
     }
     return region
@@ -1089,13 +930,15 @@ function explodeScale() {
   return Math.max(1, Number(els.explode.value) || 1)
 }
 
+// Build the streamed NVImage for the SYNTHETIC single-shard source (OME-Zarr
+// goes through the core nv.loadChunkedVolume path instead).
 function createStreamingVolume(source) {
   const win = parseWindow(source.defaultWindow)
-  const chunkSource =
-    source.kind === 'synthetic'
-      ? createRangeChunkSource(source)
-      : createOmezarrChunkSource(source)
-  const vol = buildLogicalVolume({
+  // Same skeleton the core nv.loadChunkedVolume path builds (createStreamingNVImage
+  // + chunkPlan + chunkSource); the synthetic path only differs in its single-level
+  // grid plan and Range-based chunkSource. numBitsPerVoxel is derived from
+  // datatypeCode by the core helper.
+  const vol = createStreamingNVImage({
     id: source.name,
     url:
       `client-chunk://${source.id}` +
@@ -1106,12 +949,11 @@ function createStreamingVolume(source) {
     shape: source.shape,
     spacing: source.spacing,
     datatypeCode: source.datatypeCode,
-    numBitsPerVoxel: source.numBitsPerVoxel,
     calMin: win.min,
     calMax: win.max,
     colormap: els.colormap.value,
-    chunkSource,
   })
+  vol.chunkSource = createRangeChunkSource(source)
   vol.chunkPlan = chunkPlan ?? undefined
   // Start un-exploded; syncExplode applies the slider's explode once the stream
   // settles (exploding mid-stream janks the main thread).
@@ -1132,8 +974,9 @@ const BLOCK_LEVEL_COLORS = [
   [0.35, 0.7, 1, 1],
 ]
 
-// mm extents of the active volume. Matches buildLogicalVolume: voxel centres sit
-// at (i + 0.5) * spacing, so the box spans [-0.5, dim - 0.5] * spacing per axis.
+// mm extents of the active volume. Matches the createStreamingNVImage grid: voxel
+// centres sit at (i + 0.5) * spacing, so the box spans [-0.5, dim - 0.5] * spacing
+// per axis.
 function volumeExtents(source) {
   const [sx, sy, sz] = source.spacing
   const [nx, ny, nz] = source.shape
@@ -1214,22 +1057,76 @@ function computeBlockBoxes(source, plan, zoom, explode) {
   return boxes
 }
 
+// One octree-nudge path per zoom SOURCE. applyZoom (slider) sets pan2Dxyzmm /
+// scaleMultiplier, whose controller setters synchronously emit 'change'; this flag
+// tells the 'change' listener that the nudge was already issued here so a slider
+// drag does not ALSO refocus through the change path. Set only around applyZoom's
+// synchronous setter writes.
+let zoomNudgeInApplyZoom = false
+
 // Push the current zoom to the 2D pan/zoom and the 3D render scale, mark the
 // focus ROI in 3D, then refresh the (optionally restricted) block outlines.
 function applyZoom() {
   if (!nv) return
   const zoom = Number(els.zoom.value) || 1
   els.zoomVal.textContent = `${zoom.toFixed(1)}x`
-  nv.pan2Dxyzmm = [0, 0, 0, zoom] // 2D multiplanar: zoom about the centre
-  // Zoom the 3D render camera ONLY in multiplanar, where the render quadrant
-  // mirrors what the zoomed 2D slices show (WYSIWYG) — that focus frustum-culls
-  // chunk requests to the visible region. In the dedicated render view, keep the
-  // camera framing the whole volume (scale 1) so every block stays in-frustum and
-  // streams in; otherwise switching to render after a multiplanar zoom leaves the
-  // out-of-focus blocks unrequested (only the central slab loads).
-  const inRenderView = Number(els.layout.value) === SLICE_TYPE.RENDER
-  nv.scaleMultiplier = inRenderView ? 1 : zoom
+  // Zoom the 3D render camera only where it is safe. The multi-LOD OME-Zarr plan
+  // (activeCv set) is focus-bounded, so magnifying the render keeps the finest
+  // bricks around the crosshair in view. The SYNTHETIC source (activeCv null)
+  // streams via the legacy frustum-culled single-level grid: magnifying the
+  // render camera pushes bricks out of the frustum so they are never requested
+  // and the volume renders mostly blank. Force scale 1 in the render view for
+  // that path; other layouts keep the zoom for both paths.
+  const inRender = Number(els.layout.value) === SLICE_TYPE.RENDER
+  // These setters emit 'change'; suppress the listener's refocus so the slider
+  // nudge routes only through this function's activeCv.refocus() below. The
+  // finally guarantees the flag clears even if a setter's draw throws, else the
+  // programmatic-zoom refocus path would be silently stuck off.
+  zoomNudgeInApplyZoom = true
+  try {
+    nv.pan2Dxyzmm = [0, 0, 0, zoom] // 2D multiplanar: zoom about the centre
+    nv.scaleMultiplier = inRender && !activeCv ? 1 : zoom
+  } finally {
+    zoomNudgeInApplyZoom = false
+  }
   applyBlocks()
+  // Zoom/layout changes the focus radius (radius:'auto' reads nv zoom + sliceType),
+  // so nudge the core handle to re-plan and swap.
+  activeCv?.refocus()
+}
+
+// Purely UI: reflect zoom changes from ANY source (slider drag, mouse wheel,
+// programmatic nv.scaleMultiplier / nv.pan2Dxyzmm) back into the slider + label
+// WITHOUT re-driving applyZoom (which would feed back) and WITHOUT nudging the
+// octree (each zoom source owns exactly one refocus path; see applyZoom, the
+// 'change' listener, and the canvas wheel listener in main). Reads the value
+// applyZoom pushes for the active layout: scaleMultiplier in the render view,
+// pan2Dxyzmm[3] in multiplanar -- EXCEPT the force-pinned synthetic render path.
+function syncZoomControl() {
+  if (!nv) return
+  const inRender = Number(els.layout.value) === SLICE_TYPE.RENDER
+  // applyZoom force-pins scaleMultiplier to 1 in the render view for the SYNTHETIC
+  // path (activeCv null); reading it there would keep snapping the slider back to
+  // 1.0x and fight the user's drag. pan2Dxyzmm[3] carries the real dragged zoom on
+  // that path (applyZoom still writes it), so read that instead. Only the multi-LOD
+  // OME-Zarr render (activeCv set) actually zooms the render camera, so
+  // scaleMultiplier is authoritative there; multiplanar always reads pan2Dxyzmm[3].
+  // Do NOT collapse this to always read scaleMultiplier: on the synthetic render path
+  // scaleMultiplier is pinned to 1, and reading it reintroduces the snap-to-1.0x bug.
+  const zoom = inRender && activeCv ? nv.scaleMultiplier : nv.pan2Dxyzmm[3] || 1
+  // Live zoom (wheel/programmatic) can reach beyond the slider's [min,max]; clamp
+  // to the slider range (read from the element) before comparing/assigning, else
+  // an out-of-range value never equals els.zoom.value and the label keeps churning.
+  const sliderMin = Number(els.zoom.min)
+  const sliderMax = Number(els.zoom.max)
+  const rounded = Math.min(
+    sliderMax,
+    Math.max(sliderMin, Math.round(zoom * 10) / 10),
+  )
+  if (Number(els.zoom.value) === rounded) return
+  // Assigning input.value does NOT fire 'input'/'change', so no applyZoom loop.
+  els.zoom.value = String(rounded)
+  els.zoomVal.textContent = `${rounded.toFixed(1)}x`
 }
 
 // Show or hide every block visualization together, gated on the "blocks" toggle:
@@ -1290,26 +1187,68 @@ function applyExplode() {
 // formerly every render frame) forced a DOM reflow that janked rotation; instead
 // build once when the chunk layout changes, then just toggle the 'hit' class.
 let stripSpans = []
+let stripCellKeys = []
 let stripKey = ''
+
+// The key a viewer BRICK records into `stats.completed` (and its strip cell is
+// keyed by). The synthetic legacy path records integer chunk indices (positional);
+// the OME-Zarr multi-LOD path records `level|texOrigin|texDims` content keys,
+// matching the core chunk loader. Shared by the strip cells and the plan-swap
+// telemetry intersection so the two never diverge.
+function brickKey(source, chunk, index) {
+  if (source.kind === 'omezarr') {
+    return `${chunk.sourceLevel ?? 0}|${chunk.texOrigin.join(',')}|${chunk.texDims.join(',')}`
+  }
+  return index
+}
+
+// One strip cell per viewer brick, keyed by brickKey so a cell lights when its
+// brick completes. Hard-capped at 4096: for a thin-Z finest OME-Zarr level the
+// native chunk count can be 100k+, and spreading that many <span>s into
+// replaceChildren blows the call stack.
+function chunkStripKeys(source, plan) {
+  const chunks = plan?.chunks ?? []
+  const capped = chunks.slice(0, 4096)
+  return capped.map((c, i) => brickKey(source, c, i))
+}
+
+// Reference of the plan/source the strip cells were last built for. The plan
+// reference is stable between crosshair-driven swaps (the core hands back a NEW
+// plan object on a swap), so it is a cheap change signal: rebuild the key array and
+// re-diff the cell set only when it changes, not on every 120 ms poll.
+let lastStripPlan = null
+let lastStripSource = null
 
 function renderChunkStrip() {
   const source = activeSource
   if (!source) return
   const plan = chunkPlan
-  const gridDims = plan?.gridDims ?? source.chunkGrid
-  const chunkCount = plan?.chunks.length ?? source.chunkCount
-  const columns = Math.min(16, Math.max(4, gridDims[0] * gridDims[1]))
-  const key = `${chunkCount}:${columns}`
-  if (key !== stripKey) {
-    els.chunkStrip.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`
-    stripSpans = Array.from({ length: chunkCount }, () =>
-      document.createElement('span'),
-    )
-    els.chunkStrip.replaceChildren(...stripSpans)
-    stripKey = key
+  if (plan !== lastStripPlan || source !== lastStripSource) {
+    lastStripPlan = plan
+    lastStripSource = source
+    const gridDims = plan?.gridDims ?? source.chunkGrid
+    const cellKeys = chunkStripKeys(source, plan)
+    const columns = Math.min(16, Math.max(4, gridDims[0] * gridDims[1]))
+    // Rebuild the DOM only when the cell set changes. For OME-Zarr the plan swaps
+    // as the crosshair moves, so the brick keys (not just the count) can change;
+    // compare the key list, not just its length, so the strip tracks the live plan.
+    const key = `${cellKeys.length}:${columns}`
+    const changed =
+      key !== stripKey || cellKeys.some((k, i) => k !== stripCellKeys[i])
+    if (changed) {
+      els.chunkStrip.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`
+      stripSpans = Array.from({ length: cellKeys.length }, () =>
+        document.createElement('span'),
+      )
+      els.chunkStrip.replaceChildren(...stripSpans)
+      stripCellKeys = cellKeys
+      stripKey = key
+    }
   }
+  // Runs every poll regardless of the memoized rebuild: bricks complete over time,
+  // so the per-cell hit class must keep tracking the growing `stats.completed`.
   for (let i = 0; i < stripSpans.length; i++) {
-    const hit = stats.completed.has(i)
+    const hit = stats.completed.has(stripCellKeys[i])
     const cls = hit ? 'hit' : ''
     if (stripSpans[i].className !== cls) stripSpans[i].className = cls
   }
@@ -1337,12 +1276,29 @@ function renderHud() {
   const plan = chunkPlan
   const gridDims = plan?.gridDims ?? source.chunkGrid
   const planChunkShape = plan ? chunkShapeFromPlan(plan) : source.chunkShape
-  const chunkCount = plan?.chunks.length ?? source.chunkCount
+  // Viewer BRICK count (not the OME-Zarr native chunk count); 0 until the plan
+  // is built. Synthetic always has a plan, so the fallback only affects the
+  // brief OME-Zarr load window.
+  const chunkCount = plan?.chunks.length ?? source.chunkCount ?? 0
   const nativeRow =
     source.kind === 'omezarr'
       ? `<div class="row"><span class="key">zarr chunks</span><span>${source.chunkGrid.join(' x ')} @ ${source.chunkShape.join(' x ')}</span></div>`
       : ''
   const stream = nv?.chunkStreamStats()
+  // Authoritative brick counts from the renderer's residency. The core keeps some
+  // bricks resident across a plan swap without re-fetching them, which the demo's
+  // own fetch tally cannot observe, so drive the numeric counts from chunkStreamStats.
+  // `completed` = bricks resident; `requested` = resident + in-flight + queued (all
+  // disjoint subsets of the plan, so completed <= requested <= total always holds and
+  // neither can exceed the plan or invert). chunkStreamStats reads null before a view
+  // attaches and all-zero for the sub-frame before the first streamed frame registers
+  // the chunk manager, so the denominator falls back to the plan count until total is
+  // populated (avoids a transient '0 / 0').
+  const streamTotal = stream && stream.total > 0 ? stream.total : chunkCount
+  const completedCount = stream ? stream.resident : stats.completed.size
+  const requestedCount = stream
+    ? stream.resident + stream.inFlight + stream.pending
+    : stats.requested.size
   const failures =
     stats.failures > 0
       ? `<span class="bad">${stats.failures}</span>`
@@ -1356,8 +1312,8 @@ function renderHud() {
     ${nativeRow}
     <div class="row"><span class="key">transport</span><span>${html(source.transportLabel)}</span></div>
     <div class="row"><span class="key">HTTP</span><span>${httpSummary()}</span></div>
-    <div class="row"><span class="key">requested</span><span>${stats.requested.size} / ${chunkCount}</span></div>
-    <div class="row"><span class="key">completed</span><span>${stats.completed.size} / ${chunkCount}</span></div>
+    <div class="row"><span class="key">requested</span><span>${requestedCount} / ${streamTotal}</span></div>
+    <div class="row"><span class="key">completed</span><span>${completedCount} / ${streamTotal}</span></div>
     <div class="row"><span class="key">wire</span><span>${formatBytes(stats.wireBytes)}</span></div>
     <div class="row"><span class="key">decoded</span><span>${formatBytes(stats.decodedBytes)}</span></div>
     <div class="row"><span class="key">cache</span><span>${stats.cacheHits} hits, ${formatBytes(stats.cacheBytes)}</span></div>
@@ -1386,6 +1342,23 @@ function startHudPolling() {
   // a reflow that competed with the WebGL render and janked rotation. syncExplode
   // still engages a deferred explode within ~120 ms of the stream settling.
   pollHandle = setInterval(() => {
+    // The core NVChunkedVolume swaps the plan as the crosshair moves; mirror the
+    // current plan so the HUD/block outlines and chunk strip track it. The stats
+    // sets are NOT pruned on a swap: swapVolumeChunkPlan reuses resident GPU
+    // textures for carried-over bricks without re-invoking fetchChunk, so pruning
+    // would drop a still-resident brick that never re-records, leaving its strip
+    // cell dark. Accumulating (reset only on a source switch in runReload) keeps
+    // resident bricks lit; the numeric counts come from chunkStreamStats, so stale
+    // out-of-plan keys never inflate a displayed count.
+    if (activeCv) {
+      const p = activeCv.currentPlan
+      if (p !== chunkPlan) chunkPlan = p
+    }
+    // Reconcile the slider/label with the live zoom from any source (wheel moves
+    // it with no 'change' event). syncZoomControl is UI-only and never nudges the
+    // octree, so the poll cannot perpetually re-fire refocus; the wheel's own
+    // replan is issued by the canvas wheel listener in main.
+    syncZoomControl()
     renderHud()
     syncExplode()
   }, 120)
@@ -1401,14 +1374,52 @@ function applyLayout() {
   renderHud()
 }
 
-async function reloadVolume(options = {}) {
-  if (!nv) return
-  // Capture a load token BEFORE any await. Every UI control fires reloadVolume
-  // unawaited, so rapid source/level/window/colormap/explode changes run
-  // concurrently; a stale load must bail after each await instead of stomping
-  // the newer scene (otherwise activeSource/chunkPlan and the displayed volume
-  // can end up describing whichever load happens to finish last).
+// Reloads are SERIALIZED through this single promise chain: each reload awaits
+// the previous one so their async scene mutations (add/remove the streamed
+// volume) never interleave. `nv.loadChunkedVolume` is ADDITIVE (it adds the
+// streamed NVImage rather than replacing the scene), so the demo owns removing
+// the volume it displaced — see runReload.
+let reloadChain = Promise.resolve()
+
+function reloadVolume(options = {}) {
+  if (!nv) return reloadChain
+  // Bump the token BEFORE queueing so an already-queued (not-yet-run) reload
+  // sees itself superseded and bails without mutating the scene. Every UI control
+  // fires reloadVolume unawaited; without both the chain AND the token, rapid
+  // source/level/window/colormap switching could leave the OLD source displayed
+  // with its handle disposed, or accumulate stale streamed volumes.
   const token = ++reloadToken
+  // A .catch keeps a single reload's failure from poisoning the chain for the
+  // reloads queued behind it (runReload already surfaces its own errors).
+  reloadChain = reloadChain
+    .then(() => runReload(token, options))
+    .catch((err) => console.error('reload failed:', err))
+  return reloadChain
+}
+
+// Remove specific streamed NVImages from the scene. loadChunkedVolume is additive
+// and there is no public single-volume controller removal, so drop them through
+// the model + one GL refresh. Walk high-to-low so earlier removals don't shift
+// the indices still pending.
+async function removeSceneVolumes(targets) {
+  if (!nv || targets.length === 0) return
+  const drop = new Set(targets)
+  const vols = nv.volumes
+  let removed = false
+  for (let i = vols.length - 1; i >= 0; i--) {
+    if (drop.has(vols[i])) {
+      nv.model.removeVolume(i)
+      removed = true
+    }
+  }
+  if (removed) await nv.updateGLVolume()
+}
+
+async function runReload(token, options) {
+  if (!nv) return
+  // Superseded while queued in the chain: a newer reload owns the scene, so do
+  // nothing (do not touch activeSource/activeCv/the volume list).
+  if (token !== reloadToken) return
   hideFallback()
   stats = freshStats()
   // The fresh volume starts un-exploded; syncExplode re-applies the slider's
@@ -1416,35 +1427,89 @@ async function reloadVolume(options = {}) {
   appliedExplodeScale = 1
   try {
     if (options.reloadSource || !activeSource) {
+      activeCv?.dispose()
+      activeCv = null
       activeSource = null
       chunkPlan = null
       const source = await loadActiveSource()
       if (token !== reloadToken) return
       activeSource = source
-      chunkPlan = createChunkPlan(source)
-      // Reflect the level that actually loaded (may differ if the requested
-      // one wasn't present and the loader fell back).
-      if (source.kind === 'omezarr' && typeof source.level === 'number') {
-        const value = String(source.level)
-        if ([...els.level.options].some((o) => o.value === value)) {
-          els.level.value = value
-        }
-      }
     }
     if (!activeSource) {
       throw new Error('No active source selected')
     }
-    await nv.loadVolumes([createStreamingVolume(activeSource)])
-    if (token !== reloadToken) return
+
+    if (activeSource.kind === 'omezarr') {
+      // OME-Zarr: hand the pyramid to the core crosshair-focused multi-LOD API.
+      // It builds the streamed NVImage, the octree plan, the concurrency-bounded
+      // per-level fetch dispatch, and follows the crosshair — all in core.
+      const win = parseWindow(activeSource.defaultWindow)
+      // Stop crosshair-follow on the outgoing handle; its NVImage stays in the
+      // scene (captured as `stale`) until the new one is resident, so the render
+      // never blanks between reloads.
+      activeCv?.dispose()
+      activeCv = null
+      const stale = nv.volumes.slice()
+      // The Level cap used for THIS load; re-read after the load to catch a
+      // dropdown change made while the load was in flight (see below).
+      const loadLevel = selectedLevelIndex(activeSource)
+      const cv = await nv.loadChunkedVolume(
+        createZarrChunkedSource(activeSource),
+        {
+          // Unique per load: an additive reload adds the new streamed volume while
+          // the outgoing one is still resident, so a shared id/name would let
+          // swapVolumeChunkPlan route a refocus to the doomed volume. The reload
+          // token is monotonic, so `${name}#${token}` is unique; the human-readable
+          // `name` (what the HUD/labels show) stays activeSource.name.
+          id: `${activeSource.name}#${token}`,
+          name: activeSource.name,
+          calMin: win.min,
+          calMax: win.max,
+          colormap: els.colormap.value,
+          budgetBytes: MULTILOD_BUDGET_BYTES,
+          maxBricks: MULTILOD_MAX_BRICKS,
+          // deviceLimit is omitted: core now defaults it from the host's
+          // maxTextureDimension3D, which this demo sets to 256 (see the NiiVue
+          // construction) -- the same value the explicit option used to pass.
+          halo: STREAMING_CHUNK_HALO,
+          minLevel: loadLevel,
+        },
+      )
+      if (token !== reloadToken) {
+        // Superseded mid-load: tear down the volume WE added so the scene never
+        // accumulates stale streamed volumes. `stale` is left for the newer
+        // reload (next in the chain) to reconcile.
+        cv.dispose()
+        await removeSceneVolumes([cv.volume])
+        return
+      }
+      activeCv = cv
+      // New streamed volume is resident; drop the one(s) it displaced.
+      await removeSceneVolumes(stale)
+      chunkPlan = activeCv.currentPlan
+      // A Level change during the load could not reach the octree (the change
+      // handler no-ops while activeCv is null). Re-read the dropdown and apply
+      // the cap now so the octree can't diverge from what the control shows.
+      const nowLevel = selectedLevelIndex(activeSource)
+      if (nowLevel !== loadLevel) activeCv.setMaxDetail(nowLevel)
+    } else {
+      // Synthetic: single-shard streamed volume on the legacy grid path.
+      // loadVolumes REPLACES the scene, so it also clears any prior streamed
+      // volume (including an outgoing OME-Zarr one); dispose its handle first.
+      activeCv?.dispose()
+      activeCv = null
+      chunkPlan = createChunkPlan(activeSource)
+      await nv.loadVolumes([createStreamingVolume(activeSource)])
+      if (token !== reloadToken) return
+    }
+
     applyLayout()
     // loadVolumes resets the camera/zoom and drops any prior boxes; reapply the
     // current zoom, focus ROI, and block outlines for the freshly loaded plan.
     applyZoom()
-    // Give the 3D render a coarse whole-volume floor so regions whose fine
-    // chunks have not streamed in (or do not fit the residency budget on a huge
-    // level) still show coarse detail instead of rendering blank. Built after
-    // the volume is shown; a superseded reload's late floor cannot stomp a newer
-    // scene. Skippable via ?nofloor for A/B.
+    // Back the octree with a coarse whole-volume floor (on by default) so not-yet-
+    // streamed or under-opaque coarse far-field regions show continuous coarse
+    // detail instead of blank/see-through gaps; ?nofloor disables it for A/B.
     if (activeSource.kind === 'omezarr' && !NO_FLOOR) {
       const floor = await buildCoarseFloorVolume(activeSource)
       if (token !== reloadToken) return
@@ -1479,8 +1544,11 @@ async function main() {
     void reloadVolume({ reloadSource: true })
   })
   els.level.addEventListener('change', () => {
-    // Keep the current window; the intensity range is the same across levels.
-    void reloadVolume({ reloadSource: true })
+    // The Level control is the multi-LOD max-detail cap; the pyramid is already
+    // open, so just move the cap and let core re-plan + swap in place.
+    if (activeCv && activeSource) {
+      activeCv.setMaxDetail(selectedLevelIndex(activeSource))
+    }
   })
   els.layout.addEventListener('change', applyLayout)
   els.colormap.addEventListener('change', () => {
@@ -1498,8 +1566,67 @@ async function main() {
     void reloadVolume({ reloadSource: true })
   })
 
+  // Crosshair-follow (finest bricks track the crosshair) is owned by the core
+  // NVChunkedVolume — no demo-side locationChange wiring needed.
+
+  // PROGRAMMATIC zoom path: nv.scaleMultiplier / nv.pan2Dxyzmm setters emit
+  // 'change'. Sync the slider UI and nudge the octree to re-plan -- unless the
+  // change came from applyZoom (slider drag), which already issued its own single
+  // refocus and sets zoomNudgeInApplyZoom to suppress a duplicate here.
+  nv.addEventListener('change', (e) => {
+    const prop = e.detail?.property
+    if (prop !== 'scaleMultiplier' && prop !== 'pan2Dxyzmm') return
+    syncZoomControl()
+    if (!zoomNudgeInApplyZoom) activeCv?.refocus()
+  })
+
+  // WHEEL zoom path: the wheel handler mutates the zoom on the model directly, so
+  // it emits no 'change' event -- the poll only syncs the slider UI from it. Issue
+  // the octree re-plan here (event-driven, so no perpetual re-fire); core debounces
+  // refocus, and a wheel that only steps the crosshair re-plans an unchanged zoom
+  // (cheap no-op). The poll reconciles the slider/label afterward.
+  els.canvas.addEventListener('wheel', () => activeCv?.refocus(), {
+    passive: true,
+  })
+
   await reloadVolume({ reloadSource: true })
   startHudPolling()
+
+  // Debug hook (?debug): expose live state so the multi-LOD plan can be
+  // inspected without depending on the RAF-gated render (e.g. a per-level brick
+  // tally). Read-only getters over the core NVChunkedVolume handle.
+  if (new URLSearchParams(location.search).has('debug')) {
+    window.__r = {
+      get nv() {
+        return nv
+      },
+      get source() {
+        return activeSource
+      },
+      get cv() {
+        return activeCv
+      },
+      get plan() {
+        return activeCv?.currentPlan ?? chunkPlan
+      },
+      get focus() {
+        return activeCv?.focus ?? null
+      },
+      levelTally() {
+        const t = {}
+        for (const c of (activeCv?.currentPlan ?? chunkPlan)?.chunks ?? []) {
+          const l = c.sourceLevel ?? 0
+          t[l] = (t[l] ?? 0) + 1
+        }
+        return t
+      },
+      // Drive the focus directly (the programmatic crosshairPos setter doesn't
+      // emit locationChange, so this exercises the core setFocus path).
+      driveFocus(frac) {
+        activeCv?.setFocus(frac)
+      },
+    }
+  }
 }
 
 main().catch((err) => {

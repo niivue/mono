@@ -8,6 +8,37 @@ import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 export const extensions = ['mgh', 'mgz']
 export const type = 'nii'
 
+/**
+ * True on little-endian platforms (every browser). MGH/MGZ image data is stored
+ * big-endian, but the typed-array views built downstream (toTypedViewOrU8) read
+ * in platform-native byte order — so on little-endian hosts multi-byte samples
+ * must be swapped to native order first.
+ */
+function isPlatformLittleEndian(): boolean {
+  return new Uint8Array(new Uint32Array([1]).buffer)[0] === 1
+}
+
+/** Reverse the byte order of every `elemSize`-byte sample in place (2 or 4). */
+function swapBytesInPlace(bytes: Uint8Array, elemSize: number): void {
+  const n = bytes.length
+  if (elemSize === 2) {
+    for (let i = 0; i + 1 < n; i += 2) {
+      const t = bytes[i]
+      bytes[i] = bytes[i + 1]
+      bytes[i + 1] = t
+    }
+  } else if (elemSize === 4) {
+    for (let i = 0; i + 3 < n; i += 4) {
+      let t = bytes[i]
+      bytes[i] = bytes[i + 3]
+      bytes[i + 3] = t
+      t = bytes[i + 1]
+      bytes[i + 1] = bytes[i + 2]
+      bytes[i + 2] = t
+    }
+  }
+}
+
 export async function read(
   buffer: ArrayBuffer | Uint8Array,
   filename: string,
@@ -145,6 +176,15 @@ export async function read(
   const expectedBytes = nVoxels * nBytesPerVoxel
   // Return only the raw image data buffer
   const imgRaw = raw.slice(hdr.vox_offset, hdr.vox_offset + expectedBytes)
+  // MGH/MGZ image data is big-endian. Downstream typed-array views read in
+  // platform-native byte order, so on little-endian hosts swap multi-byte
+  // samples (INT16/INT32/FLOAT32) to native order; single-byte UCHAR needs none.
+  // Without this, e.g. an INT32 aseg decodes to garbage (old niivue byte-swapped
+  // in optimizeFreeSurferLabels).
+  if (nBytesPerVoxel > 1 && isPlatformLittleEndian()) {
+    swapBytesInPlace(imgRaw, nBytesPerVoxel)
+  }
+  hdr.littleEndian = isPlatformLittleEndian()
   // label detection based on:
   // https://github.com/pwighton/mgz-optimize/blob/main/mgz_optimize.py
   // option 1: detect label by version number

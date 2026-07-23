@@ -27,6 +27,10 @@ const LABEL_CSS_PX = 22
 export class VolumeRulerOverlay implements UIKitOverlayRenderer {
   private readonly lines = new UIKitLineOverlay()
   private readonly labels: UIKitTextOverlay
+  // Signature of the last-built rulers, so we rebuild the ruler geometry (and
+  // re-lay-out its glyphs) only when the projection or dpr actually changes,
+  // not on every animation frame while a measurement is on screen.
+  private lastSig = ''
 
   constructor(
     font: UIKitFont,
@@ -37,30 +41,39 @@ export class VolumeRulerOverlay implements UIKitOverlayRenderer {
 
   drawOverlay(frame: UIKitOverlayFrame): void {
     const dpr = frame.dpr
-    const geoLines = []
-    const geoText = []
-    // Endpoints from NiiVue are in canvas (device) pixels, the same space the
-    // overlay draws in; size the label/line in CSS px scaled by dpr to match.
-    for (const m of this.getLines()) {
-      const g = buildRuler({
-        a: [m.sx, m.sy],
-        b: [m.ex, m.ey],
-        length: m.distance,
-        units: 'mm',
-        decimals: m.distance > 99 ? 0 : m.distance > 9 ? 1 : 2,
-        sizePx: LABEL_CSS_PX * dpr,
-        thickness: 2 * dpr,
-        tickLength: 6 * dpr,
-        showTicks: true,
-        showTickNumbers: true,
-        lineColor: RULER_COLOR,
-        textColor: RULER_COLOR,
-      })
-      geoLines.push(...g.lines)
-      geoText.push(...g.text)
+    const measurements = this.getLines()
+    // Cheap signature of everything the ruler geometry depends on.
+    let sig = `${dpr}`
+    for (const m of measurements) {
+      sig += `|${m.sx},${m.sy},${m.ex},${m.ey},${m.distance}`
     }
-    this.lines.setLines(geoLines)
-    this.labels.setItems(geoText)
+    if (sig !== this.lastSig) {
+      this.lastSig = sig
+      const geoLines = []
+      const geoText = []
+      // Endpoints from NiiVue are in canvas (device) pixels, the same space the
+      // overlay draws in; size the label/line in CSS px scaled by dpr to match.
+      for (const m of measurements) {
+        const g = buildRuler({
+          a: [m.sx, m.sy],
+          b: [m.ex, m.ey],
+          length: m.distance,
+          units: 'mm',
+          decimals: m.distance > 99 ? 0 : m.distance > 9 ? 1 : 2,
+          sizePx: LABEL_CSS_PX * dpr,
+          thickness: 2 * dpr,
+          tickLength: 6 * dpr,
+          showTicks: true,
+          showTickNumbers: true,
+          lineColor: RULER_COLOR,
+          textColor: RULER_COLOR,
+        })
+        geoLines.push(...g.lines)
+        geoText.push(...g.text)
+      }
+      this.lines.setLines(geoLines)
+      this.labels.setItems(geoText)
+    }
     this.lines.drawOverlay(frame)
     this.labels.drawOverlay(frame)
   }

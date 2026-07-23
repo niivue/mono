@@ -74,6 +74,9 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
   private items: UIKitTextItem[]
   private readonly gl = new GlTextRenderer()
   private readonly wgpu = new WgpuTextRenderer()
+  // Laid-out runs, cached so a static overlay doesn't re-run text layout (9x per
+  // item for the halo outline) every frame. Rebuilt when the items or font change.
+  private runs: TextRun[] | null = null
 
   constructor(font: UIKitFont, items: UIKitTextItem[] = []) {
     this.font = font
@@ -83,20 +86,17 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
   /** Swap the font atlas (metrics + image). Trigger a redraw via the controller. */
   setFont(font: UIKitFont): void {
     this.font = font
+    this.runs = null
   }
 
   /** Replace the text items drawn each frame. Trigger a redraw via the controller. */
   setItems(items: UIKitTextItem[]): void {
     this.items = items
+    this.runs = null
   }
 
-  drawOverlay(frame: UIKitOverlayFrame): void {
-    if (this.items.length === 0) return
-    const { handle, bounds } = frame
+  private layoutRuns(): TextRun[] {
     const metrics = this.font.metrics
-    // Lay out every run first. WebGPU draws them together (one packed vertex
-    // buffer + a per-run uniform slot) so multiple runs in one deferred pass
-    // don't collapse to the last; WebGL2 draws each immediately.
     const runs: TextRun[] = []
     for (const item of this.items) {
       const { vertices, count } = buildTextRun(metrics, item)
@@ -107,6 +107,17 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
         screenPxRange: screenPxRange(metrics, item.sizePx),
       })
     }
+    return runs
+  }
+
+  drawOverlay(frame: UIKitOverlayFrame): void {
+    if (this.items.length === 0) return
+    const { handle, bounds } = frame
+    // Lay out on the first draw after a change; reuse the cache otherwise. The
+    // vertices are in absolute screen pixels (the canvas size is applied via the
+    // shader uniform), so they stay valid across pan/zoom of the same items.
+    this.runs ??= this.layoutRuns()
+    const runs = this.runs
     if (runs.length === 0) return
 
     if (handle.backend === 'webgl2') {

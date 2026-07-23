@@ -30,6 +30,8 @@ export class GlLineRenderer {
   private vao: WebGLVertexArrayObject | null = null
   private buffer: WebGLBuffer | null = null
   private uCanvasSize: WebGLUniformLocation | null = null
+  // Reused instance-data scratch, grown as needed, to avoid a per-frame alloc.
+  private scratch = new Float32Array(0)
 
   private ensure(gl: WebGL2RenderingContext): void {
     if (this.gl === gl && this.program) return
@@ -88,13 +90,18 @@ export class GlLineRenderer {
     if (lines.length === 0) return
     this.ensure(gl)
     if (!this.program || !this.vao || !this.buffer) return
-    const data = new Float32Array(lines.length * FLOATS_PER_LINE)
+    const need = lines.length * FLOATS_PER_LINE
+    if (this.scratch.length < need) {
+      this.scratch = new Float32Array(Math.max(need, this.scratch.length * 2))
+    }
+    const data = this.scratch
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
       if (line) data.set(line.data, i * FLOATS_PER_LINE)
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer)
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW)
+    // Upload only the `need` used floats (scratch may be larger from a prior draw).
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW, 0, need)
     gl.useProgram(this.program)
     if (this.uCanvasSize) gl.uniform2f(this.uCanvasSize, width, height)
     gl.depthMask(false)

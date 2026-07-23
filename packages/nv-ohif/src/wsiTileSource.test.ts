@@ -204,6 +204,17 @@ describe('buildWsiManifest', () => {
     expect(built?.manifest.pixelSpacingMM).toEqual([0.001, 0.002])
   })
 
+  it('derives pixelSpacingMM from PerFrameFunctionalGroupsSequence', () => {
+    const built = buildWsiManifest(
+      oneLevelWith({
+        PerFrameFunctionalGroupsSequence: [
+          { PixelMeasuresSequence: [{ PixelSpacing: [0.002, 0.001] }] },
+        ],
+      }),
+    )
+    expect(built?.manifest.pixelSpacingMM).toEqual([0.001, 0.002])
+  })
+
   it('falls back to ImagedVolumeWidth/Height over the pixel matrix', () => {
     const built = buildWsiManifest(
       oneLevelWith({ ImagedVolumeWidth: 4, ImagedVolumeHeight: 1 }),

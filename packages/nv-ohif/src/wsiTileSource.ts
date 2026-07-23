@@ -58,12 +58,17 @@ function deriveSpacingMM(
   matrixColumns: number,
   matrixRows: number,
 ): readonly [number, number] | undefined {
-  const shared = first(inst.SharedFunctionalGroupsSequence) as
-    | Record<string, unknown>
-    | undefined
-  const measures = first(shared?.PixelMeasuresSequence) as
-    | Record<string, unknown>
-    | undefined
+  // PixelSpacing from the PixelMeasuresSequence in either the Shared or the
+  // Per-frame functional groups (a slide may carry it in only one), then a
+  // top-level PixelSpacing.
+  const measuresFrom = (group: unknown): Record<string, unknown> | undefined =>
+    first(
+      (first(group) as Record<string, unknown> | undefined)
+        ?.PixelMeasuresSequence,
+    ) as Record<string, unknown> | undefined
+  const measures =
+    measuresFrom(inst.SharedFunctionalGroupsSequence) ??
+    measuresFrom(inst.PerFrameFunctionalGroupsSequence)
   const pixelSpacing = measures?.PixelSpacing ?? inst.PixelSpacing
   if (Array.isArray(pixelSpacing)) {
     const dy = toNum(pixelSpacing[0])

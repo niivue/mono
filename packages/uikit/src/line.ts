@@ -67,8 +67,9 @@ function arrowBarbs(
   dirY: number,
   thickness: number,
   color: readonly number[],
+  barbLen: number,
 ): LineData[] {
-  const len = arrowLength(thickness)
+  const len = barbLen
   const bx = -dirX
   const by = -dirY
   const rotate = (x: number, y: number, a: number): [number, number] => [
@@ -121,7 +122,17 @@ export function buildTerminatedLine(
 
   const ux = dx / len
   const uy = dy / len
-  const inset = arrowLength(thickness) / 2
+  // Shrink the arrowheads on a short line so the shaft insets (arrowLen/2 per
+  // arrowed end) can never cross over and invert into a garbled "X": cap the barb
+  // length so the total inset stays under the line length.
+  const arrowedEnds =
+    (start === LineTerminator.ARROW ? 1 : 0) +
+    (end === LineTerminator.ARROW ? 1 : 0)
+  const arrowLen =
+    arrowedEnds > 0
+      ? Math.min(arrowLength(thickness), (len / arrowedEnds) * 0.8)
+      : arrowLength(thickness)
+  const inset = arrowLen / 2
 
   // Shorten the shaft under any ARROW so it stops at the barb base, not the tip.
   let sx = startX
@@ -139,10 +150,12 @@ export function buildTerminatedLine(
 
   const out: LineData[] = [buildLine(sx, sy, ex, ey, thickness, color)]
   if (end === LineTerminator.ARROW) {
-    out.push(...arrowBarbs(endX, endY, ux, uy, thickness, color))
+    out.push(...arrowBarbs(endX, endY, ux, uy, thickness, color, arrowLen))
   }
   if (start === LineTerminator.ARROW) {
-    out.push(...arrowBarbs(startX, startY, -ux, -uy, thickness, color))
+    out.push(
+      ...arrowBarbs(startX, startY, -ux, -uy, thickness, color, arrowLen),
+    )
   }
   return out
 }

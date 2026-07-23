@@ -95,6 +95,22 @@ describe('buildTerminatedLine', () => {
     expect(length(b1)).toBeCloseTo(length(b2))
   })
 
+  it('shrinks the arrows on a short line so the shaft never inverts', () => {
+    // len 6 < 2*base-inset (8): base arrows would invert the shaft. Both-ends
+    // arrowed: shaft must still run forward (ex > sx) with a positive length.
+    const out = buildTerminatedLine(0, 0, 6, 0, 2, [1, 0, 0, 1], {
+      start: LineTerminator.ARROW,
+      end: LineTerminator.ARROW,
+    })
+    expect(out).toHaveLength(5)
+    const [shaft, b1] = out.map(seg)
+    expect(shaft.ex).toBeGreaterThan(shaft.sx) // not inverted
+    expect(length(shaft)).toBeGreaterThan(0)
+    // Barbs are shrunk to fit (shorter than the base 8 px).
+    expect(length(b1)).toBeLessThan(8)
+    expect(length(b1)).toBeGreaterThan(0)
+  })
+
   it('returns the bare shaft for a zero-length line (no direction for terminators)', () => {
     const out = buildTerminatedLine(5, 5, 5, 5, 2, [1, 0, 0, 1], {
       end: LineTerminator.ARROW,

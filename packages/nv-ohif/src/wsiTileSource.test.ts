@@ -96,6 +96,27 @@ describe('wsiVolumeLevels', () => {
     expect(levels[0]?.frameBaseUrl).toBe('https://h/instances/fine/frames')
   })
 
+  it('strips a trailing query from the frame imageId', () => {
+    const ds: OhifDisplaySet = {
+      instances: [
+        {
+          imageId: 'wadors:https://h/instances/fine/frames/1?token=abc',
+          ImageType: 'DERIVED\\PRIMARY\\VOLUME\\NONE',
+          TotalPixelMatrixColumns: 2000,
+          TotalPixelMatrixRows: 1000,
+          Columns: 512,
+          Rows: 512,
+          TransferSyntaxUID: JPEG,
+        },
+      ],
+      imageIds: [],
+    }
+    // Base must not keep '/1?token=abc' (which would corrupt '.../frames/{n}').
+    expect(wsiVolumeLevels(ds)[0]?.frameBaseUrl).toBe(
+      'https://h/instances/fine/frames',
+    )
+  })
+
   it('falls back to a tiled-matrix test when ImageType is absent', () => {
     const ds: OhifDisplaySet = {
       instances: [

@@ -133,8 +133,14 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
       !isVolumeLevel(inst)
     )
       return
-    // '.../instances/{sop}/frames/1' -> '.../instances/{sop}/frames'
-    const frameBaseUrl = imageId.replace(/^wadors:/, '').replace(/\/\d+$/, '')
+    // '.../instances/{sop}/frames/1' -> '.../instances/{sop}/frames'. Drop any
+    // query first so a trailing '/1?foo' still strips to '.../frames' (a query
+    // left in the base would corrupt the per-tile '.../frames/{n}' URL); auth is
+    // carried via request headers, not query tokens.
+    const frameBaseUrl = imageId
+      .replace(/^wadors:/, '')
+      .replace(/\?.*$/, '')
+      .replace(/\/\d+$/, '')
     const transferSyntax =
       str(inst.TransferSyntaxUID) ?? str(inst.AvailableTransferSyntaxUID)
     levels.push({

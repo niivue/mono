@@ -285,10 +285,22 @@ export function NiivueViewport(props: OhifViewportProps) {
       .filter((s): s is NonNullable<typeof s> => s !== null)
     if (directSpecs.length > 0) {
       setStatus({ kind: 'idle' })
-      nv.loadVolumes(directSpecs).then(seedWindowLevel, () => {
-        if (!cancelled)
-          setStatus({ kind: 'error', message: 'Failed to load volume.' })
-      })
+      nv.loadVolumes(directSpecs).then(
+        () => {
+          // The slot was swapped away (e.g. to a WSI) while this load was in flight:
+          // its dropStaleVolumes() already ran and no-op'd because nv.volumes was
+          // still empty, so undo this now-stale load ourselves.
+          if (cancelled) {
+            void nv.removeAllVolumes().catch(() => {})
+            return
+          }
+          seedWindowLevel()
+        },
+        () => {
+          if (!cancelled)
+            setStatus({ kind: 'error', message: 'Failed to load volume.' })
+        },
+      )
       return () => {
         cancelled = true
       }
@@ -416,7 +428,15 @@ export function NiivueViewport(props: OhifViewportProps) {
         // the format correctly; a display name without that extension would not.
         return nv
           .loadVolumes([{ url: niftiFile, name: niftiFile.name }])
-          .then(seedWindowLevel)
+          .then(() => {
+            // Swapped away while this load was in flight: undo the now-stale load
+            // (its dropStaleVolumes already ran and no-op'd on an empty array).
+            if (cancelled) {
+              void nv.removeAllVolumes().catch(() => {})
+              return
+            }
+            seedWindowLevel()
+          })
       })
       .catch((err) => {
         if (cancelled || abort.signal.aborted) return

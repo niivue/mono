@@ -586,13 +586,34 @@ export function getNiivueCommandsModule({
         getNiivueEntry(viewportId) === entry &&
         entry.displaySets === baseDisplaySets
 
+      // Add the overlay volume, then reconcile against a swap that may have
+      // invalidated this load DURING the addVolume await: if we no longer own the
+      // viewport's base series, remove the overlay we just added so it doesn't
+      // linger on the wrong anatomy. Count-guarded (only remove when our add is
+      // still the last, untouched volume) so a concurrent swap-load that already
+      // replaced the volume array is left alone. Returns true if the overlay
+      // stuck, false if it was invalidated/undone.
+      const addOverlayGuarded = async (
+        spec: Parameters<typeof nv.addVolume>[0],
+      ): Promise<boolean> => {
+        const before = nv.volumes.length
+        await nv.addVolume(spec)
+        if (stillLive()) return true
+        if (nv.volumes.length === before + 1) {
+          nv.model.removeVolume(nv.volumes.length - 1)
+          await nv.updateGLVolume()
+        }
+        return false
+      }
+
       entry.overlayLoading = true
       try {
         // Direct volume-URL display sets skip conversion.
         const direct = displaySetToNiivue(candidate)
+        let added: boolean
         if (direct) {
           if (!stillLive()) return
-          await nv.addVolume({
+          added = await addOverlayGuarded({
             ...direct,
             colormap: OVERLAY_COLORMAP,
             opacity: OVERLAY_OPACITY,
@@ -611,14 +632,14 @@ export function getNiivueCommandsModule({
           })
           if (!stillLive()) return
           if (!niftiFile) throw new Error('conversion produced no volume')
-          await nv.addVolume({
+          added = await addOverlayGuarded({
             url: niftiFile,
             name: niftiFile.name,
             colormap: OVERLAY_COLORMAP,
             opacity: OVERLAY_OPACITY,
           })
         }
-        if (!stillLive()) return
+        if (!added) return
         entry.overlayUIDs.push(uid)
         entry.setStatus?.(null)
       } catch (err) {
@@ -626,8 +647,13 @@ export function getNiivueCommandsModule({
         const message = err instanceof Error ? err.message : String(err)
         flashStatus(entry, `Overlay load failed: ${message || 'unknown error'}`)
       } finally {
-        entry.overlayLoading = false
-        refreshToolbar(servicesManager, viewportId)
+        // Only clear the loading flag if this load still owns the entry: a swap
+        // may have started a NEWER overlay load on the reused entry, whose
+        // overlayLoading=true we must not clobber.
+        if (stillLive()) {
+          entry.overlayLoading = false
+          refreshToolbar(servicesManager, viewportId)
+        }
       }
     },
 

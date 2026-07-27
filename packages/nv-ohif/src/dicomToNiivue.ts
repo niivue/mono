@@ -97,6 +97,21 @@ export async function convertDisplaySetToNifti(
     const nifti = result
       .filter((f) => /\.nii(\.gz)?$/i.test(f.name))
       .sort((a, b) => b.size - a.size)
+    // dcm2niix legitimately splits some series into several NIfTI outputs
+    // (multi-echo, multiple orientations, scout + acquisition). We show only the
+    // largest as the primary volume; surface the rest so a wrong/partial pick is
+    // diagnosable instead of silently discarded. (Loading/selecting among the
+    // split volumes is a follow-up.)
+    if (nifti.length > 1) {
+      console.warn(
+        `[nv-ohif] dcm2niix produced ${nifti.length} NIfTI volumes for this series; ` +
+          `showing the largest ("${nifti[0]?.name}"). Others not shown: ` +
+          nifti
+            .slice(1)
+            .map((f) => f.name)
+            .join(', '),
+      )
+    }
     return nifti[0] ?? null
   } finally {
     dcm2niix.worker?.terminate()

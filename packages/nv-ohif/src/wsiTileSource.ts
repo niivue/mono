@@ -100,6 +100,13 @@ interface WsiLevel {
   isJpeg: boolean
   /** Physical spacing `[dx, dy]` in mm for this tier, when the SM metadata carries it. */
   spacingMM?: readonly [number, number]
+  /**
+   * True when the frames are (or default to) TILED_FULL row-major order — the
+   * only layout levelTiles maps correctly (frame = row*cols + col + 1). False
+   * only when DimensionOrganizationType is explicitly a non-full value
+   * (e.g. TILED_SPARSE), where frame positions come from PlanePositionSlide.
+   */
+  tiledFull: boolean
 }
 
 // A DICOM-WSI instance is a real pyramid tier only when its ImageType flavor is
@@ -143,7 +150,10 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
     // separately-kept query. Split the query off first (a query left in the base
     // would corrupt the per-tile '.../frames/{n}' URL) and re-append it after the
     // frame index in fetchTileBytes, so a DICOMweb access_token query is preserved.
-    const noScheme = imageId.replace(/^wadors:/, '')
+    // Strip the same imageId scheme prefixes the other loaders handle (dicomWadoRs,
+    // reconstructP10, wsiThumbnail), not just `wadors:`, so a `dicomweb:`/`wadouri:`
+    // data source's WSI tiles still fetch.
+    const noScheme = imageId.replace(/^(wadors|dicomweb|wadouri):/i, '')
     const qIdx = noScheme.indexOf('?')
     const frameQuery = qIdx >= 0 ? noScheme.slice(qIdx) : ''
     const frameBaseUrl = (
@@ -163,6 +173,12 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
         ? JPEG_TRANSFER_SYNTAXES.has(transferSyntax)
         : true,
       spacingMM: deriveSpacingMM(inst, matrixColumns, matrixRows),
+      // Only decline when the layout is EXPLICITLY non-full; absent = assume
+      // TILED_FULL (the common case, and what levelTiles maps).
+      tiledFull: (() => {
+        const org = str(inst.DimensionOrganizationType)
+        return org === undefined || org.toUpperCase() === 'TILED_FULL'
+      })(),
     })
   })
   // Highest resolution first (index 0 = level 0), as the manifest expects.
@@ -208,6 +224,12 @@ export interface BuiltWsiManifest {
   levelQueries: string[]
   /** True when every kept level is JPEG (v1-renderable). */
   allJpeg: boolean
+  /**
+   * True when every kept level is TILED_FULL (row-major) — the only frame layout
+   * the row-major tile grid maps correctly. False for a TILED_SPARSE slide, which
+   * would otherwise render scrambled.
+   */
+  tiledFull: boolean
 }
 
 /**
@@ -224,6 +246,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
   const levelBaseUrls: string[] = []
   const levelQueries: string[] = []
   let allJpeg = true
+  let tiledFull = true
   volumeLevels.forEach((level, index) => {
     const { columns, rows, tiles } = levelTiles(level)
     levels.push({
@@ -241,6 +264,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     levelBaseUrls[index] = level.frameBaseUrl
     levelQueries[index] = level.frameQuery
     if (!level.isJpeg) allJpeg = false
+    if (!level.tiledFull) tiledFull = false
   })
 
   const manifest: NVSlideManifest = {
@@ -258,7 +282,7 @@ export function buildWsiManifest(ds: OhifDisplaySet): BuiltWsiManifest | null {
     ...(level0.spacingMM ? { pixelSpacingMM: level0.spacingMM } : {}),
     levels,
   }
-  return { manifest, levelBaseUrls, levelQueries, allJpeg }
+  return { manifest, levelBaseUrls, levelQueries, allJpeg, tiledFull }
 }
 
 /**

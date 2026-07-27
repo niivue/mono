@@ -293,5 +293,15 @@ export async function reconstructInstanceFiles(
       worker(),
     ),
   )
+  // Progress counts every URL processed, but instances skipped for missing
+  // metadata produce no file. Surface a partial series (fewer files than URLs)
+  // so a converted-with-missing-slices volume isn't silent.
+  if (files.length < framesUrls.length) {
+    console.warn(
+      `[nv-ohif] reconstructed ${files.length} of ${framesUrls.length} DICOM instances ` +
+        `(${framesUrls.length - files.length} skipped for missing metadata); ` +
+        'the converted volume may be missing slices.',
+    )
+  }
   return files
 }

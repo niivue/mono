@@ -312,6 +312,16 @@ export function NiivueViewport(props: OhifViewportProps) {
         })
         return
       }
+      if (!built.tiledFull) {
+        // The tile grid assumes TILED_FULL row-major frame order; a TILED_SPARSE
+        // slide would render scrambled, so decline rather than mislead.
+        setStatus({
+          kind: 'note',
+          message:
+            'This slide uses TILED_SPARSE frame organization, which the viewer cannot render yet (TILED_FULL slides are supported).',
+        })
+        return
+      }
       const container = containerRef.current
       if (!container) return
       const slideCanvas = document.createElement('canvas')

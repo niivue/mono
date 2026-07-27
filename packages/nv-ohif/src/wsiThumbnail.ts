@@ -163,11 +163,24 @@ function rawFrameToDataUrl(raw: Uint8Array, info: RawImageInfo): string | null {
   return small.toDataURL('image/jpeg', 0.85)
 }
 
+// Encode frame bytes as a self-contained `data:` URL (base64) so the caller can
+// hold it for the document's lifetime with nothing to revoke — unlike a blob:
+// URL, which was never revoked and leaked one object URL per thumbnail. Chunked
+// String.fromCharCode + btoa works in the browser and the (Bun) test runtime.
+function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return `data:${mime};base64,${btoa(binary)}`
+}
+
 // Decode an encoded (JPEG/PNG) frame and re-export it capped at
 // MAX_THUMBNAIL_EDGE, so the panel never retains a full-resolution decode (a
 // blob-URL <img> keeps the full raster resident while displayed). Returns null
 // where the decode pipeline is unavailable (test runtime) or decoding fails —
-// the caller then falls back to a plain Blob URL.
+// the caller then falls back to a base64 data: URL of the original frame.
 async function encodedFrameToThumbnailUrl(
   frame: Uint8Array,
   mime: string,
@@ -242,9 +255,10 @@ export async function fetchWsiThumbnailObjectUrl(
       // view so the bytes satisfy BlobPart) when decoding isn't available.
       const scaled = await encodedFrameToThumbnailUrl(frame, mime)
       if (scaled) return scaled
-      return URL.createObjectURL(
-        new Blob([new Uint8Array(frame)], { type: mime }),
-      )
+      // Fall back to a self-contained data: URL rather than URL.createObjectURL:
+      // the panel holds the src for the document's lifetime, and a blob: URL here
+      // was never revoked, leaking one object URL per derived thumbnail.
+      return bytesToDataUrl(frame, mime)
     }
     const info = rawImageInfo(inst, frame.length)
     if (!info) return null

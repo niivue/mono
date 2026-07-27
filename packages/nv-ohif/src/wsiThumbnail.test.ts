@@ -196,20 +196,18 @@ describe('fetchWsiThumbnailObjectUrl', () => {
   let lastUrl = ''
   let lastHeaders: Record<string, string> = {}
 
-  it('returns a Blob URL for an encoded (JPEG) frame, from the picked instance', async () => {
+  it('returns a base64 data URL for an encoded (JPEG) frame, from the picked instance', async () => {
     const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])
-    let blobType = ''
     globalThis.fetch = respondWith('Bnd', jpeg) as typeof fetch
-    URL.createObjectURL = ((blob: Blob) => {
-      blobType = blob.type
-      return 'blob:mock'
-    }) as typeof URL.createObjectURL
 
     const src = await fetchWsiThumbnailObjectUrl(instances(), {
       Authorization: 'Bearer t',
     })
-    expect(src).toBe('blob:mock')
-    expect(blobType).toBe('image/jpeg')
+    // No canvas in the test runtime -> the encoded fallback returns a
+    // self-contained data: URL (not a leak-prone blob: URL) of the JPEG bytes.
+    expect(src).toBe(
+      `data:image/jpeg;base64,${btoa('\xff\xd8\xff\xe0\x00\x10')}`,
+    )
     // OVERVIEW is picked; the wadors: scheme is stripped before fetch.
     expect(lastUrl).toBe(`${BASE}/overview/frames/1`)
     expect(lastHeaders.Authorization).toBe('Bearer t')

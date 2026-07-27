@@ -118,6 +118,28 @@ describe('wsiVolumeLevels', () => {
     expect(level?.frameQuery).toBe('?token=abc')
   })
 
+  it('strips the dicomweb: / wadouri: imageId scheme too, not just wadors:', () => {
+    const mk = (scheme: string): OhifDisplaySet => ({
+      instances: [
+        {
+          imageId: `${scheme}:https://h/instances/fine/frames/1`,
+          ImageType: 'DERIVED\\PRIMARY\\VOLUME\\NONE',
+          TotalPixelMatrixColumns: 2000,
+          TotalPixelMatrixRows: 1000,
+          Columns: 512,
+          Rows: 512,
+          TransferSyntaxUID: JPEG,
+        },
+      ],
+      imageIds: [],
+    })
+    for (const scheme of ['dicomweb', 'wadouri', 'wadors']) {
+      expect(wsiVolumeLevels(mk(scheme))[0]?.frameBaseUrl).toBe(
+        'https://h/instances/fine/frames',
+      )
+    }
+  })
+
   it('falls back to a tiled-matrix test when ImageType is absent', () => {
     const ds: OhifDisplaySet = {
       instances: [
@@ -191,6 +213,22 @@ describe('buildWsiManifest', () => {
     ])
     // No spacing metadata on this display set -> ruler falls back to pixels.
     expect(manifest.pixelSpacingMM).toBeUndefined()
+    // No DimensionOrganizationType -> assumed TILED_FULL (renderable).
+    expect(built.tiledFull).toBe(true)
+  })
+
+  it('reports tiledFull=false for a TILED_SPARSE slide', () => {
+    const built = buildWsiManifest(
+      oneLevelWith({ DimensionOrganizationType: 'TILED_SPARSE' }),
+    )
+    expect(built?.tiledFull).toBe(false)
+  })
+
+  it('reports tiledFull=true when DimensionOrganizationType is TILED_FULL', () => {
+    const built = buildWsiManifest(
+      oneLevelWith({ DimensionOrganizationType: 'TILED_FULL' }),
+    )
+    expect(built?.tiledFull).toBe(true)
   })
 
   // A single-VOLUME-level SM display set (2000x1000) whose finest instance

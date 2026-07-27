@@ -224,6 +224,13 @@ describe('buildWsiManifest', () => {
     expect(built?.tiledFull).toBe(false)
   })
 
+  it('reports tiledFull=false for an array-valued TILED_SPARSE element', () => {
+    const built = buildWsiManifest(
+      oneLevelWith({ DimensionOrganizationType: ['TILED_SPARSE'] }),
+    )
+    expect(built?.tiledFull).toBe(false)
+  })
+
   it('reports tiledFull=true when DimensionOrganizationType is TILED_FULL', () => {
     const built = buildWsiManifest(
       oneLevelWith({ DimensionOrganizationType: 'TILED_FULL' }),

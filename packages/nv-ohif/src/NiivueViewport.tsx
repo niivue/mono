@@ -247,8 +247,19 @@ export function NiivueViewport(props: OhifViewportProps) {
       overlayLoading: false,
     })
     refreshToolbar(servicesManager, viewportId)
+
+    // Volume-loading routes call loadVolumes, which replaces nv.volumes to match
+    // the reset overlayUIDs=[]. Routes that do NOT load a volume (WSI /
+    // unsupported / empty) must drop any volumes left from a previous series, or
+    // nv.volumes desyncs from overlayUIDs=[] — the volume-gated Overlay button
+    // would stay enabled on a WSI viewport and toggling it would stack volumes.
+    const dropStaleVolumes = () => {
+      if (nv.volumes.length > 0) void nv.removeAllVolumes().catch(() => {})
+    }
+
     // If OHIF hung nothing, stay idle.
     if (displaySets.length === 0) {
+      dropStaleVolumes()
       setStatus({ kind: 'idle' })
       return
     }
@@ -286,12 +297,16 @@ export function NiivueViewport(props: OhifViewportProps) {
     // Otherwise route the first display set by kind.
     const ds: OhifDisplaySet | undefined = displaySets[0]
     if (!ds) {
+      dropStaleVolumes()
       setStatus({ kind: 'idle' })
       return
     }
     const kind = classifyDisplaySet(ds)
 
     if (kind === 'wsi') {
+      // WSI renders on its own slide canvas, not the NiiVue volume renderer, so
+      // drop any volume left from a previous series in this slot.
+      dropStaleVolumes()
       // Whole-slide imaging renders with NVSlide (tiled deep-zoom) on its own
       // WebGL2 canvas, independent of NiiVue's volume renderer. The NiiVue canvas
       // stays blank underneath; the slide canvas is overlaid and torn down here.
@@ -363,6 +378,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
 
     if (kind === 'unsupported') {
+      dropStaleVolumes()
       setStatus({
         kind: 'note',
         message: "This series isn't something NiiVue can load yet.",

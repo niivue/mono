@@ -174,9 +174,10 @@ export function wsiVolumeLevels(ds: OhifDisplaySet): WsiLevel[] {
         : true,
       spacingMM: deriveSpacingMM(inst, matrixColumns, matrixRows),
       // Only decline when the layout is EXPLICITLY non-full; absent = assume
-      // TILED_FULL (the common case, and what levelTiles maps).
+      // TILED_FULL (the common case, and what levelTiles maps). Handle the
+      // array-valued element form (`['TILED_SPARSE']`) too via first().
       tiledFull: (() => {
-        const org = str(inst.DimensionOrganizationType)
+        const org = str(first(inst.DimensionOrganizationType))
         return org === undefined || org.toUpperCase() === 'TILED_FULL'
       })(),
     })

@@ -573,12 +573,18 @@ export function getNiivueCommandsModule({
           ? candidate.SeriesDescription
           : 'overlay'
 
-      // The fetch + dcm2niix conversion below can take seconds, during which the
-      // viewport may unmount (navigation / layout change): its cleanup runs
-      // unregisterNiivue + nv.destroy(), tearing down the GPU context. Bail if
-      // this entry is no longer the registered one, so we never addVolume to a
-      // destroyed instance.
-      const stillLive = () => getNiivueEntry(viewportId) === entry
+      // The fetch + dcm2niix conversion below can take seconds, during which two
+      // things can invalidate this overlay load: (a) the viewport unmounts
+      // (navigation / layout change) — cleanup runs unregisterNiivue + nv.destroy()
+      // and the entry leaves the registry; (b) a NEW base series is hung in the
+      // same viewport slot — the entry object is REUSED (so the registry check
+      // alone passes), but the load effect replaces entry.displaySets and resets
+      // overlayUIDs. Guard on both: same registered entry AND same base series,
+      // so we never overlay onto the wrong anatomy or a destroyed instance.
+      const baseDisplaySets = entry.displaySets
+      const stillLive = () =>
+        getNiivueEntry(viewportId) === entry &&
+        entry.displaySets === baseDisplaySets
 
       entry.overlayLoading = true
       try {

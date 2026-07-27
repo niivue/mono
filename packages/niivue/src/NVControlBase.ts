@@ -327,6 +327,17 @@ export default class NiiVue extends EventTarget {
   /** Set once `destroy()` runs, so an in-flight async op (e.g. a deferred reload)
    *  can detect a torn-down controller and not mutate/upload against it. */
   private _destroyed = false
+
+  /**
+   * True once {@link destroy} has run. Lets external holders (e.g. an
+   * NVChunkedVolume handle listening for `viewDestroyed`) distinguish a real
+   * controller teardown from a transient view recreation (backend switch /
+   * init fallback), which also emits `viewDestroyed` but leaves the controller
+   * and its volumes alive.
+   */
+  get isDestroyed(): boolean {
+    return this._destroyed
+  }
   private _deferredVolumes: Array<ImageFromUrlOptions | NVImage> | null = null
   private _deferredMeshes: MeshFromUrlOptions[] | null = null
   private _viewLifecycle: ViewLifecycle

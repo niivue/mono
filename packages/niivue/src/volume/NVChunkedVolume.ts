@@ -299,7 +299,14 @@ export class NVChunkedVolume {
       ? [focus[0], focus[1], focus[2]]
       : [0.5, 0.5, 0.5]
     this.onLocationChange = () => this.handleLocationChange()
-    this.onViewDestroyed = () => this.dispose()
+    // Only self-dispose on a REAL controller teardown. `viewDestroyed` also fires
+    // on a transient view recreation (backend switch / init fallback), where the
+    // controller and this volume stay alive and the locationChange listener (on
+    // the controller, not the view) keeps working — disposing there would
+    // permanently freeze crosshair-follow streaming.
+    this.onViewDestroyed = () => {
+      if (this.host.isDestroyed) this.dispose()
+    }
 
     const finest = source.levels[0]
     this.plan = this.buildPlan()

@@ -103,21 +103,24 @@ DICOM series are rendered by fetching the instances and converting them to NIfTI
 in-browser with `@niivue/dcm2niix` (a WASM build of dcm2niix). This is verified
 working end-to-end in a real OHIF app for both uncompressed and JPEG-LS studies.
 
-> **Dependency caveat (as of this writing): the required `@niivue/dcm2niix` fix is
-> not published yet.** dcm2niix's Web Worker aborts every in-browser conversion on
-> the published versions: Emscripten's `exit()` *throws* inside a Web Worker (it
-> returns the code under Node), and the worker does `const exitCode =
+> **Dependency caveat: the required `@niivue/dcm2niix` fix is merged upstream but
+> not published to npm yet.** dcm2niix's Web Worker aborts every in-browser
+> conversion on the published versions: Emscripten's `exit()` *throws* inside a Web
+> Worker (it returns the code under Node), and the worker does `const exitCode =
 > mod.callMain(args)` and lets that throw hit its catch, so it never reads
-> `/output`. The fix wraps `callMain` in try/catch and reads `err.status`. It has
-> been confirmed for upstream (`rordenlab/dcm2niix` `js/src/worker*.js`) but is
-> **not in any published `@niivue/dcm2niix`** — neither `1.2.0` (current latest) nor
-> the `1.3.0-dev.0` prerelease contains it (both still have the bare `callMain`).
+> `/output`. The fix wraps `callMain` in try/catch and reads `err.status`. It is now
+> **merged upstream** in `rordenlab/dcm2niix` master (commit `aae72ac`, both
+> `js/src/worker.js` and `worker.jpeg.js`) and staged there as `js/package.json`
+> version `1.3.0` — but it is **not in any published `@niivue/dcm2niix`**: npm's
+> latest is still `1.2.0` (and `1.3.0-dev.0` is a pre-fix prerelease), both with the
+> bare `callMain`.
 >
 > Consequences:
 > - **NIfTI display sets work with published deps today.** DICOM does **not** until
->   a fixed `@niivue/dcm2niix` is published.
-> - This package pins `@niivue/dcm2niix` at `^1.2.0` as a placeholder. **When the
->   fixed release ships, bump the pin to `>=<that version>`** (search this repo for
+>   `@niivue/dcm2niix 1.3.0` (with the merged fix) is published to npm — the
+>   maintainer's release step.
+> - This package pins `@niivue/dcm2niix` at `^1.2.0` as a placeholder. **When
+>   `1.3.0` publishes, bump the pin to `>=1.3.0`** (search this repo for
 >   `DCM2NIIX_PIN` — the marker is on the dependency in `package.json`).
 > - In the monorepo dev rig, DICOM works because a locally-built patched dcm2niix is
 >   installed by hand; that is not what `npm`-install consumers get.

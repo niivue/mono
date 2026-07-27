@@ -229,11 +229,23 @@ export function NiivueViewport(props: OhifViewportProps) {
     const displaySets = displaySetsRef.current
     const servicesManager = servicesManagerRef.current
     if (!nv || !ready) return
+    // This effect re-runs when a NEW display set is hung in the same viewport
+    // slot (OHIF swaps props; the NiiVue instance is reused — the create effect
+    // keys only on viewportId). Core loadVolumes replaces the volume array but
+    // does NOT reset measurements or our overlay bookkeeping, so clear both here
+    // before loading the new series: otherwise the previous series' rulers
+    // re-project onto the new anatomy, and the Overlay button reads active with
+    // nothing overlaid. (No-op on the first load — nothing to clear yet.)
+    nv.clearMeasurements()
     // Keep the registry's view of the base display sets current, so overlay
     // commands know what is already loaded and W/L-preset buttons can gate on
     // the base modality (see commands.ts). Refresh the toolbar so those
     // modality-gated buttons re-evaluate now that the modality is known.
-    updateNiivueViewport(viewportId, { displaySets })
+    updateNiivueViewport(viewportId, {
+      displaySets,
+      overlayUIDs: [],
+      overlayLoading: false,
+    })
     refreshToolbar(servicesManager, viewportId)
     // If OHIF hung nothing, stay idle.
     if (displaySets.length === 0) {

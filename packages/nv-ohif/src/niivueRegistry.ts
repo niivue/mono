@@ -55,7 +55,12 @@ export function updateNiivueViewport(
   patch: Partial<
     Pick<
       NiivueViewportEntry,
-      'displaySets' | 'setStatus' | 'slideView' | 'windowLevel'
+      | 'displaySets'
+      | 'setStatus'
+      | 'slideView'
+      | 'windowLevel'
+      | 'overlayUIDs'
+      | 'overlayLoading'
     >
   >,
 ): void {

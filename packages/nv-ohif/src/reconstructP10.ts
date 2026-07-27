@@ -260,7 +260,8 @@ export async function reconstructInstanceFiles(
   let next = 0
   const worker = async (): Promise<void> => {
     while (next < framesUrls.length) {
-      const framesUrl = framesUrls[next++]
+      const idx = next++
+      const framesUrl = framesUrls[idx]
       if (framesUrl === undefined) break
       const sop = sopFromFramesUrl(framesUrl)
       const metadata = sop ? metaBySop.get(sop) : undefined
@@ -272,7 +273,17 @@ export async function reconstructInstanceFiles(
           frame.bytes,
           frame.transferSyntaxUID ?? undefined,
         )
-        files.push(new File([p10], `${sop}.dcm`, { type: 'application/dicom' }))
+        // Name each file uniquely (per source URL index), not just by SOP: when
+        // several frame URLs share one SOPInstanceUID (a multi-frame/enhanced
+        // instance whose frames arrive separately), a bare `${sop}.dcm` collides
+        // and dcm2niix's in-memory FS silently overwrites all but the last,
+        // dropping frames. dcm2niix groups slices by DICOM header, not filename,
+        // so a unique name is safe. (Full enhanced multi-frame reconstruction —
+        // one P10 carrying all N frames with a matching NumberOfFrames — is a
+        // separate, larger piece; this only prevents the silent overwrite.)
+        files.push(
+          new File([p10], `${sop}-${idx}.dcm`, { type: 'application/dicom' }),
+        )
       }
       onProgress?.(++done, framesUrls.length)
     }

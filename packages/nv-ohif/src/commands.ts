@@ -573,11 +573,19 @@ export function getNiivueCommandsModule({
           ? candidate.SeriesDescription
           : 'overlay'
 
+      // The fetch + dcm2niix conversion below can take seconds, during which the
+      // viewport may unmount (navigation / layout change): its cleanup runs
+      // unregisterNiivue + nv.destroy(), tearing down the GPU context. Bail if
+      // this entry is no longer the registered one, so we never addVolume to a
+      // destroyed instance.
+      const stillLive = () => getNiivueEntry(viewportId) === entry
+
       entry.overlayLoading = true
       try {
         // Direct volume-URL display sets skip conversion.
         const direct = displaySetToNiivue(candidate)
         if (direct) {
+          if (!stillLive()) return
           await nv.addVolume({
             ...direct,
             colormap: OVERLAY_COLORMAP,
@@ -595,6 +603,7 @@ export function getNiivueCommandsModule({
               )
             },
           })
+          if (!stillLive()) return
           if (!niftiFile) throw new Error('conversion produced no volume')
           await nv.addVolume({
             url: niftiFile,
@@ -603,6 +612,7 @@ export function getNiivueCommandsModule({
             opacity: OVERLAY_OPACITY,
           })
         }
+        if (!stillLive()) return
         entry.overlayUIDs.push(uid)
         entry.setStatus?.(null)
       } catch (err) {

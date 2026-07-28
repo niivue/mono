@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import type NiiVue from '@niivue/niivue'
+import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import {
+  clearNiivueAnnotations,
   findOverlayCandidate,
   getNiivueCommandsModule,
   NIIVUE_CLIP_PLANES,
@@ -9,7 +10,9 @@ import {
   OVERLAY_COLORMAP,
   OVERLAY_OPACITY,
   readBaseWindowLevel,
+  reflectNiivueAnnotation,
   reflectNiivueMeasurement,
+  removeNiivueAnnotation,
   resolveWindowLevel,
   syncNiivueWindowLevelToOhif,
 } from './commands'
@@ -161,6 +164,7 @@ function measurementServices(
 ) {
   const added: Array<{ data: Record<string, unknown> }> = []
   const mappings: Array<{ annotationType: string }> = []
+  const removed: string[] = []
   const servicesManager = {
     services: {
       viewportGridService: { getActiveViewportId: () => viewportId },
@@ -182,6 +186,9 @@ function measurementServices(
             },
           })
         },
+        remove: (uid: string) => {
+          removed.push(uid)
+        },
       },
       displaySetService: {
         getDisplaySetsForSeries: (uid: string) =>
@@ -189,7 +196,7 @@ function measurementServices(
       },
     },
   } as unknown as OhifExtensionParams['servicesManager']
-  return { added, mappings, servicesManager }
+  return { added, mappings, removed, servicesManager }
 }
 
 describe('reflectNiivueMeasurement', () => {
@@ -262,6 +269,102 @@ describe('reflectNiivueMeasurement', () => {
     })
     expect(ok).toBe(false)
     expect(svc.added).toHaveLength(0)
+  })
+})
+
+describe('reflectNiivueAnnotation', () => {
+  const backing = [
+    {
+      SeriesInstanceUID: 'series-1',
+      StudyInstanceUID: 'study-1',
+      displaySetInstanceUID: 'ds-1',
+      Modality: 'CT',
+      instances: [{ FrameOfReferenceUID: 'for-1' }],
+    },
+  ]
+  const ellipse = (id: string): VectorAnnotation =>
+    ({
+      id,
+      label: 0,
+      group: '',
+      sliceType: 0,
+      slicePosition: 0,
+      anchorMM: [10, 20, 30],
+      polygons: [],
+      style: {
+        fillColor: [1, 1, 1, 1],
+        strokeColor: [1, 1, 1, 1],
+        strokeWidth: 1,
+      },
+      stats: { area: 123.4, min: 5, mean: 50, max: 200, stdDev: 12 },
+      shape: {
+        type: 'measureEllipse',
+        start: { x: 0, y: 0 },
+        end: { x: 1, y: 1 },
+      },
+    }) as unknown as VectorAnnotation
+
+  function setup(viewportId: string) {
+    register(viewportId, stubNiivue())
+    updateNiivueViewport(viewportId, {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    return measurementServices(viewportId, backing)
+  }
+
+  it('adds an OHIF EllipticalROI with area + intensity stats (LPS anchor)', () => {
+    const svc = setup('vp-a1')
+    const ok = reflectNiivueAnnotation(
+      'vp-a1',
+      svc.servicesManager,
+      ellipse('a'),
+    )
+    expect(ok).toBe(true)
+    expect(svc.added).toHaveLength(1)
+    const m = svc.added[0]?.data.schema as {
+      toolName: string
+      referenceSeriesUID: string
+      displayText: { primary: string[] }
+      points: number[][]
+      data: { area: number; mean: number; unit: string; areaUnit: string }
+    }
+    expect(m.toolName).toBe('EllipticalROI')
+    expect(m.referenceSeriesUID).toBe('series-1')
+    expect(m.displayText.primary[0]).toBe('123.4 mm²')
+    expect(m.displayText.primary[1]).toBe('Max: 200.0 HU')
+    expect(m.data.area).toBe(123.4)
+    expect(m.data.mean).toBe(50)
+    expect(m.data.areaUnit).toBe('mm²')
+    // NIfTI RAS anchor -> DICOM LPS (negate x, y).
+    expect(m.points[0]).toEqual([-10, -20, 30])
+  })
+
+  it('does not reflect a tool with no OHIF mapping (freehand)', () => {
+    const svc = setup('vp-a2')
+    const anno = ellipse('b')
+    ;(anno.shape as { type: string }).type = 'freehand'
+    expect(reflectNiivueAnnotation('vp-a2', svc.servicesManager, anno)).toBe(
+      false,
+    )
+    expect(svc.added).toHaveLength(0)
+  })
+
+  it('removeNiivueAnnotation removes only that reflected row', () => {
+    const svc = setup('vp-a3')
+    reflectNiivueAnnotation('vp-a3', svc.servicesManager, ellipse('keep'))
+    reflectNiivueAnnotation('vp-a3', svc.servicesManager, ellipse('drop'))
+    removeNiivueAnnotation('vp-a3', svc.servicesManager, 'drop')
+    expect(svc.removed).toHaveLength(1)
+  })
+
+  it('clearNiivueAnnotations removes every reflected row for the viewport', () => {
+    const svc = setup('vp-a4')
+    reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c1'))
+    reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c2'))
+    clearNiivueAnnotations('vp-a4', svc.servicesManager)
+    expect(svc.removed).toHaveLength(2)
   })
 })
 

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import { DRAG_MODE } from '@niivue/niivue'
-import { ohifToolToDragMode } from './toolBridge'
+import {
+  ohifToolToAnnotationTool,
+  ohifToolToDragMode,
+  UNSUPPORTED_MEASUREMENT_TOOLS,
+} from './toolBridge'
 
 describe('ohifToolToDragMode', () => {
   it.each([
@@ -23,5 +27,30 @@ describe('ohifToolToDragMode', () => {
   it('uses crosshair navigation for unknown or inactive tools', () => {
     expect(ohifToolToDragMode(undefined)).toBe(DRAG_MODE.crosshair)
     expect(ohifToolToDragMode('ArrowAnnotate')).toBe(DRAG_MODE.crosshair)
+  })
+})
+
+describe('ohifToolToAnnotationTool', () => {
+  it.each([
+    ['EllipticalROI', 'measureEllipse'],
+    ['RectangleROI', 'measureRect'],
+    ['CircleROI', 'measureCircle'],
+    ['PlanarFreehandROI', 'freehand'],
+    ['ArrowAnnotate', 'arrow'],
+  ] as const)('maps %s to the NiiVue annotation tool %s', (tool, expected) => {
+    expect(ohifToolToAnnotationTool(tool)).toBe(expected)
+  })
+
+  it('returns null for non-annotation tools', () => {
+    expect(ohifToolToAnnotationTool('Length')).toBeNull()
+    expect(ohifToolToAnnotationTool('Pan')).toBeNull()
+    expect(ohifToolToAnnotationTool(undefined)).toBeNull()
+  })
+
+  it('lists the tools NiiVue cannot back yet as unsupported', () => {
+    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('Bidirectional')).toBe(true)
+    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('SplineROI')).toBe(true)
+    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('LivewireContour')).toBe(true)
+    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('EllipticalROI')).toBe(false)
   })
 })

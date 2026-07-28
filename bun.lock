@@ -271,7 +271,7 @@
       "name": "@niivue/nv-ohif",
       "version": "0.0.0",
       "dependencies": {
-        "@niivue/dcm2niix": "^1.2.0",
+        "@niivue/dcm2niix": "^1.3.20260724",
         "dcmjs": "^0.49.0",
       },
       "devDependencies": {
@@ -1677,6 +1677,8 @@
     "@niivue/nv-ext-niimath/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
 
     "@niivue/nv-ext-save-html/typescript": ["typescript@5.8.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ=="],
+
+    "@niivue/nv-ohif/@niivue/dcm2niix": ["@niivue/dcm2niix@1.3.20260724", "", {}, "sha512-iLb2wsF/NgoEP9TNAULIn985CJ5TI0Ps2g5AVYEeDjoA116Ge340cNzN5atSftwS3lRtX1Dc+G/EdYvUckl6Ag=="],
 
     "@niivue/nv-ohif/@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 

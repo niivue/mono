@@ -16,7 +16,13 @@ export const NIIVUE_OVERLAY_BUTTON = 'NiivueOverlay'
 export const NIIVUE_COLORBAR_BUTTON = 'NiivueColorbar'
 export const NIIVUE_INTERPOLATION_BUTTON = 'NiivueInterpolation'
 export const NIIVUE_RULER_BUTTON = 'NiivueRuler'
-export const NIIVUE_CAPTURE_BUTTON = 'Capture'
+// Distinct ids (not OHIF's 'Capture'/'Crosshairs'): ToolbarService.register is
+// first-registration-wins, and the mode references cornerstone's pack before
+// this one, so a same-id override would be silently dropped. A mode places
+// these in its primary bar instead of the cornerstone buttons for NiiVue
+// viewports (cornerstone's Capture/Crosshairs error or no-op on a NiiVue tile).
+export const NIIVUE_CAPTURE_BUTTON = 'NiivueCapture'
+export const NIIVUE_CROSSHAIR_BUTTON = 'NiivueCrosshair'
 
 const SLICE_TYPE_EVALUATOR = 'evaluate.niivue.sliceType'
 const CLIP_PLANE_EVALUATOR = 'evaluate.niivue.clipPlane'
@@ -25,6 +31,7 @@ const WL_PRESET_EVALUATOR = 'evaluate.niivue.windowLevelPreset'
 const COLORMAP_EVALUATOR = 'evaluate.niivue.colormap'
 const COLORBAR_EVALUATOR = 'evaluate.niivue.colorbar'
 const INTERPOLATION_EVALUATOR = 'evaluate.niivue.interpolation'
+const CROSSHAIR_EVALUATOR = 'evaluate.niivue.crosshair'
 const MEASUREMENT_EVALUATOR = 'evaluate.niivue.measurement'
 const NIIVUE_EVALUATOR = 'evaluate.niivue'
 
@@ -262,8 +269,22 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
     },
   },
   {
-    // Override OHIF's cornerstone-only Capture button when this customization
-    // pack is active; the command supports both volume and slide canvases.
+    // Toggles the NiiVue crosshair on/off. A mode uses this in place of
+    // cornerstone's Crosshairs button on a NiiVue viewport (that one no-ops).
+    id: NIIVUE_CROSSHAIR_BUTTON,
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'tool-crosshair',
+      label: 'Crosshairs',
+      tooltip: 'Toggle the crosshair on/off (NiiVue)',
+      commands: 'niivueToggleCrosshair',
+      evaluate: CROSSHAIR_EVALUATOR,
+    },
+  },
+  {
+    // NiiVue's own capture button. A mode uses this in place of cornerstone's
+    // Capture button on a NiiVue viewport (cornerstone's errors with "Image
+    // cannot be downloaded" on a non-cornerstone tile). Supports volume + slide.
     id: NIIVUE_CAPTURE_BUTTON,
     uiType: 'ohif.toolButton',
     props: {
@@ -468,6 +489,16 @@ export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
           disabled: false,
           isActive: nv.volumeIsNearestInterpolation === true,
         }
+      },
+    },
+    {
+      name: CROSSHAIR_EVALUATOR,
+      evaluate: ({ viewportId }) => {
+        const nv = getNiivueForViewport(viewportId)
+        if (!nv) return DISABLED
+        if (volumeDisabled(viewportId)) return VOLUME_DISABLED
+        // Active = crosshair currently shown (width 0 means hidden).
+        return { disabled: false, isActive: nv.crosshairWidth > 0 }
       },
     },
     {

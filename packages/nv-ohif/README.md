@@ -67,16 +67,20 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
   a **colormap** dropdown (gray / hot / bone / cool / warm / viridis / plasma /
   inferno / turbo / jet, applied to the base volume), a **colorbar** toggle (the
   colormap legend), a **smoothing** toggle (nearest-neighbor vs linear
-  interpolation), an **overlay** toggle (load the study's next series as a
-  colormapped overlay), and a reset-view button — all with active/disabled state
-  tracked per viewport.
+  interpolation), a **crosshair** toggle (`NiivueCrosshair`, show/hide the
+  crosshair — use in place of cornerstone's Crosshairs button, which no-ops on a
+  NiiVue viewport), a **capture** button (`NiivueCapture`, save the viewport as
+  PNG — use in place of cornerstone's Capture, which errors on a NiiVue
+  viewport), an **overlay** toggle (load the study's next series as a colormapped
+  overlay), and a reset-view button — all with active/disabled state tracked per
+  viewport.
 
 ## Toolbar buttons
 
 The extension registers the commands (`niivueSetSliceType`, `niivueResetView`,
 `niivueSetClipPlane`, `niivueToggleOverlay`, `niivueSetWindowLevel`,
 `niivueSetWindowLevelPreset`, `niivueAutoWindowLevel`, `niivueSetColormap`,
-`niivueToggleColorbar`, `niivueToggleInterpolation`), the toolbar evaluators, and a customization pack with the
+`niivueToggleColorbar`, `niivueToggleInterpolation`, `niivueToggleCrosshair`), the toolbar evaluators, and a customization pack with the
 button definitions. A mode pulls them in by reference and places them in its
 primary bar:
 
@@ -90,10 +94,14 @@ toolbarSections: [
   { $reference: 'cornerstone.toolbarSections' },
   { $reference: 'niivue.toolbarSections' },
   // restate your primary bar with the NiiVue buttons added (sections
-  // shallow-merge per key, later wins)
+  // shallow-merge per key, later wins). Use NiivueCapture / NiivueCrosshair
+  // in place of cornerstone's 'Capture' / 'Crosshairs' on NiiVue viewports:
+  // ToolbarService.register is first-registration-wins, so a same-id override
+  // of a cornerstone button is silently dropped.
   { primary: [/* ...your button ids, */ 'NiivueViews', 'NiivueClip',
               'NiivueWindowLevel', 'NiivueColormap', 'NiivueColorbar', 'NiivueInterpolation',
-              'NiivueOverlay', 'NiivueReset'] },
+              'NiivueRuler', 'NiivueOverlay', 'NiivueReset', 'NiivueCapture',
+              'NiivueCrosshair'] },
 ],
 ```
 

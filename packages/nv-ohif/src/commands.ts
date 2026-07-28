@@ -742,6 +742,22 @@ export function getNiivueCommandsModule({
         !entry.nv.volumeIsNearestInterpolation
       refreshToolbar(servicesManager, entry.viewportId)
     },
+
+    /**
+     * Toggle the crosshair on/off. Overrides OHIF's cornerstone Crosshairs
+     * button on a NiiVue viewport. `crosshairWidth = 0` hides the 2D crosshair
+     * (its width is the marker radius); `is3DCrosshairVisible` follows for the
+     * 3D render tile. Neither setter redraws on its own, so drawScene() here.
+     */
+    niivueToggleCrosshair: () => {
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry) return
+      const visible = entry.nv.crosshairWidth > 0
+      entry.nv.crosshairWidth = visible ? 0 : 1
+      entry.nv.is3DCrosshairVisible = !visible
+      entry.nv.drawScene()
+      refreshToolbar(servicesManager, entry.viewportId)
+    },
   }
 
   return {
@@ -759,6 +775,7 @@ export function getNiivueCommandsModule({
       niivueSetColormap: actions.niivueSetColormap,
       niivueToggleColorbar: actions.niivueToggleColorbar,
       niivueToggleInterpolation: actions.niivueToggleInterpolation,
+      niivueToggleCrosshair: actions.niivueToggleCrosshair,
     },
     defaultContext: 'NIIVUE',
   }

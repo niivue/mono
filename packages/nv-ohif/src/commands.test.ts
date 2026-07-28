@@ -629,6 +629,31 @@ describe('niivueToggleInterpolation', () => {
   })
 })
 
+describe('niivueToggleCrosshair', () => {
+  it('hides then shows the crosshair (width 0 <-> 1) and redraws', () => {
+    let drawn = 0
+    const nv = {
+      ...stubNiivue(),
+      crosshairWidth: 1,
+      is3DCrosshairVisible: true,
+      drawScene: () => {
+        drawn++
+      },
+    }
+    register('vp-1', nv)
+    const { definitions } = getNiivueCommandsModule({
+      servicesManager: services('vp-1'),
+    })
+    definitions.niivueToggleCrosshair()
+    expect(nv.crosshairWidth).toBe(0)
+    expect(nv.is3DCrosshairVisible).toBe(false)
+    definitions.niivueToggleCrosshair()
+    expect(nv.crosshairWidth).toBe(1)
+    expect(nv.is3DCrosshairVisible).toBe(true)
+    expect(drawn).toBe(2)
+  })
+})
+
 describe('niivueAutoWindowLevel', () => {
   it('recomputes the robust window on the base volume', () => {
     const nv = stubNiivue()

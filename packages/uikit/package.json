@@ -4,6 +4,25 @@
   "private": false,
   "type": "module",
   "description": "UIKit: controls and widgets integrated into the NiiVue rendering lifecycle",
+  "license": "BSD-2-Clause",
+  "author": "niivue authors",
+  "homepage": "https://github.com/niivue/niivue",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/niivue/niivue.git"
+  },
+  "bugs": {
+    "url": "https://github.com/niivue/niivue/issues"
+  },
+  "keywords": [
+    "niivue",
+    "webgpu",
+    "webgl",
+    "medical-imaging",
+    "visualization",
+    "overlay",
+    "annotation"
+  ],
   "main": "./dist/uikit.js",
   "module": "./dist/uikit.js",
   "types": "./dist/index.d.ts",

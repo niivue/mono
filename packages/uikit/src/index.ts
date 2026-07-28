@@ -4,6 +4,11 @@
 // docs/ruler-port.md in @niivue/niivue).
 
 // biome-ignore-all lint/performance/noBarrelFile: package entry point
+export type { AnnotationGeometryOptions } from './annotationOverlay'
+export {
+  buildAnnotationGeometry,
+  UIKitAnnotationOverlay,
+} from './annotationOverlay'
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'
 export { UIKitLineOverlay } from './lineOverlay'

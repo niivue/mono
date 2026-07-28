@@ -1295,6 +1295,8 @@ export default class NVGlview {
     // tracking pan/zoom/slice. buildPersistedMeasurements (below, font-gated)
     // reads what this populates.
     NVMeasurement.projectMeasurementScreenLines(this.model, screenSlices)
+    // Same for vector annotations (see annotationScreenShapes / isAnnotationDrawn).
+    NVAnnotation.projectAnnotationScreenShapes(this.model, screenSlices)
     if (this.fontRenderer.isReady) {
       if (headerStr !== '') {
         labels.push(

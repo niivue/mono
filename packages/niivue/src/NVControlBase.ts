@@ -54,6 +54,7 @@ import type {
   AffineMatrix,
   AffineTransform,
   AnnotationPoint,
+  AnnotationScreenShape,
   AnnotationStyle,
   AnnotationTool,
   BackendType,
@@ -974,6 +975,20 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * When false, NiiVue's built-in 2D vector-annotation shapes are not drawn, so
+   * an external overlay can render them from `annotationScreenShapes`. The brush
+   * cursor and selection handles are unaffected.
+   */
+  get isAnnotationDrawn(): boolean {
+    return this.model.ui.isAnnotationDrawn
+  }
+  set isAnnotationDrawn(v: boolean) {
+    this.model.ui.isAnnotationDrawn = v
+    this.emit('change', { property: 'isAnnotationDrawn', value: v })
+    this.drawScene()
+  }
+
   get isThumbnailVisible(): boolean {
     return this.model.ui.isThumbnailVisible
   }
@@ -1101,6 +1116,16 @@ export default class NiiVue extends EventTarget {
     return active
       ? [...this.model._persistedMeasurementScreenLines, active]
       : this.model._persistedMeasurementScreenLines
+  }
+
+  /**
+   * Vector annotations projected to the current frame's canvas pixels, so an
+   * external overlay (a @niivue/uikit shape renderer through the overlay hook)
+   * can draw the shapes + stats labels itself. Recomputed every frame. Pair with
+   * `isAnnotationDrawn = false` to replace the built-in annotation rendering.
+   */
+  get annotationScreenShapes(): readonly AnnotationScreenShape[] {
+    return this.model._persistedAnnotationScreenShapes
   }
 
   get rulerWidth(): number {

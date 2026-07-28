@@ -97,6 +97,7 @@ export type {
   AffineMatrix,
   AffineTransform,
   AnnotationConfig,
+  AnnotationScreenShape,
   AnnotationStats,
   AnnotationTool,
   BackendType,

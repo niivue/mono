@@ -158,6 +158,7 @@ export const UI_DEFAULTS: UIConfig = {
   isPositionInMM: false,
   isMeasureUnitsVisible: true,
   isMeasurementDrawn: true,
+  isAnnotationDrawn: true,
   isThumbnailVisible: false,
   thumbnailUrl: '',
   placeholderText: 'No image loaded',

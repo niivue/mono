@@ -6,6 +6,7 @@ import * as NVConstants from '@/NVConstants'
 import { COLORMAP_TYPE } from '@/NVConstants'
 import type {
   AnnotationConfig,
+  AnnotationScreenShape,
   ColorbarInfo,
   CompletedAngle,
   CompletedMeasurement,
@@ -127,6 +128,11 @@ export default class NVModel {
   // measurement drag and is cleared on release.
   _persistedMeasurementScreenLines: MeasurementScreenLine[] = []
   _activeMeasurementScreenLine: MeasurementScreenLine | null = null
+
+  // Vector annotations projected to canvas pixels for the current frame, exposed
+  // via NVControlBase.annotationScreenShapes so an external overlay can draw the
+  // shapes. Refilled each frame by the view (projectAnnotationScreenShapes).
+  _persistedAnnotationScreenShapes: AnnotationScreenShape[] = []
 
   constructor(options: NiiVueOptions = {}) {
     // Scene — flat options mapped to scene group

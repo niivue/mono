@@ -620,6 +620,13 @@ export type UIConfig = {
    * unaffected. Default true.
    */
   isMeasurementDrawn: boolean
+  /**
+   * When false, NiiVue's built-in 2D vector-annotation shapes (ellipse/rect/
+   * circle/line/arrow fill + stroke + stats labels) are NOT drawn, so an external
+   * overlay can render them from `annotationScreenShapes` instead. The brush
+   * cursor and selection handles are unaffected. Default true.
+   */
+  isAnnotationDrawn: boolean
   isThumbnailVisible: boolean
   thumbnailUrl: string
   placeholderText: string
@@ -1257,6 +1264,34 @@ export type VectorAnnotation = {
     start: AnnotationPoint
     end: AnnotationPoint
     width?: number
+  }
+}
+
+/**
+ * A vector annotation projected to the current frame's canvas pixels, exposed so
+ * an external overlay (a @niivue/uikit shape renderer drawn through the overlay
+ * hook) can draw the shape + its stats label in screen space with its own
+ * renderer. Recomputed every frame. See NVControlBase.annotationScreenShapes.
+ */
+export type AnnotationScreenShape = {
+  id: string
+  tool: AnnotationTool
+  /** Outer boundary projected to canvas px (the outline for closed shapes). */
+  outer: AnnotationPoint[]
+  /** Hole boundaries projected to canvas px (freehand with holes). */
+  holes: AnnotationPoint[][]
+  /** Shape endpoints projected to canvas px (line/arrow path, ellipse bbox). */
+  start?: AnnotationPoint
+  end?: AnnotationPoint
+  /** True for area shapes (ellipse/rect/circle/freehand); false for line/arrow. */
+  isClosed: boolean
+  style: AnnotationStyle
+  /** Stats label text lines + canvas-px anchor + alignment, for measure tools. */
+  label?: {
+    lines: string[]
+    x: number
+    y: number
+    align: 'left' | 'center'
   }
 }
 

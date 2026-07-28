@@ -1638,6 +1638,8 @@ export default class NVView {
     // measurements are created by user interaction, which happens after the view is
     // up and the (bundled) font has loaded.
     NVMeasurement.projectMeasurementScreenLines(this.model, screenSlices)
+    // Same for vector annotations (see annotationScreenShapes / isAnnotationDrawn).
+    NVAnnotation.projectAnnotationScreenShapes(this.model, screenSlices)
     // Layer 5: Font (full-canvas)
     if (this.fontRenderer.isReady && this.fontBindGroup) {
       const hasContent =

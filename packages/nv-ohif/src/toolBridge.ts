@@ -1,4 +1,41 @@
-import { DRAG_MODE } from '@niivue/niivue'
+import { type AnnotationTool, DRAG_MODE } from '@niivue/niivue'
+
+/**
+ * Map an OHIF measurement tool to a NiiVue vector-annotation tool. Returns null
+ * for tools that are not annotation-backed (handled as drag modes instead).
+ * Setting `nv.annotationTool` to the result + `nv.annotationIsEnabled = true`
+ * makes a left-drag on a 2D slice draw the shape; the measure* variants also
+ * compute ROI stats (area/mean) and fire `annotationAdded` with them.
+ */
+export function ohifToolToAnnotationTool(
+  tool: string | undefined,
+): AnnotationTool | null {
+  switch (tool) {
+    case 'EllipticalROI':
+      return 'measureEllipse'
+    case 'RectangleROI':
+      return 'measureRect'
+    case 'CircleROI':
+      return 'measureCircle'
+    case 'PlanarFreehandROI':
+      // freehand has no measure variant (no area/mean); draws the contour only.
+      return 'freehand'
+    case 'ArrowAnnotate':
+      return 'arrow'
+    default:
+      return null
+  }
+}
+
+/**
+ * OHIF measurement tools NiiVue cannot back yet (no core primitive). Activating
+ * one shows a brief 'not supported' status and keeps safe crosshair navigation.
+ */
+export const UNSUPPORTED_MEASUREMENT_TOOLS: ReadonlySet<string> = new Set([
+  'Bidirectional',
+  'SplineROI',
+  'LivewireContour',
+])
 
 /** Map an OHIF primary tool name to NiiVue's matching left-drag mode. */
 export function ohifToolToDragMode(tool: string | undefined): number {

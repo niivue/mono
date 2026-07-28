@@ -1,12 +1,15 @@
-import type { NiiVueOptions } from '@niivue/niivue'
+import type { NiiVueOptions, VectorAnnotation } from '@niivue/niivue'
 import NiiVue, { NVSlide, SLICE_TYPE } from '@niivue/niivue'
 import { loadDefaultFont } from '@niivue/uikit'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import type { NiivueCompletedMeasurement } from './commands'
 import {
+  clearNiivueAnnotations,
   readBaseWindowLevel,
+  reflectNiivueAnnotation,
   reflectNiivueMeasurement,
+  removeNiivueAnnotation,
   syncNiivueWindowLevelToOhif,
 } from './commands'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
@@ -20,7 +23,11 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
-import { ohifToolToDragMode } from './toolBridge'
+import {
+  ohifToolToAnnotationTool,
+  ohifToolToDragMode,
+  UNSUPPORTED_MEASUREMENT_TOOLS,
+} from './toolBridge'
 import { VolumeRulerOverlay } from './volumeRulerOverlay'
 import { mountWsiSlideView } from './wsiSlideView'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
@@ -203,6 +210,43 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
     nv.addEventListener('measurementCompleted', onMeasurement)
 
+    // ROI / arrow annotations: reflect a completed vector annotation into OHIF's
+    // measurement panel, remove its row when the annotation is removed, and drop
+    // every row when annotations are cleared (series swap / clear-all).
+    const onAnnotationAdded = (e: Event) => {
+      const annotation = (e as CustomEvent<{ annotation: VectorAnnotation }>)
+        .detail?.annotation
+      if (!annotation) return
+      const added = reflectNiivueAnnotation(
+        viewportId,
+        servicesManagerRef.current,
+        annotation,
+      )
+      const stats = annotation.stats
+      if (!added || !stats) return
+      const message = `Area: ${stats.area.toFixed(1)} mm²`
+      setStatus({ kind: 'note', message })
+      window.setTimeout(
+        () =>
+          setStatus((s) =>
+            s.kind === 'note' && s.message === message ? { kind: 'idle' } : s,
+          ),
+        2000,
+      )
+    }
+    const onAnnotationRemoved = (e: Event) => {
+      const id = (e as CustomEvent<{ id: string }>).detail?.id
+      if (id) removeNiivueAnnotation(viewportId, servicesManagerRef.current, id)
+    }
+    const onAnnotationChanged = (e: Event) => {
+      const action = (e as CustomEvent<{ action: string }>).detail?.action
+      if (action === 'clear')
+        clearNiivueAnnotations(viewportId, servicesManagerRef.current)
+    }
+    nv.addEventListener('annotationAdded', onAnnotationAdded)
+    nv.addEventListener('annotationRemoved', onAnnotationRemoved)
+    nv.addEventListener('annotationChanged', onAnnotationChanged)
+
     return () => {
       disposed = true
       setReady(false)
@@ -210,6 +254,9 @@ export function NiivueViewport(props: OhifViewportProps) {
       refreshToolbar(servicesManagerRef.current, viewportId)
       canvas.removeEventListener('pointerup', onPointerUp)
       nv.removeEventListener('measurementCompleted', onMeasurement)
+      nv.removeEventListener('annotationAdded', onAnnotationAdded)
+      nv.removeEventListener('annotationRemoved', onAnnotationRemoved)
+      nv.removeEventListener('annotationChanged', onAnnotationChanged)
       unregisterRuler?.()
       rulerOverlay?.destroy()
       ro.disconnect()
@@ -237,6 +284,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     // re-project onto the new anatomy, and the Overlay button reads active with
     // nothing overlaid. (No-op on the first load — nothing to clear yet.)
     nv.clearMeasurements()
+    // Same rationale for vector annotations (ROI/arrow tools): clear so the
+    // previous series' ellipses/rectangles/arrows do not re-project onto the
+    // new anatomy.
+    nv.clearAnnotations()
     // Keep the registry's view of the base display sets current, so overlay
     // commands know what is already loaded and W/L-preset buttons can gate on
     // the base modality (see commands.ts). Refresh the toolbar so those
@@ -469,7 +520,30 @@ export function NiivueViewport(props: OhifViewportProps) {
     const apply = () => {
       const tool = svc.getActivePrimaryMouseButtonTool?.('default')
       activeOhifToolRef.current = tool
-      nv.primaryDragMode = ohifToolToDragMode(tool)
+      // ROI / arrow tools drive NiiVue's vector-annotation system (measureEllipse
+      // etc.); the master gate must be on for a left-drag to draw. Every other
+      // tool turns the gate off and maps to a left-drag mode instead.
+      const annoTool = ohifToolToAnnotationTool(tool)
+      if (annoTool) {
+        nv.annotationTool = annoTool
+        nv.annotationIsEnabled = true
+      } else {
+        nv.annotationIsEnabled = false
+        nv.primaryDragMode = ohifToolToDragMode(tool)
+        if (tool && UNSUPPORTED_MEASUREMENT_TOOLS.has(tool)) {
+          const message = `${tool} is not supported in NiiVue`
+          setStatus({ kind: 'note', message })
+          window.setTimeout(
+            () =>
+              setStatus((s) =>
+                s.kind === 'note' && s.message === message
+                  ? { kind: 'idle' }
+                  : s,
+              ),
+            2500,
+          )
+        }
+      }
       slideViewRef.current?.setTool(tool)
     }
     apply()

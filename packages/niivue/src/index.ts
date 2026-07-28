@@ -62,6 +62,9 @@ export { default, default as NiiVue } from './NVControl'
 export type { SerializeOptions } from './NVDocument'
 // Event types
 export type {
+  AnnotationAddedDetail,
+  AnnotationChangedDetail,
+  AnnotationRemovedDetail,
   AzimuthElevationChangeDetail,
   CanvasResizeDetail,
   ClipPlaneChangeDetail,
@@ -93,6 +96,9 @@ export type {
 export type {
   AffineMatrix,
   AffineTransform,
+  AnnotationConfig,
+  AnnotationStats,
+  AnnotationTool,
   BackendType,
   CanvasViewport,
   ColorMap,
@@ -130,6 +136,7 @@ export type {
   SignalSpectrumMode,
   SyncOpts,
   TypedVoxelArray,
+  VectorAnnotation,
   ViewHitTest,
   VolumeChunkExplode,
   VolumeChunkSource,

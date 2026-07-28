@@ -1,4 +1,9 @@
-import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
+import {
+  type AnnotationStats,
+  DRAG_MODE,
+  SLICE_TYPE,
+  type VectorAnnotation,
+} from '@niivue/niivue'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
@@ -328,9 +333,47 @@ interface MeasurementServiceLike {
     data: unknown,
     toMeasurementSchema: (data: { measurement: unknown }) => unknown,
   ) => unknown
+  remove?: (uid: string, source?: MeasurementSourceLike) => void
 }
-// One 'NiiVue' source + Length mapping per MeasurementService. createSource is
-// idempotent, but addMapping stacks, so register the mapping exactly once.
+// OHIF value types for the ROI / point tools (literals, so we do not depend on
+// measurementService.VALUE_TYPES at runtime).
+const ELLIPSE_VALUE_TYPE = 'value_type::ellipse'
+const CIRCLE_VALUE_TYPE = 'value_type::circle'
+const POINT_VALUE_TYPE = 'value_type::point'
+
+// NiiVue annotation tool -> OHIF measurement tool + value type. Only the tools
+// nv-ohif activates (see toolBridge) are mapped; measureLine doubles as Length.
+const ANNOTATION_TO_OHIF: Record<
+  string,
+  { toolName: string; valueType: string; points: number }
+> = {
+  measureEllipse: {
+    toolName: 'EllipticalROI',
+    valueType: ELLIPSE_VALUE_TYPE,
+    points: 4,
+  },
+  // OHIF's Rectangle mapping uses the polyline value type.
+  measureRect: {
+    toolName: 'RectangleROI',
+    valueType: POLYLINE_VALUE_TYPE,
+    points: 4,
+  },
+  measureCircle: {
+    toolName: 'CircleROI',
+    valueType: CIRCLE_VALUE_TYPE,
+    points: 2,
+  },
+  measureLine: {
+    toolName: 'Length',
+    valueType: POLYLINE_VALUE_TYPE,
+    points: 2,
+  },
+  arrow: { toolName: 'ArrowAnnotate', valueType: POINT_VALUE_TYPE, points: 1 },
+}
+
+// One 'NiiVue' source per MeasurementService, with a mapping per tool. Length
+// covers the ruler; the annotation tools cover the ROI/arrow shapes. createSource
+// is idempotent, but addMapping stacks, so register the set exactly once.
 const measurementSources = new WeakMap<object, MeasurementSourceLike>()
 function niivueMeasurementSource(
   measurementService: MeasurementServiceLike,
@@ -338,18 +381,52 @@ function niivueMeasurementSource(
   const cached = measurementSources.get(measurementService as object)
   if (cached) return cached
   const source = measurementService.createSource('NiiVue', '1.0')
-  measurementService.addMapping(
-    source,
-    'Length',
-    [{ valueType: POLYLINE_VALUE_TYPE, points: 2 }],
-    () => ({}),
-    (data) => data.measurement,
-  )
+  const register = (toolName: string, valueType: string, points: number) =>
+    measurementService.addMapping(
+      source,
+      toolName,
+      [{ valueType, points }],
+      () => ({}),
+      (data) => data.measurement,
+    )
+  register('Length', POLYLINE_VALUE_TYPE, 2)
+  for (const { toolName, valueType, points } of Object.values(
+    ANNOTATION_TO_OHIF,
+  )) {
+    if (toolName === 'Length') continue // registered above
+    register(toolName, valueType, points)
+  }
   measurementSources.set(measurementService as object, source)
   return source
 }
 
 let niivueMeasurementCounter = 0
+
+/**
+ * Resolve a loaded DICOM series (a displaySet with a non-empty `instances`
+ * array) backing this viewport, so an OHIF measurement can carry a
+ * `referenceSeriesUID` the panel can render without throwing. Returns undefined
+ * for a NIfTI-URL display set (no instances) so callers skip reflection.
+ */
+function resolveBackingSeries(
+  entry: NiivueViewportEntry,
+  displaySetService: DisplaySetServiceLike,
+): OhifDisplaySet | undefined {
+  for (const ds of entry.displaySets) {
+    if (!ds.SeriesInstanceUID) continue
+    const resolved = displaySetService.getDisplaySetsForSeries?.(
+      ds.SeriesInstanceUID,
+    )
+    const withInstances = resolved?.find((r) => (r.instances?.length ?? 0) > 0)
+    if (withInstances?.SeriesInstanceUID) return withInstances
+  }
+  return undefined
+}
+
+// world mm in NIfTI RAS -> DICOM patient LPS (negate x and y).
+function rasToLps(p: [number, number, number]): [number, number, number] {
+  return [-p[0], -p[1], p[2]]
+}
 
 /**
  * Reflect a completed NiiVue ruler measurement into OHIF's MeasurementService so
@@ -380,28 +457,12 @@ export function reflectNiivueMeasurement(
   const entry = getNiivueEntry(viewportId)
   if (!entry) return false
 
-  // Resolve a backing DICOM series that OHIF can render a row for.
-  let backing: OhifDisplaySet | undefined
-  for (const ds of entry.displaySets) {
-    if (!ds.SeriesInstanceUID) continue
-    const resolved = displaySetService.getDisplaySetsForSeries(
-      ds.SeriesInstanceUID,
-    )
-    const withInstances = resolved?.find((r) => (r.instances?.length ?? 0) > 0)
-    if (withInstances) {
-      backing = withInstances
-      break
-    }
-  }
+  const backing = resolveBackingSeries(entry, displaySetService)
   if (!backing?.SeriesInstanceUID) return false
 
   const source = niivueMeasurementSource(measurementService)
   const uid = `niivue-length-${++niivueMeasurementCounter}`
-  const toLps = (p: [number, number, number]): [number, number, number] => [
-    -p[0],
-    -p[1],
-    p[2],
-  ]
+  const toLps = rasToLps
   const lengthMm = measurement.distance
   const forUID = backing.instances?.[0]?.FrameOfReferenceUID as
     | string
@@ -431,6 +492,159 @@ export function reflectNiivueMeasurement(
     (data) => data.measurement,
   )
   return true
+}
+
+// --- ROI / arrow annotations: reflect NiiVue vector annotations into OHIF -----
+
+// niivue annotation id -> OHIF measurement uid, per viewport, so a removed or
+// cleared annotation can remove its panel row.
+const reflectedAnnotations = new Map<string, Map<string, string>>()
+
+function modalityUnit(entry: NiivueViewportEntry): string {
+  const modality = baseModality(entry)
+  if (modality === 'CT') return 'HU'
+  if (modality === 'PT') return 'SUV'
+  return ''
+}
+
+// The panel row content + cachedStats for a reflected annotation. Measure tools
+// (ellipse/rect/circle) carry area (mm^2) + intensity stats; arrows carry none.
+function buildAnnotationDisplay(
+  toolName: string,
+  stats: AnnotationStats | undefined,
+  unit: string,
+): { primary: string[]; data: Record<string, unknown>; label: string } {
+  const label = `NiiVue ${toolName}`
+  if (toolName === 'ArrowAnnotate' || !stats) {
+    return { primary: [label], data: {}, label }
+  }
+  const withUnit = (v: number, key: string) =>
+    unit ? `${key}: ${v.toFixed(1)} ${unit}` : `${key}: ${v.toFixed(1)}`
+  return {
+    primary: [
+      `${stats.area.toFixed(1)} mm²`,
+      withUnit(stats.max, 'Max'),
+      withUnit(stats.mean, 'Mean'),
+    ],
+    data: {
+      area: stats.area,
+      mean: stats.mean,
+      stdDev: stats.stdDev,
+      max: stats.max,
+      min: stats.min,
+      unit,
+      areaUnit: 'mm²',
+    },
+    label,
+  }
+}
+
+/**
+ * Reflect a completed NiiVue vector annotation (ellipse/rect/circle/arrow) into
+ * OHIF's MeasurementService so it renders as a first-class panel row with its
+ * stats. Returns true when a row was added. Needs a backing DICOM series with
+ * instances (same constraint as the ruler; a NIfTI-URL display set is skipped).
+ * Intensity stats are the NiiVue volume's sampled values in the base modality's
+ * unit; area is in mm^2 (voxel-spacing aware, from NiiVue's annotation stats).
+ */
+export function reflectNiivueAnnotation(
+  viewportId: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
+  annotation: VectorAnnotation,
+): boolean {
+  const services = ohifServices(servicesManager)
+  const measurementService = services?.measurementService as
+    | MeasurementServiceLike
+    | undefined
+  const displaySetService = services?.displaySetService as
+    | DisplaySetServiceLike
+    | undefined
+  if (
+    !measurementService?.addRawMeasurement ||
+    !displaySetService?.getDisplaySetsForSeries
+  )
+    return false
+  const toolType = annotation.shape?.type
+  const mapping = toolType ? ANNOTATION_TO_OHIF[toolType] : undefined
+  if (!mapping) return false
+  const entry = getNiivueEntry(viewportId)
+  if (!entry) return false
+  const backing = resolveBackingSeries(entry, displaySetService)
+  if (!backing?.SeriesInstanceUID) return false
+
+  const source = niivueMeasurementSource(measurementService)
+  const uid = `niivue-${mapping.toolName}-${++niivueMeasurementCounter}`
+  const forUID = backing.instances?.[0]?.FrameOfReferenceUID as
+    | string
+    | undefined
+  const points = annotation.anchorMM ? [rasToLps(annotation.anchorMM)] : []
+  const unit = modalityUnit(entry)
+  const { primary, data, label } = buildAnnotationDisplay(
+    mapping.toolName,
+    annotation.stats,
+    unit,
+  )
+
+  measurementService.addRawMeasurement(
+    source,
+    mapping.toolName,
+    {
+      uid,
+      // addRawMeasurement unconditionally destructures data.annotation.data.
+      annotation: { data: {} },
+      measurement: {
+        uid,
+        toolName: mapping.toolName,
+        label,
+        referenceSeriesUID: backing.SeriesInstanceUID,
+        referenceStudyUID: backing.StudyInstanceUID as string | undefined,
+        displaySetInstanceUID: backing.displaySetInstanceUID,
+        FrameOfReferenceUID: forUID,
+        points,
+        displayText: { primary, secondary: [] },
+        data,
+        type: mapping.valueType,
+        metadata: { toolName: mapping.toolName, FrameOfReferenceUID: forUID },
+      },
+    },
+    (d) => d.measurement,
+  )
+
+  let byView = reflectedAnnotations.get(viewportId)
+  if (!byView) {
+    byView = new Map()
+    reflectedAnnotations.set(viewportId, byView)
+  }
+  byView.set(annotation.id, uid)
+  return true
+}
+
+/** Remove one reflected annotation's OHIF panel row (annotationRemoved). */
+export function removeNiivueAnnotation(
+  viewportId: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
+  annotationId: string,
+): void {
+  const byView = reflectedAnnotations.get(viewportId)
+  const uid = byView?.get(annotationId)
+  if (!byView || !uid) return
+  const measurementService = ohifServices(servicesManager)
+    ?.measurementService as MeasurementServiceLike | undefined
+  measurementService?.remove?.(uid)
+  byView.delete(annotationId)
+}
+
+/** Remove every reflected row for a viewport (annotation clear / series swap). */
+export function clearNiivueAnnotations(
+  viewportId: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
+): void {
+  const byView = reflectedAnnotations.get(viewportId)
+  if (!byView || byView.size === 0) return
+  const measurementService = ohifServices(servicesManager)
+    ?.measurementService as MeasurementServiceLike | undefined
+  for (const uid of byView.values()) measurementService?.remove?.(uid)
+  byView.clear()
 }
 
 export function syncNiivueWindowLevelToOhif(

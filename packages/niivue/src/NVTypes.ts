@@ -1226,6 +1226,9 @@ export type AnnotationTool =
   | 'measureLine'
   | 'circle'
   | 'measureCircle'
+  // Multi-click closed contours (Catmull-Rom spline through control points).
+  | 'spline'
+  | 'measureSpline'
 
 export type AnnotationStats = {
   area: number

@@ -36,14 +36,19 @@ export class VolumeAnnotationOverlay implements UIKitOverlayRenderer {
   drawOverlay(frame: UIKitOverlayFrame): void {
     const dpr = frame.dpr
     const shapes = this.getShapes()
-    // Cheap signature of everything the shape geometry depends on (projected
-    // outer points + endpoints, rounded to px), so we relayout only on change.
+    // Cheap signature of everything the geometry + labels depend on (projected
+    // points rounded to px, plus the label text), so we relayout only on change.
+    // The label text must be in the signature: editing an annotation's label
+    // changes nothing geometric, so without it the overlay would not rebuild.
     let sig = `${dpr}`
     for (const s of shapes) {
       sig += `|${s.id};`
       for (const p of s.outer) sig += `${p.x | 0},${p.y | 0};`
       if (s.start) sig += `s${s.start.x | 0},${s.start.y | 0};`
       if (s.end) sig += `e${s.end.x | 0},${s.end.y | 0};`
+      if (s.start2) sig += `S${s.start2.x | 0},${s.start2.y | 0};`
+      if (s.end2) sig += `E${s.end2.x | 0},${s.end2.y | 0};`
+      if (s.label) sig += `t${s.label.lines.join('')};`
     }
     if (sig !== this.lastSig) {
       this.lastSig = sig

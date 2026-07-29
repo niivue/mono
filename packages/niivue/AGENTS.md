@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in the NiiVueGPU package (`@niivue/niivue`).
+Guidance for AI coding agents working in the NiiVue package (`@niivue/niivue`).
 
 ## Project overview
 
-NiiVueGPU is a WebGPU-based neuroimaging visualization library (volumes + meshes) with a WebGL2 fallback. Written in TypeScript, MVC architecture with dual rendering backends.
+NiiVue is a WebGPU-based neuroimaging visualization library (volumes + meshes) with a WebGL2 fallback. Written in TypeScript, MVC architecture with dual rendering backends.
 
 ## Build commands
 
@@ -33,9 +33,9 @@ bunx nx lint niivue
 
 **Before committing**, run `bun run lint:fix && bun run typecheck` (or `bunx nx lint niivue && bunx nx typecheck niivue`).
 
-`bun run dev` uses a Vite plugin (`vite.config.dev.js`) to redirect `import '../dist/niivuegpu.mjs'` to source for HMR, so the same HTML/JS files work in dev and production.
+`bun run dev` uses a Vite plugin (`vite.config.dev.js`) to redirect `import '../dist/niivue.js'` to source for HMR, so the same HTML/JS files work in dev and production.
 
-Library packaging: `bun run build` emits `dist/niivuegpu.js` (both backends), `dist/niivuegpu.webgpu.js` (WebGPU-only), and `dist/niivuegpu.webgl2.js` (WebGL2-only), exported as `niivuegpu`, `niivuegpu/webgpu`, and `niivuegpu/webgl2`.
+Library packaging: `bun run build` emits `dist/niivue.js` (both backends), `dist/niivue.webgpu.js` (WebGPU-only), and `dist/niivue.webgl2.js` (WebGL2-only), exported as `@niivue/niivue`, `@niivue/niivue/webgpu`, and `@niivue/niivue/webgl2`.
 
 ## Testing
 
@@ -50,6 +50,26 @@ bunx nx test niivue      # From monorepo root, via Nx
 
 Coverage is enabled by default via `bunfig.toml` (reporters: `text` + `lcov`, output at `coverage/`). The `coverage/` directory is gitignored. No coverage thresholds are configured.
 
+### End-to-end tests (Playwright)
+
+Browser-based e2e tests live in `e2e/*.spec.ts` and run in real headless Chromium
+against the Vite dev server. They exist because some code can't be reached by the
+Bun unit runner: NiiVue's module graph uses Vite's `import.meta.glob` (so the full
+`NVDocument`/controller can't be imported under Bun) and rendering / document
+round-trips need a GPU context. Use these for anything needing a real instance.
+
+```bash
+bun run test:e2e         # playwright test (config: playwright.config.ts)
+bunx nx e2e niivue       # via Nx
+```
+
+`playwright.config.ts` starts a no-`--open` dev server (`bun run e2e:serve`) and
+reuses an already-running one locally (`reuseExistingServer` off in CI). These are
+kept OUT of the hermetic unit `test` target and the PR gate (they need a browser).
+Write assertions in Node/`expect`; drive the instance inside `page.evaluate`
+(`await import('/src/index.ts')`, force `backend: 'webgl2'`, attach an off-screen
+canvas). Artifacts (`test-results/`, `playwright-report/`) are gitignored.
+
 ### What's tested
 
 - **Drawing tools** (`src/drawing/`) — RLE codec, pen/line/flood-fill, undo stack
@@ -63,7 +83,7 @@ Coverage is enabled by default via `bunfig.toml` (reporters: `text` + `lcov`, ou
 
 ### What's NOT yet covered by unit tests
 
-The following modules require a browser or GPU context and are not covered by the Bun unit test suite. Rendering tests using Playwright are planned.
+The following modules require a browser or GPU context and are not covered by the Bun unit test suite. A Playwright e2e suite (`e2e/`, see above) now covers document save/reload round-trips end-to-end; broader rendering/visual coverage is still to come.
 
 - `gl/`, `wgpu/` — GPU shader/rendering code
 - `NVControl*.ts`, `NVLoader.ts` — DOM/canvas/fetch dependencies
@@ -80,19 +100,19 @@ The following modules require a browser or GPU context and are not covered by th
 - Follow AAA pattern (Arrange, Act, Assert) with one behavior per test
 - Test the public contract, not private internals
 
-Rendering changes must be verified manually via the interactive demos (`bun run dev` or `bun run demo`) until Playwright coverage lands.
+Rendering changes are still verified manually via the interactive demos (`bun run dev` or `bun run demo`); add an `e2e/*.spec.ts` when the behavior can be asserted through the public API in a real instance (see End-to-end tests above).
 
 ## Architecture (MVC)
 
 ```
-NiiVueGPU (controller) - src/NVControl.ts
+NiiVue (controller) - src/NVControl.ts
 ├── control/           - src/control/ (event handling, view lifecycle)
 ├── NVModel (data)     - src/NVModel.ts
 └── NVViewGPU (WebGPU) - src/wgpu/NVViewGPU.ts
     or NVViewGL (WebGL2) - src/gl/NVViewGL.ts
 ```
 
-**Data flow:** User interactions → NiiVueGPU → model updates + `drawScene()` → `requestAnimationFrame` → view.render()
+**Data flow:** User interactions → NiiVue → model updates + `drawScene()` → `requestAnimationFrame` → view.render()
 
 **Model-View separation:** Model is GPU-agnostic (only data). Views receive model read-only. Controller owns mutations. GPU resources are view-owned. This enables backend switching without data loss.
 
@@ -252,7 +272,7 @@ Use **methods** for:
 
 ### Events (EventTarget API)
 
-NiiVueGPU extends `EventTarget`. Use `addEventListener`/`removeEventListener` for all notifications:
+NiiVue extends `EventTarget`. Use `addEventListener`/`removeEventListener` for all notifications:
 
 ```js
 nv1.addEventListener('locationChange', (e) => { ... })  // crosshair moved
@@ -1343,7 +1363,7 @@ From package root (`src/index.ts`): `NVExtensionContext`, `computeSlicePointerEv
 
 ## Demo conventions
 
-Demos import `import NiiVue from '../dist/niivuegpu.mjs'` — Vite dev plugin redirects to source. Simple demos inline in HTML; complex ones use separate `.js` files. Assets relative to `demos/` (e.g., `../meshes/brain.mz3` from `features/`).
+Demos import `import NiiVue from '../dist/niivue.js'` — Vite dev plugin redirects to source. Simple demos inline in HTML; complex ones use separate `.js` files. Assets relative to `demos/` (e.g., `../meshes/brain.mz3` from `features/`).
 
 ## Dependencies
 

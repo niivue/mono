@@ -14,6 +14,8 @@ import type {
   ViewHitTest,
   WebGPUMeshGPU,
 } from '@/NVTypes'
+import type { SlidePlaneState } from '@/slide/slidePlane'
+import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
 import * as NVAnnotation from '@/view/NVAnnotation'
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM } from '@/view/NVCrosscut'
@@ -47,6 +49,7 @@ import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
 import { SliceRenderer } from './slice'
+import { SlidePlaneRendererGPU } from './slidePlaneRender'
 import { ThumbnailRenderer } from './thumbnail'
 import * as wgpu from './wgpu'
 
@@ -110,6 +113,8 @@ export default class NVView {
   isAntiAlias: boolean
   forceDevicePixelRatio: number
   device: GPUDevice | null
+  /** Set when the GPU device is lost (e.g. GPU OOM); halts the render loop. */
+  private _deviceLost = false
   context: GPUCanvasContext | null
   preferredCanvasFormat: GPUTextureFormat
   sampler: GPUSampler | null
@@ -140,6 +145,9 @@ export default class NVView {
   meshResources: Map<NVMesh, MeshGpuWithShader>
   orientCubeGpu: WebGPUMeshGPU | null
   thumbnailRenderer: ThumbnailRenderer
+  slidePlaneRenderer: SlidePlaneRendererGPU
+  /** Optional WSI slide registered into volume mm space, drawn in the 3D render tile. */
+  slidePlane: SlidePlaneState | null = null
   // Bounds: pixel rect for sub-canvas rendering
   private _boundsWidth = 0
   private _boundsHeight = 0
@@ -223,6 +231,7 @@ export default class NVView {
     this.meshResources = new Map()
     this.orientCubeGpu = null
     this.thumbnailRenderer = new ThumbnailRenderer()
+    this.slidePlaneRenderer = new SlidePlaneRendererGPU()
   }
 
   async init(): Promise<void> {
@@ -736,6 +745,9 @@ export default class NVView {
   render(): void {
     const md = this.model
     if (!this.device || !this.context || !this.depthTexture) return
+    // A lost device (GPU OOM) cannot be drawn to; bail so we don't spin the
+    // streaming loop against a dead device.
+    if (this._deviceLost) return
     // Skip render if canvas is detached (e.g., replaced during backend switch)
     if (!this.canvas.parentNode) return
     const device = this.device
@@ -746,6 +758,10 @@ export default class NVView {
     // Off-screen after viewport transform: skip render pass entirely. Sibling instances
     // still copy their own textures to the canvas in their own render() calls.
     if (this._isSubCanvasBounds && this._isBoundsOffscreen) return
+    // Publish the current lighting to the volume renderer BEFORE any chunk work
+    // (entry creation, request, pump) so chunk uploaders can skip the gradient
+    // pass when unlit. Matches the gradientAmount passed to the volume draw.
+    this.volumeRenderer.gradientAmount = md.volume.illumination
     markCpuStart()
     // Phase 3d: advance the chunk-residency LRU clock before the tile loop
     // requests this frame's working set, so eviction protects visible chunks.
@@ -1045,6 +1061,20 @@ export default class NVView {
             ),
           )
         }
+      }
+      // Outline the block a 3D vector stroke is drawing on (pick hint).
+      if (
+        md._pickedBlockBox &&
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER
+      ) {
+        crossLinesList.push(
+          ...NVSliceLayout.buildFocusBoxLines(
+            md._pickedBlockBox,
+            mvpMatrix as mat4,
+            ltwh,
+            buildLine,
+          ),
+        )
       }
       // each tile is drawn to a unique screen region
       pass.setViewport(ltwh[0], ltwh[1], ltwh[2], ltwh[3], 0.0, 1.0)
@@ -1426,6 +1456,44 @@ export default class NVView {
           0.5,
         )
       }
+      // Layer 2b-slide: WSI slide plane registered into volume mm space
+      // (RENDER tiles only). Uses the tile MVP (world mm -> clip); tiles stream
+      // via NVSlide and composite with the volume in its own space.
+      if (
+        tile.space !== 'global3d' &&
+        tile.axCorSag === NVConstants.SLICE_TYPE.RENDER &&
+        this.slidePlane &&
+        this.slidePlaneRenderer.isReady
+      ) {
+        const { tiles } = resolveSlidePlaneTiles(
+          this.slidePlane,
+          mvpMatrix as Float32Array,
+          ltwh[2],
+          ltwh[3],
+        )
+        this.slidePlaneRenderer.draw(
+          device,
+          pass,
+          mvpMatrix as Float32Array,
+          tiles,
+          this.slidePlane.slide,
+        )
+        if (this.slidePlane.annotation) {
+          this.slidePlaneRenderer.drawAnnotation(
+            device,
+            pass,
+            mvpMatrix as Float32Array,
+            this.slidePlane.annotation,
+          )
+        }
+        // Capture this frame's camera for screen->slide picking (drawing).
+        this.slidePlane.pickFrame = {
+          mvp: new Float32Array(mvpMatrix as Float32Array),
+          ltwh: [ltwh[0], ltwh[1], ltwh[2], ltwh[3]],
+          bx: this._boundsOffsetX,
+          by: this._boundsOffsetY,
+        }
+      }
       // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders and global3d)
       if (
         tile.space !== 'global3d' &&
@@ -1792,15 +1860,38 @@ export default class NVView {
     markEnd()
     // Stream in any not-yet-resident chunks of oversized volumes, then
     // schedule a follow-up frame so the freshly-uploaded data appears.
-    // Re-render if new chunks were admitted (present them) or a streaming
-    // cross-fade is still animating (drive it to completion).
-    const fading = this.volumeRenderer.fadeActive
-    this.volumeRenderer
-      .pumpChunkUploads()
-      .then((changed) => {
-        if (changed || fading) requestAnimationFrame(() => this.render())
-      })
-      .catch((err) => log.error('chunk upload pump failed', err))
+    // Re-render if new chunks were admitted (present them), a cross-fade is
+    // still animating (drive it to completion), or streaming work is still
+    // outstanding (chunks queued or mid-fetch). The last clause keeps the
+    // self-driven loop alive across frames where a pump uploads nothing because
+    // its chunks are still being fetched — otherwise streaming stalls until an
+    // unrelated redraw (e.g. a drag) re-kicks it.
+    // Pause the chunk upload pump during an active drag: its per-chunk decode +
+    // orient + gradient work would jank the rotation/pan. Resident chunks keep
+    // drawing (requestChunksInFrustum still stamps them, so the LRU won't evict
+    // them), and the pump resumes on release (pointerup -> drawScene), draining
+    // the queued working set then. Mirrors the WebGL2 backend.
+    if (!this.model._isDragging) {
+      const fading = this.volumeRenderer.fadeActive
+      this.volumeRenderer
+        .pumpChunkUploads()
+        .then((changed) => {
+          const stream = this.volumeRenderer.chunkStreamStats()
+          const busy = stream.pending > 0 || stream.inFlight > 0
+          if (changed || fading || busy) {
+            requestAnimationFrame(() => this.render())
+          }
+        })
+        .catch((err) => {
+          log.error('chunk upload pump failed', err)
+          // Keep the self-driven loop alive: an unexpected pump rejection must
+          // not permanently freeze streaming while chunks are still outstanding.
+          const stream = this.volumeRenderer.chunkStreamStats()
+          if (stream.pending > 0 || stream.inFlight > 0) {
+            requestAnimationFrame(() => this.render())
+          }
+        })
+    }
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */
@@ -1931,6 +2022,18 @@ export default class NVView {
         maxTextureDimension3D: this.maxTextureDimension3D,
       },
     })
+    // Surface a lost device (commonly GPU VRAM exhaustion — e.g. too many large
+    // streamed chunks resident at once) instead of a silently blank canvas, and
+    // stop driving the render loop once lost.
+    void this.device.lost.then((info) => {
+      this._deviceLost = true
+      if (info.reason !== 'destroyed') {
+        log.error(
+          `WebGPU device lost (${info.reason}): ${info.message}. Likely GPU ` +
+            'out of memory — reduce maxChunkResidencyBytes or use a coarser level.',
+        )
+      }
+    })
     this.context = this.canvas.getContext('webgpu')
     if (!this.context) {
       throw new Error('Unable to initialize WebGPU context')
@@ -2012,6 +2115,11 @@ export default class NVView {
       msaaCount,
     )
     await this.sliceRenderer.init(
+      this.device,
+      this.preferredCanvasFormat,
+      msaaCount,
+    )
+    this.slidePlaneRenderer.init(
       this.device,
       this.preferredCanvasFormat,
       msaaCount,

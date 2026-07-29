@@ -826,7 +826,7 @@ function emitPython(api: ApiDescriptor): string {
   lines.push(`class _GeneratedNiiVue(anywidget.AnyWidget):`)
   lines.push('    """Auto-generated reactive properties and command methods.')
   lines.push('')
-  lines.push(`    Mirrors NiiVueGPU @ niivue ${api.niivueVersion}.`)
+  lines.push(`    Mirrors NiiVue @ niivue ${api.niivueVersion}.`)
   lines.push('')
   lines.push('    Reactive properties are kept in sync with the JS view via')
   lines.push('    anywidget. Methods send command messages over the same')
@@ -1037,9 +1037,7 @@ function emitMethodDocstring(lines: string[], m: MethodDescriptor): void {
       out.push(`${py} : ${ty}`)
       const body = (p.doc ?? '').trim()
       if (body) {
-        for (const ln of body.split('\n')) {
-          out.push(`    ${ln.replace(/^\s+/, '')}`)
-        }
+        appendIndentedDocLines(out, body)
       }
     }
   }
@@ -1052,9 +1050,7 @@ function emitMethodDocstring(lines: string[], m: MethodDescriptor): void {
     out.push('-------')
     out.push(m.returns || 'Any')
     if (m.returnsDoc) {
-      for (const ln of m.returnsDoc.trim().split('\n')) {
-        out.push(`    ${ln.replace(/^\s+/, '')}`)
-      }
+      appendIndentedDocLines(out, m.returnsDoc.trim())
     }
   }
 
@@ -1064,6 +1060,13 @@ function emitMethodDocstring(lines: string[], m: MethodDescriptor): void {
     lines.push(ln ? `${indent}${pyStringEscape(ln)}` : '')
   }
   lines.push(`${indent}"""`)
+}
+
+function appendIndentedDocLines(out: string[], text: string): void {
+  for (const ln of text.split('\n')) {
+    const trimmed = ln.replace(/^\s+/, '').trimEnd()
+    out.push(trimmed ? `    ${trimmed}` : '')
+  }
 }
 
 function pyStringEscape(s: string): string {

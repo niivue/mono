@@ -7,10 +7,10 @@
  *
  * Usage:
  * ```ts
- * import NiiVueGPU from '@niivue/niivue';
+ * import NiiVue from '@niivue/niivue';
  * import { saveHTML } from '@niivue/nv-ext-save-html';
  *
- * const nv = new NiiVueGPU();
+ * const nv = new NiiVue();
  * await nv.attachTo('gl1');
  * await nv.loadVolumes([{ url: 'brain.nii.gz' }]);
  *
@@ -19,7 +19,8 @@
  * ```
  */
 
-import type NiiVueGPU from '@niivue/niivue'
+import type NiiVue from '@niivue/niivue'
+import { gzipCompress } from './gzip'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -29,7 +30,7 @@ export interface SaveHTMLOptions {
   /**
    * Fully self-contained niivue ESM bundle as a source code string.
    *
-   * The bundle must export `NiiVueGPU` as its **default export** and must
+   * The bundle must export `NiiVue` as its **default export** and must
    * have all dependencies (cbor-x, gl-matrix, nifti-reader-js, etc.) inlined.
    *
    * Build one with e.g. `vite build` using `rollupOptions.external: []`.
@@ -47,18 +48,8 @@ export interface SaveHTMLOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Compression helpers (Web Streams API — available in all modern browsers)
-// ---------------------------------------------------------------------------
-
-/** Gzip-compress a Uint8Array. */
-async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new CompressionStream('gzip')
-  const writer = stream.writable.getWriter()
-  writer.write(data)
-  writer.close()
-  return new Uint8Array(await new Response(stream.readable).arrayBuffer())
-}
+// Compression helpers live in ./gzip so they are reachable by the Bun test
+// runner — this module imports @niivue/niivue, whose graph uses import.meta.glob.
 
 // ---------------------------------------------------------------------------
 // Encoding / escaping helpers
@@ -159,7 +150,7 @@ ${base64Document}
     const blobUrl = URL.createObjectURL(blob);
     const niivueModule = await import(blobUrl);
     URL.revokeObjectURL(blobUrl);
-    const NiiVueGPU = niivueModule.default ?? niivueModule.NiiVueGPU;
+    const NiiVue = niivueModule.default ?? niivueModule.NiiVue;
 
     // 2. Decode base-64, gzip-decompress, and wrap as a File
     const base64 = document.getElementById("__nvd_data__").textContent.trim();
@@ -174,7 +165,7 @@ ${base64Document}
     const file = new File([bytes], "scene.nvd");
 
     // 3. Create NiiVue, attach to canvas, and load the document
-    const nv = new NiiVueGPU();
+    const nv = new NiiVue();
     await nv.attachTo("${canvasId}");
     await nv.loadDocument(file);
     // The serialized document has an empty matcap to avoid baking in
@@ -204,7 +195,7 @@ ${base64Document}
  * @returns A complete HTML document as a string.
  */
 export async function generateHTML(
-  nv: NiiVueGPU,
+  nv: NiiVue,
   options: SaveHTMLOptions,
 ): Promise<string> {
   const {
@@ -250,7 +241,7 @@ export async function generateHTML(
  * @param options  - See {@link SaveHTMLOptions}.
  */
 export async function saveHTML(
-  nv: NiiVueGPU,
+  nv: NiiVue,
   filename = 'scene.html',
   options: SaveHTMLOptions,
 ): Promise<void> {

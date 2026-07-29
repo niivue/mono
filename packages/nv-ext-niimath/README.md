@@ -13,10 +13,10 @@ Requires `@niivue/niivue` as a peer dependency.
 ## Usage
 
 ```ts
-import NiiVueGPU from '@niivue/niivue'
+import NiiVue from '@niivue/niivue'
 import { Niimath, runNiimathPipeline } from '@niivue/nv-ext-niimath'
 
-const nv = new NiiVueGPU()
+const nv = new NiiVue()
 await nv.attachTo('gl1')
 
 // One Niimath instance per page — its worker is expensive to spin up.

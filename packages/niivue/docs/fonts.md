@@ -1,6 +1,6 @@
 # Fonts
 
-NiiVueGPU renders text with MSDF (multi-channel signed distance field) atlases. Each
+NiiVue renders text with MSDF (multi-channel signed distance field) atlases. Each
 font is shipped as a `.json` metrics file + `.png` atlas pair under
 `src/assets/fonts/`, wrapped at build time by `scripts/generate-assets.js` into a
 TypeScript module that the library can import.

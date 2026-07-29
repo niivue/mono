@@ -1,5 +1,5 @@
 import type { NiiVueOptions, NVImage } from '@niivue/niivue'
-import NiiVueGPU, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
+import NiiVue, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import { css, html, LitElement, type PropertyValues } from 'lit'
 import { defaultLayouts } from './layouts'
 import {
@@ -110,13 +110,13 @@ export class NiivueViewerElement extends LitElement {
   options: Partial<NiiVueOptions> = {}
   sliceType = SLICE_TYPE.AXIAL
 
-  private niivue: NiiVueGPU | null = null
+  private niivue: NiiVue | null = null
   private resizeObserver: ResizeObserver | null = null
   private loadedVolumes = new Map<string, VolumeVisualProps>()
-  private attachmentReady: Promise<NiiVueGPU> | null = null
+  private attachmentReady: Promise<NiiVue> | null = null
   private attachmentGeneration = 0
 
-  get nv(): NiiVueGPU | null {
+  get nv(): NiiVue | null {
     return this.niivue
   }
 
@@ -134,7 +134,7 @@ export class NiivueViewerElement extends LitElement {
       return
     }
 
-    const nv = new NiiVueGPU({ ...defaultViewerOptions, ...this.options })
+    const nv = new NiiVue({ ...defaultViewerOptions, ...this.options })
     nv.addEventListener('locationChange', (evt) => {
       dispatchNiivueEvent(this, 'location-change', evt.detail)
     })
@@ -189,11 +189,11 @@ export class NiivueViewerElement extends LitElement {
     }
   }
 
-  private ownsAttachment(nv: NiiVueGPU, generation: number): boolean {
+  private ownsAttachment(nv: NiiVue, generation: number): boolean {
     return this.niivue === nv && this.attachmentGeneration === generation
   }
 
-  private async getAttachedNiivue(): Promise<NiiVueGPU | null> {
+  private async getAttachedNiivue(): Promise<NiiVue | null> {
     const attachmentReady = this.attachmentReady
     if (!attachmentReady) return this.niivue
 
@@ -294,7 +294,7 @@ export class NiivueViewerElement extends LitElement {
     await this.reconcileVolumeOrder(nv)
   }
 
-  private async reconcileVolumeOrder(nv: NiiVueGPU): Promise<void> {
+  private async reconcileVolumeOrder(nv: NiiVue): Promise<void> {
     let didReorder = false
     for (const [desiredIndex, opts] of this.volumes.entries()) {
       const currentIndex = volumeIndexByKey(nv.volumes, volumeKey(opts))
@@ -464,7 +464,7 @@ export class NiivueSceneElement extends LitElement {
 
   private forEachTargetViewer(
     viewerIndex: number | undefined,
-    callback: (niivue: NiiVueGPU) => void,
+    callback: (niivue: NiiVue) => void,
   ): void {
     if (viewerIndex === undefined) {
       this.scene.forEachNiivue(callback)

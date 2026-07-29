@@ -76,6 +76,13 @@ export default class NVModel {
   // --- Transient state ---
   /** Transient drag overlay for view rendering (controller-owned, not serialized) */
   _dragOverlay: DragOverlay | null = null
+  /**
+   * True during an active pointer drag (rotate/pan/etc.), mirrored from the
+   * controller's `isDragging`. Lets the view pause expensive per-frame work
+   * (chunked-volume upload pump) during interaction so rotation stays smooth.
+   * Controller-owned, not serialized.
+   */
+  _isDragging = false
   /** Transient world-space box outlined on 3D render tiles (e.g. focus region) */
   _focusBox: FocusBox | null = null
   /**
@@ -84,6 +91,12 @@ export default class NVModel {
    * LOD level, to visualize a heterogeneous chunk plan. Controller-owned.
    */
   _lodBoxes: FocusBox[] | null = null
+  /**
+   * Transient world-space outline of the exploded block a 3D vector stroke is
+   * drawing on — a hint so the user can see which block was picked. Drawn like
+   * `_focusBox`; set while a vector stroke is active, cleared on stroke end.
+   */
+  _pickedBlockBox: FocusBox | null = null
   /**
    * Transient world-mm override for the 3D render's rotation/zoom pivot. When
    * set, the render orbits and zooms about this point (which projects to the
@@ -110,24 +123,21 @@ export default class NVModel {
 
   constructor(options: NiiVueOptions = {}) {
     // Scene — flat options mapped to scene group
+    const sd = NVConstants.SCENE_DEFAULTS
     this.scene = {
-      azimuth: options.azimuth ?? 110,
-      elevation: options.elevation ?? 10,
-      crosshairPos: options.crosshairPos
-        ? vec3.fromValues(...options.crosshairPos)
-        : vec3.fromValues(0.5, 0.5, 0.5),
-      pan2Dxyzmm: options.pan2Dxyzmm
-        ? vec4.fromValues(...options.pan2Dxyzmm)
-        : vec4.fromValues(0, 0, 0, 1),
-      scaleMultiplier: options.scaleMultiplier ?? 1.0,
-      renderPan: options.renderPan
-        ? vec2.fromValues(...options.renderPan)
-        : vec2.fromValues(0, 0),
-      gamma: options.gamma ?? 1.0,
-      backgroundColor: options.backgroundColor ?? [0, 0, 0, 1],
-      clipPlaneColor: options.clipPlaneColor ?? [0.7, 0, 0.7, 0.4],
-      isClipPlaneCutaway: options.isClipPlaneCutaway ?? false,
-      clipPlaneOverlay: options.clipPlaneOverlay ?? false,
+      azimuth: options.azimuth ?? sd.azimuth,
+      elevation: options.elevation ?? sd.elevation,
+      crosshairPos: vec3.fromValues(
+        ...(options.crosshairPos ?? sd.crosshairPos),
+      ),
+      pan2Dxyzmm: vec4.fromValues(...(options.pan2Dxyzmm ?? sd.pan2Dxyzmm)),
+      scaleMultiplier: options.scaleMultiplier ?? sd.scaleMultiplier,
+      renderPan: vec2.fromValues(...(options.renderPan ?? sd.renderPan)),
+      gamma: options.gamma ?? sd.gamma,
+      backgroundColor: options.backgroundColor ?? [...sd.backgroundColor],
+      clipPlaneColor: options.clipPlaneColor ?? [...sd.clipPlaneColor],
+      isClipPlaneCutaway: options.isClipPlaneCutaway ?? sd.isClipPlaneCutaway,
+      clipPlaneOverlay: options.clipPlaneOverlay ?? sd.clipPlaneOverlay,
     }
     // Layout — flat options mapped to layout group
     this.layout = {

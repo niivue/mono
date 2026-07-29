@@ -41,9 +41,25 @@ packages/niivue/perf-report.html
 # at runtime by the save-html demo; regenerated on dev/build).
 apps/demo-ext-save-html/public/niivue-standalone.js
 
-# Large generated POC / fixture data (OME-Zarr chunks, DICOM-WSI, tile range
-# probes). Multi-GB, regenerated locally — never committed.
+# On-demand OME-Zarr fixtures for the range.html streaming example. Multi-GB,
+# downloaded by scripts/fetch-omezarr.ts. The small `stent` store is bundled
+# (tracked); every other store is ignored.
+packages/niivue/public/omezarr/*.ome.zarr/
+!packages/niivue/public/omezarr/stent.ome.zarr/
+
+# DICOM-WSI fixtures for the slides.html tile viewer. Hundreds of MB per series,
+# downloaded + manifest-generated on demand by scripts/fetch-dicom-wsi.ts.
+packages/niivue/public/dicom-wsi/
+packages/niivue/public/svs/
+
+# Synthetic POC fixtures for the range.html / slides.html streaming demos.
+# Deterministically generated on demand by scripts/generate-range-poc-fixture.ts
+# and scripts/generate-tile-range-poc-fixture.ts (run by `gen-fixtures`, which
+# the dev/build:examples/deploy scripts invoke). Never committed.
+packages/niivue/public/range-poc/
+packages/niivue/public/tile-range-poc/
+
+# Large generated POC / fixture data for the iiif-volumetric demo (OME-Zarr
+# chunks, tile range probes). Multi-GB, regenerated locally — never committed.
 apps/iiif-volumetric-demo/public/range-poc/
 apps/iiif-volumetric-demo/public/tile-range-poc/
-packages/niivue/public/dicom-wsi/
-packages/niivue/public/omezarr/

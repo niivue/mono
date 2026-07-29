@@ -3,6 +3,7 @@ import * as NVLoader from '@/NVLoader'
 import type { NVImage } from '@/NVTypes'
 import { NVWorker } from '@/workers/NVWorker'
 import VolumeLoadWorker from '@/workers/volumeLoad.worker?worker&inline'
+import { hdrFromTransferable, isTransferableHdr } from './hdrTransfer'
 import {
   builtinReaderExts,
   hasReader,
@@ -40,7 +41,14 @@ export async function loadVolumePrepared(
         limitFrames4D,
         name,
       })
-      return res.volume
+      // The worker sends the header as a data-only snapshot (its methods are own
+      // properties, which structured clone rejects). Rebuild the real instance so
+      // callers keep hdr.toFormattedString(), getDatatypeCodeString(), etc.
+      const volume = res.volume
+      if (isTransferableHdr(volume.hdr)) {
+        volume.hdr = hdrFromTransferable(volume.hdr)
+      }
+      return volume
     } catch (err) {
       log.warn(
         `volumeLoad worker failed, falling back to main thread: ${

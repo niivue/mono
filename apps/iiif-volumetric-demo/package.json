@@ -3,12 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bunx --bun vite --open /index.html",
-    "build": "bunx --bun vite build",
+    "gen-fixtures": "bun scripts/generate-range-poc-fixture.ts && bun scripts/generate-tile-range-poc-fixture.ts",
+    "dev": "bun run gen-fixtures && bunx --bun vite --open /index.html",
+    "build": "bun run gen-fixtures && bunx --bun vite build",
     "capture-screenshots": "bun scripts/capture-screenshots.ts"
   },
   "dependencies": {
-    "@niivue/niivue": "workspace:*"
+    "@niivue/niivue": "workspace:*",
+    "zarrita": "^0.7.3"
   },
   "devDependencies": {
     "@niivue/dev-images": "workspace:*",

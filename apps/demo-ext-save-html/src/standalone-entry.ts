@@ -1,5 +1,5 @@
 /**
- * Re-export NiiVueGPU as the default export for the standalone bundle.
+ * Re-export NiiVue as the default export for the standalone bundle.
  * This entry is only used by vite.config.standalone.js.
  */
 

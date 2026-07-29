@@ -1,10 +1,36 @@
 import { describe, expect, test } from 'bun:test'
 import {
   bytesPerSourceVoxel,
+  chunkIndicesForResidentBudget,
   estimateChunkedBytes,
   formatBytes,
+  residentBytesForChunkDesc,
 } from './chunkBudget'
+import type { ChunkPlan, Vec3i, VolumeChunkDesc } from './chunking'
 import { chunkVolume } from './chunking'
+
+function testChunk(texDims: Vec3i): VolumeChunkDesc {
+  return {
+    voxelOrigin: [0, 0, 0],
+    voxelDims: texDims,
+    haloLow: [0, 0, 0],
+    haloHigh: [0, 0, 0],
+    texDims,
+    texOrigin: [0, 0, 0],
+    gridIndex: [0, 0, 0],
+  }
+}
+
+function testPlan(chunks: VolumeChunkDesc[]): ChunkPlan {
+  return {
+    gridDims: [chunks.length, 1, 1],
+    stride: [1, 1, 1],
+    chunks,
+    volumeDims: [chunks.length, 1, 1],
+    deviceLimit: 100,
+    haloSize: [0, 0, 0],
+  }
+}
 
 describe('bytesPerSourceVoxel', () => {
   test('returns correct bpv for known NIfTI datatypes', () => {
@@ -65,5 +91,80 @@ describe('formatBytes', () => {
     expect(formatBytes(2 * 1024)).toBe('2.0 KiB')
     expect(formatBytes(5 * 1024 * 1024)).toBe('5.0 MiB')
     expect(formatBytes(2.5 * 1024 * 1024 * 1024)).toBe('2.50 GiB')
+  })
+})
+
+describe('resident chunk budget helpers', () => {
+  test('computes persistent RGBA plus gradient bytes from texture dims', () => {
+    expect(residentBytesForChunkDesc(testChunk([10, 20, 30]))).toBe(
+      10 * 20 * 30 * 8,
+    )
+  })
+
+  test('selects ordered chunks by actual resident bytes', () => {
+    const plan = testPlan([
+      testChunk([10, 10, 10]),
+      testChunk([8, 8, 8]),
+      testChunk([1, 1, 1]),
+      testChunk([1, 1, 1]),
+    ])
+
+    expect(chunkIndicesForResidentBudget(plan, [0, 1, 2, 3], 8016)).toEqual([
+      0, 2, 3,
+    ])
+  })
+
+  test('always returns the first valid chunk under a tiny budget', () => {
+    const plan = testPlan([testChunk([10, 10, 10]), testChunk([1, 1, 1])])
+
+    expect(chunkIndicesForResidentBudget(plan, [99, 1, 0], 1)).toEqual([1])
+  })
+
+  test('returns an empty working set when no ordered indices are valid', () => {
+    const plan = testPlan([testChunk([10, 10, 10])])
+
+    expect(chunkIndicesForResidentBudget(plan, [5, 6], 1000)).toEqual([])
+  })
+
+  test('returns an empty working set for an empty order', () => {
+    const plan = testPlan([testChunk([4, 4, 4])])
+    expect(chunkIndicesForResidentBudget(plan, [], 1_000_000)).toEqual([])
+  })
+
+  test('admits the whole ordered set when it fits the budget', () => {
+    const plan = testPlan([
+      testChunk([4, 4, 4]),
+      testChunk([4, 4, 4]),
+      testChunk([4, 4, 4]),
+    ])
+    const total = 3 * 4 * 4 * 4 * 8
+    expect(chunkIndicesForResidentBudget(plan, [0, 1, 2], total)).toEqual([
+      0, 1, 2,
+    ])
+    expect(chunkIndicesForResidentBudget(plan, [0, 1, 2], total * 2)).toEqual([
+      0, 1, 2,
+    ])
+  })
+
+  test('never exceeds the budget the residency manager accounts against', () => {
+    // The cap and ChunkResidencyManager.bytesOf must agree, or a working set can
+    // ask the manager to keep more than it may hold — its same-frame guard then
+    // refuses to evict. Uneven bricks are exactly where a plan-average cap failed.
+    const chunks = [
+      testChunk([10, 10, 10]), // 8000 B
+      testChunk([9, 9, 9]), //    5832 B
+      testChunk([2, 2, 2]), //      64 B
+      testChunk([2, 2, 2]), //      64 B
+    ]
+    const plan = testPlan(chunks)
+    const budget = 8200
+    const picked = chunkIndicesForResidentBudget(plan, [0, 1, 2, 3], budget)
+    const bytes = picked.reduce(
+      (sum, i) => sum + residentBytesForChunkDesc(chunks[i]),
+      0,
+    )
+    expect(bytes).toBeLessThanOrEqual(budget)
+    // Centre-first: the head of the order is never traded away for the tail.
+    expect(picked[0]).toBe(0)
   })
 })

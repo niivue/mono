@@ -4,7 +4,7 @@
  * Frontend (Vite, port 8088) talks to a Bun HTTP server (port 8087)
  * that runs the `niimath` binary as a subprocess.
  */
-import NiiVueGPU, {
+import NiiVue, {
   MULTIPLANAR_TYPE,
   SHOW_RENDER,
   SLICE_TYPE,
@@ -73,7 +73,7 @@ let displayedResult: { url: string; name: string } | null = null
 // fresh run.
 let latestRunId = 0
 
-const nv = new NiiVueGPU({ isDragDropEnabled: false })
+const nv = new NiiVue({ isDragDropEnabled: false })
 await nv.attachTo('gl1')
 nv.multiplanarType = MULTIPLANAR_TYPE.GRID
 nv.sliceType = SLICE_TYPE.MULTIPLANAR

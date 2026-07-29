@@ -7,7 +7,7 @@
  *   2. drag-drop a folder onto the page   → traverseDataTransferItems → runDcm2niix
  *   3. "Load demo" button                 → fetchDemoManifest → runDcm2niix
  */
-import NiiVueGPU, {
+import NiiVue, {
   DRAG_MODE,
   MULTIPLANAR_TYPE,
   SHOW_RENDER,
@@ -38,7 +38,7 @@ let isConverting = false
 
 // We handle the drop ourselves on the header drop-target div, so prevent
 // the canvas from intercepting drops with its own (NIfTI-only) handler.
-const nv = new NiiVueGPU({ isDragDropEnabled: false })
+const nv = new NiiVue({ isDragDropEnabled: false })
 await nv.attachTo('gl1')
 nv.crosshairGap = 5
 nv.multiplanarType = MULTIPLANAR_TYPE.GRID

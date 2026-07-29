@@ -18,7 +18,12 @@ const alignedSliceSize =
 const MAX_TILES = 128
 // Max chunks one chunked volume may contribute to a single slice tile.
 // Mirrors the 3D render path's per-tile chunk cap.
-const MAX_CHUNKS_PER_TILE = 256
+const MAX_CHUNKS_PER_TILE = 1024
+// Max simultaneously-drawn slice tiles a chunked volume may occupy. Mirrors the
+// 3D render path: the chunk region is sized MAX_CHUNK_TILES * MAX_CHUNKS_PER_TILE
+// (not MAX_TILES * ...) so raising the chunk cap stays memory-neutral; a chunked
+// draw at tileIndex >= MAX_CHUNK_TILES is skipped.
+const MAX_CHUNK_TILES = 32
 
 export class SliceRenderer extends NVRenderer {
   pipeline: GPURenderPipeline | null
@@ -84,11 +89,12 @@ export class SliceRenderer extends NVRenderer {
     if (this.isReady) return
 
     // Uniform buffer for slice params, addressed by dynamic offset.
-    // Base region: one slot per tile (non-chunked draws).
-    // Chunk region: tile i, chunk slot j uses
-    //   chunkBase + (i * MAX_CHUNKS_PER_TILE + j) * alignedSliceSize.
+    // Base region: one slot per tile (non-chunked draws), MAX_TILES slots.
+    // Chunk region: MAX_CHUNK_TILES * MAX_CHUNKS_PER_TILE slots; tile i, chunk
+    //   slot j uses chunkBase + (i * MAX_CHUNKS_PER_TILE + j) * alignedSliceSize.
     this.paramsBuffer = device.createBuffer({
-      size: alignedSliceSize * MAX_TILES * (1 + MAX_CHUNKS_PER_TILE),
+      size:
+        alignedSliceSize * (MAX_TILES + MAX_CHUNK_TILES * MAX_CHUNKS_PER_TILE),
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
 
@@ -576,6 +582,10 @@ export class SliceRenderer extends NVRenderer {
   ): void {
     if (!this.isReady || !this.paramsBuffer || !this.pipeline) return
     if (!vol.frac2mm) return
+    // The chunk region is sized for MAX_CHUNK_TILES tiles; a chunked (non-base-
+    // slot) draw beyond that would overflow into the next region, so skip it.
+    // The volume still streams in the tiles below the cap.
+    if (chunk && !chunk.useBaseSlot && tileIndex >= MAX_CHUNK_TILES) return
 
     const chunkDrawTex =
       chunk && this.drawingChunks

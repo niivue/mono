@@ -1,4 +1,4 @@
-import type NiiVueGPU from '@/NVControlBase'
+import type NiiVue from '@/NVControlBase'
 import type { BackendType } from '@/NVTypes'
 
 export type ReinitializeOptions = {
@@ -10,19 +10,19 @@ export type ReinitializeOptions = {
 
 export type ViewLifecycle = {
   attachTo: (
-    ctrl: NiiVueGPU,
+    ctrl: NiiVue,
     id: string,
     isAntiAlias?: boolean | null,
-  ) => Promise<NiiVueGPU>
+  ) => Promise<NiiVue>
   attachToCanvas: (
-    ctrl: NiiVueGPU,
+    ctrl: NiiVue,
     canvas: HTMLCanvasElement,
     isAntiAlias?: boolean | null,
-  ) => Promise<NiiVueGPU>
-  recreateView: (ctrl: NiiVueGPU) => Promise<void>
+  ) => Promise<NiiVue>
+  recreateView: (ctrl: NiiVue) => Promise<void>
   reinitializeView: (
-    ctrl: NiiVueGPU,
+    ctrl: NiiVue,
     options?: ReinitializeOptions,
   ) => Promise<boolean>
-  unregister?: (ctrl: NiiVueGPU) => void
+  unregister?: (ctrl: NiiVue) => void
 }

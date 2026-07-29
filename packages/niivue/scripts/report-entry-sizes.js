@@ -9,11 +9,7 @@ const jsonOut = wantJson
   ? args[jsonIdx + 1] || 'benchmarks/entry-sizes.json'
   : null
 const entries = wantJson ? args.slice(0, jsonIdx) : args
-const defaultEntries = [
-  'niivuegpu.js',
-  'niivuegpu.webgpu.js',
-  'niivuegpu.webgl2.js',
-]
+const defaultEntries = ['niivue.js', 'niivue.webgpu.js', 'niivue.webgl2.js']
 const targets = entries.length > 0 ? entries : defaultEntries
 const distDir = resolve(process.cwd(), 'dist')
 

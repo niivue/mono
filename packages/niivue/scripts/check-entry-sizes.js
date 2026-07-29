@@ -28,11 +28,7 @@ const BASELINE_PATH = resolve(
   'benchmarks/baselines/bundle-sizes-baseline.json',
 )
 const DIST_DIR = resolve(process.cwd(), 'dist')
-const DEFAULT_ENTRIES = [
-  'niivuegpu.js',
-  'niivuegpu.webgpu.js',
-  'niivuegpu.webgl2.js',
-]
+const DEFAULT_ENTRIES = ['niivue.js', 'niivue.webgpu.js', 'niivue.webgl2.js']
 
 const importRe = /(?:import|export)\s+(?:[^'"`]*?from\s+)?["'](\.[^"']+)["']/g
 

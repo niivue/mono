@@ -6,7 +6,7 @@
  * static site to GitHub Pages.
  */
 
-import NiiVueGPU, {
+import NiiVue, {
   MULTIPLANAR_TYPE,
   SHOW_RENDER,
   SLICE_TYPE,
@@ -94,7 +94,7 @@ const niimathReady = niimath.init()
 // is one boolean.
 let niimathOk = false
 
-const nv = new NiiVueGPU({ isDragDropEnabled: false })
+const nv = new NiiVue({ isDragDropEnabled: false })
 await nv.attachTo('gl1')
 nv.multiplanarType = MULTIPLANAR_TYPE.GRID
 nv.sliceType = SLICE_TYPE.MULTIPLANAR

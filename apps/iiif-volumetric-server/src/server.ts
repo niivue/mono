@@ -23,6 +23,7 @@ import morgan from 'morgan'
 
 import { registry } from './registry.ts'
 import { mountDesktopRoutes } from './routes/desktopRoutes.ts'
+import { mountDicomWsiClientRoutes } from './routes/dicomWsiClientRoutes.ts'
 import { mountImageApi } from './routes/imageApi.ts'
 import { mountPresentationApi } from './routes/presentationApi.ts'
 import { mountVolumeRoutes } from './routes/volumeRoutes.ts'
@@ -34,28 +35,29 @@ const HOST = process.env.HOST || '127.0.0.1'
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://${HOST}:${PORT}`
 const FIXTURES_DIR =
   process.env.FIXTURES_DIR || path.resolve(__dirname, '..', 'fixtures')
+const OMEZARR_FIXTURES_DIR = path.join(FIXTURES_DIR, 'omezarr')
 
-interface NiivuegpuPackage {
+interface NiivuePackage {
   name: string
   root: string | null
   mounted: boolean
 }
 
-interface NiivuegpuDeps {
+interface NiivueDeps {
   nodeModules: string | null
-  packages: NiivuegpuPackage[]
+  packages: NiivuePackage[]
   mounted: boolean
 }
 
-const NIIVUEGPU_DIST = resolveNiivuegpuDist()
-const NIIVUEGPU_DEPS = resolveNiivuegpuDeps(NIIVUEGPU_DIST)
+const NIIVUE_DIST = resolveNiivueDist()
+const NIIVUE_DEPS = resolveNiivueDeps(NIIVUE_DIST)
 
-function resolveNiivuegpuDist(): string | null {
+function resolveNiivueDist(): string | null {
   const candidates = [
-    process.env.NIIVUEGPU_DIST,
-    path.resolve(__dirname, '..', 'niivuegpu', 'dist'),
-    path.resolve(__dirname, '..', '..', 'niivuegpu', 'dist'),
-    path.resolve(process.env.HOME || '', 'Dev', 'niivuegpu', 'dist'),
+    process.env.NIIVUE_DIST,
+    path.resolve(__dirname, '..', 'niivue', 'dist'),
+    path.resolve(__dirname, '..', '..', 'niivue', 'dist'),
+    path.resolve(process.env.HOME || '', 'Dev', 'niivue', 'dist'),
   ].filter((p): p is string => Boolean(p))
   for (const c of candidates) {
     try {
@@ -67,7 +69,7 @@ function resolveNiivuegpuDist(): string | null {
   return null
 }
 
-function resolveNiivuegpuDeps(distDir: string | null): NiivuegpuDeps {
+function resolveNiivueDeps(distDir: string | null): NiivueDeps {
   const packageNames = [
     'gl-matrix',
     'cbor-x',
@@ -77,9 +79,9 @@ function resolveNiivuegpuDeps(distDir: string | null): NiivuegpuDeps {
     'clipper2-ts',
   ]
   const nodeModules =
-    process.env.NIIVUEGPU_NODE_MODULES ||
+    process.env.NIIVUE_NODE_MODULES ||
     (distDir ? path.resolve(distDir, '..', 'node_modules') : null)
-  const packages: NiivuegpuPackage[] = packageNames.map((name) => {
+  const packages: NiivuePackage[] = packageNames.map((name) => {
     const root = nodeModules ? path.join(nodeModules, name) : null
     let mounted = false
     if (root) {
@@ -127,11 +129,26 @@ async function main(): Promise<void> {
   app.use(morgan('tiny'))
   app.use(express.static(path.resolve(__dirname, '..', 'public')))
 
-  if (NIIVUEGPU_DIST) {
-    console.log(`Mounting niivuegpu dist from ${NIIVUEGPU_DIST}`)
+  if (fs.existsSync(OMEZARR_FIXTURES_DIR)) {
+    console.log(`Mounting OME-Zarr fixture store from ${OMEZARR_FIXTURES_DIR}`)
     app.use(
-      '/vendor/niivuegpu',
-      express.static(NIIVUEGPU_DIST, {
+      '/zarr',
+      express.static(OMEZARR_FIXTURES_DIR, {
+        dotfiles: 'allow',
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('.json')) {
+            res.set('Content-Type', 'application/json')
+          }
+        },
+      }),
+    )
+  }
+
+  if (NIIVUE_DIST) {
+    console.log(`Mounting niivue dist from ${NIIVUE_DIST}`)
+    app.use(
+      '/vendor/niivue',
+      express.static(NIIVUE_DIST, {
         setHeaders: (res, filePath) => {
           if (filePath.endsWith('.js')) {
             res.set('Content-Type', 'text/javascript')
@@ -142,19 +159,19 @@ async function main(): Promise<void> {
         },
       }),
     )
-    app.locals.niivuegpuMounted = true
+    app.locals.niivueMounted = true
   } else {
     console.warn(
-      'niivuegpu dist not found. Set NIIVUEGPU_DIST or place a built dist/ next to the server. The 3D viewer page will show a setup message until it is available.',
+      'niivue dist not found. Set NIIVUE_DIST or place a built dist/ next to the server. The 3D viewer page will show a setup message until it is available.',
     )
-    app.locals.niivuegpuMounted = false
+    app.locals.niivueMounted = false
   }
 
-  if (NIIVUEGPU_DEPS.nodeModules) {
-    for (const pkg of NIIVUEGPU_DEPS.packages) {
+  if (NIIVUE_DEPS.nodeModules) {
+    for (const pkg of NIIVUE_DEPS.packages) {
       if (!pkg.mounted || !pkg.root) continue
       app.use(
-        `/vendor/niivuegpu-deps/${pkg.name}`,
+        `/vendor/niivue-deps/${pkg.name}`,
         express.static(pkg.root, {
           setHeaders: (res, filePath) => {
             if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
@@ -164,17 +181,17 @@ async function main(): Promise<void> {
         }),
       )
     }
-    if (NIIVUEGPU_DEPS.mounted) {
+    if (NIIVUE_DEPS.mounted) {
       console.log(
-        `Mounting niivuegpu browser deps from ${NIIVUEGPU_DEPS.nodeModules}`,
+        `Mounting niivue browser deps from ${NIIVUE_DEPS.nodeModules}`,
       )
     } else {
-      const missing = NIIVUEGPU_DEPS.packages
+      const missing = NIIVUE_DEPS.packages
         .filter((pkg) => !pkg.mounted)
         .map((pkg) => pkg.name)
         .join(', ')
       console.warn(
-        `niivuegpu browser deps incomplete under ${NIIVUEGPU_DEPS.nodeModules}: ${missing}`,
+        `niivue browser deps incomplete under ${NIIVUE_DEPS.nodeModules}: ${missing}`,
       )
     }
   }
@@ -188,12 +205,12 @@ async function main(): Promise<void> {
         presentationApi:
           'https://preview.iiif.io/api/prezi-4/presentation/4.0/ (alpha, includes draft 3D)',
       },
-      niivuegpu: {
-        mounted: app.locals.niivuegpuMounted,
-        dist: NIIVUEGPU_DIST,
-        depsMounted: NIIVUEGPU_DEPS.mounted,
-        nodeModules: NIIVUEGPU_DEPS.nodeModules,
-        deps: NIIVUEGPU_DEPS.packages.map((pkg) => ({
+      niivue: {
+        mounted: app.locals.niivueMounted,
+        dist: NIIVUE_DIST,
+        depsMounted: NIIVUE_DEPS.mounted,
+        nodeModules: NIIVUE_DEPS.nodeModules,
+        deps: NIIVUE_DEPS.packages.map((pkg) => ({
           name: pkg.name,
           mounted: pkg.mounted,
           path: pkg.root,
@@ -220,6 +237,7 @@ async function main(): Promise<void> {
   mountImageApi(app, registry)
   mountPresentationApi(app, registry)
   mountDesktopRoutes(app, registry)
+  mountDicomWsiClientRoutes(app, registry)
   mountVolumeRoutes(app, registry)
 
   // Dev-only unauthenticated disk-write endpoint (screenshot capture). It is an

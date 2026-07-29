@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NiiVue Chunk Streaming (HTTP range + OME-Zarr)</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        --bg: #090b0b;
+        --panel: #111514;
+        --line: #26302d;
+        --muted: #91a099;
+        --text: #edf4f1;
+        --cyan: #7ad7d1;
+        --green: #9cdc85;
+        --amber: #e2b85f;
+        --red: #ef8f7b;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        overflow: hidden;
+      }
+
+      body {
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      header {
+        min-height: 44px;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel) 94%, #22483d);
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 560;
+        white-space: nowrap;
+      }
+
+      header .control {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      header select,
+      header input {
+        background: #171d1b;
+        border: 1px solid #2f3a36;
+        color: var(--text);
+        border-radius: 4px;
+        font-size: 0.78rem;
+      }
+
+      header select {
+        padding: 3px 8px;
+      }
+
+      header select:disabled {
+        opacity: 0.5;
+      }
+
+      header input[type='text'] {
+        width: 92px;
+        padding: 3px 7px;
+        font-family: ui-monospace, monospace;
+      }
+
+      header input[type='checkbox'] {
+        margin: 0 3px 0 0;
+      }
+
+      header button {
+        background: #17201d;
+        border: 1px solid #34423d;
+        color: var(--text);
+        padding: 3px 9px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.78rem;
+      }
+
+      header button:hover {
+        border-color: var(--cyan);
+      }
+
+      header .links {
+        margin-left: auto;
+      }
+
+      header .links a {
+        color: var(--cyan);
+        margin-left: 12px;
+        text-decoration: none;
+        font-size: 0.85rem;
+      }
+
+      main {
+        position: relative;
+        min-height: 0;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        outline: none;
+      }
+
+      .hud {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        box-sizing: border-box;
+        width: min(410px, calc(100vw - 24px));
+        border: 1px solid rgba(122, 215, 209, 0.28);
+        background: rgba(5, 8, 8, 0.78);
+        border-radius: 6px;
+        padding: 10px 12px;
+        pointer-events: auto;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+        font-family: ui-monospace, monospace;
+        font-size: 0.72rem;
+        line-height: 1.55;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34);
+      }
+      .hud.dragging {
+        cursor: grabbing;
+      }
+
+      .hud .title {
+        color: var(--text);
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+
+      .hud .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        border-top: 1px solid rgba(145, 160, 153, 0.14);
+        padding-top: 3px;
+        margin-top: 3px;
+      }
+
+      .hud .key {
+        color: var(--muted);
+      }
+
+      .hud .ok {
+        color: var(--green);
+      }
+
+      .hud .warn {
+        color: var(--amber);
+      }
+
+      .hud .bad {
+        color: var(--red);
+      }
+
+      .strip {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        width: min(320px, calc(50vw - 24px));
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 3px;
+        pointer-events: none;
+      }
+
+      .strip span {
+        height: 6px;
+        border-radius: 1px;
+        background: #18211e;
+        border: 1px solid #293631;
+      }
+
+      .strip span.hit {
+        background: var(--green);
+        border-color: var(--green);
+      }
+
+      .fallback {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: #101412;
+        color: var(--muted);
+        text-align: center;
+        font-size: 0.9rem;
+      }
+
+      .fallback[aria-hidden='false'] {
+        display: flex;
+      }
+
+      @media (max-width: 900px) {
+        header {
+          align-items: flex-start;
+          max-height: 38vh;
+          overflow-y: auto;
+        }
+
+        header .control {
+          width: 100%;
+          justify-content: space-between;
+        }
+
+        header select,
+        header input[type='text'] {
+          max-width: 170px;
+        }
+
+        header .links {
+          width: 100%;
+          margin-left: 0;
+          overflow-x: auto;
+          padding-bottom: 3px;
+          white-space: nowrap;
+        }
+
+        .hud {
+          right: 12px;
+          width: auto;
+          font-size: 0.66rem;
+        }
+
+        .strip {
+          left: 12px;
+          right: 12px;
+          width: auto;
+          grid-template-columns: repeat(8, minmax(0, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>NiiVue Chunk Streaming</h1>
+      <span class="control">
+        <label for="source">Source</label>
+        <select id="source">
+          <option value="synthetic" selected>synthetic range shard</option>
+          <option value="stent">stent OME-Zarr</option>
+          <option value="pawpawsaurus">pawpawsaurus OME-Zarr</option>
+          <option value="richtmyer_meshkov">richtmyer-meshkov OME-Zarr</option>
+          <option value="pig_heart">pig-heart OME-Zarr (int16)</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="level">Level</label>
+        <select id="level" title="Pyramid levels present on disk">
+          <option value="" selected>n/a</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="layout">Layout</label>
+        <select id="layout">
+          <option value="3" selected>multiplanar</option>
+          <option value="4">render</option>
+          <option value="0">axial</option>
+          <option value="1">coronal</option>
+          <option value="2">sagittal</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="colormap">Colormap</label>
+        <select id="colormap">
+          <option value="gray" selected>gray</option>
+          <option value="viridis">viridis</option>
+          <option value="hot">hot</option>
+          <option value="plasma">plasma</option>
+          <option value="turbo">turbo</option>
+        </select>
+      </span>
+      <span class="control">
+        <label for="window">Window</label>
+        <input id="window" type="text" value="24,210" />
+      </span>
+      <span class="control">
+        <label for="zoom">Zoom <span id="zoomVal">1.0x</span></label>
+        <input id="zoom" type="range" min="1" max="8" step="0.1" value="1"
+          title="Zoom the 2D views and restrict the 3D block outlines to the focused region" />
+      </span>
+      <span class="control">
+        <label for="explode">explode <span id="explodeVal">1.00x</span></label>
+        <input id="explode" type="range" min="1" max="3" step="0.05" value="1"
+          title="Uniformly spread the chunk bricks apart in x, y and z (1.00x = no gap)" />
+      </span>
+      <span class="control">
+        <label for="blocks">
+          <input id="blocks" type="checkbox" />
+          blocks
+        </label>
+      </span>
+      <button id="reload" type="button">reload</button>
+      <div class="links">
+        <a href="./index.html">Examples</a>
+        <a href="?backend=webgpu">WebGPU</a>
+        <a href="?backend=webgl2">WebGL2</a>
+      </div>
+    </header>
+    <main>
+      <canvas id="nv-canvas" aria-label="Client-side HTTP Range volume"></canvas>
+      <div class="hud" id="hud">Loading...</div>
+      <div class="strip" id="chunkStrip" aria-hidden="true"></div>
+      <div class="fallback" id="fallback" aria-hidden="true"></div>
+    </main>
+    <script type="module" src="range.js"></script>
+  </body>
+</html>

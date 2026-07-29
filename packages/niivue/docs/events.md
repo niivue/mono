@@ -1,13 +1,13 @@
-# NiiVueGPU Events
+# NiiVue Events
 
-NiiVueGPU uses the standard [`EventTarget`](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget) API. Every controller instance is an `EventTarget`, so you use `addEventListener` and `removeEventListener` just like a DOM element.
+NiiVue uses the standard [`EventTarget`](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget) API. Every controller instance is an `EventTarget`, so you use `addEventListener` and `removeEventListener` just like a DOM element.
 
 All events are fully typed via `NVEventMap`. TypeScript will infer the correct `CustomEvent<T>` detail type for each event name when using `addEventListener`/`removeEventListener`.
 
 ## Quick Start
 
 ```js
-import NiiVue from 'niivuegpu'
+import NiiVue from '@niivue/niivue'
 
 const nv = new NiiVue({ backgroundColor: [0, 0, 0, 1] })
 await nv.attachToCanvas(document.getElementById('gl'))
@@ -35,7 +35,7 @@ nv.removeEventListener('volumeLoaded', handler)
 Event listeners are fully typed. The detail type is inferred from the event name:
 
 ```ts
-import NiiVue from 'niivuegpu'
+import NiiVue from '@niivue/niivue'
 
 const nv = new NiiVue()
 
@@ -420,5 +420,5 @@ import type {
   AnnotationRemovedDetail,
   AnnotationChangedDetail,
   ColormapAddedDetail,
-} from 'niivuegpu'
+} from '@niivue/niivue'
 ```

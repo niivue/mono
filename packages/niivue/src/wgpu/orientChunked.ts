@@ -39,8 +39,33 @@ export interface VolumeChunkGPU {
   volumeTexture: GPUTexture
   /** RGBA8 gradient texture for this chunk; sized desc.texDims. */
   volumeGradientTexture: GPUTexture
+  /**
+   * True if `volumeGradientTexture` holds a real computed gradient; false if it
+   * is an empty placeholder (the gradient compute pass was skipped because the
+   * volume was unlit at upload). The renderer re-uploads such chunks if lighting
+   * is later enabled. Either way it is a real, per-chunk texture that
+   * destroyVolumeChunksGPU frees normally.
+   */
+  hasGradient: boolean
   /** Reference to the chunk descriptor (texOrigin/texDims/halos/gridIndex). */
   desc: VolumeChunkDesc
+}
+
+// Allocate an empty (zero) RGBA8 3D gradient texture sized to `dims`. WebGPU
+// zero-initializes textures, so it samples as zeros; used in place of the
+// gradient compute pass when the volume is unlit (gradientAmount == 0), keeping
+// the bind/destroy/byte-budget path unchanged (the shader gates gradient lighting
+// on gradientAmount > 0, so a zero gradient has no visible effect).
+function emptyGradientTextureGPU(
+  device: GPUDevice,
+  dims: readonly [number, number, number],
+): GPUTexture {
+  return device.createTexture({
+    size: [dims[0], dims[1], dims[2]],
+    format: 'rgba8unorm',
+    dimension: '3d',
+    usage: GPUTextureUsage.TEXTURE_BINDING,
+  })
 }
 
 /** Identity row-major 4x4 — orient.wgsl reads mtxRow0..3 as vec4 rows. */
@@ -276,6 +301,11 @@ export async function createChunkUploaderGPU(
   device: GPUDevice,
   nvimage: NVImage,
   plan: ChunkPlan,
+  // Whether to compute a real gradient for each chunk. Read per upload so the
+  // decision tracks the current lighting; the renderer re-streams the volume when
+  // this crosses false->true (see VolumeRendererGPU). Defaults to always-on so
+  // existing callers keep prior behavior.
+  wantsGradient: () => boolean = () => true,
 ): Promise<ChunkUploaderGPU> {
   if (!nvimage.dimsRAS) {
     throw new Error('orientChunked: missing dimsRAS')
@@ -476,13 +506,20 @@ export async function createChunkUploaderGPU(
       sourceTexture.destroy()
     }
 
-    const gradientTexture = await wgpu.volume2TextureGradientRGBA(
-      device,
-      rgbaTexture,
-    )
+    // Skip the gradient compute pass when the volume is unlit; an empty gradient
+    // keeps the bind/destroy/byte-budget path identical.
+    const hasGradient = wantsGradient()
+    const gradientTexture = hasGradient
+      ? await wgpu.volume2TextureGradientRGBA(device, rgbaTexture)
+      : emptyGradientTextureGPU(device, [
+          desc.texDims[0],
+          desc.texDims[1],
+          desc.texDims[2],
+        ])
     return {
       volumeTexture: rgbaTexture,
       volumeGradientTexture: gradientTexture,
+      hasGradient,
       desc,
     }
   }

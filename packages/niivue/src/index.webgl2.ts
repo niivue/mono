@@ -1,5 +1,5 @@
 /**
- * NiiVueGPU — WebGL2-only distribution.
+ * NiiVue — WebGL2-only distribution.
  */
 
 export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
@@ -29,7 +29,7 @@ export {
   paddedPpmRange,
 } from './mrs/MrsScene'
 export { DRAG_MODE } from './NVConstants'
-export { default, default as NiiVueGPU } from './NVControlWebGL2'
+export { default, default as NiiVue } from './NVControlWebGL2'
 export type {
   AffineMatrix,
   AffineTransform,
@@ -86,14 +86,30 @@ export {
   phaseCorrection,
   ppmRefForNucleus,
 } from './signal/processing'
+// Crosshair-focused multi-resolution (multi-LOD) streamed volumes
+export type {
+  ChunkedVolumeFetch,
+  ChunkedVolumeLevel,
+  ChunkedVolumeSource,
+} from './volume/ChunkedVolumeSource'
 export type {
   ChunkPlan,
+  MultiLodFocus,
+  MultiLodOptions,
   Vec3f,
   Vec3i,
   VolumeChunkDesc,
 } from './volume/chunking'
-export { chunkVolumeGrid } from './volume/chunking'
+export { chunkVolumeGrid, chunkVolumeMultiLOD } from './volume/chunking'
 // MRSI (spatial spectroscopic imaging) volume helpers
 export { buildDerivedScalarVolume, isMrsiVolume } from './volume/mrsi'
+export {
+  type ChunkedVolumeOptions,
+  NVChunkedVolume,
+} from './volume/NVChunkedVolume'
+export {
+  createStreamingNVImage,
+  type StreamingVolumeSpec,
+} from './volume/streamingVolume'
 export type { TransformInfo, TransformOptions } from './volume/transforms'
 export { extractVoxelFid, getImageDataRAS } from './volume/utils'

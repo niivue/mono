@@ -1,4 +1,4 @@
-# NiiVueGPU Property Migration Reference
+# NiiVue Property Migration Reference
 
 Complete mapping from old property names/locations to new API.
 

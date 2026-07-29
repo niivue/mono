@@ -1232,6 +1232,9 @@ export type AnnotationTool =
   // Multi-click edge-snapping contours (intelligent scissors / live wire).
   | 'livewire'
   | 'measureLivewire'
+  // Two perpendicular measured axes (RECIST-style long + short diameters).
+  | 'bidirectional'
+  | 'measureBidirectional'
 
 export type AnnotationStats = {
   area: number
@@ -1240,6 +1243,8 @@ export type AnnotationStats = {
   max: number
   stdDev: number
   length?: number
+  /** Short-axis length for a bidirectional measurement (long axis in length). */
+  shortLength?: number
 }
 
 export type AnnotationPoint = { x: number; y: number }
@@ -1272,6 +1277,9 @@ export type VectorAnnotation = {
     start: AnnotationPoint
     end: AnnotationPoint
     width?: number
+    /** Second axis endpoints for a bidirectional measurement (short axis). */
+    start2?: AnnotationPoint
+    end2?: AnnotationPoint
   }
 }
 
@@ -1291,6 +1299,9 @@ export type AnnotationScreenShape = {
   /** Shape endpoints projected to canvas px (line/arrow path, ellipse bbox). */
   start?: AnnotationPoint
   end?: AnnotationPoint
+  /** Second-axis endpoints projected to canvas px (bidirectional short axis). */
+  start2?: AnnotationPoint
+  end2?: AnnotationPoint
   /** True for area shapes (ellipse/rect/circle/freehand); false for line/arrow. */
   isClosed: boolean
   style: AnnotationStyle

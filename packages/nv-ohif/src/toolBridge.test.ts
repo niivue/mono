@@ -38,6 +38,7 @@ describe('ohifToolToAnnotationTool', () => {
     ['PlanarFreehandROI', 'freehand'],
     ['SplineROI', 'measureSpline'],
     ['LivewireContour', 'measureLivewire'],
+    ['Bidirectional', 'measureBidirectional'],
     ['ArrowAnnotate', 'arrow'],
   ] as const)('maps %s to the NiiVue annotation tool %s', (tool, expected) => {
     expect(ohifToolToAnnotationTool(tool)).toBe(expected)
@@ -49,11 +50,8 @@ describe('ohifToolToAnnotationTool', () => {
     expect(ohifToolToAnnotationTool(undefined)).toBeNull()
   })
 
-  it('lists the tools NiiVue cannot back yet as unsupported', () => {
-    // Only Bidirectional remains unbacked.
-    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('Bidirectional')).toBe(true)
-    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('SplineROI')).toBe(false)
-    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('LivewireContour')).toBe(false)
-    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('EllipticalROI')).toBe(false)
+  it('has no unsupported measurement tools left (all backed)', () => {
+    expect(UNSUPPORTED_MEASUREMENT_TOOLS.size).toBe(0)
+    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('Bidirectional')).toBe(false)
   })
 })

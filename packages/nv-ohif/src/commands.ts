@@ -345,6 +345,7 @@ interface MeasurementServiceLike {
 const ELLIPSE_VALUE_TYPE = 'value_type::ellipse'
 const CIRCLE_VALUE_TYPE = 'value_type::circle'
 const POINT_VALUE_TYPE = 'value_type::point'
+const BIDIRECTIONAL_VALUE_TYPE = 'value_type::bidirectional'
 
 // NiiVue annotation tool -> OHIF measurement tool + value type. Only the tools
 // nv-ohif activates (see toolBridge) are mapped; measureLine doubles as Length.
@@ -382,6 +383,11 @@ const ANNOTATION_TO_OHIF: Record<
     toolName: 'LivewireContour',
     valueType: POLYLINE_VALUE_TYPE,
     points: 2,
+  },
+  measureBidirectional: {
+    toolName: 'Bidirectional',
+    valueType: BIDIRECTIONAL_VALUE_TYPE,
+    points: 4,
   },
   arrow: { toolName: 'ArrowAnnotate', valueType: POINT_VALUE_TYPE, points: 1 },
 }
@@ -539,6 +545,18 @@ function buildAnnotationDisplay(
   const label = `NiiVue ${toolName}`
   if (toolName === 'ArrowAnnotate' || !stats) {
     return { primary: [label], data: {}, label }
+  }
+  // Bidirectional carries long + short diameters (mm), not area/intensity.
+  if (toolName === 'Bidirectional' && stats.length !== undefined) {
+    const short = stats.shortLength ?? 0
+    return {
+      primary: [
+        `L: ${stats.length.toFixed(1)} mm`,
+        `W: ${short.toFixed(1)} mm`,
+      ],
+      data: { length: stats.length, width: short, unit: 'mm' },
+      label,
+    }
   }
   const withUnit = (v: number, key: string) =>
     unit ? `${key}: ${v.toFixed(1)} ${unit}` : `${key}: ${v.toFixed(1)}`

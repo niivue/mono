@@ -304,6 +304,13 @@ export function buildAnnotation3DRenderData(
 
 function formatAnnotationStats(stats: AnnotationStats): string[] {
   if (stats.length !== undefined) {
+    // Bidirectional carries both axes: long (length) + short (shortLength).
+    if (stats.shortLength !== undefined) {
+      return [
+        `L: ${stats.length.toFixed(1)} mm`,
+        `W: ${stats.shortLength.toFixed(1)} mm`,
+      ]
+    }
     return [`${stats.length.toFixed(1)} mm`]
   }
   return [
@@ -516,6 +523,8 @@ const OPEN_ANNOTATION_TOOLS: ReadonlySet<AnnotationTool> = new Set([
   'line',
   'arrow',
   'measureLine',
+  'bidirectional',
+  'measureBidirectional',
 ])
 
 /**
@@ -577,6 +586,10 @@ export function projectAnnotationScreenShapes(
         if (ann.shape) {
           shape.start = project(ann.shape.start, ann.sliceType)
           shape.end = project(ann.shape.end, ann.sliceType)
+          if (ann.shape.start2 && ann.shape.end2) {
+            shape.start2 = project(ann.shape.start2, ann.sliceType)
+            shape.end2 = project(ann.shape.end2, ann.sliceType)
+          }
         }
         // Label = the user's free text (if any) above the stats lines (if a
         // measurement). Shown for any tool that has one or the other.

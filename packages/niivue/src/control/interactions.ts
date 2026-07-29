@@ -220,6 +220,96 @@ function cancelMultiClickContour(ctrl: NiiVue): void {
   ctrl.drawScene()
 }
 
+// --- Bidirectional (two perpendicular measured axes) ------------------------
+
+type Axis = { start: AnnotationPoint; end: AnnotationPoint }
+
+function isBidirectionalTool(tool: AnnotationTool): boolean {
+  return tool === 'bidirectional' || tool === 'measureBidirectional'
+}
+
+const axisLen = (a: Axis): number =>
+  Math.hypot(a.end.x - a.start.x, a.end.y - a.start.y)
+
+// Build the annotation for a bidirectional measurement from its two axes: two
+// thin-line polygons (so the built-in draw renders both), plus long/short
+// lengths in stats. The seam projects the second axis for the UIKit overlay.
+function bidirectionalAnnotation(
+  ctrl: NiiVue,
+  long: Axis,
+  short: Axis | null,
+): VectorAnnotation | null {
+  const cfg = ctrl.model.annotation
+  const w = cfg.style.strokeWidth
+  const polys = [
+    ...Annotation.generateShape('measureLine', long.start, long.end, w),
+    ...(short
+      ? Annotation.generateShape('measureLine', short.start, short.end, w)
+      : []),
+  ]
+  if (polys.length === 0) return null
+  const ann = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    ctrl._annotationSliceType,
+    ctrl._annotationSlicePosition,
+    polys,
+    cfg.style,
+    ctrl._annotationAnchorMM,
+  )
+  ann.shape = {
+    type: cfg.tool,
+    start: long.start,
+    end: long.end,
+    width: w,
+    ...(short ? { start2: short.start, end2: short.end } : {}),
+  }
+  ann.stats = {
+    area: 0,
+    min: 0,
+    mean: 0,
+    max: 0,
+    stdDev: 0,
+    length: axisLen(long),
+    ...(short ? { shortLength: axisLen(short) } : {}),
+  }
+  return ann
+}
+
+// Live preview during a bidirectional measurement: the long axis (fixed once
+// placed) plus the short axis being dragged.
+function bidirectionalPreview(ctrl: NiiVue, cursor: AnnotationPoint): void {
+  let long: Axis | null
+  let short: Axis | null
+  if (ctrl._bidirectionalLong) {
+    long = ctrl._bidirectionalLong
+    short = ctrl._annotationShapeStart
+      ? { start: ctrl._annotationShapeStart, end: cursor }
+      : null
+  } else {
+    long = ctrl._annotationShapeStart
+      ? { start: ctrl._annotationShapeStart, end: cursor }
+      : null
+    short = null
+  }
+  ctrl.model._annotationPreview = long
+    ? bidirectionalAnnotation(ctrl, long, short)
+    : null
+}
+
+// Commit the finished bidirectional measurement.
+function commitBidirectional(ctrl: NiiVue, long: Axis, short: Axis): void {
+  const ann = bidirectionalAnnotation(ctrl, long, short)
+  if (!ann) return
+  ctrl._annotationUndoStack.push(ctrl.model.annotations)
+  ctrl.model.annotations = Annotation.mergeAnnotations(
+    ctrl.model.annotations,
+    ann,
+  )
+  ctrl.emit('annotationAdded', { annotation: ann })
+  ctrl.emit('annotationChanged', { action: 'draw' })
+}
+
 function clientToCanvasPixel(
   ctrl: NiiVue,
   clientX: number,
@@ -350,8 +440,14 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   setNextActionTag('keydown')
   const key = e.key.toUpperCase()
   if (key === 'ESCAPE') {
-    // Abandon an in-progress multi-click contour (spline / livewire).
+    // Abandon an in-progress multi-click contour (spline / livewire) or a
+    // half-placed bidirectional measurement.
     if (ctrl._annotationPolyPoints) cancelMultiClickContour(ctrl)
+    if (ctrl._bidirectionalLong) {
+      ctrl._bidirectionalLong = null
+      ctrl.model._annotationPreview = null
+      ctrl.drawScene()
+    }
     return
   }
   if (key === 'V') {
@@ -1523,53 +1619,71 @@ export function initInteraction(ctrl: NiiVue): void {
                 pt2d,
               )
             }
-            const polygons = Annotation.generateShape(
-              cfg.tool,
-              ctrl._annotationShapeStart,
-              pt2d,
-              cfg.style.strokeWidth,
-            )
-            if (polygons.length > 0) {
-              ctrl._annotationUndoStack.push(ctrl.model.annotations)
-              const newAnn = Annotation.createAnnotation(
-                cfg.activeLabel,
-                cfg.activeGroup,
-                ctrl._annotationSliceType,
-                ctrl._annotationSlicePosition,
-                polygons,
-                cfg.style,
-                ctrl._annotationAnchorMM,
-              )
-              const shapeData: typeof newAnn.shape = {
-                type: cfg.tool,
+            if (isBidirectionalTool(cfg.tool)) {
+              // First drag places the long axis; the second commits the pair.
+              const drag: Axis = {
                 start: ctrl._annotationShapeStart,
                 end: pt2d,
               }
-              if (
-                cfg.tool === 'line' ||
-                cfg.tool === 'arrow' ||
-                cfg.tool === 'measureLine'
-              ) {
-                shapeData.width = cfg.style.strokeWidth
+              if (!ctrl._bidirectionalLong) {
+                ctrl._bidirectionalLong = drag
+              } else {
+                commitBidirectional(ctrl, ctrl._bidirectionalLong, drag)
+                ctrl._bidirectionalLong = null
               }
-              newAnn.shape = shapeData
-              if (Annotation.isMeasureTool(cfg.tool)) {
-                const vol = ctrl.model.getVolumes()[0]
-                if (vol)
-                  newAnn.stats =
-                    Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
-              }
-              ctrl.model.annotations = Annotation.mergeAnnotations(
-                ctrl.model.annotations,
-                newAnn,
+            } else {
+              const polygons = Annotation.generateShape(
+                cfg.tool,
+                ctrl._annotationShapeStart,
+                pt2d,
+                cfg.style.strokeWidth,
               )
-              ctrl.emit('annotationAdded', { annotation: newAnn })
-              ctrl.emit('annotationChanged', { action: 'draw' })
+              if (polygons.length > 0) {
+                ctrl._annotationUndoStack.push(ctrl.model.annotations)
+                const newAnn = Annotation.createAnnotation(
+                  cfg.activeLabel,
+                  cfg.activeGroup,
+                  ctrl._annotationSliceType,
+                  ctrl._annotationSlicePosition,
+                  polygons,
+                  cfg.style,
+                  ctrl._annotationAnchorMM,
+                )
+                const shapeData: typeof newAnn.shape = {
+                  type: cfg.tool,
+                  start: ctrl._annotationShapeStart,
+                  end: pt2d,
+                }
+                if (
+                  cfg.tool === 'line' ||
+                  cfg.tool === 'arrow' ||
+                  cfg.tool === 'measureLine'
+                ) {
+                  shapeData.width = cfg.style.strokeWidth
+                }
+                newAnn.shape = shapeData
+                if (Annotation.isMeasureTool(cfg.tool)) {
+                  const vol = ctrl.model.getVolumes()[0]
+                  if (vol)
+                    newAnn.stats =
+                      Annotation.computeAnnotationStats(newAnn, vol) ??
+                      undefined
+                }
+                ctrl.model.annotations = Annotation.mergeAnnotations(
+                  ctrl.model.annotations,
+                  newAnn,
+                )
+                ctrl.emit('annotationAdded', { annotation: newAnn })
+                ctrl.emit('annotationChanged', { action: 'draw' })
+              }
             }
           }
         }
         ctrl._annotationShapeStart = null
-        ctrl.model._annotationPreview = null
+        // Keep the long axis on screen while waiting for the short-axis drag.
+        ctrl.model._annotationPreview = ctrl._bidirectionalLong
+          ? bidirectionalAnnotation(ctrl, ctrl._bidirectionalLong, null)
+          : null
         ctrl.drawScene()
       }
       // Finalize annotation stroke on mouse-up (freehand/eraser)
@@ -1923,6 +2037,11 @@ export function initInteraction(ctrl: NiiVue): void {
           ctrl._annotationSliceType,
         )
         const cfg = ctrl.model.annotation
+        if (isBidirectionalTool(cfg.tool)) {
+          bidirectionalPreview(ctrl, pt2d)
+          ctrl.drawScene()
+          return
+        }
         if (Annotation.isCircleTool(cfg.tool)) {
           pt2d = Annotation.constrainCircleEnd(ctrl._annotationShapeStart, pt2d)
         }

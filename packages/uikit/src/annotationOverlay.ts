@@ -86,6 +86,19 @@ export function buildAnnotationGeometry(
       } else {
         lines.push(buildLine(start.x, start.y, end.x, end.y, thickness, stroke))
       }
+      // Bidirectional: draw the perpendicular short axis too.
+      if (shape.start2 && shape.end2) {
+        lines.push(
+          buildLine(
+            shape.start2.x,
+            shape.start2.y,
+            shape.end2.x,
+            shape.end2.y,
+            thickness,
+            stroke,
+          ),
+        )
+      }
     }
 
     if (shape.label) {

@@ -26,6 +26,9 @@ export function ohifToolToAnnotationTool(
     case 'LivewireContour':
       // Multi-click edge-snapping contour with area/mean stats.
       return 'measureLivewire'
+    case 'Bidirectional':
+      // Two perpendicular measured axes (long + short diameters).
+      return 'measureBidirectional'
     case 'ArrowAnnotate':
       return 'arrow'
     default:
@@ -37,9 +40,9 @@ export function ohifToolToAnnotationTool(
  * OHIF measurement tools NiiVue cannot back yet (no core primitive). Activating
  * one shows a brief 'not supported' status and keeps safe crosshair navigation.
  */
-export const UNSUPPORTED_MEASUREMENT_TOOLS: ReadonlySet<string> = new Set([
-  'Bidirectional',
-])
+// All of OHIF's MeasurementTools group are now backed by NiiVue.
+export const UNSUPPORTED_MEASUREMENT_TOOLS: ReadonlySet<string> =
+  new Set<string>()
 
 /** Map an OHIF primary tool name to NiiVue's matching left-drag mode. */
 export function ohifToolToDragMode(tool: string | undefined): number {

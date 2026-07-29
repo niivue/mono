@@ -418,6 +418,10 @@ export default class NiiVue extends EventTarget {
   _livewireSlice: LivewireSlice | null = null
   _livewireField: Int32Array | null = null
   _livewireSeed: { x: number; y: number } | null = null
+  // Bidirectional: the committed long axis (drag 1) in slice-2D coords while
+  // waiting for the short axis (drag 2). null when not mid-measurement.
+  _bidirectionalLong: { start: AnnotationPoint; end: AnnotationPoint } | null =
+    null
   _resizingControlPoint = -1
   _resizeOriginalShape: {
     start: AnnotationPoint
@@ -1528,8 +1532,9 @@ export default class NiiVue extends EventTarget {
     this.model.annotation.isEnabled = v
     // Leaving annotation mode abandons any half-drawn multi-click contour so its
     // preview does not linger.
-    if (!v && this._annotationPolyPoints) {
+    if (!v) {
       this._annotationPolyPoints = null
+      this._bidirectionalLong = null
       this.model._annotationPreview = null
       this._livewireSlice = null
       this._livewireField = null
@@ -1595,9 +1600,10 @@ export default class NiiVue extends EventTarget {
   set annotationTool(v: AnnotationTool) {
     this.model.annotation.tool = v
     this.model._annotationSelection = null
-    // Switching tools abandons any half-drawn multi-click contour.
-    if (this._annotationPolyPoints) {
+    // Switching tools abandons any half-drawn multi-click / bidirectional shape.
+    if (this._annotationPolyPoints || this._bidirectionalLong) {
       this._annotationPolyPoints = null
+      this._bidirectionalLong = null
       this.model._annotationPreview = null
       this._livewireSlice = null
       this._livewireField = null

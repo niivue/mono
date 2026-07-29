@@ -475,7 +475,8 @@ export function buildAnnotationRenderData(
             ),
           )
         } else if (ann.shape.type === 'arrow') {
-          // Anchor the arrow's label at its start (the tail), not the head.
+          // Anchor the label just beyond the arrow's start (the tail), offset
+          // backward (away from the head) so it does not cover the start.
           const startMM = slice2DToMMOnPlane(
             ann.shape.start,
             ann.sliceType,
@@ -483,8 +484,23 @@ export function buildAnnotationRenderData(
             pp,
           )
           const [scx, scy] = projectMMToCanvas(startMM, mvp, ltwh)
+          const endMM = slice2DToMMOnPlane(ann.shape.end, ann.sliceType, pn, pp)
+          const [ecx, ecy] = projectMMToCanvas(endMM, mvp, ltwh)
+          const dx = scx - ecx
+          const dy = scy - ecy
+          const alen = Math.hypot(dx, dy) || 1
+          const aoff = 22
           labels.push(
-            buildText(textStr, scx, scy - 8, 0.7, textColor, 0.5, 1, textBack),
+            buildText(
+              textStr,
+              scx + (dx / alen) * aoff,
+              scy + (dy / alen) * aoff,
+              0.7,
+              textColor,
+              0.5,
+              1,
+              textBack,
+            ),
           )
         } else {
           const rightX = Math.max(ann.shape.start.x, ann.shape.end.x)
@@ -623,9 +639,20 @@ export function projectAnnotationScreenShapes(
             )
             shape.label = { lines, x: mid.x, y: mid.y - 8, align: 'center' }
           } else if (ann.shape.type === 'arrow') {
-            // Anchor the arrow's label at its start (the tail), not the head.
+            // Anchor the arrow's label just beyond its start (the tail), offset
+            // backward (away from the arrowhead) so it does not cover the start.
             const s = project(ann.shape.start, ann.sliceType)
-            shape.label = { lines, x: s.x, y: s.y - 8, align: 'center' }
+            const e = project(ann.shape.end, ann.sliceType)
+            const dx = s.x - e.x
+            const dy = s.y - e.y
+            const len = Math.hypot(dx, dy) || 1
+            const off = 22
+            shape.label = {
+              lines,
+              x: s.x + (dx / len) * off,
+              y: s.y + (dy / len) * off,
+              align: 'center',
+            }
           } else {
             const right = project(
               {

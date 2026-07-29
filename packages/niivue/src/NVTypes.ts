@@ -1265,6 +1265,8 @@ export type VectorAnnotation = {
   polygons: PolygonWithHoles[]
   style: AnnotationStyle
   stats?: AnnotationStats
+  /** Optional user-entered free-text label shown with the annotation. */
+  text?: string
   shape?: {
     type: AnnotationTool
     start: AnnotationPoint

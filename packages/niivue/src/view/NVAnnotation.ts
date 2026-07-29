@@ -574,10 +574,15 @@ export function projectAnnotationScreenShapes(
           shape.start = project(ann.shape.start, ann.sliceType)
           shape.end = project(ann.shape.end, ann.sliceType)
         }
-        if (ann.stats && ann.shape) {
-          const lines = formatAnnotationStats(ann.stats)
+        // Label = the user's free text (if any) above the stats lines (if a
+        // measurement). Shown for any tool that has one or the other.
+        const lines = [
+          ...(ann.text ? [ann.text] : []),
+          ...(ann.stats ? formatAnnotationStats(ann.stats) : []),
+        ]
+        if (ann.shape && lines.length > 0) {
           if (
-            ann.stats.length !== undefined &&
+            ann.stats?.length !== undefined &&
             ann.shape.type === 'measureLine'
           ) {
             const mid = project(

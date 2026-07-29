@@ -1636,6 +1636,18 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Set (or clear, with an empty string) the free-text label on an annotation by
+   * id. The text shows above the annotation's stats via the overlay seam.
+   */
+  setAnnotationText(id: string, text: string): void {
+    const ann = this.model.annotations.find((a) => a.id === id)
+    if (!ann) return
+    ann.text = text.length > 0 ? text : undefined
+    this.emit('annotationChanged', { action: 'move' })
+    this.drawScene()
+  }
+
   removeAnnotation(id: string): void {
     const idx = this.model.annotations.findIndex((a) => a.id === id)
     if (idx >= 0) {

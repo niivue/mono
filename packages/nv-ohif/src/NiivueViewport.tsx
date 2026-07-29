@@ -10,6 +10,7 @@ import {
   reflectNiivueAnnotation,
   reflectNiivueMeasurement,
   removeNiivueAnnotation,
+  subscribeOhifLabelSync,
   syncNiivueWindowLevelToOhif,
 } from './commands'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
@@ -258,6 +259,12 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.addEventListener('annotationRemoved', onAnnotationRemoved)
     nv.addEventListener('annotationChanged', onAnnotationChanged)
 
+    // Push OHIF measurement-label edits onto the matching NiiVue annotation as
+    // free text, so labeling a row in the panel labels the shape on the canvas.
+    const unsubscribeLabelSync = subscribeOhifLabelSync(
+      servicesManagerRef.current,
+    )
+
     return () => {
       disposed = true
       setReady(false)
@@ -268,6 +275,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       nv.removeEventListener('annotationAdded', onAnnotationAdded)
       nv.removeEventListener('annotationRemoved', onAnnotationRemoved)
       nv.removeEventListener('annotationChanged', onAnnotationChanged)
+      unsubscribeLabelSync?.()
       unregisterRuler?.()
       rulerOverlay?.destroy()
       unregisterAnnotation?.()

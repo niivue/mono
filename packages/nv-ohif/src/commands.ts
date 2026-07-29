@@ -334,6 +334,11 @@ interface MeasurementServiceLike {
     toMeasurementSchema: (data: { measurement: unknown }) => unknown,
   ) => unknown
   remove?: (uid: string, source?: MeasurementSourceLike) => void
+  EVENTS?: { MEASUREMENT_UPDATED?: string }
+  subscribe?: (
+    event: string,
+    cb: (payload: { measurement?: { uid?: string; label?: string } }) => void,
+  ) => { unsubscribe?: () => void }
 }
 // OHIF value types for the ROI / point tools (literals, so we do not depend on
 // measurementService.VALUE_TYPES at runtime).
@@ -510,6 +515,13 @@ export function reflectNiivueMeasurement(
 // cleared annotation can remove its panel row.
 const reflectedAnnotations = new Map<string, Map<string, string>>()
 
+// OHIF measurement uid -> the NiiVue annotation it reflects, so an edit of the
+// measurement's label in OHIF's panel can be pushed back as the annotation text.
+const measurementToAnnotation = new Map<
+  string,
+  { viewportId: string; annotationId: string }
+>()
+
 function modalityUnit(entry: NiivueViewportEntry): string {
   const modality = baseModality(entry)
   if (modality === 'CT') return 'HU'
@@ -594,6 +606,9 @@ export function reflectNiivueAnnotation(
     annotation.stats,
     unit,
   )
+  // The user's free text (if set) is the panel row label; else a default name.
+  const rowLabel =
+    annotation.text && annotation.text.length > 0 ? annotation.text : label
 
   measurementService.addRawMeasurement(
     source,
@@ -605,7 +620,7 @@ export function reflectNiivueAnnotation(
       measurement: {
         uid,
         toolName: mapping.toolName,
-        label,
+        label: rowLabel,
         referenceSeriesUID: backing.SeriesInstanceUID,
         referenceStudyUID: backing.StudyInstanceUID as string | undefined,
         displaySetInstanceUID: backing.displaySetInstanceUID,
@@ -626,7 +641,46 @@ export function reflectNiivueAnnotation(
     reflectedAnnotations.set(viewportId, byView)
   }
   byView.set(annotation.id, uid)
+  measurementToAnnotation.set(uid, { viewportId, annotationId: annotation.id })
   return true
+}
+
+/**
+ * Push an OHIF measurement's label (edited in the panel) back onto the NiiVue
+ * annotation it reflects, so the free text shows on the viewport. No-op if the
+ * uid is not one of ours.
+ */
+export function applyOhifLabelToAnnotation(
+  servicesManager: OhifExtensionParams['servicesManager'],
+  measurementUid: string,
+  label: string,
+): void {
+  const ref = measurementToAnnotation.get(measurementUid)
+  if (!ref) return
+  const entry = getNiivueEntry(ref.viewportId)
+  entry?.nv.setAnnotationText(ref.annotationId, label ?? '')
+}
+
+/**
+ * Subscribe to OHIF measurement-label edits and push them onto the matching
+ * NiiVue annotation as free text (so editing a row's label in the panel labels
+ * the shape on the viewport). Returns an unsubscribe, or undefined if the
+ * MeasurementService does not expose the event.
+ */
+export function subscribeOhifLabelSync(
+  servicesManager: OhifExtensionParams['servicesManager'],
+): (() => void) | undefined {
+  const svc = ohifServices(servicesManager)?.measurementService as
+    | MeasurementServiceLike
+    | undefined
+  const evt = svc?.EVENTS?.MEASUREMENT_UPDATED
+  if (!svc?.subscribe || !evt) return undefined
+  const sub = svc.subscribe(evt, (payload) => {
+    const m = payload?.measurement
+    if (m?.uid)
+      applyOhifLabelToAnnotation(servicesManager, m.uid, m.label ?? '')
+  })
+  return () => sub?.unsubscribe?.()
 }
 
 /** Remove one reflected annotation's OHIF panel row (annotationRemoved). */
@@ -642,6 +696,7 @@ export function removeNiivueAnnotation(
     ?.measurementService as MeasurementServiceLike | undefined
   measurementService?.remove?.(uid)
   byView.delete(annotationId)
+  measurementToAnnotation.delete(uid)
 }
 
 /** Remove every reflected row for a viewport (annotation clear / series swap). */
@@ -653,7 +708,10 @@ export function clearNiivueAnnotations(
   if (!byView || byView.size === 0) return
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
-  for (const uid of byView.values()) measurementService?.remove?.(uid)
+  for (const uid of byView.values()) {
+    measurementService?.remove?.(uid)
+    measurementToAnnotation.delete(uid)
+  }
   byView.clear()
 }
 

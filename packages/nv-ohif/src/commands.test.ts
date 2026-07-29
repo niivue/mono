@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import {
+  applyOhifLabelToAnnotation,
   clearNiivueAnnotations,
   findOverlayCandidate,
   getNiivueCommandsModule,
@@ -365,6 +366,28 @@ describe('reflectNiivueAnnotation', () => {
     reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c2'))
     clearNiivueAnnotations('vp-a4', svc.servicesManager)
     expect(svc.removed).toHaveLength(2)
+  })
+
+  it('pushes an edited OHIF label back onto the annotation as free text', () => {
+    const texts: Array<{ id: string; text: string }> = []
+    const nv = {
+      ...stubNiivue(),
+      setAnnotationText: (id: string, text: string) => texts.push({ id, text }),
+    }
+    register('vp-a5', nv)
+    updateNiivueViewport('vp-a5', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-a5', backing)
+    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('lbl'))
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    applyOhifLabelToAnnotation(svc.servicesManager, uid, 'Tumor A')
+    expect(texts).toEqual([{ id: 'lbl', text: 'Tumor A' }])
+    // An unknown uid is a no-op.
+    applyOhifLabelToAnnotation(svc.servicesManager, 'not-ours', 'x')
+    expect(texts).toHaveLength(1)
   })
 })
 

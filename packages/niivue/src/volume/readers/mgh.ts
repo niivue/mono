@@ -245,7 +245,10 @@ export async function read(
     isLabel = mgLabelFiles.some((label) => filename.includes(label))
   }
   return {
-    img: imgRaw,
+    // Readers must return raw multi-byte data as an ArrayBuffer so nii2volume
+    // converts it to the typed array selected by hdr.datatypeCode. Returning
+    // Uint8Array here would make downstream code treat every byte as a voxel.
+    img: imgRaw.buffer,
     hdr: hdr,
   }
 }

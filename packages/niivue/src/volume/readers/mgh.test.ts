@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { NiiDataType } from '@/NVConstants'
+import { calMinMax, toTypedViewOrU8 } from '@/volume/utils'
 import { read } from './mgh'
 
 // A real FreeSurfer INT32 (MRI_INT) volume. MGH/MGZ is big-endian, so an
@@ -36,15 +37,20 @@ describe('mgh reader (big-endian INT32 MGZ)', () => {
     expect(hdr.dims[2]).toBe(256)
     expect(hdr.dims[3]).toBe(256)
 
-    // View the returned bytes exactly as the platform (and toTypedViewOrU8)
-    // reads them: a native Int32Array. After the fix these are the true values.
-    const bytes = img instanceof Uint8Array ? img : new Uint8Array(img)
-    const i32 = new Int32Array(
-      bytes.buffer,
-      bytes.byteOffset,
-      bytes.byteLength / 4,
-    )
+    // Exercise the same conversion and range calculation used by nii2volume.
+    // Returning Uint8Array from the reader would bypass this conversion and
+    // incorrectly treat each byte as a voxel.
+    expect(img).toBeInstanceOf(ArrayBuffer)
+    const i32 = toTypedViewOrU8(img, hdr.datatypeCode)
+    expect(i32).toBeInstanceOf(Int32Array)
+    if (!(i32 instanceof Int32Array)) {
+      throw new Error('Expected MGH INT32 data to become an Int32Array')
+    }
     expect(i32.length).toBe(256 * 256 * 256)
+
+    const [, , globalMin, globalMax] = calMinMax(hdr, img)
+    expect(globalMin).toBe(EXPECTED.min)
+    expect(globalMax).toBe(EXPECTED.max)
 
     let min = Number.POSITIVE_INFINITY
     let max = Number.NEGATIVE_INFINITY

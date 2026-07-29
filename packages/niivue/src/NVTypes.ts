@@ -1229,6 +1229,9 @@ export type AnnotationTool =
   // Multi-click closed contours (Catmull-Rom spline through control points).
   | 'spline'
   | 'measureSpline'
+  // Multi-click edge-snapping contours (intelligent scissors / live wire).
+  | 'livewire'
+  | 'measureLivewire'
 
 export type AnnotationStats = {
   area: number

@@ -23,6 +23,9 @@ export function ohifToolToAnnotationTool(
     case 'SplineROI':
       // Multi-click closed spline contour with area/mean stats.
       return 'measureSpline'
+    case 'LivewireContour':
+      // Multi-click edge-snapping contour with area/mean stats.
+      return 'measureLivewire'
     case 'ArrowAnnotate':
       return 'arrow'
     default:
@@ -36,7 +39,6 @@ export function ohifToolToAnnotationTool(
  */
 export const UNSUPPORTED_MEASUREMENT_TOOLS: ReadonlySet<string> = new Set([
   'Bidirectional',
-  'LivewireContour',
 ])
 
 /** Map an OHIF primary tool name to NiiVue's matching left-drag mode. */

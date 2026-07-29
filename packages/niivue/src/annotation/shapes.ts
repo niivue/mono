@@ -181,6 +181,17 @@ export function generateSplineFromPoints(
   return [{ outer, holes: [] }]
 }
 
+/**
+ * A closed polygon straight from a dense point list (the live-wire snapped path),
+ * with no smoothing. Needs at least 3 points to enclose an area.
+ */
+export function generatePolygonFromPoints(
+  points: readonly AnnotationPoint[],
+): PolygonWithHoles[] {
+  if (points.length < 3) return []
+  return [{ outer: points.map((p) => ({ x: p.x, y: p.y })), holes: [] }]
+}
+
 export function generateShape(
   tool: AnnotationTool,
   start: AnnotationPoint,

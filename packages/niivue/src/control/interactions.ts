@@ -59,13 +59,73 @@ function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
 // These place control points across successive clicks (not a single drag) and
 // close on double-click, so they need their own small state machine.
 
-function isMultiClickTool(tool: AnnotationTool): boolean {
-  return tool === 'spline' || tool === 'measureSpline'
+function isLivewireTool(tool: AnnotationTool): boolean {
+  return tool === 'livewire' || tool === 'measureLivewire'
 }
 
-// Refresh the live preview: the contour through the placed control points plus
-// the hovered cursor point (null when no cursor). Needs >= 3 points to enclose
-// an area; below that there is nothing to preview yet.
+function isMultiClickTool(tool: AnnotationTool): boolean {
+  return tool === 'spline' || tool === 'measureSpline' || isLivewireTool(tool)
+}
+
+// Live-wire snapped path (slice-2D points) from the current seed's field to a
+// target slice-2D point. Empty when no slice/field is ready.
+function livewireSnappedPath(
+  ctrl: NiiVue,
+  target: AnnotationPoint,
+): AnnotationPoint[] {
+  const slice = ctrl._livewireSlice
+  const field = ctrl._livewireField
+  if (!slice || !field) return []
+  const g = Annotation.slice2DToGrid(slice, target)
+  const gridPath = Annotation.livewireBacktrack(field, slice.width, g.x, g.y)
+  return gridPath.map((p) => Annotation.gridToSlice2D(slice, p.x, p.y))
+}
+
+// (Re)seed the live wire at a slice-2D point: extract the slice on first use,
+// then compute the Dijkstra field from that point. False if unavailable.
+function seedLivewire(ctrl: NiiVue, pt: AnnotationPoint): boolean {
+  const vol = ctrl.model.getVolumes()[0]
+  if (!vol) return false
+  if (!ctrl._livewireSlice) {
+    ctrl._livewireSlice = Annotation.extractLivewireSlice(
+      vol,
+      ctrl._annotationPolySliceType,
+      ctrl._annotationPolySlicePosition,
+    )
+  }
+  const slice = ctrl._livewireSlice
+  if (!slice) return false
+  const g = Annotation.slice2DToGrid(slice, pt)
+  ctrl._livewireField = Annotation.livewireField(
+    slice.cost,
+    slice.width,
+    slice.height,
+    g.x,
+    g.y,
+  )
+  ctrl._livewireSeed = g
+  return true
+}
+
+function resetLivewire(ctrl: NiiVue): void {
+  ctrl._livewireSlice = null
+  ctrl._livewireField = null
+  ctrl._livewireSeed = null
+}
+
+// The contour polygon for the active tool: spline smooths through the control
+// points; live-wire uses the dense snapped points directly.
+function contourPolygons(
+  ctrl: NiiVue,
+  points: readonly AnnotationPoint[],
+): PolygonWithHoles[] {
+  return isLivewireTool(ctrl.model.annotation.tool)
+    ? Annotation.generatePolygonFromPoints(points)
+    : Annotation.generateSplineFromPoints(points)
+}
+
+// Refresh the live preview: the contour through the placed points plus the
+// hovered cursor (a straight cursor for spline, the snapped path for live wire).
 function updateMultiClickPreview(
   ctrl: NiiVue,
   cursor: AnnotationPoint | null,
@@ -76,8 +136,12 @@ function updateMultiClickPreview(
     return
   }
   const cfg = ctrl.model.annotation
-  const all = cursor ? [...pts, cursor] : pts
-  const polygons = Annotation.generateSplineFromPoints(all)
+  const all = cursor
+    ? isLivewireTool(cfg.tool)
+      ? [...pts, ...livewireSnappedPath(ctrl, cursor)]
+      : [...pts, cursor]
+    : pts
+  const polygons = contourPolygons(ctrl, all)
   if (polygons.length === 0) {
     ctrl.model._annotationPreview = null
     return
@@ -119,7 +183,7 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
   const pts = ctrl._annotationPolyPoints
   if (!pts || pts.length < 3) return false
   const cfg = ctrl.model.annotation
-  const polygons = Annotation.generateSplineFromPoints(pts)
+  const polygons = contourPolygons(ctrl, pts)
   if (polygons.length === 0) return false
   ctrl._annotationUndoStack.push(ctrl.model.annotations)
   const newAnn = Annotation.createAnnotation(
@@ -152,6 +216,7 @@ function cancelMultiClickContour(ctrl: NiiVue): void {
   if (!ctrl._annotationPolyPoints) return
   ctrl._annotationPolyPoints = null
   ctrl.model._annotationPreview = null
+  resetLivewire(ctrl)
   ctrl.drawScene()
 }
 
@@ -1210,18 +1275,34 @@ export function initInteraction(ctrl: NiiVue): void {
         // control point; the contour is closed on double-click (see the dblclick
         // handler) or cancelled with Escape. Do NOT start a drag.
         if (isMultiClickTool(tool) && !cfg.isErasing) {
-          if (
+          const fresh =
             !ctrl._annotationPolyPoints ||
             ctrl._annotationPolySliceType !== sliceType
-          ) {
+          if (fresh) {
             // Start a fresh contour (first point, or the user moved to a new
             // slice — abandon the old in-progress contour and begin here).
             ctrl._annotationPolyPoints = []
             ctrl._annotationPolySliceType = sliceType
             ctrl._annotationPolySlicePosition = slicePosition
             ctrl._annotationPolyAnchorMM = mm as [number, number, number]
+            resetLivewire(ctrl)
           }
-          ctrl._annotationPolyPoints.push(pt2d)
+          const poly = ctrl._annotationPolyPoints as AnnotationPoint[]
+          if (isLivewireTool(tool)) {
+            if (fresh || !ctrl._livewireSeed) {
+              seedLivewire(ctrl, pt2d)
+              poly.push(pt2d)
+            } else {
+              // Commit the snapped path from the last seed to this click (drop
+              // its first point, a duplicate of the last committed one), then
+              // re-seed the live wire here.
+              const seg = livewireSnappedPath(ctrl, pt2d)
+              for (let i = 1; i < seg.length; i++) poly.push(seg[i])
+              seedLivewire(ctrl, pt2d)
+            }
+          } else {
+            poly.push(pt2d)
+          }
           updateMultiClickPreview(ctrl, pt2d)
           ctrl.drawScene()
           return
@@ -2207,6 +2288,7 @@ export function initInteraction(ctrl: NiiVue): void {
       commitMultiClickContour(ctrl)
       ctrl._annotationPolyPoints = null
       ctrl.model._annotationPreview = null
+      resetLivewire(ctrl)
       ctrl.drawScene()
       return
     }

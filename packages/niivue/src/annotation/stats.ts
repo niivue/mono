@@ -16,7 +16,8 @@ export function isMeasureTool(tool: AnnotationTool): boolean {
     tool === 'measureRect' ||
     tool === 'measureLine' ||
     tool === 'measureCircle' ||
-    tool === 'measureSpline'
+    tool === 'measureSpline' ||
+    tool === 'measureLivewire'
   )
 }
 

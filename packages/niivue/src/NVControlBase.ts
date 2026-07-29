@@ -1,5 +1,6 @@
 import { type vec2, type vec3, vec4 } from 'gl-matrix'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
+import type { LivewireSlice } from '@/annotation/livewireSlice'
 import { getControlPoints } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
@@ -411,6 +412,12 @@ export default class NiiVue extends EventTarget {
   _annotationPolySliceType = 0
   _annotationPolySlicePosition = 0
   _annotationPolyAnchorMM: [number, number, number] = [0, 0, 0]
+  // Live-wire (intelligent scissors) state: the current slice's cost grid, the
+  // Dijkstra predecessor field from the last committed seed, and that seed in
+  // grid pixels. Rebuilt when a contour starts / each seed is committed.
+  _livewireSlice: LivewireSlice | null = null
+  _livewireField: Int32Array | null = null
+  _livewireSeed: { x: number; y: number } | null = null
   _resizingControlPoint = -1
   _resizeOriginalShape: {
     start: AnnotationPoint
@@ -1524,6 +1531,9 @@ export default class NiiVue extends EventTarget {
     if (!v && this._annotationPolyPoints) {
       this._annotationPolyPoints = null
       this.model._annotationPreview = null
+      this._livewireSlice = null
+      this._livewireField = null
+      this._livewireSeed = null
     }
     this.emit('change', { property: 'annotationIsEnabled', value: v })
     this.drawScene()
@@ -1589,6 +1599,9 @@ export default class NiiVue extends EventTarget {
     if (this._annotationPolyPoints) {
       this._annotationPolyPoints = null
       this.model._annotationPreview = null
+      this._livewireSlice = null
+      this._livewireField = null
+      this._livewireSeed = null
     }
     this.emit('change', { property: 'annotationTool', value: v })
     this.drawScene()

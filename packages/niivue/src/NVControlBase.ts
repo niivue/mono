@@ -1519,6 +1519,12 @@ export default class NiiVue extends EventTarget {
    */
   set annotationIsEnabled(v: boolean) {
     this.model.annotation.isEnabled = v
+    // Leaving annotation mode abandons any half-drawn multi-click contour so its
+    // preview does not linger.
+    if (!v && this._annotationPolyPoints) {
+      this._annotationPolyPoints = null
+      this.model._annotationPreview = null
+    }
     this.emit('change', { property: 'annotationIsEnabled', value: v })
     this.drawScene()
   }
@@ -1579,6 +1585,11 @@ export default class NiiVue extends EventTarget {
   set annotationTool(v: AnnotationTool) {
     this.model.annotation.tool = v
     this.model._annotationSelection = null
+    // Switching tools abandons any half-drawn multi-click contour.
+    if (this._annotationPolyPoints) {
+      this._annotationPolyPoints = null
+      this.model._annotationPreview = null
+    }
     this.emit('change', { property: 'annotationTool', value: v })
     this.drawScene()
   }

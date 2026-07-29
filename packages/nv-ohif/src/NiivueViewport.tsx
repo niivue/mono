@@ -28,6 +28,7 @@ import {
   ohifToolToDragMode,
   UNSUPPORTED_MEASUREMENT_TOOLS,
 } from './toolBridge'
+import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
 import { VolumeRulerOverlay } from './volumeRulerOverlay'
 import { mountWsiSlideView } from './wsiSlideView'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
@@ -104,6 +105,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     // loads); torn down on unmount.
     let rulerOverlay: VolumeRulerOverlay | null = null
     let unregisterRuler: (() => void) | null = null
+    let annotationOverlay: VolumeAnnotationOverlay | null = null
+    let unregisterAnnotation: (() => void) | null = null
     const canvas = document.createElement('canvas')
     canvas.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%'
@@ -134,6 +137,14 @@ export function NiivueViewport(props: OhifViewportProps) {
           )
           unregisterRuler = nv.registerOverlayRenderer(rulerOverlay)
           nv.isMeasurementDrawn = false
+          // Same treatment for the ROI/arrow vector annotations: draw them as
+          // UIKit shapes and switch NiiVue's built-in annotation draw OFF.
+          annotationOverlay = new VolumeAnnotationOverlay(
+            font,
+            () => nv.annotationScreenShapes,
+          )
+          unregisterAnnotation = nv.registerOverlayRenderer(annotationOverlay)
+          nv.isAnnotationDrawn = false
         })
         .catch((err) =>
           console.error('[nv-ohif] volume ruler font failed to load', err),
@@ -259,6 +270,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       nv.removeEventListener('annotationChanged', onAnnotationChanged)
       unregisterRuler?.()
       rulerOverlay?.destroy()
+      unregisterAnnotation?.()
+      annotationOverlay?.destroy()
       ro.disconnect()
       nv.destroy()
       canvas.width = 0

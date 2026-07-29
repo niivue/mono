@@ -1,5 +1,6 @@
 import type { mat4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
+import { shouldStartFreshMultiClickContour } from '@/annotation/multiClick'
 import * as DragModes from '@/control/dragModes'
 import { computeBoundsPixelRect } from '@/control/viewBoth'
 import { addUndoBitmap, getDrawingBitmap } from '@/drawing/drawingManager'
@@ -1371,13 +1372,13 @@ export function initInteraction(ctrl: NiiVue): void {
         // control point; the contour is closed on double-click (see the dblclick
         // handler) or cancelled with Escape. Do NOT start a drag.
         if (isMultiClickTool(tool) && !cfg.isErasing) {
-          const fresh =
-            !ctrl._annotationPolyPoints ||
-            ctrl._annotationPolySliceType !== sliceType ||
-            // A depth change within the same orientation (e.g. wheel-scrolling to
-            // a new slice mid-contour) also abandons the in-progress contour, so
-            // its points and stats are never committed onto the wrong slice.
-            Math.abs(ctrl._annotationPolySlicePosition - slicePosition) > 1e-3
+          const fresh = shouldStartFreshMultiClickContour(
+            Boolean(ctrl._annotationPolyPoints),
+            ctrl._annotationPolySliceType,
+            ctrl._annotationPolySlicePosition,
+            sliceType,
+            slicePosition,
+          )
           if (fresh) {
             // Start a fresh contour (first point, or the user moved to a new
             // slice — abandon the old in-progress contour and begin here).

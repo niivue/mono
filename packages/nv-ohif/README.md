@@ -10,10 +10,6 @@ overlays, and voxel drawing / vector annotation to your OHIF app.
 > toolbar surfacing NiiVue's views / clip plane / overlay / window-level. Verified
 > mounting inside a full local OHIF Viewer (registered via `pluginConfig.json` + a
 > mode). See `PLAN.md`.
->
-> **DICOM has an unshipped-dependency caveat — read [DICOM support](#dicom-support)
-> before relying on it.** The NIfTI path works with published deps today; DICOM
-> needs a `@niivue/dcm2niix` release that is not published yet.
 
 > **Consuming the local build (dev):** install **packed tarballs**, do not symlink.
 > Symlinking the monorepo package into an OHIF app makes its bundler follow the link

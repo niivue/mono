@@ -4,9 +4,10 @@
  * @packageDocumentation
  */
 
-// biome-ignore-all lint/performance/noBarrelFile: package entry point
+// biome-ignore-all lint/performance/noBarrelFile assist/source/organizeImports: package entry point
 // Label colormap helpers for extensions producing label/atlas volumes
 export { lookupColorMap, makeLabelLut } from './cmap/NVCmaps'
+export { slice2DToMM } from './annotation/sliceProjection'
 // Viewport controller (OpenSeadragon-style smooth pan/zoom on the shared canvas).
 // Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
 // Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
@@ -97,6 +98,7 @@ export type {
   AffineMatrix,
   AffineTransform,
   AnnotationConfig,
+  AnnotationPoint,
   AnnotationScreenShape,
   AnnotationStats,
   AnnotationTool,

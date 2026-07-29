@@ -1,6 +1,8 @@
 import {
+  type AnnotationPoint,
   type AnnotationStats,
   SLICE_TYPE,
+  slice2DToMM,
   type VectorAnnotation,
 } from '@niivue/niivue'
 import { classifyDisplaySet } from './classifyDisplaySet'
@@ -432,7 +434,75 @@ function resolveBackingSeries(
 
 // world mm in NIfTI RAS -> DICOM patient LPS (negate x and y).
 function rasToLps(p: [number, number, number]): [number, number, number] {
-  return [-p[0], -p[1], p[2]]
+  return [p[0] === 0 ? 0 : -p[0], p[1] === 0 ? 0 : -p[1], p[2]]
+}
+
+function annotationPointToLps(
+  annotation: VectorAnnotation,
+  point: AnnotationPoint,
+): [number, number, number] {
+  return rasToLps(
+    slice2DToMM(point, annotation.sliceType, annotation.slicePosition),
+  )
+}
+
+function annotationPointsLps(
+  annotation: VectorAnnotation,
+): [number, number, number][] {
+  const shape = annotation.shape
+  if (!shape) return annotation.anchorMM ? [rasToLps(annotation.anchorMM)] : []
+
+  const { start, end } = shape
+  const cx = (start.x + end.x) / 2
+  const cy = (start.y + end.y) / 2
+  const minX = Math.min(start.x, end.x)
+  const maxX = Math.max(start.x, end.x)
+  const minY = Math.min(start.y, end.y)
+  const maxY = Math.max(start.y, end.y)
+  let points: AnnotationPoint[]
+
+  switch (shape.type) {
+    case 'measureEllipse':
+      points = [
+        { x: cx, y: minY },
+        { x: maxX, y: cy },
+        { x: cx, y: maxY },
+        { x: minX, y: cy },
+      ]
+      break
+    case 'measureRect':
+      points = [
+        { x: minX, y: minY },
+        { x: maxX, y: minY },
+        { x: maxX, y: maxY },
+        { x: minX, y: maxY },
+      ]
+      break
+    case 'measureCircle':
+      points = [
+        { x: cx, y: cy },
+        { x: maxX, y: cy },
+      ]
+      break
+    case 'measureBidirectional':
+      points =
+        shape.start2 && shape.end2
+          ? [start, end, shape.start2, shape.end2]
+          : [start, end]
+      break
+    case 'measureSpline':
+    case 'measureLivewire': {
+      const outer = annotation.polygons[0]?.outer
+      points = outer && outer.length >= 2 ? outer : [start, end]
+      break
+    }
+    case 'measureLine':
+      points = [start, end]
+      break
+    default:
+      points = [start]
+  }
+  return points.map((point) => annotationPointToLps(annotation, point))
 }
 
 // --- annotations: reflect NiiVue vector annotations into OHIF ----------------
@@ -545,14 +615,8 @@ export function reflectNiivueAnnotation(
   const forUID = backing.instances?.[0]?.FrameOfReferenceUID as
     | string
     | undefined
-  // A single LPS anchor point (the shape centre) is enough for the panel row,
-  // which renders from displayText, and for OHIF to resolve the series. It is
-  // NOT the full per-tool point geometry OHIF's value types declare (2 for
-  // Length, 4 for ellipse/bidirectional): actions that index into points
-  // (jump-to-measurement, DICOM SR export) would read undefined. Those paths are
-  // not wired for a NiiVue (non-cornerstone) viewport yet; emitting correct
-  // per-tool endpoints is a follow-up tracked with SR export (see PLAN.md).
-  const points = annotation.anchorMM ? [rasToLps(annotation.anchorMM)] : []
+  const points = annotationPointsLps(annotation)
+  if (points.length < mapping.points) return false
   const unit = modalityUnit(entry)
   const { primary, data, label } = buildAnnotationDisplay(
     mapping.toolName,
@@ -604,7 +668,6 @@ export function reflectNiivueAnnotation(
  * uid is not one of ours.
  */
 export function applyOhifLabelToAnnotation(
-  servicesManager: OhifExtensionParams['servicesManager'],
   measurementUid: string,
   label: string,
 ): void {
@@ -630,8 +693,7 @@ export function subscribeOhifLabelSync(
   if (!svc?.subscribe || !evt) return undefined
   const sub = svc.subscribe(evt, (payload) => {
     const m = payload?.measurement
-    if (m?.uid)
-      applyOhifLabelToAnnotation(servicesManager, m.uid, m.label ?? '')
+    if (m?.uid) applyOhifLabelToAnnotation(m.uid, m.label ?? '')
   })
   return () => sub?.unsubscribe?.()
 }
@@ -650,6 +712,7 @@ export function removeNiivueAnnotation(
   measurementService?.remove?.(uid)
   byView.delete(annotationId)
   measurementToAnnotation.delete(uid)
+  if (byView.size === 0) reflectedAnnotations.delete(viewportId)
 }
 
 /** Remove every reflected row for a viewport (annotation clear / series swap). */
@@ -658,14 +721,14 @@ export function clearNiivueAnnotations(
   servicesManager: OhifExtensionParams['servicesManager'],
 ): void {
   const byView = reflectedAnnotations.get(viewportId)
-  if (!byView || byView.size === 0) return
+  if (!byView) return
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
   for (const uid of byView.values()) {
     measurementService?.remove?.(uid)
     measurementToAnnotation.delete(uid)
   }
-  byView.clear()
+  reflectedAnnotations.delete(viewportId)
 }
 
 /**

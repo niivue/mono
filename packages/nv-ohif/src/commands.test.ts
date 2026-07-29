@@ -246,7 +246,7 @@ describe('reflectNiivueAnnotation', () => {
     return measurementServices(viewportId, backing)
   }
 
-  it('adds an OHIF EllipticalROI with area + intensity stats (LPS anchor)', () => {
+  it('adds an OHIF EllipticalROI with area, stats, and four LPS points', () => {
     const svc = setup('vp-a1')
     const ok = reflectNiivueAnnotation(
       'vp-a1',
@@ -269,8 +269,12 @@ describe('reflectNiivueAnnotation', () => {
     expect(m.data.area).toBe(123.4)
     expect(m.data.mean).toBe(50)
     expect(m.data.areaUnit).toBe('mm²')
-    // NIfTI RAS anchor -> DICOM LPS (negate x, y).
-    expect(m.points[0]).toEqual([-10, -20, 30])
+    expect(m.points).toEqual([
+      [-0.5, 0, 0],
+      [-1, -0.5, 0],
+      [-0.5, -1, 0],
+      [0, -0.5, 0],
+    ])
   })
 
   it('adds an OHIF Length from a measureLine (length text, no area)', () => {
@@ -301,11 +305,16 @@ describe('reflectNiivueAnnotation', () => {
     const m = svc.added[0]?.data.schema as {
       toolName: string
       displayText: { primary: string[] }
+      points: number[][]
       data: { length: number; unit: string }
     }
     expect(m.toolName).toBe('Length')
     expect(m.displayText.primary).toEqual(['42.5 mm'])
     expect(m.data).toEqual({ length: 42.5, unit: 'mm' })
+    expect(m.points).toEqual([
+      [0, 0, 0],
+      [-3, -4, 0],
+    ])
   })
 
   it('does not reflect a tool with no OHIF mapping (freehand)', () => {
@@ -315,6 +324,20 @@ describe('reflectNiivueAnnotation', () => {
     expect(reflectNiivueAnnotation('vp-a2', svc.servicesManager, anno)).toBe(
       false,
     )
+    expect(svc.added).toHaveLength(0)
+  })
+
+  it('does not reflect an incomplete shape with too few declared points', () => {
+    const svc = setup('vp-a2-incomplete')
+    const anno = ellipse('incomplete')
+    anno.shape = {
+      type: 'measureBidirectional',
+      start: { x: 0, y: 0 },
+      end: { x: 3, y: 4 },
+    }
+    expect(
+      reflectNiivueAnnotation('vp-a2-incomplete', svc.servicesManager, anno),
+    ).toBe(false)
     expect(svc.added).toHaveLength(0)
   })
 
@@ -372,10 +395,10 @@ describe('reflectNiivueAnnotation', () => {
     const svc = measurementServices('vp-a5', backing)
     reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('lbl'))
     const uid = (svc.added[0]?.data.schema as { uid: string }).uid
-    applyOhifLabelToAnnotation(svc.servicesManager, uid, 'Tumor A')
+    applyOhifLabelToAnnotation(uid, 'Tumor A')
     expect(texts).toEqual([{ id: 'lbl', text: 'Tumor A' }])
     // An unknown uid is a no-op.
-    applyOhifLabelToAnnotation(svc.servicesManager, 'not-ours', 'x')
+    applyOhifLabelToAnnotation('not-ours', 'x')
     expect(texts).toHaveLength(1)
   })
 })

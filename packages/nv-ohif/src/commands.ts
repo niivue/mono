@@ -545,6 +545,13 @@ export function reflectNiivueAnnotation(
   const forUID = backing.instances?.[0]?.FrameOfReferenceUID as
     | string
     | undefined
+  // A single LPS anchor point (the shape centre) is enough for the panel row,
+  // which renders from displayText, and for OHIF to resolve the series. It is
+  // NOT the full per-tool point geometry OHIF's value types declare (2 for
+  // Length, 4 for ellipse/bidirectional): actions that index into points
+  // (jump-to-measurement, DICOM SR export) would read undefined. Those paths are
+  // not wired for a NiiVue (non-cornerstone) viewport yet; emitting correct
+  // per-tool endpoints is a follow-up tracked with SR export (see PLAN.md).
   const points = annotation.anchorMM ? [rasToLps(annotation.anchorMM)] : []
   const unit = modalityUnit(entry)
   const { primary, data, label } = buildAnnotationDisplay(
@@ -659,6 +666,27 @@ export function clearNiivueAnnotations(
     measurementToAnnotation.delete(uid)
   }
   byView.clear()
+}
+
+/**
+ * Rebuild every reflected panel row for a viewport from NiiVue's current
+ * annotation set. Used for edits that the per-row annotationAdded / annotationRemoved
+ * events do not cover, where the change event carries only an action (no id): a
+ * resize or move (stats changed on an existing shape), an erase, or an undo/redo
+ * (membership changed). Clears the stale rows, then re-reflects each live
+ * annotation. Free-text labels survive the rebuild because they live on the
+ * annotation (reflectNiivueAnnotation uses annotation.text as the row label).
+ */
+export function reconcileNiivueAnnotations(
+  viewportId: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
+): void {
+  const entry = getNiivueEntry(viewportId)
+  if (!entry) return
+  clearNiivueAnnotations(viewportId, servicesManager)
+  for (const annotation of entry.nv.annotations) {
+    reflectNiivueAnnotation(viewportId, servicesManager, annotation)
+  }
 }
 
 export function syncNiivueWindowLevelToOhif(

@@ -8,7 +8,7 @@ import type {
 } from '@/NVTypes'
 import { getVoxelValue } from '@/volume/utils'
 import { pointInRing } from './pointInRing'
-import { slice2DToMM } from './sliceProjection'
+import { IN_PLANE_AXES, slice2DToMM } from './sliceProjection'
 
 export function isMeasureTool(tool: AnnotationTool): boolean {
   return (
@@ -24,12 +24,6 @@ export function isMeasureTool(tool: AnnotationTool): boolean {
 export function isCircleTool(tool: AnnotationTool): boolean {
   return tool === 'circle' || tool === 'measureCircle'
 }
-
-const IN_PLANE_AXES: readonly (readonly [number, number])[] = [
-  [0, 1],
-  [0, 2],
-  [1, 2],
-]
 
 export function computeAnnotationStats(
   annotation: VectorAnnotation,

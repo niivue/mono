@@ -9,13 +9,7 @@ import { sliceTypeDim } from '@/NVConstants'
 import type { AnnotationPoint, NVImage } from '@/NVTypes'
 import { getVoxelValue } from '@/volume/utils'
 import { buildLivewireCost } from './livewire'
-import { mmToSlice2D, slice2DToMM } from './sliceProjection'
-
-const IN_PLANE_AXES: readonly (readonly [number, number])[] = [
-  [0, 1],
-  [0, 2],
-  [1, 2],
-]
+import { IN_PLANE_AXES, mmToSlice2D, slice2DToMM } from './sliceProjection'
 
 export type LivewireSlice = {
   image: Float32Array

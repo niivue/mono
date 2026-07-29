@@ -558,14 +558,25 @@ const OPEN_ANNOTATION_TOOLS: ReadonlySet<AnnotationTool> = new Set([
 /**
  * Project every visible annotation to the current frame's canvas pixels and
  * store the shape-level geometry in `model._persistedAnnotationScreenShapes`,
- * exposed via NVControlBase.annotationScreenShapes. Mirrors
- * projectMeasurementScreenLines: recomputed each frame, independent of
- * isAnnotationDrawn (so an overlay keeps drawing when the built-in draw is off).
+ * exposed via NVControlBase.annotationScreenShapes for an external overlay.
+ *
+ * Only runs when the built-in draw is OFF (`ui.isAnnotationDrawn === false`),
+ * i.e. an overlay has taken over: unlike the measurement subsystem (whose
+ * built-in draw reuses the projected screen lines), buildAnnotationRenderData
+ * re-projects independently, so projecting here while the built-in draw is on
+ * would be wasted per-frame work with no consumer. When the built-in draw is on
+ * the persisted shapes are emptied (once) so a stray read never sees stale
+ * geometry.
  */
 export function projectAnnotationScreenShapes(
   model: NVModel,
   screenSlices: SliceTile[],
 ): void {
+  if (model.ui.isAnnotationDrawn) {
+    if (model._persistedAnnotationScreenShapes.length > 0)
+      model._persistedAnnotationScreenShapes = []
+    return
+  }
   const shapes: AnnotationScreenShape[] = []
   const annotations = resolveAnnotations(model)
   if (annotations.length > 0) {

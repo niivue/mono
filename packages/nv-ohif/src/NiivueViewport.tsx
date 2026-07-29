@@ -6,6 +6,7 @@ import { classifyDisplaySet } from './classifyDisplaySet'
 import {
   clearNiivueAnnotations,
   readBaseWindowLevel,
+  reconcileNiivueAnnotations,
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
   subscribeOhifLabelSync,
@@ -217,8 +218,13 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
     const onAnnotationChanged = (e: Event) => {
       const action = (e as CustomEvent<{ action: string }>).detail?.action
-      if (action === 'clear')
-        clearNiivueAnnotations(viewportId, servicesManagerRef.current)
+      // A new annotation ('draw') is handled by onAnnotationAdded. Every other
+      // action changes existing rows in bulk with no per-row event (only an
+      // action string): a resize/move (stats changed), an erase, an undo/redo
+      // (membership changed), or a clear-all. Reconcile the whole panel against
+      // the current annotation set so no row is left stale or orphaned.
+      if (action && action !== 'draw')
+        reconcileNiivueAnnotations(viewportId, servicesManagerRef.current)
     }
     nv.addEventListener('annotationAdded', onAnnotationAdded)
     nv.addEventListener('annotationRemoved', onAnnotationRemoved)
@@ -233,6 +239,11 @@ export function NiivueViewport(props: OhifViewportProps) {
     return () => {
       disposed = true
       setReady(false)
+      // Drop this viewport's reflected measurement rows and their bookkeeping:
+      // nv.destroy() fires no 'clear' event, so without this the panel rows and
+      // the module-level reflection maps would leak across every unmount
+      // (StrictMode double-mount, route / layout churn).
+      clearNiivueAnnotations(viewportId, servicesManagerRef.current)
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       canvas.removeEventListener('pointerup', onPointerUp)

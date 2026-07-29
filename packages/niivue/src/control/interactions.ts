@@ -1373,7 +1373,11 @@ export function initInteraction(ctrl: NiiVue): void {
         if (isMultiClickTool(tool) && !cfg.isErasing) {
           const fresh =
             !ctrl._annotationPolyPoints ||
-            ctrl._annotationPolySliceType !== sliceType
+            ctrl._annotationPolySliceType !== sliceType ||
+            // A depth change within the same orientation (e.g. wheel-scrolling to
+            // a new slice mid-contour) also abandons the in-progress contour, so
+            // its points and stats are never committed onto the wrong slice.
+            Math.abs(ctrl._annotationPolySlicePosition - slicePosition) > 1e-3
           if (fresh) {
             // Start a fresh contour (first point, or the user moved to a new
             // slice — abandon the old in-progress contour and begin here).

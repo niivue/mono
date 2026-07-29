@@ -567,6 +567,17 @@ single-frame image can load through the existing volume path (`loadVolumes` as a
 
 ## Open items / decisions still to make
 
+- **Measurement point geometry for SR export / jump-to-measurement.** Reflected
+  measurements currently carry a single LPS anchor point (the shape centre),
+  enough for the panel row (which renders from `displayText`) but not the full
+  per-tool point geometry OHIF's value types declare (2 for Length, 4 for
+  ellipse/bidirectional). Any consumer that indexes into `points` (DICOM SR
+  export, jump-to-measurement) reads `undefined`; those paths are not wired for a
+  NiiVue (non-cornerstone) viewport yet. Emit correct per-tool endpoints
+  (measureLine start/end, bidirectional long+short, ROI extent points) when SR
+  export is taken on. This needs a niivue helper to expose an annotation's mm
+  endpoints (the slice2D->mm convention should stay in niivue, not be duplicated
+  here). See the note at `reflectNiivueAnnotation` in `commands.ts`.
 - Which OHIF version to target first (pin to a recent `3.x`; confirm the exact
   `@ohif/core` API surface for `getViewportModule` + SOPClassHandler in that release).
 - Exact display-set criteria we claim in the SOPClassHandler (start narrow:

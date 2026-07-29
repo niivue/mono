@@ -11,6 +11,7 @@ import {
   OVERLAY_COLORMAP,
   OVERLAY_OPACITY,
   readBaseWindowLevel,
+  reconcileNiivueAnnotations,
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
   resolveWindowLevel,
@@ -38,6 +39,7 @@ function stubNiivue() {
     primaryDragMode: DRAG_MODE.crosshair as number,
     annotationTool: '' as string,
     annotationIsEnabled: false,
+    annotations: [] as VectorAnnotation[],
     azimuth: 42,
     elevation: -7,
     scaleMultiplier: 3,
@@ -330,6 +332,29 @@ describe('reflectNiivueAnnotation', () => {
     reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c2'))
     clearNiivueAnnotations('vp-a4', svc.servicesManager)
     expect(svc.removed).toHaveLength(2)
+  })
+
+  it('reconcile rebuilds panel rows from the live annotation set (undo/resize)', () => {
+    const nv = stubNiivue()
+    register('vp-a6', nv)
+    updateNiivueViewport('vp-a6', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-a6', backing)
+    // Two annotations reflected as two rows.
+    reflectNiivueAnnotation('vp-a6', svc.servicesManager, ellipse('keep'))
+    reflectNiivueAnnotation('vp-a6', svc.servicesManager, ellipse('drop'))
+    expect(svc.added).toHaveLength(2)
+    // Simulate an undo removing one: the live set now has only 'keep'.
+    nv.annotations = [ellipse('keep')]
+    reconcileNiivueAnnotations('vp-a6', svc.servicesManager)
+    // Both old rows are cleared and the surviving annotation is re-added once.
+    expect(svc.removed).toHaveLength(2)
+    expect(svc.added).toHaveLength(3)
+    const last = svc.added[2]?.data.schema as { toolName: string }
+    expect(last.toolName).toBe('EllipticalROI')
   })
 
   it('pushes an edited OHIF label back onto the annotation as free text', () => {

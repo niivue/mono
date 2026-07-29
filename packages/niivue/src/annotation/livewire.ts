@@ -124,9 +124,9 @@ export function livewireField(
         const v = vy * width + vx
         if (done[v]) continue
         const step = (dx !== 0 && dy !== 0 ? SQRT2 : 1) * cost[v]
-        const nd = dist[u] + step
-        if (nd < dist[v]) {
-          dist[v] = nd
+        const newDist = dist[u] + step
+        if (newDist < dist[v]) {
+          dist[v] = newDist
           prev[v] = u
           heap.push(v)
         }

@@ -5,6 +5,7 @@ import {
   looksLikeJSON,
 } from '@/documentJson'
 import { isTransientStreamedVolume, shouldLinkVolume } from '@/documentLinkData'
+import { selectUrlMeshLayers } from '@/documentMeshLayers'
 import {
   fillGroup,
   fillModeFor,
@@ -1105,7 +1106,11 @@ export async function reconstructMesh(
       const mesh = NVMesh.createMesh(positions, indices, colors, meshOpts)
       await model.addMesh(mesh)
     } else if (m.url) {
-      // Load from URL (layers loaded via MeshFromUrlOptions)
+      // Load from URL. Forward URL-referenced scalar overlay layers so they are
+      // fetched and applied — previously they were dropped, leaving surfaces
+      // without their overlays. See selectUrlMeshLayers for why URL-less layers
+      // are skipped on this path.
+      const layers = selectUrlMeshLayers(m.layers)
       await model.addMesh({
         url: m.url,
         name: m.name,
@@ -1115,6 +1120,7 @@ export async function reconstructMesh(
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
         isLegendVisible: m.isLegendVisible,
+        layers,
       })
     }
   } catch (err) {

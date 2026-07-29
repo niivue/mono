@@ -575,6 +575,47 @@ single-frame image can load through the existing volume path (`loadVolumes` as a
 - Monorepo build: OHIF uses webpack/React 18; our packages are Bun/Nx. The extension
   is a library build (externalize react + @ohif/*), consumed by the OHIF app's build.
 
+## Future possibility — export NiiVue masks as DICOM SEG
+
+Raised as feedback after the 2026-07-29 demo: let a NiiVue segmentation/mask
+produced in the viewport round-trip back into the clinical workflow as a **DICOM
+Segmentation (SEG)** object, so it can be stored in PACS and re-read by OHIF's
+own `@ohif/extension-cornerstone-dicom-seg` (or any DICOM-SEG-aware viewer).
+
+Not scheduled — captured here so it is not lost. Sketch of the shape:
+
+- **Source mask.** NiiVue already has voxel masks: the drawing tool
+  (`model.drawingVolume`, a `Uint8Array` label map on the background grid) and
+  loaded/derived segmentation overlays. Either is the export input.
+- **Writer.** Reuse **`dcmjs`** (already a runtime dep for the DICOM read path).
+  `dcmjs` has a DICOM-SEG writer (the Cornerstone adapter / `Segmentation`
+  derivation) that emits a multi-frame SEG referencing the source instances.
+  Feeding it our mask avoids hand-rolling the IOD.
+- **Geometry mapping — the real work.** The mask is in NiiVue RAS voxel space; a
+  SEG stores per-frame binary (or fractional) segments aligned to the **source
+  DICOM series** in LPS, one frame per referenced instance, with
+  `PerFrameFunctionalGroups` (ReferencedInstance, image position/orientation).
+  So we must resample/relabel the RAS mask back onto the original slice geometry
+  — the inverse of the `dcm2niix` LPS→RAS bridge we already do on load. Reusing
+  the source series' `imageIds` + cornerstone metadata (as the WSI/DICOM paths do)
+  gives the per-frame references.
+- **Segment metadata.** SegmentSequence needs a label, recommended display color
+  (map from the NiiVue label LUT), algorithm type (`MANUAL`), and category/type
+  codes (SNOMED). Multi-label draws → multiple segments.
+- **Delivery.** A toolbar command (e.g. "Export SEG") that either downloads the
+  `.dcm` or hands the dataset to OHIF's STOW-RS / the app's data source, mirroring
+  the existing capture/save flow.
+- **Reverse (bonus).** Loading a DICOM SEG *into* NiiVue (SEG → RAS label map as
+  a colormapped overlay) would complete the round-trip and reuse the overlay path
+  already built for the Overlay toggle.
+
+Challenges to size before committing: exact RAS↔source-geometry resample
+(non-axial/oblique source series, gantry tilt), fractional vs binary SEG, and
+keeping it out of the runtime bundle unless a consumer opts in (SEG writing pulls
+more of `dcmjs`). Related: the annotation measurements already reflect into OHIF's
+MeasurementService, and OHIF can already export those as DICOM SR — SEG would do
+the same for the raster masks.
+
 ## Non-goals (for v1)
 
 - Replacing cornerstone as OHIF's default viewport.

@@ -474,6 +474,18 @@ export function buildAnnotationRenderData(
               textBack,
             ),
           )
+        } else if (ann.shape.type === 'arrow') {
+          // Anchor the arrow's label at its start (the tail), not the head.
+          const startMM = slice2DToMMOnPlane(
+            ann.shape.start,
+            ann.sliceType,
+            pn,
+            pp,
+          )
+          const [scx, scy] = projectMMToCanvas(startMM, mvp, ltwh)
+          labels.push(
+            buildText(textStr, scx, scy - 8, 0.7, textColor, 0.5, 1, textBack),
+          )
         } else {
           const rightX = Math.max(ann.shape.start.x, ann.shape.end.x)
           const centerY = (ann.shape.start.y + ann.shape.end.y) / 2
@@ -610,6 +622,10 @@ export function projectAnnotationScreenShapes(
               ann.sliceType,
             )
             shape.label = { lines, x: mid.x, y: mid.y - 8, align: 'center' }
+          } else if (ann.shape.type === 'arrow') {
+            // Anchor the arrow's label at its start (the tail), not the head.
+            const s = project(ann.shape.start, ann.sliceType)
+            shape.label = { lines, x: s.x, y: s.y - 8, align: 'center' }
           } else {
             const right = project(
               {

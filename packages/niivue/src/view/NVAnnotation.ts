@@ -432,9 +432,13 @@ export function buildAnnotationRenderData(
         }
       }
 
-      // Stats text labels for measurement annotations
-      if (buildText && ann.stats && ann.shape) {
-        const textLines = formatAnnotationStats(ann.stats)
+      // Label = the user's free text (if any) above the stats lines (if a
+      // measurement). Drawn for any tool that has one or the other.
+      if (buildText && ann.shape && (ann.text || ann.stats)) {
+        const textLines = [
+          ...(ann.text ? [ann.text] : []),
+          ...(ann.stats ? formatAnnotationStats(ann.stats) : []),
+        ]
         const textStr = textLines.join('\n')
         const textColor = [sr, sg, sb, 1]
         const textBack = [0, 0, 0, 0.6]
@@ -442,7 +446,7 @@ export function buildAnnotationRenderData(
         const pp = tile.planePoint
 
         if (
-          ann.stats.length !== undefined &&
+          ann.stats?.length !== undefined &&
           ann.shape.type === 'measureLine'
         ) {
           const midPt: AnnotationPoint = {

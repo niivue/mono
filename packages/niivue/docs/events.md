@@ -49,6 +49,25 @@ nv.addEventListener('documentLoaded', (evt) => {
 })
 ```
 
+## Emission timing
+
+Events are emitted so that **the item an event references is present in the
+collection (`nv.volumes` / `nv.meshes`) at the moment the event fires**:
+
+- **Add / update / reorder** fire *after* the model changes — the item is now
+  present or updated (`volumeLoaded`, `meshLoaded`, `volumeUpdated`,
+  `meshUpdated`, `volumeOrderChanged`).
+- **Removal** fires *before* the model changes — the item being removed is still
+  present (`volumeRemoved`, `meshRemoved`, and their bulk forms). This lets a
+  listener inspect the departing item via the collection, not just the `detail`.
+
+**Consumer corollary:** a listener that rebuilds a list by *re-reading the
+collection* will read a stale list if it does so synchronously inside a removal
+event (the item is still there). Read after the mutation instead — on the next
+render, or a microtask. (Listeners that consume the event `detail` directly are
+unaffected.) New emitting methods should preserve this ordering rather than, for
+example, moving removal to emit-after.
+
 ## Event Reference
 
 ### User Interaction
@@ -151,7 +170,7 @@ Fired after a mesh is successfully added (via `addMesh()` or `loadMeshes()`). Fi
 | `mesh` | `NVMesh` | The newly loaded mesh |
 
 #### `volumeRemoved`
-Fired before a volume is removed. When removing all volumes, fires once per volume in reverse order.
+Fired before a volume is removed — by `removeVolume(index)`, or once per volume in reverse order by `removeAllVolumes()`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -159,7 +178,7 @@ Fired before a volume is removed. When removing all volumes, fires once per volu
 | `index` | `number` | Index in the volumes array |
 
 #### `meshRemoved`
-Fired before a mesh is removed.
+Fired before a mesh is removed — by `removeMesh(index)`, or once per mesh by `removeAllMeshes()`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -215,7 +234,8 @@ nv.addEventListener('canvasResize', (e) => {
 ### View Control
 
 #### `azimuthElevationChange`
-Fired when `azimuth` or `elevation` is set programmatically.
+Fired when `azimuth` or `elevation` is set programmatically, or when the user
+rotates the 3D render view (mouse drag or the H/J/K/L keys).
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -241,7 +261,8 @@ Fired when `sliceType` is set.
 ### Data Updates
 
 #### `volumeUpdated`
-Fired after `setVolume()` applies property changes to a volume.
+Fired after `setVolume()` applies property changes to a volume, or after
+`setColormapLabel()` sets/clears a label colormap (for which `changes` is empty).
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -257,13 +278,15 @@ nv.addEventListener('volumeUpdated', (e) => {
 ```
 
 #### `meshUpdated`
-Fired after `setMesh()` applies property changes to a mesh.
+Fired after `setMesh()` applies property changes to a mesh, or after a
+scalar-overlay layer change (`addMeshLayer`, `removeMeshLayer`,
+`setMeshLayerProperty`).
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `meshIndex` | `number` | Index of the updated mesh |
 | `mesh` | `NVMesh` | The mesh (after update) |
-| `changes` | `MeshUpdate` | The options that were applied |
+| `changes` | `MeshUpdate` | The options that were applied — **empty (`{}`) for layer changes**, since layer state isn't a `MeshUpdate` diff; re-read `mesh.layers` |
 
 #### `colormapAdded`
 Fired after `addColormap()` or `addColormapFromUrl()` registers a new user-defined colormap. The new LUT is then visible to volumes, mesh layers, colorbars, connectomes, and tracts.
@@ -288,12 +311,14 @@ Fired on drawing lifecycle events and user strokes.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `action` | `'stroke' \| 'create' \| 'close' \| 'undo'` | What happened |
+| `action` | `'stroke' \| 'create' \| 'close' \| 'undo' \| 'load' \| 'update'` | What happened |
 
 - `'create'` — `createEmptyDrawing()` was called
 - `'stroke'` — user completed a pen stroke (pointerup)
 - `'undo'` — `drawUndo()` restored a previous state
 - `'close'` — `closeDrawing()` destroyed the drawing
+- `'load'` — `loadDrawing()` loaded a drawing from a volume
+- `'update'` — the drawing bitmap was updated programmatically (extension `ctx.drawing.update()`)
 
 #### `drawingEnabled`
 Fired when `drawIsEnabled` is set.

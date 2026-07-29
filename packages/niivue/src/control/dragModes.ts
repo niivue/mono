@@ -1,4 +1,8 @@
 import { vec3 } from 'gl-matrix'
+import {
+  emitPan2DChange,
+  emitScaleMultiplierChange,
+} from '@/control/cameraEvents'
 import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
@@ -409,6 +413,7 @@ export function dragForPanZoom(ctrl: NiiVue): void {
   ctrl.model.scene.pan2Dxyzmm[0] = saved[0] + (endMM[0] - startMM[0])
   ctrl.model.scene.pan2Dxyzmm[1] = saved[1] + (endMM[1] - startMM[1])
   ctrl.model.scene.pan2Dxyzmm[2] = saved[2] + (endMM[2] - startMM[2])
+  emitPan2DChange(ctrl)
 }
 
 /** Zoom 2D view based on vertical drag delta. */
@@ -423,12 +428,14 @@ export function dragForSlicer3D(ctrl: NiiVue): void {
   ctrl.model.scene.pan2Dxyzmm[3] = zoom
   if (ctrl.model.interaction.isYoked3DTo2DZoom) {
     ctrl.model.scene.scaleMultiplier = zoom
+    emitScaleMultiplierChange(ctrl)
   }
 
   const mm = ctrl.model.scene2mm(ctrl.model.scene.crosshairPos)
   ctrl.model.scene.pan2Dxyzmm[0] += zoomChange * mm[0]
   ctrl.model.scene.pan2Dxyzmm[1] += zoomChange * mm[1]
   ctrl.model.scene.pan2Dxyzmm[2] += zoomChange * mm[2]
+  emitPan2DChange(ctrl)
 }
 
 /** Windowing: horizontal drag adjusts range width, vertical adjusts center. */

@@ -457,8 +457,7 @@ export class NvSceneController {
       (v: NVImage) => v.url === url || v.name === url,
     )
     if (volIdx >= 0) {
-      nv.model.removeVolume(volIdx)
-      await nv.updateGLVolume()
+      await nv.removeVolume(volIdx)
       this.emit('volumeRemoved', index, url)
       if (this.broadcasting) {
         this.rewireBroadcasting()

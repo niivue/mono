@@ -11,6 +11,11 @@ export function ohifToolToAnnotationTool(
   tool: string | undefined,
 ): AnnotationTool | null {
   switch (tool) {
+    case 'Length':
+      // A two-point measured line (in-plane mm length). Unifies OHIF's ruler
+      // onto the same annotation system as the ROI tools (was a separate
+      // measurement drag mode).
+      return 'measureLine'
     case 'EllipticalROI':
       return 'measureEllipse'
     case 'RectangleROI':
@@ -53,9 +58,9 @@ export function ohifToolToDragMode(tool: string | undefined): number {
       return DRAG_MODE.pan
     case 'Zoom':
       return DRAG_MODE.slicer3D
-    case 'Length':
-    case 'Bidirectional':
-      return DRAG_MODE.measurement
+    // Length and Bidirectional are annotation-backed (see
+    // ohifToolToAnnotationTool); the annotation gate handles them, so they never
+    // reach a drag mode here.
     case 'Angle':
     case 'CobbAngle':
       return DRAG_MODE.angle

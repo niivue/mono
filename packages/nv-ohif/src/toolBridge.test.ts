@@ -11,8 +11,6 @@ describe('ohifToolToDragMode', () => {
     ['WindowLevel', DRAG_MODE.windowing],
     ['Pan', DRAG_MODE.pan],
     ['Zoom', DRAG_MODE.slicer3D],
-    ['Length', DRAG_MODE.measurement],
-    ['Bidirectional', DRAG_MODE.measurement],
     ['Angle', DRAG_MODE.angle],
     ['CobbAngle', DRAG_MODE.angle],
     ['RectangleROI', DRAG_MODE.roiSelection],
@@ -28,10 +26,18 @@ describe('ohifToolToDragMode', () => {
     expect(ohifToolToDragMode(undefined)).toBe(DRAG_MODE.crosshair)
     expect(ohifToolToDragMode('ArrowAnnotate')).toBe(DRAG_MODE.crosshair)
   })
+
+  it('does not map annotation-backed tools to a drag mode', () => {
+    // Length and Bidirectional are annotation tools (see ohifToolToAnnotationTool);
+    // the annotation gate handles them, so the drag-mode path never applies.
+    expect(ohifToolToDragMode('Length')).toBe(DRAG_MODE.crosshair)
+    expect(ohifToolToDragMode('Bidirectional')).toBe(DRAG_MODE.crosshair)
+  })
 })
 
 describe('ohifToolToAnnotationTool', () => {
   it.each([
+    ['Length', 'measureLine'],
     ['EllipticalROI', 'measureEllipse'],
     ['RectangleROI', 'measureRect'],
     ['CircleROI', 'measureCircle'],
@@ -45,7 +51,6 @@ describe('ohifToolToAnnotationTool', () => {
   })
 
   it('returns null for non-annotation tools', () => {
-    expect(ohifToolToAnnotationTool('Length')).toBeNull()
     expect(ohifToolToAnnotationTool('Pan')).toBeNull()
     expect(ohifToolToAnnotationTool(undefined)).toBeNull()
   })

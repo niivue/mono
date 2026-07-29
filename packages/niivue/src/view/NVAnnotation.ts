@@ -619,12 +619,22 @@ export function projectAnnotationScreenShapes(
             shape.end2 = project(ann.shape.end2, ann.sliceType)
           }
         }
-        // Label = the user's free text (if any) above the stats lines (if a
-        // measurement). Shown for any tool that has one or the other.
-        const lines = [
-          ...(ann.text ? [ann.text] : []),
-          ...(ann.stats ? formatAnnotationStats(ann.stats) : []),
-        ]
+        // A single measured line (measureLine) renders downstream as a graduated
+        // ruler from shape.length, which draws its own mm label. So its screen
+        // shape exposes the numeric length and its label carries ONLY the user's
+        // free text (if any) — no stats line, to avoid a duplicate reading. Every
+        // other tool shows its free text above the stats lines.
+        const isMeasureLine =
+          ann.shape?.type === 'measureLine' && ann.stats?.length !== undefined
+        if (isMeasureLine) shape.length = ann.stats?.length
+        const lines = isMeasureLine
+          ? ann.text
+            ? [ann.text]
+            : []
+          : [
+              ...(ann.text ? [ann.text] : []),
+              ...(ann.stats ? formatAnnotationStats(ann.stats) : []),
+            ]
         if (ann.shape && lines.length > 0) {
           if (
             ann.stats?.length !== undefined &&

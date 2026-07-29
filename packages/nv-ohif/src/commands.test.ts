@@ -12,7 +12,6 @@ import {
   OVERLAY_OPACITY,
   readBaseWindowLevel,
   reflectNiivueAnnotation,
-  reflectNiivueMeasurement,
   removeNiivueAnnotation,
   resolveWindowLevel,
   syncNiivueWindowLevelToOhif,
@@ -37,6 +36,8 @@ function stubNiivue() {
   return {
     sliceType: SLICE_TYPE.MULTIPLANAR as number,
     primaryDragMode: DRAG_MODE.crosshair as number,
+    annotationTool: '' as string,
+    annotationIsEnabled: false,
     azimuth: 42,
     elevation: -7,
     scaleMultiplier: 3,
@@ -147,14 +148,15 @@ describe('niivueSetMeasurementMode', () => {
     ])
   })
 
-  it('falls back to NiiVue measurement mode when no commandsManager exists', () => {
+  it('falls back to the measureLine annotation when no commandsManager exists', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
     const { definitions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
     definitions.niivueSetMeasurementMode()
-    expect(nv.primaryDragMode).toBe(DRAG_MODE.measurement)
+    expect(nv.annotationTool).toBe('measureLine')
+    expect(nv.annotationIsEnabled).toBe(true)
   })
 })
 
@@ -199,79 +201,6 @@ function measurementServices(
   } as unknown as OhifExtensionParams['servicesManager']
   return { added, mappings, removed, servicesManager }
 }
-
-describe('reflectNiivueMeasurement', () => {
-  it('adds an OHIF Length measurement (RAS->LPS, series ref, length text)', () => {
-    const nv = stubNiivue()
-    register('vp-1', nv)
-    const backing = [
-      {
-        SeriesInstanceUID: 'series-1',
-        StudyInstanceUID: 'study-1',
-        displaySetInstanceUID: 'ds-1',
-        instances: [{ FrameOfReferenceUID: 'for-1' }],
-      },
-    ]
-    updateNiivueViewport('vp-1', {
-      displaySets: backing as unknown as Parameters<
-        typeof updateNiivueViewport
-      >[1]['displaySets'],
-    })
-    const svc = measurementServices('vp-1', backing)
-    const ok = reflectNiivueMeasurement('vp-1', svc.servicesManager, {
-      startMM: [10, 20, 30],
-      endMM: [10, 20, 40],
-      distance: 10,
-    })
-    expect(ok).toBe(true)
-    expect(svc.added).toHaveLength(1)
-    const first = svc.added[0]
-    if (!first) throw new Error('no measurement added')
-    const data = first.data as Record<string, unknown>
-    // addRawMeasurement destructures data.annotation.data, so it must exist.
-    const annotation = data.annotation as { data?: unknown }
-    expect(annotation.data).toBeDefined()
-    const m = data.schema as {
-      toolName: string
-      referenceSeriesUID: string
-      referenceStudyUID: string
-      displaySetInstanceUID: string
-      FrameOfReferenceUID: string
-      displayText: { primary: string[] }
-      points: number[][]
-      data: { length: number; unit: string }
-    }
-    expect(m.toolName).toBe('Length')
-    expect(m.referenceSeriesUID).toBe('series-1')
-    expect(m.referenceStudyUID).toBe('study-1')
-    expect(m.displaySetInstanceUID).toBe('ds-1')
-    expect(m.FrameOfReferenceUID).toBe('for-1')
-    expect(m.displayText.primary[0]).toBe('10.0 mm')
-    expect(m.data).toEqual({ length: 10, unit: 'mm' })
-    // NIfTI RAS -> DICOM LPS negates x and y, keeps z.
-    expect(m.points[0]).toEqual([-10, -20, 30])
-    expect(m.points[1]).toEqual([-10, -20, 40])
-  })
-
-  it('returns false and adds nothing when no backing series has instances', () => {
-    const nv = stubNiivue()
-    register('vp-1', nv)
-    updateNiivueViewport('vp-1', {
-      displaySets: [{ SeriesInstanceUID: 's-empty' }] as unknown as Parameters<
-        typeof updateNiivueViewport
-      >[1]['displaySets'],
-    })
-    // Backing series resolves but has no instances (e.g. a NIfTI-URL set).
-    const svc = measurementServices('vp-1', [{ SeriesInstanceUID: 's-empty' }])
-    const ok = reflectNiivueMeasurement('vp-1', svc.servicesManager, {
-      startMM: [0, 0, 0],
-      endMM: [1, 0, 0],
-      distance: 1,
-    })
-    expect(ok).toBe(false)
-    expect(svc.added).toHaveLength(0)
-  })
-})
 
 describe('reflectNiivueAnnotation', () => {
   const backing = [
@@ -340,6 +269,41 @@ describe('reflectNiivueAnnotation', () => {
     expect(m.data.areaUnit).toBe('mm²')
     // NIfTI RAS anchor -> DICOM LPS (negate x, y).
     expect(m.points[0]).toEqual([-10, -20, 30])
+  })
+
+  it('adds an OHIF Length from a measureLine (length text, no area)', () => {
+    const line = (id: string): VectorAnnotation =>
+      ({
+        id,
+        label: 0,
+        group: '',
+        sliceType: 0,
+        slicePosition: 0,
+        anchorMM: [10, 20, 30],
+        polygons: [],
+        style: {
+          fillColor: [1, 1, 1, 1],
+          strokeColor: [1, 1, 1, 1],
+          strokeWidth: 1,
+        },
+        stats: { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, length: 42.5 },
+        shape: {
+          type: 'measureLine',
+          start: { x: 0, y: 0 },
+          end: { x: 3, y: 4 },
+        },
+      }) as unknown as VectorAnnotation
+    const svc = setup('vp-len')
+    const ok = reflectNiivueAnnotation('vp-len', svc.servicesManager, line('L'))
+    expect(ok).toBe(true)
+    const m = svc.added[0]?.data.schema as {
+      toolName: string
+      displayText: { primary: string[] }
+      data: { length: number; unit: string }
+    }
+    expect(m.toolName).toBe('Length')
+    expect(m.displayText.primary).toEqual(['42.5 mm'])
+    expect(m.data).toEqual({ length: 42.5, unit: 'mm' })
   })
 
   it('does not reflect a tool with no OHIF mapping (freehand)', () => {

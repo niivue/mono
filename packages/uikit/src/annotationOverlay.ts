@@ -19,8 +19,14 @@ import {
   LineTerminator,
 } from './line'
 import { UIKitLineOverlay } from './lineOverlay'
+import { buildRuler } from './ruler'
 import type { UIKitFont } from './text/font'
 import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
+
+// A measured line draws as a graduated ruler (end caps, mm ticks, rotated
+// length label). The label runs larger than a shape's stats label so the reading
+// stays legible against the ticks — matching the whole-slide ruler.
+const RULER_LABEL_CSS_PX = 22
 
 export interface AnnotationGeometryOptions {
   /** Device-pixel ratio; scales stroke width + label size for crisp output. */
@@ -71,7 +77,28 @@ export function buildAnnotationGeometry(
         outlineLoop(hole, thickness, stroke, lines)
     } else if (shape.start && shape.end) {
       const { start, end } = shape
-      if (shape.tool === 'arrow') {
+      if (shape.tool === 'measureLine' && shape.length !== undefined) {
+        // A single measured line renders as a graduated ruler (end caps, mm
+        // ticks, rotated length label). buildRuler draws its own length label, so
+        // the shape's own label carries only the user's free text (if any).
+        const dist = shape.length
+        const ruler = buildRuler({
+          a: [start.x, start.y],
+          b: [end.x, end.y],
+          length: dist,
+          units: 'mm',
+          decimals: dist > 99 ? 0 : dist > 9 ? 1 : 2,
+          sizePx: RULER_LABEL_CSS_PX * dpr,
+          thickness,
+          tickLength: 6 * dpr,
+          showTicks: true,
+          showTickNumbers: true,
+          lineColor: stroke,
+          textColor: stroke,
+        })
+        lines.push(...ruler.lines)
+        text.push(...ruler.text)
+      } else if (shape.tool === 'arrow') {
         lines.push(
           ...buildTerminatedLine(
             start.x,

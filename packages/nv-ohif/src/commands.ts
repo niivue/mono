@@ -1,6 +1,5 @@
 import {
   type AnnotationStats,
-  DRAG_MODE,
   SLICE_TYPE,
   type VectorAnnotation,
 } from '@niivue/niivue'
@@ -302,15 +301,6 @@ function syncWindowLevelToSiblings(
  * the same series (see {@link syncWindowLevelToSiblings}). Returns the new
  * window/level when it changed (for a viewport readout), else undefined.
  */
-// --- ruler / length: reflect a NiiVue measurement into OHIF ------------------
-
-/** NiiVue's `measurementCompleted` detail: endpoints in world mm (RAS) + length. */
-export interface NiivueCompletedMeasurement {
-  startMM: [number, number, number]
-  endMM: [number, number, number]
-  distance: number
-}
-
 // OHIF's polyline value type (a 2-point Length). Literal, so we don't depend on
 // measurementService.VALUE_TYPES being present at runtime.
 const POLYLINE_VALUE_TYPE = 'value_type::polyline'
@@ -392,9 +382,9 @@ const ANNOTATION_TO_OHIF: Record<
   arrow: { toolName: 'ArrowAnnotate', valueType: POINT_VALUE_TYPE, points: 1 },
 }
 
-// One 'NiiVue' source per MeasurementService, with a mapping per tool. Length
-// covers the ruler; the annotation tools cover the ROI/arrow shapes. createSource
-// is idempotent, but addMapping stacks, so register the set exactly once.
+// One 'NiiVue' source per MeasurementService, with a mapping per tool. Every
+// tool (Length + the ROI/arrow shapes) is an annotation in ANNOTATION_TO_OHIF.
+// createSource is idempotent, but addMapping stacks, so register the set once.
 const measurementSources = new WeakMap<object, MeasurementSourceLike>()
 function niivueMeasurementSource(
   measurementService: MeasurementServiceLike,
@@ -402,7 +392,9 @@ function niivueMeasurementSource(
   const cached = measurementSources.get(measurementService as object)
   if (cached) return cached
   const source = measurementService.createSource('NiiVue', '1.0')
-  const register = (toolName: string, valueType: string, points: number) =>
+  for (const { toolName, valueType, points } of Object.values(
+    ANNOTATION_TO_OHIF,
+  )) {
     measurementService.addMapping(
       source,
       toolName,
@@ -410,12 +402,6 @@ function niivueMeasurementSource(
       () => ({}),
       (data) => data.measurement,
     )
-  register('Length', POLYLINE_VALUE_TYPE, 2)
-  for (const { toolName, valueType, points } of Object.values(
-    ANNOTATION_TO_OHIF,
-  )) {
-    if (toolName === 'Length') continue // registered above
-    register(toolName, valueType, points)
   }
   measurementSources.set(measurementService as object, source)
   return source
@@ -449,73 +435,7 @@ function rasToLps(p: [number, number, number]): [number, number, number] {
   return [-p[0], -p[1], p[2]]
 }
 
-/**
- * Reflect a completed NiiVue ruler measurement into OHIF's MeasurementService so
- * it shows in the measurement panel. NiiVue endpoints are world mm in NIfTI RAS;
- * DICOM patient space is LPS, so negate x and y. The panel needs a
- * `referenceSeriesUID` resolving to a loaded displaySet with instances, a
- * `label`, and `displayText.primary` (the length string). Returns false (and adds
- * nothing) when no backing DICOM series with instances exists — e.g. a NIfTI-URL
- * display set — so the panel can never throw on an unresolvable reference.
- */
-export function reflectNiivueMeasurement(
-  viewportId: string,
-  servicesManager: OhifExtensionParams['servicesManager'],
-  measurement: NiivueCompletedMeasurement,
-): boolean {
-  const services = ohifServices(servicesManager)
-  const measurementService = services?.measurementService as
-    | MeasurementServiceLike
-    | undefined
-  const displaySetService = services?.displaySetService as
-    | DisplaySetServiceLike
-    | undefined
-  if (
-    !measurementService?.addRawMeasurement ||
-    !displaySetService?.getDisplaySetsForSeries
-  )
-    return false
-  const entry = getNiivueEntry(viewportId)
-  if (!entry) return false
-
-  const backing = resolveBackingSeries(entry, displaySetService)
-  if (!backing?.SeriesInstanceUID) return false
-
-  const source = niivueMeasurementSource(measurementService)
-  const uid = `niivue-length-${++niivueMeasurementCounter}`
-  const toLps = rasToLps
-  const lengthMm = measurement.distance
-  const forUID = backing.instances?.[0]?.FrameOfReferenceUID as
-    | string
-    | undefined
-  measurementService.addRawMeasurement(
-    source,
-    'Length',
-    {
-      uid,
-      // addRawMeasurement unconditionally destructures data.annotation.data.
-      annotation: { data: {} },
-      measurement: {
-        uid,
-        toolName: 'Length',
-        label: 'NiiVue length',
-        referenceSeriesUID: backing.SeriesInstanceUID,
-        referenceStudyUID: backing.StudyInstanceUID as string | undefined,
-        displaySetInstanceUID: backing.displaySetInstanceUID,
-        FrameOfReferenceUID: forUID,
-        points: [toLps(measurement.startMM), toLps(measurement.endMM)],
-        displayText: { primary: [`${lengthMm.toFixed(1)} mm`], secondary: [] },
-        data: { length: lengthMm, unit: 'mm' },
-        type: POLYLINE_VALUE_TYPE,
-        metadata: { toolName: 'Length', FrameOfReferenceUID: forUID },
-      },
-    },
-    (data) => data.measurement,
-  )
-  return true
-}
-
-// --- ROI / arrow annotations: reflect NiiVue vector annotations into OHIF -----
+// --- annotations: reflect NiiVue vector annotations into OHIF ----------------
 
 // niivue annotation id -> OHIF measurement uid, per viewport, so a removed or
 // cleared annotation can remove its panel row.
@@ -545,6 +465,14 @@ function buildAnnotationDisplay(
   const label = `NiiVue ${toolName}`
   if (toolName === 'ArrowAnnotate' || !stats) {
     return { primary: [label], data: {}, label }
+  }
+  // Length is a single measured line: in-plane distance in mm, no area/intensity.
+  if (toolName === 'Length' && stats.length !== undefined) {
+    return {
+      primary: [`${stats.length.toFixed(1)} mm`],
+      data: { length: stats.length, unit: 'mm' },
+      label,
+    }
   }
   // Bidirectional carries long + short diameters (mm), not area/intensity.
   if (toolName === 'Bidirectional' && stats.length !== undefined) {
@@ -779,12 +707,13 @@ export function getNiivueCommandsModule({
     /**
      * Activate the ruler (length) tool. Routes through OHIF's `setToolActiveToolbar`
      * so OHIF's active-tool state and NiiVue agree: the tool bridge in
-     * NiivueViewport maps the active `Length` tool onto NiiVue's measurement
-     * drag mode. Setting `nv.primaryDragMode` directly would be reset by that
-     * bridge the next time OHIF's active tool (e.g. WindowLevel) re-applies. On
-     * release a completed measurement is reflected into OHIF's measurement panel
-     * (see the measurementCompleted subscription in NiivueViewport). Falls back to
-     * setting NiiVue's drag mode directly when no commandsManager is available.
+     * NiivueViewport maps the active `Length` tool onto NiiVue's `measureLine`
+     * annotation (the same system as the ROI tools). Setting the annotation tool
+     * directly would be reset by that bridge the next time OHIF's active tool
+     * (e.g. WindowLevel) re-applies. On release the completed line annotation is
+     * reflected into OHIF's measurement panel (see the annotationAdded
+     * subscription in NiivueViewport). Falls back to enabling NiiVue's measureLine
+     * annotation directly when no commandsManager is available.
      */
     niivueSetMeasurementMode: () => {
       const cmds = ohifCommandsManager(commandsManager)
@@ -793,7 +722,10 @@ export function getNiivueCommandsModule({
         return
       }
       const nv = getActiveNiivue(servicesManager)
-      if (nv) nv.primaryDragMode = DRAG_MODE.measurement
+      if (nv) {
+        nv.annotationTool = 'measureLine'
+        nv.annotationIsEnabled = true
+      }
     },
 
     /** Reset camera, pan, zoom, and crosshair to their defaults. */

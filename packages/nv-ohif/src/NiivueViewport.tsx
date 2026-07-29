@@ -3,12 +3,10 @@ import NiiVue, { NVSlide, SLICE_TYPE } from '@niivue/niivue'
 import { loadDefaultFont } from '@niivue/uikit'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
-import type { NiivueCompletedMeasurement } from './commands'
 import {
   clearNiivueAnnotations,
   readBaseWindowLevel,
   reflectNiivueAnnotation,
-  reflectNiivueMeasurement,
   removeNiivueAnnotation,
   subscribeOhifLabelSync,
   syncNiivueWindowLevelToOhif,
@@ -30,7 +28,6 @@ import {
   UNSUPPORTED_MEASUREMENT_TOOLS,
 } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
-import { VolumeRulerOverlay } from './volumeRulerOverlay'
 import { mountWsiSlideView } from './wsiSlideView'
 import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 
@@ -102,10 +99,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     if (!container) return
 
     let disposed = false
-    // UIKit ruler overlay for volume measurements (registered after the font
-    // loads); torn down on unmount.
-    let rulerOverlay: VolumeRulerOverlay | null = null
-    let unregisterRuler: (() => void) | null = null
+    // UIKit annotation overlay for volume measurements + ROIs (registered after
+    // the font loads); torn down on unmount.
     let annotationOverlay: VolumeAnnotationOverlay | null = null
     let unregisterAnnotation: (() => void) | null = null
     const canvas = document.createElement('canvas')
@@ -120,26 +115,15 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       nv.sliceType = SLICE_TYPE.MULTIPLANAR
-      // Volume measurements: draw them as @niivue/uikit rulers (arrowed,
-      // graduated, rotated tick numbers) to match the whole-slide ruler. The
-      // built-in NiiVue ruler is the fallback (same yellow, so it still looks
-      // right if the font never loads); once the bundled UIKit font resolves we
-      // register the overlay and switch NiiVue's built-in draw OFF, so only the
-      // UIKit ruler shows and there is no leftover label background chip.
-      nv.measureLineColor = [1, 0.85, 0, 1]
-      nv.measureTextColor = [1, 0.85, 0, 1]
-      nv.rulerWidth = 3
+      // Measurements + ROIs are vector annotations (Length is the measureLine
+      // tool, unified with the ellipse/rect/circle/arrow/spline tools). Draw them
+      // as @niivue/uikit shapes: once the bundled UIKit font resolves we register
+      // the overlay and switch NiiVue's built-in annotation draw OFF, so only the
+      // UIKit rendering shows (line + length/area/intensity label). If the font
+      // never loads, NiiVue's built-in annotation draw remains as the fallback.
       loadDefaultFont()
         .then((font) => {
           if (disposed) return
-          rulerOverlay = new VolumeRulerOverlay(
-            font,
-            () => nv.measurementScreenLines,
-          )
-          unregisterRuler = nv.registerOverlayRenderer(rulerOverlay)
-          nv.isMeasurementDrawn = false
-          // Same treatment for the ROI/arrow vector annotations: draw them as
-          // UIKit shapes and switch NiiVue's built-in annotation draw OFF.
           annotationOverlay = new VolumeAnnotationOverlay(
             font,
             () => nv.annotationScreenShapes,
@@ -148,7 +132,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           nv.isAnnotationDrawn = false
         })
         .catch((err) =>
-          console.error('[nv-ohif] volume ruler font failed to load', err),
+          console.error('[nv-ohif] annotation font failed to load', err),
         )
       // Expose the instance to OHIF commands / toolbar evaluators (commands.ts),
       // with a status sink so async commands (overlay load) surface progress.
@@ -198,33 +182,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
     canvas.addEventListener('pointerup', onPointerUp)
 
-    // Ruler bridge: when a NiiVue length measurement completes, reflect it into
-    // OHIF's measurement panel (commands.ts) and flash the length. Reflection is
-    // skipped for display sets with no backing DICOM series (returns false).
-    const onMeasurement = (e: Event) => {
-      const detail = (e as CustomEvent<NiivueCompletedMeasurement>).detail
-      if (!detail) return
-      const added = reflectNiivueMeasurement(
-        viewportId,
-        servicesManagerRef.current,
-        detail,
-      )
-      if (!added) return
-      const message = `Length: ${detail.distance.toFixed(1)} mm`
-      setStatus({ kind: 'note', message })
-      window.setTimeout(
-        () =>
-          setStatus((s) =>
-            s.kind === 'note' && s.message === message ? { kind: 'idle' } : s,
-          ),
-        2000,
-      )
-    }
-    nv.addEventListener('measurementCompleted', onMeasurement)
-
-    // ROI / arrow annotations: reflect a completed vector annotation into OHIF's
-    // measurement panel, remove its row when the annotation is removed, and drop
-    // every row when annotations are cleared (series swap / clear-all).
+    // Annotations (Length / ROI / arrow): reflect a completed vector annotation
+    // into OHIF's measurement panel, remove its row when the annotation is
+    // removed, and drop every row when annotations are cleared (series swap /
+    // clear-all).
     const onAnnotationAdded = (e: Event) => {
       const annotation = (e as CustomEvent<{ annotation: VectorAnnotation }>)
         .detail?.annotation
@@ -236,7 +197,11 @@ export function NiivueViewport(props: OhifViewportProps) {
       )
       const stats = annotation.stats
       if (!added || !stats) return
-      const message = `Area: ${stats.area.toFixed(1)} mm²`
+      // A measured line reports its length; area tools report area.
+      const message =
+        stats.length !== undefined
+          ? `Length: ${stats.length.toFixed(1)} mm`
+          : `Area: ${stats.area.toFixed(1)} mm²`
       setStatus({ kind: 'note', message })
       window.setTimeout(
         () =>
@@ -271,13 +236,10 @@ export function NiivueViewport(props: OhifViewportProps) {
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       canvas.removeEventListener('pointerup', onPointerUp)
-      nv.removeEventListener('measurementCompleted', onMeasurement)
       nv.removeEventListener('annotationAdded', onAnnotationAdded)
       nv.removeEventListener('annotationRemoved', onAnnotationRemoved)
       nv.removeEventListener('annotationChanged', onAnnotationChanged)
       unsubscribeLabelSync?.()
-      unregisterRuler?.()
-      rulerOverlay?.destroy()
       unregisterAnnotation?.()
       annotationOverlay?.destroy()
       ro.disconnect()
@@ -300,14 +262,11 @@ export function NiivueViewport(props: OhifViewportProps) {
     // This effect re-runs when a NEW display set is hung in the same viewport
     // slot (OHIF swaps props; the NiiVue instance is reused — the create effect
     // keys only on viewportId). Core loadVolumes replaces the volume array but
-    // does NOT reset measurements or our overlay bookkeeping, so clear both here
-    // before loading the new series: otherwise the previous series' rulers
-    // re-project onto the new anatomy, and the Overlay button reads active with
-    // nothing overlaid. (No-op on the first load — nothing to clear yet.)
-    nv.clearMeasurements()
-    // Same rationale for vector annotations (ROI/arrow tools): clear so the
-    // previous series' ellipses/rectangles/arrows do not re-project onto the
-    // new anatomy.
+    // does NOT reset annotations or our overlay bookkeeping, so clear them here
+    // before loading the new series: otherwise the previous series' measurements
+    // and ROIs re-project onto the new anatomy, and the Overlay button reads
+    // active with nothing overlaid. (No-op on the first load — nothing to clear
+    // yet.)
     nv.clearAnnotations()
     // Keep the registry's view of the base display sets current, so overlay
     // commands know what is already loaded and W/L-preset buttons can gate on

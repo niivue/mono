@@ -74,6 +74,10 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
   viewport), an **overlay** toggle (load the study's next series as a colormapped
   overlay), and a reset-view button — all with active/disabled state tracked per
   viewport.
+- Backs OHIF's full **Measurement** tool group (Length, ellipse / rectangle /
+  circle / freehand / spline / livewire ROIs, Bidirectional, ArrowAnnotate) with
+  NiiVue annotations, reflected into the Measurements panel with stats and
+  editable labels (see [Measurement tools](#measurement-tools)).
 
 ## Toolbar buttons
 
@@ -105,6 +109,48 @@ toolbarSections: [
 ],
 ```
 
+## Measurement tools
+
+Every tool in OHIF's **Measurement** group is backed by NiiVue's vector
+annotation system (one unified path, no separate ruler subsystem). Pick a tool in
+the toolbar and it draws on the NiiVue viewport; a completed shape appears as a
+row in OHIF's **Measurements** panel with its stats.
+
+| OHIF tool | NiiVue annotation | Gesture | Reported |
+|-----------|-------------------|---------|----------|
+| Length (Ruler button) | `measureLine` | drag | length (mm), drawn as a graduated ruler |
+| EllipticalROI | `measureEllipse` | drag | area (mm2) + min/mean/max/SD intensity |
+| RectangleROI | `measureRect` | drag | area (mm2) + intensity |
+| CircleROI | `measureCircle` | drag | area (mm2) + intensity |
+| PlanarFreehandROI | `freehand` | drag | contour only (no stats) |
+| SplineROI | `measureSpline` | multi-click | area (mm2) + intensity |
+| LivewireContour | `measureLivewire` | multi-click | area (mm2) + intensity |
+| Bidirectional | `measureBidirectional` | two drags | long + short diameter (mm) |
+| ArrowAnnotate | `arrow` | drag | label only |
+
+**Gestures.** Drag tools press-drag-release on a 2D slice. The multi-click tools
+(SplineROI, LivewireContour) click to place each vertex, double-click to close the
+contour, and Escape to cancel an in-progress contour. Bidirectional takes two
+drags: the long axis first, then the perpendicular short axis.
+
+**Intensity stats** are sampled from the base volume in the series' modality unit
+(HU for CT, SUV for PT, unitless otherwise); area is in mm2 and voxel-spacing
+aware. Length and the bidirectional diameters are in-plane mm.
+
+**Rendering.** Shapes and their labels are drawn by the `@niivue/uikit` overlay
+(the same widget set the whole-slide ruler uses), not OHIF's cornerstone canvas.
+A measured line renders as a graduated ruler (end caps, mm ticks, numbered majors,
+rotated length label) in the annotation's stroke color.
+
+**Free-text labels.** Edit a measurement row's label in OHIF's panel and the text
+is pushed onto the shape on the viewport; the label and the annotation stay in
+sync both directions.
+
+**Panel reflection needs a backing DICOM series.** A row is added only when the
+viewport is backed by a loaded DICOM series with instances (so the row carries a
+resolvable `referenceSeriesUID`). A NIfTI-URL display set still draws the shape on
+the canvas, but it is not reflected into the panel.
+
 ## DICOM support
 
 DICOM series are rendered by fetching the instances and converting them to NIfTI
@@ -134,7 +180,8 @@ and it now works for `npm`-install consumers too.
 
 ## Roadmap
 
-See `PLAN.md`. Landed: NIfTI + DICOM rendering, and a toolbar for views / clip plane /
-overlay / window-level (both directions) / colormap. Next: segmentation
+See `PLAN.md`. Landed: NIfTI + DICOM rendering, a toolbar for views / clip plane /
+overlay / window-level (both directions) / colormap, and the full **Measurement**
+tool group (see [Measurement tools](#measurement-tools)). Next: segmentation
 overlays, mesh/surface overlay, and **NVSlide for 2D / whole-slide (SM)** series (see
 the `## TODO — NVSlide for 2D` section in `PLAN.md`).

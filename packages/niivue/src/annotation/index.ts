@@ -19,7 +19,11 @@ import {
   hitTestControlPoint,
   updateShapeBounds,
 } from './selection'
-import { constrainCircleEnd, generateShape } from './shapes'
+import {
+  constrainCircleEnd,
+  generateShape,
+  generateSplineFromPoints,
+} from './shapes'
 import {
   isOnSlice,
   mmToSlice2D,
@@ -41,6 +45,7 @@ export {
   computeAnnotationStats,
   constrainCircleEnd,
   generateShape,
+  generateSplineFromPoints,
   getControlPoints,
   hitTestControlPoint,
   isCircleTool,

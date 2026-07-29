@@ -36,6 +36,7 @@ describe('ohifToolToAnnotationTool', () => {
     ['RectangleROI', 'measureRect'],
     ['CircleROI', 'measureCircle'],
     ['PlanarFreehandROI', 'freehand'],
+    ['SplineROI', 'measureSpline'],
     ['ArrowAnnotate', 'arrow'],
   ] as const)('maps %s to the NiiVue annotation tool %s', (tool, expected) => {
     expect(ohifToolToAnnotationTool(tool)).toBe(expected)
@@ -49,8 +50,9 @@ describe('ohifToolToAnnotationTool', () => {
 
   it('lists the tools NiiVue cannot back yet as unsupported', () => {
     expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('Bidirectional')).toBe(true)
-    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('SplineROI')).toBe(true)
     expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('LivewireContour')).toBe(true)
+    // SplineROI is now backed (measureSpline); EllipticalROI always was.
+    expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('SplineROI')).toBe(false)
     expect(UNSUPPORTED_MEASUREMENT_TOOLS.has('EllipticalROI')).toBe(false)
   })
 })

@@ -19,6 +19,8 @@ import * as NVConstants from '@/NVConstants'
 import { DRAG_MODE, sliceTypeDim } from '@/NVConstants'
 import type NiiVue from '@/NVControl'
 import type {
+  AnnotationPoint,
+  AnnotationTool,
   NVImage,
   PolygonWithHoles,
   VectorAnnotation,
@@ -51,6 +53,106 @@ function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.lastPointerX = evt.clientX
   ctrl.lastPointerY = evt.clientY
   ctrl.canvas?.setPointerCapture(evt.pointerId)
+}
+
+// --- Multi-click contour tools (spline / livewire) --------------------------
+// These place control points across successive clicks (not a single drag) and
+// close on double-click, so they need their own small state machine.
+
+function isMultiClickTool(tool: AnnotationTool): boolean {
+  return tool === 'spline' || tool === 'measureSpline'
+}
+
+// Refresh the live preview: the contour through the placed control points plus
+// the hovered cursor point (null when no cursor). Needs >= 3 points to enclose
+// an area; below that there is nothing to preview yet.
+function updateMultiClickPreview(
+  ctrl: NiiVue,
+  cursor: AnnotationPoint | null,
+): void {
+  const pts = ctrl._annotationPolyPoints
+  if (!pts || pts.length === 0) {
+    ctrl.model._annotationPreview = null
+    return
+  }
+  const cfg = ctrl.model.annotation
+  const all = cursor ? [...pts, cursor] : pts
+  const polygons = Annotation.generateSplineFromPoints(all)
+  if (polygons.length === 0) {
+    ctrl.model._annotationPreview = null
+    return
+  }
+  const preview = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    ctrl._annotationPolySliceType,
+    ctrl._annotationPolySlicePosition,
+    polygons,
+    cfg.style,
+    ctrl._annotationPolyAnchorMM,
+  )
+  preview.shape = { type: cfg.tool, start: all[0], end: all[all.length - 1] }
+  ctrl.model._annotationPreview = preview
+}
+
+// The bounding box of the control points (for the stats-label anchor).
+function pointsBounds(pts: readonly AnnotationPoint[]): {
+  start: AnnotationPoint
+  end: AnnotationPoint
+} {
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  return { start: { x: minX, y: minY }, end: { x: maxX, y: maxY } }
+}
+
+// Close the in-progress contour into a committed annotation (>= 3 points).
+// Returns true when an annotation was created.
+function commitMultiClickContour(ctrl: NiiVue): boolean {
+  const pts = ctrl._annotationPolyPoints
+  if (!pts || pts.length < 3) return false
+  const cfg = ctrl.model.annotation
+  const polygons = Annotation.generateSplineFromPoints(pts)
+  if (polygons.length === 0) return false
+  ctrl._annotationUndoStack.push(ctrl.model.annotations)
+  const newAnn = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    ctrl._annotationPolySliceType,
+    ctrl._annotationPolySlicePosition,
+    polygons,
+    cfg.style,
+    ctrl._annotationPolyAnchorMM,
+  )
+  const bounds = pointsBounds(pts)
+  newAnn.shape = { type: cfg.tool, start: bounds.start, end: bounds.end }
+  if (Annotation.isMeasureTool(cfg.tool)) {
+    const vol = ctrl.model.getVolumes()[0]
+    if (vol)
+      newAnn.stats = Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
+  }
+  ctrl.model.annotations = Annotation.mergeAnnotations(
+    ctrl.model.annotations,
+    newAnn,
+  )
+  ctrl.emit('annotationAdded', { annotation: newAnn })
+  ctrl.emit('annotationChanged', { action: 'draw' })
+  return true
+}
+
+// Abandon the in-progress contour (Escape, or a tool/slice change).
+function cancelMultiClickContour(ctrl: NiiVue): void {
+  if (!ctrl._annotationPolyPoints) return
+  ctrl._annotationPolyPoints = null
+  ctrl.model._annotationPreview = null
+  ctrl.drawScene()
 }
 
 function clientToCanvasPixel(
@@ -182,6 +284,11 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
   setNextActionTag('keydown')
   const key = e.key.toUpperCase()
+  if (key === 'ESCAPE') {
+    // Abandon an in-progress multi-click contour (spline / livewire).
+    if (ctrl._annotationPolyPoints) cancelMultiClickContour(ctrl)
+    return
+  }
   if (key === 'V') {
     log.info(`NIIVUE VERSION: 0.1.20260122`)
   } else if (key === 'A') {
@@ -1099,6 +1206,27 @@ export function initInteraction(ctrl: NiiVue): void {
         const cfg = ctrl.model.annotation
         const tool = cfg.tool
 
+        // Multi-click contour tools (spline / livewire): each click drops a
+        // control point; the contour is closed on double-click (see the dblclick
+        // handler) or cancelled with Escape. Do NOT start a drag.
+        if (isMultiClickTool(tool) && !cfg.isErasing) {
+          if (
+            !ctrl._annotationPolyPoints ||
+            ctrl._annotationPolySliceType !== sliceType
+          ) {
+            // Start a fresh contour (first point, or the user moved to a new
+            // slice — abandon the old in-progress contour and begin here).
+            ctrl._annotationPolyPoints = []
+            ctrl._annotationPolySliceType = sliceType
+            ctrl._annotationPolySlicePosition = slicePosition
+            ctrl._annotationPolyAnchorMM = mm as [number, number, number]
+          }
+          ctrl._annotationPolyPoints.push(pt2d)
+          updateMultiClickPreview(ctrl, pt2d)
+          ctrl.drawScene()
+          return
+        }
+
         // A) Selection/resize check for shape annotations
         if (!cfg.isErasing && tool !== 'freehand') {
           // Check control point hit on current selection
@@ -1495,6 +1623,19 @@ export function initInteraction(ctrl: NiiVue): void {
               mm: mm as [number, number, number],
               sliceType,
               slicePosition: mm[depthDim],
+            }
+            // Multi-click contour in progress: preview the spline through the
+            // placed points plus the hovered cursor (same slice only).
+            if (
+              ctrl._annotationPolyPoints &&
+              isMultiClickTool(ctrl.model.annotation.tool) &&
+              sliceType === ctrl._annotationPolySliceType
+            ) {
+              const pt2d = Annotation.mmToSlice2D(
+                mm as [number, number, number],
+                sliceType,
+              )
+              updateMultiClickPreview(ctrl, pt2d)
             }
             ctrl.drawScene()
             return
@@ -2056,6 +2197,19 @@ export function initInteraction(ctrl: NiiVue): void {
     const dblHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
     if (!dblHit) return // outside this instance's bounds
     setNextActionTag('dblclick')
+    // Close an in-progress multi-click contour (spline / livewire) instead of
+    // depth-picking. The two clicks of the double-click already added their
+    // points via the pointerdown handler; commit the accumulated contour.
+    if (
+      ctrl._annotationPolyPoints &&
+      isMultiClickTool(ctrl.model.annotation.tool)
+    ) {
+      commitMultiClickContour(ctrl)
+      ctrl._annotationPolyPoints = null
+      ctrl.model._annotationPreview = null
+      ctrl.drawScene()
+      return
+    }
     const [px, py] = dblHit
     // Double-clicking the zoom-out ("-") button jumps straight to the full view
     // (the one-click way back from a deep zoom). The reset is restricted to that

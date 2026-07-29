@@ -368,6 +368,11 @@ const ANNOTATION_TO_OHIF: Record<
     valueType: POLYLINE_VALUE_TYPE,
     points: 2,
   },
+  measureSpline: {
+    toolName: 'SplineROI',
+    valueType: POLYLINE_VALUE_TYPE,
+    points: 2,
+  },
   arrow: { toolName: 'ArrowAnnotate', valueType: POINT_VALUE_TYPE, points: 1 },
 }
 

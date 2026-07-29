@@ -404,6 +404,13 @@ export default class NiiVue extends EventTarget {
   // axis-aligned polygon on the block face. null until the first successful pick.
   _annotation3DFace: ExplodedBlockFace | null = null
   _annotationShapeStart: AnnotationPoint | null = null
+  // Multi-click contour (spline / livewire): control points accumulated in
+  // slice-2D coords across clicks until the contour is closed (double-click) or
+  // cancelled (Escape). null when no multi-click contour is in progress.
+  _annotationPolyPoints: AnnotationPoint[] | null = null
+  _annotationPolySliceType = 0
+  _annotationPolySlicePosition = 0
+  _annotationPolyAnchorMM: [number, number, number] = [0, 0, 0]
   _resizingControlPoint = -1
   _resizeOriginalShape: {
     start: AnnotationPoint

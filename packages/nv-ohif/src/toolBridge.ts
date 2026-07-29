@@ -20,6 +20,9 @@ export function ohifToolToAnnotationTool(
     case 'PlanarFreehandROI':
       // freehand has no measure variant (no area/mean); draws the contour only.
       return 'freehand'
+    case 'SplineROI':
+      // Multi-click closed spline contour with area/mean stats.
+      return 'measureSpline'
     case 'ArrowAnnotate':
       return 'arrow'
     default:
@@ -33,7 +36,6 @@ export function ohifToolToAnnotationTool(
  */
 export const UNSUPPORTED_MEASUREMENT_TOOLS: ReadonlySet<string> = new Set([
   'Bidirectional',
-  'SplineROI',
   'LivewireContour',
 ])
 

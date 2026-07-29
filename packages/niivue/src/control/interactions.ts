@@ -214,29 +214,13 @@ function handleKeydown(ctrl: NiiVueGPU, e: KeyboardEvent): void {
     )
   } else if (ctrl.model.layout.sliceType === NVConstants.SLICE_TYPE.RENDER) {
     if (key === 'H') {
-      ctrl.model.scene.azimuth =
-        (((ctrl.model.scene.azimuth - 1) % 360) + 360) % 360
-      emitOrientationChange(ctrl)
-      ctrl.drawScene()
+      ctrl.azimuth = (((ctrl.azimuth - 1) % 360) + 360) % 360
     } else if (key === 'L') {
-      ctrl.model.scene.azimuth =
-        (((ctrl.model.scene.azimuth + 1) % 360) + 360) % 360
-      emitOrientationChange(ctrl)
-      ctrl.drawScene()
+      ctrl.azimuth = (((ctrl.azimuth + 1) % 360) + 360) % 360
     } else if (key === 'K') {
-      ctrl.model.scene.elevation = Math.max(
-        -90,
-        Math.min(90, ctrl.model.scene.elevation - 1),
-      )
-      emitOrientationChange(ctrl)
-      ctrl.drawScene()
+      ctrl.elevation = Math.max(-90, Math.min(90, ctrl.elevation - 1))
     } else if (key === 'J') {
-      ctrl.model.scene.elevation = Math.max(
-        -90,
-        Math.min(90, ctrl.model.scene.elevation + 1),
-      )
-      emitOrientationChange(ctrl)
-      ctrl.drawScene()
+      ctrl.elevation = Math.max(-90, Math.min(90, ctrl.elevation + 1))
     }
   } else {
     if (key === 'H') ctrl.moveCrosshairInVox(-1, 0, 0)

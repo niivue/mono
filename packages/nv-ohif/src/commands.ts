@@ -313,30 +313,10 @@ function annotationToolType(a: VectorAnnotation): string | undefined {
   return a.shape?.type ?? (a.polygons[0]?.outer.length ? 'freehand' : undefined)
 }
 
-// Short, tool-appropriate noun for a default label. An arrow is not an ROI; a
-// Length/Bidirectional is a line, not a region — so the generic "ROI" is wrong
-// for them (see round-2 review R2-3).
-const DEFAULT_LABEL_PREFIX: Record<string, string> = {
-  measureLine: 'Length',
-  arrow: 'Arrow',
-  measureBidirectional: 'Bidirectional',
-  measureEllipse: 'ROI',
-  measureRect: 'ROI',
-  measureCircle: 'ROI',
-  measureSpline: 'ROI',
-  measureLivewire: 'ROI',
-  freehand: 'ROI',
-}
-
-function defaultLabelPrefix(a: VectorAnnotation): string {
-  const type = annotationToolType(a)
-  return (type && DEFAULT_LABEL_PREFIX[type]) || 'ROI'
-}
-
 /**
  * Assign the default viewport label before reflecting a new annotation to OHIF.
- * The number is one past the highest existing "<prefix> #N" so a label is never
- * reused after a deletion (which would leave two rows with the same name).
+ * The number is one past the highest existing "ROI #N" so the global sequence is
+ * shared by every annotation tool and a label is never reused after a deletion.
  * Returns true if it assigned text (so the caller can redraw).
  */
 export function applyDefaultAnnotationText(
@@ -344,8 +324,7 @@ export function applyDefaultAnnotationText(
   annotations: readonly VectorAnnotation[],
 ): boolean {
   if (annotation.text?.length) return false
-  const prefix = defaultLabelPrefix(annotation)
-  const re = new RegExp(`^${prefix} #(\\d+)$`)
+  const re = /^ROI #(\d+)$/
   let maxN = 0
   for (const candidate of annotations) {
     const m = candidate.text ? re.exec(candidate.text) : null
@@ -354,7 +333,7 @@ export function applyDefaultAnnotationText(
       if (n > maxN) maxN = n
     }
   }
-  const text = `${prefix} #${maxN + 1}`
+  const text = `ROI #${maxN + 1}`
   annotation.text = text
   // mergeAnnotations stores a shallow clone, while annotationAdded carries the
   // pre-merge object. Update the stored annotation too so the viewport overlay
@@ -981,25 +960,25 @@ export function removeNiivueAnnotation(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
   annotationId: string,
-): void {
+): boolean {
   const byView = reflectedAnnotations.get(viewportId)
   const row = byView?.get(annotationId)
-  if (!byView || !row) return
+  if (!byView || !row) return true
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
-  // Always drop the bookkeeping (best-effort remove). A negative-cache row has no
-  // uid — nothing to remove in OHIF. Retaining bookkeeping when the host lacks
-  // remove would leak the maps unbounded across mount/unmount (round-3 R3-3).
   if (row.uid) {
+    if (!measurementService?.remove) return false
     try {
-      measurementService?.remove?.(row.uid)
+      measurementService.remove(row.uid)
     } catch {
-      // The local maps must still be released when host cleanup fails.
+      // Keep the row bookkeeping so a later reconciliation can retry cleanup.
+      return false
     }
     measurementToAnnotation.delete(row.uid)
   }
   byView.delete(annotationId)
   if (byView.size === 0) reflectedAnnotations.delete(viewportId)
+  return true
 }
 
 /** Remove every reflected row for a viewport (annotation clear / series swap). */
@@ -1081,8 +1060,11 @@ export function reconcileNiivueAnnotations(
         existing?.uid,
       )
       if (result.status === 'permanentlyUnsupported') {
-        if (existing?.uid)
-          removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
+        if (
+          existing?.uid &&
+          !removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
+        )
+          continue
         let map = reflectedAnnotations.get(viewportId)
         if (!map) {
           map = new Map()

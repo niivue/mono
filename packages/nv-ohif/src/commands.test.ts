@@ -598,6 +598,38 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.removed).toHaveLength(1)
   })
 
+  it('retries a failed row removal on the next reconciliation', () => {
+    const nv = stubNiivue()
+    register('vp-remove-retry', nv)
+    updateNiivueViewport('vp-remove-retry', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-remove-retry', backing)
+    const measurementService = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services.measurementService as { remove: (uid: string) => void }
+    let attempts = 0
+    measurementService.remove = (uid) => {
+      attempts += 1
+      if (attempts === 1) throw new Error('temporarily unavailable')
+      svc.removed.push(uid)
+    }
+    const annotation = ellipse('retry-remove')
+    nv.annotations = [annotation]
+    reflectNiivueAnnotation('vp-remove-retry', svc.servicesManager, annotation)
+    nv.annotations = []
+
+    reconcileNiivueAnnotations('vp-remove-retry', svc.servicesManager)
+    expect(attempts).toBe(1)
+    expect(svc.removed).toHaveLength(0)
+
+    reconcileNiivueAnnotations('vp-remove-retry', svc.servicesManager)
+    expect(attempts).toBe(2)
+    expect(svc.removed).toHaveLength(1)
+  })
+
   it('clearNiivueAnnotations removes every reflected row for the viewport', () => {
     const svc = setup('vp-a4')
     reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c1'))
@@ -976,7 +1008,7 @@ describe('reflectNiivueAnnotation', () => {
     expect(addCalls - addsAfterFirst).toBeLessThan(5)
   })
 
-  it('applyDefaultAnnotationText labels by tool and never reuses a number', () => {
+  it('applyDefaultAnnotationText uses one ROI sequence for every tool', () => {
     const mk = (id: string, type: string): VectorAnnotation =>
       ({
         id,
@@ -986,11 +1018,11 @@ describe('reflectNiivueAnnotation', () => {
       }) as unknown as VectorAnnotation
     const line = mk('l', 'measureLine')
     expect(applyDefaultAnnotationText(line, [line])).toBe(true)
-    expect(line.text).toBe('Length #1')
+    expect(line.text).toBe('ROI #1')
     const arrow = mk('a', 'arrow')
     expect(applyDefaultAnnotationText(arrow, [line, arrow])).toBe(true)
-    expect(arrow.text).toBe('Arrow #1')
-    // Two ROIs exist (#1, #2), #1 was deleted; a new ROI must NOT reuse '#2'.
+    expect(arrow.text).toBe('ROI #2')
+    // ROI #1 was deleted; a new ROI must not reuse the surviving #2.
     const r2 = {
       ...mk('r2', 'measureEllipse'),
       text: 'ROI #2',

@@ -1,7 +1,7 @@
 import { type vec2, type vec3, vec4 } from 'gl-matrix'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
 import type { LivewireSlice } from '@/annotation/livewireSlice'
-import { getControlPoints } from '@/annotation/selection'
+import { getAnnotationSelection } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
 import { cortex } from '@/assets/matcaps'
@@ -1631,11 +1631,8 @@ export default class NiiVue extends EventTarget {
       this.model._annotationSelection = null
     } else {
       const ann = this.model.annotations.find((a) => a.id === id)
-      if (ann?.shape) {
-        this.model._annotationSelection = {
-          annotationId: id,
-          controlPoints: getControlPoints(ann.shape),
-        }
+      if (ann) {
+        this.model._annotationSelection = getAnnotationSelection(ann)
       }
     }
     this.drawScene()

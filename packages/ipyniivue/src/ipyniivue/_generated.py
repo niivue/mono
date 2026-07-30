@@ -113,7 +113,8 @@ interaction warns). Turn one off before turning the other on. Does not
 affect whether annotations *render* — they always do."""
     annotation_is_erasing = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_is_visible_in_3d = traitlets.Bool(None, allow_none=True).tag(sync=True)
-    annotation_tool = traitlets.Enum(["freehand", "ellipse", "rectangle", "line", "arrow", "measureEllipse", "measureRect", "measureLine", "circle", "measureCircle"], None, allow_none=True).tag(sync=True)
+    annotation_merges_overlaps = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    annotation_tool = traitlets.Enum(["freehand", "ellipse", "rectangle", "line", "arrow", "measureEllipse", "measureRect", "measureLine", "circle", "measureCircle", "spline", "measureSpline", "livewire", "measureLivewire", "bidirectional", "measureBidirectional"], None, allow_none=True).tag(sync=True)
     azimuth = traitlets.Float(None, allow_none=True).tag(sync=True)
     background_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=4, maxlen=4, allow_none=True).tag(sync=True)
     clip_plane_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
@@ -153,6 +154,7 @@ first such interaction warns). Turn one off before turning the other on.
     hero_fraction = traitlets.Float(None, allow_none=True).tag(sync=True)
     hero_slice_type = traitlets.Float(None, allow_none=True).tag(sync=True)
     is_3d_crosshair_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    is_annotation_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_clip_plane_cutaway = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_colorbar_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_cross_lines_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
@@ -161,6 +163,7 @@ first such interaction warns). Turn one off before turning the other on.
     is_equal_size = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_graph_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_legend_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    is_measurement_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_measure_units_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_mosaic_centered = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_orientation_text_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
@@ -208,6 +211,12 @@ first such interaction warns). Turn one off before turning the other on.
     colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     drawing_colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     is_anti_alias = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    is_destroyed = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """True once {@link destroy} has run. Lets external holders (e.g. an
+NVChunkedVolume handle listening for `viewDestroyed`) distinguish a real
+controller teardown from a transient view recreation (backend switch /
+init fallback), which also emits `viewDestroyed` but leaves the controller
+and its volumes alive."""
     mesh_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     mesh_shaders = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     mesh_write_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
@@ -814,6 +823,21 @@ first such interaction warns). Turn one off before turning the other on.
         """
         self.send({"cmd": "refreshSlideAnnotation", "args": []})
 
+    async def register_overlay_renderer(self, renderer: Any) -> Any:
+        """Register a privileged overlay renderer (e.g.
+
+        a
+
+        Parameters
+        ----------
+        renderer : UIKitOverlayRenderer
+
+        Returns
+        -------
+        () => void
+        """
+        return await self._request("registerOverlayRenderer", _make_args(renderer))
+
     async def reinitialize_view(self, options: Any = _UNSET) -> Any:
         return await self._request("reinitializeView", _make_args(options))
 
@@ -908,6 +932,18 @@ first such interaction warns). Turn one off before turning the other on.
         Uint8Array
         """
         return await self._request("serializeDocument", _make_args(options))
+
+    def set_annotation_text(self, id: Any, text: Any) -> None:
+        """Set (or clear, with an empty string) the free-text label on an annotation by id.
+
+        The text shows above the annotation's stats via the overlay seam.
+
+        Parameters
+        ----------
+        id : string
+        text : string
+        """
+        self.send({"cmd": "setAnnotationText", "args": _make_args(id, text)})
 
     def set_base_coarse_floor(self, coarse_vol: Any) -> None:
         """Set (or clear, with null) a coarse whole-volume \"floor\" for the streamed base.
@@ -1316,6 +1352,15 @@ first such interaction warns). Turn one off before turning the other on.
         plan : ChunkPlan
         """
         self.send({"cmd": "swapVolumeChunkPlan", "args": _make_args(volume_id, plan)})
+
+    def unregister_overlay_renderer(self, renderer: Any) -> None:
+        """Remove a previously registered overlay renderer.
+
+        Parameters
+        ----------
+        renderer : UIKitOverlayRenderer
+        """
+        self.send({"cmd": "unregisterOverlayRenderer", "args": _make_args(renderer)})
 
     def update_gl_volume(self) -> None:
         self.send({"cmd": "updateGLVolume", "args": []})

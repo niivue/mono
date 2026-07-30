@@ -269,11 +269,48 @@ describe('reflectNiivueAnnotation', () => {
     expect(m.data.area).toBe(123.4)
     expect(m.data.mean).toBe(50)
     expect(m.data.areaUnit).toBe('mm²')
+    // cornerstone3D reads consecutive pairs as axes: [top, bottom] (vertical),
+    // then [left, right] (horizontal) — NOT interleaved top/right/bottom/left.
     expect(m.points).toEqual([
-      [-0.5, 0, 0],
-      [-1, -0.5, 0],
-      [-0.5, -1, 0],
-      [0, -0.5, 0],
+      [-0.5, 0, 0], // top
+      [-0.5, -1, 0], // bottom
+      [0, -0.5, 0], // left
+      [-1, -0.5, 0], // right
+    ])
+  })
+
+  it('maps points on a coronal slice at a non-zero depth (arg order)', () => {
+    const line: VectorAnnotation = {
+      id: 'cor',
+      label: 0,
+      group: '',
+      sliceType: 1, // CORONAL
+      slicePosition: 30,
+      anchorMM: [10, 30, 20],
+      polygons: [],
+      style: {
+        fillColor: [1, 1, 1, 1],
+        strokeColor: [1, 1, 1, 1],
+        strokeWidth: 1,
+      },
+      stats: { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, length: 5 },
+      shape: {
+        type: 'measureLine',
+        start: { x: 10, y: 20 },
+        end: { x: 10, y: 25 },
+      },
+    } as unknown as VectorAnnotation
+    const svc = setup('vp-coronal')
+    expect(
+      reflectNiivueAnnotation('vp-coronal', svc.servicesManager, line),
+    ).toBe(true)
+    const m = svc.added[0]?.data.schema as { points: number[][] }
+    // coronal slice2DToMM(pt, slicePosition=30, sliceType=1) = [x, 30, y];
+    // RAS->LPS negates x,y. The swapped arg order collapsed this to the axial
+    // branch with depth 1, which this asserts against.
+    expect(m.points).toEqual([
+      [-10, -30, 20],
+      [-10, -30, 25],
     ])
   })
 
@@ -357,7 +394,7 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.removed).toHaveLength(2)
   })
 
-  it('reconcile rebuilds panel rows from the live annotation set (undo/resize)', () => {
+  it('reconcile removes only vanished rows and leaves untouched rows alone', () => {
     const nv = stubNiivue()
     register('vp-a6', nv)
     updateNiivueViewport('vp-a6', {
@@ -366,18 +403,50 @@ describe('reflectNiivueAnnotation', () => {
       >[1]['displaySets'],
     })
     const svc = measurementServices('vp-a6', backing)
-    // Two annotations reflected as two rows.
     reflectNiivueAnnotation('vp-a6', svc.servicesManager, ellipse('keep'))
     reflectNiivueAnnotation('vp-a6', svc.servicesManager, ellipse('drop'))
-    expect(svc.added).toHaveLength(2)
-    // Simulate an undo removing one: the live set now has only 'keep'.
+    const dropUid = (svc.added[1]?.data.schema as { uid: string }).uid
+    // Undo removed 'drop'; 'keep' is unchanged.
     nv.annotations = [ellipse('keep')]
     reconcileNiivueAnnotations('vp-a6', svc.servicesManager)
-    // Both old rows are cleared and the surviving annotation is re-added once.
-    expect(svc.removed).toHaveLength(2)
+    // Only the vanished row is removed; the unchanged 'keep' row is NOT re-added.
+    expect(svc.removed).toEqual([dropUid])
+    expect(svc.added).toHaveLength(2)
+  })
+
+  it('reconcile refreshes a changed row without re-minting untouched rows', () => {
+    const nv = stubNiivue()
+    register('vp-a7', nv)
+    updateNiivueViewport('vp-a7', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-a7', backing)
+    reflectNiivueAnnotation('vp-a7', svc.servicesManager, ellipse('A'))
+    reflectNiivueAnnotation('vp-a7', svc.servicesManager, ellipse('B'))
+    const aUid = (svc.added[0]?.data.schema as { uid: string }).uid
+    const bUid = (svc.added[1]?.data.schema as { uid: string }).uid
+    // A is resized (stats change); B is untouched.
+    const aChanged = ellipse('A')
+    ;(aChanged as { stats: Record<string, number> }).stats = {
+      area: 999,
+      min: 5,
+      mean: 50,
+      max: 200,
+      stdDev: 12,
+    }
+    nv.annotations = [aChanged, ellipse('B')]
+    reconcileNiivueAnnotations('vp-a7', svc.servicesManager)
+    // Only A's old row is removed (its content changed); B is never touched.
+    expect(svc.removed).toEqual([aUid])
+    expect(svc.removed).not.toContain(bUid)
+    // A is re-added once (fresh stats); B is not re-added.
     expect(svc.added).toHaveLength(3)
-    const last = svc.added[2]?.data.schema as { toolName: string }
-    expect(last.toolName).toBe('EllipticalROI')
+    const refreshed = svc.added[2]?.data.schema as {
+      data: { area: number }
+    }
+    expect(refreshed.data.area).toBe(999)
   })
 
   it('pushes an edited OHIF label back onto the annotation as free text', () => {

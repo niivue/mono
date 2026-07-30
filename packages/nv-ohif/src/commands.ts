@@ -441,8 +441,11 @@ function annotationPointToLps(
   annotation: VectorAnnotation,
   point: AnnotationPoint,
 ): [number, number, number] {
+  // slice2DToMM's signature is (point, slicePosition, sliceType) — matching every
+  // niivue caller. Passing sliceType/slicePosition in the wrong order silently
+  // corrupts the depth (and orientation for coronal/sagittal).
   return rasToLps(
-    slice2DToMM(point, annotation.sliceType, annotation.slicePosition),
+    slice2DToMM(point, annotation.slicePosition, annotation.sliceType),
   )
 }
 
@@ -463,11 +466,16 @@ function annotationPointsLps(
 
   switch (shape.type) {
     case 'measureEllipse':
+      // cornerstone3D's EllipticalROI reads consecutive point PAIRS as its two
+      // axes (points[0..1] = one axis, points[2..3] = the other), so the vertical
+      // axis endpoints must be adjacent, then the horizontal ones. An interleaved
+      // top/right/bottom/left order makes the pairs the bounding-box diagonals,
+      // which reconstructs a rotated, mis-sized ellipse.
       points = [
-        { x: cx, y: minY },
-        { x: maxX, y: cy },
-        { x: cx, y: maxY },
-        { x: minX, y: cy },
+        { x: cx, y: minY }, // top    \ vertical axis
+        { x: cx, y: maxY }, // bottom /
+        { x: minX, y: cy }, // left   \ horizontal axis
+        { x: maxX, y: cy }, // right  /
       ]
       break
     case 'measureRect':
@@ -509,7 +517,34 @@ function annotationPointsLps(
 
 // niivue annotation id -> OHIF measurement uid, per viewport, so a removed or
 // cleared annotation can remove its panel row.
-const reflectedAnnotations = new Map<string, Map<string, string>>()
+// viewportId -> (annotationId -> { OHIF measurement uid, content hash }). The hash
+// lets reconcile touch only the rows whose annotation actually changed, so an edit
+// to one annotation never re-mints another's uid (which would drop OHIF's panel
+// selection / jump on a row the user never touched).
+interface ReflectedRow {
+  uid: string
+  hash: string
+}
+const reflectedAnnotations = new Map<string, Map<string, ReflectedRow>>()
+
+/**
+ * A stable fingerprint of everything reflected into the panel row (stats, free
+ * text, and the shape geometry). Equal hashes mean the row does not need
+ * rebuilding. Includes the shape endpoints/second axis and the contour vertices
+ * (spline/livewire move without changing the endpoint bbox), so a move or resize
+ * is always detected.
+ */
+function annotationContentHash(a: VectorAnnotation): string {
+  const s = a.stats
+  const shape = a.shape
+  const outer = a.polygons[0]?.outer
+  return JSON.stringify([
+    a.text ?? '',
+    s ? [s.area, s.min, s.mean, s.max, s.stdDev, s.length, s.shortLength] : 0,
+    shape ? [shape.type, shape.start, shape.end, shape.start2, shape.end2] : 0,
+    outer ? outer.map((p) => [p.x, p.y]) : 0,
+  ])
+}
 
 // OHIF measurement uid -> the NiiVue annotation it reflects, so an edit of the
 // measurement's label in OHIF's panel can be pushed back as the annotation text.
@@ -657,7 +692,7 @@ export function reflectNiivueAnnotation(
     byView = new Map()
     reflectedAnnotations.set(viewportId, byView)
   }
-  byView.set(annotation.id, uid)
+  byView.set(annotation.id, { uid, hash: annotationContentHash(annotation) })
   measurementToAnnotation.set(uid, { viewportId, annotationId: annotation.id })
   return true
 }
@@ -705,13 +740,13 @@ export function removeNiivueAnnotation(
   annotationId: string,
 ): void {
   const byView = reflectedAnnotations.get(viewportId)
-  const uid = byView?.get(annotationId)
-  if (!byView || !uid) return
+  const row = byView?.get(annotationId)
+  if (!byView || !row) return
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
-  measurementService?.remove?.(uid)
+  measurementService?.remove?.(row.uid)
   byView.delete(annotationId)
-  measurementToAnnotation.delete(uid)
+  measurementToAnnotation.delete(row.uid)
   if (byView.size === 0) reflectedAnnotations.delete(viewportId)
 }
 
@@ -724,7 +759,7 @@ export function clearNiivueAnnotations(
   if (!byView) return
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
-  for (const uid of byView.values()) {
+  for (const { uid } of byView.values()) {
     measurementService?.remove?.(uid)
     measurementToAnnotation.delete(uid)
   }
@@ -732,13 +767,25 @@ export function clearNiivueAnnotations(
 }
 
 /**
- * Rebuild every reflected panel row for a viewport from NiiVue's current
- * annotation set. Used for edits that the per-row annotationAdded / annotationRemoved
- * events do not cover, where the change event carries only an action (no id): a
- * resize or move (stats changed on an existing shape), an erase, or an undo/redo
- * (membership changed). Clears the stale rows, then re-reflects each live
- * annotation. Free-text labels survive the rebuild because they live on the
- * annotation (reflectNiivueAnnotation uses annotation.text as the row label).
+ * Reconcile a viewport's reflected panel rows against NiiVue's current annotation
+ * set. Used for edits that the per-row annotationAdded / annotationRemoved events
+ * do not cover, where the change event carries only an action (no id): a resize or
+ * move (geometry/stats changed on an existing shape), an erase, or an undo/redo
+ * (membership changed).
+ *
+ * Diff-based, keyed on annotation id, so it only touches rows that actually
+ * changed:
+ *   - annotation gone      -> remove its row
+ *   - annotation new       -> add a row
+ *   - annotation changed   -> re-add (fresh row) then drop the old row
+ *   - annotation unchanged -> leave its row (keeps its uid, so OHIF panel
+ *                             selection / jump on rows the user did not edit is
+ *                             preserved)
+ *
+ * A changed annotation is re-added BEFORE its old row is removed, so a transient
+ * re-reflect failure (backing series momentarily unresolvable, points-guard drop)
+ * leaves the existing row in place rather than dropping it. Free-text labels
+ * survive because they live on the annotation.
  */
 export function reconcileNiivueAnnotations(
   viewportId: string,
@@ -746,9 +793,37 @@ export function reconcileNiivueAnnotations(
 ): void {
   const entry = getNiivueEntry(viewportId)
   if (!entry) return
-  clearNiivueAnnotations(viewportId, servicesManager)
-  for (const annotation of entry.nv.annotations) {
-    reflectNiivueAnnotation(viewportId, servicesManager, annotation)
+  const live = entry.nv.annotations
+  const liveIds = new Set(live.map((a) => a.id))
+
+  // Remove rows for annotations that no longer exist.
+  const byView = reflectedAnnotations.get(viewportId)
+  if (byView) {
+    for (const annotationId of [...byView.keys()]) {
+      if (!liveIds.has(annotationId))
+        removeNiivueAnnotation(viewportId, servicesManager, annotationId)
+    }
+  }
+
+  // Add new annotations; refresh changed ones (re-add, then drop the stale row).
+  for (const annotation of live) {
+    const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
+    if (!existing) {
+      reflectNiivueAnnotation(viewportId, servicesManager, annotation)
+      continue
+    }
+    if (existing.hash === annotationContentHash(annotation)) continue
+    const staleUid = existing.uid
+    if (reflectNiivueAnnotation(viewportId, servicesManager, annotation)) {
+      // reflect overwrote the map entry with the new uid; drop the old row.
+      const measurementService = ohifServices(servicesManager)
+        ?.measurementService as MeasurementServiceLike | undefined
+      const current = reflectedAnnotations.get(viewportId)?.get(annotation.id)
+      if (current && current.uid !== staleUid) {
+        measurementService?.remove?.(staleUid)
+        measurementToAnnotation.delete(staleUid)
+      }
+    }
   }
 }
 

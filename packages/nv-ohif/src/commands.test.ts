@@ -537,6 +537,52 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.removed).toHaveLength(1)
   })
 
+  it('retries a thrown removal of an unsupported row, then negative-caches (F1)', () => {
+    const nv = stubNiivue()
+    register('vp-f1', nv)
+    updateNiivueViewport('vp-f1', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-f1', backing)
+    const measurementService = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services.measurementService as { remove: (uid: string) => void }
+    let removeAttempts = 0
+    measurementService.remove = (uid) => {
+      removeAttempts += 1
+      if (removeAttempts === 1) throw new Error('temporarily unavailable')
+      svc.removed.push(uid)
+    }
+    const good = ellipse('f')
+    nv.annotations = [good]
+    reflectNiivueAnnotation('vp-f1', svc.servicesManager, good)
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    // Edit into a permanently-unsupported shape.
+    nv.annotations = [
+      {
+        ...ellipse('f'),
+        shape: {
+          type: 'measureBidirectional',
+          start: { x: 0, y: 0 },
+          end: { x: 3, y: 4 },
+        },
+      } as unknown as VectorAnnotation,
+    ]
+    // First reconcile: removal THROWS -> row + uid retained, NOT negative-cached.
+    reconcileNiivueAnnotations('vp-f1', svc.servicesManager)
+    expect(removeAttempts).toBe(1)
+    expect(svc.removed).toHaveLength(0)
+    // Second reconcile: removal is retried and succeeds -> row removed, then cached.
+    reconcileNiivueAnnotations('vp-f1', svc.servicesManager)
+    expect(removeAttempts).toBe(2)
+    expect(svc.removed).toEqual([uid])
+    // Third reconcile: negative cache is now in place; no further removal attempts.
+    reconcileNiivueAnnotations('vp-f1', svc.servicesManager)
+    expect(removeAttempts).toBe(2)
+  })
+
   it('retries a transient failure when the backing series becomes available', () => {
     const nv = stubNiivue()
     const availableBacking: typeof backing = []

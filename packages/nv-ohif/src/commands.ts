@@ -982,14 +982,20 @@ export function subscribeOhifLabelSync(
 }
 
 /** Remove one reflected annotation's OHIF panel row (annotationRemoved). */
+/**
+ * Returns true when the row is gone (removed, or there was nothing / no uid to
+ * remove, or the host has no remove so recovery is impossible). Returns FALSE only
+ * when an available remove() THREW: the bookkeeping is preserved so the caller can
+ * retry on a later reconcile instead of orphaning the OHIF row (round-5 F1).
+ */
 export function removeNiivueAnnotation(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
   annotationId: string,
-): void {
+): boolean {
   const byView = reflectedAnnotations.get(viewportId)
   const row = byView?.get(annotationId)
-  if (!byView || !row) return
+  if (!byView || !row) return true
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
   if (row.uid) {
@@ -999,7 +1005,7 @@ export function removeNiivueAnnotation(
       } catch {
         // A THROWN remove is transient — keep the bookkeeping so the next
         // reconcile retries the OHIF-side removal.
-        return
+        return false
       }
     }
     // remove absent (the host can never remove it) or succeeded: drop the
@@ -1009,6 +1015,7 @@ export function removeNiivueAnnotation(
   }
   byView.delete(annotationId)
   if (byView.size === 0) reflectedAnnotations.delete(viewportId)
+  return true
 }
 
 /** Remove every reflected row for a viewport (annotation clear / series swap). */
@@ -1096,8 +1103,16 @@ export function reconcileNiivueAnnotations(
         // rather than leave it misrepresenting the new geometry, and negative-
         // cache the hash so the permanently-bad shape is not re-attempted every
         // event. A later edit changes the hash and reflects afresh.
-        if (existing?.uid)
-          removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
+        //
+        // If the removal THROWS (transient), removeNiivueAnnotation returns false
+        // and preserves the { uid, hash } entry: leave it so the NEXT reconcile
+        // retries the removal, instead of overwriting it with a uid-less negative
+        // cache (which would orphan the OHIF row + leak measurementToAnnotation and
+        // block all future removal — round-5 F1).
+        const removed = existing?.uid
+          ? removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
+          : true
+        if (!removed) continue
         let map = reflectedAnnotations.get(viewportId)
         if (!map) {
           map = new Map()

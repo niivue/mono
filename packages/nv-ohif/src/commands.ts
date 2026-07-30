@@ -311,13 +311,22 @@ const POLYLINE_VALUE_TYPE = 'value_type::polyline'
 export function applyDefaultAnnotationText(
   annotation: VectorAnnotation,
   annotations: readonly VectorAnnotation[],
-): void {
-  if (annotation.text?.length) return
+): boolean {
+  if (annotation.text?.length) return false
   const index = annotations.findIndex(
     (candidate) => candidate.id === annotation.id,
   )
   const count = index >= 0 ? index + 1 : annotations.length + 1
-  annotation.text = `ROI #${count}`
+  const text = `ROI #${count}`
+  annotation.text = text
+  // mergeAnnotations stores a shallow clone, while annotationAdded carries the
+  // pre-merge object. Update the stored annotation too so the viewport overlay
+  // sees the label.
+  if (index >= 0) {
+    const stored = annotations[index]
+    if (stored) stored.text = text
+  }
+  return true
 }
 
 interface MeasurementSourceLike {

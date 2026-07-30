@@ -192,7 +192,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       const annotation = (e as CustomEvent<{ annotation: VectorAnnotation }>)
         .detail?.annotation
       if (!annotation) return
-      applyDefaultAnnotationText(annotation, nv.annotations)
+      if (applyDefaultAnnotationText(annotation, nv.annotations)) nv.drawScene()
       const added = reflectNiivueAnnotation(
         viewportId,
         servicesManagerRef.current,

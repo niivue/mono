@@ -243,13 +243,19 @@ describe('reflectNiivueAnnotation', () => {
 
   it('defaults new annotation text to its one-based ROI count', () => {
     const first = ellipse('first')
-    const second = ellipse('second')
-    applyDefaultAnnotationText(second, [first, second])
-    expect(second.text).toBe('ROI #2')
+    const emittedSecond = ellipse('second')
+    const storedSecond = { ...emittedSecond }
+    expect(
+      applyDefaultAnnotationText(emittedSecond, [first, storedSecond]),
+    ).toBe(true)
+    expect(emittedSecond.text).toBe('ROI #2')
+    expect(storedSecond.text).toBe('ROI #2')
 
-    second.text = 'Custom label'
-    applyDefaultAnnotationText(second, [first, second])
-    expect(second.text).toBe('Custom label')
+    emittedSecond.text = 'Custom label'
+    expect(
+      applyDefaultAnnotationText(emittedSecond, [first, storedSecond]),
+    ).toBe(false)
+    expect(emittedSecond.text).toBe('Custom label')
   })
 
   function setup(viewportId: string) {

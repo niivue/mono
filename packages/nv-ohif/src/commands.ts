@@ -448,7 +448,9 @@ const ANNOTATION_TO_OHIF: Record<
     toolName: 'ArrowAnnotate',
     valueType: POINT_VALUE_TYPE,
     minPoints: 2,
-    points: 1,
+    // ArrowAnnotate carries two handles (arrowhead + text tail); the registered
+    // count must match the 2-point payload annotationPointsLps emits.
+    points: 2,
   },
 }
 
@@ -582,7 +584,9 @@ function annotationPointsLps(
       points = [start, end]
       break
     case 'arrow':
-      points = [start, end]
+      // niivue's shape.end is the arrowHEAD/tip; cornerstone3D ArrowAnnotate reads
+      // points[0] as the arrowhead / annotated location, so emit tip first.
+      points = [end, start]
       break
     default:
       points = [start]
@@ -599,7 +603,12 @@ function annotationPointsLps(
 // to one annotation never re-mints another's uid (which would drop OHIF's panel
 // selection / jump on a row the user never touched).
 interface ReflectedRow {
-  uid: string
+  // Absent when the annotation is currently unreflectable (no backing series yet,
+  // or a geometry OHIF cannot represent). We still store the hash as a NEGATIVE
+  // CACHE so we do not re-attempt the failing reflect on every event, and — for a
+  // shape that WAS reflected and then failed an update — we keep the prior uid so
+  // the row + its selection/tracking identity are not churned.
+  uid?: string
   hash: string
 }
 const reflectedAnnotations = new Map<string, Map<string, ReflectedRow>>()
@@ -762,14 +771,16 @@ export function reflectNiivueAnnotation(
   const points = annotationPointsLps(annotation)
   if (points.length < (mapping.minPoints ?? 0)) return false
   const unit = modalityUnit(entry)
-  const { primary, data, label } = buildAnnotationDisplay(
+  const { primary, data } = buildAnnotationDisplay(
     mapping.toolName,
     annotation.stats,
     unit,
   )
-  // The user's free text (if set) is the panel row label; else a default name.
-  const rowLabel =
-    annotation.text && annotation.text.length > 0 ? annotation.text : label
+  // The row label is the annotation's own text (applyDefaultAnnotationText seeds a
+  // sensible default on add). Do NOT substitute an internal "NiiVue <Tool>"
+  // fallback for empty text: reflecting that fallback would echo it back through
+  // the label sync onto the canvas, making a user-cleared label impossible.
+  const rowLabel = annotation.text ?? ''
 
   const acceptedUid = measurementService.addRawMeasurement(
     source,
@@ -857,7 +868,12 @@ export function subscribeOhifLabelSync(
   }
   const sub = svc.subscribe(evt, (payload) => {
     const m = payload?.measurement
-    if (m?.uid) applyOhifLabelToAnnotation(m.uid, m.label ?? '')
+    // Only a real label field is a label edit. An update that OMITS label (a
+    // tracking / cachedStats change) must not be read as an explicit blank, which
+    // would wipe the user's on-canvas text (round-3 R3-4). An empty string IS a
+    // deliberate clear and is honored.
+    if (m?.uid && typeof m.label === 'string')
+      applyOhifLabelToAnnotation(m.uid, m.label)
   })
   labelSyncSubscriptions.set(svc as object, {
     refCount: 1,
@@ -877,12 +893,14 @@ export function removeNiivueAnnotation(
   if (!byView || !row) return
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
-  // If the host cannot remove the OHIF row, keep our bookkeeping so the row stays
-  // reclaimable rather than orphaned with no reference (round-2 review R2-7).
-  if (!measurementService?.remove) return
-  measurementService.remove(row.uid)
+  // Always drop the bookkeeping (best-effort remove). A negative-cache row has no
+  // uid — nothing to remove in OHIF. Retaining bookkeeping when the host lacks
+  // remove would leak the maps unbounded across mount/unmount (round-3 R3-3).
+  if (row.uid) {
+    measurementService?.remove?.(row.uid)
+    measurementToAnnotation.delete(row.uid)
+  }
   byView.delete(annotationId)
-  measurementToAnnotation.delete(row.uid)
   if (byView.size === 0) reflectedAnnotations.delete(viewportId)
 }
 
@@ -895,10 +913,9 @@ export function clearNiivueAnnotations(
   if (!byView) return
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
-  // Keep bookkeeping (reclaimable) if the host cannot remove rows (R2-7).
-  if (!measurementService?.remove) return
   for (const { uid } of byView.values()) {
-    measurementService.remove(uid)
+    if (!uid) continue
+    measurementService?.remove?.(uid)
     measurementToAnnotation.delete(uid)
   }
   reflectedAnnotations.delete(viewportId)
@@ -915,12 +932,15 @@ export function clearNiivueAnnotations(
  * changed:
  *   - annotation gone      -> remove its row
  *   - annotation new       -> add a row
- *   - annotation changed   -> update the existing row in place
+ *   - annotation changed   -> update the existing row in place (reuse the uid)
  *   - annotation unchanged -> leave its row (keeps its uid, so OHIF panel
  *                             selection / jump on rows the user did not edit is
  *                             preserved)
- *
- * The stable uid preserves OHIF panel selection, jump targets, and tracking state.
+ *   - reflect fails        -> do NOT delete the row; record the current hash as a
+ *                             negative cache (keeping any prior uid) so we neither
+ *                             churn the uid nor re-attempt the failing reflect on
+ *                             every event. A later change to a reflectable shape
+ *                             updates it in place (round-3 R3-0).
  *
  * Re-entrancy guarded: an update-in-place reflect can synchronously broadcast
  * MEASUREMENT_UPDATED, whose handler may emit annotationChanged and re-enter here.
@@ -953,23 +973,25 @@ export function reconcileNiivueAnnotations(
     // Add new annotations and update changed rows in place.
     for (const annotation of live) {
       const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
-      if (!existing) {
-        reflectNiivueAnnotation(viewportId, servicesManager, annotation)
-        continue
-      }
-      if (existing.hash === annotationContentHash(annotation)) continue
-      // Update in place (reuse the uid). If the update fails (degenerate shape
-      // under minPoints, backing series momentarily unresolvable), drop the stale
-      // row so it neither shows outdated geometry nor re-attempts on every event;
-      // a later reconcile re-adds it if it becomes reflectable again.
+      const hash = annotationContentHash(annotation)
+      if (existing && existing.hash === hash) continue
+      // reflect stores {uid, hash} on success (reusing existing?.uid to update in
+      // place). On failure, negative-cache the hash + keep any prior uid so the
+      // row is not churned/deleted and we stop re-attempting until it changes.
       const ok = reflectNiivueAnnotation(
         viewportId,
         servicesManager,
         annotation,
-        existing.uid,
+        existing?.uid,
       )
-      if (!ok)
-        removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
+      if (!ok) {
+        let map = reflectedAnnotations.get(viewportId)
+        if (!map) {
+          map = new Map()
+          reflectedAnnotations.set(viewportId, map)
+        }
+        map.set(annotation.id, { uid: existing?.uid, hash })
+      }
     }
   } finally {
     reconcilingViewports.delete(viewportId)

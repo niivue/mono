@@ -231,3 +231,94 @@ always sets text first); reconcile's new-annotation branch missing applyDefaultA
 6. Add a test with a MEASUREMENT_UPDATED-emitting mock so the recursion can never
    regress silently again. Full gate + rig verification of resize/move/undo/label
    edit with two ROIs.
+
+---
+
+# Round 3 (2026-07-30): review of round-2 fixes (0cbe70e8) + Codex 83c30abc
+
+Two high reviews: one on the round-2 recursion/label fixes, one on Codex's
+"preserve reflected annotation geometry" commit. Findings merged and deduped. NO
+fixes applied yet.
+
+## Must-fix (confirmed correctness)
+
+### R3-0 reflect-failure deletes the row + churns the uid (dominant; unifies R2-1, R2-4, and the freehand-guard fallout)
+
+reconcile's update branch does `if (!ok) removeNiivueAnnotation(...)`, and the new
+branch ignores the false return and re-attempts every event. So:
+- A freehand edited into a hole / two components (Codex's new guard makes reflect
+  return false) has its panel row + stats DELETED mid-edit; simplifying it back
+  re-adds it with a fresh uid (lost selection/tracking).
+- A transient backing-series miss deletes and re-mints.
+- A permanently-unreflectable annotation (NIfTI-URL viewport, no backing series)
+  re-runs a doomed reflect on every pointer event.
+
+Fix (one change): on reflect-failure do NOT remove the row. Make `ReflectedRow.uid`
+optional and, on failure, store `{ uid: existing?.uid, hash: currentHash }` — a
+"negative cache". Effect: the uid is preserved (no churn), the stale row stays
+(better than vanishing), and because the stored hash now equals the current one we
+STOP re-attempting until the geometry actually changes again (kills the thrash).
+removeNiivueAnnotation/clearNiivueAnnotations skip the OHIF remove for a
+uid-less entry but still delete bookkeeping.
+
+### R3-1 arrow points are reversed (Codex 83c30abc)
+
+annotationPointsLps emits arrow points as `[start, end]`, but niivue's
+`shape.end` is the arrowHEAD/tip (generateArrow) while cornerstone3D ArrowAnnotate
+takes `points[0]` as the arrowhead / annotated location. Jump-to-measurement and
+SR export target the empty tail instead of the lesion the arrow points at. Fix:
+emit `[end, start]` (tip first).
+
+### R3-2 a label cannot be cleared; the internal default leaks onto the canvas
+
+Clearing a measurement's label in OHIF reverts it to the generic `NiiVue <Tool>`:
+reflect's `rowLabel` falls back to that default when `annotation.text` is empty,
+and the echo writes it back onto the shape. Fix: `rowLabel = annotation.text ?? ''`
+(no `NiiVue <Tool>` fallback — applyDefaultAnnotationText already supplies the
+real default on add), so a cleared label stays blank and the echo carries `''`,
+which the unchanged-text guard absorbs.
+
+### R3-3 R2-7 introduced an unbounded leak — revert it
+
+Keeping bookkeeping when `measurementService.remove` is absent means unmount never
+clears the maps, which grow forever across mount/unmount. The rows can't be
+removed anyway when `remove` is absent, so keeping bookkeeping does not help. Fix:
+revert R2-7 — always delete bookkeeping (best-effort `remove?.()`).
+
+## Should-fix (plausible)
+
+### R3-4 undefined MEASUREMENT_UPDATED label clears the canvas text
+
+subscribeOhifLabelSync passes `m.label ?? ''`, so an update that omits `label`
+(tracking/cachedStats change) clears the user's on-canvas label. Fix: only apply
+when `typeof m.label === 'string'`; treat missing as no-op.
+
+### R3-5 arrow mapping registration points:1 disagrees with the 2-point payload
+
+ANNOTATION_TO_OHIF.arrow still registers `points: 1` while emitting 2. Fix: set
+`points: 2` to match (verify OHIF ArrowAnnotate accepts the value type with 2
+points on the rig; if not, reconsider the 2-point change).
+
+## Cleanup
+
+### R3-6 recursion regression test doesn't isolate the re-entrancy guard
+
+The test passes with only the unchanged-text guard (removing just the re-entrancy
+guard still stays under the bound). Fix: add a variant whose echo carries a label
+that CHANGES each time (so the unchanged-text guard never fires), leaving the
+re-entrancy guard as the sole thing preventing overflow.
+
+### R3-7 content hash stringifies all vertices per annotation per event
+
+annotationContentHash now JSON.stringify's every polygon outer+holes for each live
+annotation on every reconcile. Fine for typical counts; revisit with a cheaper
+fingerprint if dense freehand/spline editing shows latency.
+
+### R3-8 degenerate zero-length arrow (start==end) passes minPoints:2
+
+A click-without-drag reflects a 1-pixel arrow. Optional: reject when start==end.
+
+## Recommended order
+R3-0 (unifies the biggest cluster) -> R3-1 -> R3-2 + R3-4 -> R3-3 -> R3-5 ->
+R3-6; R3-7/R3-8 optional. Then full gate + rig verification (freehand hole edit,
+arrow direction on jump, label clear, resize selection-stability).

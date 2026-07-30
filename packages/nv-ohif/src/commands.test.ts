@@ -455,23 +455,73 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.added).toHaveLength(0)
   })
 
-  it('reflects both arrow endpoints', () => {
+  it('reflects arrow endpoints tip-first (arrowhead at points[0])', () => {
     const svc = setup('vp-arrow')
     const annotation = ellipse('arrow')
     annotation.shape = {
       type: 'arrow',
-      start: { x: 1, y: 2 },
-      end: { x: 4, y: 6 },
+      start: { x: 1, y: 2 }, // tail
+      end: { x: 4, y: 6 }, // arrowhead / tip
     }
     annotation.stats = undefined
     expect(
       reflectNiivueAnnotation('vp-arrow', svc.servicesManager, annotation),
     ).toBe(true)
     const measurement = svc.added[0]?.data.schema as { points: number[][] }
+    // cornerstone3D ArrowAnnotate anchors at points[0]; emit the tip (end) first.
     expect(measurement.points).toEqual([
-      [-1, -2, 0],
-      [-4, -6, 0],
+      [-4, -6, 0], // tip
+      [-1, -2, 0], // tail
     ])
+  })
+
+  it('reflects the row label from the annotation text (empty when cleared) (R3-2)', () => {
+    const svc = setup('vp-clear')
+    const a = ellipse('c')
+    a.text = 'ROI #1'
+    reflectNiivueAnnotation('vp-clear', svc.servicesManager, a)
+    expect((svc.added[0]?.data.schema as { label: string }).label).toBe(
+      'ROI #1',
+    )
+    // Clearing the text yields an EMPTY row label, not a 'NiiVue <Tool>' fallback
+    // (which would echo back onto the canvas and make clearing impossible).
+    a.text = undefined
+    reflectNiivueAnnotation('vp-clear', svc.servicesManager, a)
+    expect((svc.added[1]?.data.schema as { label: string }).label).toBe('')
+  })
+
+  it('keeps the row + uid on a failed update and stops re-attempting (R3-0)', () => {
+    const nv = stubNiivue()
+    register('vp-neg', nv)
+    updateNiivueViewport('vp-neg', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-neg', backing)
+    const good = ellipse('n')
+    nv.annotations = [good]
+    reflectNiivueAnnotation('vp-neg', svc.servicesManager, good)
+    const addsBefore = svc.added.length
+    // Mutate into an unreflectable shape: a bidirectional missing its short axis
+    // yields 2 points < minPoints 4, so reflect returns false.
+    nv.annotations = [
+      {
+        ...ellipse('n'),
+        shape: {
+          type: 'measureBidirectional',
+          start: { x: 0, y: 0 },
+          end: { x: 3, y: 4 },
+        },
+      } as unknown as VectorAnnotation,
+    ]
+    reconcileNiivueAnnotations('vp-neg', svc.servicesManager)
+    // The prior row is NOT removed (uid preserved) and nothing new was added.
+    expect(svc.removed).toHaveLength(0)
+    expect(svc.added.length).toBe(addsBefore)
+    // A second reconcile with the same bad geometry is a no-op (negative cache).
+    reconcileNiivueAnnotations('vp-neg', svc.servicesManager)
+    expect(svc.added.length).toBe(addsBefore)
   })
 
   it('does not record a row when OHIF rejects the measurement', () => {
@@ -738,6 +788,89 @@ describe('reflectNiivueAnnotation', () => {
       stats: { area: 999, min: 5, mean: 50, max: 200, stdDev: 12 },
     } as unknown as VectorAnnotation
     reconcileNiivueAnnotations('vp-loop', sm)
+    expect(addCalls - addsAfterFirst).toBeLessThan(5)
+  })
+
+  it('re-entrancy guard alone bounds recursion when each echo label differs (R3-6)', () => {
+    // Every echo carries a DIFFERENT label, so the unchanged-text guard never
+    // fires — only the reconcile re-entrancy guard prevents infinite recursion.
+    // This isolates that guard (the other test also passes on the text guard).
+    const anno = ellipse('y') as unknown as { id: string; text?: string }
+    const annos = [anno as unknown as VectorAnnotation]
+    let addCalls = 0
+    let labelSeq = 0
+    let updatedCb:
+      | ((p: { measurement: { uid: string; label?: string } }) => void)
+      | undefined
+    const seen = new Set<string>()
+    let sm: OhifExtensionParams['servicesManager']
+    const nv = {
+      ...stubNiivue(),
+      annotations: annos,
+      setAnnotationText: (id: string, text: string) => {
+        const a = annos.find((x) => x.id === id) as
+          | { text?: string }
+          | undefined
+        if (a) a.text = text || undefined
+        reconcileNiivueAnnotations('vp-loop2', sm)
+      },
+    }
+    register('vp-loop2', nv)
+    updateNiivueViewport('vp-loop2', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const measurementService = {
+      createSource: () => ({}),
+      addMapping: () => {},
+      addRawMeasurement: (
+        _s: unknown,
+        _t: string,
+        data: { measurement: unknown },
+        toSchema: (d: { measurement: unknown }) => { uid: string },
+      ) => {
+        addCalls += 1
+        const m = toSchema(data)
+        const isUpdate = seen.has(m.uid)
+        seen.add(m.uid)
+        // Always echo a brand-new label so the unchanged-text guard cannot help.
+        if (isUpdate)
+          updatedCb?.({ measurement: { uid: m.uid, label: `L${++labelSeq}` } })
+        return m.uid
+      },
+      remove: () => {},
+      EVENTS: { MEASUREMENT_UPDATED: 'updated' },
+      subscribe: (
+        evt: string,
+        cb: (p: { measurement: { uid: string; label?: string } }) => void,
+      ) => {
+        if (evt === 'updated') updatedCb = cb
+        return {
+          unsubscribe: () => {
+            updatedCb = undefined
+          },
+        }
+      },
+    }
+    sm = {
+      services: {
+        viewportGridService: { getActiveViewportId: () => 'vp-loop2' },
+        measurementService,
+        displaySetService: {
+          getDisplaySetsForSeries: (uid: string) =>
+            backing.filter((d) => d.SeriesInstanceUID === uid),
+        },
+      },
+    } as unknown as OhifExtensionParams['servicesManager']
+    subscribeOhifLabelSync(sm)
+    reflectNiivueAnnotation('vp-loop2', sm, annos[0] as VectorAnnotation)
+    const addsAfterFirst = addCalls
+    annos[0] = {
+      ...(ellipse('y') as object),
+      stats: { area: 42, min: 5, mean: 50, max: 200, stdDev: 12 },
+    } as unknown as VectorAnnotation
+    reconcileNiivueAnnotations('vp-loop2', sm)
     expect(addCalls - addsAfterFirst).toBeLessThan(5)
   })
 

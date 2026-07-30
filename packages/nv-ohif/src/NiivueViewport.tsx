@@ -68,7 +68,8 @@ interface ToolGroupServiceLike {
  * display set to the right NiiVue load path (see {@link classifyDisplaySet}):
  *   - a NIfTI/volume URL loads directly,
  *   - a volumetric DICOM series is fetched + converted with dcm2niix, then loaded,
- *   - whole-slide (SM) series are destined for NVSlide (not yet wired),
+ *   - whole-slide (SM) series render with NVSlide (JPEG / TILED_FULL; JPEG 2000 and
+ *     TILED_SPARSE are declined with a note),
  *   - anything else shows an explanatory note.
  *
  * NiiVue's core is framework-agnostic, so this owns a plain <canvas> + a `NiiVue`

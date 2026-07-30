@@ -51,8 +51,10 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 - Loads a display set whose URL is a NiiVue-readable volume (`.nii/.nii.gz`, `.nrrd`,
   `.mgz`, `.mha`, `.mif`, …) via `nv.loadVolumes(...)`, opening in multiplanar.
 - Loads a **DICOM** series by fetching it and converting to NIfTI with
-  `@niivue/dcm2niix` (see [DICOM support](#dicom-support) for the dependency caveat);
-  a whole-slide (SM) series shows a placeholder (NVSlide path not wired yet).
+  `@niivue/dcm2niix` (see [DICOM support](#dicom-support) for the dependency caveat).
+- Renders **whole-slide (SM)** series with **NVSlide** (tiled deep-zoom) on its own
+  canvas: **JPEG, TILED_FULL** slides are supported; **JPEG 2000** and **TILED_SPARSE**
+  are declined with an explanatory note (see [Whole-slide imaging](#whole-slide-imaging)).
 - Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag,
   and reflects a manual NiiVue window/level drag onto any sibling OHIF viewport
   showing the same series (`setViewportWindowLevel`).
@@ -170,6 +172,25 @@ and it now works for `npm`-install consumers too.
 > fix and DICOM conversion works out of the box. (Versions `1.2.0` and the
 > `1.3.0-dev.0` prerelease predate the fix and are excluded by the pin.)
 
+## Whole-slide imaging
+
+A whole-slide (SM) series renders with **NVSlide** (tiled deep-zoom) on its own
+WebGL2 canvas, overlaid on the NiiVue viewport. The manifest is built from the
+DICOM tile pyramid (`buildWsiManifest`) and tiles are fetched on demand
+(`DicomWsiTileSource`).
+
+Support boundary:
+
+- **Supported:** **JPEG**-encoded tiles with **TILED_FULL** frame organization.
+- **Declined (with an in-viewport note, not a crash):**
+  - **JPEG 2000** tiles (the viewer cannot decode them yet).
+  - **TILED_SPARSE** frame organization (the tile grid assumes row-major
+    TILED_FULL order, so a sparse slide would render scrambled).
+  - A slide with no tiled (VOLUME) pyramid levels.
+
+The slide viewport supports pan/zoom and the whole-slide ruler. A NVSlide path for
+2-D single-frame images is still a TODO (see `PLAN.md`).
+
 ## Compatibility
 
 - **OHIF**: `^3.12` (developed against 3.12.6; also exercised against OHIF
@@ -181,7 +202,9 @@ and it now works for `npm`-install consumers too.
 ## Roadmap
 
 See `PLAN.md`. Landed: NIfTI + DICOM rendering, a toolbar for views / clip plane /
-overlay / window-level (both directions) / colormap, and the full **Measurement**
-tool group (see [Measurement tools](#measurement-tools)). Next: segmentation
-overlays, mesh/surface overlay, and **NVSlide for 2D / whole-slide (SM)** series (see
-the `## TODO — NVSlide for 2D` section in `PLAN.md`).
+overlay / window-level (both directions) / colormap, the full **Measurement** tool
+group (see [Measurement tools](#measurement-tools)), and **NVSlide whole-slide (SM)
+rendering** for JPEG / TILED_FULL slides (see [Whole-slide imaging](#whole-slide-imaging)).
+Next: segmentation overlays, mesh/surface overlay, JPEG 2000 / TILED_SPARSE slide
+support, and **NVSlide for 2-D** single-frame series (see the
+`## TODO — NVSlide for 2D` section in `PLAN.md`).

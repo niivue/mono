@@ -249,3 +249,18 @@ export function mergeAnnotations(
 
   return result
 }
+
+/**
+ * Store a completed vector annotation using the configured overlap policy.
+ * Measurement hosts disable merging so every measurement retains its own id,
+ * geometry, and statistics even when contours overlap.
+ */
+export function storeAnnotation(
+  existing: VectorAnnotation[],
+  newAnnotation: VectorAnnotation,
+  mergesOverlaps: boolean,
+): VectorAnnotation[] {
+  return mergesOverlaps
+    ? mergeAnnotations(existing, newAnnotation)
+    : [...existing, newAnnotation]
+}

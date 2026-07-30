@@ -7,6 +7,7 @@ import {
   clearNiivueAnnotations,
   findOverlayCandidate,
   getNiivueCommandsModule,
+  jumpToNiivueMeasurement,
   NIIVUE_CLIP_PLANES,
   NIIVUE_SLICE_TYPES,
   OVERLAY_COLORMAP,
@@ -36,6 +37,8 @@ function stubNiivue() {
   const volumeUpdates: Array<{ index: number; opts: Record<string, unknown> }> =
     []
   const recalculated: number[] = []
+  const crosshairTargets: Array<[number, number, number]> = []
+  const selectedAnnotations: Array<string | null> = []
   return {
     sliceType: SLICE_TYPE.MULTIPLANAR as number,
     primaryDragMode: DRAG_MODE.crosshair as number,
@@ -53,6 +56,14 @@ function stubNiivue() {
     clipPlanes,
     volumeUpdates,
     recalculated,
+    crosshairTargets,
+    selectedAnnotations,
+    setCrosshairPos(position: [number, number, number]) {
+      crosshairTargets.push(position)
+    },
+    selectAnnotation(id: string | null) {
+      selectedAnnotations.push(id)
+    },
     setClipPlane(dae: number[]) {
       clipPlanes.push(dae)
     },
@@ -490,7 +501,7 @@ describe('reflectNiivueAnnotation', () => {
     expect((svc.added[1]?.data.schema as { label: string }).label).toBe('')
   })
 
-  it('keeps the row + uid on a failed update and stops re-attempting (R3-0)', () => {
+  it('removes a stale row when changed geometry is permanently unsupported', () => {
     const nv = stubNiivue()
     register('vp-neg', nv)
     updateNiivueViewport('vp-neg', {
@@ -516,12 +527,33 @@ describe('reflectNiivueAnnotation', () => {
       } as unknown as VectorAnnotation,
     ]
     reconcileNiivueAnnotations('vp-neg', svc.servicesManager)
-    // The prior row is NOT removed (uid preserved) and nothing new was added.
-    expect(svc.removed).toHaveLength(0)
+    // The prior row must be removed rather than misrepresenting the new geometry.
+    expect(svc.removed).toHaveLength(1)
     expect(svc.added.length).toBe(addsBefore)
     // A second reconcile with the same bad geometry is a no-op (negative cache).
     reconcileNiivueAnnotations('vp-neg', svc.servicesManager)
     expect(svc.added.length).toBe(addsBefore)
+    expect(svc.removed).toHaveLength(1)
+  })
+
+  it('retries a transient failure when the backing series becomes available', () => {
+    const nv = stubNiivue()
+    const availableBacking: typeof backing = []
+    register('vp-retry', nv)
+    updateNiivueViewport('vp-retry', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-retry', availableBacking)
+    nv.annotations = [ellipse('retry')]
+
+    reconcileNiivueAnnotations('vp-retry', svc.servicesManager)
+    expect(svc.added).toHaveLength(0)
+
+    availableBacking.push(...backing)
+    reconcileNiivueAnnotations('vp-retry', svc.servicesManager)
+    expect(svc.added).toHaveLength(1)
   })
 
   it('does not record a row when OHIF rejects the measurement', () => {
@@ -674,6 +706,34 @@ describe('reflectNiivueAnnotation', () => {
     expect(texts).toHaveLength(1)
   })
 
+  it('jumps to the owning viewport and selects the reflected annotation', () => {
+    const nv = stubNiivue()
+    const activated: string[] = []
+    register('vp-jump', nv)
+    updateNiivueViewport('vp-jump', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-jump', backing)
+    const servicesMap = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services as Record<string, unknown>
+    servicesMap.viewportGridService = {
+      setActiveViewportId: (viewportId: string) => activated.push(viewportId),
+    }
+    const annotation = ellipse('jump')
+    nv.annotations = [annotation]
+    reflectNiivueAnnotation('vp-jump', svc.servicesManager, annotation)
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+
+    jumpToNiivueMeasurement(uid, svc.servicesManager)
+
+    expect(activated).toEqual(['vp-jump'])
+    expect(nv.crosshairTargets).toEqual([[10, 20, 30]])
+    expect(nv.selectedAnnotations).toEqual(['jump'])
+  })
+
   it('shares one OHIF label subscription across viewports', () => {
     let subscriptions = 0
     let unsubscriptions = 0
@@ -699,6 +759,48 @@ describe('reflectNiivueAnnotation', () => {
     expect(unsubscriptions).toBe(0)
     releaseSecond?.()
     expect(unsubscriptions).toBe(1)
+  })
+
+  it('handles OHIF jump events through the shared measurement subscription', () => {
+    const nv = stubNiivue()
+    const callbacks = new Map<string, (payload: unknown) => void>()
+    register('vp-jump-event', nv)
+    updateNiivueViewport('vp-jump-event', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-jump-event', backing)
+    const servicesMap = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services as Record<string, unknown>
+    const measurementService = servicesMap.measurementService as {
+      EVENTS?: Record<string, string>
+      subscribe?: (
+        event: string,
+        callback: (payload: unknown) => void,
+      ) => {
+        unsubscribe: () => void
+      }
+    }
+    measurementService.EVENTS = {
+      JUMP_TO_MEASUREMENT: 'jump',
+    }
+    measurementService.subscribe = (event, callback) => {
+      callbacks.set(event, callback)
+      return { unsubscribe: () => callbacks.delete(event) }
+    }
+    const annotation = ellipse('jump-event')
+    nv.annotations = [annotation]
+    reflectNiivueAnnotation('vp-jump-event', svc.servicesManager, annotation)
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    const release = subscribeOhifLabelSync(svc.servicesManager)
+
+    callbacks.get('jump')?.({ measurement: { uid } })
+
+    expect(nv.crosshairTargets).toEqual([[10, 20, 30]])
+    expect(nv.selectedAnnotations).toEqual(['jump-event'])
+    release?.()
   })
 
   it('does not infinitely recurse when an update echoes MEASUREMENT_UPDATED (R2-0)', () => {

@@ -203,9 +203,10 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
     if (vol)
       newAnn.stats = Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
   }
-  ctrl.model.annotations = Annotation.mergeAnnotations(
+  ctrl.model.annotations = Annotation.storeAnnotation(
     ctrl.model.annotations,
     newAnn,
+    cfg.mergesOverlaps,
   )
   ctrl.emit('annotationAdded', { annotation: newAnn })
   ctrl.emit('annotationChanged', { action: 'draw' })
@@ -303,9 +304,10 @@ function commitBidirectional(ctrl: NiiVue, long: Axis, short: Axis): void {
   const ann = bidirectionalAnnotation(ctrl, long, short)
   if (!ann) return
   ctrl._annotationUndoStack.push(ctrl.model.annotations)
-  ctrl.model.annotations = Annotation.mergeAnnotations(
+  ctrl.model.annotations = Annotation.storeAnnotation(
     ctrl.model.annotations,
     ann,
+    ctrl.model.annotation.mergesOverlaps,
   )
   ctrl.emit('annotationAdded', { annotation: ann })
   ctrl.emit('annotationChanged', { action: 'draw' })
@@ -1106,9 +1108,10 @@ function finish3DAnnotationStroke(ctrl: NiiVue): void {
     cfg.style,
     anchorMM,
   )
-  ctrl.model.annotations = Annotation.mergeAnnotations(
+  ctrl.model.annotations = Annotation.storeAnnotation(
     ctrl.model.annotations,
     newAnn,
+    cfg.mergesOverlaps,
   )
   ctrl.emit('annotationAdded', { annotation: newAnn })
   ctrl.emit('annotationChanged', { action: 'draw' })
@@ -1674,9 +1677,10 @@ export function initInteraction(ctrl: NiiVue): void {
                       Annotation.computeAnnotationStats(newAnn, vol) ??
                       undefined
                 }
-                ctrl.model.annotations = Annotation.mergeAnnotations(
+                ctrl.model.annotations = Annotation.storeAnnotation(
                   ctrl.model.annotations,
                   newAnn,
+                  cfg.mergesOverlaps,
                 )
                 ctrl.emit('annotationAdded', { annotation: newAnn })
                 ctrl.emit('annotationChanged', { action: 'draw' })
@@ -1732,9 +1736,10 @@ export function initInteraction(ctrl: NiiVue): void {
                 cfg.style,
                 ctrl._annotationAnchorMM,
               )
-              ctrl.model.annotations = Annotation.mergeAnnotations(
+              ctrl.model.annotations = Annotation.storeAnnotation(
                 ctrl.model.annotations,
                 newAnn,
+                cfg.mergesOverlaps,
               )
               ctrl.emit('annotationAdded', { annotation: newAnn })
               ctrl.emit('annotationChanged', { action: 'draw' })

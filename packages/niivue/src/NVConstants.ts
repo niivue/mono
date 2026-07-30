@@ -226,6 +226,7 @@ export const ANNOTATION_DEFAULTS: AnnotationConfig = {
   activeLabel: 1,
   activeGroup: 'default',
   brushRadius: 2.0,
+  mergesOverlaps: true,
   isErasing: false,
   isVisibleIn3D: false,
   tool: 'freehand',

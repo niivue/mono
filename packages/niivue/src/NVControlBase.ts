@@ -1568,6 +1568,15 @@ export default class NiiVue extends EventTarget {
     this.emit('change', { property: 'annotationBrushRadius', value: v })
   }
 
+  get annotationMergesOverlaps(): boolean {
+    return this.model.annotation.mergesOverlaps
+  }
+
+  set annotationMergesOverlaps(v: boolean) {
+    this.model.annotation.mergesOverlaps = v
+    this.emit('change', { property: 'annotationMergesOverlaps', value: v })
+  }
+
   get annotationIsErasing(): boolean {
     return this.model.annotation.isErasing
   }

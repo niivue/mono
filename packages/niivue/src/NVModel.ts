@@ -383,6 +383,9 @@ export default class NVModel {
       ...(options.annotationBrushRadius !== undefined && {
         brushRadius: options.annotationBrushRadius,
       }),
+      ...(options.annotationMergesOverlaps !== undefined && {
+        mergesOverlaps: options.annotationMergesOverlaps,
+      }),
       ...(options.annotationIsErasing !== undefined && {
         isErasing: options.annotationIsErasing,
       }),

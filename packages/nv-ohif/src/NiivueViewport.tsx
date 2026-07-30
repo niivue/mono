@@ -42,6 +42,9 @@ const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   // WebGPU device churn when OHIF mounts/unmounts viewports). Revisit once WebGPU
   // multi-instance handling is proven in-app.
   backend: 'webgl2',
+  // OHIF panel measurements are independent records. Never union/cut them when
+  // their contours overlap, because that destroys measurement identity/stats.
+  annotationMergesOverlaps: false,
 }
 
 type Status =
@@ -323,6 +326,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     const seedWindowLevel = () => {
       if (cancelled) return
       updateNiivueViewport(viewportId, { windowLevel: readBaseWindowLevel(nv) })
+      // A reflection may have failed while OHIF's backing series or the converted
+      // volume was still becoming ready. Retry after the load boundary even when
+      // annotation geometry itself has not changed.
+      reconcileNiivueAnnotations(viewportId, servicesManagerRef.current)
       // The volume-gated toolbar buttons (Views, Clip, W/L, ...) were evaluated
       // at attach time when no volume was loaded yet, so they came up disabled.
       // Now that the volume is in (esp. after the async dcm2niix conversion),

@@ -383,10 +383,16 @@ interface MeasurementServiceLike {
     toMeasurementSchema: (data: { measurement: unknown }) => unknown,
   ) => string | undefined
   remove?: (uid: string, source?: MeasurementSourceLike) => void
-  EVENTS?: { MEASUREMENT_UPDATED?: string }
+  EVENTS?: {
+    MEASUREMENT_UPDATED?: string
+    JUMP_TO_MEASUREMENT?: string
+  }
   subscribe?: (
     event: string,
-    cb: (payload: { measurement?: { uid?: string; label?: string } }) => void,
+    cb: (payload: {
+      viewportId?: string
+      measurement?: { uid?: string; label?: string }
+    }) => void,
   ) => { unsubscribe?: () => void }
 }
 // OHIF value types for the ROI / point tools (literals, so we do not depend on
@@ -603,11 +609,9 @@ function annotationPointsLps(
 // to one annotation never re-mints another's uid (which would drop OHIF's panel
 // selection / jump on a row the user never touched).
 interface ReflectedRow {
-  // Absent when the annotation is currently unreflectable (no backing series yet,
-  // or a geometry OHIF cannot represent). We still store the hash as a NEGATIVE
-  // CACHE so we do not re-attempt the failing reflect on every event, and — for a
-  // shape that WAS reflected and then failed an update — we keep the prior uid so
-  // the row + its selection/tracking identity are not churned.
+  // Absent only when the current geometry is permanently unsupported. Transient
+  // failures are never cached, because service/display-set readiness can change
+  // without changing annotation content.
   uid?: string
   hash: string
 }
@@ -726,12 +730,17 @@ function buildAnnotationDisplay(
  * Intensity stats are the NiiVue volume's sampled values in the base modality's
  * unit; area is in mm^2 (voxel-spacing aware, from NiiVue's annotation stats).
  */
-export function reflectNiivueAnnotation(
+type ReflectionResult =
+  | { status: 'success' }
+  | { status: 'permanentlyUnsupported' }
+  | { status: 'retryableFailure' }
+
+function reflectNiivueAnnotationResult(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
   annotation: VectorAnnotation,
   existingUid?: string,
-): boolean {
+): ReflectionResult {
   const services = ohifServices(servicesManager)
   const measurementService = services?.measurementService as
     | MeasurementServiceLike
@@ -743,11 +752,11 @@ export function reflectNiivueAnnotation(
     !measurementService?.addRawMeasurement ||
     !displaySetService?.getDisplaySetsForSeries
   )
-    return false
+    return { status: 'retryableFailure' }
   // Freehand annotations predate shape metadata and are represented by polygons.
   const toolType = annotationToolType(annotation)
   const mapping = toolType ? ANNOTATION_TO_OHIF[toolType] : undefined
-  if (!mapping) return false
+  if (!mapping) return { status: 'permanentlyUnsupported' }
   // OHIF's PlanarFreehandROI measurement schema carries one polyline and has no
   // representation for disconnected components or holes. Do not silently export
   // only the first outer ring while reporting stats for different geometry.
@@ -756,11 +765,11 @@ export function reflectNiivueAnnotation(
     (annotation.polygons.length !== 1 ||
       (annotation.polygons[0]?.holes.length ?? 0) > 0)
   )
-    return false
+    return { status: 'permanentlyUnsupported' }
   const entry = getNiivueEntry(viewportId)
-  if (!entry) return false
+  if (!entry) return { status: 'retryableFailure' }
   const backing = resolveBackingSeries(entry, displaySetService)
-  if (!backing?.SeriesInstanceUID) return false
+  if (!backing?.SeriesInstanceUID) return { status: 'retryableFailure' }
 
   const source = niivueMeasurementSource(measurementService)
   const uid =
@@ -769,7 +778,8 @@ export function reflectNiivueAnnotation(
     | string
     | undefined
   const points = annotationPointsLps(annotation)
-  if (points.length < (mapping.minPoints ?? 0)) return false
+  if (points.length < (mapping.minPoints ?? 0))
+    return { status: 'permanentlyUnsupported' }
   const unit = modalityUnit(entry)
   const { primary, data } = buildAnnotationDisplay(
     mapping.toolName,
@@ -782,31 +792,36 @@ export function reflectNiivueAnnotation(
   // the label sync onto the canvas, making a user-cleared label impossible.
   const rowLabel = annotation.text ?? ''
 
-  const acceptedUid = measurementService.addRawMeasurement(
-    source,
-    mapping.toolName,
-    {
-      uid,
-      // addRawMeasurement unconditionally destructures data.annotation.data.
-      annotation: { data: {} },
-      measurement: {
+  let acceptedUid: string | undefined
+  try {
+    acceptedUid = measurementService.addRawMeasurement(
+      source,
+      mapping.toolName,
+      {
         uid,
-        toolName: mapping.toolName,
-        label: rowLabel,
-        referenceSeriesUID: backing.SeriesInstanceUID,
-        referenceStudyUID: backing.StudyInstanceUID as string | undefined,
-        displaySetInstanceUID: backing.displaySetInstanceUID,
-        FrameOfReferenceUID: forUID,
-        points,
-        displayText: { primary, secondary: [] },
-        data,
-        type: mapping.valueType,
-        metadata: { toolName: mapping.toolName, FrameOfReferenceUID: forUID },
+        // addRawMeasurement unconditionally destructures data.annotation.data.
+        annotation: { data: {} },
+        measurement: {
+          uid,
+          toolName: mapping.toolName,
+          label: rowLabel,
+          referenceSeriesUID: backing.SeriesInstanceUID,
+          referenceStudyUID: backing.StudyInstanceUID as string | undefined,
+          displaySetInstanceUID: backing.displaySetInstanceUID,
+          FrameOfReferenceUID: forUID,
+          points,
+          displayText: { primary, secondary: [] },
+          data,
+          type: mapping.valueType,
+          metadata: { toolName: mapping.toolName, FrameOfReferenceUID: forUID },
+        },
       },
-    },
-    (d) => d.measurement,
-  )
-  if (!acceptedUid) return false
+      (d) => d.measurement,
+    )
+  } catch {
+    return { status: 'retryableFailure' }
+  }
+  if (!acceptedUid) return { status: 'retryableFailure' }
 
   let byView = reflectedAnnotations.get(viewportId)
   if (!byView) {
@@ -821,7 +836,23 @@ export function reflectNiivueAnnotation(
     viewportId,
     annotationId: annotation.id,
   })
-  return true
+  return { status: 'success' }
+}
+
+export function reflectNiivueAnnotation(
+  viewportId: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
+  annotation: VectorAnnotation,
+  existingUid?: string,
+): boolean {
+  return (
+    reflectNiivueAnnotationResult(
+      viewportId,
+      servicesManager,
+      annotation,
+      existingUid,
+    ).status === 'success'
+  )
 }
 
 /**
@@ -847,11 +878,60 @@ export function applyOhifLabelToAnnotation(
   entry.nv.setAnnotationText(ref.annotationId, label ?? '')
 }
 
+/** Navigate the owning NiiVue viewport to a reflected OHIF measurement. */
+export function jumpToNiivueMeasurement(
+  measurementUid: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
+): void {
+  const ref = measurementToAnnotation.get(measurementUid)
+  if (!ref) return
+  const entry = getNiivueEntry(ref.viewportId)
+  const annotation = entry?.nv.annotations.find(
+    (candidate) => candidate.id === ref.annotationId,
+  )
+  if (!entry || !annotation) return
+
+  const services = ohifServices(servicesManager)
+  const viewportGridService = services?.viewportGridService as
+    | { setActiveViewportId?: (viewportId: string) => void }
+    | undefined
+  viewportGridService?.setActiveViewportId?.(ref.viewportId)
+
+  let target = annotation.anchorMM
+  if (!target) {
+    const shape = annotation.shape
+    if (shape) {
+      target = slice2DToMM(
+        {
+          x: (shape.start.x + shape.end.x) / 2,
+          y: (shape.start.y + shape.end.y) / 2,
+        },
+        annotation.slicePosition,
+        annotation.sliceType,
+      )
+    } else {
+      const outer = annotation.polygons[0]?.outer
+      if (outer && outer.length > 0) {
+        const sum = outer.reduce(
+          (acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }),
+          { x: 0, y: 0 },
+        )
+        target = slice2DToMM(
+          { x: sum.x / outer.length, y: sum.y / outer.length },
+          annotation.slicePosition,
+          annotation.sliceType,
+        )
+      }
+    }
+  }
+  if (target) entry.nv.setCrosshairPos(target)
+  entry.nv.selectAnnotation(annotation.id)
+}
+
 /**
- * Subscribe to OHIF measurement-label edits and push them onto the matching
- * NiiVue annotation as free text (so editing a row's label in the panel labels
- * the shape on the viewport). Returns an unsubscribe, or undefined if the
- * MeasurementService does not expose the event.
+ * Subscribe once per MeasurementService to OHIF events handled by NiiVue:
+ * label edits are pushed to annotation text, and panel jumps navigate to the
+ * owning annotation. The historical function name remains part of the API.
  */
 export function subscribeOhifLabelSync(
   servicesManager: OhifExtensionParams['servicesManager'],
@@ -859,25 +939,39 @@ export function subscribeOhifLabelSync(
   const svc = ohifServices(servicesManager)?.measurementService as
     | MeasurementServiceLike
     | undefined
-  const evt = svc?.EVENTS?.MEASUREMENT_UPDATED
-  if (!svc?.subscribe || !evt) return undefined
+  const labelEvent = svc?.EVENTS?.MEASUREMENT_UPDATED
+  const jumpEvent = svc?.EVENTS?.JUMP_TO_MEASUREMENT
+  if (!svc?.subscribe || (!labelEvent && !jumpEvent)) return undefined
   const existing = labelSyncSubscriptions.get(svc as object)
   if (existing) {
     existing.refCount += 1
     return () => releaseLabelSync(svc as object)
   }
-  const sub = svc.subscribe(evt, (payload) => {
-    const m = payload?.measurement
-    // Only a real label field is a label edit. An update that OMITS label (a
-    // tracking / cachedStats change) must not be read as an explicit blank, which
-    // would wipe the user's on-canvas text (round-3 R3-4). An empty string IS a
-    // deliberate clear and is honored.
-    if (m?.uid && typeof m.label === 'string')
-      applyOhifLabelToAnnotation(m.uid, m.label)
-  })
+  const subscriptions: Array<{ unsubscribe?: () => void }> = []
+  if (labelEvent) {
+    subscriptions.push(
+      svc.subscribe(labelEvent, (payload) => {
+        const m = payload?.measurement
+        // Only a real label field is a label edit. An update that OMITS label (a
+        // tracking / cachedStats change) must not be read as an explicit blank.
+        if (m?.uid && typeof m.label === 'string')
+          applyOhifLabelToAnnotation(m.uid, m.label)
+      }),
+    )
+  }
+  if (jumpEvent) {
+    subscriptions.push(
+      svc.subscribe(jumpEvent, (payload) => {
+        const uid = payload?.measurement?.uid
+        if (uid) jumpToNiivueMeasurement(uid, servicesManager)
+      }),
+    )
+  }
   labelSyncSubscriptions.set(svc as object, {
     refCount: 1,
-    unsubscribe: () => sub?.unsubscribe?.(),
+    unsubscribe: () => {
+      for (const subscription of subscriptions) subscription?.unsubscribe?.()
+    },
   })
   return () => releaseLabelSync(svc as object)
 }
@@ -897,7 +991,11 @@ export function removeNiivueAnnotation(
   // uid — nothing to remove in OHIF. Retaining bookkeeping when the host lacks
   // remove would leak the maps unbounded across mount/unmount (round-3 R3-3).
   if (row.uid) {
-    measurementService?.remove?.(row.uid)
+    try {
+      measurementService?.remove?.(row.uid)
+    } catch {
+      // The local maps must still be released when host cleanup fails.
+    }
     measurementToAnnotation.delete(row.uid)
   }
   byView.delete(annotationId)
@@ -915,7 +1013,11 @@ export function clearNiivueAnnotations(
     ?.measurementService as MeasurementServiceLike | undefined
   for (const { uid } of byView.values()) {
     if (!uid) continue
-    measurementService?.remove?.(uid)
+    try {
+      measurementService?.remove?.(uid)
+    } catch {
+      // Continue clearing the remaining rows and local bookkeeping.
+    }
     measurementToAnnotation.delete(uid)
   }
   reflectedAnnotations.delete(viewportId)
@@ -936,11 +1038,8 @@ export function clearNiivueAnnotations(
  *   - annotation unchanged -> leave its row (keeps its uid, so OHIF panel
  *                             selection / jump on rows the user did not edit is
  *                             preserved)
- *   - reflect fails        -> do NOT delete the row; record the current hash as a
- *                             negative cache (keeping any prior uid) so we neither
- *                             churn the uid nor re-attempt the failing reflect on
- *                             every event. A later change to a reflectable shape
- *                             updates it in place (round-3 R3-0).
+ *   - unsupported geometry -> remove any stale row and negative-cache the hash
+ *   - transient failure    -> retain prior successful state and retry later
  *
  * Re-entrancy guarded: an update-in-place reflect can synchronously broadcast
  * MEASUREMENT_UPDATED, whose handler may emit annotationChanged and re-enter here.
@@ -975,22 +1074,21 @@ export function reconcileNiivueAnnotations(
       const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
       const hash = annotationContentHash(annotation)
       if (existing && existing.hash === hash) continue
-      // reflect stores {uid, hash} on success (reusing existing?.uid to update in
-      // place). On failure, negative-cache the hash + keep any prior uid so the
-      // row is not churned/deleted and we stop re-attempting until it changes.
-      const ok = reflectNiivueAnnotation(
+      const result = reflectNiivueAnnotationResult(
         viewportId,
         servicesManager,
         annotation,
         existing?.uid,
       )
-      if (!ok) {
+      if (result.status === 'permanentlyUnsupported') {
+        if (existing?.uid)
+          removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
         let map = reflectedAnnotations.get(viewportId)
         if (!map) {
           map = new Map()
           reflectedAnnotations.set(viewportId, map)
         }
-        map.set(annotation.id, { uid: existing?.uid, hash })
+        map.set(annotation.id, { hash })
       }
     }
   } finally {

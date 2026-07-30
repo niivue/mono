@@ -941,6 +941,12 @@ export type NiiVueOptions = {
   annotationActiveLabel?: number
   annotationActiveGroup?: string
   annotationBrushRadius?: number
+  /**
+   * Union same-label vector annotations and cut different-label annotations when
+   * they overlap. Disable for measurement integrations where every annotation
+   * must retain an independent identity.
+   */
+  annotationMergesOverlaps?: boolean
   annotationIsErasing?: boolean
   annotationIsVisibleIn3D?: boolean
   annotationStyle?: AnnotationStyle
@@ -1325,6 +1331,7 @@ export type AnnotationConfig = {
   activeLabel: number
   activeGroup: string
   brushRadius: number
+  mergesOverlaps: boolean
   isErasing: boolean
   isVisibleIn3D: boolean
   tool: AnnotationTool

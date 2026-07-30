@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import {
+  applyDefaultAnnotationText,
   applyOhifLabelToAnnotation,
   clearNiivueAnnotations,
   findOverlayCandidate,
@@ -15,6 +16,7 @@ import {
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
   resolveWindowLevel,
+  subscribeOhifLabelSync,
   syncNiivueWindowLevelToOhif,
 } from './commands'
 import {
@@ -166,6 +168,7 @@ describe('niivueSetMeasurementMode', () => {
 function measurementServices(
   viewportId: string,
   backing: Record<string, unknown>[],
+  acceptMeasurement = true,
 ) {
   const added: Array<{ data: Record<string, unknown> }> = []
   const mappings: Array<{ annotationType: string }> = []
@@ -184,12 +187,14 @@ function measurementServices(
           data: Record<string, unknown>,
           toMeasurementSchema: (d: { measurement: unknown }) => unknown,
         ) => {
+          if (!acceptMeasurement) return undefined
           added.push({
             data: {
               ...data,
               schema: toMeasurementSchema(data as { measurement: unknown }),
             },
           })
+          return data.uid as string
         },
         remove: (uid: string) => {
           removed.push(uid)
@@ -235,6 +240,17 @@ describe('reflectNiivueAnnotation', () => {
         end: { x: 1, y: 1 },
       },
     }) as unknown as VectorAnnotation
+
+  it('defaults new annotation text to its one-based ROI count', () => {
+    const first = ellipse('first')
+    const second = ellipse('second')
+    applyDefaultAnnotationText(second, [first, second])
+    expect(second.text).toBe('ROI #2')
+
+    second.text = 'Custom label'
+    applyDefaultAnnotationText(second, [first, second])
+    expect(second.text).toBe('Custom label')
+  })
 
   function setup(viewportId: string) {
     register(viewportId, stubNiivue())
@@ -354,14 +370,49 @@ describe('reflectNiivueAnnotation', () => {
     ])
   })
 
-  it('does not reflect a tool with no OHIF mapping (freehand)', () => {
+  it('reflects freehand as a PlanarFreehandROI polyline', () => {
     const svc = setup('vp-a2')
     const anno = ellipse('b')
-    ;(anno.shape as { type: string }).type = 'freehand'
+    anno.shape = undefined
+    anno.polygons = [
+      {
+        outer: [
+          { x: 0, y: 0 },
+          { x: 2, y: 0 },
+          { x: 1, y: 2 },
+        ],
+        holes: [],
+      },
+    ]
     expect(reflectNiivueAnnotation('vp-a2', svc.servicesManager, anno)).toBe(
-      false,
+      true,
     )
+    const measurement = svc.added[0]?.data.schema as {
+      toolName: string
+      points: number[][]
+    }
+    expect(measurement.toolName).toBe('PlanarFreehandROI')
+    expect(measurement.points).toHaveLength(3)
+  })
+
+  it('does not record a row when OHIF rejects the measurement', () => {
+    register('vp-rejected', stubNiivue())
+    updateNiivueViewport('vp-rejected', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-rejected', backing, false)
+    expect(
+      reflectNiivueAnnotation(
+        'vp-rejected',
+        svc.servicesManager,
+        ellipse('rejected'),
+      ),
+    ).toBe(false)
     expect(svc.added).toHaveLength(0)
+    removeNiivueAnnotation('vp-rejected', svc.servicesManager, 'rejected')
+    expect(svc.removed).toHaveLength(0)
   })
 
   it('does not reflect an incomplete shape with too few declared points', () => {
@@ -414,7 +465,7 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.added).toHaveLength(2)
   })
 
-  it('reconcile refreshes a changed row without re-minting untouched rows', () => {
+  it('reconcile updates a changed row without re-minting any uid', () => {
     const nv = stubNiivue()
     register('vp-a7', nv)
     updateNiivueViewport('vp-a7', {
@@ -438,14 +489,15 @@ describe('reflectNiivueAnnotation', () => {
     }
     nv.annotations = [aChanged, ellipse('B')]
     reconcileNiivueAnnotations('vp-a7', svc.servicesManager)
-    // Only A's old row is removed (its content changed); B is never touched.
-    expect(svc.removed).toEqual([aUid])
-    expect(svc.removed).not.toContain(bUid)
-    // A is re-added once (fresh stats); B is not re-added.
+    expect(svc.removed).toHaveLength(0)
+    // A is updated once with the same uid; B is not submitted again.
     expect(svc.added).toHaveLength(3)
     const refreshed = svc.added[2]?.data.schema as {
+      uid: string
       data: { area: number }
     }
+    expect(refreshed.uid).toBe(aUid)
+    expect(refreshed.uid).not.toBe(bUid)
     expect(refreshed.data.area).toBe(999)
   })
 
@@ -469,6 +521,33 @@ describe('reflectNiivueAnnotation', () => {
     // An unknown uid is a no-op.
     applyOhifLabelToAnnotation('not-ours', 'x')
     expect(texts).toHaveLength(1)
+  })
+
+  it('shares one OHIF label subscription across viewports', () => {
+    let subscriptions = 0
+    let unsubscriptions = 0
+    const servicesManager = {
+      services: {
+        measurementService: {
+          EVENTS: { MEASUREMENT_UPDATED: 'measurement-updated' },
+          subscribe: () => {
+            subscriptions += 1
+            return {
+              unsubscribe: () => {
+                unsubscriptions += 1
+              },
+            }
+          },
+        },
+      },
+    } as unknown as OhifExtensionParams['servicesManager']
+    const releaseFirst = subscribeOhifLabelSync(servicesManager)
+    const releaseSecond = subscribeOhifLabelSync(servicesManager)
+    expect(subscriptions).toBe(1)
+    releaseFirst?.()
+    expect(unsubscriptions).toBe(0)
+    releaseSecond?.()
+    expect(unsubscriptions).toBe(1)
   })
 })
 

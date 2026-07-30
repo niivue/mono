@@ -4,6 +4,7 @@ import { loadDefaultFont } from '@niivue/uikit'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import {
+  applyDefaultAnnotationText,
   clearNiivueAnnotations,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
@@ -191,6 +192,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       const annotation = (e as CustomEvent<{ annotation: VectorAnnotation }>)
         .detail?.annotation
       if (!annotation) return
+      applyDefaultAnnotationText(annotation, nv.annotations)
       const added = reflectNiivueAnnotation(
         viewportId,
         servicesManagerRef.current,

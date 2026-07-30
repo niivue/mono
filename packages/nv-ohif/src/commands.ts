@@ -307,6 +307,19 @@ function syncWindowLevelToSiblings(
 // measurementService.VALUE_TYPES being present at runtime.
 const POLYLINE_VALUE_TYPE = 'value_type::polyline'
 
+/** Assign the default viewport label before reflecting a new annotation to OHIF. */
+export function applyDefaultAnnotationText(
+  annotation: VectorAnnotation,
+  annotations: readonly VectorAnnotation[],
+): void {
+  if (annotation.text?.length) return
+  const index = annotations.findIndex(
+    (candidate) => candidate.id === annotation.id,
+  )
+  const count = index >= 0 ? index + 1 : annotations.length + 1
+  annotation.text = `ROI #${count}`
+}
+
 interface MeasurementSourceLike {
   uid?: string
 }
@@ -315,7 +328,7 @@ interface MeasurementServiceLike {
   addMapping: (
     source: MeasurementSourceLike,
     annotationType: string,
-    matchingCriteria: Array<{ valueType: string; points: number }>,
+    matchingCriteria: Array<{ valueType: string; points?: number }>,
     toAnnotationSchema: (data: unknown) => unknown,
     toMeasurementSchema: (data: { measurement: unknown }) => unknown,
   ) => void
@@ -324,7 +337,7 @@ interface MeasurementServiceLike {
     annotationType: string,
     data: unknown,
     toMeasurementSchema: (data: { measurement: unknown }) => unknown,
-  ) => unknown
+  ) => string | undefined
   remove?: (uid: string, source?: MeasurementSourceLike) => void
   EVENTS?: { MEASUREMENT_UPDATED?: string }
   subscribe?: (
@@ -343,45 +356,56 @@ const BIDIRECTIONAL_VALUE_TYPE = 'value_type::bidirectional'
 // nv-ohif activates (see toolBridge) are mapped; measureLine doubles as Length.
 const ANNOTATION_TO_OHIF: Record<
   string,
-  { toolName: string; valueType: string; points: number }
+  { toolName: string; valueType: string; minPoints?: number; points?: number }
 > = {
   measureEllipse: {
     toolName: 'EllipticalROI',
     valueType: ELLIPSE_VALUE_TYPE,
-    points: 4,
+    minPoints: 4,
   },
   // OHIF's Rectangle mapping uses the polyline value type.
   measureRect: {
     toolName: 'RectangleROI',
     valueType: POLYLINE_VALUE_TYPE,
-    points: 4,
+    minPoints: 4,
   },
   measureCircle: {
     toolName: 'CircleROI',
     valueType: CIRCLE_VALUE_TYPE,
-    points: 2,
+    minPoints: 2,
   },
   measureLine: {
     toolName: 'Length',
     valueType: POLYLINE_VALUE_TYPE,
+    minPoints: 2,
     points: 2,
   },
   measureSpline: {
     toolName: 'SplineROI',
     valueType: POLYLINE_VALUE_TYPE,
-    points: 2,
+    minPoints: 2,
   },
   measureLivewire: {
     toolName: 'LivewireContour',
     valueType: POLYLINE_VALUE_TYPE,
-    points: 2,
+    minPoints: 2,
   },
   measureBidirectional: {
     toolName: 'Bidirectional',
     valueType: BIDIRECTIONAL_VALUE_TYPE,
-    points: 4,
+    minPoints: 4,
   },
-  arrow: { toolName: 'ArrowAnnotate', valueType: POINT_VALUE_TYPE, points: 1 },
+  freehand: {
+    toolName: 'PlanarFreehandROI',
+    valueType: POLYLINE_VALUE_TYPE,
+    minPoints: 2,
+  },
+  arrow: {
+    toolName: 'ArrowAnnotate',
+    valueType: POINT_VALUE_TYPE,
+    minPoints: 1,
+    points: 1,
+  },
 }
 
 // One 'NiiVue' source per MeasurementService, with a mapping per tool. Every
@@ -400,7 +424,7 @@ function niivueMeasurementSource(
     measurementService.addMapping(
       source,
       toolName,
-      [{ valueType, points }],
+      [{ valueType, ...(points === undefined ? {} : { points }) }],
       () => ({}),
       (data) => data.measurement,
     )
@@ -453,7 +477,12 @@ function annotationPointsLps(
   annotation: VectorAnnotation,
 ): [number, number, number][] {
   const shape = annotation.shape
-  if (!shape) return annotation.anchorMM ? [rasToLps(annotation.anchorMM)] : []
+  if (!shape) {
+    const outer = annotation.polygons[0]?.outer
+    if (outer && outer.length >= 2)
+      return outer.map((point) => annotationPointToLps(annotation, point))
+    return annotation.anchorMM ? [rasToLps(annotation.anchorMM)] : []
+  }
 
   const { start, end } = shape
   const cx = (start.x + end.x) / 2
@@ -499,7 +528,8 @@ function annotationPointsLps(
           : [start, end]
       break
     case 'measureSpline':
-    case 'measureLivewire': {
+    case 'measureLivewire':
+    case 'freehand': {
       const outer = annotation.polygons[0]?.outer
       points = outer && outer.length >= 2 ? outer : [start, end]
       break
@@ -552,6 +582,21 @@ const measurementToAnnotation = new Map<
   string,
   { viewportId: string; annotationId: string }
 >()
+
+interface LabelSyncSubscription {
+  refCount: number
+  unsubscribe: () => void
+}
+const labelSyncSubscriptions = new WeakMap<object, LabelSyncSubscription>()
+
+function releaseLabelSync(service: object): void {
+  const subscription = labelSyncSubscriptions.get(service)
+  if (!subscription) return
+  subscription.refCount -= 1
+  if (subscription.refCount > 0) return
+  subscription.unsubscribe()
+  labelSyncSubscriptions.delete(service)
+}
 
 function modalityUnit(entry: NiivueViewportEntry): string {
   const modality = baseModality(entry)
@@ -624,6 +669,7 @@ export function reflectNiivueAnnotation(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
   annotation: VectorAnnotation,
+  existingUid?: string,
 ): boolean {
   const services = ohifServices(servicesManager)
   const measurementService = services?.measurementService as
@@ -637,7 +683,10 @@ export function reflectNiivueAnnotation(
     !displaySetService?.getDisplaySetsForSeries
   )
     return false
-  const toolType = annotation.shape?.type
+  // Freehand annotations predate shape metadata and are represented by polygons.
+  const toolType =
+    annotation.shape?.type ??
+    (annotation.polygons[0]?.outer.length ? 'freehand' : undefined)
   const mapping = toolType ? ANNOTATION_TO_OHIF[toolType] : undefined
   if (!mapping) return false
   const entry = getNiivueEntry(viewportId)
@@ -646,12 +695,13 @@ export function reflectNiivueAnnotation(
   if (!backing?.SeriesInstanceUID) return false
 
   const source = niivueMeasurementSource(measurementService)
-  const uid = `niivue-${mapping.toolName}-${++niivueMeasurementCounter}`
+  const uid =
+    existingUid ?? `niivue-${mapping.toolName}-${++niivueMeasurementCounter}`
   const forUID = backing.instances?.[0]?.FrameOfReferenceUID as
     | string
     | undefined
   const points = annotationPointsLps(annotation)
-  if (points.length < mapping.points) return false
+  if (points.length < (mapping.minPoints ?? 0)) return false
   const unit = modalityUnit(entry)
   const { primary, data, label } = buildAnnotationDisplay(
     mapping.toolName,
@@ -662,7 +712,7 @@ export function reflectNiivueAnnotation(
   const rowLabel =
     annotation.text && annotation.text.length > 0 ? annotation.text : label
 
-  measurementService.addRawMeasurement(
+  const acceptedUid = measurementService.addRawMeasurement(
     source,
     mapping.toolName,
     {
@@ -686,14 +736,21 @@ export function reflectNiivueAnnotation(
     },
     (d) => d.measurement,
   )
+  if (!acceptedUid) return false
 
   let byView = reflectedAnnotations.get(viewportId)
   if (!byView) {
     byView = new Map()
     reflectedAnnotations.set(viewportId, byView)
   }
-  byView.set(annotation.id, { uid, hash: annotationContentHash(annotation) })
-  measurementToAnnotation.set(uid, { viewportId, annotationId: annotation.id })
+  byView.set(annotation.id, {
+    uid: acceptedUid,
+    hash: annotationContentHash(annotation),
+  })
+  measurementToAnnotation.set(acceptedUid, {
+    viewportId,
+    annotationId: annotation.id,
+  })
   return true
 }
 
@@ -726,11 +783,20 @@ export function subscribeOhifLabelSync(
     | undefined
   const evt = svc?.EVENTS?.MEASUREMENT_UPDATED
   if (!svc?.subscribe || !evt) return undefined
+  const existing = labelSyncSubscriptions.get(svc as object)
+  if (existing) {
+    existing.refCount += 1
+    return () => releaseLabelSync(svc as object)
+  }
   const sub = svc.subscribe(evt, (payload) => {
     const m = payload?.measurement
     if (m?.uid) applyOhifLabelToAnnotation(m.uid, m.label ?? '')
   })
-  return () => sub?.unsubscribe?.()
+  labelSyncSubscriptions.set(svc as object, {
+    refCount: 1,
+    unsubscribe: () => sub?.unsubscribe?.(),
+  })
+  return () => releaseLabelSync(svc as object)
 }
 
 /** Remove one reflected annotation's OHIF panel row (annotationRemoved). */
@@ -777,15 +843,13 @@ export function clearNiivueAnnotations(
  * changed:
  *   - annotation gone      -> remove its row
  *   - annotation new       -> add a row
- *   - annotation changed   -> re-add (fresh row) then drop the old row
+ *   - annotation changed   -> update the existing row in place
  *   - annotation unchanged -> leave its row (keeps its uid, so OHIF panel
  *                             selection / jump on rows the user did not edit is
  *                             preserved)
  *
- * A changed annotation is re-added BEFORE its old row is removed, so a transient
- * re-reflect failure (backing series momentarily unresolvable, points-guard drop)
- * leaves the existing row in place rather than dropping it. Free-text labels
- * survive because they live on the annotation.
+ * The stable uid preserves OHIF panel selection, jump targets, and tracking state.
+ * A transient update failure leaves the existing bookkeeping in place.
  */
 export function reconcileNiivueAnnotations(
   viewportId: string,
@@ -805,7 +869,7 @@ export function reconcileNiivueAnnotations(
     }
   }
 
-  // Add new annotations; refresh changed ones (re-add, then drop the stale row).
+  // Add new annotations and update changed rows in place.
   for (const annotation of live) {
     const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
     if (!existing) {
@@ -813,17 +877,12 @@ export function reconcileNiivueAnnotations(
       continue
     }
     if (existing.hash === annotationContentHash(annotation)) continue
-    const staleUid = existing.uid
-    if (reflectNiivueAnnotation(viewportId, servicesManager, annotation)) {
-      // reflect overwrote the map entry with the new uid; drop the old row.
-      const measurementService = ohifServices(servicesManager)
-        ?.measurementService as MeasurementServiceLike | undefined
-      const current = reflectedAnnotations.get(viewportId)?.get(annotation.id)
-      if (current && current.uid !== staleUid) {
-        measurementService?.remove?.(staleUid)
-        measurementToAnnotation.delete(staleUid)
-      }
-    }
+    reflectNiivueAnnotation(
+      viewportId,
+      servicesManager,
+      annotation,
+      existing.uid,
+    )
   }
 }
 

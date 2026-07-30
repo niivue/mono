@@ -402,6 +402,78 @@ describe('reflectNiivueAnnotation', () => {
     expect(measurement.points).toHaveLength(3)
   })
 
+  it('does not misrepresent multi-part or holed freehand geometry', () => {
+    const svc = setup('vp-freehand-complex')
+    const annotation = ellipse('complex')
+    annotation.shape = undefined
+    const triangle = {
+      outer: [
+        { x: 0, y: 0 },
+        { x: 2, y: 0 },
+        { x: 1, y: 2 },
+      ],
+      holes: [] as Array<Array<{ x: number; y: number }>>,
+    }
+    annotation.polygons = [
+      triangle,
+      {
+        outer: [
+          { x: 4, y: 4 },
+          { x: 6, y: 4 },
+          { x: 5, y: 6 },
+        ],
+        holes: [],
+      },
+    ]
+    expect(
+      reflectNiivueAnnotation(
+        'vp-freehand-complex',
+        svc.servicesManager,
+        annotation,
+      ),
+    ).toBe(false)
+
+    annotation.polygons = [
+      {
+        ...triangle,
+        holes: [
+          [
+            { x: 0.5, y: 0.5 },
+            { x: 1, y: 0.5 },
+            { x: 0.75, y: 1 },
+          ],
+        ],
+      },
+    ]
+    expect(
+      reflectNiivueAnnotation(
+        'vp-freehand-complex',
+        svc.servicesManager,
+        annotation,
+      ),
+    ).toBe(false)
+    expect(svc.added).toHaveLength(0)
+  })
+
+  it('reflects both arrow endpoints', () => {
+    const svc = setup('vp-arrow')
+    const annotation = ellipse('arrow')
+    annotation.shape = {
+      type: 'arrow',
+      start: { x: 1, y: 2 },
+      end: { x: 4, y: 6 },
+    }
+    annotation.stats = undefined
+    expect(
+      reflectNiivueAnnotation('vp-arrow', svc.servicesManager, annotation),
+    ).toBe(true)
+    const measurement = svc.added[0]?.data.schema as { points: number[][] }
+    expect(measurement.points).toEqual([
+      [-1, -2, 0],
+      [-4, -6, 0],
+    ])
+  })
+
   it('does not record a row when OHIF rejects the measurement', () => {
     register('vp-rejected', stubNiivue())
     updateNiivueViewport('vp-rejected', {
@@ -506,6 +578,28 @@ describe('reflectNiivueAnnotation', () => {
     expect(refreshed.uid).toBe(aUid)
     expect(refreshed.uid).not.toBe(uidB)
     expect(refreshed.data.area).toBe(999)
+  })
+
+  it('reconcile detects slice-depth changes in reflected geometry', () => {
+    const nv = stubNiivue()
+    register('vp-depth', nv)
+    updateNiivueViewport('vp-depth', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-depth', backing)
+    const annotation = ellipse('depth')
+    nv.annotations = [annotation]
+    reflectNiivueAnnotation('vp-depth', svc.servicesManager, annotation)
+    annotation.slicePosition = 12
+    reconcileNiivueAnnotations('vp-depth', svc.servicesManager)
+    expect(svc.added).toHaveLength(2)
+    const updated = svc.added[1]?.data.schema as {
+      uid: string
+      points: number[][]
+    }
+    expect(updated.points.every((point) => point[2] === 12)).toBe(true)
   })
 
   it('pushes an edited OHIF label back onto the annotation as free text', () => {

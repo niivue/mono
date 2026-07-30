@@ -447,7 +447,7 @@ const ANNOTATION_TO_OHIF: Record<
   arrow: {
     toolName: 'ArrowAnnotate',
     valueType: POINT_VALUE_TYPE,
-    minPoints: 1,
+    minPoints: 2,
     points: 1,
   },
 }
@@ -581,6 +581,9 @@ function annotationPointsLps(
     case 'measureLine':
       points = [start, end]
       break
+    case 'arrow':
+      points = [start, end]
+      break
     default:
       points = [start]
   }
@@ -611,12 +614,17 @@ const reflectedAnnotations = new Map<string, Map<string, ReflectedRow>>()
 function annotationContentHash(a: VectorAnnotation): string {
   const s = a.stats
   const shape = a.shape
-  const outer = a.polygons[0]?.outer
   return JSON.stringify([
     a.text ?? '',
+    a.sliceType,
+    a.slicePosition,
+    a.anchorMM ?? null,
     s ? [s.area, s.min, s.mean, s.max, s.stdDev, s.length, s.shortLength] : 0,
     shape ? [shape.type, shape.start, shape.end, shape.start2, shape.end2] : 0,
-    outer ? outer.map((p) => [p.x, p.y]) : 0,
+    a.polygons.map((polygon) => [
+      polygon.outer.map((p) => [p.x, p.y]),
+      polygon.holes.map((hole) => hole.map((p) => [p.x, p.y])),
+    ]),
   ])
 }
 
@@ -731,6 +739,15 @@ export function reflectNiivueAnnotation(
   const toolType = annotationToolType(annotation)
   const mapping = toolType ? ANNOTATION_TO_OHIF[toolType] : undefined
   if (!mapping) return false
+  // OHIF's PlanarFreehandROI measurement schema carries one polyline and has no
+  // representation for disconnected components or holes. Do not silently export
+  // only the first outer ring while reporting stats for different geometry.
+  if (
+    toolType === 'freehand' &&
+    (annotation.polygons.length !== 1 ||
+      (annotation.polygons[0]?.holes.length ?? 0) > 0)
+  )
+    return false
   const entry = getNiivueEntry(viewportId)
   if (!entry) return false
   const backing = resolveBackingSeries(entry, displaySetService)

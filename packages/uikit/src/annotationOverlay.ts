@@ -130,7 +130,10 @@ export function buildAnnotationGeometry(
 
     if (shape.label) {
       text.push({
-        str: shape.label.lines.join('\n'),
+        // The overlay font layout draws a single line (it skips a '\n'), which ran
+        // the label parts together (e.g. "ROI #3Area: 12.0 mm2"). Join with a space
+        // so each part is separated.
+        str: shape.label.lines.join(' '),
         x: shape.label.x,
         y: shape.label.y,
         sizePx: labelPx,

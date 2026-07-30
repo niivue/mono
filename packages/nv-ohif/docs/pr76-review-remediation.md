@@ -322,3 +322,56 @@ A click-without-drag reflects a 1-pixel arrow. Optional: reject when start==end.
 R3-0 (unifies the biggest cluster) -> R3-1 -> R3-2 + R3-4 -> R3-3 -> R3-5 ->
 R3-6; R3-7/R3-8 optional. Then full gate + rig verification (freehand hole edit,
 arrow direction on jump, label clear, resize selection-stability).
+
+---
+
+# Round 4 (2026-07-30): review of Codex 756cb9c9 / c23d4502 (post round-3)
+
+xhigh review. Codex reworked commands.ts (~276 lines), added the core
+annotationMergesOverlaps option + storeAnnotation, and a new jump-to-measurement
+feature. The good parts (merges-overlaps default-true preserves prior behavior;
+storeAnnotation; the permanent-vs-retryable status split; jump feature) are sound
+in shape, BUT the refactor SILENTLY REVERTED round-2/3 hardening and deleted the
+tests that guarded it. 7 defects, 5 correctness (1 refuted).
+
+## Regressions of prior fixes (must restore)
+
+- R4-0 (was R3-0): the `permanentlyUnsupported` reconcile branch now DELETES a
+  previously-reflected row when a valid shape is edited into an OHIF-unrepresentable
+  geometry (freehand hole / split). Round-3 kept the row + uid + user label
+  (negative cache). Restore: keep the row, do not remove.
+- R4-1 (was R3-3): removeNiivueAnnotation returns false WITHOUT clearing bookkeeping
+  when measurementService.remove is absent, and reconcile ignores the return — the
+  unbounded-map leak is back. Restore: always delete bookkeeping (best-effort remove).
+- R4-2 (was R3-0): the negative cache for RETRYABLE failures was removed (comment
+  now "Transient failures are never cached"), so reconcile re-runs a full reflect
+  (incl. addRawMeasurement) on every annotationChanged for a persistently
+  un-reflectable series. Restore: negative-cache retryable failures by content hash.
+- R4-3 (was R2-3/R3-3): tool-aware default labels removed; every tool is stamped
+  'ROI #N' again (an arrow labeled 'ROI #3'). Restore the per-tool prefix (Arrow /
+  Length / Bidirectional / ROI).
+- Deleted tests to reinstate: 'keeps the row + uid on a failed update and stops
+  re-attempting (R3-0)' and 'applyDefaultAnnotationText labels by tool and never
+  reuses a number'.
+
+## New defects in Codex's additions
+
+- R4-4 (jump, CONFIRMED): jumpToNiivueMeasurement prefers annotation.anchorMM, which
+  is the drag-START corner of a 2D shape (arrow tail), so the crosshair lands on the
+  corner/tail, not the center/tip; the centroid branch is dead code. Fix: use the
+  shape/polygon centroid (and ensure it is converted to the SAME mm space anchorMM
+  uses before setCrosshairPos — verify setCrosshairPos's expected space).
+- R4-5 (jump, PLAUSIBLE): the JUMP_TO_MEASUREMENT handler reads
+  payload.measurement.uid; OHIF may carry the uid at the payload top level, making
+  the jump a silent no-op. Verify the real event shape on the rig.
+- R4-6 (cleanup): apps/iiif-volumetric-server bun test --max-concurrency=1 only caps
+  test.concurrent cases, not cross-file port contention — may not fix the flake.
+
+## Refuted
+- centroid (start+end)/2 for a circle is correct (center+edge), not a bug.
+
+## Coordination note
+Codex is editing these same files in parallel. Restoring R4-0..R4-3 means
+re-applying round-3 behavior on TOP of Codex's status-machine + jump additions
+(keep those, fix the failure branches + labels). Sequence with Codex to avoid
+clobbering; do not both edit commands.ts simultaneously.

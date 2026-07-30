@@ -501,7 +501,7 @@ describe('reflectNiivueAnnotation', () => {
     expect((svc.added[1]?.data.schema as { label: string }).label).toBe('')
   })
 
-  it('removes a stale row when changed geometry is permanently unsupported', () => {
+  it('keeps the row + uid on a failed update and stops re-attempting (R4-0)', () => {
     const nv = stubNiivue()
     register('vp-neg', nv)
     updateNiivueViewport('vp-neg', {
@@ -515,7 +515,7 @@ describe('reflectNiivueAnnotation', () => {
     reflectNiivueAnnotation('vp-neg', svc.servicesManager, good)
     const addsBefore = svc.added.length
     // Mutate into an unreflectable shape: a bidirectional missing its short axis
-    // yields 2 points < minPoints 4, so reflect returns false.
+    // yields 2 points < minPoints 4, so reflect fails (permanentlyUnsupported).
     nv.annotations = [
       {
         ...ellipse('n'),
@@ -527,16 +527,17 @@ describe('reflectNiivueAnnotation', () => {
       } as unknown as VectorAnnotation,
     ]
     reconcileNiivueAnnotations('vp-neg', svc.servicesManager)
-    // The prior row must be removed rather than misrepresenting the new geometry.
-    expect(svc.removed).toHaveLength(1)
+    // The prior row + its uid/label are PRESERVED (not deleted), and nothing new
+    // is added (round-4 R4-0: a failed in-place edit must not vanish the row).
+    expect(svc.removed).toHaveLength(0)
     expect(svc.added.length).toBe(addsBefore)
     // A second reconcile with the same bad geometry is a no-op (negative cache).
     reconcileNiivueAnnotations('vp-neg', svc.servicesManager)
     expect(svc.added.length).toBe(addsBefore)
-    expect(svc.removed).toHaveLength(1)
+    expect(svc.removed).toHaveLength(0)
   })
 
-  it('retries a transient failure when the backing series becomes available', () => {
+  it('negative-caches a transient failure and retries when content changes (R4-2)', () => {
     const nv = stubNiivue()
     const availableBacking: typeof backing = []
     register('vp-retry', nv)
@@ -548,10 +549,23 @@ describe('reflectNiivueAnnotation', () => {
     const svc = measurementServices('vp-retry', availableBacking)
     nv.annotations = [ellipse('retry')]
 
+    // No backing series yet -> retryable failure, negative-cached.
     reconcileNiivueAnnotations('vp-retry', svc.servicesManager)
     expect(svc.added).toHaveLength(0)
 
+    // Backing becomes available, but with the SAME (cached) geometry the failing
+    // reflect is not re-attempted -> no per-event thrash on an un-reflectable set.
     availableBacking.push(...backing)
+    reconcileNiivueAnnotations('vp-retry', svc.servicesManager)
+    expect(svc.added).toHaveLength(0)
+
+    // An edit changes the content hash, which invalidates the cache and retries.
+    nv.annotations = [
+      {
+        ...ellipse('retry'),
+        stats: { area: 55, min: 5, mean: 50, max: 200, stdDev: 12 },
+      } as unknown as VectorAnnotation,
+    ]
     reconcileNiivueAnnotations('vp-retry', svc.servicesManager)
     expect(svc.added).toHaveLength(1)
   })
@@ -762,8 +776,78 @@ describe('reflectNiivueAnnotation', () => {
     jumpToNiivueMeasurement(uid, svc.servicesManager)
 
     expect(activated).toEqual(['vp-jump'])
-    expect(nv.crosshairTargets).toEqual([[10, 20, 30]])
+    // Jumps to the shape CENTER (mm), not anchorMM (the drag-start corner): the
+    // ellipse start{0,0}/end{1,1} centers at (0.5,0.5) -> axial mm [0.5,0.5,0]
+    // (round-4 R4-4).
+    expect(nv.crosshairTargets).toEqual([[0.5, 0.5, 0]])
     expect(nv.selectedAnnotations).toEqual(['jump'])
+  })
+
+  it('jumps an arrow to its tip, not its tail (R4-4)', () => {
+    const nv = stubNiivue()
+    register('vp-arrowjump', nv)
+    updateNiivueViewport('vp-arrowjump', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-arrowjump', backing)
+    const a = ellipse('aj')
+    a.shape = { type: 'arrow', start: { x: 1, y: 2 }, end: { x: 4, y: 6 } }
+    a.stats = undefined
+    nv.annotations = [a]
+    reflectNiivueAnnotation('vp-arrowjump', svc.servicesManager, a)
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    jumpToNiivueMeasurement(uid, svc.servicesManager)
+    // Arrow tip = shape.end {4,6} -> axial mm [4,6,0] (not the tail or anchorMM).
+    expect(nv.crosshairTargets).toEqual([[4, 6, 0]])
+  })
+
+  it('clears bookkeeping when the host cannot remove a row, so it does not leak (R4-1)', () => {
+    const texts: Array<{ id: string; text: string }> = []
+    const nv = {
+      ...stubNiivue(),
+      setAnnotationText: (id: string, text: string) => texts.push({ id, text }),
+    }
+    register('vp-noremove', nv)
+    updateNiivueViewport('vp-noremove', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const added: Array<{ uid: string }> = []
+    // A MeasurementService with NO remove method.
+    const sm = {
+      services: {
+        viewportGridService: { getActiveViewportId: () => 'vp-noremove' },
+        measurementService: {
+          createSource: () => ({}),
+          addMapping: () => {},
+          addRawMeasurement: (
+            _s: unknown,
+            _t: string,
+            data: { uid: string; measurement: unknown },
+            toSchema: (d: { measurement: unknown }) => { uid: string },
+          ) => {
+            added.push(toSchema(data))
+            return data.uid
+          },
+        },
+        displaySetService: {
+          getDisplaySetsForSeries: (uid: string) =>
+            backing.filter((d) => d.SeriesInstanceUID === uid),
+        },
+      },
+    } as unknown as OhifExtensionParams['servicesManager']
+    const a = ellipse('a')
+    nv.annotations = [a]
+    reflectNiivueAnnotation('vp-noremove', sm, a)
+    const uid = added[0]?.uid ?? ''
+    removeNiivueAnnotation('vp-noremove', sm, 'a')
+    // Bookkeeping is gone even though the OHIF row could not be removed: a later
+    // label event for the old uid is a no-op (before the fix the maps leaked).
+    applyOhifLabelToAnnotation(uid, 'x')
+    expect(texts).toHaveLength(0)
   })
 
   it('shares one OHIF label subscription across viewports', () => {
@@ -830,7 +914,8 @@ describe('reflectNiivueAnnotation', () => {
 
     callbacks.get('jump')?.({ measurement: { uid } })
 
-    expect(nv.crosshairTargets).toEqual([[10, 20, 30]])
+    // Shape center in mm (round-4 R4-4), not anchorMM.
+    expect(nv.crosshairTargets).toEqual([[0.5, 0.5, 0]])
     expect(nv.selectedAnnotations).toEqual(['jump-event'])
     release?.()
   })
@@ -1008,7 +1093,7 @@ describe('reflectNiivueAnnotation', () => {
     expect(addCalls - addsAfterFirst).toBeLessThan(5)
   })
 
-  it('applyDefaultAnnotationText uses one ROI sequence for every tool', () => {
+  it('applyDefaultAnnotationText labels by tool and never reuses a number (R4-3)', () => {
     const mk = (id: string, type: string): VectorAnnotation =>
       ({
         id,
@@ -1016,12 +1101,13 @@ describe('reflectNiivueAnnotation', () => {
         polygons: [],
         shape: { type, start: { x: 0, y: 0 }, end: { x: 1, y: 1 } },
       }) as unknown as VectorAnnotation
+    // Tool-aware prefixes: a line is a Length, an arrow is an Arrow — not an ROI.
     const line = mk('l', 'measureLine')
     expect(applyDefaultAnnotationText(line, [line])).toBe(true)
-    expect(line.text).toBe('ROI #1')
+    expect(line.text).toBe('Length #1')
     const arrow = mk('a', 'arrow')
     expect(applyDefaultAnnotationText(arrow, [line, arrow])).toBe(true)
-    expect(arrow.text).toBe('ROI #2')
+    expect(arrow.text).toBe('Arrow #1')
     // ROI #1 was deleted; a new ROI must not reuse the surviving #2.
     const r2 = {
       ...mk('r2', 'measureEllipse'),

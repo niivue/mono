@@ -313,18 +313,40 @@ function annotationToolType(a: VectorAnnotation): string | undefined {
   return a.shape?.type ?? (a.polygons[0]?.outer.length ? 'freehand' : undefined)
 }
 
+// Short, tool-appropriate noun for a default label. An arrow is not an ROI, and a
+// Length/Bidirectional is a line, not a region — so the generic "ROI" is wrong
+// for them (round-3 R3-3).
+const DEFAULT_LABEL_PREFIX: Record<string, string> = {
+  measureLine: 'Length',
+  arrow: 'Arrow',
+  measureBidirectional: 'Bidirectional',
+  measureEllipse: 'ROI',
+  measureRect: 'ROI',
+  measureCircle: 'ROI',
+  measureSpline: 'ROI',
+  measureLivewire: 'ROI',
+  freehand: 'ROI',
+}
+
+function defaultLabelPrefix(a: VectorAnnotation): string {
+  const type = annotationToolType(a)
+  return (type && DEFAULT_LABEL_PREFIX[type]) || 'ROI'
+}
+
 /**
  * Assign the default viewport label before reflecting a new annotation to OHIF.
- * The number is one past the highest existing "ROI #N" so the global sequence is
- * shared by every annotation tool and a label is never reused after a deletion.
- * Returns true if it assigned text (so the caller can redraw).
+ * The label is tool-aware ('Length #N' / 'Arrow #N' / 'Bidirectional #N' /
+ * 'ROI #N') and the number is one past the highest existing "<prefix> #N", so a
+ * label is never reused after a deletion. Returns true if it assigned text (so the
+ * caller can redraw).
  */
 export function applyDefaultAnnotationText(
   annotation: VectorAnnotation,
   annotations: readonly VectorAnnotation[],
 ): boolean {
   if (annotation.text?.length) return false
-  const re = /^ROI #(\d+)$/
+  const prefix = defaultLabelPrefix(annotation)
+  const re = new RegExp(`^${prefix} #(\\d+)$`)
   let maxN = 0
   for (const candidate of annotations) {
     const m = candidate.text ? re.exec(candidate.text) : null
@@ -333,11 +355,10 @@ export function applyDefaultAnnotationText(
       if (n > maxN) maxN = n
     }
   }
-  const text = `ROI #${maxN + 1}`
+  const text = `${prefix} #${maxN + 1}`
   annotation.text = text
-  // mergeAnnotations stores a shallow clone, while annotationAdded carries the
-  // pre-merge object. Update the stored annotation too so the viewport overlay
-  // sees the label.
+  // storeAnnotation may keep a shallow clone, while annotationAdded carries the
+  // pre-merge object. Update the stored annotation too so the overlay sees it.
   const stored = annotations.find((c) => c.id === annotation.id)
   if (stored) stored.text = text
   return true
@@ -588,9 +609,12 @@ function annotationPointsLps(
 // to one annotation never re-mints another's uid (which would drop OHIF's panel
 // selection / jump on a row the user never touched).
 interface ReflectedRow {
-  // Absent only when the current geometry is permanently unsupported. Transient
-  // failures are never cached, because service/display-set readiness can change
-  // without changing annotation content.
+  // The OHIF measurement uid, or absent when the annotation is currently
+  // unreflectable (unsupported geometry, or a not-yet-ready backing series). The
+  // hash is a NEGATIVE CACHE either way: we stop re-attempting a failing reflect
+  // until the annotation content changes, and — for a shape that WAS reflected and
+  // then failed — we keep the prior uid so the row + its selection/label identity
+  // are not churned or deleted (round-3 R3-0 / round-4 R4-0, R4-2).
   uid?: string
   hash: string
 }
@@ -876,33 +900,36 @@ export function jumpToNiivueMeasurement(
     | undefined
   viewportGridService?.setActiveViewportId?.(ref.viewportId)
 
-  let target = annotation.anchorMM
-  if (!target) {
-    const shape = annotation.shape
-    if (shape) {
+  // Navigate to the shape's annotated location, in mm (setCrosshairPos takes mm):
+  // an arrow's tip (its target), otherwise the shape/contour CENTER. anchorMM is
+  // only the drag-START corner (an arrow's tail), so it lands off-center — use it
+  // just as a last resort (round-4 R4-4).
+  let target: [number, number, number] | undefined
+  const shape = annotation.shape
+  if (shape) {
+    const at =
+      shape.type === 'arrow'
+        ? shape.end // arrowhead / tip = the annotated location
+        : {
+            x: (shape.start.x + shape.end.x) / 2,
+            y: (shape.start.y + shape.end.y) / 2,
+          }
+    target = slice2DToMM(at, annotation.slicePosition, annotation.sliceType)
+  } else {
+    const outer = annotation.polygons[0]?.outer
+    if (outer && outer.length > 0) {
+      const sum = outer.reduce(
+        (acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }),
+        { x: 0, y: 0 },
+      )
       target = slice2DToMM(
-        {
-          x: (shape.start.x + shape.end.x) / 2,
-          y: (shape.start.y + shape.end.y) / 2,
-        },
+        { x: sum.x / outer.length, y: sum.y / outer.length },
         annotation.slicePosition,
         annotation.sliceType,
       )
-    } else {
-      const outer = annotation.polygons[0]?.outer
-      if (outer && outer.length > 0) {
-        const sum = outer.reduce(
-          (acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }),
-          { x: 0, y: 0 },
-        )
-        target = slice2DToMM(
-          { x: sum.x / outer.length, y: sum.y / outer.length },
-          annotation.slicePosition,
-          annotation.sliceType,
-        )
-      }
     }
   }
+  if (!target) target = annotation.anchorMM
   if (target) entry.nv.setCrosshairPos(target)
   entry.nv.selectAnnotation(annotation.id)
 }
@@ -960,25 +987,29 @@ export function removeNiivueAnnotation(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
   annotationId: string,
-): boolean {
+): void {
   const byView = reflectedAnnotations.get(viewportId)
   const row = byView?.get(annotationId)
-  if (!byView || !row) return true
+  if (!byView || !row) return
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
   if (row.uid) {
-    if (!measurementService?.remove) return false
-    try {
-      measurementService.remove(row.uid)
-    } catch {
-      // Keep the row bookkeeping so a later reconciliation can retry cleanup.
-      return false
+    if (measurementService?.remove) {
+      try {
+        measurementService.remove(row.uid)
+      } catch {
+        // A THROWN remove is transient — keep the bookkeeping so the next
+        // reconcile retries the OHIF-side removal.
+        return
+      }
     }
+    // remove absent (the host can never remove it) or succeeded: drop the
+    // bookkeeping so the maps do not leak unbounded across draw/delete and
+    // mount/unmount cycles (round-4 R4-1; a negative-cache row has no uid).
     measurementToAnnotation.delete(row.uid)
   }
   byView.delete(annotationId)
   if (byView.size === 0) reflectedAnnotations.delete(viewportId)
-  return true
 }
 
 /** Remove every reflected row for a viewport (annotation clear / series swap). */
@@ -1017,8 +1048,8 @@ export function clearNiivueAnnotations(
  *   - annotation unchanged -> leave its row (keeps its uid, so OHIF panel
  *                             selection / jump on rows the user did not edit is
  *                             preserved)
- *   - unsupported geometry -> remove any stale row and negative-cache the hash
- *   - transient failure    -> retain prior successful state and retry later
+ *   - reflect fails        -> keep any prior row + uid and negative-cache the hash
+ *                             (no delete / no churn); a later change retries
  *
  * Re-entrancy guarded: an update-in-place reflect can synchronously broadcast
  * MEASUREMENT_UPDATED, whose handler may emit annotationChanged and re-enter here.
@@ -1059,18 +1090,20 @@ export function reconcileNiivueAnnotations(
         annotation,
         existing?.uid,
       )
-      if (result.status === 'permanentlyUnsupported') {
-        if (
-          existing?.uid &&
-          !removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
-        )
-          continue
+      // On success reflect stored {uid, hash}. On ANY failure — geometry OHIF
+      // cannot represent (permanent) or a not-yet-ready series (retryable) — do
+      // NOT delete the row: negative-cache the hash and KEEP any prior uid, so the
+      // row + its user label + selection identity survive, and we stop re-running
+      // the failing reflect on every event. A later edit changes the hash and
+      // retries; a shape that becomes reflectable again updates in place
+      // (round-4 R4-0 / R4-2).
+      if (result.status !== 'success') {
         let map = reflectedAnnotations.get(viewportId)
         if (!map) {
           map = new Map()
           reflectedAnnotations.set(viewportId, map)
         }
-        map.set(annotation.id, { hash })
+        map.set(annotation.id, { uid: existing?.uid, hash })
       }
     }
   } finally {

@@ -375,3 +375,31 @@ Codex is editing these same files in parallel. Restoring R4-0..R4-3 means
 re-applying round-3 behavior on TOP of Codex's status-machine + jump additions
 (keep those, fix the failure branches + labels). Sequence with Codex to avoid
 clobbering; do not both edit commands.ts simultaneously.
+
+---
+
+# Round 5 (2026-07-30): product rulings + Codex reconciliation
+
+Codex disputed the round-4 changes. Product owner ruled:
+- Default labels: KEEP tool-specific ('Length #N' / 'Arrow #N' / 'Bidirectional #N'
+  / 'ROI #N'). No change (round-4 R4-3 stands).
+- Unsupported geometry: DELETE the OHIF row (do not keep a stale row). Reverted
+  round-4 R4-0 back to: permanentlyUnsupported -> delete + negative-cache the hash.
+  This also settles #3: retryable failures stay UNcached and retry on the next
+  reconcile (so a row appears once the DICOM series finishes loading), which was
+  Codex's intent; the NIfTI-URL "thrash" is bounded to user-edit frequency and each
+  attempt is a cheap resolveBackingSeries check.
+
+Kept from round-4 (not disputed by the ruling): R4-1 (removeNiivueAnnotation clears
+bookkeeping when remove is absent/succeeds; keeps only on a THROWN remove for retry
+-> no unmount leak) and R4-4 (jump to the shape center / arrow tip, in mm).
+
+Not changed / out of scope:
+- clearNiivueAnnotations still discards bookkeeping on a THROWN remove during a bulk
+  clear. This is intentional: clear runs on teardown/unmount where there is no retry
+  trigger, so keeping bookkeeping would reintroduce the R4-1 unmount leak. A thrown
+  remove during a live series-swap can orphan an OHIF row (rare); leak-avoidance
+  wins. removeNiivueAnnotation's keep-on-throw is itself cleaned up by clear on
+  unmount, so nothing leaks permanently.
+- ipyniivue generated bindings + WSI docs are outside commands.ts/commands.test.ts
+  (core / other packages) and belong to Codex/core under the ownership split.

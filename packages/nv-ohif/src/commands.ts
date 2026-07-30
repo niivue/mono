@@ -609,12 +609,11 @@ function annotationPointsLps(
 // to one annotation never re-mints another's uid (which would drop OHIF's panel
 // selection / jump on a row the user never touched).
 interface ReflectedRow {
-  // The OHIF measurement uid, or absent when the annotation is currently
-  // unreflectable (unsupported geometry, or a not-yet-ready backing series). The
-  // hash is a NEGATIVE CACHE either way: we stop re-attempting a failing reflect
-  // until the annotation content changes, and — for a shape that WAS reflected and
-  // then failed — we keep the prior uid so the row + its selection/label identity
-  // are not churned or deleted (round-3 R3-0 / round-4 R4-0, R4-2).
+  // The OHIF measurement uid, or absent when the row is a NEGATIVE CACHE entry for
+  // a permanently-unsupported geometry: the hash lets reconcile skip re-attempting
+  // the reflect until the annotation content changes. Transient/retryable failures
+  // are NOT cached (they get no entry), so they retry on the next reconcile once
+  // the backing series / service becomes ready.
   uid?: string
   hash: string
 }
@@ -1048,8 +1047,8 @@ export function clearNiivueAnnotations(
  *   - annotation unchanged -> leave its row (keeps its uid, so OHIF panel
  *                             selection / jump on rows the user did not edit is
  *                             preserved)
- *   - reflect fails        -> keep any prior row + uid and negative-cache the hash
- *                             (no delete / no churn); a later change retries
+ *   - unsupported geometry -> delete any prior row and negative-cache the hash
+ *   - transient failure    -> leave uncached and retry on a later reconcile
  *
  * Re-entrancy guarded: an update-in-place reflect can synchronously broadcast
  * MEASUREMENT_UPDATED, whose handler may emit annotationChanged and re-enter here.
@@ -1090,21 +1089,25 @@ export function reconcileNiivueAnnotations(
         annotation,
         existing?.uid,
       )
-      // On success reflect stored {uid, hash}. On ANY failure — geometry OHIF
-      // cannot represent (permanent) or a not-yet-ready series (retryable) — do
-      // NOT delete the row: negative-cache the hash and KEEP any prior uid, so the
-      // row + its user label + selection identity survive, and we stop re-running
-      // the failing reflect on every event. A later edit changes the hash and
-      // retries; a shape that becomes reflectable again updates in place
-      // (round-4 R4-0 / R4-2).
-      if (result.status !== 'success') {
+      // On success reflect stored {uid, hash}.
+      if (result.status === 'permanentlyUnsupported') {
+        // The current geometry cannot be represented in OHIF (freehand hole /
+        // split, degenerate shape). Per product decision, DELETE any prior row
+        // rather than leave it misrepresenting the new geometry, and negative-
+        // cache the hash so the permanently-bad shape is not re-attempted every
+        // event. A later edit changes the hash and reflects afresh.
+        if (existing?.uid)
+          removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
         let map = reflectedAnnotations.get(viewportId)
         if (!map) {
           map = new Map()
           reflectedAnnotations.set(viewportId, map)
         }
-        map.set(annotation.id, { uid: existing?.uid, hash })
+        map.set(annotation.id, { hash })
       }
+      // retryableFailure (no entry / backing series not ready yet / service
+      // hiccup): leave it UNcached so the next reconcile retries — e.g. once a
+      // DICOM series finishes loading, the row appears without a content edit.
     }
   } finally {
     reconcilingViewports.delete(viewportId)

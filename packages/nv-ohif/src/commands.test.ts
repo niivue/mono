@@ -501,7 +501,7 @@ describe('reflectNiivueAnnotation', () => {
     expect((svc.added[1]?.data.schema as { label: string }).label).toBe('')
   })
 
-  it('keeps the row + uid on a failed update and stops re-attempting (R4-0)', () => {
+  it('deletes a row when changed geometry becomes permanently unsupported', () => {
     const nv = stubNiivue()
     register('vp-neg', nv)
     updateNiivueViewport('vp-neg', {
@@ -515,7 +515,7 @@ describe('reflectNiivueAnnotation', () => {
     reflectNiivueAnnotation('vp-neg', svc.servicesManager, good)
     const addsBefore = svc.added.length
     // Mutate into an unreflectable shape: a bidirectional missing its short axis
-    // yields 2 points < minPoints 4, so reflect fails (permanentlyUnsupported).
+    // yields 2 points < minPoints 4 (permanentlyUnsupported).
     nv.annotations = [
       {
         ...ellipse('n'),
@@ -527,17 +527,17 @@ describe('reflectNiivueAnnotation', () => {
       } as unknown as VectorAnnotation,
     ]
     reconcileNiivueAnnotations('vp-neg', svc.servicesManager)
-    // The prior row + its uid/label are PRESERVED (not deleted), and nothing new
-    // is added (round-4 R4-0: a failed in-place edit must not vanish the row).
-    expect(svc.removed).toHaveLength(0)
+    // Per product decision, the stale row is removed rather than misrepresenting
+    // the new geometry; nothing new is added.
+    expect(svc.removed).toHaveLength(1)
     expect(svc.added.length).toBe(addsBefore)
     // A second reconcile with the same bad geometry is a no-op (negative cache).
     reconcileNiivueAnnotations('vp-neg', svc.servicesManager)
     expect(svc.added.length).toBe(addsBefore)
-    expect(svc.removed).toHaveLength(0)
+    expect(svc.removed).toHaveLength(1)
   })
 
-  it('negative-caches a transient failure and retries when content changes (R4-2)', () => {
+  it('retries a transient failure when the backing series becomes available', () => {
     const nv = stubNiivue()
     const availableBacking: typeof backing = []
     register('vp-retry', nv)
@@ -549,23 +549,13 @@ describe('reflectNiivueAnnotation', () => {
     const svc = measurementServices('vp-retry', availableBacking)
     nv.annotations = [ellipse('retry')]
 
-    // No backing series yet -> retryable failure, negative-cached.
+    // No backing series yet -> retryable failure, NOT cached.
     reconcileNiivueAnnotations('vp-retry', svc.servicesManager)
     expect(svc.added).toHaveLength(0)
 
-    // Backing becomes available, but with the SAME (cached) geometry the failing
-    // reflect is not re-attempted -> no per-event thrash on an un-reflectable set.
+    // Once the backing series resolves, the next reconcile reflects it — even
+    // though the annotation content did not change (round-4 R4-2 / #3).
     availableBacking.push(...backing)
-    reconcileNiivueAnnotations('vp-retry', svc.servicesManager)
-    expect(svc.added).toHaveLength(0)
-
-    // An edit changes the content hash, which invalidates the cache and retries.
-    nv.annotations = [
-      {
-        ...ellipse('retry'),
-        stats: { area: 55, min: 5, mean: 50, max: 200, stdDev: 12 },
-      } as unknown as VectorAnnotation,
-    ]
     reconcileNiivueAnnotations('vp-retry', svc.servicesManager)
     expect(svc.added).toHaveLength(1)
   })

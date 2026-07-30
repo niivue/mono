@@ -307,25 +307,60 @@ function syncWindowLevelToSiblings(
 // measurementService.VALUE_TYPES being present at runtime.
 const POLYLINE_VALUE_TYPE = 'value_type::polyline'
 
-/** Assign the default viewport label before reflecting a new annotation to OHIF. */
+// The NiiVue annotation tool for an annotation (shape.type, or freehand inferred
+// from a polygon when there is no shape).
+function annotationToolType(a: VectorAnnotation): string | undefined {
+  return a.shape?.type ?? (a.polygons[0]?.outer.length ? 'freehand' : undefined)
+}
+
+// Short, tool-appropriate noun for a default label. An arrow is not an ROI; a
+// Length/Bidirectional is a line, not a region — so the generic "ROI" is wrong
+// for them (see round-2 review R2-3).
+const DEFAULT_LABEL_PREFIX: Record<string, string> = {
+  measureLine: 'Length',
+  arrow: 'Arrow',
+  measureBidirectional: 'Bidirectional',
+  measureEllipse: 'ROI',
+  measureRect: 'ROI',
+  measureCircle: 'ROI',
+  measureSpline: 'ROI',
+  measureLivewire: 'ROI',
+  freehand: 'ROI',
+}
+
+function defaultLabelPrefix(a: VectorAnnotation): string {
+  const type = annotationToolType(a)
+  return (type && DEFAULT_LABEL_PREFIX[type]) || 'ROI'
+}
+
+/**
+ * Assign the default viewport label before reflecting a new annotation to OHIF.
+ * The number is one past the highest existing "<prefix> #N" so a label is never
+ * reused after a deletion (which would leave two rows with the same name).
+ * Returns true if it assigned text (so the caller can redraw).
+ */
 export function applyDefaultAnnotationText(
   annotation: VectorAnnotation,
   annotations: readonly VectorAnnotation[],
 ): boolean {
   if (annotation.text?.length) return false
-  const index = annotations.findIndex(
-    (candidate) => candidate.id === annotation.id,
-  )
-  const count = index >= 0 ? index + 1 : annotations.length + 1
-  const text = `ROI #${count}`
+  const prefix = defaultLabelPrefix(annotation)
+  const re = new RegExp(`^${prefix} #(\\d+)$`)
+  let maxN = 0
+  for (const candidate of annotations) {
+    const m = candidate.text ? re.exec(candidate.text) : null
+    if (m) {
+      const n = Number(m[1])
+      if (n > maxN) maxN = n
+    }
+  }
+  const text = `${prefix} #${maxN + 1}`
   annotation.text = text
   // mergeAnnotations stores a shallow clone, while annotationAdded carries the
   // pre-merge object. Update the stored annotation too so the viewport overlay
   // sees the label.
-  if (index >= 0) {
-    const stored = annotations[index]
-    if (stored) stored.text = text
-  }
+  const stored = annotations.find((c) => c.id === annotation.id)
+  if (stored) stored.text = text
   return true
 }
 
@@ -693,9 +728,7 @@ export function reflectNiivueAnnotation(
   )
     return false
   // Freehand annotations predate shape metadata and are represented by polygons.
-  const toolType =
-    annotation.shape?.type ??
-    (annotation.polygons[0]?.outer.length ? 'freehand' : undefined)
+  const toolType = annotationToolType(annotation)
   const mapping = toolType ? ANNOTATION_TO_OHIF[toolType] : undefined
   if (!mapping) return false
   const entry = getNiivueEntry(viewportId)
@@ -775,7 +808,15 @@ export function applyOhifLabelToAnnotation(
   const ref = measurementToAnnotation.get(measurementUid)
   if (!ref) return
   const entry = getNiivueEntry(ref.viewportId)
-  entry?.nv.setAnnotationText(ref.annotationId, label ?? '')
+  if (!entry) return
+  // No-op when the text is already what OHIF reports. This breaks the echo loop:
+  // an update-in-place reflect broadcasts MEASUREMENT_UPDATED carrying the row
+  // label we just wrote from the annotation's own text, and setAnnotationText
+  // always re-emits annotationChanged (even for identical text) which would
+  // re-drive reconcile -> reflect -> ... (round-2 review R2-0).
+  const current = entry.nv.annotations.find((a) => a.id === ref.annotationId)
+  if (current && (current.text ?? '') === (label ?? '')) return
+  entry.nv.setAnnotationText(ref.annotationId, label ?? '')
 }
 
 /**
@@ -819,7 +860,10 @@ export function removeNiivueAnnotation(
   if (!byView || !row) return
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
-  measurementService?.remove?.(row.uid)
+  // If the host cannot remove the OHIF row, keep our bookkeeping so the row stays
+  // reclaimable rather than orphaned with no reference (round-2 review R2-7).
+  if (!measurementService?.remove) return
+  measurementService.remove(row.uid)
   byView.delete(annotationId)
   measurementToAnnotation.delete(row.uid)
   if (byView.size === 0) reflectedAnnotations.delete(viewportId)
@@ -834,8 +878,10 @@ export function clearNiivueAnnotations(
   if (!byView) return
   const measurementService = ohifServices(servicesManager)
     ?.measurementService as MeasurementServiceLike | undefined
+  // Keep bookkeeping (reclaimable) if the host cannot remove rows (R2-7).
+  if (!measurementService?.remove) return
   for (const { uid } of byView.values()) {
-    measurementService?.remove?.(uid)
+    measurementService.remove(uid)
     measurementToAnnotation.delete(uid)
   }
   reflectedAnnotations.delete(viewportId)
@@ -858,40 +904,58 @@ export function clearNiivueAnnotations(
  *                             preserved)
  *
  * The stable uid preserves OHIF panel selection, jump targets, and tracking state.
- * A transient update failure leaves the existing bookkeeping in place.
+ *
+ * Re-entrancy guarded: an update-in-place reflect can synchronously broadcast
+ * MEASUREMENT_UPDATED, whose handler may emit annotationChanged and re-enter here.
+ * Those nested calls are echoes of our own OHIF writes (never a fresh user
+ * action), so they are skipped — without this a single resize would recurse to a
+ * stack overflow (round-2 review R2-0).
  */
+const reconcilingViewports = new Set<string>()
 export function reconcileNiivueAnnotations(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
 ): void {
+  if (reconcilingViewports.has(viewportId)) return
   const entry = getNiivueEntry(viewportId)
   if (!entry) return
-  const live = entry.nv.annotations
-  const liveIds = new Set(live.map((a) => a.id))
+  reconcilingViewports.add(viewportId)
+  try {
+    const live = entry.nv.annotations
+    const liveIds = new Set(live.map((a) => a.id))
 
-  // Remove rows for annotations that no longer exist.
-  const byView = reflectedAnnotations.get(viewportId)
-  if (byView) {
-    for (const annotationId of [...byView.keys()]) {
-      if (!liveIds.has(annotationId))
-        removeNiivueAnnotation(viewportId, servicesManager, annotationId)
+    // Remove rows for annotations that no longer exist.
+    const byView = reflectedAnnotations.get(viewportId)
+    if (byView) {
+      for (const annotationId of [...byView.keys()]) {
+        if (!liveIds.has(annotationId))
+          removeNiivueAnnotation(viewportId, servicesManager, annotationId)
+      }
     }
-  }
 
-  // Add new annotations and update changed rows in place.
-  for (const annotation of live) {
-    const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
-    if (!existing) {
-      reflectNiivueAnnotation(viewportId, servicesManager, annotation)
-      continue
+    // Add new annotations and update changed rows in place.
+    for (const annotation of live) {
+      const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
+      if (!existing) {
+        reflectNiivueAnnotation(viewportId, servicesManager, annotation)
+        continue
+      }
+      if (existing.hash === annotationContentHash(annotation)) continue
+      // Update in place (reuse the uid). If the update fails (degenerate shape
+      // under minPoints, backing series momentarily unresolvable), drop the stale
+      // row so it neither shows outdated geometry nor re-attempts on every event;
+      // a later reconcile re-adds it if it becomes reflectable again.
+      const ok = reflectNiivueAnnotation(
+        viewportId,
+        servicesManager,
+        annotation,
+        existing.uid,
+      )
+      if (!ok)
+        removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
     }
-    if (existing.hash === annotationContentHash(annotation)) continue
-    reflectNiivueAnnotation(
-      viewportId,
-      servicesManager,
-      annotation,
-      existing.uid,
-    )
+  } finally {
+    reconcilingViewports.delete(viewportId)
   }
 }
 

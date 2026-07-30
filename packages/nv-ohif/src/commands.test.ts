@@ -241,14 +241,15 @@ describe('reflectNiivueAnnotation', () => {
       },
     }) as unknown as VectorAnnotation
 
-  it('defaults new annotation text to its one-based ROI count', () => {
-    const first = ellipse('first')
+  it('defaults new annotation text to max(existing #N)+1 and mutates the stored copy', () => {
+    const first = { ...ellipse('first'), text: 'ROI #1' } as VectorAnnotation
     const emittedSecond = ellipse('second')
     const storedSecond = { ...emittedSecond }
     expect(
       applyDefaultAnnotationText(emittedSecond, [first, storedSecond]),
     ).toBe(true)
     expect(emittedSecond.text).toBe('ROI #2')
+    // The stored (post-merge) copy is updated too, so the overlay shows it.
     expect(storedSecond.text).toBe('ROI #2')
 
     emittedSecond.text = 'Custom label'
@@ -483,7 +484,7 @@ describe('reflectNiivueAnnotation', () => {
     reflectNiivueAnnotation('vp-a7', svc.servicesManager, ellipse('A'))
     reflectNiivueAnnotation('vp-a7', svc.servicesManager, ellipse('B'))
     const aUid = (svc.added[0]?.data.schema as { uid: string }).uid
-    const bUid = (svc.added[1]?.data.schema as { uid: string }).uid
+    const uidB = (svc.added[1]?.data.schema as { uid: string }).uid
     // A is resized (stats change); B is untouched.
     const aChanged = ellipse('A')
     ;(aChanged as { stats: Record<string, number> }).stats = {
@@ -503,7 +504,7 @@ describe('reflectNiivueAnnotation', () => {
       data: { area: number }
     }
     expect(refreshed.uid).toBe(aUid)
-    expect(refreshed.uid).not.toBe(bUid)
+    expect(refreshed.uid).not.toBe(uidB)
     expect(refreshed.data.area).toBe(999)
   })
 
@@ -554,6 +555,122 @@ describe('reflectNiivueAnnotation', () => {
     expect(unsubscriptions).toBe(0)
     releaseSecond?.()
     expect(unsubscriptions).toBe(1)
+  })
+
+  it('does not infinitely recurse when an update echoes MEASUREMENT_UPDATED (R2-0)', () => {
+    // A measurement service that upserts and, like real OHIF, synchronously
+    // broadcasts MEASUREMENT_UPDATED on an UPDATE (a reused uid) — the exact
+    // echo the prior test mock never produced, which hid the recursion.
+    const anno = ellipse('x') as unknown as { id: string; text?: string }
+    const annos = [anno as unknown as VectorAnnotation]
+    let addCalls = 0
+    let updatedCb:
+      | ((p: { measurement: { uid: string; label?: string } }) => void)
+      | undefined
+    const seen = new Set<string>()
+    let sm: OhifExtensionParams['servicesManager']
+    const nv = {
+      ...stubNiivue(),
+      annotations: annos,
+      setAnnotationText: (id: string, text: string) => {
+        const a = annos.find((x) => x.id === id) as
+          | { text?: string }
+          | undefined
+        if (a) a.text = text || undefined
+        // Mirror NiivueViewport: setAnnotationText emits annotationChanged, which
+        // reconciles.
+        reconcileNiivueAnnotations('vp-loop', sm)
+      },
+    }
+    register('vp-loop', nv)
+    updateNiivueViewport('vp-loop', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const measurementService = {
+      createSource: () => ({}),
+      addMapping: () => {},
+      addRawMeasurement: (
+        _s: unknown,
+        _t: string,
+        data: { measurement: unknown },
+        toSchema: (d: { measurement: unknown }) => {
+          uid: string
+          label?: string
+        },
+      ) => {
+        addCalls += 1
+        const m = toSchema(data)
+        const isUpdate = seen.has(m.uid)
+        seen.add(m.uid)
+        if (isUpdate)
+          updatedCb?.({ measurement: { uid: m.uid, label: m.label } })
+        return m.uid
+      },
+      remove: () => {},
+      EVENTS: { MEASUREMENT_UPDATED: 'updated' },
+      subscribe: (
+        evt: string,
+        cb: (p: { measurement: { uid: string; label?: string } }) => void,
+      ) => {
+        if (evt === 'updated') updatedCb = cb
+        return {
+          unsubscribe: () => {
+            updatedCb = undefined
+          },
+        }
+      },
+    }
+    sm = {
+      services: {
+        viewportGridService: { getActiveViewportId: () => 'vp-loop' },
+        measurementService,
+        displaySetService: {
+          getDisplaySetsForSeries: (uid: string) =>
+            backing.filter((d) => d.SeriesInstanceUID === uid),
+        },
+      },
+    } as unknown as OhifExtensionParams['servicesManager']
+    subscribeOhifLabelSync(sm)
+    reflectNiivueAnnotation('vp-loop', sm, annos[0] as VectorAnnotation)
+    const addsAfterFirst = addCalls
+    // Resize: change stats -> reconcile updates in place (reuses the uid) ->
+    // MEASUREMENT_UPDATED echoes -> label sync -> setAnnotationText -> reconcile.
+    // The re-entrancy guard + unchanged-text guard bound this to a few calls
+    // instead of a stack overflow.
+    annos[0] = {
+      ...(ellipse('x') as object),
+      stats: { area: 999, min: 5, mean: 50, max: 200, stdDev: 12 },
+    } as unknown as VectorAnnotation
+    reconcileNiivueAnnotations('vp-loop', sm)
+    expect(addCalls - addsAfterFirst).toBeLessThan(5)
+  })
+
+  it('applyDefaultAnnotationText labels by tool and never reuses a number', () => {
+    const mk = (id: string, type: string): VectorAnnotation =>
+      ({
+        id,
+        text: undefined,
+        polygons: [],
+        shape: { type, start: { x: 0, y: 0 }, end: { x: 1, y: 1 } },
+      }) as unknown as VectorAnnotation
+    const line = mk('l', 'measureLine')
+    expect(applyDefaultAnnotationText(line, [line])).toBe(true)
+    expect(line.text).toBe('Length #1')
+    const arrow = mk('a', 'arrow')
+    expect(applyDefaultAnnotationText(arrow, [line, arrow])).toBe(true)
+    expect(arrow.text).toBe('Arrow #1')
+    // Two ROIs exist (#1, #2), #1 was deleted; a new ROI must NOT reuse '#2'.
+    const r2 = {
+      ...mk('r2', 'measureEllipse'),
+      text: 'ROI #2',
+    } as VectorAnnotation
+    const r3 = mk('r3', 'measureEllipse')
+    expect(applyDefaultAnnotationText(r3, [r2, r3])).toBe(true)
+    expect(r3.text).toBe('ROI #3')
+    // An already-labeled annotation is left alone.
+    expect(applyDefaultAnnotationText(r2, [r2, r3])).toBe(false)
   })
 })
 

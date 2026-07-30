@@ -104,3 +104,130 @@ consolidation. GL/WebGPU parity unaffected (shared projector).
   `1.3.20260724` is). Confirm, keep removed if so.
 - PLAN.md point-geometry open-item removed: correct now that point geometry is
   implemented (once [0]/[1] land).
+
+---
+
+# Round 2 (2026-07-30): review of Codex commits 28d08284 + 6fc1ab8a
+
+xhigh review of the two follow-up commits ("complete measurement reflection
+hardening" and "render default annotation labels"). 9 findings survived
+verification (8 refuted). NO fixes applied yet; this is the plan.
+
+## Must-fix (confirmed correctness)
+
+### R2-0 update-in-place recursion -> stack overflow (HIGHEST)
+
+`reconcileNiivueAnnotations` + `subscribeOhifLabelSync`. Commit 28d08284 changed
+the "changed annotation" branch from remove+re-add to update-in-place:
+`reflectNiivueAnnotation(..., existing.uid)` reuses the uid, so real OHIF
+`addRawMeasurement` UPSERTs and synchronously broadcasts `MEASUREMENT_UPDATED`.
+The label-sync subscriber then calls `applyOhifLabelToAnnotation` ->
+`nv.setAnnotationText`, which emits `annotationChanged{move}` even for identical
+text (NVControlBase ~1652), re-entering `onAnnotationChanged` -> reconcile. The
+stored hash is updated only AFTER `addRawMeasurement` returns, so the re-entrant
+reconcile still sees a mismatch and reflects again -> update -> MEASUREMENT_UPDATED
+-> ... until "Maximum call stack size exceeded". The test mock never emits
+MEASUREMENT_UPDATED, so the suite is green while real OHIF crashes on any
+resize/move/label-edit.
+
+Fix (defense in depth):
+- Guard `applyOhifLabelToAnnotation`: no-op when the annotation's current text
+  already equals the incoming label. This breaks the loop at the boundary
+  (rowLabel == annotation.text once applyDefaultAnnotationText has stamped it).
+- Update `byView`'s stored `{uid, hash}` BEFORE calling `addRawMeasurement`, so a
+  synchronous re-entrant reconcile sees the fresh hash and skips.
+- Add a per-viewport re-entrancy guard around reconcile so our own updates cannot
+  re-drive it.
+- Alternative (simpler, provably loop-free): revert to remove+re-add. `remove`
+  fires MEASUREMENT_REMOVED and `add` fires MEASUREMENT_ADDED, neither of which
+  the label sync listens to, so no loop. Cost: the edited row's uid churns (loses
+  its own selection) — acceptable. Decide guard-based vs revert.
+
+### R2-1 reconcile ignores reflect's false return -> permanent stale row
+
+`reconcileNiivueAnnotations` update branch calls `reflectNiivueAnnotation(...,
+existing.uid)` without checking the boolean. On a false return (degenerate shape
+under `minPoints`, transient `resolveBackingSeries` undefined, or `addRawMeasurement`
+returns undefined) `byView` keeps the OLD hash + uid, so the row shows stale
+geometry forever AND every later `annotationChanged` re-runs the failing reflect
+(churn). Fix: use the return; on false for an existing row, remove the row +
+bookkeeping so state stays consistent (or leave hash but stop re-attempting).
+
+### R2-2 'draw' skipped, but mergeAnnotations consumes reflected annotations
+
+`onAnnotationChanged` skips `action === 'draw'`, but niivue's `mergeAnnotations`
+(fired on draw) can union/cut a PREVIOUSLY reflected annotation out of
+`nv.annotations` with no `annotationRemoved` event, so its panel row lingers.
+Fix: reconcile on 'draw' too (membership diff removes the consumed one; the newly
+added one is already reflected by `onAnnotationAdded`). Depends on R2-0 being
+fixed first so reconcile is loop-safe.
+
+### R2-3 'ROI #N' stamped on Length/Arrow/Bidirectional
+
+`applyDefaultAnnotationText` sets `text = 'ROI #N'` guarded only on empty text,
+not tool type, so `reflectNiivueAnnotation`'s rowLabel becomes 'ROI #N' for a
+Length ruler or an Arrow (semantically wrong; overrides the tool-specific label).
+The user DID want default text on arrows, so keep default labels but make them
+tool-aware (e.g. 'Length #N' / 'Arrow #N' / 'ROI #N', or reuse the tool label +
+number).
+
+### R2-4 ROI numbering collides after a deletion
+
+Index-based `count = findIndex(...) + 1` reuses a number after a delete: draw #1
+#2, delete #1, draw new -> live is [survivor(idx0), new(idx1)] -> new is labeled
+'ROI #2', colliding with the survivor's persisted 'ROI #2'. Fix: monotonic
+per-viewport counter (never reuse), or `max(existing #N) + 1`.
+
+### R2-5 hash source mismatch: pre-merge event vs post-merge clone
+
+`onAnnotationAdded` passes the pre-merge event object to `reflectNiivueAnnotation`,
+which stores `hash(preMerge)`. But `nv.annotations` holds a clone
+`{...newAnnotation, polygons: mergedPolygons}` (clipper output). Reconcile hashes
+the clone, so for any polygon tool (freehand/spline/livewire) the hashes disagree
+for a shape the user never touched -> needless re-reflect (and, pre-R2-0-fix, feeds
+the loop). Fix: reflect should hash the STORED post-merge annotation (look up by id
+in `nv.annotations`), or `onAnnotationAdded` should reflect the merged annotation.
+
+## Plausible (should-fix / verify)
+
+### R2-6 duplicate rows if addRawMeasurement appends instead of upserts
+
+Update-in-place assumes `addRawMeasurement` upserts by the reused uid. The R2-0
+trace found real OHIF DOES upsert (that's why it broadcasts MEASUREMENT_UPDATED),
+so duplicates are unlikely on the deployed build — but the invariant "one row per
+annotation" now rests entirely on that. If we revert to remove+re-add (R2-0
+alternative) this concern disappears. Otherwise verify on the rig.
+
+### R2-7 clear/remove drop bookkeeping even when remove is absent
+
+`measurementService.remove` is optional. clear/remove call `remove?.(uid)` then
+unconditionally delete internal maps, so if the host lacks `remove` the panel rows
+orphan with no way to reclaim them. Low likelihood (OHIF has remove); guard by only
+deleting bookkeeping when `remove` exists.
+
+### R2-8 reconcile re-runs full reflect per drag step (perf)
+
+If `annotationChanged{resize|move}` fires per pointer step, each runs full reflect
+(resolveBackingSeries loop + points/LPS/display + addRawMeasurement) on the
+interaction hot path. Coalesce (rAF/debounce) or reflect only on the terminal
+event. Verify whether resize/move fire per-step or on release first.
+
+## Refuted (no action) — 8
+
+Keying bookkeeping on addRawMeasurement's RETURN value is correct; addMapping with
+`points` undefined is valid; directly mutating the stored annotation's `.text` is
+acceptable; the passed-uid vs return-uid divergence is handled; label-sync pushing
+the internal fallback label as user text (does not occur since applyDefaultAnnotationText
+always sets text first); reconcile's new-annotation branch missing applyDefaultAnnotationText.
+
+## Recommended order
+
+1. R2-0 first (unblocks everything; pick guard-based or revert to remove+re-add).
+2. R2-5 (hash the stored annotation) + R2-1 (honor false return) — both remove
+   spurious reflects that also stress R2-0.
+3. R2-2 (reconcile on draw) once reconcile is loop-safe.
+4. R2-3 + R2-4 (tool-aware default label + monotonic numbering).
+5. R2-7, R2-8 (guards + coalescing).
+6. Add a test with a MEASUREMENT_UPDATED-emitting mock so the recursion can never
+   regress silently again. Full gate + rig verification of resize/move/undo/label
+   edit with two ROIs.

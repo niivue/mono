@@ -193,12 +193,18 @@ export function NiivueViewport(props: OhifViewportProps) {
         .detail?.annotation
       if (!annotation) return
       if (applyDefaultAnnotationText(annotation, nv.annotations)) nv.drawScene()
+      // annotationAdded carries the PRE-merge object; nv.annotations holds the
+      // post-merge clone (clipper may have changed its polygons). Reflect the
+      // stored one so its geometry + content hash match what reconcile later sees
+      // (round-2 review R2-5). Fall back to the event object if not found.
+      const stored =
+        nv.annotations.find((a) => a.id === annotation.id) ?? annotation
       const added = reflectNiivueAnnotation(
         viewportId,
         servicesManagerRef.current,
-        annotation,
+        stored,
       )
-      const stats = annotation.stats
+      const stats = stored.stats
       if (!added || !stats) return
       // A measured line reports its length; area tools report area.
       const message =
@@ -220,13 +226,14 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
     const onAnnotationChanged = (e: Event) => {
       const action = (e as CustomEvent<{ action: string }>).detail?.action
-      // A new annotation ('draw') is handled by onAnnotationAdded. Every other
-      // action changes existing rows in bulk with no per-row event (only an
-      // action string): a resize/move (stats changed), an erase, an undo/redo
-      // (membership changed), or a clear-all. Reconcile the whole panel against
-      // the current annotation set so no row is left stale or orphaned.
-      if (action && action !== 'draw')
-        reconcileNiivueAnnotations(viewportId, servicesManagerRef.current)
+      if (!action) return
+      // onAnnotationAdded already reflected the new annotation, but a 'draw' can
+      // also MERGE (clipper union/cut) a previously reflected annotation out of
+      // the set with no annotationRemoved event, so its row would linger
+      // (round-2 review R2-2). Every action reconciles: it is diff-based (only
+      // touches changed/vanished/new rows) and re-entrancy guarded, so
+      // reconciling on 'draw' just prunes any consumed row and no-ops the rest.
+      reconcileNiivueAnnotations(viewportId, servicesManagerRef.current)
     }
     nv.addEventListener('annotationAdded', onAnnotationAdded)
     nv.addEventListener('annotationRemoved', onAnnotationRemoved)

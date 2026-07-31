@@ -86,18 +86,66 @@ describe('buildAnnotationGeometry', () => {
     expect(text.some((t) => t.str.includes('20'))).toBe(true)
   })
 
-  it('emits a label with the shape stats and honors alignment', () => {
+  it('centers a closed ROI label below its bounding box (ignores seam anchor)', () => {
     const el = shape({
       outer: [
         { x: 0, y: 0 },
         { x: 4, y: 0 },
         { x: 4, y: 4 },
+        { x: 0, y: 4 },
       ],
+      // The seam's off-to-the-side left-aligned anchor must be overridden.
       label: { lines: ['Area: 12.0 mm²'], x: 30, y: 5, align: 'left' },
     })
-    const { text } = buildAnnotationGeometry([el])
+    const { text } = buildAnnotationGeometry([el], { dpr: 1, labelCssPx: 14 })
     expect(text).toHaveLength(1)
     expect(text[0]?.str).toContain('Area')
+    // Centered on the bbox center x (2), center-aligned.
+    expect(text[0]?.x).toBe(2)
+    expect(text[0]?.align).toBe(0.5)
+    // Baseline below the bottom edge (maxY=4): 4 + gap(4) + ascent(14 * 0.8).
+    expect(text[0]?.y).toBeCloseTo(4 + 4 + 14 * 0.8, 5)
+  })
+
+  it('stacks a multi-line closed ROI label centered below the box', () => {
+    const el = shape({
+      outer: [
+        { x: 0, y: 0 },
+        { x: 4, y: 0 },
+        { x: 4, y: 4 },
+        { x: 0, y: 4 },
+      ],
+      label: {
+        lines: ['ROI #1', 'Area: 12.0 mm²', 'Mean: 5.0'],
+        x: 30,
+        y: 5,
+        align: 'left',
+      },
+    })
+    const { text } = buildAnnotationGeometry([el], { dpr: 1, labelCssPx: 10 })
+    // One text item per line, all centered on the bbox center x.
+    expect(text).toHaveLength(3)
+    for (const t of text) {
+      expect(t.x).toBe(2)
+      expect(t.align).toBe(0.5)
+    }
+    // Stacked with a constant line height (labelPx * 1.3 = 13).
+    expect((text[1]?.y ?? 0) - (text[0]?.y ?? 0)).toBeCloseTo(13, 5)
+    expect((text[2]?.y ?? 0) - (text[1]?.y ?? 0)).toBeCloseTo(13, 5)
+    // First line just below the bottom edge (maxY=4): 4 + gap(4) + ascent(10*0.8).
+    expect(text[0]?.y).toBeCloseTo(4 + 4 + 10 * 0.8, 5)
+  })
+
+  it('honors the seam label anchor + alignment for an OPEN shape', () => {
+    const line = shape({
+      tool: 'measureLine',
+      isClosed: false,
+      start: { x: 0, y: 0 },
+      end: { x: 20, y: 0 },
+      label: { lines: ['Tumor'], x: 30, y: 5, align: 'left' },
+    })
+    const { text } = buildAnnotationGeometry([line])
+    expect(text[0]?.x).toBe(30)
     expect(text[0]?.align).toBe(0)
   })
 

@@ -4,7 +4,7 @@ import { parseFont, screenPxRange } from './font'
 const RAW = {
   atlas: { width: 100, height: 200, distanceRange: 2, size: 50 },
   glyphs: [
-    { unicode: 32, advance: 0.25 }, // space: no bounds -> skipped
+    { unicode: 32, advance: 0.25 }, // space: no bounds -> advance-only glyph
     {
       unicode: 65, // 'A'
       advance: 0.6,
@@ -15,11 +15,17 @@ const RAW = {
 }
 
 describe('parseFont', () => {
-  it('skips glyphs without bounds and parses the rest', () => {
+  it('keeps advance-only glyphs (space) and parses the rest', () => {
     const f = parseFont(RAW)
-    expect(f.glyphs.has(' ')).toBe(false)
     expect(f.glyphs.has('A')).toBe(true)
-    expect(f.glyphs.size).toBe(1)
+    expect(f.glyphs.size).toBe(2)
+    // The space has its advance but a zero-size (invisible) quad, so it renders
+    // as a gap rather than being dropped.
+    const sp = f.glyphs.get(' ')
+    if (!sp) throw new Error('missing space')
+    expect(sp.xadv).toBeCloseTo(0.25)
+    expect(sp.plane).toEqual([0, 0, 0, 0])
+    expect(sp.uv).toEqual([0, 0, 0, 0])
     expect(f.distanceRange).toBe(2)
     expect(f.size).toBe(50)
     expect(f.textureSize).toEqual([100, 200])

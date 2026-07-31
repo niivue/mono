@@ -28,6 +28,9 @@ import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 // stays legible against the ticks — matching the whole-slide ruler.
 const RULER_LABEL_CSS_PX = 22
 
+// Gap (CSS px, scaled by dpr) between a closed ROI's bottom edge and its label.
+const LABEL_BELOW_GAP_PX = 4
+
 export interface AnnotationGeometryOptions {
   /** Device-pixel ratio; scales stroke width + label size for crisp output. */
   dpr?: number
@@ -129,18 +132,50 @@ export function buildAnnotationGeometry(
     }
 
     if (shape.label) {
-      text.push({
-        // The overlay font layout draws a single line (it skips a '\n'), which ran
-        // the label parts together (e.g. "ROI #3Area: 12.0 mm2"). Join with a space
-        // so each part is separated.
-        str: shape.label.lines.join(' '),
-        x: shape.label.x,
-        y: shape.label.y,
-        sizePx: labelPx,
-        align: shape.label.align === 'center' ? 0.5 : 0,
-        color: [sr, sg, sb, 1],
-        outlineWidthPx: dpr,
-      })
+      const labelColor = [sr, sg, sb, 1] as const
+      if (shape.isClosed && shape.outer.length > 0) {
+        // A closed ROI's label is stacked, centered, BELOW its bounding box: each
+        // line is a separate text item under the box's bottom edge (rather than off
+        // to the side, and rather than one long joined line that overruns the tile).
+        let minX = Number.POSITIVE_INFINITY
+        let maxX = Number.NEGATIVE_INFINITY
+        let maxY = Number.NEGATIVE_INFINITY
+        for (const p of shape.outer) {
+          if (p.x < minX) minX = p.x
+          if (p.x > maxX) maxX = p.x
+          if (p.y > maxY) maxY = p.y
+        }
+        const cx = (minX + maxX) / 2
+        const lineHeight = labelPx * 1.3
+        // First line's baseline: gap + glyph ascent (~0.8 em) below the bottom edge
+        // so its top sits at the edge; the overlay text is baseline-anchored + ascends.
+        let baseY = maxY + LABEL_BELOW_GAP_PX * dpr + labelPx * 0.8
+        // TODO(word-wrap): a single label line can still be wider than the box /
+        // tile (e.g. "Min: -929.0  Max: 1382.0"); wrap long lines to the box width.
+        for (const line of shape.label.lines) {
+          text.push({
+            str: line,
+            x: cx,
+            y: baseY,
+            sizePx: labelPx,
+            align: 0.5,
+            color: labelColor,
+            outlineWidthPx: dpr,
+          })
+          baseY += lineHeight
+        }
+      } else {
+        // Open shapes (line / arrow) keep the seam's single-line anchor + alignment.
+        text.push({
+          str: shape.label.lines.join(' '),
+          x: shape.label.x,
+          y: shape.label.y,
+          sizePx: labelPx,
+          align: shape.label.align === 'center' ? 0.5 : 0,
+          color: labelColor,
+          outlineWidthPx: dpr,
+        })
+      }
     }
   }
 

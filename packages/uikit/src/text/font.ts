@@ -56,10 +56,21 @@ export function parseFont(raw: RawFontFile): UIKitFontMetrics {
   const atlas = raw.atlas
   const glyphs = new Map<string, UIKitGlyph>()
   for (const glyph of raw.glyphs) {
-    if (!glyph.atlasBounds || !glyph.planeBounds) continue
     const char = String.fromCodePoint(glyph.unicode)
     const a = glyph.atlasBounds
     const p = glyph.planeBounds
+    if (!a || !p) {
+      // An advance-only glyph (e.g. the space, U+0020) has no drawable quad but
+      // its advance must still move the pen, otherwise spaces are dropped and
+      // label text runs together ("Area: 12" -> "Area:12"). Record a zero-size
+      // quad plus the advance.
+      glyphs.set(char, {
+        uv: [0, 0, 0, 0],
+        plane: [0, 0, 0, 0],
+        xadv: glyph.advance,
+      })
+      continue
+    }
     const uvL = a.left / atlas.width
     const uvB = (atlas.height - a.top) / atlas.height
     const uvW = (a.right - a.left) / atlas.width

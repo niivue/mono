@@ -19,6 +19,7 @@ import {
   resolveWindowLevel,
   subscribeOhifLabelSync,
   syncNiivueWindowLevelToOhif,
+  visibleAnnotationScreenShapes,
 } from './commands'
 import {
   getNiivueEntryForViewport,
@@ -1055,6 +1056,66 @@ describe('reflectNiivueAnnotation', () => {
 
     expect(svc.removed).toEqual([uid])
     expect(removedAnnotationIds).toHaveLength(0)
+    release?.()
+  })
+
+  it('hides and shows the annotation when its OHIF measurement visibility toggles', () => {
+    let draws = 0
+    const nv = {
+      ...stubNiivue(),
+      drawScene() {
+        draws += 1
+      },
+    }
+    const callbacks = new Map<string, (payload: unknown) => void>()
+    register('vp-vis', nv)
+    updateNiivueViewport('vp-vis', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-vis', backing)
+    const measurementService = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services.measurementService as {
+      EVENTS?: Record<string, string>
+      subscribe?: (
+        event: string,
+        callback: (payload: unknown) => void,
+      ) => { unsubscribe: () => void }
+    }
+    measurementService.EVENTS = { MEASUREMENT_UPDATED: 'updated' }
+    measurementService.subscribe = (event, callback) => {
+      callbacks.set(event, callback)
+      return { unsubscribe: () => callbacks.delete(event) }
+    }
+    const annotation = ellipse('vis')
+    nv.annotations = [annotation]
+    reflectNiivueAnnotation('vp-vis', svc.servicesManager, annotation)
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    const release = subscribeOhifLabelSync(svc.servicesManager)
+
+    const shapes = [{ id: 'vis' }, { id: 'other' }] as unknown as Parameters<
+      typeof visibleAnnotationScreenShapes
+    >[1]
+    // Visible by default: every projected shape passes through.
+    expect(visibleAnnotationScreenShapes('vp-vis', shapes)).toHaveLength(2)
+
+    // Hide it: the overlay filter drops that id and the viewport re-renders.
+    callbacks.get('updated')?.({ measurement: { uid, isVisible: false } })
+    expect(draws).toBe(1)
+    expect(
+      visibleAnnotationScreenShapes('vp-vis', shapes).map((s) => s.id),
+    ).toEqual(['other'])
+
+    // Idempotent: a repeat hide is a no-op (no extra redraw).
+    callbacks.get('updated')?.({ measurement: { uid, isVisible: false } })
+    expect(draws).toBe(1)
+
+    // Show it again: the id passes through once more.
+    callbacks.get('updated')?.({ measurement: { uid, isVisible: true } })
+    expect(draws).toBe(2)
+    expect(visibleAnnotationScreenShapes('vp-vis', shapes)).toHaveLength(2)
     release?.()
   })
 

@@ -12,6 +12,7 @@ import {
   removeNiivueAnnotation,
   subscribeOhifLabelSync,
   syncNiivueWindowLevelToOhif,
+  visibleAnnotationScreenShapes,
 } from './commands'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
@@ -130,9 +131,11 @@ export function NiivueViewport(props: OhifViewportProps) {
       loadDefaultFont()
         .then((font) => {
           if (disposed) return
-          annotationOverlay = new VolumeAnnotationOverlay(
-            font,
-            () => nv.annotationScreenShapes,
+          annotationOverlay = new VolumeAnnotationOverlay(font, () =>
+            visibleAnnotationScreenShapes(
+              viewportId,
+              nv.annotationScreenShapes,
+            ),
           )
           unregisterAnnotation = nv.registerOverlayRenderer(annotationOverlay)
           nv.isAnnotationDrawn = false

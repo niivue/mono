@@ -1,5 +1,6 @@
 import {
   type AnnotationPoint,
+  type AnnotationScreenShape,
   type AnnotationStats,
   SLICE_TYPE,
   slice2DToMM,
@@ -398,7 +399,9 @@ interface MeasurementServiceLike {
       viewportId?: string
       // MEASUREMENT_UPDATED/JUMP carry the full measurement object; the
       // MEASUREMENT_REMOVED payload carries the uid as a bare string.
-      measurement?: string | { uid?: string; label?: string }
+      measurement?:
+        | string
+        | { uid?: string; label?: string; isVisible?: boolean }
     }) => void,
   ) => { unsubscribe?: () => void }
 }
@@ -662,6 +665,12 @@ const measurementToAnnotation = new Map<
 // from that call; the reverse-delete handler skips these so our own teardown does
 // not re-enter and try to remove the annotation a second time.
 const removingUids = new Set<string>()
+
+// Annotation ids hidden from the overlay because their OHIF measurement was
+// toggled invisible in the panel (the eye icon). The overlay's shape provider
+// filters these out; toggling visibility back on clears the id. Keyed by
+// viewport, so it is torn down alongside the reflect bookkeeping.
+const hiddenAnnotations = new Map<string, Set<string>>()
 
 interface LabelSyncSubscription {
   refCount: number
@@ -965,9 +974,58 @@ export function applyOhifRemoveToAnnotation(measurementUid: string): void {
   byView?.delete(ref.annotationId)
   if (byView && byView.size === 0) reflectedAnnotations.delete(ref.viewportId)
   measurementToAnnotation.delete(measurementUid)
+  clearHiddenAnnotation(ref.viewportId, ref.annotationId)
   // removeAnnotation splices the annotation out and calls drawScene, so the
   // viewport re-renders without it.
   getNiivueEntry(ref.viewportId)?.nv.removeAnnotation(ref.annotationId)
+}
+
+/** Drop a hidden-annotation entry (annotation gone / row torn down). */
+function clearHiddenAnnotation(viewportId: string, annotationId: string): void {
+  const set = hiddenAnnotations.get(viewportId)
+  if (!set) return
+  set.delete(annotationId)
+  if (set.size === 0) hiddenAnnotations.delete(viewportId)
+}
+
+/**
+ * The overlay shape provider: `nv.annotationScreenShapes` minus any annotation
+ * hidden via its OHIF measurement's visibility toggle. Core still projects every
+ * annotation each frame; we drop the hidden ones just before the overlay draws.
+ */
+export function visibleAnnotationScreenShapes(
+  viewportId: string,
+  shapes: readonly AnnotationScreenShape[],
+): readonly AnnotationScreenShape[] {
+  const hidden = hiddenAnnotations.get(viewportId)
+  if (!hidden || hidden.size === 0) return shapes
+  return shapes.filter((shape) => !hidden.has(shape.id))
+}
+
+/**
+ * Show or hide the NiiVue annotation backing an OHIF measurement whose panel
+ * visibility (eye icon) was toggled, then re-render. No-op when the uid is not
+ * one of ours or the state already matches.
+ */
+export function applyOhifVisibilityToAnnotation(
+  measurementUid: string,
+  isVisible: boolean,
+): void {
+  const ref = measurementToAnnotation.get(measurementUid)
+  if (!ref) return
+  const entry = getNiivueEntry(ref.viewportId)
+  if (!entry) return
+  const set = hiddenAnnotations.get(ref.viewportId)
+  const currentlyHidden = set?.has(ref.annotationId) ?? false
+  if (isVisible === !currentlyHidden) return
+  if (isVisible) {
+    clearHiddenAnnotation(ref.viewportId, ref.annotationId)
+  } else {
+    const target = set ?? new Set<string>()
+    target.add(ref.annotationId)
+    hiddenAnnotations.set(ref.viewportId, target)
+  }
+  entry.nv.drawScene()
 }
 
 /**
@@ -996,10 +1054,14 @@ export function subscribeOhifLabelSync(
     subscriptions.push(
       svc.subscribe(labelEvent, (payload) => {
         const m = payload?.measurement
+        if (typeof m !== 'object' || !m?.uid) return
         // Only a real label field is a label edit. An update that OMITS label (a
         // tracking / cachedStats change) must not be read as an explicit blank.
-        if (typeof m === 'object' && m?.uid && typeof m.label === 'string')
+        if (typeof m.label === 'string')
           applyOhifLabelToAnnotation(m.uid, m.label)
+        // The panel eye toggle broadcasts MEASUREMENT_UPDATED with isVisible set.
+        if (typeof m.isVisible === 'boolean')
+          applyOhifVisibilityToAnnotation(m.uid, m.isVisible)
       }),
     )
   }
@@ -1069,6 +1131,7 @@ export function removeNiivueAnnotation(
   }
   byView.delete(annotationId)
   if (byView.size === 0) reflectedAnnotations.delete(viewportId)
+  clearHiddenAnnotation(viewportId, annotationId)
   return true
 }
 
@@ -1091,6 +1154,7 @@ export function clearNiivueAnnotations(
     measurementToAnnotation.delete(uid)
   }
   reflectedAnnotations.delete(viewportId)
+  hiddenAnnotations.delete(viewportId)
 }
 
 /**

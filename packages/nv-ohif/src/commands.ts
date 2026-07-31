@@ -335,16 +335,20 @@ function defaultLabelPrefix(a: VectorAnnotation): string {
 
 /**
  * Assign the default viewport label before reflecting a new annotation to OHIF.
- * The label is tool-aware ('Length #N' / 'Arrow #N' / 'Bidirectional #N' /
- * 'ROI #N') and the number is one past the highest existing "<prefix> #N", so a
- * label is never reused after a deletion. Returns true if it assigned text (so the
- * caller can redraw).
+ * The label is tool-aware ('Arrow #N' / 'Bidirectional #N' / 'ROI #N') and the
+ * number is one past the highest existing "<prefix> #N", so a label is never
+ * reused after a deletion. Returns true if it assigned text (so the caller can
+ * redraw).
+ *
+ * A measured line (Length) gets NO default text: its ruler already draws the mm
+ * reading, and a free-text label would cross / obscure the ruler.
  */
 export function applyDefaultAnnotationText(
   annotation: VectorAnnotation,
   annotations: readonly VectorAnnotation[],
 ): boolean {
   if (annotation.text?.length) return false
+  if (annotationToolType(annotation) === 'measureLine') return false
   const prefix = defaultLabelPrefix(annotation)
   const re = new RegExp(`^${prefix} #(\\d+)$`)
   let maxN = 0

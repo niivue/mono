@@ -1137,10 +1137,11 @@ describe('reflectNiivueAnnotation', () => {
         polygons: [],
         shape: { type, start: { x: 0, y: 0 }, end: { x: 1, y: 1 } },
       }) as unknown as VectorAnnotation
-    // Tool-aware prefixes: a line is a Length, an arrow is an Arrow — not an ROI.
+    // A measured line (Length) gets NO default text (its ruler draws the mm).
     const line = mk('l', 'measureLine')
-    expect(applyDefaultAnnotationText(line, [line])).toBe(true)
-    expect(line.text).toBe('Length #1')
+    expect(applyDefaultAnnotationText(line, [line])).toBe(false)
+    expect(line.text).toBeUndefined()
+    // Tool-aware prefixes: an arrow is an Arrow, not an ROI.
     const arrow = mk('a', 'arrow')
     expect(applyDefaultAnnotationText(arrow, [line, arrow])).toBe(true)
     expect(arrow.text).toBe('Arrow #1')

@@ -1013,11 +1013,13 @@ export function applyOhifVisibilityToAnnotation(
 ): void {
   const ref = measurementToAnnotation.get(measurementUid)
   if (!ref) return
-  const entry = getNiivueEntry(ref.viewportId)
-  if (!entry) return
   const set = hiddenAnnotations.get(ref.viewportId)
   const currentlyHidden = set?.has(ref.annotationId) ?? false
   if (isVisible === !currentlyHidden) return
+  // Record the hidden state FIRST, before touching the viewport. If the entry is
+  // transiently unregistered (a viewport remounting), we still remember the toggle
+  // so the next render's visibleAnnotationScreenShapes filter honours it; the
+  // drawScene below is only an immediate-repaint optimization.
   if (isVisible) {
     clearHiddenAnnotation(ref.viewportId, ref.annotationId)
   } else {
@@ -1025,7 +1027,7 @@ export function applyOhifVisibilityToAnnotation(
     target.add(ref.annotationId)
     hiddenAnnotations.set(ref.viewportId, target)
   }
-  entry.nv.drawScene()
+  getNiivueEntry(ref.viewportId)?.nv.drawScene()
 }
 
 /**
@@ -1131,7 +1133,17 @@ export function removeNiivueAnnotation(
   }
   byView.delete(annotationId)
   if (byView.size === 0) reflectedAnnotations.delete(viewportId)
-  clearHiddenAnnotation(viewportId, annotationId)
+  // Only drop the hidden flag when the annotation is actually gone from NiiVue.
+  // removeNiivueAnnotation also runs on reconcile's permanently-unsupported path,
+  // which drops the OHIF row while the annotation is still alive; clearing there
+  // would un-hide a shape the user hid (and leave no row to re-hide it). On a
+  // genuine delete the annotation is already spliced out (removeAnnotation emits
+  // annotationRemoved after the splice), so this correctly cleans up.
+  const stillPresent =
+    getNiivueEntry(viewportId)?.nv.annotations.some(
+      (a) => a.id === annotationId,
+    ) ?? false
+  if (!stillPresent) clearHiddenAnnotation(viewportId, annotationId)
   return true
 }
 
@@ -1146,10 +1158,18 @@ export function clearNiivueAnnotations(
     ?.measurementService as MeasurementServiceLike | undefined
   for (const { uid } of byView.values()) {
     if (!uid) continue
+    // Guard against our own echo: this runs on unmount BEFORE the MEASUREMENT_REMOVED
+    // subscription is torn down, so remove() synchronously re-enters
+    // applyOhifRemoveToAnnotation. Marking the uid makes that a no-op instead of a
+    // redundant nv.removeAnnotation + drawScene per row (and a mutation of byView
+    // mid-iteration).
+    removingUids.add(uid)
     try {
       measurementService?.remove?.(uid)
     } catch {
       // Continue clearing the remaining rows and local bookkeeping.
+    } finally {
+      removingUids.delete(uid)
     }
     measurementToAnnotation.delete(uid)
   }

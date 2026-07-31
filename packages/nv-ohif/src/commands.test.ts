@@ -4,6 +4,7 @@ import { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
 import {
   applyDefaultAnnotationText,
   applyOhifLabelToAnnotation,
+  applyOhifVisibilityToAnnotation,
   clearNiivueAnnotations,
   findOverlayCandidate,
   getNiivueCommandsModule,
@@ -59,6 +60,7 @@ function stubNiivue() {
     recalculated,
     crosshairTargets,
     selectedAnnotations,
+    drawScene() {},
     setCrosshairPos(position: [number, number, number]) {
       crosshairTargets.push(position)
     },
@@ -1116,6 +1118,119 @@ describe('reflectNiivueAnnotation', () => {
     callbacks.get('updated')?.({ measurement: { uid, isVisible: true } })
     expect(draws).toBe(2)
     expect(visibleAnnotationScreenShapes('vp-vis', shapes)).toHaveLength(2)
+    release?.()
+  })
+
+  it('records a hide even when the viewport entry is unavailable (finding 2)', () => {
+    const svc = setup('vp-vis-noentry')
+    reflectNiivueAnnotation(
+      'vp-vis-noentry',
+      svc.servicesManager,
+      ellipse('gone'),
+    )
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    // The viewport unregisters (transient remount) before the toggle arrives.
+    unregisterNiivue('vp-vis-noentry')
+    applyOhifVisibilityToAnnotation(uid, false)
+    const shapes = [{ id: 'gone' }] as unknown as Parameters<
+      typeof visibleAnnotationScreenShapes
+    >[1]
+    // The hidden state was still recorded, so the next render filters it out.
+    expect(
+      visibleAnnotationScreenShapes('vp-vis-noentry', shapes),
+    ).toHaveLength(0)
+  })
+
+  it('keeps the hidden flag when the row is dropped but the annotation lives (finding 1)', () => {
+    const nv = stubNiivue()
+    register('vp-vis-reconcile', nv)
+    updateNiivueViewport('vp-vis-reconcile', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-vis-reconcile', backing)
+    const anno = ellipse('alive')
+    nv.annotations = [anno]
+    reflectNiivueAnnotation('vp-vis-reconcile', svc.servicesManager, anno)
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    applyOhifVisibilityToAnnotation(uid, false)
+    const shapes = [{ id: 'alive' }] as unknown as Parameters<
+      typeof visibleAnnotationScreenShapes
+    >[1]
+    expect(
+      visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
+    ).toHaveLength(0)
+
+    // Reconcile drops the OHIF row while the annotation is STILL in nv.annotations
+    // (permanently-unsupported edit). The hidden flag must survive.
+    removeNiivueAnnotation('vp-vis-reconcile', svc.servicesManager, 'alive')
+    expect(
+      visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
+    ).toHaveLength(0)
+
+    // But once the annotation is genuinely gone, the flag is cleared.
+    nv.annotations = []
+    // Re-hide (the row is gone, so re-reflect to re-establish the mapping+row).
+    reflectNiivueAnnotation('vp-vis-reconcile', svc.servicesManager, anno)
+    const uid2 = (svc.added[1]?.data.schema as { uid: string }).uid
+    applyOhifVisibilityToAnnotation(uid2, false)
+    nv.annotations = []
+    removeNiivueAnnotation('vp-vis-reconcile', svc.servicesManager, 'alive')
+    expect(
+      visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
+    ).toHaveLength(1)
+  })
+
+  it('does not re-enter on its own remove echoes during teardown (finding 3)', () => {
+    const removedAnnotationIds: string[] = []
+    const nv = {
+      ...stubNiivue(),
+      removeAnnotation(id: string) {
+        removedAnnotationIds.push(id)
+      },
+    }
+    const callbacks = new Map<string, (payload: unknown) => void>()
+    register('vp-clear-echo', nv)
+    updateNiivueViewport('vp-clear-echo', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-clear-echo', backing)
+    const measurementService = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services.measurementService as {
+      EVENTS?: Record<string, string>
+      subscribe?: (
+        event: string,
+        callback: (payload: unknown) => void,
+      ) => { unsubscribe: () => void }
+      remove: (uid: string) => void
+    }
+    measurementService.EVENTS = { MEASUREMENT_REMOVED: 'removed' }
+    measurementService.subscribe = (event, callback) => {
+      callbacks.set(event, callback)
+      return { unsubscribe: () => callbacks.delete(event) }
+    }
+    // Real OHIF fires MEASUREMENT_REMOVED synchronously from remove().
+    measurementService.remove = (uid) => {
+      svc.removed.push(uid)
+      callbacks.get('removed')?.({ measurement: uid })
+    }
+    const a = ellipse('c1')
+    const b = ellipse('c2')
+    nv.annotations = [a, b]
+    reflectNiivueAnnotation('vp-clear-echo', svc.servicesManager, a)
+    reflectNiivueAnnotation('vp-clear-echo', svc.servicesManager, b)
+    const release = subscribeOhifLabelSync(svc.servicesManager)
+
+    // Teardown removes both rows while the subscription is still live.
+    clearNiivueAnnotations('vp-clear-echo', svc.servicesManager)
+
+    expect(svc.removed).toHaveLength(2)
+    // The removingUids guard kept the echoes from re-entering nv.removeAnnotation.
+    expect(removedAnnotationIds).toHaveLength(0)
     release?.()
   })
 

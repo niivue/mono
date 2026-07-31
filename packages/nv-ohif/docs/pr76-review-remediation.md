@@ -403,3 +403,47 @@ Not changed / out of scope:
   unmount, so nothing leaks permanently.
 - ipyniivue generated bindings + WSI docs are outside commands.ts/commands.test.ts
   (core / other packages) and belong to Codex/core under the ownership split.
+
+## Final review pass (reverse-sync: panel delete + visibility)
+
+High-effort workflow review of the panel-delete and visibility-toggle commits
+(`afbf1703`, `e7d3664d`). Five findings; three fixed, one documented, none
+regressed prior fixes.
+
+- **[1] Fixed - hidden flag un-set on the reconcile drop-row path.**
+  `removeNiivueAnnotation` also runs on reconcile's `permanentlyUnsupported`
+  branch, which drops the OHIF row while the NiiVue annotation is still alive.
+  It unconditionally cleared the hidden flag, so a hidden annotation edited into
+  an unsupported shape reappeared on the canvas with no row left to re-hide it.
+  Fix: only `clearHiddenAnnotation` when the annotation is actually gone from
+  `nv.annotations` (`removeAnnotation` splices before emitting `annotationRemoved`,
+  so a genuine delete still cleans up). Test: hidden flag survives a row-drop while
+  the annotation lives, and is cleared once the annotation is gone.
+
+- **[2] Fixed - hide dropped on a transiently missing viewport entry.**
+  `applyOhifVisibilityToAnnotation` early-returned on a null `getNiivueEntry`
+  before recording the hidden state, so a toggle during a viewport remount was
+  lost. Fix: record the hidden state first; the entry is only needed for the
+  immediate `drawScene` repaint (the next render's filter honours the recorded
+  state regardless). Test: a hide toggled while the entry is unregistered still
+  filters the shape out.
+
+- **[3] Fixed - teardown echo re-entered on bulk clear.**
+  `clearNiivueAnnotations` runs on unmount BEFORE the `MEASUREMENT_REMOVED`
+  subscription is torn down, and did not populate `removingUids`, so each
+  `remove()` echoed into `applyOhifRemoveToAnnotation` -> a redundant
+  `nv.removeAnnotation` + `drawScene` per row (and a mid-iteration mutation of the
+  map being looped). Fix: mark each uid in `removingUids` (add before remove,
+  delete in `finally`), mirroring `removeNiivueAnnotation`, so the echo no-ops.
+  Test: a bulk clear with a live subscription removes every OHIF row without
+  re-entering `nv.removeAnnotation`.
+
+- **[0] Known limitation (not fixed) - hide is inert on the built-in-draw
+  fallback.** The UIKit overlay (ruler, labels, AND the visibility filter) is only
+  wired inside `loadDefaultFont().then()`; if the bundled font fails to load, the
+  `catch` leaves `isAnnotationDrawn = true` and NiiVue's built-in draw renders
+  every annotation without consulting `hiddenAnnotations`. This is inherent to the
+  fallback (the whole overlay treatment is gated on the font, which ships in the
+  bundle so the failure is rare). Making hide work there would require teaching
+  NiiVue core about per-annotation visibility - the core change this feature
+  deliberately avoids for GL/WebGPU parity reasons. Left as-is.

@@ -956,6 +956,108 @@ describe('reflectNiivueAnnotation', () => {
     release?.()
   })
 
+  it('removes the NiiVue annotation when its OHIF measurement is deleted from the panel', () => {
+    const removedAnnotationIds: string[] = []
+    const nv = {
+      ...stubNiivue(),
+      removeAnnotation(id: string) {
+        removedAnnotationIds.push(id)
+        const i = nv.annotations.findIndex((a) => a.id === id)
+        if (i >= 0) nv.annotations.splice(i, 1)
+      },
+    }
+    const callbacks = new Map<string, (payload: unknown) => void>()
+    register('vp-remove-event', nv)
+    updateNiivueViewport('vp-remove-event', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-remove-event', backing)
+    const measurementService = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services.measurementService as {
+      EVENTS?: Record<string, string>
+      subscribe?: (
+        event: string,
+        callback: (payload: unknown) => void,
+      ) => { unsubscribe: () => void }
+    }
+    measurementService.EVENTS = { MEASUREMENT_REMOVED: 'removed' }
+    measurementService.subscribe = (event, callback) => {
+      callbacks.set(event, callback)
+      return { unsubscribe: () => callbacks.delete(event) }
+    }
+    const annotation = ellipse('remove-event')
+    nv.annotations = [annotation]
+    reflectNiivueAnnotation('vp-remove-event', svc.servicesManager, annotation)
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    const release = subscribeOhifLabelSync(svc.servicesManager)
+
+    // OHIF broadcasts the removed uid as a bare string.
+    callbacks.get('removed')?.({ measurement: uid })
+
+    expect(removedAnnotationIds).toEqual(['remove-event'])
+    expect(nv.annotations).toHaveLength(0)
+    // We must NOT call measurementService.remove: OHIF already deleted the row.
+    expect(svc.removed).toHaveLength(0)
+    // Bookkeeping is gone, so a duplicate remove event is an inert no-op.
+    callbacks.get('removed')?.({ measurement: uid })
+    expect(removedAnnotationIds).toEqual(['remove-event'])
+    release?.()
+  })
+
+  it('does not re-enter when our own removal echoes MEASUREMENT_REMOVED', () => {
+    const removedAnnotationIds: string[] = []
+    const nv = {
+      ...stubNiivue(),
+      removeAnnotation(id: string) {
+        removedAnnotationIds.push(id)
+      },
+    }
+    const callbacks = new Map<string, (payload: unknown) => void>()
+    register('vp-remove-echo', nv)
+    updateNiivueViewport('vp-remove-echo', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-remove-echo', backing)
+    const measurementService = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services.measurementService as {
+      EVENTS?: Record<string, string>
+      subscribe?: (
+        event: string,
+        callback: (payload: unknown) => void,
+      ) => { unsubscribe: () => void }
+      remove: (uid: string) => void
+    }
+    measurementService.EVENTS = { MEASUREMENT_REMOVED: 'removed' }
+    measurementService.subscribe = (event, callback) => {
+      callbacks.set(event, callback)
+      return { unsubscribe: () => callbacks.delete(event) }
+    }
+    // Real OHIF fires MEASUREMENT_REMOVED synchronously from remove().
+    measurementService.remove = (uid) => {
+      svc.removed.push(uid)
+      callbacks.get('removed')?.({ measurement: uid })
+    }
+    const annotation = ellipse('remove-echo')
+    nv.annotations = [annotation]
+    reflectNiivueAnnotation('vp-remove-echo', svc.servicesManager, annotation)
+    const uid = (svc.added[0]?.data.schema as { uid: string }).uid
+    const release = subscribeOhifLabelSync(svc.servicesManager)
+
+    // Our teardown calls measurementService.remove, which echoes the event. The
+    // removingUids guard keeps that from re-entering and removing the annotation.
+    removeNiivueAnnotation('vp-remove-echo', svc.servicesManager, 'remove-echo')
+
+    expect(svc.removed).toEqual([uid])
+    expect(removedAnnotationIds).toHaveLength(0)
+    release?.()
+  })
+
   it('does not infinitely recurse when an update echoes MEASUREMENT_UPDATED (R2-0)', () => {
     // A measurement service that upserts and, like real OHIF, synchronously
     // broadcasts MEASUREMENT_UPDATED on an UPDATE (a reused uid) — the exact

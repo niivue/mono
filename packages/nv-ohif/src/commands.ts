@@ -390,12 +390,15 @@ interface MeasurementServiceLike {
   EVENTS?: {
     MEASUREMENT_UPDATED?: string
     JUMP_TO_MEASUREMENT?: string
+    MEASUREMENT_REMOVED?: string
   }
   subscribe?: (
     event: string,
     cb: (payload: {
       viewportId?: string
-      measurement?: { uid?: string; label?: string }
+      // MEASUREMENT_UPDATED/JUMP carry the full measurement object; the
+      // MEASUREMENT_REMOVED payload carries the uid as a bare string.
+      measurement?: string | { uid?: string; label?: string }
     }) => void,
   ) => { unsubscribe?: () => void }
 }
@@ -653,6 +656,12 @@ const measurementToAnnotation = new Map<
   string,
   { viewportId: string; annotationId: string }
 >()
+
+// Measurement uids we are removing from OHIF ourselves (removeNiivueAnnotation ->
+// measurementService.remove). OHIF broadcasts MEASUREMENT_REMOVED synchronously
+// from that call; the reverse-delete handler skips these so our own teardown does
+// not re-enter and try to remove the annotation a second time.
+const removingUids = new Set<string>()
 
 interface LabelSyncSubscription {
   refCount: number
@@ -938,6 +947,30 @@ export function jumpToNiivueMeasurement(
 }
 
 /**
+ * Delete the NiiVue annotation backing an OHIF measurement removed from the
+ * panel, then re-render. No-op when the uid is not one of ours, or when WE are
+ * the ones removing it (removeNiivueAnnotation -> measurementService.remove
+ * echoes MEASUREMENT_REMOVED synchronously; removingUids marks those so we do
+ * not double-remove).
+ */
+export function applyOhifRemoveToAnnotation(measurementUid: string): void {
+  if (removingUids.has(measurementUid)) return
+  const ref = measurementToAnnotation.get(measurementUid)
+  if (!ref) return
+  // Drop our bookkeeping BEFORE removing the annotation. nv.removeAnnotation
+  // emits annotationRemoved, which drives onAnnotationRemoved ->
+  // removeNiivueAnnotation; with the row already gone that is a clean no-op and
+  // never calls measurementService.remove for the already-deleted measurement.
+  const byView = reflectedAnnotations.get(ref.viewportId)
+  byView?.delete(ref.annotationId)
+  if (byView && byView.size === 0) reflectedAnnotations.delete(ref.viewportId)
+  measurementToAnnotation.delete(measurementUid)
+  // removeAnnotation splices the annotation out and calls drawScene, so the
+  // viewport re-renders without it.
+  getNiivueEntry(ref.viewportId)?.nv.removeAnnotation(ref.annotationId)
+}
+
+/**
  * Subscribe once per MeasurementService to OHIF events handled by NiiVue:
  * label edits are pushed to annotation text, and panel jumps navigate to the
  * owning annotation. The historical function name remains part of the API.
@@ -950,7 +983,9 @@ export function subscribeOhifLabelSync(
     | undefined
   const labelEvent = svc?.EVENTS?.MEASUREMENT_UPDATED
   const jumpEvent = svc?.EVENTS?.JUMP_TO_MEASUREMENT
-  if (!svc?.subscribe || (!labelEvent && !jumpEvent)) return undefined
+  const removeEvent = svc?.EVENTS?.MEASUREMENT_REMOVED
+  if (!svc?.subscribe || (!labelEvent && !jumpEvent && !removeEvent))
+    return undefined
   const existing = labelSyncSubscriptions.get(svc as object)
   if (existing) {
     existing.refCount += 1
@@ -963,7 +998,7 @@ export function subscribeOhifLabelSync(
         const m = payload?.measurement
         // Only a real label field is a label edit. An update that OMITS label (a
         // tracking / cachedStats change) must not be read as an explicit blank.
-        if (m?.uid && typeof m.label === 'string')
+        if (typeof m === 'object' && m?.uid && typeof m.label === 'string')
           applyOhifLabelToAnnotation(m.uid, m.label)
       }),
     )
@@ -971,8 +1006,20 @@ export function subscribeOhifLabelSync(
   if (jumpEvent) {
     subscriptions.push(
       svc.subscribe(jumpEvent, (payload) => {
-        const uid = payload?.measurement?.uid
+        const m = payload?.measurement
+        const uid = typeof m === 'object' ? m?.uid : undefined
         if (uid) jumpToNiivueMeasurement(uid, servicesManager)
+      }),
+    )
+  }
+  if (removeEvent) {
+    subscriptions.push(
+      svc.subscribe(removeEvent, (payload) => {
+        // MEASUREMENT_REMOVED carries the uid as a bare string; tolerate an
+        // object payload too in case a host wraps it.
+        const m = payload?.measurement
+        const uid = typeof m === 'string' ? m : m?.uid
+        if (uid) applyOhifRemoveToAnnotation(uid)
       }),
     )
   }
@@ -1004,12 +1051,15 @@ export function removeNiivueAnnotation(
     ?.measurementService as MeasurementServiceLike | undefined
   if (row.uid) {
     if (measurementService?.remove) {
+      removingUids.add(row.uid)
       try {
         measurementService.remove(row.uid)
       } catch {
         // A THROWN remove is transient — keep the bookkeeping so the next
         // reconcile retries the OHIF-side removal.
         return false
+      } finally {
+        removingUids.delete(row.uid)
       }
     }
     // remove absent (the host can never remove it) or succeeded: drop the

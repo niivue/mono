@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>NiiVue Preview</title>
+    <style>
+      /* Quick Look panels are dark and can be resized to a fairly small square,
+         so the layout is a column that gives every spare pixel to the canvas and
+         lets the metadata strip wrap rather than clip. */
+      :root { color-scheme: dark; }
+
+      /* Selection is deliberately left ENABLED and made invisible instead.
+         WebKit starts a document selection on a drag that NiiVue does not
+         preventDefault, and that selection is what ABSORBS the gesture — with
+         it suppressed, the drag falls through to the host, which treats it as a
+         window move. So the cure for the blue tint must not be `user-select:
+         none`; it has to leave the selection in place and only stop it being
+         painted. */
+      ::selection { background: transparent; }
+      ::-moz-selection { background: transparent; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+        font: 12px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+        color: #f2f2f7;
+      }
+      #shell { display: flex; flex-direction: column; height: 100%; }
+      #stage { position: relative; flex: 1 1 auto; min-height: 0; }
+      /* Catalyst's Quick Look host also treats a primary canvas drag as a window
+         drag. Let only the host handle it; sending the same sequence to NiiVue
+         makes the moving coordinate space produce uncontrolled rotation. */
+      /* The canvas MUST receive pointer events — a left drag is NiiVue's
+         crosshair/rotate gesture. `pointer-events: none` gave the drag to the
+         host window instead, which made the preview inert. */
+      canvas { display: block; width: 100%; height: 100%; }
+
+      /* Centred overlays share a stacking slot; only one is ever visible. */
+      .overlay {
+        position: absolute; inset: 0;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        gap: 10px; padding: 20px; text-align: center;
+        background: #000;
+      }
+      .overlay[hidden] { display: none; }
+
+      .spinner {
+        width: 22px; height: 22px; border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.22);
+        border-top-color: rgba(255, 255, 255, 0.85);
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner { animation-duration: 3s; }
+      }
+
+      #fallback-title { font-size: 13px; font-weight: 600; }
+      #fallback-detail { color: #a1a1a6; max-width: 34ch; }
+
+      /* The strip must abbreviate, never hide values — a preview that silently
+         drops the datatype is worse than one that wraps. */
+      #meta {
+        flex: 0 0 auto;
+        display: flex; flex-wrap: wrap;
+        gap: 2px 14px;
+        padding: 6px 10px;
+        background: rgba(28, 28, 30, 0.96);
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        font-variant-numeric: tabular-nums;
+      }
+      #meta[hidden] { display: none; }
+      #meta .name { flex: 1 1 100%; font-weight: 600; overflow-wrap: anywhere; }
+      #meta .pair { color: #a1a1a6; white-space: nowrap; }
+      #meta .pair b { color: #f2f2f7; font-weight: 500; }
+      @media (max-height: 240px) {
+        #meta { gap: 0 10px; padding: 4px 8px; }
+        #meta .name { flex-basis: auto; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="shell">
+      <div id="stage">
+        <canvas id="gl" role="img" aria-label="Loading preview"></canvas>
+        <div class="overlay" id="loading" role="status" aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <div>Loading preview…</div>
+        </div>
+        <div class="overlay" id="fallback" role="alert" hidden>
+          <div id="fallback-title">Preview unavailable</div>
+          <div id="fallback-detail"></div>
+        </div>
+      </div>
+      <!-- `group`, not a bare div: the strip is a set of related values and
+           should be reachable and announced as one unit. -->
+      <div id="meta" role="group" aria-label="File details" hidden></div>
+    </div>
+    <script type="module" src="/src/quicklook.ts"></script>
+  </body>
+</html>

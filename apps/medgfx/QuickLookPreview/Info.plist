@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>medgfx Preview</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+
+	<!-- The types themselves are declared by the CONTAINING APP's Info.plist;
+	     declarations placed here are ignored by Launch Services. This list only
+	     says which of them we preview.
+
+	     `gov.nih.nifti-1` is Apple's own type from CoreTypes.bundle — listed,
+	     not redeclared.
+
+	     `public.gzip` and `org.gnu.gnu-zip-archive` are here on purpose and are
+	     the entries that deserve scrutiny. macOS resolves a file's type from the
+	     LAST extension component only, so `.nii.gz` is *always* plain gzip — a
+	     compound `nii.gz` UTI registers happily and may never match (Apple's own
+	     tar-gzip type declares only `tgz` for the same reason). Claiming gzip is
+	     therefore the only route by which the most common neuroimaging format
+	     can reach this extension at all. Both MIQ and NIfTIViewQL, the two
+	     shipping macOS Quick Look extensions for these formats, claim it too.
+
+	     The obligation that comes with it: we are now a candidate previewer for
+	     EVERY .gz on this machine, so `PreviewFileKind` declines anything whose
+	     name is not one we claim, before any file I/O at all. A foreign archive
+	     keeps whatever preview it would otherwise have had. Do not relax that.
+
+	     Deliberately ABSENT: `public.zip-archive`. `.trx` is a zip container but
+	     has its own extension and therefore its own type, so there is no reason
+	     to claim zip generally. -->
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>QLSupportedContentTypes</key>
+			<array>
+				<string>gov.nih.nifti-1</string>
+				<string>public.gzip</string>
+				<string>org.gnu.gnu-zip-archive</string>
+				<string>edu.mgh.freesurfer.mgh</string>
+				<string>edu.mgh.freesurfer.mgz</string>
+				<string>org.nrrd.nrrd</string>
+				<string>org.itk.metaimage</string>
+				<string>org.nitrc.gifti</string>
+				<string>com.niivue.mz3</string>
+				<string>org.mrtrix.tck</string>
+				<string>org.trackvis.trk</string>
+				<string>org.trx.trx</string>
+			</array>
+			<key>QLSupportsSearchableItems</key>
+			<false/>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.quicklook.preview</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).PreviewViewController</string>
+	</dict>
+</dict>
+</plist>

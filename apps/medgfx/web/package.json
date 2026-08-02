@@ -11,6 +11,7 @@
     "@niivue/web-bridge": "workspace:*"
   },
   "devDependencies": {
+    "playwright": "^1.59.1",
     "vite": "^6.3.2"
   }
 }

@@ -15,9 +15,16 @@
         "typescript",
         "{projectRoot}/vite.config.ts",
         "{projectRoot}/src/**/*",
-        "{projectRoot}/index.html"
+        "{projectRoot}/index.html",
+        "{projectRoot}/quicklook.html"
       ],
       "outputs": ["{projectRoot}/dist"]
+    },
+    "e2e": {
+      "command": "bun tests/preview-regression.mjs",
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["build"],
+      "inputs": ["typescript", "{projectRoot}/tests/**/*"]
     },
     "typecheck": {
       "command": "bunx tsc --noEmit",

@@ -36,7 +36,7 @@
 		     QuickLookPreview/Info.plist. -->
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>edu.mgh.freesurfer.mgh</string>
+			<string>org.freesurfer.mgh</string>
 			<key>UTTypeDescription</key>
 			<string>FreeSurfer MGH Volume</string>
 			<key>UTTypeConformsTo</key>
@@ -53,7 +53,7 @@
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>edu.mgh.freesurfer.mgz</string>
+			<string>org.freesurfer.mgz</string>
 			<key>UTTypeDescription</key>
 			<string>Gzipped FreeSurfer MGH Volume</string>
 			<key>UTTypeConformsTo</key>

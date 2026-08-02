@@ -54,8 +54,8 @@
 				<string>gov.nih.nifti-1</string>
 				<string>public.gzip</string>
 				<string>org.gnu.gnu-zip-archive</string>
-				<string>edu.mgh.freesurfer.mgh</string>
-				<string>edu.mgh.freesurfer.mgz</string>
+				<string>org.freesurfer.mgh</string>
+				<string>org.freesurfer.mgz</string>
 				<string>org.nrrd.nrrd</string>
 				<string>org.itk.metaimage</string>
 				<string>org.nitrc.gifti</string>

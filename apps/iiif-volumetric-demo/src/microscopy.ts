@@ -19,21 +19,25 @@ installNav()
 
 const BACKEND = getBackendFromUrl()
 
-// Loading every channel of a 32-channel source is slow. With two or more
-// overlays niivue orients each one into its own RGBA texture, reads all of them
-// back, and combines them on the CPU (additive premultiplied color, max alpha —
-// see blendOverlayData). That is the right blend for fluorescence channels, but
-// it costs a full GPU->CPU readback plus an nVoxels pass per channel, so the
-// load time grows linearly and 32 channels would be a long stall. Additive also
-// saturates: past a handful of channels the bright voxels clamp to white.
-const MAX_CHANNELS = 6
+// 16 is the tagged-structure count of an Allen IMSC dataset, and the reference
+// viewer at imsc.allencell.org shows all of them at once — so the cap is set to
+// display a whole dataset, not a sample of it. It is a cost ceiling, not a
+// legibility one: niivue blends stacked overlays additively (premultiplied
+// color, max alpha), which is the right merge for sparse fluorescence channels
+// and stays readable well past a handful. What does scale with channel count is
+// one fetch and one oriented RGBA volume each. WebGPU combines them in a compute
+// pass; WebGL2 still reads each one back and blends on the CPU, so a full
+// 16-channel stack is noticeably slower there.
+const MAX_CHANNELS = 16
 const DEFAULT_CHANNELS = 2
 
 // Whole-volume load budget. Bigger sources belong on the streaming pages, which
 // fetch a level/region at a time instead of the entire array.
 const MAX_WHOLE_VOLUME_VOXELS = 64_000_000
 
-// Distinct hues so stacked channels stay separable. Cycled by selection order.
+// Distinct hues so stacked channels stay separable, one per channel of a full
+// 16-structure Allen dataset before the list repeats. Ordered so the common
+// two- and three-channel picks land on the most separable pairs first.
 const CHANNEL_COLORMAPS = [
   'green',
   'red',
@@ -44,6 +48,13 @@ const CHANNEL_COLORMAPS = [
   'warm',
   'cool',
   'gray',
+  'bluegrn',
+  'copper',
+  'green2cyan',
+  'winter',
+  'blue2magenta',
+  'redyell',
+  'bronze',
 ]
 
 // The registry reports spacing in the source's own units and does not carry a
@@ -98,6 +109,8 @@ const els = {
   status: el<HTMLSpanElement>('status'),
   channels: el<HTMLDivElement>('channels'),
   channelNote: el<HTMLParagraphElement>('channel-note'),
+  pickAll: el<HTMLButtonElement>('pick-all'),
+  pickNone: el<HTMLButtonElement>('pick-none'),
   streaming: el<HTMLDivElement>('streaming'),
   canvas: el<HTMLCanvasElement>('nv-canvas'),
   hud: el<HTMLDivElement>('hud'),
@@ -111,6 +124,9 @@ let current: Dataset | null = null
 // result instead of windowing the volumes of the newer one.
 let loadToken = 0
 let loaded: ApiVolume[] = []
+// Set once the user drags the opacity slider, after which the channel-count
+// default stops overriding their choice.
+let opacityTouched = false
 
 function showFallback(msg: string): void {
   els.fallback.textContent = msg
@@ -181,6 +197,16 @@ function refreshChannelLimit(): void {
   els.channelNote.textContent = atCap
     ? `${n} of max ${MAX_CHANNELS} channels selected`
     : `${n} selected (max ${MAX_CHANNELS})`
+}
+
+// "all" fills up to the cap in list order. The registry lists a dataset's raw
+// channels before its segmentations, so on a 16-structure Allen source this is
+// exactly the raw stack the reference viewer shows.
+function setAllChannels(checked: boolean): void {
+  channelBoxes().forEach((box, index) => {
+    box.checked = checked && index < MAX_CHANNELS
+  })
+  refreshChannelLimit()
 }
 
 function buildChannelList(d: Dataset): void {
@@ -274,10 +300,24 @@ function renderHud(): void {
   els.hud.textContent = lines.join('\n')
 }
 
+// Overlay opacity is a per-channel gain in an additive blend, so N channels at
+// a fixed opacity sum toward white: at the 0.6 that suits a two-channel view, a
+// full 16-channel stack blows out its dense core. Scale the default with the
+// count (verified: 16 raw Allen channels are legible near 0.12, unreadable at
+// 0.6). Anchored so the common 2-channel case still lands on 0.6. Once the user
+// moves the slider it is theirs, and this stops overriding it.
+function suggestedOpacity(count: number): number {
+  if (count < 2) return 0.6
+  return Math.min(0.6, Math.max(0.12, 1.2 / count))
+}
+
 async function loadSelected(): Promise<void> {
   if (!nv || !current) return
   const ids = selectedBoxes().map((b) => b.value)
   const entries = current.channels.filter((e) => ids.includes(e.id))
+  if (!opacityTouched) {
+    els.opacity.value = String(suggestedOpacity(entries.length))
+  }
   const myToken = ++loadToken
   els.load.disabled = true
   els.status.textContent = entries.length
@@ -400,8 +440,15 @@ async function main(): Promise<void> {
     nv.drawScene()
   })
   els.opacity.addEventListener('input', () => {
+    opacityTouched = true
     if (nv && nv.volumes.length > 0) applyDisplay()
     renderHud()
+  })
+  els.pickAll.addEventListener('click', () => {
+    setAllChannels(true)
+  })
+  els.pickNone.addEventListener('click', () => {
+    setAllChannels(false)
   })
   els.load.addEventListener('click', () => {
     void loadSelected()

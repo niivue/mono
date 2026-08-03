@@ -1,5 +1,5 @@
 {
-  "niivueVersion": "1.0.0-rc.10",
+  "niivueVersion": "1.0.0-rc.11",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVue",
   "properties": [
@@ -2555,6 +2555,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "removeVolume",
+      "pyName": "remove_volume",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to remove"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Remove a single volume by index, emitting `volumeRemoved`.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "resetVolumeAffine",
       "pyName": "reset_volume_affine",
       "isAsync": true,
@@ -2874,9 +2891,9 @@
         },
         {
           "name": "cmap",
-          "tsType": "ColorMap | null",
+          "tsType": "string | ColorMap | null",
           "optional": false,
-          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays,\n  or null to remove the label colormap"
+          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays;\n  a built-in colormap name (e.g. 'freesurfer', resolved via\n  lookupColorMap); or null to remove the label colormap"
         }
       ],
       "returns": "Promise<void>",

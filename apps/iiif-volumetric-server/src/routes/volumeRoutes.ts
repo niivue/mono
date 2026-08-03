@@ -241,11 +241,13 @@ export function mountVolumeRoutes(app: Express, registry: Registry): void {
         return
       }
 
-      // Level 0, no bbox, no RLE, no .nii url. NIfTI streams its source
-      // file as-is; native-pyramid adapters (OME-Zarr) have no single file,
-      // so encode the loaded VolumeHandle into NIfTI bytes on the fly.
-      const stat = await fsp.stat(entry.source)
-      if (stat.isDirectory()) {
+      // Level 0, no bbox, no RLE, no .nii url. Only a NIfTI source can be
+      // streamed as-is; every other format is encoded from the loaded
+      // VolumeHandle on the fly. Gate on the format, NOT on "is the source a
+      // directory": OME-Zarr's store is a directory, but the Allen atlas'
+      // source is its JSON sidecar — a file — so the directory test streamed
+      // that JSON to the client as if it were a volume.
+      if (entry.format !== 'nifti') {
         await serveLevelAsNifti(req, res, registry, entry, 0)
         return
       }

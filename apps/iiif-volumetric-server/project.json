@@ -37,6 +37,10 @@
       "command": "bun scripts/fetch-omezarr.ts",
       "options": { "cwd": "{projectRoot}" }
     },
+    "fetch-allen": {
+      "command": "bun scripts/fetch-allen.ts",
+      "options": { "cwd": "{projectRoot}" }
+    },
     "fetch-dicom-wsi": {
       "command": "bun scripts/fetch-dicom-wsi.ts",
       "options": { "cwd": "{projectRoot}" }

@@ -34,6 +34,21 @@ export interface AdapterContext {
   isDirectory: boolean
 }
 
+// One channel of a multi-channel source (an Allen atlas PNG set, an
+// OME-Zarr with a `c` axis, a multi-channel OME-TIFF). The registry turns
+// each of these into its OWN entry, so every existing route works per
+// channel without knowing channels exist. `index` is the position on the
+// source's channel axis, which is what gets handed back to the adapter.
+export interface AdapterChannel {
+  index: number
+  name: string
+}
+
+// Which channel of the source a call refers to. Absent (or null on an
+// entry) means the source is single-channel and the adapter should read
+// it the only way it can.
+export type ChannelSelector = number | undefined
+
 // Half-open bbox in (X, Y, Z) voxel coords matching VolumeHandle. End
 // indices are exclusive. The adapter is responsible for clamping any
 // out-of-range values; callers (the registry) clamp before dispatch so
@@ -47,16 +62,26 @@ export interface SubvolumeBbox {
   z1: number
 }
 
+// Every read takes an optional trailing channel index. It is the LAST
+// parameter so single-channel adapters (NIfTI, NRRD, DICOM) can ignore it
+// entirely and still satisfy the interface.
 export interface VolumeAdapter {
   format: string
   canHandle(path: string, ctx: AdapterContext): boolean
-  probe(filePath: string): Promise<ProbeMeta>
-  load(filePath: string): Promise<VolumeHandle>
+  probe(filePath: string, channel?: ChannelSelector): Promise<ProbeMeta>
+  load(filePath: string, channel?: ChannelSelector): Promise<VolumeHandle>
+  // Multi-channel sources implement this. When absent the source is
+  // single-channel and the registry makes exactly one entry for it.
+  probeChannels?(filePath: string): Promise<AdapterChannel[]>
   // Adapters with a native multiscale pyramid (OME-Zarr datasets, future
   // DICOM-WSI tiers) implement these. When absent, the registry falls
   // back to generating a pyramid from level 0 (NIfTI path).
   probeLevels?(filePath: string): Promise<AdapterLevel[]>
-  loadLevel?(filePath: string, levelIdx: number): Promise<VolumeHandle>
+  loadLevel?(
+    filePath: string,
+    levelIdx: number,
+    channel?: ChannelSelector,
+  ): Promise<VolumeHandle>
   // Chunk-aware partial read. Returns a VolumeHandle whose shape equals
   // (x1-x0, y1-y0, z1-z0) and whose data covers only that slab — useful
   // for native-pyramid sources where loading the full level into RAM is
@@ -65,6 +90,7 @@ export interface VolumeAdapter {
     filePath: string,
     levelIdx: number,
     bbox: SubvolumeBbox,
+    channel?: ChannelSelector,
   ): Promise<VolumeHandle>
 }
 

@@ -103,7 +103,10 @@ image channels. The registry splits those into **one entry per channel**
 (`<source>_<channelName>`, e.g. `COMP_crop_M1-M2_DNA_raw`), so every
 route — IIIF Image, manifests, raw NIfTI, occupancy — works per channel
 with no channel parameter anywhere. Each entry reports its origin as
-`channel` / `channelName` in `/api`.
+`channel` / `channelName` in `/api`, plus `dataset` — the id the source
+would have had if it were single-channel, shared by all of its channels.
+Group by `dataset`; ids cannot be split back apart reliably, since a
+channel name may itself contain an underscore.
 
 Channel names come from the atlas sidecar's `channel_names` or the
 OME-Zarr `omero.channels[].label`, falling back to `c<index>`. A source

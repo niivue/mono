@@ -72,6 +72,11 @@ export interface RegistryEntry {
   // which is what lets the rest of the server stay channel-unaware.
   channel: number | null
   channelName: string | null
+  // The id this source would have had if it were single-channel, shared by
+  // every channel of one file. Clients group channels by this instead of
+  // string-munging ids, which cannot be done reliably (a channel name may
+  // itself contain the separator).
+  dataset: string
 }
 
 function channelOf(entry: RegistryEntry): number | undefined {
@@ -132,9 +137,10 @@ export class Registry {
     spacing: Vec3
     source: string
     // Null for a single-channel volume. A client groups the channels of one
-    // dataset by `source`, which is shared across them.
+    // dataset by `dataset`, which is shared across them.
     channel: number | null
     channelName: string | null
+    dataset: string
     levels: Array<{
       level: number
       shape: Shape3
@@ -154,6 +160,7 @@ export class Registry {
       source: e.source,
       channel: e.channel,
       channelName: e.channelName,
+      dataset: e.dataset,
       levels: e.levels.map((l) => ({
         level: l.level,
         shape: l.shape,
@@ -795,6 +802,7 @@ async function buildEntries(
     volume: null,
     channel,
     channelName,
+    dataset: baseId,
   })
 
   // An adapter that CAN report channels still returns none for a source

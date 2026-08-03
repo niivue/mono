@@ -222,10 +222,16 @@ async function main(): Promise<void> {
         format: v.format,
         shape: v.shape,
         dtype: v.dtype,
+        // Voxel size in the source's own units — a microscopy client shows
+        // um/voxel, and fetching it per volume would be a request each.
+        spacing: v.spacing,
         // Null on a single-channel source. When set, several entries came
-        // from one file and a client can group them back together.
+        // from one file and `dataset` is the key that groups them back
+        // together (ids cannot be split reliably: a channel name may itself
+        // contain an underscore).
         channel: v.channel,
         channelName: v.channelName,
+        dataset: v.dataset,
         levels: v.levels,
         manifest: `${PUBLIC_BASE_URL}/iiif/presentation/${v.id}/manifest`,
         raw: `${PUBLIC_BASE_URL}/volumes/${v.id}/raw`,

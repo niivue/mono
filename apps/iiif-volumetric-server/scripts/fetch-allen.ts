@@ -161,7 +161,11 @@ async function main(): Promise<void> {
       return
     }
     try {
-      bytes += await download(new URL(name, baseUrl).toString(), dest)
+      // Read-modify-write AFTER the await: `bytes += await download(...)`
+      // reads `bytes` before suspending, so concurrent runners would each
+      // write back a total computed from a stale read.
+      const size = await download(new URL(name, baseUrl).toString(), dest)
+      bytes += size
       downloaded += 1
       console.log(`  [ok] ${name}`)
     } catch (err) {

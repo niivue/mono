@@ -74,7 +74,11 @@ struct ContentView: View {
         .sheet(isPresented: sheetBinding) {
             #if os(iOS)
             NavigationStack {
-                InspectorContainer(model: model, panels: InspectorPanels.all)
+                InspectorContainer(
+                    model: model,
+                    panels: InspectorPanels.all,
+                    fillsAvailableWidth: true
+                )
                     .navigationTitle("Inspector")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {

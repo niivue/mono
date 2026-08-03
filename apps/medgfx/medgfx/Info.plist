@@ -2,9 +2,191 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>UIBackgroundModes</key>
+	<!-- Type declarations for the Quick Look preview extension live HERE, in the
+	     containing app, NOT in the .appex. Declared only in the extension they are
+	     ignored outright: the file keeps resolving to a `dyn.*` type and the
+	     extension is never matched.
+
+	     `.nii` is deliberately absent — macOS already declares `gov.nih.nifti-1`
+	     in CoreTypes.bundle, so re-declaring it would only add a second claimant
+	     for a type we agree with. The extension simply lists it in
+	     QLSupportedContentTypes.
+
+	     There is deliberately NO compound `nii.gz` type. MIQ and NIfTIViewQL both
+	     ship one, but the repo this was ported from tried it and removed it: it
+	     registers correctly, carries the `nii.gz` tag, and still never matches,
+	     because macOS resolves a type from the LAST extension component only.
+	     It is invisible in those tools because they claim generic gzip as well,
+	     which is what actually does the work. `.nii.gz` reaches the extension via
+	     `org.gnu.gnu-zip-archive` + `public.gzip` plus a filename check — see
+	     QuickLookPreview/Info.plist and PreviewFileKind.swift.
+
+	     Container-based types (`.mgz`, `.trx`) conform to `public.data`, NOT to
+	     an archive type, or Finder offers to "Uncompress" them. Same reason
+	     `.docx`, `.jar` and `.epub` do not. -->
+	<key>UTExportedTypeDeclarations</key>
 	<array>
-		<string>remote-notification</string>
+		<!-- There is deliberately NO `gov.nih.nifti-1-gzip` declaration here.
+		     It was tried and removed: it registers correctly, carries the
+		     `nii.gz` tag, and still never matches anything, because macOS
+		     resolves a type from the last extension component only. Leaving it
+		     in would be dead config that reads as if `.nii.gz` were handled.
+		     `.nii.gz` reaches the extension via `org.gnu.gnu-zip-archive` plus a
+		     filename check instead (PreviewFileKind.swift) — see
+		     QuickLookPreview/Info.plist. -->
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.freesurfer.mgh</string>
+			<key>UTTypeDescription</key>
+			<string>FreeSurfer MGH Volume</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mgh</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.freesurfer.mgz</string>
+			<key>UTTypeDescription</key>
+			<string>Gzipped FreeSurfer MGH Volume</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mgz</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.nrrd.nrrd</string>
+			<key>UTTypeDescription</key>
+			<string>NRRD Volume</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>nrrd</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.itk.metaimage</string>
+			<key>UTTypeDescription</key>
+			<string>MetaImage Volume</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mha</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.nitrc.gifti</string>
+			<key>UTTypeDescription</key>
+			<string>GIFTI Surface</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>gii</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.niivue.mz3</string>
+			<key>UTTypeDescription</key>
+			<string>MZ3 Mesh</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mz3</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.mrtrix.tck</string>
+			<key>UTTypeDescription</key>
+			<string>MRtrix Streamlines</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>tck</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.trackvis.trk</string>
+			<key>UTTypeDescription</key>
+			<string>TrackVis Streamlines</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>trk</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.trx.trx</string>
+			<key>UTTypeDescription</key>
+			<string>TRX Streamlines</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>trx</string>
+				</array>
+			</dict>
+		</dict>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>

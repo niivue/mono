@@ -47,6 +47,10 @@ export const DEFAULT_PROP_ALLOWLIST: PropAllowlist = {
   isCrossLinesVisible: { kind: 'boolean', emitOnChange: true },
   isRulerVisible: { kind: 'boolean', emitOnChange: true },
   isLegendVisible: { kind: 'boolean', emitOnChange: true },
+  // Numeric, but hosts generally present it as a checkbox: any non-zero value
+  // gates a depth-testing-disabled pass that redraws the crosshair (and any
+  // mesh) through solid geometry. Despite the name it is not mesh-only.
+  meshXRay: { kind: 'number', emitOnChange: true },
 
   // Scene
   backgroundColor: { kind: 'rgba', emitOnChange: true },

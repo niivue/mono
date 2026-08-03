@@ -25,6 +25,11 @@ struct ChromePanel: InspectorPanel {
                 Toggle("Cross lines",       isOn: model.binding(\.isCrossLinesVisible))
                 Toggle("Ruler",             isOn: model.binding(\.isRulerVisible))
                 Toggle("Legend",            isOn: model.binding(\.isLegendVisible))
+                // Named for meshes but not mesh-only: it gates a
+                // depth-testing-disabled pass that also redraws the crosshair
+                // through a volume render, which is why it lives with the
+                // chrome toggles rather than a mesh-specific panel.
+                Toggle("Mesh X-ray",        isOn: model.meshXRayEnabledBinding)
             }
         }
     }

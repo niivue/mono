@@ -13,6 +13,10 @@ const canvas = $<HTMLCanvasElement>('gl1')
 const nv = new NiiVue({
   backgroundColor: [0, 0, 0, 1],
   isColorbarVisible: false,
+  // On by default. NiiVue's own default is 0; this is the value the Chrome
+  // panel's checkbox restores, and it must match `NiiVueModel.meshXRayOnValue`
+  // so the cell hydrates to `true` on ready instead of flipping the box off.
+  meshXRay: 0.05,
 })
 
 // Bridge handler name + JS global default to 'niivue' / '__niivueBridge';

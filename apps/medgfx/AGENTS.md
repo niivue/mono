@@ -1,20 +1,22 @@
 # medgfx
 
-A native SwiftUI app for **macOS**, **iOS**, and **iPadOS** that hosts [NiiVue](https://github.com/niivue/niivue) (a WebGPU/WebGL2 medical image viewer) inside a single `WKWebView`. All UI chrome and data handling are native SwiftUI; the webview is strictly a rendering surface and communicates with the Swift side through a typed two-way bridge.
+A native SwiftUI app for **macOS**, **iOS**, **iPadOS** and **visionOS** (configured, untested) that hosts [NiiVue](https://github.com/niivue/niivue) (a WebGPU/WebGL2 medical image viewer) inside a single `WKWebView`. All UI chrome and data handling are native SwiftUI; the webview is strictly a rendering surface and communicates with the Swift side through a typed two-way bridge.
 
 ## Directory layout
 
 ```
 apps/medgfx/
 ├── .gitignore                     macOS (.DS_Store) + Xcode (xcuserdata/, *.xcuserstate) noise
-├── medgfx.xcodeproj/              Xcode project (targets: medgfx, medgfxTests, medgfxUITests)
+├── medgfx.xcodeproj/              Xcode project (targets: medgfx, QuickLookPreview,
+│                                  medgfxTests, medgfxUITests)
 │                                  References the Swift package at ../../packages/niivue-swift
 │                                  via XCLocalSwiftPackageReference (product: NiiVueKit).
 ├── medgfx/                        Swift target sources (target name: medgfx)
 │   ├── medgfxApp.swift              @main entry — WindowGroup { ContentView() }
 │   ├── ContentView.swift            Layout shell — NiiVueWebView + inspector + footer
 │   ├── Info.plist                   ATS exception for localhost (needed in Debug only)
-│   ├── medgfx.entitlements          App Sandbox + Outgoing Network + hardened runtime
+│   ├── medgfx.entitlements          App Sandbox + Outgoing Network only
+│                                    (hardened runtime is a build setting)
 │   ├── mni152.nii.gz                Bundled sample volume (LFS-tracked, 4.1 MB)
 │   ├── Assets.xcassets/             App icon + accent color
 │   └── Inspector/                   App-specific inspector panels (not part of NiiVueKit)
@@ -23,21 +25,35 @@ apps/medgfx/
 │       ├── PanelHelpers.swift       Shared `section()` + `sliderRow()` builders
 │       └── Panels/
 │           ├── ViewLayoutPanel.swift  Backend, slice type, multiplanar, hero, mosaic
-│           ├── ChromePanel.swift      Colorbar / orient cube / crosshair / ruler toggles
+│           ├── ChromePanel.swift      Colorbar / cube / crosshair / ruler / mesh x-ray
 │           └── ScenePanel.swift       Background color, gamma, camera (azimuth/elevation)
+├── QuickLookPreview/              macOS Quick Look extension (appex target). See below.
+│   ├── PreviewViewController.swift  NSViewController + QLPreviewingController
+│   ├── PreviewSchemeHandler.swift   bundled assets + the one previewed document
+│   ├── PreviewFileKind.swift        which files we draw, decided by filename
+│   ├── GzipPeek.swift               streaming inflate bound (size guard only)
+│   ├── Info.plist                   NSExtension + QLSupportedContentTypes
+│   └── QuickLookPreview.entitlements
+├── scripts/
+│   ├── install-quicklook.sh       build, register, prove which binary Finder uses
+│   ├── check-preview-file-kind.sh runs the routing self-check
+│   └── check-preview-file-kind.swift
 ├── medgfxTests/                   (unused, Xcode-generated)
 ├── medgfxUITests/                 (unused, Xcode-generated)
 └── web/                           Nx TS project "medgfx-web"
     ├── index.html                   Full-viewport <canvas id="gl1"> host
     ├── src/
-    │   └── main.ts                  Instantiates NiiVue, wires bridge, emits 'ready'
-    │                                Imports from @niivue/web-bridge/{bridge,niivue-controller}.
+    │   ├── main.ts                  App page: NiiVue + bridge, emits 'ready'
+    │   ├── quicklook.ts             Quick Look preview page (no bridge; see below)
+    │   └── preview-metadata.ts      describeVolume / describeMesh for the strip
     ├── vite.config.ts               Port 8083, COOP/COEP headers, base: './',
     │                                resolves the `development` export condition of
     │                                @niivue/web-bridge so the dev server uses source.
     ├── tsconfig.json
     ├── package.json                 deps: @niivue/niivue, @niivue/web-bridge (both workspace:*)
-    └── project.json                 Nx targets: dev, build, typecheck, lint, format
+    ├── quicklook.html              Quick Look preview page (second Vite entry)
+    ├── tests/                      Playwright checks for the preview page
+    └── project.json                 Nx targets: dev, build, typecheck, lint, format, e2e
 ```
 
 The reusable bridge code lives in two packages under `packages/`:
@@ -84,7 +100,7 @@ type Envelope =
 
 **Ready handshake:** when the webview finishes initialising, `main.ts` calls `bridge.emit('ready')`. Swift's `Bridge` buffers any outbound `call`/`emit` made before `ready` and flushes them on receipt. This avoids a race where SwiftUI wants to push data before the webview's JS is running.
 
-**Binary data:** `Uint8Array`/`Data` are sent as base64 strings inside the JSON payload. Fine for the current PoC (single-volume load); a side channel can be added later if a payload ever bottlenecks.
+**Binary data:** `Uint8Array`/`Data` are sent as base64 strings inside the JSON payload. This is a known cost, not a design — see "Deferred debt". The Quick Look extension does *not* use it; it serves the file over a scheme handler instead.
 
 ### Adding a new bridge method
 
@@ -233,6 +249,135 @@ The inspector surfaces differently by form factor:
 
 The bridge itself doesn't hardcode any names — `niivue-controller.ts` is the canonical JS registration site and `NiiVueModel.swift` is the canonical Swift registration site. For property-sync work, prefer the prop-bridge path (one line in `prop-allowlist.ts` + one line in `NiiVueModel.swift`) over a new bespoke method.
 
+## Quick Look extension (macOS)
+
+A separate appex target that previews medical images in Finder. Ported from the
+Catalyst app at `~/src/ios`. It shares the web build (`quicklook.html` is the
+second Vite entry, so NiiVue ships once as a common chunk) but **not** the
+bridge: the preview is read-only and single-shot, and `BridgeCore.Bridge` has
+no generation scoping, which every async channel in the controller depends on.
+It talks to `window.niivuePreview` over a `qlPreview` message handler.
+
+**Routing is by filename** (`PreviewFileKind`), following MIQ and NIfTIViewQL,
+the two shipping macOS Quick Look extensions for these formats:
+
+- macOS resolves a file's type from the **last** extension component only, so a
+  `.nii.gz` is always plain gzip. Claiming `public.gzip` +
+  `org.gnu.gnu-zip-archive` in `QLSupportedContentTypes` is the only route by
+  which the commonest neuroimaging format can reach the extension at all.
+  Confirmed: `mdls` reports `org.gnu.gnu-zip-archive` for a `.nii.gz`.
+- That makes us a candidate previewer for **every gzip on the machine**, so
+  `PreviewFileKind` declines anything whose name we do not claim, before any
+  file I/O. A foreign `.tar.gz` keeps whatever preview it had. Do not relax it.
+- There is deliberately **no compound `nii.gz` UTI**. It registers and never
+  matches, for the reason above; MIQ and NIfTIViewQL both ship one and it is
+  dead config in both, invisible only because they claim generic gzip too.
+
+Content is still read for one thing: `GzipPeek.inflatedSize` bounds how far a
+compressed payload may expand. MIQ can skip this because it renders natively
+with a bounded parser; we hand the file to NiiVue inside WebKit, which decodes
+everything (`limitFrames4D` bounds retention, not decoding). A 2.65 MB 4D
+`.nii.gz` was measured driving the content process to 5.4 GiB.
+
+Verify routing without Xcode: `./scripts/check-preview-file-kind.sh` (30
+assertions). It lives outside `QuickLookPreview/` on purpose — that directory is
+a synchronized group, so anything inside it is compiled into the appex.
+
+**Non-obvious, each cost real time:**
+
+- **`import QuickLookUI`.** `QLPreviewingController` is in `QuickLook` on
+  Catalyst but `QuickLookUI` on macOS. Without it: "cannot find type in scope".
+- **`platformFilters = (macos,)` — the plural array form.** The singular
+  `platformFilter` that the Catalyst project uses is silently ignored here, and
+  the iOS build fails with "contains embedded content built for the macOS
+  platform". Exit gate: an iOS build must succeed and `medgfx.app/PlugIns` must
+  not exist.
+- **`com.apple.security.network.client` is mandatory in the appex entitlements**
+  and has nothing to do with networking. Without it WebKit's content process
+  dies before any navigation and the preview is a black rectangle. The extension
+  stays offline by construction instead: bundled assets, self-only CSP,
+  navigation restricted to the app scheme.
+- **Registration moves silently.** Any second copy of the app can win it — an
+  old DerivedData tree, an archive, or simply the Debug build sitting beside the
+  Release one. Finder will preview with a binary from hours ago while you
+  conclude your change did not work. This happened twice during the port. Always
+  use `install-quicklook.sh`, which evicts other copies, asserts exactly one
+  registration, and hashes the shipped page against the one just built.
+- **`os_log` from a Quick Look appex does not reach `log show`.** Debug builds
+  append a build-stamped line to
+  `~/Library/Containers/com.niivue.medgfx.QuickLookPreview/Data/tmp/quicklook-preview.log`.
+  Release has no such log; use `install-quicklook.sh --which` instead.
+- **Do NOT suppress text selection in the preview page.** WebKit starts a
+  document selection on a drag NiiVue does not `preventDefault`, and that
+  selection is what absorbs the gesture — without it the drag falls through to
+  the host, which moves the window. `user-select: none` and a capture-phase
+  `preventDefault` were each tried and each *introduced* the bug they looked
+  unrelated to. The tint is killed two ways that both leave the selection free
+  to form: `::selection { background: transparent }` and a `selectionchange`
+  listener that clears any range. Verified on both the Catalyst and native
+  macOS hosts; do not remove either half.
+- **The document route must keep `.` unescaped.** `NVMesh.loadMesh` reads the
+  reader extension from the URL and ignores the `name` passed with it, falling
+  back to the MZ3 reader on an unknown extension — so a fully-escaped route
+  makes `.mz3` work by accident while every other mesh format fails.
+- **`attachToCanvas` replaces the canvas element**, so `quicklook.ts` resolves
+  it by `id` at every use. Do not add a `ResizeObserver`; NiiVue installs its
+  own and owns `devicePixelRatio`.
+- **Crosshair and `meshXRay` are off on the mesh branch only.** Both are right
+  for a volume and wrong for geometry: the crosshair marks a slice position that
+  does not exist and shows as red stubs through the surface, and `meshXRay`
+  redraws the mesh over itself with depth testing disabled, washing out surfaces
+  and desaturating tract colour. Safe to clear there *only* because that branch
+  has no 2D tiles — `is3DCrosshairVisible` gates every crosshair, not just 3D.
+
+## Deferred debt
+
+Known, deliberate, and not blocking. Each is a decision, not an oversight.
+
+- **The app's `loadVolume` still sends volume bytes as base64** through a JS
+  source string handed to `evaluateJavaScript` — roughly +33% plus several
+  copies. `PreviewSchemeHandler`'s document route is the fix and is already in
+  the tree. The original iOS plan is explicit that the host should own this
+  transport and that Quick Look should reuse it; in medgfx that is inverted. Do
+  it when a volume is measurably slow.
+- **The inflate bound covers the OUTER gzip member only.** It is called
+  unconditionally on content (never gated on the filename — that was a real
+  hole, see below), but NiiVue inflates in places this cannot see: NRRD's
+  `encoding: gz` data section, GIFTI `GZipBase64Binary` DataArrays, and every
+  entry of a `.trx` ZIP. A bomb nested inside one of those is not bounded.
+  Fixing it means bounding inside NiiVue, not here.
+- **A name-based gate must never sit in front of a content-based defence.**
+  `GzipPeek` used to run only when the *filename* ended in `.gz`/`.mgz`, while
+  every decoder downstream switches on the `1f 8b` magic bytes. `cp bomb.gz
+  bomb.nii` therefore skipped the bound entirely and NiiVue inflated 1 GiB in
+  the content process. `scripts/check-gzip-bound.sh` is the regression.
+- **One residual fail-open path** in `GzipPeek.inflatedSize`: a mid-stream
+  decoder stall or error allows the file. Failing closed there would refuse
+  legitimate volumes whenever Apple's decoder disagrees with the browser's, and
+  no triggering input has been constructed. The I/O paths do fail closed.
+- **`PreviewSchemeHandler.serve` has no total-byte bound and blocks on a FIFO.**
+  A named pipe called `x.nii` reports size 0, passes the cap, and parks a
+  global-queue thread. The preview still completes via the load timeout.
+- **`maxDecodedBytes` is not calibrated.** It counts decoded *file* bytes, but
+  NiiVue also allocates `Float32Array(nVox3D*3)` + `Uint8Array(nVox3D*4)`, so
+  for uint8 data the content-process peak is roughly **17x** what the gate
+  counts. Conservative in the right direction; a real number needs a device
+  measurement. Consequence: an oversize legitimate 4D series is refused outright
+  rather than shown at frame zero.
+- **Preview teardown does not release the NiiVue instance or the `WKWebView`.**
+  The WebGL context, decoded volume and 3D textures live until the controller
+  deallocates. Bounded by preview lifetime. `webView.load(about:blank)` is not
+  available as a fix — the navigation delegate allows only the app scheme.
+- **Ad-hoc signing leaves `com.apple.security.get-task-allow`** in the built
+  entitlements. Harmless locally, must not ship.
+- **No detached formats.** NIfTI `.hdr`/`.img`, `.mhd`, AFNI `.HEAD`/`.BRIK`,
+  `.nhdr` are out: `.hdr` resolves to `public.radiance` and `.img` to
+  `com.apple.disk-image-udif`, and rendering a detached pair needs sibling read
+  access Quick Look does not grant. Self-contained `.mha`/`.nrrd` are fine.
+- **MRtrix `.mif` is not claimed.** NiiVue can read it, but it is not in the v1
+  format set and no `org.mrtrix.mif` UTI is declared, so a bare `.mif` could not
+  route here anyway. Add the UTI and the `PreviewFileKind` entries together.
+
 ## Common commands
 
 ```bash
@@ -242,29 +387,53 @@ bunx nx build medgfx-web      # Production build -> apps/medgfx/web/dist/
 bunx nx typecheck medgfx-web
 bunx nx lint medgfx-web
 bunx nx format medgfx-web
+bunx nx e2e medgfx-web        # 88 Quick Look page checks (needs a browser, see below)
 
-# Xcode — from apps/medgfx/
-xcodebuild -project medgfx.xcodeproj -scheme medgfx \
-  -configuration Debug -destination 'platform=macOS,arch=arm64' build
+# Quick Look — from apps/medgfx/
+./scripts/install-quicklook.sh          # build Release, register, prove which copy
+./scripts/install-quicklook.sh --debug  # Debug build, which has the trace log
+./scripts/install-quicklook.sh --which  # who is registered / running right now
+./scripts/check-preview-file-kind.sh    # routing self-check, no Xcode needed
 
+# Xcode — from apps/medgfx/. The signing overrides are required: this machine
+# has no Mac Development certificate, and the app's entitlements otherwise
+# demand a provisioning profile. Ad-hoc is enough for Finder to run an appex.
 xcodebuild -project medgfx.xcodeproj -scheme medgfx \
-  -configuration Release -destination 'platform=macOS,arch=arm64' build
+  -configuration Debug -destination 'platform=macOS,arch=arm64' \
+  CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+  PROVISIONING_PROFILE_SPECIFIER="" build
 
 xcodebuild -project medgfx.xcodeproj -scheme medgfx \
   -configuration Debug -destination 'generic/platform=iOS Simulator' build
 ```
 
+`Signing.local.xcconfig` must exist even for ad-hoc builds — the project
+references it as a base configuration and errors out when it is missing. Copy
+`Signing.xcconfig.sample`.
+
+`nx e2e` needs a Playwright browser. It is `e2e`, **not** `test`, so CI's
+`nx run-many -t test` does not try to run it — same convention as
+`packages/niivue`. If Playwright's pinned revision is not downloaded, point it
+at any headless shell already on the machine:
+
+```bash
+# Command substitution, not a bare glob: shells do not expand `*` inside a
+# variable assignment, so the literal path would be exported and the launch fails.
+PLAYWRIGHT_CHROMIUM_PATH=$(ls -d ~/Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell | head -1) \
+  bunx nx e2e medgfx-web
+```
+
 ## Gotchas and lessons learned
 
 - **"Waiting for webview…" forever in Debug** — almost always means the sandboxed app can't reach `localhost:8083`. Check `com.apple.security.network.client` is in the entitlements and that the entitlements file is actually wired into the target via `CODE_SIGN_ENTITLEMENTS`.
-- **Blank webview in Release** — either (a) `web/dist/` wasn't rebuilt, or (b) the WebApp folder didn't make it into `Contents/Resources/`. Check the Run Script phase output in the Report Navigator, and open the `.app` bundle (`Show Package Contents`) to verify `Resources/WebApp/index.html` exists.
+- **Blank webview in Release** — either `web/dist/` wasn't rebuilt or the WebApp folder didn't reach `Contents/Resources/`. Verify `Resources/WebApp/index.html` exists inside the built `.app`.
 - **`bunx: command not found` in the Run Script** — Xcode.app doesn't inherit the shell PATH. The script explicitly prepends `~/.bun/bin`. If you switch tool managers, update the PATH line.
 - **Content-hashed vite filenames** — `assets/index-*.js` changes every build. Don't add individual hashed files to Xcode as file references; rely on the Run Script's `rsync` to mirror the whole `dist/` tree.
 - **SharedArrayBuffer / crossOriginIsolated** — both Debug (vite dev headers) and Release (`WebAssetHandler` headers) must serve `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. Verify in Safari Web Inspector → Network → Response Headers and in the Console via `self.crossOriginIsolated === true`.
-- **Modern Xcode file-system-synchronized groups** — this project uses `PBXFileSystemSynchronizedRootGroup` for `medgfx/`, so new Swift files dropped into `medgfx/WebView/`, `medgfx/NiiVue/`, `medgfx/Inspector/`, or `medgfx/Inspector/Panels/` are picked up automatically without editing `project.pbxproj`. The web app is *not* a synchronized group — it's referenced exclusively through the Run Script phase and the `WKURLSchemeHandler`.
+- **Modern Xcode file-system-synchronized groups** — `medgfx/` and `QuickLookPreview/` are both `PBXFileSystemSynchronizedRootGroup`s, so Swift files dropped anywhere inside them are compiled without editing `project.pbxproj`. That cuts both ways: a scratch or test file left in either directory ships in the product. The web app is *not* synchronized — it reaches the bundle only through the Run Script phase.
 - **SourceKit / live-editor diagnostics lag with synchronized groups** — when adding files in a new subdirectory, your editor (VS Code / Cursor / Xcode indexer) may scream "Cannot find type 'NiiVueModel' in scope" across every cross-file reference for several minutes. `xcodebuild` is the source of truth; if it builds, the code is correct. Don't chase phantom SourceKit errors unless `xcodebuild` also fails.
 - **iPad inspector missing entirely** — if a toolbar item on iOS/iPadOS doesn't appear, it's almost certainly because the view isn't inside a `NavigationStack`. macOS renders `.toolbar` into the window chrome automatically, iOS does not. Wrap the iOS branch in `NavigationStack { ... }` and the toolbar button reappears.
 - **`#if os(iPadOS)` is not a thing** — Swift treats iPadOS as iOS. Use `@Environment(\.horizontalSizeClass)` (regular vs compact) to distinguish iPad from iPhone at runtime, not compile-time conditionals.
-- **LFS for bundled sample volumes** — `mni152.nii.gz` in the Swift target is Git LFS-tracked via the root `.gitattributes` pattern `apps/medgfx/medgfx/**/*.nii.gz`. LFS deduplicates by content hash, so the same bytes shared with `packages/dev-images/images/volumes/mni152.nii.gz` cost zero extra LFS storage. Contributors need `git lfs install` once per machine — otherwise they'll clone the 3-line pointer file, Xcode will happily bundle that pointer as the "sample", and the Load-sample button will fail at runtime.
-- **`apps/medgfx/.gitignore`** — excludes `.DS_Store`, `xcuserdata/`, and `*.xcuserstate` (per-user Xcode window/breakpoint state). `project.pbxproj`, `contents.xcworkspacedata`, and `xcshareddata/xcschemes/` must stay tracked — dropping any of them breaks the build for other contributors.
+- **LFS for bundled sample volumes** — `mni152.nii.gz` is Git LFS-tracked. Without `git lfs install` you clone the 3-line pointer file, Xcode bundles *that* as the sample, and Load-sample fails at runtime with no obvious cause.
+- **`project.pbxproj`, `contents.xcworkspacedata` and `xcshareddata/xcschemes/` must stay tracked.** Dropping any of them breaks the build for other contributors. `.gitignore` covers per-user Xcode state, build output, and `Signing.local.xcconfig` — which is *why* that file is absent from a fresh clone and must be created by hand.
 - **`packages/niivue-swift/Sources/NiiVueKit/Resources/WebApp/` is gitignored.** Only the placeholder `README.md` inside that directory is tracked. The prebuilt web bundle is a generated artifact with content-hashed filenames (~900 KB per build); committing it would balloon git history every rebuild. medgfx doesn't need it — its Run Script phase ships `apps/medgfx/web/dist/` into `Contents/Resources/WebApp/` and `BridgeConfig.default` reads from `Bundle.main`. Only consumers opting into `BridgeConfig.niiVueKitBundled` (`.module`) need to run `packages/niivue-swift/scripts/build-web.sh` once locally. A blank webview with 404s on `niivue-app://app/index.html` for a `niiVueKitBundled` consumer is the signal to run it.

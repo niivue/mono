@@ -187,6 +187,23 @@ export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
 export type { SlideVectorKind, SlideVectorShape } from './slide/slideVector'
 export { SlideVectorLayer } from './slide/slideVector'
 export { buildDrawingLut, drawingBitmapToRGBA } from './view/NVDrawingTexture'
+// Allen "volume-viewer" JSON + PNG atlas datasets (multi-channel microscopy)
+export {
+  type AllenAtlasImage,
+  type AllenAtlasInfo,
+  allenAtlasSpacing,
+  allenAtlasVolumeDims,
+  deinterleaveAllenAtlasPlane,
+  findAllenAtlasChannel,
+  parseAllenAtlasInfo,
+} from './volume/allenAtlas'
+export {
+  type AllenAtlasLoadOptions,
+  allenAtlasChannelColormap,
+  allenAtlasChannelFile,
+  fetchAllenAtlasInfo,
+  loadAllenAtlasVolumes,
+} from './volume/allenAtlasLoader'
 // Crosshair-focused multi-resolution (multi-LOD) streamed volumes
 export type {
   ChunkedVolumeFetch,

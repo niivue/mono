@@ -86,6 +86,23 @@ export {
   phaseCorrection,
   ppmRefForNucleus,
 } from './signal/processing'
+// Allen "volume-viewer" JSON + PNG atlas datasets (multi-channel microscopy)
+export {
+  type AllenAtlasImage,
+  type AllenAtlasInfo,
+  allenAtlasSpacing,
+  allenAtlasVolumeDims,
+  deinterleaveAllenAtlasPlane,
+  findAllenAtlasChannel,
+  parseAllenAtlasInfo,
+} from './volume/allenAtlas'
+export {
+  type AllenAtlasLoadOptions,
+  allenAtlasChannelColormap,
+  allenAtlasChannelFile,
+  fetchAllenAtlasInfo,
+  loadAllenAtlasVolumes,
+} from './volume/allenAtlasLoader'
 // Crosshair-focused multi-resolution (multi-LOD) streamed volumes
 export type {
   ChunkedVolumeFetch,

@@ -48,25 +48,29 @@ export async function attachToCanvas(
   ctrl.canvas = canvas
   clearCanvasMessage(canvas)
   registerCanvasInstance(ctrl, canvas)
-  ctrl.view = new NVViewGPU(canvas, ctrl.model, ctrl.opts)
+  // Publish ctrl.view only once init() resolves; a view exposed mid-init is
+  // indistinguishable from a ready one to `if (!this.view) return` callers (#61).
+  const view = new NVViewGPU(canvas, ctrl.model, ctrl.opts)
+  ctrl.view = null
   try {
-    await ctrl.view.init()
+    await view.init()
+    ctrl.view = view
     if (ctrl.opts.thumbnail) {
       ctrl.model.ui.isThumbnailVisible = true
       ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
-      await ctrl.view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
+      await view.loadThumbnail(ctrl.model.ui.thumbnailUrl)
     }
     initInteraction(ctrl)
     setupDragAndDrop(ctrl)
     setupResizeHandler(ctrl)
-    ctrl.view.resize()
+    view.resize()
     return ctrl
   } catch (error) {
     log.error('Failed to initialize view:', error)
     // Tear down the partially-initialized view so a retry starts clean (no leaked
     // GPU/context resources, no stale ctrl.view).
     try {
-      ctrl.view?.destroy()
+      view.destroy()
     } catch {
       // a view that failed mid-init may not destroy cleanly; ignore
     }
@@ -79,6 +83,7 @@ export async function attachToCanvas(
 
 export async function recreateView(ctrl: NiiVue): Promise<void> {
   ctrl.view?.destroy()
+  ctrl.view = null
   ctrl.model.clearAllGPUResources()
   removeInteractionListeners(ctrl)
   if (ctrl.resizeObserver) {
@@ -92,8 +97,9 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
   const newCanvas = oldCanvas.cloneNode(false) as HTMLCanvasElement
   parent?.replaceChild(newCanvas, oldCanvas)
   ctrl.canvas = newCanvas
-  ctrl.view = new NVViewGPU(ctrl.canvas, ctrl.model, ctrl.opts)
-  await ctrl.view.init()
+  const view = new NVViewGPU(ctrl.canvas, ctrl.model, ctrl.opts)
+  await view.init()
+  ctrl.view = view
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
     await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
   }

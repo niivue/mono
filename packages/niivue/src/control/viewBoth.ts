@@ -154,6 +154,11 @@ export async function attachToCanvas(
   const order: ('webgpu' | 'webgl2')[] =
     ctrl.opts.backend === 'webgl2' ? ['webgl2'] : ['webgpu', 'webgl2']
   let lastError: unknown
+  // ctrl.view is the readiness signal every GPU-touching path tests
+  // (`if (!this.view) return`), so it is published only once init() resolves.
+  // Exposing it earlier lets a concurrent load reach half-built buffers (#61).
+  let view: NVViewGL | NVViewGPU | null = null
+  ctrl.view = null
   for (let i = 0; i < order.length; i++) {
     const backend = order[i]
     ctrl.opts.backend = backend
@@ -173,26 +178,26 @@ export async function attachToCanvas(
         `${order[i - 1]} backend unavailable; falling back to ${backend}`,
       )
     }
-    ctrl.view =
+    const candidate =
       backend === 'webgl2'
         ? new NVViewGL(canvas, ctrl.model, ctrl.opts)
         : new NVViewGPU(canvas, ctrl.model, ctrl.opts)
     try {
-      await ctrl.view.init() // Single async entry point
+      await candidate.init() // Single async entry point
+      view = candidate
       break
     } catch (error) {
       lastError = error
       log.error(`Failed to initialize ${backend} view:`, error)
       try {
-        ctrl.view?.destroy()
+        candidate.destroy()
       } catch {
         // a view that failed mid-init may not destroy cleanly; ignore
       }
-      ctrl.view = null
     }
   }
+  ctrl.view = view
 
-  const view = ctrl.view
   if (!view) {
     // Every available backend failed. Don't leave the controller registered, and
     // restore the originally requested backend so a later retry starts fresh.
@@ -310,6 +315,7 @@ export async function recreateView(
   // 1. Destroy current view
   ctrl.emit('viewDestroyed')
   ctrl.view?.destroy()
+  ctrl.view = null
   // 2. Clear GPU resources from model (keeps mesh/volume data)
   ctrl.model.clearAllGPUResources()
   // 3. Remove event listeners from old canvas
@@ -325,21 +331,13 @@ export async function recreateView(
     replaceCanvasElement(ctrl)
   }
   // 6. Create new view with current settings
-  if (ctrl.opts.backend === 'webgl2') {
-    ctrl.view = new NVViewGL(
-      ctrl.canvas as HTMLCanvasElement,
-      ctrl.model,
-      ctrl.opts,
-    )
-  } else {
-    ctrl.view = new NVViewGPU(
-      ctrl.canvas as HTMLCanvasElement,
-      ctrl.model,
-      ctrl.opts,
-    )
-  }
-  // 7. Initialize the new view
-  await ctrl.view.init()
+  const view =
+    ctrl.opts.backend === 'webgl2'
+      ? new NVViewGL(ctrl.canvas as HTMLCanvasElement, ctrl.model, ctrl.opts)
+      : new NVViewGPU(ctrl.canvas as HTMLCanvasElement, ctrl.model, ctrl.opts)
+  // 7. Initialize the new view, publishing it only once init() resolves
+  await view.init()
+  ctrl.view = view
   // 7b. Reload thumbnail if it was active before recreation
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
     await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)

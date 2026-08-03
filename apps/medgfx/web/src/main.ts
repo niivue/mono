@@ -11,6 +11,7 @@ function $<T extends HTMLElement>(id: string): T {
 const canvas = $<HTMLCanvasElement>('gl1')
 
 const nv = new NiiVue({
+  backend: 'webgl2',
   backgroundColor: [0, 0, 0, 1],
   isColorbarVisible: false,
   // On by default. NiiVue's own default is 0; this is the value the Chrome

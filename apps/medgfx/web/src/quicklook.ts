@@ -471,10 +471,9 @@ async function main(): Promise<void> {
     nv = new NiiVue({
       logLevel: 'warn',
       backgroundColor: [0, 0, 0, 1],
-      // Same reasoning as the app: naming a backend lets the constructor
-      // downgrade to webgl2 up front instead of failing an init and swapping in
-      // a fresh canvas. WKWebView has no navigator.gpu today.
-      backend: 'webgpu',
+      // WKWebView does not expose navigator.gpu, so request WebGL2 directly
+      // instead of relying on NiiVue's WebGPU-to-WebGL2 downgrade.
+      backend: 'webgl2',
       isOrientCubeVisible: false,
       isRadiological: false, // "neurological orientation" from the product contract
       showRender: SHOW_RENDER.ALWAYS,

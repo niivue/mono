@@ -14,12 +14,18 @@ import SwiftUI
 struct InspectorContainer: View {
     let model: NiiVueModel
     let panels: [AnyInspectorPanel]
+    let fillsAvailableWidth: Bool
 
     @State private var selection: String
 
-    init(model: NiiVueModel, panels: [AnyInspectorPanel]) {
+    init(
+        model: NiiVueModel,
+        panels: [AnyInspectorPanel],
+        fillsAvailableWidth: Bool = false
+    ) {
         self.model = model
         self.panels = panels
+        self.fillsAvailableWidth = fillsAvailableWidth
         _selection = State(initialValue: panels.first?.id ?? "")
     }
 
@@ -52,7 +58,11 @@ struct InspectorContainer: View {
                 }
             }
         }
-        .frame(minWidth: 280, idealWidth: 320, maxWidth: 380)
+        .frame(
+            minWidth: 280,
+            idealWidth: fillsAvailableWidth ? nil : 320,
+            maxWidth: fillsAvailableWidth ? .infinity : 380
+        )
         #if os(macOS)
         .background(.regularMaterial)
         #else

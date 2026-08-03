@@ -19,9 +19,13 @@ installNav()
 
 const BACKEND = getBackendFromUrl()
 
-// Loading every channel of a 32-channel source is slow and unreadable: niivue
-// alpha-composites overlays rather than accumulating them, so past a handful of
-// stacked channels nothing below the top few is visible anyway.
+// Loading every channel of a 32-channel source is slow. With two or more
+// overlays niivue orients each one into its own RGBA texture, reads all of them
+// back, and combines them on the CPU (additive premultiplied color, max alpha —
+// see blendOverlayData). That is the right blend for fluorescence channels, but
+// it costs a full GPU->CPU readback plus an nVoxels pass per channel, so the
+// load time grows linearly and 32 channels would be a long stall. Additive also
+// saturates: past a handful of channels the bright voxels clamp to white.
 const MAX_CHANNELS = 6
 const DEFAULT_CHANNELS = 2
 

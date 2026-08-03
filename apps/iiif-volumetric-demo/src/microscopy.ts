@@ -11,7 +11,7 @@
 // listed with a link to the page that streams them, so this page is still the
 // index of the microscopy demos rather than a subset of them.
 
-import NiiVue from '@niivue/niivue'
+import NiiVue, { type TypedVoxelArray } from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
 
@@ -30,6 +30,11 @@ const BACKEND = getBackendFromUrl()
 // 16-channel stack is noticeably slower there.
 const MAX_CHANNELS = 16
 const DEFAULT_CHANNELS = 2
+
+// A segmentation mask is a filled solid where a fluorescence channel is sparse,
+// so the same overlay opacity that reads well for `_raw` buries everything
+// under `_seg`. Fade masks further than raw channels.
+const SEG_OPACITY_SCALE = 0.5
 
 // Whole-volume load budget. Bigger sources belong on the streaming pages, which
 // fetch a level/region at a time instead of the entire array.
@@ -94,6 +99,24 @@ interface Dataset {
   channels: ApiVolume[]
 }
 
+// Which family of channels the sidebar lists.
+type Family = 'all' | 'raw' | 'seg'
+
+// Allen ships each tagged structure twice: the raw fluorescence image and the
+// segmentation derived from it, distinguished only by a `_raw` / `_seg` suffix
+// on the channel name. Nothing in the volume metadata separates them (both are
+// uint8 at the same shape), so the suffix is the only signal available — and
+// the two need opposite display treatment, since a mask has no internal
+// texture to window against.
+function isSegChannel(entry: ApiVolume): boolean {
+  return /_seg$/i.test(entry.channelName ?? '')
+}
+
+function matchesFamily(entry: ApiVolume, family: Family): boolean {
+  if (family === 'all') return true
+  return isSegChannel(entry) === (family === 'seg')
+}
+
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
   if (!node) throw new Error(`Missing #${id}`)
@@ -104,11 +127,13 @@ const els = {
   dataset: el<HTMLSelectElement>('dataset'),
   layout: el<HTMLSelectElement>('layout'),
   opacity: el<HTMLInputElement>('opacity'),
+  hollow: el<HTMLInputElement>('hollow'),
   load: el<HTMLButtonElement>('load'),
   clear: el<HTMLButtonElement>('clear'),
   status: el<HTMLSpanElement>('status'),
   channels: el<HTMLDivElement>('channels'),
   channelNote: el<HTMLParagraphElement>('channel-note'),
+  family: el<HTMLSelectElement>('family'),
   pickAll: el<HTMLButtonElement>('pick-all'),
   pickNone: el<HTMLButtonElement>('pick-none'),
   streaming: el<HTMLDivElement>('streaming'),
@@ -199,9 +224,9 @@ function refreshChannelLimit(): void {
     : `${n} selected (max ${MAX_CHANNELS})`
 }
 
-// "all" fills up to the cap in list order. The registry lists a dataset's raw
-// channels before its segmentations, so on a 16-structure Allen source this is
-// exactly the raw stack the reference viewer shows.
+// "all" fills up to the cap in list order, and the list is whatever the family
+// filter is showing — so on a 32-entry Allen source it selects one whole
+// 16-structure family rather than the first 16 ids of the two interleaved.
 function setAllChannels(checked: boolean): void {
   channelBoxes().forEach((box, index) => {
     box.checked = checked && index < MAX_CHANNELS
@@ -209,14 +234,32 @@ function setAllChannels(checked: boolean): void {
   refreshChannelLimit()
 }
 
-function buildChannelList(d: Dataset): void {
+function visibleChannels(d: Dataset, family: Family): ApiVolume[] {
+  return d.channels.filter((entry) => matchesFamily(entry, family))
+}
+
+function buildChannelList(
+  d: Dataset,
+  family: Family,
+  checkedIds: Set<string>,
+): void {
   els.channels.replaceChildren()
-  d.channels.forEach((entry, index) => {
+  // Colormaps are assigned per family, not per row, so a structure keeps its
+  // hue whichever family is listed and both families get the full distinct set
+  // instead of the second one wrapping around to repeats.
+  const familyIndex = new Map<string, number>()
+  let nRaw = 0
+  let nSeg = 0
+  for (const entry of d.channels) {
+    const seg = isSegChannel(entry)
+    familyIndex.set(entry.id, seg ? nSeg++ : nRaw++)
+  }
+  for (const entry of visibleChannels(d, family)) {
     const row = document.createElement('label')
     const box = document.createElement('input')
     box.type = 'checkbox'
     box.value = entry.id
-    box.checked = index < DEFAULT_CHANNELS
+    box.checked = checkedIds.has(entry.id)
     box.addEventListener('change', refreshChannelLimit)
     const name = document.createElement('span')
     name.className = 'name'
@@ -230,13 +273,14 @@ function buildChannelList(d: Dataset): void {
       opt.textContent = c
       cmap.appendChild(opt)
     }
-    cmap.value = CHANNEL_COLORMAPS[index % CHANNEL_COLORMAPS.length]
+    const hue = familyIndex.get(entry.id) ?? 0
+    cmap.value = CHANNEL_COLORMAPS[hue % CHANNEL_COLORMAPS.length]
     cmap.addEventListener('change', () => {
       applyColormap(entry.id, cmap.value)
     })
     row.append(box, name, cmap)
     els.channels.appendChild(row)
-  })
+  }
   refreshChannelLimit()
 }
 
@@ -255,24 +299,140 @@ function applyColormap(id: string, colormap: string): void {
 }
 
 /**
- * Window each channel over its own full range and fade the overlays.
+ * Replace a label mask with its surface shell, in place.
  *
- * Microscopy channels sit on a large per-channel background offset (the Allen
- * IMSC data floors at 126/82/72 rather than 0) and the whole cell body is above
- * that floor, so the robust auto-window saturates and each channel paints over
- * the one below it. Windowing floor-to-peak keeps the structure visible, and
- * the opacity is what lets stacked channels show through: niivue
- * alpha-composites overlays rather than accumulating them the way a dedicated
- * multi-channel microscopy viewer would.
+ * A mask is a filled solid, and a filled solid is opaque along any ray that
+ * crosses it — so in the 3D render the largest structure (the nucleus of
+ * `DNA_seg`) hides everything inside it no matter how far its alpha is turned
+ * down. Alpha only controls how fast a ray saturates, not whether it does.
+ *
+ * Keeping only the labelled voxels that touch an unlabelled 6-neighbour turns
+ * each mask into an outline in the 2D slices and a hollow shell in the 3D
+ * render, which is what makes a whole segmentation stack legible at once.
+ *
+ * `floor` is the background level (`globalMin`), which the interior is reset to
+ * rather than to zero: the display windows above the floor, so the emptied
+ * interior has to land on it to read as background. `globalMin` / `globalMax`
+ * are unchanged by this, since the shell keeps both extremes.
+ *
+ * Returns a NEW array rather than editing in place. Both backends cache the
+ * uploaded source texture against `img.buffer` identity
+ * (`prepareOrientTextureCache`), so an in-place edit is invisible to the GPU —
+ * the cache reuses the texture it already has and nothing on screen changes.
+ */
+function hollowMask(
+  img: TypedVoxelArray,
+  dims: [number, number, number],
+  floor: number,
+): TypedVoxelArray {
+  const [nx, ny, nz] = dims
+  const rowStride = nx
+  const sliceStride = nx * ny
+  const src = img
+  const out = img.slice()
+  for (let z = 0; z < nz; z++) {
+    for (let y = 0; y < ny; y++) {
+      for (let x = 0; x < nx; x++) {
+        const i = x + y * rowStride + z * sliceStride
+        if (src[i] <= floor) continue
+        // A voxel on a volume face has no neighbour beyond it. Treat the
+        // outside as unlabelled so a structure clipped by the field of view
+        // still closes instead of opening into a hole.
+        const interior =
+          x > 0 &&
+          x < nx - 1 &&
+          y > 0 &&
+          y < ny - 1 &&
+          z > 0 &&
+          z < nz - 1 &&
+          src[i - 1] > floor &&
+          src[i + 1] > floor &&
+          src[i - rowStride] > floor &&
+          src[i + rowStride] > floor &&
+          src[i - sliceStride] > floor &&
+          src[i + sliceStride] > floor
+        if (interior) out[i] = floor
+      }
+    }
+  }
+  return out
+}
+
+// Swap every loaded segmentation for its shell, then re-upload. Destructive to
+// the loaded copy, so the toggle re-runs the load (served from the HTTP cache)
+// rather than trying to undo it.
+async function hollowLoadedMasks(): Promise<void> {
+  if (!nv) return
+  let changed = false
+  nv.volumes.forEach((volume, index) => {
+    const entry = loaded[index]
+    if (!entry || !isSegChannel(entry) || !volume.img) return
+    const dims = volume.dims
+    volume.img = hollowMask(
+      volume.img,
+      [dims[1], dims[2], dims[3]],
+      Math.floor(volume.globalMin),
+    )
+    changed = true
+  })
+  if (changed) await nv.updateGLVolume()
+}
+
+/**
+ * Opacity for a loaded channel at its stack position.
+ *
+ * Volume 0 is niivue's base layer and is normally drawn opaque, which is right
+ * for a raw fluorescence channel. It is wrong for a mask: a segmentation is a
+ * filled solid, so an opaque one hides every channel stacked on it — that is
+ * what made a seg-only selection render as a single flat blob, with the whole
+ * nucleus of `DNA_seg` swallowing the structures inside it. When the base layer
+ * is a mask, fade it like the rest.
+ *
+ * A hollowed mask is the opposite case and takes the plain overlay opacity: a
+ * one-voxel shell occludes almost nothing and barely overlaps its neighbours,
+ * so it does not need the extra fade a filled one does — and at the fade a
+ * filled stack wants, a shell is too thin to see at all.
+ */
+function opacityFor(
+  entry: ApiVolume | undefined,
+  index: number,
+  overlayOpacity: number,
+  hollow: boolean,
+): number {
+  const seg = entry ? isSegChannel(entry) : false
+  if (!seg) return index === 0 ? 1 : overlayOpacity
+  return hollow ? overlayOpacity : overlayOpacity * SEG_OPACITY_SCALE
+}
+
+/**
+ * Window each channel for what it actually holds, and fade the overlays.
+ *
+ * Raw microscopy channels sit on a large per-channel background offset (the
+ * Allen IMSC data floors at 126/82/72 rather than 0) and the whole cell body is
+ * above that floor, so the robust auto-window saturates and each channel paints
+ * over the one below it. Windowing floor-to-peak keeps the structure visible.
+ *
+ * A `_seg` channel is a label mask, not an image: it has no internal texture to
+ * window against, and floor-to-peak puts its background floor *at* the
+ * threshold rather than below it, so the mask's whole bounding region survives
+ * as opaque colour. Threshold just above the floor instead — background falls
+ * below calMin and turns transparent, and every labelled voxel lands at the top
+ * of the colormap as one flat label colour.
+ *
+ * The opacity is what lets stacked channels show through: niivue blends
+ * overlays additively (premultiplied colour, max alpha) into one texture.
  */
 function applyDisplay(): void {
   if (!nv) return
   const overlayOpacity = Number(els.opacity.value)
   nv.volumes.forEach((volume, index) => {
+    const entry = loaded[index]
+    const seg = entry ? isSegChannel(entry) : false
+    const range = volume.globalMax - volume.globalMin
     nv?.setVolume(index, {
-      calMin: volume.globalMin,
+      calMin: seg ? volume.globalMin + range * 0.01 : volume.globalMin,
       calMax: volume.globalMax,
-      opacity: index === 0 ? 1 : overlayOpacity,
+      opacity: opacityFor(entry, index, overlayOpacity, els.hollow.checked),
     })
   })
 }
@@ -290,10 +450,12 @@ function renderHud(): void {
   if (loaded.length === 0) {
     lines.push('no channels loaded')
   } else {
+    const overlayOpacity = Number(els.opacity.value)
     lines.push('loaded:')
     for (const [i, entry] of loaded.entries()) {
+      const alpha = opacityFor(entry, i, overlayOpacity, els.hollow.checked)
       lines.push(
-        `  ${entry.channelName ?? entry.id} — ${colormapFor(entry.id)}${i === 0 ? '' : ` @ ${els.opacity.value}`}`,
+        `  ${entry.channelName ?? entry.id} — ${colormapFor(entry.id)}${alpha < 1 ? ` @ ${alpha.toFixed(2)}` : ''}`,
       )
     }
   }
@@ -306,9 +468,14 @@ function renderHud(): void {
 // count (verified: 16 raw Allen channels are legible near 0.12, unreadable at
 // 0.6). Anchored so the common 2-channel case still lands on 0.6. Once the user
 // moves the slider it is theirs, and this stops overriding it.
-function suggestedOpacity(count: number): number {
-  if (count < 2) return 0.6
-  return Math.min(0.6, Math.max(0.12, 1.2 / count))
+//
+// Hollowed masks are exempt: shells cover a small fraction of the voxels and
+// hardly overlap, so the sum stays far from saturation however many are
+// stacked, and scaling them down just makes them invisible.
+function suggestedOpacity(entries: ApiVolume[], hollow: boolean): number {
+  if (entries.length < 2) return 0.6
+  if (hollow && entries.every(isSegChannel)) return 0.6
+  return Math.min(0.6, Math.max(0.12, 1.2 / entries.length))
 }
 
 async function loadSelected(): Promise<void> {
@@ -316,7 +483,7 @@ async function loadSelected(): Promise<void> {
   const ids = selectedBoxes().map((b) => b.value)
   const entries = current.channels.filter((e) => ids.includes(e.id))
   if (!opacityTouched) {
-    els.opacity.value = String(suggestedOpacity(entries.length))
+    els.opacity.value = String(suggestedOpacity(entries, els.hollow.checked))
   }
   const myToken = ++loadToken
   els.load.disabled = true
@@ -334,7 +501,12 @@ async function loadSelected(): Promise<void> {
           window.location.origin,
         ).href,
         colormap: colormapFor(entry.id),
-        opacity: index === 0 ? 1 : Number(els.opacity.value),
+        opacity: opacityFor(
+          entry,
+          index,
+          Number(els.opacity.value),
+          els.hollow.checked,
+        ),
       })),
     )
   } catch (err) {
@@ -348,10 +520,16 @@ async function loadSelected(): Promise<void> {
   if (myToken !== loadToken) return
   loaded = entries
   applyDisplay()
+  if (els.hollow.checked) await hollowLoadedMasks()
+  if (myToken !== loadToken) return
   nv.sliceType = Number(els.layout.value)
   nv.drawScene()
   els.status.textContent = ''
   renderHud()
+}
+
+function currentFamily(): Family {
+  return els.family.value as Family
 }
 
 // Split from the load so the sidebar can be built before the (slow) GPU init.
@@ -360,8 +538,19 @@ function showDataset(key: string): void {
   if (!next) return
   current = next
   loaded = []
-  buildChannelList(next)
+  const family = currentFamily()
+  const preselect = visibleChannels(next, family).slice(0, DEFAULT_CHANNELS)
+  buildChannelList(next, family, new Set(preselect.map((e) => e.id)))
   renderHud()
+}
+
+// Switching family re-lists the sidebar and keeps whatever of the selection is
+// still on screen. It deliberately does not select the new family for you: the
+// point of the filter is to aim the "all" button, which is one click away.
+function showFamily(): void {
+  if (!current) return
+  const keep = new Set(selectedBoxes().map((b) => b.value))
+  buildChannelList(current, currentFamily(), keep)
 }
 
 function selectDataset(key: string): void {
@@ -443,6 +632,10 @@ async function main(): Promise<void> {
     opacityTouched = true
     if (nv && nv.volumes.length > 0) applyDisplay()
     renderHud()
+  })
+  els.family.addEventListener('change', showFamily)
+  els.hollow.addEventListener('change', () => {
+    void loadSelected()
   })
   els.pickAll.addEventListener('click', () => {
     setAllChannels(true)

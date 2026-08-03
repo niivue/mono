@@ -26,6 +26,7 @@
       .head-row { display: flex; align-items: baseline; justify-content: space-between; }
       .head-row .picks { display: flex; gap: 4px; }
       .head-row button { padding: 0 5px; font-size: 11px; }
+      .head-row select { padding: 0 4px; font-size: 11px; }
       .channels { display: flex; flex-direction: column; gap: 2px; }
       .channels label { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
       .channels label.disabled { color: #5f6368; }
@@ -58,6 +59,7 @@
         <option value="0">axial</option>
       </select>
       <label>overlay opacity <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.6" /></label>
+      <label title="draw segmentation masks as their surface shell, so a filled structure stops hiding what is inside it"><input type="checkbox" id="hollow" checked /> hollow masks</label>
       <button id="load" type="button">load channels</button>
       <button id="clear" type="button">clear</button>
       <span id="status" style="color:#9aa0a6"></span>
@@ -67,6 +69,11 @@
         <div class="head-row">
           <h2>channels</h2>
           <span class="picks">
+            <select id="family" title="list one channel family, so &quot;all&quot; picks that family">
+              <option value="all">both</option>
+              <option value="raw">raw</option>
+              <option value="seg">seg</option>
+            </select>
             <button id="pick-all" type="button" title="select up to the channel cap, in order">all</button>
             <button id="pick-none" type="button">none</button>
           </span>
@@ -79,7 +86,7 @@
       <main>
         <canvas id="nv-canvas"></canvas>
         <div class="hud" id="hud">loading…</div>
-        <div class="hint">every multi-channel microscopy source the server exposes · one registry entry per channel, stacked as niivue overlays and windowed floor-to-peak</div>
+        <div class="hint">every multi-channel microscopy source the server exposes · one registry entry per channel, stacked as niivue overlays · raw channels windowed floor-to-peak, segmentations thresholded and drawn as shells</div>
         <div class="fallback" id="fallback"></div>
       </main>
     </div>

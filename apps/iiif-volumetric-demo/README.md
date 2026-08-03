@@ -49,9 +49,17 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   per-channel registry entries back into datasets (on the `dataset` key
   the `/api` listing exposes) and offers a dataset picker plus a channel
   list with a per-channel colormap. Selected channels load whole from
-  `/volumes/{id}/raw.nii.gz`, stack as niivue overlays, and are windowed
-  floor-to-peak (see the windowing note in `src/microscopy.ts` — these
-  channels floor well above 0, so the robust auto-window saturates).
+  `/volumes/{id}/raw.nii.gz` and stack as niivue overlays. Raw channels
+  are windowed floor-to-peak (see the windowing note in
+  `src/microscopy.ts` — these channels floor well above 0, so the robust
+  auto-window saturates). An Allen source also carries a segmentation
+  per structure, named with a `_seg` suffix; those are label masks, not
+  images, so they are thresholded just above their floor instead and, by
+  default, reduced to their surface shell — a filled mask is opaque
+  along any ray through it, so the nucleus would otherwise hide
+  everything inside it at any alpha. The `both / raw / seg` filter picks
+  which family the list shows, so `all` selects one whole family rather
+  than the first 16 ids of the two together.
   Microscopy sources too large to load whole (the FIB-SEM OME-Zarr, the
   WSI slide) are listed in a sidebar with a link to the page that
   streams them. Needs a multi-channel fixture — run

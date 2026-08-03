@@ -45,6 +45,22 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   `dicom-wsi` fixture — run
   `bunx nx run iiif-volumetric-server:fetch-dicom-wsi` and restart the
   server. See `packages/niivue/docs/dicom-wsi.md`.
+- `microscopy.html` — the microscopy index. Groups the server's
+  per-channel registry entries back into datasets (on the `dataset` key
+  the `/api` listing exposes) and offers a dataset picker plus a channel
+  list with a per-channel colormap. Selected channels load whole from
+  `/volumes/{id}/raw.nii.gz`, stack as niivue overlays, and are windowed
+  floor-to-peak (see the windowing note in `src/microscopy.ts` — these
+  channels floor well above 0, so the robust auto-window saturates).
+  Microscopy sources too large to load whole (the FIB-SEM OME-Zarr, the
+  WSI slide) are listed in a sidebar with a link to the page that
+  streams them. Needs a multi-channel fixture — run
+  `bunx nx run iiif-volumetric-server:fetch-allen` and restart the
+  server.
+- `microscopy-overlay.html` — a synthesized hi-res microscopy patch
+  placed inside an anatomical base volume with an *oblique* affine.
+  Yaw/pitch sliders re-aim it in place via `setVolumeAffine`, and niivue
+  reslices it onto the base grid — the point of the demo.
 
 ### Backend switching
 

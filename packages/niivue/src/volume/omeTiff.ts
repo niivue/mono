@@ -72,8 +72,10 @@ const UNIT_UM: Record<string, number> = {
   micron: 1,
   microns: 1,
   micrometer: 1,
+  micrometre: 1,
   nm: 1e-3,
   nanometer: 1e-3,
+  nanometre: 1e-3,
   pm: 1e-6,
   a: 1e-4, // angstrom
   å: 1e-4,
@@ -92,8 +94,18 @@ export function omeLengthToMicrons(
   if (!Number.isFinite(value) || value <= 0) {
     return 0
   }
-  const scale = UNIT_UM[(unit ?? 'µm').trim().toLowerCase()]
+  const scale = UNIT_UM[normalizeUnit(unit)]
   return scale === undefined ? 0 : value * scale
+}
+
+/**
+ * Fold a unit string to a `UNIT_UM` key. Writers spell micrometres with either
+ * MICRO SIGN (U+00B5, what the OME schema uses) or GREEK SMALL LETTER MU
+ * (U+03BC, what many editors and fonts substitute); the two look identical and
+ * must mean the same thing here. Case folding leaves both untouched.
+ */
+function normalizeUnit(unit: string | undefined): string {
+  return (unit ?? 'µm').trim().toLowerCase().replace(/μ/g, 'µ')
 }
 
 /** Split an element's attribute text into a map. */

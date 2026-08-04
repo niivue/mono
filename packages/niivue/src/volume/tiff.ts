@@ -119,6 +119,8 @@ const TYPE_SIZE: Record<number, number> = {
   18: 8, // IFD8 (BigTIFF)
 }
 
+const ASCII_DECODER = new TextDecoder('utf-8')
+
 /** Read a single value of `type` at `offset`. Rationals return num/den. */
 function readTypedValue(
   view: DataView,
@@ -193,15 +195,17 @@ function readEntry(
     throw new Error(`TIFF: tag ${tag} points past the end of the file`)
   }
   if (type === 2) {
-    let ascii = ''
-    for (let i = 0; i < count; i++) {
-      ascii += String.fromCharCode(view.getUint8(dataOffset + i))
-    }
+    // The spec says ASCII, but ImageDescription in practice carries UTF-8:
+    // OME-XML declares that encoding and writes micrometres as a literal 'um'
+    // with a micro sign. Decoding byte-per-character would mangle it.
+    const text = ASCII_DECODER.decode(
+      new Uint8Array(view.buffer, view.byteOffset + dataOffset, count),
+    )
     // ASCII fields are NUL terminated, and multi-string fields concatenate
     // NUL-separated runs. Callers want the text, not the terminators.
     return {
       tag,
-      value: { type, count, values: [], ascii: ascii.replace(/\0+$/, '') },
+      value: { type, count, values: [], ascii: text.replace(/\0+$/, '') },
     }
   }
   const values = new Array<number>(count)

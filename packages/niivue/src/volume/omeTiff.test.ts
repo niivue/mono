@@ -235,6 +235,13 @@ describe('omeLengthToMicrons', () => {
     expect(omeLengthToMicrons(0.65, 'micron')).toBe(0.65)
   })
 
+  test('accepts a Greek mu in place of the micro sign', () => {
+    // U+03BC (GREEK SMALL LETTER MU) instead of U+00B5 (MICRO SIGN): the two
+    // are visually identical and writers use both.
+    expect(omeLengthToMicrons(0.65, 'μm')).toBe(0.65)
+    expect(omeLengthToMicrons(0.65, 'µm')).toBe(0.65)
+  })
+
   test('scales other length units', () => {
     expect(omeLengthToMicrons(1, 'mm')).toBe(1000)
     expect(omeLengthToMicrons(1, 'cm')).toBe(10000)

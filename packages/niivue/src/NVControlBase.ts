@@ -3425,6 +3425,14 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
+   * Give this instance the whole canvas again, undoing {@link setBounds}.
+   * Equivalent to `setBounds([0, 0, 1, 1])`.
+   */
+  clearBounds(): void {
+    this.setBounds([0, 0, 1, 1])
+  }
+
+  /**
    * Read the canvas-level viewport (virtual camera) shared with sibling instances.
    * The viewport applies a pan + zoom over the entire canvas before each instance's
    * `bounds` are projected to pixels. Identity is `{pan: [0, 0], zoom: 1}`.
@@ -4399,9 +4407,22 @@ export default class NiiVue extends EventTarget {
     }
   }
 
+  /** Clear both completed distance measurements and completed angles. */
   clearMeasurements(): void {
     this.model.completedMeasurements = []
     this.model.completedAngles = []
+    this.drawScene()
+  }
+
+  /** Clear completed angles only, leaving distance measurements in place. */
+  clearAngles(): void {
+    this.model.completedAngles = []
+    this.drawScene()
+  }
+
+  /** Clear completed distance measurements only, leaving angles in place. */
+  clearDistanceMeasurements(): void {
+    this.model.completedMeasurements = []
     this.drawScene()
   }
 

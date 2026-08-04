@@ -244,11 +244,13 @@ export function lookupColorMap(name: string): ColorMap | null {
 }
 
 /**
- * Reverse a 256-entry RGBA LUT end-for-end, so the color that was at the top of
+ * Reverse the colors of a 256-entry RGBA LUT, so the hue that was at the top of
  * the range moves to the bottom. Returns a new array; the input is untouched.
- * Alpha travels with its color, so a colormap that ramps alpha ramps it the
- * other way after inversion (the same thing the old NiiVue's `colormapInvert`
- * did).
+ *
+ * Alpha stays at its own index rather than travelling with its color. The
+ * shaders lean on a colormap being transparent at index 0 to hide voxels below
+ * `calMin`, so carrying a ramped alpha to the other end would paint the whole
+ * volume opaque the moment a statistical overlay was inverted.
  */
 export function invertLut(lut: Uint8ClampedArray): Uint8ClampedArray {
   const n = Math.floor(lut.length / 4)
@@ -259,7 +261,7 @@ export function invertLut(lut: Uint8ClampedArray): Uint8ClampedArray {
     out[dst] = lut[src]
     out[dst + 1] = lut[src + 1]
     out[dst + 2] = lut[src + 2]
-    out[dst + 3] = lut[src + 3]
+    out[dst + 3] = lut[dst + 3]
   }
   return out
 }

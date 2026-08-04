@@ -185,19 +185,20 @@ describe('makeLabelLut', () => {
 })
 
 describe('invertLut', () => {
-  test('reversesEntriesEndForEnd', () => {
+  test('reversesColorsEndForEnd', () => {
     const lut = new Uint8ClampedArray([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
     const inverted = invertLut(lut)
     expect(Array.from(inverted)).toEqual([
-      9, 10, 11, 12, 5, 6, 7, 8, 1, 2, 3, 4,
+      9, 10, 11, 4, 5, 6, 7, 8, 1, 2, 3, 12,
     ])
   })
 
-  test('carriesAlphaWithItsColor', () => {
+  test('leavesTheAlphaRampInPlace', () => {
+    // Index 0 must stay transparent, or every voxel below calMin would paint.
     const lut = new Uint8ClampedArray([10, 20, 30, 0, 40, 50, 60, 255])
     const inverted = invertLut(lut)
-    expect(inverted[3]).toBe(255)
-    expect(inverted[7]).toBe(0)
+    expect(inverted[3]).toBe(0)
+    expect(inverted[7]).toBe(255)
   })
 
   test('leavesTheInputUntouched', () => {

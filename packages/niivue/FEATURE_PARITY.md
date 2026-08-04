@@ -110,7 +110,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `addColormap(name, cmap)` | ✅ | |
 | `addColormapFromUrl()` | ✅ | |
 | `setColormapLabel` / `setColormapLabelFromUrl` | ✅ | |
-| `colormapInvert` | ❌ | |
+| `colormapInvert` | ✅ | Per-volume `isColormapInverted` (also a load/`setVolume` option); reverses the LUT where it is built, so 2D slices, the ray-march, and the colorbar all follow. Mesh layers already had `isColormapInverted` |
 | `setDrawColormap` | ✅ | `drawColormap` property |
 | Custom colormap format `{R,G,B,A,I}` | ✅ | |
 
@@ -145,7 +145,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `heroFraction` / `heroSliceType` | ✅ | Properties |
 | Mosaic view | ✅ | `mosaicString` property |
 | `setBounds()` | ✅ | |
-| `clearBounds()` | ❌ | |
+| `clearBounds()` | ✅ | Equivalent to `setBounds([0, 0, 1, 1])` |
 | Orientation text visible | ✅ | `isOrientationTextVisible` |
 | Corner orientation text | ❌ | No `setCornerOrientationText` |
 | Show all orientation markers | ❌ | |
@@ -219,7 +219,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `createConnectedLabelImage()` | ✅ | Volume transform |
 | `setModulationImage()` | ✅ | Scalar overlays/background: RGB + alpha via GPU prepass (both backends), `examples/vox.modulate.scalar.html`. RGB/RGBA (V1) volumes: RGB only (alpha preserved for sign bits). `modulationImage` + `modulateAlpha` persisted to NVD. Backend parity verified manually (no Playwright). |
 | `isAlphaClipDark` | ✅ | `volumeIsAlphaClipDark` |
-| `setAtlasOutline()` | ❌ | |
+| `setAtlasOutline()` | ✅ | `setAtlasOutline(outline, volumeIndex?)`; per-volume `atlasOutline` is the neighbour probe distance in the atlas's own voxels. Baked in the orient prepass on both backends. Not applied on the chunked path (a chunk's probes would read the neighbouring tile's edge) |
 | `overlayOutlineWidth` | ✅ | `volumeOutlineWidth` |
 
 ## 16. Statistical Thresholding
@@ -238,8 +238,8 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Distance measurement | ✅ | `NVMeasurement` view component |
 | `clearMeasurements()` | ✅ | |
 | Angle measurements | ✅ | `DRAG_MODE.angle`; completed angles stored on model |
-| `clearAngles()` | ⚠️ | `clearMeasurements()` clears both distances and angles; no separate `clearAngles()` method |
-| `getDescriptives()` — ROI statistics | ❌ | |
+| `clearAngles()` | ✅ | `clearAngles()` and `clearDistanceMeasurements()` clear one kind each; `clearMeasurements()` still clears both |
+| `getDescriptives()` — ROI statistics | ✅ | `getDescriptives({ volumeIndex, masks, isDrawingMask, drawPenValues })`; calibrated values, non-finite voxels excluded, `null` on a mask/grid mismatch |
 
 ## 18. Registration / Affine Transforms
 
@@ -283,7 +283,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `propertyChange` | ⚠️ | New API uses typed `change` event with `{ property, value }` detail |
 | `locationChange` / `intensityChange` | ⚠️ | `locationChange` exists; no separate `intensityChange` event found |
 | `dragRelease` | ✅ | |
-| `clickToSegment` event | ❌ | |
+| `clickToSegment` event | ✅ | Fires after a magic-wand fill with the seed voxel, pen value, voxel count, `mm3`/`mL`, and whether the grow hit the voxel cap or was confined to one slice |
 | `measurementCompleted` / `angleCompleted` | ✅ | |
 | `documentLoaded` | ✅ | |
 | `volumeOrderChanged` | ✅ | |
@@ -544,28 +544,25 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 
 ### High Priority (Core Functionality)
 1. **Mesh overlay formats**: GIfTI, CIfTI-2, MZ3, FreeSurfer ANNOT layer readers
-2. **ROI statistics**: old `getDescriptives()` over drawing/label regions (new vector annotations have stats, but this is not equivalent)
-3. **Statistical threshold modes**: old `colormapType` threshold behavior is not clearly exposed, despite negative colormaps/thresholds being present
+2. **Statistical threshold modes**: old `colormapType` threshold behavior is not clearly exposed, despite negative colormaps/thresholds being present
 
 ### Medium Priority
-4. **3D rendering**: `setGradientOpacity`, custom gradient textures (MIP is now covered by `volumeRenderMode`)
-5. **Volume/mesh lookup by ID/URL**: `getVolumeIndexByID`, `getMeshIndexByID`, `removeVolumeByUrl`, `removeMeshByUrl`
-6. **`saveScene()`**: HTML export is covered by `@niivue/nv-ext-save-html`, but old scene export remains missing
-7. **Zarr volume format**
-8. **FreeSurfer connectome** loader
-9. **NVImage class methods**: coordinate conversion, getValue, clone, etc. (architectural difference — NVImage is a type not a class)
+3. **3D rendering**: `setGradientOpacity`, custom gradient textures (MIP is now covered by `volumeRenderMode`)
+4. **Volume/mesh lookup by ID/URL**: `getVolumeIndexByID`, `getMeshIndexByID`, `removeVolumeByUrl`, `removeMeshByUrl`
+5. **`saveScene()`**: HTML export is covered by `@niivue/nv-ext-save-html`, but old scene export remains missing
+6. **Zarr volume format**
+7. **FreeSurfer connectome** loader
+8. **NVImage class methods**: coordinate conversion, getValue, clone, etc. (architectural difference — NVImage is a type not a class)
 
 ### Lower Priority
-11. **Mouse/touch event config**: `setMouseEventConfig`, `setTouchEventConfig`
-12. **`cloneVolume`**
-13. **`setAtlasOutline`**
-14. **`colormapInvert`**
-15. **Mesh utilities**: `decimateFaces`, `linesToCylinders`, `createFiberDensityMap`, `reverseFaces`
-16. **Missing/changed events**: no separate `intensityChange`; shader events not present; legacy callback properties not supported
-17. **Enum exports**: `NiiIntentCode`
-18. **AFNI .niml.tract** tractography format
-19. **`watchOptsChanges`** (replaced by `change` / property-change style event)
-20. **Standalone `binarize()` and separate `clearAngles()` APIs** (functionality partly available through different APIs)
+9. **Mouse/touch event config**: `setMouseEventConfig`, `setTouchEventConfig`
+10. **`cloneVolume`**
+11. **Mesh utilities**: `decimateFaces`, `linesToCylinders`, `createFiberDensityMap`, `reverseFaces`
+12. **Missing/changed events**: no separate `intensityChange`; shader events not present; legacy callback properties not supported
+13. **Enum exports**: `NiiIntentCode`
+14. **AFNI .niml.tract** tractography format
+15. **`watchOptsChanges`** (replaced by `change` / property-change style event)
+16. **Standalone `binarize()`** (functionality partly available through different APIs)
 
 ### Covered by New Extensions / Different APIs
 - **DICOM loading**: `@niivue/nv-ext-dcm2niix`

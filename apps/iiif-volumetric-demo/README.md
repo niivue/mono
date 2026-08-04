@@ -50,9 +50,11 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   the `/api` listing exposes) and offers a dataset picker plus a channel
   list with a per-channel colormap. Selected channels load whole from
   `/volumes/{id}/raw.nii.gz` and stack as niivue overlays. Raw channels
-  are windowed floor-to-peak (see the windowing note in
-  `src/microscopy.ts` — these channels floor well above 0, so the robust
-  auto-window saturates). An Allen source also carries a segmentation
+  are windowed by percentile — these channels floor well above 0 (so the
+  robust auto-window saturates) and the whole cell body sits above that
+  floor as a structureless haze, which sums to an opaque brick across 16
+  channels; keeping only the top few percent is what makes the stack
+  read as separate structures. An Allen source also carries a segmentation
   per structure, named with a `_seg` suffix; those are label masks, not
   images, so they are thresholded just above their floor instead and, by
   default, reduced to their surface shell — a filled mask is opaque
@@ -60,6 +62,15 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   everything inside it at any alpha. The `both / raw / seg` filter picks
   which family the list shows, so `all` selects one whole family rather
   than the first 16 ids of the two together.
+  Presentation follows the Allen IMSC reference viewer
+  (`imsc.allencell.org/?page=3d-viewer`): 3D render on black by default
+  with no crosshair or orient chrome, each recognised structure listed by
+  gene symbol plus what it labels, and its own flat hue from that
+  viewer's palette carried by a constant-colour/ramped-alpha colormap, so
+  a structure reads as one colour instead of a gradient. `turntable`
+  spins the render and `reset` returns the camera. The reference viewer
+  path-traces; niivue single-pass raymarches, so its render is crisper
+  and less diffuse than the reference.
   Microscopy sources too large to load whole (the FIB-SEM OME-Zarr, the
   WSI slide) are listed in a sidebar with a link to the page that
   streams them. Needs a multi-channel fixture — run

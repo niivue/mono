@@ -32,6 +32,9 @@
       .channels label.disabled { color: #5f6368; }
       .channels .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .channels select { padding: 0 4px; font-size: 11px; max-width: 92px; }
+      .channels .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+      .channels .tag { flex: none; color: #9aa0a6; font-size: 10px; }
+      button.on { border-color: #8ab4f8; color: #8ab4f8; }
       .note { color: #9aa0a6; font-size: 11px; margin: 6px 0 0; }
       .streaming { display: flex; flex-direction: column; gap: 6px; }
       .streaming a { display: block; color: #8ab4f8; text-decoration: none; border: 1px solid #2a2d31; border-radius: 4px; padding: 5px 7px; }
@@ -54,12 +57,14 @@
       <select id="dataset"></select>
       <label for="layout">layout</label>
       <select id="layout">
-        <option value="3">multiplanar</option>
         <option value="4">3D render</option>
+        <option value="3">multiplanar</option>
         <option value="0">axial</option>
       </select>
       <label>overlay opacity <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.6" /></label>
       <label title="draw segmentation masks as their surface shell, so a filled structure stops hiding what is inside it"><input type="checkbox" id="hollow" checked /> hollow masks</label>
+      <button id="turntable" type="button" title="spin the 3D render, so overlapping structures separate">turntable</button>
+      <button id="reset" type="button" title="return the camera to its starting angle">reset</button>
       <button id="load" type="button">load channels</button>
       <button id="clear" type="button">clear</button>
       <span id="status" style="color:#9aa0a6"></span>
@@ -86,7 +91,7 @@
       <main>
         <canvas id="nv-canvas"></canvas>
         <div class="hud" id="hud">loading…</div>
-        <div class="hint">every multi-channel microscopy source the server exposes · one registry entry per channel, stacked as niivue overlays · raw channels windowed floor-to-peak, segmentations thresholded and drawn as shells</div>
+        <div class="hint">every multi-channel microscopy source the server exposes · one registry entry per channel, stacked as niivue overlays · raw channels windowed floor-to-peak, segmentations thresholded and drawn as shells · Allen structures use the reference viewer's flat-hue palette</div>
         <div class="fallback" id="fallback"></div>
       </main>
     </div>

@@ -31,6 +31,21 @@ const BACKEND = getBackendFromUrl()
 const MAX_CHANNELS = 16
 const DEFAULT_CHANNELS = 2
 
+/**
+ * How much of a raw channel survives the window, as a fraction of its voxels.
+ *
+ * Windowing a fluorescence channel floor-to-peak keeps everything above the
+ * background floor, and in this data that is the entire cell body: a broad, dim
+ * cytoplasmic haze that carries no structure. One channel of it is a faint fog;
+ * sixteen summed is a solid opaque brick with only its outer surface visible.
+ * The reference viewer's cell is airy because it shows only the bright tagged
+ * structure, so cut at a percentile instead — keep the top few percent as
+ * signal, and let the saturation point sit just below the very brightest
+ * voxels so the structure reaches full colour rather than staying dim.
+ */
+const RAW_SIGNAL_FRACTION = 0.015
+const RAW_SATURATION_FRACTION = 0.001
+
 // A segmentation mask is a filled solid where a fluorescence channel is sparse,
 // so the same overlay opacity that reads well for `_raw` buries everything
 // under `_seg`. Fade masks further than raw channels.
@@ -61,6 +76,42 @@ const CHANNEL_COLORMAPS = [
   'redyell',
   'bronze',
 ]
+
+/**
+ * The Allen IMSC reference viewer's own palette and structure names, sampled
+ * from its legend at imsc.allencell.org.
+ *
+ * Two things make that viewer legible with all 16 structures on at once, and
+ * both are copied here. Each structure gets ONE flat hue, so a structure reads
+ * as a colour rather than as a gradient — the stock niivue ramps that sweep hue
+ * with intensity (`warm`, `bronze`, `redyell`) actively fight that. And the
+ * gene symbol is shown next to what it labels, since `SEC61B` means nothing
+ * without "endoplasmic reticulum" beside it.
+ *
+ * Keyed by gene symbol, which is the leading token of the channel name
+ * (`TUBA1B_71126_raw` -> `TUBA1B`).
+ */
+const ALLEN_STRUCTURES: Record<
+  string,
+  { label: string; rgb: [number, number, number] }
+> = {
+  DNA: { label: 'DNA', rgb: [174, 174, 174] },
+  FBL: { label: 'nucleolus (DF)', rgb: [0, 153, 255] },
+  LMNB1: { label: 'nuclear envelope', rgb: [51, 255, 255] },
+  SEC61B: { label: 'endoplasmic reticulum', rgb: [83, 126, 255] },
+  ST6GAL1: { label: 'Golgi', rgb: [97, 217, 0] },
+  CENT2: { label: 'centrosome', rgb: [240, 124, 76] },
+  LAMP1: { label: 'lysosome', rgb: [255, 195, 92] },
+  TUBA1B: { label: 'microtubules', rgb: [255, 153, 0] },
+  TOMM20: { label: 'mitochondria', rgb: [255, 77, 77] },
+  ACTB: { label: 'actin filaments', rgb: [255, 238, 30] },
+  ACTN1: { label: 'actin bundles', rgb: [187, 205, 34] },
+  MYH10: { label: 'actomyosin bundles', rgb: [255, 102, 51] },
+  CTNNB1: { label: 'adherens junctions', rgb: [253, 146, 182] },
+  DSP: { label: 'desmosomes', rgb: [240, 72, 110] },
+  GJA1: { label: 'gap junction', rgb: [194, 108, 255] },
+  TJP1: { label: 'tight junctions', rgb: [253, 97, 214] },
+}
 
 // The registry reports spacing in the source's own units and does not carry a
 // unit field, so the unit is per format: the Allen sidecar is microns, NIfTI is
@@ -117,6 +168,47 @@ function matchesFamily(entry: ApiVolume, family: Family): boolean {
   return isSegChannel(entry) === (family === 'seg')
 }
 
+// `TUBA1B_71126_raw` -> `TUBA1B`. The middle token is the cell line and varies
+// between datasets, so only the leading symbol is stable enough to key on.
+// Returns null for anything that isn't an Allen channel.
+function allenGene(entry: ApiVolume): string | null {
+  const gene = (entry.channelName ?? '').split('_')[0]?.toUpperCase()
+  return gene && gene in ALLEN_STRUCTURES ? gene : null
+}
+
+// Already capitalized, so niivue's canonicalization (upper-case first letter)
+// leaves it alone and the name the select stores is the name the LUT index has.
+function allenColormapName(gene: string): string {
+  return `Allen_${gene}`
+}
+
+/**
+ * Register one flat-hue colormap per Allen structure.
+ *
+ * Colour is constant across the ramp and *alpha* carries the intensity, which
+ * is the transfer function the reference viewer uses: a structure is always its
+ * own hue, and density shows as how much of that hue accumulates along the ray.
+ * Ramping colour instead (black to hue, as most niivue maps do) makes faint
+ * voxels grey, and grey from 16 channels sums to a white fog.
+ *
+ * The alpha stops are deliberately convex — 0, 24, 255 over an even index
+ * spread — so the broad low-intensity halo just above the background floor
+ * stays nearly transparent while the structure itself comes through. A linear
+ * alpha ramp lets that halo dominate, because there is far more of it.
+ */
+function registerAllenColormaps(v: NiiVue): void {
+  for (const [gene, s] of Object.entries(ALLEN_STRUCTURES)) {
+    const [r, g, b] = s.rgb
+    v.addColormap(allenColormapName(gene), {
+      R: [r, r, r],
+      G: [g, g, g],
+      B: [b, b, b],
+      A: [0, 24, 255],
+      I: [0, 128, 255],
+    })
+  }
+}
+
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
   if (!node) throw new Error(`Missing #${id}`)
@@ -130,6 +222,8 @@ const els = {
   hollow: el<HTMLInputElement>('hollow'),
   load: el<HTMLButtonElement>('load'),
   clear: el<HTMLButtonElement>('clear'),
+  turntable: el<HTMLButtonElement>('turntable'),
+  reset: el<HTMLButtonElement>('reset'),
   status: el<HTMLSpanElement>('status'),
   channels: el<HTMLDivElement>('channels'),
   channelNote: el<HTMLParagraphElement>('channel-note'),
@@ -149,9 +243,14 @@ let current: Dataset | null = null
 // result instead of windowing the volumes of the newer one.
 let loadToken = 0
 let loaded: ApiVolume[] = []
+// Per-channel display window, keyed by registry id. See computeWindows().
+const windows = new Map<string, { calMin: number; calMax: number }>()
 // Set once the user drags the opacity slider, after which the channel-count
 // default stops overriding their choice.
 let opacityTouched = false
+// The camera the reset button returns to, captured before anything moves it.
+let home: { azimuth: number; elevation: number } | null = null
+let spinFrame = 0
 
 function showFallback(msg: string): void {
   els.fallback.textContent = msg
@@ -255,6 +354,8 @@ function buildChannelList(
     familyIndex.set(entry.id, seg ? nSeg++ : nRaw++)
   }
   for (const entry of visibleChannels(d, family)) {
+    const gene = allenGene(entry)
+    const structure = gene ? ALLEN_STRUCTURES[gene] : null
     const row = document.createElement('label')
     const box = document.createElement('input')
     box.type = 'checkbox'
@@ -263,22 +364,47 @@ function buildChannelList(
     box.addEventListener('change', refreshChannelLimit)
     const name = document.createElement('span')
     name.className = 'name'
-    name.textContent = entry.channelName ?? entry.id
+    // Gene symbol plus what it labels, as the reference viewer lists it. The
+    // full registry id stays on the tooltip so the `_raw` / `_seg` suffix and
+    // the cell line are still reachable.
+    name.textContent = structure
+      ? `${gene} · ${structure.label}`
+      : (entry.channelName ?? entry.id)
     name.title = entry.id
     const cmap = document.createElement('select')
     cmap.dataset.for = entry.id
+    if (structure) {
+      const opt = document.createElement('option')
+      opt.value = allenColormapName(gene ?? '')
+      opt.textContent = 'allen'
+      cmap.appendChild(opt)
+    }
     for (const c of CHANNEL_COLORMAPS) {
       const opt = document.createElement('option')
       opt.value = c
       opt.textContent = c
       cmap.appendChild(opt)
     }
-    const hue = familyIndex.get(entry.id) ?? 0
-    cmap.value = CHANNEL_COLORMAPS[hue % CHANNEL_COLORMAPS.length]
+    const swatch = document.createElement('span')
+    swatch.className = 'swatch'
+    if (structure) {
+      cmap.value = allenColormapName(gene ?? '')
+      swatch.style.background = `rgb(${structure.rgb.join(',')})`
+    } else {
+      const hue = familyIndex.get(entry.id) ?? 0
+      cmap.value = CHANNEL_COLORMAPS[hue % CHANNEL_COLORMAPS.length]
+      swatch.style.visibility = 'hidden'
+    }
     cmap.addEventListener('change', () => {
       applyColormap(entry.id, cmap.value)
     })
-    row.append(box, name, cmap)
+    // Once the row is titled by structure rather than by channel name, the raw
+    // and seg entries for a structure read identically. Tag the seg one; the
+    // untagged row is the image, which is the one to reach for by default.
+    const tag = document.createElement('span')
+    tag.className = 'tag'
+    if (structure && isSegChannel(entry)) tag.textContent = 'seg'
+    row.append(box, swatch, name, tag, cmap)
     els.channels.appendChild(row)
   }
   refreshChannelLimit()
@@ -405,6 +531,54 @@ function opacityFor(
 }
 
 /**
+ * Intensities bracketing the top `lowFrac` / `highFrac` of a channel's voxels.
+ *
+ * A 256-bin histogram over the channel's own range, walked from the bright end.
+ * Bin resolution is plenty here: the source is uint8, so the bins land on the
+ * actual sample values rather than approximating them.
+ *
+ * Both fractions are of the whole volume, not of the above-floor voxels, which
+ * is what makes one constant work across channels: a sparse structure and a
+ * dense one differ mostly in how many voxels sit above the floor, and taking a
+ * fixed share of the total lets the sparse one keep proportionally more of its
+ * own signal.
+ */
+function percentileWindow(
+  img: TypedVoxelArray,
+  min: number,
+  max: number,
+  lowFrac: number,
+  highFrac: number,
+): { calMin: number; calMax: number } {
+  const range = max - min
+  if (!(range > 0)) return { calMin: min, calMax: max }
+  const bins = new Uint32Array(256)
+  const scale = 255 / range
+  for (let i = 0; i < img.length; i++) {
+    const b = Math.round((img[i] - min) * scale)
+    bins[b < 0 ? 0 : b > 255 ? 255 : b]++
+  }
+  const lowTarget = img.length * lowFrac
+  const highTarget = img.length * highFrac
+  const value = (bin: number): number => min + (bin * range) / 255
+  let seen = 0
+  let calMax = max
+  let calMin = min
+  for (let b = 255; b >= 0; b--) {
+    seen += bins[b]
+    if (seen >= highTarget && calMax === max) calMax = value(b)
+    if (seen >= lowTarget) {
+      calMin = value(b)
+      break
+    }
+  }
+  // A channel flat enough that one bin crosses both targets would collapse to a
+  // zero-width window, which paints every voxel at the top of the colormap.
+  if (calMax <= calMin) calMax = max
+  return { calMin, calMax }
+}
+
+/**
  * Window each channel for what it actually holds, and fade the overlays.
  *
  * Raw microscopy channels sit on a large per-channel background offset (the
@@ -421,17 +595,47 @@ function opacityFor(
  *
  * The opacity is what lets stacked channels show through: niivue blends
  * overlays additively (premultiplied colour, max alpha) into one texture.
+ *
+ * Windows are computed once per load and cached, because the percentile scan is
+ * a full pass over every voxel of every channel and this runs on each drag of
+ * the opacity slider.
  */
+function computeWindows(): void {
+  if (!nv) return
+  windows.clear()
+  nv.volumes.forEach((volume, index) => {
+    const entry = loaded[index]
+    if (!entry) return
+    const range = volume.globalMax - volume.globalMin
+    if (isSegChannel(entry) || !volume.img) {
+      windows.set(entry.id, {
+        calMin: volume.globalMin + range * 0.01,
+        calMax: volume.globalMax,
+      })
+      return
+    }
+    windows.set(
+      entry.id,
+      percentileWindow(
+        volume.img,
+        volume.globalMin,
+        volume.globalMax,
+        RAW_SIGNAL_FRACTION,
+        RAW_SATURATION_FRACTION,
+      ),
+    )
+  })
+}
+
 function applyDisplay(): void {
   if (!nv) return
   const overlayOpacity = Number(els.opacity.value)
   nv.volumes.forEach((volume, index) => {
     const entry = loaded[index]
-    const seg = entry ? isSegChannel(entry) : false
-    const range = volume.globalMax - volume.globalMin
+    const window = entry ? windows.get(entry.id) : undefined
     nv?.setVolume(index, {
-      calMin: seg ? volume.globalMin + range * 0.01 : volume.globalMin,
-      calMax: volume.globalMax,
+      calMin: window?.calMin ?? volume.globalMin,
+      calMax: window?.calMax ?? volume.globalMax,
       opacity: opacityFor(entry, index, overlayOpacity, els.hollow.checked),
     })
   })
@@ -454,8 +658,13 @@ function renderHud(): void {
     lines.push('loaded:')
     for (const [i, entry] of loaded.entries()) {
       const alpha = opacityFor(entry, i, overlayOpacity, els.hollow.checked)
+      const gene = allenGene(entry)
+      const name = gene
+        ? `${gene} ${ALLEN_STRUCTURES[gene].label}`
+        : (entry.channelName ?? entry.id)
+      const cmap = colormapFor(entry.id).replace(/^Allen_/, 'allen ')
       lines.push(
-        `  ${entry.channelName ?? entry.id} — ${colormapFor(entry.id)}${alpha < 1 ? ` @ ${alpha.toFixed(2)}` : ''}`,
+        `  ${name} — ${cmap}${alpha < 1 ? ` @ ${alpha.toFixed(2)}` : ''}`,
       )
     }
   }
@@ -519,6 +728,7 @@ async function loadSelected(): Promise<void> {
   // A newer load superseded this one while these channels streamed.
   if (myToken !== loadToken) return
   loaded = entries
+  computeWindows()
   applyDisplay()
   if (els.hollow.checked) await hollowLoadedMasks()
   if (myToken !== loadToken) return
@@ -526,6 +736,32 @@ async function loadSelected(): Promise<void> {
   nv.drawScene()
   els.status.textContent = ''
   renderHud()
+}
+
+// A slow yaw, which is how the reference viewer presents a cell: a static
+// projection of overlapping translucent structures is genuinely ambiguous, and
+// rotation is what separates them.
+function setSpinning(on: boolean): void {
+  if (spinFrame) {
+    cancelAnimationFrame(spinFrame)
+    spinFrame = 0
+  }
+  els.turntable.classList.toggle('on', on)
+  if (!on || !nv) return
+  const step = (): void => {
+    if (!nv) return
+    nv.azimuth = (nv.azimuth + 0.4) % 360
+    spinFrame = requestAnimationFrame(step)
+  }
+  spinFrame = requestAnimationFrame(step)
+}
+
+function resetCamera(): void {
+  if (!nv || !home) return
+  setSpinning(false)
+  nv.azimuth = home.azimuth
+  nv.elevation = home.elevation
+  nv.drawScene()
 }
 
 function currentFamily(): Family {
@@ -613,21 +849,35 @@ async function main(): Promise<void> {
   els.dataset.value = datasets[0].key
   showDataset(datasets[0].key)
 
+  // Pure black, no chrome: the reference viewer is a bare 3D render on black,
+  // and fluorescence hues only look right against it — a lifted background
+  // greys out the faint end of every channel, which is most of the signal.
   nv = new NiiVue({
     backend: BACKEND,
-    backgroundColor: [0.05, 0.05, 0.06, 1],
+    backgroundColor: [0, 0, 0, 1],
     isColorbarVisible: false,
   })
   await nv.attachToCanvas(els.canvas)
+  registerAllenColormaps(nv)
+  nv.is3DCrosshairVisible = false
+  nv.isOrientCubeVisible = false
+  nv.isOrientationTextVisible = false
+  home = { azimuth: nv.azimuth, elevation: nv.elevation }
 
   els.dataset.addEventListener('change', () => {
     selectDataset(els.dataset.value)
   })
   els.layout.addEventListener('change', () => {
     if (!nv) return
+    // A turntable only means anything in the 3D render.
+    if (Number(els.layout.value) !== 4) setSpinning(false)
     nv.sliceType = Number(els.layout.value)
     nv.drawScene()
   })
+  els.turntable.addEventListener('click', () => {
+    setSpinning(!spinFrame)
+  })
+  els.reset.addEventListener('click', resetCamera)
   els.opacity.addEventListener('input', () => {
     opacityTouched = true
     if (nv && nv.volumes.length > 0) applyDisplay()

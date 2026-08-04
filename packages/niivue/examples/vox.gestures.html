@@ -14,6 +14,8 @@
       <select id="primaryDrag">
         <option value="8" selected>crosshair</option>
         <option value="1">contrast</option>
+        <option value="2">measurement</option>
+        <option value="7">angle</option>
       </select>
       &nbsp;
       <label for="secondaryDrag">Secondary (right)</label>
@@ -37,6 +39,10 @@
         <option value="3" selected>A+C+S+R</option>
       </select>
       &nbsp;
+      <button type="button" id="clearRulersBtn" title="Erase completed distance measurements only">Clear Rulers</button>
+      <button type="button" id="clearAnglesBtn" title="Erase completed angles only">Clear Angles</button>
+      <button type="button" id="clearAllBtn" title="Erase both">Clear Both</button>
+      &nbsp;
       <label for="webgpuCheck">WebGPU</label>
       <input type="checkbox" id="webgpuCheck" checked/>
     </header>
@@ -53,9 +59,16 @@
       secondaryDrag.onchange = function () {
         nv1.secondaryDragMode = parseInt(this.value, 10)
       }
-      sliceType.onchange = function () {
-        nv1.sliceType = parseInt(this.value, 10)
+      // Read the element rather than `this`: the startup call below is a bare
+      // call, and a module is strict mode, so `this` would be undefined.
+      sliceType.onchange = () => {
+        nv1.sliceType = parseInt(sliceType.value, 10)
       }
+      // Rulers and angles clear independently, so erasing one kind leaves the
+      // other on screen; clearMeasurements() still drops both at once.
+      clearRulersBtn.onclick = () => nv1.clearDistanceMeasurements()
+      clearAnglesBtn.onclick = () => nv1.clearAngles()
+      clearAllBtn.onclick = () => nv1.clearMeasurements()
       function handleLocationChange(data) {
         document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
       }

@@ -55,6 +55,11 @@
       <button type="button" id="inferiorBtn">I</button>
       <button type="button" id="superiorBtn">S</button>
       &nbsp;
+      <label for="segmentCheck" title="Click a voxel to grow a region of similar intensity">Click to Segment</label>
+      <input type="checkbox" id="segmentCheck"/>
+      &nbsp;
+      <button type="button" id="statsBtn" disabled title="Statistics of the drawn region">Region Stats</button>
+      &nbsp;
       <label for="overwriteCheck">Overwrite</label>
       <input type="checkbox" id="overwriteCheck" checked/>
       &nbsp;
@@ -71,6 +76,7 @@
       <canvas id="gl1"></canvas>
     </main>
     <footer id="location">NiiVue::Drawing&nbsp;</footer>
+    <footer id="report">&nbsp;</footer>
     <script type="module" src="vox.draw.js"></script>
   </body>
 </html>

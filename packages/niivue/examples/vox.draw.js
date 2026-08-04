@@ -7,6 +7,11 @@ function setDrawingUI(enabled) {
   undoBtn.disabled = !enabled
   saveBtn.disabled = !enabled
   closeBtn.disabled = !enabled
+  statsBtn.disabled = !enabled
+}
+
+function report(text) {
+  document.getElementById('report').textContent = text
 }
 
 function ensureDrawing() {
@@ -147,6 +152,36 @@ anteriorBtn.onclick = () => nv1.moveCrosshairInVox(0, 1, 0)
 inferiorBtn.onclick = () => nv1.moveCrosshairInVox(0, 0, -1)
 superiorBtn.onclick = () => nv1.moveCrosshairInVox(0, 0, 1)
 
+segmentCheck.onchange = function () {
+  // The magic wand paints into the drawing, so it needs one open and a pen
+  // colour selected — "Off" would swallow the click.
+  if (this.checked) {
+    ensureDrawing()
+    if (parseInt(penValue.value, 10) < 1) {
+      penValue.value = '1'
+      penValue.onchange()
+    }
+  }
+  nv1.drawIsClickToSegment = this.checked
+  report(
+    this.checked ? 'Click a voxel to grow a region of similar intensity.' : ' ',
+  )
+}
+
+statsBtn.onclick = () => {
+  // Measure the background volume, counting only voxels the drawing covers.
+  const roi = nv1.getDescriptives({ volumeIndex: 0, isDrawingMask: true })
+  if (!roi) {
+    report('No drawing to measure.')
+    return
+  }
+  report(
+    `Drawn region: ${roi.nVox} voxels, ${roi.volumeML.toFixed(2)} mL | ` +
+      `mean ${roi.mean.toFixed(1)} +/- ${roi.stdev.toFixed(1)} | ` +
+      `range ${roi.min.toFixed(1)}..${roi.max.toFixed(1)}`,
+  )
+}
+
 overwriteCheck.onchange = function () {
   nv1.drawIsFillOverwriting = this.checked
 }
@@ -161,6 +196,13 @@ function handleLocationChange(data) {
 
 const nv1 = new NiiVue({})
 nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
+nv1.addEventListener('clickToSegment', (e) => {
+  const d = e.detail
+  report(
+    `Segmented ${d.voxelCount} voxels (${d.mL.toFixed(2)} mL) ` +
+      `from voxel ${d.seed.join(', ')}${d.hitCap ? ' - stopped at the voxel cap' : ''}`,
+  )
+})
 await nv1.attachToCanvas(gl1)
 rimCheck.onchange()
 sliceType.onchange()

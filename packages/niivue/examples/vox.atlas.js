@@ -14,6 +14,11 @@ opacitySlider.oninput = function () {
 legendCheck.onchange = async function () {
   await nv1.setVolume(1, { isLegendVisible: this.checked })
 }
+outlineSlider.oninput = function () {
+  // 0 fills each region; a positive value is the neighbour probe distance in
+  // the atlas' own voxels, so a wider setting draws a thicker border.
+  nv1.setAtlasOutline(parseInt(this.value, 10), 1)
+}
 colorbarCheck.onclick = function () {
   nv1.isColorbarVisible = this.checked
 }

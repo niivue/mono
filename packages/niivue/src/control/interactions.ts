@@ -593,6 +593,20 @@ function magicWandFill(
   ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
   ctrl.refreshDrawing()
   ctrl.emit('drawingChanged', { action: 'stroke' })
+  // Report the segmented region so a host can show its size without walking
+  // the bitmap itself. Voxel volume comes from the segmented volume's own RAS
+  // grid (the drawing shares that grid).
+  const pix = vol.pixDimsRAS
+  const mm3 = pix ? result.filled * pix[1] * pix[2] * pix[3] : 0
+  ctrl.emit('clickToSegment', {
+    seed,
+    penValue: ctrl.model.draw.penValue,
+    voxelCount: result.filled,
+    mm3,
+    mL: mm3 / 1000,
+    hitCap: result.hitCap,
+    is2D: restrictAxis !== undefined,
+  })
   return true
 }
 

@@ -60,6 +60,23 @@ export type DrawingChangedDetail = {
   action: 'stroke' | 'create' | 'close' | 'undo' | 'load' | 'update'
 }
 export type DrawingEnabledDetail = { isEnabled: boolean }
+/** A click-to-segment ("magic wand") fill finished. */
+export type ClickToSegmentDetail = {
+  /** Seed voxel (RAS ijk) the region grew from. */
+  seed: [number, number, number]
+  /** Pen value painted into the drawing. */
+  penValue: number
+  /** Voxels the fill painted. */
+  voxelCount: number
+  /** Volume of the segmented region. */
+  mm3: number
+  /** `mm3 / 1000`. */
+  mL: number
+  /** True when the grow stopped at the voxel cap rather than at a boundary. */
+  hitCap: boolean
+  /** True when the grow was confined to the clicked slice (`drawClickToSegmentIs2D`). */
+  is2D: boolean
+}
 export type PropertyChangeDetail = { property: string; value: unknown }
 export type PointerUpDetail = { x: number; y: number; button: number }
 export type VolumeUpdatedChanges = VolumeUpdate & {
@@ -139,6 +156,7 @@ export interface NVEventMap {
   penValueChanged: PenValueChangedDetail
   drawingChanged: DrawingChangedDetail
   drawingEnabled: DrawingEnabledDetail
+  clickToSegment: ClickToSegmentDetail
 
   // Annotations
   annotationAdded: AnnotationAddedDetail

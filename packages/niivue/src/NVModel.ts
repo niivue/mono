@@ -287,6 +287,9 @@ export default class NVModel {
       ...(options.volumeIsAlphaClipDark !== undefined && {
         isAlphaClipDark: options.volumeIsAlphaClipDark,
       }),
+      ...(options.volumeIsColormapAlphaOn2D !== undefined && {
+        isColormapAlphaOn2D: options.volumeIsColormapAlphaOn2D,
+      }),
       ...(options.volumeIsNearestInterpolation !== undefined && {
         isNearestInterpolation: options.volumeIsNearestInterpolation,
       }),

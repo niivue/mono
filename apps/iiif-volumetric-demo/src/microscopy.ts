@@ -225,6 +225,7 @@ const els = {
   hollow: el<HTMLInputElement>('hollow'),
   shading: el<HTMLInputElement>('shading'),
   maxProject: el<HTMLInputElement>('maxproject'),
+  alpha2d: el<HTMLInputElement>('alpha2d'),
   load: el<HTMLButtonElement>('load'),
   clear: el<HTMLButtonElement>('clear'),
   turntable: el<HTMLButtonElement>('turntable'),
@@ -861,6 +862,10 @@ async function main(): Promise<void> {
     backend: BACKEND,
     backgroundColor: [0, 0, 0, 1],
     isColorbarVisible: false,
+    // These palettes are constant-RGB with a ramped alpha, so all the
+    // structure is in alpha. Without this the 2D slices show the first
+    // channel as a flat wash (the 3D render has always used this alpha).
+    volumeIsColormapAlphaOn2D: els.alpha2d.checked,
   })
   await nv.attachToCanvas(els.canvas)
   registerAllenColormaps(nv)
@@ -897,6 +902,10 @@ async function main(): Promise<void> {
     nv.volumeRenderMode = els.maxProject.checked
       ? VOLUME_RENDER_MODE.MAXIMUM
       : VOLUME_RENDER_MODE.COMPOSITE
+  })
+  els.alpha2d.addEventListener('change', () => {
+    if (!nv) return
+    nv.volumeIsColormapAlphaOn2D = els.alpha2d.checked
   })
   els.family.addEventListener('change', showFamily)
   els.hollow.addEventListener('change', () => {

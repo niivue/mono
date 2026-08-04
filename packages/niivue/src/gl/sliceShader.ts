@@ -49,6 +49,7 @@ uniform float opacity;
 uniform float overlayAlphaShader;
 uniform float overlayOpacity;  // opacity of overlay volume (0-1)
 uniform int isAlphaClipDark;
+uniform int isColormapAlphaOn2D;  // >0 = background's baked colormap alpha scales slice opacity
 uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
 uniform highp sampler3D drawing;
 uniform float drawRimOpacity;
@@ -96,6 +97,14 @@ void main() {
   // Sample background volume
   vec4 background = texture(volume, volPos);
   color = vec4(background.rgb, opacity);
+
+  // Opt-in: scale by the colormap alpha the orient prepass baked, so a
+  // palette that carries its structure in alpha reads the same in 2D as it
+  // does in the 3D ray-march (which always samples this alpha). Off by
+  // default, since most colormaps ramp alpha and would gain a 2D fade.
+  if (isColormapAlphaOn2D != 0) {
+    color.a *= background.a;
+  }
 
   // Handle alpha clipping for dark values (FSLeyes style)
   if ((isAlphaClipDark != 0) && (background.a == 0.0)) {

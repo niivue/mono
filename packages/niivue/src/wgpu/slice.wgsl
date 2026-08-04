@@ -12,6 +12,7 @@ struct SliceUniforms {
     numPaqd: f32,                 // >0 = PAQD overlay loaded
     isV1SliceShader: i32,         // >0 = render fiber lines from RGBA overlay direction
     overlayOutlineWidth: f32,     // >0 = draw black outline at overlay threshold boundary
+    isColormapAlphaOn2D: i32,     // >0 = background's baked colormap alpha scales slice opacity
     paqdUniforms: vec4f,          // easing parameters: [t0, t1, y1, y2]
     // Chunked-volume sampling transform. Identity for non-chunked volumes
     // (chunkSubOrigin 0, chunkSubSize 1, chunkDataOrigin 0, chunkDataSize 1).
@@ -101,6 +102,14 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     // Sample background volume (use textureSampleLevel to avoid uniform control flow issues)
     let background = textureSampleLevel(volume, texSampler, volPos, 0.0);
     var color = vec4f(background.rgb, u.opacity);
+
+    // Opt-in: scale by the colormap alpha the orient prepass baked, so a
+    // palette that carries its structure in alpha reads the same in 2D as it
+    // does in the 3D ray-march (which always samples this alpha). Off by
+    // default, since most colormaps ramp alpha and would gain a 2D fade.
+    if (u.isColormapAlphaOn2D != 0) {
+        color.a *= background.a;
+    }
 
     // Handle alpha clipping for dark values (FSLeyes style)
     if (u.isAlphaClipDark != 0 && background.a == 0.0) {

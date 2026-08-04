@@ -1110,6 +1110,7 @@ export default class NVView {
             overlayAlphaShader: md.volume.alphaShader,
             overlayOutlineWidth: md.volume.outlineWidth,
             isAlphaClipDark: md.volume.isAlphaClipDark,
+            isColormapAlphaOn2D: md.volume.isColormapAlphaOn2D,
             drawRimOpacity: md.draw.rimOpacity,
             isV1SliceShader: md.volume.isV1SliceShader,
           }

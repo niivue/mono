@@ -204,6 +204,7 @@ export const VOLUME_DEFAULTS: VolumeRenderConfig = {
   alphaShader: 1,
   isBackgroundMasking: false,
   isAlphaClipDark: false,
+  isColormapAlphaOn2D: false,
   isNearestInterpolation: false,
   isV1SliceShader: false,
   matcap: '',

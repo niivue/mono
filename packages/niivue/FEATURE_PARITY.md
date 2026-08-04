@@ -228,7 +228,8 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | `cal_min` / `cal_max` | ✅ | Via `setVolume` / `recalculateCalMinMax` |
 | Negative thresholds (`cal_minNeg` / `cal_maxNeg`) | ✅ | Supported on volume and mesh layer options |
-| `colormapType` threshold modes | ❌ | Not found on controller API |
+| `colormapType` threshold modes | ✅ | Per-volume `colormapType` (`COLORMAP_TYPE`), baked by the orient prepass on both backends, serialized in NVD |
+| Colormap alpha on 2D slices | ✅ (new) | `volumeIsColormapAlphaOn2D` (default **off**). 2D slices historically replaced the background volume's baked colormap alpha with the flat volume opacity, so a palette carrying structure in alpha (constant RGB, ramped A) rendered as a flat wash and `colormapType`'s below-threshold fade was invisible on the background; the 3D ray-march has always used it. Off by default because many built-in colormaps ramp alpha and would gain a 2D fade they never had. Overlays are unaffected (their alpha is baked + blended already). A mono addition. |
 
 ## 17. Measurements
 

@@ -635,6 +635,18 @@ export type VolumeRenderConfig = {
   alphaShader: number
   isBackgroundMasking: boolean
   isAlphaClipDark: boolean
+  /**
+   * Honour the background volume's per-voxel colormap alpha on 2D slices.
+   * The 3D ray-march always uses it; 2D slices historically replaced it with
+   * the flat volume opacity, so a colormap that carries structure in alpha
+   * (constant RGB with a ramped A, as fluorescence palettes use) rendered as
+   * a flat wash and COLORMAP_TYPE's below-threshold fade had no effect on the
+   * background. Off by default: many built-in colormaps ramp alpha, so
+   * enabling it unconditionally would change standard neuro rendering.
+   * Overlays are unaffected either way (the orient prepass already bakes
+   * their alpha, and the slice shader blends it).
+   */
+  isColormapAlphaOn2D: boolean
   isNearestInterpolation: boolean
   isV1SliceShader: boolean
   matcap: string
@@ -898,6 +910,8 @@ export type NiiVueOptions = {
   volumeAlphaShader?: number
   volumeIsBackgroundMasking?: boolean
   volumeIsAlphaClipDark?: boolean
+  /** Honour the background volume's colormap alpha on 2D slices (default false) */
+  volumeIsColormapAlphaOn2D?: boolean
   volumeIsNearestInterpolation?: boolean
   volumeIsV1SliceShader?: boolean
   volumeMatcap?: string

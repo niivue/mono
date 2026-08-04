@@ -1207,6 +1207,23 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Honour the background volume's per-voxel colormap alpha on 2D slices,
+   * the way the 3D ray-march always has. Default false, because most neuro
+   * colormaps ramp alpha near the low end and would gain a fade they never
+   * had in 2D. Turn it on for a colormap that carries structure in alpha
+   * (constant RGB, ramped A) or to make COLORMAP_TYPE's below-threshold
+   * fade visible on the background in 2D.
+   */
+  get volumeIsColormapAlphaOn2D(): boolean {
+    return this.model.volume.isColormapAlphaOn2D
+  }
+  set volumeIsColormapAlphaOn2D(v: boolean) {
+    this.model.volume.isColormapAlphaOn2D = v
+    this.emit('change', { property: 'volumeIsColormapAlphaOn2D', value: v })
+    this.drawScene()
+  }
+
   get volumeIsNearestInterpolation(): boolean {
     return this.model.volume.isNearestInterpolation
   }

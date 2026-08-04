@@ -14,6 +14,7 @@ type SliceModel = {
   overlayAlphaShader?: number
   overlayOutlineWidth?: number
   isAlphaClipDark?: boolean
+  isColormapAlphaOn2D?: boolean
   drawRimOpacity?: number
   isV1SliceShader?: boolean
 }
@@ -282,6 +283,11 @@ export class SliceRenderer extends NVRenderer {
       gl.uniform1i(
         this._shader.uniforms.isAlphaClipDark,
         md.isAlphaClipDark ? 1 : 0,
+      )
+    if (this._shader.uniforms.isColormapAlphaOn2D)
+      gl.uniform1i(
+        this._shader.uniforms.isColormapAlphaOn2D,
+        md.isColormapAlphaOn2D ? 1 : 0,
       )
     if (this._shader.uniforms.numVolumes)
       gl.uniform1f(this._shader.uniforms.numVolumes, numVolumes)

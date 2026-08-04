@@ -548,6 +548,7 @@ export class SliceRenderer extends NVRenderer {
       overlayAlphaShader?: number
       overlayOutlineWidth?: number
       isAlphaClipDark?: boolean
+      isColormapAlphaOn2D?: boolean
       drawRimOpacity?: number
       isV1SliceShader?: boolean
     },
@@ -647,6 +648,7 @@ export class SliceRenderer extends NVRenderer {
     intView[37] = md.isAlphaClipDark ? 1 : 0 // i32 isAlphaClipDark
     intView[41] = isV1SliceShader ? 1 : 0 // i32 isV1SliceShader
     uniformData[42] = md.overlayOutlineWidth ?? 0 // f32 overlayOutlineWidth
+    intView[43] = md.isColormapAlphaOn2D ? 1 : 0 // i32 isColormapAlphaOn2D
 
     // Chunk transform: 5x vec3f starting at byte 192 (float 48), each vec3f
     // padded to 16 bytes (4 floats). Identity for non-chunked volumes.

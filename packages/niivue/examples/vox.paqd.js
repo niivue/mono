@@ -48,10 +48,19 @@ await nv1.loadVolumes([
   { url: '/volumes/atl-Anatom.nii.gz' },
   { url: '/volumes/spmMotor.nii.gz', colormap: 'warm', calMin: 4, calMax: 8 },
 ])
-await nv1.setColormapLabelFromUrl(
-  1,
-  'https://niivue.github.io/niivue-demo-images/Cerebellum/atl-Anatom.json',
-)
+// The label table is the only remote asset here. If it can't be reached the
+// atlas still renders in its default colors, so report the loss and carry on
+// rather than letting the rejection strand the rest of the setup below.
+try {
+  await nv1.setColormapLabelFromUrl(
+    1,
+    'https://niivue.github.io/niivue-demo-images/Cerebellum/atl-Anatom.json',
+  )
+} catch (err) {
+  console.error('setColormapLabelFromUrl failed', err)
+  document.getElementById('location').textContent =
+    `  Could not load the atlas labels: ${err?.message ?? err}`
+}
 nv1.volumeIllumination = 0.4
 nv1.isColorbarVisible = true
 nv1.setVolume(0, { isColorbarVisible: false })

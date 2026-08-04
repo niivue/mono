@@ -1,5 +1,5 @@
 {
-  "niivueVersion": "1.0.0-rc.10",
+  "niivueVersion": "1.0.0-rc.11",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVue",
   "properties": [
@@ -992,6 +992,17 @@
       "doc": null
     },
     {
+      "jsName": "volumeIsColormapAlphaOn2D",
+      "pyName": "volume_is_colormap_alpha_on_2d",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "volumeIsNearestInterpolation",
       "pyName": "volume_is_nearest_interpolation",
       "tsType": "boolean",
@@ -1045,6 +1056,17 @@
           "kind": "Float"
         },
         "length": 4
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "volumeRenderMode",
+      "pyName": "volume_render_mode",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
       },
       "hasGetter": true,
       "hasSetter": true,
@@ -1545,6 +1567,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "clearAngles",
+      "pyName": "clear_angles",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Clear completed angles only, leaving distance measurements in place.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "clearAnnotations",
       "pyName": "clear_annotations",
       "isAsync": false,
@@ -1552,6 +1584,16 @@
       "params": [],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "clearBounds",
+      "pyName": "clear_bounds",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Give this instance the whole canvas again, undoing {@link setBounds}.\nEquivalent to `setBounds([0, 0, 1, 1])`.",
       "returnsDoc": null
     },
     {
@@ -1565,13 +1607,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "clearDistanceMeasurements",
+      "pyName": "clear_distance_measurements",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Clear completed distance measurements only, leaving angles in place.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "clearMeasurements",
       "pyName": "clear_measurements",
       "isAsync": false,
       "returnsValue": false,
       "params": [],
       "returns": "void",
-      "doc": null,
+      "doc": "Clear both completed distance measurements and completed angles.",
       "returnsDoc": null
     },
     {
@@ -1764,6 +1816,23 @@
       "returns": "[number, number, number]",
       "doc": null,
       "returnsDoc": null
+    },
+    {
+      "jsName": "getDescriptives",
+      "pyName": "get_descriptives",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "options",
+          "tsType": "{ volumeIndex?: number | undefined; masks?: number[] | undefined; isDrawingMask?: boolean | undefined; drawPenValues?: number[] | undefined; }",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "DescriptiveStats | null",
+      "doc": "Region-of-interest statistics for a loaded volume.\n\nValues are calibrated (`scl_slope`/`scl_inter` applied) and non-finite\nvoxels are excluded. Every mask must sit on the same RAS grid as the\ntarget volume — overlays are resliced to the background grid, so masks\ndrawn from the loaded volume list satisfy that by construction, but a mask\non a different grid returns `null` rather than silently wrong numbers.",
+      "returnsDoc": "the statistics, or `null` when the volume has no data or a mask\ndoes not match the target grid"
     },
     {
       "jsName": "getFrame4D",
@@ -2488,6 +2557,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "removeVolume",
+      "pyName": "remove_volume",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to remove"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Remove a single volume by index, emitting `volumeRemoved`.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "resetVolumeAffine",
       "pyName": "reset_volume_affine",
       "isAsync": true,
@@ -2668,6 +2754,29 @@
       "returnsDoc": null
     },
     {
+      "jsName": "setAtlasOutline",
+      "pyName": "set_atlas_outline",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "outline",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "volumeIndex",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Draw label/atlas volumes as region outlines rather than filled regions.\n\n`outline` is the neighbour probe distance in the atlas's own voxels: 0 (the\ndefault) fills every region, 1 keeps a one-voxel border, larger values give\na thicker border. Only the interior is dropped, so the parcellation stays\nreadable over the anatomy underneath. Non-label volumes ignore it.\n\nApplies to every loaded label volume when `volumeIndex` is omitted, or to\none volume when it is given. It is a per-volume property, so\n`setVolume(i, { atlasOutline })` and the load options reach it too.\n\n```js\nnv1.setAtlasOutline(1)     // outline every atlas\nnv1.setAtlasOutline(0, 1)  // fill volume 1 again\n```",
+      "returnsDoc": null
+    },
+    {
       "jsName": "setBaseCoarseFloor",
       "pyName": "set_base_coarse_floor",
       "isAsync": true,
@@ -2784,9 +2893,9 @@
         },
         {
           "name": "cmap",
-          "tsType": "ColorMap | null",
+          "tsType": "string | ColorMap | null",
           "optional": false,
-          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays,\n  or null to remove the label colormap"
+          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays;\n  a built-in colormap name (e.g. 'freesurfer', resolved via\n  lookupColorMap); or null to remove the label colormap"
         }
       ],
       "returns": "Promise<void>",
@@ -3421,6 +3530,12 @@
       "jsName": "change",
       "pyName": "change",
       "detailType": "PropertyChangeDetail",
+      "doc": null
+    },
+    {
+      "jsName": "clickToSegment",
+      "pyName": "click_to_segment",
+      "detailType": "ClickToSegmentDetail",
       "doc": null
     },
     {

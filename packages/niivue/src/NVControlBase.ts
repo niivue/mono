@@ -1224,6 +1224,38 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Draw label/atlas volumes as region outlines rather than filled regions.
+   *
+   * `outline` is the neighbour probe distance in the atlas's own voxels: 0 (the
+   * default) fills every region, 1 keeps a one-voxel border, larger values give
+   * a thicker border. Only the interior is dropped, so the parcellation stays
+   * readable over the anatomy underneath. Non-label volumes ignore it.
+   *
+   * Applies to every loaded label volume when `volumeIndex` is omitted, or to
+   * one volume when it is given. It is a per-volume property, so
+   * `setVolume(i, { atlasOutline })` and the load options reach it too.
+   *
+   * ```js
+   * nv1.setAtlasOutline(1)     // outline every atlas
+   * nv1.setAtlasOutline(0, 1)  // fill volume 1 again
+   * ```
+   */
+  setAtlasOutline(outline: number, volumeIndex?: number): void {
+    const val = Number.isFinite(outline) ? Math.max(0, outline) : 0
+    const volumes = this.model.getVolumes()
+    if (volumeIndex === undefined) {
+      for (const vol of volumes) vol.atlasOutline = val
+    } else {
+      if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
+      volumes[volumeIndex].atlasOutline = val
+    }
+    // The outline is baked by the orient prepass, so the textures must be
+    // rebuilt. Fire-and-forget (this is sync); route a GPU rejection so it
+    // isn't an unhandled promise rejection.
+    this.updateGLVolume().catch((e) => log.error('setAtlasOutline failed', e))
+  }
+
   get volumeIsNearestInterpolation(): boolean {
     return this.model.volume.isNearestInterpolation
   }

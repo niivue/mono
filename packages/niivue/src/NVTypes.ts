@@ -181,6 +181,16 @@ export type NVImage = {
   id?: string
   /** Label colormap for atlas/parcellation volumes (compiled LUT with optional text labels) */
   colormapLabel?: LUT | null
+  /**
+   * Draw this label/atlas volume as region outlines instead of filled regions.
+   * 0 (default) fills. A positive value is the neighbour probe distance in the
+   * volume's own voxels: a voxel survives only when one of its six neighbours
+   * carries a different label, so interiors become transparent and the anatomy
+   * underneath shows through. Applied in the orient prepass, so it reaches 2D
+   * slices and the 3D ray-march on both backends. Ignored unless
+   * {@link colormapLabel} is set. See {@link NiiVue.setAtlasOutline}.
+   */
+  atlasOutline?: number
   /** Whether this volume has imaginary data (complex) */
   isImaginary?: boolean
   /**
@@ -1039,6 +1049,8 @@ export type ImageFromUrlOptions = {
   colormap?: string
   /** Colormap for negative intensities */
   colormapNegative?: string
+  /** Outline width for a label/atlas volume, in its own voxels (default 0 = filled) */
+  atlasOutline?: number
   /** Minimum intensity for negative color mapping (default: NaN = symmetric) */
   calMinNeg?: number
   /** Maximum intensity for negative color mapping (default: NaN = symmetric) */

@@ -224,6 +224,7 @@ function writeOrientUniforms(
   const modMtx = mod ? mod.mtx : IDENTITY_MTX
   for (let i = 0; i < 16; i++) dv.setFloat32(112 + i * 4, modMtx[i], true)
   dv.setFloat32(176, mod ? mod.mode : 0, true)
+  dv.setFloat32(180, u.atlasOutline, true)
   device.queue.writeBuffer(uniformBuffer, 0, ab)
 }
 

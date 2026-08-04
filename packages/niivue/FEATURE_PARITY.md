@@ -353,7 +353,8 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `useLoader()` — custom format loader | ✅ | |
 | External reader registration | ✅ | `registerExternalReader` on NVVolume |
 | DICOM loader plugin | ✅ | `@niivue/nv-ext-dcm2niix` extension |
-| Other loader plugins (itkwasm, minc, tiff, vox, cbor) | ❌ | Must be provided externally |
+| Other loader plugins (itkwasm, minc, vox, cbor) | ❌ | Must be provided externally |
+| TIFF loader | ✅ | Built in, not a plugin — see `docs/ome-tiff-format.md` |
 
 ## 29. NVImage Public API
 
@@ -397,10 +398,11 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | V16 | ✅ |
 | VMR | ✅ |
 | NPY/NPZ | ✅ |
+| Allen JSON+PNG atlas | ✅ |
 | Zarr | ❌ |
 | DICOM (extension) | ✅ |
 | MINC (plugin) | ❌ |
-| TIFF (plugin) | ❌ |
+| TIFF / OME-TIFF / ImageJ stack | ✅ |
 | VOX (plugin) | ❌ |
 
 ### Meshes

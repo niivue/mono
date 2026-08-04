@@ -24,53 +24,21 @@ import {
   findAllenAtlasChannel,
   parseAllenAtlasInfo,
 } from './allenAtlas'
+import { channelColormapFor } from './channelColormaps'
 import { type DecodedImage, decodeImageRGBA } from './imageDecode'
 import { createNiftiArray } from './utils'
 
 /**
- * Colormaps for the channels of a multi-channel acquisition, in assignment
- * order. Every entry is a ramp to a saturated primary or secondary hue, so
- * several channels shown at once stay distinguishable.
- */
-const CHANNEL_COLORMAPS: ReadonlyArray<{
-  name: string
-  rgb: readonly [number, number, number]
-}> = [
-  { name: 'green', rgb: [0, 255, 0] },
-  { name: 'violet', rgb: [255, 0, 255] },
-  { name: 'blue2cyan', rgb: [0, 255, 255] },
-  { name: 'red', rgb: [255, 0, 0] },
-  { name: 'redyell', rgb: [255, 255, 0] },
-  { name: 'blue', rgb: [0, 0, 255] },
-]
-
-/**
  * Colormap for one channel: the closest hue to the sidecar's `channel_colors`
- * entry when it has one, else the next colour in the palette so that channels
- * loaded together do not collide.
+ * entry when it has one, else the next colour in the shared palette so that
+ * channels loaded together do not collide.
  */
 export function allenAtlasChannelColormap(
   info: AllenAtlasInfo,
   channel: number,
   order: number,
 ): string {
-  const rgb = info.channelColors[channel]
-  if (!rgb) {
-    return CHANNEL_COLORMAPS[order % CHANNEL_COLORMAPS.length].name
-  }
-  let best = CHANNEL_COLORMAPS[0]
-  let bestDistance = Number.POSITIVE_INFINITY
-  for (const entry of CHANNEL_COLORMAPS) {
-    const distance =
-      (entry.rgb[0] - rgb[0]) ** 2 +
-      (entry.rgb[1] - rgb[1]) ** 2 +
-      (entry.rgb[2] - rgb[2]) ** 2
-    if (distance < bestDistance) {
-      bestDistance = distance
-      best = entry
-    }
-  }
-  return best.name
+  return channelColormapFor(info.channelColors[channel], order)
 }
 
 /**

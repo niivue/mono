@@ -211,6 +211,11 @@ export type {
   ChunkedVolumeLevel,
   ChunkedVolumeSource,
 } from './volume/ChunkedVolumeSource'
+// OME-TIFF and plain TIFF stacks (multi-channel microscopy)
+export {
+  CHANNEL_COLORMAPS,
+  channelColormapFor,
+} from './volume/channelColormaps'
 export type {
   ChunkPlan,
   MultiLodFocus,
@@ -230,9 +235,51 @@ export {
 // (e.g. wrapping segmentation labels into an overlay NVImage)
 export { nii2volume, writeVolume } from './volume/NVVolume'
 export {
+  type ImageJStackInfo,
+  type OmeChannel,
+  type OmeTiffInfo,
+  omeChannelName,
+  omeLengthToMicrons,
+  omePlaneCount,
+  omePlaneIndex,
+  parseImageJDescription,
+  parseOmeColor,
+  parseOmeXml,
+} from './volume/omeTiff'
+export {
+  fetchOmeTiff,
+  loadOmeTiffVolumes,
+  type OmeTiffLoadOptions,
+  omeTiffChannelColormap,
+  omeTiffChannelFile,
+  omeTiffVolumesFrom,
+} from './volume/omeTiffLoader'
+export {
   createStreamingNVImage,
   type StreamingVolumeSpec,
 } from './volume/streamingVolume'
+export {
+  parseTiff,
+  readTiffImage,
+  type TiffFile,
+  type TiffIfd,
+  type TiffImage,
+  tiffImageDescription,
+  tiffResolutionMm,
+} from './volume/tiff'
+export {
+  describeTiff,
+  readTiffVolume,
+  type TiffSource,
+  type TiffVolume,
+  type TiffVolumeSelection,
+  tiffChannelCount,
+  tiffChannelName,
+  tiffIsTiled,
+  tiffPlaneIndices,
+  tiffTimepointCount,
+  tiffVolumeAffine,
+} from './volume/tiffVolume'
 // Transform types
 export type {
   OptionField,

@@ -84,6 +84,23 @@ WebGL2 and WebGPU where rendering is involved.
   client scheduler can then skip fetch/decode/orient/gradient/GPU upload for
   known-empty blocks while treating missing metadata conservatively as
   "unknown, request normally."
+- [ ] Render variable-sized blocks so regions can be separated out and drawn on
+  their own. Every plan builder (`chunkVolume`, `chunkVolumeGrid`,
+  `chunkVolumeMultiLOD`) currently emits bricks on a regular lattice that covers
+  the whole volume, and `ChunkPlan.gridDims`/`stride`/`gridIndex` describe that
+  lattice. The per-brick descriptor is already general (`voxelOrigin`/`voxelDims`
+  vs `texOrigin`/`texDims`), and the multi-LOD octree already produces
+  heterogeneous bricks with a degenerate `gridIndex`/`gridDims`, so the work is
+  to make that a first-class capability: a plan that is an arbitrary set of
+  independently sized and placed blocks, not necessarily covering the volume.
+  That gives a block per region of interest, sized to the region, each
+  fetchable, resident, orderable and toggleable on its own. Needs: an audit of
+  every consumer that still assumes the lattice (stride, `gridIndex`, row-major
+  `(z*gy+y)*gx+x` indexing); halo behavior at a block face with no neighbor in
+  the plan; interaction with the BSP back-to-front sort (already mixed-size
+  safe) and with `MAX_CHUNKS_PER_TILE`; and WebGL2/WebGPU parity. Pairs with the
+  occupancy item above (skip empty space) and with per-region windowing and
+  colormaps once blocks are addressable.
 - [ ] Add priority and prefetch policy:
   visible working set first, view-centre first, optional neighborhood prefetch,
   and lower priority for off-screen or stale levels.

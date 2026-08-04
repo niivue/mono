@@ -119,6 +119,10 @@ import type { ChunkedVolumeSource } from '@/volume/ChunkedVolumeSource'
 import { chunksOverlappingVoxelBox } from '@/volume/ChunkVisibility'
 import type { ChunkPlan } from '@/volume/chunking'
 import {
+  computeDescriptiveStats,
+  type DescriptiveStats,
+} from '@/volume/descriptives'
+import {
   computeModulationData,
   computeModulationWeights,
 } from '@/volume/modulation'
@@ -138,6 +142,7 @@ import {
   calculateWorldExtents,
   calMinMaxFrame,
   computeVolumeLabelCentroids,
+  getImageDataRAS,
   reorientDrawingToNative,
   volumeTR,
 } from '@/volume/utils'
@@ -2734,6 +2739,96 @@ export default class NiiVue extends EventTarget {
       changes: options,
     })
     await this.updateGLVolume()
+  }
+
+  /**
+   * Region-of-interest statistics for a loaded volume.
+   *
+   * Values are calibrated (`scl_slope`/`scl_inter` applied) and non-finite
+   * voxels are excluded. Every mask must sit on the same RAS grid as the
+   * target volume — overlays are resliced to the background grid, so masks
+   * drawn from the loaded volume list satisfy that by construction, but a mask
+   * on a different grid returns `null` rather than silently wrong numbers.
+   *
+   * @param options.volumeIndex - which volume to measure (default 0, the background)
+   * @param options.masks - volume indices whose non-zero voxels define the region;
+   *   with several, a voxel counts only where ALL of them are non-zero
+   * @param options.isDrawingMask - also require a non-zero voxel in the drawing bitmap
+   * @param options.drawPenValues - when masking by the drawing, restrict to these
+   *   pen values (default: any non-zero voxel)
+   * @returns the statistics, or `null` when the volume has no data or a mask
+   *   does not match the target grid
+   *
+   * @example
+   * const roi = nv1.getDescriptives({ volumeIndex: 0, isDrawingMask: true })
+   * console.log(roi.mean, roi.stdev, roi.volumeML)
+   */
+  getDescriptives(
+    options: {
+      volumeIndex?: number
+      masks?: number[]
+      isDrawingMask?: boolean
+      drawPenValues?: number[]
+    } = {},
+  ): DescriptiveStats | null {
+    const volumes = this.model.getVolumes()
+    const volumeIndex = options.volumeIndex ?? 0
+    if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return null
+    const vol = volumes[volumeIndex]
+    const raw = getImageDataRAS(vol)
+    if (!raw || !vol.dimsRAS || !vol.pixDimsRAS) {
+      log.warn('getDescriptives: volume has no resolvable RAS data')
+      return null
+    }
+    const nVox = raw.length
+    // getImageDataRAS returns unscaled samples; report calibrated intensities.
+    const slope = vol.hdr?.scl_slope || 1
+    const inter = vol.hdr?.scl_inter || 0
+    let values: Float32Array = raw
+    if (slope !== 1 || inter !== 0) {
+      values = new Float32Array(nVox)
+      for (let i = 0; i < nVox; i++) values[i] = raw[i] * slope + inter
+    }
+    // Intersect every requested mask into one inclusion array.
+    let mask: Uint8Array | null = null
+    const requireMask = (): Uint8Array => {
+      if (!mask) mask = new Uint8Array(nVox).fill(1)
+      return mask
+    }
+    for (const maskIndex of options.masks ?? []) {
+      if (!this._checkBounds(volumes, maskIndex, 'Mask volume')) return null
+      const maskData = getImageDataRAS(volumes[maskIndex])
+      if (!maskData || maskData.length !== nVox) {
+        log.warn(
+          `getDescriptives: mask volume ${maskIndex} does not match the target grid`,
+        )
+        return null
+      }
+      const m = requireMask()
+      for (let i = 0; i < nVox; i++) {
+        if (maskData[i] === 0 || Number.isNaN(maskData[i])) m[i] = 0
+      }
+    }
+    if (options.isDrawingMask) {
+      const drawingVol = this.model.drawingVolume
+      const bitmap = drawingVol ? getDrawingBitmap(drawingVol) : null
+      if (!bitmap || bitmap.length !== nVox) {
+        log.warn(
+          'getDescriptives: no drawing, or the drawing does not match the target grid',
+        )
+        return null
+      }
+      const pens = options.drawPenValues
+      const m = requireMask()
+      for (let i = 0; i < nVox; i++) {
+        const v = bitmap[i]
+        const keep = pens ? pens.includes(v) : v !== 0
+        if (!keep) m[i] = 0
+      }
+    }
+    const voxelVolumeMM3 =
+      vol.pixDimsRAS[1] * vol.pixDimsRAS[2] * vol.pixDimsRAS[3]
+    return computeDescriptiveStats(values, voxelVolumeMM3, mask)
   }
 
   getVolumeAffine(volumeIndex: number): AffineMatrix {

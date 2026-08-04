@@ -303,6 +303,9 @@ export class VolumeRenderer extends NVRenderer {
   // Scene flag (set per-frame from md.scene): clip the overlay/PAQD/drawing passes
   // with the base volume instead of letting them ignore the clip plane.
   clipPlaneOverlay = false
+  // Volume flag (set per-frame from md.volume.renderMode): 0 = composite (OVER),
+  // 1 = maximum-intensity projection. See VOLUME_RENDER_MODE.
+  renderMode = 0
   private _matcapUrl: string | null = null
   private _bindTexVol: GPUTexture | null = null
   private _bindTexGrad: GPUTexture | null = null
@@ -2678,7 +2681,9 @@ export class VolumeRenderer extends NVRenderer {
         this.clipPlaneOverlay ? 1.0 : 0.0,
         // fadeAlpha (lane after clipPlaneOverlay): streaming cross-fade weight.
         fadeAlpha,
-        0,
+        // renderMode (offset 380): 0 = composite (OVER), 1 = maximum-intensity
+        // projection. Occupies what used to be implicit padding, so nothing moves.
+        this.renderMode,
         0,
         0,
         0,

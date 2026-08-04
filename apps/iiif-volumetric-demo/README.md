@@ -68,9 +68,14 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   gene symbol plus what it labels, and its own flat hue from that
   viewer's palette carried by a constant-colour/ramped-alpha colormap, so
   a structure reads as one colour instead of a gradient. `turntable`
-  spins the render and `reset` returns the camera. The reference viewer
-  path-traces; niivue single-pass raymarches, so its render is crisper
-  and less diffuse than the reference.
+  spins the render and `reset` returns the camera. `shading` applies
+  matcap lighting from the local intensity gradient to every channel (not
+  just the background volume), which is what gives the stack depth
+  instead of the flat look of an unlit render; `max project` keeps the
+  brightest sample along each ray instead of compositing front-to-back,
+  matching the reference viewer's "Max project". The reference viewer
+  path-traces; niivue single-pass raymarches, so even lit its render is
+  crisper and less diffuse than the reference.
   Microscopy sources too large to load whole (the FIB-SEM OME-Zarr, the
   WSI slide) are listed in a sidebar with a link to the page that
   streams them. Needs a multi-channel fixture — run

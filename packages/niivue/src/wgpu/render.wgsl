@@ -1,19 +1,48 @@
 // Render-specific functions (preamble is prepended by render.ts from volumeShaderLib)
 
-// Drawing-gradient tuning constants. Shader authoring choices, not runtime
-// uniforms. Offset widens vs sharpens the gradient stencil; non-integer
-// exploits the linear sampler for Gaussian-like free smoothing. Epsilon
-// below which gradient normalization is unreliable.
-const DRAW_GRAD_OFFSET: f32 = 1.5;
-const DRAW_GRAD_EPSILON: f32 = 1e-6;
+// In-shader layer-gradient tuning constants, used by the overlay and drawing
+// passes (neither has a precomputed gradient texture the way the background
+// does). Shader authoring choices, not runtime uniforms. Offset widens vs
+// sharpens the gradient stencil; non-integer exploits the linear sampler for
+// Gaussian-like free smoothing. Epsilon below which gradient normalization is
+// unreliable.
+const LAYER_GRAD_OFFSET: f32 = 1.5;
+const LAYER_GRAD_EPSILON: f32 = 1e-6;
 
-// Weighted scalar projection of drawing RGBA. Luminance weights on RGB
-// distinguish distinct label colors; heavy alpha weight (2.0) makes
-// background→drawing transitions dominate. Switched from length(rgba) which
+// Weighted scalar projection of a layer's RGBA. Luminance weights on RGB
+// distinguish distinct label/channel colors; heavy alpha weight (2.0) makes
+// background→layer transitions dominate. Switched from length(rgba) which
 // missed label-to-label boundaries when two labels had similar-magnitude
 // RGBA vectors (common when labels share alpha=255 and differ only in hue).
-fn drawScalar(c: vec4f) -> f32 {
+fn layerScalar(c: vec4f) -> f32 {
     return dot(c, vec4f(0.299, 0.587, 0.114, 2.0));
+}
+
+// Matcap shade factor from a 6-tap central-difference gradient of `tex` at `p`.
+// The taps always go through the LINEAR sampler (even when the layer itself is
+// ray-marched with nearest), so each is a trilinear blend of 8 texels — a
+// Gaussian-like smoothing for free that hides ray-march step discretization.
+// Sign: value(+X) - value(-X) matches the volume gradient's inward-pointing
+// convention. Returns vec3f(1.0) (no shading) when the gradient is degenerate.
+fn layerShade(tex: texture_3d<f32>, p: vec3f, amount: f32) -> vec3f {
+    // dv is a LAYER_GRAD_OFFSET-voxel offset in full-volume [0,1] units;
+    // chunkTexCoord then maps it into the per-chunk texture, so the stencil
+    // width stays correct for a chunked layer.
+    let dv = LAYER_GRAD_OFFSET / params.volumeTexDimsFull.xyz;
+    let vXp = layerScalar(textureSampleLevel(tex, tex_sampler, chunkTexCoord(p + vec3f(dv.x, 0.0, 0.0)), 0.0));
+    let vXm = layerScalar(textureSampleLevel(tex, tex_sampler, chunkTexCoord(p - vec3f(dv.x, 0.0, 0.0)), 0.0));
+    let vYp = layerScalar(textureSampleLevel(tex, tex_sampler, chunkTexCoord(p + vec3f(0.0, dv.y, 0.0)), 0.0));
+    let vYm = layerScalar(textureSampleLevel(tex, tex_sampler, chunkTexCoord(p - vec3f(0.0, dv.y, 0.0)), 0.0));
+    let vZp = layerScalar(textureSampleLevel(tex, tex_sampler, chunkTexCoord(p + vec3f(0.0, 0.0, dv.z)), 0.0));
+    let vZm = layerScalar(textureSampleLevel(tex, tex_sampler, chunkTexCoord(p - vec3f(0.0, 0.0, dv.z)), 0.0));
+    let grad = vec3f(vXp - vXm, vYp - vYm, vZp - vZm);
+    if (length(grad) <= LAYER_GRAD_EPSILON) { return vec3f(1.0); }
+    let localNormal = normalize(grad);
+    let norm3 = mat3x3f(params.normMtx[0].xyz, params.normMtx[1].xyz, params.normMtx[2].xyz);
+    let n = norm3 * localNormal;
+    let uv = n.xy * 0.5 + 0.5;
+    let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * (1.0 + (amount / 3.0));
+    return mix(vec3f(1.0), mc_rgb, amount);
 }
 
 struct RayMarchResult {
@@ -36,12 +65,22 @@ fn clipPassSkip(sampleA: f32, clipLo: f32, clipHi: f32, clipMode: f32) -> bool {
     return inRange;                          // cutaway: drop samples inside
 }
 
+// shadeAmount > 0 lights every accumulated sample with a matcap driven by the
+// layer's own in-shader gradient (see layerShade). Volumetric rather than
+// surface shading: a translucent stack (e.g. many microscopy channels) needs
+// each sample lit, not just the first hit. 0 leaves the layer unshaded, which
+// is both the default and the drawing pass's behaviour (it shades at first hit
+// after this returns).
+// mip replaces OVER-compositing with a component-wise max on the premultiplied
+// sample — maximum-intensity projection. Early termination is skipped in that
+// mode since the whole ray must be marched to find the maximum.
 fn rayMarchPass(
     tex: texture_3d<f32>, samp: sampler,
     start: vec3f, dir: vec3f, len: f32,
     deltaDir: vec4f, deltaDirFast: vec4f,
     ran: f32, earlyTermination: f32,
-    clipLo: f32, clipHi: f32, clipMode: f32
+    clipLo: f32, clipHi: f32, clipMode: f32,
+    shadeAmount: f32, mip: bool
 ) -> RayMarchResult {
     var result: RayMarchResult;
     result.color = vec4f(0.0);
@@ -77,9 +116,20 @@ fn rayMarchPass(
                 result.firstHit = samplePos;
             }
             result.farthest = samplePos.a;
-            let premultiplied = vec4f(colorSample.rgb * colorSample.a, colorSample.a);
-            result.color = (1.0 - result.color.a) * premultiplied + result.color;
-            if (result.color.a > earlyTermination) { break; }
+            var rgb = colorSample.rgb;
+            if (shadeAmount > 0.0) {
+                // colorSample.rgb is straight (non-premultiplied) here, so
+                // clamping the lit colour to 1.0 keeps the premultiplied
+                // product below alpha once it is multiplied in.
+                rgb = min(rgb * layerShade(tex, samplePos.xyz, shadeAmount), vec3f(1.0));
+            }
+            let premultiplied = vec4f(rgb * colorSample.a, colorSample.a);
+            if (mip) {
+                result.color = max(result.color, premultiplied);
+            } else {
+                result.color = (1.0 - result.color.a) * premultiplied + result.color;
+                if (result.color.a > earlyTermination) { break; }
+            }
         }
         samplePos += deltaDir;
     }
@@ -108,7 +158,8 @@ fn rayMarchPaqd(
     deltaDir: vec4f, deltaDirFast: vec4f,
     ran: f32, earlyTermination: f32,
     paqdUni: vec4f,
-    clipLo: f32, clipHi: f32, clipMode: f32
+    clipLo: f32, clipHi: f32, clipMode: f32,
+    mip: bool
 ) -> RayMarchResult {
     var result: RayMarchResult;
     result.color = vec4f(0.0);
@@ -161,8 +212,12 @@ fn rayMarchPaqd(
                 }
                 result.farthest = samplePos.a;
                 let premultiplied = vec4f(rgb * alpha, alpha);
-                result.color = (1.0 - result.color.a) * premultiplied + result.color;
-                if (result.color.a > earlyTermination) { break; }
+                if (mip) {
+                    result.color = max(result.color, premultiplied);
+                } else {
+                    result.color = (1.0 - result.color.a) * premultiplied + result.color;
+                    if (result.color.a > earlyTermination) { break; }
+                }
             }
         }
         samplePos += deltaDir;
@@ -176,9 +231,18 @@ fn depthAwareMix(
     result: RayMarchResult,
     backNearest: f32,
     fragDepth: ptr<function, f32>,
-    depthFactor: f32
+    depthFactor: f32,
+    mip: bool
 ) {
     if (result.color.a <= 0.001) { return; }
+    // Maximum projection: the layers combine by the same max operation that
+    // built each layer's own accumulation, so depth-weighted mixing (which
+    // assumes OVER) does not apply. Depth still tracks the nearest hit.
+    if (mip) {
+        *colAcc = max(*colAcc, result.color);
+        *fragDepth = min(*fragDepth, frac2ndc(result.firstHit.xyz));
+        return;
+    }
     var mixFactor = result.color.a;
     if ((*colAcc).a <= 0.0) {
         mixFactor = 1.0;
@@ -252,6 +316,10 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	// plane colour) and matcap lighting; still respect clip-plane ray trimming
 	// so the overlay is clipped together with the base.
 	let overlayMode = params.overlayLayerMode > 0.5;
+	// Maximum-intensity projection: every pass takes a component-wise max of the
+	// premultiplied sample instead of compositing OVER, and no pass may early-
+	// terminate (the maximum can lie anywhere along the ray).
+	let mip = params.renderMode > 0.5;
 	let stepSize = len / lenVox;
 	let deltaDir = vec4f(dir * stepSize, stepSize);
 	var localGradientAmount = select(params.gradientAmount, 0.0, overlayMode);
@@ -359,10 +427,18 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 					let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * (1.0 + (lightingAmount / 3.0));
 					let blendedRGB = mix(vec3f(1.0), mc_rgb, lightingAmount);
 					let finalRGB = blendedRGB * colorSample.rgb;
-					let correctedA = 1.0 - pow(1.0 - colorSample.a, stepRatio);
+					// Step-size correction compensates a coarse brick's sparser
+					// sampling in an OVER accumulation. A max projection reads
+					// each sample independently, so correcting it would brighten
+					// coarse bricks instead of matching them.
+					let correctedA = select(1.0 - pow(1.0 - colorSample.a, stepRatio), colorSample.a, mip);
 					let premultiplied = vec4f(finalRGB * correctedA, correctedA);
-					colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
-					if (colAcc.a > earlyTermination) { break; }
+					if (mip) {
+						colAcc = max(colAcc, premultiplied);
+					} else {
+						colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
+						if (colAcc.a > earlyTermination) { break; }
+					}
 				}
 				samplePos += deltaDir;
 			}
@@ -421,56 +497,36 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	let ovClipMode = select(0.0, select(1.0, 2.0, cutaway), clipOverlay);
 	let ovClipLo = sampleRange.x;
 	let ovClipHi = sampleRange.y;
-	// Overlay pass
+	// Overlay pass. Overlays carry no precomputed gradient texture (the combined
+	// overlay texture is rebuilt whenever any overlay changes, e.g. an opacity
+	// drag, so a cached gradient would thrash), so lighting comes from the
+	// in-shader stencil — per sample, since an overlay stack is translucent.
 	if (textureDimensions(overlay, 0).x > 2) {
-		let result = rayMarchPass(overlay, tex_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, ovClipLo, ovClipHi, ovClipMode);
-		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor);
+		let result = rayMarchPass(overlay, tex_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, ovClipLo, ovClipHi, ovClipMode, params.gradientAmount, mip);
+		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor, mip);
 	}
 	// PAQD pass (raw data with GPU-side LUT lookup + easing)
 	if (textureDimensions(paqd, 0).x > 2) {
-		let result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, params.paqdUniforms, ovClipLo, ovClipHi, ovClipMode);
-		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor);
+		let result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, params.paqdUniforms, ovClipLo, ovClipHi, ovClipMode, mip);
+		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor, mip);
 	}
 	// Drawing pass (nearest-neighbor sampling for ray-march, linear for gradient)
 	if (textureDimensions(drawing, 0).x > 2) {
-		var result = rayMarchPass(drawing, nearest_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, ovClipLo, ovClipHi, ovClipMode);
-		// Matcap lighting at first hit. 6-tap central-difference gradient
-		// sampled at 1.5 voxels out through the filtering sampler — each
-		// tap is a trilinear blend of 8 texels ("Gaussian for free"),
-		// which smooths away ray-march step discretization without any
-		// precomputed drawingGradient texture. Sign: value(+X) - value(-X)
-		// matches the volume gradient's inward-pointing convention.
+		var result = rayMarchPass(drawing, nearest_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, ovClipLo, ovClipHi, ovClipMode, 0.0, mip);
+		// Matcap lighting at FIRST HIT only (unlike the overlay, which shades
+		// every sample): a drawing is a label mask read as an opaque surface,
+		// so one shade for the whole ray is both correct and far cheaper.
 		if (result.color.a > 0.001 && params.gradientAmount > 0.0) {
-			// dv is a 1.5-voxel offset in full-volume [0,1] units; chunkTexCoord
-			// then maps it into the per-chunk texture (1.5 chunk-texels). Using
-			// volumeTexDimsFull keeps the offset correct for chunked layers.
-			let dv = DRAW_GRAD_OFFSET / params.volumeTexDimsFull.xyz;
-			let hp = result.firstHit.xyz;
-			let vXp = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp + vec3f(dv.x, 0.0, 0.0)), 0.0));
-			let vXm = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp - vec3f(dv.x, 0.0, 0.0)), 0.0));
-			let vYp = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp + vec3f(0.0, dv.y, 0.0)), 0.0));
-			let vYm = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp - vec3f(0.0, dv.y, 0.0)), 0.0));
-			let vZp = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp + vec3f(0.0, 0.0, dv.z)), 0.0));
-			let vZm = drawScalar(textureSampleLevel(drawing, tex_sampler, chunkTexCoord(hp - vec3f(0.0, 0.0, dv.z)), 0.0));
-			let grad = vec3f(vXp - vXm, vYp - vYm, vZp - vZm);
-			if (length(grad) > DRAW_GRAD_EPSILON) {
-				let localNormal = normalize(grad);
-				let norm3 = mat3x3f(params.normMtx[0].xyz, params.normMtx[1].xyz, params.normMtx[2].xyz);
-				let n = norm3 * localNormal;
-				let uv = n.xy * 0.5 + 0.5;
-				let brighten = 1.0 + (params.gradientAmount / 3.0);
-				let mc_rgb = textureSampleLevel(matcap, tex_sampler, uv, 0.0).rgb * brighten;
-				let shade = mix(vec3f(1.0), mc_rgb, params.gradientAmount);
-				// result.color is premultiplied (rgb = actualColor * alpha).
-				// Clamp to alpha so the shade (which can exceed 1.0 via
-				// brighten) can't push rgb > alpha and break the
-				// premultiplied-alpha invariant that depthAwareMix and
-				// framebuffer blending assume.
-				let shadedRgb = min(result.color.rgb * shade, vec3f(result.color.a));
-				result.color = vec4f(shadedRgb, result.color.a);
-			}
+			let shade = layerShade(drawing, result.firstHit.xyz, params.gradientAmount);
+			// result.color is premultiplied (rgb = actualColor * alpha).
+			// Clamp to alpha so the shade (which can exceed 1.0 via the
+			// matcap brighten) can't push rgb > alpha and break the
+			// premultiplied-alpha invariant that depthAwareMix and
+			// framebuffer blending assume.
+			let shadedRgb = min(result.color.rgb * shade, vec3f(result.color.a));
+			result.color = vec4f(shadedRgb, result.color.a);
 		}
-		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor);
+		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor, mip);
 	}
 	// Final output
 	if (colAcc.a <= 0.001) {
@@ -481,7 +537,10 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	// Chunked draws must emit the true per-segment premultiplied alpha so the
 	// back-to-front chunk blend reconstructs the full ray without over-occluding
 	// deeper chunks.
-	if (chunkedDraw) {
+	// A max projection never early-terminates, so a high alpha means "the
+	// brightest sample was nearly opaque", not "the ray saturated". Promoting it
+	// to fully opaque would throw away that modulation.
+	if (chunkedDraw || mip) {
 		output.color = colAcc;
 	} else if (colAcc.a >= earlyTermination) {
 		output.color = vec4f(colAcc.rgb / colAcc.a, 1.0);

@@ -1156,6 +1156,21 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * How the 3D ray-march combines the samples along each ray:
+   * `VOLUME_RENDER_MODE.COMPOSITE` (default, OVER) or
+   * `VOLUME_RENDER_MODE.MAXIMUM` (maximum-intensity projection). 2D slices draw
+   * a single plane and are unaffected.
+   */
+  get volumeRenderMode(): number {
+    return this.model.volume.renderMode
+  }
+  set volumeRenderMode(v: number) {
+    this.model.volume.renderMode = v
+    this.emit('change', { property: 'volumeRenderMode', value: v })
+    this.drawScene()
+  }
+
   get volumeOutlineWidth(): number {
     return this.model.volume.outlineWidth
   }

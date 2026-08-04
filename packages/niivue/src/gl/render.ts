@@ -245,6 +245,9 @@ export class VolumeRenderer extends NVRenderer {
   // Scene flag (set per-frame from md.scene): clip the overlay/PAQD/drawing passes
   // with the base volume instead of letting them ignore the clip plane.
   clipPlaneOverlay = false
+  // Volume flag (set per-frame from md.volume.renderMode): 0 = composite (OVER),
+  // 1 = maximum-intensity projection. See VOLUME_RENDER_MODE.
+  renderMode = 0
   // Coarse whole-volume "floor" texture for the active base, drawn behind the
   // resident fine chunks on 2D slices so a deep-zoom slice never blanks while
   // finer chunks stream. Oriented once from a coarse pyramid level the app
@@ -1976,6 +1979,8 @@ export class VolumeRenderer extends NVRenderer {
       )
     if (shader.uniforms.overlayLayerMode)
       gl.uniform1f(shader.uniforms.overlayLayerMode, 0.0)
+    if (shader.uniforms.renderMode)
+      gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
     // Default fully present; the chunk loop overrides per fading chunk.
     if (shader.uniforms.fadeAlpha) gl.uniform1f(shader.uniforms.fadeAlpha, 1.0)
     if (shader.uniforms.paqdUniforms)
@@ -2320,6 +2325,8 @@ export class VolumeRenderer extends NVRenderer {
       )
     if (shader.uniforms.overlayLayerMode)
       gl.uniform1f(shader.uniforms.overlayLayerMode, 1.0)
+    if (shader.uniforms.renderMode)
+      gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
     if (shader.uniforms.paqdUniforms)
       gl.uniform4fv(shader.uniforms.paqdUniforms, paqdUniforms as number[])
     if (shader.uniforms.earlyTermination)

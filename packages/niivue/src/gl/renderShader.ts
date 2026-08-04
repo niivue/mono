@@ -14,6 +14,8 @@ uniform float overlayLayerMode;
 // color is multiplied by this so a freshly-resident fine chunk dissolves in
 // over the coarse floor instead of popping. 1.0 for every non-fading draw.
 uniform float fadeAlpha;
+// Volume render mode: 0 = composite (OVER), 1 = maximum-intensity projection.
+uniform float renderMode;
 uniform float earlyTermination;
 // Per-brick source-level voxel dims for the ray-step density (multi-LOD). Equals
 // volumeTexDimsFull for single-level/non-chunked draws.
@@ -28,22 +30,50 @@ uniform sampler2D paqdLut;
 uniform sampler3D drawing;
 uniform sampler3D drawingLinear;
 
-// Drawing-gradient tuning constants. Kept inline because they are shader
-// authoring choices (widens vs sharpens the gradient stencil), not
-// runtime-tunable parameters.
+// In-shader layer-gradient tuning constants, used by the overlay and drawing
+// passes (neither has a precomputed gradient texture the way the background
+// does). Kept inline because they are shader authoring choices (widens vs
+// sharpens the gradient stencil), not runtime-tunable parameters.
 // Offset (in voxels) for the 6-tap gradient stencil. The non-integer value
 // exploits the LINEAR sampler — each tap is a trilinear blend of 8 texels,
 // giving a Gaussian-like smoothing for free.
-const float DRAW_GRAD_OFFSET = 1.5;
+const float LAYER_GRAD_OFFSET = 1.5;
 // Below this, the gradient is too small to normalize reliably.
-const float DRAW_GRAD_EPSILON = 1e-6;
-// Weighted scalar projection of drawing RGBA → f32. Luminance weights on
-// RGB distinguish distinct label colors; heavy alpha weight (2.0) makes
-// background→drawing transitions dominate. Switched from length(rgba) which
+const float LAYER_GRAD_EPSILON = 1e-6;
+// Weighted scalar projection of a layer's RGBA → f32. Luminance weights on
+// RGB distinguish distinct label/channel colors; heavy alpha weight (2.0) makes
+// background→layer transitions dominate. Switched from length(rgba) which
 // missed label-to-label boundaries when two labels had similar-magnitude
 // RGBA vectors (common when labels share alpha=255 and differ only in hue).
-float drawScalar(vec4 c) {
+float layerScalar(vec4 c) {
   return dot(c, vec4(0.299, 0.587, 0.114, 2.0));
+}
+
+// Matcap shade factor from a 6-tap central-difference gradient of \`tex\` at \`p\`.
+// Pass a LINEARLY-filtered sampler (the drawing pass uses \`drawingLinear\`, its
+// nearest-filtered texture rebound with LINEAR) so each tap is a trilinear
+// blend of 8 texels. Sign: value(+x) - value(-x), matching the volume
+// gradient's inward-pointing convention. Returns vec3(1.0) — no shading — when
+// the gradient is degenerate.
+vec3 layerShade(sampler3D tex, vec3 p, float amount) {
+  // Offset in full-volume [0,1] space so the stencil width is correct for a
+  // chunked layer (chunk texDims differ from the full volume); chunkTexCoord
+  // then maps each tap into the chunk texture.
+  vec3 dv = LAYER_GRAD_OFFSET / volumeTexDimsFull;
+  float vXp = layerScalar(texture(tex, chunkTexCoord(p + vec3(dv.x, 0.0, 0.0))));
+  float vXm = layerScalar(texture(tex, chunkTexCoord(p - vec3(dv.x, 0.0, 0.0))));
+  float vYp = layerScalar(texture(tex, chunkTexCoord(p + vec3(0.0, dv.y, 0.0))));
+  float vYm = layerScalar(texture(tex, chunkTexCoord(p - vec3(0.0, dv.y, 0.0))));
+  float vZp = layerScalar(texture(tex, chunkTexCoord(p + vec3(0.0, 0.0, dv.z))));
+  float vZm = layerScalar(texture(tex, chunkTexCoord(p - vec3(0.0, 0.0, dv.z))));
+  vec3 grad = vec3(vXp - vXm, vYp - vYm, vZp - vZm);
+  if (length(grad) <= LAYER_GRAD_EPSILON) { return vec3(1.0); }
+  vec3 localNormal = normalize(grad);
+  mat3 norm3 = mat3(normMtx);
+  vec3 n = norm3 * localNormal;
+  vec2 uv = n.xy * 0.5 + 0.5;
+  vec3 mc_rgb = texture(matcap, uv).rgb * (1.0 + (amount / 3.0));
+  return mix(vec3(1.0), mc_rgb, amount);
 }
 
 struct RayResult {
@@ -65,11 +95,21 @@ bool clipPassSkip(float sampleA, float clipLo, float clipHi, float clipMode) {
     return inRange;                          // cutaway: drop samples inside
 }
 
+// shadeAmount > 0 lights every accumulated sample with a matcap driven by the
+// layer's own in-shader gradient (see layerShade). Volumetric rather than
+// surface shading: a translucent stack (e.g. many microscopy channels) needs
+// each sample lit, not just the first hit. 0 leaves the layer unshaded, which
+// is both the default and the drawing pass's behaviour (it shades at first hit
+// after this returns).
+// mip replaces OVER-compositing with a component-wise max on the premultiplied
+// sample — maximum-intensity projection. Early termination is skipped in that
+// mode since the whole ray must be marched to find the maximum.
 RayResult rayMarchPass(
     sampler3D tex, vec3 start, vec3 dir, float len,
     vec4 deltaDir, vec4 deltaDirFast,
     float ran, float earlyTermination,
-    float clipLo, float clipHi, float clipMode
+    float clipLo, float clipHi, float clipMode,
+    float shadeAmount, bool mip
 ) {
     RayResult result;
     result.color = vec4(0.0);
@@ -105,9 +145,20 @@ RayResult rayMarchPass(
                 result.firstHit = samplePos;
             }
             result.farthest = samplePos.a;
-            vec4 premultiplied = vec4(colorSample.rgb * colorSample.a, colorSample.a);
-            result.color = (1.0 - result.color.a) * premultiplied + result.color;
-            if (result.color.a > earlyTermination) { break; }
+            vec3 rgb = colorSample.rgb;
+            if (shadeAmount > 0.0) {
+                // colorSample.rgb is straight (non-premultiplied) here, so
+                // clamping the lit colour to 1.0 keeps the premultiplied
+                // product below alpha once it is multiplied in.
+                rgb = min(rgb * layerShade(tex, samplePos.xyz, shadeAmount), vec3(1.0));
+            }
+            vec4 premultiplied = vec4(rgb * colorSample.a, colorSample.a);
+            if (mip) {
+                result.color = max(result.color, premultiplied);
+            } else {
+                result.color = (1.0 - result.color.a) * premultiplied + result.color;
+                if (result.color.a > earlyTermination) { break; }
+            }
         }
         samplePos += deltaDir;
     }
@@ -136,7 +187,8 @@ RayResult rayMarchPaqd(
     vec4 deltaDir, vec4 deltaDirFast,
     float ran, float earlyTermination,
     vec4 paqdUni,
-    float clipLo, float clipHi, float clipMode
+    float clipLo, float clipHi, float clipMode,
+    bool mip
 ) {
     RayResult result;
     result.color = vec4(0.0);
@@ -190,8 +242,12 @@ RayResult rayMarchPaqd(
                 }
                 result.farthest = samplePos.a;
                 vec4 premultiplied = vec4(rgb * alpha, alpha);
-                result.color = (1.0 - result.color.a) * premultiplied + result.color;
-                if (result.color.a > earlyTermination) { break; }
+                if (mip) {
+                    result.color = max(result.color, premultiplied);
+                } else {
+                    result.color = (1.0 - result.color.a) * premultiplied + result.color;
+                    if (result.color.a > earlyTermination) { break; }
+                }
             }
         }
         samplePos += deltaDir;
@@ -202,9 +258,18 @@ RayResult rayMarchPaqd(
 // Depth-aware mixing of a ray-march result into the accumulated color.
 void depthAwareMix(
     inout vec4 colAcc, RayResult result,
-    float backNearest, inout float fragDepth, float depthFactor
+    float backNearest, inout float fragDepth, float depthFactor,
+    bool mip
 ) {
     if (result.color.a <= 0.001) { return; }
+    // Maximum projection: the layers combine by the same max operation that
+    // built each layer's own accumulation, so depth-weighted mixing (which
+    // assumes OVER) does not apply. Depth still tracks the nearest hit.
+    if (mip) {
+        colAcc = max(colAcc, result.color);
+        fragDepth = min(fragDepth, frac2ndc(result.firstHit.xyz));
+        return;
+    }
     float mixFactor = result.color.a;
     if (colAcc.a <= 0.0) {
         mixFactor = 1.0;
@@ -273,6 +338,10 @@ void main() {
   // over the base. Skip the opaque clip-surface treatment (AO, clip plane
   // colour) and matcap lighting; still respect clip-plane ray trimming.
   bool overlayMode = overlayLayerMode > 0.5;
+  // Maximum-intensity projection: every pass takes a component-wise max of the
+  // premultiplied sample instead of compositing OVER, and no pass may early-
+  // terminate (the maximum can lie anywhere along the ray).
+  bool mip = renderMode > 0.5;
   float stepSize = len / lenVox;
   vec4 deltaDir = vec4(dir * stepSize, stepSize);
   float localGradientAmount = overlayMode ? 0.0 : gradientAmount;
@@ -380,10 +449,18 @@ void main() {
           vec3 mc_rgb = texture(matcap, uv).rgb * (1.0 + (lightingAmount / 3.0));
           vec3 blendedRGB = mix(vec3(1.0), mc_rgb, lightingAmount);
           vec3 finalRGB = blendedRGB * colorSample.rgb;
-          float correctedA = 1.0 - pow(1.0 - colorSample.a, stepRatio);
+          // Step-size correction compensates a coarse brick's sparser sampling
+          // in an OVER accumulation. A max projection reads each sample
+          // independently, so correcting it would brighten coarse bricks
+          // instead of matching them.
+          float correctedA = mip ? colorSample.a : (1.0 - pow(1.0 - colorSample.a, stepRatio));
           vec4 premultiplied = vec4(finalRGB * correctedA, correctedA);
-          colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
-          if (colAcc.a > localEarlyTermination) { break; }
+          if (mip) {
+            colAcc = max(colAcc, premultiplied);
+          } else {
+            colAcc = (1.0 - colAcc.a) * premultiplied + colAcc;
+            if (colAcc.a > localEarlyTermination) { break; }
+          }
         }
         samplePos += deltaDir;
       }
@@ -438,56 +515,36 @@ void main() {
   float ovClipMode = clipOverlay ? (cutaway ? 2.0 : 1.0) : 0.0;
   float ovClipLo = sampleRange.x;
   float ovClipHi = sampleRange.y;
-  // Overlay pass
+  // Overlay pass. Overlays carry no precomputed gradient texture (the combined
+  // overlay texture is rebuilt whenever any overlay changes, e.g. an opacity
+  // drag, so a cached gradient would thrash), so lighting comes from the
+  // in-shader stencil — per sample, since an overlay stack is translucent.
   if (textureSize(overlay, 0).x > 2) {
-    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode);
-    depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
+    RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode, gradientAmount, mip);
+    depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor, mip);
   }
   // PAQD pass (raw data with GPU-side LUT lookup + easing)
   if (textureSize(paqd, 0).x > 2) {
-    RayResult result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, paqdUniforms, ovClipLo, ovClipHi, ovClipMode);
-    depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
+    RayResult result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, paqdUniforms, ovClipLo, ovClipHi, ovClipMode, mip);
+    depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor, mip);
   }
   // Drawing pass (nearest-neighbor sampling — NEAREST filter set by CPU)
   if (textureSize(drawing, 0).x > 2) {
-    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode);
-    // Matcap lighting at first hit. 6-tap central-difference gradient on
-    // the drawing texture with LINEAR filtering — each tap is a trilinear
-    // blend of 8 texels, which approximates a Gaussian-smoothed sample
-    // (the "bilinear free smoothing" trick). Sampling at 1.5 voxels out
-    // widens the stencil, further reducing per-pixel noise from the
-    // ray-march step discretization. Sign convention:
-    // gx = value(+x) - value(-x), matching the volume gradient (inward-
-    // pointing toward higher drawing density).
+    RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode, 0.0, mip);
+    // Matcap lighting at FIRST HIT only (unlike the overlay, which shades every
+    // sample): a drawing is a label mask read as an opaque surface, so one
+    // shade for the whole ray is both correct and far cheaper. The gradient is
+    // taken through drawingLinear — the same texture rebound with LINEAR
+    // filtering, since the ray-march itself samples it NEAREST.
     if (result.color.a > 0.001 && gradientAmount > 0.0) {
-      // Offset in full-volume [0,1] space so the stencil width is correct
-      // for chunked drawing (chunk texDims differ from the full volume);
-      // chunkTexCoord then maps each tap into the chunk texture.
-      vec3 dv = DRAW_GRAD_OFFSET / volumeTexDimsFull;
-      vec3 hp = result.firstHit.xyz;
-      float vXp = drawScalar(texture(drawingLinear, chunkTexCoord(hp + vec3(dv.x, 0.0, 0.0))));
-      float vXm = drawScalar(texture(drawingLinear, chunkTexCoord(hp - vec3(dv.x, 0.0, 0.0))));
-      float vYp = drawScalar(texture(drawingLinear, chunkTexCoord(hp + vec3(0.0, dv.y, 0.0))));
-      float vYm = drawScalar(texture(drawingLinear, chunkTexCoord(hp - vec3(0.0, dv.y, 0.0))));
-      float vZp = drawScalar(texture(drawingLinear, chunkTexCoord(hp + vec3(0.0, 0.0, dv.z))));
-      float vZm = drawScalar(texture(drawingLinear, chunkTexCoord(hp - vec3(0.0, 0.0, dv.z))));
-      vec3 grad = vec3(vXp - vXm, vYp - vYm, vZp - vZm);
-      if (length(grad) > DRAW_GRAD_EPSILON) {
-        vec3 localNormal = normalize(grad);
-        mat3 norm3d = mat3(normMtx);
-        vec3 n = norm3d * localNormal;
-        vec2 uv = n.xy * 0.5 + 0.5;
-        float brighten = 1.0 + (gradientAmount / 3.0);
-        vec3 mc_rgb = texture(matcap, uv).rgb * brighten;
-        vec3 shade = mix(vec3(1.0), mc_rgb, gradientAmount);
-        // result.color is premultiplied (rgb = actualColor * alpha).
-        // Clamp to alpha so the shade (which can exceed 1.0 via brighten)
-        // can't push rgb > alpha and break the premultiplied-alpha
-        // invariant that depthAwareMix and framebuffer blending assume.
-        result.color.rgb = min(result.color.rgb * shade, vec3(result.color.a));
-      }
+      vec3 shade = layerShade(drawingLinear, result.firstHit.xyz, gradientAmount);
+      // result.color is premultiplied (rgb = actualColor * alpha).
+      // Clamp to alpha so the shade (which can exceed 1.0 via the matcap
+      // brighten) can't push rgb > alpha and break the premultiplied-alpha
+      // invariant that depthAwareMix and framebuffer blending assume.
+      result.color.rgb = min(result.color.rgb * shade, vec3(result.color.a));
     }
-    depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor);
+    depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor, mip);
   }
   // Final output
   if (colAcc.a <= 0.001) {
@@ -497,7 +554,10 @@ void main() {
   // Chunked draws must emit the true per-segment premultiplied alpha so the
   // back-to-front chunk blend reconstructs the full ray without over-occluding
   // deeper chunks.
-  if (chunkedDraw) {
+  // A max projection never early-terminates, so a high alpha means "the
+  // brightest sample was nearly opaque", not "the ray saturated". Promoting it
+  // to fully opaque would throw away that modulation.
+  if (chunkedDraw || mip) {
     FragColor = colAcc;
   } else if (colAcc.a >= localEarlyTermination) {
     FragColor = vec4(colAcc.rgb / colAcc.a, 1.0);

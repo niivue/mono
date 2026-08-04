@@ -31,6 +31,10 @@ struct Params {
     // over the coarse floor instead of popping. 1.0 for every non-fading draw.
     // Lives in what was _pad0's first lane, so struct size/offsets are unchanged.
     fadeAlpha: f32,
+    // Volume render mode: 0 = composite (OVER), 1 = maximum-intensity
+    // projection. Sits in the implicit padding f32 between fadeAlpha and the
+    // 8-byte-aligned _pad0, so struct size and all later offsets are unchanged.
+    renderMode: f32,
     _pad0: vec2f,
     // Tiled-volume fields. Pass-through values for non-chunked volumes:
     //   volumeTexDimsFull = textureDimensions(volume, 0)

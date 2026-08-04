@@ -640,6 +640,8 @@ export type VolumeRenderConfig = {
   matcap: string
   paqdUniforms: [number, number, number, number]
   transmittanceCutoff: number
+  /** How the 3D ray-march combines samples. VOLUME_RENDER_MODE.COMPOSITE | MAXIMUM */
+  renderMode: number
 }
 
 /** Mesh rendering config: global settings for mesh display */
@@ -901,6 +903,8 @@ export type NiiVueOptions = {
   volumeMatcap?: string
   volumePaqdUniforms?: [number, number, number, number]
   volumeTransmittanceCutoff?: number
+  /** VOLUME_RENDER_MODE.COMPOSITE (default) | MAXIMUM */
+  volumeRenderMode?: number
 
   // Mesh (prefixed)
   meshXRay?: number

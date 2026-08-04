@@ -302,6 +302,9 @@ export default class NVModel {
       ...(options.volumeTransmittanceCutoff !== undefined && {
         transmittanceCutoff: options.volumeTransmittanceCutoff,
       }),
+      ...(options.volumeRenderMode !== undefined && {
+        renderMode: options.volumeRenderMode,
+      }),
     }
     // Mesh — flat options mapped to mesh group
     this.mesh = {

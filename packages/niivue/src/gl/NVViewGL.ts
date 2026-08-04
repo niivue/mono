@@ -490,6 +490,9 @@ export default class NVGlview {
     // (entry creation, request, pump) so chunk uploaders can skip the gradient
     // pass when unlit. Matches the gradientAmount passed to the volume draw.
     this.volumeRenderer.gradientAmount = md.volume.illumination
+    // Composite (OVER) vs maximum-intensity projection, for every volume pass this
+    // frame (base, overlay, PAQD, drawing, and the independent hi-res overlay cube).
+    this.volumeRenderer.renderMode = md.volume.renderMode
     // Off-screen after viewport transform: skip the entire render pass — scissor would
     // clip everything and the work is wasted. preserveDrawingBuffer keeps prior pixels.
     if (this._isSubCanvasBounds && this._isBoundsOffscreen) return

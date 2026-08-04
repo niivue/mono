@@ -762,6 +762,9 @@ export default class NVView {
     // (entry creation, request, pump) so chunk uploaders can skip the gradient
     // pass when unlit. Matches the gradientAmount passed to the volume draw.
     this.volumeRenderer.gradientAmount = md.volume.illumination
+    // Composite (OVER) vs maximum-intensity projection, for every volume pass this
+    // frame (base, overlay, PAQD, drawing, and the independent hi-res overlay cube).
+    this.volumeRenderer.renderMode = md.volume.renderMode
     markCpuStart()
     // Phase 3d: advance the chunk-residency LRU clock before the tile loop
     // requests this frame's working set, so eviction protects visible chunks.

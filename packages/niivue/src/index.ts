@@ -56,6 +56,7 @@ export {
   NiiDataType,
   SHOW_RENDER,
   SLICE_TYPE,
+  VOLUME_RENDER_MODE,
 } from './NVConstants'
 export { default, default as NiiVue } from './NVControl'
 // Document save options (settings policy + linkData)

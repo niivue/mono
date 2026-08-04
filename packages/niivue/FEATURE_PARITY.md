@@ -168,11 +168,11 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Azimuth/elevation | ✅ | Properties |
-| Volume illumination | ✅ | `volumeIllumination` |
+| Volume illumination | ✅ | `volumeIllumination`; matcap shading is applied to the background, overlay, and drawing passes |
 | Gradient opacity | ❌ | No `setGradientOpacity` method |
 | Custom gradient texture | ❌ | No `setCustomGradientTexture` / `getGradientTextureData` |
 | MatCap texture | ✅ | `loadMatcap()` / `volumeMatcap` |
-| Additive blend (MIP) | ❌ | No `setAdditiveBlend` |
+| Maximum-intensity projection | ✅ | `volumeRenderMode = VOLUME_RENDER_MODE.MAXIMUM` (both backends). Not the old `setAdditiveBlend` API — the ray-march combines samples with a component-wise max instead of OVER, and it applies to every volume pass (base, overlay, PAQD, drawing) |
 | Gamma correction | ✅ | `gamma` property |
 | Volume alpha shader | ✅ | `volumeAlphaShader` |
 
@@ -547,7 +547,7 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 3. **Statistical threshold modes**: old `colormapType` threshold behavior is not clearly exposed, despite negative colormaps/thresholds being present
 
 ### Medium Priority
-4. **3D rendering**: `setGradientOpacity`, `setAdditiveBlend` (MIP), custom gradient textures
+4. **3D rendering**: `setGradientOpacity`, custom gradient textures (MIP is now covered by `volumeRenderMode`)
 5. **Volume/mesh lookup by ID/URL**: `getVolumeIndexByID`, `getMeshIndexByID`, `removeVolumeByUrl`, `removeMeshByUrl`
 6. **`saveScene()`**: HTML export is covered by `@niivue/nv-ext-save-html`, but old scene export remains missing
 7. **Zarr volume format**

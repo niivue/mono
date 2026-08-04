@@ -11,7 +11,10 @@
 // listed with a link to the page that streams them, so this page is still the
 // index of the microscopy demos rather than a subset of them.
 
-import NiiVue, { type TypedVoxelArray } from '@niivue/niivue'
+import NiiVue, {
+  type TypedVoxelArray,
+  VOLUME_RENDER_MODE,
+} from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
 
@@ -220,6 +223,8 @@ const els = {
   layout: el<HTMLSelectElement>('layout'),
   opacity: el<HTMLInputElement>('opacity'),
   hollow: el<HTMLInputElement>('hollow'),
+  shading: el<HTMLInputElement>('shading'),
+  maxProject: el<HTMLInputElement>('maxproject'),
   load: el<HTMLButtonElement>('load'),
   clear: el<HTMLButtonElement>('clear'),
   turntable: el<HTMLButtonElement>('turntable'),
@@ -882,6 +887,16 @@ async function main(): Promise<void> {
     opacityTouched = true
     if (nv && nv.volumes.length > 0) applyDisplay()
     renderHud()
+  })
+  els.shading.addEventListener('input', () => {
+    if (!nv) return
+    nv.volumeIllumination = Number(els.shading.value)
+  })
+  els.maxProject.addEventListener('change', () => {
+    if (!nv) return
+    nv.volumeRenderMode = els.maxProject.checked
+      ? VOLUME_RENDER_MODE.MAXIMUM
+      : VOLUME_RENDER_MODE.COMPOSITE
   })
   els.family.addEventListener('change', showFamily)
   els.hollow.addEventListener('change', () => {

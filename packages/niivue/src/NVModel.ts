@@ -656,6 +656,7 @@ export default class NVModel {
         min: isZeroBased ? 0 : v.calMin,
         max: v.calMax,
         thresholdMin: isZeroBased ? v.calMin : undefined,
+        isInverted: v.isColormapInverted,
       })
       if (v.colormapNegative) {
         const [negThresh, negMaxColor] = resolveNegativeRange(
@@ -670,6 +671,7 @@ export default class NVModel {
           max: negMaxColor,
           thresholdMin: isZeroBased ? negThresh : undefined,
           isNegative: true,
+          isInverted: v.isColormapInverted,
         })
       }
     }

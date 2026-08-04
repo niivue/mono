@@ -199,7 +199,11 @@ export class ColorbarRenderer extends NVRenderer {
         this._buildParamsData(rects[i]) as Float32Array<ArrayBuffer>,
       )
 
-      const texture = await wgpu.lut2texture(device, colorbars[i].colormapName)
+      const texture = await wgpu.lut2texture(
+        device,
+        colorbars[i].colormapName,
+        colorbars[i].isInverted,
+      )
       const bindGroup = device.createBindGroup({
         layout: this.bindLayout,
         entries: [

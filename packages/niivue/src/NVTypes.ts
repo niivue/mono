@@ -157,6 +157,13 @@ export type NVImage = {
   maxShearDeg?: number
   colormap?: string
   colormapNegative?: string
+  /**
+   * Reverse this volume's colormap (and its negative colormap, when set), so
+   * the color at the top of the intensity range moves to the bottom. Applied
+   * where the LUT is built, so it affects 2D slices, the 3D ray-march, and the
+   * colorbar alike. Default: false.
+   */
+  isColormapInverted?: boolean
   calMinNeg?: number
   calMaxNeg?: number
   colormapType?: number
@@ -298,6 +305,8 @@ export type ColorbarInfo = {
   max: number
   thresholdMin?: number
   isNegative?: boolean
+  /** Draw the colormap reversed, matching a volume's `isColormapInverted`. */
+  isInverted?: boolean
 }
 
 // ============================================================
@@ -1049,6 +1058,8 @@ export type ImageFromUrlOptions = {
   colormap?: string
   /** Colormap for negative intensities */
   colormapNegative?: string
+  /** Reverse the colormap (and the negative colormap, when set). Default: false */
+  isColormapInverted?: boolean
   /** Outline width for a label/atlas volume, in its own voxels (default 0 = filled) */
   atlasOutline?: number
   /** Minimum intensity for negative color mapping (default: NaN = symmetric) */

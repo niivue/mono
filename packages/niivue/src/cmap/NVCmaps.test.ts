@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { makeLabelLut, makeLut } from './NVCmaps'
+import { log } from '@/logger'
+import { invertLut, lutrgba8, makeLabelLut, makeLut } from './NVCmaps'
 
 type LutJson = {
   R?: unknown
@@ -180,5 +181,48 @@ describe('makeLabelLut', () => {
     const result = makeLabelLut(cm)
     expect(result.min).toBe(5)
     expect(result.max).toBe(7)
+  })
+})
+
+describe('invertLut', () => {
+  test('reversesEntriesEndForEnd', () => {
+    const lut = new Uint8ClampedArray([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    const inverted = invertLut(lut)
+    expect(Array.from(inverted)).toEqual([
+      9, 10, 11, 12, 5, 6, 7, 8, 1, 2, 3, 4,
+    ])
+  })
+
+  test('carriesAlphaWithItsColor', () => {
+    const lut = new Uint8ClampedArray([10, 20, 30, 0, 40, 50, 60, 255])
+    const inverted = invertLut(lut)
+    expect(inverted[3]).toBe(255)
+    expect(inverted[7]).toBe(0)
+  })
+
+  test('leavesTheInputUntouched', () => {
+    const lut = new Uint8ClampedArray([1, 2, 3, 4, 5, 6, 7, 8])
+    const before = Array.from(lut)
+    invertLut(lut)
+    expect(Array.from(lut)).toEqual(before)
+  })
+
+  test('isItsOwnInverse', () => {
+    const lut = makeLut([0, 255], [0, 128], [255, 0], [255, 255], [0, 255])
+    expect(Array.from(invertLut(invertLut(lut)))).toEqual(Array.from(lut))
+  })
+
+  test('lutrgba8AppliesTheInversionOnRequest', () => {
+    // The LUT registry needs `import.meta.glob`, which Bun does not provide, so
+    // every name resolves to the built-in gray fallback here. That is enough to
+    // check the `invert` argument is threaded through: the fallback is a real
+    // 256-entry ramp.
+    log.setLogLevel('silent')
+    const plain = lutrgba8('gray')
+    const inverted = lutrgba8('gray', true)
+    log.setLogLevel('info')
+    expect(Array.from(inverted)).toEqual(Array.from(invertLut(plain)))
+    // Gray ramps dark to light, so inverting swaps the ends.
+    expect(inverted[0]).toBe(plain[plain.length - 4])
   })
 })

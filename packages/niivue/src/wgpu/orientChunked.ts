@@ -172,7 +172,7 @@ async function createColormapResources(
   }
   const colormapTexture = await wgpu.lutBytes2texture(
     device,
-    NVCmaps.lutrgba8(nvimage.colormap),
+    NVCmaps.lutrgba8(nvimage.colormap, nvimage.isColormapInverted),
   )
   const hasNegativeColormap = !!(
     nvimage.colormapNegative && nvimage.colormapNegative.length > 0
@@ -180,7 +180,7 @@ async function createColormapResources(
   const negativeColormapTexture = hasNegativeColormap
     ? await wgpu.lutBytes2texture(
         device,
-        NVCmaps.lutrgba8(nvimage.colormapNegative),
+        NVCmaps.lutrgba8(nvimage.colormapNegative, nvimage.isColormapInverted),
       )
     : colormapTexture
   return {

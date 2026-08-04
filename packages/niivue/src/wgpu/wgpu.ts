@@ -128,8 +128,9 @@ export async function lutBytes2texture(
 export async function lut2texture(
   device: GPUDevice,
   lutName: string,
+  invert = false,
 ): Promise<GPUTexture> {
-  return lutBytes2texture(device, NVCmaps.lutrgba8(lutName))
+  return lutBytes2texture(device, NVCmaps.lutrgba8(lutName, invert))
 }
 
 export async function bitmap2texture(

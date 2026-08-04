@@ -647,7 +647,7 @@ function overlayColormapKey(nvimage: NVImage): string {
   if (label) {
     return `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
   }
-  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}`
+  return `${nvimage.colormap}:${nvimage.colormapNegative ?? ''}:${nvimage.isColormapInverted ? 1 : 0}`
 }
 
 function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
@@ -826,7 +826,7 @@ export function prepareOverlayTextureCache(
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      NVCmaps.lutrgba8(nvimage.colormap),
+      NVCmaps.lutrgba8(nvimage.colormap, nvimage.isColormapInverted),
     )
   }
   gl.activeTexture(gl.TEXTURE2)
@@ -849,7 +849,7 @@ export function prepareOverlayTextureCache(
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      NVCmaps.lutrgba8(nvimage.colormapNegative),
+      NVCmaps.lutrgba8(nvimage.colormapNegative, nvimage.isColormapInverted),
     )
   } else {
     gl.texImage2D(
@@ -1301,7 +1301,10 @@ export function overlay2Texture(
     // Continuous colormap: 256-wide LUT with linear filtering
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    const lutData = NVCmaps.lutrgba8(nvimage.colormap)
+    const lutData = NVCmaps.lutrgba8(
+      nvimage.colormap,
+      nvimage.isColormapInverted,
+    )
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -1336,7 +1339,10 @@ export function overlay2Texture(
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
   if (hasNegColormap) {
-    const negLutData = NVCmaps.lutrgba8(nvimage.colormapNegative)
+    const negLutData = NVCmaps.lutrgba8(
+      nvimage.colormapNegative,
+      nvimage.isColormapInverted,
+    )
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -1654,7 +1660,7 @@ export function orientChunkToTexture(
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      NVCmaps.lutrgba8(nvimage.colormap),
+      NVCmaps.lutrgba8(nvimage.colormap, nvimage.isColormapInverted),
     )
   }
   const hasNegColormap =
@@ -1677,7 +1683,7 @@ export function orientChunkToTexture(
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      NVCmaps.lutrgba8(nvimage.colormapNegative),
+      NVCmaps.lutrgba8(nvimage.colormapNegative, nvimage.isColormapInverted),
     )
   } else {
     gl.texImage2D(

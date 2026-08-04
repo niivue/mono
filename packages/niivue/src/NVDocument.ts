@@ -83,6 +83,8 @@ export type NVDocumentVolume = {
   name?: string
   colormap?: string
   colormapNegative?: string
+  isColormapInverted?: boolean
+  atlasOutline?: number
   opacity?: number
   calMin?: number
   calMax?: number
@@ -375,6 +377,8 @@ export function serialize(
         name: v.name,
         colormap: v.colormap,
         colormapNegative: v.colormapNegative,
+        isColormapInverted: v.isColormapInverted,
+        atlasOutline: v.atlasOutline,
         opacity: v.opacity,
         calMin: v.calMin,
         calMax: v.calMax,
@@ -874,6 +878,9 @@ export async function reconstructVolume(
       if (v.colormap !== undefined) base.colormap = v.colormap
       if (v.colormapNegative !== undefined)
         base.colormapNegative = v.colormapNegative
+      if (v.isColormapInverted !== undefined)
+        base.isColormapInverted = v.isColormapInverted
+      if (v.atlasOutline !== undefined) base.atlasOutline = v.atlasOutline
       if (v.opacity !== undefined) base.opacity = v.opacity
       if (v.calMin !== undefined) base.calMin = v.calMin
       if (v.calMax !== undefined) base.calMax = v.calMax

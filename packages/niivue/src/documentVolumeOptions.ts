@@ -28,6 +28,9 @@ export function urlVolumeOptions(v: NVDocumentVolume): ImageFromUrlOptions {
   if (v.colormap !== undefined) opts.colormap = v.colormap
   if (v.colormapNegative !== undefined)
     opts.colormapNegative = v.colormapNegative
+  if (v.isColormapInverted !== undefined)
+    opts.isColormapInverted = v.isColormapInverted
+  if (v.atlasOutline !== undefined) opts.atlasOutline = v.atlasOutline
   if (v.opacity !== undefined) opts.opacity = v.opacity
   if (v.calMin !== undefined) opts.calMin = v.calMin
   if (v.calMax !== undefined) opts.calMax = v.calMax

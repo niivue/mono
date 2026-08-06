@@ -59,10 +59,10 @@ const SAMPLES: Sample[] = [
     default: false,
   },
   {
-    label: 'pig_heart OME-Zarr, int16 (range.html)',
-    marker: 'omezarr/pig_heart.ome.zarr/zarr.json',
+    label: 'woodbranch OME-Zarr, uint16 (range.html)',
+    marker: 'omezarr/woodbranch.ome.zarr/zarr.json',
     script: 'fetch-omezarr.ts',
-    args: ['--name=pig_heart'],
+    args: ['--name=woodbranch'],
     default: false,
   },
 ]

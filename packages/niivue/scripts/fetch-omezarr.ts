@@ -49,8 +49,8 @@ const CATALOG: CatalogEntry[] = [
     levelCount: 5,
   },
   {
-    name: 'pig_heart',
-    label: 'microCT, 2048x2048x2612, int16, 5 levels',
+    name: 'woodbranch',
+    label: 'microCT, 2048x2048x2048, uint16, 5 levels',
     levelCount: 5,
   },
 ]

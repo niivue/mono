@@ -25,10 +25,13 @@ const backend =
 // rendered behind the octree so regions whose fine bricks have not streamed yet
 // (or whose mean-downsampled coarse bricks fall below the transparency threshold)
 // show continuous low-res detail instead of blank/see-through gaps. Pass ?nofloor
-// to disable (A/B: fine-only vs. coarse backdrop). NOTE: any residual Z-periodic
-// "venetian" striping on some OME-Zarr stores (e.g. pig-heart) is a downsampling
-// artifact baked into that dataset's coarse pyramid levels, not the floor -- the
-// finest level renders clean.
+// to disable (A/B: fine-only vs. coarse backdrop). NOTE: a store whose coarse
+// pyramid was downsampled from thin slabs shows Z-periodic "venetian" striping
+// in the floor; that is baked into the dataset's coarse levels, not the floor
+// (its finest level renders clean). The pig-heart store was dropped from the
+// list below for exactly that reason -- its chunks are 4 voxels deep in Z, so
+// every coarse level carries the banding. Every store below downsamples from
+// chunks at least 60 voxels deep, and none of them stripe.
 const NO_FLOOR = new URLSearchParams(location.search).has('nofloor')
 // Bumped each (re)load so a superseded load's late async work (e.g. the coarse
 // floor build) is discarded instead of stomping a newer scene.
@@ -62,7 +65,7 @@ let appliedExplodeScale = 1
 // never moves off the centre as you rotate, so a too-small budget leaves you
 // stuck on one section of the volume. 8 GB lets the bundled scivis levels that
 // fit a desktop GPU resolve fully (e.g. all of pawpawsaurus L0 ~8 GB). Levels
-// far larger than this (e.g. pig_heart L0 ~119 GB) still cannot render whole —
+// far larger than this (e.g. woodbranch L0 ~93 GB) still cannot render whole —
 // they are region-of-interest only.
 const DEFAULT_RESIDENCY_BYTES = 8192 * 1024 * 1024
 const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
@@ -91,14 +94,15 @@ const OMEZARR_STORES = {
     levels: [4, 3, 2, 1, 0],
     defaultWindow: { min: 0, max: 230 },
   },
-  pig_heart: {
-    id: 'pig_heart.ome.zarr',
-    name: 'Pig Heart OME-Zarr (int16)',
+  woodbranch: {
+    id: 'woodbranch.ome.zarr',
+    name: 'Wood Branch OME-Zarr (uint16)',
     levels: [4, 3, 2, 1, 0],
-    // Background is 0; tissue/structure sits ~400-750 (p90=400, p99=520,
-    // p99.9=750 measured on scale3). calMin just above 0 makes empty space
-    // transparent and ramps the structure across the gray scale.
-    defaultWindow: { min: 40, max: 700 },
+    // Air sits under ~300; the wood bulk is ~3200-3900 with denser rings and
+    // bark reaching ~8500 (p50=3564, p95=7439, p99=8541 measured over scale3).
+    // calMin above the air peak makes empty space transparent and ramps the
+    // structure across the gray scale.
+    defaultWindow: { min: 600, max: 8000 },
   },
 }
 // Per-axis brick halo (in level voxels). 3D gradient/lighting samples one voxel
@@ -115,7 +119,7 @@ const ZARR_BYTE_CACHE_BYTES = 512 * 1024 * 1024
 // see ZarrChunkedVolumeSource below), which builds a Neuroglancer-style octree:
 // bricks near the crosshair render at the finest level, coarsening outward,
 // under a brick/VRAM budget, and follow the crosshair automatically. This keeps
-// a huge finest level (e.g. pig_heart L0 ~22 GB) renderable — only the focus
+// a huge finest level (e.g. woodbranch L0 ~17 GB) renderable — only the focus
 // region is ever finest — with the fetch dispatch/concurrency/retry all in core.
 // The Level control becomes a max-detail cap (`minLevel`).
 //

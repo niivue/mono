@@ -7,7 +7,8 @@
 //
 // Two static-hosted source types:
 //   - synthetic: a bundled shard streamed one chunk at a time over Range
-//   - omezarr:   full upstream OME-Zarr stores read with zarrita
+//   - omezarr:   full upstream OME-Zarr stores read with zarrita, in either
+//                0.5 (zarr v3) or 0.4 (zarr v2) form -- see fetchStoreRoot
 
 import * as zarr from 'zarrita'
 import NiiVue, {
@@ -103,6 +104,11 @@ const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
 // (scale0 populates z 0..191 of a declared 1718, a contiguous 11% prefix, while
 // scale1 carries real signal throughout, so it is usable only from scale1 down);
 // and `woodbranch`, which passes both checks but is a dull thing to look at.
+//
+// A store outside the Open SciVis bucket sets `base` (an absolute URL that the
+// store id is appended to) instead of resolving through the local mirror.
+const HOA_BASE =
+  'https://storage.googleapis.com/ucl-hip-ct-35a68e99feaae8932b1d44da0358940b/'
 const OMEZARR_STORES = {
   stent: {
     id: 'stent.ome.zarr',
@@ -157,6 +163,32 @@ const OMEZARR_STORES = {
     // passes at every level), and no calMin separates it: raising the floor past
     // ~600 washes out the chitin before the mount fades.
     defaultWindow: { min: 200, max: 1500 },
+  },
+  // Human Organ Atlas (HiP-CT), a whole human heart at 7.013 um, in a public
+  // GCS bucket. The demo's only OME-Zarr 0.4 (zarr v2) store, and the reason
+  // the v2 read path exists. Seven levels, 91x93x123 up to 5787x5943x7865
+  // (270 Gvoxel / 541 GB), so the finest ones exist only as multi-LOD detail
+  // near the crosshair -- no level past L2 fits any residency budget whole.
+  //
+  // Screened clean at every level: all seven are complete on all three axes
+  // (L0 stores 134043 of 134044 chunks -- see below -- L1 17112/17112, L2
+  // 2304/2304, L3 288/288), and none is banded on the chunk grid (plane-mean
+  // sd 0.0-0.5% of the mean, no zero planes, acf at the 128-voxel chunk period
+  // between -0.13 and -0.35, i.e. no ripple). The one absent L0 chunk is
+  // 0/0/33, a 128-cube at the extreme x/y corner of the volume: it reads as
+  // fill value 0 where its neighbours read ~49860, but that corner is embedding
+  // medium, which calMin already clips to black, so the gap is not visible.
+  hoa_heart: {
+    id: 'UCL-ZCR-3341/heart/7.013um_overview_bm18.ome.zarr',
+    base: HOA_BASE,
+    name: 'HOA Human Heart OME-Zarr (uint16)',
+    levels: [6, 5, 4, 3, 2, 1, 0],
+    // HiP-CT is low contrast on a high pedestal, unlike every scivis store
+    // here: the embedding medium peaks at ~49890 and the myocardium at ~50830
+    // (p1=49433, p50=49887, p99=51070, measured over level 4). calMin in the
+    // valley between the two peaks drops the medium to black and spends the
+    // whole ramp on tissue.
+    defaultWindow: { min: 50200, max: 51300 },
   },
 }
 // Per-axis brick halo (in level voxels). 3D gradient/lighting samples one voxel
@@ -240,25 +272,68 @@ function omezarrAssetUrl(path) {
 const OMEZARR_UPSTREAM_BASE =
   'https://ome-zarr-scivis.s3.amazonaws.com/v0.5/96x2/'
 
-// Resolved `{ url, levels }` per store id. The level control and the open path
-// must agree on which base won, and the probe should run once per store.
+// OME-Zarr ships in two on-disk shapes and this demo reads both. 0.5 is zarr
+// v3: one `zarr.json` per group and per array, chunk keys under `c/`. 0.4 is
+// zarr v2: group metadata split across `.zgroup` + `.zattrs`, array metadata in
+// `.zarray`, chunk keys as bare indices. zarrita decodes either (it registers
+// the v2 `blosc` codec lazily, so a blosc/zstd 0.4 store needs no extra
+// dependency), which confines the version-specific code to metadata discovery
+// here plus which `zarr.open.v*` loadOmezarrSource calls.
+const ZARR_V2 = 2
+const ZARR_V3 = 3
+
+function arrayMetadataPath(zarrVersion) {
+  return zarrVersion === ZARR_V2 ? '.zarray' : 'zarr.json'
+}
+
+// Read a store root: its zarr version and its first multiscale. v3 is tried
+// first (every Open SciVis store is v3), so a v2 store pays one extra 404 on
+// the root object and nothing after that.
+async function fetchStoreRoot(storeUrl) {
+  try {
+    const meta = await fetchJson(`${storeUrl}/zarr.json`)
+    const multiscale = multiscalesFromRoot(meta, ZARR_V3)[0]
+    if (multiscale) return { zarrVersion: ZARR_V3, multiscale }
+  } catch {
+    // Not a v3 store, or no store here at all; let the v2 read decide which.
+  }
+  const attrs = await fetchJson(`${storeUrl}/.zattrs`)
+  const multiscale = multiscalesFromRoot(attrs, ZARR_V2)[0]
+  if (!multiscale) {
+    throw new Error(`${storeUrl} has no OME-Zarr multiscales`)
+  }
+  return { zarrVersion: ZARR_V2, multiscale }
+}
+
+// Resolved `{ url, levels, zarrVersion, multiscale }` per store id. The level
+// control and the open path must agree on which base won, and the probe should
+// run once per store.
 const resolvedStores = new Map()
 
 // Probe one base: which of the store's configured levels actually resolve
 // there, coarsest-first. Throws if the base has no store root at all.
+//
+// GET, not HEAD, even though only the status is wanted: the HOA bucket's CORS
+// policy lists GET alone, so a cross-origin HEAD never gets past the preflight
+// and rejects rather than 405s -- every level would read as absent. Array
+// metadata is a few hundred bytes and the browser caches it for the open that
+// follows, so the extra body costs nothing.
 async function probeStoreBase(storeDef, storeUrl) {
-  const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
-  const multiscale = multiscalesFromRoot(rootMeta)[0]
-  const found = []
+  const { zarrVersion, multiscale } = await fetchStoreRoot(storeUrl)
+  const levels = []
   for (const candidate of storeDef.levels) {
     const ds = multiscale?.datasets?.[candidate]
     if (!ds) continue
-    const res = await fetch(`${storeUrl}/${ds.path}/zarr.json`, {
-      method: 'HEAD',
-    })
-    if (res.ok) found.push(candidate)
+    try {
+      const res = await fetch(
+        `${storeUrl}/${ds.path}/${arrayMetadataPath(zarrVersion)}`,
+      )
+      if (res.ok) levels.push(candidate)
+    } catch {
+      // Unreachable level (offline, blocked); the remaining ones may still be.
+    }
   }
-  return found
+  return { zarrVersion, multiscale, levels }
 }
 
 // Pick the base offering the FINEST detail, not merely the first that answers.
@@ -266,25 +341,35 @@ async function probeStoreBase(storeDef, storeUrl) {
 // two coarsest levels -- so preferring "first that resolves" would pin the demo
 // to L2 and make L0 unreachable for exactly the stores where it matters most.
 // Ties go to the first candidate, so a fully-fetched local store still wins and
-// an offline session (upstream HEADs fail) falls back to whatever is on disk.
+// an offline session (upstream probes fail) falls back to whatever is on disk.
 async function resolveStore(storeDef) {
   const cached = resolvedStores.get(storeDef.id)
   if (cached) return cached
-  const candidates = [omezarrAssetUrl(storeDef.id)]
+  // A store with its own `base` lives in exactly one place: fetch-omezarr.ts
+  // only mirrors the Open SciVis bucket, so there is no local copy to prefer
+  // and no scivis fallback that could hold it.
+  const candidates = storeDef.base
+    ? [`${storeDef.base}${storeDef.id}`]
+    : [omezarrAssetUrl(storeDef.id)]
   // An explicit VITE_OMEZARR_ASSET_BASE is a deliberate override -- honour it
   // alone rather than silently reaching past it to the public bucket.
-  if (!import.meta.env.VITE_OMEZARR_ASSET_BASE) {
+  if (!storeDef.base && !import.meta.env.VITE_OMEZARR_ASSET_BASE) {
     candidates.push(`${OMEZARR_UPSTREAM_BASE}${storeDef.id}`)
   }
-  let best = { url: candidates[candidates.length - 1], levels: [] }
+  let best = {
+    url: candidates[candidates.length - 1],
+    levels: [],
+    zarrVersion: ZARR_V3,
+    multiscale: null,
+  }
   for (const url of candidates) {
-    let levels = []
+    let probe = null
     try {
-      levels = await probeStoreBase(storeDef, url)
+      probe = await probeStoreBase(storeDef, url)
     } catch {
       continue // no store root here (absent locally, or offline); try the next
     }
-    if (levels.length > best.levels.length) best = { url, levels }
+    if (probe.levels.length > best.levels.length) best = { url, ...probe }
   }
   resolvedStores.set(storeDef.id, best)
   return best
@@ -645,7 +730,14 @@ function createTrackedZarrFetch(serial) {
       settleProbe(false)
       throw err
     }
-    if (response.status === 404) {
+    // A 404 on METADATA is not an empty chunk. zarrita's v2 open asks each array
+    // for `.zattrs`, which a store need not write, so a v2 store 404s once per
+    // level before it has fetched a single voxel -- counting those as absent
+    // chunks would report a sparse store that isn't one.
+    if (
+      response.status === 404 &&
+      !isZarrMetadataPath(new URL(request.url).pathname)
+    ) {
       absent.add(absentKey)
       if (isLiveSerial(serial)) stats.emptyChunks++
     }
@@ -672,10 +764,10 @@ function createTrackedZarrFetch(serial) {
     if (response.status === 206) {
       stats.rangeHits++
     } else if (response.status === 200 && method !== 'HEAD') {
-      if (pathname.includes('/c/')) {
-        stats.chunkObjectHits++
-      } else {
+      if (isZarrMetadataPath(pathname)) {
         stats.metadataHits++
+      } else {
+        stats.chunkObjectHits++
       }
     }
     if (!response.ok && response.status !== 404) {
@@ -692,6 +784,16 @@ function createTrackedZarrFetch(serial) {
   }
 }
 
+// Chunk object or metadata? Keying on the chunk path shape does not generalize
+// across versions -- v3 puts chunks under `c/`, v2 writes bare indices
+// (`3/0/1/2`) that look like any other path. Every metadata object in either
+// version is named `zarr.json` or is a dotfile (`.zarray`/`.zattrs`/`.zgroup`),
+// so classify on the leaf name and read everything else as a chunk.
+function isZarrMetadataPath(pathname) {
+  const leaf = pathname.slice(pathname.lastIndexOf('/') + 1)
+  return leaf === 'zarr.json' || leaf.startsWith('.')
+}
+
 function shortZarrPath(pathname) {
   const marker = '.ome.zarr/'
   const idx = pathname.indexOf(marker)
@@ -699,10 +801,21 @@ function shortZarrPath(pathname) {
   return pathname.split('/').filter(Boolean).slice(-5).join('/')
 }
 
-function multiscalesFromRoot(meta) {
+// v3 nests group attributes under `attributes` (0.5 wraps them again in `ome`);
+// a v2 `.zattrs` IS the attribute object, so `multiscales` sits at its top level.
+function multiscalesFromRoot(meta, zarrVersion) {
+  if (zarrVersion === ZARR_V2) return meta.multiscales ?? []
   return meta.attributes?.ome?.multiscales ?? meta.attributes?.multiscales ?? []
 }
 
+// The demo maps the array's FASTEST axis to display x and its slowest to display
+// z, and permutes the pyramid's scale the same way, so the voxel grid and its
+// spacing always agree. That is the literal axis order for the Open SciVis
+// stores, whose `axes` are the usual [z, y, x]. The Human Organ Atlas declares
+// [x, y, z] instead, so its heart is presented rotated: display x runs along the
+// anatomical long axis. Geometry, spacing and streaming are all unaffected --
+// honouring the declared order would mean transposing every decoded brick, which
+// is real per-chunk work for a demo with no radiological orientation to keep.
 function scaleFromDataset(dataset) {
   const scale = dataset.coordinateTransformations?.find(
     (transform) => transform.type === 'scale',
@@ -749,9 +862,13 @@ async function loadSyntheticSource() {
 }
 
 async function loadOmezarrSource(storeDef, serial) {
-  const { url: storeUrl } = await resolveStore(storeDef)
-  const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
-  const multiscale = multiscalesFromRoot(rootMeta)[0]
+  // resolveStore already read the root to probe levels, so its version and
+  // multiscale come back with the winning base -- no second metadata fetch.
+  const {
+    url: storeUrl,
+    zarrVersion,
+    multiscale,
+  } = await resolveStore(storeDef)
 
   const baseStore = new zarr.FetchStore(storeUrl, {
     fetch: createTrackedZarrFetch(serial),
@@ -760,15 +877,17 @@ async function loadOmezarrSource(storeDef, serial) {
     cache: new ByteLruCache(ZARR_BYTE_CACHE_BYTES, serial),
   })
 
-  // Open a single pyramid level as a zarr v3 array (v2 probing 404s noisily on a
-  // static v3 store). Returns null if the level isn't present on disk.
+  // Open a single pyramid level at the version the root advertised. Opening
+  // version-agnostically would probe both and 404 noisily on every level of a
+  // static store. Returns null if the level isn't present on disk.
   const openLevel = async (candidate) => {
     const ds = multiscale?.datasets?.[candidate]
     if (!ds) return null
     try {
-      const arr = await zarr.open.v3(zarr.root(store).resolve(`/${ds.path}`), {
-        kind: 'array',
-      })
+      const location = zarr.root(store).resolve(`/${ds.path}`)
+      const arr = await (zarrVersion === ZARR_V2
+        ? zarr.open.v2(location, { kind: 'array' })
+        : zarr.open.v3(location, { kind: 'array' }))
       const [sz, sy, sx] = trailingSpatial(arr.shape, 'shape')
       return {
         level: candidate,
@@ -790,9 +909,13 @@ async function loadOmezarrSource(storeDef, serial) {
     if (lvl) opened.push(lvl)
   }
   if (opened.length === 0) {
+    // A `base` store is never mirrored locally, so pointing at fetch-omezarr.ts
+    // would be a dead end -- it is upstream or offline.
     throw new Error(
       `No OME-Zarr level found for ${storeDef.id}. ` +
-        `Did you run scripts/fetch-omezarr.ts --name=${els.source.value}?`,
+        (storeDef.base
+          ? `Is ${storeDef.base} reachable?`
+          : `Did you run scripts/fetch-omezarr.ts --name=${els.source.value}?`),
     )
   }
   opened.sort((a, b) => a.level - b.level) // finest-first

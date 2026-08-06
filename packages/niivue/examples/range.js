@@ -64,8 +64,9 @@ let appliedExplodeScale = 1
 // never moves off the centre as you rotate, so a too-small budget leaves you
 // stuck on one section of the volume. 8 GB lets the bundled scivis levels that
 // fit a desktop GPU resolve fully (e.g. all of pawpawsaurus L0 ~8 GB). Levels
-// far larger than this (e.g. woodbranch L0 ~93 GB) still cannot render whole —
-// they are region-of-interest only.
+// far larger than this still cannot render whole -- richtmyer-meshkov L0 is
+// 8.05 Gvoxel, which needs tens of GB once expanded to RGBA plus its gradient
+// texture -- so they are region-of-interest only.
 const DEFAULT_RESIDENCY_BYTES = 8192 * 1024 * 1024
 const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
 
@@ -97,7 +98,11 @@ const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
 // every 81-deep chunk, and scale2/scale3 carry that same defect averaged down
 // into period-9 and period-2 ripples. Capping the level did not help, and
 // ?nofloor was pixel-identical, because the striping is in the published bytes.
-// The four stores below all pass both checks at every level.
+// The stores below all pass both checks at every level. Also deliberately
+// absent: `3d_neurons_15_sept_2016`, which fails check (a) the same way
+// (scale0 populates z 0..191 of a declared 1718, a contiguous 11% prefix, while
+// scale1 carries real signal throughout, so it is usable only from scale1 down);
+// and `woodbranch`, which passes both checks but is a dull thing to look at.
 const OMEZARR_STORES = {
   stent: {
     id: 'stent.ome.zarr',
@@ -116,16 +121,6 @@ const OMEZARR_STORES = {
     name: 'Richtmyer-Meshkov OME-Zarr',
     levels: [4, 3, 2, 1, 0],
     defaultWindow: { min: 0, max: 230 },
-  },
-  woodbranch: {
-    id: 'woodbranch.ome.zarr',
-    name: 'Wood Branch OME-Zarr (uint16)',
-    levels: [4, 3, 2, 1, 0],
-    // Air sits under ~300; the wood bulk is ~3200-3900 with denser rings and
-    // bark reaching ~8500 (p50=3564, p95=7439, p99=8541 measured over scale3).
-    // calMin above the air peak makes empty space transparent and ramps the
-    // structure across the gray scale.
-    defaultWindow: { min: 600, max: 8000 },
   },
   // Biological microCT.
   chameleon: {
@@ -178,8 +173,9 @@ const ZARR_BYTE_CACHE_BYTES = 512 * 1024 * 1024
 // see ZarrChunkedVolumeSource below), which builds a Neuroglancer-style octree:
 // bricks near the crosshair render at the finest level, coarsening outward,
 // under a brick/VRAM budget, and follow the crosshair automatically. This keeps
-// a huge finest level (e.g. woodbranch L0 ~17 GB) renderable — only the focus
-// region is ever finest — with the fetch dispatch/concurrency/retry all in core.
+// a huge finest level (e.g. richtmyer-meshkov L0, 8.05 Gvoxel) renderable —
+// only the focus region is ever finest — with the fetch dispatch/concurrency/
+// retry all in core.
 // The Level control becomes a max-detail cap (`minLevel`).
 //
 // Cap on brick count (< core MAX_CHUNKS_PER_TILE=1024); the budget pass coarsens
@@ -235,9 +231,10 @@ function omezarrAssetUrl(path) {
 
 // Public Open SciVis mirror of every store in OMEZARR_STORES. It serves CORS
 // headers and honours Range, so the browser can stream from it directly. This
-// is what makes the finest levels reachable at all: woodbranch L0 is 7.3 GB
-// compressed (17 GB of voxels) and pawpawsaurus/richtmyer-meshkov are the same
-// order, which is far past what scripts/fetch-omezarr.ts should put on disk.
+// is what makes the finest levels reachable at all: richtmyer-meshkov L0 is
+// 1.64 GB compressed (8.05 GB of voxels) across 9682 objects and pawpawsaurus
+// L0 is 1.55 GB, which is far past what scripts/fetch-omezarr.ts should put on
+// disk.
 // A local copy always wins when present (no network, lower latency); this is
 // only the fallback, so an un-fetched store is still usable rather than dead.
 const OMEZARR_UPSTREAM_BASE =

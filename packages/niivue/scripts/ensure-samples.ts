@@ -65,6 +65,20 @@ const SAMPLES: Sample[] = [
     args: ['--name=woodbranch'],
     default: false,
   },
+  {
+    label: 'kingsnake OME-Zarr, uint8 (range.html)',
+    marker: 'omezarr/kingsnake.ome.zarr/zarr.json',
+    script: 'fetch-omezarr.ts',
+    args: ['--name=kingsnake'],
+    default: false,
+  },
+  {
+    label: 'stag beetle OME-Zarr, uint16 (range.html)',
+    marker: 'omezarr/stag_beetle.ome.zarr/zarr.json',
+    script: 'fetch-omezarr.ts',
+    args: ['--name=stag_beetle'],
+    default: false,
+  },
 ]
 
 interface Options {

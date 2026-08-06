@@ -70,11 +70,12 @@ let appliedExplodeScale = 1
 const DEFAULT_RESIDENCY_BYTES = 8192 * 1024 * 1024
 const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
 
-// OME-Zarr stores resolve against VITE_OMEZARR_ASSET_BASE in production and
-// ${BASE_URL}omezarr/ during local development. `levels` lists the scale
-// indices that may be present, coarsest-first; the loader picks the first one
-// whose array metadata resolves. `stent` is bundled locally (scale2 only); the
-// others can be downloaded on demand with scripts/fetch-omezarr.ts.
+// OME-Zarr stores resolve against a local copy first and the public Open SciVis
+// bucket second -- see resolveStore, which picks whichever base offers the most
+// levels. `levels` lists the scale indices that may be present, coarsest-first;
+// only those that actually resolve reach the Level control. `stent` is bundled
+// locally (scale2 only); the rest stream from the bucket as-is, and
+// scripts/fetch-omezarr.ts can mirror any of them to disk.
 const OMEZARR_STORES = {
   stent: {
     id: 'stent.ome.zarr',
@@ -103,6 +104,33 @@ const OMEZARR_STORES = {
     // calMin above the air peak makes empty space transparent and ramps the
     // structure across the gray scale.
     defaultWindow: { min: 600, max: 8000 },
+  },
+  // Biological microCT. Both use cubic-ish chunks (>= 60 voxels on every axis),
+  // so neither carries the thin-slab banding described above. Note that the
+  // bucket's most on-theme volume, 3d_neurons_15_sept_2016, is deliberately NOT
+  // here: its chunks are 2 x 128 x 128, thinner in Z than the pig-heart store
+  // this list just dropped, so its coarse levels stripe the same way.
+  kingsnake: {
+    id: 'kingsnake.ome.zarr',
+    name: 'Kingsnake OME-Zarr (uint8)',
+    levels: [3, 2, 1, 0],
+    // Air sits at ~3; soft tissue fills 80-90 and bone runs to ~127
+    // (p50=3, p90=82, p99=90, max=127 measured over the coarsest level).
+    defaultWindow: { min: 30, max: 110 },
+  },
+  stag_beetle: {
+    id: 'stag_beetle.ome.zarr',
+    name: 'Stag Beetle OME-Zarr (uint16)',
+    levels: [3, 2, 1, 0],
+    // Mostly air (p50=0); the chitin exoskeleton is the whole signal, reaching
+    // ~800 at p99 and 1906 at peak. calMin clears the air floor.
+    //
+    // The faint dashed sheet beside the beetle is the specimen mount, a real
+    // thin object in the scan -- it sits in one plane outside the animal and
+    // stays put at every level. It is NOT the pyramid banding this list was
+    // rewritten to avoid, and no calMin separates it (raising the floor past
+    // ~600 washes out the chitin before the mount fades).
+    defaultWindow: { min: 200, max: 1500 },
   },
 }
 // Per-axis brick halo (in level voxels). 3D gradient/lighting samples one voxel
@@ -172,6 +200,66 @@ function omezarrAssetUrl(path) {
   const streamingBase = import.meta.env.VITE_STREAMING_ASSET_BASE
   if (streamingBase) return resolveAssetUrl(`omezarr/${path}`, streamingBase)
   return demoAssetUrl(`omezarr/${path}`)
+}
+
+// Public Open SciVis mirror of every store in OMEZARR_STORES. It serves CORS
+// headers and honours Range, so the browser can stream from it directly. This
+// is what makes the finest levels reachable at all: woodbranch L0 is 7.3 GB
+// compressed (17 GB of voxels) and pawpawsaurus/richtmyer-meshkov are the same
+// order, which is far past what scripts/fetch-omezarr.ts should put on disk.
+// A local copy always wins when present (no network, lower latency); this is
+// only the fallback, so an un-fetched store is still usable rather than dead.
+const OMEZARR_UPSTREAM_BASE =
+  'https://ome-zarr-scivis.s3.amazonaws.com/v0.5/96x2/'
+
+// Resolved `{ url, levels }` per store id. The level control and the open path
+// must agree on which base won, and the probe should run once per store.
+const resolvedStores = new Map()
+
+// Probe one base: which of the store's configured levels actually resolve
+// there, coarsest-first. Throws if the base has no store root at all.
+async function probeStoreBase(storeDef, storeUrl) {
+  const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
+  const multiscale = multiscalesFromRoot(rootMeta)[0]
+  const found = []
+  for (const candidate of storeDef.levels) {
+    const ds = multiscale?.datasets?.[candidate]
+    if (!ds) continue
+    const res = await fetch(`${storeUrl}/${ds.path}/zarr.json`, {
+      method: 'HEAD',
+    })
+    if (res.ok) found.push(candidate)
+  }
+  return found
+}
+
+// Pick the base offering the FINEST detail, not merely the first that answers.
+// A local copy is usually a partial mirror -- fetch-omezarr.ts defaults to the
+// two coarsest levels -- so preferring "first that resolves" would pin the demo
+// to L2 and make L0 unreachable for exactly the stores where it matters most.
+// Ties go to the first candidate, so a fully-fetched local store still wins and
+// an offline session (upstream HEADs fail) falls back to whatever is on disk.
+async function resolveStore(storeDef) {
+  const cached = resolvedStores.get(storeDef.id)
+  if (cached) return cached
+  const candidates = [omezarrAssetUrl(storeDef.id)]
+  // An explicit VITE_OMEZARR_ASSET_BASE is a deliberate override -- honour it
+  // alone rather than silently reaching past it to the public bucket.
+  if (!import.meta.env.VITE_OMEZARR_ASSET_BASE) {
+    candidates.push(`${OMEZARR_UPSTREAM_BASE}${storeDef.id}`)
+  }
+  let best = { url: candidates[candidates.length - 1], levels: [] }
+  for (const url of candidates) {
+    let levels = []
+    try {
+      levels = await probeStoreBase(storeDef, url)
+    } catch {
+      continue // no store root here (absent locally, or offline); try the next
+    }
+    if (levels.length > best.levels.length) best = { url, levels }
+  }
+  resolvedStores.set(storeDef.id, best)
+  return best
 }
 
 const MANIFEST_URL = demoAssetUrl('range-poc/synthetic-volume.json')
@@ -361,23 +449,11 @@ function makeDraggable(node) {
   node.addEventListener('pointercancel', end)
 }
 
-// Probe a store's configured levels and return those whose array metadata
-// actually resolves on disk, coarsest-first. Used to populate the Level
-// control so the user can only pick levels that have been fetched.
+// The store's available levels, coarsest-first, on whichever base won (see
+// resolveStore). Used to populate the Level control so the user can only pick
+// levels that actually exist.
 async function presentLevels(storeDef) {
-  const storeUrl = omezarrAssetUrl(storeDef.id)
-  const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
-  const multiscale = multiscalesFromRoot(rootMeta)[0]
-  const found = []
-  for (const candidate of storeDef.levels) {
-    const ds = multiscale?.datasets?.[candidate]
-    if (!ds) continue
-    const res = await fetch(`${storeUrl}/${ds.path}/zarr.json`, {
-      method: 'HEAD',
-    })
-    if (res.ok) found.push(candidate)
-  }
-  return found
+  return (await resolveStore(storeDef)).levels
 }
 
 // Populate the Level <select> for the current source. Synthetic has no
@@ -587,7 +663,7 @@ async function loadSyntheticSource() {
 }
 
 async function loadOmezarrSource(storeDef, serial) {
-  const storeUrl = omezarrAssetUrl(storeDef.id)
+  const { url: storeUrl } = await resolveStore(storeDef)
   const rootMeta = await fetchJson(`${storeUrl}/zarr.json`)
   const multiscale = multiscalesFromRoot(rootMeta)[0]
 

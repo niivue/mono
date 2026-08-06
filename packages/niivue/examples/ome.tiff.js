@@ -46,9 +46,9 @@ const SPACING = [0.25, 0.25, 0.9]
 
 /**
  * Real OME-TIFFs written by other software, so the reader is exercised against
- * files this repository did not produce. Both hosts send CORS headers, which a
- * browser needs for a cross-origin fetch; most microscopy archives do not, so
- * an arbitrary URL may still be blocked (the file picker always works).
+ * files this repository did not produce. Every host below sends CORS headers,
+ * which a browser needs for a cross-origin fetch; most microscopy archives do
+ * not, so an arbitrary URL may still be blocked (the file picker always works).
  *
  * Nothing is vendored: the licences below cover redistribution, but a demo that
  * links is simpler to keep honest than one that copies.
@@ -72,6 +72,16 @@ const SAMPLES = [
     credit:
       'Cell Painting in 3D spheroids, BioImage Archive S-BIAD2254 (CC BY 4.0). ' +
       'Bio-Formats output: big-endian, 16-bit, micrometre units and a channel colour.',
+  },
+  {
+    label: 'hiPSC cell, 3 channels, 238 x 284 x 70 (14 MB)',
+    url: 'https://allencell.s3.amazonaws.com/aics/variance_project_dataset/crop_raw/012b784e_raw.ome.tif',
+    credit:
+      'Allen Institute for Cell Science, variance project dataset (single-cell crop). ' +
+      'Allen Institute Terms of Use: research and other non-commercial use, with citation. ' +
+      'BigTIFF, 16-bit, 210 planes folding into three channels of a 70-slice stack. ' +
+      'It names no channel colours and states no voxel size, so the colours below are ' +
+      'the fallback palette and the voxels are 1 um.',
   },
 ]
 

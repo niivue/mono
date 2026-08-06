@@ -89,9 +89,15 @@ const CATALOG: Dataset[] = [
     label: 'fossil CT, 958x646x1088, uint16',
   }, // prettier-ignore
   {
+    // Mirrors what the bucket holds, but do NOT reach for this one as a demo
+    // volume: its pyramid is broken upstream. scale0 is clean yet covers only
+    // 25% of its declared z extent, and every complete level is Z-banded on the
+    // chunk grid (scale1 zeroes local z 54..80 of every 81-deep chunk), which
+    // renders as venetian striping at any detail setting. See the screening rule
+    // at the top of packages/niivue/examples/range.js.
     category: 'CT',
     name: 'pig_heart',
-    label: 'microCT, 2048x2048x2612, int16',
+    label: 'microCT, 2048x2048x2612, int16 (BANDED pyramid upstream)',
   },
   {
     category: 'CT',

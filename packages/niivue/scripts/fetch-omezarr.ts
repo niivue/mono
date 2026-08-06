@@ -59,6 +59,11 @@ const CATALOG: CatalogEntry[] = [
     levelCount: 5,
   },
   {
+    name: 'chameleon',
+    label: 'chameleon CT, 1024x1024x1080, uint16, 4 levels',
+    levelCount: 4,
+  },
+  {
     name: 'kingsnake',
     label: 'snake microCT, 1024x1024x795, uint8, 4 levels',
     levelCount: 4,
@@ -69,6 +74,11 @@ const CATALOG: CatalogEntry[] = [
     levelCount: 4,
   },
 ]
+// NOT in the catalog: the Open SciVis `pig_heart` store. Its pyramid is broken
+// upstream in a way no renderer can compensate for -- scale0 is clean but covers
+// only 25% of its declared z extent, and every complete level is Z-banded on the
+// chunk grid (scale1 zeroes local z 54..80 of every 81-deep chunk). See the
+// screening rule at the top of examples/range.js before adding a new store here.
 
 interface Options {
   list: boolean

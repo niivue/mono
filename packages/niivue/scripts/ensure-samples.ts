@@ -66,6 +66,13 @@ const SAMPLES: Sample[] = [
     default: false,
   },
   {
+    label: 'chameleon OME-Zarr, uint16 (range.html)',
+    marker: 'omezarr/chameleon.ome.zarr/zarr.json',
+    script: 'fetch-omezarr.ts',
+    args: ['--name=chameleon'],
+    default: false,
+  },
+  {
     label: 'kingsnake OME-Zarr, uint8 (range.html)',
     marker: 'omezarr/kingsnake.ome.zarr/zarr.json',
     script: 'fetch-omezarr.ts',

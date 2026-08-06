@@ -25,13 +25,12 @@ const backend =
 // rendered behind the octree so regions whose fine bricks have not streamed yet
 // (or whose mean-downsampled coarse bricks fall below the transparency threshold)
 // show continuous low-res detail instead of blank/see-through gaps. Pass ?nofloor
-// to disable (A/B: fine-only vs. coarse backdrop). NOTE: a store whose coarse
-// pyramid was downsampled from thin slabs shows Z-periodic "venetian" striping
-// in the floor; that is baked into the dataset's coarse levels, not the floor
-// (its finest level renders clean). The pig-heart store was dropped from the
-// list below for exactly that reason -- its chunks are 4 voxels deep in Z, so
-// every coarse level carries the banding. Every store below downsamples from
-// chunks at least 60 voxels deep, and none of them stripe.
+// to disable (A/B: fine-only vs. coarse backdrop). NOTE: the floor is only as
+// good as the level it reads, so it is the first thing to rule out when a store
+// looks wrong -- but ruling it out is one URL flag, and it is worth doing before
+// blaming the renderer. Z-periodic "venetian" striping that is IDENTICAL with
+// and without ?nofloor is coming from the level's own bytes, not from mixing
+// levels. See the screening rule above OMEZARR_STORES for the worked example.
 const NO_FLOOR = new URLSearchParams(location.search).has('nofloor')
 // Bumped each (re)load so a superseded load's late async work (e.g. the coarse
 // floor build) is discarded instead of stomping a newer scene.
@@ -76,6 +75,29 @@ const SYNTHETIC_DEFAULT_WINDOW = { min: 24, max: 210 }
 // only those that actually resolve reach the Level control. `stent` is bundled
 // locally (scale2 only); the rest stream from the bucket as-is, and
 // scripts/fetch-omezarr.ts can mirror any of them to disk.
+//
+// SCREEN EVERY STORE BEFORE ADDING IT HERE. A published pyramid can be broken in
+// ways no renderer can compensate for, and the failure looks like a viewer bug:
+// Z-periodic "venetian" striping. Two checks per level, both run against the
+// decoded chunks directly (no viewer, no GPU):
+//
+//   (a) COMPLETENESS -- compare the z range that actually has chunks against the
+//       declared shape. An absent chunk is "fill value" per the zarr spec, so a
+//       level that covers less than the coarser level above it reads as empty
+//       space there and the octree refines into a hole.
+//   (b) PERIODICITY -- take a per-z-plane mean over a central window and
+//       autocorrelate. A ripple (or hard zero runs) at the chunk period means the
+//       level itself is banded on the chunk grid.
+//
+// A store needs at least one level that passes BOTH; if every level fails one,
+// it cannot be rendered faithfully at any detail setting. The Open SciVis
+// `pig_heart` store is the worked example and was dropped from this list for
+// exactly that reason: its scale0 is clean but covers 25% of its declared z
+// extent, while scale1 (the finest complete level) zeroes local z 54..80 of
+// every 81-deep chunk, and scale2/scale3 carry that same defect averaged down
+// into period-9 and period-2 ripples. Capping the level did not help, and
+// ?nofloor was pixel-identical, because the striping is in the published bytes.
+// The four stores below all pass both checks at every level.
 const OMEZARR_STORES = {
   stent: {
     id: 'stent.ome.zarr',
@@ -105,11 +127,20 @@ const OMEZARR_STORES = {
     // structure across the gray scale.
     defaultWindow: { min: 600, max: 8000 },
   },
-  // Biological microCT. Both use cubic-ish chunks (>= 60 voxels on every axis),
-  // so neither carries the thin-slab banding described above. Note that the
-  // bucket's most on-theme volume, 3d_neurons_15_sept_2016, is deliberately NOT
-  // here: its chunks are 2 x 128 x 128, thinner in Z than the pig-heart store
-  // this list just dropped, so its coarse levels stripe the same way.
+  // Biological microCT.
+  chameleon: {
+    id: 'chameleon.ome.zarr',
+    name: 'Chameleon OME-Zarr (uint16)',
+    levels: [3, 2, 1, 0],
+    // The largest whole-animal store in the bucket (1.13 Gvoxel) and the closest
+    // thing it has to a bigger stag beetle. Strongly bimodal: air/soft resin
+    // fills 0-7246 (91% of voxels; p50=4522, p90=5788), then a near-empty gap,
+    // then skeleton concentrated at 24000-29000 with a bone tail to 57591
+    // (p99=30623, p99.9=42408, measured over the coarsest level). calMin above
+    // the air shoulder drops the background out and ramps the skeleton across
+    // the full gray scale.
+    defaultWindow: { min: 7500, max: 36000 },
+  },
   kingsnake: {
     id: 'kingsnake.ome.zarr',
     name: 'Kingsnake OME-Zarr (uint8)',
@@ -127,9 +158,9 @@ const OMEZARR_STORES = {
     //
     // The faint dashed sheet beside the beetle is the specimen mount, a real
     // thin object in the scan -- it sits in one plane outside the animal and
-    // stays put at every level. It is NOT the pyramid banding this list was
-    // rewritten to avoid, and no calMin separates it (raising the floor past
-    // ~600 washes out the chitin before the mount fades).
+    // stays put at every level. It is NOT chunk-grid banding (check (b) above
+    // passes at every level), and no calMin separates it: raising the floor past
+    // ~600 washes out the chitin before the mount fades.
     defaultWindow: { min: 200, max: 1500 },
   },
 }

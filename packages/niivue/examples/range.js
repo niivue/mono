@@ -357,6 +357,8 @@ function freshStats() {
     metadataHits: 0,
     cacheHits: 0,
     cacheBytes: 0,
+    emptyChunks: 0,
+    emptySkips: 0,
     fullFileFallbacks: 0,
     failures: 0,
     lastRequests: [],
@@ -563,9 +565,65 @@ function recordRequest(serial, label) {
   if (stats.lastRequests.length > 5) stats.lastRequests.pop()
 }
 
+// Zarr's missing-chunk convention: an absent object means "every voxel holds the
+// fill value", i.e. empty space. Sparse stores lean on it hard -- 121 of the stag
+// beetle's 256 finest-level chunks are simply not there -- and the loader already
+// reads a 404 as empty rather than as a failure. What it did NOT do is remember:
+// the octree re-plans on every crosshair move and every level change, and one
+// brick spans several zarr chunks, so the same absent chunk was asked for again
+// and again. A store is immutable for the life of a load, so an absence is
+// permanent: remember it and answer locally.
+//
+// Two caches, because the duplicates arrive both ways. `absent` catches a repeat
+// of a chunk already known missing. `probing` catches the commoner case -- a
+// burst of concurrent requests for the SAME missing chunk, issued together
+// before any of them has come back -- by parking the later ones on the first
+// one's result. Only a 404 is shared: a body can be read once, so a waiter on a
+// present chunk falls through and fetches its own copy exactly as before.
+function emptyChunkResponse() {
+  // Body-less, which is what zarrita reads as "chunk not stored".
+  return new Response(null, { status: 404, statusText: 'Not Found (cached)' })
+}
+
 function createTrackedZarrFetch(serial) {
+  const absent = new Set()
+  const probing = new Map()
+
   return async (request) => {
-    const response = await fetch(request)
+    const absentKey = `${request.method || 'GET'} ${request.url}`
+    if (absent.has(absentKey)) {
+      if (isLiveSerial(serial)) stats.emptySkips++
+      return emptyChunkResponse()
+    }
+    const probe = probing.get(absentKey)
+    if (probe && (await probe)) {
+      if (isLiveSerial(serial)) stats.emptySkips++
+      return emptyChunkResponse()
+    }
+
+    let settleProbe = () => {}
+    probing.set(
+      absentKey,
+      new Promise((resolve) => {
+        settleProbe = resolve
+      }),
+    )
+    let response
+    try {
+      response = await fetch(request)
+    } catch (err) {
+      // Settle the probe before rethrowing, or every waiter hangs forever.
+      probing.delete(absentKey)
+      settleProbe(false)
+      throw err
+    }
+    if (response.status === 404) {
+      absent.add(absentKey)
+      if (isLiveSerial(serial)) stats.emptyChunks++
+    }
+    probing.delete(absentKey)
+    settleProbe(response.status === 404)
+
     const method = request.method || 'GET'
     const url = new URL(response.url || request.url)
     const pathname = url.pathname
@@ -1397,6 +1455,7 @@ function renderHud() {
     <div class="row"><span class="key">wire</span><span>${formatBytes(stats.wireBytes)}</span></div>
     <div class="row"><span class="key">decoded</span><span>${formatBytes(stats.decodedBytes)}</span></div>
     <div class="row"><span class="key">cache</span><span>${stats.cacheHits} hits, ${formatBytes(stats.cacheBytes)}</span></div>
+    <div class="row"><span class="key">empty chunks</span><span>${stats.emptyChunks} absent, ${stats.emptySkips} refetches avoided</span></div>
     <div class="row"><span class="key">resident</span><span>${stream ? `${stream.resident} resident, ${stream.pending} pending, ${stream.inFlight} in flight` : 'pending'}</span></div>
     <div class="row"><span class="key">failures</span><span>${failures}</span></div>
     <div class="row"><span class="key">last requests</span><span>${html(stats.lastRequests.join(' | ') || 'none')}</span></div>

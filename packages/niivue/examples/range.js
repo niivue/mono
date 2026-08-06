@@ -446,6 +446,7 @@ const els = {
   explode: el('explode'),
   explodeVal: el('explodeVal'),
   blocks: el('blocks'),
+  crosshair: el('crosshair'),
   reload: el('reload'),
   canvas: el('nv-canvas'),
   hud: el('hud'),
@@ -1442,6 +1443,36 @@ function applyBlocks() {
   nv.drawScene()
 }
 
+// Show or hide the 3D crosshair, and size it to whatever is loaded.
+//
+// The crosshair's thickness and centre gap are absolute MM (they end up as the
+// radius and the endpoint inset of the six cylinders core builds between
+// extentsMin and extentsMax), and the defaults -- 1 mm thick, 10 mm gap -- assume
+// a human-scale volume. This demo's stores span four orders of magnitude: the
+// synthetic shard is ~250 mm across, while the HOA heart's 7.013 um spacing is
+// read as mm and gives a ~46 m scene, where a 1 mm cylinder is far below one
+// pixel and the crosshair simply cannot be seen. Deriving both from the mean
+// scene span keeps it the same apparent size everywhere; the fractions are
+// chosen to reproduce the stock look at human scale.
+const CROSSHAIR_WIDTH_FRACTION = 0.005
+const CROSSHAIR_GAP_FRACTION = 0.05
+
+function applyCrosshair() {
+  if (!nv) return
+  nv.is3DCrosshairVisible = els.crosshair.checked
+  const { extentsMin: lo, extentsMax: hi } = nv.model
+  // Guarded: extents are only populated once something is loaded, and a degenerate
+  // (zero-span) scene would collapse the crosshair to nothing. Leave the current
+  // size alone in both cases.
+  const span =
+    lo && hi ? (hi[0] - lo[0] + (hi[1] - lo[1]) + (hi[2] - lo[2])) / 3 : 0
+  if (Number.isFinite(span) && span > 0) {
+    nv.crosshairWidth = span * CROSSHAIR_WIDTH_FRACTION
+    nv.crosshairGap = span * CROSSHAIR_GAP_FRACTION
+  }
+  nv.drawScene()
+}
+
 // Reconcile the resident volume's explode with the slider. The renderer reads
 // vol.chunkExplode every frame, so this is a live update (no re-stream). Applied
 // while streaming too: the exploded render requests every brick each frame, which
@@ -1797,6 +1828,9 @@ async function runReload(token, options) {
     // loadVolumes resets the camera/zoom and drops any prior boxes; reapply the
     // current zoom, focus ROI, and block outlines for the freshly loaded plan.
     applyZoom()
+    // The scene extents are only known now, and each source has its own scale, so
+    // re-derive the crosshair size for the volume that just landed.
+    applyCrosshair()
     // Back the octree with a coarse whole-volume floor (on by default) so not-yet-
     // streamed or under-opaque coarse far-field regions show continuous coarse
     // detail instead of blank/see-through gaps; ?nofloor disables it for A/B.
@@ -1852,6 +1886,7 @@ async function main() {
   els.explode.addEventListener('input', applyExplode)
   els.zoom.addEventListener('input', applyZoom)
   els.blocks.addEventListener('change', applyBlocks)
+  els.crosshair.addEventListener('change', applyCrosshair)
   els.reload.addEventListener('click', () => {
     void reloadVolume({ reloadSource: true })
   })

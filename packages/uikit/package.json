@@ -1,0 +1,58 @@
+{
+  "name": "@niivue/uikit",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "description": "UIKit: controls and widgets integrated into the NiiVue rendering lifecycle",
+  "license": "BSD-2-Clause",
+  "author": "niivue authors",
+  "homepage": "https://github.com/niivue/niivue",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/niivue/niivue.git"
+  },
+  "bugs": {
+    "url": "https://github.com/niivue/niivue/issues"
+  },
+  "keywords": [
+    "niivue",
+    "webgpu",
+    "webgl",
+    "medical-imaging",
+    "visualization",
+    "overlay",
+    "annotation"
+  ],
+  "main": "./dist/uikit.js",
+  "module": "./dist/uikit.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/uikit.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bunx --bun vite build",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test"
+  },
+  "peerDependencies": {
+    "@niivue/niivue": "workspace:*"
+  },
+  "devDependencies": {
+    "@niivue/dev-images": "workspace:*",
+    "@niivue/niivue": "workspace:*",
+    "@types/bun": "^1.3.12",
+    "@webgpu/types": "^0.1.69",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.9",
+    "vite-plugin-dts": "^4.5.4"
+  }
+}

@@ -263,6 +263,7 @@ export class NVChunkedVolume {
   private readonly followCrosshair: boolean
   private readonly radiusOpt: 'auto' | number
   private readonly onLocationChange: () => void
+  private readonly onViewDestroyed: () => void
 
   private focusFrac: Vec3f
   private plan: ChunkPlan
@@ -298,6 +299,14 @@ export class NVChunkedVolume {
       ? [focus[0], focus[1], focus[2]]
       : [0.5, 0.5, 0.5]
     this.onLocationChange = () => this.handleLocationChange()
+    // Only self-dispose on a REAL controller teardown. `viewDestroyed` also fires
+    // on a transient view recreation (backend switch / init fallback), where the
+    // controller and this volume stay alive and the locationChange listener (on
+    // the controller, not the view) keeps working — disposing there would
+    // permanently freeze crosshair-follow streaming.
+    this.onViewDestroyed = () => {
+      if (this.host.isDestroyed) this.dispose()
+    }
 
     const finest = source.levels[0]
     this.plan = this.buildPlan()
@@ -338,6 +347,10 @@ export class NVChunkedVolume {
     if (this.followCrosshair) {
       this.host.addEventListener('locationChange', this.onLocationChange)
     }
+    // Self-dispose if the controller is destroyed without the caller disposing
+    // this handle, so the locationChange listener + host reference don't leak
+    // (and can't fire against a torn-down view).
+    this.host.addEventListener('viewDestroyed', this.onViewDestroyed)
     this.applyRenderCentering()
   }
 
@@ -400,6 +413,7 @@ export class NVChunkedVolume {
     if (this.followCrosshair) {
       this.host.removeEventListener('locationChange', this.onLocationChange)
     }
+    this.host.removeEventListener('viewDestroyed', this.onViewDestroyed)
   }
 
   private handleLocationChange(): void {

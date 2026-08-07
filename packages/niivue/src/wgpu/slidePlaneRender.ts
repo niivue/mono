@@ -1,5 +1,9 @@
 import type { NVSlide } from '@/slide/NVSlide'
 import type { SlidePlaneAnnotation, SlidePlaneTile } from '@/slide/slidePlane'
+import {
+  DEFAULT_TILE_TEXTURE_BYTES,
+  TileTextureCache,
+} from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
 
 // WebGPU mirror of gl/slidePlaneRender.ts. Draws an NVSlide as a textured plane
@@ -53,8 +57,14 @@ export class SlidePlaneRendererGPU extends NVRenderer {
   private _vertexBuffer: GPUBuffer | null = null
   private _entries: PlaneVertexEntry[] = []
   private _builtTiles: readonly SlidePlaneTile[] | null = null
-  private _textures = new Map<string, GPUTexture>()
-  private _bindGroups = new Map<string, GPUBindGroup>()
+  // One texture + bind group per resident tile, keyed by NVSlide tile key.
+  // Byte-budgeted: tiles that leave the working set are evicted each frame
+  // (evict runs before beginFrame, so nothing referenced by the in-flight
+  // command encoder is ever destroyed).
+  private readonly _textures = new TileTextureCache<{
+    texture: GPUTexture
+    group: GPUBindGroup
+  }>(DEFAULT_TILE_TEXTURE_BYTES, (entry) => entry.texture.destroy())
   private readonly _scratch = new Float32Array(20) // mat4 (16) + opacity vec4 (4)
   // Annotation overlay (slide-space drawing).
   private _annTexture: GPUTexture | null = null
@@ -176,8 +186,8 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     key: string,
     bitmap: ImageBitmap,
   ): GPUBindGroup | null {
-    const existing = this._bindGroups.get(key)
-    if (existing) return existing
+    const existing = this._textures.get(key)
+    if (existing) return existing.group
     if (!this._textureBGL) return null
     const texture = device.createTexture({
       size: [bitmap.width, bitmap.height, 1],
@@ -195,8 +205,11 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       layout: this._textureBGL,
       entries: [{ binding: 0, resource: texture.createView() }],
     })
-    this._textures.set(key, texture)
-    this._bindGroups.set(key, group)
+    this._textures.set(
+      key,
+      { texture, group },
+      bitmap.width * bitmap.height * 4,
+    )
     return group
   }
 
@@ -219,6 +232,11 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       this._buildVertices(device, tiles)
     }
     if (!this._vertexBuffer || this._entries.length === 0) return
+    // Evict BEFORE beginFrame: the previous frame's working set (and anything
+    // drawn earlier this frame) keeps its frame stamp and is never destroyed
+    // while a command encoder that references it is still in flight.
+    this._textures.evictToBudget()
+    this._textures.beginFrame()
     this._scratch.set(mvpMatrix, 0)
     this._scratch[16] = opacity
     device.queue.writeBuffer(this._uniformBuffer, 0, this._scratch)
@@ -326,9 +344,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
   }
 
   destroy(): void {
-    for (const tex of this._textures.values()) tex.destroy()
     this._textures.clear()
-    this._bindGroups.clear()
     if (this._vertexBuffer) this._vertexBuffer.destroy()
     if (this._uniformBuffer) this._uniformBuffer.destroy()
     if (this._annTexture) this._annTexture.destroy()

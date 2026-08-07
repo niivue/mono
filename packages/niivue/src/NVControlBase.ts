@@ -1,6 +1,7 @@
 import { type vec2, type vec3, vec4 } from 'gl-matrix'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
-import { getControlPoints } from '@/annotation/selection'
+import type { LivewireSlice } from '@/annotation/livewireSlice'
+import { getAnnotationSelection } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
 import { cortex } from '@/assets/matcaps'
@@ -54,6 +55,7 @@ import type {
   AffineMatrix,
   AffineTransform,
   AnnotationPoint,
+  AnnotationScreenShape,
   AnnotationStyle,
   AnnotationTool,
   BackendType,
@@ -63,6 +65,7 @@ import type {
   FocusBox,
   ImageFromUrlOptions,
   LUT,
+  MeasurementScreenLine,
   MeshFromUrlOptions,
   MeshLayerFromUrlOptions,
   MeshUpdate,
@@ -106,6 +109,10 @@ import {
   signalXValueAtFrac,
 } from '@/view/NVGraph'
 import type { LegendLayout } from '@/view/NVLegend'
+import type {
+  UIKitOverlayFrame,
+  UIKitOverlayRenderer,
+} from '@/view/NVOverlayHook'
 import {
   arePerfMarksEnabled,
   setNextActionTag,
@@ -174,6 +181,7 @@ type ViewBackend = {
     total: number
   }
   rebakeChunkedOverlays: () => void
+  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
 }
 
 export type { NiiVueOptions }
@@ -289,6 +297,8 @@ export default class NiiVue extends EventTarget {
   activeButton?: number
   model: NVModel
   view: ViewBackend | null = null
+  /** Privileged UIKit overlay renderers, drawn at the end of every frame. */
+  private _overlayRenderers: UIKitOverlayRenderer[] = []
   // Which settings saved documents include (transient; not serialized). Default
   // {} = omit any setting equal to its default. See `settingsSavePolicy`.
   private _settingsSavePolicy: SettingsSavePolicy = {}
@@ -319,6 +329,17 @@ export default class NiiVue extends EventTarget {
   /** Set once `destroy()` runs, so an in-flight async op (e.g. a deferred reload)
    *  can detect a torn-down controller and not mutate/upload against it. */
   private _destroyed = false
+
+  /**
+   * True once {@link destroy} has run. Lets external holders (e.g. an
+   * NVChunkedVolume handle listening for `viewDestroyed`) distinguish a real
+   * controller teardown from a transient view recreation (backend switch /
+   * init fallback), which also emits `viewDestroyed` but leaves the controller
+   * and its volumes alive.
+   */
+  get isDestroyed(): boolean {
+    return this._destroyed
+  }
   private _deferredVolumes: Array<ImageFromUrlOptions | NVImage> | null = null
   private _deferredMeshes: MeshFromUrlOptions[] | null = null
   private _viewLifecycle: ViewLifecycle
@@ -384,6 +405,23 @@ export default class NiiVue extends EventTarget {
   // axis-aligned polygon on the block face. null until the first successful pick.
   _annotation3DFace: ExplodedBlockFace | null = null
   _annotationShapeStart: AnnotationPoint | null = null
+  // Multi-click contour (spline / livewire): control points accumulated in
+  // slice-2D coords across clicks until the contour is closed (double-click) or
+  // cancelled (Escape). null when no multi-click contour is in progress.
+  _annotationPolyPoints: AnnotationPoint[] | null = null
+  _annotationPolySliceType = 0
+  _annotationPolySlicePosition = 0
+  _annotationPolyAnchorMM: [number, number, number] = [0, 0, 0]
+  // Live-wire (intelligent scissors) state: the current slice's cost grid, the
+  // Dijkstra predecessor field from the last committed seed, and that seed in
+  // grid pixels. Rebuilt when a contour starts / each seed is committed.
+  _livewireSlice: LivewireSlice | null = null
+  _livewireField: Int32Array | null = null
+  _livewireSeed: { x: number; y: number } | null = null
+  // Bidirectional: the committed long axis (drag 1) in slice-2D coords while
+  // waiting for the short axis (drag 2). null when not mid-measurement.
+  _bidirectionalLong: { start: AnnotationPoint; end: AnnotationPoint } | null =
+    null
   _resizingControlPoint = -1
   _resizeOriginalShape: {
     start: AnnotationPoint
@@ -949,6 +987,29 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  get isMeasurementDrawn(): boolean {
+    return this.model.ui.isMeasurementDrawn
+  }
+  set isMeasurementDrawn(v: boolean) {
+    this.model.ui.isMeasurementDrawn = v
+    this.emit('change', { property: 'isMeasurementDrawn', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * When false, NiiVue's built-in 2D vector-annotation shapes are not drawn, so
+   * an external overlay can render them from `annotationScreenShapes`. The brush
+   * cursor and selection handles are unaffected.
+   */
+  get isAnnotationDrawn(): boolean {
+    return this.model.ui.isAnnotationDrawn
+  }
+  set isAnnotationDrawn(v: boolean) {
+    this.model.ui.isAnnotationDrawn = v
+    this.emit('change', { property: 'isAnnotationDrawn', value: v })
+    this.drawScene()
+  }
+
   get isThumbnailVisible(): boolean {
     return this.model.ui.isThumbnailVisible
   }
@@ -1060,6 +1121,32 @@ export default class NiiVue extends EventTarget {
     this.model.ui.measureTextColor = v
     this.emit('change', { property: 'measureTextColor', value: v })
     this.drawScene()
+  }
+
+  /**
+   * Every visible measurement projected to the current frame's canvas pixels
+   * (all persisted measurements plus an in-progress drag). Populated during
+   * render; read it from a registered overlay renderer (see
+   * {@link registerOverlayRenderer}) to draw measurements with an external
+   * renderer — e.g. a @niivue/uikit ruler with rotated tick numbers — instead of
+   * the built-in line. Hide the built-in draw by setting `measureLineColor` /
+   * `measureTextColor` alpha to 0.
+   */
+  get measurementScreenLines(): readonly MeasurementScreenLine[] {
+    const active = this.model._activeMeasurementScreenLine
+    return active
+      ? [...this.model._persistedMeasurementScreenLines, active]
+      : this.model._persistedMeasurementScreenLines
+  }
+
+  /**
+   * Vector annotations projected to the current frame's canvas pixels, so an
+   * external overlay (a @niivue/uikit shape renderer through the overlay hook)
+   * can draw the shapes + stats labels itself. Recomputed every frame. Pair with
+   * `isAnnotationDrawn = false` to replace the built-in annotation rendering.
+   */
+  get annotationScreenShapes(): readonly AnnotationScreenShape[] {
+    return this.model._persistedAnnotationScreenShapes
   }
 
   get rulerWidth(): number {
@@ -1446,6 +1533,16 @@ export default class NiiVue extends EventTarget {
    */
   set annotationIsEnabled(v: boolean) {
     this.model.annotation.isEnabled = v
+    // Leaving annotation mode abandons any half-drawn multi-click contour so its
+    // preview does not linger.
+    if (!v) {
+      this._annotationPolyPoints = null
+      this._bidirectionalLong = null
+      this.model._annotationPreview = null
+      this._livewireSlice = null
+      this._livewireField = null
+      this._livewireSeed = null
+    }
     this.emit('change', { property: 'annotationIsEnabled', value: v })
     this.drawScene()
   }
@@ -1472,6 +1569,15 @@ export default class NiiVue extends EventTarget {
   set annotationBrushRadius(v: number) {
     this.model.annotation.brushRadius = v
     this.emit('change', { property: 'annotationBrushRadius', value: v })
+  }
+
+  get annotationMergesOverlaps(): boolean {
+    return this.model.annotation.mergesOverlaps
+  }
+
+  set annotationMergesOverlaps(v: boolean) {
+    this.model.annotation.mergesOverlaps = v
+    this.emit('change', { property: 'annotationMergesOverlaps', value: v })
   }
 
   get annotationIsErasing(): boolean {
@@ -1506,6 +1612,15 @@ export default class NiiVue extends EventTarget {
   set annotationTool(v: AnnotationTool) {
     this.model.annotation.tool = v
     this.model._annotationSelection = null
+    // Switching tools abandons any half-drawn multi-click / bidirectional shape.
+    if (this._annotationPolyPoints || this._bidirectionalLong) {
+      this._annotationPolyPoints = null
+      this._bidirectionalLong = null
+      this.model._annotationPreview = null
+      this._livewireSlice = null
+      this._livewireField = null
+      this._livewireSeed = null
+    }
     this.emit('change', { property: 'annotationTool', value: v })
     this.drawScene()
   }
@@ -1519,11 +1634,8 @@ export default class NiiVue extends EventTarget {
       this.model._annotationSelection = null
     } else {
       const ann = this.model.annotations.find((a) => a.id === id)
-      if (ann?.shape) {
-        this.model._annotationSelection = {
-          annotationId: id,
-          controlPoints: getControlPoints(ann.shape),
-        }
+      if (ann) {
+        this.model._annotationSelection = getAnnotationSelection(ann)
       }
     }
     this.drawScene()
@@ -1536,6 +1648,18 @@ export default class NiiVue extends EventTarget {
   addAnnotation(annotation: VectorAnnotation): void {
     this.model.annotations.push(annotation)
     this.emit('annotationAdded', { annotation })
+    this.drawScene()
+  }
+
+  /**
+   * Set (or clear, with an empty string) the free-text label on an annotation by
+   * id. The text shows above the annotation's stats via the overlay seam.
+   */
+  setAnnotationText(id: string, text: string): void {
+    const ann = this.model.annotations.find((a) => a.id === id)
+    if (!ann) return
+    ann.text = text.length > 0 ? text : undefined
+    this.emit('annotationChanged', { action: 'move' })
     this.drawScene()
   }
 
@@ -3922,8 +4046,47 @@ export default class NiiVue extends EventTarget {
           this._flushDrawing()
         }
         this._sync()
-        if (this.view) this.view.render()
+        if (this.view) {
+          // Re-wire the UIKit overlay hook every controller-driven frame so it
+          // survives view recreation (backend switch, reinit). Self-driven frames
+          // (streaming/fade) keep the last-set value on the same view instance.
+          this.view.overlayDraw =
+            this._overlayRenderers.length > 0 ? this._dispatchOverlay : null
+          this.view.render()
+        }
       })
+    }
+  }
+
+  /**
+   * Register a privileged overlay renderer (e.g. a @niivue/uikit widget). It is
+   * called at the end of every frame, on whichever backend is live, to draw into
+   * the same frame in screen space. Returns an unsubscribe function; you may also
+   * call {@link unregisterOverlayRenderer}. See view/NVOverlayHook.ts.
+   */
+  registerOverlayRenderer(renderer: UIKitOverlayRenderer): () => void {
+    if (!this._overlayRenderers.includes(renderer)) {
+      this._overlayRenderers.push(renderer)
+    }
+    this.drawScene()
+    return () => this.unregisterOverlayRenderer(renderer)
+  }
+
+  /** Remove a previously registered overlay renderer. */
+  unregisterOverlayRenderer(renderer: UIKitOverlayRenderer): void {
+    const i = this._overlayRenderers.indexOf(renderer)
+    if (i < 0) return
+    this._overlayRenderers.splice(i, 1)
+    if (this._overlayRenderers.length === 0 && this.view) {
+      this.view.overlayDraw = null
+    }
+    this.drawScene()
+  }
+
+  /** Stable dispatcher fanned out to every registered overlay renderer. */
+  private _dispatchOverlay = (frame: UIKitOverlayFrame): void => {
+    for (const renderer of this._overlayRenderers) {
+      renderer.drawOverlay(frame)
     }
   }
 

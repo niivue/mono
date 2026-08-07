@@ -133,6 +133,65 @@ export function generateCircle(
   return [{ outer, holes: [] }]
 }
 
+const SPLINE_SAMPLES_PER_SEGMENT = 16
+
+// Catmull-Rom interpolation of one segment p1->p2 (p0/p3 are the neighbours).
+function catmullRom(
+  p0: AnnotationPoint,
+  p1: AnnotationPoint,
+  p2: AnnotationPoint,
+  p3: AnnotationPoint,
+  t: number,
+): AnnotationPoint {
+  const t2 = t * t
+  const t3 = t2 * t
+  const f = (a: number, b: number, c: number, d: number) =>
+    0.5 *
+    (2 * b +
+      (-a + c) * t +
+      (2 * a - 5 * b + 4 * c - d) * t2 +
+      (-a + 3 * b - 3 * c + d) * t3)
+  return {
+    x: f(p0.x, p1.x, p2.x, p3.x),
+    y: f(p0.y, p1.y, p2.y, p3.y),
+  }
+}
+
+/**
+ * A closed Catmull-Rom spline through the control points, sampled to a smooth
+ * polygon (for SplineROI / livewire contours placed by multi-click). Needs at
+ * least 3 points to enclose an area; fewer returns no polygon.
+ */
+export function generateSplineFromPoints(
+  points: readonly AnnotationPoint[],
+): PolygonWithHoles[] {
+  const n = points.length
+  if (n < 3) return []
+  const idx = (i: number) => ((i % n) + n) % n
+  const outer: AnnotationPoint[] = []
+  for (let i = 0; i < n; i++) {
+    const p0 = points[idx(i - 1)] as AnnotationPoint
+    const p1 = points[idx(i)] as AnnotationPoint
+    const p2 = points[idx(i + 1)] as AnnotationPoint
+    const p3 = points[idx(i + 2)] as AnnotationPoint
+    for (let s = 0; s < SPLINE_SAMPLES_PER_SEGMENT; s++) {
+      outer.push(catmullRom(p0, p1, p2, p3, s / SPLINE_SAMPLES_PER_SEGMENT))
+    }
+  }
+  return [{ outer, holes: [] }]
+}
+
+/**
+ * A closed polygon straight from a dense point list (the live-wire snapped path),
+ * with no smoothing. Needs at least 3 points to enclose an area.
+ */
+export function generatePolygonFromPoints(
+  points: readonly AnnotationPoint[],
+): PolygonWithHoles[] {
+  if (points.length < 3) return []
+  return [{ outer: points.map((p) => ({ x: p.x, y: p.y })), holes: [] }]
+}
+
 export function generateShape(
   tool: AnnotationTool,
   start: AnnotationPoint,

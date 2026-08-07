@@ -1,9 +1,46 @@
 import { describe, expect, test } from 'bun:test'
+import type { VectorAnnotation } from '@/NVTypes'
 import {
+  getAnnotationSelection,
   getControlPoints,
   hitTestControlPoint,
   updateShapeBounds,
 } from './selection'
+
+// ---------------------------------------------------------------------------
+// getAnnotationSelection
+// ---------------------------------------------------------------------------
+describe('getAnnotationSelection', () => {
+  test('selects a polygon-only annotation without resize handles', () => {
+    const annotation = {
+      id: 'freehand',
+      label: 1,
+      group: 'measurements',
+      sliceType: 0,
+      slicePosition: 0,
+      polygons: [
+        {
+          outer: [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+          ],
+          holes: [],
+        },
+      ],
+      style: {
+        fillColor: [1, 0, 0, 0.3],
+        strokeColor: [1, 0, 0, 1],
+        strokeWidth: 2,
+      },
+    } as VectorAnnotation
+
+    expect(getAnnotationSelection(annotation)).toEqual({
+      annotationId: annotation.id,
+      controlPoints: [],
+    })
+  })
+})
 
 // ---------------------------------------------------------------------------
 // getControlPoints

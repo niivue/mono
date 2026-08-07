@@ -1,5 +1,6 @@
 import type { mat4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
+import { shouldStartFreshMultiClickContour } from '@/annotation/multiClick'
 import {
   emitOrientationChange,
   emitPan2DChange,
@@ -24,6 +25,8 @@ import * as NVConstants from '@/NVConstants'
 import { DRAG_MODE, sliceTypeDim } from '@/NVConstants'
 import type NiiVue from '@/NVControl'
 import type {
+  AnnotationPoint,
+  AnnotationTool,
   NVImage,
   PolygonWithHoles,
   VectorAnnotation,
@@ -56,6 +59,263 @@ function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.lastPointerX = evt.clientX
   ctrl.lastPointerY = evt.clientY
   ctrl.canvas?.setPointerCapture(evt.pointerId)
+}
+
+// --- Multi-click contour tools (spline / livewire) --------------------------
+// These place control points across successive clicks (not a single drag) and
+// close on double-click, so they need their own small state machine.
+
+function isLivewireTool(tool: AnnotationTool): boolean {
+  return tool === 'livewire' || tool === 'measureLivewire'
+}
+
+function isMultiClickTool(tool: AnnotationTool): boolean {
+  return tool === 'spline' || tool === 'measureSpline' || isLivewireTool(tool)
+}
+
+// Live-wire snapped path (slice-2D points) from the current seed's field to a
+// target slice-2D point. Empty when no slice/field is ready.
+function livewireSnappedPath(
+  ctrl: NiiVue,
+  target: AnnotationPoint,
+): AnnotationPoint[] {
+  const slice = ctrl._livewireSlice
+  const field = ctrl._livewireField
+  if (!slice || !field) return []
+  const g = Annotation.slice2DToGrid(slice, target)
+  const gridPath = Annotation.livewireBacktrack(field, slice.width, g.x, g.y)
+  return gridPath.map((p) => Annotation.gridToSlice2D(slice, p.x, p.y))
+}
+
+// (Re)seed the live wire at a slice-2D point: extract the slice on first use,
+// then compute the Dijkstra field from that point. False if unavailable.
+function seedLivewire(ctrl: NiiVue, pt: AnnotationPoint): boolean {
+  const vol = ctrl.model.getVolumes()[0]
+  if (!vol) return false
+  if (!ctrl._livewireSlice) {
+    ctrl._livewireSlice = Annotation.extractLivewireSlice(
+      vol,
+      ctrl._annotationPolySliceType,
+      ctrl._annotationPolySlicePosition,
+    )
+  }
+  const slice = ctrl._livewireSlice
+  if (!slice) return false
+  const g = Annotation.slice2DToGrid(slice, pt)
+  ctrl._livewireField = Annotation.livewireField(
+    slice.cost,
+    slice.width,
+    slice.height,
+    g.x,
+    g.y,
+  )
+  ctrl._livewireSeed = g
+  return true
+}
+
+function resetLivewire(ctrl: NiiVue): void {
+  ctrl._livewireSlice = null
+  ctrl._livewireField = null
+  ctrl._livewireSeed = null
+}
+
+// The contour polygon for the active tool: spline smooths through the control
+// points; live-wire uses the dense snapped points directly.
+function contourPolygons(
+  ctrl: NiiVue,
+  points: readonly AnnotationPoint[],
+): PolygonWithHoles[] {
+  return isLivewireTool(ctrl.model.annotation.tool)
+    ? Annotation.generatePolygonFromPoints(points)
+    : Annotation.generateSplineFromPoints(points)
+}
+
+// Refresh the live preview: the contour through the placed points plus the
+// hovered cursor (a straight cursor for spline, the snapped path for live wire).
+function updateMultiClickPreview(
+  ctrl: NiiVue,
+  cursor: AnnotationPoint | null,
+): void {
+  const pts = ctrl._annotationPolyPoints
+  if (!pts || pts.length === 0) {
+    ctrl.model._annotationPreview = null
+    return
+  }
+  const cfg = ctrl.model.annotation
+  const all = cursor
+    ? isLivewireTool(cfg.tool)
+      ? [...pts, ...livewireSnappedPath(ctrl, cursor)]
+      : [...pts, cursor]
+    : pts
+  const polygons = contourPolygons(ctrl, all)
+  if (polygons.length === 0) {
+    ctrl.model._annotationPreview = null
+    return
+  }
+  const preview = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    ctrl._annotationPolySliceType,
+    ctrl._annotationPolySlicePosition,
+    polygons,
+    cfg.style,
+    ctrl._annotationPolyAnchorMM,
+  )
+  preview.shape = { type: cfg.tool, start: all[0], end: all[all.length - 1] }
+  ctrl.model._annotationPreview = preview
+}
+
+// The bounding box of the control points (for the stats-label anchor).
+function pointsBounds(pts: readonly AnnotationPoint[]): {
+  start: AnnotationPoint
+  end: AnnotationPoint
+} {
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  return { start: { x: minX, y: minY }, end: { x: maxX, y: maxY } }
+}
+
+// Close the in-progress contour into a committed annotation (>= 3 points).
+// Returns true when an annotation was created.
+function commitMultiClickContour(ctrl: NiiVue): boolean {
+  const pts = ctrl._annotationPolyPoints
+  if (!pts || pts.length < 3) return false
+  const cfg = ctrl.model.annotation
+  const polygons = contourPolygons(ctrl, pts)
+  if (polygons.length === 0) return false
+  ctrl._annotationUndoStack.push(ctrl.model.annotations)
+  const newAnn = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    ctrl._annotationPolySliceType,
+    ctrl._annotationPolySlicePosition,
+    polygons,
+    cfg.style,
+    ctrl._annotationPolyAnchorMM,
+  )
+  const bounds = pointsBounds(pts)
+  newAnn.shape = { type: cfg.tool, start: bounds.start, end: bounds.end }
+  if (Annotation.isMeasureTool(cfg.tool)) {
+    const vol = ctrl.model.getVolumes()[0]
+    if (vol)
+      newAnn.stats = Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
+  }
+  ctrl.model.annotations = Annotation.storeAnnotation(
+    ctrl.model.annotations,
+    newAnn,
+    cfg.mergesOverlaps,
+  )
+  ctrl.emit('annotationAdded', { annotation: newAnn })
+  ctrl.emit('annotationChanged', { action: 'draw' })
+  return true
+}
+
+// Abandon the in-progress contour (Escape, or a tool/slice change).
+function cancelMultiClickContour(ctrl: NiiVue): void {
+  if (!ctrl._annotationPolyPoints) return
+  ctrl._annotationPolyPoints = null
+  ctrl.model._annotationPreview = null
+  resetLivewire(ctrl)
+  ctrl.drawScene()
+}
+
+// --- Bidirectional (two perpendicular measured axes) ------------------------
+
+type Axis = { start: AnnotationPoint; end: AnnotationPoint }
+
+function isBidirectionalTool(tool: AnnotationTool): boolean {
+  return tool === 'bidirectional' || tool === 'measureBidirectional'
+}
+
+const axisLen = (a: Axis): number =>
+  Math.hypot(a.end.x - a.start.x, a.end.y - a.start.y)
+
+// Build the annotation for a bidirectional measurement from its two axes: two
+// thin-line polygons (so the built-in draw renders both), plus long/short
+// lengths in stats. The seam projects the second axis for the UIKit overlay.
+function bidirectionalAnnotation(
+  ctrl: NiiVue,
+  long: Axis,
+  short: Axis | null,
+): VectorAnnotation | null {
+  const cfg = ctrl.model.annotation
+  const w = cfg.style.strokeWidth
+  const polys = [
+    ...Annotation.generateShape('measureLine', long.start, long.end, w),
+    ...(short
+      ? Annotation.generateShape('measureLine', short.start, short.end, w)
+      : []),
+  ]
+  if (polys.length === 0) return null
+  const ann = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    ctrl._annotationSliceType,
+    ctrl._annotationSlicePosition,
+    polys,
+    cfg.style,
+    ctrl._annotationAnchorMM,
+  )
+  ann.shape = {
+    type: cfg.tool,
+    start: long.start,
+    end: long.end,
+    width: w,
+    ...(short ? { start2: short.start, end2: short.end } : {}),
+  }
+  ann.stats = {
+    area: 0,
+    min: 0,
+    mean: 0,
+    max: 0,
+    stdDev: 0,
+    length: axisLen(long),
+    ...(short ? { shortLength: axisLen(short) } : {}),
+  }
+  return ann
+}
+
+// Live preview during a bidirectional measurement: the long axis (fixed once
+// placed) plus the short axis being dragged.
+function bidirectionalPreview(ctrl: NiiVue, cursor: AnnotationPoint): void {
+  let long: Axis | null
+  let short: Axis | null
+  if (ctrl._bidirectionalLong) {
+    long = ctrl._bidirectionalLong
+    short = ctrl._annotationShapeStart
+      ? { start: ctrl._annotationShapeStart, end: cursor }
+      : null
+  } else {
+    long = ctrl._annotationShapeStart
+      ? { start: ctrl._annotationShapeStart, end: cursor }
+      : null
+    short = null
+  }
+  ctrl.model._annotationPreview = long
+    ? bidirectionalAnnotation(ctrl, long, short)
+    : null
+}
+
+// Commit the finished bidirectional measurement.
+function commitBidirectional(ctrl: NiiVue, long: Axis, short: Axis): void {
+  const ann = bidirectionalAnnotation(ctrl, long, short)
+  if (!ann) return
+  ctrl._annotationUndoStack.push(ctrl.model.annotations)
+  ctrl.model.annotations = Annotation.storeAnnotation(
+    ctrl.model.annotations,
+    ann,
+    ctrl.model.annotation.mergesOverlaps,
+  )
+  ctrl.emit('annotationAdded', { annotation: ann })
+  ctrl.emit('annotationChanged', { action: 'draw' })
 }
 
 function clientToCanvasPixel(
@@ -187,6 +447,17 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
   setNextActionTag('keydown')
   const key = e.key.toUpperCase()
+  if (key === 'ESCAPE') {
+    // Abandon an in-progress multi-click contour (spline / livewire) or a
+    // half-placed bidirectional measurement.
+    if (ctrl._annotationPolyPoints) cancelMultiClickContour(ctrl)
+    if (ctrl._bidirectionalLong) {
+      ctrl._bidirectionalLong = null
+      ctrl.model._annotationPreview = null
+      ctrl.drawScene()
+    }
+    return
+  }
   if (key === 'V') {
     log.info(`NIIVUE VERSION: 0.1.20260122`)
   } else if (key === 'A') {
@@ -830,9 +1101,10 @@ function finish3DAnnotationStroke(ctrl: NiiVue): void {
     cfg.style,
     anchorMM,
   )
-  ctrl.model.annotations = Annotation.mergeAnnotations(
+  ctrl.model.annotations = Annotation.storeAnnotation(
     ctrl.model.annotations,
     newAnn,
+    cfg.mergesOverlaps,
   )
   ctrl.emit('annotationAdded', { annotation: newAnn })
   ctrl.emit('annotationChanged', { action: 'draw' })
@@ -1092,6 +1364,47 @@ export function initInteraction(ctrl: NiiVue): void {
         const cfg = ctrl.model.annotation
         const tool = cfg.tool
 
+        // Multi-click contour tools (spline / livewire): each click drops a
+        // control point; the contour is closed on double-click (see the dblclick
+        // handler) or cancelled with Escape. Do NOT start a drag.
+        if (isMultiClickTool(tool) && !cfg.isErasing) {
+          const fresh = shouldStartFreshMultiClickContour(
+            Boolean(ctrl._annotationPolyPoints),
+            ctrl._annotationPolySliceType,
+            ctrl._annotationPolySlicePosition,
+            sliceType,
+            slicePosition,
+          )
+          if (fresh) {
+            // Start a fresh contour (first point, or the user moved to a new
+            // slice — abandon the old in-progress contour and begin here).
+            ctrl._annotationPolyPoints = []
+            ctrl._annotationPolySliceType = sliceType
+            ctrl._annotationPolySlicePosition = slicePosition
+            ctrl._annotationPolyAnchorMM = mm as [number, number, number]
+            resetLivewire(ctrl)
+          }
+          const poly = ctrl._annotationPolyPoints as AnnotationPoint[]
+          if (isLivewireTool(tool)) {
+            if (fresh || !ctrl._livewireSeed) {
+              seedLivewire(ctrl, pt2d)
+              poly.push(pt2d)
+            } else {
+              // Commit the snapped path from the last seed to this click (drop
+              // its first point, a duplicate of the last committed one), then
+              // re-seed the live wire here.
+              const seg = livewireSnappedPath(ctrl, pt2d)
+              for (let i = 1; i < seg.length; i++) poly.push(seg[i])
+              seedLivewire(ctrl, pt2d)
+            }
+          } else {
+            poly.push(pt2d)
+          }
+          updateMultiClickPreview(ctrl, pt2d)
+          ctrl.drawScene()
+          return
+        }
+
         // A) Selection/resize check for shape annotations
         if (!cfg.isErasing && tool !== 'freehand') {
           // Check control point hit on current selection
@@ -1307,53 +1620,72 @@ export function initInteraction(ctrl: NiiVue): void {
                 pt2d,
               )
             }
-            const polygons = Annotation.generateShape(
-              cfg.tool,
-              ctrl._annotationShapeStart,
-              pt2d,
-              cfg.style.strokeWidth,
-            )
-            if (polygons.length > 0) {
-              ctrl._annotationUndoStack.push(ctrl.model.annotations)
-              const newAnn = Annotation.createAnnotation(
-                cfg.activeLabel,
-                cfg.activeGroup,
-                ctrl._annotationSliceType,
-                ctrl._annotationSlicePosition,
-                polygons,
-                cfg.style,
-                ctrl._annotationAnchorMM,
-              )
-              const shapeData: typeof newAnn.shape = {
-                type: cfg.tool,
+            if (isBidirectionalTool(cfg.tool)) {
+              // First drag places the long axis; the second commits the pair.
+              const drag: Axis = {
                 start: ctrl._annotationShapeStart,
                 end: pt2d,
               }
-              if (
-                cfg.tool === 'line' ||
-                cfg.tool === 'arrow' ||
-                cfg.tool === 'measureLine'
-              ) {
-                shapeData.width = cfg.style.strokeWidth
+              if (!ctrl._bidirectionalLong) {
+                ctrl._bidirectionalLong = drag
+              } else {
+                commitBidirectional(ctrl, ctrl._bidirectionalLong, drag)
+                ctrl._bidirectionalLong = null
               }
-              newAnn.shape = shapeData
-              if (Annotation.isMeasureTool(cfg.tool)) {
-                const vol = ctrl.model.getVolumes()[0]
-                if (vol)
-                  newAnn.stats =
-                    Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
-              }
-              ctrl.model.annotations = Annotation.mergeAnnotations(
-                ctrl.model.annotations,
-                newAnn,
+            } else {
+              const polygons = Annotation.generateShape(
+                cfg.tool,
+                ctrl._annotationShapeStart,
+                pt2d,
+                cfg.style.strokeWidth,
               )
-              ctrl.emit('annotationAdded', { annotation: newAnn })
-              ctrl.emit('annotationChanged', { action: 'draw' })
+              if (polygons.length > 0) {
+                ctrl._annotationUndoStack.push(ctrl.model.annotations)
+                const newAnn = Annotation.createAnnotation(
+                  cfg.activeLabel,
+                  cfg.activeGroup,
+                  ctrl._annotationSliceType,
+                  ctrl._annotationSlicePosition,
+                  polygons,
+                  cfg.style,
+                  ctrl._annotationAnchorMM,
+                )
+                const shapeData: typeof newAnn.shape = {
+                  type: cfg.tool,
+                  start: ctrl._annotationShapeStart,
+                  end: pt2d,
+                }
+                if (
+                  cfg.tool === 'line' ||
+                  cfg.tool === 'arrow' ||
+                  cfg.tool === 'measureLine'
+                ) {
+                  shapeData.width = cfg.style.strokeWidth
+                }
+                newAnn.shape = shapeData
+                if (Annotation.isMeasureTool(cfg.tool)) {
+                  const vol = ctrl.model.getVolumes()[0]
+                  if (vol)
+                    newAnn.stats =
+                      Annotation.computeAnnotationStats(newAnn, vol) ??
+                      undefined
+                }
+                ctrl.model.annotations = Annotation.storeAnnotation(
+                  ctrl.model.annotations,
+                  newAnn,
+                  cfg.mergesOverlaps,
+                )
+                ctrl.emit('annotationAdded', { annotation: newAnn })
+                ctrl.emit('annotationChanged', { action: 'draw' })
+              }
             }
           }
         }
         ctrl._annotationShapeStart = null
-        ctrl.model._annotationPreview = null
+        // Keep the long axis on screen while waiting for the short-axis drag.
+        ctrl.model._annotationPreview = ctrl._bidirectionalLong
+          ? bidirectionalAnnotation(ctrl, ctrl._bidirectionalLong, null)
+          : null
         ctrl.drawScene()
       }
       // Finalize annotation stroke on mouse-up (freehand/eraser)
@@ -1397,9 +1729,10 @@ export function initInteraction(ctrl: NiiVue): void {
                 cfg.style,
                 ctrl._annotationAnchorMM,
               )
-              ctrl.model.annotations = Annotation.mergeAnnotations(
+              ctrl.model.annotations = Annotation.storeAnnotation(
                 ctrl.model.annotations,
                 newAnn,
+                cfg.mergesOverlaps,
               )
               ctrl.emit('annotationAdded', { annotation: newAnn })
               ctrl.emit('annotationChanged', { action: 'draw' })
@@ -1488,6 +1821,19 @@ export function initInteraction(ctrl: NiiVue): void {
               mm: mm as [number, number, number],
               sliceType,
               slicePosition: mm[depthDim],
+            }
+            // Multi-click contour in progress: preview the spline through the
+            // placed points plus the hovered cursor (same slice only).
+            if (
+              ctrl._annotationPolyPoints &&
+              isMultiClickTool(ctrl.model.annotation.tool) &&
+              sliceType === ctrl._annotationPolySliceType
+            ) {
+              const pt2d = Annotation.mmToSlice2D(
+                mm as [number, number, number],
+                sliceType,
+              )
+              updateMultiClickPreview(ctrl, pt2d)
             }
             ctrl.drawScene()
             return
@@ -1694,6 +2040,11 @@ export function initInteraction(ctrl: NiiVue): void {
           ctrl._annotationSliceType,
         )
         const cfg = ctrl.model.annotation
+        if (isBidirectionalTool(cfg.tool)) {
+          bidirectionalPreview(ctrl, pt2d)
+          ctrl.drawScene()
+          return
+        }
         if (Annotation.isCircleTool(cfg.tool)) {
           pt2d = Annotation.constrainCircleEnd(ctrl._annotationShapeStart, pt2d)
         }
@@ -2053,6 +2404,20 @@ export function initInteraction(ctrl: NiiVue): void {
     const dblHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
     if (!dblHit) return // outside this instance's bounds
     setNextActionTag('dblclick')
+    // Close an in-progress multi-click contour (spline / livewire) instead of
+    // depth-picking. The two clicks of the double-click already added their
+    // points via the pointerdown handler; commit the accumulated contour.
+    if (
+      ctrl._annotationPolyPoints &&
+      isMultiClickTool(ctrl.model.annotation.tool)
+    ) {
+      commitMultiClickContour(ctrl)
+      ctrl._annotationPolyPoints = null
+      ctrl.model._annotationPreview = null
+      resetLivewire(ctrl)
+      ctrl.drawScene()
+      return
+    }
     const [px, py] = dblHit
     // Double-clicking the zoom-out ("-") button jumps straight to the full view
     // (the one-click way back from a deep zoom). The reset is restricted to that

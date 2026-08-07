@@ -31,7 +31,13 @@ export function slice2DToMM(
   return [point.x, point.y, slicePosition] // AXIAL
 }
 
-const _inPlane: [number, number][] = [
+/**
+ * Slice-type -> the two RAS voxel/mm axes that lie in that slice plane
+ * (indexed AXIAL=0, CORONAL=1, SAGITTAL=2). The single source of truth shared by
+ * the projection, stats, and livewire code so they can never disagree on which
+ * axes are in-plane for a given orientation.
+ */
+export const IN_PLANE_AXES: readonly (readonly [number, number])[] = [
   [0, 1],
   [0, 2],
   [1, 2],
@@ -51,7 +57,7 @@ export function slice2DToMMOnPlane(
   planePoint: vec3 | Float32Array,
 ): [number, number, number] {
   const depthIdx = sliceTypeDim(sliceType)
-  const [inPlane0, inPlane1] = _inPlane[sliceType] as [number, number]
+  const [inPlane0, inPlane1] = IN_PLANE_AXES[sliceType] as [number, number]
   _mmScratch[0] = 0
   _mmScratch[1] = 0
   _mmScratch[2] = 0

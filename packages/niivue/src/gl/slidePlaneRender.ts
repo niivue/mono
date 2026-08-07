@@ -1,5 +1,9 @@
 import type { NVSlide } from '@/slide/NVSlide'
 import type { SlidePlaneAnnotation, SlidePlaneTile } from '@/slide/slidePlane'
+import {
+  DEFAULT_TILE_TEXTURE_BYTES,
+  TileTextureCache,
+} from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
 import { Shader } from './shader'
 
@@ -34,8 +38,12 @@ export class SlidePlaneRenderer extends NVRenderer {
   private _shader: Shader | null = null
   private _vao: WebGLVertexArrayObject | null = null
   private _vbo: WebGLBuffer | null = null
-  // One texture per resident tile, keyed by NVSlide tile key.
-  private _textures = new Map<string, WebGLTexture>()
+  // One texture per resident tile, keyed by NVSlide tile key. Byte-budgeted:
+  // textures for tiles that leave the working set are evicted each frame.
+  private readonly _textures = new TileTextureCache<WebGLTexture>(
+    DEFAULT_TILE_TEXTURE_BYTES,
+    (tex) => this._gl?.deleteTexture(tex),
+  )
   // Annotation overlay (slide-space drawing) texture + uploaded version.
   private _annTex: WebGLTexture | null = null
   private _annVersion = -1
@@ -76,7 +84,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    this._textures.set(key, tex)
+    this._textures.set(key, tex, bitmap.width * bitmap.height * 4)
     return tex
   }
 
@@ -88,6 +96,9 @@ export class SlidePlaneRenderer extends NVRenderer {
     opacity = 1,
   ): void {
     if (!this.isReady || !this._shader || !this._vao || !this._vbo) return
+    // Evict BEFORE beginFrame so the previous frame's working set is exempt.
+    this._textures.evictToBudget()
+    this._textures.beginFrame()
     this._shader.use(gl)
     if (this._shader.uniforms.mvpMtx) {
       gl.uniformMatrix4fv(this._shader.uniforms.mvpMtx, false, mvpMatrix)
@@ -225,7 +236,6 @@ export class SlidePlaneRenderer extends NVRenderer {
   destroy(): void {
     const gl = this._gl
     if (!gl) return
-    for (const tex of this._textures.values()) gl.deleteTexture(tex)
     this._textures.clear()
     if (this._annTex) gl.deleteTexture(this._annTex)
     if (this._vao) gl.deleteVertexArray(this._vao)

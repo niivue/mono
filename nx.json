@@ -46,7 +46,7 @@
     },
     "groups": {
       "typescript": {
-        "projects": ["packages/niivue", "packages/nv-*"],
+        "projects": ["packages/niivue", "packages/nv-*", "packages/uikit"],
         "projectsRelationship": "independent",
         "releaseTag": {
           "pattern": "{projectName}@{version}"

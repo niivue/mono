@@ -25,7 +25,7 @@
       "inputs": ["typescript"]
     },
     "test": {
-      "command": "bun test",
+      "command": "bun test --max-concurrency=1",
       "options": { "cwd": "{projectRoot}" },
       "inputs": ["typescript"]
     },

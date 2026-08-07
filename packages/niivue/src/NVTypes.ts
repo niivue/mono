@@ -612,6 +612,21 @@ export type UIConfig = {
   isLegendVisible: boolean
   isPositionInMM: boolean
   isMeasureUnitsVisible: boolean
+  /**
+   * Draw the built-in measurement overlay (ruler line, ticks, distance label).
+   * Set false to let an external overlay renderer draw measurements instead (it
+   * still reads `measurementScreenLines`); the built-in geometry is computed but
+   * not drawn, so no line, label, or label background chip appears. Angles are
+   * unaffected. Default true.
+   */
+  isMeasurementDrawn: boolean
+  /**
+   * When false, NiiVue's built-in 2D vector-annotation shapes (ellipse/rect/
+   * circle/line/arrow fill + stroke + stats labels) are NOT drawn, so an external
+   * overlay can render them from `annotationScreenShapes` instead. The brush
+   * cursor and selection handles are unaffected. Default true.
+   */
+  isAnnotationDrawn: boolean
   isThumbnailVisible: boolean
   thumbnailUrl: string
   placeholderText: string
@@ -926,6 +941,12 @@ export type NiiVueOptions = {
   annotationActiveLabel?: number
   annotationActiveGroup?: string
   annotationBrushRadius?: number
+  /**
+   * Union same-label vector annotations and cut different-label annotations when
+   * they overlap. Disable for measurement integrations where every annotation
+   * must retain an independent identity.
+   */
+  annotationMergesOverlaps?: boolean
   annotationIsErasing?: boolean
   annotationIsVisibleIn3D?: boolean
   annotationStyle?: AnnotationStyle
@@ -973,6 +994,20 @@ export type CompletedMeasurement = {
   sliceIndex: number
   sliceType: number
   slicePosition: number
+}
+
+/**
+ * A measurement projected to the current frame's canvas pixels, exposed so an
+ * external overlay (e.g. a @niivue/uikit ruler drawn through the overlay hook)
+ * can render the measurement in screen space with its own renderer. Recomputed
+ * every frame; `distance` is in millimetres. See NVControlBase.measurementScreenLines.
+ */
+export type MeasurementScreenLine = {
+  sx: number
+  sy: number
+  ex: number
+  ey: number
+  distance: number
 }
 
 /**
@@ -1197,6 +1232,15 @@ export type AnnotationTool =
   | 'measureLine'
   | 'circle'
   | 'measureCircle'
+  // Multi-click closed contours (Catmull-Rom spline through control points).
+  | 'spline'
+  | 'measureSpline'
+  // Multi-click edge-snapping contours (intelligent scissors / live wire).
+  | 'livewire'
+  | 'measureLivewire'
+  // Two perpendicular measured axes (RECIST-style long + short diameters).
+  | 'bidirectional'
+  | 'measureBidirectional'
 
 export type AnnotationStats = {
   area: number
@@ -1205,6 +1249,8 @@ export type AnnotationStats = {
   max: number
   stdDev: number
   length?: number
+  /** Short-axis length for a bidirectional measurement (long axis in length). */
+  shortLength?: number
 }
 
 export type AnnotationPoint = { x: number; y: number }
@@ -1230,11 +1276,53 @@ export type VectorAnnotation = {
   polygons: PolygonWithHoles[]
   style: AnnotationStyle
   stats?: AnnotationStats
+  /** Optional user-entered free-text label shown with the annotation. */
+  text?: string
   shape?: {
     type: AnnotationTool
     start: AnnotationPoint
     end: AnnotationPoint
     width?: number
+    /** Second axis endpoints for a bidirectional measurement (short axis). */
+    start2?: AnnotationPoint
+    end2?: AnnotationPoint
+  }
+}
+
+/**
+ * A vector annotation projected to the current frame's canvas pixels, exposed so
+ * an external overlay (a @niivue/uikit shape renderer drawn through the overlay
+ * hook) can draw the shape + its stats label in screen space with its own
+ * renderer. Recomputed every frame. See NVControlBase.annotationScreenShapes.
+ */
+export type AnnotationScreenShape = {
+  id: string
+  tool: AnnotationTool
+  /** Outer boundary projected to canvas px (the outline for closed shapes). */
+  outer: AnnotationPoint[]
+  /** Hole boundaries projected to canvas px (freehand with holes). */
+  holes: AnnotationPoint[][]
+  /** Shape endpoints projected to canvas px (line/arrow path, ellipse bbox). */
+  start?: AnnotationPoint
+  end?: AnnotationPoint
+  /** Second-axis endpoints projected to canvas px (bidirectional short axis). */
+  start2?: AnnotationPoint
+  end2?: AnnotationPoint
+  /** True for area shapes (ellipse/rect/circle/freehand); false for line/arrow. */
+  isClosed: boolean
+  /**
+   * Measured length in mm for a single measured line (`measureLine`), so an
+   * external overlay can render it as a graduated ruler (ticks numbered in mm)
+   * rather than a plain line. Absent for non-measure and multi-segment shapes.
+   */
+  length?: number
+  style: AnnotationStyle
+  /** Stats label text lines + canvas-px anchor + alignment, for measure tools. */
+  label?: {
+    lines: string[]
+    x: number
+    y: number
+    align: 'left' | 'center'
   }
 }
 
@@ -1243,6 +1331,7 @@ export type AnnotationConfig = {
   activeLabel: number
   activeGroup: string
   brushRadius: number
+  mergesOverlaps: boolean
   isErasing: boolean
   isVisibleIn3D: boolean
   tool: AnnotationTool

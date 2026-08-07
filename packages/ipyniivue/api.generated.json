@@ -1,5 +1,5 @@
 {
-  "niivueVersion": "1.0.0-rc.10",
+  "niivueVersion": "1.0.0-rc.11",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVue",
   "properties": [
@@ -70,6 +70,17 @@
       "doc": null
     },
     {
+      "jsName": "annotationMergesOverlaps",
+      "pyName": "annotation_merges_overlaps",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "annotationTool",
       "pyName": "annotation_tool",
       "tsType": "AnnotationTool",
@@ -85,7 +96,13 @@
           "measureRect",
           "measureLine",
           "circle",
-          "measureCircle"
+          "measureCircle",
+          "spline",
+          "measureSpline",
+          "livewire",
+          "measureLivewire",
+          "bidirectional",
+          "measureBidirectional"
         ]
       },
       "hasGetter": true,
@@ -487,6 +504,17 @@
       "doc": null
     },
     {
+      "jsName": "isAnnotationDrawn",
+      "pyName": "is_annotation_drawn",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "isClipPlaneCutaway",
       "pyName": "is_clip_plane_cutaway",
       "tsType": "boolean",
@@ -566,6 +594,17 @@
     {
       "jsName": "isLegendVisible",
       "pyName": "is_legend_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isMeasurementDrawn",
+      "pyName": "is_measurement_drawn",
       "tsType": "boolean",
       "pyTraitlet": {
         "kind": "Bool"
@@ -1118,6 +1157,17 @@
       "hasGetter": true,
       "hasSetter": false,
       "doc": null
+    },
+    {
+      "jsName": "isDestroyed",
+      "pyName": "is_destroyed",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "True once {@link destroy} has run. Lets external holders (e.g. an\nNVChunkedVolume handle listening for `viewDestroyed`) distinguish a real\ncontroller teardown from a transient view recreation (backend switch /\ninit fallback), which also emits `viewDestroyed` but leaves the controller\nand its volumes alive."
     },
     {
       "jsName": "meshExtensions",
@@ -2367,6 +2417,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "registerOverlayRenderer",
+      "pyName": "register_overlay_renderer",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "renderer",
+          "tsType": "UIKitOverlayRenderer",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "() => void",
+      "doc": "Register a privileged overlay renderer (e.g. a",
+      "returnsDoc": null
+    },
+    {
       "jsName": "reinitializeView",
       "pyName": "reinitialize_view",
       "isAsync": true,
@@ -2485,6 +2552,23 @@
       ],
       "returns": "this",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "removeVolume",
+      "pyName": "remove_volume",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index of the volume to remove"
+        }
+      ],
+      "returns": "Promise<void>",
+      "doc": "Remove a single volume by index, emitting `volumeRemoved`.",
       "returnsDoc": null
     },
     {
@@ -2668,6 +2752,29 @@
       "returnsDoc": null
     },
     {
+      "jsName": "setAnnotationText",
+      "pyName": "set_annotation_text",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "id",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "text",
+          "tsType": "string",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Set (or clear, with an empty string) the free-text label on an annotation by\nid. The text shows above the annotation's stats via the overlay seam.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "setBaseCoarseFloor",
       "pyName": "set_base_coarse_floor",
       "isAsync": true,
@@ -2784,9 +2891,9 @@
         },
         {
           "name": "cmap",
-          "tsType": "ColorMap | null",
+          "tsType": "string | ColorMap | null",
           "optional": false,
-          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays,\n  or null to remove the label colormap"
+          "doc": "ColorMap definition with R,G,B arrays and optional labels/I arrays;\n  a built-in colormap name (e.g. 'freesurfer', resolved via\n  lookupColorMap); or null to remove the label colormap"
         }
       ],
       "returns": "Promise<void>",
@@ -3353,6 +3460,23 @@
       "returnsDoc": null
     },
     {
+      "jsName": "unregisterOverlayRenderer",
+      "pyName": "unregister_overlay_renderer",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "renderer",
+          "tsType": "UIKitOverlayRenderer",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Remove a previously registered overlay renderer.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "updateGLVolume",
       "pyName": "update_gl_volume",
       "isAsync": true,
@@ -3588,6 +3712,11 @@
         "reason": "non-serializable nominal type: VectorAnnotation"
       },
       {
+        "jsName": "annotationScreenShapes",
+        "tsType": "AnnotationScreenShape",
+        "reason": "non-serializable nominal type: AnnotationScreenShape"
+      },
+      {
         "jsName": "annotationStyle",
         "tsType": "AnnotationStyle",
         "reason": "non-serializable nominal type: AnnotationStyle"
@@ -3611,6 +3740,11 @@
         "jsName": "lodBoxes",
         "tsType": "FocusBox",
         "reason": "non-serializable nominal type: FocusBox"
+      },
+      {
+        "jsName": "measurementScreenLines",
+        "tsType": "MeasurementScreenLine",
+        "reason": "non-serializable nominal type: MeasurementScreenLine"
       },
       {
         "jsName": "meshes",

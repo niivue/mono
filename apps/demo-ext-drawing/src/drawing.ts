@@ -14,6 +14,8 @@ import {
   type SliceType,
 } from '@niivue/nv-ext-drawing'
 
+import { PEN_SHAPE } from '@niivue/niivue'
+
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id)
   if (!el) throw new Error(`Element #${id} not found`)
@@ -26,6 +28,7 @@ const sliceTypeSelect = $<HTMLSelectElement>('sliceType')
 const useWebGPUCb = $<HTMLInputElement>('useWebGPU')
 const enableDrawBtn = $<HTMLButtonElement>('enableDrawBtn')
 const penColorSelect = $<HTMLSelectElement>('penColor')
+const penShapeSelect = $<HTMLSelectElement>('penShape')
 const penSizeInput = $<HTMLInputElement>('penSize')
 const penFilledCb = $<HTMLInputElement>('penFilled')
 const undoBtn = $<HTMLButtonElement>('undoBtn')
@@ -97,6 +100,10 @@ enableDrawBtn.onclick = () => {
 
 penColorSelect.onchange = () => {
   nv.drawPenValue = parseInt(penColorSelect.value, 10)
+}
+
+penShapeSelect.onchange = () => {
+  nv.drawPenShape = parseInt(penShapeSelect.value, 10) as PEN_SHAPE
 }
 
 penSizeInput.oninput = () => {

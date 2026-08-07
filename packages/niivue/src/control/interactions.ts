@@ -1048,6 +1048,7 @@ export function initInteraction(ctrl: NiiVue): void {
             drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
             dims: vol.dimsRAS as number[],
             penSize: ctrl.model.draw.penSize,
+            penShape: ctrl.model.draw.penShape,
             penAxCorSag: ctrl._drawPenAxCorSag,
             penOverwrites: ctrl.model.draw.isFillOverwriting,
           })
@@ -1217,6 +1218,7 @@ export function initInteraction(ctrl: NiiVue): void {
               ptA: ctrl._drawPenLocation,
               ptB: ctrl._drawPenFillPts[0],
               penValue: ctrl.model.draw.penValue,
+              penShape: ctrl.model.draw.penShape,
               drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
               dims: vol.dimsRAS,
               penSize: ctrl.model.draw.penSize,
@@ -1599,6 +1601,7 @@ export function initInteraction(ctrl: NiiVue): void {
               ptA: ctrl._drawPenLocation,
               ptB: newPt,
               penValue: ctrl.model.draw.penValue,
+              penShape: ctrl.model.draw.penShape,
               drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
               dims: vol.dimsRAS,
               penSize: ctrl.model.draw.penSize,

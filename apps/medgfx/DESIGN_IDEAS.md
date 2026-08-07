@@ -140,7 +140,6 @@ Controls related to viewport arrangement:
 - Multiplanar arrangement
 - 3D panel visibility
 - Radiological orientation
-- Hero fraction
 - Mosaic configuration inside an Advanced Layout disclosure
 
 ### Overlays
@@ -173,7 +172,7 @@ Implementation and diagnostic options:
 - Diagnostic information
 - Web-view or bridge status in development builds
 
-Backend switching is destructive because it reinitializes the view and clears loaded volumes. It should not be one of the first controls users encounter, and the UI should warn before switching when content is loaded.
+Backend switching recreates the rendering resources and re-renders the loaded data; it does not discard the data. It remains an Advanced control because most users do not need to choose the graphics implementation.
 
 ## Toolbar design
 

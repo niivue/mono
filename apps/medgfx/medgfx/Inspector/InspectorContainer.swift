@@ -2,9 +2,8 @@
 //  InspectorContainer.swift
 //  medgfx
 //
-//  Renders the active inspector panel, with a segmented picker along the top
-//  to switch between registered panels. Host views control the container's
-//  visibility — InspectorContainer itself is always "visible" when instantiated.
+//  A single scrollable display inspector. Common adjustments are expanded;
+//  implementation-level controls live under Advanced.
 //
 
 import NiiVueKit
@@ -13,55 +12,61 @@ import SwiftUI
 @MainActor
 struct InspectorContainer: View {
     let model: NiiVueModel
-    let panels: [AnyInspectorPanel]
     let fillsAvailableWidth: Bool
 
-    @State private var selection: String
+    @State private var expandedSections: Set<InspectorSectionID> = Set(
+        InspectorSectionID.allCases.filter(\.isExpandedByDefault)
+    )
 
-    init(
-        model: NiiVueModel,
-        panels: [AnyInspectorPanel],
-        fillsAvailableWidth: Bool = false
-    ) {
+    init(model: NiiVueModel, fillsAvailableWidth: Bool = false) {
         self.model = model
-        self.panels = panels
         self.fillsAvailableWidth = fillsAvailableWidth
-        _selection = State(initialValue: panels.first?.id ?? "")
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("Panel", selection: $selection) {
-                ForEach(panels) { panel in
-                    Label(panel.title, systemImage: panel.systemImage)
-                        .tag(panel.id)
+        let layoutContext = ViewerLayoutContext(model: model)
+
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                Text("Display")
+                    .font(.title3.weight(.semibold))
+                    .padding(.bottom, 8)
+
+                inspectorSection(.layout) {
+                    LayoutInspectorSection(model: model)
+                }
+                Divider()
+
+                inspectorSection(.guidesAndLabels) {
+                    GuidesLabelsInspectorSection(model: model)
+                }
+                Divider()
+
+                inspectorSection(.imageAppearance) {
+                    ImageAppearanceInspectorSection(model: model)
+                }
+
+                Divider()
+                inspectorSection(.threeDView) {
+                    ThreeDInspectorSection(
+                        model: model,
+                        isEnabled: layoutContext.hasThreeDView
+                    )
+                }
+
+                Divider()
+                inspectorSection(.advanced) {
+                    AdvancedInspectorSection(model: model)
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
-
-            Divider()
-
-            ScrollView {
-                if let active = panels.first(where: { $0.id == selection }) {
-                    active.bodyBuilder(model)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 20)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Text("No panel selected")
-                        .foregroundStyle(.secondary)
-                        .padding(20)
-                }
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(
-            minWidth: 280,
-            idealWidth: fillsAvailableWidth ? nil : 320,
-            maxWidth: fillsAvailableWidth ? .infinity : 380
+            minWidth: 290,
+            idealWidth: fillsAvailableWidth ? nil : 340,
+            maxWidth: fillsAvailableWidth ? .infinity : 400
         )
         #if os(macOS)
         .background(.regularMaterial)
@@ -69,15 +74,34 @@ struct InspectorContainer: View {
         .background(Color(.secondarySystemBackground))
         #endif
     }
-}
 
-/// Central registry of available panels. Add one line here to expose a new
-/// panel in the inspector.
-@MainActor
-enum InspectorPanels {
-    static let all: [AnyInspectorPanel] = [
-        AnyInspectorPanel(ViewLayoutPanel()),
-        AnyInspectorPanel(ChromePanel()),
-        AnyInspectorPanel(ScenePanel()),
-    ]
+    @ViewBuilder
+    private func inspectorSection<Content: View>(
+        _ section: InspectorSectionID,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        DisclosureGroup(isExpanded: expansionBinding(for: section)) {
+            content()
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Label(section.title, systemImage: section.systemImage)
+                .font(.headline)
+        }
+        .padding(.vertical, 10)
+    }
+
+    private func expansionBinding(for section: InspectorSectionID) -> Binding<Bool> {
+        Binding(
+            get: { expandedSections.contains(section) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedSections.insert(section)
+                } else {
+                    expandedSections.remove(section)
+                }
+            }
+        )
+    }
 }

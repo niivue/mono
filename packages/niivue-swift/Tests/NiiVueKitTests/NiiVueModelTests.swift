@@ -79,6 +79,28 @@ final class NiiVueModelTests: XCTestCase {
         XCTAssertEqual(payload?["value"] as? Int, SliceType.axial.rawValue)
     }
 
+    func testCustomLayoutPushesStructuredTiles() async throws {
+        let h = await makeHarness()
+        h.model.customLayout.value = [
+            CustomLayoutTile(
+                sliceType: .sagittal,
+                position: [0, 0, 0.5, 1]
+            ),
+        ]
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        let envelopes = h.captured().compactMap { parseEnvelope($0) }
+        let setProp = envelopes.first { envelope in
+            (envelope["method"] as? String) == "setProp"
+                && ((envelope["payload"] as? [String: Any])?["path"] as? String) == "customLayout"
+        }
+        let payload = setProp?["payload"] as? [String: Any]
+        let tiles = payload?["value"] as? [[String: Any]]
+        XCTAssertEqual(tiles?.count, 1)
+        XCTAssertEqual(tiles?.first?["sliceType"] as? Int, SliceType.sagittal.rawValue)
+        XCTAssertEqual(tiles?.first?["position"] as? [Double], [0, 0, 0.5, 1])
+    }
+
     // MARK: inbound propChange + echo suppression
 
     func testPropChangeUpdatesCell() async throws {

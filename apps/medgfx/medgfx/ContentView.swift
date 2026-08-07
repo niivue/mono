@@ -65,7 +65,7 @@ struct ContentView: View {
 
                 if useInlineInspector && isInspectorVisible {
                     Divider()
-                    InspectorContainer(model: model, panels: InspectorPanels.all)
+                    InspectorContainer(model: model)
                         .transition(.move(edge: .trailing))
                 }
             }
@@ -78,7 +78,6 @@ struct ContentView: View {
             NavigationStack {
                 InspectorContainer(
                     model: model,
-                    panels: InspectorPanels.all,
                     fillsAvailableWidth: true
                 )
                     .navigationTitle("Inspector")
@@ -149,6 +148,21 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
+            addImageMenu
+        }
+
+        #if os(macOS)
+        ToolbarItem(placement: .principal) {
+            viewModePicker
+                .frame(minWidth: 440)
+        }
+        #else
+        ToolbarItem(placement: .primaryAction) {
+            viewModePicker
+        }
+        #endif
+
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     isInspectorVisible.toggle()
@@ -162,26 +176,44 @@ struct ContentView: View {
         }
     }
 
+    private var addImageMenu: some View {
+        Menu {
+            Button("Load Example") {
+                Task { await loadSample() }
+            }
+
+            Button("Browse Files…") {
+                isFileImporterPresented = true
+            }
+            .keyboardShortcut("o", modifiers: .command)
+        } label: {
+            Label("Add Image", systemImage: "plus")
+        }
+        .help("Add an image")
+        .disabled(isLoading)
+    }
+
+    @ViewBuilder
+    private var viewModePicker: some View {
+        let setting = InspectorSettings.viewMode
+        SettingPicker(setting: setting, model: model)
+        #if os(macOS)
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        #else
+        .pickerStyle(.menu)
+        #endif
+        .help(setting.help)
+    }
+
     // MARK: Footer
 
     private var footer: some View {
         HStack(spacing: 12) {
-            Button("Open image…", systemImage: "folder") {
-                isFileImporterPresented = true
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
             }
-            .keyboardShortcut("o", modifiers: .command)
-            .disabled(isLoading)
-
-            Button {
-                Task { await loadSample() }
-            } label: {
-                if isLoading {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Text("Load sample")
-                }
-            }
-            .disabled(isLoading)
 
             Text(model.lastStatus)
                 .font(.caption)

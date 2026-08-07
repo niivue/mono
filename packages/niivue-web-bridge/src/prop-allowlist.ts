@@ -18,6 +18,7 @@ export type PropKind =
   | 'string'
   | 'enum' // integer-backed enum, sent as number
   | 'rgba' // [r,g,b,a] 0..1
+  | 'json' // structured JSON value, passed through unchanged
 
 export type PropSpec = {
   kind: PropKind
@@ -36,6 +37,7 @@ export const DEFAULT_PROP_ALLOWLIST: PropAllowlist = {
   multiplanarType: { kind: 'enum', emitOnChange: true },
   showRender: { kind: 'enum', emitOnChange: true },
   mosaicString: { kind: 'string', emitOnChange: true },
+  customLayout: { kind: 'json', emitOnChange: true },
   heroFraction: { kind: 'number', emitOnChange: true },
   isRadiological: { kind: 'boolean', emitOnChange: true },
 
@@ -68,6 +70,8 @@ export function coerce(kind: PropKind, value: unknown): unknown {
       return Number(value)
     case 'string':
       return String(value ?? '')
+    case 'json':
+      return value
     case 'rgba': {
       if (!Array.isArray(value) || value.length < 3) {
         throw new Error('rgba requires [r,g,b] or [r,g,b,a]')

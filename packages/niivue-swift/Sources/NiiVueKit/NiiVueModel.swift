@@ -26,6 +26,7 @@ public final class NiiVueModel {
     public let multiplanarTypeRaw:      NiiVueProp<Int>    = NiiVueProp(path: "multiplanarType",      initial: MultiplanarType.auto.rawValue)
     public let showRenderRaw:           NiiVueProp<Int>    = NiiVueProp(path: "showRender",           initial: ShowRender.auto.rawValue)
     public let mosaicString:            NiiVueProp<String> = NiiVueProp(path: "mosaicString",         initial: "")
+    public let customLayout:            NiiVueProp<[CustomLayoutTile]?> = NiiVueProp(path: "customLayout", initial: nil)
     public let heroFraction:            NiiVueProp<Double> = NiiVueProp(path: "heroFraction",         initial: 0.5)
     public let isRadiological:          NiiVueProp<Bool>   = NiiVueProp(path: "isRadiological",       initial: false)
 
@@ -71,6 +72,7 @@ public final class NiiVueModel {
         register(multiplanarTypeRaw)
         register(showRenderRaw)
         register(mosaicString)
+        register(customLayout)
         register(heroFraction)
         register(isRadiological)
 
@@ -191,8 +193,8 @@ public final class NiiVueModel {
             if let resolved = Backend(rawValue: reply.backend) {
                 currentBackend = resolved
                 lastStatus = "Backend: \(resolved.label)"
-                // A reinitialized view drops all loaded volumes -- refresh
-                // our mirror of NiiVue's property state.
+                // Reinitialization recreates rendering resources while keeping
+                // loaded data. Refresh our mirror of NiiVue's property state.
                 await hydrate()
             }
         } catch {
@@ -293,6 +295,15 @@ public final class NiiVueModel {
             }
             Task { @MainActor in
                 self.locationText = payload.string.isEmpty ? "—" : payload.string
+            }
+        }
+        bridge.on("imageLoaded") { [weak self] data in
+            guard let self else { return }
+            guard let payload = try? JSONDecoder().decode(ImageLoadedEnvelope.self, from: data) else {
+                return
+            }
+            Task { @MainActor in
+                self.lastStatus = payload.name
             }
         }
     }

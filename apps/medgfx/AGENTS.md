@@ -14,19 +14,19 @@ apps/medgfx/
 ├── medgfx/                        Swift target sources (target name: medgfx)
 │   ├── medgfxApp.swift              @main entry — WindowGroup { ContentView() }
 │   ├── ContentView.swift            Layout shell — NiiVueWebView + inspector + footer
+│   ├── AboutView.swift              macOS About window — version, authors, project links
+│   ├── AboutAuthors.generated.swift generated contributor names (do not edit directly)
 │   ├── Info.plist                   ATS exception for localhost (needed in Debug only)
 │   ├── medgfx.entitlements          App Sandbox + Outgoing Network only
 │                                    (hardened runtime is a build setting)
 │   ├── mni152.nii.gz                Bundled sample volume (LFS-tracked, 4.1 MB)
 │   ├── Assets.xcassets/             App icon + accent color
-│   └── Inspector/                   App-specific inspector panels (not part of NiiVueKit)
-│       ├── InspectorPanel.swift     Protocol + AnyInspectorPanel type eraser
-│       ├── InspectorContainer.swift Segmented picker + active panel host
-│       ├── PanelHelpers.swift       Shared `section()` + `sliderRow()` builders
-│       └── Panels/
-│           ├── ViewLayoutPanel.swift  Backend, slice type, multiplanar, hero, mosaic
-│           ├── ChromePanel.swift      Colorbar / cube / crosshair / ruler / mesh x-ray
-│           └── ScenePanel.swift       Background color, gamma, camera (azimuth/elevation)
+│   └── Inspector/                   App-specific display inspector (not part of NiiVueKit)
+│       ├── InspectorContainer.swift Scrollable disclosure-section host
+│       ├── InspectorSectionViews.swift Focused Layout / Guides / Appearance / 3D / Advanced views
+│       ├── InspectorSettings.swift  Typed setting vocabulary, choices, and bindings
+│       ├── ViewerLayoutContext.swift Central layout state, precedence, and transitions
+│       └── PanelHelpers.swift       Shared setting-aware picker, toggle, and slider controls
 ├── QuickLookPreview/              macOS Quick Look extension (appex target). See below.
 │   ├── PreviewViewController.swift  NSViewController + QLPreviewingController
 │   ├── PreviewSchemeHandler.swift   bundled assets + the one previewed document
@@ -37,7 +37,9 @@ apps/medgfx/
 ├── scripts/
 │   ├── install-quicklook.sh       build, register, prove which binary Finder uses
 │   ├── check-preview-file-kind.sh runs the routing self-check
-│   └── check-preview-file-kind.swift
+│   ├── check-preview-file-kind.swift
+│   ├── generate-about-authors.ts  generate About authors from medgfx Git history
+│   └── about-author-name-map.json override Git identities with display names
 ├── medgfxTests/                   (unused, Xcode-generated)
 ├── medgfxUITests/                 (unused, Xcode-generated)
 └── web/                           Nx TS project "medgfx-web"
@@ -140,7 +142,7 @@ For properties already in `NiiVueModel`'s built-in list, just bind them (e.g. `T
    ```ts
    crosshairColor: { kind: 'rgba', emitOnChange: true },
    ```
-   `kind` controls coercion on the JS side: `boolean`, `number`, `enum`, `string`, or `rgba`.
+`kind` controls coercion on the JS side: `boolean`, `number`, `enum`, `string`, `rgba`, or `json` for structured Codable values such as `customLayout` tiles.
 2. Register an extra cell on `NiiVueModel` at init time (preferred — the cell is then visible to the automatic `hydrate()` on `ready`):
    ```swift
    let crosshair = NiiVueProp<[Double]>(path: "crosshairColor", initial: [1, 0, 0, 1])
@@ -149,7 +151,7 @@ For properties already in `NiiVueModel`'s built-in list, just bind them (e.g. `T
    `model.registerExtra(_:)` exists for post-init registration, but cells added that way miss the first hydrate.
 3. Bind it in any panel:
    ```swift
-   ColorPicker("Crosshair", selection: ...)  // see ScenePanel for rgba↔Color conversion
+   ColorPicker("Crosshair", selection: ...)  // see InspectorSectionViews for rgba↔Color conversion
    // or: Toggle(..., isOn: model.binding(\.someBool))
    // or: Slider(value: model.binding(\.someDouble), in: 0...1)
    ```
@@ -208,10 +210,13 @@ The custom scheme exists specifically because `loadFileURL:` cannot set response
 - `ContentView.swift` — owns `@State` instances of `Bridge` and `NiiVueModel` (the model holds a reference to the same bridge). Renders the layout shell:
   - `NiiVueWebView(bridge: bridge)` filling the main area (the dominant element).
   - Trailing `InspectorContainer` or bottom sheet (see "Responsive layout" below).
-  - Footer with "Load sample" button, status text (`model.lastStatus`), and the most recent `locationChange.string` (`model.locationText`).
+  - Toolbar with a single Add Image menu, a shared view-mode picker, and inspector visibility controls.
+  - Thin footer with status text (`model.lastStatus`) and the most recent `locationChange.string` (`model.locationText`).
 - `NiiVueModel` (from `NiiVueKit`) — `@MainActor @Observable` view-model. Owns every allow-listed NiiVue property as a `NiiVueProp<Value>` cell plus transient state (`isReady`, `currentBackend`, `isSwitchingBackend`, `lastStatus`, `locationText`). Subscribes once to `ready` / `propChange` / `backendChange` / `locationChange` events; fans out inbound updates to the right cell by path via a `[String: any AnyPropCell]` dispatch table.
 - `NiiVueProp<Value>` (from `NiiVueKit`) — single bound property cell. Stores current value, has an injected `pusher` closure that fires on write (the model uses this to call `setProp` over the bridge), and an `applyFromJS(_:)` entry point for inbound updates that bypasses the pusher.
-- `InspectorContainer` — segmented picker over an array of `AnyInspectorPanel` + a `ScrollView` hosting the active panel. Panels are registered in `InspectorPanels.all`; adding one is a one-line append. Lives in this app; NiiVueKit does not ship inspector UI.
+- `InspectorContainer` — one scrollable display inspector with native disclosure sections. Layout and Guides & Labels start expanded; Image Appearance, 3D View, and implementation-oriented Advanced controls use progressive disclosure. Context-dependent controls stay in place and become disabled when inapplicable. Lives in this app; NiiVueKit does not ship inspector UI.
+- `InspectorSettings` — the single typed registry for clinician-facing titles, help, choices, and bindings. Direct property bindings use `NiiVueModel` cell key paths instead of repeating strings in views. Both the toolbar and inspector consume this registry.
+- `ViewerLayoutContext` — the single source of truth for built-in, mosaic, and custom-layout precedence and 3D applicability. Its `NiiVueModel` extension owns mutually exclusive layout transitions and normalizes empty custom layouts.
 - `NiiVueWebView` (from `NiiVueKit`) — a thin `UIViewRepresentable` (iOS/iPadOS) / `NSViewRepresentable` (macOS) wrapper around `WKWebView`. Handles configuration, script message handler registration, custom scheme handler registration, inspector toggle, and initial URL selection. Exposes no SwiftUI state — all app state flows through the `Bridge`.
 - `Bridge` (from `BridgeCore`) is a `@MainActor` reference type, stored in `@State` (not `@StateObject`, since nothing publishes).
 
@@ -227,12 +232,13 @@ The inspector surfaces differently by form factor:
 
 `useInlineInspector` in `ContentView` is the single source of truth and drives both the inline branch and the `sheetBinding`. The iOS branch wraps the root in `NavigationStack` so the `.toolbar { ToolbarItem(placement: .primaryAction) }` actually has somewhere to render — without this, iPad shows no toggle at all. `navigationBarTitleDisplayMode` is iOS-only and only referenced inside the `#if os(iOS)` branches.
 
-### Adding an inspector panel
+### Adding an inspector setting
 
-1. Create `medgfx/Inspector/Panels/FooPanel.swift` implementing `InspectorPanel` (`id`, `title`, `systemImage`, `body(model:)`).
-2. Use `section("TITLE") { ... }` and `sliderRow(label:binding:range:format:)` from `PanelHelpers.swift` for consistent styling.
-3. Bind controls via `model.binding(\.someProp)` for generic cells or a dedicated typed binding (`model.sliceTypeBinding`) for enum cells.
-4. Register the panel by appending `AnyInspectorPanel(FooPanel())` to `InspectorPanels.all` in `InspectorContainer.swift`.
+1. Add one typed `NiiVueSetting<Value>` entry in `InspectorSettings.swift`. For direct properties, supply the `NiiVueModel` property-cell key path; do not repeat a raw NiiVue path in UI code.
+2. Put the control in the appropriate focused view in `InspectorSectionViews.swift`. Use `SettingToggle`, `SettingPicker`, or `sliderRow(setting:model:range:format:)` from `PanelHelpers.swift` so titles, help, choices, and bindings come from the registry.
+3. For an enum backed by a raw property cell, use the typed model binding in the registry entry, following `panelArrangement` or `threeDPanel`.
+4. Layout presets that write `mosaicString` or `customLayout` must use the transition methods in `ViewerLayoutContext.swift`, which clear competing layouts and synchronize the toolbar view mode.
+5. Only add a new disclosure group when the setting does not fit Layout, Guides & Labels, Image Appearance, 3D View, or Advanced. Add its `InspectorSectionID` metadata and focused section view separately.
 
 ## Current bridge method surface
 
@@ -241,10 +247,11 @@ The inspector surfaces differently by form factor:
 | Swift → JS | `call` | `loadVolume` | `{ name: string, bytesBase64: string }` | JS decodes, calls `nv.loadImage(file)` |
 | Swift → JS | `call` | `setProp` | `{ path: string, value: unknown }` | Generic NiiVue property write (allow-listed paths only) |
 | Swift → JS | `call` | `getProps` | `{}` | Returns snapshot of every allow-listed property, used for hydration after `ready` / backend switch |
-| Swift → JS | `call` | `setBackend` | `{ backend: 'webgl2'\|'webgpu' }` | Calls `nv.reinitializeView({ backend })`; reply reports the backend that actually ended up active (NiiVue may downgrade) |
+| Swift → JS | `call` | `setBackend` | `{ backend: 'webgl2'\|'webgpu' }` | Calls `nv.reinitializeView({ backend })`; loaded data is retained and re-rendered, and the reply reports the backend that actually ended up active (NiiVue may downgrade) |
 | JS → Swift | `emit` | `ready` | `{ backend: 'webgpu' \| 'webgl2' }` | Webview finished init; Swift reads `backend` into `NiiVueModel.currentBackend` |
 | JS → Swift | `emit` | `propChange` | `{ path, value }` | Fired from NiiVue's `change` event when an allow-listed property changes |
 | JS → Swift | `emit` | `backendChange` | `{ backend }` | Fired after a successful `setBackend` so Swift state follows |
+| JS → Swift | `emit` | `imageLoaded` | `{ name, kind }` | Fired after NiiVue successfully loads a volume, mesh, or signal, including its built-in canvas drag and drop |
 | JS → Swift | `emit` | `locationChange` | `{ mm, voxel, string }` | NiiVue crosshair moved |
 
 The bridge itself doesn't hardcode any names — `niivue-controller.ts` is the canonical JS registration site and `NiiVueModel.swift` is the canonical Swift registration site. For property-sync work, prefer the prop-bridge path (one line in `prop-allowlist.ts` + one line in `NiiVueModel.swift`) over a new bespoke method.
@@ -389,6 +396,9 @@ bunx nx lint medgfx-web
 bunx nx format medgfx-web
 bunx nx e2e medgfx-web        # 88 Quick Look page checks (needs a browser, see below)
 
+# Native app About metadata — run from the repo root
+bun apps/medgfx/scripts/generate-about-authors.ts
+
 # Quick Look — from apps/medgfx/
 ./scripts/install-quicklook.sh          # build Release, register, prove which copy
 ./scripts/install-quicklook.sh --debug  # Debug build, which has the trace log
@@ -406,6 +416,20 @@ xcodebuild -project medgfx.xcodeproj -scheme medgfx \
 xcodebuild -project medgfx.xcodeproj -scheme medgfx \
   -configuration Debug -destination 'generic/platform=iOS Simulator' build
 ```
+
+## About author generation
+
+`medgfx/AboutAuthors.generated.swift` is generated from the Git author names of
+commits that touch `apps/medgfx`. Before finishing changes to medgfx, run
+`bun apps/medgfx/scripts/generate-about-authors.ts` from the repository root and
+include any generated update. New contributors are appended automatically in
+first-contribution order.
+
+Do not edit the generated Swift file directly. If a Git author name or username
+should appear as a person's real name, add an override to
+`scripts/about-author-name-map.json`, then rerun the generator. Keep aliases for
+the same person mapped to one display name so the generated list de-duplicates
+them.
 
 `Signing.local.xcconfig` must exist even for ad-hoc builds — the project
 references it as a base configuration and errors out when it is missing. Copy

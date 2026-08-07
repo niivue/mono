@@ -33,6 +33,7 @@ function base64ToArrayBuffer(b64: string): ArrayBuffer {
  *   - `loadVolume(name, bytesBase64)` -> `nv.loadImage(File)`
  *   - `setBackend(backend)` -> `nv.reinitializeView({ backend })` (+ emits `backendChange`)
  *   - generic prop-bridge (setProp / getProps / propChange)
+ *   - forwards successful image loads as `imageLoaded`
  *   - forwards `locationChange` as an event with `{ mm, voxel, string }`
  */
 export function wireNiiVueToBridge(
@@ -64,6 +65,27 @@ export function wireNiiVueToBridge(
   })
 
   wirePropBridge(nv, bridge, { allowlist: options.allowlist })
+
+  nv.addEventListener('volumeLoaded', (event) => {
+    bridge.emit('imageLoaded', {
+      name: event.detail.volume.name,
+      kind: 'volume',
+    })
+  })
+
+  nv.addEventListener('meshLoaded', (event) => {
+    bridge.emit('imageLoaded', {
+      name: event.detail.mesh.name,
+      kind: 'mesh',
+    })
+  })
+
+  nv.addEventListener('signalLoaded', (event) => {
+    bridge.emit('imageLoaded', {
+      name: event.detail.signal.name,
+      kind: 'signal',
+    })
+  })
 
   nv.addEventListener('locationChange', (e) => {
     const detail = (e as CustomEvent).detail

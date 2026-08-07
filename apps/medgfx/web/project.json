@@ -13,6 +13,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "typescript",
+        "^typescript",
         "{projectRoot}/vite.config.ts",
         "{projectRoot}/src/**/*",
         "{projectRoot}/index.html",
@@ -30,7 +31,7 @@
       "command": "bunx tsc --noEmit",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["^build"],
-      "inputs": ["typescript"]
+      "inputs": ["typescript", "^typescript"]
     },
     "lint": {
       "command": "bunx biome check {projectRoot}",

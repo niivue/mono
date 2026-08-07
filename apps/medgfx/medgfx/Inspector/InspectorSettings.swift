@@ -225,7 +225,7 @@ enum InspectorSettings {
     )
 
     static let threeDCursor = NiiVueSetting(
-        title: "3D Cursor",
+        title: "3D Crosshairs",
         help: "Show the crosshair position in the 3D rendering.",
         niiVueProperty: \NiiVueModel.is3DCrosshairVisible
     )
@@ -301,7 +301,7 @@ enum InspectorSectionID: String, CaseIterable, Identifiable {
         switch self {
         case .layout: return "Layout"
         case .guidesAndLabels: return "Guides & Labels"
-        case .imageAppearance: return "Image Appearance"
+        case .imageAppearance: return "Appearance"
         case .threeDView: return "3D View"
         case .advanced: return "Advanced"
         }

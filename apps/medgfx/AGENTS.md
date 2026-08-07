@@ -14,6 +14,8 @@ apps/medgfx/
 ├── medgfx/                        Swift target sources (target name: medgfx)
 │   ├── medgfxApp.swift              @main entry — WindowGroup { ContentView() }
 │   ├── ContentView.swift            Layout shell — NiiVueWebView + inspector + footer
+│   ├── AboutView.swift              macOS About window — version, authors, project links
+│   ├── AboutAuthors.generated.swift generated contributor names (do not edit directly)
 │   ├── Info.plist                   ATS exception for localhost (needed in Debug only)
 │   ├── medgfx.entitlements          App Sandbox + Outgoing Network only
 │                                    (hardened runtime is a build setting)
@@ -35,7 +37,9 @@ apps/medgfx/
 ├── scripts/
 │   ├── install-quicklook.sh       build, register, prove which binary Finder uses
 │   ├── check-preview-file-kind.sh runs the routing self-check
-│   └── check-preview-file-kind.swift
+│   ├── check-preview-file-kind.swift
+│   ├── generate-about-authors.ts  generate About authors from medgfx Git history
+│   └── about-author-name-map.json override Git identities with display names
 ├── medgfxTests/                   (unused, Xcode-generated)
 ├── medgfxUITests/                 (unused, Xcode-generated)
 └── web/                           Nx TS project "medgfx-web"
@@ -392,6 +396,9 @@ bunx nx lint medgfx-web
 bunx nx format medgfx-web
 bunx nx e2e medgfx-web        # 88 Quick Look page checks (needs a browser, see below)
 
+# Native app About metadata — run from the repo root
+bun apps/medgfx/scripts/generate-about-authors.ts
+
 # Quick Look — from apps/medgfx/
 ./scripts/install-quicklook.sh          # build Release, register, prove which copy
 ./scripts/install-quicklook.sh --debug  # Debug build, which has the trace log
@@ -409,6 +416,20 @@ xcodebuild -project medgfx.xcodeproj -scheme medgfx \
 xcodebuild -project medgfx.xcodeproj -scheme medgfx \
   -configuration Debug -destination 'generic/platform=iOS Simulator' build
 ```
+
+## About author generation
+
+`medgfx/AboutAuthors.generated.swift` is generated from the Git author names of
+commits that touch `apps/medgfx`. Before finishing changes to medgfx, run
+`bun apps/medgfx/scripts/generate-about-authors.ts` from the repository root and
+include any generated update. New contributors are appended automatically in
+first-contribution order.
+
+Do not edit the generated Swift file directly. If a Git author name or username
+should appear as a person's real name, add an override to
+`scripts/about-author-name-map.json`, then rerun the generator. Keep aliases for
+the same person mapped to one display name so the generated list de-duplicates
+them.
 
 `Signing.local.xcconfig` must exist even for ad-hoc builds — the project
 references it as a base configuration and errors out when it is missing. Copy

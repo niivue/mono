@@ -5,12 +5,15 @@
 
 import NiiVueKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var bridge: Bridge
     @State private var model: NiiVueModel
     @State private var isInspectorVisible: Bool = true
     @State private var isLoading = false
+    @State private var isFileImporterPresented = false
+    @State private var isDropTargeted = false
 
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -58,8 +61,7 @@ struct ContentView: View {
     private var mainLayout: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                NiiVueWebView(bridge: bridge)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                viewer
 
                 if useInlineInspector && isInspectorVisible {
                     Divider()
@@ -91,6 +93,43 @@ struct ContentView: View {
             #else
             EmptyView()
             #endif
+        }
+        .fileImporter(
+            isPresented: $isFileImporterPresented,
+            allowedContentTypes: [.data],
+            allowsMultipleSelection: true,
+            onCompletion: handleFileImport
+        )
+    }
+
+    private var viewer: some View {
+        ZStack {
+            NiiVueWebView(bridge: bridge)
+
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.tint.opacity(0.15))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(.tint, lineWidth: 3)
+                    }
+                    .padding(12)
+                    .allowsHitTesting(false)
+
+                Label("Drop images to load", systemImage: "square.and.arrow.down")
+                    .font(.headline)
+                    .padding()
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard !urls.isEmpty, !isLoading else { return false }
+            Task { await loadFiles(urls) }
+            return true
+        } isTargeted: { isTargeted in
+            isDropTargeted = isTargeted
         }
     }
 
@@ -127,6 +166,12 @@ struct ContentView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
+            Button("Open image…", systemImage: "folder") {
+                isFileImporterPresented = true
+            }
+            .keyboardShortcut("o", modifiers: .command)
+            .disabled(isLoading)
+
             Button {
                 Task { await loadSample() }
             } label: {
@@ -160,6 +205,45 @@ struct ContentView: View {
 
     // MARK: Actions
 
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard !urls.isEmpty else { return }
+            Task { await loadFiles(urls) }
+        case .failure(let error):
+            model.lastStatus = "Open failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func loadFiles(_ urls: [URL]) async {
+        guard !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        var loadedCount = 0
+        for url in urls {
+            let hasAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if hasAccess { url.stopAccessingSecurityScopedResource() }
+            }
+
+            do {
+                model.lastStatus = "Loading \(url.lastPathComponent)…"
+                try await model.loadVolume(url: url)
+                loadedCount += 1
+            } catch {
+                model.lastStatus = "Could not load \(url.lastPathComponent): \(error.localizedDescription)"
+                return
+            }
+        }
+
+        if loadedCount == 1, let name = urls.first?.lastPathComponent {
+            model.lastStatus = name
+        } else {
+            model.lastStatus = "\(loadedCount) images"
+        }
+    }
+
     private func loadSample() async {
         guard let url = Bundle.main.url(forResource: "mni152", withExtension: "nii.gz") else {
             model.lastStatus = "mni152.nii.gz not in bundle"
@@ -170,7 +254,7 @@ struct ContentView: View {
         do {
             try await model.loadVolume(url: url)
             let kb = (try? Data(contentsOf: url).count).map { $0 / 1024 } ?? 0
-            model.lastStatus = "Loaded mni152.nii.gz (\(kb) KB)"
+            model.lastStatus = "mni152.nii.gz (\(kb) KB)"
         } catch {
             model.lastStatus = "Load failed: \(error)"
         }

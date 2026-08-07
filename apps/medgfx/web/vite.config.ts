@@ -10,6 +10,11 @@ export default defineConfig({
   resolve: {
     conditions: ['development', 'import', 'module', 'browser', 'default'],
   },
+  // Keep the workspace bridge as source in Debug. Prebundling it would hide
+  // edits behind Vite's dependency cache until the dev server is restarted.
+  optimizeDeps: {
+    exclude: ['@niivue/web-bridge'],
+  },
   server: {
     port: 8083,
     strictPort: true,

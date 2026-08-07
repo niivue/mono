@@ -118,6 +118,19 @@ final class NiiVueModelTests: XCTestCase {
         XCTAssertEqual(setProps.count, 0, "inbound update must not echo as setProp")
     }
 
+    func testImageLoadedUpdatesStatus() async throws {
+        let h = await makeHarness()
+
+        h.bridge.receive(rawBody: [
+            "kind": "event",
+            "name": "imageLoaded",
+            "payload": ["name": "brain.nii.gz", "kind": "volume"],
+        ])
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        XCTAssertEqual(h.model.lastStatus, "brain.nii.gz")
+    }
+
     // MARK: ready -> hydrate
 
     func testReadyTriggersGetPropsCall() async throws {

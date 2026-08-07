@@ -245,6 +245,7 @@ The inspector surfaces differently by form factor:
 | JS → Swift | `emit` | `ready` | `{ backend: 'webgpu' \| 'webgl2' }` | Webview finished init; Swift reads `backend` into `NiiVueModel.currentBackend` |
 | JS → Swift | `emit` | `propChange` | `{ path, value }` | Fired from NiiVue's `change` event when an allow-listed property changes |
 | JS → Swift | `emit` | `backendChange` | `{ backend }` | Fired after a successful `setBackend` so Swift state follows |
+| JS → Swift | `emit` | `imageLoaded` | `{ name, kind }` | Fired after NiiVue successfully loads a volume, mesh, or signal, including its built-in canvas drag and drop |
 | JS → Swift | `emit` | `locationChange` | `{ mm, voxel, string }` | NiiVue crosshair moved |
 
 The bridge itself doesn't hardcode any names — `niivue-controller.ts` is the canonical JS registration site and `NiiVueModel.swift` is the canonical Swift registration site. For property-sync work, prefer the prop-bridge path (one line in `prop-allowlist.ts` + one line in `NiiVueModel.swift`) over a new bespoke method.

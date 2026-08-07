@@ -295,5 +295,14 @@ public final class NiiVueModel {
                 self.locationText = payload.string.isEmpty ? "—" : payload.string
             }
         }
+        bridge.on("imageLoaded") { [weak self] data in
+            guard let self else { return }
+            guard let payload = try? JSONDecoder().decode(ImageLoadedEnvelope.self, from: data) else {
+                return
+            }
+            Task { @MainActor in
+                self.lastStatus = payload.name
+            }
+        }
     }
 }

@@ -129,6 +129,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isMeasureUnitsVisible` | Prop | |
 | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` | Prop | Load-time preview |
 | `crosshairColor`, `crosshairGap`, `crosshairWidth` | Prop | |
+| `crosshairColorPerAxis` | Prop | `[xColor, yColor, zColor]` RGBA; `[]` (default) uses `crosshairColor` for every axis |
 | `fontColor`, `fontScale`, `fontMinSize` | Prop | |
 | `selectionBoxColor`, `measureLineColor`, `measureTextColor` | Prop | |
 | `rulerWidth` | Prop | |

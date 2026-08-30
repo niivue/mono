@@ -171,9 +171,18 @@ function handleLocationChange(data) {
   document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
 
+// Optional `?backend=webgl2` (or webgpu) picks the initial backend; the
+// WebGPU checkbox mirrors it and can still switch at runtime.
+const initialBackend =
+  new URLSearchParams(window.location.search).get('backend') === 'webgl2'
+    ? 'webgl2'
+    : 'webgpu'
+webgpuCheck.checked = initialBackend === 'webgpu'
+
 const nv1 = new NiiVue({
   backgroundColor: [0.2, 0.2, 0.2, 1],
   isColorbarVisible: true,
+  backend: initialBackend,
 })
 
 // Debounce canvasResize to avoid feedback loops

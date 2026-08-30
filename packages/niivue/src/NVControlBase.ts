@@ -452,6 +452,8 @@ export default class NiiVue extends EventTarget {
   _angleState: 'none' | 'drawing_first_line' | 'drawing_second_line' = 'none'
   _angleFirstLine: number[] = [0, 0, 0, 0]
   _pan2DxyzmmAtDragStart: [number, number, number, number] | null = null
+  /** True once a `crosshairPan` gesture has crossed the drag threshold. */
+  _crosshairPanDidDrag = false
   // Annotation transient state (controller-owned, not serialized)
   _annotationUndoStack = new AnnotationUndoStack()
   _annotationBrushPath: AnnotationPoint[] = []
@@ -5100,6 +5102,7 @@ export default class NiiVue extends EventTarget {
         angle: DRAG_MODE.angle,
         crosshair: DRAG_MODE.crosshair,
         windowing: DRAG_MODE.windowing,
+        crosshairPan: DRAG_MODE.crosshairPan,
       }
       const val = map[mode]
       if (val !== undefined) this.model.interaction.secondaryDragMode = val

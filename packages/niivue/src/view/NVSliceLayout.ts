@@ -789,13 +789,18 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
       // Fit the slice's mm aspect ratio within the available tile area
       const fov = screen.screen.fovMM
       const zoom = Math.min(pw / fov[0], ph / fov[1])
-      const fw = fov[0] * zoom
-      const fh = fov[1] * zoom
+      // Fill needs a usable fit scale: zero or infinite gives NaN mm bounds.
+      const fill = (spec.fill ?? false) && Number.isFinite(zoom) && zoom > 0
+      const fw = fill ? pw : fov[0] * zoom
+      const fh = fill ? ph : fov[1] * zoom
       const rot = rotations(idx, isRad)
       const tile: SliceTile = {
         leftTopWidthHeight: [px + (pw - fw) / 2, py + (ph - fh) / 2, fw, fh],
         axCorSag: idx,
-        screen: cloneScreen(screen.screen),
+        // Spans are stored PRE-zoom: calculateMvpMatrix2D divides by it (#68).
+        screen: fill
+          ? fillScreen(screen.screen, [fw / zoom, fh / zoom])
+          : cloneScreen(screen.screen),
         azimuth: rot.azimuth,
         elevation: rot.elevation,
       }

@@ -265,6 +265,7 @@ export class VolumeSliceSource implements SlideTileSource {
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
     label: string,
+    signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const plane = this.planeForLevel[level.index]
     if (plane === undefined) {
@@ -288,11 +289,21 @@ export class VolumeSliceSource implements SlideTileSource {
         texOrigin,
         texDims,
         bytesPerVoxel: this.bytesPerVoxel,
+        signal,
       })
     } catch (error) {
-      this.host?.updateRangeEvent(label, 'failed')
+      this.host?.updateRangeEvent(label, signal?.aborted ? 'aborted' : 'failed')
       throw error
     }
+    // The viewport may have moved while the fetch was resolving. If our signal
+    // aborted in that window, this late-resolving read is stale: do no wire
+    // accounting and do not mark 'hit'. Classify it as an abort (matching the
+    // catch path) so NVSlide does not count a load NVSlide already treats as
+    // aborted.
+    if (signal?.aborted) {
+      this.host?.updateRangeEvent(label, 'aborted')
+    }
+    signal?.throwIfAborted()
     // Voxel bytes READ, not necessarily bytes on the wire: the volume source
     // owns the transport (and may serve this region from its own cache).
     this.host?.addWireBytes(voxels.byteLength)

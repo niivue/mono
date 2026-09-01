@@ -342,6 +342,8 @@ export class DicomWsiTileSource implements SlideTileSource {
   async fetchTileBytes(
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
+    _label: string,
+    signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const base = this.levelBaseUrls[level.index]
     if (!base) throw new Error(`no frame URL for WSI level ${level.index}`)
@@ -354,6 +356,7 @@ export class DicomWsiTileSource implements SlideTileSource {
         Accept: 'multipart/related; type="image/jpeg"',
         ...this.headers,
       },
+      signal,
     })
     if (!response.ok) throw new Error(`WSI tile HTTP ${response.status}`)
     const contentType = response.headers.get('content-type') ?? ''

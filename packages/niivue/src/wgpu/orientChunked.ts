@@ -39,13 +39,16 @@ import * as wgpu from './wgpu'
 export interface VolumeChunkGPU {
   /** RGBA8 color texture for this chunk; sized desc.texDims (includes halo). */
   volumeTexture: GPUTexture
-  /** RGBA8 gradient texture for this chunk; sized desc.texDims. */
+  /**
+   * RGBA8 gradient texture for this chunk; sized desc.texDims when
+   * `hasGradient`, a 1x1x1 placeholder otherwise.
+   */
   volumeGradientTexture: GPUTexture
   /**
    * True if `volumeGradientTexture` holds a real computed gradient; false if it
-   * is an empty placeholder (the gradient compute pass was skipped because the
-   * volume was unlit at upload). The renderer re-uploads such chunks if lighting
-   * is later enabled. Either way it is a real, per-chunk texture that
+   * is a 1x1x1 zero placeholder (the gradient compute pass was skipped because
+   * the volume was unlit at upload). The renderer re-uploads such chunks if
+   * lighting is later enabled. Either way it is a real, per-chunk texture that
    * destroyVolumeChunksGPU frees normally.
    */
   hasGradient: boolean
@@ -53,17 +56,20 @@ export interface VolumeChunkGPU {
   desc: VolumeChunkDesc
 }
 
-// Allocate an empty (zero) RGBA8 3D gradient texture sized to `dims`. WebGPU
+// Allocate a 1x1x1 zero RGBA8 3D placeholder gradient texture. WebGPU
 // zero-initializes textures, so it samples as zeros; used in place of the
-// gradient compute pass when the volume is unlit (gradientAmount == 0), keeping
-// the bind/destroy/byte-budget path unchanged (the shader gates gradient lighting
-// on gradientAmount > 0, so a zero gradient has no visible effect).
-function emptyGradientTextureGPU(
-  device: GPUDevice,
-  dims: readonly [number, number, number],
-): GPUTexture {
+// gradient compute pass when the volume is unlit (no gradient consumer is
+// active: gradientAmount, gradientOpacity and silhouettePower are all zero,
+// the same rule as the renderer's _needsGradient()): the
+// gradient binding must still hold a texture for the bind group layout, but
+// the shader only samples it when a gradient consumer is on, so the single
+// zero texel is never read — and even a stale mid-transition read decodes to
+// the same zeros the old brick-sized empty texture held. Keeping it per-chunk
+// (not shared) keeps the bind/destroy path unchanged; at 4 bytes it costs
+// nothing, so an unlit chunked volume pays 4 bytes per voxel instead of 8.
+function emptyGradientTextureGPU(device: GPUDevice): GPUTexture {
   return device.createTexture({
-    size: [dims[0], dims[1], dims[2]],
+    size: [1, 1, 1],
     format: 'rgba8unorm',
     dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING,
@@ -590,17 +596,14 @@ export async function createChunkUploaderGPU(
       chunkBytes.byteLength,
     )
 
-    // Skip the gradient compute pass when the volume is unlit; an empty gradient
-    // keeps the bind/destroy/byte-budget path identical.
+    // Skip the gradient compute pass when the volume is unlit; a 1x1x1
+    // placeholder keeps the bind/destroy path identical while paying 4 bytes
+    // total instead of 4 bytes per voxel.
     const hasGradient = wantsGradient()
     const gradientStart = performance.now()
     const gradientTexture = hasGradient
       ? await wgpu.volume2TextureGradientRGBA(device, rgbaTexture)
-      : emptyGradientTextureGPU(device, [
-          desc.texDims[0],
-          desc.texDims[1],
-          desc.texDims[2],
-        ])
+      : emptyGradientTextureGPU(device)
     recordChunkPhase('gradient', performance.now() - gradientStart)
     return {
       volumeTexture: rgbaTexture,

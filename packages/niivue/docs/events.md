@@ -304,6 +304,49 @@ nv.addEventListener('colormapAdded', (e) => {
 
 ---
 
+### Chunk Streaming
+
+Chunked (oversized) volumes stream their bricks to the GPU over multiple
+frames. These events replace polling `chunkStreamStats()` on a timer. Both
+carry a `ChunkStreamDetail` — the same shape as the non-null return of
+`chunkStreamStats()`, and the method reads back the same counts at emit time.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `resident` | `number` | Bricks currently GPU-resident |
+| `pending` | `number` | Bricks queued for upload |
+| `inFlight` | `number` | Bricks mid-upload |
+| `total` | `number` | Bricks in the plan |
+| `staleDropped` | `number` | Cumulative queued uploads retired because the view moved on |
+| `predicted` | `number` | Cumulative speculative source reads |
+| `decoded` | `DecodedChunkStats` | Decoded-chunk (CPU byte) tier counters |
+
+#### `chunkStreamProgress`
+Fired while streaming is outstanding (`pending + inFlight > 0`), whenever a
+count changed since the last emission — identical back-to-back snapshots are
+skipped, so the render loop's cadence bounds the rate (no timer). The final,
+settled counts are also emitted as progress, immediately before
+`chunkStreamIdle`.
+
+#### `chunkStreamIdle`
+Fired when the stream settles: a frame had `pending + inFlight > 0` and a later
+frame reached `pending + inFlight === 0`. Because `chunkStreamStats()` returns
+zeroed counts (not null) whenever a view is attached, idle is defined on this
+transition — it never fires for a view that is attached but has not streamed.
+Streaming that resumes (e.g. a camera move queues new bricks) re-arms it, so it
+fires once per settle.
+
+```js
+nv.addEventListener('chunkStreamProgress', (e) => {
+  spinner.textContent = `${e.detail.resident} / ${e.detail.total} bricks`
+})
+nv.addEventListener('chunkStreamIdle', () => {
+  spinner.hidden = true // safe to screenshot: all requested bricks resident
+})
+```
+
+---
+
 ### Drawing
 
 #### `drawingChanged`
@@ -445,5 +488,7 @@ import type {
   AnnotationRemovedDetail,
   AnnotationChangedDetail,
   ColormapAddedDetail,
+  ChunkStreamDetail,
+  DecodedChunkStats,
 } from '@niivue/niivue'
 ```

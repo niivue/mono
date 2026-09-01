@@ -649,7 +649,7 @@ export function matchChunksByContent(
  * An axis-aligned box in COMMON (finest, level-0) voxel coordinates. `min` is
  * inclusive and `max` exclusive, so a one-voxel-thin slab at depth z is
  * `{ min: [0, 0, z], max: [w, h, z + 1] }` (any positive thickness works: a
- * brick intersects when its box overlaps the open interval).
+ * brick intersects when its box overlaps the half-open interval `[min, max)`).
  */
 export interface MultiLodBounds {
   /** Inclusive lower corner in common-grid voxels. */
@@ -663,11 +663,18 @@ export interface MultiLodFocus {
   /** Focus centre in common-grid voxels. */
   center: Vec3f
   /**
-   * Focus radius in common-grid voxels. Bricks whose region lies within this
-   * distance of the centre render at the finest level; each further doubling of
-   * distance steps one pyramid level coarser.
+   * Focus radius in common-grid voxels: a scalar for an isotropic ball, or a
+   * per-axis `[rx, ry, rz]` for an ellipsoid. Bricks whose region lies within
+   * the shape render at the finest level; each further doubling of distance
+   * (measured with each axis normalised by its own radius) steps one pyramid
+   * level coarser. A scalar behaves exactly like `[r, r, r]`. A per-axis
+   * radius matches an anisotropic field of view — a long thin volume or a
+   * slab — where a single scalar either wastes bricks on the short axes or
+   * starves the long one. Non-positive vector components fall back to the
+   * largest positive component (or 1 when none is), so a degenerate axis
+   * widens to the dominant one instead of disabling refinement.
    */
-  radius: number
+  radius: number | Vec3f
   /**
    * Regions that must be covered by ONE uniform pyramid level. After the octree
    * pass every brick intersecting any bound is subdivided until nothing coarser
@@ -789,7 +796,30 @@ export function chunkVolumeMultiLOD(
     Math.max(8, Math.floor(options.cellEdge ?? 128)),
     Math.max(1, deviceLimit - 2 * maxHalo),
   )
-  const radius = Math.max(1e-3, focus.radius)
+  // Per-axis focus radius; a scalar stays isotropic (`[r, r, r]`). Vector
+  // components that are zero/negative fall back to the largest positive
+  // component (or 1), so a degenerate axis widens to the dominant one rather
+  // than making every distance on that axis effectively infinite.
+  const radiusVec: Vec3f = (() => {
+    const r = focus.radius
+    if (typeof r === 'number') {
+      const v = Math.max(1e-3, r)
+      return [v, v, v]
+    }
+    const maxComp = Math.max(r[0], r[1], r[2])
+    const fallback = maxComp > 0 ? maxComp : 1
+    return [
+      Math.max(1e-3, r[0] > 0 ? r[0] : fallback),
+      Math.max(1e-3, r[1] > 0 ? r[1] : fallback),
+      Math.max(1e-3, r[2] > 0 ? r[2] : fallback),
+    ]
+  })()
+  // Reference radius for the `beyond` test below: distances are measured in a
+  // space where each axis is scaled by `radius / radiusVec[a]`, so the finest
+  // core is the ellipsoid with semi-axes `radiusVec` and, along the largest
+  // axis, the falloff is identical to the scalar case. For a scalar radius
+  // every scale factor is exactly 1 and the plan is bit-identical to before.
+  const radius = Math.max(radiusVec[0], radiusVec[1], radiusVec[2])
   // Scale-relative detail factor. A cell refines while `beyond < BASE_DETAIL *
   // cellSize`; >= ~1 keeps the octree 2:1 balanced (one level change per cell).
   // Larger = wider finest core (more bricks); the budget pass only shrinks it.
@@ -806,14 +836,19 @@ export function chunkVolumeMultiLOD(
   const cellExtent = (sizeC: Vec3i): number =>
     Math.max(sizeC[0], sizeC[1], sizeC[2])
 
-  // Nearest common-voxel distance from the focus centre to an axis-aligned box.
+  // Nearest common-voxel distance from the focus centre to an axis-aligned
+  // box, with each axis normalised by its radius (scaled to the reference
+  // `radius`, so the value stays comparable to `radius` and `cellExtent`).
+  // Iso-distance shells are ellipsoids matching the per-axis radius; for a
+  // scalar radius the scale factors are exactly 1 (bit-identical Euclidean).
   const distanceToBox = (originC: Vec3i, sizeC: Vec3i): number => {
     let sq = 0
     for (let a = 0; a < 3; a++) {
       const lo = originC[a]
       const hi = originC[a] + sizeC[a]
       const c = focus.center[a]
-      const outside = c < lo ? lo - c : c > hi ? c - hi : 0
+      const outside =
+        (c < lo ? lo - c : c > hi ? c - hi : 0) * (radius / radiusVec[a])
       sq += outside * outside
     }
     return Math.sqrt(sq)
@@ -1085,7 +1120,9 @@ export function chunkVolumeMultiLOD(
     }
     const centre = focus.reserveCenter
     if (!centre) return descs
-    let list = descs
+    // Copy once, then splice in place: this runs on every re-plan, so avoid
+    // reallocating the whole list per split.
+    const list = [...descs]
     for (let iter = 0; iter <= maxLevel; iter++) {
       const i = list.findIndex(
         (d) => (d.sourceLevel ?? 0) > target && containsPoint(d, centre),
@@ -1093,7 +1130,7 @@ export function chunkVolumeMultiLOD(
       if (i < 0) break
       const out: VolumeChunkDesc[] = []
       splitBrick(list[i], out)
-      list = [...list.slice(0, i), ...out, ...list.slice(i + 1)]
+      list.splice(i, 1, ...out)
     }
     return list
   }

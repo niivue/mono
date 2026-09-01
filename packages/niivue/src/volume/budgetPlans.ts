@@ -19,10 +19,12 @@ export interface BudgetPlan {
   focus: 'crosshair' | 'none' | Vec3f
   /**
    * Finest-LOD radius in common-grid voxels. `'auto'` derives it from the view
-   * (tight in the 3D render view, the visible-slice box in multiplanar);
-   * `'volume'` covers every brick, so the plan is uniform; a number pins it.
+   * (tight in the 3D render view; per-axis half-extents over zoom in 2D slice
+   * views, so anisotropic volumes are covered without over- or under-shooting);
+   * `'volume'` covers every brick, so the plan is uniform; a number pins an
+   * isotropic ball; a `[rx, ry, rz]` pins an ellipsoid.
    */
-  radius: 'auto' | 'volume' | number
+  radius: 'auto' | 'volume' | number | Vec3f
   /** LOD falloff factor (1 = 2:1-balanced octree; smaller coarsens faster). */
   detail: number
   /**
@@ -125,10 +127,12 @@ export interface BudgetPlanOptions {
   focus?: 'crosshair' | 'none' | Vec3f
   /**
    * Finest-LOD radius in common-grid voxels. `'auto'` (default) derives it from
-   * the view: tight in the 3D render view, the visible-slice box in multiplanar
-   * (shrinking with 2D zoom). `'volume'` covers every brick. A number pins it.
+   * the view: tight in the 3D render view; PER-AXIS half-extents over zoom in
+   * 2D slice views (shrinking with 2D zoom), so a long thin volume gets an
+   * ellipsoid that hugs it instead of a diagonal ball. `'volume'` covers every
+   * brick. A number pins an isotropic ball; a `[rx, ry, rz]` an ellipsoid.
    */
-  radius?: 'auto' | 'volume' | number
+  radius?: 'auto' | 'volume' | number | Vec3f
   /** GPU byte budget for the planned brick set (default 1.5 GB). */
   budgetBytes?: number
   /** Max bricks in the plan (default 240; must stay < the renderer's per-tile cap). */
@@ -184,7 +188,7 @@ export interface BudgetPlanOptions {
 /** Every option resolved to a concrete value; what the manager actually runs on. */
 export interface ResolvedOptions {
   focus: 'crosshair' | 'none' | Vec3f
-  radius: 'auto' | 'volume' | number
+  radius: 'auto' | 'volume' | number | Vec3f
   budgetBytes: number
   maxBricks: number
   cellEdge: number

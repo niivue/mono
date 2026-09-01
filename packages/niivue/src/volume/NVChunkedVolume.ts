@@ -138,13 +138,15 @@ function cloneBounds(bounds: MultiLodBounds[] | undefined): MultiLodBounds[] {
  * The octree is subdivided around a BIASED centre (see {@link focusCenterBiased})
  * for stability, while the exact focus is passed as `reserveCenter` so the
  * brick under the crosshair is always at the finest level. A `'none'` focus has
- * no crosshair to reserve, so that plan stays uniform. `focusBounds` are passed
+ * no crosshair to reserve, so no finest-detail branch is pinned (whether the
+ * plan is uniform still depends on `radius` and the other options).
+ * `focusBounds` are passed
  * through as `reserveBounds` (see {@link MultiLodFocus.reserveBounds}).
  */
 export function planForFocus(
   source: ChunkedVolumeSource,
   focusFrac: Vec3f,
-  radius: number,
+  radius: number | Vec3f,
   o: PlanShapeOptions & Partial<Pick<ResolvedOptions, 'focus'>>,
   focusBounds?: MultiLodBounds[],
 ): ChunkPlan {
@@ -162,7 +164,14 @@ export function planForFocus(
         ]
   return chunkVolumeMultiLOD(
     levelDims,
-    { center, radius, reserveCenter, reserveBounds: focusBounds },
+    {
+      center,
+      radius,
+      // A bounds reservation supersedes the centre branch (the planner ignores
+      // reserveCenter when bounds are present), so skip the dead work.
+      reserveCenter: focusBounds?.length ? undefined : reserveCenter,
+      reserveBounds: focusBounds,
+    },
     o.deviceLimit,
     {
       cellEdge: o.cellEdge,
@@ -617,7 +626,9 @@ export class NVChunkedVolume {
       focus: Array.isArray(this.o.focus)
         ? [this.o.focus[0], this.o.focus[1], this.o.focus[2]]
         : this.o.focus,
-      radius: this.o.radius,
+      radius: Array.isArray(this.o.radius)
+        ? [this.o.radius[0], this.o.radius[1], this.o.radius[2]]
+        : this.o.radius,
       detail: this.o.detail,
       budgetBytes: this.o.budgetBytes,
       maxBricks: this.o.maxBricks,
@@ -832,8 +843,11 @@ export class NVChunkedVolume {
     )
   }
 
-  private currentRadius(): number {
+  private currentRadius(): number | Vec3f {
     const radius = this.o.radius
+    // A pinned per-axis radius passes straight through (copied so a later
+    // caller mutation cannot alter the plan input).
+    if (Array.isArray(radius)) return [radius[0], radius[1], radius[2]]
     if (typeof radius === 'number') return radius
     const common = this.source.levels[0].shape
     // 'volume': a ball that swallows every brick, so nothing is outside the
@@ -848,8 +862,20 @@ export class NVChunkedVolume {
     // the region you're looking at at the finest level (the budget/maxBricks
     // pass still bounds the overall plan).
     if (this.host.sliceType === SLICE_TYPE.RENDER) return this.o.cellEdge
+    // 2D slice views: PER-AXIS half-extents over zoom, so the finest region is
+    // the ellipsoid that hugs the volume's own aspect. The old scalar here was
+    // the half-DIAGONAL over zoom, which starves long thin volumes (the
+    // motivating case: a 16821 x 7494 x 2070 slide): a single ball wide enough
+    // for the long axis over-covers the short axes several times over, the
+    // budget/maxBricks pass then coarsens the whole plan uniformly to pay for
+    // those wasted bricks, and the long axis — the one the user is actually
+    // panning along — ends up coarser than the budget could have afforded.
     const zoom = Math.max(1, this.host.pan2Dxyzmm[3] || 1)
-    return Math.hypot(common[0], common[1], common[2]) / (2 * zoom)
+    return [
+      common[0] / (2 * zoom),
+      common[1] / (2 * zoom),
+      common[2] / (2 * zoom),
+    ]
   }
 
   private async doRefocus(): Promise<void> {

@@ -45,8 +45,10 @@ export interface BudgetPlan {
   /** Which region gets the finest data. 'none' pins the volume centre and does
    *  not subscribe locationChange. */
   focus: 'crosshair' | 'none' | Vec3f
-  /** Finest-LOD radius in common-grid voxels. 'volume' covers every brick. */
-  radius: 'auto' | 'volume' | number
+  /** Finest-LOD radius in common-grid voxels. 'volume' covers every brick;
+   *  'auto' derives it from the view (per-axis half-extents over zoom in 2D
+   *  slice views); a Vec3f is a per-axis (ellipsoidal) radius. */
+  radius: 'auto' | 'volume' | number | Vec3f
   /** LOD falloff factor (1 = 2:1-balanced octree). */
   detail: number
   /** VRAM ceiling for the planned brick set. */

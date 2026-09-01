@@ -412,6 +412,7 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
   isSnapToVoxelCenters: false,
   isDragDropEnabled: true,
   isYoked3DTo2DZoom: false,
+  wheelZoomAnchor: 'crosshair',
 }
 
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {

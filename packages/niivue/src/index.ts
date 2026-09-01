@@ -12,6 +12,8 @@ export { slice2DToMM } from './annotation/sliceProjection'
 // Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
 // Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
 export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
+// Programmatic measurement API (NiiVue.addMeasurement options)
+export type { AddMeasurementOptions } from './control/measurements'
 // Options accepted by reinitializeView (backend switch, anti-alias, DPR)
 export type { ReinitializeOptions } from './control/viewLifecycle'
 // Sparse-document settings policies: which settings saveDocument includes, and
@@ -82,6 +84,7 @@ export type {
   DrawingEnabledDetail,
   FrameChangeDetail,
   GraphRangeChangeDetail,
+  MeasurementRemovedDetail,
   MeshLoadedDetail,
   MeshRemovedDetail,
   MeshUpdatedDetail,

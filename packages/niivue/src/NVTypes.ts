@@ -1308,6 +1308,12 @@ export type MeasurementScreenLine = {
   ex: number
   ey: number
   distance: number
+  /**
+   * Index of the source measurement in `completedMeasurements`, present for
+   * persisted lines. Absent on the transient active (in-progress drag) line,
+   * which has no persisted index yet.
+   */
+  index?: number
 }
 
 /**

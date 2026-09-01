@@ -252,6 +252,56 @@ export function zoomPan2DAbout(
 }
 
 /**
+ * New 2D pan that moves just enough to bring `crosshairMM` inside the ortho
+ * window on every world axis, or the unchanged pan when it is already inside.
+ *
+ * This is the spatial analogue of the signal graph's
+ * `NVModel.panViewWindowTo`: the window follows a marker that moved on its own
+ * (keyboard step, API call, linked instance), while explicit pan and zoom are
+ * still free to leave it off-window. Like that precedent it pans MINIMALLY —
+ * the crosshair lands exactly on the window edge it crossed rather than being
+ * recentred, so a slow crosshair walk scrolls the view instead of jumping it.
+ *
+ * The convention is {@link calculateMvpMatrix2D}'s (see {@link zoomPan2DAbout}
+ * for the derivation): on each axis the window is centred on `c - pan` with
+ * half-width `HW0 / zoom`, so `m` is visible iff `|m - c + pan| <= HW0/zoom`.
+ * Radiological orientation only negates the normalized U offset, which leaves
+ * that bound unchanged, so it needs no special case.
+ *
+ * At `zoom <= 1` the pan is returned untouched: the window already shows the
+ * whole extent (or more), so there is no "outside" to follow the crosshair
+ * into, and the default un-zoomed behaviour must stay byte-identical. A
+ * degenerate axis (no volume, or a single slice) has zero half-width and is
+ * likewise skipped rather than producing NaN.
+ *
+ * @param pan - current `[panX, panY, panZ, zoom]`
+ * @param crosshairMM - world-mm point to keep visible (the crosshair)
+ * @param extentsMin - world-mm minimum of the scene extents
+ * @param extentsMax - world-mm maximum of the scene extents
+ * @returns the new `[panX, panY, panZ]`; unchanged entries are copied as-is
+ */
+export function panFollowCrosshair2D(
+  pan: ArrayLike<number>,
+  crosshairMM: ArrayLike<number>,
+  extentsMin: ArrayLike<number>,
+  extentsMax: ArrayLike<number>,
+): [number, number, number] {
+  const out: [number, number, number] = [pan[0], pan[1], pan[2]]
+  const zoom = pan[3] ?? 1
+  if (!Number.isFinite(zoom) || zoom <= 1) return out
+  for (let i = 0; i < 3; i++) {
+    const halfWidth = (extentsMax[i] - extentsMin[i]) / (2 * zoom)
+    if (!Number.isFinite(halfWidth) || halfWidth <= 0) continue
+    const centre = (extentsMin[i] + extentsMax[i]) / 2
+    const offset = crosshairMM[i] - (centre - pan[i])
+    if (!Number.isFinite(offset)) continue
+    if (offset > halfWidth) out[i] = pan[i] - (offset - halfWidth)
+    else if (offset < -halfWidth) out[i] = pan[i] - (offset + halfWidth)
+  }
+  return out
+}
+
+/**
  * Millimetres of world space covered by one canvas pixel on a 2D slice tile.
  *
  * The inverse of the scale {@link calculateMvpMatrix2D} sets up: that function

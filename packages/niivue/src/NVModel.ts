@@ -400,6 +400,9 @@ export default class NVModel {
       ...(options.wheelZoomAnchor !== undefined && {
         wheelZoomAnchor: options.wheelZoomAnchor,
       }),
+      ...(options.isPanFollowingCrosshair !== undefined && {
+        isPanFollowingCrosshair: options.isPanFollowingCrosshair,
+      }),
     }
     // Annotation — flat options mapped to annotation group
     this.annotation = {

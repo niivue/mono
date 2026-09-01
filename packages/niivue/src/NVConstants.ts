@@ -413,6 +413,7 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
   isDragDropEnabled: true,
   isYoked3DTo2DZoom: false,
   wheelZoomAnchor: 'crosshair',
+  isPanFollowingCrosshair: false,
 }
 
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {

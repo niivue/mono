@@ -1,3 +1,4 @@
+import { panFollowCrosshair2D } from '@/math/NVTransforms'
 import type NiiVueGPU from '@/NVControlBase'
 
 /**
@@ -33,4 +34,36 @@ export function emitPan2DChange(ctrl: NiiVueGPU): void {
     property: 'pan2Dxyzmm',
     value: ctrl.model.scene.pan2Dxyzmm,
   })
+}
+
+/**
+ * Opt-in "pan follows crosshair": after the crosshair moved ON ITS OWN
+ * (keyboard, API, linked instance — not by an explicit pan/zoom gesture), pan
+ * the zoomed-in 2D views just enough that the crosshair stays inside every
+ * tile's visible mm window. See `NVTransforms.panFollowCrosshair2D` for the
+ * window math and the minimal-move semantics; this wrapper adds the opt-in
+ * gate, mutates the scene, and emits the same `pan2Dxyzmm` change event as
+ * every other pan mutation.
+ *
+ * Only crosshair-move paths may call this — pan and zoom handlers must not, so
+ * the user's explicit pan is never fought (same split as the signal graph's
+ * `panViewWindowTo`).
+ *
+ * @returns true when the pan moved (the caller owes a redraw)
+ */
+export function applyPanFollowsCrosshair(ctrl: NiiVueGPU): boolean {
+  const model = ctrl.model
+  if (!model.interaction.isPanFollowingCrosshair) return false
+  const pan = model.scene.pan2Dxyzmm
+  if (!(pan[3] > 1)) return false
+  const mm = model.scene2mm(model.scene.crosshairPos)
+  const next = panFollowCrosshair2D(pan, mm, model.extentsMin, model.extentsMax)
+  if (next[0] === pan[0] && next[1] === pan[1] && next[2] === pan[2]) {
+    return false
+  }
+  pan[0] = next[0]
+  pan[1] = next[1]
+  pan[2] = next[2]
+  emitPan2DChange(ctrl)
+  return true
 }

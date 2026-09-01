@@ -17,6 +17,7 @@ import {
   mmPerPixel2D,
   mmPerPixelRender,
   multiplyAffine,
+  panFollowCrosshair2D,
   rayBoxEntryMM,
   rayMarchFirstVisibleMM,
   slicePlaneEquation,
@@ -910,6 +911,137 @@ describe('zoomPan2DAbout', () => {
     const next = zoomPan2DAbout([4, 4, 4, 2], 4, [10, 10, 10], flat, flat)
     for (const v of next) expect(Number.isFinite(v)).toBe(true)
     approx(next[0], 2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// panFollowCrosshair2D
+// ---------------------------------------------------------------------------
+//
+// Like zoomPan2DAbout above, visibility is asserted through
+// calculateMvpMatrix2D itself (via projectThroughSlice): "inside the window"
+// means the crosshair's in-plane clip coordinates are within [-1, 1] on the
+// ortho window the renderer actually builds, not a restatement of the algebra.
+
+describe('panFollowCrosshair2D', () => {
+  // Same deliberately non-origin-centred extents as zoomPan2DAbout.
+  const extentsMin = [-90, -126, -72]
+  const extentsMax = [90, 90, 108]
+
+  /** True when `mm` projects inside the tile's clip window on both axes. */
+  function isVisibleOnTile(
+    mm: readonly number[],
+    pan: readonly number[],
+    axCorSag: number,
+    isRadiological = false,
+  ): boolean {
+    const [u, v] = projectThroughSlice(
+      mm,
+      pan,
+      extentsMin,
+      extentsMax,
+      axCorSag,
+      isRadiological,
+    )
+    const eps = 1e-4
+    return Math.abs(u) <= 1 + eps && Math.abs(v) <= 1 + eps
+  }
+
+  test('visibleCrosshairLeavesThePanUntouched', () => {
+    const pan = [0, 0, 0, 2]
+    const crosshair = [10, -20, 20]
+    for (const axCorSag of [0, 1, 2]) {
+      expect(isVisibleOnTile(crosshair, pan, axCorSag)).toBe(true)
+    }
+    const next = panFollowCrosshair2D(pan, crosshair, extentsMin, extentsMax)
+    expect(next).toEqual([0, 0, 0])
+  })
+
+  test('crosshairPastOneEdgePansMinimallyOnThatAxisAlone', () => {
+    // At zoom 2 with zero pan the visible x window is [-45, 45]; x = 60 is out.
+    const pan = [0, 0, 0, 2]
+    const crosshair = [60, -20, 20]
+    expect(isVisibleOnTile(crosshair, pan, 0)).toBe(false)
+    const next = panFollowCrosshair2D(pan, crosshair, extentsMin, extentsMax)
+    // Minimal move: the crosshair lands exactly ON the crossed edge, so the
+    // pan moved by the overshoot (15 mm) and no further; other axes untouched.
+    approx(next[0], -15)
+    expect(next[1]).toBe(0)
+    expect(next[2]).toBe(0)
+    const after = [next[0], next[1], next[2], 2]
+    const [u] = projectThroughSlice(crosshair, after, extentsMin, extentsMax, 0)
+    approx(Math.abs(u), 1)
+  })
+
+  test('crosshairBelowTheLowerEdgePansTheOtherWay', () => {
+    // Visible y window at zoom 2, pan 0 is [-72, 36]; y = -100 is below it.
+    const pan = [0, 0, 0, 2]
+    const crosshair = [10, -100, 20]
+    const next = panFollowCrosshair2D(pan, crosshair, extentsMin, extentsMax)
+    expect(next[0]).toBe(0)
+    approx(next[1], 28)
+    expect(next[2]).toBe(0)
+    const after = [next[0], next[1], next[2], 2]
+    const [, v] = projectThroughSlice(
+      crosshair,
+      after,
+      extentsMin,
+      extentsMax,
+      0,
+    )
+    approx(Math.abs(v), 1)
+  })
+
+  test('followedCrosshairIsVisibleOnEveryTileFromOnePan', () => {
+    // Off-window on all three axes at once, with a non-zero starting pan: one
+    // shared pan must satisfy each tile's permutation of the world axes.
+    const pan = [12, -8, 3, 3.5]
+    const crosshair = [-80, 82, -60]
+    const next = panFollowCrosshair2D(pan, crosshair, extentsMin, extentsMax)
+    const after = [next[0], next[1], next[2], 3.5]
+    for (const axCorSag of [0, 1, 2]) {
+      expect(isVisibleOnTile(crosshair, pan, axCorSag)).toBe(false)
+      expect(isVisibleOnTile(crosshair, after, axCorSag)).toBe(true)
+    }
+  })
+
+  test('radiologicalOrientationNeedsNoSpecialCase', () => {
+    const pan = [0, 0, 0, 2]
+    const crosshair = [60, -20, 20]
+    const next = panFollowCrosshair2D(pan, crosshair, extentsMin, extentsMax)
+    const after = [next[0], next[1], next[2], 2]
+    expect(isVisibleOnTile(crosshair, after, 0, true)).toBe(true)
+  })
+
+  test('zoomAtOrBelowOneLeavesThePanUntouched', () => {
+    // Un-zoomed views keep the default behaviour byte-identical, even for a
+    // crosshair a nonzero pan has pushed off-window.
+    for (const zoom of [1, 0.5]) {
+      const pan = [40, 0, 0, zoom]
+      const next = panFollowCrosshair2D(
+        pan,
+        [500, 500, 500],
+        extentsMin,
+        extentsMax,
+      )
+      expect(next).toEqual([40, 0, 0])
+    }
+  })
+
+  test('degenerateAndNonFiniteInputsAreSkippedNotNaN', () => {
+    // A flat axis (single slice) has no window to follow into.
+    const flat = [10, 10, 10]
+    expect(
+      panFollowCrosshair2D([1, 2, 3, 2], [99, 99, 99], flat, flat),
+    ).toEqual([1, 2, 3])
+    // A NaN crosshair coordinate must not poison the pan.
+    const next = panFollowCrosshair2D(
+      [0, 0, 0, 2],
+      [Number.NaN, 0, 0],
+      extentsMin,
+      extentsMax,
+    )
+    expect(next).toEqual([0, 0, 0])
   })
 })
 

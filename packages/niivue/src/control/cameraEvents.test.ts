@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
 import type NiiVueGPU from '@/NVControlBase'
 import {
+  applyPanFollowsCrosshair,
   emitOrientationChange,
   emitPan2DChange,
   emitScaleMultiplierChange,
@@ -11,12 +12,37 @@ type Scene = {
   elevation?: number
   scaleMultiplier?: number
   pan2Dxyzmm?: [number, number, number, number]
+  crosshairPos?: [number, number, number]
 }
 
 function fakeCtrl(scene: Scene) {
   const emit = mock((_type: string, _detail?: unknown) => {})
   const ctrl = { model: { scene }, emit } as unknown as NiiVueGPU
   return { ctrl, emit }
+}
+
+/**
+ * Fake controller with enough model for applyPanFollowsCrosshair: symmetric
+ * [-90, 90] mm extents and the model's linear scene-fraction interpolation.
+ */
+function fakeFollowCtrl(
+  pan2Dxyzmm: [number, number, number, number],
+  crosshairPos: [number, number, number],
+  isPanFollowingCrosshair: boolean,
+) {
+  const emit = mock((_type: string, _detail?: unknown) => {})
+  const extentsMin = [-90, -90, -90]
+  const extentsMax = [90, 90, 90]
+  const model = {
+    scene: { pan2Dxyzmm, crosshairPos },
+    interaction: { isPanFollowingCrosshair },
+    extentsMin,
+    extentsMax,
+    scene2mm: (frac: number[]) =>
+      frac.map((f, i) => extentsMin[i] + f * (extentsMax[i] - extentsMin[i])),
+  }
+  const ctrl = { model, emit } as unknown as NiiVueGPU
+  return { ctrl, emit, pan: pan2Dxyzmm }
 }
 
 describe('camera interaction events', () => {
@@ -53,6 +79,56 @@ describe('camera interaction events', () => {
     expect(emit).toHaveBeenCalledWith('change', {
       property: 'pan2Dxyzmm',
       value: [1, 2, 3, 4],
+    })
+  })
+})
+
+describe('applyPanFollowsCrosshair', () => {
+  // Fraction 1 on x maps to +90 mm; at zoom 2 the visible x window with zero
+  // pan is [-45, 45], so this crosshair is off-window on x only.
+  const offWindowX: [number, number, number] = [1, 0.5, 0.5]
+
+  test('optionOffLeavesThePanUntouchedAndEmitsNothing', () => {
+    const { ctrl, emit, pan } = fakeFollowCtrl([0, 0, 0, 2], offWindowX, false)
+    expect(applyPanFollowsCrosshair(ctrl)).toBe(false)
+    expect(pan).toEqual([0, 0, 0, 2])
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  test('zoomAtOrBelowOneLeavesThePanUntouched', () => {
+    for (const zoom of [1, 0.5]) {
+      const { ctrl, emit, pan } = fakeFollowCtrl(
+        [40, 0, 0, zoom],
+        offWindowX,
+        true,
+      )
+      expect(applyPanFollowsCrosshair(ctrl)).toBe(false)
+      expect(pan).toEqual([40, 0, 0, zoom])
+      expect(emit).not.toHaveBeenCalled()
+    }
+  })
+
+  test('visibleCrosshairLeavesThePanUntouched', () => {
+    const { ctrl, emit, pan } = fakeFollowCtrl(
+      [0, 0, 0, 2],
+      [0.6, 0.5, 0.5],
+      true,
+    )
+    expect(applyPanFollowsCrosshair(ctrl)).toBe(false)
+    expect(pan).toEqual([0, 0, 0, 2])
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  test('offWindowCrosshairPansMinimallyAndEmitsThePanChange', () => {
+    const { ctrl, emit, pan } = fakeFollowCtrl([0, 0, 0, 2], offWindowX, true)
+    expect(applyPanFollowsCrosshair(ctrl)).toBe(true)
+    // Crosshair at +90 mm, window edge at +45 mm: minimal move is -45 on x,
+    // mutated in place so the renderer sees it on the caller's redraw.
+    expect(pan).toEqual([-45, 0, 0, 2])
+    expect(emit).toHaveBeenCalledTimes(1)
+    expect(emit).toHaveBeenCalledWith('change', {
+      property: 'pan2Dxyzmm',
+      value: pan,
     })
   })
 })

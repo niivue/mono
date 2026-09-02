@@ -70,6 +70,7 @@ export type {
   AnnotationRemovedDetail,
   AzimuthElevationChangeDetail,
   CanvasResizeDetail,
+  ChunkStreamDetail,
   ClipPlaneChangeDetail,
   ColormapAddedDetail,
   DrawingChangedDetail,
@@ -95,6 +96,8 @@ export type {
   VolumeUpdatedChanges,
   VolumeUpdatedDetail,
 } from './NVEvents'
+// The decoded-chunk tier counters carried as `ChunkStreamDetail.decoded`
+export type { DecodedChunkStats } from './volume/decodedChunkCache'
 // Core types used in the public API
 export type {
   AffineMatrix,

@@ -12,6 +12,7 @@ import {
   GRAPHICS_RECOVERING_MESSAGE,
   showCanvasMessage,
 } from '@/control/canvasMessage'
+import { ChunkStreamEmitter } from '@/control/chunkStreamEvents'
 import {
   type ExplodedBlockPick,
   pickExplodedBlock,
@@ -60,6 +61,8 @@ import {
 } from '@/NVConstants'
 import * as NVDocument from '@/NVDocument'
 import type {
+  ChunkStreamCounts,
+  ChunkStreamDetail,
   GraphRangeChangeDetail,
   NVEventListener,
   NVEventMap,
@@ -151,7 +154,6 @@ import {
   chunkTimingSnapshot,
   resetChunkTiming as clearChunkTiming,
 } from '@/volume/chunkTiming'
-import type { DecodedChunkStats } from '@/volume/decodedChunkCache'
 import {
   computeDescriptiveStats,
   type DescriptiveStats,
@@ -206,15 +208,7 @@ type ViewBackend = {
   clearDrawing: () => void
   destroy: () => void
   forceDevicePixelRatio: number
-  chunkStreamStats: () => {
-    resident: number
-    pending: number
-    inFlight: number
-    total: number
-    staleDropped: number
-    predicted: number
-    decoded: DecodedChunkStats
-  }
+  chunkStreamStats: () => ChunkStreamDetail
   rebakeChunkedOverlays: () => void
   /**
    * Voxel dims of the whole-volume coarse floor texture, or null when none is
@@ -224,6 +218,9 @@ type ViewBackend = {
   coarseFloorDims: () => [number, number, number] | null
   overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
   onContextLost: (() => void) | null
+  onChunkStream:
+    | ((counts: ChunkStreamCounts, snapshot: () => ChunkStreamDetail) => void)
+    | null
 }
 
 export type { NiiVueOptions }
@@ -349,6 +346,22 @@ export default class NiiVue extends EventTarget {
   view: ViewBackend | null = null
   /** Privileged UIKit overlay renderers, drawn at the end of every frame. */
   private _overlayRenderers: UIKitOverlayRenderer[] = []
+  /** Busy/idle transition tracking behind `chunkStreamProgress`/`chunkStreamIdle`. */
+  private _chunkStreamEmitter = new ChunkStreamEmitter()
+  /** The view instance `_onChunkStream` was last wired onto. When `drawScene`
+   *  sees a different instance (view recreated: backend switch, context loss),
+   *  the emitter is reset first so the old view's busy episode cannot leak a
+   *  spurious idle into — or swallow the first progress of — the new view. */
+  private _chunkStreamWiredView: ViewBackend | null = null
+  /** View hook: both backends call this around each upload-pump run (see
+   *  `ChunkStreamEmitter`). Bound so `drawScene` can re-wire it onto a
+   *  recreated view, like `overlayDraw` and `onContextLost`. */
+  private _onChunkStream = (
+    counts: ChunkStreamCounts,
+    snapshot: () => ChunkStreamDetail,
+  ): void => {
+    this._chunkStreamEmitter.observe(this, counts, snapshot)
+  }
   // Which settings saved documents include (transient; not serialized). Default
   // {} = omit any setting equal to its default. See `settingsSavePolicy`.
   private _settingsSavePolicy: SettingsSavePolicy = {}
@@ -3891,6 +3904,10 @@ export default class NiiVue extends EventTarget {
    * overlays: `resident < total` with `pending > 0` for many frames indicates the
    * working set exceeds the residency budget (thrashing).
    *
+   * To find out when streaming finishes, listen for the `chunkStreamIdle`
+   * event (with `chunkStreamProgress` along the way) instead of polling this
+   * on a timer — see {@link ChunkStreamDetail}.
+   *
    * `staleDropped` is cumulative, not per frame: queued uploads retired because
    * the view moved on before they ran. It climbing during a pan or rotate is the
    * queue working as intended, since that work would otherwise have uploaded
@@ -3906,15 +3923,7 @@ export default class NiiVue extends EventTarget {
    * hits are source reads that skipped the network AND the decode entirely,
    * costing only a texture upload; `bytes` / `maxBytes` is how full it is.
    */
-  chunkStreamStats(): {
-    resident: number
-    pending: number
-    inFlight: number
-    total: number
-    staleDropped: number
-    predicted: number
-    decoded: DecodedChunkStats
-  } | null {
+  chunkStreamStats(): ChunkStreamDetail | null {
     return this.view?.chunkStreamStats() ?? null
   }
 
@@ -4719,6 +4728,17 @@ export default class NiiVue extends EventTarget {
             this._overlayRenderers.length > 0 ? this._dispatchOverlay : null
           // Same reasoning for the GPU-context-recovery hook.
           this.view.onContextLost = this._onGpuContextLost
+          // And for the chunk-streaming observer: streaming frames are
+          // self-driven, but streaming always starts from a controller-driven
+          // frame, so wiring here reaches every episode. Wiring onto a NEW
+          // view instance (every recreation path funnels through a drawScene)
+          // first resets the emitter, so a mid-stream recreation cannot carry
+          // the old view's busy episode into the new one.
+          if (this.view !== this._chunkStreamWiredView) {
+            this._chunkStreamEmitter.reset()
+            this._chunkStreamWiredView = this.view
+          }
+          this.view.onChunkStream = this._onChunkStream
           this.view.render()
         }
       })
@@ -5501,6 +5521,8 @@ export default class NiiVue extends EventTarget {
       this._dprMediaQuery = null
     }
     if (this.view) this.view.destroy()
+    this._chunkStreamEmitter.reset()
+    this._chunkStreamWiredView = null
     // Clear any "graphics unavailable" overlay left by a failed attach.
     if (this.canvas) clearCanvasMessage(this.canvas)
     this._viewLifecycle.unregister?.(this)

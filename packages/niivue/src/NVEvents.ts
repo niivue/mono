@@ -13,6 +13,7 @@ import type {
   VolumeUpdate,
 } from '@/NVTypes'
 import type { FrameReport } from '@/view/NVPerfMarks'
+import type { DecodedChunkStats } from '@/volume/decodedChunkCache'
 
 // ============================================================
 // Event detail types
@@ -106,6 +107,45 @@ export type ColormapAddedDetail = { name: string }
 export type VolumeOrderChangedDetail = { volumes: NVImage[] }
 
 /**
+ * Snapshot of the chunk-streaming counters, carried by `chunkStreamProgress`
+ * and `chunkStreamIdle`. Same shape as the non-null return of
+ * `chunkStreamStats()`, and the counters read back the same values at emit
+ * time, so a listener may use either the `detail` or the method.
+ *
+ * `chunkStreamProgress` fires while streaming is outstanding
+ * (`pending + inFlight > 0`), and only when a count changed since the last
+ * emission — the render loop's own cadence bounds the rate, no timer involved.
+ *
+ * `chunkStreamIdle` fires on the transition from outstanding to settled:
+ * a frame observed `pending + inFlight > 0` and a later observation reached
+ * `pending + inFlight === 0`. It never fires on a view that is attached but
+ * has not streamed (the counters are zeroed, not null, in that state — idle is
+ * defined on the transition, not on the zeros). Streaming that resumes (e.g.
+ * a camera move requests new bricks) re-arms it, so it can fire once per
+ * settle, not once per volume.
+ */
+export type ChunkStreamDetail = {
+  resident: number
+  pending: number
+  inFlight: number
+  total: number
+  staleDropped: number
+  predicted: number
+  decoded: DecodedChunkStats
+}
+
+/**
+ * The cheap per-frame subset of {@link ChunkStreamDetail}: a sum of the chunk
+ * managers' counters, with no decoded-tier walk or allocation. The views pass
+ * these to the `onChunkStream` hook twice per frame while streaming; the full
+ * snapshot is taken lazily, only when an event actually fires.
+ */
+export type ChunkStreamCounts = Pick<
+  ChunkStreamDetail,
+  'resident' | 'pending' | 'inFlight' | 'total'
+>
+
+/**
  * Per-frame render performance report. Emitted after every render
  * while `nv.perf.enabled` is true. `tag` is the action source set via
  * `nv.perf.tagFrame(...)` (or by an interaction handler) before the
@@ -168,6 +208,10 @@ export interface NVEventMap {
 
   // Asset registration
   colormapAdded: ColormapAddedDetail
+
+  // Chunk streaming (oversized volumes)
+  chunkStreamProgress: ChunkStreamDetail
+  chunkStreamIdle: ChunkStreamDetail
 
   // Render performance (only fires while nv.perf.enabled)
   perfFrame: PerfFrameDetail

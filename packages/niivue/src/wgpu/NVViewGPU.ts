@@ -6,6 +6,7 @@ import { deg2rad } from '@/math/NVTransforms'
 import { generateNormals } from '@/mesh/NVMesh'
 import * as NVShapes from '@/mesh/NVShapes'
 import * as NVConstants from '@/NVConstants'
+import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import type NVModel from '@/NVModel'
 import type {
   NVImage,
@@ -38,7 +39,6 @@ import {
   chunksCrossingSlice,
   identityChunkSampleTransform,
 } from '@/volume/chunking'
-import type { DecodedChunkStats } from '@/volume/decodedChunkCache'
 import { WGPUBench } from './bench'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
@@ -182,6 +182,19 @@ export default class NVView {
    * 'webglcontextrestored'. See NVControlBase._onGpuContextLost.
    */
   onContextLost: (() => void) | null = null
+  /**
+   * Chunk-streaming observer, wired by the controller (see
+   * `ChunkStreamEmitter`). Called twice around every upload-pump run: before
+   * the pump (the draw above it has already requested this frame's working
+   * set, so a first frame's pending count is observable even when the pump
+   * uploads everything in one call) and after it (counts settled for this
+   * frame). Each call passes the cheap manager counters plus a lazy provider
+   * for the full stats snapshot, invoked only if an event actually fires.
+   * Mirrors the same field on NVViewGL.
+   */
+  onChunkStream:
+    | ((counts: ChunkStreamCounts, snapshot: () => ChunkStreamDetail) => void)
+    | null = null
   // Reusable scratch buffer for mesh uniform writes — avoids per-call Float32Array allocation
   private _uniformScratch = new Float32Array(mesh.MESH_UNIFORM_SIZE / 4)
   // Narrow public getters for bench.ts to read current render-area size
@@ -1952,11 +1965,12 @@ export default class NVView {
     // the queued working set then. Mirrors the WebGL2 backend.
     if (!this.model._isDragging) {
       const fading = this.volumeRenderer.fadeActive
+      this.observeChunkStream()
       this.volumeRenderer
         .pumpChunkUploads()
         .then((changed) => {
-          const stream = this.volumeRenderer.chunkStreamStats()
-          const busy = stream.pending > 0 || stream.inFlight > 0
+          const counts = this.observeChunkStream()
+          const busy = counts.pending > 0 || counts.inFlight > 0
           if (changed || fading || busy) {
             requestAnimationFrame(() => this.render())
           }
@@ -1965,12 +1979,22 @@ export default class NVView {
           log.error('chunk upload pump failed', err)
           // Keep the self-driven loop alive: an unexpected pump rejection must
           // not permanently freeze streaming while chunks are still outstanding.
-          const stream = this.volumeRenderer.chunkStreamStats()
-          if (stream.pending > 0 || stream.inFlight > 0) {
+          const counts = this.observeChunkStream()
+          if (counts.pending > 0 || counts.inFlight > 0) {
             requestAnimationFrame(() => this.render())
           }
         })
     }
+  }
+
+  /** Feed the controller's chunk-streaming hook one observation: the cheap
+   * counts eagerly, the full stats snapshot lazily (see `onChunkStream`).
+   * Returns the counts so the pump callbacks can reuse them for their
+   * keep-alive busy check without re-aggregating. */
+  private observeChunkStream(): ChunkStreamCounts {
+    const counts = this.volumeRenderer.chunkStreamCounts()
+    this.onChunkStream?.(counts, () => this.volumeRenderer.chunkStreamStats())
+    return counts
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */
@@ -2459,15 +2483,7 @@ export default class NVView {
     )
   }
 
-  chunkStreamStats(): {
-    resident: number
-    pending: number
-    inFlight: number
-    total: number
-    staleDropped: number
-    predicted: number
-    decoded: DecodedChunkStats
-  } {
+  chunkStreamStats(): ChunkStreamDetail {
     return this.volumeRenderer.chunkStreamStats()
   }
 

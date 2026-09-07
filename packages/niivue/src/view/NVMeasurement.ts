@@ -1,6 +1,7 @@
 import { isOnSlice } from '@/annotation/sliceProjection'
 import { SLICE_TYPE } from '@/NVConstants'
 import type NVModel from '@/NVModel'
+import type { CompletedMeasurement } from '@/NVTypes'
 import { computeTolerance } from '@/view/NVAnnotation'
 import { projectMMToCanvas } from '@/view/sliceUtils'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
@@ -141,22 +142,38 @@ function formatDistance(dist: number, showUnits: boolean): string {
 }
 
 /**
- * Project every persisted measurement that lies on a current 2D slice tile to
- * canvas pixels and store the result on `model._persistedMeasurementScreenLines`
- * (rebuilt each call). This is font-independent and must run every frame so an
- * external overlay (e.g. a @niivue/uikit ruler) can read the current projection
- * and track pan/zoom/slice changes — independently of whether the built-in
- * measurement is drawn or the built-in font renderer is ready.
+ * A persisted measurement projected to one visible slice tile's canvas pixels,
+ * tagged with the measurement's index in the `measurements` array passed to
+ * `projectMeasurementLines` (for the renderer and the facade picker that is
+ * `model.completedMeasurements`; a filtered copy yields indices into the copy). A
+ * measurement visible on several tiles yields one entry per tile, all sharing
+ * the same `index`.
  */
-export function projectMeasurementScreenLines(
-  model: NVModel,
-  screenSlices: SliceTile[],
-): void {
-  model._persistedMeasurementScreenLines = []
-  const measurements = model.completedMeasurements
-  if (measurements.length === 0) return
+export type ProjectedMeasurementLine = {
+  index: number
+  sx: number
+  sy: number
+  ex: number
+  ey: number
+  distance: number
+}
 
-  const tolerance = computeTolerance(model)
+/**
+ * Project every measurement that lies on a current 2D slice tile to canvas
+ * pixels. This is the single source of truth for where measurements appear on
+ * screen: the per-frame overlay projection ({@link projectMeasurementScreenLines})
+ * and programmatic hit-testing (NiiVue.pickMeasurement) both use it, so they can
+ * never disagree. Tiles without cached picking matrices (not yet rendered) and
+ * the 3D render tile are skipped.
+ */
+export function projectMeasurementLines(
+  measurements: readonly CompletedMeasurement[],
+  screenSlices: readonly SliceTile[],
+  tolerance: number,
+): ProjectedMeasurementLine[] {
+  const out: ProjectedMeasurementLine[] = []
+  if (measurements.length === 0) return out
+
   for (const tile of screenSlices) {
     if (tile.axCorSag === SLICE_TYPE.RENDER) continue
     if (
@@ -171,7 +188,8 @@ export function projectMeasurementScreenLines(
     const ltwh = tile.leftTopWidthHeight
     const pn = tile.planeNormal
     const pp = tile.planePoint
-    for (const m of measurements) {
+    for (let i = 0; i < measurements.length; i++) {
+      const m = measurements[i]
       if (
         !isOnSlice(m.startMM, pn, pp, tolerance) ||
         !isOnSlice(m.endMM, pn, pp, tolerance)
@@ -179,15 +197,34 @@ export function projectMeasurementScreenLines(
         continue
       const [sx, sy] = projectMMToCanvas(m.startMM, mvp, ltwh)
       const [ex, ey] = projectMMToCanvas(m.endMM, mvp, ltwh)
-      model._persistedMeasurementScreenLines.push({
-        sx,
-        sy,
-        ex,
-        ey,
-        distance: m.distance,
-      })
+      out.push({ index: i, sx, sy, ex, ey, distance: m.distance })
     }
   }
+  return out
+}
+
+/**
+ * Project every persisted measurement that lies on a current 2D slice tile to
+ * canvas pixels and store the result on `model._persistedMeasurementScreenLines`
+ * (rebuilt each call). This is font-independent and must run every frame so an
+ * external overlay (e.g. a @niivue/uikit ruler) can read the current projection
+ * and track pan/zoom/slice changes — independently of whether the built-in
+ * measurement is drawn or the built-in font renderer is ready.
+ */
+export function projectMeasurementScreenLines(
+  model: NVModel,
+  screenSlices: SliceTile[],
+): void {
+  // ProjectedMeasurementLine is a MeasurementScreenLine (its `index` is the
+  // now-optional field on that type), so assign directly: this runs every
+  // frame on both backends and a second .map() pass to strip `index` would
+  // double the per-frame allocations for no benefit -- the index is useful
+  // (it ties each line to its completedMeasurements entry) and documented.
+  model._persistedMeasurementScreenLines = projectMeasurementLines(
+    model.completedMeasurements,
+    screenSlices,
+    computeTolerance(model),
+  )
 }
 
 /**

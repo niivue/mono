@@ -8,6 +8,8 @@
 // brick out as a standalone volume that keeps the parent's anatomical frame.
 export type { ExplodedBlockPick } from './control/interactions'
 export { pickExplodedBlock } from './control/interactions'
+// Programmatic measurement API (NiiVue.addMeasurement options)
+export type { AddMeasurementOptions } from './control/measurements'
 export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
 export { NVExtensionContext } from './extension/context'
 export type {
@@ -49,6 +51,7 @@ export type {
   BackendType,
   CanvasViewport,
   ColorMap,
+  CompletedMeasurement,
   CustomLayoutTile,
   DragReleaseInfo,
   ImageFromUrlOptions,

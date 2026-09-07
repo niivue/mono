@@ -119,7 +119,9 @@ Fired when any drag interaction completes on a 2D slice.
 | `mmEnd` | `[number, number, number]` | End position in mm |
 
 #### `measurementCompleted`
-Fired when a distance measurement line is completed.
+Fired when a distance measurement line is completed — by an interactive drag in
+`DRAG_MODE.measurement` or by a programmatic `addMeasurement` call. Fired after
+the measurement is appended, so it is already in `getMeasurements()`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -128,7 +130,16 @@ Fired when a distance measurement line is completed.
 | `distance` | `number` | Distance in mm |
 | `sliceIndex` | `number` | Slice tile index |
 | `sliceType` | `number` | Slice orientation |
-| `slicePosition` | `number` | Slice position in mm |
+| `slicePosition` | `number` | Slice position as a scene fraction (recorded from `scene.crosshairPos`), not mm |
+
+#### `measurementRemoved`
+Fired by `removeMeasurement` before the measurement is removed, so the
+referenced measurement is still in `getMeasurements()` at emit time.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `measurement` | `CompletedMeasurement` | The measurement being removed |
+| `index` | `number` | Its index in the measurement list |
 
 #### `angleCompleted`
 Fired when an angle measurement (two lines) is completed.
@@ -140,7 +151,7 @@ Fired when an angle measurement (two lines) is completed.
 | `angle` | `number` | Angle in degrees |
 | `sliceIndex` | `number` | Slice tile index |
 | `sliceType` | `number` | Slice orientation |
-| `slicePosition` | `number` | Slice position in mm |
+| `slicePosition` | `number` | Slice position as a scene fraction (recorded from `scene.crosshairPos`), not mm |
 
 #### `pointerUp`
 Fired on every pointer release over the canvas.

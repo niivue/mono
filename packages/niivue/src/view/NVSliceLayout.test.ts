@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { vec3 } from 'gl-matrix'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
+import type { CustomLayoutTile } from '@/NVTypes'
 import {
   crosshairRadiusMM,
   fitSlicesAndGraph,
@@ -211,5 +212,116 @@ describe('isSingleViewFillCanvas', () => {
     expect(on.map((t) => t.leftTopWidthHeight)).toEqual(
       off.map((t) => t.leftTopWidthHeight),
     )
+  })
+})
+
+describe('customLayout tile fill', () => {
+  const mmPerPx = (t: SliceTile, axis: 0 | 1): number => {
+    const s = t.screen as { mnMM: vec3; mxMM: vec3 }
+    const ltwh = t.leftTopWidthHeight as number[]
+    return (s.mxMM[axis] - s.mnMM[axis]) / ltwh[2 + axis]
+  }
+  const centre = (t: SliceTile, axis: 0 | 1): number => {
+    const s = t.screen as { mnMM: vec3; mxMM: vec3 }
+    return (s.mnMM[axis] + s.mxMM[axis]) / 2
+  }
+  const axialPane = (
+    over: Partial<CustomLayoutTile> = {},
+  ): CustomLayoutTile[] => [{ sliceType: 0, position: [0, 0, 1, 1], ...over }]
+
+  test('absentFlag_letterboxesToTheSliceAspect', () => {
+    // Byte-identical to the pre-fill behaviour: a cube in a 2000x400 pane is a
+    // square tile centered horizontally, mm window equal to the data's.
+    for (const layout of [axialPane(), axialPane({ fill: false })]) {
+      const [tile] = screenSlicesLayout(cfg({ customLayout: layout }))
+      expect(tile.leftTopWidthHeight).toEqual([800, 0, 400, 400])
+      const s = tile.screen as { mnMM: vec3; mxMM: vec3; fovMM: vec3 }
+      for (const axis of [0, 1] as const) {
+        expect(s.mxMM[axis] - s.mnMM[axis]).toBeCloseTo(s.fovMM[axis], 10)
+      }
+    }
+  })
+
+  test('filledTileOccupiesItsWholePaneRect', () => {
+    const [full] = screenSlicesLayout(
+      cfg({ customLayout: axialPane({ fill: true }) }),
+    )
+    expect(full.leftTopWidthHeight).toEqual([0, 0, 2000, 400])
+    // A sub-pane tile fills its own rect, not the canvas.
+    const [half] = screenSlicesLayout(
+      cfg({
+        customLayout: [
+          { sliceType: 0, position: [0.25, 0, 0.5, 1], fill: true },
+        ],
+      }),
+    )
+    expect(half.leftTopWidthHeight).toEqual([500, 0, 1000, 400])
+  })
+
+  test('fillingWidensTheWindowAboutItsCentre_fovStaysTheData', () => {
+    // Same pin as the single-view path: the slice lands on identical pixels,
+    // only the clipping rect grows. Anisotropic extents so a swapped U/V index
+    // in fillScreen would not pass unnoticed.
+    const extentsMax = vec3.fromValues(20, 10, 40)
+    for (const sliceType of [0, 1, 2]) {
+      for (const canvasWH of [
+        [2000, 400],
+        [400, 2000],
+        [400, 400],
+      ] as [number, number][]) {
+        const over = { canvasWH, extentsMax }
+        const pane = (fill: boolean): CustomLayoutTile[] => [
+          { sliceType, position: [0, 0, 1, 1], fill },
+        ]
+        const [boxed] = screenSlicesLayout(
+          cfg({ ...over, customLayout: pane(false) }),
+        )
+        const [filled] = screenSlicesLayout(
+          cfg({ ...over, customLayout: pane(true) }),
+        )
+        const boxedScr = boxed.screen as { fovMM: vec3 }
+        const filledScr = filled.screen as { fovMM: vec3 }
+        for (const axis of [0, 1] as const) {
+          expect(mmPerPx(filled, axis)).toBeCloseTo(mmPerPx(boxed, axis), 10)
+          expect(centre(filled, axis)).toBeCloseTo(centre(boxed, axis), 10)
+          // fovMM stays the DATA's span; only mnMM/mxMM widen.
+          expect(filledScr.fovMM[axis]).toBeCloseTo(boxedScr.fovMM[axis], 10)
+        }
+      }
+    }
+  })
+
+  test('nonFiniteFitScaleFallsBackToLetterbox', () => {
+    // Degenerate in-plane extents give an infinite fit scale; widening by it
+    // would put NaN mm bounds in the projection matrix.
+    const over = {
+      extentsMin: vec3.fromValues(0, 0, 0),
+      extentsMax: vec3.fromValues(0, 0, 10),
+    }
+    const [boxed] = screenSlicesLayout(
+      cfg({ ...over, customLayout: axialPane() }),
+    )
+    const [filled] = screenSlicesLayout(
+      cfg({ ...over, customLayout: axialPane({ fill: true }) }),
+    )
+    const boxedScr = boxed.screen as { mnMM: vec3; mxMM: vec3 }
+    const filledScr = filled.screen as { mnMM: vec3; mxMM: vec3 }
+    for (const axis of [0, 1] as const) {
+      expect(Number.isFinite(filledScr.mnMM[axis])).toBe(true)
+      expect(Number.isFinite(filledScr.mxMM[axis])).toBe(true)
+      expect(filledScr.mnMM[axis]).toBe(boxedScr.mnMM[axis])
+      expect(filledScr.mxMM[axis]).toBe(boxedScr.mxMM[axis])
+    }
+  })
+
+  test('renderTileIgnoresTheFlag', () => {
+    // RENDER tiles already take their whole rect; the flag must not disturb them.
+    const [tile] = screenSlicesLayout(
+      cfg({
+        customLayout: [{ sliceType: 4, position: [0, 0, 1, 1], fill: true }],
+      }),
+    )
+    expect(tile.leftTopWidthHeight).toEqual([0, 0, 2000, 400])
+    expect(tile.screen).toBeUndefined()
   })
 })

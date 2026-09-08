@@ -619,6 +619,11 @@ export type CustomLayoutTile = {
   sliceType: number // SLICE_TYPE.AXIAL | CORONAL | SAGITTAL | RENDER
   position: [number, number, number, number] // [left, top, width, height] normalized 0–1
   sliceMM?: number // optional fixed mm position for the slice
+  /** Let this 2D slice tile fill its pane instead of letterboxing to the
+   * slice's mm aspect ratio, widening the stored mm window about its own
+   * centre (same behaviour as `isSingleViewFillCanvas` for a single view).
+   * Ignored for RENDER tiles. Default false. */
+  fill?: boolean
 }
 
 export type LayoutConfig = {

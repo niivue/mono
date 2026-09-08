@@ -230,6 +230,13 @@ export type {
 } from './slide/volumeSliceSource'
 export { VolumeSliceSource } from './slide/volumeSliceSource'
 export { buildDrawingLut, drawingBitmapToRGBA } from './view/NVDrawingTexture'
+// Screen-space projection surface for external overlays (see
+// NiiVue.getScreenTiles / mmToCanvas / canvasToMM / hitTest).
+// projectMMToCanvas assumes a 2D slice tile's orthographic MVP (no
+// perspective divide, w ~= 1); it is not valid for a 3D render tile's
+// matrix -- use it only with tiles whose axCorSag is a 2D slice type.
+export type { CanvasTilePoint, SliceTile } from './view/NVSliceLayout'
+export { projectMMToCanvas } from './view/sliceUtils'
 // Allen "volume-viewer" JSON + PNG atlas datasets (multi-channel microscopy)
 export {
   type AllenAtlasImage,

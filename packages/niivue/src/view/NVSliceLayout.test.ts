@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { vec3 } from 'gl-matrix'
+import { mat4, vec3 } from 'gl-matrix'
 import * as NVConstants from '@/NVConstants'
 import type NVModel from '@/NVModel'
+import type { ViewHitTest } from '@/NVTypes'
 import {
   crosshairRadiusMM,
   fitSlicesAndGraph,
+  projectMMToNearestTile,
   type SliceLayoutConfig,
   type SliceTile,
+  screenSlicePick,
   screenSlicesLayout,
 } from './NVSliceLayout'
 
@@ -211,5 +214,103 @@ describe('isSingleViewFillCanvas', () => {
     expect(on.map((t) => t.leftTopWidthHeight)).toEqual(
       off.map((t) => t.leftTopWidthHeight),
     )
+  })
+})
+
+// ---------- Screen-space projection (external overlay API) ----------
+
+// An axis-aligned axial tile with a hand-built orthographic MVP: world x/y in
+// [-50, 50] mm map linearly onto the tile rect, the slice plane is z = zMM.
+// This mirrors what the renderer caches on a SliceTile after a draw
+// (mvpMatrix + planeNormal + planePoint), without needing a GPU.
+function orthoAxialTile(ltwh: number[], zMM: number): SliceTile {
+  const mvp = mat4.create()
+  mat4.ortho(mvp, -50, 50, -50, 50, -50, 50)
+  return {
+    axCorSag: NVConstants.SLICE_TYPE.AXIAL,
+    leftTopWidthHeight: ltwh,
+    mvpMatrix: mvp,
+    planeNormal: vec3.fromValues(0, 0, 1),
+    planePoint: vec3.fromValues(0, 0, zMM),
+  }
+}
+
+// Only the fields screenSlicePick's fast path reads.
+const pickModel = () =>
+  ({ volumes: [{}], tex2mm: mat4.create() }) as unknown as NVModel
+
+const axialHit = (tileIndex: number): ViewHitTest => ({
+  tileIndex,
+  isRender: false,
+  sliceType: NVConstants.SLICE_TYPE.AXIAL,
+  normalizedX: 0,
+  normalizedY: 0,
+})
+
+describe('projectMMToNearestTile', () => {
+  test('roundTripsWithScreenSlicePick', () => {
+    // canvas -> mm (the crosshair pick path) -> canvas must land on the pixel
+    // it started from, on the same tile.
+    const tile = orthoAxialTile([10, 20, 200, 160], 7)
+    const canvasX = 55
+    const canvasY = 60
+    const mm = screenSlicePick(
+      [tile],
+      pickModel(),
+      canvasX,
+      canvasY,
+      axialHit(0),
+    )
+    expect(mm).not.toBeNull()
+    if (!mm) return
+    expect(mm[2]).toBeCloseTo(7, 5) // picked point lies on the slice plane
+    const proj = projectMMToNearestTile([tile], mm)
+    expect(proj).not.toBeNull()
+    if (!proj) return
+    expect(proj.tileIndex).toBe(0)
+    expect(proj.x).toBeCloseTo(canvasX, 5)
+    expect(proj.y).toBeCloseTo(canvasY, 5)
+  })
+
+  test('picksTheTileWhoseSlicePlaneIsNearest', () => {
+    const tiles = [
+      orthoAxialTile([0, 0, 100, 100], 0),
+      orthoAxialTile([100, 0, 100, 100], 20),
+    ]
+    expect(projectMMToNearestTile(tiles, [0, 0, 2])?.tileIndex).toBe(0)
+    expect(projectMMToNearestTile(tiles, [0, 0, 19])?.tileIndex).toBe(1)
+  })
+
+  test('tieResolvesToTheLowestTileIndex', () => {
+    const tiles = [
+      orthoAxialTile([0, 0, 100, 100], 5),
+      orthoAxialTile([100, 0, 100, 100], 5),
+    ]
+    expect(projectMMToNearestTile(tiles, [1, 2, 5])?.tileIndex).toBe(0)
+  })
+
+  test('skipsRenderTilesAndTilesWithoutCachedGeometry', () => {
+    const render = orthoAxialTile([0, 0, 100, 100], 0)
+    render.axCorSag = NVConstants.SLICE_TYPE.RENDER
+    const bare: SliceTile = {
+      axCorSag: NVConstants.SLICE_TYPE.AXIAL,
+      leftTopWidthHeight: [0, 0, 100, 100],
+      // no mvpMatrix/planeNormal/planePoint: pre-first-render tile
+    }
+    expect(projectMMToNearestTile([render, bare], [0, 0, 0])).toBeNull()
+    const slice = orthoAxialTile([100, 0, 100, 100], 0)
+    expect(
+      projectMMToNearestTile([render, bare, slice], [0, 0, 0])?.tileIndex,
+    ).toBe(2)
+  })
+
+  test('projectsOutsideTheTileRectWhenThePointIsOutOfView', () => {
+    const tile = orthoAxialTile([0, 0, 100, 100], 0)
+    // x = 75mm is beyond the tile's +-50mm window: documented to project
+    // outside the rect rather than clamp.
+    const proj = projectMMToNearestTile([tile], [75, 0, 0])
+    expect(proj).not.toBeNull()
+    if (!proj) return
+    expect(proj.x).toBeGreaterThan(100)
   })
 })

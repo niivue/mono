@@ -534,14 +534,20 @@ const mgrSource: ChunkedVolumeSource = {
   fetchChunk: async () => new Uint8Array(),
 }
 
-/** Minimal host stub: only what the manager touches for a static-focus refocus. */
+/**
+ * Minimal host stub: only what the manager touches for a static-focus refocus.
+ * `extra` adds view state (`sliceType`, `pan2Dxyzmm`, ...) for tests that
+ * exercise the view-derived `'auto'` radius.
+ */
 function makeHost(
   swap: (id: string, plan: ChunkPlan) => Promise<void>,
+  extra: Record<string, unknown> = {},
 ): NiiVue {
   return {
     swapVolumeChunkPlan: swap,
     _registerChunkedVolume: () => {},
     _unregisterChunkedVolume: () => {},
+    ...extra,
   } as unknown as NiiVue
 }
 
@@ -608,6 +614,54 @@ describe('NVChunkedVolume deviceLimit default', () => {
     )
     expect(maxEdge).toBeGreaterThan(64)
     expect(maxEdge).toBeLessThanOrEqual(256)
+  })
+})
+
+describe("NVChunkedVolume 'auto' radius", () => {
+  // 8:1:1 pyramid — the anisotropic case the per-axis 'auto' exists for.
+  const thinSource: ChunkedVolumeSource = {
+    datatypeCode: 4,
+    levels: [
+      { level: 0, shape: [1024, 256, 32], spacing: [1, 1, 1] },
+      { level: 1, shape: [512, 128, 16], spacing: [2, 2, 2] },
+    ],
+    fetchChunk: async () => new Uint8Array(),
+  }
+  const radiusOf = (mgr: NVChunkedVolume): number | Vec3f =>
+    (mgr as unknown as { currentRadius(): number | Vec3f }).currentRadius()
+
+  test('2D slice view derives a per-axis radius (half-extents over zoom)', () => {
+    const host = makeHost(async () => {}, {
+      sliceType: SLICE_TYPE.MULTIPLANAR,
+      pan2Dxyzmm: [0, 0, 0, 2],
+    })
+    const mgr = new NVChunkedVolume(host, thinSource, { radius: 'auto' })
+    // common/(2*zoom) per axis: the ellipsoid hugging the volume's aspect,
+    // not the single half-diagonal (~264 here) that over-covers z 8x while
+    // giving x no more than the diagonal ball.
+    expect(radiusOf(mgr)).toEqual([256, 64, 8])
+  })
+
+  test('render view and pinned shapes stay as before', () => {
+    const render = new NVChunkedVolume(
+      makeHost(async () => {}, { sliceType: SLICE_TYPE.RENDER }),
+      thinSource,
+      { radius: 'auto' },
+    )
+    expect(radiusOf(render)).toBe(128) // cellEdge default: scalar core
+    const pinned = new NVChunkedVolume(
+      makeHost(async () => {}),
+      thinSource,
+      { radius: [300, 40, 10] },
+    )
+    expect(radiusOf(pinned)).toEqual([300, 40, 10])
+    const uniform = new NVChunkedVolume(
+      makeHost(async () => {}),
+      thinSource,
+      { radius: 'volume' },
+    )
+    expect(uniform.budgetPlan.radius).toBe('volume')
+    expect(radiusOf(uniform)).toBeCloseTo(Math.hypot(1024, 256, 32) / 2, 6)
   })
 })
 

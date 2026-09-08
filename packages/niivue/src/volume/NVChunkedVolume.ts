@@ -17,6 +17,7 @@ import {
   type ChunkPlan,
   CUBIC_MIN_HALO,
   chunkVolumeMultiLOD,
+  type MultiLodBounds,
   type Vec3f,
   type Vec3i,
 } from './chunking'
@@ -46,6 +47,14 @@ export interface ChunkedVolumeOptions extends BudgetPlanOptions {
   /** Display name / id for the volume (default 'chunked volume'). */
   name?: string
   id?: string
+  /**
+   * Regions (common-grid voxels, min inclusive / max exclusive) that must be
+   * covered by ONE uniform pyramid level, e.g. one thin slab per visible
+   * orthogonal slice so no slice shows a seam between two resolutions. The
+   * budget pass may coarsen a bound as a whole but never mixes levels inside
+   * it. Replaced per refocus via {@link NVChunkedVolume.setFocus}. Default none.
+   */
+  focusBounds?: MultiLodBounds[]
   /** Max concurrent source fetches (default 6; bounds the request flood). */
   maxConcurrentLoads?: number
   /** Retry attempts for a transient fetch failure (default 3, exp backoff). */
@@ -113,28 +122,67 @@ export function mmToVolumeFraction(frac2mm: mat4, mm: Vec3f): Vec3f | null {
   return [clamp01(out[0]), clamp01(out[1]), clamp01(out[2])]
 }
 
+/** Deep-copy caller bounds so a later mutation cannot alter a stored focus. */
+function cloneBounds(bounds: MultiLodBounds[] | undefined): MultiLodBounds[] {
+  return (bounds ?? []).map((b) => ({
+    min: [b.min[0], b.min[1], b.min[2]],
+    max: [b.max[0], b.max[1], b.max[2]],
+  }))
+}
+
 /**
  * Build a crosshair-focused multi-LOD plan for a source at a focus + radius.
  * Takes only the plan-shaping options: the coarse floor is a display backdrop,
  * not an input to the octree.
+ *
+ * The octree is subdivided around a BIASED centre (see {@link focusCenterBiased})
+ * for stability, while the exact focus is passed as `reserveCenter` so the
+ * brick under the crosshair is always at the finest level. A `'none'` focus has
+ * no crosshair to reserve, so no finest-detail branch is pinned (whether the
+ * plan is uniform still depends on `radius` and the other options).
+ * `focusBounds` are passed
+ * through as `reserveBounds` (see {@link MultiLodFocus.reserveBounds}).
  */
 export function planForFocus(
   source: ChunkedVolumeSource,
   focusFrac: Vec3f,
-  radius: number,
-  o: PlanShapeOptions,
+  radius: number | Vec3f,
+  o: PlanShapeOptions & Partial<Pick<ResolvedOptions, 'focus'>>,
+  focusBounds?: MultiLodBounds[],
 ): ChunkPlan {
   const levelDims = source.levels.map((l) => l.shape)
-  const center = focusCenterBiased(levelDims[0], focusFrac, o.cellEdge)
-  return chunkVolumeMultiLOD(levelDims, { center, radius }, o.deviceLimit, {
-    cellEdge: o.cellEdge,
-    gridDims: o.gridDims,
-    haloSize: o.halo,
-    detail: o.detail,
-    minLevel: o.minLevel,
-    budgetBytes: o.budgetBytes,
-    maxBricks: o.maxBricks,
-  })
+  const common = levelDims[0]
+  const center = focusCenterBiased(common, focusFrac, o.cellEdge)
+  // Clamp just inside the volume so the point always falls in some brick.
+  const reserveCenter: Vec3f | undefined =
+    o.focus === 'none'
+      ? undefined
+      : [
+          Math.max(0, Math.min(common[0] - 1e-3, focusFrac[0] * common[0])),
+          Math.max(0, Math.min(common[1] - 1e-3, focusFrac[1] * common[1])),
+          Math.max(0, Math.min(common[2] - 1e-3, focusFrac[2] * common[2])),
+        ]
+  return chunkVolumeMultiLOD(
+    levelDims,
+    {
+      center,
+      radius,
+      // A bounds reservation supersedes the centre branch (the planner ignores
+      // reserveCenter when bounds are present), so skip the dead work.
+      reserveCenter: focusBounds?.length ? undefined : reserveCenter,
+      reserveBounds: focusBounds,
+    },
+    o.deviceLimit,
+    {
+      cellEdge: o.cellEdge,
+      gridDims: o.gridDims,
+      haloSize: o.halo,
+      detail: o.detail,
+      minLevel: o.minLevel,
+      budgetBytes: o.budgetBytes,
+      maxBricks: o.maxBricks,
+    },
+  )
 }
 
 async function delay(ms: number): Promise<void> {
@@ -318,6 +366,8 @@ export class NVChunkedVolume {
   private readonly onViewDestroyed: () => void
 
   private focusFrac: Vec3f
+  /** Regions pinned to one uniform level; see {@link ChunkedVolumeOptions.focusBounds}. */
+  private focusBounds: MultiLodBounds[]
   private plan: ChunkPlan
   private disposed = false
   private refocusHandle: ReturnType<typeof setTimeout> | null = null
@@ -357,6 +407,7 @@ export class NVChunkedVolume {
     this.focusFrac = Array.isArray(this.o.focus)
       ? [this.o.focus[0], this.o.focus[1], this.o.focus[2]]
       : [0.5, 0.5, 0.5]
+    this.focusBounds = cloneBounds(options.focusBounds)
     host._registerChunkedVolume(this)
     this.onLocationChange = () => this.handleLocationChange()
     // Only self-dispose on a REAL controller teardown. `viewDestroyed` also fires
@@ -516,9 +567,14 @@ export class NVChunkedVolume {
     return this.plan
   }
 
-  /** Move the focus and rebuild+swap the plan (debounced). */
-  setFocus(frac: Vec3f): void {
+  /**
+   * Move the focus and rebuild+swap the plan (debounced). Pass `focusBounds`
+   * to replace the regions pinned to one uniform level (an empty array clears
+   * them); omit it to keep the current bounds.
+   */
+  setFocus(frac: Vec3f, focusBounds?: MultiLodBounds[]): void {
     this.focusFrac = [frac[0], frac[1], frac[2]]
+    if (focusBounds !== undefined) this.focusBounds = cloneBounds(focusBounds)
     this.refocus()
   }
 
@@ -540,7 +596,9 @@ export class NVChunkedVolume {
       focus: Array.isArray(this.o.focus)
         ? [this.o.focus[0], this.o.focus[1], this.o.focus[2]]
         : this.o.focus,
-      radius: this.o.radius,
+      radius: Array.isArray(this.o.radius)
+        ? [this.o.radius[0], this.o.radius[1], this.o.radius[2]]
+        : this.o.radius,
       detail: this.o.detail,
       budgetBytes: this.o.budgetBytes,
       maxBricks: this.o.maxBricks,
@@ -695,11 +753,15 @@ export class NVChunkedVolume {
       this.focusFrac,
       this.currentRadius(),
       this.o,
+      this.focusBounds,
     )
   }
 
-  private currentRadius(): number {
+  private currentRadius(): number | Vec3f {
     const radius = this.o.radius
+    // A pinned per-axis radius passes straight through (copied so a later
+    // caller mutation cannot alter the plan input).
+    if (Array.isArray(radius)) return [radius[0], radius[1], radius[2]]
     if (typeof radius === 'number') return radius
     const common = this.source.levels[0].shape
     // 'volume': a ball that swallows every brick, so nothing is outside the
@@ -714,8 +776,20 @@ export class NVChunkedVolume {
     // the region you're looking at at the finest level (the budget/maxBricks
     // pass still bounds the overall plan).
     if (this.host.sliceType === SLICE_TYPE.RENDER) return this.o.cellEdge
+    // 2D slice views: PER-AXIS half-extents over zoom, so the finest region is
+    // the ellipsoid that hugs the volume's own aspect. The old scalar here was
+    // the half-DIAGONAL over zoom, which starves long thin volumes (the
+    // motivating case: a 16821 x 7494 x 2070 slide): a single ball wide enough
+    // for the long axis over-covers the short axes several times over, the
+    // budget/maxBricks pass then coarsens the whole plan uniformly to pay for
+    // those wasted bricks, and the long axis — the one the user is actually
+    // panning along — ends up coarser than the budget could have afforded.
     const zoom = Math.max(1, this.host.pan2Dxyzmm[3] || 1)
-    return Math.hypot(common[0], common[1], common[2]) / (2 * zoom)
+    return [
+      common[0] / (2 * zoom),
+      common[1] / (2 * zoom),
+      common[2] / (2 * zoom),
+    ]
   }
 
   private async doRefocus(): Promise<void> {

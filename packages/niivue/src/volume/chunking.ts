@@ -645,16 +645,60 @@ export function matchChunksByContent(
   return oldToNew
 }
 
+/**
+ * An axis-aligned box in COMMON (finest, level-0) voxel coordinates. `min` is
+ * inclusive and `max` exclusive, so a one-voxel-thin slab at depth z is
+ * `{ min: [0, 0, z], max: [w, h, z + 1] }` (any positive thickness works: a
+ * brick intersects when its box overlaps the half-open interval `[min, max)`).
+ */
+export interface MultiLodBounds {
+  /** Inclusive lower corner in common-grid voxels. */
+  min: Vec3f
+  /** Exclusive upper corner in common-grid voxels. */
+  max: Vec3f
+}
+
 /** A focused region of interest, in COMMON (finest, level-0) voxel coordinates. */
 export interface MultiLodFocus {
   /** Focus centre in common-grid voxels. */
   center: Vec3f
   /**
-   * Focus radius in common-grid voxels. Bricks whose region lies within this
-   * distance of the centre render at the finest level; each further doubling of
-   * distance steps one pyramid level coarser.
+   * Focus radius in common-grid voxels: a scalar for an isotropic ball, or a
+   * per-axis `[rx, ry, rz]` for an ellipsoid. Bricks whose region lies within
+   * the shape render at the finest level; each further doubling of distance
+   * (measured with each axis normalised by its own radius) steps one pyramid
+   * level coarser. A scalar behaves exactly like `[r, r, r]`. A per-axis
+   * radius matches an anisotropic field of view — a long thin volume or a
+   * slab — where a single scalar either wastes bricks on the short axes or
+   * starves the long one. Non-positive vector components fall back to the
+   * largest positive component (or 1 when none is), so a degenerate axis
+   * widens to the dominant one instead of disabling refinement.
    */
-  radius: number
+  radius: number | Vec3f
+  /**
+   * Regions that must be covered by ONE uniform pyramid level. After the octree
+   * pass every brick intersecting any bound is subdivided until nothing coarser
+   * than the current level floor remains inside it, so a visible slice never
+   * shows a seam between two resolutions. The budget pass keeps re-applying
+   * this on each candidate: it may raise the floor (coarsening the bounds
+   * uniformly) but never mixes levels inside them. The 2:1 balance is not
+   * re-enforced across a bound's faces (that would re-refine every neighbour
+   * of a thin slab), so LOD steps there may exceed one level. Omit for the
+   * plain distance-driven octree.
+   */
+  reserveBounds?: MultiLodBounds[]
+  /**
+   * An un-biased focus (common-grid voxels) whose brick is refined to the
+   * finest level in force regardless of `radius` or `detail`, so the point
+   * under the crosshair always has a finest-detail brick. "In force" is
+   * `minLevel`, or the level floor once the budget pass has raised it: the
+   * floor is a hard cap, so this never re-introduces a finer brick into a
+   * uniformly coarsened plan. Lets `center` stay biased off cell boundaries
+   * (see `focusCenterBiased`) to keep the distance-driven subdivision stable.
+   * Only used when `reserveBounds` is empty; omit to keep the plan purely
+   * distance-driven.
+   */
+  reserveCenter?: Vec3f
 }
 
 export interface MultiLodOptions {
@@ -752,7 +796,30 @@ export function chunkVolumeMultiLOD(
     Math.max(8, Math.floor(options.cellEdge ?? 128)),
     Math.max(1, deviceLimit - 2 * maxHalo),
   )
-  const radius = Math.max(1e-3, focus.radius)
+  // Per-axis focus radius; a scalar stays isotropic (`[r, r, r]`). Vector
+  // components that are zero/negative fall back to the largest positive
+  // component (or 1), so a degenerate axis widens to the dominant one rather
+  // than making every distance on that axis effectively infinite.
+  const radiusVec: Vec3f = (() => {
+    const r = focus.radius
+    if (typeof r === 'number') {
+      const v = Math.max(1e-3, r)
+      return [v, v, v]
+    }
+    const maxComp = Math.max(r[0], r[1], r[2])
+    const fallback = maxComp > 0 ? maxComp : 1
+    return [
+      Math.max(1e-3, r[0] > 0 ? r[0] : fallback),
+      Math.max(1e-3, r[1] > 0 ? r[1] : fallback),
+      Math.max(1e-3, r[2] > 0 ? r[2] : fallback),
+    ]
+  })()
+  // Reference radius for the `beyond` test below: distances are measured in a
+  // space where each axis is scaled by `radius / radiusVec[a]`, so the finest
+  // core is the ellipsoid with semi-axes `radiusVec` and, along the largest
+  // axis, the falloff is identical to the scalar case. For a scalar radius
+  // every scale factor is exactly 1 and the plan is bit-identical to before.
+  const radius = Math.max(radiusVec[0], radiusVec[1], radiusVec[2])
   // Scale-relative detail factor. A cell refines while `beyond < BASE_DETAIL *
   // cellSize`; >= ~1 keeps the octree 2:1 balanced (one level change per cell).
   // Larger = wider finest core (more bricks); the budget pass only shrinks it.
@@ -769,14 +836,19 @@ export function chunkVolumeMultiLOD(
   const cellExtent = (sizeC: Vec3i): number =>
     Math.max(sizeC[0], sizeC[1], sizeC[2])
 
-  // Nearest common-voxel distance from the focus centre to an axis-aligned box.
+  // Nearest common-voxel distance from the focus centre to an axis-aligned
+  // box, with each axis normalised by its radius (scaled to the reference
+  // `radius`, so the value stays comparable to `radius` and `cellExtent`).
+  // Iso-distance shells are ellipsoids matching the per-axis radius; for a
+  // scalar radius the scale factors are exactly 1 (bit-identical Euclidean).
   const distanceToBox = (originC: Vec3i, sizeC: Vec3i): number => {
     let sq = 0
     for (let a = 0; a < 3; a++) {
       const lo = originC[a]
       const hi = originC[a] + sizeC[a]
       const c = focus.center[a]
-      const outside = c < lo ? lo - c : c > hi ? c - hi : 0
+      const outside =
+        (c < lo ? lo - c : c > hi ? c - hi : 0) * (radius / radiusVec[a])
       sq += outside * outside
     }
     return Math.sqrt(sq)
@@ -994,6 +1066,75 @@ export function chunkVolumeMultiLOD(
     return list
   }
 
+  // Reservation pass (opt-in via `focus.reserveBounds` / `focus.reserveCenter`).
+  // Runs on every candidate the budget pass builds, AFTER the octree + balance,
+  // so it composes with the level floor instead of fighting it.
+  //  - bounds: walk the levels from the coarsest down to `target` and split
+  //    every brick at that level that intersects a bound. `build` emits nothing
+  //    finer than its floor, so afterwards every brick touching a bound sits at
+  //    exactly `target`: one uniform level per bound, no mixed-LOD seam inside a
+  //    visible slice. The budget loop may raise `target` (coarsening the bounds
+  //    as a whole) but can never end up with a mix.
+  //  - centre only: split the brick containing `reserveCenter`, then its child
+  //    containing it, down to `target` -- a single mandatory finest-detail
+  //    branch under the crosshair (at most 7 extra bricks per level) even when
+  //    `center` is biased away from it or `detail` has been shrunk. It stops at
+  //    the floor, not `minLevel`, so a budget-raised floor stays a hard cap.
+  // Neither present: the list is returned untouched, so plans are identical to
+  // a call without the options.
+  const reserveBounds = focus.reserveBounds ?? []
+  const intersectsBounds = (d: VolumeChunkDesc): boolean =>
+    reserveBounds.some((b) => {
+      for (let a = 0; a < 3; a++) {
+        const lo = d.voxelOrigin[a]
+        const hi = lo + d.voxelDims[a]
+        if (lo >= b.max[a] || hi <= b.min[a]) return false
+      }
+      return true
+    })
+  const containsPoint = (d: VolumeChunkDesc, p: Vec3f): boolean => {
+    for (let a = 0; a < 3; a++) {
+      const lo = d.voxelOrigin[a]
+      if (p[a] < lo || p[a] >= lo + d.voxelDims[a]) return false
+    }
+    return true
+  }
+  const reserve = (
+    descs: VolumeChunkDesc[],
+    target: number,
+  ): VolumeChunkDesc[] => {
+    if (reserveBounds.length > 0) {
+      let list = descs
+      for (let level = maxLevel; level > target; level--) {
+        const out: VolumeChunkDesc[] = []
+        for (const d of list) {
+          if ((d.sourceLevel ?? 0) === level && intersectsBounds(d)) {
+            splitBrick(d, out)
+          } else {
+            out.push(d)
+          }
+        }
+        list = out
+      }
+      return list
+    }
+    const centre = focus.reserveCenter
+    if (!centre) return descs
+    // Copy once, then splice in place: this runs on every re-plan, so avoid
+    // reallocating the whole list per split.
+    const list = [...descs]
+    for (let iter = 0; iter <= maxLevel; iter++) {
+      const i = list.findIndex(
+        (d) => (d.sourceLevel ?? 0) > target && containsPoint(d, centre),
+      )
+      if (i < 0) break
+      const out: VolumeChunkDesc[] = []
+      splitBrick(list[i], out)
+      list.splice(i, 1, ...out)
+    }
+    return list
+  }
+
   // Recursive octree: a node at `level` covers a common-grid box. If a finer
   // level is desired for its region (and it is divisible), split into octants
   // and recurse one level finer; otherwise emit it as a brick.
@@ -1069,6 +1210,8 @@ export function chunkVolumeMultiLOD(
   //    size) to refine, so the whole field coarsens while staying 2:1 balanced.
   // 2) only if that still cannot fit, raise the level floor as a hard cap (the
   //    balance may degrade here).
+  // Every candidate goes through `reserve`, so reserved bounds stay uniform at
+  // the candidate's floor and the crosshair keeps its finest brick throughout.
   const budget =
     options.budgetBytes && options.budgetBytes > 0 ? options.budgetBytes : 0
   const maxBricks =
@@ -1084,15 +1227,15 @@ export function chunkVolumeMultiLOD(
     (budget > 0 && bytesOf(cs) > budget) || cs.length > maxBricks
   let detail = BASE_DETAIL
   let floor = minLevel
-  let chunks = build(detail, floor)
+  let chunks = reserve(build(detail, floor), floor)
   if (budget > 0 || maxBricks !== Number.POSITIVE_INFINITY) {
     for (let i = 0; i < 16 && overBudget(chunks); i++) {
       detail /= 1.6
-      chunks = build(detail, floor)
+      chunks = reserve(build(detail, floor), floor)
     }
     while (overBudget(chunks) && floor < maxLevel) {
       floor++
-      chunks = build(detail, floor)
+      chunks = reserve(build(detail, floor), floor)
     }
     // The detail/floor passes refine toward the focus but never coarsen the ROOT
     // grid, so a small `cellEdge` on a large volume can leave the root box count
@@ -1108,7 +1251,7 @@ export function chunkVolumeMultiLOD(
       let rootScale = 1
       while (chunks.length > maxBricks && rootScale < maxRootScale) {
         rootScale = Math.min(maxRootScale, rootScale * 2)
-        chunks = build(detail, maxLevel, rootScale)
+        chunks = reserve(build(detail, maxLevel, rootScale), maxLevel)
       }
     }
   }

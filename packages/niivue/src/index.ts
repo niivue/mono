@@ -276,6 +276,7 @@ export {
 } from './volume/channelColormaps'
 export type {
   ChunkPlan,
+  MultiLodBounds,
   MultiLodFocus,
   MultiLodOptions,
   Vec3f,

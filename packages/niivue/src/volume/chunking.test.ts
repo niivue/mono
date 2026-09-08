@@ -11,8 +11,10 @@ import {
   chunkVolumeMultiLOD,
   dimsDownsample,
   identityChunkSampleTransform,
+  type MultiLodBounds,
   matchChunksByContent,
   needsChunking,
+  type Vec3f,
   type Vec3i,
   type VolumeChunkDesc,
 } from './chunking'
@@ -451,6 +453,125 @@ describe('chunksCrossingSlice', () => {
   })
 })
 
+describe('chunkVolumeMultiLOD — reservations', () => {
+  const pyr: Vec3i[] = [
+    [512, 512, 512],
+    [256, 256, 256],
+    [128, 128, 128],
+    [64, 64, 64],
+  ]
+  const opts = { cellEdge: 32 }
+  const focus = { center: [256, 256, 256] as Vec3f, radius: 16 }
+  // A one-voxel-thin axial slab away from the focus, spanning the volume.
+  const slab: MultiLodBounds = { min: [0, 0, 100], max: [512, 512, 101] }
+  const intersects = (c: VolumeChunkDesc, b: MultiLodBounds): boolean => {
+    for (let a = 0; a < 3; a++) {
+      const lo = c.voxelOrigin[a]
+      if (lo >= b.max[a] || lo + c.voxelDims[a] <= b.min[a]) return false
+    }
+    return true
+  }
+  const contains = (c: VolumeChunkDesc, p: Vec3f): boolean => {
+    for (let a = 0; a < 3; a++) {
+      const lo = c.voxelOrigin[a]
+      if (p[a] < lo || p[a] >= lo + c.voxelDims[a]) return false
+    }
+    return true
+  }
+  const levelsIn = (plan: ChunkPlan, b: MultiLodBounds): Set<number> =>
+    new Set(
+      plan.chunks
+        .filter((c) => intersects(c, b))
+        .map((c) => c.sourceLevel ?? 0),
+    )
+
+  test('no reservation options: the plan is unchanged', () => {
+    const plain = chunkVolumeMultiLOD(pyr, focus, 2048, opts)
+    const empty = chunkVolumeMultiLOD(
+      pyr,
+      { ...focus, reserveBounds: [] },
+      2048,
+      opts,
+    )
+    expect(empty.chunks).toEqual(plain.chunks)
+    // The slab would otherwise mix levels: that is the seam being removed.
+    expect(levelsIn(plain, slab).size).toBeGreaterThan(1)
+  })
+
+  test('reserveBounds: every brick touching the slab sits at one level', () => {
+    const plan = chunkVolumeMultiLOD(
+      pyr,
+      { ...focus, reserveBounds: [slab] },
+      2048,
+      opts,
+    )
+    for (const c of plan.chunks) {
+      for (let a = 0; a < 3; a++) expect(c.texDims[a]).toBeLessThanOrEqual(2048)
+    }
+    const levels = levelsIn(plan, slab)
+    expect(levels.size).toBe(1)
+    expect([...levels][0]).toBe(0)
+    // Bricks away from the slab and the focus are still coarse.
+    expect(
+      plan.chunks.some((c) => !intersects(c, slab) && (c.sourceLevel ?? 0) > 0),
+    ).toBe(true)
+  })
+
+  test('reserveBounds: a tight brick cap coarsens the slab uniformly', () => {
+    // 512/32 = 16 -> 256 finest bricks across the slab alone, so the budget
+    // pass must raise the level floor; the slab must follow it as a whole.
+    const plan = chunkVolumeMultiLOD(
+      pyr,
+      { ...focus, reserveBounds: [slab] },
+      2048,
+      { ...opts, maxBricks: 64 },
+    )
+    for (const c of plan.chunks) {
+      for (let a = 0; a < 3; a++) expect(c.texDims[a]).toBeLessThanOrEqual(2048)
+    }
+    const levels = levelsIn(plan, slab)
+    expect(levels.size).toBe(1)
+    expect([...levels][0]).toBeGreaterThan(0)
+  })
+
+  test('reserveCenter: the brick under the point is finest even when center is biased away', () => {
+    const point: Vec3f = [400, 400, 400]
+    const biased = { center: [40, 40, 40] as Vec3f, radius: 8 }
+    const plain = chunkVolumeMultiLOD(pyr, biased, 2048, opts)
+    const plainBrick = plain.chunks.find((c) => contains(c, point))
+    expect(plainBrick).toBeDefined()
+    expect(plainBrick?.sourceLevel ?? 0).toBeGreaterThan(0)
+    const plan = chunkVolumeMultiLOD(
+      pyr,
+      { ...biased, reserveCenter: point },
+      2048,
+      opts,
+    )
+    for (const c of plan.chunks) {
+      for (let a = 0; a < 3; a++) expect(c.texDims[a]).toBeLessThanOrEqual(2048)
+    }
+    const brick = plan.chunks.find((c) => contains(c, point))
+    expect(brick).toBeDefined()
+    expect(brick?.sourceLevel ?? 0).toBe(0)
+    // One extra finest branch, not a re-refined field.
+    expect(plan.chunks.length).toBeLessThan(plain.chunks.length + 8 * 3)
+  })
+
+  test('reserveCenter: a raised level floor stays a hard cap', () => {
+    const point: Vec3f = [400, 400, 400]
+    const plan = chunkVolumeMultiLOD(
+      pyr,
+      { center: [40, 40, 40] as Vec3f, radius: 8, reserveCenter: point },
+      2048,
+      { ...opts, minLevel: 2 },
+    )
+    for (const c of plan.chunks)
+      expect(c.sourceLevel ?? 0).toBeGreaterThanOrEqual(2)
+    const brick = plan.chunks.find((c) => contains(c, point))
+    expect(brick?.sourceLevel ?? 0).toBe(2)
+  })
+})
+
 describe('chunkSampleTransform', () => {
   test('single-chunk plan yields an identity-equivalent transform', () => {
     const plan = chunkVolume([100, 200, 300], 2048)
@@ -884,6 +1005,184 @@ describe('chunkVolumeMultiLOD', () => {
     // Coarsening the root never drops coverage.
     const sum = capped.chunks.reduce((s, c) => s + brickVolume(c), 0)
     expect(sum).toBe(512 * 512 * 512)
+  })
+})
+
+describe('chunkVolumeMultiLOD — per-axis radius', () => {
+  const pyramid: Vec3i[] = [
+    [512, 512, 512],
+    [256, 256, 256],
+    [128, 128, 128],
+    [64, 64, 64],
+  ]
+  // A long thin pyramid (8:1:1), the shape a scalar radius serves worst.
+  const thin: Vec3i[] = [
+    [1024, 128, 128],
+    [512, 64, 64],
+    [256, 32, 32],
+    [128, 16, 16],
+  ]
+  const thinCenter: Vec3f = [512, 64, 64]
+
+  /** Order- and content-sensitive digest of a plan's brick list (FNV-1a). */
+  const planDigest = (plan: ChunkPlan): string => {
+    const s = plan.chunks
+      .map(
+        (c) =>
+          `${c.sourceLevel ?? 0}|${c.voxelOrigin.join(',')}|${c.voxelDims.join(',')}` +
+          `|${c.texOrigin.join(',')}|${c.texDims.join(',')}` +
+          `|${c.haloLow.join(',')}|${c.haloHigh.join(',')}`,
+      )
+      .join(';')
+    let h = 2166136261
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 16777619) >>> 0
+    }
+    return `${plan.chunks.length}:${h.toString(16)}`
+  }
+
+  test('a scalar radius plans identically to the equal per-axis vector', () => {
+    for (const r of [8, 16, 96]) {
+      const scalar = chunkVolumeMultiLOD(
+        pyramid,
+        { center: [256, 256, 256] as Vec3f, radius: r },
+        2048,
+        { cellEdge: 64 },
+      )
+      const vector = chunkVolumeMultiLOD(
+        pyramid,
+        { center: [256, 256, 256] as Vec3f, radius: [r, r, r] as Vec3f },
+        2048,
+        { cellEdge: 64 },
+      )
+      expect(vector.chunks).toEqual(scalar.chunks)
+    }
+  })
+
+  test('scalar plans are bit-identical to the pre-change snapshots', () => {
+    // Digests recorded against the implementation BEFORE the per-axis radius
+    // landed, so the scalar path provably still emits the exact same bricks
+    // in the exact same order (including through the budget and reservation
+    // passes). If a change here is intentional, re-record the digests.
+    const slab: MultiLodBounds = { min: [0, 0, 100], max: [512, 512, 101] }
+    const a = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [256, 256, 256] as Vec3f, radius: 96 },
+      2048,
+      { cellEdge: 64 },
+    )
+    expect(planDigest(a)).toBe('512:697e3290')
+    const b = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [256, 256, 256] as Vec3f, radius: 8 },
+      2048,
+      { cellEdge: 64, maxBricks: 100 },
+    )
+    expect(planDigest(b)).toBe('64:6281c2b0')
+    const c = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [256, 256, 256] as Vec3f, radius: 16, reserveBounds: [slab] },
+      2048,
+      { cellEdge: 32 },
+    )
+    expect(planDigest(c)).toBe('1044:c808c962')
+  })
+
+  test('an anisotropic radius refines the long axis further than the short-extent ball', () => {
+    // Isotropic ball sized to the SHORT half-extent vs. the ellipsoid of the
+    // volume's own half-extents: the ellipsoid must carry finest bricks
+    // further along x (the long axis the scalar starves).
+    const iso = chunkVolumeMultiLOD(
+      thin,
+      { center: thinCenter, radius: 64 },
+      2048,
+      { cellEdge: 32 },
+    )
+    const aniso = chunkVolumeMultiLOD(
+      thin,
+      { center: thinCenter, radius: [512, 64, 64] as Vec3f },
+      2048,
+      { cellEdge: 32 },
+    )
+    const finest = (plan: ChunkPlan): VolumeChunkDesc[] =>
+      plan.chunks.filter((c) => (c.sourceLevel ?? 0) === 0)
+    const spanX = (cs: VolumeChunkDesc[]): number => {
+      let lo = Number.POSITIVE_INFINITY
+      let hi = Number.NEGATIVE_INFINITY
+      for (const c of cs) {
+        lo = Math.min(lo, c.voxelOrigin[0])
+        hi = Math.max(hi, c.voxelOrigin[0] + c.voxelDims[0])
+      }
+      return hi - lo
+    }
+    expect(finest(aniso).length).toBeGreaterThan(finest(iso).length)
+    expect(spanX(finest(aniso))).toBeGreaterThan(spanX(finest(iso)))
+  })
+
+  test('zero/negative radius components widen to the largest axis', () => {
+    const guarded = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [256, 256, 256] as Vec3f, radius: [96, 0, -5] as Vec3f },
+      2048,
+      { cellEdge: 64 },
+    )
+    const full = chunkVolumeMultiLOD(
+      pyramid,
+      { center: [256, 256, 256] as Vec3f, radius: [96, 96, 96] as Vec3f },
+      2048,
+      { cellEdge: 64 },
+    )
+    expect(guarded.chunks).toEqual(full.chunks)
+  })
+
+  test('the budget pass still bounds an anisotropic plan', () => {
+    const budget = 128 * 1024 * 1024
+    const plan = chunkVolumeMultiLOD(
+      thin,
+      { center: thinCenter, radius: [512, 64, 64] as Vec3f },
+      2048,
+      { cellEdge: 32, budgetBytes: budget, maxBricks: 48 },
+    )
+    const bytes = plan.chunks.reduce(
+      (s, c) => s + c.texDims[0] * c.texDims[1] * c.texDims[2] * 8,
+      0,
+    )
+    expect(bytes).toBeLessThanOrEqual(budget)
+    expect(plan.chunks.length).toBeLessThanOrEqual(48)
+    // Coarsening never drops coverage.
+    const sum = plan.chunks.reduce(
+      (s, c) => s + c.voxelDims[0] * c.voxelDims[1] * c.voxelDims[2],
+      0,
+    )
+    expect(sum).toBe(1024 * 128 * 128)
+  })
+
+  test('reserveBounds stays uniform under a per-axis radius', () => {
+    const slab: MultiLodBounds = { min: [0, 0, 100], max: [512, 512, 101] }
+    const plan = chunkVolumeMultiLOD(
+      pyramid,
+      {
+        center: [256, 256, 256] as Vec3f,
+        radius: [256, 64, 64] as Vec3f,
+        reserveBounds: [slab],
+      },
+      2048,
+      { cellEdge: 32 },
+    )
+    const intersects = (c: VolumeChunkDesc): boolean => {
+      for (let a = 0; a < 3; a++) {
+        const lo = c.voxelOrigin[a]
+        if (lo >= slab.max[a] || lo + c.voxelDims[a] <= slab.min[a]) {
+          return false
+        }
+      }
+      return true
+    }
+    const levels = new Set(
+      plan.chunks.filter(intersects).map((c) => c.sourceLevel ?? 0),
+    )
+    expect(levels.size).toBe(1)
   })
 })
 

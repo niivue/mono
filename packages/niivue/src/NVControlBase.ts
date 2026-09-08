@@ -1421,7 +1421,7 @@ export default class NiiVue extends EventTarget {
     // still cannot feed the kernel (a hand-built chunkPlan, say), and warns.
     if (v) {
       for (const chunked of this._chunkedVolumes) {
-        chunked.raiseHaloTo(CUBIC_MIN_HALO)
+        void chunked.raiseHaloTo(CUBIC_MIN_HALO)
       }
     }
     this.emit('change', {

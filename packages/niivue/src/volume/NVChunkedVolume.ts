@@ -321,7 +321,24 @@ export class NVChunkedVolume {
   private plan: ChunkPlan
   private disposed = false
   private refocusHandle: ReturnType<typeof setTimeout> | null = null
+  /**
+   * The promise handed to every caller of the CURRENTLY debounced refocus. A
+   * newer request that supersedes it before the timer fires reuses the same
+   * deferred, so each caller resolves once the swap that absorbed its request
+   * has applied (or on dispose): never earlier, and never left hanging.
+   */
+  private pendingRefocus: RefocusDeferred | null = null
   private swapChain: Promise<void> = Promise.resolve()
+  /** Swaps queued on `swapChain` that have not yet applied. */
+  private inFlightSwaps = 0
+  /**
+   * Resolved by {@link dispose}. Raced against the swap chain wherever a caller
+   * awaits it ({@link whenSettled}, {@link doRefocus}), because the chain can
+   * only advance when the host swap settles: a host whose swap never settles
+   * (a torn-down renderer, a wedged upload) would otherwise leave every such
+   * caller hanging forever after disposal.
+   */
+  private readonly disposedDeferred: RefocusDeferred = createRefocusDeferred()
   // Built once, on the first applyCoarseFloor; null once `floorBuilt` is set
   // means "tried and cannot" (too large, or an unsupported datatype), so a
   // repeat call does not re-fetch the coarse level.
@@ -516,22 +533,37 @@ export class NVChunkedVolume {
     return this.plan
   }
 
-  /** Move the focus and rebuild+swap the plan (debounced). */
-  setFocus(frac: Vec3f): void {
+  /**
+   * Move the focus and rebuild+swap the plan (debounced). Resolves when the
+   * swap has applied; see {@link refocus}. On a disposed manager it resolves
+   * immediately and changes nothing.
+   */
+  setFocus(frac: Vec3f): Promise<void> {
+    if (this.disposed) return Promise.resolve()
     this.focusFrac = [frac[0], frac[1], frac[2]]
-    this.refocus()
+    return this.refocus()
   }
 
-  /** Cap the finest level the octree may use (index into `source.levels`). */
-  setMaxDetail(levelIndex: number): void {
+  /**
+   * Cap the finest level the octree may use (index into `source.levels`).
+   * Resolves when the swap has applied; see {@link refocus}. On a disposed
+   * manager it resolves immediately and changes nothing.
+   */
+  setMaxDetail(levelIndex: number): Promise<void> {
+    if (this.disposed) return Promise.resolve()
     this.o.minLevel = clampLevel(levelIndex, this.source)
-    this.refocus()
+    return this.refocus()
   }
 
-  /** Change the plan's GPU byte budget. */
-  setBudget(bytes: number): void {
+  /**
+   * Change the plan's GPU byte budget. Resolves when the swap has applied; see
+   * {@link refocus}. On a disposed manager it resolves immediately and changes
+   * nothing.
+   */
+  setBudget(bytes: number): Promise<void> {
+    if (this.disposed) return Promise.resolve()
     this.o.budgetBytes = bytes
-    this.refocus()
+    return this.refocus()
   }
 
   /** The budget plan currently in force, as resolved values. */
@@ -559,9 +591,11 @@ export class NVChunkedVolume {
    * `minLevel` is deliberately carried over from the CURRENT state rather than
    * re-read from the load options, so a plan switch does not silently undo a
    * {@link setMaxDetail} the app made in between.
+   *
+   * Resolves when the swap has applied; see {@link refocus}.
    */
-  setBudgetPlan(plan: BudgetPlanSpec): void {
-    if (this.disposed) return
+  setBudgetPlan(plan: BudgetPlanSpec): Promise<void> {
+    if (this.disposed) return Promise.resolve()
     const next = resolveBudgetPlan(
       { ...this.loadOptions, budgetPlan: plan, minLevel: this.o.minLevel },
       this.planContext(),
@@ -580,7 +614,7 @@ export class NVChunkedVolume {
     // Adopt the crosshair NOW rather than waiting for the next locationChange,
     // so switching back to a crosshair plan does not plan around a stale focus.
     if (this.followCrosshair) this.handleLocationChange()
-    this.refocus()
+    return this.refocus()
   }
 
   /** The halo the current plan is being built with. */
@@ -597,18 +631,23 @@ export class NVChunkedVolume {
    *
    * Note that a larger halo makes each brick bigger, so the same GPU budget
    * buys fewer/coarser bricks -- that is the cost of a seam-free cubic filter.
+   *
+   * Resolves when the swap has applied (immediately for the no-op case, and
+   * immediately with no state change on a disposed manager); see
+   * {@link refocus}.
    */
-  raiseHaloTo(minHalo: number): void {
+  raiseHaloTo(minHalo: number): Promise<void> {
+    if (this.disposed) return Promise.resolve()
     const next = raiseHalo(this.o.halo, minHalo)
     if (
       next[0] === this.o.halo[0] &&
       next[1] === this.o.halo[1] &&
       next[2] === this.o.halo[2]
     ) {
-      return
+      return Promise.resolve()
     }
     this.o.halo = next
-    this.refocus()
+    return this.refocus()
   }
 
   /** Streaming residency counters (delegates to the controller). */
@@ -616,14 +655,55 @@ export class NVChunkedVolume {
     return this.host.chunkStreamStats()
   }
 
-  /** Debounced rebuild + in-place plan swap. */
-  refocus(): void {
-    if (this.disposed) return
+  /**
+   * Debounced rebuild + in-place plan swap. Resolves once the host swap this
+   * request ended up in has COMPLETED -- applied, or failed and logged. The
+   * promise does not signal success either way, and {@link currentPlan} is not
+   * a liveness signal: {@link doRefocus} commits it (and `volume.chunkPlan`)
+   * BEFORE awaiting the host swap, and the assignment stands even if that swap
+   * throws, so `currentPlan` is only ever the last REQUESTED plan, not a
+   * confirmed-resident one. That swap is the plan built
+   * when the debounce timer fires, which absorbs every request made while the
+   * timer was pending. A
+   * newer request therefore never leaves an older one hanging -- both settle
+   * together, after the newest plan is on the GPU -- and a swap that fails is
+   * logged (as before) rather than rejecting, so an app can await the sequence
+   * without guarding every step. Resolves immediately on a disposed manager;
+   * {@link dispose} also settles every request still outstanding, whether its
+   * timer had not fired yet or its swap was queued behind one the host will
+   * now never complete.
+   */
+  refocus(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
     if (this.refocusHandle) clearTimeout(this.refocusHandle)
+    const pending = this.pendingRefocus ?? createRefocusDeferred()
+    this.pendingRefocus = pending
     this.refocusHandle = setTimeout(() => {
       this.refocusHandle = null
-      void this.doRefocus()
+      this.pendingRefocus = null
+      // doRefocus already swallows a failed host swap; settle on either path
+      // so a caller awaiting the swap can never be left hanging.
+      this.doRefocus().then(pending.resolve, pending.resolve)
     }, this.o.debounceMs)
+    return pending.promise
+  }
+
+  /**
+   * A barrier: resolves when no refocus is pending (debounced) or in flight
+   * (queued on the swap chain), immediately when the manager is idle. Under a
+   * continuous stream of requests (a crosshair drag) it waits for the stream
+   * to pause, which is the moment the GPU brick set matches the handle. Also
+   * resolves on {@link dispose} — raced explicitly, because a swap already
+   * with the host when dispose runs may simply never settle, and the swap
+   * chain (which this otherwise awaits) would hang with it.
+   */
+  async whenSettled(): Promise<void> {
+    while (!this.disposed && (this.pendingRefocus || this.inFlightSwaps > 0)) {
+      await Promise.race([
+        this.pendingRefocus?.promise ?? this.swapChain,
+        this.disposedDeferred.promise,
+      ])
+    }
   }
 
   /** Stop following the crosshair and release the manager (leaves the volume loaded). */
@@ -635,6 +715,14 @@ export class NVChunkedVolume {
       clearTimeout(this.refocusHandle)
       this.refocusHandle = null
     }
+    // A cancelled refocus never applies, so release anyone awaiting it now.
+    const pending = this.pendingRefocus
+    this.pendingRefocus = null
+    pending?.resolve()
+    // Release everyone racing on the swap chain (whenSettled, a doRefocus
+    // queued behind an in-flight swap): a swap the host is still holding may
+    // never settle now, and nothing further will be applied regardless.
+    this.disposedDeferred.resolve()
     this.followCrosshair = false
     this.syncCrosshairSubscription()
     this.host.removeEventListener('viewDestroyed', this.onViewDestroyed)
@@ -672,7 +760,7 @@ export class NVChunkedVolume {
     const frac = mmToVolumeFraction(f2m, [mm[0], mm[1], mm[2]])
     if (!frac) return
     this.focusFrac = frac
-    this.refocus()
+    void this.refocus()
   }
 
   /**
@@ -726,6 +814,7 @@ export class NVChunkedVolume {
     // the GPU brick set on an older focus while the handle/HUD report the newer
     // one; chaining guarantees swaps apply in call order, newest last.
     const plan = this.buildPlan()
+    this.inFlightSwaps++
     const applied = this.swapChain.then(async () => {
       if (this.disposed) return
       this.plan = plan
@@ -737,9 +826,20 @@ export class NVChunkedVolume {
       }
       this.applyRenderCentering()
     })
-    // Keep the shared chain resolved so a later throw cannot break the queue.
-    this.swapChain = applied.catch(() => {})
-    await applied
+    // Keep the shared chain resolved so a later throw cannot break the queue,
+    // but say so: the swap itself already logs its own failures, so anything
+    // landing here (applyRenderCentering, the commit) is unexpected.
+    // The count drops on the chain (before any awaiting caller resumes), so
+    // whenSettled never observes a swap as in flight after it has applied.
+    this.swapChain = applied
+      .catch((err) => log.warn('NVChunkedVolume: swap chain error', err))
+      .then(() => {
+        this.inFlightSwaps--
+      })
+    // Race dispose: this swap is queued behind every earlier one, and an
+    // earlier swap the host never settles would otherwise pin this caller's
+    // promise open forever.
+    await Promise.race([this.swapChain, this.disposedDeferred.promise])
   }
 
   /**
@@ -951,6 +1051,20 @@ function raiseHalo(halo: Vec3i, minHalo: number): Vec3i {
     Math.max(halo[1], minHalo),
     Math.max(halo[2], minHalo),
   ]
+}
+
+/** A refocus request's completion, resolved by whichever swap absorbs it. */
+interface RefocusDeferred {
+  promise: Promise<void>
+  resolve: () => void
+}
+
+function createRefocusDeferred(): RefocusDeferred {
+  let resolve: () => void = () => {}
+  const promise = new Promise<void>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
 }
 
 function clampLevel(levelIndex: number, source: ChunkedVolumeSource): number {

@@ -643,6 +643,344 @@ describe('NVChunkedVolume serialized refocus', () => {
   })
 })
 
+// --- manager: refocus completion promise -----------------------------------
+
+/**
+ * Host stub whose swap blocks until the test releases it, recording every
+ * plan it was asked to apply, so a test can pin down exactly WHEN a refocus
+ * promise settles relative to the host swap.
+ */
+function makeGatedHost(): {
+  host: NiiVue
+  swaps: ChunkPlan[]
+  release: () => void
+} {
+  const swaps: ChunkPlan[] = []
+  const releases: Array<() => void> = []
+  const host = makeHost(
+    (_id, plan) =>
+      new Promise<void>((resolve) => {
+        swaps.push(plan)
+        releases.push(resolve)
+      }),
+  )
+  // dispose() drops the viewDestroyed listener; nothing here subscribes.
+  Object.assign(host, {
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  })
+  return {
+    host,
+    swaps,
+    release: () => {
+      for (const r of releases.splice(0)) r()
+    },
+  }
+}
+
+/** Track a promise's settlement without awaiting it. */
+function settled(p: Promise<unknown>): () => boolean {
+  let done = false
+  p.then(
+    () => {
+      done = true
+    },
+    () => {
+      done = true
+    },
+  )
+  return () => done
+}
+
+const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Poll `predicate` until it holds, or throw after `timeoutMs`. Waits on real
+ * observable state (a swap recorded, a promise settled) instead of a fixed
+ * delay, so assertions never race the debounce timer or the swap chain under
+ * CI scheduler load.
+ */
+const waitFor = async (
+  predicate: () => boolean,
+  timeoutMs = 2000,
+): Promise<void> => {
+  const start = Date.now()
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error('waitFor: predicate not satisfied within timeout')
+    }
+    await tick(1)
+  }
+}
+
+const DEBOUNCE = 20
+
+describe('NVChunkedVolume refocus promise', () => {
+  test('setFocus resolves only after the host swap has applied', async () => {
+    const { host, swaps, release } = makeGatedHost()
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+    })
+    const before = mgr.currentPlan
+    const done = settled(mgr.setFocus([0.2, 0.2, 0.2]))
+
+    // Timer fired, swap requested, but the host has not applied it yet.
+    await waitFor(() => swaps.length === 1)
+    expect(done()).toBe(false)
+
+    release()
+    await waitFor(() => done())
+    expect(mgr.currentPlan).not.toBe(before)
+    expect(swaps[0]).toBe(mgr.currentPlan)
+    expect(mgr.focus).toEqual([0.2, 0.2, 0.2])
+  })
+
+  test('two rapid setFocus calls coalesce: both resolve, the host sees one swap of the newest plan', async () => {
+    const { host, swaps, release } = makeGatedHost()
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+    })
+    const first = mgr.setFocus([0.2, 0.2, 0.2])
+    const second = mgr.setFocus([0.8, 0.8, 0.8])
+    const firstDone = settled(first)
+    const secondDone = settled(second)
+
+    await waitFor(() => swaps.length === 1)
+    expect(firstDone()).toBe(false)
+    expect(secondDone()).toBe(false)
+
+    release()
+    await Promise.all([first, second])
+    // The superseded request settles with the swap that absorbed it.
+    expect(swaps).toHaveLength(1)
+    expect(swaps[0]).toBe(mgr.currentPlan)
+    expect(mgr.focus).toEqual([0.8, 0.8, 0.8])
+  })
+
+  test('a superseded request does not resolve before the superseding plan is on the host', async () => {
+    // Per-swap gating that records each plan at APPLICATION time (its release),
+    // so the test can apply an OLDER swap on its own and prove the superseded
+    // promise stays unsettled until the swap that absorbed it has applied.
+    // This is the #153 hazard spelled out: "a promise that resolves after a
+    // superseded refocus would be worse than no promise".
+    const applied: ChunkPlan[] = []
+    const gates: Array<{ plan: ChunkPlan; resolve: () => void }> = []
+    const host = makeHost(
+      (_id, plan) =>
+        new Promise<void>((resolve) => {
+          gates.push({
+            plan,
+            resolve: () => {
+              applied.push(plan)
+              resolve()
+            },
+          })
+        }),
+    )
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+    })
+    // An older refocus whose swap the host is still holding.
+    const older = mgr.setFocus([0.1, 0.1, 0.1])
+    await waitFor(() => gates.length === 1)
+
+    // A superseded/superseding pair arrives while that older swap is in
+    // flight. Both share ONE deferred: the superseded request is absorbed by
+    // the newer one, and only the newest focus is ever planned.
+    const superseded = mgr.setFocus([0.4, 0.4, 0.4])
+    const superseding = mgr.setFocus([0.9, 0.9, 0.9])
+    expect(superseding).toBe(superseded)
+    const supersededDone = settled(superseded)
+    await tick(DEBOUNCE * 4)
+    // The coalesced swap is queued behind the older one, not yet with the host.
+    expect(gates).toHaveLength(1)
+    expect(supersededDone()).toBe(false)
+
+    // Apply ONLY the older swap. The plan that absorbed the superseded request
+    // is not on the host yet, so its promise must not settle off this older
+    // swap.
+    gates[0].resolve()
+    await older
+    await tick()
+    expect(supersededDone()).toBe(false)
+
+    // The coalesced swap (built for the NEWEST focus) is now with the host.
+    await waitFor(() => gates.length === 2)
+    gates[1].resolve()
+    await superseded
+    // It settled only once the newest plan applied, and that plan applied last.
+    expect(applied).toHaveLength(2)
+    expect(applied[applied.length - 1]).toBe(mgr.currentPlan)
+    expect(gates[1].plan).toBe(mgr.currentPlan)
+    expect(mgr.focus).toEqual([0.9, 0.9, 0.9])
+  })
+
+  test('a request made while a swap is in flight queues a second swap, in order', async () => {
+    const { host, swaps, release } = makeGatedHost()
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+    })
+    const first = mgr.setFocus([0.2, 0.2, 0.2])
+    await waitFor(() => swaps.length === 1)
+    // Now in flight (host holding the first swap); a new request debounces
+    // separately and must not be absorbed by the swap already in progress.
+    const second = mgr.setFocus([0.8, 0.8, 0.8])
+    const secondDone = settled(second)
+    await tick(DEBOUNCE * 4)
+    expect(swaps).toHaveLength(1) // serialized behind the first
+    release()
+    await first
+    expect(secondDone()).toBe(false)
+    await waitFor(() => swaps.length === 2)
+    release()
+    await second
+    expect(swaps[1]).toBe(mgr.currentPlan)
+  })
+
+  test('dispose() before the timer fires resolves the pending promise without a swap', async () => {
+    const { host, swaps } = makeGatedHost()
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: 1000,
+    })
+    const before = mgr.currentPlan
+    const pending = mgr.setFocus([0.2, 0.2, 0.2])
+    mgr.dispose()
+    await pending
+    expect(swaps).toHaveLength(0)
+    expect(mgr.currentPlan).toBe(before)
+    // After dispose every mutator resolves immediately and stays inert.
+    await mgr.setBudget(1024)
+    await mgr.setMaxDetail(1)
+    await mgr.setBudgetPlan('uniform')
+    expect(swaps).toHaveLength(0)
+  })
+
+  test('a failed host swap still resolves the request (logged, not rejected)', async () => {
+    const host = makeHost(async () => {
+      throw new Error('swap exploded')
+    })
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+    })
+    await expect(mgr.setFocus([0.2, 0.2, 0.2])).resolves.toBeUndefined()
+    // The queue is intact: a later request still applies.
+    await expect(mgr.setBudget(1024)).resolves.toBeUndefined()
+  })
+
+  test('raiseHaloTo resolves immediately when it is a no-op', async () => {
+    const { host, swaps } = makeGatedHost()
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+    })
+    const done = settled(mgr.raiseHaloTo(1)) // default halo is already 1
+    await waitFor(() => done())
+    expect(swaps).toHaveLength(0)
+  })
+
+  test('whenSettled resolves immediately when idle', async () => {
+    const { host, swaps } = makeGatedHost()
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+    })
+    const done = settled(mgr.whenSettled())
+    await waitFor(() => done())
+    expect(swaps).toHaveLength(0)
+  })
+
+  test('whenSettled waits for a pending refocus and its in-flight swap', async () => {
+    const { host, swaps, release } = makeGatedHost()
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+    })
+    void mgr.setFocus([0.2, 0.2, 0.2])
+    const barrier = settled(mgr.whenSettled())
+    // Pending (timer not fired): not settled.
+    expect(barrier()).toBe(false)
+    await waitFor(() => swaps.length === 1)
+    // In flight (host holding the swap): still not settled.
+    expect(barrier()).toBe(false)
+    release()
+    await waitFor(() => barrier())
+    // Idle again: a fresh barrier is immediate.
+    const again = settled(mgr.whenSettled())
+    await waitFor(() => again())
+  })
+
+  test('dispose() settles whenSettled and a queued setFocus behind a swap the host never completes', async () => {
+    // The host takes the swap and simply never settles it (a torn-down
+    // renderer). Everything chained on the swap queue would hang forever
+    // without dispose racing it: the first request's own promise, a second
+    // request queued behind it, and the whenSettled barrier.
+    const { host, swaps } = makeGatedHost() // release() is never called
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+    })
+    const first = mgr.setFocus([0.2, 0.2, 0.2])
+    await waitFor(() => swaps.length === 1) // in flight, hung
+    const second = mgr.setFocus([0.8, 0.8, 0.8])
+    await tick(DEBOUNCE * 4) // second's doRefocus is now queued behind the hang
+    const firstDone = settled(first)
+    const secondDone = settled(second)
+    const barrierDone = settled(mgr.whenSettled())
+    await tick()
+    expect(firstDone()).toBe(false)
+    expect(secondDone()).toBe(false)
+    expect(barrierDone()).toBe(false)
+
+    mgr.dispose()
+    await waitFor(() => firstDone() && secondDone() && barrierDone())
+    // A barrier requested after dispose is immediate too.
+    await mgr.whenSettled()
+  })
+
+  test('mutators after dispose resolve without touching state', async () => {
+    const { host, swaps } = makeGatedHost()
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+    })
+    const focus = mgr.focus
+    const plan = mgr.currentPlan
+    const budgetBytes = mgr.budgetPlan.budgetBytes
+    const halo = mgr.halo
+    mgr.dispose()
+
+    await mgr.setFocus([0.9, 0.9, 0.9])
+    await mgr.setMaxDetail(2)
+    await mgr.setBudget(budgetBytes + 1)
+    await mgr.raiseHaloTo(halo[0] + 3)
+
+    expect(mgr.focus).toEqual(focus)
+    expect(mgr.currentPlan).toBe(plan)
+    expect(mgr.budgetPlan.budgetBytes).toBe(budgetBytes)
+    expect(mgr.halo).toEqual(halo)
+    await tick(DEBOUNCE * 4)
+    expect(swaps).toHaveLength(0)
+  })
+
+  test('whenSettled resolves after dispose cancels a pending refocus', async () => {
+    const { host } = makeGatedHost()
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: 1000,
+    })
+    void mgr.setFocus([0.2, 0.2, 0.2])
+    const barrier = mgr.whenSettled()
+    mgr.dispose()
+    await expect(barrier).resolves.toBeUndefined()
+  })
+})
+
 // --- manager: automatic coarse floor ---------------------------------------
 
 /**

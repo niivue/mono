@@ -251,7 +251,9 @@ not their difference. For a volume whose mm origin is not at its centre — whic
 our server-built window volumes are — the view **drifted toward a corner** as you
 zoomed. That is now fixed (issue #68): the branch calls
 `NVTransforms.zoomPan2DAbout`, the exact inverse of `calculateMvpMatrix2D`'s
-window, and the crosshair holds still on any volume.
+window, and the crosshair holds still on any volume. An opt-in
+`wheelZoomAnchor: 'pointer'` (default `'crosshair'`, unchanged) can instead
+anchor the wheel zoom at the pointer, OpenSeadragon-style.
 
 The viewer is unaffected either way. It sets `primaryDragMode: none`, which
 disables that branch outright, and drives a **centred** wheel zoom and a drag pan

@@ -105,6 +105,7 @@ import type {
   VectorAnnotation,
   ViewHitTest,
   VolumeUpdate,
+  WheelZoomAnchor,
 } from '@/NVTypes'
 import { niftiBufferIsSignal } from '@/signal/detect'
 import type { SignalFromUrlOptions } from '@/signal/NVSignal'
@@ -1898,6 +1899,19 @@ export default class NiiVue extends EventTarget {
   set isYoked3DTo2DZoom(v: boolean) {
     this.model.interaction.isYoked3DTo2DZoom = v
     this.emit('change', { property: 'isYoked3DTo2DZoom', value: v })
+  }
+
+  /**
+   * Anchor for the 2D wheel zoom: 'crosshair' (default) holds the crosshair
+   * still; 'pointer' holds the point under the mouse pointer still, falling
+   * back to the crosshair when the pointer picks no slice.
+   */
+  get wheelZoomAnchor(): WheelZoomAnchor {
+    return this.model.interaction.wheelZoomAnchor
+  }
+  set wheelZoomAnchor(v: WheelZoomAnchor) {
+    this.model.interaction.wheelZoomAnchor = v
+    this.emit('change', { property: 'wheelZoomAnchor', value: v })
   }
 
   // --- Annotation Properties ---

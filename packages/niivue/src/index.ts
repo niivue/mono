@@ -167,6 +167,7 @@ export type {
   VolumeChunkSource,
   VolumeChunkSourceRequest,
   VolumeUpdate,
+  WheelZoomAnchor,
 } from './NVTypes'
 // Signal load options
 export type { SignalFromUrlOptions } from './signal/NVSignal'

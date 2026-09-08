@@ -11,6 +11,7 @@ import {
 } from '@/control/cameraEvents'
 import * as DragModes from '@/control/dragModes'
 import { computeBoundsPixelRect } from '@/control/viewBoth'
+import { resolveWheelZoomAnchorMM } from '@/control/wheelZoomAnchor'
 import { addUndoBitmap, getDrawingBitmap } from '@/drawing/drawingManager'
 import {
   drawLine,
@@ -2396,11 +2397,13 @@ export function initInteraction(ctrl: NiiVue): void {
           ctrl.model.scene.scaleMultiplier = zoom
           emitScaleMultiplierChange(ctrl)
         }
-        // Pan so the crosshair stays put under the new zoom. The compensation
-        // is NVTransforms' business, not this handler's: the ortho window is
-        // built there and only it knows that holding a point takes a ratio of
-        // the zooms measured from the extent centre.
-        const mm = ctrl.model.scene2mm(ctrl.model.scene.crosshairPos)
+        // Pan so the anchor stays put under the new zoom. The anchor is the
+        // crosshair by default (issue #68), or the pointer's pick on the
+        // hovered tile when interaction.wheelZoomAnchor is 'pointer'. The
+        // compensation is NVTransforms' business, not this handler's: the
+        // ortho window is built there and only it knows that holding a point
+        // takes a ratio of the zooms measured from the extent centre.
+        const mm = resolveWheelZoomAnchorMM(ctrl, px, py, hit)
         const pan = NVTransforms.zoomPan2DAbout(
           ctrl.model.scene.pan2Dxyzmm,
           zoom,

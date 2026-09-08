@@ -97,7 +97,7 @@ nv1.drawPenValue = 3
 `drawIsEnabled`, `drawPenValue`, `drawPenSize`, `drawIsFillOverwriting`, `drawOpacity`, `drawRimOpacity`, `drawColormap`
 
 **Interaction** (no prefix -- delegate to `model.interaction`):
-`primaryDragMode`, `secondaryDragMode`, `isSnapToVoxelCenters`, `isYoked3DTo2DZoom`, `isDragDropEnabled`
+`primaryDragMode`, `secondaryDragMode`, `isSnapToVoxelCenters`, `isYoked3DTo2DZoom`, `isDragDropEnabled`, `wheelZoomAnchor`
 
 **Annotation** (prefix `annotation` -- delegate to `model.annotation`):
 `annotationIsEnabled`, `annotationActiveLabel`, `annotationActiveGroup`, `annotationBrushRadius`, `annotationIsErasing`, `annotationIsVisibleIn3D`, `annotationStyle`, `annotationTool`

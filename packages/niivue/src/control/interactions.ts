@@ -1530,6 +1530,7 @@ export function initInteraction(ctrl: NiiVue): void {
     if (ctrl.activeTileHit && !ctrl.activeTileHit.isRender) {
       const mode = DragModes.getDragModeForButton(ctrl, evt.button)
       ctrl._activeDragMode = mode
+      ctrl._crosshairPanDidDrag = false
       ctrl.dragStartXY = [px, py]
       ctrl.dragEndXY = [px, py]
       // Clear any previous overlay and reset stale angle state
@@ -1546,7 +1547,11 @@ export function initInteraction(ctrl: NiiVue): void {
           ctrl.activeTileHit,
         )
         if (mm) ctrl.setCrosshairPos(mm)
-      } else if (mode === DRAG_MODE.pan || mode === DRAG_MODE.slicer3D) {
+      } else if (
+        mode === DRAG_MODE.pan ||
+        mode === DRAG_MODE.slicer3D ||
+        mode === DRAG_MODE.crosshairPan
+      ) {
         const p = ctrl.model.scene.pan2Dxyzmm
         ctrl._pan2DxyzmmAtDragStart = [p[0], p[1], p[2], p[3]]
       } else if (mode === DRAG_MODE.angle) {
@@ -1794,6 +1799,17 @@ export function initInteraction(ctrl: NiiVue): void {
       }
       // Handle drag mode release for 2D slices
       if (ctrl._activeDragMode !== DRAG_MODE.none) {
+        // `dragEndXY` is only written by pointerdown and pointermove, so a
+        // click whose release lands away from the last move point (coalesced
+        // moves, or no moves at all) would place the crosshair at a stale
+        // point. Refresh it from the release coordinates for crosshairPan
+        // only: measurement/angle/ROI release semantics expect the last
+        // in-bounds move point, and a null hit (released outside the tile
+        // bounds under pointer capture) keeps the last known point.
+        if (ctrl._activeDragMode === DRAG_MODE.crosshairPan) {
+          const upHit = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+          if (upHit) ctrl.dragEndXY = [upHit[0], upHit[1]]
+        }
         DragModes.handleDragRelease(ctrl)
       }
       // Commit a freehand vector stroke drawn on the 3D blocks (clears its state).
@@ -1830,6 +1846,12 @@ export function initInteraction(ctrl: NiiVue): void {
   // streaming pump paused (it is gated on !isDragging) and stall streaming.
   ctrl._eventListeners.pointercancel = (e: Event) => {
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
+      // A cancelled crosshair-pan gesture must not place the crosshair: the
+      // browser took over (touch scroll, palm rejection), so the release point
+      // is not where the user meant to click.
+      if (ctrl._activeDragMode === DRAG_MODE.crosshairPan) {
+        ctrl._crosshairPanDidDrag = true
+      }
       DragModes.handleDragRelease(ctrl)
     }
     try {
@@ -2304,6 +2326,9 @@ export function initInteraction(ctrl: NiiVue): void {
         case DRAG_MODE.pan:
           DragModes.dragForPanZoom(ctrl)
           ctrl.drawScene()
+          break
+        case DRAG_MODE.crosshairPan:
+          if (DragModes.dragForCrosshairPan(ctrl)) ctrl.drawScene()
           break
         case DRAG_MODE.slicer3D:
           DragModes.dragForSlicer3D(ctrl)

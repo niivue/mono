@@ -1393,7 +1393,9 @@ Voxel-level drawing/annotation on 2D slices, visible in both 2D and 3D views. Mo
 
 Configurable drag interactions on 2D slices. `interaction.primaryDragMode` (default: `crosshair`) for left-button, `interaction.secondaryDragMode` (default: `contrast`) for right-button. 3D tile: left=rotate, right=clip plane. Module: `control/dragModes.ts`.
 
-`DRAG_MODE` enum: `none`(0), `contrast`(1), `measurement`(2), `pan`(3), `slicer3D`(4), `callbackOnly`(5), `roiSelection`(6), `angle`(7), `crosshair`(8), `windowing`(9).
+`DRAG_MODE` enum: `none`(0), `contrast`(1), `measurement`(2), `pan`(3), `slicer3D`(4), `callbackOnly`(5), `roiSelection`(6), `angle`(7), `crosshair`(8), `windowing`(9), `crosshairPan`(10).
+
+`crosshairPan` is a single-button touch/trackpad mode: press and release without moving more than `crosshairPanThresholdCssPx` (4 CSS px, scaled to canvas pixels) places the crosshair at the release point like `crosshair`; moving further pans like `pan`, and the gesture then stays a pan. A `pointercancel` never places the crosshair.
 
 Public enum exports from the package root (alongside `DRAG_MODE`): `SLICE_TYPE` (axial/coronal/sagittal/multiplanar/render/none — `none` skips the spatial pass so a signal graph fills the canvas, see "signal mode" above), `MULTIPLANAR_TYPE` (auto/column/grid/row), `SHOW_RENDER`, and `NiiDataType`.
 

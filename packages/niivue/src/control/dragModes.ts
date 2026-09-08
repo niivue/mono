@@ -10,6 +10,59 @@ import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
 import { rulerSegments, rulerTickLabels } from '@/view/NVMeasurement'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 
+/**
+ * Movement (in CSS pixels) a `crosshairPan` gesture must reach (>=) before it
+ * is treated as a pan instead of a click that places the crosshair.
+ */
+export const crosshairPanThresholdCssPx = 4
+
+/**
+ * True when the pointer has moved at least `thresholdPx` (canvas pixels)
+ * from `start` to `end`. Pure helper for `DRAG_MODE.crosshairPan`.
+ */
+export function isCrosshairPanDrag(
+  start: readonly [number, number],
+  end: readonly [number, number],
+  thresholdPx: number,
+): boolean {
+  const dx = end[0] - start[0]
+  const dy = end[1] - start[1]
+  return dx * dx + dy * dy >= thresholdPx * thresholdPx
+}
+
+/**
+ * The `crosshairPan` drag threshold in canvas pixels. `dragStartXY`/`dragEndXY`
+ * are canvas (backing-store) pixels, so the CSS threshold is scaled by the
+ * canvas' backing-store-to-CSS ratio (1:1 without a canvas).
+ */
+export function crosshairPanThresholdPx(ctrl: NiiVue): number {
+  const canvas = ctrl.canvas
+  if (!canvas) return crosshairPanThresholdCssPx
+  const cssWidth = Math.max(canvas.getBoundingClientRect().width, 1)
+  return crosshairPanThresholdCssPx * (canvas.width / cssWidth)
+}
+
+/**
+ * Advance a `crosshairPan` gesture. Before the threshold is crossed nothing
+ * happens; once crossed (or already crossed earlier in the gesture) the view
+ * pans exactly like `DRAG_MODE.pan`. Returns true once the gesture is a pan.
+ */
+export function dragForCrosshairPan(ctrl: NiiVue): boolean {
+  if (
+    !ctrl._crosshairPanDidDrag &&
+    !isCrosshairPanDrag(
+      ctrl.dragStartXY,
+      ctrl.dragEndXY,
+      crosshairPanThresholdPx(ctrl),
+    )
+  ) {
+    return false
+  }
+  ctrl._crosshairPanDidDrag = true
+  dragForPanZoom(ctrl)
+  return true
+}
+
 /** Return the DRAG_MODE for a given mouse button on 2D slice tiles. */
 export function getDragModeForButton(ctrl: NiiVue, button: number): number {
   if (button === 0) return ctrl.model.interaction.primaryDragMode
@@ -292,6 +345,26 @@ export function updateDragOverlay(ctrl: NiiVue): void {
 export function handleDragRelease(ctrl: NiiVue): void {
   const mode = ctrl._activeDragMode
 
+  // Crosshair-pan: a release that never crossed the drag threshold is a click
+  // that places the crosshair. A gesture that panned (or was cancelled) does
+  // not move the crosshair. The threshold is rechecked against the final
+  // release point because pointerup refreshes `dragEndXY` from its own
+  // coordinates: a press-and-release far apart without any pointermove never
+  // set `_crosshairPanDidDrag`, yet it exceeded the threshold, so it is not a
+  // click either.
+  if (
+    mode === DRAG_MODE.crosshairPan &&
+    !ctrl._crosshairPanDidDrag &&
+    !isCrosshairPanDrag(
+      ctrl.dragStartXY,
+      ctrl.dragEndXY,
+      crosshairPanThresholdPx(ctrl),
+    )
+  ) {
+    const mm = screenSlicePickAt(ctrl, ctrl.dragEndXY[0], ctrl.dragEndXY[1])
+    if (mm) ctrl.setCrosshairPos(mm)
+  }
+
   // Angle state machine
   if (mode === DRAG_MODE.angle) {
     if (ctrl._angleState === 'drawing_first_line') {
@@ -411,6 +484,7 @@ function fireDragRelease(ctrl: NiiVue): void {
 export function clearDragState(ctrl: NiiVue): void {
   ctrl._activeDragMode = DRAG_MODE.none
   ctrl._pan2DxyzmmAtDragStart = null
+  ctrl._crosshairPanDidDrag = false
   ctrl.model._dragOverlay = null
   ctrl.model._activeMeasurementScreenLine = null
   ctrl.drawScene()

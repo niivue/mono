@@ -13,6 +13,7 @@
       <label for="primaryDrag">Primary (left)</label>
       <select id="primaryDrag">
         <option value="8" selected>crosshair</option>
+        <option value="10">crosshairPan</option>
         <option value="1">contrast</option>
         <option value="2">measurement</option>
         <option value="7">angle</option>
@@ -28,6 +29,7 @@
         <option value="6">roiSelection</option>
         <option value="7">angle</option>
         <option value="9">windowing</option>
+        <option value="10">crosshairPan</option>
         <option value="0">none</option>
       </select>
       &nbsp;
@@ -100,11 +102,20 @@
         }
       }
 
+      // Optional `?backend=webgl2` (or webgpu) picks the initial backend; the
+      // WebGPU checkbox mirrors it and can still switch at runtime.
+      const initialBackend =
+        new URLSearchParams(window.location.search).get('backend') === 'webgl2'
+          ? 'webgl2'
+          : 'webgpu'
+      webgpuCheck.checked = initialBackend === 'webgpu'
+
       const nv1 = new NiiVue({
         backgroundColor: [0.2, 0.2, 0.2, 1],
         isColorbarVisible: true,
         secondaryDragMode: DRAG_MODE.pan,
         primaryDragMode: DRAG_MODE.crosshair,
+        backend: initialBackend,
       })
       nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
       nv1.addEventListener('dragRelease', (e) => handleDragRelease(e.detail))

@@ -205,7 +205,7 @@ TRX, TT, TSF (scalars), VTK lines.
 
 | Feature | Kind | Notes |
 |---|---|---|
-| `primaryDragMode`, `secondaryDragMode` | Prop | `DRAG_MODE` enum: `none(0)`, `contrast(1)`, `measurement(2)`, `pan(3)`, `slicer3D(4)`, `callbackOnly(5)`, `roiSelection(6)`, `angle(7)`, `crosshair(8)`, `windowing(9)` |
+| `primaryDragMode`, `secondaryDragMode` | Prop | `DRAG_MODE` enum: `none(0)`, `contrast(1)`, `measurement(2)`, `pan(3)`, `slicer3D(4)`, `callbackOnly(5)`, `roiSelection(6)`, `angle(7)`, `crosshair(8)`, `windowing(9)`, `crosshairPan(10)` (click sets crosshair, drag past 4 CSS px pans) |
 | `setDragMode(modeOrString)` | Method | Convenience |
 | `isSnapToVoxelCenters` | Prop | |
 | `isYoked3DTo2DZoom` | Prop | |

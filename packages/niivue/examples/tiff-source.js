@@ -78,16 +78,19 @@ export async function createTiffSource(svsUrl, id) {
     bind(h) {
       host = h
     },
-    async fetchTileBytes(level, tile, label) {
+    async fetchTileBytes(level, tile, label, signal) {
       host?.pushRangeEvent({ label, status: 'pending' })
       try {
         const img = images[level.index]
         const x0 = tile.x * img.getTileWidth()
         const y0 = tile.y * img.getTileHeight()
-        // geotiff fetches only the tile(s) overlapping the window via Range.
+        // geotiff fetches only the tile(s) overlapping the window via Range,
+        // and honours the abort signal NVSlide forwards (this example does not
+        // itself reclassify an aborted read; the catch below reports 'failed').
         const data = await img.readRasters({
           window: [x0, y0, x0 + tile.width, y0 + tile.height],
           interleave: true,
+          signal,
         })
         const spp = img.getSamplesPerPixel()
         const pixels = tile.width * tile.height

@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import type {
   NVSlideLevelManifest,
   NVSlideManifest,
+  NVSlideRangeEvent,
   NVSlideTileManifest,
   SlideTileSource,
 } from './NVSlide'
-import { NVSlide } from './NVSlide'
+import { ManifestRangeSource, NVSlide } from './NVSlide'
 
 const TILE_W = 8
 const TILE_H = 4
@@ -143,15 +144,21 @@ describe('NVSlide tile loading', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 1 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    // Queue all 30 (1 in flight, 29 queued) ...
-    for (const tile of level.tiles) slide.requestTile(level, tile)
+    // A viewport pass wants all 30 (1 in flight, 29 queued), so every queued
+    // tile is VIEWPORT-origin ...
+    slide.setViewport({
+      centerX: (TILE_W * 30) / 2,
+      centerY: TILE_H / 2,
+      scale: 1,
+    })
+    slide.requestVisibleTiles({ widthCss: TILE_W * 30, heightCss: TILE_H })
     // ... then the view moves on: only tile 0 remains visible. The screen is
     // sized so exactly one tile is in view at the origin.
     slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
     slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
     await waitFor(() => slide.pendingCount === 0)
     // Only the tile already in flight (tile 0, also the visible one) loads;
-    // the 29 stale queued tiles are dropped, not fetched.
+    // the 29 stale viewport-origin queued tiles are dropped, not fetched.
     expect(slide.stats.completed).toBe(1)
     expect(source.peak).toBe(1)
     expect(slide.stats.failures).toBe(0)
@@ -316,5 +323,328 @@ describe('NVSlide coarse fallback layer', () => {
     slide.setLevelChoice(2)
     expect(slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN).fallback).toEqual([])
     slide.dispose()
+  })
+})
+
+// A tile source that honours the AbortSignal: a pending fetch rejects with an
+// AbortError the moment NVSlide aborts it, and every signal is recorded.
+// A tile source that honours the AbortSignal and completes only when the test
+// releases it, so in-flight counts are deterministic regardless of scheduler
+// timing (a timer-based source flakes on slow CI runners: loads can complete
+// between a waitFor and the next assertion).
+class AbortableSource implements SlideTileSource {
+  readonly manifest: NVSlideManifest
+  readonly signals: AbortSignal[] = []
+  private readonly gates: Array<() => void> = []
+  constructor(manifest: NVSlideManifest) {
+    this.manifest = manifest
+  }
+  bind(): void {}
+  /** Resolve every fetch that has not been aborted. */
+  releaseAll(): void {
+    for (const release of this.gates.splice(0)) release()
+  }
+  fetchTileBytes(
+    _level: NVSlideLevelManifest,
+    _tile: NVSlideTileManifest,
+    _label: string,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> {
+    if (signal) this.signals.push(signal)
+    return new Promise((resolve, reject) => {
+      this.gates.push(() => resolve(new Uint8Array(16)))
+      signal?.addEventListener('abort', () => {
+        reject(new DOMException('tile fetch aborted', 'AbortError'))
+      })
+    })
+  }
+}
+
+describe('NVSlide load cancellation', () => {
+  it('passes an AbortSignal to the source and aborts in-flight loads on dispose', async () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const source = new AbortableSource(makeManifest(4))
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
+    const level = slide.manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    for (const tile of level.tiles) slide.requestTile(level, tile)
+    await waitFor(() => source.signals.length === 4)
+    expect(source.signals.every((s) => !s.aborted)).toBe(true)
+    slide.dispose()
+    source.releaseAll()
+    expect(source.signals.every((s) => s.aborted)).toBe(true)
+    await waitFor(() => slide.stats.aborted === 4)
+    // An abort is not a failure and nothing was cached.
+    expect(slide.stats.failures).toBe(0)
+    expect(slide.stats.completed).toBe(0)
+    expect(slide.pendingCount).toBe(0)
+  })
+
+  it('aborts in-flight viewport loads that leave the working set and re-requests them later', async () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const source = new AbortableSource(makeManifest(30))
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 8 })
+    const level = slide.manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    // All 30 tiles in view: 8 in flight, 22 queued, all viewport-initiated ...
+    slide.requestVisibleTiles({ widthCss: TILE_W * 30, heightCss: TILE_H })
+    await waitFor(() => source.signals.length === 8)
+    // ... then only tile 0 stays visible: the other 7 in-flight loads are
+    // abandoned on the wire, the queued ones are dropped at dequeue time.
+    slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
+    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    expect(source.signals.filter((s) => s.aborted).length).toBe(7)
+    source.releaseAll()
+    await waitFor(() => slide.pendingCount === 0)
+    expect(slide.stats.completed).toBe(1)
+    expect(slide.stats.aborted).toBe(7)
+    expect(slide.stats.failures).toBe(0)
+    // An aborted tile is not poisoned: bringing it back into view refetches.
+    const before = source.signals.length
+    slide.setViewport({ centerX: TILE_W * 1.5, centerY: TILE_H / 2, scale: 1 })
+    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    await waitFor(() => source.signals.length === before + 1)
+    source.releaseAll()
+    await waitFor(() => slide.stats.completed === 2)
+    expect(source.signals.length).toBe(before + 1)
+    slide.dispose()
+  })
+
+  it('lets a requestTile()-initiated in-flight load finish when the viewport moves on', async () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const source = new AbortableSource(makeManifest(4))
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
+    const level = slide.manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    // A non-viewport consumer (e.g. setSlidePlane's coarsest-level priming)
+    // starts all four loads ...
+    for (const tile of level.tiles) slide.requestTile(level, tile)
+    await waitFor(() => source.signals.length === 4)
+    // ... then a 2D viewport pass wants only tile 0. The other three loads
+    // were not started by the viewport working set, so they must NOT be
+    // aborted: they complete and populate the cache for their consumer.
+    slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
+    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    expect(source.signals.some((s) => s.aborted)).toBe(false)
+    source.releaseAll()
+    await waitFor(() => slide.stats.completed === 4)
+    expect(slide.stats.aborted).toBe(0)
+    expect(slide.cacheBytes).toBe(4 * DECODED_TILE_BYTES)
+    slide.dispose()
+  })
+
+  it('lets a requestTile()-initiated QUEUED load survive a viewport pass that drops it', async () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const source = new AbortableSource(makeManifest(2))
+    // One load slot, so the second requestTile() tile stays QUEUED behind the
+    // first (deterministic: which tile is in flight vs queued is fixed).
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 1 })
+    const level = slide.manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    // A non-viewport consumer requests both: tile 0 in flight, tile 1 queued.
+    for (const tile of level.tiles) slide.requestTile(level, tile)
+    await waitFor(() => source.signals.length === 1)
+    // A 2D viewport pass then wants only tile 0. It clears and rebuilds the
+    // working set, so the queued tile 1 is no longer "wanted" -- but it was
+    // queued by requestTile(), not the viewport, so it must NOT be dropped.
+    slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
+    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    // Releasing tile 0 drains the queue: tile 1 must start (not be dropped).
+    source.releaseAll()
+    await waitFor(() => source.signals.length === 2)
+    source.releaseAll()
+    await waitFor(() => slide.stats.completed === 2)
+    expect(slide.stats.aborted).toBe(0)
+    expect(slide.stats.failures).toBe(0)
+    expect(source.signals.some((s) => s.aborted)).toBe(false)
+    expect(slide.cacheBytes).toBe(2 * DECODED_TILE_BYTES)
+    slide.dispose()
+  })
+
+  it('keeps a viewport-started load that requestTile() also claimed', async () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const source = new AbortableSource(makeManifest(4))
+    // maxConcurrentLoads == tile count, so every tile is in flight (no queue):
+    // which loads are live when the viewport narrows is then deterministic.
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
+    const level = slide.manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    // The viewport starts all four loads (widthCss spans the whole slide) ...
+    slide.setViewport({
+      centerX: (TILE_W * 4) / 2,
+      centerY: TILE_H / 2,
+      scale: 1,
+    })
+    slide.requestVisibleTiles({ widthCss: TILE_W * 4, heightCss: TILE_H })
+    await waitFor(() => source.signals.length === 4)
+    // ... then another consumer explicitly claims tile 1 (already in flight) ...
+    const claimed = level.tiles[1]
+    if (!claimed) throw new Error('missing tile')
+    slide.requestTile(level, claimed)
+    // ... and the viewport moves away from everything but tile 0.
+    slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
+    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    // Only tiles 2 and 3 abort; tile 0 (visible) and tile 1 (claimed) survive.
+    expect(source.signals.filter((s) => s.aborted).length).toBe(2)
+    source.releaseAll()
+    await waitFor(() => slide.pendingCount === 0)
+    expect(slide.stats.completed).toBe(2)
+    expect(slide.stats.aborted).toBe(2)
+    slide.dispose()
+  })
+
+  it('discards bytes a source resolves after its signal was aborted', async () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    // A source that ignores the signal entirely (third-party, pre-signal API).
+    const source = new CountingSource(makeManifest(2))
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 2 })
+    const level = slide.manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    for (const tile of level.tiles) slide.requestTile(level, tile)
+    await waitFor(() => source.current === 2)
+    slide.dispose()
+    await waitFor(() => source.current === 0)
+    await waitFor(() => slide.stats.aborted === 2)
+    expect(slide.stats.completed).toBe(0)
+    expect(slide.stats.failures).toBe(0)
+    expect(slide.cacheBytes).toBe(0)
+  })
+
+  it('closes a bitmap whose decode outlives the abort instead of caching it', async () => {
+    // The abort can also land between the fetch resolving and the decode
+    // finishing. The freshly decoded bitmap must be closed, not inserted into
+    // a cache that dispose() has already cleared (nobody would ever close it).
+    let closed = 0
+    let decodeStarted = false
+    let releaseDecode = (): void => {}
+    const gate = new Promise<void>((resolve) => {
+      releaseDecode = resolve
+    })
+    NVSlide.registerTileDecoder('image/jpeg', async () => {
+      decodeStarted = true
+      await gate
+      return {
+        width: TILE_W,
+        height: TILE_H,
+        close() {
+          closed++
+        },
+      } as unknown as ImageBitmap
+    })
+    const source: SlideTileSource = {
+      manifest: makeManifest(1),
+      bind() {},
+      fetchTileBytes: () => Promise.resolve(new Uint8Array(16)),
+    }
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 1 })
+    const level = slide.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    slide.requestTile(level, tile)
+    await waitFor(() => decodeStarted)
+    slide.dispose()
+    releaseDecode()
+    await waitFor(() => slide.stats.aborted === 1)
+    expect(closed).toBe(1)
+    expect(slide.stats.completed).toBe(0)
+    expect(slide.stats.failures).toBe(0)
+    expect(slide.cacheBytes).toBe(0)
+  })
+})
+
+// A one-tile byte-range manifest for exercising ManifestRangeSource directly.
+function makeRangeManifest(): NVSlideManifest {
+  return {
+    id: 'range-slide',
+    name: 'Range slide',
+    width: TILE_W,
+    height: TILE_H,
+    tileSize: TILE_W,
+    dtype: 'uint8',
+    channels: 'encoded-rgb',
+    dataUrl: 'https://example.test/slide.bin',
+    levels: [
+      {
+        index: 0,
+        width: TILE_W,
+        height: TILE_H,
+        downsample: 1,
+        columns: 1,
+        rows: 1,
+        codec: 'image/jpeg',
+        tiles: [
+          { x: 0, y: 0, width: TILE_W, height: TILE_H, offset: 0, length: 16 },
+        ],
+      },
+    ],
+  }
+}
+
+describe('ManifestRangeSource range telemetry', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  // Bind the source to a host whose event log mirrors NVSlide's
+  // push/updateRangeEvent semantics (update the newest entry with the label).
+  function bindSource(): {
+    source: ManifestRangeSource
+    events: NVSlideRangeEvent[]
+  } {
+    const source = new ManifestRangeSource(makeRangeManifest())
+    const events: NVSlideRangeEvent[] = []
+    source.bind({
+      resolveUrl: (url) => url,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent: (event) => {
+        events.push(event)
+      },
+      updateRangeEvent: (label, status) => {
+        const existing = events.findLast((event) => event.label === label)
+        if (existing) existing.status = status
+        else events.push({ label, status })
+      },
+    })
+    return { source, events }
+  }
+
+  function onlyTile(source: ManifestRangeSource): {
+    level: NVSlideLevelManifest
+    tile: NVSlideTileManifest
+  } {
+    const level = source.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    return { level, tile }
+  }
+
+  it('marks the fragment range event aborted, not pending, when the fetch aborts', async () => {
+    const { source, events } = bindSource()
+    const controller = new AbortController()
+    controller.abort()
+    globalThis.fetch = (() =>
+      Promise.reject(
+        new DOMException('fetch aborted', 'AbortError'),
+      )) as unknown as typeof fetch
+    const { level, tile } = onlyTile(source)
+    await expect(
+      source.fetchTileBytes(level, tile, 'L0/0/0', controller.signal),
+    ).rejects.toThrow('fetch aborted')
+    // The 'pending' entry must not survive the rejected fetch.
+    expect(events).toEqual([{ label: 'L0/0/0 0-15', status: 'aborted' }])
+  })
+
+  it('marks the fragment range event failed when the fetch rejects', async () => {
+    const { source, events } = bindSource()
+    globalThis.fetch = (() =>
+      Promise.reject(new TypeError('network down'))) as unknown as typeof fetch
+    const { level, tile } = onlyTile(source)
+    await expect(source.fetchTileBytes(level, tile, 'L0/0/0')).rejects.toThrow(
+      'network down',
+    )
+    expect(events).toEqual([{ label: 'L0/0/0 0-15', status: 'failed' }])
   })
 })

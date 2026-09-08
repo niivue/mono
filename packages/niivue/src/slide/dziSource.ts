@@ -163,19 +163,24 @@ export class DziSource implements SlideTileSource {
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
     label: string,
+    signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const dziLevel = this.dziLevelForIndex[level.index] ?? 0
     const url = `${this.tilesBase}/${dziLevel}/${tile.x}_${tile.y}.${this.ext}`
     this.host?.pushRangeEvent({ label, status: 'pending' })
-    const response = await fetch(url)
-    if (!response.ok) {
-      this.host?.updateRangeEvent(label, 'failed')
-      throw new Error(`HTTP ${response.status} for ${url}`)
+    let bytes: Uint8Array
+    try {
+      const response = await fetch(url, { signal })
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`)
+      bytes = new Uint8Array(await response.arrayBuffer())
+    } catch (error) {
+      this.host?.updateRangeEvent(label, signal?.aborted ? 'aborted' : 'failed')
+      throw error
     }
-    const bytes = new Uint8Array(await response.arrayBuffer())
     this.host?.addWireBytes(bytes.byteLength)
     this.host?.updateRangeEvent(label, 'hit')
     if (this.overlap <= 0) return bytes
+    signal?.throwIfAborted()
     return this.cropTileCore(bytes, tile)
   }
 

@@ -459,9 +459,11 @@ describe('DicomWsiTileSource.fetchTileBytes', () => {
 
     let calledUrl = ''
     let calledHeaders: Record<string, string> = {}
+    let calledSignal: AbortSignal | null | undefined
     globalThis.fetch = ((url: string, init?: RequestInit) => {
       calledUrl = url
       calledHeaders = (init?.headers ?? {}) as Record<string, string>
+      calledSignal = init?.signal
       return Promise.resolve(
         new Response(body, {
           status: 200,
@@ -472,9 +474,17 @@ describe('DicomWsiTileSource.fetchTileBytes', () => {
       )
     }) as typeof fetch
 
-    const bytes = await source.fetchTileBytes(level, tile)
+    const controller = new AbortController()
+    const bytes = await source.fetchTileBytes(
+      level,
+      tile,
+      'label',
+      controller.signal,
+    )
     expect(calledUrl).toBe(`${BASE}/fine/frames/3`)
     expect(calledHeaders.Authorization).toBe('Bearer t')
+    // NVSlide's cancellation signal is forwarded to the DICOMweb fetch.
+    expect(calledSignal).toBe(controller.signal)
     expect(Array.from(bytes)).toEqual(Array.from(jpeg))
   })
 
@@ -489,6 +499,8 @@ describe('DicomWsiTileSource.fetchTileBytes', () => {
       Promise.resolve(
         new Response('nope', { status: 404 }),
       )) as unknown as typeof fetch
-    await expect(source.fetchTileBytes(level, tile)).rejects.toThrow('404')
+    await expect(source.fetchTileBytes(level, tile, 'label')).rejects.toThrow(
+      '404',
+    )
   })
 })

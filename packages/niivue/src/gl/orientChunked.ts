@@ -32,29 +32,35 @@ import { orientChunkToTexture, rgba2TextureChunk } from './orientOverlay'
 export interface VolumeChunkGL {
   /** RGBA8 color texture for this chunk; sized desc.texDims (includes halo). */
   volumeTexture: WebGLTexture
-  /** RGBA8 gradient texture for this chunk; sized desc.texDims. */
+  /**
+   * RGBA8 gradient texture for this chunk; sized desc.texDims when
+   * `hasGradient`, a 1x1x1 placeholder otherwise.
+   */
   volumeGradientTexture: WebGLTexture
   /**
    * True if `volumeGradientTexture` holds a real computed gradient; false if it
-   * is an empty placeholder (the ~per-slice gradient pass was skipped because the
-   * volume was unlit at upload). The renderer re-uploads such chunks if lighting
-   * is later enabled. Either way it is a real, per-chunk texture that
-   * destroyVolumeChunksGL frees normally.
+   * is a 1x1x1 zero placeholder (the ~per-slice gradient pass was skipped
+   * because the volume was unlit at upload). The renderer re-uploads such
+   * chunks if lighting is later enabled. Either way it is a real, per-chunk
+   * texture that destroyVolumeChunksGL frees normally.
    */
   hasGradient: boolean
   /** Reference to the chunk descriptor (texOrigin/texDims/halos/gridIndex). */
   desc: VolumeChunkDesc
 }
 
-// Allocate an empty (zero) RGBA8 gradient texture sized to `dims`, with the same
+// Allocate a 1x1x1 zero RGBA8 placeholder gradient texture, with the same
 // sampling params the gradient sampler uses. Used in place of the expensive
-// gradient pass when the volume is unlit (gradientAmount == 0): the shader
-// multiplies gradient lighting by gradientAmount, so a zero gradient has no
-// visible effect while keeping the bind/destroy/byte-budget path unchanged.
-function emptyGradientTexture(
-  gl: WebGL2RenderingContext,
-  dims: readonly [number, number, number],
-): WebGLTexture {
+// gradient pass when the volume is unlit (no gradient consumer is active:
+// gradientAmount, gradientOpacity and silhouettePower are all zero, the same
+// rule as the renderer's _needsGradient()): the gradient
+// binding must still hold a complete texture, but the shader only samples it
+// when a gradient consumer is on, so a single zero texel is never read — and
+// even a stale mid-transition read decodes to the same zeros the old
+// brick-sized empty texture held. Keeping it per-chunk (not shared) keeps the
+// bind/destroy path unchanged; at 4 bytes it costs nothing, so an unlit
+// chunked volume pays 4 bytes per voxel instead of 8.
+function emptyGradientTexture(gl: WebGL2RenderingContext): WebGLTexture {
   const tex = gl.createTexture()
   if (!tex)
     throw new Error('orientChunkedGL: failed to allocate gradient texture')
@@ -68,9 +74,9 @@ function emptyGradientTexture(
     gl.TEXTURE_3D,
     0,
     gl.RGBA8,
-    dims[0],
-    dims[1],
-    dims[2],
+    1,
+    1,
+    1,
     0,
     gl.RGBA,
     gl.UNSIGNED_BYTE,
@@ -358,12 +364,13 @@ export function createChunkUploaderGL(
       desc.texDims[2],
     ]
     // Skip the (expensive, ~per-slice) gradient pass when the volume is unlit;
-    // an empty gradient keeps the bind/destroy/budget path identical.
+    // a 1x1x1 placeholder keeps the bind/destroy path identical while paying
+    // 4 bytes total instead of 4 bytes per voxel.
     const hasGradient = wantsGradient()
     const volumeGradientTexture = timeChunkPhase('gradient', () =>
       hasGradient
         ? gradient.volume2TextureGradientRGBA(gl, volumeTexture, dims)
-        : emptyGradientTexture(gl, dims),
+        : emptyGradientTexture(gl),
     )
     return { volumeTexture, volumeGradientTexture, desc, hasGradient }
   }

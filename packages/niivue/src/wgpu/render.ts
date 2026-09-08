@@ -302,11 +302,17 @@ const DEFAULT_CHUNK_FADE_MS = 120
  * Steady-state GPU bytes one resident chunk occupies. The scalar source
  * texture is destroyed after the orient pass, so only the RGBA color texture
  * and the gradient texture persist — both rgba8unorm (4 bytes/voxel) over the
- * chunk's padded `texDims`.
+ * chunk's padded `texDims`. A chunk uploaded without a gradient
+ * (`hasGradient === false`: the volume was unlit at upload) holds a 1x1x1
+ * placeholder instead, so it costs 4 bytes/voxel; a chunk uploaded lit keeps
+ * its 8-byte accounting even if lighting is later toggled off, until it
+ * re-streams. Must agree with
+ * `residentBytesForChunkDesc` so the working-set cap and this eviction
+ * accounting measure the same currency.
  */
 function chunkResidentBytes(chunk: VolumeChunkGPU): number {
   const [tx, ty, tz] = chunk.desc.texDims
-  return tx * ty * tz * 8
+  return tx * ty * tz * (chunk.hasGradient ? 8 : 4)
 }
 
 /** Per-chunk uniform values derived from a chunk descriptor and its plan. */
@@ -1408,11 +1414,18 @@ export class VolumeRenderer extends NVRenderer {
     // any of them; without a cap the resident set grows to the entire visible
     // set and exhausts GPU memory (lost device). Streaming only the most
     // view-central chunks that fit keeps memory bounded — the coarse floor
-    // covers the rest.
+    // covers the rest. Unlit chunks carry no full-size gradient texture, so
+    // the cap prices them at 4 bytes/voxel instead of 8.
     const capped = chunkIndicesForResidentBudget(
       entry.plan,
       ordered,
       entry.manager.budgetBytes,
+      this._needsGradient(),
+      // A chunk uploaded lit keeps its 8-byte gradient footprint until it
+      // re-streams, so a resident chunk is priced by its actual gradient state,
+      // not the current lighting; non-resident chunks (undefined) fall back to
+      // the current lighting state above.
+      (ci) => entry.manager.getChunk(ci)?.hasGradient,
     )
     for (const ci of capped) {
       entry.manager.requestUpload(ci)
@@ -1488,6 +1501,10 @@ export class VolumeRenderer extends NVRenderer {
       entry.plan,
       ordered,
       entry.manager.budgetBytes,
+      this._needsGradient(),
+      // Price already-resident chunks by their real gradient footprint (see
+      // _requestChunksInFrustum); non-resident chunks fall back to lighting.
+      (ci) => entry.manager.getChunk(ci)?.hasGradient,
     )
     for (const ci of capped) {
       entry.manager.requestUpload(ci)

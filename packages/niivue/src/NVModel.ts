@@ -397,6 +397,9 @@ export default class NVModel {
       ...(options.isDragDropEnabled !== undefined && {
         isDragDropEnabled: options.isDragDropEnabled,
       }),
+      ...(options.isPanFollowingCrosshair !== undefined && {
+        isPanFollowingCrosshair: options.isPanFollowingCrosshair,
+      }),
     }
     // Annotation — flat options mapped to annotation group
     this.annotation = {

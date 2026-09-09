@@ -6,6 +6,7 @@ import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
 import { cortex } from '@/assets/matcaps'
 import * as NVCmaps from '@/cmap/NVCmaps'
+import { applyPanFollowsCrosshair } from '@/control/cameraEvents'
 import {
   clearCanvasMessage,
   GRAPHICS_LOST_MESSAGE,
@@ -669,6 +670,7 @@ export default class NiiVue extends EventTarget {
   }
   set crosshairPos(v: vec3) {
     this.model.scene.crosshairPos = v
+    applyPanFollowsCrosshair(this)
     this.emit('change', { property: 'crosshairPos', value: v })
     // Mirror the interaction/setCrosshairPos paths so a programmatic crosshair
     // move also yields a locationChange (with voxel/intensity readout).
@@ -1898,6 +1900,23 @@ export default class NiiVue extends EventTarget {
   set isYoked3DTo2DZoom(v: boolean) {
     this.model.interaction.isYoked3DTo2DZoom = v
     this.emit('change', { property: 'isYoked3DTo2DZoom', value: v })
+  }
+
+  get isPanFollowingCrosshair(): boolean {
+    return this.model.interaction.isPanFollowingCrosshair
+  }
+  /**
+   * Opt-in: when the 2D views are zoomed in ({@link pan2Dxyzmm}`[3] > 1`) and
+   * the crosshair moves on its own — keyboard step, {@link setCrosshairPos},
+   * or a linked instance — pan just enough that it stays inside every tile's
+   * visible window. Off by default (the window stays put and the crosshair may
+   * leave it), and explicit pan/zoom gestures are never fought. Enabling also
+   * applies immediately, so an already-off-window crosshair is brought back.
+   */
+  set isPanFollowingCrosshair(v: boolean) {
+    this.model.interaction.isPanFollowingCrosshair = v
+    this.emit('change', { property: 'isPanFollowingCrosshair', value: v })
+    if (v && applyPanFollowsCrosshair(this)) this.drawScene()
   }
 
   // --- Annotation Properties ---
@@ -3817,6 +3836,7 @@ export default class NiiVue extends EventTarget {
       frac[i] = Math.max(0, Math.min(1, frac[i]))
     }
     this.model.scene.crosshairPos = frac
+    applyPanFollowsCrosshair(this)
     this.createOnLocationChange()
     this.drawScene()
   }
@@ -5178,12 +5198,14 @@ export default class NiiVue extends EventTarget {
       if (opts['2d'] || opts.crosshair) {
         const mm = this.model.scene2mm(src.crosshairPos)
         const frac = target.model.mm2scene(mm)
+        let crosshairMoved = false
         if (
           dst.crosshairPos[0] !== frac[0] ||
           dst.crosshairPos[1] !== frac[1] ||
           dst.crosshairPos[2] !== frac[2]
         ) {
           dst.crosshairPos = frac
+          crosshairMoved = true
           changed = true
         }
         if (opts['2d']) {
@@ -5198,6 +5220,12 @@ export default class NiiVue extends EventTarget {
             dst.pan2Dxyzmm = vec4.clone(sp)
             changed = true
           }
+        }
+        // "By a linked instance" is one of the crosshair-moved-on-its-own
+        // paths: the target's own opt-in keeps the synced crosshair inside its
+        // visible window (after any pan copy, since extents may differ).
+        if (crosshairMoved && applyPanFollowsCrosshair(target)) {
+          changed = true
         }
       }
       if (opts.clipPlane) {

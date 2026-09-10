@@ -38,6 +38,14 @@
     "@nx/js:release-publish": {
       "dependsOn": ["build"],
       "cache": false
+    },
+    "nv-ext-dcm2niix:build": {
+      "dependsOn": ["niivue:build"],
+      "cache": true
+    },
+    "nv-ext-dcm2niix:typecheck": {
+      "dependsOn": ["niivue:typecheck"],
+      "cache": true
     }
   },
   "release": {

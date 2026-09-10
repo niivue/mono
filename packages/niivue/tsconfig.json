@@ -17,6 +17,6 @@
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["src", "vite.config.js"],
+  "include": ["src", "vite.config.js", "jsconfig.json"],
   "exclude": ["dist", "node_modules"]
 }

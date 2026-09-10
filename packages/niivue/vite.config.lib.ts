@@ -49,6 +49,7 @@ export default defineConfig({
     inlineImageAssets(),
     dts({
       tsconfigPath: './tsconfig.json',
+      entryRoot: 'src',
       exclude: ['**/*.test.ts'],
       pathsToAliases: true,
       beforeWriteFile(filePath, content) {

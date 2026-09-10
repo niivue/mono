@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Window/Level (DICOM)</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #1a1a1a;
+        color: #e0e0e0;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      header {
+        padding: 12px 16px;
+        background: #2d2d2d;
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        flex-wrap: wrap;
+        border-bottom: 1px solid #404040;
+      }
+      .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 120px;
+      }
+      label {
+        font-size: 0.85em;
+        color: #aaa;
+        font-weight: 600;
+      }
+      input[type="file"]::file-selector-button {
+        background: #444;
+        color: white;
+        border: 1px solid #555;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.8em;
+      }
+      input[type="file"]::file-selector-button:hover {
+        background: #555;
+      }
+      .slider-value {
+        color: #4caf50;
+        margin-left: 4px;
+        font-weight: normal;
+      }
+      input[type="range"] {
+        width: 140px;
+        cursor: pointer;
+      }
+      button {
+        background: #007acc;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      button:hover {
+        background: #005f9e;
+      }
+      button:disabled {
+        background: #444;
+        cursor: not-allowed;
+      }
+      #status {
+        margin-left: auto;
+        font-size: 0.9em;
+        color: #4caf50;
+      }
+      #canvas-container {
+        flex: 1;
+        position: relative;
+        min-height: 0;
+      }
+      #gl {
+        width: 100%;
+        height: 100%;
+        outline: none;
+      }
+      footer {
+        padding: 4px 12px;
+        background: #2d2d2d;
+        font-size: 0.85em;
+        color: #aaa;
+        min-height: 24px;
+      }
+      .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 999;
+      }
+      .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 15px;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="control-group">
+        <label>Load DICOM</label>
+        <input type="file" id="dicomInput" webkitdirectory disabled />
+      </div>
+
+      <div class="control-group">
+        <label>Window Level (L): <span id="levelValue" class="slider-value">0</span></label>
+        <input type="range" id="levelSlider" min="-5000" max="5000" step="1" value="0" disabled />
+      </div>
+
+      <div class="control-group">
+        <label>Window Width (W): <span id="widthValue" class="slider-value">5000</span></label>
+        <input type="range" id="widthSlider" min="1" max="10000" step="1" value="5000" disabled />
+      </div>
+
+      <button id="resetBtn" type="button" title="Reset to full range" disabled>Reset</button>
+
+      <div class="control-group">
+        <label for="benchmarkRate">Automated Test Target Rate</label>
+        <select id="benchmarkRate">
+          <option value="60">60 updates/second</option>
+          <option value="120">120 updates/second</option>
+          <option value="160" selected>160 updates/second</option>
+        </select>
+      </div>
+      <button id="benchmarkBtn" type="button" disabled>Run 10-Second Automated Test</button>
+
+      <div id="status">Ready</div>
+    </header>
+
+    <div id="canvas-container">
+      <canvas id="gl"></canvas>
+    </div>
+
+    <footer id="location">&nbsp;</footer>
+
+    <div id="loading" class="loading-overlay">
+      <div class="spinner"></div>
+      <div id="loadingText" style="color: white; font-size: 1.2em;">Loading...</div>
+    </div>
+
+    <script type="module" src="window-level-width-single-thread.js"></script>
+  </body>
+</html>

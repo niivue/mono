@@ -6,7 +6,7 @@
     "build": {
       "command": "bunx --bun vite build",
       "options": { "cwd": "{projectRoot}" },
-      "dependsOn": ["^build"],
+      "dependsOn": [],
       "inputs": [
         "typescript",
         "{projectRoot}/vite.config.ts",
@@ -17,7 +17,7 @@
     "typecheck": {
       "command": "bunx tsc --noEmit",
       "options": { "cwd": "{projectRoot}" },
-      "dependsOn": ["^build"],
+      "dependsOn": [],
       "inputs": ["typescript"]
     },
     "lint": {

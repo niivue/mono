@@ -38,6 +38,11 @@ function ghPagesRewritePlugin(): Plugin | null {
 
 export default defineConfig({
   base: ghBase || '/',
+  optimizeDeps: {
+    // dcm2niix creates a module Worker with a relative worker URL. Keeping it
+    // out of Vite's dependency pre-bundle preserves the worker asset path.
+    exclude: ['@niivue/dcm2niix'],
+  },
   plugins: [devImagesPlugin(), ghPagesRewritePlugin()],
   resolve: {
     alias: {

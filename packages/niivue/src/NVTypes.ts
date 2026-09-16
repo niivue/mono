@@ -923,6 +923,14 @@ export type DrawConfig = {
   clickToSegmentIs2D: boolean
 }
 
+/**
+ * Anchor for the 2D wheel zoom: 'crosshair' (default) holds the crosshair
+ * still while zooming; 'pointer' holds the point under the mouse pointer
+ * still, as in OpenSeadragon and other slide viewers. When the pointer picks
+ * no slice, 'pointer' falls back to the crosshair anchor.
+ */
+export type WheelZoomAnchor = 'crosshair' | 'pointer'
+
 /** Interaction config: drag modes, mouse behavior */
 export type InteractionConfig = {
   primaryDragMode: number
@@ -930,6 +938,7 @@ export type InteractionConfig = {
   isSnapToVoxelCenters: boolean
   isDragDropEnabled: boolean
   isYoked3DTo2DZoom: boolean
+  wheelZoomAnchor: WheelZoomAnchor
 }
 
 // ============================================================
@@ -1208,6 +1217,8 @@ export type NiiVueOptions = {
   secondaryDragMode?: number
   isSnapToVoxelCenters?: boolean
   isYoked3DTo2DZoom?: boolean
+  /** Anchor for the 2D wheel zoom. Default 'crosshair'. See InteractionConfig.wheelZoomAnchor. */
+  wheelZoomAnchor?: WheelZoomAnchor
 
   // Annotation (prefixed)
   annotationIsEnabled?: boolean

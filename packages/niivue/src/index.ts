@@ -236,13 +236,6 @@ export type {
 } from './slide/volumeSliceSource'
 export { VolumeSliceSource } from './slide/volumeSliceSource'
 export { buildDrawingLut, drawingBitmapToRGBA } from './view/NVDrawingTexture'
-// Screen-space projection surface for external overlays (see
-// NiiVue.getScreenTiles / mmToCanvas / canvasToMM / hitTest).
-// projectMMToCanvas assumes a 2D slice tile's orthographic MVP (no
-// perspective divide, w ~= 1); it is not valid for a 3D render tile's
-// matrix -- use it only with tiles whose axCorSag is a 2D slice type.
-export type { CanvasTilePoint, SliceTile } from './view/NVSliceLayout'
-export { projectMMToCanvas } from './view/sliceUtils'
 // Allen "volume-viewer" JSON + PNG atlas datasets (multi-channel microscopy)
 export {
   type AllenAtlasImage,
@@ -276,12 +269,16 @@ export { NVRenderer } from './view/NVRenderer'
 // Screen-space projection, for placing external overlays over the 2D tiles
 export type {
   AxisWindowMM,
+  CanvasTilePoint,
   ScreenInfo,
   SliceTile,
   VisibleWindowMM,
 } from './view/NVSliceLayout'
 // The world-mm span each axis currently shows, for brick prefetchers and axis chrome
 export { tileVisibleWindowMM, visibleWindowMM } from './view/NVSliceLayout'
+// projectMMToCanvas assumes a 2D slice tile's orthographic MVP (no perspective
+// divide, w ~= 1); it is not valid for a 3D render tile's matrix -- use it only
+// with tiles whose axCorSag is a 2D slice type.
 export { projectMMToCanvas } from './view/sliceUtils'
 // Crosshair-focused multi-resolution (multi-LOD) streamed volumes
 export type {

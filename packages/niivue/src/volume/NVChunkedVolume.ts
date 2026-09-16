@@ -824,6 +824,9 @@ export class NVChunkedVolume {
       } catch (err) {
         log.warn('NVChunkedVolume: refocus swap failed', err)
       }
+      // dispose() may have run while the host held the swap; the pivot write
+      // would redraw a torn-down host.
+      if (this.disposed) return
       this.applyRenderCentering()
     })
     // Keep the shared chain resolved so a later throw cannot break the queue,

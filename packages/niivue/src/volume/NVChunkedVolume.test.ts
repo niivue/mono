@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mat4 } from 'gl-matrix'
+import { mat4, type vec3 } from 'gl-matrix'
 import { SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
 import type { NVImage, VolumeChunkSourceRequest } from '@/NVTypes'
@@ -941,6 +941,37 @@ describe('NVChunkedVolume refocus promise', () => {
     await waitFor(() => firstDone() && secondDone() && barrierDone())
     // A barrier requested after dispose is immediate too.
     await mgr.whenRefocusIdle()
+  })
+
+  test('a swap released after dispose does not write the render pivot', async () => {
+    const { host, swaps, release } = makeGatedHost()
+    const pivots: Array<vec3 | null> = []
+    Object.defineProperty(host, 'renderPivotMM', {
+      set: (v: vec3 | null) => {
+        pivots.push(v)
+      },
+    })
+    const mgr = new NVChunkedVolume(host, mgrSource, {
+      radius: 16,
+      debounceMs: DEBOUNCE,
+      renderCentering: 'pivot',
+    })
+    // Control: a swap the host completes normally does centre the pivot.
+    const first = mgr.setFocus([0.2, 0.2, 0.2])
+    await waitFor(() => swaps.length === 1)
+    release()
+    await first
+    expect(pivots).toHaveLength(1)
+
+    const second = mgr.setFocus([0.8, 0.8, 0.8])
+    await waitFor(() => swaps.length === 2) // in flight with the host
+    mgr.dispose()
+    await second
+    // The host settles the swap only now; the resumed callback must not touch
+    // the pivot (the setter redraws) on a disposed manager.
+    release()
+    await tick()
+    expect(pivots).toHaveLength(1)
   })
 
   test('mutators after dispose resolve without touching state', async () => {

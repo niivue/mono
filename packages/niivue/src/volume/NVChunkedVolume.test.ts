@@ -7,7 +7,13 @@ import type {
   ChunkedVolumeFetch,
   ChunkedVolumeSource,
 } from './ChunkedVolumeSource'
-import type { ChunkPlan, Vec3f, Vec3i, VolumeChunkDesc } from './chunking'
+import type {
+  ChunkPlan,
+  MultiLodBounds,
+  Vec3f,
+  Vec3i,
+  VolumeChunkDesc,
+} from './chunking'
 import {
   createSourceChunkLoader,
   focusCenterBiased,
@@ -745,6 +751,23 @@ describe("NVChunkedVolume 'auto' radius", () => {
     )
     expect(uniform.budgetPlan.radius).toBe('volume')
     expect(radiusOf(uniform)).toBeCloseTo(Math.hypot(1024, 256, 32) / 2, 6)
+  })
+
+  test('a pinned per-axis radius is copied, so a later caller mutation changes nothing', () => {
+    // Both routes in: the `radius` option and a plan object's `radius`.
+    const asOption: Vec3f = [300, 40, 10]
+    const inPlan: Vec3f = [200, 30, 5]
+    const host = makeHost(async () => {})
+    const a = new NVChunkedVolume(host, thinSource, { radius: asOption })
+    const b = new NVChunkedVolume(host, thinSource, {
+      budgetPlan: { radius: inPlan },
+    })
+    asOption[0] = 1
+    inPlan[0] = 1
+    expect(radiusOf(a)).toEqual([300, 40, 10])
+    expect(a.budgetPlan.radius).toEqual([300, 40, 10])
+    expect(radiusOf(b)).toEqual([200, 30, 5])
+    expect(b.budgetPlan.radius).toEqual([200, 30, 5])
   })
 })
 
@@ -1519,5 +1542,91 @@ describe('NVChunkedVolume automatic display window', () => {
     await mgr.init()
     expect(mgr.volume.calMin).toBe(0)
     expect(mgr.volume.calMax).toBe(1)
+  })
+})
+
+describe('NVChunkedVolume focusBounds', () => {
+  const boundsOf = (mgr: NVChunkedVolume): MultiLodBounds[] =>
+    (mgr as unknown as { focusBounds: MultiLodBounds[] }).focusBounds
+  const intersects = (c: VolumeChunkDesc, b: MultiLodBounds): boolean => {
+    for (let a = 0; a < 3; a++) {
+      const lo = c.voxelOrigin[a]
+      if (lo >= b.max[a] || lo + c.voxelDims[a] <= b.min[a]) return false
+    }
+    return true
+  }
+  const levelsTouching = (plan: ChunkPlan, b: MultiLodBounds): Set<number> =>
+    new Set(
+      plan.chunks
+        .filter((c) => intersects(c, b))
+        .map((c) => c.sourceLevel ?? 0),
+    )
+  // The reservations fixture from chunking.test.ts, through the manager: a
+  // 512-cube pyramid, 32-voxel cells, a one-voxel-thick slab away from the
+  // focus that the plain octree leaves mixed and a reservation makes uniform.
+  const source: ChunkedVolumeSource = {
+    datatypeCode: 4,
+    levels: [
+      { level: 0, shape: [512, 512, 512], spacing: [1, 1, 1] },
+      { level: 1, shape: [256, 256, 256], spacing: [2, 2, 2] },
+      { level: 2, shape: [128, 128, 128], spacing: [4, 4, 4] },
+      { level: 3, shape: [64, 64, 64], spacing: [8, 8, 8] },
+    ],
+    fetchChunk: async () => new Uint8Array(),
+  }
+  // Budget off (0 disables both caps): the fixture's mixed slab only exists
+  // in the unbudgeted octree; the 240-brick default coarsens it uniformly.
+  const opts = {
+    radius: 16,
+    cellEdge: 32,
+    focus: [0.5, 0.5, 0.5] as Vec3f,
+    budgetBytes: 0,
+    maxBricks: 0,
+  }
+  const slab: MultiLodBounds = { min: [0, 0, 100], max: [512, 512, 101] }
+
+  test('initial bounds reach the planner and are cloned from the caller', () => {
+    const host = makeHost(async () => {})
+    const plain = new NVChunkedVolume(host, source, opts)
+    const mine: MultiLodBounds = {
+      min: [slab.min[0], slab.min[1], slab.min[2]],
+      max: [slab.max[0], slab.max[1], slab.max[2]],
+    }
+    const bounded = new NVChunkedVolume(host, source, {
+      ...opts,
+      focusBounds: [mine],
+    })
+    expect(levelsTouching(plain.currentPlan, slab).size).toBeGreaterThan(1)
+    expect(levelsTouching(bounded.currentPlan, slab).size).toBe(1)
+    expect(boundsOf(bounded)).toEqual([slab])
+    expect(boundsOf(bounded)[0]).not.toBe(mine)
+    mine.max[2] = 999
+    expect(boundsOf(bounded)[0].max[2]).toBe(101)
+  })
+
+  test('setFocus replaces, keeps, or clears the bounds by its second argument', async () => {
+    const host = makeHost(async () => {})
+    const mgr = new NVChunkedVolume(host, source, { ...opts, debounceMs: 0 })
+    expect(boundsOf(mgr)).toEqual([])
+    expect(levelsTouching(mgr.currentPlan, slab).size).toBeGreaterThan(1)
+
+    const passed: MultiLodBounds = {
+      min: [slab.min[0], slab.min[1], slab.min[2]],
+      max: [slab.max[0], slab.max[1], slab.max[2]],
+    }
+    await mgr.setFocus([0.5, 0.5, 0.5], [passed])
+    expect(boundsOf(mgr)).toEqual([slab])
+    expect(boundsOf(mgr)[0]).not.toBe(passed)
+    expect(levelsTouching(mgr.currentPlan, slab).size).toBe(1)
+
+    // Omitted: the stored bounds stay in force across a focus move.
+    await mgr.setFocus([0.4, 0.4, 0.4])
+    expect(boundsOf(mgr)).toEqual([slab])
+    expect(levelsTouching(mgr.currentPlan, slab).size).toBe(1)
+
+    // Empty array: cleared, and the plan goes back to the plain octree.
+    await mgr.setFocus([0.5, 0.5, 0.5], [])
+    expect(boundsOf(mgr)).toEqual([])
+    expect(levelsTouching(mgr.currentPlan, slab).size).toBeGreaterThan(1)
   })
 })

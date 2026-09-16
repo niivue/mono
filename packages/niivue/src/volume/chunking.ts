@@ -667,7 +667,8 @@ export interface MultiLodFocus {
    * per-axis `[rx, ry, rz]` for an ellipsoid. Bricks whose region lies within
    * the shape render at the finest level; each further doubling of distance
    * (measured with each axis normalised by its own radius) steps one pyramid
-   * level coarser. A scalar behaves exactly like `[r, r, r]`. A per-axis
+   * level coarser. A scalar behaves exactly like `[r, r, r]`, fallback
+   * included. A per-axis
    * radius matches an anisotropic field of view — a long thin volume or a
    * slab — where a single scalar either wastes bricks on the short axes or
    * starves the long one. Non-positive vector components fall back to the
@@ -799,11 +800,13 @@ export function chunkVolumeMultiLOD(
   // Per-axis focus radius; a scalar stays isotropic (`[r, r, r]`). Vector
   // components that are zero/negative fall back to the largest positive
   // component (or 1), so a degenerate axis widens to the dominant one rather
-  // than making every distance on that axis effectively infinite.
+  // than making every distance on that axis effectively infinite. A
+  // non-positive scalar takes the same fallback (1), so `r` and `[r, r, r]`
+  // normalise identically for every value, not just positive ones.
   const radiusVec: Vec3f = (() => {
     const r = focus.radius
     if (typeof r === 'number') {
-      const v = Math.max(1e-3, r)
+      const v = Math.max(1e-3, r > 0 ? r : 1)
       return [v, v, v]
     }
     const maxComp = Math.max(r[0], r[1], r[2])
@@ -1250,10 +1253,13 @@ export function chunkVolumeMultiLOD(
   // discard. Skipping the ones the bound already rules out leaves the plan
   // unchanged: each pass still stops at the first candidate under budget, and
   // the fallbacks below hold the same (detail, floor) the old loops ended on.
-  const candidate = (): VolumeChunkDesc[] | null =>
-    overBudget(build(detail, floor, 1, false))
-      ? null
-      : reserve(build(detail, floor), floor)
+  // The octree that passes the bound is the one balanced and reserved (it is
+  // what `build` would balance itself), so a fitting candidate pays one
+  // traversal, not two.
+  const candidate = (): VolumeChunkDesc[] | null => {
+    const octree = build(detail, floor, 1, false)
+    return overBudget(octree) ? null : reserve(balance(octree, floor), floor)
+  }
   let chunks = candidate()
   for (let i = 0; i < 16 && (chunks === null || overBudget(chunks)); i++) {
     detail /= 1.6

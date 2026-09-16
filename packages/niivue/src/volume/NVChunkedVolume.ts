@@ -891,8 +891,9 @@ export class NVChunkedVolume {
 
   private currentRadius(): number | Vec3f {
     const radius = this.o.radius
-    // A pinned per-axis radius passes straight through (copied so a later
-    // caller mutation cannot alter the plan input).
+    // A pinned per-axis radius passes straight through. `resolveBudgetPlan`
+    // already copied it out of the caller's array; this copy keeps the plan
+    // input independent of `this.o` as well.
     if (Array.isArray(radius)) return [radius[0], radius[1], radius[2]]
     if (typeof radius === 'number') return radius
     const common = this.source.levels[0].shape

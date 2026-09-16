@@ -257,9 +257,13 @@ export function resolveBudgetPlan(
 ): ResolvedOptions {
   const plan = planFromSpec(options.budgetPlan)
   const halo = options.halo ?? [1, 1, 1]
+  // A per-axis radius is copied here, whether it came in as an option or
+  // inside a plan object, so a caller mutating its array after construction
+  // cannot change a later plan; `budgetPlan` copies it back out the same way.
+  const radius = options.radius ?? plan.radius
   return {
     focus: options.focus ?? plan.focus,
-    radius: options.radius ?? plan.radius,
+    radius: Array.isArray(radius) ? [radius[0], radius[1], radius[2]] : radius,
     budgetBytes: options.budgetBytes ?? plan.budgetBytes,
     maxBricks: options.maxBricks ?? plan.maxBricks,
     cellEdge: options.cellEdge ?? 128,

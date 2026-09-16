@@ -326,8 +326,6 @@ describe('NVSlide coarse fallback layer', () => {
   })
 })
 
-// A tile source that honours the AbortSignal: a pending fetch rejects with an
-// AbortError the moment NVSlide aborts it, and every signal is recorded.
 // A tile source that honours the AbortSignal and completes only when the test
 // releases it, so in-flight counts are deterministic regardless of scheduler
 // timing (a timer-based source flakes on slow CI runners: loads can complete

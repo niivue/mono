@@ -1,4 +1,5 @@
 import { log } from '@/logger'
+import { PEN_SHAPE } from '@/NVConstants'
 import { decodeRLE } from './rle'
 
 export enum PEN_SLICE_TYPE {
@@ -15,6 +16,7 @@ export interface DrawPointParams {
   drawBitmap: Uint8Array
   dims: number[]
   penSize: number
+  penShape: PEN_SHAPE
   penAxCorSag: number
   penOverwrites?: boolean
 }
@@ -26,6 +28,7 @@ export interface DrawLineParams {
   drawBitmap: Uint8Array
   dims: number[]
   penSize: number
+  penShape: PEN_SHAPE
   penAxCorSag: number
   penOverwrites?: boolean
 }
@@ -272,6 +275,7 @@ export function drawPoint(params: DrawPointParams): void {
     drawBitmap,
     dims,
     penSize,
+    penShape,
     penAxCorSag,
     penOverwrites,
   } = params
@@ -295,9 +299,13 @@ export function drawPoint(params: DrawPointParams): void {
     const isAx = penAxCorSag === PEN_SLICE_TYPE.AXIAL
     const isCor = penAxCorSag === PEN_SLICE_TYPE.CORONAL
     const isSag = penAxCorSag === PEN_SLICE_TYPE.SAGITTAL
+    const radius = penSize / 2
+    const isCircle = penShape === PEN_SHAPE.circle
 
     for (let i = -halfPenSize; i <= halfPenSize; i++) {
       for (let j = -halfPenSize; j <= halfPenSize; j++) {
+        if (isCircle && i * i + j * j >= radius * radius) continue
+
         let nx: number, ny: number, nz: number
 
         if (isAx) {
@@ -333,6 +341,7 @@ export function drawLine(params: DrawLineParams): void {
     drawBitmap,
     dims,
     penSize,
+    penShape,
     penAxCorSag,
     penOverwrites,
   } = params
@@ -361,6 +370,7 @@ export function drawLine(params: DrawLineParams): void {
     drawBitmap,
     dims,
     penSize,
+    penShape,
     penAxCorSag,
     penOverwrites,
   }

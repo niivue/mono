@@ -10,7 +10,7 @@
 // (Phase 2 — never materialising the full drawing bitmap — is future work; here
 // the bitmap is whole but the GPU upload per stroke is incremental.)
 
-import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+import NiiVue, { SLICE_TYPE, PEN_SHAPE } from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
 import { installNav } from './nav'
 
@@ -37,6 +37,7 @@ function el<T extends HTMLElement>(id: string): T {
 const els = {
   volume: el<HTMLSelectElement>('volume'),
   pen: el<HTMLSelectElement>('pen'),
+  penShape: el<HTMLSelectElement>('penShape'),
   size: el<HTMLInputElement>('size'),
   drawOn: el<HTMLInputElement>('drawOn'),
   explode: el<HTMLInputElement>('explode'),
@@ -60,6 +61,7 @@ function showFallback(msg: string): void {
 function applyPen(): void {
   if (!nv) return
   nv.drawPenValue = Number(els.pen.value)
+  nv.drawPenShape = Number(els.penShape.value) as PEN_SHAPE
   nv.drawPenSize = Number(els.size.value)
   nv.drawIsEnabled = els.drawOn.checked
   renderHud()
@@ -90,7 +92,7 @@ function renderHud(): void {
   els.hud.textContent =
     `${currentId}\n` +
     `${v ? v.shape.join('×') : '?'} · tiled at ${CHUNK_EDGE}³: ${chunked}\n` +
-    `pen: ${els.pen.value} · size ${els.size.value} · ${els.drawOn.checked ? 'drawing on' : 'off'}`
+    `pen: ${els.pen.value} · shape: ${els.penShape.options[els.penShape.selectedIndex].text} · size ${els.size.value} · ${els.drawOn.checked ? 'drawing on' : 'off'}`
 }
 
 async function loadVolume(id: string): Promise<void> {
@@ -144,7 +146,7 @@ async function main(): Promise<void> {
   els.volume.addEventListener('change', () => {
     void loadVolume(els.volume.value)
   })
-  for (const c of [els.pen, els.size, els.drawOn]) {
+  for (const c of [els.pen, els.penShape, els.size, els.drawOn]) {
     c.addEventListener('input', applyPen)
   }
   els.explode.addEventListener('change', applyExplode)

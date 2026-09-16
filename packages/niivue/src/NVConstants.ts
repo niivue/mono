@@ -80,6 +80,11 @@ export enum SHOW_RENDER {
   AUTO = 2,
 }
 
+export enum PEN_SHAPE {
+  rectangle = 0,
+  circle = 1,
+}
+
 export const NiiIntentCode = Object.freeze({
   NIFTI_INTENT_NONE: 0,
   NIFTI_INTENT_CORREL: 2,
@@ -397,6 +402,7 @@ export const DRAW_DEFAULTS: DrawConfig = {
   isClickToSegment: false,
   clickToSegmentTolerance: 0.05,
   clickToSegmentIs2D: true,
+  penShape: PEN_SHAPE.rectangle,
 }
 
 export const INTERACTION_DEFAULTS: InteractionConfig = {

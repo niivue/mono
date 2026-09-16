@@ -101,6 +101,82 @@ describe('resident chunk budget helpers', () => {
     )
   })
 
+  test('an unlit chunk costs only its RGBA bytes (placeholder gradient)', () => {
+    // Unlit chunks skip the gradient pass and keep a 1x1x1 placeholder, so
+    // hasGradient=false costs 4 bytes/voxel; hasGradient=true (the default,
+    // asserted just below) keeps the full 8.
+    expect(residentBytesForChunkDesc(testChunk([10, 20, 30]), false)).toBe(
+      10 * 20 * 30 * 4,
+    )
+    expect(residentBytesForChunkDesc(testChunk([10, 20, 30]), true)).toBe(
+      10 * 20 * 30 * 8,
+    )
+  })
+
+  test('unlit pricing admits twice the volume under the same budget', () => {
+    const plan = testPlan([
+      testChunk([10, 10, 10]), // lit 8000 B, unlit 4000 B
+      testChunk([10, 10, 10]),
+      testChunk([10, 10, 10]),
+      testChunk([10, 10, 10]),
+    ])
+    const budget = 2 * 10 * 10 * 10 * 8 // exactly two lit chunks
+    expect(chunkIndicesForResidentBudget(plan, [0, 1, 2, 3], budget)).toEqual([
+      0, 1,
+    ])
+    expect(
+      chunkIndicesForResidentBudget(plan, [0, 1, 2, 3], budget, false),
+    ).toEqual([0, 1, 2, 3])
+  })
+
+  test('prices lit-resident chunks at 8 bytes when lighting is toggled off', () => {
+    // A chunk uploaded lit keeps its 8-byte gradient footprint until it
+    // re-streams. If lighting is toggled off while such chunks are resident,
+    // the current lighting state (unlit → 4 bytes) under-prices them and the
+    // scan would admit more than the manager actually holds. The per-index
+    // callback restores the truth: resident-lit chunks cost 8, everything else
+    // falls back to the current (unlit) lighting state.
+    const plan = testPlan([
+      testChunk([10, 10, 10]), // resident LIT   → 8000 B
+      testChunk([10, 10, 10]), // resident LIT   → 8000 B
+      testChunk([10, 10, 10]), // not resident   → unlit 4000 B
+      testChunk([10, 10, 10]), // not resident   → unlit 4000 B
+    ])
+    // Indices 0 and 1 are resident and were uploaded lit; 2 and 3 are not
+    // resident yet (undefined → fall back to the current unlit state).
+    const residentLit = new Map<number, boolean>([
+      [0, true],
+      [1, true],
+    ])
+    const hasGradientForIndex = (ci: number) => residentLit.get(ci)
+    // Budget holds two lit chunks exactly (16000 B). Priced honestly, the two
+    // resident-lit chunks fill it and nothing else is admitted.
+    const budget = 2 * 10 * 10 * 10 * 8
+    const picked = chunkIndicesForResidentBudget(
+      plan,
+      [0, 1, 2, 3],
+      budget,
+      false, // current lighting: unlit
+      hasGradientForIndex,
+    )
+    expect(picked).toEqual([0, 1])
+    // The returned set's real byte total (resident-lit at 8, rest at unlit 4)
+    // must not exceed the budget the residency manager accounts against.
+    const realBytes = picked.reduce(
+      (sum, i) =>
+        sum +
+        residentBytesForChunkDesc(plan.chunks[i], residentLit.get(i) ?? false),
+      0,
+    )
+    expect(realBytes).toBe(16000)
+    expect(realBytes).toBeLessThanOrEqual(budget)
+    // Without per-index pricing the scan would price all four at the unlit 4000
+    // B and wrongly admit the whole set, over-committing the resident bytes.
+    expect(
+      chunkIndicesForResidentBudget(plan, [0, 1, 2, 3], budget, false),
+    ).toEqual([0, 1, 2, 3])
+  })
+
   test('selects ordered chunks by actual resident bytes', () => {
     const plan = testPlan([
       testChunk([10, 10, 10]),

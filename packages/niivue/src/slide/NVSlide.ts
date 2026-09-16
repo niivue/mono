@@ -150,7 +150,12 @@ export interface NVSlideScreenRect {
   height: number
 }
 
-export type NVSlideRangeStatus = 'pending' | 'hit' | 'fallback' | 'failed'
+export type NVSlideRangeStatus =
+  | 'pending'
+  | 'hit'
+  | 'fallback'
+  | 'failed'
+  | 'aborted'
 
 export interface NVSlideRangeEvent {
   label: string
@@ -163,6 +168,11 @@ export interface NVSlideStats {
   rangeHits: number
   fullFileFallbacks: number
   failures: number
+  /**
+   * Loads NVSlide abandoned on purpose (the view moved on, or the slide was
+   * disposed). Never a failure: nothing was wrong with the tile or the source.
+   */
+  aborted: number
   wireBytes: number
   decodedBytes: number
   cacheHits: number
@@ -209,6 +219,7 @@ function freshStats(): NVSlideStats {
     rangeHits: 0,
     fullFileFallbacks: 0,
     failures: 0,
+    aborted: 0,
     wireBytes: 0,
     decodedBytes: 0,
     cacheHits: 0,
@@ -344,12 +355,32 @@ export interface SlideTileSource {
   readonly manifest: NVSlideManifest
   /** Adopted by an NVSlide before any fetch; wires up telemetry + URL resolution. */
   bind(host: SlideSourceHost): void
-  /** Fetch the encoded bytes for one tile (NVSlide decodes per level.codec). */
+  /**
+   * Fetch the encoded bytes for one tile (NVSlide decodes per level.codec).
+   *
+   * `signal` fires when NVSlide no longer wants the tile -- the view moved on,
+   * or the slide was disposed. A source that reads over the network should
+   * pass it to `fetch()` so the read is abandoned on the wire rather than
+   * discarded on arrival, and reject with an `AbortError`. Optional: a source
+   * that ignores it stays correct, only wasteful, and NVSlide drops whatever
+   * it resolves after the abort.
+   */
   fetchTileBytes(
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
     label: string,
+    signal?: AbortSignal,
   ): Promise<Uint8Array>
+}
+
+function isAbortError(err: unknown): boolean {
+  // Structural check: fetch() aborts reject with a DOMException named
+  // 'AbortError', which is not an Error instance in every runtime.
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { name?: unknown }).name === 'AbortError'
+  )
 }
 
 /**
@@ -396,19 +427,35 @@ export class ManifestRangeSource implements SlideTileSource {
     sourceUrl: string,
     fragment: NVSlideTileFragment,
     label: string,
+    signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const host = this.requireHost()
     const start = fragment.offset
     const end = fragment.offset + fragment.length - 1
     const rangeLabel = `${label} ${start}-${end}`
     host.pushRangeEvent({ label: rangeLabel, status: 'pending' })
-    const response = await fetch(sourceUrl, {
-      headers: { Range: `bytes=${start}-${end}` },
-    })
-    if (!response.ok && response.status !== 206) {
-      throw new Error(`HTTP ${response.status}`)
+    let response: Response
+    let wireBytes: Uint8Array
+    try {
+      response = await fetch(sourceUrl, {
+        headers: { Range: `bytes=${start}-${end}` },
+        signal,
+      })
+      if (!response.ok && response.status !== 206) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      wireBytes = new Uint8Array(await response.arrayBuffer())
+    } catch (error) {
+      // The 'pending' entry must not outlive the request: a rejected fetch
+      // (the load's signal firing, a network failure, an HTTP error) would
+      // otherwise leave a stale 'pending' row in stats.lastRequests forever
+      // (_runLoad's catch updates the TILE label, not this fragment's).
+      host.updateRangeEvent(
+        rangeLabel,
+        signal?.aborted || isAbortError(error) ? 'aborted' : 'failed',
+      )
+      throw error
     }
-    const wireBytes = new Uint8Array(await response.arrayBuffer())
     host.addWireBytes(wireBytes.byteLength)
     if (response.status === 206) {
       host.rangeHit()
@@ -429,12 +476,13 @@ export class ManifestRangeSource implements SlideTileSource {
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
     label: string,
+    signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const sourceUrl = this.tileSourceUrl(level)
     const fragments = this.tileFragments(tile)
     const parts = await Promise.all(
       fragments.map((fragment) =>
-        this.fetchFragment(sourceUrl, fragment, label),
+        this.fetchFragment(sourceUrl, fragment, label, signal),
       ),
     )
     return parts.length === 1 ? (parts[0] as Uint8Array) : concatBytes(parts)
@@ -475,6 +523,17 @@ export class NVSlide extends EventTarget {
   // this, zooming/panning piles stale tiles into the queue and fresh visible
   // tiles crawl behind the backlog.
   private readonly _wanted = new Set<string>()
+  // One controller per in-flight load, keyed by tile key. Aborted when the
+  // tile leaves the working set or the slide is disposed, so the source can
+  // abandon the read on the wire instead of NVSlide discarding it on arrival.
+  private readonly _inflight = new Map<string, AbortController>()
+  // Keys whose CURRENT load was started by requestVisibleTiles (the 2D
+  // viewport working-set path). _abortUnwantedLoads only aborts these: a load
+  // begun via requestTile() serves a consumer the 2D viewport knows nothing
+  // about (slide-plane coarsest-level priming, the wand color reference), so
+  // a pan/zoom must not cancel it -- it completes and populates the cache.
+  // dispose() still aborts every in-flight load regardless of origin.
+  private readonly _viewportKeys = new Set<string>()
   private _warnedTileFlood = false
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
@@ -878,8 +937,9 @@ export class NVSlide extends EventTarget {
     for (const item of visible.tiles) {
       this._wanted.add(item.key)
       if (this._cache.has(item.key) || this._pending.has(item.key)) continue
-      this.loadTile(item.level, item.tile)
+      this.loadTile(item.level, item.tile, true)
     }
+    this._abortUnwantedLoads()
     return visible
   }
 
@@ -891,7 +951,14 @@ export class NVSlide extends EventTarget {
   requestTile(level: NVSlideLevelManifest, tile: NVSlideTileManifest): void {
     const key = this.tileKey(level, tile)
     this._wanted.add(key)
-    if (this._cache.has(key) || this._pending.has(key)) return
+    if (this._cache.has(key)) return
+    if (this._pending.has(key)) {
+      // An explicit requestTile() for a tile the viewport already started
+      // means a second consumer wants it: de-classify it so a later viewport
+      // working-set change cannot abort it out from under that consumer.
+      this._viewportKeys.delete(key)
+      return
+    }
     this.loadTile(level, tile)
   }
 
@@ -912,6 +979,9 @@ export class NVSlide extends EventTarget {
     this.clearCache()
     this._loadQueue.length = 0
     this._wanted.clear()
+    this._viewportKeys.clear()
+    for (const controller of this._inflight.values()) controller.abort()
+    this._inflight.clear()
     this._pending.clear()
   }
 
@@ -982,9 +1052,12 @@ export class NVSlide extends EventTarget {
   private loadTile(
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
+    fromViewport = false,
   ): void {
     const key = this.tileKey(level, tile)
     if (this._cache.has(key) || this._pending.has(key)) return
+    if (fromViewport) this._viewportKeys.add(key)
+    else this._viewportKeys.delete(key)
     this._pending.add(key)
     this.stats.requested++
     this._emitChange()
@@ -1002,9 +1075,26 @@ export class NVSlide extends EventTarget {
   ): Promise<void> {
     this._activeLoads++
     const label = `${key}${typeof tile.frame === 'number' ? ` f${tile.frame}` : ''}`
+    const controller = new AbortController()
+    const { signal } = controller
+    this._inflight.set(key, controller)
     try {
-      const tileBytes = await this._source.fetchTileBytes(level, tile, label)
+      const tileBytes = await this._source.fetchTileBytes(
+        level,
+        tile,
+        label,
+        signal,
+      )
+      // A source that cannot stop a read in progress may still resolve after
+      // the abort; the tile is no longer wanted either way.
+      signal.throwIfAborted()
       const bitmap = await this.decodeTileBitmap(level, tile, tileBytes)
+      if (signal.aborted) {
+        // Disposed (or dropped) while decoding. Caching now would leave a
+        // bitmap in a cache that was already cleared, with nobody to close it.
+        bitmap.close()
+        signal.throwIfAborted()
+      }
       // Account the cache in DECODED bytes (RGBA), not encoded/wire bytes: the
       // cached resource is the ImageBitmap (often GPU-backed), which is 10-20x
       // the JPEG size — encoded accounting silently blew maxCacheBytes.
@@ -1014,14 +1104,41 @@ export class NVSlide extends EventTarget {
       this.stats.cacheBytes = this._cache.bytes
       this.stats.completed++
     } catch (err) {
-      this.stats.failures++
-      this.updateRangeEvent(label, 'failed')
-      console.error(`Failed to load slide tile ${this.id}/${key}`, err)
+      if (signal.aborted || isAbortError(err)) {
+        // An abort is not a failure: nothing was wrong with the tile. It is
+        // not logged, and clearing `pending` below lets it re-request later.
+        this.stats.aborted++
+        this.updateRangeEvent(label, 'aborted')
+      } else {
+        this.stats.failures++
+        this.updateRangeEvent(label, 'failed')
+        console.error(`Failed to load slide tile ${this.id}/${key}`, err)
+      }
     } finally {
       this._activeLoads--
+      if (this._inflight.get(key) === controller) this._inflight.delete(key)
+      this._viewportKeys.delete(key)
       this._pending.delete(key)
       this._emitChange()
       this._drainLoadQueue()
+    }
+  }
+
+  /**
+   * Abandon in-flight loads the current view no longer wants. The queued
+   * counterpart is `_drainLoadQueue`, which drops such tiles at dequeue time;
+   * this covers the ones that had already started. The load's own `finally`
+   * clears `pending`, so the tile re-requests if it scrolls back into view.
+   *
+   * Only VIEWPORT-initiated loads (`_viewportKeys`) are eligible: a load
+   * started by `requestTile()` belongs to another consumer (e.g. the 3D
+   * slide-plane), so a 2D pan/zoom leaves it to complete and cache.
+   */
+  private _abortUnwantedLoads(): void {
+    for (const [key, controller] of this._inflight) {
+      if (this._wanted.has(key) || !this._viewportKeys.has(key)) continue
+      this._inflight.delete(key)
+      controller.abort()
     }
   }
 
@@ -1031,10 +1148,17 @@ export class NVSlide extends EventTarget {
       // the current view is showing placeholders for.
       const next = this._loadQueue.pop()
       if (!next) return
-      // Dropped from the working set while queued (view moved on), or cached
-      // by a racing path: skip without fetching. Clearing `pending` lets the
-      // tile re-request if it scrolls back into view.
-      if (!this._wanted.has(next.key) || this._cache.has(next.key)) {
+      // Cached by a racing path: skip without fetching, whoever queued it.
+      // Otherwise drop only VIEWPORT-origin tiles that left the working set
+      // (view moved on) -- the queued counterpart of `_abortUnwantedLoads`. A
+      // tile queued via `requestTile()` belongs to another consumer (3D
+      // slide-plane, wand, setSlidePlane priming), so a 2D pan/zoom that
+      // rebuilds `_wanted` must not cancel it. Clearing `pending` lets a
+      // dropped tile re-request if it scrolls back into view.
+      const droppedFromViewport =
+        this._viewportKeys.has(next.key) && !this._wanted.has(next.key)
+      if (this._cache.has(next.key) || droppedFromViewport) {
+        this._viewportKeys.delete(next.key)
         this._pending.delete(next.key)
         continue
       }

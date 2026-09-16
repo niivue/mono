@@ -11,8 +11,9 @@ import * as NVSliceLayout from '@/view/NVSliceLayout'
  *
  * With `'pointer'` the anchor is the pointer's pick on the hovered slice tile
  * (OpenSeadragon-style zoom-to-cursor). When the pick misses — pointer off any
- * slice, no volumes, or the first frame before the tile cache is populated —
- * it falls back to the crosshair anchor.
+ * slice, or no volumes — it falls back to the crosshair anchor. A tile laid
+ * out but not yet rendered still picks: `screenSlicePick` recomputes the MVP
+ * from the tile's screen extents when the cached one is absent.
  */
 export function resolveWheelZoomAnchorMM(
   ctrl: NiiVue,

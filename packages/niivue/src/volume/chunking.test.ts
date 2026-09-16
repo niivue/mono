@@ -1186,6 +1186,44 @@ describe('chunkVolumeMultiLOD — per-axis radius', () => {
   })
 })
 
+describe('chunkVolumeMultiLOD — budget pass cost', () => {
+  test('a slide-sized pyramid under a brick cap plans in well under a second', () => {
+    // 8192 x 4096 x 1024 over seven levels with the finest core spanning most
+    // of the volume: every floor-0 candidate is a mixed-level plan of ~160k
+    // bricks whose 2:1 balance pass is quadratic (7 to 35 s each), and the
+    // detail pass used to build sixteen of them before the floor climb threw
+    // them all away (236 s end to end). The octree lower bound now rules those
+    // candidates out without balancing them, so the whole plan takes ~0.4 s.
+    // Bun's default per-test timeout (5 s) is the regression guard.
+    const levels: Vec3i[] = []
+    let d: Vec3i = [8192, 4096, 1024]
+    for (let i = 0; i < 7; i++) {
+      levels.push([d[0], d[1], d[2]])
+      d = [Math.ceil(d[0] / 2), Math.ceil(d[1] / 2), Math.ceil(d[2] / 2)]
+    }
+    const plan = chunkVolumeMultiLOD(
+      levels,
+      { center: [4096.37, 2048.29, 512.41], radius: [4096, 2048, 512] },
+      2048,
+      { cellEdge: 128, maxBricks: 240 },
+    )
+    expect(plan.chunks.length).toBeLessThanOrEqual(240)
+    // Multi-LOD bricks place in the common grid but fetch from their own
+    // level, so the single-level tex/voxel identity does not apply; check the
+    // device cap, the common-grid bounds and gap-free coverage instead.
+    for (const c of plan.chunks) {
+      for (let a = 0; a < 3; a++) {
+        expect(c.texDims[a]).toBeLessThanOrEqual(2048)
+        expect(c.voxelOrigin[a]).toBeGreaterThanOrEqual(0)
+        expect(c.voxelOrigin[a] + c.voxelDims[a]).toBeLessThanOrEqual(
+          plan.volumeDims[a],
+        )
+      }
+    }
+    expect(totalDataVoxels(plan)).toBe(8192 * 4096 * 1024)
+  })
+})
+
 describe('chunkVolumeMultiLOD — pinned gridDims lattice', () => {
   // Deliberately NOT power-of-two per axis, so an exact lattice cannot fall out
   // of a scalar cellEdge (which is the reason the option exists).

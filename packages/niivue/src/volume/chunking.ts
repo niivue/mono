@@ -1142,6 +1142,7 @@ export function chunkVolumeMultiLOD(
     detail: number,
     floor: number,
     rootScale = 1,
+    balanced = true,
   ): VolumeChunkDesc[] => {
     const chunks: VolumeChunkDesc[] = []
     const subdivide = (originC: Vec3i, sizeC: Vec3i, level: number): void => {
@@ -1200,7 +1201,7 @@ export function chunkVolumeMultiLOD(
         }
       }
     }
-    return balance(chunks, floor)
+    return balanced ? balance(chunks, floor) : chunks
   }
 
   // Budget pass — fit BOTH the GPU byte budget (rgba + gradient = 8 B per padded
@@ -1225,44 +1226,62 @@ export function chunkVolumeMultiLOD(
     )
   const overBudget = (cs: VolumeChunkDesc[]): boolean =>
     (budget > 0 && bytesOf(cs) > budget) || cs.length > maxBricks
-  let detail = BASE_DETAIL
-  let floor = minLevel
-  let chunks = reserve(build(detail, floor), floor)
-  if (budget > 0 || maxBricks !== Number.POSITIVE_INFINITY) {
-    for (let i = 0; i < 16 && overBudget(chunks); i++) {
-      detail /= 1.6
-      chunks = reserve(build(detail, floor), floor)
-    }
-    while (overBudget(chunks) && floor < maxLevel) {
-      floor++
-      chunks = reserve(build(detail, floor), floor)
-    }
-    // The detail/floor passes refine toward the focus but never coarsen the ROOT
-    // grid, so a small `cellEdge` on a large volume can leave the root box count
-    // above `maxBricks` even at floor === maxLevel. Grow the root cell (fewer,
-    // larger bricks) until the cap is met — bounded so a root brick never exceeds
-    // the device texture limit. If the cap is still unreachable at the limit, the
-    // volume genuinely cannot fit `maxBricks` device-sized bricks (rare).
-    if (chunks.length > maxBricks) {
-      const maxRootScale = Math.max(
-        1,
-        Math.floor((deviceLimit - 2 * maxHalo) / cellEdge),
-      )
-      let rootScale = 1
-      while (chunks.length > maxBricks && rootScale < maxRootScale) {
-        rootScale = Math.min(maxRootScale, rootScale * 2)
-        chunks = reserve(build(detail, maxLevel, rootScale), maxLevel)
-      }
-    }
-  }
-
-  return {
+  const finish = (cs: VolumeChunkDesc[]): ChunkPlan => ({
     gridDims: [1, 1, 1],
     stride: [commonDims[0], commonDims[1], commonDims[2]],
-    chunks,
+    chunks: cs,
     volumeDims: [commonDims[0], commonDims[1], commonDims[2]],
     deviceLimit,
     haloSize: [halo[0], halo[1], halo[2]],
     levelDims: levelDims.map((d) => [d[0], d[1], d[2]] as Vec3i),
+  })
+  let detail = BASE_DETAIL
+  let floor = minLevel
+  const budgeted = budget > 0 || maxBricks !== Number.POSITIVE_INFINITY
+  if (!budgeted) {
+    return finish(reserve(build(detail, floor), floor))
   }
+  // A candidate is built in full only when it might fit. The octree alone is
+  // a lower bound on the finished plan: `balance` and `reserve` only ever
+  // split bricks, and a split never lowers the count or the bytes. Balancing
+  // is quadratic in bricks, so on a slide-sized pyramid whose finest core
+  // spans most of the volume a full floor-0 candidate costs tens of seconds,
+  // and the detail pass used to build sixteen of them for the floor climb to
+  // discard. Skipping the ones the bound already rules out leaves the plan
+  // unchanged: each pass still stops at the first candidate under budget, and
+  // the fallbacks below hold the same (detail, floor) the old loops ended on.
+  const candidate = (): VolumeChunkDesc[] | null =>
+    overBudget(build(detail, floor, 1, false))
+      ? null
+      : reserve(build(detail, floor), floor)
+  let chunks = candidate()
+  for (let i = 0; i < 16 && (chunks === null || overBudget(chunks)); i++) {
+    detail /= 1.6
+    chunks = candidate()
+  }
+  while ((chunks === null || overBudget(chunks)) && floor < maxLevel) {
+    floor++
+    chunks = candidate()
+  }
+  // Over budget at every detail and floor: the plan is the maxLevel one.
+  if (chunks === null) chunks = reserve(build(detail, floor), floor)
+  // The detail/floor passes refine toward the focus but never coarsen the ROOT
+  // grid, so a small `cellEdge` on a large volume can leave the root box count
+  // above `maxBricks` even at floor === maxLevel. Grow the root cell (fewer,
+  // larger bricks) until the cap is met — bounded so a root brick never exceeds
+  // the device texture limit. If the cap is still unreachable at the limit, the
+  // volume genuinely cannot fit `maxBricks` device-sized bricks (rare).
+  if (chunks.length > maxBricks) {
+    const maxRootScale = Math.max(
+      1,
+      Math.floor((deviceLimit - 2 * maxHalo) / cellEdge),
+    )
+    let rootScale = 1
+    while (chunks.length > maxBricks && rootScale < maxRootScale) {
+      rootScale = Math.min(maxRootScale, rootScale * 2)
+      chunks = reserve(build(detail, maxLevel, rootScale), maxLevel)
+    }
+  }
+
+  return finish(chunks)
 }

@@ -19,8 +19,9 @@ export interface BudgetPlan {
   focus: 'crosshair' | 'none' | Vec3f
   /**
    * Finest-LOD radius in common-grid voxels. `'auto'` derives it from the view
-   * (tight in the 3D render view; per-axis half-extents over zoom in 2D slice
-   * views, so anisotropic volumes are covered without over- or under-shooting);
+   * (tight in the 3D render view; per-axis sqrt(3) * half-extents over zoom in
+   * 2D slice views, so anisotropic volumes are covered without over- or
+   * under-shooting) and re-plans when the 2D zoom or slice type changes;
    * `'volume'` covers every brick, so the plan is uniform; a number pins an
    * isotropic ball; a `[rx, ry, rz]` pins an ellipsoid.
    */
@@ -127,10 +128,12 @@ export interface BudgetPlanOptions {
   focus?: 'crosshair' | 'none' | Vec3f
   /**
    * Finest-LOD radius in common-grid voxels. `'auto'` (default) derives it from
-   * the view: tight in the 3D render view; PER-AXIS half-extents over zoom in
-   * 2D slice views (shrinking with 2D zoom), so a long thin volume gets an
-   * ellipsoid that hugs it instead of a diagonal ball. `'volume'` covers every
-   * brick. A number pins an isotropic ball; a `[rx, ry, rz]` an ellipsoid.
+   * the view: tight in the 3D render view; PER-AXIS sqrt(3) * half-extents over
+   * zoom in 2D slice views (shrinking with 2D zoom), so a long thin volume gets
+   * an ellipsoid with its own aspect instead of a diagonal ball. The plan is
+   * rebuilt (debounced) when the 2D zoom or the slice type changes, whatever
+   * the focus mode. `'volume'` covers every brick. A number pins an isotropic
+   * ball; a `[rx, ry, rz]` an ellipsoid.
    */
   radius?: 'auto' | 'volume' | number | Vec3f
   /** GPU byte budget for the planned brick set (default 1.5 GB). */

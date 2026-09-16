@@ -2,6 +2,7 @@ import { mat4, vec3 } from 'gl-matrix'
 import { log } from '@/logger'
 import { SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
+import type { PropertyChangeDetail } from '@/NVEvents'
 import type { NVImage, TypedVoxelArray, VolumeChunkSource } from '@/NVTypes'
 import type {
   BudgetPlan,
@@ -33,6 +34,11 @@ import {
  * {@link BudgetPlanOptions} (`budgetPlan` plus the individual knobs it layers
  * under); everything here is display state for the streamed volume itself.
  */
+function sameRadius(a: number | Vec3f, b: number | Vec3f): boolean {
+  if (typeof a === 'number' || typeof b === 'number') return a === b
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
+}
+
 export interface ChunkedVolumeOptions extends BudgetPlanOptions {
   /** Display window minimum (default 0). */
   calMin?: number
@@ -362,7 +368,11 @@ export class NVChunkedVolume {
   private readonly loadOptions: ChunkedVolumeOptions
   private followCrosshair: boolean
   private subscribedToCrosshair = false
+  private subscribedToView = false
   private readonly onLocationChange: () => void
+  private readonly onViewChange: (e: Event) => void
+  /** The radius the current plan was built with; see {@link handleViewChange}. */
+  private planRadius: number | Vec3f = 0
   private readonly onViewDestroyed: () => void
 
   private focusFrac: Vec3f
@@ -427,6 +437,7 @@ export class NVChunkedVolume {
     this.focusBounds = cloneBounds(options.focusBounds)
     host._registerChunkedVolume(this)
     this.onLocationChange = () => this.handleLocationChange()
+    this.onViewChange = (e) => this.handleViewChange(e)
     // Only self-dispose on a REAL controller teardown. `viewDestroyed` also fires
     // on a transient view recreation (backend switch / init fallback), where the
     // controller and this volume stay alive and the locationChange listener (on
@@ -474,6 +485,7 @@ export class NVChunkedVolume {
   async init(): Promise<void> {
     await this.host.addVolume(this.volume)
     this.syncCrosshairSubscription()
+    this.syncViewSubscription()
     // Self-dispose if the controller is destroyed without the caller disposing
     // this handle, so the locationChange listener + host reference don't leak
     // (and can't fire against a torn-down view).
@@ -667,6 +679,7 @@ export class NVChunkedVolume {
       this.focusFrac = [0.5, 0.5, 0.5]
     }
     this.syncCrosshairSubscription()
+    this.syncViewSubscription()
     // Adopt the crosshair NOW rather than waiting for the next locationChange,
     // so switching back to a crosshair plan does not plan around a stale focus.
     if (this.followCrosshair) this.handleLocationChange()
@@ -781,6 +794,7 @@ export class NVChunkedVolume {
     this.disposedDeferred.resolve()
     this.followCrosshair = false
     this.syncCrosshairSubscription()
+    this.syncViewSubscription()
     this.host.removeEventListener('viewDestroyed', this.onViewDestroyed)
   }
 
@@ -799,6 +813,36 @@ export class NVChunkedVolume {
     } else {
       this.host.removeEventListener('locationChange', this.onLocationChange)
     }
+  }
+
+  /**
+   * Add or drop the host `change` listener that re-plans an `'auto'` radius
+   * when the view it is derived from moves: the 2D zoom (`pan2Dxyzmm[3]`) and
+   * the slice type (render core vs 2D ellipsoid). Subscribed exactly when the
+   * radius is `'auto'`: a pinned or `'volume'` radius never depends on the
+   * view, and without this a pinned or `'none'` focus has no subscription at
+   * all, so a wheel zoom would keep the plan at the old radius until some
+   * unrelated refocus. Idempotent, like {@link syncCrosshairSubscription}.
+   */
+  private syncViewSubscription(): void {
+    const want = this.o.radius === 'auto' && !this.disposed
+    if (want === this.subscribedToView) return
+    this.subscribedToView = want
+    if (want) {
+      this.host.addEventListener('change', this.onViewChange)
+    } else {
+      this.host.removeEventListener('change', this.onViewChange)
+    }
+  }
+
+  private handleViewChange(e: Event): void {
+    const property = (e as CustomEvent<PropertyChangeDetail>).detail?.property
+    if (property !== 'pan2Dxyzmm' && property !== 'sliceType') return
+    // The host emits pan2Dxyzmm for a pure pan as well (and a deep-zoom viewer
+    // writes it every frame), so only a radius the current plan was NOT built
+    // with earns a re-plan. The refocus itself is debounced.
+    if (sameRadius(this.currentRadius(), this.planRadius)) return
+    void this.refocus()
   }
 
   private handleLocationChange(): void {
@@ -834,10 +878,12 @@ export class NVChunkedVolume {
   }
 
   private buildPlan(): ChunkPlan {
+    const radius = this.currentRadius()
+    this.planRadius = radius
     return planForFocus(
       this.source,
       this.focusFrac,
-      this.currentRadius(),
+      radius,
       this.o,
       this.focusBounds,
     )

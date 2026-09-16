@@ -662,6 +662,69 @@ describe("NVChunkedVolume 'auto' radius", () => {
     for (const axis of r as Vec3f) expect(axis).toBeCloseTo(halfDiagonal, 6)
   })
 
+  test("2D 'auto' re-plans on a zoom change, even with a pinned focus", async () => {
+    // A pinned/'none' focus never subscribes locationChange, so nothing else
+    // would ever pick up a zoom. The wheel and drag zooms write the model and
+    // then emit the host 'change' event with property 'pan2Dxyzmm'; drive that.
+    const listeners = new Map<string, Set<(e: Event) => void>>()
+    const swaps: ChunkPlan[] = []
+    const pan2Dxyzmm = [0, 0, 0, 1]
+    const host = makeHost(
+      async (_id, plan) => {
+        swaps.push(plan)
+      },
+      {
+        sliceType: SLICE_TYPE.MULTIPLANAR,
+        pan2Dxyzmm,
+        addVolume: async () => {},
+        addEventListener: (t: string, l: (e: Event) => void) => {
+          const set = listeners.get(t) ?? new Set<(e: Event) => void>()
+          set.add(l)
+          listeners.set(t, set)
+        },
+        removeEventListener: (t: string, l: (e: Event) => void) => {
+          listeners.get(t)?.delete(l)
+        },
+      },
+    )
+    const emitChange = (property: string): void => {
+      for (const l of listeners.get('change') ?? []) {
+        l(new CustomEvent('change', { detail: { property, value: null } }))
+      }
+    }
+    const mgr = new NVChunkedVolume(host, thinSource, {
+      radius: 'auto',
+      focus: 'none',
+      debounceMs: 0,
+      coarseFloor: false,
+      calMin: 0,
+      calMax: 1,
+    })
+    await mgr.init()
+    expect(listeners.get('locationChange')?.size ?? 0).toBe(0)
+    const initial = mgr.currentPlan
+    const before = radiusOf(mgr) as Vec3f
+    // A pan alone changes nothing the radius depends on: no re-plan.
+    emitChange('pan2Dxyzmm')
+    await mgr.whenRefocusIdle()
+    expect(swaps).toHaveLength(0)
+    // Zoom in 4x: the ellipsoid shrinks per axis and a new plan is swapped in.
+    pan2Dxyzmm[3] = 4
+    emitChange('pan2Dxyzmm')
+    await mgr.whenRefocusIdle()
+    expect(swaps).toHaveLength(1)
+    expect(mgr.currentPlan).toBe(swaps[0])
+    expect(mgr.currentPlan).not.toBe(initial)
+    const after = radiusOf(mgr) as Vec3f
+    for (let a = 0; a < 3; a++) expect(after[a]).toBeCloseTo(before[a] / 4, 6)
+    // The same zoom again is not a change worth a plan.
+    emitChange('pan2Dxyzmm')
+    await mgr.whenRefocusIdle()
+    expect(swaps).toHaveLength(1)
+    mgr.dispose()
+    expect(listeners.get('change')?.size ?? 0).toBe(0)
+  })
+
   test('render view and pinned shapes stay as before', () => {
     const render = new NVChunkedVolume(
       makeHost(async () => {}, { sliceType: SLICE_TYPE.RENDER }),

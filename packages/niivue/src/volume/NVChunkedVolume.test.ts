@@ -636,10 +636,30 @@ describe("NVChunkedVolume 'auto' radius", () => {
       pan2Dxyzmm: [0, 0, 0, 2],
     })
     const mgr = new NVChunkedVolume(host, thinSource, { radius: 'auto' })
-    // common/(2*zoom) per axis: the ellipsoid hugging the volume's aspect,
-    // not the single half-diagonal (~264 here) that over-covers z 8x while
-    // giving x no more than the diagonal ball.
-    expect(radiusOf(mgr)).toEqual([256, 64, 8])
+    // sqrt(3) * common/(2*zoom) per axis: the ellipsoid circumscribing the
+    // volume's own aspect, not the single half-diagonal (~264 here) that
+    // over-covers z 8x while giving x no more than the diagonal ball.
+    const r = radiusOf(mgr) as Vec3f
+    expect(r[0]).toBeCloseTo(256 * Math.sqrt(3), 6)
+    expect(r[1]).toBeCloseTo(64 * Math.sqrt(3), 6)
+    expect(r[2]).toBeCloseTo(8 * Math.sqrt(3), 6)
+  })
+
+  test("2D 'auto' on a cube is the old half-diagonal on every axis", () => {
+    const cube: ChunkedVolumeSource = {
+      ...thinSource,
+      levels: [
+        { level: 0, shape: [256, 256, 256], spacing: [1, 1, 1] },
+        { level: 1, shape: [128, 128, 128], spacing: [2, 2, 2] },
+      ],
+    }
+    const host = makeHost(async () => {}, {
+      sliceType: SLICE_TYPE.MULTIPLANAR,
+      pan2Dxyzmm: [0, 0, 0, 1],
+    })
+    const r = radiusOf(new NVChunkedVolume(host, cube, { radius: 'auto' }))
+    const halfDiagonal = Math.hypot(256, 256, 256) / 2
+    for (const axis of r as Vec3f) expect(axis).toBeCloseTo(halfDiagonal, 6)
   })
 
   test('render view and pinned shapes stay as before', () => {

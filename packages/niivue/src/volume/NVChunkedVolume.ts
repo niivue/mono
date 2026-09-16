@@ -862,20 +862,25 @@ export class NVChunkedVolume {
     // the region you're looking at at the finest level (the budget/maxBricks
     // pass still bounds the overall plan).
     if (this.host.sliceType === SLICE_TYPE.RENDER) return this.o.cellEdge
-    // 2D slice views: PER-AXIS half-extents over zoom, so the finest region is
-    // the ellipsoid that hugs the volume's own aspect. The old scalar here was
+    // 2D slice views: PER-AXIS sqrt(3) * half-extents over zoom, so the finest
+    // region is the ellipsoid with the volume's own aspect. The old scalar was
     // the half-DIAGONAL over zoom, which starves long thin volumes (the
     // motivating case: a 16821 x 7494 x 2070 slide): a single ball wide enough
     // for the long axis over-covers the short axes several times over, the
     // budget/maxBricks pass then coarsens the whole plan uniformly to pay for
     // those wasted bricks, and the long axis — the one the user is actually
     // panning along — ends up coarser than the budget could have afforded.
+    // The sqrt(3) keeps this a superset of the old ball: for a cube the two
+    // are the same radius (half-diagonal = sqrt(3) * half-edge), so the plan
+    // is unchanged bit for bit; for a slab the ellipsoid circumscribes the
+    // volume the way the ball did, so at zoom 1 the whole volume is inside
+    // the finest shell and the budget pass coarsens it uniformly, as before.
+    // Without it the ellipsoid is inscribed, the corners fall outside, and
+    // every budget candidate is a mixed-level plan whose 2:1 balance pass is
+    // quadratic in bricks (hundreds of seconds on a slide-sized pyramid).
     const zoom = Math.max(1, this.host.pan2Dxyzmm[3] || 1)
-    return [
-      common[0] / (2 * zoom),
-      common[1] / (2 * zoom),
-      common[2] / (2 * zoom),
-    ]
+    const k = Math.sqrt(3) / (2 * zoom)
+    return [common[0] * k, common[1] * k, common[2] * k]
   }
 
   private async doRefocus(): Promise<void> {

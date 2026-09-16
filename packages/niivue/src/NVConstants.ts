@@ -18,6 +18,13 @@ export enum DRAG_MODE {
   angle = 7,
   crosshair = 8,
   windowing = 9,
+  /**
+   * Click (press and release without meaningful movement) sets the crosshair
+   * at the release point like `crosshair`; dragging past a small threshold
+   * pans the 2D view like `pan`. Once a gesture becomes a pan it stays a pan.
+   * Single-button "click to locate, drag to pan" for touch and trackpads.
+   */
+  crosshairPan = 10,
 }
 
 /**

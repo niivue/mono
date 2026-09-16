@@ -884,25 +884,25 @@ describe('NVChunkedVolume refocus promise', () => {
     expect(swaps).toHaveLength(0)
   })
 
-  test('whenSettled resolves immediately when idle', async () => {
+  test('whenRefocusIdle resolves immediately when idle', async () => {
     const { host, swaps } = makeGatedHost()
     const mgr = new NVChunkedVolume(host, mgrSource, {
       radius: 16,
       debounceMs: DEBOUNCE,
     })
-    const done = settled(mgr.whenSettled())
+    const done = settled(mgr.whenRefocusIdle())
     await waitFor(() => done())
     expect(swaps).toHaveLength(0)
   })
 
-  test('whenSettled waits for a pending refocus and its in-flight swap', async () => {
+  test('whenRefocusIdle waits for a pending refocus and its in-flight swap', async () => {
     const { host, swaps, release } = makeGatedHost()
     const mgr = new NVChunkedVolume(host, mgrSource, {
       radius: 16,
       debounceMs: DEBOUNCE,
     })
     void mgr.setFocus([0.2, 0.2, 0.2])
-    const barrier = settled(mgr.whenSettled())
+    const barrier = settled(mgr.whenRefocusIdle())
     // Pending (timer not fired): not settled.
     expect(barrier()).toBe(false)
     await waitFor(() => swaps.length === 1)
@@ -911,15 +911,15 @@ describe('NVChunkedVolume refocus promise', () => {
     release()
     await waitFor(() => barrier())
     // Idle again: a fresh barrier is immediate.
-    const again = settled(mgr.whenSettled())
+    const again = settled(mgr.whenRefocusIdle())
     await waitFor(() => again())
   })
 
-  test('dispose() settles whenSettled and a queued setFocus behind a swap the host never completes', async () => {
+  test('dispose() settles whenRefocusIdle and a queued setFocus behind a swap the host never completes', async () => {
     // The host takes the swap and simply never settles it (a torn-down
     // renderer). Everything chained on the swap queue would hang forever
     // without dispose racing it: the first request's own promise, a second
-    // request queued behind it, and the whenSettled barrier.
+    // request queued behind it, and the whenRefocusIdle barrier.
     const { host, swaps } = makeGatedHost() // release() is never called
     const mgr = new NVChunkedVolume(host, mgrSource, {
       radius: 16,
@@ -931,7 +931,7 @@ describe('NVChunkedVolume refocus promise', () => {
     await tick(DEBOUNCE * 4) // second's doRefocus is now queued behind the hang
     const firstDone = settled(first)
     const secondDone = settled(second)
-    const barrierDone = settled(mgr.whenSettled())
+    const barrierDone = settled(mgr.whenRefocusIdle())
     await tick()
     expect(firstDone()).toBe(false)
     expect(secondDone()).toBe(false)
@@ -940,7 +940,7 @@ describe('NVChunkedVolume refocus promise', () => {
     mgr.dispose()
     await waitFor(() => firstDone() && secondDone() && barrierDone())
     // A barrier requested after dispose is immediate too.
-    await mgr.whenSettled()
+    await mgr.whenRefocusIdle()
   })
 
   test('mutators after dispose resolve without touching state', async () => {
@@ -968,14 +968,14 @@ describe('NVChunkedVolume refocus promise', () => {
     expect(swaps).toHaveLength(0)
   })
 
-  test('whenSettled resolves after dispose cancels a pending refocus', async () => {
+  test('whenRefocusIdle resolves after dispose cancels a pending refocus', async () => {
     const { host } = makeGatedHost()
     const mgr = new NVChunkedVolume(host, mgrSource, {
       radius: 16,
       debounceMs: 1000,
     })
     void mgr.setFocus([0.2, 0.2, 0.2])
-    const barrier = mgr.whenSettled()
+    const barrier = mgr.whenRefocusIdle()
     mgr.dispose()
     await expect(barrier).resolves.toBeUndefined()
   })

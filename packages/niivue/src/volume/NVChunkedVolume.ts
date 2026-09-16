@@ -333,7 +333,7 @@ export class NVChunkedVolume {
   private inFlightSwaps = 0
   /**
    * Resolved by {@link dispose}. Raced against the swap chain wherever a caller
-   * awaits it ({@link whenSettled}, {@link doRefocus}), because the chain can
+   * awaits it ({@link whenRefocusIdle}, {@link doRefocus}), because the chain can
    * only advance when the host swap settles: a host whose swap never settles
    * (a torn-down renderer, a wedged upload) would otherwise leave every such
    * caller hanging forever after disposal.
@@ -697,7 +697,7 @@ export class NVChunkedVolume {
    * with the host when dispose runs may simply never settle, and the swap
    * chain (which this otherwise awaits) would hang with it.
    */
-  async whenSettled(): Promise<void> {
+  async whenRefocusIdle(): Promise<void> {
     while (!this.disposed && (this.pendingRefocus || this.inFlightSwaps > 0)) {
       await Promise.race([
         this.pendingRefocus?.promise ?? this.swapChain,
@@ -719,7 +719,7 @@ export class NVChunkedVolume {
     const pending = this.pendingRefocus
     this.pendingRefocus = null
     pending?.resolve()
-    // Release everyone racing on the swap chain (whenSettled, a doRefocus
+    // Release everyone racing on the swap chain (whenRefocusIdle, a doRefocus
     // queued behind an in-flight swap): a swap the host is still holding may
     // never settle now, and nothing further will be applied regardless.
     this.disposedDeferred.resolve()
@@ -830,7 +830,7 @@ export class NVChunkedVolume {
     // but say so: the swap itself already logs its own failures, so anything
     // landing here (applyRenderCentering, the commit) is unexpected.
     // The count drops on the chain (before any awaiting caller resumes), so
-    // whenSettled never observes a swap as in flight after it has applied.
+    // whenRefocusIdle never observes a swap as in flight after it has applied.
     this.swapChain = applied
       .catch((err) => log.warn('NVChunkedVolume: swap chain error', err))
       .then(() => {

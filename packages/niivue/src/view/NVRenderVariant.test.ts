@@ -31,6 +31,14 @@ describe('renderVariantKey', () => {
     expect(renderVariantKey({ ...idle, clipPlanes })).toBe(1)
   })
 
+  test('clip depths are judged as the shader sees them', () => {
+    for (const depth of [Number.NaN, 1 + 1e-10]) {
+      const clipPlanes = Array.from(idle.clipPlanes)
+      clipPlanes[3] = depth
+      expect(renderVariantKey({ ...idle, clipPlanes })).toBe(1)
+    }
+  })
+
   test('each feature sets its own bit and never CHUNKED', () => {
     const key = renderVariantKey({
       ...idle,

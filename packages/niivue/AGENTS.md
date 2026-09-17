@@ -168,6 +168,7 @@ unit-tested under the Bun harness.)
 | `control/interactions.ts` | Event handling (mouse, keyboard, drag-drop, resize) |
 | `control/dragModes.ts` | Drag mode handlers — contrast, measurement, angle, pan, windowing |
 | `view/NVSliceLayout.ts` | Slice layout engine — mosaic, hero, multiplanar tile computation |
+| `view/NVRenderVariant.ts` | Compile-time flags that specialize the volume ray-march shader per draw |
 | `wgpu/NVViewGPU.ts` | WebGPU renderer with compute pipelines |
 | `gl/NVViewGL.ts` | WebGL2 fallback (substantially complete) |
 | `NVEvents.ts` | Event types — `NVEventMap`, typed `CustomEvent` dispatching |
@@ -1572,7 +1573,7 @@ The 3D render shaders (`wgpu/render.wgsl`, `gl/renderShader.ts`) use a multi-pas
 
 Guards: Each optional pass checks `textureSize > 2` (placeholder is 2×2×2 all zeros).
 
-Specialization: a uniform that is constant for a draw still costs per pixel (runtime branches block dead-code elimination; inactive clip planes alone cost ~20%), so gate features with the compile-time flags in `view/NVRenderVariant.ts` (WGSL `override`, GLSL `#define`), ANDed with the runtime test.
+Specialization: a uniform that is constant for a draw still costs per pixel (runtime branches block dead-code elimination; inactive clip planes alone cost ~20%), so gate features with the compile-time flags in `view/NVRenderVariant.ts` (WGSL `override`, GLSL `#define`), ANDed with the runtime test. On WebGPU, draws with an overlay, PAQD or drawing layer stay generic: specializing them measured up to 40% slower on Metal, so re-measure before extending it there.
 
 ### PAQD (probabilistic atlas with quantized distances)
 

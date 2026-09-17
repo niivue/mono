@@ -2736,9 +2736,6 @@ export class VolumeRenderer extends NVRenderer {
             gradientAmount,
             gradientOpacity: this.gradientOpacity,
             silhouette: this.silhouette,
-            hasOverlay: false,
-            hasPaqd: false,
-            hasDrawing: false,
           }),
         )
     pass.setPipeline(variant ?? this.pipeline)

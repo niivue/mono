@@ -6,7 +6,7 @@
  * per-sample branches. Inactive clip planes alone cost ~20% of a 3D frame when
  * left to a runtime test.
  */
-export const RENDER_VARIANT_FLAGS = [
+const RENDER_VARIANT_FLAGS = [
   'HAS_CLIP',
   'IS_CUTAWAY',
   'IS_MIP',
@@ -29,17 +29,18 @@ export type RenderVariantState = {
   gradientAmount: number
   gradientOpacity: number
   silhouette: number
-  hasOverlay: boolean
-  hasPaqd: boolean
-  hasDrawing: boolean
+  hasOverlay?: boolean
+  hasPaqd?: boolean
+  hasDrawing?: boolean
 }
 
 /** Variant key for a single (non-chunked) volume draw. */
 export function renderVariantKey(s: RenderVariantState): number {
   let hasClip = false
-  // The shader treats a plane with |depth| > 1 as disabled.
+  // Mirror the shader's float32 test: only |depth| > 1 disables a plane, so
+  // NaN (and 1 + 1e-10, which rounds to 1) count as active.
   for (let i = 3; i < s.clipPlanes.length; i += 4) {
-    if (Math.abs(s.clipPlanes[i] ?? 2) <= 1) hasClip = true
+    hasClip ||= !(Math.abs(Math.fround(s.clipPlanes[i])) > 1)
   }
   const bits = [
     hasClip,

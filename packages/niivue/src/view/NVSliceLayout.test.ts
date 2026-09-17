@@ -211,6 +211,27 @@ describe('isSingleViewFillCanvas', () => {
     }
   })
 
+  test('zeroInPlaneSpanKeepsAFiniteTile', () => {
+    // Degenerate in-plane extents give an infinite fit scale. Filling by it
+    // would put NaN mm bounds in the projection, and letterboxing to it is
+    // 0 * Infinity: a NaN rect. With no aspect to fit, take the whole canvas.
+    const over = {
+      extentsMin: vec3.fromValues(0, 0, 0),
+      extentsMax: vec3.fromValues(0, 0, 10),
+    }
+    for (const isSingleViewFillCanvas of [true, false]) {
+      const [tile] = screenSlicesLayout(
+        cfg({ ...over, isSingleViewFillCanvas }),
+      )
+      expect(tile.leftTopWidthHeight).toEqual([0, 0, 2000, 400])
+      const scr = tile.screen as { mnMM: vec3; mxMM: vec3 }
+      for (const axis of [0, 1] as const) {
+        expect(Number.isFinite(scr.mnMM[axis])).toBe(true)
+        expect(Number.isFinite(scr.mxMM[axis])).toBe(true)
+      }
+    }
+  })
+
   test('multiplanarIgnoresTheFlag', () => {
     const off = screenSlicesLayout(
       cfg({ sliceType: 3, isSingleViewFillCanvas: false }),
@@ -559,9 +580,10 @@ describe('customLayout tile fill', () => {
     }
   })
 
-  test('nonFiniteFitScaleFallsBackToLetterbox', () => {
-    // Degenerate in-plane extents give an infinite fit scale; widening by it
-    // would put NaN mm bounds in the projection matrix.
+  test('nonFiniteFitScaleKeepsAFiniteTile', () => {
+    // Degenerate in-plane extents give an infinite fit scale: widening by it
+    // would put NaN mm bounds in the projection, and letterboxing to it is
+    // 0 * Infinity, a NaN rect. With no aspect to fit, both take the pane.
     const over = {
       extentsMin: vec3.fromValues(0, 0, 0),
       extentsMax: vec3.fromValues(0, 0, 10),
@@ -572,6 +594,8 @@ describe('customLayout tile fill', () => {
     const [filled] = screenSlicesLayout(
       cfg({ ...over, customLayout: axialPane({ fill: true }) }),
     )
+    expect(boxed.leftTopWidthHeight).toEqual([0, 0, 2000, 400])
+    expect(filled.leftTopWidthHeight).toEqual([0, 0, 2000, 400])
     const boxedScr = boxed.screen as { mnMM: vec3; mxMM: vec3 }
     const filledScr = filled.screen as { mnMM: vec3; mxMM: vec3 }
     for (const axis of [0, 1] as const) {

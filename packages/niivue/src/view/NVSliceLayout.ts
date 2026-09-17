@@ -789,10 +789,14 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
       // Fit the slice's mm aspect ratio within the available tile area
       const fov = screen.screen.fovMM
       const zoom = Math.min(pw / fov[0], ph / fov[1])
-      // Fill needs a usable fit scale: zero or infinite gives NaN mm bounds.
-      const fill = (spec.fill ?? false) && Number.isFinite(zoom) && zoom > 0
-      const fw = fill ? pw : fov[0] * zoom
-      const fh = fill ? ph : fov[1] * zoom
+      // A zero in-plane span gives a zero or infinite fit scale: widening by
+      // it puts NaN mm bounds in the projection, and 0 * Infinity is a NaN
+      // rect. With no aspect to letterbox to, the tile takes the whole pane.
+      const fit = Number.isFinite(zoom) && zoom > 0
+      const fill = (spec.fill ?? false) && fit
+      const letterbox = fit && !fill
+      const fw = letterbox ? fov[0] * zoom : pw
+      const fh = letterbox ? fov[1] * zoom : ph
       const rot = rotations(idx, isRad)
       const tile: SliceTile = {
         leftTopWidthHeight: [px + (pw - fw) / 2, py + (ph - fh) / 2, fw, fh],
@@ -953,13 +957,14 @@ export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
       throw new Error('Missing fovMM for slice')
     }
     const zoom = Math.min(canvasWH[0] / fov[0], canvasWH[1] / fov[1])
-    // Fill needs a usable fit scale: zero or infinite gives NaN mm bounds.
-    const fill =
-      (config.isSingleViewFillCanvas ?? true) &&
-      Number.isFinite(zoom) &&
-      zoom > 0
-    const w = fill ? canvasWH[0] : fov[0] * zoom
-    const h = fill ? canvasWH[1] : fov[1] * zoom
+    // A zero in-plane span gives a zero or infinite fit scale: widening by it
+    // puts NaN mm bounds in the projection, and 0 * Infinity is a NaN rect.
+    // With no aspect to letterbox to, the tile takes the whole canvas.
+    const fit = Number.isFinite(zoom) && zoom > 0
+    const fill = (config.isSingleViewFillCanvas ?? true) && fit
+    const letterbox = fit && !fill
+    const w = letterbox ? fov[0] * zoom : canvasWH[0]
+    const h = letterbox ? fov[1] * zoom : canvasWH[1]
     return [
       {
         ...screens[idx],

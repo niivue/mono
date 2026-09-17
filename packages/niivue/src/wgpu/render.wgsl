@@ -5,6 +5,27 @@
 // before this, so the ceiling costs nothing at the common rates.
 const MAX_FINE_STEPS: i32 = 8192;
 
+// Pipeline-overridable specialization flags (see view/NVRenderVariant.ts). Each
+// is ANDed with the runtime test it guards; false lets the compiler drop that
+// code. The defaults give the generic shader.
+override HAS_CLIP: bool = true;
+override IS_CUTAWAY: bool = true;
+override IS_MIP: bool = true;
+override CUBIC: bool = true;
+override NEEDS_GRADIENT: bool = true;
+override HAS_OVERLAY: bool = true;
+override HAS_PAQD: bool = true;
+override HAS_DRAWING: bool = true;
+override CHUNKED: bool = true;
+
+// Step-size opacity correction 1 - (1 - a)^e. e is 1 / sampleRate for every
+// full sample, so the common rates skip pow().
+fn stepCorrectAlpha(a: f32, e: f32) -> f32 {
+    if (abs(e - 1.0) < 1e-4) { return a; }
+    if (abs(e - 0.5) < 1e-4) { return 1.0 - sqrt(1.0 - a); }
+    return 1.0 - pow(1.0 - a, e);
+}
+
 // In-shader layer-gradient constants, used by the overlay and drawing passes
 // (neither has a precomputed gradient texture the way the background does).
 //
@@ -491,26 +512,28 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	if (clipPlaneColorX.a < 0.0) {
 		clipPlaneColorX.a = 0.0;
 	}
-	let chunkedDraw = any(params.chunkSubSize.xyz < vec3f(0.999));
+	let chunkedDraw = CHUNKED && any(params.chunkSubSize.xyz < vec3f(0.999));
 	// Independent hi-res overlay cube draw: composite as a flat translucent
 	// layer over the base. Skip the opaque clip-surface treatment (AO, clip
 	// plane colour) and matcap lighting; still respect clip-plane ray trimming
 	// so the overlay is clipped together with the base.
-	let overlayMode = params.overlayLayerMode > 0.5;
+	let overlayMode = CHUNKED && params.overlayLayerMode > 0.5;
 	// Maximum-intensity projection: every pass takes a component-wise max of the
 	// premultiplied sample instead of compositing OVER, and no pass may early-
 	// terminate (the maximum can lie anywhere along the ray).
-	let mip = params.renderMode > 0.5;
+	let mip = IS_MIP && params.renderMode > 0.5;
 	let stepSize = len / lenVox;
 	let deltaDir = vec4f(dir * stepSize, stepSize);
 	var localGradientAmount = select(params.gradientAmount, 0.0, overlayMode);
 	var sampleRange = vec2f(0.0, len);
-	let cutaway = params.isClipCutaway > 0.5;
+	let cutaway = IS_CUTAWAY && params.isClipCutaway > 0.5;
 	var hasClip = false;
-	for (var i: i32 = 0; i < MAX_CLIP_PLANES; i++) {
-		clipSampleRange(dir, vec4f(start, 0.0), params.clipPlanes[i], &sampleRange, &hasClip);
+	if (HAS_CLIP) {
+		for (var i: i32 = 0; i < MAX_CLIP_PLANES; i++) {
+			clipSampleRange(dir, vec4f(start, 0.0), params.clipPlanes[i], &sampleRange, &hasClip);
+		}
 	}
-	let isClip = (sampleRange.x > 0.0) || ((sampleRange.y < len) && (sampleRange.y > 0.0));
+	let isClip = HAS_CLIP && ((sampleRange.x > 0.0) || ((sampleRange.y < len) && (sampleRange.y > 0.0)));
 	// Check if clip plane configuration eliminates background entirely
 	var skipBackground = false;
 	if (cutaway) {
@@ -625,7 +648,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 			// fragment takes the same side. Skipping the fetch + normalize +
 			// matcap tap when they are all off measures ~20% of the render.
 			// Mirrored in gl/renderShader.ts.
-			let needsGradient = (localGradientAmount > 0.0) || (params.gradientOpacity > 0.0) || (params.silhouettePower > 0.0);
+			let needsGradient = NEEDS_GRADIENT && ((localGradientAmount > 0.0) || (params.gradientOpacity > 0.0) || (params.silhouettePower > 0.0));
 			for (var fi: i32 = 0; fi < MAX_FINE_STEPS; fi++) {
 				if (bLo >= len) { break; }
 				// Clipped to len, so the final sample covers the trailing sliver
@@ -642,7 +665,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 				// Fine pass only. The fast skip pass stays trilinear: it only needs a
 				// coarse alpha test, so paying 8 fetches there would be waste.
 				var colorSample = textureSampleLevel(volume, tex_sampler, volCoord, 0.0);
-				if (params.cubicFilter > 0.5) {
+				if (CUBIC && params.cubicFilter > 0.5) {
 					colorSample = sampleTricubic(volume, tex_sampler, volCoord);
 				}
 				// Before the classification test, so a transparent-enough volume drops
@@ -684,7 +707,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 					// sampling in an OVER accumulation. A max projection reads
 					// each sample independently, so correcting it would brighten
 					// coarse bricks instead of matching them.
-					var correctedA = select(1.0 - pow(1.0 - colorSample.a, max(slab * refPerLen * params.lodOpacityScale, 1e-3)), colorSample.a, mip);
+					var correctedA = select(stepCorrectAlpha(colorSample.a, max(slab * refPerLen * params.lodOpacityScale, 1e-3)), colorSample.a, mip);
 					// Gradient opacity: scale alpha by the gradient magnitude raised to
 					// gradientOpacity*8. This is the analytic form of the old NiiVue's
 					// 192-entry LUT, which held exactly pow(i/191, opacity*8) -- so
@@ -771,17 +794,17 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	// overlay texture is rebuilt whenever any overlay changes, e.g. an opacity
 	// drag, so a cached gradient would thrash), so lighting comes from the
 	// in-shader stencil — per sample, since an overlay stack is translucent.
-	if (textureDimensions(overlay, 0).x > 2) {
+	if (HAS_OVERLAY && textureDimensions(overlay, 0).x > 2) {
 		let result = rayMarchPass(overlay, tex_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, ovClipLo, ovClipHi, ovClipMode, params.gradientAmount, params.invGamma, mip);
 		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor, mip);
 	}
 	// PAQD pass (raw data with GPU-side LUT lookup + easing)
-	if (textureDimensions(paqd, 0).x > 2) {
+	if (HAS_PAQD && textureDimensions(paqd, 0).x > 2) {
 		let result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, params.paqdUniforms, ovClipLo, ovClipHi, ovClipMode, mip);
 		depthAwareMix(&colAcc, result, backNearest, &fragDepth, depthFactor, mip);
 	}
 	// Drawing pass (nearest-neighbor sampling for ray-march, linear for gradient)
-	if (textureDimensions(drawing, 0).x > 2) {
+	if (HAS_DRAWING && textureDimensions(drawing, 0).x > 2) {
 		var result = rayMarchPass(drawing, nearest_sampler, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, earlyTermination, ovClipLo, ovClipHi, ovClipMode, 0.0, 1.0, mip);
 		// Matcap lighting at FIRST HIT only (unlike the overlay, which shades
 		// every sample): a drawing is a label mask read as an opaque surface,

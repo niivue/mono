@@ -1572,6 +1572,8 @@ The 3D render shaders (`wgpu/render.wgsl`, `gl/renderShader.ts`) use a multi-pas
 
 Guards: Each optional pass checks `textureSize > 2` (placeholder is 2×2×2 all zeros).
 
+Specialization: a uniform that is constant for a draw still costs per pixel (runtime branches block dead-code elimination; inactive clip planes alone cost ~20%), so gate features with the compile-time flags in `view/NVRenderVariant.ts` (WGSL `override`, GLSL `#define`), ANDed with the runtime test.
+
 ### PAQD (probabilistic atlas with quantized distances)
 
 GPU-side visualization: raw data (idx1, idx2, prob1, prob2 as rgba8unorm) uploaded with 256-entry label LUT texture. Shaders perform LUT lookup, probability-weighted blending, and alpha easing. **Split sampling**: label indices use nearest-neighbor; probabilities use linear interpolation.

@@ -12,6 +12,10 @@ import {
 import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
+  renderVariantConstants,
+  renderVariantKey,
+} from '@/view/NVRenderVariant'
+import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
@@ -472,6 +476,12 @@ export class VolumeRenderer extends NVRenderer {
   private _bindTexVol: GPUTexture | null = null
   private _bindTexGrad: GPUTexture | null = null
   private _bindTexMatcap: GPUTexture | null = null
+  // Specialized single-volume pipelines by variant key (view/NVRenderVariant),
+  // null while compiling; the generic `pipeline` draws until one is ready.
+  private _variantPipelines = new Map<number, GPURenderPipeline | null>()
+  private _pipelineDesc:
+    | ((constants: Record<string, number>) => GPURenderPipelineDescriptor)
+    | null = null
   private _bindTexOverlay: GPUTexture | null = null
   private _bindTexPaqd: GPUTexture | null = null
   private _bindTexDraw: GPUTexture | null = null
@@ -722,10 +732,11 @@ export class VolumeRenderer extends NVRenderer {
     const shaderModule = device.createShaderModule({
       code: volumeShaderPreamble + renderFragment,
     })
-    this.pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [this.bindLayout],
-      }),
+    const layout = device.createPipelineLayout({
+      bindGroupLayouts: [this.bindLayout],
+    })
+    this._pipelineDesc = (constants) => ({
+      layout,
       multisample: { count: msaaCount },
       vertex: {
         module: shaderModule,
@@ -740,6 +751,7 @@ export class VolumeRenderer extends NVRenderer {
       fragment: {
         module: shaderModule,
         entryPoint: 'fragment_main',
+        constants,
         targets: [
           {
             format: format,
@@ -761,6 +773,9 @@ export class VolumeRenderer extends NVRenderer {
         cullMode: 'back',
       },
     })
+    this._variantPipelines = new Map()
+    // Shader defaults are the generic variant.
+    this.pipeline = device.createRenderPipeline(this._pipelineDesc({}))
 
     const chunkedBindLayout = this.bindLayout
     const chunkedPipeline = (blend: GPUBlendState): GPURenderPipeline =>
@@ -2703,11 +2718,56 @@ export class VolumeRenderer extends NVRenderer {
       backOpacity,
     )
 
-    pass.setPipeline(this.pipeline)
+    // With an overlay, PAQD or drawing layer in the ray march, specialization
+    // measured slower on Metal (up to +40%), so those draws stay generic.
+    const hasLayer =
+      this._bindTexOverlay !== this.placeholderOverlay ||
+      this._bindTexPaqd !== this.placeholderOverlay ||
+      this._bindTexDraw !== this.placeholderOverlay
+    const variant = hasLayer
+      ? null
+      : this._variantPipeline(
+          device,
+          renderVariantKey({
+            clipPlanes,
+            isClipCutaway,
+            renderMode: this.renderMode,
+            cubic: this.isCubicInterpolation && this._cubicVolumeSafe,
+            gradientAmount,
+            gradientOpacity: this.gradientOpacity,
+            silhouette: this.silhouette,
+            hasOverlay: false,
+            hasPaqd: false,
+            hasDrawing: false,
+          }),
+        )
+    pass.setPipeline(variant ?? this.pipeline)
     pass.setBindGroup(0, this.bindGroup, [renderOffset])
     pass.setVertexBuffer(0, this.vertexBuffer)
     pass.setIndexBuffer(this.indexBuffer, 'uint16')
     pass.drawIndexed(this.cube.indices.length)
+  }
+
+  /**
+   * The specialized pipeline for `key`, or null while it compiles. Compiled
+   * asynchronously so a state change never stalls a frame; the generic
+   * pipeline renders identically in the meantime.
+   */
+  private _variantPipeline(
+    device: GPUDevice,
+    key: number,
+  ): GPURenderPipeline | null {
+    const variants = this._variantPipelines
+    const cached = variants.get(key)
+    if (cached !== undefined || !this._pipelineDesc) return cached ?? null
+    variants.set(key, null)
+    device
+      .createRenderPipelineAsync(
+        this._pipelineDesc(renderVariantConstants(key)),
+      )
+      .then((p) => variants.set(key, p))
+      .catch((e) => log.warn(`Render pipeline variant ${key} failed: ${e}`))
+    return null
   }
 
   /**
@@ -3412,6 +3472,8 @@ export class VolumeRenderer extends NVRenderer {
     this.pipeline = null
     this.pipelineChunked = null
     this.pipelineChunkedMip = null
+    this._variantPipelines = new Map()
+    this._pipelineDesc = null
     this.bindLayout = null
     this._bindTexVol = null
     this._bindTexGrad = null

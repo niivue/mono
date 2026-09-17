@@ -49,12 +49,16 @@ uniform float invGamma;
 // wgpu/volumeShaderLib.ts.
 uniform float lodOpacityScale;
 // The background volume's own \`opacity\`, scaling every background sample's
-// alpha. The 2D slice shader has always honoured it as a plain uniform; here it
-// scales the alpha BEFORE the classification test so a half-opaque volume is a
-// half-dense medium (you see deeper into it) rather than a fully dense one
-// faded at the end, and so opacity 0 removes the background from the depth
-// write and the clip-surface shading as well as from the colour. Overlays do
-// not use it: their opacity is baked into the overlay texture's alpha by the
+// alpha. The 2D slice shader honours it as a plain uniform. Here a single
+// full-volume draw scales the ACCUMULATED premultiplied result once, after the
+// background block: per-sample alpha is an absorption coefficient, so scaling
+// it barely moves a ray that saturates anyway, which left the volume opaque for
+// every value above the 1/255 early-out. Scaling the accumulation gives the
+// linear fade the 2D tiles have, and leaves the depth write and the
+// clip-surface shading opacity-independent (as pre-1.0 did). Chunked draws
+// cannot do this -- their per-chunk fragments composite with OVER, which is not
+// linear in this factor -- so they still scale each sample. Overlays do not use
+// it at all: their opacity is baked into the overlay texture's alpha by the
 // orient pass. 1.0 is the default and a strict no-op. Mirrors backOpacity in
 // wgpu/volumeShaderLib.ts.
 uniform float backOpacity;
@@ -716,9 +720,10 @@ void main() {
         vec4 colorSample = (cubicFilter > 0.5)
           ? sampleTricubic(volume, volCoord)
           : texture(volume, volCoord);
-        // Before the classification test, so a transparent-enough volume drops
-        // out of the first-hit depth and the AO stencil too, not just the colour.
-        colorSample.a *= backOpacity;
+        // Chunked draws only -- see the scaling note after this block.
+        if (chunkedDraw) {
+          colorSample.a *= backOpacity;
+        }
         if (colorSample.a >= 0.01) {
           if (!bgHasHit) {
             bgHasHit = true;
@@ -819,6 +824,21 @@ void main() {
         fragDepth = frac2ndc(firstHit.xyz);
       }
     }
+  }
+  // Scale the ACCUMULATED background once, not each sample. Per-sample alpha is
+  // an absorption coefficient: scaling it barely moves the accumulated alpha of
+  // a ray that saturates anyway, so the volume stayed opaque for every
+  // backOpacity above 1/255. colAcc is premultiplied, so this scales colour and
+  // alpha together -- a linear fade, matching the pre-1.0 behaviour. Applied
+  // before the overlay passes so overlays are not dimmed with the background.
+  // Only for a single full-volume draw. A chunked draw emits one fragment per
+  // chunk cube and those are composited with OVER, which is not linear in this
+  // factor: scaling each chunk under-occludes the chunks behind it, so the fade
+  // compounds with the number of chunks a ray crosses (4 chunks at 0.5 render
+  // near-opaque). Chunked volumes therefore keep the per-sample behaviour until
+  // the chunk cubes can be composited into a tile and scaled once.
+  if (!chunkedDraw) {
+    colAcc *= backOpacity;
   }
   // --- Optional passes. By default overlays ignore the clip plane (march the
   // full original ray); when clipPlaneOverlay is set they are clipped with the

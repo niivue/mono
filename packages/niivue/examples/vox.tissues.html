@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Tissue Blending</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      .sliders { display: inline-flex; gap: 14px; align-items: center; }
+      .sliders label { display: inline-flex; gap: 5px; align-items: center; }
+      .swatch { width: 11px; height: 11px; border: 1px solid #888; display: inline-block; }
+      .sliders input[type='range'] { width: 92px; vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <span class="sliders">
+        <label for="bg">T1<input type="range" id="bg" min="0" max="100" value="100" /></label>
+        <label for="gm"><span class="swatch" style="background:#e06868"></span>GM<input type="range" id="gm" min="0" max="100" value="70" /></label>
+        <label for="wm"><span class="swatch" style="background:#d2d2d2"></span>WM<input type="range" id="wm" min="0" max="100" value="70" /></label>
+        <label for="csf"><span class="swatch" style="background:#78a0ff"></span>CSF<input type="range" id="csf" min="0" max="100" value="70" /></label>
+      </span>
+      &nbsp;
+      <label for="gradSlider"
+        title="volumeIllumination: matcap lighting in the 3D render, from the volume's gradient">Shading</label>
+      <input type="range" min="0" max="100" value="40" class="slider" id="gradSlider" />
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">&nbsp;</footer>
+    <script type="module">
+      import { shiny } from '../src/assets/matcaps'
+      import NiiVue, { SHOW_RENDER } from '../src/index.ts'
+
+      // Three partial-volume tissue maps (grey matter, white matter, CSF) over
+      // the T1 they were segmented from, each with its own opacity slider.
+      //
+      // The maps are continuous 0..1 fractions, not labels, so a voxel on a
+      // tissue boundary is a blend of two of them. Two things make that read
+      // correctly when three translucent layers overlap:
+      //
+      //  * colormapType 1 (ZERO_TO_MAX_TRANSPARENT_BELOW_MIN) keeps zero
+      //    genuinely transparent instead of painting the colormap's low end
+      //    over the anatomy.
+      //  * each overlay alpha-modulates ITSELF (setModulationImage(id, id, 1)).
+      //    Overlay alpha is otherwise binarised, so without this a voxel that is
+      //    5% grey matter would be as opaque as one that is 95% grey matter.
+      //
+      // Generated with brainchop's CAT-lite model and resliced back to the T1's
+      // native 188x256x190 0.88mm grid, so no overlay reslicing is involved.
+      const TISSUES = [
+        { id: 'gm', name: 'grey matter', file: 'chris_t1_gm.nii.gz', tint: [224, 104, 104] },
+        { id: 'wm', name: 'white matter', file: 'chris_t1_wm.nii.gz', tint: [210, 210, 210] },
+        { id: 'csf', name: 'CSF', file: 'chris_t1_csf.nii.gz', tint: [120, 160, 255] },
+      ]
+
+      const nv1 = new NiiVue({
+        backgroundColor: [0, 0, 0, 1],
+        is3DCrosshairVisible: true,
+        showRender: SHOW_RENDER.ALWAYS,
+        matcaps: { Shiny: shiny },
+      })
+      window.nv1 = nv1
+      nv1.addEventListener('locationChange', (e) => {
+        document.getElementById('location').textContent = e.detail.string
+      })
+      await nv1.attachToCanvas(gl1)
+      // Fixed "Shiny" matcap; the Shading slider only sets how strongly it is
+      // applied. Lighting differentiates the volume, so it makes the tissue
+      // surfaces in the 3D render read as shape rather than as flat colour.
+      await nv1.loadMatcap('Shiny')
+
+      // A light ramp from a pale version of the tint up to the tint itself. A
+      // colormap that starts at black would darken bright white matter before
+      // it tinted it, which reads as a dark halo rather than a tissue overlay.
+      for (const t of TISSUES) {
+        const [r, g, b] = t.tint
+        const pale = (c) => Math.round(c * 0.75)
+        nv1.addColormap(t.id, {
+          R: [pale(r), r], G: [pale(g), g], B: [pale(b), b], A: [0, 255], I: [0, 255],
+        })
+      }
+
+      await nv1.loadVolumes([
+        { url: '/volumes/chris_t1.nii.gz', colormap: 'gray' },
+        ...TISSUES.map((t) => ({
+          url: `/volumes/${t.file}`,
+          colormap: t.id,
+          colormapType: 1,
+          calMin: 0.05, // below this a voxel is essentially not this tissue
+          calMax: 1,
+          opacity: 0.7,
+        })),
+      ])
+
+      // Ids are only known once the volumes are loaded, so self-modulation is set
+      // afterwards; each call commits its own updateGLVolume.
+      document.getElementById('bg').oninput = (e) =>
+        nv1.setVolume(0, { opacity: e.target.value / 100 })
+      for (const [i, t] of TISSUES.entries()) {
+        const vol = nv1.volumes[i + 1]
+        await nv1.setModulationImage(vol.id, vol.id, 1)
+        document.getElementById(t.id).oninput = (e) =>
+          nv1.setVolume(i + 1, { opacity: e.target.value / 100 })
+      }
+
+      const gradSlider = document.getElementById('gradSlider')
+      gradSlider.oninput = () => {
+        nv1.volumeIllumination = Number(gradSlider.value) / 100
+      }
+      gradSlider.oninput()
+
+      document.getElementById('sliceType').onchange = (e) => {
+        nv1.sliceType = parseInt(e.target.value, 10)
+      }
+    </script>
+  </body>
+</html>

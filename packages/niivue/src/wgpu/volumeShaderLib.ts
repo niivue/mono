@@ -54,13 +54,14 @@ struct Params {
     // lodOpacityScale in gl/renderShader.ts.
     lodOpacityScale: f32,
     // The background volume's own \`opacity\`, scaling every background sample's
-    // alpha. The 2D slice shader has always honoured it; here it scales the
-    // alpha BEFORE the classification test so a half-opaque volume is a
-    // half-dense medium (you see deeper into it) rather than a fully dense one
-    // faded at the end, and so opacity 0 removes the background from the depth
-    // write and the clip-surface shading as well as from the colour. Overlays
-    // do not use it: their opacity is baked into the overlay texture's alpha by
-    // the orient pass. 1.0 is the default and a strict no-op. Occupies the last
+    // alpha. The 2D slice shader honours it as a plain uniform. Here a single
+    // full-volume draw scales the ACCUMULATED premultiplied result once, giving
+    // the same linear fade as the 2D tiles and leaving the depth write and
+    // clip-surface shading opacity-independent; chunked draws still scale each
+    // sample, because their per-chunk fragments composite with OVER and a
+    // per-chunk scale would compound. See gl/renderShader.ts for the full note.
+    // Overlays do not use it: their opacity is baked into the overlay texture's
+    // alpha by the orient pass. 1.0 is the default and a strict no-op. Occupies the last
     // implicit padding lane before the 16-byte-aligned volumeTexDimsFull, so
     // the struct size and every later offset are unchanged. Mirrors
     // backOpacity in gl/renderShader.ts. The depth-pick shader shares this

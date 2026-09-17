@@ -645,9 +645,10 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 				if (params.cubicFilter > 0.5) {
 					colorSample = sampleTricubic(volume, tex_sampler, volCoord);
 				}
-				// Before the classification test, so a transparent-enough volume drops
-				// out of the first-hit depth and the AO stencil too, not just the colour.
-				colorSample.a *= params.backOpacity;
+				// Chunked draws only -- see the scaling note after this block.
+				if (chunkedDraw) {
+					colorSample.a *= params.backOpacity;
+				}
 				if (colorSample.a >= 0.01) {
 					if (!bgHasHit) {
 						bgHasHit = true;
@@ -749,6 +750,14 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 				fragDepth = frac2ndc(firstHit.xyz);
 			}
 		}
+	}
+	// Scale the ACCUMULATED background once, not each sample -- see the matching
+	// comment in gl/renderShader.ts. Per-sample alpha is an absorption
+	// coefficient, so scaling it barely moves a ray that saturates anyway.
+	// colAcc is premultiplied, so this scales colour and alpha together.
+	// Single full-volume draws only -- see the matching note in gl/renderShader.ts.
+	if (!chunkedDraw) {
+		colAcc *= params.backOpacity;
 	}
 	// --- Optional passes. By default overlays ignore the clip plane (march the
 	// full original ray); when clipPlaneOverlay is set they are clipped with the

@@ -2368,6 +2368,7 @@ export default class NiiVue extends EventTarget {
   }
 
   set devicePixelRatio(dpr: number) {
+    this.opts.forceDevicePixelRatio = dpr
     if (!this.view) return
     this.view.forceDevicePixelRatio = dpr
     this.view.resize()

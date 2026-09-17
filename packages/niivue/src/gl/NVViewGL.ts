@@ -141,7 +141,7 @@ export default class NVGlview {
     this.model = model
     this.options = options
     this.isAntiAlias = options.isAntiAlias ?? false
-    this.forceDevicePixelRatio = options.devicePixelRatio ?? -1
+    this.forceDevicePixelRatio = options.forceDevicePixelRatio ?? -1
     this.gl = null
     this.max2D = 0
     this.max3D = 0
@@ -1583,14 +1583,8 @@ export default class NVGlview {
   resize(): void {
     if (!this.gl) return
     // Calculate device pixel ratio
-    let dpr: number
-    if (this.forceDevicePixelRatio <= 0) {
-      dpr = window.devicePixelRatio || 1
-    } else if (this.forceDevicePixelRatio < 0) {
-      dpr = 1
-    } else {
-      dpr = this.forceDevicePixelRatio
-    }
+    let dpr = window.devicePixelRatio || 1
+    if (this.forceDevicePixelRatio > 0) dpr = this.forceDevicePixelRatio
     this._dpr = dpr
     const rect = this.canvas.getBoundingClientRect()
     const targetW = Math.max(1, Math.floor(rect.width * dpr))

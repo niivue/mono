@@ -219,7 +219,7 @@ export default class NVView {
     this.model = model
     this.options = options
     this.isAntiAlias = options.isAntiAlias ?? false
-    this.forceDevicePixelRatio = options.devicePixelRatio ?? -1
+    this.forceDevicePixelRatio = options.forceDevicePixelRatio ?? -1
     // State & resources (model owns them)
     this.device = null
     this.context = null

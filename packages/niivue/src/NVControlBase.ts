@@ -14,6 +14,7 @@ import {
   showCanvasMessage,
 } from '@/control/canvasMessage'
 import {
+  clientToBoundsPixel,
   type ExplodedBlockPick,
   pickExplodedBlock,
   removeInteractionListeners,
@@ -803,18 +804,35 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
+   * Convert a pointer event's client position to the canvas pixel space that
+   * {@link hitTest}, {@link canvasToMM}, {@link mmToCanvas} and
+   * {@link getScreenTiles} use. This is the exact conversion the built-in
+   * pointer handlers apply, so a caller never has to reproduce it:
+   * `(client - canvas rect origin) * dpr`, where `dpr` is
+   * `window.devicePixelRatio` or `forceDevicePixelRatio` when that is set > 0;
+   * then, for an instance sharing a canvas via `bounds`, minus the origin of
+   * this instance's post-viewport pixel rect.
+   *
+   * Returns null when the instance has no canvas or, for a `bounds` instance,
+   * when the point is outside this instance's rect (a sibling's area) or the
+   * rect is offscreen.
+   */
+  clientToCanvas(clientX: number, clientY: number): [number, number] | null {
+    if (!this.canvas) return null
+    return clientToBoundsPixel(this, clientX, clientY)
+  }
+
+  /**
    * Hit-test a canvas position against the current frame's tiles.
    *
    * Coordinate convention (shared by {@link canvasToMM}, {@link mmToCanvas}
    * and {@link getScreenTiles}): canvas BACKING-STORE pixels — the
    * `canvas.width`/`canvas.height` space the renderer draws into — origin at
-   * the top-left, y down. These are NOT CSS pixels: convert a pointer event
-   * with `x = (event.clientX - rect.left) * dpr`,
-   * `y = (event.clientY - rect.top) * dpr`, where `rect` is
-   * `canvas.getBoundingClientRect()` and `dpr` is `window.devicePixelRatio`
-   * (or `forceDevicePixelRatio` when set > 0 — the same rule the built-in
-   * pointer handlers use). For instances sharing one canvas via `bounds`,
-   * coordinates are bounds-local pixels.
+   * the top-left, y down. These are NOT CSS pixels, and for an instance
+   * sharing one canvas via `bounds` they are bounds-local (the instance's own
+   * pixel rect subtracted). Use {@link clientToCanvas} to convert a pointer
+   * event; it applies the devicePixelRatio / `forceDevicePixelRatio` rule and
+   * the bounds offset exactly as the built-in pointer handlers do.
    *
    * Returns the tile index, its slice type, whether it is a 3D render tile,
    * and the position normalized to the tile rect (half-open [0,1), y down);

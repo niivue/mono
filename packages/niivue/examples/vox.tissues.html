@@ -36,6 +36,9 @@
       <input type="range" min="0" max="100" value="40" class="slider" id="gradSlider" />
       &nbsp;
       <label title="isViewModeHotKeyEnabled: press V to cycle the view"><input type="checkbox" id="viewKey" />V key</label>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
     </header>
     <main id="canvas-container">
       <canvas id="gl1"></canvas>
@@ -68,6 +71,7 @@
       ]
 
       const nv1 = new NiiVue({
+        backend: document.getElementById('webgpuCheck').checked ? 'webgpu' : 'webgl2',
         backgroundColor: [0, 0, 0, 1],
         is3DCrosshairVisible: true,
         showRender: SHOW_RENDER.ALWAYS,
@@ -77,7 +81,7 @@
       nv1.addEventListener('locationChange', (e) => {
         document.getElementById('location').textContent = e.detail.string
       })
-      await nv1.attachToCanvas(gl1)
+      await nv1.attachToCanvas(document.getElementById('gl1'))
       // Fixed "Shiny" matcap; the Shading slider only sets how strongly it is
       // applied. Lighting differentiates the volume, so it makes the tissue
       // surfaces in the 3D render read as shape rather than as flat colour.
@@ -130,6 +134,19 @@
       nv1.addEventListener('sliceTypeChange', (e) => {
         sliceTypeSelect.value = String(e.detail.sliceType)
       })
+      const webgpuCheck = document.getElementById('webgpuCheck')
+      // Reflects the backend actually running (WebGPU may fall back to WebGL2).
+      webgpuCheck.checked = nv1.backend === 'webgpu'
+      webgpuCheck.onchange = async () => {
+        webgpuCheck.disabled = true
+        try {
+          await nv1.reinitializeView({ backend: webgpuCheck.checked ? 'webgpu' : 'webgl2' })
+        } finally {
+          webgpuCheck.checked = nv1.backend === 'webgpu'
+          webgpuCheck.disabled = false
+          webgpuCheck.blur()
+        }
+      }
       document.getElementById('viewKey').onchange = (e) => {
         nv1.isViewModeHotKeyEnabled = e.target.checked
         // the focused checkbox is an INPUT, which the hotkey ignores

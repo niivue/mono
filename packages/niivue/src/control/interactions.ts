@@ -343,8 +343,10 @@ function clientToCanvasPixel(
 
 /** Convert client coords to bounds-local pixel coords. Returns null if outside bounds.
  *  Uses the post-viewport pixel rect so hit testing tracks the same transform
- *  the renderer applies — otherwise pan/zoom would route events to the wrong tile. */
-function clientToBoundsPixel(
+ *  the renderer applies — otherwise pan/zoom would route events to the wrong tile.
+ *  Exposed publicly as `NiiVue.clientToCanvas` so callers of `hitTest` /
+ *  `canvasToMM` feed them the same pixels the built-in handlers use. */
+export function clientToBoundsPixel(
   ctrl: NiiVue,
   clientX: number,
   clientY: number,

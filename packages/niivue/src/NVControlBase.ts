@@ -1927,7 +1927,8 @@ export default class NiiVue extends EventTarget {
    * or a linked instance — pan just enough that it stays inside every tile's
    * visible window. Off by default (the window stays put and the crosshair may
    * leave it), and explicit pan/zoom gestures are never fought. Enabling also
-   * applies immediately, so an already-off-window crosshair is brought back.
+   * applies immediately against the last rendered layout, so an already
+   * off-window crosshair is brought back.
    */
   set isPanFollowingCrosshair(v: boolean) {
     this.model.interaction.isPanFollowingCrosshair = v

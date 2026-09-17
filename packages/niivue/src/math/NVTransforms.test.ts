@@ -928,18 +928,37 @@ describe('panFollowCrosshair2D', () => {
   const extentsMin = [-90, -126, -72]
   const extentsMax = [90, 90, 108]
 
+  /**
+   * The per-axis window a tile with ortho bounds `mn`/`mx` shows under `pan`:
+   * what NVSliceLayout.tileVisibleWindowMM reports, restated here so the test
+   * pins the helper against calculateMvpMatrix2D rather than the layout code.
+   */
+  function windowOf(
+    pan: readonly number[],
+    mn: readonly number[] = extentsMin,
+    mx: readonly number[] = extentsMax,
+  ): Array<{ minMM: number; maxMM: number } | null> {
+    return [0, 1, 2].map((i) => {
+      const centre = (mn[i] + mx[i]) / 2 - pan[i]
+      const half = (mx[i] - mn[i]) / (2 * pan[3])
+      return { minMM: centre - half, maxMM: centre + half }
+    })
+  }
+
   /** True when `mm` projects inside the tile's clip window on both axes. */
   function isVisibleOnTile(
     mm: readonly number[],
     pan: readonly number[],
     axCorSag: number,
     isRadiological = false,
+    mn: readonly number[] = extentsMin,
+    mx: readonly number[] = extentsMax,
   ): boolean {
     const [u, v] = projectThroughSlice(
       mm,
       pan,
-      extentsMin,
-      extentsMax,
+      mn,
+      mx,
       axCorSag,
       isRadiological,
     )
@@ -953,7 +972,7 @@ describe('panFollowCrosshair2D', () => {
     for (const axCorSag of [0, 1, 2]) {
       expect(isVisibleOnTile(crosshair, pan, axCorSag)).toBe(true)
     }
-    const next = panFollowCrosshair2D(pan, crosshair, extentsMin, extentsMax)
+    const next = panFollowCrosshair2D(pan, crosshair, windowOf(pan))
     expect(next).toEqual([0, 0, 0])
   })
 
@@ -962,7 +981,7 @@ describe('panFollowCrosshair2D', () => {
     const pan = [0, 0, 0, 2]
     const crosshair = [60, -20, 20]
     expect(isVisibleOnTile(crosshair, pan, 0)).toBe(false)
-    const next = panFollowCrosshair2D(pan, crosshair, extentsMin, extentsMax)
+    const next = panFollowCrosshair2D(pan, crosshair, windowOf(pan))
     // Minimal move: the crosshair lands exactly ON the crossed edge, so the
     // pan moved by the overshoot (15 mm) and no further; other axes untouched.
     approx(next[0], -15)
@@ -977,7 +996,7 @@ describe('panFollowCrosshair2D', () => {
     // Visible y window at zoom 2, pan 0 is [-72, 36]; y = -100 is below it.
     const pan = [0, 0, 0, 2]
     const crosshair = [10, -100, 20]
-    const next = panFollowCrosshair2D(pan, crosshair, extentsMin, extentsMax)
+    const next = panFollowCrosshair2D(pan, crosshair, windowOf(pan))
     expect(next[0]).toBe(0)
     approx(next[1], 28)
     expect(next[2]).toBe(0)
@@ -997,7 +1016,7 @@ describe('panFollowCrosshair2D', () => {
     // shared pan must satisfy each tile's permutation of the world axes.
     const pan = [12, -8, 3, 3.5]
     const crosshair = [-80, 82, -60]
-    const next = panFollowCrosshair2D(pan, crosshair, extentsMin, extentsMax)
+    const next = panFollowCrosshair2D(pan, crosshair, windowOf(pan))
     const after = [next[0], next[1], next[2], 3.5]
     for (const axCorSag of [0, 1, 2]) {
       expect(isVisibleOnTile(crosshair, pan, axCorSag)).toBe(false)
@@ -1005,10 +1024,40 @@ describe('panFollowCrosshair2D', () => {
     }
   })
 
+  test('followsTheTileWindowNotTheDataExtents', () => {
+    // A filled single view widens the ortho window into the margin (here x,
+    // 180 mm of data in a 380 mm window) while the data extents stay put. The
+    // crosshair at x = 60 is past the data's zoom-2 window ([-45, 45]) but
+    // well inside the tile's ([-95, 95]): it is on screen, so nothing moves.
+    const wideMin = [-190, -126, -72]
+    const wideMax = [190, 90, 108]
+    const pan = [0, 0, 0, 2]
+    const onScreen = [60, -20, 20]
+    expect(isVisibleOnTile(onScreen, pan, 0)).toBe(false)
+    expect(isVisibleOnTile(onScreen, pan, 0, false, wideMin, wideMax)).toBe(
+      true,
+    )
+    expect(
+      panFollowCrosshair2D(pan, onScreen, windowOf(pan, wideMin, wideMax)),
+    ).toEqual([0, 0, 0])
+    // Past the tile's window the pan moves to ITS edge (25 mm), not to the
+    // data edge (which would be 75 mm and leave the crosshair mid-screen).
+    const offScreen = [120, -20, 20]
+    const next = panFollowCrosshair2D(
+      pan,
+      offScreen,
+      windowOf(pan, wideMin, wideMax),
+    )
+    approx(next[0], -25)
+    const after = [next[0], next[1], next[2], 2]
+    const [u] = projectThroughSlice(offScreen, after, wideMin, wideMax, 0)
+    approx(Math.abs(u), 1)
+  })
+
   test('radiologicalOrientationNeedsNoSpecialCase', () => {
     const pan = [0, 0, 0, 2]
     const crosshair = [60, -20, 20]
-    const next = panFollowCrosshair2D(pan, crosshair, extentsMin, extentsMax)
+    const next = panFollowCrosshair2D(pan, crosshair, windowOf(pan))
     const after = [next[0], next[1], next[2], 2]
     expect(isVisibleOnTile(crosshair, after, 0, true)).toBe(true)
   })
@@ -1018,29 +1067,21 @@ describe('panFollowCrosshair2D', () => {
     // crosshair a nonzero pan has pushed off-window.
     for (const zoom of [1, 0.5]) {
       const pan = [40, 0, 0, zoom]
-      const next = panFollowCrosshair2D(
-        pan,
-        [500, 500, 500],
-        extentsMin,
-        extentsMax,
-      )
+      const next = panFollowCrosshair2D(pan, [500, 500, 500], windowOf(pan))
       expect(next).toEqual([40, 0, 0])
     }
   })
 
   test('degenerateAndNonFiniteInputsAreSkippedNotNaN', () => {
-    // A flat axis (single slice) has no window to follow into.
-    const flat = [10, 10, 10]
+    // An axis no tile shows, or a flat one (single slice), has no window to
+    // follow into.
+    const flat = { minMM: 10, maxMM: 10 }
     expect(
-      panFollowCrosshair2D([1, 2, 3, 2], [99, 99, 99], flat, flat),
+      panFollowCrosshair2D([1, 2, 3, 2], [99, 99, 99], [null, flat, null]),
     ).toEqual([1, 2, 3])
     // A NaN crosshair coordinate must not poison the pan.
-    const next = panFollowCrosshair2D(
-      [0, 0, 0, 2],
-      [Number.NaN, 0, 0],
-      extentsMin,
-      extentsMax,
-    )
+    const pan = [0, 0, 0, 2]
+    const next = panFollowCrosshair2D(pan, [Number.NaN, 0, 0], windowOf(pan))
     expect(next).toEqual([0, 0, 0])
   })
 })

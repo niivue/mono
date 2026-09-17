@@ -1,5 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test'
+import { vec3 } from 'gl-matrix'
+import * as NVConstants from '@/NVConstants'
 import type NiiVueGPU from '@/NVControlBase'
+import {
+  type SliceLayoutConfig,
+  screenSlicesLayout,
+} from '@/view/NVSliceLayout'
 import {
   applyPanFollowsCrosshair,
   emitOrientationChange,
@@ -23,12 +29,16 @@ function fakeCtrl(scene: Scene) {
 
 /**
  * Fake controller with enough model for applyPanFollowsCrosshair: symmetric
- * [-90, 90] mm extents and the model's linear scene-fraction interpolation.
+ * [-90, 90] mm extents, the model's linear scene-fraction interpolation, and a
+ * rendered layout (`view.screenSlices`) the follow reads its window from. The
+ * default is a plain 800x600 multiplanar, whose tile windows equal the data
+ * extents; `layout` overrides it, or `null` stands for "not rendered yet".
  */
 function fakeFollowCtrl(
   pan2Dxyzmm: [number, number, number, number],
   crosshairPos: [number, number, number],
   isPanFollowingCrosshair: boolean,
+  layout: Partial<SliceLayoutConfig> | null = {},
 ) {
   const emit = mock((_type: string, _detail?: unknown) => {})
   const extentsMin = [-90, -90, -90]
@@ -41,7 +51,16 @@ function fakeFollowCtrl(
     scene2mm: (frac: number[]) =>
       frac.map((f, i) => extentsMin[i] + f * (extentsMax[i] - extentsMin[i])),
   }
-  const ctrl = { model, emit } as unknown as NiiVueGPU
+  const screenSlices = layout
+    ? screenSlicesLayout({
+        canvasWH: [800, 600],
+        extentsMin: vec3.fromValues(-90, -90, -90),
+        extentsMax: vec3.fromValues(90, 90, 90),
+        sliceType: NVConstants.SLICE_TYPE.MULTIPLANAR,
+        ...layout,
+      })
+    : []
+  const ctrl = { model, emit, view: { screenSlices } } as unknown as NiiVueGPU
   return { ctrl, emit, pan: pan2Dxyzmm }
 }
 
@@ -130,5 +149,46 @@ describe('applyPanFollowsCrosshair', () => {
       property: 'pan2Dxyzmm',
       value: pan,
     })
+  })
+
+  test('followsTheRenderedTileWindowNotTheDataExtents', () => {
+    // A filled axial single view in a 2000x400 pane shows five times the
+    // data's width on x: at zoom 10 the window is [-45, 45] mm where the data
+    // alone would give [-9, 9]. The crosshair at +90 mm is 45 mm past the
+    // window, not 81 mm past the data, and the pan must say so.
+    const filled = {
+      sliceType: NVConstants.SLICE_TYPE.AXIAL,
+      canvasWH: [2000, 400] as [number, number],
+    }
+    const { ctrl, pan } = fakeFollowCtrl(
+      [0, 0, 0, 10],
+      offWindowX,
+      true,
+      filled,
+    )
+    expect(applyPanFollowsCrosshair(ctrl)).toBe(true)
+    expect(pan[0]).toBeCloseTo(-45, 9)
+    expect(pan[1]).toBe(0)
+    expect(pan[2]).toBe(0)
+    // And a crosshair inside that window but outside the data is on screen,
+    // so it is left alone: at zoom 2 the window is [-225, 225].
+    const inside = fakeFollowCtrl([0, 0, 0, 2], offWindowX, true, filled)
+    expect(applyPanFollowsCrosshair(inside.ctrl)).toBe(false)
+    expect(inside.pan).toEqual([0, 0, 0, 2])
+    expect(inside.emit).not.toHaveBeenCalled()
+  })
+
+  test('noRenderedLayoutLeavesThePanUntouched', () => {
+    // Before the first frame there are no tiles and so no window to keep the
+    // crosshair inside; the next move after a render catches up.
+    const { ctrl, emit, pan } = fakeFollowCtrl(
+      [0, 0, 0, 2],
+      offWindowX,
+      true,
+      null,
+    )
+    expect(applyPanFollowsCrosshair(ctrl)).toBe(false)
+    expect(pan).toEqual([0, 0, 0, 2])
+    expect(emit).not.toHaveBeenCalled()
   })
 })

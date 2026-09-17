@@ -252,51 +252,68 @@ export function zoomPan2DAbout(
 }
 
 /**
- * New 2D pan that moves just enough to bring `crosshairMM` inside the ortho
- * window on every world axis, or the unchanged pan when it is already inside.
+ * A closed world-mm interval on one axis, or null for an axis with no window.
+ * Structurally the same as `NVSliceLayout.AxisWindowMM`; declared here so the
+ * math layer does not import from the view layer.
+ */
+export type FollowWindowMM = ReadonlyArray<{
+  readonly minMM: number
+  readonly maxMM: number
+} | null>
+
+/**
+ * New 2D pan that moves just enough to bring `crosshairMM` inside `window` on
+ * every world axis, or the unchanged pan when it is already inside.
  *
  * This is the spatial analogue of the signal graph's
  * `NVModel.panViewWindowTo`: the window follows a marker that moved on its own
  * (keyboard step, API call, linked instance), while explicit pan and zoom are
- * still free to leave it off-window. Like that precedent it pans MINIMALLY —
+ * still free to leave it off-window. Like that precedent it pans MINIMALLY --
  * the crosshair lands exactly on the window edge it crossed rather than being
  * recentred, so a slow crosshair walk scrolls the view instead of jumping it.
  *
+ * `window` is what is on screen NOW, per world axis, with the current pan and
+ * zoom already applied: the intersection over the rendered 2D tiles of
+ * `NVSliceLayout.tileVisibleWindowMM` (see `everyTileWindowMM`). It is not the
+ * scene extents. The extents only equal the window when every tile is
+ * letterboxed to the data; a filled single view, `isMultiplanarEqualSize`
+ * padding, or a custom tile wider than its neighbour all show more world than
+ * the data, and following the data edge there would pan while the crosshair
+ * is still plainly visible. An axis with no window (`null`, nothing shows a
+ * range along it) is skipped.
+ *
  * The convention is {@link calculateMvpMatrix2D}'s (see {@link zoomPan2DAbout}
- * for the derivation): on each axis the window is centred on `c - pan` with
- * half-width `HW0 / zoom`, so `m` is visible iff `|m - c + pan| <= HW0/zoom`.
- * Radiological orientation only negates the normalized U offset, which leaves
- * that bound unchanged, so it needs no special case.
+ * for the derivation): the window on an axis is centred on `c - pan`, so
+ * moving the window UP by `d` mm is `pan - d`. Radiological orientation only
+ * negates the normalized U offset, which leaves the mm interval unchanged, so
+ * it needs no special case.
  *
  * At `zoom <= 1` the pan is returned untouched: the window already shows the
  * whole extent (or more), so there is no "outside" to follow the crosshair
- * into, and the default un-zoomed behaviour must stay byte-identical. A
- * degenerate axis (no volume, or a single slice) has zero half-width and is
- * likewise skipped rather than producing NaN.
+ * into, and the default un-zoomed behaviour must stay byte-identical.
  *
  * @param pan - current `[panX, panY, panZ, zoom]`
  * @param crosshairMM - world-mm point to keep visible (the crosshair)
- * @param extentsMin - world-mm minimum of the scene extents
- * @param extentsMax - world-mm maximum of the scene extents
+ * @param window - per-world-axis `[X, Y, Z]` visible window, post pan and zoom
  * @returns the new `[panX, panY, panZ]`; unchanged entries are copied as-is
  */
 export function panFollowCrosshair2D(
   pan: ArrayLike<number>,
   crosshairMM: ArrayLike<number>,
-  extentsMin: ArrayLike<number>,
-  extentsMax: ArrayLike<number>,
+  window: FollowWindowMM,
 ): [number, number, number] {
   const out: [number, number, number] = [pan[0], pan[1], pan[2]]
   const zoom = pan[3] ?? 1
   if (!Number.isFinite(zoom) || zoom <= 1) return out
   for (let i = 0; i < 3; i++) {
-    const halfWidth = (extentsMax[i] - extentsMin[i]) / (2 * zoom)
-    if (!Number.isFinite(halfWidth) || halfWidth <= 0) continue
-    const centre = (extentsMin[i] + extentsMax[i]) / 2
-    const offset = crosshairMM[i] - (centre - pan[i])
-    if (!Number.isFinite(offset)) continue
-    if (offset > halfWidth) out[i] = pan[i] - (offset - halfWidth)
-    else if (offset < -halfWidth) out[i] = pan[i] - (offset + halfWidth)
+    const w = window[i]
+    if (!w) continue
+    const m = crosshairMM[i]
+    // A zero-width or non-finite window shows no range to follow into (a flat
+    // axis, or nothing laid out), and a NaN crosshair must not poison the pan.
+    if (!Number.isFinite(m) || !(w.maxMM - w.minMM > 0)) continue
+    if (m > w.maxMM) out[i] = pan[i] - (m - w.maxMM)
+    else if (m < w.minMM) out[i] = pan[i] + (w.minMM - m)
   }
   return out
 }

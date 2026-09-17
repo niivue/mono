@@ -6,6 +6,7 @@ import type NVModel from '@/NVModel'
 import {
   type AxisWindowMM,
   crosshairRadiusMM,
+  everyTileWindowMM,
   fitSlicesAndGraph,
   type SliceLayoutConfig,
   type SliceTile,
@@ -412,5 +413,71 @@ describe('visibleWindowMM', () => {
     for (const zoom of [0, -1, Number.NaN]) {
       expect(visibleWindowMM(tiles, [0, 0, 0, zoom])).toEqual(plain)
     }
+  })
+})
+
+// ---------- everyTileWindowMM ----------
+
+describe('everyTileWindowMM', () => {
+  type Screen = { mnMM: vec3; mxMM: vec3 }
+  /** Copy of `tile` with its in-plane U ortho bounds shifted by `lo`/`hi`. */
+  const withU = (tile: SliceTile, lo: number, hi: number): SliceTile => {
+    const s = tile.screen as Screen
+    const mnMM = vec3.clone(s.mnMM)
+    const mxMM = vec3.clone(s.mxMM)
+    mnMM[0] += lo
+    mxMM[0] += hi
+    return { ...tile, screen: { ...s, mnMM, mxMM } } as SliceTile
+  }
+
+  test('equalsTheUnionWhileEveryTileAgrees', () => {
+    // Today's layouts give tiles sharing an axis the same window, so the two
+    // reductions coincide; this is the tie the union's doc says not to rely on.
+    const pan = [7, -3, 11, 2]
+    for (const over of [{}, { isMultiplanarEqualSize: true }]) {
+      const tiles = screenSlicesLayout(mpr(over))
+      expect(everyTileWindowMM(tiles, pan)).toEqual(visibleWindowMM(tiles, pan))
+    }
+  })
+
+  test('axesNoTileShowsStayNull', () => {
+    const sag = mpr({
+      sliceType: NVConstants.SLICE_TYPE.SAGITTAL,
+      isSingleViewFillCanvas: false,
+    })
+    const w = everyTileWindowMM(screenSlicesLayout(sag))
+    expect(w[0]).toBeNull()
+    expect(win(w, 1).minMM).toBeCloseTo(EXTENTS_MIN[1], 9)
+    expect(win(w, 2).maxMM).toBeCloseTo(EXTENTS_MAX[2], 9)
+  })
+
+  test('takesTheTightestWindowWhereTilesDisagree', () => {
+    // Widen the axial tile's X window on both sides: the union grows with it,
+    // the intersection keeps the coronal tile's narrower X, and Y/Z (which the
+    // axial tile shares unchanged) are untouched.
+    const tiles = screenSlicesLayout(mpr())
+    const axial = tiles.findIndex((t) => t.axCorSag === 0)
+    const wide = tiles.map((t, i) => (i === axial ? withU(t, -20, 30) : t))
+    const pan = [7, -3, 11, 2]
+    const plain = everyTileWindowMM(tiles, pan)
+    const every = everyTileWindowMM(wide, pan)
+    const union = visibleWindowMM(wide, pan)
+    expect(every).toEqual(plain)
+    expect(union[0]).not.toEqual(plain[0])
+    expect(win(union, 0).minMM).toBeLessThan(win(plain, 0).minMM)
+    expect(win(union, 0).maxMM).toBeGreaterThan(win(plain, 0).maxMM)
+  })
+
+  test('disjointWindowsLeaveTheAxisNull', () => {
+    // Slide the axial tile's X window clear past the coronal tile's: no X is
+    // visible in both, so there is no interval a follower could move to, and
+    // an inverted one would have it chase one edge then the other.
+    const tiles = screenSlicesLayout(mpr())
+    const axial = tiles.findIndex((t) => t.axCorSag === 0)
+    const apart = tiles.map((t, i) => (i === axial ? withU(t, 500, 500) : t))
+    const w = everyTileWindowMM(apart)
+    expect(w[0]).toBeNull()
+    expect(w[1]).toEqual(win(everyTileWindowMM(tiles), 1))
+    expect(w[2]).toEqual(win(everyTileWindowMM(tiles), 2))
   })
 })

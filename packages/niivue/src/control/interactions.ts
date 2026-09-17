@@ -447,10 +447,14 @@ function legendHitTest(
 }
 
 function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
-  const tag = document.activeElement?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-  const active = document.activeElement
-  if (active instanceof HTMLElement && active.isContentEditable) return
+  // composedPath reaches a focused field inside a shadow root.
+  const active = e.composedPath()[0]
+  if (
+    active instanceof HTMLElement &&
+    (active.isContentEditable ||
+      ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName))
+  )
+    return
   setNextActionTag('keydown')
   const key = e.key.toUpperCase()
   if (key === 'ESCAPE') {
@@ -464,18 +468,15 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
     }
     return
   }
-  if (
-    key === 'V' &&
-    ctrl.model.interaction.isViewModeHotKeyEnabled &&
-    !e.ctrlKey &&
-    !e.metaKey &&
-    !e.altKey &&
-    !e.shiftKey &&
-    !e.repeat // holding V would spin through views
-  ) {
-    ctrl.sliceType = NVConstants.nextSliceType(ctrl.model.layout.sliceType)
-  } else if (key === 'V') {
-    log.info(`NIIVUE VERSION: 0.1.20260122`)
+  if (key === 'V') {
+    if (!ctrl.model.interaction.isViewModeHotKeyEnabled) {
+      log.info(`NIIVUE VERSION: 0.1.20260122`)
+    } else if (
+      !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat)
+    ) {
+      // Modifiers leave Cmd/Ctrl+V to paste; a held key would spin the views.
+      ctrl.sliceType = NVConstants.nextSliceType(ctrl.model.layout.sliceType)
+    }
   } else if (key === 'A') {
     ctrl.activeClipPlaneIndex++
     if (ctrl.activeClipPlaneIndex >= NVConstants.NUM_CLIP_PLANE) {

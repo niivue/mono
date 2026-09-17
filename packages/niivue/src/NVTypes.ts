@@ -939,6 +939,12 @@ export type InteractionConfig = {
   isDragDropEnabled: boolean
   isYoked3DTo2DZoom: boolean
   wheelZoomAnchor: WheelZoomAnchor
+  // Opt-in: when the 2D views are zoomed in (pan2Dxyzmm[3] > 1) and the
+  // crosshair moves on its own (keyboard, API, linked instance), pan just
+  // enough to keep it inside every tile's visible window. Off by default: the
+  // window stays put and the crosshair may leave it. Explicit pan/zoom
+  // gestures are never fought.
+  isPanFollowingCrosshair: boolean
 }
 
 // ============================================================
@@ -1219,6 +1225,7 @@ export type NiiVueOptions = {
   isYoked3DTo2DZoom?: boolean
   /** Anchor for the 2D wheel zoom. Default 'crosshair'. See InteractionConfig.wheelZoomAnchor. */
   wheelZoomAnchor?: WheelZoomAnchor
+  isPanFollowingCrosshair?: boolean
 
   // Annotation (prefixed)
   annotationIsEnabled?: boolean

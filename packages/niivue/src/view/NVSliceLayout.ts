@@ -1163,6 +1163,57 @@ export function visibleWindowMM(
   return out
 }
 
+/**
+ * Intersection of every 2D tile's visible window, per world axis.
+ *
+ * The "keep this point visible in every tile" sibling of
+ * {@link visibleWindowMM}: an axis's window is the tightest `[minMM, maxMM]`
+ * every tile showing that axis agrees on, so a point inside it is on screen
+ * in all of them. This is what a follow behaviour wants (pan-follows-crosshair
+ * reduces over this), and it is the reduction the doc above asks such callers
+ * to do rather than assume the union stays interchangeable.
+ *
+ * Same conventions as the union: the window is the ortho window (it can reach
+ * past the data), the depth axis of a tile contributes nothing, and an axis no
+ * tile shows is `null`. Two tiles whose windows do not overlap on an axis
+ * leave that axis `null` too: no point is visible in both, so there is nothing
+ * a caller could move to, and reporting the inverted interval would send a
+ * follower chasing one edge and then the other.
+ *
+ * @param tiles - the rendered slice tiles (`view.screenSlices`)
+ * @param pan2Dxyzmm - the scene's `[panX, panY, panZ, zoom]`
+ * @returns per-world-axis windows common to every 2D tile
+ */
+export function everyTileWindowMM(
+  tiles: SliceTile[],
+  pan2Dxyzmm: ArrayLike<number> = [0, 0, 0, 1],
+): VisibleWindowMM {
+  const out: VisibleWindowMM = [null, null, null]
+  const empty = [false, false, false]
+  for (const tile of tiles) {
+    const windows = tileVisibleWindowMM(tile, pan2Dxyzmm)
+    if (!windows) continue
+    for (let axis = 0; axis < 3; axis++) {
+      const win = windows[axis]
+      if (!win || empty[axis]) continue
+      const prev = out[axis]
+      const next = prev
+        ? {
+            minMM: Math.max(prev.minMM, win.minMM),
+            maxMM: Math.min(prev.maxMM, win.maxMM),
+          }
+        : win
+      if (next.minMM > next.maxMM) {
+        empty[axis] = true
+        out[axis] = null
+      } else {
+        out[axis] = next
+      }
+    }
+  }
+  return out
+}
+
 // ---------- Cross-lines ----------
 
 export function buildCrossLines(

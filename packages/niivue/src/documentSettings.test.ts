@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { LAYOUT_DEFAULTS } from '@/NVConstants'
+import type { CustomLayoutTile, LayoutConfig } from '@/NVTypes'
 import {
   fillGroup,
   fillModeFor,
@@ -211,5 +213,28 @@ describe('fillGroup', () => {
     expect(fillGroup('scene', current, defaults, undefined, undefined)).toEqual(
       defaults,
     )
+  })
+})
+
+describe('layout.customLayout document round-trip', () => {
+  test('a tile fill flag survives sparsify then fill', () => {
+    // A custom layout with a filled tile must reach a restored document intact:
+    // sparsifyGroup keeps it (differs from the null default) and fillGroup lets
+    // the document value win over both current and default.
+    const customLayout: CustomLayoutTile[] = [
+      { sliceType: 0, position: [0, 0, 0.5, 1], fill: true },
+      { sliceType: 4, position: [0.5, 0, 0.5, 1] },
+    ]
+    const current: LayoutConfig = { ...LAYOUT_DEFAULTS, customLayout }
+    const sparse = sparsifyGroup('layout', current, LAYOUT_DEFAULTS)
+    expect(sparse).toEqual({ customLayout: current.customLayout })
+    const restored = fillGroup(
+      'layout',
+      { ...LAYOUT_DEFAULTS },
+      LAYOUT_DEFAULTS,
+      sparse,
+      undefined,
+    )
+    expect(restored.customLayout).toEqual(current.customLayout)
   })
 })

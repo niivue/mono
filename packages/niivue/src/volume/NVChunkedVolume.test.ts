@@ -7,7 +7,13 @@ import type {
   ChunkedVolumeFetch,
   ChunkedVolumeSource,
 } from './ChunkedVolumeSource'
-import type { ChunkPlan, Vec3f, Vec3i, VolumeChunkDesc } from './chunking'
+import type {
+  ChunkPlan,
+  MultiLodBounds,
+  Vec3f,
+  Vec3i,
+  VolumeChunkDesc,
+} from './chunking'
 import {
   createSourceChunkLoader,
   focusCenterBiased,
@@ -534,14 +540,20 @@ const mgrSource: ChunkedVolumeSource = {
   fetchChunk: async () => new Uint8Array(),
 }
 
-/** Minimal host stub: only what the manager touches for a static-focus refocus. */
+/**
+ * Minimal host stub: only what the manager touches for a static-focus refocus.
+ * `extra` adds view state (`sliceType`, `pan2Dxyzmm`, ...) for tests that
+ * exercise the view-derived `'auto'` radius.
+ */
 function makeHost(
   swap: (id: string, plan: ChunkPlan) => Promise<void>,
+  extra: Record<string, unknown> = {},
 ): NiiVue {
   return {
     swapVolumeChunkPlan: swap,
     _registerChunkedVolume: () => {},
     _unregisterChunkedVolume: () => {},
+    ...extra,
   } as unknown as NiiVue
 }
 
@@ -608,6 +620,154 @@ describe('NVChunkedVolume deviceLimit default', () => {
     )
     expect(maxEdge).toBeGreaterThan(64)
     expect(maxEdge).toBeLessThanOrEqual(256)
+  })
+})
+
+describe("NVChunkedVolume 'auto' radius", () => {
+  // 8:1:1 pyramid — the anisotropic case the per-axis 'auto' exists for.
+  const thinSource: ChunkedVolumeSource = {
+    datatypeCode: 4,
+    levels: [
+      { level: 0, shape: [1024, 256, 32], spacing: [1, 1, 1] },
+      { level: 1, shape: [512, 128, 16], spacing: [2, 2, 2] },
+    ],
+    fetchChunk: async () => new Uint8Array(),
+  }
+  const radiusOf = (mgr: NVChunkedVolume): number | Vec3f =>
+    (mgr as unknown as { currentRadius(): number | Vec3f }).currentRadius()
+
+  test('2D slice view derives a per-axis radius (half-extents over zoom)', () => {
+    const host = makeHost(async () => {}, {
+      sliceType: SLICE_TYPE.MULTIPLANAR,
+      pan2Dxyzmm: [0, 0, 0, 2],
+    })
+    const mgr = new NVChunkedVolume(host, thinSource, { radius: 'auto' })
+    // sqrt(3) * common/(2*zoom) per axis: the ellipsoid circumscribing the
+    // volume's own aspect, not the single half-diagonal (~264 here) that
+    // over-covers z 8x while giving x no more than the diagonal ball.
+    const r = radiusOf(mgr) as Vec3f
+    expect(r[0]).toBeCloseTo(256 * Math.sqrt(3), 6)
+    expect(r[1]).toBeCloseTo(64 * Math.sqrt(3), 6)
+    expect(r[2]).toBeCloseTo(8 * Math.sqrt(3), 6)
+  })
+
+  test("2D 'auto' on a cube is the old half-diagonal on every axis", () => {
+    const cube: ChunkedVolumeSource = {
+      ...thinSource,
+      levels: [
+        { level: 0, shape: [256, 256, 256], spacing: [1, 1, 1] },
+        { level: 1, shape: [128, 128, 128], spacing: [2, 2, 2] },
+      ],
+    }
+    const host = makeHost(async () => {}, {
+      sliceType: SLICE_TYPE.MULTIPLANAR,
+      pan2Dxyzmm: [0, 0, 0, 1],
+    })
+    const r = radiusOf(new NVChunkedVolume(host, cube, { radius: 'auto' }))
+    const halfDiagonal = Math.hypot(256, 256, 256) / 2
+    for (const axis of r as Vec3f) expect(axis).toBeCloseTo(halfDiagonal, 6)
+  })
+
+  test("2D 'auto' re-plans on a zoom change, even with a pinned focus", async () => {
+    // A pinned/'none' focus never subscribes locationChange, so nothing else
+    // would ever pick up a zoom. The wheel and drag zooms write the model and
+    // then emit the host 'change' event with property 'pan2Dxyzmm'; drive that.
+    const listeners = new Map<string, Set<(e: Event) => void>>()
+    const swaps: ChunkPlan[] = []
+    const pan2Dxyzmm = [0, 0, 0, 1]
+    const host = makeHost(
+      async (_id, plan) => {
+        swaps.push(plan)
+      },
+      {
+        sliceType: SLICE_TYPE.MULTIPLANAR,
+        pan2Dxyzmm,
+        addVolume: async () => {},
+        addEventListener: (t: string, l: (e: Event) => void) => {
+          const set = listeners.get(t) ?? new Set<(e: Event) => void>()
+          set.add(l)
+          listeners.set(t, set)
+        },
+        removeEventListener: (t: string, l: (e: Event) => void) => {
+          listeners.get(t)?.delete(l)
+        },
+      },
+    )
+    const emitChange = (property: string): void => {
+      for (const l of listeners.get('change') ?? []) {
+        l(new CustomEvent('change', { detail: { property, value: null } }))
+      }
+    }
+    const mgr = new NVChunkedVolume(host, thinSource, {
+      radius: 'auto',
+      focus: 'none',
+      debounceMs: 0,
+      coarseFloor: false,
+      calMin: 0,
+      calMax: 1,
+    })
+    await mgr.init()
+    expect(listeners.get('locationChange')?.size ?? 0).toBe(0)
+    const initial = mgr.currentPlan
+    const before = radiusOf(mgr) as Vec3f
+    // A pan alone changes nothing the radius depends on: no re-plan.
+    emitChange('pan2Dxyzmm')
+    await mgr.whenRefocusIdle()
+    expect(swaps).toHaveLength(0)
+    // Zoom in 4x: the ellipsoid shrinks per axis and a new plan is swapped in.
+    pan2Dxyzmm[3] = 4
+    emitChange('pan2Dxyzmm')
+    await mgr.whenRefocusIdle()
+    expect(swaps).toHaveLength(1)
+    expect(mgr.currentPlan).toBe(swaps[0])
+    expect(mgr.currentPlan).not.toBe(initial)
+    const after = radiusOf(mgr) as Vec3f
+    for (let a = 0; a < 3; a++) expect(after[a]).toBeCloseTo(before[a] / 4, 6)
+    // The same zoom again is not a change worth a plan.
+    emitChange('pan2Dxyzmm')
+    await mgr.whenRefocusIdle()
+    expect(swaps).toHaveLength(1)
+    mgr.dispose()
+    expect(listeners.get('change')?.size ?? 0).toBe(0)
+  })
+
+  test('render view and pinned shapes stay as before', () => {
+    const render = new NVChunkedVolume(
+      makeHost(async () => {}, { sliceType: SLICE_TYPE.RENDER }),
+      thinSource,
+      { radius: 'auto' },
+    )
+    expect(radiusOf(render)).toBe(128) // cellEdge default: scalar core
+    const pinned = new NVChunkedVolume(
+      makeHost(async () => {}),
+      thinSource,
+      { radius: [300, 40, 10] },
+    )
+    expect(radiusOf(pinned)).toEqual([300, 40, 10])
+    const uniform = new NVChunkedVolume(
+      makeHost(async () => {}),
+      thinSource,
+      { radius: 'volume' },
+    )
+    expect(uniform.budgetPlan.radius).toBe('volume')
+    expect(radiusOf(uniform)).toBeCloseTo(Math.hypot(1024, 256, 32) / 2, 6)
+  })
+
+  test('a pinned per-axis radius is copied, so a later caller mutation changes nothing', () => {
+    // Both routes in: the `radius` option and a plan object's `radius`.
+    const asOption: Vec3f = [300, 40, 10]
+    const inPlan: Vec3f = [200, 30, 5]
+    const host = makeHost(async () => {})
+    const a = new NVChunkedVolume(host, thinSource, { radius: asOption })
+    const b = new NVChunkedVolume(host, thinSource, {
+      budgetPlan: { radius: inPlan },
+    })
+    asOption[0] = 1
+    inPlan[0] = 1
+    expect(radiusOf(a)).toEqual([300, 40, 10])
+    expect(a.budgetPlan.radius).toEqual([300, 40, 10])
+    expect(radiusOf(b)).toEqual([200, 30, 5])
+    expect(b.budgetPlan.radius).toEqual([200, 30, 5])
   })
 })
 
@@ -1382,5 +1542,91 @@ describe('NVChunkedVolume automatic display window', () => {
     await mgr.init()
     expect(mgr.volume.calMin).toBe(0)
     expect(mgr.volume.calMax).toBe(1)
+  })
+})
+
+describe('NVChunkedVolume focusBounds', () => {
+  const boundsOf = (mgr: NVChunkedVolume): MultiLodBounds[] =>
+    (mgr as unknown as { focusBounds: MultiLodBounds[] }).focusBounds
+  const intersects = (c: VolumeChunkDesc, b: MultiLodBounds): boolean => {
+    for (let a = 0; a < 3; a++) {
+      const lo = c.voxelOrigin[a]
+      if (lo >= b.max[a] || lo + c.voxelDims[a] <= b.min[a]) return false
+    }
+    return true
+  }
+  const levelsTouching = (plan: ChunkPlan, b: MultiLodBounds): Set<number> =>
+    new Set(
+      plan.chunks
+        .filter((c) => intersects(c, b))
+        .map((c) => c.sourceLevel ?? 0),
+    )
+  // The reservations fixture from chunking.test.ts, through the manager: a
+  // 512-cube pyramid, 32-voxel cells, a one-voxel-thick slab away from the
+  // focus that the plain octree leaves mixed and a reservation makes uniform.
+  const source: ChunkedVolumeSource = {
+    datatypeCode: 4,
+    levels: [
+      { level: 0, shape: [512, 512, 512], spacing: [1, 1, 1] },
+      { level: 1, shape: [256, 256, 256], spacing: [2, 2, 2] },
+      { level: 2, shape: [128, 128, 128], spacing: [4, 4, 4] },
+      { level: 3, shape: [64, 64, 64], spacing: [8, 8, 8] },
+    ],
+    fetchChunk: async () => new Uint8Array(),
+  }
+  // Budget off (0 disables both caps): the fixture's mixed slab only exists
+  // in the unbudgeted octree; the 240-brick default coarsens it uniformly.
+  const opts = {
+    radius: 16,
+    cellEdge: 32,
+    focus: [0.5, 0.5, 0.5] as Vec3f,
+    budgetBytes: 0,
+    maxBricks: 0,
+  }
+  const slab: MultiLodBounds = { min: [0, 0, 100], max: [512, 512, 101] }
+
+  test('initial bounds reach the planner and are cloned from the caller', () => {
+    const host = makeHost(async () => {})
+    const plain = new NVChunkedVolume(host, source, opts)
+    const mine: MultiLodBounds = {
+      min: [slab.min[0], slab.min[1], slab.min[2]],
+      max: [slab.max[0], slab.max[1], slab.max[2]],
+    }
+    const bounded = new NVChunkedVolume(host, source, {
+      ...opts,
+      focusBounds: [mine],
+    })
+    expect(levelsTouching(plain.currentPlan, slab).size).toBeGreaterThan(1)
+    expect(levelsTouching(bounded.currentPlan, slab).size).toBe(1)
+    expect(boundsOf(bounded)).toEqual([slab])
+    expect(boundsOf(bounded)[0]).not.toBe(mine)
+    mine.max[2] = 999
+    expect(boundsOf(bounded)[0].max[2]).toBe(101)
+  })
+
+  test('setFocus replaces, keeps, or clears the bounds by its second argument', async () => {
+    const host = makeHost(async () => {})
+    const mgr = new NVChunkedVolume(host, source, { ...opts, debounceMs: 0 })
+    expect(boundsOf(mgr)).toEqual([])
+    expect(levelsTouching(mgr.currentPlan, slab).size).toBeGreaterThan(1)
+
+    const passed: MultiLodBounds = {
+      min: [slab.min[0], slab.min[1], slab.min[2]],
+      max: [slab.max[0], slab.max[1], slab.max[2]],
+    }
+    await mgr.setFocus([0.5, 0.5, 0.5], [passed])
+    expect(boundsOf(mgr)).toEqual([slab])
+    expect(boundsOf(mgr)[0]).not.toBe(passed)
+    expect(levelsTouching(mgr.currentPlan, slab).size).toBe(1)
+
+    // Omitted: the stored bounds stay in force across a focus move.
+    await mgr.setFocus([0.4, 0.4, 0.4])
+    expect(boundsOf(mgr)).toEqual([slab])
+    expect(levelsTouching(mgr.currentPlan, slab).size).toBe(1)
+
+    // Empty array: cleared, and the plan goes back to the plain octree.
+    await mgr.setFocus([0.5, 0.5, 0.5], [])
+    expect(boundsOf(mgr)).toEqual([])
+    expect(levelsTouching(mgr.currentPlan, slab).size).toBeGreaterThan(1)
   })
 })

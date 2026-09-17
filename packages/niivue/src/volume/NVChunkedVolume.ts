@@ -2,6 +2,7 @@ import { mat4, vec3 } from 'gl-matrix'
 import { log } from '@/logger'
 import { SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
+import type { PropertyChangeDetail } from '@/NVEvents'
 import type { NVImage, TypedVoxelArray, VolumeChunkSource } from '@/NVTypes'
 import type {
   BudgetPlan,
@@ -17,6 +18,7 @@ import {
   type ChunkPlan,
   CUBIC_MIN_HALO,
   chunkVolumeMultiLOD,
+  type MultiLodBounds,
   type Vec3f,
   type Vec3i,
 } from './chunking'
@@ -32,6 +34,11 @@ import {
  * {@link BudgetPlanOptions} (`budgetPlan` plus the individual knobs it layers
  * under); everything here is display state for the streamed volume itself.
  */
+function sameRadius(a: number | Vec3f, b: number | Vec3f): boolean {
+  if (typeof a === 'number' || typeof b === 'number') return a === b
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
+}
+
 export interface ChunkedVolumeOptions extends BudgetPlanOptions {
   /** Display window minimum (default 0). */
   calMin?: number
@@ -46,6 +53,14 @@ export interface ChunkedVolumeOptions extends BudgetPlanOptions {
   /** Display name / id for the volume (default 'chunked volume'). */
   name?: string
   id?: string
+  /**
+   * Regions (common-grid voxels, min inclusive / max exclusive) that must be
+   * covered by ONE uniform pyramid level, e.g. one thin slab per visible
+   * orthogonal slice so no slice shows a seam between two resolutions. The
+   * budget pass may coarsen a bound as a whole but never mixes levels inside
+   * it. Replaced per refocus via {@link NVChunkedVolume.setFocus}. Default none.
+   */
+  focusBounds?: MultiLodBounds[]
   /** Max concurrent source fetches (default 6; bounds the request flood). */
   maxConcurrentLoads?: number
   /** Retry attempts for a transient fetch failure (default 3, exp backoff). */
@@ -113,28 +128,67 @@ export function mmToVolumeFraction(frac2mm: mat4, mm: Vec3f): Vec3f | null {
   return [clamp01(out[0]), clamp01(out[1]), clamp01(out[2])]
 }
 
+/** Deep-copy caller bounds so a later mutation cannot alter a stored focus. */
+function cloneBounds(bounds: MultiLodBounds[] | undefined): MultiLodBounds[] {
+  return (bounds ?? []).map((b) => ({
+    min: [b.min[0], b.min[1], b.min[2]],
+    max: [b.max[0], b.max[1], b.max[2]],
+  }))
+}
+
 /**
  * Build a crosshair-focused multi-LOD plan for a source at a focus + radius.
  * Takes only the plan-shaping options: the coarse floor is a display backdrop,
  * not an input to the octree.
+ *
+ * The octree is subdivided around a BIASED centre (see {@link focusCenterBiased})
+ * for stability, while the exact focus is passed as `reserveCenter` so the
+ * brick under the crosshair is always at the finest level. A `'none'` focus has
+ * no crosshair to reserve, so no finest-detail branch is pinned (whether the
+ * plan is uniform still depends on `radius` and the other options).
+ * `focusBounds` are passed
+ * through as `reserveBounds` (see {@link MultiLodFocus.reserveBounds}).
  */
 export function planForFocus(
   source: ChunkedVolumeSource,
   focusFrac: Vec3f,
-  radius: number,
-  o: PlanShapeOptions,
+  radius: number | Vec3f,
+  o: PlanShapeOptions & Partial<Pick<ResolvedOptions, 'focus'>>,
+  focusBounds?: MultiLodBounds[],
 ): ChunkPlan {
   const levelDims = source.levels.map((l) => l.shape)
-  const center = focusCenterBiased(levelDims[0], focusFrac, o.cellEdge)
-  return chunkVolumeMultiLOD(levelDims, { center, radius }, o.deviceLimit, {
-    cellEdge: o.cellEdge,
-    gridDims: o.gridDims,
-    haloSize: o.halo,
-    detail: o.detail,
-    minLevel: o.minLevel,
-    budgetBytes: o.budgetBytes,
-    maxBricks: o.maxBricks,
-  })
+  const common = levelDims[0]
+  const center = focusCenterBiased(common, focusFrac, o.cellEdge)
+  // Clamp just inside the volume so the point always falls in some brick.
+  const reserveCenter: Vec3f | undefined =
+    o.focus === 'none'
+      ? undefined
+      : [
+          Math.max(0, Math.min(common[0] - 1e-3, focusFrac[0] * common[0])),
+          Math.max(0, Math.min(common[1] - 1e-3, focusFrac[1] * common[1])),
+          Math.max(0, Math.min(common[2] - 1e-3, focusFrac[2] * common[2])),
+        ]
+  return chunkVolumeMultiLOD(
+    levelDims,
+    {
+      center,
+      radius,
+      // A bounds reservation supersedes the centre branch (the planner ignores
+      // reserveCenter when bounds are present), so skip the dead work.
+      reserveCenter: focusBounds?.length ? undefined : reserveCenter,
+      reserveBounds: focusBounds,
+    },
+    o.deviceLimit,
+    {
+      cellEdge: o.cellEdge,
+      gridDims: o.gridDims,
+      haloSize: o.halo,
+      detail: o.detail,
+      minLevel: o.minLevel,
+      budgetBytes: o.budgetBytes,
+      maxBricks: o.maxBricks,
+    },
+  )
 }
 
 async function delay(ms: number): Promise<void> {
@@ -314,10 +368,16 @@ export class NVChunkedVolume {
   private readonly loadOptions: ChunkedVolumeOptions
   private followCrosshair: boolean
   private subscribedToCrosshair = false
+  private subscribedToView = false
   private readonly onLocationChange: () => void
+  private readonly onViewChange: (e: Event) => void
+  /** The radius the current plan was built with; see {@link handleViewChange}. */
+  private planRadius: number | Vec3f = 0
   private readonly onViewDestroyed: () => void
 
   private focusFrac: Vec3f
+  /** Regions pinned to one uniform level; see {@link ChunkedVolumeOptions.focusBounds}. */
+  private focusBounds: MultiLodBounds[]
   private plan: ChunkPlan
   private disposed = false
   private refocusHandle: ReturnType<typeof setTimeout> | null = null
@@ -374,8 +434,10 @@ export class NVChunkedVolume {
     this.focusFrac = Array.isArray(this.o.focus)
       ? [this.o.focus[0], this.o.focus[1], this.o.focus[2]]
       : [0.5, 0.5, 0.5]
+    this.focusBounds = cloneBounds(options.focusBounds)
     host._registerChunkedVolume(this)
     this.onLocationChange = () => this.handleLocationChange()
+    this.onViewChange = (e) => this.handleViewChange(e)
     // Only self-dispose on a REAL controller teardown. `viewDestroyed` also fires
     // on a transient view recreation (backend switch / init fallback), where the
     // controller and this volume stay alive and the locationChange listener (on
@@ -423,6 +485,7 @@ export class NVChunkedVolume {
   async init(): Promise<void> {
     await this.host.addVolume(this.volume)
     this.syncCrosshairSubscription()
+    this.syncViewSubscription()
     // Self-dispose if the controller is destroyed without the caller disposing
     // this handle, so the locationChange listener + host reference don't leak
     // (and can't fire against a torn-down view).
@@ -534,13 +597,16 @@ export class NVChunkedVolume {
   }
 
   /**
-   * Move the focus and rebuild+swap the plan (debounced). Resolves when the
-   * swap has applied; see {@link refocus}. On a disposed manager it resolves
+   * Move the focus and rebuild+swap the plan (debounced). Pass `focusBounds`
+   * to replace the regions pinned to one uniform level (an empty array clears
+   * them); omit it to keep the current bounds. Resolves when the swap has
+   * applied; see {@link refocus}. On a disposed manager it resolves
    * immediately and changes nothing.
    */
-  setFocus(frac: Vec3f): Promise<void> {
+  setFocus(frac: Vec3f, focusBounds?: MultiLodBounds[]): Promise<void> {
     if (this.disposed) return Promise.resolve()
     this.focusFrac = [frac[0], frac[1], frac[2]]
+    if (focusBounds !== undefined) this.focusBounds = cloneBounds(focusBounds)
     return this.refocus()
   }
 
@@ -572,7 +638,9 @@ export class NVChunkedVolume {
       focus: Array.isArray(this.o.focus)
         ? [this.o.focus[0], this.o.focus[1], this.o.focus[2]]
         : this.o.focus,
-      radius: this.o.radius,
+      radius: Array.isArray(this.o.radius)
+        ? [this.o.radius[0], this.o.radius[1], this.o.radius[2]]
+        : this.o.radius,
       detail: this.o.detail,
       budgetBytes: this.o.budgetBytes,
       maxBricks: this.o.maxBricks,
@@ -611,6 +679,7 @@ export class NVChunkedVolume {
       this.focusFrac = [0.5, 0.5, 0.5]
     }
     this.syncCrosshairSubscription()
+    this.syncViewSubscription()
     // Adopt the crosshair NOW rather than waiting for the next locationChange,
     // so switching back to a crosshair plan does not plan around a stale focus.
     if (this.followCrosshair) this.handleLocationChange()
@@ -725,6 +794,7 @@ export class NVChunkedVolume {
     this.disposedDeferred.resolve()
     this.followCrosshair = false
     this.syncCrosshairSubscription()
+    this.syncViewSubscription()
     this.host.removeEventListener('viewDestroyed', this.onViewDestroyed)
   }
 
@@ -743,6 +813,36 @@ export class NVChunkedVolume {
     } else {
       this.host.removeEventListener('locationChange', this.onLocationChange)
     }
+  }
+
+  /**
+   * Add or drop the host `change` listener that re-plans an `'auto'` radius
+   * when the view it is derived from moves: the 2D zoom (`pan2Dxyzmm[3]`) and
+   * the slice type (render core vs 2D ellipsoid). Subscribed exactly when the
+   * radius is `'auto'`: a pinned or `'volume'` radius never depends on the
+   * view, and without this a pinned or `'none'` focus has no subscription at
+   * all, so a wheel zoom would keep the plan at the old radius until some
+   * unrelated refocus. Idempotent, like {@link syncCrosshairSubscription}.
+   */
+  private syncViewSubscription(): void {
+    const want = this.o.radius === 'auto' && !this.disposed
+    if (want === this.subscribedToView) return
+    this.subscribedToView = want
+    if (want) {
+      this.host.addEventListener('change', this.onViewChange)
+    } else {
+      this.host.removeEventListener('change', this.onViewChange)
+    }
+  }
+
+  private handleViewChange(e: Event): void {
+    const property = (e as CustomEvent<PropertyChangeDetail>).detail?.property
+    if (property !== 'pan2Dxyzmm' && property !== 'sliceType') return
+    // The host emits pan2Dxyzmm for a pure pan as well (and a deep-zoom viewer
+    // writes it every frame), so only a radius the current plan was NOT built
+    // with earns a re-plan. The refocus itself is debounced.
+    if (sameRadius(this.currentRadius(), this.planRadius)) return
+    void this.refocus()
   }
 
   private handleLocationChange(): void {
@@ -778,16 +878,23 @@ export class NVChunkedVolume {
   }
 
   private buildPlan(): ChunkPlan {
+    const radius = this.currentRadius()
+    this.planRadius = radius
     return planForFocus(
       this.source,
       this.focusFrac,
-      this.currentRadius(),
+      radius,
       this.o,
+      this.focusBounds,
     )
   }
 
-  private currentRadius(): number {
+  private currentRadius(): number | Vec3f {
     const radius = this.o.radius
+    // A pinned per-axis radius passes straight through. `resolveBudgetPlan`
+    // already copied it out of the caller's array; this copy keeps the plan
+    // input independent of `this.o` as well.
+    if (Array.isArray(radius)) return [radius[0], radius[1], radius[2]]
     if (typeof radius === 'number') return radius
     const common = this.source.levels[0].shape
     // 'volume': a ball that swallows every brick, so nothing is outside the
@@ -802,8 +909,25 @@ export class NVChunkedVolume {
     // the region you're looking at at the finest level (the budget/maxBricks
     // pass still bounds the overall plan).
     if (this.host.sliceType === SLICE_TYPE.RENDER) return this.o.cellEdge
+    // 2D slice views: PER-AXIS sqrt(3) * half-extents over zoom, so the finest
+    // region is the ellipsoid with the volume's own aspect. The old scalar was
+    // the half-DIAGONAL over zoom, which starves long thin volumes (the
+    // motivating case: a 16821 x 7494 x 2070 slide): a single ball wide enough
+    // for the long axis over-covers the short axes several times over, the
+    // budget/maxBricks pass then coarsens the whole plan uniformly to pay for
+    // those wasted bricks, and the long axis — the one the user is actually
+    // panning along — ends up coarser than the budget could have afforded.
+    // The sqrt(3) keeps this a superset of the old ball: for a cube the two
+    // are the same radius (half-diagonal = sqrt(3) * half-edge), so the plan
+    // is unchanged bit for bit; for a slab the ellipsoid circumscribes the
+    // volume the way the ball did, so at zoom 1 the whole volume is inside
+    // the finest shell and the budget pass coarsens it uniformly, as before.
+    // Without it the ellipsoid is inscribed, the corners fall outside, and
+    // every budget candidate is a mixed-level plan whose 2:1 balance pass is
+    // quadratic in bricks (hundreds of seconds on a slide-sized pyramid).
     const zoom = Math.max(1, this.host.pan2Dxyzmm[3] || 1)
-    return Math.hypot(common[0], common[1], common[2]) / (2 * zoom)
+    const k = Math.sqrt(3) / (2 * zoom)
+    return [common[0] * k, common[1] * k, common[2] * k]
   }
 
   private async doRefocus(): Promise<void> {

@@ -1297,7 +1297,9 @@ export type MeasurementScreenLine = {
 /**
  * Transient world-space axis-aligned bounding box drawn as 12 edges on the 3D
  * render tile(s) — e.g. to outline a focused subvolume. `min`/`max` are in the
- * same world-mm space as the scene extents. Controller-owned, not serialized.
+ * same world-mm space as the scene extents, and both are corner positions the
+ * edges pass through (`max` is inclusive, unlike the half-open common-grid
+ * `MultiLodBounds`, which is voxel-indexed). Controller-owned, not serialized.
  */
 export type FocusBox = {
   min: [number, number, number]

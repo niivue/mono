@@ -174,6 +174,7 @@ first such interaction warns). Turn one off before turning the other on.
     is_ruler_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_snap_to_voxel_centers = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_thumbnail_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    is_view_mode_hot_key_enabled = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_yoked_3d_to_2d_zoom = traitlets.Bool(None, allow_none=True).tag(sync=True)
     measure_line_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
     measure_text_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)

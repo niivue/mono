@@ -449,6 +449,8 @@ function legendHitTest(
 function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   const tag = document.activeElement?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  const active = document.activeElement
+  if (active instanceof HTMLElement && active.isContentEditable) return
   setNextActionTag('keydown')
   const key = e.key.toUpperCase()
   if (key === 'ESCAPE') {
@@ -462,7 +464,17 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
     }
     return
   }
-  if (key === 'V') {
+  if (
+    key === 'V' &&
+    ctrl.model.interaction.isViewModeHotKeyEnabled &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.altKey &&
+    !e.shiftKey &&
+    !e.repeat // holding V would spin through views
+  ) {
+    ctrl.sliceType = NVConstants.nextSliceType(ctrl.model.layout.sliceType)
+  } else if (key === 'V') {
     log.info(`NIIVUE VERSION: 0.1.20260122`)
   } else if (key === 'A') {
     ctrl.activeClipPlaneIndex++

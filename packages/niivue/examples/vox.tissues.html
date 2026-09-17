@@ -34,6 +34,8 @@
       <label for="gradSlider"
         title="volumeIllumination: matcap lighting in the 3D render, from the volume's gradient">Shading</label>
       <input type="range" min="0" max="100" value="40" class="slider" id="gradSlider" />
+      &nbsp;
+      <label title="isViewModeHotKeyEnabled: press V to cycle the view"><input type="checkbox" id="viewKey" />V key</label>
     </header>
     <main id="canvas-container">
       <canvas id="gl1"></canvas>
@@ -121,8 +123,17 @@
       }
       gradSlider.oninput()
 
-      document.getElementById('sliceType').onchange = (e) => {
+      const sliceTypeSelect = document.getElementById('sliceType')
+      sliceTypeSelect.onchange = (e) => {
         nv1.sliceType = parseInt(e.target.value, 10)
+      }
+      nv1.addEventListener('sliceTypeChange', (e) => {
+        sliceTypeSelect.value = String(e.detail.sliceType)
+      })
+      document.getElementById('viewKey').onchange = (e) => {
+        nv1.isViewModeHotKeyEnabled = e.target.checked
+        // the focused checkbox is an INPUT, which the hotkey ignores
+        e.target.blur()
       }
     </script>
   </body>

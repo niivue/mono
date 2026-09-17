@@ -939,6 +939,8 @@ export type InteractionConfig = {
   isDragDropEnabled: boolean
   isYoked3DTo2DZoom: boolean
   wheelZoomAnchor: WheelZoomAnchor
+  // V key cycles sliceType (NiiVue 0.6 had this always on; opt-in here).
+  isViewModeHotKeyEnabled: boolean
 }
 
 // ============================================================
@@ -1219,6 +1221,7 @@ export type NiiVueOptions = {
   isYoked3DTo2DZoom?: boolean
   /** Anchor for the 2D wheel zoom. Default 'crosshair'. See InteractionConfig.wheelZoomAnchor. */
   wheelZoomAnchor?: WheelZoomAnchor
+  isViewModeHotKeyEnabled?: boolean
 
   // Annotation (prefixed)
   annotationIsEnabled?: boolean

@@ -283,6 +283,11 @@ export function sliceTypeDim(sliceType: number): number {
   return 2
 }
 
+/** Next view for the V hotkey: axial, coronal, sagittal, multiplanar, render, then wrap (as NiiVue 0.6). NONE restarts at axial. */
+export function nextSliceType(sliceType: number): number {
+  return sliceType >= SLICE_TYPE.RENDER ? SLICE_TYPE.AXIAL : sliceType + 1
+}
+
 import type {
   AnnotationConfig,
   DrawConfig,
@@ -413,6 +418,7 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
   isDragDropEnabled: true,
   isYoked3DTo2DZoom: false,
   wheelZoomAnchor: 'crosshair',
+  isViewModeHotKeyEnabled: false,
 }
 
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {

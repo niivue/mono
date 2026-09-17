@@ -81,6 +81,7 @@ Complete mapping from old property names/locations to new API.
 | `dragModePrimary` | `interaction.primaryDragMode` | `nv1.primaryDragMode` |
 | `isForceMouseClickToVoxelCenters` | `interaction.isSnapToVoxelCenters` | `nv1.isSnapToVoxelCenters` |
 | `yoke3Dto2DZoom` | `interaction.isYoked3DTo2DZoom` | `nv1.isYoked3DTo2DZoom` |
+| `viewModeHotKey` | `interaction.isViewModeHotKeyEnabled` | `nv1.isViewModeHotKeyEnabled`; boolean, key fixed to V, off by default |
 
 ## Per-Volume Properties (NVImage)
 

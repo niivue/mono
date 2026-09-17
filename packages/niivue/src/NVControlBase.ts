@@ -1916,6 +1916,14 @@ export default class NiiVue extends EventTarget {
     this.emit('change', { property: 'wheelZoomAnchor', value: v })
   }
 
+  get isViewModeHotKeyEnabled(): boolean {
+    return this.model.interaction.isViewModeHotKeyEnabled
+  }
+  set isViewModeHotKeyEnabled(v: boolean) {
+    this.model.interaction.isViewModeHotKeyEnabled = v
+    this.emit('change', { property: 'isViewModeHotKeyEnabled', value: v })
+  }
+
   // --- Annotation Properties ---
 
   get annotationIsEnabled(): boolean {

@@ -1,5 +1,5 @@
 {
-  "niivueVersion": "1.0.0-rc.12",
+  "niivueVersion": "1.0.0-rc.13",
   "source": "packages/niivue/src/NVControlBase.ts",
   "className": "NiiVue",
   "properties": [
@@ -658,6 +658,17 @@
       "doc": null
     },
     {
+      "jsName": "isPanFollowingCrosshair",
+      "pyName": "is_pan_following_crosshair",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "Opt-in: when the 2D views are zoomed in ({@link pan2Dxyzmm}`[3] > 1`) and\nthe crosshair moves on its own — keyboard step, {@link setCrosshairPos},\nor a linked instance — pan just enough that it stays inside every tile's\nvisible window. Off by default (the window stays put and the crosshair may\nleave it), and explicit pan/zoom gestures are never fought. Enabling also\napplies immediately against the last rendered layout, so an already\noff-window crosshair is brought back."
+    },
+    {
       "jsName": "isPositionInMM",
       "pyName": "is_position_in_mm",
       "tsType": "boolean",
@@ -682,6 +693,17 @@
     {
       "jsName": "isRulerVisible",
       "pyName": "is_ruler_visible",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isSingleViewFillCanvas",
+      "pyName": "is_single_view_fill_canvas",
       "tsType": "boolean",
       "pyTraitlet": {
         "kind": "Bool"
@@ -1194,6 +1216,21 @@
       "tsType": "number",
       "pyTraitlet": {
         "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "wheelZoomAnchor",
+      "pyName": "wheel_zoom_anchor",
+      "tsType": "WheelZoomAnchor",
+      "pyTraitlet": {
+        "kind": "Enum",
+        "values": [
+          "crosshair",
+          "pointer"
+        ]
       },
       "hasGetter": true,
       "hasSetter": true,

@@ -141,7 +141,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | `sliceType` (axial/coronal/sagittal/multiplanar/render) | ✅ | Property |
 | `multiplanarType` (auto/column/grid/row) | ✅ | Property |
-| View mode hotkey (V cycles slice type) | ✅ | `isViewModeHotKeyEnabled` (off by default; old was on). Key fixed to V, not configurable like `viewModeHotKey` |
+| View mode hotkey (V cycles slice type) | ✅ | `isViewModeHotKeyEnabled` (off by default; old was on). Key fixed to V, not configurable like `viewModeHotKey`. Like 0.6, all hotkeys act only on the viewer under the pointer |
 | `setCustomLayout` / `clearCustomLayout` / `getCustomLayout` | ✅ | `customLayout` property + `clearCustomLayout()` |
 | `heroFraction` / `heroSliceType` | ✅ | Properties |
 | Mosaic view | ✅ | `mosaicString` property |

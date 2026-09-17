@@ -455,6 +455,8 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
       ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName))
   )
     return
+  const pointer = ctrl._pointerClient
+  if (!pointer || !clientToBoundsPixel(ctrl, pointer[0], pointer[1])) return
   setNextActionTag('keydown')
   const key = e.key.toUpperCase()
   if (key === 'ESCAPE') {
@@ -1887,6 +1889,7 @@ export function initInteraction(ctrl: NiiVue): void {
   }
   ctrl._eventListeners.pointermove = (e: Event) => {
     const evt = e as PointerEvent
+    ctrl._pointerClient = [evt.clientX, evt.clientY]
     setNextActionTag(ctrl.isDragging ? 'drag' : 'pointermove')
     // Annotation brush cursor preview (hover, no drag required)
     if (ctrl.model.annotation.isEnabled && !ctrl.isDragging) {
@@ -2544,6 +2547,7 @@ export function initInteraction(ctrl: NiiVue): void {
     }
   }
   ctrl._eventListeners.pointerleave = () => {
+    ctrl._pointerClient = null
     if (ctrl.model._annotationCursor) {
       setNextActionTag('pointerleave')
       ctrl.model._annotationCursor = null

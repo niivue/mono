@@ -25,7 +25,7 @@ self.Image = class extends OffscreenCanvas {
         this.getContext('2d').drawImage(bitmap, 0, 0)
         this.onload()
       })
-      .catch((error) => this.onerror(error))
+      .catch((error) => this.onerror?.(error))
   }
 }
 // --- end worker shims -----------------------------------------------------
@@ -67,14 +67,23 @@ async function init(data) {
     self.postMessage({ type: 'location', text: e.detail.string }),
   )
   await nv.attachToCanvas(canvas)
-  await nv.loadVolumes({ url: '/volumes/mni152.nii.gz' })
+  // The URL comes from the page: the GitHub Pages base-path rewrite runs on page
+  // chunks but not on worker bundles.
+  await nv.loadVolumes({ url: data.url })
   self.postMessage({ type: 'ready', colormaps: nv.colormaps })
 }
 
 self.onmessage = async ({ data }) => {
   switch (data.type) {
     case 'init':
-      await init(data)
+      try {
+        await init(data)
+      } catch (error) {
+        self.postMessage({
+          type: 'location',
+          text: `Worker failed: ${error.message}`,
+        })
+      }
       break
     case 'event': {
       // OffscreenCanvas is an EventTarget, and PointerEvent fields are plain
@@ -92,10 +101,10 @@ self.onmessage = async ({ data }) => {
       nv?.view?.resize()
       break
     case 'sliceType':
-      nv.sliceType = data.value
+      if (nv) nv.sliceType = data.value
       break
     case 'colormap':
-      nv.setVolume(0, { colormap: data.value })
+      nv?.setVolume(0, { colormap: data.value })
       break
   }
 }

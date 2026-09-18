@@ -56,7 +56,7 @@
         post({ type: 'colormap', value: colormapSelect.value })
 
       // Pointer state the library reads, flattened so it survives structured clone.
-      const FIELDS = ['button', 'buttons', 'pointerId', 'deltaY', 'detail',
+      const FIELDS = ['button', 'pointerId', 'deltaY', 'detail',
         'shiftKey', 'ctrlKey', 'altKey', 'metaKey']
       function forward(e) {
         if (e.type === 'wheel') e.preventDefault()
@@ -76,9 +76,10 @@
       new ResizeObserver(() => post({ type: 'resize', ...size() })).observe(gl1)
 
       const offscreen = gl1.transferControlToOffscreen()
-      worker.postMessage({ type: 'init', canvas: offscreen, ...size() }, [
-        offscreen,
-      ])
+      worker.postMessage(
+        { type: 'init', canvas: offscreen, url: '/volumes/mni152.nii.gz', ...size() },
+        [offscreen],
+      )
     </script>
   </body>
 </html>

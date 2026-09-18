@@ -151,7 +151,12 @@ function buildLutIndex(): Map<string, LutDef> {
         if (Array.isArray(mod.labels)) {
           entry.labels = (mod.labels as string[]).slice()
         }
-        if (typeof mod.min === 'number' && typeof mod.max === 'number') {
+        // Some LUTs carry min = max = 0, which means "no window".
+        if (
+          typeof mod.min === 'number' &&
+          typeof mod.max === 'number' &&
+          mod.min < mod.max
+        ) {
           entry.min = mod.min
           entry.max = mod.max
         }

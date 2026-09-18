@@ -18,9 +18,7 @@
         <option value="3" selected>A+C+S+R</option>
       </select>
       &nbsp;
-      <select id="volumeSelect">
-        <option value="/volumes/torso.nii.gz" selected>torso</option>
-      </select>
+      <select id="volumeSelect"></select>
       &nbsp;
       <label for="orientCheck">Orient</label>
       <input type="checkbox" id="orientCheck" checked/>
@@ -53,6 +51,9 @@
         nv1.isOrientCubeVisible = this.checked
         nv1.isOrientationTextVisible = this.checked
       }
+      // The bundled scan. Its URL lives in script, not in the HTML, because the
+      // GitHub Pages base-path rewrite only processes script.
+      volumeSelect.add(new Option('torso', '/volumes/torso.nii.gz'))
       // CT scans hosted outside this repository, listed after the bundled torso.
       const CT_BASE = 'https://raw.githubusercontent.com/niivue/niivue-demo-images/main/'
       // Latest wins: a window change re-colors the whole volume on the GPU (a few
@@ -64,18 +65,24 @@
         pending = { ...pending, ...props }
         if (isBusy) return
         isBusy = true
-        while (pending) {
-          const next = pending
-          pending = null
-          await nv1.setVolume(0, next)
+        try {
+          while (pending) {
+            const next = pending
+            pending = null
+            await nv1.setVolume(0, next)
+          }
+        } finally {
+          isBusy = false
         }
-        isBusy = false
       }
       function showWindow(calMin, calMax) {
-        centerSlide.value = centerText.value = Math.round((calMin + calMax) / 2)
-        widthSlide.value = widthText.value = Math.round(calMax - calMin)
+        // A range input clamps, so the readout shows what the slider really holds.
+        centerSlide.value = Math.round((calMin + calMax) / 2)
+        widthSlide.value = Math.round(calMax - calMin)
+        centerText.value = centerSlide.value
+        widthText.value = widthSlide.value
       }
-      centerSlide.oninput = widthSlide.oninput = function () {
+      centerSlide.oninput = widthSlide.oninput = () => {
         const center = Number(centerSlide.value)
         const width = Number(widthSlide.value)
         showWindow(center - width / 2, center + width / 2)
@@ -87,12 +94,18 @@
       // stored as min/max in its LUT. Selecting it applies that window too.
       function applyColormap() {
         const lut = lookupColorMap(colormapSelect.value)
-        const [calMin, calMax] = lut?.min < lut?.max ? [lut.min, lut.max] : loadedRange
+        const [calMin, calMax] = lut?.min === undefined ? loadedRange : [lut.min, lut.max]
         showWindow(calMin, calMax)
         updateVolume({ colormap: colormapSelect.value, calMin, calMax })
       }
       volumeSelect.onchange = async function () {
-        await nv1.loadVolumes({ url: this.value })
+        try {
+          await nv1.loadVolumes({ url: this.value })
+        } catch (err) {
+          // A failed load (offline, 404) keeps the previous scan on screen.
+          console.error(`Could not load ${this.value}:`, err)
+          return
+        }
         loadedRange = [nv1.volumes[0].calMin, nv1.volumes[0].calMax]
         applyColormap()
       }

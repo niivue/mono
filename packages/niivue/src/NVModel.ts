@@ -394,6 +394,9 @@ export default class NVModel {
       ...(options.isYoked3DTo2DZoom !== undefined && {
         isYoked3DTo2DZoom: options.isYoked3DTo2DZoom,
       }),
+      ...(options.isViewModeHotKeyEnabled !== undefined && {
+        isViewModeHotKeyEnabled: options.isViewModeHotKeyEnabled,
+      }),
       ...(options.isDragDropEnabled !== undefined && {
         isDragDropEnabled: options.isDragDropEnabled,
       }),

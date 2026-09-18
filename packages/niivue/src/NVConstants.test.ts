@@ -9,6 +9,7 @@ import {
   lodOpacityScale,
   NiiDataType,
   NiiIntentCode,
+  nextSliceType,
   SLICE_TYPE,
   sliceTypeDim,
   VOLUME_DEFAULTS,
@@ -214,5 +215,15 @@ describe('lodOpacityScale', () => {
     expect(lodOpacityScale(Number.NaN, c)).toBe(1)
     expect(lodOpacityScale(Number.POSITIVE_INFINITY, c)).toBe(1)
     expect(lodOpacityScale(4, Number.NaN)).toBe(1)
+  })
+})
+
+describe('nextSliceType', () => {
+  test('cycles axial, coronal, sagittal, multiplanar, render, axial', () => {
+    const { AXIAL, CORONAL, SAGITTAL, MULTIPLANAR, RENDER, NONE } = SLICE_TYPE
+    expect(
+      [AXIAL, CORONAL, SAGITTAL, MULTIPLANAR, RENDER].map(nextSliceType),
+    ).toEqual([CORONAL, SAGITTAL, MULTIPLANAR, RENDER, AXIAL])
+    expect(nextSliceType(NONE)).toBe(AXIAL)
   })
 })

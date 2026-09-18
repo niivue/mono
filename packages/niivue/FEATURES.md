@@ -216,6 +216,7 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `setDragMode(modeOrString)` | Method | Convenience |
 | `isSnapToVoxelCenters` | Prop | |
 | `isYoked3DTo2DZoom` | Prop | |
+| `isViewModeHotKeyEnabled` | Prop | V key cycles `sliceType` of the viewer under the pointer; off by default |
 | `moveCrosshairInVox(di, dj, dk)` | Method | Keyboard/button navigation |
 | `getCrosshairPos()` / `setCrosshairPos([x,y,z])` | Method | |
 | `vox2frac([i,j,k])` | Method | |

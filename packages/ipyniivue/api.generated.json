@@ -735,6 +735,17 @@
       "doc": null
     },
     {
+      "jsName": "isViewModeHotKeyEnabled",
+      "pyName": "is_view_mode_hot_key_enabled",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "isYoked3DTo2DZoom",
       "pyName": "is_yoked_3d_to_2d_zoom",
       "tsType": "boolean",

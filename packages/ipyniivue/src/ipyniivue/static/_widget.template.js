@@ -85,6 +85,7 @@ const PROPS_RW = [
   ["isSingleViewFillCanvas", "is_single_view_fill_canvas"],
   ["isSnapToVoxelCenters", "is_snap_to_voxel_centers"],
   ["isThumbnailVisible", "is_thumbnail_visible"],
+  ["isViewModeHotKeyEnabled", "is_view_mode_hot_key_enabled"],
   ["isYoked3DTo2DZoom", "is_yoked_3d_to_2d_zoom"],
   ["measureLineColor", "measure_line_color"],
   ["measureTextColor", "measure_text_color"],

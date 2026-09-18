@@ -447,8 +447,16 @@ function legendHitTest(
 }
 
 function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
-  const tag = document.activeElement?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  // composedPath reaches a focused field inside a shadow root.
+  const active = e.composedPath()[0]
+  if (
+    active instanceof HTMLElement &&
+    (active.isContentEditable ||
+      ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName))
+  )
+    return
+  const pointer = ctrl._pointerClient
+  if (!pointer || !clientToBoundsPixel(ctrl, pointer[0], pointer[1])) return
   setNextActionTag('keydown')
   const key = e.key.toUpperCase()
   if (key === 'ESCAPE') {
@@ -463,7 +471,14 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
     return
   }
   if (key === 'V') {
-    log.info(`NIIVUE VERSION: 0.1.20260122`)
+    if (!ctrl.model.interaction.isViewModeHotKeyEnabled) {
+      log.info(`NIIVUE VERSION: 0.1.20260122`)
+    } else if (
+      !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat)
+    ) {
+      // Modifiers leave Cmd/Ctrl+V to paste; a held key would spin the views.
+      ctrl.sliceType = NVConstants.nextSliceType(ctrl.model.layout.sliceType)
+    }
   } else if (key === 'A') {
     ctrl.activeClipPlaneIndex++
     if (ctrl.activeClipPlaneIndex >= NVConstants.NUM_CLIP_PLANE) {
@@ -1874,6 +1889,7 @@ export function initInteraction(ctrl: NiiVue): void {
   }
   ctrl._eventListeners.pointermove = (e: Event) => {
     const evt = e as PointerEvent
+    ctrl._pointerClient = [evt.clientX, evt.clientY]
     setNextActionTag(ctrl.isDragging ? 'drag' : 'pointermove')
     // Annotation brush cursor preview (hover, no drag required)
     if (ctrl.model.annotation.isEnabled && !ctrl.isDragging) {
@@ -2531,6 +2547,7 @@ export function initInteraction(ctrl: NiiVue): void {
     }
   }
   ctrl._eventListeners.pointerleave = () => {
+    ctrl._pointerClient = null
     if (ctrl.model._annotationCursor) {
       setNextActionTag('pointerleave')
       ctrl.model._annotationCursor = null

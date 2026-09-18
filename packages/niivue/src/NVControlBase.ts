@@ -487,6 +487,9 @@ export default class NiiVue extends EventTarget {
   _livewireSlice: LivewireSlice | null = null
   _livewireField: Int32Array | null = null
   _livewireSeed: { x: number; y: number } | null = null
+  // Last pointer position over the canvas (client px); hotkeys only act when
+  // it lies within this instance's bounds, as in NiiVue 0.6.
+  _pointerClient: [number, number] | null = null
   // Bidirectional: the committed long axis (drag 1) in slice-2D coords while
   // waiting for the short axis (drag 2). null when not mid-measurement.
   _bidirectionalLong: { start: AnnotationPoint; end: AnnotationPoint } | null =
@@ -1916,6 +1919,14 @@ export default class NiiVue extends EventTarget {
   set wheelZoomAnchor(v: WheelZoomAnchor) {
     this.model.interaction.wheelZoomAnchor = v
     this.emit('change', { property: 'wheelZoomAnchor', value: v })
+  }
+
+  get isViewModeHotKeyEnabled(): boolean {
+    return this.model.interaction.isViewModeHotKeyEnabled
+  }
+  set isViewModeHotKeyEnabled(v: boolean) {
+    this.model.interaction.isViewModeHotKeyEnabled = v
+    this.emit('change', { property: 'isViewModeHotKeyEnabled', value: v })
   }
 
   get isPanFollowingCrosshair(): boolean {

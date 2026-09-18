@@ -944,6 +944,8 @@ export type InteractionConfig = {
   isDragDropEnabled: boolean
   isYoked3DTo2DZoom: boolean
   wheelZoomAnchor: WheelZoomAnchor
+  // V key cycles sliceType (NiiVue 0.6 had this always on; opt-in here).
+  isViewModeHotKeyEnabled: boolean
   // Opt-in: when the 2D views are zoomed in (pan2Dxyzmm[3] > 1) and the
   // crosshair moves on its own (keyboard, API, linked instance), pan just
   // enough to keep it inside every tile's visible window. Off by default: the
@@ -1230,6 +1232,7 @@ export type NiiVueOptions = {
   isYoked3DTo2DZoom?: boolean
   /** Anchor for the 2D wheel zoom. Default 'crosshair'. See InteractionConfig.wheelZoomAnchor. */
   wheelZoomAnchor?: WheelZoomAnchor
+  isViewModeHotKeyEnabled?: boolean
   isPanFollowingCrosshair?: boolean
 
   // Annotation (prefixed)

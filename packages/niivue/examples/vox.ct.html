@@ -28,6 +28,14 @@
       <label for="colormapSelect">Colormap</label>
       <select id="colormapSelect"></select>
       &nbsp;
+      <label for="centerSlide" title="window center (level), Hounsfield units">Center</label>
+      <input type="range" id="centerSlide" min="-1000" max="1000" step="1" />
+      <output id="centerText" for="centerSlide"></output>
+      &nbsp;
+      <label for="widthSlide" title="window width, Hounsfield units">Width</label>
+      <input type="range" id="widthSlide" min="1" max="4000" step="1" />
+      <output id="widthText" for="widthSlide"></output>
+      &nbsp;
       <label for="darkCheck">Clip Dark</label>
       <input type="checkbox" id="darkCheck">
       &nbsp;
@@ -47,6 +55,32 @@
       }
       // CT scans hosted outside this repository, listed after the bundled torso.
       const CT_BASE = 'https://raw.githubusercontent.com/niivue/niivue-demo-images/main/'
+      // Latest wins: a window change re-bakes the volume texture (tens of ms), and
+      // a slider fires far faster. Changes that arrive while one is in flight merge
+      // into a single follow-up instead of queueing a bake per event.
+      let pending = null
+      let isBusy = false
+      async function updateVolume(props) {
+        pending = { ...pending, ...props }
+        if (isBusy) return
+        isBusy = true
+        while (pending) {
+          const next = pending
+          pending = null
+          await nv1.setVolume(0, next)
+        }
+        isBusy = false
+      }
+      function showWindow(calMin, calMax) {
+        centerSlide.value = centerText.value = Math.round((calMin + calMax) / 2)
+        widthSlide.value = widthText.value = Math.round(calMax - calMin)
+      }
+      centerSlide.oninput = widthSlide.oninput = function () {
+        const center = Number(centerSlide.value)
+        const width = Number(widthSlide.value)
+        showWindow(center - width / 2, center + width / 2)
+        updateVolume({ calMin: center - width / 2, calMax: center + width / 2 })
+      }
       // The window the scan loaded with; gray falls back to it.
       let loadedRange = [0, 1]
       // A CT colormap is designed for one Hounsfield window (ct_bones is 180..600),
@@ -54,7 +88,8 @@
       function applyColormap() {
         const lut = lookupColorMap(colormapSelect.value)
         const [calMin, calMax] = lut?.min < lut?.max ? [lut.min, lut.max] : loadedRange
-        nv1.setVolume(0, { colormap: colormapSelect.value, calMin, calMax })
+        showWindow(calMin, calMax)
+        updateVolume({ colormap: colormapSelect.value, calMin, calMax })
       }
       volumeSelect.onchange = async function () {
         await nv1.loadVolumes({ url: this.value })
@@ -76,6 +111,7 @@
         nv1.volumeIsAlphaClipDark = this.checked
       }
       const nv1 = new NiiVue({backgroundColor: [0.2,0.2,0.2, 1], isColorbarVisible: true, showRender: SHOW_RENDER.ALWAYS })
+      window.nv1 = nv1
       nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
       await nv1.attachToCanvas(gl1)
       // CT windows are tuned for Hounsfield units, so only they and gray apply.

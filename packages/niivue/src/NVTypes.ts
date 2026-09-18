@@ -1020,7 +1020,7 @@ export type NVInstance = {
 
 export type NVViewOptions = {
   isAntiAlias?: boolean
-  devicePixelRatio?: number
+  forceDevicePixelRatio?: number
   font?: NVFontData
   matcaps?: Record<string, string>
   bounds?: NVBounds

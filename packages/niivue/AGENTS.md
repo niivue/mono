@@ -1451,6 +1451,8 @@ the BSD-3 upstream. The MRS API is exported from all three entry subpaths
 
 ## Colormap conventions
 
+**Colormap display window (`min`/`max`):** Some bundled LUTs (the `ct_*` maps, e.g. `ct_bones` 180..600 HU) declare a suggested `cal_min`/`cal_max` window in their JSON. `lookupColorMap(name)` returns it on the `ColorMap`, but nothing applies it automatically — a caller must pass it to `setVolume` as `calMin`/`calMax`.
+
 **Negative colormaps:** Enabled by setting `colormapNegative` to a non-empty string. `calMinNeg`/`calMaxNeg` default to mirroring `calMin`/`calMax`.
 
 **`colormapType`** (`COLORMAP_TYPE` enum in `NVConstants.ts`):

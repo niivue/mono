@@ -619,6 +619,11 @@ export type CustomLayoutTile = {
   sliceType: number // SLICE_TYPE.AXIAL | CORONAL | SAGITTAL | RENDER
   position: [number, number, number, number] // [left, top, width, height] normalized 0–1
   sliceMM?: number // optional fixed mm position for the slice
+  /** Let this 2D slice tile fill its pane instead of letterboxing to the
+   * slice's mm aspect ratio, widening the stored mm window about its own
+   * centre (same behaviour as `isSingleViewFillCanvas` for a single view).
+   * Ignored for RENDER tiles. Default false. */
+  fill?: boolean
 }
 
 export type LayoutConfig = {
@@ -941,6 +946,12 @@ export type InteractionConfig = {
   wheelZoomAnchor: WheelZoomAnchor
   // V key cycles sliceType (NiiVue 0.6 had this always on; opt-in here).
   isViewModeHotKeyEnabled: boolean
+  // Opt-in: when the 2D views are zoomed in (pan2Dxyzmm[3] > 1) and the
+  // crosshair moves on its own (keyboard, API, linked instance), pan just
+  // enough to keep it inside every tile's visible window. Off by default: the
+  // window stays put and the crosshair may leave it. Explicit pan/zoom
+  // gestures are never fought.
+  isPanFollowingCrosshair: boolean
 }
 
 // ============================================================
@@ -1011,7 +1022,7 @@ export type NVInstance = {
 
 export type NVViewOptions = {
   isAntiAlias?: boolean
-  devicePixelRatio?: number
+  forceDevicePixelRatio?: number
   font?: NVFontData
   matcaps?: Record<string, string>
   bounds?: NVBounds
@@ -1222,6 +1233,7 @@ export type NiiVueOptions = {
   /** Anchor for the 2D wheel zoom. Default 'crosshair'. See InteractionConfig.wheelZoomAnchor. */
   wheelZoomAnchor?: WheelZoomAnchor
   isViewModeHotKeyEnabled?: boolean
+  isPanFollowingCrosshair?: boolean
 
   // Annotation (prefixed)
   annotationIsEnabled?: boolean

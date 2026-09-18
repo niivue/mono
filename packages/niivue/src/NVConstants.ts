@@ -419,6 +419,7 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
   isYoked3DTo2DZoom: false,
   wheelZoomAnchor: 'crosshair',
   isViewModeHotKeyEnabled: false,
+  isPanFollowingCrosshair: false,
 }
 
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {

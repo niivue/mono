@@ -789,13 +789,22 @@ function buildCustomLayout(config: SliceLayoutConfig): SliceTile[] {
       // Fit the slice's mm aspect ratio within the available tile area
       const fov = screen.screen.fovMM
       const zoom = Math.min(pw / fov[0], ph / fov[1])
-      const fw = fov[0] * zoom
-      const fh = fov[1] * zoom
+      // A zero in-plane span gives a zero or infinite fit scale: widening by
+      // it puts NaN mm bounds in the projection, and 0 * Infinity is a NaN
+      // rect. With no aspect to letterbox to, the tile takes the whole pane.
+      const fit = Number.isFinite(zoom) && zoom > 0
+      const fill = (spec.fill ?? false) && fit
+      const letterbox = fit && !fill
+      const fw = letterbox ? fov[0] * zoom : pw
+      const fh = letterbox ? fov[1] * zoom : ph
       const rot = rotations(idx, isRad)
       const tile: SliceTile = {
         leftTopWidthHeight: [px + (pw - fw) / 2, py + (ph - fh) / 2, fw, fh],
         axCorSag: idx,
-        screen: cloneScreen(screen.screen),
+        // Spans are stored PRE-zoom: calculateMvpMatrix2D divides by it (#68).
+        screen: fill
+          ? fillScreen(screen.screen, [fw / zoom, fh / zoom])
+          : cloneScreen(screen.screen),
         azimuth: rot.azimuth,
         elevation: rot.elevation,
       }
@@ -948,13 +957,14 @@ export function screenSlicesLayout(config: SliceLayoutConfig): SliceTile[] {
       throw new Error('Missing fovMM for slice')
     }
     const zoom = Math.min(canvasWH[0] / fov[0], canvasWH[1] / fov[1])
-    // Fill needs a usable fit scale: zero or infinite gives NaN mm bounds.
-    const fill =
-      (config.isSingleViewFillCanvas ?? true) &&
-      Number.isFinite(zoom) &&
-      zoom > 0
-    const w = fill ? canvasWH[0] : fov[0] * zoom
-    const h = fill ? canvasWH[1] : fov[1] * zoom
+    // A zero in-plane span gives a zero or infinite fit scale: widening by it
+    // puts NaN mm bounds in the projection, and 0 * Infinity is a NaN rect.
+    // With no aspect to letterbox to, the tile takes the whole canvas.
+    const fit = Number.isFinite(zoom) && zoom > 0
+    const fill = (config.isSingleViewFillCanvas ?? true) && fit
+    const letterbox = fit && !fill
+    const w = letterbox ? fov[0] * zoom : canvasWH[0]
+    const h = letterbox ? fov[1] * zoom : canvasWH[1]
     return [
       {
         ...screens[idx],
@@ -1158,6 +1168,57 @@ export function visibleWindowMM(
             maxMM: Math.max(prev.maxMM, win.maxMM),
           }
         : win
+    }
+  }
+  return out
+}
+
+/**
+ * Intersection of every 2D tile's visible window, per world axis.
+ *
+ * The "keep this point visible in every tile" sibling of
+ * {@link visibleWindowMM}: an axis's window is the tightest `[minMM, maxMM]`
+ * every tile showing that axis agrees on, so a point inside it is on screen
+ * in all of them. This is what a follow behaviour wants (pan-follows-crosshair
+ * reduces over this), and it is the reduction the doc above asks such callers
+ * to do rather than assume the union stays interchangeable.
+ *
+ * Same conventions as the union: the window is the ortho window (it can reach
+ * past the data), the depth axis of a tile contributes nothing, and an axis no
+ * tile shows is `null`. Two tiles whose windows do not overlap on an axis
+ * leave that axis `null` too: no point is visible in both, so there is nothing
+ * a caller could move to, and reporting the inverted interval would send a
+ * follower chasing one edge and then the other.
+ *
+ * @param tiles - the rendered slice tiles (`view.screenSlices`)
+ * @param pan2Dxyzmm - the scene's `[panX, panY, panZ, zoom]`
+ * @returns per-world-axis windows common to every 2D tile
+ */
+export function everyTileWindowMM(
+  tiles: SliceTile[],
+  pan2Dxyzmm: ArrayLike<number> = [0, 0, 0, 1],
+): VisibleWindowMM {
+  const out: VisibleWindowMM = [null, null, null]
+  const empty = [false, false, false]
+  for (const tile of tiles) {
+    const windows = tileVisibleWindowMM(tile, pan2Dxyzmm)
+    if (!windows) continue
+    for (let axis = 0; axis < 3; axis++) {
+      const win = windows[axis]
+      if (!win || empty[axis]) continue
+      const prev = out[axis]
+      const next = prev
+        ? {
+            minMM: Math.max(prev.minMM, win.minMM),
+            maxMM: Math.min(prev.maxMM, win.maxMM),
+          }
+        : win
+      if (next.minMM > next.maxMM) {
+        empty[axis] = true
+        out[axis] = null
+      } else {
+        out[axis] = next
+      }
     }
   }
   return out

@@ -114,7 +114,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isMosaicCentered` | Prop | No | |
 | `tileMargin` | Prop | No | |
 | `isRadiological` | Prop | No | Flip left/right |
-| `customLayout` | Prop | No | `CustomLayoutTile[]` — explicit tile list |
+| `customLayout` | Prop | No | `CustomLayoutTile[]` — explicit tile list. Per tile: `sliceType`, normalized `position`, optional `sliceMM`, optional `fill` (fill the pane instead of letterboxing to the slice aspect; default false) |
 | `clearCustomLayout()` | Method | No | |
 | `setBounds([x1,y1,x2,y2])` | Method | No | Shared-canvas bounds |
 

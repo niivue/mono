@@ -55,9 +55,9 @@
       }
       // CT scans hosted outside this repository, listed after the bundled torso.
       const CT_BASE = 'https://raw.githubusercontent.com/niivue/niivue-demo-images/main/'
-      // Latest wins: a window change re-bakes the volume texture (tens of ms), and
-      // a slider fires far faster. Changes that arrive while one is in flight merge
-      // into a single follow-up instead of queueing a bake per event.
+      // Latest wins: a window change re-colors the whole volume on the GPU (a few
+      // ms here, more for a large scan or a slow GPU). Changes that arrive while
+      // one is in flight merge into a single follow-up instead of queueing up.
       let pending = null
       let isBusy = false
       async function updateVolume(props) {

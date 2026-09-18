@@ -8,6 +8,14 @@ export const fragmentShader = `${fragmentPreamble}
 // long before this, so the ceiling costs nothing at the common rates.
 const int MAX_FINE_STEPS = 8192;
 
+// Step-size opacity correction 1 - (1 - a)^e. e is 1 / sampleRate for every
+// full sample, so the common rates skip pow(). Mirrored in wgpu/render.wgsl.
+float stepCorrectAlpha(float a, float e) {
+  if (abs(e - 1.0) < 1e-4) return a;
+  if (abs(e - 0.5) < 1e-4) return 1.0 - sqrt(1.0 - a);
+  return 1.0 - pow(1.0 - a, e);
+}
+
 uniform mat4 normMtx;
 uniform float gradientAmount;
 uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
@@ -573,25 +581,27 @@ void main() {
   if (clipPlaneColorX.a < 0.0) {
     clipPlaneColorX.a = 0.0;
   }
-  bool chunkedDraw = any(lessThan(chunkSubSize, vec3(0.999)));
+  bool chunkedDraw = CHUNKED && any(lessThan(chunkSubSize, vec3(0.999)));
   // Independent hi-res overlay cube draw: composite as a flat translucent layer
   // over the base. Skip the opaque clip-surface treatment (AO, clip plane
   // colour) and matcap lighting; still respect clip-plane ray trimming.
-  bool overlayMode = overlayLayerMode > 0.5;
+  bool overlayMode = CHUNKED && overlayLayerMode > 0.5;
   // Maximum-intensity projection: every pass takes a component-wise max of the
   // premultiplied sample instead of compositing OVER, and no pass may early-
   // terminate (the maximum can lie anywhere along the ray).
-  bool mip = renderMode > 0.5;
+  bool mip = IS_MIP && renderMode > 0.5;
   float stepSize = len / lenVox;
   vec4 deltaDir = vec4(dir * stepSize, stepSize);
   float localGradientAmount = overlayMode ? 0.0 : gradientAmount;
   vec2 sampleRange = vec2(0.0, len);
-  bool cutaway = isClipCutaway > 0.5;
+  bool cutaway = IS_CUTAWAY && isClipCutaway > 0.5;
   bool hasClip = false;
-  for (int i = 0; i < MAX_CLIP_PLANES; i++) {
-    clipSampleRange(dir, vec4(start, 0.0), clipPlanes[i], sampleRange, hasClip);
+  if (HAS_CLIP) {
+    for (int i = 0; i < MAX_CLIP_PLANES; i++) {
+      clipSampleRange(dir, vec4(start, 0.0), clipPlanes[i], sampleRange, hasClip);
+    }
   }
-  bool isClip = (sampleRange.x > 0.0) || ((sampleRange.y < len) && (sampleRange.y > 0.0));
+  bool isClip = HAS_CLIP && ((sampleRange.x > 0.0) || ((sampleRange.y < len) && (sampleRange.y > 0.0)));
   // Check if clip plane configuration eliminates background entirely
   bool skipBackground = false;
   if (cutaway) {
@@ -702,7 +712,7 @@ void main() {
       // above), so the branch is fully coherent -- every fragment takes the
       // same side. Skipping the fetch + normalize + matcap tap when they are
       // all off measures ~20% of the render. Mirrored in wgpu/render.wgsl.
-      bool needsGradient = (localGradientAmount > 0.0) || (gradientOpacity > 0.0) || (silhouettePower > 0.0);
+      bool needsGradient = NEEDS_GRADIENT && ((localGradientAmount > 0.0) || (gradientOpacity > 0.0) || (silhouettePower > 0.0));
       for (int fi = 0; fi < MAX_FINE_STEPS; fi++) {
         if (bLo >= len) { break; }
         // Clipped to len, so the final sample covers the trailing sliver past
@@ -717,7 +727,7 @@ void main() {
         vec3 volCoord = chunkTexCoord(samplePos.xyz);
         // Fine pass only. The fast skip pass stays trilinear: it only needs a
         // coarse alpha test, so paying 8 fetches there would be waste.
-        vec4 colorSample = (cubicFilter > 0.5)
+        vec4 colorSample = (CUBIC && cubicFilter > 0.5)
           ? sampleTricubic(volume, volCoord)
           : texture(volume, volCoord);
         // Chunked draws only -- see the scaling note after this block.
@@ -759,7 +769,7 @@ void main() {
           // in an OVER accumulation. A max projection reads each sample
           // independently, so correcting it would brighten coarse bricks
           // instead of matching them.
-          float correctedA = mip ? colorSample.a : (1.0 - pow(1.0 - colorSample.a, max(slab * refPerLen * lodOpacityScale, 1e-3)));
+          float correctedA = mip ? colorSample.a : stepCorrectAlpha(colorSample.a, max(slab * refPerLen * lodOpacityScale, 1e-3));
           // Gradient opacity: scale alpha by the gradient magnitude raised to
           // gradientOpacity*8. This is the analytic form of the old niivue's
           // 192-entry LUT, which held exactly pow(i/191, opacity*8) -- so there
@@ -857,17 +867,17 @@ void main() {
   // overlay texture is rebuilt whenever any overlay changes, e.g. an opacity
   // drag, so a cached gradient would thrash), so lighting comes from the
   // in-shader stencil — per sample, since an overlay stack is translucent.
-  if (textureSize(overlay, 0).x > 2) {
+  if (HAS_OVERLAY && textureSize(overlay, 0).x > 2) {
     RayResult result = rayMarchPass(overlay, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode, gradientAmount, invGamma, mip);
     depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor, mip);
   }
   // PAQD pass (raw data with GPU-side LUT lookup + easing)
-  if (textureSize(paqd, 0).x > 2) {
+  if (HAS_PAQD && textureSize(paqd, 0).x > 2) {
     RayResult result = rayMarchPaqd(paqd, paqdLut, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, paqdUniforms, ovClipLo, ovClipHi, ovClipMode, mip);
     depthAwareMix(colAcc, result, backNearest, fragDepth, depthFactor, mip);
   }
   // Drawing pass (nearest-neighbor sampling — NEAREST filter set by CPU)
-  if (textureSize(drawing, 0).x > 2) {
+  if (HAS_DRAWING && textureSize(drawing, 0).x > 2) {
     RayResult result = rayMarchPass(drawing, origStart, dir, origLen, deltaDir, deltaDirFast, origRan, localEarlyTermination, ovClipLo, ovClipHi, ovClipMode, 0.0, 1.0, mip);
     // Matcap lighting at FIRST HIT only (unlike the overlay, which shades every
     // sample): a drawing is a label mask read as an opaque surface, so one

@@ -14,6 +14,11 @@ import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
 import { blendOverlayData } from '@/view/NVMeshView'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
+  GENERIC_RENDER_VARIANT,
+  renderVariantDefines,
+  renderVariantKey,
+} from '@/view/NVRenderVariant'
+import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
@@ -69,7 +74,7 @@ import {
 } from './orientChunked'
 import * as orientOverlay from './orientOverlay'
 import * as renderShader from './renderShader'
-import { Shader } from './shader'
+import { compileShaderAsync, Shader } from './shader'
 
 /**
  * Default GPU memory budget, in bytes, for a chunked volume's resident chunk
@@ -308,9 +313,32 @@ function chunkOffsetFor(
     chunkExplodeOffsetFrac(plan, chunkIndex, explode)
 }
 
+const renderFragmentShader = (key: number): string =>
+  renderShader.fragmentShader.replace(
+    '#version 300 es\n',
+    `#version 300 es\n${renderVariantDefines(key)}`,
+  )
+
+// The Shader class does not resolve uniform arrays.
+function withClipPlanes(gl: WebGL2RenderingContext, shader: Shader): Shader {
+  shader.uniforms.clipPlanes = gl.getUniformLocation(
+    shader.program,
+    'clipPlanes[0]',
+  )
+  return shader
+}
+
 export class VolumeRenderer extends NVRenderer {
   private _gl: WebGL2RenderingContext | null
+  // Generic volume program; chunked draws always use it.
   shader: Shader | null
+  // Specialized single-volume programs by variant key (view/NVRenderVariant),
+  // compiled in the background on first use; the generic program draws until
+  // one is linked, and stands in for a variant that failed.
+  private _variantShaders = new Map<
+    number,
+    Shader | ReturnType<typeof compileShaderAsync>
+  >()
   depthPickShaderProgram: Shader | null
   matcapTexture: WebGLTexture | null
   private _matcapUrl: string | null
@@ -546,16 +574,16 @@ export class VolumeRenderer extends NVRenderer {
     }
 
     // Compile volume rendering shader
-    this.shader = new Shader(
+    this._variantShaders = new Map()
+    this.shader = withClipPlanes(
       gl,
-      renderShader.vertexShader,
-      renderShader.fragmentShader,
+      new Shader(
+        gl,
+        renderShader.vertexShader,
+        renderFragmentShader(GENERIC_RENDER_VARIANT),
+      ),
     )
-    // Fix uniform array locations (Shader class doesn't handle arrays correctly)
-    this.shader.uniforms.clipPlanes = gl.getUniformLocation(
-      this.shader.program,
-      'clipPlanes[0]',
-    )
+    this._variantShaders.set(GENERIC_RENDER_VARIANT, this.shader)
 
     // Compile depth-pick shader for depth picking
     this.depthPickShaderProgram = new Shader(
@@ -2340,7 +2368,23 @@ export class VolumeRenderer extends NVRenderer {
     // placeholder is bound below and never sampled.
     if (!this._activeChunked && !this.volumeTexture) return
 
-    const shader = this.shader
+    const shader = this._activeChunked
+      ? this.shader
+      : (this._variantShader(
+          gl,
+          renderVariantKey({
+            clipPlanes,
+            isClipCutaway,
+            renderMode: this.renderMode,
+            cubic: this.isCubicInterpolation && this._cubicVolumeSafe,
+            gradientAmount,
+            gradientOpacity: this.gradientOpacity,
+            silhouette: this.silhouette,
+            hasOverlay: !!this.overlayTexture,
+            hasPaqd: !!this.paqdTexture,
+            hasDrawing: !!this.drawingTexture,
+          }),
+        ) ?? this.shader)
     const indexCount = this.cube.indices.length
 
     // 1. Use the program
@@ -2515,6 +2559,28 @@ export class VolumeRenderer extends NVRenderer {
 
     // Cleanup
     gl.bindVertexArray(null)
+  }
+
+  /** The volume program specialized for `key`, or null while it compiles. */
+  private _variantShader(
+    gl: WebGL2RenderingContext,
+    key: number,
+  ): Shader | null {
+    let entry = this._variantShaders.get(key)
+    if (entry instanceof Shader) return entry
+    if (!entry) {
+      entry = compileShaderAsync(
+        gl,
+        renderShader.vertexShader,
+        renderFragmentShader(key),
+      )
+      this._variantShaders.set(key, entry)
+    }
+    const polled = entry.poll()
+    if (polled === undefined) return null
+    const shader = polled ? withClipPlanes(gl, polled) : this.shader
+    if (shader) this._variantShaders.set(key, shader)
+    return shader
   }
 
   /** Set the five per-chunk tiled-volume uniforms on the active shader. */
@@ -3228,7 +3294,13 @@ export class VolumeRenderer extends NVRenderer {
     this.placeholderOverlay = null
 
     // Delete shader program
-    if (this.shader?.program) gl.deleteProgram(this.shader.program)
+    // A failed variant maps to the generic program, so dedupe before deleting.
+    for (const program of new Set(
+      [...this._variantShaders.values()].map((v) => v.program),
+    )) {
+      gl.deleteProgram(program)
+    }
+    this._variantShaders.clear()
     this.shader = null
 
     // Destroy module resources

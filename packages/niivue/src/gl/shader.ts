@@ -1,11 +1,17 @@
 // shader.js is taken from github user Twinklebear: https://github.com/Twinklebear/webgl-util
 import { log } from '@/logger'
 
-const compileShader = (
+type ProgramJob = {
+  program: WebGLProgram
+  vs: WebGLShader
+  fs: WebGLShader
+}
+
+const startProgram = (
   gl: WebGL2RenderingContext,
   vert: string,
   frag: string,
-): WebGLProgram => {
+): ProgramJob => {
   const vs = gl.createShader(gl.VERTEX_SHADER)
   if (!vs) {
     throw new Error('Vertex shader creation failed')
@@ -28,6 +34,13 @@ const compileShader = (
   gl.attachShader(program, vs)
   gl.attachShader(program, fs)
   gl.linkProgram(program)
+  return { program, vs, fs }
+}
+
+const finishProgram = (
+  gl: WebGL2RenderingContext,
+  { program, vs, fs }: ProgramJob,
+): WebGLProgram => {
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
     log.error('Shader link error:', gl.getProgramInfoLog(program))
     if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
@@ -36,9 +49,40 @@ const compileShader = (
     if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
       log.error('Fragment shader compilation error:', gl.getShaderInfoLog(fs))
     }
+    gl.deleteProgram(program)
+    gl.deleteShader(vs)
+    gl.deleteShader(fs)
     throw new Error('Shader failed to link, see console for log')
   }
+  // Flagged shaders are freed with the program.
+  gl.deleteShader(vs)
+  gl.deleteShader(fs)
   return program
+}
+
+/**
+ * Start compiling a program without blocking. `poll` returns undefined while
+ * the driver is still compiling (KHR_parallel_shader_compile), then the
+ * Shader, or null if it failed to link. Without the extension the first poll
+ * blocks until the program is linked.
+ */
+export function compileShaderAsync(
+  gl: WebGL2RenderingContext,
+  vertexSrc: string,
+  fragmentSrc: string,
+): { program: WebGLProgram; poll: () => Shader | null | undefined } {
+  const ext = gl.getExtension('KHR_parallel_shader_compile')
+  const job = startProgram(gl, vertexSrc, fragmentSrc)
+  const poll = (): Shader | null | undefined => {
+    if (ext && !gl.getProgramParameter(job.program, ext.COMPLETION_STATUS_KHR))
+      return undefined
+    try {
+      return new Shader(gl, vertexSrc, fragmentSrc, finishProgram(gl, job))
+    } catch {
+      return null
+    }
+  }
+  return { program: job.program, poll }
 }
 
 export class Shader {
@@ -51,8 +95,10 @@ export class Shader {
     gl: WebGL2RenderingContext,
     vertexSrc: string,
     fragmentSrc: string,
+    program?: WebGLProgram,
   ) {
-    this.program = compileShader(gl, vertexSrc, fragmentSrc)
+    this.program =
+      program ?? finishProgram(gl, startProgram(gl, vertexSrc, fragmentSrc))
     this.uniforms = {}
     this.isMatcap = undefined
     this.isCrosscut = undefined

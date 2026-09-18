@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Web Worker</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label for="colormapSelect">Colormap</label>
+      <select id="colormapSelect"></select>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue in a Web Worker</footer>
+    <script type="module">
+      const footer = document.getElementById('location')
+      const worker = new Worker(new URL('./vox.worker.js', import.meta.url), {
+        type: 'module',
+      })
+      const post = (message) => worker.postMessage(message)
+      const size = () => ({
+        width: gl1.clientWidth,
+        height: gl1.clientHeight,
+        dpr: devicePixelRatio,
+      })
+
+      worker.onmessage = ({ data }) => {
+        if (data.type === 'location') {
+          footer.innerHTML = `&nbsp;&nbsp;${data.text}`
+          return
+        }
+        for (const cmap of data.colormaps) {
+          const option = document.createElement('option')
+          option.value = cmap
+          option.textContent = cmap.charAt(0).toUpperCase() + cmap.slice(1)
+          option.selected = cmap.toLowerCase() === 'gray'
+          colormapSelect.appendChild(option)
+        }
+      }
+      sliceType.onchange = () =>
+        post({ type: 'sliceType', value: parseInt(sliceType.value, 10) })
+      colormapSelect.onchange = () =>
+        post({ type: 'colormap', value: colormapSelect.value })
+
+      // Pointer state the library reads, flattened so it survives structured clone.
+      const FIELDS = ['button', 'pointerId', 'deltaY', 'detail',
+        'shiftKey', 'ctrlKey', 'altKey', 'metaKey']
+      function forward(e) {
+        if (e.type === 'wheel') e.preventDefault()
+        if (e.type === 'pointerdown') gl1.setPointerCapture(e.pointerId)
+        const rect = gl1.getBoundingClientRect()
+        const init = {
+          type: e.type,
+          clientX: e.clientX - rect.left,
+          clientY: e.clientY - rect.top,
+        }
+        for (const key of FIELDS) if (key in e) init[key] = e[key]
+        post({ type: 'event', init })
+      }
+      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel']) {
+        gl1.addEventListener(type, forward, { passive: false })
+      }
+      new ResizeObserver(() => post({ type: 'resize', ...size() })).observe(gl1)
+
+      const offscreen = gl1.transferControlToOffscreen()
+      worker.postMessage(
+        { type: 'init', canvas: offscreen, url: '/volumes/mni152.nii.gz', ...size() },
+        [offscreen],
+      )
+    </script>
+  </body>
+</html>

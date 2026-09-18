@@ -11,6 +11,8 @@ type LutJson = {
   A?: unknown
   I?: unknown
   labels?: unknown
+  min?: unknown
+  max?: unknown
 }
 
 const isNumberArray = (value: unknown): value is number[] =>
@@ -41,6 +43,16 @@ describe('bundled colormaps', () => {
     expect(lutFiles).toContain('magma.json')
     expect(lutFiles).toContain('ct_bones.json')
     expect(lutFiles).toContain('_slicer3d.json')
+  })
+
+  // lookupColorMap() carries this window so a viewer can apply it with the colormap.
+  test.each(
+    lutFiles.filter((file) => file.startsWith('ct_')),
+  )('%s declares its Hounsfield window', (file) => {
+    const { min, max } = readLut(file)
+    expect(typeof min).toBe('number')
+    expect(typeof max).toBe('number')
+    expect(min as number).toBeLessThan(max as number)
   })
 
   test.each(lutFiles)('%s has valid color stops', (file) => {

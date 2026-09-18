@@ -113,6 +113,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `colormapInvert` | ✅ | Per-volume `isColormapInverted` (also a load/`setVolume` option); reverses the LUT where it is built, so 2D slices, the ray-march, and the colorbar all follow. Mesh layers already had `isColormapInverted` |
 | `setDrawColormap` | ✅ | `drawColormap` property |
 | Custom colormap format `{R,G,B,A,I}` | ✅ | |
+| Colormap-specified display window (`min`/`max`, e.g. `ct_bones` 180..600 HU) | ⚠️ | Old package auto-applied a colormap's `min`/`max` to `cal_min`/`cal_max` on selection (`calMinMax`). New package exposes the window via `lookupColorMap(name)` but does not auto-apply it — pass `calMin`/`calMax` explicitly to `setVolume` |
 
 ## 9. Display Options
 

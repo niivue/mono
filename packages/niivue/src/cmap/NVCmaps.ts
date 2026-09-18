@@ -111,6 +111,9 @@ type LutDef = {
   A: number[]
   I: number[]
   labels?: string[]
+  // Suggested display window, e.g. the Hounsfield range a CT colormap targets.
+  min?: number
+  max?: number
 }
 let _lutIndex: Map<string, LutDef> | null = null
 
@@ -147,6 +150,15 @@ function buildLutIndex(): Map<string, LutDef> {
         }
         if (Array.isArray(mod.labels)) {
           entry.labels = (mod.labels as string[]).slice()
+        }
+        // Some LUTs carry min = max = 0, which means "no window".
+        if (
+          typeof mod.min === 'number' &&
+          typeof mod.max === 'number' &&
+          mod.min < mod.max
+        ) {
+          entry.min = mod.min
+          entry.max = mod.max
         }
         map.set(name, entry)
       } else {

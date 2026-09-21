@@ -28,6 +28,9 @@ test.use({
   },
 })
 
+// Every test here loads a volume and compiles shaders on SwiftShader.
+test.describe.configure({ timeout: 180_000 })
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/examples/index.html', { waitUntil: 'load' })
 })
@@ -116,12 +119,44 @@ const GRID: [number, number][] = [
 const gridProbes = (page: Page, left: number): Promise<number[]>[] =>
   GRID.map(([u, v]) => probe(page, left + u * SIZE, v * SIZE))
 
+/** Mount an instance, skipping the test when its backend is unavailable. */
+async function mountOrSkip(
+  page: Page,
+  backend: string,
+  id = '',
+  left = 0,
+  opts = '',
+): Promise<void> {
+  const ready = await page.evaluate(mount(backend, id, left, opts))
+  test.skip(!ready.ok, `backend unavailable: ${ready.why}`)
+  // WebGPU falls back to WebGL2 rather than failing, which would quietly turn
+  // the cross-backend comparison below into WebGL2 against itself.
+  expect(ready.backend).toBe(backend)
+}
+
+/**
+ * Two probe grids of the same scene agree. Not bit-exact: two rasterizers (or a
+ * whole volume and the same volume in bricks) land the ray on fractionally
+ * different texels, which a trilinear tap turns into a few levels. Anything
+ * structural -- a layer blended in the wrong order, a plane missing, air drawn
+ * opaque, a seam composited twice -- is far larger than this.
+ */
+function expectProbesClose(a: number[][], b: number[][], label: string): void {
+  for (const [i, px] of a.entries()) {
+    for (let c = 0; c < 3; c++) {
+      expect(
+        Math.abs(px[c] - b[i][c]),
+        `${label} probe ${i} channel ${c}: ${px} vs ${b[i]}`,
+      ).toBeLessThanOrEqual(8)
+    }
+  }
+  // And not by both being empty.
+  expect(a.some((px) => !isBackground(px))).toBe(true)
+}
+
 for (const backend of ['webgl2', 'webgpu'] as const) {
   test(`every render mode draws the volume (${backend})`, async ({ page }) => {
-    test.setTimeout(180_000)
-    const ready = await page.evaluate(mount(backend, '', 0))
-    test.skip(!ready.ok, `backend unavailable: ${ready.why}`)
-    expect(ready.backend).toBe(backend)
+    await mountOrSkip(page, backend)
 
     const shots: Record<string, Buffer> = {}
     for (const [name, mode] of Object.entries(MODES)) {
@@ -144,10 +179,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
   test(`a SLICES pick lands on a crosshair plane (${backend})`, async ({
     page,
   }) => {
-    test.setTimeout(180_000)
-    const ready = await page.evaluate(mount(backend, '', 0))
-    test.skip(!ready.ok, `backend unavailable: ${ready.why}`)
-    expect(ready.backend).toBe(backend)
+    await mountOrSkip(page, backend)
 
     const hit = await page.evaluate(`(async () => {
       await window.__setMode(${MODES.SLICES})
@@ -172,34 +204,21 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
 }
 
 test('both backends draw SLICES the same', async ({ page }) => {
-  test.setTimeout(180_000)
-  const gl = await page.evaluate(mount('webgl2', 'A', 0))
-  const gpu = await page.evaluate(mount('webgpu', 'B', SIZE))
-  test.skip(!gpu.ok, `backend unavailable: ${gpu.why}`)
-  expect([gl.backend, gpu.backend]).toEqual(['webgl2', 'webgpu'])
+  await mountOrSkip(page, 'webgl2', 'A', 0)
+  await mountOrSkip(page, 'webgpu', 'B', SIZE)
 
   await page.evaluate(`Promise.all([
     window.__setModeA(${MODES.SLICES}),
     window.__setModeB(${MODES.SLICES}),
   ])`)
 
-  const a = await Promise.all(gridProbes(page, 0))
-  const b = await Promise.all(gridProbes(page, SIZE))
   // The plane branch is duplicated in WGSL and GLSL, so this is what catches
-  // the two drifting. Not bit-exact: the two rasterizers land the ray on
-  // fractionally different texels, which a trilinear tap turns into a few
-  // levels. Anything structural (a layer blended in the wrong order, a plane
-  // missing, air drawn opaque) is far larger than this.
-  for (const [i, px] of a.entries()) {
-    for (let c = 0; c < 3; c++) {
-      expect(
-        Math.abs(px[c] - b[i][c]),
-        `probe ${i} channel ${c}: ${px} vs ${b[i]}`,
-      ).toBeLessThanOrEqual(8)
-    }
-  }
-  // And not by both being empty.
-  expect(a.some((px) => !isBackground(px))).toBe(true)
+  // the two drifting.
+  expectProbesClose(
+    await Promise.all(gridProbes(page, 0)),
+    await Promise.all(gridProbes(page, SIZE)),
+    'webgl2 vs webgpu',
+  )
 })
 
 // A chunked volume draws one cube per brick, so a plane crossing a brick
@@ -208,14 +227,9 @@ test('both backends draw SLICES the same', async ({ page }) => {
 // cheapest way to see it fail is against the same volume drawn whole.
 for (const backend of ['webgl2', 'webgpu'] as const) {
   test(`a chunked volume has no plane seams (${backend})`, async ({ page }) => {
-    test.setTimeout(180_000)
-    const whole = await page.evaluate(mount(backend, 'A', 0))
+    await mountOrSkip(page, backend, 'A', 0)
     // maxTextureDimension3D forces an ordinary volume down the chunked path.
-    const tiled = await page.evaluate(
-      mount(backend, 'B', SIZE, 'maxTextureDimension3D: 128,'),
-    )
-    test.skip(!tiled.ok, `backend unavailable: ${tiled.why}`)
-    expect([whole.backend, tiled.backend]).toEqual([backend, backend])
+    await mountOrSkip(page, backend, 'B', SIZE, 'maxTextureDimension3D: 128,')
     expect(
       await page.evaluate('window.__nvB.view.volumeRenderer.hasChunkedVolume'),
     ).toBe(true)
@@ -229,16 +243,10 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     await page.waitForTimeout(4000)
     await page.evaluate(`window.__setModeB(${MODES.SLICES})`)
 
-    const a = await Promise.all(gridProbes(page, 0))
-    const b = await Promise.all(gridProbes(page, SIZE))
-    for (const [i, px] of a.entries()) {
-      for (let c = 0; c < 3; c++) {
-        expect(
-          Math.abs(px[c] - b[i][c]),
-          `probe ${i} channel ${c}: whole ${px} vs chunked ${b[i]}`,
-        ).toBeLessThanOrEqual(8)
-      }
-    }
-    expect(a.some((px) => !isBackground(px))).toBe(true)
+    expectProbesClose(
+      await Promise.all(gridProbes(page, 0)),
+      await Promise.all(gridProbes(page, SIZE)),
+      'whole vs chunked',
+    )
   })
 }

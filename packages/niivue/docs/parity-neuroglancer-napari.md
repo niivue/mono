@@ -4,7 +4,7 @@ Capability comparison of the NiiVue ecosystem against **Neuroglancer** (web,
 WebGL2, client-side chunked decode; large EM/connectomics) and **Napari**
 (Python/Qt desktop, in-memory n-dimensional arrays; analysis + plugins).
 
-*Assessed: 2026-06-30; section 1 refreshed 2026-08-25 after the caching stages landed.* This is a **capability** comparison, not an API map. The
+*Assessed: 2026-06-30; section 1 refreshed 2026-08-25 after the caching stages landed; section 4 render modes refreshed 2026-09-21.* This is a **capability** comparison, not an API map. The
 relevant work is currently split across two unmerged feature branches, so verdicts
 are attributed to where the code lives:
 
@@ -81,7 +81,8 @@ piece is promoting it (and meshes/volumes) into one layer abstraction.
 | Item | Status | Evidence / notes |
 |---|---|---|
 | Composite (translucent) volume render + matcap lighting | present | `gl/renderShader.ts`, `wgpu/render.wgsl`. |
-| MIP (maximum-intensity projection) | missing | No additive/max mode. Standard in both Neuroglancer and Napari. **Top render gap.** |
+| MIP (maximum-intensity projection) | present | `volumeRenderMode = VOLUME_RENDER_MODE.MAXIMUM`, both backends. |
+| Orthogonal slices in the 3D render | present | `volumeRenderMode = VOLUME_RENDER_MODE.SLICES`, both backends: the three crosshair planes instead of a ray-march. No equivalent in either tool. |
 | Iso-surface render | missing | No iso mode. |
 | Interpolation (nearest/linear) | present | `isNearestInterpolation`. |
 | Gamma | present | `gamma`. |
@@ -95,8 +96,9 @@ piece is promoting it (and meshes/volumes) into one layer abstraction.
 
 ## Biggest real gaps (priority order)
 
-1. **MIP + iso-surface render modes** — most user-visible parity gap vs both tools;
-   lands in the existing render shaders, both backends.
+1. **Iso-surface render mode** — the remaining render-mode gap; lands in the
+   existing render shaders, both backends. MIP and orthogonal slices shipped as
+   `VOLUME_RENDER_MODE.MAXIMUM` / `SLICES`.
 2. **Chunk-fetch cancellation + explicit request-state model** — Neuroglancer's
    signature robustness; today stale volume-chunk fetches run to completion.
 3. **Unified layer model** — the Napari axis and the precondition for promoting

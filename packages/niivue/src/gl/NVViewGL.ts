@@ -537,11 +537,7 @@ export default class NVGlview {
     // The crosshair planes SLICES draws, in the base volume's texture fraction —
     // the same conversion the 2D tiles use, so sheared and oblique volumes line
     // up with them.
-    this.volumeRenderer.sliceFrac = [
-      md.getSliceTexFrac(0),
-      md.getSliceTexFrac(1),
-      md.getSliceTexFrac(2),
-    ]
+    this.volumeRenderer.sliceFrac = [0, 1, 2].map((d) => md.getSliceTexFrac(d))
     // Ray samples per voxel in the 3D fine march (anti-aliasing vs fragment cost).
     this.volumeRenderer.sampleRate = md.volume.sampleRate
     // Tricubic B-spline reconstruction in the fine march (8 fetches vs 1).
@@ -1909,23 +1905,27 @@ export default class NVGlview {
         )
         // SLICES draws three crosshair planes, so the pick lands on the nearest
         // VISIBLE plane crossing rather than on the near surface — the same rule
-        // the GPU shaders use for a non-chunked volume.
-        // ponytail: un-exploded only. Exploded blocks displace the planes with
-        // them, so they keep the block pick below; give them their own plane
-        // maths if anyone picks in an exploded SLICES view.
+        // the GPU shaders use for a non-chunked volume. A miss falls through
+        // like every other exit here, because the GPU pass below is the only
+        // one that picks MESHES.
+        // ponytail: un-exploded only, and the planes are the mm-axis ones, as
+        // the bounding box around them already is -- an oblique volume's true
+        // planes are tilted. Exploded blocks displace the planes with them, so
+        // they keep the block pick below. Give either its own plane maths if
+        // someone picks in one of those views.
         if (
           md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.SLICES &&
           !chunkExplodeEnabled(vol.chunkExplode)
         ) {
-          const crossMM = md.scene2mm(md.scene.crosshairPos)
-          return NVTransforms.rayPlaneFirstVisibleMM(
+          const planeMM = NVTransforms.rayPlaneFirstVisibleMM(
             near,
             far,
             vol.extentsMin,
             vol.extentsMax,
-            crossMM,
+            md.scene2mm(md.scene.crosshairPos),
             vol.pickSampler,
           )
+          if (planeMM) return planeMM
         }
         // Exploded view: blocks are displaced, so the un-exploded bounding box no
         // longer matches what's on screen. Pick against each block's exploded

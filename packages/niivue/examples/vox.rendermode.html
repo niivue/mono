@@ -36,7 +36,7 @@
     </main>
     <footer id="location">&nbsp;</footer>
     <script type="module">
-      import NiiVue, { SHOW_RENDER, VOLUME_RENDER_MODE } from '../src/index.ts'
+      import NiiVue, { SHOW_RENDER } from '../src/index.ts'
 
       // The three volumeRenderMode values side by side. COMPOSITE and MAXIMUM
       // ray-march; SLICES does not — it draws the three crosshair planes inside
@@ -63,9 +63,12 @@
       })
       await nv1.attachToCanvas(document.getElementById('gl1'))
 
+      // A ramp from a pale version of the tint up to the tint, as in
+      // vox.tissues.html: a built-in saturated primary would repaint the
+      // anatomy rather than tint it, which is the opposite of the point here.
       for (const t of TISSUES) {
-        const [r, g, b] = t.tint
         const pale = (c) => Math.round(c * 0.75)
+        const [r, g, b] = t.tint
         nv1.addColormap(t.id, {
           R: [pale(r), r], G: [pale(g), g], B: [pale(b), b], A: [0, 255], I: [0, 255],
         })
@@ -92,15 +95,10 @@
       modeSelect.onchange = () => {
         nv1.volumeRenderMode = parseInt(modeSelect.value, 10)
       }
-      modeSelect.value = String(VOLUME_RENDER_MODE.COMPOSITE)
 
-      const sliceTypeSelect = document.getElementById('sliceType')
-      sliceTypeSelect.onchange = (e) => {
+      document.getElementById('sliceType').onchange = (e) => {
         nv1.sliceType = parseInt(e.target.value, 10)
       }
-      nv1.addEventListener('sliceTypeChange', (e) => {
-        sliceTypeSelect.value = String(e.detail.sliceType)
-      })
 
       const webgpuCheck = document.getElementById('webgpuCheck')
       // Reflects the backend actually running (WebGPU may fall back to WebGL2).

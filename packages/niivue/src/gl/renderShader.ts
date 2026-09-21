@@ -544,12 +544,16 @@ float distance2Plane(vec4 samplePos, vec4 clipPlane) {
 // (see gl/sliceShader.ts). Returns PREMULTIPLIED rgba; alpha 0 means the plane
 // is transparent here, so whatever lies behind it shows through. Mirrors
 // sampleSlice in wgpu/render.wgsl -- keep the two in step.
-vec4 sampleSlice(vec3 pos) {
+// isLayer is the independent hi-res overlay cube draw: the bound texture is a
+// LAYER, not the background, and the orient pass has already baked its opacity
+// into the alpha -- so take the sample's own alpha rather than the background
+// volume's own opacity, which that draw passes as 1.
+vec4 sampleSlice(vec3 pos, bool isLayer) {
   vec3 volCoord = chunkTexCoord(pos);
   vec4 bg = texture(volume, volCoord);
   // Air (baked alpha 0) is transparent rather than black: the whole point of
   // compositing three planes is that the farther ones stay visible.
-  float a = bg.a > 0.0 ? backOpacity : 0.0;
+  float a = isLayer ? bg.a : (bg.a > 0.0 ? backOpacity : 0.0);
   vec3 rgb = applyGamma(bg.rgb, invGamma);
   if (HAS_OVERLAY && textureSize(overlay, 0).x > 2) {
     vec4 ov = texture(overlay, volCoord);
@@ -608,45 +612,6 @@ void main() {
   if (lenVox < 0.5) {
     discard;
   }
-  // --- Orthogonal slices (VOLUME_RENDER_MODE.SLICES) ---
-  // No march: intersect the ray with the three crosshair planes and composite
-  // the hits front to back. start/dir/len already come from this chunk's own
-  // cube, so a chunked draw needs nothing extra. Mirrors the block in
-  // wgpu/render.wgsl -- keep the two in step.
-  if (IS_SLICES && isRenderMode(RENDER_MODE_SLICES)) {
-    const float NO_HIT = 1e20;
-    vec3 t = vec3(NO_HIT);
-    for (int k = 0; k < 3; k++) {
-      if (abs(dir[k]) < 1e-8) { continue; }
-      float tk = (sliceFrac[k] - start[k]) / dir[k];
-      // Half-open [0, len): a hit on a chunk's exit face belongs to the next
-      // chunk along the ray, so a shared plane is composited exactly once.
-      if (tk >= 0.0 && tk < len) { t[k] = tk; }
-    }
-    // Sorting network, nearest first.
-    if (t.x > t.y) { float s = t.x; t.x = t.y; t.y = s; }
-    if (t.y > t.z) { float s = t.y; t.y = t.z; t.z = s; }
-    if (t.x > t.y) { float s = t.x; t.x = t.y; t.y = s; }
-    vec4 acc = vec4(0.0);
-    vec3 firstHit = vec3(0.0);
-    bool hasHit = false;
-    for (int i = 0; i < 3; i++) {
-      if (t[i] >= NO_HIT) { break; }
-      vec3 pos = start + dir * t[i];
-      vec4 c = sampleSlice(pos);
-      if (c.a > 0.0) {
-        if (!hasHit) { hasHit = true; firstHit = pos; }
-        acc += (1.0 - acc.a) * c;
-        if (acc.a > 0.999) { break; }
-      }
-    }
-    if (!hasHit) {
-      discard;
-    }
-    FragColor = acc * fadeAlpha;
-    gl_FragDepth = frac2ndc(firstHit);
-    return;
-  }
   // Opacity (step-size) correction: a coarse multi-LOD brick takes fewer samples
   // along the ray, so without this it accumulates less alpha and renders dimmer —
   // a brightness seam at LOD boundaries. Rescale per-sample alpha to a fixed
@@ -676,6 +641,48 @@ void main() {
   // premultiplied sample instead of compositing OVER, and no pass may early-
   // terminate (the maximum can lie anywhere along the ray).
   bool mip = IS_MIP && isRenderMode(RENDER_MODE_MAXIMUM);
+  // --- Orthogonal slices (VOLUME_RENDER_MODE.SLICES) ---
+  // No march: intersect the ray with the three crosshair planes and composite
+  // the hits front to back. start/dir/len already come from this chunk's own
+  // cube, so a chunked draw needs nothing extra. Mirrors the block in
+  // wgpu/render.wgsl -- keep the two in step.
+  if (IS_SLICES && isRenderMode(RENDER_MODE_SLICES)) {
+    const float NO_HIT = 1e20;
+    vec3 t = vec3(NO_HIT);
+    for (int k = 0; k < 3; k++) {
+      if (abs(dir[k]) < 1e-8) { continue; }
+      float tk = (sliceFrac[k] - start[k]) / dir[k];
+      // Half-open [0, len): a hit on a chunk's exit face belongs to the next
+      // chunk along the ray, not to both. The two cubes compute that boundary
+      // from different ends, so the rule is only exact up to rounding -- which
+      // never bites, because a crosshair plane sits at a voxel CENTRE fraction
+      // and a chunk face sits on a voxel boundary.
+      if (tk >= 0.0 && tk < len) { t[k] = tk; }
+    }
+    // Sorting network, nearest first.
+    if (t.x > t.y) { float s = t.x; t.x = t.y; t.y = s; }
+    if (t.y > t.z) { float s = t.y; t.y = t.z; t.z = s; }
+    if (t.x > t.y) { float s = t.x; t.x = t.y; t.y = s; }
+    vec4 acc = vec4(0.0);
+    vec3 firstHit = vec3(0.0);
+    bool hasHit = false;
+    for (int i = 0; i < 3; i++) {
+      if (t[i] >= NO_HIT) { break; }
+      vec3 pos = start + dir * t[i];
+      vec4 c = sampleSlice(pos, overlayMode);
+      if (c.a > 0.0) {
+        if (!hasHit) { hasHit = true; firstHit = pos; }
+        acc += (1.0 - acc.a) * c;
+        if (acc.a > 0.999) { break; }
+      }
+    }
+    if (!hasHit) {
+      discard;
+    }
+    FragColor = acc * fadeAlpha;
+    gl_FragDepth = frac2ndc(firstHit);
+    return;
+  }
   float stepSize = len / lenVox;
   vec4 deltaDir = vec4(dir * stepSize, stepSize);
   float localGradientAmount = overlayMode ? 0.0 : gradientAmount;

@@ -1379,10 +1379,11 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * How the 3D ray-march combines the samples along each ray:
-   * `VOLUME_RENDER_MODE.COMPOSITE` (default, OVER) or
-   * `VOLUME_RENDER_MODE.MAXIMUM` (maximum-intensity projection). 2D slices draw
-   * a single plane and are unaffected.
+   * What the 3D render tile draws: `VOLUME_RENDER_MODE.COMPOSITE` (default, the
+   * OVER ray-march), `VOLUME_RENDER_MODE.MAXIMUM` (maximum-intensity
+   * projection), or `VOLUME_RENDER_MODE.SLICES` (no march at all -- the three
+   * crosshair planes, composited front to back, with overlays sampled on them
+   * as the 2D tiles do). 2D slices draw a single plane and are unaffected.
    */
   get volumeRenderMode(): number {
     return this.model.volume.renderMode

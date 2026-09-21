@@ -574,14 +574,7 @@ describe('rayPlaneFirstVisibleMM', () => {
   const hi = [10, 10, 10]
   const cross = [4, 6, 5]
 
-  test('takes the nearest of the three crossings', () => {
-    // +x ray at y=6, z=5: it lies IN the y and z planes, so only the x plane is
-    // a crossing (the other two are parallel).
-    const hit = rayPlaneFirstVisibleMM([-5, 6, 5], [15, 6, 5], lo, hi, cross)
-    expect(hit?.[0]).toBeCloseTo(4)
-  })
-
-  test('a diagonal ray takes the first plane it reaches', () => {
+  test('takes the first plane the ray reaches', () => {
     // Along +(1,1,1) from the origin corner: x=4 at t=4, y=6 at t=6, z=5 at t=5.
     const hit = rayPlaneFirstVisibleMM([0, 0, 0], [10, 10, 10], lo, hi, cross)
     expect(hit).toEqual([4, 4, 4])

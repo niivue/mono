@@ -434,7 +434,7 @@ export class VolumeRenderer extends NVRenderer {
   // The three crosshair planes in the base volume's texture fraction (set
   // per-frame from model.getSliceTexFrac), read only in SLICES mode. 1 is
   // off-cube, so the default hits nothing.
-  sliceFrac: [number, number, number] = [1, 1, 1]
+  sliceFrac: number[] = [1, 1, 1]
   // Which stencil the overlay/drawing passes estimate their own gradient with
   // (from md.volume.layerGradientMode). The background volume reads a
   // precomputed gradient texture and is unaffected. See LAYER_GRADIENT_MODE.
@@ -3227,6 +3227,17 @@ export class VolumeRenderer extends NVRenderer {
     }
   }
 
+  /**
+   * This brick's per-level brightness compensation for the display-gamma
+   * exponent. 1 (a strict no-op) in SLICES mode: the compensation exists to
+   * offset what a coarse brick loses to sparser MARCH sampling, and a plane
+   * takes exactly one sample whatever the level.
+   */
+  private _lodGamma(lodDownsample: number): number {
+    if (this.renderMode === VOLUME_RENDER_MODE.SLICES) return 1
+    return lodGammaExponent(lodDownsample, this.lodBrightnessCompensation)
+  }
+
   private _writeRenderParams(
     device: GPUDevice,
     paramsBuffer: GPUBuffer,
@@ -3293,12 +3304,11 @@ export class VolumeRenderer extends NVRenderer {
         // the exponent): the reciprocal of the user-facing display gamma, and
         // this brick's per-level compensation for the brightness a coarse
         // pyramid level loses in the march. The latter is 1 for every
-        // single-level and non-chunked draw.
-        invGamma(this.gamma) *
-          lodGammaExponent(
-            chunkUniforms.lodDownsample ?? 1,
-            this.lodBrightnessCompensation,
-          ),
+        // single-level and non-chunked draw -- and for SLICES, which takes one
+        // sample per plane and so loses nothing to compensate for. Without that
+        // gate a coarse floor brick's planes read brighter than the resident
+        // fine ones beside them.
+        invGamma(this.gamma) * this._lodGamma(chunkUniforms.lodDownsample ?? 1),
         // lodOpacityScale (offset 392, was the first _pad0 lane): scales the
         // step-size opacity exponent for a coarse brick. 1 for every
         // single-level and non-chunked draw, and for the default coefficient 0.

@@ -474,12 +474,16 @@ fn distance2Plane(samplePos: vec4f, clipPlane: vec4f) -> f32 {
 // (see wgpu/slice.wgsl). Returns PREMULTIPLIED rgba; alpha 0 means the plane is
 // transparent here, so whatever lies behind it shows through. Mirrored in
 // gl/renderShader.ts -- keep the two in step.
-fn sampleSlice(pos: vec3f) -> vec4f {
+// `isLayer` is the independent hi-res overlay cube draw: the bound texture is a
+// LAYER, not the background, and the orient pass has already baked its opacity
+// into the alpha -- so take the sample's own alpha rather than the background
+// volume's `opacity`, which that draw passes as 1.
+fn sampleSlice(pos: vec3f, isLayer: bool) -> vec4f {
     let volCoord = chunkTexCoord(pos);
     let bg = textureSampleLevel(volume, tex_sampler, volCoord, 0.0);
     // Air (baked alpha 0) is transparent rather than black: the whole point of
     // compositing three planes is that the farther ones stay visible.
-    var a = select(0.0, params.backOpacity, bg.a > 0.0);
+    var a = select(select(0.0, params.backOpacity, bg.a > 0.0), bg.a, isLayer);
     var rgb = applyGamma(bg.rgb, params.invGamma);
     if (HAS_OVERLAY && textureDimensions(overlay, 0).x > 2) {
         let ov = textureSampleLevel(overlay, tex_sampler, volCoord, 0.0);
@@ -542,45 +546,6 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	if (lenVox < 0.5) {
 		discard;
 	}
-	// --- Orthogonal slices (VOLUME_RENDER_MODE.SLICES) ---
-	// No march: intersect the ray with the three crosshair planes and composite
-	// the hits front to back. start/dir/len already come from this chunk's own
-	// cube, so a chunked draw needs nothing extra. Mirrored in
-	// gl/renderShader.ts -- keep the two in step.
-	if (IS_SLICES && isRenderMode(RENDER_MODE_SLICES)) {
-		let planes = sliceFrac();
-		let NO_HIT = 1e20;
-		var t = vec3f(NO_HIT);
-		for (var k: i32 = 0; k < 3; k++) {
-			if (abs(dir[k]) < 1e-8) { continue; }
-			let tk = (planes[k] - start[k]) / dir[k];
-			// Half-open [0, len): a hit on a chunk's exit face belongs to the next
-			// chunk along the ray, so a shared plane is composited exactly once.
-			if (tk >= 0.0 && tk < len) { t[k] = tk; }
-		}
-		// Sorting network, nearest first.
-		if (t.x > t.y) { let s = t.x; t.x = t.y; t.y = s; }
-		if (t.y > t.z) { let s = t.y; t.y = t.z; t.z = s; }
-		if (t.x > t.y) { let s = t.x; t.x = t.y; t.y = s; }
-		var acc = vec4f(0.0);
-		var firstHit = vec3f(0.0);
-		var hasHit = false;
-		for (var i: i32 = 0; i < 3; i++) {
-			if (t[i] >= NO_HIT) { break; }
-			let pos = start + dir * t[i];
-			let c = sampleSlice(pos);
-			if (c.a > 0.0) {
-				if (!hasHit) { hasHit = true; firstHit = pos; }
-				acc += (1.0 - acc.a) * c;
-				if (acc.a > 0.999) { break; }
-			}
-		}
-		if (!hasHit) { discard; }
-		var sliceOut: FragmentOutput;
-		sliceOut.color = acc * params.fadeAlpha;
-		sliceOut.fragDepth = frac2ndc(firstHit);
-		return sliceOut;
-	}
 	// Opacity (step-size) correction. A coarse multi-LOD brick takes fewer
 	// samples along the ray, so without this it accumulates less alpha and
 	// renders dimmer/more transparent than a fine brick of the same material —
@@ -612,6 +577,48 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	// premultiplied sample instead of compositing OVER, and no pass may early-
 	// terminate (the maximum can lie anywhere along the ray).
 	let mip = IS_MIP && isRenderMode(RENDER_MODE_MAXIMUM);
+	// --- Orthogonal slices (VOLUME_RENDER_MODE.SLICES) ---
+	// No march: intersect the ray with the three crosshair planes and composite
+	// the hits front to back. start/dir/len already come from this chunk's own
+	// cube, so a chunked draw needs nothing extra. Mirrored in
+	// gl/renderShader.ts -- keep the two in step.
+	if (IS_SLICES && isRenderMode(RENDER_MODE_SLICES)) {
+		let planes = sliceFrac();
+		let NO_HIT = 1e20;
+		var t = vec3f(NO_HIT);
+		for (var k: i32 = 0; k < 3; k++) {
+			if (abs(dir[k]) < 1e-8) { continue; }
+			let tk = (planes[k] - start[k]) / dir[k];
+			// Half-open [0, len): a hit on a chunk's exit face belongs to the
+			// next chunk along the ray, not to both. The two cubes compute that
+			// boundary from different ends, so the rule is only exact up to
+			// rounding -- which never bites, because a crosshair plane sits at a
+			// voxel CENTRE fraction and a chunk face sits on a voxel boundary.
+			if (tk >= 0.0 && tk < len) { t[k] = tk; }
+		}
+		// Sorting network, nearest first.
+		if (t.x > t.y) { let s = t.x; t.x = t.y; t.y = s; }
+		if (t.y > t.z) { let s = t.y; t.y = t.z; t.z = s; }
+		if (t.x > t.y) { let s = t.x; t.x = t.y; t.y = s; }
+		var acc = vec4f(0.0);
+		var firstHit = vec3f(0.0);
+		var hasHit = false;
+		for (var i: i32 = 0; i < 3; i++) {
+			if (t[i] >= NO_HIT) { break; }
+			let pos = start + dir * t[i];
+			let c = sampleSlice(pos, overlayMode);
+			if (c.a > 0.0) {
+				if (!hasHit) { hasHit = true; firstHit = pos; }
+				acc += (1.0 - acc.a) * c;
+				if (acc.a > 0.999) { break; }
+			}
+		}
+		if (!hasHit) { discard; }
+		var sliceOut: FragmentOutput;
+		sliceOut.color = acc * params.fadeAlpha;
+		sliceOut.fragDepth = frac2ndc(firstHit);
+		return sliceOut;
+	}
 	let stepSize = len / lenVox;
 	let deltaDir = vec4f(dir * stepSize, stepSize);
 	var localGradientAmount = select(params.gradientAmount, 0.0, overlayMode);

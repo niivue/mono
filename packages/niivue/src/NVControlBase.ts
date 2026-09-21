@@ -219,7 +219,11 @@ type ViewBackend = {
   overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
   onContextLost: (() => void) | null
   onChunkStream:
-    | ((counts: ChunkStreamCounts, snapshot: () => ChunkStreamDetail) => void)
+    | ((
+        counts: ChunkStreamCounts,
+        settled: boolean,
+        snapshot: () => ChunkStreamDetail,
+      ) => void)
     | null
 }
 
@@ -348,19 +352,21 @@ export default class NiiVue extends EventTarget {
   private _overlayRenderers: UIKitOverlayRenderer[] = []
   /** Busy/idle transition tracking behind `chunkStreamProgress`/`chunkStreamIdle`. */
   private _chunkStreamEmitter = new ChunkStreamEmitter()
-  /** The view instance `_onChunkStream` was last wired onto. When `drawScene`
-   *  sees a different instance (view recreated: backend switch, context loss),
-   *  the emitter is reset first so the old view's busy episode cannot leak a
-   *  spurious idle into — or swallow the first progress of — the new view. */
+  /** The view instance `_onChunkStream` was last wired onto. When
+   *  `_wireViewHooks` sees a different instance (attach, or a recreate after a
+   *  backend switch or context loss), the emitter is reset first so the old
+   *  view's busy episode cannot leak a spurious idle into — or swallow the
+   *  first progress of — the new view. */
   private _chunkStreamWiredView: ViewBackend | null = null
-  /** View hook: both backends call this around each upload-pump run (see
-   *  `ChunkStreamEmitter`). Bound so `drawScene` can re-wire it onto a
+  /** View hook: both backends call this once per drawn frame (see
+   *  `ChunkStreamEmitter`). Bound so `_wireViewHooks` can re-point it at a
    *  recreated view, like `overlayDraw` and `onContextLost`. */
   private _onChunkStream = (
     counts: ChunkStreamCounts,
+    settled: boolean,
     snapshot: () => ChunkStreamDetail,
   ): void => {
-    this._chunkStreamEmitter.observe(this, counts, snapshot)
+    this._chunkStreamEmitter.observe(this, counts, settled, snapshot)
   }
   // Which settings saved documents include (transient; not serialized). Default
   // {} = omit any setting equal to its default. See `settingsSavePolicy`.
@@ -4708,6 +4714,34 @@ export default class NiiVue extends EventTarget {
     return new Uint8Array(ctx.getImageData(0, 0, w, h).data)
   }
 
+  /**
+   * Point the current view's controller hooks (UIKit overlay, GPU-context
+   * recovery, chunk-streaming observer) at this controller. The view lifecycle
+   * calls this the moment a view is published (attach, and every recreate
+   * path), BEFORE the `resize()` that draws its first frame: a preloaded
+   * chunked volume streams from that very first frame, and every frame after
+   * it is self-driven (`view.render()`, not `drawScene()`), so a hook wired
+   * only from `drawScene` would miss the whole episode. `drawScene` re-wires
+   * on every controller-driven frame as well, which is harmless.
+   *
+   * Wiring the chunk-streaming observer onto a NEW view instance first resets
+   * the emitter, so a mid-stream recreation cannot carry the old view's busy
+   * episode into the new one; the old view's own hook is detached by its
+   * `destroy()`.
+   */
+  _wireViewHooks(): void {
+    const view = this.view
+    if (!view) return
+    view.overlayDraw =
+      this._overlayRenderers.length > 0 ? this._dispatchOverlay : null
+    view.onContextLost = this._onGpuContextLost
+    if (view !== this._chunkStreamWiredView) {
+      this._chunkStreamEmitter.reset()
+      this._chunkStreamWiredView = view
+    }
+    view.onChunkStream = this._onChunkStream
+  }
+
   drawScene(needsSync = true): void {
     if (needsSync) this._syncDirty = true
     if (!this.framePending) {
@@ -4721,24 +4755,11 @@ export default class NiiVue extends EventTarget {
         }
         this._sync()
         if (this.view) {
-          // Re-wire the UIKit overlay hook every controller-driven frame so it
-          // survives view recreation (backend switch, reinit). Self-driven frames
-          // (streaming/fade) keep the last-set value on the same view instance.
-          this.view.overlayDraw =
-            this._overlayRenderers.length > 0 ? this._dispatchOverlay : null
-          // Same reasoning for the GPU-context-recovery hook.
-          this.view.onContextLost = this._onGpuContextLost
-          // And for the chunk-streaming observer: streaming frames are
-          // self-driven, but streaming always starts from a controller-driven
-          // frame, so wiring here reaches every episode. Wiring onto a NEW
-          // view instance (every recreation path funnels through a drawScene)
-          // first resets the emitter, so a mid-stream recreation cannot carry
-          // the old view's busy episode into the new one.
-          if (this.view !== this._chunkStreamWiredView) {
-            this._chunkStreamEmitter.reset()
-            this._chunkStreamWiredView = this.view
-          }
-          this.view.onChunkStream = this._onChunkStream
+          // Re-wire the view hooks every controller-driven frame so a change
+          // in what they should point at (an overlay renderer registered or
+          // removed) is picked up. Self-driven frames (streaming/fade) keep the
+          // last-set values on the same view instance.
+          this._wireViewHooks()
           this.view.render()
         }
       })

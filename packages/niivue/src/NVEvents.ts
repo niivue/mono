@@ -112,17 +112,22 @@ export type VolumeOrderChangedDetail = { volumes: NVImage[] }
  * `chunkStreamStats()`, and the counters read back the same values at emit
  * time, so a listener may use either the `detail` or the method.
  *
- * `chunkStreamProgress` fires while streaming is outstanding
+ * `chunkStreamProgress` fires on a drawn frame while streaming is outstanding
  * (`pending + inFlight > 0`), and only when a count changed since the last
  * emission — the render loop's own cadence bounds the rate, no timer involved.
  *
- * `chunkStreamIdle` fires on the transition from outstanding to settled:
- * a frame observed `pending + inFlight > 0` and a later observation reached
- * `pending + inFlight === 0`. It never fires on a view that is attached but
- * has not streamed (the counters are zeroed, not null, in that state — idle is
- * defined on the transition, not on the zeros). Streaming that resumes (e.g.
- * a camera move requests new bricks) re-arms it, so it can fire once per
- * settle, not once per volume.
+ * `chunkStreamIdle` fires when the stream settles: a drawn frame observed
+ * `pending + inFlight > 0`, and a later drawn frame is complete — nothing
+ * queued or mid-upload for the working set that frame requested, and no brick
+ * still cross-fading in. It is emitted after that frame's draw has been
+ * submitted, so the canvas shows every brick the frame asked for and a
+ * listener may capture it. `resident < total` on that frame is normal under a
+ * residency budget: idle means the visible working set is resident, not the
+ * whole plan. It never fires on a view that is attached but has not streamed
+ * (the counters are zeroed, not null, in that state — idle is defined on the
+ * transition, not on the zeros). Streaming that resumes (e.g. a camera move
+ * requests new bricks) re-arms it, so it can fire once per settle, not once
+ * per volume.
  */
 export type ChunkStreamDetail = {
   resident: number
@@ -137,8 +142,8 @@ export type ChunkStreamDetail = {
 /**
  * The cheap per-frame subset of {@link ChunkStreamDetail}: a sum of the chunk
  * managers' counters, with no decoded-tier walk or allocation. The views pass
- * these to the `onChunkStream` hook twice per frame while streaming; the full
- * snapshot is taken lazily, only when an event actually fires.
+ * these to the `onChunkStream` hook once per drawn frame; the full snapshot is
+ * taken lazily, only when an event actually fires.
  */
 export type ChunkStreamCounts = Pick<
   ChunkStreamDetail,

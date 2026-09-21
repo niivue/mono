@@ -9,6 +9,7 @@ import {
   SCENE_DEFAULTS,
   VOLUME_DEFAULTS,
 } from '@/NVConstants'
+import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import { applyCORS } from '@/NVLoader'
 import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
 import { blendOverlayData } from '@/view/NVMeshView'
@@ -2044,12 +2045,7 @@ export class VolumeRenderer extends NVRenderer {
    * upload-pump run to feed the streaming-event hook, so it must stay O(one
    * integer read per chunked volume).
    */
-  chunkStreamCounts(): {
-    resident: number
-    pending: number
-    inFlight: number
-    total: number
-  } {
+  chunkStreamCounts(): ChunkStreamCounts {
     let resident = 0
     let pending = 0
     let inFlight = 0
@@ -2074,15 +2070,7 @@ export class VolumeRenderer extends NVRenderer {
    * tiers: its hit rate is the share of source reads that an evicted brick's
    * return cost nothing but an upload.
    */
-  chunkStreamStats(): {
-    resident: number
-    pending: number
-    inFlight: number
-    total: number
-    staleDropped: number
-    predicted: number
-    decoded: DecodedChunkStats
-  } {
+  chunkStreamStats(): ChunkStreamDetail {
     let resident = 0
     let pending = 0
     let inFlight = 0

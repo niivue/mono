@@ -120,16 +120,20 @@ export default class NVGlview {
   onContextLost: (() => void) | null = null
   /**
    * Chunk-streaming observer, wired by the controller (see
-   * `ChunkStreamEmitter`). Called twice around every upload-pump run: before
-   * the pump (the draw above it has already requested this frame's working
-   * set, so a first frame's pending count is observable even when the pump
-   * uploads everything in one call) and after it (counts settled for this
-   * frame). Each call passes the cheap manager counters plus a lazy provider
-   * for the full stats snapshot, invoked only if an event actually fires.
-   * Mirrors the same field on NVViewGPU.
+   * `ChunkStreamEmitter`). Called once per drawn frame, after the draw (which
+   * requested this frame's working set and painted every resident brick) has
+   * been submitted and before the upload pump. Passes the cheap manager
+   * counters, whether the frame on screen is settled (nothing queued or in
+   * flight for the working set it requested, no cross-fade still animating,
+   * no drag), and a lazy provider for the full stats snapshot, invoked only if
+   * an event actually fires. Mirrors the same field on NVViewGPU.
    */
   onChunkStream:
-    | ((counts: ChunkStreamCounts, snapshot: () => ChunkStreamDetail) => void)
+    | ((
+        counts: ChunkStreamCounts,
+        settled: boolean,
+        snapshot: () => ChunkStreamDetail,
+      ) => void)
     | null = null
   // Narrow public getters for bench.ts to read current render-area size
   // without making the backing fields public or mutable.
@@ -1514,16 +1518,21 @@ export default class NVGlview {
       if (allLines.length > this.maxLines) this.maxLines = allLines.length
       this.lineRenderer.draw(gl, null, null, null, allLines, this.maxLines)
     }
+    // Is the frame just drawn complete? Nothing queued or mid-upload for the
+    // working set this draw requested, no cross-fade still animating, no drag
+    // in progress. Shared by the overlay hook and the chunk-streaming observer
+    // below. The cheap counts, not the full stats aggregation: this runs on
+    // every frame, streaming or not.
+    const stream = this.volumeRenderer.chunkStreamCounts()
+    const settled =
+      !this.isBusy &&
+      !md._isDragging &&
+      !this.volumeRenderer.fadeActive &&
+      stream.pending === 0 &&
+      stream.inFlight === 0
     // UIKit overlay hook: last screen-space draw of the frame, before the scissor
     // is dropped, with viewport/scissor still set to this view's bounds rect.
     if (this.overlayDraw) {
-      const stream = this.volumeRenderer.chunkStreamStats()
-      const settled =
-        !this.isBusy &&
-        !md._isDragging &&
-        !this.volumeRenderer.fadeActive &&
-        stream.pending === 0 &&
-        stream.inFlight === 0
       this.overlayDraw({
         handle: { backend: 'webgl2', gl },
         bounds: {
@@ -1542,6 +1551,16 @@ export default class NVGlview {
     }
     markSubmitStart()
     markEnd()
+    // Chunk-streaming observer: one observation per drawn frame, after this
+    // frame's draw has been submitted, carrying the verdict on whether the
+    // frame is complete. Idle can then only fire for a frame that shows every
+    // brick it asked for (see ChunkStreamEmitter). Deliberately BEFORE the
+    // pump, and not again after it: the pump's counts describe the NEXT frame,
+    // which the pump schedules whenever it admits anything, and that frame
+    // will be observed in turn.
+    this.onChunkStream?.(stream, settled, () =>
+      this.volumeRenderer.chunkStreamStats(),
+    )
     // Stream in any not-yet-resident chunks of oversized volumes, then
     // schedule a follow-up frame so the freshly-uploaded data appears.
     // Re-render if a chunk was admitted, a cross-fade is still animating, or
@@ -1556,11 +1575,10 @@ export default class NVGlview {
     // the queued working set then. Standard "stream on interaction-end".
     if (!md._isDragging) {
       const fading = this.volumeRenderer.fadeActive
-      this.observeChunkStream()
       this.volumeRenderer
         .pumpChunkUploads()
         .then((changed) => {
-          const counts = this.observeChunkStream()
+          const counts = this.volumeRenderer.chunkStreamCounts()
           const busy = counts.pending > 0 || counts.inFlight > 0
           if (changed || fading || busy) {
             requestAnimationFrame(() => this.render())
@@ -1570,22 +1588,12 @@ export default class NVGlview {
           log.error('chunk upload pump failed', err)
           // Keep the self-driven loop alive: an unexpected pump rejection must
           // not permanently freeze streaming while chunks are still outstanding.
-          const counts = this.observeChunkStream()
+          const counts = this.volumeRenderer.chunkStreamCounts()
           if (counts.pending > 0 || counts.inFlight > 0) {
             requestAnimationFrame(() => this.render())
           }
         })
     }
-  }
-
-  /** Feed the controller's chunk-streaming hook one observation: the cheap
-   * counts eagerly, the full stats snapshot lazily (see `onChunkStream`).
-   * Returns the counts so the pump callbacks can reuse them for their
-   * keep-alive busy check without re-aggregating. */
-  private observeChunkStream(): ChunkStreamCounts {
-    const counts = this.volumeRenderer.chunkStreamCounts()
-    this.onChunkStream?.(counts, () => this.volumeRenderer.chunkStreamStats())
-    return counts
   }
 
   /** Lazy bench harness. Not for production use. See ./bench.ts. */
@@ -2083,6 +2091,9 @@ export default class NVGlview {
       'webglcontextrestored',
       this._handleContextRestored,
     )
+    // Detach the controller's streaming observer so nothing this view does
+    // after teardown can reach the emitter that now tracks its replacement.
+    this.onChunkStream = null
     const gl = this.gl
     if (!gl) return
 

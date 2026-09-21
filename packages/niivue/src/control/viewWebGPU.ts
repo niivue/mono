@@ -55,6 +55,9 @@ export async function attachToCanvas(
   try {
     await view.init()
     ctrl.view = view
+    // Hooks go on before the resize() below draws the first frame: a preloaded
+    // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
+    ctrl._wireViewHooks()
     if (ctrl.opts.thumbnail) {
       ctrl.model.ui.isThumbnailVisible = true
       ctrl.model.ui.thumbnailUrl = ctrl.opts.thumbnail as string
@@ -100,6 +103,9 @@ export async function recreateView(ctrl: NiiVue): Promise<void> {
   const view = new NVViewGPU(ctrl.canvas, ctrl.model, ctrl.opts)
   await view.init()
   ctrl.view = view
+  // Hooks go on before the resize() below draws the first frame: a preloaded
+  // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
+  ctrl._wireViewHooks()
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
     await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)
   }

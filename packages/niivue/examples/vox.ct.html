@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - CT</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <select id="volumeSelect"></select>
+      &nbsp;
+      <label for="orientCheck">Orient</label>
+      <input type="checkbox" id="orientCheck" checked/>
+      &nbsp;
+      <label for="colormapSelect">Colormap</label>
+      <select id="colormapSelect"></select>
+      &nbsp;
+      <label for="centerSlide" title="window center (level), Hounsfield units">Center</label>
+      <input type="range" id="centerSlide" min="-1000" max="1000" step="1" />
+      <output id="centerText" for="centerSlide"></output>
+      &nbsp;
+      <label for="widthSlide" title="window width, Hounsfield units">Width</label>
+      <input type="range" id="widthSlide" min="1" max="4000" step="1" />
+      <output id="widthText" for="widthSlide"></output>
+      &nbsp;
+      <label for="darkCheck">Clip Dark</label>
+      <input type="checkbox" id="darkCheck">
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked/>
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module">
+      import NiiVue, { lookupColorMap, SHOW_RENDER } from '../src/index.ts'
+
+      orientCheck.onclick = async function () {
+        nv1.isOrientCubeVisible = this.checked
+        nv1.isOrientationTextVisible = this.checked
+      }
+      // The bundled scan. Its URL lives in script, not in the HTML, because the
+      // GitHub Pages base-path rewrite only processes script.
+      volumeSelect.add(new Option('torso', '/volumes/torso.nii.gz'))
+      // CT scans hosted outside this repository, listed after the bundled torso.
+      const CT_BASE = 'https://raw.githubusercontent.com/niivue/niivue-demo-images/main/'
+      // Latest wins: a window change re-colors the whole volume on the GPU (a few
+      // ms here, more for a large scan or a slow GPU). Changes that arrive while
+      // one is in flight merge into a single follow-up instead of queueing up.
+      let pending = null
+      let isBusy = false
+      async function updateVolume(props) {
+        pending = { ...pending, ...props }
+        if (isBusy) return
+        isBusy = true
+        try {
+          while (pending) {
+            const next = pending
+            pending = null
+            await nv1.setVolume(0, next)
+          }
+        } finally {
+          isBusy = false
+        }
+      }
+      function showWindow(calMin, calMax) {
+        // A range input clamps, so the readout shows what the slider really holds.
+        centerSlide.value = Math.round((calMin + calMax) / 2)
+        widthSlide.value = Math.round(calMax - calMin)
+        centerText.value = centerSlide.value
+        widthText.value = widthSlide.value
+      }
+      centerSlide.oninput = widthSlide.oninput = () => {
+        const center = Number(centerSlide.value)
+        const width = Number(widthSlide.value)
+        showWindow(center - width / 2, center + width / 2)
+        updateVolume({ calMin: center - width / 2, calMax: center + width / 2 })
+      }
+      // The window the scan loaded with; gray falls back to it.
+      let loadedRange = [0, 1]
+      // A CT colormap is designed for one Hounsfield window (ct_bones is 180..600),
+      // stored as min/max in its LUT. Selecting it applies that window too.
+      function applyColormap() {
+        const lut = lookupColorMap(colormapSelect.value)
+        const [calMin, calMax] = lut?.min === undefined ? loadedRange : [lut.min, lut.max]
+        showWindow(calMin, calMax)
+        updateVolume({ colormap: colormapSelect.value, calMin, calMax })
+      }
+      volumeSelect.onchange = async function () {
+        try {
+          await nv1.loadVolumes({ url: this.value })
+        } catch (err) {
+          // A failed load (offline, 404) keeps the previous scan on screen.
+          console.error(`Could not load ${this.value}:`, err)
+          return
+        }
+        loadedRange = [nv1.volumes[0].calMin, nv1.volumes[0].calMax]
+        applyColormap()
+      }
+      webgpuCheck.onclick = function () {
+        nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+      }
+      sliceType.onchange = () => {
+        nv1.sliceType = parseInt(sliceType.value, 10)
+      }
+      colormapSelect.onchange = applyColormap
+      function handleLocationChange(data) {
+        document.getElementById("location").innerHTML =
+          `&nbsp;&nbsp;${data.string}`
+      }
+      darkCheck.onclick = function () {
+        nv1.volumeIsAlphaClipDark = this.checked
+      }
+      const nv1 = new NiiVue({backgroundColor: [0.2,0.2,0.2, 1], isColorbarVisible: true, showRender: SHOW_RENDER.ALWAYS })
+      window.nv1 = nv1
+      nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
+      await nv1.attachToCanvas(gl1)
+      // CT windows are tuned for Hounsfield units, so only they and gray apply.
+      const isGray = (c) => c.toLowerCase() === 'gray'
+      const ctMaps = nv1.colormaps.filter((c) => /^ct_/i.test(c))
+      for (const cmap of [...nv1.colormaps.filter(isGray), ...ctMaps]) {
+        const option = document.createElement('option')
+        option.value = cmap
+        option.textContent = cmap.charAt(0).toUpperCase() + cmap.slice(1)
+        if (cmap.toLowerCase() === 'gray') {
+          option.selected = true
+        }
+        colormapSelect.appendChild(option)
+      }
+      // The bundled torso still loads if the remote list is unreachable.
+      try {
+        const manifest = await (await fetch(`${CT_BASE}manifest.json`)).json()
+        for (const name of manifest.filter((n) => n.startsWith('CT_'))) {
+          volumeSelect.add(new Option(name.replace('.nii.gz', ''), CT_BASE + name))
+        }
+      } catch (err) {
+        console.error('Could not list remote CT scans:', err)
+      }
+      sliceType.onchange()
+      orientCheck.onclick()
+      volumeSelect.onchange()
+    </script>
+  </body>
+</html>

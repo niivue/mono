@@ -9,6 +9,7 @@ import {
   SCENE_DEFAULTS,
   VOLUME_DEFAULTS,
 } from '@/NVConstants'
+import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import { applyCORS } from '@/NVLoader'
 import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
 import { blendOverlayData } from '@/view/NVMeshView'
@@ -2083,6 +2084,28 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /**
+   * Cheap per-frame subset of {@link chunkStreamStats}: sums only the chunk
+   * managers' scalar counters, skipping the decoded-tier walk and its
+   * accumulator allocation. The render loop calls this around every
+   * upload-pump run to feed the streaming-event hook, so it must stay O(one
+   * integer read per chunked volume).
+   */
+  chunkStreamCounts(): ChunkStreamCounts {
+    let resident = 0
+    let pending = 0
+    let inFlight = 0
+    let total = 0
+    for (const entry of this._texCache.values()) {
+      if (entry.kind !== 'chunked') continue
+      resident += entry.manager.residentCount
+      pending += entry.manager.pendingUploadCount
+      inFlight += entry.manager.inFlightUploadCount
+      total += entry.manager.chunkCount
+    }
+    return { resident, pending, inFlight, total }
+  }
+
+  /**
    * Aggregate streaming stats across all chunked volumes (base + overlay), for
    * HUD / debug instrumentation. `resident` is bricks currently on the GPU,
    * `pending` queued for upload, `inFlight` mid-upload, `total` the chunk count.
@@ -2092,15 +2115,7 @@ export class VolumeRenderer extends NVRenderer {
    * tiers: its hit rate is the share of source reads that an evicted brick's
    * return cost nothing but an upload.
    */
-  chunkStreamStats(): {
-    resident: number
-    pending: number
-    inFlight: number
-    total: number
-    staleDropped: number
-    predicted: number
-    decoded: DecodedChunkStats
-  } {
+  chunkStreamStats(): ChunkStreamDetail {
     let resident = 0
     let pending = 0
     let inFlight = 0

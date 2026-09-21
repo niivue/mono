@@ -197,6 +197,9 @@ export async function attachToCanvas(
     }
   }
   ctrl.view = view
+  // Hooks go on before the resize() below draws the first frame: a preloaded
+  // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
+  ctrl._wireViewHooks()
 
   if (!view) {
     // Every available backend failed. Don't leave the controller registered, and
@@ -338,6 +341,9 @@ export async function recreateView(
   // 7. Initialize the new view, publishing it only once init() resolves
   await view.init()
   ctrl.view = view
+  // Hooks go on before the resize() below draws the first frame: a preloaded
+  // chunked volume starts streaming on it (see NiiVue._wireViewHooks).
+  ctrl._wireViewHooks()
   // 7b. Reload thumbnail if it was active before recreation
   if (ctrl.opts.thumbnail && ctrl.model.ui.isThumbnailVisible) {
     await ctrl.view.loadThumbnail(ctrl.opts.thumbnail as string)

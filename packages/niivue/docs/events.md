@@ -304,6 +304,60 @@ nv.addEventListener('colormapAdded', (e) => {
 
 ---
 
+### Chunk Streaming
+
+Chunked (oversized) volumes stream their bricks to the GPU over multiple
+frames. These events replace polling `chunkStreamStats()` on a timer. Both
+carry a `ChunkStreamDetail` — the same shape as the non-null return of
+`chunkStreamStats()`, and the method reads back the same counts at emit time.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `resident` | `number` | Bricks currently GPU-resident |
+| `pending` | `number` | Bricks queued for upload |
+| `inFlight` | `number` | Bricks mid-upload |
+| `total` | `number` | Bricks in the plan |
+| `staleDropped` | `number` | Cumulative queued uploads retired because the view moved on |
+| `predicted` | `number` | Cumulative speculative source reads |
+| `decoded` | `DecodedChunkStats` | Decoded-chunk (CPU byte) tier counters |
+
+#### `chunkStreamProgress`
+Fired on a drawn frame while streaming is outstanding (`pending + inFlight > 0`),
+whenever a count changed since the last emission — identical back-to-back
+snapshots are skipped, so the render loop's cadence bounds the rate (no timer).
+The final, settled counts are also emitted as progress, immediately before
+`chunkStreamIdle`.
+
+#### `chunkStreamIdle`
+Fired when the stream settles: a drawn frame had `pending + inFlight > 0`, and a
+later drawn frame is complete — nothing queued or mid-upload for the working set
+that frame requested, and no brick still cross-fading in. It is emitted after
+that frame's draw has been submitted, so the canvas shows every brick the frame
+asked for and a listener may capture it.
+
+What idle does and does not promise:
+
+- `resident < total` on the idle frame is normal under a residency budget: idle
+  means the visible working set is resident, not the whole plan.
+- A brick whose upload failed is not resident and does not settle the stream;
+  the next drawn frame re-requests it.
+- Because `chunkStreamStats()` returns zeroed counts (not null) whenever a view
+  is attached, idle is defined on this transition — it never fires for a view
+  that is attached but has not streamed.
+- Streaming that resumes (e.g. a camera move queues new bricks) re-arms it, so
+  it fires once per settle.
+
+```js
+nv.addEventListener('chunkStreamProgress', (e) => {
+  spinner.textContent = `${e.detail.resident} / ${e.detail.total} bricks`
+})
+nv.addEventListener('chunkStreamIdle', () => {
+  spinner.hidden = true // the frame on screen shows every brick it asked for
+})
+```
+
+---
+
 ### Drawing
 
 #### `drawingChanged`
@@ -445,5 +499,7 @@ import type {
   AnnotationRemovedDetail,
   AnnotationChangedDetail,
   ColormapAddedDetail,
+  ChunkStreamDetail,
+  DecodedChunkStats,
 } from '@niivue/niivue'
 ```

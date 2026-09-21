@@ -32,6 +32,32 @@ void main() {
   if (lenVox < 0.5) {
     discard;
   }
+  // SLICES mode draws three planes, not a marched surface, so the pick lands on
+  // the nearest VISIBLE plane hit. Visibility must be the same rule the render
+  // uses (background baked alpha, or the overlay), or a double-click lands
+  // somewhere the user cannot see. Mirrored in wgpu/depthPick.ts.
+  if (isRenderMode(RENDER_MODE_SLICES)) {
+    float best = -1.0;
+    for (int k = 0; k < 3; k++) {
+      if (abs(dir[k]) < 1e-8) { continue; }
+      float tk = (sliceFrac[k] - start[k]) / dir[k];
+      if (tk < 0.0 || tk >= len) { continue; }
+      if (best >= 0.0 && tk >= best) { continue; }
+      vec3 pos = start + dir * tk;
+      bool visible = texture(volume, chunkTexCoord(pos)).a > 0.0;
+      if (!visible && numVolumes > 1.0) {
+        visible = texture(overlay, chunkTexCoord(pos)).a > 0.0;
+      }
+      if (visible) { best = tk; }
+    }
+    if (best < 0.0) {
+      discard;
+    }
+    float sliceDepth = frac2ndc(start + dir * best);
+    FragColor = packDepth(sliceDepth);
+    gl_FragDepth = sliceDepth;
+    return;
+  }
   // Save original ray for overlay passes (overlay ignores clip planes)
   vec3 origStart = start;
   float origLen = len;

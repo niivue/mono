@@ -37,8 +37,17 @@ export enum DRAG_MODE {
  * sparse bright structure (vessels in an angiogram, labelled structures in a
  * fluorescence stack) visible through everything in front of it.
  *
- * Applies to the 3D render only; a 2D slice draws one plane, where the two
- * modes are identical.
+ * SLICES does not march at all: it shows the axial, coronal and sagittal
+ * planes through the crosshair inside the 3D tile, compositing the (at most
+ * three) plane hits front to back. Layers -- overlay, PAQD and drawing -- are
+ * sampled on the planes the way the 2D tiles blend them, and a voxel whose
+ * baked alpha is 0 is transparent, so air never hides a farther plane. At most
+ * three samples per ray makes it the cheapest 3D view. Clip planes and all
+ * lighting (illumination, gradient opacity, silhouette) are ignored: a plane
+ * has no surface to shade.
+ *
+ * Applies to the 3D render only; a 2D slice draws one plane, where the modes
+ * are identical.
  *
  * MAXIMUM on a CHUNKED (streamed) volume additionally assumes a black
  * background. The per-chunk cube draws are merged with a component-wise MAX
@@ -52,6 +61,7 @@ export enum DRAG_MODE {
 export enum VOLUME_RENDER_MODE {
   COMPOSITE = 0,
   MAXIMUM = 1,
+  SLICES = 2,
 }
 
 /**

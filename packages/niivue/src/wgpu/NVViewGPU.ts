@@ -802,9 +802,18 @@ export default class NVView {
     // (entry creation, request, pump) so chunk uploaders can skip the gradient
     // pass when unlit. Matches the gradientAmount passed to the volume draw.
     this.volumeRenderer.gradientAmount = md.volume.illumination
-    // Composite (OVER) vs maximum-intensity projection, for every volume pass this
-    // frame (base, overlay, PAQD, drawing, and the independent hi-res overlay cube).
+    // Composite (OVER) vs maximum-intensity projection vs orthogonal slices, for
+    // every volume pass this frame (base, overlay, PAQD, drawing, and the
+    // independent hi-res overlay cube).
     this.volumeRenderer.renderMode = md.volume.renderMode
+    // The crosshair planes SLICES draws, in the base volume's texture fraction —
+    // the same conversion the 2D tiles use, so sheared and oblique volumes line
+    // up with them.
+    this.volumeRenderer.sliceFrac = [
+      md.getSliceTexFrac(0),
+      md.getSliceTexFrac(1),
+      md.getSliceTexFrac(2),
+    ]
     // Ray samples per voxel in the 3D fine march (anti-aliasing vs fragment cost).
     this.volumeRenderer.sampleRate = md.volume.sampleRate
     // Tricubic B-spline reconstruction in the fine march (8 fetches vs 1).
@@ -2688,6 +2697,26 @@ export default class NVView {
           1,
           mvpMatrix as mat4,
         )
+        // SLICES draws three crosshair planes, so the pick lands on the nearest
+        // VISIBLE plane crossing rather than on the near surface — the same rule
+        // the GPU shaders use for a non-chunked volume.
+        // ponytail: un-exploded only. Exploded blocks displace the planes with
+        // them, so they keep the block pick below; give them their own plane
+        // maths if anyone picks in an exploded SLICES view.
+        if (
+          md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.SLICES &&
+          !chunkExplodeEnabled(vol.chunkExplode)
+        ) {
+          const crossMM = md.scene2mm(md.scene.crosshairPos)
+          return NVTransforms.rayPlaneFirstVisibleMM(
+            near,
+            far,
+            vol.extentsMin,
+            vol.extentsMax,
+            crossMM,
+            vol.pickSampler,
+          )
+        }
         // Exploded view: blocks are displaced, so the un-exploded bounding box no
         // longer matches what's on screen. Pick against each block's exploded
         // AABB (first window-visible voxel in the hit block) and map the recovered
@@ -2792,27 +2821,33 @@ export default class NVView {
         const renderParamPadding = [
           md.scene.clipPlaneOverlay ? 1.0 : 0.0,
           1.0, // fadeAlpha: no cross-fade in a pick draw
-          0,
+          // renderMode: live, because SLICES picks a plane rather than the
+          // first opaque voxel (WebGL2 sets the same uniform in drawDepthPick).
+          md.volume.renderMode,
           0,
           1.0, // invGamma: neutral
           0, // lodOpacityScale: unused by the pick shader
           1.0, // backOpacity: neutral
         ]
+        // The chunkSubOrigin / chunkSubSize / dataOriginTexFrac .w lanes carry
+        // the crosshair planes for SLICES mode, not padding. See sliceFrac() in
+        // wgpu/volumeShaderLib.ts.
+        const sliceFrac = vr.sliceFrac
         const identityChunkUniforms = [
           ...volumeTexDimsFull,
           1,
           0,
           0,
           0,
+          sliceFrac[0],
           1,
           1,
           1,
-          1,
-          1,
+          sliceFrac[1],
           0,
           0,
           0,
-          1,
+          sliceFrac[2],
           1,
           1,
           1,

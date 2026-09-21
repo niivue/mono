@@ -76,6 +76,19 @@ uniform vec3 dataSizeTexFrac;
 in vec3 vColor;
 out vec4 FragColor;
 
+// Volume render mode, mirroring VOLUME_RENDER_MODE in NVConstants.ts. It is a
+// float, so always compare by proximity: a \`> 0.5\` test reads SLICES as MAXIMUM.
+uniform float renderMode;
+const float RENDER_MODE_MAXIMUM = 1.0;
+const float RENDER_MODE_SLICES = 2.0;
+// The three crosshair planes in full-volume texture fraction, for
+// RENDER_MODE_SLICES. 1.0 when unused, which is off-cube and hits nothing.
+uniform vec3 sliceFrac;
+
+bool isRenderMode(float mode) {
+  return abs(renderMode - mode) < 0.5;
+}
+
 vec3 chunkTexCoord(vec3 samplePos) {
   vec3 chunkLocal = (samplePos - chunkSubOrigin) / chunkSubSize;
   return dataOriginTexFrac + chunkLocal * dataSizeTexFrac;

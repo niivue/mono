@@ -1577,6 +1577,24 @@ Guards: Each optional pass checks `textureSize > 2` (placeholder is 2×2×2 all 
 
 Specialization: a uniform that is constant for a draw still costs per pixel (runtime branches block dead-code elimination; inactive clip planes alone cost ~20%), so gate features with the compile-time flags in `view/NVRenderVariant.ts` (WGSL `override`, GLSL `#define`), ANDed with the runtime test. On WebGPU, draws with an overlay, PAQD or drawing layer stay generic: specializing them measured up to 40% slower on Metal, so re-measure before extending it there.
 
+Render modes: `renderMode` is one field holding a `VOLUME_RENDER_MODE`, so
+always test it for EQUALITY (`isRenderMode()` in the shader preambles,
+`=== VOLUME_RENDER_MODE.X` on the CPU). A `> 0.5` test reads `SLICES` as
+`MAXIMUM` — which picks the MIP shader variant and, on a chunked volume, the MAX
+blend equation.
+
+`SLICES` does not march at all. It intersects the ray with the three crosshair
+planes, samples the whole layer stack at each hit with `sampleSlice()` (the
+order the 2D tiles blend in, not the march's per-layer passes), and composites
+the hits front to back with air transparent. The planes arrive in the
+`sliceFrac` GLSL uniform / three `.w` lanes of the WebGPU `Params` struct (see
+`sliceFrac()` in `wgpu/volumeShaderLib.ts`) — lanes, not a bigger struct,
+because `Params` is 512 bytes with one 256-byte-aligned slot per tile AND per
+chunk. Geometry needs nothing chunk-specific: `start`/`dir`/`len` already come
+from the drawn cube. The depth-pick shaders carry the same plane test, and
+`NVTransforms.rayPlaneFirstVisibleMM` is its CPU twin for chunked volumes the
+GPU pick cannot sample.
+
 ### PAQD (probabilistic atlas with quantized distances)
 
 GPU-side visualization: raw data (idx1, idx2, prob1, prob2 as rgba8unorm) uploaded with 256-entry label LUT texture. Shaders perform LUT lookup, probability-weighted blending, and alpha easing. **Split sampling**: label indices use nearest-neighbor; probabilities use linear interpolation.

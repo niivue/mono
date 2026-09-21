@@ -17,6 +17,7 @@ override HAS_OVERLAY: bool = true;
 override HAS_PAQD: bool = true;
 override HAS_DRAWING: bool = true;
 override CHUNKED: bool = true;
+override IS_SLICES: bool = true;
 
 // Step-size opacity correction 1 - (1 - a)^e. e is 1 / sampleRate for every
 // full sample, so the common rates skip pow().
@@ -469,6 +470,56 @@ fn distance2Plane(samplePos: vec4f, clipPlane: vec4f) -> f32 {
     return abs(signedDist) / nlen;
 }
 
+// One layer-stack sample at a plane hit, blended in the order the 2D tiles use
+// (see wgpu/slice.wgsl). Returns PREMULTIPLIED rgba; alpha 0 means the plane is
+// transparent here, so whatever lies behind it shows through. Mirrored in
+// gl/renderShader.ts -- keep the two in step.
+fn sampleSlice(pos: vec3f) -> vec4f {
+    let volCoord = chunkTexCoord(pos);
+    let bg = textureSampleLevel(volume, tex_sampler, volCoord, 0.0);
+    // Air (baked alpha 0) is transparent rather than black: the whole point of
+    // compositing three planes is that the farther ones stay visible.
+    var a = select(0.0, params.backOpacity, bg.a > 0.0);
+    var rgb = applyGamma(bg.rgb, params.invGamma);
+    if (HAS_OVERLAY && textureDimensions(overlay, 0).x > 2) {
+        let ov = textureSampleLevel(overlay, tex_sampler, volCoord, 0.0);
+        let oa = a + ov.a * (1.0 - a);
+        if (oa > 0.0) {
+            rgb = mix(rgb, applyGamma(ov.rgb, params.invGamma), ov.a / oa);
+            a = oa;
+        }
+    }
+    if (HAS_PAQD && textureDimensions(paqd, 0).x > 2) {
+        let pDims = vec3f(textureDimensions(paqd, 0));
+        // Nearest for BOTH the label indices and the probabilities. The 2D tiles
+        // sample the probabilities linearly, but the GL PAQD texture is
+        // NEAREST-filtered, so a linear tap there would silently be nearest and
+        // the two backends would drift.
+        let raw = textureLoad(paqd, vec3i(clamp(volCoord * pDims, vec3f(0.0), pDims - 1.0)), 0);
+        let total = raw.b + raw.a;
+        if (total > 0.004) {
+            let c1 = textureLoad(paqdLut, vec2i(clamp(i32(round(raw.r * 255.0)), 0, 255), 0), 0);
+            let c2 = textureLoad(paqdLut, vec2i(clamp(i32(round(raw.g * 255.0)), 0, 255), 0), 0);
+            let prgb = mix(c1.rgb, c2.rgb, raw.a / total);
+            let palpha = paqdEaseAlpha(raw.b, params.paqdUniforms);
+            if (palpha > 0.0) {
+                let na = palpha + a * (1.0 - palpha);
+                rgb = mix(rgb, prgb, palpha / max(na, 0.001));
+                a = na;
+            }
+        }
+    }
+    if (HAS_DRAWING && textureDimensions(drawing, 0).x > 2) {
+        let dDims = vec3f(textureDimensions(drawing, 0));
+        let dc = textureLoad(drawing, vec3i(clamp(volCoord * dDims, vec3f(0.0), dDims - 1.0)), 0);
+        if (dc.a > 0.0) {
+            rgb = mix(rgb, dc.rgb, dc.a);
+            a = max(a, dc.a);
+        }
+    }
+    return vec4f(rgb * a, a);
+}
+
 @fragment
 fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	let rayStart = in.vColor;
@@ -490,6 +541,45 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	let lenVox = length(dirVec * texVox);
 	if (lenVox < 0.5) {
 		discard;
+	}
+	// --- Orthogonal slices (VOLUME_RENDER_MODE.SLICES) ---
+	// No march: intersect the ray with the three crosshair planes and composite
+	// the hits front to back. start/dir/len already come from this chunk's own
+	// cube, so a chunked draw needs nothing extra. Mirrored in
+	// gl/renderShader.ts -- keep the two in step.
+	if (IS_SLICES && isRenderMode(RENDER_MODE_SLICES)) {
+		let planes = sliceFrac();
+		let NO_HIT = 1e20;
+		var t = vec3f(NO_HIT);
+		for (var k: i32 = 0; k < 3; k++) {
+			if (abs(dir[k]) < 1e-8) { continue; }
+			let tk = (planes[k] - start[k]) / dir[k];
+			// Half-open [0, len): a hit on a chunk's exit face belongs to the next
+			// chunk along the ray, so a shared plane is composited exactly once.
+			if (tk >= 0.0 && tk < len) { t[k] = tk; }
+		}
+		// Sorting network, nearest first.
+		if (t.x > t.y) { let s = t.x; t.x = t.y; t.y = s; }
+		if (t.y > t.z) { let s = t.y; t.y = t.z; t.z = s; }
+		if (t.x > t.y) { let s = t.x; t.x = t.y; t.y = s; }
+		var acc = vec4f(0.0);
+		var firstHit = vec3f(0.0);
+		var hasHit = false;
+		for (var i: i32 = 0; i < 3; i++) {
+			if (t[i] >= NO_HIT) { break; }
+			let pos = start + dir * t[i];
+			let c = sampleSlice(pos);
+			if (c.a > 0.0) {
+				if (!hasHit) { hasHit = true; firstHit = pos; }
+				acc += (1.0 - acc.a) * c;
+				if (acc.a > 0.999) { break; }
+			}
+		}
+		if (!hasHit) { discard; }
+		var sliceOut: FragmentOutput;
+		sliceOut.color = acc * params.fadeAlpha;
+		sliceOut.fragDepth = frac2ndc(firstHit);
+		return sliceOut;
 	}
 	// Opacity (step-size) correction. A coarse multi-LOD brick takes fewer
 	// samples along the ray, so without this it accumulates less alpha and
@@ -521,7 +611,7 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
 	// Maximum-intensity projection: every pass takes a component-wise max of the
 	// premultiplied sample instead of compositing OVER, and no pass may early-
 	// terminate (the maximum can lie anywhere along the ray).
-	let mip = IS_MIP && params.renderMode > 0.5;
+	let mip = IS_MIP && isRenderMode(RENDER_MODE_MAXIMUM);
 	let stepSize = len / lenVox;
 	let deltaDir = vec4f(dir * stepSize, stepSize);
 	var localGradientAmount = select(params.gradientAmount, 0.0, overlayMode);

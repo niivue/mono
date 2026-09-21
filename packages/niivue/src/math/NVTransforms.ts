@@ -816,6 +816,48 @@ export function rayMarchFirstVisibleMM(
 }
 
 /**
+ * Nearest mm point where the segment `near`->`far` crosses one of the three
+ * axis-aligned mm planes through `planeMM`, inside the box `[lo, hi]` and over a
+ * visible voxel (`sampler(x,y,z) > 0`; without a sampler every crossing counts).
+ *
+ * The CPU twin of the SLICES branch in the render and depth-pick shaders, for
+ * chunked volumes whose (non-single) texture the GPU pick cannot sample. Clip
+ * planes are ignored, as they are in that mode. Returns null when the ray
+ * crosses no plane where anything is visible — the planes really are empty
+ * there, so the crosshair should not move.
+ */
+export function rayPlaneFirstVisibleMM(
+  near: ArrayLike<number>,
+  far: ArrayLike<number>,
+  lo: ArrayLike<number>,
+  hi: ArrayLike<number>,
+  planeMM: ArrayLike<number>,
+  sampler?: (x: number, y: number, z: number) => number,
+): [number, number, number] | null {
+  const seg = clipRaySegment(near, far, lo, hi)
+  if (!seg) return null
+  const { o, d, tmin, tmax } = seg
+  let best: [number, number, number] | null = null
+  let bestT = Number.POSITIVE_INFINITY
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-9) continue
+    const t = (planeMM[i] - o[i]) / d[i]
+    if (!(t >= tmin && t <= tmax) || t >= bestT) continue
+    const p: [number, number, number] = [
+      o[0] + d[0] * t,
+      o[1] + d[1] * t,
+      o[2] + d[2] * t,
+    ]
+    // Pin to the plane: the division leaves the hit a float epsilon off it.
+    p[i] = planeMM[i]
+    if (sampler && !(sampler(p[0], p[1], p[2]) > 0)) continue
+    bestT = t
+    best = p
+  }
+  return best
+}
+
+/**
  * Compute the plane equation (normal + point) for a 2D slice defined by the
  * volume's `frac2mm` matrix, a slice type, and a slice fraction.
  * Returns null if the plane degenerates (zero-area cross product).

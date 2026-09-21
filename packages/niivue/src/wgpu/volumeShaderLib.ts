@@ -32,8 +32,9 @@ struct Params {
     // Lives in what was _pad0's first lane, so struct size/offsets are unchanged.
     fadeAlpha: f32,
     // Volume render mode: 0 = composite (OVER), 1 = maximum-intensity
-    // projection. Sits in the implicit padding f32 between fadeAlpha and the
-    // 8-byte-aligned _pad0, so struct size and all later offsets are unchanged.
+    // projection, 2 = orthogonal slices. Sits in the implicit padding f32
+    // between fadeAlpha and the 8-byte-aligned _pad0, so struct size and all
+    // later offsets are unchanged. Test it with isRenderMode(), never \`> 0.5\`.
     renderMode: f32,
     // 0 = hardware trilinear, 1 = tricubic B-spline reconstruction in the
     // background fine pass. Occupies what was _pad0's first lane, so the struct
@@ -78,6 +79,9 @@ struct Params {
     // halo. The fragment shader then clips ray marching back to the chunk's
     // owned data sub-cube and remaps samples into [dataOrigin, dataOrigin+dataSize],
     // letting trilinear sampling pull from halo voxels without double-counting them.
+    // The three trailing .w lanes below are not padding: chunkSubOrigin.w,
+    // chunkSubSize.w and dataOriginTexFrac.w carry the crosshair planes for
+    // RENDER_MODE_SLICES. See sliceFrac().
     volumeTexDimsFull: vec4f,
     chunkSubOrigin: vec4f,
     chunkSubSize: vec4f,
@@ -114,6 +118,25 @@ struct Params {
     // this struct but never reads them -- a pick reads geometry, not opacity.
     gradientOpacity: f32,
     silhouettePower: f32,
+}
+
+// Volume render modes, mirroring VOLUME_RENDER_MODE in NVConstants.ts.
+// renderMode is an f32, so always compare by proximity: a \`> 0.5\` test reads
+// SLICES as MAXIMUM.
+const RENDER_MODE_MAXIMUM: f32 = 1.0;
+const RENDER_MODE_SLICES: f32 = 2.0;
+
+fn isRenderMode(mode: f32) -> bool {
+    return abs(params.renderMode - mode) < 0.5;
+}
+
+// The three crosshair planes, in full-volume texture fraction, for
+// RENDER_MODE_SLICES. They ride in three of the vec4 trailing lanes above so
+// the 512-byte Params struct (256-byte aligned, one slot per tile AND per
+// chunk) does not grow. Written by _writeRenderParams in wgpu/render.ts; 1.0
+// when unused, which is off-cube and hits nothing.
+fn sliceFrac() -> vec3f {
+    return vec3f(params.chunkSubOrigin.w, params.chunkSubSize.w, params.dataOriginTexFrac.w);
 }
 
 // Remap a sample position from full-volume [0,1] cube space to the local chunk

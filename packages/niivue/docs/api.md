@@ -88,7 +88,19 @@ nv1.drawPenValue = 3
 `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible`, `is3DCrosshairVisible`, `isGraphVisible`, `isRulerVisible`, `isCrossLinesVisible`, `isLegendVisible`, `isPositionInMM`, `isMeasureUnitsVisible`, `isThumbnailVisible`, `thumbnailUrl`, `placeholderText`, `crosshairColor`, `crosshairGap`, `crosshairWidth`, `fontColor`, `fontScale`, `fontMinSize`, `selectionBoxColor`, `measureLineColor`, `measureTextColor`, `rulerWidth`, `graphNormalizeValues`, `graphIsRangeCalMinMax`
 
 **Volume** (prefix `volume` -- delegate to `model.volume`):
-`volumeIllumination`, `volumeOutlineWidth`, `volumeAlphaShader`, `volumeIsBackgroundMasking`, `volumeIsAlphaClipDark`, `volumeIsNearestInterpolation`, `volumeIsV1SliceShader`, `volumeMatcap`, `volumePaqdUniforms`
+`volumeIllumination`, `volumeRenderMode`, `volumeOutlineWidth`, `volumeAlphaShader`, `volumeIsBackgroundMasking`, `volumeIsAlphaClipDark`, `volumeIsNearestInterpolation`, `volumeIsV1SliceShader`, `volumeMatcap`, `volumePaqdUniforms`
+
+`volumeRenderMode` takes a `VOLUME_RENDER_MODE` and applies to the 3D render only:
+
+| Value | Mode | What it draws |
+|-------|------|---------------|
+| `COMPOSITE` (0, default) | emission-absorption OVER | a solid, depth-ordered object |
+| `MAXIMUM` (1) | maximum-intensity projection | the brightest sample per ray, through everything in front of it |
+| `SLICES` (2) | orthogonal slices | the three crosshair planes, composited front to back |
+
+`SLICES` does not ray-march: it takes at most three samples per ray, so it is
+the cheapest 3D view. Overlays, PAQD and the drawing are sampled on the planes
+the way the 2D tiles blend them; clip planes and all lighting are ignored.
 
 **Mesh** (prefix `mesh` -- delegate to `model.mesh`):
 `meshXRay`, `meshThicknessOn2D`

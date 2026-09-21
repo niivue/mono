@@ -8,6 +8,7 @@ import {
   lodOpacityScale,
   SCENE_DEFAULTS,
   VOLUME_DEFAULTS,
+  VOLUME_RENDER_MODE,
 } from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
@@ -427,8 +428,13 @@ export class VolumeRenderer extends NVRenderer {
   // with the base volume instead of letting them ignore the clip plane.
   clipPlaneOverlay = false
   // Volume flag (set per-frame from md.volume.renderMode): 0 = composite (OVER),
-  // 1 = maximum-intensity projection. See VOLUME_RENDER_MODE.
+  // 1 = maximum-intensity projection, 2 = orthogonal slices. See
+  // VOLUME_RENDER_MODE.
   renderMode = 0
+  // The three crosshair planes in the base volume's texture fraction (set
+  // per-frame from model.getSliceTexFrac), read only in SLICES mode. 1 is
+  // off-cube, so the default hits nothing.
+  sliceFrac: [number, number, number] = [1, 1, 1]
   // Which stencil the overlay/drawing passes estimate their own gradient with
   // (from md.volume.layerGradientMode). The background volume reads a
   // precomputed gradient texture and is unaffected. See LAYER_GRADIENT_MODE.
@@ -2735,6 +2741,9 @@ export class VolumeRenderer extends NVRenderer {
 
     // With an overlay, PAQD or drawing layer in the ray march, specialization
     // measured slower on Metal (up to +40%), so those draws stay generic.
+    // SLICES has no march loops to specialize away: exempting it measured
+    // 0.66 vs 0.72 ms/frame with three overlays, which is below the bench's
+    // trustworthy floor, so it stays on the same rule as the rest.
     const hasLayer =
       this._bindTexOverlay !== this.placeholderOverlay ||
       this._bindTexPaqd !== this.placeholderOverlay ||
@@ -2994,7 +3003,9 @@ export class VolumeRenderer extends NVRenderer {
     // MIP rule (depthAwareMix), so the result is the true full-ray maximum
     // independent of chunk draw order.
     pass.setPipeline(
-      this.renderMode > 0.5 ? this.pipelineChunkedMip : this.pipelineChunked,
+      this.renderMode === VOLUME_RENDER_MODE.MAXIMUM
+        ? this.pipelineChunkedMip
+        : this.pipelineChunked,
     )
     pass.setVertexBuffer(0, this.vertexBuffer)
     pass.setIndexBuffer(this.indexBuffer, 'uint16')
@@ -3302,12 +3313,15 @@ export class VolumeRenderer extends NVRenderer {
         backOpacity,
         ...chunkUniforms.volumeTexDimsFull,
         1,
+        // The next three .w lanes are NOT padding: they carry the crosshair
+        // planes for SLICES mode (see sliceFrac() in volumeShaderLib.ts), which
+        // is why the 512-byte Params struct does not have to grow for them.
         ...chunkUniforms.chunkSubOrigin,
-        1,
+        this.sliceFrac[0],
         ...chunkUniforms.chunkSubSize,
-        1,
+        this.sliceFrac[1],
         ...chunkUniforms.dataOriginTexFrac,
-        1,
+        this.sliceFrac[2],
         ...chunkUniforms.dataSizeTexFrac,
         1,
         ...chunkUniforms.rayStepTexVox,

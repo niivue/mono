@@ -8,6 +8,7 @@ import {
   lodOpacityScale,
   SCENE_DEFAULTS,
   VOLUME_DEFAULTS,
+  VOLUME_RENDER_MODE,
 } from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import { applyCORS } from '@/NVLoader'
@@ -378,8 +379,13 @@ export class VolumeRenderer extends NVRenderer {
   // with the base volume instead of letting them ignore the clip plane.
   clipPlaneOverlay = false
   // Volume flag (set per-frame from md.volume.renderMode): 0 = composite (OVER),
-  // 1 = maximum-intensity projection. See VOLUME_RENDER_MODE.
+  // 1 = maximum-intensity projection, 2 = orthogonal slices. See
+  // VOLUME_RENDER_MODE.
   renderMode = 0
+  // The three crosshair planes in the base volume's texture fraction (set
+  // per-frame from model.getSliceTexFrac), read only in SLICES mode. 1 is
+  // off-cube, so the default hits nothing.
+  sliceFrac: [number, number, number] = [1, 1, 1]
   // Scene display gamma (set per-frame from md.scene.gamma). Applied to the
   // classified RGB of every volume sample, never to alpha, so brightening does
   // not change how much a ray occludes. 1.0 is a strict no-op.
@@ -2518,6 +2524,8 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1f(shader.uniforms.overlayLayerMode, 0.0)
     if (shader.uniforms.renderMode)
       gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
+    if (shader.uniforms.sliceFrac)
+      gl.uniform3fv(shader.uniforms.sliceFrac, this.sliceFrac)
     // Default fully present; the chunk loop overrides per fading chunk.
     if (shader.uniforms.fadeAlpha) gl.uniform1f(shader.uniforms.fadeAlpha, 1.0)
     if (shader.uniforms.paqdUniforms)
@@ -2686,7 +2694,7 @@ export class VolumeRenderer extends NVRenderer {
     // brighter voxel in a farther chunk). Assumes a black tile behind the cube
     // (the classic MAX-blend MIP convention); non-chunked MIP composites OVER.
     // GL_MAX ignores the blend factors. Restored to FUNC_ADD after the loop.
-    const mip = this.renderMode > 0.5
+    const mip = this.renderMode === VOLUME_RENDER_MODE.MAXIMUM
     if (mip) gl.blendEquation(gl.MAX)
     const explode = entry.volume.chunkExplode
     const order = chunksBackToFront(
@@ -2964,6 +2972,8 @@ export class VolumeRenderer extends NVRenderer {
       gl.uniform1f(shader.uniforms.overlayLayerMode, 1.0)
     if (shader.uniforms.renderMode)
       gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
+    if (shader.uniforms.sliceFrac)
+      gl.uniform3fv(shader.uniforms.sliceFrac, this.sliceFrac)
     if (shader.uniforms.paqdUniforms)
       gl.uniform4fv(shader.uniforms.paqdUniforms, paqdUniforms as number[])
     if (shader.uniforms.earlyTermination)
@@ -3050,6 +3060,11 @@ export class VolumeRenderer extends NVRenderer {
       )
     if (shader.uniforms.numVolumes)
       gl.uniform1f(shader.uniforms.numVolumes, volumeCount)
+    // SLICES mode: the pick lands on a plane, not on the first opaque voxel.
+    if (shader.uniforms.renderMode)
+      gl.uniform1f(shader.uniforms.renderMode, this.renderMode)
+    if (shader.uniforms.sliceFrac)
+      gl.uniform3fv(shader.uniforms.sliceFrac, this.sliceFrac)
     // Depth pick uses a single volume texture; pass identity chunk uniforms
     // so the shared vertex shader / preamble run in non-chunked mode.
     this._setChunkUniforms(gl, shader, {

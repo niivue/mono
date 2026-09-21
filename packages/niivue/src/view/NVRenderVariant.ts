@@ -1,3 +1,5 @@
+import { VOLUME_RENDER_MODE } from '@/NVConstants'
+
 /**
  * Compile-time specialization of the volume ray-march shader (WGSL `override`
  * constants, GLSL `#define`s). Each flag is ANDed with the runtime test it
@@ -16,6 +18,7 @@ const RENDER_VARIANT_FLAGS = [
   'HAS_PAQD',
   'HAS_DRAWING',
   'CHUNKED',
+  'IS_SLICES',
 ] as const
 
 /** Every flag set: the unspecialized shader, valid for any draw. */
@@ -45,13 +48,14 @@ export function renderVariantKey(s: RenderVariantState): number {
   const bits = [
     hasClip,
     s.isClipCutaway,
-    s.renderMode > 0.5,
+    s.renderMode === VOLUME_RENDER_MODE.MAXIMUM,
     s.cubic,
     s.gradientAmount > 0 || s.gradientOpacity > 0 || s.silhouette > 0,
     s.hasOverlay,
     s.hasPaqd,
     s.hasDrawing,
     false,
+    s.renderMode === VOLUME_RENDER_MODE.SLICES,
   ]
   return bits.reduce((key, on, i) => (on ? key | (1 << i) : key), 0)
 }

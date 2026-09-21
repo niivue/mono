@@ -37,6 +37,36 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
     var dummy: FragmentOutput;
     return dummy;
   }
+  // SLICES mode draws three planes, not a marched surface, so the pick lands on
+  // the nearest VISIBLE plane hit. Visibility must be the same rule the render
+  // uses (background baked alpha, or the overlay), or a double-click lands
+  // somewhere the user cannot see. Mirrored in gl/depthPickShader.ts.
+  if (isRenderMode(RENDER_MODE_SLICES)) {
+    let planes = sliceFrac();
+    var best = -1.0;
+    for (var k: i32 = 0; k < 3; k++) {
+      if (abs(dir[k]) < 1e-8) { continue; }
+      let tk = (planes[k] - start[k]) / dir[k];
+      if (tk < 0.0 || tk >= len) { continue; }
+      if (best >= 0.0 && tk >= best) { continue; }
+      let pos = start + dir * tk;
+      var visible = textureSampleLevel(volume, tex_sampler, chunkTexCoord(pos), 0.0).a > 0.0;
+      if (!visible && params.numVolumes > 1.0) {
+        visible = textureSampleLevel(overlay, tex_sampler, chunkTexCoord(pos), 0.0).a > 0.0;
+      }
+      if (visible) { best = tk; }
+    }
+    if (best < 0.0) {
+      discard;
+      var dummy: FragmentOutput;
+      return dummy;
+    }
+    let sliceDepth = frac2ndc(start + dir * best);
+    var sliceOut: FragmentOutput;
+    sliceOut.color = packDepth((sliceDepth + 1.0) / 2.0);
+    sliceOut.fragDepth = sliceDepth;
+    return sliceOut;
+  }
   // Save original ray for overlay passes (overlay ignores clip planes)
   let origStart = start;
   let origLen = len;

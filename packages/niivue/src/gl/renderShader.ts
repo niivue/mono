@@ -27,8 +27,6 @@ uniform float overlayLayerMode;
 // color is multiplied by this so a freshly-resident fine chunk dissolves in
 // over the coarse floor instead of popping. 1.0 for every non-fading draw.
 uniform float fadeAlpha;
-// Volume render mode: 0 = composite (OVER), 1 = maximum-intensity projection.
-uniform float renderMode;
 uniform float earlyTermination;
 // Per-brick source-level voxel dims for the ray-step density (multi-LOD). Equals
 // volumeTexDimsFull for single-level/non-chunked draws.
@@ -542,6 +540,55 @@ float distance2Plane(vec4 samplePos, vec4 clipPlane) {
   return abs(signedDist) / nlen;
 }
 
+// One layer-stack sample at a plane hit, blended in the order the 2D tiles use
+// (see gl/sliceShader.ts). Returns PREMULTIPLIED rgba; alpha 0 means the plane
+// is transparent here, so whatever lies behind it shows through. Mirrors
+// sampleSlice in wgpu/render.wgsl -- keep the two in step.
+vec4 sampleSlice(vec3 pos) {
+  vec3 volCoord = chunkTexCoord(pos);
+  vec4 bg = texture(volume, volCoord);
+  // Air (baked alpha 0) is transparent rather than black: the whole point of
+  // compositing three planes is that the farther ones stay visible.
+  float a = bg.a > 0.0 ? backOpacity : 0.0;
+  vec3 rgb = applyGamma(bg.rgb, invGamma);
+  if (HAS_OVERLAY && textureSize(overlay, 0).x > 2) {
+    vec4 ov = texture(overlay, volCoord);
+    float oa = a + ov.a * (1.0 - a);
+    if (oa > 0.0) {
+      rgb = mix(rgb, applyGamma(ov.rgb, invGamma), ov.a / oa);
+      a = oa;
+    }
+  }
+  if (HAS_PAQD && textureSize(paqd, 0).x > 2) {
+    ivec3 pDims = textureSize(paqd, 0);
+    // Nearest for BOTH the label indices and the probabilities. The 2D tiles
+    // sample the probabilities linearly, but this texture is NEAREST-filtered,
+    // so a linear tap would silently be nearest and drift from WebGPU.
+    vec4 raw = texelFetch(paqd, clamp(ivec3(volCoord * vec3(pDims)), ivec3(0), pDims - 1), 0);
+    float total = raw.b + raw.a;
+    if (total > 0.004) {
+      vec4 c1 = texelFetch(paqdLut, ivec2(clamp(int(round(raw.r * 255.0)), 0, 255), 0), 0);
+      vec4 c2 = texelFetch(paqdLut, ivec2(clamp(int(round(raw.g * 255.0)), 0, 255), 0), 0);
+      vec3 prgb = mix(c1.rgb, c2.rgb, raw.a / total);
+      float palpha = paqdEaseAlpha(raw.b, paqdUniforms);
+      if (palpha > 0.0) {
+        float na = palpha + a * (1.0 - palpha);
+        rgb = mix(rgb, prgb, palpha / max(na, 0.001));
+        a = na;
+      }
+    }
+  }
+  if (HAS_DRAWING && textureSize(drawing, 0).x > 2) {
+    ivec3 dDims = textureSize(drawing, 0);
+    vec4 dc = texelFetch(drawing, clamp(ivec3(volCoord * vec3(dDims)), ivec3(0), dDims - 1), 0);
+    if (dc.a > 0.0) {
+      rgb = mix(rgb, dc.rgb, dc.a);
+      a = max(a, dc.a);
+    }
+  }
+  return vec4(rgb * a, a);
+}
+
 void main() {
   vec3 rayStart = vColor;
   vec3 start = GetFrontPosition(rayStart);
@@ -560,6 +607,45 @@ void main() {
   float lenVox = length(dirVec * texVox);
   if (lenVox < 0.5) {
     discard;
+  }
+  // --- Orthogonal slices (VOLUME_RENDER_MODE.SLICES) ---
+  // No march: intersect the ray with the three crosshair planes and composite
+  // the hits front to back. start/dir/len already come from this chunk's own
+  // cube, so a chunked draw needs nothing extra. Mirrors the block in
+  // wgpu/render.wgsl -- keep the two in step.
+  if (IS_SLICES && isRenderMode(RENDER_MODE_SLICES)) {
+    const float NO_HIT = 1e20;
+    vec3 t = vec3(NO_HIT);
+    for (int k = 0; k < 3; k++) {
+      if (abs(dir[k]) < 1e-8) { continue; }
+      float tk = (sliceFrac[k] - start[k]) / dir[k];
+      // Half-open [0, len): a hit on a chunk's exit face belongs to the next
+      // chunk along the ray, so a shared plane is composited exactly once.
+      if (tk >= 0.0 && tk < len) { t[k] = tk; }
+    }
+    // Sorting network, nearest first.
+    if (t.x > t.y) { float s = t.x; t.x = t.y; t.y = s; }
+    if (t.y > t.z) { float s = t.y; t.y = t.z; t.z = s; }
+    if (t.x > t.y) { float s = t.x; t.x = t.y; t.y = s; }
+    vec4 acc = vec4(0.0);
+    vec3 firstHit = vec3(0.0);
+    bool hasHit = false;
+    for (int i = 0; i < 3; i++) {
+      if (t[i] >= NO_HIT) { break; }
+      vec3 pos = start + dir * t[i];
+      vec4 c = sampleSlice(pos);
+      if (c.a > 0.0) {
+        if (!hasHit) { hasHit = true; firstHit = pos; }
+        acc += (1.0 - acc.a) * c;
+        if (acc.a > 0.999) { break; }
+      }
+    }
+    if (!hasHit) {
+      discard;
+    }
+    FragColor = acc * fadeAlpha;
+    gl_FragDepth = frac2ndc(firstHit);
+    return;
   }
   // Opacity (step-size) correction: a coarse multi-LOD brick takes fewer samples
   // along the ray, so without this it accumulates less alpha and renders dimmer —
@@ -589,7 +675,7 @@ void main() {
   // Maximum-intensity projection: every pass takes a component-wise max of the
   // premultiplied sample instead of compositing OVER, and no pass may early-
   // terminate (the maximum can lie anywhere along the ray).
-  bool mip = IS_MIP && renderMode > 0.5;
+  bool mip = IS_MIP && isRenderMode(RENDER_MODE_MAXIMUM);
   float stepSize = len / lenVox;
   vec4 deltaDir = vec4(dir * stepSize, stepSize);
   float localGradientAmount = overlayMode ? 0.0 : gradientAmount;

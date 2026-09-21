@@ -530,9 +530,18 @@ export default class NVGlview {
     // (entry creation, request, pump) so chunk uploaders can skip the gradient
     // pass when unlit. Matches the gradientAmount passed to the volume draw.
     this.volumeRenderer.gradientAmount = md.volume.illumination
-    // Composite (OVER) vs maximum-intensity projection, for every volume pass this
-    // frame (base, overlay, PAQD, drawing, and the independent hi-res overlay cube).
+    // Composite (OVER) vs maximum-intensity projection vs orthogonal slices, for
+    // every volume pass this frame (base, overlay, PAQD, drawing, and the
+    // independent hi-res overlay cube).
     this.volumeRenderer.renderMode = md.volume.renderMode
+    // The crosshair planes SLICES draws, in the base volume's texture fraction —
+    // the same conversion the 2D tiles use, so sheared and oblique volumes line
+    // up with them.
+    this.volumeRenderer.sliceFrac = [
+      md.getSliceTexFrac(0),
+      md.getSliceTexFrac(1),
+      md.getSliceTexFrac(2),
+    ]
     // Ray samples per voxel in the 3D fine march (anti-aliasing vs fragment cost).
     this.volumeRenderer.sampleRate = md.volume.sampleRate
     // Tricubic B-spline reconstruction in the fine march (8 fetches vs 1).
@@ -1898,6 +1907,26 @@ export default class NVGlview {
           1,
           mvpMatrix,
         )
+        // SLICES draws three crosshair planes, so the pick lands on the nearest
+        // VISIBLE plane crossing rather than on the near surface — the same rule
+        // the GPU shaders use for a non-chunked volume.
+        // ponytail: un-exploded only. Exploded blocks displace the planes with
+        // them, so they keep the block pick below; give them their own plane
+        // maths if anyone picks in an exploded SLICES view.
+        if (
+          md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.SLICES &&
+          !chunkExplodeEnabled(vol.chunkExplode)
+        ) {
+          const crossMM = md.scene2mm(md.scene.crosshairPos)
+          return NVTransforms.rayPlaneFirstVisibleMM(
+            near,
+            far,
+            vol.extentsMin,
+            vol.extentsMax,
+            crossMM,
+            vol.pickSampler,
+          )
+        }
         // Exploded view: blocks are displaced, so the un-exploded bounding box no
         // longer matches what's on screen. Pick against each block's exploded
         // AABB (first window-visible voxel in the hit block) and map the recovered

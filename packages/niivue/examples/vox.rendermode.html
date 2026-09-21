@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Volume Render Mode</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/niivue.css" />
+  </head>
+  <body>
+    <header>
+      <label for="modeSelect"
+        title="volumeRenderMode: how the 3D render combines samples along a ray">Render mode</label>
+      <select id="modeSelect">
+        <option value="0" selected>Composite</option>
+        <option value="1">Maximum</option>
+        <option value="2">Slices</option>
+      </select>
+      &nbsp;
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4">Render</option>
+        <option value="3" selected>A+C+S+R</option>
+      </select>
+      &nbsp;
+      <label title="load the GM/WM/CSF tissue maps as overlays"><input type="checkbox" id="overlayCheck" />Overlays</label>
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">&nbsp;</footer>
+    <script type="module">
+      import NiiVue, { SHOW_RENDER, VOLUME_RENDER_MODE } from '../src/index.ts'
+
+      // The three volumeRenderMode values side by side. COMPOSITE and MAXIMUM
+      // ray-march; SLICES does not — it draws the three crosshair planes inside
+      // the 3D tile and composites their hits, so it costs at most three samples
+      // per ray and shows overlays exactly where the 2D tiles do.
+      //
+      // Volume URLs live here rather than in HTML attributes: the GitHub Pages
+      // build rewrites absolute /volumes/ paths in page script only.
+      const T1 = '/volumes/chris_t1.nii.gz'
+      const TISSUES = [
+        { id: 'gm', file: 'chris_t1_gm.nii.gz', tint: [224, 104, 104] },
+        { id: 'wm', file: 'chris_t1_wm.nii.gz', tint: [210, 210, 210] },
+        { id: 'csf', file: 'chris_t1_csf.nii.gz', tint: [120, 160, 255] },
+      ]
+
+      const nv1 = new NiiVue({
+        backgroundColor: [0, 0, 0, 1],
+        is3DCrosshairVisible: true,
+        showRender: SHOW_RENDER.ALWAYS,
+      })
+      window.nv1 = nv1
+      nv1.addEventListener('locationChange', (e) => {
+        document.getElementById('location').textContent = e.detail.string
+      })
+      await nv1.attachToCanvas(document.getElementById('gl1'))
+
+      for (const t of TISSUES) {
+        const [r, g, b] = t.tint
+        const pale = (c) => Math.round(c * 0.75)
+        nv1.addColormap(t.id, {
+          R: [pale(r), r], G: [pale(g), g], B: [pale(b), b], A: [0, 255], I: [0, 255],
+        })
+      }
+
+      const overlayCheck = document.getElementById('overlayCheck')
+      async function loadScene() {
+        const layers = overlayCheck.checked
+          ? TISSUES.map((t) => ({
+              url: `/volumes/${t.file}`,
+              colormap: t.id,
+              colormapType: 1,
+              calMin: 0.05,
+              calMax: 1,
+              opacity: 0.7,
+            }))
+          : []
+        await nv1.loadVolumes([{ url: T1, colormap: 'gray' }, ...layers])
+      }
+      overlayCheck.onchange = loadScene
+      await loadScene()
+
+      const modeSelect = document.getElementById('modeSelect')
+      modeSelect.onchange = () => {
+        nv1.volumeRenderMode = parseInt(modeSelect.value, 10)
+      }
+      modeSelect.value = String(VOLUME_RENDER_MODE.COMPOSITE)
+
+      const sliceTypeSelect = document.getElementById('sliceType')
+      sliceTypeSelect.onchange = (e) => {
+        nv1.sliceType = parseInt(e.target.value, 10)
+      }
+      nv1.addEventListener('sliceTypeChange', (e) => {
+        sliceTypeSelect.value = String(e.detail.sliceType)
+      })
+
+      const webgpuCheck = document.getElementById('webgpuCheck')
+      // Reflects the backend actually running (WebGPU may fall back to WebGL2).
+      webgpuCheck.checked = nv1.backend === 'webgpu'
+      webgpuCheck.onchange = async () => {
+        webgpuCheck.disabled = true
+        try {
+          await nv1.reinitializeView({ backend: webgpuCheck.checked ? 'webgpu' : 'webgl2' })
+        } finally {
+          webgpuCheck.checked = nv1.backend === 'webgpu'
+          webgpuCheck.disabled = false
+          webgpuCheck.blur()
+        }
+      }
+    </script>
+  </body>
+</html>

@@ -29,6 +29,11 @@ test.use({
       '--use-angle=swiftshader',
       '--enable-features=Vulkan',
     ],
+    // `use.launchOptions` replaces the config's object rather than merging into
+    // it, so the config's escape hatch has to be repeated here.
+    ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
+      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
+      : {}),
   },
 })
 

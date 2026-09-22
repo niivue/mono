@@ -1,4 +1,4 @@
-import { mat4, type vec2, type vec3, vec4 } from 'gl-matrix'
+import { type vec2, type vec3, vec4 } from 'gl-matrix'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
 import type { LivewireSlice } from '@/annotation/livewireSlice'
 import { getAnnotationSelection } from '@/annotation/selection'

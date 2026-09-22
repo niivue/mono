@@ -111,8 +111,16 @@ export const assertNoPublishablePackageSkipped = (
 // the publish allowlist can never disagree with what was versioned.
 export const resolveNpmReleaseProjects = (): Set<string> => {
   const patterns = readNpmReleaseGroupPatterns()
+  // Nx declares --projects as a single comma-separated string.
   const result = Bun.spawnSync(
-    ['bunx', 'nx', 'show', 'projects', '--projects', ...patterns, '--json'],
+    [
+      'bunx',
+      'nx',
+      'show',
+      'projects',
+      `--projects=${patterns.join(',')}`,
+      '--json',
+    ],
     { stdout: 'pipe', stderr: 'inherit' },
   )
   if (result.exitCode !== 0) {

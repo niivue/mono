@@ -164,6 +164,12 @@ if (headBefore !== targetCommit) {
   run(['bun', 'install', '--frozen-lockfile'])
 }
 
+// Re-resolve the release group at the tagged commit. The allowlist above
+// came from the workflow checkout (main) and was only used to find the release
+// commit; a project retired from main after this release must still publish,
+// and the guard must check the packages that existed at this commit.
+const taggedReleaseProjects = resolveNpmReleaseProjects()
+
 const summary: string[] = []
 
 for (const tag of tags) {
@@ -174,8 +180,10 @@ for (const tag of tags) {
   }
   const { project, version } = parsed
 
-  if (!isNpmReleaseProject(project)) {
-    console.log(`Skipping ${tag} (not an npm release project)`)
+  if (!taggedReleaseProjects.has(project)) {
+    console.log(
+      `Skipping ${tag} (not an npm release project at ${targetCommit.slice(0, 8)})`,
+    )
     continue
   }
 

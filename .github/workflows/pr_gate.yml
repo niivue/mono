@@ -59,6 +59,9 @@ jobs:
       - name: README notebook paths
         run: bun .github/scripts/check-readme-notebook-paths.ts
 
+      - name: Release helper tests
+        run: bun test ./.github/scripts/npm-release-projects.test.ts
+
       - name: Coverage summary (niivue)
         if: always()
         run: bun .github/scripts/lcov-to-summary.ts packages/niivue/coverage/lcov.info --title "niivue test coverage"

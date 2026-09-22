@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>NiiVue - Matcap</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/niivue.css" />
+    <style>
+      /* The matcap sphere, at the size it is actually sampled: a lookup keyed
+         by the surface normal, so the image IS the lighting model. */
+      #matcapImg {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        vertical-align: middle;
+        border: 1px solid #888;
+        background: #222;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <select id="sliceType">
+        <option value="0">Axial</option>
+        <option value="1">Coronal</option>
+        <option value="2">Sagittal</option>
+        <option value="4" selected>Render</option>
+        <option value="3">A+C+S+R</option>
+      </select>
+      &nbsp;
+      <select id="volumeSelect">
+        <option selected>mni152</option>
+        <option>visiblehuman</option>
+        <option>shear</option>
+      </select>
+      &nbsp;
+      <label for="matcapSelect">Matcap</label>
+      <select id="matcapSelect">
+        <option>Cortex</option>
+        <option>Shiny</option>
+      </select>
+      <img id="matcapImg" alt="the selected matcap" />
+      <input type="range" min="0" max="100" value="40" class="slider" id="gradSlider" />
+      &nbsp;
+      <label for="colormapSelect">Colormap</label>
+      <select id="colormapSelect"></select>
+      &nbsp;
+      <label for="darkCheck">Clip Dark</label>
+      <input type="checkbox" id="darkCheck" />
+      &nbsp;
+      <label for="webgpuCheck">WebGPU</label>
+      <input type="checkbox" id="webgpuCheck" checked />
+    </header>
+    <main id="canvas-container">
+      <canvas id="gl1"></canvas>
+    </main>
+    <footer id="location">NiiVue</footer>
+    <script type="module">
+      import { cortex, shiny } from '../src/assets/matcaps'
+      import NiiVue, { SHOW_RENDER } from '../src/index.ts'
+
+      // A matcap ("material capture") is a photograph of a lit sphere. The
+      // shader takes the surface normal at a sample, projects it to screen
+      // space, and reads the colour at that point of the sphere -- so the
+      // picture beside the dropdown is not a preview of the lighting, it IS
+      // the lighting: every shading decision in the render is a lookup into
+      // those pixels.
+      //
+      // The asset modules export the image URL Vite resolved, which is the
+      // same URL loadMatcap fetches, so showing it costs an <img> and cannot
+      // fall out of step with what the renderer is sampling.
+      const MATCAPS = { Cortex: cortex, Shiny: shiny }
+
+      const nv1 = new NiiVue({
+        backgroundColor: [0.2, 0.2, 0.2, 1],
+        isColorbarVisible: true,
+        matcaps: MATCAPS,
+        showRender: SHOW_RENDER.ALWAYS,
+      })
+      window.nv1 = nv1
+      nv1.addEventListener('locationChange', (e) => {
+        document.getElementById('location').textContent = e.detail.string
+      })
+      await nv1.attachToCanvas(gl1)
+
+      matcapSelect.onchange = async () => {
+        matcapImg.src = MATCAPS[matcapSelect.value]
+        await nv1.loadMatcap(matcapSelect.value)
+      }
+      gradSlider.oninput = () => {
+        const illumination = Number(gradSlider.value) / 100
+        nv1.volumeIllumination = illumination
+        // Below 1% nothing is lit, so the choice of matcap has no effect.
+        matcapSelect.disabled = illumination < 0.01
+        matcapImg.style.opacity = illumination < 0.01 ? 0.3 : 1
+      }
+      volumeSelect.onchange = async () => {
+        await nv1.loadVolumes([{ url: `/volumes/${volumeSelect.value}.nii.gz` }])
+      }
+      sliceType.onchange = () => {
+        nv1.sliceType = parseInt(sliceType.value, 10)
+      }
+      colormapSelect.onchange = () => {
+        nv1.setVolume(0, { colormap: colormapSelect.value })
+      }
+      darkCheck.onclick = function () {
+        nv1.volumeIsAlphaClipDark = this.checked
+      }
+      webgpuCheck.onclick = function () {
+        nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+      }
+
+      for (const cmap of nv1.colormaps) {
+        const option = document.createElement('option')
+        option.value = cmap
+        option.textContent = cmap.charAt(0).toUpperCase() + cmap.slice(1)
+        option.selected = cmap.toLowerCase() === 'gray'
+        colormapSelect.appendChild(option)
+      }
+
+      sliceType.onchange()
+      await matcapSelect.onchange()
+      gradSlider.oninput()
+      await volumeSelect.onchange()
+    </script>
+  </body>
+</html>

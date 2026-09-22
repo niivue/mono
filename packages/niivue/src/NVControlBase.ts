@@ -473,7 +473,6 @@ export default class NiiVue extends EventTarget {
   } | null = null
   drawPenAutoClose = false
   drawPenFilled = false
-  isCircle = false
   // Undo state (controller-owned — not persisted in documents)
   drawUndoBitmaps: Uint8Array[] = []
   currentDrawUndoBitmap = -1
@@ -1926,6 +1925,10 @@ export default class NiiVue extends EventTarget {
   get drawPenShape(): PEN_SHAPE {
     return this.model.draw.penShape
   }
+  /**
+   * Footprint of the pen when `drawPenSize` is greater than one: a square
+   * (`PEN_SHAPE.RECTANGLE`, the default) or a round brush (`PEN_SHAPE.CIRCLE`).
+   */
   set drawPenShape(v: PEN_SHAPE) {
     this.model.draw.penShape = v
     this.emit('change', { property: 'drawPenShape', value: v })
@@ -4684,14 +4687,14 @@ export default class NiiVue extends EventTarget {
       // pen / eraser / filled
       const pv = tool === 'eraser' ? 0 : penValue
       if (begin) {
-        dr.point(rx, ry, pv, penSize, penShape, overwrite)
+        dr.point(rx, ry, pv, penSize, overwrite, penShape)
         if (tool === 'filled') this._slideFillPts = [[rx, ry]]
       } else if (this._slideLastRasterPt) {
         const [px, py] = this._slideLastRasterPt
-        dr.line(px, py, rx, ry, pv, penSize, penShape, overwrite)
+        dr.line(px, py, rx, ry, pv, penSize, overwrite, penShape)
         if (tool === 'filled') this._slideFillPts.push([rx, ry])
       } else {
-        dr.point(rx, ry, pv, penSize, penShape, overwrite)
+        dr.point(rx, ry, pv, penSize, overwrite, penShape)
         if (tool === 'filled') this._slideFillPts.push([rx, ry])
       }
       this._slideLastRasterPt = [rx, ry]

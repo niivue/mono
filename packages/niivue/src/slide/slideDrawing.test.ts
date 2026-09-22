@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
-import { SlideDrawing } from './slideDrawing'
 import { PEN_SHAPE } from '@/NVConstants'
+import { SlideDrawing } from './slideDrawing'
 
 const at = (d: SlideDrawing, x: number, y: number): number =>
   d.img[y * d.width + x]
@@ -20,7 +20,7 @@ describe('SlideDrawing', () => {
 
   test('point() paints a single raster pixel and bumps version', () => {
     const d = new SlideDrawing(8, 4)
-    d.point(2, 1, 5, 1, PEN_SHAPE.rectangle, true)
+    d.point(2, 1, 5, 1, true)
     expect(at(d, 2, 1)).toBe(5)
     expect(countNonZero(d)).toBe(1)
     expect(d.version).toBe(1)
@@ -29,24 +29,36 @@ describe('SlideDrawing', () => {
   test('point + line paint a connected run (line draws toward ptB)', () => {
     const d = new SlideDrawing(8, 4)
     // Real usage: the first point is painted on pen-down, then lines connect.
-    d.point(0, 0, 3, 1, PEN_SHAPE.rectangle, true)
-    d.line(0, 0, 7, 0, 3, 1, PEN_SHAPE.rectangle, true)
+    d.point(0, 0, 3, 1, true)
+    d.line(0, 0, 7, 0, 3, 1, true)
     for (let x = 0; x < 8; x++) expect(at(d, x, 0)).toBe(3)
     expect(at(d, 0, 1)).toBe(0) // adjacent row untouched
   })
 
+  test('point() honours the pen shape and defaults to a rectangle', () => {
+    const round = new SlideDrawing(9, 9)
+    round.point(4, 4, 5, 5, true, PEN_SHAPE.CIRCLE)
+    expect(at(round, 4, 4)).toBe(5)
+    expect(at(round, 6, 4)).toBe(5) // on-axis extreme
+    expect(at(round, 6, 6)).toBe(0) // corner of the 5x5 bounding square
+
+    const square = new SlideDrawing(9, 9)
+    square.point(4, 4, 5, 5, true) // penShape omitted
+    expect(at(square, 6, 6)).toBe(5)
+  })
+
   test('penValue 0 erases (eraser path)', () => {
     const d = new SlideDrawing(8, 4)
-    d.point(2, 1, 7, 1, PEN_SHAPE.rectangle, true)
-    d.point(2, 1, 0, 1, PEN_SHAPE.rectangle, true)
+    d.point(2, 1, 7, 1, true)
+    d.point(2, 1, 0, 1, true)
     expect(at(d, 2, 1)).toBe(0)
   })
 
   test('undo restores the pre-stroke raster', () => {
     const d = new SlideDrawing(8, 4)
     d.beginStroke() // snapshot empty
-    d.point(2, 1, 5, 1, PEN_SHAPE.rectangle, true)
-    d.line(2, 1, 5, 1, 5, 1, PEN_SHAPE.rectangle, true)
+    d.point(2, 1, 5, 1, true)
+    d.line(2, 1, 5, 1, 5, 1, true)
     expect(countNonZero(d)).toBeGreaterThan(0)
     expect(d.undo()).toBe(true)
     expect(countNonZero(d)).toBe(0)
@@ -59,7 +71,7 @@ describe('SlideDrawing', () => {
 
   test('clear wipes the raster and bumps version', () => {
     const d = new SlideDrawing(8, 4)
-    d.point(0, 0, 9, 1, PEN_SHAPE.rectangle, true)
+    d.point(0, 0, 9, 1, true)
     const v = d.version
     d.clear()
     expect(countNonZero(d)).toBe(0)
@@ -77,7 +89,7 @@ describe('SlideDrawing', () => {
   test('bucketFill is bounded by a drawn divider', () => {
     const d = new SlideDrawing(8, 4)
     // Vertical divider at x=4 (label 9) splits the raster.
-    for (let y = 0; y < 4; y++) d.point(4, y, 9, 1, PEN_SHAPE.rectangle, true)
+    for (let y = 0; y < 4; y++) d.point(4, y, 9, 1, true)
     d.bucketFill(0, 0, 5, true) // seed in the left region
     expect(at(d, 0, 0)).toBe(5)
     expect(at(d, 3, 2)).toBe(5) // left region filled

@@ -16,7 +16,7 @@ export interface DrawPointParams {
   drawBitmap: Uint8Array
   dims: number[]
   penSize: number
-  penShape: PEN_SHAPE
+  penShape?: PEN_SHAPE
   penAxCorSag: number
   penOverwrites?: boolean
 }
@@ -28,7 +28,7 @@ export interface DrawLineParams {
   drawBitmap: Uint8Array
   dims: number[]
   penSize: number
-  penShape: PEN_SHAPE
+  penShape?: PEN_SHAPE
   penAxCorSag: number
   penOverwrites?: boolean
 }
@@ -275,7 +275,7 @@ export function drawPoint(params: DrawPointParams): void {
     drawBitmap,
     dims,
     penSize,
-    penShape,
+    penShape = PEN_SHAPE.RECTANGLE,
     penAxCorSag,
     penOverwrites,
   } = params
@@ -299,12 +299,14 @@ export function drawPoint(params: DrawPointParams): void {
     const isAx = penAxCorSag === PEN_SLICE_TYPE.AXIAL
     const isCor = penAxCorSag === PEN_SLICE_TYPE.CORONAL
     const isSag = penAxCorSag === PEN_SLICE_TYPE.SAGITTAL
-    const radius = penSize / 2
-    const isCircle = penShape === PEN_SHAPE.circle
+    // Circle brush: keep voxels whose centre lies within penSize / 2 of the
+    // pen centre. `>` (not `>=`) so even sizes keep their on-axis extremes.
+    const radiusSq = (penSize / 2) ** 2
+    const isCircle = penShape === PEN_SHAPE.CIRCLE
 
     for (let i = -halfPenSize; i <= halfPenSize; i++) {
       for (let j = -halfPenSize; j <= halfPenSize; j++) {
-        if (isCircle && i * i + j * j >= radius * radius) continue
+        if (isCircle && i * i + j * j > radiusSq) continue
 
         let nx: number, ny: number, nz: number
 

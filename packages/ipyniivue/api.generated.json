@@ -2128,7 +2128,7 @@
       "returnsValue": true,
       "params": [],
       "returns": "readonly CompletedMeasurement[]",
-      "doc": "All completed distance measurements, in insertion order (an entry's\nposition is the index {@link addMeasurement} returned and\n{@link removeMeasurement}/{@link pickMeasurement} use). Returns the live\ncollection typed readonly — do not mutate it; use\n{@link addMeasurement}/{@link removeMeasurement}/{@link clearMeasurements}\nso events fire and the scene redraws.",
+      "doc": "All completed distance measurements, in insertion order (an entry's\nposition is the index {@link addMeasurement} returned and\n{@link removeMeasurement}/{@link pickMeasurement} use). Returns a snapshot:\na fresh array of fresh entries, so editing it (an endpoint tuple included)\ncannot change what is rendered, and it does not update when measurements\nare later added, removed or cleared. Call it again for the current list,\nand use {@link addMeasurement}/{@link removeMeasurement}/\n{@link clearMeasurements} to change it so events fire and the scene\nredraws.",
       "returnsDoc": null
     },
     {
@@ -2741,7 +2741,7 @@
         }
       ],
       "returns": "number | null",
-      "doc": "Find the completed distance measurement under a canvas point, e.g. to\nimplement click-to-select or click-to-delete. Each measurement is projected\nwith the same per-tile filtering and matrices the renderer uses to draw it,\nso the hit-test agrees with what is on screen. Returns the index of the\nclosest measurement whose projected line is within `radiusPx` (default 8)\ncanvas pixels of the point, or null if none is. Requires a rendered frame\n(the projection uses matrices cached during render).",
+      "doc": "Find the completed distance measurement under a canvas point, e.g. to\nimplement click-to-select or click-to-delete. Each measurement is projected\nwith the same per-tile filtering and matrices the renderer uses to draw it,\nso the hit-test agrees with what is on screen. Returns the index of the\nclosest measurement whose projected line is within `radiusPx` (default 8)\ncanvas pixels of the point, or null if none is. Requires a rendered frame\n(the projection uses matrices cached during render).\n\n`canvasX`/`canvasY` are canvas BACKING-STORE pixels, the same convention\nas {@link hitTest} and {@link canvasToMM}, not CSS pixels: a pointer\nevent's `offsetX`/`offsetY` are off by the device pixel ratio on any\ndisplay above 1x. Convert with {@link clientToCanvas} first.",
       "returnsDoc": null
     },
     {

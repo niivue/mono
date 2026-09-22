@@ -1,0 +1,62 @@
+name: GPU runner probe
+
+# Which GPU does a GitHub-hosted runner expose to headless Chromium?
+#
+# niivue-e2e.yml runs a narrow list of specs because the Ubuntu runners only
+# have SwiftShader, and WebGPU on it dies partway through a run. This job asks
+# whether the free macOS runners do better: they are VMs on Apple silicon whose
+# guest sees a paravirtual GPU backed by the host's Metal, which would give
+# both WebGL2 (ANGLE on Metal) and WebGPU (Dawn on Metal) real hardware.
+# Ubuntu is in the matrix as the baseline to compare against.
+#
+# It is a probe, not a gate: every variant is reported in the job summary,
+# working or not, and the job passes unless the script itself errors. The
+# logic lives in .github/scripts/gpu-probe.ts. Run it by hand from the
+# Actions tab, or push a change to either file.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/gpu-probe.yml'
+      - '.github/scripts/gpu-probe.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-14, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runner hardware
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            sw_vers
+            sysctl -n machdep.cpu.brand_string hw.ncpu hw.memsize
+            system_profiler SPDisplaysDataType || true
+          else
+            uname -a
+            nproc
+            (lspci 2>/dev/null | grep -i -E 'vga|3d|display') || echo 'no PCI display device listed'
+          fi
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      # Both the headless shell and full Chromium: the probe launches each.
+      - name: Install Playwright chromium
+        working-directory: packages/niivue
+        run: bunx playwright install --with-deps chromium
+
+      - name: Probe WebGL2 and WebGPU adapters
+        run: bun .github/scripts/gpu-probe.ts

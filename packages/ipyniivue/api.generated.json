@@ -321,6 +321,21 @@
       "doc": null
     },
     {
+      "jsName": "drawPenShape",
+      "pyName": "draw_pen_shape",
+      "tsType": "PEN_SHAPE",
+      "pyTraitlet": {
+        "kind": "Enum",
+        "values": [
+          0,
+          1
+        ]
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "Footprint of the pen when `drawPenSize` is greater than one: a square\n(`PEN_SHAPE.RECTANGLE`, the default) or a round brush (`PEN_SHAPE.CIRCLE`)."
+    },
+    {
       "jsName": "drawPenSize",
       "pyName": "draw_pen_size",
       "tsType": "number",

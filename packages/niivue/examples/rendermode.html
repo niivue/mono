@@ -67,7 +67,7 @@
       const TRACTS = '/meshes/dpsv.trx'
       const TISSUES = [
         { id: 'gm', file: 'chris_t1_gm.nii.gz', tint: [224, 104, 104] },
-        { id: 'wm', file: 'chris_t1_wm.nii.gz', tint: [210, 210, 210] },
+        { id: 'wm', file: 'chris_t1_wm.nii.gz', tint: [250, 250, 250] },
         { id: 'csf', file: 'chris_t1_csf.nii.gz', tint: [120, 160, 255] },
       ]
 
@@ -85,6 +85,16 @@
       // A ramp from a pale version of the tint up to the tint, as in
       // vox.tissues.html: a built-in saturated primary would repaint the
       // anatomy rather than tint it, which is the opposite of the point here.
+      //
+      // White matter is tinted near-WHITE, not the mid-grey it looks like on
+      // its own. Two reasons, and the second is the one that bites: a tint
+      // darker than the T1's white matter makes 100%-WM voxels read grey, and
+      // it exposes the fact that three OVER layers are not a partition of
+      // unity -- coverage is 1 - a_gm*a_wm, so a 50/50 boundary voxel leaves a
+      // quarter of the bright T1 showing and the mixture blooms white. Tinting
+      // WM the colour of the thing behind it makes that dip invisible, and the
+      // mixtures then ramp smoothly from red to white the way partial volumes
+      // should. Give WM a colour unlike the T1 and the halo comes back.
       for (const t of TISSUES) {
         const pale = (c) => Math.round(c * 0.75)
         const [r, g, b] = t.tint

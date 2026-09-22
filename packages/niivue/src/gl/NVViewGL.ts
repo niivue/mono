@@ -26,6 +26,7 @@ import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
 import * as NVMeasurement from '@/view/NVMeasurement'
+import { isMeshDrawn } from '@/view/NVMeshView'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import * as NVRuler from '@/view/NVRuler'
@@ -1061,7 +1062,7 @@ export default class NVGlview {
       const meshes =
         tile.space === 'global3d'
           ? []
-          : (md.getMeshes() as NVMesh[]).filter((m) => (m.opacity ?? 1.0) > 0.0)
+          : (md.getMeshes() as NVMesh[]).filter(isMeshDrawn)
       const ccMM = crosscutMM(md, tile.axCorSag)
       // Mesh-specific MVP: constrain near/far to meshThicknessOn2D around slice plane
       let meshMvp = mvpMatrix
@@ -2039,9 +2040,7 @@ export default class NVGlview {
       }
     }
     // Draw meshes with depth-pick shader
-    const meshes = (md.getMeshes() as NVMesh[]).filter(
-      (m) => (m.opacity ?? 1.0) > 0.0,
-    )
+    const meshes = (md.getMeshes() as NVMesh[]).filter(isMeshDrawn)
     for (const m of meshes) {
       const mGpu = this._getMeshGpu(m)
       if (!mGpu) continue

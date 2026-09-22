@@ -2485,9 +2485,7 @@ export function initInteraction(ctrl: NiiVue): void {
     }
     const dae = ctrl.getClipPlaneDepthAziElev(ctrl.activeClipPlaneIndex)
     if (dae[0] > -1 && dae[0] < 1) {
-      const clipSpeed = 0.00005
-      dae[0] += evt.deltaY * clipSpeed
-      dae[0] = Math.max(-0.49, Math.min(0.49, dae[0]))
+      dae[0] = NVTransforms.stepClipDepth(dae[0], evt.deltaY)
       ctrl.setClipPlaneDepthAziElev(
         dae[0],
         dae[1],

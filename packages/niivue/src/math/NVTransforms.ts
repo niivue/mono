@@ -194,6 +194,35 @@ export function stepZoom2D(zoom: number, direction: number): number {
   return Math.max(ZOOM_2D_MIN, Math.min(ZOOM_2D_MAX, next))
 }
 
+/** How far one wheel notch moves a clip plane, in plane-depth units. */
+export const CLIP_DEPTH_STEP = 0.025
+/**
+ * The shader stops clipping at `|depth| >= 1` (`clipSampleRange` in
+ * wgpu/volumeShaderLib.ts, mirrored in gl/renderShader.ts), which the wheel
+ * handler also reads as "this plane is off, zoom instead". Stop just inside it
+ * so a sweep cannot silently turn into a zoom.
+ */
+const CLIP_DEPTH_LIMIT = 0.99
+
+/**
+ * One wheel notch of clip-plane depth, clamped to the range where the plane is
+ * still live.
+ *
+ * A FIXED step per notch, not a multiple of `deltaY`, which is what the 0.6
+ * series did and what the demos are tuned to. `deltaY` is around 100 for one
+ * mouse notch but around 1 for a trackpad event, so anything proportional to it
+ * is two orders of magnitude apart between the two devices.
+ *
+ * The volume spans +-0.5 about its centre, so its half-diagonal is 0.87: a
+ * clamp tighter than that cannot sweep an oblique plane clear of the volume.
+ */
+export function stepClipDepth(depth: number, direction: number): number {
+  const dir = Math.sign(direction)
+  if (dir === 0) return depth
+  const next = depth + CLIP_DEPTH_STEP * dir
+  return Math.max(-CLIP_DEPTH_LIMIT, Math.min(CLIP_DEPTH_LIMIT, next))
+}
+
 /**
  * New 2D pan that holds `anchorMM` at the same place on screen while the zoom
  * changes from `pan[3]` to `newZoom`.

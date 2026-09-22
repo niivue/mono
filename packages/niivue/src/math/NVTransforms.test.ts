@@ -3,6 +3,7 @@ import { mat4, vec3, vec4 } from 'gl-matrix'
 import type { AffineMatrix, NVGlobalCamera, NVImage } from '@/NVTypes'
 import {
   arrayToMat4,
+  CLIP_DEPTH_STEP,
   calculateGlobalVolumeMvp,
   calculateMvpMatrix,
   calculateMvpMatrix2D,
@@ -22,6 +23,7 @@ import {
   rayMarchFirstVisibleMM,
   rayPlaneFirstVisibleMM,
   slicePlaneEquation,
+  stepClipDepth,
   stepZoom2D,
   unprojectScreen,
   vox2mm,
@@ -1189,6 +1191,35 @@ describe('stepZoom2D', () => {
     for (const bad of [0, -3, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(stepZoom2D(bad, 1)).toBe(ZOOM_2D_MIN)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// stepClipDepth
+// ---------------------------------------------------------------------------
+
+describe('stepClipDepth', () => {
+  test('oneNotchMovesTheStepWhateverTheDeltaYIs', () => {
+    // The whole point: a mouse notch reports deltaY 100 and a trackpad reports
+    // about 1, so a step proportional to deltaY was 100x slower on a trackpad.
+    for (const deltaY of [1, 4, 100, 240]) {
+      approx(stepClipDepth(0.1, deltaY), 0.1 + CLIP_DEPTH_STEP)
+      approx(stepClipDepth(0.1, -deltaY), 0.1 - CLIP_DEPTH_STEP)
+    }
+  })
+
+  test('sweepsFarEnoughToClearAnObliqueVolume', () => {
+    // Half-diagonal of the +-0.5 volume is 0.87. Stop short of that and an
+    // oblique plane can never leave the volume.
+    let depth = 0
+    for (let i = 0; i < 200; i++) depth = stepClipDepth(depth, 1)
+    expect(depth).toBeGreaterThan(Math.sqrt(3) / 2)
+    // ...but stay where the shader still clips, or the wheel becomes a zoom.
+    expect(Math.abs(depth)).toBeLessThan(1)
+  })
+
+  test('noDirectionIsANoOp', () => {
+    expect(stepClipDepth(0.3, 0)).toBe(0.3)
   })
 })
 

@@ -187,6 +187,7 @@ const EVENTS = [
   "graphRangeChange",
   "locationChange",
   "measurementCompleted",
+  "measurementRemoved",
   "meshLoaded",
   "meshRemoved",
   "meshUpdated",

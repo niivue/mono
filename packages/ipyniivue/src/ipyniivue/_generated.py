@@ -50,6 +50,7 @@ NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
     "graphRangeChange",
     "locationChange",
     "measurementCompleted",
+    "measurementRemoved",
     "meshLoaded",
     "meshRemoved",
     "meshUpdated",
@@ -294,6 +295,30 @@ and its volumes alive."""
 
     def add_image(self, path_or_file: Any, options: Any = _UNSET) -> None:
         self.send({"cmd": "addImage", "args": _make_args(path_or_file, options)})
+
+    async def add_measurement(self, start_mm: Any, end_mm: Any, opts: Any = _UNSET) -> Any:
+        """Add a distance measurement between two mm-space points, exactly as if it had been drawn interactively in `DRAG_MODE.measurement`: it renders on every 2D slice tile whose slice plane contains both endpoints, emits `measurementCompleted` (after the mutation), and redraws.
+
+        `opts` may pin
+        the slice metadata (`sliceIndex`/`sliceType`/`slicePosition`); omitted
+        fields are derived from the segment geometry (see
+        control/measurements.buildMeasurement). An explicit `sliceType` must be a
+        2D orientation (`SLICE_TYPE.AXIAL`/`CORONAL`/`SAGITTAL`); a non-2D value
+        (`MULTIPLANAR`/`RENDER`/`NONE`) warns and is ignored, deriving the
+        orientation from geometry. Returns the new measurement's index
+        (valid for {@link removeMeasurement} until an earlier one is removed).
+
+        Parameters
+        ----------
+        start_mm : [number, number, number]
+        end_mm : [number, number, number]
+        opts : Partial<Pick<CompletedMeasurement, \"sliceIndex\" | \"sliceType\" | \"slicePosition\">>
+
+        Returns
+        -------
+        number
+        """
+        return await self._request("addMeasurement", _make_args(start_mm, end_mm, opts))
 
     def add_mesh(self, mesh: Any) -> None:
         self.send({"cmd": "addMesh", "args": _make_args(mesh)})
@@ -663,6 +688,20 @@ and its volumes alive."""
         """
         return await self._request("getGraphRange", [])
 
+    async def get_measurements(self) -> Any:
+        """All completed distance measurements, in insertion order (an entry's position is the index {@link addMeasurement} returned and {@link removeMeasurement}/{@link pickMeasurement} use).
+
+        Returns the live
+        collection typed readonly — do not mutate it; use
+        {@link addMeasurement}/{@link removeMeasurement}/{@link clearMeasurements}
+        so events fire and the scene redraws.
+
+        Returns
+        -------
+        readonly CompletedMeasurement[]
+        """
+        return await self._request("getMeasurements", [])
+
     async def get_mesh_shader(self, mesh_index: Any) -> Any:
         return await self._request("getMeshShader", _make_args(mesh_index))
 
@@ -902,7 +941,9 @@ and its volumes alive."""
         ```
 
         Reads the background volume (`volumes[0]`), which is the volume both
-        settings act on. Cheap enough to call per frame for a debug HUD.
+        settings act on. Cheap enough to call per frame for a debug HUD. In
+        `VOLUME_RENDER_MODE.SLICES` the reported exponent reaches the 2D tiles
+        only: the 3D planes take one sample per level and apply none.
 
         Returns
         -------
@@ -1034,6 +1075,29 @@ and its volumes alive."""
         """
         return await self._request("pickExplodedBlock", _make_args(client_x, client_y))
 
+    async def pick_measurement(self, canvas_x: Any, canvas_y: Any, radius_px: Any = _UNSET) -> Any:
+        """Find the completed distance measurement under a canvas point, e.g.
+
+        to
+        implement click-to-select or click-to-delete. Each measurement is projected
+        with the same per-tile filtering and matrices the renderer uses to draw it,
+        so the hit-test agrees with what is on screen. Returns the index of the
+        closest measurement whose projected line is within `radiusPx` (default 8)
+        canvas pixels of the point, or null if none is. Requires a rendered frame
+        (the projection uses matrices cached during render).
+
+        Parameters
+        ----------
+        canvas_x : number
+        canvas_y : number
+        radius_px : number | undefined
+
+        Returns
+        -------
+        number | null
+        """
+        return await self._request("pickMeasurement", _make_args(canvas_x, canvas_y, radius_px))
+
     def rebake_chunked_overlays(self) -> None:
         """Re-bake the streamed/chunked overlays in place: drop their resident bricks so the next frame re-requests and re-bakes only the blocks in the current view frustum, leaving the base volume resident.
 
@@ -1094,6 +1158,18 @@ and its volumes alive."""
 
     def remove_annotation(self, id: Any) -> None:
         self.send({"cmd": "removeAnnotation", "args": _make_args(id)})
+
+    def remove_measurement(self, index: Any) -> None:
+        """Remove a single completed distance measurement by index, emitting `measurementRemoved` before the mutation (so the listener can still reach it) and redrawing.
+
+        An index that is not an integer in bounds warns and
+        no-ops, matching {@link removeVolume}.
+
+        Parameters
+        ----------
+        index : number
+        """
+        self.send({"cmd": "removeMeasurement", "args": _make_args(index)})
 
     def remove_mesh(self, mesh_index: Any) -> None:
         self.send({"cmd": "removeMesh", "args": _make_args(mesh_index)})

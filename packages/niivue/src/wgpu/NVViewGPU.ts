@@ -26,13 +26,14 @@ import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
 import * as NVMeasurement from '@/view/NVMeasurement'
-import { isMeshDrawn } from '@/view/NVMeshView'
+import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
@@ -118,6 +119,9 @@ export default class NVView {
   device: GPUDevice | null
   /** Set when the GPU device is lost (e.g. GPU OOM); halts the render loop. */
   private _deviceLost = false
+  // The drawing RGBA the drawing texture(s) were uploaded from, for the chunked
+  // volume's CPU plane pick (view/planeVisibility.ts). Null without a drawing.
+  private _drawingPickGrid: RgbaGrid | null = null
   private _destroyed = false
   context: GPUCanvasContext | null
   preferredCanvasFormat: GPUTextureFormat
@@ -2551,6 +2555,7 @@ export default class NVView {
     dirtyChunks?: readonly number[],
   ): void {
     if (!this.device) return
+    this._drawingPickGrid = { data: rgba, dims }
     const needsRebind =
       !this.sliceRenderer.drawingTexture || !this.volumeRenderer.drawingTexture
     this.sliceRenderer.updateDrawingTexture(
@@ -2583,6 +2588,7 @@ export default class NVView {
   }
 
   clearDrawing(): void {
+    this._drawingPickGrid = null
     this.sliceRenderer.destroyDrawing()
     this.volumeRenderer.destroyDrawing()
     // Rebuild bind groups so shaders see the placeholder
@@ -2723,8 +2729,23 @@ export default class NVView {
             vol.extentsMax,
             md.scene2mm(md.scene.crosshairPos),
             // Without alpha clipping the plane is a solid slab, so every
-            // in-box crossing is visible and there is nothing to reject.
-            md.volume.isAlphaClipDark ? vol.pickSampler : undefined,
+            // in-box crossing is visible and there is nothing to reject. With
+            // it, the base volume's own sampler is widened by the PAQD and
+            // drawing layers the render paints over transparent base.
+            md.volume.isAlphaClipDark
+              ? composePlaneVisibility({
+                  lo: vol.extentsMin,
+                  hi: vol.extentsMax,
+                  base: vol.pickSampler,
+                  drawing: this._drawingPickGrid,
+                  paqd: this.volumeRenderer.paqdPickGrid
+                    ? {
+                        grid: this.volumeRenderer.paqdPickGrid,
+                        uniforms: md.volume.paqdUniforms,
+                      }
+                    : null,
+                })
+              : undefined,
           )
           if (planeMM) return planeMM
         } else if (
@@ -2820,7 +2841,6 @@ export default class NVView {
           volumeTexture.height,
           volumeTexture.depthOrArrayLayers,
         ]
-        const zeroPaqdUniforms = [0, 0, 0, 0]
         // The 7 floats after earlyTermination: clipPlaneOverlay, fadeAlpha,
         // renderMode, cubicFilter, invGamma, then implicit struct padding.
         // clipPlaneOverlay must carry the LIVE flag — the pick shader clips its
@@ -2883,7 +2903,9 @@ export default class NVView {
           0.0,
           ...md.scene.clipPlaneColor,
           ...md.clipPlanes,
-          ...zeroPaqdUniforms,
+          // Live, because the SLICES plane test eases the PAQD layer's alpha
+          // with them (see planeLayerVisible in depthPick.ts).
+          ...md.volume.paqdUniforms,
           0.95,
           ...renderParamPadding,
           ...identityChunkUniforms,

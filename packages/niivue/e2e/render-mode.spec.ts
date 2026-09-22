@@ -293,3 +293,138 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     )
   })
 }
+
+/**
+ * A streamed volume for the chunked case: only a chunked SOURCE carries a base
+ * pick sampler (built from its coarse floor), so only it can show a plane
+ * crossing being rejected as transparent and then accepted for the drawing.
+ * An ordinary volume forced down the chunked path has no sampler and every
+ * in-box crossing already counts as visible. One 64^3 level, a bright ball in
+ * the middle, air around it.
+ */
+const BALL_SOURCE = `(() => {
+  const N = 64, R = 18
+  const vox = new Uint8Array(N * N * N)
+  for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = x - N / 2 + 0.5, dy = y - N / 2 + 0.5, dz = z - N / 2 + 0.5
+    if (dx * dx + dy * dy + dz * dz < R * R) vox[x + y * N + z * N * N] = 200
+  }
+  return {
+    datatypeCode: 2,
+    levels: [{ level: 0, shape: [N, N, N], spacing: [2, 2, 2] }],
+    fetchChunk: async ({ texOrigin: o, texDims: d }) => {
+      const out = new Uint8Array(d[0] * d[1] * d[2])
+      for (let z = 0; z < d[2]; z++) for (let y = 0; y < d[1]; y++) for (let x = 0; x < d[0]; x++) {
+        const sx = o[0] + x, sy = o[1] + y, sz = o[2] + z
+        if (sx < N && sy < N && sz < N) {
+          out[x + y * d[0] + z * d[0] * d[1]] = vox[sx + sy * N + sz * N * N]
+        }
+      }
+      return out
+    },
+  }
+})()`
+
+// SLICES composites the drawing (and any PAQD label) onto a plane even where
+// the base volume is transparent, so a painted voxel on an otherwise empty
+// plane is on screen. A pick has to agree: every pick path used to test only
+// the base and overlay alpha, so a click on a painted-but-transparent spot of a
+// plane was discarded and the crosshair did not move. The whole volume takes
+// the GPU depth pass, the chunked one takes the CPU ray walk; both have to see
+// the drawing.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  for (const kind of ['whole', 'chunked'] as const) {
+    test(`a drawing on a transparent plane is pickable (${backend}, ${kind})`, async ({
+      page,
+    }) => {
+      // Clip Dark, so the air around the head (or the ball) is transparent and
+      // a painted voxel there is the only thing on the plane.
+      await mountOrSkip(page, backend, '', 0, 'volumeIsAlphaClipDark: true,')
+      if (kind === 'chunked') {
+        await page.evaluate(`(async () => {
+          const nv = window.__nv
+          await nv.removeAllVolumes()
+          await nv.loadChunkedVolume(${BALL_SOURCE},
+            { calMin: 50, calMax: 255, colormap: 'gray' })
+          await window.__nextFrame()
+        })()`)
+        // Let the floor and the bricks settle.
+        await page.waitForTimeout(4000)
+      }
+      expect(
+        await page.evaluate('window.__nv.view.volumeRenderer.hasChunkedVolume'),
+      ).toBe(kind === 'chunked')
+
+      const swept = await page.evaluate(`(async () => {
+        await window.__setMode(${MODES.SLICES})
+        const nv = window.__nv
+        const cross = nv.model.scene2mm(nv.model.scene.crosshairPos)
+        const px = nv.volumes[0].pixDimsRAS ?? nv.volumes[0].hdr.pixDims
+        const vox = [px[1], px[2], px[3]].map(Math.abs)
+        const sweep = async () => {
+          const hits = new Map()
+          for (let y = 16; y < ${SIZE}; y += 16) {
+            for (let x = 16; x < ${SIZE}; x += 16) {
+              const mm = await nv.view.depthPick(x, y)
+              if (mm) hits.set(x + ',' + y, [mm[0], mm[1], mm[2]])
+            }
+          }
+          return hits
+        }
+        const before = await sweep()
+
+        // Paint the whole axial crosshair slice (and its two neighbours, so a
+        // plane sitting on a voxel boundary still lands on paint). Where the
+        // tissue is, the base already showed; where the air is, only the
+        // drawing does.
+        nv.createEmptyDrawing()
+        const dv = nv.drawingVolume
+        const [nx, ny, nz] = [dv.dimsRAS[1], dv.dimsRAS[2], dv.dimsRAS[3]]
+        const zc = Math.min(nz - 1, Math.max(0,
+          Math.floor(nv.model.scene.crosshairPos[2] * nz)))
+        for (let z = Math.max(0, zc - 1); z <= Math.min(nz - 1, zc + 1); z++) {
+          dv.img.fill(1, z * nx * ny, (z + 1) * nx * ny)
+        }
+        nv.refreshDrawing()
+        await window.__nextFrame()
+        await window.__nextFrame()
+        const after = await sweep()
+
+        const added = []
+        const offPlane = []
+        for (const [k, mm] of after) {
+          if (!mm.some((v, i) => Math.abs(v - cross[i]) <= vox[i])) {
+            offPlane.push({ k, mm })
+          }
+          if (!before.has(k)) added.push({ k, mm })
+        }
+        const lost = [...before.keys()].filter((k) => !after.has(k))
+        const addedOffAxial = added.filter(
+          ({ mm }) => Math.abs(mm[2] - cross[2]) > vox[2])
+        return {
+          before: before.size, after: after.size, added: added.length,
+          lost: lost.length,
+          addedOffAxial: addedOffAxial.slice(0, 5),
+          addedOffAxialCount: addedOffAxial.length,
+          offPlane: offPlane.slice(0, 5), offPlaneCount: offPlane.length,
+        }
+      })()`)
+
+      // The paint reached spots that were nothing before.
+      expect(swept.before).toBeGreaterThan(0)
+      expect(swept.added, JSON.stringify(swept)).toBeGreaterThan(0)
+      // And nothing that was pickable stopped being pickable.
+      expect(swept.lost).toBe(0)
+      // Every new pick sits on the painted axial plane, not on a scalp voxel
+      // the near-surface fallback found for a ray that crossed no plane.
+      expect(
+        swept.addedOffAxialCount,
+        `new picks off the painted plane: ${JSON.stringify(swept.addedOffAxial)}`,
+      ).toBe(0)
+      expect(
+        swept.offPlaneCount,
+        `picks off every plane: ${JSON.stringify(swept.offPlane)}`,
+      ).toBe(0)
+    })
+  }
+}

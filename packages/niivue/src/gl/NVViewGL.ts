@@ -26,13 +26,14 @@ import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
 import * as NVMeasurement from '@/view/NVMeasurement'
-import { isMeshDrawn } from '@/view/NVMeshView'
+import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
 import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
@@ -68,6 +69,9 @@ export default class NVGlview {
   gl: WebGL2RenderingContext | null
   /** Set when the WebGL2 context is lost (e.g. GPU OOM); halts the render loop. */
   private _contextLost = false
+  // The drawing RGBA the drawing texture(s) were uploaded from, for the chunked
+  // volume's CPU plane pick (view/planeVisibility.ts). Null without a drawing.
+  private _drawingPickGrid: RgbaGrid | null = null
   max2D: number
   max3D: number
   fontTexture: WebGLTexture | null
@@ -1787,6 +1791,7 @@ export default class NVGlview {
     dirtyChunks?: readonly number[],
   ): void {
     if (!this.gl) return
+    this._drawingPickGrid = { data: rgba, dims }
     this.sliceRenderer.updateDrawingTexture(
       this.gl,
       rgba,
@@ -1804,6 +1809,7 @@ export default class NVGlview {
   }
 
   clearDrawing(): void {
+    this._drawingPickGrid = null
     if (!this.gl) return
     this.sliceRenderer.destroyDrawing()
     this.volumeRenderer.destroyDrawing(this.gl)
@@ -1933,8 +1939,23 @@ export default class NVGlview {
             vol.extentsMax,
             md.scene2mm(md.scene.crosshairPos),
             // Without alpha clipping the plane is a solid slab, so every
-            // in-box crossing is visible and there is nothing to reject.
-            md.volume.isAlphaClipDark ? vol.pickSampler : undefined,
+            // in-box crossing is visible and there is nothing to reject. With
+            // it, the base volume's own sampler is widened by the PAQD and
+            // drawing layers the render paints over transparent base.
+            md.volume.isAlphaClipDark
+              ? composePlaneVisibility({
+                  lo: vol.extentsMin,
+                  hi: vol.extentsMax,
+                  base: vol.pickSampler,
+                  drawing: this._drawingPickGrid,
+                  paqd: this.volumeRenderer.paqdPickGrid
+                    ? {
+                        grid: this.volumeRenderer.paqdPickGrid,
+                        uniforms: md.volume.paqdUniforms,
+                      }
+                    : null,
+                })
+              : undefined,
           )
           if (planeMM) return planeMM
         } else if (
@@ -2036,6 +2057,7 @@ export default class NVGlview {
           md.clipPlanes,
           md.scene.isClipPlaneCutaway,
           Math.min(volumes.length, 2),
+          md.volume.paqdUniforms,
         )
       }
     }

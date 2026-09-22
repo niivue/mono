@@ -24,6 +24,7 @@ import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
+import type { RgbaGrid } from '@/view/planeVisibility'
 import {
   chunkExplodedMatRAS,
   chunkExplodeEnabled,
@@ -357,6 +358,10 @@ export class VolumeRenderer extends NVRenderer {
   // single-texture paqdTexture stays null in that case (and vice versa).
   paqdChunks: WebGLTexture[] | null
   paqdLutTexture: WebGLTexture | null
+  // The resliced PAQD voxels the paqd texture(s) were uploaded from, kept for
+  // the chunked volume's CPU plane pick (view/planeVisibility.ts), which has no
+  // single texture to sample. Null when no PAQD layer is bound.
+  paqdPickGrid: RgbaGrid | null
   drawingTexture: WebGLTexture | null
   // Per-chunk drawing textures, parallel to the active chunked volume's
   // plan.chunks. Non-null only when the drawing layer is chunked; the
@@ -509,6 +514,7 @@ export class VolumeRenderer extends NVRenderer {
     this.paqdTexture = null
     this.paqdChunks = null
     this.paqdLutTexture = null
+    this.paqdPickGrid = null
     this.drawingTexture = null
     this.drawingChunks = null
     this.drawingLinearSampler = null
@@ -1699,6 +1705,7 @@ export class VolumeRenderer extends NVRenderer {
       const prepared = preparePaqdOverlayData(baseVol, vol, dimsOut)
       if (prepared) {
         const { paqdData, lut256 } = prepared
+        this.paqdPickGrid = { data: paqdData, dims: dimsOut }
         // Chunked (oversized) background: split the raw PAQD volume into one
         // 3D sub-texture per chunk, sharing the volume's ChunkPlan. The single
         // paqdTexture stays null in that case.
@@ -2313,6 +2320,7 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   clearPaqd(gl: WebGL2RenderingContext): void {
+    this.paqdPickGrid = null
     if (this.paqdTexture) {
       gl.deleteTexture(this.paqdTexture)
       this.paqdTexture = null
@@ -3033,6 +3041,7 @@ export class VolumeRenderer extends NVRenderer {
     clipPlanes: number[],
     isClipCutaway = false,
     volumeCount = 1,
+    paqdUniforms: readonly number[] = [0, 0, 0, 0],
   ): void {
     if (
       !this.isReady ||
@@ -3060,6 +3069,25 @@ export class VolumeRenderer extends NVRenderer {
       this.overlayTexture || this.placeholderOverlay,
     )
     if (shader.uniforms.overlay) gl.uniform1i(shader.uniforms.overlay, 1)
+
+    // The SLICES plane test also reads the PAQD and drawing layers (see
+    // planeLayerVisible in the shader), nearest-filtered as the render binds
+    // them. An unbound layer is the 2-voxel placeholder the shader skips.
+    gl.activeTexture(gl.TEXTURE2)
+    gl.bindTexture(gl.TEXTURE_3D, this.paqdTexture || this.placeholderOverlay)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    if (shader.uniforms.paqd) gl.uniform1i(shader.uniforms.paqd, 2)
+    gl.activeTexture(gl.TEXTURE3)
+    gl.bindTexture(
+      gl.TEXTURE_3D,
+      this.drawingTexture || this.placeholderOverlay,
+    )
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    if (shader.uniforms.drawing) gl.uniform1i(shader.uniforms.drawing, 3)
+    if (shader.uniforms.paqdUniforms)
+      gl.uniform4fv(shader.uniforms.paqdUniforms, paqdUniforms as number[])
 
     // Upload uniforms
     if (shader.uniforms.mvpMtx)

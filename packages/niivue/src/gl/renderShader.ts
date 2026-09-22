@@ -396,20 +396,6 @@ RayResult rayMarchPass(
     return result;
 }
 
-// PAQD easing function — piecewise linear alpha from primary probability.
-float paqdEaseAlpha(float alpha, vec4 u) {
-    float t0 = u[0];
-    float t1 = 0.5 * (u[0] + u[1]);
-    float t2 = u[1];
-    float y0 = 0.0;
-    float y1 = abs(u[2]);
-    float y2 = abs(u[3]);
-    if (alpha <= t0) { return y0; }
-    if (alpha <= t1) { return mix(y0, y1, (alpha - t0) / (t1 - t0)); }
-    if (alpha <= t2) { return mix(y1, y2, (alpha - t1) / (t2 - t1)); }
-    return y2;
-}
-
 // Specialized PAQD ray-march: samples raw PAQD data (nearest-neighbor),
 // performs LUT lookup, probability blending, and alpha easing per sample.
 RayResult rayMarchPaqd(

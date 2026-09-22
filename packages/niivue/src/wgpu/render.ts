@@ -21,6 +21,7 @@ import {
   isRgbaDatatype,
   preparePaqdOverlayData,
 } from '@/view/NVRenderVolumeData'
+import type { RgbaGrid } from '@/view/planeVisibility'
 import {
   chunkExplodedMatRAS,
   chunkExplodeEnabled,
@@ -402,6 +403,10 @@ export class VolumeRenderer extends NVRenderer {
   // single-texture paqdTexture stays null in that case (and vice versa).
   paqdChunks: GPUTexture[] | null
   paqdLutTexture: GPUTexture | null
+  // The resliced PAQD voxels the paqd texture(s) were uploaded from, kept for
+  // the chunked volume's CPU plane pick (view/planeVisibility.ts), which has no
+  // single texture to sample. Null when no PAQD layer is bound.
+  paqdPickGrid: RgbaGrid | null
   drawingTexture: GPUTexture | null
   // Per-chunk drawing textures, parallel to the active chunked volume's
   // plan.chunks. Non-null only when the drawing layer is chunked; the
@@ -587,6 +592,7 @@ export class VolumeRenderer extends NVRenderer {
     this.paqdTexture = null
     this.paqdChunks = null
     this.paqdLutTexture = null
+    this.paqdPickGrid = null
     this.drawingTexture = null
     this.drawingChunks = null
     this.placeholderOverlay = null
@@ -1860,6 +1866,7 @@ export class VolumeRenderer extends NVRenderer {
       const prepared = preparePaqdOverlayData(baseVol, vol, dimsOut)
       if (prepared) {
         const { paqdData, lut256 } = prepared
+        this.paqdPickGrid = { data: paqdData, dims: dimsOut }
         // Chunked (oversized) background: split the raw PAQD volume into one
         // 3D sub-texture per chunk, sharing the volume's ChunkPlan. The single
         // paqdTexture stays null in that case.
@@ -2378,6 +2385,7 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   clearPaqd(): void {
+    this.paqdPickGrid = null
     if (this.paqdTexture) {
       this.paqdTexture.destroy()
       this.paqdTexture = null

@@ -9,6 +9,30 @@ export const depthPickVertexShader = volumeVertexShader
 export const depthPickFragmentShader = `${fragmentPreamble}
 uniform float numVolumes;
 uniform sampler3D overlay;
+uniform vec4 paqdUniforms;
+uniform sampler3D paqd;
+uniform sampler3D drawing;
+
+// The layers sampleSlice (gl/renderShader.ts) composites on a plane over the
+// base and the overlay: a PAQD label with a non-zero eased alpha, or a painted
+// drawing voxel, is drawn even where both of those are transparent, so it has
+// to be pickable there too. Same nearest texel, same thresholds as the render.
+// A missing layer is the 2-voxel placeholder, which the size guard skips.
+// Mirrored in wgpu/depthPick.ts and, for chunked volumes the GPU pick cannot
+// sample, in view/planeVisibility.ts.
+bool planeLayerVisible(vec3 volCoord) {
+  if (textureSize(paqd, 0).x > 2) {
+    ivec3 pDims = textureSize(paqd, 0);
+    vec4 raw = texelFetch(paqd, clamp(ivec3(volCoord * vec3(pDims)), ivec3(0), pDims - 1), 0);
+    if (raw.b + raw.a > 0.004 && paqdEaseAlpha(raw.b, paqdUniforms) > 0.0) { return true; }
+  }
+  if (textureSize(drawing, 0).x > 2) {
+    ivec3 dDims = textureSize(drawing, 0);
+    vec4 dc = texelFetch(drawing, clamp(ivec3(volCoord * vec3(dDims)), ivec3(0), dDims - 1), 0);
+    if (dc.a > 0.0) { return true; }
+  }
+  return false;
+}
 
 vec4 packDepth(float d) {
   d = clamp(d, 0.0, 1.0);
@@ -34,8 +58,9 @@ void main() {
   }
   // SLICES mode draws three planes, not a marched surface, so the pick lands on
   // the nearest VISIBLE plane hit. Visibility must be the same rule the render
-  // uses (background baked alpha, or the overlay), or a double-click lands
-  // somewhere the user cannot see. Mirrored in wgpu/depthPick.ts.
+  // uses (background baked alpha, the overlay, a PAQD label or the drawing), or
+  // a double-click lands somewhere the user cannot see. Mirrored in
+  // wgpu/depthPick.ts.
   if (isRenderMode(RENDER_MODE_SLICES)) {
     float best = -1.0;
     for (int k = 0; k < 3; k++) {
@@ -51,6 +76,7 @@ void main() {
       if (!visible && numVolumes > 1.0) {
         visible = texture(overlay, chunkTexCoord(pos)).a > 0.0;
       }
+      if (!visible) { visible = planeLayerVisible(chunkTexCoord(pos)); }
       if (visible) { best = tk; }
     }
     if (best < 0.0) {

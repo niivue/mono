@@ -149,6 +149,23 @@ fn alphaClipDark() -> bool {
     return params.dataSizeTexFrac.w > 0.5;
 }
 
+// PAQD easing: piecewise-linear alpha from the primary label's probability,
+// with volumePaqdUniforms as [t0, t1, y1, y2]. In the preamble because the
+// render and the depth pick both read it: what one draws, the other must pick.
+// Mirrors paqdEaseAlpha in gl/volumeShaderLib.ts and view/planeVisibility.ts.
+fn paqdEaseAlpha(alpha: f32, u: vec4f) -> f32 {
+    let t0 = u[0];
+    let t1 = 0.5 * (u[0] + u[1]);
+    let t2 = u[1];
+    let y0 = 0.0;
+    let y1 = abs(u[2]);
+    let y2 = abs(u[3]);
+    if (alpha <= t0) { return y0; }
+    if (alpha <= t1) { return mix(y0, y1, (alpha - t0) / (t1 - t0)); }
+    if (alpha <= t2) { return mix(y1, y2, (alpha - t1) / (t2 - t1)); }
+    return y2;
+}
+
 // Remap a sample position from full-volume [0,1] cube space to the local chunk
 // texture's [dataOrigin, dataOrigin+dataSize] region (preserves trilinear halo
 // access at chunk seams). Identity for non-chunked volumes.

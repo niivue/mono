@@ -94,6 +94,23 @@ bool isRenderMode(float mode) {
   return abs(renderMode - mode) < 0.5;
 }
 
+// PAQD easing: piecewise-linear alpha from the primary label's probability,
+// with volumePaqdUniforms as [t0, t1, y1, y2]. In the preamble because the
+// render and the depth pick both read it: what one draws, the other must pick.
+// Mirrors paqdEaseAlpha in wgpu/volumeShaderLib.ts and view/planeVisibility.ts.
+float paqdEaseAlpha(float alpha, vec4 u) {
+    float t0 = u[0];
+    float t1 = 0.5 * (u[0] + u[1]);
+    float t2 = u[1];
+    float y0 = 0.0;
+    float y1 = abs(u[2]);
+    float y2 = abs(u[3]);
+    if (alpha <= t0) { return y0; }
+    if (alpha <= t1) { return mix(y0, y1, (alpha - t0) / (t1 - t0)); }
+    if (alpha <= t2) { return mix(y1, y2, (alpha - t1) / (t2 - t1)); }
+    return y2;
+}
+
 vec3 chunkTexCoord(vec3 samplePos) {
   vec3 chunkLocal = (samplePos - chunkSubOrigin) / chunkSubSize;
   return dataOriginTexFrac + chunkLocal * dataSizeTexFrac;
